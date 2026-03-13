@@ -84,7 +84,7 @@ const generate = async () => {
 
   const { connect } = useEventSource()
   await connect({
-    url: 'http://localhost:8001/api/report/daily/stream',
+    url: 'http://118.89.101.11:8000:8001/api/report/daily/stream',
     body: {
       source: selectedType.value,
       date: selectedDate.value,

@@ -137,7 +137,7 @@ export const useChatStore = defineStore('chat', {
 
       // ── SSE 连接 ──────────────────────────────────────────────
       await connect({
-        url: 'http://localhost:8001/api/chat/stream',
+        url: 'http://118.89.101.11:8000/api/chat/stream',
         body: { message: trimmed, history, temperature },
         onMessage: (payload: unknown) => {
           const event = payload as StreamPayload
