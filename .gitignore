@@ -1,0 +1,25 @@
+# 环境变量（极度机密）
+.env
+**/.env
+
+# Python 虚拟环境与缓存
+.venv
+venv/
+__pycache__/
+*.pyc
+
+# Node.js 依赖与前端打包产物
+**/node_modules/
+frontend/dist/
+dist/
+
+# 数据库本地真实数据与日志 (核心隔离)
+docker/volumes/
+data/
+*.log
+
+# AI 助手本地缓存
+.roo/
+
+# 系统级隐藏文件 (可选)
+.DS_Store

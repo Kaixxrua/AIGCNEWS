@@ -1,0 +1,399 @@
+from __future__ import annotations
+
+import base64
+import logging
+import os
+import re
+from datetime import date, timedelta
+from typing import Dict, List, Optional, Set
+
+import httpx
+
+from backend.app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+GITHUB_API_BASE = "https://api.github.com"
+GITHUB_TRENDING_BASE = "https://github.com/trending"
+
+_TOPICS = [
+    "llm",
+    "ai",
+    "agent",
+    "large-language-model",
+    "generative-ai",
+]
+
+_PER_TOPIC_LIMIT = 10
+
+
+def _get_token() -> str:
+    return (settings.github_token or os.getenv("GITHUB_TOKEN", "")).strip()
+
+
+def _build_headers(use_token: bool = True) -> dict:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "RAG-AIGC-Agent/1.0",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if use_token:
+        token = _get_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _search_repos(
+    query: str,
+    limit: int,
+    client: httpx.Client,
+    use_token: bool = True,
+    sort: str = "stars",
+) -> List[dict]:
+    params = {
+        "q": query,
+        "sort": sort,
+        "order": "desc",
+        "per_page": min(limit, 30),
+        "page": 1,
+    }
+
+    resp = client.get(
+        f"{GITHUB_API_BASE}/search/repositories",
+        headers=_build_headers(use_token=use_token),
+        params=params,
+    )
+
+    if resp.status_code == 401 and use_token:
+        logger.warning("[GitHub] Token 401，降级匿名重试 (query=%s)...", query[:60])
+        return _search_repos(query, limit, client, use_token=False, sort=sort)
+
+    if resp.status_code in (403, 429):
+        logger.warning(
+            "[GitHub] 限流 %d (query=%s)，跳过。", resp.status_code, query[:60]
+        )
+        return []
+
+    try:
+        resp.raise_for_status()
+    except Exception:
+        logger.warning(
+            "[GitHub] HTTP %d (query=%s)，跳过。", resp.status_code, query[:60]
+        )
+        return []
+
+    items = resp.json().get("items", [])
+    logger.debug("[GitHub] query=%s，命中 %d 条。", query[:60], len(items))
+    return items
+
+
+def _clean_readme_text(text: str) -> str:
+    text = re.sub(r"```[\s\S]*?```", " ", text)
+    text = re.sub(r"`[^`]+`", " ", text)
+    text = re.sub(r"!\[[^\]]*\]\([^\)]*\)", " ", text)
+    text = re.sub(r"\[[^\]]+\]\([^\)]*\)", " ", text)
+    text = re.sub(r"[#>*_\-]{1,}", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _fetch_readme(
+    full_name: str,
+    client: httpx.Client,
+    use_token: bool = True,
+) -> str:
+    try:
+        resp = client.get(
+            f"{GITHUB_API_BASE}/repos/{full_name}/readme",
+            headers=_build_headers(use_token=use_token),
+        )
+        if resp.status_code == 401 and use_token:
+            return _fetch_readme(full_name, client, use_token=False)
+        if resp.status_code in (403, 404, 429):
+            return ""
+        resp.raise_for_status()
+        payload = resp.json()
+        content = payload.get("content", "")
+        encoding = payload.get("encoding", "")
+        if not content or encoding != "base64":
+            return ""
+        decoded = base64.b64decode(content).decode("utf-8", errors="ignore")
+        cleaned = _clean_readme_text(decoded)
+        return cleaned[:20000]
+    except Exception as exc:
+        logger.debug("[GitHub] README 抓取失败 %s: %s", full_name, exc)
+        return ""
+
+
+def _parse_item(item: dict, client: httpx.Client, use_token: bool = True) -> dict:
+    lang = item.get("language") or ""
+    desc = item.get("description") or ""
+    summary = f"{desc}  [Language: {lang}]".strip() if lang else desc
+    topics = item.get("topics", [])
+    full_name = item.get("full_name", item.get("name", ""))
+    readme_text = (
+        _fetch_readme(full_name, client, use_token=use_token) if full_name else ""
+    )
+
+    combined_abstract = summary
+    if readme_text:
+        combined_abstract = f"{summary}\n\nREADME:\n{readme_text}".strip()
+
+    repo_id = str(item.get("node_id") or item.get("id", "") or full_name)
+    return {
+        "repo_id": repo_id,
+        "full_name": full_name,
+        "title": full_name,
+        "abstract": combined_abstract,
+        "summary": summary,
+        "description": desc,
+        "readme": readme_text,
+        "url": item.get("html_url", ""),
+        "pdf_url": "",
+        "source": "github",
+        "score": float(item.get("stargazers_count", 0)),
+        "tags": ([lang] if lang else []) + topics[:5],
+        "topics": topics[:10],
+        "published_date": (item.get("created_at") or "")[:10],
+        "language": lang,
+        "stars": int(item.get("stargazers_count", 0) or 0),
+        "forks": int(item.get("forks_count", 0) or 0),
+        "watchers": int(item.get("watchers_count", 0) or 0),
+        "open_issues": int(item.get("open_issues_count", 0) or 0),
+        "created_at": (item.get("created_at") or "")[:10],
+        "pushed_at": (item.get("pushed_at") or "")[:10],
+    }
+
+
+def _check_token_valid(client: httpx.Client) -> bool:
+    token = _get_token()
+    if not token:
+        return False
+    try:
+        resp = client.get(
+            f"{GITHUB_API_BASE}/search/repositories",
+            headers=_build_headers(use_token=True),
+            params={"q": "topic:llm", "per_page": 1},
+        )
+        if resp.status_code == 401:
+            logger.warning(
+                "[GitHub] Token 对 Search API 无效（401），全程使用匿名访问。"
+            )
+            return False
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _fetch_trending_page(
+    period: str,
+    client: httpx.Client,
+    language: Optional[str] = None,
+) -> str:
+    params = {"since": period}
+    if language:
+        params["l"] = language
+    resp = client.get(
+        GITHUB_TRENDING_BASE,
+        params=params,
+        headers={"User-Agent": "RAG-AIGC-Agent/1.0"},
+        follow_redirects=True,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.text
+
+
+def _parse_trending_repos(
+    html: str, period: str, limit: int = 25
+) -> List[Dict[str, object]]:
+    matches = re.findall(
+        r'<h2[^>]*class="[^"]*h3[^"]*lh-condensed[^"]*">\s*<a[^>]*href="/([^"#?]+/[^"#?]+)"',
+        html,
+        flags=re.IGNORECASE,
+    )
+    repos: List[Dict[str, object]] = []
+    seen: Set[str] = set()
+    for idx, full_name in enumerate(matches, start=1):
+        clean_name = "/".join(part.strip() for part in full_name.split("/", 1))
+        if clean_name in seen:
+            continue
+        seen.add(clean_name)
+        repos.append(
+            {
+                "repo_id": clean_name,
+                "full_name": clean_name,
+                "period": period,
+                "rank": idx,
+            }
+        )
+        if len(repos) >= limit:
+            break
+    return repos
+
+
+def fetch_github_trending_repos(
+    period: str = "daily", limit: int = 25
+) -> List[Dict[str, object]]:
+    period = period.lower().strip()
+    if period not in {"daily", "weekly", "monthly"}:
+        raise ValueError(f"Unsupported period: {period}")
+
+    with httpx.Client(timeout=30, trust_env=True, follow_redirects=True) as client:
+        html = _fetch_trending_page(period, client)
+        repos = _parse_trending_repos(html, period=period, limit=limit)
+        logger.info("[GitHub][Trending] period=%s -> %d repos", period, len(repos))
+        return repos
+
+
+def fetch_github_repo_metadata(full_name: str) -> Optional[dict]:
+    with httpx.Client(timeout=30, trust_env=True) as client:
+        use_token = _check_token_valid(client)
+        try:
+            resp = client.get(
+                f"{GITHUB_API_BASE}/repos/{full_name}",
+                headers=_build_headers(use_token=use_token),
+            )
+            if resp.status_code == 401 and use_token:
+                resp = client.get(
+                    f"{GITHUB_API_BASE}/repos/{full_name}",
+                    headers=_build_headers(use_token=False),
+                )
+            if resp.status_code in (403, 404, 429):
+                return None
+            resp.raise_for_status()
+            return _parse_item(resp.json(), client, use_token=use_token)
+        except Exception as exc:
+            logger.warning("[GitHub] 仓库详情抓取失败 %s: %s", full_name, exc)
+            return None
+
+
+def fetch_github_candidate_repos(limit: int = 60) -> List[dict]:
+    today = date.today()
+    recent_cutoff = (today - timedelta(days=7)).isoformat()
+    active_cutoff = (today - timedelta(days=30)).isoformat()
+
+    seen_ids: Set[str] = set()
+    parsed: List[dict] = []
+
+    with httpx.Client(timeout=30, trust_env=True) as client:
+        use_token = _check_token_valid(client)
+        if _get_token() and not use_token:
+            logger.info("[GitHub] Token 无效，本次全程使用匿名访问。")
+
+        queries = [
+            *(f"topic:{topic} created:>{recent_cutoff}" for topic in _TOPICS),
+            f"created:>{recent_cutoff} stars:>10",
+            f"pushed:>{active_cutoff} stars:>1000",
+        ]
+
+        for query in queries:
+            items = _search_repos(
+                query,
+                min(max(limit, 20), 30),
+                client,
+                use_token=use_token,
+                sort="stars",
+            )
+            for item in items:
+                node_id = str(item.get("node_id") or item.get("id") or "")
+                if not node_id or node_id in seen_ids:
+                    continue
+                seen_ids.add(node_id)
+                parsed.append(_parse_item(item, client, use_token=use_token))
+                if len(parsed) >= limit:
+                    break
+            if len(parsed) >= limit:
+                break
+
+    logger.info("[GitHub][Candidates] 最终返回 %d 个候选仓库。", len(parsed))
+    return parsed
+
+
+def fetch_github_repos(
+    limit: int = 20,
+    days_back: int = 14,
+) -> List[dict]:
+    today = date.today()
+    date_cutoff = (today - timedelta(days=days_back)).isoformat()
+
+    seen_ids: Set[str] = set()
+    all_items: List[dict] = []
+
+    with httpx.Client(timeout=30, trust_env=True) as client:
+        use_token = _check_token_valid(client)
+        if _get_token() and not use_token:
+            logger.info("[GitHub] Token 无效，本次全程使用匿名访问。")
+
+        logger.info(
+            "[GitHub][RisingStars] 搜索近 %d 天内创建的高热项目 (created:>%s)...",
+            days_back,
+            date_cutoff,
+        )
+
+        for topic in _TOPICS:
+            if len(all_items) >= limit * 3:
+                break
+
+            query = f"topic:{topic} created:>{date_cutoff}"
+            try:
+                items = _search_repos(
+                    query,
+                    _PER_TOPIC_LIMIT,
+                    client,
+                    use_token=use_token,
+                    sort="stars",
+                )
+                new_count = 0
+                for item in items:
+                    node_id = str(item.get("node_id") or item.get("id", ""))
+                    if node_id and node_id not in seen_ids:
+                        seen_ids.add(node_id)
+                        all_items.append(item)
+                        new_count += 1
+
+                logger.info(
+                    "[GitHub][RisingStars] topic=%s → 命中 %d 条，新增 %d 条（累计 %d）。",
+                    topic,
+                    len(items),
+                    new_count,
+                    len(all_items),
+                )
+            except Exception as exc:
+                logger.warning("[GitHub][RisingStars] topic=%s 异常: %s", topic, exc)
+
+        if len(all_items) < limit:
+            fallback_cutoff = (today - timedelta(days=30)).isoformat()
+            logger.info(
+                "[GitHub][RisingStars] 结果不足（%d/%d），扩大时间窗至 30 天 (created:>%s)...",
+                len(all_items),
+                limit,
+                fallback_cutoff,
+            )
+            for topic in _TOPICS[:3]:
+                if len(all_items) >= limit * 2:
+                    break
+                query = f"topic:{topic} created:>{fallback_cutoff}"
+                try:
+                    items = _search_repos(
+                        query, limit, client, use_token=use_token, sort="stars"
+                    )
+                    for item in items:
+                        node_id = str(item.get("node_id") or item.get("id", ""))
+                        if node_id and node_id not in seen_ids:
+                            seen_ids.add(node_id)
+                            all_items.append(item)
+                except Exception as exc:
+                    logger.warning(
+                        "[GitHub][RisingStars] fallback topic=%s 异常: %s",
+                        topic,
+                        exc,
+                    )
+
+        all_items.sort(key=lambda x: x.get("stargazers_count", 0), reverse=True)
+        selected = all_items[:limit]
+
+        repos = [_parse_item(item, client, use_token=use_token) for item in selected]
+        logger.info("[GitHub][RisingStars] 最终返回 %d 个仓库。", len(repos))
+        return repos

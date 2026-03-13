@@ -1,0 +1,267 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply font-sans;
+    color: #44403c; /* stone-700 */
+    min-height: 100dvh;
+    /* 暖调米白纸张底色 */
+    background: #F9F9F8;
+    background-attachment: fixed;
+  }
+
+  /* 滚动条美化（暖调） */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full;
+    background: rgba(168, 162, 158, 0.25); /* stone-400 */
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 162, 158, 0.40);
+  }
+}
+
+@layer components {
+  /* ═══ 毛玻璃卡片（暖白纸质 — Editorial Warm Minimalism） ═══ */
+  .glass {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(168, 162, 158, 0.20); /* stone-400/20 */
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+  }
+
+  .glass-card {
+    @apply glass rounded-[24px];
+  }
+
+  .card {
+    @apply glass-card;
+  }
+
+  /* 卡片 hover（极克制的纸质悬浮） */
+  .card-hover {
+    @apply transition-all duration-200;
+  }
+  .card-hover:hover {
+    background: rgba(255, 255, 255, 1.0);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    transform: translateY(-1px);
+  }
+
+  /* ═══ 按钮（全部胶囊形 — stone 色系） ═══ */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium text-white
+           transition-all duration-150 active:scale-[0.97]
+           disabled:cursor-not-allowed disabled:opacity-40;
+    background: #44403c; /* stone-700 */
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #57534e; /* stone-600 */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium
+           transition-all duration-150 active:scale-[0.97]
+           disabled:cursor-not-allowed disabled:opacity-40;
+    color: #57534e; /* stone-600 */
+    background: rgba(255, 255, 255, 0.80);
+    border: 1px solid rgba(168, 162, 158, 0.25);
+    backdrop-filter: blur(10px);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 1.0);
+    color: #44403c;
+    border-color: rgba(168, 162, 158, 0.35);
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium text-white
+           transition-all duration-150 active:scale-[0.97]
+           disabled:cursor-not-allowed disabled:opacity-40;
+    background: #dc2626;
+    box-shadow: 0 1px 4px rgba(220, 38, 38, 0.15);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: #b91c1c;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium
+           transition-all duration-150 active:scale-[0.97];
+    color: #a8a29e; /* stone-400 */
+  }
+  .btn-ghost:hover {
+    background: rgba(245, 245, 244, 0.8); /* stone-100 */
+    color: #57534e; /* stone-600 */
+  }
+
+  /* ═══ Tab 按钮（胶囊形 — 暖色） ═══ */
+  .tab-active {
+    @apply rounded-full;
+    background: #44403c; /* stone-700 */
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  }
+
+  .tab-inactive {
+    @apply rounded-full;
+    color: #a8a29e; /* stone-400 */
+  }
+  .tab-inactive:hover {
+    background: rgba(245, 245, 244, 0.8); /* stone-100 */
+    color: #57534e; /* stone-600 */
+  }
+
+  /* ═══ 徽章（胶囊 — 暖色） ═══ */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  /* ═══ 输入框（暖色纸质） ═══ */
+  .input {
+    @apply w-full rounded-full px-5 py-3 text-sm
+           placeholder:text-stone-400 outline-none
+           transition-all duration-150;
+    color: #44403c; /* stone-700 */
+    background: rgba(255, 255, 255, 0.80);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(168, 162, 158, 0.20);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+  }
+  .input:focus {
+    background: rgba(255, 255, 255, 1.0);
+    border-color: rgba(168, 162, 158, 0.40);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  /* ═══ 分割线（极淡暖色） ═══ */
+  .divider {
+    border-top: 1px solid rgba(168, 162, 158, 0.15);
+  }
+
+  /* ═══ 状态点 ═══ */
+  .status-dot {
+    @apply inline-block h-2 w-2 rounded-full;
+  }
+}
+
+@layer utilities {
+  .line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .line-clamp-3 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #44403c, #78716c);
+  }
+
+  /* 内部分隔：用交替暖色背景 */
+  .row-alt:nth-child(even) {
+    background: rgba(245, 245, 244, 0.5); /* stone-100 */
+  }
+}
+
+/* ═══ prose markdown 基础样式（暖调书卷气） ═══ */
+.prose-content h1 { @apply text-xl font-bold mb-3 mt-5; color: #1c1917; font-family: 'Playfair Display', Georgia, serif; }
+.prose-content h2 { @apply text-lg font-semibold mb-2 mt-4; color: #292524; font-family: 'Playfair Display', Georgia, serif; }
+.prose-content h3 { @apply text-base font-semibold mb-2 mt-3; color: #57534e; }
+.prose-content p  { @apply text-sm leading-7 mb-3; color: #78716c; }
+.prose-content ul { @apply mb-3 list-disc pl-5 space-y-1 text-sm; color: #78716c; }
+.prose-content ol { @apply mb-3 list-decimal pl-5 space-y-1 text-sm; color: #78716c; }
+.prose-content li { @apply leading-6; }
+.prose-content blockquote {
+  @apply my-3 pl-4 italic text-sm;
+  color: #a8a29e;
+  border-left: 2px solid rgba(168, 162, 158, 0.30);
+}
+.prose-content code {
+  @apply rounded-full px-2 py-0.5 font-mono text-xs;
+  color: #57534e;
+  background: rgba(245, 245, 244, 0.8);
+}
+.prose-content pre {
+  @apply mb-3 overflow-x-auto rounded-[20px] p-5 font-mono text-xs leading-relaxed;
+  background: rgba(245, 245, 244, 0.6);
+  color: #44403c;
+  border: 1px solid rgba(168, 162, 158, 0.15);
+}
+/* pre 内的 code 不再加额外背景/圆角 */
+.prose-content pre code {
+  @apply p-0 rounded-none;
+  background: transparent;
+  color: inherit;
+}
+.prose-content hr  { border-top: 1px solid rgba(168, 162, 158, 0.15); @apply my-5; }
+.prose-content a   { @apply font-medium underline underline-offset-2; color: #44403c; }
+.prose-content a:hover { color: #1c1917; }
+.prose-content strong { @apply font-semibold; color: #292524; }
+
+/* 表格样式（暖调纸质） */
+.prose-content table {
+  @apply w-full mb-4 text-sm border-collapse;
+  border: 1px solid rgba(168, 162, 158, 0.20);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.prose-content thead { background: rgba(245, 245, 244, 0.6); }
+.prose-content th {
+  @apply px-4 py-2.5 text-left font-semibold text-xs;
+  color: #57534e;
+  border-bottom: 1px solid rgba(168, 162, 158, 0.20);
+}
+.prose-content td {
+  @apply px-4 py-2 text-sm;
+  color: #78716c;
+  border-bottom: 1px solid rgba(168, 162, 158, 0.10);
+}
+.prose-content tbody tr:last-child td { border-bottom: none; }
+.prose-content tbody tr:hover { background: rgba(245, 245, 244, 0.4); }
+
+/* ═══ 交错式卡片进场动画 (Spatial Pop-in) ═══ */
+@keyframes cardPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.90);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.stagger-enter {
+  animation: cardPopIn 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
