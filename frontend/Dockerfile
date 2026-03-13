@@ -1,8 +1,8 @@
 # 阶段一：使用 Node.js 编译 Vue 代码
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm install --registry=https://registry.npmmirror.com
 COPY . .
 # 注意：确保你的前端 .env.production 里 VITE_API_BASE_URL=http://118.89.101.11:8000
 RUN npm run build

@@ -22,3 +22,4 @@ pymysql
 DBUtils
 redis
 fastapi-cache2[redis]
+cryptography

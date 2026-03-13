@@ -82,7 +82,7 @@ services:
     container_name: milvus-attu
     image: zilliz/attu:v2.4
     ports:
-      - "8000:3000"
+      - "8001:3000"
     environment:
       MILVUS_URL: milvus:19530
     depends_on:
@@ -99,45 +99,31 @@ services:
     volumes:
       - ../data/neo4j:/data
 
-  mysql:
+  mysql-aigc:
     image: mysql:8.0
-    container_name: rag-mysql
-    restart: unless-stopped
+    container_name: mysql-aigc
+    restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-ragaigc2024}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-rag_aigc}
-      MYSQL_CHARSET: utf8mb4
-      MYSQL_COLLATION: utf8mb4_unicode_ci
+      MYSQL_ROOT_PASSWORD: root_password_here
+      MYSQL_DATABASE: rag_aigc
+      MYSQL_USER: aigc_admin
+      MYSQL_PASSWORD: Pp900900=
+      TZ: Asia/Shanghai
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-    command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
-      --default-authentication-plugin=mysql_native_password
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD:-ragaigc2024}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --innodb_buffer_pool_size=128M
 
   redis:
     image: redis:7-alpine
-    container_name: rag-redis
-    restart: unless-stopped
+    container_name: redis-aigc
+    restart: always
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+    command: redis-server --appendonly yes
 
 volumes:
   mysql_data:
