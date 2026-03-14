@@ -5,8 +5,10 @@ import logging
 from datetime import date as DateType
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
+
+from backend.app.core.auth import RequireAdmin
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -101,6 +103,7 @@ def _bg_refresh_github_hot(limit: int) -> None:
 async def trigger_ingest(
     request: IngestRequest,
     background_tasks: BackgroundTasks,
+    _: dict = Depends(RequireAdmin),
 ) -> IngestResponse:
     """
     手动触发数据采集任务。
@@ -139,6 +142,7 @@ async def trigger_ingest(
 async def ingest_by_date(
     request: IngestByDateRequest,
     background_tasks: BackgroundTasks,
+    _: dict = Depends(RequireAdmin),
 ) -> IngestResponse:
     """
     按指定日期触发数据采集。
@@ -176,7 +180,7 @@ async def ingest_by_date(
 
 
 @router.post("/ops/clear-data", response_model=ClearDataResponse, tags=["Ops"])
-async def clear_all_data() -> ClearDataResponse:
+async def clear_all_data(_: dict = Depends(RequireAdmin)) -> ClearDataResponse:
     """
     清空所有已存储数据：
 
@@ -220,6 +224,7 @@ async def clear_all_data() -> ClearDataResponse:
 async def refresh_github_hot(
     limit: int = Query(default=80, ge=20, le=200),
     background_tasks: BackgroundTasks = None,
+    _: dict = Depends(RequireAdmin),
 ) -> IngestResponse:
     """手动刷新 GitHub 热榜候选池与快照。"""
     from backend.app.repositories.mysql_repo import MySQLRepository
@@ -248,6 +253,7 @@ async def ingest_single_source(
     ),
     limit: int = Query(default=20, ge=5, le=100),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
+    _: dict = Depends(RequireAdmin),
 ) -> IngestResponse:
     """
     按数据源独立采集（单源模式）。
@@ -287,7 +293,7 @@ async def ingest_single_source(
 
 
 @router.get("/ops/ingest-source/list", tags=["Ops"])
-async def list_available_sources():
+async def list_available_sources(_: dict = Depends(RequireAdmin)):
     """返回所有可用的数据源名称列表（前端下拉 / 按钮渲染用）。"""
     return {
         "sources": sorted(_VALID_SOURCES),
@@ -295,7 +301,7 @@ async def list_available_sources():
 
 
 @router.get("/ops/scheduler/status", tags=["Ops"])
-async def scheduler_status():
+async def scheduler_status(_: dict = Depends(RequireAdmin)):
     """查询 APScheduler 当前状态与已注册任务列表。"""
     from backend.app.core.scheduler import get_scheduler
 
@@ -321,6 +327,7 @@ async def scheduler_status():
 @router.post("/ops/scheduler/trigger", tags=["Ops"])
 async def trigger_scheduled_job(
     job_id: str = Query(default="daily_smart_ingestion"),
+    _: dict = Depends(RequireAdmin),
 ):
     """立即触发指定的定时任务（用于调试）。"""
     from backend.app.core.scheduler import get_scheduler

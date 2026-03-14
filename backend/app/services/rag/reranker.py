@@ -58,17 +58,37 @@ _cross_encoder: Optional[object] = None
 
 
 def _load_cross_encoder_sync() -> Optional[object]:
-    """同步加载 Cross-Encoder 模型，模块导入时调用一次。"""
+    """同步加载 Cross-Encoder 模型，模块导入时调用一次。
+
+    优先使用本地缓存（HF_HUB_OFFLINE=1），若缓存不存在则自动通过 hf-mirror 下载。
+    """
     try:
         from sentence_transformers import CrossEncoder
 
         print(f"[Reranker] Loading Cross-Encoder: {CROSS_ENCODER_MODEL}")
+        # 先尝试本地缓存（快速路径）
+        try:
+            model = CrossEncoder(
+                CROSS_ENCODER_MODEL,
+                max_length=512,
+                local_files_only=True,
+            )
+            print(f"[Reranker] Cross-Encoder loaded from local cache.")
+            return model
+        except Exception:
+            pass
+        # 本地无缓存，尝试从 hf-mirror 在线下载
+        import os as _os
+
+        _os.environ["HF_HUB_OFFLINE"] = "0"
+        _os.environ["TRANSFORMERS_OFFLINE"] = "0"
+        print(f"[Reranker] Local cache miss, downloading from {_hf_endpoint}...")
         model = CrossEncoder(
             CROSS_ENCODER_MODEL,
             max_length=512,
-            local_files_only=True,
+            local_files_only=False,
         )
-        print(f"[Reranker] Cross-Encoder loaded successfully.")
+        print(f"[Reranker] Cross-Encoder downloaded and loaded successfully.")
         return model
     except Exception as exc:
         print(f"[Reranker] Failed to load Cross-Encoder (will skip rerank): {exc}")

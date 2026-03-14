@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { useEventSource } from '../composables/useEventSource'
+import { api } from '../services/api'
 
 export type ChatRole = 'user' | 'assistant'
 
@@ -136,8 +137,9 @@ export const useChatStore = defineStore('chat', {
       }
 
       // ── SSE 连接 ──────────────────────────────────────────────
+      const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
       await connect({
-        url: 'http://118.89.101.11:8000/api/chat/stream',
+        url: `${baseURL}/chat/stream`,
         body: { message: trimmed, history, temperature },
         onMessage: (payload: unknown) => {
           const event = payload as StreamPayload

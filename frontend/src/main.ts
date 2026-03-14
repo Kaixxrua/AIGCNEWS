@@ -5,8 +5,15 @@ import App from './App.vue'
 import router from './router/index'
 
 const app = createApp(App)
+const pinia = createPinia()
 
-app.use(createPinia())
+app.use(pinia)
 app.use(router)
 
-app.mount('#app')
+// 在挂载前从 localStorage 恢复登录状态
+import('./stores/authStore').then(({ useAuthStore }) => {
+  const authStore = useAuthStore()
+  authStore.initFromStorage().finally(() => {
+    app.mount('#app')
+  })
+})

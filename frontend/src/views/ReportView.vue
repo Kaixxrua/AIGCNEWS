@@ -3,6 +3,9 @@ import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { api } from '../services/api'
 import { useEventSource } from '../composables/useEventSource'
+import { useAuthStore } from '../stores/authStore'
+
+const authStore = useAuthStore()
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -83,8 +86,9 @@ const generate = async () => {
   autoScroll.value = true
 
   const { connect } = useEventSource()
+  const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
   await connect({
-    url: 'http://118.89.101.11:8000:8001/api/report/daily/stream',
+    url: `${baseURL}/report/daily/stream`,
     body: {
       source: selectedType.value,
       date: selectedDate.value,
@@ -144,7 +148,7 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-4 overflow-hidden p-6">
+  <div class="flex h-full flex-col overflow-hidden p-6" :class="authStore.isAdmin ? 'gap-4' : 'gap-6'">
 
     <!-- 页头 -->
     <div class="stagger-enter flex items-end justify-between shrink-0">
@@ -158,8 +162,8 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
       </div>
     </div>
 
-    <!-- 控制面板 -->
-    <div class="stagger-enter glass-card shrink-0 p-5 space-y-3" style="animation-delay: 0.1s">
+    <!-- Admin 专属：控制面板（生成报告操作区） -->
+    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 p-5 space-y-3" style="animation-delay: 0.1s">
       <div class="flex flex-wrap gap-2">
         <button
           v-for="type in REPORT_TYPES"

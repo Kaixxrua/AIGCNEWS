@@ -1,21 +1,18 @@
 from __future__ import annotations
 
-"""Arxiv 数据源：Hugging Face Daily Papers 全 HTML 策略（async 极速版）。
+"""Arxiv 数据源：Hugging Face Daily Papers HTML + arXiv XML API 双轨策略（v3）。
 
-策略（无 Arxiv API）：
+策略：
   1. 请求 https://huggingface.co/papers/date/{YYYY-MM-DD} 获取当日页面
   2. 从 HTML 中提取 Arxiv ID 与 upvotes（热度），按热度降序排列取 Top N
-  3. **并发** 请求 https://huggingface.co/papers/{id} 抓取详细元数据
-     （标题、摘要、作者、发布日期、PDF URL）
-  4. 完全不调用 arxiv.org API，避免限速（HTTP 429）
+  3. **并发** 请求 https://huggingface.co/papers/{id} 抓取 HF 详情页（标题/摘要/作者等）
+  4. 用 arXiv 官方 XML API 补充/校正元数据（摘要更完整、发布日期更准确）
   5. source='arxiv'，source_channel='huggingface_daily_html'
-  6. 解析失败直接抛出，不做兜底
+  6. PDF 内容由后台 ArxivPdfDownloader 异步落盘，不在此阶段下载
 
-性能优化（v2）：
-  - 使用 httpx.AsyncClient + asyncio.gather 并发拉取详情页
-  - Semaphore=10 控制并发量
-  - 注入 HUGGINGFACE_TOKEN 到请求 Headers（有 Token 无需人为延迟）
-  - 删除 1s time.sleep，20 篇论文从 20s+ 降至 1-2s
+v3 变更：
+  - 新增 Step 4：arXiv XML API 补全元数据（摘要 / 作者 / 日期）
+  - pdf_url 统一为 https://arxiv.org/pdf/{arxiv_id}（落盘下载时使用）
 """
 
 import asyncio
@@ -352,12 +349,66 @@ async def _fetch_paper_details_async(
 # ── 核心异步函数 ──────────────────────────────────────────────────────────────
 
 
+async def _enrich_with_arxiv_api(
+    docs: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """用 arXiv XML API 补全/校正元数据（摘要更完整、发布日期更准确）。
+
+    HF 详情页有时摘要被截断，arXiv API 返回完整 abstract。
+    本函数在独立线程中同步调用 API，不阻塞事件循环。
+    """
+    arxiv_ids = [d["arxiv_id"] for d in docs if d.get("arxiv_id")]
+    if not arxiv_ids:
+        return docs
+
+    try:
+        from backend.app.services.ingestion.arxiv_pdf_downloader import (
+            _fetch_arxiv_metadata_by_ids,
+        )
+
+        api_papers = await asyncio.to_thread(_fetch_arxiv_metadata_by_ids, arxiv_ids)
+        api_map: Dict[str, Dict[str, Any]] = {
+            p["arxiv_id"]: p for p in api_papers if p.get("arxiv_id")
+        }
+
+        for doc in docs:
+            arxiv_id = doc.get("arxiv_id", "")
+            api_data = api_map.get(arxiv_id)
+            if not api_data:
+                continue
+            # 用 API 返回的更完整摘要覆盖 HF 解析结果（API 更权威）
+            if api_data.get("abstract") and len(api_data["abstract"]) > len(
+                doc.get("abstract", "")
+            ):
+                doc["abstract"] = api_data["abstract"]
+            # 补全作者（HF 详情页可能解析失败）
+            if api_data.get("authors") and not doc.get("authors"):
+                doc["authors"] = api_data["authors"]
+            # 补全发布日期
+            if api_data.get("published_date") and not doc.get("published_date"):
+                doc["published_date"] = api_data["published_date"]
+
+        logger.info(
+            "[Arxiv][API] arXiv XML API 元数据补全完成，%d/%d 篇命中。",
+            len(api_map),
+            len(arxiv_ids),
+        )
+    except Exception as exc:
+        logger.warning(
+            "[Arxiv][API] arXiv XML API 补全失败（非致命，使用 HF 数据）: %s", exc
+        )
+
+    return docs
+
+
 async def fetch_latest_papers_async(
     limit: int = 20,
     period: str = "daily",
     target_date: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """异步版：通过 HuggingFace Papers HTML 获取指定周期论文元数据。"""
+    """异步版：通过 HuggingFace Papers HTML 获取指定周期论文元数据，
+    并用 arXiv XML API 补全/校正摘要和发布日期。
+    """
     period = (period or "daily").lower().strip()
     target_dt = None
     if target_date:
@@ -389,8 +440,11 @@ async def fetch_latest_papers_async(
             f"[Arxiv][HF] {period} 榜单论文详情全部抓取失败，已终止采集。"
         )
 
+    # ── Step 4：arXiv XML API 补全元数据 ──
+    docs = await _enrich_with_arxiv_api(docs)
+
     logger.info(
-        "[Arxiv][HF] 成功构造 %d/%d 篇 HF %s Papers 文档（async 并发）。",
+        "[Arxiv][HF] 成功构造 %d/%d 篇 HF %s Papers 文档（HF+API 双轨）。",
         len(docs),
         len(arxiv_ids),
         period,

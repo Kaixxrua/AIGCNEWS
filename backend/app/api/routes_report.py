@@ -5,10 +5,11 @@ import traceback
 from datetime import date as _date, datetime as _dt, timedelta as _td
 from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 
@@ -21,7 +22,9 @@ _VALID_PERIODS = {"daily", "weekly", "monthly"}
 
 class GenerateReportRequest(BaseModel):
     date: Optional[str] = None  # ISO date string, e.g. "2025-03-01"; defaults to today
-    source: str = "all"  # "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews"
+    source: str = (
+        "all"  # "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews"
+    )
     period: str = "daily"  # "daily" | "weekly" | "monthly"
     force_regenerate: bool = True  # 始终重新生成（不走缓存）
 
@@ -58,7 +61,10 @@ async def _briefing_stream(
 
 
 @router.post("/report/daily/stream")
-async def stream_daily_report(request: GenerateReportRequest) -> StreamingResponse:
+async def stream_daily_report(
+    request: GenerateReportRequest,
+    _: dict = Depends(RequireAdmin),
+) -> StreamingResponse:
     """Generate today's (or a specific date's) briefing and stream via SSE.
 
     source 参数：
@@ -118,7 +124,9 @@ def _resolve_report_date(period: str, date_str: Optional[str]) -> str:
 
 @router.get("/report/latest")
 async def get_latest_briefing(
-    source: str = Query(default="all", description="all/arxiv/github/news/producthunt/hackernews"),
+    source: str = Query(
+        default="all", description="all/arxiv/github/news/producthunt/hackernews"
+    ),
     period: str = Query(default="daily", description="daily/weekly/monthly"),
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD，可选"),
 ):
@@ -159,7 +167,9 @@ async def get_latest_briefing(
 
 
 @router.get("/report/history")
-async def list_briefings(limit: int = Query(default=30, ge=1, le=200)):
+async def list_briefings(
+    limit: int = Query(default=30, ge=1, le=200),
+):
     """Return a list of past briefings (id + date + created_at)."""
     db = MySQLRepository()
     items = db.list_briefings(limit=limit)
@@ -194,7 +204,9 @@ async def eval_summary():
 
 
 @router.get("/report/eval/list")
-async def eval_list(limit: int = Query(default=50, ge=1, le=500)):
+async def eval_list(
+    limit: int = Query(default=50, ge=1, le=500),
+):
     """Return the most recent RAG evaluation records."""
     from backend.app.services.evaluation.rag_metrics import RAGMetricsService
 

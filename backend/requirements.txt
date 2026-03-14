@@ -5,6 +5,9 @@ langchain-community
 langchain-experimental
 langchain-ollama
 langchain-anthropic
+langchain-openai
+langchain-huggingface
+sentence-transformers
 pymilvus
 neo4j
 apscheduler
@@ -16,10 +19,14 @@ feedparser
 huggingface_hub
 beautifulsoup4
 pypdf
+pymupdf
+pdfplumber
 sentence-transformers
 
 pymysql
 DBUtils
-redis
+redis>=4.0.0
 fastapi-cache2[redis]
 cryptography
+python-jose[cryptography]
+bcrypt

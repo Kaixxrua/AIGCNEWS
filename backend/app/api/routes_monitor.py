@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from backend.app.core.auth import RequireAdmin, RequireUser
 
 router = APIRouter()
 
 
 @router.get("/monitor/health")
-async def health_check():
+async def health_check(_: dict = Depends(RequireUser)):
     """Full health check across all services (Milvus, Neo4j, Ollama, SQLite)."""
     from backend.app.monitoring.health import run_health_checks
 
@@ -17,7 +19,7 @@ async def health_check():
 
 
 @router.get("/monitor/metrics")
-async def system_metrics():
+async def system_metrics(_: dict = Depends(RequireUser)):
     """Collect runtime metrics: uptime, document count, task stats, eval summary."""
     from backend.app.monitoring.metrics import collect_metrics
 
@@ -26,7 +28,9 @@ async def system_metrics():
 
 
 @router.get("/monitor/tasks")
-async def recent_tasks(page: int = 1, page_size: int = 10):
+async def recent_tasks(
+    page: int = 1, page_size: int = 10, _: dict = Depends(RequireAdmin)
+):
     """Return paginated ingestion task records."""
     from backend.app.repositories.mysql_repo import MySQLRepository
 

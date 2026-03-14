@@ -52,15 +52,35 @@ class MilvusRepository:
                 )
                 docs = splitter.split_documents(docs)
 
-            vector_store = Milvus(
-                embedding_function=self._embeddings,
-                collection_name=self._collection_name,
-                connection_args=self._connection_args,
-                consistency_level="Strong",
-                auto_id=True,
-                drop_old=False,
-            )
-            vector_store.add_documents(docs)
+            try:
+                vector_store = Milvus(
+                    embedding_function=self._embeddings,
+                    collection_name=self._collection_name,
+                    connection_args=self._connection_args,
+                    consistency_level="Strong",
+                    auto_id=True,
+                    drop_old=False,
+                )
+                vector_store.add_documents(docs)
+            except Exception as exc:
+                err_str = str(exc)
+                # Schema 不匹配时（字段数量变化），自动重建 Collection
+                if (
+                    "DataNotMatchException" in err_str
+                    or "doesn't match with schema" in err_str
+                ):
+                    print(f"[Milvus] Schema 不匹配，重建 Collection: {exc}")
+                    vector_store = Milvus(
+                        embedding_function=self._embeddings,
+                        collection_name=self._collection_name,
+                        connection_args=self._connection_args,
+                        consistency_level="Strong",
+                        auto_id=True,
+                        drop_old=True,
+                    )
+                    vector_store.add_documents(docs)
+                else:
+                    raise
             print(
                 f"[Milvus] Inserted {len(docs)} chunks into '{self._collection_name}'."
             )

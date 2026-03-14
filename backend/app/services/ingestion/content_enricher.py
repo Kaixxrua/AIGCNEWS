@@ -187,10 +187,14 @@ async def _fetch_github_readme(full_name: str) -> str:
 
 
 def enrich_arxiv(paper: Dict[str, Any]) -> Dict[str, Any]:
-    """Arxiv 论文：【快速路径】先用摘要入 RAG，标记 pdf_pending=True。
+    """Arxiv 论文：【快速路径】先用摘要入 RAG。
 
     第一阶段：直接使用已抓好的摘要 (abstract) 入库，让 RAG 可以立即检索。
-    第二阶段：调用 enrich_arxiv_pdf_full() 在后台下载 PDF 补全 full_text。
+    第二阶段：由 pipeline._start_arxiv_pdf_background() 调用
+              arxiv_pdf_downloader.download_and_index_arxiv_pdfs() 在后台
+              落盘 PDF → PyMuPDF 解析 → 切片写入 Milvus。
+
+    如果本地 PDF 已存在（local_pdf_path），直接读取全文作为 full_text。
 
     PDF URL 格式: https://arxiv.org/pdf/{arxiv_id}
     """
@@ -207,13 +211,40 @@ def enrich_arxiv(paper: Dict[str, Any]) -> Dict[str, Any]:
         pdf_url = f"https://arxiv.org/pdf/{arxiv_id}"
         paper["pdf_url"] = pdf_url
 
-    # 快速路径：直接用摘要，标记待补充 PDF
+    # 如果本地 PDF 已落盘，直接读取全文
+    local_pdf_path = paper.get("local_pdf_path", "")
+    if local_pdf_path:
+        try:
+            from backend.app.services.ingestion.arxiv_pdf_downloader import (
+                _extract_text_from_local_pdf,
+            )
+
+            pdf_text = _extract_text_from_local_pdf(local_pdf_path)
+            if pdf_text:
+                full_text = (
+                    f"Abstract:\n{abstract}\n\nFull Paper:\n{pdf_text}"
+                    if abstract
+                    else pdf_text
+                )
+                paper["full_text"] = full_text[:_MAX_CONTENT_CHARS]
+                paper["pdf_pending"] = False
+                logger.debug(
+                    "[Enricher][Arxiv] 本地 PDF 已存在，直接读取: %s (%d chars)",
+                    local_pdf_path,
+                    len(paper["full_text"]),
+                )
+                return paper
+        except Exception as exc:
+            logger.debug("[Enricher][Arxiv] 本地 PDF 读取失败，回退到摘要: %s", exc)
+
+    # 快速路径：使用摘要入库，后台 PDF 下载器会补全
     full_text = abstract or paper.get("title", "")
     paper["full_text"] = full_text[:_MAX_CONTENT_CHARS]
     paper["pdf_pending"] = True  # 标记需要后台补 PDF
 
     logger.debug(
-        "[Enricher][Arxiv] 摘要入库（pdf_pending），待补 PDF: %s", arxiv_id or pdf_url
+        "[Enricher][Arxiv] 摘要入库（pdf_pending=True），后台将落盘 PDF: %s",
+        arxiv_id or pdf_url,
     )
     return paper
 
@@ -518,11 +549,17 @@ def enrich_arxiv_pdfs_background(
                     if milvus_repo is not None:
                         try:
                             from langchain_core.documents import Document
+                            from backend.app.services.ingestion.pipeline import (
+                                _doc_id as calc_doc_id,
+                            )
+
+                            # 修复 Bug2：用 _doc_id() 计算正确的文档 ID
+                            real_doc_id = calc_doc_id(updated)
 
                             doc = Document(
                                 page_content=ft,
                                 metadata={
-                                    "id": updated.get("id", ""),
+                                    "id": real_doc_id,  # ← 修复 Bug2
                                     "source": updated.get("source", "arxiv"),
                                     "title": updated.get("title", ""),
                                     "published_date": updated.get("published_date", ""),
@@ -541,8 +578,9 @@ def enrich_arxiv_pdfs_background(
                             )
                             milvus_repo.add_documents([doc], already_split=False)
                             logger.debug(
-                                "[Enricher][Arxiv] PDF 补全并更新 Milvus: %s",
+                                "[Enricher][Arxiv] PDF 补全并更新 Milvus: %s (id=%s)",
                                 updated.get("arxiv_id", updated.get("title", ""))[:50],
+                                real_doc_id,
                             )
                         except Exception as exc:
                             logger.warning(

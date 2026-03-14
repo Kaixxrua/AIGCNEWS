@@ -6,7 +6,7 @@ WORKDIR /src
 # 先拷贝依赖文件
 COPY requirements.txt .
 
-# 极速安装依赖
+# 极速安装依赖（腾讯云镜像源）
 RUN pip install --no-cache-dir -i https://mirrors.cloud.tencent.com/pypi/simple -r requirements.txt
 
 # 【核心修复】把后端代码整个打包进一个叫 backend 的文件夹里！
@@ -14,6 +14,11 @@ COPY . /src/backend
 
 # 告诉 Python 从 /src 开始寻找包，这样 import backend 就能完美找到了
 ENV PYTHONPATH=/src
+
+# HuggingFace 镜像源（国内加速，容器重启后自动生效）
+ENV HF_ENDPOINT=https://hf-mirror.com
+ENV HF_HUB_OFFLINE=0
+ENV TRANSFORMERS_OFFLINE=0
 
 # 暴露端口
 EXPOSE 8000

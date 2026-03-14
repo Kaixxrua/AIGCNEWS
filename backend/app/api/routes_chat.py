@@ -4,10 +4,11 @@ import json
 import traceback
 from typing import AsyncGenerator, List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
+from backend.app.core.auth import RequireUser
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.services.rag.chat_service import ChatService
@@ -53,7 +54,10 @@ async def _event_stream(
 
 
 @router.post("/chat/stream")
-async def stream_chat(request: ChatRequest) -> StreamingResponse:
+async def stream_chat(
+    request: ChatRequest,
+    _: dict = Depends(RequireUser),
+) -> StreamingResponse:
     return StreamingResponse(
         _event_stream(
             request.message,

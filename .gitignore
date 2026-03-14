@@ -23,3 +23,8 @@ data/
 
 # 系统级隐藏文件 (可选)
 .DS_Store
+
+# PDF 论文本地存储（保留目录结构，忽略 PDF 文件本身）
+storage/papers/*.pdf
+# HuggingFace 模型缓存（大文件，不入 git）
+storage/hf_cache/

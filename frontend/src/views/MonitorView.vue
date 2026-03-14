@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { api } from '../services/api'
+import { useAuthStore } from '../stores/authStore'
+
+const authStore = useAuthStore()
 
 interface Task {
   id: number
@@ -186,15 +189,18 @@ const getStatusConfig = (status: string) =>
           <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
           {{ loading ? '刷新中…' : '刷新' }}
         </button>
-        <button class="btn-primary" :disabled="syncing || isTaskRunning" @click="syncDataNow(false)">
-          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          {{ syncing ? '同步中…' : isTaskRunning ? '任务运行中…' : '立即同步' }}
-        </button>
-        <button class="btn-secondary" :disabled="syncing || isTaskRunning" @click="syncDataNow(true)">强制同步</button>
-        <button class="btn-danger" :disabled="clearing" @click="showClearConfirm = true">
-          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-          {{ clearing ? '清空中…' : '清空数据' }}
-        </button>
+        <!-- Admin 专属：同步 / 强制同步 / 清空数据 -->
+        <template v-if="authStore.isAdmin">
+          <button class="btn-primary" :disabled="syncing || isTaskRunning" @click="syncDataNow(false)">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            {{ syncing ? '同步中…' : isTaskRunning ? '任务运行中…' : '立即同步' }}
+          </button>
+          <button class="btn-secondary" :disabled="syncing || isTaskRunning" @click="syncDataNow(true)">强制同步</button>
+          <button class="btn-danger" :disabled="clearing" @click="showClearConfirm = true">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+            {{ clearing ? '清空中…' : '清空数据' }}
+          </button>
+        </template>
       </div>
     </div>
 
@@ -235,8 +241,8 @@ const getStatusConfig = (status: string) =>
       </button>
     </div>
 
-    <!-- 按日期采集 -->
-    <div class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.1s">
+    <!-- Admin 专属：按日期采集 -->
+    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.1s">
       <div class="flex items-center gap-2 mb-3">
         <svg class="h-4 w-4 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <h3 class="text-sm font-semibold text-stone-700">按日期采集数据</h3>
@@ -254,8 +260,8 @@ const getStatusConfig = (status: string) =>
       </div>
     </div>
 
-    <!-- 按数据源独立采集 -->
-    <div class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.15s">
+    <!-- Admin 专属：按数据源独立采集 -->
+    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.15s">
       <div class="flex items-center gap-2 mb-3">
         <svg class="h-4 w-4 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
         <h3 class="text-sm font-semibold text-stone-700">按数据源采集</h3>
@@ -279,10 +285,10 @@ const getStatusConfig = (status: string) =>
       </div>
     </div>
 
-    <!-- 主内容网格 -->
-    <div class="grid grid-cols-1 gap-5 lg:grid-cols-3 shrink-0">
-      <!-- 调度器状态 -->
-      <div class="stagger-enter glass-card p-5" style="animation-delay: 0.2s">
+    <!-- 主内容网格：admin 时三列，普通用户时全宽单列 -->
+    <div class="grid grid-cols-1 gap-5 shrink-0" :class="authStore.isAdmin ? 'lg:grid-cols-3' : ''">
+      <!-- Admin 专属：调度器状态 -->
+      <div v-if="authStore.isAdmin" class="stagger-enter glass-card p-5" style="animation-delay: 0.2s">
         <h3 class="mb-4 text-sm font-semibold text-stone-700">调度器状态</h3>
         <div v-if="schedulerStatus">
           <div class="mb-4 flex items-center gap-2.5">
@@ -302,8 +308,8 @@ const getStatusConfig = (status: string) =>
         </div>
       </div>
 
-      <!-- 最近任务表格 -->
-      <div class="stagger-enter lg:col-span-2 glass-card overflow-hidden flex flex-col" style="animation-delay: 0.3s">
+      <!-- 最近任务表格：admin 时占 2/3，普通用户时占全宽 -->
+      <div class="stagger-enter glass-card overflow-hidden flex flex-col" :class="authStore.isAdmin ? 'lg:col-span-2' : 'lg:col-span-1'" style="animation-delay: 0.3s">
         <div class="flex items-center justify-between px-5 py-3.5 shrink-0" style="border-bottom: 1px solid rgba(168,162,158,0.15)">
           <h3 class="text-sm font-semibold text-stone-700">最近任务</h3>
           <span class="badge bg-white text-stone-500 border border-stone-200">共 {{ total }} 条</span>

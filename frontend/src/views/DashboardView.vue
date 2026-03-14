@@ -73,6 +73,15 @@ const loading  = ref(true)
 const tabLoading = ref(false)
 const errorMsg = ref('')
 
+// AbortController：每次切换 Tab / Period / Date 时取消上一个未完成的请求，防止竞态覆盖
+let _abortController: AbortController | null = null
+
+function _newAbortSignal(): AbortSignal {
+  if (_abortController) _abortController.abort()
+  _abortController = new AbortController()
+  return _abortController.signal
+}
+
 const _d = new Date()
 const todayStr = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`
 const currentDate = ref<string>(todayStr)
@@ -83,11 +92,11 @@ const isViewingHistory = computed(() => currentDate.value !== todayStr)
 const isFinalized = ref(false)
 const isEmbargoed = ref(false)
 
-const fetchDashboardData = async (tab: TabKey, period: PeriodKey, date?: string) => {
+const fetchDashboardData = async (tab: TabKey, period: PeriodKey, date?: string, signal?: AbortSignal) => {
   const dateParam = date || currentDate.value
   const [summaryRes, topRes] = await Promise.all([
-    api.get('/dashboard/summary', { params: { period, date: dateParam } }),
-    api.get('/dashboard/top', { params: { limit: 10, source: tab, period, date: dateParam } }),
+    api.get('/dashboard/summary', { params: { period, date: dateParam }, signal }),
+    api.get('/dashboard/top', { params: { limit: 10, source: tab, period, date: dateParam }, signal }),
   ])
   stats.value   = summaryRes.data.stats ?? {}
   tabList.value = topRes.data.items ?? []
@@ -125,10 +134,13 @@ watch(activeTab, (tab) => {
 
 watch([activeTab, activePeriod], async ([tab, period]) => {
   tabLoading.value = true
+  tabList.value = []  // 切换时立即清空，避免旧数据残留
+  const signal = _newAbortSignal()
   try {
-    await fetchDashboardData(tab, period, currentDate.value)
+    await fetchDashboardData(tab, period, currentDate.value, signal)
     updateStatSources()
-  } catch (e) {
+  } catch (e: any) {
+    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return  // 被新请求取消，静默忽略
     console.error('Failed to load dashboard data', e)
   } finally {
     tabLoading.value = false
@@ -138,11 +150,14 @@ watch([activeTab, activePeriod], async ([tab, period]) => {
 const onDateChange = async (date: string) => {
   currentDate.value = date
   tabLoading.value = true
+  tabList.value = []  // 切换时立即清空
   countUpDisabled.value = true
+  const signal = _newAbortSignal()
   try {
-    await fetchDashboardData(activeTab.value, activePeriod.value, date)
+    await fetchDashboardData(activeTab.value, activePeriod.value, date, signal)
     updateStatSources()
-  } catch (e) {
+  } catch (e: any) {
+    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     console.error('Failed to load dashboard data by date', e)
   } finally {
     tabLoading.value = false
@@ -358,8 +373,10 @@ const hasData = computed(() => {
           <div
             v-for="(card, index) in statCards"
             :key="card.key"
-            class="stagger-enter card-hover h-[56px] px-3 flex items-center justify-between transition-colors"
-            :class="card.dark ? `rounded-xl shadow-sm ${card.cardBg}` : 'glass-card'"
+            class="stagger-enter h-[56px] px-3 flex items-center justify-between transition-colors"
+            :class="card.dark
+              ? `rounded-xl shadow-sm ${card.cardBg} hover:bg-slate-700`
+              : 'glass-card card-hover'"
             :style="{ animationDelay: (index * 0.08 + 0.1) + 's' }"
           >
             <div class="flex items-center gap-2.5">
@@ -528,12 +545,17 @@ const hasData = computed(() => {
           <span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" />
         </div>
 
-        <div v-else-if="!tabList.length" class="flex flex-col items-center justify-center py-10 text-stone-400">
-          <svg class="h-8 w-8 mb-2 opacity-30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 01-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 011-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 011.52 0C14.51 3.81 17 5 19 5a1 1 0 011 1z"/>
-          </svg>
-          <p v-if="!isViewingHistory" class="text-sm">今日榜单正在采集中，将于数据源更新后自动生成</p>
-          <p v-else class="text-sm">当前周期暂无数据</p>
+        <div v-else-if="!tabList.length" class="flex flex-col items-center justify-center py-12 text-stone-400">
+          <div class="w-12 h-12 mb-3 rounded-full bg-stone-100 flex items-center justify-center">
+            <svg class="h-6 w-6 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <p v-if="!isViewingHistory" class="text-sm font-medium text-stone-500">实时数据采集中，请稍候</p>
+          <p v-if="!isViewingHistory" class="mt-1 text-2xs text-stone-400">当前周期数据将在爬虫完成后自动上榜</p>
+          <p v-else class="text-sm font-medium text-stone-500">该日期此周期暂无榜单数据</p>
+          <p v-if="isViewingHistory" class="mt-1 text-2xs text-stone-400">可能是当天未采集该周期，或数据尚未归档</p>
         </div>
 
         <!-- 列表（暖色交替背景） -->

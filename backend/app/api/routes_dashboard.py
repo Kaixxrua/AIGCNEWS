@@ -3,12 +3,32 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi_cache.decorator import cache
 
 router = APIRouter()
+
+
+def _enrich_doc_pdf_url(doc: Dict[str, Any], request: Request) -> Dict[str, Any]:
+    """将 local_pdf_path 相对路径转换为完整的可访问媒体 URL。
+
+    例如：
+        local_pdf_path = "storage/papers/2403.12345.pdf"
+        → pdf_media_url = "http://host/api/media/papers/2403.12345.pdf"
+
+    如果 local_pdf_path 为空，pdf_media_url 为 None。
+    """
+    local_path = doc.get("local_pdf_path") or ""
+    if local_path:
+        filename = os.path.basename(local_path)
+        base_url = str(request.base_url).rstrip("/")
+        doc["pdf_media_url"] = f"{base_url}/api/media/papers/{filename}"
+    else:
+        doc["pdf_media_url"] = None
+    return doc
 
 
 def _dashboard_cache_key_builder(
@@ -423,13 +443,11 @@ def _filter_docs_by_period(
             picked = _try_pick_with_time(fallback_docs)
             result.extend(picked)
 
-    # 按 rank_in_period 升序（值越小越靠前）排序
-    # rank_in_period=1 表示本榜第一名，9999 表示无排名数据（旧数据兜底）
-    # 对于 rank_in_period 相同（如都是 9999）的情况，次要按 raw_score 降序
+    # 按 raw_score（vote 数）降序排列，rank_in_period 作为次要参考
     result.sort(
         key=lambda d: (
-            int(d.get("rank_in_period") or 9999),
             -float(d.get("raw_score") or d.get("score") or 0),
+            int(d.get("rank_in_period") or 9999),
         )
     )
     return result
@@ -529,12 +547,16 @@ def _get_docs_for_date(
     source_type: Optional[str] = None,
     limit: int = 500,
 ) -> List[Dict[str, Any]]:
-    """优先从快照表获取指定日期的文档，若无快照数据则回退到原有逻辑。
+    """从快照表获取指定日期 + 周期的文档，严格按 period 对应的 channel 查询。
+
+    数据物理隔离原则：日榜只查 daily channel，周榜只查 weekly channel，
+    月榜只查 monthly channel。如果对应 channel 无数据则返回空列表，
+    绝不跨周期降级（宁缺毋乱）。
 
     返回按 rank_in_period 升序排列的文档列表。
     """
-    # 构造当前 period 对应的精确 source_channel 列表
-    channel_maps = {
+    # 构造当前 period 对应的精确 source_channel 映射
+    channel_maps: Dict[str, Dict[str, str]] = {
         "arxiv": _ARXIV_PERIOD_CHANNELS,
         "github": _GITHUB_PERIOD_CHANNELS,
         "news": {
@@ -546,11 +568,19 @@ def _get_docs_for_date(
         "hackernews": _HN_PERIOD_CHANNELS,
     }
 
-    # 尝试从快照表查询
+    # 同周期备用 channel（仅限同一 period 的历史兼容 channel，绝不跨周期）
+    _SAME_PERIOD_FALLBACKS: Dict[str, Dict[str, List[str]]] = {
+        "github": {
+            "daily": ["github_hot_daily", "github_fallback"],
+            "weekly": ["github_hot_weekly"],
+            "monthly": ["github_hot_monthly"],
+        },
+    }
+
     all_snapshot_docs: List[Dict[str, Any]] = []
 
     if source_type and source_type != "all":
-        # 单来源查询：精确 channel
+        # ── 单来源查询：严格精确 channel ──
         ch_map = channel_maps.get(source_type, {})
         channel = ch_map.get(period)
         if channel:
@@ -561,41 +591,47 @@ def _get_docs_for_date(
                 limit=limit,
             )
             all_snapshot_docs.extend(docs)
-        # 如果精确 channel 无结果，尝试不限 channel
+
+        # 精确 channel 无数据时，仅尝试同周期备用 channel（不跨周期）
         if not all_snapshot_docs:
-            docs = db.get_snapshot_documents(
-                snapshot_date=date_str,
-                source_channel=None,
-                source_type=source_type,
-                limit=limit,
-            )
-            all_snapshot_docs.extend(docs)
-    else:
-        # 全来源查询：分别按各来源的精确 channel 查询
-        for src, ch_map in channel_maps.items():
-            channel = ch_map.get(period)
-            if channel:
+            fallbacks = _SAME_PERIOD_FALLBACKS.get(source_type, {}).get(period, [])
+            for fb_channel in fallbacks:
                 docs = db.get_snapshot_documents(
                     snapshot_date=date_str,
-                    source_channel=channel,
+                    source_channel=fb_channel,
+                    source_type=source_type,
+                    limit=limit,
+                )
+                if docs:
+                    all_snapshot_docs.extend(docs)
+                    break  # 找到即停，不贪多
+    else:
+        # ── 全来源查询：逐来源按精确 channel 拉取，严格隔离 ──
+        for src, ch_map in channel_maps.items():
+            channel = ch_map.get(period)
+            if not channel:
+                continue
+            docs = db.get_snapshot_documents(
+                snapshot_date=date_str,
+                source_channel=channel,
+                source_type=src,
+                limit=limit,
+            )
+            if docs:
+                all_snapshot_docs.extend(docs)
+                continue
+            # 该来源精确 channel 无数据，尝试同周期备用 channel
+            fallbacks = _SAME_PERIOD_FALLBACKS.get(src, {}).get(period, [])
+            for fb_channel in fallbacks:
+                docs = db.get_snapshot_documents(
+                    snapshot_date=date_str,
+                    source_channel=fb_channel,
                     source_type=src,
                     limit=limit,
                 )
-                all_snapshot_docs.extend(docs)
-
-        # 如果分 channel 查询结果太少，尝试不限 channel 查全量
-        if len(all_snapshot_docs) < 5:
-            docs = db.get_snapshot_documents(
-                snapshot_date=date_str,
-                source_channel=None,
-                source_type=None,
-                limit=limit,
-            )
-            # 合并，去重
-            existing_ids = {d.get("id") for d in all_snapshot_docs}
-            for d in docs:
-                if d.get("id") not in existing_ids:
-                    all_snapshot_docs.append(d)
+                if docs:
+                    all_snapshot_docs.extend(docs)
+                    break
 
     if all_snapshot_docs:
         # ── HackerNews 日榜特殊处理：排除昨日已上榜的条目，按 points 降序 ──
@@ -603,15 +639,15 @@ def _get_docs_for_date(
             all_snapshot_docs = _apply_hn_daily_dedup(db, date_str, all_snapshot_docs)
         return all_snapshot_docs
 
-    # ── 无快照数据 → 返回空列表 ──
-    # 不再使用全库兜底（全库数据可能来自不同日期，会误导用户）
-    # 前端根据 is_finalized 和列表是否为空来展示合适的提示
+    # ── 无快照数据 → 返回空列表（宁缺毋乱） ──
+    # 前端根据 is_finalized / is_embargoed 和列表是否为空来展示合适的提示
     return []
 
 
 @router.get("/dashboard/top")
 @cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_top_list(
+    request: Request,
     limit: int = Query(default=10, ge=1, le=50),
     source: Optional[str] = Query(
         default=None, description="过滤来源：all/arxiv/github/news"
@@ -646,6 +682,9 @@ async def get_top_list(
     )
     deduped = _dedupe_docs(docs)
     top_items = deduped[:limit]
+
+    # 模块四-1：为每条文档注入完整 pdf_media_url
+    top_items = [_enrich_doc_pdf_url(dict(doc), request) for doc in top_items]
 
     return {
         "items": top_items,
@@ -723,12 +762,17 @@ async def get_dashboard_summary(
 
     board = _compute_board_status(snapshot_date)
 
-    # 静默期拦截：返回空数据 + 空统计
+    # 静默期拦截：返回空排行数据，但统计卡片仍显示全库累计数量
     if board["is_embargoed"]:
+        source_counts_embargo = await asyncio.to_thread(db.get_source_counts)
+        total_embargo = sum(source_counts_embargo.values())
         return {
             "top_list": [],
             "radar": [],
-            "stats": {"total_documents": 0, "source_counts": {}},
+            "stats": {
+                "total_documents": total_embargo,
+                "source_counts": source_counts_embargo,
+            },
             "period": period,
             "snapshot_date": snapshot_date,
             "is_finalized": board["is_finalized"],
@@ -743,18 +787,10 @@ async def get_dashboard_summary(
     radar = _score_categories(deduped[:50])
 
     # ── 统计卡片数据 ──────────────────────────────────────────────
-    # 统一策略：优先用当天快照统计（与排行榜数据一致），无快照时回退到全库统计。
-    # 这保证了统计数字和排行榜列表始终对齐，避免"有数字但无列表"的困惑。
-    snapshot_counts: Dict[str, int] = await asyncio.to_thread(
-        db.get_snapshot_source_counts, snapshot_date
-    )
-    if snapshot_counts:
-        source_counts: Dict[str, int] = snapshot_counts
-        total_documents = sum(snapshot_counts.values())
-    else:
-        # 无快照数据，回退到全库统计
-        source_counts = await asyncio.to_thread(db.get_source_counts)
-        total_documents = sum(source_counts.values())
+    # 始终使用全库累计统计，数字不随日期切换而变化，
+    # 展示的是每个来源在数据库中的实际入库总量。
+    source_counts = await asyncio.to_thread(db.get_source_counts)
+    total_documents = sum(source_counts.values())
 
     return {
         "top_list": top10,

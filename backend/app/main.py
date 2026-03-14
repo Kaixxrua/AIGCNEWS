@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from redis.asyncio import Redis
 
-from backend.app.api import routes_chat, routes_dashboard, routes_monitor, routes_report
+from backend.app.api import (
+    routes_auth,
+    routes_chat,
+    routes_dashboard,
+    routes_monitor,
+    routes_report,
+)
 from backend.app.api import routes_ops
 from backend.app.core.config import settings
 from backend.app.core.scheduler import start_scheduler, stop_scheduler
@@ -43,6 +51,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             decode_responses=False,
         )
         await redis_client.ping()
+
+        # 开发环境：热重载时自动清除 API 缓存（aigc-cache:* 前缀），实现"保存即刷新"零感知体验
+        # 注意：不能用 flushdb()，会清除 SMS 验证码等业务数据
+        if settings.env.lower() in ("development", "dev"):
+            cache_keys = await redis_client.keys("aigc-cache:*")
+            if cache_keys:
+                await redis_client.delete(*cache_keys)
+                print(
+                    f"[Startup][DEV] Cleared {len(cache_keys)} cache keys — reload complete."
+                )
+            else:
+                print("[Startup][DEV] No cache keys to clear.")
+
         FastAPICache.init(
             RedisBackend(redis_client),
             prefix="aigc-cache:",
@@ -77,6 +98,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── 静态文件：挂载 PDF 存储目录，前端可通过 /api/media/papers/{arxiv_id}.pdf 访问 ──
+_papers_dir = settings.papers_storage_dir
+os.makedirs(_papers_dir, exist_ok=True)
+app.mount(
+    "/api/media/papers",
+    StaticFiles(directory=_papers_dir),
+    name="papers",
+)
+
 # 配置 CORS：允许前端 (localhost:5173) 访问后端
 app.add_middleware(
     CORSMiddleware,
@@ -86,6 +116,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(routes_auth.router, prefix="/api", tags=["Auth"])
 app.include_router(routes_chat.router, prefix="/api", tags=["Chat"])
 app.include_router(routes_dashboard.router, prefix="/api", tags=["Dashboard"])
 app.include_router(routes_monitor.router, prefix="/api", tags=["Monitor"])

@@ -37,13 +37,20 @@ export function useEventSource() {
     const controller = new AbortController()
 
     try {
+      // 从 localStorage 读取 token，附加到 Authorization header
+      const token = localStorage.getItem('auth_token')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        'Cache-Control': 'no-cache',
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-          'Cache-Control': 'no-cache',
-        },
+        headers,
         body: JSON.stringify(body),
         signal: controller.signal,
       })

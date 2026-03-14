@@ -67,6 +67,10 @@ class MySQLRepository:
                 raw_score DOUBLE DEFAULT 0.0,
                 rank_in_period INT DEFAULT 9999,
                 indexed TINYINT DEFAULT 0,
+                in_daily TINYINT DEFAULT 0,
+                in_weekly TINYINT DEFAULT 0,
+                in_monthly TINYINT DEFAULT 0,
+                local_pdf_path VARCHAR(512) DEFAULT NULL,
                 created_at VARCHAR(64)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
@@ -163,12 +167,34 @@ class MySQLRepository:
                 INDEX idx_snapshots_date_channel (snapshot_date, source_channel)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                phone VARCHAR(20) UNIQUE NOT NULL,
+                username VARCHAR(64),
+                hashed_password VARCHAR(256) NOT NULL,
+                role ENUM('user', 'admin') DEFAULT 'user',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
         ]
         conn = self._connect()
         try:
             with conn.cursor() as cur:
                 for statement in statements:
                     cur.execute(statement)
+                # 增量迁移：为 documents 表添加新字段（已存在则跳过）
+                alter_stmts = [
+                    "ALTER TABLE documents ADD COLUMN in_daily TINYINT DEFAULT 0",
+                    "ALTER TABLE documents ADD COLUMN in_weekly TINYINT DEFAULT 0",
+                    "ALTER TABLE documents ADD COLUMN in_monthly TINYINT DEFAULT 0",
+                    "ALTER TABLE documents ADD COLUMN local_pdf_path VARCHAR(512) DEFAULT NULL",
+                ]
+                for stmt in alter_stmts:
+                    try:
+                        cur.execute(stmt)
+                    except Exception:
+                        pass  # 字段已存在，忽略 Duplicate column 错误
             conn.commit()
         finally:
             conn.close()
@@ -180,9 +206,11 @@ class MySQLRepository:
     def upsert_document(self, doc: Dict[str, Any]) -> None:
         sql = """
             INSERT INTO documents (id, source, source_channel, title, url, summary, published_date,
-                                   tags, score, raw_score, rank_in_period, indexed, created_at)
+                                   tags, score, raw_score, rank_in_period, indexed,
+                                   in_daily, in_weekly, in_monthly, local_pdf_path, created_at)
             VALUES (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s, %(summary)s, %(published_date)s,
-                    %(tags)s, %(score)s, %(raw_score)s, %(rank_in_period)s, %(indexed)s, %(created_at)s)
+                    %(tags)s, %(score)s, %(raw_score)s, %(rank_in_period)s, %(indexed)s,
+                    %(in_daily)s, %(in_weekly)s, %(in_monthly)s, %(local_pdf_path)s, %(created_at)s)
             ON DUPLICATE KEY UPDATE
                 source_channel=VALUES(source_channel),
                 title=VALUES(title),
@@ -193,20 +221,39 @@ class MySQLRepository:
                 score=VALUES(score),
                 raw_score=VALUES(raw_score),
                 rank_in_period=VALUES(rank_in_period),
-                indexed=VALUES(indexed)
+                indexed=VALUES(indexed),
+                in_daily=GREATEST(in_daily, VALUES(in_daily)),
+                in_weekly=GREATEST(in_weekly, VALUES(in_weekly)),
+                in_monthly=GREATEST(in_monthly, VALUES(in_monthly)),
+                local_pdf_path=COALESCE(VALUES(local_pdf_path), local_pdf_path)
         """
         doc.setdefault("created_at", _utcnow())
         doc.setdefault("indexed", 0)
+        doc.setdefault("in_daily", 0)
+        doc.setdefault("in_weekly", 0)
+        doc.setdefault("in_monthly", 0)
         doc.setdefault("score", 0.0)
         doc.setdefault("raw_score", doc.get("score", 0.0))
         doc.setdefault("source_channel", "")
         doc.setdefault("rank_in_period", 9999)
+        doc.setdefault("local_pdf_path", None)
         if isinstance(doc.get("tags"), list):
             doc["tags"] = json.dumps(doc["tags"], ensure_ascii=False)
         conn = self._connect()
         try:
             with conn.cursor() as cur:
                 cur.execute(sql, doc)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def update_document_pdf_path(self, doc_id: str, local_pdf_path: str) -> None:
+        """更新指定文档的本地 PDF 路径（PDF 落盘后调用）。"""
+        sql = "UPDATE documents SET local_pdf_path = %s WHERE id = %s"
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (local_pdf_path, doc_id))
             conn.commit()
         finally:
             conn.close()
@@ -448,6 +495,7 @@ class MySQLRepository:
             SELECT
                 d.id, d.source, d.title, d.url, d.summary, d.published_date,
                 d.tags, d.indexed, d.created_at,
+                d.in_daily, d.in_weekly, d.in_monthly,
                 s.source_channel,
                 s.rank_in_period,
                 s.raw_score,
@@ -456,7 +504,7 @@ class MySQLRepository:
             FROM document_rank_snapshots s
             JOIN documents d ON s.doc_id = d.id
             WHERE {where_clause}
-            ORDER BY s.rank_in_period ASC, s.raw_score DESC
+            ORDER BY s.raw_score DESC, s.rank_in_period ASC
             LIMIT %s
         """
         conn = self._connect()
@@ -1065,5 +1113,44 @@ class MySQLRepository:
                 rows = cur.fetchall()
             conn.commit()
             return list(rows)
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Users
+    # ------------------------------------------------------------------
+
+    def get_user_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
+        """根据手机号查询用户，返回 dict 或 None。"""
+        sql = "SELECT id, phone, username, hashed_password, role, created_at FROM users WHERE phone = %s"
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (phone,))
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def create_user(
+        self,
+        phone: str,
+        username: str,
+        hashed_password: str,
+        role: str = "user",
+    ) -> int:
+        """创建新用户，返回新插入记录的 id。"""
+        sql = """
+            INSERT INTO users (phone, username, hashed_password, role)
+            VALUES (%s, %s, %s, %s)
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (phone, username, hashed_password, role))
+                new_id = cur.lastrowid
+            conn.commit()
+            return new_id  # type: ignore[return-value]
         finally:
             conn.close()

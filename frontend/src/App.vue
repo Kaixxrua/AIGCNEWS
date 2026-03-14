@@ -1,9 +1,21 @@
 <script setup lang="ts">
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useAuthStore } from './stores/authStore'
 
 const route = useRoute()
+const router = useRouter()
 const hoveredNav = ref<string | null>(null)
+const hoveredAuth = ref(false)
+const authStore = useAuthStore()
+
+const handleAuthAction = () => {
+  if (authStore.isLoggedIn) {
+    authStore.logout()
+  } else {
+    router.push('/login')
+  }
+}
 
 /* ═══ Giant Typewriter Watermark ═══ */
 const phrases = [
@@ -70,6 +82,7 @@ const navItems = [
     to: '/monitor',
     label: 'Monitor',
     exact: false,
+    requiresAdmin: true,
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>`,
   },
 ]
@@ -126,6 +139,7 @@ const isActive = (item: { to: string; exact: boolean }) => {
         v-for="item in navItems"
         :key="item.to"
         :to="item.to"
+        v-show="!item.requiresAdmin || authStore.isAdmin"
         class="dock-item"
         :class="{ 'dock-item--active': isActive(item) }"
         @mouseenter="hoveredNav = item.to"
@@ -142,6 +156,40 @@ const isActive = (item: { to: string; exact: boolean }) => {
         </Transition>
       </RouterLink>
     </nav>
+
+    <!-- ═══ 右上角独立 Auth 浮岛 ═══ -->
+    <div class="auth-island">
+      <button
+        class="dock-item"
+        :class="{ 'dock-item--auth-active': authStore.isLoggedIn }"
+        @click="handleAuthAction"
+        @mouseenter="hoveredAuth = true"
+        @mouseleave="hoveredAuth = false"
+      >
+        <!-- 已登录：离开图标 -->
+        <span v-if="authStore.isLoggedIn" class="dock-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+            <polyline points="16,17 21,12 16,7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </span>
+        <!-- 未登录：进入图标 -->
+        <span v-else class="dock-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/>
+            <polyline points="10,17 15,12 10,7"/>
+            <line x1="15" y1="12" x2="3" y2="12"/>
+          </svg>
+        </span>
+        <!-- Tooltip -->
+        <Transition name="dock-label">
+          <span v-if="hoveredAuth" class="dock-label">
+            {{ authStore.isLoggedIn ? '退出登录' : '登录账号' }}
+          </span>
+        </Transition>
+      </button>
+    </div>
 
   </div>
 </template>
@@ -298,4 +346,24 @@ const isActive = (item: { to: string; exact: boolean }) => {
   filter: blur(10px);
   z-index: 10;
 }
+
+
+/* ═══ 右上角独立 Auth 浮岛 ═══ */
+.auth-island {
+  position: fixed;
+  top: 28px;
+  right: 28px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(168, 162, 158, 0.20);
+  border-radius: 999px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
 </style>

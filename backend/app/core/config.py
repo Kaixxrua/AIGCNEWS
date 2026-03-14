@@ -60,6 +60,15 @@ class Settings(BaseSettings):
     producthunt_api_token: str = ""
     huggingface_token: str = ""
 
+    # JWT 鉴权配置
+    JWT_SECRET_KEY: str = "change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7天
+
+    # Redis OTP 配置（SMS 验证码）
+    REDIS_URL: str = "redis://localhost:6379/0"
+    SMS_API_KEY: str = ""  # 空字符串 = dev 模式，打印到日志
+
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     api_prefix: str = "/api"
@@ -71,6 +80,12 @@ class Settings(BaseSettings):
     scheduler_cron_daily_brief: str = "0 9 * * *"
 
     log_level: str = "INFO"
+
+    # 运行环境：development / production（开发环境热重载时自动清除 Redis 缓存）
+    env: str = "production"
+
+    # PDF 持久化存储目录（容器内路径，对应 docker-compose volume 映射）
+    papers_storage_dir: str = "storage/papers"
 
     class Config:
         env_file = ".env"

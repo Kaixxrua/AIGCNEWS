@@ -8,6 +8,7 @@ from backend.app.core.config import settings
 OPENAI_PROVIDER = "openai"
 OLLAMA_PROVIDER = "ollama"
 ANTHROPIC_PROVIDER = "anthropic"
+HUGGINGFACE_PROVIDER = "huggingface"
 
 
 def _resolve_provider(preferred: str | None) -> str:
@@ -100,15 +101,21 @@ def get_chat_model(temperature: float | None = None):
 
 def get_embedding_model():
     """
-    根据配置返回 OllamaEmbeddings 或 OpenAIEmbeddings。
+    根据配置返回对应的 Embeddings 实例。
+
+    支持的 provider：
+    - openai      使用 OpenAIEmbeddings（需代理支持 /v1/embeddings）
+    - huggingface 使用 HuggingFaceEmbeddings（本地 sentence-transformers，无需外部 API）
+    - ollama      使用 OllamaEmbeddings（本地 Ollama 服务）
     """
     provider = _resolve_provider(settings.embedding_provider)
+
     if provider == OPENAI_PROVIDER:
         try:
             from langchain_openai import OpenAIEmbeddings
         except ImportError as exc:
             raise RuntimeError(
-                "EMBEDDING_PROVIDER=openai 需要安装 langchain-openai。"
+                "EMBEDDING_PROVIDER=openai 需要安装 langchain-openai：pip install langchain-openai"
             ) from exc
 
         return OpenAIEmbeddings(
@@ -117,6 +124,33 @@ def get_embedding_model():
             model=settings.embedding_model_name,
         )
 
+    if provider == HUGGINGFACE_PROVIDER:
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError as exc:
+            raise RuntimeError(
+                "EMBEDDING_PROVIDER=huggingface 需要安装 langchain-huggingface：pip install langchain-huggingface"
+            ) from exc
+
+        import os
+
+        # 优先使用 hf-mirror.com 镜像（国内服务器访问 huggingface.co 不通）
+        if not os.environ.get("HF_ENDPOINT"):
+            os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+        # 强制离线加载：模型已在本地缓存，禁止网络请求
+        # 新版 sentence-transformers 会检查 adapter_config.json（PEFT 适配器）
+        # 设置 TRANSFORMERS_OFFLINE=1 / HF_HUB_OFFLINE=1 阻止任何网络请求
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        os.environ["HF_HUB_OFFLINE"] = "1"
+
+        return HuggingFaceEmbeddings(
+            model_name=settings.embedding_model_name,
+            model_kwargs={"device": "cpu", "local_files_only": True},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+
+    # 默认 Ollama
     return OllamaEmbeddings(
         base_url=settings.ollama_base_url,
         model=settings.embedding_model_name,

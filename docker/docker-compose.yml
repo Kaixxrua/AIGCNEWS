@@ -13,6 +13,15 @@ services:
       - redis
     env_file:
       - ../.env
+    environment:
+      - HF_ENDPOINT=https://hf-mirror.com
+      - HF_HUB_OFFLINE=0
+      - TRANSFORMERS_OFFLINE=0
+    volumes:
+      - ../backend:/src/backend
+      - ../storage/papers:/src/storage/papers
+      - ../storage/hf_cache/huggingface:/root/.cache/huggingface
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 
   frontend-web:
     build: ../frontend

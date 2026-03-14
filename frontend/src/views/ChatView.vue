@@ -1,13 +1,30 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import { useChatStore } from '../stores/chatStore'
+import { useAuthStore } from '../stores/authStore'
 
 const store = useChatStore()
+const authStore = useAuthStore()
+const router = useRouter()
 const inputText = ref('')
 const listRef = ref<HTMLElement | null>(null)
 const showSettings = ref(false)
 const isSending = ref(false)
+
+// ── PDF 预览面板（模块四-2：预留 DOM，为"边看 PDF 边 AI 对话"做铺垫） ──
+const pdfPanelUrl = ref<string | null>(null)  // 当前预览的 PDF URL
+const showPdfPanel = ref(false)               // 是否显示右侧 PDF 面板
+
+const openPdfPanel = (url: string) => {
+  pdfPanelUrl.value = url
+  showPdfPanel.value = true
+}
+const closePdfPanel = () => {
+  showPdfPanel.value = false
+  pdfPanelUrl.value = null
+}
 
 const localSettings = ref({ ...store.settings })
 
@@ -83,6 +100,11 @@ onMounted(() => {
     el.addEventListener('touchstart', onTouchStart, { passive: true })
     el.addEventListener('touchmove', onTouchMoveHandler, { passive: true })
   }
+  // 登录后回填未发送的消息（从 authStore 中恢复）
+  const pending = authStore.consumePendingMessage()
+  if (pending) {
+    inputText.value = pending
+  }
 })
 
 onUnmounted(() => {
@@ -120,6 +142,14 @@ watch(
 const handleSend = async () => {
   const text = inputText.value.trim()
   if (!text || isSending.value) return
+
+  // ── 精准拦截：未登录时缓存消息并跳转登录页 ────────────────────────────
+  if (!authStore.isLoggedIn) {
+    authStore.savePendingMessage(text)
+    router.push({ path: '/login', query: { redirect: '/chat' } })
+    return
+  }
+
   inputText.value = ''
   autoScroll.value = true
   isSending.value = true
@@ -138,8 +168,13 @@ const cancelSettings = () => { showSettings.value = false }
 </script>
 
 <template>
+  <!-- 左右分栏容器：左侧 Chat，右侧 PDF 预览（模块四-2 预留 DOM） -->
   <div class="flex h-full overflow-hidden">
-    <section class="flex flex-1 flex-col overflow-hidden">
+    <!-- 左侧：对话区（当 PDF 面板打开时收窄） -->
+    <section
+      class="relative flex flex-col overflow-hidden transition-all duration-300"
+      :class="showPdfPanel ? 'w-1/2' : 'flex-1'"
+    >
 
       <!-- 标题栏 -->
       <header class="stagger-enter flex items-center justify-between px-5 py-3.5 shrink-0"
@@ -322,15 +357,94 @@ const cancelSettings = () => { showSettings.value = false }
       <footer class="stagger-enter shrink-0 p-4" style="border-top: 1px solid rgba(168,162,158,0.15); animation-delay: 0.2s">
         <div class="flex items-end gap-3">
           <div class="relative flex-1">
-            <textarea v-model="inputText" rows="1" class="input max-h-36 min-h-[48px] resize-y" placeholder="输入问题…（Enter 发送，Shift+Enter 换行）" @keydown="handleKeydown" />
+            <textarea
+              v-model="inputText"
+              rows="1"
+              class="input max-h-36 min-h-[48px] resize-y"
+              placeholder="输入问题…（Enter 发送，Shift+Enter 换行）"
+              :disabled="isSending"
+              @keydown="handleKeydown"
+            />
           </div>
-          <button class="btn-primary h-[48px] w-[48px] shrink-0 justify-center !rounded-full p-0" :disabled="!inputText.trim() || isSending" @click="handleSend">
+          <button
+            class="btn-primary h-[48px] w-[48px] shrink-0 justify-center !rounded-full p-0"
+            :disabled="!inputText.trim() || isSending"
+            @click="handleSend"
+          >
             <svg v-if="!isSending" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             <svg v-if="isSending" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
           </button>
         </div>
       </footer>
     </section>
+
+    <!-- 右侧：PDF 预览面板（iframe + PDF.js 预留位） -->
+    <Transition name="pdf-panel">
+      <aside
+        v-if="showPdfPanel"
+        class="relative flex w-1/2 flex-col overflow-hidden border-l"
+        style="border-color: rgba(168,162,158,0.20)"
+      >
+        <!-- PDF 面板标题栏 -->
+        <header
+          class="flex shrink-0 items-center justify-between px-4 py-3"
+          style="border-bottom: 1px solid rgba(168,162,158,0.15)"
+        >
+          <div class="flex items-center gap-2">
+            <svg class="h-4 w-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <span class="text-xs font-semibold text-stone-600 font-serif">论文原文预览</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <!-- 在新标签页打开 -->
+            <a
+              v-if="pdfPanelUrl"
+              :href="pdfPanelUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rounded-full p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
+              title="在新标签页打开"
+            >
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+              </svg>
+            </a>
+            <!-- 关闭面板 -->
+            <button
+              class="rounded-full p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
+              title="关闭预览"
+              @click="closePdfPanel"
+            >
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- PDF iframe 渲染区 / PDF.js 预留位 -->
+        <!--
+          TODO（下一步集成）：
+          1. 用 PDF.js viewer 替换 iframe，实现页面跳转、高亮引用段落等高级功能
+          2. 将 AI 回答中引用的段落 chunk_index 传给 PDF.js，自动跳转到对应页
+        -->
+        <div class="flex-1 overflow-hidden bg-stone-50">
+          <iframe
+            v-if="pdfPanelUrl"
+            :src="pdfPanelUrl"
+            class="h-full w-full border-0"
+            title="PDF 预览"
+            loading="lazy"
+          />
+          <div v-else class="flex h-full items-center justify-center">
+            <p class="text-sm text-stone-400">暂无 PDF</p>
+          </div>
+        </div>
+      </aside>
+    </Transition>
   </div>
 </template>
 
@@ -347,5 +461,21 @@ const cancelSettings = () => { showSettings.value = false }
 .settings-panel-enter-to,
 .settings-panel-leave-from {
   transform: translateX(-50%) translateY(0);
+}
+
+/* PDF 面板滑入/滑出动画 */
+.pdf-panel-enter-active,
+.pdf-panel-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.pdf-panel-enter-from,
+.pdf-panel-leave-to {
+  opacity: 0;
+  transform: translateX(32px);
+}
+.pdf-panel-enter-to,
+.pdf-panel-leave-from {
+  opacity: 1;
+  transform: translateX(0);
 }
 </style>
