@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useTransition, TransitionPresets } from '@vueuse/core'
+import { useRouter } from 'vue-router'
 import { api, fetchSnapshotDates } from '../services/api'
 import GlassCalendar from '../components/GlassCalendar.vue'
 
+const router = useRouter()
+
 interface TopDoc {
+  id?: number | string
   title?: string
   summary?: string
   score?: number
@@ -572,7 +576,7 @@ const hasData = computed(() => {
               :target="doc.url ? '_blank' : undefined"
               :rel="doc.url ? 'noopener noreferrer' : undefined"
               class="flex items-start gap-2.5 px-4 py-2.5"
-              :class="[doc.url ? 'hover:bg-stone-50' : 'pointer-events-none']"
+              :class="doc.url ? 'hover:bg-stone-50 cursor-pointer' : 'pointer-events-none'"
             >
               <!-- 序号 -->
               <span
@@ -626,6 +630,7 @@ const hasData = computed(() => {
                 </div>
               </div>
 
+              <!-- 外链图标（所有来源统一） -->
               <svg
                 v-if="doc.url"
                 class="mt-1 h-3.5 w-3.5 shrink-0 text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity"

@@ -35,6 +35,7 @@ const pageSize        = ref(10)
 const schedulerStatus = ref<SchedulerStatus | null>(null)
 const loading         = ref(false)
 const syncing         = ref(false)
+const generatingBriefing = ref(false)
 const errorMsg        = ref('')
 const successMsg      = ref('')
 
@@ -109,7 +110,7 @@ const goPage = async (p: number) => {
 const clearMessages = () => { errorMsg.value = ''; successMsg.value = '' }
 
 const ingestSingleSource = async (sourceKey: string) => {
-  if (ingestingSource.value || isTaskRunning.value) return
+  if (ingestingSource.value) return
   clearMessages()
   ingestingSource.value = sourceKey
   try {
@@ -120,6 +121,18 @@ const ingestSingleSource = async (sourceKey: string) => {
     const status = e?.response?.status
     errorMsg.value = status === 409 ? '当前已有任务正在运行，请等待完成后再试。' : status === 400 ? e?.response?.data?.detail || '未知数据源' : e?.response?.data?.detail || String(e)
   } finally { ingestingSource.value = null }
+}
+
+const generateAllBriefings = async (forceRegenerate = true) => {
+  if (generatingBriefing.value) return
+  clearMessages()
+  generatingBriefing.value = true
+  try {
+    const res = await api.post('/ops/briefing/generate-all', null, { params: { force_regenerate: forceRegenerate } })
+    successMsg.value = res.data?.message || '全维度每日简报生成任务已提交，后台执行中…'
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.detail || String(e)
+  } finally { generatingBriefing.value = false }
 }
 
 const syncDataNow = async (force = false) => {
@@ -137,7 +150,7 @@ const syncDataNow = async (force = false) => {
 }
 
 const ingestByDate = async () => {
-  if (ingestingByDate.value || isTaskRunning.value) return
+  if (ingestingByDate.value) return
   if (!targetDate.value) { errorMsg.value = '请选择目标日期'; return }
   clearMessages()
   ingestingByDate.value = true
@@ -196,6 +209,10 @@ const getStatusConfig = (status: string) =>
             {{ syncing ? '同步中…' : isTaskRunning ? '任务运行中…' : '立即同步' }}
           </button>
           <button class="btn-secondary" :disabled="syncing || isTaskRunning" @click="syncDataNow(true)">强制同步</button>
+          <button class="btn-secondary" :disabled="generatingBriefing" @click="generateAllBriefings(true)">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            {{ generatingBriefing ? '生成中…' : '生成每日简报' }}
+          </button>
           <button class="btn-danger" :disabled="clearing" @click="showClearConfirm = true">
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
             {{ clearing ? '清空中…' : '清空数据' }}
@@ -252,7 +269,7 @@ const getStatusConfig = (status: string) =>
           <span class="text-xs text-stone-400 shrink-0">目标日期：</span>
           <input v-model="targetDate" type="date" class="input w-auto py-1.5 text-xs" :max="new Date().toISOString().slice(0, 10)" />
         </div>
-        <button class="btn-primary" :disabled="ingestingByDate || isTaskRunning || !targetDate" @click="ingestByDate">
+        <button class="btn-primary" :disabled="ingestingByDate || !targetDate" @click="ingestByDate">
           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           {{ ingestingByDate ? '采集中…' : '开始采集' }}
         </button>
@@ -275,7 +292,7 @@ const getStatusConfig = (status: string) =>
                  border border-stone-200 hover:border-stone-300 hover:shadow-sm active:scale-[0.97]
                  disabled:opacity-40 disabled:cursor-not-allowed"
           :class="[src.color, src.textColor, ingestingSource === src.key ? 'ring-2 ring-offset-1 ring-stone-400/40' : '']"
-          :disabled="!!ingestingSource || isTaskRunning"
+          :disabled="!!ingestingSource"
           @click="ingestSingleSource(src.key)"
         >
           <span class="text-sm leading-none">{{ src.icon }}</span>
@@ -288,21 +305,21 @@ const getStatusConfig = (status: string) =>
     <!-- 主内容网格：admin 时三列，普通用户时全宽单列 -->
     <div class="grid grid-cols-1 gap-5 shrink-0" :class="authStore.isAdmin ? 'lg:grid-cols-3' : ''">
       <!-- Admin 专属：调度器状态 -->
-      <div v-if="authStore.isAdmin" class="stagger-enter glass-card p-5" style="animation-delay: 0.2s">
-        <h3 class="mb-4 text-sm font-semibold text-stone-700">调度器状态</h3>
-        <div v-if="schedulerStatus">
-          <div class="mb-4 flex items-center gap-2.5">
-            <span class="status-dot" :class="schedulerStatus.running ? 'bg-brand-green animate-[pulseDot_2s_ease-in-out_infinite]' : 'bg-brand-rose'" />
-            <span class="text-sm font-medium text-stone-700">{{ schedulerStatus.running ? '运行中' : '已停止' }}</span>
-            <span class="ml-auto text-xs text-stone-400">{{ schedulerStatus.job_count }} 个任务</span>
-          </div>
-          <div class="space-y-2">
-            <div v-for="job in schedulerStatus.jobs" :key="job.id" class="rounded-2xl p-3" style="background: rgba(255,255,255,0.6); border: 1px solid rgba(168,162,158,0.15)">
-              <p class="text-xs font-medium text-stone-600">{{ job.name }}</p>
-              <p class="mt-1 text-2xs text-stone-400">下次：{{ job.next_run_time ? formatDate(job.next_run_time) : '未安排' }}</p>
-            </div>
-          </div>
-        </div>
+      <div v-if="authStore.isAdmin" class="stagger-enter glass-card flex flex-col p-5" style="animation-delay: 0.2s; max-height: 560px;">
+              <h3 class="mb-4 shrink-0 text-sm font-semibold text-stone-700">调度器状态</h3>
+              <div v-if="schedulerStatus" class="flex flex-col min-h-0 flex-1">
+                <div class="mb-4 shrink-0 flex items-center gap-2.5">
+                  <span class="status-dot" :class="schedulerStatus.running ? 'bg-brand-green animate-[pulseDot_2s_ease-in-out_infinite]' : 'bg-brand-rose'" />
+                  <span class="text-sm font-medium text-stone-700">{{ schedulerStatus.running ? '运行中' : '已停止' }}</span>
+                  <span class="ml-auto text-xs text-stone-400">{{ schedulerStatus.job_count }} 个任务</span>
+                </div>
+                <div class="space-y-2 overflow-y-auto">
+                  <div v-for="job in schedulerStatus.jobs" :key="job.id" class="rounded-2xl p-3" style="background: rgba(255,255,255,0.6); border: 1px solid rgba(168,162,158,0.15)">
+                    <p class="text-xs font-medium text-stone-600">{{ job.name }}</p>
+                    <p class="mt-1 text-2xs text-stone-400">下次：{{ job.next_run_time ? formatDate(job.next_run_time) : '未安排' }}</p>
+                  </div>
+                </div>
+              </div>
         <div v-else-if="loading" class="flex items-center gap-2 text-sm text-stone-400">
           <span class="inline-block h-4 w-4 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" />加载中…
         </div>

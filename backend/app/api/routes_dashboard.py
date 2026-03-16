@@ -443,13 +443,18 @@ def _filter_docs_by_period(
             picked = _try_pick_with_time(fallback_docs)
             result.extend(picked)
 
-    # 按 raw_score（vote 数）降序排列，rank_in_period 作为次要参考
-    result.sort(
-        key=lambda d: (
-            -float(d.get("raw_score") or d.get("score") or 0),
-            int(d.get("rank_in_period") or 9999),
-        )
-    )
+    # 排序规则：
+    #   - github 源：优先按 rank_in_period 升序（原始榜单顺序），raw_score 作为次要
+    #   - 其他来源：优先按 raw_score（vote/star 数）降序，rank_in_period 作为次要
+    def _sort_key(d: Dict[str, Any]) -> tuple:
+        src = (d.get("source") or "").lower()
+        rank = int(d.get("rank_in_period") or 9999)
+        score = float(d.get("raw_score") or d.get("score") or 0)
+        if src == "github":
+            return (rank, -score)
+        return (9999, -score)
+
+    result.sort(key=_sort_key)
     return result
 
 

@@ -17,7 +17,9 @@ from backend.app.api import (
     routes_chat,
     routes_dashboard,
     routes_monitor,
+    routes_papers,
     routes_report,
+    routes_vision,
 )
 from backend.app.api import routes_ops
 from backend.app.core.config import settings
@@ -118,6 +120,8 @@ app.add_middleware(
 
 app.include_router(routes_auth.router, prefix="/api", tags=["Auth"])
 app.include_router(routes_chat.router, prefix="/api", tags=["Chat"])
+app.include_router(routes_vision.router, prefix="/api", tags=["Vision"])
+app.include_router(routes_papers.router, prefix="/api", tags=["Papers"])
 app.include_router(routes_dashboard.router, prefix="/api", tags=["Dashboard"])
 app.include_router(routes_monitor.router, prefix="/api", tags=["Monitor"])
 app.include_router(routes_report.router, prefix="/api", tags=["Report"])

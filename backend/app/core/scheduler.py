@@ -28,38 +28,38 @@ logger = logging.getLogger(__name__)
 # 调度配置（集中管理所有采集任务的频率）
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# 五源从 15:01 开始每小时采集一次，各源错开 1 分钟避免同时触发
+# arxiv:01, github:02, news:03, producthunt:04, hackernews:05
 SCHEDULE_CONFIG: List[Dict[str, Any]] = [
-    # ── 高频：实时热榜类 ──────────────────────────────────────────
-    {
-        "id": "github_trending",
-        "source": "github",
-        "cron": {"hour": "6,10,14,18,22", "minute": 0},
-        "desc": "GitHub Trending 热榜采集",
-    },
-    {
-        "id": "hackernews",
-        "source": "hackernews",
-        "cron": {"hour": "7,11,15,19,23", "minute": 30},
-        "desc": "Hacker News AI 热帖采集",
-    },
-    {
-        "id": "producthunt",
-        "source": "producthunt",
-        "cron": {"hour": "10,16", "minute": 0},
-        "desc": "Product Hunt 新品采集",
-    },
-    # ── 低频：编辑精选类 ──────────────────────────────────────────
     {
         "id": "arxiv_papers",
         "source": "arxiv",
-        "cron": {"hour": "9,15", "minute": 30},
+        "cron": {"minute": 1},  # 每小时 :01 触发（如 15:01, 16:01, ...）
         "desc": "HuggingFace Papers 论文采集",
+    },
+    {
+        "id": "github_trending",
+        "source": "github",
+        "cron": {"minute": 2},  # 每小时 :02
+        "desc": "GitHub Trending 热榜采集",
     },
     {
         "id": "news_techmeme",
         "source": "news",
-        "cron": {"hour": "8,12,18", "minute": 0},
+        "cron": {"minute": 3},  # 每小时 :03
         "desc": "Techmeme 科技新闻采集",
+    },
+    {
+        "id": "producthunt",
+        "source": "producthunt",
+        "cron": {"minute": 4},  # 每小时 :04
+        "desc": "Product Hunt 新品采集",
+    },
+    {
+        "id": "hackernews",
+        "source": "hackernews",
+        "cron": {"minute": 5},  # 每小时 :05
+        "desc": "Hacker News AI 热帖采集",
     },
     # ── GitHub 热度快照（独立于 Trending，使用 github_hot_service） ──
     {
@@ -123,15 +123,64 @@ async def _run_github_hot_job() -> None:
 
 
 async def _run_smart_ingestion_job() -> None:
-    """全量智能采集 Job（向后兼容）：每天 08:00 执行，检测是否需要补录。"""
-    logger.info("[Scheduler] 触发每日智能全量采集任务...")
+    """全量智能采集 Job（向后兼容）：检测是否需要补录。"""
+    logger.info("[Scheduler] 触发智能全量采集任务...")
     try:
         from backend.app.services.ingestion.pipeline import run_smart_ingestion
 
         await asyncio.to_thread(run_smart_ingestion, 20)
-        logger.info("[Scheduler] 每日智能全量采集任务完成。")
+        logger.info("[Scheduler] 智能全量采集任务完成。")
     except Exception as exc:
         logger.error("[Scheduler] 智能全量采集失败: %s", exc, exc_info=True)
+
+
+# 每天 08:00 自动生成简报的维度列表
+# source × period 组合：只生成有数据的维度
+_BRIEFING_TASKS: List[Dict[str, str]] = [
+    {"source": "all", "period": "daily"},
+    {"source": "arxiv", "period": "daily"},
+    {"source": "github", "period": "daily"},
+    {"source": "news", "period": "daily"},
+    {"source": "producthunt", "period": "daily"},
+    {"source": "hackernews", "period": "daily"},
+]
+
+
+async def _run_daily_briefing_job() -> None:
+    """每天 08:00 自动生成所有维度的简报并持久化到数据库。"""
+    logger.info(
+        "[Scheduler] 触发每日自动简报生成（%d 个维度）...", len(_BRIEFING_TASKS)
+    )
+    from backend.app.services.briefing.daily_briefing import DailyBriefingService
+
+    success = 0
+    for task in _BRIEFING_TASKS:
+        source = task["source"]
+        period = task["period"]
+        try:
+            service = DailyBriefingService()
+            # 消费完整的 SSE 流以触发生成 + 持久化
+            async for payload in service.stream_generate(
+                target_date=None,
+                source=source,
+                period=period,
+                force_regenerate=False,  # 已生成过则跳过，避免重复消耗 LLM
+            ):
+                pass  # 只需触发生成，不需要转发 SSE
+            success += 1
+            logger.info("[Scheduler] 简报生成完成: source=%s period=%s", source, period)
+        except Exception as exc:
+            logger.error(
+                "[Scheduler] 简报生成失败: source=%s period=%s error=%s",
+                source,
+                period,
+                exc,
+                exc_info=True,
+            )
+
+    logger.info(
+        "[Scheduler] 每日简报生成完毕，%d/%d 成功。", success, len(_BRIEFING_TASKS)
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -143,8 +192,8 @@ def start_scheduler() -> None:
     """启动 APScheduler，注册所有调度任务。
 
     任务分两类：
-    1. SCHEDULE_CONFIG 中的多源独立调度（按各源自定义频率）
-    2. 每日 08:00 全量智能采集（兜底保障，确保至少每天执行一次全量）
+    1. SCHEDULE_CONFIG 中的多源独立调度（五源每小时各跑一次，从 :01~:05 错开触发）
+    2. 每日 08:00 自动生成所有维度的简报并持久化
     """
     scheduler = get_scheduler()
 
@@ -164,7 +213,6 @@ def start_scheduler() -> None:
             job_func = _run_github_hot_job
         else:
             # 普通数据源使用 run_single_source_pipeline
-
             # 创建闭包绑定 source_name 避免 late-binding 问题
             async def _make_job(src: str = source) -> None:
                 await _run_single_source_job(src)
@@ -181,23 +229,26 @@ def start_scheduler() -> None:
             misfire_grace_time=7200,  # 允许最多延迟 2 小时触发
         )
         logger.info(
-            "[Scheduler] 注册任务: %s (%s) cron=%s",
+            "[Scheduler] 注册采集任务: %s (%s) cron=%s",
             job_id,
             desc,
             cron,
         )
 
-    # ── 兜底：每日 08:00 全量智能采集 ──────────────────────────────
+    # ── 每日 08:00 自动生成所有维度简报 ────────────────────────────
     scheduler.add_job(
-        _run_smart_ingestion_job,
+        _run_daily_briefing_job,
         trigger=CronTrigger(hour=8, minute=0, timezone="Asia/Shanghai"),
-        id="daily_smart_ingestion",
-        name="每日全量智能采集（兜底）",
+        id="daily_briefing",
+        name="每日自动简报生成（全维度）",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=3600,
     )
-    logger.info("[Scheduler] 注册兜底任务: daily_smart_ingestion (每日 08:00)")
+    logger.info(
+        "[Scheduler] 注册简报任务: daily_briefing (每日 08:00，共 %d 个维度)",
+        len(_BRIEFING_TASKS),
+    )
 
     scheduler.start()
 

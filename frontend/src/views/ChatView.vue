@@ -2,6 +2,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import MarkdownIt from 'markdown-it'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
 import { useChatStore } from '../stores/chatStore'
 import { useAuthStore } from '../stores/authStore'
 
@@ -13,26 +15,123 @@ const listRef = ref<HTMLElement | null>(null)
 const showSettings = ref(false)
 const isSending = ref(false)
 
-// ── PDF 预览面板（模块四-2：预留 DOM，为"边看 PDF 边 AI 对话"做铺垫） ──
-const pdfPanelUrl = ref<string | null>(null)  // 当前预览的 PDF URL
-const showPdfPanel = ref(false)               // 是否显示右侧 PDF 面板
-
-const openPdfPanel = (url: string) => {
-  pdfPanelUrl.value = url
-  showPdfPanel.value = true
-}
-const closePdfPanel = () => {
-  showPdfPanel.value = false
-  pdfPanelUrl.value = null
-}
-
 const localSettings = ref({ ...store.settings })
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
 const messages = computed(() => store.messages)
+const rawModeSet = ref(new Set<number>()) // 追踪哪些消息索引处于"源码"模式
+const toggleRaw = (idx: number) => {
+  if (rawModeSet.value.has(idx)) rawModeSet.value.delete(idx)
+  else rawModeSet.value.add(idx)
+  rawModeSet.value = new Set(rawModeSet.value) // 触发响应式更新
+}
 
-const renderMarkdown = (text: string) => md.render(text || '')
+// ── 手动 KaTeX 渲染（与 PaperReadView 保持一致）────────────────────────────
+const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+const tryKatex = (expr: string, displayMode: boolean): string | null => {
+  try {
+    const html = katex.renderToString(expr.trim(), { displayMode, throwOnError: false })
+    const escaped = escapeAttr(expr.trim())
+    if (displayMode) {
+      return `<div class="formula-wrap"><button class="formula-copy-btn" data-latex="${escaped}" title="复制公式">📋</button>${html}</div>`
+    }
+    return html
+  } catch { return null }
+}
+const decodeHtml = (s: string) =>
+  s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+
+/** 复制文本到剪贴板（兼容非 HTTPS） */
+const copyToClipboard = (text: string): Promise<void> => {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text)
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.left = '-9999px'
+  document.body.appendChild(ta)
+  ta.select()
+  document.execCommand('copy')
+  document.body.removeChild(ta)
+  return Promise.resolve()
+}
+
+const handleFormulaCopy = (e: Event) => {
+  const btn = (e.target as HTMLElement).closest('.formula-copy-btn') as HTMLElement | null
+  if (!btn) return
+  const latex = btn.getAttribute('data-latex')
+    ?.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  if (!latex) return
+  copyToClipboard(latex).then(() => {
+    btn.textContent = '✅'
+    setTimeout(() => { btn.textContent = '📋' }, 1200)
+  })
+}
+
+const renderLatex = (text: string): string => {
+  if (!text) return ''
+  const codeBlocks: string[] = []
+  let s = text.replace(/```[\s\S]*?```/g, (m) => { codeBlocks.push(m); return `%%CODEBLOCK_${codeBlocks.length - 1}%%` })
+
+  s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_m, expr: string) => tryKatex(expr, true) ?? _m)
+  s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_m, expr: string) => tryKatex(expr, true) ?? _m)
+  s = s.replace(/\\begin\{([a-zA-Z*]+)\}([\s\S]+?)\\end\{\1\}/g, (_m, env: string, body: string) => {
+    const full = `\\begin{${env}}${body}\\end{${env}}`
+    return tryKatex(full, true) ?? _m
+  })
+  s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_m, expr: string) => tryKatex(expr, false) ?? _m)
+  s = s.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$(?!\$)/g, (_m, expr: string) => tryKatex(expr, false) ?? _m)
+
+  s = s.replace(/%%CODEBLOCK_(\d+)%%/g, (_m, idx: string) => codeBlocks[Number(idx)] || _m)
+  return s
+}
+
+const renderMarkdown = (text: string) => {
+  const withKatex = renderLatex(text || '')
+  const mdHtml = new MarkdownIt({ html: true, linkify: true, breaks: true })
+  let html = mdHtml.render(withKatex)
+
+  html = html.replace(/<pre><code(?:\s[^>]*)?>([\s\S]*?)<\/code><\/pre>/g, (_m, inner: string) => {
+    const decoded = decodeHtml(inner)
+    if (/\\[a-zA-Z]/.test(decoded)) {
+      const result = tryKatex(decoded.trim(), true)
+      if (result) return `<div class="katex-block-wrapper">${result}</div>`
+    }
+    return _m
+  })
+  html = html.replace(/<code>([\s\S]*?)<\/code>/g, (_m, inner: string) => {
+    const decoded = decodeHtml(inner)
+    if (/\\[a-zA-Z]/.test(decoded)) return tryKatex(decoded.trim(), false) ?? _m
+    return _m
+  })
+  return html
+}
+
+const extractLatexSources = (content: string): string[] => {
+  const sources: string[] = []
+  content.replace(/\$\$([\s\S]+?)\$\$/g, (_m, expr: string) => { sources.push(`$$${expr.trim()}$$`); return '' })
+  content.replace(/\\\[([\s\S]+?)\\\]/g, (_m, expr: string) => { sources.push(`\\[${expr.trim()}\\]`); return '' })
+  content.replace(/\\begin\{([a-zA-Z*]+)\}([\s\S]+?)\\end\{\1\}/g, (_m, env: string, body: string) => {
+    sources.push(`\\begin{${env}}${body}\\end{${env}}`); return ''
+  })
+  content.replace(/\\\(([\s\S]+?)\\\)/g, (_m, expr: string) => { sources.push(`\\(${expr.trim()}\\)`); return '' })
+  content.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$(?!\$)/g, (_m, expr: string) => { sources.push(`$${expr.trim()}$`); return '' })
+  content.replace(/`([^`\n]+)`/g, (_m, inner: string) => {
+    if (/\\[a-zA-Z]/.test(inner)) sources.push(inner.trim())
+    return ''
+  })
+  return sources
+}
+
+const copyFormulas = async (content: string) => {
+  const formulas = extractLatexSources(content)
+  if (!formulas.length) { alert('未检测到公式'); return }
+  await copyToClipboard(formulas.join('\n\n'))
+  alert(`已复制 ${formulas.length} 条公式`)
+}
 
 interface SourceFlat {
   id?: string
@@ -100,6 +199,7 @@ onMounted(() => {
     el.addEventListener('touchstart', onTouchStart, { passive: true })
     el.addEventListener('touchmove', onTouchMoveHandler, { passive: true })
   }
+  document.addEventListener('click', handleFormulaCopy)
   // 登录后回填未发送的消息（从 authStore 中恢复）
   const pending = authStore.consumePendingMessage()
   if (pending) {
@@ -114,6 +214,7 @@ onUnmounted(() => {
     el.removeEventListener('touchstart', onTouchStart)
     el.removeEventListener('touchmove', onTouchMoveHandler)
   }
+  document.removeEventListener('click', handleFormulaCopy)
 })
 
 const scrollToBottom = async () => {
@@ -168,12 +269,11 @@ const cancelSettings = () => { showSettings.value = false }
 </script>
 
 <template>
-  <!-- 左右分栏容器：左侧 Chat，右侧 PDF 预览（模块四-2 预留 DOM） -->
+  <!-- 单栏居中对话区 -->
   <div class="flex h-full overflow-hidden">
-    <!-- 左侧：对话区（当 PDF 面板打开时收窄） -->
+    <!-- 对话区（单栏，不分屏；PDF 阅读请使用 /papers/:id/read） -->
     <section
-      class="relative flex flex-col overflow-hidden transition-all duration-300"
-      :class="showPdfPanel ? 'w-1/2' : 'flex-1'"
+      class="relative flex flex-col overflow-hidden flex-1"
     >
 
       <!-- 标题栏 -->
@@ -316,7 +416,27 @@ const cancelSettings = () => { showSettings.value = false }
 
               <!-- 正文 -->
               <div v-if="msg.content" class="rounded-[20px] rounded-bl-md px-4 py-3" style="background: rgba(255,255,255,0.85); border: 1px solid rgba(168,162,158,0.20)">
-                <div class="prose-content text-sm leading-7 text-stone-700" v-html="renderMarkdown(msg.content)" />
+                <!-- 渲染/源码/复制按钮 -->
+                <div class="flex justify-end gap-1 mb-1">
+                  <button
+                    class="text-2xs px-2 py-0.5 rounded-md bg-stone-100 text-stone-400 hover:text-stone-600 transition"
+                    @click="copyFormulas(msg.content)"
+                    title="复制公式 LaTeX 源码"
+                  >
+                    📋 复制公式
+                  </button>
+                  <button
+                    class="text-2xs px-2 py-0.5 rounded-md transition"
+                    :class="rawModeSet.has(idx) ? 'bg-stone-200 text-stone-600' : 'bg-stone-100 text-stone-400 hover:text-stone-600'"
+                    @click="toggleRaw(idx)"
+                  >
+                    {{ rawModeSet.has(idx) ? '📐 渲染公式' : '{ } 源码' }}
+                  </button>
+                </div>
+                <!-- 渲染后内容 -->
+                <div v-if="!rawModeSet.has(idx)" class="prose-content text-sm leading-7 text-stone-700" v-html="renderMarkdown(msg.content)" />
+                <!-- LaTeX 源码 -->
+                <pre v-else class="text-sm leading-6 text-stone-600 whitespace-pre-wrap break-all font-mono bg-stone-50 rounded-lg p-3">{{ msg.content }}</pre>
               </div>
 
               <!-- 来源卡片 -->
@@ -378,73 +498,6 @@ const cancelSettings = () => { showSettings.value = false }
       </footer>
     </section>
 
-    <!-- 右侧：PDF 预览面板（iframe + PDF.js 预留位） -->
-    <Transition name="pdf-panel">
-      <aside
-        v-if="showPdfPanel"
-        class="relative flex w-1/2 flex-col overflow-hidden border-l"
-        style="border-color: rgba(168,162,158,0.20)"
-      >
-        <!-- PDF 面板标题栏 -->
-        <header
-          class="flex shrink-0 items-center justify-between px-4 py-3"
-          style="border-bottom: 1px solid rgba(168,162,158,0.15)"
-        >
-          <div class="flex items-center gap-2">
-            <svg class="h-4 w-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-            </svg>
-            <span class="text-xs font-semibold text-stone-600 font-serif">论文原文预览</span>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <!-- 在新标签页打开 -->
-            <a
-              v-if="pdfPanelUrl"
-              :href="pdfPanelUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="rounded-full p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
-              title="在新标签页打开"
-            >
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-              </svg>
-            </a>
-            <!-- 关闭面板 -->
-            <button
-              class="rounded-full p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
-              title="关闭预览"
-              @click="closePdfPanel"
-            >
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-              </svg>
-            </button>
-          </div>
-        </header>
-
-        <!-- PDF iframe 渲染区 / PDF.js 预留位 -->
-        <!--
-          TODO（下一步集成）：
-          1. 用 PDF.js viewer 替换 iframe，实现页面跳转、高亮引用段落等高级功能
-          2. 将 AI 回答中引用的段落 chunk_index 传给 PDF.js，自动跳转到对应页
-        -->
-        <div class="flex-1 overflow-hidden bg-stone-50">
-          <iframe
-            v-if="pdfPanelUrl"
-            :src="pdfPanelUrl"
-            class="h-full w-full border-0"
-            title="PDF 预览"
-            loading="lazy"
-          />
-          <div v-else class="flex h-full items-center justify-center">
-            <p class="text-sm text-stone-400">暂无 PDF</p>
-          </div>
-        </div>
-      </aside>
-    </Transition>
   </div>
 </template>
 
@@ -463,19 +516,50 @@ const cancelSettings = () => { showSettings.value = false }
   transform: translateX(-50%) translateY(0);
 }
 
-/* PDF 面板滑入/滑出动画 */
-.pdf-panel-enter-active,
-.pdf-panel-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s ease;
+/* KaTeX 公式溢出处理 —— 长公式可横向滚动，不撑破气泡 */
+:deep(.katex-display) {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding: 4px 0;
 }
-.pdf-panel-enter-from,
-.pdf-panel-leave-to {
+:deep(.katex-display > .katex) {
+  white-space: nowrap;
+}
+:deep(.prose-content) {
+  overflow: hidden;
+  max-width: 100%;
+}
+
+/* 公式容器 + 独立复制按钮 */
+:deep(.formula-wrap) {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 0;
+}
+:deep(.formula-copy-btn) {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 5;
+  cursor: pointer;
+  background: rgba(245,245,244,0.85);
+  border: 1px solid rgba(168,162,158,0.2);
+  border-radius: 6px;
+  padding: 1px 5px;
+  font-size: 11px;
+  line-height: 1.4;
   opacity: 0;
-  transform: translateX(32px);
+  transition: opacity 0.15s;
 }
-.pdf-panel-enter-to,
-.pdf-panel-leave-from {
+:deep(.formula-wrap:hover .formula-copy-btn) {
   opacity: 1;
-  transform: translateX(0);
+}
+:deep(.katex-block-wrapper) {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 0;
 }
 </style>

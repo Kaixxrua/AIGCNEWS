@@ -19,7 +19,7 @@ import asyncio
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -164,8 +164,17 @@ def _extract_daily_ids_from_html(html: str, limit: int) -> List[Tuple[str, int]]
     return pairs[:top_n]
 
 
+# CST 时区（UTC+8）
+_TZ_CST = timezone(timedelta(hours=8))
+
+
+def _now_cst() -> datetime:
+    """返回当前 CST（UTC+8）时间，带时区信息。"""
+    return datetime.now(_TZ_CST)
+
+
 def _get_period_url(period: str, target_date: Optional[datetime] = None) -> str:
-    dt = target_date or datetime.utcnow()
+    dt = target_date or _now_cst()
     period = (period or "daily").lower().strip()
 
     if period == "weekly":
@@ -181,17 +190,24 @@ async def _fetch_hf_listing_html(
     limit: int = 20,
     target_date: Optional[datetime] = None,
 ) -> Tuple[List[str], Dict[str, int]]:
-    """异步抓取 HF 榜单 HTML，返回 (arxiv_ids, id->upvotes)。"""
+    """异步抓取 HF 榜单 HTML，返回 (arxiv_ids, id->upvotes)。
+
+    注意：使用 CST（UTC+8）时间构造日期 URL，确保与 HuggingFace 榜单日期一致。
+    daily 模式下最多回退 2 天，保证即使当天榜单尚未更新也能拿到最新数据。
+    爬取成功后，返回的 snapshot_date 应取 URL 中实际命中的日期，
+    由上层 pipeline 负责将其写入 document_rank_snapshots.snapshot_date。
+    """
     period = (period or "daily").lower().strip()
     headers = _get_headers()
 
     if period == "daily" and target_date is None:
-        base_date = datetime.utcnow().date()
+        # 使用 CST 时间，避免 UTC/CST 跨日期导致拿到旧一天的榜单
+        base_date = _now_cst().date()
         candidates = [
             _hf_papers_daily_url(
                 base_date.fromordinal(base_date.toordinal() - day_offset).isoformat()
             )
-            for day_offset in range(0, 2)
+            for day_offset in range(0, 3)  # 今天、昨天、前天，应对 HF 延迟更新
         ]
     else:
         candidates = [_get_period_url(period, target_date=target_date)]

@@ -91,3 +91,44 @@ export async function fetchSnapshotDates(limit = 60): Promise<string[]> {
   const res = await api.get('/dashboard/snapshot-dates', { params: { limit } })
   return res.data?.dates ?? []
 }
+
+// ── Papers API ────────────────────────────────────────────────────────────────
+
+export interface PaperItem {
+  id: string
+  source: string
+  source_channel?: string
+  title: string
+  url?: string
+  summary?: string
+  published_date?: string
+  tags?: string
+  score?: number
+  raw_score?: number
+  rank_in_period?: number
+  local_pdf_path?: string | null
+  pdf_media_url?: string | null
+  created_at?: string
+}
+
+/** 全文搜索所有来源文档 */
+export async function searchPapers(q: string, limit = 20): Promise<PaperItem[]> {
+  const res = await api.get('/papers/search', { params: { q, limit } })
+  return res.data?.items ?? []
+}
+
+/** 今日高分 Arxiv Top10 冷启动推荐 */
+export async function fetchTop10Today(): Promise<PaperItem[]> {
+  const res = await api.get('/papers/top10-today')
+  return res.data?.items ?? []
+}
+
+/** 按 id 获取论文详情 */
+export async function fetchPaperDetail(paperId: string): Promise<PaperItem | null> {
+  try {
+    const res = await api.get(`/papers/${paperId}`)
+    return res.data ?? null
+  } catch {
+    return null
+  }
+}

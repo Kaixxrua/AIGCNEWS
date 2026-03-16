@@ -340,3 +340,80 @@ async def trigger_scheduled_job(
     job.modify(next_run_time=None)
     scheduler.wakeup()
     return {"status": "triggered", "message": f"Job '{job_id}' 已触发执行。"}
+
+
+# ── 每日简报生成 ─────────────────────────────────────────────────────────────
+
+_BRIEFING_TASKS = [
+    {"source": "all", "period": "daily"},
+    {"source": "arxiv", "period": "daily"},
+    {"source": "github", "period": "daily"},
+    {"source": "news", "period": "daily"},
+    {"source": "producthunt", "period": "daily"},
+    {"source": "hackernews", "period": "daily"},
+]
+
+
+async def _bg_generate_all_briefings(force_regenerate: bool) -> None:
+    """后台生成全维度每日简报（与 scheduler 中的逻辑一致）。"""
+    from backend.app.services.briefing.daily_briefing import DailyBriefingService
+
+    success = 0
+    for task in _BRIEFING_TASKS:
+        source = task["source"]
+        period = task["period"]
+        try:
+            service = DailyBriefingService()
+            async for _ in service.stream_generate(
+                target_date=None,
+                source=source,
+                period=period,
+                force_regenerate=force_regenerate,
+            ):
+                pass
+            success += 1
+            logger.info("[Ops] 简报生成完成: source=%s period=%s", source, period)
+        except Exception as exc:
+            logger.error(
+                "[Ops] 简报生成失败: source=%s period=%s error=%s",
+                source,
+                period,
+                exc,
+                exc_info=True,
+            )
+    logger.info("[Ops] 全维度简报生成完毕，%d/%d 成功。", success, len(_BRIEFING_TASKS))
+
+
+def _run_briefings_sync(force_regenerate: bool) -> None:
+    """在线程中运行异步简报生成。"""
+    import asyncio
+
+    asyncio.run(_bg_generate_all_briefings(force_regenerate))
+
+
+@router.post("/ops/briefing/generate-all", response_model=IngestResponse, tags=["Ops"])
+async def generate_all_briefings(
+    force_regenerate: bool = Query(
+        default=True, description="是否强制重新生成（忽略缓存）"
+    ),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
+    _: dict = Depends(RequireAdmin),
+) -> IngestResponse:
+    """
+    手动触发全维度每日简报生成。
+
+    后台依次生成 all / arxiv / github / news / producthunt / hackernews
+    六个维度的今日简报，并持久化到数据库。
+
+    - **force_regenerate=true**（默认）：强制重新生成，忽略已有缓存。
+    - **force_regenerate=false**：已生成过则跳过，避免重复消耗 LLM。
+    """
+    assert background_tasks is not None
+    background_tasks.add_task(_run_briefings_sync, force_regenerate)
+    logger.info(
+        "[Ops] 全维度简报生成任务已加入后台队列，force_regenerate=%s", force_regenerate
+    )
+    return IngestResponse(
+        status="queued",
+        message=f"全维度每日简报生成任务已提交（force_regenerate={force_regenerate}），后台执行中。",
+    )

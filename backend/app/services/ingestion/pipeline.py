@@ -376,14 +376,44 @@ def _ingest_documents(
         logger.error("[Pipeline][%s] Milvus 写入失败: %s", source_label, exc)
 
     # ── Graph extraction + Neo4j ───────────────────────────────────
-    try:
-        graph_extractor = GraphExtractor()
-        graph_docs = graph_extractor.extract(documents)
-        graph_repo = GraphRepository()
-        graph_repo.add_graph_documents(graph_docs)
-        graph_repo.close()
-    except Exception as exc:
-        logger.error("[Pipeline][%s] Neo4j 写入失败: %s", source_label, exc)
+    # 只对 arxiv 源做图谱抽取；非 arxiv 来源跳过（向量检索已能覆盖）
+    # 同时跳过数据库中已有记录的论文（existing_summary_reused=True），
+    # 避免对重复爬取的论文重复消耗 LLM。
+    is_arxiv_source = source_label.startswith("arxiv")
+    if is_arxiv_source:
+        # 筛选出真正新增的文档（旧文档复用 summary，无需重新抽图谱）
+        new_doc_pairs = [
+            (doc, paper)
+            for doc, paper in zip(documents, sorted_papers)
+            if not paper.get("existing_summary_reused", False)
+        ]
+        new_documents = [doc for doc, _ in new_doc_pairs]
+        if new_documents:
+            try:
+                graph_extractor = GraphExtractor()
+                graph_docs = graph_extractor.extract(new_documents)
+                graph_repo = GraphRepository()
+                graph_repo.add_graph_documents(graph_docs)
+                graph_repo.close()
+                logger.info(
+                    "[Pipeline][%s] 图谱写入完成：%d 篇新论文（跳过 %d 篇已有记录）。",
+                    source_label,
+                    len(new_documents),
+                    len(documents) - len(new_documents),
+                )
+            except Exception as exc:
+                logger.error("[Pipeline][%s] Neo4j 写入失败: %s", source_label, exc)
+        else:
+            logger.info(
+                "[Pipeline][%s] 图谱抽取跳过：所有 %d 篇论文均已存在于数据库。",
+                source_label,
+                len(documents),
+            )
+    else:
+        logger.debug(
+            "[Pipeline][%s] 非 arxiv 来源，跳过图谱抽取（向量检索已覆盖）。",
+            source_label,
+        )
 
     logger.info("[Pipeline][%s] 入库完成，%d 条。", source_label, len(sorted_papers))
     return len(sorted_papers)

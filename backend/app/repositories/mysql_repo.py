@@ -504,7 +504,10 @@ class MySQLRepository:
             FROM document_rank_snapshots s
             JOIN documents d ON s.doc_id = d.id
             WHERE {where_clause}
-            ORDER BY s.raw_score DESC, s.rank_in_period ASC
+            ORDER BY
+                CASE WHEN d.source = 'github' THEN s.rank_in_period ELSE 9999 END ASC,
+                CASE WHEN d.source != 'github' THEN -s.raw_score ELSE 0 END ASC,
+                s.rank_in_period ASC
             LIMIT %s
         """
         conn = self._connect()

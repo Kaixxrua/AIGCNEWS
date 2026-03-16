@@ -44,8 +44,8 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 # bge-reranker-v2-m3 实测：openclaw 相关文档 ~0.985，无关文档 ~0.000
 RELEVANCE_THRESHOLD = 0.7
 
-# 一次精排最多处理的文档数
-MAX_DOCS_TO_RERANK = 20
+# 一次精排最多处理的文档数（只取向量检索 Top5，大幅降低 CPU 推理耗时）
+MAX_DOCS_TO_RERANK = 5
 
 # Cross-Encoder 模型名称（首次使用自动下载）
 # bge-reranker-v2-m3：多语言高精度（中英双语效果更好），2.27GB（需要足够内存）
@@ -192,7 +192,7 @@ async def rerank(
         return [float(s) for s in scores]
 
     try:
-        raw_scores = await asyncio.wait_for(asyncio.to_thread(_score_all), timeout=8.0)
+        raw_scores = await asyncio.wait_for(asyncio.to_thread(_score_all), timeout=3.0)
     except asyncio.TimeoutError:
         print("[Reranker] Cross-Encoder scoring timeout, skipping rerank")
         return rerank_targets + passthrough_docs
