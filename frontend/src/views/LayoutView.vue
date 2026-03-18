@@ -10,13 +10,8 @@ const hoveredNav = ref<string | null>(null)
 const hoveredAuth = ref(false)
 const authStore = useAuthStore()
 
-const handleAuthAction = () => {
-  if (authStore.isLoggedIn) {
-    authStore.logout()
-  } else {
-    router.push('/login')
-  }
-}
+/** 品牌名称 — 从 Vite 环境变量读取，回退默认值 */
+const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 const navItems = [
   {
@@ -56,6 +51,10 @@ const isActive = (item: { to: string; exact: boolean }) => {
   <!-- ═══ 全屏内容层 ═══ -->
   <div class="relative flex h-screen w-full items-center justify-center overflow-hidden">
 
+    <!-- ═══ 科技感背景光晕层 ═══ -->
+    <div class="bg-glow bg-glow--cyan" />
+    <div class="bg-glow bg-glow--violet" />
+
     <!-- ═══ 居中悬浮画板（暖白纸质毛玻璃主面板） ═══ -->
     <div class="main-canvas">
       <!-- 顶部全局搜索条 -->
@@ -68,8 +67,10 @@ const isActive = (item: { to: string; exact: boolean }) => {
 
       <!-- 内容区（搜索条占位 44px） -->
       <div class="absolute inset-0 pt-[44px] flex flex-col">
-        <router-view v-slot="{ Component }" class="router-view-shell">
-          <component :is="Component" class="view-container" />
+        <router-view v-slot="{ Component }">
+          <Transition name="route-fade" mode="out-in">
+            <component :is="Component" :key="route.path" class="view-container" />
+          </Transition>
         </router-view>
       </div>
     </div>
@@ -96,53 +97,93 @@ const isActive = (item: { to: string; exact: boolean }) => {
           </span>
         </Transition>
       </RouterLink>
+    <!-- ═══ Dock 中的登录/登出按钮（与导航栏分隔） ═══ -->
+    <div class="dock-auth-sep" />
+    <!-- 未登录：绿色登录按钮 -->
+    <button
+      v-if="!authStore.isLoggedIn"
+      class="dock-item dock-item--login"
+      @click="router.push('/login')"
+      @mouseenter="hoveredAuth = true"
+      @mouseleave="hoveredAuth = false"
+    >
+      <span class="dock-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/>
+          <polyline points="10,17 15,12 10,7"/>
+          <line x1="15" y1="12" x2="3" y2="12"/>
+        </svg>
+      </span>
+      <Transition name="dock-label">
+        <span v-if="hoveredAuth" class="dock-label">登录账号</span>
+      </Transition>
+    </button>
+    <!-- 已登录：红色登出按钮 -->
+    <button
+      v-else
+      class="dock-item dock-item--logout"
+      @click="authStore.logout()"
+      @mouseenter="hoveredAuth = true"
+      @mouseleave="hoveredAuth = false"
+    >
+      <span class="dock-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+          <polyline points="16,17 21,12 16,7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </span>
+      <Transition name="dock-label">
+        <span v-if="hoveredAuth" class="dock-label">退出登录</span>
+      </Transition>
+    </button>
     </nav>
 
-    <!-- ═══ 右上角独立 Auth 浮岛 ═══ -->
-    <div class="auth-island">
-      <button
-        class="dock-item"
-        :class="{ 'dock-item--auth-active': authStore.isLoggedIn }"
-        @click="handleAuthAction"
-        @mouseenter="hoveredAuth = true"
-        @mouseleave="hoveredAuth = false"
-      >
-        <!-- 已登录：离开图标 -->
-        <span v-if="authStore.isLoggedIn" class="dock-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-            <polyline points="16,17 21,12 16,7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-        </span>
-        <!-- 未登录：进入图标 -->
-        <span v-else class="dock-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/>
-            <polyline points="10,17 15,12 10,7"/>
-            <line x1="15" y1="12" x2="3" y2="12"/>
-          </svg>
-        </span>
-        <!-- Tooltip -->
-        <Transition name="dock-label">
-          <span v-if="hoveredAuth" class="dock-label">
-            {{ authStore.isLoggedIn ? '退出登录' : '登录账号' }}
-          </span>
-        </Transition>
-      </button>
+    <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 生态合作） ═══ -->
+    <div class="dock-footer">
+      <span>Powered by {{ brandName }}</span>
+      <span class="footer-sep">·</span>
+      <RouterLink to="/disclaimer" class="footer-link">免责声明</RouterLink>
+      <span class="footer-sep">·</span>
+      <RouterLink to="/privacy" class="footer-link">隐私政策</RouterLink>
+      <span class="footer-sep">·</span>
+      <span>生态合作联系：<a href="mailto:kaixxrua@gmail.com" class="footer-link">kaixxrua@gmail.com</a></span>
     </div>
 
   </div>
 </template>
 
 <style scoped>
-/* ═══ 视图容器：只控制 flex 撑满 + 溢出裁剪，不强制 flex-direction ═══ */
+/* ═══ 视图容器：只控制 flex 撑满 + 溢出裁剪 ═══ */
 :deep(.view-container) {
   width: 100%;
   height: 100%;
   flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* ═══ 科技感背景光晕（低透明度，不抢视觉重心） ═══ */
+.bg-glow {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(100px);
+}
+.bg-glow--cyan {
+  width: 600px;
+  height: 600px;
+  top: -15%;
+  right: -10%;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.06) 0%, transparent 70%);
+}
+.bg-glow--violet {
+  width: 500px;
+  height: 500px;
+  bottom: -10%;
+  left: -5%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.04) 0%, transparent 70%);
 }
 
 /* ═══ 主悬浮画板（暖白纸质毛玻璃） ═══ */
@@ -154,14 +195,53 @@ const isActive = (item: { to: string; exact: boolean }) => {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(32px) saturate(180%);
   -webkit-backdrop-filter: blur(32px) saturate(180%);
-  border: 1px solid rgba(168, 162, 158, 0.20);
+  border: 1px solid rgba(168, 162, 158, 0.18);
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.03),
+    0 0 0 1px rgba(6, 182, 212, 0.04),
     inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   position: relative;
+  z-index: 1;
+}
+
+/* ═══ Dock 下方小字（版权 / 免责 / 隐私 / 生态合作） ═══ */
+.dock-footer {
+  position: fixed;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 2px;
+  font-size: 10px;
+  font-weight: 400;
+  color: rgba(168, 162, 158, 0.7);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.footer-sep {
+  margin: 0 5px;
+  opacity: 0.5;
+}
+
+.footer-link {
+  color: rgba(168, 162, 158, 0.7);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-link:hover {
+  color: #78716c;
+  text-decoration: underline;
 }
 
 /* ═══ 底部 Dock（暖白纸质） ═══ */
@@ -264,50 +344,32 @@ const isActive = (item: { to: string; exact: boolean }) => {
   transform: translateX(-50%) translateY(0) scale(1);
 }
 
-/* ═══ 路由切换：无缝交叉空间缩放 ═══ */
-.spatial-fade-enter-active,
-.spatial-fade-leave-active {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  height: 100%;
-  transition: opacity 0.6s ease,
-              transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-              filter 0.6s ease;
-  will-change: transform, opacity, filter;
+/* ═══ Dock 内分隔线 ═══ */
+.dock-auth-sep {
+  width: 1px;
+  height: 20px;
+  background: rgba(168, 162, 158, 0.25);
+  margin: 0 4px;
+  flex-shrink: 0;
 }
 
-.spatial-fade-enter-from {
-  opacity: 0;
-  transform: scale(0.95);
-  filter: blur(10px);
+/* ═══ 登录按钮（绿色调） ═══ */
+.dock-item--login {
+  color: #16a34a; /* green-600 */
+}
+.dock-item--login:hover {
+  color: #15803d; /* green-700 */
+  background: rgba(220, 252, 231, 0.6); /* green-100 */
+  transform: scale(1.08);
 }
 
-.spatial-fade-leave-to {
-  opacity: 0;
-  transform: scale(1.05);
-  filter: blur(10px);
-  z-index: 10;
+/* ═══ 登出按钮（红色调） ═══ */
+.dock-item--logout {
+  color: #dc2626; /* red-600 */
 }
-
-/* ═══ 右上角独立 Auth 浮岛 ═══ */
-.auth-island {
-  position: fixed;
-  top: 28px;
-  right: 28px;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(168, 162, 158, 0.20);
-  border-radius: 999px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+.dock-item--logout:hover {
+  color: #b91c1c; /* red-700 */
+  background: rgba(254, 226, 226, 0.6); /* red-100 */
+  transform: scale(1.08);
 }
 </style>

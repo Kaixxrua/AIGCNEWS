@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import traceback
 from datetime import date as _date, datetime as _dt, timedelta as _td
 from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from backend.app.core.auth import RequireAdmin
+from backend.app.core.auth import RequireAdmin, RequireUser
+from backend.app.core.config import settings
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
+from backend.app.services.email_service import EmailService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -213,3 +219,119 @@ async def eval_list(
     svc = RAGMetricsService()
     items = svc.list_evaluations(limit=limit)
     return {"items": items, "total": len(items)}
+
+
+# -----------------------------------------------------------------------
+# Briefing Subscription APIs
+# -----------------------------------------------------------------------
+
+
+def _get_email_service(request: Request) -> EmailService:
+    """从 app.state 获取 Redis 并构造 EmailService 实例。"""
+    redis_client = getattr(request.app.state, "redis", None)
+    return EmailService(
+        redis_client=redis_client,
+        smtp_host=settings.SMTP_HOST,
+        smtp_port=settings.SMTP_PORT,
+        smtp_username=settings.SMTP_USERNAME,
+        smtp_password=settings.SMTP_PASSWORD,
+        smtp_from_email=settings.SMTP_FROM_EMAIL,
+        smtp_from_name=settings.SMTP_FROM_NAME,
+        smtp_use_tls=settings.SMTP_USE_TLS,
+    )
+
+
+class SubscribeRequest(BaseModel):
+    source: str = "all"
+    period: str = "daily"
+
+
+@router.post("/report/subscribe")
+async def subscribe_briefing(
+    body: SubscribeRequest,
+    user: dict = Depends(RequireUser),
+):
+    """订阅简报邮件推送。用户点击订阅后，当对应简报生成时会发送到注册邮箱。"""
+    source = body.source if body.source in _VALID_SOURCES else "all"
+    period = body.period if body.period in _VALID_PERIODS else "daily"
+    email = user.get("email", "")
+    user_id = user.get("user_id")
+    if not email:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "用户邮箱为空，无法订阅"},
+        )
+    db = MySQLRepository()
+    sub = db.upsert_briefing_subscription(
+        user_id=user_id, email=email, source=source, period=period
+    )
+    return {"message": "订阅成功", "subscription": sub}
+
+
+@router.post("/report/unsubscribe")
+async def unsubscribe_briefing(
+    body: SubscribeRequest,
+    user: dict = Depends(RequireUser),
+):
+    """取消简报邮件订阅。"""
+    source = body.source if body.source in _VALID_SOURCES else "all"
+    period = body.period if body.period in _VALID_PERIODS else "daily"
+    user_id = user.get("user_id")
+    db = MySQLRepository()
+    ok = db.cancel_briefing_subscription(user_id=user_id, source=source, period=period)
+    if ok:
+        return {"message": "已取消订阅"}
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "未找到对应订阅记录"},
+    )
+
+
+@router.get("/report/subscriptions")
+async def get_my_subscriptions(
+    user: dict = Depends(RequireUser),
+):
+    """获取当前用户的所有活跃简报订阅。"""
+    db = MySQLRepository()
+    subs = db.get_user_briefing_subscriptions(user_id=user.get("user_id"))
+    return {"items": subs}
+
+
+@router.post("/report/send-to-email")
+async def send_briefing_to_email(
+    body: SubscribeRequest,
+    request: Request,
+    user: dict = Depends(RequireUser),
+):
+    """将当前简报立即发送到用户邮箱（一次性发送，不需要订阅）。"""
+    source = body.source if body.source in _VALID_SOURCES else "all"
+    period = body.period if body.period in _VALID_PERIODS else "daily"
+    email = user.get("email", "")
+    if not email:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "用户邮箱为空，无法发送"},
+        )
+
+    # 获取最新简报
+    target = _resolve_report_date(period, None)
+    suffix = "" if source == "all" else f"_{source}"
+    cache_key = f"{target}{suffix}_{period}"
+
+    db = MySQLRepository()
+    item = db.get_briefing_by_date(cache_key)
+    if item is None:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "对应简报尚未生成，无法发送"},
+        )
+
+    email_svc = _get_email_service(request)
+    await email_svc.send_briefing(
+        to_email=email,
+        briefing_content=item.get("content", ""),
+        source=source,
+        period=period,
+        date_str=target,
+    )
+    return {"message": f"简报已发送至 {email}"}

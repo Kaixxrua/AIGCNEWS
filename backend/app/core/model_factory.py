@@ -118,9 +118,13 @@ def get_embedding_model():
                 "EMBEDDING_PROVIDER=openai 需要安装 langchain-openai：pip install langchain-openai"
             ) from exc
 
+        # Embedding 支持独立的 API Key / Base URL（留空则复用 LLM 的 OpenAI 配置）
+        emb_api_key = settings.embedding_api_key or settings.openai_api_key
+        emb_base_url = settings.embedding_base_url or settings.openai_base_url or None
+
         return OpenAIEmbeddings(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url or None,
+            api_key=emb_api_key,
+            base_url=emb_base_url,
             model=settings.embedding_model_name,
         )
 

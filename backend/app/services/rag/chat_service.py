@@ -1,26 +1,51 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import re
 import traceback
-from typing import Any, AsyncGenerator, Dict, List, Tuple
+from datetime import datetime, timezone, timedelta
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
-from backend.app.core.model_factory import get_chat_model
+from backend.app.core.config import settings
+from backend.app.services.rag.raw_openai_streamer import (
+    stream_chat_completions,
+    chat_completions,
+    ChatCompletionResult,
+    ToolCallResult,
+)
 from backend.app.services.rag.retriever import HybridRetriever
 from backend.app.services.rag.reranker import rerank, RELEVANCE_THRESHOLD  # type: ignore[import]
+from backend.app.services.rag.web_search_service import (
+    web_search,
+    format_search_results_as_context,
+    WebSearchResult,
+)
 
 
 # 默认保留最近几轮历史（每轮 = user + assistant 各一条）
 MAX_HISTORY_TURNS = 5
 
+SYSTEM_PROMPT = (
+    "你是一个专业的 AIGC 技术助手。请始终使用中文进行思考和回答。\n"
+    "你的思考过程（reasoning）也必须使用中文。\n"
+    "你可以使用工具来查询数据库中的实时数据。当用户询问排行榜、统计数量、"
+    "知识库内容等结构化数据问题时，请调用合适的工具获取真实数据后再回答。"
+)
+
 PROMPT_TEMPLATE = (
-    "你是一个专业的 AIGC 技术助手。请基于以下上下文（Context）回答用户的问题。\n"
-    "上下文来自三类数据源：\n"
+    "请基于以下上下文（Context）回答用户的问题。\n"
+    "上下文来自以下数据源：\n"
     "  - [arxiv] = 学术论文（arXiv 预印本）\n"
     "  - [github] = GitHub 开源项目\n"
     "  - [news] = AI 行业新闻\n"
+    "  - [producthunt] = Product Hunt 新产品\n"
+    "  - [hackernews] = Hacker News 热帖\n"
     "  - [neo4j] = 知识图谱实体\n"
+    "  - [web-N] = 互联网实时搜索结果\n"
+    "  - [db-query] = 数据库实时查询结果\n"
     "请仔细阅读上下文，优先根据上下文回答；如果上下文确实不包含足够信息，再说明。\n\n"
     "[上下文开始]\n"
     "{context_str}\n"
@@ -29,6 +54,253 @@ PROMPT_TEMPLATE = (
     "用户问题: {query}"
 )
 
+
+# ── Tool Definitions（OpenAI Function Calling 格式） ───────────────
+
+TOOL_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "query_ranking",
+            "description": (
+                "查询数据库中的排行榜数据。当用户询问今日/本周/本月的排行榜、"
+                "top N、热门项目、trending 等问题时调用此工具。"
+                "支持的来源：github、arxiv、news、producthunt、hackernews，"
+                "或 all 查询全部来源。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": ["github", "arxiv", "news", "producthunt", "hackernews", "all"],
+                        "description": "数据来源，all 表示查询所有来源",
+                    },
+                    "period": {
+                        "type": "string",
+                        "enum": ["daily", "weekly", "monthly"],
+                        "description": "排行周期：daily=日榜，weekly=周榜，monthly=月榜",
+                        "default": "daily",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回条数，默认 15",
+                        "default": 15,
+                    },
+                },
+                "required": ["source"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_knowledge_stats",
+            "description": (
+                "查询知识库的统计数据和文档列表。当用户询问知识库中有多少文档、"
+                "有哪些项目、收录了多少条数据、数据库总量等问题时调用此工具。"
+                "返回各来源的文档数量统计和按热度排序的文档列表。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": ["github", "arxiv", "news", "producthunt", "hackernews", "all"],
+                        "description": "数据来源筛选，all 表示查询所有来源",
+                        "default": "all",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回文档列表条数，默认 50",
+                        "default": 50,
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+]
+
+
+# ── 工具执行函数 ──────────────────────────────────────────────────
+
+def _execute_query_ranking(
+    source: str = "all", period: str = "daily", limit: int = 15
+) -> Dict[str, Any]:
+    """执行排行榜查询，返回结构化结果。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    tz_cst = timezone(timedelta(hours=8))
+    today = datetime.now(tz_cst).strftime("%Y-%m-%d")
+
+    conditions = ["LEFT(created_at, 10) = %s"]
+    params: List[Any] = [today]
+
+    if source and source != "all":
+        conditions.append("source = %s")
+        params.append(source)
+
+    params.append(limit)
+    where_clause = " AND ".join(conditions)
+
+    sql = f"""
+        SELECT id, source, source_channel, title, url, summary,
+               published_date, raw_score, score, rank_in_period, created_at
+        FROM documents
+        WHERE {where_clause}
+        ORDER BY raw_score DESC, rank_in_period ASC
+        LIMIT %s
+    """
+
+    conn = db._connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        conn.commit()
+        docs = list(rows)
+    finally:
+        conn.close()
+
+    period_labels = {"daily": "日", "weekly": "周", "monthly": "月"}
+    period_label = period_labels.get(period, "日")
+    source_label = (source or "全部来源").upper()
+
+    lines = [f"=== 今日 {source_label} {period_label}榜排行（{today}，共 {len(docs)} 条） ==="]
+    for i, doc in enumerate(docs, start=1):
+        title = doc.get("title") or "(未知标题)"
+        src = doc.get("source") or ""
+        url = doc.get("url") or ""
+        rank = doc.get("rank_in_period") or i
+        raw_score = doc.get("raw_score") or doc.get("score") or 0
+        summary = (doc.get("summary") or "")[:200]
+
+        entry = f"第{rank}名 [{src}] {title}"
+        if raw_score:
+            if src == "github":
+                entry += f" (Stars: {int(raw_score)})"
+            else:
+                entry += f" (分数: {raw_score})"
+        if url:
+            entry += f"\n  URL: {url}"
+        if summary:
+            entry += f"\n  简介: {summary}"
+        lines.append(entry)
+
+    return {"formatted": "\n".join(lines), "docs": docs, "count": len(docs)}
+
+
+def _execute_query_knowledge_stats(
+    source: str = "all", limit: int = 50
+) -> Dict[str, Any]:
+    """执行知识库统计查询，返回结构化结果。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    source_counts = db.get_source_counts()
+
+    conditions: List[str] = []
+    params: List[Any] = []
+
+    if source and source != "all":
+        conditions.append("source = %s")
+        params.append(source)
+
+    params.append(limit)
+    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+    sql = f"""
+        SELECT id, source, source_channel, title, url, summary,
+               published_date, raw_score, score, rank_in_period, created_at
+        FROM documents
+        {where_clause}
+        ORDER BY raw_score DESC, created_at DESC
+        LIMIT %s
+    """
+
+    conn = db._connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        conn.commit()
+        docs = list(rows)
+    finally:
+        conn.close()
+
+    source_label = (source or "全部来源").upper()
+    total = sum(source_counts.values())
+    lines = [f"=== 知识库 {source_label} 数据统计（实时） ==="]
+    lines.append(f"知识库总文档数: {total}")
+    for src, cnt in sorted(source_counts.items(), key=lambda x: -x[1]):
+        lines.append(f"  - {src}: {cnt} 条")
+
+    if source and source != "all":
+        target_count = source_counts.get(source, 0)
+        lines.append(f"\n{source} 来源共 {target_count} 条，以下按热度排序前 {limit} 条：")
+
+    lines.append("")
+    for i, doc in enumerate(docs, start=1):
+        title = doc.get("title") or "(未知标题)"
+        src = doc.get("source") or ""
+        url = doc.get("url") or ""
+        raw_score = doc.get("raw_score") or doc.get("score") or 0
+
+        entry = f"{i}. [{src}] {title}"
+        if raw_score:
+            if src == "github":
+                entry += f" (Stars: {int(raw_score)})"
+            else:
+                entry += f" (分数: {raw_score})"
+        if url:
+            entry += f"\n   URL: {url}"
+        lines.append(entry)
+
+    return {
+        "formatted": "\n".join(lines),
+        "docs": docs,
+        "source_counts": source_counts,
+        "total": total,
+    }
+
+
+# 工具名 → 执行函数映射
+_TOOL_EXECUTORS: Dict[str, Any] = {
+    "query_ranking": _execute_query_ranking,
+    "query_knowledge_stats": _execute_query_knowledge_stats,
+}
+
+
+def _build_tool_sources(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """将数据库查询结果转换为前端来源格式。"""
+    sources = []
+    seen_urls: set = set()
+    for doc in docs:
+        url = str(doc.get("url") or "")
+        title = str(doc.get("title") or "")
+        if not title and not url:
+            continue
+        dedup_key = url if url else title
+        if dedup_key in seen_urls:
+            continue
+        seen_urls.add(dedup_key)
+
+        sources.append(
+            {
+                "id": str(doc.get("id") or f"db-{len(sources)}"),
+                "score": float(doc.get("raw_score") or doc.get("score") or 0),
+                "source": str(doc.get("source") or ""),
+                "title": title,
+                "url": url,
+                "published_date": str(doc.get("published_date") or ""),
+            }
+        )
+    return sources
+
+
+# ── 通用辅助函数 ──────────────────────────────────────────────────
 
 def _format_history(
     history: List[Dict[str, str]], max_turns: int = MAX_HISTORY_TURNS
@@ -121,7 +393,23 @@ def _extract_thinking_and_content(chunk: Any) -> Tuple[str, str]:
 class ChatService:
     def __init__(self, retriever: HybridRetriever) -> None:
         self.retriever = retriever
-        self._llm = get_chat_model()
+
+    @staticmethod
+    def _build_web_sources(results: List[WebSearchResult]) -> List[Dict[str, Any]]:
+        """将联网搜索结果转换为前端来源格式。"""
+        sources = []
+        for i, item in enumerate(results, start=1):
+            sources.append(
+                {
+                    "id": f"web-{i}",
+                    "score": 0.0,
+                    "source": "web",
+                    "title": item.title or item.url,
+                    "url": item.url,
+                    "published_date": "",
+                }
+            )
+        return sources
 
     @staticmethod
     def _build_context(docs: List[Document]) -> str:
@@ -139,7 +427,20 @@ class ChatService:
                 header += f" {title}"
             if url:
                 header += f" ({url})"
-            parts.append(f"{header}\n{content}")
+            entry = f"{header}\n{content}"
+            # 对 GitHub 来源追加结构化数值字段，确保 LLM 能看到 stars/forks/language
+            if source_type.lower() == "github":
+                stars = meta.get("stars") or meta.get("raw_score") or 0
+                forks = meta.get("forks") or 0
+                language = meta.get("language") or ""
+                extra_parts = [f"Stars: {int(stars)}"]
+                if forks:
+                    extra_parts.append(f"Forks: {int(forks)}")
+                if language:
+                    extra_parts.append(f"Language: {language}")
+                extra_line = " | ".join(extra_parts)
+                entry += f"\n[GitHub 数据] {extra_line} | URL: {url}"
+            parts.append(entry)
         return "\n\n".join(parts)
 
     @staticmethod
@@ -215,28 +516,181 @@ class ChatService:
         candidates.sort(key=lambda x: x.get("score") or 0.0, reverse=True)
         return candidates
 
+    # ── 工具调用处理 ──────────────────────────────────────────────
+
+    @staticmethod
+    async def _run_tool_calls(
+        tool_calls: List[ToolCallResult],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], str]:
+        """
+        并发执行 LLM 返回的 tool_calls。
+
+        Returns:
+            (tool_messages, all_tool_sources, tool_context):
+              - tool_messages: 回传给 LLM 的 tool role 消息列表
+              - all_tool_sources: 合并的前端来源列表
+              - tool_context: 格式化的数据库查询结果上下文文本
+        """
+        tool_messages: List[Dict[str, Any]] = []
+        all_tool_sources: List[Dict[str, Any]] = []
+        context_parts: List[str] = []
+
+        async def _exec_one(tc: ToolCallResult) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str]:
+            executor = _TOOL_EXECUTORS.get(tc.name)
+            if executor is None:
+                msg = {"role": "tool", "tool_call_id": tc.id, "content": f"未知工具: {tc.name}"}
+                return msg, [], ""
+
+            try:
+                args = json.loads(tc.arguments)
+            except json.JSONDecodeError:
+                args = {}
+
+            try:
+                result = await asyncio.to_thread(executor, **args)
+            except Exception as e:
+                msg = {"role": "tool", "tool_call_id": tc.id, "content": f"工具执行出错: {e}"}
+                return msg, [], ""
+
+            formatted = result.get("formatted", "")
+            docs = result.get("docs", [])
+            sources = _build_tool_sources(docs)
+
+            msg = {"role": "tool", "tool_call_id": tc.id, "content": formatted}
+            return msg, sources, f"[db-query] {formatted}"
+
+        tasks = [_exec_one(tc) for tc in tool_calls]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for r in results:
+            if isinstance(r, Exception):
+                print(f"[ChatService] Tool execution error: {r}")
+                continue
+            msg, sources, ctx = r
+            tool_messages.append(msg)
+            all_tool_sources.extend(sources)
+            if ctx:
+                context_parts.append(ctx)
+
+        tool_context = "\n\n".join(context_parts)
+        return tool_messages, all_tool_sources, tool_context
+
     async def stream_chat(
         self,
         query: str,
         history: List[Dict[str, str]] | None = None,
         max_history_turns: int = MAX_HISTORY_TURNS,
         temperature: float | None = None,
+        web_search_enabled: bool = False,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         try:
-            # 1. 立即告知前端正在检索，避免前端长时间白屏
+            # 1. 立即告知前端正在检索
             yield {"type": "status", "data": "searching"}
 
-            # 2. 一次检索：获取候选文档
-            raw_docs = await self.retriever.search(query)
+            # 2. 并发执行：RAG 检索 + 联网搜索 + LLM 工具判断（第一轮）
+            effective_model = settings.thinking_model_name or settings.chat_model_name
+            effective_temp = (
+                temperature if temperature is not None else settings.llm_temperature
+            )
 
-            # 3. 告知前端正在精排
-            yield {"type": "status", "data": "reranking"}
+            # 构建第一轮 LLM 调用的消息（带 tools）
+            first_round_messages: List[Dict[str, Any]] = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": query},
+            ]
 
-            # 4. LLM 二次精排：过滤不相关文档，按相关性排序
-            ranked_docs = await rerank(query, raw_docs, threshold=RELEVANCE_THRESHOLD)
+            tasks: Dict[str, Any] = {
+                "rag": self.retriever.search(query),
+                "tool_decision": chat_completions(
+                    messages=first_round_messages,
+                    model=effective_model,
+                    temperature=effective_temp,
+                    max_tokens=1024,
+                    tools=TOOL_DEFINITIONS,
+                    tool_choice="auto",
+                ),
+            }
+            if web_search_enabled:
+                tasks["web"] = web_search(query, max_results=6)
 
-            # 5. 构建上下文（使用精排后的文档）
-            context_str = self._build_context(ranked_docs)
+            task_keys = list(tasks.keys())
+            task_coros = list(tasks.values())
+            results = await asyncio.gather(*task_coros, return_exceptions=True)
+            task_results = dict(zip(task_keys, results))
+
+            # 提取 RAG 结果
+            raw_docs = task_results.get("rag", [])
+            if isinstance(raw_docs, Exception):
+                print(f"[ChatService] RAG search error: {raw_docs}")
+                raw_docs = []
+
+            # 提取联网搜索结果
+            web_results: List[WebSearchResult] = []
+            if "web" in task_results:
+                wr = task_results["web"]
+                web_results = wr if not isinstance(wr, Exception) else []
+
+            # 提取工具判断结果
+            tool_decision: Optional[ChatCompletionResult] = None
+            td = task_results.get("tool_decision")
+            if isinstance(td, ChatCompletionResult):
+                tool_decision = td
+            elif isinstance(td, Exception):
+                print(f"[ChatService] Tool decision error: {td}")
+
+            # 3. 执行工具调用（如果 LLM 返回了 tool_calls）
+            tool_messages: List[Dict[str, Any]] = []
+            tool_sources: List[Dict[str, Any]] = []
+            tool_context = ""
+
+            if tool_decision and tool_decision.tool_calls:
+                print(
+                    f"[ChatService] LLM requested {len(tool_decision.tool_calls)} tool call(s): "
+                    f"{[tc.name for tc in tool_decision.tool_calls]}"
+                )
+                yield {"type": "status", "data": "querying database"}
+                tool_messages, tool_sources, tool_context = await self._run_tool_calls(
+                    tool_decision.tool_calls
+                )
+
+            # 4. 智能精排：检查向量检索文档的 Milvus 分数
+            VECTOR_SCORE_SKIP_THRESHOLD = 0.6
+            vector_docs = [
+                d for d in raw_docs if (d.metadata or {}).get("retriever") == "vector"
+            ]
+            best_vector_score = (
+                min((d.metadata.get("score", 1.0) for d in vector_docs), default=1.0)
+                if vector_docs
+                else 1.0
+            )
+
+            if best_vector_score > VECTOR_SCORE_SKIP_THRESHOLD or not vector_docs:
+                print(
+                    f"[ChatService] Skipping rerank: best_vector_score={best_vector_score:.4f}"
+                    f" > {VECTOR_SCORE_SKIP_THRESHOLD} or no vector docs"
+                )
+                ranked_docs = raw_docs
+                for doc in ranked_docs:
+                    doc.metadata = dict(doc.metadata or {})
+                    doc.metadata.setdefault("rerank_score", 0.0)
+            else:
+                yield {"type": "status", "data": "reranking"}
+                ranked_docs = await rerank(
+                    query, raw_docs, threshold=RELEVANCE_THRESHOLD
+                )
+
+            # 5. 构建上下文
+            rag_context = self._build_context(ranked_docs)
+            web_context = (
+                format_search_results_as_context(web_results) if web_results else ""
+            )
+            context_parts = [
+                p for p in [tool_context, rag_context, web_context] if p
+            ]
+            context_str = (
+                "\n\n".join(context_parts) if context_parts else "（暂无相关上下文）"
+            )
+
             chat_history_str = _format_history(
                 history or [], max_turns=max_history_turns
             )
@@ -246,17 +700,50 @@ class ChatService:
                 query=query,
             )
 
-            # 6. 推送参考来源（精排后的文档）
-            yield {"type": "sources", "data": self._build_sources(ranked_docs)}
+            # 6. 推送参考来源
+            rag_sources = self._build_sources(ranked_docs)
+            web_sources = self._build_web_sources(web_results) if web_results else []
+            all_sources = tool_sources + rag_sources + web_sources
+            yield {"type": "sources", "data": all_sources}
 
-            # 7. 流式生成回答（支持思维链）
-            llm = get_chat_model(temperature) if temperature is not None else self._llm
-            async for chunk in llm.astream(prompt):
-                thinking, content = _extract_thinking_and_content(chunk)
-                if thinking:
-                    yield {"type": "thinking", "data": thinking}
-                if content:
-                    yield {"type": "content", "data": content}
+            # 7. 构建第二轮消息（流式生成最终回答）
+            messages_for_api: List[Dict[str, Any]] = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+            ]
+
+            if tool_decision and tool_decision.tool_calls and tool_messages:
+                # Tool Use 路径：把第一轮的 assistant + tool 消息都加上
+                assistant_msg: Dict[str, Any] = {"role": "assistant", "content": None}
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": tc.arguments},
+                    }
+                    for tc in tool_decision.tool_calls
+                ]
+                messages_for_api.append({"role": "user", "content": query})
+                messages_for_api.append(assistant_msg)
+                messages_for_api.extend(tool_messages)
+                # 最后追加一个 user 消息，提示 LLM 根据工具结果 + RAG 上下文回答
+                messages_for_api.append(
+                    {"role": "user", "content": prompt}
+                )
+            else:
+                # 无工具调用，直接用 prompt
+                messages_for_api.append({"role": "user", "content": prompt})
+
+            # 8. 流式生成回答（支持思维链）
+            async for delta in stream_chat_completions(
+                messages=messages_for_api,
+                model=effective_model,
+                temperature=effective_temp,
+                max_tokens=settings.llm_max_tokens,
+            ):
+                if delta.reasoning:
+                    yield {"type": "thinking", "data": delta.reasoning}
+                if delta.content:
+                    yield {"type": "content", "data": delta.content}
 
         except Exception as exc:
             traceback.print_exc()

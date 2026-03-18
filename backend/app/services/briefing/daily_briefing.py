@@ -10,17 +10,37 @@ from backend.app.repositories.mysql_repo import MySQLRepository
 
 logger = logging.getLogger(__name__)
 
+# ── 续写相关常量 ─────────────────────────────────────────────────────────────
+# 最大续写轮数，防止无限循环
+_MAX_CONTINUATION_ROUNDS = 5
+
+# 用于判断输出是否被截断的信号：如果内容没有以完整结尾标志结束，则认为被截断
+_COMPLETION_MARKERS = ("---", "**", "。", "！", "\n")
+
+_CONTINUATION_PROMPT = """你之前的回答在生成过程中被截断了。请从截断处**无缝续写**，不要重复已有内容，也不要重新开头。直接从上次停止的地方继续输出，直到报告完整结束。
+
+以下是你之前已经生成的内容（请勿重复）：
+
+---已生成内容开始---
+{previous_content}
+---已生成内容结束---
+
+请从上面截断的位置**直接续写**，保持格式和风格一致，直到报告完整输出完毕。"""
+
 # ── Prompt 模板（按来源类型区分）──────────────────────────────────────────────
 # 模板中使用 {period_label} 来适配日/周/月报措辞
 
-_PROMPT_ALL = """你是一位专业的 AIGC 技术资讯编辑。请根据以下{period_label}热点内容（综合学术论文、开源项目、行业新闻），撰写一份结构清晰的综合{period_label}报。
+_PROMPT_ALL = """你是一位专业的 AIGC 技术资讯编辑。请根据以下{period_label}热点内容（综合学术论文、开源项目、行业新闻），撰写一份**内容详尽、深度全面**的综合{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"{period_label}热点摘要"、"技术亮点"、"工程动态"、"行业资讯"、"值得关注"五个章节
-3. 每篇内容用一两句话精炼概括
-4. 语言简洁专业，面向技术从业者
-5. 最后附上日期和数据来源
+3. **每篇内容都必须详细分析**，包括：核心要点、技术细节、影响分析、相关背景（每篇至少 3-5 句话）
+4. 对每个章节进行深入的趋势总结和洞察点评
+5. 语言专业且详尽，面向技术从业者
+6. 最后附上日期和数据来源
+7. **务必覆盖所有提供的内容，不要遗漏任何一条**
+8. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#arxiv` `#github` `#news` `#producthunt` `#hackernews`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#RAG` `#代码生成` `#图像生成` `#视频生成` `#语音合成` `#强化学习` `#数据集` `#评测基准` `#推理优化` `#模型压缩` `#开源模型` `#商业化` `#安全对齐` `#具身智能` `#知识图谱` `#MLOps` `#AI基础设施`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
 **{period_label}热点内容（共 {count} 条）：**
 {articles}
@@ -28,13 +48,16 @@ _PROMPT_ALL = """你是一位专业的 AIGC 技术资讯编辑。请根据以下
 **生成日期：** {date}
 """
 
-_PROMPT_ARXIV = """你是一位专业的 AI 学术研究分析师。请根据以下{period_label} Arxiv 学术论文，撰写一份学术{period_label}报。
+_PROMPT_ARXIV = """你是一位专业的 AI 学术研究分析师。请根据以下{period_label} Arxiv 学术论文，撰写一份**内容详尽、深度全面**的学术{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"{period_label}研究热点"、"核心技术突破"、"值得精读的论文"三个章节
-3. 重点突出研究创新点和实验结论
-4. 语言专业严谨，面向研究人员
+3. **每篇论文都必须详细分析**，包括：研究动机、方法论创新、关键实验结论、与现有工作的对比（每篇至少 4-6 句话）
+4. 对研究趋势进行深入总结，分析技术方向的演进
+5. 语言专业严谨，面向研究人员
+6. **务必覆盖所有提供的论文，不要遗漏任何一篇**
+7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#arxiv`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#RAG` `#代码生成` `#图像生成` `#视频生成` `#语音合成` `#强化学习` `#数据集` `#评测基准` `#推理优化` `#模型压缩` `#开源模型` `#安全对齐` `#具身智能` `#知识图谱`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
 **{period_label} Arxiv 论文（共 {count} 篇）：**
 {articles}
@@ -42,13 +65,16 @@ _PROMPT_ARXIV = """你是一位专业的 AI 学术研究分析师。请根据以
 **生成日期：** {date}
 """
 
-_PROMPT_GITHUB = """你是一位专业的 AI 工程技术分析师。请根据以下{period_label} GitHub 热门开源项目，撰写一份工程{period_label}报。
+_PROMPT_GITHUB = """你是一位专业的 AI 工程技术分析师。请根据以下{period_label} GitHub 热门开源项目，撰写一份**内容详尽、深度全面**的工程{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"{period_label}明星项目"、"技术栈分析"、"实践价值"三个章节
-3. 重点突出项目的工程价值、使用场景、Stars 趋势
-4. 语言务实，面向工程师和架构师
+3. **每个项目都必须详细分析**，包括：项目定位、核心功能、技术架构、使用场景、Stars 增长趋势、与同类项目对比（每个至少 4-6 句话）
+4. 对开源生态的技术趋势进行深入洞察
+5. 语言务实，面向工程师和架构师
+6. **务必覆盖所有提供的项目，不要遗漏任何一个**
+7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#github`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#RAG` `#代码生成` `#推理优化` `#模型压缩` `#开源模型` `#MLOps` `#AI基础设施` `#数据工程` `#Web框架` `#CLI工具` `#DevOps` `#前端` `#Rust` `#Python`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
 **{period_label} GitHub 热门项目（共 {count} 个）：**
 {articles}
@@ -56,13 +82,16 @@ _PROMPT_GITHUB = """你是一位专业的 AI 工程技术分析师。请根据�
 **生成日期：** {date}
 """
 
-_PROMPT_NEWS = """你是一位专业的 AI 行业分析师。请根据以下{period_label} AI 行业新闻，撰写一份商业{period_label}报。
+_PROMPT_NEWS = """你是一位专业的 AI 行业分析师。请根据以下{period_label} AI 行业新闻，撰写一份**内容详尽、深度全面**的商业{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"{period_label}行业动态"、"商业化进展"、"政策与监管"、"值得关注的趋势"四个章节
-3. 重点突出商业影响力和行业趋势
-4. 语言通俗易懂，面向决策者和产品经理
+3. **每条新闻都必须详细分析**，包括：事件概述、商业影响、行业意义、潜在的连锁反应（每条至少 3-5 句话）
+4. 对行业趋势进行深入总结和前瞻性判断
+5. 语言通俗易懂，面向决策者和产品经理
+6. **务必覆盖所有提供的新闻，不要遗漏任何一条**
+7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#news`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#商业化` `#融资收购` `#监管政策` `#芯片算力` `#云服务` `#自动驾驶` `#医疗AI` `#教育AI` `#企业AI` `#开源生态`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
 **{period_label} AI 行业新闻（共 {count} 条）：**
 {articles}
@@ -71,13 +100,16 @@ _PROMPT_NEWS = """你是一位专业的 AI 行业分析师。请根据以下{per
 """
 
 
-_PROMPT_PRODUCTHUNT = """你是一位专业的 AI 产品分析师。请根据以下{period_label} Product Hunt 热门 AI 产品，撰写一份产品{period_label}报。
+_PROMPT_PRODUCTHUNT = """你是一位专业的 AI 产品分析师。请根据以下{period_label} Product Hunt 热门 AI 产品，撰写一份**内容详尽、深度全面**的产品{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"{period_label}明星产品"、"功能亮点"、"市场价值"、"值得关注的产品"四个章节
-3. 重点突出产品的核心功能、适用场景和社区热度（得票数）
-4. 语言通俗易懂，面向产品经理和技术创业者
+3. **每个产品都必须详细分析**，包括：产品定位、核心功能、目标用户、差异化优势、社区热度分析（每个至少 4-6 句话）
+4. 对 AI 产品赛道的趋势进行深入洞察
+5. 语言通俗易懂，面向产品经理和技术创业者
+6. **务必覆盖所有提供的产品，不要遗漏任何一个**
+7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#producthunt`。领域标签（必选1-2个，选择最贴切的）：`#AI写作` `#AI设计` `#AI编程` `#AI营销` `#效率工具` `#开发者工具` `#SaaS` `#个人助理` `#协作工具` `#数据分析` `#自动化` `#API服务`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
 **{period_label} Product Hunt 热门产品（共 {count} 个）：**
 {articles}
@@ -85,13 +117,16 @@ _PROMPT_PRODUCTHUNT = """你是一位专业的 AI 产品分析师。请根据以
 **生成日期：** {date}
 """
 
-_PROMPT_HACKERNEWS = """你是一位专业的技术社区观察员。请根据以下{period_label} Hacker News AI 相关热门讨论，撰写一份社区洞察{period_label}报。
+_PROMPT_HACKERNEWS = """你是一位专业的技术社区观察员。请根据以下{period_label} Hacker News AI 相关热门讨论，撰写一份**内容详尽、深度全面**的社区洞察{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"社区热点话题"、"技术争鸣"、"工具与资源"、"值得深读"四个章节
-3. 重点突出社区观点、技术讨论的深度和实践价值
-4. 语言深度兼备，面向开发者和技术研究者
+3. **每条讨论都必须详细分析**，包括：话题概述、核心观点、社区争议、技术深度、实践价值（每条至少 4-6 句话）
+4. 对社区讨论反映出的技术趋势进行深入洞察
+5. 语言深度兼备，面向开发者和技术研究者
+6. **务必覆盖所有提供的讨论，不要遗漏任何一条**
+7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#hackernews`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#开源争议` `#隐私安全` `#编程语言` `#系统架构` `#创业` `#职业发展` `#硬件` `#Web技术` `#分布式系统` `#技术文化`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
 **{period_label} Hacker News AI 讨论（共 {count} 条）：**
 {articles}
@@ -361,29 +396,49 @@ class DailyBriefingService:
                 period_label=period_label,
             )
 
-            # 4. Stream LLM generation
+            # 4. Stream LLM generation（支持截断续写）
             full_content: List[str] = []
-            async for chunk in self._llm.astream(prompt):
-                raw_content = getattr(chunk, "content", None)
-                # Anthropic Extended Thinking 返回的 content 可能是
-                # list[dict]（含 thinking_block / text_block），需要提取纯文本
-                if isinstance(raw_content, list):
-                    text_parts = []
-                    for block in raw_content:
-                        if isinstance(block, dict):
-                            if block.get("type") == "text":
-                                text_parts.append(block.get("text", ""))
-                            # 跳过 thinking_block 等非文本块
-                        elif isinstance(block, str):
-                            text_parts.append(block)
-                    content = "".join(text_parts)
-                else:
-                    content = raw_content or ""
-                if content:
-                    full_content.append(str(content))
-                    yield {"type": "content", "data": str(content)}
 
-            # 5. Persist only if LLM actually produced content
+            # 首次生成
+            round_content = await self._stream_llm_round(prompt)
+            for token in round_content:
+                full_content.append(token)
+                yield {"type": "content", "data": token}
+
+            # 5. 截断续写：检测输出是否被截断，若是则多轮续写
+            accumulated = "".join(full_content)
+            for continuation_round in range(1, _MAX_CONTINUATION_ROUNDS + 1):
+                if not self._is_truncated(accumulated):
+                    logger.info("报告生成完整，无需续写 (round %d)", continuation_round)
+                    break
+
+                logger.warning(
+                    "检测到输出可能被截断 (round %d/%d)，启动续写...",
+                    continuation_round,
+                    _MAX_CONTINUATION_ROUNDS,
+                )
+                yield {
+                    "type": "content",
+                    "data": "",  # 空 token 作为续写信号（前端无感）
+                }
+
+                # 构建续写 prompt，将已有内容作为上下文
+                cont_prompt = _CONTINUATION_PROMPT.format(
+                    previous_content=accumulated[-4000:]  # 只传最后 4000 字符避免超长
+                )
+
+                cont_content = await self._stream_llm_round(cont_prompt)
+                for token in cont_content:
+                    full_content.append(token)
+                    yield {"type": "content", "data": token}
+
+                accumulated = "".join(full_content)
+            else:
+                logger.warning(
+                    "已达最大续写轮数 (%d)，停止续写", _MAX_CONTINUATION_ROUNDS
+                )
+
+            # 6. Persist only if LLM actually produced content
             complete_text = "".join(full_content)
             if complete_text.strip():
                 briefing_id = self._db.save_briefing(cache_date, complete_text)
@@ -396,6 +451,70 @@ class DailyBriefingService:
         except Exception as exc:
             traceback.print_exc()
             yield {"type": "error", "data": str(exc)}
+
+    async def _stream_llm_round(self, prompt: str) -> List[str]:
+        """执行一轮 LLM 流式生成，返回 token 列表。"""
+        tokens: List[str] = []
+        async for chunk in self._llm.astream(prompt):
+            raw_content = getattr(chunk, "content", None)
+            # Anthropic Extended Thinking 返回的 content 可能是
+            # list[dict]（含 thinking_block / text_block），需要提取纯文本
+            if isinstance(raw_content, list):
+                text_parts = []
+                for block in raw_content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        # 跳过 thinking_block 等非文本块
+                    elif isinstance(block, str):
+                        text_parts.append(block)
+                content = "".join(text_parts)
+            else:
+                content = raw_content or ""
+            if content:
+                tokens.append(str(content))
+        return tokens
+
+    @staticmethod
+    def _is_truncated(text: str) -> bool:
+        """判断 LLM 输出是否被截断（未完整结束）。
+
+        检测逻辑：
+        1. 内容过短（少于 200 字符）且非空 → 可能截断
+        2. 最后一行在 Markdown 标题/列表/粗体中间断开 → 截断
+        3. 最后一个字符是中文字符且没有标点结尾 → 可能截断
+        4. 存在未闭合的 Markdown 代码块 → 截断
+        """
+        if not text or not text.strip():
+            return False
+
+        stripped = text.strip()
+
+        # 内容过短且没有明显的报告结尾标志
+        if len(stripped) < 200:
+            return True
+
+        # 检查未闭合的 Markdown 代码块（``` 出现奇数次）
+        if stripped.count("```") % 2 != 0:
+            return True
+
+        last_line = stripped.split("\n")[-1].strip()
+
+        # 最后一行是 Markdown 标题但没有内容（如 "## " 或 "### 技术"）
+        if last_line.startswith("#") and len(last_line) < 6:
+            return True
+
+        # 最后一行以 "**" 开头但没有闭合（如 "**项目名称" 没有 "**" 结尾）
+        if last_line.count("**") % 2 != 0:
+            return True
+
+        # 最后一行以数字列表开头但内容很短（如 "3. "）
+        if len(last_line) < 5 and any(
+            last_line.startswith(f"{i}.") for i in range(1, 30)
+        ):
+            return True
+
+        return False
 
     def get_history(self, limit: int = 30) -> List[Dict[str, Any]]:
         return self._db.list_briefings(limit=limit)

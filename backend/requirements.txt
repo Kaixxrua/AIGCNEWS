@@ -30,3 +30,7 @@ fastapi-cache2[redis]
 cryptography
 python-jose[cryptography]
 bcrypt
+aiosmtplib
+email-validator
+# 联网搜索后端（DuckDuckGo 免费兜底）
+duckduckgo-search>=6.0.0

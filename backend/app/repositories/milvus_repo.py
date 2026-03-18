@@ -39,11 +39,42 @@ class MilvusRepository:
             print(f"[Milvus] unavailable: {exc}")
             return False
 
+    @staticmethod
+    def _enrich_github_content(docs: List[Document]) -> List[Document]:
+        """对 GitHub 来源的文档，在 page_content 末尾追加结构化字段（stars/forks/language），
+        使向量化时能感知这些数值型信息，提升 GitHub stars 相关查询的召回率。"""
+        enriched: List[Document] = []
+        for doc in docs:
+            meta = doc.metadata or {}
+            if str(meta.get("source") or "").lower() == "github":
+                stars = meta.get("stars") or meta.get("raw_score") or 0
+                forks = meta.get("forks") or 0
+                language = meta.get("language") or ""
+                extra_parts = [f"Stars: {int(stars)}"]
+                if forks:
+                    extra_parts.append(f"Forks: {int(forks)}")
+                if language:
+                    extra_parts.append(f"Language: {language}")
+                extra_line = " | ".join(extra_parts)
+                new_content = (
+                    f"{doc.page_content}\n{extra_line}"
+                    if doc.page_content
+                    else extra_line
+                )
+                enriched.append(Document(page_content=new_content, metadata=meta))
+            else:
+                enriched.append(doc)
+        return enriched
+
     def add_documents(self, docs: List[Document], already_split: bool = False) -> None:
         try:
             if not docs:
                 print("[Milvus] No documents to add.")
                 return
+
+            # 在切分之前先对 GitHub 文档追加结构化字段，
+            # 这样切分后的每个 chunk 也都包含 stars/forks/language 信息
+            docs = self._enrich_github_content(docs)
 
             if not already_split:
                 splitter = RecursiveCharacterTextSplitter(

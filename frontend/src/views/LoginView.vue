@@ -7,27 +7,27 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
-const phone    = ref('')
+const email    = ref('')
 const password = ref('')
 const loading  = ref(false)
 const errorMsg = ref('')
 
 const handleLogin = async () => {
   errorMsg.value = ''
-  if (!phone.value.trim() || !password.value.trim()) {
-    errorMsg.value = '请填写手机号和密码'
+  if (!email.value.trim() || !password.value.trim()) {
+    errorMsg.value = '请填写邮箱和密码'
     return
   }
   loading.value = true
   try {
-    await authStore.login(phone.value.trim(), password.value)
+    await authStore.login(email.value.trim(), password.value)
     // 登录成功后跳转到原来要访问的页面，或默认跳 /
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     await router.push(redirect)
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } }; message?: string }
     errorMsg.value =
-      err?.response?.data?.detail || err?.message || '登录失败，请检查手机号和密码'
+      err?.response?.data?.detail || err?.message || '登录失败，请检查邮箱和密码'
   } finally {
     loading.value = false
   }
@@ -58,15 +58,15 @@ const handleKeydown = (e: KeyboardEvent) => {
       <!-- 表单卡片 -->
       <div class="glass-card p-6 space-y-4 stagger-enter" style="animation-delay: 0.1s">
 
-        <!-- 手机号 -->
+        <!-- 邮箱 -->
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-stone-500">手机号</label>
+          <label class="text-xs font-medium text-stone-500">邮箱</label>
           <input
-            v-model="phone"
-            type="tel"
+            v-model="email"
+            type="email"
             class="input"
-            placeholder="请输入手机号"
-            autocomplete="tel"
+            placeholder="you@example.com"
+            autocomplete="email"
             :disabled="loading"
             @keydown="handleKeydown"
           />

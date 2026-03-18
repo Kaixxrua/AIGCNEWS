@@ -59,13 +59,13 @@
     @apply glass-card;
   }
 
-  /* 卡片 hover（极克制的纸质悬浮） */
+  /* 卡片 hover（极克制的纸质悬浮 + 微科技光晕） */
   .card-hover {
     @apply transition-all duration-200;
   }
   .card-hover:hover {
     background: rgba(255, 255, 255, 1.0);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(6, 182, 212, 0.06);
     transform: translateY(-1px);
   }
 
@@ -140,6 +140,44 @@
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
 
+  /* ═══ 来源徽章分色 ═══ */
+  .badge-arxiv {
+    @apply badge;
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.20);
+  }
+  .badge-github {
+    @apply badge;
+    color: #64748b;
+    background: rgba(100, 116, 139, 0.08);
+    border: 1px solid rgba(100, 116, 139, 0.20);
+  }
+  .badge-news {
+    @apply badge;
+    color: #d97706;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.20);
+  }
+  .badge-neo4j {
+    @apply badge;
+    color: #8b5cf6;
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.20);
+  }
+  .badge-milvus {
+    @apply badge;
+    color: #06b6d4;
+    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.20);
+  }
+  .badge-default {
+    @apply badge;
+    color: #57534e;
+    background: rgba(245, 245, 244, 0.8);
+    border: 1px solid rgba(168, 162, 158, 0.20);
+  }
+
   /* ═══ 输入框（暖色纸质） ═══ */
   .input {
     @apply w-full rounded-full px-5 py-3 text-sm
@@ -153,8 +191,8 @@
   }
   .input:focus {
     background: rgba(255, 255, 255, 1.0);
-    border-color: rgba(168, 162, 158, 0.40);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    border-color: rgba(6, 182, 212, 0.35);
+    box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
   }
 
   /* ═══ 分割线（极淡暖色） ═══ */
@@ -165,6 +203,73 @@
   /* ═══ 状态点 ═══ */
   .status-dot {
     @apply inline-block h-2 w-2 rounded-full;
+  }
+
+  /* ═══ PDF 进度条 ═══ */
+  .pdf-progress-bar {
+    @apply w-full h-1 rounded-full overflow-hidden;
+    background: rgba(168, 162, 158, 0.12);
+  }
+  .pdf-progress-fill {
+    @apply h-full rounded-full transition-all duration-300 ease-out;
+    background: linear-gradient(90deg, #06b6d4, #8b5cf6);
+  }
+  .pdf-progress-fill--indeterminate {
+    @apply h-full rounded-full;
+    width: 40%;
+    background: linear-gradient(90deg, #06b6d4, #8b5cf6);
+    animation: progressIndeterminate 1.5s ease-in-out infinite;
+  }
+
+  /* ═══ 流式状态指示器 ═══ */
+  .stream-indicator {
+    @apply inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium;
+    background: rgba(6, 182, 212, 0.06);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    color: #0891b2;
+  }
+  .stream-indicator .stream-dot {
+    @apply h-1.5 w-1.5 rounded-full;
+    background: #06b6d4;
+    animation: pulseDot 1.5s ease-in-out infinite;
+  }
+
+  /* ═══ 渐变描边卡片（科技感 Glassmorphism 2.0） ═══ */
+  .glass-card-tech {
+    @apply glass-card;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    position: relative;
+  }
+  .glass-card-tech::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.12), rgba(139, 92, 246, 0.08), rgba(168, 162, 158, 0.10));
+    z-index: -1;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: xor;
+    -webkit-mask-composite: xor;
+    padding: 1px;
+    pointer-events: none;
+  }
+
+  /* ═══ 简报 Hero 区域 ═══ */
+  .report-hero {
+    @apply relative rounded-[24px] px-6 py-5 overflow-hidden;
+    background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(250,250,249,0.88));
+    border: 1px solid rgba(168, 162, 158, 0.15);
+  }
+  .report-hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 60%;
+    height: 200%;
+    background: radial-gradient(ellipse, rgba(6, 182, 212, 0.04) 0%, transparent 70%);
+    pointer-events: none;
   }
 }
 
@@ -188,6 +293,12 @@
     background-image: linear-gradient(135deg, #44403c, #78716c);
   }
 
+  /* 科技感渐变文字 */
+  .gradient-text-tech {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #06b6d4, #8b5cf6);
+  }
+
   /* 内部分隔：用交替暖色背景 */
   .row-alt:nth-child(even) {
     background: rgba(245, 245, 244, 0.5); /* stone-100 */
@@ -205,7 +316,7 @@
 .prose-content blockquote {
   @apply my-3 pl-4 italic text-sm;
   color: #a8a29e;
-  border-left: 2px solid rgba(168, 162, 158, 0.30);
+  border-left: 2px solid rgba(6, 182, 212, 0.30);
 }
 .prose-content code {
   @apply rounded-full px-2 py-0.5 font-mono text-xs;
@@ -225,8 +336,8 @@
   color: inherit;
 }
 .prose-content hr  { border-top: 1px solid rgba(168, 162, 158, 0.15); @apply my-5; }
-.prose-content a   { @apply font-medium underline underline-offset-2; color: #44403c; }
-.prose-content a:hover { color: #1c1917; }
+.prose-content a   { @apply font-medium underline underline-offset-2; color: #0891b2; }
+.prose-content a:hover { color: #06b6d4; }
 .prose-content strong { @apply font-semibold; color: #292524; }
 
 /* 表格样式（暖调纸质） */
@@ -250,6 +361,22 @@
 .prose-content tbody tr:last-child td { border-bottom: none; }
 .prose-content tbody tr:hover { background: rgba(245, 245, 244, 0.4); }
 
+/* ═══ 简报增强 prose 样式 ═══ */
+.prose-report h2 {
+  @apply relative pl-4 mb-3;
+  border-left: 3px solid #06b6d4;
+}
+.prose-report h2::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, #06b6d4, #8b5cf6);
+  border-radius: 2px;
+}
+
 /* ═══ 交错式卡片进场动画 (Spatial Pop-in) ═══ */
 @keyframes cardPopIn {
   0% {
@@ -264,4 +391,25 @@
 
 .stagger-enter {
   animation: cardPopIn 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* ═══ 路由切换过渡动画 ═══ */
+.route-fade-enter-active,
+.route-fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.route-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.route-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+/* ═══ 进度条过渡动画 ═══ */
+@keyframes progressIndeterminate {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0%); }
+  100% { transform: translateX(100%); }
 }

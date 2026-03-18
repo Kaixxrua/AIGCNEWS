@@ -44,13 +44,29 @@ class Settings(BaseSettings):
     anthropic_base_url: str = ""  # 留空则使用官方端点；可填代理地址
     # 是否启用 Extended Thinking（仅 anthropic provider 有效）
     anthropic_thinking_budget: int = 5000  # thinking tokens 上限，0 = 不启用
-    embedding_provider: str = "ollama"
+    embedding_provider: str = "openai"
+
+    # Embedding 独立的 API 配置（可选，留空则复用 OPENAI_API_KEY / OPENAI_BASE_URL）
+    embedding_api_key: str = ""
+    embedding_base_url: str = ""
 
     ollama_base_url: str = "http://127.0.0.1:11434"
     embedding_model_name: str = "nomic-embed-text"
     chat_model_name: str = "gemini-3.1-flash-lite-preview"
+    # 推理模型（支持 reasoning_content 的模型，如 DeepSeek-R1）
+    # 留空则复用 chat_model_name
+    thinking_model_name: str = ""
+
+    # 硅基流动 API 配置（Reranker / 视觉问答等）
+    siliconflow_api_key: str = ""
+    # Reranker 模型名称（硅基流动 /v1/rerank 接口）
+    reranker_model_name: str = "Pro/BAAI/bge-reranker-v2-m3"
     llm_temperature: float = 0.2
-    llm_max_tokens: int = 8192
+    llm_max_tokens: int = 150000
+
+    # 联网搜索 API Keys（按优先级：Tavily > Brave > DuckDuckGo 兜底）
+    tavily_api_key: str = ""
+    brave_search_api_key: str = ""
 
     arxiv_mcp_url: str = ""
     github_mcp_url: str = ""
@@ -65,9 +81,25 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7天
 
-    # Redis OTP 配置（SMS 验证码）
+    # Redis OTP 配置
     REDIS_URL: str = "redis://localhost:6379/0"
-    SMS_API_KEY: str = ""  # 空字符串 = dev 模式，打印到日志
+    SMS_API_KEY: str = ""  # 保留兼容旧字段，新流程使用 EmailService
+
+    # SMTP 邮件配置（Phase 4 邮箱验证码）
+    # SMTP_HOST 为空时进入 dev 模式，验证码打印到日志
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "no-reply@example.com"
+    SMTP_FROM_NAME: str = "AIGC_NEWS"
+    SMTP_USE_TLS: bool = True
+
+    # 注册邀请码（内测阶段固定值，可通过环境变量覆盖）
+    AUTH_REGISTER_INVITE_CODE: str = "internal_testing"
+
+    # 普通用户每日消息上限（0 = 不限制，仅对 role='user' 生效，admin 不受限）
+    USER_DAILY_MESSAGE_LIMIT: int = 20
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000

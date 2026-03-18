@@ -7,6 +7,8 @@ import MonitorView from '../views/MonitorView.vue'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import PaperReadView from '../views/PaperReadView.vue'
+import DisclaimerView from '../views/DisclaimerView.vue'
+import PrivacyView from '../views/PrivacyView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -56,6 +58,16 @@ const router = createRouter({
           name: 'paper-read',
           component: PaperReadView,
           meta: { requiresAuth: true },
+        },
+        {
+          path: 'disclaimer',
+          name: 'disclaimer',
+          component: DisclaimerView,
+        },
+        {
+          path: 'privacy',
+          name: 'privacy',
+          component: PrivacyView,
         },
       ],
     },

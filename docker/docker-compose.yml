@@ -14,9 +14,17 @@ services:
     env_file:
       - ../.env
     environment:
-      - HF_ENDPOINT=https://hf-mirror.com
+      - HF_ENDPOINT=https://huggingface.co
       - HF_HUB_OFFLINE=0
       - TRANSFORMERS_OFFLINE=0
+      # 通过宿主机 Clash 代理访问外网（172.18.0.1 = compose 网络网关 = 宿主机）
+      - HTTP_PROXY=http://172.18.0.1:7890
+      - HTTPS_PROXY=http://172.18.0.1:7890
+      - http_proxy=http://172.18.0.1:7890
+      - https_proxy=http://172.18.0.1:7890
+      # 内网服务不走代理
+      - NO_PROXY=localhost,127.0.0.1,milvus-standalone,mysql-aigc,redis,neo4j,etcd,minio,172.18.0.0/16
+      - no_proxy=localhost,127.0.0.1,milvus-standalone,mysql-aigc,redis,neo4j,etcd,minio,172.18.0.0/16
     volumes:
       - ../backend:/src/backend
       - ../storage/papers:/src/storage/papers

@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { api } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
+import { FileText, GitBranch, Triangle, Rocket, Newspaper, AlertTriangle } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 
@@ -36,6 +37,7 @@ const schedulerStatus = ref<SchedulerStatus | null>(null)
 const loading         = ref(false)
 const syncing         = ref(false)
 const generatingBriefing = ref(false)
+const clearingCache      = ref(false)
 const errorMsg        = ref('')
 const successMsg      = ref('')
 
@@ -45,17 +47,17 @@ const ingestingByDate = ref(false)
 interface SourceItem {
   key: string
   label: string
-  icon: string
+  icon: any
   color: string
   textColor: string
 }
 
 const SOURCE_LIST: SourceItem[] = [
-  { key: 'arxiv',       label: 'Arxiv 论文',        icon: '📄', color: 'bg-white',     textColor: 'text-stone-600' },
-  { key: 'github',      label: 'GitHub Trending',   icon: '🐙', color: 'bg-white',     textColor: 'text-stone-600' },
-  { key: 'hackernews',  label: 'Hacker News',       icon: '🔶', color: 'bg-white',     textColor: 'text-stone-600' },
-  { key: 'producthunt', label: 'Product Hunt',      icon: '🚀', color: 'bg-white',     textColor: 'text-stone-600' },
-  { key: 'news',        label: 'Tech News',         icon: '📰', color: 'bg-white',     textColor: 'text-stone-600' },
+  { key: 'arxiv',       label: 'Arxiv 论文',        icon: FileText,   color: 'bg-white',  textColor: 'text-stone-600' },
+  { key: 'github',      label: 'GitHub Trending',   icon: GitBranch,  color: 'bg-white',  textColor: 'text-stone-600' },
+  { key: 'hackernews',  label: 'Hacker News',       icon: Triangle,   color: 'bg-white',  textColor: 'text-stone-600' },
+  { key: 'producthunt', label: 'Product Hunt',      icon: Rocket,     color: 'bg-white',  textColor: 'text-stone-600' },
+  { key: 'news',        label: 'Tech News',         icon: Newspaper,  color: 'bg-white',  textColor: 'text-stone-600' },
 ]
 
 const ingestingSource = ref<string | null>(null)
@@ -133,6 +135,18 @@ const generateAllBriefings = async (forceRegenerate = true) => {
   } catch (e: any) {
     errorMsg.value = e?.response?.data?.detail || String(e)
   } finally { generatingBriefing.value = false }
+}
+
+const clearDashboardCache = async () => {
+  if (clearingCache.value) return
+  clearMessages()
+  clearingCache.value = true
+  try {
+    const res = await api.post('/ops/cache/clear-dashboard')
+    successMsg.value = res.data?.message || 'Dashboard 缓存已清除，刷新仪表盘即可看到最新数据。'
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.detail || String(e)
+  } finally { clearingCache.value = false }
 }
 
 const syncDataNow = async (force = false) => {
@@ -213,6 +227,10 @@ const getStatusConfig = (status: string) =>
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
             {{ generatingBriefing ? '生成中…' : '生成每日简报' }}
           </button>
+          <button class="btn-secondary" :disabled="clearingCache" @click="clearDashboardCache" title="清除仪表盘 Redis 缓存，强制下次请求重新读取数据库">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+            {{ clearingCache ? '清除中…' : '刷新仪表盘缓存' }}
+          </button>
           <button class="btn-danger" :disabled="clearing" @click="showClearConfirm = true">
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
             {{ clearing ? '清空中…' : '清空数据' }}
@@ -235,7 +253,10 @@ const getStatusConfig = (status: string) =>
             <p>此操作将永久删除：</p>
             <ul class="ml-2 space-y-1 text-stone-400"><li>· SQLite 中所有文档 &amp; 任务记录</li><li>· Milvus 向量索引数据</li></ul>
           </div>
-          <p class="mb-5 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600 border border-rose-200">⚠️ 此操作不可逆，清空后无法恢复！</p>
+          <p class="mb-5 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600 border border-rose-200 flex items-center gap-1.5">
+            <AlertTriangle class="h-3.5 w-3.5 shrink-0" />
+            此操作不可逆，清空后无法恢复！
+          </p>
           <div class="flex gap-2">
             <button class="btn-secondary flex-1 justify-center" @click="showClearConfirm = false">取消</button>
             <button class="btn-danger flex-1 justify-center" @click="clearAllData">确认清空</button>
@@ -295,7 +316,7 @@ const getStatusConfig = (status: string) =>
           :disabled="!!ingestingSource"
           @click="ingestSingleSource(src.key)"
         >
-          <span class="text-sm leading-none">{{ src.icon }}</span>
+          <component :is="src.icon" class="h-3.5 w-3.5 shrink-0" />
           <span>{{ src.label }}</span>
           <span v-if="ingestingSource === src.key" class="inline-block h-3 w-3 rounded-full border-2 border-stone-300 border-t-stone-600 animate-spin ml-0.5" />
         </button>

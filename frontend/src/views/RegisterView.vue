@@ -8,22 +8,29 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
-const phone           = ref('')
-const otp             = ref('')
-const password        = ref('')
-const confirmPassword = ref('')
-const loading         = ref(false)
-const otpLoading      = ref(false)
-const errorMsg        = ref('')
-const successMsg      = ref('')
+const email         = ref('')
+const otp           = ref('')
+const inviteCode    = ref('')
+const password      = ref('')
+const confirmPwd    = ref('')
+const loading       = ref(false)
+const otpLoading    = ref(false)
+const errorMsg      = ref('')
+const successMsg    = ref('')
+const agreedToTerms = ref(false)
 
 // OTP 倒计时
 const countdown     = ref(0)
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 
-const phoneValid = computed(() => /^1[3-9]\d{9}$/.test(phone.value.trim()))
+// 邮箱格式校验
+const emailValid = computed(() =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())
+)
 
-const otpBtnDisabled = computed(() => !phoneValid.value || countdown.value > 0 || otpLoading.value)
+const otpBtnDisabled = computed(
+  () => !emailValid.value || countdown.value > 0 || otpLoading.value
+)
 
 const startCountdown = () => {
   countdown.value = 60
@@ -43,17 +50,17 @@ onUnmounted(() => {
 
 const sendOtp = async () => {
   errorMsg.value = ''
-  if (!phoneValid.value) {
-    errorMsg.value = '请输入有效的手机号（1 开头 11 位）'
+  if (!emailValid.value) {
+    errorMsg.value = '请输入有效的邮箱地址'
     return
   }
   if (countdown.value > 0) return
   otpLoading.value = true
   try {
-    await api.post('/auth/send-otp', { phone: phone.value.trim() })
+    await api.post('/auth/send-email-otp', { email: email.value.trim() })
     startCountdown()
-    successMsg.value = '验证码已发送，请查收短信'
-    setTimeout(() => { successMsg.value = '' }, 3000)
+    successMsg.value = '验证码已发送，请查收邮件'
+    setTimeout(() => { successMsg.value = '' }, 4000)
   } catch (e: unknown) {
     const err = e as { response?: { status?: number; data?: { detail?: string } }; message?: string }
     if (err?.response?.status === 429) {
@@ -68,22 +75,24 @@ const sendOtp = async () => {
 
 const handleRegister = async () => {
   errorMsg.value = ''
-  if (!phoneValid.value) { errorMsg.value = '请输入有效的手机号'; return }
+  if (!emailValid.value) { errorMsg.value = '请输入有效的邮箱地址'; return }
   if (!otp.value.trim() || !/^\d{6}$/.test(otp.value.trim())) { errorMsg.value = '验证码应为 6 位数字'; return }
+  if (!inviteCode.value.trim()) { errorMsg.value = '请输入邀请码'; return }
   if (!password.value) { errorMsg.value = '请设置密码'; return }
-  if (password.value !== confirmPassword.value) { errorMsg.value = '两次密码输入不一致'; return }
+  if (password.value !== confirmPwd.value) { errorMsg.value = '两次密码输入不一致'; return }
+  if (!agreedToTerms.value) { errorMsg.value = '请阅读并同意《用户协议与免责声明》后再注册'; return }
 
   loading.value = true
   try {
     await api.post('/auth/register', {
-      phone: phone.value.trim(),
-      sms_code: otp.value.trim(),
+      email: email.value.trim(),
+      email_code: otp.value.trim(),
+      invite_code: inviteCode.value.trim(),
       password: password.value,
     })
     // 注册成功后自动登录
-    await authStore.login(phone.value.trim(), password.value)
+    await authStore.login(email.value.trim(), password.value)
     successMsg.value = '注册成功！正在为您自动登录…'
-    // 跳回注册前的页面，若无来源页则跳到首页
     const redirect = (route.query.redirect as string) || '/'
     setTimeout(() => router.replace(redirect), 800)
   } catch (e: unknown) {
@@ -114,16 +123,16 @@ const handleRegister = async () => {
       <!-- 表单卡片 -->
       <div class="glass-card p-6 space-y-4 stagger-enter" style="animation-delay: 0.1s">
 
-        <!-- 手机号 + 发送验证码 -->
+        <!-- 邮箱 + 发送验证码 -->
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-stone-500">手机号</label>
+          <label class="text-xs font-medium text-stone-500">邮箱</label>
           <div class="flex gap-2">
             <input
-              v-model="phone"
-              type="tel"
+              v-model="email"
+              type="email"
               class="input flex-1"
-              placeholder="1xxxxxxxxxx"
-              autocomplete="tel"
+              placeholder="you@example.com"
+              autocomplete="email"
               :disabled="loading"
             />
             <button
@@ -138,11 +147,11 @@ const handleRegister = async () => {
             </button>
           </div>
           <Transition name="fade-msg">
-            <p v-if="phone && !phoneValid" class="text-2xs text-rose-500 pl-1">请输入正确格式的手机号（1 开头 11 位）</p>
+            <p v-if="email && !emailValid" class="text-2xs text-rose-500 pl-1">请输入正确格式的邮箱地址</p>
           </Transition>
         </div>
 
-        <!-- 验证码 -->
+        <!-- 邮箱验证码 -->
         <div class="space-y-1.5">
           <label class="text-xs font-medium text-stone-500">验证码</label>
           <input
@@ -153,6 +162,19 @@ const handleRegister = async () => {
             class="input tracking-widest"
             placeholder="6 位数字验证码"
             autocomplete="one-time-code"
+            :disabled="loading"
+          />
+        </div>
+
+        <!-- 邀请码 -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-medium text-stone-500">邀请码</label>
+          <input
+            v-model="inviteCode"
+            type="text"
+            class="input"
+            placeholder="请输入内测邀请码"
+            autocomplete="off"
             :disabled="loading"
           />
         </div>
@@ -174,7 +196,7 @@ const handleRegister = async () => {
         <div class="space-y-1.5">
           <label class="text-xs font-medium text-stone-500">确认密码</label>
           <input
-            v-model="confirmPassword"
+            v-model="confirmPwd"
             type="password"
             class="input"
             placeholder="再次输入密码"
@@ -182,7 +204,7 @@ const handleRegister = async () => {
             :disabled="loading"
           />
           <Transition name="fade-msg">
-            <p v-if="confirmPassword && password !== confirmPassword" class="text-2xs text-rose-500 pl-1">两次密码输入不一致</p>
+            <p v-if="confirmPwd && password !== confirmPwd" class="text-2xs text-rose-500 pl-1">两次密码输入不一致</p>
           </Transition>
         </div>
 
@@ -212,10 +234,33 @@ const handleRegister = async () => {
           </div>
         </Transition>
 
+        <!-- 用户协议勾选 -->
+        <div class="flex items-start gap-2.5 pt-1">
+          <button
+            type="button"
+            class="mt-0.5 shrink-0 w-4 h-4 rounded border transition-all duration-150 flex items-center justify-center"
+            :class="agreedToTerms
+              ? 'bg-stone-800 border-stone-800'
+              : 'bg-white border-stone-300 hover:border-stone-500'"
+            @click="agreedToTerms = !agreedToTerms"
+          >
+            <svg v-if="agreedToTerms" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
+              <polyline points="2,6 5,9 10,3"/>
+            </svg>
+          </button>
+          <label class="text-xs text-stone-500 leading-relaxed cursor-pointer select-none" @click="agreedToTerms = !agreedToTerms">
+            我已阅读并同意
+            <RouterLink to="/disclaimer" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>《用户协议与免责声明》</RouterLink>
+            及
+            <RouterLink to="/privacy" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>《隐私政策》</RouterLink>
+            ，包括但不限于 AI 内容免责、禁止违法输入等条款
+          </label>
+        </div>
+
         <!-- 注册按钮 -->
         <button
           class="btn-primary w-full justify-center py-3"
-          :disabled="loading"
+          :disabled="loading || !agreedToTerms"
           @click="handleRegister"
         >
           <span v-if="loading" class="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />

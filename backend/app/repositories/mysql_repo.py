@@ -22,6 +22,10 @@ def _normalize_doc_lookup_key(value: Optional[str]) -> str:
     return (value or "").strip()
 
 
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value or [], ensure_ascii=False)
+
+
 class MySQLRepository:
     """MySQL repository for metadata, task records, briefings, eval results and GitHub hotness."""
 
@@ -170,11 +174,87 @@ class MySQLRepository:
             """
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                phone VARCHAR(20) UNIQUE NOT NULL,
+                phone VARCHAR(20) NULL,
+                email VARCHAR(255) NULL,
+                email_verified TINYINT(1) NOT NULL DEFAULT 1,
+                invite_code_used VARCHAR(64) NULL,
                 username VARCHAR(64),
                 hashed_password VARCHAR(256) NOT NULL,
                 role ENUM('user', 'admin') DEFAULT 'user',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS conversations (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                scope ENUM('global', 'paper') NOT NULL DEFAULT 'global',
+                scope_key VARCHAR(255) NULL,
+                title VARCHAR(255) NULL,
+                last_message_preview VARCHAR(500) NULL,
+                message_count INT NOT NULL DEFAULT 0,
+                last_accessed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_conv_user_updated (user_id, updated_at DESC),
+                INDEX idx_conv_user_accessed (user_id, last_accessed_at DESC),
+                INDEX idx_conv_scope (user_id, scope, scope_key),
+                CONSTRAINT fk_conversations_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                conversation_id BIGINT NOT NULL,
+                role ENUM('user', 'assistant') NOT NULL,
+                content MEDIUMTEXT NOT NULL,
+                thinking MEDIUMTEXT NULL,
+                sources_json JSON NULL,
+                attachments_json JSON NULL,
+                status ENUM('done', 'streaming', 'deleted', 'regenerated') NOT NULL DEFAULT 'done',
+                parent_message_id BIGINT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_msg_conversation_created (conversation_id, created_at ASC),
+                INDEX idx_msg_parent (parent_message_id),
+                CONSTRAINT fk_chat_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS chat_attachments (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                conversation_id BIGINT NULL,
+                file_name VARCHAR(255) NOT NULL,
+                mime_type VARCHAR(100) NOT NULL,
+                modality ENUM('image', 'pdf') NOT NULL,
+                storage_path VARCHAR(512) NULL,
+                file_size BIGINT NOT NULL DEFAULT 0,
+                page_count INT NULL,
+                parse_status ENUM('uploaded', 'processing', 'ready', 'failed') NOT NULL DEFAULT 'uploaded',
+                extract_text MEDIUMTEXT NULL,
+                meta_json JSON NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_attachment_user_created (user_id, created_at DESC),
+                INDEX idx_attachment_conv (conversation_id),
+                CONSTRAINT fk_chat_attachments_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                CONSTRAINT fk_chat_attachments_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS briefing_subscriptions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                source VARCHAR(32) NOT NULL DEFAULT 'all',
+                period VARCHAR(16) NOT NULL DEFAULT 'daily',
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_sub_user_source_period (user_id, source, period),
+                INDEX idx_sub_active (is_active, source, period),
+                CONSTRAINT fk_briefing_sub_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
         ]
@@ -183,18 +263,22 @@ class MySQLRepository:
             with conn.cursor() as cur:
                 for statement in statements:
                     cur.execute(statement)
-                # 增量迁移：为 documents 表添加新字段（已存在则跳过）
                 alter_stmts = [
                     "ALTER TABLE documents ADD COLUMN in_daily TINYINT DEFAULT 0",
                     "ALTER TABLE documents ADD COLUMN in_weekly TINYINT DEFAULT 0",
                     "ALTER TABLE documents ADD COLUMN in_monthly TINYINT DEFAULT 0",
                     "ALTER TABLE documents ADD COLUMN local_pdf_path VARCHAR(512) DEFAULT NULL",
+                    # Phase 4: 认证鉴权改造 — users 表邮箱字段迁移
+                    "ALTER TABLE users MODIFY phone VARCHAR(20) NULL",
+                    "ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL UNIQUE AFTER phone",
+                    "ALTER TABLE users ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 1 AFTER email",
+                    "ALTER TABLE users ADD COLUMN invite_code_used VARCHAR(64) NULL AFTER email_verified",
                 ]
                 for stmt in alter_stmts:
                     try:
                         cur.execute(stmt)
                     except Exception:
-                        pass  # 字段已存在，忽略 Duplicate column 错误
+                        pass
             conn.commit()
         finally:
             conn.close()
@@ -218,9 +302,9 @@ class MySQLRepository:
                 summary=VALUES(summary),
                 published_date=COALESCE(NULLIF(VALUES(published_date), ''), published_date),
                 tags=VALUES(tags),
-                score=VALUES(score),
-                raw_score=VALUES(raw_score),
-                rank_in_period=VALUES(rank_in_period),
+                score=GREATEST(score, VALUES(score)),
+                raw_score=GREATEST(raw_score, VALUES(raw_score)),
+                rank_in_period=LEAST(rank_in_period, VALUES(rank_in_period)),
                 indexed=VALUES(indexed),
                 in_daily=GREATEST(in_daily, VALUES(in_daily)),
                 in_weekly=GREATEST(in_weekly, VALUES(in_weekly)),
@@ -248,7 +332,6 @@ class MySQLRepository:
             conn.close()
 
     def update_document_pdf_path(self, doc_id: str, local_pdf_path: str) -> None:
-        """更新指定文档的本地 PDF 路径（PDF 落盘后调用）。"""
         sql = "UPDATE documents SET local_pdf_path = %s WHERE id = %s"
         conn = self._connect()
         try:
@@ -265,11 +348,6 @@ class MySQLRepository:
         urls: Optional[List[str]] = None,
         titles: Optional[List[str]] = None,
     ) -> Dict[str, str]:
-        """批量查询已存在文档的 summary。
-
-        返回的 key 形如 `id:<id>` / `url:<url>` / `title:<title>`，
-        仅包含 summary 非空的记录。
-        """
         ids = [_normalize_doc_lookup_key(item) for item in (ids or [])]
         urls = [_normalize_doc_lookup_key(item) for item in (urls or [])]
         titles = [_normalize_doc_lookup_key(item) for item in (titles or [])]
@@ -362,7 +440,6 @@ class MySQLRepository:
             conn.close()
 
     def get_latest_documents(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """获取最新的 N 条文档（按 created_at 倒序，忽略日期过滤，用于兜底）。"""
         sql = """
             SELECT * FROM documents
             ORDER BY created_at DESC
@@ -390,11 +467,6 @@ class MySQLRepository:
             conn.close()
 
     def get_source_counts(self) -> Dict[str, int]:
-        """返回数据库中各来源的去重文档数量（全库统计，不受 period 过滤影响）。
-
-        对同一来源按 url 去重（忽略日/周/月多 channel 重复写入的问题），
-        确保统计卡片展示的是实际独特内容数量。
-        """
         sql = """
             SELECT source, COUNT(DISTINCT COALESCE(NULLIF(url, ''), title)) AS cnt
             FROM documents
@@ -407,6 +479,70 @@ class MySQLRepository:
                 rows = cur.fetchall()
             conn.commit()
             return {row["source"]: row["cnt"] for row in rows}
+        finally:
+            conn.close()
+
+    def get_user_count(self) -> int:
+        """返回已注册用户总数。"""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS cnt FROM users")
+                row = cur.fetchone()
+            conn.commit()
+            return int(row["cnt"] if row else 0)
+        finally:
+            conn.close()
+
+    def get_today_document_count(self) -> int:
+        """返回今日新增文档数（created_at 日期 = CST 今天）。
+
+        documents.created_at 以 UTC ISO 字符串存储，查询时取前 10 字符与 CST 今天对比。
+        """
+        from datetime import datetime, timezone, timedelta
+
+        tz_cst = timezone(timedelta(hours=8))
+        today_str = datetime.now(tz_cst).strftime("%Y-%m-%d")
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS cnt FROM documents WHERE LEFT(created_at, 10) = %s",
+                    (today_str,),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            return int(row["cnt"] if row else 0)
+        finally:
+            conn.close()
+
+    def count_user_messages_today(self, user_id: int) -> int:
+        """统计指定用户今日（CST）发送的消息数（role='user'）。
+
+        通过 JOIN conversations 表过滤 user_id，
+        chat_messages.created_at 为 DATETIME 类型，使用 CONVERT_TZ 转换到 CST 后取日期对比。
+        """
+        from datetime import datetime, timezone, timedelta
+
+        tz_cst = timezone(timedelta(hours=8))
+        today_str = datetime.now(tz_cst).strftime("%Y-%m-%d")
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM chat_messages m
+                    JOIN conversations c ON c.id = m.conversation_id
+                    WHERE c.user_id = %s
+                      AND m.role = 'user'
+                      AND DATE(CONVERT_TZ(m.created_at, '+00:00', '+08:00')) = %s
+                    """,
+                    (user_id, today_str),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            return int(row["cnt"] if row else 0)
         finally:
             conn.close()
 
@@ -424,7 +560,7 @@ class MySQLRepository:
             conn.close()
 
     # ------------------------------------------------------------------
-    # Document rank snapshots (历史排行快照)
+    # Document rank snapshots
     # ------------------------------------------------------------------
 
     def upsert_rank_snapshot(
@@ -436,15 +572,14 @@ class MySQLRepository:
         raw_score: float,
         score: float,
     ) -> None:
-        """写入或更新一条排行快照记录（每天每渠道每文档唯一）。"""
         sql = """
             INSERT INTO document_rank_snapshots
                 (doc_id, snapshot_date, source_channel, rank_in_period, raw_score, score, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                rank_in_period=VALUES(rank_in_period),
-                raw_score=VALUES(raw_score),
-                score=VALUES(score)
+                rank_in_period=LEAST(rank_in_period, VALUES(rank_in_period)),
+                raw_score=GREATEST(raw_score, VALUES(raw_score)),
+                score=GREATEST(score, VALUES(score))
         """
         conn = self._connect()
         try:
@@ -461,6 +596,21 @@ class MySQLRepository:
                         _utcnow(),
                     ),
                 )
+            sync_sql = """
+                UPDATE document_rank_snapshots s
+                JOIN (
+                    SELECT doc_id, snapshot_date,
+                           MAX(raw_score) AS max_raw, MAX(score) AS max_score
+                    FROM document_rank_snapshots
+                    WHERE doc_id = %s AND snapshot_date = %s
+                    GROUP BY doc_id, snapshot_date
+                ) agg ON s.doc_id = agg.doc_id AND s.snapshot_date = agg.snapshot_date
+                SET s.raw_score = agg.max_raw, s.score = agg.max_score
+                WHERE s.doc_id = %s AND s.snapshot_date = %s
+                  AND (s.raw_score < agg.max_raw OR s.score < agg.max_score)
+            """
+            with conn.cursor() as cur:
+                cur.execute(sync_sql, (doc_id, snapshot_date, doc_id, snapshot_date))
             conn.commit()
         finally:
             conn.close()
@@ -472,11 +622,6 @@ class MySQLRepository:
         source_type: Optional[str] = None,
         limit: int = 500,
     ) -> List[Dict[str, Any]]:
-        """通过 JOIN 快照表查询指定日期的文档排行数据。
-
-        返回的每条记录包含 documents 表的元数据 + 快照表的 rank/score。
-        快照表的 rank_in_period / raw_score / score 会覆盖 documents 表中的同名字段。
-        """
         conditions = ["s.snapshot_date = %s"]
         params: List[Any] = [snapshot_date]
 
@@ -521,7 +666,6 @@ class MySQLRepository:
             conn.close()
 
     def get_snapshot_dates(self, limit: int = 60) -> List[str]:
-        """返回有快照记录的日期列表（降序），用于前端日历高亮。"""
         sql = """
             SELECT DISTINCT snapshot_date
             FROM document_rank_snapshots
@@ -539,11 +683,6 @@ class MySQLRepository:
             conn.close()
 
     def get_snapshot_source_counts(self, snapshot_date: str) -> Dict[str, int]:
-        """返回指定日期各来源在快照表中的去重文档数量。
-
-        用于前端日历切换日期后，统计卡片展示该日期的实际采集量。
-        按 source（从 documents 表 JOIN 获取）分组，按 doc_id 去重。
-        """
         sql = """
             SELECT d.source, COUNT(DISTINCT s.doc_id) AS cnt
             FROM document_rank_snapshots s
@@ -566,10 +705,6 @@ class MySQLRepository:
         snapshot_date: str,
         source_channel: Optional[str] = None,
     ) -> Set[str]:
-        """返回指定日期（和可选 channel）下快照表中的 doc_id 集合。
-
-        用于跨天去重：例如 HackerNews 日榜排除昨日已上榜的条目。
-        """
         conditions = ["s.snapshot_date = %s"]
         params: List[Any] = [snapshot_date]
 
@@ -590,6 +725,23 @@ class MySQLRepository:
                 rows = cur.fetchall()
             conn.commit()
             return {row["doc_id"] for row in rows}
+        finally:
+            conn.close()
+
+    def delete_snapshots_by_channel(
+        self, snapshot_date: str, source_channel: str
+    ) -> int:
+        sql = """
+            DELETE FROM document_rank_snapshots
+            WHERE snapshot_date = %s AND source_channel = %s
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (snapshot_date, source_channel))
+                deleted = cur.rowcount
+            conn.commit()
+            return deleted
         finally:
             conn.close()
 
@@ -803,7 +955,7 @@ class MySQLRepository:
                     * CASE
                         WHEN %s = 'daily' AND CAST(DATEDIFF(l.snapshot_date, LEFT(c.created_at, 10)) AS DOUBLE) <= 90 THEN 1.25
                         WHEN %s = 'daily' THEN 0.72
-                        WHEN %s = 'weekly' AND CAST(DATEDIFF(l.snapshot_date, LEFT(c.created_at, 10)) AS DOUBLE) AS DOUBLE <= 180 THEN 1.12
+                        WHEN %s = 'weekly' AND CAST(DATEDIFF(l.snapshot_date, LEFT(c.created_at, 10)) AS DOUBLE) <= 180 THEN 1.12
                         WHEN %s = 'weekly' THEN 0.9
                         WHEN CAST(DATEDIFF(l.snapshot_date, LEFT(c.created_at, 10)) AS DOUBLE) <= 365 THEN 1.05
                         ELSE 0.96
@@ -925,7 +1077,6 @@ class MySQLRepository:
             conn.close()
 
     def get_recent_tasks(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """返回最近的 N 条任务记录（按 id 倒序）。"""
         sql = "SELECT * FROM ingestion_tasks ORDER BY id DESC LIMIT %s"
         conn = self._connect()
         try:
@@ -1011,7 +1162,6 @@ class MySQLRepository:
             conn.close()
 
     def get_briefing_by_date(self, date_str: str) -> Optional[Dict[str, Any]]:
-        """按 date 字段精确查找简报（支持 cache_key 格式，如 '2026-03-08_arxiv_daily'）。"""
         sql = "SELECT * FROM briefings WHERE date = %s ORDER BY id DESC LIMIT 1"
         conn = self._connect()
         try:
@@ -1024,7 +1174,6 @@ class MySQLRepository:
             conn.close()
 
     def list_briefings(self, limit: int = 30) -> List[Dict[str, Any]]:
-        """返回最近的简报列表（id + date + created_at，不含完整 content）。"""
         sql = """
             SELECT id, date, created_at,
                    SUBSTRING(content, 1, 100) AS content_preview
@@ -1036,6 +1185,93 @@ class MySQLRepository:
         try:
             with conn.cursor() as cur:
                 cur.execute(sql, (limit,))
+                rows = cur.fetchall()
+            conn.commit()
+            return list(rows)
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Briefing Subscriptions
+    # ------------------------------------------------------------------
+
+    def upsert_briefing_subscription(
+        self, user_id: int, email: str, source: str = "all", period: str = "daily"
+    ) -> Dict[str, Any]:
+        """创建或激活简报订阅（若已存在则更新为 is_active=1）。"""
+        sql = """
+            INSERT INTO briefing_subscriptions (user_id, email, source, period, is_active, updated_at)
+            VALUES (%s, %s, %s, %s, 1, NOW())
+            ON DUPLICATE KEY UPDATE
+                email = VALUES(email),
+                is_active = 1,
+                updated_at = NOW()
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (user_id, email, source, period))
+                # 查询刚刚 upsert 的记录
+                cur.execute(
+                    "SELECT * FROM briefing_subscriptions WHERE user_id = %s AND source = %s AND period = %s",
+                    (user_id, source, period),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else {}
+        finally:
+            conn.close()
+
+    def cancel_briefing_subscription(
+        self, user_id: int, source: str = "all", period: str = "daily"
+    ) -> bool:
+        """取消简报订阅（软删除，设 is_active=0）。"""
+        sql = """
+            UPDATE briefing_subscriptions
+            SET is_active = 0, updated_at = NOW()
+            WHERE user_id = %s AND source = %s AND period = %s
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (user_id, source, period))
+                affected = cur.rowcount
+            conn.commit()
+            return affected > 0
+        finally:
+            conn.close()
+
+    def get_user_briefing_subscriptions(self, user_id: int) -> List[Dict[str, Any]]:
+        """获取指定用户的所有活跃订阅。"""
+        sql = """
+            SELECT id, source, period, is_active, created_at, updated_at
+            FROM briefing_subscriptions
+            WHERE user_id = %s AND is_active = 1
+            ORDER BY created_at ASC
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (user_id,))
+                rows = cur.fetchall()
+            conn.commit()
+            return list(rows)
+        finally:
+            conn.close()
+
+    def get_active_subscribers(
+        self, source: str = "all", period: str = "daily"
+    ) -> List[Dict[str, Any]]:
+        """获取指定 source+period 的所有活跃订阅者（含 email）。"""
+        sql = """
+            SELECT bs.id, bs.user_id, bs.email, bs.source, bs.period
+            FROM briefing_subscriptions bs
+            WHERE bs.is_active = 1 AND bs.source = %s AND bs.period = %s
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (source, period))
                 rows = cur.fetchall()
             conn.commit()
             return list(rows)
@@ -1124,12 +1360,24 @@ class MySQLRepository:
     # ------------------------------------------------------------------
 
     def get_user_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
-        """根据手机号查询用户，返回 dict 或 None。"""
-        sql = "SELECT id, phone, username, hashed_password, role, created_at FROM users WHERE phone = %s"
+        sql = "SELECT id, phone, email, username, hashed_password, role, created_at FROM users WHERE phone = %s"
         conn = self._connect()
         try:
             with conn.cursor() as cur:
                 cur.execute(sql, (phone,))
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """按邮箱查询用户（邮箱不区分大小写）。"""
+        sql = "SELECT id, phone, email, username, hashed_password, role, created_at FROM users WHERE email = %s"
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (email.lower(),))
                 row = cur.fetchone()
             conn.commit()
             return dict(row) if row else None
@@ -1143,7 +1391,6 @@ class MySQLRepository:
         hashed_password: str,
         role: str = "user",
     ) -> int:
-        """创建新用户，返回新插入记录的 id。"""
         sql = """
             INSERT INTO users (phone, username, hashed_password, role)
             VALUES (%s, %s, %s, %s)
@@ -1157,3 +1404,653 @@ class MySQLRepository:
             return new_id  # type: ignore[return-value]
         finally:
             conn.close()
+
+    def create_user_with_email(
+        self,
+        email: str,
+        hashed_password: str,
+        invite_code_used: str = "",
+        role: str = "user",
+        username: str = "",
+    ) -> int:
+        """使用邮箱创建新用户（Phase 4 邮箱注册流程）。"""
+        sql = """
+            INSERT INTO users (email, username, hashed_password, role, email_verified, invite_code_used)
+            VALUES (%s, %s, %s, %s, 1, %s)
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    sql,
+                    (email.lower(), username, hashed_password, role, invite_code_used),
+                )
+                new_id = cur.lastrowid
+            conn.commit()
+            return new_id  # type: ignore[return-value]
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Conversation / Chat history
+    # ------------------------------------------------------------------
+
+    def get_or_create_conversation(
+        self,
+        *,
+        user_id: int,
+        scope: str = "global",
+        scope_key: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                if scope_key:
+                    cur.execute(
+                        """
+                        SELECT * FROM conversations
+                        WHERE user_id = %s AND scope = %s AND scope_key = %s
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """,
+                        (user_id, scope, scope_key),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT * FROM conversations
+                        WHERE user_id = %s AND scope = %s AND scope_key IS NULL
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """,
+                        (user_id, scope),
+                    )
+                row = cur.fetchone()
+                if row:
+                    conversation = dict(row)
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO conversations (
+                            user_id, scope, scope_key, title, last_message_preview,
+                            message_count, last_accessed_at, updated_at, created_at
+                        ) VALUES (%s, %s, %s, %s, '', 0, NOW(), NOW(), NOW())
+                        """,
+                        (user_id, scope, scope_key, title or "新对话"),
+                    )
+                    conversation_id = cur.lastrowid
+                    cur.execute(
+                        "SELECT * FROM conversations WHERE id = %s", (conversation_id,)
+                    )
+                    conversation = dict(cur.fetchone())
+            conn.commit()
+            return conversation
+        finally:
+            conn.close()
+
+    def create_conversation(
+        self,
+        *,
+        user_id: int,
+        scope: str = "global",
+        scope_key: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """强制创建新会话（不复用已有会话）。"""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO conversations (
+                        user_id, scope, scope_key, title, last_message_preview,
+                        message_count, last_accessed_at, updated_at, created_at
+                    ) VALUES (%s, %s, %s, %s, '', 0, NOW(), NOW(), NOW())
+                    """,
+                    (user_id, scope, scope_key, title or "新对话"),
+                )
+                conversation_id = cur.lastrowid
+                cur.execute(
+                    "SELECT * FROM conversations WHERE id = %s", (conversation_id,)
+                )
+                conversation = dict(cur.fetchone())
+            conn.commit()
+            return conversation
+        finally:
+            conn.close()
+
+    def delete_conversation_by_id(
+        self,
+        conversation_id: int,
+        *,
+        user_id: Optional[int] = None,
+    ) -> bool:
+        """删除指定会话及其所有消息（CASCADE 由外键自动处理，
+        但为保险起见先手动删消息）。"""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                # 权限校验
+                if user_id is not None:
+                    cur.execute(
+                        "SELECT id FROM conversations WHERE id = %s AND user_id = %s",
+                        (conversation_id, user_id),
+                    )
+                    if cur.fetchone() is None:
+                        return False
+                # 先删消息
+                cur.execute(
+                    "DELETE FROM chat_messages WHERE conversation_id = %s",
+                    (conversation_id,),
+                )
+                # 再删会话
+                cur.execute(
+                    "DELETE FROM conversations WHERE id = %s", (conversation_id,)
+                )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+    def get_conversation_by_id(
+        self,
+        conversation_id: int,
+        *,
+        user_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                if user_id is None:
+                    cur.execute(
+                        "SELECT * FROM conversations WHERE id = %s", (conversation_id,)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT * FROM conversations WHERE id = %s AND user_id = %s",
+                        (conversation_id, user_id),
+                    )
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def list_conversations(
+        self,
+        *,
+        user_id: int,
+        scope: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        offset = max(page - 1, 0) * page_size
+        where = ["user_id = %s"]
+        params: List[Any] = [user_id]
+        if scope:
+            where.append("scope = %s")
+            params.append(scope)
+        where_clause = " AND ".join(where)
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT COUNT(*) AS cnt FROM conversations WHERE {where_clause}",
+                    tuple(params),
+                )
+                total_row = cur.fetchone()
+                cur.execute(
+                    f"""
+                    SELECT * FROM conversations
+                    WHERE {where_clause}
+                    ORDER BY last_accessed_at DESC, updated_at DESC, id DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    tuple(params + [page_size, offset]),
+                )
+                rows = cur.fetchall()
+            conn.commit()
+            return {
+                "items": list(rows),
+                "total": int(total_row["cnt"] if total_row else 0),
+                "page": page,
+                "page_size": page_size,
+            }
+        finally:
+            conn.close()
+
+    def touch_conversation(self, conversation_id: int) -> None:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE conversations
+                    SET last_accessed_at = NOW(), updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (conversation_id,),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def refresh_conversation_stats(
+        self,
+        conversation_id: int,
+        *,
+        title: Optional[str] = None,
+        last_message_preview: Optional[str] = None,
+    ) -> None:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS cnt FROM chat_messages WHERE conversation_id = %s",
+                    (conversation_id,),
+                )
+                count_row = cur.fetchone()
+                message_count = int(count_row["cnt"] if count_row else 0)
+                if last_message_preview is None:
+                    cur.execute(
+                        """
+                        SELECT content FROM chat_messages
+                        WHERE conversation_id = %s
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 1
+                        """,
+                        (conversation_id,),
+                    )
+                    latest = cur.fetchone()
+                    last_message_preview = (
+                        (latest.get("content") or "")[:200] if latest else ""
+                    )
+                if title is None:
+                    cur.execute(
+                        """
+                        SELECT content FROM chat_messages
+                        WHERE conversation_id = %s AND role = 'user'
+                        ORDER BY created_at ASC, id ASC
+                        LIMIT 1
+                        """,
+                        (conversation_id,),
+                    )
+                    first_user = cur.fetchone()
+                    if first_user:
+                        title = (first_user.get("content") or "新对话")[:60]
+                cur.execute(
+                    """
+                    UPDATE conversations
+                    SET title = COALESCE(%s, title),
+                        last_message_preview = %s,
+                        message_count = %s,
+                        last_accessed_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (title, last_message_preview or "", message_count, conversation_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def create_chat_message(
+        self,
+        *,
+        conversation_id: int,
+        role: str,
+        content: str,
+        thinking: str = "",
+        sources: Optional[List[Dict[str, Any]]] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
+        status: str = "done",
+        parent_message_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO chat_messages (
+                        conversation_id, role, content, thinking, sources_json,
+                        attachments_json, status, parent_message_id, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    """,
+                    (
+                        conversation_id,
+                        role,
+                        content,
+                        thinking,
+                        _json_dumps(sources),
+                        _json_dumps(attachments),
+                        status,
+                        parent_message_id,
+                    ),
+                )
+                message_id = cur.lastrowid
+                cur.execute("SELECT * FROM chat_messages WHERE id = %s", (message_id,))
+                row = cur.fetchone()
+            conn.commit()
+            return self._deserialize_message(dict(row))
+        finally:
+            conn.close()
+
+    def list_chat_messages(self, conversation_id: int) -> List[Dict[str, Any]]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM chat_messages
+                    WHERE conversation_id = %s
+                    ORDER BY created_at ASC, id ASC
+                    """,
+                    (conversation_id,),
+                )
+                rows = cur.fetchall()
+            conn.commit()
+            return [self._deserialize_message(dict(row)) for row in rows]
+        finally:
+            conn.close()
+
+    def get_chat_message(
+        self,
+        message_id: int,
+        *,
+        user_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                if user_id is None:
+                    cur.execute(
+                        "SELECT * FROM chat_messages WHERE id = %s", (message_id,)
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT m.*
+                        FROM chat_messages m
+                        JOIN conversations c ON c.id = m.conversation_id
+                        WHERE m.id = %s AND c.user_id = %s
+                        """,
+                        (message_id, user_id),
+                    )
+                row = cur.fetchone()
+            conn.commit()
+            return self._deserialize_message(dict(row)) if row else None
+        finally:
+            conn.close()
+
+    def delete_message_branch(self, message_id: int) -> List[int]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, conversation_id FROM chat_messages WHERE id = %s",
+                    (message_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return []
+                conversation_id = int(row["conversation_id"])
+                cur.execute(
+                    "SELECT id, role FROM chat_messages WHERE conversation_id = %s ORDER BY created_at ASC, id ASC",
+                    (conversation_id,),
+                )
+                rows = cur.fetchall()
+                ids = [int(item["id"]) for item in rows]
+                try:
+                    start_idx = ids.index(int(message_id))
+                except ValueError:
+                    return []
+                delete_ids = ids[start_idx:]
+                placeholders = ", ".join(["%s"] * len(delete_ids))
+                cur.execute(
+                    f"DELETE FROM chat_messages WHERE id IN ({placeholders})",
+                    tuple(delete_ids),
+                )
+            conn.commit()
+            return delete_ids
+        finally:
+            conn.close()
+
+    def delete_messages_after(self, message_id: int) -> List[int]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, conversation_id, created_at FROM chat_messages WHERE id = %s",
+                    (message_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return []
+                conversation_id = int(row["conversation_id"])
+                created_at = row["created_at"]
+                cur.execute(
+                    """
+                    SELECT id FROM chat_messages
+                    WHERE conversation_id = %s
+                      AND (created_at > %s OR (created_at = %s AND id >= %s))
+                    ORDER BY created_at ASC, id ASC
+                    """,
+                    (conversation_id, created_at, created_at, message_id),
+                )
+                rows = cur.fetchall()
+                delete_ids = [int(item["id"]) for item in rows]
+                if delete_ids:
+                    placeholders = ", ".join(["%s"] * len(delete_ids))
+                    cur.execute(
+                        f"DELETE FROM chat_messages WHERE id IN ({placeholders})",
+                        tuple(delete_ids),
+                    )
+            conn.commit()
+            return delete_ids
+        finally:
+            conn.close()
+
+    def trim_conversation_messages(
+        self, *, conversation_id: int, keep_latest: int = 10
+    ) -> int:
+        if keep_latest <= 0:
+            return 0
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM chat_messages WHERE conversation_id = %s ORDER BY created_at DESC, id DESC LIMIT %s",
+                    (conversation_id, keep_latest),
+                )
+                keep_rows = cur.fetchall()
+                keep_ids = [int(row["id"]) for row in keep_rows]
+                if keep_ids:
+                    placeholders = ", ".join(["%s"] * len(keep_ids))
+                    cur.execute(
+                        f"DELETE FROM chat_messages WHERE conversation_id = %s AND id NOT IN ({placeholders})",
+                        tuple([conversation_id] + keep_ids),
+                    )
+                else:
+                    cur.execute(
+                        "DELETE FROM chat_messages WHERE conversation_id = %s",
+                        (conversation_id,),
+                    )
+                deleted = cur.rowcount
+            conn.commit()
+            return deleted
+        finally:
+            conn.close()
+
+    def trim_user_conversations(self, *, user_id: int, keep_latest: int = 10) -> int:
+        if keep_latest <= 0:
+            return 0
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM conversations WHERE user_id = %s ORDER BY last_accessed_at DESC, updated_at DESC, id DESC LIMIT %s",
+                    (user_id, keep_latest),
+                )
+                keep_rows = cur.fetchall()
+                keep_ids = [int(row["id"]) for row in keep_rows]
+                if keep_ids:
+                    placeholders = ", ".join(["%s"] * len(keep_ids))
+                    cur.execute(
+                        f"DELETE FROM conversations WHERE user_id = %s AND id NOT IN ({placeholders})",
+                        tuple([user_id] + keep_ids),
+                    )
+                else:
+                    cur.execute(
+                        "DELETE FROM conversations WHERE user_id = %s", (user_id,)
+                    )
+                deleted = cur.rowcount
+            conn.commit()
+            return deleted
+        finally:
+            conn.close()
+
+    def cleanup_stale_conversations(
+        self, *, stale_days: int = 7, limit: int = 5
+    ) -> int:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id FROM conversations
+                    WHERE last_accessed_at < DATE_SUB(NOW(), INTERVAL %s DAY)
+                    ORDER BY last_accessed_at ASC, updated_at ASC, id ASC
+                    LIMIT %s
+                    """,
+                    (stale_days, limit),
+                )
+                rows = cur.fetchall()
+                delete_ids = [int(row["id"]) for row in rows]
+                if not delete_ids:
+                    conn.commit()
+                    return 0
+                placeholders = ", ".join(["%s"] * len(delete_ids))
+                cur.execute(
+                    f"DELETE FROM conversations WHERE id IN ({placeholders})",
+                    tuple(delete_ids),
+                )
+                deleted = cur.rowcount
+            conn.commit()
+            return deleted
+        finally:
+            conn.close()
+
+    def create_chat_attachment(
+        self,
+        *,
+        user_id: int,
+        conversation_id: Optional[int],
+        file_name: str,
+        mime_type: str,
+        modality: str,
+        storage_path: Optional[str] = None,
+        file_size: int = 0,
+        page_count: Optional[int] = None,
+        parse_status: str = "uploaded",
+        extract_text: Optional[str] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO chat_attachments (
+                        user_id, conversation_id, file_name, mime_type, modality,
+                        storage_path, file_size, page_count, parse_status,
+                        extract_text, meta_json, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    """,
+                    (
+                        user_id,
+                        conversation_id,
+                        file_name,
+                        mime_type,
+                        modality,
+                        storage_path,
+                        file_size,
+                        page_count,
+                        parse_status,
+                        extract_text,
+                        _json_dumps(meta or {}),
+                    ),
+                )
+                attachment_id = cur.lastrowid
+                cur.execute(
+                    "SELECT * FROM chat_attachments WHERE id = %s", (attachment_id,)
+                )
+                row = cur.fetchone()
+            conn.commit()
+            return self._deserialize_attachment(dict(row))
+        finally:
+            conn.close()
+
+    def get_chat_attachment(
+        self,
+        attachment_id: int,
+        *,
+        user_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                if user_id is None:
+                    cur.execute(
+                        "SELECT * FROM chat_attachments WHERE id = %s", (attachment_id,)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT * FROM chat_attachments WHERE id = %s AND user_id = %s",
+                        (attachment_id, user_id),
+                    )
+                row = cur.fetchone()
+            conn.commit()
+            return self._deserialize_attachment(dict(row)) if row else None
+        finally:
+            conn.close()
+
+    def list_chat_attachments(
+        self,
+        *,
+        user_id: int,
+        conversation_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                if conversation_id is None:
+                    cur.execute(
+                        "SELECT * FROM chat_attachments WHERE user_id = %s ORDER BY created_at DESC, id DESC",
+                        (user_id,),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT * FROM chat_attachments WHERE user_id = %s AND conversation_id = %s ORDER BY created_at DESC, id DESC",
+                        (user_id, conversation_id),
+                    )
+                rows = cur.fetchall()
+            conn.commit()
+            return [self._deserialize_attachment(dict(row)) for row in rows]
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _deserialize_message(row: Dict[str, Any]) -> Dict[str, Any]:
+        row["sources"] = json.loads(row.get("sources_json") or "[]")
+        row["attachments"] = json.loads(row.get("attachments_json") or "[]")
+        row["thinking_preview"] = (row.get("thinking") or "")[:80]
+        row["has_thinking"] = bool(row.get("thinking"))
+        row["is_thinking"] = False
+        row["is_streaming"] = row.get("status") == "streaming"
+        return row
+
+    @staticmethod
+    def _deserialize_attachment(row: Dict[str, Any]) -> Dict[str, Any]:
+        row["meta"] = json.loads(row.get("meta_json") or "{}")
+        return row

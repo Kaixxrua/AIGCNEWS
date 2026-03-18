@@ -65,7 +65,9 @@ const calendarDays = computed<CalendarDay[]>(() => {
     days.push({ date: dateStr, day: d, inMonth: true, isToday: dateStr === todayStr, hasSnapshot: availableSet.value.has(dateStr) })
   }
 
-  const remaining = 42 - days.length
+  // 最多显示 35 格（5 行），减少日历高度
+  const totalCells = days.length <= 35 ? 35 : 42
+  const remaining = totalCells - days.length
   for (let d = 1; d <= remaining; d++) {
     const m = month === 11 ? 1 : month + 2
     const y = month === 11 ? year + 1 : year
@@ -86,7 +88,7 @@ const selectDate = (day: CalendarDay) => {
 
 <template>
   <div
-    class="stagger-enter flex flex-col rounded-2xl px-2.5 py-2"
+    class="stagger-enter flex flex-col rounded-xl px-2 py-1.5"
     style="
       background: rgba(255, 255, 255, 0.85);
       backdrop-filter: blur(16px) saturate(180%);
@@ -162,8 +164,8 @@ const selectDate = (day: CalendarDay) => {
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 24px;
-  font-size: 10px;
+  height: 20px;
+  font-size: 9px;
   font-weight: 500;
   border-radius: 50%;
   transition: all 0.15s ease;
@@ -205,11 +207,11 @@ const selectDate = (day: CalendarDay) => {
 
 .snapshot-dot {
   position: absolute;
-  bottom: 1px;
+  bottom: 0px;
   left: 50%;
   transform: translateX(-50%);
-  width: 4px;
-  height: 4px;
+  width: 3px;
+  height: 3px;
   border-radius: 50%;
   background: #a8a29e; /* stone-400 */
   pointer-events: none;

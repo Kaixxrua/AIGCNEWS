@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 from backend.app.core.auth import (
     RequireUser,
@@ -15,26 +15,27 @@ from backend.app.core.auth import (
 )
 from backend.app.core.config import settings
 from backend.app.repositories.mysql_repo import MySQLRepository
-from backend.app.services.sms_service import SmsService
+from backend.app.services.email_service import EmailService
 
 router = APIRouter()
 
-_PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
+# 固定邀请码（内测阶段）
+_INVITE_CODE = "internal_testing"
 
 
-def _validate_phone(phone: str) -> None:
-    """校验手机号格式，不合法时抛 422。"""
-    if not _PHONE_RE.match(phone):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="手机号格式错误，请输入 11 位大陆手机号",
-        )
-
-
-def _get_sms_service(request: Request) -> SmsService:
-    """从 app.state 获取 Redis 并构造 SmsService 实例。"""
+def _get_email_service(request: Request) -> EmailService:
+    """从 app.state 获取 Redis 并构造 EmailService 实例。"""
     redis_client = getattr(request.app.state, "redis", None)
-    return SmsService(redis_client=redis_client, sms_api_key=settings.SMS_API_KEY)
+    return EmailService(
+        redis_client=redis_client,
+        smtp_host=settings.SMTP_HOST,
+        smtp_port=settings.SMTP_PORT,
+        smtp_username=settings.SMTP_USERNAME,
+        smtp_password=settings.SMTP_PASSWORD,
+        smtp_from_email=settings.SMTP_FROM_EMAIL,
+        smtp_from_name=settings.SMTP_FROM_NAME,
+        smtp_use_tls=settings.SMTP_USE_TLS,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -42,18 +43,19 @@ def _get_sms_service(request: Request) -> SmsService:
 # ---------------------------------------------------------------------------
 
 
-class SendOtpRequest(BaseModel):
-    phone: str
+class SendEmailOtpRequest(BaseModel):
+    email: EmailStr
 
 
 class RegisterRequest(BaseModel):
-    phone: str
+    email: EmailStr
+    email_code: str
     password: str
-    sms_code: str
+    invite_code: str
 
 
 class LoginRequest(BaseModel):
-    phone: str
+    email: EmailStr
     password: str
 
 
@@ -62,87 +64,95 @@ class LoginRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/auth/send-otp", summary="发送短信验证码")
-async def send_otp(body: SendOtpRequest, request: Request) -> dict[str, Any]:
+@router.post("/auth/send-email-otp", summary="发送邮箱验证码")
+async def send_email_otp(body: SendEmailOtpRequest, request: Request) -> dict[str, Any]:
     """
-    发送短信验证码。
+    发送邮箱验证码。
 
-    - 校验 11 位大陆手机号格式
-    - 60 秒防刷（Redis sms:lock）
-    - dev 模式（SMS_API_KEY 为空）将 OTP 打印到日志
+    - 60 秒防刷（Redis email:lock）
+    - dev 模式（SMTP_HOST 为空）将 OTP 打印到日志
     """
-    _validate_phone(body.phone)
-    sms = _get_sms_service(request)
-    await sms.send_otp(body.phone)
+    email_svc = _get_email_service(request)
+    await email_svc.send_otp(str(body.email))
     return {"detail": "验证码已发送"}
 
 
-@router.post("/auth/register", summary="用户注册（手机号 + 密码 + 验证码）")
+@router.post("/auth/register", summary="用户注册（邮箱 + 验证码 + 邀请码 + 密码）")
 async def register(body: RegisterRequest, request: Request) -> dict[str, Any]:
     """
     注册新用户。
 
-    1. 校验手机号格式
-    2. 校验短信验证码
-    3. 检查手机号是否已注册
+    1. 校验邀请码
+    2. 校验邮箱验证码（consume=False 先不删除）
+    3. 检查邮箱是否已注册
     4. bcrypt 哈希密码后写库
+    5. 消耗验证码
     """
-    _validate_phone(body.phone)
+    # Step 1: 校验邀请码
+    if body.invite_code != _INVITE_CODE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="邀请码无效",
+        )
 
-    sms = _get_sms_service(request)
-    # consume=False：先只校验验证码正确性，不立即删除
-    # 避免后续步骤（hash_password / 写库）失败时验证码被白白消耗
-    verified = await sms.verify_otp(body.phone, body.sms_code, consume=False)
+    # Step 2: 校验邮箱验证码（先不消耗）
+    email_svc = _get_email_service(request)
+    verified = await email_svc.verify_otp(
+        str(body.email), body.email_code, consume=False
+    )
     if not verified:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="验证码错误或已过期",
         )
 
+    # Step 3: 检查邮箱是否已注册
     db = MySQLRepository()
-    existing = await asyncio.to_thread(db.get_user_by_phone, body.phone)
+    existing = await asyncio.to_thread(db.get_user_by_email, str(body.email))
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="该手机号已注册",
+            detail="该邮箱已注册",
         )
 
+    # Step 4: 哈希密码并写库
     hashed = hash_password(body.password)
     new_id = await asyncio.to_thread(
-        db.create_user,
-        body.phone,
-        "",  # username 默认为空，用户可后续修改
+        db.create_user_with_email,
+        str(body.email),
         hashed,
+        body.invite_code,
         "user",
+        "",  # username 默认为空
     )
-    # 所有步骤成功后，才删除验证码 key（防止重复注册同一验证码）
-    await sms.consume_otp(body.phone)
+
+    # Step 5: 全部成功后消耗验证码
+    await email_svc.consume_otp(str(body.email))
+
     return {"detail": "注册成功", "user_id": new_id}
 
 
-@router.post("/auth/login", summary="登录（手机号 + 密码）")
+@router.post("/auth/login", summary="登录（邮箱 + 密码）")
 async def login(body: LoginRequest) -> dict[str, Any]:
     """
     用户登录，返回 JWT。
 
-    - 查库验证手机号 + 密码
-    - 签发 JWT（payload 含 user_id、role、phone）
+    - 查库验证邮箱 + 密码
+    - 签发 JWT（payload 含 user_id、role、email）
     """
-    _validate_phone(body.phone)
-
     db = MySQLRepository()
-    user = await asyncio.to_thread(db.get_user_by_phone, body.phone)
+    user = await asyncio.to_thread(db.get_user_by_email, str(body.email))
     if user is None or not verify_password(body.password, user["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="手机号或密码错误",
+            detail="邮箱或密码错误",
         )
 
     token = create_access_token(
         {
             "user_id": user["id"],
             "role": user["role"],
-            "phone": user["phone"],
+            "email": user["email"],
         }
     )
     return {
@@ -160,6 +170,6 @@ async def me(current_user: dict[str, Any] = Depends(RequireUser)) -> dict[str, A
     """
     return {
         "user_id": current_user.get("user_id"),
-        "phone": current_user.get("phone"),
+        "email": current_user.get("email"),
         "role": current_user.get("role"),
     }

@@ -4,8 +4,9 @@ import { api } from '../services/api'
 
 export interface AuthUser {
   user_id: number
-  phone: string
+  email: string
   role: 'user' | 'admin'
+  email_verified?: boolean
 }
 
 const TOKEN_KEY = 'auth_token'
@@ -39,8 +40,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /** 登录：调用 POST /api/auth/login，保存 token/user，返回 user */
-  async function login(phone: string, password: string): Promise<AuthUser> {
-    const res = await api.post<{ access_token: string; role: string }>('/auth/login', { phone, password })
+  async function login(email: string, password: string): Promise<AuthUser> {
+    const res = await api.post<{ access_token: string; role: string }>('/auth/login', { email, password })
     const data = res.data
     token.value = data.access_token
     localStorage.setItem(TOKEN_KEY, data.access_token)

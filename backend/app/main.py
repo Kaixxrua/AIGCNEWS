@@ -3,16 +3,19 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from redis.asyncio import Redis
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.app.api import (
+    routes_attachments,
     routes_auth,
     routes_chat,
     routes_dashboard,
@@ -24,6 +27,40 @@ from backend.app.api import (
 from backend.app.api import routes_ops
 from backend.app.core.config import settings
 from backend.app.core.scheduler import start_scheduler, stop_scheduler
+
+
+# ── 访客统计中间件 ─────────────────────────────────────────────────────────────
+# 使用 Redis SET 记录每天不同 IP 地址的访问者
+# Key 格式：visitor:{YYYY-MM-DD}（CST 时区），TTL 48 小时，自动过期清理
+_VISITOR_EXCLUDE_PREFIXES = ("/api/media/",)  # 静态文件
+
+
+class VisitorTrackingMiddleware(BaseHTTPMiddleware):
+    """统计今日独立访客 IP：每次 HTTP 请求将来源 IP 写入 Redis SET。"""
+
+    async def dispatch(self, request: Request, call_next):
+        # 排除静态资源路径
+        path = request.url.path
+        if not any(path.startswith(p) for p in _VISITOR_EXCLUDE_PREFIXES):
+            redis_client: Redis | None = getattr(request.app.state, "redis", None)
+            if redis_client is not None:
+                # 获取真实 IP（支持反向代理 X-Forwarded-For）
+                forwarded_for = request.headers.get("x-forwarded-for")
+                if forwarded_for:
+                    ip = forwarded_for.split(",")[0].strip()
+                else:
+                    ip = request.client.host if request.client else "unknown"
+
+                tz_cst = timezone(timedelta(hours=8))
+                today_str = datetime.now(tz_cst).strftime("%Y-%m-%d")
+                redis_key = f"visitor:{today_str}"
+                try:
+                    await redis_client.sadd(redis_key, ip)
+                    await redis_client.expire(redis_key, 48 * 3600)  # 48 小时 TTL
+                except Exception:
+                    pass  # Redis 不可用时静默忽略，不影响正常请求
+
+        return await call_next(request)
 
 
 async def _warmup_reranker() -> None:
@@ -118,8 +155,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 访客统计中间件（在 CORS 之后注册，确保跨域预检请求不计入访客）
+app.add_middleware(VisitorTrackingMiddleware)
+
 app.include_router(routes_auth.router, prefix="/api", tags=["Auth"])
 app.include_router(routes_chat.router, prefix="/api", tags=["Chat"])
+app.include_router(routes_attachments.router, prefix="/api", tags=["Attachments"])
 app.include_router(routes_vision.router, prefix="/api", tags=["Vision"])
 app.include_router(routes_papers.router, prefix="/api", tags=["Papers"])
 app.include_router(routes_dashboard.router, prefix="/api", tags=["Dashboard"])

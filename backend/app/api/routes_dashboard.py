@@ -39,8 +39,20 @@ def _dashboard_cache_key_builder(
     *args,
     **kwargs,
 ) -> str:
-    """为 dashboard 接口构建稳定 cache key，确保 date/period/source/limit 等参数隔离。"""
+    """为 dashboard 接口构建稳定 cache key，确保 date/period/source/limit 等参数隔离。
+
+    关键修复：当 date 参数未传入时，显式注入 CST 当天日期到 key 中，
+    防止跨日后命中前一天缓存（原先无 date 参数时 key 完全相同）。
+    """
+    from datetime import datetime, timezone, timedelta
+
     query_params = dict(request.query_params) if request is not None else {}
+
+    # 若未传 date 参数，注入今日 CST 日期，确保每天 key 不同
+    if "date" not in query_params:
+        tz_cst = timezone(timedelta(hours=8))
+        query_params["_date_injected"] = datetime.now(tz_cst).strftime("%Y-%m-%d")
+
     payload = {
         "path": request.url.path if request is not None else func.__name__,
         "namespace": namespace,
@@ -750,6 +762,7 @@ async def get_trend_radar(
 @router.get("/dashboard/summary")
 @cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_dashboard_summary(
+    request: Request,
     period: str = Query(default="daily", pattern="^(daily|weekly|monthly)$"),
     date: Optional[str] = Query(
         default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
@@ -760,6 +773,8 @@ async def get_dashboard_summary(
     当传入 date 参数时，从 document_rank_snapshots 表查询该日期的历史排行数据；
     未传入时默认查当天，若无快照则回退到原有 documents 表逻辑。
     """
+    from datetime import timedelta, timezone as _tz
+
     from backend.app.repositories.mysql_repo import MySQLRepository
 
     db = MySQLRepository()
@@ -767,16 +782,33 @@ async def get_dashboard_summary(
 
     board = _compute_board_status(snapshot_date)
 
+    # ── 今日独立访客数（Redis SET：visitor:{YYYY-MM-DD}）──────────
+    async def _get_today_unique_visitors() -> int:
+        redis_client = getattr(request.app.state, "redis", None)
+        if redis_client is None:
+            return 0
+        tz_cst = _tz(timedelta(hours=8))
+        from datetime import datetime as _dt
+
+        today_key = f"visitor:{_dt.now(tz_cst).strftime('%Y-%m-%d')}"
+        try:
+            count = await redis_client.scard(today_key)
+            return int(count or 0)
+        except Exception:
+            return 0
+
     # 静默期拦截：返回空排行数据，但统计卡片仍显示全库累计数量
     if board["is_embargoed"]:
         source_counts_embargo = await asyncio.to_thread(db.get_source_counts)
         total_embargo = sum(source_counts_embargo.values())
+        today_unique_visitors = await _get_today_unique_visitors()
         return {
             "top_list": [],
             "radar": [],
             "stats": {
                 "total_documents": total_embargo,
                 "source_counts": source_counts_embargo,
+                "today_unique_visitors": today_unique_visitors,
             },
             "period": period,
             "snapshot_date": snapshot_date,
@@ -796,6 +828,9 @@ async def get_dashboard_summary(
     # 展示的是每个来源在数据库中的实际入库总量。
     source_counts = await asyncio.to_thread(db.get_source_counts)
     total_documents = sum(source_counts.values())
+    registered_users = await asyncio.to_thread(db.get_user_count)
+    today_new_documents = await asyncio.to_thread(db.get_today_document_count)
+    today_unique_visitors = await _get_today_unique_visitors()
 
     return {
         "top_list": top10,
@@ -803,6 +838,9 @@ async def get_dashboard_summary(
         "stats": {
             "total_documents": total_documents,
             "source_counts": source_counts,
+            "registered_users": registered_users,
+            "today_new_documents": today_new_documents,
+            "today_unique_visitors": today_unique_visitors,
         },
         "period": period,
         "snapshot_date": snapshot_date,
@@ -822,6 +860,26 @@ async def get_snapshot_dates(
     db = MySQLRepository()
     dates = await asyncio.to_thread(db.get_snapshot_dates, limit)
     return {"dates": dates, "total": len(dates)}
+
+
+@router.get("/dashboard/visitor-count")
+async def get_visitor_count(request: Request):
+    """返回今日独立访客数（不缓存，实时读取 Redis SET）。
+
+    Key：visitor:{YYYY-MM-DD}（CST 时区），由 VisitorTrackingMiddleware 写入。
+    """
+    from datetime import datetime as _dt, timedelta, timezone as _tz
+
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        return {"today_unique_visitors": 0}
+    tz_cst = _tz(timedelta(hours=8))
+    today_key = f"visitor:{_dt.now(tz_cst).strftime('%Y-%m-%d')}"
+    try:
+        count = await redis_client.scard(today_key)
+        return {"today_unique_visitors": int(count or 0)}
+    except Exception:
+        return {"today_unique_visitors": 0}
 
 
 @router.get("/dashboard/github-hot")

@@ -111,17 +111,6 @@ async def trigger_ingest(
     - **force=false**（默认）：智能模式，检测落后天数后补录（最多 3 天）。
     - **force=true**：强制模式，直接抓取最新数据，不做日期检测。
     """
-    # ── 并发锁：检查是否有任务正在运行 ────────────────────────────────
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    latest = await asyncio.to_thread(db.get_latest_task)
-    if latest and latest.get("status") == "running":
-        raise HTTPException(
-            status_code=409,
-            detail="A task is already running. Please wait for it to finish.",
-        )
-
     if request.force:
         background_tasks.add_task(_bg_force_ingest, request.limit)
         logger.info("[Ops] 强制采集任务已加入后台队列，limit=%d", request.limit)
@@ -155,16 +144,6 @@ async def ingest_by_date(
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", request.target_date):
         raise HTTPException(
             status_code=400, detail="target_date 格式错误，应为 YYYY-MM-DD"
-        )
-
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    latest = await asyncio.to_thread(db.get_latest_task)
-    if latest and latest.get("status") == "running":
-        raise HTTPException(
-            status_code=409,
-            detail="当前已有任务正在运行，请等待完成后再试。",
         )
 
     background_tasks.add_task(_bg_ingest_by_date, request.target_date, request.limit)
@@ -227,16 +206,6 @@ async def refresh_github_hot(
     _: dict = Depends(RequireAdmin),
 ) -> IngestResponse:
     """手动刷新 GitHub 热榜候选池与快照。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    latest = await asyncio.to_thread(db.get_latest_task)
-    if latest and latest.get("status") == "running":
-        raise HTTPException(
-            status_code=409,
-            detail="当前已有任务正在运行，请等待完成后再试。",
-        )
-
     assert background_tasks is not None
     background_tasks.add_task(_bg_refresh_github_hot, limit)
     logger.info("[Ops] GitHub 热榜刷新任务已加入后台队列，limit=%d", limit)
@@ -269,16 +238,6 @@ async def ingest_single_source(
         raise HTTPException(
             status_code=400,
             detail=f"未知数据源 '{source}'，可选值：{', '.join(sorted(_VALID_SOURCES))}",
-        )
-
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    latest = await asyncio.to_thread(db.get_latest_task)
-    if latest and latest.get("status") == "running":
-        raise HTTPException(
-            status_code=409,
-            detail="当前已有任务正在运行，请等待完成后再试。",
         )
 
     assert background_tasks is not None
@@ -416,4 +375,57 @@ async def generate_all_briefings(
     return IngestResponse(
         status="queued",
         message=f"全维度每日简报生成任务已提交（force_regenerate={force_regenerate}），后台执行中。",
+    )
+
+
+@router.post("/ops/cache/clear-dashboard", response_model=IngestResponse, tags=["Ops"])
+async def clear_dashboard_cache(_: dict = Depends(RequireAdmin)) -> IngestResponse:
+    """手动清除 dashboard Redis 缓存，强制下次请求重新查询数据库。
+
+    使用多种 pattern 兜底，确保 aigc-cache:dashboard:* 等所有相关 key 被删除。
+    """
+    from fastapi_cache import FastAPICache
+    from redis.asyncio import Redis as AsyncRedis
+
+    from backend.app.core.config import settings
+
+    redis_client = AsyncRedis(
+        host=settings.redis_host,
+        port=settings.redis_port,
+        db=settings.redis_db,
+        password=settings.redis_password or None,
+        decode_responses=False,
+    )
+    total_deleted = 0
+    try:
+        _raw_prefix = getattr(FastAPICache, "_prefix", "") or ""
+        patterns = list(
+            dict.fromkeys(
+                [
+                    "aigc-cache:dashboard:*",
+                    f"{_raw_prefix}dashboard:*",
+                    "dashboard:*",
+                    "*:dashboard:*",
+                ]
+            )
+        )
+        for pattern in patterns:
+            keys = await redis_client.keys(pattern)
+            if keys:
+                await redis_client.delete(*keys)
+                total_deleted += len(keys)
+                logger.info(
+                    "[Ops] cache clear: pattern=%r 删除 %d keys", pattern, len(keys)
+                )
+    finally:
+        close_method = getattr(redis_client, "aclose", None)
+        if close_method:
+            await close_method()
+        else:
+            await redis_client.close()
+
+    logger.info("[Ops] dashboard cache 清除完成，共删除 %d keys。", total_deleted)
+    return IngestResponse(
+        status="ok",
+        message=f"Dashboard 缓存已清除（共删除 {total_deleted} 个 Redis key），下次请求将重新查询数据库。",
     )

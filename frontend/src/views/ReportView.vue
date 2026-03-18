@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch, computed } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { api } from '../services/api'
 import { useEventSource } from '../composables/useEventSource'
 import { useAuthStore } from '../stores/authStore'
+import { Globe, FileText, Code2, Newspaper, Rocket, Circle, Pin, Mail, BellRing, BellOff, Send } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 
@@ -16,12 +17,12 @@ const errorMsg = ref('')
 const reportRef = ref<HTMLElement | null>(null)
 
 const REPORT_TYPES = [
-  { key: 'all',         label: '综合简报', icon: '🌐', desc: '全源汇总' },
-  { key: 'arxiv',       label: '学术报告', icon: '📄', desc: 'HF Papers' },
-  { key: 'github',      label: '工程报告', icon: '💻', desc: 'GitHub Hot' },
-  { key: 'news',        label: '行业报告', icon: '📰', desc: 'RSS 新闻' },
-  { key: 'producthunt', label: '产品报告', icon: '🚀', desc: 'Product Hunt' },
-  { key: 'hackernews',  label: '社区报告', icon: '🟠', desc: 'Hacker News' },
+  { key: 'all',         label: '综合简报', icon: Globe,     desc: '全源汇总' },
+  { key: 'arxiv',       label: '学术报告', icon: FileText,  desc: 'HF Papers' },
+  { key: 'github',      label: '工程报告', icon: Code2,     desc: 'GitHub Hot' },
+  { key: 'news',        label: '行业报告', icon: Newspaper, desc: 'RSS 新闻' },
+  { key: 'producthunt', label: '产品报告', icon: Rocket,    desc: 'Product Hunt' },
+  { key: 'hackernews',  label: '社区报告', icon: Circle,    desc: 'Hacker News' },
 ] as const
 
 const PERIOD_TYPES = [
@@ -42,6 +43,75 @@ const selectedDate   = ref<string>(new Date().toISOString().slice(0, 10))
 const isPeriodDisabled = (periodKey: PeriodKey): boolean =>
   periodKey !== 'daily' && DAILY_ONLY_TYPES.has(selectedType.value)
 
+const currentTypeInfo = computed(() => REPORT_TYPES.find(t => t.key === selectedType.value))
+const currentPeriodInfo = computed(() => PERIOD_TYPES.find(p => p.key === selectedPeriod.value))
+
+// ── 订阅状态 ──────────────────────────────────────────────────────────
+interface Subscription {
+  source: string
+  period: string
+  is_active: number
+}
+
+const subscriptions = ref<Subscription[]>([])
+const isSubscribing = ref(false)
+const isSendingEmail = ref(false)
+const emailSentMsg = ref('')
+
+const isCurrentSubscribed = computed(() =>
+  subscriptions.value.some(
+    s => s.source === selectedType.value && s.period === selectedPeriod.value && s.is_active,
+  ),
+)
+
+const loadSubscriptions = async () => {
+  if (!authStore.isLoggedIn) return
+  try {
+    const res = await api.get<{ items: Subscription[] }>('/report/subscriptions')
+    subscriptions.value = res.data?.items ?? []
+  } catch {
+    subscriptions.value = []
+  }
+}
+
+const toggleSubscribe = async () => {
+  if (isSubscribing.value || !authStore.isLoggedIn) return
+  isSubscribing.value = true
+  try {
+    if (isCurrentSubscribed.value) {
+      await api.post('/report/unsubscribe', { source: selectedType.value, period: selectedPeriod.value })
+    } else {
+      await api.post('/report/subscribe', { source: selectedType.value, period: selectedPeriod.value })
+    }
+    await loadSubscriptions()
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+    errorMsg.value = msg || '订阅操作失败'
+  } finally {
+    isSubscribing.value = false
+  }
+}
+
+const sendToEmail = async () => {
+  if (isSendingEmail.value || !authStore.isLoggedIn) return
+  isSendingEmail.value = true
+  emailSentMsg.value = ''
+  try {
+    const res = await api.post<{ message: string }>('/report/send-to-email', {
+      source: selectedType.value,
+      period: selectedPeriod.value,
+    })
+    emailSentMsg.value = res.data?.message || '已发送'
+    setTimeout(() => { emailSentMsg.value = '' }, 4000)
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+    errorMsg.value = msg || '发送失败'
+  } finally {
+    isSendingEmail.value = false
+  }
+}
+
+// ── 自动滚动 ──────────────────────────────────────────────────────────
 const autoScroll = ref(true)
 const onWheelHandler = (e: WheelEvent) => { if (e.deltaY < 0) autoScroll.value = false }
 let lastTouchY = 0
@@ -78,6 +148,7 @@ onUnmounted(() => {
   }
 })
 
+// ── SSE 生成（仅 Admin） ──────────────────────────────────────────────
 const generate = async () => {
   if (isGenerating.value) return
   isGenerating.value = true
@@ -98,7 +169,6 @@ const generate = async () => {
     onMessage: async (payload: unknown) => {
       const event = payload as { type: string; data?: unknown }
       if (event.type === 'content' || event.type === 'chunk') {
-        // 防御：data 可能是对象/数组（如 Anthropic Extended Thinking 的块列表）
         let text = ''
         const d = event.data
         if (typeof d === 'string') {
@@ -123,8 +193,7 @@ const generate = async () => {
   })
 }
 
-const currentTypeInfo = () => REPORT_TYPES.find(t => t.key === selectedType.value)
-
+// ── 加载缓存 ──────────────────────────────────────────────────────────
 const loadCachedReport = async () => {
   try {
     const res = await api.get<{ content: string; date: string; id: number }>('/report/latest', {
@@ -135,7 +204,10 @@ const loadCachedReport = async () => {
   } catch { reportContent.value = ''; isCached.value = false }
 }
 
-onMounted(loadCachedReport)
+onMounted(() => {
+  loadCachedReport()
+  loadSubscriptions()
+})
 
 watch(selectedType, (type) => {
   if (DAILY_ONLY_TYPES.has(type) && selectedPeriod.value !== 'daily') selectedPeriod.value = 'daily'
@@ -148,108 +220,167 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden p-6" :class="authStore.isAdmin ? 'gap-4' : 'gap-6'">
+  <div class="flex h-full flex-col overflow-hidden p-4 gap-2.5">
 
-    <!-- 页头 -->
-    <div class="stagger-enter flex items-end justify-between shrink-0">
-      <div>
-        <h1 class="text-2xl font-bold text-stone-800 tracking-tight font-serif">自动化简报</h1>
-        <p class="mt-0.5 text-sm text-stone-400">基于多源数据，由 LLM 自动生成结构化简报</p>
-      </div>
-      <div v-if="isCached && !isGenerating" class="flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1.5 border border-green-200">
-        <span class="status-dot bg-brand-green" />
-        <span class="text-xs font-medium text-green-700">已缓存</span>
-      </div>
-    </div>
-
-    <!-- Admin 专属：控制面板（生成报告操作区） -->
-    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 p-5 space-y-3" style="animation-delay: 0.1s">
-      <div class="flex flex-wrap gap-2">
-        <button
-          v-for="type in REPORT_TYPES"
-          :key="type.key"
-          class="flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all duration-200"
-          :class="selectedType === type.key
-            ? 'bg-stone-700 text-white shadow-sm'
-            : 'text-stone-500 hover:bg-stone-50 hover:text-stone-700'"
-          :style="selectedType !== type.key ? 'background: rgba(255,255,255,0.6); border: 1px solid rgba(168,162,158,0.20)' : ''"
-          :disabled="isGenerating"
-          @click="selectedType = type.key"
-        >
-          <span>{{ type.icon }}</span>
-          <span>{{ type.label }}</span>
-          <span class="text-2xs font-normal hidden sm:inline" :class="selectedType === type.key ? 'text-white/60' : 'text-stone-400'">{{ type.desc }}</span>
-        </button>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-3 pt-3" style="border-top: 1px solid rgba(168,162,158,0.15)">
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs text-stone-400 shrink-0">周期：</span>
-          <div class="flex gap-1.5">
-            <button
-              v-for="p in PERIOD_TYPES"
-              :key="p.key"
-              class="rounded-full px-4 py-1.5 text-xs font-medium transition-all duration-200"
-              :class="[
-                isPeriodDisabled(p.key) ? 'cursor-not-allowed opacity-30 text-stone-400'
-                  : selectedPeriod === p.key ? 'bg-green-50 text-green-700 font-semibold border border-green-200'
-                  : 'text-stone-400 hover:bg-stone-50 hover:text-stone-600'
-              ]"
-              :disabled="isGenerating || isPeriodDisabled(p.key)"
-              @click="!isPeriodDisabled(p.key) && (selectedPeriod = p.key)"
-            >{{ p.label }}</button>
+    <!-- ═══ 紧凑型操作面板：标题 + 源选择 + 周期 + 操作按钮 ═══ -->
+    <div class="stagger-enter glass-card shrink-0 px-4 py-3 space-y-2">
+      <!-- 第一行：标题 + 状态 + 操作按钮 -->
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2 min-w-0">
+          <component v-if="currentTypeInfo?.icon" :is="currentTypeInfo.icon" class="h-5 w-5 text-stone-500 shrink-0" />
+          <h1 class="text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo?.label || '自动化简报' }}</h1>
+          <span class="text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ currentPeriodInfo?.label }} · {{ currentTypeInfo?.desc }}</span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <div v-if="isCached && !isGenerating" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
+            <span class="status-dot bg-brand-green" />
+            <span class="text-2xs font-medium text-green-700">已缓存</span>
           </div>
-          <span v-if="DAILY_ONLY_TYPES.has(selectedType)" class="text-2xs text-stone-400">📌 仅日报</span>
-        </div>
+          <div v-if="isGenerating" class="stream-indicator">
+            <span class="stream-dot" />
+            <span>生成中</span>
+          </div>
 
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs text-stone-400 shrink-0">日期：</span>
-          <input v-model="selectedDate" type="date" class="input w-auto py-1.5 text-xs" :disabled="isGenerating" />
-        </div>
-
-        <div class="ml-auto flex items-center gap-3">
-          <span v-if="isGenerating" class="flex items-center gap-1.5 text-xs" :class="autoScroll ? 'text-green-600' : 'text-stone-400'">
-            <span class="status-dot" :class="autoScroll ? 'bg-brand-green animate-[pulseDot_2s_ease-in-out_infinite]' : 'bg-stone-400'" />
-            {{ autoScroll ? '跟随底部' : '已解锁' }}
-          </span>
-          <button class="btn-primary gap-2" :disabled="isGenerating" @click="generate">
-            <span v-if="isGenerating" class="h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-            <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            {{ isGenerating ? '生成中…' : isCached ? '重新生成' : '生成报告' }}
+          <!-- 订阅/取消订阅按钮（需登录） -->
+          <button
+            v-if="authStore.isLoggedIn"
+            class="flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-medium transition-all duration-200"
+            :class="isCurrentSubscribed
+              ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+              : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'"
+            :disabled="isSubscribing"
+            @click="toggleSubscribe"
+          >
+            <span v-if="isSubscribing" class="h-3 w-3 rounded-full border-2 border-current/40 border-t-current animate-spin" />
+            <BellOff v-else-if="isCurrentSubscribed" class="h-3 w-3" />
+            <BellRing v-else class="h-3 w-3" />
+            {{ isCurrentSubscribed ? '退订' : '订阅' }}
           </button>
+
+          <!-- 发送到邮箱 -->
+          <button
+            v-if="authStore.isLoggedIn && isCached && reportContent"
+            class="flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-medium bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100 transition-all duration-200"
+            :disabled="isSendingEmail"
+            @click="sendToEmail"
+          >
+            <span v-if="isSendingEmail" class="h-3 w-3 rounded-full border-2 border-stone-400/40 border-t-stone-500 animate-spin" />
+            <Send v-else class="h-3 w-3" />
+            发邮件
+          </button>
+
+          <!-- 发送成功提示 -->
+          <span v-if="emailSentMsg" class="text-2xs text-green-600 flex items-center gap-1">
+            <Mail class="h-3 w-3" />
+            {{ emailSentMsg }}
+          </span>
+
+          <!-- Admin: 生成相关控件 -->
+          <template v-if="authStore.isAdmin">
+            <span v-if="isGenerating" class="flex items-center gap-1 text-2xs" :class="autoScroll ? 'text-cyan-600' : 'text-stone-400'">
+              <span class="status-dot" :class="autoScroll ? 'bg-cyan-500 animate-[pulseDot_2s_ease-in-out_infinite]' : 'bg-stone-400'" />
+              {{ autoScroll ? '跟随' : '解锁' }}
+            </span>
+            <button class="btn-primary gap-1.5 text-xs py-1.5 px-3" :disabled="isGenerating" @click="generate">
+              <span v-if="isGenerating" class="h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+              <svg v-else class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              {{ isGenerating ? '生成中…' : isCached ? '重新生成' : '生成' }}
+            </button>
+          </template>
+        </div>
+      </div>
+
+      <!-- 第二行：源选择 + 周期选择 -->
+      <div class="flex flex-wrap items-center gap-2" style="border-top: 1px solid rgba(168,162,158,0.10); padding-top: 8px">
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            v-for="type in REPORT_TYPES"
+            :key="type.key"
+            class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
+            :class="selectedType === type.key
+              ? 'bg-stone-700 text-white shadow-sm'
+              : 'text-stone-500 hover:bg-stone-50 hover:text-stone-700'"
+            :style="selectedType !== type.key ? 'background: rgba(255,255,255,0.6); border: 1px solid rgba(168,162,158,0.20)' : ''"
+            :disabled="isGenerating"
+            @click="selectedType = type.key"
+          >
+            <component :is="type.icon" class="h-3 w-3 shrink-0" />
+            <span>{{ type.label }}</span>
+          </button>
+        </div>
+
+        <span class="text-stone-200">|</span>
+
+        <div class="flex items-center gap-1">
+          <button
+            v-for="p in PERIOD_TYPES"
+            :key="p.key"
+            class="rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
+            :class="[
+              isPeriodDisabled(p.key) ? 'cursor-not-allowed opacity-30 text-stone-400'
+                : selectedPeriod === p.key ? 'bg-cyan-50 text-cyan-700 font-semibold border border-cyan-200'
+                : 'text-stone-400 hover:bg-stone-50 hover:text-stone-600'
+            ]"
+            :disabled="isGenerating || isPeriodDisabled(p.key)"
+            @click="!isPeriodDisabled(p.key) && (selectedPeriod = p.key)"
+          >{{ p.label }}</button>
+          <span v-if="DAILY_ONLY_TYPES.has(selectedType)" class="flex items-center gap-0.5 text-2xs text-stone-400 ml-0.5">
+            <Pin class="h-2.5 w-2.5 shrink-0" />
+            仅日报
+          </span>
+        </div>
+
+        <!-- Admin: 日期选择 -->
+        <div v-if="authStore.isAdmin" class="flex items-center gap-1 ml-2">
+          <input v-model="selectedDate" type="date" class="input w-auto py-1 text-xs" :disabled="isGenerating" />
         </div>
       </div>
     </div>
 
     <!-- 错误 -->
-    <div v-if="errorMsg" class="shrink-0 glass-card flex items-center gap-2 px-5 py-3 text-sm text-rose-600">
-      <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div v-if="errorMsg" class="shrink-0 glass-card flex items-center gap-2 px-4 py-2 text-xs text-rose-600">
+      <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       {{ errorMsg }}
     </div>
 
-    <!-- 内容区 -->
-    <div ref="reportRef" class="stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto p-6 scroll-smooth" style="animation-delay: 0.25s">
-      <div v-if="!reportContent && !isGenerating" class="flex h-full flex-col items-center justify-center gap-3 text-stone-400">
-        <div class="flex h-16 w-16 items-center justify-center rounded-3xl bg-stone-100">
-          <svg class="h-8 w-8 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    <!-- ═══ 内容阅读区（最大化空间） ═══ -->
+    <div ref="reportRef" class="stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto scroll-smooth" style="animation-delay: 0.1s">
+      <!-- 空状态 -->
+      <div v-if="!reportContent && !isGenerating" class="flex h-full flex-col items-center justify-center gap-2 text-stone-400 p-4">
+        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100">
+          <svg class="h-6 w-6 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
         </div>
-        <p class="text-sm font-medium text-stone-500 font-serif">选择类型并点击生成</p>
-        <p class="text-xs text-center max-w-sm text-stone-400">支持综合简报 · 学术 · 工程 · 行业 · 产品 · 社区<br/>日报 / 周报（学术/工程）/ 月报（学术/工程）</p>
-        <p class="mt-1 text-2xs text-stone-400">正在检查缓存…</p>
+        <p class="text-sm font-medium text-stone-500 font-serif">选择类型查看简报</p>
+        <p class="text-xs text-center max-w-sm text-stone-400">综合 · 学术 · 工程 · 行业 · 产品 · 社区 | 日报 / 周报 / 月报</p>
       </div>
 
-      <div v-if="isGenerating && !reportContent" class="flex items-center gap-2 text-sm text-stone-500">
-        <span class="status-dot bg-stone-500 animate-[pulseDot_2s_ease-in-out_infinite]" />
-        正在生成「{{ currentTypeInfo()?.label }}」，请稍候…
+      <!-- 生成中骨架 -->
+      <div v-if="isGenerating && !reportContent" class="p-5">
+        <div class="flex items-center gap-2 text-sm text-stone-500 mb-3">
+          <span class="status-dot bg-cyan-500 animate-[pulseDot_2s_ease-in-out_infinite]" />
+          正在生成「{{ currentTypeInfo?.label }}」…
+        </div>
+        <div class="space-y-2.5 animate-pulse">
+          <div class="h-5 w-48 rounded-lg bg-stone-100" />
+          <div class="h-3.5 w-full rounded bg-stone-50" />
+          <div class="h-3.5 w-5/6 rounded bg-stone-50" />
+          <div class="h-3.5 w-4/6 rounded bg-stone-50" />
+          <div class="h-5 w-36 rounded-lg bg-stone-100 mt-3" />
+          <div class="h-3.5 w-full rounded bg-stone-50" />
+          <div class="h-3.5 w-3/4 rounded bg-stone-50" />
+        </div>
       </div>
 
-      <article v-if="reportContent" class="prose-content max-w-none" v-html="md.render(reportContent)" />
+      <!-- 报告正文 -->
+      <div v-if="reportContent" class="p-5">
+        <article class="prose-content prose-report max-w-none" v-html="md.render(reportContent)" />
+        <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />
+      </div>
 
-      <span v-if="isGenerating && reportContent" class="inline-block h-4 w-0.5 animate-pulse bg-stone-500 align-middle ml-0.5" />
-
+      <!-- 回到底部按钮 -->
       <button
         v-if="isGenerating && !autoScroll"
-        class="sticky bottom-4 ml-auto btn-primary text-xs"
+        class="sticky bottom-4 ml-auto mr-4 btn-primary text-xs"
         @click="() => { autoScroll = true; scrollToBottom() }"
       >
         <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>

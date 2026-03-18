@@ -2,18 +2,23 @@
 /**
  * PdfCanvasViewer.vue — PDF.js 纯 Canvas 渲染器（禁 iframe）
  *
- * 修复四大维度：
- *  1. Vite ?url 语法导入 Worker，生产构建正确打包
- *  2. 完整 try/catch + isLoading/errorMessage，死得明明白白
- *  3. onMounted + nextTick 保障 DOM 就绪再渲染
- *  4. Canvas display:block; max-width:100%; 防空间塌陷
+ * 新增功能：
+ *  - 真实逐页渲染进度条（emit progress 事件）
+ *  - 进度 UI：顶部细线型进度条 + 页数标注
  */
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 // Vite ?url 语法确保 Worker 被正确打包
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+
+export interface PdfProgress {
+  phase: 'idle' | 'fetching' | 'parsing' | 'rendering' | 'done' | 'error'
+  loadedPages: number
+  totalPages: number
+  percent: number
+}
 
 const props = defineProps<{ pdfUrl: string | null | undefined }>()
 
@@ -23,6 +28,7 @@ const emit = defineEmits<{
     base64: string
     x: number; y: number; w: number; h: number
   }]
+  'progress': [payload: PdfProgress]
 }>()
 
 // ── 状态 ──────────────────────────────────────────────────────────────────
@@ -30,8 +36,28 @@ const containerRef = ref<HTMLDivElement | null>(null)
 const isLoading = ref(false)
 const errorMessage = ref('')
 const totalPages = ref(0)
+const loadedPages = ref(0)
 const scale = ref(1.5)
 const isMounted = ref(false)
+
+/** 渲染进度百分比（0-100） */
+const progressPercent = computed(() => {
+  if (totalPages.value === 0) return 0
+  return Math.round(10 + (loadedPages.value / totalPages.value) * 90)
+})
+
+/** 当前进度阶段 */
+const progressPhase = ref<PdfProgress['phase']>('idle')
+
+const emitProgress = () => {
+  const payload: PdfProgress = {
+    phase: progressPhase.value,
+    loadedPages: loadedPages.value,
+    totalPages: totalPages.value,
+    percent: progressPercent.value,
+  }
+  emit('progress', payload)
+}
 
 interface PageEntry {
   canvas: HTMLCanvasElement
@@ -49,20 +75,16 @@ const selectionBox = ref<{
 const selectionStyle = ref({ left: '0px', top: '0px', width: '0px', height: '0px' })
 
 // ── 核心渲染函数 ──────────────────────────────────────────────────────────
-// 安全清空 canvas 容器（不用 innerHTML='' 避免破坏 Vue vDOM 引用）
 const clearContainer = () => {
   if (!containerRef.value) return
-  // 只移除 canvas 元素，保留 Vue 托管的其他节点
   const canvases = containerRef.value.querySelectorAll('canvas')
   canvases.forEach(c => c.remove())
 }
 
 const loadPdf = async (url: string) => {
-  // 取消上一个渲染任务
   renderTask?.cancel()
   renderTask = null
 
-  // 维度3：DOM 就绪检查
   await nextTick()
   if (!isMounted.value || !containerRef.value) {
     console.error('[PdfCanvasViewer] containerRef is null or unmounted after nextTick')
@@ -74,6 +96,9 @@ const loadPdf = async (url: string) => {
   errorMessage.value = ''
   pageEntries.value = []
   totalPages.value = 0
+  loadedPages.value = 0
+  progressPhase.value = 'parsing'
+  emitProgress()
   clearContainer()
 
   try {
@@ -85,19 +110,20 @@ const loadPdf = async (url: string) => {
       cMapPacked: true,
     })
 
-    // 维度2：精准捕获 getDocument 错误
     pdfDoc = await loadingTask.promise.catch((err) => {
       throw new Error(`PDF 解析失败: ${err?.message || err}`)
     })
 
-    if (!isMounted.value) return  // 组件已卸载
+    if (!isMounted.value) return
 
     totalPages.value = pdfDoc.numPages
+    progressPhase.value = 'rendering'
+    emitProgress()
     console.log('[PdfCanvasViewer] numPages:', pdfDoc.numPages)
 
     // 逐页渲染循环
     for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-      if (!isMounted.value || !containerRef.value) break  // 组件已卸载
+      if (!isMounted.value || !containerRef.value) break
 
       const page = await pdfDoc.getPage(pageNum).catch((err) => {
         throw new Error(`第 ${pageNum} 页获取失败: ${err?.message || err}`)
@@ -105,7 +131,6 @@ const loadPdf = async (url: string) => {
 
       const viewport = page.getViewport({ scale: scale.value })
 
-      // 维度4：Canvas 样式防空间塌陷
       const canvas = document.createElement('canvas')
       canvas.width = Math.floor(viewport.width)
       canvas.height = Math.floor(viewport.height)
@@ -119,7 +144,7 @@ const loadPdf = async (url: string) => {
       ].join(';')
       canvas.dataset.pageIndex = String(pageNum - 1)
 
-      if (!isMounted.value || !containerRef.value) break  // 再次检查
+      if (!isMounted.value || !containerRef.value) break
       containerRef.value.appendChild(canvas)
 
       const ctx = canvas.getContext('2d')
@@ -127,49 +152,46 @@ const loadPdf = async (url: string) => {
 
       renderTask = page.render({ canvasContext: ctx, viewport, canvas })
       await renderTask.promise.catch((err) => {
-        // RenderingCancelledException 是正常的，其他错误上报
         if (err?.name !== 'RenderingCancelledException') {
           console.warn(`[PdfCanvasViewer] page ${pageNum} render error:`, err)
         }
       })
 
-      if (!isMounted.value) break  // 渲染后再检查一次
+      if (!isMounted.value) break
 
       pageEntries.value.push({
         canvas,
         viewport: { width: canvas.width, height: canvas.height, scale: scale.value },
       })
+
+      // 更新进度
+      loadedPages.value = pageNum
+      emitProgress()
     }
 
     if (isMounted.value) {
       isLoading.value = false
-      const el = containerRef.value
-      const parent = el?.parentElement
-      const grandParent = parent?.parentElement
-      console.log('[PdfCanvasViewer] All pages rendered.',
-        el ? `container: ${el.offsetWidth}x${el.offsetHeight}` : 'container null',
-        el ? `scrollHeight: ${el.scrollHeight}` : '',
-        parent ? `parent: ${parent.offsetWidth}x${parent.offsetHeight} flex:${getComputedStyle(parent).display}` : '',
-        grandParent ? `grandParent: ${grandParent.offsetWidth}x${grandParent.offsetHeight} flex:${getComputedStyle(grandParent).display}` : '')
+      progressPhase.value = 'done'
+      emitProgress()
     }
   } catch (err: unknown) {
-    // 维度2：所有错误都打印 + 显示给用户
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[PdfCanvasViewer] Fatal error:', err)
     if (isMounted.value) {
       errorMessage.value = msg
       isLoading.value = false
+      progressPhase.value = 'error'
+      emitProgress()
     }
   }
 }
 
-// 维度3：等待祖先容器有实际高度再渲染（解决 Transition 动画期间祖先高度为 0 的问题）
+// 等待祖先容器有实际高度再渲染
 let resizeObserver: ResizeObserver | null = null
 
 const startRenderWhenReady = (url: string) => {
   if (!containerRef.value) return
 
-  // 找到第一个有正高度的祖先元素（最多向上找 5 层）
   const findAncestorWithHeight = (): Element | null => {
     let el: Element | null = containerRef.value
     for (let i = 0; i < 6; i++) {
@@ -182,13 +204,10 @@ const startRenderWhenReady = (url: string) => {
 
   const ancestor = findAncestorWithHeight()
   if (ancestor && (ancestor as HTMLElement).offsetHeight > 10) {
-    // 祖先有高度，直接渲染
     loadPdf(url)
     return
   }
 
-  // 祖先高度为 0，用 ResizeObserver 等待任意祖先出现高度
-  // 监听容器的父元素（直接父容器）
   const targetEl = containerRef.value.parentElement?.parentElement ?? containerRef.value
   resizeObserver?.disconnect()
   resizeObserver = new ResizeObserver(() => {
@@ -200,7 +219,6 @@ const startRenderWhenReady = (url: string) => {
     }
   })
   resizeObserver.observe(targetEl)
-  // 同时也监听更上一层
   if (targetEl.parentElement) resizeObserver.observe(targetEl.parentElement)
 }
 
@@ -218,6 +236,9 @@ watch(() => props.pdfUrl, (url) => {
     errorMessage.value = ''
     pageEntries.value = []
     totalPages.value = 0
+    loadedPages.value = 0
+    progressPhase.value = 'idle'
+    emitProgress()
     if (containerRef.value) clearContainer()
   }
 })
@@ -278,7 +299,7 @@ const updateSelectionStyle = () => {
   }
 }
 
-// ── 内存截图：支持跨页长截图，Canvas toDataURL，不落盘 ────────────────────
+// ── 内存截图 ────────────────────────────────────────────────────
 const captureRegion = () => {
   if (!selectionBox.value) return
   const { startX, startY, endX, endY } = selectionBox.value
@@ -289,7 +310,6 @@ const captureRegion = () => {
 
   if (w < 8 || h < 8) { selectionBox.value = null; return }
 
-  // 收集所有与选区相交的页面片段
   interface Slice {
     canvas: HTMLCanvasElement
     pageIndex: number
@@ -320,7 +340,6 @@ const captureRegion = () => {
 
   if (slices.length === 0) { selectionBox.value = null; return }
 
-  // 合并所有片段到一个 offscreen canvas
   const totalW = Math.max(...slices.map(s => s.sw))
   const totalH = slices.reduce((sum, s) => sum + s.sh, 0)
 
@@ -336,7 +355,6 @@ const captureRegion = () => {
   }
 
   let dataUrl = offscreen.toDataURL('image/jpeg', 0.85)
-  // 若 base64 超过 500KB，降质重试
   if (dataUrl.length > 500_000) {
     dataUrl = offscreen.toDataURL('image/jpeg', 0.6)
   }
@@ -356,47 +374,119 @@ const captureRegion = () => {
 </script>
 
 <template>
-  <div
-    ref="containerRef"
-    class="pdf-canvas-container"
-    @mousedown="onMouseDown"
-    @mousemove="onMouseMove"
-    @mouseup="onMouseUp"
-    @contextmenu="onContextMenu"
-  >
-    <!-- 加载状态 -->
-    <div v-if="isLoading" class="pdf-status">
-      <div class="pdf-spinner" />
-      <span class="pdf-status-text">PDF 加载中…</span>
+  <div class="pdf-viewer-wrapper">
+    <!-- ═══ 顶部进度条 ═══ -->
+    <div v-if="isLoading || progressPhase === 'rendering'" class="pdf-progress-header">
+      <div class="pdf-progress-bar">
+        <div
+          class="pdf-progress-fill"
+          :style="{ width: `${progressPercent}%` }"
+        />
+      </div>
+      <div class="pdf-progress-label">
+        <span v-if="progressPhase === 'parsing'">解析 PDF…</span>
+        <span v-else-if="progressPhase === 'rendering' && totalPages > 0">
+          渲染中 {{ loadedPages }}/{{ totalPages }} 页
+        </span>
+        <span v-else>加载中…</span>
+        <span class="pdf-progress-pct">{{ progressPercent }}%</span>
+      </div>
     </div>
 
-    <!-- 错误状态 -->
-    <div v-else-if="errorMessage" class="pdf-error">
-      <div class="pdf-error-icon">⚠️</div>
-      <div class="pdf-error-msg">{{ errorMessage }}</div>
-    </div>
-
-    <!-- 无 URL 提示 -->
-    <div v-else-if="!props.pdfUrl" class="pdf-status">
-      <span class="pdf-status-text">暂无 PDF 文件</span>
-    </div>
-
-    <!-- 右键选区蓝框 -->
+    <!-- ═══ PDF Canvas 容器 ═══ -->
     <div
-      v-if="selectionBox && (selectionBox.active || selectionBox.startX !== selectionBox.endX)"
-      class="selection-rect"
-      :style="selectionStyle"
-    />
+      ref="containerRef"
+      class="pdf-canvas-container"
+      @mousedown="onMouseDown"
+      @mousemove="onMouseMove"
+      @mouseup="onMouseUp"
+      @contextmenu="onContextMenu"
+    >
+      <!-- 加载状态（仅在进度条前显示 spinner） -->
+      <div v-if="isLoading && loadedPages === 0" class="pdf-status">
+        <div class="pdf-spinner" />
+        <span class="pdf-status-text">PDF 加载中…</span>
+      </div>
+
+      <!-- 错误状态 -->
+      <div v-else-if="errorMessage" class="pdf-error">
+        <div class="pdf-error-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-rose-400"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="pdf-error-msg">{{ errorMessage }}</div>
+      </div>
+
+      <!-- 无 URL 提示 -->
+      <div v-else-if="!props.pdfUrl" class="pdf-status">
+        <span class="pdf-status-text">暂无 PDF 文件</span>
+      </div>
+
+      <!-- 右键选区蓝框 -->
+      <div
+        v-if="selectionBox && (selectionBox.active || selectionBox.startX !== selectionBox.endX)"
+        class="selection-rect"
+        :style="selectionStyle"
+      />
+    </div>
   </div>
 </template>
 
 <style scoped>
-.pdf-canvas-container {
-  position: relative;
+.pdf-viewer-wrapper {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   min-height: 0;
   flex: 1 1 0;
+  overflow: hidden;
+}
+
+/* ═══ 进度条头部 ═══ */
+.pdf-progress-header {
+  flex-shrink: 0;
+  padding: 6px 12px 4px;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(168, 162, 158, 0.08);
+}
+
+.pdf-progress-bar {
+  width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(168, 162, 158, 0.12);
+}
+
+.pdf-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease-out;
+  background: linear-gradient(90deg, #06b6d4, #8b5cf6);
+}
+
+.pdf-progress-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 3px;
+  font-size: 11px;
+  color: #78716c;
+}
+
+.pdf-progress-pct {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #06b6d4;
+}
+
+/* ═══ PDF Canvas 容器 ═══ */
+.pdf-canvas-container {
+  position: relative;
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 16px 12px;
@@ -406,7 +496,6 @@ const captureRegion = () => {
   cursor: crosshair;
 }
 
-/* 维度4：防空间塌陷 —— 所有 canvas 子元素继承 */
 .pdf-canvas-container :deep(canvas) {
   display: block;
   max-width: 100%;
@@ -432,7 +521,7 @@ const captureRegion = () => {
   width: 32px;
   height: 32px;
   border: 3px solid #e5e7eb;
-  border-top-color: #6366f1;
+  border-top-color: #06b6d4;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -466,8 +555,8 @@ const captureRegion = () => {
 
 .selection-rect {
   position: absolute;
-  border: 2px solid #6366f1;
-  background: rgba(99, 102, 241, 0.12);
+  border: 2px solid #06b6d4;
+  background: rgba(6, 182, 212, 0.10);
   pointer-events: none;
   z-index: 10;
   border-radius: 2px;

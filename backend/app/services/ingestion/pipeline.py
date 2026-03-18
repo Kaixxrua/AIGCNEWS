@@ -65,7 +65,9 @@ async def _clear_dashboard_cache_safely() -> None:
     从而触发 "Future attached to a different loop"。
 
     这里为当前协程所在 loop 临时创建一个短生命周期 Redis 客户端，
-    按 prefix + namespace 精确删除 dashboard 缓存键。
+    使用多种 pattern 兜底清除 dashboard 缓存键——
+    因为 FastAPICache._prefix 可能是私有属性取不到真实值，
+    导致单一 pattern 无法匹配实际 key。
     """
     redis_client = Redis(
         host=settings.redis_host,
@@ -75,15 +77,43 @@ async def _clear_dashboard_cache_safely() -> None:
         decode_responses=False,
     )
     try:
-        prefix = getattr(FastAPICache, "_prefix", "") or ""
-        namespace_prefix = f"{prefix}dashboard:"
-        keys = await redis_client.keys(f"{namespace_prefix}*")
-        if keys:
-            await redis_client.delete(*keys)
-        logger.info(
-            "[Orchestrator] dashboard cache cleared (%d keys).",
-            len(keys),
+        # 尝试从 FastAPICache 取 prefix（可能为空字符串或私有属性不可达）
+        _raw_prefix = getattr(FastAPICache, "_prefix", "") or ""
+
+        # 多种 pattern 兜底：
+        # 核心 prefix 是 main.py 中写死的 "aigc-cache:"，同时兼容其他情况
+        patterns = list(
+            dict.fromkeys(  # 去重同时保持顺序
+                [
+                    "aigc-cache:dashboard:*",  # 主路径：main.py 中配置的实际 prefix
+                    f"{_raw_prefix}dashboard:*",  # FastAPICache 运行时取到的 prefix（可能与上方相同）
+                    "dashboard:*",  # 无 prefix 情况
+                    "*:dashboard:*",  # 任意 prefix 通配（最宽泛）
+                ]
+            )
         )
+
+        total_deleted = 0
+        for pattern in patterns:
+            keys = await redis_client.keys(pattern)
+            if keys:
+                await redis_client.delete(*keys)
+                total_deleted += len(keys)
+                logger.info(
+                    "[Orchestrator] dashboard cache: pattern=%r 删除 %d keys。",
+                    pattern,
+                    len(keys),
+                )
+
+        if total_deleted == 0:
+            logger.info(
+                "[Orchestrator] dashboard cache: 未找到可删除的 key（可能已过期）。"
+            )
+        else:
+            logger.info(
+                "[Orchestrator] dashboard cache cleared，共删除 %d keys。",
+                total_deleted,
+            )
     finally:
         close_method = getattr(redis_client, "aclose", None)
         if close_method is not None:
@@ -318,6 +348,36 @@ def _ingest_documents(
 
     sorted_papers = _sort_papers_for_write(papers)
     documents = _to_documents(sorted_papers)
+
+    # ── 替换式快照写入：先收集本批次涉及的所有 channel，逐 channel 清除旧快照 ──
+    # 确保同一 snapshot_date + source_channel 下不会残留上次采集的旧 doc_id，
+    # 避免 rank_in_period 重复导致旧论文覆盖新论文。
+    channels_in_batch: set = set()
+    for paper in sorted_papers:
+        ch = paper.get("source_channel", paper.get("channel", ""))
+        if ch:
+            channels_in_batch.add(ch)
+
+    for ch in channels_in_batch:
+        try:
+            deleted = db.delete_snapshots_by_channel(snapshot_date, ch)
+            if deleted:
+                logger.info(
+                    "[Pipeline][%s] 清除旧快照 %s/%s: %d 条（将替换为本批 %d 条）",
+                    source_label,
+                    snapshot_date,
+                    ch,
+                    deleted,
+                    len(sorted_papers),
+                )
+        except Exception as exc:
+            logger.warning(
+                "[Pipeline][%s] 清除旧快照失败 %s/%s: %s",
+                source_label,
+                snapshot_date,
+                ch,
+                exc,
+            )
 
     # ── SQLite metadata + rank snapshot ────────────────────────────
     for paper, doc in zip(sorted_papers, documents):
