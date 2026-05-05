@@ -17,14 +17,19 @@ def _enrich_doc_pdf_url(doc: Dict[str, Any], request: Request) -> Dict[str, Any]
 
     例如：
         local_pdf_path = "storage/papers/2403.12345.pdf"
-        → pdf_media_url = "http://host/api/media/papers/2403.12345.pdf"
+        → pdf_media_url = "https://host/api/media/papers/2403.12345.pdf"
 
+    通过 X-Forwarded-Proto 头感知真实协议（HTTPS），避免 Mixed Content 问题。
     如果 local_pdf_path 为空，pdf_media_url 为 None。
     """
     local_path = doc.get("local_pdf_path") or ""
     if local_path:
         filename = os.path.basename(local_path)
         base_url = str(request.base_url).rstrip("/")
+        # 读取 Nginx 传入的真实协议头，感知 HTTPS
+        forwarded_proto = request.headers.get("x-forwarded-proto", "")
+        if forwarded_proto:
+            base_url = base_url.replace("http://", f"{forwarded_proto}://", 1)
         doc["pdf_media_url"] = f"{base_url}/api/media/papers/{filename}"
     else:
         doc["pdf_media_url"] = None

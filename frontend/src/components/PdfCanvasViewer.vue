@@ -91,6 +91,9 @@ const loadPdf = async (url: string) => {
     return
   }
 
+  // 强制升级为 HTTPS，避免 Mixed Content 错误
+  const safeUrl = url.replace(/^http:\/\//i, 'https://')
+
   // 重置状态
   isLoading.value = true
   errorMessage.value = ''
@@ -102,10 +105,10 @@ const loadPdf = async (url: string) => {
   clearContainer()
 
   try {
-    console.log('[PdfCanvasViewer] Loading PDF:', url)
+    console.log('[PdfCanvasViewer] Loading PDF:', safeUrl)
 
     const loadingTask = pdfjsLib.getDocument({
-      url,
+      url: safeUrl,
       cMapUrl: new URL('pdfjs-dist/cmaps/', import.meta.url).toString(),
       cMapPacked: true,
     })

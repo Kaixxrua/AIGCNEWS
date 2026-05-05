@@ -223,7 +223,7 @@ class EmailService:
             f"    {otp}\n\n"
             f"验证码有效期为 5 分钟，请勿泄露给他人。\n\n"
             f"如非本人操作，请忽略此邮件。\n\n"
-            f"— AIGC_NEWS 团队"
+            f"— AIGC_NEWS"
         )
 
     def _build_briefing_html(

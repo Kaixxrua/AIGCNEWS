@@ -25,9 +25,15 @@ def _enrich_pdf_url(doc: Dict[str, Any], request: Request) -> Dict[str, Any]:
     """
     将 local_pdf_path 转成完整可访问的 pdf_media_url。
     若无本地文件，对 arxiv 论文 fallback 到代理 URL（/api/papers/{id}/pdf）。
+    通过 X-Forwarded-Proto 头感知真实协议（HTTPS），避免 Mixed Content 问题。
     """
     local_path = doc.get("local_pdf_path") or ""
+    # 读取 Nginx 传入的真实协议头，默认 http
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
     base_url = str(request.base_url).rstrip("/")
+    if forwarded_proto:
+        # 将 base_url 中的协议替换为真实协议
+        base_url = base_url.replace("http://", f"{forwarded_proto}://", 1)
     if local_path:
         filename = os.path.basename(local_path)
         doc["pdf_media_url"] = f"{base_url}/api/media/papers/{filename}"
@@ -256,6 +262,10 @@ async def proxy_arxiv_pdf(paper_id: str, request: Request):
     if local_path and os.path.isfile(local_path):
         filename = os.path.basename(local_path)
         base_url = str(request.base_url).rstrip("/")
+        # 感知真实协议（HTTPS），避免 Mixed Content
+        forwarded_proto = request.headers.get("x-forwarded-proto", "")
+        if forwarded_proto:
+            base_url = base_url.replace("http://", f"{forwarded_proto}://", 1)
         from fastapi.responses import RedirectResponse
 
         return RedirectResponse(url=f"{base_url}/api/media/papers/{filename}")

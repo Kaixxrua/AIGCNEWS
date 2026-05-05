@@ -633,8 +633,8 @@ const cancelSettings = () => { showSettings.value = false }
             <button class="text-stone-400 hover:text-red-500" @click="removeAttachment(attachment.id)">×</button>
           </div>
         </div>
-        <!-- 工具栏（联网搜索等开关） -->
-        <div class="flex items-center gap-2 mb-2">
+        <!-- 工具栏（联网搜索等开关）— 暂时隐藏，待配置 KIMI_API_KEY 后启用 -->
+        <!-- <div class="flex items-center gap-2 mb-2">
           <button
             class="web-search-toggle"
             :class="webSearchEnabled ? 'web-search-toggle--active' : ''"
@@ -645,14 +645,14 @@ const cancelSettings = () => { showSettings.value = false }
             <span>联网搜索</span>
             <span v-if="webSearchEnabled" class="web-search-dot" />
           </button>
-        </div>
+        </div> -->
         <div class="flex items-end gap-3">
           <div class="relative flex-1">
             <textarea
               v-model="inputText"
               rows="1"
               class="input max-h-36 min-h-[48px] resize-y"
-              :placeholder="webSearchEnabled ? '输入问题…（已开启联网搜索）' : '输入问题…（Enter 发送，Shift+Enter 换行）'"
+              :placeholder="'输入问题…（Enter 发送，Shift+Enter 换行）'"
               :disabled="isSending"
               @keydown="handleKeydown"
             />

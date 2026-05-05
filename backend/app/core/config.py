@@ -64,7 +64,15 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.2
     llm_max_tokens: int = 150000
 
-    # 联网搜索 API Keys（按优先级：Tavily > Brave > DuckDuckGo 兜底）
+    # 联网搜索配置（使用 Kimi $web_search builtin_function）
+    # KIMI_API_KEY：Moonshot AI 的 API Key（https://platform.moonshot.cn）
+    # KIMI_BASE_URL：留空默认使用 https://api.moonshot.cn/v1
+    # KIMI_MODEL：支持 $web_search 的模型，默认 kimi-k2-turbo-preview
+    kimi_api_key: str = ""
+    kimi_base_url: str = "https://api.moonshot.cn/v1"
+    kimi_model: str = "kimi-k2-turbo-preview"
+
+    # 旧三方搜索 API Keys（保留兼容，已废弃）
     tavily_api_key: str = ""
     brave_search_api_key: str = ""
 

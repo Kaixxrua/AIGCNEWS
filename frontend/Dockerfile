@@ -4,14 +4,16 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --registry=https://registry.npmmirror.com
 COPY . .
-# 注意：确保你的前端 .env.production 里 VITE_API_BASE_URL=http://118.89.101.11:8000
 RUN npm run build
 
-# 阶段二：使用轻量级 Nginx 提供网页访问服务
+# 阶段二：使用轻量级 Nginx 提供网页访问服务（含 HTTPS）
 FROM nginx:alpine
-# 覆盖默认 Nginx 配置，支持 Vue Router History 模式刷新回退到 index.html
+# 覆盖默认 Nginx 配置（HTTP 重定向 + HTTPS + Vue Router History 模式）
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 # 把编译好的 dist 文件夹放进 Nginx
 COPY --from=builder /app/dist /usr/share/nginx/html
-EXPOSE 80
+# 将 SSL 证书复制进镜像
+COPY ssl/aigcnews.cn_bundle.crt /etc/nginx/ssl/aigcnews.cn_bundle.crt
+COPY ssl/aigcnews.cn.key        /etc/nginx/ssl/aigcnews.cn.key
+EXPOSE 80 443
 CMD ["nginx", "-g", "daemon off;"]

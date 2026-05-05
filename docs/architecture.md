@@ -1,6 +1,6 @@
 # AIGC_NEWS 项目功能架构
 
-> 最后更新：2026-03-19（布局优化：缩小 Dashboard 统计卡片尺寸让排行榜多显示；Dock 登录/登出分色按钮取代右上角 Auth Island；注册页新增用户协议勾选（不默认勾选）；DisclaimerView 重写为五侧重点完整法律条款）
+> 最后更新：2026-03-19（联网搜索后端重构：弃用三方搜索源（Tavily/Brave/DuckDuckGo），改为使用 Kimi 内置 $web_search builtin_function，通过两轮 tool_calls 循环实现联网搜索，无需额外 API Key）
 
 ---
 
@@ -214,11 +214,11 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 - **配置**: 复用 `settings.openai_api_key`、`settings.openai_base_url`
 - **超时**: 流式 180s + 非流式 60s
 
-#### `web_search_service.py`（新增）
-- **功能**: 联网搜索统一入口，自动选择最优后端
-- **后端优先级**: Tavily（RAG 友好，推荐）> Brave Search > DuckDuckGo（免费兜底）
-- **配置项**: `TAVILY_API_KEY`、`BRAVE_SEARCH_API_KEY`（均在 `.env` 中配置，留空则自动降级）
-- **DuckDuckGo**: 无需 API Key，使用 `duckduckgo-search>=6.0.0` 库，自动作为兜底
+#### `web_search_service.py`
+- **功能**: 联网搜索统一入口，使用 Kimi 内置 `$web_search` builtin_function 实现联网搜索
+- **实现**: 两轮 tool_calls 循环——Round 1 发送带 `$web_search` 工具声明的请求，收到 `finish_reason=tool_calls` 后，将 `arguments` 原封不动提交给 Kimi（role=tool 消息）；Round 2 Kimi 执行搜索并返回结果文本
+- **配置项**: 复用 `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `CHAT_MODEL_NAME`，无需额外配置
+- **结果解析**: `_parse_kimi_search_response()` 从 Kimi 返回的 Markdown 文本中提取结构化链接和摘要
 - **返回格式**: `List[WebSearchResult]`（title/url/snippet/content），统一转换为 `source="web"` 的来源格式
 - **异常策略**: 任何后端失败自动切换，全部失败时返回空列表，不中断主流程
 
