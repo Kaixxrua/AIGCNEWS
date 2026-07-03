@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date as DateType
-from typing import Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -36,6 +36,58 @@ class ClearDataResponse(BaseModel):
     deleted_documents: int
     deleted_tasks: int
     milvus_dropped: bool
+
+
+class GitHubProjectsEnrichRequest(BaseModel):
+    limit: int = 50
+    force: bool = False
+    dry_run: bool = False
+    retry_failed: bool = True
+    refresh_changed: bool = False
+
+
+class GitHubProjectsEnrichResponse(BaseModel):
+    status: str
+    message: str
+    result: Optional[Dict[str, Any]] = None
+
+
+class ProviderConfigRequest(BaseModel):
+    provider: Literal["openai", "anthropic"] = "openai"
+    base_url: str = ""
+    model_name: str = ""
+    api_key: Optional[str] = None
+    clear_api_key: bool = False
+
+
+class ProviderConfigResponse(BaseModel):
+    provider: str
+    base_url: str
+    model_name: str
+    api_key_configured: bool
+    api_key_masked: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+def _mask_api_key(api_key: Optional[str]) -> Optional[str]:
+    if not api_key:
+        return None
+    if len(api_key) <= 8:
+        return "****"
+    return f"{api_key[:4]}****{api_key[-4:]}"
+
+
+def _provider_config_response(row: Optional[dict], provider: str) -> ProviderConfigResponse:
+    api_key = row.get("api_key") if row else None
+    updated_at = row.get("updated_at") if row else None
+    return ProviderConfigResponse(
+        provider=(row.get("provider") if row else provider),
+        base_url=(row.get("base_url") if row else "") or "",
+        model_name=(row.get("model_name") if row else "") or "",
+        api_key_configured=bool(api_key),
+        api_key_masked=_mask_api_key(api_key),
+        updated_at=str(updated_at) if updated_at else None,
+    )
 
 
 # ── 后台任务包装 ─────────────────────────────────────────────────────────────
@@ -94,6 +146,63 @@ def _bg_refresh_github_hot(limit: int) -> None:
     )
 
     refresh_github_hot_candidates(limit=limit)
+
+
+def _bg_enrich_github_projects(
+    limit: int,
+    force: bool,
+    dry_run: bool,
+    retry_failed: bool = True,
+    refresh_changed: bool = False,
+) -> None:
+    """富化 GitHub 项目库分类与中文描述。"""
+    from backend.app.services.ingestion.github_project_enricher import (
+        enrich_github_projects,
+    )
+
+    result = enrich_github_projects(
+        limit=limit,
+        force=force,
+        dry_run=dry_run,
+        retry_failed=retry_failed,
+        refresh_changed=refresh_changed,
+    )
+    logger.info("[Ops] GitHub 项目库富化任务完成：%s", result)
+
+
+# ── 运行时模型配置 ─────────────────────────────────────────────────────────────
+
+
+@router.get("/ops/provider-config", response_model=ProviderConfigResponse, tags=["Ops"])
+async def get_provider_config(
+    _: dict = Depends(RequireAdmin),
+) -> ProviderConfigResponse:
+    """读取唯一的运行时模型配置。响应只返回密钥是否已配置与脱敏值。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    row = await asyncio.to_thread(db.get_runtime_provider_setting)
+    return _provider_config_response(row, "openai")
+
+
+@router.put("/ops/provider-config", response_model=ProviderConfigResponse, tags=["Ops"])
+async def update_provider_config(
+    request: ProviderConfigRequest,
+    _: dict = Depends(RequireAdmin),
+) -> ProviderConfigResponse:
+    """更新唯一的运行时模型配置。api_key 留空时保留原值，clear_api_key=true 时清空。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    row = await asyncio.to_thread(
+        db.upsert_runtime_provider_setting,
+        request.provider,
+        request.base_url,
+        request.api_key,
+        request.clear_api_key,
+        request.model_name,
+    )
+    return _provider_config_response(row, request.provider)
 
 
 # ── 路由 ─────────────────────────────────────────────────────────────────────
@@ -213,6 +322,68 @@ async def refresh_github_hot(
         status="queued",
         message=f"GitHub 热榜刷新任务已提交（limit={limit}），后台执行中。",
     )
+
+
+@router.post(
+    "/ops/github-projects/enrich",
+    response_model=GitHubProjectsEnrichResponse,
+    tags=["Ops"],
+)
+async def enrich_github_project_library(
+    request: GitHubProjectsEnrichRequest,
+    background_tasks: BackgroundTasks = None,
+    _: dict = Depends(RequireAdmin),
+) -> GitHubProjectsEnrichResponse:
+    """手动触发 GitHub 项目库 AI 分类与中文描述富化。"""
+    limit = max(1, min(int(request.limit or 50), 500))
+    if request.dry_run:
+        from backend.app.services.ingestion.github_project_enricher import (
+            enrich_github_projects,
+        )
+
+        result = await asyncio.to_thread(
+            enrich_github_projects,
+            limit=limit,
+            force=request.force,
+            dry_run=True,
+            retry_failed=request.retry_failed,
+            refresh_changed=request.refresh_changed,
+        )
+        return GitHubProjectsEnrichResponse(
+            status="dry_run",
+            message=f"GitHub 项目库富化 dry-run 完成，候选 {result.get('candidates', 0)} 个。",
+            result=result,
+        )
+
+    assert background_tasks is not None
+    background_tasks.add_task(
+        _bg_enrich_github_projects,
+        limit,
+        request.force,
+        False,
+        request.retry_failed,
+        request.refresh_changed,
+    )
+    logger.info(
+        "[Ops] GitHub 项目库富化任务已加入后台队列，limit=%d force=%s retry_failed=%s refresh_changed=%s",
+        limit,
+        request.force,
+        request.retry_failed,
+        request.refresh_changed,
+    )
+    return GitHubProjectsEnrichResponse(
+        status="queued",
+        message=f"GitHub 项目库富化任务已提交（limit={limit}），后台执行中。",
+    )
+
+
+@router.get("/ops/github-projects/enrichment-status", tags=["Ops"])
+async def github_project_enrichment_status(_: dict = Depends(RequireAdmin)):
+    """查看 GitHub 项目库富化进度。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    return await asyncio.to_thread(db.get_github_project_enrichment_status)
 
 
 @router.post("/ops/ingest-source", response_model=IngestResponse, tags=["Ops"])

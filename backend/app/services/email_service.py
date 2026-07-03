@@ -206,10 +206,14 @@ class EmailService:
                 to_email=to_email, subject=subject, html_body=html_body
             )
         else:
-            logger.info(
-                "[EMAIL DEV] 简报邮件 to=%s subject=%s (SMTP 未配置，跳过发送)",
+            logger.warning(
+                "[EMAIL] 简报邮件未发送 to=%s subject=%s (SMTP 未配置)",
                 to_email,
                 subject,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="SMTP 未配置，无法发送真实邮件",
             )
 
     # ------------------------------------------------------------------
@@ -407,4 +411,7 @@ class EmailService:
                 type(exc).__name__,
                 exc,
             )
-            # 简报邮件发送失败不抛出异常，仅记录日志，避免阻塞主流程
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"简报邮件发送失败（{type(exc).__name__}），请检查 SMTP 配置后重试",
+            ) from exc

@@ -26,6 +26,46 @@ def _json_dumps(value: Any) -> str:
     return json.dumps(value or [], ensure_ascii=False)
 
 
+def _json_loads_list(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if not value:
+        return []
+    try:
+        data = json.loads(str(value))
+    except (TypeError, json.JSONDecodeError):
+        data = []
+    if not isinstance(data, list):
+        return []
+    return [str(item).strip() for item in data if str(item).strip()]
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_github_project_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    item = dict(row)
+    item["topics"] = _json_loads_list(item.pop("topics_json", None))
+    item["tags"] = _json_loads_list(item.pop("tags_json", None))
+    item["stars"] = _as_int(item.get("stars"))
+    item["forks"] = _as_int(item.get("forks"))
+    item["watchers"] = _as_int(item.get("watchers"))
+    item["open_issues"] = _as_int(item.get("open_issues"))
+    item["confidence"] = _as_float(item.get("confidence"))
+    return item
+
+
 class MySQLRepository:
     """MySQL repository for metadata, task records, briefings, eval results and GitHub hotness."""
 
@@ -55,6 +95,81 @@ class MySQLRepository:
         conn = self._pool.connection()
         return conn
 
+    def resolve_github_repo_id(self, repo_id: str = "", full_name: str = "") -> str:
+        """Return the canonical repo_id for a GitHub repository identity."""
+        repo_id = (repo_id or "").strip()
+        full_name = (full_name or "").strip()
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                resolved = self._resolve_github_repo_id_cur(cur, repo_id, full_name)
+            conn.commit()
+            return resolved
+        finally:
+            conn.close()
+
+    def _resolve_github_repo_id_cur(self, cur, repo_id: str = "", full_name: str = "") -> str:
+        repo_id = (repo_id or "").strip()
+        full_name = (full_name or "").strip()
+        if repo_id:
+            cur.execute(
+                """
+                SELECT canonical_repo_id
+                FROM github_repo_aliases
+                WHERE alias_repo_id = %s
+                LIMIT 1
+                """,
+                (repo_id,),
+            )
+            row = cur.fetchone()
+            if row and row.get("canonical_repo_id"):
+                return str(row["canonical_repo_id"])
+
+        if full_name:
+            cur.execute(
+                """
+                SELECT repo_id
+                FROM github_repo_candidates
+                WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(%s))
+                ORDER BY (repo_id = full_name) DESC,
+                         COALESCE(stars, 0) DESC,
+                         COALESCE(last_seen_at, '') DESC
+                LIMIT 1
+                """,
+                (full_name,),
+            )
+            row = cur.fetchone()
+            if row and row.get("repo_id"):
+                return str(row["repo_id"])
+        return full_name or repo_id
+
+    def _upsert_github_repo_alias_cur(
+        self,
+        cur,
+        *,
+        alias_repo_id: str,
+        canonical_repo_id: str,
+        full_name: str,
+    ) -> None:
+        alias_repo_id = (alias_repo_id or "").strip()
+        canonical_repo_id = (canonical_repo_id or "").strip()
+        full_name = (full_name or "").strip()
+        if not alias_repo_id or not canonical_repo_id or alias_repo_id == canonical_repo_id:
+            return
+        now = _utcnow()
+        cur.execute(
+            """
+            INSERT INTO github_repo_aliases (
+                alias_repo_id, canonical_repo_id, full_name, created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                canonical_repo_id=VALUES(canonical_repo_id),
+                full_name=VALUES(full_name),
+                updated_at=VALUES(updated_at)
+            """,
+            (alias_repo_id, canonical_repo_id, full_name, now, now),
+        )
+
     def _init_schema(self) -> None:
         statements = [
             """
@@ -69,6 +184,9 @@ class MySQLRepository:
                 tags TEXT,
                 score DOUBLE DEFAULT 0.0,
                 raw_score DOUBLE DEFAULT 0.0,
+                stars INT DEFAULT 0,
+                forks INT DEFAULT 0,
+                language VARCHAR(128) DEFAULT '',
                 rank_in_period INT DEFAULT 9999,
                 indexed TINYINT DEFAULT 0,
                 in_daily TINYINT DEFAULT 0,
@@ -126,7 +244,19 @@ class MySQLRepository:
                 source_channels VARCHAR(512),
                 first_seen_at VARCHAR(64),
                 last_seen_at VARCHAR(64),
-                last_snapshot_at VARCHAR(64)
+                last_snapshot_at VARCHAR(64),
+                UNIQUE KEY uq_gh_repo_full_name (full_name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS github_repo_aliases (
+                alias_repo_id VARCHAR(255) NOT NULL PRIMARY KEY,
+                canonical_repo_id VARCHAR(255) NOT NULL,
+                full_name VARCHAR(255) NOT NULL,
+                created_at VARCHAR(64),
+                updated_at VARCHAR(64),
+                INDEX idx_gh_repo_alias_canonical (canonical_repo_id),
+                INDEX idx_gh_repo_alias_full_name (full_name)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
             """
@@ -155,6 +285,26 @@ class MySQLRepository:
                 observed_date VARCHAR(16) NOT NULL,
                 captured_at VARCHAR(64) NOT NULL,
                 UNIQUE KEY uq_trend (repo_id, period, observed_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS github_repo_enrichments (
+                repo_id VARCHAR(255) NOT NULL PRIMARY KEY,
+                category_slug VARCHAR(64) NOT NULL,
+                category_name VARCHAR(128) NOT NULL,
+                description_zh VARCHAR(512) NOT NULL,
+                tags_json TEXT,
+                confidence DOUBLE DEFAULT 0.0,
+                source_fingerprint VARCHAR(64) NOT NULL,
+                prompt_version VARCHAR(32) NOT NULL,
+                model_provider VARCHAR(64) DEFAULT '',
+                model_name VARCHAR(255) DEFAULT '',
+                status VARCHAR(32) NOT NULL DEFAULT 'succeeded',
+                error_msg TEXT,
+                enriched_at VARCHAR(64),
+                updated_at VARCHAR(64),
+                INDEX idx_gh_repo_enrich_category (category_slug, status),
+                INDEX idx_gh_repo_enrich_status (status, updated_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
             """
@@ -243,6 +393,15 @@ class MySQLRepository:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
             """
+            CREATE TABLE IF NOT EXISTS runtime_provider_settings (
+                provider VARCHAR(64) NOT NULL PRIMARY KEY,
+                base_url VARCHAR(1024) DEFAULT '',
+                api_key TEXT,
+                model_name VARCHAR(255) DEFAULT '',
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            """
             CREATE TABLE IF NOT EXISTS briefing_subscriptions (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL,
@@ -267,12 +426,17 @@ class MySQLRepository:
                     "ALTER TABLE documents ADD COLUMN in_daily TINYINT DEFAULT 0",
                     "ALTER TABLE documents ADD COLUMN in_weekly TINYINT DEFAULT 0",
                     "ALTER TABLE documents ADD COLUMN in_monthly TINYINT DEFAULT 0",
+                    "ALTER TABLE documents ADD COLUMN stars INT DEFAULT 0",
+                    "ALTER TABLE documents ADD COLUMN forks INT DEFAULT 0",
+                    "ALTER TABLE documents ADD COLUMN language VARCHAR(128) DEFAULT ''",
                     "ALTER TABLE documents ADD COLUMN local_pdf_path VARCHAR(512) DEFAULT NULL",
+                    "ALTER TABLE runtime_provider_settings ADD COLUMN model_name VARCHAR(255) DEFAULT ''",
                     # Phase 4: 认证鉴权改造 — users 表邮箱字段迁移
                     "ALTER TABLE users MODIFY phone VARCHAR(20) NULL",
                     "ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL UNIQUE AFTER phone",
                     "ALTER TABLE users ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 1 AFTER email",
                     "ALTER TABLE users ADD COLUMN invite_code_used VARCHAR(64) NULL AFTER email_verified",
+                    "ALTER TABLE github_repo_candidates ADD UNIQUE KEY uq_gh_repo_full_name (full_name)",
                 ]
                 for stmt in alter_stmts:
                     try:
@@ -290,10 +454,10 @@ class MySQLRepository:
     def upsert_document(self, doc: Dict[str, Any]) -> None:
         sql = """
             INSERT INTO documents (id, source, source_channel, title, url, summary, published_date,
-                                   tags, score, raw_score, rank_in_period, indexed,
+                                   tags, score, raw_score, stars, forks, language, rank_in_period, indexed,
                                    in_daily, in_weekly, in_monthly, local_pdf_path, created_at)
             VALUES (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s, %(summary)s, %(published_date)s,
-                    %(tags)s, %(score)s, %(raw_score)s, %(rank_in_period)s, %(indexed)s,
+                    %(tags)s, %(score)s, %(raw_score)s, %(stars)s, %(forks)s, %(language)s, %(rank_in_period)s, %(indexed)s,
                     %(in_daily)s, %(in_weekly)s, %(in_monthly)s, %(local_pdf_path)s, %(created_at)s)
             ON DUPLICATE KEY UPDATE
                 source_channel=VALUES(source_channel),
@@ -304,6 +468,9 @@ class MySQLRepository:
                 tags=VALUES(tags),
                 score=GREATEST(score, VALUES(score)),
                 raw_score=GREATEST(raw_score, VALUES(raw_score)),
+                stars=COALESCE(NULLIF(VALUES(stars), 0), stars),
+                forks=COALESCE(NULLIF(VALUES(forks), 0), forks),
+                language=COALESCE(NULLIF(VALUES(language), ''), language),
                 rank_in_period=LEAST(rank_in_period, VALUES(rank_in_period)),
                 indexed=VALUES(indexed),
                 in_daily=GREATEST(in_daily, VALUES(in_daily)),
@@ -318,6 +485,9 @@ class MySQLRepository:
         doc.setdefault("in_monthly", 0)
         doc.setdefault("score", 0.0)
         doc.setdefault("raw_score", doc.get("score", 0.0))
+        doc.setdefault("stars", 0)
+        doc.setdefault("forks", 0)
+        doc.setdefault("language", "")
         doc.setdefault("source_channel", "")
         doc.setdefault("rank_in_period", 9999)
         doc.setdefault("local_pdf_path", None)
@@ -408,23 +578,48 @@ class MySQLRepository:
     def get_top_documents(
         self, limit: int = 10, source_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
+        select_clause = """
+            SELECT
+                d.id, d.source, d.source_channel, d.title, d.url, d.summary,
+                d.published_date, d.tags, d.score, d.raw_score,
+                COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
+                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
+                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
+                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
+                d.in_monthly, d.local_pdf_path, d.created_at
+            FROM documents d
+            LEFT JOIN github_repo_candidates c
+              ON d.source = 'github'
+             AND (c.full_name = d.title OR c.url = d.url)
+            LEFT JOIN (
+                SELECT s.repo_id, s.stars, s.forks
+                FROM github_repo_snapshots s
+                JOIN (
+                    SELECT repo_id, MAX(snapshot_date) AS snapshot_date
+                    FROM github_repo_snapshots
+                    GROUP BY repo_id
+                ) latest
+                  ON latest.repo_id = s.repo_id
+                 AND latest.snapshot_date = s.snapshot_date
+            ) gs ON gs.repo_id = c.repo_id
+        """
         order_by = """
             ORDER BY
-                COALESCE(raw_score, score, 0) DESC,
-                published_date DESC
+                COALESCE(d.raw_score, d.score, 0) DESC,
+                d.published_date DESC
         """
 
         if source_type and source_type != "all":
             sql = f"""
-                SELECT * FROM documents
-                WHERE source = %s
+                {select_clause}
+                WHERE d.source = %s
                 {order_by}
                 LIMIT %s
             """
             params: tuple = (source_type, limit)
         else:
             sql = f"""
-                SELECT * FROM documents
+                {select_clause}
                 {order_by}
                 LIMIT %s
             """
@@ -441,8 +636,30 @@ class MySQLRepository:
 
     def get_latest_documents(self, limit: int = 10) -> List[Dict[str, Any]]:
         sql = """
-            SELECT * FROM documents
-            ORDER BY created_at DESC
+            SELECT
+                d.id, d.source, d.source_channel, d.title, d.url, d.summary,
+                d.published_date, d.tags, d.score, d.raw_score,
+                COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
+                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
+                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
+                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
+                d.in_monthly, d.local_pdf_path, d.created_at
+            FROM documents d
+            LEFT JOIN github_repo_candidates c
+              ON d.source = 'github'
+             AND (c.full_name = d.title OR c.url = d.url)
+            LEFT JOIN (
+                SELECT s.repo_id, s.stars, s.forks
+                FROM github_repo_snapshots s
+                JOIN (
+                    SELECT repo_id, MAX(snapshot_date) AS snapshot_date
+                    FROM github_repo_snapshots
+                    GROUP BY repo_id
+                ) latest
+                  ON latest.repo_id = s.repo_id
+                 AND latest.snapshot_date = s.snapshot_date
+            ) gs ON gs.repo_id = c.repo_id
+            ORDER BY d.created_at DESC
             LIMIT %s
         """
         conn = self._connect()
@@ -488,6 +705,25 @@ class MySQLRepository:
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) AS cnt FROM users")
+                row = cur.fetchone()
+            conn.commit()
+            return int(row["cnt"] if row else 0)
+        finally:
+            conn.close()
+
+    def get_today_registered_user_count(self) -> int:
+        """返回今日注册用户数（CST）。"""
+        from datetime import datetime, timezone, timedelta
+
+        tz_cst = timezone(timedelta(hours=8))
+        today_str = datetime.now(tz_cst).strftime("%Y-%m-%d")
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS cnt FROM users WHERE LEFT(created_at, 10) = %s",
+                    (today_str,),
+                )
                 row = cur.fetchone()
             conn.commit()
             return int(row["cnt"] if row else 0)
@@ -640,6 +876,9 @@ class MySQLRepository:
             SELECT
                 d.id, d.source, d.title, d.url, d.summary, d.published_date,
                 d.tags, d.indexed, d.created_at,
+                COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
+                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
+                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
                 d.in_daily, d.in_weekly, d.in_monthly,
                 s.source_channel,
                 s.rank_in_period,
@@ -648,6 +887,20 @@ class MySQLRepository:
                 s.snapshot_date
             FROM document_rank_snapshots s
             JOIN documents d ON s.doc_id = d.id
+            LEFT JOIN github_repo_candidates c
+              ON d.source = 'github'
+             AND (c.full_name = d.title OR c.url = d.url)
+            LEFT JOIN (
+                SELECT snap.repo_id, snap.stars, snap.forks
+                FROM github_repo_snapshots snap
+                JOIN (
+                    SELECT repo_id, MAX(snapshot_date) AS snapshot_date
+                    FROM github_repo_snapshots
+                    GROUP BY repo_id
+                ) latest
+                  ON latest.repo_id = snap.repo_id
+                 AND latest.snapshot_date = snap.snapshot_date
+            ) gs ON gs.repo_id = c.repo_id
             WHERE {where_clause}
             ORDER BY
                 CASE WHEN d.source = 'github' THEN s.rank_in_period ELSE 9999 END ASC,
@@ -761,22 +1014,24 @@ class MySQLRepository:
                 %(source_channels)s, %(first_seen_at)s, %(last_seen_at)s, %(last_snapshot_at)s
             )
             ON DUPLICATE KEY UPDATE
-                full_name=VALUES(full_name),
-                title=VALUES(title),
-                url=VALUES(url),
-                description=VALUES(description),
-                language=VALUES(language),
-                topics_json=VALUES(topics_json),
-                created_at=VALUES(created_at),
-                pushed_at=VALUES(pushed_at),
-                stars=VALUES(stars),
-                forks=VALUES(forks),
-                watchers=VALUES(watchers),
+                title=COALESCE(NULLIF(VALUES(title), ''), title),
+                url=COALESCE(NULLIF(VALUES(url), ''), url),
+                description=COALESCE(NULLIF(VALUES(description), ''), description),
+                language=COALESCE(NULLIF(VALUES(language), ''), language),
+                topics_json=COALESCE(NULLIF(VALUES(topics_json), '[]'), topics_json),
+                created_at=COALESCE(NULLIF(created_at, ''), VALUES(created_at)),
+                pushed_at=GREATEST(COALESCE(pushed_at, ''), COALESCE(VALUES(pushed_at), '')),
+                stars=GREATEST(COALESCE(stars, 0), COALESCE(VALUES(stars), 0)),
+                forks=GREATEST(COALESCE(forks, 0), COALESCE(VALUES(forks), 0)),
+                watchers=GREATEST(COALESCE(watchers, 0), COALESCE(VALUES(watchers), 0)),
                 source_channels=VALUES(source_channels),
-                last_seen_at=VALUES(last_seen_at),
-                last_snapshot_at=VALUES(last_snapshot_at)
+                first_seen_at=LEAST(COALESCE(NULLIF(first_seen_at, ''), VALUES(first_seen_at)), VALUES(first_seen_at)),
+                last_seen_at=GREATEST(COALESCE(last_seen_at, ''), COALESCE(VALUES(last_seen_at), '')),
+                last_snapshot_at=GREATEST(COALESCE(last_snapshot_at, ''), COALESCE(VALUES(last_snapshot_at), ''))
         """
         payload = dict(repo)
+        payload["full_name"] = str(payload.get("full_name") or payload.get("title") or payload.get("repo_id") or "").strip()
+        payload["repo_id"] = str(payload.get("repo_id") or payload["full_name"]).strip()
         payload.setdefault("title", payload.get("full_name", ""))
         payload.setdefault("description", "")
         payload.setdefault("language", "")
@@ -794,6 +1049,19 @@ class MySQLRepository:
         conn = self._connect()
         try:
             with conn.cursor() as cur:
+                requested_repo_id = payload["repo_id"]
+                canonical_repo_id = self._resolve_github_repo_id_cur(
+                    cur,
+                    requested_repo_id,
+                    payload["full_name"],
+                )
+                self._upsert_github_repo_alias_cur(
+                    cur,
+                    alias_repo_id=requested_repo_id,
+                    canonical_repo_id=canonical_repo_id,
+                    full_name=payload["full_name"],
+                )
+                payload["repo_id"] = canonical_repo_id
                 cur.execute(sql, payload)
             conn.commit()
         finally:
@@ -809,13 +1077,13 @@ class MySQLRepository:
                 %(open_issues)s, %(repo_created_at)s, %(repo_pushed_at)s
             )
             ON DUPLICATE KEY UPDATE
-                captured_at=VALUES(captured_at),
-                stars=VALUES(stars),
-                forks=VALUES(forks),
-                watchers=VALUES(watchers),
-                open_issues=VALUES(open_issues),
-                repo_created_at=VALUES(repo_created_at),
-                repo_pushed_at=VALUES(repo_pushed_at)
+                captured_at=GREATEST(COALESCE(captured_at, ''), COALESCE(VALUES(captured_at), '')),
+                stars=GREATEST(COALESCE(stars, 0), COALESCE(VALUES(stars), 0)),
+                forks=GREATEST(COALESCE(forks, 0), COALESCE(VALUES(forks), 0)),
+                watchers=GREATEST(COALESCE(watchers, 0), COALESCE(VALUES(watchers), 0)),
+                open_issues=GREATEST(COALESCE(open_issues, 0), COALESCE(VALUES(open_issues), 0)),
+                repo_created_at=COALESCE(NULLIF(repo_created_at, ''), VALUES(repo_created_at)),
+                repo_pushed_at=GREATEST(COALESCE(repo_pushed_at, ''), COALESCE(VALUES(repo_pushed_at), ''))
         """
         payload = dict(snapshot)
         payload.setdefault("captured_at", _utcnow())
@@ -828,6 +1096,11 @@ class MySQLRepository:
         conn = self._connect()
         try:
             with conn.cursor() as cur:
+                payload["repo_id"] = self._resolve_github_repo_id_cur(
+                    cur,
+                    str(payload.get("repo_id") or ""),
+                    str(payload.get("full_name") or ""),
+                )
                 cur.execute(sql, payload)
             conn.commit()
         finally:
@@ -842,17 +1115,23 @@ class MySQLRepository:
             )
             ON DUPLICATE KEY UPDATE
                 full_name=VALUES(full_name),
-                language=VALUES(language),
-                `rank`=VALUES(`rank`),
-                captured_at=VALUES(captured_at)
+                language=COALESCE(NULLIF(VALUES(language), ''), language),
+                `rank`=LEAST(COALESCE(`rank`, VALUES(`rank`)), VALUES(`rank`)),
+                captured_at=GREATEST(COALESCE(captured_at, ''), COALESCE(VALUES(captured_at), ''))
         """
         payload = dict(hit)
+        payload.setdefault("full_name", "")
         payload.setdefault("language", "")
         payload.setdefault("rank", 999)
         payload.setdefault("captured_at", _utcnow())
         conn = self._connect()
         try:
             with conn.cursor() as cur:
+                payload["repo_id"] = self._resolve_github_repo_id_cur(
+                    cur,
+                    str(payload.get("repo_id") or ""),
+                    str(payload.get("full_name") or ""),
+                )
                 cur.execute(sql, payload)
             conn.commit()
         finally:
@@ -997,6 +1276,7 @@ class MySQLRepository:
                         period,
                         period,
                         period,
+                        period,
                         decay_exp,
                         float(window_days),
                         period,
@@ -1019,6 +1299,391 @@ class MySQLRepository:
             return int(row["cnt"] if row else 0)
         finally:
             conn.close()
+
+    def list_github_projects(
+        self,
+        *,
+        category: str = "",
+        q: str = "",
+        language: str = "",
+        page: int = 1,
+        page_size: int = 24,
+        sort: str = "stars",
+        min_stars: int = 500,
+        enriched_only: bool = True,
+    ) -> Dict[str, Any]:
+        page = max(1, int(page or 1))
+        page_size = max(1, min(int(page_size or 24), 100))
+        offset = (page - 1) * page_size
+        filters = ["COALESCE(ls.stars, c.stars, 0) > %s"]
+        params: List[Any] = [min_stars]
+
+        if enriched_only:
+            filters.append("e.status = 'succeeded'")
+        if category:
+            filters.append("e.category_slug = %s")
+            params.append(category)
+        if language:
+            filters.append("LOWER(COALESCE(c.language, '')) = LOWER(%s)")
+            params.append(language)
+        if q:
+            like = f"%{q.strip()}%"
+            filters.append(
+                "("
+                "c.full_name LIKE %s OR c.title LIKE %s OR c.description LIKE %s OR "
+                "COALESCE(e.description_zh, '') LIKE %s OR COALESCE(c.language, '') LIKE %s OR "
+                "COALESCE(c.topics_json, '') LIKE %s OR COALESCE(e.tags_json, '') LIKE %s"
+                ")"
+            )
+            params.extend([like, like, like, like, like, like, like])
+
+        order_by = {
+            "stars": "stars DESC, forks DESC, c.full_name ASC",
+            "updated": "COALESCE(NULLIF(c.pushed_at, ''), c.repo_pushed_at, '') DESC, stars DESC",
+            "recent": "COALESCE(NULLIF(c.first_seen_at, ''), c.last_seen_at, '') DESC, stars DESC",
+            "name": "c.full_name ASC",
+        }.get(sort, "stars DESC, forks DESC, c.full_name ASC")
+
+        where_clause = " AND ".join(filters)
+        base_sql = f"""
+            WITH latest_snap AS (
+                SELECT s.*
+                FROM github_repo_snapshots s
+                JOIN (
+                    SELECT repo_id, MAX(snapshot_date) AS snapshot_date
+                    FROM github_repo_snapshots
+                    GROUP BY repo_id
+                ) t
+                  ON s.repo_id = t.repo_id AND s.snapshot_date = t.snapshot_date
+            ), project_rows AS (
+                SELECT
+                    c.repo_id,
+                    c.full_name,
+                    c.title,
+                    c.url,
+                    c.description,
+                    c.language,
+                    c.topics_json,
+                    c.created_at,
+                    c.pushed_at,
+                    c.source_channels,
+                    c.first_seen_at,
+                    c.last_seen_at,
+                    c.last_snapshot_at,
+                    COALESCE(ls.stars, c.stars, 0) AS stars,
+                    COALESCE(ls.forks, c.forks, 0) AS forks,
+                    COALESCE(ls.watchers, c.watchers, 0) AS watchers,
+                    COALESCE(ls.open_issues, 0) AS open_issues,
+                    ls.snapshot_date,
+                    ls.captured_at,
+                    ls.repo_created_at,
+                    ls.repo_pushed_at,
+                    e.category_slug,
+                    e.category_name,
+                    e.description_zh,
+                    e.tags_json,
+                    e.confidence,
+                    e.status AS enrichment_status,
+                    e.enriched_at
+                FROM github_repo_candidates c
+                LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
+                LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
+                WHERE {where_clause}
+            )
+        """
+        count_sql = f"{base_sql} SELECT COUNT(*) AS cnt FROM project_rows"
+        rows_sql = f"""
+            {base_sql}
+            SELECT *
+            FROM project_rows c
+            ORDER BY {order_by}
+            LIMIT %s OFFSET %s
+        """
+
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(count_sql, tuple(params))
+                total_row = cur.fetchone()
+                total = int(total_row["cnt"] if total_row else 0)
+                cur.execute(rows_sql, tuple(params + [page_size, offset]))
+                rows = cur.fetchall()
+            conn.commit()
+            return {
+                "items": [_normalize_github_project_row(row) for row in rows],
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+            }
+        finally:
+            conn.close()
+
+    def get_github_project_categories(
+        self,
+        *,
+        min_stars: int = 500,
+        enriched_only: bool = True,
+    ) -> List[Dict[str, Any]]:
+        status_filter = "AND e.status = 'succeeded'" if enriched_only else ""
+        sql = f"""
+            WITH latest_snap AS (
+                SELECT s.*
+                FROM github_repo_snapshots s
+                JOIN (
+                    SELECT repo_id, MAX(snapshot_date) AS snapshot_date
+                    FROM github_repo_snapshots
+                    GROUP BY repo_id
+                ) t
+                  ON s.repo_id = t.repo_id AND s.snapshot_date = t.snapshot_date
+            )
+            SELECT e.category_slug AS slug, e.category_name AS name, COUNT(*) AS count
+            FROM github_repo_candidates c
+            LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
+            JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
+            WHERE COALESCE(ls.stars, c.stars, 0) > %s
+              {status_filter}
+            GROUP BY e.category_slug, e.category_name
+            ORDER BY count DESC, e.category_name ASC
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (min_stars,))
+                rows = cur.fetchall()
+            conn.commit()
+            return [
+                {
+                    "slug": row.get("slug") or "other",
+                    "name": row.get("name") or "其他",
+                    "count": int(row.get("count") or 0),
+                }
+                for row in rows
+            ]
+        finally:
+            conn.close()
+
+    def get_github_projects_needing_enrichment(
+        self,
+        *,
+        limit: int = 50,
+        min_stars: int = 500,
+        prompt_version: str = "v1",
+        force: bool = False,
+        retry_failed: bool = True,
+        refresh_changed: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Return projects that should be AI-enriched.
+
+        Daily enrichment is intentionally new-only by default: existing successful
+        enrichments remain stable while normal ingestion only updates metrics such
+        as stars/forks/snapshots. Use ``force`` or ``refresh_changed`` for manual
+        re-curation when the taxonomy/prompt or repo metadata should be refreshed.
+        """
+        if force:
+            stale_clause = "1 = 1"
+            params: List[Any] = [min_stars]
+        else:
+            stale_parts = ["e.repo_id IS NULL"]
+            params = [min_stars]
+            if retry_failed:
+                stale_parts.append("e.status != 'succeeded'")
+            if refresh_changed:
+                stale_parts.append("e.prompt_version != %s")
+                params.append(prompt_version)
+                stale_parts.append(
+                    "e.source_fingerprint != SHA2(CONCAT_WS('\\n', c.full_name, COALESCE(c.description, ''), COALESCE(c.language, ''), COALESCE(c.topics_json, '')), 256)"
+                )
+            stale_clause = "(" + " OR ".join(stale_parts) + ")"
+        params.append(max(1, min(int(limit or 50), 500)))
+
+        sql = f"""
+            WITH latest_snap AS (
+                SELECT s.*
+                FROM github_repo_snapshots s
+                JOIN (
+                    SELECT repo_id, MAX(snapshot_date) AS snapshot_date
+                    FROM github_repo_snapshots
+                    GROUP BY repo_id
+                ) t
+                  ON s.repo_id = t.repo_id AND s.snapshot_date = t.snapshot_date
+            )
+            SELECT
+                c.repo_id,
+                c.full_name,
+                c.title,
+                c.url,
+                c.description,
+                c.language,
+                c.topics_json,
+                c.created_at,
+                c.pushed_at,
+                c.source_channels,
+                c.first_seen_at,
+                c.last_seen_at,
+                c.last_snapshot_at,
+                COALESCE(ls.stars, c.stars, 0) AS stars,
+                COALESCE(ls.forks, c.forks, 0) AS forks,
+                COALESCE(ls.watchers, c.watchers, 0) AS watchers,
+                COALESCE(ls.open_issues, 0) AS open_issues,
+                ls.snapshot_date,
+                ls.captured_at,
+                SHA2(CONCAT_WS('\n', c.full_name, COALESCE(c.description, ''), COALESCE(c.language, ''), COALESCE(c.topics_json, '')), 256) AS source_fingerprint
+            FROM github_repo_candidates c
+            LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
+            LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
+            WHERE COALESCE(ls.stars, c.stars, 0) > %s
+              AND {stale_clause}
+            ORDER BY COALESCE(ls.stars, c.stars, 0) DESC, c.full_name ASC
+            LIMIT %s
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+                rows = cur.fetchall()
+            conn.commit()
+            return [_normalize_github_project_row(row) for row in rows]
+        finally:
+            conn.close()
+
+    def upsert_github_repo_enrichment(self, payload: Dict[str, Any]) -> None:
+        now = _utcnow()
+        data = dict(payload)
+        data.setdefault("tags_json", _json_dumps(data.get("tags") or []))
+        data.setdefault("confidence", 0.0)
+        data.setdefault("model_provider", "")
+        data.setdefault("model_name", "")
+        data.setdefault("status", "succeeded")
+        data.setdefault("error_msg", None)
+        data.setdefault("enriched_at", now)
+        data.setdefault("updated_at", now)
+        sql = """
+            INSERT INTO github_repo_enrichments (
+                repo_id, category_slug, category_name, description_zh, tags_json,
+                confidence, source_fingerprint, prompt_version, model_provider, model_name,
+                status, error_msg, enriched_at, updated_at
+            ) VALUES (
+                %(repo_id)s, %(category_slug)s, %(category_name)s, %(description_zh)s, %(tags_json)s,
+                %(confidence)s, %(source_fingerprint)s, %(prompt_version)s, %(model_provider)s, %(model_name)s,
+                %(status)s, %(error_msg)s, %(enriched_at)s, %(updated_at)s
+            )
+            ON DUPLICATE KEY UPDATE
+                category_slug=VALUES(category_slug),
+                category_name=VALUES(category_name),
+                description_zh=VALUES(description_zh),
+                tags_json=VALUES(tags_json),
+                confidence=VALUES(confidence),
+                source_fingerprint=VALUES(source_fingerprint),
+                prompt_version=VALUES(prompt_version),
+                model_provider=VALUES(model_provider),
+                model_name=VALUES(model_name),
+                status=VALUES(status),
+                error_msg=VALUES(error_msg),
+                enriched_at=VALUES(enriched_at),
+                updated_at=VALUES(updated_at)
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, data)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def mark_github_repo_enrichment_failed(
+        self,
+        repo_id: str,
+        *,
+        source_fingerprint: str,
+        prompt_version: str,
+        error_msg: str,
+        model_provider: str = "",
+        model_name: str = "",
+    ) -> None:
+        self.upsert_github_repo_enrichment(
+            {
+                "repo_id": repo_id,
+                "category_slug": "other",
+                "category_name": "其他",
+                "description_zh": "",
+                "tags_json": "[]",
+                "confidence": 0.0,
+                "source_fingerprint": source_fingerprint,
+                "prompt_version": prompt_version,
+                "model_provider": model_provider,
+                "model_name": model_name,
+                "status": "failed",
+                "error_msg": error_msg[:2000],
+            }
+        )
+
+    def get_github_project_enrichment_status(self, *, min_stars: int = 500) -> Dict[str, Any]:
+        base_sql = """
+            WITH latest_snap AS (
+                SELECT s.*
+                FROM github_repo_snapshots s
+                JOIN (
+                    SELECT repo_id, MAX(snapshot_date) AS snapshot_date
+                    FROM github_repo_snapshots
+                    GROUP BY repo_id
+                ) t
+                  ON s.repo_id = t.repo_id AND s.snapshot_date = t.snapshot_date
+            ), eligible AS (
+                SELECT c.repo_id, e.status, e.category_slug, e.category_name
+                FROM github_repo_candidates c
+                LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
+                LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
+                WHERE COALESCE(ls.stars, c.stars, 0) > %s
+            )
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    {base_sql}
+                    SELECT
+                        COUNT(*) AS eligible,
+                        SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS succeeded,
+                        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+                    FROM eligible
+                    """,
+                    (min_stars,),
+                )
+                row = cur.fetchone() or {}
+                cur.execute(
+                    f"""
+                    {base_sql}
+                    SELECT category_slug AS slug, category_name AS name, COUNT(*) AS count
+                    FROM eligible
+                    WHERE status = 'succeeded'
+                    GROUP BY category_slug, category_name
+                    ORDER BY count DESC, category_name ASC
+                    """,
+                    (min_stars,),
+                )
+                categories = cur.fetchall()
+            conn.commit()
+        finally:
+            conn.close()
+
+        eligible = int(row.get("eligible") or 0)
+        succeeded = int(row.get("succeeded") or 0)
+        failed = int(row.get("failed") or 0)
+        return {
+            "eligible": eligible,
+            "succeeded": succeeded,
+            "failed": failed,
+            "pending": max(eligible - succeeded - failed, 0),
+            "by_category": [
+                {
+                    "slug": item.get("slug") or "other",
+                    "name": item.get("name") or "其他",
+                    "count": int(item.get("count") or 0),
+                }
+                for item in categories
+            ],
+        }
 
     # ------------------------------------------------------------------
     # Ingestion tasks
@@ -1190,6 +1855,76 @@ class MySQLRepository:
             return list(rows)
         finally:
             conn.close()
+
+    # ------------------------------------------------------------------
+    # Runtime Provider Settings
+    # ------------------------------------------------------------------
+
+    def get_runtime_provider_setting(self, provider: str = "") -> Optional[Dict[str, Any]]:
+        provider_key = (provider or "").strip().lower()
+        where_clause = "WHERE provider = %s" if provider_key else ""
+        params = (provider_key,) if provider_key else ()
+
+        sql = f"""
+            SELECT provider, base_url, api_key, model_name, updated_at
+            FROM runtime_provider_settings
+            {where_clause}
+            ORDER BY updated_at DESC
+            LIMIT 1
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def upsert_runtime_provider_setting(
+        self,
+        provider: str,
+        base_url: str = "",
+        api_key: Optional[str] = None,
+        clear_api_key: bool = False,
+        model_name: str = "",
+    ) -> Dict[str, Any]:
+        provider_key = (provider or "").strip().lower()
+        clean_base_url = (base_url or "").strip()
+        clean_api_key = api_key.strip() if isinstance(api_key, str) else None
+        clean_model_name = (model_name or "").strip()
+
+        existing = self.get_runtime_provider_setting()
+        if clear_api_key:
+            effective_api_key: Optional[str] = None
+        elif clean_api_key:
+            effective_api_key = clean_api_key
+        else:
+            effective_api_key = existing.get("api_key") if existing else None
+
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM runtime_provider_settings")
+                cur.execute(
+                    """
+                    INSERT INTO runtime_provider_settings
+                        (provider, base_url, api_key, model_name, updated_at)
+                    VALUES (%s, %s, %s, %s, NOW())
+                    """,
+                    (provider_key, clean_base_url, effective_api_key, clean_model_name),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return self.get_runtime_provider_setting() or {
+            "provider": provider_key,
+            "base_url": clean_base_url,
+            "api_key": effective_api_key,
+            "model_name": clean_model_name,
+        }
 
     # ------------------------------------------------------------------
     # Briefing Subscriptions

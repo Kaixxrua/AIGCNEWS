@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, Optional
+
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 from backend.app.core.config import settings
@@ -18,9 +20,29 @@ def _resolve_provider(preferred: str | None) -> str:
     return provider or OLLAMA_PROVIDER
 
 
+def _get_runtime_provider_setting(provider: str | None = None) -> dict[str, Any]:
+    """读取运维页保存的唯一运行时模型配置；失败时静默回退到 .env。"""
+    try:
+        from backend.app.repositories.mysql_repo import MySQLRepository
+
+        row = MySQLRepository().get_runtime_provider_setting(provider or "")
+        return row or {}
+    except Exception:
+        return {}
+
+
+def _runtime_value(row: dict[str, Any], key: str, fallback: Optional[str]) -> Optional[str]:
+    value = (row.get(key) or "").strip() if row else ""
+    return value or fallback
+
+
+def _runtime_model_name(row: dict[str, Any]) -> str:
+    return _runtime_value(row, "model_name", settings.chat_model_name) or settings.chat_model_name
+
+
 def get_chat_model(temperature: float | None = None):
     """
-    根据 settings.LLM_PROVIDER 返回对应的 Chat 模型实例。
+    根据运维页保存的运行时配置（优先）或 settings.LLM_PROVIDER 返回对应的 Chat 模型实例。
 
     支持的 provider：
     - openai    使用 ChatOpenAI（OpenAI 官方或兼容代理）
@@ -29,7 +51,8 @@ def get_chat_model(temperature: float | None = None):
 
     可传入 temperature 覆盖 settings 中的默认值。
     """
-    provider = _resolve_provider(settings.llm_provider)
+    runtime_config = _get_runtime_provider_setting()
+    provider = _resolve_provider(runtime_config.get("provider") or settings.llm_provider)
     effective_temperature = (
         temperature if temperature is not None else settings.llm_temperature
     )
@@ -44,16 +67,23 @@ def get_chat_model(temperature: float | None = None):
             ) from exc
 
         init_kwargs: dict = dict(
-            api_key=settings.anthropic_api_key or settings.openai_api_key,
-            model=settings.chat_model_name,
+            api_key=_runtime_value(
+                runtime_config,
+                "api_key",
+                settings.anthropic_api_key or settings.openai_api_key,
+            ),
+            model=_runtime_model_name(runtime_config),
             temperature=effective_temperature,
             max_tokens=settings.llm_max_tokens,
             streaming=True,
         )
 
         # 代理端点（可选）
-        if settings.anthropic_base_url:
-            init_kwargs["base_url"] = settings.anthropic_base_url
+        anthropic_base_url = _runtime_value(
+            runtime_config, "base_url", settings.anthropic_base_url or None
+        )
+        if anthropic_base_url:
+            init_kwargs["base_url"] = anthropic_base_url
 
         # Extended Thinking（budget > 0 时启用）
         if settings.anthropic_thinking_budget > 0:
@@ -82,9 +112,11 @@ def get_chat_model(temperature: float | None = None):
             pass
 
         return ChatOpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url or None,
-            model=settings.chat_model_name,
+            api_key=_runtime_value(runtime_config, "api_key", settings.openai_api_key),
+            base_url=_runtime_value(
+                runtime_config, "base_url", settings.openai_base_url or None
+            ),
+            model=_runtime_model_name(runtime_config),
             temperature=effective_temperature,
             max_tokens=settings.llm_max_tokens,
             streaming=True,
@@ -119,8 +151,13 @@ def get_embedding_model():
             ) from exc
 
         # Embedding 支持独立的 API Key / Base URL（留空则复用 LLM 的 OpenAI 配置）
-        emb_api_key = settings.embedding_api_key or settings.openai_api_key
-        emb_base_url = settings.embedding_base_url or settings.openai_base_url or None
+        runtime_config = _get_runtime_provider_setting(OPENAI_PROVIDER)
+        emb_api_key = settings.embedding_api_key or _runtime_value(
+            runtime_config, "api_key", settings.openai_api_key
+        )
+        emb_base_url = settings.embedding_base_url or _runtime_value(
+            runtime_config, "base_url", settings.openai_base_url or None
+        )
 
         return OpenAIEmbeddings(
             api_key=emb_api_key,

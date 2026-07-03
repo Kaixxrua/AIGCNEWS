@@ -311,7 +311,7 @@ const cancelSettings = () => { showSettings.value = false }
 
 <template>
   <!-- 双栏布局：左侧会话列表 + 右侧对话区 -->
-  <div class="flex h-full overflow-hidden">
+  <div class="relative flex h-full overflow-hidden">
 
     <!-- 左侧历史会话列表 -->
     <aside
@@ -696,6 +696,20 @@ const cancelSettings = () => { showSettings.value = false }
         </div>
       </footer>
     </section>
+    <div class="absolute inset-0 z-50 flex items-center justify-center bg-white/70 px-6 backdrop-blur-sm">
+      <div class="glass-card max-w-md px-8 py-10 text-center shadow-2xl">
+        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-stone-100">
+          <svg class="h-8 w-8 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+            <path d="M8 9h8M8 13h5"/>
+          </svg>
+        </div>
+        <h1 class="text-xl font-semibold text-stone-800 font-serif">服务暂未开放敬请期待</h1>
+        <p class="mt-3 text-sm leading-6 text-stone-500">
+          聊天与 AI 对话功能正在维护升级中，开放后将第一时间恢复使用。
+        </p>
+      </div>
+    </div>
 
   </div>
 </template>

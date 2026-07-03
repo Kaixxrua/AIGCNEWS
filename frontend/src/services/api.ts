@@ -88,6 +88,80 @@ export interface PaperItem {
   created_at?: string
 }
 
+export type GitHubHotPeriod = 'daily' | 'weekly' | 'monthly'
+
+export interface GitHubHotRepo {
+  repo_id?: string | number
+  full_name?: string
+  title?: string
+  url?: string
+  description?: string | null
+  language?: string | null
+  topics_json?: string | string[] | null
+  stars?: number | string | null
+  forks?: number | string | null
+}
+
+export interface GitHubHotResponse {
+  period: GitHubHotPeriod | string
+  window_days?: number
+  items: GitHubHotRepo[]
+  total?: number
+  snapshot_count?: number
+}
+
+export type GitHubProjectSort = 'stars' | 'updated' | 'recent' | 'name'
+
+export interface GitHubProjectCategory {
+  slug: string
+  name: string
+  count: number
+}
+
+export interface GitHubProjectItem {
+  repo_id: string | number
+  full_name: string
+  title?: string | null
+  url?: string | null
+  description?: string | null
+  description_zh?: string | null
+  category_slug?: string | null
+  category_name?: string | null
+  tags?: string[]
+  language?: string | null
+  topics?: string[]
+  stars?: number | string | null
+  forks?: number | string | null
+  watchers?: number | string | null
+  open_issues?: number | string | null
+  created_at?: string | null
+  pushed_at?: string | null
+  first_seen_at?: string | null
+  last_seen_at?: string | null
+  last_snapshot_at?: string | null
+  snapshot_date?: string | null
+  captured_at?: string | null
+  confidence?: number | string | null
+}
+
+export interface GitHubProjectsResponse {
+  items: GitHubProjectItem[]
+  total: number
+  page: number
+  page_size: number
+  has_next: boolean
+  min_stars: number
+  category?: string
+  q?: string
+  sort?: GitHubProjectSort
+}
+
+export interface GitHubProjectCategoriesResponse {
+  items: GitHubProjectCategory[]
+  total: number
+  min_stars: number
+}
+
 export interface AttachmentMeta {
   id: string
   type: 'image' | 'pdf'
@@ -168,6 +242,51 @@ export async function searchPapers(q: string, limit = 20): Promise<PaperItem[]> 
 export async function fetchTop10Today(): Promise<PaperItem[]> {
   const res = await api.get('/papers/top10-today')
   return res.data?.items ?? []
+}
+
+export async function fetchGitHubHotRepos(
+  period: GitHubHotPeriod = 'daily',
+  limit = 30,
+): Promise<GitHubHotResponse> {
+  const res = await api.get('/dashboard/github-hot', { params: { period, limit } })
+  return {
+    period: res.data?.period ?? period,
+    window_days: res.data?.window_days,
+    items: Array.isArray(res.data?.items) ? res.data.items : [],
+    total: res.data?.total,
+    snapshot_count: res.data?.snapshot_count,
+  }
+}
+
+export async function fetchGitHubProjects(params?: {
+  category?: string
+  q?: string
+  language?: string
+  page?: number
+  page_size?: number
+  sort?: GitHubProjectSort
+}): Promise<GitHubProjectsResponse> {
+  const res = await api.get('/github/projects', { params })
+  return {
+    items: Array.isArray(res.data?.items) ? res.data.items : [],
+    total: Number(res.data?.total ?? 0),
+    page: Number(res.data?.page ?? params?.page ?? 1),
+    page_size: Number(res.data?.page_size ?? params?.page_size ?? 24),
+    has_next: Boolean(res.data?.has_next),
+    min_stars: Number(res.data?.min_stars ?? 500),
+    category: res.data?.category ?? params?.category ?? '',
+    q: res.data?.q ?? params?.q ?? '',
+    sort: res.data?.sort ?? params?.sort ?? 'stars',
+  }
+}
+
+export async function fetchGitHubProjectCategories(): Promise<GitHubProjectCategoriesResponse> {
+  const res = await api.get('/github/projects/categories')
+  return {
+    items: Array.isArray(res.data?.items) ? res.data.items : [],
+    total: Number(res.data?.total ?? 0),
+    min_stars: Number(res.data?.min_stars ?? 500),
+  }
 }
 
 export async function fetchPaperDetail(paperId: string): Promise<PaperItem | null> {

@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from backend.app.core.model_factory import get_chat_model
+from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
 
 logger = logging.getLogger(__name__)
@@ -27,8 +28,23 @@ _CONTINUATION_PROMPT = """你之前的回答在生成过程中被截断了。请
 
 请从上面截断的位置**直接续写**，保持格式和风格一致，直到报告完整输出完毕。"""
 
-# ── Prompt 模板（按来源类型区分）──────────────────────────────────────────────
-# 模板中使用 {period_label} 来适配日/周/月报措辞
+# ── 外部拦截页 / 网关错误检测 ─────────────────────────────────────────────────
+_BLOCK_RESPONSE_PATTERNS = (
+    "您的 IP 涉嫌网络攻击",
+    "您的IP涉嫌网络攻击",
+    "请与站长联系",
+    "涉嫌网络攻击",
+    "Access Denied",
+    "Cloudflare Ray ID",
+    "cf-error-code",
+    "Attention Required! | Cloudflare",
+)
+
+_BLOCK_RESPONSE_ERROR = (
+    "生成简报时上游服务返回了访问拦截页或网关错误，已停止生成且未保存缓存。"
+    "请检查 LLM 代理/API 网关或采集源的访问状态。"
+)
+
 
 _PROMPT_ALL = """你是一位专业的 AIGC 技术资讯编辑。请根据以下{period_label}热点内容（综合学术论文、开源项目、行业新闻），撰写一份**内容详尽、深度全面**的综合{period_label}报。
 
@@ -223,7 +239,15 @@ def _format_articles(docs: List[Dict[str, Any]], source: str = "all") -> str:
         src = doc.get("source") or source
 
         if src == "github":
-            score_label = f"⭐ Stars: {int(score)}"
+            stars = int(doc.get("stars") or 0)
+            growth = int(doc.get("raw_score") or score or 0)
+            channel = doc.get("source_channel") or doc.get("channel") or ""
+            if stars > 0:
+                score_label = f"⭐ Stars: {stars}"
+                if channel.startswith("github_trending_") and growth:
+                    score_label += f"（+{growth} 本周期）"
+            else:
+                score_label = f"📈 本周期新增 Stars: {growth}"
         elif src == "news":
             score_label = f"📰 {doc.get('feed_name') or '新闻'}"
         else:
@@ -238,6 +262,72 @@ def _format_articles(docs: List[Dict[str, Any]], source: str = "all") -> str:
     return "\n".join(lines)
 
 
+def _looks_like_block_response(text: str) -> bool:
+    """识别上游 WAF/代理拦截页，避免把错误页当成简报保存。"""
+    if not text:
+        return False
+    lowered = text.lower()
+    return any(pattern.lower() in lowered for pattern in _BLOCK_RESPONSE_PATTERNS)
+
+
+def _filter_blocked_docs(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """过滤采集中误入库的拦截页内容。"""
+    clean_docs: List[Dict[str, Any]] = []
+    for doc in docs:
+        haystack = "\n".join(
+            str(doc.get(key) or "") for key in ("title", "summary", "url")
+        )
+        if _looks_like_block_response(haystack):
+            logger.warning(
+                "跳过疑似拦截页文档: id=%s source=%s title=%s",
+                doc.get("id"),
+                doc.get("source"),
+                doc.get("title"),
+            )
+            continue
+        clean_docs.append(doc)
+    return clean_docs
+
+
+def _milvus_doc_to_briefing_doc(doc: Any, fallback_source: str = "github") -> Dict[str, Any]:
+    """将 Milvus/LangChain Document 转为简报生成使用的 dict 结构。"""
+    meta = dict(getattr(doc, "metadata", None) or {})
+    page_content = str(getattr(doc, "page_content", "") or "")
+    source = str(meta.get("source") or fallback_source).lower()
+    stars = meta.get("stars") or meta.get("raw_score") or meta.get("score") or 0
+    raw_score = meta.get("raw_score") or stars
+
+    return {
+        "id": str(meta.get("id") or meta.get("pk") or ""),
+        "source": source,
+        "source_channel": meta.get("source_channel") or meta.get("channel") or "",
+        "channel": meta.get("source_channel") or meta.get("channel") or "",
+        "title": meta.get("title") or "无标题",
+        "summary": page_content,
+        "url": meta.get("url") or "",
+        "published_date": meta.get("published_date") or "",
+        "score": meta.get("score") or raw_score or 0.0,
+        "raw_score": raw_score or 0.0,
+        "stars": stars or 0,
+        "language": meta.get("language") or "",
+    }
+
+
+def _dedupe_docs(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """按 id/title/url 去重，避免 Milvus chunk 级结果重复进入 Prompt。"""
+    seen: set[str] = set()
+    result: List[Dict[str, Any]] = []
+    for doc in docs:
+        key = str(doc.get("id") or doc.get("url") or doc.get("title") or "").strip()
+        if not key:
+            key = str(len(result))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(doc)
+    return result
+
+
 class DailyBriefingService:
     """Generate and persist daily briefing reports with SSE streaming."""
 
@@ -249,6 +339,47 @@ class DailyBriefingService:
         self._db = mysql_repo or MySQLRepository()
         self._top_k = top_k
         self._llm = get_chat_model()
+
+    def _get_github_docs_from_milvus(self, period: str) -> List[Dict[str, Any]]:
+        """GitHub 简报优先从 Milvus 取 README 丰富内容。"""
+        expected_channel = _PERIOD_CHANNEL_MAP.get("github", {}).get(period, "")
+        try:
+            milvus_repo = MilvusRepository()
+            vector_docs = milvus_repo.search_by_source("github", top_k=self._top_k * 5)
+        except Exception as exc:
+            logger.warning("Milvus 获取 GitHub 简报文档失败，回退 MySQL: %s", exc)
+            return []
+
+        docs = [_milvus_doc_to_briefing_doc(doc, "github") for doc in vector_docs]
+        if expected_channel:
+            period_docs = [
+                doc
+                for doc in docs
+                if (doc.get("source_channel") or doc.get("channel") or "")
+                == expected_channel
+            ]
+            if period_docs:
+                docs = period_docs
+            else:
+                logger.info(
+                    "Milvus 未找到 channel=%s 的 GitHub 文档，使用 Milvus GitHub 全量结果兜底",
+                    expected_channel,
+                )
+
+        docs = [doc for doc in docs if doc.get("source") == "github"]
+        docs = _dedupe_docs(docs)
+        docs.sort(
+            key=lambda d: (d.get("raw_score") or d.get("stars") or d.get("score") or 0),
+            reverse=True,
+        )
+        docs = docs[: self._top_k]
+        logger.info(
+            "Milvus 返回 GitHub 简报文档 %d 条 (period=%s, channel=%s)",
+            len(docs),
+            period,
+            expected_channel,
+        )
+        return docs
 
     async def stream_generate(
         self,
@@ -300,13 +431,20 @@ class DailyBriefingService:
                     yield {"type": "done", "data": {"briefing_id": existing["id"]}}
                     return
 
-            # 2. Fetch documents (优先从快照表获取，按日期+channel 精确查询)
+            # 2. Fetch documents（GitHub 优先从 Milvus 取 README 丰富内容，其它来源仍走 MySQL）
             logger.info(
                 "开始获取文档，source=%s, period=%s, date=%s...", source, period, today
             )
             source_type: Optional[str] = None if source == "all" else source
             docs: List[Dict[str, Any]] = []
             fallback_used = False
+            milvus_used = False
+
+            if source == "github":
+                docs = self._get_github_docs_from_milvus(period)
+                milvus_used = bool(docs)
+                if not docs:
+                    logger.info("Milvus 未返回 GitHub 文档，回退到 MySQL 快照/documents 表")
 
             # 2a. 确定期望的 source_channel 列表
             expected_channels: List[str] = []
@@ -321,8 +459,8 @@ class DailyBriefingService:
                 if ch:
                     expected_channels.append(ch)
 
-            # 2b. 优先从快照表按日期+channel 精确获取
-            if expected_channels:
+            # 2b. 从快照表按日期+channel 精确获取（GitHub 仅在 Milvus 无结果时回退到这里）
+            if not docs and expected_channels:
                 for channel in expected_channels:
                     snap_docs = self._db.get_snapshot_documents(
                         snapshot_date=today,
@@ -361,6 +499,15 @@ class DailyBriefingService:
                 fallback_used = True
                 logger.info("兜底逻辑返回 %d 条", len(docs))
 
+            before_filter_count = len(docs)
+            docs = _filter_blocked_docs(docs)
+            if len(docs) != before_filter_count:
+                logger.warning(
+                    "过滤疑似拦截页文档 %d 条，剩余 %d 条",
+                    before_filter_count - len(docs),
+                    len(docs),
+                )
+
             yield {
                 "type": "start",
                 "data": {
@@ -368,6 +515,7 @@ class DailyBriefingService:
                     "doc_count": len(docs),
                     "cached": False,
                     "fallback": fallback_used,
+                    "milvus": milvus_used,
                     "source": source,
                     "period": period,
                 },
@@ -399,14 +547,18 @@ class DailyBriefingService:
             # 4. Stream LLM generation（支持截断续写）
             full_content: List[str] = []
 
-            # 首次生成
-            round_content = await self._stream_llm_round(prompt)
-            for token in round_content:
+            # 首次生成：边接收 LLM token 边转发给前端，避免 SSE 长时间空闲断流
+            async for token in self._stream_llm_round(prompt):
                 full_content.append(token)
                 yield {"type": "content", "data": token}
 
-            # 5. 截断续写：检测输出是否被截断，若是则多轮续写
             accumulated = "".join(full_content)
+            if _looks_like_block_response(accumulated):
+                logger.error("LLM 上游返回疑似拦截页，停止简报生成: source=%s", source)
+                yield {"type": "error", "data": _BLOCK_RESPONSE_ERROR}
+                return
+
+            # 5. 截断续写：检测输出是否被截断，若是则多轮续写
             for continuation_round in range(1, _MAX_CONTINUATION_ROUNDS + 1):
                 if not self._is_truncated(accumulated):
                     logger.info("报告生成完整，无需续写 (round %d)", continuation_round)
@@ -427,12 +579,17 @@ class DailyBriefingService:
                     previous_content=accumulated[-4000:]  # 只传最后 4000 字符避免超长
                 )
 
-                cont_content = await self._stream_llm_round(cont_prompt)
-                for token in cont_content:
+                async for token in self._stream_llm_round(cont_prompt):
                     full_content.append(token)
                     yield {"type": "content", "data": token}
 
                 accumulated = "".join(full_content)
+                if _looks_like_block_response(accumulated):
+                    logger.error(
+                        "LLM 续写阶段返回疑似拦截页，停止简报生成: source=%s", source
+                    )
+                    yield {"type": "error", "data": _BLOCK_RESPONSE_ERROR}
+                    return
             else:
                 logger.warning(
                     "已达最大续写轮数 (%d)，停止续写", _MAX_CONTINUATION_ROUNDS
@@ -440,6 +597,11 @@ class DailyBriefingService:
 
             # 6. Persist only if LLM actually produced content
             complete_text = "".join(full_content)
+            if _looks_like_block_response(complete_text):
+                logger.error("生成结果为疑似拦截页，跳过持久化: source=%s", source)
+                yield {"type": "error", "data": _BLOCK_RESPONSE_ERROR}
+                return
+
             if complete_text.strip():
                 briefing_id = self._db.save_briefing(cache_date, complete_text)
                 logger.info("日报已持久化，id=%d, source=%s", briefing_id, source)
@@ -449,12 +611,20 @@ class DailyBriefingService:
             yield {"type": "done", "data": {"briefing_id": briefing_id}}
 
         except Exception as exc:
+            err_text = str(exc)
+            if _looks_like_block_response(err_text):
+                logger.error(
+                    "简报生成被上游服务拦截，停止生成且不返回原始拦截页: source=%s",
+                    source,
+                    exc_info=True,
+                )
+                yield {"type": "error", "data": _BLOCK_RESPONSE_ERROR}
+                return
             traceback.print_exc()
-            yield {"type": "error", "data": str(exc)}
+            yield {"type": "error", "data": err_text}
 
-    async def _stream_llm_round(self, prompt: str) -> List[str]:
-        """执行一轮 LLM 流式生成，返回 token 列表。"""
-        tokens: List[str] = []
+    async def _stream_llm_round(self, prompt: str) -> AsyncGenerator[str, None]:
+        """执行一轮 LLM 流式生成，逐 token 返回。"""
         async for chunk in self._llm.astream(prompt):
             raw_content = getattr(chunk, "content", None)
             # Anthropic Extended Thinking 返回的 content 可能是
@@ -472,8 +642,7 @@ class DailyBriefingService:
             else:
                 content = raw_content or ""
             if content:
-                tokens.append(str(content))
-        return tokens
+                yield str(content)
 
     @staticmethod
     def _is_truncated(text: str) -> bool:

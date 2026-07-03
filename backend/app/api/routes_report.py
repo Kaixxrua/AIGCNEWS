@@ -7,7 +7,7 @@ import traceback
 from datetime import date as _date, datetime as _dt, timedelta as _td
 from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -20,6 +20,8 @@ from backend.app.services.email_service import EmailService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_SSE_HEARTBEAT_INTERVAL_SECONDS = 10.0
 
 
 _VALID_SOURCES = {"all", "arxiv", "github", "news", "producthunt", "hackernews"}
@@ -46,14 +48,31 @@ async def _briefing_stream(
     period: str = "daily",
     force_regenerate: bool = True,
 ) -> AsyncGenerator[str, None]:
+    stream: AsyncGenerator[dict, None] | None = None
+    next_payload: asyncio.Task | None = None
     try:
         service = DailyBriefingService()
-        async for payload in service.stream_generate(
+        stream = service.stream_generate(
             target_date,
             source=source,
             period=period,
             force_regenerate=force_regenerate,
-        ):
+        )
+
+        while True:
+            next_payload = asyncio.create_task(stream.__anext__())
+            while not next_payload.done():
+                done, _ = await asyncio.wait(
+                    {next_payload}, timeout=_SSE_HEARTBEAT_INTERVAL_SECONDS
+                )
+                if not done:
+                    yield ": heartbeat\n\n"
+
+            try:
+                payload = next_payload.result()
+            except StopAsyncIteration:
+                break
+
             try:
                 data = json.dumps(payload, ensure_ascii=False, default=str)
             except Exception:
@@ -63,6 +82,13 @@ async def _briefing_stream(
         traceback.print_exc()
         yield f"data: {json.dumps({'type': 'error', 'data': str(exc)})}\n\n"
     finally:
+        if next_payload is not None and not next_payload.done():
+            next_payload.cancel()
+        if stream is not None:
+            try:
+                await stream.aclose()
+            except Exception:
+                pass
         yield "data: [DONE]\n\n"
 
 
@@ -244,6 +270,45 @@ def _get_email_service(request: Request) -> EmailService:
 class SubscribeRequest(BaseModel):
     source: str = "all"
     period: str = "daily"
+    date: Optional[str] = None
+
+
+class BatchSubscribeRequest(BaseModel):
+    sources: list[str]
+    period: str = "daily"
+    date: Optional[str] = None
+
+
+async def _send_cached_briefing_to_email(
+    *,
+    request: Request,
+    email: str,
+    source: str,
+    period: str,
+    date_str: Optional[str],
+) -> str:
+    """发送已生成的简报缓存到指定邮箱，返回实际使用的报告日期。"""
+    target = _resolve_report_date(period, date_str)
+    suffix = "" if source == "all" else f"_{source}"
+    cache_key = f"{target}{suffix}_{period}"
+
+    db = MySQLRepository()
+    item = db.get_briefing_by_date(cache_key)
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail="对应简报尚未生成，无法发送",
+        )
+
+    email_svc = _get_email_service(request)
+    await email_svc.send_briefing(
+        to_email=email,
+        briefing_content=item.get("content", ""),
+        source=source,
+        period=period,
+        date_str=target,
+    )
+    return target
 
 
 @router.post("/report/subscribe")
@@ -251,7 +316,7 @@ async def subscribe_briefing(
     body: SubscribeRequest,
     user: dict = Depends(RequireUser),
 ):
-    """订阅简报邮件推送。用户点击订阅后，当对应简报生成时会发送到注册邮箱。"""
+    """订阅简报邮件推送；日报生成后会自动推送到注册邮箱。"""
     source = body.source if body.source in _VALID_SOURCES else "all"
     period = body.period if body.period in _VALID_PERIODS else "daily"
     email = user.get("email", "")
@@ -261,11 +326,15 @@ async def subscribe_briefing(
             status_code=400,
             content={"detail": "用户邮箱为空，无法订阅"},
         )
+
     db = MySQLRepository()
     sub = db.upsert_briefing_subscription(
         user_id=user_id, email=email, source=source, period=period
     )
-    return {"message": "订阅成功", "subscription": sub}
+    return {
+        "message": f"订阅成功，{period} 简报生成后将推送至 {email}",
+        "subscription": sub,
+    }
 
 
 @router.post("/report/unsubscribe")
@@ -297,6 +366,50 @@ async def get_my_subscriptions(
     return {"items": subs}
 
 
+@router.post("/report/subscriptions/batch")
+async def batch_subscribe_briefings(
+    body: BatchSubscribeRequest,
+    user: dict = Depends(RequireUser),
+):
+    """批量订阅日报领域；日报生成后会自动推送到注册邮箱。"""
+    email = user.get("email", "")
+    user_id = user.get("user_id")
+    if not email:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "用户邮箱为空，无法订阅"},
+        )
+
+    sources: list[str] = []
+    for source in body.sources:
+        if source in _VALID_SOURCES and source not in sources:
+            sources.append(source)
+    if not sources:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "请选择至少一个有效订阅领域"},
+        )
+
+    period = "daily"
+    db = MySQLRepository()
+    subscriptions = [
+        db.upsert_briefing_subscription(
+            user_id=user_id,
+            email=email,
+            source=source,
+            period=period,
+        )
+        for source in sources
+    ]
+    return {
+        "message": f"已订阅 {len(subscriptions)} 个日报领域，日报生成后将推送至 {email}",
+        "sources": sources,
+        "period": period,
+        "items": subscriptions,
+        "total": len(subscriptions),
+    }
+
+
 @router.post("/report/send-to-email")
 async def send_briefing_to_email(
     body: SubscribeRequest,
@@ -313,25 +426,11 @@ async def send_briefing_to_email(
             content={"detail": "用户邮箱为空，无法发送"},
         )
 
-    # 获取最新简报
-    target = _resolve_report_date(period, None)
-    suffix = "" if source == "all" else f"_{source}"
-    cache_key = f"{target}{suffix}_{period}"
-
-    db = MySQLRepository()
-    item = db.get_briefing_by_date(cache_key)
-    if item is None:
-        return JSONResponse(
-            status_code=404,
-            content={"detail": "对应简报尚未生成，无法发送"},
-        )
-
-    email_svc = _get_email_service(request)
-    await email_svc.send_briefing(
-        to_email=email,
-        briefing_content=item.get("content", ""),
+    sent_date = await _send_cached_briefing_to_email(
+        request=request,
+        email=email,
         source=source,
         period=period,
-        date_str=target,
+        date_str=body.date,
     )
-    return {"message": f"简报已发送至 {email}"}
+    return {"message": f"简报已发送至 {email}", "sent_date": sent_date}

@@ -1,6 +1,6 @@
 # AIGC_NEWS 项目功能架构
 
-> 最后更新：2026-03-19（联网搜索后端重构：弃用三方搜索源（Tavily/Brave/DuckDuckGo），改为使用 Kimi 内置 $web_search builtin_function，通过两轮 tool_calls 循环实现联网搜索，无需额外 API Key）
+> 最后更新：2026-05-28（修复论文阅读页 RAG 已收录论文漏召回；统一聊天清空按钮为删除当前会话；补齐论文阅读页深度思考框，与通用聊天页保持一致）
 
 ---
 
@@ -225,11 +225,13 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 #### `retriever.py`
 - **核心类**: `HybridRetriever`
 - **混合检索策略**:
-  1. **Milvus 向量检索**: 按 query embedding 相似度搜索，HNSW 索引
-  2. **Neo4j 图检索**: 按关键词匹配知识图谱实体和关系
-  3. **MySQL Fallback**: 当 Milvus 不可用时，关键词匹配 MySQL 文档
-  4. **Source Fallback**: 每个来源（arxiv/news/github）额外取 3-5 条保证覆盖
-- **去重合并**: Round-Robin 均衡各来源文档，ID/URL/标题去重
+  1. **MySQL 文档 ID 精确召回**: 从 query 中提取 32 位 `documents.id`（论文阅读页会通过 `paper_id` 注入当前论文 ID），直接按主键查询 MySQL，命中文档设置 `match_type=mysql_id`、`force_include=true`、`rerank_score=10.0` 并优先注入上下文；ArXiv 且 `local_pdf_path` 存在时补充本地 PDF 前 20000 字符正文，保证“详细讲一下这篇论文”等泛化问题也能读到目标论文内容
+  2. **MySQL 标题召回**: 对用户输入中的英文关键词执行 title 近似匹配，优先召回标题高度命中的已收录论文/项目；当命中 ArXiv 且 `local_pdf_path` 存在时，会从本地 PDF 补充前 6000 字符正文片段，避免只使用 MySQL 中 500 字符元数据摘要导致回答误判“摘要被截断”
+  3. **Milvus 向量检索**: 按 query embedding 相似度搜索，HNSW 索引；若 ID 召回命中，会把目标论文标题拼入向量检索 query，提升同论文 PDF 分块召回概率
+  4. **Neo4j 图检索**: 按关键词匹配知识图谱实体和关系
+  5. **MySQL Fallback**: 当 Milvus 不可用时，关键词匹配 MySQL 文档
+  6. **Source Fallback**: 每个来源（arxiv/news/github）额外取 3-5 条保证覆盖
+- **去重合并**: MySQL ID 精确命中文档优先，其次标题命中文档，然后 Round-Robin 均衡各来源文档，ID/URL/标题去重
 - **关键词提取**: 简单 token 化 + 停用词过滤
 
 #### `reranker.py`
@@ -368,7 +370,7 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 #### `conversation_service.py`
 - **核心类**: `ConversationService`
 - **功能**: 服务端会话创建、消息落盘、消息树裁剪、LRU 清理
-- **作用域模型**: `scope=global|paper`，论文阅读通过 `scope_key=paper_id` 绑定专属会话
+- **作用域模型**: `scope=global|paper`，历史上支持论文专属会话；当前论文阅读页默认共用 `global` 会话，`paper_id` 只作为 RAG 当前论文上下文传递，不再强制把会话落库为 `paper` 作用域
 - **持久化策略**: 在 `/api/chat/stream` 完成后同时写入 `user` 与 `assistant` 两条消息，并刷新会话统计
 - **裁剪策略**:
   - 每用户最多保留 10 个会话
@@ -426,7 +428,7 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 
 | 功能 | 说明 |
 |------|------|
-| `add_documents()` | GitHub 结构化字段增强 → 文档切片（800 字符/100 重叠）→ Embedding → 写入 Milvus |
+| `add_documents()` | GitHub 结构化字段增强 → 文档切片（800 字符/100 重叠）→ Embedding → 写入 Milvus，返回 `bool` 标识写入是否成功 |
 | `_enrich_github_content()` | 对 `source=github` 文档在切片前追加 `Stars: n \| Forks: n \| Language: lang`（Bug1 修复） |
 | `search()` | 向量相似度搜索（HNSW，ef ≥ k 且 ≥ 64） |
 | `search_by_source()` | 按 source 字段过滤查询（保证每源有代表） |
@@ -600,7 +602,7 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 - **多会话初始化（Bug4 修复）**：`onMounted` 现在在登录状态下自动调用 `store.loadConversations('global')` + `store.ensureGlobalConversation()`，解决首次进入页面时无会话导致消息被吞的问题
 - **历史会话侧边栏（Bug4 修复）**：新增左侧会话列表面板（宽 220px），展示所有 `scope=global` 的会话，支持点击切换、新建对话、折叠/展开，活跃会话高亮显示
 - **新建会话（Bug8 修复）**：`+` 按钮调用 `createNewConversation()` 强制创建新会话（而非 `ensureGlobalConversation` 复用已有会话）
-- **清空会话（Bug8 修复）**：清空按钮调用 `deleteActiveConversation()` 真正删除当前会话及消息（不再仅清空前端内存）
+- **删除会话（Bug8 修复 + 文案统一）**：标题栏“删除”按钮调用 `deleteActiveConversation()` 真正删除当前会话及消息（不再仅清空前端内存）
 - **附件按钮**：改为回形针（Paperclip）SVG 矢量图标，上传中显示旋转动画
 - **发送/停止按钮**：AI 生成时发送按钮变为圆角正方形停止图标（可中止生成），空闲时恢复为发送箭头图标
 - **标题栏**：实时显示当前活跃会话标题（fallback 为 "RAG 智能助手"），移除了顶部终止按钮（停止功能已整合到发送按钮位置）
@@ -608,10 +610,11 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 #### `PaperReadView.vue`
 - **共用全局会话（Bug5 最终方案）**：`currentConversationId` 直接映射为 `chatStore.activeConversationId`，与 ChatView 完全共享同一会话状态
 - 进入论文页时不再创建 `scope=paper` 专属会话；若无活跃会话则调用 `ensureGlobalConversation()`
-- 发送消息透传 `paper_id` 供后端 RAG 检索论文内容，`scope` 字段由会话自身决定（非 paperId 硬编码）
+- 发送消息透传 `paper_id` 供后端 RAG 检索论文内容；后端会将该 ID 注入 query 并触发 MySQL 文档 ID 精确召回，`scope` 字段由会话自身决定（非 paperId 硬编码）
 - **历史会话面板**：左上角按钮展开全局会话列表（与 ChatView 一致），显示当前会话标题，支持切换和新建
 - 切换会话调用 `chatStore.openConversation()`，完全同步 `activeConversationId`
-- 页面消息区由 `chatStore.messageMap[currentConversationId]` 驱动，视觉问答消息仍以页面临时态补充展示
+- 页面消息区由 `chatStore.messageMap[currentConversationId]` 驱动，视觉问答消息仍以页面临时态补充展示；标题栏“删除”按钮调用 `chatStore.deleteActiveConversation()` 删除当前全局会话并切换/创建后续会话
+- **深度思考框**：从 `chatStore` 消息同步 `hasThinking/isThinking/thinkingDurationSec/thinking` 字段，复用与 ChatView 一致的“正在深度思考 / 已完成深度思考（用时 N 秒）”折叠式思考框体验；由于组件样式为 scoped，论文页单独声明 `.thinking-*` 样式
 - 视觉问答请求已透传 `conversation_id` 与 `paper_id`，为后续多模态会话统一持久化预留接口
 
 ---
@@ -634,6 +637,7 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 4. 发送消息时携带 `paper_id` 作为 RAG 上下文，`scope` 字段跟随当前会话本身的 scope
 5. 左侧历史会话面板展示与 ChatView 相同的全局会话列表，支持切换和新建
 6. 切换会话调用 `openConversation(convId)`，与 ChatView 的切换逻辑完全一致
+7. 流式生成期间，论文页从 `chatStore.messageMap` 同步思考状态：`isThinking=true` 时展示“正在深度思考”框，结束后保留“已完成深度思考（用时 N 秒）”折叠框
 
 ### 8.3 会话清理流
 
@@ -664,7 +668,7 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 | `frontend/src/views/RegisterView.vue` | 注册页（邮箱 + OTP验证码 + 邀请码 + 密码） |
 | `frontend/src/stores/chatStore.ts` | 多会话状态树、流式消费、消息控制 |
 | `frontend/src/views/ChatView.vue` | 通用聊天页 |
-| `frontend/src/views/PaperReadView.vue` | 论文阅读器 + 论文专属会话 |
+| `frontend/src/views/PaperReadView.vue` | 论文阅读器 + 全局会话共享 + 深度思考框 |
 | `frontend/src/composables/useEventSource.ts` | 基于 Fetch 的 SSE 客户端 |
 | `frontend/src/services/api.ts` | 前端 REST API 类型与请求封装 |
 | `frontend/src/views/DisclaimerView.vue` | 免责声明页面（平台性质、版权、AI内容不构成专业建议声明） |
@@ -690,6 +694,13 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 > - **简报订阅功能**：新增 `briefing_subscriptions` 表和 4 个 API（subscribe/unsubscribe/subscriptions/send-to-email），用户可一键订阅简报邮件推送或立即发送到注册邮箱。[`email_service.py`](backend/app/services/email_service.py) 新增 `send_briefing()` / `_send_html_email()` 方法，支持 Markdown→HTML 邮件模板。
 > - **简报 Tag 优化**：6 个 Prompt 模板的标签系统从宽泛的 `#ai #tool #trending` 升级为细粒度领域标签（如 `#LLM` `#Agent` `#RAG` `#推理优化` `#模型压缩` `#商业化` 等），每个源类型有独立的领域标签候选列表。
 > - **普通用户 Report 页面增强**：[`ReportView.vue`](frontend/src/views/ReportView.vue) 现在对所有登录用户展示源类型选择按钮（6 种）和周期选择按钮（日报/周报/月报），新增「订阅到邮箱」和「发送到邮箱」按钮。生成按钮仅 Admin 可见。
+>
+> **已解决（2026-05-28）**：
+> - **论文阅读页泛化问题漏召回修复**：针对 “SkillOpt: Executive Strategy for Self-Evolving Agent Skills”（paper ID `b0f920cb5e67ba8012c28098da0cf123`）在论文阅读页询问“详细讲一下这篇论文”时，问题文本只有 `paper_id` 和泛化描述、没有标题关键词，导致标题召回/向量召回可能错过目标论文。修复措施：[`HybridRetriever`](backend/app/services/rag/retriever.py:15) 新增 32 位 MySQL 文档 ID 提取与 `documents.id` 精确召回，ID 命中文档优先注入 RAG 上下文，并在存在 `local_pdf_path` 时读取本地 PDF 前 20000 字符；同时 [`routes_chat.py`](backend/app/api/routes_chat.py) 将 `paper_id` 固定为 RAG 上下文信号，不再因存在 `paper_id` 就强制把当前全局会话持久化为 `scope=paper`。
+> - **论文页删除当前会话修复**：[`PaperReadView.vue`](frontend/src/views/PaperReadView.vue) 原“清空”按钮只清空本地 `messageMap` 和临时视觉消息，刷新后历史仍恢复；现改为“删除”按钮并调用 [`chatStore.deleteActiveConversation()`](frontend/src/stores/chatStore.ts)，真正删除服务端当前会话及消息，同时 [`ChatView.vue`](frontend/src/views/ChatView.vue) 按钮文案也从“清空”统一为“删除”。
+>
+> **已解决（2026-05-25）**：
+> - **Milvus 未命中已收录论文排查与修复**：发现论文 “Generation Models Know Space: Unleashing Implicit 3D Priors for Scene Understanding” 已存在于 MySQL `documents` 表并已落盘 PDF，但 Milvus Collection 中无对应分块。根因是历史向量库分块不完整，且后续采集日志显示 Embedding API 返回 `403 insufficient balance`，导致 MySQL 元数据写入成功但 Milvus 向量写入失败；同时纯向量检索对精确标题查询召回不稳定。修复措施：补写该论文 19 个 PDF 分块到 Milvus；[`MilvusRepository.add_documents()`](backend/app/repositories/milvus_repo.py:69) 改为返回写入成功/失败布尔值；[`HybridRetriever`](backend/app/services/rag/retriever.py:15) 新增 MySQL 标题召回并在合并时优先注入标题高度命中文档，确保用户直接输入已收录论文标题时可命中并展示为参考来源。对于标题高度命中的 ArXiv 文档，若 `local_pdf_path` 存在，会额外读取本地 PDF 前 6000 字符作为上下文，避免仅注入 MySQL 500 字符摘要导致模型提示“摘要被截断”。
 >
 > **已解决（2026-03-19）**：
 > - **Bug8（Chat 页面新建会话）**：`+` 按钮原调用 `ensureGlobalConversation()` 只返回已有会话，现改为调用新增的 `POST /api/chat/conversations/create` API（`createNewConversation()`），强制创建新会话。

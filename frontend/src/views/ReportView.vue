@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import { api } from '../services/api'
 import { useEventSource } from '../composables/useEventSource'
@@ -7,6 +8,8 @@ import { useAuthStore } from '../stores/authStore'
 import { Globe, FileText, Code2, Newspaper, Rocket, Circle, Pin, Mail, BellRing, BellOff, Send } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
+const router = useRouter()
+const route = useRoute()
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -50,19 +53,110 @@ const currentPeriodInfo = computed(() => PERIOD_TYPES.find(p => p.key === select
 interface Subscription {
   source: string
   period: string
-  is_active: number
+  is_active?: number | boolean | string
 }
 
 const subscriptions = ref<Subscription[]>([])
 const isSubscribing = ref(false)
 const isSendingEmail = ref(false)
 const emailSentMsg = ref('')
+const showSubscribePanel = ref(false)
+const showLoginPrompt = ref(false)
+const selectedSubscribeSources = ref<ReportKey[]>([])
+
+const isActiveSubscription = (subscription: Subscription): boolean =>
+  subscription.is_active === undefined ||
+  subscription.is_active === true ||
+  subscription.is_active === 1 ||
+  subscription.is_active === '1' ||
+  subscription.is_active === 'true'
+
+const dailySubscriptions = computed(() =>
+  subscriptions.value.filter(s => s.period === 'daily' && isActiveSubscription(s)),
+)
+
+const isSourceSubscribed = (source: ReportKey): boolean =>
+  dailySubscriptions.value.some(s => s.source === source)
 
 const isCurrentSubscribed = computed(() =>
-  subscriptions.value.some(
-    s => s.source === selectedType.value && s.period === selectedPeriod.value && s.is_active,
-  ),
+  isSourceSubscribed(selectedType.value),
 )
+
+const openSubscribePanel = () => {
+  const currentDaily = dailySubscriptions.value
+    .map(s => s.source)
+    .filter((source): source is ReportKey => REPORT_TYPES.some(t => t.key === source))
+  selectedSubscribeSources.value = currentDaily.length ? [...currentDaily] : [selectedType.value]
+  showSubscribePanel.value = true
+  errorMsg.value = ''
+}
+
+const promptLoginForSubscribe = () => {
+  showLoginPrompt.value = true
+  errorMsg.value = '请先登录后再订阅简报'
+  setTimeout(() => {
+    if (showLoginPrompt.value && !authStore.isLoggedIn) goToLogin()
+  }, 900)
+}
+
+const goToLogin = () => {
+  router.push({ path: '/login', query: { redirect: route.fullPath } })
+}
+
+const closeLoginPrompt = () => {
+  showLoginPrompt.value = false
+}
+
+const handleLoginAndRedirect = () => {
+  showLoginPrompt.value = false
+  goToLogin()
+}
+
+const handleManageSubscriptions = () => {
+  if (!authStore.isLoggedIn) {
+    promptLoginForSubscribe()
+    return
+  }
+  openSubscribePanel()
+}
+
+const toggleSubscribeSource = (source: ReportKey) => {
+  if (selectedSubscribeSources.value.includes(source)) {
+    selectedSubscribeSources.value = selectedSubscribeSources.value.filter(item => item !== source)
+  } else {
+    selectedSubscribeSources.value = [...selectedSubscribeSources.value, source]
+  }
+}
+
+const confirmSubscribeSources = async () => {
+  if (isSubscribing.value || !authStore.isLoggedIn || !selectedSubscribeSources.value.length) return
+  isSubscribing.value = true
+  errorMsg.value = ''
+  try {
+    const res = await api.post<{ message?: string; sources?: string[] }>('/report/subscriptions/batch', {
+      sources: selectedSubscribeSources.value,
+      period: 'daily',
+    })
+    const subscribedSources = new Set(res.data?.sources ?? selectedSubscribeSources.value)
+    await loadSubscriptions()
+    subscriptions.value = [
+      ...subscriptions.value.filter(s => s.period !== 'daily' || !subscribedSources.has(s.source)),
+      ...Array.from(subscribedSources).map(source => ({
+        source,
+        period: 'daily',
+        is_active: true,
+      })),
+    ]
+    emailSentMsg.value = res.data?.message || '订阅成功，日报生成后会自动推送到邮箱'
+    setTimeout(() => { emailSentMsg.value = '' }, 4000)
+    showSubscribePanel.value = false
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+    errorMsg.value = msg || '订阅操作失败'
+  } finally {
+    isSubscribing.value = false
+  }
+}
 
 const loadSubscriptions = async () => {
   if (!authStore.isLoggedIn) return
@@ -75,15 +169,25 @@ const loadSubscriptions = async () => {
 }
 
 const toggleSubscribe = async () => {
-  if (isSubscribing.value || !authStore.isLoggedIn) return
+  if (isSubscribing.value) return
+  if (!authStore.isLoggedIn) {
+    promptLoginForSubscribe()
+    return
+  }
+  if (!isCurrentSubscribed.value) {
+    openSubscribePanel()
+    return
+  }
   isSubscribing.value = true
+  errorMsg.value = ''
   try {
-    if (isCurrentSubscribed.value) {
-      await api.post('/report/unsubscribe', { source: selectedType.value, period: selectedPeriod.value })
-    } else {
-      await api.post('/report/subscribe', { source: selectedType.value, period: selectedPeriod.value })
-    }
+    await api.post('/report/unsubscribe', { source: selectedType.value, period: 'daily' })
     await loadSubscriptions()
+    subscriptions.value = subscriptions.value.filter(
+      s => !(s.source === selectedType.value && s.period === 'daily'),
+    )
+    emailSentMsg.value = '已取消当前简报订阅'
+    setTimeout(() => { emailSentMsg.value = '' }, 4000)
   } catch (err: unknown) {
     const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
     errorMsg.value = msg || '订阅操作失败'
@@ -100,6 +204,7 @@ const sendToEmail = async () => {
     const res = await api.post<{ message: string }>('/report/send-to-email', {
       source: selectedType.value,
       period: selectedPeriod.value,
+      date: selectedDate.value,
     })
     emailSentMsg.value = res.data?.message || '已发送'
     setTimeout(() => { emailSentMsg.value = '' }, 4000)
@@ -241,20 +346,19 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
             <span>生成中</span>
           </div>
 
-          <!-- 订阅/取消订阅按钮（需登录） -->
+          <!-- 订阅/取消订阅按钮 -->
           <button
-            v-if="authStore.isLoggedIn"
             class="flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-medium transition-all duration-200"
             :class="isCurrentSubscribed
               ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
               : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'"
             :disabled="isSubscribing"
-            @click="toggleSubscribe"
+            @click="authStore.isLoggedIn ? toggleSubscribe() : promptLoginForSubscribe()"
           >
             <span v-if="isSubscribing" class="h-3 w-3 rounded-full border-2 border-current/40 border-t-current animate-spin" />
             <BellOff v-else-if="isCurrentSubscribed" class="h-3 w-3" />
             <BellRing v-else class="h-3 w-3" />
-            {{ isCurrentSubscribed ? '退订' : '订阅' }}
+            {{ isCurrentSubscribed ? '取消订阅' : '订阅' }}
           </button>
 
           <!-- 发送到邮箱 -->
@@ -266,14 +370,24 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
           >
             <span v-if="isSendingEmail" class="h-3 w-3 rounded-full border-2 border-stone-400/40 border-t-stone-500 animate-spin" />
             <Send v-else class="h-3 w-3" />
-            发邮件
+            发送简报
           </button>
 
-          <!-- 发送成功提示 -->
-          <span v-if="emailSentMsg" class="text-2xs text-green-600 flex items-center gap-1">
+          <!-- 操作成功提示 -->
+          <span v-if="emailSentMsg" class="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-2xs font-medium text-green-700">
             <Mail class="h-3 w-3" />
             {{ emailSentMsg }}
           </span>
+
+          <button
+            v-if="authStore.isLoggedIn"
+            class="flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-medium bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100 transition-all duration-200"
+            :disabled="isSubscribing"
+            @click="handleManageSubscriptions"
+          >
+            <BellRing class="h-3 w-3" />
+            管理订阅
+          </button>
 
           <!-- Admin: 生成相关控件 -->
           <template v-if="authStore.isAdmin">
@@ -333,6 +447,69 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
         <!-- Admin: 日期选择 -->
         <div v-if="authStore.isAdmin" class="flex items-center gap-1 ml-2">
           <input v-model="selectedDate" type="date" class="input w-auto py-1 text-xs" :disabled="isGenerating" />
+        </div>
+      </div>
+
+      <!-- 游客订阅登录提示 -->
+      <div v-if="showLoginPrompt" class="rounded-2xl border border-amber-100 bg-amber-50/90 p-3 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2 text-sm text-amber-800">
+            <BellRing class="h-4 w-4 shrink-0" />
+            <span>请先登录后再订阅简报，即将跳转到登录页面。</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="rounded-full px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100" @click="closeLoginPrompt">稍后</button>
+            <button class="rounded-full bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700" @click="handleLoginAndRedirect">去登录</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 日报订阅领域选择 -->
+      <div v-if="showSubscribePanel" class="rounded-2xl border border-indigo-100 bg-white/90 p-3 shadow-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold text-stone-700">选择要订阅的日报领域</p>
+            <p class="text-2xs text-stone-400 mt-0.5">日报生成后会自动推送到你的注册邮箱；综合简报与单领域报告会分别推送。</p>
+          </div>
+          <button class="text-2xs text-stone-400 hover:text-stone-600" :disabled="isSubscribing" @click="showSubscribePanel = false">取消</button>
+        </div>
+
+        <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <button
+            v-for="type in REPORT_TYPES"
+            :key="type.key"
+            type="button"
+            class="flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all duration-200"
+            :class="selectedSubscribeSources.includes(type.key)
+              ? 'border-indigo-200 bg-indigo-50 text-indigo-800'
+              : 'border-stone-100 bg-white/70 text-stone-600 hover:bg-stone-50'"
+            :disabled="isSubscribing"
+            @click="toggleSubscribeSource(type.key)"
+          >
+            <span class="flex h-4 w-4 items-center justify-center rounded border text-[10px]"
+              :class="selectedSubscribeSources.includes(type.key) ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-stone-300 text-transparent'">✓</span>
+            <component :is="type.icon" class="h-4 w-4 shrink-0" />
+            <span class="min-w-0 flex-1">
+              <span class="block text-xs font-semibold">{{ type.label }}</span>
+              <span class="block text-2xs opacity-70">{{ type.desc }}{{ isSourceSubscribed(type.key) ? ' · 已订阅' : '' }}</span>
+            </span>
+          </button>
+        </div>
+
+        <div class="mt-3 flex items-center justify-end gap-2">
+          <button
+            class="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 hover:bg-stone-50"
+            :disabled="isSubscribing"
+            @click="showSubscribePanel = false"
+          >取消</button>
+          <button
+            class="btn-primary gap-1.5 text-xs py-1.5 px-3"
+            :disabled="isSubscribing || !selectedSubscribeSources.length"
+            @click="confirmSubscribeSources"
+          >
+            <span v-if="isSubscribing" class="h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+            确定订阅 {{ selectedSubscribeSources.length }} 个领域
+          </button>
         </div>
       </div>
     </div>

@@ -400,6 +400,9 @@ def _ingest_documents(
                 "tags": paper.get("tags", []),
                 "score": score_val,
                 "raw_score": raw_score,
+                "stars": doc.metadata.get("stars", 0),
+                "forks": int(paper.get("forks") or doc.metadata.get("forks") or 0),
+                "language": paper.get("language") or doc.metadata.get("language") or "",
                 # 榜单内排名：1=第一名，值越小越靠前；未设置时默认 9999
                 "rank_in_period": rank_in_period,
                 "indexed": 1,

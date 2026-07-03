@@ -806,14 +806,21 @@ async def get_dashboard_summary(
     if board["is_embargoed"]:
         source_counts_embargo = await asyncio.to_thread(db.get_source_counts)
         total_embargo = sum(source_counts_embargo.values())
-        today_unique_visitors = await _get_today_unique_visitors()
+        registered_users = await asyncio.to_thread(db.get_user_count)
+        today_registered_users = await asyncio.to_thread(
+            db.get_today_registered_user_count
+        )
+        user_count = registered_users + today_registered_users
         return {
             "top_list": [],
             "radar": [],
             "stats": {
                 "total_documents": total_embargo,
                 "source_counts": source_counts_embargo,
-                "today_unique_visitors": today_unique_visitors,
+                "registered_users": registered_users,
+                "today_registered_users": today_registered_users,
+                "user_count": user_count,
+                "today_unique_visitors": user_count,
             },
             "period": period,
             "snapshot_date": snapshot_date,
@@ -834,8 +841,9 @@ async def get_dashboard_summary(
     source_counts = await asyncio.to_thread(db.get_source_counts)
     total_documents = sum(source_counts.values())
     registered_users = await asyncio.to_thread(db.get_user_count)
+    today_registered_users = await asyncio.to_thread(db.get_today_registered_user_count)
+    user_count = registered_users + today_registered_users
     today_new_documents = await asyncio.to_thread(db.get_today_document_count)
-    today_unique_visitors = await _get_today_unique_visitors()
 
     return {
         "top_list": top10,
@@ -844,8 +852,10 @@ async def get_dashboard_summary(
             "total_documents": total_documents,
             "source_counts": source_counts,
             "registered_users": registered_users,
+            "today_registered_users": today_registered_users,
+            "user_count": user_count,
             "today_new_documents": today_new_documents,
-            "today_unique_visitors": today_unique_visitors,
+            "today_unique_visitors": user_count,
         },
         "period": period,
         "snapshot_date": snapshot_date,
@@ -869,22 +879,19 @@ async def get_snapshot_dates(
 
 @router.get("/dashboard/visitor-count")
 async def get_visitor_count(request: Request):
-    """返回今日独立访客数（不缓存，实时读取 Redis SET）。
+    """返回用户数指标（不缓存，实时读取数据库）。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
 
-    Key：visitor:{YYYY-MM-DD}（CST 时区），由 VisitorTrackingMiddleware 写入。
-    """
-    from datetime import datetime as _dt, timedelta, timezone as _tz
-
-    redis_client = getattr(request.app.state, "redis", None)
-    if redis_client is None:
-        return {"today_unique_visitors": 0}
-    tz_cst = _tz(timedelta(hours=8))
-    today_key = f"visitor:{_dt.now(tz_cst).strftime('%Y-%m-%d')}"
-    try:
-        count = await redis_client.scard(today_key)
-        return {"today_unique_visitors": int(count or 0)}
-    except Exception:
-        return {"today_unique_visitors": 0}
+    db = MySQLRepository()
+    registered_users = await asyncio.to_thread(db.get_user_count)
+    today_registered_users = await asyncio.to_thread(db.get_today_registered_user_count)
+    user_count = registered_users + today_registered_users
+    return {
+        "user_count": user_count,
+        "registered_users": registered_users,
+        "today_registered_users": today_registered_users,
+        "today_unique_visitors": user_count,
+    }
 
 
 @router.get("/dashboard/github-hot")

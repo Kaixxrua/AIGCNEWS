@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LayoutView from '../views/LayoutView.vue'
 import DashboardView from '../views/DashboardView.vue'
+import GitHubProjectsView from '../views/GitHubProjectsView.vue'
 import ChatView from '../views/ChatView.vue'
 import ReportView from '../views/ReportView.vue'
 import MonitorView from '../views/MonitorView.vue'
@@ -36,6 +37,11 @@ const router = createRouter({
           path: '',
           name: 'dashboard',
           component: DashboardView,
+        },
+        {
+          path: 'projects',
+          name: 'github-projects',
+          component: GitHubProjectsView,
         },
         {
           path: 'chat',

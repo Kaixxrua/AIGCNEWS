@@ -29,7 +29,6 @@ from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.retriever import HybridRetriever
 
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -168,8 +167,11 @@ async def _stream_persisted_chat(
         # ── 后置持久化（流结束后） ──────────────────────────────
         thinking_text = "".join(thinking_parts)
         answer_text = "".join(content_parts)
-        scope = "paper" if request.paper_id else (request.scope or "global")
-        scope_key = request.paper_id if request.paper_id else None
+        # paper_id 只表示“当前阅读论文”的 RAG 上下文，不能强制改变会话作用域；
+        # PaperReadView 现在与 ChatView 共用 global 会话，scope 必须跟随请求中的会话自身。
+        requested_scope = request.scope or "global"
+        scope = requested_scope if requested_scope in ("global", "paper") else "global"
+        scope_key = request.paper_id if scope == "paper" else None
         persisted = await asyncio.to_thread(
             conversation_service.append_message_pair,
             user_id=user_id,

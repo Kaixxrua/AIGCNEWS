@@ -41,6 +41,8 @@ interface Stats {
   total_documents?: number
   source_counts?: Record<string, number>
   registered_users?: number
+  today_registered_users?: number
+  user_count?: number
   today_new_documents?: number
   today_unique_visitors?: number
 }
@@ -124,18 +126,23 @@ const fetchAvailableDates = async () => {
   }
 }
 
-// 单独获取今日独立访客数（不缓存接口，实时读取 Redis SET）
-const fetchVisitorCount = async () => {
+// 单独获取用户数指标（不缓存接口，实时读取数据库）
+const fetchUserCountMetric = async () => {
   try {
     const res = await api.get('/dashboard/visitor-count')
-    stats.value = { ...stats.value, today_unique_visitors: res.data.today_unique_visitors ?? 0 }
-    // 同步更新访客动画数据源
+    stats.value = {
+      ...stats.value,
+      registered_users: res.data.registered_users ?? stats.value.registered_users ?? 0,
+      today_registered_users: res.data.today_registered_users ?? 0,
+      user_count: res.data.user_count ?? 0,
+    }
+    // 同步更新用户数动画数据源
     visitorSources.value = visitorCards.map(card => {
       const key = card.key as keyof typeof stats.value
       return Number(stats.value[key] ?? 0)
     })
   } catch (e) {
-    console.warn('[Dashboard] 获取今日访客数失败', e)
+    console.warn('[Dashboard] 获取用户数失败', e)
   }
 }
 
@@ -144,7 +151,7 @@ onMounted(async () => {
     await Promise.all([
       fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value),
       fetchAvailableDates(),
-      fetchVisitorCount(),
+      fetchUserCountMetric(),
     ])
   } catch (e) {
     errorMsg.value = String(e)
@@ -283,7 +290,7 @@ const statCards = [
 
 const visitorCards = [
   {
-    label: '今日访客', key: 'today_unique_visitors', dark: false,
+    label: '用户数', key: 'user_count', dark: false,
     iconBg: 'bg-purple-50', iconColor: 'text-purple-500', numColor: 'text-purple-600',
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`,
   },
@@ -340,6 +347,17 @@ const getVisitorAnimatedValue = (index: number): string => {
   const transition = animatedVisitors[index]
   const val = transition ? transition.value : 0
   return Math.round(val ?? 0).toLocaleString()
+}
+
+const getUserCountParts = (): string => {
+  const registered = Number(stats.value.registered_users ?? 0).toLocaleString()
+  const todayRegistered = Number(stats.value.today_registered_users ?? 0).toLocaleString()
+  return `${registered}+${todayRegistered}`
+}
+
+const getVisitorDisplayValue = (cardKey: string, index: number): string => {
+  if (cardKey === 'user_count') return getUserCountParts()
+  return getVisitorAnimatedValue(index)
 }
 
 const hasData = computed(() => {
@@ -412,7 +430,7 @@ const hasData = computed(() => {
           </div>
         </div>
 
-        <!-- 2 个访客统计卡片 -->
+        <!-- 2 个运营统计卡片 -->
         <div class="grid gap-2 grid-cols-2">
           <div
             v-for="(card, index) in visitorCards"
@@ -430,7 +448,7 @@ const hasData = computed(() => {
               <span class="text-xs font-medium text-stone-400">{{ card.label }}</span>
             </div>
             <span class="text-lg font-bold tabular-nums" :class="card.numColor">
-              {{ getVisitorAnimatedValue(index) }}
+              {{ getVisitorDisplayValue(card.key, index) }}
             </span>
           </div>
         </div>

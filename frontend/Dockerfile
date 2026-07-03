@@ -15,5 +15,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # 将 SSL 证书复制进镜像
 COPY ssl/aigcnews.cn_bundle.crt /etc/nginx/ssl/aigcnews.cn_bundle.crt
 COPY ssl/aigcnews.cn.key        /etc/nginx/ssl/aigcnews.cn.key
+COPY ssl/sub2api.aigcnews.cn_bundle.crt /etc/nginx/ssl/sub2api.aigcnews.cn_bundle.crt
+COPY ssl/sub2api.aigcnews.cn.key        /etc/nginx/ssl/sub2api.aigcnews.cn.key
 EXPOSE 80 443
 CMD ["nginx", "-g", "daemon off;"]

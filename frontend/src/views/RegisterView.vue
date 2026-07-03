@@ -10,7 +10,6 @@ const authStore = useAuthStore()
 
 const email         = ref('')
 const otp           = ref('')
-const inviteCode    = ref('')
 const password      = ref('')
 const confirmPwd    = ref('')
 const loading       = ref(false)
@@ -77,7 +76,6 @@ const handleRegister = async () => {
   errorMsg.value = ''
   if (!emailValid.value) { errorMsg.value = '请输入有效的邮箱地址'; return }
   if (!otp.value.trim() || !/^\d{6}$/.test(otp.value.trim())) { errorMsg.value = '验证码应为 6 位数字'; return }
-  if (!inviteCode.value.trim()) { errorMsg.value = '请输入邀请码'; return }
   if (!password.value) { errorMsg.value = '请设置密码'; return }
   if (password.value !== confirmPwd.value) { errorMsg.value = '两次密码输入不一致'; return }
   if (!agreedToTerms.value) { errorMsg.value = '请阅读并同意《用户协议与免责声明》后再注册'; return }
@@ -87,7 +85,6 @@ const handleRegister = async () => {
     await api.post('/auth/register', {
       email: email.value.trim(),
       email_code: otp.value.trim(),
-      invite_code: inviteCode.value.trim(),
       password: password.value,
     })
     // 注册成功后自动登录
@@ -162,19 +159,6 @@ const handleRegister = async () => {
             class="input tracking-widest"
             placeholder="6 位数字验证码"
             autocomplete="one-time-code"
-            :disabled="loading"
-          />
-        </div>
-
-        <!-- 邀请码 -->
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-stone-500">邀请码</label>
-          <input
-            v-model="inviteCode"
-            type="text"
-            class="input"
-            placeholder="请输入内测邀请码"
-            autocomplete="off"
             :disabled="loading"
           />
         </div>

@@ -23,8 +23,8 @@ services:
       - http_proxy=http://172.18.0.1:7890
       - https_proxy=http://172.18.0.1:7890
       # 内网服务不走代理
-      - NO_PROXY=localhost,127.0.0.1,milvus-standalone,mysql-aigc,redis,neo4j,etcd,minio,172.18.0.0/16
-      - no_proxy=localhost,127.0.0.1,milvus-standalone,mysql-aigc,redis,neo4j,etcd,minio,172.18.0.0/16
+      - NO_PROXY=localhost,127.0.0.1,milvus-standalone,mysql-aigc,redis,neo4j,etcd,minio,172.18.0.0/16,172.18.0.1,118.89.101.11,sub2api.aigcnews.cn
+      - no_proxy=localhost,127.0.0.1,milvus-standalone,mysql-aigc,redis,neo4j,etcd,minio,172.18.0.0/16,172.18.0.1,118.89.101.11,sub2api.aigcnews.cn
     volumes:
       - ../backend:/src/backend
       - ../storage/papers:/src/storage/papers

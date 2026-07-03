@@ -14,6 +14,10 @@ interface PaperMsg {
   role: 'user' | 'assistant'
   content: string
   thinking?: string
+  thinkingPreview?: string
+  hasThinking?: boolean
+  isThinking?: boolean
+  thinkingDurationSec?: number
   isStreaming?: boolean
   visionExtract?: string
   imageBase64?: string
@@ -121,6 +125,10 @@ const chatMessages = computed<PaperMsg[]>(() => {
     role: item.role,
     content: item.content,
     thinking: item.thinking,
+    thinkingPreview: item.thinkingPreview,
+    hasThinking: item.hasThinking || !!item.thinking,
+    isThinking: item.isThinking,
+    thinkingDurationSec: item.thinkingDurationSec,
     isStreaming: item.isStreaming,
     showRaw: false,
   }))
@@ -139,11 +147,19 @@ const isSending = computed(() => chatStore.isStreaming)
 const visionMessages = ref<PaperMsg[]>([])
 
 const messages = computed<PaperMsg[]>(() => [...chatMessages.value, ...visionMessages.value])
+const thinkingExpanded = ref<Record<string, boolean>>({})
 
-const clearChat = async () => {
+const toggleThinking = (msgId: string) => {
+  thinkingExpanded.value = { ...thinkingExpanded.value, [msgId]: !thinkingExpanded.value[msgId] }
+}
+const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
+
+const deleteCurrentConversation = async () => {
   if (!currentConversationId.value) return
-  chatStore.messageMap[currentConversationId.value] = []
   visionMessages.value = []
+  showConvPanel.value = false
+  await chatStore.deleteActiveConversation()
+  await loadGlobalConvList()
 }
 
 const scrollBottom = async () => {
@@ -151,7 +167,7 @@ const scrollBottom = async () => {
   if (chatListRef.value) chatListRef.value.scrollTop = chatListRef.value.scrollHeight
 }
 
-watch(() => messages.value.map((item) => `${item.id}:${item.content.length}:${item.thinking?.length || 0}`).join('|'), () => {
+watch(() => messages.value.map((item) => `${item.id}:${item.content.length}:${item.thinking?.length || 0}:${item.hasThinking ? 1 : 0}:${item.isThinking ? 1 : 0}:${item.thinkingDurationSec || 0}`).join('|'), () => {
   void scrollBottom()
 })
 
@@ -163,9 +179,15 @@ const visionPopup = ref<{
 } | null>(null)
 const popupInputRef = ref<HTMLInputElement | null>(null)
 
+const chatServiceDisabled = true
+
 const onRightclickRegion = async (payload: {
   pageIndex: number; base64: string; x: number; y: number; w: number; h: number
 }) => {
+  if (chatServiceDisabled) {
+    visionPopup.value = null
+    return
+  }
   visionPopup.value = {
     visible: true,
     base64: payload.base64,
@@ -285,7 +307,7 @@ const downloadPdf = () => {
 
 <template>
   <div class="w-full flex-1 min-h-0 flex flex-row overflow-hidden">
-    <div class="w-[35%] flex-shrink-0 flex flex-col h-full bg-white border-r border-gray-100/80 hover:border-gray-200 transition-colors">
+    <div class="relative w-[35%] flex-shrink-0 flex flex-col h-full bg-white border-r border-gray-100/80 hover:border-gray-200 transition-colors">
       <header class="flex shrink-0 items-center justify-between px-4 py-3 relative" style="border-bottom: 1px solid rgba(168,162,158,0.12)">
         <button class="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-600 transition" @click="router.push('/chat')">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -344,7 +366,7 @@ const downloadPdf = () => {
           </Transition>
         </div>
 
-        <button class="text-xs text-stone-400 hover:text-stone-600 transition" @click="clearChat">清空</button>
+        <button class="text-xs text-stone-400 hover:text-red-500 transition" @click="deleteCurrentConversation">删除</button>
       </header>
 
       <!-- 点击外部关闭面板 -->
@@ -383,11 +405,55 @@ const downloadPdf = () => {
                 <pre class="px-3 pb-3 pt-1 text-2xs leading-5 text-stone-500 whitespace-pre-wrap break-all">{{ msg.visionExtract }}</pre>
               </details>
 
-              <div v-if="msg.thinking" class="rounded-[18px] px-3.5 py-2 text-2xs text-stone-500 bg-stone-50 border border-stone-200 whitespace-pre-wrap break-words">
-                {{ msg.thinking }}
+              <div
+                v-if="msg.hasThinking || msg.isThinking || msg.thinking"
+                class="thinking-block overflow-hidden"
+                :class="msg.isThinking ? 'thinking-block--active' : ''"
+              >
+                <button
+                  class="thinking-header flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
+                  :class="msg.isThinking ? 'cursor-default' : 'cursor-pointer'"
+                  @click="!msg.isThinking && toggleThinking(msg.id)"
+                >
+                  <span v-if="msg.isThinking" class="thinking-spinner" />
+                  <svg v-else class="h-3.5 w-3.5 shrink-0" style="color: #7c6f5c" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.346A3 3 0 0115 18H9a3 3 0 01-2.12-.879l-.347-.346a5 5 0 010-7.072z"/>
+                  </svg>
+                  <span class="flex-1 text-xs font-medium thinking-label">
+                    <template v-if="msg.isThinking">
+                      <span class="thinking-dots-text">正在深度思考</span>
+                    </template>
+                    <template v-else>
+                      已完成深度思考
+                      <span v-if="(msg.thinkingDurationSec || 0) > 0" class="thinking-duration">（用时 {{ msg.thinkingDurationSec }} 秒）</span>
+                    </template>
+                  </span>
+                  <svg
+                    v-if="!msg.isThinking"
+                    class="h-3.5 w-3.5 shrink-0 text-stone-400 transition-transform duration-300"
+                    :class="isThinkingExpanded(msg.id) ? 'rotate-180' : ''"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                  </svg>
+                </button>
+
+                <Transition name="thinking-expand">
+                  <div
+                    v-if="msg.thinking || msg.isThinking"
+                    v-show="msg.isThinking || isThinkingExpanded(msg.id)"
+                    class="thinking-body px-3.5 pb-2.5"
+                  >
+                    <div class="thinking-content-inner">
+                      <p v-if="msg.thinking" class="font-mono text-[11px] leading-[1.7] text-stone-500 whitespace-pre-wrap break-words">{{ msg.thinking }}</p>
+                      <p v-else-if="msg.isThinking" class="text-[11px] text-stone-400 italic">正在检索与生成中…</p>
+                      <span v-if="msg.isThinking" class="thinking-cursor" />
+                    </div>
+                  </div>
+                </Transition>
               </div>
 
-              <div v-if="!msg.content && msg.isStreaming" class="flex items-center gap-1.5 rounded-[18px] px-3.5 py-2.5 bg-stone-50">
+              <div v-if="!msg.content && msg.isStreaming && !msg.hasThinking && !msg.isThinking && !msg.thinking" class="flex items-center gap-1.5 rounded-[18px] px-3.5 py-2.5 bg-stone-50">
                 <span v-for="i in 3" :key="i" class="h-1.5 w-1.5 animate-bounce rounded-full bg-stone-300" :style="`animation-delay:${(i-1)*150}ms`"/>
               </div>
 
@@ -430,6 +496,17 @@ const downloadPdf = () => {
           </button>
         </div>
       </footer>
+      <div class="absolute inset-0 z-[60] flex items-center justify-center bg-white/75 px-4 backdrop-blur-sm">
+        <div class="max-w-xs rounded-3xl border border-stone-200 bg-white/95 px-6 py-8 text-center shadow-2xl">
+          <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-3xl bg-stone-100">
+            <svg class="h-7 w-7 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.6">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+            </svg>
+          </div>
+          <p class="text-base font-semibold text-stone-800 font-serif">服务暂未开放敬请期待</p>
+          <p class="mt-2 text-xs leading-5 text-stone-500">论文旁 AI 对话功能正在维护升级中，当前暂不可使用。</p>
+        </div>
+      </div>
     </div>
 
     <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-gray-50/50">
@@ -574,6 +651,98 @@ const downloadPdf = () => {
   padding: 6px 0;
 }
 
+/* Cherry Studio 风格思维链块（论文阅读页 scoped 样式） */
+.thinking-block {
+  border-radius: 16px;
+  border: 1px solid rgba(120, 100, 70, 0.18);
+  background: linear-gradient(135deg, rgba(255,252,245,0.95) 0%, rgba(250,247,240,0.92) 100%);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+.thinking-block--active {
+  border-color: rgba(120, 100, 70, 0.32);
+  background: linear-gradient(135deg, rgba(255,253,248,0.98) 0%, rgba(252,249,242,0.96) 100%);
+}
+.thinking-header {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  transition: background 0.15s ease;
+}
+.thinking-header:hover {
+  background: rgba(120, 100, 70, 0.05);
+}
+.thinking-label {
+  color: #7c6f5c;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.thinking-dots-text {
+  background: linear-gradient(90deg, #a08060 0%, #c8a870 40%, #a08060 80%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 1.8s linear infinite;
+}
+.thinking-duration {
+  color: #b0a090;
+  font-weight: 400;
+}
+.thinking-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(160, 128, 96, 0.25);
+  border-top-color: #a08060;
+  animation: thinking-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.thinking-body {
+  border-top: 1px solid rgba(120, 100, 70, 0.12);
+}
+.thinking-content-inner {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 2px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120,100,70,0.2) transparent;
+}
+.thinking-content-inner::-webkit-scrollbar {
+  width: 4px;
+}
+.thinking-content-inner::-webkit-scrollbar-thumb {
+  background: rgba(120,100,70,0.2);
+  border-radius: 2px;
+}
+.thinking-cursor {
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  background: #a08060;
+  margin-left: 2px;
+  vertical-align: middle;
+  animation: blink 0.9s step-end infinite;
+}
+.thinking-expand-enter-active,
+.thinking-expand-leave-active {
+  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  overflow: hidden;
+  max-height: 300px;
+}
+.thinking-expand-enter-from,
+.thinking-expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+.thinking-expand-enter-to,
+.thinking-expand-leave-from {
+  opacity: 1;
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;
@@ -587,5 +756,15 @@ const downloadPdf = () => {
 .dropdown-leave-from {
   opacity: 1;
   transform: translateX(-50%) translateY(0) scale(1);
+}
+
+@keyframes thinking-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes shimmer {
+  to { background-position: -200% center; }
+}
+@keyframes blink {
+  50% { opacity: 0; }
 }
 </style>

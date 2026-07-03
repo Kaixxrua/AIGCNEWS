@@ -19,9 +19,6 @@ from backend.app.services.email_service import EmailService
 
 router = APIRouter()
 
-# 固定邀请码（内测阶段）
-_INVITE_CODE = "internal_testing"
-
 
 def _get_email_service(request: Request) -> EmailService:
     """从 app.state 获取 Redis 并构造 EmailService 实例。"""
@@ -51,7 +48,6 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     email_code: str
     password: str
-    invite_code: str
 
 
 class LoginRequest(BaseModel):
@@ -77,25 +73,17 @@ async def send_email_otp(body: SendEmailOtpRequest, request: Request) -> dict[st
     return {"detail": "验证码已发送"}
 
 
-@router.post("/auth/register", summary="用户注册（邮箱 + 验证码 + 邀请码 + 密码）")
+@router.post("/auth/register", summary="用户注册（邮箱 + 验证码 + 密码）")
 async def register(body: RegisterRequest, request: Request) -> dict[str, Any]:
     """
     注册新用户。
 
-    1. 校验邀请码
-    2. 校验邮箱验证码（consume=False 先不删除）
-    3. 检查邮箱是否已注册
-    4. bcrypt 哈希密码后写库
-    5. 消耗验证码
+    1. 校验邮箱验证码（consume=False 先不删除）
+    2. 检查邮箱是否已注册
+    3. bcrypt 哈希密码后写库
+    4. 消耗验证码
     """
-    # Step 1: 校验邀请码
-    if body.invite_code != _INVITE_CODE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="邀请码无效",
-        )
-
-    # Step 2: 校验邮箱验证码（先不消耗）
+    # Step 1: 校验邮箱验证码（先不消耗）
     email_svc = _get_email_service(request)
     verified = await email_svc.verify_otp(
         str(body.email), body.email_code, consume=False
@@ -106,7 +94,7 @@ async def register(body: RegisterRequest, request: Request) -> dict[str, Any]:
             detail="验证码错误或已过期",
         )
 
-    # Step 3: 检查邮箱是否已注册
+    # Step 2: 检查邮箱是否已注册
     db = MySQLRepository()
     existing = await asyncio.to_thread(db.get_user_by_email, str(body.email))
     if existing is not None:
@@ -115,18 +103,18 @@ async def register(body: RegisterRequest, request: Request) -> dict[str, Any]:
             detail="该邮箱已注册",
         )
 
-    # Step 4: 哈希密码并写库
+    # Step 3: 哈希密码并写库
     hashed = hash_password(body.password)
     new_id = await asyncio.to_thread(
         db.create_user_with_email,
         str(body.email),
         hashed,
-        body.invite_code,
+        "",
         "user",
         "",  # username 默认为空
     )
 
-    # Step 5: 全部成功后消耗验证码
+    # Step 4: 全部成功后消耗验证码
     await email_svc.consume_otp(str(body.email))
 
     return {"detail": "注册成功", "user_id": new_id}

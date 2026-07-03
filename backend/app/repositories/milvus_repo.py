@@ -3,7 +3,14 @@ from __future__ import annotations
 from typing import List
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Milvus
+
+try:
+    from langchain_community.vectorstores import Milvus
+except ImportError:
+    try:
+        from langchain_community.vectorstores.milvus import Milvus
+    except ImportError:
+        from langchain_milvus import Milvus
 from langchain_core.documents import Document
 
 from backend.app.core.config import settings
@@ -66,11 +73,11 @@ class MilvusRepository:
                 enriched.append(doc)
         return enriched
 
-    def add_documents(self, docs: List[Document], already_split: bool = False) -> None:
+    def add_documents(self, docs: List[Document], already_split: bool = False) -> bool:
         try:
             if not docs:
                 print("[Milvus] No documents to add.")
-                return
+                return True
 
             # 在切分之前先对 GitHub 文档追加结构化字段，
             # 这样切分后的每个 chunk 也都包含 stars/forks/language 信息
@@ -115,8 +122,10 @@ class MilvusRepository:
             print(
                 f"[Milvus] Inserted {len(docs)} chunks into '{self._collection_name}'."
             )
+            return True
         except Exception as exc:
             print(f"[Milvus] Failed to add documents: {exc}")
+            return False
 
     def drop_collection(self) -> bool:
         """删除（清空）整个 Milvus Collection，返回是否成功。"""

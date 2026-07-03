@@ -93,6 +93,231 @@ class HybridRetriever:
                 merged.append(doc)
         return merged
 
+    @staticmethod
+    def _extract_explicit_document_ids(query: str) -> List[str]:
+        """从用户问题/论文页上下文中提取 MySQL documents.id。"""
+        doc_ids: List[str] = []
+        for item in re.findall(r"\b[a-fA-F0-9]{32}\b", query or ""):
+            normalized = item.lower()
+            if normalized not in doc_ids:
+                doc_ids.append(normalized)
+        return doc_ids
+
+    def _mysql_id_match_documents(
+        self, query: str = "", top_k: int = 5
+    ) -> List[Document]:
+        """按 documents.id 精确召回当前论文。
+
+        论文阅读页会把当前 paper_id 传给后端；用户如果只问“详细讲一下这篇论文”，
+        query 中没有标题关键词，纯向量/标题检索都容易漏掉目标论文。因此只要问题里出现
+        32 位文档 ID，就必须优先从 MySQL 精确取回该论文元数据，并尽可能补充本地 PDF 正文。
+        """
+        doc_ids = self._extract_explicit_document_ids(query)
+        if not doc_ids:
+            return []
+
+        placeholders = ", ".join(["%s"] * len(doc_ids))
+        order_placeholders = ", ".join(["%s"] * len(doc_ids))
+        sql = f"""
+            SELECT id, source, source_channel, title, url, summary,
+                   published_date, raw_score, score, rank_in_period, created_at,
+                   local_pdf_path
+            FROM documents
+            WHERE id IN ({placeholders})
+            ORDER BY FIELD(id, {order_placeholders})
+            LIMIT %s
+        """
+        params = tuple(doc_ids + doc_ids + [top_k])
+
+        conn = self._mysql_repo._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+            conn.commit()
+        finally:
+            conn.close()
+
+        docs: List[Document] = []
+        for row in rows:
+            title = str(row.get("title") or "")
+            summary = str(row.get("summary") or "")
+            local_pdf_path = str(row.get("local_pdf_path") or "")
+            pdf_excerpt = ""
+            if local_pdf_path and str(row.get("source") or "").lower() == "arxiv":
+                try:
+                    from backend.app.services.ingestion.arxiv_pdf_downloader import (
+                        _extract_text_from_local_pdf,
+                    )
+
+                    pdf_text = _extract_text_from_local_pdf(local_pdf_path)
+                    if pdf_text:
+                        pdf_excerpt = pdf_text[:20000].strip()
+                except Exception as exc:
+                    print(
+                        f"[HybridRetriever] failed to load local PDF excerpt "
+                        f"{local_pdf_path}: {exc}"
+                    )
+
+            metadata = {
+                "id": str(row.get("id") or ""),
+                "source": str(row.get("source") or "mysql"),
+                "title": title,
+                "url": str(row.get("url") or ""),
+                "published_date": str(row.get("published_date") or ""),
+                "score": float(row.get("score") or 0.0),
+                "raw_score": float(row.get("raw_score") or 0.0),
+                "rank_in_period": int(row.get("rank_in_period") or 9999),
+                "retriever": "hybrid",
+                "match_type": "mysql_id",
+                "keyword_score": 100.0,
+                "rerank_score": 10.0,
+                "force_include": True,
+            }
+            content = f"Document ID: {metadata['id']}\nTitle: {title}"
+            if summary:
+                content += f"\nSummary (metadata excerpt): {summary}"
+            if pdf_excerpt:
+                content += f"\nFull paper excerpt from local PDF:\n{pdf_excerpt}"
+            docs.append(Document(page_content=content, metadata=metadata))
+        return docs
+
+    def _mysql_title_match_documents(
+        self, query: str = "", top_k: int = 5
+    ) -> List[Document]:
+        """按标题关键词从 MySQL 精确/近似召回文档。
+
+        这条路径用于补足纯向量检索的短板：当用户直接输入论文标题时，
+        即使对应 PDF 分块尚未写入 Milvus、或向量相似度排序不靠前，也应优先把
+        MySQL 中已收录的文档元数据和摘要注入 RAG 上下文。
+        """
+        raw_tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", query.lower())
+        stopwords = {
+            "the",
+            "a",
+            "an",
+            "in",
+            "on",
+            "of",
+            "and",
+            "or",
+            "to",
+            "for",
+            "with",
+            "by",
+            "from",
+            "is",
+            "are",
+            "be",
+            "as",
+            "at",
+            "it",
+            "this",
+            "that",
+            "these",
+            "those",
+            "into",
+            "paper",
+            "papers",
+            "article",
+            "tell",
+            "about",
+        }
+        tokens: List[str] = []
+        for token in raw_tokens:
+            if token in stopwords:
+                continue
+            if len(token) <= 1:
+                continue
+            if token not in tokens:
+                tokens.append(token)
+            if len(tokens) >= 8:
+                break
+
+        if len(tokens) < 3:
+            return []
+
+        like_values = [f"%{token}%" for token in tokens]
+        score_expr = " + ".join(["(LOWER(title) LIKE %s)" for _ in tokens])
+        or_clause = " OR ".join(["LOWER(title) LIKE %s" for _ in tokens])
+        min_match_count = min(3, len(tokens))
+        sql = f"""
+            SELECT id, source, source_channel, title, url, summary,
+                   published_date, raw_score, score, rank_in_period, created_at,
+                   local_pdf_path,
+                   ({score_expr}) AS keyword_score
+            FROM documents
+            WHERE ({or_clause})
+            HAVING keyword_score >= %s
+            ORDER BY keyword_score DESC,
+                     CASE WHEN source = 'arxiv' THEN 0 ELSE 1 END ASC,
+                     COALESCE(raw_score, score, 0) DESC,
+                     published_date DESC
+            LIMIT %s
+        """
+        params = tuple(like_values + like_values + [min_match_count, top_k])
+
+        conn = self._mysql_repo._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+            conn.commit()
+        finally:
+            conn.close()
+
+        docs: List[Document] = []
+        for row in rows:
+            title = str(row.get("title") or "")
+            summary = str(row.get("summary") or "")
+            keyword_score = float(row.get("keyword_score") or 0.0)
+            local_pdf_path = str(row.get("local_pdf_path") or "")
+            pdf_excerpt = ""
+            # MySQL documents.summary 只保存元数据摘要，历史数据可能只有 500 字符。
+            # 当标题高度命中且本地 PDF 已落盘时，补充 PDF 正文前段，避免 LLM
+            # 只能看到被截断的 Summary 后误判“摘要被截断”。
+            if (
+                local_pdf_path
+                and str(row.get("source") or "").lower() == "arxiv"
+                and keyword_score >= min(5, len(tokens))
+            ):
+                try:
+                    from backend.app.services.ingestion.arxiv_pdf_downloader import (
+                        _extract_text_from_local_pdf,
+                    )
+
+                    pdf_text = _extract_text_from_local_pdf(local_pdf_path)
+                    if pdf_text:
+                        pdf_excerpt = pdf_text[:6000].strip()
+                except Exception as exc:
+                    print(
+                        f"[HybridRetriever] failed to load local PDF excerpt "
+                        f"{local_pdf_path}: {exc}"
+                    )
+
+            metadata = {
+                "id": str(row.get("id") or ""),
+                "source": str(row.get("source") or "mysql"),
+                "title": title,
+                "url": str(row.get("url") or ""),
+                "published_date": str(row.get("published_date") or ""),
+                "score": float(row.get("score") or 0.0),
+                "raw_score": float(row.get("raw_score") or 0.0),
+                "rank_in_period": int(row.get("rank_in_period") or 9999),
+                "retriever": "hybrid",
+                "match_type": "mysql_title",
+                "keyword_score": keyword_score,
+                # 若后续因向量分数过高跳过 reranker，也让标题命中文档排在来源前列。
+                "rerank_score": min(10.0, round(keyword_score * 1.5, 1)),
+            }
+            content = f"Title: {title}"
+            if summary:
+                content += f"\nSummary (metadata excerpt): {summary}"
+            if pdf_excerpt:
+                content += f"\nFull paper excerpt from local PDF:\n{pdf_excerpt}"
+            docs.append(Document(page_content=content, metadata=metadata))
+        return docs
+
     def _sqlite_fallback_documents(
         self, query: str = "", top_k: int = 10
     ) -> List[Document]:
@@ -134,28 +359,56 @@ class HybridRetriever:
         return docs
 
     async def search(self, query: str, top_k: int = 5) -> List[Document]:
-        keywords = self._extract_keywords(query, max_keywords=5)
+        id_docs = await asyncio.to_thread(
+            self._mysql_id_match_documents, query, max(top_k, 5)
+        )
+        if id_docs:
+            matched_titles = " ".join(
+                str((doc.metadata or {}).get("title") or "") for doc in id_docs
+            ).strip()
+            retrieval_query = f"{matched_titles}\n{query}" if matched_titles else query
+        else:
+            retrieval_query = query
+        keywords = self._extract_keywords(retrieval_query, max_keywords=5)
 
         if not self._milvus_repo.is_available():
+            title_docs = await asyncio.to_thread(
+                self._mysql_title_match_documents, retrieval_query, max(top_k, 5)
+            )
             graph_docs = await asyncio.to_thread(
                 self._graph_repo.search, keywords, top_k
             )
             sqlite_docs = await asyncio.to_thread(
-                self._sqlite_fallback_documents, query, top_k
+                self._sqlite_fallback_documents, retrieval_query, top_k
             )
-            return self._merge_documents(sqlite_docs, graph_docs)
+            return self._merge_documents(id_docs, title_docs, sqlite_docs, graph_docs)
 
         milvus_k = max(top_k * 3, 15)
-        vector_task = asyncio.to_thread(self._milvus_repo.search, query, milvus_k)
+        title_task = asyncio.to_thread(
+            self._mysql_title_match_documents, retrieval_query, max(top_k, 5)
+        )
+        vector_task = asyncio.to_thread(
+            self._milvus_repo.search, retrieval_query, milvus_k
+        )
         graph_task = asyncio.to_thread(self._graph_repo.search, keywords, top_k)
         arxiv_task = asyncio.to_thread(self._milvus_repo.search_by_source, "arxiv", 5)
         news_task = asyncio.to_thread(self._milvus_repo.search_by_source, "news", 3)
         github_task = asyncio.to_thread(self._milvus_repo.search_by_source, "github", 3)
 
-        vector_docs, graph_docs, arxiv_fallback, news_fallback, github_fallback = (
-            await asyncio.gather(
-                vector_task, graph_task, arxiv_task, news_task, github_task
-            )
+        (
+            title_docs,
+            vector_docs,
+            graph_docs,
+            arxiv_fallback,
+            news_fallback,
+            github_fallback,
+        ) = await asyncio.gather(
+            title_task,
+            vector_task,
+            graph_task,
+            arxiv_task,
+            news_task,
+            github_task,
         )
 
         # 向量检索文档按 source 均衡采样（round-robin）
@@ -182,13 +435,21 @@ class HybridRetriever:
             doc.metadata["retriever"] = "source_fallback"
 
         merged = self._merge_documents(
-            round_robin, arxiv_fallback, news_fallback, github_fallback, graph_docs
+            id_docs,
+            title_docs,
+            round_robin,
+            arxiv_fallback,
+            news_fallback,
+            github_fallback,
+            graph_docs,
         )
         sqlite_docs = await asyncio.to_thread(
-            self._sqlite_fallback_documents, query, top_k
+            self._sqlite_fallback_documents, retrieval_query, top_k
         )
         # sqlite fallback 保持自己的 keyword_score，不覆盖 retriever 标记
-        return self._merge_documents(sqlite_docs, merged, graph_docs)
+        return self._merge_documents(
+            id_docs, title_docs, sqlite_docs, merged, graph_docs
+        )
 
 
 if __name__ == "__main__":

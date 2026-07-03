@@ -56,10 +56,10 @@ SCHEDULE_CONFIG: List[Dict[str, Any]] = [
         "desc": "Hacker News AI 热帖采集",
     },
     {
-        "id": "github_hot_refresh",
-        "source": "github_hot",
+        "id": "github_project_daily_pipeline",
+        "source": "github_project_daily_pipeline",
         "cron": {"hour": 2, "minute": 0},
-        "desc": "GitHub 热度快照刷新",
+        "desc": "GitHub 项目库每日流水线（入库、去重、富化新增）",
     },
 ]
 
@@ -85,6 +85,23 @@ async def _run_single_source_job(source_name: str) -> None:
         logger.error("[Scheduler] %s 采集失败: %s", source_name, exc, exc_info=True)
 
 
+async def _run_github_project_daily_pipeline_job() -> None:
+    logger.info("[Scheduler] 触发 GitHub 项目库每日流水线...")
+    try:
+        from backend.app.services.ingestion.github_project_enricher import (
+            run_github_project_daily_pipeline,
+        )
+
+        result = await asyncio.to_thread(
+            run_github_project_daily_pipeline,
+            refresh_limit=80,
+            enrich_limit=50,
+        )
+        logger.info("[Scheduler] GitHub 项目库每日流水线完成：%s", result)
+    except Exception as exc:
+        logger.error("[Scheduler] GitHub 项目库每日流水线失败: %s", exc, exc_info=True)
+
+
 async def _run_github_hot_job() -> None:
     logger.info("[Scheduler] 触发 GitHub 热度快照刷新...")
     try:
@@ -96,6 +113,19 @@ async def _run_github_hot_job() -> None:
         logger.info("[Scheduler] GitHub 热度快照刷新完成。")
     except Exception as exc:
         logger.error("[Scheduler] GitHub 热度快照刷新失败: %s", exc, exc_info=True)
+
+
+async def _run_github_project_enrichment_job() -> None:
+    logger.info("[Scheduler] 触发 GitHub 项目库 AI 分类富化...")
+    try:
+        from backend.app.services.ingestion.github_project_enricher import (
+            enrich_github_projects,
+        )
+
+        result = await asyncio.to_thread(enrich_github_projects, limit=50)
+        logger.info("[Scheduler] GitHub 项目库 AI 分类富化完成：%s", result)
+    except Exception as exc:
+        logger.error("[Scheduler] GitHub 项目库 AI 分类富化失败: %s", exc, exc_info=True)
 
 
 async def _run_smart_ingestion_job() -> None:
@@ -119,6 +149,59 @@ _BRIEFING_TASKS: List[Dict[str, str]] = [
 ]
 
 
+async def _send_briefing_to_subscribers(
+    *,
+    source: str,
+    period: str,
+    date_str: str,
+    content: str,
+) -> int:
+    from backend.app.core.config import settings
+    from backend.app.repositories.mysql_repo import MySQLRepository
+    from backend.app.services.email_service import EmailService
+
+    db = MySQLRepository()
+    subscribers = db.get_active_subscribers(source=source, period=period)
+    if not subscribers:
+        return 0
+
+    email_svc = EmailService(
+        redis_client=None,
+        smtp_host=settings.SMTP_HOST,
+        smtp_port=settings.SMTP_PORT,
+        smtp_username=settings.SMTP_USERNAME,
+        smtp_password=settings.SMTP_PASSWORD,
+        smtp_from_email=settings.SMTP_FROM_EMAIL,
+        smtp_from_name=settings.SMTP_FROM_NAME,
+        smtp_use_tls=settings.SMTP_USE_TLS,
+    )
+
+    sent = 0
+    for subscriber in subscribers:
+        email = subscriber.get("email")
+        if not email:
+            continue
+        try:
+            await email_svc.send_briefing(
+                to_email=email,
+                briefing_content=content,
+                source=source,
+                period=period,
+                date_str=date_str,
+            )
+            sent += 1
+        except Exception as exc:
+            logger.error(
+                "[Scheduler] 订阅简报发送失败: source=%s period=%s email=%s error=%s",
+                source,
+                period,
+                email,
+                exc,
+                exc_info=True,
+            )
+    return sent
+
+
 async def _run_daily_briefing_job() -> None:
     logger.info(
         "[Scheduler] 触发每日自动简报生成（%d 个维度）...", len(_BRIEFING_TASKS)
@@ -131,15 +214,44 @@ async def _run_daily_briefing_job() -> None:
         period = task["period"]
         try:
             service = DailyBriefingService()
-            async for _payload in service.stream_generate(
+            content_parts: list[str] = []
+            report_date = ""
+            briefing_id = -1
+            async for payload in service.stream_generate(
                 target_date=None,
                 source=source,
                 period=period,
                 force_regenerate=False,
             ):
-                pass
+                payload_type = payload.get("type")
+                if payload_type == "start":
+                    data = payload.get("data") or {}
+                    report_date = str(data.get("date") or "")
+                elif payload_type == "content":
+                    content_parts.append(str(payload.get("data") or ""))
+                elif payload_type == "done":
+                    data = payload.get("data") or {}
+                    briefing_id = int(data.get("briefing_id") or -1)
             success += 1
-            logger.info("[Scheduler] 简报生成完成: source=%s period=%s", source, period)
+            logger.info(
+                "[Scheduler] 日报生成完成，准备推送订阅用户: source=%s period=%s",
+                source,
+                period,
+            )
+            content = "".join(content_parts)
+            if briefing_id > 0 and content.strip() and report_date:
+                sent = await _send_briefing_to_subscribers(
+                    source=source,
+                    period=period,
+                    date_str=report_date,
+                    content=content,
+                )
+                logger.info(
+                    "[Scheduler] 订阅简报发送完成: source=%s period=%s sent=%d",
+                    source,
+                    period,
+                    sent,
+                )
         except Exception as exc:
             logger.error(
                 "[Scheduler] 简报生成失败: source=%s period=%s error=%s",
@@ -182,6 +294,10 @@ def start_scheduler() -> None:
 
         if source == "github_hot":
             job_func = _run_github_hot_job
+        elif source == "github_project_enrichment":
+            job_func = _run_github_project_enrichment_job
+        elif source == "github_project_daily_pipeline":
+            job_func = _run_github_project_daily_pipeline_job
         else:
 
             async def _make_job(src: str = source) -> None:

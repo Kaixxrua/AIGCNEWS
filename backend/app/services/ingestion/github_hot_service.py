@@ -55,7 +55,7 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
             full_name = str(repo.get("full_name") or "").strip()
             if not full_name:
                 continue
-            repo_id = str(repo.get("repo_id") or full_name)
+            repo_id = full_name
             if repo_id not in candidate_map:
                 meta = fetch_github_repo_metadata(full_name)
                 if not meta:
@@ -85,7 +85,7 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
         searched = []
 
     for repo in searched:
-        repo_id = str(repo.get("repo_id") or repo.get("full_name") or "").strip()
+        repo_id = str(repo.get("full_name") or repo.get("repo_id") or "").strip()
         if not repo_id:
             continue
         existing = candidate_map.get(repo_id)

@@ -44,6 +44,26 @@ const successMsg      = ref('')
 const targetDate      = ref<string>(new Date().toISOString().slice(0, 10))
 const ingestingByDate = ref(false)
 
+interface ProviderConfig {
+  provider: 'openai' | 'anthropic'
+  base_url: string
+  model_name: string
+  api_key_configured: boolean
+  api_key_masked: string | null
+  updated_at: string | null
+}
+
+const providerConfig = ref<ProviderConfig | null>(null)
+const providerForm = ref({
+  provider: 'openai' as 'openai' | 'anthropic',
+  base_url: '',
+  model_name: '',
+  api_key: '',
+  clear_api_key: false,
+})
+const loadingProviderConfig = ref(false)
+const savingProviderConfig = ref(false)
+
 interface SourceItem {
   key: string
   label: string
@@ -97,9 +117,45 @@ const fetchSchedulerStatus = async () => {
   } catch (e) { console.error('Failed to fetch scheduler status', e) }
 }
 
+const fetchProviderConfig = async () => {
+  if (!authStore.isAdmin) return
+  loadingProviderConfig.value = true
+  try {
+    const res = await api.get('/ops/provider-config')
+    providerConfig.value = res.data
+    providerForm.value.provider = res.data?.provider || 'openai'
+    providerForm.value.base_url = res.data?.base_url || ''
+    providerForm.value.model_name = res.data?.model_name || ''
+    providerForm.value.api_key = ''
+    providerForm.value.clear_api_key = false
+  } catch (e) { console.error('Failed to fetch provider config', e) }
+  finally { loadingProviderConfig.value = false }
+}
+
+const saveProviderConfig = async () => {
+  if (savingProviderConfig.value) return
+  clearMessages()
+  savingProviderConfig.value = true
+  try {
+    const res = await api.put('/ops/provider-config', {
+      provider: providerForm.value.provider,
+      base_url: providerForm.value.base_url,
+      model_name: providerForm.value.model_name,
+      api_key: providerForm.value.api_key || null,
+      clear_api_key: providerForm.value.clear_api_key,
+    })
+    providerConfig.value = res.data
+    providerForm.value.api_key = ''
+    providerForm.value.clear_api_key = false
+    successMsg.value = '模型服务配置已保存。新建模型实例时会自动使用最新配置。'
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.detail || String(e)
+  } finally { savingProviderConfig.value = false }
+}
+
 const refreshData = async () => {
   loading.value = true
-  await Promise.all([fetchTasks(), fetchSchedulerStatus()])
+  await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchProviderConfig()])
   loading.value = false
 }
 
@@ -277,6 +333,50 @@ const getStatusConfig = (status: string) =>
       <button class="ml-3 text-green-400 hover:text-green-600 transition" @click="successMsg = ''">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
+    </div>
+
+    <!-- Admin 专属：模型服务配置 -->
+    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.08s">
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <svg class="h-4 w-4 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20"/><path d="M2 12h20"/><circle cx="12" cy="12" r="4"/></svg>
+        <h3 class="text-sm font-semibold text-stone-700">模型服务配置</h3>
+        <span v-if="providerConfig?.api_key_configured" class="badge bg-green-50 text-green-700 border border-green-100">Key: {{ providerConfig.api_key_masked }}</span>
+        <span v-else class="badge bg-stone-50 text-stone-400 border border-stone-200">未配置 Key</span>
+        <span v-if="providerConfig?.updated_at" class="ml-auto text-2xs text-stone-400">更新于 {{ formatDate(providerConfig.updated_at) }}</span>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-[150px_minmax(220px,1fr)_minmax(180px,0.8fr)_minmax(220px,1fr)_auto] lg:items-end">
+        <label class="block">
+          <span class="mb-1 block text-xs text-stone-400">Provider</span>
+          <select v-model="providerForm.provider" class="input w-full py-2 text-xs" :disabled="loadingProviderConfig || savingProviderConfig">
+            <option value="openai">OpenAI 兼容</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs text-stone-400">Base URL</span>
+          <input v-model.trim="providerForm.base_url" type="url" class="input w-full py-2 text-xs" placeholder="https://api.example.com/v1" autocomplete="off" />
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs text-stone-400">模型</span>
+          <input v-model.trim="providerForm.model_name" type="text" class="input w-full py-2 text-xs" placeholder="例如 claude-opus-4-8" autocomplete="off" />
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs text-stone-400">API Key</span>
+          <input v-model="providerForm.api_key" type="password" class="input w-full py-2 text-xs" placeholder="留空则保留当前密钥" autocomplete="new-password" />
+        </label>
+        <button class="btn-primary justify-center" :disabled="savingProviderConfig || loadingProviderConfig" @click="saveProviderConfig">
+          {{ savingProviderConfig ? '保存中…' : '保存配置' }}
+        </button>
+      </div>
+
+      <div class="mt-3 flex flex-wrap items-center gap-3 text-xs text-stone-400">
+        <label class="inline-flex items-center gap-1.5">
+          <input v-model="providerForm.clear_api_key" type="checkbox" class="rounded border-stone-300 text-stone-700 focus:ring-stone-400" />
+          清空当前 API Key
+        </label>
+        <span>本页只保存一套模型配置，每次保存会覆盖上次配置；API Key 不会回显完整密钥。</span>
+      </div>
     </div>
 
     <!-- Admin 专属：按日期采集 -->
