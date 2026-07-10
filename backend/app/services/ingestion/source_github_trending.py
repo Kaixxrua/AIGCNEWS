@@ -17,16 +17,17 @@ from __future__ import annotations
   - fetch_github_trending_all_periods 使用 asyncio.gather 并发三周期
 
 返回字段（兼容 pipeline._to_documents）：
-  - title:          full_name（如 "owner/repo"）
-  - abstract:       description
-  - url:            https://github.com/{full_name}
-  - source:         "github"
-  - source_channel: "github_trending_{period}"
-  - raw_score:      stars_today（今日新增星数，用于 scoreDisplay）
-  - stars:          total stars
-  - language:       主语言
-  - rank_in_period: 在榜单中的排名（1=第一名）
-  - published_date: 今日日期（采集日）
+  - title:              full_name（如 "owner/repo"）
+  - abstract:           description
+  - url:                https://github.com/{full_name}
+  - source:             "github"
+  - source_channel:     "github_trending_{period}"
+  - period_star_growth: GitHub 页面报告的对应周期 Stars 增长
+  - raw_score:          period_star_growth（仅用于当前周期榜单）
+  - stars:              total stars
+  - language:           主语言
+  - rank_in_period:     在榜单中的排名（1=第一名）
+  - published_date:     今日日期（采集日）
 """
 
 import asyncio
@@ -53,6 +54,12 @@ _CHANNEL_MAP = {
     "daily": "github_trending_daily",
     "weekly": "github_trending_weekly",
     "monthly": "github_trending_monthly",
+}
+
+_PERIOD_GROWTH_SUFFIXES = {
+    "daily": "today",
+    "weekly": "this week",
+    "monthly": "this month",
 }
 
 
@@ -87,11 +94,20 @@ def _parse_int(text: str) -> int:
     return int(clean) if clean else 0
 
 
-def _parse_trending_html(html: str) -> List[Dict[str, Any]]:
-    """从 github.com/trending 页面 HTML 解析仓库列表。
-
-    返回按网页顺序排列的仓库列表（第0项=排名第一）。
-    """
+def parse_github_trending_html(
+    html: str,
+    *,
+    period: str = "daily",
+    limit: int = 25,
+) -> List[Dict[str, Any]]:
+    """解析 GitHub Trending 页面并保留对应周期的增长语义。"""
+    normalized_period = (period or "daily").lower().strip()
+    if normalized_period not in _PERIOD_PARAMS:
+        raise ValueError(f"Unsupported period: {period}")
+    expected_growth_suffix = _PERIOD_GROWTH_SUFFIXES[normalized_period]
+    effective_limit = max(0, int(limit or 0))
+    if effective_limit == 0:
+        return []
     soup = BeautifulSoup(html, "html.parser")
 
     # 每个仓库是一个 <article class="Box-row">
@@ -127,18 +143,18 @@ def _parse_trending_html(html: str) -> List[Dict[str, Any]]:
         stars_tag = article.find("a", href=re.compile(r"/stargazers$"))
         total_stars = _parse_int(stars_tag.get_text(strip=True)) if stars_tag else 0
 
-        # ── 今日新增 Stars ──────────────────────────────────────
-        stars_today = 0
+        # ── 对应周期新增 Stars ──────────────────────────────────
+        period_star_growth: int | None = None
         for span in article.find_all("span"):
-            txt = span.get_text(strip=True).lower()
-            if "stars" in txt and (
-                "today" in txt or "this week" in txt or "this month" in txt
-            ):
-                stars_today = _parse_int(txt)
+            text = " ".join(span.get_text(" ", strip=True).lower().split())
+            if "stars" in text and expected_growth_suffix in text:
+                period_star_growth = _parse_int(text)
                 break
 
+        rank = len(repos) + 1
         repos.append(
             {
+                "repo_id": full_name,
                 "full_name": full_name,
                 "title": full_name,
                 "description": description,
@@ -148,13 +164,23 @@ def _parse_trending_html(html: str) -> List[Dict[str, Any]]:
                 "pdf_url": "",
                 "language": language,
                 "stars": total_stars,
-                "stars_today": stars_today,
-                "raw_score": float(stars_today),
-                "score": float(stars_today),
+                "period": normalized_period,
+                "period_star_growth": period_star_growth,
+                "rank": rank,
+                "rank_in_period": rank,
+                "raw_score": float(period_star_growth or 0),
+                "score": float(period_star_growth or 0),
             }
         )
+        if len(repos) >= effective_limit:
+            break
 
     return repos
+
+
+def _parse_trending_html(html: str) -> List[Dict[str, Any]]:
+    """兼容旧调用：按日榜语义解析 Trending 页面。"""
+    return parse_github_trending_html(html, period="daily")
 
 
 async def fetch_github_trending_async(
@@ -199,7 +225,7 @@ async def fetch_github_trending_async(
         logger.error("[GitHub Trending] %s 榜抓取失败: %s", period, exc)
         return []
 
-    repos = _parse_trending_html(html)
+    repos = parse_github_trending_html(html, period=period, limit=limit)
 
     if not repos:
         logger.warning(
@@ -208,10 +234,12 @@ async def fetch_github_trending_async(
         return []
 
     result: List[Dict[str, Any]] = []
-    for rank, repo in enumerate(repos[:limit], start=1):
+    for rank, repo in enumerate(repos, start=1):
         repo["source"] = "github"
         repo["source_channel"] = channel
         repo["channel"] = channel
+        repo["period"] = period
+        repo["rank"] = rank
         repo["rank_in_period"] = rank
         repo["published_date"] = today
         repo["created_at"] = today

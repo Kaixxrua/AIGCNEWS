@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -17,151 +15,59 @@ from backend.app.core.config import settings
 from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.ingestion.github_hot_service import refresh_github_hot_candidates
+from backend.app.services.ingestion.github_project_metrics_service import (
+    compute_github_daily_metrics,
+    refresh_github_project_metric_snapshots,
+)
+from backend.app.services.ingestion.project_taxonomy import (
+    CATEGORY_PROMPT,
+    PROMPT_VERSION,
+    EnrichmentResult,
+    clean_text,
+    normalize_enrichment,
+    normalize_tags,
+    parse_json_object,
+)
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "v2"
 DEFAULT_MIN_STARS = 500
 DEFAULT_BATCH_LIMIT = 50
 _MAX_RETRIES = 4
 _RETRY_BASE_DELAY = 15.0
 _REQUEST_INTERVAL = 3.0
 
-PROJECT_CATEGORIES: List[Dict[str, str]] = [
-    {"slug": "productivity_tools", "name": "AI 效率工具"},
-    {"slug": "coding_tools", "name": "AI 编程工具"},
-    {"slug": "agents_automation", "name": "AI Agent / 自动化"},
-    {"slug": "ai_apps", "name": "AI 产品 / 应用"},
-    {"slug": "learning_resources", "name": "AI 教程 / 学习资源"},
-    {"slug": "rag_knowledge", "name": "RAG / 知识库"},
-    {"slug": "multimodal_tools", "name": "多模态工具"},
-    {"slug": "models_infra", "name": "模型 / 推理 / 部署"},
-    {"slug": "data_eval_training", "name": "数据 / 评测 / 训练"},
-    {"slug": "security_privacy", "name": "安全 / 隐私"},
-    {"slug": "other", "name": "其他"},
-]
-CATEGORY_BY_SLUG = {item["slug"]: item["name"] for item in PROJECT_CATEGORIES}
+_SYSTEM_PROMPT = f"""\
+你是一个 AI 开源项目收藏夹的技术策展人。请根据 GitHub 仓库元数据，完成四件事：
+1. 从给定一级分类中选择最合适的 category_slug，优先按“用户拿它来做什么”分类，而不是按底层技术名词分类。
+2. 从该一级分类下选择最合适的 subcategory_slug。
+3. 写一句中文短描述，说明这个项目能解决什么问题、适合什么使用场景。
+4. 给 1-4 个中文短标签。
 
-_SYSTEM_PROMPT = """\
-你是一个 AI 开源项目收藏夹的技术策展人。请根据 GitHub 仓库元数据，完成三件事：
-1. 从给定分类中选择最合适的 category_slug，优先按“用户拿它来做什么”分类，而不是按底层技术名词分类。
-2. 写一句中文短描述，说明这个项目能解决什么问题、适合什么使用场景。
-3. 给 1-4 个中文短标签。
-
-可选 category_slug：
-- productivity_tools：AI 效率工具。能直接提升个人或团队效率的工具，如笔记、搜索、写作、浏览器、办公、自动化助手。
-- coding_tools：AI 编程工具。代码生成、代码审查、IDE 插件、Claude Code/Cursor 相关、测试生成、自动 PR、代码搜索。
-- agents_automation：AI Agent / 自动化。智能体框架、多智能体协作、任务编排、MCP、工具调用、自动化任务机器人。
-- ai_apps：AI 产品 / 应用。接近成品的 AI 应用或客户端，如聊天产品、AI 搜索、本地应用、垂直场景应用。
-- learning_resources：AI 教程 / 学习资源。awesome list、教程、课程、prompt 合集、build-your-own、论文/项目合集。
-- rag_knowledge：RAG / 知识库。文档问答、企业知识库、向量检索、GraphRAG、搜索增强。
-- multimodal_tools：多模态工具。图像、视频、语音、音频、视觉理解、内容生成工具。
-- models_infra：模型 / 推理 / 部署。模型框架、本地模型运行、推理服务、API 网关、模型部署、LLM infra。
-- data_eval_training：数据 / 评测 / 训练。数据集、benchmark、eval、微调、训练、模型评估。
-- security_privacy：安全 / 隐私。AI 安全、提示词安全、漏洞分析、隐私保护、红队、对齐。
-- other：其他。只有在确实无法归入以上类别时才使用。
-
-分类优先级提示：
-- awesome、tutorial、course、prompt collection、build-your-own、papers/list 优先归入 learning_resources。
-- coding assistant、Claude Code、Cursor、IDE、code review、test generation 优先归入 coding_tools。
-- agent、MCP、workflow、automation、multi-agent 优先归入 agents_automation。
-- 直接可用的个人效率/办公/搜索/写作/浏览器工具优先归入 productivity_tools。
-- API gateway、serving、local runtime、inference、deployment 优先归入 models_infra。
+{CATEGORY_PROMPT}
 
 只返回 JSON，不要 Markdown，不要解释。格式：
-{"category_slug":"coding_tools","description_zh":"一句 40 到 90 个中文字符的短描述。","tags":["代码助手","开发工具"],"confidence":0.86}
+{{"category_slug":"coding_tools","subcategory_slug":"ide_plugins","description_zh":"一句 40 到 90 个中文字符的短描述。","tags":["IDE 插件","代码助手"],"confidence":0.86}}
 """
-
-
-@dataclass
-class EnrichmentResult:
-    category_slug: str
-    category_name: str
-    description_zh: str
-    tags: List[str]
-    confidence: float
 
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _clean_text(value: Any, *, max_len: int = 512) -> str:
-    text = str(value or "").strip()
-    text = re.sub(r"\s+", " ", text)
-    text = text.replace("```", "").strip()
-    return text[:max_len]
-
-
-def _parse_json_object(raw: str) -> Dict[str, Any]:
-    cleaned = re.sub(r"```(?:json)?", "", raw or "").replace("```", "").strip()
-    try:
-        data = json.loads(cleaned)
-        return data if isinstance(data, dict) else {}
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if not match:
-            return {}
-        try:
-            data = json.loads(match.group())
-            return data if isinstance(data, dict) else {}
-        except json.JSONDecodeError:
-            return {}
-
-
-def _clamp_confidence(value: Any) -> float:
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    return max(0.0, min(1.0, numeric))
-
-
-def _normalize_tags(value: Any, language: str = "") -> List[str]:
-    if isinstance(value, list):
-        raw_tags = value
-    elif value:
-        raw_tags = str(value).split(",")
-    else:
-        raw_tags = []
-
-    tags: List[str] = []
-    for item in raw_tags:
-        tag = _clean_text(item, max_len=24)
-        if tag and tag not in tags:
-            tags.append(tag)
-        if len(tags) >= 4:
-            break
-
-    if not tags and language:
-        tags.append(language)
-    return tags or ["开源项目"]
-
-
 def _fallback_description(repo: Dict[str, Any]) -> str:
-    name = _clean_text(repo.get("full_name") or repo.get("title"), max_len=80)
-    language = _clean_text(repo.get("language"), max_len=40)
+    name = clean_text(repo.get("full_name") or repo.get("title"), max_len=80)
+    language = clean_text(repo.get("language"), max_len=40)
     if language:
         return f"{name} 是一个以 {language} 为主的 AI 开源项目，可作为相关场景的工程参考。"
     return f"{name} 是一个值得关注的 AI 开源项目，可作为相关方向的工程参考。"
 
 
 def _normalize_enrichment(data: Dict[str, Any], repo: Dict[str, Any]) -> EnrichmentResult:
-    category_slug = _clean_text(data.get("category_slug"), max_len=64)
-    if category_slug not in CATEGORY_BY_SLUG:
-        category_slug = "other"
-
-    description_zh = _clean_text(data.get("description_zh"), max_len=160)
-    if not description_zh:
-        description_zh = _fallback_description(repo)
-
-    tags = _normalize_tags(data.get("tags"), _clean_text(repo.get("language"), max_len=40))
-    return EnrichmentResult(
-        category_slug=category_slug,
-        category_name=CATEGORY_BY_SLUG[category_slug],
-        description_zh=description_zh,
-        tags=tags,
-        confidence=_clamp_confidence(data.get("confidence")),
+    return normalize_enrichment(
+        data,
+        fallback_description=_fallback_description(repo),
+        fallback_tag=clean_text(repo.get("language"), max_len=40),
     )
 
 
@@ -273,6 +179,8 @@ class GitHubProjectEnricher:
                     "repo_id": repo_id,
                     "category_slug": result.category_slug,
                     "category_name": result.category_name,
+                    "subcategory_slug": result.subcategory_slug,
+                    "subcategory_name": result.subcategory_name,
                     "description_zh": result.description_zh,
                     "tags_json": json.dumps(result.tags, ensure_ascii=False),
                     "confidence": result.confidence,
@@ -313,7 +221,7 @@ class GitHubProjectEnricher:
             try:
                 response = self.llm.invoke(messages)
                 raw = response.content if hasattr(response, "content") else str(response)
-                data = _parse_json_object(str(raw))
+                data = parse_json_object(str(raw))
                 if not data:
                     raise ValueError("模型未返回可解析 JSON")
                 return _normalize_enrichment(data, repo)
@@ -375,15 +283,21 @@ def run_github_project_daily_pipeline(
     min_stars: int = DEFAULT_MIN_STARS,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
-    """Daily GitHub library pipeline: ingest/update metrics, then enrich new projects only.
+    """Daily GitHub library pipeline: ingest/update metrics, score, then enrich new projects only.
 
     Existing successful enrichments are kept stable. The ingestion layer updates
     candidates/snapshots using canonical repo IDs, so cards get fresh stars/forks
     without spending LLM calls unless a newly eligible project has no enrichment.
+    Daily metric snapshots and hot scores are pure data processing and do not call
+    the LLM.
     """
     refresh_result: Dict[str, Any] | None = None
+    metric_refresh_result: Dict[str, Any] | None = None
+    daily_metrics_result: Dict[str, Any] | None = None
     if not dry_run:
         refresh_result = refresh_github_hot_candidates(limit=refresh_limit)
+        metric_refresh_result = refresh_github_project_metric_snapshots(min_stars=min_stars)
+        daily_metrics_result = compute_github_daily_metrics(min_stars=min_stars)
 
     enrich_result = enrich_github_projects(
         limit=enrich_limit,
@@ -397,6 +311,8 @@ def run_github_project_daily_pipeline(
     return {
         "status": "success" if not dry_run else "dry_run",
         "refresh": refresh_result,
+        "metric_refresh": metric_refresh_result,
+        "daily_metrics": daily_metrics_result,
         "enrichment": enrich_result,
         "policy": "new_or_failed_only",
         "min_stars": min_stars,

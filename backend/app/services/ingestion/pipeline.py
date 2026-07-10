@@ -697,6 +697,35 @@ class IngestionOrchestrator:
                     p["in_weekly"] = 1 if period == "weekly" else 0
                     p["in_monthly"] = 1 if period == "monthly" else 0
 
+                if source_name == "github":
+                    from backend.app.services.ingestion.github_hot_service import (
+                        record_github_trending_hits,
+                    )
+
+                    hit_result = await asyncio.to_thread(
+                        record_github_trending_hits,
+                        cr.items,
+                        period=period,
+                        observed_date=cr.snapshot_date,
+                        db=self.db,
+                    )
+                    if period == "daily" and hit_result["repo_ids"]:
+                        from backend.app.services.ingestion.github_project_metrics_service import (
+                            compute_github_daily_metrics,
+                        )
+
+                        metric_result = await asyncio.to_thread(
+                            compute_github_daily_metrics,
+                            metric_date=cr.snapshot_date,
+                            repo_ids=hit_result["repo_ids"],
+                        )
+                        logger.info(
+                            "[Orchestrator][github_daily] Trending 增长已同步：hits=%d metrics=%d fallback=%d",
+                            hit_result["hits"],
+                            metric_result["rows"],
+                            metric_result["trending_fallback"],
+                        )
+
                 logger.info(
                     "[Orchestrator][%s] %s 榜采集 %d 条，开始 enrich+ingest...",
                     source_name,

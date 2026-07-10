@@ -53,6 +53,42 @@ interface ProviderConfig {
   updated_at: string | null
 }
 
+interface McpToolSummary {
+  name: string
+  description: string
+}
+
+interface McpServerConfig {
+  id: number
+  server_key: string
+  display_name: string
+  description: string
+  url: string
+  transport: 'streamable_http' | string
+  auth_type: 'none' | 'bearer' | string
+  auth_token_configured: boolean
+  auth_token_masked: string | null
+  enabled: boolean
+  last_test_status: string
+  last_test_message: string
+  last_test_at: string | null
+  tools: McpToolSummary[]
+  created_at: string | null
+  updated_at: string | null
+}
+
+interface McpServerForm {
+  id: number | null
+  server_key: string
+  display_name: string
+  description: string
+  url: string
+  auth_type: 'none' | 'bearer'
+  auth_token: string
+  clear_auth_token: boolean
+  enabled: boolean
+}
+
 const providerConfig = ref<ProviderConfig | null>(null)
 const providerForm = ref({
   provider: 'openai' as 'openai' | 'anthropic',
@@ -63,6 +99,32 @@ const providerForm = ref({
 })
 const loadingProviderConfig = ref(false)
 const savingProviderConfig = ref(false)
+
+const createEmptyMcpForm = (): McpServerForm => ({
+  id: null,
+  server_key: '',
+  display_name: '',
+  description: '',
+  url: '',
+  auth_type: 'none',
+  auth_token: '',
+  clear_auth_token: false,
+  enabled: true,
+})
+
+const mcpServers = ref<McpServerConfig[]>([])
+const mcpForm = ref<McpServerForm>(createEmptyMcpForm())
+const loadingMcpServers = ref(false)
+const savingMcpServer = ref(false)
+const testingMcpServerId = ref<number | null>(null)
+const deletingMcpServerId = ref<number | null>(null)
+const mcpFormMode = computed(() => (mcpForm.value.id ? 'edit' : 'create'))
+
+const MCP_TEST_SCOPE = [
+  { title: 'initialize', description: '协商协议版本与客户端信息' },
+  { title: 'initialized', description: '发送初始化完成通知' },
+  { title: 'tools/list', description: '只读取工具清单，不执行工具' },
+]
 
 interface SourceItem {
   key: string
@@ -132,6 +194,16 @@ const fetchProviderConfig = async () => {
   finally { loadingProviderConfig.value = false }
 }
 
+const fetchMcpServers = async () => {
+  if (!authStore.isAdmin) return
+  loadingMcpServers.value = true
+  try {
+    const res = await api.get('/ops/mcp-servers')
+    mcpServers.value = Array.isArray(res.data?.items) ? res.data.items : []
+  } catch (e) { console.error('Failed to fetch MCP servers', e) }
+  finally { loadingMcpServers.value = false }
+}
+
 const saveProviderConfig = async () => {
   if (savingProviderConfig.value) return
   clearMessages()
@@ -153,9 +225,103 @@ const saveProviderConfig = async () => {
   } finally { savingProviderConfig.value = false }
 }
 
+const resetMcpForm = () => {
+  mcpForm.value = createEmptyMcpForm()
+}
+
+const editMcpServer = (server: McpServerConfig) => {
+  clearMessages()
+  mcpForm.value = {
+    id: server.id,
+    server_key: server.server_key,
+    display_name: server.display_name,
+    description: server.description || '',
+    url: server.url,
+    auth_type: server.auth_type === 'bearer' ? 'bearer' : 'none',
+    auth_token: '',
+    clear_auth_token: false,
+    enabled: server.enabled,
+  }
+}
+
+const saveMcpServer = async () => {
+  if (savingMcpServer.value) return
+  clearMessages()
+  const form = mcpForm.value
+  if (!form.server_key.trim()) { errorMsg.value = '请填写 MCP Server 标识。'; return }
+  if (!form.display_name.trim()) { errorMsg.value = '请填写 MCP Server 名称。'; return }
+  if (!form.url.trim()) { errorMsg.value = '请填写 MCP Server URL。'; return }
+
+  savingMcpServer.value = true
+  try {
+    const payload = {
+      server_key: form.server_key,
+      display_name: form.display_name,
+      description: form.description,
+      url: form.url,
+      transport: 'streamable_http',
+      auth_type: form.auth_type,
+      auth_token: form.auth_token || null,
+      clear_auth_token: form.clear_auth_token,
+      enabled: form.enabled,
+    }
+    const res = form.id
+      ? await api.put(`/ops/mcp-servers/${form.id}`, payload)
+      : await api.post('/ops/mcp-servers', payload)
+    const saved: McpServerConfig = res.data
+    const index = mcpServers.value.findIndex((item) => item.id === saved.id)
+    if (index >= 0) mcpServers.value.splice(index, 1, saved)
+    else mcpServers.value = [saved, ...mcpServers.value]
+    resetMcpForm()
+    successMsg.value = 'MCP Server 配置已保存。'
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.detail || String(e)
+  } finally { savingMcpServer.value = false }
+}
+
+const testMcpServer = async (server: McpServerConfig) => {
+  if (testingMcpServerId.value) return
+  clearMessages()
+  if (!server.enabled) {
+    errorMsg.value = '该 MCP Server 已停用，请先启用后再测试。'
+    return
+  }
+  testingMcpServerId.value = server.id
+  try {
+    const res = await api.post(`/ops/mcp-servers/${server.id}/test`, null, { timeout: 30_000 })
+    const updated = res.data?.server
+    if (updated) {
+      const index = mcpServers.value.findIndex((item) => item.id === updated.id)
+      if (index >= 0) mcpServers.value.splice(index, 1, updated)
+    }
+    const status = String(res.data?.status || '').toLowerCase()
+    const message = res.data?.message || 'MCP Server 测试完成。'
+    if (status === 'success') successMsg.value = message
+    else errorMsg.value = message || 'MCP Server 测试失败。'
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.detail || String(e)
+  } finally { testingMcpServerId.value = null }
+}
+
+const deleteMcpServer = async (server: McpServerConfig) => {
+  if (deletingMcpServerId.value) return
+  const confirmed = window.confirm(`确定删除 MCP Server「${server.display_name || server.server_key}」吗？`)
+  if (!confirmed) return
+  clearMessages()
+  deletingMcpServerId.value = server.id
+  try {
+    const res = await api.delete(`/ops/mcp-servers/${server.id}`)
+    mcpServers.value = mcpServers.value.filter((item) => item.id !== server.id)
+    if (mcpForm.value.id === server.id) resetMcpForm()
+    successMsg.value = res.data?.message || 'MCP Server 配置已删除。'
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.detail || String(e)
+  } finally { deletingMcpServerId.value = null }
+}
+
 const refreshData = async () => {
   loading.value = true
-  await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchProviderConfig()])
+  await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchProviderConfig(), fetchMcpServers()])
   loading.value = false
 }
 
@@ -250,16 +416,34 @@ onMounted(refreshData)
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
   success: { label: '成功',   dot: 'bg-brand-green',  bg: 'bg-green-50',  text: 'text-green-700' },
+  succeeded: { label: '成功', dot: 'bg-brand-green', bg: 'bg-green-50', text: 'text-green-700' },
   failed:  { label: '失败',   dot: 'bg-brand-rose',   bg: 'bg-rose-50',   text: 'text-rose-600' },
   running: { label: '运行中', dot: 'bg-brand-blue',   bg: 'bg-blue-50',   text: 'text-blue-600' },
+  unknown: { label: '未测试', dot: 'bg-stone-300', bg: 'bg-stone-50', text: 'text-stone-500' },
 }
 
 const getStatusConfig = (status: string) =>
-  STATUS_CONFIG[status.toLowerCase()] ?? { label: status, dot: 'bg-stone-400', bg: 'bg-stone-50', text: 'text-stone-500' }
+  STATUS_CONFIG[(status || 'unknown').toLowerCase()] ?? { label: status, dot: 'bg-stone-400', bg: 'bg-stone-50', text: 'text-stone-500' }
+
+const getMcpTransportLabel = (transport: string) => {
+  if ((transport || '').toLowerCase() === 'streamable_http') return 'Streamable HTTP'
+  return transport || '未知传输'
+}
+
+const getMcpAuthLabel = (authType: string) => {
+  if ((authType || '').toLowerCase() === 'bearer') return 'Bearer Token'
+  return '无需鉴权'
+}
+
+const getMcpServerInitial = (server: McpServerConfig) => {
+  const value = (server.display_name || server.server_key || 'M').trim()
+  return value.slice(0, 1).toUpperCase()
+}
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-5 overflow-y-auto p-6 pb-20">
+  <div class="monitor-view flex h-full min-h-0 flex-col overflow-hidden">
+    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-6 pb-24">
 
     <!-- 页头 -->
     <div class="stagger-enter flex flex-wrap items-center justify-between gap-3 shrink-0">
@@ -379,8 +563,168 @@ const getStatusConfig = (status: string) =>
       </div>
     </div>
 
+    <!-- Admin 专属：MCP Server 配置 -->
+    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 overflow-hidden p-0" style="animation-delay: 0.1s">
+      <div class="relative border-b border-stone-200/60 bg-gradient-to-br from-white/80 via-cyan-50/35 to-stone-50/70 p-5">
+        <div class="pointer-events-none absolute right-6 top-4 hidden font-mono text-[52px] font-black leading-none text-cyan-100/70 md:block">MCP</div>
+        <div class="relative flex flex-wrap items-start justify-between gap-3">
+          <div class="max-w-3xl">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="flex h-8 w-8 items-center justify-center rounded-2xl border border-cyan-100 bg-white/80 text-cyan-700 shadow-sm">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+              </span>
+              <h3 class="text-sm font-semibold text-stone-700">MCP Server 集成</h3>
+              <span class="badge border border-stone-200 bg-white/80 text-stone-500">{{ mcpServers.length }} 个配置</span>
+              <span class="badge border border-cyan-100 bg-cyan-50 text-cyan-700">Streamable HTTP</span>
+            </div>
+            <p class="mt-2 text-xs leading-5 text-stone-500">集中保存外部 MCP Server 连接信息，用于后续工具发现与智能工作流接入。当前仅支持 HTTP / Streamable HTTP；测试流程只做握手与工具清单读取，不执行任意工具。</p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <span v-for="item in MCP_TEST_SCOPE" :key="item.title" class="rounded-full border border-white/80 bg-white/70 px-3 py-1 text-2xs text-stone-500 shadow-sm">
+                <span class="font-mono text-cyan-700">{{ item.title }}</span>
+                <span class="ml-1 text-stone-400">{{ item.description }}</span>
+              </span>
+            </div>
+          </div>
+          <button class="btn-secondary px-3.5 py-2 text-xs" :disabled="loadingMcpServers" @click="fetchMcpServers">
+            <span class="inline-block h-3 w-3 rounded-full border-2 border-stone-200 border-t-stone-500" :class="loadingMcpServers ? 'animate-spin' : ''" />
+            刷新 MCP
+          </button>
+        </div>
+      </div>
+
+      <div class="grid gap-4 p-5 xl:grid-cols-[minmax(320px,0.95fr)_minmax(420px,1.25fr)]">
+        <div class="rounded-[22px] border border-stone-200/70 bg-white/60 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+          <div class="mb-3 flex items-start justify-between gap-2">
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-widest text-stone-400">{{ mcpFormMode === 'edit' ? '编辑 Server' : '新增 Server' }}</h4>
+              <p class="mt-1 text-2xs text-stone-400">Key 会自动按后端规则规范为小写字母、数字、下划线或短横线。</p>
+            </div>
+            <button v-if="mcpFormMode === 'edit'" class="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-stone-400 hover:text-stone-700" @click="resetMcpForm">取消编辑</button>
+          </div>
+          <div class="space-y-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label class="block">
+                <span class="mb-1 block text-xs text-stone-400">标识 Key</span>
+                <input v-model.trim="mcpForm.server_key" class="input w-full py-2 text-xs font-mono" placeholder="github" autocomplete="off" />
+              </label>
+              <label class="block">
+                <span class="mb-1 block text-xs text-stone-400">显示名称</span>
+                <input v-model.trim="mcpForm.display_name" class="input w-full py-2 text-xs" placeholder="GitHub MCP" autocomplete="off" />
+              </label>
+            </div>
+            <label class="block">
+              <span class="mb-1 block text-xs text-stone-400">Server URL</span>
+              <input v-model.trim="mcpForm.url" type="url" class="input w-full py-2 text-xs font-mono" placeholder="https://example.com/mcp" autocomplete="off" />
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-xs text-stone-400">说明</span>
+              <textarea v-model.trim="mcpForm.description" class="input min-h-[82px] rounded-[18px] py-2 text-xs" placeholder="这个 MCP Server 提供哪些工具 / 适合什么场景" />
+            </label>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-[150px_minmax(0,1fr)]">
+              <label class="block">
+                <span class="mb-1 block text-xs text-stone-400">鉴权方式</span>
+                <select v-model="mcpForm.auth_type" class="input w-full py-2 text-xs">
+                  <option value="none">无需鉴权</option>
+                  <option value="bearer">Bearer Token</option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="mb-1 flex items-center justify-between text-xs text-stone-400">
+                  <span>Token</span>
+                  <span v-if="mcpForm.auth_type === 'bearer'" class="text-2xs text-stone-300">只写入，不回显</span>
+                </span>
+                <input v-model="mcpForm.auth_token" type="password" class="input w-full py-2 text-xs" :disabled="mcpForm.auth_type === 'none'" placeholder="留空则保留当前 Token" autocomplete="new-password" />
+              </label>
+            </div>
+            <div class="rounded-2xl border border-stone-200/70 bg-stone-50/70 px-3 py-2">
+              <div class="flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                <label class="inline-flex items-center gap-1.5">
+                  <input v-model="mcpForm.enabled" type="checkbox" class="rounded border-stone-300 text-stone-700 focus:ring-stone-400" />
+                  启用此 Server
+                </label>
+                <label v-if="mcpFormMode === 'edit'" class="inline-flex items-center gap-1.5">
+                  <input v-model="mcpForm.clear_auth_token" type="checkbox" class="rounded border-stone-300 text-stone-700 focus:ring-stone-400" :disabled="mcpForm.auth_type === 'none'" />
+                  清空当前 Token
+                </label>
+              </div>
+              <p class="mt-1 text-2xs text-stone-400">Bearer Token 会以密文形式保存；列表中仅显示脱敏值。</p>
+            </div>
+            <button class="btn-primary w-full justify-center" :disabled="savingMcpServer" @click="saveMcpServer">
+              {{ savingMcpServer ? '保存中…' : mcpFormMode === 'edit' ? '保存 MCP Server' : '新增 MCP Server' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="min-h-[260px] rounded-[22px] border border-stone-200/70 bg-white/45 p-4">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-widest text-stone-400">Server Registry</h4>
+              <p class="mt-1 text-2xs text-stone-400">测试成功后会缓存最多 20 个工具名称与描述。</p>
+            </div>
+            <span v-if="loadingMcpServers && mcpServers.length" class="inline-flex items-center gap-1 text-2xs text-stone-400">
+              <span class="inline-block h-3 w-3 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" />同步中
+            </span>
+          </div>
+          <div v-if="loadingMcpServers && !mcpServers.length" class="flex h-full min-h-[180px] items-center justify-center gap-2 text-sm text-stone-400">
+            <span class="inline-block h-4 w-4 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" />加载 MCP Server…
+          </div>
+          <div v-else-if="!mcpServers.length" class="flex h-full min-h-[180px] flex-col items-center justify-center rounded-[18px] border border-dashed border-stone-200 bg-white/55 text-center text-sm text-stone-400">
+            <p class="font-medium text-stone-500">暂无 MCP Server 配置</p>
+            <p class="mt-1 text-xs">添加后可在这里测试连接并查看可用工具。</p>
+          </div>
+          <div v-else class="space-y-3">
+            <div v-for="server in mcpServers" :key="server.id" class="rounded-[20px] border border-stone-200/70 bg-white/75 p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+              <div class="flex flex-wrap items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-stone-200 bg-gradient-to-br from-white to-cyan-50 font-serif text-base font-semibold text-cyan-700">
+                  {{ getMcpServerInitial(server) }}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <p class="truncate text-sm font-semibold text-stone-700">{{ server.display_name }}</p>
+                    <span class="badge border" :class="[getStatusConfig(server.last_test_status).bg, getStatusConfig(server.last_test_status).text]">
+                      <span class="status-dot" :class="getStatusConfig(server.last_test_status).dot" />
+                      {{ getStatusConfig(server.last_test_status).label }}
+                    </span>
+                    <span v-if="!server.enabled" class="badge border border-stone-200 bg-stone-50 text-stone-400">已停用</span>
+                    <span v-if="server.auth_token_configured" class="badge border border-green-100 bg-green-50 text-green-700">Token: {{ server.auth_token_masked }}</span>
+                  </div>
+                  <p class="mt-1 truncate font-mono text-2xs text-stone-400">{{ server.server_key }} · {{ server.url }}</p>
+                  <div class="mt-2 flex flex-wrap gap-1.5 text-2xs">
+                    <span class="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-500">{{ getMcpTransportLabel(server.transport) }}</span>
+                    <span class="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-500">{{ getMcpAuthLabel(server.auth_type) }}</span>
+                    <span class="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-500">工具 {{ server.tools?.length || 0 }}</span>
+                    <span v-if="server.last_test_at" class="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-400">{{ formatDate(server.last_test_at) }}</span>
+                  </div>
+                  <p v-if="server.description" class="mt-2 line-clamp-2 text-xs leading-5 text-stone-500">{{ server.description }}</p>
+                </div>
+                <div class="flex shrink-0 flex-wrap gap-1.5">
+                  <button class="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-stone-500 hover:bg-stone-50" @click="editMcpServer(server)">编辑</button>
+                  <button
+                    class="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs font-medium text-cyan-700 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="!!testingMcpServerId || !server.enabled"
+                    :title="server.enabled ? '执行 initialize / initialized / tools/list' : 'Server 已停用，请先启用后测试'"
+                    @click="testMcpServer(server)"
+                  >
+                    {{ testingMcpServerId === server.id ? '测试中…' : '测试' }}
+                  </button>
+                  <button class="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!!deletingMcpServerId" @click="deleteMcpServer(server)">删除</button>
+                </div>
+              </div>
+              <div v-if="server.last_test_message" class="mt-3 rounded-2xl border px-3 py-2 text-xs leading-5" :class="server.last_test_status === 'success' ? 'border-green-100 bg-green-50 text-green-700' : 'border-rose-100 bg-rose-50 text-rose-600'">
+                {{ server.last_test_message }}
+                <span v-if="server.last_test_at" class="ml-1 opacity-70">· {{ formatDate(server.last_test_at) }}</span>
+              </div>
+              <div v-if="server.tools?.length" class="mt-3 flex flex-wrap gap-1.5">
+                <span v-for="tool in server.tools" :key="`${server.id}-${tool.name}`" class="badge border border-stone-200 bg-stone-50 text-stone-600" :title="tool.description || tool.name">{{ tool.name }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Admin 专属：按日期采集 -->
-    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.1s">
+    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.13s">
       <div class="flex items-center gap-2 mb-3">
         <svg class="h-4 w-4 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <h3 class="text-sm font-semibold text-stone-700">按日期采集数据</h3>
@@ -399,7 +743,7 @@ const getStatusConfig = (status: string) =>
     </div>
 
     <!-- Admin 专属：按数据源独立采集 -->
-    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.15s">
+    <div v-if="authStore.isAdmin" class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.16s">
       <div class="flex items-center gap-2 mb-3">
         <svg class="h-4 w-4 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
         <h3 class="text-sm font-semibold text-stone-700">按数据源采集</h3>
@@ -515,6 +859,7 @@ const getStatusConfig = (status: string) =>
           </div>
         </div>
       </div>
+    </div>
     </div>
   </div>
 </template>

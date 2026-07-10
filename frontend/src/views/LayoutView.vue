@@ -39,6 +39,12 @@ const navItems = [
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
   },
   {
+    to: '/mcp',
+    label: 'MCP',
+    exact: false,
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8a3 3 0 100 6h3"/><path d="M17 8a3 3 0 110 6h-3"/><path d="M8 12h8"/><path d="M12 4v3"/><path d="M12 17v3"/></svg>`,
+  },
+  {
     to: '/monitor',
     label: 'Monitor',
     exact: false,
@@ -152,6 +158,8 @@ const isActive = (item: { to: string; exact: boolean }) => {
       <RouterLink to="/disclaimer" class="footer-link">免责声明</RouterLink>
       <span class="footer-sep">·</span>
       <RouterLink to="/privacy" class="footer-link">隐私政策</RouterLink>
+      <span class="footer-sep">·</span>
+      <RouterLink to="/mcp" class="footer-link">MCP 接入</RouterLink>
       <span class="footer-sep">·</span>
       <span>生态合作联系：<a href="mailto:kaixxrua@gmail.com" class="footer-link">kaixxrua@gmail.com</a></span>
     </div>

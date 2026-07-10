@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import httpx
 
@@ -208,29 +209,11 @@ def _fetch_trending_page(
 def _parse_trending_repos(
     html: str, period: str, limit: int = 25
 ) -> List[Dict[str, object]]:
-    matches = re.findall(
-        r'<h2[^>]*class="[^"]*h3[^"]*lh-condensed[^"]*">\s*<a[^>]*href="/([^"#?]+/[^"#?]+)"',
-        html,
-        flags=re.IGNORECASE,
+    from backend.app.services.ingestion.source_github_trending import (
+        parse_github_trending_html,
     )
-    repos: List[Dict[str, object]] = []
-    seen: Set[str] = set()
-    for idx, full_name in enumerate(matches, start=1):
-        clean_name = "/".join(part.strip() for part in full_name.split("/", 1))
-        if clean_name in seen:
-            continue
-        seen.add(clean_name)
-        repos.append(
-            {
-                "repo_id": clean_name,
-                "full_name": clean_name,
-                "period": period,
-                "rank": idx,
-            }
-        )
-        if len(repos) >= limit:
-            break
-    return repos
+
+    return parse_github_trending_html(html, period=period, limit=limit)
 
 
 def fetch_github_trending_repos(
@@ -267,6 +250,185 @@ def fetch_github_repo_metadata(full_name: str) -> Optional[dict]:
         except Exception as exc:
             logger.warning("[GitHub] 仓库详情抓取失败 %s: %s", full_name, exc)
             return None
+
+
+def _parse_metrics_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    full_name = str(item.get("full_name") or item.get("name") or "").strip()
+    lang = item.get("language") or ""
+    topics = item.get("topics") if isinstance(item.get("topics"), list) else []
+    return {
+        "repo_id": str(item.get("node_id") or item.get("id") or full_name),
+        "full_name": full_name,
+        "title": full_name,
+        "url": item.get("html_url") or (f"https://github.com/{full_name}" if full_name else ""),
+        "description": item.get("description") or "",
+        "summary": item.get("description") or "",
+        "language": lang,
+        "topics": topics[:10],
+        "tags": ([lang] if lang else []) + topics[:5],
+        "stars": int(item.get("stargazers_count") or 0),
+        "forks": int(item.get("forks_count") or 0),
+        "watchers": int(item.get("watchers_count") or 0),
+        "open_issues": int(item.get("open_issues_count") or 0),
+        "created_at": (item.get("created_at") or "")[:10],
+        "pushed_at": (item.get("pushed_at") or "")[:10],
+    }
+
+
+def fetch_github_repo_metrics(full_name: str, *, client: httpx.Client | None = None, use_token: bool | None = None) -> Optional[dict]:
+    """Fetch lightweight repository metrics without fetching README or invoking LLM."""
+
+    clean_name = str(full_name or "").strip()
+    if not clean_name:
+        return None
+
+    def _fetch(active_client: httpx.Client, active_use_token: bool) -> Optional[dict]:
+        resp = active_client.get(
+            f"{GITHUB_API_BASE}/repos/{clean_name}",
+            headers=_build_headers(use_token=active_use_token),
+        )
+        if resp.status_code == 401 and active_use_token:
+            return _fetch(active_client, False)
+        if resp.status_code in (403, 404, 429):
+            logger.warning("[GitHub] 仓库指标抓取跳过 %s: HTTP %s", clean_name, resp.status_code)
+            return None
+        resp.raise_for_status()
+        return _parse_metrics_item(resp.json())
+
+    if client is not None:
+        try:
+            return _fetch(client, bool(use_token))
+        except Exception as exc:
+            logger.warning("[GitHub] 仓库指标抓取失败 %s: %s", clean_name, exc)
+            return None
+
+    with httpx.Client(timeout=30, trust_env=True) as local_client:
+        active_use_token = _check_token_valid(local_client) if use_token is None else bool(use_token)
+        try:
+            return _fetch(local_client, active_use_token)
+        except Exception as exc:
+            logger.warning("[GitHub] 仓库指标抓取失败 %s: %s", clean_name, exc)
+            return None
+
+
+def _graphql_repo_alias(index: int) -> str:
+    return f"r{index}"
+
+
+def _graphql_escape(value: str) -> str:
+    return json.dumps(value)[1:-1]
+
+
+def _parse_graphql_repo(node: Dict[str, Any]) -> Dict[str, Any]:
+    owner = (node.get("owner") or {}).get("login") or ""
+    name = node.get("name") or ""
+    full_name = f"{owner}/{name}" if owner and name else str(node.get("nameWithOwner") or "")
+    topics = [
+        edge.get("node", {}).get("topic", {}).get("name", "")
+        for edge in ((node.get("repositoryTopics") or {}).get("edges") or [])
+        if edge.get("node", {}).get("topic", {}).get("name")
+    ]
+    lang = (node.get("primaryLanguage") or {}).get("name") or ""
+    return {
+        "repo_id": str(node.get("id") or full_name),
+        "full_name": full_name,
+        "title": full_name,
+        "url": node.get("url") or (f"https://github.com/{full_name}" if full_name else ""),
+        "description": node.get("description") or "",
+        "summary": node.get("description") or "",
+        "language": lang,
+        "topics": topics[:10],
+        "tags": ([lang] if lang else []) + topics[:5],
+        "stars": int((node.get("stargazerCount") or 0)),
+        "forks": int((node.get("forkCount") or 0)),
+        "watchers": int(((node.get("watchers") or {}).get("totalCount") or 0)),
+        "open_issues": int(((node.get("issues") or {}).get("totalCount") or 0)),
+        "created_at": str(node.get("createdAt") or "")[:10],
+        "pushed_at": str(node.get("pushedAt") or "")[:10],
+    }
+
+
+def fetch_github_repo_metrics_batch(full_names: List[str], *, batch_size: int = 40) -> List[dict]:
+    """Fetch lightweight repository metrics in batches; GraphQL with token, REST fallback otherwise."""
+
+    names: List[str] = []
+    seen: Set[str] = set()
+    for full_name in full_names:
+        clean_name = str(full_name or "").strip()
+        if not clean_name or "/" not in clean_name or clean_name.lower() in seen:
+            continue
+        seen.add(clean_name.lower())
+        names.append(clean_name)
+
+    if not names:
+        return []
+
+    token = _get_token()
+    results: List[dict] = []
+    if token:
+        headers = _build_headers(use_token=True)
+        headers["Accept"] = "application/vnd.github+json"
+        with httpx.Client(timeout=40, trust_env=True) as client:
+            for start in range(0, len(names), max(1, min(batch_size, 50))):
+                chunk = names[start : start + max(1, min(batch_size, 50))]
+                fields: List[str] = []
+                alias_to_name: Dict[str, str] = {}
+                for index, full_name in enumerate(chunk):
+                    owner, repo_name = full_name.split("/", 1)
+                    alias = _graphql_repo_alias(index)
+                    alias_to_name[alias] = full_name
+                    fields.append(
+                        f'''{alias}: repository(owner: "{_graphql_escape(owner)}", name: "{_graphql_escape(repo_name)}") {{
+                          id
+                          name
+                          owner {{ login }}
+                          url
+                          description
+                          primaryLanguage {{ name }}
+                          stargazerCount
+                          forkCount
+                          watchers {{ totalCount }}
+                          issues(states: OPEN) {{ totalCount }}
+                          createdAt
+                          pushedAt
+                          repositoryTopics(first: 10) {{ edges {{ node {{ topic {{ name }} }} }} }}
+                        }}'''
+                    )
+                query = "query {\n" + "\n".join(fields) + "\n}"
+                try:
+                    resp = client.post(f"{GITHUB_API_BASE}/graphql", headers=headers, json={"query": query})
+                    if resp.status_code == 401:
+                        logger.warning("[GitHub] GraphQL token 401，降级 REST 指标抓取。")
+                        break
+                    if resp.status_code in (403, 429):
+                        logger.warning("[GitHub] GraphQL 指标抓取限流 HTTP %s，停止批量抓取。", resp.status_code)
+                        break
+                    resp.raise_for_status()
+                    payload = resp.json()
+                    data = payload.get("data") if isinstance(payload, dict) else {}
+                    if not isinstance(data, dict):
+                        continue
+                    for alias, full_name in alias_to_name.items():
+                        node = data.get(alias)
+                        if isinstance(node, dict):
+                            results.append(_parse_graphql_repo(node))
+                        else:
+                            logger.debug("[GitHub] GraphQL 未返回仓库 %s", full_name)
+                except Exception as exc:
+                    logger.warning("[GitHub] GraphQL 指标批量抓取失败: %s", exc)
+                    break
+        if len(results) >= len(names):
+            return results
+
+    returned_names = {str(item.get("full_name") or "").lower() for item in results}
+    missing_names = [full_name for full_name in names if full_name.lower() not in returned_names]
+    with httpx.Client(timeout=30, trust_env=True) as client:
+        use_token = _check_token_valid(client)
+        for full_name in missing_names:
+            item = fetch_github_repo_metrics(full_name, client=client, use_token=use_token)
+            if item:
+                results.append(item)
+    return results
 
 
 def fetch_github_candidate_repos(limit: int = 60) -> List[dict]:

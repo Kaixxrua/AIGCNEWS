@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     github_mcp_url: str = ""
     news_source_url: str = ""
     github_token: str = ""
+    mcp_github_fallback_enabled: bool = True
+    mcp_github_fallback_use_token: bool = False
+    mcp_github_fallback_timeout_seconds: float = 8.0
     # Product Hunt API v2 Developer Token（免费申请：https://www.producthunt.com/v2/oauth/applications）
     producthunt_api_token: str = ""
     huggingface_token: str = ""

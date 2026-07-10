@@ -10,6 +10,7 @@ import RegisterView from '../views/RegisterView.vue'
 import PaperReadView from '../views/PaperReadView.vue'
 import DisclaimerView from '../views/DisclaimerView.vue'
 import PrivacyView from '../views/PrivacyView.vue'
+import McpConnectView from '../views/McpConnectView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -52,6 +53,11 @@ const router = createRouter({
           path: 'report',
           name: 'report',
           component: ReportView,
+        },
+        {
+          path: 'mcp',
+          name: 'mcp-connect',
+          component: McpConnectView,
         },
         {
           path: 'monitor',

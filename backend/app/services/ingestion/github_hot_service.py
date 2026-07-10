@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List
+from zoneinfo import ZoneInfo
 
+from backend.app.core.config import settings
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.ingestion.source_github import (
     fetch_github_candidate_repos,
-    fetch_github_repo_metadata,
+    fetch_github_repo_metrics_batch,
     fetch_github_trending_repos,
 )
 
@@ -21,7 +23,8 @@ _PERIOD_TO_DAYS = {
 
 
 def _today_str() -> str:
-    return date.today().isoformat()
+    tz_name = getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai"
+    return datetime.now(ZoneInfo(tz_name)).date().isoformat()
 
 
 def _utcnow() -> str:
@@ -35,6 +38,84 @@ def _merge_channels(existing: str, new_channel: str) -> str:
     return ",".join(parts)
 
 
+def record_github_trending_hits(
+    items: List[Dict[str, Any]],
+    *,
+    period: str,
+    observed_date: str | None = None,
+    captured_at: str | None = None,
+    db: MySQLRepository | None = None,
+) -> Dict[str, Any]:
+    """Persist structured Trending observations and return canonical repo IDs."""
+    normalized_period = (period or "daily").lower().strip()
+    if normalized_period not in _PERIOD_TO_DAYS:
+        raise ValueError(f"Unsupported period: {period}")
+    active_db = db or MySQLRepository()
+    active_date = observed_date or _today_str()
+    active_captured_at = captured_at or _utcnow()
+    repo_ids: List[str] = []
+    growth_count = 0
+    for item in items:
+        full_name = str(item.get("full_name") or item.get("title") or "").strip()
+        if not full_name:
+            continue
+        growth = item.get("period_star_growth")
+        if normalized_period == "daily":
+            canonical_repo_id = active_db.ensure_github_repo_candidate(
+                {
+                    "repo_id": item.get("repo_id") or full_name,
+                    "full_name": full_name,
+                    "title": item.get("title") or full_name,
+                    "url": item.get("url") or f"https://github.com/{full_name}",
+                    "description": item.get("description") or item.get("summary") or "",
+                    "language": item.get("language") or "",
+                    "stars": int(item.get("stars") or 0),
+                    "source_channels": "trending_daily",
+                    "last_snapshot_at": active_captured_at,
+                }
+            )
+            active_db.insert_github_repo_snapshot(
+                {
+                    "repo_id": canonical_repo_id,
+                    "full_name": full_name,
+                    "snapshot_date": active_date,
+                    "captured_at": active_captured_at,
+                    "stars": int(item.get("stars") or 0),
+                    "forks": int(item.get("forks") or 0),
+                    "watchers": int(item.get("watchers") or 0),
+                    "open_issues": int(item.get("open_issues") or 0),
+                    "repo_created_at": item.get("created_at") or "",
+                    "repo_pushed_at": item.get("pushed_at") or "",
+                }
+            )
+        else:
+            canonical_repo_id = str(item.get("repo_id") or full_name)
+        canonical_repo_id = active_db.upsert_github_trending_hit(
+            {
+                "repo_id": canonical_repo_id,
+                "full_name": full_name,
+                "period": normalized_period,
+                "language": item.get("language") or "",
+                "rank": int(item.get("rank") or item.get("rank_in_period") or 999),
+                "observed_date": active_date,
+                "captured_at": active_captured_at,
+                "period_star_growth": int(growth) if growth is not None else None,
+                "period_growth_observed_at": active_captured_at if growth is not None else None,
+            }
+        )
+        if canonical_repo_id not in repo_ids:
+            repo_ids.append(canonical_repo_id)
+        if growth is not None:
+            growth_count += 1
+    return {
+        "period": normalized_period,
+        "observed_date": active_date,
+        "hits": len(repo_ids),
+        "growth_values": growth_count,
+        "repo_ids": repo_ids,
+    }
+
+
 def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
     """抓取 Trending + Search 候选，并写入 repo candidates / snapshots / trending hits。"""
     db = MySQLRepository()
@@ -42,7 +123,7 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
     captured_at = _utcnow()
 
     candidate_map: Dict[str, Dict[str, Any]] = {}
-    trending_hits: List[Dict[str, Any]] = []
+    trending_by_period: Dict[str, List[Dict[str, Any]]] = {}
 
     for period in ("daily", "weekly", "monthly"):
         try:
@@ -50,33 +131,35 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("[GitHubHot] Trending 抓取失败 period=%s: %s", period, exc)
             repos = []
+        trending_by_period[period] = repos
 
         for repo in repos:
             full_name = str(repo.get("full_name") or "").strip()
             if not full_name:
                 continue
-            repo_id = full_name
-            if repo_id not in candidate_map:
-                meta = fetch_github_repo_metadata(full_name)
-                if not meta:
-                    continue
-                meta["repo_id"] = repo_id
-                candidate_map[repo_id] = meta
-            candidate_map[repo_id]["source_channels"] = _merge_channels(
-                candidate_map[repo_id].get("source_channels", ""),
-                f"trending_{period}",
-            )
-            trending_hits.append(
-                {
-                    "repo_id": repo_id,
-                    "full_name": full_name,
-                    "period": period,
-                    "language": candidate_map[repo_id].get("language", ""),
-                    "rank": int(repo.get("rank") or 999),
-                    "observed_date": observed_date,
-                    "captured_at": captured_at,
-                }
-            )
+            existing = candidate_map.get(full_name) or {}
+            candidate_map[full_name] = {
+                **repo,
+                **existing,
+                "repo_id": full_name,
+                "source_channels": _merge_channels(
+                    str(existing.get("source_channels") or ""),
+                    f"trending_{period}",
+                ),
+            }
+
+    metrics = fetch_github_repo_metrics_batch(list(candidate_map))
+    for repo in metrics:
+        full_name = str(repo.get("full_name") or "").strip()
+        if not full_name or full_name not in candidate_map:
+            continue
+        source_channels = candidate_map[full_name].get("source_channels", "")
+        candidate_map[full_name] = {
+            **candidate_map[full_name],
+            **repo,
+            "repo_id": full_name,
+            "source_channels": source_channels,
+        }
 
     try:
         searched = fetch_github_candidate_repos(limit=limit)
@@ -141,20 +224,36 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
         )
         snapshot_count += 1
 
-    for hit in trending_hits:
-        db.upsert_github_trending_hit(hit)
+    hit_results = [
+        record_github_trending_hits(
+            items,
+            period=period,
+            observed_date=observed_date,
+            captured_at=captured_at,
+            db=db,
+        )
+        for period, items in trending_by_period.items()
+    ]
+    hit_count = sum(int(result["hits"]) for result in hit_results)
+    growth_count = sum(int(result["growth_values"]) for result in hit_results)
 
     logger.info(
-        "[GitHubHot] 刷新完成：repos=%d snapshots=%d hits=%d",
+        "[GitHubHot] 刷新完成：repos=%d snapshots=%d hits=%d growth=%d",
         repo_count,
         snapshot_count,
-        len(trending_hits),
+        hit_count,
+        growth_count,
     )
     return {
         "date": observed_date,
         "repos": repo_count,
         "snapshots": snapshot_count,
-        "trending_hits": len(trending_hits),
+        "trending_hits": hit_count,
+        "trending_growth_values": growth_count,
+        "daily_repo_ids": next(
+            (result["repo_ids"] for result in hit_results if result["period"] == "daily"),
+            [],
+        ),
     }
 
 

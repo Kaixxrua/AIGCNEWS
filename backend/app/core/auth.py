@@ -85,6 +85,18 @@ async def RequireUser(
     return decode_access_token(credentials.credentials)
 
 
+async def OptionalUser(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> dict[str, Any] | None:
+    """FastAPI 依赖：可选登录态；缺失或无效 token 都按匿名访问处理。"""
+    if credentials is None:
+        return None
+    try:
+        return decode_access_token(credentials.credentials)
+    except HTTPException:
+        return None
+
+
 async def RequireAdmin(
     user: dict[str, Any] = Depends(RequireUser),
 ) -> dict[str, Any]:

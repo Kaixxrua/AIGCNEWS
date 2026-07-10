@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 import traceback
-from datetime import date
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.services.ingestion.base_crawler import today_cst
 
 logger = logging.getLogger(__name__)
 
@@ -403,7 +403,7 @@ class DailyBriefingService:
           - {"type": "done",     "data": {"briefing_id": int}}
           - {"type": "error",    "data": str}
         """
-        today = target_date or date.today().isoformat()
+        today = target_date or today_cst()
         source = source if source in _SOURCE_CONFIG else "all"
         period = period if period in ("daily", "weekly", "monthly") else "daily"
         _, cache_suffix = _SOURCE_CONFIG[source]
@@ -431,7 +431,7 @@ class DailyBriefingService:
                     yield {"type": "done", "data": {"briefing_id": existing["id"]}}
                     return
 
-            # 2. Fetch documents（GitHub 优先从 Milvus 取 README 丰富内容，其它来源仍走 MySQL）
+            # 2. Fetch documents（以日期快照表决定榜单项目；GitHub 与项目库“今日暴涨”保持同源）
             logger.info(
                 "开始获取文档，source=%s, period=%s, date=%s...", source, period, today
             )
@@ -439,12 +439,6 @@ class DailyBriefingService:
             docs: List[Dict[str, Any]] = []
             fallback_used = False
             milvus_used = False
-
-            if source == "github":
-                docs = self._get_github_docs_from_milvus(period)
-                milvus_used = bool(docs)
-                if not docs:
-                    logger.info("Milvus 未返回 GitHub 文档，回退到 MySQL 快照/documents 表")
 
             # 2a. 确定期望的 source_channel 列表
             expected_channels: List[str] = []
@@ -459,7 +453,7 @@ class DailyBriefingService:
                 if ch:
                     expected_channels.append(ch)
 
-            # 2b. 从快照表按日期+channel 精确获取（GitHub 仅在 Milvus 无结果时回退到这里）
+            # 2b. 从快照表按日期+channel 精确获取，确保 GitHub 简报与项目库“今日暴涨”同源。
             if not docs and expected_channels:
                 for channel in expected_channels:
                     snap_docs = self._db.get_snapshot_documents(
@@ -469,11 +463,18 @@ class DailyBriefingService:
                         limit=self._top_k,
                     )
                     docs.extend(snap_docs)
-                # 按 raw_score 降序排序，取 top_k
-                docs.sort(
-                    key=lambda d: (d.get("raw_score") or d.get("score") or 0),
-                    reverse=True,
-                )
+                if source == "github":
+                    docs.sort(
+                        key=lambda d: (
+                            int(d.get("rank_in_period") or 9999),
+                            -(float(d.get("raw_score") or d.get("score") or 0)),
+                        )
+                    )
+                else:
+                    docs.sort(
+                        key=lambda d: (d.get("raw_score") or d.get("score") or 0),
+                        reverse=True,
+                    )
                 docs = docs[: self._top_k]
                 logger.info(
                     "快照表返回 %d 条 (channels=%s)", len(docs), expected_channels

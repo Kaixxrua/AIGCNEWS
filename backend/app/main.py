@@ -20,6 +20,7 @@ from backend.app.api import (
     routes_chat,
     routes_dashboard,
     routes_github_projects,
+    routes_mcp,
     routes_monitor,
     routes_papers,
     routes_report,
@@ -154,6 +155,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Mcp-Session-Id", "MCP-Protocol-Version"],
 )
 
 # 访客统计中间件（在 CORS 之后注册，确保跨域预检请求不计入访客）
@@ -166,6 +168,7 @@ app.include_router(routes_vision.router, prefix="/api", tags=["Vision"])
 app.include_router(routes_papers.router, prefix="/api", tags=["Papers"])
 app.include_router(routes_dashboard.router, prefix="/api", tags=["Dashboard"])
 app.include_router(routes_github_projects.router, prefix="/api", tags=["GitHub Projects"])
+app.include_router(routes_mcp.router, prefix="/api", tags=["MCP"])
 app.include_router(routes_monitor.router, prefix="/api", tags=["Monitor"])
 app.include_router(routes_report.router, prefix="/api", tags=["Report"])
 app.include_router(routes_ops.router, prefix="/api", tags=["Ops"])

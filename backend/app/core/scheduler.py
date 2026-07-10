@@ -59,7 +59,7 @@ SCHEDULE_CONFIG: List[Dict[str, Any]] = [
         "id": "github_project_daily_pipeline",
         "source": "github_project_daily_pipeline",
         "cron": {"hour": 2, "minute": 0},
-        "desc": "GitHub 项目库每日流水线（入库、去重、富化新增）",
+        "desc": "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",
     },
 ]
 

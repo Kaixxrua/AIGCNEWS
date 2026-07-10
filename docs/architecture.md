@@ -1,6 +1,6 @@
 # AIGC_NEWS 项目功能架构
 
-> 最后更新：2026-05-28（修复论文阅读页 RAG 已收录论文漏召回；统一聊天清空按钮为删除当前会话；补齐论文阅读页深度思考框，与通用聊天页保持一致）
+> 最后更新：2026-07-09（新增 GitHub 项目库每日精确增长快照、热度排序与 MCP/前端展示说明）
 
 ---
 
@@ -163,12 +163,29 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 | GET | `/api/ops/ingest-source/list` | RequireAdmin | 可用数据源列表 |
 | POST | `/api/ops/clear-data` | RequireAdmin | 清空所有数据（不可逆） |
 | POST | `/api/ops/github-hot/refresh` | RequireAdmin | 刷新 GitHub 热榜 |
+| POST | `/api/ops/github-projects/metrics/refresh` | RequireAdmin | 刷新项目库 GitHub 每日轻量指标快照并重算热度 |
+| POST | `/api/ops/github-projects/metrics/recompute` | RequireAdmin | 基于已有快照重算某天精确增长与热度分 |
 | GET | `/api/ops/scheduler/status` | RequireAdmin | 调度器状态查询 |
 | POST | `/api/ops/scheduler/trigger` | RequireAdmin | 手动触发定时任务 |
 | POST | `/api/ops/briefing/generate-all` | RequireAdmin | 全维度简报批量生成 |
 | POST | `/api/ops/cache/clear-dashboard` | RequireAdmin | 清除 Dashboard 缓存 |
+| GET | `/api/ops/mcp-servers` | RequireAdmin | 列出 MCP Server 配置（Token 仅返回脱敏状态） |
+| POST | `/api/ops/mcp-servers` | RequireAdmin | 新增 Streamable HTTP MCP Server 配置 |
+| PUT | `/api/ops/mcp-servers/{server_id}` | RequireAdmin | 更新 MCP Server 配置（空 Token 保留，clear 标记清空） |
+| DELETE | `/api/ops/mcp-servers/{server_id}` | RequireAdmin | 删除 MCP Server 配置 |
+| POST | `/api/ops/mcp-servers/{server_id}/test` | RequireAdmin | 安全测试外部 MCP 连接，仅执行 initialize / initialized / tools/list |
 
-### 2.8 监控路由 — `routes_monitor.py`
+> `/api/ops/mcp-servers*` 是出站 MCP 配置管理：管理员在这里保存和测试第三方 MCP Server。
+
+### 2.8 入站 MCP 路由 — `routes_mcp.py`
+
+| 方法 | 端点 | 鉴权 | 功能 |
+|------|------|------|------|
+| POST | `/api/mcp` | 无（仅公开只读工具/上下文） | AIGC_NEWS 对外暴露的 Streamable HTTP MCP Server，支持 `initialize`、`notifications/initialized`、`tools/list`、`tools/call`、`resources/list`、`resources/templates/list`、`resources/read`、`prompts/list`、`prompts/get` |
+
+当前 `/api/mcp` 暴露的工具与上下文均为公开只读数据：工具包括 `search_papers`、`get_paper_detail`、`get_top_items`、`search_github_projects`、`search_github_ai_projects`、`get_project_library`、`get_project_categories`；资源包括 Dashboard 摘要/榜单、论文详情、项目分类/项目库、最新公开简报；Prompt 包括 `daily_research_brief`、`project_discovery`。`search_github_projects` 是任意领域 GitHub/开源软件（包括非 AI 桌面与截图工具）的通用首选入口；`search_github_ai_projects` 是 AI/RAG/LLM/Agent/MCP 请求的 local-first 首选入口，`get_project_library` 作为兼容别名保留。每日增长优先基于连续自然日快照精确计算；缺少昨天快照但项目进入同日 GitHub Trending 日榜时，立即采用页面报告的 `stars today`，其他情况返回 0，周榜/月榜不会作为今日增长，热度排序由结构化指标数学公式完成，不调用大模型。只有本地结果为 0 时才进行限量、只读 GitHub Search fallback：通用模式不追加 AI/LLM/RAG 词，AI 模式保留定向扩展；返回项目采用紧凑公开字段并通过 `result_origin` / `fallback_used` / `local_total` 标记来源。MCP-first 通过工具名称、触发描述与真实 Claude Code 回归测试提升命中稳定性，不是协议层强制客户端工具优先级。不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server Token、用户会话、个人收藏、订阅、任意 SQL/文件访问或采集/调度/缓存写操作；fallback 不写库、不暴露 GitHub Token。
+
+### 2.9 监控路由 — `routes_monitor.py`
 
 | 方法 | 端点 | 鉴权 | 功能 |
 |------|------|------|------|
@@ -176,7 +193,7 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 | GET | `/api/monitor/metrics` | RequireUser | 运行时指标收集 |
 | GET | `/api/monitor/tasks` | RequireAdmin | 分页采集任务记录 |
 
-### 2.9 静态文件
+### 2.10 静态文件
 
 | 路径 | 功能 |
 |------|------|
@@ -333,7 +350,14 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 #### `github_hot_service.py`（GitHub 热度服务）
 - 维护 GitHub 候选池（`github_repo_candidates` 表）
 - 周期性快照（`github_repo_snapshots` 表）
-- 基于增长 + 基线 + 年龄修正的热度排名算法
+- 基于增长 + 基线 + 年龄修正的 Dashboard 热度排名算法
+
+#### `github_project_metrics_service.py`（GitHub 项目库每日指标）
+- 每天对项目库 GitHub 仓库抓取轻量指标快照，不抓 README、不调用大模型
+- 优先基于连续自然日快照计算精确 `daily_star_growth`；缺少昨天快照时，仅对同日 GitHub Trending 日榜项目采用页面报告的 `stars today`
+- 通过 `daily_growth_source` 区分 `snapshot_delta`、`github_trending_daily` 与 `unavailable`；周榜/月榜增长不会作为今日增长
+- 写入 `github_repo_daily_metrics`，按规模校正增长、增长加速度、绝对增长、维护活跃、社区参与计算 `hot_score`
+- 项目库 `sort=hot` 使用 `hot_score DESC, daily_star_growth DESC`，今日暴涨展示两种有效当日来源中的全局热度前 50
 
 ### 3.4 评分服务 — `backend/app/services/scoring/`
 
@@ -406,8 +430,9 @@ Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
 | `chat_messages` | 聊天消息表 | conversation_id, role, content, thinking, sources_json, attachments_json, parent_message_id |
 | `chat_attachments` | 聊天附件表 | user_id, conversation_id, file_name, mime_type, modality, parse_status, meta_json |
 | `github_repo_candidates` | GitHub 候选池 | repo_id, full_name, stars, forks, watchers |
-| `github_repo_snapshots` | GitHub 快照 | repo_id, snapshot_date, stars, forks |
-| `github_trending_hits` | GitHub Trending 命中记录 | repo_id, period, rank, observed_date |
+| `github_repo_snapshots` | GitHub 原始快照 | repo_id, snapshot_date, stars, forks, watchers, open_issues |
+| `github_repo_daily_metrics` | GitHub 项目库每日派生指标 | repo_id, metric_date, daily_star_growth, daily_growth_available, daily_growth_source, hot_score |
+| `github_trending_hits` | GitHub Trending 命中记录 | repo_id, period, rank, observed_date, period_star_growth, period_growth_observed_at |
 
 **关键操作**:
 - `upsert_document()`: ON DUPLICATE KEY UPDATE，GREATEST() 语义确保多周期 upsert 不丢失

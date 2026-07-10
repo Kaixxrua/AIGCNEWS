@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from datetime import date as DateType
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.app.core.auth import RequireAdmin
 
@@ -46,10 +48,74 @@ class GitHubProjectsEnrichRequest(BaseModel):
     refresh_changed: bool = False
 
 
+class GitHubProjectsMetricsRequest(BaseModel):
+    min_stars: int = 500
+    limit: int = 0
+    metric_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    dry_run: bool = False
+
+
+class GitHubProjectsMetricsRecomputeRequest(BaseModel):
+    min_stars: int = 500
+    metric_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class GitHubProjectRecommendRequest(BaseModel):
+    repo_id: Optional[str | int] = None
+    full_name: str = Field(default="", max_length=255)
+
+
+class GitHubProjectRecommendResponse(BaseModel):
+    status: str
+    message: str
+    repo_id: str
+    full_name: str = ""
+    is_recommended: bool = True
+    recommended_at: Optional[str] = None
+    removed: bool = False
+
+
 class GitHubProjectsEnrichResponse(BaseModel):
     status: str
     message: str
     result: Optional[Dict[str, Any]] = None
+
+
+class ToolWebsiteAddRequest(BaseModel):
+    url: str = Field(default="", max_length=1024)
+
+
+class ToolWebsiteManualAddRequest(BaseModel):
+    url: str = Field(default="", max_length=1024)
+    title: str = Field(default="", max_length=512)
+    description_zh: str = Field(default="", max_length=512)
+    category_slug: str = Field(default="other", max_length=64)
+    subcategory_slug: str = Field(default="", max_length=64)
+    tags: list[str] = Field(default_factory=list, max_length=8)
+
+
+class ToolWebsiteAddResponse(BaseModel):
+    status: str
+    message: str
+    duplicate: bool = False
+    item: Optional[Dict[str, Any]] = None
+
+
+class ToolWebsiteDeleteResponse(BaseModel):
+    status: str
+    message: str
+    deleted: bool = False
+    website_id: int
+
+
+class ProjectTaxonomyItem(BaseModel):
+    slug: str
+    name: str
+    children: list[Dict[str, str]] = Field(default_factory=list)
+
+
+class ProjectTaxonomyResponse(BaseModel):
+    items: list[ProjectTaxonomyItem]
 
 
 class ProviderConfigRequest(BaseModel):
@@ -67,6 +133,61 @@ class ProviderConfigResponse(BaseModel):
     api_key_configured: bool
     api_key_masked: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class McpServerConfigRequest(BaseModel):
+    server_key: str = Field(default="", max_length=64)
+    display_name: str = Field(default="", max_length=128)
+    description: str = Field(default="", max_length=2000)
+    url: str = Field(default="", max_length=1024)
+    transport: Literal["streamable_http"] = "streamable_http"
+    auth_type: Literal["none", "bearer"] = "none"
+    auth_token: Optional[str] = Field(default=None, max_length=4096)
+    clear_auth_token: bool = False
+    enabled: bool = True
+
+
+class McpToolSummary(BaseModel):
+    name: str
+    description: str = ""
+
+
+class McpServerConfigResponse(BaseModel):
+    id: int
+    server_key: str
+    display_name: str
+    description: str = ""
+    url: str
+    transport: str
+    auth_type: str
+    auth_token_configured: bool
+    auth_token_masked: Optional[str] = None
+    enabled: bool
+    last_test_status: str = "unknown"
+    last_test_message: str = ""
+    last_test_at: Optional[str] = None
+    tools: list[McpToolSummary] = Field(default_factory=list)
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class McpServerConfigListResponse(BaseModel):
+    items: list[McpServerConfigResponse]
+    total: int
+
+
+class McpServerDeleteResponse(BaseModel):
+    status: str
+    message: str
+    deleted: bool
+    id: int
+
+
+class McpServerTestResponse(BaseModel):
+    status: str
+    message: str
+    server: McpServerConfigResponse
+    tools: list[McpToolSummary] = Field(default_factory=list)
 
 
 def _mask_api_key(api_key: Optional[str]) -> Optional[str]:
@@ -88,6 +209,83 @@ def _provider_config_response(row: Optional[dict], provider: str) -> ProviderCon
         api_key_masked=_mask_api_key(api_key),
         updated_at=str(updated_at) if updated_at else None,
     )
+
+
+def _parse_mcp_tools(raw_value: Any) -> list[McpToolSummary]:
+    if not raw_value:
+        return []
+    if isinstance(raw_value, list):
+        data = raw_value
+    else:
+        try:
+            data = json.loads(str(raw_value))
+        except (TypeError, json.JSONDecodeError):
+            data = []
+    if not isinstance(data, list):
+        return []
+
+    tools: list[McpToolSummary] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        tools.append(McpToolSummary(name=name, description=str(item.get("description") or "").strip()))
+    return tools
+
+
+def _mcp_server_config_response(row: dict) -> McpServerConfigResponse:
+    auth_token = row.get("auth_token") or ""
+    last_test_at = row.get("last_test_at")
+    created_at = row.get("created_at")
+    updated_at = row.get("updated_at")
+    return McpServerConfigResponse(
+        id=int(row.get("id") or 0),
+        server_key=(row.get("server_key") or ""),
+        display_name=(row.get("display_name") or ""),
+        description=(row.get("description") or ""),
+        url=(row.get("url") or ""),
+        transport=(row.get("transport") or "streamable_http"),
+        auth_type=(row.get("auth_type") or "none"),
+        auth_token_configured=bool(auth_token),
+        auth_token_masked=_mask_api_key(auth_token),
+        enabled=bool(row.get("enabled")),
+        last_test_status=(row.get("last_test_status") or "unknown"),
+        last_test_message=(row.get("last_test_message") or ""),
+        last_test_at=str(last_test_at) if last_test_at else None,
+        tools=_parse_mcp_tools(row.get("last_tools_json")),
+        created_at=str(created_at) if created_at else None,
+        updated_at=str(updated_at) if updated_at else None,
+    )
+
+
+def _mcp_payload(request: McpServerConfigRequest) -> dict[str, Any]:
+    server_key = request.server_key.strip().lower()
+    if not re.fullmatch(r"[a-z0-9_-]{2,64}", server_key):
+        raise HTTPException(status_code=400, detail="server_key 仅支持 2-64 位小写字母、数字、下划线和短横线")
+    display_name = request.display_name.strip()
+    if not display_name:
+        raise HTTPException(status_code=400, detail="请填写 MCP Server 名称")
+
+    from backend.app.services.mcp_connection_tester import McpConnectionTestError, validate_mcp_http_url
+
+    try:
+        url = validate_mcp_http_url(request.url)
+    except McpConnectionTestError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "server_key": server_key,
+        "display_name": display_name,
+        "description": request.description.strip(),
+        "url": url,
+        "transport": request.transport,
+        "auth_type": request.auth_type,
+        "auth_token": request.auth_token,
+        "clear_auth_token": request.clear_auth_token,
+        "enabled": request.enabled,
+    }
 
 
 # ── 后台任务包装 ─────────────────────────────────────────────────────────────
@@ -140,12 +338,19 @@ def _bg_single_source_ingest(source_name: str, limit: int) -> None:
 
 
 def _bg_refresh_github_hot(limit: int) -> None:
-    """刷新 GitHub 候选池 / Trending / 快照数据。"""
+    """刷新 GitHub 候选池 / Trending / 快照数据并同步当日指标。"""
     from backend.app.services.ingestion.github_hot_service import (
         refresh_github_hot_candidates,
     )
+    from backend.app.services.ingestion.github_project_metrics_service import (
+        compute_github_daily_metrics,
+    )
 
-    refresh_github_hot_candidates(limit=limit)
+    refresh_result = refresh_github_hot_candidates(limit=limit)
+    compute_github_daily_metrics(
+        metric_date=refresh_result.get("date"),
+        repo_ids=refresh_result.get("daily_repo_ids") or None,
+    )
 
 
 def _bg_enrich_github_projects(
@@ -168,6 +373,27 @@ def _bg_enrich_github_projects(
         refresh_changed=refresh_changed,
     )
     logger.info("[Ops] GitHub 项目库富化任务完成：%s", result)
+
+
+def _bg_refresh_github_project_metrics(
+    *,
+    min_stars: int,
+    limit: int,
+    metric_date: Optional[str],
+    dry_run: bool,
+) -> None:
+    """刷新 GitHub 项目轻量指标快照并重算每日热度。"""
+    from backend.app.services.ingestion.github_project_metrics_service import (
+        refresh_and_compute_github_project_metrics,
+    )
+
+    result = refresh_and_compute_github_project_metrics(
+        min_stars=min_stars,
+        limit=limit,
+        metric_date=metric_date,
+        dry_run=dry_run,
+    )
+    logger.info("[Ops] GitHub 项目每日指标刷新任务完成：%s", result)
 
 
 # ── 运行时模型配置 ─────────────────────────────────────────────────────────────
@@ -203,6 +429,96 @@ async def update_provider_config(
         request.model_name,
     )
     return _provider_config_response(row, request.provider)
+
+
+# ── MCP Server 配置 ──────────────────────────────────────────────────────────
+
+
+@router.get("/ops/mcp-servers", response_model=McpServerConfigListResponse, tags=["Ops"])
+async def list_mcp_servers(_: dict = Depends(RequireAdmin)) -> McpServerConfigListResponse:
+    """列出 MCP Server 配置。响应不会返回明文 Token。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    rows = await asyncio.to_thread(db.list_mcp_server_configs)
+    items = [_mcp_server_config_response(row) for row in rows]
+    return McpServerConfigListResponse(items=items, total=len(items))
+
+
+@router.post("/ops/mcp-servers", response_model=McpServerConfigResponse, tags=["Ops"])
+async def create_mcp_server(
+    request: McpServerConfigRequest,
+    _: dict = Depends(RequireAdmin),
+) -> McpServerConfigResponse:
+    """创建 MCP Server 配置。auth_token 只写入，不明文返回。"""
+    from pymysql.err import IntegrityError
+
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    payload = _mcp_payload(request)
+    try:
+        row = await asyncio.to_thread(db.create_mcp_server_config, payload)
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="server_key 已存在，请换一个标识") from exc
+    return _mcp_server_config_response(row)
+
+
+@router.put("/ops/mcp-servers/{server_id}", response_model=McpServerConfigResponse, tags=["Ops"])
+async def update_mcp_server(
+    server_id: int,
+    request: McpServerConfigRequest,
+    _: dict = Depends(RequireAdmin),
+) -> McpServerConfigResponse:
+    """更新 MCP Server 配置。auth_token 留空时保留，clear_auth_token=true 时清空。"""
+    from pymysql.err import IntegrityError
+
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    payload = _mcp_payload(request)
+    try:
+        row = await asyncio.to_thread(db.update_mcp_server_config, server_id, payload)
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="server_key 已存在，请换一个标识") from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
+    return _mcp_server_config_response(row)
+
+
+@router.delete("/ops/mcp-servers/{server_id}", response_model=McpServerDeleteResponse, tags=["Ops"])
+async def delete_mcp_server(
+    server_id: int,
+    _: dict = Depends(RequireAdmin),
+) -> McpServerDeleteResponse:
+    """删除 MCP Server 配置。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    deleted = await asyncio.to_thread(db.delete_mcp_server_config, server_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
+    return McpServerDeleteResponse(status="succeeded", message="MCP Server 配置已删除。", deleted=True, id=server_id)
+
+
+@router.post("/ops/mcp-servers/{server_id}/test", response_model=McpServerTestResponse, tags=["Ops"])
+async def test_mcp_server(
+    server_id: int,
+    _: dict = Depends(RequireAdmin),
+) -> McpServerTestResponse:
+    """测试 MCP Server 连通性，只执行 initialize / tools/list，不调用任意工具。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+    from backend.app.services.mcp_connection_tester import test_mcp_server_connection
+
+    db = MySQLRepository()
+    row = await asyncio.to_thread(db.get_mcp_server_config, server_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
+
+    result = await asyncio.to_thread(test_mcp_server_connection, row)
+    updated = await asyncio.to_thread(db.update_mcp_server_test_result, server_id, result)
+    server = _mcp_server_config_response(updated or row)
+    return McpServerTestResponse(status=result.get("status", "failed"), message=result.get("message", ""), server=server, tools=server.tools)
 
 
 # ── 路由 ─────────────────────────────────────────────────────────────────────
@@ -325,6 +641,81 @@ async def refresh_github_hot(
 
 
 @router.post(
+    "/ops/tool-websites",
+    response_model=ToolWebsiteAddResponse,
+    tags=["Ops"],
+)
+async def add_tool_website(
+    request: ToolWebsiteAddRequest,
+    user: dict = Depends(RequireAdmin),
+) -> ToolWebsiteAddResponse:
+    """公共网页收藏已下线；网页收藏只允许用户添加到个人收藏夹。"""
+    raise HTTPException(status_code=410, detail="公共网页收藏已下线，请在我的收藏中添加个人网页收藏")
+
+
+@router.post(
+    "/ops/tool-websites/manual",
+    response_model=ToolWebsiteAddResponse,
+    tags=["Ops"],
+)
+async def add_tool_website_manual(
+    request: ToolWebsiteManualAddRequest,
+    user: dict = Depends(RequireAdmin),
+) -> ToolWebsiteAddResponse:
+    """公共网页收藏已下线；网页收藏只允许用户手动添加到个人收藏夹。"""
+    raise HTTPException(status_code=410, detail="公共网页收藏已下线，请在我的收藏中手动添加个人网页收藏")
+
+
+@router.delete(
+    "/ops/tool-websites/{website_id}",
+    response_model=ToolWebsiteDeleteResponse,
+    tags=["Ops"],
+)
+async def delete_tool_website(
+    website_id: int,
+    _: dict = Depends(RequireAdmin),
+) -> ToolWebsiteDeleteResponse:
+    """公共网页收藏已下线；用户只能移出自己的个人网页收藏。"""
+    raise HTTPException(status_code=410, detail="公共网页收藏已下线，请从个人收藏夹移出网页收藏")
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    deleted = await asyncio.to_thread(db.delete_tool_website, website_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="工具网站不存在或已删除")
+    return ToolWebsiteDeleteResponse(
+        status="succeeded",
+        message="工具网站已删除。",
+        deleted=True,
+        website_id=website_id,
+    )
+
+
+@router.get(
+    "/ops/project-taxonomy",
+    response_model=ProjectTaxonomyResponse,
+    tags=["Ops"],
+)
+async def get_project_taxonomy(_: dict = Depends(RequireAdmin)) -> ProjectTaxonomyResponse:
+    """返回管理员手动添加工具网页时可选的分类体系。"""
+    from backend.app.services.ingestion.project_taxonomy import WEBSITE_TAXONOMY
+
+    items = []
+    for category in WEBSITE_TAXONOMY:
+        items.append(
+            {
+                "slug": category["slug"],
+                "name": category["name"],
+                "children": [
+                    {"slug": child["slug"], "name": child["name"]}
+                    for child in category.get("children", [])
+                ],
+            }
+        )
+    return ProjectTaxonomyResponse(items=items)
+
+
+@router.post(
     "/ops/github-projects/enrich",
     response_model=GitHubProjectsEnrichResponse,
     tags=["Ops"],
@@ -377,6 +768,66 @@ async def enrich_github_project_library(
     )
 
 
+@router.post(
+    "/ops/github-projects/recommendations",
+    response_model=GitHubProjectRecommendResponse,
+    tags=["Ops"],
+)
+async def recommend_github_project(
+    request: GitHubProjectRecommendRequest,
+    user: dict = Depends(RequireAdmin),
+) -> GitHubProjectRecommendResponse:
+    """将 GitHub 项目加入站长推荐。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    raw_user_id = user.get("user_id") or user.get("id") or user.get("sub") if isinstance(user, dict) else None
+    try:
+        admin_user_id = int(raw_user_id) if raw_user_id else None
+    except (TypeError, ValueError):
+        admin_user_id = None
+
+    db = MySQLRepository()
+    try:
+        result = await asyncio.to_thread(
+            db.recommend_github_project,
+            repo_id=request.repo_id,
+            full_name=request.full_name,
+            recommended_by_user_id=admin_user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return GitHubProjectRecommendResponse(status="succeeded", message="已加入站长推荐。", **result)
+
+
+@router.delete(
+    "/ops/github-projects/recommendations",
+    response_model=GitHubProjectRecommendResponse,
+    tags=["Ops"],
+)
+async def unrecommend_github_project(
+    request: GitHubProjectRecommendRequest,
+    _: dict = Depends(RequireAdmin),
+) -> GitHubProjectRecommendResponse:
+    """取消 GitHub 项目的站长推荐。"""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    db = MySQLRepository()
+    try:
+        result = await asyncio.to_thread(
+            db.unrecommend_github_project,
+            repo_id=request.repo_id,
+            full_name=request.full_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    message = "已取消站长推荐。" if result.get("removed") else "该项目当前不是站长推荐。"
+    return GitHubProjectRecommendResponse(status="succeeded", message=message, **result)
+
+
 @router.get("/ops/github-projects/enrichment-status", tags=["Ops"])
 async def github_project_enrichment_status(_: dict = Depends(RequireAdmin)):
     """查看 GitHub 项目库富化进度。"""
@@ -384,6 +835,64 @@ async def github_project_enrichment_status(_: dict = Depends(RequireAdmin)):
 
     db = MySQLRepository()
     return await asyncio.to_thread(db.get_github_project_enrichment_status)
+
+
+@router.post(
+    "/ops/github-projects/metrics/refresh",
+    response_model=GitHubProjectsEnrichResponse,
+    tags=["Ops"],
+)
+async def refresh_github_project_metrics(
+    request: GitHubProjectsMetricsRequest,
+    background_tasks: BackgroundTasks = None,
+    _: dict = Depends(RequireAdmin),
+) -> GitHubProjectsEnrichResponse:
+    """手动刷新 GitHub 项目每日快照，并在非 dry-run 时重算热度分。"""
+    min_stars = max(0, int(request.min_stars or 0))
+    limit = max(0, min(int(request.limit or 0), 20000))
+    if request.dry_run:
+        from backend.app.services.ingestion.github_project_metrics_service import (
+            refresh_and_compute_github_project_metrics,
+        )
+
+        result = await asyncio.to_thread(
+            refresh_and_compute_github_project_metrics,
+            min_stars=min_stars,
+            limit=limit,
+            metric_date=request.metric_date,
+            dry_run=True,
+        )
+        return GitHubProjectsEnrichResponse(status="dry_run", message="GitHub 项目每日指标 dry-run 完成。", result=result)
+
+    assert background_tasks is not None
+    background_tasks.add_task(
+        _bg_refresh_github_project_metrics,
+        min_stars=min_stars,
+        limit=limit,
+        metric_date=request.metric_date,
+        dry_run=False,
+    )
+    return GitHubProjectsEnrichResponse(status="queued", message="GitHub 项目每日指标刷新任务已提交，后台执行中。")
+
+
+@router.post(
+    "/ops/github-projects/metrics/recompute",
+    response_model=GitHubProjectsEnrichResponse,
+    tags=["Ops"],
+)
+async def recompute_github_project_metrics(
+    request: GitHubProjectsMetricsRecomputeRequest,
+    _: dict = Depends(RequireAdmin),
+) -> GitHubProjectsEnrichResponse:
+    """基于连续快照或同日 Trending 日榜值，重算某天增长和热度分。"""
+    from backend.app.services.ingestion.github_project_metrics_service import compute_github_daily_metrics
+
+    result = await asyncio.to_thread(
+        compute_github_daily_metrics,
+        metric_date=request.metric_date,
+        min_stars=max(0, int(request.min_stars or 0)),
+    )
+    return GitHubProjectsEnrichResponse(status="succeeded", message="GitHub 项目每日热度指标已重算。", result=result)
 
 
 @router.post("/ops/ingest-source", response_model=IngestResponse, tags=["Ops"])
