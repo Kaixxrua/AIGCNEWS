@@ -102,7 +102,7 @@ const handleRegister = async () => {
 </script>
 
 <template>
-  <div class="flex h-full items-center justify-center overflow-y-auto p-6">
+  <div class="flex h-full items-center justify-center overflow-y-auto p-3 sm:p-6">
     <div class="w-full max-w-sm py-4">
 
       <!-- 标题区 -->
@@ -118,12 +118,12 @@ const handleRegister = async () => {
       </div>
 
       <!-- 表单卡片 -->
-      <div class="glass-card p-6 space-y-4 stagger-enter" style="animation-delay: 0.1s">
+      <div class="glass-card p-4 sm:p-6 space-y-4 stagger-enter" style="animation-delay: 0.1s">
 
         <!-- 邮箱 + 发送验证码 -->
         <div class="space-y-1.5">
           <label class="text-xs font-medium text-stone-500">邮箱</label>
-          <div class="flex gap-2">
+          <div class="flex flex-col gap-2 sm:flex-row">
             <input
               v-model="email"
               type="email"
@@ -133,7 +133,7 @@ const handleRegister = async () => {
               :disabled="loading"
             />
             <button
-              class="shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+              class="shrink-0 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-medium sm:w-auto transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
               style="background: rgba(255,255,255,0.80); border: 1px solid rgba(168,162,158,0.25); color: #57534e; backdrop-filter: blur(10px); white-space: nowrap"
               :disabled="otpBtnDisabled || loading"
               @click="sendOtp"

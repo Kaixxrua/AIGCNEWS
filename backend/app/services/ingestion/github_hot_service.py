@@ -83,6 +83,7 @@ def record_github_trending_hits(
                     "stars": int(item.get("stars") or 0),
                     "forks": int(item.get("forks") or 0),
                     "watchers": int(item.get("watchers") or 0),
+                    "community_metrics_complete": 0,
                     "open_issues": int(item.get("open_issues") or 0),
                     "repo_created_at": item.get("created_at") or "",
                     "repo_pushed_at": item.get("pushed_at") or "",
@@ -116,10 +117,14 @@ def record_github_trending_hits(
     }
 
 
-def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
+def refresh_github_hot_candidates(
+    limit: int = 80,
+    *,
+    observed_date: str | None = None,
+) -> Dict[str, Any]:
     """抓取 Trending + Search 候选，并写入 repo candidates / snapshots / trending hits。"""
     db = MySQLRepository()
-    observed_date = _today_str()
+    resolved_date = observed_date or _today_str()
     captured_at = _utcnow()
 
     candidate_map: Dict[str, Dict[str, Any]] = {}
@@ -146,6 +151,7 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
                     str(existing.get("source_channels") or ""),
                     f"trending_{period}",
                 ),
+                "_community_metrics_complete": False,
             }
 
     metrics = fetch_github_repo_metrics_batch(list(candidate_map))
@@ -159,6 +165,7 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
             **repo,
             "repo_id": full_name,
             "source_channels": source_channels,
+            "_community_metrics_complete": True,
         }
 
     try:
@@ -173,6 +180,7 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
             continue
         existing = candidate_map.get(repo_id)
         repo["repo_id"] = repo_id
+        repo["_community_metrics_complete"] = True
         repo["source_channels"] = _merge_channels(
             (existing or {}).get("source_channels", ""),
             "search_candidates",
@@ -210,11 +218,14 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
         db.insert_github_repo_snapshot(
             {
                 "repo_id": repo_id,
-                "snapshot_date": observed_date,
+                "snapshot_date": resolved_date,
                 "captured_at": captured_at,
                 "stars": int(repo.get("stars") or 0),
                 "forks": int(repo.get("forks") or 0),
                 "watchers": int(repo.get("watchers") or 0),
+                "community_metrics_complete": (
+                    1 if repo.get("_community_metrics_complete") else 0
+                ),
                 "open_issues": int(repo.get("open_issues") or 0),
                 "repo_created_at": repo.get("created_at")
                 or repo.get("published_date")
@@ -228,7 +239,7 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
         record_github_trending_hits(
             items,
             period=period,
-            observed_date=observed_date,
+            observed_date=resolved_date,
             captured_at=captured_at,
             db=db,
         )
@@ -245,7 +256,7 @@ def refresh_github_hot_candidates(limit: int = 80) -> Dict[str, Any]:
         growth_count,
     )
     return {
-        "date": observed_date,
+        "date": resolved_date,
         "repos": repo_count,
         "snapshots": snapshot_count,
         "trending_hits": hit_count,

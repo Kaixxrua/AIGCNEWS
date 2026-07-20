@@ -32,10 +32,11 @@ api.interceptors.response.use(
     const data = error?.response?.data
     const message = error?.message ?? 'Unknown API error'
 
+    const isSensitiveEndpoint = requestUrl.includes('/auth/me/mcp-tokens')
     console.error('[API Error]', {
       status,
       message,
-      data,
+      ...(isSensitiveEndpoint ? {} : { data }),
       url: requestUrl,
       method: error?.config?.method,
     })
@@ -72,6 +73,51 @@ api.interceptors.response.use(
     return Promise.reject(error)
   },
 )
+
+export type McpClientType = 'claude' | 'cursor' | 'vscode' | 'other'
+
+export interface McpTokenMetadata {
+  id: number
+  user_id?: number
+  token_hint: string
+  scopes: string[]
+  client_type: McpClientType
+  client_label: string
+  expires_at: string | null
+  revoked_at: string | null
+  deleted_at?: string | null
+  created_at?: string | null
+  last_used_at?: string | null
+}
+
+export interface CreateMcpTokenPayload {
+  client_type: McpClientType
+  client_label?: string
+  scopes?: string[]
+  multi_open?: boolean
+  expires_at?: string | null
+}
+
+export interface CreateMcpTokenResponse {
+  token: string
+  token_metadata: McpTokenMetadata
+  replaced_count: number
+}
+
+export async function fetchMcpTokens(): Promise<McpTokenMetadata[]> {
+  const res = await api.get<McpTokenMetadata[]>('/auth/me/mcp-tokens')
+  return Array.isArray(res.data) ? res.data : []
+}
+
+export async function createMcpToken(payload: CreateMcpTokenPayload): Promise<CreateMcpTokenResponse> {
+  const res = await api.post<CreateMcpTokenResponse>('/auth/me/mcp-tokens', payload)
+  return res.data
+}
+
+export async function deleteMcpToken(tokenId: number): Promise<{ deleted: boolean; id: number }> {
+  const res = await api.delete<{ deleted: boolean; id: number }>(`/auth/me/mcp-tokens/${tokenId}`)
+  return res.data
+}
 
 export interface PaperItem {
   id: string
@@ -370,8 +416,13 @@ export interface ConversationDetailResponse {
   messages: ChatMessageDTO[]
 }
 
-export async function fetchSnapshotDates(limit = 60): Promise<string[]> {
-  const res = await api.get('/dashboard/snapshot-dates', { params: { limit } })
+export async function fetchSnapshotDates(
+  limit = 60,
+  source?: string,
+  period?: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const res = await api.get('/dashboard/snapshot-dates', { params: { limit, source, period }, signal })
   return res.data?.dates ?? []
 }
 

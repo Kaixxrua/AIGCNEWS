@@ -34,6 +34,36 @@ PROBES = {
         "expected": "mcp__aigc-news__search_papers",
         "default_trials": 5,
     },
+    "agent_learning": {
+        "prompt": "我想系统学习 AI Agent 和 MCP，请从已有资源里找一些教程、示例和学习材料。",
+        "expected": "mcp__aigc-news__search_github_ai_projects",
+        "default_trials": 5,
+    },
+    "agent_learning_exact": {
+        "prompt": "我想要学习Agent相关的内容，帮我找一点资料进行学习",
+        "expected": "mcp__aigc-news__search_github_ai_projects",
+        "default_trials": 5,
+    },
+    "agent_academic": {
+        "prompt": "请找几篇关于 AI Agent memory 和 planning 的论文或综述，并给出引用和实验研究方向。",
+        "expected": "mcp__aigc-news__search_papers",
+        "default_trials": 5,
+    },
+    "agent_mixed_implementation": {
+        "prompt": "以 Agent 示例项目、教程和 SDK 实现为主，也可以附几篇论文。",
+        "expected": "mcp__aigc-news__search_github_ai_projects",
+        "default_trials": 5,
+    },
+    "agent_mixed_academic": {
+        "prompt": "以 Agent 论文、survey、引用和实验结果为主，项目只作为补充。",
+        "expected": "mcp__aigc-news__search_papers",
+        "default_trials": 5,
+    },
+    "agent_projects": {
+        "prompt": "帮我找几个 GitHub 开源的 Agent/MCP 完整项目，用来学习工具调用和工作流编排。",
+        "expected": "mcp__aigc-news__search_github_ai_projects",
+        "default_trials": 5,
+    },
 }
 MCP_TOOLS = [
     "mcp__aigc-news__search_papers",
@@ -53,6 +83,11 @@ class TrialResult:
     trial: int
     expected: str
     first_tools: list[str]
+    tool_timeline: list[list[str]]
+    timeline_complete: bool
+    initial_host_tool_violations: list[str]
+    host_tool_before_expected: list[str]
+    host_tools_after_mcp: list[str]
     passed: bool
     elapsed_seconds: float
     exit_code: int | None
@@ -66,19 +101,26 @@ def _tool_names(value: Any) -> list[str]:
     if isinstance(value, dict):
         if value.get("type") in {"tool_use", "server_tool_use"} and isinstance(value.get("name"), str):
             names.append(value["name"])
-        for item in value.values():
-            names.extend(_tool_names(item))
+        else:
+            for item in value.values():
+                names.extend(_tool_names(item))
     elif isinstance(value, list):
         for item in value:
             names.extend(_tool_names(item))
-    return list(dict.fromkeys(names))
+    return names
 
 
-def _is_assistant_event(event: dict[str, Any]) -> bool:
-    if event.get("type") == "assistant":
-        return True
+def _assistant_tool_event(event: dict[str, Any]) -> tuple[str, list[str]] | None:
     message = event.get("message")
-    return isinstance(message, dict) and message.get("role") == "assistant"
+    if event.get("type") == "assistant" and isinstance(message, dict):
+        message_id = message.get("id")
+        if isinstance(message_id, str):
+            return message_id, _tool_names(message)
+    if isinstance(message, dict) and message.get("role") == "assistant":
+        message_id = message.get("id")
+        if isinstance(message_id, str):
+            return message_id, _tool_names(message)
+    return None
 
 
 def run_trial(
@@ -124,6 +166,9 @@ def run_trial(
     ]
 
     first_tools: list[str] = []
+    tool_timeline: list[list[str]] = []
+    timeline_by_message: dict[str, list[str]] = {}
+    first_tool_message_id: str | None = None
     timed_out = False
     start = time.monotonic()
     with trace_file.open("w", encoding="utf-8") as trace, stderr_file.open("w", encoding="utf-8") as stderr:
@@ -160,9 +205,18 @@ def run_trial(
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if not first_tools and _is_assistant_event(event):
-                first_tools = _tool_names(event)
-                if first_tools and not complete_turn:
+            assistant_event = _assistant_tool_event(event)
+            if assistant_event is not None:
+                message_id, assistant_tools = assistant_event
+                if assistant_tools:
+                    if message_id not in timeline_by_message:
+                        timeline_by_message[message_id] = []
+                        tool_timeline.append(timeline_by_message[message_id])
+                    timeline_by_message[message_id].extend(assistant_tools)
+                    if first_tool_message_id is None:
+                        first_tool_message_id = message_id
+                        first_tools = timeline_by_message[message_id]
+                elif first_tool_message_id is not None and message_id != first_tool_message_id and not complete_turn:
                     process.terminate()
                     break
         selector.close()
@@ -174,12 +228,42 @@ def run_trial(
             process.wait(timeout=5)
 
     expected = str(probe["expected"])
-    passed = first_tools == [expected]
+    initial_host_tool_violations = [name for name in first_tools if name in HOST_TOOLS]
+    flattened_timeline = [name for tools in tool_timeline for name in tools]
+    expected_index = flattened_timeline.index(expected) if expected in flattened_timeline else None
+    host_tool_before_expected = [
+        name
+        for index, name in enumerate(flattened_timeline)
+        if name in HOST_TOOLS and (expected_index is None or index < expected_index)
+    ]
+    host_tools_after_mcp = [
+        name
+        for index, name in enumerate(flattened_timeline)
+        if name in HOST_TOOLS and expected_index is not None and index > expected_index
+    ]
+    competing_search = (
+        "mcp__aigc-news__search_papers"
+        if expected == "mcp__aigc-news__search_github_ai_projects"
+        else "mcp__aigc-news__search_github_ai_projects"
+        if expected == "mcp__aigc-news__search_papers"
+        else ""
+    )
+    passed = (
+        bool(first_tools)
+        and first_tools[0] == expected
+        and not initial_host_tool_violations
+        and (not competing_search or competing_search not in first_tools)
+    )
     return TrialResult(
         probe=probe_name,
         trial=trial,
         expected=expected,
         first_tools=first_tools,
+        tool_timeline=tool_timeline,
+        timeline_complete=complete_turn and not timed_out and process.returncode == 0,
+        initial_host_tool_violations=initial_host_tool_violations,
+        host_tool_before_expected=host_tool_before_expected,
+        host_tools_after_mcp=host_tools_after_mcp,
         passed=passed,
         elapsed_seconds=round(time.monotonic() - start, 3),
         exit_code=process.returncode,
@@ -242,8 +326,18 @@ def main() -> int:
             "expected": PROBES[probe_name]["expected"],
             "passed": sum(result.passed for result in probe_results),
             "total": len(probe_results),
+            "complete_timelines": sum(result.timeline_complete for result in probe_results),
+            "initial_host_tool_violations": sum(
+                bool(result.initial_host_tool_violations) for result in probe_results
+            ),
+            "host_tool_before_expected": sum(
+                bool(result.host_tool_before_expected) for result in probe_results
+            ),
+            "host_tools_after_mcp": sum(
+                bool(result.host_tools_after_mcp) for result in probe_results
+            ),
             "first_tool_counts": {
-                name: sum(result.first_tools == [name] for result in probe_results)
+                name: sum(bool(result.first_tools) and result.first_tools[0] == name for result in probe_results)
                 for name in sorted({name for result in probe_results for name in result.first_tools})
             },
         }

@@ -306,8 +306,8 @@ const downloadPdf = () => {
 </script>
 
 <template>
-  <div class="w-full flex-1 min-h-0 flex flex-row overflow-hidden">
-    <div class="relative w-[35%] flex-shrink-0 flex flex-col h-full bg-white border-r border-gray-100/80 hover:border-gray-200 transition-colors">
+  <div class="w-full flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+    <div class="relative w-full h-1/2 md:h-full md:w-[35%] flex-shrink-0 flex flex-col bg-white border-r border-gray-100/80 hover:border-gray-200 transition-colors">
       <header class="flex shrink-0 items-center justify-between px-4 py-3 relative" style="border-bottom: 1px solid rgba(168,162,158,0.12)">
         <button class="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-600 transition" @click="router.push('/chat')">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -509,7 +509,7 @@ const downloadPdf = () => {
       </div>
     </div>
 
-    <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-gray-50/50">
+    <div class="flex-1 min-w-0 min-h-0 h-1/2 md:h-auto flex flex-col overflow-hidden bg-gray-50/50">
       <header class="flex shrink-0 items-start justify-between gap-3 px-5 py-3" style="border-bottom: 1px solid rgba(168,162,158,0.12)">
         <div class="min-w-0 flex-1">
           <div v-if="paperLoading" class="h-4 w-48 animate-pulse rounded bg-stone-200"/>
@@ -547,7 +547,7 @@ const downloadPdf = () => {
         <Transition name="popup-fade">
           <div
             v-if="visionPopup?.visible"
-            class="absolute bottom-24 left-1/2 -translate-x-1/2 w-[340px] rounded-2xl p-4 shadow-2xl"
+            class="absolute bottom-4 md:bottom-24 left-1/2 -translate-x-1/2 w-[340px] max-w-[calc(100%_-_24px)] max-h-[calc(100%_-_24px)] overflow-y-auto rounded-2xl p-4 shadow-2xl"
             style="background: rgba(255,255,255,0.97); border: 1px solid rgba(168,162,158,0.25); backdrop-filter: blur(16px); z-index: 50"
           >
             <p class="mb-2 text-xs font-semibold text-stone-600 flex items-center gap-1"><Camera class="h-3.5 w-3.5" /> 已截取区域，向 AI 提问</p>

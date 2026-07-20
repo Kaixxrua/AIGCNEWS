@@ -50,11 +50,16 @@ class ArxivCrawler(BaseCrawler):
             target_date=target_date,
         )
 
+        # daily 榜可能回退到昨天/前天，快照必须归属实际命中的 HF 日期。
+        if period == "daily" and papers:
+            snapshot_date = str(papers[0].get("snapshot_date") or snapshot_date)
+
         # 标准化字段
         for p in papers:
             p.setdefault("source", "arxiv")
             p.setdefault("source_channel", channel)
             p.setdefault("channel", channel)
+            p["snapshot_date"] = snapshot_date
 
         return CrawlResult(
             source="arxiv",

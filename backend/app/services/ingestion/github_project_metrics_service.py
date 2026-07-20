@@ -16,8 +16,8 @@ from backend.app.services.ingestion.source_github import fetch_github_repo_metri
 logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_STARS = 500
-DEFAULT_SCORE_VERSION = "daily_hot_v3"
-_MIN_ACCELERATION_SAMPLES = 3
+DEFAULT_SCORE_VERSION = "daily_hot_v4"
+_FULL_ACCELERATION_CONFIDENCE_SAMPLES = 3
 _SCALE_GROWTH_REFERENCE = math.log1p(4.0)
 _ACCELERATION_REFERENCE = math.log1p(3.0)
 _ABSOLUTE_GROWTH_REFERENCE = math.log1p(1000.0)
@@ -33,12 +33,35 @@ def _local_today(tz_name: str | None = None) -> date:
     return datetime.now(ZoneInfo(timezone_name)).date()
 
 
+def current_github_metric_date() -> str:
+    return _local_today().isoformat()
+
+
 def _date_str(value: date | str | None = None) -> str:
     if value is None:
-        return _local_today().isoformat()
+        return current_github_metric_date()
     if isinstance(value, date):
         return value.isoformat()
     return str(value)[:10]
+
+
+def _live_metric_date(
+    value: date | str | None = None,
+    *,
+    local_today: date | None = None,
+) -> str:
+    """Resolve a live GitHub snapshot date and reject historical writes."""
+    today = (local_today or _local_today()).isoformat()
+    resolved = _date_str(value) if value is not None else today
+    try:
+        parsed = date.fromisoformat(resolved)
+    except ValueError as exc:
+        raise ValueError(f"Invalid GitHub metric date: {resolved}") from exc
+    if parsed.isoformat() != today:
+        raise ValueError(
+            f"Live GitHub snapshots can only be written for today ({today}), got {resolved}"
+        )
+    return today
 
 
 def _parse_date(value: Any) -> date | None:
@@ -108,6 +131,7 @@ def _snapshot_payload(repo: Dict[str, Any], *, metric_date: str, captured_at: st
         "stars": int(repo.get("stars") or 0),
         "forks": int(repo.get("forks") or 0),
         "watchers": int(repo.get("watchers") or 0),
+        "community_metrics_complete": 1,
         "open_issues": int(repo.get("open_issues") or 0),
         "repo_created_at": repo.get("created_at") or "",
         "repo_pushed_at": repo.get("pushed_at") or "",
@@ -120,11 +144,12 @@ def refresh_github_project_metric_snapshots(
     limit: int = 0,
     metric_date: str | date | None = None,
     dry_run: bool = False,
+    _local_date: date | None = None,
 ) -> Dict[str, Any]:
     """Refresh today's lightweight GitHub metrics and write raw snapshots."""
 
+    snapshot_date = _live_metric_date(metric_date, local_today=_local_date)
     db = MySQLRepository()
-    snapshot_date = _date_str(metric_date)
     captured_at = _utcnow()
     targets = db.list_github_project_metric_targets(min_stars=min_stars, limit=limit)
     full_names = [str(item.get("full_name") or "").strip() for item in targets if item.get("full_name")]
@@ -203,12 +228,25 @@ def compute_github_daily_metrics(
         forks = int(row.get("forks") or 0)
         watchers = int(row.get("watchers") or 0)
         previous_stars = int(row.get("previous_stars") or 0)
+        has_complete_community_pair = (
+            has_previous
+            and row.get("community_metrics_complete") == 1
+            and row.get("previous_community_metrics_complete") == 1
+        )
         if has_previous:
             growth_source = "snapshot_delta"
             growth_observed_at = None
             daily_growth = max(stars - previous_stars, 0)
-            daily_fork_growth = max(forks - int(row.get("previous_forks") or 0), 0)
-            daily_watcher_growth = max(watchers - int(row.get("previous_watchers") or 0), 0)
+            daily_fork_growth = (
+                max(forks - int(row.get("previous_forks") or 0), 0)
+                if has_complete_community_pair
+                else 0
+            )
+            daily_watcher_growth = (
+                max(watchers - int(row.get("previous_watchers") or 0), 0)
+                if has_complete_community_pair
+                else 0
+            )
             scale_base_stars = max(previous_stars, 100)
         elif has_trending_growth:
             growth_source = "github_trending_daily"
@@ -232,14 +270,14 @@ def compute_github_daily_metrics(
             scale_raw = math.log1p(daily_growth / math.sqrt(scale_base_stars))
             acceleration_raw = (
                 math.log1p(max(daily_growth - baseline_7d, 0.0) / (baseline_7d + 1.0))
-                if baseline_sample_count >= _MIN_ACCELERATION_SAMPLES
+                if baseline_sample_count > 0
                 else 0.0
             )
             absolute_raw = math.log1p(daily_growth)
             community_raw = (
                 0.6 * math.log1p(daily_fork_growth)
                 + 0.4 * math.log1p(daily_watcher_growth)
-                if has_previous
+                if has_complete_community_pair
                 else 0.0
             )
         else:
@@ -263,6 +301,11 @@ def compute_github_daily_metrics(
                 "maintenance_activity_score": _maintenance_score(metric_date_str, row.get("repo_pushed_at")),
                 "_scale_raw": scale_raw,
                 "_acceleration_raw": acceleration_raw,
+                "_acceleration_confidence": min(
+                    max(baseline_sample_count, 0)
+                    / _FULL_ACCELERATION_CONFIDENCE_SAMPLES,
+                    1.0,
+                ),
                 "_absolute_raw": absolute_raw,
                 "_community_raw": community_raw,
             }
@@ -284,7 +327,18 @@ def compute_github_daily_metrics(
         if int(item["daily_star_growth"] or 0) > 0:
             positive_growth_count += 1
         scale_score = _normalize_against_reference(float(item.pop("_scale_raw")), _SCALE_GROWTH_REFERENCE) if available else 0.0
-        acceleration_score = _normalize_against_reference(float(item.pop("_acceleration_raw")), _ACCELERATION_REFERENCE) if available else 0.0
+        acceleration_score = (
+            round(
+                _normalize_against_reference(
+                    float(item.pop("_acceleration_raw")),
+                    _ACCELERATION_REFERENCE,
+                )
+                * float(item.pop("_acceleration_confidence")),
+                4,
+            )
+            if available
+            else 0.0
+        )
         absolute_score = _normalize_against_reference(float(item.pop("_absolute_raw")), _ABSOLUTE_GROWTH_REFERENCE) if available else 0.0
         community_score = _normalize_against_reference(float(item.pop("_community_raw")), _COMMUNITY_REFERENCE) if available else 0.0
         maintenance_score = float(item.get("maintenance_activity_score") or 0.0) if available else 0.0
@@ -337,17 +391,24 @@ def refresh_and_compute_github_project_metrics(
     metric_date: str | date | None = None,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
+    local_today = _local_today()
+    resolved_date = _live_metric_date(metric_date, local_today=local_today)
     refresh_result = refresh_github_project_metric_snapshots(
         min_stars=min_stars,
         limit=limit,
-        metric_date=metric_date,
+        metric_date=resolved_date,
         dry_run=dry_run,
+        _local_date=local_today,
     )
     metrics_result = None
     if not dry_run:
-        metrics_result = compute_github_daily_metrics(metric_date=metric_date, min_stars=min_stars)
+        metrics_result = compute_github_daily_metrics(
+            metric_date=resolved_date,
+            min_stars=min_stars,
+        )
     return {
         "status": "success" if not dry_run else "dry_run",
+        "metric_date": resolved_date,
         "refresh": refresh_result,
         "metrics": metrics_result,
     }

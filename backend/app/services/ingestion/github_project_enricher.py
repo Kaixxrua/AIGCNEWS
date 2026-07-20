@@ -16,8 +16,8 @@ from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.ingestion.github_hot_service import refresh_github_hot_candidates
 from backend.app.services.ingestion.github_project_metrics_service import (
-    compute_github_daily_metrics,
-    refresh_github_project_metric_snapshots,
+    current_github_metric_date,
+    refresh_and_compute_github_project_metrics,
 )
 from backend.app.services.ingestion.project_taxonomy import (
     CATEGORY_PROMPT,
@@ -291,13 +291,18 @@ def run_github_project_daily_pipeline(
     Daily metric snapshots and hot scores are pure data processing and do not call
     the LLM.
     """
+    metric_date = current_github_metric_date()
     refresh_result: Dict[str, Any] | None = None
-    metric_refresh_result: Dict[str, Any] | None = None
-    daily_metrics_result: Dict[str, Any] | None = None
+    metric_result: Dict[str, Any] | None = None
     if not dry_run:
-        refresh_result = refresh_github_hot_candidates(limit=refresh_limit)
-        metric_refresh_result = refresh_github_project_metric_snapshots(min_stars=min_stars)
-        daily_metrics_result = compute_github_daily_metrics(min_stars=min_stars)
+        refresh_result = refresh_github_hot_candidates(
+            limit=refresh_limit,
+            observed_date=metric_date,
+        )
+        metric_result = refresh_and_compute_github_project_metrics(
+            min_stars=min_stars,
+            metric_date=metric_date,
+        )
 
     enrich_result = enrich_github_projects(
         limit=enrich_limit,
@@ -311,8 +316,8 @@ def run_github_project_daily_pipeline(
     return {
         "status": "success" if not dry_run else "dry_run",
         "refresh": refresh_result,
-        "metric_refresh": metric_refresh_result,
-        "daily_metrics": daily_metrics_result,
+        "metric_refresh": (metric_result or {}).get("refresh"),
+        "daily_metrics": (metric_result or {}).get("metrics"),
         "enrichment": enrich_result,
         "policy": "new_or_failed_only",
         "min_stars": min_stars,

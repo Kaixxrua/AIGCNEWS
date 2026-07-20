@@ -865,16 +865,24 @@ async def get_dashboard_summary(
 
 
 @router.get("/dashboard/snapshot-dates")
-@cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
+@cache(expire=60, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_snapshot_dates(
     limit: int = Query(default=60, ge=1, le=365),
+    source: Optional[str] = Query(default=None),
+    period: Optional[str] = Query(default=None, pattern="^(daily|weekly|monthly)$"),
 ):
-    """返回有快照记录的日期列表（降序），用于前端日历组件高亮可查看的日期。"""
+    """返回指定来源和周期有快照记录的日期列表（降序）。"""
     from backend.app.repositories.mysql_repo import MySQLRepository
 
     db = MySQLRepository()
-    dates = await asyncio.to_thread(db.get_snapshot_dates, limit)
-    return {"dates": dates, "total": len(dates)}
+    source_type = None if (not source or source == "all") else source
+    dates = await asyncio.to_thread(db.get_snapshot_dates, limit, source_type, period)
+    return {
+        "dates": dates,
+        "total": len(dates),
+        "source": source_type or "all",
+        "period": period,
+    }
 
 
 @router.get("/dashboard/visitor-count")

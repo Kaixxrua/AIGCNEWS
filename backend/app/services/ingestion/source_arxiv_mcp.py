@@ -189,8 +189,8 @@ async def _fetch_hf_listing_html(
     period: str = "daily",
     limit: int = 20,
     target_date: Optional[datetime] = None,
-) -> Tuple[List[str], Dict[str, int]]:
-    """异步抓取 HF 榜单 HTML，返回 (arxiv_ids, id->upvotes)。
+) -> Tuple[List[str], Dict[str, int], str]:
+    """异步抓取 HF 榜单 HTML，返回 (arxiv_ids, id->upvotes, 实际榜单日期)。
 
     注意：使用 CST（UTC+8）时间构造日期 URL，确保与 HuggingFace 榜单日期一致。
     daily 模式下最多回退 2 天，保证即使当天榜单尚未更新也能拿到最新数据。
@@ -228,12 +228,17 @@ async def _fetch_hf_listing_html(
                         period,
                         len(arxiv_ids),
                     )
-                    return arxiv_ids, id_to_upvotes
+                    actual_date = (
+                        url.rsplit("/", 1)[-1]
+                        if period == "daily"
+                        else (target_date or _now_cst()).date().isoformat()
+                    )
+                    return arxiv_ids, id_to_upvotes, actual_date
                 logger.warning("[Arxiv][HF] %s 榜单解析无结果: %s", period, url)
             except Exception as exc:
                 logger.error("[Arxiv][HF] %s 榜单抓取失败 %s: %s", period, url, exc)
 
-    return [], {}
+    return [], {}, ""
 
 
 # ── Step 2: 并发抓取 HF 论文详情页 ──────────────────────────────────────────
@@ -431,7 +436,7 @@ async def fetch_latest_papers_async(
         target_dt = datetime.fromisoformat(target_date)
 
     source_channel = f"huggingface_{period}_html"
-    arxiv_ids, id_to_upvotes = await _fetch_hf_listing_html(
+    arxiv_ids, id_to_upvotes, actual_snapshot_date = await _fetch_hf_listing_html(
         period=period,
         limit=limit,
         target_date=target_dt,
@@ -458,6 +463,8 @@ async def fetch_latest_papers_async(
 
     # ── Step 4：arXiv XML API 补全元数据 ──
     docs = await _enrich_with_arxiv_api(docs)
+    for doc in docs:
+        doc["snapshot_date"] = actual_snapshot_date
 
     logger.info(
         "[Arxiv][HF] 成功构造 %d/%d 篇 HF %s Papers 文档（HF+API 双轨）。",

@@ -94,6 +94,8 @@ const isActive = (item: { to: string; exact: boolean }) => {
         :key="item.to"
         :to="item.to"
         v-show="!item.requiresAdmin || authStore.isAdmin"
+        :aria-label="item.label"
+        :aria-current="isActive(item) ? 'page' : undefined"
         class="dock-item"
         :class="{ 'dock-item--active': isActive(item) }"
         @mouseenter="hoveredNav = item.to"
@@ -115,6 +117,7 @@ const isActive = (item: { to: string; exact: boolean }) => {
     <button
       v-if="!authStore.isLoggedIn"
       class="dock-item dock-item--login"
+      aria-label="登录账号"
       @click="router.push('/login')"
       @mouseenter="hoveredAuth = true"
       @mouseleave="hoveredAuth = false"
@@ -134,6 +137,7 @@ const isActive = (item: { to: string; exact: boolean }) => {
     <button
       v-else
       class="dock-item dock-item--logout"
+      aria-label="退出登录"
       @click="authStore.logout()"
       @mouseenter="hoveredAuth = true"
       @mouseleave="hoveredAuth = false"
@@ -385,5 +389,60 @@ const isActive = (item: { to: string; exact: boolean }) => {
   color: #b91c1c; /* red-700 */
   background: rgba(254, 226, 226, 0.6); /* red-100 */
   transform: scale(1.08);
+}
+
+@media (max-width: 639px) {
+  .main-canvas {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    border-radius: 18px;
+  }
+
+  .main-canvas > .absolute.top-0 {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+
+  .main-canvas > .absolute.inset-0 {
+    padding-top: 48px;
+    padding-bottom: 86px;
+  }
+
+  .dock {
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    transform: none;
+    max-width: calc(100vw - 16px);
+    overflow-x: auto;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 6px 8px;
+    scrollbar-width: none;
+  }
+
+  .dock::-webkit-scrollbar { display: none; }
+  .dock-item { flex: 0 0 44px; }
+  .dock-label { display: none; }
+  .dock-auth-sep { margin: 0 2px; }
+
+  .dock-footer {
+    left: 12px;
+    right: 12px;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    transform: none;
+    max-width: calc(100vw - 24px);
+    line-height: 1.5;
+    white-space: normal;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-item,
+  .dock-label-enter-active,
+  .dock-label-leave-active { transition: none; }
 }
 </style>

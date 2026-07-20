@@ -10,6 +10,8 @@
   }
 
   html {
+    width: 100%;
+    min-height: 100%;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -17,11 +19,33 @@
 
   body {
     @apply font-sans;
+    width: 100%;
+    min-width: 0;
     color: #44403c; /* stone-700 */
     min-height: 100dvh;
     /* 暖调米白纸张底色 */
     background: #F9F9F8;
     background-attachment: fixed;
+    overflow-x: clip;
+  }
+
+  #app {
+    min-height: 100dvh;
+    width: 100%;
+    min-width: 0;
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgba(6, 182, 212, 0.7);
+    outline-offset: 2px;
   }
 
   /* 滚动条美化（暖调） */
@@ -338,11 +362,13 @@
 .prose-content hr  { border-top: 1px solid rgba(168, 162, 158, 0.15); @apply my-5; }
 .prose-content a   { @apply font-medium underline underline-offset-2; color: #0891b2; }
 .prose-content a:hover { color: #06b6d4; }
+.prose-content a { overflow-wrap: anywhere; }
 .prose-content strong { @apply font-semibold; color: #292524; }
 
 /* 表格样式（暖调纸质） */
 .prose-content table {
   @apply w-full mb-4 text-sm border-collapse;
+  min-width: 520px;
   border: 1px solid rgba(168, 162, 158, 0.20);
   border-radius: 12px;
   overflow: hidden;
@@ -412,4 +438,37 @@
   0% { transform: translateX(-100%); }
   50% { transform: translateX(0%); }
   100% { transform: translateX(100%); }
+}
+
+@media (max-width: 639px) {
+  body { background-attachment: scroll; }
+  input,
+  textarea,
+  select { font-size: 16px; }
+
+  .prose-content {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .prose-content pre { padding: 1rem; }
+  .glass-card { border-radius: 18px; }
+}
+
+@media (hover: none) {
+  .card-hover:hover,
+  .btn-primary:hover,
+  .btn-secondary:hover,
+  .btn-ghost:hover { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

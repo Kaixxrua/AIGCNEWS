@@ -316,7 +316,7 @@ const cancelSettings = () => { showSettings.value = false }
     <!-- 左侧历史会话列表 -->
     <aside
       v-if="showSidebar"
-      class="flex flex-col shrink-0 border-r overflow-hidden"
+      class="chat-sidebar flex flex-col shrink-0 border-r overflow-hidden"
       style="width: 220px; border-color: rgba(168,162,158,0.18); background: rgba(255,255,255,0.6)"
     >
       <!-- 侧边栏标题 + 新建按钮 -->
@@ -369,10 +369,10 @@ const cancelSettings = () => { showSettings.value = false }
     <section class="relative flex flex-col overflow-hidden flex-1">
 
       <!-- 标题栏 -->
-      <header class="stagger-enter flex items-center justify-between px-5 py-3.5 shrink-0"
+      <header class="stagger-enter chat-header flex flex-wrap items-center justify-between px-3 py-3.5 sm:px-5 shrink-0"
         style="border-bottom: 1px solid rgba(168,162,158,0.15)"
       >
-        <div class="flex items-center gap-3">
+        <div class="flex min-w-0 items-center gap-2 sm:gap-3">
           <!-- 侧边栏折叠按钮 -->
           <button
             class="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition"
@@ -390,8 +390,8 @@ const cancelSettings = () => { showSettings.value = false }
               <circle cx="12" cy="17" r=".5" fill="currentColor"/>
             </svg>
           </div>
-          <div>
-            <h2 class="text-sm font-semibold text-stone-800 font-serif">
+          <div class="min-w-0">
+            <h2 class="truncate text-sm font-semibold text-stone-800 font-serif">
               {{ store.activeConversation?.title || 'RAG 智能助手' }}
             </h2>
             <p class="text-2xs text-stone-400">
@@ -427,7 +427,7 @@ const cancelSettings = () => { showSettings.value = false }
       <Transition name="settings-panel">
         <div
           v-if="showSettings"
-          class="absolute left-1/2 top-[60px] z-30 w-80 -translate-x-1/2 glass-card p-5"
+          class="absolute left-1/2 top-[60px] z-30 w-80 max-w-[calc(100%_-_24px)] max-h-[calc(100dvh-140px)] -translate-x-1/2 overflow-y-auto glass-card p-5"
           style="box-shadow: 0 4px 20px rgba(0,0,0,0.06)"
         >
           <h3 class="mb-4 text-sm font-semibold text-stone-800 font-serif">对话设置</h3>
@@ -646,8 +646,8 @@ const cancelSettings = () => { showSettings.value = false }
             <span v-if="webSearchEnabled" class="web-search-dot" />
           </button>
         </div> -->
-        <div class="flex items-end gap-3">
-          <div class="relative flex-1">
+        <div class="flex flex-wrap items-end gap-2 sm:flex-nowrap sm:gap-3">
+          <div class="relative min-w-[calc(100%_-_104px)] flex-1 sm:min-w-0">
             <textarea
               v-model="inputText"
               rows="1"
@@ -715,6 +715,21 @@ const cancelSettings = () => { showSettings.value = false }
 </template>
 
 <style scoped>
+@media (max-width: 639px) {
+  .chat-sidebar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 45;
+    width: min(84vw, 300px) !important;
+    box-shadow: 12px 0 28px rgba(68,64,60,0.12);
+  }
+
+  .chat-header > div:last-child {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 .settings-panel-enter-active,
 .settings-panel-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;

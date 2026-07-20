@@ -101,6 +101,7 @@ const todayStr = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0
 const currentDate = ref<string>(todayStr)
 
 const availableDates = ref<string[]>([])
+let _availabilityController: AbortController | null = null
 
 const isViewingHistory = computed(() => currentDate.value !== todayStr)
 const isFinalized = ref(false)
@@ -118,10 +119,17 @@ const fetchDashboardData = async (tab: TabKey, period: PeriodKey, date?: string,
   isEmbargoed.value = summaryRes.data.is_embargoed ?? false
 }
 
-const fetchAvailableDates = async () => {
+const fetchAvailableDates = async (tab = activeTab.value, period = activePeriod.value) => {
+  _availabilityController?.abort()
+  const controller = new AbortController()
+  _availabilityController = controller
   try {
-    availableDates.value = await fetchSnapshotDates(90)
-  } catch (e) {
+    const dates = await fetchSnapshotDates(90, tab, period, controller.signal)
+    if (!controller.signal.aborted && tab === activeTab.value && period === activePeriod.value) {
+      availableDates.value = dates
+    }
+  } catch (e: any) {
+    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     console.warn('[Dashboard] 获取快照日期失败', e)
   }
 }
@@ -172,6 +180,7 @@ watch([activeTab, activePeriod], async ([tab, period]) => {
   tabList.value = []  // 切换时立即清空，避免旧数据残留
   const signal = _newAbortSignal()
   try {
+    await fetchAvailableDates(tab, period)
     await fetchDashboardData(tab, period, currentDate.value, signal)
     updateStatSources()
   } catch (e: any) {
@@ -390,9 +399,9 @@ const hasData = computed(() => {
     </div>
 
     <!-- 顶部区域：统计卡片 + 日历 -->
-    <div v-if="loading" class="flex items-start gap-2 shrink-0">
+    <div v-if="loading" class="flex flex-col gap-2 shrink-0 md:flex-row md:items-start">
       <div class="flex-1 flex flex-col gap-2">
-        <div class="grid gap-2 grid-cols-3">
+        <div class="grid gap-2 grid-cols-2 sm:grid-cols-3">
           <div v-for="i in 6" :key="i" class="glass-card h-[44px] animate-pulse" />
         </div>
         <div class="grid gap-2 grid-cols-2">
@@ -402,10 +411,10 @@ const hasData = computed(() => {
       <div class="w-[170px] shrink-0 glass-card h-[150px] animate-pulse" />
     </div>
 
-    <div v-else class="flex items-start gap-2 shrink-0">
+    <div v-else class="flex flex-col gap-2 shrink-0 md:flex-row md:items-start">
       <div class="flex-1 flex flex-col gap-2">
         <!-- 6 个数据源卡片 -->
-        <div class="grid gap-2 grid-cols-3">
+        <div class="grid gap-2 grid-cols-2 sm:grid-cols-3">
           <div
             v-for="(card, index) in statCards"
             :key="card.key"
@@ -455,7 +464,7 @@ const hasData = computed(() => {
       </div>
 
       <!-- 日历 -->
-      <div class="w-[170px] shrink-0">
+      <div class="w-full shrink-0 md:w-[170px]">
         <GlassCalendar
           v-model="currentDate"
           :available-dates="availableDates"
@@ -621,9 +630,9 @@ const hasData = computed(() => {
 
               <!-- 内容 -->
               <div class="min-w-0 flex-1">
-                <div class="flex items-start gap-2">
+                <div class="flex flex-wrap items-start gap-2">
                   <p
-                    class="flex-1 text-sm font-medium text-stone-700 leading-tight group-hover:text-stone-900 line-clamp-1"
+                    class="min-w-0 flex-1 text-sm font-medium text-stone-700 leading-tight group-hover:text-stone-900 line-clamp-2 sm:line-clamp-1"
                     :class="doc.url ? 'group-hover:underline underline-offset-2' : ''"
                   >
                     {{ doc.title || '(无标题)' }}

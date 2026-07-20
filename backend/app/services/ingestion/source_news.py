@@ -115,9 +115,20 @@ def _fetch_rss_articles(
         return []
 
     try:
-        feed = feedparser.parse(TECHMEME_RSS_URL)
+        import httpx
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+        }
+        with httpx.Client(timeout=20, follow_redirects=True, headers=headers) as client:
+            response = client.get(TECHMEME_RSS_URL)
+            response.raise_for_status()
+        feed = feedparser.parse(response.content)
     except Exception as exc:
-        logger.error("[News] 无法解析 Techmeme RSS: %s", exc)
+        logger.error("[News] 无法获取或解析 Techmeme RSS: %s", exc)
         return []
 
     total_entries = len(feed.entries)

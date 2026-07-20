@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "web-clone": {
+      "source": "Jane-xiaoer/claude-skill-web-clone",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "c8595b981f960a23740b334610f2b7d61a55a339d6d6e5cb3d272893d8030f7b"
+    }
+  }
+}

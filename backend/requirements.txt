@@ -11,7 +11,7 @@ sentence-transformers
 pymilvus
 neo4j
 apscheduler
-httpx
+httpx[socks]
 python-multipart
 pydantic-settings
 arxiv

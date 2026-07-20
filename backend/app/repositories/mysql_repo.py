@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Any, Dict, List, Optional, Set
@@ -29,6 +31,30 @@ logger = logging.getLogger(__name__)
 
 GITHUB_PROJECT_TODAY_LIMIT = 50
 
+SNAPSHOT_PERIOD_CHANNELS: Dict[str, Dict[str, tuple[str, ...]]] = {
+    "arxiv": {
+        "daily": ("huggingface_daily_html",),
+        "weekly": ("huggingface_weekly_html",),
+        "monthly": ("huggingface_monthly_html",),
+    },
+    "github": {
+        "daily": ("github_trending_daily", "github_hot_daily", "github_fallback"),
+        "weekly": ("github_trending_weekly", "github_hot_weekly"),
+        "monthly": ("github_trending_monthly", "github_hot_monthly"),
+    },
+    "news": {"daily": ("techmeme_daily_rss",)},
+    "producthunt": {
+        "daily": ("producthunt_daily_html",),
+        "weekly": ("producthunt_weekly_html",),
+        "monthly": ("producthunt_monthly_html",),
+    },
+    "hackernews": {
+        "daily": ("hn_daily_html",),
+        "weekly": ("hn_weekly_html",),
+        "monthly": ("hn_monthly_html",),
+    },
+}
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -50,6 +76,98 @@ def _today_local_date(tz_name: str | None = None) -> str:
 
 def _normalize_doc_lookup_key(value: Optional[str]) -> str:
     return (value or "").strip()
+
+
+_DOCUMENT_SEARCH_INTENT_PHRASES = (
+    "learning resources",
+    "learning materials",
+    "help me find",
+    "i would like to",
+    "related content",
+    "找一些",
+    "找一点",
+    "相关的内容",
+    "相关内容",
+    "学习资料",
+    "学习材料",
+    "进行学习",
+    "我想要",
+    "帮我找",
+    "i want to",
+    "find me",
+)
+_DOCUMENT_SEARCH_STOP_TERMS = {
+    "about",
+    "content",
+    "find",
+    "help",
+    "learn",
+    "learning",
+    "material",
+    "materials",
+    "related",
+    "resource",
+    "resources",
+    "tutorial",
+    "tutorials",
+    "want",
+    "学习",
+    "内容",
+    "帮我",
+    "教程",
+    "资料",
+}
+_DOCUMENT_SEARCH_TOKEN_RE = re.compile(
+    r"[A-Za-z0-9](?:[A-Za-z0-9_+#-]|\.(?=[A-Za-z0-9]))*|\.[A-Za-z][A-Za-z0-9]*|[㐀-䶿一-鿿]+"
+)
+
+
+def _normalize_document_search_query(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value or "").strip().split())
+
+
+def _document_search_candidates(query: str, *, max_terms: int = 5) -> List[str]:
+    normalized = _normalize_document_search_query(query)
+    if not normalized:
+        return []
+
+    lowered = normalized.casefold()
+    has_intent = any(phrase in lowered for phrase in _DOCUMENT_SEARCH_INTENT_PHRASES)
+    if not has_intent and len(normalized) <= 48:
+        return [normalized]
+
+    cleaned = normalized
+    for phrase in sorted(_DOCUMENT_SEARCH_INTENT_PHRASES, key=len, reverse=True):
+        cleaned = re.sub(re.escape(phrase), " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"(^|[\s,，。！？!?;:：；])(?:学习|帮我)(?=[A-Za-z0-9])", r"\1", cleaned)
+    cleaned = " ".join(cleaned.strip(" ，。！？,.!?;:：；").split())
+
+    candidates = [normalized]
+    residual_intent = any(term in cleaned.casefold() for term in _DOCUMENT_SEARCH_STOP_TERMS)
+    if cleaned and not residual_intent and cleaned.casefold() != normalized.casefold():
+        candidates.append(cleaned)
+
+    seen = {candidate.casefold() for candidate in candidates}
+    technical_terms: List[str] = []
+    for token in _DOCUMENT_SEARCH_TOKEN_RE.findall(cleaned or normalized):
+        key = token.casefold()
+        if key in _DOCUMENT_SEARCH_STOP_TERMS or key in seen:
+            continue
+        if len(token) == 1 and not token.isdigit():
+            continue
+        seen.add(key)
+        technical_terms.append(token)
+        if len(technical_terms) >= max(1, min(max_terms, 5)):
+            break
+
+    if len(technical_terms) > 1 and any(term.casefold() != "ai" for term in technical_terms):
+        technical_terms = [term for term in technical_terms if term.casefold() != "ai"]
+    candidates.extend(technical_terms)
+    return candidates
+
+
+def _escape_like_literal(value: str, *, escape: str = "=") -> str:
+    return value.replace(escape, escape * 2).replace("%", f"{escape}%").replace("_", f"{escape}_")
 
 
 def _json_dumps(value: Any) -> str:
@@ -117,7 +235,11 @@ def _to_iso_string(value: Any) -> Optional[str]:
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
-        return value.isoformat()
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.isoformat().replace("+00:00", "Z")
     return str(value)
 
 
@@ -464,6 +586,7 @@ class MySQLRepository:
                 stars INT DEFAULT 0,
                 forks INT DEFAULT 0,
                 watchers INT DEFAULT 0,
+                community_metrics_complete TINYINT(1) NULL DEFAULT NULL,
                 open_issues INT DEFAULT 0,
                 repo_created_at VARCHAR(64),
                 repo_pushed_at VARCHAR(64),
@@ -493,7 +616,7 @@ class MySQLRepository:
                 maintenance_activity_score DOUBLE DEFAULT 0.0,
                 community_engagement_score DOUBLE DEFAULT 0.0,
                 hot_score DOUBLE DEFAULT 0.0,
-                score_version VARCHAR(32) NOT NULL DEFAULT 'daily_hot_v3',
+                score_version VARCHAR(32) NOT NULL DEFAULT 'daily_hot_v4',
                 updated_at VARCHAR(64),
                 PRIMARY KEY (repo_id, metric_date),
                 INDEX idx_gh_daily_metrics_date_hot (metric_date, hot_score),
@@ -767,6 +890,26 @@ class MySQLRepository:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
             """
+            CREATE TABLE IF NOT EXISTS user_mcp_tokens (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                token_hash CHAR(64) NOT NULL,
+                token_hint VARCHAR(32) NOT NULL,
+                scopes_json TEXT NOT NULL,
+                client_type VARCHAR(32) NOT NULL,
+                client_label VARCHAR(128) NOT NULL DEFAULT '',
+                expires_at DATETIME NULL,
+                revoked_at DATETIME NULL,
+                deleted_at DATETIME NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_used_at DATETIME NULL,
+                UNIQUE KEY uq_user_mcp_tokens_hash (token_hash),
+                INDEX idx_user_mcp_tokens_user_created (user_id, created_at DESC),
+                INDEX idx_user_mcp_tokens_active (user_id, revoked_at, deleted_at, expires_at),
+                CONSTRAINT fk_user_mcp_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            """
             CREATE TABLE IF NOT EXISTS briefing_subscriptions (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL,
@@ -896,6 +1039,14 @@ class MySQLRepository:
                     "ALTER TABLE mcp_server_configs ADD COLUMN last_tools_json TEXT AFTER last_test_at",
                     "ALTER TABLE mcp_server_configs ADD INDEX idx_mcp_server_configs_enabled (enabled, updated_at)",
                     "ALTER TABLE mcp_server_configs ADD INDEX idx_mcp_server_configs_status (last_test_status, last_test_at)",
+                    "ALTER TABLE user_mcp_tokens CHANGE COLUMN token_prefix token_hint VARCHAR(32) NOT NULL",
+                    "ALTER TABLE user_mcp_tokens CHANGE COLUMN name client_label VARCHAR(128) NOT NULL DEFAULT ''",
+                    "ALTER TABLE user_mcp_tokens ADD COLUMN scopes_json TEXT NOT NULL AFTER token_hint",
+                    "ALTER TABLE user_mcp_tokens ADD COLUMN client_type VARCHAR(32) NOT NULL DEFAULT 'other' AFTER scopes_json",
+                    "ALTER TABLE user_mcp_tokens ADD COLUMN expires_at DATETIME NULL AFTER client_label",
+                    "ALTER TABLE user_mcp_tokens ADD COLUMN revoked_at DATETIME NULL AFTER expires_at",
+                    "ALTER TABLE user_mcp_tokens ADD COLUMN deleted_at DATETIME NULL AFTER revoked_at",
+                    "ALTER TABLE user_mcp_tokens ADD INDEX idx_user_mcp_tokens_active (user_id, revoked_at, deleted_at, expires_at)",
                     # Phase 4: 认证鉴权改造 — users 表邮箱字段迁移
                     "ALTER TABLE users MODIFY phone VARCHAR(20) NULL",
                     "ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL UNIQUE AFTER phone",
@@ -907,11 +1058,12 @@ class MySQLRepository:
                     "ALTER TABLE github_repo_candidates ADD INDEX idx_gh_candidates_first_seen (first_seen_at, stars)",
                     "ALTER TABLE github_repo_candidates ADD INDEX idx_gh_candidates_language (language, stars)",
                     "ALTER TABLE github_repo_snapshots ADD INDEX idx_gh_snapshots_date_repo (snapshot_date, repo_id)",
+                    "ALTER TABLE github_repo_snapshots ADD COLUMN community_metrics_complete TINYINT(1) NULL DEFAULT NULL AFTER watchers",
                     "ALTER TABLE github_repo_daily_metrics ADD COLUMN daily_fork_growth INT DEFAULT 0 AFTER daily_star_growth",
                     "ALTER TABLE github_repo_daily_metrics ADD COLUMN daily_watcher_growth INT DEFAULT 0 AFTER daily_fork_growth",
                     "ALTER TABLE github_repo_daily_metrics ADD COLUMN daily_growth_source VARCHAR(32) NOT NULL DEFAULT 'unavailable' AFTER daily_growth_available",
                     "ALTER TABLE github_repo_daily_metrics ADD COLUMN daily_growth_observed_at VARCHAR(64) NULL AFTER daily_growth_source",
-                    "ALTER TABLE github_repo_daily_metrics MODIFY score_version VARCHAR(32) NOT NULL DEFAULT 'daily_hot_v3'",
+                    "ALTER TABLE github_repo_daily_metrics MODIFY score_version VARCHAR(32) NOT NULL DEFAULT 'daily_hot_v4'",
                     "ALTER TABLE github_trending_hits ADD COLUMN period_star_growth INT NULL AFTER captured_at",
                     "ALTER TABLE github_trending_hits ADD COLUMN period_growth_observed_at VARCHAR(64) NULL AFTER period_star_growth",
                     "ALTER TABLE github_repo_daily_metrics ADD INDEX idx_gh_daily_metrics_date_hot (metric_date, hot_score)",
@@ -935,13 +1087,21 @@ class MySQLRepository:
                         cur.execute(stmt)
                     except pymysql.err.OperationalError as exc:
                         code = exc.args[0] if exc.args else None
-                        if code in {1060, 1061, 1068, 1091}:
+                        legacy_token_rename = stmt in {
+                            "ALTER TABLE user_mcp_tokens CHANGE COLUMN token_prefix token_hint VARCHAR(32) NOT NULL",
+                            "ALTER TABLE user_mcp_tokens CHANGE COLUMN name client_label VARCHAR(128) NOT NULL DEFAULT ''",
+                        }
+                        if code in {1060, 1061, 1068, 1091} or (code == 1054 and legacy_token_rename):
                             continue
                         logger.exception("[MySQLRepository] schema migration failed: %s", stmt)
                         raise
                     except pymysql.err.InternalError as exc:
                         code = exc.args[0] if exc.args else None
-                        if code in {1060, 1061, 1068, 1091}:
+                        legacy_token_rename = stmt in {
+                            "ALTER TABLE user_mcp_tokens CHANGE COLUMN token_prefix token_hint VARCHAR(32) NOT NULL",
+                            "ALTER TABLE user_mcp_tokens CHANGE COLUMN name client_label VARCHAR(128) NOT NULL DEFAULT ''",
+                        }
+                        if code in {1060, 1061, 1068, 1091} or (code == 1054 and legacy_token_rename):
                             continue
                         logger.exception("[MySQLRepository] schema migration failed: %s", stmt)
                         raise
@@ -955,6 +1115,17 @@ class MySQLRepository:
                           DATE_SUB(STR_TO_DATE(metric_date, '%Y-%m-%d'), INTERVAL 1 DAY),
                           '%Y-%m-%d'
                       )
+                    """
+                )
+                # Legacy rows may predate scopes_json or contain its old empty default.
+                # Backfill only missing/empty scopes so reruns are safe and explicit scopes survive.
+                cur.execute(
+                    """
+                    UPDATE user_mcp_tokens
+                    SET scopes_json = '["projects:favorites:read"]'
+                    WHERE scopes_json IS NULL
+                       OR TRIM(scopes_json) = ''
+                       OR TRIM(scopes_json) = '[]'
                     """
                 )
             conn.commit()
@@ -1022,6 +1193,57 @@ class MySQLRepository:
             with conn.cursor() as cur:
                 cur.execute(sql, (local_pdf_path, doc_id))
             conn.commit()
+        finally:
+            conn.close()
+
+    def search_documents(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+        candidates = _document_search_candidates(query)
+        if not candidates:
+            return []
+        limit = max(1, min(int(limit), 100))
+        patterns = [f"%{_escape_like_literal(candidate)}%" for candidate in candidates]
+
+        field_match = (
+            "(COALESCE(title, '') LIKE %s ESCAPE '=' "
+            "OR COALESCE(summary, '') LIKE %s ESCAPE '=' "
+            "OR COALESCE(tags, '') LIKE %s ESCAPE '=')"
+        )
+        where_sql = " OR ".join([field_match] * len(patterns))
+        where_params = [pattern for pattern in patterns for _ in range(3)]
+
+        tier_clauses: List[str] = []
+        tier_params: List[Any] = []
+        for index, pattern in enumerate(patterns):
+            tier_clauses.append(f"WHEN COALESCE(title, '') LIKE %s ESCAPE '=' THEN {index * 2}")
+            tier_params.append(pattern)
+            tier_clauses.append(
+                f"WHEN (COALESCE(summary, '') LIKE %s ESCAPE '=' "
+                f"OR COALESCE(tags, '') LIKE %s ESCAPE '=') THEN {index * 2 + 1}"
+            )
+            tier_params.extend([pattern, pattern])
+
+        count_clauses = [f"CASE WHEN {field_match} THEN 1 ELSE 0 END" for _ in patterns]
+        count_params = [pattern for pattern in patterns for _ in range(3)]
+        sql = f"""
+            SELECT id, source, source_channel, title, url, summary,
+                   published_date, tags, score, raw_score, rank_in_period,
+                   local_pdf_path, created_at
+            FROM documents
+            WHERE {where_sql}
+            ORDER BY
+                CASE {' '.join(tier_clauses)} ELSE {len(patterns) * 2} END ASC,
+                ({' + '.join(count_clauses)}) DESC,
+                COALESCE(raw_score, score, 0) DESC,
+                created_at DESC,
+                id ASC
+            LIMIT %s
+        """
+        params = tuple(where_params + tier_params + count_params + [limit])
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                return [dict(row) for row in cur.fetchall()]
         finally:
             conn.close()
 
@@ -1432,17 +1654,48 @@ class MySQLRepository:
         finally:
             conn.close()
 
-    def get_snapshot_dates(self, limit: int = 60) -> List[str]:
-        sql = """
-            SELECT DISTINCT snapshot_date
-            FROM document_rank_snapshots
-            ORDER BY snapshot_date DESC
+    def get_snapshot_dates(
+        self,
+        limit: int = 60,
+        source: Optional[str] = None,
+        period: Optional[str] = None,
+    ) -> List[str]:
+        conditions: List[str] = []
+        params: List[Any] = []
+
+        if source:
+            conditions.append("d.source = %s")
+            params.append(source)
+
+        if period:
+            if source:
+                channels = SNAPSHOT_PERIOD_CHANNELS.get(source, {}).get(period, ())
+            else:
+                channels = tuple(
+                    channel
+                    for period_map in SNAPSHOT_PERIOD_CHANNELS.values()
+                    for channel in period_map.get(period, ())
+                )
+            if not channels:
+                return []
+            placeholders = ", ".join(["%s"] * len(channels))
+            conditions.append(f"s.source_channel IN ({placeholders})")
+            params.extend(channels)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        sql = f"""
+            SELECT DISTINCT s.snapshot_date
+            FROM document_rank_snapshots s
+            JOIN documents d ON s.doc_id = d.id
+            {where_clause}
+            ORDER BY s.snapshot_date DESC
             LIMIT %s
         """
+        params.append(limit)
         conn = self._connect()
         try:
             with conn.cursor() as cur:
-                cur.execute(sql, (limit,))
+                cur.execute(sql, tuple(params))
                 rows = cur.fetchall()
             conn.commit()
             return [row["snapshot_date"] for row in rows]
@@ -1640,16 +1893,45 @@ class MySQLRepository:
         sql = """
             INSERT INTO github_repo_snapshots (
                 repo_id, snapshot_date, captured_at, stars, forks, watchers,
-                open_issues, repo_created_at, repo_pushed_at
+                community_metrics_complete, open_issues, repo_created_at, repo_pushed_at
             ) VALUES (
                 %(repo_id)s, %(snapshot_date)s, %(captured_at)s, %(stars)s, %(forks)s, %(watchers)s,
-                %(open_issues)s, %(repo_created_at)s, %(repo_pushed_at)s
+                %(community_metrics_complete)s, %(open_issues)s, %(repo_created_at)s, %(repo_pushed_at)s
             )
             ON DUPLICATE KEY UPDATE
                 captured_at=GREATEST(COALESCE(captured_at, ''), COALESCE(VALUES(captured_at), '')),
                 stars=GREATEST(COALESCE(stars, 0), COALESCE(VALUES(stars), 0)),
-                forks=GREATEST(COALESCE(forks, 0), COALESCE(VALUES(forks), 0)),
-                watchers=GREATEST(COALESCE(watchers, 0), COALESCE(VALUES(watchers), 0)),
+                forks=CASE
+                    WHEN VALUES(community_metrics_complete) = 1
+                     AND COALESCE(community_metrics_complete, 0) <> 1
+                    THEN VALUES(forks)
+                    WHEN VALUES(community_metrics_complete) = 1
+                     AND community_metrics_complete = 1
+                    THEN GREATEST(COALESCE(forks, 0), COALESCE(VALUES(forks), 0))
+                    WHEN community_metrics_complete = 1
+                    THEN forks
+                    ELSE GREATEST(COALESCE(forks, 0), COALESCE(VALUES(forks), 0))
+                END,
+                watchers=CASE
+                    WHEN VALUES(community_metrics_complete) = 1
+                     AND COALESCE(community_metrics_complete, 0) <> 1
+                    THEN VALUES(watchers)
+                    WHEN VALUES(community_metrics_complete) = 1
+                     AND community_metrics_complete = 1
+                    THEN GREATEST(COALESCE(watchers, 0), COALESCE(VALUES(watchers), 0))
+                    WHEN community_metrics_complete = 1
+                    THEN watchers
+                    ELSE GREATEST(COALESCE(watchers, 0), COALESCE(VALUES(watchers), 0))
+                END,
+                community_metrics_complete=CASE
+                    WHEN community_metrics_complete = 1
+                      OR VALUES(community_metrics_complete) = 1
+                    THEN 1
+                    WHEN community_metrics_complete = 0
+                      OR VALUES(community_metrics_complete) = 0
+                    THEN 0
+                    ELSE NULL
+                END,
                 open_issues=GREATEST(COALESCE(open_issues, 0), COALESCE(VALUES(open_issues), 0)),
                 repo_created_at=COALESCE(NULLIF(repo_created_at, ''), VALUES(repo_created_at)),
                 repo_pushed_at=GREATEST(COALESCE(repo_pushed_at, ''), COALESCE(VALUES(repo_pushed_at), ''))
@@ -1659,6 +1941,10 @@ class MySQLRepository:
         payload.setdefault("stars", 0)
         payload.setdefault("forks", 0)
         payload.setdefault("watchers", 0)
+        completeness = payload.get("community_metrics_complete")
+        payload["community_metrics_complete"] = (
+            None if completeness is None else (1 if completeness else 0)
+        )
         payload.setdefault("open_issues", 0)
         payload.setdefault("repo_created_at", "")
         payload.setdefault("repo_pushed_at", "")
@@ -1942,6 +2228,63 @@ class MySQLRepository:
         finally:
             conn.close()
 
+    def get_github_metric_refresh_status(
+        self,
+        *,
+        metric_date: str,
+        min_stars: int = 500,
+        limit: int = 0,
+    ) -> Dict[str, Any]:
+        """Return current-day snapshot/metric coverage for eligible projects."""
+        targets = self.list_github_project_metric_targets(
+            min_stars=min_stars,
+            limit=limit,
+        )
+        repo_ids = [
+            str(item.get("repo_id") or "").strip()
+            for item in targets
+            if str(item.get("repo_id") or "").strip()
+        ]
+        if not repo_ids:
+            return {
+                "metric_date": metric_date,
+                "target_count": 0,
+                "snapshot_count": 0,
+                "metric_count": 0,
+                "oldest_captured_at": None,
+            }
+
+        placeholders = ", ".join(["%s"] * len(repo_ids))
+        sql = f"""
+            SELECT
+                COUNT(DISTINCT s.repo_id) AS snapshot_count,
+                COUNT(DISTINCT m.repo_id) AS metric_count,
+                MIN(s.captured_at) AS oldest_captured_at
+            FROM github_repo_candidates c
+            LEFT JOIN github_repo_snapshots s
+              ON s.repo_id = c.repo_id
+             AND s.snapshot_date = %s
+            LEFT JOIN github_repo_daily_metrics m
+              ON m.repo_id = c.repo_id
+             AND m.metric_date = %s
+            WHERE c.repo_id IN ({placeholders})
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple([metric_date, metric_date] + repo_ids))
+                row = cur.fetchone() or {}
+            conn.commit()
+            return {
+                "metric_date": metric_date,
+                "target_count": len(repo_ids),
+                "snapshot_count": int(row.get("snapshot_count") or 0),
+                "metric_count": int(row.get("metric_count") or 0),
+                "oldest_captured_at": row.get("oldest_captured_at"),
+            }
+        finally:
+            conn.close()
+
     def get_github_daily_metric_inputs(
         self,
         *,
@@ -1966,6 +2309,7 @@ class MySQLRepository:
                 COALESCE(s.stars, 0) AS stars,
                 COALESCE(s.forks, 0) AS forks,
                 COALESCE(s.watchers, 0) AS watchers,
+                s.community_metrics_complete AS community_metrics_complete,
                 COALESCE(s.open_issues, 0) AS open_issues,
                 s.repo_created_at,
                 COALESCE(NULLIF(s.repo_pushed_at, ''), NULLIF(c.pushed_at, '')) AS repo_pushed_at,
@@ -1973,6 +2317,7 @@ class MySQLRepository:
                 COALESCE(prev.stars, 0) AS previous_stars,
                 COALESCE(prev.forks, 0) AS previous_forks,
                 COALESCE(prev.watchers, 0) AS previous_watchers,
+                prev.community_metrics_complete AS previous_community_metrics_complete,
                 daily_hit.period_star_growth AS trending_daily_star_growth,
                 daily_hit.period_growth_observed_at AS trending_daily_observed_at,
                 COALESCE((
@@ -1981,7 +2326,7 @@ class MySQLRepository:
                     WHERE m.repo_id = s.repo_id
                       AND m.metric_date >= %s
                       AND m.metric_date < %s
-                      AND m.daily_growth_source = 'snapshot_delta'
+                      AND m.daily_growth_source IN ('snapshot_delta', 'github_trending_daily')
                 ), 0.0) AS baseline_7d,
                 (
                     SELECT COUNT(*)
@@ -1989,7 +2334,7 @@ class MySQLRepository:
                     WHERE m.repo_id = s.repo_id
                       AND m.metric_date >= %s
                       AND m.metric_date < %s
-                      AND m.daily_growth_source = 'snapshot_delta'
+                      AND m.daily_growth_source IN ('snapshot_delta', 'github_trending_daily')
                 ) AS baseline_sample_count
             FROM github_repo_snapshots s
             LEFT JOIN github_repo_snapshots prev
@@ -2125,7 +2470,7 @@ class MySQLRepository:
             payload.setdefault("maintenance_activity_score", 0.0)
             payload.setdefault("community_engagement_score", 0.0)
             payload.setdefault("hot_score", 0.0)
-            payload.setdefault("score_version", "daily_hot_v3")
+            payload.setdefault("score_version", "daily_hot_v4")
             payload.setdefault("updated_at", _utcnow())
             normalized.append(payload)
         conn = self._connect()
@@ -2220,10 +2565,10 @@ class MySQLRepository:
                 c.first_seen_at,
                 c.last_seen_at,
                 c.last_snapshot_at,
-                COALESCE(c.stars, 0) AS stars,
-                COALESCE(c.forks, 0) AS forks,
-                COALESCE(c.watchers, 0) AS watchers,
-                0 AS open_issues,
+                CASE WHEN gm.repo_id IS NOT NULL THEN gm.stars ELSE COALESCE(c.stars, 0) END AS stars,
+                CASE WHEN gm.repo_id IS NOT NULL THEN gm.forks ELSE COALESCE(c.forks, 0) END AS forks,
+                CASE WHEN gm.repo_id IS NOT NULL THEN gm.watchers ELSE COALESCE(c.watchers, 0) END AS watchers,
+                CASE WHEN gm.repo_id IS NOT NULL THEN gm.open_issues ELSE 0 END AS open_issues,
                 gm.metric_date AS snapshot_date,
                 c.last_snapshot_at AS captured_at,
                 gm.metric_date AS daily_growth_date,
@@ -3098,7 +3443,7 @@ class MySQLRepository:
                   {today_top_status}
                 ORDER BY gm_top.hot_score DESC,
                          gm_top.daily_star_growth DESC,
-                         c_top.stars DESC,
+                         gm_top.stars DESC,
                          c_top.full_name ASC
                 LIMIT {GITHUB_PROJECT_TODAY_LIMIT}
             ) today_top ON today_top.repo_id = c.repo_id
@@ -3235,10 +3580,10 @@ class MySQLRepository:
                 ge.tags_json,
                 c.language,
                 c.topics_json,
-                COALESCE(c.stars, 0) AS stars,
-                COALESCE(c.forks, 0) AS forks,
-                COALESCE(c.watchers, 0) AS watchers,
-                0 AS open_issues,
+                CASE WHEN gm.repo_id IS NOT NULL THEN gm.stars ELSE COALESCE(c.stars, 0) END AS stars,
+                CASE WHEN gm.repo_id IS NOT NULL THEN gm.forks ELSE COALESCE(c.forks, 0) END AS forks,
+                CASE WHEN gm.repo_id IS NOT NULL THEN gm.watchers ELSE COALESCE(c.watchers, 0) END AS watchers,
+                CASE WHEN gm.repo_id IS NOT NULL THEN gm.open_issues ELSE 0 END AS open_issues,
                 c.created_at,
                 c.pushed_at,
                 c.first_seen_at,
@@ -3469,7 +3814,7 @@ class MySQLRepository:
                       {status_github.replace('ge.', 'ge_top.')}
                     ORDER BY gm_top.hot_score DESC,
                              gm_top.daily_star_growth DESC,
-                             c_top.stars DESC,
+                             gm_top.stars DESC,
                              c_top.full_name ASC
                     LIMIT {GITHUB_PROJECT_TODAY_LIMIT}
                 ) today_top
@@ -4475,6 +4820,148 @@ class MySQLRepository:
                 rows = cur.fetchall()
             conn.commit()
             return list(rows)
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Inbound MCP access tokens
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _mcp_token_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
+        item = dict(row)
+        try:
+            item["scopes"] = json.loads(item.pop("scopes_json", "[]") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            item["scopes"] = []
+        for field in ("expires_at", "revoked_at", "deleted_at", "created_at", "last_used_at"):
+            item[field] = _to_iso_string(item.get(field))
+        return item
+
+    def create_user_mcp_token(
+        self,
+        *,
+        user_id: int,
+        token_hash: str,
+        token_hint: str,
+        scopes: List[str],
+        client_type: str,
+        client_label: str = "",
+        expires_at: Any = None,
+        multi_open: bool = False,
+    ) -> Dict[str, Any]:
+        """Atomically create a token and revoke, rather than erase, replaced active tokens."""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (int(user_id),))
+                if not cur.fetchone():
+                    raise ValueError("user does not exist")
+                replaced_count = 0
+                if not multi_open:
+                    cur.execute(
+                        """
+                        UPDATE user_mcp_tokens
+                        SET revoked_at = UTC_TIMESTAMP()
+                        WHERE user_id = %s AND revoked_at IS NULL AND deleted_at IS NULL
+                          AND (expires_at IS NULL OR expires_at > UTC_TIMESTAMP())
+                        """,
+                        (int(user_id),),
+                    )
+                    replaced_count = int(cur.rowcount)
+                cur.execute(
+                    """
+                    INSERT INTO user_mcp_tokens
+                        (user_id, token_hash, token_hint, scopes_json, client_type, client_label, expires_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        int(user_id), token_hash, token_hint,
+                        json.dumps(scopes, ensure_ascii=False, separators=(",", ":")),
+                        client_type, client_label, expires_at,
+                    ),
+                )
+                token_id = int(cur.lastrowid)
+                cur.execute(
+                    """
+                    SELECT id, user_id, token_hint, scopes_json, client_type, client_label,
+                           expires_at, revoked_at, deleted_at, created_at, last_used_at
+                    FROM user_mcp_tokens WHERE id = %s AND user_id = %s
+                    """,
+                    (token_id, int(user_id)),
+                )
+                row = cur.fetchone() or {}
+            conn.commit()
+            return {"token_metadata": self._mcp_token_metadata(row), "replaced_count": replaced_count}
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def list_user_mcp_tokens(self, *, user_id: int) -> List[Dict[str, Any]]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, user_id, token_hint, scopes_json, client_type, client_label,
+                           expires_at, revoked_at, deleted_at, created_at, last_used_at
+                    FROM user_mcp_tokens
+                    WHERE user_id = %s AND deleted_at IS NULL
+                    ORDER BY created_at DESC, id DESC
+                    """,
+                    (int(user_id),),
+                )
+                rows = cur.fetchall()
+            return [self._mcp_token_metadata(dict(row)) for row in rows]
+        finally:
+            conn.close()
+
+    def get_user_by_mcp_token_hash(self, token_hash: str) -> Optional[Dict[str, Any]]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT t.id AS token_id, t.user_id, t.scopes_json, t.expires_at,
+                           t.revoked_at, t.deleted_at, u.email, u.role
+                    FROM user_mcp_tokens t JOIN users u ON u.id = t.user_id
+                    WHERE t.token_hash = %s AND t.revoked_at IS NULL AND t.deleted_at IS NULL
+                      AND (t.expires_at IS NULL OR t.expires_at > UTC_TIMESTAMP())
+                    LIMIT 1
+                    """,
+                    (token_hash,),
+                )
+                row = cur.fetchone()
+                if row:
+                    cur.execute(
+                        """
+                        UPDATE user_mcp_tokens SET last_used_at = UTC_TIMESTAMP()
+                        WHERE id = %s AND (last_used_at IS NULL OR last_used_at < UTC_TIMESTAMP() - INTERVAL 5 MINUTE)
+                        """,
+                        (row["token_id"],),
+                    )
+            conn.commit()
+            return self._mcp_token_metadata(dict(row)) if row else None
+        finally:
+            conn.close()
+
+    def delete_user_mcp_token(self, *, user_id: int, token_id: int) -> bool:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE user_mcp_tokens
+                    SET revoked_at = COALESCE(revoked_at, UTC_TIMESTAMP()), deleted_at = UTC_TIMESTAMP()
+                    WHERE id = %s AND user_id = %s AND deleted_at IS NULL
+                    """,
+                    (int(token_id), int(user_id)),
+                )
+                deleted = cur.rowcount > 0
+            conn.commit()
+            return deleted
         finally:
             conn.close()
 

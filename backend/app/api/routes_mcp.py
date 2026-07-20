@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -10,7 +11,7 @@ from json import JSONDecodeError
 from typing import Any, Awaitable, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
 from backend.app.api.routes_dashboard import (
@@ -22,8 +23,10 @@ from backend.app.api.routes_dashboard import (
     _score_categories,
 )
 from backend.app.api.routes_papers import _enrich_pdf_url, _safe_doc
+from backend.app.core.auth import OptionalMcpUser
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
+from backend.app.services.project_discovery import search_projects
 
 logger = logging.getLogger(__name__)
 
@@ -147,15 +150,25 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_papers",
         "description": (
-            "Search public AIGC_NEWS research papers, scholarly articles, AI news, and other indexed documents by keyword. "
-            "Call this for paper, literature, article, or indexed-news searches. Do NOT call it for GitHub repositories, "
-            "open-source software, desktop applications, or project recommendations; use search_github_projects or "
-            "search_github_ai_projects instead."
+            "Search public AIGC_NEWS papers and indexed documents for explicitly scholarly or publication-centered requests: "
+            "papers, literature, surveys or systematic reviews, citations, authors or venues, benchmarks or evaluations, "
+            "methods or theory, experiments, and research results. Agent/MCP is only a topic, not an academic-intent signal. "
+            "For generic Agent/MCP learning, tutorials, examples, implementations, SDKs, servers/clients, workflows, tool "
+            "calling, demos, templates, or unspecified 资料, call search_github_ai_projects first. For an academic search, "
+            "rewrite natural-language intent into a concise query of 1-3 established technical terms rather than the full user "
+            "sentence; use at most three focused paper searches for distinct scholarly concepts. For mixed requests, choose one "
+            "initial tool based on the dominant deliverable: implementations/tutorials use GitHub AI first, while papers/citations/"
+            "experimental results use this tool first. Do not batch both primary searches or native WebSearch/WebFetch in the "
+            "initial tool message. Inspect MCP results first; use a host web tool only if an MCP call fails, returns no relevant "
+            "items, or lacks a specific fact, then search only for that missing detail."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "q": {"type": "string", "description": "Search keyword, 1-200 characters."},
+                "q": {
+                    "type": "string",
+                    "description": "Concise semantic query using 1-3 established technical terms, not the full user sentence; e.g. AI Agent, LLM Agent, or Model Context Protocol.",
+                },
                 "limit": {"type": "integer", "description": "Maximum results, 1-20.", "default": 10},
             },
             "required": ["q"],
@@ -208,13 +221,18 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_github_projects",
         "description": (
-            "Search public GitHub repositories and open-source software in any domain, including non-AI Windows, macOS, "
-            "Linux, desktop, screenshot, screen-capture, productivity, and developer tools. Call this FIRST when the user "
-            "asks to find, recommend, compare, or identify GitHub/open-source software; use it before generic web search, "
-            "shell/curl GitHub calls, or fetching repository pages. This includes requests for a Windows screenshot app like "
-            "macOS iShot that can export configurable rounded-corner images. Translate non-English intent into a concise "
-            "GitHub query while preserving product names and requested features. Inspect specific returned repositories only "
-            "when their metadata is insufficient to verify a requested feature."
+            "Search public GitHub repositories and open-source software only; this never searches the authenticated user's favorites. "
+            "It covers any domain, including non-AI Windows, macOS, "
+            "Linux, desktop, screenshot, screen-capture, productivity, and developer tools. Use it when the user explicitly asks "
+            "to find/recommend open-source software, or when planning a complete product, independent subsystem, mature infrastructure "
+            "capability, or architecture-level comparison. Do not call it for typo fixes, styling, renames, clear bugs, or isolated "
+            "function/component changes. When search is warranted, use it before generic web search, shell/curl GitHub calls, or "
+            "fetching repository pages. Do not batch it with native WebSearch/WebFetch/Bash: inspect the MCP result first. Use "
+            "a host tool only if this call fails, returns no usable items, or lacks a specific fact required by the question, and "
+            "then query only that missing detail. This includes requests for a Windows screenshot app like macOS iShot that can "
+            "export configurable rounded-corner images. Translate non-English intent into a concise GitHub query while preserving "
+            "product names and requested features. Inspect specific returned repositories only when their metadata is insufficient "
+            "to verify a requested feature."
         ),
         "inputSchema": {
             "type": "object",
@@ -234,9 +252,18 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_github_ai_projects",
         "description": (
-            "Recommended local-first search for GitHub AI projects in the curated/enriched AIGC_NEWS public project library. "
-            "Call this BEFORE direct GitHub or web search for open-source AI tools, RAG, LLM, local AI deployment, Web UI AI apps, "
-            "Python AI repos, Agent/MCP/workflow automation, language filters, categories, station recommendations, or star rankings. "
+            "Recommended local-first search for public GitHub AI projects in the curated/enriched AIGC_NEWS library; it explicitly excludes the authenticated user's favorites. "
+            "Use this as the default first search for Agent/MCP topics, including generic learning resources or 资料, tutorials, "
+            "examples, implementations, SDKs, servers/clients, workflows, tool calling, demos, templates, and general exploration, "
+            "even when the user does not explicitly say GitHub or open source. Also use it when the user requests open-source AI "
+            "candidates or plans a complete RAG/LLM/Agent/MCP product, independent subsystem, local AI deployment, workflow automation, "
+            "or architecture-level comparison. Use search_papers first only when the dominant requested output is explicitly scholarly: "
+            "papers, literature, surveys, citations, benchmarks/evaluations, methods/theory, experiments, or research results. For mixed "
+            "requests choose one initial tool by the dominant deliverable; do not batch GitHub AI and paper search together. Do not batch "
+            "it with native WebSearch/WebFetch/Bash: inspect the MCP result first. Use a host tool only if this call fails, returns "
+            "no usable items, or lacks a specific fact required by the question, and then query only that "
+            "missing detail. Do not call it for narrow edits, styling, renames, clear bugs, or isolated function/component changes "
+            "merely because AI terms appear. It supports language filters, categories, station recommendations, and star rankings. "
             "For non-AI GitHub or open-source software, call search_github_projects instead. Use returned AIGC_NEWS fields such as "
             "description_zh, tags, categories, language, stars, daily_star_growth, hot_score, and URL before inspecting repositories. "
             "If local results are zero, this tool may perform a bounded read-only AI-focused GitHub Search fallback labeled github_api_fallback."
@@ -293,6 +320,28 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+]
+
+_PRIVATE_MCP_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "search_my_project_favorites",
+        "description": "Search the authenticated user's private GitHub project favorites. Call this only for the user's own saved or favorited projects.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "q": {"type": "string", "description": "Optional search keyword, max 120 chars."},
+                "category": {"type": "string", "description": "Optional category slug, max 64 chars."},
+                "subcategory": {"type": "string", "description": "Optional subcategory slug, max 64 chars."},
+                "language": {"type": "string", "description": "Optional programming language, max 64 chars."},
+                "tag": {"type": "string", "description": "Optional favorite project tag, max 64 chars."},
+                "sort": {"type": "string", "enum": sorted(_PROJECT_SORT_CHOICES), "default": "recent"},
+                "limit": {"type": "integer", "description": "Maximum favorites per page, 1-20.", "default": 10},
+                "marker": {"type": "string", "description": "Opaque zero-based pagination marker returned by the previous call."},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    }
 ]
 
 
@@ -448,32 +497,8 @@ async def _tool_search_papers(request: Request, args: dict[str, Any]) -> dict[st
     q = _clean_string(args, "q", required=True, max_len=200)
     limit = _clean_limit(args)
     db = MySQLRepository()
-
-    def _do_search() -> list[dict[str, Any]]:
-        like = f"%{q}%"
-        sql = """
-            SELECT id, source, source_channel, title, url, summary,
-                   published_date, tags, score, raw_score, rank_in_period,
-                   local_pdf_path, created_at
-            FROM documents
-            WHERE title LIKE %s OR summary LIKE %s
-            ORDER BY
-                CASE WHEN title LIKE %s THEN 0 ELSE 1 END,
-                COALESCE(raw_score, score, 0) DESC,
-                created_at DESC
-            LIMIT %s
-        """
-        conn = db._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (like, like, like, limit))
-                rows = cur.fetchall()
-            conn.commit()
-            return [_safe_doc(dict(row)) for row in rows]
-        finally:
-            conn.close()
-
-    docs = await asyncio.to_thread(_do_search)
+    rows = await asyncio.to_thread(db.search_documents, q, limit)
+    docs = [_safe_doc(dict(row)) for row in rows]
     items = [_public_doc(doc, request) for doc in docs]
     return {"q": q, "total": len(items), "items": items}
 
@@ -562,86 +587,18 @@ async def _search_project_library(
     )
     sort = "hot" if scope == "today" else requested_sort
     limit = _clean_limit(args)
-    min_stars = 50 if generic else 500
-    db = MySQLRepository()
-
-    result = await asyncio.to_thread(
-        db.list_projects,
-        source="github",
-        scope=scope,
+    return await search_projects(
+        query=q,
+        mode="generic" if generic else "ai",
+        language=language,
         category=category,
         subcategory=subcategory,
-        q=q,
-        language=language,
-        page=1,
-        page_size=limit,
+        scope=scope,
         sort=sort,
-        min_stars=min_stars,
-        enriched_only=True,
-        user_id=None,
+        limit=limit,
+        repository_factory=MySQLRepository,
+        fallback_search=search_github_projects_fallback,
     )
-    items = [_public_project_item(item) for item in result.get("items") or []]
-    total = int(result.get("total") or 0)
-    base = {
-        "items": items,
-        "total": total,
-        "page": 1,
-        "page_size": limit,
-        "has_next": limit < total,
-        "min_stars": min_stars,
-        "scope": scope,
-        "category": category,
-        "subcategory": subcategory,
-        "language": language,
-        "q": q,
-        "sort": sort,
-        "source": "github",
-        "search_mode": mode,
-        "result_origin": "aigc_news_local",
-        "local_total": total,
-        "fallback_used": False,
-        "fallback_reason": "",
-        "fallback_policy": _PROJECT_FALLBACK_POLICY,
-    }
-    if items or scope in {"recommended", "today"}:
-        return base
-
-    try:
-        fallback = await asyncio.to_thread(
-            search_github_projects_fallback,
-            q=q,
-            category=category,
-            subcategory=subcategory,
-            language=language,
-            sort=sort,
-            limit=limit,
-            min_stars=min_stars,
-            mode=mode,
-        )
-    except Exception as exc:
-        logger.warning("MCP GitHub project fallback failed: %s", exc)
-        return {
-            **base,
-            "fallback_used": True,
-            "fallback_reason": "local_zero_results",
-            "fallback_error": f"GitHub fallback failed: {exc}",
-        }
-
-    fallback_items = [_public_project_item(item) for item in fallback.get("items") or []]
-    fallback_error = str(fallback.get("error") or "")
-    return {
-        **base,
-        "items": fallback_items,
-        "total": int(fallback.get("total") or len(fallback_items)),
-        "has_next": False,
-        "result_origin": "github_api_fallback" if fallback_items else "aigc_news_local",
-        "fallback_used": True,
-        "fallback_reason": "local_zero_results",
-        "fallback_error": fallback_error,
-        "github_total_count": int(fallback.get("github_total_count") or 0),
-        "fallback_queries": fallback.get("queries") or [],
-        "fallback_cache_hit": bool(fallback.get("cache_hit")),
-    }
 
 
 async def _tool_search_github_projects(_request: Request, args: dict[str, Any]) -> dict[str, Any]:
@@ -654,6 +611,69 @@ async def _tool_search_github_ai_projects(_request: Request, args: dict[str, Any
 
 async def _tool_get_project_library(_request: Request, args: dict[str, Any]) -> dict[str, Any]:
     return await _search_project_library(args, mode="ai")
+
+
+async def _tool_search_my_project_favorites(request: Request, args: dict[str, Any]) -> dict[str, Any]:
+    user = getattr(request.state, "mcp_user", None)
+    try:
+        user_id = int((user or {}).get("user_id") or 0)
+    except (TypeError, ValueError):
+        user_id = 0
+    if user_id <= 0:
+        raise McpToolInputError("Authentication is required for this tool.")
+    if "projects:favorites:read" not in (user or {}).get("scopes", frozenset()):
+        raise McpToolInputError("This token requires the projects:favorites:read scope.")
+    q = _clean_string(args, "q", max_len=120)
+    category = _clean_string(args, "category", max_len=64)
+    subcategory = _clean_string(args, "subcategory", max_len=64)
+    language = _clean_string(args, "language", max_len=64)
+    tag = _clean_string(args, "tag", max_len=64)
+    sort = _clean_choice(args, "sort", _PROJECT_SORT_CHOICES, default="recent")
+    limit = _clean_limit(args)
+    marker = _clean_string(args, "marker", max_len=128)
+    offset = 0
+    if marker:
+        try:
+            padding = "=" * (-len(marker) % 4)
+            marker_data = json.loads(base64.urlsafe_b64decode(marker + padding).decode("utf-8"))
+            offset = int(marker_data["offset"])
+            marker_limit = int(marker_data["limit"])
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            raise McpToolInputError("marker must be the opaque value returned by this tool.") from exc
+        if offset < 0 or marker_limit != limit or offset % limit:
+            raise McpToolInputError("marker is invalid or was issued for a different limit.")
+    page = offset // limit + 1
+    result = await asyncio.to_thread(
+        MySQLRepository().list_user_project_collection,
+        user_id=user_id,
+        source="github",
+        scope="all",
+        category=category,
+        subcategory=subcategory,
+        q=q,
+        language=language,
+        tag=tag,
+        page=page,
+        page_size=limit,
+        sort=sort,
+        min_stars=500,
+        enriched_only=True,
+    )
+    items = [_public_project_item(item) for item in result.get("items") or []]
+    total = int(result.get("total") or 0)
+    next_offset = offset + len(items)
+    next_marker = None
+    if next_offset < total:
+        marker_json = json.dumps({"offset": next_offset, "limit": limit}, separators=(",", ":"))
+        next_marker = base64.urlsafe_b64encode(marker_json.encode("utf-8")).decode("ascii").rstrip("=")
+    return {
+        "items": items,
+        "total": total,
+        "q": q,
+        "tag": tag,
+        "sort": sort,
+        "marker": next_marker,
+    }
 
 
 async def _tool_get_project_categories(_request: Request, args: dict[str, Any]) -> dict[str, Any]:
@@ -684,6 +704,7 @@ _TOOL_HANDLERS: dict[str, Callable[[Request, dict[str, Any]], Awaitable[dict[str
     "search_github_ai_projects": _tool_search_github_ai_projects,
     "get_project_library": _tool_get_project_library,
     "get_project_categories": _tool_get_project_categories,
+    "search_my_project_favorites": _tool_search_my_project_favorites,
 }
 
 
@@ -862,11 +883,14 @@ Use the AIGC_NEWS MCP public context to produce a concise research brief.{topic_
 
 Suggested flow:
 1. Read `aigc-news://dashboard/summary` for the latest overall context.
-2. Call `get_top_items` with source `{source}` and period `daily` for ranked items.
-3. If a specific item matters, call `get_paper_detail` for its id.
-4. Summarize key trends, notable papers/projects/news, and why they matter.
+2. For generic Agent/MCP learning, tutorials, examples, implementations, SDK/server/client resources, workflows, tool calling, or unspecified 资料, call `search_github_ai_projects` first even if GitHub/open source was not named.
+3. Use `search_papers` first only when the dominant requested output is explicitly scholarly: papers, literature, surveys, citations, authors/venues, benchmarks/evaluations, methods/theory, experiments, or research results. Rewrite academic requests into 1-3 concise technical terms.
+4. For mixed requests choose one initial route by the dominant deliverable: implementations/tutorials use GitHub AI; papers/citations/experimental results use papers. Do not batch both primary searches or MCP and host web tools in the same initial tool message.
+5. Inspect the selected AIGC_NEWS result before adding another source. If the MCP call fails, returns no relevant items, or lacks a specific fact, use another MCP tool or a host web tool only for that missing detail.
+6. If a specific indexed item matters, call `get_paper_detail` for its id.
+7. Summarize key trends, notable papers/projects/news, and why they matter, distinguishing AIGC_NEWS evidence from any later web fallback.
 
-Do not use private user data or admin-only operations.
+These instructions guide MCP-aware agents; the MCP server cannot override a client's own system prompt or native tool priorities. Do not use private user data or admin-only operations.
 """
         return {
             "description": "Summarize the latest public AIGC_NEWS context.",
@@ -888,10 +912,20 @@ Do not use private user data or admin-only operations.
         text = f"""
 Use the AIGC_NEWS MCP public GitHub project context to discover useful projects.{filter_text}
 
-Local-first policy:
-- For non-AI GitHub/open-source software questions, call `search_github_projects` first.
-- For AI project questions (RAG, local deployment, Web UI, Agent/MCP/workflow automation, Python AI repos, categories, languages, stars), call `search_github_ai_projects` first.
-- Do not directly search GitHub or the web before using the matching AIGC_NEWS MCP search tool; `get_project_library` remains a legacy AI alias.
+Decision policy before searching:
+- First reuse capabilities already present in the current codebase and dependencies.
+- Do not call project search for typo fixes, styling/copy, renames, clear bugs, validation/field changes, tests/logging/types, simple CRUD, or isolated function/component/endpoint changes.
+- Always search when the user explicitly asks for open-source alternatives, describes a complete product or independent subsystem, references an existing product, or requests mature/high-risk infrastructure such as auth, payments, permissions, workflow engines, search engines, queues, collaboration, protocol implementations, or sandboxes.
+- For remaining development requests, score 0-3 on scope, standardization, external integration, risk, expected effort, and reuse potential. Total 0-4 means implement directly; 5-8 means one light search only when it can change the decision; 9-18 means search and ask the user to choose a route.
+
+Local-first search policy:
+- For qualifying non-AI software requests, call `search_github_projects` before generic web/GitHub search.
+- For Agent/MCP topics, `search_github_ai_projects` is the default first route for generic learning or 资料, tutorials, examples, implementations, SDKs, servers/clients, workflows, tool calling, demos, templates, and exploration, even without an explicit GitHub/open-source request.
+- Use `search_papers` first only when the dominant deliverable is explicitly scholarly (papers/literature/surveys/citations/benchmarks/evaluations/methods/theory/experiments/research results). For mixed requests choose one initial route by the dominant deliverable; do not batch both searches.
+- For other qualifying AI requests (RAG, local deployment, Web UI, workflow automation, Python AI repos), call `search_github_ai_projects` first.
+- Do not put the selected MCP search and native WebSearch/WebFetch/Bash in the same initial tool batch. Await and inspect the MCP result first.
+- Use a host tool only if the MCP call fails, returns no usable items, or lacks a specific fact required by the request; query only that missing detail rather than repeating the broad discovery search.
+- `get_project_library` remains a legacy AI alias.
 - For broad discovery/comparison questions, use the returned AIGC_NEWS local fields (`description`, `description_zh`, `tags`, `topics`, category/subcategory, language, stars, forks, pushed_at, url) as the project summary and evidence.
 - Do not inspect each returned GitHub repository just to summarize candidates. Only visit GitHub/README/docs when the user explicitly asks about one or several named projects, or when local MCP metadata is insufficient to answer a concrete follow-up question.
 - Direct GitHub fallback is only appropriate when the MCP result reports `local_total: 0` / no local AIGC_NEWS matches.
@@ -902,9 +936,12 @@ Suggested flow:
 3. If `fallback_used` is false or `local_total` is positive, answer from the curated AIGC_NEWS local project library without re-checking every GitHub repo.
 4. If local metadata is insufficient, explain what is missing; only then inspect the specific returned repo(s) needed for that missing detail.
 5. If `fallback_used` is true and `result_origin` is `github_api_fallback`, clearly label those results as direct GitHub fallback rather than curated local catalog entries.
-6. Compare projects by purpose, stars, language, update activity, likely use case, and trade-offs.
+6. Filter candidates by requirement match, maintenance, integration fit, documentation, license fit, community, and security/stability; stars alone are not suitability.
+7. Show only the best 2-3 candidates. If none clearly saves implementation effort or reduces risk, recommend building within the current project without forcing a meaningless choice.
+8. If adopting a candidate changes architecture, deployment, data ownership, licensing, or long-term maintenance, stop and ask the user to choose: reuse a numbered candidate, build from scratch, or refine and search again. Do not start implementation in the same turn.
+9. Run at most one initial search per unchanged requirement. Search again only when the user asks, filters change, the first result is empty, or candidates are incompatible.
 
-Do not use personal favorites or admin-only MCP server configuration.
+These instructions guide MCP-aware agents; the MCP server cannot override a client's own system prompt or native tool priorities. Do not use personal favorites or admin-only MCP server configuration.
 """
         return {
             "description": "Discover and compare public AI GitHub projects with local-first AIGC_NEWS MCP search.",
@@ -929,7 +966,11 @@ async def _call_tool(request: Request, name: str, arguments: Any) -> dict[str, A
 
 
 @router.post("/mcp", tags=["MCP"])
-async def mcp_endpoint(request: Request) -> Response:
+async def mcp_endpoint(
+    request: Request,
+    mcp_user: dict[str, Any] | None = Depends(OptionalMcpUser),
+) -> Response:
+    request.state.mcp_user = mcp_user
     content_length = request.headers.get("content-length")
     if content_length:
         try:
@@ -989,14 +1030,18 @@ async def mcp_endpoint(request: Request) -> Response:
         )
 
     if method == "tools/list":
-        return _jsonrpc_result(request_id, {"tools": MCP_TOOLS})
+        tools = MCP_TOOLS + (_PRIVATE_MCP_TOOLS if mcp_user else [])
+        return _jsonrpc_result(request_id, {"tools": tools})
 
     if method == "tools/call":
         name = params.get("name") if isinstance(params, dict) else None
         if not isinstance(name, str) or not name:
             return _jsonrpc_error(request_id, _JSONRPC_INVALID_PARAMS, "tools/call params.name is required")
         arguments = params.get("arguments", {}) if isinstance(params, dict) else {}
-        result = await _call_tool(request, name, arguments)
+        if name == "search_my_project_favorites" and not mcp_user:
+            result = _tool_error("Authentication is required for this tool.")
+        else:
+            result = await _call_tool(request, name, arguments)
         return _jsonrpc_result(request_id, result)
 
     if method == "resources/list":

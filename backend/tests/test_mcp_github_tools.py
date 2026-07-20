@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import sys
 import types
@@ -34,6 +35,16 @@ if "backend.app.core.config" not in sys.modules:
         mcp_github_fallback_use_token=False,
         mcp_github_fallback_timeout_seconds=8.0,
         github_token="",
+        ACCESS_TOKEN_EXPIRE_MINUTES=60,
+        JWT_SECRET_KEY="test-secret",
+        JWT_ALGORITHM="HS256",
+        SMTP_HOST="",
+        SMTP_PORT=587,
+        SMTP_USERNAME="",
+        SMTP_PASSWORD="",
+        SMTP_FROM_EMAIL="",
+        SMTP_FROM_NAME="",
+        SMTP_USE_TLS=True,
     )
     sys.modules["backend.app.core.config"] = config_module
 
@@ -63,12 +74,42 @@ class ToolMetadataTests(unittest.TestCase):
         papers = tools["search_papers"]["description"].lower()
         ai = tools["search_github_ai_projects"]["description"].lower()
         legacy = tools["get_project_library"]["description"].lower()
-        self.assertIn("call this first", generic)
+        self.assertIn("when search is warranted", generic)
         self.assertIn("non-ai", generic)
         self.assertIn("screenshot", generic)
-        self.assertIn("do not call", papers)
-        self.assertIn("github repositories", papers)
+        self.assertIn("explicitly scholarly", papers)
+        self.assertIn("surveys or systematic reviews", papers)
+        self.assertIn("citations", papers)
+        self.assertIn("benchmarks or evaluations", papers)
+        self.assertIn("agent/mcp is only a topic", papers)
+        self.assertIn("generic agent/mcp learning", papers)
+        self.assertIn("search_github_ai_projects first", papers)
+        self.assertIn("1-3 established technical terms", papers)
+        self.assertIn("dominant deliverable", papers)
+        self.assertIn("do not batch both primary searches", papers)
+        self.assertIn("native websearch/webfetch", papers)
+        self.assertIn("call fails", papers)
+        self.assertIn("no relevant items", papers)
+        self.assertIn("default first search for agent/mcp topics", ai)
+        self.assertIn("generic learning resources", ai)
+        self.assertIn("tutorials", ai)
+        self.assertIn("sdks", ai)
+        self.assertIn("tool calling", ai)
+        self.assertIn("search_papers first only", ai)
+        self.assertIn("dominant deliverable", ai)
         self.assertIn("search_github_projects", ai)
+        for description in (generic, ai):
+            self.assertIn("do not batch", description)
+            self.assertIn("websearch/webfetch/bash", description)
+            self.assertIn("inspect the mcp result first", description)
+            self.assertIn("call fails", description)
+            self.assertIn("no usable items", description)
+            self.assertIn("missing detail", description)
+        self.assertIn("favorites", generic)
+        self.assertIn("do not call", generic)
+        self.assertIn("complete product", generic)
+        self.assertIn("excludes", ai)
+        self.assertIn("narrow edits", ai)
         self.assertIn("legacy", legacy)
         self.assertEqual(tools["search_github_projects"]["inputSchema"]["required"], ["q"])
 
@@ -318,6 +359,193 @@ class McpProtocolTests(unittest.TestCase):
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
         self.assertEqual(len(listed.json()["result"]["tools"]), 7)
+
+    def test_prompts_require_mcp_first_and_sequential_web_fallback(self) -> None:
+        prompts = {}
+        for request_id, name in ((3, "daily_research_brief"), (4, "project_discovery")):
+            response = self.client.post(
+                "/api/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": "prompts/get",
+                    "params": {"name": name, "arguments": {}},
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            prompts[name] = response.json()["result"]["messages"][0]["content"]["text"].lower()
+
+        research = prompts["daily_research_brief"]
+        self.assertIn("generic agent/mcp learning", research)
+        self.assertIn("search_github_ai_projects` first", research)
+        self.assertIn("search_papers` first only", research)
+        self.assertIn("explicitly scholarly", research)
+        self.assertIn("dominant deliverable", research)
+        self.assertIn("do not batch both primary searches", research)
+        self.assertIn("inspect the selected aigc_news result", research)
+        self.assertIn("call fails", research)
+        self.assertIn("missing detail", research)
+
+        projects = prompts["project_discovery"]
+        self.assertIn("default first route for generic learning", projects)
+        self.assertIn("search_papers` first only", projects)
+        self.assertIn("dominant deliverable", projects)
+        self.assertIn("do not batch both searches", projects)
+        self.assertIn("do not put the selected mcp search", projects)
+        self.assertIn("same initial tool batch", projects)
+        self.assertIn("await and inspect the mcp result first", projects)
+        self.assertIn("call fails", projects)
+        self.assertIn("no usable items", projects)
+        self.assertIn("missing detail", projects)
+        self.assertIn("cannot override a client's own system prompt", projects)
+
+    def test_search_papers_uses_shared_repository_and_hides_local_path(self) -> None:
+        repository = MagicMock()
+        repository.search_documents.return_value = [
+            {
+                "id": "paper-1",
+                "source": "arxiv",
+                "title": "Agent Paper",
+                "local_pdf_path": "/tmp/agent.pdf",
+            }
+        ]
+        with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
+            response = self.client.post(
+                "/api/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_papers",
+                        "arguments": {"q": "  Agent  ", "limit": 999},
+                    },
+                },
+            )
+
+        repository.search_documents.assert_called_once_with("Agent", 20)
+        payload = response.json()["result"]["structuredContent"]
+        self.assertEqual(payload["q"], "Agent")
+        self.assertEqual(payload["total"], 1)
+        self.assertNotIn("local_pdf_path", payload["items"][0])
+        self.assertTrue(payload["items"][0]["pdf_media_url"].endswith("/api/media/papers/agent.pdf"))
+
+    def test_authenticated_token_adds_private_favorites_tool(self) -> None:
+        async def authenticated_user():
+            return {"user_id": 42, "role": "user", "scopes": frozenset({"projects:favorites:read"})}
+
+        self.client.app.dependency_overrides[routes_mcp.OptionalMcpUser] = authenticated_user
+        try:
+            listed = self.client.post(
+                "/api/mcp",
+                json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            )
+        finally:
+            self.client.app.dependency_overrides.clear()
+        names = {tool["name"] for tool in listed.json()["result"]["tools"]}
+        self.assertEqual(len(names), 8)
+        self.assertIn("search_my_project_favorites", names)
+
+    def test_private_favorites_tool_is_owner_scoped(self) -> None:
+        async def authenticated_user():
+            return {"user_id": 42, "role": "user", "scopes": frozenset({"projects:favorites:read"})}
+
+        repository = MagicMock()
+        repository.list_user_project_collection.return_value = {
+            "items": [{"id": "github:1", "full_name": "owner/private", "stars": 900}],
+            "total": 1,
+        }
+        self.client.app.dependency_overrides[routes_mcp.OptionalMcpUser] = authenticated_user
+        try:
+            with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
+                response = self.client.post(
+                    "/api/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "tools/call",
+                        "params": {"name": "search_my_project_favorites", "arguments": {"q": "private"}},
+                    },
+                )
+        finally:
+            self.client.app.dependency_overrides.clear()
+        self.assertFalse(response.json()["result"]["isError"])
+        self.assertEqual(repository.list_user_project_collection.call_args.kwargs["user_id"], 42)
+        self.assertEqual(repository.list_user_project_collection.call_args.kwargs["source"], "github")
+
+    def test_private_favorites_tool_forwards_tag_and_opaque_marker(self) -> None:
+        async def authenticated_user():
+            return {"user_id": 42, "scopes": frozenset({"projects:favorites:read"})}
+
+        repository = MagicMock()
+        repository.list_user_project_collection.side_effect = [
+            {"items": [{"id": "github:1", "full_name": "owner/first"}] * 10, "total": 25},
+            {"items": [{"id": "github:2", "full_name": "owner/tagged"}], "total": 25},
+        ]
+        self.client.app.dependency_overrides[routes_mcp.OptionalMcpUser] = authenticated_user
+        try:
+            with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
+                first = self.client.post(
+                    "/api/mcp",
+                    json={"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "search_my_project_favorites", "arguments": {"tag": "agent", "limit": 10}}},
+                ).json()["result"]["structuredContent"]
+                response = self.client.post(
+                    "/api/mcp",
+                    json={
+                        "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                        "params": {"name": "search_my_project_favorites", "arguments": {"tag": "agent", "limit": 10, "marker": first["marker"]}},
+                    },
+                )
+        finally:
+            self.client.app.dependency_overrides.clear()
+        payload = response.json()["result"]["structuredContent"]
+        self.assertEqual(repository.list_user_project_collection.call_args.kwargs["tag"], "agent")
+        self.assertEqual(repository.list_user_project_collection.call_args.kwargs["page"], 2)
+        self.assertIsNotNone(payload["marker"])
+
+    def test_private_favorites_marker_rejects_changed_limit(self) -> None:
+        async def authenticated_user():
+            return {"user_id": 42, "scopes": frozenset({"projects:favorites:read"})}
+
+        marker = base64.urlsafe_b64encode(b'{"offset":10,"limit":10}').decode().rstrip("=")
+        self.client.app.dependency_overrides[routes_mcp.OptionalMcpUser] = authenticated_user
+        try:
+            response = self.client.post(
+                "/api/mcp",
+                json={"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "search_my_project_favorites", "arguments": {"limit": 5, "marker": marker}}},
+            )
+        finally:
+            self.client.app.dependency_overrides.clear()
+        self.assertTrue(response.json()["result"]["isError"])
+        self.assertIn("different limit", response.json()["result"]["content"][0]["text"])
+
+    def test_private_favorites_tool_requires_scope(self) -> None:
+        async def authenticated_user():
+            return {"user_id": 42, "scopes": frozenset()}
+
+        self.client.app.dependency_overrides[routes_mcp.OptionalMcpUser] = authenticated_user
+        try:
+            response = self.client.post(
+                "/api/mcp",
+                json={"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "search_my_project_favorites", "arguments": {}}},
+            )
+        finally:
+            self.client.app.dependency_overrides.clear()
+        self.assertTrue(response.json()["result"]["isError"])
+        self.assertIn("projects:favorites:read", response.json()["result"]["content"][0]["text"])
+
+    def test_anonymous_private_tool_call_is_rejected(self) -> None:
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "search_my_project_favorites", "arguments": {}},
+            },
+        )
+        self.assertTrue(response.json()["result"]["isError"])
+        self.assertIn("Authentication", response.json()["result"]["content"][0]["text"])
 
     def test_project_tools_call_through_json_rpc_surface(self) -> None:
         compact = {"items": [], "total": 0, "fallback_used": False}

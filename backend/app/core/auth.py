@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -95,6 +97,48 @@ async def OptionalUser(
         return decode_access_token(credentials.credentials)
     except HTTPException:
         return None
+
+
+def hash_mcp_token(token: str) -> str:
+    """Return the stable SHA-256 digest stored for an inbound MCP token."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+async def OptionalMcpUser(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> dict[str, Any] | None:
+    """Authenticate an optional inbound MCP token; reject every supplied invalid auth header."""
+    authorization = request.headers.get("authorization")
+    if authorization and credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization 必须使用 Bearer Token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if credentials is None:
+        return None
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    user = await asyncio.to_thread(
+        MySQLRepository().get_user_by_mcp_token_hash,
+        hash_mcp_token(credentials.credentials),
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MCP Token 无效、已过期或已撤销",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    scopes = user.get("scopes")
+    if not isinstance(scopes, list) or not all(isinstance(scope, str) for scope in scopes):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MCP Token 权限无效",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user["scopes"] = frozenset(scopes)
+    return user
 
 
 async def RequireAdmin(

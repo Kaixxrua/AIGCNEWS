@@ -23,6 +23,12 @@ from backend.app.services.rag.web_search_service import (
     format_search_results_as_context,
     WebSearchResult,
 )
+from backend.app.services.project_discovery import search_projects
+from backend.app.services.rag.development_orchestrator import (
+    DevelopmentDecision,
+    assess_candidate,
+    classify_development_request,
+)
 
 
 # 默认保留最近几轮历史（每轮 = user + assistant 各一条）
@@ -575,6 +581,104 @@ class ChatService:
         tool_context = "\n\n".join(context_parts)
         return tool_messages, all_tool_sources, tool_context
 
+    @staticmethod
+    async def _stream_direct_development(
+        query: str,
+        history: List[Dict[str, str]],
+        decision: DevelopmentDecision,
+        model: str,
+        temperature: float,
+        max_history_turns: int,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        yield {"type": "sources", "data": []}
+        history_text = _format_history(history, max_turns=max_history_turns)
+        instruction = (
+            "这是一个局部或已明确路线的开发需求。直接提供最小、可执行的实现建议，不搜索外部项目。"
+            "优先复用现有代码和依赖。你没有直接编辑用户仓库的工具，不得声称已经修改文件。"
+        )
+        if "user_chose_reuse" in decision.reasons:
+            instruction = "用户已经选择复用前一轮候选项目。基于对话中的候选和约束给出接入/二次开发方案，不重复搜索。"
+        elif "user_chose_scratch" in decision.reasons:
+            instruction = "用户已经明确选择从零自研。给出贴合现有需求的架构和实施步骤，不重复搜索开源项目。"
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT + "\n" + instruction},
+            {"role": "user", "content": f"{history_text}用户问题: {query}"},
+        ]
+        async for delta in stream_chat_completions(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=settings.llm_max_tokens,
+        ):
+            if delta.reasoning:
+                yield {"type": "thinking", "data": delta.reasoning}
+            if delta.content:
+                yield {"type": "content", "data": delta.content}
+
+    @staticmethod
+    async def _stream_project_discovery(
+        query: str,
+        decision: DevelopmentDecision,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        yield {"type": "status", "data": "discovering_projects"}
+        result = await search_projects(
+            query=decision.query_hint,
+            mode=decision.search_mode,
+            language=decision.language_hint,
+            limit=5,
+        )
+        items = list(result.get("items") or [])
+        sources = [
+            {
+                "id": item.get("id"),
+                "title": item.get("full_name") or "GitHub project",
+                "url": item.get("url") or "",
+                "source": "mcp-project-search",
+                "score": item.get("hot_score") or item.get("stars") or 0,
+                "result_origin": item.get("result_origin") or result.get("result_origin"),
+            }
+            for item in items[:5]
+        ]
+        yield {"type": "sources", "data": sources}
+        if not items:
+            failure = str(result.get("fallback_error") or "").strip()
+            detail = f"（{failure}）" if failure else ""
+            yield {
+                "type": "content",
+                "data": (
+                    f"没有找到足够匹配的开源项目{detail}。请选择下一步：\n"
+                    "- **B：从零开发**，我将按需求给出架构和实施方案\n"
+                    "- **C：调整条件后重新搜索**"
+                ),
+            }
+            return
+
+        assessed = [(item, assess_candidate(item, high_risk=decision.scores.risk >= 3)) for item in items[:5]]
+        worthwhile = [(item, assessment) for item, assessment in assessed if assessment.worthwhile]
+        selected = (worthwhile or assessed)[:3]
+        lines = ["我先检查了可复用的开源项目："]
+        for index, (item, assessment) in enumerate(selected, 1):
+            description = item.get("description_zh") or item.get("description") or "暂无简介"
+            origin = "AIGC_NEWS 本地项目库" if item.get("result_origin") != "github_api_fallback" else "GitHub 实时 fallback"
+            lines.append(
+                f"{index}. **{item.get('full_name') or '未命名项目'}**（{item.get('stars', 0)} stars，{item.get('language') or '语言未知'}）\n"
+                f"   - {description}\n   - 来源：{origin}；候选质量：{assessment.score:.2f}；许可证与安全性仍需在采用前核实"
+            )
+
+        must_ask = decision.route == "search_and_ask" or any(a.requires_user_choice for _, a in selected)
+        if decision.route == "light_search" and not worthwhile:
+            lines.extend(["", "这些候选的复用价值没有明显高于当前自研成本，建议直接基于现有项目实现。我可以继续给出最小实现方案。"])
+        elif must_ask:
+            lines.extend([
+                "", "请选择下一步：",
+                "- **A：复用开源项目**（回复项目编号，我再给出接入/二次开发方案）",
+                "- **B：从零开发**（按你的需求自行设计）",
+                "- **C：调整条件后重新搜索**",
+            ])
+        else:
+            lines.extend(["", "建议优先评估第 1 个候选；它属于低路线影响的可复用方案。如不采用，我也可以直接给出自研实现。"])
+        yield {"type": "content", "data": "\n".join(lines)}
+
     async def stream_chat(
         self,
         query: str,
@@ -584,14 +688,43 @@ class ChatService:
         web_search_enabled: bool = False,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         try:
-            # 1. 立即告知前端正在检索
+            effective_model = settings.thinking_model_name or settings.chat_model_name
+            effective_temp = temperature if temperature is not None else settings.llm_temperature
+            decision = classify_development_request(query, history or [])
+            print(
+                "[ChatService] development route=%s score=%s reasons=%s mode=%s"
+                % (decision.route, decision.score, list(decision.reasons), decision.search_mode)
+            )
+
+            if decision.route == "clarify":
+                yield {"type": "status", "data": "clarifying_scope"}
+                yield {"type": "sources", "data": []}
+                yield {
+                    "type": "content",
+                    "data": (
+                        "这个需求的范围还不够明确。它是：\n"
+                        "1. **现有项目中的局部修改**——我直接按当前代码处理；还是\n"
+                        "2. **完整功能或独立子系统**——我先搜索可复用的开源项目，再比较复用与自研？"
+                    ),
+                }
+                return
+
+            if decision.route == "direct":
+                async for event in self._stream_direct_development(
+                    query, history or [], decision, effective_model, effective_temp, max_history_turns
+                ):
+                    yield event
+                return
+
+            if decision.route in {"light_search", "search_and_ask"}:
+                async for event in self._stream_project_discovery(query, decision):
+                    yield event
+                return
+
+            # 非开发请求保留原有 RAG、联网搜索和结构化工具路径。
             yield {"type": "status", "data": "searching"}
 
-            # 2. 并发执行：RAG 检索 + 联网搜索 + LLM 工具判断（第一轮）
-            effective_model = settings.thinking_model_name or settings.chat_model_name
-            effective_temp = (
-                temperature if temperature is not None else settings.llm_temperature
-            )
+            # 并发执行：RAG 检索 + 联网搜索 + LLM 工具判断（第一轮）
 
             # 构建第一轮 LLM 调用的消息（带 tools）
             first_round_messages: List[Dict[str, Any]] = [

@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
-import os
 import re
 import socket
 from contextlib import contextmanager
@@ -290,31 +289,6 @@ def build_manual_tool_website_metadata(
         image_url=_default_favicon_url(url),
         raw_metadata={"manual": True, "logo_url": _default_favicon_url(url)},
     )
-
-
-def _has_proxy_env() -> bool:
-    return any(
-        os.environ.get(key)
-        for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
-    )
-
-
-def _is_network_unreachable(exc: Exception) -> bool:
-    text = str(exc).lower()
-    return isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout)) or any(
-        marker in text
-        for marker in (
-            "network is unreachable",
-            "address family for hostname not supported",
-            "name or service not known",
-            "connection refused",
-            "connection reset",
-            "timed out",
-            "timeout",
-            "temporary failure in name resolution",
-        )
-    )
-
 
 def _normalize_encoding(value: str) -> str:
     encoding = (value or "").strip().lower().replace(" ", "")
@@ -642,15 +616,8 @@ def _fetch_tool_website_metadata(raw_url: str, *, trust_env: bool = False) -> To
 
 def fetch_tool_website_metadata(raw_url: str) -> ToolWebsiteMetadata:
     try:
+        # This SSRF-sensitive fetcher must keep local DNS validation and pinning.
+        # Remote DNS through socks5h would invalidate that security boundary.
         return _fetch_tool_website_metadata(raw_url, trust_env=False)
     except httpx.RequestError as direct_exc:
-        if _is_network_unreachable(direct_exc) and _has_proxy_env():
-            try:
-                return _fetch_tool_website_metadata(raw_url, trust_env=True)
-            except httpx.RequestError as proxy_exc:
-                raise ToolWebsiteFetchError(
-                    f"直连无法连接目标网站，已尝试当前环境代理但仍失败：{proxy_exc}"
-                ) from proxy_exc
-
-        proxy_hint = "，且未检测到 HTTP(S)_PROXY/ALL_PROXY 环境代理" if not _has_proxy_env() else ""
-        raise ToolWebsiteFetchError(f"无法连接目标网站{proxy_hint}：{direct_exc}") from direct_exc
+        raise ToolWebsiteFetchError(f"无法连接目标网站：{direct_exc}") from direct_exc

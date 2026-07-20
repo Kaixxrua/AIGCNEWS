@@ -95,7 +95,6 @@ type ProjectRouteQuery = Record<string, string>
 const validSources: ProjectViewSource[] = ['all', 'website', 'favorites']
 const validScopes: ProjectScope[] = ['all', 'today', 'recommended']
 const validSorts: GitHubProjectSort[] = ['hot', 'stars', 'updated', 'recent', 'name']
-const favoritesRedirectPath = '/projects?source=favorites'
 
 const queryValue = (value: unknown) => {
   if (Array.isArray(value)) return String(value[0] ?? '').trim()
@@ -169,12 +168,6 @@ const applyRouteState = () => {
   const nextSource = validSources.includes(routeSource as ProjectViewSource)
     ? routeSource as ProjectViewSource
     : 'all'
-  if ((nextSource === 'favorites' || nextSource === 'website') && !authStore.isLoggedIn) {
-    const redirect = nextSource === 'favorites' ? favoritesRedirectPath : '/projects?source=website'
-    router.replace({ path: '/login', query: { redirect } })
-    return false
-  }
-
   const routeScope = queryValue(route.query.scope)
   const nextScope = validScopes.includes(routeScope as ProjectScope) ? routeScope as ProjectScope : 'all'
   const routeSort = queryValue(route.query.sort)
@@ -202,12 +195,8 @@ const applyRouteState = () => {
 
 const sourceOptions = computed<SourceOption[]>(() => [
   { value: 'all', label: 'GitHub 项目', hint: '公共开源项目' },
-  ...(authStore.isLoggedIn
-    ? [
-        { value: 'website' as const, label: '我的网页', hint: '个人网页收藏', authOnly: true },
-        { value: 'favorites' as const, label: '我的收藏', hint: 'GitHub 项目收藏', authOnly: true },
-      ]
-    : []),
+  { value: 'website', label: '我的网页', hint: '个人网页收藏', authOnly: true },
+  { value: 'favorites', label: '我的收藏', hint: 'GitHub 项目收藏', authOnly: true },
 ])
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
@@ -223,9 +212,23 @@ const visibleSubcategories = computed(() => activeCategory.value?.children ?? []
 const activeSubcategory = computed(() => visibleSubcategories.value.find((item) => item.slug === selectedSubcategory.value))
 const publicSource = computed<ProjectSource>(() => (source.value === 'website' ? 'website' : 'github'))
 const isPersonalView = computed(() => source.value === 'favorites' || source.value === 'website')
+const requiresPersonalLogin = computed(() => isPersonalView.value && !authStore.isLoggedIn)
 const isMyCollection = computed(() => isPersonalView.value)
 const isWebsiteOnlyView = computed(() => source.value === 'website')
 const sourceLabel = computed(() => sourceOptions.value.find((item) => item.value === source.value)?.label ?? '全部')
+const personalLoginCopy = computed(() => (
+  isWebsiteOnlyView.value
+    ? {
+        kicker: 'YOUR PRIVATE WEB SHELF',
+        title: '登录后，继续整理你的网页世界',
+        description: '保存常用网站、补充中文说明，并把散落在浏览器里的灵感整理成只属于你的收藏夹。',
+      }
+    : {
+        kicker: 'YOUR STARRED PROJECTS',
+        title: '登录后，查看你的 GitHub 收藏',
+        description: '把感兴趣的开源项目留在这里，按标签、更新时间和收藏顺序快速找回来。',
+      }
+))
 const starsBadgeLabel = computed(() => {
   if (source.value === 'all') return 'GitHub Stars > 500'
   return ''
@@ -428,7 +431,7 @@ const mergePersonalTagsFromItems = (items: GitHubProjectItem[]) => {
 const loadPersonalTags = async () => {
   const requestId = tagRequestId.value + 1
   tagRequestId.value = requestId
-  if (!isPersonalView.value) {
+  if (!isPersonalView.value || requiresPersonalLogin.value) {
     personalTags.value = []
     tagsLoading.value = false
     return
@@ -499,7 +502,7 @@ const loadCategories = async () => {
 }
 
 const loadTaxonomy = async () => {
-  if (taxonomy.value.length || taxonomyLoading.value) return
+  if (!authStore.isLoggedIn || taxonomy.value.length || taxonomyLoading.value) return
   taxonomyLoading.value = true
   try {
     const data = await fetchProjectTaxonomy()
@@ -519,9 +522,15 @@ const loadTaxonomy = async () => {
 const loadProjects = async (options: { clearSuccess?: boolean } = {}) => {
   const requestId = currentRequestId.value + 1
   currentRequestId.value = requestId
-  loading.value = true
   errorMsg.value = ''
   if (options.clearSuccess !== false) successMsg.value = ''
+  if (requiresPersonalLogin.value) {
+    projects.value = []
+    total.value = 0
+    loading.value = false
+    return
+  }
+  loading.value = true
 
   try {
     const loadParams = () => ({
@@ -573,11 +582,6 @@ const resetAndLoad = () => {
 }
 
 const changeSource = (nextSource: ProjectViewSource) => {
-  if ((nextSource === 'favorites' || nextSource === 'website') && !authStore.isLoggedIn) {
-    const redirect = nextSource === 'favorites' ? favoritesRedirectPath : '/projects?source=website'
-    router.push({ path: '/login', query: { redirect } })
-    return
-  }
   if (source.value === nextSource) return
   const nextSort = defaultSortForSource(nextSource)
   isApplyingRouteState.value = true
@@ -736,6 +740,10 @@ const resetManualForm = () => {
   const firstCategory = taxonomy.value.find((item) => item.slug === 'other') ?? taxonomy.value[0]
   manualCategory.value = firstCategory?.slug ?? 'other'
   manualSubcategory.value = firstCategory?.children[0]?.slug ?? 'other_uncategorized'
+}
+
+const goToPersonalLogin = () => {
+  router.push({ path: '/login', query: { redirect: currentProjectsRedirect() } })
 }
 
 const openAddDialog = () => {
@@ -1004,13 +1012,25 @@ watch(editCategory, () => {
 })
 
 watch(() => authStore.isLoggedIn, (loggedIn) => {
-  if (!loggedIn && (source.value === 'favorites' || source.value === 'website')) {
-    changeSource('all')
-  } else {
-    loadCategories()
-    loadPersonalTags()
-    loadProjects()
+  if (!loggedIn && isPersonalView.value) {
+    currentRequestId.value += 1
+    tagRequestId.value += 1
+    projects.value = []
+    personalTags.value = []
+    total.value = 0
+    loading.value = false
+    tagsLoading.value = false
+    errorMsg.value = ''
+    successMsg.value = ''
+    addDialogOpen.value = false
+    editDialogOpen.value = false
+    editTarget.value = null
+    return
   }
+  loadCategories()
+  loadPersonalTags()
+  loadProjects()
+  if (loggedIn) loadTaxonomy()
 })
 
 onMounted(() => {
@@ -1039,7 +1059,7 @@ onMounted(() => {
           <span>{{ activeFilterLabel }}</span>
         </div>
         <button
-          v-if="isWebsiteOnlyView"
+          v-if="isWebsiteOnlyView && !requiresPersonalLogin"
           type="button"
           class="projects-add-btn"
           :title="isMyCollection && !authStore.isLoggedIn ? '登录后添加个人网站' : ''"
@@ -1066,7 +1086,7 @@ onMounted(() => {
         </button>
       </div>
 
-      <div class="projects-search">
+      <div v-if="!requiresPersonalLogin" class="projects-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7" />
           <path d="m20 20-3.5-3.5" />
@@ -1087,7 +1107,7 @@ onMounted(() => {
         </button>
       </div>
 
-      <label class="projects-sort">
+      <label v-if="!requiresPersonalLogin" class="projects-sort">
         <span>排序</span>
         <select v-model="sort" :disabled="selectedScope === 'today'">
           <option v-if="!isWebsiteOnlyView" value="hot">{{ selectedScope === 'today' ? '热度前 50' : '热度优先' }}</option>
@@ -1099,10 +1119,38 @@ onMounted(() => {
       </label>
     </section>
 
-    <section v-if="successMsg" class="projects-toast projects-toast--success glass-card">
+    <section v-if="successMsg && !requiresPersonalLogin" class="projects-toast projects-toast--success glass-card">
       {{ successMsg }}
     </section>
 
+    <section v-if="requiresPersonalLogin" class="projects-login-prompt glass-card" aria-labelledby="personal-login-title">
+      <div class="projects-login-prompt__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="10" width="16" height="11" rx="3" />
+          <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+          <path d="M12 14v3" />
+        </svg>
+      </div>
+      <div class="projects-login-prompt__copy">
+        <p class="projects-kicker">{{ personalLoginCopy.kicker }}</p>
+        <h2 id="personal-login-title">{{ personalLoginCopy.title }}</h2>
+        <p>{{ personalLoginCopy.description }}</p>
+        <div class="projects-login-prompt__notes" aria-label="登录后可用功能">
+          <span>{{ isWebsiteOnlyView ? '私人收藏夹' : '收藏同步' }}</span>
+          <span>标签整理</span>
+          <span>跨设备访问</span>
+        </div>
+      </div>
+      <button type="button" class="projects-login-prompt__action" @click="goToPersonalLogin">
+        登录后查看
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14" />
+          <path d="m14 7 5 5-5 5" />
+        </svg>
+      </button>
+    </section>
+
+    <template v-else>
     <section v-if="!isPersonalView" class="projects-category-panel glass-card" aria-label="项目分类筛选">
       <div class="projects-categories" aria-label="一级分类筛选">
         <button
@@ -1413,6 +1461,7 @@ onMounted(() => {
         <button class="btn-secondary" :disabled="!hasNext" @click="goPage(page + 1)">下一页</button>
       </div>
     </nav>
+    </template>
 
     <Teleport to="body">
       <Transition name="tool-modal">
@@ -1890,6 +1939,122 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(168, 162, 158, 0.25);
   outline: none;
+}
+
+.projects-login-prompt {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  min-height: 250px;
+  overflow: hidden;
+  padding: 34px;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.92), rgba(245, 245, 244, 0.78)),
+    radial-gradient(circle at 84% 20%, var(--projects-accent-soft), transparent 34%);
+}
+
+.projects-login-prompt::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.52;
+  background-image:
+    linear-gradient(rgba(168, 162, 158, 0.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(168, 162, 158, 0.10) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(90deg, #000, transparent 72%);
+}
+
+.projects-login-prompt > * {
+  position: relative;
+  z-index: 1;
+}
+
+.projects-login-prompt__mark {
+  display: grid;
+  width: 74px;
+  height: 74px;
+  place-items: center;
+  border: 1px solid var(--projects-accent-border);
+  border-radius: 26px;
+  color: var(--projects-accent);
+  background: rgba(236, 254, 255, 0.72);
+  box-shadow: 0 18px 45px var(--projects-accent-soft);
+  transform: rotate(-3deg);
+}
+
+.projects-login-prompt__mark svg {
+  width: 32px;
+  height: 32px;
+}
+
+.projects-login-prompt__copy {
+  max-width: 660px;
+}
+
+.projects-login-prompt__copy h2 {
+  color: #292524;
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.projects-login-prompt__copy > p:not(.projects-kicker) {
+  max-width: 620px;
+  margin-top: 12px;
+  color: #78716c;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.projects-login-prompt__notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.projects-login-prompt__notes span {
+  border: 1px solid rgba(168, 162, 158, 0.22);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #57534e;
+  background: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.projects-login-prompt__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 999px;
+  padding: 13px 19px;
+  color: #fff;
+  background: #292524;
+  box-shadow: 0 16px 34px rgba(41, 37, 36, 0.16);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.projects-login-prompt__action:hover {
+  background: var(--projects-accent);
+  box-shadow: 0 18px 38px rgba(14, 116, 144, 0.20);
+  transform: translateY(-2px);
+}
+
+.projects-login-prompt__action svg {
+  width: 16px;
+  height: 16px;
 }
 
 .projects-category-panel {
@@ -2553,8 +2718,17 @@ onMounted(() => {
     padding: 16px 16px 96px;
   }
 
+  .projects-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-card {
+    min-width: 0;
+  }
+
   .projects-hero,
   .projects-toolbar,
+  .projects-login-prompt,
   .projects-pagination {
     align-items: flex-start;
     flex-direction: column;
@@ -2572,6 +2746,22 @@ onMounted(() => {
 
   .projects-hero {
     padding: 22px;
+  }
+
+  .projects-login-prompt {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: 26px 22px;
+  }
+
+  .projects-login-prompt__mark {
+    width: 62px;
+    height: 62px;
+    border-radius: 22px;
+  }
+
+  .projects-login-prompt__action {
+    width: 100%;
   }
 
   .projects-hero__stats {
@@ -2600,6 +2790,21 @@ onMounted(() => {
   .project-card__actions {
     align-items: flex-start;
     flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .project-card__stats {
+    flex-wrap: wrap;
+  }
+
+  .tool-modal__overlay {
+    padding: 10px;
+  }
+
+  .tool-modal__panel {
+    max-height: calc(100dvh - 20px);
+    overflow-y: auto;
+    padding: 20px;
   }
 
   .tool-modal__manual-grid {

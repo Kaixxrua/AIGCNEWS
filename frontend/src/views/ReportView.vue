@@ -330,13 +330,13 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
     <!-- ═══ 紧凑型操作面板：标题 + 源选择 + 周期 + 操作按钮 ═══ -->
     <div class="stagger-enter glass-card shrink-0 px-4 py-3 space-y-2">
       <!-- 第一行：标题 + 状态 + 操作按钮 -->
-      <div class="flex items-center justify-between gap-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2 min-w-0">
           <component v-if="currentTypeInfo?.icon" :is="currentTypeInfo.icon" class="h-5 w-5 text-stone-500 shrink-0" />
           <h1 class="text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo?.label || '自动化简报' }}</h1>
           <span class="text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ currentPeriodInfo?.label }} · {{ currentTypeInfo?.desc }}</span>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
           <div v-if="isCached && !isGenerating" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
             <span class="status-dot bg-brand-green" />
             <span class="text-2xs font-medium text-green-700">已缓存</span>
@@ -406,11 +406,11 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
 
       <!-- 第二行：源选择 + 周期选择 -->
       <div class="flex flex-wrap items-center gap-2" style="border-top: 1px solid rgba(168,162,158,0.10); padding-top: 8px">
-        <div class="flex flex-wrap gap-1.5">
+        <div class="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
           <button
             v-for="type in REPORT_TYPES"
             :key="type.key"
-            class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
+            class="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
             :class="selectedType === type.key
               ? 'bg-stone-700 text-white shadow-sm'
               : 'text-stone-500 hover:bg-stone-50 hover:text-stone-700'"

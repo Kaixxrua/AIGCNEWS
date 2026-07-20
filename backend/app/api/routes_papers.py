@@ -2,7 +2,7 @@
 Papers API：论文搜索、Top10 今日推荐、论文详情、PDF 代理。
 
 端点列表：
-  GET  /api/papers/search?q=&limit=  → 全文搜索（title+summary模糊匹配，所有来源）
+  GET  /api/papers/search?q=&limit=  → 文档搜索（title+summary+tags，所有来源）
   GET  /api/papers/top10-today        → 今日高分 Arxiv 论文前10，用于冷启动推荐
   GET  /api/papers/{paper_id}         → 论文详情（含 pdf_media_url）
   GET  /api/papers/{paper_id}/pdf     → 代理 arxiv PDF（解决前端 CORS）
@@ -10,6 +10,7 @@ Papers API：论文搜索、Top10 今日推荐、论文详情、PDF 代理。
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from typing import Any, Dict, List, Optional
@@ -17,6 +18,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+
+from backend.app.repositories.mysql_repo import MySQLRepository
 
 router = APIRouter()
 
@@ -68,44 +71,21 @@ async def search_papers(
     limit: int = Query(default=20, ge=1, le=100),
 ):
     """
-    全文搜索所有来源的文档（title + summary 模糊匹配）。
+    搜索所有来源的文档（title + summary + tags，支持自然语言查询放宽）。
 
     返回结果包含 source 字段：
     - source=='arxiv' 且存在 id 时，前端可跳转 /papers/:id/read
     - 其他来源继续跳原始 url
     """
-    import asyncio
-    from backend.app.repositories.mysql_repo import MySQLRepository
+    normalized_q = q.strip()
+    if not normalized_q:
+        raise HTTPException(status_code=422, detail="搜索关键词不能为空")
 
     db = MySQLRepository()
-
-    def _do_search() -> List[Dict[str, Any]]:
-        like = f"%{q}%"
-        sql = """
-            SELECT id, source, source_channel, title, url, summary,
-                   published_date, tags, score, raw_score, rank_in_period,
-                   local_pdf_path, created_at
-            FROM documents
-            WHERE title LIKE %s OR summary LIKE %s
-            ORDER BY
-                CASE WHEN title LIKE %s THEN 0 ELSE 1 END,
-                COALESCE(raw_score, score, 0) DESC,
-                created_at DESC
-            LIMIT %s
-        """
-        conn = db._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (like, like, like, limit))
-                rows = cur.fetchall()
-            conn.commit()
-            return [_safe_doc(dict(r)) for r in rows]
-        finally:
-            conn.close()
-
-    docs = await asyncio.to_thread(_do_search)
+    rows = await asyncio.to_thread(db.search_documents, normalized_q, limit)
+    docs = [_safe_doc(dict(row)) for row in rows]
     enriched = [_enrich_pdf_url(d, request) for d in docs]
-    return {"items": enriched, "total": len(enriched), "q": q}
+    return {"items": enriched, "total": len(enriched), "q": normalized_q}
 
 
 # ---------------------------------------------------------------------------

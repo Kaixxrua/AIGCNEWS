@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, AsyncGenerator, Dict, List
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -61,9 +62,69 @@ SCHEDULE_CONFIG: List[Dict[str, Any]] = [
         "cron": {"hour": 2, "minute": 0},
         "desc": "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",
     },
+    {
+        "id": "github_project_metrics_refresh",
+        "source": "github_project_metrics_refresh",
+        "cron": {"hour": "1-23/2", "minute": 17},
+        "desc": "GitHub 项目库当天指标每两小时刷新",
+    },
 ]
 
 _scheduler: AsyncIOScheduler | None = None
+_github_job_lock: asyncio.Lock | None = None
+_ARXIV_RECONCILE_DAYS = 2
+_GITHUB_METRICS_REFRESH_LIMIT = 80
+_GITHUB_METRICS_MIN_STARS = 500
+_GITHUB_METRICS_MAX_AGE = timedelta(hours=2, minutes=15)
+
+
+def _get_github_job_lock() -> asyncio.Lock:
+    global _github_job_lock
+    if _github_job_lock is None:
+        _github_job_lock = asyncio.Lock()
+    return _github_job_lock
+
+
+def _missing_recent_arxiv_daily_dates() -> List[str]:
+    """Return missing recent HF daily dates, bounded to avoid startup storms."""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+    from backend.app.services.ingestion.base_crawler import today_cst
+
+    today = date.fromisoformat(today_cst())
+    candidates = [
+        (today - timedelta(days=offset)).isoformat()
+        for offset in range(_ARXIV_RECONCILE_DAYS, 0, -1)
+    ]
+    existing = set(
+        MySQLRepository().get_snapshot_dates(
+            limit=_ARXIV_RECONCILE_DAYS,
+            source="arxiv",
+            period="daily",
+        )
+    )
+    return [candidate for candidate in candidates if candidate not in existing]
+
+
+async def _reconcile_recent_arxiv_daily_snapshots() -> None:
+    try:
+        missing_dates = await asyncio.to_thread(_missing_recent_arxiv_daily_dates)
+    except Exception as exc:
+        logger.warning("[Scheduler] 检查 Arxiv 日榜缺口失败，跳过启动补齐: %s", exc)
+        return
+
+    for target_date in missing_dates:
+        logger.info("[Scheduler] 补齐缺失 Arxiv 日榜快照: %s", target_date)
+        try:
+            from backend.app.services.ingestion.pipeline import run_single_source_pipeline
+
+            await asyncio.to_thread(
+                run_single_source_pipeline,
+                "arxiv",
+                target_date=target_date,
+                periods=["daily"],
+            )
+        except Exception as exc:
+            logger.error("[Scheduler] Arxiv 日榜快照补齐失败 %s: %s", target_date, exc)
 
 
 def get_scheduler() -> AsyncIOScheduler:
@@ -75,10 +136,15 @@ def get_scheduler() -> AsyncIOScheduler:
 
 async def _run_single_source_job(source_name: str) -> None:
     logger.info("[Scheduler] 触发 %s 采集任务...", source_name)
+    lock = _get_github_job_lock() if source_name == "github" else None
     try:
         from backend.app.services.ingestion.pipeline import run_single_source_pipeline
 
-        result = await asyncio.to_thread(run_single_source_pipeline, source_name)
+        if lock is None:
+            result = await asyncio.to_thread(run_single_source_pipeline, source_name)
+        else:
+            async with lock:
+                result = await asyncio.to_thread(run_single_source_pipeline, source_name)
         ingested = result.get("ingested_total", 0)
         logger.info("[Scheduler] %s 采集完成，入库 %d 条。", source_name, ingested)
     except Exception as exc:
@@ -92,14 +158,91 @@ async def _run_github_project_daily_pipeline_job() -> None:
             run_github_project_daily_pipeline,
         )
 
-        result = await asyncio.to_thread(
-            run_github_project_daily_pipeline,
-            refresh_limit=80,
-            enrich_limit=50,
-        )
+        async with _get_github_job_lock():
+            result = await asyncio.to_thread(
+                run_github_project_daily_pipeline,
+                refresh_limit=80,
+                enrich_limit=50,
+            )
         logger.info("[Scheduler] GitHub 项目库每日流水线完成：%s", result)
     except Exception as exc:
         logger.error("[Scheduler] GitHub 项目库每日流水线失败: %s", exc, exc_info=True)
+
+
+def _github_refresh_needed(status: Dict[str, Any]) -> bool:
+    target_count = int(status.get("target_count") or 0)
+    if target_count == 0:
+        return False
+    if int(status.get("snapshot_count") or 0) < target_count:
+        return True
+    if int(status.get("metric_count") or 0) < target_count:
+        return True
+
+    latest = status.get("oldest_captured_at")
+    if not latest:
+        return True
+    if isinstance(latest, str):
+        try:
+            latest = datetime.fromisoformat(latest.replace("Z", "+00:00"))
+        except ValueError:
+            return True
+    if not isinstance(latest, datetime):
+        return True
+    if latest.tzinfo is None:
+        latest = latest.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - latest.astimezone(timezone.utc) > _GITHUB_METRICS_MAX_AGE
+
+
+async def _refresh_current_github_project_metrics(metric_date: str) -> Dict[str, Any]:
+    from backend.app.services.ingestion.github_project_metrics_service import (
+        refresh_and_compute_github_project_metrics,
+    )
+
+    return await asyncio.to_thread(
+        refresh_and_compute_github_project_metrics,
+        min_stars=_GITHUB_METRICS_MIN_STARS,
+        limit=_GITHUB_METRICS_REFRESH_LIMIT,
+        metric_date=metric_date,
+    )
+
+
+async def _run_github_project_metrics_refresh_job() -> None:
+    from backend.app.services.ingestion.github_project_metrics_service import (
+        current_github_metric_date,
+    )
+
+    metric_date = current_github_metric_date()
+    logger.info("[Scheduler] 触发 GitHub 当天指标刷新: %s", metric_date)
+    try:
+        async with _get_github_job_lock():
+            result = await _refresh_current_github_project_metrics(metric_date)
+        logger.info("[Scheduler] GitHub 当天指标刷新完成：%s", result)
+    except Exception as exc:
+        logger.error("[Scheduler] GitHub 当天指标刷新失败: %s", exc, exc_info=True)
+
+
+async def _reconcile_current_github_project_metrics() -> None:
+    from backend.app.repositories.mysql_repo import MySQLRepository
+    from backend.app.services.ingestion.github_project_metrics_service import (
+        current_github_metric_date,
+    )
+
+    metric_date = current_github_metric_date()
+    try:
+        async with _get_github_job_lock():
+            status = await asyncio.to_thread(
+                MySQLRepository().get_github_metric_refresh_status,
+                metric_date=metric_date,
+                min_stars=_GITHUB_METRICS_MIN_STARS,
+                limit=_GITHUB_METRICS_REFRESH_LIMIT,
+            )
+            if not _github_refresh_needed(status):
+                logger.info("[Scheduler] GitHub 当天指标完整且新鲜，跳过启动补跑：%s", status)
+                return
+            logger.info("[Scheduler] GitHub 当天指标缺失或过期，执行启动补跑：%s", status)
+            await _refresh_current_github_project_metrics(metric_date)
+    except Exception as exc:
+        logger.warning("[Scheduler] GitHub 当天指标启动补跑失败: %s", exc, exc_info=True)
 
 
 async def _run_github_hot_job() -> None:
@@ -298,6 +441,8 @@ def start_scheduler() -> None:
             job_func = _run_github_project_enrichment_job
         elif source == "github_project_daily_pipeline":
             job_func = _run_github_project_daily_pipeline_job
+        elif source == "github_project_metrics_refresh":
+            job_func = _run_github_project_metrics_refresh_job
         else:
 
             async def _make_job(src: str = source) -> None:
@@ -312,7 +457,10 @@ def start_scheduler() -> None:
             name=desc,
             replace_existing=True,
             max_instances=1,
-            misfire_grace_time=7200,
+            coalesce=source == "github_project_metrics_refresh",
+            misfire_grace_time=(
+                3600 if source == "github_project_metrics_refresh" else 7200
+            ),
         )
         logger.info("[Scheduler] 注册采集任务: %s (%s) cron=%s", job_id, desc, cron)
 
@@ -342,6 +490,9 @@ def start_scheduler() -> None:
     logger.info("[Scheduler] 注册会话清理任务: conversation_cleanup (每 7 天 03:30)")
 
     scheduler.start()
+    loop = asyncio.get_running_loop()
+    loop.create_task(_reconcile_recent_arxiv_daily_snapshots())
+    loop.create_task(_reconcile_current_github_project_metrics())
 
     jobs = scheduler.get_jobs()
     logger.info("[Scheduler] APScheduler 已启动，共 %d 个调度任务：", len(jobs))

@@ -14,17 +14,20 @@ services:
     env_file:
       - ../.env
     environment:
-      - HF_ENDPOINT=https://huggingface.co
+      - HF_ENDPOINT=https://hf-mirror.com
       - HF_HUB_OFFLINE=0
       - TRANSFORMERS_OFFLINE=0
-      # 通过宿主机 Clash 代理访问外网（172.18.0.1 = compose 网络网关 = 宿主机）
-      - HTTP_PROXY=http://172.18.0.1:7890
-      - HTTPS_PROXY=http://172.18.0.1:7890
-      - http_proxy=http://172.18.0.1:7890
-      - https_proxy=http://172.18.0.1:7890
-      # 内网服务不走代理
-      - NO_PROXY=localhost,127.0.0.1,milvus-standalone,mysql-aigc,redis,neo4j,etcd,minio,172.18.0.0/16,172.18.0.1,118.89.101.11,sub2api.aigcnews.cn
-      - no_proxy=localhost,127.0.0.1,milvus-standalone,mysql-aigc,redis,neo4j,etcd,minio,172.18.0.0/16,172.18.0.1,118.89.101.11,sub2api.aigcnews.cn
+      - OUTBOUND_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
+      - HTTP_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
+      - HTTPS_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
+      - ALL_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
+      - http_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
+      - https_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
+      - all_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,mysql-aigc,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,mysql-aigc,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:172.19.0.1"
     volumes:
       - ../backend:/src/backend
       - ../storage/papers:/src/storage/papers
@@ -39,7 +42,38 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      - backend-api
+      backend-api:
+        condition: service_started
+      priceai:
+        condition: service_healthy
+
+  priceai:
+    build:
+      context: ../../PriceAI
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${PRICEAI_NEXT_PUBLIC_SUPABASE_URL:?set PRICEAI_NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${PRICEAI_NEXT_PUBLIC_SUPABASE_ANON_KEY:?set PRICEAI_NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_UMAMI_ALLOWED_DOMAINS: price.gptsakura.com
+    image: priceai-node-standalone:local
+    container_name: priceai
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ../../.priceai-node.env
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "--header=User-Agent: PriceAI-Docker-Healthcheck", "http://127.0.0.1:3000/api/deployment"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
 
   etcd:
     container_name: milvus-etcd

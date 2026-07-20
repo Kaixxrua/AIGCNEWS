@@ -540,6 +540,7 @@ class IngestionOrchestrator:
         papers: List[dict],
         task_id: int,
         log_label: Optional[str] = None,
+        snapshot_date: Optional[str] = None,
     ) -> int:
         """内容丰富 → 三库写入，返回入库数量。
 
@@ -583,7 +584,7 @@ class IngestionOrchestrator:
             self.db,
             task_id,
             label,
-            self.snapshot_date,
+            snapshot_date or self.snapshot_date,
         )
         return count
 
@@ -634,7 +635,11 @@ class IngestionOrchestrator:
         bg_thread.start()
         logger.info("[Orchestrator] 后台 PDF 下载线程已启动（daemon=True）。")
 
-    async def run_single_source(self, source_name: str) -> Dict[str, int]:
+    async def run_single_source(
+        self,
+        source_name: str,
+        periods: Optional[List[str]] = None,
+    ) -> Dict[str, int]:
         """按源独立采集，按周期串行处理（Phase 4 智能调度器使用）。
 
         改造要点：
@@ -659,7 +664,8 @@ class IngestionOrchestrator:
         arxiv_papers_for_pdf: List[dict] = []
 
         try:
-            for period in ("daily", "weekly", "monthly"):
+            requested_periods = periods or ["daily", "weekly", "monthly"]
+            for period in requested_periods:
                 if period not in crawler.supported_periods:
                     logger.info(
                         "[Orchestrator][%s] 不支持 %s 周期，跳过。",
@@ -738,6 +744,7 @@ class IngestionOrchestrator:
                     papers=cr.items,
                     task_id=task_id,
                     log_label=f"{source_name}_{period}",  # 日志仍显示周期信息
+                    snapshot_date=cr.snapshot_date,
                 )
                 total += count
 
@@ -880,6 +887,7 @@ class IngestionOrchestrator:
                         papers=cr.items,
                         task_id=task_id,
                         log_label=f"{source_key}_{period}",  # 日志仍显示周期信息
+                        snapshot_date=cr.snapshot_date,
                     )
                     stats[source_key] += count
                     total += count
@@ -955,6 +963,7 @@ def run_single_source_pipeline(
     limit: int = _FETCH_LIMIT,
     top_n: int = _TOP_N_PER_SOURCE,
     target_date: Optional[str] = None,
+    periods: Optional[List[str]] = None,
 ) -> Dict[str, int]:
     """单源采集入口（Phase 4 调度器使用）。
 
@@ -972,7 +981,7 @@ def run_single_source_pipeline(
         top_n=top_n,
         target_date=target_date,
     )
-    return asyncio.run(orchestrator.run_single_source(source_name))
+    return asyncio.run(orchestrator.run_single_source(source_name, periods=periods))
 
 
 async def run_ingestion_pipeline_async(
