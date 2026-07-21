@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+message_file=${1:?commit message file is required}
+subject=$(grep -m1 -v '^[[:space:]]*#' "$message_file" || true)
+
+# Allow Git-generated merge commits; normal project commits remain constrained.
+if [[ "$subject" == Merge\ * ]]; then
+  exit 0
+fi
+
+pattern='^(feat|fix|refactor|perf|test|docs|build|ci|chore|revert)\([a-z0-9]+(-[a-z0-9]+)*\)!?: .{1,}$'
+
+if [[ ! "$subject" =~ $pattern ]]; then
+  cat >&2 <<'EOF'
+提交信息不符合 AIGCNEWS 规范。
+
+格式：<type>(<scope>)!: <subject>
+示例：feat(projects): 增加个人工具网站收藏
+
+允许的 type：feat、fix、refactor、perf、test、docs、build、ci、chore、revert
+scope 必填并使用小写 kebab-case。详见 docs/git-workflow.md。
+EOF
+  exit 1
+fi
+
+if (( ${#subject} > 100 )); then
+  printf '提交标题超过 100 个字符（当前 %d 个）。\n' "${#subject}" >&2
+  exit 1
+fi
+
+if [[ "$subject" =~ [[:space:]]$ ]]; then
+  printf '提交标题末尾不得包含空白字符。\n' >&2
+  exit 1
+fi

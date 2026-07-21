@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/auto-push-after-commit.sh",
+            "timeout": 120,
+            "statusMessage": "Pushing completed PR branch..."
+          }
+        ]
+      }
+    ]
+  }
+}
