@@ -3,7 +3,7 @@
  * GlobalSearch.vue
  * 顶部全局搜索框（Ctrl/Cmd+K 唤醒，300ms debounce，空输入时展示今日 Top10）
  */
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { searchPapers, fetchTop10Today, type PaperItem } from '../services/api'
 
@@ -154,7 +154,7 @@ const sourceLabel = (source?: string) => {
         <button
           v-for="item in results"
           :key="item.id"
-          class="flex w-full items-start gap-2.5 px-3 py-2 text-left text-xs transition hover:bg-stone-50 group"
+          class="search-result flex w-full items-start gap-2.5 px-3 py-2 text-left text-xs transition group"
           @mousedown.prevent="onSelectItem(item)"
         >
           <!-- 来源标签 -->
@@ -190,6 +190,12 @@ const sourceLabel = (source?: string) => {
 </template>
 
 <style scoped>
+.search-result:hover,
+.search-result:focus-visible {
+  color: var(--ink);
+  background: var(--acid-soft);
+}
+
 .search-drop-enter-active,
 .search-drop-leave-active {
   transition: opacity 0.12s ease, transform 0.12s ease;

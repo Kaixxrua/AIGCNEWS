@@ -102,7 +102,7 @@ const selectDate = (day: CalendarDay) => {
       <h3 class="text-2xs font-semibold text-stone-700 tracking-tight font-serif">{{ monthLabel }}</h3>
       <div class="flex items-center gap-0.5">
         <button
-          class="flex h-5 w-5 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
+          class="flex h-5 w-5 items-center justify-center rounded-full text-stone-500 transition hover:bg-accent-soft hover:text-ink"
           @click="prevMonth"
         >
           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -110,7 +110,7 @@ const selectDate = (day: CalendarDay) => {
           </svg>
         </button>
         <button
-          class="flex h-5 w-5 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
+          class="flex h-5 w-5 items-center justify-center rounded-full text-stone-500 transition hover:bg-accent-soft hover:text-ink"
           @click="nextMonth"
         >
           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -174,7 +174,8 @@ const selectDate = (day: CalendarDay) => {
 }
 
 .calendar-day:hover:not(:disabled) {
-  background: #f5f5f4; /* stone-100 */
+  color: var(--acid-ink);
+  background: var(--acid-soft);
 }
 
 .calendar-day--disabled,
@@ -191,14 +192,15 @@ const selectDate = (day: CalendarDay) => {
 }
 
 .calendar-day--active {
-  color: #fff !important;
-  background: #44403c !important; /* stone-700 */
+  color: var(--acid-ink) !important;
+  background: var(--acid) !important;
   font-weight: 700;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
 }
 
 .calendar-day--active:hover {
-  background: #57534e !important; /* stone-600 */
+  color: var(--acid-ink) !important;
+  background: var(--acid) !important;
 }
 
 .calendar-day--has-snapshot {

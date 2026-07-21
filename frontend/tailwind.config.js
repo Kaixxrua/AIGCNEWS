@@ -7,24 +7,35 @@ export default {
   theme: {
     extend: {
       colors: {
+        paper: {
+          DEFAULT: '#f7f5ee',
+          raised: '#fffefa',
+          muted: '#efede4',
+        },
         surface: {
-          DEFAULT: '#ffffff',
-          subtle: '#fafaf9',  /* stone-50 */
-          muted: '#f5f5f4',   /* stone-100 */
+          DEFAULT: '#fffefa',
+          subtle: '#f7f5ee',
+          muted: '#efede4',
         },
         border: {
-          DEFAULT: '#e7e5e4', /* stone-200 */
-          strong: '#d6d3d1',  /* stone-300 */
+          DEFAULT: '#d6d4ca',
+          strong: '#1b1b18',
+        },
+        rule: {
+          DEFAULT: '#d6d4ca',
+          strong: '#1b1b18',
         },
         ink: {
-          DEFAULT: '#1c1917', /* stone-900 */
-          secondary: '#57534e', /* stone-600 */
-          muted: '#78716c',     /* stone-500 */
-          faint: '#a8a29e',     /* stone-400 */
+          DEFAULT: '#151512',
+          secondary: '#4f5049',
+          muted: '#797a70',
+          faint: '#a4a498',
         },
         accent: {
-          DEFAULT: '#44403c', /* stone-700 */
-          hover: '#57534e',   /* stone-600 */
+          DEFAULT: '#d8f14b',
+          soft: '#f4f9d4',
+          hover: '#bfd830',
+          ink: '#171a09',
         },
         brand: {
           green: '#22c55e',
@@ -59,22 +70,23 @@ export default {
         },
       },
       borderRadius: {
-        '2xl': '1rem',
-        '3xl': '1.25rem',
-        '4xl': '1.5rem',
+        control: '0.5rem',
+        module: '0.75rem',
+        '2xl': '0.75rem',
+        '3xl': '1rem',
+        '4xl': '1.25rem',
       },
       boxShadow: {
-        card: '0 1px 3px 0 rgba(0,0,0,0.03), 0 1px 2px -1px rgba(0,0,0,0.02)',
-        'card-md': '0 2px 12px 0 rgba(0,0,0,0.03)',
-        'card-lg': '0 4px 20px 0 rgba(0,0,0,0.05)',
-        'inner-sm': 'inset 0 1px 2px rgba(0,0,0,0.03)',
-        /* 科技感发光阴影 */
-        'glow-sm': '0 0 12px rgba(6, 182, 212, 0.08)',
-        'glow-md': '0 0 24px rgba(6, 182, 212, 0.12)',
-        'glow-lg': '0 0 40px rgba(6, 182, 212, 0.15)',
+        card: '1px 1px 0 rgba(21,21,18,0.08)',
+        'card-md': '2px 2px 0 rgba(21,21,18,0.12)',
+        'card-lg': '4px 4px 0 #151512',
+        'inner-sm': 'inset 0 0 0 1px rgba(21,21,18,0.06)',
+        'glow-sm': '2px 2px 0 rgba(21,21,18,0.10)',
+        'glow-md': '3px 3px 0 rgba(21,21,18,0.14)',
+        'glow-lg': '5px 5px 0 #d8f14b',
       },
       fontFamily: {
-        sans: ['"Inter"', '"PingFang SC"', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+        sans: ['"DM Sans"', '"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
         serif: ['"Playfair Display"', 'Georgia', '"Times New Roman"', 'serif'],
         mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
       },

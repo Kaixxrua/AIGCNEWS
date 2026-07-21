@@ -849,13 +849,13 @@ const getMcpServerInitial = (server: McpServerConfig) => {
         <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-top: 1px solid rgba(168,162,158,0.15)">
           <p class="text-xs text-stone-400">第 {{ page }} / {{ totalPages }} 页 · {{ total }} 条</p>
           <div class="flex items-center gap-1">
-            <button class="rounded-full px-2.5 py-1 text-xs font-medium text-stone-400 hover:bg-stone-100 disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page <= 1" @click="goPage(1)">«</button>
-            <button class="rounded-full px-3 py-1 text-xs font-medium text-stone-400 hover:bg-stone-100 disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
+            <button class="rounded-full px-2.5 py-1 text-xs font-medium text-stone-400 hover:bg-accent-soft disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page <= 1" @click="goPage(1)">«</button>
+            <button class="rounded-full px-3 py-1 text-xs font-medium text-stone-400 hover:bg-accent-soft disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
             <template v-for="p in totalPages" :key="p">
-              <button v-if="Math.abs(p - page) <= 2" class="rounded-full px-3 py-1 text-xs font-medium transition" :class="p === page ? 'bg-stone-700 text-white shadow-sm' : 'text-stone-400 hover:bg-stone-100'" @click="goPage(p)">{{ p }}</button>
+              <button v-if="Math.abs(p - page) <= 2" class="rounded-full px-3 py-1 text-xs font-medium transition" :class="p === page ? 'bg-accent text-accent-ink border border-ink shadow-sm' : 'text-stone-500 hover:bg-accent-soft hover:text-ink'" @click="goPage(p)">{{ p }}</button>
             </template>
-            <button class="rounded-full px-3 py-1 text-xs font-medium text-stone-400 hover:bg-stone-100 disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
-            <button class="rounded-full px-2.5 py-1 text-xs font-medium text-stone-400 hover:bg-stone-100 disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page >= totalPages" @click="goPage(totalPages)">»</button>
+            <button class="rounded-full px-3 py-1 text-xs font-medium text-stone-400 hover:bg-accent-soft disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
+            <button class="rounded-full px-2.5 py-1 text-xs font-medium text-stone-400 hover:bg-accent-soft disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page >= totalPages" @click="goPage(totalPages)">»</button>
           </div>
         </div>
       </div>

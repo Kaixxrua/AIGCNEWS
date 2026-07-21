@@ -7,7 +7,7 @@ import ipaddress
 import json
 import re
 import socket
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from threading import RLock
 from typing import Any, Dict, Iterator
@@ -16,6 +16,7 @@ from urllib.parse import urldefrag, urljoin, urlparse, urlunparse
 import httpx
 from bs4 import BeautifulSoup
 
+from backend.app.core.config import settings
 from backend.app.services.ingestion.project_taxonomy import clean_text
 
 _MAX_REDIRECTS = 3
@@ -28,6 +29,7 @@ _USER_AGENT = (
 _ALLOWED_SCHEMES = {"http", "https"}
 _DENIED_HOSTS = {"localhost", "metadata.google.internal"}
 _BLOCKED_STATUS_CODES = {401, 403, 429, 503}
+_REMOTE_DNS_PROXY_HOSTS = {"youtube.com", "youtu.be"}
 _CHARSET_RE = re.compile(rb"charset=[\"']?([a-zA-Z0-9_\-]+)", re.IGNORECASE)
 _META_CHARSET_RE = re.compile(rb"<meta[^>]+charset=[\"']?\s*([a-zA-Z0-9_\-]+)", re.IGNORECASE)
 _ENCODING_ALIASES = {
@@ -558,7 +560,60 @@ def _read_limited_response(response: httpx.Response) -> bytes:
     return b"".join(chunks)
 
 
-def _fetch_tool_website_metadata(raw_url: str, *, trust_env: bool = False) -> ToolWebsiteMetadata:
+def _validated_proxy_url(raw_proxy_url: str) -> str | None:
+    proxy_url = (raw_proxy_url or "").strip()
+    if not proxy_url:
+        return None
+    try:
+        parsed = urlparse(proxy_url)
+        port = parsed.port
+    except ValueError as exc:
+        raise ToolWebsiteFetchError("出站代理配置无效") from exc
+    if parsed.scheme.lower() not in {"http", "https", "socks5", "socks5h"}:
+        raise ToolWebsiteFetchError("出站代理配置无效")
+    if not parsed.hostname or port is None or not 1 <= port <= 65_535:
+        raise ToolWebsiteFetchError("出站代理配置无效")
+    if parsed.path not in {"", "/"} or parsed.params or parsed.query or parsed.fragment:
+        raise ToolWebsiteFetchError("出站代理配置无效")
+    return proxy_url
+
+
+def _proxy_uses_remote_dns(proxy_url: str, hostname: str) -> bool:
+    proxy_scheme = urlparse(proxy_url).scheme.lower()
+    host = hostname.lower().rstrip(".")
+    return proxy_scheme == "socks5h" and any(
+        host == allowed_host or host.endswith(f".{allowed_host}")
+        for allowed_host in _REMOTE_DNS_PROXY_HOSTS
+    )
+
+
+def _proxy_request_target(logical_url: str) -> tuple[str, dict[str, str], dict[str, Any]]:
+    parsed = urlparse(logical_url)
+    hostname = parsed.hostname or ""
+    safe_ips = _safe_resolved_ips(hostname)
+    if not safe_ips:
+        raise ToolWebsiteFetchError("不允许访问本地、内网或保留地址")
+    selected_ip = next((ip for ip in safe_ips if ":" not in ip), safe_ips[0])
+    ip_host = f"[{selected_ip}]" if ":" in selected_ip else selected_ip
+    netloc = ip_host
+    if parsed.port:
+        netloc = f"{ip_host}:{parsed.port}"
+    target_url = urlunparse((parsed.scheme, netloc, parsed.path, "", parsed.query, ""))
+
+    host_header = hostname
+    if parsed.port and not (
+        (parsed.scheme == "http" and parsed.port == 80)
+        or (parsed.scheme == "https" and parsed.port == 443)
+    ):
+        host_header = f"{hostname}:{parsed.port}"
+    return target_url, {"Host": host_header}, {"sni_hostname": hostname}
+
+
+def _fetch_tool_website_metadata(
+    raw_url: str,
+    *,
+    proxy_url: str | None = None,
+) -> ToolWebsiteMetadata:
     current_url = _validate_url(raw_url)
     headers = {
         "User-Agent": _USER_AGENT,
@@ -570,13 +625,35 @@ def _fetch_tool_website_metadata(raw_url: str, *, trust_env: bool = False) -> To
     with httpx.Client(
         timeout=timeout,
         follow_redirects=False,
-        trust_env=trust_env,
+        trust_env=False,
         headers=headers,
+        proxy=proxy_url,
     ) as client:
         for _ in range(_MAX_REDIRECTS + 1):
             hostname = urlparse(current_url).hostname or ""
-            with _pin_safe_dns_resolution(hostname):
-                with client.stream("GET", current_url) as response:
+            if proxy_url and _proxy_uses_remote_dns(proxy_url, hostname):
+                # Some blocked domains receive poisoned local DNS answers. This narrow allowlist
+                # deliberately relies on the trusted SOCKS resolver; redirects are revalidated.
+                request_url = current_url
+                request_headers = {}
+                extensions = {}
+                request_context = nullcontext()
+            elif proxy_url:
+                request_url, request_headers, extensions = _proxy_request_target(current_url)
+                request_context = nullcontext()
+            else:
+                request_url = current_url
+                request_headers = {}
+                extensions = {}
+                request_context = _pin_safe_dns_resolution(hostname)
+
+            with request_context:
+                with client.stream(
+                    "GET",
+                    request_url,
+                    headers=request_headers,
+                    extensions=extensions,
+                ) as response:
                     if response.status_code in (301, 302, 303, 307, 308):
                         location = response.headers.get("location")
                         if not location:
@@ -586,7 +663,7 @@ def _fetch_tool_website_metadata(raw_url: str, *, trust_env: bool = False) -> To
 
                     if response.status_code in _BLOCKED_STATUS_CODES:
                         return _fallback_metadata(
-                            str(response.url),
+                            current_url,
                             status_code=response.status_code,
                             reason=f"目标网站返回 {response.status_code}，可能启用了登录、WAF 或反爬限制，已用 URL 创建基础条目。",
                         )
@@ -609,15 +686,19 @@ def _fetch_tool_website_metadata(raw_url: str, *, trust_env: bool = False) -> To
 
                     content = _read_limited_response(response)
                     html, encoding = _decode_html(content, content_type)
-                    return _extract_metadata(str(response.url), html, encoding=encoding)
+                    return _extract_metadata(current_url, html, encoding=encoding)
 
     raise ToolWebsiteFetchError("重定向次数过多")
 
 
 def fetch_tool_website_metadata(raw_url: str) -> ToolWebsiteMetadata:
     try:
-        # This SSRF-sensitive fetcher must keep local DNS validation and pinning.
-        # Remote DNS through socks5h would invalidate that security boundary.
-        return _fetch_tool_website_metadata(raw_url, trust_env=False)
+        return _fetch_tool_website_metadata(raw_url)
     except httpx.RequestError as direct_exc:
-        raise ToolWebsiteFetchError(f"无法连接目标网站：{direct_exc}") from direct_exc
+        try:
+            proxy_url = _validated_proxy_url(settings.outbound_proxy)
+            if not proxy_url:
+                raise ToolWebsiteFetchError(f"无法连接目标网站：{direct_exc}") from direct_exc
+            return _fetch_tool_website_metadata(raw_url, proxy_url=proxy_url)
+        except httpx.RequestError as proxy_exc:
+            raise ToolWebsiteFetchError("直接连接和出站代理均无法访问目标网站") from proxy_exc

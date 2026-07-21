@@ -34,6 +34,11 @@ PROBES = {
         "expected": "mcp__aigc-news__search_papers",
         "default_trials": 5,
     },
+    "indexed_news": {
+        "prompt": "从 AIGC_NEWS 已索引内容里搜索最近关于模型推理的新闻和跨来源资料。",
+        "expected": "mcp__aigc-news__search_documents",
+        "default_trials": 5,
+    },
     "agent_learning": {
         "prompt": "我想系统学习 AI Agent 和 MCP，请从已有资源里找一些教程、示例和学习材料。",
         "expected": "mcp__aigc-news__search_github_ai_projects",
@@ -67,6 +72,7 @@ PROBES = {
 }
 MCP_TOOLS = [
     "mcp__aigc-news__search_papers",
+    "mcp__aigc-news__search_documents",
     "mcp__aigc-news__get_paper_detail",
     "mcp__aigc-news__get_top_items",
     "mcp__aigc-news__search_github_projects",

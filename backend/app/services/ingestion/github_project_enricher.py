@@ -24,6 +24,7 @@ from backend.app.services.ingestion.project_taxonomy import (
     PROMPT_VERSION,
     EnrichmentResult,
     clean_text,
+    extract_message_text,
     normalize_enrichment,
     normalize_tags,
     parse_json_object,
@@ -220,8 +221,7 @@ class GitHubProjectEnricher:
         for attempt in range(_MAX_RETRIES):
             try:
                 response = self.llm.invoke(messages)
-                raw = response.content if hasattr(response, "content") else str(response)
-                data = parse_json_object(str(raw))
+                data = parse_json_object(extract_message_text(response))
                 if not data:
                     raise ValueError("模型未返回可解析 JSON")
                 return _normalize_enrichment(data, repo)

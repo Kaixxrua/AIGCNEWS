@@ -33,3 +33,6 @@ storage/hf_cache/
 **/*.key
 frontend/ssl/
 ssl/
+
+# Generated test artifacts
+test-results/

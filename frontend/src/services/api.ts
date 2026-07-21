@@ -94,7 +94,6 @@ export interface CreateMcpTokenPayload {
   client_type: McpClientType
   client_label?: string
   scopes?: string[]
-  multi_open?: boolean
   expires_at?: string | null
 }
 

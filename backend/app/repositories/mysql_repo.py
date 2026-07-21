@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import unicodedata
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Any, Dict, List, Optional, Set
@@ -18,12 +17,20 @@ except ModuleNotFoundError:
 
 from backend.app.core.config import settings
 from backend.app.services.ingestion.project_taxonomy import (
+    CATEGORY_BY_SLUG,
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
     PROJECT_TAXONOMY,
+    SUBCATEGORY_BY_CATEGORY_SLUG,
     WEBSITE_CATEGORY_BY_SLUG,
     WEBSITE_DEFAULT_SUBCATEGORY_BY_CATEGORY,
     WEBSITE_SUBCATEGORY_BY_CATEGORY_SLUG,
     WEBSITE_TAXONOMY,
+)
+from backend.app.services.search_semantics import (
+    TECHNICAL_TOKEN_RE,
+    escape_like_literal,
+    normalize_search_query,
+    project_search_terms,
 )
 
 
@@ -117,13 +124,11 @@ _DOCUMENT_SEARCH_STOP_TERMS = {
     "教程",
     "资料",
 }
-_DOCUMENT_SEARCH_TOKEN_RE = re.compile(
-    r"[A-Za-z0-9](?:[A-Za-z0-9_+#-]|\.(?=[A-Za-z0-9]))*|\.[A-Za-z][A-Za-z0-9]*|[㐀-䶿一-鿿]+"
-)
+_DOCUMENT_SEARCH_TOKEN_RE = TECHNICAL_TOKEN_RE
 
 
 def _normalize_document_search_query(value: str) -> str:
-    return " ".join(unicodedata.normalize("NFKC", value or "").strip().split())
+    return normalize_search_query(value)
 
 
 def _document_search_candidates(query: str, *, max_terms: int = 5) -> List[str]:
@@ -167,7 +172,7 @@ def _document_search_candidates(query: str, *, max_terms: int = 5) -> List[str]:
 
 
 def _escape_like_literal(value: str, *, escape: str = "=") -> str:
-    return value.replace(escape, escape * 2).replace("%", f"{escape}%").replace("_", f"{escape}_")
+    return escape_like_literal(value, escape=escape)
 
 
 def _json_dumps(value: Any) -> str:
@@ -274,8 +279,20 @@ def _normalize_project_row(row: Dict[str, Any]) -> Dict[str, Any]:
     if item.get("source") == "website":
         category_slug = item.get("category_slug") or "other"
         subcategory_slug = item.get("subcategory_slug") or WEBSITE_DEFAULT_SUBCATEGORY_BY_CATEGORY.get(category_slug, "")
+        item["category_slug"] = category_slug
+        item["subcategory_slug"] = subcategory_slug
         item["category_name"] = WEBSITE_CATEGORY_BY_SLUG.get(category_slug, item.get("category_name") or "其他网站")
         item["subcategory_name"] = WEBSITE_SUBCATEGORY_BY_CATEGORY_SLUG.get(category_slug, {}).get(
+            subcategory_slug,
+            item.get("subcategory_name") or "未分类",
+        )
+    else:
+        category_slug = item.get("category_slug") or "other"
+        subcategory_slug = item.get("subcategory_slug") or DEFAULT_SUBCATEGORY_BY_CATEGORY.get(category_slug, "")
+        item["category_slug"] = category_slug
+        item["subcategory_slug"] = subcategory_slug
+        item["category_name"] = CATEGORY_BY_SLUG.get(category_slug, item.get("category_name") or "其他")
+        item["subcategory_name"] = SUBCATEGORY_BY_CATEGORY_SLUG.get(category_slug, {}).get(
             subcategory_slug,
             item.get("subcategory_name") or "未分类",
         )
@@ -1196,20 +1213,34 @@ class MySQLRepository:
         finally:
             conn.close()
 
-    def search_documents(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    def search_document_page(
+        self,
+        query: str,
+        *,
+        source: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
         candidates = _document_search_candidates(query)
+        page = max(1, int(page))
+        page_size = max(1, min(int(page_size), 100))
         if not candidates:
-            return []
-        limit = max(1, min(int(limit), 100))
-        patterns = [f"%{_escape_like_literal(candidate)}%" for candidate in candidates]
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
+        patterns = [f"%{_escape_like_literal(candidate)}%" for candidate in candidates]
         field_match = (
             "(COALESCE(title, '') LIKE %s ESCAPE '=' "
             "OR COALESCE(summary, '') LIKE %s ESCAPE '=' "
             "OR COALESCE(tags, '') LIKE %s ESCAPE '=')"
         )
-        where_sql = " OR ".join([field_match] * len(patterns))
-        where_params = [pattern for pattern in patterns for _ in range(3)]
+        search_sql = "(" + " OR ".join([field_match] * len(patterns)) + ")"
+        where_parts = [search_sql]
+        where_params: List[Any] = [pattern for pattern in patterns for _ in range(3)]
+        clean_source = str(source or "").strip().lower()
+        if clean_source:
+            where_parts.append("source = %s")
+            where_params.append(clean_source)
+        where_sql = " AND ".join(where_parts)
 
         tier_clauses: List[str] = []
         tier_params: List[Any] = []
@@ -1224,7 +1255,8 @@ class MySQLRepository:
 
         count_clauses = [f"CASE WHEN {field_match} THEN 1 ELSE 0 END" for _ in patterns]
         count_params = [pattern for pattern in patterns for _ in range(3)]
-        sql = f"""
+        count_sql = f"SELECT COUNT(*) AS cnt FROM documents WHERE {where_sql}"
+        rows_sql = f"""
             SELECT id, source, source_channel, title, url, summary,
                    published_date, tags, score, raw_score, rank_in_period,
                    local_pdf_path, created_at
@@ -1236,16 +1268,37 @@ class MySQLRepository:
                 COALESCE(raw_score, score, 0) DESC,
                 created_at DESC,
                 id ASC
-            LIMIT %s
+            LIMIT %s OFFSET %s
         """
-        params = tuple(where_params + tier_params + count_params + [limit])
+        offset = (page - 1) * page_size
         conn = self._connect()
         try:
             with conn.cursor() as cur:
-                cur.execute(sql, params)
-                return [dict(row) for row in cur.fetchall()]
+                cur.execute(count_sql, tuple(where_params))
+                total_row = cur.fetchone()
+                total = int(total_row["cnt"] if total_row else 0)
+                cur.execute(
+                    rows_sql,
+                    tuple(where_params + tier_params + count_params + [page_size, offset]),
+                )
+                items = [dict(row) for row in cur.fetchall()]
+            return {"items": items, "total": total, "page": page, "page_size": page_size}
         finally:
             conn.close()
+
+    def search_documents(
+        self,
+        query: str,
+        limit: int = 20,
+        *,
+        source: str | None = None,
+    ) -> List[Dict[str, Any]]:
+        return self.search_document_page(
+            query,
+            source=source,
+            page=1,
+            page_size=max(1, min(int(limit), 100)),
+        )["items"]
 
     def get_existing_document_summaries(
         self,
@@ -2499,7 +2552,7 @@ class MySQLRepository:
         page = max(1, int(page or 1))
         page_size = max(1, min(int(page_size or 24), 100))
         offset = (page - 1) * page_size
-        filters = ["COALESCE(c.stars, 0) > %s"]
+        filters = ["COALESCE(c.stars, 0) >= %s"]
         params: List[Any] = [min_stars]
 
         if enriched_only:
@@ -3388,7 +3441,7 @@ class MySQLRepository:
         website_effective_description_zh = "COALESCE(NULLIF(uo.description_zh, ''), we.description_zh)" if user_id else "we.description_zh"
         website_effective_tags_json = "COALESCE(NULLIF(uo.tags_json, ''), we.tags_json)" if user_id else "we.tags_json"
 
-        github_filters = ["COALESCE(c.stars, 0) > %s"]
+        github_filters = ["COALESCE(c.stars, 0) >= %s"]
         website_filters = ["1 = 1"]
         github_params: List[Any] = [min_stars]
         website_params: List[Any] = []
@@ -3396,7 +3449,12 @@ class MySQLRepository:
             website_filters.append("w.visibility COLLATE utf8mb4_unicode_ci = _utf8mb4'public' COLLATE utf8mb4_unicode_ci")
         if enriched_only:
             github_filters.append("ge.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci")
-            website_filters.append("we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci")
+            if favorites_only:
+                website_filters.append(
+                    "(we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci OR uo.id IS NOT NULL)"
+                )
+            else:
+                website_filters.append("we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci")
         metric_date = _today_local_date()
         today_top_status = (
             "AND ge_top.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci"
@@ -3439,7 +3497,7 @@ class MySQLRepository:
                  AND gm_top.daily_growth_available = 1
                  AND gm_top.daily_star_growth > 0
                 LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id = c_top.repo_id
-                WHERE COALESCE(c_top.stars, 0) > %s
+                WHERE COALESCE(c_top.stars, 0) >= %s
                   {today_top_status}
                 ORDER BY gm_top.hot_score DESC,
                          gm_top.daily_star_growth DESC,
@@ -3478,19 +3536,29 @@ class MySQLRepository:
             github_params.append(language)
             website_filters.append("1 = 0")
         if q:
-            like = f"%{q.strip()}%"
-            github_filters.append(
-                "(c.full_name LIKE %s OR c.title LIKE %s OR c.description LIKE %s OR "
-                "COALESCE(ge.description_zh, '') LIKE %s OR COALESCE(c.language, '') LIKE %s OR "
-                "COALESCE(c.topics_json, '') LIKE %s OR COALESCE(ge.tags_json, '') LIKE %s)"
-            )
-            website_filters.append(
-                f"({website_effective_title} LIKE %s OR w.domain LIKE %s OR "
-                f"{website_effective_description} LIKE %s OR w.canonical_url LIKE %s OR "
-                f"COALESCE({website_effective_description_zh}, '') LIKE %s OR COALESCE({website_effective_tags_json}, '') LIKE %s)"
-            )
-            github_params.extend([like, like, like, like, like, like, like])
-            website_params.extend([like, like, like, like, like, like])
+            terms = project_search_terms(q)
+            if terms:
+                github_term_filter = (
+                    "(c.full_name LIKE %s ESCAPE '=' OR c.title LIKE %s ESCAPE '=' OR "
+                    "c.description LIKE %s ESCAPE '=' OR COALESCE(ge.description_zh, '') LIKE %s ESCAPE '=' OR "
+                    "COALESCE(c.language, '') LIKE %s ESCAPE '=' OR COALESCE(c.topics_json, '') LIKE %s ESCAPE '=' OR "
+                    "COALESCE(ge.tags_json, '') LIKE %s ESCAPE '=')"
+                )
+                website_term_filter = (
+                    f"({website_effective_title} LIKE %s ESCAPE '=' OR w.domain LIKE %s ESCAPE '=' OR "
+                    f"{website_effective_description} LIKE %s ESCAPE '=' OR w.canonical_url LIKE %s ESCAPE '=' OR "
+                    f"COALESCE({website_effective_description_zh}, '') LIKE %s ESCAPE '=' OR "
+                    f"COALESCE({website_effective_tags_json}, '') LIKE %s ESCAPE '=')"
+                )
+                github_filters.extend([github_term_filter] * len(terms))
+                website_filters.extend([website_term_filter] * len(terms))
+                for term in terms:
+                    like = f"%{_escape_like_literal(term)}%"
+                    github_params.extend([like] * 7)
+                    website_params.extend([like] * 6)
+            else:
+                github_filters.append("1 = 0")
+                website_filters.append("1 = 0")
         if clean_tag:
             tag_like = f'%"{clean_tag}"%'
             github_filters.append("COALESCE(ge.tags_json, '') LIKE %s")
@@ -3511,8 +3579,8 @@ class MySQLRepository:
         order_by = {
             "hot": "hot_score DESC, daily_star_growth DESC, stars DESC, full_name ASC",
             "stars": "stars DESC, forks DESC, full_name ASC",
-            "updated": "COALESCE(NULLIF(pushed_at, ''), NULLIF(last_seen_at, ''), first_seen_at, '') DESC, stars DESC",
-            "recent": recent_order,
+            "updated": "COALESCE(NULLIF(pushed_at, ''), NULLIF(last_seen_at, ''), first_seen_at, '') DESC, stars DESC, full_name ASC",
+            "recent": f"{recent_order}, full_name ASC",
             "name": "full_name ASC",
         }.get(sort, "hot_score DESC, daily_star_growth DESC, stars DESC, full_name ASC" if scope == "today" else "stars DESC, forks DESC, full_name ASC")
 
@@ -3754,7 +3822,7 @@ class MySQLRepository:
                 FROM github_repo_candidates c
                 JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id
                 {github_user_join}
-                WHERE COALESCE(c.stars, 0) > %s
+                WHERE COALESCE(c.stars, 0) >= %s
                   {status_github}
                   {github_user_filter}
                 GROUP BY ge.category_slug, ge.category_name, ge.subcategory_slug, ge.subcategory_name
@@ -3810,7 +3878,7 @@ class MySQLRepository:
                      AND gm_top.metric_date = %s
                      AND gm_top.daily_growth_available = 1
                      AND gm_top.daily_star_growth > 0
-                    WHERE COALESCE(c_top.stars, 0) > %s
+                    WHERE COALESCE(c_top.stars, 0) >= %s
                       {status_github.replace('ge.', 'ge_top.')}
                     ORDER BY gm_top.hot_score DESC,
                              gm_top.daily_star_growth DESC,
@@ -3863,7 +3931,7 @@ class MySQLRepository:
                   ON gr.repo_id = c.repo_id
                  AND gr.active = 1
                 {github_user_join}
-                WHERE COALESCE(c.stars, 0) > %s
+                WHERE COALESCE(c.stars, 0) >= %s
                   {status_github}
                   {github_user_filter}
             """
@@ -3923,7 +3991,11 @@ class MySQLRepository:
         if source not in {"github", "website"}:
             source = "github"
         status_github = "AND ge.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci" if enriched_only else ""
-        status_website = "AND we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci" if enriched_only else ""
+        status_website = (
+            "AND (we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci OR uo.id IS NOT NULL)"
+            if enriched_only
+            else ""
+        )
         if source == "website":
             sql = f"""
                 SELECT COALESCE(NULLIF(uo.tags_json, ''), we.tags_json) AS tags_json
@@ -3948,7 +4020,7 @@ class MySQLRepository:
                  AND pf.project_source = 'github'
                  AND pf.project_id = c.repo_id
                 LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id
-                WHERE COALESCE(c.stars, 0) > %s
+                WHERE COALESCE(c.stars, 0) >= %s
                   {status_github}
             """
             params = (user_id, min_stars)
@@ -4044,7 +4116,7 @@ class MySQLRepository:
             FROM github_repo_candidates c
             LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
             LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
-            WHERE COALESCE(ls.stars, c.stars, 0) > %s
+            WHERE COALESCE(ls.stars, c.stars, 0) >= %s
               AND {stale_clause}
             ORDER BY COALESCE(ls.stars, c.stars, 0) DESC, c.full_name ASC
             LIMIT %s
@@ -4152,7 +4224,7 @@ class MySQLRepository:
                 FROM github_repo_candidates c
                 LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
                 LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
-                WHERE COALESCE(ls.stars, c.stars, 0) > %s
+                WHERE COALESCE(ls.stars, c.stars, 0) >= %s
             )
         """
         conn = self._connect()
@@ -4848,27 +4920,21 @@ class MySQLRepository:
         client_type: str,
         client_label: str = "",
         expires_at: Any = None,
-        multi_open: bool = False,
     ) -> Dict[str, Any]:
-        """Atomically create a token and revoke, rather than erase, replaced active tokens."""
+        """Atomically purge revoked history and create an independently valid token."""
         conn = self._connect()
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (int(user_id),))
                 if not cur.fetchone():
                     raise ValueError("user does not exist")
-                replaced_count = 0
-                if not multi_open:
-                    cur.execute(
-                        """
-                        UPDATE user_mcp_tokens
-                        SET revoked_at = UTC_TIMESTAMP()
-                        WHERE user_id = %s AND revoked_at IS NULL AND deleted_at IS NULL
-                          AND (expires_at IS NULL OR expires_at > UTC_TIMESTAMP())
-                        """,
-                        (int(user_id),),
-                    )
-                    replaced_count = int(cur.rowcount)
+                cur.execute(
+                    """
+                    DELETE FROM user_mcp_tokens
+                    WHERE user_id = %s AND revoked_at IS NOT NULL
+                    """,
+                    (int(user_id),),
+                )
                 cur.execute(
                     """
                     INSERT INTO user_mcp_tokens
@@ -4892,7 +4958,7 @@ class MySQLRepository:
                 )
                 row = cur.fetchone() or {}
             conn.commit()
-            return {"token_metadata": self._mcp_token_metadata(row), "replaced_count": replaced_count}
+            return {"token_metadata": self._mcp_token_metadata(row), "replaced_count": 0}
         except Exception:
             conn.rollback()
             raise
@@ -4908,7 +4974,7 @@ class MySQLRepository:
                     SELECT id, user_id, token_hint, scopes_json, client_type, client_label,
                            expires_at, revoked_at, deleted_at, created_at, last_used_at
                     FROM user_mcp_tokens
-                    WHERE user_id = %s AND deleted_at IS NULL
+                    WHERE user_id = %s AND revoked_at IS NULL AND deleted_at IS NULL
                     ORDER BY created_at DESC, id DESC
                     """,
                     (int(user_id),),
@@ -5012,6 +5078,32 @@ class MySQLRepository:
                 new_id = cur.lastrowid
             conn.commit()
             return new_id  # type: ignore[return-value]
+        finally:
+            conn.close()
+
+    def update_user_password(
+        self,
+        *,
+        user_id: int,
+        email: str,
+        hashed_password: str,
+    ) -> int:
+        """更新精确匹配用户的密码哈希，返回受影响行数。"""
+        sql = """
+            UPDATE users
+            SET hashed_password = %s
+            WHERE id = %s AND email = %s
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (hashed_password, int(user_id), email.lower()))
+                affected = cur.rowcount
+            conn.commit()
+            return affected
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 

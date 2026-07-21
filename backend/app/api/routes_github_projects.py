@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from backend.app.core.auth import OptionalUser, RequireUser
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.services.project_discovery import resolve_project_sort
 
 router = APIRouter()
 
@@ -365,7 +366,7 @@ async def list_projects(
     clean_category = category.strip()
     clean_subcategory = subcategory.strip()
     clean_q = q.strip()
-    effective_sort = "hot" if scope == "today" else (sort or "stars")
+    effective_sort = resolve_project_sort(scope, sort)
     result = await asyncio.to_thread(
         db.list_projects,
         source=effective_source,
@@ -632,9 +633,16 @@ async def add_my_tool_website(
         raise HTTPException(status_code=502, detail=f"工具网站添加或富化失败：{exc}") from exc
 
     duplicate = bool(result.get("duplicate"))
+    enrichment_failed = bool(result.get("enrichment_failed"))
+    if duplicate:
+        message = "工具网站已存在，已加入我的收藏。"
+    elif enrichment_failed:
+        message = "工具网站已添加到我的收藏，AI 分类服务暂时不可用，可稍后编辑分类。"
+    else:
+        message = "工具网站已添加到我的收藏。"
     return ToolWebsiteAddResponse(
         status="succeeded",
-        message="工具网站已存在，已加入我的收藏。" if duplicate else "工具网站已添加到我的收藏。",
+        message=message,
         duplicate=duplicate,
         item=item,
     )

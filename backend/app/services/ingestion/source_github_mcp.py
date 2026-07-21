@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from collections import OrderedDict
 from copy import deepcopy
 from threading import Lock
@@ -12,6 +11,7 @@ import httpx
 
 from backend.app.core.config import settings
 from backend.app.services.ingestion.source_github import GITHUB_API_BASE, _build_headers
+from backend.app.services.search_semantics import normalize_search_query, project_search_terms
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +41,7 @@ _FALLBACK_CACHE_LOCK = Lock()
 
 
 def _clean_query_words(value: str, *, max_words: int = 8) -> List[str]:
-    words = re.findall(r"[\w\-一-鿿]+", value or "")
-    blocked = {"github", "repo", "repository", "repositories", "项目", "仓库", "工具"}
-    cleaned: List[str] = []
-    for word in words:
-        if word.lower() in blocked:
-            continue
-        if word not in cleaned:
-            cleaned.append(word)
-        if len(cleaned) >= max_words:
-            break
-    return cleaned
+    return project_search_terms(value, max_terms=max_words)
 
 
 def _build_queries(
@@ -198,7 +188,7 @@ def _fallback_cache_key(
 ) -> tuple[Any, ...]:
     return (
         mode,
-        " ".join((q or "").lower().split()),
+        normalize_search_query(q).casefold(),
         (category or "").lower().strip(),
         (subcategory or "").lower().strip(),
         (language or "").lower().strip(),
@@ -317,18 +307,29 @@ def search_github_projects_fallback(
                 errors.append(str(result["error"]))
             for item in result.get("items") or []:
                 normalized = _normalize_repo(item)
-                key = str(normalized.get("full_name") or normalized.get("repo_id") or "").lower()
+                key = str(normalized.get("full_name") or normalized.get("repo_id") or "").casefold()
                 if not key or key in seen:
                     continue
                 seen.add(key)
                 repos.append(normalized)
-                if len(repos) >= limit:
-                    break
-            if len(repos) >= limit:
-                break
 
-    if sort == "name":
-        repos.sort(key=lambda item: str(item.get("full_name") or "").lower())
+    if sort == "updated":
+        repos.sort(key=lambda item: str(item.get("full_name") or "").casefold())
+        repos.sort(
+            key=lambda item: (
+                str(item.get("pushed_at") or ""),
+                int(item.get("stars") or 0),
+            ),
+            reverse=True,
+        )
+    else:
+        repos.sort(
+            key=lambda item: (
+                -int(item.get("stars") or 0),
+                -int(item.get("forks") or 0),
+                str(item.get("full_name") or "").casefold(),
+            )
+        )
 
     final = {
         "items": repos[:limit],

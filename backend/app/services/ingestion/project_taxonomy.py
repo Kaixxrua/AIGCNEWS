@@ -405,6 +405,40 @@ def clean_text(value: Any, *, max_len: int = 512) -> str:
     return text[:max_len]
 
 
+def extract_message_text(message_or_content: Any) -> str:
+    """Extract final text from LangChain string or multipart message content."""
+    content = getattr(message_or_content, "content", message_or_content)
+
+    if isinstance(content, str):
+        return content
+    if content is None:
+        return ""
+    if isinstance(content, dict):
+        if "content" in content and not content.get("type"):
+            return extract_message_text(content["content"])
+        blocks = [content]
+    elif isinstance(content, (list, tuple)):
+        blocks = content
+    else:
+        return str(content)
+
+    text_parts: List[str] = []
+    for block in blocks:
+        if isinstance(block, str):
+            text_parts.append(block)
+            continue
+        if isinstance(block, dict):
+            block_type = str(block.get("type") or "").lower()
+            text = block.get("text") or block.get("text_delta")
+        else:
+            block_type = str(getattr(block, "type", "") or "").lower()
+            text = getattr(block, "text", None) or getattr(block, "text_delta", None)
+        if block_type in {"text", "text_delta", "output_text"} and isinstance(text, str):
+            text_parts.append(text)
+
+    return "".join(text_parts)
+
+
 def parse_json_object(raw: str) -> Dict[str, Any]:
     cleaned = re.sub(r"```(?:json)?", "", raw or "").replace("```", "").strip()
     try:

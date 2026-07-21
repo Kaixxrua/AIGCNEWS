@@ -36,14 +36,14 @@ export const mcpClientOptions: McpClientOption[] = [
   { id: 'generic-json', label: '其他客户端', apiType: 'other', description: '生成带 headers 的标准 mcpServers JSON。', configPath: 'aigc-news.mcp.json', format: 'mcp-servers' },
 ]
 
-function quote(value: string, shell: McpShellId): string {
-  if (shell === 'bash') return `'${value.replace(/'/g, `'\\''`)}'`
-  if (shell === 'powershell') return `"${value.replace(/`/g, '``').replace(/"/g, '`"')}"`
-  return `"${value.replace(/"/g, '""')}"`
-}
-
 function quotePowerShellLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
+}
+
+function quote(value: string, shell: McpShellId): string {
+  if (shell === 'bash') return `'${value.replace(/'/g, `'\\''`)}'`
+  if (shell === 'powershell') return quotePowerShellLiteral(value)
+  return `"${value.replace(/"/g, '""')}"`
 }
 
 function encodePowerShellCommand(command: string): string {
@@ -75,8 +75,9 @@ function powerShellWriteJsonScript(path: string, data: unknown): string {
   const directory = parentDirectory(path)
   const json = JSON.stringify(data)
   const mkdir = directory ? `New-Item -ItemType Directory -Force -Path ${quotePowerShellLiteral(directory)} | Out-Null` : ''
-  const write = `Set-Content -Encoding UTF8 -Path ${quotePowerShellLiteral(path)} -Value ${quotePowerShellLiteral(json)}`
-  return [mkdir, write].filter(Boolean).join('; ')
+  const outputPath = `$outputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(${quotePowerShellLiteral(path)})`
+  const write = `[System.IO.File]::WriteAllText($outputPath, ${quotePowerShellLiteral(json)}, (New-Object System.Text.UTF8Encoding($false)))`
+  return [mkdir, outputPath, write].filter(Boolean).join('; ')
 }
 
 function writeJsonCommand(path: string, data: unknown, shell: McpShellId): string {
@@ -128,10 +129,20 @@ function codexCommand(url: string, token: string, shell: McpShellId): string {
 
 export function generateMcpClientCommand(option: McpClientOption, url: string, token: string, shell: McpShellId): string {
   if (option.format === 'claude-cli') {
-    const executable = shell === 'bash' ? 'claude' : 'claude.cmd'
+    if (shell !== 'bash') {
+      const resolveExecutable = "$claudeCommand = Get-Command claude.exe, claude.cmd -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $claudeCommand) { throw 'Claude Code executable not found. Install Claude Code and reopen the terminal.' }"
+      const command = [
+        resolveExecutable,
+        `& $claudeCommand.Source mcp remove ${MCP_SERVER_KEY} 2>$null`,
+        `& $claudeCommand.Source mcp add --transport http ${MCP_SERVER_KEY} ${quotePowerShellLiteral(url)} --header ${quotePowerShellLiteral(`Authorization: Bearer ${token}`)}`,
+      ].join('; ')
+      return shell === 'cmd'
+        ? `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodePowerShellCommand(command)}`
+        : command
+    }
     return [
-      `${executable} mcp remove ${MCP_SERVER_KEY} ${ignored(shell)}`,
-      `${executable} mcp add --transport http ${MCP_SERVER_KEY} ${quote(url, shell)} --header ${quote(`Authorization: Bearer ${token}`, shell)}`,
+      `claude mcp remove ${MCP_SERVER_KEY} ${ignored(shell)}`,
+      `claude mcp add --transport http ${MCP_SERVER_KEY} ${quote(url, shell)} --header ${quote(`Authorization: Bearer ${token}`, shell)}`,
     ].join(join(shell))
   }
   if (option.format === 'codex-cli') return codexCommand(url, token, shell)

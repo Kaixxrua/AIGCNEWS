@@ -86,13 +86,9 @@ export function useEventSource() {
           }
           const err = new Error(detail) as Error & { status?: number; errorType?: string }
           err.status = response.status
-          try {
-            const bodyText = detail
-            // 尝试从 detail 提取 error type
-            if (response.status === 429) {
-              err.errorType = 'message_limit_exceeded'
-            }
-          } catch { /* ignore */ }
+          if (response.status === 429) {
+            err.errorType = 'message_limit_exceeded'
+          }
           throw err
         }
 

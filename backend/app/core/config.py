@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     # HuggingFace 镜像（国内加速，可在 .env 中设置 HF_ENDPOINT=https://hf-mirror.com）
     hf_endpoint: str = ""
 
+    # 直连失败时供安全网页抓取器显式使用；不读取环境代理变量。
+    outbound_proxy: str = ""
+
     milvus_host: str = "localhost"
     milvus_port: int = 19530
     milvus_user: str = ""
@@ -133,6 +136,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 @lru_cache

@@ -45,14 +45,14 @@ class GitHubProjectMetricProjectionTests(unittest.TestCase):
         self._assert_atomic_metric_projection(self.unified_source)
 
     def test_today_top_fifty_uses_metric_stars_but_candidate_eligibility(self) -> None:
-        self.assertIn("WHERE COALESCE(c_top.stars, 0) > %s", self.unified_source)
+        self.assertIn("WHERE COALESCE(c_top.stars, 0) >= %s", self.unified_source)
         self.assertIn("gm_top.stars DESC", self.unified_source)
         self.assertNotIn("c_top.stars DESC", self.unified_source)
         self.assertIn("gm_top.daily_growth_available = 1", self.unified_source)
         self.assertIn("gm_top.daily_star_growth > 0", self.unified_source)
 
     def test_today_count_matches_top_fifty_metric_tiebreaker(self) -> None:
-        self.assertIn("WHERE COALESCE(c_top.stars, 0) > %s", self.categories_source)
+        self.assertIn("WHERE COALESCE(c_top.stars, 0) >= %s", self.categories_source)
         self.assertIn("gm_top.stars DESC", self.categories_source)
         self.assertNotIn("c_top.stars DESC", self.categories_source)
         self.assertIn("gm_top.daily_growth_available = 1", self.categories_source)

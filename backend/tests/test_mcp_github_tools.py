@@ -58,10 +58,11 @@ from backend.app.services.ingestion import source_github_mcp
 class ToolMetadataTests(unittest.TestCase):
     def test_tool_names_and_routing_boundaries(self) -> None:
         tools = {tool["name"]: tool for tool in routes_mcp.MCP_TOOLS}
-        self.assertEqual(len(tools), 7)
+        self.assertEqual(len(tools), 8)
         self.assertTrue(
             {
                 "search_papers",
+                "search_documents",
                 "get_paper_detail",
                 "get_top_items",
                 "search_github_projects",
@@ -197,14 +198,37 @@ class QueryModeTests(unittest.TestCase):
             "total_count": 1,
             "error": "",
         }
-        with patch.object(source_github_mcp, "_search_once", side_effect=[empty, match]) as search_once:
+        with patch.object(source_github_mcp, "_search_once", side_effect=[empty, match, empty]) as search_once:
             result = source_github_mcp.search_github_projects_fallback(
                 q="Windows screenshot rounded corners iShot",
                 limit=1,
             )
-        self.assertEqual(search_once.call_count, 2)
+        self.assertEqual(search_once.call_count, 3)
         self.assertEqual(result["items"][0]["full_name"], "owner/repo")
         self.assertEqual(len(result["queries"]), 3)
+
+    def test_fallback_globally_sorts_across_retries(self) -> None:
+        low = {
+            "items": [{"id": 1, "full_name": "owner/low", "stargazers_count": 10}],
+            "total_count": 1,
+            "error": "",
+        }
+        high = {
+            "items": [{"id": 2, "full_name": "owner/high", "stargazers_count": 10000}],
+            "total_count": 1,
+            "error": "",
+        }
+        empty = {"items": [], "total_count": 0, "error": ""}
+        with patch.object(source_github_mcp, "_search_once", side_effect=[low, high, empty]):
+            result = source_github_mcp.search_github_projects_fallback(
+                q="Windows screenshot rounded corners iShot",
+                sort="stars",
+                limit=2,
+            )
+        self.assertEqual(
+            [item["full_name"] for item in result["items"]],
+            ["owner/high", "owner/low"],
+        )
 
     def test_fallback_cache_evicts_oldest_entry(self) -> None:
         fake = {"items": [], "total_count": 0, "error": ""}
@@ -358,7 +382,7 @@ class McpProtocolTests(unittest.TestCase):
             "/api/mcp",
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
-        self.assertEqual(len(listed.json()["result"]["tools"]), 7)
+        self.assertEqual(len(listed.json()["result"]["tools"]), 8)
 
     def test_prompts_require_mcp_first_and_sequential_web_fallback(self) -> None:
         prompts = {}
@@ -381,7 +405,7 @@ class McpProtocolTests(unittest.TestCase):
         self.assertIn("search_papers` first only", research)
         self.assertIn("explicitly scholarly", research)
         self.assertIn("dominant deliverable", research)
-        self.assertIn("do not batch both primary searches", research)
+        self.assertIn("do not batch primary searches", research)
         self.assertIn("inspect the selected aigc_news result", research)
         self.assertIn("call fails", research)
         self.assertIn("missing detail", research)
@@ -401,14 +425,17 @@ class McpProtocolTests(unittest.TestCase):
 
     def test_search_papers_uses_shared_repository_and_hides_local_path(self) -> None:
         repository = MagicMock()
-        repository.search_documents.return_value = [
-            {
-                "id": "paper-1",
-                "source": "arxiv",
-                "title": "Agent Paper",
-                "local_pdf_path": "/tmp/agent.pdf",
-            }
-        ]
+        repository.search_document_page.return_value = {
+            "items": [
+                {
+                    "id": "paper-1",
+                    "source": "arxiv",
+                    "title": "Agent Paper",
+                    "local_pdf_path": "/tmp/agent.pdf",
+                }
+            ],
+            "total": 1,
+        }
         with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
             response = self.client.post(
                 "/api/mcp",
@@ -418,12 +445,14 @@ class McpProtocolTests(unittest.TestCase):
                     "method": "tools/call",
                     "params": {
                         "name": "search_papers",
-                        "arguments": {"q": "  Agent  ", "limit": 999},
+                        "arguments": {"q": "  Agent  ", "limit": 20},
                     },
                 },
             )
 
-        repository.search_documents.assert_called_once_with("Agent", 20)
+        repository.search_document_page.assert_called_once_with(
+            "Agent", source="arxiv", page=1, page_size=20
+        )
         payload = response.json()["result"]["structuredContent"]
         self.assertEqual(payload["q"], "Agent")
         self.assertEqual(payload["total"], 1)
@@ -443,7 +472,7 @@ class McpProtocolTests(unittest.TestCase):
         finally:
             self.client.app.dependency_overrides.clear()
         names = {tool["name"] for tool in listed.json()["result"]["tools"]}
-        self.assertEqual(len(names), 8)
+        self.assertEqual(len(names), 9)
         self.assertIn("search_my_project_favorites", names)
 
     def test_private_favorites_tool_is_owner_scoped(self) -> None:
@@ -634,6 +663,64 @@ class McpProtocolTests(unittest.TestCase):
         result = response.json()["result"]
         self.assertTrue(result["isError"])
         self.assertIn("q", result["content"][0]["text"])
+
+    def test_tool_schema_rejects_unknown_and_non_strict_limit(self) -> None:
+        for request_id, arguments in (
+            (20, {"q": "Agent", "unexpected": True}),
+            (21, {"q": "Agent", "limit": "10"}),
+            (22, {"q": "Agent", "limit": True}),
+            (23, {"q": "Agent", "limit": 21}),
+        ):
+            with self.subTest(arguments=arguments):
+                response = self.client.post(
+                    "/api/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "method": "tools/call",
+                        "params": {"name": "search_papers", "arguments": arguments},
+                    },
+                )
+                self.assertTrue(response.json()["result"]["isError"])
+
+    def test_falsey_non_object_params_are_invalid(self) -> None:
+        for params in (None, False, "", 0, []):
+            with self.subTest(params=params):
+                response = self.client.post(
+                    "/api/mcp",
+                    json={"jsonrpc": "2.0", "id": 30, "method": "tools/list", "params": params},
+                )
+                self.assertEqual(response.json()["error"]["code"], -32602)
+
+    def test_invalid_calendar_date_is_rejected(self) -> None:
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 31,
+                "method": "tools/call",
+                "params": {"name": "get_top_items", "arguments": {"date": "2026-02-30"}},
+            },
+        )
+        self.assertTrue(response.json()["result"]["isError"])
+
+    def test_search_documents_keeps_all_source_semantics(self) -> None:
+        repository = MagicMock()
+        repository.search_document_page.return_value = {"items": [], "total": 0}
+        with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
+            response = self.client.post(
+                "/api/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 32,
+                    "method": "tools/call",
+                    "params": {"name": "search_documents", "arguments": {"q": "inference news"}},
+                },
+            )
+        self.assertFalse(response.json()["result"]["isError"])
+        repository.search_document_page.assert_called_once_with(
+            "inference news", source=None, page=1, page_size=10
+        )
 
 
 if __name__ == "__main__":

@@ -68,6 +68,7 @@ class DocumentQueryTests(unittest.TestCase):
 
     def test_repository_search_uses_shared_fields_and_stable_order(self) -> None:
         cursor = MagicMock()
+        cursor.fetchone.return_value = {"cnt": 1}
         cursor.fetchall.return_value = [{"id": "doc-1", "title": "Agent"}]
         connection = MagicMock()
         connection.cursor.return_value.__enter__.return_value = cursor
@@ -80,14 +81,14 @@ class DocumentQueryTests(unittest.TestCase):
         )
 
         self.assertEqual(rows, [{"id": "doc-1", "title": "Agent"}])
-        sql, params = cursor.execute.call_args.args
+        sql, params = cursor.execute.call_args_list[-1].args
         normalized_sql = " ".join(sql.split())
         self.assertIn("COALESCE(title, '') LIKE %s ESCAPE '='", normalized_sql)
         self.assertIn("COALESCE(summary, '') LIKE %s ESCAPE '='", normalized_sql)
         self.assertIn("COALESCE(tags, '') LIKE %s ESCAPE '='", normalized_sql)
         self.assertIn("created_at DESC, id ASC", normalized_sql)
         self.assertIn("%Agent%", params)
-        self.assertEqual(params[-1], 100)
+        self.assertEqual(params[-2:], (100, 0))
         connection.close.assert_called_once()
 
 

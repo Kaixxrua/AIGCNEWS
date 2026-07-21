@@ -13,7 +13,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
+from backend.app.api.mcp_contracts import TOOL_INPUT_MODELS, input_schema, validate_iso_date
 from backend.app.api.routes_dashboard import (
     _compute_board_status,
     _dedupe_docs,
@@ -26,7 +28,7 @@ from backend.app.api.routes_papers import _enrich_pdf_url, _safe_doc
 from backend.app.core.auth import OptionalMcpUser
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
-from backend.app.services.project_discovery import search_projects
+from backend.app.services.project_discovery import public_project_item, search_projects
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ router = APIRouter()
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 MCP_SERVER_NAME = "aigc-news"
-MCP_SERVER_VERSION = "1.0.0"
+MCP_SERVER_VERSION = "1.1.0"
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_TOOL_RESULT_CHARS = 100_000
 MAX_RESOURCE_TEXT_CHARS = 100_000
@@ -105,7 +107,7 @@ MCP_RESOURCE_TEMPLATES: list[dict[str, Any]] = [
         "mimeType": "application/json",
     },
     {
-        "uriTemplate": "aigc-news://projects/library{?q,category,subcategory,language,scope,sort,limit}",
+        "uriTemplate": "aigc-news://projects/library{?q,category,subcategory,language,scope,sort,page,limit}",
         "name": "project_library",
         "title": "AI Project Library",
         "description": "Read public GitHub AI project library slices by query, taxonomy, language, scope, and sort.",
@@ -150,7 +152,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_papers",
         "description": (
-            "Search public AIGC_NEWS papers and indexed documents for explicitly scholarly or publication-centered requests: "
+            "Search public AIGC_NEWS arXiv papers only for explicitly scholarly or publication-centered requests: "
             "papers, literature, surveys or systematic reviews, citations, authors or venues, benchmarks or evaluations, "
             "methods or theory, experiments, and research results. Agent/MCP is only a topic, not an academic-intent signal. "
             "For generic Agent/MCP learning, tutorials, examples, implementations, SDKs, servers/clients, workflows, tool "
@@ -162,18 +164,16 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "initial tool message. Inspect MCP results first; use a host web tool only if an MCP call fails, returns no relevant "
             "items, or lacks a specific fact, then search only for that missing detail."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "q": {
-                    "type": "string",
-                    "description": "Concise semantic query using 1-3 established technical terms, not the full user sentence; e.g. AI Agent, LLM Agent, or Model Context Protocol.",
-                },
-                "limit": {"type": "integer", "description": "Maximum results, 1-20.", "default": 10},
-            },
-            "required": ["q"],
-            "additionalProperties": False,
-        },
+        "inputSchema": input_schema("search_papers"),
+    },
+    {
+        "name": "search_documents",
+        "description": (
+            "Search indexed AIGC_NEWS records across arXiv, GitHub, news, Product Hunt, and Hacker News. "
+            "Use this for explicit cross-source or indexed news/feed searches. For scholarly papers use search_papers; "
+            "for GitHub project discovery use search_github_projects or search_github_ai_projects."
+        ),
+        "inputSchema": input_schema("search_documents"),
     },
     {
         "name": "get_paper_detail",
@@ -181,14 +181,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "Fetch public metadata for one indexed AIGC_NEWS document by id. "
             "Call this after search_papers or get_top_items when the user needs details for a specific item."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "paper_id": {"type": "string", "description": "Document id returned by search/top tools."},
-            },
-            "required": ["paper_id"],
-            "additionalProperties": False,
-        },
+        "inputSchema": input_schema("get_paper_detail"),
     },
     {
         "name": "get_top_items",
@@ -196,27 +189,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "Return public top-ranked AIGC_NEWS items for a source, period, and optional snapshot date. "
             "Call this for daily, weekly, or monthly rankings and trend questions."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "source": {
-                    "type": "string",
-                    "enum": sorted(_SOURCE_CHOICES),
-                    "description": "Source filter. Use all unless the user names a source.",
-                    "default": "all",
-                },
-                "period": {
-                    "type": "string",
-                    "enum": sorted(_PERIOD_CHOICES),
-                    "description": "Ranking period.",
-                    "default": "daily",
-                },
-                "date": {"type": "string", "description": "Optional snapshot date in YYYY-MM-DD format."},
-                "limit": {"type": "integer", "description": "Maximum results, 1-20.", "default": 10},
-            },
-            "required": [],
-            "additionalProperties": False,
-        },
+        "inputSchema": input_schema("get_top_items"),
     },
     {
         "name": "search_github_projects",
@@ -234,20 +207,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "product names and requested features. Inspect specific returned repositories only when their metadata is insufficient "
             "to verify a requested feature."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "q": {
-                    "type": "string",
-                    "description": "Required concise GitHub search terms, max 120 chars. Translate non-English intent and preserve product/feature names.",
-                },
-                "language": {"type": "string", "description": "Optional programming language, max 64 chars."},
-                "sort": {"type": "string", "enum": sorted(_PROJECT_SORT_CHOICES), "default": "stars"},
-                "limit": {"type": "integer", "description": "Maximum projects, 1-20.", "default": 10},
-            },
-            "required": ["q"],
-            "additionalProperties": False,
-        },
+        "inputSchema": input_schema("search_github_projects"),
     },
     {
         "name": "search_github_ai_projects",
@@ -268,20 +228,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "description_zh, tags, categories, language, stars, daily_star_growth, hot_score, and URL before inspecting repositories. "
             "If local results are zero, this tool may perform a bounded read-only AI-focused GitHub Search fallback labeled github_api_fallback."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "q": {"type": "string", "description": "Optional short project search keyword, max 120 chars. Prefer concise terms like RAG, Web UI, local deploy, agent, MCP."},
-                "category": {"type": "string", "description": "Optional AIGC_NEWS project category slug, max 64 chars."},
-                "subcategory": {"type": "string", "description": "Optional AIGC_NEWS project subcategory slug, max 64 chars."},
-                "language": {"type": "string", "description": "Optional programming language, max 64 chars, e.g. Python."},
-                "scope": {"type": "string", "enum": sorted(_PROJECT_SCOPE_CHOICES), "default": "all"},
-                "sort": {"type": "string", "enum": sorted(_PROJECT_SORT_CHOICES), "default": "stars"},
-                "limit": {"type": "integer", "description": "Maximum projects, 1-20.", "default": 10},
-            },
-            "required": [],
-            "additionalProperties": False,
-        },
+        "inputSchema": input_schema("search_github_ai_projects"),
     },
     {
         "name": "get_project_library",
@@ -291,20 +238,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "search_github_projects for non-AI GitHub/open-source software. sort=hot uses exact consecutive daily snapshots "
             "when available; direct AI-focused GitHub fallback is attempted only after local results are zero."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "q": {"type": "string", "description": "Optional project search keyword, max 120 chars."},
-                "category": {"type": "string", "description": "Optional category slug, max 64 chars."},
-                "subcategory": {"type": "string", "description": "Optional subcategory slug, max 64 chars."},
-                "language": {"type": "string", "description": "Optional programming language, max 64 chars."},
-                "scope": {"type": "string", "enum": sorted(_PROJECT_SCOPE_CHOICES), "default": "all"},
-                "sort": {"type": "string", "enum": sorted(_PROJECT_SORT_CHOICES), "default": "stars"},
-                "limit": {"type": "integer", "description": "Maximum projects, 1-20.", "default": 10},
-            },
-            "required": [],
-            "additionalProperties": False,
-        },
+        "inputSchema": input_schema("get_project_library"),
     },
     {
         "name": "get_project_categories",
@@ -313,12 +247,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "Call this first only when category/subcategory taxonomy is unclear, then call search_github_ai_projects or get_project_library. "
             "Do not use direct GitHub or web search just to discover available AIGC_NEWS project categories."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
+        "inputSchema": input_schema("get_project_categories"),
     },
 ]
 
@@ -326,21 +255,7 @@ _PRIVATE_MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_my_project_favorites",
         "description": "Search the authenticated user's private GitHub project favorites. Call this only for the user's own saved or favorited projects.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "q": {"type": "string", "description": "Optional search keyword, max 120 chars."},
-                "category": {"type": "string", "description": "Optional category slug, max 64 chars."},
-                "subcategory": {"type": "string", "description": "Optional subcategory slug, max 64 chars."},
-                "language": {"type": "string", "description": "Optional programming language, max 64 chars."},
-                "tag": {"type": "string", "description": "Optional favorite project tag, max 64 chars."},
-                "sort": {"type": "string", "enum": sorted(_PROJECT_SORT_CHOICES), "default": "recent"},
-                "limit": {"type": "integer", "description": "Maximum favorites per page, 1-20.", "default": 10},
-                "marker": {"type": "string", "description": "Opaque zero-based pagination marker returned by the previous call."},
-            },
-            "required": [],
-            "additionalProperties": False,
-        },
+        "inputSchema": input_schema("search_my_project_favorites"),
     }
 ]
 
@@ -468,39 +383,51 @@ def _bounded_strings(value: Any, max_items: int = 4) -> list[str]:
 
 
 def _public_project_item(item: dict[str, Any]) -> dict[str, Any]:
-    data = dict(item)
+    return public_project_item(item)
+
+
+async def _search_indexed_documents(
+    request: Request,
+    args: dict[str, Any],
+    *,
+    source: str | None,
+) -> dict[str, Any]:
+    q = args["q"]
+    page = args.get("page", 1)
+    limit = args.get("limit", 10)
+    result = await asyncio.to_thread(
+        MySQLRepository().search_document_page,
+        q,
+        source=source,
+        page=page,
+        page_size=limit,
+    )
+    docs = [_safe_doc(dict(row)) for row in result.get("items") or []]
+    items = [_public_doc(doc, request) for doc in docs]
+    total = int(result.get("total") or 0)
     return {
-        "id": data.get("id"),
-        "full_name": _clip_text(data.get("full_name") or data.get("title"), 160),
-        "url": _clip_text(data.get("url"), 500),
-        "description": _clip_text(data.get("description"), 180),
-        "description_zh": _clip_text(data.get("description_zh"), 80),
-        "category_slug": _clip_text(data.get("category_slug"), 64),
-        "category_name": _clip_text(data.get("category_name"), 80),
-        "subcategory_slug": _clip_text(data.get("subcategory_slug"), 64),
-        "subcategory_name": _clip_text(data.get("subcategory_name"), 80),
-        "tags": _bounded_strings(data.get("tags")),
-        "topics": _bounded_strings(data.get("topics")),
-        "language": _clip_text(data.get("language"), 64),
-        "stars": int(data.get("stars") or 0),
-        "forks": int(data.get("forks") or 0),
-        "pushed_at": data.get("pushed_at"),
-        "daily_star_growth": int(data.get("daily_star_growth") or 0),
-        "daily_growth_available": bool(data.get("daily_growth_available")),
-        "hot_score": float(data.get("hot_score") or 0),
-        "is_recommended": bool(data.get("is_recommended")),
-        "result_origin": _clip_text(data.get("result_origin") or "aigc_news_local", 40),
+        "q": q,
+        "source": source or "all",
+        "total": total,
+        "returned_count": len(items),
+        "page": page,
+        "page_size": limit,
+        "has_next": page * limit < total,
+        "items": items,
     }
 
 
 async def _tool_search_papers(request: Request, args: dict[str, Any]) -> dict[str, Any]:
-    q = _clean_string(args, "q", required=True, max_len=200)
-    limit = _clean_limit(args)
-    db = MySQLRepository()
-    rows = await asyncio.to_thread(db.search_documents, q, limit)
-    docs = [_safe_doc(dict(row)) for row in rows]
-    items = [_public_doc(doc, request) for doc in docs]
-    return {"q": q, "total": len(items), "items": items}
+    return await _search_indexed_documents(request, args, source="arxiv")
+
+
+async def _tool_search_documents(request: Request, args: dict[str, Any]) -> dict[str, Any]:
+    source = args["source"]
+    return await _search_indexed_documents(
+        request,
+        args,
+        source=None if source == "all" else source,
+    )
 
 
 async def _tool_get_paper_detail(request: Request, args: dict[str, Any]) -> dict[str, Any]:
@@ -533,12 +460,10 @@ async def _tool_get_paper_detail(request: Request, args: dict[str, Any]) -> dict
 
 
 async def _tool_get_top_items(request: Request, args: dict[str, Any]) -> dict[str, Any]:
-    source = _clean_choice(args, "source", _SOURCE_CHOICES, default="all")
-    period = _clean_choice(args, "period", _PERIOD_CHOICES, default="daily")
-    date_value = _clean_string(args, "date", max_len=10, default="")
-    if date_value and not _DATE_RE.fullmatch(date_value):
-        raise McpToolInputError("date 必须是 YYYY-MM-DD 格式。")
-    limit = _clean_limit(args)
+    source = args.get("source", "all")
+    period = args.get("period", "daily")
+    date_value = args.get("date") or ""
+    limit = args.get("limit", 10)
 
     db = MySQLRepository()
     snapshot_date = _resolve_snapshot_date(date_value or None)
@@ -574,19 +499,14 @@ async def _search_project_library(
     mode: str,
 ) -> dict[str, Any]:
     generic = mode == "generic"
-    q = _clean_string(args, "q", required=generic, max_len=120)
-    category = "" if generic else _clean_string(args, "category", max_len=64)
-    subcategory = "" if generic else _clean_string(args, "subcategory", max_len=64)
-    language = _clean_string(args, "language", max_len=64)
-    scope = "all" if generic else _clean_choice(args, "scope", _PROJECT_SCOPE_CHOICES, default="all")
-    requested_sort = _clean_choice(
-        args,
-        "sort",
-        _PROJECT_SORT_CHOICES,
-        default="hot" if scope == "today" else ("recent" if scope == "recommended" else "stars"),
-    )
-    sort = "hot" if scope == "today" else requested_sort
-    limit = _clean_limit(args)
+    q = args.get("q", "")
+    category = "" if generic else args.get("category", "")
+    subcategory = "" if generic else args.get("subcategory", "")
+    language = args.get("language", "")
+    scope = "all" if generic else args.get("scope", "all")
+    sort = args.get("sort")
+    page = args.get("page", 1)
+    limit = args.get("limit", 10)
     return await search_projects(
         query=q,
         mode="generic" if generic else "ai",
@@ -595,6 +515,7 @@ async def _search_project_library(
         subcategory=subcategory,
         scope=scope,
         sort=sort,
+        page=page,
         limit=limit,
         repository_factory=MySQLRepository,
         fallback_search=search_github_projects_fallback,
@@ -698,6 +619,7 @@ async def _tool_get_project_categories(_request: Request, args: dict[str, Any]) 
 
 _TOOL_HANDLERS: dict[str, Callable[[Request, dict[str, Any]], Awaitable[dict[str, Any]]]] = {
     "search_papers": _tool_search_papers,
+    "search_documents": _tool_search_documents,
     "get_paper_detail": _tool_get_paper_detail,
     "get_top_items": _tool_get_top_items,
     "search_github_projects": _tool_search_github_projects,
@@ -749,9 +671,10 @@ def _resolve_report_date(period: str, date_str: str = "") -> str:
     today = _date.today()
     if date_str:
         try:
-            anchor = _dt.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
-            raise McpResourceInputError("date must use YYYY-MM-DD format.") from None
+            validate_iso_date(date_str)
+            anchor = _date.fromisoformat(date_str)
+        except ValueError as exc:
+            raise McpResourceInputError(str(exc)) from exc
     else:
         anchor = today
 
@@ -765,8 +688,11 @@ def _resolve_report_date(period: str, date_str: str = "") -> str:
 async def _resource_dashboard_summary(request: Request, uri: str, query: dict[str, str]) -> dict[str, Any]:
     period = _clean_choice(query, "period", _PERIOD_CHOICES, default="daily")
     date_value = _clean_string(query, "date", max_len=10, default="")
-    if date_value and not _DATE_RE.fullmatch(date_value):
-        raise McpResourceInputError("date must use YYYY-MM-DD format.")
+    if date_value:
+        try:
+            validate_iso_date(date_value)
+        except ValueError as exc:
+            raise McpResourceInputError(str(exc)) from exc
 
     db = MySQLRepository()
     snapshot_date = _resolve_snapshot_date(date_value or None)
@@ -828,6 +754,19 @@ async def _resource_report_latest(uri: str, query: dict[str, str]) -> dict[str, 
     return _resource_content(uri, item.get("content", ""), mime_type="text/markdown")
 
 
+def _resource_tool_args(query: dict[str, str], *, integer_fields: set[str]) -> dict[str, Any]:
+    args: dict[str, Any] = dict(query)
+    for field in integer_fields:
+        if field not in args:
+            continue
+        raw = args[field]
+        try:
+            args[field] = int(raw)
+        except (TypeError, ValueError):
+            raise McpResourceInputError(f"{field} must be an integer.") from None
+    return args
+
+
 async def _read_resource(request: Request, uri: Any) -> dict[str, Any]:
     path, query = _parse_resource_uri(uri)
 
@@ -835,16 +774,40 @@ async def _read_resource(request: Request, uri: Any) -> dict[str, Any]:
         if path == "dashboard/summary":
             return await _resource_dashboard_summary(request, uri, query)
         if path == "dashboard/top":
-            return _resource_content(uri, await _tool_get_top_items(request, query))
+            return _resource_content(
+                uri,
+                await _tool_get_top_items(
+                    request,
+                    _validated_tool_args(
+                        "get_top_items",
+                        _resource_tool_args(query, integer_fields={"limit"}),
+                    ),
+                ),
+            )
         if path == "projects/categories":
             return _resource_content(uri, await _tool_get_project_categories(request, {}))
         if path == "projects/library":
-            return _resource_content(uri, await _tool_get_project_library(request, query))
+            return _resource_content(
+                uri,
+                await _tool_get_project_library(
+                    request,
+                    _validated_tool_args(
+                        "get_project_library",
+                        _resource_tool_args(query, integer_fields={"page", "limit"}),
+                    ),
+                ),
+            )
         if path == "report/latest":
             return await _resource_report_latest(uri, query)
         if path.startswith("papers/"):
             paper_id = path.removeprefix("papers/").strip()
-            return _resource_content(uri, await _tool_get_paper_detail(request, {"paper_id": paper_id}))
+            return _resource_content(
+                uri,
+                await _tool_get_paper_detail(
+                    request,
+                    _validated_tool_args("get_paper_detail", {"paper_id": paper_id}),
+                ),
+            )
     except McpToolInputError as exc:
         raise McpResourceInputError(str(exc)) from exc
 
@@ -884,8 +847,9 @@ Use the AIGC_NEWS MCP public context to produce a concise research brief.{topic_
 Suggested flow:
 1. Read `aigc-news://dashboard/summary` for the latest overall context.
 2. For generic Agent/MCP learning, tutorials, examples, implementations, SDK/server/client resources, workflows, tool calling, or unspecified 资料, call `search_github_ai_projects` first even if GitHub/open source was not named.
-3. Use `search_papers` first only when the dominant requested output is explicitly scholarly: papers, literature, surveys, citations, authors/venues, benchmarks/evaluations, methods/theory, experiments, or research results. Rewrite academic requests into 1-3 concise technical terms.
-4. For mixed requests choose one initial route by the dominant deliverable: implementations/tutorials use GitHub AI; papers/citations/experimental results use papers. Do not batch both primary searches or MCP and host web tools in the same initial tool message.
+3. Use `search_papers` first only when the dominant requested output is explicitly scholarly: papers, literature, surveys, citations, authors/venues, benchmarks/evaluations, methods/theory, experiments, or research results. It returns arXiv papers only. Rewrite academic requests into 1-3 concise technical terms.
+4. Use `search_documents` only for explicit AIGC_NEWS indexed news/feed or cross-source searches; GitHub project discovery should still use the project tools.
+5. For mixed requests choose one initial route by the dominant deliverable: implementations/tutorials use GitHub AI; papers/citations/experimental results use papers. Do not batch primary searches or MCP and host web tools in the same initial tool message.
 5. Inspect the selected AIGC_NEWS result before adding another source. If the MCP call fails, returns no relevant items, or lacks a specific fact, use another MCP tool or a host web tool only for that missing detail.
 6. If a specific indexed item matters, call `get_paper_detail` for its id.
 7. Summarize key trends, notable papers/projects/news, and why they matter, distinguishing AIGC_NEWS evidence from any later web fallback.
@@ -951,12 +915,28 @@ These instructions guide MCP-aware agents; the MCP server cannot override a clie
     raise McpPromptInputError(f"Unknown prompt: {name}")
 
 
+def _validated_tool_args(name: str, arguments: Any) -> dict[str, Any]:
+    input_model = TOOL_INPUT_MODELS.get(name)
+    if input_model is None:
+        raise McpToolInputError(f"Unknown tool: {name}")
+    if not isinstance(arguments, dict):
+        raise McpToolInputError("arguments 必须是 JSON 对象。")
+    try:
+        return input_model.model_validate(arguments).model_dump()
+    except ValidationError as exc:
+        detail = "; ".join(
+            ".".join(str(part) for part in error["loc"]) + ": " + error["msg"]
+            for error in exc.errors(include_url=False)
+        )
+        raise McpToolInputError(detail) from exc
+
+
 async def _call_tool(request: Request, name: str, arguments: Any) -> dict[str, Any]:
     handler = _TOOL_HANDLERS.get(name)
     if handler is None:
         return _tool_error(f"Unknown tool: {name}")
     try:
-        data = await handler(request, _as_args(arguments))
+        data = await handler(request, _validated_tool_args(name, arguments))
         return _tool_response(data)
     except McpToolInputError as exc:
         return _tool_error(str(exc))
@@ -1003,9 +983,13 @@ async def mcp_endpoint(
     if not isinstance(method, str) or not method:
         return _jsonrpc_error(request_id, _JSONRPC_INVALID_REQUEST, "Missing method")
 
-    params = payload.get("params") or {}
-    if params is not None and not isinstance(params, dict):
-        return _jsonrpc_error(request_id, _JSONRPC_INVALID_PARAMS, "params must be an object")
+    if "params" not in payload:
+        params: dict[str, Any] = {}
+    else:
+        raw_params = payload["params"]
+        if not isinstance(raw_params, dict):
+            return _jsonrpc_error(request_id, _JSONRPC_INVALID_PARAMS, "params must be an object")
+        params = raw_params
 
     if method == "notifications/initialized" and "id" not in payload:
         return Response(status_code=204, headers=_mcp_headers())

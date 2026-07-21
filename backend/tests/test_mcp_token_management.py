@@ -61,7 +61,7 @@ class McpTokenManagementTests(unittest.TestCase):
                 "revoked_at": None,
                 "deleted_at": None,
             },
-            "replaced_count": 2,
+            "replaced_count": 0,
         }
         with patch.object(routes_auth, "MySQLRepository", return_value=repository):
             response = self.client.post(
@@ -70,13 +70,14 @@ class McpTokenManagementTests(unittest.TestCase):
                     "client_type": "claude",
                     "client_label": "Desktop",
                     "scopes": ["projects:favorites:read"],
-                    "multi_open": False,
                 },
             )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["token"].startswith("aigc_mcp_"))
-        self.assertEqual(response.json()["replaced_count"], 2)
+        self.assertEqual(response.json()["replaced_count"], 0)
         self.assertEqual(response.json()["token_metadata"]["client_type"], "claude")
+        repository.create_user_mcp_token.assert_called_once()
+        self.assertNotIn("multi_open", repository.create_user_mcp_token.call_args.kwargs)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.headers["pragma"], "no-cache")
 
@@ -95,6 +96,28 @@ class McpTokenManagementTests(unittest.TestCase):
         )
         self.assertEqual(unknown.status_code, 422)
         self.assertEqual(expired.status_code, 422)
+
+    def test_list_contract_and_no_cache_headers(self) -> None:
+        repository = MagicMock()
+        repository.list_user_mcp_tokens.return_value = [
+            {
+                "id": 9,
+                "token_hint": "aigc_mcp_abc...wxyz",
+                "scopes": ["projects:favorites:read"],
+                "client_type": "claude",
+                "client_label": "Desktop",
+                "expires_at": None,
+                "revoked_at": None,
+                "deleted_at": None,
+            }
+        ]
+        with patch.object(routes_auth, "MySQLRepository", return_value=repository):
+            response = self.client.get("/api/auth/me/mcp-tokens")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["token_hint"], "aigc_mcp_abc...wxyz")
+        repository.list_user_mcp_tokens.assert_called_once_with(user_id=7)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.headers["pragma"], "no-cache")
 
     def test_old_management_path_is_not_exposed(self) -> None:
         self.assertEqual(self.client.get("/api/auth/mcp-tokens").status_code, 404)

@@ -1,16 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LayoutView from '../views/LayoutView.vue'
-import DashboardView from '../views/DashboardView.vue'
-import GitHubProjectsView from '../views/GitHubProjectsView.vue'
-import ChatView from '../views/ChatView.vue'
-import ReportView from '../views/ReportView.vue'
-import MonitorView from '../views/MonitorView.vue'
-import LoginView from '../views/LoginView.vue'
-import RegisterView from '../views/RegisterView.vue'
-import PaperReadView from '../views/PaperReadView.vue'
-import DisclaimerView from '../views/DisclaimerView.vue'
-import PrivacyView from '../views/PrivacyView.vue'
-import McpConnectView from '../views/McpConnectView.vue'
+
+const DashboardView = () => import('../views/DashboardView.vue')
+const GitHubProjectsView = () => import('../views/GitHubProjectsView.vue')
+const ChatView = () => import('../views/ChatView.vue')
+const ReportView = () => import('../views/ReportView.vue')
+const MonitorView = () => import('../views/MonitorView.vue')
+const LoginView = () => import('../views/LoginView.vue')
+const RegisterView = () => import('../views/RegisterView.vue')
+const ForgotPasswordView = () => import('../views/ForgotPasswordView.vue')
+const PaperReadView = () => import('../views/PaperReadView.vue')
+const DisclaimerView = () => import('../views/DisclaimerView.vue')
+const PrivacyView = () => import('../views/PrivacyView.vue')
+const McpConnectView = () => import('../views/McpConnectView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -26,6 +28,12 @@ const router = createRouter({
       path: '/register',
       name: 'register',
       component: RegisterView,
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: ForgotPasswordView,
       meta: { guestOnly: true },
     },
 

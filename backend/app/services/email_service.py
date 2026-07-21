@@ -6,23 +6,46 @@ Dev 模式：SMTP_HOST 为空时，验证码直接打印到日志，不发送真
 
 from __future__ import annotations
 
+import hmac
 import logging
-import random
+import secrets
 import string
+from typing import Literal
 
 from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
 
+OtpPurpose = Literal["registration", "password_reset"]
+
 _OTP_CODE_PREFIX = "email:code:"
 _OTP_LOCK_PREFIX = "email:lock:"
+_RESET_CODE_PREFIX = "email:reset:code:"
+_RESET_LOCK_PREFIX = "email:reset:lock:"
+_RESET_ATTEMPTS_PREFIX = "email:reset:attempts:"
 _OTP_TTL = 300  # 验证码有效期 5 分钟
 _LOCK_TTL = 60  # 防刷冷却 60 秒
+_RESET_MAX_ATTEMPTS = 5
 
 
 def _gen_otp(length: int = 6) -> str:
-    """生成 length 位随机数字 OTP。"""
-    return "".join(random.choices(string.digits, k=length))
+    """生成 length 位密码学安全的随机数字 OTP。"""
+    return "".join(secrets.choice(string.digits) for _ in range(length))
+
+
+def _otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str | None]:
+    email_lower = email.lower()
+    if purpose == "password_reset":
+        return (
+            f"{_RESET_CODE_PREFIX}{email_lower}",
+            f"{_RESET_LOCK_PREFIX}{email_lower}",
+            f"{_RESET_ATTEMPTS_PREFIX}{email_lower}",
+        )
+    return (
+        f"{_OTP_CODE_PREFIX}{email_lower}",
+        f"{_OTP_LOCK_PREFIX}{email_lower}",
+        None,
+    )
 
 
 class EmailService:
@@ -74,87 +97,107 @@ class EmailService:
     # Public API
     # ------------------------------------------------------------------
 
-    async def send_otp(self, email: str) -> None:
-        """发送邮件 OTP 验证码。
-
-        防刷逻辑：
-        1. 检查 Redis key email:lock:<email>，若存在 -> 抛 429
-        2. 生成 6 位随机数字 OTP
-        3. 写入 Redis: email:code:<email> = OTP, TTL=300s
-        4. 写入 Redis: email:lock:<email> = "1", TTL=60s
-        5. 发送邮件（dev 模式打印日志；生产模式通过 SMTP 发送）
-        """
+    async def send_otp(
+        self,
+        email: str,
+        *,
+        purpose: OtpPurpose = "registration",
+        deliver: bool = True,
+    ) -> None:
+        """生成并按用途存储邮件 OTP，必要时发送邮件。"""
         email_lower = email.lower()
+        code_key, lock_key, attempts_key = _otp_keys(email_lower, purpose)
 
-        if self._is_redis_available():
-            lock_key = f"{_OTP_LOCK_PREFIX}{email_lower}"
-            existing_lock = await self._redis.get(lock_key)
-            if existing_lock is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="请求过于频繁，请 60 秒后再试",
-                )
+        if not self._is_redis_available():
+            logger.warning("[EMAIL] Redis 不可用，无法生成可验证的 OTP。")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="验证码服务暂不可用，请稍后重试",
+            )
+
+        existing_lock = await self._redis.get(lock_key)
+        if existing_lock is not None:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="请求过于频繁，请 60 秒后再试",
+            )
 
         otp = _gen_otp()
+        await self._redis.set(code_key, otp, ex=_OTP_TTL)
+        await self._redis.set(lock_key, "1", ex=_LOCK_TTL)
+        if attempts_key is not None:
+            await self._redis.delete(attempts_key)
 
-        if self._is_redis_available():
-            code_key = f"{_OTP_CODE_PREFIX}{email_lower}"
-            lock_key = f"{_OTP_LOCK_PREFIX}{email_lower}"
-            await self._redis.set(code_key, otp, ex=_OTP_TTL)
-            await self._redis.set(lock_key, "1", ex=_LOCK_TTL)
+        if not deliver:
+            return
+
+        if purpose == "password_reset":
+            subject = "【AIGC_NEWS】密码重置验证码"
+            body = self._build_password_reset_email_body(otp)
+        else:
+            subject = "【AIGC_NEWS】您的验证码"
+            body = self._build_email_body(otp)
 
         if self._is_smtp_configured():
             await self._send_email(
                 to_email=email_lower,
-                subject="【AIGC_NEWS】您的验证码",
-                body=self._build_email_body(otp),
+                subject=subject,
+                body=body,
             )
         else:
             # Dev 模式：直接打印到日志，方便本地开发调试
             logger.info(
-                "[EMAIL DEV] to=%s  otp=%s  (SMTP 未配置，跳过真实发送)",
+                "[EMAIL DEV] purpose=%s to=%s otp=%s (SMTP 未配置，跳过真实发送)",
+                purpose,
                 email_lower,
                 otp,
             )
 
-    async def verify_otp(self, email: str, code: str, consume: bool = True) -> bool:
-        """验证 OTP 是否正确。
-
-        Args:
-            email:   邮箱地址
-            code:    用户输入的验证码
-            consume: 验证成功后是否立即删除 Redis key（默认 True）。
-                     若业务逻辑中后续步骤可能失败，可传 False，
-                     待全部成功后再调用 consume_otp() 手动删除。
-
-        当 Redis 不可用时，始终返回 False（不允许无状态验证）。
-        """
+    async def verify_otp(
+        self,
+        email: str,
+        code: str,
+        consume: bool = True,
+        *,
+        purpose: OtpPurpose = "registration",
+    ) -> bool:
+        """验证用途隔离的 OTP；Redis 不可用时拒绝验证。"""
         if not self._is_redis_available():
             logger.warning("[EMAIL] Redis 不可用，无法验证 OTP，拒绝请求。")
             return False
 
-        email_lower = email.lower()
-        code_key = f"{_OTP_CODE_PREFIX}{email_lower}"
+        code_key, _lock_key, attempts_key = _otp_keys(email, purpose)
         stored = await self._redis.get(code_key)
-
         if stored is None:
             return False
 
-        # decode bytes -> str（redis decode_responses=False 时返回 bytes）
-        stored_str = stored.decode("utf-8") if isinstance(stored, bytes) else stored
-
-        if stored_str == code:
+        stored_str = stored.decode("utf-8") if isinstance(stored, bytes) else str(stored)
+        if hmac.compare_digest(stored_str, code):
             if consume:
-                await self._redis.delete(code_key)
+                await self.consume_otp(email, purpose=purpose)
             return True
 
+        if attempts_key is not None:
+            attempts = await self._redis.incr(attempts_key)
+            if attempts == 1:
+                await self._redis.expire(attempts_key, _OTP_TTL)
+            if attempts >= _RESET_MAX_ATTEMPTS:
+                await self._redis.delete(code_key, attempts_key)
         return False
 
-    async def consume_otp(self, email: str) -> None:
-        """显式删除 Redis 中的 OTP key（在业务流程全部成功后调用）。"""
+    async def consume_otp(
+        self,
+        email: str,
+        *,
+        purpose: OtpPurpose = "registration",
+    ) -> None:
+        """显式删除 Redis 中的 OTP 状态（在业务流程全部成功后调用）。"""
         if self._is_redis_available():
-            code_key = f"{_OTP_CODE_PREFIX}{email.lower()}"
-            await self._redis.delete(code_key)
+            code_key, _lock_key, attempts_key = _otp_keys(email, purpose)
+            keys = [code_key]
+            if attempts_key is not None:
+                keys.append(attempts_key)
+            await self._redis.delete(*keys)
 
     # ------------------------------------------------------------------
     # Public: 发送简报邮件
@@ -227,6 +270,16 @@ class EmailService:
             f"    {otp}\n\n"
             f"验证码有效期为 5 分钟，请勿泄露给他人。\n\n"
             f"如非本人操作，请忽略此邮件。\n\n"
+            f"— AIGC_NEWS"
+        )
+
+    def _build_password_reset_email_body(self, otp: str) -> str:
+        return (
+            f"您好，\n\n"
+            f"您正在重置 AIGC_NEWS 账号密码，验证码为：\n\n"
+            f"    {otp}\n\n"
+            f"验证码有效期为 5 分钟，请勿泄露给他人。\n\n"
+            f"如非本人操作，请忽略此邮件，您的密码不会被更改。\n\n"
             f"— AIGC_NEWS"
         )
 

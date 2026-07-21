@@ -10,7 +10,7 @@ import {
   uploadPdfAttachment,
   type AttachmentMeta,
 } from '../services/api'
-import { Clipboard, SquareCode, FileText, Image, Globe } from 'lucide-vue-next'
+import { Clipboard, SquareCode, FileText, Image } from 'lucide-vue-next'
 
 const store = useChatStore()
 const authStore = useAuthStore()
@@ -26,10 +26,6 @@ const attachmentMetas = ref<AttachmentMeta[]>([])
 const showSidebar = ref(true)
 
 const localSettings = ref({ ...store.settings })
-const webSearchEnabled = computed({
-  get: () => store.settings.webSearch,
-  set: (val: boolean) => store.updateSettings({ webSearch: val }),
-})
 
 /** 会话列表（按 updatedAt 降序） */
 const conversationList = computed(() => {
@@ -311,7 +307,7 @@ const cancelSettings = () => { showSettings.value = false }
 
 <template>
   <!-- 双栏布局：左侧会话列表 + 右侧对话区 -->
-  <div class="relative flex h-full overflow-hidden">
+  <div class="chat-shell relative flex h-full overflow-hidden">
 
     <!-- 左侧历史会话列表 -->
     <aside
@@ -715,6 +711,85 @@ const cancelSettings = () => { showSettings.value = false }
 </template>
 
 <style scoped>
+.chat-shell {
+  --paper: #f4f0e6;
+  --paper-raised: #fffdf6;
+  --ink: #191a16;
+  --rule: rgba(25, 26, 22, 0.72);
+  --lime: #c7ff2e;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.chat-shell .chat-sidebar,
+.chat-shell .chat-header,
+.chat-shell footer {
+  border-color: var(--rule) !important;
+  background: var(--paper-raised) !important;
+}
+
+.chat-shell :deep(.glass-card) {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  box-shadow: 3px 3px 0 rgba(25, 26, 22, 0.12);
+  backdrop-filter: none;
+}
+
+.chat-shell button,
+.chat-shell textarea,
+.chat-shell input { border-radius: 4px; }
+
+.chat-shell button:focus-visible,
+.chat-shell textarea:focus-visible,
+.chat-shell input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--lime);
+}
+
+.chat-shell :deep(.btn-primary) {
+  border: 1px solid var(--ink);
+  border-radius: 4px !important;
+  background: var(--ink);
+  color: var(--paper-raised);
+  box-shadow: none;
+}
+
+.chat-shell :deep(.btn-primary:hover:not(:disabled)) {
+  background: var(--lime);
+  color: var(--ink);
+}
+
+.chat-shell .chat-sidebar [class*="bg-stone-700"] {
+  border: 1px solid var(--ink);
+  background: var(--lime) !important;
+  color: var(--ink) !important;
+}
+
+.chat-shell [class*="text-cyan"] { color: #4b6100 !important; }
+.chat-shell [class*="bg-cyan"] { background-color: var(--lime) !important; }
+
+.chat-shell textarea,
+.chat-shell input:not([type="range"]) {
+  border-color: rgba(25, 26, 22, 0.52);
+  background: #fffef9;
+}
+
+.chat-shell input[type="range"] { accent-color: var(--lime); }
+
+.chat-shell > .absolute.inset-0 {
+  background: rgba(244, 240, 230, 0.9);
+  backdrop-filter: none;
+}
+
+.chat-shell > .absolute.inset-0 > div {
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  box-shadow: 6px 6px 0 rgba(25, 26, 22, 0.16);
+}
+
 @media (max-width: 639px) {
   .chat-sidebar {
     position: absolute;

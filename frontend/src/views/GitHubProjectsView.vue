@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   addMyToolWebsite,
@@ -27,6 +27,8 @@ import {
 } from '../services/api'
 import router from '../router'
 import { useAuthStore } from '../stores/authStore'
+
+defineOptions({ name: 'GitHubProjectsView' })
 
 const authStore = useAuthStore()
 const route = useRoute()
@@ -81,6 +83,10 @@ const categoryRequestId = ref(0)
 const tagRequestId = ref(0)
 const isApplyingRouteState = ref(false)
 const isReplacingRoute = ref(false)
+const isViewActive = ref(true)
+const VIEW_REFRESH_INTERVAL = 60_000
+let lastSuccessfulFetchAt = 0
+let hasActivatedOnce = false
 let searchTimer: number | undefined
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
@@ -276,15 +282,38 @@ const sourceBadge = (repo: GitHubProjectItem) => {
 }
 const linkLabel = (repo: GitHubProjectItem) => (isWebsite(repo) ? '访问网站' : 'GitHub')
 const projectKey = (repo: GitHubProjectItem) => (isWebsite(repo) ? `website:${repo.website_id}` : `github:${repo.repo_id ?? repo.full_name}`)
-const brokenLogoKeys = ref<Set<string>>(new Set())
-const websiteLogoUrl = (repo: GitHubProjectItem) => {
+const logoKey = (repo: GitHubProjectItem) => {
   const url = isWebsite(repo) ? (repo.image_url || '') : ''
-  return url && !brokenLogoKeys.value.has(`${projectKey(repo)}:${url}`) ? url : ''
+  return url ? `${projectKey(repo)}:${url}` : ''
+}
+const brokenLogoKeys = ref<Set<string>>(new Set())
+const loadedLogoKeys = ref<Set<string>>(new Set())
+const websiteLogoUrl = (repo: GitHubProjectItem) => {
+  const key = logoKey(repo)
+  return key && !brokenLogoKeys.value.has(key) ? (repo.image_url || '') : ''
+}
+const websiteLogoInitial = (repo: GitHubProjectItem) => {
+  const label = repo.title || repo.domain || repoName(repo)
+  return Array.from(label.trim())[0]?.toLocaleUpperCase() || 'W'
+}
+const isWebsiteLogoLoaded = (repo: GitHubProjectItem) => {
+  const key = logoKey(repo)
+  return Boolean(key && loadedLogoKeys.value.has(key))
+}
+const markWebsiteLogoLoaded = (repo: GitHubProjectItem) => {
+  const key = logoKey(repo)
+  if (!key || loadedLogoKeys.value.has(key)) return
+  loadedLogoKeys.value = new Set([...loadedLogoKeys.value, key])
 }
 const hideBrokenLogo = (repo: GitHubProjectItem) => {
-  const url = isWebsite(repo) ? (repo.image_url || '') : ''
-  if (!url) return
-  brokenLogoKeys.value = new Set([...brokenLogoKeys.value, `${projectKey(repo)}:${url}`])
+  const key = logoKey(repo)
+  if (!key) return
+  brokenLogoKeys.value = new Set([...brokenLogoKeys.value, key])
+  if (loadedLogoKeys.value.has(key)) {
+    const nextLoadedKeys = new Set(loadedLogoKeys.value)
+    nextLoadedKeys.delete(key)
+    loadedLogoKeys.value = nextLoadedKeys
+  }
 }
 const favoritePayload = (repo: GitHubProjectItem): ProjectFavoritePayload => {
   if (isWebsite(repo)) return { source: 'website', website_id: repo.website_id }
@@ -465,7 +494,6 @@ const loadCategories = async () => {
       selectedSubcategory.value = 'all'
       selectedScope.value = 'all'
     }
-    void loadPersonalTags()
     return
   }
   categoriesLoading.value = true
@@ -519,7 +547,7 @@ const loadTaxonomy = async () => {
   }
 }
 
-const loadProjects = async (options: { clearSuccess?: boolean } = {}) => {
+const loadProjects = async (options: { clearSuccess?: boolean; preserveContent?: boolean } = {}) => {
   const requestId = currentRequestId.value + 1
   currentRequestId.value = requestId
   errorMsg.value = ''
@@ -530,7 +558,7 @@ const loadProjects = async (options: { clearSuccess?: boolean } = {}) => {
     loading.value = false
     return
   }
-  loading.value = true
+  if (!options.preserveContent) loading.value = true
 
   try {
     const loadParams = () => ({
@@ -560,13 +588,16 @@ const loadProjects = async (options: { clearSuccess?: boolean } = {}) => {
     }
     projects.value = data.items
     total.value = data.total
+    lastSuccessfulFetchAt = Date.now()
     mergePersonalTagsFromItems(data.items)
   } catch (error) {
     if (requestId !== currentRequestId.value) return
     console.error('Failed to load projects:', error)
-    errorMsg.value = isMyCollection.value ? '我的收藏暂时加载失败，请稍后重试。' : '项目库暂时加载失败，请稍后重试。'
-    projects.value = []
-    total.value = 0
+    if (!options.preserveContent) {
+      errorMsg.value = isMyCollection.value ? '我的收藏暂时加载失败，请稍后重试。' : '项目库暂时加载失败，请稍后重试。'
+      projects.value = []
+      total.value = 0
+    }
   } finally {
     if (requestId === currentRequestId.value) {
       loading.value = false
@@ -989,7 +1020,7 @@ watch([selectedScope, selectedCategory, selectedSubcategory, selectedLanguage, s
 watch(
   () => route.query,
   () => {
-    if (isReplacingRoute.value) return
+    if (!isViewActive.value || route.name !== 'github-projects' || isReplacingRoute.value) return
     if (!applyRouteState()) return
     loadCategories()
     loadPersonalTags()
@@ -1033,6 +1064,25 @@ watch(() => authStore.isLoggedIn, (loggedIn) => {
   if (loggedIn) loadTaxonomy()
 })
 
+const stopViewReads = () => {
+  if (searchTimer) {
+    window.clearTimeout(searchTimer)
+    searchTimer = undefined
+  }
+  currentRequestId.value += 1
+  categoryRequestId.value += 1
+  tagRequestId.value += 1
+}
+
+const refreshProjectsInBackground = async () => {
+  await Promise.all([
+    loadCategories(),
+    loadPersonalTags(),
+    loadProjects({ clearSuccess: false, preserveContent: true }),
+  ])
+  if (authStore.isLoggedIn) await loadTaxonomy()
+}
+
 onMounted(() => {
   if (!applyRouteState()) return
   loadCategories()
@@ -1040,6 +1090,29 @@ onMounted(() => {
   loadProjects()
   if (authStore.isLoggedIn) loadTaxonomy()
 })
+
+onActivated(() => {
+  isViewActive.value = true
+  if (!hasActivatedOnce) {
+    hasActivatedOnce = true
+    return
+  }
+  if (searchQuery.value !== debouncedQuery.value) {
+    searchTimer = window.setTimeout(() => {
+      debouncedQuery.value = searchQuery.value
+    }, 280)
+  }
+  if (Date.now() - lastSuccessfulFetchAt >= VIEW_REFRESH_INTERVAL) {
+    void refreshProjectsInBackground()
+  }
+})
+
+onDeactivated(() => {
+  isViewActive.value = false
+  stopViewReads()
+})
+
+onBeforeUnmount(stopViewReads)
 </script>
 
 <template>
@@ -1295,15 +1368,25 @@ onMounted(() => {
 
         <header class="project-card__header">
           <div class="project-card__identity">
-            <img
-              v-if="websiteLogoUrl(repo)"
-              class="project-card__logo"
-              :src="websiteLogoUrl(repo)"
-              :alt="`${repoName(repo)} logo`"
-              loading="lazy"
-              referrerpolicy="no-referrer"
-              @error="hideBrokenLogo(repo)"
-            />
+            <div v-if="isWebsite(repo)" class="project-card__logo-shell">
+              <span class="project-card__logo-placeholder" aria-hidden="true">
+                {{ websiteLogoInitial(repo) }}
+              </span>
+              <img
+                v-if="websiteLogoUrl(repo)"
+                class="project-card__logo"
+                :class="isWebsiteLogoLoaded(repo) ? 'project-card__logo--loaded' : ''"
+                :src="repo.image_url || ''"
+                :alt="`${repoName(repo)} 图标`"
+                width="42"
+                height="42"
+                decoding="async"
+                :loading="index < 6 ? 'eager' : 'lazy'"
+                referrerpolicy="no-referrer"
+                @load="markWebsiteLogoLoaded(repo)"
+                @error="hideBrokenLogo(repo)"
+              />
+            </div>
             <div>
               <span class="project-card__source">{{ sourceBadge(repo) }}</span>
               <h2 :title="repoName(repo)">{{ repoName(repo) }}</h2>
@@ -1465,7 +1548,7 @@ onMounted(() => {
 
     <Teleport to="body">
       <Transition name="tool-modal">
-        <div v-if="addDialogOpen" class="tool-modal" role="presentation" @click.self="closeAddDialog">
+        <div v-if="isViewActive && addDialogOpen" class="tool-modal" role="presentation" @click.self="closeAddDialog">
           <form class="tool-modal__panel" @submit.prevent="submitToolWebsite">
             <button
               type="button"
@@ -1582,7 +1665,7 @@ onMounted(() => {
 
     <Teleport to="body">
       <Transition name="tool-modal">
-        <div v-if="editDialogOpen" class="tool-modal" role="presentation" @click.self="closeEditDialog">
+        <div v-if="isViewActive && editDialogOpen" class="tool-modal" role="presentation" @click.self="closeEditDialog">
           <form class="tool-modal__panel" @submit.prevent="submitEditWebsite">
             <button
               type="button"
@@ -2198,15 +2281,44 @@ onMounted(() => {
   gap: 12px;
 }
 
-.project-card__logo {
+.project-card__logo-shell {
+  position: relative;
   width: 42px;
   height: 42px;
-  flex-shrink: 0;
+  flex: 0 0 42px;
+  overflow: hidden;
   border: 1px solid rgba(168, 162, 158, 0.22);
   border-radius: 14px;
-  object-fit: cover;
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--acid-soft);
   box-shadow: 0 10px 24px rgba(41, 37, 36, 0.08);
+}
+
+.project-card__logo-placeholder,
+.project-card__logo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.project-card__logo-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--acid-ink);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.project-card__logo {
+  object-fit: cover;
+  background: var(--paper-raised);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.project-card__logo--loaded {
+  opacity: 1;
 }
 
 .project-card__source {
@@ -2810,5 +2922,168 @@ onMounted(() => {
   .tool-modal__manual-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Warm editorial migration: paper surfaces, hard rules, acid signal. */
+.projects-page {
+  --projects-accent: #11110f;
+  --projects-accent-soft: rgba(199, 244, 50, .28);
+  --projects-accent-border: #11110f;
+  --projects-warm: #11110f;
+  --projects-warm-soft: rgba(199, 244, 50, .22);
+  --projects-paper: #f3f0e6;
+  --projects-paper-light: #fffdf5;
+  --projects-acid: #c7f432;
+  --projects-acid-soft: #f1f8d2;
+  color: #11110f;
+  background: var(--projects-paper);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.projects-page::before { display: none; }
+.projects-page :deep(.glass-card) {
+  border: 1px solid #11110f;
+  border-radius: 6px;
+  background: var(--projects-paper-light);
+  box-shadow: 4px 4px 0 #11110f;
+  backdrop-filter: none;
+}
+
+.projects-hero::after,
+.projects-category-panel::before,
+.project-card::before,
+.tool-modal__panel::before { opacity: .22; mask-image: none; }
+.projects-kicker { color: #11110f; }
+.projects-kicker::before { content: '■'; margin-right: 8px; color: var(--projects-acid); -webkit-text-stroke: 1px #11110f; }
+.projects-hero h1,
+.empty-state h2,
+.projects-login-prompt__copy h2,
+.tool-modal__panel h2 {
+  color: #11110f;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 900;
+  letter-spacing: -.055em;
+}
+
+.projects-hero__stats span,
+.projects-source-tab,
+.projects-sort select,
+.projects-search__filter,
+.projects-login-prompt__notes span,
+.projects-subcategories__label,
+.project-card__source,
+.project-card__link,
+.project-card__favorite,
+.project-card__recommend,
+.project-card__edit,
+.project-card__delete,
+.tool-modal__close,
+.tool-modal__tabs,
+.tool-modal__tabs button,
+.tool-modal__field input,
+.tool-modal__field select,
+.tool-modal__field textarea,
+.tool-modal__error,
+.projects-pagination__jump input {
+  border-color: #11110f;
+  border-radius: 4px;
+  background: var(--projects-paper-light);
+  box-shadow: none;
+}
+
+.projects-add-btn,
+.projects-add-submit,
+.projects-login-prompt__action {
+  border: 1px solid #11110f;
+  border-radius: 4px;
+  color: #11110f;
+  background: var(--projects-acid);
+  box-shadow: none;
+}
+.projects-add-btn:hover,
+.projects-add-submit:hover,
+.projects-login-prompt__action:hover {
+  color: var(--projects-paper-light);
+  background: #11110f;
+  box-shadow: none;
+  transform: none;
+}
+
+.projects-source-tab:hover,
+.projects-category:hover,
+.projects-category:focus-visible,
+.projects-page :deep(.tab-inactive:hover) {
+  border-color: #11110f;
+  color: #11110f;
+  background: var(--projects-acid-soft);
+  transform: none;
+}
+.projects-source-tab--active,
+.projects-page :deep(.tab-active) {
+  border-color: #11110f;
+  color: #11110f;
+  background: var(--projects-acid);
+  box-shadow: inset 0 0 0 1px #11110f;
+  transform: none;
+}
+.projects-source-tab--active strong { color: #11110f; }
+.projects-page :deep(.tab-inactive) { border: 1px solid #11110f; border-radius: 4px; background: var(--projects-paper-light); }
+.projects-search :deep(.input) { border: 1px solid #11110f; border-radius: 4px; background: var(--projects-paper-light); box-shadow: none; }
+.projects-search :deep(.input:focus),
+.tool-modal__field input:focus,
+.tool-modal__field select:focus,
+.tool-modal__field textarea:focus,
+.projects-pagination__jump input:focus { border-color: #11110f; box-shadow: 0 0 0 3px var(--projects-acid); }
+
+.projects-login-prompt { background: var(--projects-paper-light); }
+.projects-login-prompt__mark { border-color: #11110f; border-radius: 6px; color: #11110f; background: var(--projects-acid); box-shadow: 4px 4px 0 #11110f; transform: none; }
+.projects-subcategories { border-top: 1px solid #11110f; }
+.projects-category { border-radius: 4px; }
+.projects-grid { gap: 12px; }
+.project-card { border-radius: 6px; }
+.project-card__pin { width: 12px; height: 12px; border: 1px solid #11110f; border-radius: 2px; background: var(--projects-acid); box-shadow: none; }
+.project-card__pin--website { background: var(--projects-acid); }
+.project-card__logo { border-color: #11110f; border-radius: 4px; box-shadow: none; }
+.project-card__source { color: #11110f; background: var(--projects-acid); }
+.project-card__stats { border-top: 1px solid #11110f; color: #11110f; }
+.project-card__stats svg { color: #11110f; }
+
+.project-card__link:hover,
+.project-card__favorite:hover,
+.project-card__recommend:hover,
+.project-card__edit:hover,
+.project-chip:hover,
+.project-chip:focus-visible,
+.project-chip--language:hover,
+.project-chip--language:focus-visible {
+  border-color: #11110f;
+  color: #11110f;
+  background: var(--projects-acid-soft);
+  transform: none;
+}
+.project-card__delete:hover {
+  border-color: #991b1b;
+  color: #991b1b;
+  background: #fef2f2;
+  transform: none;
+}
+.project-card__favorite--active,
+.project-card__recommend--active { border-color: #11110f; color: #11110f; background: var(--projects-acid); box-shadow: none; }
+
+.tool-modal {
+  --projects-paper: #f3f0e6;
+  --projects-paper-light: #fffdf5;
+  --projects-acid: #c7f432;
+  --projects-acid-soft: #f1f8d2;
+  background: rgba(17, 17, 15, .72);
+  backdrop-filter: none;
+}
+.tool-modal__panel { border: 2px solid #11110f; border-radius: 6px; background: var(--projects-paper); box-shadow: 8px 8px 0 var(--projects-acid); }
+.tool-modal__tabs button:hover { color: #11110f !important; background: var(--projects-acid-soft) !important; box-shadow: none; }
+.tool-modal__tab--active,
+.tool-modal__tab--active:hover { color: #11110f !important; background: var(--projects-acid) !important; box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .projects-page *, .projects-page *::before, .projects-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
 </style>

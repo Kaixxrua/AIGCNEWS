@@ -64,15 +64,13 @@ const isActive = (item: { to: string; exact: boolean }) => {
   <div class="relative flex h-screen w-full items-center justify-center overflow-hidden">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
-    <div class="bg-glow bg-glow--cyan" />
-    <div class="bg-glow bg-glow--violet" />
 
     <!-- ═══ 居中悬浮画板（暖白纸质毛玻璃主面板） ═══ -->
     <div class="main-canvas">
       <!-- 顶部全局搜索条 -->
       <div
         class="absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
-        style="z-index: 100; border-bottom: 1px solid rgba(168,162,158,0.12); background: rgba(255,255,255,0.75); backdrop-filter: blur(8px);"
+        style="z-index: 100; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised);"
       >
         <GlobalSearch />
       </div>
@@ -80,9 +78,9 @@ const isActive = (item: { to: string; exact: boolean }) => {
       <!-- 内容区（搜索条占位 44px） -->
       <div class="absolute inset-0 pt-[44px] flex flex-col">
         <router-view v-slot="{ Component }">
-          <Transition name="route-fade" mode="out-in">
+          <KeepAlive :include="['DashboardView', 'GitHubProjectsView']" :max="2">
             <component :is="Component" :key="route.path" class="view-container" />
-          </Transition>
+          </KeepAlive>
         </router-view>
       </div>
     </div>
@@ -181,43 +179,15 @@ const isActive = (item: { to: string; exact: boolean }) => {
   overflow: hidden;
 }
 
-/* ═══ 科技感背景光晕（低透明度，不抢视觉重心） ═══ */
-.bg-glow {
-  position: fixed;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-  filter: blur(100px);
-}
-.bg-glow--cyan {
-  width: 600px;
-  height: 600px;
-  top: -15%;
-  right: -10%;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.06) 0%, transparent 70%);
-}
-.bg-glow--violet {
-  width: 500px;
-  height: 500px;
-  bottom: -10%;
-  left: -5%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.04) 0%, transparent 70%);
-}
-
-/* ═══ 主悬浮画板（暖白纸质毛玻璃） ═══ */
+/* ═══ 主工作画板：纸面、硬规则、轻微错版阴影 ═══ */
 .main-canvas {
   width: 92%;
   max-width: 1400px;
   height: 84vh;
-  border-radius: 32px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(32px) saturate(180%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  border: 1px solid rgba(168, 162, 158, 0.18);
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.03),
-    0 0 0 1px rgba(6, 182, 212, 0.04),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+  border-radius: 14px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  box-shadow: 7px 7px 0 rgba(21, 21, 18, 0.12);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -262,7 +232,7 @@ const isActive = (item: { to: string; exact: boolean }) => {
   text-decoration: underline;
 }
 
-/* ═══ 底部 Dock（暖白纸质） ═══ */
+/* ═══ 底部 command strip ═══ */
 .dock {
   position: fixed;
   bottom: 28px;
@@ -271,14 +241,12 @@ const isActive = (item: { to: string; exact: boolean }) => {
   z-index: 100;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 24px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(168, 162, 158, 0.20);
-  border-radius: 999px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  gap: 5px;
+  padding: 7px 10px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  box-shadow: 4px 4px 0 var(--ink);
 }
 
 .dock-item {
@@ -288,9 +256,9 @@ const isActive = (item: { to: string; exact: boolean }) => {
   justify-content: center;
   width: 44px;
   height: 44px;
-  border-radius: 50%;
-  transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
-  color: #a8a29e; /* stone-400 */
+  border-radius: 6px;
+  transition: all 0.16s ease;
+  color: var(--ink-muted);
   text-decoration: none;
   background: transparent;
   border: none;
@@ -298,21 +266,21 @@ const isActive = (item: { to: string; exact: boolean }) => {
 }
 
 .dock-item:hover {
-  color: #57534e; /* stone-600 */
-  background: rgba(245, 245, 244, 0.8); /* stone-100 */
-  transform: scale(1.08);
+  color: var(--ink);
+  background: var(--acid-soft);
+  transform: translateY(-2px);
 }
 
 .dock-item--active {
-  color: #44403c; /* stone-700 */
-  background: #f5f5f4; /* stone-100 */
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  color: var(--acid-ink);
+  background: var(--acid);
+  box-shadow: inset 0 -3px 0 var(--ink);
 }
 
 .dock-item--active:hover {
-  color: #44403c;
-  background: #e7e5e4; /* stone-200 */
-  transform: scale(1.08);
+  color: var(--acid-ink);
+  background: var(--acid);
+  transform: translateY(-2px);
 }
 
 .dock-icon {
@@ -337,13 +305,12 @@ const isActive = (item: { to: string; exact: boolean }) => {
   white-space: nowrap;
   font-size: 11px;
   font-weight: 600;
-  color: #44403c; /* stone-700 */
-  background: rgba(255, 255, 255, 0.90);
-  backdrop-filter: blur(10px);
-  padding: 4px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(168, 162, 158, 0.15);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  color: var(--acid);
+  background: var(--ink);
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--acid);
   pointer-events: none;
 }
 
@@ -366,19 +333,17 @@ const isActive = (item: { to: string; exact: boolean }) => {
 .dock-auth-sep {
   width: 1px;
   height: 20px;
-  background: rgba(168, 162, 158, 0.25);
+  background: var(--rule-strong);
   margin: 0 4px;
   flex-shrink: 0;
 }
 
 /* ═══ 登录按钮（绿色调） ═══ */
-.dock-item--login {
-  color: #16a34a; /* green-600 */
-}
+.dock-item--login { color: var(--acid-ink); background: var(--acid); }
 .dock-item--login:hover {
-  color: #15803d; /* green-700 */
-  background: rgba(220, 252, 231, 0.6); /* green-100 */
-  transform: scale(1.08);
+  color: var(--acid);
+  background: var(--ink);
+  transform: translateY(-2px);
 }
 
 /* ═══ 登出按钮（红色调） ═══ */
@@ -388,7 +353,7 @@ const isActive = (item: { to: string; exact: boolean }) => {
 .dock-item--logout:hover {
   color: #b91c1c; /* red-700 */
   background: rgba(254, 226, 226, 0.6); /* red-100 */
-  transform: scale(1.08);
+  transform: translateY(-2px);
 }
 
 @media (max-width: 639px) {

@@ -306,7 +306,7 @@ const downloadPdf = () => {
 </script>
 
 <template>
-  <div class="w-full flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+  <div class="paper-read-shell w-full flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
     <div class="relative w-full h-1/2 md:h-full md:w-[35%] flex-shrink-0 flex flex-col bg-white border-r border-gray-100/80 hover:border-gray-200 transition-colors">
       <header class="flex shrink-0 items-center justify-between px-4 py-3 relative" style="border-bottom: 1px solid rgba(168,162,158,0.12)">
         <button class="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-600 transition" @click="router.push('/chat')">
@@ -593,6 +593,78 @@ const downloadPdf = () => {
 </template>
 
 <style scoped>
+.paper-read-shell {
+  --paper: #f4f0e6;
+  --paper-raised: #fffdf6;
+  --ink: #191a16;
+  --rule: rgba(25, 26, 22, 0.72);
+  --lime: #c7ff2e;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.paper-read-shell > div {
+  border-color: var(--rule) !important;
+  background: var(--paper) !important;
+}
+
+.paper-read-shell header,
+.paper-read-shell footer {
+  border-color: var(--rule) !important;
+  background: var(--paper-raised);
+}
+
+.paper-read-shell button,
+.paper-read-shell textarea,
+.paper-read-shell input { border-radius: 4px; }
+
+.paper-read-shell button:focus-visible,
+.paper-read-shell textarea:focus-visible,
+.paper-read-shell input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--lime);
+}
+
+.paper-read-shell button[class*="bg-stone-700"] {
+  border: 1px solid var(--ink);
+  background: var(--ink) !important;
+  color: var(--paper-raised) !important;
+}
+
+.paper-read-shell button[class*="bg-stone-700"]:hover:not(:disabled) {
+  background: var(--lime) !important;
+  color: var(--ink) !important;
+}
+
+.paper-read-shell [class*="text-cyan"] { color: #4b6100 !important; }
+.paper-read-shell [class*="bg-cyan"] { background-color: var(--lime) !important; }
+
+.paper-read-shell textarea,
+.paper-read-shell input {
+  border-color: rgba(25, 26, 22, 0.52);
+  background: #fffef9;
+}
+
+.paper-read-shell .absolute.inset-0.z-\[60\] {
+  background: rgba(244, 240, 230, 0.9);
+  backdrop-filter: none;
+}
+
+.paper-read-shell .absolute.inset-0.z-\[60\] > div {
+  border-color: var(--ink);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  box-shadow: 6px 6px 0 rgba(25, 26, 22, 0.16);
+}
+
+.paper-read-shell .absolute.top-full {
+  border-color: var(--ink) !important;
+  border-radius: 4px;
+  background: var(--paper-raised) !important;
+  box-shadow: 4px 4px 0 rgba(25, 26, 22, 0.14);
+}
+
 .popup-fade-enter-active,
 .popup-fade-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;

@@ -1,16 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useTransition, TransitionPresets } from '@vueuse/core'
-import { useRouter } from 'vue-router'
 import { api, fetchSnapshotDates } from '../services/api'
 import GlassCalendar from '../components/GlassCalendar.vue'
 import {
   FileText, Code2, Newspaper, Rocket, Circle,
   Star, Heart, ThumbsUp, ArrowUp, Flame,
-  CalendarDays, RefreshCw, Zap, CheckCircle2,
+  CalendarDays, Zap, CheckCircle2,
 } from 'lucide-vue-next'
 
-const router = useRouter()
+defineOptions({ name: 'DashboardView' })
 
 interface TopDoc {
   id?: number | string
@@ -86,6 +85,9 @@ const stats    = ref<Stats>({})
 const loading  = ref(true)
 const tabLoading = ref(false)
 const errorMsg = ref('')
+const VIEW_REFRESH_INTERVAL = 60_000
+let lastSuccessfulFetchAt = 0
+let hasActivatedOnce = false
 
 // AbortController：每次切换 Tab / Period / Date 时取消上一个未完成的请求，防止竞态覆盖
 let _abortController: AbortController | null = null
@@ -117,6 +119,7 @@ const fetchDashboardData = async (tab: TabKey, period: PeriodKey, date?: string,
   tabList.value = topRes.data.items ?? []
   isFinalized.value = summaryRes.data.is_finalized ?? false
   isEmbargoed.value = summaryRes.data.is_embargoed ?? false
+  lastSuccessfulFetchAt = Date.now()
 }
 
 const fetchAvailableDates = async (tab = activeTab.value, period = activePeriod.value) => {
@@ -135,9 +138,9 @@ const fetchAvailableDates = async (tab = activeTab.value, period = activePeriod.
 }
 
 // 单独获取用户数指标（不缓存接口，实时读取数据库）
-const fetchUserCountMetric = async () => {
+const fetchUserCountMetric = async (signal?: AbortSignal) => {
   try {
-    const res = await api.get('/dashboard/visitor-count')
+    const res = await api.get('/dashboard/visitor-count', { signal })
     stats.value = {
       ...stats.value,
       registered_users: res.data.registered_users ?? stats.value.registered_users ?? 0,
@@ -149,25 +152,63 @@ const fetchUserCountMetric = async () => {
       const key = card.key as keyof typeof stats.value
       return Number(stats.value[key] ?? 0)
     })
-  } catch (e) {
+  } catch (e: any) {
+    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     console.warn('[Dashboard] 获取用户数失败', e)
   }
 }
 
-onMounted(async () => {
+const stopDashboardRequests = () => {
+  _abortController?.abort()
+  _abortController = null
+  _availabilityController?.abort()
+  _availabilityController = null
+}
+
+const refreshDashboardInBackground = async () => {
+  if (loading.value || tabLoading.value) return
+  const signal = _newAbortSignal()
   try {
     await Promise.all([
-      fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value),
+      fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, signal),
       fetchAvailableDates(),
-      fetchUserCountMetric(),
+      fetchUserCountMetric(signal),
     ])
-  } catch (e) {
-    errorMsg.value = String(e)
+    updateStatSources()
+  } catch (e: any) {
+    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
+    console.warn('[Dashboard] 后台刷新失败', e)
+  }
+}
+
+onMounted(async () => {
+  const signal = _newAbortSignal()
+  try {
+    await Promise.all([
+      fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, signal),
+      fetchAvailableDates(),
+      fetchUserCountMetric(signal),
+    ])
+  } catch (e: any) {
+    if (e?.name !== 'CanceledError' && e?.code !== 'ERR_CANCELED') errorMsg.value = String(e)
   } finally {
     loading.value = false
     updateStatSources()
   }
 })
+
+onActivated(() => {
+  if (!hasActivatedOnce) {
+    hasActivatedOnce = true
+    return
+  }
+  if (Date.now() - lastSuccessfulFetchAt >= VIEW_REFRESH_INTERVAL) {
+    void refreshDashboardInBackground()
+  }
+})
+
+onDeactivated(stopDashboardRequests)
+onBeforeUnmount(stopDashboardRequests)
 
 watch(activeTab, (tab) => {
   if (DAILY_ONLY_TABS.has(tab) && activePeriod.value !== 'daily') {
@@ -229,22 +270,6 @@ const SOURCE_CONFIG: Record<string, { label: string; dot: string; badge: string 
 
 const getSourceConfig = (src?: string) =>
   SOURCE_CONFIG[src || ''] ?? { label: src || '?', dot: 'bg-stone-300', badge: 'bg-white text-stone-500 border border-stone-200' }
-
-const docDateDisplay = (doc: TopDoc): { label: string; title: string } => {
-  const pub     = doc.published_date || doc.published_at || ''
-  const snapshotDate = doc.snapshot_date || ''
-  if (doc.source === 'arxiv') {
-    if (snapshotDate) {
-      return { label: snapshotDate, title: `论文发表于: ${pub.slice(0, 16).replace('T', ' ')}` }
-    }
-    const created = doc.created_at || ''
-    return {
-      label: created ? `采集: ${created.slice(0, 10)}` : pub.slice(0, 10),
-      title: pub ? `论文发表于: ${pub.slice(0, 16).replace('T', ' ')}` : '',
-    }
-  }
-  return { label: pub.slice(0, 16).replace('T', ' '), title: '' }
-}
 
 const aiScoreDisplay = (score?: number) => {
   if (score === undefined || score === null) return null
@@ -309,6 +334,14 @@ const visitorCards = [
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`,
   },
 ]
+
+const SOURCE_TAB_KEYS = new Set<TabKey>(TABS.map(tab => tab.key))
+
+const isSourceStatCard = (key: string): key is TabKey => SOURCE_TAB_KEYS.has(key as TabKey)
+
+const selectSourceTab = (key: string) => {
+  if (isSourceStatCard(key)) activeTab.value = key
+}
 
 const getStatValue = (key: string): number => {
   if (key === 'total') return Number(stats.value.total_documents ?? 0)
@@ -376,7 +409,7 @@ const hasData = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-2 overflow-y-auto px-6 py-3 pb-16">
+  <div class="dashboard-page flex h-full flex-col gap-2 overflow-y-auto px-6 py-3 pb-16">
 
     <!-- 页头 — 简洁标题 -->
     <div class="stagger-enter flex items-center justify-between shrink-0">
@@ -415,28 +448,45 @@ const hasData = computed(() => {
       <div class="flex-1 flex flex-col gap-2">
         <!-- 6 个数据源卡片 -->
         <div class="grid gap-2 grid-cols-2 sm:grid-cols-3">
-          <div
-            v-for="(card, index) in statCards"
-            :key="card.key"
-            class="stagger-enter h-[44px] px-2.5 flex items-center justify-between transition-colors"
-            :class="card.dark
-              ? `rounded-xl shadow-sm ${card.cardBg} hover:bg-slate-700`
-              : 'glass-card card-hover'"
-            :style="{ animationDelay: (index * 0.08 + 0.1) + 's' }"
-          >
-            <div class="flex items-center gap-2">
-              <div
-                class="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
-                :class="[card.iconBg, card.iconColor]"
-              >
-                <span class="w-3 h-3 flex items-center justify-center" v-html="card.icon" />
-              </div>
-              <span class="text-xs font-medium" :class="card.dark ? card.labelColor : 'text-stone-400'">{{ card.label }}</span>
+          <template v-for="(card, index) in statCards" :key="card.key">
+            <button
+              v-if="isSourceStatCard(card.key)"
+              type="button"
+              class="dashboard-source-card stagger-enter h-[44px] px-2.5 flex items-center justify-between transition-colors"
+              :class="[activeTab === card.key ? 'dashboard-source-card--active' : '', 'glass-card card-hover']"
+              :style="{ animationDelay: (index * 0.08 + 0.1) + 's' }"
+              :aria-pressed="activeTab === card.key"
+              :aria-label="`查看${card.label}排行榜`"
+              @click="selectSourceTab(card.key)"
+            >
+              <span class="flex items-center gap-2">
+                <span
+                  class="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+                  :class="[card.iconBg, card.iconColor]"
+                >
+                  <span class="w-3 h-3 flex items-center justify-center" v-html="card.icon" />
+                </span>
+                <span class="text-xs font-medium" :class="card.labelColor || 'text-stone-500'">{{ card.label }}</span>
+              </span>
+              <span class="text-lg font-bold tabular-nums" :class="card.numColor">
+                {{ getAnimatedValue(index) }}
+              </span>
+            </button>
+            <div
+              v-else
+              class="stagger-enter h-[44px] px-2.5 flex items-center justify-between transition-colors rounded-xl shadow-sm"
+              :class="card.cardBg"
+              :style="{ animationDelay: (index * 0.08 + 0.1) + 's' }"
+            >
+              <span class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" :class="[card.iconBg, card.iconColor]">
+                  <span class="w-3 h-3 flex items-center justify-center" v-html="card.icon" />
+                </span>
+                <span class="text-xs font-medium" :class="card.labelColor">{{ card.label }}</span>
+              </span>
+              <span class="text-lg font-bold tabular-nums" :class="card.numColor">{{ getAnimatedValue(index) }}</span>
             </div>
-            <span class="text-lg font-bold tabular-nums" :class="card.numColor">
-              {{ getAnimatedValue(index) }}
-            </span>
-          </div>
+          </template>
         </div>
 
         <!-- 2 个运营统计卡片 -->
@@ -444,7 +494,7 @@ const hasData = computed(() => {
           <div
             v-for="(card, index) in visitorCards"
             :key="card.key"
-            class="stagger-enter glass-card card-hover h-[44px] px-2.5 flex items-center justify-between transition-colors"
+            class="stagger-enter glass-card h-[44px] px-2.5 flex items-center justify-between transition-colors"
             :style="{ animationDelay: (index * 0.08 + 0.6) + 's' }"
           >
             <div class="flex items-center gap-2">
@@ -531,13 +581,15 @@ const hasData = computed(() => {
       <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5"
         style="border-bottom: 1px solid rgba(168,162,158,0.15)"
       >
-        <div class="flex flex-wrap gap-1">
+        <div class="flex flex-wrap gap-1" role="tablist" aria-label="排行榜来源">
           <button
             v-for="tab in TABS"
             :key="tab.key"
             class="flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
             :class="activeTab === tab.key ? 'tab-active' : 'tab-inactive'"
-            @click="activeTab = tab.key"
+            role="tab"
+            :aria-selected="activeTab === tab.key"
+            @click="selectSourceTab(tab.key)"
           >
             <component :is="tab.icon" class="h-3.5 w-3.5" />
             {{ tab.label }}
@@ -553,8 +605,8 @@ const hasData = computed(() => {
               isPeriodDisabled(period.key)
                 ? 'cursor-not-allowed opacity-30 text-stone-400'
                 : activePeriod === period.key
-                  ? 'bg-stone-700 text-white font-semibold'
-                  : 'text-stone-400 hover:bg-stone-100 hover:text-stone-600'
+                  ? 'tab-active font-semibold'
+                  : 'tab-inactive'
             ]"
             :disabled="isPeriodDisabled(period.key)"
             @click="!isPeriodDisabled(period.key) && (activePeriod = period.key)"
@@ -695,3 +747,71 @@ const hasData = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.dashboard-page {
+  --paper: #f3f0e6;
+  --paper-light: #fffdf5;
+  --ink: #11110f;
+  --muted: #68655d;
+  --acid: #c7f432;
+  --acid-soft: #f1f8d2;
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image: linear-gradient(rgba(17, 17, 15, .035) 1px, transparent 1px);
+  background-size: 100% 32px;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.dashboard-page :deep(.font-serif) { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.dashboard-page :deep(h1),
+.dashboard-page :deep(h2),
+.dashboard-page :deep(h3) { color: var(--ink); font-weight: 850; letter-spacing: -.04em; }
+.dashboard-page :deep(.glass-card) {
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  background: var(--paper-light);
+  box-shadow: 3px 3px 0 var(--ink);
+  backdrop-filter: none;
+}
+.dashboard-page :deep(.card-hover:hover) { border-color: var(--ink); background: var(--acid-soft); box-shadow: 3px 3px 0 var(--ink); transform: none; }
+.dashboard-page :deep(.text-stone-300),
+.dashboard-page :deep(.text-stone-400) { color: var(--muted); }
+.dashboard-page :deep(.rounded-full),
+.dashboard-page :deep(.rounded-xl),
+.dashboard-page :deep(.rounded-2xl) { border-radius: 4px; }
+
+.dashboard-page :deep(.bg-slate-800) { border: 1px solid var(--ink); color: var(--ink); background: var(--acid); box-shadow: 3px 3px 0 var(--ink); }
+.dashboard-page :deep(.bg-slate-800:hover) { color: var(--ink); background: var(--acid); }
+.dashboard-page :deep(.bg-slate-800 .text-white),
+.dashboard-page :deep(.bg-slate-800 .text-slate-300) { color: inherit; }
+.dashboard-page :deep(.dashboard-source-card--active) {
+  border-color: var(--ink);
+  background: var(--acid);
+  box-shadow: inset 0 -3px 0 var(--ink), 3px 3px 0 var(--ink);
+}
+.dashboard-page :deep(.dashboard-source-card--active .text-blue-600),
+.dashboard-page :deep(.dashboard-source-card--active .text-gray-800),
+.dashboard-page :deep(.dashboard-source-card--active .text-amber-600),
+.dashboard-page :deep(.dashboard-source-card--active .text-rose-600),
+.dashboard-page :deep(.dashboard-source-card--active .text-orange-500) { color: var(--ink) !important; }
+
+.dashboard-page :deep(.tab-active) { border: 1px solid var(--ink); border-radius: 4px; color: var(--ink); background: var(--acid); box-shadow: none; }
+.dashboard-page :deep(.tab-inactive) { border: 1px solid transparent; border-radius: 4px; color: var(--ink); }
+.dashboard-page :deep(.tab-inactive:hover) { border-color: var(--ink); color: var(--ink); background: var(--acid-soft); }
+
+.dashboard-page ol > li { border-top: 1px solid var(--ink) !important; background: transparent; }
+.dashboard-page ol > li:first-child { border-top: 0 !important; }
+.dashboard-page ol > li a:hover { color: var(--ink); background: var(--acid-soft); }
+.dashboard-page ol > li a:hover :deep(.text-stone-700),
+.dashboard-page ol > li a:hover :deep(.text-stone-500),
+.dashboard-page ol > li a:hover :deep(.text-stone-300) { color: inherit; }
+.dashboard-page :deep(.badge) { border-color: var(--ink); border-radius: 3px; background: var(--paper-light); }
+
+.dashboard-page :deep(.bg-gradient-to-br) { background-image: none; background-color: var(--acid); }
+.dashboard-page :deep(.blur-xl) { filter: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-page *, .dashboard-page *::before, .dashboard-page *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+</style>

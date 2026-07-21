@@ -42,17 +42,119 @@ def test_rss_network_failure_does_not_retry(monkeypatch: pytest.MonkeyPatch) -> 
     client.get.assert_called_once_with(source_news.TECHMEME_RSS_URL)
 
 
-def test_website_fetcher_never_falls_back_to_environment_proxy(
+def test_website_fetcher_ignores_ambient_proxy_when_fallback_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ALL_PROXY", "socks5h://10.20.0.1:1080")
+    monkeypatch.setattr(tool_website_fetcher.settings, "outbound_proxy", "")
     fetch = Mock(side_effect=httpx.ConnectError("offline"))
     monkeypatch.setattr(tool_website_fetcher, "_fetch_tool_website_metadata", fetch)
 
     with pytest.raises(tool_website_fetcher.ToolWebsiteFetchError, match="无法连接目标网站"):
         tool_website_fetcher.fetch_tool_website_metadata("https://example.com")
 
-    fetch.assert_called_once_with("https://example.com", trust_env=False)
+    fetch.assert_called_once_with("https://example.com")
+
+
+def test_website_fetcher_falls_back_to_configured_proxy_after_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata = Mock()
+    monkeypatch.setattr(
+        tool_website_fetcher.settings,
+        "outbound_proxy",
+        "socks5h://10.20.0.1:1080",
+    )
+    fetch = Mock(side_effect=[httpx.ConnectTimeout("offline"), metadata])
+    monkeypatch.setattr(tool_website_fetcher, "_fetch_tool_website_metadata", fetch)
+
+    assert tool_website_fetcher.fetch_tool_website_metadata("https://www.youtube.com") is metadata
+    assert fetch.call_args_list == [
+        (("https://www.youtube.com",), {}),
+        (("https://www.youtube.com",), {"proxy_url": "socks5h://10.20.0.1:1080"}),
+    ]
+
+
+def test_website_fetcher_does_not_use_proxy_when_direct_fetch_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata = Mock()
+    monkeypatch.setattr(tool_website_fetcher.settings, "outbound_proxy", "http://proxy:7897")
+    fetch = Mock(return_value=metadata)
+    monkeypatch.setattr(tool_website_fetcher, "_fetch_tool_website_metadata", fetch)
+
+    assert tool_website_fetcher.fetch_tool_website_metadata("https://example.com") is metadata
+    fetch.assert_called_once_with("https://example.com")
+
+
+def test_website_fetcher_does_not_proxy_policy_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tool_website_fetcher.settings, "outbound_proxy", "http://proxy:7897")
+    fetch = Mock(side_effect=tool_website_fetcher.ToolWebsiteFetchError("网页内容过大"))
+    monkeypatch.setattr(tool_website_fetcher, "_fetch_tool_website_metadata", fetch)
+
+    with pytest.raises(tool_website_fetcher.ToolWebsiteFetchError, match="网页内容过大"):
+        tool_website_fetcher.fetch_tool_website_metadata("https://example.com")
+
+    fetch.assert_called_once_with("https://example.com")
+
+
+def test_website_fetcher_sanitizes_proxy_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    proxy_url = "socks5h://user:secret@10.20.0.1:1080"
+    monkeypatch.setattr(tool_website_fetcher.settings, "outbound_proxy", proxy_url)
+    fetch = Mock(side_effect=[httpx.ConnectError("direct"), httpx.ConnectError(proxy_url)])
+    monkeypatch.setattr(tool_website_fetcher, "_fetch_tool_website_metadata", fetch)
+
+    with pytest.raises(tool_website_fetcher.ToolWebsiteFetchError) as exc_info:
+        tool_website_fetcher.fetch_tool_website_metadata("https://example.com")
+
+    assert str(exc_info.value) == "直接连接和出站代理均无法访问目标网站"
+    assert "secret" not in str(exc_info.value)
+
+
+def test_youtube_uses_remote_dns_only_with_socks5h() -> None:
+    assert tool_website_fetcher._proxy_uses_remote_dns(
+        "socks5h://10.20.0.1:1080", "www.youtube.com"
+    )
+    assert tool_website_fetcher._proxy_uses_remote_dns("socks5h://10.20.0.1:1080", "youtu.be")
+    assert not tool_website_fetcher._proxy_uses_remote_dns(
+        "socks5h://10.20.0.1:1080", "youtube.com.attacker.example"
+    )
+    assert not tool_website_fetcher._proxy_uses_remote_dns(
+        "http://10.20.0.1:7897", "www.youtube.com"
+    )
+
+
+def test_proxy_request_is_pinned_to_validated_ip(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        tool_website_fetcher,
+        "_safe_resolved_ips",
+        Mock(return_value=["203.0.113.10", "2001:db8::10"]),
+    )
+
+    request_url, headers, extensions = tool_website_fetcher._proxy_request_target(
+        "https://www.youtube.com/watch?v=abc"
+    )
+
+    assert request_url == "https://203.0.113.10/watch?v=abc"
+    assert headers == {"Host": "www.youtube.com"}
+    assert extensions == {"sni_hostname": "www.youtube.com"}
+
+
+def test_invalid_proxy_configuration_is_sanitized(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        tool_website_fetcher.settings,
+        "outbound_proxy",
+        "ftp://user:secret@proxy.example:21",
+    )
+    fetch = Mock(side_effect=httpx.ConnectError("direct"))
+    monkeypatch.setattr(tool_website_fetcher, "_fetch_tool_website_metadata", fetch)
+
+    with pytest.raises(tool_website_fetcher.ToolWebsiteFetchError) as exc_info:
+        tool_website_fetcher.fetch_tool_website_metadata("https://example.com")
+
+    assert str(exc_info.value) == "出站代理配置无效"
+    assert "secret" not in str(exc_info.value)
+    fetch.assert_called_once_with("https://example.com")
 
 
 def test_httpx_accepts_socks5h_proxy_when_socks_extra_is_installed() -> None:

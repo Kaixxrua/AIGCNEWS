@@ -325,7 +325,7 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden p-4 gap-2.5">
+  <div class="report-shell flex h-full flex-col overflow-hidden p-4 gap-2.5">
 
     <!-- ═══ 紧凑型操作面板：标题 + 源选择 + 周期 + 操作按钮 ═══ -->
     <div class="stagger-enter glass-card shrink-0 px-4 py-3 space-y-2">
@@ -412,8 +412,8 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
             :key="type.key"
             class="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
             :class="selectedType === type.key
-              ? 'bg-stone-700 text-white shadow-sm'
-              : 'text-stone-500 hover:bg-stone-50 hover:text-stone-700'"
+              ? 'tab-active shadow-sm'
+              : 'tab-inactive'"
             :style="selectedType !== type.key ? 'background: rgba(255,255,255,0.6); border: 1px solid rgba(168,162,158,0.20)' : ''"
             :disabled="isGenerating"
             @click="selectedType = type.key"
@@ -433,7 +433,7 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
             :class="[
               isPeriodDisabled(p.key) ? 'cursor-not-allowed opacity-30 text-stone-400'
                 : selectedPeriod === p.key ? 'bg-cyan-50 text-cyan-700 font-semibold border border-cyan-200'
-                : 'text-stone-400 hover:bg-stone-50 hover:text-stone-600'
+                : 'text-stone-400 hover:bg-accent-soft hover:text-stone-600'
             ]"
             :disabled="isGenerating || isPeriodDisabled(p.key)"
             @click="!isPeriodDisabled(p.key) && (selectedPeriod = p.key)"
@@ -482,7 +482,7 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
             class="flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all duration-200"
             :class="selectedSubscribeSources.includes(type.key)
               ? 'border-indigo-200 bg-indigo-50 text-indigo-800'
-              : 'border-stone-100 bg-white/70 text-stone-600 hover:bg-stone-50'"
+              : 'border-stone-100 bg-white/70 text-stone-600 hover:bg-accent-soft'"
             :disabled="isSubscribing"
             @click="toggleSubscribeSource(type.key)"
           >
@@ -498,7 +498,7 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
 
         <div class="mt-3 flex items-center justify-end gap-2">
           <button
-            class="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 hover:bg-stone-50"
+            class="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 hover:bg-accent-soft"
             :disabled="isSubscribing"
             @click="showSubscribePanel = false"
           >取消</button>
@@ -566,3 +566,81 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.report-shell {
+  --paper: #f4f0e6;
+  --paper-raised: #fffdf6;
+  --ink: #191a16;
+  --rule: rgba(25, 26, 22, 0.76);
+  --lime: #c7ff2e;
+  --lime-soft: #f1f9d2;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.report-shell :deep(.glass-card) {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  box-shadow: 3px 3px 0 rgba(25, 26, 22, 0.1);
+  backdrop-filter: none;
+}
+
+.report-shell button,
+.report-shell input { border-radius: 4px; }
+
+.report-shell button:focus-visible,
+.report-shell input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--lime);
+}
+
+.report-shell :deep(.btn-primary) {
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  background: var(--ink);
+  color: #fffdf6;
+  box-shadow: none;
+}
+
+.report-shell :deep(.btn-primary:hover:not(:disabled)) {
+  background: var(--lime);
+  color: var(--ink);
+}
+
+.report-shell :deep(.tab-active) {
+  border-color: var(--ink);
+  background: var(--lime);
+  color: var(--ink);
+  box-shadow: inset 0 -3px 0 var(--ink);
+}
+
+.report-shell :deep(.tab-inactive:hover) {
+  border-color: var(--ink);
+  background: var(--lime-soft);
+  color: var(--ink);
+}
+
+.report-shell button[class*="bg-indigo"],
+.report-shell button[class*="border-indigo"],
+.report-shell button[class*="bg-cyan"] {
+  border-color: var(--ink) !important;
+  background: var(--lime) !important;
+  color: var(--ink) !important;
+}
+
+.report-shell [class*="text-cyan"],
+.report-shell [class*="text-indigo"] { color: #4b6100 !important; }
+.report-shell [class*="bg-cyan"] { background-color: var(--lime) !important; }
+
+.report-shell > div:first-child > div:nth-child(2) {
+  border-top-color: rgba(25, 26, 22, 0.24) !important;
+}
+
+.report-shell input[type="date"] {
+  border-color: rgba(25, 26, 22, 0.45);
+  background: var(--paper-raised);
+}
+</style>

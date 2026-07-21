@@ -8,6 +8,14 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
+const getSafeInternalRedirect = (value: unknown) =>
+  typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')
+    ? value
+    : '/'
+
+const redirect = computed(() => getSafeInternalRedirect(route.query.redirect))
+const redirectQuery = computed(() => ({ redirect: redirect.value }))
+
 const email         = ref('')
 const otp           = ref('')
 const password      = ref('')
@@ -76,7 +84,7 @@ const handleRegister = async () => {
   errorMsg.value = ''
   if (!emailValid.value) { errorMsg.value = '请输入有效的邮箱地址'; return }
   if (!otp.value.trim() || !/^\d{6}$/.test(otp.value.trim())) { errorMsg.value = '验证码应为 6 位数字'; return }
-  if (!password.value) { errorMsg.value = '请设置密码'; return }
+  if (password.value.length < 6) { errorMsg.value = '密码至少需要 6 个字符'; return }
   if (password.value !== confirmPwd.value) { errorMsg.value = '两次密码输入不一致'; return }
   if (!agreedToTerms.value) { errorMsg.value = '请阅读并同意《用户协议与免责声明》后再注册'; return }
 
@@ -90,8 +98,7 @@ const handleRegister = async () => {
     // 注册成功后自动登录
     await authStore.login(email.value.trim(), password.value)
     successMsg.value = '注册成功！正在为您自动登录…'
-    const redirect = (route.query.redirect as string) || '/'
-    setTimeout(() => router.replace(redirect), 800)
+    setTimeout(() => router.replace(redirect.value), 800)
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } }; message?: string }
     errorMsg.value = err?.response?.data?.detail || err?.message || '注册失败，请稍后再试'
@@ -170,10 +177,13 @@ const handleRegister = async () => {
             v-model="password"
             type="password"
             class="input"
-            placeholder="请设置密码"
+            placeholder="至少 6 个字符"
             autocomplete="new-password"
             :disabled="loading"
           />
+          <Transition name="fade-msg">
+            <p v-if="password && password.length < 6" class="text-2xs text-rose-500 pl-1">密码至少需要 6 个字符</p>
+          </Transition>
         </div>
 
         <!-- 确认密码 -->
@@ -224,11 +234,13 @@ const handleRegister = async () => {
             type="button"
             class="mt-0.5 shrink-0 w-4 h-4 rounded border transition-all duration-150 flex items-center justify-center"
             :class="agreedToTerms
-              ? 'bg-stone-800 border-stone-800'
-              : 'bg-white border-stone-300 hover:border-stone-500'"
+              ? 'bg-accent border-ink'
+              : 'bg-white border-stone-300 hover:border-ink hover:bg-accent-soft'"
+            :aria-pressed="agreedToTerms"
+            aria-label="同意用户协议与免责声明"
             @click="agreedToTerms = !agreedToTerms"
           >
-            <svg v-if="agreedToTerms" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
+            <svg v-if="agreedToTerms" viewBox="0 0 12 12" fill="none" stroke="#171a09" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
               <polyline points="2,6 5,9 10,3"/>
             </svg>
           </button>
@@ -261,7 +273,7 @@ const handleRegister = async () => {
       <!-- 底部登录链接 -->
       <p class="mt-5 text-center text-sm text-stone-400 stagger-enter" style="animation-delay: 0.2s">
         已有账号？
-        <RouterLink to="/login" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors">
+        <RouterLink :to="{ path: '/login', query: redirectQuery }" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors">
           去登录
         </RouterLink>
       </p>

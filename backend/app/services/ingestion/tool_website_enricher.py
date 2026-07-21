@@ -21,6 +21,7 @@ from backend.app.services.ingestion.project_taxonomy import (
     WEBSITE_SUBCATEGORY_BY_CATEGORY_SLUG,
     EnrichmentResult,
     clean_text,
+    extract_message_text,
     normalize_enrichment,
     normalize_subcategory,
     normalize_tags,
@@ -125,12 +126,10 @@ class ToolWebsiteEnricher:
     ) -> Dict[str, Any]:
         metadata = fetch_tool_website_metadata(url)
         existing_website = self.db.get_tool_website_by_hash(metadata.normalized_url_hash)
+        preserve_existing_private = bool(existing_website and visibility == "private")
         if existing_website:
             existing_manual = self.db.get_tool_website_enrichment(int(existing_website["id"]))
             prompt_version = str((existing_manual or {}).get("prompt_version") or "")
-            if visibility == "private":
-                item = self.db.get_tool_website_item(int(existing_website["id"]))
-                return {"duplicate": True, "item": item}
             if (
                 existing_manual
                 and existing_manual.get("status") == "succeeded"
@@ -141,6 +140,7 @@ class ToolWebsiteEnricher:
                     metadata,
                     added_by_user_id=added_by_user_id,
                     visibility=visibility,
+                    update_existing=not preserve_existing_private,
                 )
                 item = self.db.get_tool_website_item(int(website["id"]))
                 return {"duplicate": True, "item": item}
@@ -149,6 +149,7 @@ class ToolWebsiteEnricher:
             metadata,
             added_by_user_id=added_by_user_id,
             visibility=visibility,
+            update_existing=not preserve_existing_private,
         )
         existing = self.db.get_tool_website_enrichment(int(website["id"]))
         duplicate = bool(
@@ -161,10 +162,12 @@ class ToolWebsiteEnricher:
             item = self.db.get_tool_website_item(int(website["id"]))
             return {"duplicate": True, "item": item}
 
+        enrichment_failed = False
         try:
             result = self._enrich_one(metadata)
             self._upsert_result(int(website["id"]), metadata, result)
         except Exception as exc:  # noqa: BLE001
+            enrichment_failed = True
             logger.warning("[ToolWebsiteEnricher] 工具网站富化失败 url=%s error=%s", url, exc, exc_info=True)
             self.db.mark_tool_website_enrichment_failed(
                 int(website["id"]),
@@ -173,10 +176,9 @@ class ToolWebsiteEnricher:
                 error_msg=str(exc),
                 **self.model_meta,
             )
-            raise
 
         item = self.db.get_tool_website_item(int(website["id"]))
-        return {"duplicate": False, "item": item}
+        return {"duplicate": False, "item": item, "enrichment_failed": enrichment_failed}
 
     def add_manual(
         self,
@@ -280,8 +282,7 @@ class ToolWebsiteEnricher:
         for attempt in range(_MAX_RETRIES):
             try:
                 response = self.llm.invoke(messages)
-                raw = response.content if hasattr(response, "content") else str(response)
-                data = parse_json_object(str(raw))
+                data = parse_json_object(extract_message_text(response))
                 if not data:
                     raise ValueError("模型未返回可解析 JSON")
                 return normalize_enrichment(

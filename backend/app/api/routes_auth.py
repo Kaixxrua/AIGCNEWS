@@ -47,15 +47,55 @@ class SendEmailOtpRequest(BaseModel):
     email: EmailStr
 
 
+def _validate_email_code(value: str) -> str:
+    if not re.fullmatch(r"\d{6}", value):
+        raise ValueError("email_code must be exactly 6 digits")
+    return value
+
+
+def _validate_new_password(value: str) -> str:
+    if len(value) < 6:
+        raise ValueError("password must be at least 6 characters")
+    if len(value.encode("utf-8")) > 72:
+        raise ValueError("password must not exceed 72 UTF-8 bytes")
+    return value
+
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     email_code: str
     password: str
 
+    @field_validator("email_code")
+    @classmethod
+    def validate_email_code(cls, value: str) -> str:
+        return _validate_email_code(value)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return _validate_new_password(value)
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    email_code: str
+    new_password: str
+
+    @field_validator("email_code")
+    @classmethod
+    def validate_email_code(cls, value: str) -> str:
+        return _validate_email_code(value)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return _validate_new_password(value)
 
 
 MCP_TOKEN_SCOPES = frozenset({"projects:favorites:read"})
@@ -66,7 +106,6 @@ class CreateMcpTokenRequest(BaseModel):
     client_type: str
     client_label: str = Field(default="", max_length=128)
     scopes: list[str] = Field(default_factory=lambda: ["projects:favorites:read"])
-    multi_open: bool = False
     expires_at: datetime | None = None
 
     @field_validator("client_type")
@@ -114,6 +153,68 @@ async def send_email_otp(body: SendEmailOtpRequest, request: Request) -> dict[st
     email_svc = _get_email_service(request)
     await email_svc.send_otp(str(body.email))
     return {"detail": "验证码已发送"}
+
+
+@router.post("/auth/send-password-reset-otp", summary="发送密码重置邮箱验证码")
+async def send_password_reset_otp(
+    body: SendEmailOtpRequest,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    email = str(body.email).lower()
+    db = MySQLRepository()
+    user = await asyncio.to_thread(db.get_user_by_email, email)
+    email_svc = _get_email_service(request)
+    await email_svc.send_otp(
+        email,
+        purpose="password_reset",
+        deliver=user is not None,
+    )
+    return {"detail": "如果该邮箱已注册，验证码将发送至该邮箱"}
+
+
+@router.post("/auth/reset-password", summary="使用邮箱验证码重置密码")
+async def reset_password(
+    body: ResetPasswordRequest,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    email = str(body.email).lower()
+    email_svc = _get_email_service(request)
+    verified = await email_svc.verify_otp(
+        email,
+        body.email_code,
+        consume=False,
+        purpose="password_reset",
+    )
+
+    db = MySQLRepository()
+    user = await asyncio.to_thread(db.get_user_by_email, email)
+    if not verified or user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证码错误或已过期",
+        )
+
+    hashed = hash_password(body.new_password)
+    affected = await asyncio.to_thread(
+        db.update_user_password,
+        user_id=int(user["id"]),
+        email=email,
+        hashed_password=hashed,
+    )
+    if affected != 1:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="密码重置失败，请稍后重试",
+        )
+
+    await email_svc.consume_otp(email, purpose="password_reset")
+    return {"detail": "密码重置成功"}
 
 
 @router.post("/auth/register", summary="用户注册（邮箱 + 验证码 + 密码）")
@@ -233,7 +334,6 @@ async def create_mcp_token(
         client_type=body.client_type,
         client_label=body.client_label.strip(),
         expires_at=body.expires_at,
-        multi_open=body.multi_open,
     )
     metadata = item.pop("token_metadata")
     return {"token": token, "token_metadata": metadata, "replaced_count": item["replaced_count"]}
