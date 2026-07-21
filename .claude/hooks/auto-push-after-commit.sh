@@ -25,8 +25,8 @@ if [[ -z "$branch" ]]; then
   printf '{"systemMessage":"AIGCNEWS auto-push skipped: detached HEAD."}\n'
   exit 0
 fi
-if [[ "$branch" == "main" || "$branch" == "master" ]]; then
-  printf '{"systemMessage":"AIGCNEWS auto-push blocked on default branch: %s."}\n' "$branch"
+if [[ "$branch" != "main" ]]; then
+  printf '{"systemMessage":"AIGCNEWS auto-push skipped outside main: %s."}\n' "$branch"
   exit 0
 fi
 if ! git remote get-url origin >/dev/null 2>&1; then
@@ -37,7 +37,7 @@ fi
 if git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1; then
   git push
 else
-  git push -u origin HEAD
+  git push -u origin main
 fi
 
 printf '{"systemMessage":"AIGCNEWS auto-push succeeded for branch %s."}\n' "$branch"

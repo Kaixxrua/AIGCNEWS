@@ -96,8 +96,8 @@ Reverts: <commit-sha>
 2. 提交前完成与影响面匹配的测试、类型检查或构建；失败时不得提交或推送。
 3. 不覆盖、暂存或提交其他开发者及用户已有的无关修改。
 4. 提交信息通过本规范校验。
-5. 变更位于功能、修复或重构分支，不直接在 `main`/`master` 上自动推送。
-6. 推送不等于合并；PR 仍须按 Green/Yellow/Red 风险等级完成审查和 merge train。
+5. 当前项目采用主干开发，完成并验证后直接提交到 `main`，不创建长期任务分支。
+6. 推送前仍须按 Green/Yellow/Red 风险等级完成相应验证；自动推送不等于自动发布。
 
 ## 4. “PR 完成”的自动推送语义
 
@@ -107,14 +107,14 @@ Reverts: <commit-sha>
 2. 影响范围检查全部通过；
 3. 仅暂存该工作单元的文件；
 4. Conventional Commit 创建成功；
-5. 当前分支不是默认分支。
+5. 当前分支是 `main`，且本地 `main` 已基于最新 `origin/main`。
 
 成功执行 `git commit` 后，项目的 Claude Code `PostToolUse` hook 自动推送当前 `HEAD`：
 
-- 已有 upstream：`git push`；
-- 没有 upstream：`git push -u origin HEAD`；
+- `main` 已有 upstream：`git push`；
+- `main` 没有 upstream：`git push -u origin main`；
 - 禁止 force push；
-- `main`/`master`、detached HEAD、无 `origin` 时跳过并报告；
+- 非 `main` 分支、detached HEAD、无 `origin` 时跳过并报告；
 - push 失败必须如实报告，提交仍保留在本地；
 - 设置 `AIGCNEWS_SKIP_AUTO_PUSH=1` 可对单次紧急操作禁用自动推送。
 

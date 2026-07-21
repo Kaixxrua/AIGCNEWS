@@ -5,9 +5,9 @@
 - 所有提交必须遵守 `docs/git-workflow.md`，标题格式为 `<type>(<scope>)!: <subject>`；`scope` 必填。
 - 一个提交对应一个 PR-sized 工作单元；仅暂存本次工作涉及的文件，不得夹带、覆盖或回滚用户已有修改。
 - 提交前必须运行与影响面匹配的测试、类型检查或构建。检查失败时不得提交或推送，并应如实报告。
-- 不得直接在 `main` 或 `master` 上完成自动提交/推送；应先创建任务分支。
-- 成功提交后，由项目 Claude Code hook 自动 push 当前分支。不得使用 `--force`、`--force-with-lease` 或任何等效强制推送。
-- 自动 push 不代表自动创建、合并或发布 PR；这些操作仍需独立授权或既定流程。
+- 当前项目采用主干开发：完成并验证一个 PR-sized 工作单元后，直接提交并推送到 `main`。
+- 成功提交后，由项目 Claude Code hook 自动 push `main`。不得使用 `--force`、`--force-with-lease` 或任何等效强制推送。
+- 自动 push 不代表自动发布；若需要创建或合并远程 PR，仍需独立授权或既定流程。
 - Git 提交必须保留 Claude Code 要求的 `Co-Authored-By: Claude <noreply@anthropic.com>` trailer。
 
 ## 重构执行
