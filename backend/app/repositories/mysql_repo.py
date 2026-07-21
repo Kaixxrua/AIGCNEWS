@@ -10,12 +10,8 @@ from zoneinfo import ZoneInfo
 
 import pymysql
 
-try:
-    from DBUtils.PooledDB import PooledDB
-except ModuleNotFoundError:
-    from dbutils.pooled_db import PooledDB
-
 from backend.app.core.config import settings
+from backend.app.core.database import DatabaseLifecycle, mysql_database
 from backend.app.services.ingestion.project_taxonomy import (
     CATEGORY_BY_SLUG,
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
@@ -399,23 +395,8 @@ class MySQLRepository:
     _schema_initialized = False
     _schema_lock = Lock()
 
-    def __init__(self) -> None:
-        self._pool = PooledDB(
-            creator=pymysql,
-            mincached=2,
-            maxcached=5,
-            maxconnections=20,
-            blocking=True,
-            host=getattr(settings, "mysql_host", "localhost"),
-            port=getattr(settings, "mysql_port", 3306),
-            user=getattr(settings, "mysql_user", "root"),
-            password=getattr(settings, "mysql_password", ""),
-            database=getattr(settings, "mysql_database", "rag_aigc"),
-            charset="utf8mb4",
-            cursorclass=pymysql.cursors.DictCursor,
-            autocommit=False,
-            setsession=["SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"],
-        )
+    def __init__(self, database: DatabaseLifecycle | None = None) -> None:
+        self._database = database or mysql_database
         if not MySQLRepository._schema_initialized:
             with MySQLRepository._schema_lock:
                 if not MySQLRepository._schema_initialized:
@@ -427,8 +408,7 @@ class MySQLRepository:
     # ------------------------------------------------------------------
 
     def _connect(self):
-        conn = self._pool.connection()
-        return conn
+        return self._database.connect()
 
     def resolve_github_repo_id(self, repo_id: str = "", full_name: str = "") -> str:
         """Return the canonical repo_id for a GitHub repository identity."""
