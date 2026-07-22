@@ -31,6 +31,7 @@ from redis.asyncio import Redis
 
 from langchain_core.documents import Document
 
+from backend.app.core.config import settings
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
