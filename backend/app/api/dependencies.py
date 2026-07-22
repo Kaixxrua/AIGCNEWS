@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from backend.app.core.database import DatabaseLifecycle
+from backend.app.repositories.mysql_briefing_repository import MySQLBriefingRepository
 from backend.app.repositories.mysql_ingestion_task_repository import (
     MySQLIngestionTaskRepository,
 )
@@ -29,3 +30,10 @@ def get_ingestion_task_repository(
 ) -> MySQLIngestionTaskRepository:
     """Return task persistence while preserving compatibility schema setup."""
     return MySQLRepository(database=database).ingestion_tasks
+
+
+def get_briefing_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLBriefingRepository:
+    """Return briefing persistence while preserving compatibility schema setup."""
+    return MySQLRepository(database=database).briefings

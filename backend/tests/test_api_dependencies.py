@@ -60,6 +60,21 @@ class DatabaseDependencyTests(unittest.TestCase):
         self.assertIs(result, task_repository)
         repository_type.assert_called_once_with(database=database)
 
+    def test_get_briefing_repository_uses_compatibility_component(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        briefing_repository = MagicMock()
+        repository = MagicMock(briefings=briefing_repository)
+
+        with patch.object(
+            dependencies,
+            "MySQLRepository",
+            return_value=repository,
+        ) as repository_type:
+            result = dependencies.get_briefing_repository(database)
+
+        self.assertIs(result, briefing_repository)
+        repository_type.assert_called_once_with(database=database)
+
     def test_task_repository_dependency_can_be_overridden(self) -> None:
         app = FastAPI()
         repository = MagicMock()
@@ -76,6 +91,27 @@ class DatabaseDependencyTests(unittest.TestCase):
 
         with patch.object(dependencies, "MySQLRepository") as repository_type:
             response = TestClient(app).get("/tasks")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"overridden": True})
+        repository_type.assert_not_called()
+
+    def test_briefing_repository_dependency_can_be_overridden(self) -> None:
+        app = FastAPI()
+        repository = MagicMock()
+
+        @app.get("/briefings")
+        def read_briefings(
+            injected=Depends(dependencies.get_briefing_repository),
+        ) -> dict[str, bool]:
+            return {"overridden": injected is repository}
+
+        app.dependency_overrides[
+            dependencies.get_briefing_repository
+        ] = lambda: repository
+
+        with patch.object(dependencies, "MySQLRepository") as repository_type:
+            response = TestClient(app).get("/briefings")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"overridden": True})
