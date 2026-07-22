@@ -4,6 +4,9 @@ from fastapi import Depends, Request
 
 from backend.app.core.database import DatabaseLifecycle
 from backend.app.repositories.mysql_briefing_repository import MySQLBriefingRepository
+from backend.app.repositories.mysql_briefing_subscription_repository import (
+    MySQLBriefingSubscriptionRepository,
+)
 from backend.app.repositories.mysql_ingestion_task_repository import (
     MySQLIngestionTaskRepository,
 )
@@ -37,3 +40,10 @@ def get_briefing_repository(
 ) -> MySQLBriefingRepository:
     """Return briefing persistence while preserving compatibility schema setup."""
     return MySQLRepository(database=database).briefings
+
+
+def get_briefing_subscription_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLBriefingSubscriptionRepository:
+    """Return user subscription persistence through the compatibility facade."""
+    return MySQLRepository(database=database).briefing_subscriptions

@@ -13,6 +13,9 @@ import pymysql
 from backend.app.core.config import settings
 from backend.app.core.database import DatabaseLifecycle, mysql_database
 from backend.app.repositories.mysql_briefing_repository import MySQLBriefingRepository
+from backend.app.repositories.mysql_briefing_subscription_repository import (
+    MySQLBriefingSubscriptionRepository,
+)
 from backend.app.repositories.mysql_ingestion_task_repository import (
     MySQLIngestionTaskRepository,
 )
@@ -403,6 +406,7 @@ class MySQLRepository:
         self._database = database or mysql_database
         self._ingestion_tasks: MySQLIngestionTaskRepository | None = None
         self._briefings: MySQLBriefingRepository | None = None
+        self._briefing_subscriptions: MySQLBriefingSubscriptionRepository | None = None
         if not MySQLRepository._schema_initialized:
             with MySQLRepository._schema_lock:
                 if not MySQLRepository._schema_initialized:
@@ -427,6 +431,14 @@ class MySQLRepository:
         if self._briefings is None:
             self._briefings = MySQLBriefingRepository(self._database)
         return self._briefings
+
+    @property
+    def briefing_subscriptions(self) -> MySQLBriefingSubscriptionRepository:
+        if self._briefing_subscriptions is None:
+            self._briefing_subscriptions = MySQLBriefingSubscriptionRepository(
+                self._database
+            )
+        return self._briefing_subscriptions
 
     def resolve_github_repo_id(self, repo_id: str = "", full_name: str = "") -> str:
         """Return the canonical repo_id for a GitHub repository identity."""
