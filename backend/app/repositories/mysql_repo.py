@@ -4481,15 +4481,7 @@ class MySQLRepository:
     # ------------------------------------------------------------------
 
     def create_task(self, task_name: str) -> int:
-        sql = """
-            INSERT INTO ingestion_tasks (task_name, status, started_at)
-            VALUES (%s, 'running', %s)
-        """
-        with self._database.transaction() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, (task_name, _utcnow()))
-                task_id = cur.lastrowid
-            return task_id  # type: ignore[return-value]
+        return self.ingestion_tasks.create_task(task_name)
 
     def finish_task(
         self,
@@ -4499,80 +4491,24 @@ class MySQLRepository:
         error_msg: Optional[str] = None,
         item_count: int = 0,
     ) -> None:
-        sql = """
-            UPDATE ingestion_tasks
-            SET status=%s, finished_at=%s, error_msg=%s, item_count=%s
-            WHERE id=%s
-        """
-        with self._database.transaction() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, (status, _utcnow(), error_msg, item_count, task_id))
+        self.ingestion_tasks.finish_task(
+            task_id,
+            status=status,
+            error_msg=error_msg,
+            item_count=item_count,
+        )
 
     def get_latest_task(self) -> Optional[Dict[str, Any]]:
-        sql = """
-            SELECT * FROM ingestion_tasks
-            ORDER BY id DESC
-            LIMIT 1
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql)
-                row = cur.fetchone()
-            conn.commit()
-            return dict(row) if row else None
-        finally:
-            conn.close()
+        return self.ingestion_tasks.get_latest_task()
 
     def get_recent_tasks(self, limit: int = 100) -> List[Dict[str, Any]]:
-        sql = "SELECT * FROM ingestion_tasks ORDER BY id DESC LIMIT %s"
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (limit,))
-                return cur.fetchall()
-        finally:
-            conn.close()
+        return self.ingestion_tasks.get_recent_tasks(limit)
 
     def list_tasks(self, page: int = 1, page_size: int = 10) -> Dict[str, Any]:
-        offset = max(page - 1, 0) * page_size
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) AS cnt FROM ingestion_tasks")
-                total_row = cur.fetchone()
-                total = total_row["cnt"] if total_row else 0
-                cur.execute(
-                    """
-                    SELECT * FROM ingestion_tasks
-                    ORDER BY id DESC
-                    LIMIT %s OFFSET %s
-                    """,
-                    (page_size, offset),
-                )
-                rows = cur.fetchall()
-            conn.commit()
-            return {
-                "items": list(rows),
-                "total": total,
-                "page": page,
-                "page_size": page_size,
-            }
-        finally:
-            conn.close()
+        return self.ingestion_tasks.list_tasks(page, page_size)
 
     def clear_all_tasks(self) -> int:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) AS cnt FROM ingestion_tasks")
-                row = cur.fetchone()
-                count = int(row["cnt"] if row else 0)
-                cur.execute("DELETE FROM ingestion_tasks")
-            conn.commit()
-            return count
-        finally:
-            conn.close()
+        return self.ingestion_tasks.clear_all_tasks()
 
     # ------------------------------------------------------------------
     # Briefings
