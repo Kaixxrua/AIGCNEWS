@@ -28,6 +28,7 @@ from backend.app.api import (
 )
 from backend.app.api import routes_ops
 from backend.app.core.config import settings
+from backend.app.core.database import mysql_database
 from backend.app.core.scheduler import start_scheduler, stop_scheduler
 
 
@@ -79,6 +80,8 @@ async def _warmup_reranker() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """FastAPI lifespan：启动时预热模型、初始化 Redis Cache、开启调度器；关闭时优雅释放资源。"""
+    app.state.database = mysql_database
+
     # 在后台异步预热 Cross-Encoder 模型，不阻塞服务启动
     asyncio.create_task(_warmup_reranker())
 
@@ -131,6 +134,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 print("[Shutdown] Redis cache connection closed.")
             except Exception as exc:
                 print(f"[Shutdown] Redis close failed (non-fatal): {exc}")
+        mysql_database.close()
+        print("[Shutdown] MySQL connection pool closed.")
 
 
 app = FastAPI(
