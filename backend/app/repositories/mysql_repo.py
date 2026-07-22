@@ -4837,85 +4837,29 @@ class MySQLRepository:
     def upsert_briefing_subscription(
         self, user_id: int, email: str, source: str = "all", period: str = "daily"
     ) -> Dict[str, Any]:
-        """创建或激活简报订阅（若已存在则更新为 is_active=1）。"""
-        sql = """
-            INSERT INTO briefing_subscriptions (user_id, email, source, period, is_active, updated_at)
-            VALUES (%s, %s, %s, %s, 1, NOW())
-            ON DUPLICATE KEY UPDATE
-                email = VALUES(email),
-                is_active = 1,
-                updated_at = NOW()
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (user_id, email, source, period))
-                # 查询刚刚 upsert 的记录
-                cur.execute(
-                    "SELECT * FROM briefing_subscriptions WHERE user_id = %s AND source = %s AND period = %s",
-                    (user_id, source, period),
-                )
-                row = cur.fetchone()
-            conn.commit()
-            return dict(row) if row else {}
-        finally:
-            conn.close()
+        return self.briefing_subscriptions.upsert_briefing_subscription(
+            user_id,
+            email,
+            source,
+            period,
+        )
 
     def cancel_briefing_subscription(
         self, user_id: int, source: str = "all", period: str = "daily"
     ) -> bool:
-        """取消简报订阅（软删除，设 is_active=0）。"""
-        sql = """
-            UPDATE briefing_subscriptions
-            SET is_active = 0, updated_at = NOW()
-            WHERE user_id = %s AND source = %s AND period = %s
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (user_id, source, period))
-                affected = cur.rowcount
-            conn.commit()
-            return affected > 0
-        finally:
-            conn.close()
+        return self.briefing_subscriptions.cancel_briefing_subscription(
+            user_id,
+            source,
+            period,
+        )
 
     def get_user_briefing_subscriptions(self, user_id: int) -> List[Dict[str, Any]]:
-        """获取指定用户的所有活跃订阅。"""
-        sql = """
-            SELECT id, source, period, is_active, created_at, updated_at
-            FROM briefing_subscriptions
-            WHERE user_id = %s AND is_active = 1
-            ORDER BY created_at ASC
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (user_id,))
-                rows = cur.fetchall()
-            conn.commit()
-            return list(rows)
-        finally:
-            conn.close()
+        return self.briefing_subscriptions.get_user_briefing_subscriptions(user_id)
 
     def get_active_subscribers(
         self, source: str = "all", period: str = "daily"
     ) -> List[Dict[str, Any]]:
-        """获取指定 source+period 的所有活跃订阅者（含 email）。"""
-        sql = """
-            SELECT bs.id, bs.user_id, bs.email, bs.source, bs.period
-            FROM briefing_subscriptions bs
-            WHERE bs.is_active = 1 AND bs.source = %s AND bs.period = %s
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (source, period))
-                rows = cur.fetchall()
-            conn.commit()
-            return list(rows)
-        finally:
-            conn.close()
+        return self.briefing_subscriptions.get_active_subscribers(source, period)
 
     # ------------------------------------------------------------------
     # Evaluation

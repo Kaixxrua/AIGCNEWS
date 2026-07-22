@@ -157,6 +157,57 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         briefing_repository.get_briefing_by_date.assert_called_once_with("2026-07-22")
         briefing_repository.list_briefings.assert_called_once_with(7)
 
+    def test_subscription_compatibility_methods_delegate_to_component(self) -> None:
+        repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
+        subscription_repository = MagicMock()
+        subscription_repository.upsert_briefing_subscription.return_value = {"id": 42}
+        subscription_repository.cancel_briefing_subscription.return_value = True
+        subscription_repository.get_user_briefing_subscriptions.return_value = [
+            {"id": 42}
+        ]
+        subscription_repository.get_active_subscribers.return_value = [
+            {"email": "reader@example.com"}
+        ]
+        repository._briefing_subscriptions = subscription_repository
+
+        self.assertEqual(
+            repository.upsert_briefing_subscription(
+                7,
+                "reader@example.com",
+                "github",
+                "weekly",
+            ),
+            {"id": 42},
+        )
+        self.assertTrue(
+            repository.cancel_briefing_subscription(7, "github", "weekly")
+        )
+        self.assertEqual(
+            repository.get_user_briefing_subscriptions(7),
+            [{"id": 42}],
+        )
+        self.assertEqual(
+            repository.get_active_subscribers("github", "weekly"),
+            [{"email": "reader@example.com"}],
+        )
+
+        subscription_repository.upsert_briefing_subscription.assert_called_once_with(
+            7,
+            "reader@example.com",
+            "github",
+            "weekly",
+        )
+        subscription_repository.cancel_briefing_subscription.assert_called_once_with(
+            7,
+            "github",
+            "weekly",
+        )
+        subscription_repository.get_user_briefing_subscriptions.assert_called_once_with(7)
+        subscription_repository.get_active_subscribers.assert_called_once_with(
+            "github",
+            "weekly",
+        )
+
     @staticmethod
     def _repository_with_database():
         cursor = MagicMock()
