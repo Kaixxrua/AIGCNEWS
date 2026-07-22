@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.task_repository import RecentTaskReader
 
 _START_TIME = datetime.now(timezone.utc)
 
@@ -43,7 +44,7 @@ def collect_metrics() -> Dict[str, Any]:
     }
 
 
-def _task_summary(db: MySQLRepository) -> Dict[str, Any]:
+def _task_summary(db: RecentTaskReader) -> Dict[str, Any]:
     tasks = db.get_recent_tasks(limit=100)
     total = len(tasks)
     success = sum(1 for t in tasks if t.get("status") == "success")

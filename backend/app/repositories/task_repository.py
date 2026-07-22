@@ -24,6 +24,22 @@ class LatestTaskReader(Protocol):
     def get_latest_task(self) -> dict[str, Any] | None: ...
 
 
+class RecentTaskReader(Protocol):
+    """Read boundary for recent ingestion task metrics."""
+
+    def get_recent_tasks(self, limit: int = 100) -> list[dict[str, Any]]: ...
+
+
+class MonitorMetricsRepository(RecentTaskReader, Protocol):
+    """Read-only repository boundary used by monitor metrics."""
+
+    def get_eval_summary(self) -> dict[str, Any]: ...
+
+    def get_document_count(self) -> int: ...
+
+    def list_briefings(self, limit: int = 30) -> list[dict[str, Any]]: ...
+
+
 class MonitorTaskRepository(Protocol):
     """Read-only task query boundary used by monitor endpoints."""
 
