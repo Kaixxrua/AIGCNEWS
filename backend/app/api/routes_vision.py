@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
 from backend.app.core.auth import RequireUser
+from backend.app.core.config import settings
 
 router = APIRouter()
 
@@ -47,7 +48,6 @@ router = APIRouter()
 
 _VISION_BASE_URL = "https://api.siliconflow.cn/v1"
 _VISION_MODEL = "Pro/moonshotai/Kimi-K2.5"
-_VISION_API_KEY = "sk-zrzgdszgakmufhierwywatlfooyeqnchdmhjtshtdrkafmww"
 
 _SCREENSHOT_TTL = 300  # 5 分钟
 
@@ -199,7 +199,7 @@ async def _vision_relay_stream(req: VisionRelayRequest) -> AsyncGenerator[str, N
         }
 
         headers = {
-            "Authorization": f"Bearer {_VISION_API_KEY}",
+            "Authorization": f"Bearer {settings.siliconflow_api_key}",
             "Content-Type": "application/json",
         }
 
