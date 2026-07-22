@@ -35,6 +35,7 @@ from backend.app.core.config import settings
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.task_repository import IngestionTaskWriter
 from backend.app.services.ingestion.graph_extractor import GraphExtractor
 from backend.app.services.ingestion.content_enricher import (
     enrich_papers,
@@ -516,6 +517,7 @@ class IngestionOrchestrator:
         limit: int = _FETCH_LIMIT,
         top_n: int = _TOP_N_PER_SOURCE,
         target_date: Optional[str] = None,
+        task_writer: IngestionTaskWriter | None = None,
     ):
         self.limit = limit
         self.top_n = top_n
@@ -523,6 +525,7 @@ class IngestionOrchestrator:
         self.snapshot_date = target_date or today_cst()
 
         self.db = MySQLRepository()
+        self.task_writer = task_writer or self.db
 
         # 实例化所有爬虫
         self._crawlers: Dict[str, BaseCrawler] = {}
@@ -534,6 +537,24 @@ class IngestionOrchestrator:
     def registered_sources(self) -> List[str]:
         """返回所有已注册的数据源名称。"""
         return list(self._crawlers.keys())
+
+    def _create_task(self, task_name: str) -> int:
+        return self.task_writer.create_task(task_name)
+
+    def _finish_task(
+        self,
+        task_id: int,
+        *,
+        status: str = "success",
+        error_msg: str | None = None,
+        item_count: int = 0,
+    ) -> None:
+        self.task_writer.finish_task(
+            task_id,
+            status=status,
+            error_msg=error_msg,
+            item_count=item_count,
+        )
 
     async def _enrich_and_ingest(
         self,
