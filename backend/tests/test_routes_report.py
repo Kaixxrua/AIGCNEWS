@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI, Request
 
 from backend.app.api import routes_report
-from backend.app.repositories.briefing_repository import BriefingReader
+from backend.app.repositories.briefing_repository import (
+    BriefingReader,
+    BriefingSubscriptionRepository,
+)
 from backend.app.services.email_service import EmailService
 
 
@@ -128,6 +131,114 @@ class ReportBriefingRepositoryTests(unittest.TestCase):
             source="all",
             period="monthly",
             date_str="2026-07-01",
+        )
+
+
+class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
+    def test_subscribe_uses_authenticated_user_and_repository(self) -> None:
+        repository = MagicMock(spec=BriefingSubscriptionRepository)
+        repository.upsert_briefing_subscription.return_value = {"id": 42}
+
+        result = asyncio.run(
+            routes_report.subscribe_briefing(
+                routes_report.SubscribeRequest(source="github", period="weekly"),
+                user={"user_id": 7, "email": "reader@example.com"},
+                repository=repository,
+            )
+        )
+
+        repository.upsert_briefing_subscription.assert_called_once_with(
+            user_id=7,
+            email="reader@example.com",
+            source="github",
+            period="weekly",
+        )
+        self.assertEqual(result["subscription"], {"id": 42})
+
+    def test_subscribe_without_email_performs_no_write(self) -> None:
+        repository = MagicMock(spec=BriefingSubscriptionRepository)
+
+        response = asyncio.run(
+            routes_report.subscribe_briefing(
+                routes_report.SubscribeRequest(),
+                user={"user_id": 7, "email": ""},
+                repository=repository,
+            )
+        )
+
+        self.assertEqual(response.status_code, 400)
+        repository.upsert_briefing_subscription.assert_not_called()
+
+    def test_unsubscribe_preserves_not_found_response(self) -> None:
+        repository = MagicMock(spec=BriefingSubscriptionRepository)
+        repository.cancel_briefing_subscription.return_value = False
+
+        response = asyncio.run(
+            routes_report.unsubscribe_briefing(
+                routes_report.SubscribeRequest(source="news", period="monthly"),
+                user={"user_id": 7},
+                repository=repository,
+            )
+        )
+
+        repository.cancel_briefing_subscription.assert_called_once_with(
+            user_id=7,
+            source="news",
+            period="monthly",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_list_subscriptions_is_scoped_to_authenticated_user(self) -> None:
+        repository = MagicMock(spec=BriefingSubscriptionRepository)
+        repository.get_user_briefing_subscriptions.return_value = [{"id": 42}]
+
+        result = asyncio.run(
+            routes_report.get_my_subscriptions(
+                user={"user_id": 7},
+                repository=repository,
+            )
+        )
+
+        self.assertEqual(result, {"items": [{"id": 42}]})
+        repository.get_user_briefing_subscriptions.assert_called_once_with(user_id=7)
+
+    def test_batch_deduplicates_sources_and_forces_daily_period(self) -> None:
+        repository = MagicMock(spec=BriefingSubscriptionRepository)
+        repository.upsert_briefing_subscription.side_effect = [
+            {"id": 1},
+            {"id": 2},
+        ]
+
+        result = asyncio.run(
+            routes_report.batch_subscribe_briefings(
+                routes_report.BatchSubscribeRequest(
+                    sources=["github", "invalid", "github", "news"],
+                    period="monthly",
+                ),
+                user={"user_id": 7, "email": "reader@example.com"},
+                repository=repository,
+            )
+        )
+
+        self.assertEqual(result["sources"], ["github", "news"])
+        self.assertEqual(result["period"], "daily")
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(
+            [call.kwargs for call in repository.upsert_briefing_subscription.call_args_list],
+            [
+                {
+                    "user_id": 7,
+                    "email": "reader@example.com",
+                    "source": "github",
+                    "period": "daily",
+                },
+                {
+                    "user_id": 7,
+                    "email": "reader@example.com",
+                    "source": "news",
+                    "period": "daily",
+                },
+            ],
         )
 
 

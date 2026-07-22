@@ -11,9 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from backend.app.api.dependencies import get_briefing_repository
+from backend.app.api.dependencies import (
+    get_briefing_repository,
+    get_briefing_subscription_repository,
+)
 from backend.app.core.auth import RequireAdmin, RequireUser
-from backend.app.repositories.briefing_repository import BriefingReader
+from backend.app.repositories.briefing_repository import (
+    BriefingReader,
+    BriefingSubscriptionRepository,
+)
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.email_service import EmailService, build_email_service
@@ -307,6 +313,9 @@ async def _send_cached_briefing_to_email(
 async def subscribe_briefing(
     body: SubscribeRequest,
     user: dict = Depends(RequireUser),
+    repository: BriefingSubscriptionRepository = Depends(
+        get_briefing_subscription_repository
+    ),
 ):
     """订阅简报邮件推送；日报生成后会自动推送到注册邮箱。"""
     source = body.source if body.source in _VALID_SOURCES else "all"
@@ -319,8 +328,7 @@ async def subscribe_briefing(
             content={"detail": "用户邮箱为空，无法订阅"},
         )
 
-    db = MySQLRepository()
-    sub = db.upsert_briefing_subscription(
+    sub = repository.upsert_briefing_subscription(
         user_id=user_id, email=email, source=source, period=period
     )
     return {
@@ -333,13 +341,19 @@ async def subscribe_briefing(
 async def unsubscribe_briefing(
     body: SubscribeRequest,
     user: dict = Depends(RequireUser),
+    repository: BriefingSubscriptionRepository = Depends(
+        get_briefing_subscription_repository
+    ),
 ):
     """取消简报邮件订阅。"""
     source = body.source if body.source in _VALID_SOURCES else "all"
     period = body.period if body.period in _VALID_PERIODS else "daily"
     user_id = user.get("user_id")
-    db = MySQLRepository()
-    ok = db.cancel_briefing_subscription(user_id=user_id, source=source, period=period)
+    ok = repository.cancel_briefing_subscription(
+        user_id=user_id,
+        source=source,
+        period=period,
+    )
     if ok:
         return {"message": "已取消订阅"}
     return JSONResponse(
@@ -351,10 +365,14 @@ async def unsubscribe_briefing(
 @router.get("/report/subscriptions")
 async def get_my_subscriptions(
     user: dict = Depends(RequireUser),
+    repository: BriefingSubscriptionRepository = Depends(
+        get_briefing_subscription_repository
+    ),
 ):
     """获取当前用户的所有活跃简报订阅。"""
-    db = MySQLRepository()
-    subs = db.get_user_briefing_subscriptions(user_id=user.get("user_id"))
+    subs = repository.get_user_briefing_subscriptions(
+        user_id=user.get("user_id")
+    )
     return {"items": subs}
 
 
@@ -362,6 +380,9 @@ async def get_my_subscriptions(
 async def batch_subscribe_briefings(
     body: BatchSubscribeRequest,
     user: dict = Depends(RequireUser),
+    repository: BriefingSubscriptionRepository = Depends(
+        get_briefing_subscription_repository
+    ),
 ):
     """批量订阅日报领域；日报生成后会自动推送到注册邮箱。"""
     email = user.get("email", "")
@@ -383,9 +404,8 @@ async def batch_subscribe_briefings(
         )
 
     period = "daily"
-    db = MySQLRepository()
     subscriptions = [
-        db.upsert_briefing_subscription(
+        repository.upsert_briefing_subscription(
             user_id=user_id,
             email=email,
             source=source,
