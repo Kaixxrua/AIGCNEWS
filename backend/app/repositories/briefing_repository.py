@@ -21,3 +21,49 @@ class BriefingReader(Protocol):
 
 class BriefingContentRepository(BriefingWriter, BriefingReader, Protocol):
     """Combined content boundary used by briefing generation services."""
+
+
+class BriefingSubscriptionWriter(Protocol):
+    """Write boundary for a user's briefing subscriptions."""
+
+    def upsert_briefing_subscription(
+        self,
+        user_id: int,
+        email: str,
+        source: str = "all",
+        period: str = "daily",
+    ) -> dict[str, Any]: ...
+
+    def cancel_briefing_subscription(
+        self,
+        user_id: int,
+        source: str = "all",
+        period: str = "daily",
+    ) -> bool: ...
+
+
+class UserBriefingSubscriptionReader(Protocol):
+    """Read boundary scoped to a user's active subscriptions."""
+
+    def get_user_briefing_subscriptions(
+        self,
+        user_id: int,
+    ) -> list[dict[str, Any]]: ...
+
+
+class BriefingSubscriptionRepository(
+    BriefingSubscriptionWriter,
+    UserBriefingSubscriptionReader,
+    Protocol,
+):
+    """Combined subscription boundary used by authenticated user routes."""
+
+
+class ActiveBriefingSubscriberReader(Protocol):
+    """Delivery-only boundary that may expose subscriber email addresses."""
+
+    def get_active_subscribers(
+        self,
+        source: str = "all",
+        period: str = "daily",
+    ) -> list[dict[str, Any]]: ...
