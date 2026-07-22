@@ -660,6 +660,37 @@ class MySQLRepository:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
             """
+            CREATE TABLE IF NOT EXISTS github_project_semantic_sources (
+                repo_id VARCHAR(255) NOT NULL PRIMARY KEY,
+                readme_text MEDIUMTEXT,
+                readme_sha256 CHAR(64) NOT NULL DEFAULT '',
+                readme_etag VARCHAR(512) NOT NULL DEFAULT '',
+                readme_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                readme_checked_at VARCHAR(64),
+                readme_fetched_at VARCHAR(64),
+                readme_repo_pushed_at VARCHAR(64),
+                readme_error TEXT,
+                readme_retry_count INT NOT NULL DEFAULT 0,
+                readme_next_retry_at VARCHAR(64),
+                source_fingerprint CHAR(64) NOT NULL DEFAULT '',
+                indexed_fingerprint CHAR(64) NOT NULL DEFAULT '',
+                index_version VARCHAR(32) NOT NULL DEFAULT '',
+                embedding_provider VARCHAR(64) NOT NULL DEFAULT '',
+                embedding_model VARCHAR(255) NOT NULL DEFAULT '',
+                embedding_dimension INT NOT NULL DEFAULT 0,
+                chunk_count INT NOT NULL DEFAULT 0,
+                index_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                index_error TEXT,
+                index_retry_count INT NOT NULL DEFAULT 0,
+                index_next_retry_at VARCHAR(64),
+                indexed_at VARCHAR(64),
+                updated_at VARCHAR(64),
+                INDEX idx_project_semantic_readme_status (readme_status, readme_checked_at),
+                INDEX idx_project_semantic_index_status (index_status, indexed_at),
+                INDEX idx_project_semantic_fingerprint (indexed_fingerprint)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            """
             CREATE TABLE IF NOT EXISTS tool_websites (
                 id BIGINT AUTO_INCREMENT PRIMARY KEY,
                 canonical_url VARCHAR(1024) NOT NULL,
@@ -3397,6 +3428,7 @@ class MySQLRepository:
         enriched_only: bool = True,
         user_id: int | None = None,
         favorites_only: bool = False,
+        candidate_repo_ids: List[str] | None = None,
     ) -> Dict[str, Any]:
         page = max(1, int(page or 1))
         page_size = max(1, min(int(page_size or 24), 100))
@@ -3409,6 +3441,14 @@ class MySQLRepository:
             scope = "all"
         user_id = int(user_id) if user_id else None
         favorites_only = bool(favorites_only and user_id)
+        clean_candidate_repo_ids = None
+        if candidate_repo_ids is not None:
+            clean_candidate_repo_ids = list(
+                dict.fromkeys(str(repo_id).strip() for repo_id in candidate_repo_ids if str(repo_id).strip())
+            )
+            if not clean_candidate_repo_ids or source == "website":
+                return {"items": [], "total": 0, "page": page, "page_size": page_size}
+            source = "github"
         clean_tag = (tag or "").strip()
         website_effective_full_name = "COALESCE(NULLIF(uo.title, ''), NULLIF(w.title, ''), w.domain)" if user_id else "COALESCE(NULLIF(w.title, ''), w.domain)"
         website_effective_title = "COALESCE(NULLIF(uo.title, ''), w.title)" if user_id else "w.title"
@@ -3427,6 +3467,10 @@ class MySQLRepository:
         website_params: List[Any] = []
         if not favorites_only:
             website_filters.append("w.visibility COLLATE utf8mb4_unicode_ci = _utf8mb4'public' COLLATE utf8mb4_unicode_ci")
+        if clean_candidate_repo_ids is not None:
+            placeholders = ", ".join(["%s"] * len(clean_candidate_repo_ids))
+            github_filters.append(f"c.repo_id IN ({placeholders})")
+            github_params.extend(clean_candidate_repo_ids)
         if enriched_only:
             github_filters.append("ge.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci")
             if favorites_only:
@@ -4026,6 +4070,171 @@ class MySQLRepository:
             for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         ]
         return {"items": items, "total": len(items), "source": source}
+
+    def list_github_projects_for_semantic_sync(
+        self,
+        *,
+        limit: int = 100,
+        min_stars: int = 500,
+        after_repo_id: str = "",
+        retry_failed: bool = True,
+    ) -> List[Dict[str, Any]]:
+        stale_statuses = ("pending", "failed") if retry_failed else ("pending",)
+        status_placeholders = ", ".join(["%s"] * len(stale_statuses))
+        sql = f"""
+            SELECT
+                c.repo_id, c.full_name, c.title, c.url, c.description, c.language,
+                c.topics_json, c.pushed_at, c.stars, c.forks,
+                ge.description_zh, ge.category_slug, ge.category_name,
+                ge.subcategory_slug, ge.subcategory_name, ge.tags_json,
+                ss.readme_text, ss.readme_sha256, ss.readme_etag,
+                ss.readme_status, ss.readme_checked_at, ss.readme_repo_pushed_at,
+                ss.source_fingerprint, ss.indexed_fingerprint, ss.index_status,
+                ss.index_retry_count
+            FROM github_repo_candidates c
+            JOIN github_repo_enrichments ge
+              ON ge.repo_id = c.repo_id AND ge.status = 'succeeded'
+            LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
+            WHERE COALESCE(c.stars, 0) >= %s
+              AND c.repo_id > %s
+              AND (
+                    ss.repo_id IS NULL
+                 OR ss.index_status IN ({status_placeholders})
+                 OR COALESCE(ss.source_fingerprint, '') != COALESCE(ss.indexed_fingerprint, '')
+                 OR COALESCE(ss.readme_repo_pushed_at, '') < COALESCE(c.pushed_at, '')
+              )
+            ORDER BY c.repo_id ASC
+            LIMIT %s
+        """
+        params: List[Any] = [min_stars, after_repo_id, *stale_statuses, max(1, min(int(limit or 100), 1000))]
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+                rows = cur.fetchall()
+            conn.commit()
+            return [_normalize_github_project_row(row) for row in rows]
+        finally:
+            conn.close()
+
+    def upsert_github_project_semantic_source(self, payload: Dict[str, Any]) -> None:
+        now = _utcnow()
+        data = dict(payload)
+        defaults = {
+            "readme_text": None,
+            "readme_sha256": "",
+            "readme_etag": "",
+            "readme_status": "pending",
+            "readme_checked_at": None,
+            "readme_fetched_at": None,
+            "readme_repo_pushed_at": None,
+            "readme_error": None,
+            "readme_retry_count": 0,
+            "readme_next_retry_at": None,
+            "source_fingerprint": "",
+            "indexed_fingerprint": "",
+            "index_version": "",
+            "embedding_provider": "",
+            "embedding_model": "",
+            "embedding_dimension": 0,
+            "chunk_count": 0,
+            "index_status": "pending",
+            "index_error": None,
+            "index_retry_count": 0,
+            "index_next_retry_at": None,
+            "indexed_at": None,
+            "updated_at": now,
+        }
+        for key, value in defaults.items():
+            data.setdefault(key, value)
+        sql = """
+            INSERT INTO github_project_semantic_sources (
+                repo_id, readme_text, readme_sha256, readme_etag, readme_status,
+                readme_checked_at, readme_fetched_at, readme_repo_pushed_at,
+                readme_error, readme_retry_count, readme_next_retry_at,
+                source_fingerprint, indexed_fingerprint, index_version,
+                embedding_provider, embedding_model, embedding_dimension,
+                chunk_count, index_status, index_error, index_retry_count,
+                index_next_retry_at, indexed_at, updated_at
+            ) VALUES (
+                %(repo_id)s, %(readme_text)s, %(readme_sha256)s, %(readme_etag)s, %(readme_status)s,
+                %(readme_checked_at)s, %(readme_fetched_at)s, %(readme_repo_pushed_at)s,
+                %(readme_error)s, %(readme_retry_count)s, %(readme_next_retry_at)s,
+                %(source_fingerprint)s, %(indexed_fingerprint)s, %(index_version)s,
+                %(embedding_provider)s, %(embedding_model)s, %(embedding_dimension)s,
+                %(chunk_count)s, %(index_status)s, %(index_error)s, %(index_retry_count)s,
+                %(index_next_retry_at)s, %(indexed_at)s, %(updated_at)s
+            )
+            ON DUPLICATE KEY UPDATE
+                readme_text=VALUES(readme_text),
+                readme_sha256=VALUES(readme_sha256),
+                readme_etag=VALUES(readme_etag),
+                readme_status=VALUES(readme_status),
+                readme_checked_at=VALUES(readme_checked_at),
+                readme_fetched_at=VALUES(readme_fetched_at),
+                readme_repo_pushed_at=VALUES(readme_repo_pushed_at),
+                readme_error=VALUES(readme_error),
+                readme_retry_count=VALUES(readme_retry_count),
+                readme_next_retry_at=VALUES(readme_next_retry_at),
+                source_fingerprint=VALUES(source_fingerprint),
+                indexed_fingerprint=VALUES(indexed_fingerprint),
+                index_version=VALUES(index_version),
+                embedding_provider=VALUES(embedding_provider),
+                embedding_model=VALUES(embedding_model),
+                embedding_dimension=VALUES(embedding_dimension),
+                chunk_count=VALUES(chunk_count),
+                index_status=VALUES(index_status),
+                index_error=VALUES(index_error),
+                index_retry_count=VALUES(index_retry_count),
+                index_next_retry_at=VALUES(index_next_retry_at),
+                indexed_at=VALUES(indexed_at),
+                updated_at=VALUES(updated_at)
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                canonical_repo_id = self._resolve_github_repo_id_cur(cur, str(data.get("repo_id") or ""))
+                data["repo_id"] = canonical_repo_id
+                cur.execute(sql, data)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_github_project_semantic_status(self, *, min_stars: int = 500) -> Dict[str, Any]:
+        sql = """
+            SELECT
+                COUNT(*) AS eligible,
+                SUM(CASE WHEN ss.index_status = 'succeeded' THEN 1 ELSE 0 END) AS indexed,
+                SUM(CASE WHEN ss.index_status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN ss.readme_status = 'succeeded' THEN 1 ELSE 0 END) AS readme_succeeded,
+                COALESCE(SUM(ss.chunk_count), 0) AS chunk_count,
+                MAX(ss.indexed_at) AS last_indexed_at
+            FROM github_repo_candidates c
+            JOIN github_repo_enrichments ge
+              ON ge.repo_id = c.repo_id AND ge.status = 'succeeded'
+            LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
+            WHERE COALESCE(c.stars, 0) >= %s
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (min_stars,))
+                row = cur.fetchone() or {}
+            conn.commit()
+        finally:
+            conn.close()
+        eligible = int(row.get("eligible") or 0)
+        indexed = int(row.get("indexed") or 0)
+        failed = int(row.get("failed") or 0)
+        return {
+            "eligible": eligible,
+            "indexed": indexed,
+            "failed": failed,
+            "pending": max(eligible - indexed - failed, 0),
+            "readme_succeeded": int(row.get("readme_succeeded") or 0),
+            "chunk_count": int(row.get("chunk_count") or 0),
+            "last_indexed_at": row.get("last_indexed_at"),
+        }
 
     def get_github_projects_needing_enrichment(
         self,

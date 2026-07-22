@@ -19,6 +19,18 @@ class Settings(BaseSettings):
     milvus_dimension: int = 1024
     milvus_index_type: str = "HNSW"
     milvus_metric_type: str = "COSINE"
+    project_semantic_search_enabled: bool = False
+    project_semantic_indexing_enabled: bool = False
+    project_semantic_collection_name: str = "aigc_github_projects_v1"
+    project_semantic_index_version: str = "v1"
+    project_semantic_min_score: float = 0.45
+    project_semantic_repo_limit: int = 200
+    project_semantic_chunk_limit: int = 800
+    project_semantic_query_timeout_seconds: float = 3.0
+    project_semantic_readme_max_chars: int = 40_000
+    project_semantic_readme_refresh_days: int = 14
+    project_semantic_sync_batch_size: int = 100
+    project_semantic_github_rate_limit_reserve: int = 200
 
     neo4j_uri: str = "bolt://localhost:7688"
     neo4j_username: str = "neo4j"
