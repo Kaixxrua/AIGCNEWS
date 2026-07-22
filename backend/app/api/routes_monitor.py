@@ -4,7 +4,9 @@ import asyncio
 
 from fastapi import APIRouter, Depends
 
+from backend.app.api.dependencies import get_mysql_repository
 from backend.app.core.auth import RequireAdmin, RequireUser
+from backend.app.repositories.mysql_repo import MySQLRepository
 
 router = APIRouter()
 
@@ -29,11 +31,11 @@ async def system_metrics(_: dict = Depends(RequireUser)):
 
 @router.get("/monitor/tasks")
 async def recent_tasks(
-    page: int = 1, page_size: int = 10, _: dict = Depends(RequireAdmin)
+    page: int = 1,
+    page_size: int = 10,
+    _: dict = Depends(RequireAdmin),
+    db: MySQLRepository = Depends(get_mysql_repository),
 ):
     """Return paginated ingestion task records."""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     result = await asyncio.to_thread(db.list_tasks, page, page_size)
     return result
