@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 
 from backend.app.api.dependencies import get_mysql_repository
 from backend.app.core.auth import RequireAdmin, RequireUser
-from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.task_repository import MonitorTaskRepository
 
 router = APIRouter()
 
@@ -34,7 +34,7 @@ async def recent_tasks(
     page: int = 1,
     page_size: int = 10,
     _: dict = Depends(RequireAdmin),
-    db: MySQLRepository = Depends(get_mysql_repository),
+    db: MonitorTaskRepository = Depends(get_mysql_repository),
 ):
     """Return paginated ingestion task records."""
     result = await asyncio.to_thread(db.list_tasks, page, page_size)

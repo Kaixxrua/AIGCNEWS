@@ -9,13 +9,14 @@ from fastapi.testclient import TestClient
 from backend.app.api import routes_monitor
 from backend.app.api.dependencies import get_mysql_repository
 from backend.app.core.auth import RequireAdmin
+from backend.app.repositories.task_repository import MonitorTaskRepository
 
 
 class MonitorRouteTests(unittest.TestCase):
     def test_recent_tasks_uses_repository_dependency(self) -> None:
         app = FastAPI()
         app.include_router(routes_monitor.router, prefix="/api")
-        repository = MagicMock()
+        repository = MagicMock(spec=MonitorTaskRepository)
         expected = {
             "items": [{"id": 42, "status": "completed"}],
             "total": 1,
