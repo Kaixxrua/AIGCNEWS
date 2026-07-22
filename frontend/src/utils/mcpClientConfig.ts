@@ -133,16 +133,16 @@ export function generateMcpClientCommand(option: McpClientOption, url: string, t
       const resolveExecutable = "$claudeCommand = Get-Command claude.exe, claude.cmd -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $claudeCommand) { throw 'Claude Code executable not found. Install Claude Code and reopen the terminal.' }"
       const command = [
         resolveExecutable,
-        `& $claudeCommand.Source mcp remove ${MCP_SERVER_KEY} 2>$null`,
-        `& $claudeCommand.Source mcp add --transport http ${MCP_SERVER_KEY} ${quotePowerShellLiteral(url)} --header ${quotePowerShellLiteral(`Authorization: Bearer ${token}`)}`,
+        `& $claudeCommand.Source mcp remove --scope user ${MCP_SERVER_KEY} 2>$null`,
+        `& $claudeCommand.Source mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quotePowerShellLiteral(url)} --header ${quotePowerShellLiteral(`Authorization: Bearer ${token}`)}`,
       ].join('; ')
       return shell === 'cmd'
         ? `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodePowerShellCommand(command)}`
         : command
     }
     return [
-      `claude mcp remove ${MCP_SERVER_KEY} ${ignored(shell)}`,
-      `claude mcp add --transport http ${MCP_SERVER_KEY} ${quote(url, shell)} --header ${quote(`Authorization: Bearer ${token}`, shell)}`,
+      `claude mcp remove --scope user ${MCP_SERVER_KEY} ${ignored(shell)}`,
+      `claude mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quote(url, shell)} --header ${quote(`Authorization: Bearer ${token}`, shell)}`,
     ].join(join(shell))
   }
   if (option.format === 'codex-cli') return codexCommand(url, token, shell)
