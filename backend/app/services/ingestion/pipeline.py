@@ -681,7 +681,7 @@ class IngestionOrchestrator:
             if self.target_date
             else f"single:{source_name}"
         )
-        task_id = self.db.create_task(task_name)
+        task_id = self._create_task(task_name)
         total = 0
         arxiv_papers_for_pdf: List[dict] = []
 
@@ -779,7 +779,7 @@ class IngestionOrchestrator:
             if source_name == "arxiv":
                 self._start_arxiv_pdf_background(arxiv_papers_for_pdf)
 
-            self.db.finish_task(task_id, status="success", item_count=total)
+            self._finish_task(task_id, status="success", item_count=total)
             try:
                 await _clear_dashboard_cache_safely()
                 logger.info(
@@ -796,7 +796,7 @@ class IngestionOrchestrator:
             )
 
         except Exception as exc:
-            self.db.finish_task(task_id, status="failed", error_msg=str(exc))
+            self._finish_task(task_id, status="failed", error_msg=str(exc))
             logger.error("[Orchestrator] 单源采集失败 %s: %s", source_name, exc)
             raise
 
@@ -817,7 +817,7 @@ class IngestionOrchestrator:
             if self.target_date
             else "multi_source_ingest"
         )
-        task_id = self.db.create_task(task_name)
+        task_id = self._create_task(task_name)
 
         stats: Dict[str, int] = {name: 0 for name in self._crawlers}
         stats["huggingface"] = 0
@@ -925,7 +925,7 @@ class IngestionOrchestrator:
                     period,
                 )
 
-            self.db.finish_task(task_id, status="success", item_count=total)
+            self._finish_task(task_id, status="success", item_count=total)
             try:
                 await _clear_dashboard_cache_safely()
                 logger.info("[Orchestrator] dashboard cache cleared after full ingest.")
@@ -942,7 +942,7 @@ class IngestionOrchestrator:
             self._start_arxiv_pdf_background(arxiv_papers_for_pdf)
 
         except Exception as exc:
-            self.db.finish_task(task_id, status="failed", error_msg=str(exc))
+            self._finish_task(task_id, status="failed", error_msg=str(exc))
             logger.error("[Orchestrator] ERROR: %s", exc)
             raise
 
