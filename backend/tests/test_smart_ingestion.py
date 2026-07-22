@@ -122,7 +122,7 @@ class SmartIngestionInjectionTests(unittest.TestCase):
         with (
             patch(
                 "backend.app.services.ingestion.pipeline.MySQLRepository",
-                return_value=reader,
+                return_value=MagicMock(ingestion_tasks=reader),
             ) as repository_type,
             patch(
                 "backend.app.services.ingestion.pipeline.run_ingestion_pipeline"
@@ -145,7 +145,7 @@ class SmartIngestionInjectionTests(unittest.TestCase):
         with (
             patch(
                 "backend.app.services.ingestion.pipeline.MySQLRepository",
-                return_value=reader,
+                return_value=MagicMock(ingestion_tasks=reader),
             ),
             patch(
                 "backend.app.services.ingestion.pipeline.run_ingestion_pipeline"

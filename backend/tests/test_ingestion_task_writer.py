@@ -32,8 +32,9 @@ class IngestionTaskWriterTests(unittest.TestCase):
             item_count=3,
         )
 
-    def test_default_writer_reuses_data_repository(self) -> None:
-        repository = MagicMock(spec=IngestionTaskWriter)
+    def test_default_writer_uses_data_repository_task_component(self) -> None:
+        writer = MagicMock(spec=IngestionTaskWriter)
+        repository = MagicMock(ingestion_tasks=writer)
 
         with (
             patch(
@@ -45,7 +46,7 @@ class IngestionTaskWriterTests(unittest.TestCase):
             orchestrator = IngestionOrchestrator()
 
         self.assertIs(orchestrator.db, repository)
-        self.assertIs(orchestrator.task_writer, repository)
+        self.assertIs(orchestrator.task_writer, writer)
 
     def test_injected_writer_keeps_data_repository_separate(self) -> None:
         repository = MagicMock()

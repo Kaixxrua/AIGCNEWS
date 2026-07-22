@@ -528,7 +528,7 @@ class IngestionOrchestrator:
         self.snapshot_date = target_date or today_cst()
 
         self.db = MySQLRepository()
-        self.task_writer = task_writer or self.db
+        self.task_writer = task_writer or self.db.ingestion_tasks
 
         # 实例化所有爬虫
         self._crawlers: Dict[str, BaseCrawler] = {}
@@ -1090,7 +1090,7 @@ def run_smart_ingestion(
 ) -> None:
     """智能采集：检测今天是否已有成功任务，若无则执行采集。"""
     _run_smart_ingestion_with(
-        reader if reader is not None else MySQLRepository(),
+        reader if reader is not None else MySQLRepository().ingestion_tasks,
         runner if runner is not None else run_ingestion_pipeline,
         limit,
         date.today(),
