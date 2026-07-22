@@ -7,10 +7,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from backend.app.core.config import settings
-from backend.app.core.model_factory import get_embedding_model
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_vector_repo import ProjectVectorChunk, ProjectVectorRepository
 from backend.app.services.ingestion.source_github import fetch_github_readme_snapshot
@@ -70,10 +68,16 @@ def build_project_semantic_chunks(project: dict[str, Any], readme: str) -> list[
     ]
     chunks: list[tuple[str, int, str]] = [("profile", 0, "\n".join(line for line in lines if not line.endswith(": ")))]
     if readme:
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=120)
         prefix = f"Repository: {project.get('full_name') or project.get('title') or ''}\nREADME:\n"
-        for index, text in enumerate(splitter.split_text(readme)[:12]):
+        start = 0
+        for index in range(12):
+            text = readme[start : start + 1200].strip()
+            if not text:
+                break
             chunks.append(("readme", index, prefix + text))
+            if start + 1200 >= len(readme):
+                break
+            start += 1080
     return chunks
 
 
@@ -87,7 +91,11 @@ class GitHubProjectSemanticIndexer:
     ) -> None:
         self.db = db or MySQLRepository()
         self.vectors = vectors or ProjectVectorRepository()
-        self.embeddings = embeddings or get_embedding_model()
+        if embeddings is None:
+            from backend.app.core.model_factory import get_embedding_model
+
+            embeddings = get_embedding_model()
+        self.embeddings = embeddings
 
     def _readme_snapshot(self, project: dict[str, Any], *, fetch_readme: bool) -> dict[str, Any]:
         existing_text = str(project.get("readme_text") or "")
