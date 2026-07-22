@@ -1035,6 +1035,26 @@ async def run_single_source_async(
     return await orchestrator.run_single_source(source_name)
 
 
+def should_run_smart_ingestion(
+    latest_task: dict[str, Any] | None,
+    today: date,
+) -> bool:
+    """Return whether the latest task permits today's ingestion run."""
+    if not latest_task or latest_task.get("status") != "success":
+        return True
+
+    started_at = latest_task.get("started_at")
+    if not isinstance(started_at, str):
+        return True
+
+    try:
+        latest_task_date = date.fromisoformat(started_at[:10])
+    except ValueError:
+        return True
+
+    return latest_task_date < today
+
+
 def run_smart_ingestion(limit: int = _FETCH_LIMIT) -> None:
     """智能采集：检测今天是否已有成功任务，若无则执行采集。"""
     db = MySQLRepository()
@@ -1042,20 +1062,12 @@ def run_smart_ingestion(limit: int = _FETCH_LIMIT) -> None:
 
     try:
         latest = db.get_latest_task()
-        if latest and latest.get("status") == "success":
-            started_at = latest.get("started_at") or ""
-            latest_task_date_str = started_at[:10]
-            try:
-                latest_task_date = date.fromisoformat(latest_task_date_str)
-            except ValueError:
-                latest_task_date = None
-
-            if latest_task_date and latest_task_date >= today:
-                logger.info(
-                    "[SmartIngestion] 今天已成功采集（任务 #%d），无需重复。",
-                    latest.get("id"),
-                )
-                return
+        if not should_run_smart_ingestion(latest, today):
+            logger.info(
+                "[SmartIngestion] 今天已成功采集（任务 #%d），无需重复。",
+                latest.get("id"),
+            )
+            return
     except Exception as exc:
         logger.warning("[SmartIngestion] 检查最新任务失败，继续执行: %s", exc)
 
