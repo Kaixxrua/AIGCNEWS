@@ -18,6 +18,12 @@ class IngestionTaskWriter(Protocol):
     ) -> None: ...
 
 
+class LatestTaskReader(Protocol):
+    """Read boundary for the latest ingestion task."""
+
+    def get_latest_task(self) -> dict[str, Any] | None: ...
+
+
 class MonitorTaskRepository(Protocol):
     """Read-only task query boundary used by monitor endpoints."""
 
