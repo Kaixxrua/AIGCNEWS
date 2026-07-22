@@ -299,25 +299,15 @@ async def _send_briefing_to_subscribers(
     date_str: str,
     content: str,
 ) -> int:
-    from backend.app.core.config import settings
     from backend.app.repositories.mysql_repo import MySQLRepository
-    from backend.app.services.email_service import EmailService
+    from backend.app.services.email_service import build_email_service
 
     db = MySQLRepository()
     subscribers = db.get_active_subscribers(source=source, period=period)
     if not subscribers:
         return 0
 
-    email_svc = EmailService(
-        redis_client=None,
-        smtp_host=settings.SMTP_HOST,
-        smtp_port=settings.SMTP_PORT,
-        smtp_username=settings.SMTP_USERNAME,
-        smtp_password=settings.SMTP_PASSWORD,
-        smtp_from_email=settings.SMTP_FROM_EMAIL,
-        smtp_from_name=settings.SMTP_FROM_NAME,
-        smtp_use_tls=settings.SMTP_USE_TLS,
-    )
+    email_svc = build_email_service(None)
 
     sent = 0
     for subscriber in subscribers:
