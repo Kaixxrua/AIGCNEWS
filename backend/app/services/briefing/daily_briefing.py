@@ -5,6 +5,7 @@ import traceback
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from backend.app.core.model_factory import get_chat_model
+from backend.app.repositories.briefing_repository import BriefingContentRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.ingestion.base_crawler import today_cst
@@ -335,8 +336,10 @@ class DailyBriefingService:
         self,
         mysql_repo: MySQLRepository | None = None,
         top_k: int = 10,
+        briefing_repository: BriefingContentRepository | None = None,
     ) -> None:
         self._db = mysql_repo or MySQLRepository()
+        self._briefings = briefing_repository or self._db.briefings
         self._top_k = top_k
         self._llm = get_chat_model()
 
@@ -415,7 +418,7 @@ class DailyBriefingService:
         try:
             # 1. 若非强制重新生成，检查缓存
             if not force_regenerate:
-                existing = self._db.get_briefing_by_date(cache_date)
+                existing = self._briefings.get_briefing_by_date(cache_date)
                 if existing:
                     yield {
                         "type": "start",
@@ -604,7 +607,7 @@ class DailyBriefingService:
                 return
 
             if complete_text.strip():
-                briefing_id = self._db.save_briefing(cache_date, complete_text)
+                briefing_id = self._briefings.save_briefing(cache_date, complete_text)
                 logger.info("日报已持久化，id=%d, source=%s", briefing_id, source)
             else:
                 briefing_id = -1
@@ -687,7 +690,7 @@ class DailyBriefingService:
         return False
 
     def get_history(self, limit: int = 30) -> List[Dict[str, Any]]:
-        return self._db.list_briefings(limit=limit)
+        return self._briefings.list_briefings(limit=limit)
 
     def get_briefing(self, briefing_id: int) -> Dict[str, Any] | None:
         with self._db._connect() as conn:
