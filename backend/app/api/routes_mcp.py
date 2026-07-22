@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from backend.app.api.dependencies import get_briefing_repository
 from backend.app.api.mcp_contracts import TOOL_INPUT_MODELS, input_schema, validate_iso_date
 from backend.app.api.routes_dashboard import (
     _compute_board_status,
@@ -26,6 +27,7 @@ from backend.app.api.routes_dashboard import (
 )
 from backend.app.api.routes_papers import _enrich_pdf_url, _safe_doc
 from backend.app.core.auth import OptionalMcpUser
+from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
 from backend.app.services.project_discovery import public_project_item, search_projects
@@ -740,15 +742,18 @@ async def _resource_dashboard_summary(request: Request, uri: str, query: dict[st
     )
 
 
-async def _resource_report_latest(uri: str, query: dict[str, str]) -> dict[str, Any]:
+async def _resource_report_latest(
+    uri: str,
+    query: dict[str, str],
+    repository: BriefingReader,
+) -> dict[str, Any]:
     source = _clean_choice(query, "source", _SOURCE_CHOICES, default="all")
     period = _clean_choice(query, "period", _PERIOD_CHOICES, default="daily")
     date_value = _clean_string(query, "date", max_len=10, default="")
     target = _resolve_report_date(period, date_value)
     suffix = "" if source == "all" else f"_{source}"
     cache_key = f"{target}{suffix}_{period}"
-    db = MySQLRepository()
-    item = await asyncio.to_thread(db.get_briefing_by_date, cache_key)
+    item = await asyncio.to_thread(repository.get_briefing_by_date, cache_key)
     if item is None:
         raise McpResourceInputError(f"Briefing {cache_key!r} not found.")
     return _resource_content(uri, item.get("content", ""), mime_type="text/markdown")
@@ -767,7 +772,11 @@ def _resource_tool_args(query: dict[str, str], *, integer_fields: set[str]) -> d
     return args
 
 
-async def _read_resource(request: Request, uri: Any) -> dict[str, Any]:
+async def _read_resource(
+    request: Request,
+    uri: Any,
+    briefing_repository: BriefingReader,
+) -> dict[str, Any]:
     path, query = _parse_resource_uri(uri)
 
     try:
@@ -798,7 +807,7 @@ async def _read_resource(request: Request, uri: Any) -> dict[str, Any]:
                 ),
             )
         if path == "report/latest":
-            return await _resource_report_latest(uri, query)
+            return await _resource_report_latest(uri, query, briefing_repository)
         if path.startswith("papers/"):
             paper_id = path.removeprefix("papers/").strip()
             return _resource_content(
@@ -949,6 +958,7 @@ async def _call_tool(request: Request, name: str, arguments: Any) -> dict[str, A
 async def mcp_endpoint(
     request: Request,
     mcp_user: dict[str, Any] | None = Depends(OptionalMcpUser),
+    briefing_repository: BriefingReader = Depends(get_briefing_repository),
 ) -> Response:
     request.state.mcp_user = mcp_user
     content_length = request.headers.get("content-length")
@@ -1036,7 +1046,11 @@ async def mcp_endpoint(
 
     if method == "resources/read":
         try:
-            result = await _read_resource(request, params.get("uri"))
+            result = await _read_resource(
+                request,
+                params.get("uri"),
+                briefing_repository,
+            )
         except McpResourceInputError as exc:
             return _jsonrpc_error(request_id, _JSONRPC_INVALID_PARAMS, str(exc))
         except Exception:

@@ -54,6 +54,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_mcp
+from backend.app.api.dependencies import get_briefing_repository
+from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.services.ingestion import source_github_mcp
 
 
@@ -364,8 +366,57 @@ class ProjectHandlerTests(unittest.TestCase):
 class McpProtocolTests(unittest.TestCase):
     def setUp(self) -> None:
         app = FastAPI()
+        self.briefing_repository = MagicMock(spec=BriefingReader)
+        app.dependency_overrides[get_briefing_repository] = (
+            lambda: self.briefing_repository
+        )
         app.include_router(routes_mcp.router, prefix="/api")
         self.client = TestClient(app)
+
+    def test_latest_report_resource_uses_injected_repository(self) -> None:
+        self.briefing_repository.get_briefing_by_date.return_value = {
+            "content": "# Cached briefing"
+        }
+
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "resources/read",
+                "params": {
+                    "uri": (
+                        "aigc-news://report/latest"
+                        "?source=github&period=weekly&date=2026-07-22"
+                    )
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.briefing_repository.get_briefing_by_date.assert_called_once_with(
+            "2026-07-20_github_weekly"
+        )
+        content = response.json()["result"]["contents"][0]
+        self.assertEqual(content["mimeType"], "text/markdown")
+        self.assertEqual(content["text"], "# Cached briefing")
+
+    def test_missing_latest_report_preserves_jsonrpc_error(self) -> None:
+        self.briefing_repository.get_briefing_by_date.return_value = None
+
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "resources/read",
+                "params": {"uri": "aigc-news://report/latest?date=2026-07-22"},
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["error"]["code"], -32602)
+        self.assertIn("2026-07-22_daily", response.json()["error"]["message"])
 
     def test_initialize_and_tools_list(self) -> None:
         initialized = self.client.post(
