@@ -58,6 +58,92 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         connection.close.assert_called_once_with()
         pool.close.assert_not_called()
 
+    def test_create_task_uses_transaction_and_returns_task_id(self) -> None:
+        repository, connection, cursor = self._repository_with_database()
+        cursor.lastrowid = 42
+
+        task_id = repository.create_task("multi_source_ingest")
+
+        self.assertEqual(task_id, 42)
+        cursor.execute.assert_called_once()
+        sql, params = cursor.execute.call_args.args
+        self.assertIn("INSERT INTO ingestion_tasks", sql)
+        self.assertEqual(params[0], "multi_source_ingest")
+        connection.commit.assert_called_once_with()
+        connection.rollback.assert_not_called()
+        connection.close.assert_called_once_with()
+
+    def test_create_task_rolls_back_and_preserves_sql_error(self) -> None:
+        repository, connection, cursor = self._repository_with_database()
+        error = RuntimeError("insert failed")
+        cursor.execute.side_effect = error
+
+        with self.assertRaises(RuntimeError) as context:
+            repository.create_task("multi_source_ingest")
+
+        self.assertIs(context.exception, error)
+        connection.commit.assert_not_called()
+        connection.rollback.assert_called_once_with()
+        connection.close.assert_called_once_with()
+
+    def test_create_task_rolls_back_and_preserves_commit_error(self) -> None:
+        repository, connection, cursor = self._repository_with_database()
+        cursor.lastrowid = 42
+        error = RuntimeError("commit failed")
+        connection.commit.side_effect = error
+
+        with self.assertRaises(RuntimeError) as context:
+            repository.create_task("multi_source_ingest")
+
+        self.assertIs(context.exception, error)
+        connection.rollback.assert_called_once_with()
+        connection.close.assert_called_once_with()
+
+    def test_finish_task_uses_transaction(self) -> None:
+        repository, connection, cursor = self._repository_with_database()
+
+        repository.finish_task(
+            42,
+            status="failed",
+            error_msg="sentinel",
+            item_count=3,
+        )
+
+        cursor.execute.assert_called_once()
+        sql, params = cursor.execute.call_args.args
+        self.assertIn("UPDATE ingestion_tasks", sql)
+        self.assertEqual(params[0], "failed")
+        self.assertEqual(params[2:], ("sentinel", 3, 42))
+        connection.commit.assert_called_once_with()
+        connection.rollback.assert_not_called()
+        connection.close.assert_called_once_with()
+
+    def test_finish_task_rolls_back_and_preserves_sql_error(self) -> None:
+        repository, connection, cursor = self._repository_with_database()
+        error = RuntimeError("update failed")
+        cursor.execute.side_effect = error
+
+        with self.assertRaises(RuntimeError) as context:
+            repository.finish_task(42)
+
+        self.assertIs(context.exception, error)
+        connection.commit.assert_not_called()
+        connection.rollback.assert_called_once_with()
+        connection.close.assert_called_once_with()
+
+    @staticmethod
+    def _repository_with_database():
+        cursor = MagicMock()
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        connection = MagicMock()
+        connection.cursor.return_value = cursor_context
+        pool = MagicMock()
+        pool.connection.return_value = connection
+        database = DatabaseLifecycle(MagicMock(return_value=pool))
+        repository = MySQLRepository(database=database)
+        return repository, connection, cursor
+
 
 if __name__ == "__main__":
     unittest.main()

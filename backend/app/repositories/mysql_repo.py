@@ -4475,15 +4475,11 @@ class MySQLRepository:
             INSERT INTO ingestion_tasks (task_name, status, started_at)
             VALUES (%s, 'running', %s)
         """
-        conn = self._connect()
-        try:
+        with self._database.transaction() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, (task_name, _utcnow()))
                 task_id = cur.lastrowid
-            conn.commit()
             return task_id  # type: ignore[return-value]
-        finally:
-            conn.close()
 
     def finish_task(
         self,
@@ -4498,13 +4494,9 @@ class MySQLRepository:
             SET status=%s, finished_at=%s, error_msg=%s, item_count=%s
             WHERE id=%s
         """
-        conn = self._connect()
-        try:
+        with self._database.transaction() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, (status, _utcnow(), error_msg, item_count, task_id))
-            conn.commit()
-        finally:
-            conn.close()
 
     def get_latest_task(self) -> Optional[Dict[str, Any]]:
         sql = """
