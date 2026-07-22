@@ -48,3 +48,9 @@ class MonitorTaskRepository(Protocol):
         page: int = 1,
         page_size: int = 10,
     ) -> dict[str, Any]: ...
+
+
+class IngestionTaskAdminRepository(Protocol):
+    """Destructive task administration boundary used by operations."""
+
+    def clear_all_tasks(self) -> int: ...
