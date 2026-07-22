@@ -143,41 +143,24 @@ def _fetch_pdf_text(pdf_url: str, timeout: int = 30) -> str:
 
 
 async def _fetch_github_readme(full_name: str) -> str:
-    """通过 GitHub API 获取仓库 README 纯文本（无需 token）。"""
+    """通过共享 GitHub README 抓取器获取清洗后的文本。"""
     if not full_name or "/" not in full_name:
         return ""
     try:
-        import base64
+        from backend.app.services.ingestion.source_github import (
+            fetch_github_readme_snapshot,
+        )
 
-        api_url = f"https://api.github.com/repos/{full_name}/readme"
-        async with httpx.AsyncClient(
-            timeout=15,
-            follow_redirects=True,
-            trust_env=True,
-        ) as client:
-            resp = await client.get(
-                api_url,
-                headers={
-                    "Accept": "application/vnd.github+json",
-                    "User-Agent": "RAG-AIGC-Agent/1.0",
-                },
-            )
-        if resp.status_code in (403, 404, 429):
-            return ""
-        resp.raise_for_status()
-        payload = resp.json()
-        content = payload.get("content", "")
-        encoding = payload.get("encoding", "")
-        if not content or encoding != "base64":
-            return ""
-        decoded = base64.b64decode(content).decode("utf-8", errors="ignore")
-        decoded = re.sub(r"```[\s\S]*?```", " ", decoded)
-        decoded = re.sub(r"`[^`]+`", " ", decoded)
-        decoded = re.sub(r"!\[[^\]]*\]\([^\)]*\)", " ", decoded)
-        decoded = re.sub(r"\[[^\]]+\]\([^\)]*\)", " ", decoded)
-        decoded = re.sub(r"[#>*_\-]{1,}", " ", decoded)
-        decoded = re.sub(r"\s+", " ", decoded).strip()
-        return decoded[:20_000]
+        def fetch() -> str:
+            with httpx.Client(timeout=15, follow_redirects=True, trust_env=True) as client:
+                snapshot = fetch_github_readme_snapshot(
+                    full_name,
+                    client,
+                    max_chars=20_000,
+                )
+                return snapshot.text if snapshot.status == "succeeded" else ""
+
+        return await asyncio.to_thread(fetch)
     except Exception as exc:
         logger.debug("[Enricher] GitHub README 抓取失败 %s: %s", full_name, exc)
         return ""

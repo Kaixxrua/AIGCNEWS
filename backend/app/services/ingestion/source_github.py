@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Literal, Optional, Set
 
 import httpx
 
@@ -99,32 +101,101 @@ def _clean_readme_text(text: str) -> str:
     return text
 
 
+@dataclass(frozen=True)
+class GitHubReadmeSnapshot:
+    status: Literal["succeeded", "not_modified", "not_found", "rate_limited", "failed"]
+    text: str = ""
+    etag: str = ""
+    sha256: str = ""
+    error: str = ""
+    rate_limit_remaining: int | None = None
+    rate_limit_reset: str = ""
+
+
+def fetch_github_readme_snapshot(
+    full_name: str,
+    client: httpx.Client,
+    *,
+    etag: str = "",
+    max_chars: int = 40_000,
+    use_token: bool = True,
+) -> GitHubReadmeSnapshot:
+    if not full_name or "/" not in full_name:
+        return GitHubReadmeSnapshot(status="failed", error="invalid repository name")
+    headers = _build_headers(use_token=use_token)
+    if etag:
+        headers["If-None-Match"] = etag
+    try:
+        resp = client.get(
+            f"{GITHUB_API_BASE}/repos/{full_name}/readme",
+            headers=headers,
+        )
+        if resp.status_code == 401 and use_token:
+            return fetch_github_readme_snapshot(
+                full_name,
+                client,
+                etag=etag,
+                max_chars=max_chars,
+                use_token=False,
+            )
+        remaining_raw = resp.headers.get("x-ratelimit-remaining")
+        try:
+            remaining = int(remaining_raw) if remaining_raw is not None else None
+        except ValueError:
+            remaining = None
+        rate_limit_reset = resp.headers.get("x-ratelimit-reset", "")
+        if resp.status_code == 304:
+            return GitHubReadmeSnapshot(
+                status="not_modified",
+                etag=resp.headers.get("etag", etag),
+                rate_limit_remaining=remaining,
+                rate_limit_reset=rate_limit_reset,
+            )
+        if resp.status_code == 404:
+            return GitHubReadmeSnapshot(
+                status="not_found",
+                rate_limit_remaining=remaining,
+                rate_limit_reset=rate_limit_reset,
+            )
+        if resp.status_code in (403, 429):
+            return GitHubReadmeSnapshot(
+                status="rate_limited",
+                error=f"GitHub API returned {resp.status_code}",
+                rate_limit_remaining=remaining,
+                rate_limit_reset=rate_limit_reset,
+            )
+        resp.raise_for_status()
+        payload = resp.json()
+        content = payload.get("content", "")
+        if not content or payload.get("encoding") != "base64":
+            return GitHubReadmeSnapshot(status="failed", error="README content is not base64")
+        decoded = base64.b64decode(content).decode("utf-8", errors="ignore")
+        cleaned = _clean_readme_text(decoded)[: max(1, int(max_chars))]
+        return GitHubReadmeSnapshot(
+            status="succeeded",
+            text=cleaned,
+            etag=resp.headers.get("etag", ""),
+            sha256=hashlib.sha256(cleaned.encode("utf-8")).hexdigest(),
+            rate_limit_remaining=remaining,
+            rate_limit_reset=rate_limit_reset,
+        )
+    except Exception as exc:
+        logger.debug("[GitHub] README 抓取失败 %s: %s", full_name, exc)
+        return GitHubReadmeSnapshot(status="failed", error=str(exc)[:1000])
+
+
 def _fetch_readme(
     full_name: str,
     client: httpx.Client,
     use_token: bool = True,
 ) -> str:
-    try:
-        resp = client.get(
-            f"{GITHUB_API_BASE}/repos/{full_name}/readme",
-            headers=_build_headers(use_token=use_token),
-        )
-        if resp.status_code == 401 and use_token:
-            return _fetch_readme(full_name, client, use_token=False)
-        if resp.status_code in (403, 404, 429):
-            return ""
-        resp.raise_for_status()
-        payload = resp.json()
-        content = payload.get("content", "")
-        encoding = payload.get("encoding", "")
-        if not content or encoding != "base64":
-            return ""
-        decoded = base64.b64decode(content).decode("utf-8", errors="ignore")
-        cleaned = _clean_readme_text(decoded)
-        return cleaned[:20000]
-    except Exception as exc:
-        logger.debug("[GitHub] README 抓取失败 %s: %s", full_name, exc)
-        return ""
+    snapshot = fetch_github_readme_snapshot(
+        full_name,
+        client,
+        max_chars=20_000,
+        use_token=use_token,
+    )
+    return snapshot.text if snapshot.status == "succeeded" else ""
 
 
 def _parse_item(item: dict, client: httpx.Client, use_token: bool = True) -> dict:
