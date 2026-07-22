@@ -90,12 +90,20 @@ class GitHubProjectSemanticIndexer:
         embeddings: Any = None,
     ) -> None:
         self.db = db or MySQLRepository()
-        self.vectors = vectors or ProjectVectorRepository()
-        if embeddings is None:
+        self.vectors = vectors
+        self.embeddings = embeddings
+
+    def _vectors(self) -> ProjectVectorRepository:
+        if self.vectors is None:
+            self.vectors = ProjectVectorRepository()
+        return self.vectors
+
+    def _embeddings(self):
+        if self.embeddings is None:
             from backend.app.core.model_factory import get_embedding_model
 
-            embeddings = get_embedding_model()
-        self.embeddings = embeddings
+            self.embeddings = get_embedding_model()
+        return self.embeddings
 
     def _readme_snapshot(self, project: dict[str, Any], *, fetch_readme: bool) -> dict[str, Any]:
         existing_text = str(project.get("readme_text") or "")
@@ -109,7 +117,7 @@ class GitHubProjectSemanticIndexer:
                 "status": str(project.get("readme_status") or "pending"),
                 "error": "",
             }
-        with httpx.Client(timeout=15, follow_redirects=True, trust_env=True) as client:
+        with httpx.Client(timeout=15, follow_redirects=True, trust_env=False) as client:
             snapshot = fetch_github_readme_snapshot(
                 str(project.get("full_name") or ""),
                 client,
@@ -154,7 +162,7 @@ class GitHubProjectSemanticIndexer:
         }
         self.db.upsert_github_project_semantic_source(base)
         try:
-            vectors = self.embeddings.embed_documents([text for _, _, text in chunks])
+            vectors = self._embeddings().embed_documents([text for _, _, text in chunks])
             repo_id = str(project.get("repo_id") or "")
             vector_chunks = [
                 ProjectVectorChunk(
@@ -170,7 +178,7 @@ class GitHubProjectSemanticIndexer:
                 )
                 for (kind, index, text), vector in zip(chunks, vectors, strict=True)
             ]
-            count = self.vectors.upsert_project_chunks(repo_id, vector_chunks)
+            count = self._vectors().upsert_project_chunks(repo_id, vector_chunks)
             self.db.upsert_github_project_semantic_source(
                 {**base, "indexed_fingerprint": fingerprint, "chunk_count": count, "index_status": "succeeded", "index_error": None, "indexed_at": _utcnow()}
             )
