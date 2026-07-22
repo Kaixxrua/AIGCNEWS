@@ -34,6 +34,8 @@ if "backend.app.core.config" not in sys.modules:
         mcp_github_fallback_enabled=True,
         mcp_github_fallback_use_token=False,
         mcp_github_fallback_timeout_seconds=8.0,
+        project_semantic_search_enabled=False,
+        project_semantic_query_timeout_seconds=1.5,
         github_token="",
         ACCESS_TOKEN_EXPIRE_MINUTES=60,
         JWT_SECRET_KEY="test-secret",

@@ -5,12 +5,6 @@ import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-langchain_core = types.ModuleType("langchain_core")
-langchain_documents = types.ModuleType("langchain_core.documents")
-langchain_documents.Document = type("Document", (), {})
-sys.modules.setdefault("langchain_core", langchain_core)
-sys.modules.setdefault("langchain_core.documents", langchain_documents)
-
 config = types.ModuleType("backend.app.core.config")
 config.settings = MagicMock()
 sys.modules.setdefault("backend.app.core.config", config)
