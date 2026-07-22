@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
+from unittest.mock import MagicMock, patch
 
-from backend.app.services.ingestion.pipeline import should_run_smart_ingestion
+from backend.app.repositories.task_repository import LatestTaskReader
+from backend.app.services.ingestion.pipeline import (
+    run_smart_ingestion,
+    should_run_smart_ingestion,
+)
 
 
 class SmartIngestionDecisionTests(unittest.TestCase):
@@ -51,6 +56,64 @@ class SmartIngestionDecisionTests(unittest.TestCase):
                         date(2026, 7, 22),
                     )
                 )
+
+
+class SmartIngestionInjectionTests(unittest.TestCase):
+    def test_injected_reader_can_skip_runner(self) -> None:
+        reader = MagicMock(spec=LatestTaskReader)
+        reader.get_latest_task.return_value = {
+            "id": 42,
+            "status": "success",
+            "started_at": "2026-07-22 08:00:00",
+        }
+        runner = MagicMock()
+
+        with patch(
+            "backend.app.services.ingestion.pipeline.date"
+        ) as date_module:
+            date_module.today.return_value = date(2026, 7, 22)
+            date_module.fromisoformat.side_effect = date.fromisoformat
+            run_smart_ingestion(7, reader=reader, runner=runner)
+
+        reader.get_latest_task.assert_called_once_with()
+        runner.assert_not_called()
+
+    def test_injected_reader_and_runner_execute_requested_limit(self) -> None:
+        reader = MagicMock(spec=LatestTaskReader)
+        reader.get_latest_task.return_value = None
+        runner = MagicMock()
+
+        run_smart_ingestion(7, reader=reader, runner=runner)
+
+        runner.assert_called_once_with(7)
+
+    def test_reader_failure_is_fail_open(self) -> None:
+        reader = MagicMock(spec=LatestTaskReader)
+        reader.get_latest_task.side_effect = RuntimeError("lookup failed")
+        runner = MagicMock()
+
+        run_smart_ingestion(7, reader=reader, runner=runner)
+
+        runner.assert_called_once_with(7)
+
+    def test_runner_failure_is_swallowed(self) -> None:
+        reader = MagicMock(spec=LatestTaskReader)
+        reader.get_latest_task.return_value = None
+        runner = MagicMock(side_effect=RuntimeError("run failed"))
+
+        self.assertIsNone(run_smart_ingestion(7, reader=reader, runner=runner))
+
+    def test_injected_reader_avoids_default_repository(self) -> None:
+        reader = MagicMock(spec=LatestTaskReader)
+        reader.get_latest_task.return_value = None
+        runner = MagicMock()
+
+        with patch(
+            "backend.app.services.ingestion.pipeline.MySQLRepository"
+        ) as repository_type:
+            run_smart_ingestion(7, reader=reader, runner=runner)
+
+        repository_type.assert_not_called()
 
 
 if __name__ == "__main__":
