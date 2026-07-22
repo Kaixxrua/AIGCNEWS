@@ -115,6 +115,46 @@ class SmartIngestionInjectionTests(unittest.TestCase):
 
         repository_type.assert_not_called()
 
+    def test_default_path_uses_repository_and_pipeline_runner(self) -> None:
+        reader = MagicMock(spec=LatestTaskReader)
+        reader.get_latest_task.return_value = None
+
+        with (
+            patch(
+                "backend.app.services.ingestion.pipeline.MySQLRepository",
+                return_value=reader,
+            ) as repository_type,
+            patch(
+                "backend.app.services.ingestion.pipeline.run_ingestion_pipeline"
+            ) as runner,
+        ):
+            run_smart_ingestion(7)
+
+        repository_type.assert_called_once_with()
+        reader.get_latest_task.assert_called_once_with()
+        runner.assert_called_once_with(7)
+
+    def test_default_path_skips_after_success_today(self) -> None:
+        reader = MagicMock(spec=LatestTaskReader)
+        reader.get_latest_task.return_value = {
+            "id": 42,
+            "status": "success",
+            "started_at": date.today().isoformat(),
+        }
+
+        with (
+            patch(
+                "backend.app.services.ingestion.pipeline.MySQLRepository",
+                return_value=reader,
+            ),
+            patch(
+                "backend.app.services.ingestion.pipeline.run_ingestion_pipeline"
+            ) as runner,
+        ):
+            run_smart_ingestion()
+
+        runner.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

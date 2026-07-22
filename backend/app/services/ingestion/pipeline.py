@@ -1089,31 +1089,9 @@ def run_smart_ingestion(
     runner: Callable[[int], Any] | None = None,
 ) -> None:
     """智能采集：检测今天是否已有成功任务，若无则执行采集。"""
-    if reader is not None or runner is not None:
-        _run_smart_ingestion_with(
-            reader if reader is not None else MySQLRepository(),
-            runner if runner is not None else run_ingestion_pipeline,
-            limit,
-            date.today(),
-        )
-        return
-
-    db = MySQLRepository()
-    today = date.today()
-
-    try:
-        latest = db.get_latest_task()
-        if not should_run_smart_ingestion(latest, today):
-            logger.info(
-                "[SmartIngestion] 今天已成功采集（任务 #%d），无需重复。",
-                latest.get("id"),
-            )
-            return
-    except Exception as exc:
-        logger.warning("[SmartIngestion] 检查最新任务失败，继续执行: %s", exc)
-
-    logger.info("[SmartIngestion] 执行今日采集，limit=%d ...", limit)
-    try:
-        run_ingestion_pipeline(limit=limit)
-    except Exception as exc:
-        logger.error("[SmartIngestion] 采集失败: %s", exc)
+    _run_smart_ingestion_with(
+        reader if reader is not None else MySQLRepository(),
+        runner if runner is not None else run_ingestion_pipeline,
+        limit,
+        date.today(),
+    )
