@@ -55,6 +55,31 @@ class DatabaseLifecycle:
         finally:
             connection.close()
 
+    @contextmanager
+    def transaction(self) -> Iterator[DBAPIConnection]:
+        """Commit successful work or roll it back, then return the connection."""
+        connection = self.connect()
+        primary_error: BaseException | None = None
+        try:
+            try:
+                yield connection
+                connection.commit()
+            except BaseException as exc:
+                primary_error = exc
+                try:
+                    connection.rollback()
+                except BaseException:
+                    pass
+                raise
+        finally:
+            if primary_error is None:
+                connection.close()
+            else:
+                try:
+                    connection.close()
+                except BaseException:
+                    pass
+
     def close(self) -> None:
         """Close the initialized pool without creating one."""
         with self._lock:

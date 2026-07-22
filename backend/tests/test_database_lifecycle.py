@@ -62,6 +62,142 @@ class DatabaseLifecycleTests(unittest.TestCase):
         connection.commit.assert_not_called()
         connection.rollback.assert_not_called()
 
+    def test_transaction_is_lazy_until_context_entry(self) -> None:
+        connection = MagicMock()
+        pool = MagicMock()
+        pool.connection.return_value = connection
+        pool_factory = MagicMock(return_value=pool)
+        database = DatabaseLifecycle(pool_factory)
+
+        transaction = database.transaction()
+
+        pool_factory.assert_not_called()
+        pool.connection.assert_not_called()
+
+        with transaction as acquired:
+            self.assertIs(acquired, connection)
+
+        pool_factory.assert_called_once_with()
+        pool.connection.assert_called_once_with()
+
+    def test_transaction_commits_then_closes_on_success(self) -> None:
+        events: list[str] = []
+        connection = MagicMock()
+        connection.commit.side_effect = lambda: events.append("commit")
+        connection.close.side_effect = lambda: events.append("close")
+        pool = MagicMock()
+        pool.connection.return_value = connection
+        database = DatabaseLifecycle(MagicMock(return_value=pool))
+
+        with database.transaction() as acquired:
+            self.assertIs(acquired, connection)
+
+        connection.commit.assert_called_once_with()
+        connection.rollback.assert_not_called()
+        connection.close.assert_called_once_with()
+        self.assertEqual(events, ["commit", "close"])
+
+    def test_transaction_rolls_back_then_closes_on_body_error(self) -> None:
+        events: list[str] = []
+        connection = MagicMock()
+        connection.rollback.side_effect = lambda: events.append("rollback")
+        connection.close.side_effect = lambda: events.append("close")
+        pool = MagicMock()
+        pool.connection.return_value = connection
+        database = DatabaseLifecycle(MagicMock(return_value=pool))
+        error = RuntimeError("sentinel")
+
+        with self.assertRaises(RuntimeError) as context:
+            with database.transaction():
+                raise error
+
+        self.assertIs(context.exception, error)
+        connection.commit.assert_not_called()
+        connection.rollback.assert_called_once_with()
+        connection.close.assert_called_once_with()
+        self.assertEqual(events, ["rollback", "close"])
+
+    def test_transaction_handles_base_exception(self) -> None:
+        class Sentinel(BaseException):
+            pass
+
+        connection = MagicMock()
+        pool = MagicMock()
+        pool.connection.return_value = connection
+        database = DatabaseLifecycle(MagicMock(return_value=pool))
+        error = Sentinel()
+
+        with self.assertRaises(Sentinel) as context:
+            with database.transaction():
+                raise error
+
+        self.assertIs(context.exception, error)
+        connection.rollback.assert_called_once_with()
+        connection.close.assert_called_once_with()
+
+    def test_transaction_rolls_back_when_commit_fails(self) -> None:
+        events: list[str] = []
+        error = RuntimeError("commit failed")
+        connection = MagicMock()
+
+        def fail_commit() -> None:
+            events.append("commit")
+            raise error
+
+        connection.commit.side_effect = fail_commit
+        connection.rollback.side_effect = lambda: events.append("rollback")
+        connection.close.side_effect = lambda: events.append("close")
+        pool = MagicMock()
+        pool.connection.return_value = connection
+        database = DatabaseLifecycle(MagicMock(return_value=pool))
+
+        with self.assertRaises(RuntimeError) as context:
+            with database.transaction():
+                pass
+
+        self.assertIs(context.exception, error)
+        connection.commit.assert_called_once_with()
+        connection.rollback.assert_called_once_with()
+        connection.close.assert_called_once_with()
+        self.assertEqual(events, ["commit", "rollback", "close"])
+
+    def test_transaction_preserves_body_error_when_cleanup_fails(self) -> None:
+        body_error = RuntimeError("body failed")
+        connection = MagicMock()
+        connection.rollback.side_effect = RuntimeError("rollback failed")
+        connection.close.side_effect = RuntimeError("close failed")
+        pool = MagicMock()
+        pool.connection.return_value = connection
+        database = DatabaseLifecycle(MagicMock(return_value=pool))
+
+        with self.assertRaises(RuntimeError) as context:
+            with database.transaction():
+                raise body_error
+
+        self.assertIs(context.exception, body_error)
+        connection.rollback.assert_called_once_with()
+        connection.close.assert_called_once_with()
+
+    def test_transaction_reuses_pool_across_contexts(self) -> None:
+        first_connection = MagicMock()
+        second_connection = MagicMock()
+        pool = MagicMock()
+        pool.connection.side_effect = [first_connection, second_connection]
+        pool_factory = MagicMock(return_value=pool)
+        database = DatabaseLifecycle(pool_factory)
+
+        with database.transaction() as first:
+            self.assertIs(first, first_connection)
+        with database.transaction() as second:
+            self.assertIs(second, second_connection)
+
+        pool_factory.assert_called_once_with()
+        self.assertEqual(pool.connection.call_count, 2)
+        first_connection.commit.assert_called_once_with()
+        first_connection.close.assert_called_once_with()
+        second_connection.commit.assert_called_once_with()
+        second_connection.close.assert_called_once_with()
+
     def test_close_before_first_connect_does_not_create_pool(self) -> None:
         pool_factory = MagicMock()
         database = DatabaseLifecycle(pool_factory)
