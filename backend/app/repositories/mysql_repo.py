@@ -4088,7 +4088,8 @@ class MySQLRepository:
                 ge.description_zh, ge.category_slug, ge.category_name,
                 ge.subcategory_slug, ge.subcategory_name, ge.tags_json,
                 ss.readme_text, ss.readme_sha256, ss.readme_etag,
-                ss.readme_status, ss.readme_checked_at, ss.readme_repo_pushed_at,
+                ss.readme_status, ss.readme_checked_at, ss.readme_fetched_at,
+                ss.readme_repo_pushed_at,
                 ss.source_fingerprint, ss.indexed_fingerprint, ss.index_status,
                 ss.index_retry_count
             FROM github_repo_candidates c
