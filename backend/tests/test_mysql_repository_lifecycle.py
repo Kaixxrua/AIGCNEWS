@@ -32,6 +32,24 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         self.assertIs(first_repository._database, mysql_database)
         self.assertIs(second_repository._database, mysql_database)
 
+    def test_ingestion_task_component_reuses_database_lifecycle(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MySQLRepository(database=database)
+
+        first = repository.ingestion_tasks
+        second = repository.ingestion_tasks
+
+        self.assertIs(first, second)
+        self.assertIs(first._database, database)
+
+    def test_ingestion_task_component_does_not_create_pool(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MySQLRepository(database=database)
+
+        _ = repository.ingestion_tasks
+
+        database.connect.assert_not_called()
+
     def test_preserves_single_schema_initialization(self) -> None:
         MySQLRepository._schema_initialized = False
         database = MagicMock(spec=DatabaseLifecycle)

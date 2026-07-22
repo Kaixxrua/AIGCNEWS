@@ -12,6 +12,9 @@ import pymysql
 
 from backend.app.core.config import settings
 from backend.app.core.database import DatabaseLifecycle, mysql_database
+from backend.app.repositories.mysql_ingestion_task_repository import (
+    MySQLIngestionTaskRepository,
+)
 from backend.app.services.ingestion.project_taxonomy import (
     CATEGORY_BY_SLUG,
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
@@ -397,6 +400,7 @@ class MySQLRepository:
 
     def __init__(self, database: DatabaseLifecycle | None = None) -> None:
         self._database = database or mysql_database
+        self._ingestion_tasks: MySQLIngestionTaskRepository | None = None
         if not MySQLRepository._schema_initialized:
             with MySQLRepository._schema_lock:
                 if not MySQLRepository._schema_initialized:
@@ -409,6 +413,12 @@ class MySQLRepository:
 
     def _connect(self):
         return self._database.connect()
+
+    @property
+    def ingestion_tasks(self) -> MySQLIngestionTaskRepository:
+        if self._ingestion_tasks is None:
+            self._ingestion_tasks = MySQLIngestionTaskRepository(self._database)
+        return self._ingestion_tasks
 
     def resolve_github_repo_id(self, repo_id: str = "", full_name: str = "") -> str:
         """Return the canonical repo_id for a GitHub repository identity."""
