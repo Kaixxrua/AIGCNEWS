@@ -14,14 +14,16 @@ _START_TIME = datetime.now(timezone.utc)
 
 def collect_metrics(
     repository: MonitorMetricsRepository | None = None,
+    task_reader: RecentTaskReader | None = None,
 ) -> Dict[str, Any]:
     """Collect runtime metrics for the monitor dashboard."""
     db = repository if repository is not None else MySQLRepository()
+    tasks = task_reader if task_reader is not None else _default_task_reader(db)
 
     uptime_seconds = (datetime.now(timezone.utc) - _START_TIME).total_seconds()
 
     try:
-        task_summary = _task_summary(db)
+        task_summary = _task_summary(tasks)
     except Exception as exc:
         task_summary = {"error": str(exc)}
 
@@ -47,6 +49,11 @@ def collect_metrics(
         "tasks": task_summary,
         "rag_evaluation": eval_summary,
     }
+
+
+def _default_task_reader(repository: MonitorMetricsRepository) -> RecentTaskReader:
+    component = getattr(repository, "ingestion_tasks", None)
+    return component if component is not None else repository  # type: ignore[return-value]
 
 
 def _task_summary(db: RecentTaskReader) -> Dict[str, Any]:

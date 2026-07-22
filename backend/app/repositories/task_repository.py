@@ -30,8 +30,8 @@ class RecentTaskReader(Protocol):
     def get_recent_tasks(self, limit: int = 100) -> list[dict[str, Any]]: ...
 
 
-class MonitorMetricsRepository(RecentTaskReader, Protocol):
-    """Read-only repository boundary used by monitor metrics."""
+class MonitorMetricsRepository(Protocol):
+    """Non-task read boundary used by monitor metrics."""
 
     def get_eval_summary(self) -> dict[str, Any]: ...
 

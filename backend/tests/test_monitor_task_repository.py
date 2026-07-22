@@ -33,7 +33,6 @@ class MonitorTaskRepositoryTests(unittest.TestCase):
 
         contract: MonitorMetricsRepository = repository
 
-        self.assertTrue(callable(contract.get_recent_tasks))
         self.assertTrue(callable(contract.get_eval_summary))
         self.assertTrue(callable(contract.get_document_count))
         self.assertTrue(callable(contract.list_briefings))
