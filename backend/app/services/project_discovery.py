@@ -4,8 +4,10 @@ import asyncio
 import logging
 from typing import Any, Literal
 
+from backend.app.core.config import settings
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
+from backend.app.services.project_semantic_search import ProjectSemanticSearch
 from backend.app.services.search_semantics import normalize_search_query
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,7 @@ async def search_projects(
     limit: int = 10,
     repository_factory: Any = MySQLRepository,
     fallback_search: Any = search_github_projects_fallback,
+    semantic_search_factory: Any = ProjectSemanticSearch,
 ) -> dict[str, Any]:
     generic = mode == "generic"
     query = normalize_search_query(str(query or ""))[:120]
@@ -95,8 +98,9 @@ async def search_projects(
     limit = max(1, min(int(limit or 10), 20))
     min_stars = 50 if generic else 500
 
+    repository = repository_factory()
     result = await asyncio.to_thread(
-        repository_factory().list_projects,
+        repository.list_projects,
         source="github",
         scope=scope,
         category=category,
@@ -136,6 +140,46 @@ async def search_projects(
     }
     if total > 0:
         return base
+
+    if mode == "ai" and query and settings.project_semantic_search_enabled:
+        try:
+            semantic_hits = await asyncio.wait_for(
+                asyncio.to_thread(semantic_search_factory().search_repo_ids, query),
+                timeout=max(0.1, float(settings.project_semantic_query_timeout_seconds)),
+            )
+            candidate_repo_ids = [str(hit.repo_id) for hit in semantic_hits if getattr(hit, "repo_id", "")]
+            if candidate_repo_ids:
+                semantic_result = await asyncio.to_thread(
+                    repository.list_projects,
+                    source="github",
+                    scope=scope,
+                    category=category,
+                    subcategory=subcategory,
+                    q="",
+                    language=language,
+                    page=page,
+                    page_size=limit,
+                    sort=effective_sort,
+                    min_stars=min_stars,
+                    enriched_only=True,
+                    user_id=None,
+                    candidate_repo_ids=candidate_repo_ids,
+                )
+                semantic_total = int(semantic_result.get("total") or 0)
+                if semantic_total > 0:
+                    semantic_items = [
+                        public_project_item(item) for item in semantic_result.get("items") or []
+                    ]
+                    return {
+                        **base,
+                        "items": semantic_items,
+                        "total": semantic_total,
+                        "local_total": semantic_total,
+                        "has_next": page * limit < semantic_total,
+                    }
+        except Exception as exc:
+            logger.warning("Local project semantic search failed: %s", exc)
+
     if page != 1:
         return {**base, "fallback_skipped_reason": "fallback_is_first_page_only"}
     if scope != "all":
