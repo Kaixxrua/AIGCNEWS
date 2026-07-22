@@ -313,12 +313,27 @@ def run_github_project_daily_pipeline(
         refresh_changed=False,
         concurrency=1,
     )
+    semantic_result: Dict[str, Any] = {"status": "disabled"}
+    if settings.project_semantic_indexing_enabled:
+        try:
+            from backend.app.services.indexing.github_project_semantic_indexer import (
+                sync_github_project_semantic_index,
+            )
+
+            semantic_result = sync_github_project_semantic_index(
+                min_stars=min_stars,
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            logger.warning("GitHub project semantic sync failed without aborting daily pipeline: %s", exc)
+            semantic_result = {"status": "failed", "error": str(exc)[:1000]}
     return {
         "status": "success" if not dry_run else "dry_run",
         "refresh": refresh_result,
         "metric_refresh": (metric_result or {}).get("refresh"),
         "daily_metrics": (metric_result or {}).get("metrics"),
         "enrichment": enrich_result,
+        "semantic_index": semantic_result,
         "policy": "new_or_failed_only",
         "min_stars": min_stars,
     }
