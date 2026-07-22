@@ -16,9 +16,8 @@ from backend.app.core.auth import (
     hash_password,
     verify_password,
 )
-from backend.app.core.config import settings
 from backend.app.repositories.mysql_repo import MySQLRepository
-from backend.app.services.email_service import EmailService
+from backend.app.services.email_service import EmailService, build_email_service
 
 router = APIRouter()
 
@@ -26,16 +25,7 @@ router = APIRouter()
 def _get_email_service(request: Request) -> EmailService:
     """从 app.state 获取 Redis 并构造 EmailService 实例。"""
     redis_client = getattr(request.app.state, "redis", None)
-    return EmailService(
-        redis_client=redis_client,
-        smtp_host=settings.SMTP_HOST,
-        smtp_port=settings.SMTP_PORT,
-        smtp_username=settings.SMTP_USERNAME,
-        smtp_password=settings.SMTP_PASSWORD,
-        smtp_from_email=settings.SMTP_FROM_EMAIL,
-        smtp_from_name=settings.SMTP_FROM_NAME,
-        smtp_use_tls=settings.SMTP_USE_TLS,
-    )
+    return build_email_service(redis_client)
 
 
 # ---------------------------------------------------------------------------

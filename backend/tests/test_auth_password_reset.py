@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_auth
@@ -94,6 +94,26 @@ class EmailResetOtpTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("email:reset:code:user@example.com", redis.values)
         self.assertNotIn("email:reset:attempts:user@example.com", redis.values)
+
+
+class EmailServiceWiringTests(unittest.TestCase):
+    def test_get_email_service_passes_application_redis_to_factory(self) -> None:
+        app = FastAPI()
+        redis_client = object()
+        app.state.redis = redis_client
+        request = MagicMock(spec=Request)
+        request.app = app
+        service = MagicMock(spec=EmailService)
+
+        with patch.object(
+            routes_auth,
+            "build_email_service",
+            return_value=service,
+        ) as factory:
+            result = routes_auth._get_email_service(request)
+
+        self.assertIs(result, service)
+        factory.assert_called_once_with(redis_client)
 
 
 class PasswordResetRouteTests(unittest.TestCase):
