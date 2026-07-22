@@ -8,11 +8,31 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_monitor
 from backend.app.api.dependencies import get_mysql_repository
-from backend.app.core.auth import RequireAdmin
+from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.repositories.task_repository import MonitorTaskRepository
 
 
 class MonitorRouteTests(unittest.TestCase):
+    def test_system_metrics_preserves_no_argument_collector_call(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        collector = MagicMock(return_value={"uptime_seconds": 1.0})
+
+        def override_require_user() -> dict[str, str]:
+            return {"role": "user"}
+
+        app.dependency_overrides[RequireUser] = override_require_user
+
+        with unittest.mock.patch(
+            "backend.app.monitoring.metrics.collect_metrics",
+            collector,
+        ):
+            response = TestClient(app).get("/api/monitor/metrics")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"uptime_seconds": 1.0})
+        collector.assert_called_once_with()
+
     def test_recent_tasks_uses_repository_dependency(self) -> None:
         app = FastAPI()
         app.include_router(routes_monitor.router, prefix="/api")

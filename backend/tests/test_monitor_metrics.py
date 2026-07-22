@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from backend.app.monitoring.metrics import _task_summary
-from backend.app.repositories.task_repository import RecentTaskReader
+from backend.app.monitoring.metrics import _task_summary, collect_metrics
+from backend.app.repositories.task_repository import (
+    MonitorMetricsRepository,
+    RecentTaskReader,
+)
 
 
 class MonitorMetricsTests(unittest.TestCase):
@@ -47,6 +50,41 @@ class MonitorMetricsTests(unittest.TestCase):
                 "last_task": None,
             },
         )
+
+    def test_collect_metrics_uses_injected_repository_for_all_reads(self) -> None:
+        repository = MagicMock(spec=MonitorMetricsRepository)
+        repository.get_recent_tasks.return_value = []
+        repository.get_eval_summary.return_value = {"score": 0.9}
+        repository.get_document_count.return_value = 12
+        repository.list_briefings.return_value = [{"id": 1}, {"id": 2}]
+
+        with patch(
+            "backend.app.monitoring.metrics.MySQLRepository"
+        ) as repository_type:
+            result = collect_metrics(repository)
+
+        repository_type.assert_not_called()
+        repository.get_recent_tasks.assert_called_once_with(limit=100)
+        repository.get_eval_summary.assert_called_once_with()
+        repository.get_document_count.assert_called_once_with()
+        repository.list_briefings.assert_called_once_with(limit=1000)
+        self.assertEqual(result["document_count"], 12)
+        self.assertEqual(result["briefing_count"], 2)
+        self.assertEqual(result["rag_evaluation"], {"score": 0.9})
+
+    def test_collect_metrics_preserves_independent_error_fallbacks(self) -> None:
+        repository = MagicMock(spec=MonitorMetricsRepository)
+        repository.get_recent_tasks.side_effect = RuntimeError("tasks")
+        repository.get_eval_summary.side_effect = RuntimeError("eval")
+        repository.get_document_count.side_effect = RuntimeError("documents")
+        repository.list_briefings.side_effect = RuntimeError("briefings")
+
+        result = collect_metrics(repository)
+
+        self.assertEqual(result["tasks"], {"error": "tasks"})
+        self.assertEqual(result["rag_evaluation"], {"error": "eval"})
+        self.assertEqual(result["document_count"], -1)
+        self.assertEqual(result["briefing_count"], -1)
 
 
 if __name__ == "__main__":

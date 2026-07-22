@@ -4,14 +4,19 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from backend.app.repositories.mysql_repo import MySQLRepository
-from backend.app.repositories.task_repository import RecentTaskReader
+from backend.app.repositories.task_repository import (
+    MonitorMetricsRepository,
+    RecentTaskReader,
+)
 
 _START_TIME = datetime.now(timezone.utc)
 
 
-def collect_metrics() -> Dict[str, Any]:
+def collect_metrics(
+    repository: MonitorMetricsRepository | None = None,
+) -> Dict[str, Any]:
     """Collect runtime metrics for the monitor dashboard."""
-    db = MySQLRepository()
+    db = repository if repository is not None else MySQLRepository()
 
     uptime_seconds = (datetime.now(timezone.utc) - _START_TIME).total_seconds()
 
