@@ -4523,65 +4523,16 @@ class MySQLRepository:
     # ------------------------------------------------------------------
 
     def save_briefing(self, date_str: str, content: str) -> int:
-        sql = """
-            INSERT INTO briefings (date, content, created_at)
-            VALUES (%s, %s, %s)
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (date_str, content, _utcnow()))
-                briefing_id = cur.lastrowid
-            conn.commit()
-            return briefing_id  # type: ignore[return-value]
-        finally:
-            conn.close()
+        return self.briefings.save_briefing(date_str, content)
 
     def get_latest_briefing(self) -> Optional[Dict[str, Any]]:
-        sql = """
-            SELECT * FROM briefings
-            ORDER BY id DESC
-            LIMIT 1
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql)
-                row = cur.fetchone()
-            conn.commit()
-            return dict(row) if row else None
-        finally:
-            conn.close()
+        return self.briefings.get_latest_briefing()
 
     def get_briefing_by_date(self, date_str: str) -> Optional[Dict[str, Any]]:
-        sql = "SELECT * FROM briefings WHERE date = %s ORDER BY id DESC LIMIT 1"
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (date_str,))
-                row = cur.fetchone()
-            conn.commit()
-            return dict(row) if row else None
-        finally:
-            conn.close()
+        return self.briefings.get_briefing_by_date(date_str)
 
     def list_briefings(self, limit: int = 30) -> List[Dict[str, Any]]:
-        sql = """
-            SELECT id, date, created_at,
-                   SUBSTRING(content, 1, 100) AS content_preview
-            FROM briefings
-            ORDER BY id DESC
-            LIMIT %s
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (limit,))
-                rows = cur.fetchall()
-            conn.commit()
-            return list(rows)
-        finally:
-            conn.close()
+        return self.briefings.list_briefings(limit)
 
     # ------------------------------------------------------------------
     # Runtime Provider Settings

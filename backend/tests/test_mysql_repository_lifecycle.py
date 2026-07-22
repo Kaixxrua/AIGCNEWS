@@ -122,6 +122,28 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         task_repository.list_tasks.assert_called_once_with(2, 3)
         task_repository.clear_all_tasks.assert_called_once_with()
 
+    def test_briefing_compatibility_methods_delegate_to_component(self) -> None:
+        repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
+        briefing_repository = MagicMock()
+        briefing_repository.save_briefing.return_value = 42
+        briefing_repository.get_latest_briefing.return_value = {"id": 42}
+        briefing_repository.get_briefing_by_date.return_value = {"id": 43}
+        briefing_repository.list_briefings.return_value = [{"id": 42}]
+        repository._briefings = briefing_repository
+
+        self.assertEqual(repository.save_briefing("2026-07-22", "content"), 42)
+        self.assertEqual(repository.get_latest_briefing(), {"id": 42})
+        self.assertEqual(repository.get_briefing_by_date("2026-07-22"), {"id": 43})
+        self.assertEqual(repository.list_briefings(limit=7), [{"id": 42}])
+
+        briefing_repository.save_briefing.assert_called_once_with(
+            "2026-07-22",
+            "content",
+        )
+        briefing_repository.get_latest_briefing.assert_called_once_with()
+        briefing_repository.get_briefing_by_date.assert_called_once_with("2026-07-22")
+        briefing_repository.list_briefings.assert_called_once_with(7)
+
     @staticmethod
     def _repository_with_database():
         cursor = MagicMock()
