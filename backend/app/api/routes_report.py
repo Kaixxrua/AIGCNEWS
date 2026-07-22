@@ -11,7 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from backend.app.api.dependencies import get_briefing_repository
 from backend.app.core.auth import RequireAdmin, RequireUser
+from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.email_service import EmailService, build_email_service
@@ -160,6 +162,7 @@ async def get_latest_briefing(
     ),
     period: str = Query(default="daily", description="daily/weekly/monthly"),
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD，可选"),
+    repository: BriefingReader = Depends(get_briefing_repository),
 ):
     """返回指定类型与周期的简报缓存。
 
@@ -175,8 +178,7 @@ async def get_latest_briefing(
     suffix = "" if source == "all" else f"_{source}"
     cache_key = f"{target}{suffix}_{period}"
 
-    db = MySQLRepository()
-    item = db.get_briefing_by_date(cache_key)
+    item = repository.get_briefing_by_date(cache_key)
     if item is None:
         return JSONResponse(
             status_code=404,
@@ -200,10 +202,10 @@ async def get_latest_briefing(
 @router.get("/report/history")
 async def list_briefings(
     limit: int = Query(default=30, ge=1, le=200),
+    repository: BriefingReader = Depends(get_briefing_repository),
 ):
     """Return a list of past briefings (id + date + created_at)."""
-    db = MySQLRepository()
-    items = db.list_briefings(limit=limit)
+    items = repository.list_briefings(limit=limit)
     return {"items": items, "total": len(items)}
 
 
@@ -272,6 +274,7 @@ class BatchSubscribeRequest(BaseModel):
 async def _send_cached_briefing_to_email(
     *,
     request: Request,
+    repository: BriefingReader,
     email: str,
     source: str,
     period: str,
@@ -282,8 +285,7 @@ async def _send_cached_briefing_to_email(
     suffix = "" if source == "all" else f"_{source}"
     cache_key = f"{target}{suffix}_{period}"
 
-    db = MySQLRepository()
-    item = db.get_briefing_by_date(cache_key)
+    item = repository.get_briefing_by_date(cache_key)
     if item is None:
         raise HTTPException(
             status_code=404,
@@ -405,6 +407,7 @@ async def send_briefing_to_email(
     body: SubscribeRequest,
     request: Request,
     user: dict = Depends(RequireUser),
+    repository: BriefingReader = Depends(get_briefing_repository),
 ):
     """将当前简报立即发送到用户邮箱（一次性发送，不需要订阅）。"""
     source = body.source if body.source in _VALID_SOURCES else "all"
@@ -418,6 +421,7 @@ async def send_briefing_to_email(
 
     sent_date = await _send_cached_briefing_to_email(
         request=request,
+        repository=repository,
         email=email,
         source=source,
         period=period,
