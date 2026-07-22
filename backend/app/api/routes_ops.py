@@ -10,7 +10,13 @@ from typing import Any, Dict, Literal, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from backend.app.api.dependencies import (
+    get_ingestion_task_repository,
+    get_mysql_repository,
+)
 from backend.app.core.auth import RequireAdmin
+from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -584,7 +590,13 @@ async def ingest_by_date(
 
 
 @router.post("/ops/clear-data", response_model=ClearDataResponse, tags=["Ops"])
-async def clear_all_data(_: dict = Depends(RequireAdmin)) -> ClearDataResponse:
+async def clear_all_data(
+    _: dict = Depends(RequireAdmin),
+    db: MySQLRepository = Depends(get_mysql_repository),
+    task_repository: IngestionTaskAdminRepository = Depends(
+        get_ingestion_task_repository
+    ),
+) -> ClearDataResponse:
     """
     清空所有已存储数据：
 
@@ -594,14 +606,11 @@ async def clear_all_data(_: dict = Depends(RequireAdmin)) -> ClearDataResponse:
 
     ⚠️ 此操作不可逆，请谨慎使用。
     """
-    from backend.app.repositories.mysql_repo import MySQLRepository
     from backend.app.repositories.milvus_repo import MilvusRepository
-
-    db = MySQLRepository()
 
     # 1. 清空 SQLite
     deleted_docs = await asyncio.to_thread(db.clear_all_documents)
-    deleted_tasks = await asyncio.to_thread(db.clear_all_tasks)
+    deleted_tasks = await asyncio.to_thread(task_repository.clear_all_tasks)
     logger.info(
         "[Ops] 已清空 SQLite：documents=%d, tasks=%d", deleted_docs, deleted_tasks
     )

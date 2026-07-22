@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_monitor
-from backend.app.api.dependencies import get_mysql_repository
+from backend.app.api.dependencies import get_ingestion_task_repository
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.repositories.task_repository import MonitorTaskRepository
 
@@ -56,7 +56,7 @@ class MonitorRouteTests(unittest.TestCase):
             return repository
 
         app.dependency_overrides[RequireAdmin] = override_require_admin
-        app.dependency_overrides[get_mysql_repository] = override_repository
+        app.dependency_overrides[get_ingestion_task_repository] = override_repository
 
         response = TestClient(app).get(
             "/api/monitor/tasks",
