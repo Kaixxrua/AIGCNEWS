@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from backend.app.core.config import settings
-from backend.app.core.model_factory import get_embedding_model
 from backend.app.repositories.project_vector_repo import ProjectVectorRepository
 from backend.app.services.search_semantics import normalize_search_query
 
@@ -31,8 +30,11 @@ class ProjectSemanticSearch:
         query = normalize_search_query(query)[:120]
         if not query:
             return []
-        embeddings = self._embeddings or get_embedding_model()
-        vector = list(embeddings.embed_query(query))
+        if self._embeddings is None:
+            from backend.app.core.model_factory import get_embedding_model
+
+            self._embeddings = get_embedding_model()
+        vector = list(self._embeddings.embed_query(query))
         hits = self.vectors.search_repo_ids(
             vector,
             chunk_limit=settings.project_semantic_chunk_limit,
