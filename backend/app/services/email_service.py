@@ -14,6 +14,8 @@ from typing import Literal
 
 from fastapi import HTTPException, status
 
+from backend.app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 OtpPurpose = Literal["registration", "password_reset"]
@@ -468,3 +470,17 @@ class EmailService:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"简报邮件发送失败（{type(exc).__name__}），请检查 SMTP 配置后重试",
             ) from exc
+
+
+def build_email_service(redis_client, *, config=settings) -> EmailService:
+    """Build an email service from application SMTP settings."""
+    return EmailService(
+        redis_client=redis_client,
+        smtp_host=config.SMTP_HOST,
+        smtp_port=config.SMTP_PORT,
+        smtp_username=config.SMTP_USERNAME,
+        smtp_password=config.SMTP_PASSWORD,
+        smtp_from_email=config.SMTP_FROM_EMAIL,
+        smtp_from_name=config.SMTP_FROM_NAME,
+        smtp_use_tls=config.SMTP_USE_TLS,
+    )
