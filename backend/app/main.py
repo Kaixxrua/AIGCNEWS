@@ -29,6 +29,7 @@ from backend.app.api import (
 from backend.app.api import routes_ops
 from backend.app.core.config import settings
 from backend.app.core.database import mysql_database
+from backend.app.core.postgres_database import postgres_database
 from backend.app.core.scheduler import start_scheduler, stop_scheduler
 
 
@@ -77,13 +78,34 @@ async def _warmup_reranker() -> None:
         print(f"[Startup] Cross-Encoder warmup failed (non-fatal): {exc}")
 
 
+async def _warmup_project_semantic_search() -> None:
+    """后台预热项目语义搜索链路，不阻塞服务启动。"""
+    try:
+        from backend.app.services.project_semantic_search import (
+            warmup_project_semantic_search,
+        )
+
+        result = await asyncio.to_thread(warmup_project_semantic_search)
+        print(f"[Startup] Project semantic search warmup: {result.get('status')}.")
+    except Exception as exc:
+        print(f"[Startup] Project semantic search warmup failed (non-fatal): {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """FastAPI lifespan：启动时预热模型、初始化 Redis Cache、开启调度器；关闭时优雅释放资源。"""
     app.state.database = mysql_database
+    app.state.postgres_database = postgres_database
+    project_catalog_backend = str(settings.project_catalog_backend or "").strip().lower()
+    if project_catalog_backend == "postgres":
+        await asyncio.to_thread(postgres_database.open)
 
-    # 在后台异步预热 Cross-Encoder 模型，不阻塞服务启动
+    # 在后台异步预热模型，不阻塞服务启动
     asyncio.create_task(_warmup_reranker())
+    semantic_warmup_task = None
+    if settings.project_semantic_search_enabled:
+        semantic_warmup_task = asyncio.create_task(_warmup_project_semantic_search())
+        app.state.semantic_warmup_task = semantic_warmup_task
 
     redis_client: Redis | None = None
     try:
@@ -123,6 +145,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
     finally:
         stop_scheduler()
+        if semantic_warmup_task is not None and not semantic_warmup_task.done():
+            semantic_warmup_task.cancel()
+            try:
+                await semantic_warmup_task
+            except asyncio.CancelledError:
+                pass
+        try:
+            from backend.app.services.project_semantic_search import (
+                close_project_semantic_search,
+            )
+
+            await asyncio.to_thread(close_project_semantic_search)
+        except Exception as exc:
+            print(f"[Shutdown] Project semantic search close failed (non-fatal): {exc}")
+        try:
+            from backend.app.services.project_reranker import close_project_reranker
+
+            await close_project_reranker()
+        except Exception as exc:
+            print(f"[Shutdown] Project reranker close failed (non-fatal): {exc}")
         redis_in_app = getattr(app.state, "redis", None)
         if redis_in_app is not None:
             try:
@@ -134,6 +176,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 print("[Shutdown] Redis cache connection closed.")
             except Exception as exc:
                 print(f"[Shutdown] Redis close failed (non-fatal): {exc}")
+        if project_catalog_backend == "postgres":
+            postgres_database.close()
+            print("[Shutdown] PostgreSQL connection pool closed.")
         mysql_database.close()
         print("[Shutdown] MySQL connection pool closed.")
 
