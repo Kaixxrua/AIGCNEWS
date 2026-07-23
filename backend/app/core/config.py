@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     project_semantic_min_score: float = 0.45
     project_semantic_repo_limit: int = 200
     project_semantic_chunk_limit: int = 800
-    project_semantic_query_timeout_seconds: float = 3.0
+    project_semantic_query_timeout_seconds: float = 6.0
     project_semantic_readme_max_chars: int = 40_000
     project_semantic_readme_refresh_days: int = 14
     project_semantic_sync_batch_size: int = 100
