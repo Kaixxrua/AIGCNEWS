@@ -2,32 +2,26 @@
 import { ref, onMounted, computed } from 'vue'
 import { api } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
-import { FileText, GitBranch, Triangle, Rocket, Newspaper, AlertTriangle } from 'lucide-vue-next'
+import { AlertTriangle } from 'lucide-vue-next'
+import {
+  MCP_TEST_SCOPE,
+  SOURCE_LIST,
+  createEmptyMcpForm,
+  formatDate,
+  formatTime,
+  getMcpAuthLabel,
+  getMcpServerInitial,
+  getMcpTransportLabel,
+  getStatusConfig,
+  type McpServerConfig,
+  type McpServerForm,
+  type PagedResult,
+  type ProviderConfig,
+  type SchedulerStatus,
+  type Task,
+} from '../features/monitor/monitorViewModel'
 
 const authStore = useAuthStore()
-
-interface Task {
-  id: number
-  task_name: string
-  status: string
-  item_count: number
-  error_msg: string | null
-  started_at: string | null
-  finished_at: string | null
-}
-
-interface SchedulerStatus {
-  running: boolean
-  job_count: number
-  jobs: Array<{ id: string; name: string; next_run_time: string | null }>
-}
-
-interface PagedResult {
-  items: Task[]
-  total: number
-  page: number
-  page_size: number
-}
 
 const tasks           = ref<Task[]>([])
 const total           = ref(0)
@@ -44,51 +38,6 @@ const successMsg      = ref('')
 const targetDate      = ref<string>(new Date().toISOString().slice(0, 10))
 const ingestingByDate = ref(false)
 
-interface ProviderConfig {
-  provider: 'openai' | 'anthropic'
-  base_url: string
-  model_name: string
-  api_key_configured: boolean
-  api_key_masked: string | null
-  updated_at: string | null
-}
-
-interface McpToolSummary {
-  name: string
-  description: string
-}
-
-interface McpServerConfig {
-  id: number
-  server_key: string
-  display_name: string
-  description: string
-  url: string
-  transport: 'streamable_http' | string
-  auth_type: 'none' | 'bearer' | string
-  auth_token_configured: boolean
-  auth_token_masked: string | null
-  enabled: boolean
-  last_test_status: string
-  last_test_message: string
-  last_test_at: string | null
-  tools: McpToolSummary[]
-  created_at: string | null
-  updated_at: string | null
-}
-
-interface McpServerForm {
-  id: number | null
-  server_key: string
-  display_name: string
-  description: string
-  url: string
-  auth_type: 'none' | 'bearer'
-  auth_token: string
-  clear_auth_token: boolean
-  enabled: boolean
-}
-
 const providerConfig = ref<ProviderConfig | null>(null)
 const providerForm = ref({
   provider: 'openai' as 'openai' | 'anthropic',
@@ -100,18 +49,6 @@ const providerForm = ref({
 const loadingProviderConfig = ref(false)
 const savingProviderConfig = ref(false)
 
-const createEmptyMcpForm = (): McpServerForm => ({
-  id: null,
-  server_key: '',
-  display_name: '',
-  description: '',
-  url: '',
-  auth_type: 'none',
-  auth_token: '',
-  clear_auth_token: false,
-  enabled: true,
-})
-
 const mcpServers = ref<McpServerConfig[]>([])
 const mcpForm = ref<McpServerForm>(createEmptyMcpForm())
 const loadingMcpServers = ref(false)
@@ -120,48 +57,12 @@ const testingMcpServerId = ref<number | null>(null)
 const deletingMcpServerId = ref<number | null>(null)
 const mcpFormMode = computed(() => (mcpForm.value.id ? 'edit' : 'create'))
 
-const MCP_TEST_SCOPE = [
-  { title: 'initialize', description: '协商协议版本与客户端信息' },
-  { title: 'initialized', description: '发送初始化完成通知' },
-  { title: 'tools/list', description: '只读取工具清单，不执行工具' },
-]
-
-interface SourceItem {
-  key: string
-  label: string
-  icon: any
-  color: string
-  textColor: string
-}
-
-const SOURCE_LIST: SourceItem[] = [
-  { key: 'arxiv',       label: 'Arxiv 论文',        icon: FileText,   color: 'bg-white',  textColor: 'text-stone-600' },
-  { key: 'github',      label: 'GitHub Trending',   icon: GitBranch,  color: 'bg-white',  textColor: 'text-stone-600' },
-  { key: 'hackernews',  label: 'Hacker News',       icon: Triangle,   color: 'bg-white',  textColor: 'text-stone-600' },
-  { key: 'producthunt', label: 'Product Hunt',      icon: Rocket,     color: 'bg-white',  textColor: 'text-stone-600' },
-  { key: 'news',        label: 'Tech News',         icon: Newspaper,  color: 'bg-white',  textColor: 'text-stone-600' },
-]
-
 const ingestingSource = ref<string | null>(null)
 const clearing        = ref(false)
 const showClearConfirm = ref(false)
 
 const isTaskRunning = computed(() => tasks.value.length > 0 && tasks.value[0]?.status === 'running')
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
-
-const formatDate = (val: string | null | undefined): string => {
-  if (!val) return '—'
-  const d = new Date(val.endsWith('Z') || val.includes('+') ? val : val + 'Z')
-  if (isNaN(d.getTime())) return val
-  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d)
-}
-
-const formatTime = (val: string | null | undefined): string => {
-  if (!val) return '—'
-  const d = new Date(val.endsWith('Z') || val.includes('+') ? val : val + 'Z')
-  if (isNaN(d.getTime())) return val
-  return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d)
-}
 
 const fetchTasks = async () => {
   try {
@@ -414,31 +315,6 @@ const clearAllData = async () => {
 
 onMounted(refreshData)
 
-const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
-  success: { label: '成功',   dot: 'bg-brand-green',  bg: 'bg-green-50',  text: 'text-green-700' },
-  succeeded: { label: '成功', dot: 'bg-brand-green', bg: 'bg-green-50', text: 'text-green-700' },
-  failed:  { label: '失败',   dot: 'bg-brand-rose',   bg: 'bg-rose-50',   text: 'text-rose-600' },
-  running: { label: '运行中', dot: 'bg-brand-blue',   bg: 'bg-blue-50',   text: 'text-blue-600' },
-  unknown: { label: '未测试', dot: 'bg-stone-300', bg: 'bg-stone-50', text: 'text-stone-500' },
-}
-
-const getStatusConfig = (status: string) =>
-  STATUS_CONFIG[(status || 'unknown').toLowerCase()] ?? { label: status, dot: 'bg-stone-400', bg: 'bg-stone-50', text: 'text-stone-500' }
-
-const getMcpTransportLabel = (transport: string) => {
-  if ((transport || '').toLowerCase() === 'streamable_http') return 'Streamable HTTP'
-  return transport || '未知传输'
-}
-
-const getMcpAuthLabel = (authType: string) => {
-  if ((authType || '').toLowerCase() === 'bearer') return 'Bearer Token'
-  return '无需鉴权'
-}
-
-const getMcpServerInitial = (server: McpServerConfig) => {
-  const value = (server.display_name || server.server_key || 'M').trim()
-  return value.slice(0, 1).toUpperCase()
-}
 </script>
 
 <template>
