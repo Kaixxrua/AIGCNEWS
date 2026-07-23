@@ -46,5 +46,26 @@ class ProjectVectorRepositoryTests(unittest.TestCase):
         self.assertFalse(hasattr(collection, "drop") and collection.drop.called)
 
 
+    def test_count_project_chunks_quotes_repo_id(self) -> None:
+        repository = ProjectVectorRepository(collection_name="test", dimension=2)
+        collection = MagicMock()
+        collection.query.return_value = [{"chunk_id": "one"}, {"chunk_id": "two"}]
+        repository.ensure_collection = MagicMock(return_value=collection)
+
+        count = repository.count_project_chunks('owner/"repo')
+
+        self.assertEqual(count, 2)
+        self.assertEqual(collection.query.call_args.kwargs["expr"], 'repo_id == "owner/\\"repo"')
+
+    def test_delete_project_is_scoped_to_repo_id(self) -> None:
+        repository = ProjectVectorRepository(collection_name="test", dimension=2)
+        collection = MagicMock()
+        repository.ensure_collection = MagicMock(return_value=collection)
+
+        repository.delete_project('owner/"repo')
+
+        collection.delete.assert_called_once_with('repo_id == "owner/\\"repo"')
+        collection.flush.assert_called_once_with()
+
 if __name__ == "__main__":
     unittest.main()

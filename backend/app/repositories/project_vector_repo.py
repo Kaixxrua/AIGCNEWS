@@ -120,6 +120,15 @@ class ProjectVectorRepository:
         collection.flush()
         return len(chunk_list)
 
+    def count_project_chunks(self, repo_id: str) -> int:
+        collection = self.ensure_collection()
+        rows = collection.query(
+            expr=f'repo_id == "{self._quoted(repo_id)}"',
+            output_fields=["chunk_id"],
+            limit=16_384,
+        )
+        return len(rows)
+
     def delete_project(self, repo_id: str) -> None:
         collection = self.ensure_collection()
         collection.delete(f'repo_id == "{self._quoted(repo_id)}"')
