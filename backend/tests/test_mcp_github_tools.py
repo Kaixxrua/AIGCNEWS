@@ -104,6 +104,13 @@ class ToolMetadataTests(unittest.TestCase):
         self.assertIn("search_papers first only", ai)
         self.assertIn("dominant deliverable", ai)
         self.assertIn("search_github_projects", ai)
+        self.assertIn("default to relevance", ai)
+        for tool_name in ("search_github_ai_projects", "get_project_library"):
+            sort_schema = tools[tool_name]["inputSchema"]["properties"]["sort"]
+            self.assertIn("relevance", json.dumps(sort_schema))
+        for tool_name in ("search_github_projects", "search_my_project_favorites"):
+            sort_schema = routes_mcp.input_schema(tool_name)["properties"]["sort"]
+            self.assertNotIn("relevance", json.dumps(sort_schema))
         for description in (generic, ai):
             self.assertIn("do not batch", description)
             self.assertIn("websearch/webfetch/bash", description)
@@ -288,7 +295,7 @@ class ProjectHandlerTests(unittest.TestCase):
                 return_value={"items": [], "total": 0, "github_total_count": 0, "queries": [], "error": "", "cache_hit": False},
             ) as fallback,
         ):
-            asyncio.run(routes_mcp._tool_search_github_ai_projects(None, {"q": "RAG"}))
+            asyncio.run(routes_mcp._tool_search_github_ai_projects(None, {"q": "RAG", "sort": "stars"}))
         self.assertEqual(fallback.call_args.kwargs["mode"], "ai")
         self.assertEqual(fallback.call_args.kwargs["min_stars"], 500)
 

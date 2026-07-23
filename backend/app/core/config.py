@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     project_semantic_sync_batch_size: int = 100
     project_semantic_sync_concurrency: int = 20
     project_semantic_github_rate_limit_reserve: int = 200
+    project_reranker_enabled: bool = False
+    project_reranker_url: str = "https://api.siliconflow.cn/v1/rerank"
+    project_reranker_model_name: str = "Pro/BAAI/bge-reranker-v2-m3"
+    project_reranker_timeout_seconds: float = 1.0
+    project_reranker_candidate_limit: int = 20
+    project_reranker_min_candidates: int = 5
 
     neo4j_uri: str = "bolt://localhost:7688"
     neo4j_username: str = "neo4j"

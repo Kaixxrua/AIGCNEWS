@@ -51,6 +51,42 @@ class ProjectSemanticSearchTests(unittest.TestCase):
 
         factory.assert_called_once_with()
 
+    def test_bilingual_variants_are_fused_by_reciprocal_rank(self) -> None:
+        vectors = MagicMock()
+        vectors.search_repo_ids.side_effect = [
+            [
+                semantic.ProjectSemanticHit("owner/a", 0.9),
+                semantic.ProjectSemanticHit("owner/b", 0.8),
+            ],
+            [
+                semantic.ProjectSemanticHit("owner/b", 0.95),
+                semantic.ProjectSemanticHit("owner/c", 0.7),
+            ],
+        ]
+        embeddings = MagicMock()
+        embeddings.embed_query.side_effect = [[0.1, 0.2], [0.3, 0.4]]
+        search = semantic.ProjectSemanticSearch(vectors=vectors, embeddings=embeddings)
+
+        with patch.object(semantic.settings, "project_semantic_search_enabled", True):
+            hits = search.search_repo_ids("智能体工作流")
+
+        self.assertEqual([hit.repo_id for hit in hits], ["owner/b", "owner/a", "owner/c"])
+        self.assertEqual(embeddings.embed_query.call_count, 2)
+        self.assertEqual(vectors.search_repo_ids.call_count, 2)
+
+    def test_rrf_deduplicates_each_ranking_and_breaks_ties_by_repo_id(self) -> None:
+        rankings = [
+            [
+                semantic.ProjectSemanticHit("owner/b", 0.9),
+                semantic.ProjectSemanticHit("owner/b", 0.8),
+            ],
+            [semantic.ProjectSemanticHit("owner/a", 0.9)],
+        ]
+
+        hits = semantic.reciprocal_rank_fusion(rankings, rank_constant=60, limit=10)
+
+        self.assertEqual([hit.repo_id for hit in hits], ["owner/a", "owner/b"])
+
     def test_warmup_uses_minimal_vector_search(self) -> None:
         vectors = MagicMock()
         embeddings = MagicMock()

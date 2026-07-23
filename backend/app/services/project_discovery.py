@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from typing import Any, Literal
 
 from backend.app.core.config import settings
 from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
+from backend.app.services.project_reranker import get_project_reranker
 from backend.app.services.project_semantic_search import get_project_semantic_search
 from backend.app.services.search_semantics import normalize_search_query
 
 logger = logging.getLogger(__name__)
 
 PROJECT_FALLBACK_POLICY = "local_first_github_only_when_semantics_preserved"
-PROJECT_SORT_CHOICES = {"hot", "stars", "updated", "recent", "name"}
+PROJECT_SORT_CHOICES = {"relevance", "hot", "stars", "updated", "recent", "name"}
 PROJECT_SCOPE_CHOICES = {"all", "today", "recommended"}
-_FALLBACK_SORTS = {"stars", "updated"}
+_FALLBACK_SORTS = {"relevance", "stars", "updated"}
 
 
 def _clipped(value: Any, limit: int) -> str:
@@ -61,12 +63,55 @@ def public_project_item(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def resolve_project_sort(scope: str, requested_sort: str | None) -> str:
+def _declared_callable(value: Any, name: str) -> Any | None:
+    try:
+        inspect.getattr_static(value, name)
+    except AttributeError:
+        return None
+    candidate = getattr(value, name, None)
+    return candidate if callable(candidate) else None
+
+
+def _fuse_project_candidate_ids(
+    lexical_repo_ids: list[str],
+    semantic_hits: list[Any],
+    *,
+    rank_constant: int = 60,
+    limit: int = 200,
+) -> list[str]:
+    scores: dict[str, float] = {}
+    best_rank: dict[str, int] = {}
+    for weight, ranking in (
+        (0.45, lexical_repo_ids),
+        (0.55, [str(hit.repo_id) for hit in semantic_hits if getattr(hit, "repo_id", "")]),
+    ):
+        seen: set[str] = set()
+        for rank, repo_id in enumerate(ranking, start=1):
+            repo_id = str(repo_id or "").strip()
+            if not repo_id or repo_id in seen:
+                continue
+            seen.add(repo_id)
+            scores[repo_id] = scores.get(repo_id, 0.0) + weight / (rank_constant + rank)
+            best_rank[repo_id] = min(best_rank.get(repo_id, rank), rank)
+    return sorted(scores, key=lambda repo_id: (-scores[repo_id], best_rank[repo_id], repo_id))[:limit]
+
+
+def resolve_project_sort(
+    scope: str,
+    requested_sort: str | None,
+    *,
+    has_query: bool = False,
+    prefer_relevance: bool = False,
+) -> str:
     clean_scope = scope if scope in PROJECT_SCOPE_CHOICES else "all"
     if clean_scope == "today":
         return "hot"
     if requested_sort in PROJECT_SORT_CHOICES:
+        if requested_sort == "relevance" and not has_query:
+            return "recent" if clean_scope == "recommended" else "stars"
         return requested_sort
+    if has_query and prefer_relevance:
+        return "relevance"
     return "recent" if clean_scope == "recommended" else "stars"
 
 
@@ -84,6 +129,7 @@ async def search_projects(
     repository_factory: Any | None = None,
     fallback_search: Any = search_github_projects_fallback,
     semantic_search_factory: Any | None = None,
+    reranker_factory: Any | None = None,
 ) -> dict[str, Any]:
     generic = mode == "generic"
     query = normalize_search_query(str(query or ""))[:120]
@@ -93,7 +139,12 @@ async def search_projects(
     category = "" if generic else str(category or "").strip()[:64]
     subcategory = "" if generic else str(subcategory or "").strip()[:64]
     scope = "all" if generic else (scope if scope in PROJECT_SCOPE_CHOICES else "all")
-    effective_sort = resolve_project_sort(scope, sort)
+    effective_sort = resolve_project_sort(
+        scope,
+        sort,
+        has_query=bool(query),
+        prefer_relevance=mode == "ai",
+    )
     page = max(1, int(page or 1))
     limit = max(1, min(int(limit or 10), 20))
     min_stars = 50 if generic else 500
@@ -103,21 +154,133 @@ async def search_projects(
         if repository_factory is not None
         else get_project_catalog_repository()
     )
-    result = await asyncio.to_thread(
-        repository.list_projects,
-        source="github",
-        scope=scope,
-        category=category,
-        subcategory=subcategory,
-        q=query,
-        language=language,
-        page=page,
-        page_size=limit,
-        sort=effective_sort,
-        min_stars=min_stars,
-        enriched_only=True,
-        user_id=None,
+    hybrid_attempted = False
+    result: dict[str, Any]
+    lexical_candidate_search = _declared_callable(
+        repository,
+        "find_lexical_candidate_repo_ids",
     )
+    if mode == "ai" and query and effective_sort == "relevance" and callable(lexical_candidate_search):
+        hybrid_attempted = True
+        lexical_task = asyncio.to_thread(
+            lexical_candidate_search,
+            q=query,
+            category=category,
+            subcategory=subcategory,
+            language=language,
+            min_stars=min_stars,
+            enriched_only=True,
+            limit=150,
+        )
+        semantic_task = None
+        if settings.project_semantic_search_enabled:
+            semantic_search = (
+                semantic_search_factory()
+                if semantic_search_factory is not None
+                else get_project_semantic_search()
+            )
+            semantic_task = asyncio.wait_for(
+                asyncio.to_thread(semantic_search.search_repo_ids, query),
+                timeout=max(0.1, float(settings.project_semantic_query_timeout_seconds)),
+            )
+        tasks = [lexical_task, *([semantic_task] if semantic_task is not None else [])]
+        candidate_results = await asyncio.gather(*tasks, return_exceptions=True)
+        lexical_repo_ids = candidate_results[0] if not isinstance(candidate_results[0], Exception) else []
+        semantic_hits = (
+            candidate_results[1]
+            if len(candidate_results) > 1 and not isinstance(candidate_results[1], Exception)
+            else []
+        )
+        candidate_repo_ids = _fuse_project_candidate_ids(
+            list(lexical_repo_ids),
+            list(semantic_hits),
+        )
+        if candidate_repo_ids:
+            result = await asyncio.to_thread(
+                repository.list_projects,
+                source="github",
+                scope=scope,
+                category=category,
+                subcategory=subcategory,
+                q="",
+                language=language,
+                page=page,
+                page_size=limit,
+                sort="relevance",
+                min_stars=min_stars,
+                enriched_only=True,
+                user_id=None,
+                candidate_repo_ids=candidate_repo_ids,
+            )
+            if bool(getattr(settings, "project_reranker_enabled", False)):
+                rerank_limit = max(
+                    limit,
+                    min(int(settings.project_reranker_candidate_limit), 20),
+                )
+                rerank_result = await asyncio.to_thread(
+                    repository.list_projects,
+                    source="github",
+                    scope=scope,
+                    category=category,
+                    subcategory=subcategory,
+                    q="",
+                    language=language,
+                    page=1,
+                    page_size=rerank_limit,
+                    sort="relevance",
+                    min_stars=min_stars,
+                    enriched_only=True,
+                    user_id=None,
+                    candidate_repo_ids=candidate_repo_ids,
+                )
+                reranker = (
+                    reranker_factory()
+                    if reranker_factory is not None
+                    else get_project_reranker()
+                )
+                reranked_prefix = await reranker.rerank_repo_ids(
+                    query,
+                    list(rerank_result.get("items") or []),
+                )
+                reranked_set = set(reranked_prefix)
+                ranked_repo_ids = reranked_prefix + [
+                    repo_id for repo_id in candidate_repo_ids if repo_id not in reranked_set
+                ]
+                if ranked_repo_ids:
+                    result = await asyncio.to_thread(
+                        repository.list_projects,
+                        source="github",
+                        scope=scope,
+                        category=category,
+                        subcategory=subcategory,
+                        q="",
+                        language=language,
+                        page=page,
+                        page_size=limit,
+                        sort="relevance",
+                        min_stars=min_stars,
+                        enriched_only=True,
+                        user_id=None,
+                        candidate_repo_ids=ranked_repo_ids,
+                    )
+        else:
+            result = {"items": [], "total": 0}
+    else:
+        result = await asyncio.to_thread(
+            repository.list_projects,
+            source="github",
+            scope=scope,
+            category=category,
+            subcategory=subcategory,
+            q=query,
+            language=language,
+            page=page,
+            page_size=limit,
+            sort=effective_sort,
+            min_stars=min_stars,
+            enriched_only=True,
+            user_id=None,
+        )
     items = [public_project_item(item) for item in result.get("items") or []]
     total = int(result.get("total") or 0)
     base = {
@@ -145,7 +308,7 @@ async def search_projects(
     if total > 0:
         return base
 
-    if mode == "ai" and query and settings.project_semantic_search_enabled:
+    if not hybrid_attempted and mode == "ai" and query and settings.project_semantic_search_enabled:
         try:
             semantic_search = (
                 semantic_search_factory()
@@ -198,6 +361,7 @@ async def search_projects(
     if effective_sort not in _FALLBACK_SORTS:
         return {**base, "fallback_skipped_reason": "sort_not_equivalent_on_github_search"}
 
+    fallback_sort = "stars" if effective_sort == "relevance" else effective_sort
     try:
         fallback = await asyncio.to_thread(
             fallback_search,
@@ -205,7 +369,7 @@ async def search_projects(
             category="",
             subcategory="",
             language=language,
-            sort=effective_sort,
+            sort=fallback_sort,
             limit=limit,
             min_stars=min_stars,
             mode=mode,

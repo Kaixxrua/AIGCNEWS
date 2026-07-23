@@ -2,7 +2,7 @@ import asyncio
 import sys
 import types
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 repository_module = types.ModuleType("backend.app.repositories.mysql_repo")
 repository_module.MySQLRepository = MagicMock
@@ -15,6 +15,8 @@ config_module.settings = types.SimpleNamespace(
     mcp_github_fallback_timeout_seconds=8.0,
     project_semantic_search_enabled=False,
     project_semantic_query_timeout_seconds=6.0,
+    project_reranker_enabled=False,
+    project_reranker_candidate_limit=20,
     github_token="",
 )
 sys.modules.setdefault("backend.app.core.config", config_module)
@@ -151,6 +153,110 @@ class ProjectDiscoveryTests(unittest.TestCase):
         self.assertEqual(repo.list_projects.call_args_list[1].kwargs["q"], "")
         fallback.assert_not_called()
 
+    def test_relevance_search_fuses_lexical_and_semantic_candidates(self) -> None:
+        class HybridRepository:
+            def __init__(self) -> None:
+                self.find_lexical_candidate_repo_ids = MagicMock(
+                    return_value=["owner/lexical", "owner/shared"]
+                )
+                self.list_projects = MagicMock(
+                    return_value={
+                        "items": [{"id": "1", "full_name": "owner/shared", "stars": 800}],
+                        "total": 1,
+                    }
+                )
+
+        repo = HybridRepository()
+        semantic = MagicMock()
+        semantic.search_repo_ids.return_value = [
+            types.SimpleNamespace(repo_id="owner/semantic", score=0.9),
+            types.SimpleNamespace(repo_id="owner/shared", score=0.8),
+        ]
+        project_discovery.settings.project_semantic_search_enabled = True
+        try:
+            result = asyncio.run(
+                project_discovery.search_projects(
+                    query="智能体工作流",
+                    mode="ai",
+                    repository_factory=lambda: repo,
+                    semantic_search_factory=lambda: semantic,
+                )
+            )
+        finally:
+            project_discovery.settings.project_semantic_search_enabled = False
+
+        call = repo.list_projects.call_args.kwargs
+        self.assertEqual(call["q"], "")
+        self.assertEqual(call["sort"], "relevance")
+        self.assertEqual(
+            call["candidate_repo_ids"],
+            ["owner/shared", "owner/semantic", "owner/lexical"],
+        )
+        self.assertEqual(result["sort"], "relevance")
+
+    def test_optional_reranker_reorders_hybrid_prefix(self) -> None:
+        class HybridRepository:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def find_lexical_candidate_repo_ids(self, **_kwargs):
+                return ["owner/a", "owner/b"]
+
+            def list_projects(self, **kwargs):
+                self.calls.append(kwargs)
+                ordered = kwargs["candidate_repo_ids"]
+                return {
+                    "items": [
+                        {"full_name": repo_id, "description": repo_id, "stars": 800}
+                        for repo_id in ordered[: kwargs["page_size"]]
+                    ],
+                    "total": len(ordered),
+                }
+
+        repo = HybridRepository()
+        reranker = MagicMock()
+        reranker.rerank_repo_ids = AsyncMock(return_value=["owner/b", "owner/a"])
+        project_discovery.settings.project_reranker_enabled = True
+        try:
+            result = asyncio.run(
+                project_discovery.search_projects(
+                    query="agent learning",
+                    mode="ai",
+                    repository_factory=lambda: repo,
+                    reranker_factory=lambda: reranker,
+                )
+            )
+        finally:
+            project_discovery.settings.project_reranker_enabled = False
+
+        self.assertEqual(
+            [item["full_name"] for item in result["items"]],
+            ["owner/b", "owner/a"],
+        )
+        self.assertEqual(repo.calls[-1]["candidate_repo_ids"], ["owner/b", "owner/a"])
+
+    def test_default_relevance_miss_uses_bounded_github_fallback(self) -> None:
+        class HybridRepository:
+            def find_lexical_candidate_repo_ids(self, **_kwargs):
+                return []
+
+            def list_projects(self, **_kwargs):
+                return {"items": [], "total": 0}
+
+        fallback = MagicMock(return_value={"items": [], "total": 0})
+        result = asyncio.run(
+            project_discovery.search_projects(
+                query="agent learning",
+                mode="ai",
+                repository_factory=HybridRepository,
+                fallback_search=fallback,
+            )
+        )
+
+        self.assertTrue(result["fallback_used"])
+        self.assertEqual(result["sort"], "relevance")
+        self.assertEqual(fallback.call_args.kwargs["sort"], "stars")
+
     def test_semantic_failure_preserves_github_fallback(self) -> None:
         repo = MagicMock()
         repo.list_projects.return_value = {"items": [], "total": 0}
@@ -163,6 +269,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
                 project_discovery.search_projects(
                     query="agent tooling",
                     mode="ai",
+                    sort="stars",
                     repository_factory=lambda: repo,
                     semantic_search_factory=lambda: semantic,
                     fallback_search=fallback,
@@ -196,7 +303,34 @@ class ProjectDiscoveryTests(unittest.TestCase):
 
     def test_scope_defaults_resolve_consistently(self) -> None:
         self.assertEqual(project_discovery.resolve_project_sort("all", None), "stars")
-        self.assertEqual(project_discovery.resolve_project_sort("today", "name"), "hot")
+        self.assertEqual(
+            project_discovery.resolve_project_sort(
+                "all",
+                None,
+                has_query=True,
+                prefer_relevance=True,
+            ),
+            "relevance",
+        )
+        self.assertEqual(
+            project_discovery.resolve_project_sort(
+                "all",
+                "stars",
+                has_query=True,
+                prefer_relevance=True,
+            ),
+            "stars",
+        )
+        self.assertEqual(
+            project_discovery.resolve_project_sort(
+                "all",
+                "relevance",
+                has_query=False,
+                prefer_relevance=True,
+            ),
+            "stars",
+        )
+        self.assertEqual(project_discovery.resolve_project_sort("today", "relevance"), "hot")
         self.assertEqual(project_discovery.resolve_project_sort("recommended", None), "recent")
 
 

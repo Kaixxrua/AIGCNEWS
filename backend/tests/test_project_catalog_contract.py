@@ -118,6 +118,9 @@ def _without_annotations(function: Any) -> inspect.Signature:
 
 
 def test_mysql_catalog_read_signatures_are_frozen() -> None:
+    candidate_signature = _without_annotations(ProjectCatalogRepository.find_lexical_candidate_repo_ids)
+    assert _without_annotations(MySQLProjectCatalogRepository.find_lexical_candidate_repo_ids) == candidate_signature
+    assert _without_annotations(MySQLRepository.find_lexical_candidate_repo_ids) == candidate_signature
     list_signature = _without_annotations(ScriptedCatalogRepository.list_projects)
     categories_signature = _without_annotations(ScriptedCatalogRepository.get_project_categories)
 
@@ -177,8 +180,11 @@ def test_semantic_candidate_hydration_preserves_catalog_order_and_contract() -> 
 
     assert [item["id"] for item in result["items"]] == case["expected_ids"]
     assert repository.calls[0]["q"] == "local knowledge"
+    assert repository.calls[0]["sort"] == "relevance"
     assert repository.calls[1]["q"] == ""
+    assert repository.calls[1]["sort"] == "relevance"
     assert repository.calls[1]["candidate_repo_ids"] == case["candidate_repo_ids"]
+    assert result["sort"] == "relevance"
     assert result["result_origin"] == "aigc_news_local"
     assert result["fallback_used"] is False
     fallback.assert_not_called()
@@ -214,6 +220,26 @@ def test_lossy_fallback_paths_are_frozen(search_request: dict[str, Any], skip_re
     fallback.assert_not_called()
 
 
+def test_default_relevance_miss_preserves_github_fallback() -> None:
+    fixture = load_catalog_cases()
+    repository = ScriptedCatalogRepository(fixture, [{"project_keys": [], "total": 0}])
+    fallback = MagicMock(return_value={"items": [], "total": 0})
+
+    with patch.object(project_discovery.settings, "project_semantic_search_enabled", False):
+        result = asyncio.run(
+            project_discovery.search_projects(
+                query="agent learning",
+                mode="ai",
+                repository_factory=lambda: repository,
+                fallback_search=fallback,
+            )
+        )
+
+    assert result["sort"] == "relevance"
+    assert result["fallback_used"] is True
+    assert fallback.call_args.kwargs["sort"] == "stars"
+
+
 def test_semantic_timeout_preserves_github_fallback() -> None:
     fixture = load_catalog_cases()
     repository = ScriptedCatalogRepository(fixture, [{"project_keys": [], "total": 0}])
@@ -231,6 +257,7 @@ def test_semantic_timeout_preserves_github_fallback() -> None:
             project_discovery.search_projects(
                 query="agent runtime",
                 mode="ai",
+                sort="stars",
                 repository_factory=lambda: repository,
                 semantic_search_factory=MagicMock(),
                 fallback_search=fallback,

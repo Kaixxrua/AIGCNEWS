@@ -7,7 +7,7 @@ from typing import Any
 
 from backend.app.core.config import settings
 from backend.app.repositories.project_vector_repo import ProjectVectorRepository
-from backend.app.services.search_semantics import normalize_search_query
+from backend.app.services.search_semantics import build_project_search_intent, normalize_search_query
 
 logger = logging.getLogger(__name__)
 _WARMUP_QUERY = "AI developer tools and open source projects"
@@ -17,6 +17,26 @@ _WARMUP_QUERY = "AI developer tools and open source projects"
 class ProjectSemanticHit:
     repo_id: str
     score: float
+
+
+def reciprocal_rank_fusion(
+    rankings: list[list[ProjectSemanticHit]],
+    *,
+    rank_constant: int = 60,
+    limit: int,
+) -> list[ProjectSemanticHit]:
+    scores: dict[str, float] = {}
+    best_ranks: dict[str, int] = {}
+    for ranking in rankings:
+        seen: set[str] = set()
+        for rank, hit in enumerate(ranking, start=1):
+            if not hit.repo_id or hit.repo_id in seen:
+                continue
+            seen.add(hit.repo_id)
+            scores[hit.repo_id] = scores.get(hit.repo_id, 0.0) + 1.0 / (rank_constant + rank)
+            best_ranks[hit.repo_id] = min(best_ranks.get(hit.repo_id, rank), rank)
+    ordered = sorted(scores, key=lambda repo_id: (-scores[repo_id], best_ranks[repo_id], repo_id))
+    return [ProjectSemanticHit(repo_id=repo_id, score=scores[repo_id]) for repo_id in ordered[:limit]]
 
 
 class ProjectSemanticSearch:
@@ -42,17 +62,26 @@ class ProjectSemanticSearch:
     def search_repo_ids(self, query: str) -> list[ProjectSemanticHit]:
         if not settings.project_semantic_search_enabled:
             return []
-        query = normalize_search_query(query)[:120]
-        if not query:
+        intent = build_project_search_intent(query)
+        if not intent.semantic_queries:
             return []
-        vector = list(self._get_embeddings().embed_query(query))
-        hits = self.vectors.search_repo_ids(
-            vector,
-            chunk_limit=settings.project_semantic_chunk_limit,
-            repo_limit=settings.project_semantic_repo_limit,
-            min_score=settings.project_semantic_min_score,
+        rankings: list[list[ProjectSemanticHit]] = []
+        embeddings = self._get_embeddings()
+        for semantic_query in intent.semantic_queries:
+            vector = list(embeddings.embed_query(semantic_query))
+            hits = self.vectors.search_repo_ids(
+                vector,
+                chunk_limit=settings.project_semantic_chunk_limit,
+                repo_limit=settings.project_semantic_repo_limit,
+                min_score=settings.project_semantic_min_score,
+            )
+            rankings.append([ProjectSemanticHit(repo_id=hit.repo_id, score=hit.score) for hit in hits])
+        if len(rankings) == 1:
+            return rankings[0]
+        return reciprocal_rank_fusion(
+            rankings,
+            limit=settings.project_semantic_repo_limit,
         )
-        return [ProjectSemanticHit(repo_id=hit.repo_id, score=hit.score) for hit in hits]
 
     def warmup(self) -> None:
         vector = list(self._get_embeddings().embed_query(_WARMUP_QUERY))

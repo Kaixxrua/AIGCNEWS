@@ -225,7 +225,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "it with native WebSearch/WebFetch/Bash: inspect the MCP result first. Use a host tool only if this call fails, returns "
             "no usable items, or lacks a specific fact required by the question, and then query only that "
             "missing detail. Do not call it for narrow edits, styling, renames, clear bugs, or isolated function/component changes "
-            "merely because AI terms appear. It supports language filters, categories, station recommendations, and star rankings. "
+            "merely because AI terms appear. Non-empty queries default to relevance ranking; explicit stars, hot, updated, recent, "
+            "or name sorts remain authoritative, and today scope always uses hot. It supports language filters, categories, and station recommendations. "
             "For non-AI GitHub or open-source software, call search_github_projects instead. Use returned AIGC_NEWS fields such as "
             "description_zh, tags, categories, language, stars, daily_star_growth, hot_score, and URL before inspecting repositories. "
             "If local results are zero, this tool may perform a bounded read-only AI-focused GitHub Search fallback labeled github_api_fallback."
@@ -237,8 +238,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Legacy compatibility entry for the curated/enriched AIGC_NEWS GitHub AI project library with local-first behavior. "
             "Existing clients may keep using it. New requests should use search_github_ai_projects for AI projects or "
-            "search_github_projects for non-AI GitHub/open-source software. sort=hot uses exact consecutive daily snapshots "
-            "when available; direct AI-focused GitHub fallback is attempted only after local results are zero."
+            "search_github_projects for non-AI GitHub/open-source software. Non-empty queries default to relevance; sort=hot uses "
+            "exact consecutive daily snapshots when available. Direct AI-focused GitHub fallback is attempted only after local results are zero."
         ),
         "inputSchema": input_schema("get_project_library"),
     },
@@ -904,7 +905,7 @@ Local-first search policy:
 
 Suggested flow:
 1. If category/subcategory is unclear, read `aigc-news://projects/categories` or call `get_project_categories`.
-2. Call `search_github_projects` for generic software, or `search_github_ai_projects` for AI projects, with concise `q`, relevant filters, sort `stars` or `hot`, and limit 5-10.
+2. Call `search_github_projects` for generic software, or `search_github_ai_projects` for AI projects, with concise `q`, relevant filters, and limit 5-10. AI queries default to `relevance`; use `stars` or `hot` only when the user explicitly wants popularity or trend order.
 3. If `fallback_used` is false or `local_total` is positive, answer from the curated AIGC_NEWS local project library without re-checking every GitHub repo.
 4. If local metadata is insufficient, explain what is missing; only then inspect the specific returned repo(s) needed for that missing detail.
 5. If `fallback_used` is true and `result_origin` is `github_api_fallback`, clearly label those results as direct GitHub fallback rather than curated local catalog entries.

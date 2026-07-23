@@ -15,6 +15,7 @@ SourceChoice = Literal["all", "arxiv", "github", "news", "producthunt", "hackern
 PeriodChoice = Literal["daily", "weekly", "monthly"]
 ProjectScope = Literal["all", "today", "recommended"]
 ProjectSort = Literal["hot", "stars", "updated", "recent", "name"]
+ProjectDiscoverySort = Literal["relevance", "hot", "stars", "updated", "recent", "name"]
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -79,9 +80,12 @@ class SearchGitHubAIProjectsInput(McpInputModel):
     subcategory: StrictStr = Field(default="", max_length=64)
     language: StrictStr = Field(default="", max_length=64)
     scope: ProjectScope = "all"
-    sort: ProjectSort | None = Field(
+    sort: ProjectDiscoverySort | None = Field(
         default=None,
-        description="Omit to use the scope default: all=stars, today=hot, recommended=recent. Today always uses hot.",
+        description=(
+            "Omit to rank non-empty queries by relevance; queryless defaults are all=stars, "
+            "today=hot, recommended=recent. Today always uses hot."
+        ),
     )
     page: StrictInt = Field(default=1, ge=1)
     limit: StrictInt = Field(default=10, ge=1, le=20)
