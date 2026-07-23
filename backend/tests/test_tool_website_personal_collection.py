@@ -212,7 +212,7 @@ class PersonalWebsiteQueryTests(unittest.TestCase):
         repository._connect = MagicMock(return_value=connection)
         return repository, connection
 
-    def test_personal_collection_accepts_only_current_users_override(self) -> None:
+    def test_personal_collection_accepts_current_users_link_without_enrichment(self) -> None:
         repository, connection = self._repository()
 
         with patch(
@@ -226,7 +226,12 @@ class PersonalWebsiteQueryTests(unittest.TestCase):
             )
 
         sql, params = connection.executions[0]
-        self.assertIn("OR uo.id IS NOT NULL", sql)
+        self.assertIn(
+            "we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' "
+            "COLLATE utf8mb4_unicode_ci OR uo.id IS NOT NULL OR utw.id IS NOT NULL",
+            sql,
+        )
+        self.assertIn("utw.user_id = %s", sql)
         self.assertIn("uo.user_id = %s", sql)
         self.assertIn("(pf.id IS NOT NULL OR utw.id IS NOT NULL)", sql)
         self.assertEqual(params[:3], (7, 7, 7))
@@ -243,6 +248,8 @@ class PersonalWebsiteQueryTests(unittest.TestCase):
         sql, _params = connection.executions[0]
         self.assertIn("we.status", sql)
         self.assertNotIn("OR uo.id IS NOT NULL", sql)
+        self.assertNotIn("OR utw.id IS NOT NULL", sql)
+        self.assertNotIn("utw.user_id = %s", sql)
         self.assertIn("w.visibility", sql)
 
     def test_github_collection_still_requires_global_enrichment(self) -> None:

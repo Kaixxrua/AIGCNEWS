@@ -3515,7 +3515,7 @@ class MySQLRepository:
             github_filters.append("ge.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci")
             if favorites_only:
                 website_filters.append(
-                    "(we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci OR uo.id IS NOT NULL)"
+                    "(we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci OR uo.id IS NOT NULL OR utw.id IS NOT NULL)"
                 )
             else:
                 website_filters.append("we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci")
