@@ -74,7 +74,10 @@ class DocumentQueryTests(unittest.TestCase):
         connection = MagicMock()
         connection.cursor.return_value.__enter__.return_value = cursor
         repository = object.__new__(MySQLRepository)
-        repository._connect = MagicMock(return_value=connection)
+        repository._documents = MagicMock()
+        repository._documents.search_documents.return_value = [
+            {"id": "doc-1", "title": "Agent"}
+        ]
 
         rows = repository.search_documents(
             "我想要学习Agent相关的内容，帮我找一点资料进行学习",
@@ -82,15 +85,11 @@ class DocumentQueryTests(unittest.TestCase):
         )
 
         self.assertEqual(rows, [{"id": "doc-1", "title": "Agent"}])
-        sql, params = cursor.execute.call_args_list[-1].args
-        normalized_sql = " ".join(sql.split())
-        self.assertIn("COALESCE(title, '') LIKE %s ESCAPE '='", normalized_sql)
-        self.assertIn("COALESCE(summary, '') LIKE %s ESCAPE '='", normalized_sql)
-        self.assertIn("COALESCE(tags, '') LIKE %s ESCAPE '='", normalized_sql)
-        self.assertIn("created_at DESC, id ASC", normalized_sql)
-        self.assertIn("%Agent%", params)
-        self.assertEqual(params[-2:], (100, 0))
-        connection.close.assert_called_once()
+        repository._documents.search_documents.assert_called_once_with(
+            "我想要学习Agent相关的内容，帮我找一点资料进行学习",
+            500,
+            source=None,
+        )
 
 
 class PaperRouteTests(unittest.TestCase):
