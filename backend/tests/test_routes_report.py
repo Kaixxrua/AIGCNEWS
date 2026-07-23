@@ -11,6 +11,7 @@ from backend.app.repositories.briefing_repository import (
     BriefingReader,
     BriefingSubscriptionRepository,
 )
+from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.services.email_service import EmailService
 
 
@@ -132,6 +133,28 @@ class ReportBriefingRepositoryTests(unittest.TestCase):
             period="monthly",
             date_str="2026-07-01",
         )
+
+
+class ReportEvaluationRepositoryTests(unittest.TestCase):
+    def test_summary_uses_repository(self) -> None:
+        repository = MagicMock(spec=EvaluationRepository)
+        repository.get_eval_summary.return_value = {"total": 2}
+
+        result = asyncio.run(routes_report.eval_summary(repository=repository))
+
+        self.assertEqual(result, {"total": 2})
+        repository.get_eval_summary.assert_called_once_with()
+
+    def test_list_uses_repository_and_preserves_response(self) -> None:
+        repository = MagicMock(spec=EvaluationRepository)
+        repository.list_evaluations.return_value = [{"id": 2}]
+
+        result = asyncio.run(
+            routes_report.eval_list(limit=7, repository=repository)
+        )
+
+        self.assertEqual(result, {"items": [{"id": 2}], "total": 1})
+        repository.list_evaluations.assert_called_once_with(limit=7)
 
 
 class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):

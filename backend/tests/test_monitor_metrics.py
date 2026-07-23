@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from backend.app.monitoring.metrics import _task_summary, collect_metrics
+from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.task_repository import (
     MonitorMetricsRepository,
     RecentTaskReader,
@@ -54,19 +55,20 @@ class MonitorMetricsTests(unittest.TestCase):
     def test_collect_metrics_uses_injected_repository_for_all_reads(self) -> None:
         repository = MagicMock(spec=MonitorMetricsRepository)
         task_reader = MagicMock(spec=RecentTaskReader)
+        evaluation_reader = MagicMock(spec=EvaluationSummaryReader)
         task_reader.get_recent_tasks.return_value = []
-        repository.get_eval_summary.return_value = {"score": 0.9}
+        evaluation_reader.get_eval_summary.return_value = {"score": 0.9}
         repository.get_document_count.return_value = 12
         repository.list_briefings.return_value = [{"id": 1}, {"id": 2}]
 
         with patch(
             "backend.app.monitoring.metrics.MySQLRepository"
         ) as repository_type:
-            result = collect_metrics(repository, task_reader)
+            result = collect_metrics(repository, task_reader, evaluation_reader)
 
         repository_type.assert_not_called()
         task_reader.get_recent_tasks.assert_called_once_with(limit=100)
-        repository.get_eval_summary.assert_called_once_with()
+        evaluation_reader.get_eval_summary.assert_called_once_with()
         repository.get_document_count.assert_called_once_with()
         repository.list_briefings.assert_called_once_with(limit=1000)
         self.assertEqual(result["document_count"], 12)
@@ -76,9 +78,11 @@ class MonitorMetricsTests(unittest.TestCase):
     def test_collect_metrics_uses_default_repository_task_component(self) -> None:
         repository = MagicMock(spec=MonitorMetricsRepository)
         task_reader = MagicMock(spec=RecentTaskReader)
+        evaluation_reader = MagicMock(spec=EvaluationSummaryReader)
         task_reader.get_recent_tasks.return_value = []
+        evaluation_reader.get_eval_summary.return_value = {}
         repository.ingestion_tasks = task_reader
-        repository.get_eval_summary.return_value = {}
+        repository.evaluations = evaluation_reader
         repository.get_document_count.return_value = 0
         repository.list_briefings.return_value = []
 
@@ -89,16 +93,18 @@ class MonitorMetricsTests(unittest.TestCase):
             collect_metrics()
 
         task_reader.get_recent_tasks.assert_called_once_with(limit=100)
+        evaluation_reader.get_eval_summary.assert_called_once_with()
 
     def test_collect_metrics_preserves_independent_error_fallbacks(self) -> None:
         repository = MagicMock(spec=MonitorMetricsRepository)
         task_reader = MagicMock(spec=RecentTaskReader)
+        evaluation_reader = MagicMock(spec=EvaluationSummaryReader)
         task_reader.get_recent_tasks.side_effect = RuntimeError("tasks")
-        repository.get_eval_summary.side_effect = RuntimeError("eval")
+        evaluation_reader.get_eval_summary.side_effect = RuntimeError("eval")
         repository.get_document_count.side_effect = RuntimeError("documents")
         repository.list_briefings.side_effect = RuntimeError("briefings")
 
-        result = collect_metrics(repository, task_reader)
+        result = collect_metrics(repository, task_reader, evaluation_reader)
 
         self.assertEqual(result["tasks"], {"error": "tasks"})
         self.assertEqual(result["rag_evaluation"], {"error": "eval"})

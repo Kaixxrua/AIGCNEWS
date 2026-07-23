@@ -14,13 +14,14 @@ from pydantic import BaseModel
 from backend.app.api.dependencies import (
     get_briefing_repository,
     get_briefing_subscription_repository,
+    get_evaluation_repository,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.repositories.briefing_repository import (
     BriefingReader,
     BriefingSubscriptionRepository,
 )
-from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.email_service import EmailService, build_email_service
 
@@ -234,22 +235,25 @@ async def get_briefing(briefing_id: int):
 
 
 @router.get("/report/eval/summary")
-async def eval_summary():
+async def eval_summary(
+    repository: EvaluationRepository = Depends(get_evaluation_repository),
+):
     """Return aggregated RAG evaluation statistics."""
     from backend.app.services.evaluation.rag_metrics import RAGMetricsService
 
-    svc = RAGMetricsService()
+    svc = RAGMetricsService(repository)
     return svc.get_summary()
 
 
 @router.get("/report/eval/list")
 async def eval_list(
     limit: int = Query(default=50, ge=1, le=500),
+    repository: EvaluationRepository = Depends(get_evaluation_repository),
 ):
     """Return the most recent RAG evaluation records."""
     from backend.app.services.evaluation.rag_metrics import RAGMetricsService
 
-    svc = RAGMetricsService()
+    svc = RAGMetricsService(repository)
     items = svc.list_evaluations(limit=limit)
     return {"items": items, "total": len(items)}
 

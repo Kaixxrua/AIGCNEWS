@@ -4,8 +4,12 @@ import asyncio
 
 from fastapi import APIRouter, Depends
 
-from backend.app.api.dependencies import get_ingestion_task_repository
+from backend.app.api.dependencies import (
+    get_evaluation_repository,
+    get_ingestion_task_repository,
+)
 from backend.app.core.auth import RequireAdmin, RequireUser
+from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.task_repository import MonitorTaskRepository
 
 router = APIRouter()
@@ -21,11 +25,19 @@ async def health_check(_: dict = Depends(RequireUser)):
 
 
 @router.get("/monitor/metrics")
-async def system_metrics(_: dict = Depends(RequireUser)):
+async def system_metrics(
+    _: dict = Depends(RequireUser),
+    evaluation_reader: EvaluationSummaryReader = Depends(
+        get_evaluation_repository
+    ),
+):
     """Collect runtime metrics: uptime, document count, task stats, eval summary."""
     from backend.app.monitoring.metrics import collect_metrics
 
-    result = await asyncio.to_thread(collect_metrics)
+    result = await asyncio.to_thread(
+        collect_metrics,
+        evaluation_reader=evaluation_reader,
+    )
     return result
 
 

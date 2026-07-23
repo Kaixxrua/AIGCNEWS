@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
 
 
@@ -32,8 +33,8 @@ class RAGMetricsService:
       - subjective_score: (placeholder) always 0 unless explicitly provided
     """
 
-    def __init__(self, mysql_repo: Optional[MySQLRepository] = None) -> None:
-        self._db = mysql_repo or MySQLRepository()
+    def __init__(self, repository: Optional[EvaluationRepository] = None) -> None:
+        self._repository = repository or MySQLRepository().evaluations
 
     # ------------------------------------------------------------------
     # Core metric functions
@@ -95,12 +96,12 @@ class RAGMetricsService:
         subjective_score: float = 0.0,
     ) -> Dict[str, Any]:
         """
-        Compute all metrics, persist to SQLite, and return the result dict.
+        Compute all metrics, persist them, and return the result dict.
         """
         recall = self.compute_recall(answer, sources)
         citation = self.compute_citation_coverage(answer, sources)
 
-        eval_id = self._db.save_evaluation(
+        eval_id = self._repository.save_evaluation(
             query=query,
             answer=answer,
             sources=sources,
@@ -117,7 +118,7 @@ class RAGMetricsService:
 
     def get_summary(self) -> Dict[str, Any]:
         """Return aggregated evaluation statistics."""
-        return self._db.get_eval_summary()
+        return self._repository.get_eval_summary()
 
     def list_evaluations(self, limit: int = 50) -> List[Dict[str, Any]]:
-        return self._db.list_evaluations(limit=limit)
+        return self._repository.list_evaluations(limit=limit)

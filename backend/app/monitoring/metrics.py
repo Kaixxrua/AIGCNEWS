@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.task_repository import (
     MonitorMetricsRepository,
@@ -15,10 +16,16 @@ _START_TIME = datetime.now(timezone.utc)
 def collect_metrics(
     repository: MonitorMetricsRepository | None = None,
     task_reader: RecentTaskReader | None = None,
+    evaluation_reader: EvaluationSummaryReader | None = None,
 ) -> Dict[str, Any]:
     """Collect runtime metrics for the monitor dashboard."""
     db = repository if repository is not None else MySQLRepository()
     tasks = task_reader if task_reader is not None else _default_task_reader(db)
+    evaluations = (
+        evaluation_reader
+        if evaluation_reader is not None
+        else _default_evaluation_reader(db)
+    )
 
     uptime_seconds = (datetime.now(timezone.utc) - _START_TIME).total_seconds()
 
@@ -28,7 +35,7 @@ def collect_metrics(
         task_summary = {"error": str(exc)}
 
     try:
-        eval_summary = db.get_eval_summary()
+        eval_summary = evaluations.get_eval_summary()
     except Exception as exc:
         eval_summary = {"error": str(exc)}
 
@@ -53,6 +60,13 @@ def collect_metrics(
 
 def _default_task_reader(repository: MonitorMetricsRepository) -> RecentTaskReader:
     component = getattr(repository, "ingestion_tasks", None)
+    return component if component is not None else repository  # type: ignore[return-value]
+
+
+def _default_evaluation_reader(
+    repository: MonitorMetricsRepository,
+) -> EvaluationSummaryReader:
+    component = getattr(repository, "evaluations", None)
     return component if component is not None else repository  # type: ignore[return-value]
 
 
