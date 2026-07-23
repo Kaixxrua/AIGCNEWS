@@ -53,6 +53,19 @@ class Settings(BaseSettings):
     mysql_database: str = "rag_aigc"
     project_catalog_backend: str = "mysql"
 
+    # PostgreSQL 备选项目目录配置
+    postgres_host: str = ""
+    postgres_port: int = 5432
+    postgres_user: str = ""
+    postgres_password: str = ""
+    postgres_database: str = ""
+    postgres_sslmode: str = "require"
+    postgres_pool_min_size: int = 2
+    postgres_pool_max_size: int = 20
+    postgres_pool_timeout_seconds: float = 10.0
+    postgres_connect_timeout_seconds: int = 5
+    postgres_statement_timeout_ms: int = 15_000
+
     # Redis 连接配置
     redis_host: str = "localhost"
     redis_port: int = 6379
