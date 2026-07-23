@@ -27,6 +27,11 @@ import {
 import router from '../router'
 import { useAuthStore } from '../stores/authStore'
 import {
+  defaultProjectSortForScope,
+  defaultProjectSortForSource,
+  useProjectRouteState,
+} from '../composables/useProjectRouteState'
+import {
   canEditWebsiteProject,
   canFavoriteProject,
   canRecommendProject,
@@ -105,8 +110,6 @@ const recommendBusyKey = ref('')
 const currentRequestId = ref(0)
 const categoryRequestId = ref(0)
 const tagRequestId = ref(0)
-const isApplyingRouteState = ref(false)
-const isReplacingRoute = ref(false)
 const isViewActive = ref(true)
 const VIEW_REFRESH_INTERVAL = 60_000
 let lastSuccessfulFetchAt = 0
@@ -114,108 +117,31 @@ let hasActivatedOnce = false
 let searchTimer: number | undefined
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
-type ProjectRouteQuery = Record<string, string>
 
-const validSources: ProjectViewSource[] = ['all', 'website', 'favorites']
-const validScopes: ProjectScope[] = ['all', 'today', 'recommended']
-const validSorts: GitHubProjectSort[] = ['hot', 'stars', 'updated', 'recent', 'name']
+const {
+  applyRouteState,
+  currentProjectsRedirect,
+  endStateBatch,
+  isApplyingRouteState,
+  isReplacingRoute,
+  replaceRouteFromState,
+} = useProjectRouteState(route, router, {
+  source,
+  selectedScope,
+  selectedCategory,
+  selectedSubcategory,
+  searchQuery,
+  debouncedQuery,
+  selectedLanguage,
+  selectedTag,
+  sort,
+  page,
+})
 
-const queryValue = (value: unknown) => {
-  if (Array.isArray(value)) return String(value[0] ?? '').trim()
-  return String(value ?? '').trim()
-}
-
-const parseRoutePage = (value: unknown) => {
-  const parsed = Number(queryValue(value) || 1)
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1
-}
-
-const defaultSortForSource = (value: ProjectViewSource): GitHubProjectSort => (
-  value === 'favorites' || value === 'website' ? 'recent' : 'stars'
+const defaultSortForSource = defaultProjectSortForSource
+const defaultSortForScope = (scopeValue: ProjectScope, sourceValue: ProjectViewSource = source.value) => (
+  defaultProjectSortForScope(scopeValue, sourceValue)
 )
-
-const defaultSortForScope = (scopeValue: ProjectScope, sourceValue: ProjectViewSource = source.value): GitHubProjectSort => {
-  if (scopeValue === 'today' && sourceValue === 'all') return 'hot'
-  if (scopeValue === 'recommended' && sourceValue === 'all') return 'recent'
-  return defaultSortForSource(sourceValue)
-}
-
-const endStateBatch = () => {
-  window.setTimeout(() => {
-    isApplyingRouteState.value = false
-  }, 0)
-}
-
-const currentProjectsRedirect = () => (
-  route.fullPath.startsWith('/projects') ? route.fullPath : '/projects'
-)
-
-const sameRouteQuery = (left: Record<string, unknown>, right: ProjectRouteQuery) => {
-  const keys = new Set([...Object.keys(left), ...Object.keys(right)])
-  for (const key of keys) {
-    if (queryValue(left[key]) !== queryValue(right[key])) return false
-  }
-  return true
-}
-
-const buildRouteQuery = (): ProjectRouteQuery => {
-  const query: ProjectRouteQuery = {}
-  if (source.value !== 'all') query.source = source.value
-  if (selectedScope.value !== 'all') query.scope = selectedScope.value
-  if (selectedCategory.value !== 'all') query.category = selectedCategory.value
-  if (selectedSubcategory.value !== 'all') query.subcategory = selectedSubcategory.value
-  const cleanQuery = debouncedQuery.value.trim()
-  if (cleanQuery) query.q = cleanQuery
-  if (selectedLanguage.value) query.language = selectedLanguage.value
-  if (isPersonalView.value && selectedTag.value) query.tag = selectedTag.value
-  if (sort.value !== defaultSortForScope(selectedScope.value, source.value) && (sort.value !== 'hot' || source.value === 'all')) query.sort = sort.value
-  if (page.value > 1) query.page = String(page.value)
-  return query
-}
-
-const replaceRouteFromState = async (force = false) => {
-  if (isApplyingRouteState.value && !force) return
-  const query = buildRouteQuery()
-  if (route.path === '/projects' && sameRouteQuery(route.query, query)) return
-  isReplacingRoute.value = true
-  try {
-    await router.replace({ path: '/projects', query })
-  } finally {
-    window.setTimeout(() => {
-      isReplacingRoute.value = false
-    }, 0)
-  }
-}
-
-const applyRouteState = () => {
-  const routeSource = queryValue(route.query.source)
-  const nextSource = validSources.includes(routeSource as ProjectViewSource)
-    ? routeSource as ProjectViewSource
-    : 'all'
-  const routeScope = queryValue(route.query.scope)
-  const nextScope = validScopes.includes(routeScope as ProjectScope) ? routeScope as ProjectScope : 'all'
-  const routeSort = queryValue(route.query.sort)
-  const routeSortAllowed = validSorts.includes(routeSort as GitHubProjectSort)
-    && (routeSort !== 'hot' || nextSource === 'all')
-  const nextSort = nextScope === 'today'
-    ? 'hot'
-    : (routeSortAllowed ? routeSort as GitHubProjectSort : defaultSortForScope(nextScope, nextSource))
-  const nextQuery = queryValue(route.query.q)
-
-  isApplyingRouteState.value = true
-  source.value = nextSource
-  selectedScope.value = nextScope
-  selectedCategory.value = queryValue(route.query.category) || 'all'
-  selectedSubcategory.value = queryValue(route.query.subcategory) || 'all'
-  selectedLanguage.value = queryValue(route.query.language)
-  selectedTag.value = nextSource === 'favorites' || nextSource === 'website' ? queryValue(route.query.tag) : ''
-  searchQuery.value = nextQuery
-  debouncedQuery.value = nextQuery
-  sort.value = nextSort
-  page.value = parseRoutePage(route.query.page)
-  endStateBatch()
-  return true
-}
 
 const sourceOptions = computed<SourceOption[]>(() => [
   { value: 'all', label: 'GitHub 项目', hint: '公共开源项目' },
