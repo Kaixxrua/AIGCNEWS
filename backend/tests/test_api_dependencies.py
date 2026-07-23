@@ -120,6 +120,21 @@ class DatabaseDependencyTests(unittest.TestCase):
         self.assertIs(result, mcp_repository)
         repository_type.assert_called_once_with(database=database)
 
+    def test_get_user_account_repository_uses_component(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        account_repository = MagicMock()
+        repository = MagicMock(user_accounts=account_repository)
+
+        with patch.object(
+            dependencies,
+            "MySQLRepository",
+            return_value=repository,
+        ) as repository_type:
+            result = dependencies.get_user_account_repository(database)
+
+        self.assertIs(result, account_repository)
+        repository_type.assert_called_once_with(database=database)
+
     def test_task_repository_dependency_can_be_overridden(self) -> None:
         app = FastAPI()
         repository = MagicMock()
@@ -220,6 +235,27 @@ class DatabaseDependencyTests(unittest.TestCase):
 
         with patch.object(dependencies, "MySQLRepository") as repository_type:
             response = TestClient(app).get("/mcp-server-configs")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"overridden": True})
+        repository_type.assert_not_called()
+
+    def test_user_account_dependency_can_be_overridden(self) -> None:
+        app = FastAPI()
+        repository = MagicMock()
+
+        @app.get("/user-accounts")
+        def read_user_accounts(
+            injected=Depends(dependencies.get_user_account_repository),
+        ) -> dict[str, bool]:
+            return {"overridden": injected is repository}
+
+        app.dependency_overrides[
+            dependencies.get_user_account_repository
+        ] = lambda: repository
+
+        with patch.object(dependencies, "MySQLRepository") as repository_type:
+            response = TestClient(app).get("/user-accounts")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"overridden": True})

@@ -17,6 +17,9 @@ from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.mysql_user_account_repository import (
+    MySQLUserAccountRepository,
+)
 
 
 def get_database(request: Request) -> DatabaseLifecycle:
@@ -67,3 +70,10 @@ def get_mcp_server_config_repository(
 ) -> MySQLMcpServerConfigRepository:
     """Return MCP Server configuration through the compatibility facade."""
     return MySQLRepository(database=database).mcp_server_configs
+
+
+def get_user_account_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLUserAccountRepository:
+    """Return user account persistence through the compatibility facade."""
+    return MySQLRepository(database=database).user_accounts

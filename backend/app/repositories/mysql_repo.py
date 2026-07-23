@@ -25,6 +25,9 @@ from backend.app.repositories.mysql_ingestion_task_repository import (
 from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
+from backend.app.repositories.mysql_user_account_repository import (
+    MySQLUserAccountRepository,
+)
 from backend.app.services.ingestion.project_taxonomy import (
     CATEGORY_BY_SLUG,
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
@@ -415,6 +418,7 @@ class MySQLRepository:
         self._briefing_subscriptions: MySQLBriefingSubscriptionRepository | None = None
         self._evaluations: MySQLEvaluationRepository | None = None
         self._mcp_server_configs: MySQLMcpServerConfigRepository | None = None
+        self._user_accounts: MySQLUserAccountRepository | None = None
         if not MySQLRepository._schema_initialized:
             with MySQLRepository._schema_lock:
                 if not MySQLRepository._schema_initialized:
@@ -466,6 +470,12 @@ class MySQLRepository:
                 defaults,
             )
         return self._mcp_server_configs
+
+    @property
+    def user_accounts(self) -> MySQLUserAccountRepository:
+        if self._user_accounts is None:
+            self._user_accounts = MySQLUserAccountRepository(self._database)
+        return self._user_accounts
 
     def resolve_github_repo_id(self, repo_id: str = "", full_name: str = "") -> str:
         """Return the canonical repo_id for a GitHub repository identity."""
