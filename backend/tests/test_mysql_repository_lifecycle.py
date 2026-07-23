@@ -273,6 +273,64 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
             result,
         )
 
+    def test_user_account_compatibility_methods_delegate_to_component(self) -> None:
+        repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
+        account_repository = MagicMock()
+        account_repository.get_user_count.return_value = 10
+        account_repository.get_today_registered_user_count.return_value = 2
+        account_repository.get_user_by_phone.return_value = {"id": 41}
+        account_repository.get_user_by_email.return_value = {"id": 42}
+        account_repository.create_user.return_value = 43
+        account_repository.update_user_password.return_value = 1
+        account_repository.create_user_with_email.return_value = 44
+        repository._user_accounts = account_repository
+
+        self.assertEqual(repository.get_user_count(), 10)
+        self.assertEqual(repository.get_today_registered_user_count(), 2)
+        self.assertEqual(repository.get_user_by_phone("13800000000"), {"id": 41})
+        self.assertEqual(
+            repository.get_user_by_email("reader@example.com"),
+            {"id": 42},
+        )
+        self.assertEqual(repository.create_user("phone", "reader", "hash"), 43)
+        self.assertEqual(
+            repository.update_user_password(
+                user_id=42,
+                email="reader@example.com",
+                hashed_password="new-hash",
+            ),
+            1,
+        )
+        self.assertEqual(
+            repository.create_user_with_email("reader@example.com", "hash"),
+            44,
+        )
+
+        account_repository.get_user_count.assert_called_once_with()
+        account_repository.get_today_registered_user_count.assert_called_once_with()
+        account_repository.get_user_by_phone.assert_called_once_with("13800000000")
+        account_repository.get_user_by_email.assert_called_once_with(
+            "reader@example.com"
+        )
+        account_repository.create_user.assert_called_once_with(
+            "phone",
+            "reader",
+            "hash",
+            "user",
+        )
+        account_repository.update_user_password.assert_called_once_with(
+            user_id=42,
+            email="reader@example.com",
+            hashed_password="new-hash",
+        )
+        account_repository.create_user_with_email.assert_called_once_with(
+            "reader@example.com",
+            "hash",
+            "",
+            "user",
+            "",
+        )
+
     def test_subscription_compatibility_methods_delegate_to_component(self) -> None:
         repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
         subscription_repository = MagicMock()

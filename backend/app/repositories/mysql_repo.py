@@ -1568,34 +1568,11 @@ class MySQLRepository:
 
     def get_user_count(self) -> int:
         """返回已注册用户总数。"""
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) AS cnt FROM users")
-                row = cur.fetchone()
-            conn.commit()
-            return int(row["cnt"] if row else 0)
-        finally:
-            conn.close()
+        return self.user_accounts.get_user_count()
 
     def get_today_registered_user_count(self) -> int:
         """返回今日注册用户数（CST）。"""
-        from datetime import datetime, timezone, timedelta
-
-        tz_cst = timezone(timedelta(hours=8))
-        today_str = datetime.now(tz_cst).strftime("%Y-%m-%d")
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) AS cnt FROM users WHERE LEFT(created_at, 10) = %s",
-                    (today_str,),
-                )
-                row = cur.fetchone()
-            conn.commit()
-            return int(row["cnt"] if row else 0)
-        finally:
-            conn.close()
+        return self.user_accounts.get_today_registered_user_count()
 
     def get_today_document_count(self) -> int:
         """返回今日新增文档数（created_at 日期 = CST 今天）。
@@ -4903,29 +4880,11 @@ class MySQLRepository:
     # ------------------------------------------------------------------
 
     def get_user_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
-        sql = "SELECT id, phone, email, username, hashed_password, role, created_at FROM users WHERE phone = %s"
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (phone,))
-                row = cur.fetchone()
-            conn.commit()
-            return dict(row) if row else None
-        finally:
-            conn.close()
+        return self.user_accounts.get_user_by_phone(phone)
 
     def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """按邮箱查询用户（邮箱不区分大小写）。"""
-        sql = "SELECT id, phone, email, username, hashed_password, role, created_at FROM users WHERE email = %s"
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (email.lower(),))
-                row = cur.fetchone()
-            conn.commit()
-            return dict(row) if row else None
-        finally:
-            conn.close()
+        return self.user_accounts.get_user_by_email(email)
 
     def create_user(
         self,
@@ -4934,19 +4893,12 @@ class MySQLRepository:
         hashed_password: str,
         role: str = "user",
     ) -> int:
-        sql = """
-            INSERT INTO users (phone, username, hashed_password, role)
-            VALUES (%s, %s, %s, %s)
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (phone, username, hashed_password, role))
-                new_id = cur.lastrowid
-            conn.commit()
-            return new_id  # type: ignore[return-value]
-        finally:
-            conn.close()
+        return self.user_accounts.create_user(
+            phone,
+            username,
+            hashed_password,
+            role,
+        )
 
     def update_user_password(
         self,
@@ -4956,23 +4908,11 @@ class MySQLRepository:
         hashed_password: str,
     ) -> int:
         """更新精确匹配用户的密码哈希，返回受影响行数。"""
-        sql = """
-            UPDATE users
-            SET hashed_password = %s
-            WHERE id = %s AND email = %s
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (hashed_password, int(user_id), email.lower()))
-                affected = cur.rowcount
-            conn.commit()
-            return affected
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        return self.user_accounts.update_user_password(
+            user_id=user_id,
+            email=email,
+            hashed_password=hashed_password,
+        )
 
     def create_user_with_email(
         self,
@@ -4983,22 +4923,13 @@ class MySQLRepository:
         username: str = "",
     ) -> int:
         """使用邮箱创建新用户（Phase 4 邮箱注册流程）。"""
-        sql = """
-            INSERT INTO users (email, username, hashed_password, role, email_verified, invite_code_used)
-            VALUES (%s, %s, %s, %s, 1, %s)
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    sql,
-                    (email.lower(), username, hashed_password, role, invite_code_used),
-                )
-                new_id = cur.lastrowid
-            conn.commit()
-            return new_id  # type: ignore[return-value]
-        finally:
-            conn.close()
+        return self.user_accounts.create_user_with_email(
+            email,
+            hashed_password,
+            invite_code_used,
+            role,
+            username,
+        )
 
     # ------------------------------------------------------------------
     # Conversation / Chat history
