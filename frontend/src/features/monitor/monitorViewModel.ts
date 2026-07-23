@@ -32,6 +32,14 @@ export interface ProviderConfig {
   updated_at: string | null
 }
 
+export interface ProviderForm {
+  provider: 'openai' | 'anthropic'
+  base_url: string
+  model_name: string
+  api_key: string
+  clear_api_key: boolean
+}
+
 export interface McpToolSummary {
   name: string
   description: string
