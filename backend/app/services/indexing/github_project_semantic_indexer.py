@@ -30,6 +30,12 @@ def _json_list(value: Any) -> list[str]:
     return [str(item) for item in parsed if str(item).strip()] if isinstance(parsed, list) else []
 
 
+def _project_list(project: dict[str, Any], key: str) -> list[str]:
+    if key in project:
+        return _json_list(project.get(key))
+    return _json_list(project.get(f"{key}_json"))
+
+
 def project_semantic_fingerprint(project: dict[str, Any], readme_sha256: str) -> str:
     payload = {
         "repo_id": project.get("repo_id") or "",
@@ -41,8 +47,8 @@ def project_semantic_fingerprint(project: dict[str, Any], readme_sha256: str) ->
         "category_name": project.get("category_name") or "",
         "subcategory_slug": project.get("subcategory_slug") or "",
         "subcategory_name": project.get("subcategory_name") or "",
-        "tags": sorted(_json_list(project.get("tags_json"))),
-        "topics": sorted(_json_list(project.get("topics_json"))),
+        "tags": sorted(_project_list(project, "tags")),
+        "topics": sorted(_project_list(project, "topics")),
         "language": project.get("language") or "",
         "readme_sha256": readme_sha256,
         "index_version": settings.project_semantic_index_version,
@@ -62,8 +68,8 @@ def build_project_semantic_chunks(project: dict[str, Any], readme: str) -> list[
         f"Chinese description: {project.get('description_zh') or ''}",
         f"Category: {project.get('category_name') or project.get('category_slug') or ''}",
         f"Subcategory: {project.get('subcategory_name') or project.get('subcategory_slug') or ''}",
-        f"Tags: {', '.join(_json_list(project.get('tags_json')))}",
-        f"Topics: {', '.join(_json_list(project.get('topics_json')))}",
+        f"Tags: {', '.join(_project_list(project, 'tags'))}",
+        f"Topics: {', '.join(_project_list(project, 'topics'))}",
         f"Language: {project.get('language') or ''}",
     ]
     chunks: list[tuple[str, int, str]] = [("profile", 0, "\n".join(line for line in lines if not line.endswith(": ")))]

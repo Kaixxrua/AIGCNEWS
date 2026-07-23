@@ -4135,19 +4135,29 @@ class MySQLRepository:
             FROM github_repo_candidates c
             JOIN github_repo_enrichments ge
               ON ge.repo_id = c.repo_id AND ge.status = 'succeeded'
+            LEFT JOIN github_repo_aliases ga
+              ON ga.alias_repo_id = c.repo_id AND ga.canonical_repo_id <> c.repo_id
             LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
-            WHERE COALESCE(c.stars, 0) >= %s
+            WHERE ga.alias_repo_id IS NULL
+              AND COALESCE(c.stars, 0) >= %s
               AND c.repo_id > %s
               AND (
                     ss.repo_id IS NULL
                  OR ss.index_status IN ({status_placeholders})
                  OR COALESCE(ss.source_fingerprint, '') != COALESCE(ss.indexed_fingerprint, '')
+                 OR COALESCE(ss.index_version, '') != %s
                  OR COALESCE(ss.readme_repo_pushed_at, '') < COALESCE(c.pushed_at, '')
               )
             ORDER BY c.repo_id ASC
             LIMIT %s
         """
-        params: List[Any] = [min_stars, after_repo_id, *stale_statuses, max(1, min(int(limit or 100), 1000))]
+        params: List[Any] = [
+            min_stars,
+            after_repo_id,
+            *stale_statuses,
+            settings.project_semantic_index_version,
+            max(1, min(int(limit or 100), 1000)),
+        ]
         conn = self._connect()
         try:
             with conn.cursor() as cur:
@@ -4253,8 +4263,11 @@ class MySQLRepository:
             FROM github_repo_candidates c
             JOIN github_repo_enrichments ge
               ON ge.repo_id = c.repo_id AND ge.status = 'succeeded'
+            LEFT JOIN github_repo_aliases ga
+              ON ga.alias_repo_id = c.repo_id AND ga.canonical_repo_id <> c.repo_id
             LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
-            WHERE COALESCE(c.stars, 0) >= %s
+            WHERE ga.alias_repo_id IS NULL
+              AND COALESCE(c.stars, 0) >= %s
         """
         conn = self._connect()
         try:

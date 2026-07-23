@@ -40,6 +40,46 @@ class GitHubProjectSemanticIndexerTests(unittest.TestCase):
         changed = {**PROJECT, "stars": 100_000, "forks": 3_000}
         self.assertEqual(first, project_semantic_fingerprint(changed, "abc"))
 
+    def test_normalized_topics_and_tags_are_embedded_and_fingerprinted(self) -> None:
+        normalized = {
+            **PROJECT,
+            "topics": ["frontend", "developer-tools"],
+            "tags": ["前端", "开发工具"],
+        }
+        normalized.pop("topics_json")
+        normalized.pop("tags_json")
+
+        chunks = build_project_semantic_chunks(normalized, "")
+        changed = {**normalized, "topics": ["frontend", "design-system"]}
+
+        self.assertIn("Tags: 前端, 开发工具", chunks[0][2])
+        self.assertIn("Topics: frontend, developer-tools", chunks[0][2])
+        self.assertNotEqual(
+            project_semantic_fingerprint(normalized, "abc"),
+            project_semantic_fingerprint(changed, "abc"),
+        )
+
+    def test_sync_project_uses_one_repo_id_for_vector_and_status(self) -> None:
+        canonical = {**PROJECT, "repo_id": "owner/canonical"}
+        db = MagicMock()
+        vectors = MagicMock()
+        vectors.upsert_project_chunks.return_value = 1
+        embeddings = MagicMock()
+        embeddings.embed_documents.return_value = [[0.1] * 1024]
+        indexer = GitHubProjectSemanticIndexer(db=db, vectors=vectors, embeddings=embeddings)
+
+        result = indexer.sync_project(canonical, fetch_readme=False)
+
+        self.assertEqual(result["repo_id"], "owner/canonical")
+        self.assertEqual(vectors.upsert_project_chunks.call_args.args[0], "owner/canonical")
+        self.assertEqual(vectors.upsert_project_chunks.call_args.args[1][0].repo_id, "owner/canonical")
+        self.assertTrue(
+            all(
+                call.args[0]["repo_id"] == "owner/canonical"
+                for call in db.upsert_github_project_semantic_source.call_args_list
+            )
+        )
+
     def test_sync_project_upserts_stable_chunks_and_status(self) -> None:
         db = MagicMock()
         vectors = MagicMock()
