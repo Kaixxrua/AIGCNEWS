@@ -143,6 +143,35 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         self.assertIsNot(first, repository.user_accounts)
         database.connect.assert_not_called()
 
+    def test_runtime_provider_compatibility_methods_delegate_to_component(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MySQLRepository(database=database)
+        component = MagicMock()
+        component.get_runtime_provider_setting.return_value = {"provider": "openai"}
+        component.upsert_runtime_provider_setting.return_value = {"provider": "anthropic"}
+        repository._runtime_provider_settings = component
+
+        read_result = repository.get_runtime_provider_setting("openai")
+        write_result = repository.upsert_runtime_provider_setting(
+            "anthropic",
+            "https://example.test",
+            "secret",
+            False,
+            "model",
+        )
+
+        self.assertEqual(read_result, {"provider": "openai"})
+        self.assertEqual(write_result, {"provider": "anthropic"})
+        component.get_runtime_provider_setting.assert_called_once_with("openai")
+        component.upsert_runtime_provider_setting.assert_called_once_with(
+            "anthropic",
+            "https://example.test",
+            "secret",
+            False,
+            "model",
+        )
+        database.connect.assert_not_called()
+
     def test_preserves_single_schema_initialization(self) -> None:
         MySQLRepository._schema_initialized = False
         database = MagicMock(spec=DatabaseLifecycle)

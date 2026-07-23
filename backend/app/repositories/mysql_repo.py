@@ -4685,26 +4685,7 @@ class MySQLRepository:
     # ------------------------------------------------------------------
 
     def get_runtime_provider_setting(self, provider: str = "") -> Optional[Dict[str, Any]]:
-        provider_key = (provider or "").strip().lower()
-        where_clause = "WHERE provider = %s" if provider_key else ""
-        params = (provider_key,) if provider_key else ()
-
-        sql = f"""
-            SELECT provider, base_url, api_key, model_name, updated_at
-            FROM runtime_provider_settings
-            {where_clause}
-            ORDER BY updated_at DESC
-            LIMIT 1
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                row = cur.fetchone()
-            conn.commit()
-            return dict(row) if row else None
-        finally:
-            conn.close()
+        return self.runtime_provider_settings.get_runtime_provider_setting(provider)
 
     def upsert_runtime_provider_setting(
         self,
@@ -4714,41 +4695,13 @@ class MySQLRepository:
         clear_api_key: bool = False,
         model_name: str = "",
     ) -> Dict[str, Any]:
-        provider_key = (provider or "").strip().lower()
-        clean_base_url = (base_url or "").strip()
-        clean_api_key = api_key.strip() if isinstance(api_key, str) else None
-        clean_model_name = (model_name or "").strip()
-
-        existing = self.get_runtime_provider_setting()
-        if clear_api_key:
-            effective_api_key: Optional[str] = None
-        elif clean_api_key:
-            effective_api_key = clean_api_key
-        else:
-            effective_api_key = existing.get("api_key") if existing else None
-
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM runtime_provider_settings")
-                cur.execute(
-                    """
-                    INSERT INTO runtime_provider_settings
-                        (provider, base_url, api_key, model_name, updated_at)
-                    VALUES (%s, %s, %s, %s, NOW())
-                    """,
-                    (provider_key, clean_base_url, effective_api_key, clean_model_name),
-                )
-            conn.commit()
-        finally:
-            conn.close()
-
-        return self.get_runtime_provider_setting() or {
-            "provider": provider_key,
-            "base_url": clean_base_url,
-            "api_key": effective_api_key,
-            "model_name": clean_model_name,
-        }
+        return self.runtime_provider_settings.upsert_runtime_provider_setting(
+            provider,
+            base_url,
+            api_key,
+            clear_api_key,
+            model_name,
+        )
 
     # ------------------------------------------------------------------
     # MCP Server Settings
