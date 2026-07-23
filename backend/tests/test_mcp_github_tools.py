@@ -56,6 +56,7 @@ from fastapi.testclient import TestClient
 from backend.app.api import routes_mcp
 from backend.app.api.dependencies import get_briefing_repository
 from backend.app.repositories.briefing_repository import BriefingReader
+from backend.app.services import project_discovery
 from backend.app.services.ingestion import source_github_mcp
 
 
@@ -269,7 +270,7 @@ class ProjectHandlerTests(unittest.TestCase):
             "cache_hit": False,
         }
         with (
-            patch.object(routes_mcp, "MySQLRepository", return_value=self._repository({"items": [], "total": 0})),
+            patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository({"items": [], "total": 0})),
             patch.object(routes_mcp, "search_github_projects_fallback", return_value=fallback_result) as fallback,
         ):
             result = asyncio.run(routes_mcp._search_project_library({"q": "screenshot rounded"}, mode="generic"))
@@ -280,7 +281,7 @@ class ProjectHandlerTests(unittest.TestCase):
 
     def test_ai_alias_miss_uses_ai_fallback(self) -> None:
         with (
-            patch.object(routes_mcp, "MySQLRepository", return_value=self._repository({"items": [], "total": 0})),
+            patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository({"items": [], "total": 0})),
             patch.object(
                 routes_mcp,
                 "search_github_projects_fallback",
@@ -294,7 +295,7 @@ class ProjectHandlerTests(unittest.TestCase):
     def test_local_hit_suppresses_fallback(self) -> None:
         local = {"items": [{"id": "x", "full_name": "owner/local", "stars": 900}], "total": 1}
         with (
-            patch.object(routes_mcp, "MySQLRepository", return_value=self._repository(local)),
+            patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository(local)),
             patch.object(routes_mcp, "search_github_projects_fallback") as fallback,
         ):
             result = asyncio.run(routes_mcp._search_project_library({"q": "local"}, mode="generic"))
@@ -304,7 +305,7 @@ class ProjectHandlerTests(unittest.TestCase):
 
     def test_today_miss_does_not_fallback(self) -> None:
         with (
-            patch.object(routes_mcp, "MySQLRepository", return_value=self._repository({"items": [], "total": 0})),
+            patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository({"items": [], "total": 0})),
             patch.object(routes_mcp, "search_github_projects_fallback") as fallback,
         ):
             result = asyncio.run(routes_mcp._search_project_library({"scope": "today"}, mode="ai"))
@@ -679,7 +680,7 @@ class McpProtocolTests(unittest.TestCase):
         }
         source_github_mcp._clear_fallback_cache()
         with (
-            patch.object(routes_mcp, "MySQLRepository", return_value=repository),
+            patch.object(project_discovery, "get_project_catalog_repository", return_value=repository),
             patch.object(source_github_mcp, "_search_once", return_value={"items": [github_item], "total_count": 1, "error": ""}) as search_once,
         ):
             responses = [
