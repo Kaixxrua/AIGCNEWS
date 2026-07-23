@@ -285,6 +285,51 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
             result,
         )
 
+    def test_mcp_access_token_compatibility_methods_delegate_to_component(self) -> None:
+        repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
+        token_repository = MagicMock()
+        token_repository.create_user_mcp_token.return_value = {
+            "token_metadata": {"id": 42},
+            "replaced_count": 0,
+        }
+        token_repository.list_user_mcp_tokens.return_value = [{"id": 42}]
+        token_repository.get_user_by_mcp_token_hash.return_value = {"user_id": 7}
+        token_repository.delete_user_mcp_token.return_value = True
+        repository._mcp_access_tokens = token_repository
+
+        created = repository.create_user_mcp_token(
+            user_id=7,
+            token_hash="digest",
+            token_hint="aigc_mcp_abc...wxyz",
+            scopes=["projects:favorites:read"],
+            client_type="claude",
+            client_label="Desktop",
+            expires_at="2026-08-01T00:00:00Z",
+        )
+
+        self.assertEqual(created["token_metadata"], {"id": 42})
+        self.assertEqual(repository.list_user_mcp_tokens(user_id=7), [{"id": 42}])
+        self.assertEqual(
+            repository.get_user_by_mcp_token_hash("digest"),
+            {"user_id": 7},
+        )
+        self.assertTrue(repository.delete_user_mcp_token(user_id=7, token_id=42))
+        token_repository.create_user_mcp_token.assert_called_once_with(
+            user_id=7,
+            token_hash="digest",
+            token_hint="aigc_mcp_abc...wxyz",
+            scopes=["projects:favorites:read"],
+            client_type="claude",
+            client_label="Desktop",
+            expires_at="2026-08-01T00:00:00Z",
+        )
+        token_repository.list_user_mcp_tokens.assert_called_once_with(user_id=7)
+        token_repository.get_user_by_mcp_token_hash.assert_called_once_with("digest")
+        token_repository.delete_user_mcp_token.assert_called_once_with(
+            user_id=7,
+            token_id=42,
+        )
+
     def test_user_account_compatibility_methods_delegate_to_component(self) -> None:
         repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
         account_repository = MagicMock()
