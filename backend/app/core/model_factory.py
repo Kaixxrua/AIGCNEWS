@@ -152,17 +152,31 @@ def get_embedding_model():
 
         # Embedding 支持独立的 API Key / Base URL（留空则复用 LLM 的 OpenAI 配置）
         runtime_config = _get_runtime_provider_setting(OPENAI_PROVIDER)
-        emb_api_key = settings.embedding_api_key or _runtime_value(
-            runtime_config, "api_key", settings.openai_api_key
-        )
         emb_base_url = settings.embedding_base_url or _runtime_value(
             runtime_config, "base_url", settings.openai_base_url or None
         )
+        siliconflow_key = (
+            settings.siliconflow_api_key
+            if emb_base_url and "siliconflow." in emb_base_url.lower()
+            else ""
+        )
+        emb_api_key = settings.embedding_api_key or siliconflow_key or _runtime_value(
+            runtime_config, "api_key", settings.openai_api_key
+        )
+
+        embedding_http_client = None
+        if emb_base_url and "siliconflow." in emb_base_url.lower():
+            import httpx
+
+            embedding_http_client = httpx.Client(trust_env=False)
 
         return OpenAIEmbeddings(
             api_key=emb_api_key,
             base_url=emb_base_url,
             model=settings.embedding_model_name,
+            http_client=embedding_http_client,
+            tiktoken_enabled=False if embedding_http_client is not None else True,
+            check_embedding_ctx_length=False if embedding_http_client is not None else True,
         )
 
     if provider == HUGGINGFACE_PROVIDER:
