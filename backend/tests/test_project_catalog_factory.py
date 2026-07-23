@@ -106,7 +106,26 @@ def test_factory_builds_mysql_adapter(backend: str) -> None:
     adapter_type.assert_called_once_with()
 
 
-@pytest.mark.parametrize("backend", ["postgres", "sqlite", ""])
+@pytest.mark.parametrize("backend", ["postgres", "POSTGRES", " Postgres "])
+def test_factory_builds_postgres_adapter(backend: str) -> None:
+    adapter = MagicMock()
+    config = SimpleNamespace(project_catalog_backend=backend)
+
+    with (
+        patch.object(project_catalog_factory, "settings", config),
+        patch(
+            "backend.app.repositories.postgres_project_catalog."
+            "PostgresProjectCatalogRepository",
+            return_value=adapter,
+        ) as adapter_type,
+    ):
+        result = project_catalog_factory.get_project_catalog_repository()
+
+    assert result is adapter
+    adapter_type.assert_called_once_with()
+
+
+@pytest.mark.parametrize("backend", ["sqlite", ""])
 def test_factory_rejects_unavailable_backends(backend: str) -> None:
     config = SimpleNamespace(project_catalog_backend=backend)
 
@@ -116,6 +135,7 @@ def test_factory_rejects_unavailable_backends(backend: str) -> None:
 
     assert repr(backend) in str(caught.value)
     assert "mysql" in str(caught.value)
+    assert "postgres" in str(caught.value)
 
 
 def test_discovery_uses_lazy_catalog_factory_by_default() -> None:
