@@ -11,9 +11,13 @@ from backend.app.api.dependencies import (
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
     get_mysql_repository,
+    get_runtime_provider_setting_repository,
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
+from backend.app.repositories.runtime_provider_repository import (
+    RuntimeProviderSettingManager,
+)
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 
 
@@ -91,6 +95,71 @@ class OperationsRouteTests(unittest.TestCase):
             response = client.post("/api/ops/clear-data")
 
         self.assertEqual(response.status_code, 500)
+
+    def test_provider_config_uses_injected_repository_and_redacts_key(self) -> None:
+        repository = MagicMock(spec=RuntimeProviderSettingManager)
+        repository.get_runtime_provider_setting.return_value = {
+            "provider": "openai",
+            "base_url": "https://example.test/v1",
+            "api_key": "internal-secret-key",
+            "model_name": "example-model",
+        }
+        client = self._provider_client(repository)
+
+        response = client.get("/api/ops/provider-config")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertNotIn("api_key", body)
+        self.assertTrue(body["api_key_configured"])
+        self.assertEqual(body["api_key_masked"], "inte****-key")
+        self.assertNotIn("internal-secret-key", response.text)
+        repository.get_runtime_provider_setting.assert_called_once_with()
+
+    def test_provider_config_update_forwards_secret_without_exposing_it(self) -> None:
+        repository = MagicMock(spec=RuntimeProviderSettingManager)
+        repository.upsert_runtime_provider_setting.return_value = {
+            "provider": "anthropic",
+            "base_url": "https://example.test",
+            "api_key": "replacement-secret",
+            "model_name": "example-model",
+        }
+        client = self._provider_client(repository)
+
+        response = client.put(
+            "/api/ops/provider-config",
+            json={
+                "provider": "anthropic",
+                "base_url": "https://example.test",
+                "api_key": "replacement-secret",
+                "clear_api_key": False,
+                "model_name": "example-model",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("api_key", response.json())
+        self.assertNotIn("replacement-secret", response.text)
+        repository.upsert_runtime_provider_setting.assert_called_once_with(
+            "anthropic",
+            "https://example.test",
+            "replacement-secret",
+            False,
+            "example-model",
+        )
+
+    def test_provider_config_requires_admin_before_repository_calls(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        repository = MagicMock(spec=RuntimeProviderSettingManager)
+        app.dependency_overrides[
+            get_runtime_provider_setting_repository
+        ] = lambda: repository
+
+        response = TestClient(app).get("/api/ops/provider-config")
+
+        self.assertIn(response.status_code, (401, 403))
+        repository.get_runtime_provider_setting.assert_not_called()
 
     def test_mcp_server_list_uses_injected_repository_and_redacts_token(self) -> None:
         repository = MagicMock(spec=McpServerConfigRepository)
@@ -196,6 +265,16 @@ class OperationsRouteTests(unittest.TestCase):
 
         self.assertIn(response.status_code, (401, 403))
         repository.list_mcp_server_configs.assert_not_called()
+
+    @staticmethod
+    def _provider_client(repository: RuntimeProviderSettingManager) -> TestClient:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[
+            get_runtime_provider_setting_repository
+        ] = lambda: repository
+        return TestClient(app)
 
     @staticmethod
     def _mcp_client(repository: McpServerConfigRepository) -> TestClient:

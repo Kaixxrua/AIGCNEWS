@@ -14,6 +14,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from backend.app.core.config import settings
 from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.runtime_provider_repository import (
+    RuntimeProviderSettingReader,
+)
 from backend.app.services.ingestion.github_hot_service import refresh_github_hot_candidates
 from backend.app.services.ingestion.github_project_metrics_service import (
     current_github_metric_date,
@@ -84,18 +87,25 @@ def _repo_prompt(repo: Dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def _model_metadata(db: MySQLRepository) -> Dict[str, str]:
-    row = db.get_runtime_provider_setting() or {}
+def _model_metadata(reader: RuntimeProviderSettingReader) -> Dict[str, str]:
+    row = reader.get_runtime_provider_setting() or {}
     provider = (row.get("provider") or settings.llm_provider or "").strip()
     model_name = (row.get("model_name") or settings.chat_model_name or "").strip()
     return {"model_provider": provider, "model_name": model_name}
 
 
 class GitHubProjectEnricher:
-    def __init__(self, db: MySQLRepository | None = None) -> None:
+    def __init__(
+        self,
+        db: MySQLRepository | None = None,
+        *,
+        runtime_settings: RuntimeProviderSettingReader | None = None,
+    ) -> None:
         self.db = db or MySQLRepository()
         self.llm = get_chat_model(temperature=0)
-        self.model_meta = _model_metadata(self.db)
+        self.model_meta = _model_metadata(
+            runtime_settings or self.db.runtime_provider_settings
+        )
 
     def enrich_batch(
         self,

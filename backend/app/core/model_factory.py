@@ -20,12 +20,18 @@ def _resolve_provider(preferred: str | None) -> str:
     return provider or OLLAMA_PROVIDER
 
 
+def _get_runtime_provider_setting_reader():
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    return MySQLRepository().runtime_provider_settings
+
+
 def _get_runtime_provider_setting(provider: str | None = None) -> dict[str, Any]:
     """读取运维页保存的唯一运行时模型配置；失败时静默回退到 .env。"""
     try:
-        from backend.app.repositories.mysql_repo import MySQLRepository
-
-        row = MySQLRepository().get_runtime_provider_setting(provider or "")
+        row = _get_runtime_provider_setting_reader().get_runtime_provider_setting(
+            provider or ""
+        )
         return row or {}
     except Exception:
         return {}

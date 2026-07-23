@@ -14,10 +14,14 @@ from backend.app.api.dependencies import (
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
     get_mysql_repository,
+    get_runtime_provider_setting_repository,
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.runtime_provider_repository import (
+    RuntimeProviderSettingManager,
+)
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 
 router = APIRouter()
@@ -410,12 +414,12 @@ def _bg_refresh_github_project_metrics(
 @router.get("/ops/provider-config", response_model=ProviderConfigResponse, tags=["Ops"])
 async def get_provider_config(
     _: dict = Depends(RequireAdmin),
+    repository: RuntimeProviderSettingManager = Depends(
+        get_runtime_provider_setting_repository
+    ),
 ) -> ProviderConfigResponse:
     """读取唯一的运行时模型配置。响应只返回密钥是否已配置与脱敏值。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    row = await asyncio.to_thread(db.get_runtime_provider_setting)
+    row = await asyncio.to_thread(repository.get_runtime_provider_setting)
     return _provider_config_response(row, "openai")
 
 
@@ -423,13 +427,13 @@ async def get_provider_config(
 async def update_provider_config(
     request: ProviderConfigRequest,
     _: dict = Depends(RequireAdmin),
+    repository: RuntimeProviderSettingManager = Depends(
+        get_runtime_provider_setting_repository
+    ),
 ) -> ProviderConfigResponse:
     """更新唯一的运行时模型配置。api_key 留空时保留原值，clear_api_key=true 时清空。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     row = await asyncio.to_thread(
-        db.upsert_runtime_provider_setting,
+        repository.upsert_runtime_provider_setting,
         request.provider,
         request.base_url,
         request.api_key,

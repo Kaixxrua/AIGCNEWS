@@ -13,6 +13,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from backend.app.core.config import settings
 from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.runtime_provider_repository import (
+    RuntimeProviderSettingReader,
+)
 from backend.app.services.ingestion.project_taxonomy import (
     PROMPT_VERSION,
     WEBSITE_CATEGORY_BY_SLUG,
@@ -57,8 +60,8 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _model_metadata(db: MySQLRepository) -> Dict[str, str]:
-    row = db.get_runtime_provider_setting() or {}
+def _model_metadata(reader: RuntimeProviderSettingReader) -> Dict[str, str]:
+    row = reader.get_runtime_provider_setting() or {}
     provider = (row.get("provider") or settings.llm_provider or "").strip()
     model_name = (row.get("model_name") or settings.chat_model_name or "").strip()
     return {"model_provider": provider, "model_name": model_name}
@@ -80,10 +83,17 @@ def _fallback_description(metadata: ToolWebsiteMetadata) -> str:
 
 
 class ToolWebsiteEnricher:
-    def __init__(self, db: MySQLRepository | None = None) -> None:
+    def __init__(
+        self,
+        db: MySQLRepository | None = None,
+        *,
+        runtime_settings: RuntimeProviderSettingReader | None = None,
+    ) -> None:
         self.db = db or MySQLRepository()
         self._llm = None
-        self.model_meta = _model_metadata(self.db)
+        self.model_meta = _model_metadata(
+            runtime_settings or self.db.runtime_provider_settings
+        )
 
     @property
     def llm(self):
