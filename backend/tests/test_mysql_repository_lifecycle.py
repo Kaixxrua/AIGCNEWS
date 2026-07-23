@@ -88,6 +88,25 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         self.assertIsNot(first, repository.briefing_subscriptions)
         database.connect.assert_not_called()
 
+    def test_mcp_server_config_component_reuses_database_lifecycle(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MySQLRepository(database=database)
+
+        first = repository.mcp_server_configs
+        second = repository.mcp_server_configs
+
+        self.assertIs(first, second)
+        self.assertIs(first._database, database)
+        self.assertEqual(
+            first._defaults,
+            (
+                ("arxiv", "Arxiv MCP", ""),
+                ("github", "GitHub MCP", ""),
+            ),
+        )
+        self.assertIsNot(first, repository.evaluations)
+        database.connect.assert_not_called()
+
     def test_preserves_single_schema_initialization(self) -> None:
         MySQLRepository._schema_initialized = False
         database = MagicMock(spec=DatabaseLifecycle)

@@ -13,6 +13,9 @@ from backend.app.repositories.mysql_evaluation_repository import (
 from backend.app.repositories.mysql_ingestion_task_repository import (
     MySQLIngestionTaskRepository,
 )
+from backend.app.repositories.mysql_mcp_server_repository import (
+    MySQLMcpServerConfigRepository,
+)
 from backend.app.repositories.mysql_repo import MySQLRepository
 
 
@@ -57,3 +60,10 @@ def get_evaluation_repository(
 ) -> MySQLEvaluationRepository:
     """Return RAG evaluation persistence through the compatibility facade."""
     return MySQLRepository(database=database).evaluations
+
+
+def get_mcp_server_config_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLMcpServerConfigRepository:
+    """Return MCP Server configuration through the compatibility facade."""
+    return MySQLRepository(database=database).mcp_server_configs
