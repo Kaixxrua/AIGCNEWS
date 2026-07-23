@@ -32,7 +32,10 @@ repository_module = sys.modules.get("backend.app.repositories.mysql_repo")
 if repository_module is not None and getattr(repository_module, "MySQLRepository", None) is object:
     del sys.modules["backend.app.repositories.mysql_repo"]
 
-from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.core.database import DatabaseLifecycle
+from backend.app.repositories.mysql_mcp_access_token_repository import (
+    MySQLMcpAccessTokenRepository,
+)
 
 
 class McpTokenRepositoryTests(unittest.TestCase):
@@ -57,8 +60,9 @@ class McpTokenRepositoryTests(unittest.TestCase):
         cursor.lastrowid = 21
         connection = MagicMock()
         connection.cursor.return_value.__enter__.return_value = cursor
-        repository = object.__new__(MySQLRepository)
-        repository._connect = MagicMock(return_value=connection)
+        database = MagicMock(spec=DatabaseLifecycle)
+        database.transaction.return_value.__enter__.return_value = connection
+        repository = MySQLMcpAccessTokenRepository(database)
 
         result = repository.create_user_mcp_token(
             user_id=7,
@@ -79,9 +83,7 @@ class McpTokenRepositoryTests(unittest.TestCase):
         self.assertNotIn("UPDATE user_mcp_tokens", "\n".join(call.args[0] for call in executions))
         self.assertEqual(result["replaced_count"], 0)
         self.assertEqual(result["token_metadata"]["id"], 21)
-        connection.commit.assert_called_once()
-        connection.rollback.assert_not_called()
-        connection.close.assert_called_once()
+        database.transaction.assert_called_once_with()
 
 
 if __name__ == "__main__":
