@@ -21,6 +21,7 @@ def main() -> int:
     parser.add_argument("--min-stars", type=int, default=500)
     parser.add_argument("--after-repo-id", default="")
     parser.add_argument("--profiles-only", action="store_true")
+    parser.add_argument("--concurrency", type=int, default=20)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     result = sync_github_project_semantic_index(
@@ -29,6 +30,7 @@ def main() -> int:
         min_stars=args.min_stars,
         after_repo_id=args.after_repo_id,
         fetch_readme=not args.profiles_only,
+        concurrency=args.concurrency,
         dry_run=args.dry_run,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Any
 
 import httpx
@@ -14,6 +16,7 @@ from backend.app.repositories.project_vector_repo import ProjectVectorChunk, Pro
 from backend.app.services.ingestion.source_github import fetch_github_readme_snapshot
 
 logger = logging.getLogger(__name__)
+_vector_write_lock = Lock()
 
 
 def _utcnow() -> str:
@@ -184,7 +187,8 @@ class GitHubProjectSemanticIndexer:
                 )
                 for (kind, index, text), vector in zip(chunks, vectors, strict=True)
             ]
-            count = self._vectors().upsert_project_chunks(repo_id, vector_chunks)
+            with _vector_write_lock:
+                count = self._vectors().upsert_project_chunks(repo_id, vector_chunks)
             self.db.upsert_github_project_semantic_source(
                 {**base, "indexed_fingerprint": fingerprint, "chunk_count": count, "index_status": "succeeded", "index_error": None, "indexed_at": _utcnow()}
             )
@@ -203,21 +207,53 @@ class GitHubProjectSemanticIndexer:
         min_stars: int = 500,
         after_repo_id: str = "",
         fetch_readme: bool = True,
+        concurrency: int | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
         limit = int(limit or settings.project_semantic_sync_batch_size)
+        concurrency = max(
+            1,
+            min(int(concurrency or settings.project_semantic_sync_concurrency), 20),
+        )
         projects = self.db.list_github_projects_for_semantic_sync(
             limit=limit,
             min_stars=min_stars,
             after_repo_id=after_repo_id,
         )
-        results = [self.sync_project(project, fetch_readme=fetch_readme, dry_run=dry_run) for project in projects]
+
+        def sync_one(project: dict[str, Any]) -> dict[str, Any]:
+            try:
+                return self.sync_project(project, fetch_readme=fetch_readme, dry_run=dry_run)
+            except Exception as exc:
+                logger.warning(
+                    "GitHub project semantic sync aborted for %s: %s",
+                    project.get("repo_id"),
+                    exc,
+                )
+                return {
+                    "repo_id": project.get("repo_id"),
+                    "status": "failed",
+                    "error": str(exc),
+                }
+
+        if concurrency == 1 or len(projects) < 2:
+            results = [sync_one(project) for project in projects]
+        else:
+            if not dry_run:
+                self._embeddings()
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                results = list(executor.map(sync_one, projects))
         counts: dict[str, int] = {}
         for result in results:
             status = str(result.get("status") or "unknown")
             counts[status] = counts.get(status, 0) + 1
+        failed = counts.get("failed", 0)
         return {
-            "status": "dry_run" if dry_run else "success",
+            "status": (
+                "dry_run"
+                if dry_run
+                else ("failed" if failed == len(projects) and projects else "success")
+            ),
             "selected": len(projects),
             "counts": counts,
             "last_repo_id": projects[-1].get("repo_id") if projects else after_repo_id,

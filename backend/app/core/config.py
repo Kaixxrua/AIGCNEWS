@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     project_semantic_readme_max_chars: int = 40_000
     project_semantic_readme_refresh_days: int = 14
     project_semantic_sync_batch_size: int = 100
+    project_semantic_sync_concurrency: int = 20
     project_semantic_github_rate_limit_reserve: int = 200
 
     neo4j_uri: str = "bolt://localhost:7688"
