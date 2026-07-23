@@ -112,6 +112,15 @@ class GitHubReadmeSnapshot:
     rate_limit_reset: str = ""
 
 
+@dataclass(frozen=True)
+class GitHubRepoMetricsResult:
+    full_name: str
+    status: Literal["succeeded", "not_found", "unknown"]
+    metrics: dict[str, Any] | None = None
+    http_status: int | None = None
+    error: str = ""
+
+
 def fetch_github_readme_snapshot(
     full_name: str,
     client: httpx.Client,
@@ -346,32 +355,54 @@ def _parse_metrics_item(item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def fetch_github_repo_metrics(full_name: str, *, client: httpx.Client | None = None, use_token: bool | None = None) -> Optional[dict]:
-    """Fetch lightweight repository metrics without fetching README or invoking LLM."""
+def fetch_github_repo_metrics(
+    full_name: str,
+    *,
+    client: httpx.Client | None = None,
+    use_token: bool | None = None,
+) -> GitHubRepoMetricsResult:
+    """Fetch lightweight metrics while preserving repository availability outcomes."""
 
     clean_name = str(full_name or "").strip()
     if not clean_name:
-        return None
+        return GitHubRepoMetricsResult(full_name="", status="unknown", error="invalid repository name")
 
-    def _fetch(active_client: httpx.Client, active_use_token: bool) -> Optional[dict]:
+    def _fetch(active_client: httpx.Client, active_use_token: bool) -> GitHubRepoMetricsResult:
         resp = active_client.get(
             f"{GITHUB_API_BASE}/repos/{clean_name}",
             headers=_build_headers(use_token=active_use_token),
         )
         if resp.status_code == 401 and active_use_token:
             return _fetch(active_client, False)
-        if resp.status_code in (403, 404, 429):
+        if resp.status_code == 404:
+            logger.warning("[GitHub] 仓库指标抓取未找到 %s: HTTP 404", clean_name)
+            return GitHubRepoMetricsResult(
+                full_name=clean_name,
+                status="not_found",
+                http_status=404,
+            )
+        if resp.status_code in (403, 429):
             logger.warning("[GitHub] 仓库指标抓取跳过 %s: HTTP %s", clean_name, resp.status_code)
-            return None
+            return GitHubRepoMetricsResult(
+                full_name=clean_name,
+                status="unknown",
+                http_status=resp.status_code,
+            )
         resp.raise_for_status()
-        return _parse_metrics_item(resp.json())
+        metrics = _parse_metrics_item(resp.json())
+        return GitHubRepoMetricsResult(
+            full_name=clean_name,
+            status="succeeded",
+            metrics=metrics,
+            http_status=resp.status_code,
+        )
 
     if client is not None:
         try:
             return _fetch(client, bool(use_token))
         except Exception as exc:
             logger.warning("[GitHub] 仓库指标抓取失败 %s: %s", clean_name, exc)
-            return None
+            return GitHubRepoMetricsResult(full_name=clean_name, status="unknown", error=str(exc))
 
     with httpx.Client(timeout=30, trust_env=True) as local_client:
         active_use_token = _check_token_valid(local_client) if use_token is None else bool(use_token)
@@ -379,7 +410,7 @@ def fetch_github_repo_metrics(full_name: str, *, client: httpx.Client | None = N
             return _fetch(local_client, active_use_token)
         except Exception as exc:
             logger.warning("[GitHub] 仓库指标抓取失败 %s: %s", clean_name, exc)
-            return None
+            return GitHubRepoMetricsResult(full_name=clean_name, status="unknown", error=str(exc))
 
 
 def _graphql_repo_alias(index: int) -> str:
@@ -419,8 +450,12 @@ def _parse_graphql_repo(node: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def fetch_github_repo_metrics_batch(full_names: List[str], *, batch_size: int = 40) -> List[dict]:
-    """Fetch lightweight repository metrics in batches; GraphQL with token, REST fallback otherwise."""
+def fetch_github_repo_metrics_batch(
+    full_names: List[str],
+    *,
+    batch_size: int = 40,
+) -> List[GitHubRepoMetricsResult]:
+    """Fetch lightweight metrics and return one classified result per repository."""
 
     names: List[str] = []
     seen: Set[str] = set()
@@ -435,7 +470,7 @@ def fetch_github_repo_metrics_batch(full_names: List[str], *, batch_size: int = 
         return []
 
     token = _get_token()
-    results: List[dict] = []
+    metrics_by_name: Dict[str, dict] = {}
     if token:
         headers = _build_headers(use_token=True)
         headers["Accept"] = "application/vnd.github+json"
@@ -482,24 +517,43 @@ def fetch_github_repo_metrics_batch(full_names: List[str], *, batch_size: int = 
                     for alias, full_name in alias_to_name.items():
                         node = data.get(alias)
                         if isinstance(node, dict):
-                            results.append(_parse_graphql_repo(node))
+                            metrics_by_name[full_name.lower()] = _parse_graphql_repo(node)
                         else:
                             logger.debug("[GitHub] GraphQL 未返回仓库 %s", full_name)
                 except Exception as exc:
                     logger.warning("[GitHub] GraphQL 指标批量抓取失败: %s", exc)
                     break
-        if len(results) >= len(names):
-            return results
+        if len(metrics_by_name) >= len(names):
+            return [
+                GitHubRepoMetricsResult(
+                    full_name=full_name,
+                    status="succeeded",
+                    metrics=metrics_by_name[full_name.lower()],
+                    http_status=200,
+                )
+                for full_name in names
+            ]
 
-    returned_names = {str(item.get("full_name") or "").lower() for item in results}
-    missing_names = [full_name for full_name in names if full_name.lower() not in returned_names]
+    outcomes: Dict[str, GitHubRepoMetricsResult] = {
+        full_name.lower(): GitHubRepoMetricsResult(
+            full_name=full_name,
+            status="succeeded",
+            metrics=metrics_by_name[full_name.lower()],
+            http_status=200,
+        )
+        for full_name in names
+        if full_name.lower() in metrics_by_name
+    }
+    missing_names = [full_name for full_name in names if full_name.lower() not in outcomes]
     with httpx.Client(timeout=30, trust_env=True) as client:
         use_token = _check_token_valid(client)
         for full_name in missing_names:
-            item = fetch_github_repo_metrics(full_name, client=client, use_token=use_token)
-            if item:
-                results.append(item)
-    return results
+            outcomes[full_name.lower()] = fetch_github_repo_metrics(
+                full_name,
+                client=client,
+                use_token=use_token,
+            )
+    return [outcomes[full_name.lower()] for full_name in names]
 
 
 def fetch_github_candidate_repos(limit: int = 60) -> List[dict]:

@@ -162,20 +162,45 @@ def refresh_github_project_metric_snapshots(
             "updated_candidates": 0,
         }
 
-    fetched = fetch_github_repo_metrics_batch(full_names)
+    outcomes = fetch_github_repo_metrics_batch(full_names)
     existing_by_name = {str(item.get("full_name") or "").lower(): item for item in targets}
     updated_candidates = 0
     snapshots = 0
-    skipped = max(0, len(full_names) - len(fetched))
+    fetched = 0
+    skipped = 0
+    not_found_observations = 0
+    newly_not_found = 0
+    recovered = 0
+    unknown = 0
 
-    for repo in fetched:
-        full_name = str(repo.get("full_name") or "").strip()
+    for outcome in outcomes:
+        full_name = str(outcome.full_name or "").strip()
+        if outcome.status == "not_found":
+            skipped += 1
+            not_found_observations += 1
+            try:
+                if db.record_github_repo_not_found(full_name, checked_at=captured_at):
+                    newly_not_found += 1
+            except Exception as exc:  # noqa: BLE001 - keep daily refresh moving
+                logger.warning("[GitHubProjectMetrics] 仓库不可用状态写入失败 repo=%s error=%s", full_name, exc, exc_info=True)
+            continue
+        if outcome.status != "succeeded" or not outcome.metrics:
+            skipped += 1
+            unknown += 1
+            continue
+
+        repo = outcome.metrics
+        fetched += 1
+        full_name = str(repo.get("full_name") or full_name).strip()
         if not full_name:
             skipped += 1
             continue
-        existing = existing_by_name.get(full_name.lower())
+        existing = existing_by_name.get(outcome.full_name.lower())
+        was_not_found = (existing or {}).get("availability_status") == "not_found"
         try:
             db.upsert_github_repo_candidate(_candidate_payload(repo, existing=existing, captured_at=captured_at))
+            db.mark_github_repo_available(outcome.full_name, checked_at=captured_at)
+            recovered += int(was_not_found)
             updated_candidates += 1
             db.insert_github_repo_snapshot(_snapshot_payload(repo, metric_date=snapshot_date, captured_at=captured_at))
             snapshots += 1
@@ -183,14 +208,19 @@ def refresh_github_project_metric_snapshots(
             skipped += 1
             logger.warning("[GitHubProjectMetrics] 快照写入失败 repo=%s error=%s", full_name, exc, exc_info=True)
 
+    skipped += max(0, len(full_names) - len(outcomes))
     result = {
         "status": "success",
         "metric_date": snapshot_date,
         "targets": len(full_names),
-        "fetched": len(fetched),
+        "fetched": fetched,
         "updated_candidates": updated_candidates,
         "snapshots": snapshots,
         "skipped": skipped,
+        "not_found_observations": not_found_observations,
+        "newly_not_found": newly_not_found,
+        "recovered": recovered,
+        "unknown": unknown,
     }
     logger.info("[GitHubProjectMetrics] 每日指标快照刷新完成：%s", result)
     return result

@@ -205,6 +205,7 @@ export interface GitHubProjectItem {
   first_seen_at?: string | null
   last_seen_at?: string | null
   last_snapshot_at?: string | null
+  availability_status?: 'active' | 'not_found' | string
   snapshot_date?: string | null
   captured_at?: string | null
   rank_in_period?: number | string | null

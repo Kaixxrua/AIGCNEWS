@@ -155,7 +155,10 @@ def refresh_github_hot_candidates(
             }
 
     metrics = fetch_github_repo_metrics_batch(list(candidate_map))
-    for repo in metrics:
+    for outcome in metrics:
+        repo = outcome.metrics if outcome.status == "succeeded" else None
+        if not repo:
+            continue
         full_name = str(repo.get("full_name") or "").strip()
         if not full_name or full_name not in candidate_map:
             continue

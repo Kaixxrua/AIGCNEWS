@@ -1362,6 +1362,7 @@ onBeforeUnmount(stopViewReads)
         v-for="(repo, index) in projects"
         :key="repo.id ?? repo.repo_id ?? repo.website_id ?? repo.full_name ?? index"
         class="project-card glass-card card-hover stagger-enter"
+        :class="{ 'project-card--not-found': !isWebsite(repo) && repo.availability_status === 'not_found' }"
         :style="{ animationDelay: `${Math.min(index, 12) * 36}ms` }"
       >
         <div class="project-card__pin" :class="isWebsite(repo) ? 'project-card__pin--website' : ''" aria-hidden="true" />
@@ -1388,7 +1389,15 @@ onBeforeUnmount(stopViewReads)
               />
             </div>
             <div>
-              <span class="project-card__source">{{ sourceBadge(repo) }}</span>
+              <div class="project-card__source-row">
+                <span class="project-card__source">{{ sourceBadge(repo) }}</span>
+                <span
+                  v-if="!isWebsite(repo) && repo.availability_status === 'not_found'"
+                  class="project-card__availability"
+                >
+                  仓库不可用
+                </span>
+              </div>
               <h2 :title="repoName(repo)">{{ repoName(repo) }}</h2>
               <p v-if="isWebsite(repo) && repo.domain" class="project-card__domain">{{ repo.domain }}</p>
             </div>
@@ -3082,6 +3091,58 @@ onBeforeUnmount(stopViewReads)
 .tool-modal__tabs button:hover { color: #11110f !important; background: var(--projects-acid-soft) !important; box-shadow: none; }
 .tool-modal__tab--active,
 .tool-modal__tab--active:hover { color: #11110f !important; background: var(--projects-acid) !important; box-shadow: none; }
+
+.project-card__source-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.project-card__availability {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid #666;
+  border-radius: 3px;
+  color: #444;
+  background: #e5e5e5;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+.project-card.project-card--not-found {
+  border-color: #8a8a85;
+  background: #e7e7e2;
+  box-shadow: 5px 5px 0 #a5a5a0;
+}
+.project-card.project-card--not-found:hover {
+  border-color: #666662;
+  background: #deded9;
+}
+.project-card--not-found .project-card__pin,
+.project-card--not-found .project-card__source,
+.project-card--not-found .project-card__favorite--active,
+.project-card--not-found .project-card__recommend--active {
+  border-color: #666662;
+  color: #333;
+  background: #b8b8b3;
+}
+.project-card--not-found h2,
+.project-card--not-found .project-card__description,
+.project-card--not-found .project-card__stats,
+.project-card--not-found .project-card__stats svg,
+.project-card--not-found .project-card__domain {
+  color: #555550;
+}
+.project-card--not-found .project-card__stats {
+  border-top-color: #8a8a85;
+}
+.project-card--not-found .project-chip {
+  border-color: #888883;
+  color: #555550;
+  background: #d6d6d1;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .projects-page *, .projects-page *::before, .projects-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }

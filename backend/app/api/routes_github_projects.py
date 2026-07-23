@@ -46,6 +46,7 @@ class GitHubProjectItem(BaseModel):
     first_seen_at: str | None = None
     last_seen_at: str | None = None
     last_snapshot_at: str | None = None
+    availability_status: str = "active"
     snapshot_date: str | None = None
     captured_at: str | None = None
     rank_in_period: int | None = None

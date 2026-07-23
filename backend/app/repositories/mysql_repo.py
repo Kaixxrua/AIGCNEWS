@@ -244,6 +244,9 @@ def _normalize_github_project_row(row: Dict[str, Any]) -> Dict[str, Any]:
     item["daily_star_growth"] = _as_int(item.get("daily_star_growth"))
     item["daily_growth_available"] = bool(_as_int(item.get("daily_growth_available")))
     item["daily_growth_source"] = str(item.get("daily_growth_source") or "unavailable")
+    item["availability_status"] = (
+        "not_found" if item.get("availability_status") == "not_found" else "active"
+    )
     item["daily_growth_observed_at"] = _to_iso_string(item.get("daily_growth_observed_at"))
     item["hot_score"] = _as_float(item.get("hot_score"))
     item["scale_corrected_growth_score"] = _as_float(item.get("scale_corrected_growth_score"))
@@ -285,6 +288,9 @@ def _normalize_project_row(row: Dict[str, Any]) -> Dict[str, Any]:
     item["daily_star_growth"] = _as_int(item.get("daily_star_growth"))
     item["daily_growth_available"] = bool(_as_int(item.get("daily_growth_available")))
     item["daily_growth_source"] = str(item.get("daily_growth_source") or "unavailable")
+    item["availability_status"] = (
+        "not_found" if item.get("availability_status") == "not_found" else "active"
+    )
     item["daily_growth_observed_at"] = _to_iso_string(item.get("daily_growth_observed_at"))
     item["hot_score"] = _as_float(item.get("hot_score"))
     item["scale_corrected_growth_score"] = _as_float(item.get("scale_corrected_growth_score"))
@@ -667,6 +673,9 @@ class MySQLRepository:
                 first_seen_at VARCHAR(64),
                 last_seen_at VARCHAR(64),
                 last_snapshot_at VARCHAR(64),
+                availability_status VARCHAR(32) NOT NULL DEFAULT 'active',
+                not_found_count INT NOT NULL DEFAULT 0,
+                availability_checked_at VARCHAR(64),
                 UNIQUE KEY uq_gh_repo_full_name (full_name)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
@@ -1187,6 +1196,9 @@ class MySQLRepository:
                     "ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL UNIQUE AFTER phone",
                     "ALTER TABLE users ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 1 AFTER email",
                     "ALTER TABLE users ADD COLUMN invite_code_used VARCHAR(64) NULL AFTER email_verified",
+                    "ALTER TABLE github_repo_candidates ADD COLUMN availability_status VARCHAR(32) NOT NULL DEFAULT 'active' AFTER last_snapshot_at",
+                    "ALTER TABLE github_repo_candidates ADD COLUMN not_found_count INT NOT NULL DEFAULT 0 AFTER availability_status",
+                    "ALTER TABLE github_repo_candidates ADD COLUMN availability_checked_at VARCHAR(64) NULL AFTER not_found_count",
                     "ALTER TABLE github_repo_candidates ADD UNIQUE KEY uq_gh_repo_full_name (full_name)",
                     "ALTER TABLE github_repo_candidates ADD INDEX idx_gh_candidates_stars (stars, forks, full_name)",
                     "ALTER TABLE github_repo_candidates ADD INDEX idx_gh_candidates_pushed (pushed_at, stars)",
@@ -1677,6 +1689,62 @@ class MySQLRepository:
         finally:
             conn.close()
 
+    def mark_github_repo_available(self, full_name: str, *, checked_at: str) -> bool:
+        """Restore a repository after a successful public GitHub API response."""
+        sql = """
+            UPDATE github_repo_candidates
+            SET availability_status = 'active',
+                not_found_count = 0,
+                availability_checked_at = %s
+            WHERE LOWER(full_name) = LOWER(%s)
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (checked_at, full_name))
+                changed = cur.rowcount > 0
+            conn.commit()
+            return changed
+        finally:
+            conn.close()
+
+    def record_github_repo_not_found(self, full_name: str, *, checked_at: str) -> bool:
+        """Mark a repository unavailable after two consecutive public API 404s."""
+        sql = """
+            UPDATE github_repo_candidates
+            SET not_found_count = not_found_count + 1,
+                availability_status = CASE
+                    WHEN not_found_count + 1 >= 2 THEN 'not_found'
+                    ELSE availability_status
+                END,
+                availability_checked_at = %s
+            WHERE LOWER(full_name) = LOWER(%s)
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT availability_status FROM github_repo_candidates WHERE LOWER(full_name) = LOWER(%s) FOR UPDATE",
+                    (full_name,),
+                )
+                previous = cur.fetchone() or {}
+                if not previous:
+                    conn.commit()
+                    return False
+                cur.execute(sql, (checked_at, full_name))
+                cur.execute(
+                    "SELECT availability_status FROM github_repo_candidates WHERE LOWER(full_name) = LOWER(%s)",
+                    (full_name,),
+                )
+                current = cur.fetchone() or {}
+            conn.commit()
+            return (
+                previous.get("availability_status") != "not_found"
+                and current.get("availability_status") == "not_found"
+            )
+        finally:
+            conn.close()
+
     def ensure_github_repo_candidate(self, repo: Dict[str, Any]) -> str:
         """Create a minimal candidate without overwriting an existing project row."""
         sql = """
@@ -2055,7 +2123,10 @@ class MySQLRepository:
                 source_channels,
                 first_seen_at,
                 last_seen_at,
-                last_snapshot_at
+                last_snapshot_at,
+                availability_status,
+                not_found_count,
+                availability_checked_at
             FROM github_repo_candidates
             WHERE {' AND '.join(filters)}
             ORDER BY COALESCE(stars, 0) DESC, full_name ASC
@@ -2100,8 +2171,12 @@ class MySQLRepository:
         placeholders = ", ".join(["%s"] * len(repo_ids))
         sql = f"""
             SELECT
-                COUNT(DISTINCT s.repo_id) AS snapshot_count,
-                COUNT(DISTINCT m.repo_id) AS metric_count,
+                COUNT(DISTINCT CASE
+                    WHEN s.repo_id IS NOT NULL OR c.availability_status = 'not_found' THEN c.repo_id
+                END) AS snapshot_count,
+                COUNT(DISTINCT CASE
+                    WHEN m.repo_id IS NOT NULL OR c.availability_status = 'not_found' THEN c.repo_id
+                END) AS metric_count,
                 MIN(s.captured_at) AS oldest_captured_at
             FROM github_repo_candidates c
             LEFT JOIN github_repo_snapshots s
@@ -3540,6 +3615,7 @@ class MySQLRepository:
                 c.first_seen_at,
                 c.last_seen_at,
                 c.last_snapshot_at,
+                c.availability_status,
                 {github_hot_columns}
                 ge.confidence,
                 {github_favorite_columns},
@@ -3581,6 +3657,7 @@ class MySQLRepository:
                 w.first_seen_at,
                 w.last_seen_at,
                 NULL AS last_snapshot_at,
+                'active' AS availability_status,
                 NULL AS snapshot_date,
                 NULL AS captured_at,
                 NULL AS rank_in_period,
