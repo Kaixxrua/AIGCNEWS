@@ -28,6 +28,9 @@ from backend.app.repositories.mysql_mcp_access_token_repository import (
 from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
+from backend.app.repositories.mysql_runtime_provider_repository import (
+    MySQLRuntimeProviderSettingRepository,
+)
 from backend.app.repositories.mysql_user_account_repository import (
     MySQLUserAccountRepository,
 )
@@ -423,6 +426,7 @@ class MySQLRepository:
         self._mcp_server_configs: MySQLMcpServerConfigRepository | None = None
         self._mcp_access_tokens: MySQLMcpAccessTokenRepository | None = None
         self._user_accounts: MySQLUserAccountRepository | None = None
+        self._runtime_provider_settings: MySQLRuntimeProviderSettingRepository | None = None
         if not MySQLRepository._schema_initialized:
             with MySQLRepository._schema_lock:
                 if not MySQLRepository._schema_initialized:
@@ -486,6 +490,14 @@ class MySQLRepository:
         if self._user_accounts is None:
             self._user_accounts = MySQLUserAccountRepository(self._database)
         return self._user_accounts
+
+    @property
+    def runtime_provider_settings(self) -> MySQLRuntimeProviderSettingRepository:
+        if self._runtime_provider_settings is None:
+            self._runtime_provider_settings = MySQLRuntimeProviderSettingRepository(
+                self._database
+            )
+        return self._runtime_provider_settings
 
     def resolve_github_repo_id(self, repo_id: str = "", full_name: str = "") -> str:
         """Return the canonical repo_id for a GitHub repository identity."""

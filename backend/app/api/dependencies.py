@@ -20,6 +20,9 @@ from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.mysql_runtime_provider_repository import (
+    MySQLRuntimeProviderSettingRepository,
+)
 from backend.app.repositories.mysql_user_account_repository import (
     MySQLUserAccountRepository,
 )
@@ -87,3 +90,10 @@ def get_user_account_repository(
 ) -> MySQLUserAccountRepository:
     """Return user account persistence through the compatibility facade."""
     return MySQLRepository(database=database).user_accounts
+
+
+def get_runtime_provider_setting_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLRuntimeProviderSettingRepository:
+    """Return runtime model configuration through the compatibility facade."""
+    return MySQLRepository(database=database).runtime_provider_settings
