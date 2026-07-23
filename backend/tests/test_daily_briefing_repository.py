@@ -11,7 +11,11 @@ from backend.app.services.briefing.daily_briefing import DailyBriefingService
 class DailyBriefingRepositoryTests(unittest.TestCase):
     def test_default_briefing_repository_uses_mysql_component(self) -> None:
         briefing_repository = MagicMock(spec=BriefingContentRepository)
-        mysql_repository = MagicMock(briefings=briefing_repository)
+        snapshot_reader = MagicMock()
+        mysql_repository = MagicMock(
+            briefings=briefing_repository,
+            rank_snapshots=snapshot_reader,
+        )
 
         with patch(
             "backend.app.services.briefing.daily_briefing.get_chat_model",
@@ -21,6 +25,7 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
 
         self.assertIs(service._db, mysql_repository)
         self.assertIs(service._briefings, briefing_repository)
+        self.assertIs(service._rank_snapshots, snapshot_reader)
 
     def test_injected_briefing_repository_remains_separate(self) -> None:
         briefing_repository = MagicMock(spec=BriefingContentRepository)
@@ -64,7 +69,7 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
     def test_force_regenerate_does_not_read_briefing_cache(self) -> None:
         repository = MagicMock(spec=BriefingContentRepository)
         service = self._service(repository)
-        service._db.get_snapshot_documents.return_value = []
+        service._rank_snapshots.get_snapshot_documents.return_value = []
 
         events = self._collect(
             service.stream_generate(

@@ -9,6 +9,7 @@ from backend.app.repositories.briefing_repository import BriefingContentReposito
 from backend.app.repositories.document_repository import DocumentFeedReader
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.services.ingestion.base_crawler import today_cst
 
 logger = logging.getLogger(__name__)
@@ -339,10 +340,12 @@ class DailyBriefingService:
         top_k: int = 10,
         briefing_repository: BriefingContentRepository | None = None,
         document_feed: DocumentFeedReader | None = None,
+        rank_snapshot_reader: RankSnapshotReader | None = None,
     ) -> None:
         self._db = mysql_repo or MySQLRepository()
         self._briefings = briefing_repository or self._db.briefings
         self._document_feed = document_feed or self._db.documents
+        self._rank_snapshots = rank_snapshot_reader or self._db.rank_snapshots
         self._top_k = top_k
         self._llm = get_chat_model()
 
@@ -462,7 +465,7 @@ class DailyBriefingService:
             # 2b. 从快照表按日期+channel 精确获取，确保 GitHub 简报与项目库“今日暴涨”同源。
             if not docs and expected_channels:
                 for channel in expected_channels:
-                    snap_docs = self._db.get_snapshot_documents(
+                    snap_docs = self._rank_snapshots.get_snapshot_documents(
                         snapshot_date=today,
                         source_channel=channel,
                         source_type=source_type,

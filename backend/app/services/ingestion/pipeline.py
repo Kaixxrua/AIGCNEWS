@@ -39,6 +39,7 @@ from backend.app.repositories.document_repository import (
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.task_repository import (
     IngestionTaskWriter,
     LatestTaskReader,
@@ -343,6 +344,7 @@ def _ingest_documents(
     source_label: str,
     snapshot_date: Optional[str] = None,
     document_writer: DocumentWriter | None = None,
+    rank_snapshots: RankSnapshotRepository | None = None,
 ) -> int:
     """将一批文档写入 SQLite + Milvus + Neo4j，返回成功入库数量。
 
@@ -359,6 +361,7 @@ def _ingest_documents(
     sorted_papers = _sort_papers_for_write(papers)
     vector_documents = _to_documents(sorted_papers)
     writer = document_writer or db.documents
+    snapshots = rank_snapshots or db.rank_snapshots
 
     # ── 替换式快照写入：先收集本批次涉及的所有 channel，逐 channel 清除旧快照 ──
     # 确保同一 snapshot_date + source_channel 下不会残留上次采集的旧 doc_id，
@@ -371,7 +374,7 @@ def _ingest_documents(
 
     for ch in channels_in_batch:
         try:
-            deleted = db.delete_snapshots_by_channel(snapshot_date, ch)
+            deleted = snapshots.delete_snapshots_by_channel(snapshot_date, ch)
             if deleted:
                 logger.info(
                     "[Pipeline][%s] 清除旧快照 %s/%s: %d 条（将替换为本批 %d 条）",
@@ -426,7 +429,7 @@ def _ingest_documents(
 
         # ── 写入排行快照（历史记录，不会被后续采集覆盖） ──
         try:
-            db.upsert_rank_snapshot(
+            snapshots.upsert_rank_snapshot(
                 doc_id=doc.metadata["id"],
                 snapshot_date=snapshot_date,
                 source_channel=source_channel,
@@ -617,6 +620,7 @@ class IngestionOrchestrator:
             label,
             snapshot_date or self.snapshot_date,
             self.db.documents,
+            self.db.rank_snapshots,
         )
         return count
 

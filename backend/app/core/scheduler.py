@@ -97,7 +97,7 @@ def _missing_recent_arxiv_daily_dates() -> List[str]:
         for offset in range(_ARXIV_RECONCILE_DAYS, 0, -1)
     ]
     existing = set(
-        MySQLRepository().get_snapshot_dates(
+        MySQLRepository().rank_snapshots.get_snapshot_dates(
             limit=_ARXIV_RECONCILE_DAYS,
             source="arxiv",
             period="daily",

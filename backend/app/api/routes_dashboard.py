@@ -11,9 +11,11 @@ from fastapi_cache.decorator import cache
 
 from backend.app.api.dependencies import (
     get_document_repository,
+    get_rank_snapshot_repository,
     get_user_account_repository,
 )
 from backend.app.repositories.document_repository import DocumentStatisticsReader
+from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.repositories.user_account_repository import UserStatisticsReader
 
 router = APIRouter()
@@ -504,7 +506,7 @@ def _resolve_snapshot_date(date_param: Optional[str]) -> str:
 
 
 def _apply_hn_daily_dedup(
-    db: "MySQLRepository",
+    db: RankSnapshotReader,
     date_str: str,
     docs: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
@@ -570,7 +572,7 @@ def _apply_hn_daily_dedup(
 
 
 def _get_docs_for_date(
-    db: "MySQLRepository",
+    db: RankSnapshotReader,
     date_str: str,
     period: str,
     source_type: Optional[str] = None,
@@ -685,11 +687,9 @@ async def get_top_list(
     date: Optional[str] = Query(
         default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
     ),
+    rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
 ):
     """Return top-N documents ranked by vote count, optionally filtered by source, period and date."""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     source_type = None if (not source or source == "all") else source
     snapshot_date = _resolve_snapshot_date(date)
 
@@ -707,7 +707,7 @@ async def get_top_list(
         }
 
     docs = await asyncio.to_thread(
-        _get_docs_for_date, db, snapshot_date, period, source_type, 500
+        _get_docs_for_date, rank_snapshots, snapshot_date, period, source_type, 500
     )
     deduped = _dedupe_docs(docs)
     top_items = deduped[:limit]
@@ -736,11 +736,9 @@ async def get_trend_radar(
     date: Optional[str] = Query(
         default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
     ),
+    rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
 ):
     """Return trend radar chart data computed from filtered top documents."""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     source_type = None if (not source or source == "all") else source
     snapshot_date = _resolve_snapshot_date(date)
 
@@ -758,7 +756,12 @@ async def get_trend_radar(
         }
 
     docs = await asyncio.to_thread(
-        _get_docs_for_date, db, snapshot_date, period, source_type, max(limit, 100)
+        _get_docs_for_date,
+        rank_snapshots,
+        snapshot_date,
+        period,
+        source_type,
+        max(limit, 100),
     )
     radar = _score_categories(docs[:limit])
     return {
@@ -781,6 +784,7 @@ async def get_dashboard_summary(
     ),
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
+    rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
 ):
     """Return a combined dashboard payload: period top-10 + radar + basic stats + source breakdown.
 
@@ -789,9 +793,6 @@ async def get_dashboard_summary(
     """
     from datetime import timedelta, timezone as _tz
 
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     snapshot_date = _resolve_snapshot_date(date)
 
     board = _compute_board_status(snapshot_date)
@@ -838,7 +839,7 @@ async def get_dashboard_summary(
         }
 
     docs = await asyncio.to_thread(
-        _get_docs_for_date, db, snapshot_date, period, None, 500
+        _get_docs_for_date, rank_snapshots, snapshot_date, period, None, 500
     )
     deduped = _dedupe_docs(docs)
     top10 = deduped[:10]
@@ -879,13 +880,16 @@ async def get_snapshot_dates(
     limit: int = Query(default=60, ge=1, le=365),
     source: Optional[str] = Query(default=None),
     period: Optional[str] = Query(default=None, pattern="^(daily|weekly|monthly)$"),
+    rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
 ):
     """返回指定来源和周期有快照记录的日期列表（降序）。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     source_type = None if (not source or source == "all") else source
-    dates = await asyncio.to_thread(db.get_snapshot_dates, limit, source_type, period)
+    dates = await asyncio.to_thread(
+        rank_snapshots.get_snapshot_dates,
+        limit,
+        source_type,
+        period,
+    )
     return {
         "dates": dates,
         "total": len(dates),

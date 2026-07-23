@@ -50,11 +50,13 @@ class SnapshotDateFlowTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(count, 1)
-        self.assertEqual(to_thread.call_args.args[-1], "2026-07-12")
+        self.assertEqual(to_thread.call_args.args[5], "2026-07-12")
+        self.assertIs(to_thread.call_args.args[7], orchestrator.db.rank_snapshots)
 
     def test_reconciliation_is_bounded_and_oldest_first(self) -> None:
-        repo = MagicMock()
-        repo.get_snapshot_dates.return_value = ["2026-07-13"]
+        snapshots = MagicMock()
+        snapshots.get_snapshot_dates.return_value = ["2026-07-13"]
+        repo = MagicMock(rank_snapshots=snapshots)
         with (
             patch("backend.app.repositories.mysql_repo.MySQLRepository", return_value=repo),
             patch("backend.app.services.ingestion.base_crawler.today_cst", return_value="2026-07-13"),
@@ -62,7 +64,7 @@ class SnapshotDateFlowTests(unittest.IsolatedAsyncioTestCase):
             missing = scheduler._missing_recent_arxiv_daily_dates()
 
         self.assertEqual(missing, ["2026-07-11", "2026-07-12"])
-        repo.get_snapshot_dates.assert_called_once_with(
+        snapshots.get_snapshot_dates.assert_called_once_with(
             limit=2, source="arxiv", period="daily"
         )
 
