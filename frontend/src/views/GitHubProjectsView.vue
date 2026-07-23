@@ -19,7 +19,6 @@ import {
   type GitHubProjectItem,
   type GitHubProjectSort,
   type GitHubProjectTag,
-  type ProjectFavoritePayload,
   type ProjectScope,
   type ProjectSource,
   type ProjectTaxonomyItem,
@@ -27,6 +26,31 @@ import {
 } from '../services/api'
 import router from '../router'
 import { useAuthStore } from '../stores/authStore'
+import {
+  canEditWebsiteProject,
+  canFavoriteProject,
+  canRecommendProject,
+  fallbackProjectDescription,
+  favoriteButtonLabel as getFavoriteButtonLabel,
+  formattedProjectHotScore,
+  formatProjectCount,
+  formatProjectShortDate,
+  isWebsite,
+  projectDailyGrowth,
+  projectDailyGrowthTitle,
+  projectDisplayTags,
+  projectFavoritePayload,
+  projectKey,
+  projectLinkLabel,
+  projectLogoKey,
+  projectName,
+  projectSourceBadge,
+  projectUrl,
+  recommendButtonLabel as getRecommendButtonLabel,
+  shouldShowProjectHotScore,
+  websiteLogoInitial,
+  type ProjectChip,
+} from '../features/projects/projectPresentation'
 
 defineOptions({ name: 'GitHubProjectsView' })
 
@@ -90,12 +114,6 @@ let hasActivatedOnce = false
 let searchTimer: number | undefined
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
-type ProjectChip =
-  | { type: 'subcategory'; label: string; categorySlug: string; value: string }
-  | { type: 'category'; label: string; value: string }
-  | { type: 'tag'; label: string; value: string }
-  | { type: 'language'; label: string; value: string }
-
 type ProjectRouteQuery = Record<string, string>
 
 const validSources: ProjectViewSource[] = ['all', 'website', 'favorites']
@@ -263,38 +281,16 @@ const hasActiveFilter = computed(() => (
   || !!selectedTag.value
 ))
 
-const isWebsite = (repo: GitHubProjectItem) => repo.source === 'website' || !!repo.website_id
-
-const repoName = (repo: GitHubProjectItem) => {
-  const name = repo.full_name || repo.title || repo.domain || String(repo.repo_id ?? repo.website_id ?? '')
-  return name.trim()
-}
-
-const repoUrl = (repo: GitHubProjectItem) => {
-  if (repo.url) return repo.url
-  if (!isWebsite(repo) && repo.full_name) return `https://github.com/${repo.full_name}`
-  return ''
-}
-
-const sourceBadge = (repo: GitHubProjectItem) => {
-  if (isWebsite(repo)) return '网页收藏'
-  return repo.is_recommended ? 'GitHub · 站长推荐' : 'GitHub'
-}
-const linkLabel = (repo: GitHubProjectItem) => (isWebsite(repo) ? '访问网站' : 'GitHub')
-const projectKey = (repo: GitHubProjectItem) => (isWebsite(repo) ? `website:${repo.website_id}` : `github:${repo.repo_id ?? repo.full_name}`)
-const logoKey = (repo: GitHubProjectItem) => {
-  const url = isWebsite(repo) ? (repo.image_url || '') : ''
-  return url ? `${projectKey(repo)}:${url}` : ''
-}
+const repoName = projectName
+const repoUrl = projectUrl
+const sourceBadge = projectSourceBadge
+const linkLabel = projectLinkLabel
+const logoKey = projectLogoKey
 const brokenLogoKeys = ref<Set<string>>(new Set())
 const loadedLogoKeys = ref<Set<string>>(new Set())
 const websiteLogoUrl = (repo: GitHubProjectItem) => {
   const key = logoKey(repo)
   return key && !brokenLogoKeys.value.has(key) ? (repo.image_url || '') : ''
-}
-const websiteLogoInitial = (repo: GitHubProjectItem) => {
-  const label = repo.title || repo.domain || repoName(repo)
-  return Array.from(label.trim())[0]?.toLocaleUpperCase() || 'W'
 }
 const isWebsiteLogoLoaded = (repo: GitHubProjectItem) => {
   const key = logoKey(repo)
@@ -315,120 +311,27 @@ const hideBrokenLogo = (repo: GitHubProjectItem) => {
     loadedLogoKeys.value = nextLoadedKeys
   }
 }
-const favoritePayload = (repo: GitHubProjectItem): ProjectFavoritePayload => {
-  if (isWebsite(repo)) return { source: 'website', website_id: repo.website_id }
-  return { source: 'github', repo_id: repo.repo_id ?? repo.full_name }
-}
-const canFavorite = (repo: GitHubProjectItem) => (isWebsite(repo) ? !!repo.website_id : !!(repo.repo_id || repo.full_name))
-const canRecommendCard = (repo: GitHubProjectItem) => authStore.isAdmin && !isWebsite(repo) && !!(repo.repo_id || repo.full_name)
-const canEditCard = (repo: GitHubProjectItem) => isWebsiteOnlyView.value && isWebsite(repo) && Boolean(repo.user_added) && Boolean(repo.website_id)
-const favoriteButtonLabel = (repo: GitHubProjectItem) => {
-  if (favoriteBusyKey.value === projectKey(repo)) return '处理中'
-  if (!repo.is_favorited) return authStore.isLoggedIn ? '收藏' : '登录收藏'
-  return isWebsite(repo) && repo.user_added ? '已加入' : '已收藏'
-}
-const recommendButtonLabel = (repo: GitHubProjectItem) => {
-  if (recommendBusyKey.value === projectKey(repo)) return '处理中'
-  return repo.is_recommended ? '取消推荐' : '设为站长推荐'
-}
-const fallbackDescription = (repo: GitHubProjectItem) => (
-  isWebsite(repo) ? '这个工具网页暂时没有中文简介。' : '这个项目暂时没有中文简介。'
+const favoritePayload = projectFavoritePayload
+const canFavorite = canFavoriteProject
+const canRecommendCard = (repo: GitHubProjectItem) => canRecommendProject(repo, authStore.isAdmin)
+const canEditCard = (repo: GitHubProjectItem) => canEditWebsiteProject(repo, isWebsiteOnlyView.value)
+const favoriteButtonLabel = (repo: GitHubProjectItem) => getFavoriteButtonLabel(
+  repo,
+  favoriteBusyKey.value === projectKey(repo),
+  authStore.isLoggedIn,
 )
-
-const displayTags = (repo: GitHubProjectItem): ProjectChip[] => {
-  const result: ProjectChip[] = []
-  const labels = new Set<string>()
-  const pushChip = (chip: ProjectChip) => {
-    const cleanLabel = chip.label.trim()
-    if (!cleanLabel || labels.has(cleanLabel) || result.length >= 5) return
-    labels.add(cleanLabel)
-    result.push({ ...chip, label: cleanLabel })
-  }
-
-  if (repo.subcategory_name && repo.subcategory_slug) {
-    pushChip({
-      type: 'subcategory',
-      label: repo.subcategory_name,
-      categorySlug: repo.category_slug || '',
-      value: repo.subcategory_slug,
-    })
-  }
-  if (repo.category_name && repo.category_slug) {
-    pushChip({ type: 'category', label: repo.category_name, value: repo.category_slug })
-  }
-  const ignoredPersonalTags = new Set(['AI 工具', '网页收藏'])
-  for (const tag of repo.tags ?? []) {
-    const label = String(tag).trim()
-    if (isPersonalView.value && ignoredPersonalTags.has(label)) continue
-    pushChip({ type: 'tag', label, value: label })
-  }
-  if (repo.language) {
-    pushChip({ type: 'language', label: repo.language, value: repo.language })
-  }
-  if (result.length) return result
-  if (isPersonalView.value) return []
-  return [{ type: 'tag', label: isWebsite(repo) ? '网页收藏' : 'AI 项目', value: isWebsite(repo) ? '网页收藏' : 'AI 项目' }]
-}
-
-const formatCount = (value: GitHubProjectItem['stars']) => {
-  const numeric = Number(value ?? 0)
-  if (!Number.isFinite(numeric)) return '0'
-
-  return new Intl.NumberFormat('en', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(numeric)
-}
-
-const formatShortDate = (value: string | null | undefined) => {
-  if (!value) return '已收藏'
-  const date = new Date(value.endsWith('Z') || value.includes('+') ? value : `${value}Z`)
-  if (Number.isNaN(date.getTime())) return '已收藏'
-  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' }).format(date)
-}
-
-const dailyGrowth = (repo: GitHubProjectItem) => {
-  const numeric = Number(repo.daily_star_growth ?? 0)
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
-}
-const hotScore = (repo: GitHubProjectItem) => {
-  const numeric = Number(repo.hot_score ?? repo.score ?? 0)
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
-}
-const dailyGrowthSource = (repo: GitHubProjectItem) => {
-  if (repo.daily_growth_source) return String(repo.daily_growth_source)
-  const available = (
-    repo.daily_growth_available === true
-    || repo.daily_growth_available === 1
-    || repo.daily_growth_available === '1'
-    || repo.daily_growth_available === 'true'
-  )
-  return available && repo.previous_snapshot_date ? 'snapshot_delta' : 'unavailable'
-}
-const formatGrowthObservedAt = (value: string | null | undefined) => {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-const dailyGrowthTitle = (repo: GitHubProjectItem) => {
-  const source = dailyGrowthSource(repo)
-  if (source === 'snapshot_delta') {
-    return `基于 ${repo.previous_snapshot_date || '昨天'} → ${repo.daily_growth_date || repo.snapshot_date || '今天'} 的连续快照精确计算`
-  }
-  if (source === 'github_trending_daily') {
-    const observedAt = formatGrowthObservedAt(repo.daily_growth_observed_at)
-    return `来自 GitHub Trending 日榜报告的 stars today${observedAt ? ` · ${observedAt} 采集` : ''}`
-  }
-  return '缺少连续快照和同日 GitHub Trending 日榜数据，今日增长暂按 0 计算'
-}
-const shouldShowHotScore = (repo: GitHubProjectItem) => !isWebsite(repo) && (sort.value === 'hot' || selectedScope.value === 'today')
-const formattedHotScore = (repo: GitHubProjectItem) => hotScore(repo).toFixed(1).replace(/\.0$/, '')
+const recommendButtonLabel = (repo: GitHubProjectItem) => getRecommendButtonLabel(
+  repo,
+  recommendBusyKey.value === projectKey(repo),
+)
+const fallbackDescription = fallbackProjectDescription
+const displayTags = (repo: GitHubProjectItem): ProjectChip[] => projectDisplayTags(repo, isPersonalView.value)
+const formatCount = formatProjectCount
+const formatShortDate = formatProjectShortDate
+const dailyGrowth = projectDailyGrowth
+const dailyGrowthTitle = projectDailyGrowthTitle
+const shouldShowHotScore = (repo: GitHubProjectItem) => shouldShowProjectHotScore(repo, sort.value, selectedScope.value)
+const formattedHotScore = formattedProjectHotScore
 
 const upsertProjectItem = (item: GitHubProjectItem) => {
   const key = projectKey(item)
