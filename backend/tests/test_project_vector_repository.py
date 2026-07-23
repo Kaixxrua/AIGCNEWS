@@ -7,6 +7,7 @@ from backend.app.repositories.project_vector_repo import (
     ProjectVectorChunk,
     ProjectVectorRepository,
     ProjectVectorSchemaError,
+    ProjectVectorUnavailableError,
 )
 
 
@@ -45,6 +46,29 @@ class ProjectVectorRepositoryTests(unittest.TestCase):
 
         self.assertFalse(hasattr(collection, "drop") and collection.drop.called)
 
+    def test_search_loads_collection_only_once(self) -> None:
+        repository = ProjectVectorRepository(collection_name="test", dimension=2)
+        collection = MagicMock()
+        collection.search.return_value = [[]]
+        repository.ensure_collection = MagicMock(return_value=collection)
+
+        repository.search_repo_ids([0.1, 0.2], chunk_limit=5, repo_limit=2, min_score=0)
+        repository.search_repo_ids([0.1, 0.2], chunk_limit=5, repo_limit=2, min_score=0)
+
+        collection.load.assert_called_once_with()
+
+    def test_failed_load_is_retried(self) -> None:
+        repository = ProjectVectorRepository(collection_name="test", dimension=2)
+        collection = MagicMock()
+        collection.load.side_effect = [RuntimeError("temporary"), None]
+        repository.ensure_collection = MagicMock(return_value=collection)
+
+        with self.assertRaises(ProjectVectorUnavailableError):
+            repository.search_repo_ids([0.1, 0.2], chunk_limit=5, repo_limit=2, min_score=0)
+        collection.search.return_value = [[]]
+        repository.search_repo_ids([0.1, 0.2], chunk_limit=5, repo_limit=2, min_score=0)
+
+        self.assertEqual(collection.load.call_count, 2)
 
     def test_count_project_chunks_quotes_repo_id(self) -> None:
         repository = ProjectVectorRepository(collection_name="test", dimension=2)
@@ -66,6 +90,16 @@ class ProjectVectorRepositoryTests(unittest.TestCase):
 
         collection.delete.assert_called_once_with('repo_id == "owner/\\"repo"')
         collection.flush.assert_called_once_with()
+
+    def test_close_disconnects_once(self) -> None:
+        repository = ProjectVectorRepository(collection_name="test", dimension=2)
+        repository._connected = True
+        with patch("pymilvus.connections.disconnect") as disconnect:
+            repository.close()
+            repository.close()
+
+        disconnect.assert_called_once_with("project_semantic")
+
 
 if __name__ == "__main__":
     unittest.main()

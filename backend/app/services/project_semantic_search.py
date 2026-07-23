@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
 from backend.app.core.config import settings
 from backend.app.repositories.project_vector_repo import ProjectVectorRepository
 from backend.app.services.search_semantics import normalize_search_query
+
+logger = logging.getLogger(__name__)
+_WARMUP_QUERY = "AI developer tools and open source projects"
 
 
 @dataclass(frozen=True)
@@ -23,6 +28,16 @@ class ProjectSemanticSearch:
     ) -> None:
         self.vectors = vectors or ProjectVectorRepository()
         self._embeddings = embeddings
+        self._embedding_lock = Lock()
+
+    def _get_embeddings(self):
+        if self._embeddings is None:
+            with self._embedding_lock:
+                if self._embeddings is None:
+                    from backend.app.core.model_factory import get_embedding_model
+
+                    self._embeddings = get_embedding_model()
+        return self._embeddings
 
     def search_repo_ids(self, query: str) -> list[ProjectSemanticHit]:
         if not settings.project_semantic_search_enabled:
@@ -30,11 +45,7 @@ class ProjectSemanticSearch:
         query = normalize_search_query(query)[:120]
         if not query:
             return []
-        if self._embeddings is None:
-            from backend.app.core.model_factory import get_embedding_model
-
-            self._embeddings = get_embedding_model()
-        vector = list(self._embeddings.embed_query(query))
+        vector = list(self._get_embeddings().embed_query(query))
         hits = self.vectors.search_repo_ids(
             vector,
             chunk_limit=settings.project_semantic_chunk_limit,
@@ -42,3 +53,54 @@ class ProjectSemanticSearch:
             min_score=settings.project_semantic_min_score,
         )
         return [ProjectSemanticHit(repo_id=hit.repo_id, score=hit.score) for hit in hits]
+
+    def warmup(self) -> None:
+        vector = list(self._get_embeddings().embed_query(_WARMUP_QUERY))
+        self.vectors.search_repo_ids(
+            vector,
+            chunk_limit=1,
+            repo_limit=1,
+            min_score=-1.0,
+        )
+
+    def close(self) -> None:
+        self.vectors.close()
+
+
+_shared_project_semantic_search: ProjectSemanticSearch | None = None
+_shared_search_lock = Lock()
+_warmup_lock = Lock()
+
+
+def get_project_semantic_search() -> ProjectSemanticSearch:
+    global _shared_project_semantic_search
+    if _shared_project_semantic_search is None:
+        with _shared_search_lock:
+            if _shared_project_semantic_search is None:
+                _shared_project_semantic_search = ProjectSemanticSearch()
+    return _shared_project_semantic_search
+
+
+def warmup_project_semantic_search() -> dict[str, Any]:
+    if not settings.project_semantic_search_enabled:
+        return {"status": "disabled"}
+    if not _warmup_lock.acquire(blocking=False):
+        return {"status": "already_running"}
+    try:
+        get_project_semantic_search().warmup()
+        return {"status": "success"}
+    except Exception as exc:
+        logger.warning("Project semantic search warmup failed: %s", exc)
+        return {"status": "failed", "error": str(exc)}
+    finally:
+        _warmup_lock.release()
+
+
+def close_project_semantic_search() -> None:
+    global _shared_project_semantic_search
+    with _warmup_lock:
+        with _shared_search_lock:
+            search = _shared_project_semantic_search
+            _shared_project_semantic_search = None
+        if search is not None:
+            search.close()
