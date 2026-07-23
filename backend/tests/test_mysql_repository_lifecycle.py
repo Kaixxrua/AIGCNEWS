@@ -198,6 +198,45 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         component.clear_all_documents.assert_called_once_with()
         database.connect.assert_not_called()
 
+    def test_rank_snapshot_compatibility_methods_delegate_to_component(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MySQLRepository(database=database)
+        component = MagicMock()
+        component.get_snapshot_dates.return_value = ["2026-07-23"]
+        component.delete_snapshots_by_channel.return_value = 2
+        repository._rank_snapshots = component
+
+        repository.upsert_rank_snapshot(
+            "doc-1",
+            "2026-07-23",
+            "github_trending_daily",
+            1,
+            12.0,
+            8.0,
+        )
+        dates = repository.get_snapshot_dates(2, "github", "daily")
+        deleted = repository.delete_snapshots_by_channel(
+            "2026-07-23",
+            "github_trending_daily",
+        )
+
+        self.assertEqual(dates, ["2026-07-23"])
+        self.assertEqual(deleted, 2)
+        component.upsert_rank_snapshot.assert_called_once_with(
+            "doc-1",
+            "2026-07-23",
+            "github_trending_daily",
+            1,
+            12.0,
+            8.0,
+        )
+        component.get_snapshot_dates.assert_called_once_with(2, "github", "daily")
+        component.delete_snapshots_by_channel.assert_called_once_with(
+            "2026-07-23",
+            "github_trending_daily",
+        )
+        database.connect.assert_not_called()
+
     def test_runtime_provider_compatibility_methods_delegate_to_component(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         repository = MySQLRepository(database=database)
