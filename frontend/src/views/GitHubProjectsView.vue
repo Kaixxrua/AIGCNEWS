@@ -31,6 +31,8 @@ import { useAuthStore } from '../stores/authStore'
 import ProjectResultCard from '../components/projects/ProjectResultCard.vue'
 import ToolWebsiteAddDialog from '../components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '../components/projects/ToolWebsiteEditDialog.vue'
+import ProjectFiltersPanel from '../components/projects/ProjectFiltersPanel.vue'
+import ProjectPagination from '../components/projects/ProjectPagination.vue'
 import {
   defaultProjectSortForScope,
   defaultProjectSortForSource,
@@ -844,53 +846,36 @@ onBeforeUnmount(stopViewReads)
       </div>
     </section>
 
-    <section class="projects-toolbar glass-card">
-      <div class="projects-source-tabs" aria-label="来源筛选">
-        <button
-          v-for="item in sourceOptions"
-          :key="item.value"
-          type="button"
-          class="projects-source-tab"
-          :class="source === item.value ? 'projects-source-tab--active' : ''"
-          @click="changeSource(item.value)"
-        >
-          <strong>{{ item.label }}</strong>
-          <small>{{ item.hint }}</small>
-        </button>
-      </div>
-
-      <div v-if="!requiresPersonalLogin" class="projects-search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <path d="m20 20-3.5-3.5" />
-        </svg>
-        <input
-          v-model="searchQuery"
-          class="input"
-          type="search"
-          placeholder="搜索项目名、网站、中文描述、语言或标签"
-        />
-        <button
-          v-if="selectedLanguage"
-          type="button"
-          class="projects-search__filter"
-          @click="clearLanguageFilter"
-        >
-          {{ selectedLanguage }} ×
-        </button>
-      </div>
-
-      <label v-if="!requiresPersonalLogin" class="projects-sort">
-        <span>排序</span>
-        <select v-model="sort" :disabled="selectedScope === 'today'">
-          <option v-if="!isWebsiteOnlyView" value="hot">{{ selectedScope === 'today' ? '热度前 50' : '热度优先' }}</option>
-          <option value="stars">Stars 优先</option>
-          <option value="updated">最近更新</option>
-          <option value="recent">最近收录</option>
-          <option value="name">名称</option>
-        </select>
-      </label>
-    </section>
+    <ProjectFiltersPanel
+      v-model:search-query="searchQuery"
+      v-model:sort="sort"
+      :source-options="sourceOptions"
+      :source="source"
+      :requires-personal-login="requiresPersonalLogin"
+      :selected-language="selectedLanguage"
+      :selected-scope="selectedScope"
+      :is-website-only-view="isWebsiteOnlyView"
+      :is-personal-view="isPersonalView"
+      :categories-loading="categoriesLoading"
+      :tags-loading="tagsLoading"
+      :all-scope="allScope"
+      :recommended-scope="recommendedScope"
+      :today-scope="todayScope"
+      :semantic-categories="semanticCategories"
+      :active-category="activeCategory"
+      :visible-subcategories="visibleSubcategories"
+      :selected-category="selectedCategory"
+      :selected-subcategory="selectedSubcategory"
+      :personal-tags="personalTags"
+      :selected-tag="selectedTag"
+      @change-source="changeSource"
+      @clear-language="clearLanguageFilter"
+      @select-scope="selectScope"
+      @select-category="selectCategory"
+      @select-subcategory="selectSubcategory"
+      @select-personal-tag="selectPersonalTag"
+      @clear-personal-tag="clearPersonalTag"
+    />
 
     <section v-if="successMsg && !requiresPersonalLogin" class="projects-toast projects-toast--success glass-card">
       {{ successMsg }}
@@ -924,113 +909,6 @@ onBeforeUnmount(stopViewReads)
     </section>
 
     <template v-else>
-    <section v-if="!isPersonalView" class="projects-category-panel glass-card" aria-label="项目分类筛选">
-      <div class="projects-categories" aria-label="一级分类筛选">
-        <button
-          type="button"
-          class="projects-category projects-category--scope"
-          :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'"
-          :disabled="categoriesLoading"
-          @click="selectScope('all')"
-        >
-          <span>{{ allScope?.name || '全部' }}</span>
-          <small>{{ allScope?.count ?? 0 }}</small>
-        </button>
-        <button
-          type="button"
-          class="projects-category projects-category--recommend"
-          :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'"
-          :disabled="categoriesLoading"
-          @click="selectScope('recommended')"
-        >
-          <span>{{ recommendedScope?.name || '站长推荐' }}</span>
-          <small>{{ recommendedScope?.count ?? 0 }}</small>
-        </button>
-        <button
-          type="button"
-          class="projects-category projects-category--today"
-          :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'"
-          :disabled="categoriesLoading"
-          @click="selectScope('today')"
-        >
-          <span>{{ todayScope?.name || '今日暴涨' }}</span>
-          <small>{{ todayScope?.count ?? 0 }}</small>
-        </button>
-        <button
-          v-for="category in semanticCategories"
-          :key="category.slug"
-          type="button"
-          class="projects-category"
-          :class="selectedScope === 'all' && selectedCategory === category.slug ? 'tab-active' : 'tab-inactive'"
-          :disabled="categoriesLoading"
-          @click="selectCategory(category.slug)"
-        >
-          <span>{{ category.name }}</span>
-          <small>{{ category.count }}</small>
-        </button>
-      </div>
-
-      <div
-        v-if="visibleSubcategories.length"
-        class="projects-subcategories"
-        aria-label="二级分类筛选"
-      >
-        <span class="projects-subcategories__label">{{ activeCategory?.name }} · 二级分类</span>
-        <button
-          type="button"
-          class="projects-category projects-category--sub"
-          :class="selectedSubcategory === 'all' ? 'tab-active' : 'tab-inactive'"
-          :disabled="categoriesLoading"
-          @click="selectSubcategory('all')"
-        >
-          <span>全部</span>
-          <small>{{ activeCategory?.count ?? 0 }}</small>
-        </button>
-        <button
-          v-for="subcategory in visibleSubcategories"
-          :key="subcategory.slug"
-          type="button"
-          class="projects-category projects-category--sub"
-          :class="selectedSubcategory === subcategory.slug ? 'tab-active' : 'tab-inactive'"
-          :disabled="categoriesLoading"
-          @click="selectSubcategory(subcategory.slug)"
-        >
-          <span>{{ subcategory.name }}</span>
-          <small>{{ subcategory.count }}</small>
-        </button>
-      </div>
-    </section>
-
-    <section
-      v-else-if="personalTags.length || selectedTag"
-      class="projects-category-panel projects-tag-panel glass-card"
-      aria-label="个人标签筛选"
-    >
-      <div class="projects-categories" aria-label="个人标签筛选">
-        <button
-          v-for="tag in personalTags"
-          :key="tag.label"
-          type="button"
-          class="projects-category projects-category--tag"
-          :class="selectedTag === tag.label ? 'tab-active' : 'tab-inactive'"
-          :disabled="tagsLoading"
-          @click="selectPersonalTag(tag.label)"
-        >
-          <span>{{ tag.label }}</span>
-          <small>{{ tag.count }}</small>
-        </button>
-        <button
-          v-if="selectedTag"
-          type="button"
-          class="projects-category projects-category--sub"
-          :disabled="tagsLoading"
-          @click="clearPersonalTag"
-        >
-          清除标签
-        </button>
-      </div>
-    </section>
-
     <section v-if="errorMsg" class="projects-toast projects-toast--error glass-card">
       {{ errorMsg }}
     </section>
@@ -1089,27 +967,17 @@ onBeforeUnmount(stopViewReads)
       />
     </section>
 
-    <nav v-if="total > pageSize && !loading" class="projects-pagination glass-card" aria-label="项目分页">
-      <p>第 {{ page }} / {{ totalPages }} 页 · {{ total }} 个条目</p>
-      <div class="projects-pagination__controls">
-        <button class="btn-secondary" :disabled="!hasPrev" @click="goPage(page - 1)">上一页</button>
-        <form class="projects-pagination__jump" aria-label="跳转页码" @submit.prevent="jumpToPage">
-          <span>跳至</span>
-          <input
-            v-model="pageJump"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            :max="totalPages"
-            :placeholder="String(page)"
-            aria-label="输入要跳转的页码"
-          />
-          <span>页</span>
-          <button class="btn-secondary" type="submit">跳转</button>
-        </form>
-        <button class="btn-secondary" :disabled="!hasNext" @click="goPage(page + 1)">下一页</button>
-      </div>
-    </nav>
+    <ProjectPagination
+      v-if="total > pageSize && !loading"
+      v-model:page-jump="pageJump"
+      :page="page"
+      :total-pages="totalPages"
+      :total="total"
+      :has-prev="hasPrev"
+      :has-next="hasNext"
+      @go-page="goPage"
+      @jump-to-page="jumpToPage"
+    />
     </template>
 
     <ToolWebsiteAddDialog
@@ -1291,113 +1159,6 @@ onBeforeUnmount(stopViewReads)
   transform: none;
 }
 
-.projects-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 14px;
-  padding: 14px;
-}
-
-.projects-source-tabs {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.projects-source-tab {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 94px;
-  border: 1px solid rgba(168, 162, 158, 0.22);
-  border-radius: 18px;
-  padding: 9px 12px;
-  color: #78716c;
-  background: rgba(255, 255, 255, 0.64);
-  text-align: left;
-  transition: all 160ms ease;
-}
-
-.projects-source-tab strong {
-  color: #44403c;
-  font-size: 13px;
-}
-
-.projects-source-tab small {
-  font-size: 10px;
-  opacity: 0.72;
-}
-
-.projects-source-tab:hover,
-.projects-source-tab--active {
-  border-color: var(--projects-accent-border);
-  background: rgba(245, 245, 244, 0.86);
-  transform: translateY(-1px);
-}
-
-.projects-source-tab--active strong {
-  color: var(--projects-accent);
-}
-
-.projects-search {
-  position: relative;
-  flex: 1;
-}
-
-.projects-search svg {
-  position: absolute;
-  left: 16px;
-  top: 50%;
-  z-index: 1;
-  width: 17px;
-  height: 17px;
-  color: #a8a29e;
-  transform: translateY(-50%);
-}
-
-.projects-search :deep(.input) {
-  padding-left: 44px;
-}
-
-.projects-search :deep(.input:focus) {
-  border-color: var(--projects-accent-border);
-  box-shadow: 0 0 0 3px var(--projects-accent-soft), 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.projects-search__filter {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  z-index: 2;
-  transform: translateY(-50%);
-  border: 1px solid rgba(245, 158, 11, 0.24);
-  border-radius: 999px;
-  padding: 5px 9px;
-  color: var(--projects-warm);
-  background: rgba(255, 251, 235, 0.86);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.projects-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #78716c;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.projects-sort select {
-  border-radius: 999px;
-  padding: 10px 34px 10px 14px;
-  color: #44403c;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(168, 162, 158, 0.25);
-  outline: none;
-}
-
 .projects-login-prompt {
   position: relative;
   display: grid;
@@ -1514,83 +1275,6 @@ onBeforeUnmount(stopViewReads)
   height: 16px;
 }
 
-.projects-category-panel {
-  position: relative;
-  display: grid;
-  gap: 12px;
-  overflow: hidden;
-  margin-bottom: 18px;
-  padding: 14px;
-}
-
-.projects-category-panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 10% 10%, var(--projects-warm-soft), transparent 26%),
-    radial-gradient(circle at 88% 0%, var(--projects-accent-soft), transparent 30%);
-}
-
-.projects-category-panel > * {
-  position: relative;
-  z-index: 1;
-}
-
-.projects-categories,
-.projects-subcategories {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 3px;
-}
-
-.projects-subcategories {
-  align-items: center;
-  padding-top: 11px;
-  border-top: 1px dashed rgba(168, 162, 158, 0.24);
-}
-
-.projects-subcategories__label {
-  flex-shrink: 0;
-  border-radius: 999px;
-  padding: 7px 10px;
-  color: #78716c;
-  background: rgba(255, 255, 255, 0.54);
-  border: 1px solid rgba(168, 162, 158, 0.18);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-}
-
-.projects-category {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 700;
-  transition: all 160ms ease;
-}
-
-.projects-category--scope,
-.projects-category--recommend,
-.projects-category--today {
-  box-shadow: inset 0 0 0 1px rgba(168, 162, 158, 0.18);
-}
-
-.projects-category--sub {
-  padding: 7px 11px;
-  font-size: 12px;
-}
-
-.projects-category small {
-  font-size: 11px;
-  opacity: 0.68;
-}
-
 .projects-grid {
   position: relative;
   display: grid;
@@ -1634,64 +1318,6 @@ onBeforeUnmount(stopViewReads)
   font-weight: 600;
 }
 
-.projects-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 18px;
-  padding: 14px 16px;
-}
-
-.projects-pagination p {
-  color: #78716c;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.projects-pagination__controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.projects-pagination__jump {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 2px;
-  color: #78716c;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.projects-pagination__jump input {
-  width: 58px;
-  height: 36px;
-  padding: 0 8px;
-  color: #44403c;
-  font-size: 13px;
-  font-weight: 700;
-  text-align: center;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(168, 162, 158, 0.34);
-  border-radius: 10px;
-  outline: none;
-  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
-}
-
-.projects-pagination__jump input:focus {
-  background: #fff;
-  border-color: var(--projects-warm);
-  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.12);
-}
-
-.projects-pagination__jump input::-webkit-inner-spin-button,
-.projects-pagination__jump input::-webkit-outer-spin-button {
-  margin: 0;
-  appearance: none;
-}
-
 .projects-toast {
   margin: -2px 0 14px;
   padding: 12px 16px;
@@ -1726,21 +1352,9 @@ onBeforeUnmount(stopViewReads)
 
 
   .projects-hero,
-  .projects-toolbar,
-  .projects-login-prompt,
-  .projects-pagination {
+  .projects-login-prompt {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .projects-pagination__controls {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .projects-pagination__jump {
-    flex: 1;
-    justify-content: center;
   }
 
   .projects-hero {
@@ -1768,20 +1382,9 @@ onBeforeUnmount(stopViewReads)
     max-width: none;
   }
 
-  .projects-hero__side,
-  .projects-toolbar,
-  .projects-source-tabs,
-  .projects-search,
-  .projects-sort,
-  .projects-sort select {
+  .projects-hero__side {
     width: 100%;
   }
-
-  .projects-source-tabs {
-    overflow-x: auto;
-  }
-
-
 }
 
 /* Warm editorial migration: paper surfaces, hard rules, acid signal. */
@@ -1809,8 +1412,7 @@ onBeforeUnmount(stopViewReads)
   backdrop-filter: none;
 }
 
-.projects-hero::after,
-.projects-category-panel::before { opacity: .22; mask-image: none; }
+.projects-hero::after { opacity: .22; mask-image: none; }
 .projects-kicker { color: #11110f; }
 .projects-kicker::before { content: '■'; margin-right: 8px; color: var(--projects-acid); -webkit-text-stroke: 1px #11110f; }
 .projects-hero h1,
@@ -1823,12 +1425,7 @@ onBeforeUnmount(stopViewReads)
 }
 
 .projects-hero__stats span,
-.projects-source-tab,
-.projects-sort select,
-.projects-search__filter,
-.projects-login-prompt__notes span,
-.projects-subcategories__label,
-.projects-pagination__jump input {
+.projects-login-prompt__notes span {
   border-color: #11110f;
   border-radius: 4px;
   background: var(--projects-paper-light);
@@ -1853,33 +1450,8 @@ onBeforeUnmount(stopViewReads)
   transform: none;
 }
 
-.projects-source-tab:hover,
-.projects-category:hover,
-.projects-category:focus-visible,
-.projects-page :deep(.tab-inactive:hover) {
-  border-color: #11110f;
-  color: #11110f;
-  background: var(--projects-acid-soft);
-  transform: none;
-}
-.projects-source-tab--active,
-.projects-page :deep(.tab-active) {
-  border-color: #11110f;
-  color: #11110f;
-  background: var(--projects-acid);
-  box-shadow: inset 0 0 0 1px #11110f;
-  transform: none;
-}
-.projects-source-tab--active strong { color: #11110f; }
-.projects-page :deep(.tab-inactive) { border: 1px solid #11110f; border-radius: 4px; background: var(--projects-paper-light); }
-.projects-search :deep(.input) { border: 1px solid #11110f; border-radius: 4px; background: var(--projects-paper-light); box-shadow: none; }
-.projects-search :deep(.input:focus),
-.projects-pagination__jump input:focus { border-color: #11110f; box-shadow: 0 0 0 3px var(--projects-acid); }
-
 .projects-login-prompt { background: var(--projects-paper-light); }
 .projects-login-prompt__mark { border-color: #11110f; border-radius: 6px; color: #11110f; background: var(--projects-acid); box-shadow: 4px 4px 0 #11110f; transform: none; }
-.projects-subcategories { border-top: 1px solid #11110f; }
-.projects-category { border-radius: 4px; }
 .projects-grid { gap: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .projects-page *, .projects-page *::before, .projects-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
