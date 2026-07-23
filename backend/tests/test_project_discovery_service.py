@@ -14,7 +14,7 @@ config_module.settings = types.SimpleNamespace(
     mcp_github_fallback_use_token=False,
     mcp_github_fallback_timeout_seconds=8.0,
     project_semantic_search_enabled=False,
-    project_semantic_query_timeout_seconds=3.0,
+    project_semantic_query_timeout_seconds=6.0,
     github_token="",
 )
 sys.modules.setdefault("backend.app.core.config", config_module)
