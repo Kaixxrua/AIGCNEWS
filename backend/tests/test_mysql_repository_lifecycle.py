@@ -249,6 +249,30 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         )
         database.connect.assert_not_called()
 
+    def test_conversation_compatibility_methods_delegate_to_component(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MySQLRepository(database=database)
+        component = MagicMock()
+        component.count_user_messages_today.return_value = 4
+        component.list_chat_messages.return_value = [{"id": 1}]
+        component.cleanup_stale_conversations.return_value = 2
+        repository._conversations = component
+
+        count = repository.count_user_messages_today(3)
+        messages = repository.list_chat_messages(7)
+        deleted = repository.cleanup_stale_conversations(stale_days=9, limit=4)
+
+        self.assertEqual(count, 4)
+        self.assertEqual(messages, [{"id": 1}])
+        self.assertEqual(deleted, 2)
+        component.count_user_messages_today.assert_called_once_with(3)
+        component.list_chat_messages.assert_called_once_with(7)
+        component.cleanup_stale_conversations.assert_called_once_with(
+            stale_days=9,
+            limit=4,
+        )
+        database.connect.assert_not_called()
+
     def test_runtime_provider_compatibility_methods_delegate_to_component(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         repository = MySQLRepository(database=database)

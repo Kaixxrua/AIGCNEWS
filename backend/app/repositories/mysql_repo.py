@@ -1340,34 +1340,7 @@ class MySQLRepository:
         return self.documents.get_today_document_count()
 
     def count_user_messages_today(self, user_id: int) -> int:
-        """统计指定用户今日（CST）发送的消息数（role='user'）。
-
-        通过 JOIN conversations 表过滤 user_id，
-        chat_messages.created_at 为 DATETIME 类型，使用 CONVERT_TZ 转换到 CST 后取日期对比。
-        """
-        from datetime import datetime, timezone, timedelta
-
-        tz_cst = timezone(timedelta(hours=8))
-        today_str = datetime.now(tz_cst).strftime("%Y-%m-%d")
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT COUNT(*) AS cnt
-                    FROM chat_messages m
-                    JOIN conversations c ON c.id = m.conversation_id
-                    WHERE c.user_id = %s
-                      AND m.role = 'user'
-                      AND DATE(CONVERT_TZ(m.created_at, '+00:00', '+08:00')) = %s
-                    """,
-                    (user_id, today_str),
-                )
-                row = cur.fetchone()
-            conn.commit()
-            return int(row["cnt"] if row else 0)
-        finally:
-            conn.close()
+        return self.conversations.count_user_messages_today(user_id)
 
     def clear_all_documents(self) -> int:
         return self.documents.clear_all_documents()
@@ -4508,51 +4481,9 @@ class MySQLRepository:
         scope_key: Optional[str] = None,
         title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                if scope_key:
-                    cur.execute(
-                        """
-                        SELECT * FROM conversations
-                        WHERE user_id = %s AND scope = %s AND scope_key = %s
-                        ORDER BY id DESC
-                        LIMIT 1
-                        """,
-                        (user_id, scope, scope_key),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT * FROM conversations
-                        WHERE user_id = %s AND scope = %s AND scope_key IS NULL
-                        ORDER BY id DESC
-                        LIMIT 1
-                        """,
-                        (user_id, scope),
-                    )
-                row = cur.fetchone()
-                if row:
-                    conversation = dict(row)
-                else:
-                    cur.execute(
-                        """
-                        INSERT INTO conversations (
-                            user_id, scope, scope_key, title, last_message_preview,
-                            message_count, last_accessed_at, updated_at, created_at
-                        ) VALUES (%s, %s, %s, %s, '', 0, NOW(), NOW(), NOW())
-                        """,
-                        (user_id, scope, scope_key, title or "新对话"),
-                    )
-                    conversation_id = cur.lastrowid
-                    cur.execute(
-                        "SELECT * FROM conversations WHERE id = %s", (conversation_id,)
-                    )
-                    conversation = dict(cur.fetchone())
-            conn.commit()
-            return conversation
-        finally:
-            conn.close()
+        return self.conversations.get_or_create_conversation(
+            user_id=user_id, scope=scope, scope_key=scope_key, title=title
+        )
 
     def create_conversation(
         self,
@@ -4562,85 +4493,27 @@ class MySQLRepository:
         scope_key: Optional[str] = None,
         title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """强制创建新会话（不复用已有会话）。"""
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO conversations (
-                        user_id, scope, scope_key, title, last_message_preview,
-                        message_count, last_accessed_at, updated_at, created_at
-                    ) VALUES (%s, %s, %s, %s, '', 0, NOW(), NOW(), NOW())
-                    """,
-                    (user_id, scope, scope_key, title or "新对话"),
-                )
-                conversation_id = cur.lastrowid
-                cur.execute(
-                    "SELECT * FROM conversations WHERE id = %s", (conversation_id,)
-                )
-                conversation = dict(cur.fetchone())
-            conn.commit()
-            return conversation
-        finally:
-            conn.close()
+        return self.conversations.create_conversation(
+            user_id=user_id,
+            scope=scope,
+            scope_key=scope_key,
+            title=title,
+            keep_latest=0,
+        )
 
     def delete_conversation_by_id(
-        self,
-        conversation_id: int,
-        *,
-        user_id: Optional[int] = None,
+        self, conversation_id: int, *, user_id: Optional[int] = None
     ) -> bool:
-        """删除指定会话及其所有消息（CASCADE 由外键自动处理，
-        但为保险起见先手动删消息）。"""
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                # 权限校验
-                if user_id is not None:
-                    cur.execute(
-                        "SELECT id FROM conversations WHERE id = %s AND user_id = %s",
-                        (conversation_id, user_id),
-                    )
-                    if cur.fetchone() is None:
-                        return False
-                # 先删消息
-                cur.execute(
-                    "DELETE FROM chat_messages WHERE conversation_id = %s",
-                    (conversation_id,),
-                )
-                # 再删会话
-                cur.execute(
-                    "DELETE FROM conversations WHERE id = %s", (conversation_id,)
-                )
-            conn.commit()
-            return True
-        finally:
-            conn.close()
+        return self.conversations.delete_conversation_by_id(
+            conversation_id, user_id=user_id
+        )
 
     def get_conversation_by_id(
-        self,
-        conversation_id: int,
-        *,
-        user_id: Optional[int] = None,
+        self, conversation_id: int, *, user_id: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                if user_id is None:
-                    cur.execute(
-                        "SELECT * FROM conversations WHERE id = %s", (conversation_id,)
-                    )
-                else:
-                    cur.execute(
-                        "SELECT * FROM conversations WHERE id = %s AND user_id = %s",
-                        (conversation_id, user_id),
-                    )
-                row = cur.fetchone()
-            conn.commit()
-            return dict(row) if row else None
-        finally:
-            conn.close()
+        return self.conversations.get_conversation_by_id(
+            conversation_id, user_id=user_id
+        )
 
     def list_conversations(
         self,
@@ -4650,56 +4523,12 @@ class MySQLRepository:
         page: int = 1,
         page_size: int = 20,
     ) -> Dict[str, Any]:
-        offset = max(page - 1, 0) * page_size
-        where = ["user_id = %s"]
-        params: List[Any] = [user_id]
-        if scope:
-            where.append("scope = %s")
-            params.append(scope)
-        where_clause = " AND ".join(where)
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT COUNT(*) AS cnt FROM conversations WHERE {where_clause}",
-                    tuple(params),
-                )
-                total_row = cur.fetchone()
-                cur.execute(
-                    f"""
-                    SELECT * FROM conversations
-                    WHERE {where_clause}
-                    ORDER BY last_accessed_at DESC, updated_at DESC, id DESC
-                    LIMIT %s OFFSET %s
-                    """,
-                    tuple(params + [page_size, offset]),
-                )
-                rows = cur.fetchall()
-            conn.commit()
-            return {
-                "items": list(rows),
-                "total": int(total_row["cnt"] if total_row else 0),
-                "page": page,
-                "page_size": page_size,
-            }
-        finally:
-            conn.close()
+        return self.conversations.list_conversations(
+            user_id=user_id, scope=scope, page=page, page_size=page_size
+        )
 
     def touch_conversation(self, conversation_id: int) -> None:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE conversations
-                    SET last_accessed_at = NOW(), updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (conversation_id,),
-                )
-            conn.commit()
-        finally:
-            conn.close()
+        return self.conversations.touch_conversation(conversation_id)
 
     def refresh_conversation_stats(
         self,
@@ -4708,57 +4537,9 @@ class MySQLRepository:
         title: Optional[str] = None,
         last_message_preview: Optional[str] = None,
     ) -> None:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) AS cnt FROM chat_messages WHERE conversation_id = %s",
-                    (conversation_id,),
-                )
-                count_row = cur.fetchone()
-                message_count = int(count_row["cnt"] if count_row else 0)
-                if last_message_preview is None:
-                    cur.execute(
-                        """
-                        SELECT content FROM chat_messages
-                        WHERE conversation_id = %s
-                        ORDER BY created_at DESC, id DESC
-                        LIMIT 1
-                        """,
-                        (conversation_id,),
-                    )
-                    latest = cur.fetchone()
-                    last_message_preview = (
-                        (latest.get("content") or "")[:200] if latest else ""
-                    )
-                if title is None:
-                    cur.execute(
-                        """
-                        SELECT content FROM chat_messages
-                        WHERE conversation_id = %s AND role = 'user'
-                        ORDER BY created_at ASC, id ASC
-                        LIMIT 1
-                        """,
-                        (conversation_id,),
-                    )
-                    first_user = cur.fetchone()
-                    if first_user:
-                        title = (first_user.get("content") or "新对话")[:60]
-                cur.execute(
-                    """
-                    UPDATE conversations
-                    SET title = COALESCE(%s, title),
-                        last_message_preview = %s,
-                        message_count = %s,
-                        last_accessed_at = NOW(),
-                        updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (title, last_message_preview or "", message_count, conversation_id),
-                )
-            conn.commit()
-        finally:
-            conn.close()
+        return self.conversations.refresh_conversation_stats(
+            conversation_id, title=title, last_message_preview=last_message_preview
+        )
 
     def create_chat_message(
         self,
@@ -4772,239 +4553,46 @@ class MySQLRepository:
         status: str = "done",
         parent_message_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO chat_messages (
-                        conversation_id, role, content, thinking, sources_json,
-                        attachments_json, status, parent_message_id, created_at, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-                    """,
-                    (
-                        conversation_id,
-                        role,
-                        content,
-                        thinking,
-                        _json_dumps(sources),
-                        _json_dumps(attachments),
-                        status,
-                        parent_message_id,
-                    ),
-                )
-                message_id = cur.lastrowid
-                cur.execute("SELECT * FROM chat_messages WHERE id = %s", (message_id,))
-                row = cur.fetchone()
-            conn.commit()
-            return self._deserialize_message(dict(row))
-        finally:
-            conn.close()
+        return self.conversations.create_chat_message(
+            conversation_id=conversation_id, role=role, content=content,
+            thinking=thinking, sources=sources, attachments=attachments, status=status,
+            parent_message_id=parent_message_id,
+        )
 
     def list_chat_messages(self, conversation_id: int) -> List[Dict[str, Any]]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT * FROM chat_messages
-                    WHERE conversation_id = %s
-                    ORDER BY created_at ASC, id ASC
-                    """,
-                    (conversation_id,),
-                )
-                rows = cur.fetchall()
-            conn.commit()
-            return [self._deserialize_message(dict(row)) for row in rows]
-        finally:
-            conn.close()
+        return self.conversations.list_chat_messages(conversation_id)
 
     def get_chat_message(
-        self,
-        message_id: int,
-        *,
-        user_id: Optional[int] = None,
+        self, message_id: int, *, user_id: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                if user_id is None:
-                    cur.execute(
-                        "SELECT * FROM chat_messages WHERE id = %s", (message_id,)
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT m.*
-                        FROM chat_messages m
-                        JOIN conversations c ON c.id = m.conversation_id
-                        WHERE m.id = %s AND c.user_id = %s
-                        """,
-                        (message_id, user_id),
-                    )
-                row = cur.fetchone()
-            conn.commit()
-            return self._deserialize_message(dict(row)) if row else None
-        finally:
-            conn.close()
+        return self.conversations.get_chat_message(message_id, user_id=user_id)
 
     def delete_message_branch(self, message_id: int) -> List[int]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, conversation_id FROM chat_messages WHERE id = %s",
-                    (message_id,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    return []
-                conversation_id = int(row["conversation_id"])
-                cur.execute(
-                    "SELECT id, role FROM chat_messages WHERE conversation_id = %s ORDER BY created_at ASC, id ASC",
-                    (conversation_id,),
-                )
-                rows = cur.fetchall()
-                ids = [int(item["id"]) for item in rows]
-                try:
-                    start_idx = ids.index(int(message_id))
-                except ValueError:
-                    return []
-                delete_ids = ids[start_idx:]
-                placeholders = ", ".join(["%s"] * len(delete_ids))
-                cur.execute(
-                    f"DELETE FROM chat_messages WHERE id IN ({placeholders})",
-                    tuple(delete_ids),
-                )
-            conn.commit()
-            return delete_ids
-        finally:
-            conn.close()
+        return self.conversations.delete_message_branch(message_id)
 
     def delete_messages_after(self, message_id: int) -> List[int]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, conversation_id, created_at FROM chat_messages WHERE id = %s",
-                    (message_id,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    return []
-                conversation_id = int(row["conversation_id"])
-                created_at = row["created_at"]
-                cur.execute(
-                    """
-                    SELECT id FROM chat_messages
-                    WHERE conversation_id = %s
-                      AND (created_at > %s OR (created_at = %s AND id >= %s))
-                    ORDER BY created_at ASC, id ASC
-                    """,
-                    (conversation_id, created_at, created_at, message_id),
-                )
-                rows = cur.fetchall()
-                delete_ids = [int(item["id"]) for item in rows]
-                if delete_ids:
-                    placeholders = ", ".join(["%s"] * len(delete_ids))
-                    cur.execute(
-                        f"DELETE FROM chat_messages WHERE id IN ({placeholders})",
-                        tuple(delete_ids),
-                    )
-            conn.commit()
-            return delete_ids
-        finally:
-            conn.close()
+        return self.conversations.delete_messages_after(message_id)
 
     def trim_conversation_messages(
         self, *, conversation_id: int, keep_latest: int = 10
     ) -> int:
-        if keep_latest <= 0:
-            return 0
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id FROM chat_messages WHERE conversation_id = %s ORDER BY created_at DESC, id DESC LIMIT %s",
-                    (conversation_id, keep_latest),
-                )
-                keep_rows = cur.fetchall()
-                keep_ids = [int(row["id"]) for row in keep_rows]
-                if keep_ids:
-                    placeholders = ", ".join(["%s"] * len(keep_ids))
-                    cur.execute(
-                        f"DELETE FROM chat_messages WHERE conversation_id = %s AND id NOT IN ({placeholders})",
-                        tuple([conversation_id] + keep_ids),
-                    )
-                else:
-                    cur.execute(
-                        "DELETE FROM chat_messages WHERE conversation_id = %s",
-                        (conversation_id,),
-                    )
-                deleted = cur.rowcount
-            conn.commit()
-            return deleted
-        finally:
-            conn.close()
+        return self.conversations.trim_conversation_messages(
+            conversation_id=conversation_id, keep_latest=keep_latest
+        )
 
-    def trim_user_conversations(self, *, user_id: int, keep_latest: int = 10) -> int:
-        if keep_latest <= 0:
-            return 0
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id FROM conversations WHERE user_id = %s ORDER BY last_accessed_at DESC, updated_at DESC, id DESC LIMIT %s",
-                    (user_id, keep_latest),
-                )
-                keep_rows = cur.fetchall()
-                keep_ids = [int(row["id"]) for row in keep_rows]
-                if keep_ids:
-                    placeholders = ", ".join(["%s"] * len(keep_ids))
-                    cur.execute(
-                        f"DELETE FROM conversations WHERE user_id = %s AND id NOT IN ({placeholders})",
-                        tuple([user_id] + keep_ids),
-                    )
-                else:
-                    cur.execute(
-                        "DELETE FROM conversations WHERE user_id = %s", (user_id,)
-                    )
-                deleted = cur.rowcount
-            conn.commit()
-            return deleted
-        finally:
-            conn.close()
+    def trim_user_conversations(
+        self, *, user_id: int, keep_latest: int = 10
+    ) -> int:
+        return self.conversations.trim_user_conversations(
+            user_id=user_id, keep_latest=keep_latest
+        )
 
     def cleanup_stale_conversations(
         self, *, stale_days: int = 7, limit: int = 5
     ) -> int:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id FROM conversations
-                    WHERE last_accessed_at < DATE_SUB(NOW(), INTERVAL %s DAY)
-                    ORDER BY last_accessed_at ASC, updated_at ASC, id ASC
-                    LIMIT %s
-                    """,
-                    (stale_days, limit),
-                )
-                rows = cur.fetchall()
-                delete_ids = [int(row["id"]) for row in rows]
-                if not delete_ids:
-                    conn.commit()
-                    return 0
-                placeholders = ", ".join(["%s"] * len(delete_ids))
-                cur.execute(
-                    f"DELETE FROM conversations WHERE id IN ({placeholders})",
-                    tuple(delete_ids),
-                )
-                deleted = cur.rowcount
-            conn.commit()
-            return deleted
-        finally:
-            conn.close()
+        return self.conversations.cleanup_stale_conversations(
+            stale_days=stale_days, limit=limit
+        )
 
     def create_chat_attachment(
         self,
@@ -5104,16 +4692,6 @@ class MySQLRepository:
             return [self._deserialize_attachment(dict(row)) for row in rows]
         finally:
             conn.close()
-
-    @staticmethod
-    def _deserialize_message(row: Dict[str, Any]) -> Dict[str, Any]:
-        row["sources"] = json.loads(row.get("sources_json") or "[]")
-        row["attachments"] = json.loads(row.get("attachments_json") or "[]")
-        row["thinking_preview"] = (row.get("thinking") or "")[:80]
-        row["has_thinking"] = bool(row.get("thinking"))
-        row["is_thinking"] = False
-        row["is_streaming"] = row.get("status") == "streaming"
-        return row
 
     @staticmethod
     def _deserialize_attachment(row: Dict[str, Any]) -> Dict[str, Any]:

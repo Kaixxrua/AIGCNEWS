@@ -404,6 +404,189 @@ class MySQLConversationRepository:
                     result["target_message"] = target
                 return result
 
+    # Compatibility methods retained for the MySQLRepository facade.
+    def get_or_create_conversation(
+        self,
+        *,
+        user_id: int,
+        scope: str = "global",
+        scope_key: str | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        return self.ensure_conversation(
+            user_id=user_id,
+            scope=scope,
+            scope_key=scope_key,
+            title=title,
+            keep_latest=0,
+        )
+
+    def delete_conversation_by_id(
+        self,
+        conversation_id: int,
+        *,
+        user_id: int | None = None,
+    ) -> bool:
+        if user_id is not None:
+            return self.delete_owned_conversation(
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM chat_messages WHERE conversation_id = %s",
+                    (conversation_id,),
+                )
+                cursor.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
+                return cursor.rowcount > 0
+
+    def get_conversation_by_id(
+        self,
+        conversation_id: int,
+        *,
+        user_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        with self._database.connection() as connection:
+            with connection.cursor() as cursor:
+                if user_id is None:
+                    cursor.execute(
+                        "SELECT * FROM conversations WHERE id = %s",
+                        (conversation_id,),
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT * FROM conversations WHERE id = %s AND user_id = %s",
+                        (conversation_id, user_id),
+                    )
+                row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def touch_conversation(self, conversation_id: int) -> None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                self._touch_conversation(cursor, conversation_id)
+
+    def refresh_conversation_stats(
+        self,
+        conversation_id: int,
+        *,
+        title: str | None = None,
+        last_message_preview: str | None = None,
+    ) -> None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                self._refresh_stats(
+                    cursor,
+                    conversation_id,
+                    title=title,
+                    last_message_preview=last_message_preview,
+                )
+
+    def create_chat_message(
+        self,
+        *,
+        conversation_id: int,
+        role: str,
+        content: str,
+        thinking: str = "",
+        sources: list[dict[str, Any]] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+        status: str = "done",
+        parent_message_id: int | None = None,
+    ) -> dict[str, Any]:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                return self._create_message(
+                    cursor,
+                    conversation_id=conversation_id,
+                    role=role,
+                    content=content,
+                    thinking=thinking,
+                    sources=sources or [],
+                    attachments=attachments or [],
+                    status=status,
+                    parent_message_id=parent_message_id,
+                )
+
+    def list_chat_messages(self, conversation_id: int) -> list[dict[str, Any]]:
+        with self._database.connection() as connection:
+            with connection.cursor() as cursor:
+                return self._list_messages(cursor, conversation_id)
+
+    def get_chat_message(
+        self,
+        message_id: int,
+        *,
+        user_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        with self._database.connection() as connection:
+            with connection.cursor() as cursor:
+                if user_id is None:
+                    cursor.execute("SELECT * FROM chat_messages WHERE id = %s", (message_id,))
+                else:
+                    cursor.execute(
+                        """
+                        SELECT m.* FROM chat_messages m
+                        JOIN conversations c ON c.id = m.conversation_id
+                        WHERE m.id = %s AND c.user_id = %s
+                        """,
+                        (message_id, user_id),
+                    )
+                row = cursor.fetchone()
+        return _deserialize_message(dict(row)) if row else None
+
+    def delete_message_branch(self, message_id: int) -> list[int]:
+        result = self._delete_suffix_without_owner(message_id)
+        return result
+
+    def delete_messages_after(self, message_id: int) -> list[int]:
+        result = self._delete_suffix_without_owner(message_id)
+        return result
+
+    def trim_conversation_messages(
+        self,
+        *,
+        conversation_id: int,
+        keep_latest: int = 10,
+    ) -> int:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                return self._trim_messages(cursor, conversation_id, keep_latest)
+
+    def trim_user_conversations(self, *, user_id: int, keep_latest: int = 10) -> int:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                return self._trim_user_conversations(cursor, user_id, keep_latest)
+
+    def _delete_suffix_without_owner(self, message_id: int) -> list[int]:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT id, conversation_id, created_at FROM chat_messages WHERE id = %s FOR UPDATE",
+                    (message_id,),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return []
+                cursor.execute(
+                    """
+                    SELECT id FROM chat_messages
+                    WHERE conversation_id = %s
+                      AND (created_at > %s OR (created_at = %s AND id >= %s))
+                    ORDER BY created_at ASC, id ASC
+                    """,
+                    (row["conversation_id"], row["created_at"], row["created_at"], message_id),
+                )
+                delete_ids = [int(item["id"]) for item in cursor.fetchall()]
+                if delete_ids:
+                    placeholders = ", ".join(["%s"] * len(delete_ids))
+                    cursor.execute(
+                        f"DELETE FROM chat_messages WHERE id IN ({placeholders})",
+                        tuple(delete_ids),
+                    )
+                return delete_ids
+
     @staticmethod
     def _get_owned_conversation(
         cursor: Any,
