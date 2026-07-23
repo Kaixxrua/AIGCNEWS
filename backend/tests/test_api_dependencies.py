@@ -150,6 +150,21 @@ class DatabaseDependencyTests(unittest.TestCase):
         self.assertIs(result, account_repository)
         repository_type.assert_called_once_with(database=database)
 
+    def test_get_document_repository_uses_component(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        document_repository = MagicMock()
+        repository = MagicMock(documents=document_repository)
+
+        with patch.object(
+            dependencies,
+            "MySQLRepository",
+            return_value=repository,
+        ) as repository_type:
+            result = dependencies.get_document_repository(database)
+
+        self.assertIs(result, document_repository)
+        repository_type.assert_called_once_with(database=database)
+
     def test_get_runtime_provider_repository_uses_component(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         runtime_repository = MagicMock()
@@ -286,6 +301,27 @@ class DatabaseDependencyTests(unittest.TestCase):
 
         with patch.object(dependencies, "MySQLRepository") as repository_type:
             response = TestClient(app).get("/user-accounts")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"overridden": True})
+        repository_type.assert_not_called()
+
+    def test_document_dependency_can_be_overridden(self) -> None:
+        app = FastAPI()
+        repository = MagicMock()
+
+        @app.get("/documents")
+        def read_documents(
+            injected=Depends(dependencies.get_document_repository),
+        ) -> dict[str, bool]:
+            return {"overridden": injected is repository}
+
+        app.dependency_overrides[
+            dependencies.get_document_repository
+        ] = lambda: repository
+
+        with patch.object(dependencies, "MySQLRepository") as repository_type:
+            response = TestClient(app).get("/documents")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"overridden": True})

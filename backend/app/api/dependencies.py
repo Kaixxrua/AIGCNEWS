@@ -7,6 +7,7 @@ from backend.app.repositories.mysql_briefing_repository import MySQLBriefingRepo
 from backend.app.repositories.mysql_briefing_subscription_repository import (
     MySQLBriefingSubscriptionRepository,
 )
+from backend.app.repositories.mysql_document_repository import MySQLDocumentRepository
 from backend.app.repositories.mysql_evaluation_repository import (
     MySQLEvaluationRepository,
 )
@@ -97,3 +98,10 @@ def get_runtime_provider_setting_repository(
 ) -> MySQLRuntimeProviderSettingRepository:
     """Return runtime model configuration through the compatibility facade."""
     return MySQLRepository(database=database).runtime_provider_settings
+
+
+def get_document_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLDocumentRepository:
+    """Return document persistence through the compatibility facade."""
+    return MySQLRepository(database=database).documents

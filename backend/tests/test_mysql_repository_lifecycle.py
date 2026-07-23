@@ -75,6 +75,18 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         self.assertIsNot(first, repository.ingestion_tasks)
         database.connect.assert_not_called()
 
+    def test_document_component_reuses_database_lifecycle(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MySQLRepository(database=database)
+
+        first = repository.documents
+        second = repository.documents
+
+        self.assertIs(first, second)
+        self.assertIs(first._database, database)
+        self.assertIsNot(first, repository.briefings)
+        database.connect.assert_not_called()
+
     def test_evaluation_component_reuses_database_lifecycle(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         repository = MySQLRepository(database=database)
