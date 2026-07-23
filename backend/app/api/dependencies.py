@@ -7,6 +7,9 @@ from backend.app.repositories.mysql_briefing_repository import MySQLBriefingRepo
 from backend.app.repositories.mysql_briefing_subscription_repository import (
     MySQLBriefingSubscriptionRepository,
 )
+from backend.app.repositories.mysql_evaluation_repository import (
+    MySQLEvaluationRepository,
+)
 from backend.app.repositories.mysql_ingestion_task_repository import (
     MySQLIngestionTaskRepository,
 )
@@ -47,3 +50,10 @@ def get_briefing_subscription_repository(
 ) -> MySQLBriefingSubscriptionRepository:
     """Return user subscription persistence through the compatibility facade."""
     return MySQLRepository(database=database).briefing_subscriptions
+
+
+def get_evaluation_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLEvaluationRepository:
+    """Return RAG evaluation persistence through the compatibility facade."""
+    return MySQLRepository(database=database).evaluations

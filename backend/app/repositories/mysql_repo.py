@@ -16,6 +16,9 @@ from backend.app.repositories.mysql_briefing_repository import MySQLBriefingRepo
 from backend.app.repositories.mysql_briefing_subscription_repository import (
     MySQLBriefingSubscriptionRepository,
 )
+from backend.app.repositories.mysql_evaluation_repository import (
+    MySQLEvaluationRepository,
+)
 from backend.app.repositories.mysql_ingestion_task_repository import (
     MySQLIngestionTaskRepository,
 )
@@ -407,6 +410,7 @@ class MySQLRepository:
         self._ingestion_tasks: MySQLIngestionTaskRepository | None = None
         self._briefings: MySQLBriefingRepository | None = None
         self._briefing_subscriptions: MySQLBriefingSubscriptionRepository | None = None
+        self._evaluations: MySQLEvaluationRepository | None = None
         if not MySQLRepository._schema_initialized:
             with MySQLRepository._schema_lock:
                 if not MySQLRepository._schema_initialized:
@@ -439,6 +443,12 @@ class MySQLRepository:
                 self._database
             )
         return self._briefing_subscriptions
+
+    @property
+    def evaluations(self) -> MySQLEvaluationRepository:
+        if self._evaluations is None:
+            self._evaluations = MySQLEvaluationRepository(self._database)
+        return self._evaluations
 
     def resolve_github_repo_id(self, repo_id: str = "", full_name: str = "") -> str:
         """Return the canonical repo_id for a GitHub repository identity."""
