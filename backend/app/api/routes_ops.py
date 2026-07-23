@@ -12,9 +12,11 @@ from pydantic import BaseModel, Field
 
 from backend.app.api.dependencies import (
     get_ingestion_task_repository,
+    get_mcp_server_config_repository,
     get_mysql_repository,
 )
 from backend.app.core.auth import RequireAdmin
+from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 
@@ -441,12 +443,14 @@ async def update_provider_config(
 
 
 @router.get("/ops/mcp-servers", response_model=McpServerConfigListResponse, tags=["Ops"])
-async def list_mcp_servers(_: dict = Depends(RequireAdmin)) -> McpServerConfigListResponse:
+async def list_mcp_servers(
+    _: dict = Depends(RequireAdmin),
+    repository: McpServerConfigRepository = Depends(
+        get_mcp_server_config_repository
+    ),
+) -> McpServerConfigListResponse:
     """列出 MCP Server 配置。响应不会返回明文 Token。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    rows = await asyncio.to_thread(db.list_mcp_server_configs)
+    rows = await asyncio.to_thread(repository.list_mcp_server_configs)
     items = [_mcp_server_config_response(row) for row in rows]
     return McpServerConfigListResponse(items=items, total=len(items))
 
@@ -455,16 +459,16 @@ async def list_mcp_servers(_: dict = Depends(RequireAdmin)) -> McpServerConfigLi
 async def create_mcp_server(
     request: McpServerConfigRequest,
     _: dict = Depends(RequireAdmin),
+    repository: McpServerConfigRepository = Depends(
+        get_mcp_server_config_repository
+    ),
 ) -> McpServerConfigResponse:
     """创建 MCP Server 配置。auth_token 只写入，不明文返回。"""
     from pymysql.err import IntegrityError
 
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     payload = _mcp_payload(request)
     try:
-        row = await asyncio.to_thread(db.create_mcp_server_config, payload)
+        row = await asyncio.to_thread(repository.create_mcp_server_config, payload)
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="server_key 已存在，请换一个标识") from exc
     return _mcp_server_config_response(row)
@@ -475,16 +479,20 @@ async def update_mcp_server(
     server_id: int,
     request: McpServerConfigRequest,
     _: dict = Depends(RequireAdmin),
+    repository: McpServerConfigRepository = Depends(
+        get_mcp_server_config_repository
+    ),
 ) -> McpServerConfigResponse:
     """更新 MCP Server 配置。auth_token 留空时保留，clear_auth_token=true 时清空。"""
     from pymysql.err import IntegrityError
 
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     payload = _mcp_payload(request)
     try:
-        row = await asyncio.to_thread(db.update_mcp_server_config, server_id, payload)
+        row = await asyncio.to_thread(
+            repository.update_mcp_server_config,
+            server_id,
+            payload,
+        )
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="server_key 已存在，请换一个标识") from exc
     if not row:
@@ -496,12 +504,15 @@ async def update_mcp_server(
 async def delete_mcp_server(
     server_id: int,
     _: dict = Depends(RequireAdmin),
+    repository: McpServerConfigRepository = Depends(
+        get_mcp_server_config_repository
+    ),
 ) -> McpServerDeleteResponse:
     """删除 MCP Server 配置。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    deleted = await asyncio.to_thread(db.delete_mcp_server_config, server_id)
+    deleted = await asyncio.to_thread(
+        repository.delete_mcp_server_config,
+        server_id,
+    )
     if not deleted:
         raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
     return McpServerDeleteResponse(status="succeeded", message="MCP Server 配置已删除。", deleted=True, id=server_id)
@@ -511,18 +522,23 @@ async def delete_mcp_server(
 async def test_mcp_server(
     server_id: int,
     _: dict = Depends(RequireAdmin),
+    repository: McpServerConfigRepository = Depends(
+        get_mcp_server_config_repository
+    ),
 ) -> McpServerTestResponse:
     """测试 MCP Server 连通性，只执行 initialize / tools/list，不调用任意工具。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
     from backend.app.services.mcp_connection_tester import test_mcp_server_connection
 
-    db = MySQLRepository()
-    row = await asyncio.to_thread(db.get_mcp_server_config, server_id)
+    row = await asyncio.to_thread(repository.get_mcp_server_config, server_id)
     if not row:
         raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
 
     result = await asyncio.to_thread(test_mcp_server_connection, row)
-    updated = await asyncio.to_thread(db.update_mcp_server_test_result, server_id, result)
+    updated = await asyncio.to_thread(
+        repository.update_mcp_server_test_result,
+        server_id,
+        result,
+    )
     server = _mcp_server_config_response(updated or row)
     return McpServerTestResponse(status=result.get("status", "failed"), message=result.get("message", ""), server=server, tools=server.tools)
 
