@@ -165,6 +165,21 @@ class DatabaseDependencyTests(unittest.TestCase):
         self.assertIs(result, document_repository)
         repository_type.assert_called_once_with(database=database)
 
+    def test_get_rank_snapshot_repository_uses_component(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        snapshot_repository = MagicMock()
+        repository = MagicMock(rank_snapshots=snapshot_repository)
+
+        with patch.object(
+            dependencies,
+            "MySQLRepository",
+            return_value=repository,
+        ) as repository_type:
+            result = dependencies.get_rank_snapshot_repository(database)
+
+        self.assertIs(result, snapshot_repository)
+        repository_type.assert_called_once_with(database=database)
+
     def test_get_runtime_provider_repository_uses_component(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         runtime_repository = MagicMock()

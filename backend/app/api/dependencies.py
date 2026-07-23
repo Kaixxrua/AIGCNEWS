@@ -20,6 +20,9 @@ from backend.app.repositories.mysql_mcp_access_token_repository import (
 from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
+from backend.app.repositories.mysql_rank_snapshot_repository import (
+    MySQLRankSnapshotRepository,
+)
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.mysql_runtime_provider_repository import (
     MySQLRuntimeProviderSettingRepository,
@@ -105,3 +108,10 @@ def get_document_repository(
 ) -> MySQLDocumentRepository:
     """Return document persistence through the compatibility facade."""
     return MySQLRepository(database=database).documents
+
+
+def get_rank_snapshot_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLRankSnapshotRepository:
+    """Return document rank snapshots through the compatibility facade."""
+    return MySQLRepository(database=database).rank_snapshots

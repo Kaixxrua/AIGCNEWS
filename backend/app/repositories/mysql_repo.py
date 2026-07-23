@@ -29,6 +29,9 @@ from backend.app.repositories.mysql_mcp_access_token_repository import (
 from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
+from backend.app.repositories.mysql_rank_snapshot_repository import (
+    MySQLRankSnapshotRepository,
+)
 from backend.app.repositories.mysql_runtime_provider_repository import (
     MySQLRuntimeProviderSettingRepository,
 )
@@ -424,6 +427,7 @@ class MySQLRepository:
         self._briefings: MySQLBriefingRepository | None = None
         self._briefing_subscriptions: MySQLBriefingSubscriptionRepository | None = None
         self._documents: MySQLDocumentRepository | None = None
+        self._rank_snapshots: MySQLRankSnapshotRepository | None = None
         self._evaluations: MySQLEvaluationRepository | None = None
         self._mcp_server_configs: MySQLMcpServerConfigRepository | None = None
         self._mcp_access_tokens: MySQLMcpAccessTokenRepository | None = None
@@ -467,6 +471,12 @@ class MySQLRepository:
         if self._documents is None:
             self._documents = MySQLDocumentRepository(self._database)
         return self._documents
+
+    @property
+    def rank_snapshots(self) -> MySQLRankSnapshotRepository:
+        if self._rank_snapshots is None:
+            self._rank_snapshots = MySQLRankSnapshotRepository(self._database)
+        return self._rank_snapshots
 
     @property
     def evaluations(self) -> MySQLEvaluationRepository:
