@@ -107,6 +107,18 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         self.assertIsNot(first, repository.evaluations)
         database.connect.assert_not_called()
 
+    def test_mcp_access_token_component_reuses_database_lifecycle(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MySQLRepository(database=database)
+
+        first = repository.mcp_access_tokens
+        second = repository.mcp_access_tokens
+
+        self.assertIs(first, second)
+        self.assertIs(first._database, database)
+        self.assertIsNot(first, repository.mcp_server_configs)
+        database.connect.assert_not_called()
+
     def test_user_account_component_reuses_database_lifecycle(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         repository = MySQLRepository(database=database)

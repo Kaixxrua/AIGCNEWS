@@ -13,6 +13,9 @@ from backend.app.repositories.mysql_evaluation_repository import (
 from backend.app.repositories.mysql_ingestion_task_repository import (
     MySQLIngestionTaskRepository,
 )
+from backend.app.repositories.mysql_mcp_access_token_repository import (
+    MySQLMcpAccessTokenRepository,
+)
 from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
@@ -70,6 +73,13 @@ def get_mcp_server_config_repository(
 ) -> MySQLMcpServerConfigRepository:
     """Return MCP Server configuration through the compatibility facade."""
     return MySQLRepository(database=database).mcp_server_configs
+
+
+def get_mcp_access_token_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLMcpAccessTokenRepository:
+    """Return MCP access-token persistence through the compatibility facade."""
+    return MySQLRepository(database=database).mcp_access_tokens
 
 
 def get_user_account_repository(

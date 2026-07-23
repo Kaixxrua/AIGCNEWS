@@ -22,6 +22,9 @@ from backend.app.repositories.mysql_evaluation_repository import (
 from backend.app.repositories.mysql_ingestion_task_repository import (
     MySQLIngestionTaskRepository,
 )
+from backend.app.repositories.mysql_mcp_access_token_repository import (
+    MySQLMcpAccessTokenRepository,
+)
 from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
@@ -418,6 +421,7 @@ class MySQLRepository:
         self._briefing_subscriptions: MySQLBriefingSubscriptionRepository | None = None
         self._evaluations: MySQLEvaluationRepository | None = None
         self._mcp_server_configs: MySQLMcpServerConfigRepository | None = None
+        self._mcp_access_tokens: MySQLMcpAccessTokenRepository | None = None
         self._user_accounts: MySQLUserAccountRepository | None = None
         if not MySQLRepository._schema_initialized:
             with MySQLRepository._schema_lock:
@@ -470,6 +474,12 @@ class MySQLRepository:
                 defaults,
             )
         return self._mcp_server_configs
+
+    @property
+    def mcp_access_tokens(self) -> MySQLMcpAccessTokenRepository:
+        if self._mcp_access_tokens is None:
+            self._mcp_access_tokens = MySQLMcpAccessTokenRepository(self._database)
+        return self._mcp_access_tokens
 
     @property
     def user_accounts(self) -> MySQLUserAccountRepository:
