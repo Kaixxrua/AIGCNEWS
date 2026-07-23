@@ -22,6 +22,7 @@ from typing import Any, AsyncGenerator, Dict, List
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -399,6 +400,21 @@ async def _run_daily_briefing_job() -> None:
     )
 
 
+async def _run_project_semantic_warmup_job() -> None:
+    try:
+        from backend.app.services.project_semantic_search import (
+            warmup_project_semantic_search,
+        )
+
+        result = await asyncio.to_thread(warmup_project_semantic_search)
+        if result.get("status") == "failed":
+            logger.warning("[Scheduler] 项目语义搜索预热失败：%s", result)
+        else:
+            logger.info("[Scheduler] 项目语义搜索预热完成：%s", result)
+    except Exception as exc:
+        logger.warning("[Scheduler] 项目语义搜索预热失败: %s", exc)
+
+
 async def _run_conversation_cleanup_job() -> None:
     logger.info("[Scheduler] 触发会话历史清理任务...")
     try:
@@ -467,6 +483,24 @@ def start_scheduler() -> None:
         "[Scheduler] 注册简报任务: daily_briefing (每日 08:00，共 %d 个维度)",
         len(_BRIEFING_TASKS),
     )
+
+    from backend.app.core.config import settings
+
+    if settings.project_semantic_search_enabled:
+        scheduler.add_job(
+            _run_project_semantic_warmup_job,
+            trigger=IntervalTrigger(
+                minutes=30,
+                timezone=settings.scheduler_timezone,
+            ),
+            id="project_semantic_warmup",
+            name="项目语义搜索链路预热",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=300,
+        )
+        logger.info("[Scheduler] 注册项目语义搜索预热任务（每 30 分钟）")
 
     scheduler.add_job(
         _run_conversation_cleanup_job,
