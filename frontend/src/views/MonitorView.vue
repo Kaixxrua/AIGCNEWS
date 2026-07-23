@@ -3,12 +3,12 @@ import { ref, onMounted, computed } from 'vue'
 import { api } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { AlertTriangle } from 'lucide-vue-next'
+import MonitorTaskPanel from '../components/monitor/MonitorTaskPanel.vue'
 import {
   MCP_TEST_SCOPE,
   SOURCE_LIST,
   createEmptyMcpForm,
   formatDate,
-  formatTime,
   getMcpAuthLabel,
   getMcpServerInitial,
   getMcpTransportLabel,
@@ -643,99 +643,16 @@ onMounted(refreshData)
       </div>
     </div>
 
-    <!-- 主内容网格：admin 时三列，普通用户时全宽单列 -->
-    <div class="grid grid-cols-1 gap-5 shrink-0" :class="authStore.isAdmin ? 'lg:grid-cols-3' : ''">
-      <!-- Admin 专属：调度器状态 -->
-      <div v-if="authStore.isAdmin" class="stagger-enter glass-card flex flex-col p-5" style="animation-delay: 0.2s; max-height: 560px;">
-              <h3 class="mb-4 shrink-0 text-sm font-semibold text-stone-700">调度器状态</h3>
-              <div v-if="schedulerStatus" class="flex flex-col min-h-0 flex-1">
-                <div class="mb-4 shrink-0 flex items-center gap-2.5">
-                  <span class="status-dot" :class="schedulerStatus.running ? 'bg-brand-green animate-[pulseDot_2s_ease-in-out_infinite]' : 'bg-brand-rose'" />
-                  <span class="text-sm font-medium text-stone-700">{{ schedulerStatus.running ? '运行中' : '已停止' }}</span>
-                  <span class="ml-auto text-xs text-stone-400">{{ schedulerStatus.job_count }} 个任务</span>
-                </div>
-                <div class="space-y-2 overflow-y-auto">
-                  <div v-for="job in schedulerStatus.jobs" :key="job.id" class="rounded-2xl p-3" style="background: rgba(255,255,255,0.6); border: 1px solid rgba(168,162,158,0.15)">
-                    <p class="text-xs font-medium text-stone-600">{{ job.name }}</p>
-                    <p class="mt-1 text-2xs text-stone-400">下次：{{ job.next_run_time ? formatDate(job.next_run_time) : '未安排' }}</p>
-                  </div>
-                </div>
-              </div>
-        <div v-else-if="loading" class="flex items-center gap-2 text-sm text-stone-400">
-          <span class="inline-block h-4 w-4 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" />加载中…
-        </div>
-      </div>
-
-      <!-- 最近任务表格：admin 时占 2/3，普通用户时占全宽 -->
-      <div class="stagger-enter glass-card overflow-hidden flex flex-col" :class="authStore.isAdmin ? 'lg:col-span-2' : 'lg:col-span-1'" style="animation-delay: 0.3s">
-        <div class="flex items-center justify-between px-5 py-3.5 shrink-0" style="border-bottom: 1px solid rgba(168,162,158,0.15)">
-          <h3 class="text-sm font-semibold text-stone-700">最近任务</h3>
-          <span class="badge bg-white text-stone-500 border border-stone-200">共 {{ total }} 条</span>
-        </div>
-
-        <div class="overflow-x-auto flex-1">
-          <table class="min-w-full">
-            <thead>
-              <tr style="border-bottom: 1px solid rgba(168,162,158,0.15); background: rgba(250,250,249,0.5)">
-                <th class="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-stone-400">ID</th>
-                <th class="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-stone-400">任务名称</th>
-                <th class="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-stone-400">状态</th>
-                <th class="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-stone-400">条数</th>
-                <th class="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-stone-400">开始时间</th>
-                <th class="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-stone-400">结束</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="loading && !tasks.length">
-                <td colspan="6" class="px-4 py-8 text-center text-sm text-stone-400">
-                  <span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" />
-                </td>
-              </tr>
-              <tr v-else-if="!tasks.length">
-                <td colspan="6" class="px-4 py-8 text-center text-sm text-stone-400">暂无任务记录</td>
-              </tr>
-              <tr
-                v-for="task in tasks"
-                :key="task.id"
-                class="transition-colors hover:bg-stone-50/50"
-                :style="tasks.indexOf(task) % 2 !== 0 ? 'background: rgba(250,250,249,0.4)' : ''"
-              >
-                <td class="whitespace-nowrap px-4 py-3 text-xs text-stone-400 font-mono">#{{ task.id }}</td>
-                <td class="px-4 py-3 text-xs font-medium text-stone-700 max-w-[200px] truncate">{{ task.task_name }}</td>
-                <td class="whitespace-nowrap px-4 py-3">
-                  <div class="flex flex-col gap-1">
-                    <span class="badge" :class="[getStatusConfig(task.status).bg, getStatusConfig(task.status).text]">
-                      <span class="status-dot shrink-0" :class="getStatusConfig(task.status).dot" />
-                      {{ getStatusConfig(task.status).label }}
-                    </span>
-                    <span v-if="task.error_msg" class="max-w-[180px] truncate text-2xs text-rose-500" :title="task.error_msg">{{ task.error_msg }}</span>
-                  </div>
-                </td>
-                <td class="whitespace-nowrap px-4 py-3 text-xs text-stone-500 tabular-nums">{{ task.item_count }}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-xs text-stone-400">{{ formatDate(task.started_at) }}</td>
-                <td class="whitespace-nowrap px-4 py-3 text-xs text-stone-400">
-                  <span v-if="task.finished_at">{{ formatTime(task.finished_at) }}</span>
-                  <span v-else class="text-stone-300">—</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-top: 1px solid rgba(168,162,158,0.15)">
-          <p class="text-xs text-stone-400">第 {{ page }} / {{ totalPages }} 页 · {{ total }} 条</p>
-          <div class="flex items-center gap-1">
-            <button class="rounded-full px-2.5 py-1 text-xs font-medium text-stone-400 hover:bg-accent-soft disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page <= 1" @click="goPage(1)">«</button>
-            <button class="rounded-full px-3 py-1 text-xs font-medium text-stone-400 hover:bg-accent-soft disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
-            <template v-for="p in totalPages" :key="p">
-              <button v-if="Math.abs(p - page) <= 2" class="rounded-full px-3 py-1 text-xs font-medium transition" :class="p === page ? 'bg-accent text-accent-ink border border-ink shadow-sm' : 'text-stone-500 hover:bg-accent-soft hover:text-ink'" @click="goPage(p)">{{ p }}</button>
-            </template>
-            <button class="rounded-full px-3 py-1 text-xs font-medium text-stone-400 hover:bg-accent-soft disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
-            <button class="rounded-full px-2.5 py-1 text-xs font-medium text-stone-400 hover:bg-accent-soft disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page >= totalPages" @click="goPage(totalPages)">»</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <MonitorTaskPanel
+      :is-admin="authStore.isAdmin"
+      :scheduler-status="schedulerStatus"
+      :tasks="tasks"
+      :total="total"
+      :page="page"
+      :total-pages="totalPages"
+      :loading="loading"
+      @go-page="goPage"
+    />
     </div>
   </div>
 </template>
