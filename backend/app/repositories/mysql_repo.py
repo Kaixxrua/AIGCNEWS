@@ -16,6 +16,9 @@ from backend.app.repositories.mysql_briefing_repository import MySQLBriefingRepo
 from backend.app.repositories.mysql_briefing_subscription_repository import (
     MySQLBriefingSubscriptionRepository,
 )
+from backend.app.repositories.mysql_conversation_repository import (
+    MySQLConversationRepository,
+)
 from backend.app.repositories.mysql_document_repository import MySQLDocumentRepository
 from backend.app.repositories.mysql_evaluation_repository import (
     MySQLEvaluationRepository,
@@ -408,6 +411,7 @@ class MySQLRepository:
         self._ingestion_tasks: MySQLIngestionTaskRepository | None = None
         self._briefings: MySQLBriefingRepository | None = None
         self._briefing_subscriptions: MySQLBriefingSubscriptionRepository | None = None
+        self._conversations: MySQLConversationRepository | None = None
         self._documents: MySQLDocumentRepository | None = None
         self._rank_snapshots: MySQLRankSnapshotRepository | None = None
         self._evaluations: MySQLEvaluationRepository | None = None
@@ -447,6 +451,12 @@ class MySQLRepository:
                 self._database
             )
         return self._briefing_subscriptions
+
+    @property
+    def conversations(self) -> MySQLConversationRepository:
+        if self._conversations is None:
+            self._conversations = MySQLConversationRepository(self._database)
+        return self._conversations
 
     @property
     def documents(self) -> MySQLDocumentRepository:
