@@ -24,6 +24,8 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.app.repositories.document_repository import DocumentWriter
+
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -436,7 +438,7 @@ def _chunk_and_index(
 def download_and_index_arxiv_pdfs(
     papers: List[Dict[str, Any]],
     milvus_repo: Optional[Any] = None,
-    mysql_repo: Optional[Any] = None,
+    mysql_repo: Optional[DocumentWriter] = None,
     sleep_between: float = 3.0,
     max_workers: int = 1,
 ) -> Tuple[int, int]:
@@ -541,7 +543,7 @@ def download_and_index_arxiv_pdfs(
 async def download_and_index_arxiv_pdfs_async(
     papers: List[Dict[str, Any]],
     milvus_repo: Optional[Any] = None,
-    mysql_repo: Optional[Any] = None,
+    mysql_repo: Optional[DocumentWriter] = None,
     sleep_between: float = 3.0,
     max_workers: int = 1,
 ) -> Tuple[int, int]:

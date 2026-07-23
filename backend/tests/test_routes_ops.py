@@ -8,9 +8,9 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_ops
 from backend.app.api.dependencies import (
+    get_document_repository,
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
-    get_mysql_repository,
     get_runtime_provider_setting_repository,
 )
 from backend.app.core.auth import RequireAdmin
@@ -33,7 +33,7 @@ class OperationsRouteTests(unittest.TestCase):
         milvus.drop_collection.return_value = True
 
         app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
-        app.dependency_overrides[get_mysql_repository] = lambda: repository
+        app.dependency_overrides[get_document_repository] = lambda: repository
         app.dependency_overrides[
             get_ingestion_task_repository
         ] = lambda: task_repository
@@ -66,7 +66,7 @@ class OperationsRouteTests(unittest.TestCase):
         repository = MagicMock()
         task_repository = MagicMock(spec=IngestionTaskAdminRepository)
 
-        app.dependency_overrides[get_mysql_repository] = lambda: repository
+        app.dependency_overrides[get_document_repository] = lambda: repository
         app.dependency_overrides[
             get_ingestion_task_repository
         ] = lambda: task_repository
@@ -86,7 +86,7 @@ class OperationsRouteTests(unittest.TestCase):
         task_repository.clear_all_tasks.side_effect = RuntimeError("delete failed")
 
         app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
-        app.dependency_overrides[get_mysql_repository] = lambda: repository
+        app.dependency_overrides[get_document_repository] = lambda: repository
         app.dependency_overrides[
             get_ingestion_task_repository
         ] = lambda: task_repository

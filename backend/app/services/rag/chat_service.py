@@ -205,7 +205,7 @@ def _execute_query_knowledge_stats(
     from backend.app.repositories.mysql_repo import MySQLRepository
 
     db = MySQLRepository()
-    source_counts = db.get_source_counts()
+    source_counts = db.documents.get_source_counts()
 
     conditions: List[str] = []
     params: List[Any] = []

@@ -398,8 +398,14 @@ async def _search_indexed_documents(
     q = args["q"]
     page = args.get("page", 1)
     limit = args.get("limit", 10)
+    compatibility_repository = MySQLRepository()
+    documents = getattr(
+        compatibility_repository,
+        "documents",
+        compatibility_repository,
+    )
     result = await asyncio.to_thread(
-        MySQLRepository().search_document_page,
+        documents.search_document_page,
         q,
         source=source,
         page=page,
@@ -697,11 +703,14 @@ async def _resource_dashboard_summary(request: Request, uri: str, query: dict[st
             raise McpResourceInputError(str(exc)) from exc
 
     db = MySQLRepository()
+    document_statistics = db.documents
     snapshot_date = _resolve_snapshot_date(date_value or None)
     board = _compute_board_status(snapshot_date)
-    source_counts = await asyncio.to_thread(db.get_source_counts)
+    source_counts = await asyncio.to_thread(document_statistics.get_source_counts)
     total_documents = sum(int(value or 0) for value in source_counts.values())
-    today_new_documents = await asyncio.to_thread(db.get_today_document_count)
+    today_new_documents = await asyncio.to_thread(
+        document_statistics.get_today_document_count
+    )
 
     if board["is_embargoed"]:
         return _resource_content(

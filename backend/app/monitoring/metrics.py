@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.task_repository import (
@@ -17,9 +18,11 @@ def collect_metrics(
     repository: MonitorMetricsRepository | None = None,
     task_reader: RecentTaskReader | None = None,
     evaluation_reader: EvaluationSummaryReader | None = None,
+    document_statistics: DocumentStatisticsReader | None = None,
 ) -> Dict[str, Any]:
     """Collect runtime metrics for the monitor dashboard."""
     db = repository if repository is not None else MySQLRepository()
+    documents = document_statistics or _default_document_statistics(db)
     tasks = task_reader if task_reader is not None else _default_task_reader(db)
     evaluations = (
         evaluation_reader
@@ -40,7 +43,7 @@ def collect_metrics(
         eval_summary = {"error": str(exc)}
 
     try:
-        doc_count = db.get_document_count()
+        doc_count = documents.get_document_count()
     except Exception as exc:
         doc_count = -1
 
@@ -56,6 +59,13 @@ def collect_metrics(
         "tasks": task_summary,
         "rag_evaluation": eval_summary,
     }
+
+
+def _default_document_statistics(
+    repository: MonitorMetricsRepository,
+) -> DocumentStatisticsReader:
+    component = getattr(repository, "documents", None)
+    return component if component is not None else repository  # type: ignore[return-value]
 
 
 def _default_task_reader(repository: MonitorMetricsRepository) -> RecentTaskReader:

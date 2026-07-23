@@ -9,7 +9,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi_cache.decorator import cache
 
-from backend.app.api.dependencies import get_user_account_repository
+from backend.app.api.dependencies import (
+    get_document_repository,
+    get_user_account_repository,
+)
+from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.user_account_repository import UserStatisticsReader
 
 router = APIRouter()
@@ -776,6 +780,7 @@ async def get_dashboard_summary(
         default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
     ),
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
+    document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
 ):
     """Return a combined dashboard payload: period top-10 + radar + basic stats + source breakdown.
 
@@ -808,7 +813,7 @@ async def get_dashboard_summary(
 
     # 静默期拦截：返回空排行数据，但统计卡片仍显示全库累计数量
     if board["is_embargoed"]:
-        source_counts_embargo = await asyncio.to_thread(db.get_source_counts)
+        source_counts_embargo = await asyncio.to_thread(document_statistics.get_source_counts)
         total_embargo = sum(source_counts_embargo.values())
         registered_users = await asyncio.to_thread(user_statistics.get_user_count)
         today_registered_users = await asyncio.to_thread(
@@ -842,12 +847,12 @@ async def get_dashboard_summary(
     # ── 统计卡片数据 ──────────────────────────────────────────────
     # 始终使用全库累计统计，数字不随日期切换而变化，
     # 展示的是每个来源在数据库中的实际入库总量。
-    source_counts = await asyncio.to_thread(db.get_source_counts)
+    source_counts = await asyncio.to_thread(document_statistics.get_source_counts)
     total_documents = sum(source_counts.values())
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
     today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
     user_count = registered_users + today_registered_users
-    today_new_documents = await asyncio.to_thread(db.get_today_document_count)
+    today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
 
     return {
         "top_list": top10,

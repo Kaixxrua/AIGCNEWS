@@ -16,9 +16,11 @@ import re
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from backend.app.api.dependencies import get_document_repository
+from backend.app.repositories.document_repository import DocumentSearchReader
 from backend.app.repositories.mysql_repo import MySQLRepository
 
 router = APIRouter()
@@ -69,6 +71,7 @@ async def search_papers(
     request: Request,
     q: str = Query(..., min_length=1, max_length=200, description="搜索关键词"),
     limit: int = Query(default=20, ge=1, le=100),
+    documents: DocumentSearchReader = Depends(get_document_repository),
 ):
     """
     搜索所有来源的文档（title + summary + tags，支持自然语言查询放宽）。
@@ -81,8 +84,7 @@ async def search_papers(
     if not normalized_q:
         raise HTTPException(status_code=422, detail="搜索关键词不能为空")
 
-    db = MySQLRepository()
-    rows = await asyncio.to_thread(db.search_documents, normalized_q, limit)
+    rows = await asyncio.to_thread(documents.search_documents, normalized_q, limit)
     docs = [_safe_doc(dict(row)) for row in rows]
     enriched = [_enrich_pdf_url(d, request) for d in docs]
     return {"items": enriched, "total": len(enriched), "q": normalized_q}

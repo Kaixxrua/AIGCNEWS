@@ -32,6 +32,10 @@ from redis.asyncio import Redis
 from langchain_core.documents import Document
 
 from backend.app.core.config import settings
+from backend.app.repositories.document_repository import (
+    DocumentSearchReader,
+    DocumentWriter,
+)
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
@@ -240,13 +244,13 @@ def _sort_papers_for_write(papers: List[dict]) -> List[dict]:
 
 def _apply_existing_summary_short_circuit(
     papers: List[dict],
-    db: MySQLRepository,
+    documents: DocumentSearchReader,
     source_label: str,
 ) -> List[dict]:
     if not papers:
         return papers
 
-    existing = db.get_existing_document_summaries(
+    existing = documents.get_existing_document_summaries(
         ids=[_doc_id(paper) for paper in papers],
         urls=[(paper.get("url") or "").strip() for paper in papers],
         titles=[(paper.get("title") or "").strip() for paper in papers],
@@ -338,6 +342,7 @@ def _ingest_documents(
     task_id: int,
     source_label: str,
     snapshot_date: Optional[str] = None,
+    document_writer: DocumentWriter | None = None,
 ) -> int:
     """将一批文档写入 SQLite + Milvus + Neo4j，返回成功入库数量。
 
@@ -352,7 +357,8 @@ def _ingest_documents(
         snapshot_date = today_cst()
 
     sorted_papers = _sort_papers_for_write(papers)
-    documents = _to_documents(sorted_papers)
+    vector_documents = _to_documents(sorted_papers)
+    writer = document_writer or db.documents
 
     # ── 替换式快照写入：先收集本批次涉及的所有 channel，逐 channel 清除旧快照 ──
     # 确保同一 snapshot_date + source_channel 下不会残留上次采集的旧 doc_id，
@@ -385,7 +391,7 @@ def _ingest_documents(
             )
 
     # ── SQLite metadata + rank snapshot ────────────────────────────
-    for paper, doc in zip(sorted_papers, documents):
+    for paper, doc in zip(sorted_papers, vector_documents):
         ai_score = doc.metadata.get("ai_score") or paper.get("ai_score")
         ai_reason = doc.metadata.get("ai_reason") or paper.get("ai_reason", "")
         raw_score = paper.get("raw_score", paper.get("score", 0.0))
@@ -393,7 +399,7 @@ def _ingest_documents(
         source_channel = paper.get("source_channel", paper.get("channel", ""))
         score_val = ai_score if ai_score is not None else 0.0
 
-        db.upsert_document(
+        writer.upsert_document(
             {
                 "id": doc.metadata["id"],
                 "source": paper.get("source", source_label),
@@ -439,7 +445,7 @@ def _ingest_documents(
     # ── Milvus vector indexing ─────────────────────────────────────
     try:
         milvus_repo = MilvusRepository()
-        milvus_repo.add_documents(documents, already_split=False)
+        milvus_repo.add_documents(vector_documents, already_split=False)
     except Exception as exc:
         logger.error("[Pipeline][%s] Milvus 写入失败: %s", source_label, exc)
 
@@ -452,7 +458,7 @@ def _ingest_documents(
         # 筛选出真正新增的文档（旧文档复用 summary，无需重新抽图谱）
         new_doc_pairs = [
             (doc, paper)
-            for doc, paper in zip(documents, sorted_papers)
+            for doc, paper in zip(vector_documents, sorted_papers)
             if not paper.get("existing_summary_reused", False)
         ]
         new_documents = [doc for doc, _ in new_doc_pairs]
@@ -467,7 +473,7 @@ def _ingest_documents(
                     "[Pipeline][%s] 图谱写入完成：%d 篇新论文（跳过 %d 篇已有记录）。",
                     source_label,
                     len(new_documents),
-                    len(documents) - len(new_documents),
+                    len(vector_documents) - len(new_documents),
                 )
             except Exception as exc:
                 logger.error("[Pipeline][%s] Neo4j 写入失败: %s", source_label, exc)
@@ -475,7 +481,7 @@ def _ingest_documents(
             logger.info(
                 "[Pipeline][%s] 图谱抽取跳过：所有 %d 篇论文均已存在于数据库。",
                 source_label,
-                len(documents),
+                len(vector_documents),
             )
     else:
         logger.debug(
@@ -593,7 +599,7 @@ class IngestionOrchestrator:
         )
         selected = _apply_existing_summary_short_circuit(
             selected,
-            self.db,
+            self.db.documents,
             label,
         )
         # source_name 是纯名称（如 "arxiv"），用于 _ENRICH_MAP 查找
@@ -610,6 +616,7 @@ class IngestionOrchestrator:
             task_id,
             label,
             snapshot_date or self.snapshot_date,
+            self.db.documents,
         )
         return count
 
@@ -640,7 +647,7 @@ class IngestionOrchestrator:
                 dl_ok, idx_ok = download_and_index_arxiv_pdfs(
                     arxiv_papers,
                     milvus_repo=milvus_repo,
-                    mysql_repo=db,
+                    mysql_repo=db.documents,
                     sleep_between=3.0,
                     max_workers=1,
                 )

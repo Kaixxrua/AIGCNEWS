@@ -7,6 +7,7 @@ from typing import Iterable, List
 from langchain_core.documents import Document
 
 from backend.app.core.model_factory import get_chat_model, get_embedding_model
+from backend.app.repositories.document_repository import DocumentFeedReader
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
@@ -18,10 +19,12 @@ class HybridRetriever:
         milvus_repo: MilvusRepository,
         graph_repo: GraphRepository,
         mysql_repo: MySQLRepository | None = None,
+        document_feed: DocumentFeedReader | None = None,
     ) -> None:
         self._milvus_repo = milvus_repo
         self._graph_repo = graph_repo
         self._mysql_repo = mysql_repo or MySQLRepository()
+        self._document_feed = document_feed or self._mysql_repo.documents
         self._embeddings = get_embedding_model()
         self._llm = get_chat_model()
 
@@ -321,7 +324,7 @@ class HybridRetriever:
     def _sqlite_fallback_documents(
         self, query: str = "", top_k: int = 10
     ) -> List[Document]:
-        rows = self._mysql_repo.get_top_documents(limit=max(top_k * 5, 30))
+        rows = self._document_feed.get_top_documents(limit=max(top_k * 5, 30))
         query_lc = query.lower().strip()
         query_tokens = [t for t in re.findall(r"[A-Za-z0-9_-]+", query_lc) if t]
 

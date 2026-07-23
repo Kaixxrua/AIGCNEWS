@@ -486,6 +486,7 @@ class McpProtocolTests(unittest.TestCase):
 
     def test_search_papers_uses_shared_repository_and_hides_local_path(self) -> None:
         repository = MagicMock()
+        repository.documents = repository
         repository.search_document_page.return_value = {
             "items": [
                 {
@@ -767,6 +768,7 @@ class McpProtocolTests(unittest.TestCase):
 
     def test_search_documents_keeps_all_source_semantics(self) -> None:
         repository = MagicMock()
+        repository.documents = repository
         repository.search_document_page.return_value = {"items": [], "total": 0}
         with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
             response = self.client.post(

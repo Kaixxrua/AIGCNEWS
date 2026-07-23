@@ -31,6 +31,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_papers
+from backend.app.api.dependencies import get_document_repository
 from backend.app.repositories.mysql_repo import (
     MySQLRepository,
     _document_search_candidates,
@@ -96,11 +97,12 @@ class PaperRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         app = FastAPI()
         app.include_router(routes_papers.router, prefix="/api")
+        self.repository = MagicMock()
+        app.dependency_overrides[get_document_repository] = lambda: self.repository
         self.client = TestClient(app)
 
     def test_rest_search_trims_query_and_enriches_pdf(self) -> None:
-        repository = MagicMock()
-        repository.search_documents.return_value = [
+        self.repository.search_documents.return_value = [
             {
                 "id": "paper-1",
                 "source": "arxiv",
@@ -108,11 +110,13 @@ class PaperRouteTests(unittest.TestCase):
                 "local_pdf_path": "/tmp/agent.pdf",
             }
         ]
-        with patch.object(routes_papers, "MySQLRepository", return_value=repository):
-            response = self.client.get("/api/papers/search", params={"q": "  Agent  ", "limit": 100})
+        response = self.client.get(
+            "/api/papers/search",
+            params={"q": "  Agent  ", "limit": 100},
+        )
 
         self.assertEqual(response.status_code, 200)
-        repository.search_documents.assert_called_once_with("Agent", 100)
+        self.repository.search_documents.assert_called_once_with("Agent", 100)
         payload = response.json()
         self.assertEqual(payload["q"], "Agent")
         self.assertEqual(payload["total"], 1)

@@ -6,6 +6,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.briefing_repository import BriefingContentRepository
+from backend.app.repositories.document_repository import DocumentFeedReader
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.services.ingestion.base_crawler import today_cst
@@ -337,9 +338,11 @@ class DailyBriefingService:
         mysql_repo: MySQLRepository | None = None,
         top_k: int = 10,
         briefing_repository: BriefingContentRepository | None = None,
+        document_feed: DocumentFeedReader | None = None,
     ) -> None:
         self._db = mysql_repo or MySQLRepository()
         self._briefings = briefing_repository or self._db.briefings
+        self._document_feed = document_feed or self._db.documents
         self._top_k = top_k
         self._llm = get_chat_model()
 
@@ -486,7 +489,7 @@ class DailyBriefingService:
             # 2c. 快照表无数据时，回退到 documents 表 + channel 过滤
             if not docs:
                 logger.info("快照表无数据，回退到 documents 表...")
-                all_docs = self._db.get_top_documents(
+                all_docs = self._document_feed.get_top_documents(
                     limit=self._top_k * 3, source_type=source_type
                 )
                 # 所有周期（包括 daily）都按 source_channel 过滤
@@ -499,7 +502,7 @@ class DailyBriefingService:
             # 2d. 依然无数据时，使用最新文档兜底
             if not docs:
                 logger.info("尝试兜底逻辑 (get_latest_documents)...")
-                docs = self._db.get_latest_documents(limit=self._top_k)
+                docs = self._document_feed.get_latest_documents(limit=self._top_k)
                 fallback_used = True
                 logger.info("兜底逻辑返回 %d 条", len(docs))
 
