@@ -11,6 +11,13 @@ import {
   type AttachmentMeta,
 } from '../services/api'
 import { Clipboard, SquareCode, FileText, Image } from 'lucide-vue-next'
+import {
+  getSourceTitle,
+  getSourceType,
+  getSourceUrl,
+  getStreamPhaseLabel,
+  sourceTypeBadgeClass,
+} from '../features/chat/chatPresentation'
 
 const store = useChatStore()
 const authStore = useAuthStore()
@@ -48,56 +55,6 @@ const toggleRaw = (idx: number) => {
   rawModeSet.value = new Set(rawModeSet.value)
 }
 
-interface SourceFlat {
-  id?: string
-  score?: number
-  source?: string
-  title?: string
-  url?: string
-  published_date?: string
-  metadata?: {
-    title?: string
-    url?: string
-    source?: string
-    source_type?: string
-    node?: { id?: string }
-  }
-}
-
-const getSourceTitle = (src: unknown): string => {
-  const s = src as SourceFlat
-  return s?.title || s?.metadata?.title || s?.metadata?.node?.id || s?.id || 'Unknown Source'
-}
-
-const getSourceType = (src: unknown): string => {
-  const s = src as SourceFlat
-  const channel = s?.source || s?.metadata?.source_type || s?.metadata?.source || ''
-  if (channel === 'arxiv') return 'Arxiv'
-  if (channel === 'github') return 'GitHub'
-  if (channel === 'news') return 'News'
-  if (channel === 'web') return 'Web'
-  if (channel.toLowerCase().includes('neo4j') || channel.toLowerCase().includes('graph')) return 'Neo4j'
-  if (channel.toLowerCase().includes('milvus') || channel.toLowerCase().includes('vector')) return 'Milvus'
-  return channel || 'Unknown'
-}
-
-const getSourceUrl = (src: unknown): string | null => {
-  const s = src as SourceFlat
-  return s?.url || s?.metadata?.url || null
-}
-
-/** 来源徽章按类型分色 CSS 类 */
-const sourceTypeBadgeClass = (type: string): string => {
-  const t = type.toLowerCase()
-  if (t === 'arxiv') return 'badge-arxiv'
-  if (t === 'github') return 'badge-github'
-  if (t === 'news') return 'badge-news'
-  if (t === 'neo4j') return 'badge-neo4j'
-  if (t === 'milvus') return 'badge-milvus'
-  if (t === 'web') return 'badge-web'
-  return 'badge-default'
-}
-
 const thinkingExpanded = ref<Record<string, boolean>>({})
 
 const toggleThinking = (msgId: string) => {
@@ -118,15 +75,7 @@ const onTouchMoveHandler = (e: TouchEvent) => {
 }
 
 /** 流式阶段文案映射 */
-const streamPhaseLabel = computed(() => {
-  switch (store.streamPhase) {
-    case 'searching': return '正在检索资料…'
-    case 'reranking': return '正在精排匹配…'
-    case 'answering': return '正在生成回答…'
-    case 'error': return '请求出错'
-    default: return ''
-  }
-})
+const streamPhaseLabel = computed(() => getStreamPhaseLabel(store.streamPhase))
 
 onMounted(async () => {
   const el = listRef.value
