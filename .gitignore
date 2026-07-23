@@ -37,3 +37,6 @@ ssl/
 
 # Generated test artifacts
 test-results/
+
+# Private project-search judgments and web snapshots
+benchmarks/project-search/private/
