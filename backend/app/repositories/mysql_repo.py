@@ -1262,64 +1262,10 @@ class MySQLRepository:
     # ------------------------------------------------------------------
 
     def upsert_document(self, doc: Dict[str, Any]) -> None:
-        sql = """
-            INSERT INTO documents (id, source, source_channel, title, url, summary, published_date,
-                                   tags, score, raw_score, stars, forks, language, rank_in_period, indexed,
-                                   in_daily, in_weekly, in_monthly, local_pdf_path, created_at)
-            VALUES (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s, %(summary)s, %(published_date)s,
-                    %(tags)s, %(score)s, %(raw_score)s, %(stars)s, %(forks)s, %(language)s, %(rank_in_period)s, %(indexed)s,
-                    %(in_daily)s, %(in_weekly)s, %(in_monthly)s, %(local_pdf_path)s, %(created_at)s)
-            ON DUPLICATE KEY UPDATE
-                source_channel=VALUES(source_channel),
-                title=VALUES(title),
-                url=VALUES(url),
-                summary=VALUES(summary),
-                published_date=COALESCE(NULLIF(VALUES(published_date), ''), published_date),
-                tags=VALUES(tags),
-                score=GREATEST(score, VALUES(score)),
-                raw_score=GREATEST(raw_score, VALUES(raw_score)),
-                stars=COALESCE(NULLIF(VALUES(stars), 0), stars),
-                forks=COALESCE(NULLIF(VALUES(forks), 0), forks),
-                language=COALESCE(NULLIF(VALUES(language), ''), language),
-                rank_in_period=LEAST(rank_in_period, VALUES(rank_in_period)),
-                indexed=VALUES(indexed),
-                in_daily=GREATEST(in_daily, VALUES(in_daily)),
-                in_weekly=GREATEST(in_weekly, VALUES(in_weekly)),
-                in_monthly=GREATEST(in_monthly, VALUES(in_monthly)),
-                local_pdf_path=COALESCE(VALUES(local_pdf_path), local_pdf_path)
-        """
-        doc.setdefault("created_at", _utcnow())
-        doc.setdefault("indexed", 0)
-        doc.setdefault("in_daily", 0)
-        doc.setdefault("in_weekly", 0)
-        doc.setdefault("in_monthly", 0)
-        doc.setdefault("score", 0.0)
-        doc.setdefault("raw_score", doc.get("score", 0.0))
-        doc.setdefault("stars", 0)
-        doc.setdefault("forks", 0)
-        doc.setdefault("language", "")
-        doc.setdefault("source_channel", "")
-        doc.setdefault("rank_in_period", 9999)
-        doc.setdefault("local_pdf_path", None)
-        if isinstance(doc.get("tags"), list):
-            doc["tags"] = json.dumps(doc["tags"], ensure_ascii=False)
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, doc)
-            conn.commit()
-        finally:
-            conn.close()
+        return self.documents.upsert_document(doc)
 
     def update_document_pdf_path(self, doc_id: str, local_pdf_path: str) -> None:
-        sql = "UPDATE documents SET local_pdf_path = %s WHERE id = %s"
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (local_pdf_path, doc_id))
-            conn.commit()
-        finally:
-            conn.close()
+        return self.documents.update_document_pdf_path(doc_id, local_pdf_path)
 
     def search_document_page(
         self,
@@ -1329,70 +1275,12 @@ class MySQLRepository:
         page: int = 1,
         page_size: int = 20,
     ) -> Dict[str, Any]:
-        candidates = _document_search_candidates(query)
-        page = max(1, int(page))
-        page_size = max(1, min(int(page_size), 100))
-        if not candidates:
-            return {"items": [], "total": 0, "page": page, "page_size": page_size}
-
-        patterns = [f"%{_escape_like_literal(candidate)}%" for candidate in candidates]
-        field_match = (
-            "(COALESCE(title, '') LIKE %s ESCAPE '=' "
-            "OR COALESCE(summary, '') LIKE %s ESCAPE '=' "
-            "OR COALESCE(tags, '') LIKE %s ESCAPE '=')"
+        return self.documents.search_document_page(
+            query,
+            source=source,
+            page=page,
+            page_size=page_size,
         )
-        search_sql = "(" + " OR ".join([field_match] * len(patterns)) + ")"
-        where_parts = [search_sql]
-        where_params: List[Any] = [pattern for pattern in patterns for _ in range(3)]
-        clean_source = str(source or "").strip().lower()
-        if clean_source:
-            where_parts.append("source = %s")
-            where_params.append(clean_source)
-        where_sql = " AND ".join(where_parts)
-
-        tier_clauses: List[str] = []
-        tier_params: List[Any] = []
-        for index, pattern in enumerate(patterns):
-            tier_clauses.append(f"WHEN COALESCE(title, '') LIKE %s ESCAPE '=' THEN {index * 2}")
-            tier_params.append(pattern)
-            tier_clauses.append(
-                f"WHEN (COALESCE(summary, '') LIKE %s ESCAPE '=' "
-                f"OR COALESCE(tags, '') LIKE %s ESCAPE '=') THEN {index * 2 + 1}"
-            )
-            tier_params.extend([pattern, pattern])
-
-        count_clauses = [f"CASE WHEN {field_match} THEN 1 ELSE 0 END" for _ in patterns]
-        count_params = [pattern for pattern in patterns for _ in range(3)]
-        count_sql = f"SELECT COUNT(*) AS cnt FROM documents WHERE {where_sql}"
-        rows_sql = f"""
-            SELECT id, source, source_channel, title, url, summary,
-                   published_date, tags, score, raw_score, rank_in_period,
-                   local_pdf_path, created_at
-            FROM documents
-            WHERE {where_sql}
-            ORDER BY
-                CASE {' '.join(tier_clauses)} ELSE {len(patterns) * 2} END ASC,
-                ({' + '.join(count_clauses)}) DESC,
-                COALESCE(raw_score, score, 0) DESC,
-                created_at DESC,
-                id ASC
-            LIMIT %s OFFSET %s
-        """
-        offset = (page - 1) * page_size
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(count_sql, tuple(where_params))
-                total_row = cur.fetchone()
-                total = int(total_row["cnt"] if total_row else 0)
-                cur.execute(
-                    rows_sql,
-                    tuple(where_params + tier_params + count_params + [page_size, offset]),
-                )
-                items = [dict(row) for row in cur.fetchall()]
-            return {"items": items, "total": total, "page": page, "page_size": page_size}
-        finally:
-            conn.close()
 
     def search_documents(
         self,
@@ -1401,12 +1289,7 @@ class MySQLRepository:
         *,
         source: str | None = None,
     ) -> List[Dict[str, Any]]:
-        return self.search_document_page(
-            query,
-            source=source,
-            page=1,
-            page_size=max(1, min(int(limit), 100)),
-        )["items"]
+        return self.documents.search_documents(query, limit, source=source)
 
     def get_existing_document_summaries(
         self,
@@ -1415,186 +1298,27 @@ class MySQLRepository:
         urls: Optional[List[str]] = None,
         titles: Optional[List[str]] = None,
     ) -> Dict[str, str]:
-        ids = [_normalize_doc_lookup_key(item) for item in (ids or [])]
-        urls = [_normalize_doc_lookup_key(item) for item in (urls or [])]
-        titles = [_normalize_doc_lookup_key(item) for item in (titles or [])]
-        ids = [item for item in ids if item]
-        urls = [item for item in urls if item]
-        titles = [item for item in titles if item]
-
-        conditions: List[str] = []
-        params: List[Any] = []
-
-        if ids:
-            placeholders = ", ".join(["%s"] * len(ids))
-            conditions.append(f"id IN ({placeholders})")
-            params.extend(ids)
-        if urls:
-            placeholders = ", ".join(["%s"] * len(urls))
-            conditions.append(f"url IN ({placeholders})")
-            params.extend(urls)
-        if titles:
-            placeholders = ", ".join(["%s"] * len(titles))
-            conditions.append(f"title IN ({placeholders})")
-            params.extend(titles)
-
-        if not conditions:
-            return {}
-
-        sql = f"""
-            SELECT id, url, title, summary
-            FROM documents
-            WHERE ({' OR '.join(conditions)})
-              AND COALESCE(NULLIF(TRIM(summary), ''), '') != ''
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, tuple(params))
-                rows = cur.fetchall()
-            conn.commit()
-        finally:
-            conn.close()
-
-        result: Dict[str, str] = {}
-        for row in rows:
-            summary = (row.get("summary") or "").strip()
-            if not summary:
-                continue
-            doc_id = _normalize_doc_lookup_key(row.get("id"))
-            url = _normalize_doc_lookup_key(row.get("url"))
-            title = _normalize_doc_lookup_key(row.get("title"))
-            if doc_id:
-                result[f"id:{doc_id}"] = summary
-            if url:
-                result[f"url:{url}"] = summary
-            if title:
-                result[f"title:{title}"] = summary
-        return result
+        return self.documents.get_existing_document_summaries(
+            ids=ids,
+            urls=urls,
+            titles=titles,
+        )
 
     def get_top_documents(
-        self, limit: int = 10, source_type: Optional[str] = None
+        self,
+        limit: int = 10,
+        source_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        select_clause = """
-            SELECT
-                d.id, d.source, d.source_channel, d.title, d.url, d.summary,
-                d.published_date, d.tags, d.score, d.raw_score,
-                COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
-                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
-                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
-                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
-                d.in_monthly, d.local_pdf_path, d.created_at
-            FROM documents d
-            LEFT JOIN github_repo_candidates c
-              ON d.source = 'github'
-             AND (c.full_name = d.title OR c.url = d.url)
-            LEFT JOIN (
-                SELECT s.repo_id, s.stars, s.forks
-                FROM github_repo_snapshots s
-                JOIN (
-                    SELECT repo_id, MAX(snapshot_date) AS snapshot_date
-                    FROM github_repo_snapshots
-                    GROUP BY repo_id
-                ) latest
-                  ON latest.repo_id = s.repo_id
-                 AND latest.snapshot_date = s.snapshot_date
-            ) gs ON gs.repo_id = c.repo_id
-        """
-        order_by = """
-            ORDER BY
-                COALESCE(d.raw_score, d.score, 0) DESC,
-                d.published_date DESC
-        """
-
-        if source_type and source_type != "all":
-            sql = f"""
-                {select_clause}
-                WHERE d.source = %s
-                {order_by}
-                LIMIT %s
-            """
-            params: tuple = (source_type, limit)
-        else:
-            sql = f"""
-                {select_clause}
-                {order_by}
-                LIMIT %s
-            """
-            params = (limit,)
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
-            conn.commit()
-            return list(rows)
-        finally:
-            conn.close()
+        return self.documents.get_top_documents(limit, source_type)
 
     def get_latest_documents(self, limit: int = 10) -> List[Dict[str, Any]]:
-        sql = """
-            SELECT
-                d.id, d.source, d.source_channel, d.title, d.url, d.summary,
-                d.published_date, d.tags, d.score, d.raw_score,
-                COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
-                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
-                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
-                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
-                d.in_monthly, d.local_pdf_path, d.created_at
-            FROM documents d
-            LEFT JOIN github_repo_candidates c
-              ON d.source = 'github'
-             AND (c.full_name = d.title OR c.url = d.url)
-            LEFT JOIN (
-                SELECT s.repo_id, s.stars, s.forks
-                FROM github_repo_snapshots s
-                JOIN (
-                    SELECT repo_id, MAX(snapshot_date) AS snapshot_date
-                    FROM github_repo_snapshots
-                    GROUP BY repo_id
-                ) latest
-                  ON latest.repo_id = s.repo_id
-                 AND latest.snapshot_date = s.snapshot_date
-            ) gs ON gs.repo_id = c.repo_id
-            ORDER BY d.created_at DESC
-            LIMIT %s
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (limit,))
-                rows = cur.fetchall()
-            conn.commit()
-            return list(rows)
-        finally:
-            conn.close()
+        return self.documents.get_latest_documents(limit)
 
     def get_document_count(self) -> int:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) AS cnt FROM documents")
-                row = cur.fetchone()
-            conn.commit()
-            return int(row["cnt"] if row else 0)
-        finally:
-            conn.close()
+        return self.documents.get_document_count()
 
     def get_source_counts(self) -> Dict[str, int]:
-        sql = """
-            SELECT source, COUNT(DISTINCT COALESCE(NULLIF(url, ''), title)) AS cnt
-            FROM documents
-            GROUP BY source
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql)
-                rows = cur.fetchall()
-            conn.commit()
-            return {row["source"]: row["cnt"] for row in rows}
-        finally:
-            conn.close()
+        return self.documents.get_source_counts()
 
     def get_user_count(self) -> int:
         """返回已注册用户总数。"""
@@ -1605,26 +1329,7 @@ class MySQLRepository:
         return self.user_accounts.get_today_registered_user_count()
 
     def get_today_document_count(self) -> int:
-        """返回今日新增文档数（created_at 日期 = CST 今天）。
-
-        documents.created_at 以 UTC ISO 字符串存储，查询时取前 10 字符与 CST 今天对比。
-        """
-        from datetime import datetime, timezone, timedelta
-
-        tz_cst = timezone(timedelta(hours=8))
-        today_str = datetime.now(tz_cst).strftime("%Y-%m-%d")
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) AS cnt FROM documents WHERE LEFT(created_at, 10) = %s",
-                    (today_str,),
-                )
-                row = cur.fetchone()
-            conn.commit()
-            return int(row["cnt"] if row else 0)
-        finally:
-            conn.close()
+        return self.documents.get_today_document_count()
 
     def count_user_messages_today(self, user_id: int) -> int:
         """统计指定用户今日（CST）发送的消息数（role='user'）。
@@ -1657,17 +1362,7 @@ class MySQLRepository:
             conn.close()
 
     def clear_all_documents(self) -> int:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) AS cnt FROM documents")
-                row = cur.fetchone()
-                count = int(row["cnt"] if row else 0)
-                cur.execute("DELETE FROM documents")
-            conn.commit()
-            return count
-        finally:
-            conn.close()
+        return self.documents.clear_all_documents()
 
     # ------------------------------------------------------------------
     # Document rank snapshots
