@@ -170,6 +170,40 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         briefing_repository.get_briefing_by_date.assert_called_once_with("2026-07-22")
         briefing_repository.list_briefings.assert_called_once_with(7)
 
+    def test_evaluation_compatibility_methods_delegate_to_component(self) -> None:
+        repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
+        evaluation_repository = MagicMock()
+        evaluation_repository.save_evaluation.return_value = 42
+        evaluation_repository.get_eval_summary.return_value = {"total": 1}
+        evaluation_repository.list_evaluations.return_value = [{"id": 42}]
+        repository._evaluations = evaluation_repository
+        sources = [{"title": "source"}]
+
+        self.assertEqual(
+            repository.save_evaluation(
+                query="query",
+                answer="answer",
+                sources=sources,
+                recall_score=0.5,
+                citation_score=0.25,
+                subjective_score=0.0,
+            ),
+            42,
+        )
+        self.assertEqual(repository.get_eval_summary(), {"total": 1})
+        self.assertEqual(repository.list_evaluations(limit=7), [{"id": 42}])
+
+        evaluation_repository.save_evaluation.assert_called_once_with(
+            query="query",
+            answer="answer",
+            sources=sources,
+            recall_score=0.5,
+            citation_score=0.25,
+            subjective_score=0.0,
+        )
+        evaluation_repository.get_eval_summary.assert_called_once_with()
+        evaluation_repository.list_evaluations.assert_called_once_with(7)
+
     def test_subscription_compatibility_methods_delegate_to_component(self) -> None:
         repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
         subscription_repository = MagicMock()

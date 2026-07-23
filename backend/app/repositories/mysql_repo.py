@@ -4898,68 +4898,20 @@ class MySQLRepository:
         citation_score: float,
         subjective_score: float,
     ) -> int:
-        sql = """
-            INSERT INTO rag_evaluations
-                (query, answer, sources_json, recall_score, citation_score,
-                 subjective_score, evaluated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    sql,
-                    (
-                        query,
-                        answer,
-                        json.dumps(sources, ensure_ascii=False),
-                        recall_score,
-                        citation_score,
-                        subjective_score,
-                        _utcnow(),
-                    ),
-                )
-                evaluation_id = cur.lastrowid
-            conn.commit()
-            return evaluation_id  # type: ignore[return-value]
-        finally:
-            conn.close()
+        return self.evaluations.save_evaluation(
+            query=query,
+            answer=answer,
+            sources=sources,
+            recall_score=recall_score,
+            citation_score=citation_score,
+            subjective_score=subjective_score,
+        )
 
     def get_eval_summary(self) -> Dict[str, Any]:
-        sql = """
-            SELECT
-                COUNT(*) AS total,
-                AVG(recall_score) AS avg_recall,
-                AVG(citation_score) AS avg_citation,
-                AVG(subjective_score) AS avg_subjective
-            FROM rag_evaluations
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql)
-                row = cur.fetchone()
-            conn.commit()
-            return dict(row) if row else {"total": 0}
-        finally:
-            conn.close()
+        return self.evaluations.get_eval_summary()
 
     def list_evaluations(self, limit: int = 20) -> List[Dict[str, Any]]:
-        sql = """
-            SELECT id, query, recall_score, citation_score, subjective_score, evaluated_at
-            FROM rag_evaluations
-            ORDER BY id DESC
-            LIMIT %s
-        """
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (limit,))
-                rows = cur.fetchall()
-            conn.commit()
-            return list(rows)
-        finally:
-            conn.close()
+        return self.evaluations.list_evaluations(limit)
 
     # ------------------------------------------------------------------
     # Inbound MCP access tokens
