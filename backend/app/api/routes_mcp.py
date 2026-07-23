@@ -519,7 +519,6 @@ async def _search_project_library(
         sort=sort,
         page=page,
         limit=limit,
-        repository_factory=MySQLRepository,
         fallback_search=search_github_projects_fallback,
     )
 

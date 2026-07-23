@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     mysql_user: str = "root"
     mysql_password: str = ""
     mysql_database: str = "rag_aigc"
+    project_catalog_backend: str = "mysql"
 
     # Redis 连接配置
     redis_host: str = "localhost"

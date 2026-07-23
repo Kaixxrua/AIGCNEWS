@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from backend.app.core.auth import OptionalUser, RequireUser
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.services.project_discovery import resolve_project_sort
 
 router = APIRouter()
@@ -362,7 +363,7 @@ async def list_projects(
         raise HTTPException(status_code=404, detail="网页收藏仅在个人收藏夹中可见")
     effective_source: ProjectSource = "github"
     min_stars = 500
-    db = MySQLRepository()
+    db = get_project_catalog_repository()
     clean_category = category.strip()
     clean_subcategory = subcategory.strip()
     clean_q = q.strip()
@@ -409,7 +410,7 @@ async def list_project_categories(
         raise HTTPException(status_code=404, detail="网页收藏分类仅在个人收藏夹中可见")
     effective_source: ProjectSource = "github"
     min_stars = 500
-    db = MySQLRepository()
+    db = get_project_catalog_repository()
     result = await asyncio.to_thread(
         db.get_project_categories,
         source=effective_source,

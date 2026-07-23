@@ -5,7 +5,7 @@ import logging
 from typing import Any, Literal
 
 from backend.app.core.config import settings
-from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
 from backend.app.services.project_semantic_search import ProjectSemanticSearch
 from backend.app.services.search_semantics import normalize_search_query
@@ -81,7 +81,7 @@ async def search_projects(
     sort: str | None = None,
     page: int = 1,
     limit: int = 10,
-    repository_factory: Any = MySQLRepository,
+    repository_factory: Any | None = None,
     fallback_search: Any = search_github_projects_fallback,
     semantic_search_factory: Any = ProjectSemanticSearch,
 ) -> dict[str, Any]:
@@ -98,7 +98,11 @@ async def search_projects(
     limit = max(1, min(int(limit or 10), 20))
     min_stars = 50 if generic else 500
 
-    repository = repository_factory()
+    repository = (
+        repository_factory()
+        if repository_factory is not None
+        else get_project_catalog_repository()
+    )
     result = await asyncio.to_thread(
         repository.list_projects,
         source="github",
