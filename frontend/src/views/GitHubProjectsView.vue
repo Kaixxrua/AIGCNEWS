@@ -21,12 +21,16 @@ import {
   type GitHubProjectTag,
   type ProjectScope,
   type ProjectSource,
+  type ManualToolWebsitePayload,
   type ProjectTaxonomyItem,
   type ProjectViewSource,
+  type ToolWebsiteUpdatePayload,
 } from '../services/api'
 import router from '../router'
 import { useAuthStore } from '../stores/authStore'
 import ProjectResultCard from '../components/projects/ProjectResultCard.vue'
+import ToolWebsiteAddDialog from '../components/projects/ToolWebsiteAddDialog.vue'
+import ToolWebsiteEditDialog from '../components/projects/ToolWebsiteEditDialog.vue'
 import {
   defaultProjectSortForScope,
   defaultProjectSortForSource,
@@ -70,25 +74,12 @@ const tagsLoading = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
 const addDialogOpen = ref(false)
-const addMode = ref<'auto' | 'manual'>('auto')
-const toolUrl = ref('')
-const manualTitle = ref('')
-const manualDescription = ref('')
-const manualCategory = ref('other')
-const manualSubcategory = ref('other_uncategorized')
-const manualTags = ref('')
 const taxonomy = ref<ProjectTaxonomyItem[]>([])
 const taxonomyLoading = ref(false)
 const addingTool = ref(false)
 const addToolError = ref('')
 const editDialogOpen = ref(false)
 const editTarget = ref<GitHubProjectItem | null>(null)
-const editTitle = ref('')
-const editDescription = ref('')
-const editCategory = ref('other')
-const editSubcategory = ref('other_uncategorized')
-const editTags = ref('')
-const editImageUrl = ref('')
 const editError = ref('')
 const savingEdit = ref(false)
 const deletingWebsiteId = ref<number | string | null>(null)
@@ -170,10 +161,6 @@ const starsBadgeLabel = computed(() => {
   if (source.value === 'all') return 'GitHub Stars > 500'
   return ''
 })
-const selectedManualCategory = computed(() => taxonomy.value.find((item) => item.slug === manualCategory.value))
-const manualSubcategoryOptions = computed(() => selectedManualCategory.value?.children ?? [])
-const selectedEditCategory = computed(() => taxonomy.value.find((item) => item.slug === editCategory.value))
-const editSubcategoryOptions = computed(() => selectedEditCategory.value?.children ?? [])
 const activeFilterLabel = computed(() => {
   if (selectedTag.value) return `标签：${selectedTag.value}`
   if (selectedLanguage.value) return `语言：${selectedLanguage.value}`
@@ -327,11 +314,6 @@ const loadTaxonomy = async () => {
   try {
     const data = await fetchProjectTaxonomy()
     taxonomy.value = data.items
-    const firstCategory = data.items[0]
-    if (firstCategory && !data.items.some((item) => item.slug === manualCategory.value)) {
-      manualCategory.value = firstCategory.slug
-      manualSubcategory.value = firstCategory.children[0]?.slug ?? ''
-    }
   } catch (error) {
     console.error('Failed to load project taxonomy:', error)
   } finally {
@@ -556,15 +538,6 @@ watch(searchQuery, (value) => {
   }, 280)
 })
 
-const resetManualForm = () => {
-  manualTitle.value = ''
-  manualDescription.value = ''
-  manualTags.value = ''
-  const firstCategory = taxonomy.value.find((item) => item.slug === 'other') ?? taxonomy.value[0]
-  manualCategory.value = firstCategory?.slug ?? 'other'
-  manualSubcategory.value = firstCategory?.children[0]?.slug ?? 'other_uncategorized'
-}
-
 const goToPersonalLogin = () => {
   router.push({ path: '/login', query: { redirect: currentProjectsRedirect() } })
 }
@@ -575,9 +548,6 @@ const openAddDialog = () => {
     return
   }
   addToolError.value = ''
-  toolUrl.value = ''
-  addMode.value = 'auto'
-  resetManualForm()
   addDialogOpen.value = true
   loadTaxonomy()
 }
@@ -591,12 +561,6 @@ const closeAddDialog = () => {
 const openEditDialog = (repo: GitHubProjectItem) => {
   if (!canEditCard(repo)) return
   editTarget.value = repo
-  editTitle.value = repo.title || repoName(repo)
-  editDescription.value = repo.description_zh || repo.description || ''
-  editCategory.value = repo.category_slug || 'other'
-  editSubcategory.value = repo.subcategory_slug || ''
-  editTags.value = (repo.tags ?? []).join(', ')
-  editImageUrl.value = repo.image_url || ''
   editError.value = ''
   editDialogOpen.value = true
   loadTaxonomy()
@@ -609,35 +573,15 @@ const closeEditDialog = () => {
   editTarget.value = null
 }
 
-const submitEditWebsite = async () => {
-  const target = editTarget.value
-  if (!target?.website_id) return
-  const title = editTitle.value.trim()
-  const description = editDescription.value.trim()
-  if (!title) {
-    editError.value = '请输入工具名称。'
-    return
-  }
-  if (!description) {
-    editError.value = '请输入中文说明。'
-    return
-  }
+const submitEditWebsite = async (
+  websiteId: string | number,
+  payload: ToolWebsiteUpdatePayload,
+) => {
   savingEdit.value = true
   editError.value = ''
   successMsg.value = ''
   try {
-    const result = await updateMyToolWebsite(target.website_id, {
-      title,
-      description,
-      description_zh: description,
-      category_slug: editCategory.value,
-      subcategory_slug: editSubcategory.value,
-      image_url: editImageUrl.value.trim(),
-      tags: editTags.value
-        .split(/[，,]/)
-        .map((item) => item.trim())
-        .filter(Boolean),
-    })
+    const result = await updateMyToolWebsite(websiteId, payload)
     if (result.item) {
       upsertProjectItem(result.item)
       mergePersonalTagsFromItems([result.item])
@@ -744,41 +688,19 @@ const toggleFavorite = async (repo: GitHubProjectItem) => {
   }
 }
 
-const submitToolWebsite = async () => {
-  const url = toolUrl.value.trim()
-  if (!url) {
-    addToolError.value = '请输入工具网页链接。'
-    return
-  }
+const submitToolWebsite = async (
+  request: string | ManualToolWebsitePayload,
+) => {
   addingTool.value = true
   addToolError.value = ''
   successMsg.value = ''
   try {
-    let result
-    if (addMode.value === 'manual') {
-      const title = manualTitle.value.trim()
-      const description = manualDescription.value.trim()
-      if (!title) throw new Error('请输入工具名称。')
-      if (!description) throw new Error('请输入中文说明。')
-      const payload = {
-        url,
-        title,
-        description_zh: description,
-        category_slug: manualCategory.value,
-        subcategory_slug: manualSubcategory.value,
-        tags: manualTags.value
-          .split(/[，,]/)
-          .map((item) => item.trim())
-          .filter(Boolean),
-      }
-      result = await addMyToolWebsiteManual(payload)
-    } else {
-      result = await addMyToolWebsite(url)
-    }
+    const result = typeof request === 'string'
+      ? await addMyToolWebsite(request)
+      : await addMyToolWebsiteManual(request)
     if (result.item) mergePersonalTagsFromItems([result.item])
     successMsg.value = result.message || (result.duplicate ? '网页收藏已存在。' : '网页收藏已添加。')
     addDialogOpen.value = false
-    toolUrl.value = ''
     await refreshAfterWebsiteMutation()
   } catch (error: any) {
     addToolError.value = error?.response?.data?.detail || error?.message || String(error)
@@ -820,20 +742,6 @@ watch(
   },
   { deep: true },
 )
-watch(manualCategory, () => {
-  const firstSubcategory = manualSubcategoryOptions.value[0]
-  if (!manualSubcategoryOptions.value.some((item) => item.slug === manualSubcategory.value)) {
-    manualSubcategory.value = firstSubcategory?.slug ?? ''
-  }
-})
-
-watch(editCategory, () => {
-  const firstSubcategory = editSubcategoryOptions.value[0]
-  if (!editSubcategoryOptions.value.some((item) => item.slug === editSubcategory.value)) {
-    editSubcategory.value = firstSubcategory?.slug ?? ''
-  }
-})
-
 watch(() => authStore.isLoggedIn, (loggedIn) => {
   if (!loggedIn && isPersonalView.value) {
     currentRequestId.value += 1
@@ -1204,221 +1112,29 @@ onBeforeUnmount(stopViewReads)
     </nav>
     </template>
 
-    <Teleport to="body">
-      <Transition name="tool-modal">
-        <div v-if="isViewActive && addDialogOpen" class="tool-modal" role="presentation" @click.self="closeAddDialog">
-          <form class="tool-modal__panel" @submit.prevent="submitToolWebsite">
-            <button
-              type="button"
-              class="tool-modal__close"
-              :disabled="addingTool"
-              aria-label="关闭添加网页收藏弹窗"
-              @click="closeAddDialog"
-            >
-              ×
-            </button>
-            <p class="projects-kicker">ADD WEB TOOL</p>
-            <h2>{{ isMyCollection ? '添加到我的收藏' : '收藏一个网页' }}</h2>
-            <p class="tool-modal__hint">
-              {{ isMyCollection ? '普通用户添加的网站只进入你的个人收藏夹；自动模式会抓取 metadata 并 AI 富化。' : '自动模式会抓取网页 metadata 并 AI 富化；如果网站拦截爬取或网络不可达，可切换手动模式填写说明。' }}
-            </p>
-
-            <div class="tool-modal__tabs" aria-label="添加方式">
-              <button
-                type="button"
-                :class="addMode === 'auto' ? 'tool-modal__tab--active' : ''"
-                :disabled="addingTool"
-                @click="addMode = 'auto'"
-              >
-                自动抓取
-              </button>
-              <button
-                type="button"
-                :class="addMode === 'manual' ? 'tool-modal__tab--active' : ''"
-                :disabled="addingTool"
-                @click="addMode = 'manual'"
-              >
-                手动添加
-              </button>
-            </div>
-
-            <label class="tool-modal__field">
-              <span>工具链接</span>
-              <input
-                v-model="toolUrl"
-                type="text"
-                inputmode="url"
-                placeholder="https://example.com 或 example.com"
-                autocomplete="url"
-                :disabled="addingTool"
-                autofocus
-              />
-            </label>
-
-            <div v-if="addMode === 'manual'" class="tool-modal__manual-grid">
-              <label class="tool-modal__field">
-                <span>工具名称</span>
-                <input
-                  v-model="manualTitle"
-                  type="text"
-                  placeholder="例如：Linux.do"
-                  :disabled="addingTool"
-                />
-              </label>
-              <label class="tool-modal__field tool-modal__field--wide">
-                <span>中文说明</span>
-                <textarea
-                  v-model="manualDescription"
-                  rows="3"
-                  placeholder="一句话说明这个网站能解决什么问题、适合什么场景。"
-                  :disabled="addingTool"
-                />
-              </label>
-              <label class="tool-modal__field">
-                <span>一级分类</span>
-                <select v-model="manualCategory" :disabled="addingTool || taxonomyLoading">
-                  <option
-                    v-for="item in taxonomy"
-                    :key="item.slug"
-                    :value="item.slug"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </label>
-              <label class="tool-modal__field">
-                <span>二级分类</span>
-                <select v-model="manualSubcategory" :disabled="addingTool || taxonomyLoading">
-                  <option
-                    v-for="item in manualSubcategoryOptions"
-                    :key="item.slug"
-                    :value="item.slug"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </label>
-              <label class="tool-modal__field tool-modal__field--wide">
-                <span>标签（用逗号分隔）</span>
-                <input
-                  v-model="manualTags"
-                  type="text"
-                  placeholder="社区, 教程, 效率工具"
-                  :disabled="addingTool"
-                />
-              </label>
-            </div>
-
-            <p v-if="addToolError" class="tool-modal__error">{{ addToolError }}</p>
-            <div class="tool-modal__actions">
-              <button type="button" class="btn-secondary" :disabled="addingTool" @click="closeAddDialog">取消</button>
-              <button type="submit" class="projects-add-submit" :disabled="addingTool">
-                {{ addingTool ? (addMode === 'manual' ? '保存中…' : '抓取并富化中…') : (addMode === 'manual' ? '手动保存' : '添加并 AI 富化') }}
-              </button>
-            </div>
-          </form>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="tool-modal">
-        <div v-if="isViewActive && editDialogOpen" class="tool-modal" role="presentation" @click.self="closeEditDialog">
-          <form class="tool-modal__panel" @submit.prevent="submitEditWebsite">
-            <button
-              type="button"
-              class="tool-modal__close"
-              :disabled="savingEdit"
-              aria-label="关闭编辑网页收藏弹窗"
-              @click="closeEditDialog"
-            >
-              ×
-            </button>
-            <p class="projects-kicker">EDIT WEB TOOL</p>
-            <h2>编辑网页收藏</h2>
-            <p class="tool-modal__hint">
-              这些修改只会影响你的个人网页收藏卡片，不会修改其他用户看到的同一网站信息。
-            </p>
-
-            <div class="tool-modal__manual-grid">
-              <label class="tool-modal__field">
-                <span>工具名称</span>
-                <input
-                  v-model="editTitle"
-                  type="text"
-                  placeholder="例如：Linux.do"
-                  :disabled="savingEdit"
-                  autofocus
-                />
-              </label>
-              <label class="tool-modal__field tool-modal__field--wide">
-                <span>中文说明</span>
-                <textarea
-                  v-model="editDescription"
-                  rows="3"
-                  placeholder="一句话说明这个网站能解决什么问题、适合什么场景。"
-                  :disabled="savingEdit"
-                />
-              </label>
-              <label class="tool-modal__field">
-                <span>一级分类</span>
-                <select v-model="editCategory" :disabled="savingEdit || taxonomyLoading">
-                  <option
-                    v-for="item in taxonomy"
-                    :key="item.slug"
-                    :value="item.slug"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </label>
-              <label class="tool-modal__field">
-                <span>二级分类</span>
-                <select v-model="editSubcategory" :disabled="savingEdit || taxonomyLoading">
-                  <option
-                    v-for="item in editSubcategoryOptions"
-                    :key="item.slug"
-                    :value="item.slug"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </label>
-              <label class="tool-modal__field tool-modal__field--wide">
-                <span>标签（用逗号分隔）</span>
-                <input
-                  v-model="editTags"
-                  type="text"
-                  placeholder="社区, 教程, 效率工具"
-                  :disabled="savingEdit"
-                />
-              </label>
-              <label class="tool-modal__field tool-modal__field--wide">
-                <span>图标 URL（可选）</span>
-                <input
-                  v-model="editImageUrl"
-                  type="text"
-                  inputmode="url"
-                  placeholder="https://example.com/favicon.ico"
-                  :disabled="savingEdit"
-                />
-              </label>
-              <p v-if="editTarget?.url" class="tool-modal__readonly">
-                原始链接：{{ editTarget.url }}
-              </p>
-            </div>
-
-            <p v-if="editError" class="tool-modal__error">{{ editError }}</p>
-            <div class="tool-modal__actions">
-              <button type="button" class="btn-secondary" :disabled="savingEdit" @click="closeEditDialog">取消</button>
-              <button type="submit" class="projects-add-submit" :disabled="savingEdit">
-                {{ savingEdit ? '保存中…' : '保存修改' }}
-              </button>
-            </div>
-          </form>
-        </div>
-      </Transition>
-    </Teleport>
+    <ToolWebsiteAddDialog
+      :open="addDialogOpen"
+      :active="isViewActive"
+      :is-my-collection="isMyCollection"
+      :taxonomy="taxonomy"
+      :taxonomy-loading="taxonomyLoading"
+      :busy="addingTool"
+      :error="addToolError"
+      @close="closeAddDialog"
+      @submit-auto="submitToolWebsite"
+      @submit-manual="submitToolWebsite"
+    />
+    <ToolWebsiteEditDialog
+      :open="editDialogOpen"
+      :active="isViewActive"
+      :target="editTarget"
+      :taxonomy="taxonomy"
+      :taxonomy-loading="taxonomyLoading"
+      :busy="savingEdit"
+      :error="editError"
+      @close="closeEditDialog"
+      @submit="submitEditWebsite"
+    />
   </div>
 </template>
 
@@ -1999,201 +1715,6 @@ onBeforeUnmount(stopViewReads)
   border-left-color: var(--projects-error);
 }
 
-.tool-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background:
-    radial-gradient(circle at 50% 38%, rgba(168, 162, 158, 0.18), transparent 34%),
-    rgba(41, 37, 36, 0.34);
-  backdrop-filter: blur(16px);
-}
-
-.tool-modal__panel {
-  position: relative;
-  width: min(640px, 100%);
-  max-height: min(86vh, 760px);
-  overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.68);
-  border-radius: 30px;
-  padding: 30px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(245, 245, 244, 0.90)),
-    radial-gradient(circle at 0 0, rgba(168, 162, 158, 0.12), transparent 42%);
-  box-shadow: 0 30px 90px rgba(41, 37, 36, 0.24);
-}
-
-.tool-modal__panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.42;
-  background-image:
-    linear-gradient(rgba(168, 162, 158, 0.10) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(168, 162, 158, 0.10) 1px, transparent 1px);
-  background-size: 26px 26px;
-}
-
-.tool-modal__panel > * {
-  position: relative;
-  z-index: 1;
-}
-
-.tool-modal__close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 2;
-  width: 34px;
-  height: 34px;
-  border: 1px solid rgba(168, 162, 158, 0.24);
-  border-radius: 999px;
-  color: #78716c;
-  background: rgba(255, 255, 255, 0.72);
-  font-size: 22px;
-  line-height: 1;
-}
-
-.tool-modal__panel h2 {
-  color: #292524;
-  font-family: 'Playfair Display', serif;
-  font-size: 36px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-
-.tool-modal__hint {
-  margin-top: 10px;
-  color: #78716c;
-  font-size: 14px;
-  line-height: 1.75;
-}
-
-.tool-modal__tabs {
-  display: inline-flex;
-  gap: 6px;
-  margin-top: 18px;
-  border: 1px solid rgba(168, 162, 158, 0.20);
-  border-radius: 999px;
-  padding: 5px;
-  background: rgba(255, 255, 255, 0.62);
-}
-
-.tool-modal__tabs button {
-  border: 0;
-  border-radius: 999px;
-  padding: 8px 13px;
-  color: #78716c;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 800;
-  transition: all 160ms ease;
-}
-
-.tool-modal__tabs button:hover,
-.tool-modal__tab--active {
-  color: var(--projects-accent) !important;
-  background: rgba(245, 245, 244, 0.92) !important;
-  box-shadow: 0 6px 18px var(--projects-accent-soft);
-}
-
-.tool-modal__field {
-  display: grid;
-  gap: 8px;
-  margin-top: 22px;
-  color: #57534e;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.tool-modal__manual-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 12px;
-}
-
-.tool-modal__field--wide {
-  grid-column: 1 / -1;
-}
-
-.tool-modal__field input,
-.tool-modal__field select,
-.tool-modal__field textarea {
-  width: 100%;
-  border: 1px solid rgba(168, 162, 158, 0.30);
-  border-radius: 18px;
-  padding: 14px 16px;
-  color: #292524;
-  background: rgba(255, 255, 255, 0.78);
-  outline: none;
-  font-size: 14px;
-  transition: border-color 160ms ease, box-shadow 160ms ease;
-}
-
-.tool-modal__field textarea {
-  resize: vertical;
-  min-height: 92px;
-  line-height: 1.6;
-}
-
-.tool-modal__field input:focus,
-.tool-modal__field select:focus,
-.tool-modal__field textarea:focus {
-  border-color: var(--projects-accent-border);
-  box-shadow: 0 0 0 4px var(--projects-accent-soft);
-}
-
-.tool-modal__readonly {
-  grid-column: 1 / -1;
-  margin-top: 12px;
-  overflow-wrap: anywhere;
-  color: #78716c;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.tool-modal__error {
-  margin-top: 12px;
-  border-radius: 16px;
-  padding: 10px 12px;
-  color: #57534e;
-  background: rgba(245, 245, 244, 0.82);
-  border: 1px solid rgba(168, 162, 158, 0.22);
-  font-size: 13px;
-}
-
-.tool-modal__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 22px;
-}
-
-.tool-modal-enter-active,
-.tool-modal-leave-active {
-  transition: opacity 180ms ease;
-}
-
-.tool-modal-enter-active .tool-modal__panel,
-.tool-modal-leave-active .tool-modal__panel {
-  transition: transform 180ms ease, opacity 180ms ease;
-}
-
-.tool-modal-enter-from,
-.tool-modal-leave-to {
-  opacity: 0;
-}
-
-.tool-modal-enter-from .tool-modal__panel,
-.tool-modal-leave-to .tool-modal__panel {
-  opacity: 0;
-  transform: translateY(10px) scale(0.98);
-}
-
 @media (max-width: 720px) {
   .projects-page {
     padding: 16px 16px 96px;
@@ -2261,19 +1782,6 @@ onBeforeUnmount(stopViewReads)
   }
 
 
-  .tool-modal__overlay {
-    padding: 10px;
-  }
-
-  .tool-modal__panel {
-    max-height: calc(100dvh - 20px);
-    overflow-y: auto;
-    padding: 20px;
-  }
-
-  .tool-modal__manual-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* Warm editorial migration: paper surfaces, hard rules, acid signal. */
@@ -2302,14 +1810,12 @@ onBeforeUnmount(stopViewReads)
 }
 
 .projects-hero::after,
-.projects-category-panel::before,
-.tool-modal__panel::before { opacity: .22; mask-image: none; }
+.projects-category-panel::before { opacity: .22; mask-image: none; }
 .projects-kicker { color: #11110f; }
 .projects-kicker::before { content: '■'; margin-right: 8px; color: var(--projects-acid); -webkit-text-stroke: 1px #11110f; }
 .projects-hero h1,
 .empty-state h2,
-.projects-login-prompt__copy h2,
-.tool-modal__panel h2 {
+.projects-login-prompt__copy h2 {
   color: #11110f;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-weight: 900;
@@ -2322,13 +1828,6 @@ onBeforeUnmount(stopViewReads)
 .projects-search__filter,
 .projects-login-prompt__notes span,
 .projects-subcategories__label,
-.tool-modal__close,
-.tool-modal__tabs,
-.tool-modal__tabs button,
-.tool-modal__field input,
-.tool-modal__field select,
-.tool-modal__field textarea,
-.tool-modal__error,
 .projects-pagination__jump input {
   border-color: #11110f;
   border-radius: 4px;
@@ -2375,9 +1874,6 @@ onBeforeUnmount(stopViewReads)
 .projects-page :deep(.tab-inactive) { border: 1px solid #11110f; border-radius: 4px; background: var(--projects-paper-light); }
 .projects-search :deep(.input) { border: 1px solid #11110f; border-radius: 4px; background: var(--projects-paper-light); box-shadow: none; }
 .projects-search :deep(.input:focus),
-.tool-modal__field input:focus,
-.tool-modal__field select:focus,
-.tool-modal__field textarea:focus,
 .projects-pagination__jump input:focus { border-color: #11110f; box-shadow: 0 0 0 3px var(--projects-acid); }
 
 .projects-login-prompt { background: var(--projects-paper-light); }
@@ -2385,19 +1881,6 @@ onBeforeUnmount(stopViewReads)
 .projects-subcategories { border-top: 1px solid #11110f; }
 .projects-category { border-radius: 4px; }
 .projects-grid { gap: 12px; }
-.tool-modal {
-  --projects-paper: #f3f0e6;
-  --projects-paper-light: #fffdf5;
-  --projects-acid: #c7f432;
-  --projects-acid-soft: #f1f8d2;
-  background: rgba(17, 17, 15, .72);
-  backdrop-filter: none;
-}
-.tool-modal__panel { border: 2px solid #11110f; border-radius: 6px; background: var(--projects-paper); box-shadow: 8px 8px 0 var(--projects-acid); }
-.tool-modal__tabs button:hover { color: #11110f !important; background: var(--projects-acid-soft) !important; box-shadow: none; }
-.tool-modal__tab--active,
-.tool-modal__tab--active:hover { color: #11110f !important; background: var(--projects-acid) !important; box-shadow: none; }
-
 @media (prefers-reduced-motion: reduce) {
   .projects-page *, .projects-page *::before, .projects-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
