@@ -35,6 +35,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_auth
+from backend.app.api.dependencies import get_mcp_access_token_repository
 
 
 class McpTokenManagementTests(unittest.TestCase):
@@ -46,10 +47,14 @@ class McpTokenManagementTests(unittest.TestCase):
             return {"user_id": 7, "email": "user@example.com", "role": "user"}
 
         app.dependency_overrides[routes_auth.RequireUser] = user
+        self.repository = MagicMock()
+        app.dependency_overrides[get_mcp_access_token_repository] = (
+            lambda: self.repository
+        )
         self.client = TestClient(app)
 
     def test_create_contract_and_no_cache_headers(self) -> None:
-        repository = MagicMock()
+        repository = self.repository
         repository.create_user_mcp_token.return_value = {
             "token_metadata": {
                 "id": 9,
@@ -63,8 +68,7 @@ class McpTokenManagementTests(unittest.TestCase):
             },
             "replaced_count": 0,
         }
-        with patch.object(routes_auth, "MySQLRepository", return_value=repository):
-            response = self.client.post(
+        response = self.client.post(
                 "/api/auth/me/mcp-tokens",
                 json={
                     "client_type": "claude",
@@ -98,7 +102,7 @@ class McpTokenManagementTests(unittest.TestCase):
         self.assertEqual(expired.status_code, 422)
 
     def test_list_contract_and_no_cache_headers(self) -> None:
-        repository = MagicMock()
+        repository = self.repository
         repository.list_user_mcp_tokens.return_value = [
             {
                 "id": 9,
@@ -111,8 +115,7 @@ class McpTokenManagementTests(unittest.TestCase):
                 "deleted_at": None,
             }
         ]
-        with patch.object(routes_auth, "MySQLRepository", return_value=repository):
-            response = self.client.get("/api/auth/me/mcp-tokens")
+        response = self.client.get("/api/auth/me/mcp-tokens")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()[0]["token_hint"], "aigc_mcp_abc...wxyz")
         repository.list_user_mcp_tokens.assert_called_once_with(user_id=7)
@@ -123,10 +126,9 @@ class McpTokenManagementTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/auth/mcp-tokens").status_code, 404)
 
     def test_delete_uses_soft_delete_repository_operation(self) -> None:
-        repository = MagicMock()
+        repository = self.repository
         repository.delete_user_mcp_token.return_value = True
-        with patch.object(routes_auth, "MySQLRepository", return_value=repository):
-            response = self.client.delete("/api/auth/me/mcp-tokens/11")
+        response = self.client.delete("/api/auth/me/mcp-tokens/11")
         self.assertEqual(response.status_code, 200)
         repository.delete_user_mcp_token.assert_called_once_with(user_id=7, token_id=11)
         self.assertEqual(response.headers["pragma"], "no-cache")

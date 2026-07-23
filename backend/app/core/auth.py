@@ -104,9 +104,24 @@ def hash_mcp_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def get_mcp_access_token_authenticator(request: Request):
+    """Return the token repository only when Bearer authentication is attempted."""
+    authorization = request.headers.get("authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        return None
+
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    database = getattr(request.app.state, "database", None)
+    if database is None:
+        raise RuntimeError("Database lifecycle is not configured")
+    return MySQLRepository(database=database).mcp_access_tokens
+
+
 async def OptionalMcpUser(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    repository=Depends(get_mcp_access_token_authenticator),
 ) -> dict[str, Any] | None:
     """Authenticate an optional inbound MCP token; reject every supplied invalid auth header."""
     authorization = request.headers.get("authorization")
@@ -118,10 +133,8 @@ async def OptionalMcpUser(
         )
     if credentials is None:
         return None
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
     user = await asyncio.to_thread(
-        MySQLRepository().get_user_by_mcp_token_hash,
+        repository.get_user_by_mcp_token_hash,
         hash_mcp_token(credentials.credentials),
     )
     if user is None:

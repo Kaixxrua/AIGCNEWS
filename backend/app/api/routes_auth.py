@@ -9,7 +9,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from backend.app.api.dependencies import get_user_account_repository
+from backend.app.api.dependencies import (
+    get_mcp_access_token_repository,
+    get_user_account_repository,
+)
 from backend.app.core.auth import (
     RequireUser,
     create_access_token,
@@ -17,6 +20,7 @@ from backend.app.core.auth import (
     hash_password,
     verify_password,
 )
+from backend.app.repositories.mcp_access_token_repository import McpAccessTokenManager
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.email_service import EmailService, build_email_service
@@ -311,11 +315,16 @@ def _user_id(user: dict[str, Any]) -> int:
 async def list_mcp_tokens(
     response: Response,
     current_user: dict[str, Any] = Depends(RequireUser),
+    repository: McpAccessTokenManager = Depends(
+        get_mcp_access_token_repository
+    ),
 ) -> list[dict[str, Any]]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    db = MySQLRepository()
-    return await asyncio.to_thread(db.list_user_mcp_tokens, user_id=_user_id(current_user))
+    return await asyncio.to_thread(
+        repository.list_user_mcp_tokens,
+        user_id=_user_id(current_user),
+    )
 
 
 @router.post("/auth/me/mcp-tokens", summary="创建当前用户的 MCP Token")
@@ -323,13 +332,15 @@ async def create_mcp_token(
     body: CreateMcpTokenRequest,
     response: Response,
     current_user: dict[str, Any] = Depends(RequireUser),
+    repository: McpAccessTokenManager = Depends(
+        get_mcp_access_token_repository
+    ),
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     token = "aigc_mcp_" + secrets.token_urlsafe(32)
-    db = MySQLRepository()
     item = await asyncio.to_thread(
-        db.create_user_mcp_token,
+        repository.create_user_mcp_token,
         user_id=_user_id(current_user),
         token_hash=hash_mcp_token(token),
         token_hint=f"{token[:12]}...{token[-4:]}",
@@ -347,12 +358,14 @@ async def delete_mcp_token(
     token_id: int,
     response: Response,
     current_user: dict[str, Any] = Depends(RequireUser),
+    repository: McpAccessTokenManager = Depends(
+        get_mcp_access_token_repository
+    ),
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    db = MySQLRepository()
     deleted = await asyncio.to_thread(
-        db.delete_user_mcp_token,
+        repository.delete_user_mcp_token,
         user_id=_user_id(current_user),
         token_id=token_id,
     )
