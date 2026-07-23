@@ -3742,12 +3742,6 @@ class MySQLRepository:
             "name": "full_name ASC",
         }.get(sort, "hot_score DESC, daily_star_growth DESC, stars DESC, full_name ASC" if scope == "today" else "stars DESC, forks DESC, full_name ASC")
 
-        order_params: List[Any] = []
-        if sort == "relevance" and clean_candidate_repo_ids is not None:
-            relevance_placeholders = ", ".join(["%s"] * len(clean_candidate_repo_ids))
-            order_by = f"FIELD(repo_id, {relevance_placeholders}), full_name ASC"
-            order_params.extend(clean_candidate_repo_ids)
-
         github_favorite_join = ""
         website_favorite_join = ""
         github_favorite_columns = """
@@ -3908,6 +3902,11 @@ class MySQLRepository:
             )
         """
         count_sql = f"{base_sql} SELECT COUNT(*) AS cnt FROM project_rows"
+        order_params: List[Any] = []
+        if sort == "relevance" and clean_candidate_repo_ids is not None:
+            relevance_placeholders = ", ".join(["%s"] * len(clean_candidate_repo_ids))
+            order_by = f"FIELD(repo_id, {relevance_placeholders}), full_name ASC"
+            order_params.extend(clean_candidate_repo_ids)
         rows_sql = f"""
             {base_sql}
             SELECT * FROM project_rows
