@@ -223,6 +223,44 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         evaluation_repository.get_eval_summary.assert_called_once_with()
         evaluation_repository.list_evaluations.assert_called_once_with(7)
 
+    def test_mcp_server_compatibility_methods_delegate_to_component(self) -> None:
+        repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
+        mcp_repository = MagicMock()
+        mcp_repository.list_mcp_server_configs.return_value = [{"id": 42}]
+        mcp_repository.get_mcp_server_config.return_value = {"id": 42}
+        mcp_repository.create_mcp_server_config.return_value = {"id": 42}
+        mcp_repository.update_mcp_server_config.return_value = {"id": 42}
+        mcp_repository.delete_mcp_server_config.return_value = True
+        mcp_repository.update_mcp_server_test_result.return_value = {"id": 42}
+        repository._mcp_server_configs = mcp_repository
+        payload = {"server_key": "example"}
+        result = {"status": "succeeded"}
+
+        repository._seed_default_mcp_server_configs()
+        self.assertEqual(repository.list_mcp_server_configs(), [{"id": 42}])
+        self.assertEqual(repository.get_mcp_server_config(42), {"id": 42})
+        self.assertEqual(repository.create_mcp_server_config(payload), {"id": 42})
+        self.assertEqual(
+            repository.update_mcp_server_config(42, payload),
+            {"id": 42},
+        )
+        self.assertTrue(repository.delete_mcp_server_config(42))
+        self.assertEqual(
+            repository.update_mcp_server_test_result(42, result),
+            {"id": 42},
+        )
+
+        mcp_repository._seed_default_mcp_server_configs.assert_called_once_with()
+        mcp_repository.list_mcp_server_configs.assert_called_once_with()
+        mcp_repository.get_mcp_server_config.assert_called_once_with(42)
+        mcp_repository.create_mcp_server_config.assert_called_once_with(payload)
+        mcp_repository.update_mcp_server_config.assert_called_once_with(42, payload)
+        mcp_repository.delete_mcp_server_config.assert_called_once_with(42)
+        mcp_repository.update_mcp_server_test_result.assert_called_once_with(
+            42,
+            result,
+        )
+
     def test_subscription_compatibility_methods_delegate_to_component(self) -> None:
         repository = MySQLRepository(database=MagicMock(spec=DatabaseLifecycle))
         subscription_repository = MagicMock()
