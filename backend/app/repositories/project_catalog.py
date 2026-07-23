@@ -6,6 +6,19 @@ from typing import Any, Protocol
 class ProjectCatalogRepository(Protocol):
     """Read boundary for the public project catalog."""
 
+    def find_lexical_candidate_repo_ids(
+        self,
+        *,
+        q: str,
+        category: str = "",
+        subcategory: str = "",
+        language: str = "",
+        tag: str = "",
+        min_stars: int = 500,
+        enriched_only: bool = True,
+        limit: int = 200,
+    ) -> list[str]: ...
+
     def list_projects(
         self,
         *,

@@ -3465,6 +3465,86 @@ class MySQLRepository:
             raise LookupError("工具网站不存在")
         return item
 
+    def find_lexical_candidate_repo_ids(
+        self,
+        *,
+        q: str,
+        category: str = "",
+        subcategory: str = "",
+        language: str = "",
+        tag: str = "",
+        min_stars: int = 500,
+        enriched_only: bool = True,
+        limit: int = 200,
+    ) -> List[str]:
+        terms = project_search_terms(q)
+        if not terms:
+            return []
+        limit = max(1, min(int(limit or 200), 200))
+        normalized_query = normalize_search_query(q)
+        filters = ["COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL"]
+        params: List[Any] = [min_stars]
+        if enriched_only:
+            filters.append("ge.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci")
+        if category:
+            filters.append("ge.category_slug = %s")
+            params.append(category)
+        if subcategory:
+            default_subcategory = DEFAULT_SUBCATEGORY_BY_CATEGORY.get(category or "")
+            if category and subcategory == default_subcategory:
+                filters.append("(ge.subcategory_slug = %s OR COALESCE(ge.subcategory_slug, '') = '')")
+            else:
+                filters.append("ge.subcategory_slug = %s")
+            params.append(subcategory)
+        if language:
+            filters.append("LOWER(COALESCE(c.language, '')) = LOWER(%s)")
+            params.append(language)
+        if tag:
+            filters.append("COALESCE(ge.tags_json, '') LIKE %s")
+            params.append(f'%"{tag.strip()}"%')
+
+        term_filter = (
+            "(c.full_name LIKE %s ESCAPE '=' OR c.title LIKE %s ESCAPE '=' OR "
+            "c.description LIKE %s ESCAPE '=' OR COALESCE(ge.description_zh, '') LIKE %s ESCAPE '=' OR "
+            "COALESCE(c.language, '') LIKE %s ESCAPE '=' OR COALESCE(c.topics_json, '') LIKE %s ESCAPE '=' OR "
+            "COALESCE(ge.tags_json, '') LIKE %s ESCAPE '=')"
+        )
+        for term in terms:
+            filters.append(term_filter)
+            params.extend([f"%{_escape_like_literal(term)}%"] * 7)
+
+        prefix = f"{_escape_like_literal(normalized_query)}%"
+        sql = f"""
+            SELECT c.repo_id
+            FROM github_repo_candidates c
+            LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id
+            LEFT JOIN github_repo_aliases ga
+              ON ga.alias_repo_id = c.repo_id
+             AND ga.canonical_repo_id <> c.repo_id
+            WHERE {' AND '.join(filters)}
+            ORDER BY
+                CASE
+                    WHEN LOWER(c.full_name) = LOWER(%s) THEN 0
+                    WHEN LOWER(COALESCE(c.title, '')) = LOWER(%s) THEN 1
+                    WHEN c.full_name LIKE %s ESCAPE '=' THEN 2
+                    WHEN COALESCE(c.title, '') LIKE %s ESCAPE '=' THEN 3
+                    ELSE 4
+                END,
+                COALESCE(c.stars, 0) DESC,
+                c.full_name ASC
+            LIMIT %s
+        """
+        query_params = params + [normalized_query, normalized_query, prefix, prefix, limit]
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(query_params))
+                rows = cur.fetchall()
+            conn.commit()
+            return [str(row.get("repo_id") or "") for row in rows if row.get("repo_id")]
+        finally:
+            conn.close()
+
     def list_projects(
         self,
         *,
@@ -3499,7 +3579,7 @@ class MySQLRepository:
         if candidate_repo_ids is not None:
             clean_candidate_repo_ids = list(
                 dict.fromkeys(str(repo_id).strip() for repo_id in candidate_repo_ids if str(repo_id).strip())
-            )
+            )[:200]
             if not clean_candidate_repo_ids or source == "website":
                 return {"items": [], "total": 0, "page": page, "page_size": page_size}
             source = "github"
@@ -3661,6 +3741,12 @@ class MySQLRepository:
             "recent": f"{recent_order}, full_name ASC",
             "name": "full_name ASC",
         }.get(sort, "hot_score DESC, daily_star_growth DESC, stars DESC, full_name ASC" if scope == "today" else "stars DESC, forks DESC, full_name ASC")
+
+        order_params: List[Any] = []
+        if sort == "relevance" and clean_candidate_repo_ids is not None:
+            relevance_placeholders = ", ".join(["%s"] * len(clean_candidate_repo_ids))
+            order_by = f"FIELD(repo_id, {relevance_placeholders}), full_name ASC"
+            order_params.extend(clean_candidate_repo_ids)
 
         github_favorite_join = ""
         website_favorite_join = ""
@@ -3834,7 +3920,7 @@ class MySQLRepository:
                 cur.execute(count_sql, tuple(params))
                 total_row = cur.fetchone()
                 total = int(total_row["cnt"] if total_row else 0)
-                cur.execute(rows_sql, tuple(params + [page_size, offset]))
+                cur.execute(rows_sql, tuple(params + order_params + [page_size, offset]))
                 rows = cur.fetchall()
             conn.commit()
             return {

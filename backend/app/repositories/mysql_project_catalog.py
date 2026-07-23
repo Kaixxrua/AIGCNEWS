@@ -11,6 +11,29 @@ class MySQLProjectCatalogRepository:
     def __init__(self, repository: MySQLRepository | None = None) -> None:
         self._repository = repository if repository is not None else MySQLRepository()
 
+    def find_lexical_candidate_repo_ids(
+        self,
+        *,
+        q: str,
+        category: str = "",
+        subcategory: str = "",
+        language: str = "",
+        tag: str = "",
+        min_stars: int = 500,
+        enriched_only: bool = True,
+        limit: int = 200,
+    ) -> list[str]:
+        return self._repository.find_lexical_candidate_repo_ids(
+            q=q,
+            category=category,
+            subcategory=subcategory,
+            language=language,
+            tag=tag,
+            min_stars=min_stars,
+            enriched_only=enriched_only,
+            limit=limit,
+        )
+
     def list_projects(
         self,
         *,
