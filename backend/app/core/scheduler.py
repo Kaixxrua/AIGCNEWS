@@ -74,7 +74,7 @@ SCHEDULE_CONFIG: List[Dict[str, Any]] = [
 _scheduler: AsyncIOScheduler | None = None
 _github_job_lock: asyncio.Lock | None = None
 _ARXIV_RECONCILE_DAYS = 2
-_GITHUB_METRICS_REFRESH_LIMIT = 80
+_GITHUB_METRICS_REFRESH_LIMIT = 0  # 0 表示刷新全部符合条件的项目
 _GITHUB_METRICS_MIN_STARS = 500
 _GITHUB_METRICS_MAX_AGE = timedelta(hours=2, minutes=15)
 

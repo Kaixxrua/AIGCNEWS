@@ -89,6 +89,9 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
             scheduler._github_refresh_needed({**fresh, "snapshot_count": 1})
         )
         self.assertTrue(
+            scheduler._github_refresh_needed({**fresh, "metric_count": 1})
+        )
+        self.assertTrue(
             scheduler._github_refresh_needed(
                 {
                     **fresh,
@@ -153,7 +156,28 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
         repo.get_github_metric_refresh_status.assert_called_once_with(
             metric_date="2026-07-14",
             min_stars=500,
-            limit=80,
+            limit=0,
+        )
+
+    async def test_scheduled_refresh_covers_all_eligible_projects(self) -> None:
+        service_module = types.ModuleType(
+            "backend.app.services.ingestion.github_project_metrics_service"
+        )
+        refresh = MagicMock(return_value={})
+        service_module.refresh_and_compute_github_project_metrics = refresh
+
+        with patch.dict(
+            sys.modules,
+            {
+                "backend.app.services.ingestion.github_project_metrics_service": service_module,
+            },
+        ):
+            await scheduler._refresh_current_github_project_metrics("2026-07-14")
+
+        refresh.assert_called_once_with(
+            min_stars=500,
+            limit=0,
+            metric_date="2026-07-14",
         )
 
     async def test_github_jobs_share_one_lock(self) -> None:
