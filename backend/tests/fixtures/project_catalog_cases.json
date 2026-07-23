@@ -1,0 +1,149 @@
+{
+  "contract_version": 1,
+  "projects": {
+    "alpha": {
+      "id": "github:acme/alpha",
+      "repo_id": "acme/alpha",
+      "full_name": "acme/alpha",
+      "url": "https://github.com/acme/alpha",
+      "description": "Local RAG workspace",
+      "description_zh": "本地知识库",
+      "category_slug": "rag_knowledge",
+      "category_name": "RAG 与知识库",
+      "subcategory_slug": "rag_framework",
+      "subcategory_name": "RAG 框架",
+      "tags": ["RAG", "local"],
+      "topics": ["rag", "knowledge-base"],
+      "language": "Python",
+      "stars": 1200,
+      "forks": 80,
+      "pushed_at": "2026-07-20T08:00:00+00:00",
+      "daily_star_growth": 42,
+      "daily_growth_available": true,
+      "hot_score": 91.5,
+      "is_recommended": true
+    },
+    "beta": {
+      "id": "github:acme/beta",
+      "repo_id": "acme/beta",
+      "full_name": "acme/beta",
+      "url": "https://github.com/acme/beta",
+      "description": "Agent workflow runtime",
+      "description_zh": "智能体工作流",
+      "category_slug": "agents_automation",
+      "category_name": "智能体与自动化",
+      "subcategory_slug": "agent_framework",
+      "subcategory_name": "智能体框架",
+      "tags": ["Agent", "MCP"],
+      "topics": ["agents", "mcp"],
+      "language": "TypeScript",
+      "stars": 800,
+      "forks": 80,
+      "pushed_at": "2026-07-19T08:00:00+00:00",
+      "daily_star_growth": 12,
+      "daily_growth_available": true,
+      "hot_score": 70.0,
+      "is_recommended": false
+    }
+  },
+  "categories": {
+    "items": [
+      {
+        "slug": "rag_knowledge",
+        "name": "RAG 与知识库",
+        "count": 1,
+        "children": [
+          {"slug": "rag_framework", "name": "RAG 框架", "count": 1}
+        ]
+      },
+      {
+        "slug": "agents_automation",
+        "name": "智能体与自动化",
+        "count": 1,
+        "children": [
+          {"slug": "agent_framework", "name": "智能体框架", "count": 1}
+        ]
+      }
+    ],
+    "total": 2,
+    "today_count": 1,
+    "recommended_count": 1
+  },
+  "discovery_cases": [
+    {
+      "name": "generic_local_page_two",
+      "request": {"query": "  workflow   runtime  ", "mode": "generic", "page": 2, "limit": 1},
+      "repository_results": [{"project_keys": ["beta"], "total": 2}],
+      "expected_call": {
+        "source": "github",
+        "scope": "all",
+        "category": "",
+        "subcategory": "",
+        "q": "workflow runtime",
+        "language": "",
+        "page": 2,
+        "page_size": 1,
+        "sort": "stars",
+        "min_stars": 50,
+        "enriched_only": true,
+        "user_id": null
+      },
+      "expected": {
+        "ids": ["github:acme/beta"],
+        "total": 2,
+        "local_total": 2,
+        "page": 2,
+        "page_size": 1,
+        "has_next": false,
+        "scope": "all",
+        "sort": "stars",
+        "result_origin": "aigc_news_local",
+        "fallback_used": false,
+        "fallback_reason": "",
+        "fallback_skipped_reason": ""
+      }
+    },
+    {
+      "name": "ai_today_without_fallback",
+      "request": {"query": "rag", "mode": "ai", "scope": "today", "sort": "name", "limit": 10},
+      "repository_results": [{"project_keys": [], "total": 0}],
+      "expected_call": {
+        "source": "github",
+        "scope": "today",
+        "category": "",
+        "subcategory": "",
+        "q": "rag",
+        "language": "",
+        "page": 1,
+        "page_size": 10,
+        "sort": "hot",
+        "min_stars": 500,
+        "enriched_only": true,
+        "user_id": null
+      },
+      "expected": {
+        "ids": [],
+        "total": 0,
+        "local_total": 0,
+        "page": 1,
+        "page_size": 10,
+        "has_next": false,
+        "scope": "today",
+        "sort": "hot",
+        "result_origin": "aigc_news_local",
+        "fallback_used": false,
+        "fallback_reason": "",
+        "fallback_skipped_reason": "scope_requires_local_metrics"
+      }
+    }
+  ],
+  "semantic_case": {
+    "request": {"query": "local knowledge", "mode": "ai", "limit": 10},
+    "repository_results": [
+      {"project_keys": [], "total": 0},
+      {"project_keys": ["alpha"], "total": 1}
+    ],
+    "candidate_repo_ids": ["acme/alpha", "acme/beta"],
+    "expected_ids": ["github:acme/alpha"]
+  }
+}
