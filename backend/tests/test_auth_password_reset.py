@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_auth
+from backend.app.api.dependencies import get_user_account_repository
 from backend.app.core.auth import verify_password
 from backend.app.services.email_service import EmailService
 
@@ -121,18 +122,21 @@ class PasswordResetRouteTests(unittest.TestCase):
         app = FastAPI()
         app.state.redis = FakeRedis()
         app.include_router(routes_auth.router, prefix="/api")
+        self.repository = MagicMock()
+        app.dependency_overrides[get_user_account_repository] = (
+            lambda: self.repository
+        )
         self.client = TestClient(app)
 
     def test_send_code_response_does_not_enumerate_accounts(self) -> None:
         responses = []
         deliveries = []
         for user in ({"id": 7, "email": "user@example.com"}, None):
-            repository = MagicMock()
+            repository = self.repository
             repository.get_user_by_email.return_value = user
             email_service = MagicMock()
             email_service.send_otp = AsyncMock()
             with (
-                patch.object(routes_auth, "MySQLRepository", return_value=repository),
                 patch.object(routes_auth, "_get_email_service", return_value=email_service),
             ):
                 response = self.client.post(
@@ -147,7 +151,7 @@ class PasswordResetRouteTests(unittest.TestCase):
         self.assertEqual(deliveries, [True, False])
 
     def test_successful_reset_hashes_password_then_consumes_code(self) -> None:
-        repository = MagicMock()
+        repository = self.repository
         repository.get_user_by_email.return_value = {
             "id": 7,
             "email": "user@example.com",
@@ -158,7 +162,6 @@ class PasswordResetRouteTests(unittest.TestCase):
         email_service.consume_otp = AsyncMock()
 
         with (
-            patch.object(routes_auth, "MySQLRepository", return_value=repository),
             patch.object(routes_auth, "_get_email_service", return_value=email_service),
         ):
             response = self.client.post(
@@ -183,12 +186,11 @@ class PasswordResetRouteTests(unittest.TestCase):
     def test_invalid_code_and_missing_account_share_response(self) -> None:
         results = []
         for verified, user in ((False, {"id": 7}), (True, None)):
-            repository = MagicMock()
+            repository = self.repository
             repository.get_user_by_email.return_value = user
             email_service = MagicMock()
             email_service.verify_otp = AsyncMock(return_value=verified)
             with (
-                patch.object(routes_auth, "MySQLRepository", return_value=repository),
                 patch.object(routes_auth, "_get_email_service", return_value=email_service),
             ):
                 response = self.client.post(
@@ -205,7 +207,7 @@ class PasswordResetRouteTests(unittest.TestCase):
         self.assertEqual(results[0][0], 400)
 
     def test_zero_row_update_does_not_consume_code(self) -> None:
-        repository = MagicMock()
+        repository = self.repository
         repository.get_user_by_email.return_value = {
             "id": 7,
             "email": "user@example.com",
@@ -216,7 +218,6 @@ class PasswordResetRouteTests(unittest.TestCase):
         email_service.consume_otp = AsyncMock()
 
         with (
-            patch.object(routes_auth, "MySQLRepository", return_value=repository),
             patch.object(routes_auth, "_get_email_service", return_value=email_service),
         ):
             response = self.client.post(

@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from backend.app.api.dependencies import get_user_account_repository
 from backend.app.core.auth import (
     RequireUser,
     create_access_token,
@@ -17,6 +18,7 @@ from backend.app.core.auth import (
     verify_password,
 )
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.email_service import EmailService, build_email_service
 
 router = APIRouter()
@@ -150,12 +152,12 @@ async def send_password_reset_otp(
     body: SendEmailOtpRequest,
     request: Request,
     response: Response,
+    repository: UserAccountRepository = Depends(get_user_account_repository),
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     email = str(body.email).lower()
-    db = MySQLRepository()
-    user = await asyncio.to_thread(db.get_user_by_email, email)
+    user = await asyncio.to_thread(repository.get_user_by_email, email)
     email_svc = _get_email_service(request)
     await email_svc.send_otp(
         email,
@@ -170,6 +172,7 @@ async def reset_password(
     body: ResetPasswordRequest,
     request: Request,
     response: Response,
+    repository: UserAccountRepository = Depends(get_user_account_repository),
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
@@ -182,8 +185,7 @@ async def reset_password(
         purpose="password_reset",
     )
 
-    db = MySQLRepository()
-    user = await asyncio.to_thread(db.get_user_by_email, email)
+    user = await asyncio.to_thread(repository.get_user_by_email, email)
     if not verified or user is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -192,7 +194,7 @@ async def reset_password(
 
     hashed = hash_password(body.new_password)
     affected = await asyncio.to_thread(
-        db.update_user_password,
+        repository.update_user_password,
         user_id=int(user["id"]),
         email=email,
         hashed_password=hashed,
@@ -208,7 +210,11 @@ async def reset_password(
 
 
 @router.post("/auth/register", summary="用户注册（邮箱 + 验证码 + 密码）")
-async def register(body: RegisterRequest, request: Request) -> dict[str, Any]:
+async def register(
+    body: RegisterRequest,
+    request: Request,
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> dict[str, Any]:
     """
     注册新用户。
 
@@ -229,8 +235,10 @@ async def register(body: RegisterRequest, request: Request) -> dict[str, Any]:
         )
 
     # Step 2: 检查邮箱是否已注册
-    db = MySQLRepository()
-    existing = await asyncio.to_thread(db.get_user_by_email, str(body.email))
+    existing = await asyncio.to_thread(
+        repository.get_user_by_email,
+        str(body.email),
+    )
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -240,7 +248,7 @@ async def register(body: RegisterRequest, request: Request) -> dict[str, Any]:
     # Step 3: 哈希密码并写库
     hashed = hash_password(body.password)
     new_id = await asyncio.to_thread(
-        db.create_user_with_email,
+        repository.create_user_with_email,
         str(body.email),
         hashed,
         "",
@@ -255,15 +263,20 @@ async def register(body: RegisterRequest, request: Request) -> dict[str, Any]:
 
 
 @router.post("/auth/login", summary="登录（邮箱 + 密码）")
-async def login(body: LoginRequest) -> dict[str, Any]:
+async def login(
+    body: LoginRequest,
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> dict[str, Any]:
     """
     用户登录，返回 JWT。
 
     - 查库验证邮箱 + 密码
     - 签发 JWT（payload 含 user_id、role、email）
     """
-    db = MySQLRepository()
-    user = await asyncio.to_thread(db.get_user_by_email, str(body.email))
+    user = await asyncio.to_thread(
+        repository.get_user_by_email,
+        str(body.email),
+    )
     if user is None or not verify_password(body.password, user["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

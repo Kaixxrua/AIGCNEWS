@@ -6,8 +6,11 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi_cache.decorator import cache
+
+from backend.app.api.dependencies import get_user_account_repository
+from backend.app.repositories.user_account_repository import UserStatisticsReader
 
 router = APIRouter()
 
@@ -772,6 +775,7 @@ async def get_dashboard_summary(
     date: Optional[str] = Query(
         default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
     ),
+    user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
 ):
     """Return a combined dashboard payload: period top-10 + radar + basic stats + source breakdown.
 
@@ -806,9 +810,9 @@ async def get_dashboard_summary(
     if board["is_embargoed"]:
         source_counts_embargo = await asyncio.to_thread(db.get_source_counts)
         total_embargo = sum(source_counts_embargo.values())
-        registered_users = await asyncio.to_thread(db.get_user_count)
+        registered_users = await asyncio.to_thread(user_statistics.get_user_count)
         today_registered_users = await asyncio.to_thread(
-            db.get_today_registered_user_count
+            user_statistics.get_today_registered_user_count
         )
         user_count = registered_users + today_registered_users
         return {
@@ -840,8 +844,8 @@ async def get_dashboard_summary(
     # 展示的是每个来源在数据库中的实际入库总量。
     source_counts = await asyncio.to_thread(db.get_source_counts)
     total_documents = sum(source_counts.values())
-    registered_users = await asyncio.to_thread(db.get_user_count)
-    today_registered_users = await asyncio.to_thread(db.get_today_registered_user_count)
+    registered_users = await asyncio.to_thread(user_statistics.get_user_count)
+    today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
     user_count = registered_users + today_registered_users
     today_new_documents = await asyncio.to_thread(db.get_today_document_count)
 
@@ -886,13 +890,13 @@ async def get_snapshot_dates(
 
 
 @router.get("/dashboard/visitor-count")
-async def get_visitor_count(request: Request):
+async def get_visitor_count(
+    request: Request,
+    user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
+):
     """返回用户数指标（不缓存，实时读取数据库）。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    registered_users = await asyncio.to_thread(db.get_user_count)
-    today_registered_users = await asyncio.to_thread(db.get_today_registered_user_count)
+    registered_users = await asyncio.to_thread(user_statistics.get_user_count)
+    today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
     user_count = registered_users + today_registered_users
     return {
         "user_count": user_count,
