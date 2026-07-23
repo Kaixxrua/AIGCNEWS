@@ -418,10 +418,13 @@ async def _run_project_semantic_warmup_job() -> None:
 async def _run_conversation_cleanup_job() -> None:
     logger.info("[Scheduler] 触发会话历史清理任务...")
     try:
+        from backend.app.repositories.mysql_repo import MySQLRepository
         from backend.app.services.chat.conversation_service import ConversationService
 
         deleted = await asyncio.to_thread(
-            ConversationService().cleanup_stale_conversations,
+            ConversationService(
+                MySQLRepository().conversations
+            ).cleanup_stale_conversations,
         )
         logger.info("[Scheduler] 会话历史清理完成，删除 %d 条旧会话。", deleted)
     except Exception as exc:

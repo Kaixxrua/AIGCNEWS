@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
 
 
@@ -21,14 +22,14 @@ class ConversationContext:
 class ConversationService:
     def __init__(
         self,
-        repo: Optional[MySQLRepository] = None,
+        repo: ConversationRepository | None = None,
         *,
         max_conversations: int = DEFAULT_MAX_CONVERSATIONS,
         max_messages: int = DEFAULT_MAX_MESSAGES,
         cleanup_stale_days: int = DEFAULT_CLEANUP_STALE_DAYS,
         cleanup_batch_size: int = DEFAULT_CLEANUP_BATCH_SIZE,
     ) -> None:
-        self.repo = repo or MySQLRepository()
+        self.repo = repo or MySQLRepository().conversations
         self.max_conversations = max_conversations
         self.max_messages = max_messages
         self.cleanup_stale_days = cleanup_stale_days
@@ -42,17 +43,12 @@ class ConversationService:
         scope_key: Optional[str] = None,
         title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        conversation = self.repo.get_or_create_conversation(
+        return self.repo.ensure_conversation(
             user_id=user_id,
             scope=scope,
             scope_key=scope_key,
             title=title,
-        )
-        self.repo.touch_conversation(conversation["id"])
-        self._trim_user_conversations(user_id)
-        return (
-            self.repo.get_conversation_by_id(conversation["id"], user_id=user_id)
-            or conversation
+            keep_latest=self.max_conversations,
         )
 
     def create_new_conversation(
@@ -63,18 +59,12 @@ class ConversationService:
         scope_key: Optional[str] = None,
         title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """强制创建新会话（不复用已有会话）。"""
-        conversation = self.repo.create_conversation(
+        return self.repo.create_conversation(
             user_id=user_id,
             scope=scope,
             scope_key=scope_key,
             title=title,
-        )
-        self.repo.touch_conversation(conversation["id"])
-        self._trim_user_conversations(user_id)
-        return (
-            self.repo.get_conversation_by_id(conversation["id"], user_id=user_id)
-            or conversation
+            keep_latest=self.max_conversations,
         )
 
     def delete_conversation(
@@ -83,23 +73,24 @@ class ConversationService:
         user_id: int,
         conversation_id: int,
     ) -> bool:
-        """删除指定会话及其所有消息。"""
-        return self.repo.delete_conversation_by_id(
-            conversation_id,
+        return self.repo.delete_owned_conversation(
             user_id=user_id,
+            conversation_id=conversation_id,
         )
 
     def get_conversation_context(
         self, *, user_id: int, conversation_id: int
     ) -> ConversationContext:
-        conversation = self.repo.get_conversation_by_id(
-            conversation_id, user_id=user_id
+        context = self.repo.get_owned_conversation_context(
+            user_id=user_id,
+            conversation_id=conversation_id,
         )
-        if conversation is None:
+        if context is None:
             raise ValueError("conversation_not_found")
-        self.repo.touch_conversation(conversation_id)
-        messages = self.repo.list_chat_messages(conversation_id)
-        return ConversationContext(conversation=conversation, messages=messages)
+        return ConversationContext(
+            conversation=context["conversation"],
+            messages=context["messages"],
+        )
 
     def list_conversations(
         self,
@@ -131,75 +122,30 @@ class ConversationService:
         parent_message_id: Optional[int] = None,
         title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        conversation = self.ensure_conversation(
+        return self.repo.append_message_pair(
             user_id=user_id,
+            conversation_id=conversation_id,
             scope=scope,
             scope_key=scope_key,
-            title=title or self._derive_title(user_message),
-        )
-        if conversation_id and int(conversation["id"]) != int(conversation_id):
-            existing = self.repo.get_conversation_by_id(
-                conversation_id, user_id=user_id
-            )
-            if existing is not None:
-                conversation = existing
-
-        self.repo.touch_conversation(conversation["id"])
-
-        user_row = self.repo.create_chat_message(
-            conversation_id=conversation["id"],
-            role="user",
-            content=user_message,
-            thinking="",
-            sources=[],
-            attachments=attachments or [],
-            status="done",
+            user_message=user_message,
+            assistant_content=assistant_content,
+            assistant_thinking=assistant_thinking,
+            sources=sources,
+            attachments=attachments,
             parent_message_id=parent_message_id,
+            title=title or self._derive_title(user_message),
+            max_messages=self.max_messages,
+            max_conversations=self.max_conversations,
         )
-        assistant_row = self.repo.create_chat_message(
-            conversation_id=conversation["id"],
-            role="assistant",
-            content=assistant_content,
-            thinking=assistant_thinking,
-            sources=sources or [],
-            attachments=attachments or [],
-            status="done",
-            parent_message_id=user_row["id"],
-        )
-        self.repo.refresh_conversation_stats(
-            conversation["id"],
-            title=conversation.get("title") or self._derive_title(user_message),
-            last_message_preview=self._build_preview(assistant_content or user_message),
-        )
-        self._trim_conversation_messages(conversation["id"])
-        self._trim_user_conversations(user_id)
-        latest_conversation = (
-            self.repo.get_conversation_by_id(conversation["id"], user_id=user_id)
-            or conversation
-        )
-        latest_messages = self.repo.list_chat_messages(conversation["id"])
-        return {
-            "conversation": latest_conversation,
-            "user_message": user_row,
-            "assistant_message": assistant_row,
-            "messages": latest_messages,
-        }
 
     def delete_message(self, *, user_id: int, message_id: int) -> Dict[str, Any]:
-        message = self.repo.get_chat_message(message_id, user_id=user_id)
-        if message is None:
-            raise ValueError("message_not_found")
-        conversation_id = int(message["conversation_id"])
-        deleted_ids = self.repo.delete_message_branch(message_id)
-        self.repo.refresh_conversation_stats(conversation_id)
-        context = self.get_conversation_context(
-            user_id=user_id, conversation_id=conversation_id
+        result = self.repo.delete_owned_message_branch(
+            user_id=user_id,
+            message_id=message_id,
         )
-        return {
-            "deleted_ids": deleted_ids,
-            "conversation": context.conversation,
-            "messages": context.messages,
-        }
+        if result is None:
+            raise ValueError("message_not_found")
+        return result
 
     def regenerate_from_message(
         self,
@@ -207,39 +153,18 @@ class ConversationService:
         user_id: int,
         message_id: int,
     ) -> Dict[str, Any]:
-        message = self.repo.get_chat_message(message_id, user_id=user_id)
-        if message is None:
-            raise ValueError("message_not_found")
-        conversation_id = int(message["conversation_id"])
-        deleted_ids = self.repo.delete_messages_after(message_id)
-        self.repo.refresh_conversation_stats(conversation_id)
-        context = self.get_conversation_context(
-            user_id=user_id, conversation_id=conversation_id
+        result = self.repo.prepare_owned_regeneration(
+            user_id=user_id,
+            message_id=message_id,
         )
-        return {
-            "deleted_ids": deleted_ids,
-            "conversation": context.conversation,
-            "messages": context.messages,
-            "target_message": message,
-        }
+        if result is None:
+            raise ValueError("message_not_found")
+        return result
 
     def cleanup_stale_conversations(self) -> int:
         return self.repo.cleanup_stale_conversations(
             stale_days=self.cleanup_stale_days,
             limit=self.cleanup_batch_size,
-        )
-
-    def _trim_conversation_messages(self, conversation_id: int) -> None:
-        self.repo.trim_conversation_messages(
-            conversation_id=conversation_id,
-            keep_latest=self.max_messages,
-        )
-        self.repo.refresh_conversation_stats(conversation_id)
-
-    def _trim_user_conversations(self, user_id: int) -> None:
-        self.repo.trim_user_conversations(
-            user_id=user_id,
-            keep_latest=self.max_conversations,
         )
 
     @staticmethod

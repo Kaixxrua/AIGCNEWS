@@ -11,6 +11,7 @@ from starlette.responses import StreamingResponse
 
 from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
+from backend.app.api.dependencies import get_conversation_repository
 from backend.app.models.schema_chat import (
     ChatStreamRequest,
     ConversationDetailResponse,
@@ -22,6 +23,7 @@ from backend.app.models.schema_chat import (
     EnsureConversationRequest,
     RegenerateRequest,
 )
+from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
@@ -34,7 +36,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _check_user_message_limit(user_payload: dict) -> None:
+def _check_user_message_limit(
+    user_payload: dict,
+    quota_reader: ConversationRepository | None = None,
+) -> None:
     """检查普通用户每日消息限额，超限则抛出 HTTP 429。
 
     admin 用户不受限；配置项 USER_DAILY_MESSAGE_LIMIT=0 时不限制。
@@ -47,8 +52,8 @@ def _check_user_message_limit(user_payload: dict) -> None:
     user_id = int(user_payload.get("user_id") or 0)
     if user_id <= 0:
         return
-    db = MySQLRepository()
-    today_count = db.count_user_messages_today(user_id)
+    repository = quota_reader or MySQLRepository().conversations
+    today_count = repository.count_user_messages_today(user_id)
     if today_count >= limit:
         logger.info(
             "[MessageLimit] 用户 %s 今日消息数 %d 已达上限 %d",
@@ -78,6 +83,7 @@ async def _stream_persisted_chat(
     history_override: Optional[List[dict]] = None,
     message_override: Optional[str] = None,
     conversation_id_override: Optional[int] = None,
+    conversation_repository: ConversationRepository | None = None,
 ) -> AsyncGenerator[str, None]:
     """真流式 SSE：边收边 yield，持久化后置异步。"""
     try:
@@ -87,7 +93,9 @@ async def _stream_persisted_chat(
 
         retriever = HybridRetriever(MilvusRepository(), GraphRepository())
         rag_service = ChatService(retriever)
-        conversation_service = ConversationService(MySQLRepository())
+        conversation_service = ConversationService(
+            conversation_repository or MySQLRepository().conversations
+        )
 
         attachment_context = ""
         attachment_ids = request.attachment_ids or []
@@ -207,10 +215,15 @@ async def _stream_persisted_chat(
 async def stream_chat(
     request: ChatStreamRequest,
     user: dict = Depends(RequireUser),
+    conversations: ConversationRepository = Depends(get_conversation_repository),
 ) -> StreamingResponse:
-    _check_user_message_limit(user)
+    _check_user_message_limit(user, conversations)
     return StreamingResponse(
-        _stream_persisted_chat(request, user),
+        _stream_persisted_chat(
+            request,
+            user,
+            conversation_repository=conversations,
+        ),
         media_type="text/event-stream; charset=utf-8",
         headers={
             "Cache-Control": "no-cache, no-transform",
@@ -226,7 +239,7 @@ async def ensure_conversation(
     request: EnsureConversationRequest,
     user: dict = Depends(RequireUser),
 ) -> ConversationSummaryDTO:
-    service = ConversationService(MySQLRepository())
+    service = ConversationService(MySQLRepository().conversations)
     conversation = await asyncio.to_thread(
         service.ensure_conversation,
         user_id=int(user["user_id"]),
@@ -243,7 +256,7 @@ async def create_conversation(
     user: dict = Depends(RequireUser),
 ) -> ConversationSummaryDTO:
     """强制创建新会话（不复用已有会话）。"""
-    service = ConversationService(MySQLRepository())
+    service = ConversationService(MySQLRepository().conversations)
     conversation = await asyncio.to_thread(
         service.create_new_conversation,
         user_id=int(user["user_id"]),
@@ -263,7 +276,7 @@ async def delete_conversation(
     user: dict = Depends(RequireUser),
 ) -> DeleteConversationResponse:
     """删除指定会话及其所有消息。"""
-    service = ConversationService(MySQLRepository())
+    service = ConversationService(MySQLRepository().conversations)
     success = await asyncio.to_thread(
         service.delete_conversation,
         user_id=int(user["user_id"]),
@@ -284,7 +297,7 @@ async def get_conversations(
     page_size: int = Query(default=20, ge=1, le=100),
     user: dict = Depends(RequireUser),
 ) -> ConversationListResponse:
-    service = ConversationService(MySQLRepository())
+    service = ConversationService(MySQLRepository().conversations)
     result = await asyncio.to_thread(
         service.list_conversations,
         user_id=int(user["user_id"]),
@@ -302,7 +315,7 @@ async def get_conversation_detail(
     conversation_id: int,
     user: dict = Depends(RequireUser),
 ) -> ConversationDetailResponse:
-    service = ConversationService(MySQLRepository())
+    service = ConversationService(MySQLRepository().conversations)
     try:
         context = await asyncio.to_thread(
             service.get_conversation_context,
@@ -324,7 +337,7 @@ async def delete_message(
     message_id: int,
     user: dict = Depends(RequireUser),
 ) -> DeleteMessageResponse:
-    service = ConversationService(MySQLRepository())
+    service = ConversationService(MySQLRepository().conversations)
     try:
         result = await asyncio.to_thread(
             service.delete_message,
@@ -345,9 +358,10 @@ async def regenerate_message(
     message_id: int,
     request: RegenerateRequest,
     user: dict = Depends(RequireUser),
+    conversations: ConversationRepository = Depends(get_conversation_repository),
 ) -> StreamingResponse:
-    _check_user_message_limit(user)
-    service = ConversationService(MySQLRepository())
+    _check_user_message_limit(user, conversations)
+    service = ConversationService(conversations)
     try:
         regen_result = await asyncio.to_thread(
             service.regenerate_from_message,
@@ -385,6 +399,7 @@ async def regenerate_message(
             history_override=history,
             message_override=user_message,
             conversation_id_override=int(target["conversation_id"]),
+            conversation_repository=conversations,
         ),
         media_type="text/event-stream; charset=utf-8",
         headers={
