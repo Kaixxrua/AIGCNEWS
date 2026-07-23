@@ -76,8 +76,10 @@ export interface McpServerForm {
   enabled: boolean
 }
 
+export type SourceKey = 'arxiv' | 'github' | 'hackernews' | 'producthunt' | 'news'
+
 export interface SourceItem {
-  key: string
+  key: SourceKey
   label: string
   icon: typeof FileText
   color: string
