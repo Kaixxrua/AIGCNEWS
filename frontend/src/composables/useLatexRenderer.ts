@@ -8,13 +8,21 @@
  *
  * 同时提供公式提取、公式复制按钮委托等辅助功能。
  */
+import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { copyToClipboard } from './useClipboard'
 
-const markdownWithHtml = new MarkdownIt({ html: true, linkify: true, breaks: true })
-const markdownWithoutHtml = new MarkdownIt({ html: false, linkify: true, breaks: true })
+const markdown = new MarkdownIt({ html: true, linkify: true, breaks: true })
+
+const sanitizeRenderedMarkdown = (html: string): string =>
+  DOMPurify.sanitize(html, {
+    ADD_ATTR: ['data-latex'],
+    FORBID_TAGS: ['form', 'iframe', 'object', 'embed', 'svg'],
+    ALLOW_DATA_ATTR: false,
+    FORBID_ATTR: ['formaction'],
+  })
 
 // ── 内部辅助 ──────────────────────────────────────────────────────────────
 
@@ -82,12 +90,10 @@ export function renderLatex(text: string): string {
 
 /**
  * renderMarkdown: 先走 LaTeX 渲染，再走 markdown-it，最后后处理 <code> 中残留 LaTeX。
- * allowHtml=false 用于来自用户、模型或报告的非信任内容。
  */
-export function renderMarkdown(text: string, allowHtml = true): string {
+export function renderMarkdown(text: string): string {
   const withKatex = renderLatex(text || '')
-  const markdown = allowHtml ? markdownWithHtml : markdownWithoutHtml
-  let html = markdown.render(withKatex)
+  let html = sanitizeRenderedMarkdown(markdown.render(withKatex))
 
   // 后处理：先处理 <pre><code>（块级），再处理行内 <code>
   html = html.replace(/<pre><code(?:\s[^>]*)?>([\s\S]*?)<\/code><\/pre>/g, (_m, inner: string) => {

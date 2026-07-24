@@ -4,7 +4,7 @@ const props = defineProps<{
   isGenerating: boolean
   currentTypeLabel?: string
   autoScroll: boolean
-  renderMarkdown: (content: string, allowHtml?: boolean) => string
+  renderMarkdown: (content: string) => string
 }>()
 
 const emit = defineEmits<{
@@ -41,7 +41,7 @@ const emit = defineEmits<{
 
   <!-- 报告正文 -->
   <div v-if="reportContent" class="p-5">
-    <article class="prose-content prose-report max-w-none" v-html="renderMarkdown(reportContent, false)" />
+    <article class="prose-content prose-report max-w-none" v-html="renderMarkdown(reportContent)" />
     <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />
   </div>
 
