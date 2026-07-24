@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useTransition, TransitionPresets } from '@vueuse/core'
 import { useDashboardData } from '../composables/useDashboardData'
+import { useDashboardStats } from '../composables/useDashboardStats'
 import GlassCalendar from '../components/GlassCalendar.vue'
 import { CalendarDays, Zap, CheckCircle2 } from 'lucide-vue-next'
 import {
@@ -20,24 +19,14 @@ import {
 
 defineOptions({ name: 'DashboardView' })
 
-const countUpDisabled = ref(false)
-const statSources = ref(statCards.map(() => 0))
-const visitorSources = ref(visitorCards.map(() => 0))
-
-const updateVisitorSources = (stats: Stats) => {
-  visitorSources.value = visitorCards.map(card => {
-    const key = card.key as keyof Stats
-    return Number(stats[key] ?? 0)
-  })
-}
-
-const updateStatSources = (stats: Stats) => {
-  statSources.value = statCards.map(card => {
-    if (card.key === 'total') return Number(stats.total_documents ?? 0)
-    return Number(stats.source_counts?.[card.key] ?? 0)
-  })
-  updateVisitorSources(stats)
-}
+let currentStats: () => Stats = () => ({})
+const {
+  updateStatSources,
+  updateVisitorSources,
+  disableCountUp,
+  getAnimatedValue,
+  getVisitorDisplayValue,
+} = useDashboardStats(() => currentStats())
 
 const {
   activeTab,
@@ -59,49 +48,9 @@ const {
 } = useDashboardData({
   updateStatSources,
   updateVisitorSources,
-  disableCountUp: () => { countUpDisabled.value = true },
+  disableCountUp,
 })
-
-const animatedStats = statCards.map((_, i) => {
-  const source = computed(() => statSources.value[i])
-  return useTransition(source, {
-    duration: 1000,
-    transition: TransitionPresets.easeOutCubic,
-    disabled: countUpDisabled,
-  })
-})
-
-const animatedVisitors = visitorCards.map((_, i) => {
-  const source = computed(() => visitorSources.value[i])
-  return useTransition(source, {
-    duration: 1200,
-    transition: TransitionPresets.easeOutCubic,
-    disabled: countUpDisabled,
-  })
-})
-
-const getAnimatedValue = (index: number): string => {
-  const transition = animatedStats[index]
-  const val = transition ? transition.value : 0
-  return Math.round(val ?? 0).toString()
-}
-
-const getVisitorAnimatedValue = (index: number): string => {
-  const transition = animatedVisitors[index]
-  const val = transition ? transition.value : 0
-  return Math.round(val ?? 0).toLocaleString()
-}
-
-const getUserCountParts = (): string => {
-  const registered = Number(stats.value.registered_users ?? 0).toLocaleString()
-  const todayRegistered = Number(stats.value.today_registered_users ?? 0).toLocaleString()
-  return `${registered}+${todayRegistered}`
-}
-
-const getVisitorDisplayValue = (cardKey: string, index: number): string => {
-  if (cardKey === 'user_count') return getUserCountParts()
-  return getVisitorAnimatedValue(index)
-}
+currentStats = () => stats.value
 
 </script>
 
