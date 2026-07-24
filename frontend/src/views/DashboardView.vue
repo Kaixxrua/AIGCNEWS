@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useTransition, TransitionPresets } from '@vueuse/core'
-import { api, fetchSnapshotDates } from '../services/api'
+import { useDashboardData } from '../composables/useDashboardData'
 import GlassCalendar from '../components/GlassCalendar.vue'
 import { CalendarDays, Zap, CheckCircle2 } from 'lucide-vue-next'
 import {
@@ -15,200 +15,52 @@ import {
   scoreDisplay,
   statCards,
   visitorCards,
-  type PeriodKey,
   type Stats,
-  type TabKey,
-  type TopDoc,
 } from '../features/dashboard/dashboardViewModel'
 
 defineOptions({ name: 'DashboardView' })
 
-const activeTab    = ref<TabKey>('arxiv')
-const activePeriod = ref<PeriodKey>('daily')
-
-const isPeriodDisabled = (periodKey: PeriodKey): boolean =>
-  periodKey !== 'daily' && DAILY_ONLY_TABS.has(activeTab.value)
-
-const tabList  = ref<TopDoc[]>([])
-const stats    = ref<Stats>({})
-const loading  = ref(true)
-const tabLoading = ref(false)
-const errorMsg = ref('')
-const VIEW_REFRESH_INTERVAL = 60_000
-let lastSuccessfulFetchAt = 0
-let hasActivatedOnce = false
-
-// AbortController：每次切换 Tab / Period / Date 时取消上一个未完成的请求，防止竞态覆盖
-let _abortController: AbortController | null = null
-
-function _newAbortSignal(): AbortSignal {
-  if (_abortController) _abortController.abort()
-  _abortController = new AbortController()
-  return _abortController.signal
-}
-
-const _d = new Date()
-const todayStr = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`
-const currentDate = ref<string>(todayStr)
-
-const availableDates = ref<string[]>([])
-let _availabilityController: AbortController | null = null
-
-const isViewingHistory = computed(() => currentDate.value !== todayStr)
-const isFinalized = ref(false)
-const isEmbargoed = ref(false)
-
-const fetchDashboardData = async (tab: TabKey, period: PeriodKey, date?: string, signal?: AbortSignal) => {
-  const dateParam = date || currentDate.value
-  const [summaryRes, topRes] = await Promise.all([
-    api.get('/dashboard/summary', { params: { period, date: dateParam }, signal }),
-    api.get('/dashboard/top', { params: { limit: 10, source: tab, period, date: dateParam }, signal }),
-  ])
-  stats.value   = summaryRes.data.stats ?? {}
-  tabList.value = topRes.data.items ?? []
-  isFinalized.value = summaryRes.data.is_finalized ?? false
-  isEmbargoed.value = summaryRes.data.is_embargoed ?? false
-  lastSuccessfulFetchAt = Date.now()
-}
-
-const fetchAvailableDates = async (tab = activeTab.value, period = activePeriod.value) => {
-  _availabilityController?.abort()
-  const controller = new AbortController()
-  _availabilityController = controller
-  try {
-    const dates = await fetchSnapshotDates(90, tab, period, controller.signal)
-    if (!controller.signal.aborted && tab === activeTab.value && period === activePeriod.value) {
-      availableDates.value = dates
-    }
-  } catch (e: any) {
-    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
-    console.warn('[Dashboard] 获取快照日期失败', e)
-  }
-}
-
-// 单独获取用户数指标（不缓存接口，实时读取数据库）
-const fetchUserCountMetric = async (signal?: AbortSignal) => {
-  try {
-    const res = await api.get('/dashboard/visitor-count', { signal })
-    stats.value = {
-      ...stats.value,
-      registered_users: res.data.registered_users ?? stats.value.registered_users ?? 0,
-      today_registered_users: res.data.today_registered_users ?? 0,
-      user_count: res.data.user_count ?? 0,
-    }
-    // 同步更新用户数动画数据源
-    visitorSources.value = visitorCards.map(card => {
-      const key = card.key as keyof typeof stats.value
-      return Number(stats.value[key] ?? 0)
-    })
-  } catch (e: any) {
-    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
-    console.warn('[Dashboard] 获取用户数失败', e)
-  }
-}
-
-const stopDashboardRequests = () => {
-  _abortController?.abort()
-  _abortController = null
-  _availabilityController?.abort()
-  _availabilityController = null
-}
-
-const refreshDashboardInBackground = async () => {
-  if (loading.value || tabLoading.value) return
-  const signal = _newAbortSignal()
-  try {
-    await Promise.all([
-      fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, signal),
-      fetchAvailableDates(),
-      fetchUserCountMetric(signal),
-    ])
-    updateStatSources()
-  } catch (e: any) {
-    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
-    console.warn('[Dashboard] 后台刷新失败', e)
-  }
-}
-
-onMounted(async () => {
-  const signal = _newAbortSignal()
-  try {
-    await Promise.all([
-      fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, signal),
-      fetchAvailableDates(),
-      fetchUserCountMetric(signal),
-    ])
-  } catch (e: any) {
-    if (e?.name !== 'CanceledError' && e?.code !== 'ERR_CANCELED') errorMsg.value = String(e)
-  } finally {
-    loading.value = false
-    updateStatSources()
-  }
-})
-
-onActivated(() => {
-  if (!hasActivatedOnce) {
-    hasActivatedOnce = true
-    return
-  }
-  if (Date.now() - lastSuccessfulFetchAt >= VIEW_REFRESH_INTERVAL) {
-    void refreshDashboardInBackground()
-  }
-})
-
-onDeactivated(stopDashboardRequests)
-onBeforeUnmount(stopDashboardRequests)
-
-watch(activeTab, (tab) => {
-  if (DAILY_ONLY_TABS.has(tab) && activePeriod.value !== 'daily') {
-    activePeriod.value = 'daily'
-  }
-})
-
-watch([activeTab, activePeriod], async ([tab, period]) => {
-  tabLoading.value = true
-  tabList.value = []  // 切换时立即清空，避免旧数据残留
-  const signal = _newAbortSignal()
-  try {
-    await fetchAvailableDates(tab, period)
-    await fetchDashboardData(tab, period, currentDate.value, signal)
-    updateStatSources()
-  } catch (e: any) {
-    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return  // 被新请求取消，静默忽略
-    console.error('Failed to load dashboard data', e)
-  } finally {
-    tabLoading.value = false
-  }
-})
-
-const onDateChange = async (date: string) => {
-  currentDate.value = date
-  tabLoading.value = true
-  tabList.value = []  // 切换时立即清空
-  countUpDisabled.value = true
-  const signal = _newAbortSignal()
-  try {
-    await fetchDashboardData(activeTab.value, activePeriod.value, date, signal)
-    updateStatSources()
-  } catch (e: any) {
-    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
-    console.error('Failed to load dashboard data by date', e)
-  } finally {
-    tabLoading.value = false
-  }
-}
-
-const selectSourceTab = (key: string) => {
-  if (isSourceStatCard(key)) activeTab.value = key
-}
-
-const getStatValue = (key: string): number => {
-  if (key === 'total') return Number(stats.value.total_documents ?? 0)
-  return Number(stats.value.source_counts?.[key] ?? 0)
-}
-
 const countUpDisabled = ref(false)
 const statSources = ref(statCards.map(() => 0))
+const visitorSources = ref(visitorCards.map(() => 0))
+
+const updateVisitorSources = (stats: Stats) => {
+  visitorSources.value = visitorCards.map(card => {
+    const key = card.key as keyof Stats
+    return Number(stats[key] ?? 0)
+  })
+}
+
+const updateStatSources = (stats: Stats) => {
+  statSources.value = statCards.map(card => {
+    if (card.key === 'total') return Number(stats.total_documents ?? 0)
+    return Number(stats.source_counts?.[card.key] ?? 0)
+  })
+  updateVisitorSources(stats)
+}
+
+const {
+  activeTab,
+  activePeriod,
+  isPeriodDisabled,
+  tabList,
+  stats,
+  loading,
+  tabLoading,
+  errorMsg,
+  currentDate,
+  availableDates,
+  isViewingHistory,
+  isFinalized,
+  isEmbargoed,
+  selectSourceTab,
+  onDateChange,
+  hasData,
+} = useDashboardData({
+  updateStatSources,
+  updateVisitorSources,
+  disableCountUp: () => { countUpDisabled.value = true },
+})
 
 const animatedStats = statCards.map((_, i) => {
   const source = computed(() => statSources.value[i])
@@ -219,8 +71,6 @@ const animatedStats = statCards.map((_, i) => {
   })
 })
 
-const visitorSources = ref(visitorCards.map(() => 0))
-
 const animatedVisitors = visitorCards.map((_, i) => {
   const source = computed(() => visitorSources.value[i])
   return useTransition(source, {
@@ -229,14 +79,6 @@ const animatedVisitors = visitorCards.map((_, i) => {
     disabled: countUpDisabled,
   })
 })
-
-const updateStatSources = () => {
-  statSources.value = statCards.map(card => getStatValue(card.key))
-  visitorSources.value = visitorCards.map(card => {
-    const key = card.key as keyof typeof stats.value
-    return Number(stats.value[key] ?? 0)
-  })
-}
 
 const getAnimatedValue = (index: number): string => {
   const transition = animatedStats[index]
@@ -261,10 +103,6 @@ const getVisitorDisplayValue = (cardKey: string, index: number): string => {
   return getVisitorAnimatedValue(index)
 }
 
-const hasData = computed(() => {
-  const total = Number(stats.value.total_documents ?? 0)
-  return total > 0 || tabList.value.length > 0
-})
 </script>
 
 <template>
