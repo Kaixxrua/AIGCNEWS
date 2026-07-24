@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import httpx
+
+from backend.app.services.outbound_target_policy import (
+    OutboundTargetPolicyError,
+    PinnedHttpTarget,
+    pin_http_target,
+)
 
 MAX_MESSAGE_LENGTH = 500
 MAX_TOOLS = 20
@@ -26,16 +31,41 @@ def _sanitize_message(value: Any, token: str = "") -> str:
     return message
 
 
+def _policy_error_message(exc: OutboundTargetPolicyError) -> str:
+    message = str(exc)
+    if message == "只支持 http/https URL":
+        return "MCP Server URL 只支持 http 或 https。"
+    if message in {"URL 不能为空", "URL 缺少域名"}:
+        return "MCP Server URL 缺少主机名。"
+    if message == "URL 不能包含用户名或密码":
+        return "MCP Server URL 不允许包含用户名或密码。"
+    if message == "URL 端口无效":
+        return "MCP Server URL 端口无效。"
+    return message
+
+
 def validate_mcp_http_url(url: str) -> str:
-    clean_url = (url or "").strip()
-    parsed = urlparse(clean_url)
-    if parsed.scheme not in {"http", "https"}:
-        raise McpConnectionTestError("MCP Server URL 只支持 http 或 https。")
-    if not parsed.netloc:
-        raise McpConnectionTestError("MCP Server URL 缺少主机名。")
-    if parsed.username or parsed.password:
-        raise McpConnectionTestError("MCP Server URL 不允许包含用户名或密码。")
-    return clean_url
+    try:
+        # Saving a configuration performs syntax validation only. DNS validation and
+        # pinning happen atomically at connection-test time through _pin_mcp_target.
+        from backend.app.services.outbound_target_policy import normalize_http_url
+
+        return normalize_http_url(url)
+    except OutboundTargetPolicyError as exc:
+        raise McpConnectionTestError(_policy_error_message(exc)) from exc
+
+
+def _pin_mcp_target(
+    url: str,
+    *,
+    resolver: Callable[[str], Iterable[str]] | None = None,
+) -> PinnedHttpTarget:
+    try:
+        # Reject mixed public/private DNS answers rather than choosing a public member:
+        # this makes deliberately ambiguous and rebinding-prone targets fail closed.
+        return pin_http_target(url, resolver=resolver, reject_mixed=True)
+    except OutboundTargetPolicyError as exc:
+        raise McpConnectionTestError(_policy_error_message(exc)) from exc
 
 
 def _mcp_payload(method: str, params: Dict[str, Any] | None = None, request_id: Optional[int] = 1) -> Dict[str, Any]:
@@ -210,7 +240,7 @@ def _decode_json_rpc_response(response: httpx.Response, *, expected_id: Optional
 
 def _post_json_rpc(
     client: httpx.Client,
-    url: str,
+    target: PinnedHttpTarget,
     payload: Dict[str, Any],
     *,
     expect_response: bool = True,
@@ -218,18 +248,29 @@ def _post_json_rpc(
     # Streamable HTTP MCP servers may return text/event-stream responses that stay
     # open. Stream the response and stop reading as soon as the matching JSON-RPC
     # result arrives, rather than waiting for the HTTP body to close.
-    with client.stream("POST", url, json=payload) as response:
+    with client.stream(
+        "POST",
+        target.request_url,
+        json=payload,
+        headers=target.headers,
+        extensions=target.extensions,
+    ) as response:
         headers = httpx.Headers(response.headers)
         if response.status_code in {401, 403}:
             raise McpConnectionTestError("MCP Server 鉴权失败，请检查 Token。")
-        if response.status_code >= 400:
+        if response.status_code >= 300:
             raise McpConnectionTestError(f"MCP Server 返回 HTTP {response.status_code}。")
         if not expect_response:
             return {}, headers
         return _decode_json_rpc_response(response, expected_id=payload.get("id")), headers
 
 
-def test_mcp_server_connection(config: Dict[str, Any]) -> Dict[str, Any]:
+def test_mcp_server_connection(
+    config: Dict[str, Any],
+    *,
+    resolver: Callable[[str], Iterable[str]] | None = None,
+    client_factory: Callable[..., httpx.Client] = httpx.Client,
+) -> Dict[str, Any]:
     """Test HTTP MCP connectivity without executing arbitrary tools."""
 
     token = str(config.get("auth_token") or "").strip()
@@ -238,6 +279,7 @@ def test_mcp_server_connection(config: Dict[str, Any]) -> Dict[str, Any]:
         transport = (config.get("transport") or "streamable_http").strip().lower()
         if transport != "streamable_http":
             raise McpConnectionTestError("当前仅支持 HTTP/Streamable HTTP MCP Server 测试。")
+        target = _pin_mcp_target(url, resolver=resolver)
 
         auth_type = (config.get("auth_type") or "none").strip().lower()
         headers = {
@@ -253,15 +295,15 @@ def test_mcp_server_connection(config: Dict[str, Any]) -> Dict[str, Any]:
             "capabilities": {},
             "clientInfo": {"name": "aigc-news-admin", "version": "1.0.0"},
         }
-        with httpx.Client(
+        with client_factory(
             timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
             follow_redirects=False,
-            trust_env=True,
+            trust_env=False,
             headers=headers,
         ) as client:
             initialize_data, initialize_headers = _post_json_rpc(
                 client,
-                url,
+                target,
                 _mcp_payload("initialize", initialize_params, 1),
             )
             session_id = initialize_headers.get("mcp-session-id")
@@ -276,7 +318,7 @@ def test_mcp_server_connection(config: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 _post_json_rpc(
                     client,
-                    url,
+                    target,
                     _mcp_payload("notifications/initialized", request_id=None),
                     expect_response=False,
                 )
@@ -284,7 +326,7 @@ def test_mcp_server_connection(config: Dict[str, Any]) -> Dict[str, Any]:
                 raise
             except httpx.RequestError:
                 raise
-            tools_data, _ = _post_json_rpc(client, url, _mcp_payload("tools/list", {}, 2))
+            tools_data, _ = _post_json_rpc(client, target, _mcp_payload("tools/list", {}, 2))
             tools = _extract_tools(tools_data)
             message = "连接成功。"
             if tools:

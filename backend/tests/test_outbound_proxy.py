@@ -128,14 +128,14 @@ def test_proxy_request_is_pinned_to_validated_ip(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(
         tool_website_fetcher,
         "_safe_resolved_ips",
-        Mock(return_value=["203.0.113.10", "2001:db8::10"]),
+        Mock(return_value=["8.8.8.8", "2001:4860:4860::8888"]),
     )
 
     request_url, headers, extensions = tool_website_fetcher._proxy_request_target(
         "https://www.youtube.com/watch?v=abc"
     )
 
-    assert request_url == "https://203.0.113.10/watch?v=abc"
+    assert request_url == "https://8.8.8.8/watch?v=abc"
     assert headers == {"Host": "www.youtube.com"}
     assert extensions == {"sni_hostname": "www.youtube.com"}
 

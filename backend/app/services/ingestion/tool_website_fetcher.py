@@ -3,14 +3,11 @@ from __future__ import annotations
 """Safe metadata fetching for admin-added AI tool websites."""
 
 import hashlib
-import ipaddress
 import json
 import re
-import socket
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from dataclasses import dataclass
-from threading import RLock
-from typing import Any, Dict, Iterator
+from typing import Any, Dict
 from urllib.parse import urldefrag, urljoin, urlparse, urlunparse
 
 import httpx
@@ -18,6 +15,12 @@ from bs4 import BeautifulSoup
 
 from backend.app.core.config import settings
 from backend.app.services.ingestion.project_taxonomy import clean_text
+from backend.app.services.outbound_target_policy import (
+    OutboundTargetPolicyError,
+    normalize_http_url,
+    pin_http_target,
+    resolve_public_ips,
+)
 
 _MAX_REDIRECTS = 3
 _MAX_BYTES = 1_000_000
@@ -27,7 +30,6 @@ _USER_AGENT = (
     "Chrome/126.0.0.0 Safari/537.36 AIGC-NEWS-ToolWebsiteBot/1.0"
 )
 _ALLOWED_SCHEMES = {"http", "https"}
-_DENIED_HOSTS = {"localhost", "metadata.google.internal"}
 _BLOCKED_STATUS_CODES = {401, 403, 429, 503}
 _REMOTE_DNS_PROXY_HOSTS = {"youtube.com", "youtu.be"}
 _CHARSET_RE = re.compile(rb"charset=[\"']?([a-zA-Z0-9_\-]+)", re.IGNORECASE)
@@ -38,7 +40,6 @@ _ENCODING_ALIASES = {
     "gb_2312-80": "gb18030",
     "x-gbk": "gb18030",
 }
-_DNS_PIN_LOCK = RLock()
 
 
 class ToolWebsiteFetchError(ValueError):
@@ -62,59 +63,13 @@ def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _ip_is_local_or_dangerous(ip: ipaddress._BaseAddress) -> bool:
-    return bool(
-        ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_unspecified
-        or (ip.version == 4 and ip.is_private)
-        or (ip.version == 6 and str(ip).lower().startswith("fc"))
-        or (ip.version == 6 and str(ip).lower().startswith("fd"))
-    )
-
-
-def _ip_is_safe_public(ip: ipaddress._BaseAddress) -> bool:
-    return not (_ip_is_local_or_dangerous(ip) or ip.is_reserved or not ip.is_global)
-
-
 def _safe_resolved_ips(hostname: str) -> list[str]:
-    host = (hostname or "").strip().lower().rstrip(".")
-    if not host:
-        return []
-    if host in _DENIED_HOSTS or host.endswith(".localhost"):
-        return []
-
     try:
-        ip = ipaddress.ip_address(host)
-        if not _ip_is_safe_public(ip):
-            return []
-        return [str(ip)]
-    except ValueError:
-        pass
-
-    try:
-        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise ToolWebsiteFetchError(f"无法解析域名：{host}") from exc
-
-    safe_ips: list[str] = []
-    seen: set[str] = set()
-    for info in infos:
-        address = info[4][0]
-        try:
-            ip = ipaddress.ip_address(address)
-        except ValueError:
-            continue
-        # Some DNS resolvers return unusable placeholder IPv6 records alongside valid public A
-        # records. Pin requests only to the public addresses instead of rejecting the domain.
-        if not _ip_is_safe_public(ip):
-            continue
-        ip_text = str(ip)
-        if ip_text not in seen:
-            seen.add(ip_text)
-            safe_ips.append(ip_text)
-    return safe_ips
+        return list(resolve_public_ips(hostname))
+    except OutboundTargetPolicyError as exc:
+        if str(exc).startswith("无法解析域名"):
+            raise ToolWebsiteFetchError(str(exc)) from exc
+        return []
 
 
 def _host_is_safe(hostname: str) -> bool:
@@ -122,31 +77,25 @@ def _host_is_safe(hostname: str) -> bool:
 
 
 def _validate_url(raw_url: str) -> str:
-    url = (raw_url or "").strip()
-    if not url:
-        raise ToolWebsiteFetchError("URL 不能为空")
-    if len(url) > 1024:
-        raise ToolWebsiteFetchError("URL 过长")
-    if "://" not in url:
-        url = f"https://{url}"
-
-    url, _fragment = urldefrag(url)
-    parsed = urlparse(url)
-    if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
-        raise ToolWebsiteFetchError("只支持 http/https URL")
-    if parsed.username or parsed.password:
-        raise ToolWebsiteFetchError("URL 不能包含用户名或密码")
-    if parsed.port and parsed.port not in (80, 443):
-        raise ToolWebsiteFetchError("只允许标准 HTTP/HTTPS 端口")
-    hostname = (parsed.hostname or "").strip().lower().rstrip(".")
-    if not _host_is_safe(hostname):
-        raise ToolWebsiteFetchError("不允许访问本地、内网或保留地址")
-
-    netloc = hostname
-    if parsed.port:
-        netloc = f"{hostname}:{parsed.port}"
-    path = parsed.path or "/"
-    return urlunparse((parsed.scheme.lower(), netloc, path, "", parsed.query, ""))
+    try:
+        url = normalize_http_url(
+            raw_url,
+            allowed_ports={80, 443},
+            add_default_scheme=True,
+        )
+        resolve_public_ips(urlparse(url).hostname or "")
+        return url
+    except OutboundTargetPolicyError as exc:
+        message = str(exc)
+        if message == "URL 端口不在允许范围内":
+            message = "只允许标准 HTTP/HTTPS 端口"
+        elif message == "URL 不能包含用户名或密码":
+            message = "URL 不能包含用户名或密码"
+        elif message == "只支持 http/https URL":
+            message = "只支持 http/https URL"
+        elif message == "URL 缺少域名":
+            message = "不允许访问本地、内网或保留地址"
+        raise ToolWebsiteFetchError(message) from exc
 
 
 def _normalize_url(url: str) -> str:
@@ -162,37 +111,6 @@ def _normalize_url(url: str) -> str:
     if path != "/":
         path = path.rstrip("/")
     return urlunparse((parsed.scheme.lower(), netloc, path, "", parsed.query, ""))
-
-
-@contextmanager
-def _pin_safe_dns_resolution(hostname: str) -> Iterator[None]:
-    """Keep httpx on the same pre-validated public addresses during one fetch."""
-    host = (hostname or "").strip().lower().rstrip(".")
-    if not host:
-        raise ToolWebsiteFetchError("URL 缺少域名")
-    with _DNS_PIN_LOCK:
-        safe_ips = _safe_resolved_ips(host)
-        if not safe_ips:
-            raise ToolWebsiteFetchError("不允许访问本地、内网或保留地址")
-
-        original_getaddrinfo = socket.getaddrinfo
-
-        def pinned_getaddrinfo(request_host: str, port: Any, *args: Any, **kwargs: Any):
-            normalized_request_host = (request_host or "").strip().lower().rstrip(".")
-            if normalized_request_host != host:
-                return original_getaddrinfo(request_host, port, *args, **kwargs)
-            results = []
-            for ip_text in safe_ips:
-                family = socket.AF_INET6 if ":" in ip_text else socket.AF_INET
-                sockaddr = (ip_text, port, 0, 0) if family == socket.AF_INET6 else (ip_text, port)
-                results.append((family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", sockaddr))
-            return results
-
-        socket.getaddrinfo = pinned_getaddrinfo
-        try:
-            yield
-        finally:
-            socket.getaddrinfo = original_getaddrinfo
 
 
 def _friendly_domain_title(domain: str) -> str:
@@ -588,25 +506,15 @@ def _proxy_uses_remote_dns(proxy_url: str, hostname: str) -> bool:
 
 
 def _proxy_request_target(logical_url: str) -> tuple[str, dict[str, str], dict[str, Any]]:
-    parsed = urlparse(logical_url)
-    hostname = parsed.hostname or ""
-    safe_ips = _safe_resolved_ips(hostname)
-    if not safe_ips:
-        raise ToolWebsiteFetchError("不允许访问本地、内网或保留地址")
-    selected_ip = next((ip for ip in safe_ips if ":" not in ip), safe_ips[0])
-    ip_host = f"[{selected_ip}]" if ":" in selected_ip else selected_ip
-    netloc = ip_host
-    if parsed.port:
-        netloc = f"{ip_host}:{parsed.port}"
-    target_url = urlunparse((parsed.scheme, netloc, parsed.path, "", parsed.query, ""))
-
-    host_header = hostname
-    if parsed.port and not (
-        (parsed.scheme == "http" and parsed.port == 80)
-        or (parsed.scheme == "https" and parsed.port == 443)
-    ):
-        host_header = f"{hostname}:{parsed.port}"
-    return target_url, {"Host": host_header}, {"sni_hostname": hostname}
+    try:
+        target = pin_http_target(
+            logical_url,
+            allowed_ports={80, 443},
+            resolver=lambda hostname: _safe_resolved_ips(hostname),
+        )
+    except OutboundTargetPolicyError as exc:
+        raise ToolWebsiteFetchError(str(exc)) from exc
+    return target.request_url, target.headers, target.extensions
 
 
 def _fetch_tool_website_metadata(
@@ -642,10 +550,8 @@ def _fetch_tool_website_metadata(
                 request_url, request_headers, extensions = _proxy_request_target(current_url)
                 request_context = nullcontext()
             else:
-                request_url = current_url
-                request_headers = {}
-                extensions = {}
-                request_context = _pin_safe_dns_resolution(hostname)
+                request_url, request_headers, extensions = _proxy_request_target(current_url)
+                request_context = nullcontext()
 
             with request_context:
                 with client.stream(
