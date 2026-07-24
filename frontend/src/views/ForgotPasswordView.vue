@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useOtpCountdown } from '../composables/useOtpCountdown'
 import { api } from '../services/api'
 import {
   getErrorDetail,
@@ -9,8 +10,6 @@ import {
   isValidEmail,
   isValidOtp,
   isValidPassword,
-  OTP_COUNTDOWN_INTERVAL_MS,
-  OTP_COUNTDOWN_SECONDS,
   PASSWORD_RESET_REDIRECT_DELAY_MS,
   passwordsMatch,
 } from '../features/auth/authViewModel'
@@ -31,8 +30,11 @@ const errorMsg   = ref('')
 const successMsg = ref('')
 const resetDone  = ref(false)
 
-const countdown = ref(0)
-let countdownTimer: ReturnType<typeof setInterval> | null = null
+const {
+  countdown,
+  start: startCountdown,
+  reset: resetCountdown,
+} = useOtpCountdown({ clearBeforeStart: true })
 let redirectTimer: ReturnType<typeof setTimeout> | null = null
 
 const emailValid = computed(() => isValidEmail(email.value))
@@ -41,21 +43,7 @@ const otpBtnDisabled = computed(
   () => !emailValid.value || countdown.value > 0 || otpLoading.value || resetDone.value
 )
 
-const startCountdown = () => {
-  if (countdownTimer) clearInterval(countdownTimer)
-  countdown.value = OTP_COUNTDOWN_SECONDS
-  countdownTimer = setInterval(() => {
-    countdown.value--
-    if (countdown.value <= 0) {
-      clearInterval(countdownTimer!)
-      countdownTimer = null
-      countdown.value = 0
-    }
-  }, OTP_COUNTDOWN_INTERVAL_MS)
-}
-
 onUnmounted(() => {
-  if (countdownTimer) clearInterval(countdownTimer)
   if (redirectTimer) clearTimeout(redirectTimer)
 })
 
@@ -99,11 +87,7 @@ const handleReset = async () => {
     })
     resetDone.value = true
     successMsg.value = '密码重置成功，即将返回登录页…'
-    if (countdownTimer) {
-      clearInterval(countdownTimer)
-      countdownTimer = null
-      countdown.value = 0
-    }
+    resetCountdown()
     redirectTimer = setTimeout(() => {
       router.replace({ path: '/login', query: redirectQuery.value })
     }, PASSWORD_RESET_REDIRECT_DELAY_MS)

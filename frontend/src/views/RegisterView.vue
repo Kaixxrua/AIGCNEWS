@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useOtpCountdown } from '../composables/useOtpCountdown'
 import { api } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import {
@@ -11,8 +12,6 @@ import {
   isValidEmail,
   isValidOtp,
   isValidPassword,
-  OTP_COUNTDOWN_INTERVAL_MS,
-  OTP_COUNTDOWN_SECONDS,
   passwordsMatch,
   REGISTER_REDIRECT_DELAY_MS,
   REGISTER_SUCCESS_MESSAGE_DURATION_MS,
@@ -35,9 +34,7 @@ const errorMsg      = ref('')
 const successMsg    = ref('')
 const agreedToTerms = ref(false)
 
-// OTP 倒计时
-const countdown     = ref(0)
-let countdownTimer: ReturnType<typeof setInterval> | null = null
+const { countdown, start: startCountdown } = useOtpCountdown()
 
 // 邮箱格式校验
 const emailValid = computed(() => isValidEmail(email.value))
@@ -45,22 +42,6 @@ const emailValid = computed(() => isValidEmail(email.value))
 const otpBtnDisabled = computed(
   () => !emailValid.value || countdown.value > 0 || otpLoading.value
 )
-
-const startCountdown = () => {
-  countdown.value = OTP_COUNTDOWN_SECONDS
-  countdownTimer = setInterval(() => {
-    countdown.value--
-    if (countdown.value <= 0) {
-      clearInterval(countdownTimer!)
-      countdownTimer = null
-      countdown.value = 0
-    }
-  }, OTP_COUNTDOWN_INTERVAL_MS)
-}
-
-onUnmounted(() => {
-  if (countdownTimer) clearInterval(countdownTimer)
-})
 
 const sendOtp = async () => {
   errorMsg.value = ''
