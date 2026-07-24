@@ -8,8 +8,13 @@ import {
 } from '../features/search/globalSearchModel'
 import type { PaperItem } from '../services/api'
 
+interface GlobalSearchInputHandle {
+  focus: () => void
+  blur: () => void
+}
+
 interface GlobalSearchDependencies {
-  inputRef: Ref<HTMLInputElement | null>
+  inputRef: Ref<GlobalSearchInputHandle | null>
   search: (query: string, limit: number) => Promise<PaperItem[]>
   fetchTop10: () => Promise<PaperItem[]>
   push: (location: RouteLocationRaw) => void | Promise<unknown>
