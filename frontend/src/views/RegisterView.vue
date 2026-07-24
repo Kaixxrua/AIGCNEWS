@@ -1,21 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useOtpCountdown } from '../composables/useOtpCountdown'
+import { useRegisterForm } from '../composables/useRegisterForm'
+import { getSafeInternalRedirect } from '../features/auth/authViewModel'
 import { api } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
-import {
-  getErrorDetail,
-  getSafeInternalRedirect,
-  hasTrimmedValue,
-  isRateLimited,
-  isValidEmail,
-  isValidOtp,
-  isValidPassword,
-  passwordsMatch,
-  REGISTER_REDIRECT_DELAY_MS,
-  REGISTER_SUCCESS_MESSAGE_DURATION_MS,
-} from '../features/auth/authViewModel'
 
 const router = useRouter()
 const route = useRoute()
@@ -24,74 +13,27 @@ const authStore = useAuthStore()
 const redirect = computed(() => getSafeInternalRedirect(route.query.redirect))
 const redirectQuery = computed(() => ({ redirect: redirect.value }))
 
-const email         = ref('')
-const otp           = ref('')
-const password      = ref('')
-const confirmPwd    = ref('')
-const loading       = ref(false)
-const otpLoading    = ref(false)
-const errorMsg      = ref('')
-const successMsg    = ref('')
-const agreedToTerms = ref(false)
-
-const { countdown, start: startCountdown } = useOtpCountdown()
-
-// 邮箱格式校验
-const emailValid = computed(() => isValidEmail(email.value))
-
-const otpBtnDisabled = computed(
-  () => !emailValid.value || countdown.value > 0 || otpLoading.value
-)
-
-const sendOtp = async () => {
-  errorMsg.value = ''
-  if (!emailValid.value) {
-    errorMsg.value = '请输入有效的邮箱地址'
-    return
-  }
-  if (countdown.value > 0) return
-  otpLoading.value = true
-  try {
-    await api.post('/auth/send-email-otp', { email: email.value.trim() })
-    startCountdown()
-    successMsg.value = '验证码已发送，请查收邮件'
-    setTimeout(() => { successMsg.value = '' }, REGISTER_SUCCESS_MESSAGE_DURATION_MS)
-  } catch (e: unknown) {
-    if (isRateLimited(e)) {
-      errorMsg.value = '请 60 秒后再试'
-    } else {
-      errorMsg.value = getErrorDetail(e, '发送验证码失败，请稍后再试')
-    }
-  } finally {
-    otpLoading.value = false
-  }
-}
-
-const handleRegister = async () => {
-  errorMsg.value = ''
-  if (!emailValid.value) { errorMsg.value = '请输入有效的邮箱地址'; return }
-  if (!hasTrimmedValue(otp.value) || !isValidOtp(otp.value)) { errorMsg.value = '验证码应为 6 位数字'; return }
-  if (!isValidPassword(password.value)) { errorMsg.value = '密码至少需要 6 个字符'; return }
-  if (!passwordsMatch(password.value, confirmPwd.value)) { errorMsg.value = '两次密码输入不一致'; return }
-  if (!agreedToTerms.value) { errorMsg.value = '请阅读并同意《用户协议与免责声明》后再注册'; return }
-
-  loading.value = true
-  try {
-    await api.post('/auth/register', {
-      email: email.value.trim(),
-      email_code: otp.value.trim(),
-      password: password.value,
-    })
-    // 注册成功后自动登录
-    await authStore.login(email.value.trim(), password.value)
-    successMsg.value = '注册成功！正在为您自动登录…'
-    setTimeout(() => router.replace(redirect.value), REGISTER_REDIRECT_DELAY_MS)
-  } catch (e: unknown) {
-    errorMsg.value = getErrorDetail(e, '注册失败，请稍后再试')
-  } finally {
-    loading.value = false
-  }
-}
+const {
+  email,
+  otp,
+  password,
+  confirmPwd,
+  loading,
+  otpLoading,
+  errorMsg,
+  successMsg,
+  agreedToTerms,
+  countdown,
+  emailValid,
+  otpBtnDisabled,
+  sendOtp,
+  handleRegister,
+} = useRegisterForm({
+  post: (url, payload) => api.post(url, payload),
+  login: (email, password) => authStore.login(email, password),
+  replace: target => router.replace(target),
+  getRedirect: () => redirect.value,
+})
 </script>
 
 <template>
