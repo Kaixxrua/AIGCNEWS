@@ -3,106 +3,33 @@
  * GlobalSearch.vue
  * 顶部全局搜索框（Ctrl/Cmd+K 唤醒，300ms debounce，空输入时展示今日 Top10）
  */
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useGlobalSearch } from '../composables/useGlobalSearch'
 import {
-  GLOBAL_SEARCH_BLUR_DELAY_MS,
-  GLOBAL_SEARCH_DEBOUNCE_MS,
-  GLOBAL_SEARCH_RESULT_LIMIT,
-  getGlobalSearchDestination,
   getSearchSourceLabel,
   getSearchSummaryPreview,
 } from '../features/search/globalSearchModel'
-import { searchPapers, fetchTop10Today, type PaperItem } from '../services/api'
+import { searchPapers, fetchTop10Today } from '../services/api'
 
 const router = useRouter()
 const inputRef = ref<HTMLInputElement | null>(null)
-const query = ref('')
-const results = ref<PaperItem[]>([])
-const showDropdown = ref(false)
-const loading = ref(false)
-const focused = ref(false)
-
-// ── Debounce 300ms ─────────────────────────────────────────────────────────
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
-
-const triggerSearch = () => {
-  if (debounceTimer) clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(async () => {
-    const q = query.value.trim()
-    if (!q) {
-      await loadTop10()
-    } else {
-      loading.value = true
-      try {
-        results.value = await searchPapers(q, GLOBAL_SEARCH_RESULT_LIMIT)
-      } finally {
-        loading.value = false
-      }
-    }
-  }, GLOBAL_SEARCH_DEBOUNCE_MS)
-}
-
-const loadTop10 = async () => {
-  loading.value = true
-  try {
-    results.value = await fetchTop10Today()
-  } finally {
-    loading.value = false
-  }
-}
-
-watch(query, triggerSearch)
-
-// ── 聚焦时若空输入自动加载 Top10 ──────────────────────────────────────────
-const onFocus = async () => {
-  focused.value = true
-  showDropdown.value = true
-  if (!query.value.trim() && results.value.length === 0) {
-    await loadTop10()
-  }
-}
-
-const onBlur = () => {
-  // 延迟关闭，允许用户点击结果项
-  setTimeout(() => {
-    focused.value = false
-    showDropdown.value = false
-  }, GLOBAL_SEARCH_BLUR_DELAY_MS)
-}
-
-// ── 点击搜索结果 ───────────────────────────────────────────────────────────
-const onSelectItem = (item: PaperItem) => {
-  showDropdown.value = false
-  query.value = ''
-  results.value = []
-
-  const destination = getGlobalSearchDestination(item)
-  if (destination.kind === 'route') {
-    // 论文 → 沉浸阅读页
-    router.push(destination.location)
-  } else if (destination.kind === 'external') {
-    // 其他来源 → 原始链接
-    window.open(destination.url, '_blank', 'noopener,noreferrer')
-  }
-}
-
-// ── Ctrl/Cmd+K 聚焦唤醒 ───────────────────────────────────────────────────
-const onGlobalKeydown = (e: KeyboardEvent) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-    e.preventDefault()
-    inputRef.value?.focus()
-    showDropdown.value = true
-    if (!query.value.trim()) loadTop10()
-  }
-  if (e.key === 'Escape') {
-    showDropdown.value = false
-    inputRef.value?.blur()
-  }
-}
-
-onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
+const {
+  query,
+  results,
+  showDropdown,
+  loading,
+  focused,
+  onFocus,
+  onBlur,
+  onSelectItem,
+} = useGlobalSearch({
+  inputRef,
+  search: searchPapers,
+  fetchTop10: fetchTop10Today,
+  push: location => router.push(location),
+  openExternal: url => window.open(url, '_blank', 'noopener,noreferrer'),
+})
 </script>
 
 <template>
