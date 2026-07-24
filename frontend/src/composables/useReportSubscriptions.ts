@@ -1,4 +1,4 @@
-import { computed, ref, type Ref } from 'vue'
+import { computed, onMounted, ref, type Ref } from 'vue'
 import {
   isSourceSubscribed as hasSourceSubscription,
   selectActiveDailySources,
@@ -181,6 +181,10 @@ export const useReportSubscriptions = ({
     }
   }
 
+  onMounted(() => {
+    void loadSubscriptions()
+  })
+
   return {
     subscriptions,
     isSubscribing,
@@ -198,7 +202,6 @@ export const useReportSubscriptions = ({
     closeSubscribePanel,
     toggleSubscribeSource,
     confirmSubscribeSources,
-    loadSubscriptions,
     toggleSubscribe,
     sendToEmail,
   }

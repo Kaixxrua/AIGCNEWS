@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import ReportContentPanel from '../components/report/ReportContentPanel.vue'
@@ -85,7 +85,6 @@ const {
   closeSubscribePanel,
   toggleSubscribeSource,
   confirmSubscribeSources,
-  loadSubscriptions,
   toggleSubscribe,
   sendToEmail,
 } = useReportSubscriptions({
@@ -114,10 +113,6 @@ const {
     router.push({ path: '/login', query: { redirect: route.fullPath } })
   },
   setError: message => { errorMsg.value = message },
-})
-
-onMounted(() => {
-  void loadSubscriptions()
 })
 </script>
 
