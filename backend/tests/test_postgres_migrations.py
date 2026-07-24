@@ -246,6 +246,40 @@ def test_initial_schema_preserves_mysql_text_search_and_sort_fields() -> None:
     assert "readme_text TEXT" in migration.sql
 
 
+def test_transfer_control_schema_is_versioned_and_avoids_sensitive_payloads() -> None:
+    migration = discover_migrations()[1]
+
+    assert migration.filename == "0002_project_catalog_transfer_control.sql"
+    assert "CREATE TABLE project_catalog_migration_runs" in migration.sql
+    assert "CREATE TABLE project_catalog_migration_checkpoints" in migration.sql
+    assert "CREATE TABLE project_catalog_migration_failures" in migration.sql
+    assert "source_identity_sha256 CHAR(64) NOT NULL" in migration.sql
+    assert "cursor_json JSONB NOT NULL" in migration.sql
+    assert "last_batch_digest_sha256 CHAR(64)" in migration.sql
+    assert "source_prefix_digest_sha256 CHAR(64)" in migration.sql
+    assert "password" not in migration.sql.lower()
+    assert "readme_text" not in migration.sql.lower()
+
+
+def test_availability_schema_is_a_separate_versioned_migration() -> None:
+    migration = discover_migrations()[2]
+    assert migration.filename == "0003_github_repo_availability.sql"
+    assert "availability_status VARCHAR(32) NOT NULL DEFAULT 'active'" in migration.sql
+    assert "not_found_count INTEGER NOT NULL DEFAULT 0" in migration.sql
+    assert "availability_checked_at TEXT" in migration.sql
+
+
+def test_applied_event_schema_is_versioned_and_key_only() -> None:
+    migration = discover_migrations()[3]
+    assert migration.filename == "0004_project_catalog_applied_events.sql"
+    assert "CREATE TABLE project_catalog_applied_events" in migration.sql
+    assert "event_id UUID PRIMARY KEY" in migration.sql
+    assert "aggregate_key JSONB NOT NULL" in migration.sql
+    assert "idx_project_catalog_applied_events_outbox_id" in migration.sql
+    assert "readme_text" not in migration.sql.lower()
+    assert "description text" not in migration.sql.lower()
+
+
 def test_live_postgres_apply_twice_and_introspect_schema() -> None:
     dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
     if not dsn:
@@ -270,7 +304,7 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             )
 
         runner = PostgresMigrationRunner(DirectDatabase())  # type: ignore[arg-type]
-        assert [migration.version for migration in runner.apply()] == [1]
+        assert [migration.version for migration in runner.apply()] == [1, 2, 3, 4]
         assert runner.apply() == []
 
         with connection.cursor() as cursor:
@@ -302,6 +336,16 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
                 (schema_name,),
             )
             candidate_constraints = {row[0] for row in cursor.fetchall()}
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = %s
+                  AND table_name = 'github_repo_candidates'
+                """,
+                (schema_name,),
+            )
+            candidate_columns = {row[0] for row in cursor.fetchall()}
 
         assert {
             "app_schema_migrations",
@@ -309,6 +353,10 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             "github_repo_aliases",
             "github_repo_snapshots",
             "github_project_semantic_sources",
+            "project_catalog_migration_runs",
+            "project_catalog_migration_checkpoints",
+            "project_catalog_migration_failures",
+            "project_catalog_applied_events",
         } <= tables
         assert {
             "idx_gh_candidates_stars",
@@ -317,6 +365,11 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             "idx_project_semantic_index_status",
         } <= indexes
         assert {"PRIMARY KEY", "UNIQUE"} <= candidate_constraints
+        assert {
+            "availability_status",
+            "not_found_count",
+            "availability_checked_at",
+        } <= candidate_columns
     finally:
         connection.rollback()
         try:
