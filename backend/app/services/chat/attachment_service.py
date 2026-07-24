@@ -24,6 +24,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 from backend.app.core.config import settings
+from backend.app.services.chat.attachment_policy import ValidatedImage, ValidatedPdf
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +50,7 @@ class AttachmentMeta:
     """附件元数据。"""
 
     id: str
+    user_id: int
     type: AttachmentType
     status: AttachmentStatus
     filename: str = ""
@@ -98,33 +100,29 @@ _registry_lock = asyncio.Lock()
 
 
 async def upload_image(
-    base64_data: str,
-    mime_type: str = "image/jpeg",
-    filename: str = "",
+    content: ValidatedImage,
+    user_id: int,
 ) -> AttachmentMeta:
     """
     上传图片附件，存入内存缓存，返回附件元数据。
     """
     attachment_id = str(uuid.uuid4())
-    # 清理 data URI 前缀
-    b64 = base64_data
-    if b64.startswith("data:"):
-        b64 = b64.split(",", 1)[-1]
-
-    size_bytes = len(b64) * 3 // 4  # 近似原始大小
+    b64 = content.base64_data
+    size_bytes = len(content.data)
 
     expire_ts = time.time() + _IMAGE_TTL
 
     async with _image_lock:
         await _evict_expired_images()
-        _image_cache[attachment_id] = (b64, mime_type, expire_ts)
+        _image_cache[attachment_id] = (b64, content.mime_type, expire_ts)
 
     meta = AttachmentMeta(
         id=attachment_id,
+        user_id=user_id,
         type=AttachmentType.IMAGE,
         status=AttachmentStatus.READY,
-        filename=filename or f"image_{attachment_id[:8]}.jpg",
-        mime_type=mime_type,
+        filename=content.filename,
+        mime_type=content.mime_type,
         size_bytes=size_bytes,
         expires_at=expire_ts,
     )
@@ -136,23 +134,23 @@ async def upload_image(
 
 
 async def upload_pdf(
-    file_bytes: bytes,
-    filename: str = "",
+    content: ValidatedPdf,
+    user_id: int,
 ) -> AttachmentMeta:
     """
     上传 PDF 附件：落盘 → 提取文本 → 返回附件元数据。
     """
     attachment_id = str(uuid.uuid4())
-    safe_name = filename or f"upload_{attachment_id[:8]}.pdf"
     file_path = os.path.join(_PDF_UPLOAD_DIR, f"{attachment_id}.pdf")
 
     meta = AttachmentMeta(
         id=attachment_id,
+        user_id=user_id,
         type=AttachmentType.PDF,
         status=AttachmentStatus.PROCESSING,
-        filename=safe_name,
-        mime_type="application/pdf",
-        size_bytes=len(file_bytes),
+        filename=content.filename,
+        mime_type=content.mime_type,
+        size_bytes=len(content.data),
     )
 
     async with _registry_lock:
@@ -161,10 +159,10 @@ async def upload_pdf(
     # 落盘
     try:
         with open(file_path, "wb") as f:
-            f.write(file_bytes)
-    except Exception as exc:
+            f.write(content.data)
+    except Exception:
         meta.status = AttachmentStatus.ERROR
-        meta.error_msg = f"写盘失败: {exc}"
+        meta.error_msg = "附件保存失败"
         return meta
 
     # 提取文本（异步包装同步 fitz 调用）
@@ -173,21 +171,28 @@ async def upload_pdf(
         meta.page_count = page_count
         meta.text_preview = text[:500] if text else ""
         meta.status = AttachmentStatus.READY
-    except Exception as exc:
+    except Exception:
         meta.status = AttachmentStatus.ERROR
-        meta.error_msg = f"PDF 解析失败: {exc}"
+        meta.error_msg = "PDF 解析失败"
 
     return meta
 
 
-async def get_attachment(attachment_id: str) -> Optional[AttachmentMeta]:
-    """获取附件元数据。"""
+async def get_attachment(
+    attachment_id: str, user_id: int
+) -> Optional[AttachmentMeta]:
+    """获取当前用户拥有的附件元数据。"""
     async with _registry_lock:
-        return _attachment_registry.get(attachment_id)
+        meta = _attachment_registry.get(attachment_id)
+        return meta if meta is not None and meta.user_id == user_id else None
 
 
-async def get_image_base64(attachment_id: str) -> Optional[Tuple[str, str]]:
-    """获取图片附件的 base64 和 mime_type。"""
+async def get_image_base64(
+    attachment_id: str, user_id: int
+) -> Optional[Tuple[str, str]]:
+    """获取当前用户图片附件的 base64 和 mime_type。"""
+    if await get_attachment(attachment_id, user_id) is None:
+        return None
     async with _image_lock:
         entry = _image_cache.get(attachment_id)
     if entry is None or time.time() > entry[2]:
@@ -195,8 +200,11 @@ async def get_image_base64(attachment_id: str) -> Optional[Tuple[str, str]]:
     return entry[0], entry[1]
 
 
-async def get_pdf_text(attachment_id: str) -> Optional[str]:
-    """获取 PDF 附件的全文文本。"""
+async def get_pdf_text(attachment_id: str, user_id: int) -> Optional[str]:
+    """获取当前用户 PDF 附件的全文文本。"""
+    meta = await get_attachment(attachment_id, user_id)
+    if meta is None or meta.type != AttachmentType.PDF:
+        return None
     file_path = os.path.join(_PDF_UPLOAD_DIR, f"{attachment_id}.pdf")
     if not os.path.exists(file_path):
         return None
@@ -207,13 +215,15 @@ async def get_pdf_text(attachment_id: str) -> Optional[str]:
         return None
 
 
-async def list_attachments(attachment_ids: List[str]) -> List[AttachmentMeta]:
-    """批量获取附件元数据。"""
+async def list_attachments(
+    attachment_ids: List[str], user_id: int
+) -> List[AttachmentMeta]:
+    """批量获取当前用户拥有的附件元数据。"""
     result = []
     async with _registry_lock:
         for aid in attachment_ids:
             meta = _attachment_registry.get(aid)
-            if meta:
+            if meta is not None and meta.user_id == user_id:
                 result.append(meta)
     return result
 

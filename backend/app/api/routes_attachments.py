@@ -8,8 +8,6 @@ GET  /api/chat/attachments/{id}     — 查询附件状态
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from pydantic import BaseModel, Field
 
@@ -18,7 +16,12 @@ from backend.app.services.chat.attachment_service import (
     upload_image,
     upload_pdf,
     get_attachment,
-    AttachmentStatus,
+)
+from backend.app.services.chat.attachment_policy import (
+    AttachmentValidationError,
+    MAX_PDF_BYTES,
+    validate_image_attachment,
+    validate_pdf_attachment,
 )
 
 router = APIRouter()
@@ -54,14 +57,18 @@ class AttachmentResponse(BaseModel):
 @router.post("/chat/attachments/image", response_model=AttachmentResponse)
 async def upload_image_attachment(
     request: ImageUploadRequest,
-    _: dict = Depends(RequireUser),
+    user: dict = Depends(RequireUser),
 ) -> AttachmentResponse:
     """上传图片附件（base64 编码），返回 attachment_id。"""
-    meta = await upload_image(
-        base64_data=request.image_base64,
-        mime_type=request.mime_type,
-        filename=request.filename,
-    )
+    try:
+        content = validate_image_attachment(
+            request.image_base64,
+            request.mime_type,
+            request.filename,
+        )
+    except AttachmentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    meta = await upload_image(content=content, user_id=int(user["user_id"]))
     return AttachmentResponse(
         id=meta.id,
         type=meta.type.value,
@@ -81,25 +88,16 @@ async def upload_image_attachment(
 @router.post("/chat/attachments/pdf", response_model=AttachmentResponse)
 async def upload_pdf_attachment(
     file: UploadFile = File(...),
-    _: dict = Depends(RequireUser),
+    user: dict = Depends(RequireUser),
 ) -> AttachmentResponse:
     """上传 PDF 文件（multipart/form-data），返回 attachment_id。"""
-    # 验证文件类型
-    content_type = file.content_type or ""
-    if "pdf" not in content_type.lower() and not (file.filename or "").lower().endswith(
-        ".pdf"
-    ):
-        raise HTTPException(status_code=400, detail="仅支持 PDF 文件上传")
+    file_bytes = await file.read(MAX_PDF_BYTES + 1)
+    try:
+        content = validate_pdf_attachment(file_bytes, file.filename or "")
+    except AttachmentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # 限制文件大小（50MB）
-    file_bytes = await file.read()
-    if len(file_bytes) > 50 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="PDF 文件大小不能超过 50MB")
-
-    meta = await upload_pdf(
-        file_bytes=file_bytes,
-        filename=file.filename or "",
-    )
+    meta = await upload_pdf(content=content, user_id=int(user["user_id"]))
     return AttachmentResponse(
         id=meta.id,
         type=meta.type.value,
@@ -121,10 +119,10 @@ async def upload_pdf_attachment(
 @router.get("/chat/attachments/{attachment_id}", response_model=AttachmentResponse)
 async def get_attachment_status(
     attachment_id: str,
-    _: dict = Depends(RequireUser),
+    user: dict = Depends(RequireUser),
 ) -> AttachmentResponse:
     """查询附件状态与元数据。"""
-    meta = await get_attachment(attachment_id)
+    meta = await get_attachment(attachment_id, int(user["user_id"]))
     if meta is None:
         raise HTTPException(status_code=404, detail="附件不存在或已过期")
 

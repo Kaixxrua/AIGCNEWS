@@ -70,6 +70,57 @@ class ChatPersistenceRouteTests(unittest.TestCase):
         self.assertIn('"message_id": 12', events[-2])
         self.assertEqual(events[-1], "data: [DONE]\n\n")
 
+    def test_cross_owner_attachment_is_ignored_without_changing_sse(self) -> None:
+        repository = MagicMock()
+        persisted = {
+            "conversation": {"id": 7},
+            "assistant_message": {"id": 12},
+        }
+        rag_service = MagicMock()
+        seen_messages: list[str] = []
+
+        async def stream_chat(message, **kwargs):
+            seen_messages.append(message)
+            yield {"type": "content", "data": "answer"}
+
+        rag_service.stream_chat = stream_chat
+        request = ChatStreamRequest(
+            message="question", history=[], attachment_ids=["other-owner"]
+        )
+
+        async def collect() -> list[str]:
+            with (
+                patch.object(routes_chat, "HybridRetriever", return_value=MagicMock()),
+                patch.object(routes_chat, "ChatService", return_value=rag_service),
+                patch.object(routes_chat, "ConversationService"),
+                patch.object(
+                    routes_chat.asyncio,
+                    "to_thread",
+                    new=AsyncMock(return_value=persisted),
+                ),
+                patch(
+                    "backend.app.services.chat.attachment_service.get_attachment",
+                    new=AsyncMock(return_value=None),
+                ) as get_attachment,
+            ):
+                events = [
+                    event
+                    async for event in routes_chat._stream_persisted_chat(
+                        request,
+                        {"user_id": 3},
+                        conversation_repository=repository,
+                    )
+                ]
+                get_attachment.assert_awaited_once_with("other-owner", 3)
+                return events
+
+        events = asyncio.run(collect())
+
+        self.assertEqual(seen_messages, ["question"])
+        self.assertEqual(events[0], 'data: {"type": "content", "data": "answer"}\n\n')
+        self.assertIn('"type": "conversation"', events[-2])
+        self.assertEqual(events[-1], "data: [DONE]\n\n")
+
     def test_stream_error_still_emits_error_and_done(self) -> None:
         rag_service = MagicMock()
 

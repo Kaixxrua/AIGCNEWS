@@ -99,6 +99,7 @@ async def _stream_persisted_chat(
 
         attachment_context = ""
         attachment_ids = request.attachment_ids or []
+        owned_attachment_ids: List[str] = []
         if attachment_ids:
             from backend.app.services.chat.attachment_service import (
                 AttachmentStatus,
@@ -108,11 +109,12 @@ async def _stream_persisted_chat(
             )
 
             for aid in attachment_ids:
-                meta = await get_attachment(aid)
+                meta = await get_attachment(aid, user_id)
                 if meta is None or meta.status != AttachmentStatus.READY:
                     continue
+                owned_attachment_ids.append(aid)
                 if meta.type == AttachmentType.PDF:
-                    pdf_text = await get_pdf_text(aid)
+                    pdf_text = await get_pdf_text(aid, user_id)
                     if pdf_text:
                         truncated = pdf_text[:8000]
                         attachment_context += (
@@ -190,7 +192,7 @@ async def _stream_persisted_chat(
             assistant_content=answer_text,
             assistant_thinking=thinking_text,
             sources=sources,
-            attachments=_build_attachment_refs(attachment_ids),
+            attachments=_build_attachment_refs(owned_attachment_ids),
             title=raw_message[:60] if raw_message else None,
         )
 
