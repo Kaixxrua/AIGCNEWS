@@ -5,7 +5,27 @@ import MarkdownIt from 'markdown-it'
 import { api } from '../services/api'
 import { useEventSource } from '../composables/useEventSource'
 import { useAuthStore } from '../stores/authStore'
-import { Globe, FileText, Code2, Newspaper, Rocket, Circle, Pin, Mail, BellRing, BellOff, Send } from 'lucide-vue-next'
+import { Pin, Mail, BellRing, BellOff, Send } from 'lucide-vue-next'
+import {
+  DAILY_ONLY_TYPES,
+  PERIOD_TYPES,
+  REPORT_TYPES,
+  coercePeriodForReport,
+  coerceReportStreamText,
+  getPeriodTypeInfo,
+  getReportTypeInfo,
+  isPeriodDisabled as isReportPeriodDisabled,
+  isSourceSubscribed as hasSourceSubscription,
+  selectActiveDailySources,
+  type BatchSubscriptionResponse,
+  type PeriodKey,
+  type ReportKey,
+  type ReportMessageResponse,
+  type ReportResponse,
+  type ReportStreamEvent,
+  type Subscription,
+  type SubscriptionListResponse,
+} from '../features/report/reportViewModel'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -19,42 +39,17 @@ const isCached = ref(false)
 const errorMsg = ref('')
 const reportRef = ref<HTMLElement | null>(null)
 
-const REPORT_TYPES = [
-  { key: 'all',         label: '综合简报', icon: Globe,     desc: '全源汇总' },
-  { key: 'arxiv',       label: '学术报告', icon: FileText,  desc: 'HF Papers' },
-  { key: 'github',      label: '工程报告', icon: Code2,     desc: 'GitHub Hot' },
-  { key: 'news',        label: '行业报告', icon: Newspaper, desc: 'RSS 新闻' },
-  { key: 'producthunt', label: '产品报告', icon: Rocket,    desc: 'Product Hunt' },
-  { key: 'hackernews',  label: '社区报告', icon: Circle,    desc: 'Hacker News' },
-] as const
-
-const PERIOD_TYPES = [
-  { key: 'daily',   label: '日报' },
-  { key: 'weekly',  label: '周报' },
-  { key: 'monthly', label: '月报' },
-] as const
-
-const DAILY_ONLY_TYPES = new Set(['all', 'news', 'producthunt', 'hackernews'])
-
-type ReportKey = (typeof REPORT_TYPES)[number]['key']
-type PeriodKey = (typeof PERIOD_TYPES)[number]['key']
-
 const selectedType   = ref<ReportKey>('all')
 const selectedPeriod = ref<PeriodKey>('daily')
 const selectedDate   = ref<string>(new Date().toISOString().slice(0, 10))
 
 const isPeriodDisabled = (periodKey: PeriodKey): boolean =>
-  periodKey !== 'daily' && DAILY_ONLY_TYPES.has(selectedType.value)
+  isReportPeriodDisabled(selectedType.value, periodKey)
 
-const currentTypeInfo = computed(() => REPORT_TYPES.find(t => t.key === selectedType.value))
-const currentPeriodInfo = computed(() => PERIOD_TYPES.find(p => p.key === selectedPeriod.value))
+const currentTypeInfo = computed(() => getReportTypeInfo(selectedType.value))
+const currentPeriodInfo = computed(() => getPeriodTypeInfo(selectedPeriod.value))
 
 // ── 订阅状态 ──────────────────────────────────────────────────────────
-interface Subscription {
-  source: string
-  period: string
-  is_active?: number | boolean | string
-}
 
 const subscriptions = ref<Subscription[]>([])
 const isSubscribing = ref(false)
@@ -64,28 +59,15 @@ const showSubscribePanel = ref(false)
 const showLoginPrompt = ref(false)
 const selectedSubscribeSources = ref<ReportKey[]>([])
 
-const isActiveSubscription = (subscription: Subscription): boolean =>
-  subscription.is_active === undefined ||
-  subscription.is_active === true ||
-  subscription.is_active === 1 ||
-  subscription.is_active === '1' ||
-  subscription.is_active === 'true'
-
-const dailySubscriptions = computed(() =>
-  subscriptions.value.filter(s => s.period === 'daily' && isActiveSubscription(s)),
-)
-
 const isSourceSubscribed = (source: ReportKey): boolean =>
-  dailySubscriptions.value.some(s => s.source === source)
+  hasSourceSubscription(subscriptions.value, source)
 
 const isCurrentSubscribed = computed(() =>
   isSourceSubscribed(selectedType.value),
 )
 
 const openSubscribePanel = () => {
-  const currentDaily = dailySubscriptions.value
-    .map(s => s.source)
-    .filter((source): source is ReportKey => REPORT_TYPES.some(t => t.key === source))
+  const currentDaily = selectActiveDailySources(subscriptions.value)
   selectedSubscribeSources.value = currentDaily.length ? [...currentDaily] : [selectedType.value]
   showSubscribePanel.value = true
   errorMsg.value = ''
@@ -133,7 +115,7 @@ const confirmSubscribeSources = async () => {
   isSubscribing.value = true
   errorMsg.value = ''
   try {
-    const res = await api.post<{ message?: string; sources?: string[] }>('/report/subscriptions/batch', {
+    const res = await api.post<BatchSubscriptionResponse>('/report/subscriptions/batch', {
       sources: selectedSubscribeSources.value,
       period: 'daily',
     })
@@ -161,7 +143,7 @@ const confirmSubscribeSources = async () => {
 const loadSubscriptions = async () => {
   if (!authStore.isLoggedIn) return
   try {
-    const res = await api.get<{ items: Subscription[] }>('/report/subscriptions')
+    const res = await api.get<SubscriptionListResponse>('/report/subscriptions')
     subscriptions.value = res.data?.items ?? []
   } catch {
     subscriptions.value = []
@@ -201,7 +183,7 @@ const sendToEmail = async () => {
   isSendingEmail.value = true
   emailSentMsg.value = ''
   try {
-    const res = await api.post<{ message: string }>('/report/send-to-email', {
+    const res = await api.post<ReportMessageResponse>('/report/send-to-email', {
       source: selectedType.value,
       period: selectedPeriod.value,
       date: selectedDate.value,
@@ -272,22 +254,9 @@ const generate = async () => {
       force_regenerate: true,
     },
     onMessage: async (payload: unknown) => {
-      const event = payload as { type: string; data?: unknown }
+      const event = payload as ReportStreamEvent
       if (event.type === 'content' || event.type === 'chunk') {
-        let text = ''
-        const d = event.data
-        if (typeof d === 'string') {
-          text = d
-        } else if (Array.isArray(d)) {
-          text = d
-            .map((b: unknown) =>
-              typeof b === 'string' ? b : (b as Record<string, unknown>)?.text ?? '',
-            )
-            .join('')
-        } else {
-          text = d != null ? JSON.stringify(d) : ''
-        }
-        reportContent.value += text
+        reportContent.value += coerceReportStreamText(event.data)
         await scrollToBottom()
       } else if (event.type === 'error') {
         errorMsg.value = String(event.data ?? 'Unknown error')
@@ -301,7 +270,7 @@ const generate = async () => {
 // ── 加载缓存 ──────────────────────────────────────────────────────────
 const loadCachedReport = async () => {
   try {
-    const res = await api.get<{ content: string; date: string; id: number }>('/report/latest', {
+    const res = await api.get<ReportResponse>('/report/latest', {
       params: { source: selectedType.value, period: selectedPeriod.value, date: selectedDate.value },
     })
     if (res.data?.content) { reportContent.value = res.data.content; isCached.value = true; errorMsg.value = ''; return }
@@ -315,7 +284,7 @@ onMounted(() => {
 })
 
 watch(selectedType, (type) => {
-  if (DAILY_ONLY_TYPES.has(type) && selectedPeriod.value !== 'daily') selectedPeriod.value = 'daily'
+  selectedPeriod.value = coercePeriodForReport(type, selectedPeriod.value)
 })
 
 watch([selectedType, selectedPeriod, selectedDate], () => {
