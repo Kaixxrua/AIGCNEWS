@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import { api } from '../services/api'
 import { useEventSource } from '../composables/useEventSource'
+import { useFollowViewport } from '../composables/useFollowViewport'
+import { useReportController } from '../composables/useReportController'
 import { useReportSubscriptions } from '../composables/useReportSubscriptions'
 import { useAuthStore } from '../stores/authStore'
 import { Pin, Mail, BellRing, BellOff, Send } from 'lucide-vue-next'
@@ -11,17 +13,13 @@ import {
   DAILY_ONLY_TYPES,
   PERIOD_TYPES,
   REPORT_TYPES,
-  coercePeriodForReport,
-  coerceReportStreamText,
   getPeriodTypeInfo,
   getReportTypeInfo,
   isPeriodDisabled as isReportPeriodDisabled,
   type BatchSubscriptionResponse,
   type PeriodKey,
-  type ReportKey,
   type ReportMessageResponse,
   type ReportResponse,
-  type ReportStreamEvent,
   type SubscriptionListResponse,
 } from '../features/report/reportViewModel'
 
@@ -30,16 +28,39 @@ const router = useRouter()
 const route = useRoute()
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
-
-const reportContent = ref('')
-const isGenerating = ref(false)
-const isCached = ref(false)
-const errorMsg = ref('')
 const reportRef = ref<HTMLElement | null>(null)
+const { autoScroll, resetAutoScroll, scrollToBottom, resumeAutoScroll } = useFollowViewport(reportRef)
 
-const selectedType   = ref<ReportKey>('all')
-const selectedPeriod = ref<PeriodKey>('daily')
-const selectedDate   = ref<string>(new Date().toISOString().slice(0, 10))
+const { connect } = useEventSource()
+const {
+  reportContent,
+  isGenerating,
+  isCached,
+  errorMsg,
+  selectedSource: selectedType,
+  selectedPeriod,
+  selectedDate,
+  generate,
+} = useReportController({
+  operations: {
+    loadCachedReport: async params => {
+      const res = await api.get<ReportResponse>('/report/latest', { params })
+      return res.data
+    },
+    connectReportStream: ({ source, date, period, onMessage, onDone, onError }) => {
+      const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
+      return connect({
+        url: `${baseURL}/report/daily/stream`,
+        body: { source, date, period, force_regenerate: true },
+        onMessage,
+        onDone,
+        onError,
+      })
+    },
+  },
+  resetAutoScroll,
+  scrollToBottom,
+})
 
 const isPeriodDisabled = (periodKey: PeriodKey): boolean =>
   isReportPeriodDisabled(selectedType.value, periodKey)
@@ -96,98 +117,8 @@ const {
   setError: message => { errorMsg.value = message },
 })
 
-// ── 自动滚动 ──────────────────────────────────────────────────────────
-const autoScroll = ref(true)
-const onWheelHandler = (e: WheelEvent) => { if (e.deltaY < 0) autoScroll.value = false }
-let lastTouchY = 0
-const onTouchStart = (e: TouchEvent) => { lastTouchY = e.touches[0]?.clientY ?? 0 }
-const onTouchMoveHandler = (e: TouchEvent) => {
-  const currentY = e.touches[0]?.clientY ?? 0
-  if (currentY > lastTouchY) autoScroll.value = false
-  lastTouchY = currentY
-}
-
-const scrollToBottom = async () => {
-  if (!autoScroll.value) return
-  await nextTick()
-  const el = reportRef.value
-  if (!el) return
-  el.scrollTop = el.scrollHeight
-}
-
 onMounted(() => {
-  const el = reportRef.value
-  if (el) {
-    el.addEventListener('wheel', onWheelHandler, { passive: true })
-    el.addEventListener('touchstart', onTouchStart, { passive: true })
-    el.addEventListener('touchmove', onTouchMoveHandler, { passive: true })
-  }
-})
-
-onUnmounted(() => {
-  const el = reportRef.value
-  if (el) {
-    el.removeEventListener('wheel', onWheelHandler)
-    el.removeEventListener('touchstart', onTouchStart)
-    el.removeEventListener('touchmove', onTouchMoveHandler)
-  }
-})
-
-// ── SSE 生成（仅 Admin） ──────────────────────────────────────────────
-const generate = async () => {
-  if (isGenerating.value) return
-  isGenerating.value = true
-  reportContent.value = ''
-  errorMsg.value = ''
-  autoScroll.value = true
-
-  const { connect } = useEventSource()
-  const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
-  await connect({
-    url: `${baseURL}/report/daily/stream`,
-    body: {
-      source: selectedType.value,
-      date: selectedDate.value,
-      period: selectedPeriod.value,
-      force_regenerate: true,
-    },
-    onMessage: async (payload: unknown) => {
-      const event = payload as ReportStreamEvent
-      if (event.type === 'content' || event.type === 'chunk') {
-        reportContent.value += coerceReportStreamText(event.data)
-        await scrollToBottom()
-      } else if (event.type === 'error') {
-        errorMsg.value = String(event.data ?? 'Unknown error')
-      }
-    },
-    onDone: () => { isGenerating.value = false },
-    onError: (err: unknown) => { errorMsg.value = String(err); isGenerating.value = false },
-  })
-}
-
-// ── 加载缓存 ──────────────────────────────────────────────────────────
-const loadCachedReport = async () => {
-  try {
-    const res = await api.get<ReportResponse>('/report/latest', {
-      params: { source: selectedType.value, period: selectedPeriod.value, date: selectedDate.value },
-    })
-    if (res.data?.content) { reportContent.value = res.data.content; isCached.value = true; errorMsg.value = ''; return }
-    reportContent.value = ''; isCached.value = false
-  } catch { reportContent.value = ''; isCached.value = false }
-}
-
-onMounted(() => {
-  loadCachedReport()
-  loadSubscriptions()
-})
-
-watch(selectedType, (type) => {
-  selectedPeriod.value = coercePeriodForReport(type, selectedPeriod.value)
-})
-
-watch([selectedType, selectedPeriod, selectedDate], () => {
-  if (isGenerating.value) return
-  void loadCachedReport()
+  void loadSubscriptions()
 })
 </script>
 
@@ -425,7 +356,7 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
       <button
         v-if="isGenerating && !autoScroll"
         class="sticky bottom-4 ml-auto mr-4 btn-primary text-xs"
-        @click="() => { autoScroll = true; scrollToBottom() }"
+        @click="resumeAutoScroll"
       >
         <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         回到底部
