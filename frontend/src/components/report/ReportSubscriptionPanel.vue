@@ -1,0 +1,85 @@
+<script setup lang="ts">
+import { BellRing } from 'lucide-vue-next'
+import { REPORT_TYPES, type ReportKey } from '../../features/report/reportViewModel'
+
+const props = defineProps<{
+  showLoginPrompt: boolean
+  showSubscribePanel: boolean
+  isSubscribing: boolean
+  selectedSubscribeSources: ReportKey[]
+  isSourceSubscribed: (source: ReportKey) => boolean
+}>()
+
+const emit = defineEmits<{
+  closeLoginPrompt: []
+  loginAndRedirect: []
+  closeSubscribePanel: []
+  toggleSubscribeSource: [source: ReportKey]
+  confirmSubscribeSources: []
+}>()
+</script>
+
+<template>
+  <!-- 游客订阅登录提示 -->
+  <div v-if="showLoginPrompt" class="rounded-2xl border border-amber-100 bg-amber-50/90 p-3 shadow-sm">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2 text-sm text-amber-800">
+        <BellRing class="h-4 w-4 shrink-0" />
+        <span>请先登录后再订阅简报，即将跳转到登录页面。</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="rounded-full px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100" @click="emit('closeLoginPrompt')">稍后</button>
+        <button class="rounded-full bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700" @click="emit('loginAndRedirect')">去登录</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日报订阅领域选择 -->
+  <div v-if="showSubscribePanel" class="rounded-2xl border border-indigo-100 bg-white/90 p-3 shadow-sm">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <p class="text-sm font-semibold text-stone-700">选择要订阅的日报领域</p>
+        <p class="text-2xs text-stone-400 mt-0.5">日报生成后会自动推送到你的注册邮箱；综合简报与单领域报告会分别推送。</p>
+      </div>
+      <button class="text-2xs text-stone-400 hover:text-stone-600" :disabled="isSubscribing" @click="emit('closeSubscribePanel')">取消</button>
+    </div>
+
+    <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <button
+        v-for="type in REPORT_TYPES"
+        :key="type.key"
+        type="button"
+        class="flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all duration-200"
+        :class="selectedSubscribeSources.includes(type.key)
+          ? 'border-indigo-200 bg-indigo-50 text-indigo-800'
+          : 'border-stone-100 bg-white/70 text-stone-600 hover:bg-accent-soft'"
+        :disabled="isSubscribing"
+        @click="emit('toggleSubscribeSource', type.key)"
+      >
+        <span class="flex h-4 w-4 items-center justify-center rounded border text-[10px]"
+          :class="selectedSubscribeSources.includes(type.key) ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-stone-300 text-transparent'">✓</span>
+        <component :is="type.icon" class="h-4 w-4 shrink-0" />
+        <span class="min-w-0 flex-1">
+          <span class="block text-xs font-semibold">{{ type.label }}</span>
+          <span class="block text-2xs opacity-70">{{ type.desc }}{{ isSourceSubscribed(type.key) ? ' · 已订阅' : '' }}</span>
+        </span>
+      </button>
+    </div>
+
+    <div class="mt-3 flex items-center justify-end gap-2">
+      <button
+        class="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 hover:bg-accent-soft"
+        :disabled="isSubscribing"
+        @click="emit('closeSubscribePanel')"
+      >取消</button>
+      <button
+        class="btn-primary gap-1.5 text-xs py-1.5 px-3"
+        :disabled="isSubscribing || !selectedSubscribeSources.length"
+        @click="emit('confirmSubscribeSources')"
+      >
+        <span v-if="isSubscribing" class="h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+        确定订阅 {{ selectedSubscribeSources.length }} 个领域
+      </button>
+    </div>
+  </div>
+</template>
