@@ -16,8 +16,6 @@ const authStore = useAuthStore()
 
 /** 品牌名称 — 从 Vite 环境变量读取，回退默认值 */
 const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
-
-const navItems = NAV_ITEMS
 </script>
 
 <template>
@@ -47,7 +45,7 @@ const navItems = NAV_ITEMS
     </div>
 
     <AppDock
-      :items="navItems"
+      :items="NAV_ITEMS"
       :current-path="route.path"
       :is-admin="authStore.isAdmin"
       :is-logged-in="authStore.isLoggedIn"

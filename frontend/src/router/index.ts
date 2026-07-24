@@ -105,11 +105,7 @@ router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore(pinia)
   const redirect = getRoutePolicyRedirect(to, authStore)
 
-  if (redirect) {
-    next(redirect)
-    return
-  }
-
+  if (redirect) return next(redirect)
   next()
 })
 
