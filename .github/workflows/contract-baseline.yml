@@ -1,6 +1,9 @@
 name: Contract Baseline
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -8,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: contract-baseline-${{ github.ref }}
+  group: contract-baseline-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -116,6 +119,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Run frontend unit tests
+        run: npm run test:unit
 
       - name: Build frontend
         run: npm run build
