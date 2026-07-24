@@ -1,4 +1,4 @@
-import { ref, useTemplateRef, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
 import { useChatStore } from '../stores/chatStore'
@@ -14,12 +14,7 @@ export const useChatAttachments = (inputText: Ref<string>) => {
   const authStore = useAuthStore()
   const router = useRouter()
   const isUploading = ref(false)
-  const fileInputRef = useTemplateRef<HTMLInputElement>('fileInputRef')
   const attachmentMetas = ref<AttachmentMeta[]>([])
-
-  const openFilePicker = () => {
-    fileInputRef.value?.click()
-  }
 
   const removeAttachment = (attachmentId: string) => {
     store.removePendingAttachment(attachmentId)
@@ -89,9 +84,7 @@ export const useChatAttachments = (inputText: Ref<string>) => {
 
   return {
     isUploading,
-    fileInputRef,
     attachmentMetas,
-    openFilePicker,
     removeAttachment,
     handleFileChange,
     clearAttachmentMetas,
