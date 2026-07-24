@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import MarkdownIt from 'markdown-it'
 import ReportContentPanel from '../components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '../components/report/ReportControlsPanel.vue'
 import ReportSubscriptionPanel from '../components/report/ReportSubscriptionPanel.vue'
@@ -10,6 +9,7 @@ import { useEventSource } from '../composables/useEventSource'
 import { useFollowViewport } from '../composables/useFollowViewport'
 import { useReportController } from '../composables/useReportController'
 import { useReportSubscriptions } from '../composables/useReportSubscriptions'
+import { useLatexRenderer } from '../composables/useLatexRenderer'
 import { useAuthStore } from '../stores/authStore'
 import {
   getPeriodTypeInfo,
@@ -26,7 +26,7 @@ const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+const { renderMarkdown } = useLatexRenderer()
 const reportRef = ref<HTMLElement | null>(null)
 const { autoScroll, resetAutoScroll, scrollToBottom, resumeAutoScroll } = useFollowViewport(reportRef)
 
@@ -172,7 +172,7 @@ const {
         :is-generating="isGenerating"
         :current-type-label="currentTypeInfo?.label"
         :auto-scroll="autoScroll"
-        :markdown="md"
+        :render-markdown="renderMarkdown"
         @resume-auto-scroll="resumeAutoScroll"
       />
     </div>

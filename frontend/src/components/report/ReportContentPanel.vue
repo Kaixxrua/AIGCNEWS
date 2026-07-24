@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import type MarkdownIt from 'markdown-it'
-
 const props = defineProps<{
   reportContent: string
   isGenerating: boolean
   currentTypeLabel?: string
   autoScroll: boolean
-  markdown: MarkdownIt
+  renderMarkdown: (content: string, allowHtml?: boolean) => string
 }>()
 
 const emit = defineEmits<{
@@ -43,7 +41,7 @@ const emit = defineEmits<{
 
   <!-- 报告正文 -->
   <div v-if="reportContent" class="p-5">
-    <article class="prose-content prose-report max-w-none" v-html="markdown.render(reportContent)" />
+    <article class="prose-content prose-report max-w-none" v-html="renderMarkdown(reportContent, false)" />
     <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />
   </div>
 

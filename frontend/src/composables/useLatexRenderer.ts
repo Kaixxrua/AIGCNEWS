@@ -13,6 +13,9 @@ import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { copyToClipboard } from './useClipboard'
 
+const markdownWithHtml = new MarkdownIt({ html: true, linkify: true, breaks: true })
+const markdownWithoutHtml = new MarkdownIt({ html: false, linkify: true, breaks: true })
+
 // ── 内部辅助 ──────────────────────────────────────────────────────────────
 
 /** HTML 属性转义 */
@@ -79,11 +82,12 @@ export function renderLatex(text: string): string {
 
 /**
  * renderMarkdown: 先走 LaTeX 渲染，再走 markdown-it，最后后处理 <code> 中残留 LaTeX。
+ * allowHtml=false 用于来自用户、模型或报告的非信任内容。
  */
-export function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string, allowHtml = true): string {
   const withKatex = renderLatex(text || '')
-  const mdInstance = new MarkdownIt({ html: true, linkify: true, breaks: true })
-  let html = mdInstance.render(withKatex)
+  const markdown = allowHtml ? markdownWithHtml : markdownWithoutHtml
+  let html = markdown.render(withKatex)
 
   // 后处理：先处理 <pre><code>（块级），再处理行内 <code>
   html = html.replace(/<pre><code(?:\s[^>]*)?>([\s\S]*?)<\/code><\/pre>/g, (_m, inner: string) => {
