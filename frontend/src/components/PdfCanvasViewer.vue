@@ -9,16 +9,16 @@
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import {
+  getPdfProgressPercent,
+  type PdfPageEntry,
+  type PdfProgress,
+} from '../features/papers/pdfViewerModel'
+
+export type { PdfProgress } from '../features/papers/pdfViewerModel'
 
 // Vite ?url 语法确保 Worker 被正确打包
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-
-export interface PdfProgress {
-  phase: 'idle' | 'fetching' | 'parsing' | 'rendering' | 'done' | 'error'
-  loadedPages: number
-  totalPages: number
-  percent: number
-}
 
 const props = defineProps<{ pdfUrl: string | null | undefined }>()
 
@@ -41,10 +41,7 @@ const scale = ref(1.5)
 const isMounted = ref(false)
 
 /** 渲染进度百分比（0-100） */
-const progressPercent = computed(() => {
-  if (totalPages.value === 0) return 0
-  return Math.round(10 + (loadedPages.value / totalPages.value) * 90)
-})
+const progressPercent = computed(() => getPdfProgressPercent(loadedPages.value, totalPages.value))
 
 /** 当前进度阶段 */
 const progressPhase = ref<PdfProgress['phase']>('idle')
@@ -59,11 +56,7 @@ const emitProgress = () => {
   emit('progress', payload)
 }
 
-interface PageEntry {
-  canvas: HTMLCanvasElement
-  viewport: { width: number; height: number; scale: number }
-}
-const pageEntries = ref<PageEntry[]>([])
+const pageEntries = ref<PdfPageEntry[]>([])
 
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 let renderTask: pdfjsLib.RenderTask | null = null

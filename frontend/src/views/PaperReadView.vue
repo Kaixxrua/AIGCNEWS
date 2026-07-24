@@ -6,23 +6,16 @@ import { useLatexRenderer } from '../composables/useLatexRenderer'
 import { api, fetchPaperDetail, type PaperItem } from '../services/api'
 import { useChatStore } from '../stores/chatStore'
 import PdfCanvasViewer from '../components/PdfCanvasViewer.vue'
-import type { PdfProgress } from '../components/PdfCanvasViewer.vue'
+import type { PdfProgress } from '../features/papers/pdfViewerModel'
+import {
+  filterAndSortGlobalConversations,
+  getMessageWatcherSignature,
+  mapChatStoreMessage,
+  type PaperReaderMessage,
+  type VisionPopup,
+  type VisionRegionCapture,
+} from '../features/papers/paperReaderModel'
 import { Eye, Clipboard, Camera } from 'lucide-vue-next'
-
-interface PaperMsg {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  thinking?: string
-  thinkingPreview?: string
-  hasThinking?: boolean
-  isThinking?: boolean
-  thinkingDurationSec?: number
-  isStreaming?: boolean
-  visionExtract?: string
-  imageBase64?: string
-  showRaw?: boolean
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -41,13 +34,7 @@ const currentConversationId = computed(() => chatStore.activeConversationId)
 const showConvPanel = ref(false)
 
 const conversationList = computed(() => {
-  return Object.values(chatStore.conversationMap)
-    .filter((c) => c.scope === 'global')
-    .sort((a, b) => {
-      const ta = a.updatedAt ?? a.createdAt ?? ''
-      const tb = b.updatedAt ?? b.createdAt ?? ''
-      return tb.localeCompare(ta)
-    })
+  return filterAndSortGlobalConversations(Object.values(chatStore.conversationMap))
 })
 
 const loadGlobalConvList = async () => {
@@ -116,22 +103,11 @@ const onPdfProgress = (payload: PdfProgress) => {
   pdfProgress.value = payload
 }
 
-const chatMessages = computed<PaperMsg[]>(() => {
+const chatMessages = computed<PaperReaderMessage[]>(() => {
   const active = currentConversationId.value
   if (!active) return []
   const mapped = chatStore.messageMap[active] || []
-  return mapped.map((item) => ({
-    id: item.id,
-    role: item.role,
-    content: item.content,
-    thinking: item.thinking,
-    thinkingPreview: item.thinkingPreview,
-    hasThinking: item.hasThinking || !!item.thinking,
-    isThinking: item.isThinking,
-    thinkingDurationSec: item.thinkingDurationSec,
-    isStreaming: item.isStreaming,
-    showRaw: false,
-  }))
+  return mapped.map(mapChatStoreMessage)
 })
 
 // 当前活跃会话摘要（用于显示标题）
@@ -144,9 +120,9 @@ const activeConversationTitle = computed(() => {
 const inputText = ref('')
 const chatListRef = ref<HTMLElement | null>(null)
 const isSending = computed(() => chatStore.isStreaming)
-const visionMessages = ref<PaperMsg[]>([])
+const visionMessages = ref<PaperReaderMessage[]>([])
 
-const messages = computed<PaperMsg[]>(() => [...chatMessages.value, ...visionMessages.value])
+const messages = computed<PaperReaderMessage[]>(() => [...chatMessages.value, ...visionMessages.value])
 const thinkingExpanded = ref<Record<string, boolean>>({})
 
 const toggleThinking = (msgId: string) => {
@@ -167,23 +143,16 @@ const scrollBottom = async () => {
   if (chatListRef.value) chatListRef.value.scrollTop = chatListRef.value.scrollHeight
 }
 
-watch(() => messages.value.map((item) => `${item.id}:${item.content.length}:${item.thinking?.length || 0}:${item.hasThinking ? 1 : 0}:${item.isThinking ? 1 : 0}:${item.thinkingDurationSec || 0}`).join('|'), () => {
+watch(() => getMessageWatcherSignature(messages.value), () => {
   void scrollBottom()
 })
 
-const visionPopup = ref<{
-  visible: boolean
-  base64: string
-  question: string
-  pageIndex: number
-} | null>(null)
+const visionPopup = ref<VisionPopup | null>(null)
 const popupInputRef = ref<HTMLInputElement | null>(null)
 
 const chatServiceDisabled = true
 
-const onRightclickRegion = async (payload: {
-  pageIndex: number; base64: string; x: number; y: number; w: number; h: number
-}) => {
+const onRightclickRegion = async (payload: VisionRegionCapture) => {
   if (chatServiceDisabled) {
     visionPopup.value = null
     return
@@ -202,7 +171,7 @@ const closePopup = () => {
   visionPopup.value = null
 }
 
-const patchVisionMessage = (id: string, patch: Partial<PaperMsg>) => {
+const patchVisionMessage = (id: string, patch: Partial<PaperReaderMessage>) => {
   visionMessages.value = visionMessages.value.map((item) => item.id === id ? { ...item, ...patch } : item)
 }
 
