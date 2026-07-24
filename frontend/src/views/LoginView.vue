@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import AuthFeedback from '../components/auth/AuthFeedback.vue'
+import AuthPageHeader from '../components/auth/AuthPageHeader.vue'
 import { useAuthStore } from '../stores/authStore'
 import { getErrorDetail, getSafeInternalRedirect, hasTrimmedValue } from '../features/auth/authViewModel'
 
@@ -44,17 +46,13 @@ const handleKeydown = (e: KeyboardEvent) => {
     <div class="w-full max-w-sm">
 
       <!-- 标题区 -->
-      <div class="mb-8 text-center stagger-enter">
-        <div class="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-stone-100">
-          <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/>
-            <path d="M9.5 9.5a2.5 2.5 0 015 0c0 2-2 3-2.5 4"/>
-            <circle cx="12" cy="17" r=".5" fill="currentColor"/>
-          </svg>
-        </div>
-        <h1 class="text-2xl font-bold text-stone-800 tracking-tight font-serif">AIGC 资讯 · 登录</h1>
-        <p class="mt-1 text-sm text-stone-400">欢迎回来，请登录您的账号</p>
-      </div>
+      <AuthPageHeader title="AIGC 资讯 · 登录" description="欢迎回来，请登录您的账号">
+        <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/>
+          <path d="M9.5 9.5a2.5 2.5 0 015 0c0 2-2 3-2.5 4"/>
+          <circle cx="12" cy="17" r=".5" fill="currentColor"/>
+        </svg>
+      </AuthPageHeader>
 
       <!-- 表单卡片 -->
       <div class="glass-card p-6 space-y-4 stagger-enter" style="animation-delay: 0.1s">
@@ -88,17 +86,7 @@ const handleKeydown = (e: KeyboardEvent) => {
         </div>
 
         <!-- 错误提示 -->
-        <Transition name="fade-msg">
-          <div
-            v-if="errorMsg"
-            class="flex items-center gap-2 rounded-2xl bg-rose-50 px-4 py-2.5 text-sm text-rose-600 border border-rose-200"
-          >
-            <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            {{ errorMsg }}
-          </div>
-        </Transition>
+        <AuthFeedback :message="errorMsg" type="error" />
 
         <div class="text-right">
           <RouterLink
@@ -136,15 +124,3 @@ const handleKeydown = (e: KeyboardEvent) => {
     </div>
   </div>
 </template>
-
-<style scoped>
-.fade-msg-enter-active,
-.fade-msg-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.fade-msg-enter-from,
-.fade-msg-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-</style>
