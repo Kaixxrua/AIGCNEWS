@@ -16,6 +16,10 @@ export interface PdfPageEntry {
   }
 }
 
+export interface PdfDocumentRendererOptions {
+  onProgress: (progress: PdfProgress) => void
+}
+
 export function getPdfProgressPercent(loadedPages: number, totalPages: number): number {
   if (totalPages === 0) return 0
   return Math.round(10 + (loadedPages / totalPages) * 90)
