@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import { api } from '../services/api'
 import { useEventSource } from '../composables/useEventSource'
+import { useReportSubscriptions } from '../composables/useReportSubscriptions'
 import { useAuthStore } from '../stores/authStore'
 import { Pin, Mail, BellRing, BellOff, Send } from 'lucide-vue-next'
 import {
@@ -15,15 +16,12 @@ import {
   getPeriodTypeInfo,
   getReportTypeInfo,
   isPeriodDisabled as isReportPeriodDisabled,
-  isSourceSubscribed as hasSourceSubscription,
-  selectActiveDailySources,
   type BatchSubscriptionResponse,
   type PeriodKey,
   type ReportKey,
   type ReportMessageResponse,
   type ReportResponse,
   type ReportStreamEvent,
-  type Subscription,
   type SubscriptionListResponse,
 } from '../features/report/reportViewModel'
 
@@ -51,152 +49,52 @@ const currentPeriodInfo = computed(() => getPeriodTypeInfo(selectedPeriod.value)
 
 // ── 订阅状态 ──────────────────────────────────────────────────────────
 
-const subscriptions = ref<Subscription[]>([])
-const isSubscribing = ref(false)
-const isSendingEmail = ref(false)
-const emailSentMsg = ref('')
-const showSubscribePanel = ref(false)
-const showLoginPrompt = ref(false)
-const selectedSubscribeSources = ref<ReportKey[]>([])
-
-const isSourceSubscribed = (source: ReportKey): boolean =>
-  hasSourceSubscription(subscriptions.value, source)
-
-const isCurrentSubscribed = computed(() =>
-  isSourceSubscribed(selectedType.value),
-)
-
-const openSubscribePanel = () => {
-  const currentDaily = selectActiveDailySources(subscriptions.value)
-  selectedSubscribeSources.value = currentDaily.length ? [...currentDaily] : [selectedType.value]
-  showSubscribePanel.value = true
-  errorMsg.value = ''
-}
-
-const promptLoginForSubscribe = () => {
-  showLoginPrompt.value = true
-  errorMsg.value = '请先登录后再订阅简报'
-  setTimeout(() => {
-    if (showLoginPrompt.value && !authStore.isLoggedIn) goToLogin()
-  }, 900)
-}
-
-const goToLogin = () => {
-  router.push({ path: '/login', query: { redirect: route.fullPath } })
-}
-
-const closeLoginPrompt = () => {
-  showLoginPrompt.value = false
-}
-
-const handleLoginAndRedirect = () => {
-  showLoginPrompt.value = false
-  goToLogin()
-}
-
-const handleManageSubscriptions = () => {
-  if (!authStore.isLoggedIn) {
-    promptLoginForSubscribe()
-    return
-  }
-  openSubscribePanel()
-}
-
-const toggleSubscribeSource = (source: ReportKey) => {
-  if (selectedSubscribeSources.value.includes(source)) {
-    selectedSubscribeSources.value = selectedSubscribeSources.value.filter(item => item !== source)
-  } else {
-    selectedSubscribeSources.value = [...selectedSubscribeSources.value, source]
-  }
-}
-
-const confirmSubscribeSources = async () => {
-  if (isSubscribing.value || !authStore.isLoggedIn || !selectedSubscribeSources.value.length) return
-  isSubscribing.value = true
-  errorMsg.value = ''
-  try {
-    const res = await api.post<BatchSubscriptionResponse>('/report/subscriptions/batch', {
-      sources: selectedSubscribeSources.value,
-      period: 'daily',
-    })
-    const subscribedSources = new Set(res.data?.sources ?? selectedSubscribeSources.value)
-    await loadSubscriptions()
-    subscriptions.value = [
-      ...subscriptions.value.filter(s => s.period !== 'daily' || !subscribedSources.has(s.source)),
-      ...Array.from(subscribedSources).map(source => ({
-        source,
-        period: 'daily',
-        is_active: true,
-      })),
-    ]
-    emailSentMsg.value = res.data?.message || '订阅成功，日报生成后会自动推送到邮箱'
-    setTimeout(() => { emailSentMsg.value = '' }, 4000)
-    showSubscribePanel.value = false
-  } catch (err: unknown) {
-    const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-    errorMsg.value = msg || '订阅操作失败'
-  } finally {
-    isSubscribing.value = false
-  }
-}
-
-const loadSubscriptions = async () => {
-  if (!authStore.isLoggedIn) return
-  try {
-    const res = await api.get<SubscriptionListResponse>('/report/subscriptions')
-    subscriptions.value = res.data?.items ?? []
-  } catch {
-    subscriptions.value = []
-  }
-}
-
-const toggleSubscribe = async () => {
-  if (isSubscribing.value) return
-  if (!authStore.isLoggedIn) {
-    promptLoginForSubscribe()
-    return
-  }
-  if (!isCurrentSubscribed.value) {
-    openSubscribePanel()
-    return
-  }
-  isSubscribing.value = true
-  errorMsg.value = ''
-  try {
-    await api.post('/report/unsubscribe', { source: selectedType.value, period: 'daily' })
-    await loadSubscriptions()
-    subscriptions.value = subscriptions.value.filter(
-      s => !(s.source === selectedType.value && s.period === 'daily'),
-    )
-    emailSentMsg.value = '已取消当前简报订阅'
-    setTimeout(() => { emailSentMsg.value = '' }, 4000)
-  } catch (err: unknown) {
-    const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-    errorMsg.value = msg || '订阅操作失败'
-  } finally {
-    isSubscribing.value = false
-  }
-}
-
-const sendToEmail = async () => {
-  if (isSendingEmail.value || !authStore.isLoggedIn) return
-  isSendingEmail.value = true
-  emailSentMsg.value = ''
-  try {
-    const res = await api.post<ReportMessageResponse>('/report/send-to-email', {
-      source: selectedType.value,
-      period: selectedPeriod.value,
-      date: selectedDate.value,
-    })
-    emailSentMsg.value = res.data?.message || '已发送'
-    setTimeout(() => { emailSentMsg.value = '' }, 4000)
-  } catch (err: unknown) {
-    const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-    errorMsg.value = msg || '发送失败'
-  } finally {
-    isSendingEmail.value = false
-  }
-}
+const {
+  isSubscribing,
+  isSendingEmail,
+  emailSentMsg,
+  showSubscribePanel,
+  showLoginPrompt,
+  selectedSubscribeSources,
+  isSourceSubscribed,
+  isCurrentSubscribed,
+  promptLoginForSubscribe,
+  closeLoginPrompt,
+  handleLoginAndRedirect,
+  handleManageSubscriptions,
+  closeSubscribePanel,
+  toggleSubscribeSource,
+  confirmSubscribeSources,
+  loadSubscriptions,
+  toggleSubscribe,
+  sendToEmail,
+} = useReportSubscriptions({
+  isLoggedIn: computed(() => authStore.isLoggedIn),
+  selectedSource: selectedType,
+  selectedPeriod,
+  selectedDate,
+  operations: {
+    loadSubscriptions: async () => {
+      const res = await api.get<SubscriptionListResponse>('/report/subscriptions')
+      return res.data
+    },
+    subscribeSources: async payload => {
+      const res = await api.post<BatchSubscriptionResponse>('/report/subscriptions/batch', payload)
+      return res.data
+    },
+    unsubscribe: async payload => {
+      await api.post('/report/unsubscribe', payload)
+    },
+    sendToEmail: async payload => {
+      const res = await api.post<ReportMessageResponse>('/report/send-to-email', payload)
+      return res.data
+    },
+  },
+  redirectToLogin: () => {
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+  },
+  setError: message => { errorMsg.value = message },
+})
 
 // ── 自动滚动 ──────────────────────────────────────────────────────────
 const autoScroll = ref(true)
@@ -440,7 +338,7 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
             <p class="text-sm font-semibold text-stone-700">选择要订阅的日报领域</p>
             <p class="text-2xs text-stone-400 mt-0.5">日报生成后会自动推送到你的注册邮箱；综合简报与单领域报告会分别推送。</p>
           </div>
-          <button class="text-2xs text-stone-400 hover:text-stone-600" :disabled="isSubscribing" @click="showSubscribePanel = false">取消</button>
+          <button class="text-2xs text-stone-400 hover:text-stone-600" :disabled="isSubscribing" @click="closeSubscribePanel">取消</button>
         </div>
 
         <div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -469,7 +367,7 @@ watch([selectedType, selectedPeriod, selectedDate], () => {
           <button
             class="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 hover:bg-accent-soft"
             :disabled="isSubscribing"
-            @click="showSubscribePanel = false"
+            @click="closeSubscribePanel"
           >取消</button>
           <button
             class="btn-primary gap-1.5 text-xs py-1.5 px-3"
