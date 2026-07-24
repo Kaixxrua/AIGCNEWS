@@ -47,10 +47,6 @@ const {
   setPopupInputRef,
 } = controller
 
-const updateVisionQuestion = (question: string) => {
-  if (visionPopup.value) visionPopup.value.question = question
-}
-
 onMounted(() => { void initializePaperContext(paperId.value) })
 watch(paperId, handlePaperIdChange)
 onMounted(() => document.addEventListener('click', handleFormulaCopy))
@@ -84,12 +80,11 @@ onUnmounted(() => document.removeEventListener('click', handleFormulaCopy))
       :paper-loading="paperLoading"
       :paper-error="paperError"
       :pdf-progress="pdfProgress"
-      :vision-popup="visionPopup"
+      v-model:vision-popup="visionPopup"
       :is-sending="isSending"
       @download-pdf="downloadPdf"
       @rightclick-region="onRightclickRegion"
       @progress="onPdfProgress"
-      @update:vision-question="updateVisionQuestion"
       @popup-keydown="handlePopupKeydown"
       @send-vision="sendVision"
       @close-popup="closePopup"

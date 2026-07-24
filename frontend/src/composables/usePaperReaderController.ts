@@ -65,8 +65,6 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   })
   const isSending = computed(() => options.isStreaming.value)
 
-  const loadGlobalConvList = async () => { await options.loadConversations() }
-
   const loadPaper = async (id: string) => {
     if (!id) {
       paperError.value = '无效的论文 ID'
@@ -88,7 +86,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   const initializePaperContext = async (id: string) => {
     await loadPaper(id)
     if (!options.activeConversationId.value) await options.ensureGlobalConversation()
-    await loadGlobalConvList()
+    await options.loadConversations()
   }
 
   const handlePaperIdChange = (newId: string) => {
@@ -107,7 +105,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
     showConvPanel.value = false
     visionMessages.value = []
     await options.ensureGlobalConversation('新对话')
-    await loadGlobalConvList()
+    await options.loadConversations()
   }
 
   const deleteCurrentConversation = async () => {
@@ -115,7 +113,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
     visionMessages.value = []
     showConvPanel.value = false
     await options.deleteActiveConversation()
-    await loadGlobalConvList()
+    await options.loadConversations()
   }
 
   const setChatListRef = (element: Element | null) => {
@@ -237,8 +235,8 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
 
   return {
     paper, paperLoading, paperError, showConvPanel, currentConversationId, conversationList,
-    activeConversationTitle, inputText, chatListRef, setChatListRef, isSending, messages, thinkingExpanded,
-    visionPopup, popupInputRef, setPopupInputRef, pdfProgress, initializePaperContext, handlePaperIdChange,
+    activeConversationTitle, inputText, setChatListRef, isSending, messages,
+    visionPopup, setPopupInputRef, pdfProgress, initializePaperContext, handlePaperIdChange,
     switchConversation, newConversation, deleteCurrentConversation, toggleThinking,
     isThinkingExpanded, onRightclickRegion, closePopup, sendVision, sendText,
     handleKeydown, handlePopupKeydown, onPdfProgress, downloadPdf,

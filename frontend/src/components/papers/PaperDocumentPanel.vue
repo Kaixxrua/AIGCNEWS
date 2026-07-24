@@ -18,7 +18,7 @@ const emit = defineEmits<{
   downloadPdf: []
   rightclickRegion: [payload: VisionRegionCapture]
   progress: [payload: PdfProgress]
-  'update:visionQuestion': [question: string]
+  'update:visionPopup': [popup: VisionPopup]
   popupKeydown: [event: KeyboardEvent]
   sendVision: []
   closePopup: []
@@ -51,7 +51,7 @@ const emit = defineEmits<{
         <div v-if="visionPopup?.visible" class="absolute bottom-4 md:bottom-24 left-1/2 -translate-x-1/2 w-[340px] max-w-[calc(100%_-_24px)] max-h-[calc(100%_-_24px)] overflow-y-auto rounded-2xl p-4 shadow-2xl" style="background: rgba(255,255,255,0.97); border: 1px solid rgba(168,162,158,0.25); backdrop-filter: blur(16px); z-index: 50">
           <p class="mb-2 text-xs font-semibold text-stone-600 flex items-center gap-1"><Camera class="h-3.5 w-3.5" /> 已截取区域，向 AI 提问</p>
           <div class="mb-2 max-h-[160px] overflow-hidden rounded-lg border border-stone-200 bg-stone-100"><img :src="visionPopup.base64" alt="截图预览" class="w-full h-auto object-contain max-h-[160px]" /></div>
-          <input :ref="(element) => emit('popupInputRef', element as Element | null)" :value="visionPopup.question" type="text" placeholder="例如：请解释这个图表的含义…" class="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-700 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/40" @input="emit('update:visionQuestion', ($event.target as HTMLInputElement).value)" @keydown="emit('popupKeydown', $event)" />
+          <input :ref="(element) => emit('popupInputRef', element as Element | null)" :value="visionPopup.question" type="text" placeholder="例如：请解释这个图表的含义…" class="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-700 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/40" @input="emit('update:visionPopup', { ...visionPopup, question: ($event.target as HTMLInputElement).value })" @keydown="emit('popupKeydown', $event)" />
           <div class="mt-2.5 flex gap-2">
             <button class="flex-1 rounded-xl bg-stone-700 px-3 py-1.5 text-xs text-white transition hover:bg-stone-800 disabled:opacity-40" :disabled="!visionPopup.question.trim() || isSending" @click="emit('sendVision')">发送</button>
             <button class="rounded-xl border border-stone-200 px-3 py-1.5 text-xs text-stone-500 transition hover:bg-stone-50" @click="emit('closePopup')">取消</button>
