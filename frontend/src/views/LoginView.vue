@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
+import { getErrorDetail, getSafeInternalRedirect, hasTrimmedValue } from '../features/auth/authViewModel'
 
 const router = useRouter()
 const route = useRoute()
@@ -12,17 +13,12 @@ const password = ref('')
 const loading  = ref(false)
 const errorMsg = ref('')
 
-const getSafeInternalRedirect = (value: unknown) =>
-  typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')
-    ? value
-    : '/'
-
 const redirect = computed(() => getSafeInternalRedirect(route.query.redirect))
 const redirectQuery = computed(() => ({ redirect: redirect.value }))
 
 const handleLogin = async () => {
   errorMsg.value = ''
-  if (!email.value.trim() || !password.value.trim()) {
+  if (!hasTrimmedValue(email.value) || !hasTrimmedValue(password.value)) {
     errorMsg.value = '请填写邮箱和密码'
     return
   }
@@ -32,9 +28,7 @@ const handleLogin = async () => {
     // 登录成功后跳转到安全的站内页面，或默认跳 /
     await router.push(redirect.value)
   } catch (e: unknown) {
-    const err = e as { response?: { data?: { detail?: string } }; message?: string }
-    errorMsg.value =
-      err?.response?.data?.detail || err?.message || '登录失败，请检查邮箱和密码'
+    errorMsg.value = getErrorDetail(e, '登录失败，请检查邮箱和密码')
   } finally {
     loading.value = false
   }

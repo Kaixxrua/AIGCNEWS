@@ -3,15 +3,24 @@ import { ref, computed, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
+import {
+  getErrorDetail,
+  getSafeInternalRedirect,
+  hasTrimmedValue,
+  isRateLimited,
+  isValidEmail,
+  isValidOtp,
+  isValidPassword,
+  OTP_COUNTDOWN_INTERVAL_MS,
+  OTP_COUNTDOWN_SECONDS,
+  passwordsMatch,
+  REGISTER_REDIRECT_DELAY_MS,
+  REGISTER_SUCCESS_MESSAGE_DURATION_MS,
+} from '../features/auth/authViewModel'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-
-const getSafeInternalRedirect = (value: unknown) =>
-  typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')
-    ? value
-    : '/'
 
 const redirect = computed(() => getSafeInternalRedirect(route.query.redirect))
 const redirectQuery = computed(() => ({ redirect: redirect.value }))
@@ -31,16 +40,14 @@ const countdown     = ref(0)
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 // 邮箱格式校验
-const emailValid = computed(() =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())
-)
+const emailValid = computed(() => isValidEmail(email.value))
 
 const otpBtnDisabled = computed(
   () => !emailValid.value || countdown.value > 0 || otpLoading.value
 )
 
 const startCountdown = () => {
-  countdown.value = 60
+  countdown.value = OTP_COUNTDOWN_SECONDS
   countdownTimer = setInterval(() => {
     countdown.value--
     if (countdown.value <= 0) {
@@ -48,7 +55,7 @@ const startCountdown = () => {
       countdownTimer = null
       countdown.value = 0
     }
-  }, 1000)
+  }, OTP_COUNTDOWN_INTERVAL_MS)
 }
 
 onUnmounted(() => {
@@ -67,13 +74,12 @@ const sendOtp = async () => {
     await api.post('/auth/send-email-otp', { email: email.value.trim() })
     startCountdown()
     successMsg.value = '验证码已发送，请查收邮件'
-    setTimeout(() => { successMsg.value = '' }, 4000)
+    setTimeout(() => { successMsg.value = '' }, REGISTER_SUCCESS_MESSAGE_DURATION_MS)
   } catch (e: unknown) {
-    const err = e as { response?: { status?: number; data?: { detail?: string } }; message?: string }
-    if (err?.response?.status === 429) {
+    if (isRateLimited(e)) {
       errorMsg.value = '请 60 秒后再试'
     } else {
-      errorMsg.value = err?.response?.data?.detail || err?.message || '发送验证码失败，请稍后再试'
+      errorMsg.value = getErrorDetail(e, '发送验证码失败，请稍后再试')
     }
   } finally {
     otpLoading.value = false
@@ -83,9 +89,9 @@ const sendOtp = async () => {
 const handleRegister = async () => {
   errorMsg.value = ''
   if (!emailValid.value) { errorMsg.value = '请输入有效的邮箱地址'; return }
-  if (!otp.value.trim() || !/^\d{6}$/.test(otp.value.trim())) { errorMsg.value = '验证码应为 6 位数字'; return }
-  if (password.value.length < 6) { errorMsg.value = '密码至少需要 6 个字符'; return }
-  if (password.value !== confirmPwd.value) { errorMsg.value = '两次密码输入不一致'; return }
+  if (!hasTrimmedValue(otp.value) || !isValidOtp(otp.value)) { errorMsg.value = '验证码应为 6 位数字'; return }
+  if (!isValidPassword(password.value)) { errorMsg.value = '密码至少需要 6 个字符'; return }
+  if (!passwordsMatch(password.value, confirmPwd.value)) { errorMsg.value = '两次密码输入不一致'; return }
   if (!agreedToTerms.value) { errorMsg.value = '请阅读并同意《用户协议与免责声明》后再注册'; return }
 
   loading.value = true
@@ -98,10 +104,9 @@ const handleRegister = async () => {
     // 注册成功后自动登录
     await authStore.login(email.value.trim(), password.value)
     successMsg.value = '注册成功！正在为您自动登录…'
-    setTimeout(() => router.replace(redirect.value), 800)
+    setTimeout(() => router.replace(redirect.value), REGISTER_REDIRECT_DELAY_MS)
   } catch (e: unknown) {
-    const err = e as { response?: { data?: { detail?: string } }; message?: string }
-    errorMsg.value = err?.response?.data?.detail || err?.message || '注册失败，请稍后再试'
+    errorMsg.value = getErrorDetail(e, '注册失败，请稍后再试')
   } finally {
     loading.value = false
   }
