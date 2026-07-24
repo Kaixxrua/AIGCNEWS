@@ -5,6 +5,7 @@ import { useChatStore } from '../stores/chatStore'
 import { useAuthStore } from '../stores/authStore'
 import { useLatexRenderer } from '../composables/useLatexRenderer'
 import { Clipboard, SquareCode, FileText, Image } from 'lucide-vue-next'
+import ChatConversationSidebar from '../components/chat/ChatConversationSidebar.vue'
 import { useChatAttachments } from '../composables/useChatAttachments'
 import {
   getSourceTitle,
@@ -183,6 +184,14 @@ const handleKeydown = async (e: KeyboardEvent) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); await handleSend() }
 }
 
+const handleCreateConversation = () => {
+  if (!authStore.isLoggedIn) return
+  void store.createNewConversation('global')
+}
+const handleOpenConversation = (conversationId: string) => {
+  void store.openConversation(conversationId)
+}
+
 const openSettings = () => { localSettings.value = { ...store.settings }; showSettings.value = true }
 const saveSettings = () => { store.updateSettings({ ...localSettings.value }); showSettings.value = false }
 const cancelSettings = () => { showSettings.value = false }
@@ -193,57 +202,14 @@ const cancelSettings = () => { showSettings.value = false }
   <div class="chat-shell relative flex h-full overflow-hidden">
 
     <!-- 左侧历史会话列表 -->
-    <aside
+    <ChatConversationSidebar
       v-if="showSidebar"
-      class="chat-sidebar flex flex-col shrink-0 border-r overflow-hidden"
-      style="width: 220px; border-color: rgba(168,162,158,0.18); background: rgba(255,255,255,0.6)"
-    >
-      <!-- 侧边栏标题 + 新建按钮 -->
-      <div class="flex items-center justify-between px-3 py-3 shrink-0" style="border-bottom: 1px solid rgba(168,162,158,0.15)">
-        <span class="text-xs font-semibold text-stone-500 tracking-wide">历史会话</span>
-        <button
-          class="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition text-xs"
-          title="新建对话"
-          @click="() => authStore.isLoggedIn && store.createNewConversation('global')"
-        >
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-        </button>
-      </div>
-
-      <!-- 加载中 -->
-      <div v-if="isLoadingInit" class="flex items-center justify-center py-6">
-        <svg class="h-4 w-4 animate-spin text-stone-400" viewBox="0 0 24 24" fill="none">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"/>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-        </svg>
-      </div>
-
-      <!-- 会话列表 -->
-      <div v-else class="flex-1 overflow-y-auto py-1">
-        <div
-          v-for="conv in conversationList"
-          :key="conv.id"
-          class="mx-2 my-0.5 cursor-pointer rounded-xl px-3 py-2.5 transition-all"
-          :class="conv.id === store.activeConversationId
-            ? 'bg-stone-700 text-white'
-            : 'hover:bg-stone-100 text-stone-600'"
-          @click="() => store.openConversation(conv.id)"
-        >
-          <p class="truncate text-xs font-medium leading-5">{{ conv.title || '新对话' }}</p>
-          <p
-            class="truncate text-2xs leading-4 mt-0.5"
-            :class="conv.id === store.activeConversationId ? 'text-stone-300' : 'text-stone-400'"
-          >
-            {{ conv.lastMessagePreview || '暂无消息' }}
-          </p>
-        </div>
-        <div v-if="!conversationList.length" class="px-4 py-6 text-center text-xs text-stone-400">
-          暂无历史会话
-        </div>
-      </div>
-    </aside>
+      :conversations="conversationList"
+      :active-conversation-id="store.activeConversationId"
+      :loading="isLoadingInit"
+      @create="handleCreateConversation"
+      @open="handleOpenConversation"
+    />
 
     <section class="relative flex flex-col overflow-hidden flex-1">
 
@@ -604,7 +570,6 @@ const cancelSettings = () => { showSettings.value = false }
   color: var(--ink);
 }
 
-.chat-shell .chat-sidebar,
 .chat-shell .chat-header,
 .chat-shell footer {
   border-color: var(--rule) !important;
@@ -644,12 +609,6 @@ const cancelSettings = () => { showSettings.value = false }
   color: var(--ink);
 }
 
-.chat-shell .chat-sidebar [class*="bg-stone-700"] {
-  border: 1px solid var(--ink);
-  background: var(--lime) !important;
-  color: var(--ink) !important;
-}
-
 .chat-shell [class*="text-cyan"] { color: #4b6100 !important; }
 .chat-shell [class*="bg-cyan"] { background-color: var(--lime) !important; }
 
@@ -674,14 +633,6 @@ const cancelSettings = () => { showSettings.value = false }
 }
 
 @media (max-width: 639px) {
-  .chat-sidebar {
-    position: absolute;
-    inset: 0 auto 0 0;
-    z-index: 45;
-    width: min(84vw, 300px) !important;
-    box-shadow: 12px 0 28px rgba(68,64,60,0.12);
-  }
-
   .chat-header > div:last-child {
     width: 100%;
     justify-content: flex-end;
