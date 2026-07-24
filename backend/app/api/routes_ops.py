@@ -970,6 +970,16 @@ async def list_available_sources(_: dict = Depends(RequireAdmin)):
     }
 
 
+@router.get("/ops/project-catalog/shadow-status", tags=["Ops"])
+async def project_catalog_shadow_status(_: dict = Depends(RequireAdmin)):
+    """返回有界且脱敏的项目目录 shadow read 运行证据。"""
+    from backend.app.services.project_catalog_shadow import (
+        project_catalog_shadow_snapshot,
+    )
+
+    return project_catalog_shadow_snapshot()
+
+
 @router.get("/ops/scheduler/status", tags=["Ops"])
 async def scheduler_status(_: dict = Depends(RequireAdmin)):
     """查询 APScheduler 当前状态与已注册任务列表。"""

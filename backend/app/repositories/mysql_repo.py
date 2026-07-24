@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Any, Dict, List, Optional, Set
@@ -62,7 +63,6 @@ from backend.app.services.search_semantics import (
 logger = logging.getLogger(__name__)
 
 GITHUB_PROJECT_TODAY_LIMIT = 50
-
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -432,6 +432,38 @@ class MySQLRepository:
     def _connect(self):
         return self._database.connect()
 
+    @staticmethod
+    def _record_project_catalog_change_cur(
+        cur: Any,
+        *,
+        aggregate_type: str,
+        aggregate_key: dict[str, Any],
+        operation: str = "reconcile",
+        source_method: str,
+    ) -> None:
+        if not bool(getattr(settings, "project_catalog_outbox_capture_enabled", False)):
+            return
+        key_json = json.dumps(
+            aggregate_key,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        cur.execute(
+            """
+            INSERT INTO project_catalog_outbox (
+                event_id, aggregate_type, aggregate_key, operation, source_method
+            ) VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                str(uuid.uuid4()),
+                aggregate_type,
+                key_json,
+                operation,
+                source_method,
+            ),
+        )
+
     @property
     def ingestion_tasks(self) -> MySQLIngestionTaskRepository:
         if self._ingestion_tasks is None:
@@ -582,6 +614,12 @@ class MySQLRepository:
                 updated_at=VALUES(updated_at)
             """,
             (alias_repo_id, canonical_repo_id, full_name, now, now),
+        )
+        self._record_project_catalog_change_cur(
+            cur,
+            aggregate_type="github_repo_aliases",
+            aggregate_key={"alias_repo_id": alias_repo_id},
+            source_method="_upsert_github_repo_alias_cur",
         )
 
     def _init_schema(self) -> None:
@@ -1472,6 +1510,12 @@ class MySQLRepository:
                 )
                 payload["repo_id"] = canonical_repo_id
                 cur.execute(sql, payload)
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="github_repo_candidates",
+                    aggregate_key={"repo_id": canonical_repo_id},
+                    source_method="upsert_github_repo_candidate",
+                )
             conn.commit()
         finally:
             conn.close()
@@ -1488,8 +1532,21 @@ class MySQLRepository:
         conn = self._connect()
         try:
             with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT repo_id FROM github_repo_candidates "
+                    "WHERE LOWER(full_name) = LOWER(%s) LIMIT 1",
+                    (full_name,),
+                )
+                candidate = cur.fetchone() or {}
                 cur.execute(sql, (checked_at, full_name))
                 changed = cur.rowcount > 0
+                if candidate.get("repo_id"):
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="github_repo_candidates",
+                        aggregate_key={"repo_id": str(candidate["repo_id"])},
+                        source_method="mark_github_repo_available",
+                    )
             conn.commit()
             return changed
         finally:
@@ -1511,7 +1568,7 @@ class MySQLRepository:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT availability_status FROM github_repo_candidates WHERE LOWER(full_name) = LOWER(%s) FOR UPDATE",
+                    "SELECT repo_id, availability_status FROM github_repo_candidates WHERE LOWER(full_name) = LOWER(%s) FOR UPDATE",
                     (full_name,),
                 )
                 previous = cur.fetchone() or {}
@@ -1524,6 +1581,12 @@ class MySQLRepository:
                     (full_name,),
                 )
                 current = cur.fetchone() or {}
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="github_repo_candidates",
+                    aggregate_key={"repo_id": str(previous["repo_id"])},
+                    source_method="record_github_repo_not_found",
+                )
             conn.commit()
             return (
                 previous.get("availability_status") != "not_found"
@@ -1582,8 +1645,17 @@ class MySQLRepository:
                 )
                 payload["repo_id"] = canonical_repo_id
                 cur.execute(sql, payload)
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="github_repo_candidates",
+                    aggregate_key={"repo_id": canonical_repo_id},
+                    source_method="ensure_github_repo_candidate",
+                )
             conn.commit()
             return canonical_repo_id
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -1655,6 +1727,15 @@ class MySQLRepository:
                     str(payload.get("full_name") or ""),
                 )
                 cur.execute(sql, payload)
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="github_repo_snapshots",
+                    aggregate_key={
+                        "repo_id": str(payload["repo_id"]),
+                        "snapshot_date": str(payload["snapshot_date"]),
+                    },
+                    source_method="insert_github_repo_snapshot",
+                )
             conn.commit()
         finally:
             conn.close()
@@ -1713,6 +1794,27 @@ class MySQLRepository:
                     str(payload.get("full_name") or ""),
                 )
                 cur.execute(sql, payload)
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM github_trending_hits
+                    WHERE repo_id = %s AND period = %s AND observed_date = %s
+                    LIMIT 1
+                    """,
+                    (
+                        payload["repo_id"],
+                        payload["period"],
+                        payload["observed_date"],
+                    ),
+                )
+                row = cur.fetchone() or {}
+                if row.get("id") is not None:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="github_trending_hits",
+                        aggregate_key={"id": int(row["id"])},
+                        source_method="upsert_github_trending_hit",
+                    )
             conn.commit()
             return str(payload["repo_id"])
         finally:
@@ -2183,6 +2285,16 @@ class MySQLRepository:
             with conn.cursor() as cur:
                 cur.executemany(sql, normalized)
                 affected = cur.rowcount
+                for payload in normalized:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="github_repo_daily_metrics",
+                        aggregate_key={
+                            "repo_id": str(payload["repo_id"]),
+                            "metric_date": str(payload["metric_date"]),
+                        },
+                        source_method="upsert_github_daily_metrics",
+                    )
             conn.commit()
             return int(affected or 0)
         finally:
@@ -2408,6 +2520,13 @@ class MySQLRepository:
                     (data["normalized_url_hash"],),
                 )
                 row = cur.fetchone() or {}
+                if row.get("id") is not None:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="tool_websites",
+                        aggregate_key={"id": int(row["id"])},
+                        source_method="upsert_tool_website",
+                    )
             conn.commit()
             return dict(row)
         finally:
@@ -2433,6 +2552,41 @@ class MySQLRepository:
         try:
             with conn.cursor() as cur:
                 cur.execute(
+                    """
+                    SELECT user_id, project_source, project_id
+                    FROM project_favorites
+                    WHERE project_source = 'website' AND project_id = %s
+                    FOR UPDATE
+                    """,
+                    (str(website_id),),
+                )
+                favorites = list(cur.fetchall())
+                cur.execute(
+                    """
+                    SELECT user_id, website_id
+                    FROM user_tool_websites
+                    WHERE website_id = %s
+                    FOR UPDATE
+                    """,
+                    (website_id,),
+                )
+                links = list(cur.fetchall())
+                cur.execute(
+                    """
+                    SELECT user_id, website_id
+                    FROM user_tool_website_overrides
+                    WHERE website_id = %s
+                    FOR UPDATE
+                    """,
+                    (website_id,),
+                )
+                overrides = list(cur.fetchall())
+                cur.execute(
+                    "SELECT website_id FROM tool_website_enrichments WHERE website_id = %s FOR UPDATE",
+                    (website_id,),
+                )
+                enrichment = cur.fetchone()
+                cur.execute(
                     "DELETE FROM project_favorites WHERE project_source = 'website' AND project_id = %s",
                     (str(website_id),),
                 )
@@ -2449,6 +2603,56 @@ class MySQLRepository:
                     (website_id,),
                 )
                 deleted = cur.rowcount > 0
+                for favorite in favorites:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="project_favorites",
+                        aggregate_key={
+                            "user_id": int(favorite["user_id"]),
+                            "project_source": str(favorite["project_source"]),
+                            "project_id": str(favorite["project_id"]),
+                        },
+                        operation="delete",
+                        source_method="delete_tool_website",
+                    )
+                for override in overrides:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="user_tool_website_overrides",
+                        aggregate_key={
+                            "user_id": int(override["user_id"]),
+                            "website_id": int(override["website_id"]),
+                        },
+                        operation="delete",
+                        source_method="delete_tool_website",
+                    )
+                for link in links:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="user_tool_websites",
+                        aggregate_key={
+                            "user_id": int(link["user_id"]),
+                            "website_id": int(link["website_id"]),
+                        },
+                        operation="delete",
+                        source_method="delete_tool_website",
+                    )
+                if enrichment:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="tool_website_enrichments",
+                        aggregate_key={"website_id": website_id},
+                        operation="delete",
+                        source_method="delete_tool_website",
+                    )
+                if deleted:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="tool_websites",
+                        aggregate_key={"id": website_id},
+                        operation="delete",
+                        source_method="delete_tool_website",
+                    )
             conn.commit()
             return deleted
         finally:
@@ -2498,6 +2702,12 @@ class MySQLRepository:
         try:
             with conn.cursor() as cur:
                 cur.execute(sql, data)
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="tool_website_enrichments",
+                    aggregate_key={"website_id": int(data["website_id"])},
+                    source_method="upsert_tool_website_enrichment",
+                )
             conn.commit()
         finally:
             conn.close()
@@ -2586,6 +2796,12 @@ class MySQLRepository:
                     (canonical_repo_id,),
                 )
                 recommendation = cur.fetchone() or {}
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="github_repo_recommendations",
+                    aggregate_key={"repo_id": canonical_repo_id},
+                    source_method="recommend_github_project",
+                )
             conn.commit()
             return {
                 "repo_id": canonical_repo_id,
@@ -2637,6 +2853,13 @@ class MySQLRepository:
                     (canonical_repo_id,),
                 )
                 removed = cur.rowcount > 0
+                if removed:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="github_repo_recommendations",
+                        aggregate_key={"repo_id": canonical_repo_id},
+                        source_method="unrecommend_github_project",
+                    )
             conn.commit()
             return {
                 "repo_id": canonical_repo_id,
@@ -2751,6 +2974,16 @@ class MySQLRepository:
                     (user_id, project_source, project_id),
                 )
                 row = cur.fetchone() or {}
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="project_favorites",
+                    aggregate_key={
+                        "user_id": user_id,
+                        "project_source": project_source,
+                        "project_id": project_id,
+                    },
+                    source_method="add_project_favorite",
+                )
             conn.commit()
             result: Dict[str, Any] = {
                 "source": project_source,
@@ -2801,6 +3034,18 @@ class MySQLRepository:
                     (user_id, project_source, project_id),
                 )
                 deleted_favorite = cur.rowcount > 0
+                if deleted_favorite:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="project_favorites",
+                        aggregate_key={
+                            "user_id": user_id,
+                            "project_source": project_source,
+                            "project_id": project_id,
+                        },
+                        operation="delete",
+                        source_method="remove_project_favorite",
+                    )
             conn.commit()
             return deleted_favorite
         finally:
@@ -2842,6 +3087,12 @@ class MySQLRepository:
                     (user_id, website_id),
                 )
                 row = cur.fetchone() or {}
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="user_tool_websites",
+                    aggregate_key={"user_id": user_id, "website_id": website_id},
+                    source_method="link_user_tool_website",
+                )
             conn.commit()
             return {
                 "user_added": True,
@@ -2867,6 +3118,7 @@ class MySQLRepository:
                     "DELETE FROM user_tool_website_overrides WHERE user_id = %s AND website_id = %s",
                     (user_id, website_id),
                 )
+                deleted_override = cur.rowcount > 0
                 cur.execute(
                     """
                     DELETE FROM project_favorites
@@ -2875,6 +3127,34 @@ class MySQLRepository:
                     (user_id, str(website_id)),
                 )
                 deleted_favorite = cur.rowcount > 0
+                if deleted_override:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="user_tool_website_overrides",
+                        aggregate_key={"user_id": user_id, "website_id": website_id},
+                        operation="delete",
+                        source_method="unlink_user_tool_website",
+                    )
+                if deleted_favorite:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="project_favorites",
+                        aggregate_key={
+                            "user_id": user_id,
+                            "project_source": "website",
+                            "project_id": str(website_id),
+                        },
+                        operation="delete",
+                        source_method="unlink_user_tool_website",
+                    )
+                if deleted_link:
+                    self._record_project_catalog_change_cur(
+                        cur,
+                        aggregate_type="user_tool_websites",
+                        aggregate_key={"user_id": user_id, "website_id": website_id},
+                        operation="delete",
+                        source_method="unlink_user_tool_website",
+                    )
             conn.commit()
             return deleted_link or deleted_favorite
         finally:
@@ -3043,6 +3323,12 @@ class MySQLRepository:
                         updated_at=CURRENT_TIMESTAMP
                     """,
                     data,
+                )
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="user_tool_website_overrides",
+                    aggregate_key={"user_id": user_id, "website_id": website_id},
+                    source_method="upsert_user_tool_website_override",
                 )
             conn.commit()
         finally:
@@ -3935,6 +4221,12 @@ class MySQLRepository:
                 canonical_repo_id = self._resolve_github_repo_id_cur(cur, str(data.get("repo_id") or ""))
                 data["repo_id"] = canonical_repo_id
                 cur.execute(sql, data)
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="github_project_semantic_sources",
+                    aggregate_key={"repo_id": canonical_repo_id},
+                    source_method="upsert_github_project_semantic_source",
+                )
             conn.commit()
         finally:
             conn.close()
@@ -4105,7 +4397,18 @@ class MySQLRepository:
         conn = self._connect()
         try:
             with conn.cursor() as cur:
+                canonical_repo_id = self._resolve_github_repo_id_cur(
+                    cur,
+                    str(data.get("repo_id") or ""),
+                )
+                data["repo_id"] = canonical_repo_id
                 cur.execute(sql, data)
+                self._record_project_catalog_change_cur(
+                    cur,
+                    aggregate_type="github_repo_enrichments",
+                    aggregate_key={"repo_id": canonical_repo_id},
+                    source_method="upsert_github_repo_enrichment",
+                )
             conn.commit()
         finally:
             conn.close()

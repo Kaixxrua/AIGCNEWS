@@ -6,6 +6,7 @@ from typing import Any, Dict
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.services.project_catalog_shadow import project_catalog_shadow_snapshot
 from backend.app.repositories.task_repository import (
     MonitorMetricsRepository,
     RecentTaskReader,
@@ -58,6 +59,7 @@ def collect_metrics(
         "briefing_count": briefing_count,
         "tasks": task_summary,
         "rag_evaluation": eval_summary,
+        "project_catalog_shadow": project_catalog_shadow_snapshot(),
     }
 
 

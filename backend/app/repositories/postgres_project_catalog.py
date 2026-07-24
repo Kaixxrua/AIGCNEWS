@@ -35,12 +35,33 @@ def _today_range() -> tuple[str, str]:
 class PostgresProjectCatalogRepository:
     """PostgreSQL implementation of the frozen public project catalog reads."""
 
-    def __init__(self, database: PostgresDatabaseLifecycle = postgres_database) -> None:
+    def __init__(
+        self,
+        database: PostgresDatabaseLifecycle = postgres_database,
+        *,
+        statement_timeout_ms: int | None = None,
+    ) -> None:
         self._database = database
+        self._statement_timeout_ms = (
+            max(1, int(statement_timeout_ms))
+            if statement_timeout_ms is not None
+            else None
+        )
 
-    @staticmethod
-    def _begin_read(cursor: Any) -> None:
+    def _begin_read(self, cursor: Any) -> None:
         cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        if self._statement_timeout_ms is not None:
+            cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (str(self._statement_timeout_ms),),
+            )
+
+    def _transaction(self) -> Any:
+        if self._statement_timeout_ms is None:
+            return self._database.transaction()
+        return self._database.transaction(
+            acquisition_timeout=self._statement_timeout_ms / 1000,
+        )
 
     def find_lexical_candidate_repo_ids(
         self,
@@ -85,7 +106,7 @@ class PostgresProjectCatalogRepository:
             ORDER BY CASE WHEN LOWER(c.full_name)=LOWER(%s) THEN 0 WHEN LOWER(COALESCE(c.title,''))=LOWER(%s) THEN 1 WHEN c.full_name ILIKE %s ESCAPE '=' THEN 2 WHEN COALESCE(c.title,'') ILIKE %s ESCAPE '=' THEN 3 ELSE 4 END,
                 COALESCE(c.stars,0) DESC,c.full_name ASC LIMIT %s"""
         params.extend([normalized_query, normalized_query, prefix, prefix, limit])
-        with self._database.transaction() as connection:
+        with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
                 cursor.execute(sql, tuple(params))
@@ -220,7 +241,7 @@ class PostgresProjectCatalogRepository:
         if sort == "relevance" and candidates is not None:
             order = "array_position(%s::text[],repo_id),full_name ASC"
             order_params.append(candidates)
-        with self._database.transaction() as connection:
+        with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
                 cursor.execute(base + " SELECT COUNT(*) AS cnt FROM project_rows", tuple(params))
@@ -270,7 +291,7 @@ class PostgresProjectCatalogRepository:
             recommended_params=gh_user+[min_stars]
         else:
             recommended_sql="SELECT 0 count"; recommended_params=[]
-        with self._database.transaction() as connection:
+        with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
                 cursor.execute(aggregate,tuple(params)); rows=cursor.fetchall()

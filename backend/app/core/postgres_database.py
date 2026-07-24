@@ -67,10 +67,19 @@ class PostgresDatabaseLifecycle:
             pool.putconn(connection)
 
     @contextmanager
-    def transaction(self) -> Iterator[PostgresConnection]:
+    def transaction(
+        self,
+        *,
+        acquisition_timeout: float | None = None,
+    ) -> Iterator[PostgresConnection]:
         """Run work in a Psycopg transaction and return the pooled connection."""
         pool = self.open()
-        connection = pool.getconn(timeout=self._acquisition_timeout)
+        timeout = (
+            self._acquisition_timeout
+            if acquisition_timeout is None
+            else max(0.001, float(acquisition_timeout))
+        )
+        connection = pool.getconn(timeout=timeout)
         primary_error: BaseException | None = None
         try:
             try:

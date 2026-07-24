@@ -826,7 +826,7 @@ async def list_github_projects(
 async def list_github_project_categories() -> GitHubProjectCategoriesResponse:
     """返回 GitHub 项目库 AI 分类及数量。"""
     min_stars = 500
-    db = MySQLRepository()
+    db = get_project_catalog_repository()
     result = await asyncio.to_thread(
         db.get_project_categories,
         source="github",

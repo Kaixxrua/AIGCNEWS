@@ -415,6 +415,23 @@ async def _run_project_semantic_warmup_job() -> None:
         logger.warning("[Scheduler] 项目语义搜索预热失败: %s", exc)
 
 
+async def _run_project_catalog_sync_job() -> None:
+    try:
+        from backend.app.services.project_catalog_sync import ProjectCatalogSyncWorker
+
+        result = await asyncio.to_thread(ProjectCatalogSyncWorker().run_once)
+        if result.claimed:
+            logger.info(
+                "[Scheduler] 项目目录同步完成: claimed=%d processed=%d retry=%d dead=%d",
+                result.claimed,
+                result.processed,
+                result.retried,
+                result.dead,
+            )
+    except Exception as exc:
+        logger.error("[Scheduler] 项目目录同步失败: %s", exc, exc_info=True)
+
+
 async def _run_conversation_cleanup_job() -> None:
     logger.info("[Scheduler] 触发会话历史清理任务...")
     try:
@@ -505,6 +522,25 @@ def start_scheduler() -> None:
         )
         logger.info("[Scheduler] 注册项目语义搜索预热任务（每 30 分钟）")
 
+    if settings.project_catalog_sync_worker_enabled:
+        scheduler.add_job(
+            _run_project_catalog_sync_job,
+            trigger=IntervalTrigger(
+                seconds=max(1, int(settings.project_catalog_sync_poll_seconds)),
+                timezone=settings.scheduler_timezone,
+            ),
+            id="project_catalog_sync",
+            name="MySQL 到 PostgreSQL 项目目录同步",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=max(
+                30,
+                int(settings.project_catalog_sync_poll_seconds) * 2,
+            ),
+        )
+        logger.info("[Scheduler] 注册项目目录同步任务")
+
     scheduler.add_job(
         _run_conversation_cleanup_job,
         trigger=CronTrigger(day="*/7", hour=3, minute=30, timezone="Asia/Shanghai"),
@@ -520,6 +556,8 @@ def start_scheduler() -> None:
     loop = asyncio.get_running_loop()
     loop.create_task(_reconcile_recent_arxiv_daily_snapshots())
     loop.create_task(_reconcile_current_github_project_metrics())
+    if settings.project_catalog_sync_worker_enabled:
+        loop.create_task(_run_project_catalog_sync_job())
 
     jobs = scheduler.get_jobs()
     logger.info("[Scheduler] APScheduler 已启动，共 %d 个调度任务：", len(jobs))

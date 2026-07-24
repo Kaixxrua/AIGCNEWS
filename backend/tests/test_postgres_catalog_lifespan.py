@@ -21,6 +21,10 @@ class _App:
 def _settings(backend: str) -> SimpleNamespace:
     return SimpleNamespace(
         project_catalog_backend=backend,
+        project_catalog_sync_worker_enabled=False,
+        project_catalog_shadow_enabled=False,
+        project_catalog_shadow_backend="postgres",
+        project_catalog_shadow_shutdown_timeout_seconds=1.0,
         project_semantic_search_enabled=False,
         redis_host="localhost",
         redis_port=6379,
@@ -80,6 +84,36 @@ def test_postgres_lifespan_opens_and_closes_selected_pool() -> None:
                 pass
             assert to_thread.await_args_list[0].args == (postgres_open,)
             postgres_close.assert_called_once_with()
+
+    asyncio.run(run())
+
+
+def test_shadow_postgres_open_failure_is_non_fatal() -> None:
+    app = _App()
+    redis = AsyncMock()
+    redis.ping.side_effect = RuntimeError("redis unavailable")
+    config = _settings("mysql")
+    config.project_catalog_shadow_enabled = True
+
+    async def run() -> None:
+        async def invoke(function: MagicMock, *args: object) -> object:
+            return function(*args)
+
+        with (
+            patch.object(main, "settings", config),
+            patch.object(main, "Redis", return_value=redis),
+            patch.object(main.asyncio, "to_thread", side_effect=invoke),
+            patch.object(main.asyncio, "create_task") as create_task,
+            patch.object(main.postgres_database, "open", side_effect=RuntimeError("postgres unavailable")),
+            patch.object(main.postgres_database, "close") as postgres_close,
+            patch.object(main.mysql_database, "close"),
+            patch.object(main, "start_scheduler"),
+            patch.object(main, "stop_scheduler"),
+        ):
+            create_task.side_effect = lambda coroutine: coroutine.close()
+            async with main.lifespan(app):
+                pass
+            postgres_close.assert_not_called()
 
     asyncio.run(run())
 

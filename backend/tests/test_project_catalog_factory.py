@@ -138,6 +138,43 @@ def test_factory_rejects_unavailable_backends(backend: str) -> None:
     assert "postgres" in str(caught.value)
 
 
+def test_factory_wraps_mysql_only_when_shadow_manager_is_available() -> None:
+    active = MagicMock()
+    shadow = MagicMock()
+    manager = MagicMock()
+    config = SimpleNamespace(
+        project_catalog_backend="mysql",
+        project_catalog_shadow_enabled=True,
+        project_catalog_shadow_backend="postgres",
+        project_catalog_shadow_timeout_seconds=2.0,
+    )
+    with (
+        patch.object(project_catalog_factory, "settings", config),
+        patch.object(
+            project_catalog_factory,
+            "MySQLProjectCatalogRepository",
+            return_value=active,
+        ),
+        patch(
+            "backend.app.services.project_catalog_shadow."
+            "get_project_catalog_shadow_manager",
+            return_value=manager,
+        ),
+        patch(
+            "backend.app.repositories.postgres_project_catalog."
+            "PostgresProjectCatalogRepository",
+            return_value=shadow,
+        ),
+        patch(
+            "backend.app.services.project_catalog_shadow."
+            "ShadowComparingProjectCatalogRepository"
+        ) as decorator,
+    ):
+        project_catalog_factory.get_project_catalog_repository()
+
+    decorator.assert_called_once_with(active, shadow, manager)
+
+
 def test_discovery_uses_lazy_catalog_factory_by_default() -> None:
     repository = MagicMock()
     repository.list_projects.return_value = {"items": [], "total": 0}
