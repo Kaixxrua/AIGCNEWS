@@ -1,0 +1,72 @@
+<script setup lang="ts">
+defineProps<{
+  brandName: string
+}>()
+</script>
+
+<template>
+  <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 生态合作） ═══ -->
+  <div class="dock-footer">
+    <span>Powered by {{ brandName }}</span>
+    <span class="footer-sep">·</span>
+    <RouterLink to="/disclaimer" class="footer-link">免责声明</RouterLink>
+    <span class="footer-sep">·</span>
+    <RouterLink to="/privacy" class="footer-link">隐私政策</RouterLink>
+    <span class="footer-sep">·</span>
+    <RouterLink to="/mcp" class="footer-link">MCP 接入</RouterLink>
+    <span class="footer-sep">·</span>
+    <span>生态合作联系：<a href="mailto:kaixxrua@gmail.com" class="footer-link">kaixxrua@gmail.com</a></span>
+  </div>
+</template>
+
+<style scoped>
+.dock-footer {
+  position: fixed;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 2px;
+  font-size: 10px;
+  font-weight: 400;
+  color: rgba(168, 162, 158, 0.7);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.footer-sep {
+  margin: 0 5px;
+  opacity: 0.5;
+}
+
+.footer-link {
+  color: rgba(168, 162, 158, 0.7);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-link:hover {
+  color: #78716c;
+  text-decoration: underline;
+}
+
+@media (max-width: 639px) {
+  .dock-footer {
+    left: 12px;
+    right: 12px;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    transform: none;
+    max-width: calc(100vw - 24px);
+    line-height: 1.5;
+    white-space: normal;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+}
+</style>
