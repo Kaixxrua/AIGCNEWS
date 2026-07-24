@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getRoutePolicyRedirect } from '../features/navigation/routePolicy'
 import LayoutView from '../views/LayoutView.vue'
 
 const DashboardView = () => import('../views/DashboardView.vue')
@@ -102,19 +103,10 @@ router.beforeEach(async (to, _from, next) => {
   if (!pinia) { next(); return }
 
   const authStore = useAuthStore(pinia)
+  const redirect = getRoutePolicyRedirect(to, authStore)
 
-  if (to.meta.requiresAuth && !authStore.isLoggedIn) {
-    next({ path: '/login', query: { redirect: to.fullPath } })
-    return
-  }
-
-  if (to.meta.requiresAdmin && !authStore.isAdmin) {
-    next({ path: '/' })
-    return
-  }
-
-  if (to.meta.guestOnly && authStore.isLoggedIn) {
-    next({ path: '/' })
+  if (redirect) {
+    next(redirect)
     return
   }
 

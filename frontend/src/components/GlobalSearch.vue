@@ -5,6 +5,14 @@
  */
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  GLOBAL_SEARCH_BLUR_DELAY_MS,
+  GLOBAL_SEARCH_DEBOUNCE_MS,
+  GLOBAL_SEARCH_RESULT_LIMIT,
+  getGlobalSearchDestination,
+  getSearchSourceLabel,
+  getSearchSummaryPreview,
+} from '../features/search/globalSearchModel'
 import { searchPapers, fetchTop10Today, type PaperItem } from '../services/api'
 
 const router = useRouter()
@@ -27,12 +35,12 @@ const triggerSearch = () => {
     } else {
       loading.value = true
       try {
-        results.value = await searchPapers(q, 20)
+        results.value = await searchPapers(q, GLOBAL_SEARCH_RESULT_LIMIT)
       } finally {
         loading.value = false
       }
     }
-  }, 300)
+  }, GLOBAL_SEARCH_DEBOUNCE_MS)
 }
 
 const loadTop10 = async () => {
@@ -60,7 +68,7 @@ const onBlur = () => {
   setTimeout(() => {
     focused.value = false
     showDropdown.value = false
-  }, 200)
+  }, GLOBAL_SEARCH_BLUR_DELAY_MS)
 }
 
 // ── 点击搜索结果 ───────────────────────────────────────────────────────────
@@ -69,12 +77,13 @@ const onSelectItem = (item: PaperItem) => {
   query.value = ''
   results.value = []
 
-  if (item.source === 'arxiv' && item.id) {
+  const destination = getGlobalSearchDestination(item)
+  if (destination.kind === 'route') {
     // 论文 → 沉浸阅读页
-    router.push({ name: 'paper-read', params: { id: item.id } })
-  } else if (item.url) {
+    router.push(destination.location)
+  } else if (destination.kind === 'external') {
     // 其他来源 → 原始链接
-    window.open(item.url, '_blank', 'noopener,noreferrer')
+    window.open(destination.url, '_blank', 'noopener,noreferrer')
   }
 }
 
@@ -94,15 +103,6 @@ const onGlobalKeydown = (e: KeyboardEvent) => {
 
 onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
-
-// ── 来源标签样式 ──────────────────────────────────────────────────────────
-const sourceLabel = (source?: string) => {
-  const map: Record<string, string> = {
-    arxiv: 'Paper', github: 'GitHub', news: 'News',
-    producthunt: 'PH', hackernews: 'HN',
-  }
-  return map[source || ''] ?? source ?? '?'
-}
 </script>
 
 <template>
@@ -160,12 +160,12 @@ const sourceLabel = (source?: string) => {
           <!-- 来源标签 -->
           <span
             class="mt-0.5 shrink-0 rounded-md border px-1.5 py-0.5 text-2xs font-medium text-stone-500 border-stone-200 bg-white"
-          >{{ sourceLabel(item.source) }}</span>
+          >{{ getSearchSourceLabel(item.source) }}</span>
 
           <!-- 标题 + 摘要 -->
           <span class="min-w-0 flex-1">
             <span class="block truncate font-medium text-stone-700 group-hover:text-stone-900">{{ item.title }}</span>
-            <span v-if="item.summary" class="block mt-0.5 truncate text-stone-400">{{ (item.summary || '').slice(0, 80) }}…</span>
+            <span v-if="item.summary" class="block mt-0.5 truncate text-stone-400">{{ getSearchSummaryPreview(item.summary) }}</span>
           </span>
 
           <!-- 论文可进入阅读的箭头提示 -->
