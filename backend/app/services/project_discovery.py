@@ -10,7 +10,12 @@ from backend.app.repositories.project_catalog_factory import get_project_catalog
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
 from backend.app.services.project_reranker import get_project_reranker
 from backend.app.services.project_semantic_search import get_project_semantic_search
-from backend.app.services.search_semantics import normalize_search_query
+from backend.app.services.search_semantics import (
+    ProjectSearchIntent,
+    build_client_project_search_intent,
+    build_project_search_intent,
+    normalize_search_query,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,23 @@ def _bounded_strings(value: Any, max_items: int = 4) -> list[str]:
         if len(items) >= max_items:
             break
     return items
+
+
+def _project_reranker_query(query: str, intent: ProjectSearchIntent, *, enriched: bool) -> str:
+    if not enriched:
+        return query
+    sections = [query]
+    hints = (
+        ("intent", (intent.intent_class,)),
+        ("topics", intent.topics),
+        ("artifact types", intent.artifact_types),
+        ("must have", intent.must_have),
+        ("should have", intent.should_have),
+    )
+    for label, values in hints:
+        if values:
+            sections.append(f"{label}: {', '.join(values)}")
+    return _clipped("; ".join(sections), 500)
 
 
 def public_project_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -120,6 +142,7 @@ async def search_projects(
     query: str,
     mode: Literal["generic", "ai"] = "generic",
     language: str = "",
+    client_intent: dict[str, Any] | None = None,
     category: str = "",
     subcategory: str = "",
     scope: str = "all",
@@ -148,6 +171,16 @@ async def search_projects(
     page = max(1, int(page or 1))
     limit = max(1, min(int(limit or 10), 20))
     min_stars = 50 if generic else 500
+    intent = build_project_search_intent(query)
+    client_intent_used = bool(
+        client_intent
+        and mode == "ai"
+        and query
+        and effective_sort == "relevance"
+    )
+    if client_intent_used:
+        intent = build_client_project_search_intent(query, client_intent or {})
+    lexical_query = " ".join(intent.lexical_terms) or intent.normalized_query
 
     repository = (
         repository_factory()
@@ -164,7 +197,7 @@ async def search_projects(
         hybrid_attempted = True
         lexical_task = asyncio.to_thread(
             lexical_candidate_search,
-            q=query,
+            q=lexical_query,
             category=category,
             subcategory=subcategory,
             language=language,
@@ -180,7 +213,7 @@ async def search_projects(
                 else get_project_semantic_search()
             )
             semantic_task = asyncio.wait_for(
-                asyncio.to_thread(semantic_search.search_repo_ids, query),
+                asyncio.to_thread(semantic_search.search_repo_ids, intent),
                 timeout=max(0.1, float(settings.project_semantic_query_timeout_seconds)),
             )
         tasks = [lexical_task, *([semantic_task] if semantic_task is not None else [])]
@@ -239,7 +272,7 @@ async def search_projects(
                     else get_project_reranker()
                 )
                 reranked_prefix = await reranker.rerank_repo_ids(
-                    query,
+                    _project_reranker_query(query, intent, enriched=client_intent_used),
                     list(rerank_result.get("items") or []),
                 )
                 reranked_set = set(reranked_prefix)
@@ -316,7 +349,7 @@ async def search_projects(
                 else get_project_semantic_search()
             )
             semantic_hits = await asyncio.wait_for(
-                asyncio.to_thread(semantic_search.search_repo_ids, query),
+                asyncio.to_thread(semantic_search.search_repo_ids, intent),
                 timeout=max(0.1, float(settings.project_semantic_query_timeout_seconds)),
             )
             candidate_repo_ids = [str(hit.repo_id) for hit in semantic_hits if getattr(hit, "repo_id", "")]

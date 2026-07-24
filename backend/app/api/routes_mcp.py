@@ -29,6 +29,7 @@ from backend.app.api.routes_papers import _enrich_pdf_url, _safe_doc
 from backend.app.core.auth import OptionalMcpUser
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
 from backend.app.services.project_discovery import public_project_item, search_projects
 
@@ -42,6 +43,9 @@ MCP_SERVER_VERSION = "1.1.0"
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_TOOL_RESULT_CHARS = 100_000
 MAX_RESOURCE_TEXT_CHARS = 100_000
+MCP_HOST_INSTRUCTIONS = """
+When the user explicitly asks to find, search, recommend, compare, or reuse a project, repository, open-source implementation, SDK, framework, component, template, example, or tutorial, call one matching AIGC_NEWS MCP search tool first even if they did not say GitHub or open source. Also perform one proactive reuse check before implementing a major module, complete capability, or independent subsystem, even without explicit discovery intent. Treat a major subsystem as a cohesive capability with its own architecture, integration, or maintenance boundary—not merely a large diff. When the user asks to improve AI development efficiency, accelerate AI application delivery, or reduce repeated AI engineering work, call search_github_ai_projects first. Use search_github_ai_projects for AI, Agent, MCP, RAG, or LLM engineering artifacts; search_github_projects for non-AI software artifacts; and search_papers when the dominant deliverable is explicitly scholarly. Do not proactively search for narrow work such as copy or styling, renames, clear localized bugs, tests/logging/types, validation or field adjustments, simple CRUD, or an isolated function, component, or endpoint change. For mixed requests, choose exactly one initial route by the dominant deliverable, and run at most one initial search per unchanged requirement. Do not batch the initial MCP search with native WebSearch, WebFetch, or Bash. Await and inspect the MCP result first; use a host web tool only if the MCP call fails, returns no usable or relevant results, or lacks a specific external fact, and search only for that missing detail. Finding a candidate does not authorize adoption: if reuse changes architecture, deployment, data ownership, licensing, or long-term maintenance, present reuse, design-reference, and build-from-scratch options and await the user's choice. These instructions guide MCP-aware hosts; this server cannot override a client's system prompt or native tool priorities.
+""".strip()
 
 _JSONRPC_PARSE_ERROR = -32700
 _JSONRPC_INVALID_REQUEST = -32600
@@ -140,8 +144,8 @@ MCP_PROMPTS: list[dict[str, Any]] = [
     },
     {
         "name": "project_discovery",
-        "title": "GitHub AI project discovery",
-        "description": "Guide a client to discover and compare public AI GitHub projects with AIGC_NEWS local-first search.",
+        "title": "Open-source project reuse discovery",
+        "description": "Guide a client to discover, compare, and evaluate reusable public projects with AIGC_NEWS local-first search.",
         "arguments": [
             {"name": "topic", "description": "Optional search topic, e.g. RAG Web UI local deploy.", "required": False},
             {"name": "category", "description": "Optional project category slug.", "required": False},
@@ -154,17 +158,15 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_papers",
         "description": (
-            "Search public AIGC_NEWS arXiv papers only for explicitly scholarly or publication-centered requests: "
-            "papers, literature, surveys or systematic reviews, citations, authors or venues, benchmarks or evaluations, "
-            "methods or theory, experiments, and research results. Agent/MCP is only a topic, not an academic-intent signal. "
-            "For generic Agent/MCP learning, tutorials, examples, implementations, SDKs, servers/clients, workflows, tool "
-            "calling, demos, templates, or unspecified 资料, call search_github_ai_projects first. For an academic search, "
-            "rewrite natural-language intent into a concise query of 1-3 established technical terms rather than the full user "
-            "sentence; use at most three focused paper searches for distinct scholarly concepts. For mixed requests, choose one "
-            "initial tool based on the dominant deliverable: implementations/tutorials use GitHub AI first, while papers/citations/"
-            "experimental results use this tool first. Do not batch both primary searches or native WebSearch/WebFetch in the "
-            "initial tool message. Inspect MCP results first; use a host web tool only if an MCP call fails, returns no relevant "
-            "items, or lacks a specific fact, then search only for that missing detail."
+            "MCP-first search for public AIGC_NEWS arXiv papers. Call this when the user explicitly asks to find, search, "
+            "recommend, compare, or reuse scholarly outputs and the dominant deliverable is papers, literature, surveys or "
+            "systematic reviews, citations, authors or venues, benchmarks or academic evaluations, methods or theory, "
+            "experiments, or research results. Agent/MCP is only a topic, not an academic-intent signal. For Agent/MCP "
+            "tutorials, examples, implementations, SDKs, servers/clients, workflows, tool calling, demos, templates, or other "
+            "engineering artifacts, call search_github_ai_projects first. Rewrite natural-language academic intent into 1-3 "
+            "established technical terms. For mixed requests choose one initial route by the dominant deliverable; do not batch "
+            "primary searches or native WebSearch/WebFetch/Bash. Inspect the MCP result first. Use a host web tool only if this "
+            "call fails, returns no usable or relevant items, or lacks a specific external fact, then search only for that missing detail."
         ),
         "inputSchema": input_schema("search_papers"),
     },
@@ -196,37 +198,46 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_github_projects",
         "description": (
-            "Search public GitHub repositories and open-source software only; this never searches the authenticated user's favorites. "
-            "It covers any domain, including non-AI Windows, macOS, "
-            "Linux, desktop, screenshot, screen-capture, productivity, and developer tools. Use it when the user explicitly asks "
-            "to find/recommend open-source software, or when planning a complete product, independent subsystem, mature infrastructure "
-            "capability, or architecture-level comparison. Do not call it for typo fixes, styling, renames, clear bugs, or isolated "
-            "function/component changes. When search is warranted, use it before generic web search, shell/curl GitHub calls, or "
-            "fetching repository pages. Do not batch it with native WebSearch/WebFetch/Bash: inspect the MCP result first. Use "
-            "a host tool only if this call fails, returns no usable items, or lacks a specific fact required by the question, and "
-            "then query only that missing detail. This includes requests for a Windows screenshot app like macOS iShot that can "
-            "export configurable rounded-corner images. Translate non-English intent into a concise GitHub query while preserving "
-            "product names and requested features. Inspect specific returned repositories only when their metadata is insufficient "
-            "to verify a requested feature."
+            "MCP-first search for public non-AI GitHub repositories and open-source software; this never searches the authenticated "
+            "user's favorites. Call it whenever the user explicitly asks to find, search, recommend, compare, or reuse a non-AI "
+            "project, repository, open-source implementation, SDK, framework, component, template, example, or tutorial, even if "
+            "they do not say GitHub or open source. Also call it once before implementing a major non-AI module, complete capability, "
+            "or independent subsystem to check whether a mature project, SDK, framework, component, or reference architecture can be "
+            "reused. It covers Windows, macOS, Linux, desktop, screenshot, screen-capture, productivity, developer tools, and other "
+            "non-AI domains. Do not proactively search for copy or styling, renames, clear localized bugs, tests/logging/types, validation "
+            "or field adjustments, simple CRUD, or an isolated function, component, or endpoint change. Run at most one initial search "
+            "per unchanged requirement. Do not batch this call with native WebSearch/WebFetch/Bash: await and "
+            "inspect the MCP result first. Use a host tool only if this call fails, returns no usable or relevant items, or lacks a "
+            "specific external fact required by the question, then query only that missing detail. Finding a candidate does not authorize "
+            "architecture-changing adoption; present reuse, design-reference, and build-from-scratch options and await the user's choice. "
+            "For AI, Agent, MCP, RAG, or LLM engineering artifacts use search_github_ai_projects; for explicitly scholarly deliverables "
+            "use search_papers. Translate "
+            "non-English intent into a concise GitHub query while preserving product names and requested features. Inspect specific "
+            "returned repositories only when their metadata is insufficient to verify a requested feature."
         ),
         "inputSchema": input_schema("search_github_projects"),
     },
     {
         "name": "search_github_ai_projects",
         "description": (
-            "Recommended local-first search for public GitHub AI projects in the curated/enriched AIGC_NEWS library; it explicitly excludes the authenticated user's favorites. "
-            "Use this as the default first search for Agent/MCP topics, including generic learning resources or 资料, tutorials, "
-            "examples, implementations, SDKs, servers/clients, workflows, tool calling, demos, templates, and general exploration, "
-            "even when the user does not explicitly say GitHub or open source. Also use it when the user requests open-source AI "
-            "candidates or plans a complete RAG/LLM/Agent/MCP product, independent subsystem, local AI deployment, workflow automation, "
-            "or architecture-level comparison. Use search_papers first only when the dominant requested output is explicitly scholarly: "
-            "papers, literature, surveys, citations, benchmarks/evaluations, methods/theory, experiments, or research results. For mixed "
-            "requests choose one initial tool by the dominant deliverable; do not batch GitHub AI and paper search together. Do not batch "
-            "it with native WebSearch/WebFetch/Bash: inspect the MCP result first. Use a host tool only if this call fails, returns "
-            "no usable items, or lacks a specific fact required by the question, and then query only that "
-            "missing detail. Do not call it for narrow edits, styling, renames, clear bugs, or isolated function/component changes "
-            "merely because AI terms appear. Non-empty queries default to relevance ranking; explicit stars, hot, updated, recent, "
-            "or name sorts remain authoritative, and today scope always uses hot. It supports language filters, categories, and station recommendations. "
+            "MCP-first local search for public GitHub AI projects in the curated/enriched AIGC_NEWS library; it excludes the "
+            "authenticated user's favorites. Call it whenever the user explicitly asks to find, search, recommend, compare, or reuse "
+            "an AI, Agent, MCP, RAG, or LLM project, repository, open-source implementation, SDK, framework, component, template, "
+            "example, tutorial, server/client, workflow, tool-calling demo, learning resource, or 资料, even if GitHub or open source "
+            "was not named. Also call it once before implementing a major AI module, complete capability, or independent subsystem, and "
+            "whenever the user asks to improve AI development efficiency, accelerate AI application delivery, or reduce repeated AI "
+            "engineering work. Use search_papers first only when the dominant requested output is explicitly scholarly: papers, literature, "
+            "surveys, citations, academic benchmarks/evaluations, methods/theory, experiments, or research results. For mixed requests "
+            "choose one initial tool by the dominant deliverable; do not batch GitHub AI and paper search. Do not proactively search for "
+            "copy or styling, renames, clear localized bugs, tests/logging/types, validation or field adjustments, simple CRUD, or an "
+            "isolated function, component, or endpoint change merely because AI terms appear. Run at most one initial search per unchanged "
+            "requirement. Do not batch this call with native WebSearch/WebFetch/Bash: await and inspect the MCP result first. Use a host tool only if "
+            "this call fails, returns no usable or relevant items, or lacks a specific external fact, then query only that missing detail. "
+            "Finding a candidate does not authorize architecture-changing adoption; present reuse, design-reference, and build-from-scratch "
+            "options and await the user's choice. Non-empty queries default to relevance ranking; explicit stars, hot, updated, recent, "
+            "or name sorts remain authoritative, and today scope always uses hot. A capable MCP host may include the optional versioned intent "
+            "object using full conversation context; preserve exact technical names. Intent affects relevance only, while explicit top-level "
+            "filters and sort remain authoritative. It supports language filters, categories, and station recommendations. "
             "For non-AI GitHub or open-source software, call search_github_projects instead. Use returned AIGC_NEWS fields such as "
             "description_zh, tags, categories, language, stars, daily_star_growth, hot_score, and URL before inspecting repositories. "
             "If local results are zero, this tool may perform a bounded read-only AI-focused GitHub Search fallback labeled github_api_fallback."
@@ -238,8 +249,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Legacy compatibility entry for the curated/enriched AIGC_NEWS GitHub AI project library with local-first behavior. "
             "Existing clients may keep using it. New requests should use search_github_ai_projects for AI projects or "
-            "search_github_projects for non-AI GitHub/open-source software. Non-empty queries default to relevance; sort=hot uses "
-            "exact consecutive daily snapshots when available. Direct AI-focused GitHub fallback is attempted only after local results are zero."
+            "search_github_projects for non-AI GitHub/open-source software. Non-empty queries default to relevance; capable hosts may "
+            "supply the same optional versioned intent used by search_github_ai_projects. Intent affects relevance only and explicit "
+            "top-level filters remain authoritative. sort=hot uses exact consecutive daily snapshots when available. Direct AI-focused "
+            "GitHub fallback is attempted only after local results are zero."
         ),
         "inputSchema": input_schema("get_project_library"),
     },
@@ -520,6 +533,7 @@ async def _search_project_library(
         query=q,
         mode="generic" if generic else "ai",
         language=language,
+        client_intent=None if generic else args.get("intent"),
         category=category,
         subcategory=subcategory,
         scope=scope,
@@ -608,7 +622,7 @@ async def _tool_search_my_project_favorites(request: Request, args: dict[str, An
 async def _tool_get_project_categories(_request: Request, args: dict[str, Any]) -> dict[str, Any]:
     if args:
         raise McpToolInputError("get_project_categories 不接受参数。")
-    db = MySQLRepository()
+    db = get_project_catalog_repository()
     result = await asyncio.to_thread(
         db.get_project_categories,
         source="github",
@@ -862,15 +876,22 @@ def _get_prompt(name: Any, arguments: Any) -> dict[str, Any]:
         text = f"""
 Use the AIGC_NEWS MCP public context to produce a concise research brief.{topic_line}
 
+Routing policy:
+- Any explicit request to find, search, recommend, compare, or reuse a project, repository, open-source implementation, SDK, framework, component, template, example, or tutorial starts with one matching AIGC_NEWS MCP search, even if GitHub or open source was not named.
+- Before implementing a major module, complete capability, or independent subsystem, perform one proactive project reuse check even without explicit discovery intent.
+- Use `search_github_ai_projects` for AI/Agent/MCP/RAG/LLM engineering artifacts and `search_github_projects` for non-AI software artifacts. Requests to improve AI development efficiency, accelerate AI application delivery, or reduce repeated AI engineering work use `search_github_ai_projects` first.
+- Use `search_papers` first only when the dominant requested output is explicitly scholarly: papers, literature, surveys, citations, authors/venues, academic benchmarks/evaluations, methods/theory, experiments, or research results. It returns arXiv papers only.
+- Do not proactively search for copy or styling, renames, clear localized bugs, tests/logging/types, validation or field adjustments, simple CRUD, or an isolated function, component, or endpoint change.
+
 Suggested flow:
 1. Read `aigc-news://dashboard/summary` for the latest overall context.
-2. For generic Agent/MCP learning, tutorials, examples, implementations, SDK/server/client resources, workflows, tool calling, or unspecified 资料, call `search_github_ai_projects` first even if GitHub/open source was not named.
-3. Use `search_papers` first only when the dominant requested output is explicitly scholarly: papers, literature, surveys, citations, authors/venues, benchmarks/evaluations, methods/theory, experiments, or research results. It returns arXiv papers only. Rewrite academic requests into 1-3 concise technical terms.
-4. Use `search_documents` only for explicit AIGC_NEWS indexed news/feed or cross-source searches; GitHub project discovery should still use the project tools.
-5. For mixed requests choose one initial route by the dominant deliverable: implementations/tutorials use GitHub AI; papers/citations/experimental results use papers. Do not batch primary searches or MCP and host web tools in the same initial tool message.
-5. Inspect the selected AIGC_NEWS result before adding another source. If the MCP call fails, returns no relevant items, or lacks a specific fact, use another MCP tool or a host web tool only for that missing detail.
-6. If a specific indexed item matters, call `get_paper_detail` for its id.
-7. Summarize key trends, notable papers/projects/news, and why they matter, distinguishing AIGC_NEWS evidence from any later web fallback.
+2. Choose exactly one initial search route by the dominant deliverable and run at most one initial search per unchanged requirement. For mixed requests, do not batch primary searches.
+3. Rewrite academic requests into 1-3 concise technical terms. Use `search_documents` only for explicit AIGC_NEWS indexed news/feed or cross-source searches.
+4. Do not batch the selected MCP search with host WebSearch/WebFetch/Bash. Await and inspect the selected AIGC_NEWS result first.
+5. If the MCP call fails, returns no usable or relevant items, or lacks a specific external fact, use another MCP tool or a host web tool only for that missing detail.
+6. If reuse changes architecture, deployment, data ownership, licensing, or long-term maintenance, present reuse, design-reference, and build-from-scratch options and await the user's choice.
+7. If a specific indexed item matters, call `get_paper_detail` for its id.
+8. Summarize key trends, notable papers/projects/news, and why they matter, distinguishing AIGC_NEWS evidence from any later web fallback.
 
 These instructions guide MCP-aware agents; the MCP server cannot override a client's own system prompt or native tool priorities. Do not use private user data or admin-only operations.
 """
@@ -894,19 +915,15 @@ These instructions guide MCP-aware agents; the MCP server cannot override a clie
         text = f"""
 Use the AIGC_NEWS MCP public GitHub project context to discover useful projects.{filter_text}
 
-Decision policy before searching:
-- First reuse capabilities already present in the current codebase and dependencies.
-- Do not call project search for typo fixes, styling/copy, renames, clear bugs, validation/field changes, tests/logging/types, simple CRUD, or isolated function/component/endpoint changes.
-- Always search when the user explicitly asks for open-source alternatives, describes a complete product or independent subsystem, references an existing product, or requests mature/high-risk infrastructure such as auth, payments, permissions, workflow engines, search engines, queues, collaboration, protocol implementations, or sandboxes.
-- For remaining development requests, score 0-3 on scope, standardization, external integration, risk, expected effort, and reuse potential. Total 0-4 means implement directly; 5-8 means one light search only when it can change the decision; 9-18 means search and ask the user to choose a route.
-
-Local-first search policy:
-- For qualifying non-AI software requests, call `search_github_projects` before generic web/GitHub search.
-- For Agent/MCP topics, `search_github_ai_projects` is the default first route for generic learning or 资料, tutorials, examples, implementations, SDKs, servers/clients, workflows, tool calling, demos, templates, and exploration, even without an explicit GitHub/open-source request.
-- Use `search_papers` first only when the dominant deliverable is explicitly scholarly (papers/literature/surveys/citations/benchmarks/evaluations/methods/theory/experiments/research results). For mixed requests choose one initial route by the dominant deliverable; do not batch both searches.
-- For other qualifying AI requests (RAG, local deployment, Web UI, workflow automation, Python AI repos), call `search_github_ai_projects` first.
+MCP-first discovery and reuse policy:
+- Whenever the user explicitly asks to find, search, recommend, compare, or reuse a project, repository, open-source implementation, SDK, framework, component, template, example, or tutorial, call one matching AIGC_NEWS MCP search first. The user does not need to say GitHub or open source.
+- Before implementing a major module, complete capability, or independent subsystem, perform one proactive reuse check even without explicit discovery intent. This means a cohesive capability with its own architecture, integration, or maintenance boundary—not merely a large diff. Examples include auth/permissions, payments, workflow engines, queues, search/indexing, collaboration, protocol implementations, sandboxes, local AI deployment, and end-to-end RAG or Agent subsystems.
+- For AI, Agent, MCP, RAG, or LLM engineering artifacts, call `search_github_ai_projects` first. Requests to improve AI development efficiency, accelerate AI application delivery, or reduce repeated AI engineering work also use it first. For non-AI software artifacts, call `search_github_projects` first.
+- Use `search_papers` first only when the dominant deliverable is explicitly scholarly: papers, literature, surveys, citations, authors/venues, academic benchmarks/evaluations, methods/theory, experiments, or research results.
+- For mixed requests choose exactly one initial route by the dominant deliverable; do not batch primary searches.
+- Do not proactively search for copy or styling, renames, clear localized bugs, tests/logging/types, validation or field adjustments, simple CRUD, or an isolated function, component, or endpoint change.
 - Do not put the selected MCP search and native WebSearch/WebFetch/Bash in the same initial tool batch. Await and inspect the MCP result first.
-- Use a host tool only if the MCP call fails, returns no usable items, or lacks a specific fact required by the request; query only that missing detail rather than repeating the broad discovery search.
+- Use a host tool only if the MCP call fails, returns no usable or relevant items, or lacks a specific external fact required by the request; query only that missing detail rather than repeating the broad discovery search.
 - `get_project_library` remains a legacy AI alias.
 - For broad discovery/comparison questions, use the returned AIGC_NEWS local fields (`description`, `description_zh`, `tags`, `topics`, category/subcategory, language, stars, forks, pushed_at, url) as the project summary and evidence.
 - Do not inspect each returned GitHub repository just to summarize candidates. Only visit GitHub/README/docs when the user explicitly asks about one or several named projects, or when local MCP metadata is insufficient to answer a concrete follow-up question.
@@ -914,19 +931,19 @@ Local-first search policy:
 
 Suggested flow:
 1. If category/subcategory is unclear, read `aigc-news://projects/categories` or call `get_project_categories`.
-2. Call `search_github_projects` for generic software, or `search_github_ai_projects` for AI projects, with concise `q`, relevant filters, and limit 5-10. AI queries default to `relevance`; use `stars` or `hot` only when the user explicitly wants popularity or trend order.
+2. Call `search_github_projects` for non-AI software, or `search_github_ai_projects` for AI engineering artifacts, with concise `q`, relevant filters, and limit 5-10. AI queries default to `relevance`; use `stars` or `hot` only when the user explicitly wants popularity or trend order.
 3. If `fallback_used` is false or `local_total` is positive, answer from the curated AIGC_NEWS local project library without re-checking every GitHub repo.
 4. If local metadata is insufficient, explain what is missing; only then inspect the specific returned repo(s) needed for that missing detail.
 5. If `fallback_used` is true and `result_origin` is `github_api_fallback`, clearly label those results as direct GitHub fallback rather than curated local catalog entries.
 6. Filter candidates by requirement match, maintenance, integration fit, documentation, license fit, community, and security/stability; stars alone are not suitability.
 7. Show only the best 2-3 candidates. If none clearly saves implementation effort or reduces risk, recommend building within the current project without forcing a meaningless choice.
-8. If adopting a candidate changes architecture, deployment, data ownership, licensing, or long-term maintenance, stop and ask the user to choose: reuse a numbered candidate, build from scratch, or refine and search again. Do not start implementation in the same turn.
+8. If adopting a candidate changes architecture, deployment, data ownership, licensing, or long-term maintenance, stop and ask the user to choose: reuse a numbered candidate, use it only as a design reference and build internally, build from scratch, or refine and search again. Do not start implementation in the same turn.
 9. Run at most one initial search per unchanged requirement. Search again only when the user asks, filters change, the first result is empty, or candidates are incompatible.
 
 These instructions guide MCP-aware agents; the MCP server cannot override a client's own system prompt or native tool priorities. Do not use personal favorites or admin-only MCP server configuration.
 """
         return {
-            "description": "Discover and compare public AI GitHub projects with local-first AIGC_NEWS MCP search.",
+            "description": "Discover, compare, and evaluate reusable public projects with local-first AIGC_NEWS MCP search.",
             "messages": [_prompt_message(text)],
         }
 
@@ -1028,6 +1045,7 @@ async def mcp_endpoint(
                     "prompts": {"listChanged": False},
                 },
                 "serverInfo": {"name": MCP_SERVER_NAME, "version": MCP_SERVER_VERSION},
+                "instructions": MCP_HOST_INSTRUCTIONS,
             },
             session_id=session_id,
         )

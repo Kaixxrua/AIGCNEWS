@@ -54,6 +54,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_mcp
+from backend.app.api.mcp_contracts import SearchGitHubAIProjectsInput
 from backend.app.api.dependencies import get_briefing_repository
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.services import project_discovery
@@ -80,51 +81,127 @@ class ToolMetadataTests(unittest.TestCase):
         papers = tools["search_papers"]["description"].lower()
         ai = tools["search_github_ai_projects"]["description"].lower()
         legacy = tools["get_project_library"]["description"].lower()
-        self.assertIn("when search is warranted", generic)
+        for trigger in ("find", "search", "recommend", "compare", "reuse"):
+            self.assertIn(trigger, generic)
+            self.assertIn(trigger, ai)
+        for artifact in ("project", "sdk", "framework", "component", "template", "example", "tutorial"):
+            self.assertIn(artifact, generic)
+            self.assertIn(artifact, ai)
         self.assertIn("non-ai", generic)
         self.assertIn("screenshot", generic)
-        self.assertIn("explicitly scholarly", papers)
+        self.assertIn("major non-ai module", generic)
+        self.assertIn("independent subsystem", generic)
+        self.assertIn("simple crud", generic)
+        self.assertIn("isolated function", generic)
+        self.assertIn("at most one initial search", generic)
+        self.assertIn("architecture-changing adoption", generic)
+        self.assertIn("search_github_ai_projects", generic)
+        self.assertIn("scholarly outputs", papers)
         self.assertIn("surveys or systematic reviews", papers)
         self.assertIn("citations", papers)
-        self.assertIn("benchmarks or evaluations", papers)
+        self.assertIn("academic evaluations", papers)
         self.assertIn("agent/mcp is only a topic", papers)
-        self.assertIn("generic agent/mcp learning", papers)
         self.assertIn("search_github_ai_projects first", papers)
         self.assertIn("1-3 established technical terms", papers)
         self.assertIn("dominant deliverable", papers)
-        self.assertIn("do not batch both primary searches", papers)
-        self.assertIn("native websearch/webfetch", papers)
+        self.assertIn("native websearch/webfetch/bash", papers)
         self.assertIn("call fails", papers)
-        self.assertIn("no relevant items", papers)
-        self.assertIn("default first search for agent/mcp topics", ai)
-        self.assertIn("generic learning resources", ai)
-        self.assertIn("tutorials", ai)
-        self.assertIn("sdks", ai)
-        self.assertIn("tool calling", ai)
+        self.assertIn("no usable or relevant items", papers)
+        self.assertIn("mcp-first local search", ai)
+        self.assertIn("agent", ai)
+        self.assertIn("rag", ai)
+        self.assertIn("major ai module", ai)
+        self.assertIn("independent subsystem", ai)
+        self.assertIn("improve ai development efficiency", ai)
+        self.assertIn("simple crud", ai)
+        self.assertIn("isolated function", ai)
+        self.assertIn("at most one initial search", ai)
+        self.assertIn("architecture-changing adoption", ai)
         self.assertIn("search_papers first only", ai)
         self.assertIn("dominant deliverable", ai)
-        self.assertIn("search_github_projects", ai)
         self.assertIn("default to relevance", ai)
         for tool_name in ("search_github_ai_projects", "get_project_library"):
             sort_schema = tools[tool_name]["inputSchema"]["properties"]["sort"]
             self.assertIn("relevance", json.dumps(sort_schema))
         for tool_name in ("search_github_projects", "search_my_project_favorites"):
-            sort_schema = routes_mcp.input_schema(tool_name)["properties"]["sort"]
+            schema = routes_mcp.input_schema(tool_name)
+            sort_schema = schema["properties"]["sort"]
             self.assertNotIn("relevance", json.dumps(sort_schema))
+            self.assertNotIn("intent", schema["properties"])
+        for tool_name in ("search_github_ai_projects", "get_project_library"):
+            self.assertIn("intent", tools[tool_name]["inputSchema"]["properties"])
         for description in (generic, ai):
             self.assertIn("do not batch", description)
             self.assertIn("websearch/webfetch/bash", description)
             self.assertIn("inspect the mcp result first", description)
             self.assertIn("call fails", description)
-            self.assertIn("no usable items", description)
+            self.assertIn("no usable or relevant items", description)
             self.assertIn("missing detail", description)
         self.assertIn("favorites", generic)
-        self.assertIn("do not call", generic)
-        self.assertIn("complete product", generic)
         self.assertIn("excludes", ai)
-        self.assertIn("narrow edits", ai)
         self.assertIn("legacy", legacy)
         self.assertEqual(tools["search_github_projects"]["inputSchema"]["required"], ["q"])
+
+
+class HostIntentContractTests(unittest.TestCase):
+    def _intent(self) -> dict:
+        return {
+            "schema_version": "project-search-intent-client-v1",
+            "language": "en",
+            "intent_class": "sdk",
+            "lexical_terms": ["MCP", "Python", "SDK"],
+            "semantic_queries": ["MCP Python SDK server examples"],
+            "must_have": ["MCP", "Python"],
+        }
+
+    def test_valid_intent_is_normalized_without_changing_top_level_filters(self) -> None:
+        validated = SearchGitHubAIProjectsInput.model_validate(
+            {
+                "q": "MCP Python SDK",
+                "category": "agents_automation",
+                "language": "Python",
+                "sort": "relevance",
+                "intent": self._intent(),
+            }
+        )
+
+        self.assertEqual(validated.category, "agents_automation")
+        self.assertEqual(validated.language, "Python")
+        self.assertEqual(validated.sort, "relevance")
+        self.assertEqual(validated.intent.lexical_terms, ["MCP", "Python", "SDK"])
+
+    def test_invalid_version_unknown_key_and_removed_token_are_rejected(self) -> None:
+        invalid_payloads = []
+        wrong_version = self._intent()
+        wrong_version["schema_version"] = "v2"
+        invalid_payloads.append(wrong_version)
+        unknown_key = self._intent()
+        unknown_key["sort"] = "stars"
+        invalid_payloads.append(unknown_key)
+        removed_token = self._intent()
+        removed_token["lexical_terms"] = ["Python", "SDK"]
+        removed_token["semantic_queries"] = ["Python SDK examples"]
+        invalid_payloads.append(removed_token)
+
+        for intent in invalid_payloads:
+            with self.subTest(intent=intent):
+                with self.assertRaises(Exception):
+                    SearchGitHubAIProjectsInput.model_validate(
+                        {"q": "MCP Python SDK", "intent": intent}
+                    )
+
+    def test_control_character_and_oversized_values_are_rejected(self) -> None:
+        control = self._intent()
+        control["lexical_terms"] = ["MCP\nPython"]
+        oversized = self._intent()
+        oversized["semantic_queries"] = ["MCP " + "x" * 121]
+
+        for intent in (control, oversized):
+            with self.subTest(intent=intent):
+                with self.assertRaises(Exception):
+                    SearchGitHubAIProjectsInput.model_validate(
+                        {"q": "MCP Python SDK", "intent": intent}
+                    )
 
 
 class QueryModeTests(unittest.TestCase):
@@ -299,6 +376,18 @@ class ProjectHandlerTests(unittest.TestCase):
         self.assertEqual(fallback.call_args.kwargs["mode"], "ai")
         self.assertEqual(fallback.call_args.kwargs["min_stars"], 500)
 
+    def test_ai_and_legacy_handlers_forward_host_intent(self) -> None:
+        intent = HostIntentContractTests()._intent()
+        for handler in (
+            routes_mcp._tool_search_github_ai_projects,
+            routes_mcp._tool_get_project_library,
+        ):
+            with self.subTest(handler=handler.__name__):
+                with patch.object(routes_mcp, "search_projects", new=AsyncMock(return_value={})) as search:
+                    asyncio.run(handler(None, {"q": "MCP Python SDK", "intent": intent}))
+                self.assertEqual(search.call_args.kwargs["client_intent"], intent)
+                self.assertEqual(search.call_args.kwargs["query"], "MCP Python SDK")
+
     def test_local_hit_suppresses_fallback(self) -> None:
         local = {"items": [{"id": "x", "full_name": "owner/local", "stars": 900}], "total": 1}
         with (
@@ -432,7 +521,26 @@ class McpProtocolTests(unittest.TestCase):
             json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
         )
         self.assertEqual(initialized.status_code, 200)
-        self.assertEqual(initialized.json()["result"]["protocolVersion"], routes_mcp.MCP_PROTOCOL_VERSION)
+        initialize_result = initialized.json()["result"]
+        self.assertEqual(initialize_result["protocolVersion"], routes_mcp.MCP_PROTOCOL_VERSION)
+        self.assertEqual(initialize_result["serverInfo"]["name"], routes_mcp.MCP_SERVER_NAME)
+        self.assertIn("tools", initialize_result["capabilities"])
+        instructions = initialize_result["instructions"].lower()
+        for trigger in ("find", "search", "recommend", "compare", "reuse"):
+            self.assertIn(trigger, instructions)
+        self.assertIn("search_github_ai_projects", instructions)
+        self.assertIn("search_github_projects", instructions)
+        self.assertIn("search_papers", instructions)
+        self.assertIn("major module", instructions)
+        self.assertIn("independent subsystem", instructions)
+        self.assertIn("improve ai development efficiency", instructions)
+        self.assertIn("simple crud", instructions)
+        self.assertIn("isolated function", instructions)
+        self.assertIn("at most one initial search", instructions)
+        self.assertIn("do not batch", instructions)
+        self.assertIn("finding a candidate does not authorize adoption", instructions)
+        self.assertIn("await the user's choice", instructions)
+        self.assertIn("cannot override a client's system prompt", instructions)
         self.assertTrue(initialized.headers.get("mcp-session-id"))
         notification = self.client.post(
             "/api/mcp",
@@ -461,27 +569,50 @@ class McpProtocolTests(unittest.TestCase):
             prompts[name] = response.json()["result"]["messages"][0]["content"]["text"].lower()
 
         research = prompts["daily_research_brief"]
-        self.assertIn("generic agent/mcp learning", research)
-        self.assertIn("search_github_ai_projects` first", research)
+        for trigger in ("find", "search", "recommend", "compare", "reuse"):
+            self.assertIn(trigger, research)
+        self.assertIn("search_github_ai_projects`", research)
+        self.assertIn("search_github_projects`", research)
         self.assertIn("search_papers` first only", research)
         self.assertIn("explicitly scholarly", research)
+        self.assertIn("major module", research)
+        self.assertIn("independent subsystem", research)
+        self.assertIn("improve ai development efficiency", research)
+        self.assertIn("simple crud", research)
+        self.assertIn("isolated function", research)
+        self.assertIn("at most one initial search", research)
         self.assertIn("dominant deliverable", research)
         self.assertIn("do not batch primary searches", research)
-        self.assertIn("inspect the selected aigc_news result", research)
+        self.assertIn("design-reference", research)
+        self.assertIn("await the user's choice", research)
+        self.assertIn("await and inspect the selected aigc_news result", research)
         self.assertIn("call fails", research)
         self.assertIn("missing detail", research)
 
         projects = prompts["project_discovery"]
-        self.assertIn("default first route for generic learning", projects)
+        for trigger in ("find", "search", "recommend", "compare", "reuse"):
+            self.assertIn(trigger, projects)
+        for artifact in ("project", "repository", "sdk", "framework", "component", "template", "example", "tutorial"):
+            self.assertIn(artifact, projects)
+        self.assertIn("search_github_ai_projects` first", projects)
+        self.assertIn("search_github_projects` first", projects)
         self.assertIn("search_papers` first only", projects)
         self.assertIn("dominant deliverable", projects)
-        self.assertIn("do not batch both searches", projects)
+        self.assertIn("major module", projects)
+        self.assertIn("independent subsystem", projects)
+        self.assertIn("improve ai development efficiency", projects)
+        self.assertIn("auth/permissions", projects)
+        self.assertIn("simple crud", projects)
+        self.assertIn("isolated function", projects)
         self.assertIn("do not put the selected mcp search", projects)
         self.assertIn("same initial tool batch", projects)
         self.assertIn("await and inspect the mcp result first", projects)
         self.assertIn("call fails", projects)
-        self.assertIn("no usable items", projects)
+        self.assertIn("no usable or relevant items", projects)
         self.assertIn("missing detail", projects)
+        self.assertIn("at most one initial search per unchanged requirement", projects)
+        self.assertIn("use it only as a design reference", projects)
+        self.assertIn("do not start implementation in the same turn", projects)
         self.assertIn("cannot override a client's own system prompt", projects)
 
     def test_search_papers_uses_shared_repository_and_hides_local_path(self) -> None:

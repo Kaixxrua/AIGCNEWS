@@ -29,6 +29,7 @@ const { copy } = useClipboard()
 const MCP_PROTOCOL_VERSION = '2025-06-18'
 const MCP_TEST_TIMEOUT_MS = 15_000
 const SCOPE = 'projects:favorites:read'
+const MCP_FIRST_HOST_INSTRUCTION = `当用户明确要求寻找、搜索、推荐、比较或复用项目、仓库、开源实现、SDK、框架、组件、模板、示例或教程时，即使没有明确说 GitHub 或开源，也必须先调用一个最匹配的 AIGC_NEWS MCP 搜索工具。在实现重大模块、完整能力或独立子系统之前，即使用户没有要求搜索，也先做一次开源复用检查；重大能力指具有自身架构、集成或长期维护边界的完整能力，而不是单纯改动行数多。用户要求提升 AI 开发效率、加速 AI 应用交付或减少 AI 工程重复工作时，先调用 search_github_ai_projects。AI、Agent、MCP、RAG、LLM 工程产物使用 search_github_ai_projects；非 AI 软件产物使用 search_github_projects；主要交付物明确是论文、文献、引用、实验或学术评测时使用 search_papers。文案或样式、重命名、明确局部 Bug、测试/日志/类型、validation 或字段调整、简单 CRUD、孤立函数/组件/endpoint 修改不主动搜索。混合请求按主要交付物只选择一个初始路由，每个未变化需求最多一次初始搜索。不要把首次 MCP 搜索与 WebSearch、WebFetch 或 Bash 放在同一批次；等待并检查 MCP 结果后，只有在 MCP 失败、没有可用或相关结果，或缺少某个具体外部事实时，才针对该缺口使用 Web 工具。找到候选不等于可以自动采用；如果复用会改变架构、部署、数据归属、许可证或长期维护，列出“直接复用、仅借鉴设计后自研、完全自研”等选项并等待用户确认。`
 const defaultEndpoint = typeof window !== 'undefined' ? new URL('/api/mcp', window.location.origin).href : 'https://your-domain.com/api/mcp'
 
 const endpointUrl = ref(defaultEndpoint)
@@ -59,8 +60,8 @@ const publicTools: PublicTool[] = [
   { name: 'search_documents', description: '检索新闻、论文、GitHub 等跨来源索引内容。' },
   { name: 'get_paper_detail', description: '读取单篇公开索引文档的详细元数据。' },
   { name: 'get_top_items', description: '读取 daily / weekly / monthly 公开排行。' },
-  { name: 'search_github_projects', description: '搜索公开 GitHub 项目与开源软件。' },
-  { name: 'search_github_ai_projects', description: '搜索本地优先的 GitHub AI 项目库。' },
+  { name: 'search_github_projects', description: '优先搜索非 AI 项目、组件、SDK、框架、模板与开源软件。' },
+  { name: 'search_github_ai_projects', description: '优先搜索本地 AI / Agent / MCP / RAG / LLM 项目库。' },
   { name: 'get_project_library', description: '兼容读取 GitHub AI 项目库。' },
   { name: 'get_project_categories', description: '读取 AI 项目分类与数量。' },
 ]
@@ -141,14 +142,20 @@ async function startSetup() {
   } catch (error) { setupError.value = apiError(error, '创建 MCP Token 失败。') }
   finally { creating.value = false }
 }
-async function copyGeneratedCommand() {
-  if (!transientCommand.value) return
+async function copyText(value: string, key: string) {
   try {
-    await copy(transientCommand.value)
-    copiedKey.value = 'command'
+    await copy(value)
+    copiedKey.value = key
     if (copyTimer) clearTimeout(copyTimer)
     copyTimer = setTimeout(() => { copiedKey.value = '' }, 1800)
   } catch { setupError.value = '复制失败，请检查浏览器剪贴板权限。' }
+}
+async function copyGeneratedCommand() {
+  if (!transientCommand.value) return
+  await copyText(transientCommand.value, 'command')
+}
+async function copyHostInstruction() {
+  await copyText(MCP_FIRST_HOST_INSTRUCTION, 'host-instruction')
 }
 async function removeToken(item: McpTokenMetadata) {
   if (!window.confirm(`删除 ${item.client_label || item.token_hint}？使用该 Token 的客户端将立即失去收藏访问权限。`)) return
@@ -271,6 +278,19 @@ onBeforeUnmount(() => { clearTransientCommand(); if (copyTimer) clearTimeout(cop
         <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">Token management</p><h2 class="mt-1 text-lg font-semibold text-stone-800">已创建的 MCP Token</h2></div><button class="btn-secondary text-xs" :disabled="loadingTokens" @click="loadTokens">{{ loadingTokens ? '刷新中…' : '刷新' }}</button></div>
         <div v-if="tokens.length" class="mcp-token-list mt-4 grid gap-3 pr-1"><div v-for="item in tokens" :key="item.id" class="grid gap-3 rounded-[20px] border border-stone-200 bg-white/70 p-4 md:grid-cols-[1fr_auto] md:items-center"><div><div class="flex flex-wrap items-center gap-2"><span class="font-semibold text-stone-800">{{ item.client_label || item.client_type }}</span><span class="rounded-full px-2 py-0.5 text-2xs" :class="tokenStatus(item) === '有效' ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-500'">{{ tokenStatus(item) }}</span></div><p class="mt-2 font-mono text-xs text-stone-500">{{ item.token_hint }}</p><p class="mt-1 text-2xs text-stone-400">创建：{{ formatDate(item.created_at) }} · 最近使用：{{ formatDate(item.last_used_at) }}</p></div><button class="btn-secondary text-xs text-rose-700" :disabled="deletingId === item.id" @click="removeToken(item)">{{ deletingId === item.id ? '删除中…' : '删除' }}</button></div></div>
         <p v-else-if="!loadingTokens" class="mt-4 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">还没有 MCP Token。</p>
+      </section>
+
+      <section class="glass-card p-5 md:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">MCP-first routing</p><h2 class="mt-1 text-lg font-semibold text-stone-800">先发现、先复用，再实现重大能力</h2><p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">明确寻找项目时必搜；实现重大模块或独立子系统前先做一次开源复用检查；提升 AI 开发效率时优先搜索 AI 项目。样式、重命名、局部 Bug、简单 CRUD 等局部改动不主动搜索。</p></div>
+          <button class="btn-secondary text-xs" @click="copyHostInstruction">{{ copiedKey === 'host-instruction' ? '已复制' : '复制 Host 指令' }}</button>
+        </div>
+        <div class="mt-4 grid gap-3 md:grid-cols-3">
+          <div class="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4"><p class="font-mono text-2xs font-semibold text-cyan-800">AI / Agent / MCP / RAG</p><p class="mt-2 text-xs leading-5 text-cyan-900">search_github_ai_projects</p></div>
+          <div class="rounded-2xl border border-stone-200 bg-white/70 p-4"><p class="font-mono text-2xs font-semibold text-stone-600">非 AI 软件与组件</p><p class="mt-2 text-xs leading-5 text-stone-800">search_github_projects</p></div>
+          <div class="rounded-2xl border border-violet-100 bg-violet-50/60 p-4"><p class="font-mono text-2xs font-semibold text-violet-700">论文 / 引用 / 实验</p><p class="mt-2 text-xs leading-5 text-violet-900">search_papers</p></div>
+        </div>
+        <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4"><p class="text-xs font-semibold text-amber-900">连接配置无法强制宿主工具优先级</p><p class="mt-1 text-xs leading-5 text-amber-800">生成的命令只注册 endpoint 和 Token，无法跨客户端覆盖原生 Web Search。请把上方可复制指令加入宿主的全局或项目指令；首次 MCP 结果失败、无相关结果或缺少具体事实时，再顺序回退 Web。</p></div>
       </section>
 
       <section class="glass-card p-5">

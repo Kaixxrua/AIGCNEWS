@@ -7,7 +7,11 @@ from typing import Any
 
 from backend.app.core.config import settings
 from backend.app.repositories.project_vector_repo import ProjectVectorRepository
-from backend.app.services.search_semantics import build_project_search_intent, normalize_search_query
+from backend.app.services.search_semantics import (
+    ProjectSearchIntent,
+    build_project_search_intent,
+    normalize_search_query,
+)
 
 logger = logging.getLogger(__name__)
 _WARMUP_QUERY = "AI developer tools and open source projects"
@@ -59,10 +63,13 @@ class ProjectSemanticSearch:
                     self._embeddings = get_embedding_model()
         return self._embeddings
 
-    def search_repo_ids(self, query: str) -> list[ProjectSemanticHit]:
+    def search_repo_ids(
+        self,
+        query: str | ProjectSearchIntent,
+    ) -> list[ProjectSemanticHit]:
         if not settings.project_semantic_search_enabled:
             return []
-        intent = build_project_search_intent(query)
+        intent = query if isinstance(query, ProjectSearchIntent) else build_project_search_intent(query)
         if not intent.semantic_queries:
             return []
         rankings: list[list[ProjectSemanticHit]] = []

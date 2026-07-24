@@ -194,6 +194,49 @@ class ProjectDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(result["sort"], "relevance")
 
+    def test_host_intent_is_shared_by_lexical_and_semantic_search(self) -> None:
+        class HybridRepository:
+            def __init__(self) -> None:
+                self.lexical_queries = []
+
+            def find_lexical_candidate_repo_ids(self, **kwargs):
+                self.lexical_queries.append(kwargs["q"])
+                return ["owner/sdk"]
+
+            def list_projects(self, **kwargs):
+                return {
+                    "items": [{"full_name": "owner/sdk", "stars": 800}],
+                    "total": 1,
+                }
+
+        semantic = MagicMock()
+        semantic.search_repo_ids.return_value = []
+        repo = HybridRepository()
+        project_discovery.settings.project_semantic_search_enabled = True
+        try:
+            asyncio.run(
+                project_discovery.search_projects(
+                    query="MCP Python SDK server examples",
+                    mode="ai",
+                    client_intent={
+                        "language": "en",
+                        "intent_class": "sdk",
+                        "lexical_terms": ["MCP", "Python", "SDK"],
+                        "semantic_queries": ["Model Context Protocol MCP Python SDK examples"],
+                        "must_have": ["MCP", "Python"],
+                    },
+                    repository_factory=lambda: repo,
+                    semantic_search_factory=lambda: semantic,
+                )
+            )
+        finally:
+            project_discovery.settings.project_semantic_search_enabled = False
+
+        self.assertEqual(repo.lexical_queries, ["MCP Python SDK"])
+        selected_intent = semantic.search_repo_ids.call_args.args[0]
+        self.assertEqual(selected_intent.schema_version, "project-search-intent-client-v1")
+        self.assertEqual(selected_intent.must_have, ("MCP", "Python"))
+
     def test_optional_reranker_reorders_hybrid_prefix(self) -> None:
         class HybridRepository:
             def __init__(self) -> None:
@@ -235,6 +278,53 @@ class ProjectDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(repo.calls[-1]["candidate_repo_ids"], ["owner/b", "owner/a"])
 
+    def test_host_intent_enriches_reranker_query_without_changing_filters(self) -> None:
+        class HybridRepository:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def find_lexical_candidate_repo_ids(self, **_kwargs):
+                return ["owner/a", "owner/b"]
+
+            def list_projects(self, **kwargs):
+                self.calls.append(kwargs)
+                return {
+                    "items": [{"full_name": repo_id} for repo_id in kwargs["candidate_repo_ids"]],
+                    "total": len(kwargs["candidate_repo_ids"]),
+                }
+
+        repo = HybridRepository()
+        reranker = MagicMock()
+        reranker.rerank_repo_ids = AsyncMock(return_value=["owner/a", "owner/b"])
+        project_discovery.settings.project_reranker_enabled = True
+        try:
+            asyncio.run(
+                project_discovery.search_projects(
+                    query="MCP Python SDK",
+                    mode="ai",
+                    language="Python",
+                    category="agents_automation",
+                    client_intent={
+                        "language": "en",
+                        "intent_class": "sdk",
+                        "lexical_terms": ["MCP", "Python", "SDK"],
+                        "semantic_queries": ["MCP Python SDK server examples"],
+                        "artifact_types": ["SDK", "server"],
+                        "must_have": ["MCP", "Python"],
+                    },
+                    repository_factory=lambda: repo,
+                    reranker_factory=lambda: reranker,
+                )
+            )
+        finally:
+            project_discovery.settings.project_reranker_enabled = False
+
+        reranker_query = reranker.rerank_repo_ids.call_args.args[0]
+        self.assertIn("artifact types: SDK, server", reranker_query)
+        self.assertIn("must have: MCP, Python", reranker_query)
+        self.assertTrue(all(call["category"] == "agents_automation" for call in repo.calls))
+        self.assertTrue(all(call["language"] == "Python" for call in repo.calls))
+
     def test_default_relevance_miss_uses_bounded_github_fallback(self) -> None:
         class HybridRepository:
             def find_lexical_candidate_repo_ids(self, **_kwargs):
@@ -256,6 +346,32 @@ class ProjectDiscoveryTests(unittest.TestCase):
         self.assertTrue(result["fallback_used"])
         self.assertEqual(result["sort"], "relevance")
         self.assertEqual(fallback.call_args.kwargs["sort"], "stars")
+
+    def test_host_intent_fallback_keeps_original_query(self) -> None:
+        class HybridRepository:
+            def find_lexical_candidate_repo_ids(self, **_kwargs):
+                return []
+
+            def list_projects(self, **_kwargs):
+                return {"items": [], "total": 0}
+
+        fallback = MagicMock(return_value={"items": [], "total": 0})
+        asyncio.run(
+            project_discovery.search_projects(
+                query="Python SDK",
+                mode="ai",
+                client_intent={
+                    "language": "en",
+                    "intent_class": "sdk",
+                    "lexical_terms": ["MCP", "Python", "SDK"],
+                    "semantic_queries": ["MCP Python SDK examples"],
+                },
+                repository_factory=HybridRepository,
+                fallback_search=fallback,
+            )
+        )
+
+        self.assertEqual(fallback.call_args.kwargs["q"], "Python SDK")
 
     def test_semantic_failure_preserves_github_fallback(self) -> None:
         repo = MagicMock()

@@ -2,13 +2,26 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    StrictStr,
+    StringConstraints,
+    model_validator,
+)
 
 from backend.app.services.ingestion.project_taxonomy import (
     CATEGORY_BY_SLUG,
     SUBCATEGORY_BY_CATEGORY_SLUG,
+)
+from backend.app.services.search_semantics import (
+    ProjectIntentClass,
+    ProjectQueryLanguage,
+    build_client_project_search_intent,
 )
 
 SourceChoice = Literal["all", "arxiv", "github", "news", "producthunt", "hackernews"]
@@ -16,6 +29,9 @@ PeriodChoice = Literal["daily", "weekly", "monthly"]
 ProjectScope = Literal["all", "today", "recommended"]
 ProjectSort = Literal["hot", "stars", "updated", "recent", "name"]
 ProjectDiscoverySort = Literal["relevance", "hot", "stars", "updated", "recent", "name"]
+IntentText30 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=30)]
+IntentText40 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=40)]
+IntentText120 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=120)]
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -67,11 +83,39 @@ class GetTopItemsInput(McpInputModel):
 
 
 class SearchGitHubProjectsInput(McpInputModel):
-    q: StrictStr = Field(min_length=1, max_length=120, description="Concise GitHub project search terms.")
+    q: StrictStr = Field(
+        min_length=1,
+        max_length=120,
+        description=(
+            "Concise terms distilled from a project discovery request for software, repositories, "
+            "open-source implementations, SDKs, frameworks, components, templates, examples, or tutorials."
+        ),
+    )
     language: StrictStr = Field(default="", max_length=64)
     sort: ProjectSort = "stars"
     page: StrictInt = Field(default=1, ge=1)
     limit: StrictInt = Field(default=10, ge=1, le=20)
+
+
+class ClientProjectSearchIntentInput(McpInputModel):
+    schema_version: Literal["project-search-intent-client-v1"]
+    language: ProjectQueryLanguage
+    intent_class: ProjectIntentClass = "general_discovery"
+    lexical_terms: list[IntentText40] = Field(min_length=1, max_length=8)
+    semantic_queries: list[IntentText120] = Field(min_length=1, max_length=3)
+    topics: list[IntentText40] = Field(default_factory=list, max_length=6)
+    languages: list[IntentText30] = Field(default_factory=list, max_length=3)
+    artifact_types: list[IntentText40] = Field(default_factory=list, max_length=6)
+    must_have: list[IntentText40] = Field(default_factory=list, max_length=6)
+    should_have: list[IntentText40] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_values(self) -> "ClientProjectSearchIntentInput":
+        build_client_project_search_intent(
+            "",
+            self.model_dump(exclude={"schema_version"}),
+        )
+        return self
 
 
 class SearchGitHubAIProjectsInput(McpInputModel):
@@ -79,6 +123,10 @@ class SearchGitHubAIProjectsInput(McpInputModel):
     category: StrictStr = Field(default="", max_length=64)
     subcategory: StrictStr = Field(default="", max_length=64)
     language: StrictStr = Field(default="", max_length=64)
+    intent: ClientProjectSearchIntentInput | None = Field(
+        default=None,
+        description="Optional host-generated relevance intent; explicit top-level filters remain authoritative.",
+    )
     scope: ProjectScope = "all"
     sort: ProjectDiscoverySort | None = Field(
         default=None,
@@ -92,6 +140,11 @@ class SearchGitHubAIProjectsInput(McpInputModel):
 
     @model_validator(mode="after")
     def validate_taxonomy(self) -> "SearchGitHubAIProjectsInput":
+        if self.intent is not None:
+            build_client_project_search_intent(
+                self.q,
+                self.intent.model_dump(exclude={"schema_version"}),
+            )
         category = self.category
         subcategory = self.subcategory
         if category and category not in CATEGORY_BY_SLUG:
