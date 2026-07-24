@@ -35,8 +35,7 @@ const {
 } = useRegisterForm({
   post: (url, payload) => api.post(url, payload),
   login: (email, password) => authStore.login(email, password),
-  replace: target => router.replace(target),
-  getRedirect: () => redirect.value,
+  replace: () => router.replace(redirect.value),
 })
 </script>
 

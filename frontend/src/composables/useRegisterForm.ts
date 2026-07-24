@@ -15,16 +15,10 @@ import { useOtpCountdown } from './useOtpCountdown'
 interface RegisterFormDependencies {
   post: (url: string, payload: Record<string, string>) => Promise<unknown>
   login: (email: string, password: string) => Promise<unknown>
-  replace: (redirect: string) => void | Promise<unknown>
-  getRedirect: () => string
+  replace: () => void | Promise<unknown>
 }
 
-export const useRegisterForm = ({
-  post,
-  login,
-  replace,
-  getRedirect,
-}: RegisterFormDependencies) => {
+export const useRegisterForm = ({ post, login, replace }: RegisterFormDependencies) => {
   const email = ref('')
   const otp = ref('')
   const password = ref('')
@@ -91,7 +85,7 @@ export const useRegisterForm = ({
       await login(normalizedEmail, password.value)
       successMsg.value = '注册成功！正在为您自动登录…'
       redirectTimer = setTimeout(() => {
-        void replace(getRedirect())
+        void replace()
       }, REGISTER_REDIRECT_DELAY_MS)
     } catch (e: unknown) {
       errorMsg.value = getErrorDetail(e, '注册失败，请稍后再试')

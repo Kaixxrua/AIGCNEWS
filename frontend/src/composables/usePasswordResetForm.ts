@@ -15,10 +15,7 @@ interface PasswordResetFormDependencies {
   replaceLogin: () => void | Promise<unknown>
 }
 
-export const usePasswordResetForm = ({
-  post,
-  replaceLogin,
-}: PasswordResetFormDependencies) => {
+export const usePasswordResetForm = ({ post, replaceLogin }: PasswordResetFormDependencies) => {
   const email = ref('')
   const otp = ref('')
   const password = ref('')

@@ -37,7 +37,6 @@ export const useOtpCountdown = ({ clearBeforeStart = false }: OtpCountdownOption
   return {
     countdown,
     start,
-    stop,
     reset,
   }
 }

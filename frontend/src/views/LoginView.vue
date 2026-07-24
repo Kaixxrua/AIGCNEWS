@@ -35,10 +35,6 @@ const handleLogin = async () => {
     loading.value = false
   }
 }
-
-const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Enter') handleLogin()
-}
 </script>
 
 <template>
@@ -67,7 +63,7 @@ const handleKeydown = (e: KeyboardEvent) => {
             placeholder="you@example.com"
             autocomplete="email"
             :disabled="loading"
-            @keydown="handleKeydown"
+            @keydown.enter="handleLogin"
           />
         </div>
 
@@ -81,7 +77,7 @@ const handleKeydown = (e: KeyboardEvent) => {
             placeholder="请输入密码"
             autocomplete="current-password"
             :disabled="loading"
-            @keydown="handleKeydown"
+            @keydown.enter="handleLogin"
           />
         </div>
 
