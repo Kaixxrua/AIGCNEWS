@@ -84,7 +84,7 @@
         "page": 2,
         "page_size": 1,
         "sort": "stars",
-        "min_stars": 50,
+        "min_stars": 500,
         "enriched_only": true,
         "user_id": null
       },

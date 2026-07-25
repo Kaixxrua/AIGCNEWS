@@ -28,7 +28,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
     def test_local_hits_suppress_fallback(self) -> None:
         repo = MagicMock()
         repo.list_projects.return_value = {
-            "items": [{"id": "1", "full_name": "a/b", "stars": 100}],
+            "items": [{"id": "1", "full_name": "a/b", "stars": 500}],
             "total": 1,
         }
         fallback = MagicMock()
@@ -42,6 +42,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
             )
         )
         self.assertEqual(result["local_total"], 1)
+        self.assertEqual(repo.list_projects.call_args.kwargs["min_stars"], 500)
         self.assertFalse(result["fallback_used"])
         fallback.assert_not_called()
 
@@ -51,7 +52,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
         fallback_result = {
             "items": [{"id": "x", "full_name": "x/y", "result_origin": "github_api_fallback"}],
             "total": 1,
-            "queries": ["screenshot stars:>=50"],
+            "queries": ["screenshot stars:>=500"],
         }
         fallback = MagicMock(return_value=fallback_result)
         result = asyncio.run(
@@ -66,7 +67,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
         self.assertTrue(result["fallback_used"])
         self.assertEqual(result["result_origin"], "github_api_fallback")
         self.assertEqual(fallback.call_args.kwargs["mode"], "generic")
-        self.assertEqual(fallback.call_args.kwargs["min_stars"], 50)
+        self.assertEqual(fallback.call_args.kwargs["min_stars"], 500)
 
     def test_today_scope_never_falls_back(self) -> None:
         repo = MagicMock()

@@ -289,7 +289,7 @@ def test_fallback_success_and_error_provenance_are_frozen() -> None:
             return_value={
                 "items": [fixture["projects"]["beta"]],
                 "github_total_count": 7,
-                "queries": ["workflow stars:>=50"],
+                "queries": ["workflow stars:>=500"],
                 "cache_hit": True,
             }
         )

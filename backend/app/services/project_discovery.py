@@ -7,7 +7,10 @@ from typing import Any, Literal
 
 from backend.app.core.config import settings
 from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
-from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
+from backend.app.services.ingestion.source_github_mcp import (
+    PUBLIC_PROJECT_MIN_STARS,
+    search_github_projects_fallback,
+)
 from backend.app.services.project_reranker import get_project_reranker
 from backend.app.services.project_semantic_search import get_project_semantic_search
 from backend.app.services.search_semantics import (
@@ -170,7 +173,7 @@ async def search_projects(
     )
     page = max(1, int(page or 1))
     limit = max(1, min(int(limit or 10), 20))
-    min_stars = 50 if generic else 500
+    min_stars = PUBLIC_PROJECT_MIN_STARS
     intent = build_project_search_intent(query)
     client_intent_used = bool(
         client_intent

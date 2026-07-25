@@ -33,6 +33,7 @@ _SORT_MAP = {
     "name": "stars",
 }
 _SEARCH_MODES = {"generic", "ai"}
+PUBLIC_PROJECT_MIN_STARS = 500
 _CACHE_MAX_ENTRIES = 128
 _CACHE_SUCCESS_TTL_SECONDS = 300.0
 _CACHE_EMPTY_TTL_SECONDS = 45.0
@@ -101,6 +102,11 @@ def _build_queries(
         if normalized and normalized not in deduped:
             deduped.append(normalized)
     return deduped
+
+
+def _has_eligible_stars(item: Dict[str, Any], *, min_stars: int) -> bool:
+    stars = item.get("stargazers_count")
+    return isinstance(stars, int) and not isinstance(stars, bool) and stars >= min_stars
 
 
 def _normalize_repo(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -235,7 +241,7 @@ def search_github_projects_fallback(
     language: str = "",
     sort: str = "stars",
     limit: int = 10,
-    min_stars: int = 50,
+    min_stars: int = PUBLIC_PROJECT_MIN_STARS,
     mode: Literal["generic", "ai"] = "generic",
 ) -> Dict[str, Any]:
     """Run a bounded, read-only GitHub Search after local project search misses."""
@@ -246,7 +252,7 @@ def search_github_projects_fallback(
         return {"items": [], "total": 0, "github_total_count": 0, "queries": [], "error": "GitHub fallback is disabled."}
 
     limit = max(1, min(int(limit or 10), 20))
-    min_stars = max(0, int(min_stars or 0))
+    min_stars = max(PUBLIC_PROJECT_MIN_STARS, int(min_stars or 0))
     cache_key = _fallback_cache_key(
         mode=mode,
         q=q,
@@ -306,12 +312,25 @@ def search_github_projects_fallback(
             if result.get("error"):
                 errors.append(str(result["error"]))
             for item in result.get("items") or []:
+                if not isinstance(item, dict) or not _has_eligible_stars(
+                    item,
+                    min_stars=min_stars,
+                ):
+                    continue
                 normalized = _normalize_repo(item)
                 key = str(normalized.get("full_name") or normalized.get("repo_id") or "").casefold()
                 if not key or key in seen:
                     continue
                 seen.add(key)
                 repos.append(normalized)
+
+    repos = [
+        repo
+        for repo in repos
+        if isinstance(repo.get("stars"), int)
+        and not isinstance(repo.get("stars"), bool)
+        and int(repo["stars"]) >= min_stars
+    ]
 
     if sort == "updated":
         repos.sort(key=lambda item: str(item.get("full_name") or "").casefold())
@@ -351,7 +370,7 @@ def search_github_ai_projects_fallback(
     language: str = "",
     sort: str = "stars",
     limit: int = 10,
-    min_stars: int = 500,
+    min_stars: int = PUBLIC_PROJECT_MIN_STARS,
 ) -> Dict[str, Any]:
     """Compatibility wrapper for the curated AI-project fallback behavior."""
 

@@ -130,6 +130,9 @@ class ToolMetadataTests(unittest.TestCase):
             self.assertNotIn("intent", schema["properties"])
         for tool_name in ("search_github_ai_projects", "get_project_library"):
             self.assertIn("intent", tools[tool_name]["inputSchema"]["properties"])
+        for description in (generic, ai, legacy):
+            self.assertIn("500 github stars", description)
+            self.assertIn("unverifiable or below-threshold", description)
         for description in (generic, ai):
             self.assertIn("do not batch", description)
             self.assertIn("websearch/webfetch/bash", description)
@@ -214,10 +217,10 @@ class QueryModeTests(unittest.TestCase):
             category="",
             subcategory="",
             language="",
-            min_stars=50,
+            min_stars=500,
             mode="generic",
         )
-        self.assertEqual(queries[0], "Windows screenshot rounded corners iShot stars:>=50")
+        self.assertEqual(queries[0], "Windows screenshot rounded corners iShot stars:>=500")
         self.assertTrue(all("LLM" not in query for query in queries))
         self.assertTrue(all("RAG" not in query for query in queries))
         self.assertTrue(all("agent" not in query.lower() for query in queries))
@@ -228,15 +231,15 @@ class QueryModeTests(unittest.TestCase):
             category="",
             subcategory="",
             language="",
-            min_stars=50,
+            min_stars=500,
             mode="generic",
         )
         self.assertEqual(
             queries,
             [
-                "Windows screenshot rounded corners iShot stars:>=50",
-                "Windows screenshot rounded corners stars:>=50",
-                "Windows screenshot stars:>=50",
+                "Windows screenshot rounded corners iShot stars:>=500",
+                "Windows screenshot rounded corners stars:>=500",
+                "Windows screenshot stars:>=500",
             ],
         )
         self.assertTrue(all("LLM" not in query and "RAG" not in query for query in queries))
@@ -247,7 +250,7 @@ class QueryModeTests(unittest.TestCase):
             category="",
             subcategory="",
             language="Python",
-            min_stars=50,
+            min_stars=500,
             mode="generic",
         )
         self.assertIn("RAG", queries[0])
@@ -267,7 +270,7 @@ class QueryModeTests(unittest.TestCase):
 
     def test_fallback_cache_returns_defensive_copy(self) -> None:
         fake = {
-            "items": [{"id": 1, "full_name": "owner/repo", "html_url": "https://github.com/owner/repo"}],
+            "items": [{"id": 1, "full_name": "owner/repo", "html_url": "https://github.com/owner/repo", "stargazers_count": 500}],
             "total_count": 1,
             "error": "",
         }
@@ -283,7 +286,7 @@ class QueryModeTests(unittest.TestCase):
     def test_fallback_stops_relaxed_retries_after_limit_is_filled(self) -> None:
         empty = {"items": [], "total_count": 0, "error": ""}
         match = {
-            "items": [{"id": 1, "full_name": "owner/repo", "html_url": "https://github.com/owner/repo"}],
+            "items": [{"id": 1, "full_name": "owner/repo", "html_url": "https://github.com/owner/repo", "stargazers_count": 500}],
             "total_count": 1,
             "error": "",
         }
@@ -298,8 +301,11 @@ class QueryModeTests(unittest.TestCase):
 
     def test_fallback_globally_sorts_across_retries(self) -> None:
         low = {
-            "items": [{"id": 1, "full_name": "owner/low", "stargazers_count": 10}],
-            "total_count": 1,
+            "items": [
+                {"id": 1, "full_name": "owner/boundary", "stargazers_count": 500},
+                {"id": 3, "full_name": "owner/rejected", "stargazers_count": 499},
+            ],
+            "total_count": 2,
             "error": "",
         }
         high = {
@@ -316,8 +322,33 @@ class QueryModeTests(unittest.TestCase):
             )
         self.assertEqual(
             [item["full_name"] for item in result["items"]],
-            ["owner/high", "owner/low"],
+            ["owner/high", "owner/boundary"],
         )
+
+    def test_fallback_rejects_malformed_and_below_threshold_stars(self) -> None:
+        invalid_values = (None, "500", 500.0, True, 499)
+        items = [
+            {"id": index, "full_name": f"owner/invalid-{index}", "stargazers_count": value}
+            for index, value in enumerate(invalid_values, start=1)
+        ]
+        items.append({"id": 99, "full_name": "owner/missing"})
+        items.append({"id": 100, "full_name": "owner/boundary", "stargazers_count": 500})
+        fake = {"items": items, "total_count": len(items), "error": ""}
+
+        with patch.object(source_github_mcp, "_search_once", return_value=fake):
+            result = source_github_mcp.search_github_projects_fallback(
+                q="rounded screenshot",
+                min_stars=50,
+            )
+            cached = source_github_mcp.search_github_projects_fallback(
+                q="rounded screenshot",
+                min_stars=50,
+            )
+
+        self.assertEqual(result["queries"][0], "rounded screenshot stars:>=500")
+        self.assertEqual([item["full_name"] for item in result["items"]], ["owner/boundary"])
+        self.assertTrue(cached["cache_hit"])
+        self.assertEqual([item["full_name"] for item in cached["items"]], ["owner/boundary"])
 
     def test_fallback_cache_evicts_oldest_entry(self) -> None:
         fake = {"items": [], "total_count": 0, "error": ""}
@@ -346,10 +377,10 @@ class ProjectHandlerTests(unittest.TestCase):
 
     def test_generic_miss_uses_generic_fallback(self) -> None:
         fallback_result = {
-            "items": [{"id": "x", "full_name": "owner/repo", "url": "https://github.com/owner/repo", "stars": 100}],
+            "items": [{"id": "x", "full_name": "owner/repo", "url": "https://github.com/owner/repo", "stars": 500}],
             "total": 1,
             "github_total_count": 1,
-            "queries": ["screenshot rounded stars:>=50"],
+            "queries": ["screenshot rounded stars:>=500"],
             "error": "",
             "cache_hit": False,
         }
@@ -359,7 +390,7 @@ class ProjectHandlerTests(unittest.TestCase):
         ):
             result = asyncio.run(routes_mcp._search_project_library({"q": "screenshot rounded"}, mode="generic"))
         self.assertEqual(fallback.call_args.kwargs["mode"], "generic")
-        self.assertEqual(fallback.call_args.kwargs["min_stars"], 50)
+        self.assertEqual(fallback.call_args.kwargs["min_stars"], 500)
         self.assertEqual(result["result_origin"], "github_api_fallback")
         self.assertEqual(result["items"][0]["full_name"], "owner/repo")
 
@@ -540,6 +571,8 @@ class McpProtocolTests(unittest.TestCase):
         self.assertIn("do not batch", instructions)
         self.assertIn("finding a candidate does not authorize adoption", instructions)
         self.assertIn("await the user's choice", instructions)
+        self.assertIn("500 github stars", instructions)
+        self.assertIn("unverifiable or below 500", instructions)
         self.assertIn("cannot override a client's system prompt", instructions)
         self.assertTrue(initialized.headers.get("mcp-session-id"))
         notification = self.client.post(
@@ -588,6 +621,8 @@ class McpProtocolTests(unittest.TestCase):
         self.assertIn("await and inspect the selected aigc_news result", research)
         self.assertIn("call fails", research)
         self.assertIn("missing detail", research)
+        self.assertIn("500 github stars", research)
+        self.assertIn("unverifiable or below-threshold", research)
 
         projects = prompts["project_discovery"]
         for trigger in ("find", "search", "recommend", "compare", "reuse"):
@@ -610,6 +645,8 @@ class McpProtocolTests(unittest.TestCase):
         self.assertIn("call fails", projects)
         self.assertIn("no usable or relevant items", projects)
         self.assertIn("missing detail", projects)
+        self.assertIn("500 github stars", projects)
+        self.assertIn("unverifiable or below 500", projects)
         self.assertIn("at most one initial search per unchanged requirement", projects)
         self.assertIn("use it only as a design reference", projects)
         self.assertIn("do not start implementation in the same turn", projects)
@@ -810,17 +847,31 @@ class McpProtocolTests(unittest.TestCase):
     def test_generic_fallback_provenance_and_cache_reuse_through_json_rpc(self) -> None:
         repository = MagicMock()
         repository.list_projects.return_value = {"items": [], "total": 0}
-        github_item = {
-            "id": 1,
-            "full_name": "owner/screenshot-tool",
-            "html_url": "https://github.com/owner/screenshot-tool",
-            "description": "Windows screenshot utility",
-            "stargazers_count": 123,
-        }
+        github_items = [
+            {
+                "id": 1,
+                "full_name": "owner/screenshot-tool",
+                "html_url": "https://github.com/owner/screenshot-tool",
+                "description": "Windows screenshot utility",
+                "stargazers_count": 500,
+            },
+            {
+                "id": 2,
+                "full_name": "owner/below-threshold",
+                "html_url": "https://github.com/owner/below-threshold",
+                "stargazers_count": 499,
+            },
+            {
+                "id": 3,
+                "full_name": "owner/malformed-stars",
+                "html_url": "https://github.com/owner/malformed-stars",
+                "stargazers_count": "900",
+            },
+        ]
         source_github_mcp._clear_fallback_cache()
         with (
             patch.object(project_discovery, "get_project_catalog_repository", return_value=repository),
-            patch.object(source_github_mcp, "_search_once", return_value={"items": [github_item], "total_count": 1, "error": ""}) as search_once,
+            patch.object(source_github_mcp, "_search_once", return_value={"items": github_items, "total_count": 3, "error": ""}) as search_once,
         ):
             responses = [
                 self.client.post(
@@ -840,7 +891,10 @@ class McpProtocolTests(unittest.TestCase):
         self.assertTrue(all(payload["fallback_used"] for payload in payloads))
         self.assertFalse(payloads[0]["fallback_cache_hit"])
         self.assertTrue(payloads[1]["fallback_cache_hit"])
-        self.assertEqual(payloads[0]["items"][0]["full_name"], "owner/screenshot-tool")
+        self.assertEqual(
+            [[item["full_name"] for item in payload["items"]] for payload in payloads],
+            [["owner/screenshot-tool"], ["owner/screenshot-tool"]],
+        )
 
     def test_generic_query_is_required(self) -> None:
         with patch.object(routes_mcp, "MySQLRepository"):

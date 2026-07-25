@@ -44,7 +44,7 @@ MAX_REQUEST_BYTES = 64 * 1024
 MAX_TOOL_RESULT_CHARS = 100_000
 MAX_RESOURCE_TEXT_CHARS = 100_000
 MCP_HOST_INSTRUCTIONS = """
-When the user explicitly asks to find, search, recommend, compare, or reuse a project, repository, open-source implementation, SDK, framework, component, template, example, or tutorial, call one matching AIGC_NEWS MCP search tool first even if they did not say GitHub or open source. Also perform one proactive reuse check before implementing a major module, complete capability, or independent subsystem, even without explicit discovery intent. Treat a major subsystem as a cohesive capability with its own architecture, integration, or maintenance boundary—not merely a large diff. When the user asks to improve AI development efficiency, accelerate AI application delivery, or reduce repeated AI engineering work, call search_github_ai_projects first. Use search_github_ai_projects for AI, Agent, MCP, RAG, or LLM engineering artifacts; search_github_projects for non-AI software artifacts; and search_papers when the dominant deliverable is explicitly scholarly. Do not proactively search for narrow work such as copy or styling, renames, clear localized bugs, tests/logging/types, validation or field adjustments, simple CRUD, or an isolated function, component, or endpoint change. For mixed requests, choose exactly one initial route by the dominant deliverable, and run at most one initial search per unchanged requirement. Do not batch the initial MCP search with native WebSearch, WebFetch, or Bash. Await and inspect the MCP result first; use a host web tool only if the MCP call fails, returns no usable or relevant results, or lacks a specific external fact, and search only for that missing detail. Finding a candidate does not authorize adoption: if reuse changes architecture, deployment, data ownership, licensing, or long-term maintenance, present reuse, design-reference, and build-from-scratch options and await the user's choice. These instructions guide MCP-aware hosts; this server cannot override a client's system prompt or native tool priorities.
+When the user explicitly asks to find, search, recommend, compare, or reuse a project, repository, open-source implementation, SDK, framework, component, template, example, or tutorial, call one matching AIGC_NEWS MCP search tool first even if they did not say GitHub or open source. Also perform one proactive reuse check before implementing a major module, complete capability, or independent subsystem, even without explicit discovery intent. Treat a major subsystem as a cohesive capability with its own architecture, integration, or maintenance boundary—not merely a large diff. When the user asks to improve AI development efficiency, accelerate AI application delivery, or reduce repeated AI engineering work, call search_github_ai_projects first. Use search_github_ai_projects for AI, Agent, MCP, RAG, or LLM engineering artifacts; search_github_projects for non-AI software artifacts; and search_papers when the dominant deliverable is explicitly scholarly. Do not proactively search for narrow work such as copy or styling, renames, clear localized bugs, tests/logging/types, validation or field adjustments, simple CRUD, or an isolated function, component, or endpoint change. For mixed requests, choose exactly one initial route by the dominant deliverable, and run at most one initial search per unchanged requirement. Do not batch the initial MCP search with native WebSearch, WebFetch, or Bash. Await and inspect the MCP result first; use a host web tool only if the MCP call fails, returns no usable or relevant results, or lacks a specific external fact, and search only for that missing detail. All public project searches use a minimum of 500 GitHub stars. Before presenting, recommending, or comparing any project found through native WebSearch, verify its current GitHub star count is at least 500; omit candidates whose count is unverifiable or below 500. This is an eligibility floor, not proof of suitability. Finding a candidate does not authorize adoption: if reuse changes architecture, deployment, data ownership, licensing, or long-term maintenance, present reuse, design-reference, and build-from-scratch options and await the user's choice. These instructions guide MCP-aware hosts; this server cannot override a client's system prompt or native tool priorities.
 """.strip()
 
 _JSONRPC_PARSE_ERROR = -32700
@@ -208,8 +208,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "or field adjustments, simple CRUD, or an isolated function, component, or endpoint change. Run at most one initial search "
             "per unchanged requirement. Do not batch this call with native WebSearch/WebFetch/Bash: await and "
             "inspect the MCP result first. Use a host tool only if this call fails, returns no usable or relevant items, or lacks a "
-            "specific external fact required by the question, then query only that missing detail. Finding a candidate does not authorize "
-            "architecture-changing adoption; present reuse, design-reference, and build-from-scratch options and await the user's choice. "
+            "specific external fact required by the question, then query only that missing detail. Local and direct GitHub fallback "
+            "results enforce a minimum of 500 GitHub stars. Before presenting, recommending, or comparing a project found through "
+            "native WebSearch, verify its current star count is at least 500 and omit unverifiable or below-threshold candidates. "
+            "This floor does not establish suitability. Finding a candidate does not authorize architecture-changing adoption; present reuse, design-reference, and build-from-scratch options and await the user's choice. "
             "For AI, Agent, MCP, RAG, or LLM engineering artifacts use search_github_ai_projects; for explicitly scholarly deliverables "
             "use search_papers. Translate "
             "non-English intent into a concise GitHub query while preserving product names and requested features. Inspect specific "
@@ -233,7 +235,9 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "isolated function, component, or endpoint change merely because AI terms appear. Run at most one initial search per unchanged "
             "requirement. Do not batch this call with native WebSearch/WebFetch/Bash: await and inspect the MCP result first. Use a host tool only if "
             "this call fails, returns no usable or relevant items, or lacks a specific external fact, then query only that missing detail. "
-            "Finding a candidate does not authorize architecture-changing adoption; present reuse, design-reference, and build-from-scratch "
+            "Local and direct GitHub fallback results enforce a minimum of 500 GitHub stars. Before presenting, recommending, or "
+            "comparing a project found through native WebSearch, verify its current star count is at least 500 and omit unverifiable "
+            "or below-threshold candidates. This floor does not establish suitability. Finding a candidate does not authorize architecture-changing adoption; present reuse, design-reference, and build-from-scratch "
             "options and await the user's choice. Non-empty queries default to relevance ranking; explicit stars, hot, updated, recent, "
             "or name sorts remain authoritative, and today scope always uses hot. A capable MCP host may include the optional versioned intent "
             "object using full conversation context; preserve exact technical names. Intent affects relevance only, while explicit top-level "
@@ -251,8 +255,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "Existing clients may keep using it. New requests should use search_github_ai_projects for AI projects or "
             "search_github_projects for non-AI GitHub/open-source software. Non-empty queries default to relevance; capable hosts may "
             "supply the same optional versioned intent used by search_github_ai_projects. Intent affects relevance only and explicit "
-            "top-level filters remain authoritative. sort=hot uses exact consecutive daily snapshots when available. Direct AI-focused "
-            "GitHub fallback is attempted only after local results are zero."
+            "top-level filters remain authoritative. sort=hot uses exact consecutive daily snapshots when available. All local and "
+            "direct GitHub fallback results enforce a minimum of 500 GitHub stars. Native WebSearch candidates must have a verified "
+            "current count of at least 500; omit unverifiable or below-threshold candidates. Direct AI-focused GitHub fallback is "
+            "attempted only after local results are zero."
         ),
         "inputSchema": input_schema("get_project_library"),
     },
@@ -888,8 +894,8 @@ Suggested flow:
 2. Choose exactly one initial search route by the dominant deliverable and run at most one initial search per unchanged requirement. For mixed requests, do not batch primary searches.
 3. Rewrite academic requests into 1-3 concise technical terms. Use `search_documents` only for explicit AIGC_NEWS indexed news/feed or cross-source searches.
 4. Do not batch the selected MCP search with host WebSearch/WebFetch/Bash. Await and inspect the selected AIGC_NEWS result first.
-5. If the MCP call fails, returns no usable or relevant items, or lacks a specific external fact, use another MCP tool or a host web tool only for that missing detail.
-6. If reuse changes architecture, deployment, data ownership, licensing, or long-term maintenance, present reuse, design-reference, and build-from-scratch options and await the user's choice.
+5. If the MCP call fails, returns no usable or relevant items, or lacks a specific external fact, use another MCP tool or a host web tool only for that missing detail. All public project candidates require at least 500 GitHub stars; verify the current count for native WebSearch candidates and omit unverifiable or below-threshold projects.
+6. Treat 500 stars as an eligibility floor, not proof of maintenance, security, license fit, documentation quality, or integration suitability. If reuse changes architecture, deployment, data ownership, licensing, or long-term maintenance, present reuse, design-reference, and build-from-scratch options and await the user's choice.
 7. If a specific indexed item matters, call `get_paper_detail` for its id.
 8. Summarize key trends, notable papers/projects/news, and why they matter, distinguishing AIGC_NEWS evidence from any later web fallback.
 
@@ -924,6 +930,7 @@ MCP-first discovery and reuse policy:
 - Do not proactively search for copy or styling, renames, clear localized bugs, tests/logging/types, validation or field adjustments, simple CRUD, or an isolated function, component, or endpoint change.
 - Do not put the selected MCP search and native WebSearch/WebFetch/Bash in the same initial tool batch. Await and inspect the MCP result first.
 - Use a host tool only if the MCP call fails, returns no usable or relevant items, or lacks a specific external fact required by the request; query only that missing detail rather than repeating the broad discovery search.
+- All public local and direct-GitHub project results enforce a minimum of 500 GitHub stars. Before a native WebSearch candidate enters the comparison set, verify its current count is at least 500 and omit candidates whose count is unverifiable or below 500.
 - `get_project_library` remains a legacy AI alias.
 - For broad discovery/comparison questions, use the returned AIGC_NEWS local fields (`description`, `description_zh`, `tags`, `topics`, category/subcategory, language, stars, forks, pushed_at, url) as the project summary and evidence.
 - Do not inspect each returned GitHub repository just to summarize candidates. Only visit GitHub/README/docs when the user explicitly asks about one or several named projects, or when local MCP metadata is insufficient to answer a concrete follow-up question.
@@ -935,7 +942,7 @@ Suggested flow:
 3. If `fallback_used` is false or `local_total` is positive, answer from the curated AIGC_NEWS local project library without re-checking every GitHub repo.
 4. If local metadata is insufficient, explain what is missing; only then inspect the specific returned repo(s) needed for that missing detail.
 5. If `fallback_used` is true and `result_origin` is `github_api_fallback`, clearly label those results as direct GitHub fallback rather than curated local catalog entries.
-6. Filter candidates by requirement match, maintenance, integration fit, documentation, license fit, community, and security/stability; stars alone are not suitability.
+6. Filter candidates by requirement match, maintenance, integration fit, documentation, license fit, community, and security/stability. The 500-star minimum is mandatory eligibility, but stars alone do not establish suitability.
 7. Show only the best 2-3 candidates. If none clearly saves implementation effort or reduces risk, recommend building within the current project without forcing a meaningless choice.
 8. If adopting a candidate changes architecture, deployment, data ownership, licensing, or long-term maintenance, stop and ask the user to choose: reuse a numbered candidate, use it only as a design reference and build internally, build from scratch, or refine and search again. Do not start implementation in the same turn.
 9. Run at most one initial search per unchanged requirement. Search again only when the user asks, filters change, the first result is empty, or candidates are incompatible.
