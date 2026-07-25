@@ -970,6 +970,15 @@ async def list_available_sources(_: dict = Depends(RequireAdmin)):
     }
 
 
+@router.get("/ops/project-catalog/readiness", tags=["Ops"])
+async def project_catalog_readiness(_: dict = Depends(RequireAdmin)):
+    from backend.app.services.project_catalog_readiness import (
+        project_catalog_runtime_readiness,
+    )
+
+    return await asyncio.to_thread(project_catalog_runtime_readiness)
+
+
 @router.get("/ops/project-catalog/shadow-status", tags=["Ops"])
 async def project_catalog_shadow_status(_: dict = Depends(RequireAdmin)):
     """返回有界且脱敏的项目目录 shadow read 运行证据。"""

@@ -15,6 +15,25 @@ from backend.app.repositories.task_repository import MonitorTaskRepository
 router = APIRouter()
 
 
+@router.get("/live")
+async def liveness() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@router.get("/ready")
+async def readiness() -> dict[str, object]:
+    from backend.app.services.project_catalog_readiness import (
+        project_catalog_runtime_readiness,
+    )
+
+    result = await asyncio.to_thread(project_catalog_runtime_readiness)
+    if result.get("runtime_ready"):
+        return result
+    from fastapi import HTTPException
+
+    raise HTTPException(status_code=503, detail=result)
+
+
 @router.get("/monitor/health")
 async def health_check(_: dict = Depends(RequireUser)):
     """Full health check across all services (Milvus, Neo4j, Ollama, SQLite)."""

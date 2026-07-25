@@ -19,9 +19,11 @@ class _App:
 
 
 def _settings(backend: str) -> SimpleNamespace:
+    postgres_selected = backend.strip().lower() == "postgres"
     return SimpleNamespace(
         project_catalog_backend=backend,
-        project_catalog_sync_worker_enabled=False,
+        project_catalog_outbox_capture_enabled=postgres_selected,
+        project_catalog_sync_worker_enabled=postgres_selected,
         project_catalog_shadow_enabled=False,
         project_catalog_shadow_backend="postgres",
         project_catalog_shadow_shutdown_timeout_seconds=1.0,

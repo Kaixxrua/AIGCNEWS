@@ -407,12 +407,20 @@ def stop_project_catalog_shadow(timeout_seconds: float) -> None:
 def project_catalog_shadow_snapshot() -> dict[str, Any]:
     manager = get_project_catalog_shadow_manager()
     if manager is None:
+        from backend.app.core.config import settings
+
+        active_backend = str(
+            getattr(settings, "project_catalog_backend", "mysql") or "mysql"
+        ).strip().lower()
+        shadow_backend = str(
+            getattr(settings, "project_catalog_shadow_backend", "postgres") or "postgres"
+        ).strip().lower()
         return {
             "enabled": False,
             "available": False,
             "degraded": False,
-            "active_backend": "mysql",
-            "shadow_backend": "postgres",
+            "active_backend": active_backend,
+            "shadow_backend": shadow_backend,
             "counts": {},
             "recent_cases": [],
         }
