@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import date
 from typing import Any
 
 from fastapi import FastAPI
@@ -12,6 +13,7 @@ from starlette.requests import Request
 
 from backend.app.api import routes_dashboard
 from backend.app.api.dependencies import get_rank_snapshot_repository
+from backend.app.services.dashboard import policy
 
 
 COMPATIBILITY_HELPERS = (
@@ -233,6 +235,75 @@ def test_top_route_preserves_dedupe_limit_and_forwarded_pdf_url() -> None:
     assert reader.document_calls == [
         (date, "github_trending_daily", "github", 500)
     ]
+
+
+def test_extracted_policy_matches_legacy_document_projection() -> None:
+    docs = [
+        {
+            "id": "github-weekly",
+            "source": "github",
+            "source_channel": "github_trending_weekly",
+            "rank_in_period": 2,
+            "raw_score": 200,
+            "url": "https://example.test/repo",
+            "title": "LLM image benchmark",
+            "published_date": "2025-01-02",
+        },
+        {
+            "id": "duplicate",
+            "source": "github",
+            "source_channel": "github_trending_weekly",
+            "rank_in_period": 3,
+            "raw_score": 500,
+            "url": "https://example.test/repo",
+        },
+        {
+            "id": "fallback-ignored",
+            "source": "github",
+            "source_channel": "github_hot_weekly",
+            "rank_in_period": 1,
+            "raw_score": 900,
+            "url": "https://example.test/fallback",
+        },
+        {
+            "id": "arxiv",
+            "source": "arxiv",
+            "source_channel": "huggingface_weekly_html",
+            "raw_score": 12,
+            "title": "agent inference",
+            "created_at": "2025-01-01",
+        },
+    ]
+    reference_date = date(2025, 1, 2)
+
+    legacy_filtered = routes_dashboard._filter_docs_by_period(
+        docs, "weekly", reference_date=reference_date
+    )
+    extracted_filtered = policy.filter_docs_by_period(
+        docs, "weekly", reference_date=reference_date
+    )
+
+    assert extracted_filtered == legacy_filtered
+    assert policy.dedupe_docs(extracted_filtered) == routes_dashboard._dedupe_docs(
+        legacy_filtered
+    )
+    assert policy.score_categories(docs) == routes_dashboard._score_categories(docs)
+
+
+def test_extracted_policy_matches_legacy_date_and_pdf_projection() -> None:
+    assert policy.compute_board_status("2020-01-02") == (
+        routes_dashboard._compute_board_status("2020-01-02")
+    )
+    assert policy.resolve_snapshot_date("2025-01-02") == (
+        routes_dashboard._resolve_snapshot_date("2025-01-02")
+    )
+
+    legacy_doc = {"local_pdf_path": "storage/papers/report.pdf"}
+    extracted_doc = dict(legacy_doc)
+    request = _request("/api/dashboard/top", proto="https")
+    assert policy.enrich_doc_pdf_url(extracted_doc, request) == (
+        routes_dashboard._enrich_doc_pdf_url(legacy_doc, request)
+    )
 
 
 def test_radar_scoring_preserves_weighting_rounding_and_neutral_floor() -> None:
