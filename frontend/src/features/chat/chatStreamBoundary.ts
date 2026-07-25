@@ -1,11 +1,11 @@
 import type { SseConnectParams } from '../../composables/useEventSource'
 import type { ChatAttachmentRef } from '../../services/chat/chatApi'
-import type { ConversationScope, StreamPhase } from './chatModel'
+import type { ChatHistoryEntry, ConversationScope, StreamPhase } from './chatModel'
 
 export interface ChatStreamCommand {
   text: string
   conversationId: string
-  history: Array<{ role: string; content: string }>
+  history: ChatHistoryEntry[]
   temperature: number
   scope: ConversationScope
   webSearch: boolean

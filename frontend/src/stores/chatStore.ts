@@ -12,12 +12,6 @@ import {
 } from '../services/chat/chatApi'
 import { api } from '../services/http/apiClient'
 import {
-  buildChatStreamRequest,
-  initialChatStreamEventState,
-  reduceChatStreamEvent,
-  toSseConnectParams,
-} from '../features/chat/chatStreamBoundary'
-import {
   buildChatHistory,
   normalizeChatAttachment,
   normalizeChatMessage,
@@ -55,6 +49,15 @@ interface ChatState {
   settings: ChatSettings
 }
 
+type StreamPayload =
+  | { type: 'sources'; data: unknown[] }
+  | { type: 'content'; data: string }
+  | { type: 'thinking'; data: string }
+  | { type: 'status'; data: string }
+  | { type: 'conversation'; data: { conversation_id: number | string; message_id: number | string } }
+  | { type: string; data?: unknown }
+
+const THINK_TAG_RE = /<think>([\s\S]*?)<\/think>/
 let _activeConnection: SseConnection | null = null
 
 export const useChatStore = defineStore('chat', {
@@ -415,11 +418,12 @@ export const useChatStore = defineStore('chat', {
     }) {
       const { connect } = useEventSource()
       const { temperature } = this.settings
-      let eventState = initialChatStreamEventState(params.conversationId)
+      let pendingSources: unknown[] = []
       let sseFinished = false
+      let persistedConversationId = params.conversationId
 
       this.isStreaming = true
-      this.streamPhase = eventState.phase
+      this.streamPhase = 'searching'
 
       const contentQueue: string[] = []
       const thinkingQueue: string[] = []
@@ -441,16 +445,16 @@ export const useChatStore = defineStore('chat', {
         this.isStreaming = false
         this.streamPhase = 'idle'
         _activeConnection = null
-        if (eventState.persistedConversationId) {
-          await this.openConversation(eventState.persistedConversationId)
+        if (persistedConversationId) {
+          await this.openConversation(persistedConversationId)
           // openConversation 会用后端 DTO 覆盖消息列表。
           // 后端持久化的 has_thinking 可能为 false（普通模型无 thinking），
           // 需要把 thinkingDurationSec 回写到最后一条 assistant 消息上，
           // 并确保 hasThinking=true 以保留"已完成深度思考（用时 N 秒）"提示。
-          const convMessages = this.messageMap[eventState.persistedConversationId] || []
+          const convMessages = this.messageMap[persistedConversationId] || []
           const lastAssistant = [...convMessages].reverse().find((m) => m.role === 'assistant')
           if (lastAssistant && durationSec > 0) {
-            this.patchMessage(eventState.persistedConversationId, lastAssistant.id, {
+            this.patchMessage(persistedConversationId, lastAssistant.id, {
               hasThinking: true,
               thinkingDurationSec: durationSec,
             })
@@ -513,7 +517,7 @@ export const useChatStore = defineStore('chat', {
                 isStreaming: false,
                 thinkingDurationSec: durationSec,
                 content: finalMsg.content || '本次请求未返回正文内容，请检查后端日志。',
-                sources: eventState.pendingSources.length > 0 ? eventState.pendingSources : finalMsg.sources,
+                sources: pendingSources.length > 0 ? pendingSources : finalMsg.sources,
               })
             }
             void finishStreaming()
@@ -521,50 +525,89 @@ export const useChatStore = defineStore('chat', {
         }, 16)
       }
 
-      const request = buildChatStreamRequest(api.defaults.baseURL ?? '', {
-        text: params.text,
-        conversationId: params.conversationId,
+      const body: Record<string, unknown> = {
+        message: params.text,
         history: params.history,
         temperature,
+        conversation_id: params.conversationId,
         // scope 取决于会话本身的 scope，而非 paperId 是否存在
         scope: this.conversationMap[params.conversationId]?.scope ?? 'global',
-        webSearch: this.settings.webSearch,
-        attachments: params.attachments,
-        paperId: params.paperId,
-        regenerateMessageId: params.regenerateMessageId,
-      })
-      const connection = connect(toSseConnectParams(request, {
-        onMessage: (payload: unknown) => {
-          const transition = reduceChatStreamEvent(eventState, payload)
-          eventState = transition.state
-          this.streamPhase = eventState.phase
+        web_search: this.settings.webSearch,
+      }
+      if (params.attachments?.length) {
+        body.attachment_ids = params.attachments.map((item) => item.id)
+      }
+      if (params.paperId) {
+        body.paper_id = params.paperId
+      }
 
-          if (transition.effect.type === 'thinking') {
-            for (const ch of transition.effect.chunk) thinkingQueue.push(ch)
+      const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
+      const connection = connect({
+        url: params.regenerateMessageId
+          ? `${baseURL}/chat/messages/${params.regenerateMessageId}/regenerate`
+          : `${baseURL}/chat/stream`,
+        body: params.regenerateMessageId ? { temperature } : body,
+        onMessage: (payload: unknown) => {
+          const event = payload as StreamPayload
+          if (event.type === 'status') {
+            const statusText = String(event.data ?? '')
+            if (statusText.includes('search')) this.streamPhase = 'searching'
+            else if (statusText.includes('rerank')) this.streamPhase = 'reranking'
+            else this.streamPhase = 'answering'
+            return
+          }
+          if (event.type === 'sources' && Array.isArray(event.data)) {
+            pendingSources = event.data
+            return
+          }
+          if (event.type === 'conversation' && event.data) {
+            const conversationData = event.data as { conversation_id?: number | string }
+            persistedConversationId = String(conversationData.conversation_id ?? persistedConversationId)
+            return
+          }
+          if (event.type === 'thinking') {
+            const chunk = String(event.data ?? '')
+            if (!chunk) return
+            this.streamPhase = 'answering'
+            for (const ch of chunk) thinkingQueue.push(ch)
             startTyping()
             return
           }
-          if (transition.effect.type === 'content') {
-            for (const ch of transition.effect.thinkingChunk) thinkingQueue.push(ch)
+          if (event.type === 'content') {
+            let chunk = String(event.data ?? '')
+            if (!chunk) return
+            const thinkMatch = THINK_TAG_RE.exec(chunk)
+            if (thinkMatch) {
+              const thinkBody = thinkMatch[1]
+              const remaining = chunk.replace(THINK_TAG_RE, '').trim()
+              if (thinkBody) {
+                for (const ch of thinkBody) thinkingQueue.push(ch)
+              }
+              chunk = remaining
+            }
+            this.streamPhase = 'answering'
             // 记录首次收到 content 的时间，用于计算思维链时长
             if (!thinkingEndMs) {
               thinkingEndMs = Date.now()
             }
-            for (const ch of transition.effect.chunk) contentQueue.push(ch)
+            if (chunk) {
+              for (const ch of chunk) contentQueue.push(ch)
+            }
             startTyping()
             return
           }
-          if (transition.effect.type === 'error') {
+          if (event.type === 'error') {
             sseFinished = true
             if (typingTimer !== null) {
               clearInterval(typingTimer)
               typingTimer = null
             }
             this.patchMessage(params.conversationId, params.assistantTempId, {
-              content: `请求失败：${transition.effect.message}`,
+              content: `请求失败：${String(event.data ?? '未知错误')}`,
               isThinking: false,
               isStreaming: false,
             })
+            this.streamPhase = 'error'
             this.isStreaming = false
             _activeConnection = null
           }
@@ -600,7 +643,7 @@ export const useChatStore = defineStore('chat', {
           this.isStreaming = false
           _activeConnection = null
         },
-      }))
+      })
 
       _activeConnection = connection
       await connection.promise
