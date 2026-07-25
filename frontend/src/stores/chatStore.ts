@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia'
-import { useEventSource, type SseConnection } from '../composables/useEventSource'
 import {
   type ChatAttachmentRef,
   type ChatMessageDTO,
@@ -10,12 +9,11 @@ import {
   fetchConversations,
   deleteConversationMessage,
 } from '../services/chat/chatApi'
-import { api } from '../services/http/apiClient'
 import {
-  buildChatStreamRequest,
+  connectChatStream,
   initialChatStreamEventState,
   reduceChatStreamEvent,
-  toSseConnectParams,
+  type SseConnection,
 } from '../features/chat/chatStreamBoundary'
 import {
   buildChatHistory,
@@ -413,7 +411,6 @@ export const useChatStore = defineStore('chat', {
       paperId?: string
       regenerateMessageId?: string
     }) {
-      const { connect } = useEventSource()
       const { temperature } = this.settings
       let eventState = initialChatStreamEventState(params.conversationId)
       let sseFinished = false
@@ -521,7 +518,7 @@ export const useChatStore = defineStore('chat', {
         }, 16)
       }
 
-      const request = buildChatStreamRequest(api.defaults.baseURL ?? '', {
+      const connection = connectChatStream({
         text: params.text,
         conversationId: params.conversationId,
         history: params.history,
@@ -532,8 +529,7 @@ export const useChatStore = defineStore('chat', {
         attachments: params.attachments,
         paperId: params.paperId,
         regenerateMessageId: params.regenerateMessageId,
-      })
-      const connection = connect(toSseConnectParams(request, {
+      }, {
         onMessage: (payload: unknown) => {
           const transition = reduceChatStreamEvent(eventState, payload)
           eventState = transition.state
@@ -600,7 +596,7 @@ export const useChatStore = defineStore('chat', {
           this.isStreaming = false
           _activeConnection = null
         },
-      }))
+      })
 
       _activeConnection = connection
       await connection.promise

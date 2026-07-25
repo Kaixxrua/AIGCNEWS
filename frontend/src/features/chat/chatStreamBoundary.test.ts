@@ -1,11 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildChatStreamRequest,
+  connectChatStream,
   initialChatStreamEventState,
   reduceChatStreamEvent,
-  toSseConnectParams,
   type ChatStreamCommand,
 } from './chatStreamBoundary'
+
+const mocks = vi.hoisted(() => ({ connect: vi.fn() }))
+
+vi.mock('../../composables/useEventSource', () => ({
+  useEventSource: () => ({ connect: mocks.connect }),
+}))
+
+vi.mock('../../services/http/apiClient', () => ({
+  api: { defaults: { baseURL: '/api/' } },
+}))
 
 function command(patch: Partial<ChatStreamCommand> = {}): ChatStreamCommand {
   return {
@@ -80,14 +90,16 @@ describe('chat stream boundary', () => {
     })
   })
 
-  it('adapts requests without changing generic SSE callback identities', () => {
+  it('connects through generic SSE without changing request or callback identities', () => {
     const onMessage = vi.fn()
     const onDone = vi.fn()
     const onError = vi.fn()
-    const request = buildChatStreamRequest('/api', command())
+    const connection = { controller: new AbortController(), promise: Promise.resolve() }
+    mocks.connect.mockReturnValue(connection)
 
-    expect(toSseConnectParams(request, { onMessage, onDone, onError })).toEqual({
-      ...request, onMessage, onDone, onError,
+    expect(connectChatStream(command(), { onMessage, onDone, onError })).toBe(connection)
+    expect(mocks.connect).toHaveBeenCalledWith({
+      ...buildChatStreamRequest('/api/', command()), onMessage, onDone, onError,
     })
   })
 })

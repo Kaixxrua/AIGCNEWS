@@ -1,5 +1,12 @@
-import type { SseConnectParams } from '../../composables/useEventSource'
+import {
+  useEventSource,
+  type SseConnectParams,
+  type SseConnection,
+} from '../../composables/useEventSource'
 import type { ChatAttachmentRef } from '../../services/chat/chatApi'
+import { api } from '../../services/http/apiClient'
+
+export type { SseConnection } from '../../composables/useEventSource'
 import type { ConversationScope, StreamPhase } from './chatModel'
 
 export interface ChatStreamCommand {
@@ -138,9 +145,10 @@ export function reduceChatStreamEvent(
   return { state, effect: { type: 'none' } }
 }
 
-export function toSseConnectParams(
-  request: ChatStreamRequest,
+export function connectChatStream(
+  command: ChatStreamCommand,
   callbacks: Omit<SseConnectParams, 'url' | 'body'>,
-): SseConnectParams {
-  return { ...request, ...callbacks }
+): SseConnection {
+  const request = buildChatStreamRequest(api.defaults.baseURL ?? '', command)
+  return useEventSource().connect({ ...request, ...callbacks })
 }
