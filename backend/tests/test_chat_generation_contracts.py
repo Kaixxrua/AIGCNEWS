@@ -41,7 +41,7 @@ reranker_module.RELEVANCE_THRESHOLD = 0.25
 reranker_module.rerank = AsyncMock()
 sys.modules.setdefault("backend.app.services.rag.reranker", reranker_module)
 
-from backend.app.services.rag import chat_service, database_tools
+from backend.app.services.rag import chat_service, database_tools, generator
 
 
 async def collect(generator):
@@ -318,3 +318,148 @@ def test_extracted_knowledge_query_preserves_sql_params_commit_and_close():
     assert run(database_tools.execute_query_knowledge_stats) == run(
         chat_service._execute_query_knowledge_stats
     )
+
+
+def test_generation_orchestrator_preserves_project_search_adapter_arguments():
+    retriever = MagicMock()
+    project_searcher = AsyncMock(
+        return_value={
+            "items": [
+                {
+                    "id": "github:1",
+                    "full_name": "owner/project",
+                    "url": "https://github.com/owner/project",
+                    "description": "project",
+                    "stars": 42,
+                    "language": "Python",
+                    "result_origin": "aigc_news_local",
+                }
+            ],
+            "result_origin": "aigc_news_local",
+        }
+    )
+    orchestrator = generator.GenerationOrchestrator(
+        retriever, project_searcher=project_searcher
+    )
+    decision = types.SimpleNamespace(
+        query_hint="workflow engine",
+        search_mode="hybrid",
+        language_hint="Python",
+        scores=types.SimpleNamespace(risk=0),
+        route="search_and_ask",
+    )
+    events = asyncio.run(
+        collect(orchestrator._stream_project_discovery("original query", decision))
+    )
+
+    project_searcher.assert_awaited_once_with(
+        query="workflow engine", mode="hybrid", language="Python", limit=5
+    )
+    assert [event["type"] for event in events] == ["status", "sources", "content"]
+    assert events[0]["data"] == "discovering_projects"
+    assert events[1]["data"][0]["id"] == "github:1"
+    assert "A：复用开源项目" in events[2]["data"]
+
+
+def test_generation_orchestrator_uses_injected_rag_web_tool_and_model_adapters():
+    raw_doc = Document(
+        "raw",
+        {
+            "id": "rag-1",
+            "retriever": "vector",
+            "score": 0.2,
+            "source": "arxiv",
+            "title": "Raw",
+            "url": "https://example.test/rag",
+        },
+    )
+    ranked_doc = Document(
+        "ranked",
+        {
+            "id": "rag-1",
+            "retriever": "vector",
+            "rerank_score": 9.0,
+            "source": "arxiv",
+            "title": "Ranked",
+            "url": "https://example.test/rag",
+        },
+    )
+    retriever = MagicMock()
+    retriever.search = AsyncMock(return_value=[raw_doc])
+    tool_call = chat_service.ToolCallResult("call-1", "query_ranking", "{}")
+    completion = AsyncMock(
+        return_value=chat_service.ChatCompletionResult(tool_calls=[tool_call])
+    )
+    web_result = chat_service.WebSearchResult(
+        title="Web", url="https://example.test/web", snippet="web context"
+    )
+    web_searcher = AsyncMock(return_value=[web_result])
+    reranker = AsyncMock(return_value=[ranked_doc])
+    database_runner = AsyncMock(
+        return_value=(
+            [{"role": "tool", "tool_call_id": "call-1", "content": "db"}],
+            [{"id": "db", "title": "DB"}],
+            "[db-query] db",
+        )
+    )
+    stream_calls = []
+
+    async def stream_completion(**kwargs):
+        stream_calls.append(kwargs)
+        yield types.SimpleNamespace(reasoning="think", content="answer")
+
+    orchestrator = generator.GenerationOrchestrator(
+        retriever,
+        stream_completion=stream_completion,
+        completion=completion,
+        web_searcher=web_searcher,
+        web_context_formatter=lambda results: "web context" if results else "",
+        reranker=reranker,
+        database_tool_runner=database_runner,
+        project_searcher=AsyncMock(),
+    )
+    with patch.object(generator, "classify_development_request") as classify:
+        classify.return_value = types.SimpleNamespace(
+            route="rag", score=0, reasons=(), search_mode="local"
+        )
+        events = asyncio.run(
+            collect(
+                orchestrator.stream_chat(
+                    "query", temperature=0.4, web_search_enabled=True
+                )
+            )
+        )
+
+    assert [event["type"] for event in events] == [
+        "status",
+        "status",
+        "status",
+        "sources",
+        "thinking",
+        "content",
+    ]
+    assert events[3]["data"] == [
+        {"id": "db", "title": "DB"},
+        {
+            "id": "rag-1",
+            "score": 9.0,
+            "source": "arxiv",
+            "title": "Ranked",
+            "url": "https://example.test/rag",
+            "published_date": "",
+        },
+        {
+            "id": "web-1",
+            "score": 0.0,
+            "source": "web",
+            "title": "Web",
+            "url": "https://example.test/web",
+            "published_date": "",
+        },
+    ]
+    retriever.search.assert_awaited_once_with("query")
+    completion.assert_awaited_once()
+    web_searcher.assert_awaited_once_with("query", max_results=6)
+    reranker.assert_awaited_once_with("query", [raw_doc], threshold=0.25)
+    database_runner.assert_awaited_once_with([tool_call])
+    assert stream_calls[0]["temperature"] == 0.4
