@@ -1,71 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-
-const MCP_PROTOCOL_VERSION = '2025-06-18'
-const MCP_TEST_TIMEOUT_MS = 15_000
-
-type JsonRpcData = {
-  jsonrpc?: string
-  id?: string | number | null
-  result?: { tools?: Array<{ name: string; description: string }> }
-  error?: { message?: string } | string
-}
-type Phase = 'initialize' | 'initialized' | 'tools/list'
-type FetchLike = (input: string, init: RequestInit) => Promise<Pick<Response, 'ok' | 'status' | 'text'>>
-
-async function publicHandshakeContract(
-  endpoint: string,
-  fetchImpl: FetchLike,
-  onPhase: (phase: Phase, status: 'running' | 'success' | 'error') => void,
-): Promise<JsonRpcData> {
-  async function post(method: string, params: Record<string, unknown> | undefined, id: number | undefined) {
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), MCP_TEST_TIMEOUT_MS)
-    try {
-      const response = await fetchImpl(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json, text/event-stream',
-          'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method,
-          ...(id === undefined ? {} : { id }),
-          ...(params ? { params } : {}),
-        }),
-        signal: controller.signal,
-      })
-      const text = await response.text()
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const match = text.match(/data:\s*(\{.*\})/)
-      const data = JSON.parse(match?.[1] || text || '{}') as JsonRpcData
-      if (data.error) throw new Error(typeof data.error === 'string' ? data.error : data.error.message)
-      return data
-    } finally {
-      window.clearTimeout(timeout)
-    }
-  }
-
-  let running: Phase = 'initialize'
-  try {
-    onPhase(running, 'running')
-    await post('initialize', { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'aigc-news-connect-page', version: '1.0.0' } }, 1)
-    onPhase(running, 'success')
-    running = 'initialized'
-    onPhase(running, 'running')
-    await post('notifications/initialized', undefined, undefined)
-    onPhase(running, 'success')
-    running = 'tools/list'
-    onPhase(running, 'running')
-    const data = await post('tools/list', {}, 2)
-    onPhase(running, 'success')
-    return data
-  } catch (error) {
-    onPhase(running, 'error')
-    throw error
-  }
-}
+import {
+  MCP_PROTOCOL_VERSION,
+  MCP_TEST_TIMEOUT_MS,
+  performPublicMcpHandshake,
+  type McpHandshakeFetch,
+} from './mcpHandshake'
 
 function response(body: string, status = 200) {
   return { ok: status >= 200 && status < 300, status, text: async () => body }
@@ -76,7 +15,7 @@ describe('public MCP handshake contract', () => {
 
   it('uses initialize id 1, initialized without id, then tools/list id 2', async () => {
     const requests: Array<{ input: string; init: RequestInit }> = []
-    const fetchImpl: FetchLike = vi.fn(async (input, init) => {
+    const fetchImpl: McpHandshakeFetch = vi.fn(async (input, init) => {
       requests.push({ input, init })
       const body = JSON.parse(String(init.body))
       return response(JSON.stringify(body.method === 'tools/list'
@@ -85,10 +24,10 @@ describe('public MCP handshake contract', () => {
     })
     const onPhase = vi.fn()
 
-    const result = await publicHandshakeContract('https://example.test/api/mcp', fetchImpl, onPhase)
+    const tools = await performPublicMcpHandshake('https://example.test/api/mcp', { fetch: fetchImpl, onPhase })
 
     expect(requests.map(({ init }) => JSON.parse(String(init.body)))).toEqual([
-      { jsonrpc: '2.0', method: 'initialize', id: 1, params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'aigc-news-connect-page', version: '1.0.0' } } },
+      { jsonrpc: '2.0', method: 'initialize', id: 1, params: { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'aigc-news-connect-page', version: '1.0.0' } } },
       { jsonrpc: '2.0', method: 'notifications/initialized' },
       { jsonrpc: '2.0', method: 'tools/list', id: 2, params: {} },
     ])
@@ -96,9 +35,9 @@ describe('public MCP handshake contract', () => {
     expect(requests[0]!.init.headers).toEqual({
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
-      'MCP-Protocol-Version': '2025-06-18',
+      'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
     })
-    expect(result.result?.tools).toHaveLength(1)
+    expect(tools).toHaveLength(1)
     expect(onPhase.mock.calls).toEqual([
       ['initialize', 'running'], ['initialize', 'success'],
       ['initialized', 'running'], ['initialized', 'success'],
@@ -110,11 +49,11 @@ describe('public MCP handshake contract', () => {
     ['plain JSON', JSON.stringify({ jsonrpc: '2.0', id: 2, result: { tools: [] } })],
     ['single-line data', 'event: message\ndata: {"jsonrpc":"2.0","id":2,"result":{"tools":[]}}\n\n'],
   ])('parses %s responses', async (_label, body) => {
-    const fetchImpl: FetchLike = vi.fn(async (_input, init) => {
+    const fetchImpl: McpHandshakeFetch = vi.fn(async (_input, init) => {
       const request = JSON.parse(String(init.body))
       return request.method === 'tools/list' ? response(body) : response('{}')
     })
-    await expect(publicHandshakeContract('https://example.test/api/mcp', fetchImpl, vi.fn())).resolves.toMatchObject({ result: { tools: [] } })
+    await expect(performPublicMcpHandshake('https://example.test/api/mcp', { fetch: fetchImpl })).resolves.toEqual([])
   })
 
   it.each([
@@ -123,18 +62,38 @@ describe('public MCP handshake contract', () => {
     ['JSON-RPC string errors', () => response('{"jsonrpc":"2.0","id":1,"error":"rpc failed"}'), 'rpc failed'],
   ])('maps %s and marks the running phase', async (_label, makeResponse, message) => {
     const onPhase = vi.fn()
-    await expect(publicHandshakeContract('https://example.test/api/mcp', vi.fn(async () => makeResponse()), onPhase)).rejects.toThrow(message)
+    await expect(performPublicMcpHandshake('https://example.test/api/mcp', {
+      fetch: vi.fn(async () => makeResponse()),
+      onPhase,
+    })).rejects.toThrow(message)
     expect(onPhase.mock.calls[onPhase.mock.calls.length - 1]).toEqual(['initialize', 'error'])
+  })
+
+  it('rejects an invalid tools/list result and marks that phase as error', async () => {
+    const onPhase = vi.fn()
+    const fetchImpl: McpHandshakeFetch = vi.fn(async (_input, init) => {
+      const request = JSON.parse(String(init.body))
+      return response(JSON.stringify(request.method === 'tools/list'
+        ? { jsonrpc: '2.0', id: 2, result: {} }
+        : { jsonrpc: '2.0', result: {} }))
+    })
+
+    await expect(performPublicMcpHandshake('https://example.test/api/mcp', { fetch: fetchImpl, onPhase }))
+      .rejects.toThrow('tools/list 未返回有效的工具列表。')
+    expect(onPhase.mock.calls.slice(-2)).toEqual([
+      ['tools/list', 'running'],
+      ['tools/list', 'error'],
+    ])
   })
 
   it('aborts a request after 15 seconds and clears its timer', async () => {
     vi.useFakeTimers()
-    const fetchImpl: FetchLike = vi.fn((_input, init) => new Promise<Pick<Response, 'ok' | 'status' | 'text'>>((_resolve, reject) => {
+    const fetchImpl: McpHandshakeFetch = vi.fn((_input, init) => new Promise<Pick<Response, 'ok' | 'status' | 'text'>>((_resolve, reject) => {
       init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
     }))
-    const promise = publicHandshakeContract('https://example.test/api/mcp', fetchImpl, vi.fn())
+    const promise = performPublicMcpHandshake('https://example.test/api/mcp', { fetch: fetchImpl })
     const rejection = expect(promise).rejects.toMatchObject({ name: 'AbortError' })
-    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(MCP_TEST_TIMEOUT_MS)
     await rejection
     expect(vi.getTimerCount()).toBe(0)
   })
@@ -144,12 +103,15 @@ describe('public MCP handshake contract', () => {
     const requests: RequestInit[] = []
     const storageSpy = vi.spyOn(Storage.prototype, 'setItem')
     const consoleSpy = vi.spyOn(console, 'log')
-    const fetchImpl: FetchLike = vi.fn(async (_input, init) => {
+    const fetchImpl: McpHandshakeFetch = vi.fn(async (_input, init) => {
       requests.push(init)
-      return response('{}')
+      const request = JSON.parse(String(init.body))
+      return response(request.method === 'tools/list'
+        ? '{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}'
+        : '{}')
     })
 
-    await publicHandshakeContract('https://example.test/api/mcp', fetchImpl, vi.fn())
+    await performPublicMcpHandshake('https://example.test/api/mcp', { fetch: fetchImpl })
 
     expect(JSON.stringify(requests)).not.toContain(sentinel)
     expect(JSON.stringify(storageSpy.mock.calls)).not.toContain(sentinel)
