@@ -17,6 +17,8 @@ from backend.app.api.dependencies import (
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.repositories.user_account_repository import UserStatisticsReader
+from backend.app.services.dashboard import policy
+from backend.app.services.dashboard.query_service import DashboardQueryService
 
 router = APIRouter()
 
@@ -675,6 +677,39 @@ def _get_docs_for_date(
     return []
 
 
+# Compatibility exports consumed by routes_mcp and older callers.
+def _compute_board_status(snapshot_date_str: str) -> dict:
+    return policy.compute_board_status(snapshot_date_str)
+
+
+def _dedupe_docs(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return policy.dedupe_docs(docs)
+
+
+def _enrich_doc_pdf_url(doc: Dict[str, Any], request: Request) -> Dict[str, Any]:
+    return policy.enrich_doc_pdf_url(doc, request)
+
+
+def _get_docs_for_date(
+    db: RankSnapshotReader,
+    date_str: str,
+    period: str,
+    source_type: Optional[str] = None,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    return DashboardQueryService(db).get_docs_for_date(
+        date_str, period, source_type, limit
+    )
+
+
+def _resolve_snapshot_date(date_param: Optional[str]) -> str:
+    return policy.resolve_snapshot_date(date_param)
+
+
+def _score_categories(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return policy.score_categories(docs)
+
+
 @router.get("/dashboard/top")
 @cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_top_list(
@@ -691,9 +726,9 @@ async def get_top_list(
 ):
     """Return top-N documents ranked by vote count, optionally filtered by source, period and date."""
     source_type = None if (not source or source == "all") else source
-    snapshot_date = _resolve_snapshot_date(date)
+    snapshot_date = policy.resolve_snapshot_date(date)
 
-    board = _compute_board_status(snapshot_date)
+    board = policy.compute_board_status(snapshot_date)
 
     # 静默期拦截：直接返回空列表，防止前端泄露未解禁数据
     if board["is_embargoed"]:
@@ -706,14 +741,15 @@ async def get_top_list(
             "is_embargoed": True,
         }
 
+    query_service = DashboardQueryService(rank_snapshots)
     docs = await asyncio.to_thread(
-        _get_docs_for_date, rank_snapshots, snapshot_date, period, source_type, 500
+        query_service.get_docs_for_date, snapshot_date, period, source_type, 500
     )
-    deduped = _dedupe_docs(docs)
+    deduped = policy.dedupe_docs(docs)
     top_items = deduped[:limit]
 
     # 模块四-1：为每条文档注入完整 pdf_media_url
-    top_items = [_enrich_doc_pdf_url(dict(doc), request) for doc in top_items]
+    top_items = [policy.enrich_doc_pdf_url(dict(doc), request) for doc in top_items]
 
     return {
         "items": top_items,
@@ -740,9 +776,9 @@ async def get_trend_radar(
 ):
     """Return trend radar chart data computed from filtered top documents."""
     source_type = None if (not source or source == "all") else source
-    snapshot_date = _resolve_snapshot_date(date)
+    snapshot_date = policy.resolve_snapshot_date(date)
 
-    board = _compute_board_status(snapshot_date)
+    board = policy.compute_board_status(snapshot_date)
 
     # 静默期拦截
     if board["is_embargoed"]:
@@ -755,15 +791,15 @@ async def get_trend_radar(
             "is_embargoed": True,
         }
 
+    query_service = DashboardQueryService(rank_snapshots)
     docs = await asyncio.to_thread(
-        _get_docs_for_date,
-        rank_snapshots,
+        query_service.get_docs_for_date,
         snapshot_date,
         period,
         source_type,
         max(limit, 100),
     )
-    radar = _score_categories(docs[:limit])
+    radar = policy.score_categories(docs[:limit])
     return {
         "radar": radar,
         "doc_count": len(docs[:limit]),
@@ -793,9 +829,9 @@ async def get_dashboard_summary(
     """
     from datetime import timedelta, timezone as _tz
 
-    snapshot_date = _resolve_snapshot_date(date)
+    snapshot_date = policy.resolve_snapshot_date(date)
 
-    board = _compute_board_status(snapshot_date)
+    board = policy.compute_board_status(snapshot_date)
 
     # ── 今日独立访客数（Redis SET：visitor:{YYYY-MM-DD}）──────────
     async def _get_today_unique_visitors() -> int:
@@ -838,12 +874,13 @@ async def get_dashboard_summary(
             "is_embargoed": True,
         }
 
+    query_service = DashboardQueryService(rank_snapshots)
     docs = await asyncio.to_thread(
-        _get_docs_for_date, rank_snapshots, snapshot_date, period, None, 500
+        query_service.get_docs_for_date, snapshot_date, period, None, 500
     )
-    deduped = _dedupe_docs(docs)
+    deduped = policy.dedupe_docs(docs)
     top10 = deduped[:10]
-    radar = _score_categories(deduped[:50])
+    radar = policy.score_categories(deduped[:50])
 
     # ── 统计卡片数据 ──────────────────────────────────────────────
     # 始终使用全库累计统计，数字不随日期切换而变化，
