@@ -20,7 +20,6 @@ M14 变更（已保留）：
 """
 
 import asyncio
-import hashlib
 import logging
 import threading
 from datetime import date
@@ -28,8 +27,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 from fastapi_cache import FastAPICache
 from redis.asyncio import Redis
-
-from langchain_core.documents import Document
 
 from backend.app.core.config import settings
 from backend.app.repositories.document_repository import (
@@ -63,6 +60,16 @@ from backend.app.services.ingestion.crawlers import (
     NewsCrawler,
     ProductHuntCrawler,
     HackerNewsCrawler,
+)
+from backend.app.services.ingestion.document_projection import (
+    document_id as _doc_id,
+    paper_identity_keys as _paper_identity_keys,
+    project_documents as _to_documents,
+    select_top_for_write,
+    sort_papers_for_write as _sort_papers_for_write,
+)
+from backend.app.services.ingestion.persistence_adapter import (
+    IngestionPersistenceAdapter,
 )
 from backend.app.services.ingestion.source_orchestration import (
     MultiSourceIngestionRuntime,
@@ -142,110 +149,6 @@ _FETCH_LIMIT = 25
 _TOP_N_PER_SOURCE = 10
 
 
-def _doc_id(paper: dict) -> str:
-    """Generate a stable ID based on content identity (source + key fields).
-
-    不包含 source_channel，确保同一篇文章在不同周期（daily/weekly/monthly）
-    生成相同的 doc_id，从而支持 GREATEST() OR 语义的布尔字段 upsert。
-
-    优先级：
-      1. arxiv_id（+ source 前缀）
-      2. GitHub full_name（+ source 前缀）
-      3. url
-      4. title hash（+ source 前缀）
-    """
-    source = paper.get("source", "")
-
-    arxiv_id = paper.get("arxiv_id")
-    if arxiv_id:
-        return hashlib.md5(f"arxiv:{arxiv_id}".encode()).hexdigest()
-
-    if source == "github":
-        key = (
-            paper.get("full_name")
-            or paper.get("title")
-            or paper.get("url")
-            or str(paper)
-        )
-        return hashlib.md5(f"github:{key}".encode()).hexdigest()
-
-    key = paper.get("url") or paper.get("title") or str(paper)
-    return hashlib.md5(f"{source}:{key}".encode()).hexdigest()
-
-
-def _to_documents(papers: List[dict]) -> List[Document]:
-    """将原始 paper dict 列表转换为 LangChain Document 列表。"""
-    documents: List[Document] = []
-    for paper in papers:
-        # stars 必须是 int（Milvus schema INT64），None 用 0 兜底，避免非 GitHub 源写入失败
-        raw_stars = paper.get("stars")
-        try:
-            stars_val = int(raw_stars) if raw_stars is not None else 0
-        except (TypeError, ValueError):
-            stars_val = 0
-
-        metadata = {
-            "id": _doc_id(paper),
-            "source": paper.get("source", "unknown"),
-            "title": paper.get("title") or "",
-            "published_date": paper.get("published_date") or "",
-            "url": paper.get("url") or "",
-            "pdf_url": paper.get("pdf_url") or "",
-            # 源数据原始分（stars / likes 等），与 ai_score 区分
-            "raw_score": float(paper.get("score") or 0.0),
-            # Arxiv 渠道标记：hf_trending | arxiv_fallback
-            "source_channel": paper.get("source_channel", paper.get("channel", ""))
-            or "",
-            # GitHub 专属字段（非 GitHub 源为 0/""，保持 schema 一致）
-            "stars": stars_val,
-            "language": paper.get("language") or "",
-            "created_at": paper.get("created_at") or "",
-            # 周期布尔字段：由 run_all / run_single_source 在 paper dict 上预设
-            "in_daily": int(paper.get("in_daily", 0)),
-            "in_weekly": int(paper.get("in_weekly", 0)),
-            "in_monthly": int(paper.get("in_monthly", 0)),
-        }
-        # page_content 优先用 full_text（enricher 填充的完整正文），
-        # 回退到 abstract → summary → title
-        page_content = (
-            paper.get("full_text")
-            or paper.get("abstract")
-            or paper.get("summary")
-            or paper.get("title")
-            or ""
-        )
-        documents.append(Document(page_content=page_content, metadata=metadata))
-    return documents
-
-
-def _paper_identity_keys(paper: dict) -> List[str]:
-    keys: List[str] = []
-    doc_id = _doc_id(paper)
-    if doc_id:
-        keys.append(f"id:{doc_id}")
-
-    url = (paper.get("url") or "").strip()
-    if url:
-        keys.append(f"url:{url}")
-
-    title = (paper.get("title") or "").strip()
-    if title:
-        keys.append(f"title:{title}")
-    return keys
-
-
-def _sort_papers_for_write(papers: List[dict]) -> List[dict]:
-    return sorted(
-        papers,
-        key=lambda paper: (
-            paper.get("source", ""),
-            paper.get("source_channel", paper.get("channel", "")),
-            paper.get("published_date", ""),
-            _doc_id(paper),
-        ),
-    )
-
-
 def _apply_existing_summary_short_circuit(
     papers: List[dict],
     documents: DocumentSearchReader,
@@ -294,49 +197,15 @@ def _select_top(
     top_n: int = _TOP_N_PER_SOURCE,
     source_label: str = "unknown",
 ) -> List[dict]:
-    """按 raw_score 降序取 Top-N（已移除 LLM 评分，直接使用原始热度分）。
-
-    Args:
-        papers: 原始 paper dict 列表
-        top_n: 保留的 Top-N 数量
-        source_label: 数据源标签（用于日志）
-
-    Returns:
-        按 raw_score 降序取 Top-N 的 paper dict 列表
-    """
-    if not papers:
-        return []
-
-    # 直接按 raw_score / score 降序，不再调用 LLM 评分
-    papers.sort(
-        key=lambda p: float(p.get("raw_score") or p.get("score") or 0),
-        reverse=True,
-    )
-    selected = _sort_papers_for_write(papers[:top_n])
-
-    logger.info(
-        "[Pipeline][%s] Top-%d 筛选完成（raw_score: %s ~ %s）：",
-        source_label,
-        len(selected),
-        (
-            selected[-1].get("raw_score", selected[-1].get("score", "?"))
-            if selected
-            else "?"
-        ),
-        (
-            selected[0].get("raw_score", selected[0].get("score", "?"))
-            if selected
-            else "?"
-        ),
-    )
-    for i, p in enumerate(selected, 1):
+    selected = select_top_for_write(papers, top_n)
+    if selected:
         logger.info(
-            "  #%d raw_score=%s | %s",
-            i,
-            p.get("raw_score", p.get("score", "?")),
-            (p.get("title") or "")[:60],
+            "[Pipeline][%s] Top-%d 筛选完成（raw_score: %s ~ %s）",
+            source_label,
+            len(selected),
+            selected[-1].get("raw_score", selected[-1].get("score", "?")),
+            selected[0].get("raw_score", selected[0].get("score", "?")),
         )
-
     return selected
 
 
@@ -349,154 +218,19 @@ def _ingest_documents(
     document_writer: DocumentWriter | None = None,
     rank_snapshots: RankSnapshotRepository | None = None,
 ) -> int:
-    """将一批文档写入 SQLite + Milvus + Neo4j，返回成功入库数量。
-
-    同时写入 document_rank_snapshots 表，记录当天的排行快照。
-    """
-    if not papers:
-        logger.info("[Pipeline][%s] 无数据，跳过。", source_label)
-        return 0
-
-    # 快照日期：优先使用传入值，否则取 CST 当天日期
-    if not snapshot_date:
-        snapshot_date = today_cst()
-
-    sorted_papers = _sort_papers_for_write(papers)
-    vector_documents = _to_documents(sorted_papers)
-    writer = document_writer or db.documents
-    snapshots = rank_snapshots or db.rank_snapshots
-
-    # ── 替换式快照写入：先收集本批次涉及的所有 channel，逐 channel 清除旧快照 ──
-    # 确保同一 snapshot_date + source_channel 下不会残留上次采集的旧 doc_id，
-    # 避免 rank_in_period 重复导致旧论文覆盖新论文。
-    channels_in_batch: set = set()
-    for paper in sorted_papers:
-        ch = paper.get("source_channel", paper.get("channel", ""))
-        if ch:
-            channels_in_batch.add(ch)
-
-    for ch in channels_in_batch:
-        try:
-            deleted = snapshots.delete_snapshots_by_channel(snapshot_date, ch)
-            if deleted:
-                logger.info(
-                    "[Pipeline][%s] 清除旧快照 %s/%s: %d 条（将替换为本批 %d 条）",
-                    source_label,
-                    snapshot_date,
-                    ch,
-                    deleted,
-                    len(sorted_papers),
-                )
-        except Exception as exc:
-            logger.warning(
-                "[Pipeline][%s] 清除旧快照失败 %s/%s: %s",
-                source_label,
-                snapshot_date,
-                ch,
-                exc,
-            )
-
-    # ── SQLite metadata + rank snapshot ────────────────────────────
-    for paper, doc in zip(sorted_papers, vector_documents):
-        ai_score = doc.metadata.get("ai_score") or paper.get("ai_score")
-        ai_reason = doc.metadata.get("ai_reason") or paper.get("ai_reason", "")
-        raw_score = paper.get("raw_score", paper.get("score", 0.0))
-        rank_in_period = int(paper.get("rank_in_period") or 9999)
-        source_channel = paper.get("source_channel", paper.get("channel", ""))
-        score_val = ai_score if ai_score is not None else 0.0
-
-        writer.upsert_document(
-            {
-                "id": doc.metadata["id"],
-                "source": paper.get("source", source_label),
-                "source_channel": source_channel,
-                "title": paper.get("title"),
-                "url": paper.get("url"),
-                "summary": (paper.get("abstract") or paper.get("summary") or "")[:500],
-                "published_date": paper.get("published_date"),
-                "tags": paper.get("tags", []),
-                "score": score_val,
-                "raw_score": raw_score,
-                "stars": doc.metadata.get("stars", 0),
-                "forks": int(paper.get("forks") or doc.metadata.get("forks") or 0),
-                "language": paper.get("language") or doc.metadata.get("language") or "",
-                # 榜单内排名：1=第一名，值越小越靠前；未设置时默认 9999
-                "rank_in_period": rank_in_period,
-                "indexed": 1,
-                # 周期布尔字段：GREATEST() 语义确保多周期 upsert 不丢失
-                "in_daily": int(paper.get("in_daily", 0)),
-                "in_weekly": int(paper.get("in_weekly", 0)),
-                "in_monthly": int(paper.get("in_monthly", 0)),
-            }
-        )
-
-        # ── 写入排行快照（历史记录，不会被后续采集覆盖） ──
-        try:
-            snapshots.upsert_rank_snapshot(
-                doc_id=doc.metadata["id"],
-                snapshot_date=snapshot_date,
-                source_channel=source_channel,
-                rank_in_period=rank_in_period,
-                raw_score=float(raw_score or 0.0),
-                score=float(score_val or 0.0),
-            )
-        except Exception as exc:
-            logger.warning(
-                "[Pipeline][%s] 快照写入失败 doc_id=%s: %s",
-                source_label,
-                doc.metadata["id"],
-                exc,
-            )
-
-    # ── Milvus vector indexing ─────────────────────────────────────
-    try:
-        milvus_repo = MilvusRepository()
-        milvus_repo.add_documents(vector_documents, already_split=False)
-    except Exception as exc:
-        logger.error("[Pipeline][%s] Milvus 写入失败: %s", source_label, exc)
-
-    # ── Graph extraction + Neo4j ───────────────────────────────────
-    # 只对 arxiv 源做图谱抽取；非 arxiv 来源跳过（向量检索已能覆盖）
-    # 同时跳过数据库中已有记录的论文（existing_summary_reused=True），
-    # 避免对重复爬取的论文重复消耗 LLM。
-    is_arxiv_source = source_label.startswith("arxiv")
-    if is_arxiv_source:
-        # 筛选出真正新增的文档（旧文档复用 summary，无需重新抽图谱）
-        new_doc_pairs = [
-            (doc, paper)
-            for doc, paper in zip(vector_documents, sorted_papers)
-            if not paper.get("existing_summary_reused", False)
-        ]
-        new_documents = [doc for doc, _ in new_doc_pairs]
-        if new_documents:
-            try:
-                graph_extractor = GraphExtractor()
-                graph_docs = graph_extractor.extract(new_documents)
-                graph_repo = GraphRepository()
-                graph_repo.add_graph_documents(graph_docs)
-                graph_repo.close()
-                logger.info(
-                    "[Pipeline][%s] 图谱写入完成：%d 篇新论文（跳过 %d 篇已有记录）。",
-                    source_label,
-                    len(new_documents),
-                    len(vector_documents) - len(new_documents),
-                )
-            except Exception as exc:
-                logger.error("[Pipeline][%s] Neo4j 写入失败: %s", source_label, exc)
-        else:
-            logger.info(
-                "[Pipeline][%s] 图谱抽取跳过：所有 %d 篇论文均已存在于数据库。",
-                source_label,
-                len(vector_documents),
-            )
-    else:
-        logger.debug(
-            "[Pipeline][%s] 非 arxiv 来源，跳过图谱抽取（向量检索已覆盖）。",
-            source_label,
-        )
-
-    logger.info("[Pipeline][%s] 入库完成，%d 条。", source_label, len(sorted_papers))
-    return len(sorted_papers)
+    del task_id
+    adapter = IngestionPersistenceAdapter(
+        documents=document_writer or db.documents,
+        rank_snapshots=rank_snapshots or db.rank_snapshots,
+        vector_writer_factory=MilvusRepository,
+        graph_extractor_factory=GraphExtractor,
+        graph_writer_factory=GraphRepository,
+    )
+    return adapter.persist(
+        papers,
+        source_label=source_label,
+        snapshot_date=snapshot_date or today_cst(),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
