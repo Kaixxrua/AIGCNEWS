@@ -3,7 +3,6 @@ import { useEventSource, type SseConnection } from '../composables/useEventSourc
 import {
   type ChatAttachmentRef,
   type ChatMessageDTO,
-  type ConversationSummaryDTO,
   createConversation,
   deleteConversation as apiDeleteConversation,
   ensureConversation,
@@ -12,49 +11,30 @@ import {
   deleteConversationMessage,
 } from '../services/chat/chatApi'
 import { api } from '../services/http/apiClient'
+import {
+  buildChatHistory,
+  normalizeChatAttachment,
+  normalizeChatMessage,
+  normalizeConversation,
+  type ChatMessage,
+  type ChatSettings,
+  type ConversationScope,
+  type ConversationSummary,
+  type StreamPhase,
+} from '../features/chat/chatModel'
 
-export type ChatRole = 'user' | 'assistant'
-export type ConversationScope = 'global' | 'paper'
-export type StreamPhase = 'idle' | 'searching' | 'reranking' | 'answering' | 'error'
+export type {
+  ChatMessage,
+  ChatRole,
+  ChatSettings,
+  ConversationScope,
+  ConversationSummary,
+  StreamPhase,
+} from '../features/chat/chatModel'
 
 let _msgIdCounter = 0
 function nextLocalMsgId(): string {
   return `msg_${Date.now()}_${++_msgIdCounter}`
-}
-
-export interface ChatMessage {
-  id: string
-  conversationId: string
-  role: ChatRole
-  content: string
-  thinking: string
-  thinkingPreview: string
-  hasThinking: boolean
-  isThinking: boolean
-  thinkingDurationSec: number
-  isStreaming: boolean
-  sources: unknown[]
-  attachments: ChatAttachmentRef[]
-  createdAt?: string
-  updatedAt?: string
-}
-
-export interface ConversationSummary {
-  id: string
-  title: string
-  scope: ConversationScope
-  scopeKey?: string
-  lastMessagePreview: string
-  messageCount: number
-  updatedAt?: string
-  lastAccessedAt?: string
-  createdAt?: string
-}
-
-export interface ChatSettings {
-  maxHistoryTurns: number
-  temperature: number
-  webSearch: boolean
 }
 
 interface ChatState {
@@ -79,58 +59,6 @@ type StreamPayload =
 
 const THINK_TAG_RE = /<think>([\s\S]*?)<\/think>/
 let _activeConnection: SseConnection | null = null
-
-function normalizeAttachment(input: ChatAttachmentRef | Record<string, unknown>): ChatAttachmentRef {
-  const raw = input as Record<string, unknown>
-  return {
-    id: String(raw.id ?? ''),
-    name: String(raw.name ?? raw.file_name ?? ''),
-    mimeType: String(raw.mimeType ?? raw.mime_type ?? ''),
-    modality: (raw.modality === 'pdf' ? 'pdf' : 'image') as 'image' | 'pdf',
-    parseStatus: (raw.parseStatus ?? raw.parse_status ?? 'uploaded') as
-      | 'uploaded'
-      | 'processing'
-      | 'ready'
-      | 'failed',
-    progress: typeof raw.progress === 'number' ? raw.progress : undefined,
-  }
-}
-
-function normalizeConversation(dto: ConversationSummaryDTO): ConversationSummary {
-  return {
-    id: String(dto.id),
-    title: dto.title || '新对话',
-    scope: dto.scope,
-    scopeKey: dto.scope_key ?? undefined,
-    lastMessagePreview: dto.last_message_preview || '',
-    messageCount: dto.message_count || 0,
-    updatedAt: dto.updated_at,
-    lastAccessedAt: dto.last_accessed_at,
-    createdAt: dto.created_at,
-  }
-}
-
-function normalizeMessage(dto: ChatMessageDTO, conversationIdOverride?: string): ChatMessage {
-  const thinking = dto.thinking || ''
-  return {
-    id: String(dto.id),
-    conversationId: conversationIdOverride || String(dto.conversation_id),
-    role: dto.role,
-    content: dto.content || '',
-    thinking,
-    thinkingPreview: dto.thinking_preview || (thinking ? `${thinking.slice(0, 80)}${thinking.length > 80 ? '…' : ''}` : ''),
-    hasThinking: dto.has_thinking ?? !!thinking,
-    isThinking: dto.is_thinking ?? false,
-    thinkingDurationSec: typeof (dto as unknown as Record<string, unknown>).thinking_duration_sec === 'number'
-      ? (dto as unknown as Record<string, unknown>).thinking_duration_sec as number
-      : 0,
-    isStreaming: dto.is_streaming ?? false,
-    sources: dto.sources || [],
-    attachments: Array.isArray(dto.attachments) ? dto.attachments.map((item) => normalizeAttachment(item)) : [],
-    createdAt: dto.created_at,
-    updatedAt: dto.updated_at,
-  }
-}
 
 export const useChatStore = defineStore('chat', {
   state: (): ChatState => ({
@@ -216,7 +144,7 @@ export const useChatStore = defineStore('chat', {
     addPendingAttachment(attachment: ChatAttachmentRef | string) {
       const normalized = typeof attachment === 'string'
         ? { id: attachment, name: attachment, mimeType: '', modality: 'image' as const, parseStatus: 'uploaded' as const }
-        : normalizeAttachment(attachment)
+        : normalizeChatAttachment(attachment)
       const exists = this.pendingAttachments.some((item) => item.id === normalized.id)
       if (!exists) {
         this.pendingAttachments = [...this.pendingAttachments, normalized]
@@ -248,7 +176,7 @@ export const useChatStore = defineStore('chat', {
       try {
         const detail = await fetchConversationDetail(id)
         const conversation = normalizeConversation(detail.conversation)
-        const messages = detail.messages.map((item) => normalizeMessage(item, conversation.id))
+        const messages = detail.messages.map((item) => normalizeChatMessage(item, conversation.id))
         this.conversationMap = { ...this.conversationMap, [conversation.id]: conversation }
         this.messageMap = { ...this.messageMap, [conversation.id]: messages }
         this.activeConversationId = conversation.id
@@ -285,7 +213,7 @@ export const useChatStore = defineStore('chat', {
       if (!this.messageMap[summary.id]) {
         // 仅拉取历史消息，不切换 activeConversationId
         const detail = await fetchConversationDetail(summary.id)
-        const messages = detail.messages.map((item) => normalizeMessage(item, summary.id))
+        const messages = detail.messages.map((item) => normalizeChatMessage(item, summary.id))
         this.messageMap = { ...this.messageMap, [summary.id]: messages }
       }
       return summary
@@ -329,7 +257,7 @@ export const useChatStore = defineStore('chat', {
 
     replaceTempAssistantMessage(conversationId: string, tempId: string, dto: ChatMessageDTO) {
       const current = this.messageMap[conversationId] || []
-      const normalized = normalizeMessage(dto, conversationId)
+      const normalized = normalizeChatMessage(dto, conversationId)
       this.messageMap = {
         ...this.messageMap,
         [conversationId]: current.map((item) => item.id === tempId ? normalized : item),
@@ -406,14 +334,10 @@ export const useChatStore = defineStore('chat', {
     },
 
     buildHistory(conversationId: string) {
-      const historySlice = this.settings.maxHistoryTurns > 0 ? this.settings.maxHistoryTurns * 2 : 0
-      const current = this.messageMap[conversationId] || []
-      return historySlice > 0
-        ? current
-            .slice(-historySlice)
-            .filter((item) => item.content.trim() !== '')
-            .map((item) => ({ role: item.role, content: item.content }))
-        : []
+      return buildChatHistory(
+        this.messageMap[conversationId] || [],
+        this.settings.maxHistoryTurns,
+      )
     },
 
     async sendMessage(text: string, paperId?: string, paperConversationId?: string) {
