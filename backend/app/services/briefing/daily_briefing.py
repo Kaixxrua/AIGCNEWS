@@ -10,6 +10,11 @@ from backend.app.repositories.document_repository import DocumentFeedReader
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
+from backend.app.services.briefing.preparation import (
+    PreparedBriefing,
+    normalize_briefing_context,
+    prepare_briefing,
+)
 from backend.app.services.ingestion.base_crawler import today_cst
 
 logger = logging.getLogger(__name__)
@@ -390,6 +395,117 @@ class DailyBriefingService:
         )
         return docs
 
+    def _prepare_briefing(
+        self,
+        *,
+        target_date: str,
+        source: str,
+        period: str,
+    ) -> PreparedBriefing:
+        context = normalize_briefing_context(
+            target_date=target_date,
+            source=source,
+            period=period,
+            source_config=_SOURCE_CONFIG,
+            period_labels=_PERIOD_LABEL,
+            period_channels=_PERIOD_CHANNEL_MAP,
+        )
+        return prepare_briefing(
+            context=context,
+            top_k=self._top_k,
+            snapshot_reader=self._rank_snapshots,
+            document_feed=self._document_feed,
+            source_config=_SOURCE_CONFIG,
+            filter_by_period=_filter_docs_by_period,
+            format_articles=_format_articles,
+            is_blocked=_looks_like_block_response,
+        )
+
+    def _prepare_briefing_inline_legacy(
+        self,
+        *,
+        target_date: str,
+        source: str,
+        period: str,
+    ) -> PreparedBriefing:
+        """PR9 switch fallback retained for deletion in the next unit."""
+        source = source if source in _SOURCE_CONFIG else "all"
+        period = period if period in ("daily", "weekly", "monthly") else "daily"
+        _, cache_suffix = _SOURCE_CONFIG[source]
+        context = normalize_briefing_context(
+            target_date=target_date,
+            source=source,
+            period=period,
+            source_config=_SOURCE_CONFIG,
+            period_labels=_PERIOD_LABEL,
+            period_channels=_PERIOD_CHANNEL_MAP,
+        )
+        source_type: Optional[str] = None if source == "all" else source
+        docs: List[Dict[str, Any]] = []
+        fallback_used = False
+        milvus_used = False
+        expected_channels: List[str] = []
+        if source == "all":
+            for ch_map in _PERIOD_CHANNEL_MAP.values():
+                channel = ch_map.get(period)
+                if channel:
+                    expected_channels.append(channel)
+        else:
+            channel = _PERIOD_CHANNEL_MAP.get(source, {}).get(period)
+            if channel:
+                expected_channels.append(channel)
+        for channel in expected_channels:
+            docs.extend(
+                self._rank_snapshots.get_snapshot_documents(
+                    snapshot_date=target_date,
+                    source_channel=channel,
+                    source_type=source_type,
+                    limit=self._top_k,
+                )
+            )
+        if docs:
+            if source == "github":
+                docs.sort(
+                    key=lambda document: (
+                        int(document.get("rank_in_period") or 9999),
+                        -(float(document.get("raw_score") or document.get("score") or 0)),
+                    )
+                )
+            else:
+                docs.sort(
+                    key=lambda document: (
+                        document.get("raw_score") or document.get("score") or 0
+                    ),
+                    reverse=True,
+                )
+            docs = docs[: self._top_k]
+        if not docs:
+            all_docs = self._document_feed.get_top_documents(
+                limit=self._top_k * 3,
+                source_type=source_type,
+            )
+            docs = _filter_docs_by_period(all_docs, source, period)[: self._top_k]
+        if not docs:
+            docs = self._document_feed.get_latest_documents(limit=self._top_k)
+            fallback_used = True
+        docs = _filter_blocked_docs(docs)
+        prompt = None
+        if docs:
+            prompt_template, _ = _SOURCE_CONFIG[source]
+            prompt = prompt_template.format(
+                count=len(docs),
+                articles=_format_articles(docs, source),
+                date=target_date,
+                period_label=_PERIOD_LABEL.get(period, "今日"),
+            )
+        return PreparedBriefing(
+            context=context,
+            documents=tuple(docs),
+            prompt=prompt,
+            fallback_used=fallback_used,
+            milvus_used=milvus_used,
+        )
+
     async def stream_generate(
         self,
         target_date: str | None = None,
@@ -413,13 +529,18 @@ class DailyBriefingService:
           - {"type": "error",    "data": str}
         """
         today = target_date or today_cst()
-        source = source if source in _SOURCE_CONFIG else "all"
-        period = period if period in ("daily", "weekly", "monthly") else "daily"
-        _, cache_suffix = _SOURCE_CONFIG[source]
-        period_label = _PERIOD_LABEL.get(period, "今日")
-
-        # 缓存 key 加入 source 和 period 区分
-        cache_date = f"{today}{cache_suffix}_{period}"
+        context = normalize_briefing_context(
+            target_date=today,
+            source=source,
+            period=period,
+            source_config=_SOURCE_CONFIG,
+            period_labels=_PERIOD_LABEL,
+            period_channels=_PERIOD_CHANNEL_MAP,
+        )
+        source = context.source
+        period = context.period
+        period_label = context.period_label
+        cache_date = context.cache_date
 
         try:
             # 1. 若非强制重新生成，检查缓存
@@ -440,83 +561,15 @@ class DailyBriefingService:
                     yield {"type": "done", "data": {"briefing_id": existing["id"]}}
                     return
 
-            # 2. Fetch documents（以日期快照表决定榜单项目；GitHub 与项目库“今日暴涨”保持同源）
             logger.info(
                 "开始获取文档，source=%s, period=%s, date=%s...", source, period, today
             )
-            source_type: Optional[str] = None if source == "all" else source
-            docs: List[Dict[str, Any]] = []
-            fallback_used = False
-            milvus_used = False
-
-            # 2a. 确定期望的 source_channel 列表
-            expected_channels: List[str] = []
-            if source == "all":
-                for src_key, ch_map in _PERIOD_CHANNEL_MAP.items():
-                    ch = ch_map.get(period)
-                    if ch:
-                        expected_channels.append(ch)
-            else:
-                ch_map = _PERIOD_CHANNEL_MAP.get(source, {})
-                ch = ch_map.get(period)
-                if ch:
-                    expected_channels.append(ch)
-
-            # 2b. 从快照表按日期+channel 精确获取，确保 GitHub 简报与项目库“今日暴涨”同源。
-            if not docs and expected_channels:
-                for channel in expected_channels:
-                    snap_docs = self._rank_snapshots.get_snapshot_documents(
-                        snapshot_date=today,
-                        source_channel=channel,
-                        source_type=source_type,
-                        limit=self._top_k,
-                    )
-                    docs.extend(snap_docs)
-                if source == "github":
-                    docs.sort(
-                        key=lambda d: (
-                            int(d.get("rank_in_period") or 9999),
-                            -(float(d.get("raw_score") or d.get("score") or 0)),
-                        )
-                    )
-                else:
-                    docs.sort(
-                        key=lambda d: (d.get("raw_score") or d.get("score") or 0),
-                        reverse=True,
-                    )
-                docs = docs[: self._top_k]
-                logger.info(
-                    "快照表返回 %d 条 (channels=%s)", len(docs), expected_channels
-                )
-
-            # 2c. 快照表无数据时，回退到 documents 表 + channel 过滤
-            if not docs:
-                logger.info("快照表无数据，回退到 documents 表...")
-                all_docs = self._document_feed.get_top_documents(
-                    limit=self._top_k * 3, source_type=source_type
-                )
-                # 所有周期（包括 daily）都按 source_channel 过滤
-                docs = _filter_docs_by_period(all_docs, source, period)
-                docs = docs[: self._top_k]
-                logger.info(
-                    "documents 表过滤后返回 %d 条 (period=%s)", len(docs), period
-                )
-
-            # 2d. 依然无数据时，使用最新文档兜底
-            if not docs:
-                logger.info("尝试兜底逻辑 (get_latest_documents)...")
-                docs = self._document_feed.get_latest_documents(limit=self._top_k)
-                fallback_used = True
-                logger.info("兜底逻辑返回 %d 条", len(docs))
-
-            before_filter_count = len(docs)
-            docs = _filter_blocked_docs(docs)
-            if len(docs) != before_filter_count:
-                logger.warning(
-                    "过滤疑似拦截页文档 %d 条，剩余 %d 条",
-                    before_filter_count - len(docs),
-                    len(docs),
-                )
+            prepared = self._prepare_briefing(
+                target_date=today,
+                source=source,
+                period=period,
+            )
+            docs = list(prepared.documents)
 
             yield {
                 "type": "start",
@@ -524,8 +577,8 @@ class DailyBriefingService:
                     "date": today,
                     "doc_count": len(docs),
                     "cached": False,
-                    "fallback": fallback_used,
-                    "milvus": milvus_used,
+                    "fallback": prepared.fallback_used,
+                    "milvus": prepared.milvus_used,
                     "source": source,
                     "period": period,
                 },
@@ -544,15 +597,7 @@ class DailyBriefingService:
             logger.info(
                 "找到 %d 条文档，source=%s，开始构建 Prompt...", len(docs), source
             )
-
-            # 3. Build prompt (按 source 选择模板，传入 period_label 适配措辞)
-            prompt_template, _ = _SOURCE_CONFIG[source]
-            prompt = prompt_template.format(
-                count=len(docs),
-                articles=_format_articles(docs, source),
-                date=today,
-                period_label=period_label,
-            )
+            prompt = prepared.prompt or ""
 
             # 4. Stream LLM generation（支持截断续写）
             full_content: List[str] = []
