@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import time
 
+import pytest
+from pydantic import ValidationError
+
+from backend.app.core.config import Settings
 from backend.app.repositories.project_catalog import (
     ProjectLexicalCandidate,
     ProjectLexicalCandidateLanes,
 )
 from backend.app.services.project_search_shadow import ProjectSearchShadowManager
+
+
+def test_search_strategy_defaults_to_legacy_and_rejects_unknown_values() -> None:
+    assert Settings(_env_file=None).project_ai_search_strategy == "legacy"
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, project_ai_search_strategy="unknown")
 
 
 def test_search_shadow_is_fail_open_bounded_and_sanitized() -> None:
