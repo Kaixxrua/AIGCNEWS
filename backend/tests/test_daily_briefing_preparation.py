@@ -37,6 +37,7 @@ from backend.app.services.briefing.daily_briefing import (
 from backend.app.services.briefing.preparation import (
     normalize_briefing_context,
     order_snapshot_documents,
+    prepare_briefing,
     remove_blocked_documents,
     render_briefing_prompt,
 )
@@ -117,6 +118,124 @@ class BriefingPurePreparationTests(unittest.TestCase):
                 period_label="今日",
             ),
         )
+
+
+class BriefingPreparationAdapterTests(unittest.TestCase):
+    def test_adapter_uses_snapshot_first_and_preserves_prompt(self) -> None:
+        snapshot_reader = MagicMock()
+        snapshot_reader.get_snapshot_documents.return_value = [
+            _github_doc("second", rank=2, score=200),
+            _github_doc("first", rank=1, score=100),
+        ]
+        document_feed = MagicMock()
+        context = normalize_briefing_context(
+            target_date="2026-07-22",
+            source="github",
+            period="daily",
+            source_config=_SOURCE_CONFIG,
+            period_labels=_PERIOD_LABEL,
+            period_channels=_PERIOD_CHANNEL_MAP,
+        )
+
+        prepared = prepare_briefing(
+            context=context,
+            top_k=1,
+            snapshot_reader=snapshot_reader,
+            document_feed=document_feed,
+            source_config=_SOURCE_CONFIG,
+            filter_by_period=lambda docs, _source, _period: docs,
+            format_articles=_format_articles,
+            is_blocked=_looks_like_block_response,
+        )
+
+        self.assertEqual([document["title"] for document in prepared.documents], ["first"])
+        self.assertFalse(prepared.fallback_used)
+        self.assertFalse(prepared.milvus_used)
+        self.assertEqual(
+            prepared.prompt,
+            _PROMPT_GITHUB.format(
+                count=1,
+                articles=_format_articles([_github_doc("first", rank=1, score=100)], "github"),
+                date="2026-07-22",
+                period_label="今日",
+            ),
+        )
+        document_feed.get_top_documents.assert_not_called()
+        document_feed.get_latest_documents.assert_not_called()
+
+    def test_adapter_filters_documents_then_uses_latest_fallback(self) -> None:
+        snapshot_reader = MagicMock()
+        snapshot_reader.get_snapshot_documents.return_value = []
+        document_feed = MagicMock()
+        document_feed.get_top_documents.return_value = [
+            _github_doc("weekly", channel="github_trending_weekly")
+        ]
+        document_feed.get_latest_documents.return_value = [
+            _github_doc("blocked", summary="Access Denied"),
+            _github_doc("latest"),
+        ]
+        context = normalize_briefing_context(
+            target_date="2026-07-22",
+            source="github",
+            period="daily",
+            source_config=_SOURCE_CONFIG,
+            period_labels=_PERIOD_LABEL,
+            period_channels=_PERIOD_CHANNEL_MAP,
+        )
+
+        prepared = prepare_briefing(
+            context=context,
+            top_k=2,
+            snapshot_reader=snapshot_reader,
+            document_feed=document_feed,
+            source_config=_SOURCE_CONFIG,
+            filter_by_period=lambda docs, _source, _period: [
+                doc
+                for doc in docs
+                if doc["source_channel"] == "github_trending_daily"
+            ],
+            format_articles=_format_articles,
+            is_blocked=_looks_like_block_response,
+        )
+
+        document_feed.get_top_documents.assert_called_once_with(
+            limit=6,
+            source_type="github",
+        )
+        document_feed.get_latest_documents.assert_called_once_with(limit=2)
+        self.assertTrue(prepared.fallback_used)
+        self.assertEqual([document["title"] for document in prepared.documents], ["latest"])
+        self.assertIsNotNone(prepared.prompt)
+
+    def test_adapter_keeps_missing_channel_source_fallback_behavior(self) -> None:
+        snapshot_reader = MagicMock()
+        document_feed = MagicMock()
+        document_feed.get_top_documents.return_value = []
+        document_feed.get_latest_documents.return_value = []
+        context = normalize_briefing_context(
+            target_date="2026-07-22",
+            source="news",
+            period="weekly",
+            source_config=_SOURCE_CONFIG,
+            period_labels=_PERIOD_LABEL,
+            period_channels=_PERIOD_CHANNEL_MAP,
+        )
+
+        prepared = prepare_briefing(
+            context=context,
+            top_k=10,
+            snapshot_reader=snapshot_reader,
+            document_feed=document_feed,
+            source_config=_SOURCE_CONFIG,
+            filter_by_period=lambda _docs, _source, _period: [],
+            format_articles=_format_articles,
+            is_blocked=_looks_like_block_response,
+        )
+
+        snapshot_reader.get_snapshot_documents.assert_not_called()
+        self.assertEqual(prepared.documents, ())
+        self.assertIsNone(prepared.prompt)
+        self.assertTrue(prepared.fallback_used)
 
 
 class DailyBriefingPreparationContractTests(unittest.TestCase):

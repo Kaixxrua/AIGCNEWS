@@ -1,11 +1,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 Document = dict[str, Any]
 PromptConfig = Mapping[str, tuple[str, str]]
 PeriodChannels = Mapping[str, Mapping[str, str]]
+
+
+class SnapshotDocumentReader(Protocol):
+    def get_snapshot_documents(
+        self,
+        *,
+        snapshot_date: str,
+        source_channel: str,
+        source_type: str | None,
+        limit: int,
+    ) -> list[Document]: ...
+
+
+class DocumentFallbackReader(Protocol):
+    def get_top_documents(
+        self, *, limit: int, source_type: str | None
+    ) -> list[Document]: ...
+
+    def get_latest_documents(self, *, limit: int) -> list[Document]: ...
 
 
 @dataclass(frozen=True)
@@ -116,4 +135,69 @@ def render_briefing_prompt(
         articles=format_articles(docs, context.source),
         date=context.target_date,
         period_label=context.period_label,
+    )
+
+
+def prepare_briefing(
+    *,
+    context: BriefingContext,
+    top_k: int,
+    snapshot_reader: SnapshotDocumentReader,
+    document_feed: DocumentFallbackReader,
+    source_config: PromptConfig,
+    filter_by_period: Callable[[list[Document], str, str], list[Document]],
+    format_articles: Callable[[list[Document], str], str],
+    is_blocked: Callable[[str], bool],
+) -> PreparedBriefing:
+    documents: list[Document] = []
+    fallback_used = False
+
+    for channel in context.expected_channels:
+        documents.extend(
+            snapshot_reader.get_snapshot_documents(
+                snapshot_date=context.target_date,
+                source_channel=channel,
+                source_type=context.source_type,
+                limit=top_k,
+            )
+        )
+
+    if documents:
+        documents = order_snapshot_documents(
+            documents,
+            source=context.source,
+            top_k=top_k,
+        )
+    else:
+        top_documents = document_feed.get_top_documents(
+            limit=top_k * 3,
+            source_type=context.source_type,
+        )
+        documents = filter_by_period(
+            top_documents,
+            context.source,
+            context.period,
+        )[:top_k]
+
+    if not documents:
+        documents = document_feed.get_latest_documents(limit=top_k)
+        fallback_used = True
+
+    documents = remove_blocked_documents(documents, is_blocked=is_blocked)
+    prompt = (
+        render_briefing_prompt(
+            context=context,
+            documents=documents,
+            source_config=source_config,
+            format_articles=format_articles,
+        )
+        if documents
+        else None
+    )
+    return PreparedBriefing(
+        context=context,
+        documents=tuple(documents),
+        prompt=prompt,
+        fallback_used=fallback_used,
+        milvus_used=False,
     )
