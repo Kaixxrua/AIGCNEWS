@@ -24,6 +24,7 @@ from backend.app.services.rag.web_search_service import (
     WebSearchResult,
 )
 from backend.app.services.project_discovery import search_projects
+from backend.app.services.rag.generator import GenerationOrchestrator
 from backend.app.services.rag.development_orchestrator import (
     DevelopmentDecision,
     assess_candidate,
@@ -679,7 +680,7 @@ class ChatService:
             lines.extend(["", "建议优先评估第 1 个候选；它属于低路线影响的可复用方案。如不采用，我也可以直接给出自研实现。"])
         yield {"type": "content", "data": "\n".join(lines)}
 
-    async def stream_chat(
+    async def _stream_chat_inline(
         self,
         query: str,
         history: List[Dict[str, str]] | None = None,
@@ -881,3 +882,32 @@ class ChatService:
         except Exception as exc:
             traceback.print_exc()
             yield {"type": "error", "data": str(exc)}
+
+    async def stream_chat(
+        self,
+        query: str,
+        history: List[Dict[str, str]] | None = None,
+        max_history_turns: int = MAX_HISTORY_TURNS,
+        temperature: float | None = None,
+        web_search_enabled: bool = False,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        orchestrator = GenerationOrchestrator(
+            self.retriever,
+            stream_completion=stream_chat_completions,
+            completion=chat_completions,
+            web_searcher=web_search,
+            web_context_formatter=format_search_results_as_context,
+            reranker=rerank,
+            database_tool_runner=self._run_tool_calls,
+            tool_definitions=TOOL_DEFINITIONS,
+            development_classifier=classify_development_request,
+            project_searcher=search_projects,
+        )
+        async for event in orchestrator.stream_chat(
+            query,
+            history=history,
+            max_history_turns=max_history_turns,
+            temperature=temperature,
+            web_search_enabled=web_search_enabled,
+        ):
+            yield event

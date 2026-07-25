@@ -160,6 +160,8 @@ class GenerationOrchestrator:
         web_context_formatter: Any = format_search_results_as_context,
         reranker: Any = rerank,
         database_tool_runner: Any = run_tool_calls,
+        tool_definitions: Any = TOOL_DEFINITIONS,
+        development_classifier: Any = classify_development_request,
         project_searcher: Any,
     ) -> None:
         self.retriever = retriever
@@ -169,6 +171,8 @@ class GenerationOrchestrator:
         self._web_context_formatter = web_context_formatter
         self._reranker = reranker
         self._database_tool_runner = database_tool_runner
+        self._tool_definitions = tool_definitions
+        self._development_classifier = development_classifier
         self._project_searcher = project_searcher
 
     @staticmethod
@@ -407,7 +411,7 @@ class GenerationOrchestrator:
         try:
             effective_model = settings.thinking_model_name or settings.chat_model_name
             effective_temp = temperature if temperature is not None else settings.llm_temperature
-            decision = classify_development_request(query, history or [])
+            decision = self._development_classifier(query, history or [])
             print(
                 "[ChatService] development route=%s score=%s reasons=%s mode=%s"
                 % (decision.route, decision.score, list(decision.reasons), decision.search_mode)
@@ -456,7 +460,7 @@ class GenerationOrchestrator:
                     model=effective_model,
                     temperature=effective_temp,
                     max_tokens=1024,
-                    tools=TOOL_DEFINITIONS,
+                    tools=self._tool_definitions,
                     tool_choice="auto",
                 ),
             }

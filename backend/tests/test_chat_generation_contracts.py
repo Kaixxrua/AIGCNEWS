@@ -408,6 +408,11 @@ def test_generation_orchestrator_uses_injected_rag_web_tool_and_model_adapters()
         stream_calls.append(kwargs)
         yield types.SimpleNamespace(reasoning="think", content="answer")
 
+    classify = MagicMock(
+        return_value=types.SimpleNamespace(
+            route="rag", score=0, reasons=(), search_mode="local"
+        )
+    )
     orchestrator = generator.GenerationOrchestrator(
         retriever,
         stream_completion=stream_completion,
@@ -416,19 +421,16 @@ def test_generation_orchestrator_uses_injected_rag_web_tool_and_model_adapters()
         web_context_formatter=lambda results: "web context" if results else "",
         reranker=reranker,
         database_tool_runner=database_runner,
+        development_classifier=classify,
         project_searcher=AsyncMock(),
     )
-    with patch.object(generator, "classify_development_request") as classify:
-        classify.return_value = types.SimpleNamespace(
-            route="rag", score=0, reasons=(), search_mode="local"
-        )
-        events = asyncio.run(
-            collect(
-                orchestrator.stream_chat(
-                    "query", temperature=0.4, web_search_enabled=True
-                )
+    events = asyncio.run(
+        collect(
+            orchestrator.stream_chat(
+                "query", temperature=0.4, web_search_enabled=True
             )
         )
+    )
 
     assert [event["type"] for event in events] == [
         "status",
