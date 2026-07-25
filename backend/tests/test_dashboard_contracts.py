@@ -310,17 +310,19 @@ def test_extracted_policy_matches_legacy_document_projection() -> None:
     ]
     reference_date = date(2025, 1, 2)
 
-    legacy_filtered = routes_dashboard._filter_docs_by_period(
-        docs, "weekly", reference_date=reference_date
-    )
     extracted_filtered = policy.filter_docs_by_period(
         docs, "weekly", reference_date=reference_date
     )
 
-    assert extracted_filtered == legacy_filtered
-    assert policy.dedupe_docs(extracted_filtered) == routes_dashboard._dedupe_docs(
-        legacy_filtered
-    )
+    assert [doc["id"] for doc in extracted_filtered] == [
+        "github-weekly",
+        "duplicate",
+        "arxiv",
+    ]
+    assert [doc["id"] for doc in policy.dedupe_docs(extracted_filtered)] == [
+        "github-weekly",
+        "arxiv",
+    ]
     assert policy.score_categories(docs) == routes_dashboard._score_categories(docs)
 
 
