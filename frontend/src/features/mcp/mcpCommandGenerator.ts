@@ -63,9 +63,6 @@ function authenticatedServer(url: string, token: string) {
 }
 
 function configFor(option: McpClientOption, url: string, token: string): unknown {
-  if (option.format === 'vscode-servers') {
-    return { servers: { [MCP_SERVER_KEY]: authenticatedServer(url, token) } }
-  }
   if (option.format === 'opencode-remote') {
     return {
       $schema: 'https://opencode.ai/config.json',
@@ -81,6 +78,79 @@ function configFor(option: McpClientOption, url: string, token: string): unknown
     }
   }
   return { mcpServers: { [MCP_SERVER_KEY]: authenticatedServer(url, token) } }
+}
+
+function continueYaml(url: string, token: string): string {
+  const yamlString = (value: string) => JSON.stringify(value)
+  return [
+    'name: AIGC NEWS',
+    'version: 0.0.1',
+    'schema: v1',
+    'mcpServers:',
+    '  - name: aigc-news',
+    '    type: streamable-http',
+    `    url: ${yamlString(url)}`,
+    '    requestOptions:',
+    '      headers:',
+    `        Authorization: ${yamlString(`Bearer ${token}`)}`,
+    '',
+  ].join('\n')
+}
+
+function continueCommand(url: string, token: string, shell: McpShellId): string {
+  const yaml = continueYaml(url, token)
+  const relativePath = '.continue/mcpServers/aigc-news.yaml'
+  if (shell === 'bash') {
+    const target = '"$HOME/.continue/mcpServers/aigc-news.yaml"'
+    const directory = '"$HOME/.continue/mcpServers"'
+    return [
+      `mkdir -p ${directory}`,
+      `(umask 077; tmp=$(mktemp "$HOME/.continue/mcpServers/.aigc-news.yaml.XXXXXX") || exit 1; trap 'rm -f "$tmp"' EXIT; printf '%s' ${quote(yaml, shell)} > "$tmp" && ln "$tmp" ${target}; status=$?; rm -f "$tmp"; trap - EXIT; exit $status)`,
+    ].join(join(shell))
+  }
+
+  const script = [
+    `$outputPath = Join-Path $HOME ${quotePowerShellLiteral(relativePath)}`,
+    '$directory = Split-Path -Parent $outputPath',
+    'New-Item -ItemType Directory -Force -Path $directory | Out-Null',
+    '$temporaryPath = Join-Path $directory (([System.Guid]::NewGuid().ToString()) + \'.tmp\')',
+    `$content = ${quotePowerShellLiteral(yaml)}`,
+    "$encoding = New-Object System.Text.UTF8Encoding($false)",
+    'try { [System.IO.File]::WriteAllText($temporaryPath, $content, $encoding); [System.IO.File]::Move($temporaryPath, $outputPath) } finally { if (Test-Path -LiteralPath $temporaryPath) { Remove-Item -LiteralPath $temporaryPath -Force } }',
+  ].join('; ')
+  return shell === 'cmd'
+    ? `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodePowerShellCommand(script)}`
+    : script
+}
+
+function vscodeCommand(url: string, token: string, shell: McpShellId): string {
+  const payload = JSON.stringify({
+    name: MCP_SERVER_KEY,
+    type: 'http',
+    url,
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const unsupported = 'VS Code CLI does not support --add-mcp. Upgrade VS Code or use MCP: Add Server and select the user scope.'
+
+  if (shell === 'bash') {
+    const workflow = [
+      "command -v code >/dev/null 2>&1 || { printf '%s\\n' 'VS Code CLI not found. Install VS Code and reopen the terminal.' >&2; exit 1; }",
+      `code --help 2>&1 | grep -Eq '^[[:space:]]*--add-mcp([=[:space:]]|$)' || { printf '%s\\n' ${quote(unsupported, shell)} >&2; exit 1; }`,
+      `printf '%s' 'Register aigc-news in the VS Code default user profile? This replaces an existing server with the same name. [y/N] '; read -r reply; case "$reply" in [yY]|[yY][eE][sS]) ;; *) printf '%s\\n' 'Cancelled.'; exit 1 ;; esac`,
+      `code --add-mcp ${quote(payload, shell)}`,
+    ].join(join(shell))
+    return `( ${workflow} )`
+  }
+
+  const script = [
+    "$codeCommand = Get-Command code, code.exe, code.cmd -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $codeCommand) { throw 'VS Code CLI not found. Install VS Code and reopen the terminal.' }",
+    "$codeHelp = (& $codeCommand.Source --help 2>&1 | Out-String); if ($codeHelp -notmatch '(?m)^\\s*--add-mcp(?:[=\\s]|$)') { throw " + quotePowerShellLiteral(unsupported) + ' }',
+    "$confirmation = Read-Host 'Register aigc-news in the VS Code default user profile? This replaces an existing server with the same name. [y/N]'; if ($confirmation -notmatch '^(?i:y|yes)$') { throw 'Cancelled.' }",
+    `& $codeCommand.Source --add-mcp ${quotePowerShellLiteral(payload)}`,
+  ].join('; ')
+  return shell === 'cmd'
+    ? `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodePowerShellCommand(script)}`
+    : script
 }
 
 function codexCommand(url: string, token: string, shell: McpShellId): string {
@@ -113,5 +183,7 @@ export function generateMcpClientCommand(option: McpClientOption, url: string, t
     ].join(join(shell))
   }
   if (option.format === 'codex-cli') return codexCommand(url, token, shell)
+  if (option.format === 'continue-yaml') return continueCommand(url, token, shell)
+  if (option.format === 'vscode-cli') return vscodeCommand(url, token, shell)
   return writeJsonCommand(option.configPath, configFor(option, url, token), shell)
 }

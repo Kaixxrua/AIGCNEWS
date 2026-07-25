@@ -68,6 +68,29 @@ const discoveryState = ref<PublicToolDiscoveryState>({ status: 'idle', endpoint:
 const testing = computed(() => discoveryState.value.status === 'running')
 const clientOption = computed(() => clientOptions.find((item) => item.id === selectedClient.value)!)
 const displayedPublicTools = computed(() => resolveDisplayedPublicTools(normalizedEndpoint.value, discoveryState.value))
+const setupScopeLabels = {
+  user: '用户级',
+  'conditional-user': '用户级 · 执行时检测',
+  'user-with-session-secret': '用户配置 · 当前终端密钥',
+  'import-file': '独立导入文件',
+} as const
+const setupScopeLabel = computed(() => setupScopeLabels[clientOption.value.setupScope])
+const setupTargetDescription = computed(() => {
+  if (clientOption.value.id === 'claude-code') return '执行后写入 Claude Code 用户级 MCP 配置，可在该用户的其他项目中使用。'
+  if (clientOption.value.id === 'continue') return `执行后创建 ${clientOption.value.configPath}；若文件已存在会安全退出，不会覆盖。`
+  if (clientOption.value.id === 'vscode') return '执行时先检查 code --add-mcp；支持时注册到 VS Code 默认用户 Profile，同名服务器会先请求确认；不支持则不修改配置。'
+  if (clientOption.value.id === 'codex') return selectedShell.value === 'bash'
+    ? 'MCP 注册写入 Codex 用户配置；Token 仅在当前 Bash / zsh 及其子进程中有效。'
+    : 'MCP 注册写入 Codex 用户配置；Token 同时保存为当前 Windows 用户环境变量。'
+  return `仅创建 ${clientOption.value.configPath}，不会自动修改客户端的用户级配置。`
+})
+const setupResultDescription = computed(() => {
+  if (clientOption.value.id === 'claude-code') return '执行后可运行 claude mcp get aigc-news 或 claude mcp list 验证。'
+  if (clientOption.value.id === 'continue') return 'Continue 将从用户级独立文件读取配置；若文件已存在，请先检查原文件，不要直接覆盖。'
+  if (clientOption.value.id === 'vscode') return 'CLI 不支持时命令会安全失败；可升级 VS Code，或在 MCP: Add Server 中选择用户级配置。已有同名服务器时请确认是否替换。'
+  if (clientOption.value.id === 'codex') return '请从已设置 AIGC_NEWS_MCP_TOKEN 的终端启动 Codex；新 Bash / zsh 终端需要重新设置 Token。'
+  return `命令只生成 ${clientOption.value.configPath}，仍需在对应客户端中手动导入或合并。`
+})
 const endpointWarning = computed(() => {
   try { return ['http:', 'https:'].includes(new URL(normalizedEndpoint.value).protocol) ? '' : 'MCP URL 只支持 http 或 https。' }
   catch { return '请输入有效的 MCP Server URL。' }
@@ -243,8 +266,8 @@ onBeforeUnmount(() => { discoveryRunId += 1; clearTransientCommand(); if (copyTi
         <div v-if="authStore.isLoggedIn" class="mt-6 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
           <div class="rounded-[24px] border border-stone-200/80 bg-white/65 p-5">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Step 1 · 选择</p>
-            <div class="mt-4 grid gap-2 sm:grid-cols-2"><button v-for="client in clientOptions" :key="client.id" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-white'" @click="selectedClient = client.id"><span class="text-sm font-semibold text-stone-800">{{ client.label }}</span><span class="mt-1 block text-2xs leading-4 text-stone-400">{{ client.description }}</span></button></div>
-            <p class="mt-5 text-sm font-semibold text-stone-700">终端</p>
+            <div class="mt-4 grid gap-2 sm:grid-cols-2"><button v-for="client in clientOptions" :key="client.id" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-white'" @click="selectedClient = client.id"><span class="flex flex-wrap items-center gap-2"><span class="text-sm font-semibold text-stone-800">{{ client.label }}</span><span class="rounded-full bg-stone-100 px-2 py-0.5 text-2xs font-semibold text-stone-500">{{ setupScopeLabels[client.setupScope] }}</span></span><span class="mt-1 block text-2xs leading-4 text-stone-400">{{ client.description }}</span></button></div>
+            <p class="mt-5 text-sm font-semibold text-stone-700">执行命令的终端</p>
             <div class="mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-white text-stone-600'" @click="selectedShell = shell.id">{{ shell.label }}</button></div>
             <label class="mt-5 block text-xs font-semibold text-stone-600">设备备注（可选）</label><input v-model="clientLabel" maxlength="128" class="input mt-2" placeholder="例如：工作电脑" />
           </div>
@@ -252,9 +275,10 @@ onBeforeUnmount(() => { discoveryRunId += 1; clearTransientCommand(); if (copyTi
           <div class="rounded-[24px] border border-stone-200/80 bg-stone-50/70 p-5">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Step 2 · 确认</p>
             <div class="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4"><p class="text-sm font-semibold text-cyan-900">权限：读取我的项目收藏</p><p class="mt-1 font-mono text-2xs text-cyan-700">{{ SCOPE }}</p><p class="mt-2 text-xs leading-5 text-cyan-800/80">生成的客户端请求均携带 Authorization: Bearer &lt;token&gt;。Token 明文仅在本组件内存中保留到选择变化、删除或离开页面。</p></div>
-            <p class="mt-4 text-xs leading-5 text-stone-500">可为不同设备分别创建 Token，所有未删除的 Token 均可同时使用。</p>
-            <button class="btn-primary mt-3 w-full justify-center" :disabled="creating" @click="startSetup">{{ creating ? '正在创建…' : '生成安全配置' }}</button>
-            <div v-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">警告：复制内容包含 Bearer Token</p><p class="mt-1 text-xs font-semibold leading-5 text-amber-800">粘贴并执行后可能进入 Shell 历史记录。请将其视为密码，避免共享终端、录屏或日志；使用后按需清理历史记录。</p><p class="mt-2 text-xs leading-5 text-amber-700">配置内容保持隐藏且不会在页面渲染。请立即复制并粘贴到 {{ clientOption.configPath }} 对应环境。Claude Code 可执行后运行 <span class="font-mono">claude mcp get aigc-news</span> 或 <span class="font-mono">claude mcp list</span> 验证；Codex 需要从已设置 AIGC_NEWS_MCP_TOKEN 的终端启动。</p><button class="btn-primary mt-3 text-xs" @click="copyGeneratedCommand">{{ copiedKey === 'command' ? '已复制到剪贴板' : '复制一次性配置' }}</button></div>
+            <div class="mt-4 rounded-2xl border border-stone-200 bg-white/75 p-4"><div class="flex flex-wrap items-center gap-2"><span class="rounded-full bg-stone-100 px-2.5 py-1 text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span><span class="text-xs font-semibold text-stone-700">{{ clientOption.configPath }}</span></div><p class="mt-2 text-xs leading-5 text-stone-500">{{ setupTargetDescription }}</p></div>
+            <p class="mt-3 text-xs leading-5 text-stone-500">可为不同设备分别创建 Token，所有未删除的 Token 均可同时使用。</p>
+            <button class="btn-primary mt-3 w-full justify-center" :disabled="creating" @click="startSetup">{{ creating ? '正在创建…' : clientOption.setupScope === 'import-file' ? '生成安全导入文件' : '生成用户级配置命令' }}</button>
+            <div v-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">警告：复制内容包含 Bearer Token</p><p class="mt-1 text-xs font-semibold leading-5 text-amber-800">粘贴并执行后可能进入 Shell 历史记录。请将其视为密码，避免共享终端、录屏或日志；使用后按需清理历史记录。</p><p class="mt-2 text-xs leading-5 text-amber-700">配置内容保持隐藏且不会在页面渲染。{{ setupResultDescription }} 若命令失败或不再需要，可在下方 Token 管理中删除刚创建的 Token。</p><button class="btn-primary mt-3 text-xs" @click="copyGeneratedCommand">{{ copiedKey === 'command' ? '已复制到剪贴板' : '复制一次性配置' }}</button></div>
             <p v-if="setupNotice" class="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-xs text-emerald-700">{{ setupNotice }}</p>
             <p v-if="setupError" class="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-xs text-rose-700">{{ setupError }}</p>
           </div>
