@@ -3,31 +3,38 @@ import axios from 'axios'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useClipboard } from '../composables/useClipboard'
+import {
+  displayedPublicTools as resolveDisplayedPublicTools,
+  isActivePublicToolDiscovery,
+  normalizePublicTools,
+  type PublicToolDiscoveryState,
+} from '../features/mcp/publicToolsModel'
 import { useAuthStore } from '../stores/authStore'
+import {
+  mcpClientOptions,
+  type McpClientId,
+  type McpShellId,
+} from '../features/mcp/mcpClientCatalog'
+import { generateMcpClientCommand } from '../features/mcp/mcpCommandGenerator'
+import {
+  performPublicMcpHandshake,
+  type McpHandshakePhase,
+  type McpHandshakePhaseStatus,
+} from '../features/mcp/mcpHandshake'
 import {
   createMcpToken,
   deleteMcpToken,
   fetchMcpTokens,
   type McpTokenMetadata,
-} from '../services/api'
-import {
-  generateMcpClientCommand,
-  mcpClientOptions,
-  type McpClientId,
-  type McpShellId,
-} from '../utils/mcpClientConfig'
+} from '../services/mcp/mcpTokenApi'
 
 type TestPhaseStatus = 'idle' | 'running' | 'success' | 'error'
 
-interface PublicTool { name: string; description: string }
-interface TestPhase { label: string; description: string; status: TestPhaseStatus; detail: string }
-interface JsonRpcData { jsonrpc?: string; id?: string | number | null; result?: any; error?: { message?: string } | string }
+interface TestPhase { label: McpHandshakePhase; description: string; status: TestPhaseStatus; detail: string }
 
 const router = useRouter()
 const authStore = useAuthStore()
 const { copy } = useClipboard()
-const MCP_PROTOCOL_VERSION = '2025-06-18'
-const MCP_TEST_TIMEOUT_MS = 15_000
 const SCOPE = 'projects:favorites:read'
 const MCP_FIRST_HOST_INSTRUCTION = `当用户明确要求寻找、搜索、推荐、比较或复用项目、仓库、开源实现、SDK、框架、组件、模板、示例或教程时，即使没有明确说 GitHub 或开源，也必须先调用一个最匹配的 AIGC_NEWS MCP 搜索工具。在实现重大模块、完整能力或独立子系统之前，即使用户没有要求搜索，也先做一次开源复用检查；重大能力指具有自身架构、集成或长期维护边界的完整能力，而不是单纯改动行数多。用户要求提升 AI 开发效率、加速 AI 应用交付或减少 AI 工程重复工作时，先调用 search_github_ai_projects。AI、Agent、MCP、RAG、LLM 工程产物使用 search_github_ai_projects；非 AI 软件产物使用 search_github_projects；主要交付物明确是论文、文献、引用、实验或学术评测时使用 search_papers。文案或样式、重命名、明确局部 Bug、测试/日志/类型、validation 或字段调整、简单 CRUD、孤立函数/组件/endpoint 修改不主动搜索。混合请求按主要交付物只选择一个初始路由，每个未变化需求最多一次初始搜索。不要把首次 MCP 搜索与 WebSearch、WebFetch 或 Bash 放在同一批次；等待并检查 MCP 结果后，只有在 MCP 失败、没有可用或相关结果，或缺少某个具体外部事实时，才针对该缺口使用 Web 工具。找到候选不等于可以自动采用；如果复用会改变架构、部署、数据归属、许可证或长期维护，列出“直接复用、仅借鉴设计后自研、完全自研”等选项并等待用户确认。`
 const defaultEndpoint = typeof window !== 'undefined' ? new URL('/api/mcp', window.location.origin).href : 'https://your-domain.com/api/mcp'
@@ -44,9 +51,8 @@ const setupError = ref('')
 const setupNotice = ref('')
 const transientCommand = ref('')
 const copiedKey = ref('')
-const testing = ref(false)
 const testMessage = ref('')
-const detectedTools = ref<PublicTool[]>([])
+let discoveryRunId = 0
 let copyTimer: ReturnType<typeof setTimeout> | undefined
 
 const shellOptions = [
@@ -55,28 +61,13 @@ const shellOptions = [
   { id: 'bash' as const, label: 'Bash / zsh' },
 ]
 const clientOptions = mcpClientOptions
-const publicTools: PublicTool[] = [
-  { name: 'search_papers', description: '检索公开 arXiv 论文与学术文献。' },
-  { name: 'search_documents', description: '检索新闻、论文、GitHub 等跨来源索引内容。' },
-  { name: 'get_paper_detail', description: '读取单篇公开索引文档的详细元数据。' },
-  { name: 'get_top_items', description: '读取 daily / weekly / monthly 公开排行。' },
-  { name: 'search_github_projects', description: '优先搜索非 AI 项目、组件、SDK、框架、模板与开源软件。' },
-  { name: 'search_github_ai_projects', description: '优先搜索本地 AI / Agent / MCP / RAG / LLM 项目库。' },
-  { name: 'get_project_library', description: '兼容读取 GitHub AI 项目库。' },
-  { name: 'get_project_categories', description: '读取 AI 项目分类与数量。' },
-]
 const testPhases = ref<TestPhase[]>(createTestPhases())
 
 const normalizedEndpoint = computed(() => endpointUrl.value.trim() || defaultEndpoint)
+const discoveryState = ref<PublicToolDiscoveryState>({ status: 'idle', endpoint: normalizedEndpoint.value })
+const testing = computed(() => discoveryState.value.status === 'running')
 const clientOption = computed(() => clientOptions.find((item) => item.id === selectedClient.value)!)
-const displayedPublicTools = computed(() => {
-  if (!detectedTools.value.length) return publicTools
-  const localizedDescriptions = new Map(publicTools.map((tool) => [tool.name, tool.description]))
-  return detectedTools.value.map((tool) => ({
-    ...tool,
-    description: localizedDescriptions.get(tool.name) || tool.description,
-  }))
-})
+const displayedPublicTools = computed(() => resolveDisplayedPublicTools(normalizedEndpoint.value, discoveryState.value))
 const endpointWarning = computed(() => {
   try { return ['http:', 'https:'].includes(new URL(normalizedEndpoint.value).protocol) ? '' : 'MCP URL 只支持 http 或 https。' }
   catch { return '请输入有效的 MCP Server URL。' }
@@ -95,6 +86,12 @@ function clearTransientCommand() {
   if (copiedKey.value === 'command') copiedKey.value = ''
 }
 watch([selectedClient, selectedShell, endpointUrl, clientLabel], clearTransientCommand)
+watch(normalizedEndpoint, (endpoint) => {
+  discoveryRunId += 1
+  discoveryState.value = { status: 'idle', endpoint }
+  testMessage.value = ''
+  testPhases.value = createTestPhases()
+})
 
 function generateAuthenticatedCommand(token: string) {
   return generateMcpClientCommand(
@@ -176,47 +173,38 @@ function tokenStatus(item: McpTokenMetadata) {
 }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '从未' }
 
-function protocolHeaders() { return { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': MCP_PROTOCOL_VERSION } }
-async function postMcp(method: string, params: Record<string, unknown> | undefined, id: number | undefined) {
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), MCP_TEST_TIMEOUT_MS)
-  try {
-    const response = await fetch(normalizedEndpoint.value, { method: 'POST', headers: protocolHeaders(), body: JSON.stringify({ jsonrpc: '2.0', method, ...(id === undefined ? {} : { id }), ...(params ? { params } : {}) }), signal: controller.signal })
-    const text = await response.text()
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const match = text.match(/data:\s*(\{.*\})/)
-    const data = JSON.parse(match?.[1] || text || '{}') as JsonRpcData
-    if (data.error) throw new Error(typeof data.error === 'string' ? data.error : data.error.message)
-    return data
-  } finally { window.clearTimeout(timeout) }
-}
 async function testPublicHandshake() {
   if (testing.value || endpointWarning.value) return
-  testing.value = true
+  const endpoint = normalizedEndpoint.value
+  const runId = ++discoveryRunId
+  const isActive = () => isActivePublicToolDiscovery(endpoint, runId, discoveryState.value)
+  discoveryState.value = { status: 'running', endpoint, runId }
   testMessage.value = '正在测试公开握手…'
   testPhases.value = createTestPhases()
   try {
-    testPhases.value[0]!.status = 'running'
-    await postMcp('initialize', { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'aigc-news-connect-page', version: '1.0.0' } }, 1)
-    testPhases.value[0]!.status = 'success'
-    testPhases.value[1]!.status = 'running'
-    await postMcp('notifications/initialized', undefined, undefined)
-    testPhases.value[1]!.status = 'success'
-    testPhases.value[2]!.status = 'running'
-    const data = await postMcp('tools/list', {}, 2)
-    detectedTools.value = Array.isArray(data.result?.tools) ? data.result.tools : []
-    testPhases.value[2]!.status = 'success'
-    testPhases.value[2]!.detail = `${detectedTools.value.length} tools`
+    const tools = normalizePublicTools(await performPublicMcpHandshake(endpoint, {
+      onPhase(phase: McpHandshakePhase, status: McpHandshakePhaseStatus) {
+        if (!isActive()) return
+        const item = testPhases.value.find((candidate) => candidate.label === phase)
+        if (item) item.status = status
+      },
+    }))
+    if (!isActive()) return
+    const toolsPhase = testPhases.value.find((phase) => phase.label === 'tools/list')
+    if (toolsPhase) toolsPhase.detail = `${tools.length} tools`
     testMessage.value = '公开 MCP 握手成功。'
+    discoveryState.value = { status: 'success', endpoint, runId, tools }
   } catch (error) {
+    if (!isActive()) return
     const running = testPhases.value.find((phase) => phase.status === 'running')
     if (running) running.status = 'error'
     testMessage.value = apiError(error, '握手失败。')
-  } finally { testing.value = false }
+    discoveryState.value = { status: 'error', endpoint, runId }
+  }
 }
 
 onMounted(loadTokens)
-onBeforeUnmount(() => { clearTransientCommand(); if (copyTimer) clearTimeout(copyTimer) })
+onBeforeUnmount(() => { discoveryRunId += 1; clearTransientCommand(); if (copyTimer) clearTimeout(copyTimer) })
 </script>
 
 <template>
