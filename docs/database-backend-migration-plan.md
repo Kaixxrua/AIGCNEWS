@@ -132,8 +132,8 @@ factory 读取集中配置：
 PROJECT_CATALOG_BACKEND=mysql
 PROJECT_CATALOG_SHADOW_BACKEND=
 PROJECT_CATALOG_SHADOW_ENABLED=false
-PROJECT_CATALOG_DUAL_WRITE_ENABLED=false
-PROJECT_CATALOG_FAIL_OPEN_TO_MYSQL=true
+PROJECT_CATALOG_OUTBOX_CAPTURE_ENABLED=false
+PROJECT_CATALOG_SYNC_WORKER_ENABLED=true
 ```
 
 允许值：
@@ -401,9 +401,11 @@ shadow 模式下，用户仍使用 MySQL：
 PROJECT_CATALOG_BACKEND=mysql
 PROJECT_CATALOG_SHADOW_BACKEND=postgres
 PROJECT_CATALOG_SHADOW_ENABLED=true
-PROJECT_CATALOG_DUAL_WRITE_ENABLED=true
-PROJECT_CATALOG_FAIL_OPEN_TO_MYSQL=true
+PROJECT_CATALOG_OUTBOX_CAPTURE_ENABLED=true
+PROJECT_CATALOG_SYNC_WORKER_ENABLED=true
 ```
+
+这里的增量同步是 MySQL transaction 内 durable outbox capture 加异步 PostgreSQL reconciliation，不是同步双写。所有目录写入、personal/private reads 与 legacy `GET /github/projects` 仍由 MySQL 提供；PostgreSQL 仅作为公开目录读取副本。
 
 **正式切换前最低门槛建议：**
 
@@ -418,23 +420,25 @@ PROJECT_CATALOG_FAIL_OPEN_TO_MYSQL=true
 
 ## Phase 5：一键切换
 
-切换前先停止或冻结会修改 schema 的 migration job，确认双写和 outbox 状态已追平。
+切换前先停止或冻结会修改 schema 的 migration job，确认 transactional outbox 与异步 sync 状态已追平；当前 compose 只有单个 backend 实例，`--force-recreate` 是 controlled recreate，不应称为 rolling restart。
 
-### 5.1 切换到 PostgreSQL
+### 5.1 切换到 PostgreSQL 公开目录读取
 
 ```dotenv
 PROJECT_CATALOG_BACKEND=postgres
 PROJECT_CATALOG_SHADOW_ENABLED=false
-PROJECT_CATALOG_DUAL_WRITE_ENABLED=true
-PROJECT_CATALOG_FAIL_OPEN_TO_MYSQL=false
+PROJECT_CATALOG_OUTBOX_CAPTURE_ENABLED=true
+PROJECT_CATALOG_SYNC_WORKER_ENABLED=true
 ```
+
+这不是 PostgreSQL 写入权威切换：MySQL 继续承载所有目录写入并通过 outbox 同步 PostgreSQL。切换前必须证明固定 outbox barrier 已由 PostgreSQL applied-event ledger 完整覆盖。
 
 发布步骤：
 
 1. 检查新库健康、schema version、连接池和 lag；
 2. 检查一致性报告为 green；
 3. 修改 secret/env，不在代码中写 key；
-4. 滚动重启应用；
+4. 经独立授权后 controlled recreate 应用；
 5. 检查 `/health`、monitor、REST 项目查询、MCP tool；
 6. 执行固定 contract smoke queries；
 7. 观察错误率、延迟、pool saturation 和 fallback provenance；
@@ -457,21 +461,15 @@ PROJECT_CATALOG_FAIL_OPEN_TO_MYSQL=false
 ```dotenv
 PROJECT_CATALOG_BACKEND=mysql
 PROJECT_CATALOG_SHADOW_ENABLED=false
-PROJECT_CATALOG_DUAL_WRITE_ENABLED=true
-PROJECT_CATALOG_FAIL_OPEN_TO_MYSQL=true
+PROJECT_CATALOG_OUTBOX_CAPTURE_ENABLED=true
+PROJECT_CATALOG_SYNC_WORKER_ENABLED=true
 ```
 
 然后重启应用并执行同一组 smoke queries。回滚期间继续保留 PostgreSQL 增量同步，避免下次切换重新全量迁移。
 
 ### 5.3 稳定后收尾
 
-只有在 PostgreSQL 稳定运行、备份可恢复、双写和回滚观察期完成后，才考虑：
-
-```dotenv
-PROJECT_CATALOG_DUAL_WRITE_ENABLED=false
-```
-
-删除 MySQL 必须是单独的、经过授权的迁移项目，不能作为本次切换的隐含步骤。
+PostgreSQL 公开读取稳定后仍必须保持 MySQL outbox capture 与 sync，因为写入权威尚未迁移。停止 capture/sync、把 PostgreSQL 改为写入权威或删除 MySQL 都必须是单独、经过授权的迁移项目，不能作为本次切换的隐含步骤。
 
 ---
 
