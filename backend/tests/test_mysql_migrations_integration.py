@@ -31,7 +31,7 @@ def test_live_mysql_outbox_migration_is_repeatable_and_introspectable() -> None:
     try:
         runner = MySQLMigrationRunner(database)
         applied = runner.apply()
-        assert [migration.version for migration in applied] in ([1], [])
+        assert [migration.version for migration in applied] in ([1, 2], [2], [])
         assert runner.apply() == []
         assert all(status.applied for status in runner.status())
         with database.connection() as connection:
@@ -79,7 +79,8 @@ def test_live_mysql_outbox_migration_is_repeatable_and_introspectable() -> None:
             "idx_project_catalog_outbox_lease",
         } <= indexes
         assert ledger == [
-            {"version": 1, "filename": "0001_project_catalog_outbox.sql"}
+            {"version": 1, "filename": "0001_project_catalog_outbox.sql"},
+            {"version": 2, "filename": "0002_daily_growth_source_outbox.sql"},
         ]
     finally:
         database.close()

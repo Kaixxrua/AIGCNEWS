@@ -8,6 +8,7 @@ import pytest
 from backend.app.core.mysql_migrations import (
     MySQLMigrationError,
     discover_mysql_migrations,
+    split_mysql_statements,
 )
 
 
@@ -55,3 +56,25 @@ def test_outbox_migration_is_key_only_and_indexed_for_claiming() -> None:
     assert "readme_text" not in lowered
     assert "description text" not in lowered
     assert "password" not in lowered
+
+
+def test_daily_growth_backfill_records_keys_before_updating_rows() -> None:
+    migration = discover_mysql_migrations()[1]
+    statements = split_mysql_statements(migration.sql)
+
+    assert migration.filename == "0002_daily_growth_source_outbox.sql"
+    assert len(statements) == 2
+    assert statements[0].startswith("INSERT INTO project_catalog_outbox")
+    assert "JSON_OBJECT('metric_date', metric_date, 'repo_id', repo_id)" in statements[0]
+    assert "mysql_migration_daily_growth_source_backfill" in statements[0]
+    assert statements[1].startswith("UPDATE github_repo_daily_metrics")
+    assert "daily_growth_source = 'snapshot_delta'" in statements[1]
+
+
+def test_statement_splitter_preserves_semicolons_inside_strings() -> None:
+    assert split_mysql_statements("SELECT 'a;b'; -- comment\nSELECT `x`; # tail") == [
+        "SELECT 'a;b'",
+        "SELECT `x`",
+    ]
+    assert split_mysql_statements("SELECT 5--2;") == ["SELECT 5--2"]
+    assert split_mysql_statements("SELECT/**/1;") == ["SELECT 1"]

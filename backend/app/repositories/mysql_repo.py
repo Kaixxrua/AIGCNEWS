@@ -1276,18 +1276,6 @@ class MySQLRepository:
                             continue
                         logger.exception("[MySQLRepository] schema migration failed: %s", stmt)
                         raise
-                cur.execute(
-                    """
-                    UPDATE github_repo_daily_metrics
-                    SET daily_growth_source = 'snapshot_delta'
-                    WHERE daily_growth_available = 1
-                      AND COALESCE(daily_growth_source, 'unavailable') = 'unavailable'
-                      AND previous_snapshot_date = DATE_FORMAT(
-                          DATE_SUB(STR_TO_DATE(metric_date, '%Y-%m-%d'), INTERVAL 1 DAY),
-                          '%Y-%m-%d'
-                      )
-                    """
-                )
                 # Legacy rows may predate scopes_json or contain its old empty default.
                 # Backfill only missing/empty scopes so reruns are safe and explicit scopes survive.
                 cur.execute(

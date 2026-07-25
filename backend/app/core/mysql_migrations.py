@@ -18,6 +18,68 @@ class MySQLMigrationError(RuntimeError):
     """Raised when MySQL migration history or files are unsafe to apply."""
 
 
+def split_mysql_statements(script: str) -> list[str]:
+    """Split migration SQL without treating quoted semicolons as delimiters."""
+    statements: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    escaped = False
+    index = 0
+    while index < len(script):
+        character = script[index]
+        next_character = script[index + 1] if index + 1 < len(script) else ""
+        if quote is not None:
+            current.append(character)
+            if escaped:
+                escaped = False
+            elif character == "\\" and quote in {"'", '"'}:
+                escaped = True
+            elif character == quote:
+                if next_character == quote:
+                    current.append(next_character)
+                    index += 1
+                else:
+                    quote = None
+        elif character in {"'", '"', "`"}:
+            quote = character
+            current.append(character)
+        elif character == "#" or (
+            character == "-"
+            and next_character == "-"
+            and (
+                index + 2 >= len(script)
+                or script[index + 2].isspace()
+                or ord(script[index + 2]) < 32
+            )
+        ):
+            end = script.find("\n", index)
+            if end < 0:
+                break
+            current.append("\n")
+            index = end
+        elif character == "/" and next_character == "*":
+            end = script.find("*/", index + 2)
+            if end < 0:
+                raise MySQLMigrationError("unterminated MySQL migration comment")
+            if current and not current[-1].isspace():
+                current.append(" ")
+            index = end + 1
+        elif character == ";":
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+        else:
+            current.append(character)
+        index += 1
+    if quote is not None:
+        raise MySQLMigrationError("unterminated quoted value in MySQL migration")
+    statement = "".join(current).strip()
+    if statement:
+        statements.append(statement)
+    return statements
+
+
 @dataclass(frozen=True)
 class MySQLMigration:
     version: int
@@ -114,7 +176,8 @@ class MySQLMigrationRunner:
                         continue
                     try:
                         with connection.cursor() as cursor:
-                            cursor.execute(migration.sql)
+                            for statement in split_mysql_statements(migration.sql):
+                                cursor.execute(statement)
                             cursor.execute(
                                 """
                                 INSERT INTO app_mysql_schema_migrations
