@@ -33,6 +33,10 @@ from backend.app.repositories.mysql_mcp_access_token_repository import (
 from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
+from backend.app.repositories.project_catalog import (
+    ProjectLexicalCandidate,
+    ProjectLexicalCandidateLanes,
+)
 from backend.app.repositories.mysql_rank_snapshot_repository import (
     MySQLRankSnapshotRepository,
 )
@@ -3405,6 +3409,128 @@ class MySQLRepository:
             return [str(row.get("repo_id") or "") for row in rows if row.get("repo_id")]
         finally:
             conn.close()
+
+    def find_lexical_candidate_lanes(
+        self,
+        *,
+        q: str,
+        category: str = "",
+        subcategory: str = "",
+        language: str = "",
+        tag: str = "",
+        min_stars: int = 500,
+        enriched_only: bool = True,
+        strict_limit: int = 150,
+        relaxed_limit: int = 150,
+    ) -> ProjectLexicalCandidateLanes:
+        terms = project_search_terms(q)
+        if not terms:
+            return ProjectLexicalCandidateLanes()
+        strict_limit = max(1, min(int(strict_limit or 150), 150))
+        relaxed_limit = max(1, min(int(relaxed_limit or 150), 150))
+        normalized_query = normalize_search_query(q)
+        prefix = f"{_escape_like_literal(normalized_query)}%"
+        filters = ["COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL"]
+        filter_params: List[Any] = [min_stars]
+        if enriched_only:
+            filters.append("ge.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' COLLATE utf8mb4_unicode_ci")
+        if category:
+            filters.append("ge.category_slug = %s")
+            filter_params.append(category)
+        if subcategory:
+            default_subcategory = DEFAULT_SUBCATEGORY_BY_CATEGORY.get(category or "")
+            if category and subcategory == default_subcategory:
+                filters.append("(ge.subcategory_slug = %s OR COALESCE(ge.subcategory_slug, '') = '')")
+            else:
+                filters.append("ge.subcategory_slug = %s")
+            filter_params.append(subcategory)
+        if language:
+            filters.append("LOWER(COALESCE(c.language, '')) = LOWER(%s)")
+            filter_params.append(language)
+        if tag:
+            filters.append("COALESCE(ge.tags_json, '') LIKE %s")
+            filter_params.append(f'%"{tag.strip()}"%')
+
+        term_match = (
+            "(c.full_name LIKE %s ESCAPE '=' OR COALESCE(c.title, '') LIKE %s ESCAPE '=' OR "
+            "COALESCE(c.description, '') LIKE %s ESCAPE '=' OR COALESCE(ge.description_zh, '') LIKE %s ESCAPE '=' OR "
+            "COALESCE(c.language, '') LIKE %s ESCAPE '=' OR COALESCE(c.topics_json, '') LIKE %s ESCAPE '=' OR "
+            "COALESCE(ge.tags_json, '') LIKE %s ESCAPE '=')"
+        )
+        coverage_expression = " + ".join(f"CASE WHEN {term_match} THEN 1 ELSE 0 END" for _ in terms)
+        coverage_params: List[Any] = []
+        for term in terms:
+            coverage_params.extend([f"%{_escape_like_literal(term)}%"] * 7)
+        scored_sql = f"""
+            SELECT
+                c.repo_id,
+                c.full_name,
+                COALESCE(c.stars, 0) AS stars,
+                ({coverage_expression}) AS term_coverage,
+                CASE
+                    WHEN LOWER(c.full_name) = LOWER(%s) THEN 4
+                    WHEN LOWER(COALESCE(c.title, '')) = LOWER(%s) THEN 3
+                    WHEN c.full_name LIKE %s ESCAPE '=' THEN 2
+                    WHEN COALESCE(c.title, '') LIKE %s ESCAPE '=' THEN 1
+                    ELSE 0
+                END AS match_strength
+            FROM github_repo_candidates c
+            LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id
+            LEFT JOIN github_repo_aliases ga
+              ON ga.alias_repo_id = c.repo_id
+             AND ga.canonical_repo_id <> c.repo_id
+            WHERE {' AND '.join(filters)}
+        """
+        scored_params = coverage_params + [normalized_query, normalized_query, prefix, prefix] + filter_params
+
+        def lane_sql(*, strict: bool) -> str:
+            qualification = "term_coverage = %s" if strict else "term_coverage > 0"
+            ordering = (
+                "match_strength DESC, stars DESC, full_name ASC"
+                if strict
+                else "term_coverage DESC, match_strength DESC, stars DESC, full_name ASC"
+            )
+            return f"""
+                SELECT repo_id, term_coverage, match_strength
+                FROM ({scored_sql}) scored
+                WHERE {qualification}
+                ORDER BY {ordering}
+                LIMIT %s
+            """
+
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    lane_sql(strict=True),
+                    tuple(scored_params + [len(terms), strict_limit]),
+                )
+                strict_rows = cur.fetchall()
+                cur.execute(
+                    lane_sql(strict=False),
+                    tuple(scored_params + [relaxed_limit]),
+                )
+                relaxed_rows = cur.fetchall()
+            conn.commit()
+        finally:
+            conn.close()
+
+        def candidates(rows: List[Dict[str, Any]], lane: str) -> tuple[ProjectLexicalCandidate, ...]:
+            return tuple(
+                ProjectLexicalCandidate(
+                    repo_id=str(row.get("repo_id") or ""),
+                    lane=lane,
+                    term_coverage=int(row.get("term_coverage") or 0),
+                    match_strength=int(row.get("match_strength") or 0),
+                )
+                for row in rows
+                if row.get("repo_id")
+            )
+
+        return ProjectLexicalCandidateLanes(
+            strict=candidates(strict_rows, "strict"),
+            relaxed=candidates(relaxed_rows, "relaxed"),
+        )
 
     def list_projects(
         self,

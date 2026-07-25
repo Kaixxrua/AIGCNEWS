@@ -121,6 +121,9 @@ def test_mysql_catalog_read_signatures_are_frozen() -> None:
     candidate_signature = _without_annotations(ProjectCatalogRepository.find_lexical_candidate_repo_ids)
     assert _without_annotations(MySQLProjectCatalogRepository.find_lexical_candidate_repo_ids) == candidate_signature
     assert _without_annotations(MySQLRepository.find_lexical_candidate_repo_ids) == candidate_signature
+    lanes_signature = _without_annotations(ProjectCatalogRepository.find_lexical_candidate_lanes)
+    assert _without_annotations(MySQLProjectCatalogRepository.find_lexical_candidate_lanes) == lanes_signature
+    assert _without_annotations(MySQLRepository.find_lexical_candidate_lanes) == lanes_signature
     list_signature = _without_annotations(ScriptedCatalogRepository.list_projects)
     categories_signature = _without_annotations(ScriptedCatalogRepository.get_project_categories)
 

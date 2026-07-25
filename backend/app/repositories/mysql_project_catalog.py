@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.project_catalog import ProjectLexicalCandidateLanes
 
 
 class MySQLProjectCatalogRepository:
@@ -32,6 +33,31 @@ class MySQLProjectCatalogRepository:
             min_stars=min_stars,
             enriched_only=enriched_only,
             limit=limit,
+        )
+
+    def find_lexical_candidate_lanes(
+        self,
+        *,
+        q: str,
+        category: str = "",
+        subcategory: str = "",
+        language: str = "",
+        tag: str = "",
+        min_stars: int = 500,
+        enriched_only: bool = True,
+        strict_limit: int = 150,
+        relaxed_limit: int = 150,
+    ) -> ProjectLexicalCandidateLanes:
+        return self._repository.find_lexical_candidate_lanes(
+            q=q,
+            category=category,
+            subcategory=subcategory,
+            language=language,
+            tag=tag,
+            min_stars=min_stars,
+            enriched_only=enriched_only,
+            strict_limit=strict_limit,
+            relaxed_limit=relaxed_limit,
         )
 
     def list_projects(
