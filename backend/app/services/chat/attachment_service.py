@@ -13,10 +13,7 @@
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import os
-import tempfile
 import time
 import uuid
 from typing import Dict, List, Optional, Tuple
@@ -30,23 +27,15 @@ from backend.app.services.chat.attachment_lifecycle import (
     AttachmentType,
 )
 from backend.app.services.chat.attachment_policy import ValidatedImage, ValidatedPdf
-from backend.app.services.chat.attachment_storage import ImageCache, PdfStorage
+from backend.app.services.chat.attachment_storage import (
+    ImageCache,
+    PdfStorage,
+    extract_pdf_text,
+)
 
 
-# ---------------------------------------------------------------------------
-# 图片内存缓存（与 routes_vision.py 兼容，但使用独立缓存）
-# ---------------------------------------------------------------------------
-
-_IMAGE_TTL = 600  # 10 分钟
-_image_cache: Dict[str, Tuple[str, str, float]] = {}  # {id: (base64, mime, expire_ts)}
-_image_lock = asyncio.Lock()
-
-
-async def _evict_expired_images() -> None:
-    now = time.time()
-    expired = [k for k, (_, _, ts) in _image_cache.items() if ts < now]
-    for k in expired:
-        del _image_cache[k]
+# Public compatibility view used by existing tests and in-process callers.
+_image_cache: Dict[str, Tuple[str, str, float]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +50,6 @@ os.makedirs(_PDF_UPLOAD_DIR, exist_ok=True)
 
 # 附件元数据注册表（内存，生产环境应改为 Redis/MySQL）
 _attachment_registry: Dict[str, AttachmentMeta] = {}
-_registry_lock = asyncio.Lock()
 _image_store = ImageCache(clock=lambda: time.time())
 _image_store._entries = _image_cache
 _attachment_store = AttachmentRegistry(_attachment_registry)
@@ -73,7 +61,7 @@ _attachment_lifecycle = AttachmentLifecycle(
 
 
 def _pdf_storage() -> PdfStorage:
-    return PdfStorage(_PDF_UPLOAD_DIR, extractor=_extract_pdf_text)
+    return PdfStorage(_PDF_UPLOAD_DIR, extractor=extract_pdf_text)
 
 
 # ---------------------------------------------------------------------------
@@ -170,28 +158,3 @@ async def list_attachments(
 ) -> List[AttachmentMeta]:
     """批量获取当前用户拥有的附件元数据。"""
     return await _attachment_store.list_owned(attachment_ids, user_id)
-
-
-# ---------------------------------------------------------------------------
-# 内部工具
-# ---------------------------------------------------------------------------
-
-
-def _extract_pdf_text(file_path: str) -> Tuple[str, int]:
-    """
-    使用 PyMuPDF (fitz) 提取 PDF 全文文本。
-    返回 (full_text, page_count)。
-    """
-    try:
-        import fitz  # PyMuPDF
-    except ImportError:
-        # fitz 不可用时，返回空文本
-        return "", 0
-
-    doc = fitz.open(file_path)
-    page_count = len(doc)
-    text_parts: List[str] = []
-    for page in doc:
-        text_parts.append(page.get_text())
-    doc.close()
-    return "\n".join(text_parts), page_count

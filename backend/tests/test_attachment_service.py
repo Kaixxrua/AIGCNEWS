@@ -99,7 +99,7 @@ class AttachmentServiceTests(unittest.TestCase):
                 patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
                 patch.object(
                     attachment_service,
-                    "_extract_pdf_text",
+                    "extract_pdf_text",
                     return_value=("secret", 1),
                 ),
             ):
@@ -136,7 +136,10 @@ class AttachmentServiceTests(unittest.TestCase):
         with (
             patch.object(attachment_service, "_PDF_UPLOAD_DIR", "/tmp/contracts"),
             patch("builtins.open", return_value=RecordingFile()) as opened,
-            patch.object(attachment_service.asyncio, "to_thread", new=run_in_thread),
+            patch(
+                "backend.app.services.chat.attachment_storage.asyncio.to_thread",
+                new=run_in_thread,
+            ),
         ):
             meta = asyncio.run(attachment_service.upload_pdf(content, user_id=7))
 
@@ -145,7 +148,7 @@ class AttachmentServiceTests(unittest.TestCase):
         self.assertEqual(observed["bytes"], content.data)
         self.assertEqual(
             observed["thread_call"],
-            (attachment_service._extract_pdf_text, (f"/tmp/contracts/{meta.id}.pdf",)),
+            (attachment_service.extract_pdf_text, (f"/tmp/contracts/{meta.id}.pdf",)),
         )
         self.assertEqual(meta.status, attachment_service.AttachmentStatus.READY)
         self.assertEqual(meta.page_count, 3)
@@ -171,7 +174,7 @@ class AttachmentServiceTests(unittest.TestCase):
                 patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
                 patch.object(
                     attachment_service,
-                    "_extract_pdf_text",
+                    "extract_pdf_text",
                     side_effect=RuntimeError("parse detail"),
                 ),
             ):
@@ -221,7 +224,7 @@ class AttachmentServiceTests(unittest.TestCase):
                 patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
                 patch.object(
                     attachment_service,
-                    "_extract_pdf_text",
+                    "extract_pdf_text",
                     side_effect=RuntimeError("sensitive path"),
                 ),
             ):
