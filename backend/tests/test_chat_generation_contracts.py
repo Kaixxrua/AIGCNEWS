@@ -41,7 +41,7 @@ reranker_module.RELEVANCE_THRESHOLD = 0.25
 reranker_module.rerank = AsyncMock()
 sys.modules.setdefault("backend.app.services.rag.reranker", reranker_module)
 
-from backend.app.services.rag import chat_service
+from backend.app.services.rag import chat_service, database_tools
 
 
 async def collect(generator):
@@ -224,3 +224,97 @@ def test_tool_call_runner_preserves_input_order_and_error_messages():
         }
     ]
     assert context == "[db-query] first=1"
+
+
+def test_extracted_database_tool_contract_matches_legacy_exports_and_runner():
+    docs = [
+        {"id": "1", "title": "One", "url": "same", "raw_score": 9},
+        {"id": "2", "title": "Duplicate", "url": "same", "raw_score": 8},
+        {"id": "3", "title": "Title only", "source": "news", "score": 2},
+    ]
+    assert database_tools.TOOL_DEFINITIONS == chat_service.TOOL_DEFINITIONS
+    assert database_tools.build_tool_sources(docs) == chat_service._build_tool_sources(docs)
+
+    calls = [
+        chat_service.ToolCallResult("one", "first", '{"value":1}'),
+        chat_service.ToolCallResult("missing", "unknown", "{}"),
+    ]
+
+    def first(value: int):
+        return {"formatted": f"first={value}", "docs": docs}
+
+    with (
+        patch.dict(chat_service._TOOL_EXECUTORS, {"first": first}),
+        patch.dict(database_tools.TOOL_EXECUTORS, {"first": first}),
+    ):
+        legacy = asyncio.run(chat_service.ChatService._run_tool_calls(calls))
+        extracted = asyncio.run(database_tools.run_tool_calls(calls))
+    assert extracted == legacy
+
+
+def test_extracted_ranking_query_preserves_sql_params_commit_and_close():
+    rows = [
+        {
+            "id": "1",
+            "source": "github",
+            "title": "Project",
+            "url": "https://example.test/project",
+            "summary": "summary",
+            "raw_score": 12,
+            "rank_in_period": 2,
+        }
+    ]
+
+    def run(executor):
+        cursor = MagicMock()
+        cursor.__enter__.return_value = cursor
+        cursor.fetchall.return_value = rows
+        connection = MagicMock()
+        connection.cursor.return_value = cursor
+        repository = MagicMock()
+        repository._connect.return_value = connection
+        module = "backend.app.repositories.mysql_repo.MySQLRepository"
+        with patch(module, return_value=repository):
+            result = executor(source="github", period="weekly", limit=7)
+        sql, params = cursor.execute.call_args.args
+        return (
+            result,
+            " ".join(sql.split()),
+            params,
+            connection.commit.call_count,
+            connection.close.call_count,
+        )
+
+    assert run(database_tools.execute_query_ranking) == run(
+        chat_service._execute_query_ranking
+    )
+
+
+def test_extracted_knowledge_query_preserves_sql_params_commit_and_close():
+    rows = [{"id": "1", "source": "news", "title": "Story", "raw_score": 4}]
+
+    def run(executor):
+        cursor = MagicMock()
+        cursor.__enter__.return_value = cursor
+        cursor.fetchall.return_value = rows
+        connection = MagicMock()
+        connection.cursor.return_value = cursor
+        repository = MagicMock()
+        repository.documents.get_source_counts.return_value = {"news": 3, "github": 2}
+        repository._connect.return_value = connection
+        module = "backend.app.repositories.mysql_repo.MySQLRepository"
+        with patch(module, return_value=repository):
+            result = executor(source="news", limit=11)
+        sql, params = cursor.execute.call_args.args
+        return (
+            result,
+            " ".join(sql.split()),
+            params,
+            repository.documents.get_source_counts.call_count,
+            connection.commit.call_count,
+            connection.close.call_count,
+        )
+
+    assert run(database_tools.execute_query_knowledge_stats) == run(
+        chat_service._execute_query_knowledge_stats
+    )
