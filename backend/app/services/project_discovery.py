@@ -12,6 +12,10 @@ from backend.app.services.ingestion.source_github_mcp import (
     search_github_projects_fallback,
 )
 from backend.app.services.project_reranker import get_project_reranker
+from backend.app.services.project_search_ranking import (
+    ProjectCandidateSearchResult,
+    rank_legacy_project_candidate_ids,
+)
 from backend.app.services.project_semantic_search import get_project_semantic_search
 from backend.app.services.search_semantics import (
     ProjectSearchIntent,
@@ -95,30 +99,6 @@ def _declared_callable(value: Any, name: str) -> Any | None:
         return None
     candidate = getattr(value, name, None)
     return candidate if callable(candidate) else None
-
-
-def _fuse_project_candidate_ids(
-    lexical_repo_ids: list[str],
-    semantic_hits: list[Any],
-    *,
-    rank_constant: int = 60,
-    limit: int = 200,
-) -> list[str]:
-    scores: dict[str, float] = {}
-    best_rank: dict[str, int] = {}
-    for weight, ranking in (
-        (0.45, lexical_repo_ids),
-        (0.55, [str(hit.repo_id) for hit in semantic_hits if getattr(hit, "repo_id", "")]),
-    ):
-        seen: set[str] = set()
-        for rank, repo_id in enumerate(ranking, start=1):
-            repo_id = str(repo_id or "").strip()
-            if not repo_id or repo_id in seen:
-                continue
-            seen.add(repo_id)
-            scores[repo_id] = scores.get(repo_id, 0.0) + weight / (rank_constant + rank)
-            best_rank[repo_id] = min(best_rank.get(repo_id, rank), rank)
-    return sorted(scores, key=lambda repo_id: (-scores[repo_id], best_rank[repo_id], repo_id))[:limit]
 
 
 def resolve_project_sort(
@@ -227,9 +207,15 @@ async def search_projects(
             if len(candidate_results) > 1 and not isinstance(candidate_results[1], Exception)
             else []
         )
-        candidate_repo_ids = _fuse_project_candidate_ids(
-            list(lexical_repo_ids),
-            list(semantic_hits),
+        candidate_search = ProjectCandidateSearchResult(
+            lexical_repo_ids=tuple(str(repo_id) for repo_id in lexical_repo_ids),
+            semantic_repo_ids=tuple(
+                str(hit.repo_id) for hit in semantic_hits if getattr(hit, "repo_id", "")
+            ),
+        )
+        candidate_repo_ids = rank_legacy_project_candidate_ids(
+            candidate_search.lexical_repo_ids,
+            candidate_search.semantic_repo_ids,
         )
         if candidate_repo_ids:
             result = await asyncio.to_thread(
