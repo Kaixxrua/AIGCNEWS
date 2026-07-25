@@ -1,6 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol
+
+
+@dataclass(frozen=True)
+class ProjectLexicalCandidate:
+    repo_id: str
+    lane: Literal["strict", "relaxed"]
+    term_coverage: int = 0
+    match_strength: int = 0
+
+
+@dataclass(frozen=True)
+class ProjectLexicalCandidateLanes:
+    strict: tuple[ProjectLexicalCandidate, ...] = ()
+    relaxed: tuple[ProjectLexicalCandidate, ...] = ()
 
 
 class ProjectCatalogRepository(Protocol):
@@ -18,6 +33,20 @@ class ProjectCatalogRepository(Protocol):
         enriched_only: bool = True,
         limit: int = 200,
     ) -> list[str]: ...
+
+    def find_lexical_candidate_lanes(
+        self,
+        *,
+        q: str,
+        category: str = "",
+        subcategory: str = "",
+        language: str = "",
+        tag: str = "",
+        min_stars: int = 500,
+        enriched_only: bool = True,
+        strict_limit: int = 150,
+        relaxed_limit: int = 150,
+    ) -> ProjectLexicalCandidateLanes: ...
 
     def list_projects(
         self,

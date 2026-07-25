@@ -1,6 +1,8 @@
+from backend.app.repositories.project_catalog import ProjectLexicalCandidate
 from backend.app.services.project_search_ranking import (
     ProjectCandidateSearchResult,
     rank_legacy_project_candidate_ids,
+    rank_v2_project_candidate_ids,
 )
 
 
@@ -41,3 +43,35 @@ def test_legacy_candidate_ranker_applies_limit_after_stable_tie_break() -> None:
     )
 
     assert ranked == ["owner/b"]
+
+
+def test_v2_ranker_accumulates_strict_relaxed_and_semantic_lanes() -> None:
+    ranked = rank_v2_project_candidate_ids(
+        [
+            ProjectLexicalCandidate("owner/strict", "strict", term_coverage=3, match_strength=2),
+            ProjectLexicalCandidate("owner/shared", "strict", term_coverage=2, match_strength=1),
+        ],
+        [
+            ProjectLexicalCandidate("owner/relaxed", "relaxed", term_coverage=2, match_strength=2),
+            ProjectLexicalCandidate("owner/shared", "relaxed", term_coverage=2, match_strength=1),
+        ],
+        ["owner/semantic", "owner/shared"],
+    )
+
+    assert ranked == [
+        "owner/shared",
+        "owner/strict",
+        "owner/semantic",
+        "owner/relaxed",
+    ]
+
+
+def test_v2_ranker_protects_exact_repository_lookup() -> None:
+    ranked = rank_v2_project_candidate_ids(
+        [ProjectLexicalCandidate("owner/popular", "strict", term_coverage=2, match_strength=3)],
+        [ProjectLexicalCandidate("DeusData/codebase-memory-mcp", "relaxed", term_coverage=1, match_strength=1)],
+        ["owner/popular"],
+        exact_repo_id="deusdata/codebase-memory-mcp",
+    )
+
+    assert ranked[0] == "DeusData/codebase-memory-mcp"
