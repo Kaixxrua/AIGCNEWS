@@ -14,6 +14,7 @@ from starlette.requests import Request
 from backend.app.api import routes_dashboard
 from backend.app.api.dependencies import get_rank_snapshot_repository
 from backend.app.services.dashboard import policy
+from backend.app.services.dashboard.query_service import DashboardQueryService
 
 
 COMPATIBILITY_HELPERS = (
@@ -158,6 +159,29 @@ def test_all_source_query_keeps_source_order_exact_channels_and_limit() -> None:
     ]
 
 
+def test_query_service_matches_legacy_fallback_output_and_call_order() -> None:
+    date = "2025-01-02"
+    documents = {
+        (date, "github_hot_daily", "github"): [
+            {"id": "fallback", "source": "github"}
+        ],
+        (date, "github_fallback", "github"): [{"id": "must-not-read"}],
+    }
+    legacy_reader = FakeRankSnapshotReader(documents)
+    service_reader = FakeRankSnapshotReader(documents)
+
+    legacy_docs = routes_dashboard._get_docs_for_date(
+        legacy_reader, date, "daily", "github", 29
+    )
+    service_docs = DashboardQueryService(service_reader).get_docs_for_date(
+        date, "daily", "github", 29
+    )
+
+    assert service_docs == legacy_docs
+    assert service_reader.document_calls == legacy_reader.document_calls
+    assert service_reader.doc_id_calls == legacy_reader.doc_id_calls
+
+
 def test_daily_hackernews_excludes_yesterday_then_sorts_by_points() -> None:
     date = "2025-01-02"
     reader = FakeRankSnapshotReader(
@@ -177,6 +201,16 @@ def test_daily_hackernews_excludes_yesterday_then_sorts_by_points() -> None:
 
     assert [doc["id"] for doc in docs] == ["high", "low"]
     assert reader.doc_id_calls == [("2025-01-01", "hn_daily_html")]
+
+    service_reader = FakeRankSnapshotReader(
+        reader.documents, yesterday_ids={"old"}
+    )
+    service_docs = DashboardQueryService(service_reader).get_docs_for_date(
+        date, "daily", "hackernews", 500
+    )
+    assert service_docs == docs
+    assert service_reader.document_calls == reader.document_calls
+    assert service_reader.doc_id_calls == reader.doc_id_calls
 
 
 def test_top_route_preserves_dedupe_limit_and_forwarded_pdf_url() -> None:
