@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "codebase-memory-exact",
+      "intent": "exact_lookup",
+      "must_find": ["DeusData/codebase-memory-mcp"],
+      "systems": {
+        "legacy": {
+          "result_ids": ["DeusData/codebase-memory-mcp", "giancarloerra/SocratiCode"],
+          "relevance": [3, 1],
+          "latency_ms": 210,
+          "fallback_used": false,
+          "error": ""
+        },
+        "v2": {
+          "result_ids": ["DeusData/codebase-memory-mcp", "giancarloerra/SocratiCode"],
+          "relevance": [3, 1],
+          "latency_ms": 220,
+          "fallback_used": false,
+          "error": ""
+        }
+      }
+    },
+    {
+      "id": "coding-agent-speed-broad-en",
+      "intent": "broad_coding_productivity",
+      "must_find": ["DeusData/codebase-memory-mcp"],
+      "systems": {
+        "legacy": {
+          "result_ids": ["example/autonomous-coder", "example/code-generator"],
+          "relevance": [1, 0],
+          "latency_ms": 250,
+          "fallback_used": false,
+          "error": ""
+        },
+        "v2": {
+          "result_ids": ["giancarloerra/SocratiCode", "DeusData/codebase-memory-mcp", "example/autonomous-coder"],
+          "relevance": [2, 3, 1],
+          "latency_ms": 270,
+          "fallback_used": false,
+          "error": ""
+        }
+      }
+    },
+    {
+      "id": "developer-memory-broad-zh",
+      "intent": "broad_coding_productivity",
+      "must_find": ["DeusData/codebase-memory-mcp"],
+      "systems": {
+        "legacy": {
+          "result_ids": [],
+          "relevance": [],
+          "latency_ms": 260,
+          "fallback_used": false,
+          "error": ""
+        },
+        "v2": {
+          "result_ids": ["DeusData/codebase-memory-mcp", "giancarloerra/SocratiCode"],
+          "relevance": [3, 2],
+          "latency_ms": 280,
+          "fallback_used": false,
+          "error": ""
+        }
+      }
+    },
+    {
+      "id": "filtered-rag-python",
+      "intent": "filtered_rag",
+      "must_find": ["acme/local-rag"],
+      "systems": {
+        "legacy": {
+          "result_ids": ["acme/local-rag", "example/popular-unrelated"],
+          "relevance": [3, 0],
+          "latency_ms": 180,
+          "fallback_used": false,
+          "error": ""
+        },
+        "v2": {
+          "result_ids": ["acme/local-rag", "example/popular-unrelated"],
+          "relevance": [3, 0],
+          "latency_ms": 190,
+          "fallback_used": false,
+          "error": ""
+        }
+      }
+    },
+    {
+      "id": "local-zero-fallback",
+      "intent": "fallback_contract",
+      "must_find": ["external/agent-sdk"],
+      "systems": {
+        "legacy": {
+          "result_ids": ["external/agent-sdk"],
+          "relevance": [3],
+          "latency_ms": 900,
+          "fallback_used": true,
+          "error": ""
+        },
+        "v2": {
+          "result_ids": ["external/agent-sdk"],
+          "relevance": [3],
+          "latency_ms": 920,
+          "fallback_used": true,
+          "error": ""
+        }
+      }
+    }
+  ]
+}
