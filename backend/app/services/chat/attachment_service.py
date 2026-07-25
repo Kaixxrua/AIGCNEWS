@@ -19,48 +19,18 @@ import os
 import tempfile
 import time
 import uuid
-from dataclasses import dataclass, field
-from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 from backend.app.core.config import settings
+from backend.app.services.chat.attachment_lifecycle import (
+    AttachmentLifecycle,
+    AttachmentMeta,
+    AttachmentRegistry,
+    AttachmentStatus,
+    AttachmentType,
+)
 from backend.app.services.chat.attachment_policy import ValidatedImage, ValidatedPdf
-
-
-# ---------------------------------------------------------------------------
-# 枚举与数据结构
-# ---------------------------------------------------------------------------
-
-
-class AttachmentType(str, Enum):
-    IMAGE = "image"
-    PDF = "pdf"
-
-
-class AttachmentStatus(str, Enum):
-    UPLOADING = "uploading"
-    PROCESSING = "processing"
-    READY = "ready"
-    ERROR = "error"
-    EXPIRED = "expired"
-
-
-@dataclass
-class AttachmentMeta:
-    """附件元数据。"""
-
-    id: str
-    user_id: int
-    type: AttachmentType
-    status: AttachmentStatus
-    filename: str = ""
-    mime_type: str = ""
-    size_bytes: int = 0
-    page_count: int = 0
-    text_preview: str = ""
-    created_at: float = field(default_factory=time.time)
-    expires_at: float = 0.0
-    error_msg: str = ""
+from backend.app.services.chat.attachment_storage import ImageCache, PdfStorage
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +62,18 @@ os.makedirs(_PDF_UPLOAD_DIR, exist_ok=True)
 # 附件元数据注册表（内存，生产环境应改为 Redis/MySQL）
 _attachment_registry: Dict[str, AttachmentMeta] = {}
 _registry_lock = asyncio.Lock()
+_image_store = ImageCache(clock=lambda: time.time())
+_image_store._entries = _image_cache
+_attachment_store = AttachmentRegistry(_attachment_registry)
+_attachment_lifecycle = AttachmentLifecycle(
+    _attachment_store,
+    id_factory=lambda: uuid.uuid4(),
+    clock=lambda: time.time(),
+)
+
+
+def _pdf_storage() -> PdfStorage:
+    return PdfStorage(_PDF_UPLOAD_DIR, extractor=_extract_pdf_text)
 
 
 # ---------------------------------------------------------------------------
@@ -106,31 +88,18 @@ async def upload_image(
     """
     上传图片附件，存入内存缓存，返回附件元数据。
     """
-    attachment_id = str(uuid.uuid4())
-    b64 = content.base64_data
-    size_bytes = len(content.data)
-
-    expire_ts = time.time() + _IMAGE_TTL
-
-    async with _image_lock:
-        await _evict_expired_images()
-        _image_cache[attachment_id] = (b64, content.mime_type, expire_ts)
-
-    meta = AttachmentMeta(
-        id=attachment_id,
+    attachment_id = _attachment_lifecycle.new_id()
+    expire_ts = await _image_store.put(
+        attachment_id, content.base64_data, content.mime_type
+    )
+    return await _attachment_lifecycle.register_image(
+        attachment_id=attachment_id,
         user_id=user_id,
-        type=AttachmentType.IMAGE,
-        status=AttachmentStatus.READY,
         filename=content.filename,
         mime_type=content.mime_type,
-        size_bytes=size_bytes,
+        size_bytes=len(content.data),
         expires_at=expire_ts,
     )
-
-    async with _registry_lock:
-        _attachment_registry[attachment_id] = meta
-
-    return meta
 
 
 async def upload_pdf(
@@ -140,40 +109,27 @@ async def upload_pdf(
     """
     上传 PDF 附件：落盘 → 提取文本 → 返回附件元数据。
     """
-    attachment_id = str(uuid.uuid4())
-    file_path = os.path.join(_PDF_UPLOAD_DIR, f"{attachment_id}.pdf")
-
-    meta = AttachmentMeta(
-        id=attachment_id,
+    attachment_id = _attachment_lifecycle.new_id()
+    meta = await _attachment_lifecycle.register_pdf(
+        attachment_id=attachment_id,
         user_id=user_id,
-        type=AttachmentType.PDF,
-        status=AttachmentStatus.PROCESSING,
         filename=content.filename,
         mime_type=content.mime_type,
         size_bytes=len(content.data),
     )
+    storage = _pdf_storage()
 
-    async with _registry_lock:
-        _attachment_registry[attachment_id] = meta
-
-    # 落盘
     try:
-        with open(file_path, "wb") as f:
-            f.write(content.data)
+        storage.write(attachment_id, content.data)
     except Exception:
-        meta.status = AttachmentStatus.ERROR
-        meta.error_msg = "附件保存失败"
+        _attachment_lifecycle.mark_error(meta, "附件保存失败")
         return meta
 
-    # 提取文本（异步包装同步 fitz 调用）
     try:
-        text, page_count = await asyncio.to_thread(_extract_pdf_text, file_path)
-        meta.page_count = page_count
-        meta.text_preview = text[:500] if text else ""
-        meta.status = AttachmentStatus.READY
+        text, page_count = await storage.extract_text(attachment_id)
+        _attachment_lifecycle.mark_pdf_ready(meta, text, page_count)
     except Exception:
-        meta.status = AttachmentStatus.ERROR
-        meta.error_msg = "PDF 解析失败"
+        _attachment_lifecycle.mark_error(meta, "PDF 解析失败")
 
     return meta
 
@@ -182,9 +138,7 @@ async def get_attachment(
     attachment_id: str, user_id: int
 ) -> Optional[AttachmentMeta]:
     """获取当前用户拥有的附件元数据。"""
-    async with _registry_lock:
-        meta = _attachment_registry.get(attachment_id)
-        return meta if meta is not None and meta.user_id == user_id else None
+    return await _attachment_store.get_owned(attachment_id, user_id)
 
 
 async def get_image_base64(
@@ -193,11 +147,7 @@ async def get_image_base64(
     """获取当前用户图片附件的 base64 和 mime_type。"""
     if await get_attachment(attachment_id, user_id) is None:
         return None
-    async with _image_lock:
-        entry = _image_cache.get(attachment_id)
-    if entry is None or time.time() > entry[2]:
-        return None
-    return entry[0], entry[1]
+    return await _image_store.get(attachment_id)
 
 
 async def get_pdf_text(attachment_id: str, user_id: int) -> Optional[str]:
@@ -205,11 +155,11 @@ async def get_pdf_text(attachment_id: str, user_id: int) -> Optional[str]:
     meta = await get_attachment(attachment_id, user_id)
     if meta is None or meta.type != AttachmentType.PDF:
         return None
-    file_path = os.path.join(_PDF_UPLOAD_DIR, f"{attachment_id}.pdf")
-    if not os.path.exists(file_path):
+    storage = _pdf_storage()
+    if not storage.exists(attachment_id):
         return None
     try:
-        text, _ = await asyncio.to_thread(_extract_pdf_text, file_path)
+        text, _ = await storage.extract_text(attachment_id)
         return text
     except Exception:
         return None
@@ -219,13 +169,7 @@ async def list_attachments(
     attachment_ids: List[str], user_id: int
 ) -> List[AttachmentMeta]:
     """批量获取当前用户拥有的附件元数据。"""
-    result = []
-    async with _registry_lock:
-        for aid in attachment_ids:
-            meta = _attachment_registry.get(aid)
-            if meta is not None and meta.user_id == user_id:
-                result.append(meta)
-    return result
+    return await _attachment_store.list_owned(attachment_ids, user_id)
 
 
 # ---------------------------------------------------------------------------
