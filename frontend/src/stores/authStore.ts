@@ -1,13 +1,12 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { api } from '../services/api'
+import {
+  fetchCurrentUser,
+  loginWithPassword,
+  type AuthUserDTO,
+} from '../services/auth/authApi'
 
-export interface AuthUser {
-  user_id: number
-  email: string
-  role: 'user' | 'admin'
-  email_verified?: boolean
-}
+export type AuthUser = AuthUserDTO
 
 const TOKEN_KEY = 'auth_token'
 const PENDING_CHAT_KEY = 'pending_chat_message'
@@ -41,8 +40,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** 登录：调用 POST /api/auth/login，保存 token/user，返回 user */
   async function login(email: string, password: string): Promise<AuthUser> {
-    const res = await api.post<{ access_token: string; role: string }>('/auth/login', { email, password })
-    const data = res.data
+    const data = await loginWithPassword(email, password)
     token.value = data.access_token
     localStorage.setItem(TOKEN_KEY, data.access_token)
     // 登录后立即拉取完整用户信息
@@ -62,8 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** 刷新当前用户信息 */
   async function fetchMe(): Promise<void> {
-    const res = await api.get<AuthUser>('/auth/me')
-    user.value = res.data
+    user.value = await fetchCurrentUser()
   }
 
   /** 从 localStorage 恢复 token，若有效则调用 fetchMe() 恢复 user */

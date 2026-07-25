@@ -1,122 +1,17 @@
-import axios from 'axios'
+import { api } from './http/apiClient'
 
-export const api = axios.create({
-  baseURL: '/api',
-  timeout: 60_000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
+export { api } from './http/apiClient'
+export {
+  createMcpToken,
+  deleteMcpToken,
+  fetchMcpTokens,
+  type CreateMcpTokenPayload,
+  type CreateMcpTokenResponse,
+  type McpClientType,
+  type McpTokenMetadata,
+} from './mcp/mcpTokenApi'
 
 const TOOL_WEBSITE_ADD_TIMEOUT = 120_000
-
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('auth_token')
-    if (token) {
-      config.headers = config.headers ?? {}
-      config.headers['Authorization'] = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => Promise.reject(error),
-)
-
-let _is401Handling = false
-
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const status = error?.response?.status
-    const requestUrl: string = error?.config?.url ?? ''
-    const data = error?.response?.data
-    const message = error?.message ?? 'Unknown API error'
-
-    const isSensitiveEndpoint = requestUrl.includes('/auth/me/mcp-tokens')
-    console.error('[API Error]', {
-      status,
-      message,
-      ...(isSensitiveEndpoint ? {} : { data }),
-      url: requestUrl,
-      method: error?.config?.method,
-    })
-
-    if (status === 401 && !_is401Handling) {
-      const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/me')
-
-      localStorage.removeItem('auth_token')
-      try {
-        const { useAuthStore } = await import('../stores/authStore')
-        const { getActivePinia } = await import('pinia')
-        const pinia = getActivePinia()
-        if (pinia) {
-          const authStore = useAuthStore(pinia)
-          authStore.token = null
-          authStore.user = null
-        }
-      } catch (_) {
-        /* ignore */
-      }
-
-      if (!isAuthEndpoint) {
-        _is401Handling = true
-        try {
-          const { default: router } = await import('../router/index')
-          alert('登录已过期，请重新登录')
-          await router.push('/login')
-        } finally {
-          _is401Handling = false
-        }
-      }
-    }
-
-    return Promise.reject(error)
-  },
-)
-
-export type McpClientType = 'claude' | 'cursor' | 'vscode' | 'other'
-
-export interface McpTokenMetadata {
-  id: number
-  user_id?: number
-  token_hint: string
-  scopes: string[]
-  client_type: McpClientType
-  client_label: string
-  expires_at: string | null
-  revoked_at: string | null
-  deleted_at?: string | null
-  created_at?: string | null
-  last_used_at?: string | null
-}
-
-export interface CreateMcpTokenPayload {
-  client_type: McpClientType
-  client_label?: string
-  scopes?: string[]
-  expires_at?: string | null
-}
-
-export interface CreateMcpTokenResponse {
-  token: string
-  token_metadata: McpTokenMetadata
-  replaced_count: number
-}
-
-export async function fetchMcpTokens(): Promise<McpTokenMetadata[]> {
-  const res = await api.get<McpTokenMetadata[]>('/auth/me/mcp-tokens')
-  return Array.isArray(res.data) ? res.data : []
-}
-
-export async function createMcpToken(payload: CreateMcpTokenPayload): Promise<CreateMcpTokenResponse> {
-  const res = await api.post<CreateMcpTokenResponse>('/auth/me/mcp-tokens', payload)
-  return res.data
-}
-
-export async function deleteMcpToken(tokenId: number): Promise<{ deleted: boolean; id: number }> {
-  const res = await api.delete<{ deleted: boolean; id: number }>(`/auth/me/mcp-tokens/${tokenId}`)
-  return res.data
-}
 
 export interface PaperItem {
   id: string
