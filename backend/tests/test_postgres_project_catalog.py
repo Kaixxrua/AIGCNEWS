@@ -8,7 +8,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.app.repositories.project_catalog import ProjectCatalogRepository
+from backend.app.repositories.project_catalog import (
+    ProjectCatalogRepository,
+    ProjectLexicalCandidate,
+)
 from backend.app.repositories.project_catalog_normalization import (
     format_project_category_counts,
     normalize_project_row,
@@ -64,6 +67,7 @@ def stripped(function: Any) -> inspect.Signature:
 
 def test_signatures_match_frozen_contract_exactly() -> None:
     assert stripped(PostgresProjectCatalogRepository.find_lexical_candidate_repo_ids) == stripped(ProjectCatalogRepository.find_lexical_candidate_repo_ids)
+    assert stripped(PostgresProjectCatalogRepository.find_lexical_candidate_lanes) == stripped(ProjectCatalogRepository.find_lexical_candidate_lanes)
     assert stripped(PostgresProjectCatalogRepository.list_projects) == stripped(ProjectCatalogRepository.list_projects)
     assert stripped(PostgresProjectCatalogRepository.get_project_categories) == stripped(ProjectCatalogRepository.get_project_categories)
 
@@ -109,6 +113,58 @@ def test_lexical_candidates_are_canonical_bounded_and_parameterized() -> None:
     assert "LIMIT %s" in sql
     assert params[-1] == 200
     assert "100%_safe" not in sql
+
+
+def test_empty_lexical_lanes_short_circuit_without_transaction() -> None:
+    database = Database([])
+    result = PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(
+        q="GitHub repository 项目 仓库"
+    )
+
+    assert not result.strict
+    assert not result.relaxed
+    assert database.entered == 0
+
+
+def test_lexical_lanes_are_typed_filtered_and_independently_bounded() -> None:
+    database = Database([
+        [{"repo_id": "owner/strict", "term_coverage": 3, "match_strength": 4}],
+        [{"repo_id": "owner/relaxed", "term_coverage": 1, "match_strength": 1}],
+    ])
+    result = PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(
+        q="agent 100%_safe",
+        category="agents_automation",
+        subcategory="agent_framework",
+        language="Python",
+        tag="MCP",
+        strict_limit=1000,
+        relaxed_limit=999,
+    )
+
+    assert result.strict == (
+        ProjectLexicalCandidate("owner/strict", "strict", term_coverage=3, match_strength=4),
+    )
+    assert result.relaxed == (
+        ProjectLexicalCandidate("owner/relaxed", "relaxed", term_coverage=1, match_strength=1),
+    )
+    strict_sql, strict_params = database.cursor.calls[1]
+    relaxed_sql, relaxed_params = database.cursor.calls[2]
+    for sql in (strict_sql, relaxed_sql):
+        assert "github_repo_aliases ga" in sql
+        assert "ga.alias_repo_id IS NULL" in sql
+        assert "COALESCE(c.stars, 0) >= %s" in sql
+        assert "ge.category_slug = %s" in sql
+        assert "ge.subcategory_slug = %s" in sql
+        assert "LOWER(COALESCE(c.language, '')) = LOWER(%s)" in sql
+        assert "COALESCE(ge.tags_json::text, '') ILIKE %s" in sql
+        assert "unnest(%s::text[])" in sql
+        assert "100%_safe" not in sql
+    assert "term_coverage = %s" in strict_sql
+    assert "term_coverage > 0" in relaxed_sql
+    assert strict_params[-2:] == (3, 150)
+    assert relaxed_params[-1] == 150
+    assert ["%agent%", "%100%", "%safe%"] in strict_params
+    assert database.entered == database.exited == 1
 
 
 def test_relevance_hydration_preserves_candidate_order_parameters() -> None:

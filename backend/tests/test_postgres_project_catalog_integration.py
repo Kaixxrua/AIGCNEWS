@@ -141,6 +141,15 @@ def test_real_catalog_queries_match_committed_expected_results(catalog: Any) -> 
     assert hydrated["total"] == 2
     assert [item["repo_id"] for item in hydrated["items"]] == ["acme/alpha", "acme/beta"]
 
+    lanes = catalog.find_lexical_candidate_lanes(
+        q="workflow local",
+        min_stars=500,
+        enriched_only=True,
+    )
+    assert [item.repo_id for item in lanes.strict] == []
+    assert [item.repo_id for item in lanes.relaxed] == ["acme/alpha", "acme/beta"]
+    assert [item.term_coverage for item in lanes.relaxed] == [1, 1]
+
 
 def test_real_catalog_scope_favorites_and_categories(catalog: Any) -> None:
     today = catalog.list_projects(source="github", scope="today", min_stars=500)
