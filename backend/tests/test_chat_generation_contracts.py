@@ -201,8 +201,8 @@ def test_tool_call_runner_preserves_input_order_and_error_messages():
     def second():
         raise RuntimeError("database unavailable")
 
-    with patch.dict(chat_service._TOOL_EXECUTORS, {"first": first, "second": second}):
-        messages, sources, context = asyncio.run(chat_service.ChatService._run_tool_calls(calls))
+    with patch.dict(database_tools.TOOL_EXECUTORS, {"first": first, "second": second}):
+        messages, sources, context = asyncio.run(database_tools.run_tool_calls(calls))
 
     assert messages == [
         {"role": "tool", "tool_call_id": "one", "content": "first=1"},
@@ -226,34 +226,45 @@ def test_tool_call_runner_preserves_input_order_and_error_messages():
     assert context == "[db-query] first=1"
 
 
-def test_extracted_database_tool_contract_matches_legacy_exports_and_runner():
+def test_database_tool_boundary_preserves_exports_projection_and_runner():
     docs = [
         {"id": "1", "title": "One", "url": "same", "raw_score": 9},
         {"id": "2", "title": "Duplicate", "url": "same", "raw_score": 8},
         {"id": "3", "title": "Title only", "source": "news", "score": 2},
     ]
-    assert database_tools.TOOL_DEFINITIONS == chat_service.TOOL_DEFINITIONS
-    assert database_tools.build_tool_sources(docs) == chat_service._build_tool_sources(docs)
-
-    calls = [
-        chat_service.ToolCallResult("one", "first", '{"value":1}'),
-        chat_service.ToolCallResult("missing", "unknown", "{}"),
+    assert chat_service.TOOL_DEFINITIONS is database_tools.TOOL_DEFINITIONS
+    assert database_tools.build_tool_sources(docs) == [
+        {
+            "id": "1",
+            "score": 9.0,
+            "source": "",
+            "title": "One",
+            "url": "same",
+            "published_date": "",
+        },
+        {
+            "id": "3",
+            "score": 2.0,
+            "source": "news",
+            "title": "Title only",
+            "url": "",
+            "published_date": "",
+        },
     ]
+
+    calls = [chat_service.ToolCallResult("one", "first", '{"value":1}')]
 
     def first(value: int):
         return {"formatted": f"first={value}", "docs": docs}
 
-    with (
-        patch.dict(chat_service._TOOL_EXECUTORS, {"first": first}),
-        patch.dict(database_tools.TOOL_EXECUTORS, {"first": first}),
-    ):
-        legacy = asyncio.run(chat_service.ChatService._run_tool_calls(calls))
-        extracted = asyncio.run(database_tools.run_tool_calls(calls))
-    assert extracted == legacy
+    with patch.dict(database_tools.TOOL_EXECUTORS, {"first": first}):
+        direct = asyncio.run(database_tools.run_tool_calls(calls))
+        facade = asyncio.run(chat_service.ChatService._run_tool_calls(calls))
+    assert facade == direct
 
 
-def test_extracted_ranking_query_preserves_sql_params_commit_and_close():
-    rows = [
+def test_database_queries_preserve_exact_sql_params_commit_and_close():
+    ranking_rows = [
         {
             "id": "1",
             "source": "github",
@@ -264,36 +275,9 @@ def test_extracted_ranking_query_preserves_sql_params_commit_and_close():
             "rank_in_period": 2,
         }
     ]
+    stats_rows = [{"id": "1", "source": "news", "title": "Story", "raw_score": 4}]
 
-    def run(executor):
-        cursor = MagicMock()
-        cursor.__enter__.return_value = cursor
-        cursor.fetchall.return_value = rows
-        connection = MagicMock()
-        connection.cursor.return_value = cursor
-        repository = MagicMock()
-        repository._connect.return_value = connection
-        module = "backend.app.repositories.mysql_repo.MySQLRepository"
-        with patch(module, return_value=repository):
-            result = executor(source="github", period="weekly", limit=7)
-        sql, params = cursor.execute.call_args.args
-        return (
-            result,
-            " ".join(sql.split()),
-            params,
-            connection.commit.call_count,
-            connection.close.call_count,
-        )
-
-    assert run(database_tools.execute_query_ranking) == run(
-        chat_service._execute_query_ranking
-    )
-
-
-def test_extracted_knowledge_query_preserves_sql_params_commit_and_close():
-    rows = [{"id": "1", "source": "news", "title": "Story", "raw_score": 4}]
-
-    def run(executor):
+    def run(executor, rows, **kwargs):
         cursor = MagicMock()
         cursor.__enter__.return_value = cursor
         cursor.fetchall.return_value = rows
@@ -304,20 +288,33 @@ def test_extracted_knowledge_query_preserves_sql_params_commit_and_close():
         repository._connect.return_value = connection
         module = "backend.app.repositories.mysql_repo.MySQLRepository"
         with patch(module, return_value=repository):
-            result = executor(source="news", limit=11)
+            result = executor(**kwargs)
         sql, params = cursor.execute.call_args.args
-        return (
-            result,
-            " ".join(sql.split()),
-            params,
-            repository.documents.get_source_counts.call_count,
-            connection.commit.call_count,
-            connection.close.call_count,
-        )
+        return result, " ".join(sql.split()), params, connection, repository
 
-    assert run(database_tools.execute_query_knowledge_stats) == run(
-        chat_service._execute_query_knowledge_stats
+    ranking = run(
+        database_tools.execute_query_ranking,
+        ranking_rows,
+        source="github",
+        period="weekly",
+        limit=7,
     )
+    assert "WHERE LEFT(created_at, 10) = %s AND source = %s" in ranking[1]
+    assert ranking[2][1:] == ("github", 7)
+    assert ranking[3].commit.call_count == 1
+    assert ranking[3].close.call_count == 1
+
+    stats = run(
+        database_tools.execute_query_knowledge_stats,
+        stats_rows,
+        source="news",
+        limit=11,
+    )
+    assert "WHERE source = %s" in stats[1]
+    assert stats[2] == ("news", 11)
+    assert stats[4].documents.get_source_counts.call_count == 1
+    assert stats[3].commit.call_count == 1
+    assert stats[3].close.call_count == 1
 
 
 def test_generation_orchestrator_preserves_project_search_adapter_arguments():
