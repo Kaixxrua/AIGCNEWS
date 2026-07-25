@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import traceback
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List
 
 from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.briefing_repository import BriefingContentRepository
@@ -419,91 +419,6 @@ class DailyBriefingService:
             filter_by_period=_filter_docs_by_period,
             format_articles=_format_articles,
             is_blocked=_looks_like_block_response,
-        )
-
-    def _prepare_briefing_inline_legacy(
-        self,
-        *,
-        target_date: str,
-        source: str,
-        period: str,
-    ) -> PreparedBriefing:
-        """PR9 switch fallback retained for deletion in the next unit."""
-        source = source if source in _SOURCE_CONFIG else "all"
-        period = period if period in ("daily", "weekly", "monthly") else "daily"
-        _, cache_suffix = _SOURCE_CONFIG[source]
-        context = normalize_briefing_context(
-            target_date=target_date,
-            source=source,
-            period=period,
-            source_config=_SOURCE_CONFIG,
-            period_labels=_PERIOD_LABEL,
-            period_channels=_PERIOD_CHANNEL_MAP,
-        )
-        source_type: Optional[str] = None if source == "all" else source
-        docs: List[Dict[str, Any]] = []
-        fallback_used = False
-        milvus_used = False
-        expected_channels: List[str] = []
-        if source == "all":
-            for ch_map in _PERIOD_CHANNEL_MAP.values():
-                channel = ch_map.get(period)
-                if channel:
-                    expected_channels.append(channel)
-        else:
-            channel = _PERIOD_CHANNEL_MAP.get(source, {}).get(period)
-            if channel:
-                expected_channels.append(channel)
-        for channel in expected_channels:
-            docs.extend(
-                self._rank_snapshots.get_snapshot_documents(
-                    snapshot_date=target_date,
-                    source_channel=channel,
-                    source_type=source_type,
-                    limit=self._top_k,
-                )
-            )
-        if docs:
-            if source == "github":
-                docs.sort(
-                    key=lambda document: (
-                        int(document.get("rank_in_period") or 9999),
-                        -(float(document.get("raw_score") or document.get("score") or 0)),
-                    )
-                )
-            else:
-                docs.sort(
-                    key=lambda document: (
-                        document.get("raw_score") or document.get("score") or 0
-                    ),
-                    reverse=True,
-                )
-            docs = docs[: self._top_k]
-        if not docs:
-            all_docs = self._document_feed.get_top_documents(
-                limit=self._top_k * 3,
-                source_type=source_type,
-            )
-            docs = _filter_docs_by_period(all_docs, source, period)[: self._top_k]
-        if not docs:
-            docs = self._document_feed.get_latest_documents(limit=self._top_k)
-            fallback_used = True
-        docs = _filter_blocked_docs(docs)
-        prompt = None
-        if docs:
-            prompt_template, _ = _SOURCE_CONFIG[source]
-            prompt = prompt_template.format(
-                count=len(docs),
-                articles=_format_articles(docs, source),
-                date=target_date,
-                period_label=_PERIOD_LABEL.get(period, "今日"),
-            )
-        return PreparedBriefing(
-            context=context,
-            documents=tuple(docs),
-            prompt=prompt,
-            fallback_used=fallback_used,
-            milvus_used=milvus_used,
         )
 
     async def stream_generate(
