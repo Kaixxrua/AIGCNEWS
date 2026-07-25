@@ -64,6 +64,9 @@ from backend.app.services.ingestion.crawlers import (
     ProductHuntCrawler,
     HackerNewsCrawler,
 )
+from backend.app.services.ingestion.source_orchestration import (
+    MultiSourceIngestionRuntime,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -671,297 +674,22 @@ class IngestionOrchestrator:
         bg_thread.start()
         logger.info("[Orchestrator] 后台 PDF 下载线程已启动（daemon=True）。")
 
+    async def _clear_dashboard_cache(self) -> None:
+        await _clear_dashboard_cache_safely()
+
     async def run_single_source(
         self,
         source_name: str,
         periods: Optional[List[str]] = None,
     ) -> Dict[str, int]:
-        """按源独立采集，按周期串行处理（Phase 4 智能调度器使用）。
-
-        改造要点：
-          - 按 daily → weekly → monthly 顺序逐周期采集
-          - 每个周期独立设置布尔字段（in_daily / in_weekly / in_monthly）
-          - 每个周期独立调用 _enrich_and_ingest()
-          - 利用 GREATEST() upsert 语义合并多周期的布尔标记
-        """
-        crawler = self._crawlers.get(source_name)
-        if crawler is None:
-            raise ValueError(
-                f"未知数据源 '{source_name}'，可用: {self.registered_sources}"
-            )
-
-        task_name = (
-            f"single:{source_name}:{self.target_date}"
-            if self.target_date
-            else f"single:{source_name}"
+        """按源独立采集，保持既有公开入口与周期顺序。"""
+        return await MultiSourceIngestionRuntime(self).run_single_source(
+            source_name, periods
         )
-        task_id = self._create_task(task_name)
-        total = 0
-        arxiv_papers_for_pdf: List[dict] = []
-
-        try:
-            requested_periods = periods or ["daily", "weekly", "monthly"]
-            for period in requested_periods:
-                if period not in crawler.supported_periods:
-                    logger.info(
-                        "[Orchestrator][%s] 不支持 %s 周期，跳过。",
-                        source_name,
-                        period,
-                    )
-                    continue
-
-                cr: CrawlResult = await crawler.fetch(
-                    period=period,
-                    limit=self.limit,
-                    target_date=self.target_date,
-                )
-
-                if not cr.ok:
-                    logger.warning(
-                        "[Orchestrator][%s] %s 榜采集失败: %s",
-                        source_name,
-                        period,
-                        cr.error,
-                    )
-                    continue
-
-                if not cr.items:
-                    logger.info(
-                        "[Orchestrator][%s] %s 榜无数据。",
-                        source_name,
-                        period,
-                    )
-                    continue
-
-                # 为该周期的 papers 设置布尔字段
-                for p in cr.items:
-                    p["in_daily"] = 1 if period == "daily" else 0
-                    p["in_weekly"] = 1 if period == "weekly" else 0
-                    p["in_monthly"] = 1 if period == "monthly" else 0
-
-                if source_name == "github":
-                    from backend.app.services.ingestion.github_hot_service import (
-                        record_github_trending_hits,
-                    )
-
-                    hit_result = await asyncio.to_thread(
-                        record_github_trending_hits,
-                        cr.items,
-                        period=period,
-                        observed_date=cr.snapshot_date,
-                        db=self.db,
-                    )
-                    if period == "daily" and hit_result["repo_ids"]:
-                        from backend.app.services.ingestion.github_project_metrics_service import (
-                            compute_github_daily_metrics,
-                        )
-
-                        metric_result = await asyncio.to_thread(
-                            compute_github_daily_metrics,
-                            metric_date=cr.snapshot_date,
-                            repo_ids=hit_result["repo_ids"],
-                        )
-                        logger.info(
-                            "[Orchestrator][github_daily] Trending 增长已同步：hits=%d metrics=%d fallback=%d",
-                            hit_result["hits"],
-                            metric_result["rows"],
-                            metric_result["trending_fallback"],
-                        )
-
-                logger.info(
-                    "[Orchestrator][%s] %s 榜采集 %d 条，开始 enrich+ingest...",
-                    source_name,
-                    period,
-                    len(cr.items),
-                )
-
-                count = await self._enrich_and_ingest(
-                    source_name=source_name,  # ← 修复 Bug1：传纯名称
-                    papers=cr.items,
-                    task_id=task_id,
-                    log_label=f"{source_name}_{period}",  # 日志仍显示周期信息
-                    snapshot_date=cr.snapshot_date,
-                )
-                total += count
-
-                if source_name == "arxiv":
-                    # 修复 Bug1：不再依赖 pdf_pending，直接收集有 arxiv_id 的论文
-                    arxiv_papers_for_pdf.extend(
-                        [p for p in cr.items if p.get("arxiv_id")]
-                    )
-
-            if source_name == "arxiv":
-                self._start_arxiv_pdf_background(arxiv_papers_for_pdf)
-
-            self._finish_task(task_id, status="success", item_count=total)
-            try:
-                await _clear_dashboard_cache_safely()
-                logger.info(
-                    "[Orchestrator] dashboard cache cleared after single-source ingest."
-                )
-            except Exception as exc:
-                logger.warning(
-                    "[Orchestrator] 清理 dashboard cache 失败（非致命）: %s", exc
-                )
-            logger.info(
-                "[Orchestrator] 单源采集完成: %s → %d 条入库。",
-                source_name,
-                total,
-            )
-
-        except Exception as exc:
-            self._finish_task(task_id, status="failed", error_msg=str(exc))
-            logger.error("[Orchestrator] 单源采集失败 %s: %s", source_name, exc)
-            raise
-
-        return {source_name: total, "ingested_total": total}
 
     async def run_all(self) -> Dict[str, int]:
-        """全量采集所有已注册数据源，按周期串行处理。
-
-        改造要点（修复日榜/周榜数据缺失的根因）：
-          - 按 daily → weekly → monthly 顺序串行处理
-          - 每个周期内，各 crawler 并发采集（保留性能）
-          - 每个周期的 papers 独立设置布尔字段并独立入库
-          - 不再合并所有周期做全局 _select_top，避免月榜高分挤掉日榜数据
-          - GREATEST() upsert 语义确保同一文章出现在多个周期时布尔字段被正确合并
-        """
-        task_name = (
-            f"date_ingest:{self.target_date}"
-            if self.target_date
-            else "multi_source_ingest"
-        )
-        task_id = self._create_task(task_name)
-
-        stats: Dict[str, int] = {name: 0 for name in self._crawlers}
-        stats["huggingface"] = 0
-        total = 0
-        arxiv_papers_for_pdf: List[dict] = []
-
-        try:
-            logger.info(
-                "[Orchestrator] 按周期串行采集 %d 个数据源（limit=%d, target_date=%s）...",
-                len(self._crawlers),
-                self.limit,
-                self.target_date or "today",
-            )
-
-            for period in ("daily", "weekly", "monthly"):
-                logger.info(
-                    "[Orchestrator] ── 开始 %s 周期采集 ──",
-                    period,
-                )
-
-                # 筛选支持当前周期的 crawler，并发采集
-                period_crawl_tasks = {}
-                for name, crawler in self._crawlers.items():
-                    if period in crawler.supported_periods:
-                        period_crawl_tasks[name] = crawler.fetch(
-                            period=period,
-                            limit=self.limit,
-                            target_date=self.target_date,
-                        )
-
-                if not period_crawl_tasks:
-                    logger.info(
-                        "[Orchestrator] %s 周期无可用 crawler，跳过。",
-                        period,
-                    )
-                    continue
-
-                gathered = await asyncio.gather(
-                    *period_crawl_tasks.values(),
-                    return_exceptions=True,
-                )
-
-                # 逐源处理该周期的采集结果
-                for source_key, crawl_result in zip(
-                    period_crawl_tasks.keys(), gathered
-                ):
-                    if isinstance(crawl_result, Exception):
-                        logger.error(
-                            "[Orchestrator][%s] %s 榜采集异常: %s",
-                            source_key,
-                            period,
-                            crawl_result,
-                        )
-                        continue
-
-                    cr: CrawlResult = crawl_result
-                    if not cr.ok:
-                        logger.warning(
-                            "[Orchestrator][%s] %s 榜采集失败: %s",
-                            source_key,
-                            period,
-                            cr.error,
-                        )
-                        continue
-
-                    if not cr.items:
-                        logger.info(
-                            "[Orchestrator][%s] %s 榜无数据。",
-                            source_key,
-                            period,
-                        )
-                        continue
-
-                    # 为该周期的 papers 设置布尔字段
-                    for p in cr.items:
-                        p["in_daily"] = 1 if period == "daily" else 0
-                        p["in_weekly"] = 1 if period == "weekly" else 0
-                        p["in_monthly"] = 1 if period == "monthly" else 0
-
-                    logger.info(
-                        "[Orchestrator][%s] %s 榜采集 %d 条，开始 enrich+ingest...",
-                        source_key,
-                        period,
-                        len(cr.items),
-                    )
-
-                    count = await self._enrich_and_ingest(
-                        source_name=source_key,  # ← 修复 Bug1：传纯名称
-                        papers=cr.items,
-                        task_id=task_id,
-                        log_label=f"{source_key}_{period}",  # 日志仍显示周期信息
-                        snapshot_date=cr.snapshot_date,
-                    )
-                    stats[source_key] += count
-                    total += count
-
-                    if source_key == "arxiv":
-                        # 修复 Bug1：不再依赖 pdf_pending，直接收集有 arxiv_id 的论文
-                        arxiv_papers_for_pdf.extend(
-                            [p for p in cr.items if p.get("arxiv_id")]
-                        )
-
-                logger.info(
-                    "[Orchestrator] ── %s 周期处理完成 ──",
-                    period,
-                )
-
-            self._finish_task(task_id, status="success", item_count=total)
-            try:
-                await _clear_dashboard_cache_safely()
-                logger.info("[Orchestrator] dashboard cache cleared after full ingest.")
-            except Exception as exc:
-                logger.warning(
-                    "[Orchestrator] 清理 dashboard cache 失败（非致命）: %s", exc
-                )
-            logger.info(
-                "[Orchestrator] 采集完成，%d 源共 %d 条文档入库（按周期串行）。",
-                len(self._crawlers),
-                total,
-            )
-
-            self._start_arxiv_pdf_background(arxiv_papers_for_pdf)
-
-        except Exception as exc:
-            self._finish_task(task_id, status="failed", error_msg=str(exc))
-            logger.error("[Orchestrator] ERROR: %s", exc)
-            raise
-
-        stats["ingested_total"] = total
-        return stats
+        """按 daily → weekly → monthly 调度所有已注册数据源。"""
+        return await MultiSourceIngestionRuntime(self).run_all()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
