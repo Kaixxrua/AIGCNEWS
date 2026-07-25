@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { useEventSource, type SseConnection } from '../composables/useEventSource'
 import {
-  api,
   type ChatAttachmentRef,
   type ChatMessageDTO,
   type ConversationSummaryDTO,
@@ -11,7 +10,8 @@ import {
   fetchConversationDetail,
   fetchConversations,
   deleteConversationMessage,
-} from '../services/api'
+} from '../services/chat/chatApi'
+import { api } from '../services/http/apiClient'
 
 export type ChatRole = 'user' | 'assistant'
 export type ConversationScope = 'global' | 'paper'

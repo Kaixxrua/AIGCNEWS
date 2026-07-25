@@ -7,7 +7,7 @@ import {
   uploadImageAttachment,
   uploadPdfAttachment,
   type AttachmentMeta,
-} from '../services/api'
+} from '../services/attachments/attachmentApi'
 
 export const useChatAttachments = (inputText: Ref<string>) => {
   const store = useChatStore()

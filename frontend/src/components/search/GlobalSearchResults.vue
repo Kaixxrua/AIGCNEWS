@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { getSearchSourceLabel, getSearchSummaryPreview } from '../../features/search/globalSearchModel'
-import type { PaperItem } from '../../services/api'
+import type { PaperItem } from '../../services/papers/paperApi'
 
 const props = defineProps<{
   query: string

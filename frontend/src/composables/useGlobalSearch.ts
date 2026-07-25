@@ -6,7 +6,7 @@ import {
   GLOBAL_SEARCH_RESULT_LIMIT,
   getGlobalSearchDestination,
 } from '../features/search/globalSearchModel'
-import type { PaperItem } from '../services/api'
+import type { PaperItem } from '../services/papers/paperApi'
 
 interface GlobalSearchInputHandle {
   focus: () => void

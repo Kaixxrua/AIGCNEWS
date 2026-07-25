@@ -3,7 +3,7 @@ import type {
   GitHubProjectSort,
   ProjectFavoritePayload,
   ProjectScope,
-} from '../../services/api'
+} from '../../services/projects/projectApi'
 
 export type ProjectChip =
   | { type: 'subcategory'; label: string; categorySlug: string; value: string }

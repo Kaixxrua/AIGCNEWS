@@ -5,7 +5,7 @@ import type {
   GitHubProjectTag,
   ProjectScope,
   ProjectViewSource,
-} from '../../services/api'
+} from '../../services/projects/projectApi'
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { ManualToolWebsitePayload, ProjectTaxonomyItem } from '../../services/api'
+import type { ManualToolWebsitePayload, ProjectTaxonomyItem } from '../../services/projects/projectApi'
 
 const props = defineProps<{
   open: boolean

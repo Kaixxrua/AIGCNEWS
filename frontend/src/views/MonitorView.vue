@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { api } from '../services/api'
+import { api } from '../services/http/apiClient'
 import { useAuthStore } from '../stores/authStore'
 import McpServerConfigPanel from '../components/monitor/McpServerConfigPanel.vue'
 import MonitorAdminActionControls from '../components/monitor/MonitorAdminActionControls.vue'

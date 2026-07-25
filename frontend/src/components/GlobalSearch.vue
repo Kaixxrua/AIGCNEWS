@@ -8,7 +8,7 @@ import { useRouter } from 'vue-router'
 import GlobalSearchInput from './search/GlobalSearchInput.vue'
 import GlobalSearchResults from './search/GlobalSearchResults.vue'
 import { useGlobalSearch } from '../composables/useGlobalSearch'
-import { searchPapers, fetchTop10Today } from '../services/api'
+import { searchPapers, fetchTop10Today } from '../services/papers/paperApi'
 
 const router = useRouter()
 const inputRef = ref<InstanceType<typeof GlobalSearchInput> | null>(null)

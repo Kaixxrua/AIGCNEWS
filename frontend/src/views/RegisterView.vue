@@ -7,7 +7,7 @@ import OtpEmailField from '../components/auth/OtpEmailField.vue'
 import PasswordConfirmationFields from '../components/auth/PasswordConfirmationFields.vue'
 import { useRegisterForm } from '../composables/useRegisterForm'
 import { getSafeInternalRedirect } from '../features/auth/authViewModel'
-import { api } from '../services/api'
+import { api } from '../services/http/apiClient'
 import { useAuthStore } from '../stores/authStore'
 
 const router = useRouter()

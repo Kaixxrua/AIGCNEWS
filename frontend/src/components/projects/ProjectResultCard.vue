@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { GitHubProjectItem, GitHubProjectSort, ProjectScope } from '../../services/api'
+import type { GitHubProjectItem, GitHubProjectSort, ProjectScope } from '../../services/projects/projectApi'
 import {
   fallbackProjectDescription,
   favoriteButtonLabel,

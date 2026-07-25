@@ -7,7 +7,8 @@ import {
   ref,
   watch,
 } from 'vue'
-import { api, fetchSnapshotDates } from '../services/api'
+import { fetchSnapshotDates } from '../services/dashboard/dashboardApi'
+import { api } from '../services/http/apiClient'
 import {
   DAILY_ONLY_TABS,
   isSourceStatCard,

@@ -1,5 +1,5 @@
 import { ref, type ComputedRef, type Ref } from 'vue'
-import { api } from '../services/api'
+import { api } from '../services/http/apiClient'
 import type { SourceKey } from '../features/monitor/monitorViewModel'
 
 interface MonitorControllerOptions {
