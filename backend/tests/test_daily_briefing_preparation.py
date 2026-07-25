@@ -26,10 +26,97 @@ from backend.app.services.briefing.daily_briefing import (
     _BLOCK_RESPONSE_ERROR,
     _CONTINUATION_PROMPT,
     _MAX_CONTINUATION_ROUNDS,
+    _PERIOD_CHANNEL_MAP,
+    _PERIOD_LABEL,
     _PROMPT_GITHUB,
+    _SOURCE_CONFIG,
     DailyBriefingService,
     _format_articles,
+    _looks_like_block_response,
 )
+from backend.app.services.briefing.preparation import (
+    normalize_briefing_context,
+    order_snapshot_documents,
+    remove_blocked_documents,
+    render_briefing_prompt,
+)
+
+
+class BriefingPurePreparationTests(unittest.TestCase):
+    def test_context_normalization_preserves_fallback_cache_and_channels(self) -> None:
+        context = normalize_briefing_context(
+            target_date="2026-07-22",
+            source="invalid",
+            period="invalid",
+            source_config=_SOURCE_CONFIG,
+            period_labels=_PERIOD_LABEL,
+            period_channels=_PERIOD_CHANNEL_MAP,
+        )
+
+        self.assertEqual(context.source, "all")
+        self.assertEqual(context.period, "daily")
+        self.assertEqual(context.cache_date, "2026-07-22_daily")
+        self.assertIsNone(context.source_type)
+        self.assertEqual(
+            context.expected_channels,
+            (
+                "huggingface_daily_html",
+                "github_trending_daily",
+                "techmeme_daily_rss",
+                "producthunt_daily_html",
+                "hn_daily_html",
+            ),
+        )
+
+    def test_snapshot_ordering_and_top_k_are_pure(self) -> None:
+        documents = [
+            _github_doc("third", rank=3, score=300),
+            _github_doc("first-low", rank=1, score=100),
+            _github_doc("first-high", rank=1, score=200),
+        ]
+
+        ordered = order_snapshot_documents(documents, source="github", top_k=2)
+
+        self.assertEqual(
+            [document["title"] for document in ordered],
+            ["first-high", "first-low"],
+        )
+        self.assertEqual(documents[0]["title"], "third")
+
+    def test_block_filter_and_prompt_rendering_preserve_exact_text(self) -> None:
+        documents = [
+            _github_doc("blocked", summary="Cloudflare Ray ID"),
+            _github_doc("usable"),
+        ]
+        clean = remove_blocked_documents(
+            documents,
+            is_blocked=_looks_like_block_response,
+        )
+        context = normalize_briefing_context(
+            target_date="2026-07-22",
+            source="github",
+            period="daily",
+            source_config=_SOURCE_CONFIG,
+            period_labels=_PERIOD_LABEL,
+            period_channels=_PERIOD_CHANNEL_MAP,
+        )
+
+        prompt = render_briefing_prompt(
+            context=context,
+            documents=clean,
+            source_config=_SOURCE_CONFIG,
+            format_articles=_format_articles,
+        )
+
+        self.assertEqual(
+            prompt,
+            _PROMPT_GITHUB.format(
+                count=1,
+                articles=_format_articles([_github_doc("usable")], "github"),
+                date="2026-07-22",
+                period_label="今日",
+            ),
+        )
 
 
 class DailyBriefingPreparationContractTests(unittest.TestCase):
