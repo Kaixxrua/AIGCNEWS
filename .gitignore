@@ -20,6 +20,7 @@ data/
 
 # AI 助手本地缓存
 .roo/
+.claude/worktrees/
 
 # 系统级隐藏文件 (可选)
 .DS_Store

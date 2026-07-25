@@ -80,7 +80,7 @@ MCP_TOOLS = [
     "mcp__aigc-news__get_project_library",
     "mcp__aigc-news__get_project_categories",
 ]
-HOST_TOOLS = ["WebSearch", "WebFetch", "Bash"]
+HOST_TOOLS = ["Agent", "WebSearch", "WebFetch", "Bash", "Skill", "multi_tool_use.parallel"]
 
 
 @dataclass

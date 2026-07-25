@@ -1,7 +1,46 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "AIGCNEWS_MCP_FIRST_MODE": "observe"
+  },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/mcp-first-guard.py",
+            "timeout": 10,
+            "statusMessage": "Classifying MCP-first route..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent|WebSearch|WebFetch|Bash|Skill|multi_tool_use.*|Task.*|Batch.*|mcp__aigc-news__search_papers|mcp__aigc-news__search_documents|mcp__aigc-news__search_github_projects|mcp__aigc-news__search_github_ai_projects",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/mcp-first-guard.py",
+            "timeout": 10,
+            "statusMessage": "Checking MCP-first route..."
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
+      {
+        "matcher": "mcp__aigc-news__search_papers|mcp__aigc-news__search_documents|mcp__aigc-news__search_github_projects|mcp__aigc-news__search_github_ai_projects",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/mcp-first-guard.py",
+            "timeout": 10,
+            "statusMessage": "Recording MCP-first result..."
+          }
+        ]
+      },
       {
         "matcher": "Bash",
         "hooks": [
@@ -10,6 +49,19 @@
             "command": ".claude/hooks/auto-push-after-commit.sh",
             "timeout": 120,
             "statusMessage": "Pushing completed PR branch..."
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "mcp__aigc-news__search_papers|mcp__aigc-news__search_documents|mcp__aigc-news__search_github_projects|mcp__aigc-news__search_github_ai_projects",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/mcp-first-guard.py",
+            "timeout": 10,
+            "statusMessage": "Recording MCP-first failure..."
           }
         ]
       }
