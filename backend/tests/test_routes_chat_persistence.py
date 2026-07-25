@@ -34,14 +34,23 @@ class ChatPersistenceRouteTests(unittest.TestCase):
             "assistant_message": {"id": 12},
         }
         rag_service = MagicMock()
+        stream_calls = []
 
         async def stream_chat(*args, **kwargs):
+            stream_calls.append((args, kwargs))
+            yield {"type": "sources", "data": [{"id": "source-1"}]}
+            yield {"type": "thinking", "data": "thought"}
             yield {"type": "content", "data": "answer"}
 
         rag_service.stream_chat = stream_chat
-        request = ChatStreamRequest(message="question", history=[])
+        request = ChatStreamRequest(
+            message=" question ",
+            history=[{"role": "user", "content": "history"}],
+            temperature=0.4,
+            web_search=True,
+        )
 
-        async def collect() -> list[str]:
+        async def collect():
             with (
                 patch.object(routes_chat, "HybridRetriever", return_value=MagicMock()),
                 patch.object(routes_chat, "ChatService", return_value=rag_service),
@@ -50,10 +59,10 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                     routes_chat.asyncio,
                     "to_thread",
                     new=AsyncMock(return_value=repository.append_message_pair.return_value),
-                ),
+                ) as to_thread,
             ):
                 service_type.return_value.append_message_pair = repository.append_message_pair
-                return [
+                events = [
                     event
                     async for event in routes_chat._stream_persisted_chat(
                         request,
@@ -61,14 +70,46 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                         conversation_repository=repository,
                     )
                 ]
+                return events, to_thread, service_type
 
-        events = asyncio.run(collect())
+        events, to_thread, service_type = asyncio.run(collect())
 
-        self.assertEqual(events[0], 'data: {"type": "content", "data": "answer"}\n\n')
-        self.assertIn('"type": "conversation"', events[-2])
-        self.assertIn('"conversation_id": 7', events[-2])
-        self.assertIn('"message_id": 12', events[-2])
-        self.assertEqual(events[-1], "data: [DONE]\n\n")
+        self.assertEqual(
+            events,
+            [
+                'data: {"type": "sources", "data": [{"id": "source-1"}]}\n\n',
+                'data: {"type": "thinking", "data": "thought"}\n\n',
+                'data: {"type": "content", "data": "answer"}\n\n',
+                'data: {"type": "conversation", "data": {"conversation_id": 7, "message_id": 12}}\n\n',
+                "data: [DONE]\n\n",
+            ],
+        )
+        self.assertEqual(
+            stream_calls,
+            [
+                (
+                    ("question",),
+                    {
+                        "history": [{"role": "user", "content": "history"}],
+                        "temperature": 0.4,
+                        "web_search_enabled": True,
+                    },
+                )
+            ],
+        )
+        to_thread.assert_awaited_once_with(
+            service_type.return_value.append_message_pair,
+            user_id=3,
+            conversation_id=None,
+            scope="global",
+            scope_key=None,
+            user_message="question",
+            assistant_content="answer",
+            assistant_thinking="thought",
+            sources=[{"id": "source-1"}],
+            attachments=[],
+            title="question",
+        )
 
     def test_cross_owner_attachment_is_ignored_without_changing_sse(self) -> None:
         repository = MagicMock()
