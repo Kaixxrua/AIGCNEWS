@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import re
 from typing import Any, Literal
 
 from backend.app.core.config import settings
+from backend.app.repositories.project_catalog import ProjectLexicalCandidateLanes
 from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.services.ingestion.source_github_mcp import (
     PUBLIC_PROJECT_MIN_STARS,
@@ -15,6 +17,7 @@ from backend.app.services.project_reranker import get_project_reranker
 from backend.app.services.project_search_ranking import (
     ProjectCandidateSearchResult,
     rank_legacy_project_candidate_ids,
+    rank_v2_project_candidate_ids,
 )
 from backend.app.services.project_semantic_search import get_project_semantic_search
 from backend.app.services.search_semantics import (
@@ -30,6 +33,7 @@ PROJECT_FALLBACK_POLICY = "local_first_github_only_when_semantics_preserved"
 PROJECT_SORT_CHOICES = {"relevance", "hot", "stars", "updated", "recent", "name"}
 PROJECT_SCOPE_CHOICES = {"all", "today", "recommended"}
 _FALLBACK_SORTS = {"relevance", "stars", "updated"}
+_EXACT_REPO_QUERY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def _clipped(value: Any, limit: int) -> str:
@@ -176,17 +180,25 @@ async def search_projects(
         repository,
         "find_lexical_candidate_repo_ids",
     )
+    lexical_lane_search = _declared_callable(
+        repository,
+        "find_lexical_candidate_lanes",
+    )
+    strategy = str(getattr(settings, "project_ai_search_strategy", "legacy") or "legacy").strip().lower()
+    if strategy not in {"legacy", "shadow", "v2"}:
+        strategy = "legacy"
     if mode == "ai" and query and effective_sort == "relevance" and callable(lexical_candidate_search):
         hybrid_attempted = True
+        use_lanes = strategy in {"shadow", "v2"} and callable(lexical_lane_search)
         lexical_task = asyncio.to_thread(
-            lexical_candidate_search,
+            lexical_lane_search if use_lanes else lexical_candidate_search,
             q=lexical_query,
             category=category,
             subcategory=subcategory,
             language=language,
             min_stars=min_stars,
             enriched_only=True,
-            limit=150,
+            **({"strict_limit": 150, "relaxed_limit": 150} if use_lanes else {"limit": 150}),
         )
         semantic_task = None
         if settings.project_semantic_search_enabled:
@@ -207,16 +219,51 @@ async def search_projects(
             if len(candidate_results) > 1 and not isinstance(candidate_results[1], Exception)
             else []
         )
-        candidate_search = ProjectCandidateSearchResult(
-            lexical_repo_ids=tuple(str(repo_id) for repo_id in lexical_repo_ids),
-            semantic_repo_ids=tuple(
-                str(hit.repo_id) for hit in semantic_hits if getattr(hit, "repo_id", "")
-            ),
+        semantic_repo_ids = tuple(
+            str(hit.repo_id) for hit in semantic_hits if getattr(hit, "repo_id", "")
         )
-        candidate_repo_ids = rank_legacy_project_candidate_ids(
+        if use_lanes and isinstance(lexical_repo_ids, ProjectLexicalCandidateLanes):
+            lanes = lexical_repo_ids
+            legacy_lexical_repo_ids = tuple(candidate.repo_id for candidate in lanes.strict)
+        else:
+            lanes = None
+            legacy_lexical_repo_ids = tuple(str(repo_id) for repo_id in lexical_repo_ids)
+        candidate_search = ProjectCandidateSearchResult(
+            lexical_repo_ids=legacy_lexical_repo_ids,
+            semantic_repo_ids=semantic_repo_ids,
+        )
+        legacy_repo_ids = rank_legacy_project_candidate_ids(
             candidate_search.lexical_repo_ids,
             candidate_search.semantic_repo_ids,
         )
+        exact_repo_id = query if _EXACT_REPO_QUERY.fullmatch(query) else ""
+        if strategy == "v2" and lanes is not None:
+            candidate_repo_ids = rank_v2_project_candidate_ids(
+                lanes.strict,
+                lanes.relaxed,
+                candidate_search.semantic_repo_ids,
+                exact_repo_id=exact_repo_id,
+            )
+        else:
+            candidate_repo_ids = legacy_repo_ids
+        if strategy == "shadow" and lanes is not None:
+            from backend.app.services.project_search_shadow import (
+                get_project_search_shadow_manager,
+            )
+
+            get_project_search_shadow_manager(settings).submit(
+                arguments={
+                    "query": query,
+                    "category": category,
+                    "subcategory": subcategory,
+                    "language": language,
+                    "scope": scope,
+                },
+                legacy_repo_ids=legacy_repo_ids,
+                lanes=lanes,
+                semantic_repo_ids=candidate_search.semantic_repo_ids,
+                exact_repo_id=exact_repo_id,
+            )
         if candidate_repo_ids:
             result = await asyncio.to_thread(
                 repository.list_projects,

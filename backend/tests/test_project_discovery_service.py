@@ -14,6 +14,12 @@ config_module.settings = types.SimpleNamespace(
     mcp_github_fallback_use_token=False,
     mcp_github_fallback_timeout_seconds=8.0,
     project_semantic_search_enabled=False,
+    project_ai_search_strategy="legacy",
+    project_search_shadow_sample_rate=0.0,
+    project_search_shadow_workers=1,
+    project_search_shadow_capacity=1,
+    project_search_shadow_timeout_seconds=1.0,
+    project_search_shadow_recent_case_limit=10,
     project_semantic_query_timeout_seconds=6.0,
     project_reranker_enabled=False,
     project_reranker_candidate_limit=20,
@@ -21,6 +27,10 @@ config_module.settings = types.SimpleNamespace(
 )
 sys.modules.setdefault("backend.app.core.config", config_module)
 
+from backend.app.repositories.project_catalog import (
+    ProjectLexicalCandidate,
+    ProjectLexicalCandidateLanes,
+)
 from backend.app.services import project_discovery
 
 
@@ -194,6 +204,111 @@ class ProjectDiscoveryTests(unittest.TestCase):
             ["owner/shared", "owner/semantic", "owner/lexical"],
         )
         self.assertEqual(result["sort"], "relevance")
+
+    def test_v2_strategy_uses_typed_lanes_and_exact_lookup_protection(self) -> None:
+        class V2Repository:
+            def __init__(self) -> None:
+                self.find_lexical_candidate_repo_ids = MagicMock(return_value=[])
+                self.find_lexical_candidate_lanes = MagicMock(
+                    return_value=ProjectLexicalCandidateLanes(
+                        strict=(
+                            ProjectLexicalCandidate(
+                                "owner/popular", "strict", term_coverage=2, match_strength=3
+                            ),
+                        ),
+                        relaxed=(
+                            ProjectLexicalCandidate(
+                                "DeusData/codebase-memory-mcp",
+                                "relaxed",
+                                term_coverage=1,
+                                match_strength=1,
+                            ),
+                        ),
+                    )
+                )
+                self.list_projects = MagicMock(
+                    return_value={
+                        "items": [{"full_name": "DeusData/codebase-memory-mcp", "stars": 900}],
+                        "total": 1,
+                    }
+                )
+
+        repo = V2Repository()
+        project_discovery.settings.project_ai_search_strategy = "v2"
+        try:
+            asyncio.run(
+                project_discovery.search_projects(
+                    query="DeusData/codebase-memory-mcp",
+                    mode="ai",
+                    repository_factory=lambda: repo,
+                )
+            )
+        finally:
+            project_discovery.settings.project_ai_search_strategy = "legacy"
+
+        repo.find_lexical_candidate_repo_ids.assert_not_called()
+        repo.find_lexical_candidate_lanes.assert_called_once()
+        self.assertEqual(
+            repo.list_projects.call_args.kwargs["candidate_repo_ids"][0],
+            "DeusData/codebase-memory-mcp",
+        )
+
+    def test_shadow_strategy_keeps_legacy_authority(self) -> None:
+        class ShadowRepository:
+            def find_lexical_candidate_repo_ids(self, **_kwargs):
+                raise AssertionError("shadow should use the typed lane read once")
+
+            def find_lexical_candidate_lanes(self, **_kwargs):
+                return ProjectLexicalCandidateLanes(
+                    strict=(ProjectLexicalCandidate("owner/strict", "strict", 2, 2),),
+                    relaxed=(ProjectLexicalCandidate("owner/relaxed", "relaxed", 1, 1),),
+                )
+
+            def list_projects(self, **kwargs):
+                return {
+                    "items": [{"full_name": kwargs["candidate_repo_ids"][0], "stars": 800}],
+                    "total": 1,
+                }
+
+        manager = MagicMock()
+        project_discovery.settings.project_ai_search_strategy = "shadow"
+        try:
+            with unittest.mock.patch(
+                "backend.app.services.project_search_shadow.get_project_search_shadow_manager",
+                return_value=manager,
+            ):
+                result = asyncio.run(
+                    project_discovery.search_projects(
+                        query="agent learning",
+                        mode="ai",
+                        repository_factory=ShadowRepository,
+                    )
+                )
+        finally:
+            project_discovery.settings.project_ai_search_strategy = "legacy"
+
+        self.assertEqual(result["items"][0]["full_name"], "owner/strict")
+        manager.submit.assert_called_once()
+        self.assertEqual(manager.submit.call_args.kwargs["legacy_repo_ids"], ["owner/strict"])
+
+    def test_explicit_non_relevance_sort_does_not_activate_v2(self) -> None:
+        repo = MagicMock()
+        repo.list_projects.return_value = {"items": [], "total": 0}
+        project_discovery.settings.project_ai_search_strategy = "v2"
+        try:
+            asyncio.run(
+                project_discovery.search_projects(
+                    query="agent",
+                    mode="ai",
+                    sort="stars",
+                    repository_factory=lambda: repo,
+                    fallback_search=MagicMock(return_value={"items": [], "total": 0}),
+                )
+            )
+        finally:
+            project_discovery.settings.project_ai_search_strategy = "legacy"
+
+        self.assertEqual(repo.list_projects.call_args.kwargs["q"], "agent")
 
     def test_host_intent_is_shared_by_lexical_and_semantic_search(self) -> None:
         class HybridRepository:

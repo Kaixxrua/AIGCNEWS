@@ -4,6 +4,10 @@ import time
 from threading import Event
 from unittest.mock import MagicMock
 
+from backend.app.repositories.project_catalog import (
+    ProjectLexicalCandidate,
+    ProjectLexicalCandidateLanes,
+)
 from backend.app.services.project_catalog_shadow import (
     ProjectCatalogShadowManager,
     ShadowComparingProjectCatalogRepository,
@@ -45,6 +49,16 @@ def test_comparator_distinguishes_order_set_pagination_and_fields() -> None:
     assert compare_results(
         "find_lexical_candidate_repo_ids", ["a", "b"], ["a", "c"]
     )[0] == "set_mismatch"
+    lanes = ProjectLexicalCandidateLanes(
+        strict=(ProjectLexicalCandidate("a", "strict", 2, 4),),
+        relaxed=(ProjectLexicalCandidate("b", "relaxed", 1, 1),),
+    )
+    assert compare_results("find_lexical_candidate_lanes", lanes, lanes)[0] == "match"
+    changed_lanes = ProjectLexicalCandidateLanes(
+        strict=lanes.strict,
+        relaxed=(ProjectLexicalCandidate("c", "relaxed", 1, 1),),
+    )
+    assert compare_results("find_lexical_candidate_lanes", lanes, changed_lanes)[0] == "lane_mismatch"
     primary = {
         "items": [{"id": "github:a", "stars": 1}],
         "total": 1,

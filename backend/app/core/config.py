@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings
 
@@ -20,6 +21,12 @@ class Settings(BaseSettings):
     milvus_index_type: str = "HNSW"
     milvus_metric_type: str = "COSINE"
     project_semantic_search_enabled: bool = False
+    project_ai_search_strategy: Literal["legacy", "shadow", "v2"] = "legacy"
+    project_search_shadow_sample_rate: float = 0.0
+    project_search_shadow_workers: int = 2
+    project_search_shadow_capacity: int = 8
+    project_search_shadow_timeout_seconds: float = 1.0
+    project_search_shadow_recent_case_limit: int = 20
     project_semantic_indexing_enabled: bool = False
     project_semantic_collection_name: str = "aigc_github_projects_v1"
     project_semantic_index_version: str = "v1"

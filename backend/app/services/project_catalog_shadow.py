@@ -10,7 +10,10 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
-from backend.app.repositories.project_catalog import ProjectCatalogRepository
+from backend.app.repositories.project_catalog import (
+    ProjectCatalogRepository,
+    ProjectLexicalCandidateLanes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +102,18 @@ def compare_results(method: str, primary: Any, shadow: Any) -> tuple[str, str, s
         ):
             outcome = "duplicate_mismatch"
         return outcome, _digest(primary_ids), _digest(shadow_ids)
+
+    if method == "find_lexical_candidate_lanes":
+        primary_lanes = {
+            "strict": [candidate.__dict__ for candidate in primary.strict],
+            "relaxed": [candidate.__dict__ for candidate in primary.relaxed],
+        }
+        shadow_lanes = {
+            "strict": [candidate.__dict__ for candidate in shadow.strict],
+            "relaxed": [candidate.__dict__ for candidate in shadow.relaxed],
+        }
+        outcome = "match" if primary_lanes == shadow_lanes else "lane_mismatch"
+        return outcome, _digest(primary_lanes), _digest(shadow_lanes)
 
     if method == "list_projects":
         primary_envelope = {key: primary.get(key) for key in ("total", "page", "page_size")}
@@ -366,6 +381,9 @@ class ShadowComparingProjectCatalogRepository:
 
     def find_lexical_candidate_repo_ids(self, **kwargs: Any) -> list[str]:
         return self._call("find_lexical_candidate_repo_ids", kwargs)
+
+    def find_lexical_candidate_lanes(self, **kwargs: Any) -> ProjectLexicalCandidateLanes:
+        return self._call("find_lexical_candidate_lanes", kwargs)
 
     def list_projects(self, **kwargs: Any) -> dict[str, Any]:
         return self._call("list_projects", kwargs)
