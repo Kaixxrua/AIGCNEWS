@@ -1,0 +1,261 @@
+from __future__ import annotations
+
+import hashlib
+import unittest
+from unittest.mock import MagicMock, call, patch
+
+from backend.app.services.ingestion.pipeline import (
+    _apply_existing_summary_short_circuit,
+    _doc_id,
+    _ingest_documents,
+    _select_top,
+    _to_documents,
+)
+
+
+class DocumentProjectionContractTests(unittest.TestCase):
+    def test_doc_id_preserves_identity_precedence_and_ignores_period(self) -> None:
+        arxiv = {
+            "source": "arxiv",
+            "arxiv_id": "2607.00001",
+            "full_name": "ignored/repo",
+            "url": "https://ignored.example/paper",
+            "title": "Ignored",
+            "source_channel": "huggingface_daily_html",
+            "in_daily": 1,
+        }
+        expected_arxiv = hashlib.md5(b"arxiv:2607.00001").hexdigest()
+        self.assertEqual(_doc_id(arxiv), expected_arxiv)
+        self.assertEqual(
+            _doc_id(
+                {
+                    **arxiv,
+                    "source_channel": "huggingface_monthly_html",
+                    "in_daily": 0,
+                    "in_monthly": 1,
+                }
+            ),
+            expected_arxiv,
+        )
+
+        github = {
+            "source": "github",
+            "full_name": "owner/repo",
+            "url": "https://github.com/ignored/repo",
+            "title": "Ignored",
+        }
+        self.assertEqual(
+            _doc_id(github),
+            hashlib.md5(b"github:owner/repo").hexdigest(),
+        )
+        generic = {"source": "news", "url": "https://example.test/item", "title": "Ignored"}
+        self.assertEqual(
+            _doc_id(generic),
+            hashlib.md5(b"news:https://example.test/item").hexdigest(),
+        )
+        self.assertEqual(
+            _doc_id({"source": "news", "title": "Fallback"}),
+            hashlib.md5(b"news:Fallback").hexdigest(),
+        )
+
+    def test_document_projection_preserves_content_precedence_and_defaults(self) -> None:
+        papers = [
+            {
+                "source": "github",
+                "title": "Full",
+                "full_text": "full text",
+                "abstract": "abstract",
+                "summary": "summary",
+                "stars": "12",
+                "score": "3.5",
+                "channel": "github_trending_daily",
+                "in_daily": 1,
+            },
+            {"title": "Abstract", "abstract": "abstract only", "stars": "invalid"},
+            {"title": "Summary", "summary": "summary only"},
+            {"title": "Title only"},
+        ]
+
+        documents = _to_documents(papers)
+
+        self.assertEqual(
+            [document.page_content for document in documents],
+            ["full text", "abstract only", "summary only", "Title only"],
+        )
+        self.assertEqual(documents[0].metadata["stars"], 12)
+        self.assertEqual(documents[0].metadata["raw_score"], 3.5)
+        self.assertEqual(documents[0].metadata["source_channel"], "github_trending_daily")
+        self.assertEqual(documents[0].metadata["in_daily"], 1)
+        self.assertEqual(documents[1].metadata["source"], "unknown")
+        self.assertEqual(documents[1].metadata["stars"], 0)
+        self.assertEqual(documents[1].metadata["raw_score"], 0.0)
+        self.assertEqual(documents[1].metadata["url"], "")
+        self.assertEqual(documents[1].metadata["in_monthly"], 0)
+
+    def test_existing_summary_reuse_mutates_original_paper_in_place(self) -> None:
+        paper = {
+            "source": "news",
+            "title": "Existing",
+            "url": "https://example.test/existing",
+        }
+        papers = [paper]
+        reader = MagicMock()
+        reader.get_existing_document_summaries.return_value = {
+            f"id:{_doc_id(paper)}": "stored summary"
+        }
+
+        result = _apply_existing_summary_short_circuit(papers, reader, "news_daily")
+
+        self.assertIs(result, papers)
+        self.assertIs(result[0], paper)
+        self.assertEqual(paper["summary"], "stored summary")
+        self.assertEqual(paper["abstract"], "stored summary")
+        self.assertEqual(paper["full_text"], "stored summary")
+        self.assertTrue(paper["skip_enrich"])
+        self.assertTrue(paper["existing_summary_reused"])
+
+    def test_top_n_uses_raw_score_then_returns_stable_write_order(self) -> None:
+        papers = [
+            {"source": "news", "title": "B", "url": "https://b", "score": 20},
+            {"source": "arxiv", "title": "A", "url": "https://a", "raw_score": 30},
+            {"source": "github", "title": "C", "url": "https://c", "score": 10},
+        ]
+
+        selected = _select_top(papers, top_n=2, source_label="contract")
+
+        self.assertEqual({paper["title"] for paper in selected}, {"A", "B"})
+        self.assertEqual([paper["source"] for paper in selected], ["arxiv", "news"])
+        self.assertEqual([paper["title"] for paper in papers], ["A", "B", "C"])
+
+
+class PersistenceProjectionContractTests(unittest.TestCase):
+    def test_snapshot_replacement_precedes_document_and_snapshot_upserts(self) -> None:
+        events: list[tuple] = []
+        writer = MagicMock()
+        snapshots = MagicMock()
+        snapshots.delete_snapshots_by_channel.side_effect = (
+            lambda snapshot_date, channel: events.append(("delete", snapshot_date, channel)) or 0
+        )
+        writer.upsert_document.side_effect = lambda document: events.append(
+            ("document", document["title"])
+        )
+        snapshots.upsert_rank_snapshot.side_effect = lambda **kwargs: events.append(
+            ("snapshot", kwargs["doc_id"], kwargs["snapshot_date"])
+        )
+        db = MagicMock(documents=writer, rank_snapshots=snapshots)
+        papers = [
+            {
+                "source": "news",
+                "source_channel": "channel_b",
+                "title": "B",
+                "url": "https://b",
+                "raw_score": 2,
+                "rank_in_period": 2,
+            },
+            {
+                "source": "arxiv",
+                "source_channel": "channel_a",
+                "title": "A",
+                "url": "https://a",
+                "raw_score": 3,
+                "rank_in_period": 1,
+            },
+        ]
+
+        with (
+            patch("backend.app.services.ingestion.pipeline.MilvusRepository"),
+            patch("backend.app.services.ingestion.pipeline.GraphExtractor") as graph_extractor,
+            patch("backend.app.services.ingestion.pipeline.GraphRepository"),
+        ):
+            graph_extractor.return_value.extract.return_value = []
+            count = _ingest_documents(
+                papers,
+                db,
+                42,
+                "mixed",
+                "2026-07-24",
+                writer,
+                snapshots,
+            )
+
+        self.assertEqual(count, 2)
+        first_write = next(index for index, event in enumerate(events) if event[0] == "document")
+        self.assertTrue(all(event[0] == "delete" for event in events[:first_write]))
+        self.assertEqual(
+            [event[1] for event in events if event[0] == "document"],
+            ["A", "B"],
+        )
+        self.assertEqual(
+            [event[2] for event in events if event[0] == "snapshot"],
+            ["2026-07-24", "2026-07-24"],
+        )
+
+    def test_secondary_store_failures_are_fail_open_and_arxiv_graph_skips_reused(self) -> None:
+        writer = MagicMock()
+        snapshots = MagicMock()
+        snapshots.delete_snapshots_by_channel.side_effect = RuntimeError("delete failed")
+        snapshots.upsert_rank_snapshot.side_effect = RuntimeError("snapshot failed")
+        db = MagicMock(documents=writer, rank_snapshots=snapshots)
+        new_paper = {
+            "source": "arxiv",
+            "source_channel": "huggingface_daily_html",
+            "title": "New",
+            "url": "https://new",
+        }
+        reused_paper = {
+            "source": "arxiv",
+            "source_channel": "huggingface_daily_html",
+            "title": "Reused",
+            "url": "https://reused",
+            "existing_summary_reused": True,
+        }
+
+        with (
+            patch("backend.app.services.ingestion.pipeline.MilvusRepository") as milvus_type,
+            patch("backend.app.services.ingestion.pipeline.GraphExtractor") as extractor_type,
+            patch("backend.app.services.ingestion.pipeline.GraphRepository") as graph_type,
+        ):
+            milvus_type.return_value.add_documents.side_effect = RuntimeError("milvus failed")
+            extractor_type.return_value.extract.return_value = ["graph-document"]
+            count = _ingest_documents(
+                [reused_paper, new_paper],
+                db,
+                42,
+                "arxiv_daily",
+                "2026-07-24",
+                writer,
+                snapshots,
+            )
+
+        self.assertEqual(count, 2)
+        self.assertEqual(writer.upsert_document.call_count, 2)
+        extracted_documents = extractor_type.return_value.extract.call_args.args[0]
+        self.assertEqual(len(extracted_documents), 1)
+        self.assertEqual(extracted_documents[0].metadata["title"], "New")
+        graph_type.return_value.add_graph_documents.assert_called_once_with(["graph-document"])
+        graph_type.return_value.close.assert_called_once_with()
+
+    def test_non_arxiv_source_never_constructs_graph_dependencies(self) -> None:
+        db = MagicMock()
+        with (
+            patch("backend.app.services.ingestion.pipeline.MilvusRepository"),
+            patch("backend.app.services.ingestion.pipeline.GraphExtractor") as extractor_type,
+            patch("backend.app.services.ingestion.pipeline.GraphRepository") as graph_type,
+        ):
+            count = _ingest_documents(
+                [{"source": "news", "title": "Item", "url": "https://item"}],
+                db,
+                1,
+                "news_daily",
+                "2026-07-24",
+                db.documents,
+                db.rank_snapshots,
+            )
+
+        self.assertEqual(count, 1)
+        extractor_type.assert_not_called()
+        graph_type.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
