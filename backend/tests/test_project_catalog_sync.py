@@ -267,3 +267,173 @@ def test_event_parser_rejects_non_object_key() -> None:
                 "lease_token": "lease",
             }
         )
+
+
+def test_barrier_claim_never_leases_events_above_fixed_id() -> None:
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = []
+    worker = ProjectCatalogSyncWorker(
+        TransactionalDatabase(connection),  # type: ignore[arg-type]
+        writer=MagicMock(),
+        batch_size=5,
+    )
+
+    assert worker.claim(barrier_id=12) == []
+
+    sql, params = cursor.execute.call_args.args
+    assert sql.count("id <= %s") == 2
+    assert params == (12, 12, 5)
+
+
+def test_capture_barrier_requires_capture_and_reads_fixed_max(monkeypatch: pytest.MonkeyPatch) -> None:
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = {"barrier_id": 17}
+    worker = ProjectCatalogSyncWorker(
+        TransactionalDatabase(connection),  # type: ignore[arg-type]
+        writer=MagicMock(),
+    )
+    monkeypatch.setattr(
+        "backend.app.services.project_catalog_sync.settings.project_catalog_outbox_capture_enabled",
+        True,
+    )
+
+    barrier = worker.capture_barrier()
+
+    assert barrier.id == 17
+    assert "MAX(id)" in cursor.execute.call_args.args[0]
+
+
+def test_exact_barrier_proof_canonicalizes_json_key_order() -> None:
+    mysql_connection = MagicMock()
+    mysql_cursor = mysql_connection.cursor.return_value.__enter__.return_value
+    mysql_cursor.fetchone.return_value = {
+        "pending": 0,
+        "leased": 0,
+        "retry": 0,
+        "processed": 1,
+        "dead": 0,
+    }
+    mysql_cursor.fetchall.return_value = [
+        {
+            "id": 7,
+            "event_id": "00000000-0000-0000-0000-000000000007",
+            "aggregate_type": "github_repo_snapshots",
+            "aggregate_key": '{"snapshot_date":"2026-07-24","repo_id":"r"}',
+            "operation": "reconcile",
+            "source_method": "test",
+        }
+    ]
+    postgres_connection = MagicMock()
+    postgres_cursor = postgres_connection.cursor.return_value.__enter__.return_value
+    postgres_cursor.fetchall.return_value = [
+        {
+            "outbox_id": 7,
+            "event_id": "00000000-0000-0000-0000-000000000007",
+            "aggregate_type": "github_repo_snapshots",
+            "aggregate_key": {"repo_id": "r", "snapshot_date": "2026-07-24"},
+            "operation": "reconcile",
+            "source_method": "test",
+        }
+    ]
+    worker = ProjectCatalogSyncWorker(
+        TransactionalDatabase(mysql_connection),  # type: ignore[arg-type]
+        writer=MagicMock(),
+        postgres=TransactionalDatabase(postgres_connection),  # type: ignore[arg-type]
+    )
+
+    proof = worker.prove_barrier(7)
+
+    assert proof["barrier_proven"] is True
+    assert proof["compared"] == 1
+    assert proof["missing_applied"] == 0
+    assert proof["extra_applied"] == 0
+
+
+def test_barrier_proof_pages_past_duplicate_at_barrier_id() -> None:
+    mysql_connection = MagicMock()
+    mysql_cursor = mysql_connection.cursor.return_value.__enter__.return_value
+    mysql_cursor.fetchone.return_value = {
+        "pending": 0,
+        "leased": 0,
+        "retry": 0,
+        "processed": 1,
+        "dead": 0,
+    }
+    source = {
+        "id": 1,
+        "event_id": "00000000-0000-0000-0000-000000000001",
+        "aggregate_type": "tool_websites",
+        "aggregate_key": '{"id":1}',
+        "operation": "reconcile",
+        "source_method": "test",
+    }
+    mysql_cursor.fetchall.side_effect = [[source], []]
+    postgres_connection = MagicMock()
+    postgres_cursor = postgres_connection.cursor.return_value.__enter__.return_value
+    first = {
+        **source,
+        "outbox_id": 1,
+        "aggregate_key": {"id": 1},
+    }
+    first.pop("id")
+    duplicate = {
+        **first,
+        "event_id": "00000000-0000-0000-0000-000000000002",
+    }
+    postgres_cursor.fetchall.side_effect = [[first], [duplicate], []]
+    worker = ProjectCatalogSyncWorker(
+        TransactionalDatabase(mysql_connection),  # type: ignore[arg-type]
+        writer=MagicMock(),
+        postgres=TransactionalDatabase(postgres_connection),  # type: ignore[arg-type]
+    )
+
+    proof = worker.prove_barrier(1, page_size=1)
+
+    assert proof["barrier_proven"] is False
+    assert proof["duplicate_outbox_ids"] == 1
+    assert postgres_cursor.execute.call_count == 3
+
+
+def test_barrier_proof_detects_missing_middle_event_without_miscounting_tail() -> None:
+    mysql_connection = MagicMock()
+    mysql_cursor = mysql_connection.cursor.return_value.__enter__.return_value
+    mysql_cursor.fetchone.return_value = {
+        "pending": 0,
+        "leased": 0,
+        "retry": 0,
+        "processed": 2,
+        "dead": 0,
+    }
+    base = {
+        "aggregate_type": "tool_websites",
+        "aggregate_key": '{"id":1}',
+        "operation": "reconcile",
+        "source_method": "test",
+    }
+    mysql_cursor.fetchall.return_value = [
+        {**base, "id": 1, "event_id": "00000000-0000-0000-0000-000000000001"},
+        {**base, "id": 2, "event_id": "00000000-0000-0000-0000-000000000002"},
+    ]
+    postgres_connection = MagicMock()
+    postgres_cursor = postgres_connection.cursor.return_value.__enter__.return_value
+    postgres_cursor.fetchall.return_value = [
+        {
+            **base,
+            "aggregate_key": {"id": 1},
+            "outbox_id": 2,
+            "event_id": "00000000-0000-0000-0000-000000000002",
+        }
+    ]
+    worker = ProjectCatalogSyncWorker(
+        TransactionalDatabase(mysql_connection),  # type: ignore[arg-type]
+        writer=MagicMock(),
+        postgres=TransactionalDatabase(postgres_connection),  # type: ignore[arg-type]
+    )
+
+    proof = worker.prove_barrier(2)
+
+    assert proof["barrier_proven"] is False
+    assert proof["missing_applied"] == 1
+    assert proof["compared"] == 1

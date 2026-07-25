@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 from backend.app.core.config import settings
 from backend.app.core.database import DatabaseLifecycle, mysql_database
@@ -44,6 +45,12 @@ class SyncBatchResult:
     processed: int
     retried: int
     dead: int
+
+
+@dataclass(frozen=True)
+class OutboxBarrier:
+    id: int
+    captured_at: str
 
 
 class ProjectCatalogReconciliationWriter:
@@ -206,15 +213,20 @@ class ProjectCatalogSyncWorker:
         batch_size: int | None = None,
         lease_seconds: int | None = None,
         max_attempts: int | None = None,
+        postgres: PostgresDatabaseLifecycle = postgres_database,
     ) -> None:
         self._mysql = mysql
-        self._writer = writer or ProjectCatalogReconciliationWriter(mysql=mysql)
+        self._postgres = postgres
+        self._writer = writer or ProjectCatalogReconciliationWriter(
+            mysql=mysql,
+            postgres=postgres,
+        )
         self._batch_size = max(1, int(batch_size or settings.project_catalog_sync_batch_size))
         self._lease_seconds = max(1, int(lease_seconds or settings.project_catalog_sync_lease_seconds))
         self._max_attempts = max(1, int(max_attempts or settings.project_catalog_sync_max_attempts))
 
-    def run_once(self) -> SyncBatchResult:
-        events = self.claim()
+    def run_once(self, *, barrier_id: int | None = None) -> SyncBatchResult:
+        events = self.claim(barrier_id=barrier_id)
         processed = retried = dead = 0
         for event in events:
             try:
@@ -234,24 +246,30 @@ class ProjectCatalogSyncWorker:
                 processed += 1
         return SyncBatchResult(len(events), processed, retried, dead)
 
-    def claim(self) -> list[OutboxEvent]:
+    def claim(self, *, barrier_id: int | None = None) -> list[OutboxEvent]:
         lease_token = str(uuid.uuid4())
+        barrier_clause = "" if barrier_id is None else "id <= %s AND "
+        claim_params: tuple[Any, ...] = (
+            (self._batch_size,)
+            if barrier_id is None
+            else (self._validate_barrier(barrier_id), self._batch_size)
+        )
         with self._mysql.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     SELECT id
                     FROM project_catalog_outbox
-                    WHERE (
+                    WHERE {barrier_clause}(
                         status IN ('pending', 'retry') AND available_at <= UTC_TIMESTAMP(6)
-                    ) OR (
+                    ) OR {barrier_clause}(
                         status = 'leased' AND lease_expires_at <= UTC_TIMESTAMP(6)
                     )
                     ORDER BY id
                     LIMIT %s
                     FOR UPDATE SKIP LOCKED
                     """,
-                    (self._batch_size,),
+                    claim_params if barrier_id is None else (claim_params[0], claim_params[0], claim_params[1]),
                 )
                 ids = [int(row["id"]) for row in cursor.fetchall()]
                 if not ids:
@@ -376,6 +394,223 @@ class ProjectCatalogSyncWorker:
                 if cursor.rowcount != 1:
                     raise ProjectCatalogSyncError("outbox failure update lost its lease fence")
 
+    @staticmethod
+    def _validate_barrier(barrier_id: int) -> int:
+        value = int(barrier_id)
+        if value < 0:
+            raise ValueError("outbox barrier must be non-negative")
+        return value
+
+    def capture_barrier(self) -> OutboxBarrier:
+        if not bool(getattr(settings, "project_catalog_outbox_capture_enabled", False)):
+            raise ProjectCatalogSyncError("project catalog outbox capture is disabled")
+        with self._mysql.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COALESCE(MAX(id), 0) AS barrier_id "
+                    "FROM project_catalog_outbox"
+                )
+                row = cursor.fetchone() or {}
+        return OutboxBarrier(
+            id=int(row.get("barrier_id") or 0),
+            captured_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    @staticmethod
+    def _canonical_key(value: Any) -> str:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ProjectCatalogSyncError("durable aggregate key is invalid") from exc
+        if not isinstance(value, Mapping):
+            raise ProjectCatalogSyncError("durable aggregate key is not an object")
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    @classmethod
+    def _proof_tuple(cls, row: Mapping[str, Any], *, postgres_row: bool) -> tuple[Any, ...]:
+        return (
+            int(row["outbox_id"] if postgres_row else row["id"]),
+            str(row["event_id"]),
+            str(row["aggregate_type"]),
+            cls._canonical_key(row["aggregate_key"]),
+            str(row["operation"]),
+            str(row["source_method"]),
+        )
+
+    def _source_events(self, barrier_id: int, page_size: int) -> Iterator[tuple[Any, ...]]:
+        cursor_id = 0
+        while cursor_id < barrier_id:
+            with self._mysql.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT id, event_id, aggregate_type, aggregate_key,
+                               operation, source_method
+                        FROM project_catalog_outbox
+                        WHERE id > %s AND id <= %s
+                        ORDER BY id ASC
+                        LIMIT %s
+                        """,
+                        (cursor_id, barrier_id, page_size),
+                    )
+                    rows = cursor.fetchall()
+            if not rows:
+                return
+            for row in rows:
+                event = self._proof_tuple(row, postgres_row=False)
+                cursor_id = event[0]
+                yield event
+
+    def _applied_events(self, barrier_id: int, page_size: int) -> Iterator[tuple[Any, ...]]:
+        cursor_id = 0
+        cursor_event_id = ""
+        while True:
+            with self._postgres.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT outbox_id, event_id::text AS event_id,
+                               aggregate_type, aggregate_key, operation, source_method
+                        FROM project_catalog_applied_events
+                        WHERE (
+                            outbox_id > %s
+                            OR (outbox_id = %s AND event_id::text > %s)
+                        ) AND outbox_id <= %s
+                        ORDER BY outbox_id ASC, event_id ASC
+                        LIMIT %s
+                        """,
+                        (
+                            cursor_id,
+                            cursor_id,
+                            cursor_event_id,
+                            barrier_id,
+                            page_size,
+                        ),
+                    )
+                    rows = cursor.fetchall()
+            if not rows:
+                return
+            for row in rows:
+                event = self._proof_tuple(row, postgres_row=True)
+                cursor_id = event[0]
+                cursor_event_id = event[1]
+                yield event
+            if len(rows) < page_size:
+                return
+
+    def prove_barrier(
+        self,
+        barrier_id: int,
+        *,
+        page_size: int | None = None,
+    ) -> dict[str, Any]:
+        barrier = self._validate_barrier(barrier_id)
+        size = ProjectCatalogTransferService._validate_batch_size(
+            int(page_size or self._batch_size)
+        )
+        with self._mysql.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        SUM(status = 'pending') AS pending,
+                        SUM(status = 'leased') AS leased,
+                        SUM(status = 'retry') AS retry,
+                        SUM(status = 'processed') AS processed,
+                        SUM(status = 'dead') AS dead
+                    FROM project_catalog_outbox
+                    WHERE id <= %s
+                    """,
+                    (barrier,),
+                )
+                status = cursor.fetchone() or {}
+        blocking = {
+            name: int(status.get(name) or 0)
+            for name in ("pending", "leased", "retry", "dead")
+        }
+        missing = extra = mismatched = duplicates = compared = 0
+        source_events = iter(self._source_events(barrier, size))
+        applied_events = iter(self._applied_events(barrier, size))
+        source = next(source_events, None)
+        applied = next(applied_events, None)
+        previous_applied_id: int | None = None
+        while source is not None or applied is not None:
+            if applied is not None and previous_applied_id == int(applied[0]):
+                duplicates += 1
+                applied = next(applied_events, None)
+                continue
+            if source is None:
+                extra += 1
+                previous_applied_id = int(applied[0])
+                applied = next(applied_events, None)
+            elif applied is None:
+                missing += 1
+                source = next(source_events, None)
+            elif source[0] < applied[0]:
+                missing += 1
+                source = next(source_events, None)
+            elif source[0] > applied[0]:
+                extra += 1
+                previous_applied_id = int(applied[0])
+                applied = next(applied_events, None)
+            else:
+                previous_applied_id = int(applied[0])
+                if source != applied:
+                    mismatched += 1
+                else:
+                    compared += 1
+                source = next(source_events, None)
+                applied = next(applied_events, None)
+        proven = (
+            not any(blocking.values())
+            and missing == extra == mismatched == duplicates == 0
+            and compared == int(status.get("processed") or 0)
+        )
+        return {
+            "barrier_id": barrier,
+            "barrier_proven": proven,
+            "blocking": blocking,
+            "processed": int(status.get("processed") or 0),
+            "compared": compared,
+            "missing_applied": missing,
+            "extra_applied": extra,
+            "mismatched_applied": mismatched,
+            "duplicate_outbox_ids": duplicates,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def drain_to_barrier(
+        self,
+        barrier_id: int,
+        *,
+        timeout_seconds: float,
+        production_authorized: bool = False,
+    ) -> dict[str, Any]:
+        barrier = self._validate_barrier(barrier_id)
+        timeout = float(timeout_seconds)
+        if timeout <= 0:
+            raise ValueError("drain timeout must be positive")
+        ProjectCatalogTransferService(
+            mysql=self._mysql,
+            postgres=self._postgres,
+        )._validate_production_authorization(production_authorized)
+        started = time.monotonic()
+        totals = {"claimed": 0, "processed": 0, "retried": 0, "dead": 0}
+        while True:
+            proof = self.prove_barrier(barrier)
+            if proof["barrier_proven"]:
+                return {"status": "drained", **totals, **proof}
+            if proof["blocking"]["dead"]:
+                return {"status": "blocked", **totals, **proof}
+            if time.monotonic() - started >= timeout:
+                return {"status": "timeout", **totals, **proof}
+            batch = self.run_once(barrier_id=barrier)
+            for name in totals:
+                totals[name] += int(getattr(batch, name))
+            if batch.claimed == 0:
+                time.sleep(min(0.1, max(0.0, timeout - (time.monotonic() - started))))
+
     def status(self) -> dict[str, Any]:
         with self._mysql.transaction() as connection:
             with connection.cursor() as cursor:
@@ -386,6 +621,7 @@ class ProjectCatalogSyncWorker:
                         SUM(status = 'leased') AS leased,
                         SUM(status = 'retry') AS retry,
                         SUM(status = 'dead') AS dead,
+                        MAX(id) AS source_captured_high_water,
                         MAX(CASE WHEN status = 'processed' THEN id END) AS high_water,
                         MIN(CASE WHEN status IN ('pending', 'leased', 'retry') THEN created_at END) AS oldest_pending_at
                     FROM project_catalog_outbox
@@ -400,6 +636,9 @@ class ProjectCatalogSyncWorker:
             "leased": int(row.get("leased") or 0),
             "retry": int(row.get("retry") or 0),
             "dead": int(row.get("dead") or 0),
+            "source_captured_high_water": int(
+                row.get("source_captured_high_water") or 0
+            ),
             "high_water": int(row.get("high_water") or 0),
             "oldest_pending_at": oldest,
         }

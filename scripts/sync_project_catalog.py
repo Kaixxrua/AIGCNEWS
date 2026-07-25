@@ -20,8 +20,20 @@ from backend.app.services.project_catalog_sync import (  # noqa: E402
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Replay MySQL project-catalog outbox events.")
-    parser.add_argument("command", choices=("status", "run-once"))
+    parser.add_argument(
+        "command",
+        choices=(
+            "status",
+            "run-once",
+            "capture-barrier",
+            "prove-barrier",
+            "drain-to-barrier",
+        ),
+    )
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--barrier-id", type=int, default=None)
+    parser.add_argument("--timeout-seconds", type=float, default=60.0)
+    parser.add_argument("--authorize-production", action="store_true")
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--lease-seconds", type=int, default=None)
     parser.add_argument("--max-attempts", type=int, default=None)
@@ -41,6 +53,33 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "status":
             result = {"status": "ok", **worker.status()}
+        elif args.command == "capture-barrier":
+            barrier = worker.capture_barrier()
+            result = {
+                "status": "captured",
+                "barrier_id": barrier.id,
+                "captured_at": barrier.captured_at,
+            }
+        elif args.command in {"prove-barrier", "drain-to-barrier"}:
+            if args.barrier_id is None:
+                raise ValueError("--barrier-id is required")
+            if args.command == "prove-barrier":
+                proof = worker.prove_barrier(args.barrier_id)
+                result = {
+                    "status": "ready" if proof["barrier_proven"] else "not_ready",
+                    **proof,
+                }
+            elif not args.apply:
+                result = {
+                    "status": "dry_run",
+                    **worker.prove_barrier(args.barrier_id),
+                }
+            else:
+                result = worker.drain_to_barrier(
+                    args.barrier_id,
+                    timeout_seconds=args.timeout_seconds,
+                    production_authorized=args.authorize_production,
+                )
         elif not args.apply:
             result = {"status": "dry_run", **worker.status()}
         else:
@@ -53,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
                 "dead": batch.dead,
             }
         print(json.dumps(result, indent=2, sort_keys=True))
-        return 0
+        return 0 if result.get("status") not in {"not_ready", "blocked", "timeout"} else 1
     except Exception as error:
         print(
             json.dumps(
