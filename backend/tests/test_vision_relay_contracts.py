@@ -78,6 +78,10 @@ def parse_sse(body: str) -> list[object]:
     return events
 
 
+async def _collect_route_stream(stream) -> list[str]:
+    return [chunk async for chunk in stream]
+
+
 class VisionRelayContractsTests(unittest.TestCase):
     def setUp(self) -> None:
         routes_vision._screenshot_cache.clear()
@@ -393,6 +397,38 @@ class VisionRelayContractsTests(unittest.TestCase):
             ],
         )
         self.assertEqual(response.text.count("data: [DONE]\n\n"), 1)
+
+    def test_private_stream_forwards_request_and_legacy_seams_to_relay(self) -> None:
+        request = routes_vision.VisionRelayRequest(
+            paper_id="paper-18",
+            question="explain",
+            image_id="image-id",
+            history=[{"role": "user", "content": "before"}],
+        )
+        captured: dict = {}
+
+        async def relay_stream(**kwargs):
+            captured.update(kwargs)
+            yield "relay-chunk"
+
+        with patch.object(
+            routes_vision.vision_relay_service,
+            "stream_vision_relay",
+            relay_stream,
+        ):
+            chunks = asyncio.run(
+                _collect_route_stream(routes_vision._vision_relay_stream(request))
+            )
+
+        self.assertEqual(chunks, ["relay-chunk"])
+        self.assertEqual(captured["image_id"], "image-id")
+        self.assertEqual(captured["question"], "explain")
+        self.assertEqual(captured["paper_id"], "paper-18")
+        self.assertEqual(captured["history"], request.history)
+        self.assertIs(captured["encode_event"], routes_vision._sse)
+        self.assertIs(captured["report_error"], routes_vision.traceback.print_exc)
+        self.assertTrue(callable(captured["image_loader"]))
+        self.assertTrue(callable(captured["provider_stream"]))
 
     def test_streaming_response_headers_content_type_and_exact_bytes(self) -> None:
         routes_vision._screenshot_cache["image-id"] = ("image", "image/png", 999.0)

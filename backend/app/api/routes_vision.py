@@ -26,7 +26,6 @@ POST /api/chat/vision-relay
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 import traceback
 import uuid
@@ -39,6 +38,8 @@ from starlette.responses import StreamingResponse
 
 from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
+from backend.app.services.vision import relay as vision_relay_service
+from backend.app.services.vision.provider import VISION_SYSTEM, VisionProvider
 
 router = APIRouter()
 
@@ -46,16 +47,10 @@ router = APIRouter()
 # 常量
 # ---------------------------------------------------------------------------
 
-_VISION_BASE_URL = "https://api.siliconflow.cn/v1"
-_VISION_MODEL = "Pro/moonshotai/Kimi-K2.5"
-
 _SCREENSHOT_TTL = 300  # 5 分钟
 
-_VISION_SYSTEM = (
-    "你是一位顶级 AI 研究员，擅长深度解读学术论文中的图表、公式、文字与实验结果。"
-    "你将直接看到用户截取的论文区域图片，并结合用户的追问给出有见地的深度分析回答。"
-    "回答要简洁有力，直接切中要点。"
-)
+# 兼容既有模块内访问；消息载荷由 provider 边界持有。
+_VISION_SYSTEM = VISION_SYSTEM
 
 # ---------------------------------------------------------------------------
 # 内存截图缓存  { image_id: (base64_str, mime_type, expire_ts) }
@@ -102,8 +97,8 @@ class VisionRelayRequest(BaseModel):
 
 
 def _sse(event_type: str, data: str) -> str:
-    payload = json.dumps({"type": event_type, "data": data}, ensure_ascii=False)
-    return f"data: {payload}\n\n"
+    """兼容既有 monkeypatch seam，实际编码由 relay 边界持有。"""
+    return vision_relay_service.encode_sse(event_type, data)
 
 
 # ---------------------------------------------------------------------------
@@ -139,131 +134,35 @@ async def upload_screenshot(
 
 
 async def _vision_relay_stream(req: VisionRelayRequest) -> AsyncGenerator[str, None]:
-    """
-    单棒流式视觉问答：从缓存取 base64 → 用 httpx 直调 SiliconFlow → 流式输出。
-    """
+    """兼容路由私有入口，将旧 globals 晚绑定转发给 relay 协调边界。"""
 
-    # ── 从缓存取 base64 ───────────────────────────────────────────────────
-    async with _cache_lock:
-        entry = _screenshot_cache.get(req.image_id)
+    async def load_image(image_id: str) -> Optional[Tuple[str, str]]:
+        async with _cache_lock:
+            entry = _screenshot_cache.get(image_id)
 
-    if entry is None or time.time() > entry[2]:
-        if entry is not None:
-            async with _cache_lock:
-                _screenshot_cache.pop(req.image_id, None)
-        yield _sse("error", "截图已过期或不存在，请重新截图后再提问")
-        yield "data: [DONE]\n\n"
-        return
+        if entry is None or time.time() > entry[2]:
+            if entry is not None:
+                async with _cache_lock:
+                    _screenshot_cache.pop(image_id, None)
+            return None
+        return entry[0], entry[1]
 
-    b64_str, mime_type, _ = entry
-    data_uri = f"data:{mime_type};base64,{b64_str}"
-
-    try:
-        yield _sse("status", "🔍 正在分析图像内容…")
-
-        # 当前轮：图片 + 问题
-        user_text = req.question
-        if req.paper_id:
-            user_text = f"（当前论文 ID：{req.paper_id}）\n{user_text}"
-
-        # 组装消息
-        messages: list = [
-            {"role": "system", "content": _VISION_SYSTEM},
-        ]
-        for h in req.history[-12:]:
-            if isinstance(h, dict) and h.get("role") and h.get("content"):
-                messages.append({"role": h["role"], "content": str(h["content"])})
-
-        messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": data_uri},
-                    },
-                    {
-                        "type": "text",
-                        "text": user_text,
-                    },
-                ],
-            }
-        )
-
-        payload = {
-            "model": _VISION_MODEL,
-            "messages": messages,
-            "max_tokens": 4096,
-            "temperature": 0.7,
-            "stream": True,
-        }
-
-        headers = {
-            "Authorization": f"Bearer {settings.siliconflow_api_key}",
-            "Content-Type": "application/json",
-        }
-
-        # 带退避重试，最多 3 次
-        for attempt in range(3):
-            try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    async with client.stream(
-                        "POST",
-                        f"{_VISION_BASE_URL}/chat/completions",
-                        json=payload,
-                        headers=headers,
-                    ) as resp:
-                        if resp.status_code != 200:
-                            body = await resp.aread()
-                            err_text = body.decode("utf-8", errors="replace")
-                            # 429 限速 → 退避重试
-                            if resp.status_code == 429:
-                                raise Exception(f"429 rate limit: {err_text}")
-                            raise Exception(
-                                f"Error code: {resp.status_code} - {err_text}"
-                            )
-
-                        async for line in resp.aiter_lines():
-                            if not line.startswith("data:"):
-                                continue
-                            data_str = line[5:].strip()
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                chunk = json.loads(data_str)
-                                choices = chunk.get("choices", [])
-                                if choices:
-                                    delta = choices[0].get("delta", {})
-                                    content = delta.get("content")
-                                    if content:
-                                        yield _sse("content", content)
-                            except json.JSONDecodeError:
-                                continue
-                # 成功完成，跳出重试循环
-                break
-
-            except Exception as exc:
-                if attempt == 2:
-                    raise
-                err_str = str(exc)
-                is_rate_limit = (
-                    "429" in err_str
-                    or "rate_limit" in err_str
-                    or "rate limit" in err_str.lower()
-                )
-                wait = 30 * (attempt + 1) if is_rate_limit else 2 ** (attempt + 1)
-                yield _sse(
-                    "status",
-                    f"⏳ {'触发限速，' if is_rate_limit else '模型繁忙，'}{wait}s 后重试（第 {attempt + 1} 次）…",
-                )
-                await asyncio.sleep(wait)
-
-    except Exception as exc:
-        traceback.print_exc()
-        yield _sse("error", f"视觉分析失败：{exc}")
-
-    finally:
-        yield "data: [DONE]\n\n"
+    provider = VisionProvider(
+        api_key=settings.siliconflow_api_key,
+        client_factory=httpx.AsyncClient,
+        sleep=asyncio.sleep,
+    )
+    async for chunk in vision_relay_service.stream_vision_relay(
+        image_id=req.image_id,
+        question=req.question,
+        paper_id=req.paper_id,
+        history=req.history,
+        image_loader=load_image,
+        provider_stream=provider.stream,
+        encode_event=_sse,
+        report_error=traceback.print_exc,
+    ):
+        yield chunk
 
 
 # ---------------------------------------------------------------------------
