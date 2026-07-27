@@ -2,9 +2,10 @@ from __future__ import annotations
 
 """Typed, immutable scheduler job descriptors and pure projections."""
 
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -77,6 +78,8 @@ class IntervalJobDescriptor:
 
 JobDescriptor = CronJobDescriptor | IntervalJobDescriptor
 SchedulerTrigger = CronTrigger | IntervalTrigger
+SchedulerCallback = Callable[[], Awaitable[None]]
+SingleSourceCallback = Callable[[str], Awaitable[None]]
 
 
 SOURCE_JOB_DESCRIPTORS: tuple[CronJobDescriptor, ...] = (
@@ -180,6 +183,26 @@ def project_catalog_sync_job_descriptor(
         timezone=timezone,
         misfire_grace_time=max(30, int(poll_seconds) * 2),
     )
+
+
+def resolve_source_job_callback(
+    source: JobSource,
+    namespace: Mapping[str, Any],
+) -> SchedulerCallback:
+    """Resolve a source callback lazily from the scheduler module namespace."""
+    callback_name = {
+        "github_project_daily_pipeline": "_run_github_project_daily_pipeline_job",
+        "github_project_metrics_refresh": "_run_github_project_metrics_refresh_job",
+    }.get(source)
+    if callback_name is not None:
+        return namespace[callback_name]
+
+    run_single_source: SingleSourceCallback = namespace["_run_single_source_job"]
+
+    async def run_source_job(source_name: str = source) -> None:
+        await run_single_source(source_name)
+
+    return run_source_job
 
 
 def build_trigger(descriptor: JobDescriptor) -> SchedulerTrigger:

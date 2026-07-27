@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from backend.app.core.scheduler_registry import (
     project_catalog_sync_job_descriptor,
     project_scheduler_status,
     project_semantic_warmup_job_descriptor,
+    resolve_source_job_callback,
 )
 
 
@@ -141,6 +143,59 @@ class SchedulerDescriptorTests(unittest.TestCase):
 
         self.assertIsNot(first, second)
         self.assertEqual(descriptor.schedule, CronSchedule(minute=1))
+
+
+class SchedulerCallbackResolutionTests(unittest.TestCase):
+    def test_resolves_special_callback_from_namespace_at_registration_time(self) -> None:
+        async def first() -> None:
+            return None
+
+        async def replacement() -> None:
+            return None
+
+        namespace = {"_run_github_project_daily_pipeline_job": first}
+        self.assertIs(
+            resolve_source_job_callback(
+                "github_project_daily_pipeline",
+                namespace,
+            ),
+            first,
+        )
+
+        namespace["_run_github_project_daily_pipeline_job"] = replacement
+        self.assertIs(
+            resolve_source_job_callback(
+                "github_project_daily_pipeline",
+                namespace,
+            ),
+            replacement,
+        )
+
+    def test_source_callback_preserves_source_default_and_registration_binding(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        async def first(source: str) -> None:
+            calls.append(("first", source))
+
+        async def replacement(source: str) -> None:
+            calls.append(("replacement", source))
+
+        namespace = {"_run_single_source_job": first}
+        callback = resolve_source_job_callback("arxiv", namespace)
+        namespace["_run_single_source_job"] = replacement
+
+        asyncio.run(callback())
+        asyncio.run(callback("github"))
+        asyncio.run(resolve_source_job_callback("news", namespace)())
+
+        self.assertEqual(
+            calls,
+            [
+                ("first", "arxiv"),
+                ("first", "github"),
+                ("replacement", "news"),
+            ],
+        )
 
 
 class SchedulerStatusProjectionTests(unittest.TestCase):

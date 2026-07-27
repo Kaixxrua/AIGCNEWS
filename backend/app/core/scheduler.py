@@ -24,6 +24,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from backend.app.core.scheduler_registry import resolve_source_job_callback
+
 logger = logging.getLogger(__name__)
 
 SCHEDULE_CONFIG: List[Dict[str, Any]] = [
@@ -461,20 +463,7 @@ def start_scheduler() -> None:
         cron = config["cron"]
         desc = config["desc"]
 
-        if source == "github_hot":
-            job_func = _run_github_hot_job
-        elif source == "github_project_enrichment":
-            job_func = _run_github_project_enrichment_job
-        elif source == "github_project_daily_pipeline":
-            job_func = _run_github_project_daily_pipeline_job
-        elif source == "github_project_metrics_refresh":
-            job_func = _run_github_project_metrics_refresh_job
-        else:
-
-            async def _make_job(src: str = source) -> None:
-                await _run_single_source_job(src)
-
-            job_func = _make_job
+        job_func = resolve_source_job_callback(source, globals())
 
         scheduler.add_job(
             job_func,

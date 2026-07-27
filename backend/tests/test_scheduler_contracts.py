@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -173,6 +174,36 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             {key: value for key, value in _cron_fields(cleanup["trigger"]).items() if value != "*"},
             {"day": "*/7", "hour": "3", "minute": "30", "second": "0"},
         )
+
+    def test_resolves_monkeypatched_callbacks_when_jobs_are_registered(self) -> None:
+        single_source = AsyncMock()
+        daily_pipeline = AsyncMock()
+        metrics_refresh = AsyncMock()
+
+        with (
+            patch.object(scheduler, "_run_single_source_job", new=single_source),
+            patch.object(
+                scheduler,
+                "_run_github_project_daily_pipeline_job",
+                new=daily_pipeline,
+            ),
+            patch.object(
+                scheduler,
+                "_run_github_project_metrics_refresh_job",
+                new=metrics_refresh,
+            ),
+        ):
+            fake_scheduler, _ = self._start_scheduler()
+
+        callbacks = {
+            kwargs["id"]: callback
+            for callback, kwargs in fake_scheduler.add_job_calls
+        }
+        self.assertIs(callbacks["github_project_daily_pipeline"], daily_pipeline)
+        self.assertIs(callbacks["github_project_metrics_refresh"], metrics_refresh)
+
+        asyncio.run(callbacks["arxiv_papers"]())  # type: ignore[operator]
+        single_source.assert_awaited_once_with("arxiv")
 
     def test_optional_jobs_freeze_intervals_options_and_startup_order(self) -> None:
         fake_scheduler, events = self._start_scheduler(
