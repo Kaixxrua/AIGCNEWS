@@ -223,6 +223,51 @@ class ContentEnricherSourceCompositionContractTests(unittest.IsolatedAsyncioTest
         self.assertEqual(internal["full_text"], "# Ask HN\n\nQuestion body")
         self.assertEqual(title_only["full_text"], "Same")
 
+    async def test_fetching_sources_accept_injected_ports_without_using_module_seams(self) -> None:
+        page_fetcher = MagicMock()
+        page_fetcher.fetch = AsyncMock(return_value="p" * 221)
+        readme_fetcher = MagicMock()
+        readme_fetcher.fetch = AsyncMock(return_value="README body")
+        github = {"title": "owner/repo", "description": "Description"}
+        news = {
+            "title": "News",
+            "url": "https://public.example.test/news",
+            "summary": "s" * 20,
+        }
+        hackernews = {
+            "title": "Story",
+            "url": "https://public.example.test/story",
+        }
+
+        with (
+            patch.object(content_enricher, "_fetch_url_text", new=AsyncMock()) as page_seam,
+            patch.object(
+                content_enricher, "_fetch_github_readme", new=AsyncMock()
+            ) as readme_seam,
+        ):
+            self.assertIs(
+                await content_enricher.enrich_github(github, readme_fetcher), github
+            )
+            self.assertIs(await content_enricher.enrich_news(news, page_fetcher), news)
+            self.assertIs(
+                await content_enricher.enrich_hackernews(hackernews, page_fetcher),
+                hackernews,
+            )
+
+        readme_fetcher.fetch.assert_awaited_once_with("owner/repo")
+        self.assertEqual(
+            [call.args for call in page_fetcher.fetch.await_args_list],
+            [
+                ("https://public.example.test/news",),
+                ("https://public.example.test/story",),
+            ],
+        )
+        readme_seam.assert_not_awaited()
+        page_seam.assert_not_awaited()
+        self.assertEqual(github["full_text"], "Description\n\nREADME:\nREADME body")
+        self.assertEqual(news["full_text"], f"# News\n\n{'p' * 221}")
+        self.assertEqual(hackernews["full_text"], f"# Story\n\n{'p' * 221}")
+
     async def test_all_non_pdf_sources_truncate_full_text_in_place(self) -> None:
         cases = [
             (content_enricher.enrich_huggingface, {"abstract": "x" * 40_001}),
@@ -312,6 +357,42 @@ class ContentEnricherBatchContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(papers[0]["full_text"], "Original abstract")
         self.assertEqual(papers[1]["full_text"], "Healthy content")
         sleep.assert_awaited_once_with(0.4)
+
+    async def test_batch_dispatches_injected_ports_only_to_matching_sources(self) -> None:
+        page_fetcher = MagicMock()
+        page_fetcher.fetch = AsyncMock(return_value="p" * 201)
+        readme_fetcher = MagicMock()
+        readme_fetcher.fetch = AsyncMock(return_value="README")
+        news = [{"title": "News", "url": "https://public.example.test/news"}]
+        github = [{"title": "owner/repo", "description": "Description"}]
+
+        self.assertIs(
+            await content_enricher.enrich_papers(
+                news,
+                "news",
+                delay=0,
+                page_fetcher=page_fetcher,
+                readme_fetcher=readme_fetcher,
+            ),
+            news,
+        )
+        self.assertIs(
+            await content_enricher.enrich_papers(
+                github,
+                "github",
+                delay=0,
+                page_fetcher=page_fetcher,
+                readme_fetcher=readme_fetcher,
+            ),
+            github,
+        )
+
+        page_fetcher.fetch.assert_awaited_once_with(
+            "https://public.example.test/news"
+        )
+        readme_fetcher.fetch.assert_awaited_once_with("owner/repo")
+        self.assertEqual(news[0]["full_text"], f"# News\n\n{'p' * 201}")
+        self.assertEqual(github[0]["full_text"], "Description\n\nREADME:\nREADME")
 
     async def test_arxiv_batch_never_delays_even_when_delay_requested(self) -> None:
         papers = [{"title": "One"}, {"title": "Two"}]

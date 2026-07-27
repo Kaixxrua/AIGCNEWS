@@ -32,9 +32,19 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from backend.app.services.ingestion.content_enrichment_policy import (
+    ContentEnrichmentPolicy,
+    compose_huggingface_content,
+    compose_producthunt_content,
+    select_github_content,
+    select_hackernews_content,
+    select_news_content,
+)
 from backend.app.services.ingestion.content_fetch_port import (
     DefaultGitHubReadmeFetcher,
     DefaultPageContentFetcher,
+    GitHubReadmeFetcher,
+    PageContentFetcher,
     clean_html_text,
 )
 
@@ -113,6 +123,17 @@ def _fetch_pdf_text(pdf_url: str, timeout: int = 30) -> str:
 async def _fetch_github_readme(full_name: str) -> str:
     """通过共享 GitHub README 抓取器获取清洗后的文本。"""
     return await DefaultGitHubReadmeFetcher().fetch(full_name)
+
+
+def _apply_content_policy(
+    paper: Dict[str, Any],
+    policy: ContentEnrichmentPolicy,
+) -> Dict[str, Any]:
+    """将纯策略结果写回原 paper，保留既有就地变更语义。"""
+    paper["full_text"] = policy.full_text
+    if policy.pdf_pending is not None:
+        paper["pdf_pending"] = policy.pdf_pending
+    return paper
 
 
 # ── 各源 Enricher ──────────────────────────────────────────────────────────────
@@ -227,121 +248,83 @@ def enrich_huggingface(paper: Dict[str, Any]) -> Dict[str, Any]:
 
     模型卡片的描述已经足够，不需要额外的 PDF 解析。
     """
-    abstract = paper.get("abstract", "") or paper.get("summary", "") or ""
+    policy = compose_huggingface_content(paper)
+    _apply_content_policy(paper, policy)
+
     title = paper.get("title", "")
-    pipeline_tag = paper.get("pipeline_tag", "")
-    likes = paper.get("likes", 0)
-    downloads = paper.get("downloads", 0)
-
-    # 拼接丰富的摘要文本
-    parts = []
-    if title:
-        parts.append(f"# {title}")
-    if pipeline_tag:
-        parts.append(
-            f"Pipeline: {pipeline_tag} | Likes: {likes:,} | Downloads: {downloads:,}"
-        )
-    if abstract:
-        parts.append(abstract)
-
-    full_text = "\n\n".join(parts) if parts else title
-    paper["full_text"] = full_text[:_MAX_CONTENT_CHARS]
-    paper["pdf_pending"] = False
-
     logger.debug(
-        "[Enricher][HuggingFace] 摘要入库: %s (%d chars)", title[:50], len(full_text)
+        "[Enricher][HuggingFace] 摘要入库: %s (%d chars)",
+        title[:50],
+        len(policy.full_text),
     )
     return paper
 
 
-async def enrich_github(paper: Dict[str, Any]) -> Dict[str, Any]:
+async def enrich_github(
+    paper: Dict[str, Any],
+    readme_fetcher: Optional[GitHubReadmeFetcher] = None,
+) -> Dict[str, Any]:
     """GitHub 仓库：优先使用已有 abstract（含 README），否则重新抓取。
 
     source_github.py 的 _parse_item 会在 abstract 中拼接 README，
     但 github_hot_service 走 get_github_hot_rank → SQLite，abstract 字段
     只存了 description，需要额外补 README。
     """
-    abstract = paper.get("abstract", "") or ""
-    full_name = paper.get("full_name") or paper.get("title") or ""
-
-    # 如果 abstract 已包含 README（超过 500 字符）则认为已充分
-    if len(abstract) > 500:
-        paper["full_text"] = abstract[:_MAX_CONTENT_CHARS]
-        return paper
-
-    # 需要额外抓取 README
-    readme = ""
-    if full_name and "/" in full_name:
+    policy = select_github_content(paper)
+    if policy.fetch_github_readme:
+        full_name = policy.fetch_github_readme
         logger.info("[Enricher][GitHub] 补抓 README: %s", full_name)
-        readme = await _fetch_github_readme(full_name)
+        readme = (
+            await readme_fetcher.fetch(full_name)
+            if readme_fetcher is not None
+            else await _fetch_github_readme(full_name)
+        )
+        policy = select_github_content(paper, readme)
 
-    description = paper.get("description") or paper.get("summary") or abstract
-    if readme:
-        full_text = f"{description}\n\nREADME:\n{readme}".strip()
-    else:
-        full_text = description
-
-    paper["full_text"] = full_text[:_MAX_CONTENT_CHARS]
-    return paper
+    return _apply_content_policy(paper, policy)
 
 
-async def enrich_news(paper: Dict[str, Any]) -> Dict[str, Any]:
+async def enrich_news(
+    paper: Dict[str, Any],
+    page_fetcher: Optional[PageContentFetcher] = None,
+) -> Dict[str, Any]:
     """News 文章：抓取原文详情页正文；回退到 RSS 摘要。"""
-    url = paper.get("url", "")
-    summary = paper.get("abstract", "") or paper.get("summary", "") or ""
-    title = paper.get("title", "")
-
-    full_text = ""
-    if url:
+    policy = select_news_content(paper)
+    if policy.fetch_url:
+        url = policy.fetch_url
         logger.info("[Enricher][News] 抓取详情页: %s", url[:80])
-        page_text = await _fetch_url_text(url)
-        if len(page_text) > len(summary) + 200:
-            full_text = f"# {title}\n\n{page_text}"
+        page_text = (
+            await page_fetcher.fetch(url)
+            if page_fetcher is not None
+            else await _fetch_url_text(url)
+        )
+        policy = select_news_content(paper, page_text)
 
-    if not full_text:
-        full_text = f"# {title}\n\n{summary}" if summary else title
-
-    paper["full_text"] = full_text[:_MAX_CONTENT_CHARS]
-    return paper
+    return _apply_content_policy(paper, policy)
 
 
 def enrich_producthunt(paper: Dict[str, Any]) -> Dict[str, Any]:
     """ProductHunt：保持 tagline + description，不额外抓取。"""
-    abstract = paper.get("abstract", "") or paper.get("summary", "") or ""
-    title = paper.get("title", "")
-    paper["full_text"] = (f"# {title}\n\n{abstract}" if abstract else title)[
-        :_MAX_CONTENT_CHARS
-    ]
-    return paper
+    return _apply_content_policy(paper, compose_producthunt_content(paper))
 
 
-async def enrich_hackernews(paper: Dict[str, Any]) -> Dict[str, Any]:
+async def enrich_hackernews(
+    paper: Dict[str, Any],
+    page_fetcher: Optional[PageContentFetcher] = None,
+) -> Dict[str, Any]:
     """HackerNews 帖子：抓取外链正文；Ask HN / Show HN 使用 story_text；回退到标题。"""
-    url = paper.get("url", "")
-    title = paper.get("title", "")
-    story_text = paper.get("abstract", "") or paper.get("summary", "") or ""
-    hn_id = paper.get("hn_id", "")
-
-    # HN 内链（Ask HN / Show HN）直接用 story_text
-    hn_item_url = f"https://news.ycombinator.com/item?id={hn_id}"
-    is_internal = not url or url == hn_item_url or "news.ycombinator.com" in url
-
-    full_text = ""
-
-    if not is_internal and url:
+    policy = select_hackernews_content(paper)
+    if policy.fetch_url:
+        url = policy.fetch_url
         logger.info("[Enricher][HackerNews] 抓取外链详情页: %s", url[:80])
-        page_text = await _fetch_url_text(url)
-        if len(page_text) > 200:
-            full_text = f"# {title}\n\n{page_text}"
+        page_text = (
+            await page_fetcher.fetch(url)
+            if page_fetcher is not None
+            else await _fetch_url_text(url)
+        )
+        policy = select_hackernews_content(paper, page_text)
 
-    if not full_text and story_text and story_text != title:
-        full_text = f"# {title}\n\n{story_text}"
-
-    if not full_text:
-        full_text = title
-
-    paper["full_text"] = full_text[:_MAX_CONTENT_CHARS]
-    return paper
+    return _apply_content_policy(paper, policy)
 
 
 # ── 批量入口 ──────────────────────────────────────────────────────────────────
@@ -360,6 +343,9 @@ async def enrich_papers(
     papers: List[Dict[str, Any]],
     source_key: str,
     delay: float = 0.5,
+    *,
+    page_fetcher: Optional[PageContentFetcher] = None,
+    readme_fetcher: Optional[GitHubReadmeFetcher] = None,
 ) -> List[Dict[str, Any]]:
     """对一批 paper dict 批量执行内容丰富，返回原列表（就地修改）。
 
@@ -368,6 +354,8 @@ async def enrich_papers(
         source_key: 数据源名称（"arxiv" / "huggingface" / "github" / "news" / "producthunt" / "hackernews"）
         delay: 每条之间的礼貌延迟（秒），避免对目标服务器过于频繁
                注意：arxiv 快速路径（摘要入库）无需延迟
+        page_fetcher: News / HackerNews 可注入页面抓取端口；默认保留模块抓取 seam
+        readme_fetcher: GitHub 可注入 README 抓取端口；默认保留模块抓取 seam
 
     Returns:
         就地添加了 full_text 字段的同一列表
@@ -399,7 +387,12 @@ async def enrich_papers(
             continue
 
         try:
-            result = enricher(paper)
+            if source_key == "github" and readme_fetcher is not None:
+                result = enricher(paper, readme_fetcher=readme_fetcher)
+            elif source_key in {"news", "hackernews"} and page_fetcher is not None:
+                result = enricher(paper, page_fetcher=page_fetcher)
+            else:
+                result = enricher(paper)
             if asyncio.iscoroutine(result):
                 await result
             ft_len = len(paper.get("full_text", ""))
