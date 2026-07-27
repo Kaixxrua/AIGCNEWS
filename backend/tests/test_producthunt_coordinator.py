@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import json
 from datetime import date
 from typing import Any
@@ -10,7 +9,6 @@ import pytest
 
 from backend.app.services.ingestion import producthunt_coordinator as coordinator
 from backend.app.services.ingestion import producthunt_parser as parser
-from backend.app.services.ingestion import producthunt_policy as policy
 from backend.app.services.ingestion import source_producthunt as ph
 
 
@@ -264,11 +262,8 @@ def test_public_async_entry_delegates_to_coordinator(
         "period": call["period"],
         "target_date": call["target_date"],
     } == {"limit": 3, "period": " WEEKLY ", "target_date": "2026-07-20"}
-    assert call["normalize_period"] is policy.normalize_period
-    assert call["resolve_anchor"] is ph._resolve_anchor
-    assert call["api_channel"] is ph._fetch_via_api
-    assert call["html_transport"] is ph._fetch_html
-    assert call["apollo_parser"] is ph._extract_posts_from_html
-    assert "producthunt_coordinator" in inspect.getsource(
-        ph.fetch_producthunt_products_async
-    )
+    assert call == {
+        "limit": 3,
+        "period": " WEEKLY ",
+        "target_date": "2026-07-20",
+    }
