@@ -1,82 +1,16 @@
 import { FileText, GitBranch, Newspaper, Rocket, Triangle } from 'lucide-vue-next'
 
-export interface Task {
-  id: number
-  task_name: string
-  status: string
-  item_count: number
-  error_msg: string | null
-  started_at: string | null
-  finished_at: string | null
-}
+export type {
+  McpServerConfig,
+  McpServerForm,
+  ProviderConfig,
+  ProviderForm,
+  SchedulerStatus,
+  SourceKey,
+  Task,
+} from './monitorModel'
 
-export interface SchedulerStatus {
-  running: boolean
-  job_count: number
-  jobs: Array<{ id: string; name: string; next_run_time: string | null }>
-}
-
-export interface PagedResult {
-  items: Task[]
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface ProviderConfig {
-  provider: 'openai' | 'anthropic'
-  base_url: string
-  model_name: string
-  api_key_configured: boolean
-  api_key_masked: string | null
-  updated_at: string | null
-}
-
-export interface ProviderForm {
-  provider: 'openai' | 'anthropic'
-  base_url: string
-  model_name: string
-  api_key: string
-  clear_api_key: boolean
-}
-
-export interface McpToolSummary {
-  name: string
-  description: string
-}
-
-export interface McpServerConfig {
-  id: number
-  server_key: string
-  display_name: string
-  description: string
-  url: string
-  transport: 'streamable_http' | string
-  auth_type: 'none' | 'bearer' | string
-  auth_token_configured: boolean
-  auth_token_masked: string | null
-  enabled: boolean
-  last_test_status: string
-  last_test_message: string
-  last_test_at: string | null
-  tools: McpToolSummary[]
-  created_at: string | null
-  updated_at: string | null
-}
-
-export interface McpServerForm {
-  id: number | null
-  server_key: string
-  display_name: string
-  description: string
-  url: string
-  auth_type: 'none' | 'bearer'
-  auth_token: string
-  clear_auth_token: boolean
-  enabled: boolean
-}
-
-export type SourceKey = 'arxiv' | 'github' | 'hackernews' | 'producthunt' | 'news'
+import type { McpServerConfig, SourceKey } from './monitorModel'
 
 export interface SourceItem {
   key: SourceKey
@@ -85,18 +19,6 @@ export interface SourceItem {
   color: string
   textColor: string
 }
-
-export const createEmptyMcpForm = (): McpServerForm => ({
-  id: null,
-  server_key: '',
-  display_name: '',
-  description: '',
-  url: '',
-  auth_type: 'none',
-  auth_token: '',
-  clear_auth_token: false,
-  enabled: true,
-})
 
 export const MCP_TEST_SCOPE = [
   { title: 'initialize', description: '协商协议版本与客户端信息' },

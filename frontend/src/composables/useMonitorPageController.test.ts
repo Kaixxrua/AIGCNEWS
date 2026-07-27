@@ -1,107 +1,104 @@
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { MonitorApi } from '../services/monitor/monitorApi'
+import { useMonitorPageController } from './useMonitorPageController'
 
-const api = vi.hoisted(() => ({ post: vi.fn() }))
-vi.mock('../services/http/apiClient', () => ({ api }))
+const createApi = (): MonitorApi => ({
+  fetchTasks: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 10 })),
+  fetchSchedulerStatus: vi.fn(async () => ({ running: false, job_count: 0, jobs: [] })),
+  fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), fetchMcpServers: vi.fn(async () => []),
+  saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
+  generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
+})
 
-import { useMonitorController } from './useMonitorController'
-
-const createController = (running = false) => {
-  const errorMsg = ref('old error')
-  const successMsg = ref('old success')
-  const fetchTasks = vi.fn(async () => undefined)
-  const refreshData = vi.fn(async () => undefined)
-  const controller = useMonitorController({
-    isTaskRunning: computed(() => running),
-    errorMsg,
-    successMsg,
-    clearMessages: () => { errorMsg.value = ''; successMsg.value = '' },
-    fetchTasks,
-    refreshData,
-  })
-  return { controller, errorMsg, successMsg, fetchTasks, refreshData }
+const createController = (api = createApi(), isAdmin = true) => {
+  const schedule = vi.fn((callback: () => void, delay: number) => setTimeout(callback, delay))
+  const controller = useMonitorPageController({ isAdmin: computed(() => isAdmin), api, schedule, confirm: () => true })
+  return { api, schedule, controller }
 }
 
-describe('Monitor page action contract', () => {
-  beforeEach(() => {
-    api.post.mockReset()
-    vi.useFakeTimers()
+describe('Monitor page controller contract', () => {
+  beforeEach(() => vi.useFakeTimers())
+
+  it('does not request provider or MCP configuration for non-admin users', async () => {
+    const { api, controller } = createController(createApi(), false)
+    await controller.refreshData()
+    expect(api.fetchTasks).toHaveBeenCalledWith(1, 10)
+    expect(api.fetchSchedulerStatus).toHaveBeenCalledOnce()
+    expect(api.fetchProviderConfig).not.toHaveBeenCalled()
+    expect(api.fetchMcpServers).not.toHaveBeenCalled()
   })
 
-  it('preserves source/date ingestion request shapes and delayed task refreshes', async () => {
-    api.post.mockResolvedValue({ data: {} })
-    const { controller, successMsg, fetchTasks } = createController()
-
+  it('preserves source/date ingestion payload delegation and delayed refreshes', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.ingestSource).mockResolvedValue({})
+    vi.mocked(api.ingestByDate).mockResolvedValue({})
     await controller.ingestSingleSource('github')
-    expect(api.post).toHaveBeenCalledWith('/ops/ingest-source', null, { params: { source: 'github', limit: 20 } })
-    expect(successMsg.value).toContain('github')
+    expect(api.ingestSource).toHaveBeenCalledWith('github')
+    expect(controller.successMsg.value).toContain('github')
     await vi.advanceTimersByTimeAsync(999)
-    expect(fetchTasks).not.toHaveBeenCalled()
+    expect(api.fetchTasks).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
-    expect(fetchTasks).toHaveBeenCalledTimes(1)
+    expect(api.fetchTasks).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(3000)
-    expect(fetchTasks).toHaveBeenCalledTimes(2)
-
+    expect(api.fetchTasks).toHaveBeenCalledTimes(2)
     controller.targetDate.value = '2026-07-20'
     await controller.ingestByDate()
-    expect(api.post).toHaveBeenLastCalledWith('/ops/ingest-by-date', { target_date: '2026-07-20', limit: 30 })
+    expect(api.ingestByDate).toHaveBeenCalledWith('2026-07-20')
   })
 
-  it('preserves normal/forced sync body, guards, messages, and refresh timing', async () => {
-    api.post.mockResolvedValue({ data: {} })
-    const normal = createController()
-    await normal.controller.syncDataNow(false)
-    expect(api.post).toHaveBeenCalledWith('/ops/ingest', { limit: 20, force: false })
-    expect(normal.successMsg.value).toBe('智能同步任务已提交，后台执行中…')
-    await vi.advanceTimersByTimeAsync(1000)
-    expect(normal.fetchTasks).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(2000)
-    expect(normal.fetchTasks).toHaveBeenCalledTimes(2)
-
-    await normal.controller.syncDataNow(true)
-    expect(api.post).toHaveBeenLastCalledWith('/ops/ingest', { limit: 20, force: true })
-    expect(normal.successMsg.value).toBe('强制采集任务已提交，后台执行中…')
-
-    const blocked = createController(true)
-    await blocked.controller.syncDataNow()
-    expect(api.post).toHaveBeenCalledTimes(2)
+  it('preserves normal/forced sync guards, messages, and refresh timing', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.syncData).mockResolvedValue({})
+    await controller.syncDataNow(false)
+    expect(api.syncData).toHaveBeenCalledWith(false)
+    expect(controller.successMsg.value).toBe('智能同步任务已提交，后台执行中…')
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(api.fetchTasks).toHaveBeenCalledTimes(2)
+    await controller.syncDataNow(true)
+    expect(api.syncData).toHaveBeenLastCalledWith(true)
+    expect(controller.successMsg.value).toBe('强制采集任务已提交，后台执行中…')
+    controller.tasks.value = [{ id: 1, task_name: 'running', status: 'running', item_count: 0, error_msg: null, started_at: null, finished_at: null }]
+    await controller.syncDataNow()
+    expect(api.syncData).toHaveBeenCalledTimes(2)
   })
 
-  it('preserves operation endpoints, defaults, error mapping, and loading reset', async () => {
-    api.post.mockResolvedValueOnce({ data: {} }).mockResolvedValueOnce({ data: {} })
-    const { controller, successMsg } = createController()
-    await controller.generateAllBriefings()
-    expect(api.post).toHaveBeenCalledWith('/ops/briefing/generate-all', null, { params: { force_regenerate: true } })
-    expect(successMsg.value).toContain('简报生成任务')
-    await controller.clearDashboardCache()
-    expect(api.post).toHaveBeenLastCalledWith('/ops/cache/clear-dashboard')
+  it('preserves error mapping, validation, loading reset, and destructive refresh order', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.ingestSource).mockRejectedValue({ response: { status: 409 } })
+    await controller.ingestSingleSource('arxiv')
+    expect(controller.errorMsg.value).toBe('当前已有任务正在运行，请等待完成后再试。')
+    expect(controller.ingestingSource.value).toBeNull()
+    controller.targetDate.value = ''
+    await controller.ingestByDate()
+    expect(controller.errorMsg.value).toBe('请选择目标日期')
 
-    api.post.mockRejectedValueOnce({ response: { status: 409 } })
-    const failed = createController()
-    await failed.controller.ingestSingleSource('arxiv')
-    expect(failed.errorMsg.value).toBe('当前已有任务正在运行，请等待完成后再试。')
-    expect(failed.controller.ingestingSource.value).toBeNull()
-
-    failed.controller.targetDate.value = ''
-    await failed.controller.ingestByDate()
-    expect(failed.errorMsg.value).toBe('请选择目标日期')
-  })
-
-  it('preserves destructive clear state, endpoint, response message, and refresh order', async () => {
-    let resolve!: (value: { data: { message: string } }) => void
-    api.post.mockReturnValue(new Promise((done) => { resolve = done }))
-    const { controller, successMsg, refreshData } = createController()
+    let resolve!: (value: { message: string }) => void
+    vi.mocked(api.clearAllData).mockReturnValue(new Promise((done) => { resolve = done }))
     controller.showClearConfirm.value = true
-
     const pending = controller.clearAllData()
     expect(controller.showClearConfirm.value).toBe(false)
     expect(controller.clearing.value).toBe(true)
-    expect(api.post).toHaveBeenCalledWith('/ops/clear-data')
-    expect(refreshData).not.toHaveBeenCalled()
-    resolve({ data: { message: '已删除' } })
+    expect(api.fetchTasks).not.toHaveBeenCalled()
+    resolve({ message: '已删除' })
     await pending
-    expect(successMsg.value).toBe('已删除')
-    expect(refreshData).toHaveBeenCalledOnce()
+    expect(controller.successMsg.value).toBe('已删除')
+    expect(api.fetchTasks).toHaveBeenCalledOnce()
     expect(controller.clearing.value).toBe(false)
+  })
+
+  it('preserves confirmation branch and immutable list ordering', async () => {
+    const api = createApi()
+    const confirm = vi.fn(() => false)
+    const controller = useMonitorPageController({ isAdmin: computed(() => true), api, confirm })
+    const server = { id: 7, server_key: 'docs', display_name: 'Docs', description: '', url: 'https://test', transport: 'streamable_http', auth_type: 'none', auth_token_configured: false, auth_token_masked: null, enabled: true, last_test_status: '', last_test_message: '', last_test_at: null, tools: [], created_at: null, updated_at: null }
+    controller.mcpServers.value = [server]
+    await controller.deleteMcpServer(server)
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(api.deleteMcpServer).not.toHaveBeenCalled()
+    vi.mocked(api.saveMcpServer).mockResolvedValue({ ...server, id: 8 })
+    controller.mcpForm.value = { id: null, server_key: 'new', display_name: 'New', description: '', url: 'https://new', auth_type: 'none', auth_token: '', clear_auth_token: false, enabled: true }
+    await controller.saveMcpServer()
+    expect(controller.mcpServers.value.map(({ id }) => id)).toEqual([8, 7])
   })
 })
