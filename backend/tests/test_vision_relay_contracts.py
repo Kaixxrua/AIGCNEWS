@@ -84,12 +84,12 @@ async def _collect_route_stream(stream) -> list[str]:
 
 class VisionRelayContractsTests(unittest.TestCase):
     def setUp(self) -> None:
-        routes_vision._screenshot_cache.clear()
+        routes_vision._image_cache._entries.clear()
         self.app = FastAPI()
         self.app.include_router(routes_vision.router, prefix="/api")
 
     def tearDown(self) -> None:
-        routes_vision._screenshot_cache.clear()
+        routes_vision._image_cache._entries.clear()
 
     def authenticated_client(self, user: dict | None = None) -> TestClient:
         authenticated = user or {"user_id": 7}
@@ -114,7 +114,7 @@ class VisionRelayContractsTests(unittest.TestCase):
         self.app.dependency_overrides[RequireUser] = lambda: auth_calls.append("auth") or {
             "user_id": 7
         }
-        with patch.object(routes_vision.uuid, "uuid4", return_value="fixed-id"):
+        with patch.object(routes_vision._image_cache, "_id_factory", return_value="fixed-id"):
             response = TestClient(self.app).post(
                 "/api/chat/upload-screenshot",
                 json={"image_base64": "abcdefghij"},
@@ -164,15 +164,15 @@ class VisionRelayContractsTests(unittest.TestCase):
         self.assertEqual(relay.history, [])
 
     def test_upload_strips_data_uri_and_freezes_uuid_mime_ttl_and_write_eviction(self) -> None:
-        routes_vision._screenshot_cache.update(
+        routes_vision._image_cache._entries.update(
             {
                 "expired": ("old", "image/gif", 199.999),
                 "boundary": ("edge", "image/png", 200.0),
             }
         )
         with (
-            patch.object(routes_vision.uuid, "uuid4", return_value="00000000-0000-0000-0000-000000000016"),
-            patch.object(routes_vision.time, "time", return_value=200.0),
+            patch.object(routes_vision._image_cache, "_id_factory", return_value="00000000-0000-0000-0000-000000000016"),
+            patch.object(routes_vision._image_cache, "_clock", return_value=200.0),
         ):
             response = self.authenticated_client().post(
                 "/api/chat/upload-screenshot",
@@ -187,9 +187,9 @@ class VisionRelayContractsTests(unittest.TestCase):
             response.json(),
             {"image_id": "00000000-0000-0000-0000-000000000016"},
         )
-        self.assertNotIn("expired", routes_vision._screenshot_cache)
+        self.assertNotIn("expired", routes_vision._image_cache._entries)
         self.assertEqual(
-            routes_vision._screenshot_cache,
+            routes_vision._image_cache._entries,
             {
                 "boundary": ("edge", "image/png", 200.0),
                 "00000000-0000-0000-0000-000000000016": (
@@ -201,12 +201,12 @@ class VisionRelayContractsTests(unittest.TestCase):
         )
 
     def test_read_expiry_boundary_and_expired_error_are_exact(self) -> None:
-        routes_vision._screenshot_cache["boundary"] = ("image", "image/png", 100.0)
+        routes_vision._image_cache._entries["boundary"] = ("image", "image/png", 100.0)
         provider = FakeProvider(
             [FakeProviderResponse(lines=["data: [DONE]"])]
         )
         with (
-            patch.object(routes_vision.time, "time", return_value=100.0),
+            patch.object(routes_vision._image_cache, "_clock", return_value=100.0),
             patch.object(routes_vision.httpx, "AsyncClient", provider.client_type),
         ):
             response = self.authenticated_client().post(
@@ -218,10 +218,10 @@ class VisionRelayContractsTests(unittest.TestCase):
             parse_sse(response.text),
             [{"type": "status", "data": "🔍 正在分析图像内容…"}, "[DONE]"],
         )
-        self.assertIn("boundary", routes_vision._screenshot_cache)
+        self.assertIn("boundary", routes_vision._image_cache._entries)
 
-        routes_vision._screenshot_cache["expired"] = ("image", "image/png", 100.0)
-        with patch.object(routes_vision.time, "time", return_value=100.0001):
+        routes_vision._image_cache._entries["expired"] = ("image", "image/png", 100.0)
+        with patch.object(routes_vision._image_cache, "_clock", return_value=100.0001):
             expired = self.authenticated_client().post(
                 "/api/chat/vision-relay",
                 json={"question": "过期", "image_id": "expired"},
@@ -234,10 +234,10 @@ class VisionRelayContractsTests(unittest.TestCase):
                 "data: [DONE]\n\n"
             ).encode(),
         )
-        self.assertNotIn("expired", routes_vision._screenshot_cache)
+        self.assertNotIn("expired", routes_vision._image_cache._entries)
 
     def test_provider_request_payload_history_system_model_key_and_url_are_exact(self) -> None:
-        routes_vision._screenshot_cache["image-id"] = (
+        routes_vision._image_cache._entries["image-id"] = (
             "raw-base64",
             "image/webp",
             999.0,
@@ -263,7 +263,7 @@ class VisionRelayContractsTests(unittest.TestCase):
             ]
         )
         with (
-            patch.object(routes_vision.time, "time", return_value=100.0),
+            patch.object(routes_vision._image_cache, "_clock", return_value=100.0),
             patch.object(routes_vision.settings, "siliconflow_api_key", "test-key"),
             patch.object(routes_vision.httpx, "AsyncClient", provider.client_type),
         ):
@@ -332,13 +332,13 @@ class VisionRelayContractsTests(unittest.TestCase):
         self.assertEqual(response.text.count("data: [DONE]\n\n"), 1)
 
     def test_non_rate_failures_retry_twice_with_exponential_sleeps(self) -> None:
-        routes_vision._screenshot_cache["image-id"] = ("image", "image/png", 999.0)
+        routes_vision._image_cache._entries["image-id"] = ("image", "image/png", 999.0)
         provider = FakeProvider(
             [RuntimeError("provider busy"), RuntimeError("provider busy"), FakeProviderResponse()]
         )
         sleep = AsyncMock()
         with (
-            patch.object(routes_vision.time, "time", return_value=100.0),
+            patch.object(routes_vision._image_cache, "_clock", return_value=100.0),
             patch.object(routes_vision.httpx, "AsyncClient", provider.client_type),
             patch.object(routes_vision.asyncio, "sleep", sleep),
         ):
@@ -361,7 +361,7 @@ class VisionRelayContractsTests(unittest.TestCase):
         )
 
     def test_rate_limit_classification_retries_and_terminal_error_are_exact(self) -> None:
-        routes_vision._screenshot_cache["image-id"] = ("image", "image/png", 999.0)
+        routes_vision._image_cache._entries["image-id"] = ("image", "image/png", 999.0)
         provider = FakeProvider(
             [
                 FakeProviderResponse(status_code=429, body=b"slow down"),
@@ -371,7 +371,7 @@ class VisionRelayContractsTests(unittest.TestCase):
         )
         sleep = AsyncMock()
         with (
-            patch.object(routes_vision.time, "time", return_value=100.0),
+            patch.object(routes_vision._image_cache, "_clock", return_value=100.0),
             patch.object(routes_vision.httpx, "AsyncClient", provider.client_type),
             patch.object(routes_vision.asyncio, "sleep", sleep),
             patch.object(routes_vision.traceback, "print_exc"),
@@ -431,7 +431,7 @@ class VisionRelayContractsTests(unittest.TestCase):
         self.assertTrue(callable(captured["provider_stream"]))
 
     def test_streaming_response_headers_content_type_and_exact_bytes(self) -> None:
-        routes_vision._screenshot_cache["image-id"] = ("image", "image/png", 999.0)
+        routes_vision._image_cache._entries["image-id"] = ("image", "image/png", 999.0)
         provider = FakeProvider(
             [
                 FakeProviderResponse(
@@ -440,7 +440,7 @@ class VisionRelayContractsTests(unittest.TestCase):
             ]
         )
         with (
-            patch.object(routes_vision.time, "time", return_value=100.0),
+            patch.object(routes_vision._image_cache, "_clock", return_value=100.0),
             patch.object(routes_vision.httpx, "AsyncClient", provider.client_type),
         ):
             response = self.authenticated_client().post(

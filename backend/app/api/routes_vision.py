@@ -26,10 +26,8 @@ POST /api/chat/vision-relay
 from __future__ import annotations
 
 import asyncio
-import time
 import traceback
-import uuid
-from typing import AsyncGenerator, Dict, List, Optional, Tuple
+from typing import AsyncGenerator, List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends
@@ -44,28 +42,10 @@ from backend.app.services.vision.provider import VISION_SYSTEM, VisionProvider
 
 router = APIRouter()
 
-# ---------------------------------------------------------------------------
-# 常量
-# ---------------------------------------------------------------------------
-
-_SCREENSHOT_TTL = 300  # 5 分钟
-
 # 兼容既有模块内访问；消息载荷由 provider 边界持有。
 _VISION_SYSTEM = VISION_SYSTEM
 
-# ---------------------------------------------------------------------------
-# 内存截图缓存  { image_id: (base64_str, mime_type, expire_ts) }
-# ---------------------------------------------------------------------------
-
-_screenshot_cache: Dict[str, Tuple[str, str, float]] = {}
-_cache_lock = asyncio.Lock()
-_image_cache = ScreenshotImageCache(
-    ttl_seconds=_SCREENSHOT_TTL,
-    clock=lambda: time.time(),
-    id_factory=lambda: uuid.uuid4(),
-    entries=_screenshot_cache,
-    lock=_cache_lock,
-)
+_image_cache = ScreenshotImageCache()
 
 
 # ---------------------------------------------------------------------------
