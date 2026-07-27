@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -22,43 +21,20 @@ from fastapi.responses import StreamingResponse
 from backend.app.api.dependencies import get_document_repository
 from backend.app.repositories.document_repository import DocumentSearchReader
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.services.papers.arxiv_identity import extract_arxiv_id
+from backend.app.services.papers.presentation import project_pdf_media_url, safe_document
 
 router = APIRouter()
 
 
 def _enrich_pdf_url(doc: Dict[str, Any], request: Request) -> Dict[str, Any]:
-    """
-    将 local_pdf_path 转成完整可访问的 pdf_media_url。
-    若无本地文件，对 arxiv 论文 fallback 到代理 URL（/api/papers/{id}/pdf）。
-    通过 X-Forwarded-Proto 头感知真实协议（HTTPS），避免 Mixed Content 问题。
-    """
-    local_path = doc.get("local_pdf_path") or ""
-    # 读取 Nginx 传入的真实协议头，默认 http
-    forwarded_proto = request.headers.get("x-forwarded-proto", "")
-    base_url = str(request.base_url).rstrip("/")
-    if forwarded_proto:
-        # 将 base_url 中的协议替换为真实协议
-        base_url = base_url.replace("http://", f"{forwarded_proto}://", 1)
-    if local_path:
-        filename = os.path.basename(local_path)
-        doc["pdf_media_url"] = f"{base_url}/api/media/papers/{filename}"
-    elif doc.get("source") == "arxiv" and doc.get("id"):
-        # 无本地缓存时使用后端代理 → 前端 PDF.js 直接请求此 URL
-        doc["pdf_media_url"] = f"{base_url}/api/papers/{doc['id']}/pdf"
-    else:
-        doc["pdf_media_url"] = None
-    return doc
+    """Compatibility wrapper for the extracted Papers presentation policy."""
+    return project_pdf_media_url(doc, request)
 
 
 def _safe_doc(row: Dict[str, Any]) -> Dict[str, Any]:
-    """统一过滤掉不可序列化字段，返回安全的 dict。"""
-    result: Dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, (str, int, float, bool, type(None))):
-            result[k] = v
-        else:
-            result[k] = str(v) if v is not None else None
-    return result
+    """Compatibility wrapper for the extracted safe serialization policy."""
+    return safe_document(row)
 
 
 # ---------------------------------------------------------------------------
@@ -202,13 +178,9 @@ async def get_paper_detail(paper_id: str, request: Request):
 # GET /api/papers/{paper_id}/pdf  — arxiv PDF 代理（解决前端 CORS）
 # ---------------------------------------------------------------------------
 
-_ARXIV_ID_RE = re.compile(r"(\d{4}\.\d{4,5}(?:v\d+)?)")
-
-
 def _extract_arxiv_id(url_or_id: str) -> Optional[str]:
-    """从 URL 或字符串中提取 arxiv id，如 2603.12255。"""
-    m = _ARXIV_ID_RE.search(url_or_id or "")
-    return m.group(1) if m else None
+    """Compatibility wrapper for the extracted Arxiv identity policy."""
+    return extract_arxiv_id(url_or_id)
 
 
 @router.get("/papers/{paper_id}/pdf")
