@@ -210,14 +210,6 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(maximum, 1)
 
-    def test_two_hour_job_avoids_daily_pipeline_hour(self) -> None:
-        config = next(
-            item
-            for item in scheduler.SCHEDULE_CONFIG
-            if item["id"] == "github_project_metrics_refresh"
-        )
-        self.assertEqual(config["cron"], {"hour": "1-23/2", "minute": 17})
-
 
 if __name__ == "__main__":
     unittest.main()

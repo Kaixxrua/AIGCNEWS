@@ -7,7 +7,7 @@ from __future__ import annotations
 
 设计原则：
   - 每个数据源独立 APScheduler Job，互不影响
-  - 通过 SCHEDULE_CONFIG 集中管理所有调度配置
+  - 通过不可变任务描述符集中管理所有调度配置
   - max_instances=1 防止同源 job 重叠执行
   - misfire_grace_time=7200 确保服务重启后追赶执行
   - 保留 run_smart_ingestion() 兼容入口：仍可手动调用全量采集
@@ -36,51 +36,6 @@ from backend.app.core.scheduler_registry import (
 )
 
 logger = logging.getLogger(__name__)
-
-SCHEDULE_CONFIG: List[Dict[str, Any]] = [
-    {
-        "id": "arxiv_papers",
-        "source": "arxiv",
-        "cron": {"minute": 1},
-        "desc": "HuggingFace Papers 论文采集",
-    },
-    {
-        "id": "github_trending",
-        "source": "github",
-        "cron": {"minute": 2},
-        "desc": "GitHub Trending 热榜采集",
-    },
-    {
-        "id": "news_techmeme",
-        "source": "news",
-        "cron": {"minute": 3},
-        "desc": "Techmeme 科技新闻采集",
-    },
-    {
-        "id": "producthunt",
-        "source": "producthunt",
-        "cron": {"minute": 4},
-        "desc": "Product Hunt 新品采集",
-    },
-    {
-        "id": "hackernews",
-        "source": "hackernews",
-        "cron": {"minute": 5},
-        "desc": "Hacker News AI 热帖采集",
-    },
-    {
-        "id": "github_project_daily_pipeline",
-        "source": "github_project_daily_pipeline",
-        "cron": {"hour": 2, "minute": 0},
-        "desc": "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",
-    },
-    {
-        "id": "github_project_metrics_refresh",
-        "source": "github_project_metrics_refresh",
-        "cron": {"hour": "1-23/2", "minute": 17},
-        "desc": "GitHub 项目库当天指标每两小时刷新",
-    },
-]
 
 _scheduler: AsyncIOScheduler | None = None
 _github_job_lock: asyncio.Lock | None = None
