@@ -23,12 +23,14 @@ class ScreenshotImageCache:
         ttl_seconds: int = SCREENSHOT_TTL_SECONDS,
         clock: Callable[[], float] = time.time,
         id_factory: Callable[[], object] = uuid.uuid4,
+        entries: Dict[str, ScreenshotEntry] | None = None,
+        lock: asyncio.Lock | None = None,
     ) -> None:
         self._ttl_seconds = ttl_seconds
         self._clock = clock
         self._id_factory = id_factory
-        self._entries: Dict[str, ScreenshotEntry] = {}
-        self._lock = asyncio.Lock()
+        self._entries = entries if entries is not None else {}
+        self._lock = lock if lock is not None else asyncio.Lock()
 
     async def put(self, image_base64: str, mime_type: str) -> str:
         image_id = str(self._id_factory())

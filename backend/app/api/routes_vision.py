@@ -39,6 +39,7 @@ from starlette.responses import StreamingResponse
 from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
 from backend.app.services.vision import relay as vision_relay_service
+from backend.app.services.vision.image_cache import ScreenshotImageCache
 from backend.app.services.vision.provider import VISION_SYSTEM, VisionProvider
 
 router = APIRouter()
@@ -58,14 +59,13 @@ _VISION_SYSTEM = VISION_SYSTEM
 
 _screenshot_cache: Dict[str, Tuple[str, str, float]] = {}
 _cache_lock = asyncio.Lock()
-
-
-async def _evict_expired() -> None:
-    """清理过期条目（每次写入时顺手清理）。"""
-    now = time.time()
-    expired = [k for k, (_, _, ts) in _screenshot_cache.items() if ts < now]
-    for k in expired:
-        del _screenshot_cache[k]
+_image_cache = ScreenshotImageCache(
+    ttl_seconds=_SCREENSHOT_TTL,
+    clock=lambda: time.time(),
+    id_factory=lambda: uuid.uuid4(),
+    entries=_screenshot_cache,
+    lock=_cache_lock,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -114,17 +114,7 @@ async def upload_screenshot(
     """
     接收截图 base64，存入内存缓存（TTL 5 分钟），返回 image_id。
     """
-    image_id = str(uuid.uuid4())
-    # 清理可能存在的 data URI 前缀（前端有时会带上 data:image/...;base64, ）
-    b64 = request.image_base64
-    if b64.startswith("data:"):
-        b64 = b64.split(",", 1)[-1]
-    expire_ts = time.time() + _SCREENSHOT_TTL
-
-    async with _cache_lock:
-        await _evict_expired()
-        _screenshot_cache[image_id] = (b64, request.mime_type, expire_ts)
-
+    image_id = await _image_cache.put(request.image_base64, request.mime_type)
     return UploadScreenshotResponse(image_id=image_id)
 
 
@@ -136,17 +126,6 @@ async def upload_screenshot(
 async def _vision_relay_stream(req: VisionRelayRequest) -> AsyncGenerator[str, None]:
     """兼容路由私有入口，将旧 globals 晚绑定转发给 relay 协调边界。"""
 
-    async def load_image(image_id: str) -> Optional[Tuple[str, str]]:
-        async with _cache_lock:
-            entry = _screenshot_cache.get(image_id)
-
-        if entry is None or time.time() > entry[2]:
-            if entry is not None:
-                async with _cache_lock:
-                    _screenshot_cache.pop(image_id, None)
-            return None
-        return entry[0], entry[1]
-
     provider = VisionProvider(
         api_key=settings.siliconflow_api_key,
         client_factory=httpx.AsyncClient,
@@ -157,7 +136,7 @@ async def _vision_relay_stream(req: VisionRelayRequest) -> AsyncGenerator[str, N
         question=req.question,
         paper_id=req.paper_id,
         history=req.history,
-        image_loader=load_image,
+        image_loader=_image_cache.get,
         provider_stream=provider.stream,
         encode_event=_sse,
         report_error=traceback.print_exc,
