@@ -8,6 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
+from backend.app.services.email.message_renderer import EmailMessageRenderer
+from backend.app.services.email.otp_store import RedisOtpStore
+from backend.app.services.email.smtp_transport import SmtpDeliveryError, SmtpTransport
 from backend.app.services.email_service import EmailService, build_email_service
 
 
@@ -354,6 +357,97 @@ class EmailDeliveryContractTests(unittest.IsolatedAsyncioTestCase):
             html_context.exception.detail,
             "简报邮件发送失败（TimeoutError），请检查 SMTP 配置后重试",
         )
+
+
+class ExtractedEmailBoundaryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_otp_store_matches_legacy_sequence_and_attempt_policy(self) -> None:
+        redis = FakeRedis()
+        store = RedisOtpStore(redis)
+
+        await store.store("USER@example.com", "123456", purpose="password_reset")
+        for _ in range(5):
+            self.assertFalse(
+                await store.verify(
+                    "USER@example.com",
+                    "000000",
+                    purpose="password_reset",
+                    consume=True,
+                )
+            )
+
+        self.assertEqual(
+            redis.calls[:4],
+            [
+                ("get", "email:reset:lock:user@example.com"),
+                ("set", "email:reset:code:user@example.com", "123456", 300),
+                ("set", "email:reset:lock:user@example.com", "1", 60),
+                ("delete", "email:reset:attempts:user@example.com"),
+            ],
+        )
+        self.assertEqual(
+            redis.calls[-1],
+            (
+                "delete",
+                "email:reset:code:user@example.com",
+                "email:reset:attempts:user@example.com",
+            ),
+        )
+
+    async def test_renderer_matches_legacy_private_helpers(self) -> None:
+        legacy = EmailService(None)
+        renderer = EmailMessageRenderer()
+        content = "# <Title>\n- **bold**\n[link](https://example.test/?a=1&b=2)"
+
+        self.assertEqual(
+            renderer.registration_otp_body("123456"),
+            legacy._build_email_body("123456"),
+        )
+        self.assertEqual(
+            renderer.password_reset_otp_body("654321"),
+            legacy._build_password_reset_email_body("654321"),
+        )
+        self.assertEqual(
+            renderer.briefing_html(content, "综合简报", "日报", "2026-07-27"),
+            legacy._build_briefing_html(
+                content, "综合简报", "日报", "2026-07-27"
+            ),
+        )
+
+    async def test_smtp_transport_preserves_mime_tls_credentials_and_error_type(self) -> None:
+        transport = SmtpTransport(
+            host="smtp.example.test",
+            port=465,
+            username="",
+            password="",
+            from_email="sender@example.test",
+            from_name="AIGC Test",
+            use_tls=False,
+        )
+
+        with patch("aiosmtplib.send", new_callable=AsyncMock) as send:
+            await transport.send_html("to@example.test", "subject", "<p>body</p>")
+
+        message = send.await_args.args[0]
+        self.assertEqual(message.get_content_type(), "text/html")
+        self.assertEqual(
+            send.await_args.kwargs,
+            {
+                "hostname": "smtp.example.test",
+                "port": 465,
+                "username": None,
+                "password": None,
+                "use_tls": True,
+                "start_tls": False,
+            },
+        )
+
+        with patch(
+            "aiosmtplib.send", new_callable=AsyncMock, side_effect=TimeoutError("boom")
+        ):
+            with self.assertRaises(SmtpDeliveryError) as context:
+                await transport.send_plain("to@example.test", "subject", "body")
+        self.assertEqual(context.exception.error_type, "TimeoutError")
+        self.assertIsInstance(context.exception.__cause__, TimeoutError)
 
 
 class EmailFactoryContractTests(unittest.TestCase):
