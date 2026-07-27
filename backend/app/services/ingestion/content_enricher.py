@@ -31,7 +31,12 @@ import time
 from typing import Any, Dict, List, Optional
 
 import httpx
-from bs4 import BeautifulSoup
+
+from backend.app.services.ingestion.content_fetch_port import (
+    DefaultGitHubReadmeFetcher,
+    DefaultPageContentFetcher,
+    clean_html_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,50 +60,13 @@ _MAX_CONTENT_CHARS = 40_000
 
 def _clean_html_text(html: str) -> str:
     """从 HTML 提取可读纯文本。"""
-    soup = BeautifulSoup(html, "html.parser")
-    # 移除脚本、样式、导航等噪音标签
-    for tag in soup(
-        [
-            "script",
-            "style",
-            "nav",
-            "header",
-            "footer",
-            "aside",
-            "form",
-            "button",
-            "noscript",
-            "iframe",
-        ]
-    ):
-        tag.decompose()
-    text = soup.get_text(separator="\n")
-    # 折叠多余空白行
-    lines = [ln.strip() for ln in text.splitlines()]
-    lines = [ln for ln in lines if ln]
-    return "\n".join(lines)
+    return clean_html_text(html)
 
 
 async def _fetch_url_text(url: str, timeout: int = _HTTP_TIMEOUT) -> str:
     """抓取 URL 页面并返回纯文本，失败返回空字符串。"""
-    if not url or not url.startswith("http"):
-        return ""
-    try:
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            follow_redirects=True,
-            headers=_HEADERS,
-            trust_env=True,
-        ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            ct = resp.headers.get("content-type", "")
-            if "html" not in ct and "text" not in ct:
-                return ""
-            return _clean_html_text(resp.text)
-    except Exception as exc:
-        logger.debug("[Enricher] 抓取页面失败 %s: %s", url, exc)
-        return ""
+    fetcher = DefaultPageContentFetcher(headers=_HEADERS, clean_html=_clean_html_text)
+    return await fetcher.fetch(url, timeout)
 
 
 def _fetch_pdf_text(pdf_url: str, timeout: int = 30) -> str:
@@ -144,26 +112,7 @@ def _fetch_pdf_text(pdf_url: str, timeout: int = 30) -> str:
 
 async def _fetch_github_readme(full_name: str) -> str:
     """通过共享 GitHub README 抓取器获取清洗后的文本。"""
-    if not full_name or "/" not in full_name:
-        return ""
-    try:
-        from backend.app.services.ingestion.source_github import (
-            fetch_github_readme_snapshot,
-        )
-
-        def fetch() -> str:
-            with httpx.Client(timeout=15, follow_redirects=True, trust_env=True) as client:
-                snapshot = fetch_github_readme_snapshot(
-                    full_name,
-                    client,
-                    max_chars=20_000,
-                )
-                return snapshot.text if snapshot.status == "succeeded" else ""
-
-        return await asyncio.to_thread(fetch)
-    except Exception as exc:
-        logger.debug("[Enricher] GitHub README 抓取失败 %s: %s", full_name, exc)
-        return ""
+    return await DefaultGitHubReadmeFetcher().fetch(full_name)
 
 
 # ── 各源 Enricher ──────────────────────────────────────────────────────────────
