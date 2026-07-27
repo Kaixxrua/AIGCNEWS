@@ -10,6 +10,7 @@ import pytest
 
 from backend.app.services.ingestion import producthunt_coordinator as coordinator
 from backend.app.services.ingestion import producthunt_parser as parser
+from backend.app.services.ingestion import producthunt_policy as policy
 from backend.app.services.ingestion import source_producthunt as ph
 
 
@@ -239,8 +240,35 @@ def test_facade_transport_and_api_wrappers_forward_at_call_time(
     assert result[0]["votes"] == 7
 
 
-def test_public_async_entry_is_not_switched_to_coordinator() -> None:
-    source = inspect.getsource(ph.fetch_producthunt_products_async)
-    assert "producthunt_coordinator" not in source
-    assert "await _fetch_via_api(" in source
-    assert "await _fetch_html(PH_HOME_URL)" in source
+def test_public_async_entry_delegates_to_coordinator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    expected = [{"title": "from-coordinator"}]
+
+    async def coordinated_fetch(**kwargs: Any) -> list[dict[str, Any]]:
+        calls.append(kwargs)
+        return expected
+
+    monkeypatch.setattr(coordinator, "fetch_producthunt_products", coordinated_fetch)
+
+    result = asyncio.run(
+        ph.fetch_producthunt_products_async(3, " WEEKLY ", "2026-07-20")
+    )
+
+    assert result is expected
+    assert len(calls) == 1
+    call = calls[0]
+    assert {
+        "limit": call["limit"],
+        "period": call["period"],
+        "target_date": call["target_date"],
+    } == {"limit": 3, "period": " WEEKLY ", "target_date": "2026-07-20"}
+    assert call["normalize_period"] is policy.normalize_period
+    assert call["resolve_anchor"] is ph._resolve_anchor
+    assert call["api_channel"] is ph._fetch_via_api
+    assert call["html_transport"] is ph._fetch_html
+    assert call["apollo_parser"] is ph._extract_posts_from_html
+    assert "producthunt_coordinator" in inspect.getsource(
+        ph.fetch_producthunt_products_async
+    )

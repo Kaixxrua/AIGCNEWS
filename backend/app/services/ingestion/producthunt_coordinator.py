@@ -31,6 +31,10 @@ ApiProjection = Callable[
     [List[Dict[str, Any]], str, date, str, str],
     Optional[List[Dict[str, Any]]],
 ]
+ApiChannel = Callable[
+    [int, str, date, str, str],
+    Awaitable[Optional[List[Dict[str, Any]]]],
+]
 HtmlProjection = Callable[
     [List[Dict[str, Any]], int, str, date, str, str],
     List[Dict[str, Any]],
@@ -50,6 +54,7 @@ async def fetch_producthunt_products(
     resolve_anchor: AnchorPolicy = producthunt_policy.resolve_anchor,
     crawl_date: CrawlDatePolicy = producthunt_policy.crawl_date_cst,
     api_transport: ApiEdgesTransport = fetch_api_edges,
+    api_channel: Optional[ApiChannel] = None,
     html_transport: HtmlTransport = fetch_html,
     apollo_parser: ApolloParser = extract_posts_from_html,
     api_projection: ApiProjection = project_api_items,
@@ -66,20 +71,30 @@ async def fetch_producthunt_products(
         "[ProductHunt] 开始抓取 period=%s anchor=%s", normalized_period, anchor
     )
 
-    edges = await api_transport(limit)
-    if edges:
-        api_results = api_projection(
-            edges,
+    if api_channel is not None:
+        api_results = await api_channel(
+            limit,
             normalized_period,
             anchor,
             source_channel,
             crawl_date_str,
         )
-        if api_results:
-            logger.info(
-                "[ProductHunt] API v2 通道成功，返回 %d 条", len(api_results)
+    else:
+        edges = await api_transport(limit)
+        api_results = (
+            api_projection(
+                edges,
+                normalized_period,
+                anchor,
+                source_channel,
+                crawl_date_str,
             )
-            return api_results
+            if edges
+            else None
+        )
+    if api_results:
+        logger.info("[ProductHunt] API v2 通道成功，返回 %d 条", len(api_results))
+        return api_results
 
     logger.info("[ProductHunt] API v2 不可用，回退到 HTML 解析...")
     html = await html_transport(PH_HOME_URL)

@@ -26,7 +26,9 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from backend.app.services.ingestion import (
+    producthunt_coordinator,
     producthunt_parser,
+    producthunt_policy,
     producthunt_projection,
     producthunt_transport,
 )
@@ -76,6 +78,17 @@ _BROWSER_HEADERS = {
 def _today_cst() -> date:
     """返回 UTC+8 当前日期。"""
     return datetime.now(_CST).date()
+
+
+def _resolve_anchor(target_date: Optional[str]) -> date:
+    """兼容旧 datetime monkeypatch 点，解析抓取锚点日期。"""
+    anchor = _today_cst()
+    if target_date:
+        try:
+            anchor = date.fromisoformat(target_date)
+        except ValueError:
+            logger.warning("[ProductHunt] target_date 解析失败: %s", target_date)
+    return anchor
 
 
 def _parse_featured_at(feat_str: str) -> Optional[date]:
@@ -221,204 +234,18 @@ async def fetch_producthunt_products_async(
     period: str = "daily",
     target_date: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """获取 Product Hunt 热门产品列表（含真实投票数）。
-
-    三通道策略（按优先级）：
-      1. PH API v2（需要 PRODUCTHUNT_API_TOKEN，不受 Cloudflare 限制）
-      2. curl_cffi + Apollo SSR 解析（绕过 Cloudflare）
-      3. httpx + 浏览器 Headers（最后手段）
-
-    Args:
-        limit: 最多返回条数
-        period: daily / weekly / monthly
-        target_date: 可选 YYYY-MM-DD（不传默认 UTC+8 今天）
-
-    Returns:
-        标准化 product dict 列表，兼容 pipeline._to_documents() 格式。
-    """
-    period = (period or "daily").lower().strip()
-
-    # anchor 日期（UTC+8）
-    anchor = _today_cst()
-    if target_date:
-        try:
-            anchor = date.fromisoformat(target_date)
-        except ValueError:
-            logger.warning("[ProductHunt] target_date 解析失败: %s", target_date)
-
-    # 爬取时间（UTC+8）
-    crawl_dt = datetime.now(_CST)
-    crawl_date_str = crawl_dt.date().isoformat()
-
-    source_channel = f"producthunt_{period}_html"
-
-    logger.info("[ProductHunt] 开始抓取 period=%s anchor=%s", period, anchor)
-
-    # ── 通道 1: PH API v2（首选，需要 token） ──
-    api_results = await _fetch_via_api(
-        limit,
-        period,
-        anchor,
-        source_channel,
-        crawl_date_str,
+    """通过分层协调器获取 Product Hunt 热门产品列表。"""
+    return await producthunt_coordinator.fetch_producthunt_products(
+        limit=limit,
+        period=period,
+        target_date=target_date,
+        normalize_period=producthunt_policy.normalize_period,
+        resolve_anchor=_resolve_anchor,
+        crawl_date=lambda: datetime.now(_CST).date().isoformat(),
+        api_channel=_fetch_via_api,
+        html_transport=_fetch_html,
+        apollo_parser=_extract_posts_from_html,
     )
-    if api_results:
-        logger.info("[ProductHunt] API v2 通道成功，返回 %d 条", len(api_results))
-        return api_results
-
-    logger.info("[ProductHunt] API v2 不可用，回退到 HTML 解析...")
-
-    # ── 通道 2+3: HTML 解析（curl_cffi + httpx fallback） ──
-    html = await _fetch_html(PH_HOME_URL)
-    if not html:
-        logger.error(
-            "[ProductHunt] 页面抓取完全失败，返回空列表。"
-            "建议配置 PRODUCTHUNT_API_TOKEN 以绕过 Cloudflare。"
-            "申请地址：https://www.producthunt.com/v2/oauth/applications"
-        )
-        return []
-
-    # 提取所有 Post
-    all_posts = _extract_posts_from_html(html)
-    if not all_posts:
-        logger.error(
-            "[ProductHunt] 未提取到任何 Post 对象，返回空列表。"
-            "页面长度=%d，请检查页面内容是否为 Cloudflare 挑战页面。",
-            len(html),
-        )
-        return []
-
-    # 按周期筛选 + 构造标准字段
-    results: List[Dict[str, Any]] = []
-    for post in all_posts:
-        if len(results) >= limit:
-            break
-
-        featured_at_str = post.get("featuredAt", "")
-        feat_date = _parse_featured_at(featured_at_str)
-
-        if not _within_period(feat_date, period, anchor):
-            continue
-
-        name = (post.get("name") or "").strip()
-        tagline = (post.get("tagline") or "").strip()
-        if not name:
-            continue
-
-        slug = post.get("slug", "")
-        url = f"https://www.producthunt.com/posts/{slug}" if slug else ""
-
-        launch_score = int(post.get("launchDayScore") or 0)
-        latest_score = int(post.get("latestScore") or 0)
-        votes = max(launch_score, latest_score)
-
-        daily_rank = str(post.get("dailyRank") or "")
-        weekly_rank = str(post.get("weeklyRank") or "")
-        monthly_rank = str(post.get("monthlyRank") or "")
-
-        # 提取话题标签
-        topics: List[str] = []
-        topics_data = post.get("topics") or {}
-        if isinstance(topics_data, dict):
-            for edge in topics_data.get("edges", []):
-                node = edge.get("node", {})
-                if isinstance(node, dict) and node.get("name"):
-                    topics.append(node["name"])
-
-        # published_date 使用 UTC+8 爬取日期，保证在中国时区下日期匹配
-        # featuredAt 保留在 abstract 补充信息中
-        feat_date_str = feat_date.isoformat() if feat_date else crawl_date_str
-
-        # 如果 feat_date 是昨天（PST），published_date 用今天（CST）
-        # 如果 feat_date 更早（weekly/monthly），保留原始日期
-        if period == "daily" and feat_date and feat_date < anchor:
-            pub_date = anchor.isoformat()
-        else:
-            pub_date = feat_date_str or crawl_date_str
-
-        abstract = tagline
-        if topics:
-            abstract = f"{tagline} [{', '.join(topics[:3])}]"
-
-        item: Dict[str, Any] = {
-            "title": name,
-            "abstract": abstract,
-            "summary": abstract,
-            "url": url,
-            "votes": votes,
-            "raw_score": float(votes),
-            "score": float(votes),
-            "source": "producthunt",
-            "source_channel": source_channel,
-            "channel": source_channel,
-            "published_date": pub_date,
-            "tags": ["ProductHunt", period] + topics[:5],
-            "pdf_url": "",
-            # 保留原始字段，供调试
-            "featured_at": featured_at_str,
-            "daily_rank": daily_rank,
-            "weekly_rank": weekly_rank,
-            "monthly_rank": monthly_rank,
-        }
-        results.append(item)
-
-    logger.info(
-        "[ProductHunt] period=%s anchor=%s 筛选出 %d 条产品（共 %d Post）",
-        period,
-        anchor,
-        len(results),
-        len(all_posts),
-    )
-
-    # 如果当日无数据，放宽为最近数据（保证页面不空）
-    if not results:
-        logger.warning(
-            "[ProductHunt] period=%s 无符合条件的产品，使用所有抓取数据（最多%d条）",
-            period,
-            limit,
-        )
-        for post in all_posts[:limit]:
-            name = (post.get("name") or "").strip()
-            tagline = (post.get("tagline") or "").strip()
-            if not name:
-                continue
-            slug = post.get("slug", "")
-            url = f"https://www.producthunt.com/posts/{slug}" if slug else ""
-            launch_score = int(post.get("launchDayScore") or 0)
-            latest_score = int(post.get("latestScore") or 0)
-            votes = max(launch_score, latest_score)
-            topics = []
-            topics_data = post.get("topics") or {}
-            if isinstance(topics_data, dict):
-                for edge in topics_data.get("edges", []):
-                    node = edge.get("node", {})
-                    if isinstance(node, dict) and node.get("name"):
-                        topics.append(node["name"])
-            item = {
-                "title": name,
-                "abstract": (
-                    f"{tagline} [{', '.join(topics[:3])}]" if topics else tagline
-                ),
-                "summary": tagline,
-                "url": url,
-                "votes": votes,
-                "raw_score": float(votes),
-                "score": float(votes),
-                "source": "producthunt",
-                "source_channel": source_channel,
-                "channel": source_channel,
-                "published_date": crawl_date_str,
-                "tags": ["ProductHunt", period] + topics[:5],
-                "pdf_url": "",
-                "featured_at": post.get("featuredAt", ""),
-                "daily_rank": str(post.get("dailyRank") or ""),
-                "weekly_rank": str(post.get("weeklyRank") or ""),
-                "monthly_rank": str(post.get("monthlyRank") or ""),
-            }
-            results.append(item)
-        logger.info("[ProductHunt] 放宽后返回 %d 条", len(results))
-
-    return results
 
 
 # ── 同步兼容包装器（供旧调用方使用） ──────────────────────────────────────────
