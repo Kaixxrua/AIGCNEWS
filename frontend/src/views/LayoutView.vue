@@ -70,10 +70,10 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 /* ═══ 主工作画板：纸面、硬规则、轻微错版阴影 ═══ */
 .main-canvas {
-  width: calc(100% - 24px);
+  width: calc(100% - 40px);
   max-width: none;
-  height: calc(100dvh - 82px);
-  margin-top: 12px;
+  height: calc(100dvh - 90px);
+  margin-top: 20px;
   border-radius: 14px;
   background: var(--paper-raised);
   border: 1px solid var(--rule-strong);
