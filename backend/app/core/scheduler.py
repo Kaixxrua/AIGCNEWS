@@ -21,10 +21,19 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, AsyncGenerator, Dict, List
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 
-from backend.app.core.scheduler_registry import resolve_source_job_callback
+from backend.app.core.scheduler_registry import (
+    CONVERSATION_CLEANUP_JOB,
+    DAILY_BRIEFING_JOB,
+    SOURCE_JOB_DESCRIPTORS,
+    JobDescriptor,
+    SchedulerCallback,
+    build_trigger,
+    project_catalog_sync_job_descriptor,
+    project_scheduler_status,
+    project_semantic_warmup_job_descriptor,
+    resolve_source_job_callback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -450,6 +459,24 @@ async def _run_conversation_cleanup_job() -> None:
         logger.error("[Scheduler] 会话历史清理失败: %s", exc, exc_info=True)
 
 
+def _register_job(
+    scheduler: AsyncIOScheduler,
+    descriptor: JobDescriptor,
+    callback: SchedulerCallback,
+) -> None:
+    job_kwargs: Dict[str, Any] = {
+        "trigger": build_trigger(descriptor),
+        "id": descriptor.id,
+        "name": descriptor.name,
+        "replace_existing": descriptor.replace_existing,
+        "max_instances": descriptor.max_instances,
+        "misfire_grace_time": descriptor.misfire_grace_time,
+    }
+    if descriptor.coalesce is not None:
+        job_kwargs["coalesce"] = descriptor.coalesce
+    scheduler.add_job(callback, **job_kwargs)
+
+
 def start_scheduler() -> None:
     scheduler = get_scheduler()
 
@@ -457,36 +484,23 @@ def start_scheduler() -> None:
         logger.info("[Scheduler] 已在运行，跳过重复启动。")
         return
 
-    for config in SCHEDULE_CONFIG:
-        job_id = config["id"]
-        source = config["source"]
-        cron = config["cron"]
-        desc = config["desc"]
-
-        job_func = resolve_source_job_callback(source, globals())
-
-        scheduler.add_job(
-            job_func,
-            trigger=CronTrigger(**cron, timezone="Asia/Shanghai"),
-            id=job_id,
-            name=desc,
-            replace_existing=True,
-            max_instances=1,
-            coalesce=source == "github_project_metrics_refresh",
-            misfire_grace_time=(
-                3600 if source == "github_project_metrics_refresh" else 7200
-            ),
+    for descriptor in SOURCE_JOB_DESCRIPTORS:
+        _register_job(
+            scheduler,
+            descriptor,
+            resolve_source_job_callback(descriptor.source, globals()),
         )
-        logger.info("[Scheduler] 注册采集任务: %s (%s) cron=%s", job_id, desc, cron)
+        logger.info(
+            "[Scheduler] 注册采集任务: %s (%s) cron=%s",
+            descriptor.id,
+            descriptor.name,
+            descriptor.schedule.as_kwargs(),
+        )
 
-    scheduler.add_job(
-        _run_daily_briefing_job,
-        trigger=CronTrigger(hour=8, minute=0, timezone="Asia/Shanghai"),
-        id="daily_briefing",
-        name="每日自动简报生成（全维度）",
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=3600,
+    _register_job(
+        scheduler,
+        DAILY_BRIEFING_JOB,
+        globals()["_run_daily_briefing_job"],
     )
     logger.info(
         "[Scheduler] 注册简报任务: daily_briefing (每日 08:00，共 %d 个维度)",
@@ -496,48 +510,30 @@ def start_scheduler() -> None:
     from backend.app.core.config import settings
 
     if settings.project_semantic_search_enabled:
-        scheduler.add_job(
-            _run_project_semantic_warmup_job,
-            trigger=IntervalTrigger(
-                minutes=30,
+        _register_job(
+            scheduler,
+            project_semantic_warmup_job_descriptor(
                 timezone=settings.scheduler_timezone,
             ),
-            id="project_semantic_warmup",
-            name="项目语义搜索链路预热",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=300,
+            globals()["_run_project_semantic_warmup_job"],
         )
         logger.info("[Scheduler] 注册项目语义搜索预热任务（每 30 分钟）")
 
     if settings.project_catalog_sync_worker_enabled:
-        scheduler.add_job(
-            _run_project_catalog_sync_job,
-            trigger=IntervalTrigger(
-                seconds=max(1, int(settings.project_catalog_sync_poll_seconds)),
+        _register_job(
+            scheduler,
+            project_catalog_sync_job_descriptor(
+                settings.project_catalog_sync_poll_seconds,
                 timezone=settings.scheduler_timezone,
             ),
-            id="project_catalog_sync",
-            name="MySQL 到 PostgreSQL 项目目录同步",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=max(
-                30,
-                int(settings.project_catalog_sync_poll_seconds) * 2,
-            ),
+            globals()["_run_project_catalog_sync_job"],
         )
         logger.info("[Scheduler] 注册项目目录同步任务")
 
-    scheduler.add_job(
-        _run_conversation_cleanup_job,
-        trigger=CronTrigger(day="*/7", hour=3, minute=30, timezone="Asia/Shanghai"),
-        id="conversation_cleanup",
-        name="会话历史定期清理（7 天清 5 条）",
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=3600,
+    _register_job(
+        scheduler,
+        CONVERSATION_CLEANUP_JOB,
+        globals()["_run_conversation_cleanup_job"],
     )
     logger.info("[Scheduler] 注册会话清理任务: conversation_cleanup (每 7 天 03:30)")
 
@@ -566,21 +562,7 @@ def get_scheduler_status() -> List[Dict[str, Any]]:
     if not scheduler.running:
         return []
 
-    result = []
-    for job in scheduler.get_jobs():
-        result.append(
-            {
-                "id": job.id,
-                "name": job.name,
-                "next_run_time": (
-                    job.next_run_time.isoformat() if job.next_run_time else None
-                ),
-                "trigger": str(job.trigger),
-                "max_instances": job.max_instances,
-                "pending": job.pending,
-            }
-        )
-    return result
+    return project_scheduler_status(scheduler.get_jobs())
 
 
 @asynccontextmanager
