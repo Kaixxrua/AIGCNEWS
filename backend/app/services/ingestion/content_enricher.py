@@ -32,14 +32,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from backend.app.services.ingestion.content_enrichment_policy import (
-    ContentEnrichmentPolicy,
-    compose_huggingface_content,
-    compose_producthunt_content,
-    select_github_content,
-    select_hackernews_content,
-    select_news_content,
-)
+from backend.app.services.ingestion import content_enrichment_coordinator
 from backend.app.services.ingestion.content_fetch_port import (
     DefaultGitHubReadmeFetcher,
     DefaultPageContentFetcher,
@@ -123,17 +116,6 @@ def _fetch_pdf_text(pdf_url: str, timeout: int = 30) -> str:
 async def _fetch_github_readme(full_name: str) -> str:
     """通过共享 GitHub README 抓取器获取清洗后的文本。"""
     return await DefaultGitHubReadmeFetcher().fetch(full_name)
-
-
-def _apply_content_policy(
-    paper: Dict[str, Any],
-    policy: ContentEnrichmentPolicy,
-) -> Dict[str, Any]:
-    """将纯策略结果写回原 paper，保留既有就地变更语义。"""
-    paper["full_text"] = policy.full_text
-    if policy.pdf_pending is not None:
-        paper["pdf_pending"] = policy.pdf_pending
-    return paper
 
 
 # ── 各源 Enricher ──────────────────────────────────────────────────────────────
@@ -244,87 +226,49 @@ def enrich_arxiv_pdf_full(paper: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def enrich_huggingface(paper: Dict[str, Any]) -> Dict[str, Any]:
-    """HuggingFace 模型：直接用描述/摘要入 RAG，无需 PDF。
-
-    模型卡片的描述已经足够，不需要额外的 PDF 解析。
-    """
-    policy = compose_huggingface_content(paper)
-    _apply_content_policy(paper, policy)
-
-    title = paper.get("title", "")
-    logger.debug(
-        "[Enricher][HuggingFace] 摘要入库: %s (%d chars)",
-        title[:50],
-        len(policy.full_text),
-    )
-    return paper
+    """HuggingFace 模型：兼容入口，委托非 PDF 内容协调器。"""
+    return content_enrichment_coordinator.enrich_huggingface(paper)
 
 
 async def enrich_github(
     paper: Dict[str, Any],
     readme_fetcher: Optional[GitHubReadmeFetcher] = None,
 ) -> Dict[str, Any]:
-    """GitHub 仓库：优先使用已有 abstract（含 README），否则重新抓取。
-
-    source_github.py 的 _parse_item 会在 abstract 中拼接 README，
-    但 github_hot_service 走 get_github_hot_rank → SQLite，abstract 字段
-    只存了 description，需要额外补 README。
-    """
-    policy = select_github_content(paper)
-    if policy.fetch_github_readme:
-        full_name = policy.fetch_github_readme
-        logger.info("[Enricher][GitHub] 补抓 README: %s", full_name)
-        readme = (
-            await readme_fetcher.fetch(full_name)
-            if readme_fetcher is not None
-            else await _fetch_github_readme(full_name)
-        )
-        policy = select_github_content(paper, readme)
-
-    return _apply_content_policy(paper, policy)
+    """GitHub 仓库：兼容入口，保留模块 README 抓取 seam。"""
+    return await content_enrichment_coordinator.enrich_github(
+        paper,
+        readme_fetcher=readme_fetcher,
+        fetch_readme=_fetch_github_readme,
+    )
 
 
 async def enrich_news(
     paper: Dict[str, Any],
     page_fetcher: Optional[PageContentFetcher] = None,
 ) -> Dict[str, Any]:
-    """News 文章：抓取原文详情页正文；回退到 RSS 摘要。"""
-    policy = select_news_content(paper)
-    if policy.fetch_url:
-        url = policy.fetch_url
-        logger.info("[Enricher][News] 抓取详情页: %s", url[:80])
-        page_text = (
-            await page_fetcher.fetch(url)
-            if page_fetcher is not None
-            else await _fetch_url_text(url)
-        )
-        policy = select_news_content(paper, page_text)
-
-    return _apply_content_policy(paper, policy)
+    """News 文章：兼容入口，保留模块页面抓取 seam。"""
+    return await content_enrichment_coordinator.enrich_news(
+        paper,
+        page_fetcher=page_fetcher,
+        fetch_page=_fetch_url_text,
+    )
 
 
 def enrich_producthunt(paper: Dict[str, Any]) -> Dict[str, Any]:
-    """ProductHunt：保持 tagline + description，不额外抓取。"""
-    return _apply_content_policy(paper, compose_producthunt_content(paper))
+    """ProductHunt：兼容入口，委托非 PDF 内容协调器。"""
+    return content_enrichment_coordinator.enrich_producthunt(paper)
 
 
 async def enrich_hackernews(
     paper: Dict[str, Any],
     page_fetcher: Optional[PageContentFetcher] = None,
 ) -> Dict[str, Any]:
-    """HackerNews 帖子：抓取外链正文；Ask HN / Show HN 使用 story_text；回退到标题。"""
-    policy = select_hackernews_content(paper)
-    if policy.fetch_url:
-        url = policy.fetch_url
-        logger.info("[Enricher][HackerNews] 抓取外链详情页: %s", url[:80])
-        page_text = (
-            await page_fetcher.fetch(url)
-            if page_fetcher is not None
-            else await _fetch_url_text(url)
-        )
-        policy = select_hackernews_content(paper, page_text)
-
-    return _apply_content_policy(paper, policy)
+    """HackerNews：兼容入口，保留模块页面抓取 seam。"""
+    return await content_enrichment_coordinator.enrich_hackernews(
+        paper,
+        page_fetcher=page_fetcher,
+        fetch_page=_fetch_url_text,
+    )
 
 
 # ── 批量入口 ──────────────────────────────────────────────────────────────────
