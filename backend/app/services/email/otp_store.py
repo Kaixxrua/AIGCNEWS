@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+from collections.abc import Callable
 from typing import Literal
 
 OtpPurpose = Literal["registration", "password_reset"]
@@ -43,8 +44,14 @@ def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str | None]:
 class RedisOtpStore:
     """Preserve the legacy non-atomic Redis OTP lifecycle."""
 
-    def __init__(self, redis_client) -> None:
+    def __init__(
+        self,
+        redis_client,
+        *,
+        compare_digest: Callable[[str, str], bool] = hmac.compare_digest,
+    ) -> None:
         self._redis = redis_client
+        self._compare_digest = compare_digest
 
     @property
     def available(self) -> bool:
@@ -81,7 +88,7 @@ class RedisOtpStore:
             return False
 
         stored_str = stored.decode("utf-8") if isinstance(stored, bytes) else str(stored)
-        if hmac.compare_digest(stored_str, code):
+        if self._compare_digest(stored_str, code):
             if consume:
                 await self.consume(email, purpose=purpose)
             return True
