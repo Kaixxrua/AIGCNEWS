@@ -19,14 +19,17 @@ source_channel = producthunt_daily_html / producthunt_weekly_html / producthunt_
 """
 
 import asyncio
-import json
 import logging
-import re
-import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+from backend.app.services.ingestion import (
+    producthunt_parser,
+    producthunt_projection,
+    producthunt_transport,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,123 +117,13 @@ _IMPERSONATE_OPTIONS = ["chrome124", "chrome120", "chrome116", "chrome110", "chr
 
 
 async def _fetch_html_curl_cffi(url: str) -> Optional[str]:
-    """使用 curl_cffi 抓取页面（绕过 Cloudflare）。成功返回 HTML，失败返回 None。
-
-    每次重试使用不同的 impersonate 版本，提高绕过 Cloudflare 的概率。
-    """
-    try:
-        from curl_cffi import requests as cf_requests  # type: ignore
-    except ImportError:
-        logger.warning(
-            "[ProductHunt] curl_cffi 未安装，跳过此方式。安装命令: pip install curl_cffi"
-        )
-        return None
-
-    for attempt in range(1, _MAX_RETRIES + 1):
-        impersonate = _IMPERSONATE_OPTIONS[(attempt - 1) % len(_IMPERSONATE_OPTIONS)]
-        try:
-            resp = await asyncio.to_thread(
-                cf_requests.get,
-                url,
-                impersonate=impersonate,
-                timeout=30,
-                allow_redirects=True,
-            )
-            status_code = getattr(resp, "status_code", None)
-            if status_code and status_code >= 400:
-                logger.warning(
-                    "[ProductHunt] curl_cffi 请求返回 HTTP %d（第 %d/%d 次尝试）",
-                    status_code,
-                    attempt,
-                    _MAX_RETRIES,
-                )
-                if attempt < _MAX_RETRIES:
-                    await asyncio.sleep(_RETRY_DELAY * attempt)
-                continue
-
-            html = resp.text
-            if html and len(html) > 1000:
-                logger.info(
-                    "[ProductHunt] curl_cffi 抓取成功，页面长度=%d（第 %d 次尝试）",
-                    len(html),
-                    attempt,
-                )
-                return html
-            else:
-                logger.warning(
-                    "[ProductHunt] curl_cffi 返回内容过短（%d bytes），可能被拦截（第 %d/%d 次）",
-                    len(html) if html else 0,
-                    attempt,
-                    _MAX_RETRIES,
-                )
-                if attempt < _MAX_RETRIES:
-                    await asyncio.sleep(_RETRY_DELAY * attempt)
-
-        except Exception as exc:
-            logger.warning(
-                "[ProductHunt] curl_cffi 抓取异常（第 %d/%d 次）: %s",
-                attempt,
-                _MAX_RETRIES,
-                exc,
-            )
-            if attempt < _MAX_RETRIES:
-                await asyncio.sleep(_RETRY_DELAY * attempt)
-
-    return None
+    """兼容旧 monkeypatch 点，转发到抽取后的 curl_cffi transport。"""
+    return await producthunt_transport.fetch_html_curl_cffi(url)
 
 
 async def _fetch_html_httpx(url: str) -> Optional[str]:
-    """使用 [`httpx.AsyncClient`](backend/app/services/ingestion/source_producthunt.py:28) 作为 fallback 抓取方式。"""
-    for attempt in range(1, _MAX_RETRIES + 1):
-        try:
-            async with httpx.AsyncClient(
-                timeout=30,
-                follow_redirects=True,
-                headers=_BROWSER_HEADERS,
-                trust_env=True,
-            ) as client:
-                resp = await client.get(url)
-
-            if resp.status_code >= 400:
-                logger.warning(
-                    "[ProductHunt] httpx fallback 返回 HTTP %d（第 %d/%d 次）",
-                    resp.status_code,
-                    attempt,
-                    _MAX_RETRIES,
-                )
-                if attempt < _MAX_RETRIES:
-                    await asyncio.sleep(_RETRY_DELAY * attempt)
-                continue
-
-            html = resp.text
-            if html and len(html) > 1000:
-                logger.info(
-                    "[ProductHunt] httpx fallback 抓取成功，页面长度=%d（第 %d 次尝试）",
-                    len(html),
-                    attempt,
-                )
-                return html
-
-            logger.warning(
-                "[ProductHunt] httpx fallback 返回内容过短（%d bytes）（第 %d/%d 次）",
-                len(html) if html else 0,
-                attempt,
-                _MAX_RETRIES,
-            )
-            if attempt < _MAX_RETRIES:
-                await asyncio.sleep(_RETRY_DELAY * attempt)
-
-        except Exception as exc:
-            logger.warning(
-                "[ProductHunt] httpx fallback 抓取异常（第 %d/%d 次）: %s",
-                attempt,
-                _MAX_RETRIES,
-                exc,
-            )
-            if attempt < _MAX_RETRIES:
-                await asyncio.sleep(_RETRY_DELAY * attempt)
-
-    return None
+    """兼容旧 monkeypatch 点，转发到抽取后的 httpx transport。"""
+    return await producthunt_transport.fetch_html_httpx(url)
 
 
 async def _fetch_html(url: str) -> str:
@@ -254,113 +147,8 @@ async def _fetch_html(url: str) -> str:
 
 
 def _extract_posts_from_html(html: str) -> List[Dict[str, Any]]:
-    """从 PH 主页 HTML 中提取所有 Post 对象（Apollo SSR Transport）。
-
-    PH 将 homefeed 数据通过 Apollo SSR 嵌入 HTML script 标签：
-      (window[Symbol.for("ApolloSSRDataTransport")] ??= []).push({...})
-    其中 homefeed.items 数组包含当日及近期推荐产品。
-    """
-    # 找含有产品数据的 script（含 featuredAt + launchDayScore）
-    scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, re.DOTALL)
-    target_script = ""
-    for s in scripts:
-        if "featuredAt" in s and "launchDayScore" in s:
-            target_script = s
-            break
-
-    if not target_script:
-        # 尝试更宽泛的匹配（可能 DOM 结构变了）
-        for s in scripts:
-            if "ApolloSSRDataTransport" in s or "homefeed" in s:
-                target_script = s
-                break
-
-    if not target_script:
-        logger.error(
-            "[ProductHunt] 未在页面找到含产品数据的 script 标签，"
-            "页面长度=%d，script标签数=%d。"
-            "可能原因：1) Cloudflare 拦截返回了挑战页面 2) PH 前端 DOM 结构变更 "
-            "3) Apollo SSR Transport 数据格式变更",
-            len(html),
-            len(scripts),
-        )
-        # 打印前 500 字符辅助排查
-        logger.error("[ProductHunt] 页面前500字符: %s", html[:500].replace("\n", " "))
-        return []
-
-    posts: List[Dict[str, Any]] = []
-    seen_ids: set = set()
-
-    # 遍历所有 "items":[ 数组
-    for m in re.finditer(r'"items":\[', target_script):
-        array_start = m.end()
-        # 手动匹配方括号，找到数组结尾
-        depth = 1
-        pos = array_start
-        while pos < len(target_script) and depth > 0:
-            c = target_script[pos]
-            if c == "[":
-                depth += 1
-            elif c == "]":
-                depth -= 1
-            pos += 1
-        array_content = target_script[array_start : pos - 1]
-
-        if '"__typename":"Post"' not in array_content:
-            continue
-
-        # 尝试标准 JSON 解析
-        try:
-            items_data: List[Any] = json.loads("[" + array_content + "]")
-        except json.JSONDecodeError:
-            items_data = []
-            # 降级：逐对象提取
-            for pm in re.finditer(r'\{"__typename":"Post","id":"(\d+)"', array_content):
-                pid = pm.group(1)
-                if pid in seen_ids:
-                    continue
-                obj_start = pm.start()
-                d2 = 0
-                for i2, c2 in enumerate(array_content[obj_start : obj_start + 4000]):
-                    if c2 == "{":
-                        d2 += 1
-                    elif c2 == "}":
-                        d2 -= 1
-                        if d2 == 0:
-                            try:
-                                obj = json.loads(
-                                    array_content[obj_start : obj_start + i2 + 1]
-                                )
-                                seen_ids.add(pid)
-                                items_data.append(obj)
-                            except json.JSONDecodeError:
-                                pass
-                            break
-
-        # 收集 Post 对象
-        for item in items_data:
-            if not isinstance(item, dict):
-                continue
-            if item.get("__typename") != "Post":
-                continue
-            pid = str(item.get("id", ""))
-            if not pid or pid in seen_ids:
-                continue
-            seen_ids.add(pid)
-            posts.append(item)
-
-    if posts:
-        logger.info("[ProductHunt] Apollo SSR 共提取 %d 个 Post 对象", len(posts))
-    else:
-        logger.error(
-            "[ProductHunt] Apollo SSR 提取到 0 个 Post 对象。"
-            "target_script 长度=%d，包含 'items' 匹配数=%d。"
-            "可能原因：1) JSON 解析失败 2) __typename 字段名变更 3) 数据结构变更",
-            len(target_script),
-            len(list(re.finditer(r'"items":\[', target_script))),
-        )
-
-    return posts
+    """兼容旧 monkeypatch 点，转发到抽取后的 Apollo parser。"""
+    return producthunt_parser.extract_posts_from_html(html)
 
 
 # ---------------------------------------------------------------------------
@@ -403,153 +191,24 @@ async def _fetch_via_api(
     source_channel: str,
     crawl_date_str: str,
 ) -> Optional[List[Dict[str, Any]]]:
-    """通过 PH 官方 API v2 获取产品列表（需要 Developer Token）。
-
-    优势：不受 Cloudflare 拦截，数据结构稳定。
-    如果未配置 token 或请求失败，返回 None（触发 HTML 解析 fallback）。
-    """
-    try:
-        from backend.app.core.config import settings
-
-        token = settings.producthunt_api_token
-    except Exception:
-        token = ""
-
-    if not token:
-        logger.debug("[ProductHunt] 未配置 PRODUCTHUNT_API_TOKEN，跳过 API 通道")
-        return None
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "RAG-AIGC-Agent/1.0",
-    }
-
-    variables = {
-        "first": min(limit, 20),  # PH API 单次最多 20 条
-        # FEATURED_AT: 按上线时间倒序，获取最近 featured 的产品
-        # 比 VOTES（全站历史高票）更适合日榜场景
-        "order": "FEATURED_AT",
-    }
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=20,
-            follow_redirects=True,
-            trust_env=True,
-        ) as client:
-            resp = await client.post(
-                _PH_API_URL,
-                json={"query": _PH_POSTS_QUERY, "variables": variables},
-                headers=headers,
-            )
-
-            if resp.status_code == 401:
-                logger.error(
-                    "[ProductHunt] API v2 认证失败 (401)。"
-                    "请检查 PRODUCTHUNT_API_TOKEN 是否正确。"
-                    "申请地址：https://www.producthunt.com/v2/oauth/applications"
-                )
-                return None
-
-            if resp.status_code >= 400:
-                logger.error(
-                    "[ProductHunt] API v2 请求失败 HTTP %d: %s",
-                    resp.status_code,
-                    resp.text[:200],
-                )
-                return None
-
-            data = resp.json()
-
-    except Exception as exc:
-        logger.error("[ProductHunt] API v2 请求异常: %s", exc)
-        return None
-
-    # 解析 GraphQL 响应
-    errors = data.get("errors")
-    if errors:
-        logger.error("[ProductHunt] API v2 GraphQL 错误: %s", errors)
-        return None
-
-    edges = (data.get("data") or {}).get("posts", {}).get("edges", [])
+    """兼容旧 monkeypatch 点，协调 API edges transport 与统一投影。"""
+    edges = await producthunt_transport.fetch_api_edges(limit)
     if not edges:
-        logger.warning("[ProductHunt] API v2 返回 0 条产品")
         return None
-
-    results: List[Dict[str, Any]] = []
-    for edge in edges:
-        node = edge.get("node", {})
-        if not node:
-            continue
-
-        name = (node.get("name") or "").strip()
-        if not name:
-            continue
-
-        tagline = (node.get("tagline") or "").strip()
-        slug = node.get("slug", "")
-        url = node.get("url") or (
-            f"https://www.producthunt.com/posts/{slug}" if slug else ""
-        )
-        votes = int(node.get("votesCount") or 0)
-        comments = int(node.get("commentsCount") or 0)
-
-        featured_at_str = node.get("featuredAt", "")
-        feat_date = _parse_featured_at(featured_at_str)
-
-        if not _within_period(feat_date, period, anchor):
-            continue
-
-        # 提取话题
-        topics: List[str] = []
-        topics_data = node.get("topics") or {}
-        if isinstance(topics_data, dict):
-            for te in topics_data.get("edges", []):
-                tn = te.get("node", {})
-                if isinstance(tn, dict) and tn.get("name"):
-                    topics.append(tn["name"])
-
-        feat_date_str = feat_date.isoformat() if feat_date else crawl_date_str
-        if period == "daily" and feat_date and feat_date < anchor:
-            pub_date = anchor.isoformat()
-        else:
-            pub_date = feat_date_str or crawl_date_str
-
-        abstract = tagline
-        if topics:
-            abstract = f"{tagline} [{', '.join(topics[:3])}]"
-
-        results.append(
-            {
-                "title": name,
-                "abstract": abstract,
-                "summary": abstract,
-                "url": url,
-                "votes": votes,
-                "raw_score": float(votes),
-                "score": float(votes),
-                "source": "producthunt",
-                "source_channel": source_channel,
-                "channel": source_channel,
-                "published_date": pub_date,
-                "tags": ["ProductHunt", period] + topics[:5],
-                "pdf_url": "",
-                "featured_at": featured_at_str,
-                "daily_rank": "",
-                "weekly_rank": "",
-                "monthly_rank": "",
-            }
-        )
-
+    results = producthunt_projection.project_api_items(
+        edges,
+        period,
+        anchor,
+        source_channel,
+        crawl_date_str,
+    )
     logger.info(
         "[ProductHunt] API v2 获取 %d 条产品（period=%s, anchor=%s）",
-        len(results),
+        len(results or []),
         period,
         anchor,
     )
-    return results if results else None
+    return results
 
 
 # ---------------------------------------------------------------------------
