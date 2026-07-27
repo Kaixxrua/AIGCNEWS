@@ -40,6 +40,16 @@ class DocumentSearchReader(Protocol):
     ) -> dict[str, str]: ...
 
 
+class PapersReader(Protocol):
+    """Read the narrow document projections consumed by Papers REST routes."""
+
+    def get_today_top_arxiv_documents(self) -> list[dict[str, Any]]: ...
+
+    def get_paper_detail(self, paper_id: str) -> dict[str, Any] | None: ...
+
+    def get_paper_pdf_source(self, paper_id: str) -> dict[str, Any] | None: ...
+
+
 class DocumentFeedReader(Protocol):
     """Read ranked and recently ingested document feeds."""
 
@@ -71,6 +81,7 @@ class DocumentAdminWriter(Protocol):
 class DocumentRepository(
     DocumentWriter,
     DocumentSearchReader,
+    PapersReader,
     DocumentFeedReader,
     DocumentStatisticsReader,
     DocumentAdminWriter,

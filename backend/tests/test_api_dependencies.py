@@ -180,6 +180,27 @@ class DatabaseDependencyTests(unittest.TestCase):
         self.assertIs(result, document_repository)
         repository_type.assert_called_once_with(database=database)
 
+    def test_get_papers_repository_uses_document_repository_directly(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MagicMock()
+
+        with patch.object(
+            dependencies,
+            "MySQLDocumentRepository",
+            return_value=repository,
+        ) as repository_type:
+            result = dependencies.get_papers_repository(database)
+
+        self.assertIs(result, repository)
+        repository_type.assert_called_once_with(database)
+
+    def test_get_pdf_relay_builds_httpx_adapter(self) -> None:
+        relay = MagicMock()
+        with patch.object(dependencies, "HttpxPdfRelay", return_value=relay) as relay_type:
+            result = dependencies.get_pdf_relay()
+        self.assertIs(result, relay)
+        relay_type.assert_called_once_with()
+
     def test_get_rank_snapshot_repository_uses_component(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         snapshot_repository = MagicMock()

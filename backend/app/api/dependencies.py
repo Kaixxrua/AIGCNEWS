@@ -33,6 +33,7 @@ from backend.app.repositories.mysql_runtime_provider_repository import (
 from backend.app.repositories.mysql_user_account_repository import (
     MySQLUserAccountRepository,
 )
+from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 
 
 def get_database(request: Request) -> DatabaseLifecycle:
@@ -118,6 +119,18 @@ def get_document_repository(
 ) -> MySQLDocumentRepository:
     """Return document persistence through the compatibility facade."""
     return MySQLRepository(database=database).documents
+
+
+def get_papers_repository(
+    database: DatabaseLifecycle = Depends(get_database),
+) -> MySQLDocumentRepository:
+    """Return the narrow document reader used by Papers routes."""
+    return MySQLDocumentRepository(database)
+
+
+def get_pdf_relay() -> HttpxPdfRelay:
+    """Return the remote PDF streaming adapter."""
+    return HttpxPdfRelay()
 
 
 def get_rank_snapshot_repository(

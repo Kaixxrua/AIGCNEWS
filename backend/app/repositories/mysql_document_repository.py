@@ -320,6 +320,66 @@ class MySQLDocumentRepository:
                     result[f"{prefix}:{key}"] = summary
         return result
 
+    def get_today_top_arxiv_documents(self) -> list[dict[str, Any]]:
+        tz_cst = timezone(timedelta(hours=8))
+        today = datetime.now(tz_cst).date().isoformat()
+        sql_today = """
+            SELECT id, source, source_channel, title, url, summary,
+                   published_date, tags, score, raw_score, rank_in_period,
+                   local_pdf_path, created_at
+            FROM documents
+            WHERE source = 'arxiv'
+              AND LEFT(created_at, 10) = %s
+            ORDER BY COALESCE(raw_score, score, 0) DESC
+            LIMIT 10
+        """
+        sql_fallback = """
+            SELECT id, source, source_channel, title, url, summary,
+                   published_date, tags, score, raw_score, rank_in_period,
+                   local_pdf_path, created_at
+            FROM documents
+            WHERE source = 'arxiv'
+            ORDER BY created_at DESC, COALESCE(raw_score, score, 0) DESC
+            LIMIT 10
+        """
+        with self._database.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_today, (today,))
+                rows = cur.fetchall()
+            conn.commit()
+            if rows:
+                return [dict(row) for row in rows]
+            with conn.cursor() as cur:
+                cur.execute(sql_fallback)
+                rows = cur.fetchall()
+            conn.commit()
+            return [dict(row) for row in rows]
+
+    def get_paper_detail(self, paper_id: str) -> dict[str, Any] | None:
+        sql = """
+            SELECT id, source, source_channel, title, url, summary,
+                   published_date, tags, score, raw_score, rank_in_period,
+                   local_pdf_path, created_at
+            FROM documents
+            WHERE id = %s
+            LIMIT 1
+        """
+        with self._database.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (paper_id,))
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
+    def get_paper_pdf_source(self, paper_id: str) -> dict[str, Any] | None:
+        sql = "SELECT local_pdf_path, url, source FROM documents WHERE id = %s LIMIT 1"
+        with self._database.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (paper_id,))
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
     def get_top_documents(
         self,
         limit: int = 10,

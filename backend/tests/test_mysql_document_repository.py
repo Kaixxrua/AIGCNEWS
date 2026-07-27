@@ -106,6 +106,45 @@ class MySQLDocumentRepositoryTests(unittest.TestCase):
         )
         connection.commit.assert_called_once_with()
 
+    def test_papers_today_query_preserves_fallback_order_and_commits(self) -> None:
+        repository, _, connection, cursor = self._connection_repository()
+        cursor.fetchall.side_effect = [[], [{"id": "fallback"}]]
+
+        result = repository.get_today_top_arxiv_documents()
+
+        self.assertEqual(result, [{"id": "fallback"}])
+        today_sql, today_params = cursor.execute.call_args_list[0].args
+        fallback_call = cursor.execute.call_args_list[1]
+        self.assertIn("LEFT(created_at, 10) = %s", today_sql)
+        self.assertIn("ORDER BY COALESCE(raw_score, score, 0) DESC", today_sql)
+        self.assertRegex(today_params[0], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertIn("ORDER BY created_at DESC, COALESCE(raw_score, score, 0) DESC", fallback_call.args[0])
+        self.assertEqual(connection.commit.call_count, 2)
+
+    def test_papers_detail_and_pdf_queries_preserve_projection_and_commit(self) -> None:
+        repository, _, connection, cursor = self._connection_repository()
+        cursor.fetchone.side_effect = [
+            {"id": "paper-1", "source": "arxiv"},
+            {"local_pdf_path": None, "url": "https://arxiv.org/abs/2603.12255", "source": "arxiv"},
+        ]
+
+        detail = repository.get_paper_detail("paper-1")
+        pdf_source = repository.get_paper_pdf_source("paper-1")
+
+        self.assertEqual(detail["id"], "paper-1")
+        self.assertEqual(pdf_source["source"], "arxiv")
+        detail_sql, detail_params = cursor.execute.call_args_list[0].args
+        pdf_sql, pdf_params = cursor.execute.call_args_list[1].args
+        self.assertIn("published_date, tags, score, raw_score", detail_sql)
+        self.assertIn("WHERE id = %s", detail_sql)
+        self.assertEqual(detail_params, ("paper-1",))
+        self.assertEqual(
+            pdf_sql,
+            "SELECT local_pdf_path, url, source FROM documents WHERE id = %s LIMIT 1",
+        )
+        self.assertEqual(pdf_params, ("paper-1",))
+        self.assertEqual(connection.commit.call_count, 2)
+
     def test_top_and_latest_share_github_metric_projection(self) -> None:
         repository, _, _, cursor = self._connection_repository()
         cursor.fetchall.return_value = []
