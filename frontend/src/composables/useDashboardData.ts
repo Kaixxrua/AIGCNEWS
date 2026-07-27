@@ -7,17 +7,10 @@ import {
   ref,
   watch,
 } from 'vue'
-import { fetchSnapshotDates } from '../services/dashboard/dashboardApi'
+import { dashboardApi as defaultDashboardApi } from '../services/dashboard/dashboardApi'
 import type {
   DashboardApi,
-  DashboardSnapshotDatesParams,
-  DashboardSummaryParams,
-  DashboardTopParams,
-  DashboardVisitorCount,
-  GitHubHotPeriod,
-  GitHubHotResponse,
 } from '../services/dashboard/dashboardContracts'
-import { api } from '../services/http/apiClient'
 import {
   DAILY_ONLY_TABS,
   isSourceStatCard,
@@ -36,35 +29,6 @@ interface DashboardDataOptions {
   createAbortController?: () => AbortController
 }
 
-const legacyDashboardApi: DashboardApi = {
-  async fetchSummary({ period, date, signal }: DashboardSummaryParams) {
-    const response = await api.get('/dashboard/summary', { params: { period, date }, signal })
-    return {
-      stats: response.data.stats ?? {},
-      isFinalized: response.data.is_finalized ?? false,
-      isEmbargoed: response.data.is_embargoed ?? false,
-    }
-  },
-  async fetchTop({ source, period, date, limit = 10, signal }: DashboardTopParams) {
-    const response = await api.get('/dashboard/top', { params: { limit, source, period, date }, signal })
-    return { items: response.data.items ?? [] }
-  },
-  fetchSnapshotDates({ limit = 60, source, period, signal }: DashboardSnapshotDatesParams) {
-    return fetchSnapshotDates(limit, source, period, signal)
-  },
-  async fetchVisitorCount(signal?: AbortSignal): Promise<DashboardVisitorCount> {
-    const response = await api.get('/dashboard/visitor-count', { signal })
-    return {
-      registeredUsers: response.data.registered_users ?? 0,
-      todayRegisteredUsers: response.data.today_registered_users ?? 0,
-      userCount: response.data.user_count ?? 0,
-    }
-  },
-  async fetchGitHubHotRepos(_period?: GitHubHotPeriod, _limit?: number): Promise<GitHubHotResponse> {
-    throw new Error('GitHub hot repositories are not used by the Dashboard data controller')
-  },
-}
-
 const isCanceledError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false
   const candidate = error as { name?: string; code?: string }
@@ -72,7 +36,7 @@ const isCanceledError = (error: unknown): boolean => {
 }
 
 export const useDashboardData = (options: DashboardDataOptions) => {
-  const dashboardApi = options.dashboardApi ?? legacyDashboardApi
+  const dashboardApi = options.dashboardApi ?? defaultDashboardApi
   const now = options.now ?? Date.now
   const createAbortController = options.createAbortController ?? (() => new AbortController())
   const activeTab = ref<TabKey>('arxiv')

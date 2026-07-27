@@ -3,8 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const transport = vi.hoisted(() => ({ get: vi.fn() }))
 const fetchSnapshotDates = vi.hoisted(() => vi.fn())
+const defaultDashboardApi = vi.hoisted(() => ({
+  fetchSummary: vi.fn(),
+  fetchTop: vi.fn(),
+  fetchSnapshotDates,
+  fetchVisitorCount: vi.fn(),
+  fetchGitHubHotRepos: vi.fn(),
+}))
 vi.mock('../services/http/apiClient', () => ({ api: transport }))
-vi.mock('../services/dashboard/dashboardApi', () => ({ fetchSnapshotDates }))
+vi.mock('../services/dashboard/dashboardApi', () => ({ dashboardApi: defaultDashboardApi }))
 
 import type { DashboardApi } from '../services/dashboard/dashboardApi'
 import { useDashboardData } from './useDashboardData'
@@ -55,9 +62,21 @@ describe('Dashboard request lifecycle contract', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 27, 12))
     transport.get.mockReset()
-    fetchSnapshotDates.mockReset()
+    Object.values(defaultDashboardApi).forEach(mock => mock.mockReset())
     transport.get.mockImplementation(async (url: string) => responseFor(url))
+    defaultDashboardApi.fetchSummary.mockImplementation(async ({ period, date, signal }) => {
+      const response = await transport.get('/dashboard/summary', { params: { period, date }, signal })
+      return { stats: response.data.stats ?? {}, isFinalized: response.data.is_finalized ?? false, isEmbargoed: response.data.is_embargoed ?? false }
+    })
+    defaultDashboardApi.fetchTop.mockImplementation(async ({ source, period, date, limit = 10, signal }) => {
+      const response = await transport.get('/dashboard/top', { params: { limit, source, period, date }, signal })
+      return { items: response.data.items ?? [] }
+    })
     fetchSnapshotDates.mockResolvedValue(['2026-07-27'])
+    defaultDashboardApi.fetchVisitorCount.mockImplementation(async (signal) => {
+      const response = await transport.get('/dashboard/visitor-count', { signal })
+      return { registeredUsers: response.data.registered_users ?? 0, todayRegisteredUsers: response.data.today_registered_users ?? 0, userCount: response.data.user_count ?? 0 }
+    })
   })
 
   afterEach(() => {
@@ -86,7 +105,7 @@ describe('Dashboard request lifecycle contract', () => {
     expect(transport.get).toHaveBeenCalledWith('/dashboard/top', {
       params: { limit: 10, source: 'arxiv', period: 'daily', date: '2026-07-27' }, signal: expect.any(AbortSignal),
     })
-    expect(fetchSnapshotDates).toHaveBeenCalledWith(90, 'arxiv', 'daily', expect.any(AbortSignal))
+    expect(fetchSnapshotDates).toHaveBeenCalledWith({ limit: 90, source: 'arxiv', period: 'daily', signal: expect.any(AbortSignal) })
     expect(transport.get).toHaveBeenCalledWith('/dashboard/visitor-count', { signal: expect.any(AbortSignal) })
     expect(mounted.dashboard.stats.value).toMatchObject({ total_documents: 3, registered_users: 7, user_count: 9 })
     expect(mounted.dashboard.tabList.value).toEqual([{ id: 1, title: 'Top' }])
@@ -137,7 +156,7 @@ describe('Dashboard request lifecycle contract', () => {
       return responseFor(url)
     })
     const availabilitySignals: AbortSignal[] = []
-    fetchSnapshotDates.mockImplementation(async (_limit: number, _tab: string, _period: string, signal: AbortSignal) => {
+    fetchSnapshotDates.mockImplementation(async ({ signal }: { signal: AbortSignal }) => {
       availabilitySignals.push(signal)
       return []
     })
