@@ -40,6 +40,18 @@ class SmtpTransport:
     def configured(self) -> bool:
         return bool(self._host)
 
+    @property
+    def host(self) -> str:
+        return self._host
+
+    @property
+    def port(self) -> int:
+        return self._port
+
+    @property
+    def from_email(self) -> str:
+        return self._from_email
+
     def tls_options(self) -> tuple[bool, bool]:
         if self._port == 465:
             return True, False

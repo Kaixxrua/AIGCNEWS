@@ -180,17 +180,17 @@ class EmailOtpContractTests(unittest.IsolatedAsyncioTestCase):
 
 class EmailRenderingContractTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.service = EmailService(None)
+        self.renderer = EmailMessageRenderer()
 
     def test_otp_plain_text_bodies_are_exact(self) -> None:
         self.assertEqual(
-            self.service._build_email_body("123456"),
+            self.renderer.registration_otp_body("123456"),
             "您好，\n\n您正在注册 AIGC_NEWS 账号，验证码为：\n\n"
             "    123456\n\n验证码有效期为 5 分钟，请勿泄露给他人。\n\n"
             "如非本人操作，请忽略此邮件。\n\n— AIGC_NEWS",
         )
         self.assertEqual(
-            self.service._build_password_reset_email_body("654321"),
+            self.renderer.password_reset_otp_body("654321"),
             "您好，\n\n您正在重置 AIGC_NEWS 账号密码，验证码为：\n\n"
             "    654321\n\n验证码有效期为 5 分钟，请勿泄露给他人。\n\n"
             "如非本人操作，请忽略此邮件，您的密码不会被更改。\n\n— AIGC_NEWS",
@@ -198,7 +198,7 @@ class EmailRenderingContractTests(unittest.TestCase):
 
     def test_briefing_html_and_unescaped_content_are_exact(self) -> None:
         content = "# <Title>\n## Section\n### Detail\n- **bold**\n1. `code`\n> quote\n[link](https://example.test/?a=1&b=2)\n"
-        html = self.service._build_briefing_html(
+        html = self.renderer.briefing_html(
             content, "综合简报", "日报", "2026-07-27"
         )
 
@@ -325,7 +325,9 @@ class EmailDeliveryContractTests(unittest.IsolatedAsyncioTestCase):
                     smtp_use_tls=configured_tls,
                 )
                 with patch("aiosmtplib.send", new_callable=AsyncMock) as send:
-                    await service._send_email("to@example.test", "subject", "body")
+                    await service._transport.send_plain(
+                        "to@example.test", "subject", "body"
+                    )
                 self.assertEqual(
                     send.await_args.kwargs,
                     {
@@ -339,14 +341,21 @@ class EmailDeliveryContractTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_plain_and_html_smtp_errors_keep_distinct_details(self) -> None:
-        service = EmailService(None, smtp_host="smtp.example.test")
-        with patch(
-            "aiosmtplib.send", new_callable=AsyncMock, side_effect=TimeoutError("boom")
+        redis = FakeRedis()
+        service = EmailService(redis, smtp_host="smtp.example.test")
+        with (
+            patch("backend.app.services.email_service._gen_otp", return_value="123456"),
+            patch(
+                "aiosmtplib.send",
+                new_callable=AsyncMock,
+                side_effect=TimeoutError("boom"),
+            ),
         ):
             with self.assertRaises(HTTPException) as plain_context:
-                await service._send_email("to@example.test", "subject", "body")
+                await service.send_otp("to@example.test")
+            redis.values.pop("email:lock:to@example.test")
             with self.assertRaises(HTTPException) as html_context:
-                await service._send_html_email("to@example.test", "subject", "<p>x</p>")
+                await service.send_briefing("to@example.test", "content")
 
         self.assertEqual(plain_context.exception.status_code, 503)
         self.assertEqual(
@@ -390,26 +399,6 @@ class ExtractedEmailBoundaryTests(unittest.IsolatedAsyncioTestCase):
                 "delete",
                 "email:reset:code:user@example.com",
                 "email:reset:attempts:user@example.com",
-            ),
-        )
-
-    async def test_renderer_matches_legacy_private_helpers(self) -> None:
-        legacy = EmailService(None)
-        renderer = EmailMessageRenderer()
-        content = "# <Title>\n- **bold**\n[link](https://example.test/?a=1&b=2)"
-
-        self.assertEqual(
-            renderer.registration_otp_body("123456"),
-            legacy._build_email_body("123456"),
-        )
-        self.assertEqual(
-            renderer.password_reset_otp_body("654321"),
-            legacy._build_password_reset_email_body("654321"),
-        )
-        self.assertEqual(
-            renderer.briefing_html(content, "综合简报", "日报", "2026-07-27"),
-            legacy._build_briefing_html(
-                content, "综合简报", "日报", "2026-07-27"
             ),
         )
 
@@ -466,14 +455,14 @@ class EmailFactoryContractTests(unittest.TestCase):
         service = build_email_service(redis, config=config)
 
         self.assertIsInstance(service, EmailService)
-        self.assertIs(service._redis, redis)
-        self.assertEqual(service._smtp_host, "smtp.example.test")
-        self.assertEqual(service._smtp_port, 2465)
-        self.assertEqual(service._smtp_username, "user")
-        self.assertEqual(service._smtp_password, "password")
-        self.assertEqual(service._smtp_from_email, "sender@example.test")
-        self.assertEqual(service._smtp_from_name, "AIGC Test")
-        self.assertFalse(service._smtp_use_tls)
+        self.assertIs(service._otp_store._redis, redis)
+        self.assertEqual(service._transport.host, "smtp.example.test")
+        self.assertEqual(service._transport.port, 2465)
+        self.assertEqual(service._transport._username, "user")
+        self.assertEqual(service._transport._password, "password")
+        self.assertEqual(service._transport.from_email, "sender@example.test")
+        self.assertEqual(service._transport._from_name, "AIGC Test")
+        self.assertFalse(service._transport._use_tls)
 
 
 if __name__ == "__main__":
