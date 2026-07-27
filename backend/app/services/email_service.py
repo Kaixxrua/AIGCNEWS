@@ -241,6 +241,17 @@ class EmailService:
 
 def build_email_service(redis_client, *, config=settings) -> EmailService:
     """Build an email service from application SMTP settings."""
+    otp_store = RedisOtpStore(redis_client, compare_digest=hmac.compare_digest)
+    renderer = EmailMessageRenderer()
+    transport = SmtpTransport(
+        host=config.SMTP_HOST,
+        port=config.SMTP_PORT,
+        username=config.SMTP_USERNAME,
+        password=config.SMTP_PASSWORD,
+        from_email=config.SMTP_FROM_EMAIL,
+        from_name=config.SMTP_FROM_NAME,
+        use_tls=config.SMTP_USE_TLS,
+    )
     return EmailService(
         redis_client=redis_client,
         smtp_host=config.SMTP_HOST,
@@ -250,4 +261,7 @@ def build_email_service(redis_client, *, config=settings) -> EmailService:
         smtp_from_email=config.SMTP_FROM_EMAIL,
         smtp_from_name=config.SMTP_FROM_NAME,
         smtp_use_tls=config.SMTP_USE_TLS,
+        otp_store=otp_store,
+        renderer=renderer,
+        transport=transport,
     )

@@ -34,7 +34,14 @@ class EmailServiceFactoryTests(unittest.TestCase):
             smtp_from_email="sender@example.test",
             smtp_from_name="AIGC Test",
             smtp_use_tls=False,
+            otp_store=unittest.mock.ANY,
+            renderer=unittest.mock.ANY,
+            transport=unittest.mock.ANY,
         )
+        kwargs = service_type.call_args.kwargs
+        self.assertIs(kwargs["otp_store"]._redis, redis_client)
+        self.assertEqual(kwargs["transport"]._host, "smtp.example.test")
+        self.assertEqual(kwargs["transport"]._port, 2465)
 
     def test_build_email_service_has_no_io_side_effects(self) -> None:
         redis_client = MagicMock()
