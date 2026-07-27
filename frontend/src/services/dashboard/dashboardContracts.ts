@@ -1,0 +1,93 @@
+import type { PeriodKey, Stats, TabKey, TopDoc } from '../../features/dashboard/dashboardViewModel'
+
+export interface DashboardSummaryWireResponse {
+  stats?: Stats | null
+  is_finalized?: boolean | null
+  is_embargoed?: boolean | null
+}
+
+export interface DashboardTopWireResponse {
+  items?: TopDoc[] | null
+}
+
+export interface DashboardSnapshotDatesWireResponse {
+  dates?: string[] | null
+}
+
+export interface DashboardVisitorCountWireResponse {
+  registered_users?: number | null
+  today_registered_users?: number | null
+  user_count?: number | null
+}
+
+export interface DashboardSummary {
+  stats: Stats
+  isFinalized: boolean
+  isEmbargoed: boolean
+}
+
+export interface DashboardTop {
+  items: TopDoc[]
+}
+
+export interface DashboardVisitorCount {
+  registeredUsers: number
+  todayRegisteredUsers: number
+  userCount: number
+}
+
+export interface DashboardSummaryParams {
+  period: PeriodKey
+  date: string
+  signal?: AbortSignal
+}
+
+export interface DashboardTopParams extends DashboardSummaryParams {
+  source: TabKey
+  limit?: number
+}
+
+export interface DashboardSnapshotDatesParams {
+  limit?: number
+  source?: TabKey
+  period?: PeriodKey
+  signal?: AbortSignal
+}
+
+export type GitHubHotPeriod = 'daily' | 'weekly' | 'monthly'
+
+export interface GitHubHotRepo {
+  repo_id?: string | number
+  full_name?: string
+  title?: string
+  url?: string
+  description?: string | null
+  language?: string | null
+  topics_json?: string | string[] | null
+  stars?: number | string | null
+  forks?: number | string | null
+}
+
+export interface GitHubHotWireResponse {
+  period?: GitHubHotPeriod | string | null
+  window_days?: number
+  items?: GitHubHotRepo[] | null
+  total?: number
+  snapshot_count?: number
+}
+
+export interface GitHubHotResponse {
+  period: GitHubHotPeriod | string
+  window_days?: number
+  items: GitHubHotRepo[]
+  total?: number
+  snapshot_count?: number
+}
+
+export interface DashboardApi {
+  fetchSummary(params: DashboardSummaryParams): Promise<DashboardSummary>
+  fetchTop(params: DashboardTopParams): Promise<DashboardTop>
+  fetchSnapshotDates(params: DashboardSnapshotDatesParams): Promise<string[]>
+  fetchVisitorCount(signal?: AbortSignal): Promise<DashboardVisitorCount>
+  fetchGitHubHotRepos(period?: GitHubHotPeriod, limit?: number): Promise<GitHubHotResponse>
+}

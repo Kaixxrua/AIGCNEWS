@@ -9,8 +9,16 @@ export {
   type McpTokenMetadata,
 } from './mcp/mcpTokenApi'
 export {
+  dashboardApi,
   fetchGitHubHotRepos,
   fetchSnapshotDates,
+  type DashboardApi,
+  type DashboardSnapshotDatesParams,
+  type DashboardSummary,
+  type DashboardSummaryParams,
+  type DashboardTop,
+  type DashboardTopParams,
+  type DashboardVisitorCount,
   type GitHubHotPeriod,
   type GitHubHotRepo,
   type GitHubHotResponse,
