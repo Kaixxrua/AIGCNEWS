@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -87,11 +87,6 @@ async def get_paper_detail(
     if row is None:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id!r} not found")
     return project_pdf_media_url(safe_document(dict(row)), request)
-
-
-def _extract_arxiv_id(url_or_id: str) -> Optional[str]:
-    """Compatibility wrapper for the extracted Arxiv identity policy."""
-    return extract_arxiv_id(url_or_id)
 
 
 @router.get("/papers/{paper_id}/pdf")

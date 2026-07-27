@@ -16,14 +16,10 @@ from backend.app.api.dependencies import (
     get_papers_repository,
     get_pdf_relay,
 )
-from backend.app.api.routes_papers import (
-    _enrich_pdf_url,
-    _extract_arxiv_id,
-    _safe_doc,
-    proxy_arxiv_pdf,
-    router,
-)
+from backend.app.api.routes_papers import proxy_arxiv_pdf, router
+from backend.app.services.papers.arxiv_identity import extract_arxiv_id
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
+from backend.app.services.papers.presentation import project_pdf_media_url, safe_document
 
 
 class SearchRepository:
@@ -119,9 +115,9 @@ class PapersContractsTests(unittest.TestCase):
             "server": ("example.test", 80), "path": "/", "root_path": "",
             "query_string": b"", "headers": [(b"x-forwarded-proto", b"https")],
         })
-        self.assertEqual(_safe_doc({"id": 1, "value": date(2026, 7, 27)}), {"id": 1, "value": "2026-07-27"})
-        local = _enrich_pdf_url({"local_pdf_path": "/tmp/a/b.pdf"}, request)
-        other = _enrich_pdf_url({"id": "two", "source": "news"}, request)
+        self.assertEqual(safe_document({"id": 1, "value": date(2026, 7, 27)}), {"id": 1, "value": "2026-07-27"})
+        local = project_pdf_media_url({"local_pdf_path": "/tmp/a/b.pdf"}, request)
+        other = project_pdf_media_url({"id": "two", "source": "news"}, request)
         self.assertEqual(local["pdf_media_url"], "https://example.test/api/media/papers/b.pdf")
         self.assertIsNone(other["pdf_media_url"])
 
@@ -152,8 +148,8 @@ class PapersContractsTests(unittest.TestCase):
         self.assertEqual(response.headers["location"], "https://testserver/api/media/papers/cached.pdf")
 
     def test_pdf_lookup_errors_and_arxiv_version_extraction(self) -> None:
-        self.assertEqual(_extract_arxiv_id("https://arxiv.org/abs/2603.12255v2"), "2603.12255v2")
-        self.assertIsNone(_extract_arxiv_id("not-an-arxiv-id"))
+        self.assertEqual(extract_arxiv_id("https://arxiv.org/abs/2603.12255v2"), "2603.12255v2")
+        self.assertIsNone(extract_arxiv_id("not-an-arxiv-id"))
         self.papers.pdf_sources["bad"] = {"local_pdf_path": None, "url": "bad", "source": "arxiv"}
         client = TestClient(self.app)
         missing = client.get("/api/papers/missing/pdf")
