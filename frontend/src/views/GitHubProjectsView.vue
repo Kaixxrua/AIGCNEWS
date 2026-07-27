@@ -1040,10 +1040,10 @@ onBeforeUnmount(stopViewReads)
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
+  gap: 20px;
   overflow: hidden;
   margin-bottom: 16px;
-  padding: 26px;
+  padding: 18px 20px;
 }
 
 .projects-hero::after {
@@ -1081,7 +1081,7 @@ onBeforeUnmount(stopViewReads)
 }
 
 .projects-hero h1 {
-  font-size: clamp(34px, 5vw, 58px);
+  font-size: clamp(30px, 4vw, 48px);
   font-weight: 600;
   letter-spacing: -0.04em;
 }
@@ -1358,7 +1358,7 @@ onBeforeUnmount(stopViewReads)
   }
 
   .projects-hero {
-    padding: 22px;
+    padding: 18px;
   }
 
   .projects-login-prompt {
