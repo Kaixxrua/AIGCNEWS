@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 import unittest
-from contextlib import contextmanager
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from backend.app.api.dependencies import get_document_repository
+from backend.app.api.dependencies import (
+    get_document_repository,
+    get_papers_repository,
+    get_pdf_relay,
+)
 from backend.app.api.routes_papers import (
     _enrich_pdf_url,
     _extract_arxiv_id,
@@ -19,372 +23,235 @@ from backend.app.api.routes_papers import (
     proxy_arxiv_pdf,
     router,
 )
+from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 
 
-class _SearchRepository:
+class SearchRepository:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int]] = []
 
     def search_documents(self, query: str, limit: int = 20, *, source=None):
         self.calls.append((query, limit))
-        return [
-            {
-                "id": "paper-1",
-                "source": "arxiv",
-                "title": "Paper",
-                "published_date": date(2026, 7, 27),
-                "local_pdf_path": None,
-            }
-        ]
+        return [{"id": "paper-1", "source": "arxiv", "published_date": date(2026, 7, 27)}]
 
 
-class _Cursor:
-    def __init__(self, rows: list[dict[str, object] | None]) -> None:
-        self._rows = iter(rows)
-        self.executions: list[tuple[str, tuple[object, ...] | None]] = []
+class PapersRepository:
+    def __init__(self) -> None:
+        self.today: list[dict[str, object]] = []
+        self.details: dict[str, dict[str, object]] = {}
+        self.pdf_sources: dict[str, dict[str, object]] = {}
+        self.calls: list[tuple[str, str | None]] = []
 
-    def __enter__(self):
-        return self
+    def get_today_top_arxiv_documents(self):
+        self.calls.append(("today", None))
+        return self.today
 
-    def __exit__(self, *args):
-        return False
+    def get_paper_detail(self, paper_id: str):
+        self.calls.append(("detail", paper_id))
+        return self.details.get(paper_id)
 
-    def execute(self, sql: str, params=None) -> None:
-        self.executions.append((sql, params))
-
-    def fetchall(self):
-        row = next(self._rows)
-        return row
-
-    def fetchone(self):
-        return next(self._rows)
+    def get_paper_pdf_source(self, paper_id: str):
+        self.calls.append(("pdf", paper_id))
+        return self.pdf_sources.get(paper_id)
 
 
-class _Connection:
-    def __init__(self, rows: list[dict[str, object] | None]) -> None:
-        self.cursor_value = _Cursor(rows)
-        self.commits = 0
-        self.closes = 0
+class FakeRelay:
+    def __init__(self, chunks=(b"first", b"second"), error: HTTPException | None = None):
+        self.chunks = chunks
+        self.error = error
+        self.calls: list[tuple[str, dict[str, str]]] = []
+        self.closed = False
 
-    def cursor(self):
-        return self.cursor_value
-
-    def commit(self) -> None:
-        self.commits += 1
-
-    def close(self) -> None:
-        self.closes += 1
-
-
-class _LegacyRepository:
-    connections: list[_Connection] = []
-
-    def __init__(self, *args, **kwargs) -> None:
-        pass
-
-    def _connect(self):
-        return self.connections.pop(0)
+    async def stream(self, url: str, headers: dict[str, str]):
+        self.calls.append((url, headers))
+        try:
+            if self.error:
+                raise self.error
+            for chunk in self.chunks:
+                yield chunk
+        finally:
+            self.closed = True
 
 
 class PapersContractsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.app = FastAPI()
         self.app.include_router(router, prefix="/api")
+        self.search = SearchRepository()
+        self.papers = PapersRepository()
+        self.relay = FakeRelay()
+        self.app.dependency_overrides[get_document_repository] = lambda: self.search
+        self.app.dependency_overrides[get_papers_repository] = lambda: self.papers
+        self.app.dependency_overrides[get_pdf_relay] = lambda: self.relay
 
     def test_search_preserves_normalization_shape_and_forwarded_proto(self) -> None:
-        repository = _SearchRepository()
-        self.app.dependency_overrides[get_document_repository] = lambda: repository
-
         response = TestClient(self.app).get(
             "/api/papers/search",
             params={"q": "  agents  ", "limit": 7},
             headers={"x-forwarded-proto": "https"},
         )
-
         self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(repository.calls, [("agents", 7)])
-        self.assertEqual(body["q"], "agents")
-        self.assertEqual(body["total"], 1)
-        self.assertEqual(body["items"][0]["published_date"], "2026-07-27")
+        self.assertEqual(self.search.calls, [("agents", 7)])
         self.assertEqual(
-            body["items"][0]["pdf_media_url"],
-            "https://testserver/api/papers/paper-1/pdf",
+            response.json(),
+            {
+                "items": [{
+                    "id": "paper-1",
+                    "source": "arxiv",
+                    "published_date": "2026-07-27",
+                    "pdf_media_url": "https://testserver/api/papers/paper-1/pdf",
+                }],
+                "total": 1,
+                "q": "agents",
+            },
         )
 
     def test_search_rejects_whitespace_and_query_bounds(self) -> None:
-        repository = _SearchRepository()
-        self.app.dependency_overrides[get_document_repository] = lambda: repository
         client = TestClient(self.app)
-
-        whitespace = client.get("/api/papers/search", params={"q": "   "})
-        missing = client.get("/api/papers/search")
-        excessive_limit = client.get(
-            "/api/papers/search", params={"q": "paper", "limit": 101}
-        )
-
-        self.assertEqual(whitespace.status_code, 422)
-        self.assertEqual(whitespace.json()["detail"], "搜索关键词不能为空")
-        self.assertEqual(missing.status_code, 422)
-        self.assertEqual(excessive_limit.status_code, 422)
-        self.assertEqual(repository.calls, [])
+        self.assertEqual(client.get("/api/papers/search", params={"q": "   "}).status_code, 422)
+        self.assertEqual(client.get("/api/papers/search").status_code, 422)
+        self.assertEqual(client.get("/api/papers/search", params={"q": "x", "limit": 101}).status_code, 422)
+        self.assertEqual(self.search.calls, [])
 
     def test_safe_projection_and_media_urls_preserve_scalar_rules(self) -> None:
-        request = Request(
-            {
-                "type": "http",
-                "method": "GET",
-                "scheme": "http",
-                "server": ("example.test", 80),
-                "path": "/",
-                "root_path": "",
-                "query_string": b"",
-                "headers": [(b"x-forwarded-proto", b"https")],
-            }
-        )
-        safe = _safe_doc({"id": 1, "value": date(2026, 7, 27), "none": None})
-        local = _enrich_pdf_url(
-            {"id": "one", "source": "arxiv", "local_pdf_path": "/tmp/a/b.pdf"},
-            request,
-        )
+        request = Request({
+            "type": "http", "method": "GET", "scheme": "http",
+            "server": ("example.test", 80), "path": "/", "root_path": "",
+            "query_string": b"", "headers": [(b"x-forwarded-proto", b"https")],
+        })
+        self.assertEqual(_safe_doc({"id": 1, "value": date(2026, 7, 27)}), {"id": 1, "value": "2026-07-27"})
+        local = _enrich_pdf_url({"local_pdf_path": "/tmp/a/b.pdf"}, request)
         other = _enrich_pdf_url({"id": "two", "source": "news"}, request)
-
-        self.assertEqual(safe, {"id": 1, "value": "2026-07-27", "none": None})
         self.assertEqual(local["pdf_media_url"], "https://example.test/api/media/papers/b.pdf")
         self.assertIsNone(other["pdf_media_url"])
 
-    def test_top_today_uses_exact_today_then_fallback_order_and_lifecycle(self) -> None:
-        connection = _Connection([[], [{"id": "fallback", "source": "arxiv"}]])
-        _LegacyRepository.connections = [connection]
-
-        with patch(
-            "backend.app.repositories.mysql_repo.MySQLRepository", _LegacyRepository
-        ):
-            response = TestClient(self.app).get("/api/papers/top10-today")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["items"][0]["id"], "fallback")
-        self.assertEqual(len(connection.cursor_value.executions), 2)
-        today_sql, today_params = connection.cursor_value.executions[0]
-        fallback_sql, fallback_params = connection.cursor_value.executions[1]
-        self.assertIn("LEFT(created_at, 10) = %s", today_sql)
-        self.assertIn("ORDER BY COALESCE(raw_score, score, 0) DESC", today_sql)
-        self.assertEqual(len(today_params), 1)
-        self.assertRegex(today_params[0], r"^\d{4}-\d{2}-\d{2}$")
-        self.assertIn(
-            "ORDER BY created_at DESC, COALESCE(raw_score, score, 0) DESC",
-            fallback_sql,
-        )
-        self.assertIsNone(fallback_params)
-        self.assertEqual(connection.commits, 2)
-        self.assertEqual(connection.closes, 1)
-
-    def test_detail_preserves_query_shape_not_found_and_lifecycle(self) -> None:
-        found = _Connection([{"id": "paper-1", "source": "arxiv"}])
-        missing = _Connection([None])
-        _LegacyRepository.connections = [found, missing]
-
-        with patch(
-            "backend.app.repositories.mysql_repo.MySQLRepository", _LegacyRepository
-        ):
-            client = TestClient(self.app)
-            response = client.get("/api/papers/paper-1")
-            not_found = client.get("/api/papers/missing")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["pdf_media_url"], "http://testserver/api/papers/paper-1/pdf")
-        self.assertEqual(not_found.status_code, 404)
-        self.assertEqual(not_found.json()["detail"], "Paper 'missing' not found")
-        sql, params = found.cursor_value.executions[0]
-        self.assertIn("WHERE id = %s", sql)
-        self.assertIn("LIMIT 1", sql)
-        self.assertEqual(params, ("paper-1",))
-        self.assertEqual((found.commits, found.closes), (1, 1))
-        self.assertEqual((missing.commits, missing.closes), (1, 1))
+    def test_top_and_detail_preserve_shapes_calls_and_not_found(self) -> None:
+        self.papers.today = [{"id": "top", "source": "arxiv"}]
+        self.papers.details["paper-1"] = {"id": "paper-1", "source": "arxiv"}
+        client = TestClient(self.app)
+        top = client.get("/api/papers/top10-today")
+        detail = client.get("/api/papers/paper-1")
+        missing = client.get("/api/papers/missing")
+        self.assertEqual(top.json()["total"], 1)
+        self.assertEqual(detail.json()["pdf_media_url"], "http://testserver/api/papers/paper-1/pdf")
+        self.assertEqual((missing.status_code, missing.json()["detail"]), (404, "Paper 'missing' not found"))
+        self.assertEqual(self.papers.calls, [("today", None), ("detail", "paper-1"), ("detail", "missing")])
 
     def test_local_pdf_redirect_preserves_basename_and_forwarded_proto(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "cached.pdf")
             with open(path, "wb") as handle:
                 handle.write(b"pdf")
-            connection = _Connection(
-                [{"local_pdf_path": path, "url": "", "source": "arxiv"}]
+            self.papers.pdf_sources["paper-1"] = {"local_pdf_path": path, "url": "", "source": "arxiv"}
+            response = TestClient(self.app).get(
+                "/api/papers/paper-1/pdf",
+                headers={"x-forwarded-proto": "https"},
+                follow_redirects=False,
             )
-            _LegacyRepository.connections = [connection]
-            with patch(
-                "backend.app.repositories.mysql_repo.MySQLRepository", _LegacyRepository
-            ):
-                response = TestClient(self.app).get(
-                    "/api/papers/paper-1/pdf",
-                    headers={"x-forwarded-proto": "https"},
-                    follow_redirects=False,
-                )
-
         self.assertEqual(response.status_code, 307)
-        self.assertEqual(
-            response.headers["location"],
-            "https://testserver/api/media/papers/cached.pdf",
-        )
-        self.assertEqual((connection.commits, connection.closes), (1, 1))
+        self.assertEqual(response.headers["location"], "https://testserver/api/media/papers/cached.pdf")
 
     def test_pdf_lookup_errors_and_arxiv_version_extraction(self) -> None:
         self.assertEqual(_extract_arxiv_id("https://arxiv.org/abs/2603.12255v2"), "2603.12255v2")
         self.assertIsNone(_extract_arxiv_id("not-an-arxiv-id"))
-        missing = _Connection([None])
-        invalid = _Connection([{"local_pdf_path": None, "url": "bad", "source": "arxiv"}])
-        _LegacyRepository.connections = [missing, invalid]
+        self.papers.pdf_sources["bad"] = {"local_pdf_path": None, "url": "bad", "source": "arxiv"}
+        client = TestClient(self.app)
+        missing = client.get("/api/papers/missing/pdf")
+        invalid = client.get("/api/papers/bad/pdf")
+        self.assertEqual((missing.status_code, missing.json()["detail"]), (404, "Paper not found"))
+        self.assertEqual((invalid.status_code, invalid.json()["detail"]), (422, "Cannot determine arxiv ID from paper URL"))
 
-        with patch(
-            "backend.app.repositories.mysql_repo.MySQLRepository", _LegacyRepository
-        ):
-            client = TestClient(self.app)
-            not_found = client.get("/api/papers/missing/pdf")
-            unprocessable = client.get("/api/papers/bad/pdf")
+    def test_remote_pdf_preserves_url_headers_chunks_response_and_closure(self) -> None:
+        self.papers.pdf_sources["paper-1"] = {
+            "local_pdf_path": None,
+            "url": "https://arxiv.org/abs/2603.12255v3",
+            "source": "arxiv",
+        }
+        response = TestClient(self.app).get("/api/papers/paper-1/pdf")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"firstsecond")
+        self.assertEqual(response.headers["content-type"], "application/pdf")
+        self.assertEqual(response.headers["content-disposition"], 'inline; filename="2603.12255v3.pdf"')
+        self.assertEqual(response.headers["cache-control"], "public, max-age=86400")
+        self.assertEqual(response.headers["access-control-allow-origin"], "*")
+        self.assertEqual(self.relay.calls[0][0], "https://arxiv.org/pdf/2603.12255v3.pdf")
+        self.assertEqual(self.relay.calls[0][1]["Accept"], "application/pdf,*/*")
+        self.assertTrue(self.relay.closed)
 
-        self.assertEqual((not_found.status_code, not_found.json()["detail"]), (404, "Paper not found"))
-        self.assertEqual(
-            (unprocessable.status_code, unprocessable.json()["detail"]),
-            (422, "Cannot determine arxiv ID from paper URL"),
-        )
+    def test_remote_pdf_upstream_error_preserves_status_detail_and_closure(self) -> None:
+        error = HTTPException(status_code=503, detail="arxiv returned 503 for https://arxiv.org/pdf/2603.12255.pdf")
+        relay = FakeRelay(error=error)
+        self.papers.pdf_sources["paper-1"] = {
+            "local_pdf_path": None, "url": "https://arxiv.org/abs/2603.12255", "source": "arxiv"
+        }
+        request = Request({
+            "type": "http", "method": "GET", "scheme": "http",
+            "server": ("testserver", 80), "path": "/", "root_path": "",
+            "query_string": b"", "headers": [],
+        })
 
-    def test_remote_pdf_stream_preserves_request_headers_chunks_and_closure(self) -> None:
+        async def consume():
+            streaming = await proxy_arxiv_pdf("paper-1", request, self.papers, relay)
+            with self.assertRaises(HTTPException) as raised:
+                async for _ in streaming.body_iterator:
+                    pass
+            return raised.exception
+
+        raised = asyncio.run(consume())
+        self.assertEqual((raised.status_code, raised.detail), (503, error.detail))
+        self.assertTrue(relay.closed)
+
+    def test_httpx_relay_preserves_transport_options_chunk_size_and_closure(self) -> None:
         events: list[str] = []
 
         class Response:
             status_code = 200
-
-            async def __aenter__(self):
-                events.append("response-enter")
-                return self
-
-            async def __aexit__(self, *args):
-                events.append("response-close")
-
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): events.append("response-close")
             async def aiter_bytes(self, chunk_size: int):
-                self.chunk_size = chunk_size
-                yield b"first"
-                yield b"second"
-
-        response = Response()
+                events.append(f"chunk:{chunk_size}")
+                yield b"pdf"
 
         class Client:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-                events.append(f"client:{kwargs}")
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                events.append("client-close")
-
+            def __init__(self, **kwargs): events.append(f"client:{kwargs}")
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): events.append("client-close")
             def stream(self, method, url, headers):
-                self.request = (method, url, headers)
-                events.append(f"request:{method}:{url}:{headers}")
-                return response
-
-        connection = _Connection(
-            [{"local_pdf_path": None, "url": "https://arxiv.org/abs/2603.12255v3", "source": "arxiv"}]
-        )
-        _LegacyRepository.connections = [connection]
-        request = Request(
-            {
-                "type": "http",
-                "method": "GET",
-                "scheme": "http",
-                "server": ("testserver", 80),
-                "path": "/api/papers/paper-1/pdf",
-                "root_path": "",
-                "query_string": b"",
-                "headers": [],
-            }
-        )
+                events.append(f"request:{method}:{url}:{headers['Accept']}")
+                return Response()
 
         async def consume():
-            with patch(
-                "backend.app.repositories.mysql_repo.MySQLRepository", _LegacyRepository
-            ), patch("backend.app.api.routes_papers.httpx.AsyncClient", Client):
-                streaming = await proxy_arxiv_pdf("paper-1", request)
-                chunks = [chunk async for chunk in streaming.body_iterator]
-                return streaming, chunks
+            with patch("backend.app.services.papers.pdf_relay.httpx.AsyncClient", Client):
+                return [chunk async for chunk in HttpxPdfRelay().stream("https://arxiv.test/a.pdf", {"Accept": "application/pdf,*/*"})]
 
-        import asyncio
-
-        streaming, chunks = asyncio.run(consume())
-        self.assertEqual(chunks, [b"first", b"second"])
-        self.assertEqual(response.chunk_size, 65536)
-        self.assertEqual(streaming.media_type, "application/pdf")
-        self.assertEqual(streaming.headers["content-disposition"], 'inline; filename="2603.12255v3.pdf"')
-        self.assertEqual(streaming.headers["cache-control"], "public, max-age=86400")
-        self.assertEqual(streaming.headers["access-control-allow-origin"], "*")
-        self.assertIn("client:{'follow_redirects': True, 'timeout': 60.0}", events)
-        self.assertTrue(any("request:GET:https://arxiv.org/pdf/2603.12255v3.pdf" in event for event in events))
+        self.assertEqual(asyncio.run(consume()), [b"pdf"])
+        self.assertEqual(events[0], "client:{'follow_redirects': True, 'timeout': 60.0}")
+        self.assertIn("chunk:65536", events)
         self.assertEqual(events[-2:], ["response-close", "client-close"])
 
-    def test_remote_pdf_upstream_error_preserves_status_detail_and_closure(self) -> None:
+    def test_httpx_relay_preserves_upstream_error_and_closure(self) -> None:
         events: list[str] = []
 
         class Response:
-            status_code = 503
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                events.append("response-close")
-
-            async def aiter_bytes(self, chunk_size: int):
-                if False:
-                    yield b""
+            status_code = 502
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): events.append("response-close")
 
         class Client:
-            def __init__(self, **kwargs):
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                events.append("client-close")
-
-            def stream(self, method, url, headers):
-                return Response()
-
-        connection = _Connection(
-            [{"local_pdf_path": None, "url": "https://arxiv.org/abs/2603.12255", "source": "arxiv"}]
-        )
-        _LegacyRepository.connections = [connection]
-        request = Request(
-            {
-                "type": "http",
-                "method": "GET",
-                "scheme": "http",
-                "server": ("testserver", 80),
-                "path": "/",
-                "root_path": "",
-                "query_string": b"",
-                "headers": [],
-            }
-        )
+            def __init__(self, **kwargs): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): events.append("client-close")
+            def stream(self, method, url, headers): return Response()
 
         async def consume():
-            with patch(
-                "backend.app.repositories.mysql_repo.MySQLRepository", _LegacyRepository
-            ), patch("backend.app.api.routes_papers.httpx.AsyncClient", Client):
-                streaming = await proxy_arxiv_pdf("paper-1", request)
+            with patch("backend.app.services.papers.pdf_relay.httpx.AsyncClient", Client):
                 with self.assertRaises(HTTPException) as raised:
-                    async for _ in streaming.body_iterator:
+                    async for _ in HttpxPdfRelay().stream("https://arxiv.test/a.pdf", {}):
                         pass
                 return raised.exception
 
-        import asyncio
-
-        error = asyncio.run(consume())
-        self.assertEqual(error.status_code, 503)
-        self.assertEqual(
-            error.detail,
-            "arxiv returned 503 for https://arxiv.org/pdf/2603.12255.pdf",
-        )
+        raised = asyncio.run(consume())
+        self.assertEqual((raised.status_code, raised.detail), (502, "arxiv returned 502 for https://arxiv.test/a.pdf"))
         self.assertEqual(events, ["response-close", "client-close"])
 
 
