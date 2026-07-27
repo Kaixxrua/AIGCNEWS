@@ -8,6 +8,15 @@ import {
   watch,
 } from 'vue'
 import { fetchSnapshotDates } from '../services/dashboard/dashboardApi'
+import type {
+  DashboardApi,
+  DashboardSnapshotDatesParams,
+  DashboardSummaryParams,
+  DashboardTopParams,
+  DashboardVisitorCount,
+  GitHubHotPeriod,
+  GitHubHotResponse,
+} from '../services/dashboard/dashboardContracts'
 import { api } from '../services/http/apiClient'
 import {
   DAILY_ONLY_TABS,
@@ -22,9 +31,50 @@ interface DashboardDataOptions {
   updateStatSources: (stats: Stats) => void
   updateVisitorSources: (stats: Stats) => void
   disableCountUp: () => void
+  dashboardApi?: DashboardApi
+  now?: () => number
+  createAbortController?: () => AbortController
+}
+
+const legacyDashboardApi: DashboardApi = {
+  async fetchSummary({ period, date, signal }: DashboardSummaryParams) {
+    const response = await api.get('/dashboard/summary', { params: { period, date }, signal })
+    return {
+      stats: response.data.stats ?? {},
+      isFinalized: response.data.is_finalized ?? false,
+      isEmbargoed: response.data.is_embargoed ?? false,
+    }
+  },
+  async fetchTop({ source, period, date, limit = 10, signal }: DashboardTopParams) {
+    const response = await api.get('/dashboard/top', { params: { limit, source, period, date }, signal })
+    return { items: response.data.items ?? [] }
+  },
+  fetchSnapshotDates({ limit = 60, source, period, signal }: DashboardSnapshotDatesParams) {
+    return fetchSnapshotDates(limit, source, period, signal)
+  },
+  async fetchVisitorCount(signal?: AbortSignal): Promise<DashboardVisitorCount> {
+    const response = await api.get('/dashboard/visitor-count', { signal })
+    return {
+      registeredUsers: response.data.registered_users ?? 0,
+      todayRegisteredUsers: response.data.today_registered_users ?? 0,
+      userCount: response.data.user_count ?? 0,
+    }
+  },
+  async fetchGitHubHotRepos(_period?: GitHubHotPeriod, _limit?: number): Promise<GitHubHotResponse> {
+    throw new Error('GitHub hot repositories are not used by the Dashboard data controller')
+  },
+}
+
+const isCanceledError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { name?: string; code?: string }
+  return candidate.name === 'CanceledError' || candidate.code === 'ERR_CANCELED'
 }
 
 export const useDashboardData = (options: DashboardDataOptions) => {
+  const dashboardApi = options.dashboardApi ?? legacyDashboardApi
+  const now = options.now ?? Date.now
+  const createAbortController = options.createAbortController ?? (() => new AbortController())
   const activeTab = ref<TabKey>('arxiv')
   const activePeriod = ref<PeriodKey>('daily')
   const tabList = ref<TopDoc[]>([])
@@ -36,65 +86,88 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   let lastSuccessfulFetchAt = 0
   let hasActivatedOnce = false
   let dashboardController: AbortController | null = null
+  let dashboardGeneration = 0
 
-  const newDashboardSignal = (): AbortSignal => {
+  const beginDashboardRequest = () => {
     dashboardController?.abort()
-    dashboardController = new AbortController()
-    return dashboardController.signal
+    dashboardController = createAbortController()
+    dashboardGeneration += 1
+    return { controller: dashboardController, generation: dashboardGeneration }
   }
 
-  const date = new Date()
+  const isCurrentDashboardRequest = (controller: AbortController, generation: number) =>
+    dashboardController === controller && dashboardGeneration === generation && !controller.signal.aborted
+
+  const date = new Date(now())
   const todayStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   const currentDate = ref<string>(todayStr)
   const availableDates = ref<string[]>([])
   let availabilityController: AbortController | null = null
+  let availabilityGeneration = 0
   const isViewingHistory = computed(() => currentDate.value !== todayStr)
   const isFinalized = ref(false)
   const isEmbargoed = ref(false)
 
+  const beginAvailabilityRequest = () => {
+    availabilityController?.abort()
+    availabilityController = createAbortController()
+    availabilityGeneration += 1
+    return { controller: availabilityController, generation: availabilityGeneration }
+  }
+
   const isPeriodDisabled = (periodKey: PeriodKey): boolean =>
     periodKey !== 'daily' && DAILY_ONLY_TABS.has(activeTab.value)
 
-  const fetchDashboardData = async (tab: TabKey, period: PeriodKey, selectedDate?: string, signal?: AbortSignal) => {
-    const dateParam = selectedDate || currentDate.value
-    const [summaryRes, topRes] = await Promise.all([
-      api.get('/dashboard/summary', { params: { period, date: dateParam }, signal }),
-      api.get('/dashboard/top', { params: { limit: 10, source: tab, period, date: dateParam }, signal }),
+  const fetchDashboardData = async (
+    tab: TabKey,
+    period: PeriodKey,
+    selectedDate: string,
+    controller: AbortController,
+    generation: number,
+  ) => {
+    const [summary, top] = await Promise.all([
+      dashboardApi.fetchSummary({ period, date: selectedDate, signal: controller.signal }),
+      dashboardApi.fetchTop({ limit: 10, source: tab, period, date: selectedDate, signal: controller.signal }),
     ])
-    stats.value = summaryRes.data.stats ?? {}
-    tabList.value = topRes.data.items ?? []
-    isFinalized.value = summaryRes.data.is_finalized ?? false
-    isEmbargoed.value = summaryRes.data.is_embargoed ?? false
-    lastSuccessfulFetchAt = Date.now()
+    if (!isCurrentDashboardRequest(controller, generation)) return false
+    stats.value = summary.stats
+    tabList.value = top.items
+    isFinalized.value = summary.isFinalized
+    isEmbargoed.value = summary.isEmbargoed
+    lastSuccessfulFetchAt = now()
+    return true
   }
 
   const fetchAvailableDates = async (tab = activeTab.value, period = activePeriod.value) => {
-    availabilityController?.abort()
-    const controller = new AbortController()
-    availabilityController = controller
+    const { controller, generation } = beginAvailabilityRequest()
     try {
-      const dates = await fetchSnapshotDates(90, tab, period, controller.signal)
-      if (!controller.signal.aborted && tab === activeTab.value && period === activePeriod.value) {
-        availableDates.value = dates
-      }
-    } catch (error: any) {
-      if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return
+      const dates = await dashboardApi.fetchSnapshotDates({ limit: 90, source: tab, period, signal: controller.signal })
+      if (
+        availabilityController === controller
+        && availabilityGeneration === generation
+        && !controller.signal.aborted
+        && tab === activeTab.value
+        && period === activePeriod.value
+      ) availableDates.value = dates
+    } catch (error: unknown) {
+      if (isCanceledError(error)) return
       console.warn('[Dashboard] 获取快照日期失败', error)
     }
   }
 
-  const fetchUserCountMetric = async (signal?: AbortSignal) => {
+  const fetchUserCountMetric = async (controller: AbortController, generation: number) => {
     try {
-      const response = await api.get('/dashboard/visitor-count', { signal })
+      const visitor = await dashboardApi.fetchVisitorCount(controller.signal)
+      if (!isCurrentDashboardRequest(controller, generation)) return
       stats.value = {
         ...stats.value,
-        registered_users: response.data.registered_users ?? stats.value.registered_users ?? 0,
-        today_registered_users: response.data.today_registered_users ?? 0,
-        user_count: response.data.user_count ?? 0,
+        registered_users: visitor.registeredUsers ?? stats.value.registered_users ?? 0,
+        today_registered_users: visitor.todayRegisteredUsers ?? 0,
+        user_count: visitor.userCount ?? 0,
       }
       options.updateVisitorSources(stats.value)
-    } catch (error: any) {
-      if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return
+    } catch (error: unknown) {
+      if (isCanceledError(error)) return
       console.warn('[Dashboard] 获取用户数失败', error)
     }
   }
@@ -102,39 +175,43 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const stopDashboardRequests = () => {
     dashboardController?.abort()
     dashboardController = null
+    dashboardGeneration += 1
     availabilityController?.abort()
     availabilityController = null
+    availabilityGeneration += 1
   }
 
   const refreshDashboardInBackground = async () => {
     if (loading.value || tabLoading.value) return
-    const signal = newDashboardSignal()
+    const { controller, generation } = beginDashboardRequest()
     try {
       await Promise.all([
-        fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, signal),
+        fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, controller, generation),
         fetchAvailableDates(),
-        fetchUserCountMetric(signal),
+        fetchUserCountMetric(controller, generation),
       ])
-      options.updateStatSources(stats.value)
-    } catch (error: any) {
-      if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return
+      if (isCurrentDashboardRequest(controller, generation)) options.updateStatSources(stats.value)
+    } catch (error: unknown) {
+      if (isCanceledError(error)) return
       console.warn('[Dashboard] 后台刷新失败', error)
     }
   }
 
   onMounted(async () => {
-    const signal = newDashboardSignal()
+    const { controller, generation } = beginDashboardRequest()
     try {
       await Promise.all([
-        fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, signal),
+        fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, controller, generation),
         fetchAvailableDates(),
-        fetchUserCountMetric(signal),
+        fetchUserCountMetric(controller, generation),
       ])
-    } catch (error: any) {
-      if (error?.name !== 'CanceledError' && error?.code !== 'ERR_CANCELED') errorMsg.value = String(error)
+    } catch (error: unknown) {
+      if (!isCanceledError(error) && isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)
     } finally {
-      loading.value = false
-      options.updateStatSources(stats.value)
+      if (isCurrentDashboardRequest(controller, generation)) {
+        loading.value = false
+        options.updateStatSources(stats.value)
+      }
     }
   })
 
@@ -143,9 +220,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       hasActivatedOnce = true
       return
     }
-    if (Date.now() - lastSuccessfulFetchAt >= viewRefreshInterval) {
-      void refreshDashboardInBackground()
-    }
+    if (now() - lastSuccessfulFetchAt >= viewRefreshInterval) void refreshDashboardInBackground()
   })
 
   onDeactivated(stopDashboardRequests)
@@ -158,16 +233,16 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   watch([activeTab, activePeriod], async ([tab, period]) => {
     tabLoading.value = true
     tabList.value = []
-    const signal = newDashboardSignal()
+    const { controller, generation } = beginDashboardRequest()
     try {
       await fetchAvailableDates(tab, period)
-      await fetchDashboardData(tab, period, currentDate.value, signal)
-      options.updateStatSources(stats.value)
-    } catch (error: any) {
-      if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return
+      const applied = await fetchDashboardData(tab, period, currentDate.value, controller, generation)
+      if (applied) options.updateStatSources(stats.value)
+    } catch (error: unknown) {
+      if (isCanceledError(error)) return
       console.error('Failed to load dashboard data', error)
     } finally {
-      tabLoading.value = false
+      if (isCurrentDashboardRequest(controller, generation)) tabLoading.value = false
     }
   })
 
@@ -176,15 +251,15 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     tabLoading.value = true
     tabList.value = []
     options.disableCountUp()
-    const signal = newDashboardSignal()
+    const { controller, generation } = beginDashboardRequest()
     try {
-      await fetchDashboardData(activeTab.value, activePeriod.value, selectedDate, signal)
-      options.updateStatSources(stats.value)
-    } catch (error: any) {
-      if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return
+      const applied = await fetchDashboardData(activeTab.value, activePeriod.value, selectedDate, controller, generation)
+      if (applied) options.updateStatSources(stats.value)
+    } catch (error: unknown) {
+      if (isCanceledError(error)) return
       console.error('Failed to load dashboard data by date', error)
     } finally {
-      tabLoading.value = false
+      if (isCurrentDashboardRequest(controller, generation)) tabLoading.value = false
     }
   }
 

@@ -6,9 +6,11 @@ const fetchSnapshotDates = vi.hoisted(() => vi.fn())
 vi.mock('../services/http/apiClient', () => ({ api: transport }))
 vi.mock('../services/dashboard/dashboardApi', () => ({ fetchSnapshotDates }))
 
+import type { DashboardApi } from '../services/dashboard/dashboardApi'
 import { useDashboardData } from './useDashboardData'
 
 type DashboardData = ReturnType<typeof useDashboardData>
+type DashboardOverrides = Partial<Pick<Parameters<typeof useDashboardData>[0], 'dashboardApi' | 'now' | 'createAbortController'>>
 
 const flush = async () => {
   await Promise.resolve()
@@ -24,7 +26,7 @@ const responseFor = (url: string) => {
   return { data: { registered_users: 7, today_registered_users: 2, user_count: 9 } }
 }
 
-const mountDashboard = () => {
+const mountDashboard = (overrides: DashboardOverrides = {}) => {
   let dashboard!: DashboardData
   const updateStatSources = vi.fn()
   const updateVisitorSources = vi.fn()
@@ -33,7 +35,7 @@ const mountDashboard = () => {
   const DashboardHarness = defineComponent({
     name: 'DashboardHarness',
     setup() {
-      dashboard = useDashboardData({ updateStatSources, updateVisitorSources, disableCountUp })
+      dashboard = useDashboardData({ updateStatSources, updateVisitorSources, disableCountUp, ...overrides })
       return () => h('div')
     },
   })
@@ -105,7 +107,7 @@ describe('Dashboard request lifecycle contract', () => {
 
     expect(mounted.dashboard.activePeriod.value).toBe('daily')
     expect(mounted.dashboard.loading.value).toBe(false)
-    expect(mounted.dashboard.tabLoading.value).toBe(false)
+    await vi.waitFor(() => expect(mounted.dashboard.tabLoading.value).toBe(false))
     expect(mounted.dashboard.isPeriodDisabled('weekly')).toBe(true)
     mounted.app.unmount()
   })
@@ -150,6 +152,30 @@ describe('Dashboard request lifecycle contract', () => {
     await nextTick()
     expect(dashboardSignals[dashboardSignals.length - 1]?.aborted).toBe(true)
     expect(availabilitySignals[availabilitySignals.length - 1]?.aborted).toBe(true)
+    mounted.app.unmount()
+  })
+
+  it('ignores a late dashboard response even when its transport does not reject on abort', async () => {
+    type Summary = Awaited<ReturnType<DashboardApi['fetchSummary']>>
+    const deferred: Array<{ resolve: (value: Summary) => void }> = []
+    const injectedApi: DashboardApi = {
+      fetchSummary: vi.fn(() => new Promise<Summary>((resolve) => deferred.push({ resolve }))),
+      fetchTop: vi.fn(async () => ({ items: [] })),
+      fetchSnapshotDates: vi.fn(async () => []),
+      fetchVisitorCount: vi.fn(async () => ({ registeredUsers: 0, todayRegisteredUsers: 0, userCount: 0 })),
+      fetchGitHubHotRepos: vi.fn(async () => ({ period: 'daily', items: [] })),
+    }
+    const mounted = mountDashboard({ dashboardApi: injectedApi, now: () => new Date(2026, 6, 27, 12).getTime() })
+    await flush()
+    mounted.dashboard.activeTab.value = 'github'
+    await flush()
+    deferred[1]!.resolve({ stats: { total_documents: 2 }, isFinalized: false, isEmbargoed: false })
+    await flush()
+    expect(mounted.dashboard.stats.value.total_documents).toBe(2)
+    deferred[0]!.resolve({ stats: { total_documents: 1 }, isFinalized: true, isEmbargoed: true })
+    await flush()
+    expect(mounted.dashboard.stats.value.total_documents).toBe(2)
+    expect(mounted.dashboard.isFinalized.value).toBe(false)
     mounted.app.unmount()
   })
 
