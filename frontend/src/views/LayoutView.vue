@@ -20,7 +20,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="relative flex h-screen w-full items-center justify-center overflow-hidden">
+  <div class="relative flex h-screen w-full items-start justify-center overflow-hidden">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
@@ -70,9 +70,10 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 /* ═══ 主工作画板：纸面、硬规则、轻微错版阴影 ═══ */
 .main-canvas {
-  width: 94%;
-  max-width: 1480px;
-  height: 90vh;
+  width: calc(100% - 24px);
+  max-width: none;
+  height: calc(100dvh - 82px);
+  margin-top: 12px;
   border-radius: 14px;
   background: var(--paper-raised);
   border: 1px solid var(--rule-strong);
@@ -89,6 +90,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     width: 100%;
     height: 100dvh;
     min-height: 100dvh;
+    margin-top: 0;
     border-radius: 18px;
   }
 
