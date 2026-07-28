@@ -106,67 +106,77 @@ def test_explicit_document_ids_are_lowercase_deduplicated_in_caller_order() -> N
     assert HybridRetriever._extract_explicit_document_ids("no document id") == []
 
 
-def test_mysql_id_match_binds_ids_twice_to_preserve_caller_order() -> None:
+def test_id_match_delegates_ordered_ids_and_preserves_langchain_projection() -> None:
     first = "abcdef0123456789abcdef0123456789"
     second = "0123456789abcdef0123456789abcdef"
-    repository, connection, cursor = _query_fixture()
+    reader = MagicMock()
+    reader.get_documents_by_ids.return_value = [
+        {
+            "id": first,
+            "source": "arxiv",
+            "title": "Paper",
+            "summary": "Summary",
+            "score": 1.5,
+            "raw_score": 2.5,
+            "rank_in_period": 2,
+        }
+    ]
     retriever = HybridRetriever.__new__(HybridRetriever)
-    retriever._mysql_repo = repository
+    retriever._document_retrieval = reader
 
-    assert retriever._mysql_id_match_documents(f"{first} {second} {first}", top_k=4) == []
+    docs = retriever._mysql_id_match_documents(f"{first} {second} {first}", top_k=4)
 
-    sql, params = cursor.execute.call_args.args
-    normalized = _normalized_sql(sql)
-    assert "WHERE id IN (%s, %s)" in normalized
-    assert "ORDER BY FIELD(id, %s, %s) LIMIT %s" in normalized
-    assert params == (first, second, first, second, 4)
-    connection.commit.assert_called_once_with()
-    connection.close.assert_called_once_with()
+    reader.get_documents_by_ids.assert_called_once_with([first, second], limit=4)
+    assert docs[0].page_content == f"Document ID: {first}\nTitle: Paper\nSummary (metadata excerpt): Summary"
+    assert docs[0].metadata["match_type"] == "mysql_id"
+    assert docs[0].metadata["force_include"] is True
 
 
-def test_mysql_id_match_with_no_id_does_not_open_database_connection() -> None:
-    repository = MagicMock()
+def test_id_match_with_no_id_does_not_call_reader() -> None:
+    reader = MagicMock()
     retriever = HybridRetriever.__new__(HybridRetriever)
-    retriever._mysql_repo = repository
+    retriever._document_retrieval = reader
 
     assert retriever._mysql_id_match_documents("explain this paper") == []
-    repository._connect.assert_not_called()
+    reader.get_documents_by_ids.assert_not_called()
 
 
-def test_mysql_title_match_filters_deduplicates_caps_and_binds_wildcards() -> None:
-    repository, connection, cursor = _query_fixture()
+def test_title_match_filters_deduplicates_caps_and_delegates_tokens() -> None:
+    reader = MagicMock()
+    reader.get_documents_by_title_tokens.return_value = [
+        {
+            "id": "doc-1",
+            "source": "news",
+            "title": "Alpha Beta Gamma",
+            "summary": "Summary",
+            "keyword_score": 4,
+        }
+    ]
     retriever = HybridRetriever.__new__(HybridRetriever)
-    retriever._mysql_repo = repository
+    retriever._document_retrieval = reader
     query = (
         "The alpha ALPHA b beta and gamma delta epsilon zeta eta theta "
         "iota kappa"
     )
 
-    assert retriever._mysql_title_match_documents(query, top_k=6) == []
+    docs = retriever._mysql_title_match_documents(query, top_k=6)
 
     expected_tokens = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"]
-    wildcards = tuple(f"%{token}%" for token in expected_tokens)
-    sql, params = cursor.execute.call_args.args
-    normalized = _normalized_sql(sql)
-    assert normalized.count("(LOWER(title) LIKE %s)") == 8
-    assert "WHERE (LOWER(title) LIKE %s OR LOWER(title) LIKE %s" in normalized
-    assert "HAVING keyword_score >= %s" in normalized
-    assert (
-        "ORDER BY keyword_score DESC, CASE WHEN source = 'arxiv' THEN 0 ELSE 1 END ASC, "
-        "COALESCE(raw_score, score, 0) DESC, published_date DESC LIMIT %s"
-    ) in normalized
-    assert params == wildcards + wildcards + (3, 6)
-    connection.commit.assert_called_once_with()
-    connection.close.assert_called_once_with()
+    reader.get_documents_by_title_tokens.assert_called_once_with(
+        expected_tokens, min_matches=3, limit=6
+    )
+    assert docs[0].page_content == "Title: Alpha Beta Gamma\nSummary (metadata excerpt): Summary"
+    assert docs[0].metadata["match_type"] == "mysql_title"
+    assert docs[0].metadata["keyword_score"] == 4.0
 
 
-def test_mysql_title_match_requires_three_filtered_tokens() -> None:
-    repository = MagicMock()
+def test_title_match_requires_three_filtered_tokens() -> None:
+    reader = MagicMock()
     retriever = HybridRetriever.__new__(HybridRetriever)
-    retriever._mysql_repo = repository
+    retriever._document_retrieval = reader
 
     assert retriever._mysql_title_match_documents("the alpha and beta b") == []
-    repository._connect.assert_not_called()
+    reader.get_documents_by_title_tokens.assert_not_called()
 
 
 class _FixedDateTime(datetime):
@@ -177,39 +187,21 @@ class _FixedDateTime(datetime):
         return cls(2026, 7, 28, 9, 30, tzinfo=tz)
 
 
-@pytest.mark.parametrize(
-    ("source", "expected_where", "expected_params"),
-    [
-        ("all", "WHERE LEFT(created_at, 10) = %s", ("2026-07-28", 5)),
-        (
-            "github",
-            "WHERE LEFT(created_at, 10) = %s AND source = %s",
-            ("2026-07-28", "github", 5),
-        ),
-    ],
-)
-def test_ranking_uses_cst_date_source_scope_and_stable_order(
-    source: str, expected_where: str, expected_params: tuple[object, ...]
+@pytest.mark.parametrize(("source", "reader_source"), [("all", None), ("github", "github")])
+def test_ranking_uses_reader_source_scope_and_cst_label(
+    source: str, reader_source: str | None
 ) -> None:
-    repository, connection, cursor = _query_fixture()
-    with (
-        patch.object(database_tools, "datetime", _FixedDateTime),
-        patch.object(mysql_module, "MySQLRepository", return_value=repository),
-    ):
-        result = database_tools.execute_query_ranking(source=source, period="weekly", limit=5)
+    reader = MagicMock()
+    reader.get_today_ranked_documents.return_value = []
+    with patch.object(database_tools, "datetime", _FixedDateTime):
+        result = database_tools.execute_query_ranking(
+            source=source, period="weekly", limit=5, ranking_reader=reader
+        )
 
-    sql, params = cursor.execute.call_args.args
-    normalized = _normalized_sql(sql)
-    assert expected_where in normalized
-    if source == "all":
-        assert "source = %s" not in normalized
-    assert "ORDER BY raw_score DESC, rank_in_period ASC LIMIT %s" in normalized
-    assert params == expected_params
+    reader.get_today_ranked_documents.assert_called_once_with(limit=5, source=reader_source)
     assert result["docs"] == []
     assert result["count"] == 0
     assert "周榜排行（2026-07-28，共 0 条）" in result["formatted"]
-    connection.commit.assert_called_once_with()
-    connection.close.assert_called_once_with()
 
 
 def test_ranking_period_is_presentation_only_and_preserves_rows() -> None:
@@ -222,44 +214,44 @@ def test_ranking_period_is_presentation_only_and_preserves_rows() -> None:
         "raw_score": 12,
         "rank_in_period": 2,
     }
-    calls = []
+    reader = MagicMock()
+    reader.get_today_ranked_documents.return_value = [row]
     results = []
     for period in ("daily", "monthly"):
-        repository, _, cursor = _query_fixture(rows=[row])
-        with (
-            patch.object(database_tools, "datetime", _FixedDateTime),
-            patch.object(mysql_module, "MySQLRepository", return_value=repository),
-        ):
-            results.append(database_tools.execute_query_ranking(period=period, limit=3))
-        calls.append((_normalized_sql(cursor.execute.call_args.args[0]), cursor.execute.call_args.args[1]))
+        with patch.object(database_tools, "datetime", _FixedDateTime):
+            results.append(
+                database_tools.execute_query_ranking(
+                    period=period, limit=3, ranking_reader=reader
+                )
+            )
 
-    assert calls[0] == calls[1]
+    assert reader.get_today_ranked_documents.call_args_list[0] == reader.get_today_ranked_documents.call_args_list[1]
     assert results[0]["docs"] == results[1]["docs"] == [row]
     assert "日榜排行" in results[0]["formatted"]
     assert "月榜排行" in results[1]["formatted"]
     assert "第2名 [github] Project (Stars: 12)" in results[0]["formatted"]
 
 
-@pytest.mark.parametrize(
-    ("source", "expected_where", "expected_params"),
-    [
-        ("all", "FROM documents ORDER BY", (7,)),
-        ("news", "FROM documents WHERE source = %s ORDER BY", ("news", 7)),
-    ],
-)
-def test_knowledge_stats_uses_logical_counts_source_scope_and_stable_order(
-    source: str, expected_where: str, expected_params: tuple[object, ...]
+@pytest.mark.parametrize(("source", "reader_source"), [("all", None), ("news", "news")])
+def test_knowledge_stats_uses_logical_counts_and_reader_source_scope(
+    source: str, reader_source: str | None
 ) -> None:
     counts = {"news": 3, "github": 5, "arxiv": 2}
-    repository, connection, cursor = _query_fixture(source_counts=counts)
-    with patch.object(mysql_module, "MySQLRepository", return_value=repository):
-        result = database_tools.execute_query_knowledge_stats(source=source, limit=7)
+    ranking_reader = MagicMock()
+    ranking_reader.get_knowledge_ranked_documents.return_value = []
+    statistics_reader = MagicMock()
+    statistics_reader.get_source_counts.return_value = counts
+    result = database_tools.execute_query_knowledge_stats(
+        source=source,
+        limit=7,
+        ranking_reader=ranking_reader,
+        statistics_reader=statistics_reader,
+    )
 
-    sql, params = cursor.execute.call_args.args
-    normalized = _normalized_sql(sql)
-    assert expected_where in normalized
-    assert "ORDER BY raw_score DESC, created_at DESC LIMIT %s" in normalized
-    assert params == expected_params
+    ranking_reader.get_knowledge_ranked_documents.assert_called_once_with(
+        limit=7, source=reader_source
+    )
+    statistics_reader.get_source_counts.assert_called_once_with()
     assert result["docs"] == []
     assert result["source_counts"] == counts
     assert result["total"] == 10
@@ -268,30 +260,26 @@ def test_knowledge_stats_uses_logical_counts_source_scope_and_stable_order(
     assert result["formatted"].index("news: 3 条") < result["formatted"].index("arxiv: 2 条")
     if source == "news":
         assert "news 来源共 3 条，以下按热度排序前 7 条" in result["formatted"]
-    connection.commit.assert_called_once_with()
-    connection.close.assert_called_once_with()
 
 
-def test_mcp_paper_detail_uses_exact_id_and_public_projection() -> None:
-    repository, connection, cursor = _query_fixture()
-    cursor.fetchone.return_value = {
+def test_mcp_paper_detail_uses_reader_and_public_projection() -> None:
+    repository = MagicMock()
+    repository.get_paper_detail.return_value = {
         "id": "paper-1",
         "source": "arxiv",
         "title": "Paper",
         "published_date": date(2026, 7, 27),
         "local_pdf_path": "/srv/papers/paper-1.pdf",
     }
-    with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
-        result = asyncio.run(
-            routes_mcp._tool_get_paper_detail(
-                _request(forwarded_proto="https"), {"paper_id": "paper-1"}
-            )
+    result = asyncio.run(
+        routes_mcp._tool_get_paper_detail(
+            _request(forwarded_proto="https"),
+            {"paper_id": "paper-1"},
+            repository,
         )
+    )
 
-    sql, params = cursor.execute.call_args.args
-    normalized = _normalized_sql(sql)
-    assert "FROM documents WHERE id = %s LIMIT 1" in normalized
-    assert params == ("paper-1",)
+    repository.get_paper_detail.assert_called_once_with("paper-1")
     assert result == {
         "item": {
             "id": "paper-1",
@@ -301,19 +289,19 @@ def test_mcp_paper_detail_uses_exact_id_and_public_projection() -> None:
             "pdf_media_url": "https://testserver/api/media/papers/paper-1.pdf",
         }
     }
-    connection.commit.assert_called_once_with()
-    connection.close.assert_called_once_with()
 
 
 def test_mcp_paper_detail_reports_missing_document() -> None:
-    repository, connection, cursor = _query_fixture()
-    cursor.fetchone.return_value = None
-    with (
-        patch.object(routes_mcp, "MySQLRepository", return_value=repository),
-        pytest.raises(routes_mcp.McpToolInputError, match=re.escape("Document 'missing' not found.")),
+    repository = MagicMock()
+    repository.get_paper_detail.return_value = None
+    with pytest.raises(
+        routes_mcp.McpToolInputError,
+        match=re.escape("Document 'missing' not found."),
     ):
-        asyncio.run(routes_mcp._tool_get_paper_detail(_request(), {"paper_id": "missing"}))
+        asyncio.run(
+            routes_mcp._tool_get_paper_detail(
+                _request(), {"paper_id": "missing"}, repository
+            )
+        )
 
-    assert cursor.execute.call_args.args[1] == ("missing",)
-    connection.commit.assert_called_once_with()
-    connection.close.assert_called_once_with()
+    repository.get_paper_detail.assert_called_once_with("missing")

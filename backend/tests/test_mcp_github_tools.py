@@ -55,8 +55,9 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_mcp
 from backend.app.api.mcp_contracts import SearchGitHubAIProjectsInput
-from backend.app.api.dependencies import get_briefing_repository
+from backend.app.api.dependencies import get_briefing_repository, get_papers_repository
 from backend.app.repositories.briefing_repository import BriefingReader
+from backend.app.repositories.document_repository import PapersReader
 from backend.app.services import project_discovery
 from backend.app.services.ingestion import source_github_mcp
 
@@ -495,11 +496,61 @@ class McpProtocolTests(unittest.TestCase):
     def setUp(self) -> None:
         app = FastAPI()
         self.briefing_repository = MagicMock(spec=BriefingReader)
+        self.papers_repository = MagicMock(spec=PapersReader)
         app.dependency_overrides[get_briefing_repository] = (
             lambda: self.briefing_repository
         )
+        app.dependency_overrides[get_papers_repository] = lambda: self.papers_repository
         app.include_router(routes_mcp.router, prefix="/api")
         self.client = TestClient(app)
+
+    def test_paper_detail_tool_uses_injected_papers_reader(self) -> None:
+        self.papers_repository.get_paper_detail.return_value = {
+            "id": "paper-1",
+            "source": "arxiv",
+            "title": "Paper",
+            "local_pdf_path": "/srv/papers/paper-1.pdf",
+        }
+
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_paper_detail",
+                    "arguments": {"paper_id": "paper-1"},
+                },
+            },
+        )
+
+        self.papers_repository.get_paper_detail.assert_called_once_with("paper-1")
+        item = response.json()["result"]["structuredContent"]["item"]
+        self.assertEqual(item["id"], "paper-1")
+        self.assertNotIn("local_pdf_path", item)
+        self.assertTrue(item["pdf_media_url"].endswith("/api/media/papers/paper-1.pdf"))
+
+    def test_paper_detail_resource_uses_injected_papers_reader(self) -> None:
+        self.papers_repository.get_paper_detail.return_value = {
+            "id": "paper-2",
+            "source": "arxiv",
+            "title": "Resource Paper",
+        }
+
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "resources/read",
+                "params": {"uri": "aigc-news://papers/paper-2"},
+            },
+        )
+
+        self.papers_repository.get_paper_detail.assert_called_once_with("paper-2")
+        content = json.loads(response.json()["result"]["contents"][0]["text"])
+        self.assertEqual(content["item"]["title"], "Resource Paper")
 
     def test_latest_report_resource_uses_injected_repository(self) -> None:
         self.briefing_repository.get_briefing_by_date.return_value = {

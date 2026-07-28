@@ -263,7 +263,7 @@ def test_database_tool_boundary_preserves_exports_projection_and_runner():
     assert facade == direct
 
 
-def test_database_queries_preserve_exact_sql_params_commit_and_close():
+def test_database_queries_delegate_to_document_readers_and_preserve_formatting():
     ranking_rows = [
         {
             "id": "1",
@@ -277,44 +277,35 @@ def test_database_queries_preserve_exact_sql_params_commit_and_close():
     ]
     stats_rows = [{"id": "1", "source": "news", "title": "Story", "raw_score": 4}]
 
-    def run(executor, rows, **kwargs):
-        cursor = MagicMock()
-        cursor.__enter__.return_value = cursor
-        cursor.fetchall.return_value = rows
-        connection = MagicMock()
-        connection.cursor.return_value = cursor
-        repository = MagicMock()
-        repository.documents.get_source_counts.return_value = {"news": 3, "github": 2}
-        repository._connect.return_value = connection
-        module = "backend.app.repositories.mysql_repo.MySQLRepository"
-        with patch(module, return_value=repository):
-            result = executor(**kwargs)
-        sql, params = cursor.execute.call_args.args
-        return result, " ".join(sql.split()), params, connection, repository
-
-    ranking = run(
-        database_tools.execute_query_ranking,
-        ranking_rows,
+    ranking_reader = MagicMock()
+    ranking_reader.get_today_ranked_documents.return_value = ranking_rows
+    ranking = database_tools.execute_query_ranking(
         source="github",
         period="weekly",
         limit=7,
+        ranking_reader=ranking_reader,
     )
-    assert "WHERE LEFT(created_at, 10) = %s AND source = %s" in ranking[1]
-    assert ranking[2][1:] == ("github", 7)
-    assert ranking[3].commit.call_count == 1
-    assert ranking[3].close.call_count == 1
+    ranking_reader.get_today_ranked_documents.assert_called_once_with(
+        limit=7, source="github"
+    )
+    assert ranking["docs"] == ranking_rows
+    assert "第2名 [github] Project (Stars: 12)" in ranking["formatted"]
 
-    stats = run(
-        database_tools.execute_query_knowledge_stats,
-        stats_rows,
+    ranking_reader.get_knowledge_ranked_documents.return_value = stats_rows
+    statistics_reader = MagicMock()
+    statistics_reader.get_source_counts.return_value = {"news": 3, "github": 2}
+    stats = database_tools.execute_query_knowledge_stats(
         source="news",
         limit=11,
+        ranking_reader=ranking_reader,
+        statistics_reader=statistics_reader,
     )
-    assert "WHERE source = %s" in stats[1]
-    assert stats[2] == ("news", 11)
-    assert stats[4].documents.get_source_counts.call_count == 1
-    assert stats[3].commit.call_count == 1
-    assert stats[3].close.call_count == 1
+    ranking_reader.get_knowledge_ranked_documents.assert_called_once_with(
+        limit=11, source="news"
+    )
+    statistics_reader.get_source_counts.assert_called_once_with()
+    assert stats["docs"] == stats_rows
+    assert stats["total"] == 5
 
 
 def test_generation_orchestrator_preserves_project_search_adapter_arguments():

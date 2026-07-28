@@ -5,7 +5,19 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
 
+from backend.app.repositories.document_repository import (
+    DocumentRankingReader,
+    DocumentStatisticsReader,
+)
 from backend.app.services.rag.raw_openai_streamer import ToolCallResult
+
+
+def _get_document_readers() -> tuple[DocumentRankingReader, DocumentStatisticsReader]:
+    """Build the narrow document readers used by database-backed chat tools."""
+    from backend.app.repositories.mysql_repo import MySQLRepository
+
+    documents = MySQLRepository().documents
+    return documents, documents
 
 
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
@@ -89,40 +101,21 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
 
 
 def execute_query_ranking(
-    source: str = "all", period: str = "daily", limit: int = 15
+    source: str = "all",
+    period: str = "daily",
+    limit: int = 15,
+    *,
+    ranking_reader: DocumentRankingReader | None = None,
 ) -> Dict[str, Any]:
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     tz_cst = timezone(timedelta(hours=8))
     today = datetime.now(tz_cst).strftime("%Y-%m-%d")
-
-    conditions = ["LEFT(created_at, 10) = %s"]
-    params: List[Any] = [today]
-    if source and source != "all":
-        conditions.append("source = %s")
-        params.append(source)
-    params.append(limit)
-    where_clause = " AND ".join(conditions)
-
-    sql = f"""
-        SELECT id, source, source_channel, title, url, summary,
-               published_date, raw_score, score, rank_in_period, created_at
-        FROM documents
-        WHERE {where_clause}
-        ORDER BY raw_score DESC, rank_in_period ASC
-        LIMIT %s
-    """
-
-    conn = db._connect()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, tuple(params))
-            rows = cur.fetchall()
-        conn.commit()
-        docs = list(rows)
-    finally:
-        conn.close()
+    ranking = ranking_reader or _get_document_readers()[0]
+    docs = list(
+        ranking.get_today_ranked_documents(
+            limit=limit,
+            source=None if not source or source == "all" else source,
+        )
+    )
 
     period_labels = {"daily": "日", "weekly": "周", "monthly": "月"}
     period_label = period_labels.get(period, "日")
@@ -150,38 +143,23 @@ def execute_query_ranking(
 
 
 def execute_query_knowledge_stats(
-    source: str = "all", limit: int = 50
+    source: str = "all",
+    limit: int = 50,
+    *,
+    ranking_reader: DocumentRankingReader | None = None,
+    statistics_reader: DocumentStatisticsReader | None = None,
 ) -> Dict[str, Any]:
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    source_counts = db.documents.get_source_counts()
-    conditions: List[str] = []
-    params: List[Any] = []
-    if source and source != "all":
-        conditions.append("source = %s")
-        params.append(source)
-    params.append(limit)
-    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-
-    sql = f"""
-        SELECT id, source, source_channel, title, url, summary,
-               published_date, raw_score, score, rank_in_period, created_at
-        FROM documents
-        {where_clause}
-        ORDER BY raw_score DESC, created_at DESC
-        LIMIT %s
-    """
-
-    conn = db._connect()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, tuple(params))
-            rows = cur.fetchall()
-        conn.commit()
-        docs = list(rows)
-    finally:
-        conn.close()
+    if ranking_reader is None or statistics_reader is None:
+        default_ranking, default_statistics = _get_document_readers()
+        ranking_reader = ranking_reader or default_ranking
+        statistics_reader = statistics_reader or default_statistics
+    source_counts = statistics_reader.get_source_counts()
+    docs = list(
+        ranking_reader.get_knowledge_ranked_documents(
+            limit=limit,
+            source=None if not source or source == "all" else source,
+        )
+    )
 
     source_label = (source or "全部来源").upper()
     total = sum(source_counts.values())

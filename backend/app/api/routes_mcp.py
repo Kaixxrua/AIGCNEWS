@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from backend.app.api.dependencies import get_briefing_repository
+from backend.app.api.dependencies import get_briefing_repository, get_papers_repository
 from backend.app.api.mcp_contracts import TOOL_INPUT_MODELS, input_schema, validate_iso_date
 from backend.app.api.routes_dashboard import (
     _compute_board_status,
@@ -28,6 +28,7 @@ from backend.app.api.routes_dashboard import (
 from backend.app.api.routes_papers import _enrich_pdf_url, _safe_doc
 from backend.app.core.auth import OptionalMcpUser
 from backend.app.repositories.briefing_repository import BriefingReader
+from backend.app.repositories.document_repository import PapersReader
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
@@ -458,32 +459,17 @@ async def _tool_search_documents(request: Request, args: dict[str, Any]) -> dict
     )
 
 
-async def _tool_get_paper_detail(request: Request, args: dict[str, Any]) -> dict[str, Any]:
+async def _tool_get_paper_detail(
+    request: Request,
+    args: dict[str, Any],
+    papers: PapersReader | None = None,
+) -> dict[str, Any]:
     paper_id = _clean_string(args, "paper_id", required=True, max_len=128)
-    db = MySQLRepository()
-
-    def _do_get() -> dict[str, Any] | None:
-        sql = """
-            SELECT id, source, source_channel, title, url, summary,
-                   published_date, tags, score, raw_score, rank_in_period,
-                   local_pdf_path, created_at
-            FROM documents
-            WHERE id = %s
-            LIMIT 1
-        """
-        conn = db._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, (paper_id,))
-                row = cur.fetchone()
-            conn.commit()
-            return _safe_doc(dict(row)) if row else None
-        finally:
-            conn.close()
-
-    doc = await asyncio.to_thread(_do_get)
-    if not doc:
+    reader = papers or request.state.papers_repository
+    row = await asyncio.to_thread(reader.get_paper_detail, paper_id)
+    if row is None:
         raise McpToolInputError(f"Document {paper_id!r} not found.")
+    doc = _safe_doc(dict(row))
     return {"item": _public_doc(doc, request)}
 
 
@@ -992,8 +978,10 @@ async def mcp_endpoint(
     request: Request,
     mcp_user: dict[str, Any] | None = Depends(OptionalMcpUser),
     briefing_repository: BriefingReader = Depends(get_briefing_repository),
+    papers_repository: PapersReader = Depends(get_papers_repository),
 ) -> Response:
     request.state.mcp_user = mcp_user
+    request.state.papers_repository = papers_repository
     content_length = request.headers.get("content-length")
     if content_length:
         try:

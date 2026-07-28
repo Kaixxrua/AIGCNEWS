@@ -7,7 +7,10 @@ from typing import Iterable, List
 from langchain_core.documents import Document
 
 from backend.app.core.model_factory import get_chat_model, get_embedding_model
-from backend.app.repositories.document_repository import DocumentFeedReader
+from backend.app.repositories.document_repository import (
+    DocumentFeedReader,
+    DocumentRetrievalReader,
+)
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
@@ -20,11 +23,16 @@ class HybridRetriever:
         graph_repo: GraphRepository,
         mysql_repo: MySQLRepository | None = None,
         document_feed: DocumentFeedReader | None = None,
+        document_retrieval: DocumentRetrievalReader | None = None,
     ) -> None:
         self._milvus_repo = milvus_repo
         self._graph_repo = graph_repo
-        self._mysql_repo = mysql_repo or MySQLRepository()
-        self._document_feed = document_feed or self._mysql_repo.documents
+        documents = None
+        if document_feed is None or document_retrieval is None:
+            compatibility_repository = mysql_repo or MySQLRepository()
+            documents = compatibility_repository.documents
+        self._document_feed = document_feed or documents
+        self._document_retrieval = document_retrieval or documents
         self._embeddings = get_embedding_model()
         self._llm = get_chat_model()
 
@@ -119,27 +127,7 @@ class HybridRetriever:
         if not doc_ids:
             return []
 
-        placeholders = ", ".join(["%s"] * len(doc_ids))
-        order_placeholders = ", ".join(["%s"] * len(doc_ids))
-        sql = f"""
-            SELECT id, source, source_channel, title, url, summary,
-                   published_date, raw_score, score, rank_in_period, created_at,
-                   local_pdf_path
-            FROM documents
-            WHERE id IN ({placeholders})
-            ORDER BY FIELD(id, {order_placeholders})
-            LIMIT %s
-        """
-        params = tuple(doc_ids + doc_ids + [top_k])
-
-        conn = self._mysql_repo._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
-            conn.commit()
-        finally:
-            conn.close()
+        rows = self._document_retrieval.get_documents_by_ids(doc_ids, limit=top_k)
 
         docs: List[Document] = []
         for row in rows:
@@ -240,34 +228,12 @@ class HybridRetriever:
         if len(tokens) < 3:
             return []
 
-        like_values = [f"%{token}%" for token in tokens]
-        score_expr = " + ".join(["(LOWER(title) LIKE %s)" for _ in tokens])
-        or_clause = " OR ".join(["LOWER(title) LIKE %s" for _ in tokens])
         min_match_count = min(3, len(tokens))
-        sql = f"""
-            SELECT id, source, source_channel, title, url, summary,
-                   published_date, raw_score, score, rank_in_period, created_at,
-                   local_pdf_path,
-                   ({score_expr}) AS keyword_score
-            FROM documents
-            WHERE ({or_clause})
-            HAVING keyword_score >= %s
-            ORDER BY keyword_score DESC,
-                     CASE WHEN source = 'arxiv' THEN 0 ELSE 1 END ASC,
-                     COALESCE(raw_score, score, 0) DESC,
-                     published_date DESC
-            LIMIT %s
-        """
-        params = tuple(like_values + like_values + [min_match_count, top_k])
-
-        conn = self._mysql_repo._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
-            conn.commit()
-        finally:
-            conn.close()
+        rows = self._document_retrieval.get_documents_by_title_tokens(
+            tokens,
+            min_matches=min_match_count,
+            limit=top_k,
+        )
 
         docs: List[Document] = []
         for row in rows:
