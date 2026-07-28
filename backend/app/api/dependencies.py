@@ -16,6 +16,14 @@ from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.repositories.mcp_access_token_repository import McpAccessTokenRepository
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.project_write_repository import (
+    GitHubProjectEnrichmentRepository,
+    GitHubProjectIngestionRepository,
+    GitHubProjectRecommendationRepository,
+    GitHubProjectSemanticSourceRepository,
+    ToolWebsiteEnrichmentRepository,
+    UserProjectCollectionRepository,
+)
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingRepository,
@@ -127,6 +135,42 @@ def get_papers_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> PapersReader:
     return repositories.documents
+
+
+def get_github_project_ingestion_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> GitHubProjectIngestionRepository:
+    return repositories.github_ingestion
+
+
+def get_github_project_enrichment_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> GitHubProjectEnrichmentRepository:
+    return repositories.github_enrichment
+
+
+def get_tool_website_enrichment_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> ToolWebsiteEnrichmentRepository:
+    return repositories.tool_website_enrichment
+
+
+def get_user_project_collection_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> UserProjectCollectionRepository:
+    return repositories.project_collections
+
+
+def get_github_project_recommendation_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> GitHubProjectRecommendationRepository:
+    return repositories.project_recommendations
+
+
+def get_github_project_semantic_source_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> GitHubProjectSemanticSourceRepository:
+    return repositories.github_semantic_sources
 
 
 def get_pdf_relay() -> HttpxPdfRelay:

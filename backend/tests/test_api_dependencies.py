@@ -62,6 +62,18 @@ class DatabaseDependencyTests(unittest.TestCase):
             dependencies.get_runtime_provider_setting_repository: (
                 "runtime_provider_settings"
             ),
+            dependencies.get_github_project_ingestion_repository: "github_ingestion",
+            dependencies.get_github_project_enrichment_repository: "github_enrichment",
+            dependencies.get_tool_website_enrichment_repository: (
+                "tool_website_enrichment"
+            ),
+            dependencies.get_user_project_collection_repository: "project_collections",
+            dependencies.get_github_project_recommendation_repository: (
+                "project_recommendations"
+            ),
+            dependencies.get_github_project_semantic_source_repository: (
+                "github_semantic_sources"
+            ),
         }
 
         for provider, attribute in mapping.items():
