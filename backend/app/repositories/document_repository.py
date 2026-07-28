@@ -40,6 +40,42 @@ class DocumentSearchReader(Protocol):
     ) -> dict[str, str]: ...
 
 
+class DocumentRetrievalReader(Protocol):
+    """Read document rows for exact-ID and title-token retrieval."""
+
+    def get_documents_by_ids(
+        self,
+        document_ids: list[str],
+        limit: int = 5,
+    ) -> list[dict[str, Any]]: ...
+
+    def get_documents_by_title_tokens(
+        self,
+        tokens: list[str],
+        *,
+        min_matches: int = 3,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]: ...
+
+
+class DocumentRankingReader(Protocol):
+    """Read the ranked document lists consumed by RAG database tools."""
+
+    def get_today_ranked_documents(
+        self,
+        limit: int = 15,
+        *,
+        source: str | None = None,
+    ) -> list[dict[str, Any]]: ...
+
+    def get_knowledge_ranked_documents(
+        self,
+        limit: int = 50,
+        *,
+        source: str | None = None,
+    ) -> list[dict[str, Any]]: ...
+
+
 class PapersReader(Protocol):
     """Read the narrow document projections consumed by Papers REST routes."""
 
@@ -81,6 +117,8 @@ class DocumentAdminWriter(Protocol):
 class DocumentRepository(
     DocumentWriter,
     DocumentSearchReader,
+    DocumentRetrievalReader,
+    DocumentRankingReader,
     PapersReader,
     DocumentFeedReader,
     DocumentStatisticsReader,

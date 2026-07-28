@@ -74,6 +74,76 @@ class MySQLDocumentRepositoryTests(unittest.TestCase):
         self.assertEqual(result, {"items": [], "total": 0, "page": 1, "page_size": 1})
         database.connection.assert_not_called()
 
+    def test_id_batch_preserves_caller_order_and_limit(self) -> None:
+        repository, database, _, cursor = self._connection_repository()
+        cursor.fetchall.return_value = [{"id": "second"}, {"id": "first"}]
+
+        result = repository.get_documents_by_ids(["second", "first"], limit=4)
+
+        sql, params = cursor.execute.call_args.args
+        normalized = " ".join(sql.split())
+        self.assertIn("WHERE id IN (%s, %s)", normalized)
+        self.assertIn("ORDER BY FIELD(id, %s, %s) LIMIT %s", normalized)
+        self.assertEqual(params, ("second", "first", "second", "first", 4))
+        self.assertEqual(result, [{"id": "second"}, {"id": "first"}])
+        database.connection.assert_called_once_with()
+
+    def test_empty_id_batch_skips_database_access(self) -> None:
+        database = MagicMock(spec=DatabaseLifecycle)
+        repository = MySQLDocumentRepository(database)
+
+        self.assertEqual(repository.get_documents_by_ids([]), [])
+        database.connection.assert_not_called()
+
+    def test_title_token_ranking_preserves_match_and_order_semantics(self) -> None:
+        repository, _, _, cursor = self._connection_repository()
+        cursor.fetchall.return_value = [{"id": "doc-1", "keyword_score": 3}]
+
+        result = repository.get_documents_by_title_tokens(
+            ["alpha", "beta", "gamma"], min_matches=3, limit=6
+        )
+
+        sql, params = cursor.execute.call_args.args
+        normalized = " ".join(sql.split())
+        self.assertEqual(normalized.count("(LOWER(title) LIKE %s)"), 3)
+        self.assertIn("WHERE (LOWER(title) LIKE %s OR LOWER(title) LIKE %s", normalized)
+        self.assertIn("HAVING keyword_score >= %s", normalized)
+        self.assertIn(
+            "ORDER BY keyword_score DESC, CASE WHEN source = 'arxiv' THEN 0 ELSE 1 END ASC, "
+            "COALESCE(raw_score, score, 0) DESC, published_date DESC LIMIT %s",
+            normalized,
+        )
+        self.assertEqual(
+            params,
+            ("%alpha%", "%beta%", "%gamma%") * 2 + (3, 6),
+        )
+        self.assertEqual(result, [{"id": "doc-1", "keyword_score": 3}])
+
+    def test_title_token_ranking_preserves_current_wildcard_behavior(self) -> None:
+        repository, _, _, cursor = self._connection_repository()
+        cursor.fetchall.return_value = []
+
+        repository.get_documents_by_title_tokens(["50%", "under_score", "agent"])
+
+        self.assertEqual(cursor.execute.call_args.args[1][0:3], ("%50%%", "%under_score%", "%agent%"))
+
+    def test_ranked_lists_preserve_raw_score_orders_and_source_filters(self) -> None:
+        repository, _, _, cursor = self._connection_repository()
+        cursor.fetchall.return_value = []
+
+        repository.get_today_ranked_documents(5, source="github")
+        today_sql, today_params = cursor.execute.call_args.args
+        repository.get_knowledge_ranked_documents(7, source="news")
+        knowledge_sql, knowledge_params = cursor.execute.call_args.args
+
+        self.assertIn("LEFT(created_at, 10) = %s AND source = %s", today_sql)
+        self.assertIn("ORDER BY raw_score DESC, rank_in_period ASC LIMIT %s", today_sql)
+        self.assertRegex(today_params[0], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertEqual(today_params[1:], ("github", 5))
+        self.assertIn("WHERE source = %s", knowledge_sql)
+        self.assertIn("ORDER BY raw_score DESC, created_at DESC LIMIT %s", knowledge_sql)
+        self.assertEqual(knowledge_params, ("news", 7))
+
     def test_summary_lookup_preserves_placeholder_and_result_keys(self) -> None:
         repository, _, connection, cursor = self._connection_repository()
         cursor.fetchall.return_value = [

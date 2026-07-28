@@ -207,6 +207,109 @@ class PostgresDocumentRepository:
     def search_documents(self, query: str, limit: int = 20, *, source: str | None = None) -> list[dict[str, Any]]:
         return self.search_document_page(query, source=source, page=1, page_size=max(1, min(int(limit), 100)))["items"]
 
+    def get_documents_by_ids(
+        self,
+        document_ids: list[str],
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        if not document_ids:
+            return []
+        sql = """
+            WITH requested AS (
+                SELECT id, MIN(ordinality) AS caller_order
+                FROM unnest(%s::text[]) WITH ORDINALITY AS requested_id(id, ordinality)
+                GROUP BY id
+            )
+            SELECT d.id, d.source, d.source_channel, d.title, d.url, d.summary,
+                   d.published_date, d.raw_score, d.score, d.rank_in_period,
+                   d.created_at, d.local_pdf_path
+            FROM requested
+            JOIN documents d ON d.id = requested.id
+            ORDER BY requested.caller_order ASC
+            LIMIT %s
+        """
+        return self._fetch_rows(sql, (document_ids, limit))
+
+    def get_documents_by_title_tokens(
+        self,
+        tokens: list[str],
+        *,
+        min_matches: int = 3,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        if len(tokens) < min_matches:
+            return []
+        wildcards = [f"%{token}%" for token in tokens]
+        score_sql = " + ".join(
+            ["CASE WHEN LOWER(title) LIKE %s THEN 1 ELSE 0 END"] * len(tokens)
+        )
+        sql = f"""
+            WITH ranked AS (
+                SELECT id, source, source_channel, title, url, summary,
+                       published_date, raw_score, score, rank_in_period, created_at,
+                       local_pdf_path, ({score_sql}) AS keyword_score
+                FROM documents
+            )
+            SELECT id, source, source_channel, title, url, summary,
+                   published_date, raw_score, score, rank_in_period, created_at,
+                   local_pdf_path, keyword_score
+            FROM ranked
+            WHERE keyword_score >= %s
+            ORDER BY keyword_score DESC,
+                     CASE WHEN source = 'arxiv' THEN 0 ELSE 1 END ASC,
+                     COALESCE(raw_score, score, 0) DESC,
+                     published_date DESC
+            LIMIT %s
+        """
+        return self._fetch_rows(sql, tuple(wildcards + [min_matches, limit]))
+
+    def get_today_ranked_documents(
+        self,
+        limit: int = 15,
+        *,
+        source: str | None = None,
+    ) -> list[dict[str, Any]]:
+        today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+        fields = (
+            "id, source, source_channel, title, url, summary, published_date, "
+            "raw_score, score, rank_in_period, created_at"
+        )
+        if source and source != "all":
+            return self._fetch_rows(
+                f"SELECT {fields} FROM documents "
+                "WHERE LEFT(created_at, 10) = %s AND source = %s "
+                "ORDER BY raw_score DESC, rank_in_period ASC LIMIT %s",
+                (today, source, limit),
+            )
+        return self._fetch_rows(
+            f"SELECT {fields} FROM documents "
+            "WHERE LEFT(created_at, 10) = %s "
+            "ORDER BY raw_score DESC, rank_in_period ASC LIMIT %s",
+            (today, limit),
+        )
+
+    def get_knowledge_ranked_documents(
+        self,
+        limit: int = 50,
+        *,
+        source: str | None = None,
+    ) -> list[dict[str, Any]]:
+        fields = (
+            "id, source, source_channel, title, url, summary, published_date, "
+            "raw_score, score, rank_in_period, created_at"
+        )
+        if source and source != "all":
+            return self._fetch_rows(
+                f"SELECT {fields} FROM documents WHERE source = %s "
+                "ORDER BY raw_score DESC, created_at DESC LIMIT %s",
+                (source, limit),
+            )
+        return self._fetch_rows(
+            f"SELECT {fields} FROM documents "
+            "ORDER BY raw_score DESC, created_at DESC LIMIT %s",
+            (limit,),
+        )
+
     def get_existing_document_summaries(
         self,
         *,

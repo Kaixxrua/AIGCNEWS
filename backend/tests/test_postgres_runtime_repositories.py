@@ -112,6 +112,63 @@ def test_document_search_uses_literal_ilike_filters_and_stable_pagination() -> N
     assert 'id COLLATE "C" ASC' in rows_call.args[0]
 
 
+def test_document_id_batch_uses_ordinality_for_caller_order() -> None:
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [{"id": "second"}, {"id": "first"}]
+    repository = PostgresDocumentRepository(FakeDatabase(cursor))
+
+    result = repository.get_documents_by_ids(["second", "first", "second"], limit=4)
+
+    sql, params = cursor.execute.call_args.args
+    assert "unnest(%s::text[]) WITH ORDINALITY" in sql
+    assert "MIN(ordinality) AS caller_order" in sql
+    assert "JOIN documents d ON d.id = requested.id" in sql
+    assert "ORDER BY requested.caller_order ASC" in sql
+    assert params == (["second", "first", "second"], 4)
+    assert result == [{"id": "second"}, {"id": "first"}]
+
+
+def test_document_title_token_ranking_uses_integer_score_cte_and_mysql_order() -> None:
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [{"id": "doc-1", "keyword_score": 3}]
+    repository = PostgresDocumentRepository(FakeDatabase(cursor))
+
+    result = repository.get_documents_by_title_tokens(
+        ["alpha", "beta", "50%"], min_matches=3, limit=6
+    )
+
+    sql, params = cursor.execute.call_args.args
+    normalized = " ".join(sql.split())
+    assert normalized.count("CASE WHEN LOWER(title) LIKE %s THEN 1 ELSE 0 END") == 3
+    assert "WITH ranked AS" in normalized
+    assert "WHERE keyword_score >= %s" in normalized
+    assert "HAVING" not in normalized
+    assert (
+        "ORDER BY keyword_score DESC, CASE WHEN source = 'arxiv' THEN 0 ELSE 1 END ASC, "
+        "COALESCE(raw_score, score, 0) DESC, published_date DESC LIMIT %s"
+    ) in normalized
+    assert params == ("%alpha%", "%beta%", "%50%%", 3, 6)
+    assert result == [{"id": "doc-1", "keyword_score": 3}]
+
+
+def test_document_ranked_lists_preserve_raw_score_orders_and_source_filters() -> None:
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    repository = PostgresDocumentRepository(FakeDatabase(cursor))
+
+    repository.get_today_ranked_documents(5, source="github")
+    today_sql, today_params = cursor.execute.call_args.args
+    repository.get_knowledge_ranked_documents(7, source="news")
+    knowledge_sql, knowledge_params = cursor.execute.call_args.args
+
+    assert "LEFT(created_at, 10) = %s AND source = %s" in today_sql
+    assert "ORDER BY raw_score DESC, rank_in_period ASC LIMIT %s" in today_sql
+    assert today_params[1:] == ("github", 5)
+    assert "WHERE source = %s" in knowledge_sql
+    assert "ORDER BY raw_score DESC, created_at DESC LIMIT %s" in knowledge_sql
+    assert knowledge_params == ("news", 7)
+
+
 def test_task_insert_returns_identity_and_list_shape_matches_mysql() -> None:
     cursor = MagicMock()
     cursor.fetchone.return_value = {"id": 7}

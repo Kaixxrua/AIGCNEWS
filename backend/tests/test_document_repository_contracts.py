@@ -7,7 +7,9 @@ from typing import Any
 from backend.app.repositories.document_repository import (
     DocumentAdminWriter,
     DocumentFeedReader,
+    DocumentRankingReader,
     DocumentRepository,
+    DocumentRetrievalReader,
     DocumentSearchReader,
     DocumentStatisticsReader,
     DocumentWriter,
@@ -34,6 +36,8 @@ class DocumentRepositoryContractTests(unittest.TestCase):
         for capability in (
             DocumentWriter,
             DocumentSearchReader,
+            DocumentRetrievalReader,
+            DocumentRankingReader,
             DocumentFeedReader,
             DocumentStatisticsReader,
             DocumentAdminWriter,
@@ -52,6 +56,18 @@ class DocumentRepositoryContractTests(unittest.TestCase):
             ),
             DocumentSearchReader.get_existing_document_summaries: (
                 "(self, *, ids=None, urls=None, titles=None)"
+            ),
+            DocumentRetrievalReader.get_documents_by_ids: (
+                "(self, document_ids, limit=5)"
+            ),
+            DocumentRetrievalReader.get_documents_by_title_tokens: (
+                "(self, tokens, *, min_matches=3, limit=5)"
+            ),
+            DocumentRankingReader.get_today_ranked_documents: (
+                "(self, limit=15, *, source=None)"
+            ),
+            DocumentRankingReader.get_knowledge_ranked_documents: (
+                "(self, limit=50, *, source=None)"
             ),
             DocumentFeedReader.get_top_documents: "(self, limit=10, source_type=None)",
             DocumentFeedReader.get_latest_documents: "(self, limit=10)",
