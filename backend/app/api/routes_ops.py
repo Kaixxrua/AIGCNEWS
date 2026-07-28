@@ -999,6 +999,26 @@ async def project_search_shadow_status(_: dict = Depends(RequireAdmin)):
     return project_search_shadow_snapshot()
 
 
+@router.post("/ops/project-shadow/finalize", tags=["Ops"])
+async def finalize_project_shadow(_: dict = Depends(RequireAdmin)):
+    """停止接收新 shadow 调用，排空并返回两个具名 epoch 的最终证据。"""
+    from backend.app.core.config import settings
+    from backend.app.services.project_catalog_shadow import (
+        finalize_project_catalog_shadow,
+    )
+    from backend.app.services.project_search_shadow import (
+        finalize_project_search_shadow,
+    )
+
+    catalog_timeout = float(settings.project_catalog_shadow_shutdown_timeout_seconds)
+    search_timeout = float(settings.project_search_shadow_shutdown_timeout_seconds)
+    catalog, search = await asyncio.gather(
+        asyncio.to_thread(finalize_project_catalog_shadow, catalog_timeout),
+        asyncio.to_thread(finalize_project_search_shadow, search_timeout),
+    )
+    return {"catalog": catalog, "search": search}
+
+
 @router.get("/ops/scheduler/status", tags=["Ops"])
 async def scheduler_status(_: dict = Depends(RequireAdmin)):
     """查询 APScheduler 当前状态与已注册任务列表。"""

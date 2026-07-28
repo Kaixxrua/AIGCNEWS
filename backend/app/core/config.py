@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     project_search_shadow_capacity: int = 8
     project_search_shadow_timeout_seconds: float = 1.0
     project_search_shadow_recent_case_limit: int = 20
+    project_search_shadow_shutdown_timeout_seconds: float = 5.0
+    project_search_shadow_epoch: str = "default"
     project_semantic_indexing_enabled: bool = False
     project_semantic_collection_name: str = "aigc_github_projects_v1"
     project_semantic_index_version: str = "v1"
@@ -73,6 +75,7 @@ class Settings(BaseSettings):
     project_catalog_shadow_timeout_seconds: float = 3.0
     project_catalog_shadow_recent_case_limit: int = 20
     project_catalog_shadow_shutdown_timeout_seconds: float = 5.0
+    project_catalog_shadow_epoch: str = "default"
 
     # PostgreSQL 备选项目目录配置
     postgres_host: str = ""
@@ -175,6 +178,7 @@ class Settings(BaseSettings):
 
     sse_heartbeat_interval: int = 15
 
+    scheduler_enabled: bool = True
     scheduler_timezone: str = "Asia/Shanghai"
     scheduler_cron_ingest: str = "0 */3 * * *"
     scheduler_cron_daily_brief: str = "0 9 * * *"

@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import threading
 import time
 from collections import Counter, deque
+from dataclasses import asdict, is_dataclass
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
@@ -46,6 +48,8 @@ def _canonical_bytes(value: Any) -> bytes:
     def normalize(item: Any) -> Any:
         if item is None or isinstance(item, (bool, int, float, str)):
             return item
+        if is_dataclass(item) and not isinstance(item, type):
+            return normalize(asdict(item))
         if isinstance(item, Mapping):
             return [[str(key), normalize(item[key])] for key in sorted(item, key=str)]
         if isinstance(item, (list, tuple)):
@@ -105,12 +109,12 @@ def compare_results(method: str, primary: Any, shadow: Any) -> tuple[str, str, s
 
     if method == "find_lexical_candidate_lanes":
         primary_lanes = {
-            "strict": [candidate.__dict__ for candidate in primary.strict],
-            "relaxed": [candidate.__dict__ for candidate in primary.relaxed],
+            "strict": [asdict(candidate) for candidate in primary.strict],
+            "relaxed": [asdict(candidate) for candidate in primary.relaxed],
         }
         shadow_lanes = {
-            "strict": [candidate.__dict__ for candidate in shadow.strict],
-            "relaxed": [candidate.__dict__ for candidate in shadow.relaxed],
+            "strict": [asdict(candidate) for candidate in shadow.strict],
+            "relaxed": [asdict(candidate) for candidate in shadow.relaxed],
         }
         outcome = "match" if primary_lanes == shadow_lanes else "lane_mismatch"
         return outcome, _digest(primary_lanes), _digest(shadow_lanes)
@@ -165,6 +169,7 @@ class ProjectCatalogShadowManager:
         sample_rate: float,
         timeout_seconds: float,
         recent_case_limit: int,
+        epoch_name: str = "default",
     ) -> None:
         if workers < 1 or capacity < workers:
             raise ValueError("shadow capacity must be at least the worker count")
@@ -172,6 +177,9 @@ class ProjectCatalogShadowManager:
             raise ValueError("shadow sample rate must be between zero and one")
         if timeout_seconds <= 0 or recent_case_limit < 0:
             raise ValueError("invalid project catalog shadow bounds")
+        epoch_name = str(epoch_name).strip()
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", epoch_name):
+            raise ValueError("invalid project catalog shadow epoch name")
         self._executor = ThreadPoolExecutor(
             max_workers=workers,
             thread_name_prefix="project-catalog-shadow",
@@ -179,11 +187,16 @@ class ProjectCatalogShadowManager:
         self._capacity = capacity
         self._sample_rate = sample_rate
         self._timeout_seconds = timeout_seconds
+        self._epoch_name = epoch_name
+        self._started_at = datetime.now(timezone.utc).isoformat()
+        self._finalized_at: str | None = None
+        self._finalization_timed_out = False
         self._recent = deque(maxlen=recent_case_limit)
         self._slots = threading.BoundedSemaphore(capacity)
         self._lock = threading.Lock()
         self._futures: set[Future[Any]] = set()
         self._counts: Counter[tuple[str, str]] = Counter()
+        self._accepted = 0
         self._latencies: list[float] = []
         self._accepting = True
         self._available = True
@@ -227,6 +240,7 @@ class ProjectCatalogShadowManager:
             return False
         with self._lock:
             self._futures.add(future)
+            self._accepted += 1
         future.add_done_callback(self._done)
         return True
 
@@ -270,6 +284,8 @@ class ProjectCatalogShadowManager:
     def _done(self, future: Future[Any]) -> None:
         with self._lock:
             self._futures.discard(future)
+            if not self._accepting and not self._futures and self._finalized_at is None:
+                self._finalized_at = datetime.now(timezone.utc).isoformat()
         self._slots.release()
 
     def _record(self, method: str, outcome: str) -> None:
@@ -331,14 +347,81 @@ class ProjectCatalogShadowManager:
                 counts.setdefault(method, {})[outcome] = count
             latencies = sorted(self._latencies)
             p95 = latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))] if latencies else None
+            accepted = self._accepted
+            sampled_out = sum(
+                count for (method, outcome), count in self._counts.items() if outcome == "skipped_sampled"
+            )
+            skipped_unavailable = sum(
+                count for (method, outcome), count in self._counts.items() if outcome == "skipped_unavailable"
+            )
+            skipped_saturated = sum(
+                count for (method, outcome), count in self._counts.items() if outcome == "skipped_saturated"
+            )
+            submit_errors = sum(
+                count for (method, outcome), count in self._counts.items() if outcome == "submit_error"
+            )
+            completed_terminal = sum(
+                count
+                for (method, outcome), count in self._counts.items()
+                if not outcome.startswith("skipped_") and outcome != "submit_error"
+            )
+            successful_terminal = sum(
+                count for (method, outcome), count in self._counts.items() if outcome == "match"
+            )
+            terminal_failures = completed_terminal - successful_terminal
+            in_flight = len(self._futures)
+            eligible = accepted + skipped_unavailable + skipped_saturated + submit_errors
+            attempted = sampled_out + eligible
+            accounting_valid = (
+                attempted == sampled_out + eligible
+                and eligible == accepted + skipped_unavailable + skipped_saturated + submit_errors
+                and accepted == completed_terminal + in_flight
+            )
+            complete_coverage = (
+                self._sample_rate == 1
+                and self._finalized_at is not None
+                and not self._finalization_timed_out
+                and sampled_out == 0
+                and skipped_unavailable == 0
+                and skipped_saturated == 0
+                and submit_errors == 0
+                and terminal_failures == 0
+                and in_flight == 0
+                and accounting_valid
+            )
             return {
                 "enabled": True,
                 "available": self._available,
                 "degraded": not self._available,
+                "epoch": self._epoch_name,
+                "lifecycle": "finalized" if self._finalized_at else ("draining" if not self._accepting else "running"),
+                "started_at": self._started_at,
+                "finalized_at": self._finalized_at,
+                "finalization_timed_out": self._finalization_timed_out,
                 "active_backend": "mysql",
                 "shadow_backend": "postgres",
                 "capacity": self._capacity,
-                "in_flight": len(self._futures),
+                "sample_rate": self._sample_rate,
+                "in_flight": in_flight,
+                "accounting": {
+                    "attempted": attempted,
+                    "eligible": eligible,
+                    "sampled_out": sampled_out,
+                    "accepted": accepted,
+                    "completed_terminal": completed_terminal,
+                    "successful_terminal": successful_terminal,
+                    "terminal_failures": terminal_failures,
+                    "in_flight": in_flight,
+                    "skipped_unavailable": skipped_unavailable,
+                    "skipped_saturated": skipped_saturated,
+                    "submit_errors": submit_errors,
+                    "accounting_valid": accounting_valid,
+                    "complete_coverage": complete_coverage,
+                    # Backward-compatible aggregate aliases.
+                    "submitted": accepted,
+                    "completed": completed_terminal,
+                    "skipped": sampled_out + skipped_unavailable + skipped_saturated,
+                },
                 "counts": counts,
                 "latency_p95_ms": p95,
                 "last_success_at": self._last_success_at,
@@ -347,15 +430,18 @@ class ProjectCatalogShadowManager:
                 "recent_cases": list(self._recent),
             }
 
-    def close(self, timeout_seconds: float) -> None:
+    def close(self, timeout_seconds: float) -> bool:
         with self._lock:
             self._accepting = False
             futures = tuple(self._futures)
         if futures:
             wait(futures, timeout=max(0.0, timeout_seconds))
-        # Running database calls cannot be force-cancelled safely.  Wait for the
-        # database-side statement timeout before returning the pool to shutdown.
-        self._executor.shutdown(wait=True, cancel_futures=True)
+        self._executor.shutdown(wait=False, cancel_futures=False)
+        with self._lock:
+            self._finalization_timed_out = bool(self._futures)
+            if not self._futures:
+                self._finalized_at = datetime.now(timezone.utc).isoformat()
+            return not self._finalization_timed_out
 
 
 class ShadowComparingProjectCatalogRepository:
@@ -406,12 +492,21 @@ def start_project_catalog_shadow(config: Any) -> ProjectCatalogShadowManager:
                 sample_rate=float(config.project_catalog_shadow_sample_rate),
                 timeout_seconds=float(config.project_catalog_shadow_timeout_seconds),
                 recent_case_limit=int(config.project_catalog_shadow_recent_case_limit),
+                epoch_name=str(getattr(config, "project_catalog_shadow_epoch", "default")),
             )
         return _manager
 
 
 def get_project_catalog_shadow_manager() -> ProjectCatalogShadowManager | None:
     return _manager
+
+
+def finalize_project_catalog_shadow(timeout_seconds: float) -> dict[str, Any]:
+    manager = get_project_catalog_shadow_manager()
+    if manager is None:
+        return project_catalog_shadow_snapshot()
+    manager.close(timeout_seconds)
+    return manager.snapshot()
 
 
 def stop_project_catalog_shadow(timeout_seconds: float) -> None:

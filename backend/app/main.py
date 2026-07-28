@@ -175,11 +175,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.redis = None
         print(f"[Startup] Redis cache init failed (non-fatal): {exc}")
 
-    start_scheduler()
+    scheduler_enabled = bool(getattr(settings, "scheduler_enabled", True))
+    if scheduler_enabled:
+        start_scheduler()
     try:
         yield
     finally:
-        stop_scheduler()
+        if scheduler_enabled:
+            stop_scheduler()
         if semantic_warmup_task is not None and not semantic_warmup_task.done():
             semantic_warmup_task.cancel()
             try:
@@ -226,6 +229,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     )
                 ),
             )
+        from backend.app.services.project_search_shadow import (
+            stop_project_search_shadow,
+        )
+
+        await asyncio.to_thread(
+            stop_project_search_shadow,
+            float(
+                getattr(
+                    settings,
+                    "project_search_shadow_shutdown_timeout_seconds",
+                    5.0,
+                )
+            ),
+        )
         if postgres_opened:
             postgres_database.close()
             print("[Shutdown] PostgreSQL connection pool closed.")

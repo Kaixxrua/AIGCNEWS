@@ -41,3 +41,23 @@ def test_shadow_status_route_is_admin_dependency_and_sanitized() -> None:
         result = asyncio.run(routes_ops.project_catalog_shadow_status({"role": "admin"}))
     assert result == snapshot
     assert "password" not in str(result)
+
+
+def test_finalize_shadow_route_drains_both_named_epochs() -> None:
+    catalog = {"epoch": "catalog-v2", "lifecycle": "finalized"}
+    search = {"epoch": "search-v2", "lifecycle": "finalized"}
+    with (
+        patch(
+            "backend.app.services.project_catalog_shadow.finalize_project_catalog_shadow",
+            return_value=catalog,
+        ) as finalize_catalog,
+        patch(
+            "backend.app.services.project_search_shadow.finalize_project_search_shadow",
+            return_value=search,
+        ) as finalize_search,
+    ):
+        result = asyncio.run(routes_ops.finalize_project_shadow({"role": "admin"}))
+
+    assert result == {"catalog": catalog, "search": search}
+    finalize_catalog.assert_called_once()
+    finalize_search.assert_called_once()
