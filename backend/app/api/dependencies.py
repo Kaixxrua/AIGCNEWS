@@ -82,8 +82,8 @@ def get_evaluation_repository(
 def get_mcp_server_config_repository(
     database: DatabaseLifecycle = Depends(get_database),
 ) -> MySQLMcpServerConfigRepository:
-    """Return MCP Server configuration through the compatibility facade."""
-    return MySQLRepository(database=database).mcp_server_configs
+    """Return MCP Server configuration from the application-owned lifecycle."""
+    return MySQLMcpServerConfigRepository(database)
 
 
 def get_mcp_access_token_repository(
