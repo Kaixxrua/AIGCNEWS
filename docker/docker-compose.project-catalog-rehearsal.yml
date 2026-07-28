@@ -1,0 +1,185 @@
+name: aigcnews-project-catalog-rehearsal
+
+x-rehearsal-labels: &rehearsal-labels
+  com.aigcnews.purpose: project-catalog-cutover-rehearsal
+  com.aigcnews.isolation: rehearsal-only
+
+services:
+  mysql-aigc:
+    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${REHEARSAL_MYSQL_ROOT_PASSWORD:?set REHEARSAL_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${REHEARSAL_MYSQL_DATABASE:?set REHEARSAL_MYSQL_DATABASE}
+      MYSQL_USER: ${REHEARSAL_MYSQL_USER:?set REHEARSAL_MYSQL_USER}
+      MYSQL_PASSWORD: ${REHEARSAL_MYSQL_PASSWORD:?set REHEARSAL_MYSQL_PASSWORD}
+      TZ: UTC
+    command: >-
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-time-zone=+00:00
+      --innodb_buffer_pool_size=128M
+    volumes:
+      - project_catalog_rehearsal_mysql:/var/lib/mysql
+    networks: [rehearsal]
+    labels: *rehearsal-labels
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    security_opt: [no-new-privileges:true]
+
+  project-catalog-postgres:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${REHEARSAL_POSTGRES_DATABASE:?set REHEARSAL_POSTGRES_DATABASE}
+      POSTGRES_USER: ${REHEARSAL_POSTGRES_USER:?set REHEARSAL_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${REHEARSAL_POSTGRES_PASSWORD:?set REHEARSAL_POSTGRES_PASSWORD}
+    volumes:
+      - project_catalog_rehearsal_postgres:/var/lib/postgresql/data
+    networks: [rehearsal]
+    labels: *rehearsal-labels
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    security_opt: [no-new-privileges:true]
+
+  redis:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    command: redis-server --appendonly no --save ""
+    tmpfs: [/data]
+    networks: [rehearsal]
+    labels: *rehearsal-labels
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5@sha256:89b6debd43502d1088f3e02f39442fd3e951aa52bee846ed601cf4477114b89e
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command: >-
+      etcd -advertise-client-urls=http://etcd:2379
+      -listen-client-urls=http://0.0.0.0:2379 --data-dir=/etcd
+    tmpfs: [/etcd]
+    networks: [rehearsal]
+    labels: *rehearsal-labels
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z@sha256:6d770d7f255cda1f18d841ffc4365cb7e0d237f6af6a15fcdb587480cd7c3b93
+    environment:
+      MINIO_ROOT_USER: ${REHEARSAL_MINIO_ROOT_USER:?set REHEARSAL_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${REHEARSAL_MINIO_ROOT_PASSWORD:?set REHEARSAL_MINIO_ROOT_PASSWORD}
+    command: minio server /minio_data
+    tmpfs: [/minio_data]
+    networks: [rehearsal]
+    labels: *rehearsal-labels
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+
+  milvus:
+    image: milvusdb/milvus:v2.4.6@sha256:1658525cd8858683f6ba98458f4ad46e409ee75b25d609c983194ec509175267
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${REHEARSAL_MINIO_ROOT_USER:?set REHEARSAL_MINIO_ROOT_USER}
+      MINIO_SECRET_ACCESS_KEY: ${REHEARSAL_MINIO_ROOT_PASSWORD:?set REHEARSAL_MINIO_ROOT_PASSWORD}
+    tmpfs: [/var/lib/milvus]
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks: [rehearsal]
+    labels: *rehearsal-labels
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    security_opt: [no-new-privileges:true]
+
+  project-catalog-backend:
+    image: ${REHEARSAL_BACKEND_IMAGE:?set immutable REHEARSAL_BACKEND_IMAGE including @sha256 digest}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${REHEARSAL_ENV_FILE:?set REHEARSAL_ENV_FILE to an absolute secret env file path}
+    environment:
+      PROJECT_CATALOG_BACKEND: ${REHEARSAL_CATALOG_BACKEND:-mysql}
+      PROJECT_CATALOG_OUTBOX_CAPTURE_ENABLED: ${REHEARSAL_CATALOG_CAPTURE:-true}
+      PROJECT_CATALOG_SYNC_WORKER_ENABLED: ${REHEARSAL_CATALOG_SYNC:-false}
+      PROJECT_CATALOG_SHADOW_ENABLED: ${REHEARSAL_CATALOG_SHADOW:-false}
+      PROJECT_CATALOG_SHADOW_SAMPLE_RATE: "1.0"
+      PROJECT_SEARCH_SHADOW_SAMPLE_RATE: "1.0"
+      PROJECT_CATALOG_SHADOW_EPOCH: ${REHEARSAL_RELEASE_ID:?set REHEARSAL_RELEASE_ID}
+      PROJECT_SEARCH_SHADOW_EPOCH: ${REHEARSAL_RELEASE_ID:?set REHEARSAL_RELEASE_ID}
+      PROJECT_AI_SEARCH_STRATEGY: ${REHEARSAL_SEARCH_STRATEGY:-legacy}
+      SCHEDULER_ENABLED: "false"
+      POSTGRES_HOST: project-catalog-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DATABASE: ${REHEARSAL_POSTGRES_DATABASE:?set REHEARSAL_POSTGRES_DATABASE}
+      POSTGRES_USER: ${REHEARSAL_POSTGRES_USER:?set REHEARSAL_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${REHEARSAL_POSTGRES_PASSWORD:?set REHEARSAL_POSTGRES_PASSWORD}
+      POSTGRES_SSLMODE: disable
+      MYSQL_HOST: mysql-aigc
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${REHEARSAL_MYSQL_DATABASE:?set REHEARSAL_MYSQL_DATABASE}
+      MYSQL_USER: ${REHEARSAL_MYSQL_USER:?set REHEARSAL_MYSQL_USER}
+      MYSQL_PASSWORD: ${REHEARSAL_MYSQL_PASSWORD:?set REHEARSAL_MYSQL_PASSWORD}
+      MILVUS_HOST: milvus
+      REDIS_HOST: redis
+      ENV: production
+    depends_on:
+      mysql-aigc:
+        condition: service_healthy
+      project-catalog-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    networks: [rehearsal]
+    labels: *rehearsal-labels
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5)"]
+      interval: 10s
+      timeout: 7s
+      retries: 12
+      start_period: 30s
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  project_catalog_rehearsal_mysql:
+    labels: *rehearsal-labels
+  project_catalog_rehearsal_postgres:
+    labels: *rehearsal-labels
+
+networks:
+  rehearsal:
+    internal: true
+    labels: *rehearsal-labels

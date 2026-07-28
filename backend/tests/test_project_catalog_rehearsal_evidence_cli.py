@@ -25,13 +25,21 @@ class Response:
         return {"status": "ok"}
 
 
+class SseResponse(Response):
+    headers = {"content-type": "text/event-stream; charset=utf-8"}
+    text = 'data: {"type":"progress","data":"secret payload"}\n\ndata: [DONE]\n\n'
+
+    def json(self):
+        raise ValueError
+
+
 class Client:
     def __init__(self) -> None:
         self.calls = []
 
     def request(self, method, path, json=None):
         self.calls.append((method, path, json))
-        return Response()
+        return SseResponse() if path == "/api/report/daily/stream" else Response()
 
 
 def test_fixed_suite_covers_rest_health_and_mcp_without_raw_payloads() -> None:
@@ -50,9 +58,13 @@ def test_fixed_suite_covers_rest_health_and_mcp_without_raw_payloads() -> None:
         "mcp-tools-list",
         "mcp-search-exact",
         "mcp-search-zh",
+        "sse-report",
     }
     assert all(len(case["response_sha256"]) == 64 for case in cases)
     assert "DeusData/codebase-memory-mcp" not in json.dumps(cases)
+    assert "secret payload" not in json.dumps(cases)
+    sse_case = next(case for case in cases if case["case_id"] == "sse-report")
+    assert sse_case["content_type"] == "text/event-stream"
     assert any(call[0] == "POST" and call[1] == "/api/mcp" for call in client.calls)
 
 
@@ -64,6 +76,7 @@ def test_shadow_cohort_uses_only_queries_with_exact_legacy_v2_parity() -> None:
 
     case_ids = {case["case_id"] for case in cases}
     assert "mcp-search-exact" in case_ids
+    assert "sse-report" in case_ids
     assert "mcp-search-zh" not in case_ids
     assert "projects-zh" not in case_ids
     assert "ready" not in case_ids
