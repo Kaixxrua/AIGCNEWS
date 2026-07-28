@@ -1,62 +1,54 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { formatLocaleDate } from '../i18n/formatters'
-import axios from 'axios'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useClipboard } from '../composables/useClipboard'
-import {
-  displayedPublicTools as resolveDisplayedPublicTools,
-  isActivePublicToolDiscovery,
-  normalizePublicTools,
-  type PublicToolDiscoveryState,
-} from '../features/mcp/publicToolsModel'
+import { useMcpConnectController } from '../composables/useMcpConnectController'
+import { mcpClientOptions } from '../features/mcp/mcpClientCatalog'
+import { resolveMcpFeedback } from '../features/mcp/mcpFeedback'
+import { formatLocaleDate } from '../i18n/formatters'
 import { useAuthStore } from '../stores/authStore'
-import {
-  mcpClientOptions,
-  type McpClientId,
-  type McpShellId,
-} from '../features/mcp/mcpClientCatalog'
-import { generateMcpClientCommand } from '../features/mcp/mcpCommandGenerator'
-import {
-  performPublicMcpHandshake,
-  type McpHandshakePhase,
-  type McpHandshakePhaseStatus,
-} from '../features/mcp/mcpHandshake'
-import {
-  createMcpToken,
-  deleteMcpToken,
-  fetchMcpTokens,
-  type McpTokenMetadata,
-} from '../services/mcp/mcpTokenApi'
-import { feedbackKey, feedbackLiteral, resolveMcpFeedback, type McpFeedback } from '../features/mcp/mcpFeedback'
-
-type TestPhaseStatus = 'idle' | 'running' | 'success' | 'error'
-
-interface TestPhase { label: McpHandshakePhase; descriptionKey: string; status: TestPhaseStatus; detail: McpFeedback }
 
 const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const { copy } = useClipboard()
 const SCOPE = 'projects:favorites:read'
-const defaultEndpoint = typeof window !== 'undefined' ? new URL('/api/mcp', window.location.origin).href : 'https://your-domain.com/api/mcp'
 
-const endpointUrl = ref(defaultEndpoint)
-const selectedShell = ref<McpShellId>('powershell')
-const selectedClient = ref<McpClientId>('claude-code')
-const clientLabel = ref('')
-const tokens = ref<McpTokenMetadata[]>([])
-const loadingTokens = ref(false)
-const creating = ref(false)
-const deletingId = ref<number | null>(null)
-const setupError = ref<McpFeedback>(null)
-const setupNotice = ref<McpFeedback>(null)
-const transientCommand = ref('')
-const copiedKey = ref('')
-const testMessage = ref<McpFeedback>(null)
-let discoveryRunId = 0
-let copyTimer: ReturnType<typeof setTimeout> | undefined
+const {
+  clientLabel,
+  clientOption,
+  copiedKey,
+  copyGeneratedCommand,
+  copyHostInstruction,
+  creating,
+  deletingId,
+  displayedPublicTools,
+  dispose,
+  endpointUrl,
+  endpointWarningKey,
+  loadTokens,
+  loadingTokens,
+  normalizedEndpoint,
+  removeToken,
+  selectedClient,
+  selectedShell,
+  setupError,
+  setupNotice,
+  startSetup,
+  testing,
+  testMessage,
+  testPhases,
+  testPublicHandshake,
+  tokenStatus,
+  tokens,
+  transientCommand,
+} = useMcpConnectController({
+  copy,
+  isLoggedIn: () => authStore.isLoggedIn,
+  navigateToLogin: async () => { await router.push('/login') },
+  translate: t,
+})
 
 const shellOptions = [
   { id: 'powershell' as const, label: 'PowerShell' },
@@ -64,16 +56,10 @@ const shellOptions = [
   { id: 'bash' as const, label: 'Bash / zsh' },
 ]
 const clientOptions = mcpClientOptions
-const testPhases = ref<TestPhase[]>(createTestPhases())
-
-const normalizedEndpoint = computed(() => endpointUrl.value.trim() || defaultEndpoint)
-const discoveryState = ref<PublicToolDiscoveryState>({ status: 'idle', endpoint: normalizedEndpoint.value })
 const setupErrorDisplay = computed(() => resolveMcpFeedback(setupError.value, t))
 const setupNoticeDisplay = computed(() => resolveMcpFeedback(setupNotice.value, t))
 const testMessageDisplay = computed(() => resolveMcpFeedback(testMessage.value, t))
-const testing = computed(() => discoveryState.value.status === 'running')
-const clientOption = computed(() => clientOptions.find((item) => item.id === selectedClient.value)!)
-const displayedPublicTools = computed(() => resolveDisplayedPublicTools(normalizedEndpoint.value, discoveryState.value))
+const endpointWarning = computed(() => endpointWarningKey.value ? t(endpointWarningKey.value) : '')
 const setupScopeKeys = {
   user: 'user',
   'conditional-user': 'conditionalUser',
@@ -97,147 +83,13 @@ const setupResultDescription = computed(() => {
   if (clientOption.value.id === 'codex') return t('mcp.hintCodex')
   return t('mcp.hintImport', { path: clientOption.value.configPath })
 })
-const endpointWarningKey = computed(() => {
-  try { return ['http:', 'https:'].includes(new URL(normalizedEndpoint.value).protocol) ? '' : 'mcp.invalidProtocol' }
-  catch { return 'mcp.invalidUrl' }
-})
-const endpointWarning = computed(() => endpointWarningKey.value ? t(endpointWarningKey.value) : '')
-
-function createTestPhases(): TestPhase[] {
-  return [
-    { label: 'initialize', descriptionKey: 'initialize', status: 'idle', detail: null },
-    { label: 'initialized', descriptionKey: 'initialized', status: 'idle', detail: null },
-    { label: 'tools/list', descriptionKey: 'tools', status: 'idle', detail: null },
-  ]
-}
-
-function clearTransientCommand() {
-  transientCommand.value = ''
-  if (copiedKey.value === 'command') copiedKey.value = ''
-}
-watch([selectedClient, selectedShell, endpointUrl, clientLabel], clearTransientCommand)
-watch(normalizedEndpoint, (endpoint) => {
-  discoveryRunId += 1
-  discoveryState.value = { status: 'idle', endpoint }
-  testMessage.value = null
-  testPhases.value = createTestPhases()
-})
-
-function generateAuthenticatedCommand(token: string) {
-  return generateMcpClientCommand(
-    clientOption.value,
-    normalizedEndpoint.value,
-    token,
-    selectedShell.value,
-  )
-}
-
-function apiFeedback(error: unknown, fallbackKey: string): McpFeedback {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data?.detail
-    if (typeof detail === 'string') return feedbackLiteral(detail)
-    if (error.response?.status === 401) return feedbackKey('mcp.loginExpired')
-  }
-  return error instanceof Error
-    ? feedbackLiteral(error.message)
-    : feedbackKey(fallbackKey)
-}
-
-async function loadTokens() {
-  if (!authStore.isLoggedIn) return
-  loadingTokens.value = true
-  setupError.value = null
-  try { tokens.value = await fetchMcpTokens() }
-  catch (error) { setupError.value = apiFeedback(error, 'mcp.tokenLoadFailed') }
-  finally { loadingTokens.value = false }
-}
-async function startSetup() {
-  setupError.value = null
-  setupNotice.value = null
-  clearTransientCommand()
-  if (!authStore.isLoggedIn) { await router.push('/login'); return }
-  if (endpointWarning.value) { setupError.value = feedbackKey(endpointWarningKey.value); return }
-  creating.value = true
-  try {
-    const result = await createMcpToken({
-      client_type: clientOption.value.apiType,
-      client_label: clientLabel.value.trim()
-        ? `${clientOption.value.label} · ${clientLabel.value.trim()}`
-        : clientOption.value.label,
-      scopes: [SCOPE],
-    })
-    transientCommand.value = generateAuthenticatedCommand(result.token)
-    setupNotice.value = feedbackKey('mcp.tokenCreated')
-    await loadTokens()
-  } catch (error) { setupError.value = apiFeedback(error, 'mcp.tokenCreateFailed') }
-  finally { creating.value = false }
-}
-async function copyText(value: string, key: string) {
-  try {
-    await copy(value)
-    copiedKey.value = key
-    if (copyTimer) clearTimeout(copyTimer)
-    copyTimer = setTimeout(() => { copiedKey.value = '' }, 1800)
-  } catch { setupError.value = feedbackKey('mcp.copyFailed') }
-}
-async function copyGeneratedCommand() {
-  if (!transientCommand.value) return
-  await copyText(transientCommand.value, 'command')
-}
-async function copyHostInstruction() {
-  await copyText(t('mcp.hostInstruction'), 'host-instruction')
-}
-async function removeToken(item: McpTokenMetadata) {
-  if (!window.confirm(t('mcp.deleteConfirm', { label: item.client_label || item.token_hint }))) return
-  clearTransientCommand()
-  deletingId.value = item.id
-  setupError.value = null
-  try {
-    await deleteMcpToken(item.id)
-    tokens.value = tokens.value.filter((token) => token.id !== item.id)
-    setupNotice.value = feedbackKey('mcp.tokenDeleted')
-  } catch (error) { setupError.value = apiFeedback(error, 'mcp.tokenDeleteFailed') }
-  finally { deletingId.value = null }
-}
-function tokenStatus(item: McpTokenMetadata) {
-  if (item.revoked_at) return t('mcp.revoked')
-  if (item.expires_at && new Date(item.expires_at) <= new Date()) return t('mcp.expired')
-  return t('mcp.valid')
-}
-function formatDate(value?: string | null) { return value ? formatLocaleDate(value, { dateStyle: 'medium', timeStyle: 'short' }) : t('common.never') }
-
-async function testPublicHandshake() {
-  if (testing.value || endpointWarning.value) return
-  const endpoint = normalizedEndpoint.value
-  const runId = ++discoveryRunId
-  const isActive = () => isActivePublicToolDiscovery(endpoint, runId, discoveryState.value)
-  discoveryState.value = { status: 'running', endpoint, runId }
-  testMessage.value = feedbackKey('mcp.handshakeTesting')
-  testPhases.value = createTestPhases()
-  try {
-    const tools = normalizePublicTools(await performPublicMcpHandshake(endpoint, {
-      onPhase(phase: McpHandshakePhase, status: McpHandshakePhaseStatus) {
-        if (!isActive()) return
-        const item = testPhases.value.find((candidate) => candidate.label === phase)
-        if (item) item.status = status
-      },
-    }))
-    if (!isActive()) return
-    const toolsPhase = testPhases.value.find((phase) => phase.label === 'tools/list')
-    if (toolsPhase) toolsPhase.detail = feedbackKey('mcp.toolCount', { count: tools.length })
-    testMessage.value = feedbackKey('mcp.handshakeSuccess')
-    discoveryState.value = { status: 'success', endpoint, runId, tools }
-  } catch (error) {
-    if (!isActive()) return
-    const running = testPhases.value.find((phase) => phase.status === 'running')
-    if (running) running.status = 'error'
-    testMessage.value = apiFeedback(error, 'mcp.handshakeFailed')
-    discoveryState.value = { status: 'error', endpoint, runId }
-  }
-}
+const tokenStatusLabel = (status: ReturnType<typeof tokenStatus>) => t(`mcp.${status}`)
+const formatDate = (value?: string | null) => value
+  ? formatLocaleDate(value, { dateStyle: 'medium', timeStyle: 'short' })
+  : t('common.never')
 
 onMounted(loadTokens)
-onBeforeUnmount(() => { discoveryRunId += 1; clearTransientCommand(); if (copyTimer) clearTimeout(copyTimer) })
+onBeforeUnmount(dispose)
 </script>
 
 <template>
@@ -298,7 +150,7 @@ onBeforeUnmount(() => { discoveryRunId += 1; clearTransientCommand(); if (copyTi
 
       <section v-if="authStore.isLoggedIn" class="glass-card p-5 md:p-6">
         <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">Token management</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.tokenTitle') }}</h2></div><button class="btn-secondary text-xs" :disabled="loadingTokens" @click="loadTokens">{{ t(loadingTokens ? 'common.refreshing' : 'common.refresh') }}</button></div>
-        <div v-if="tokens.length" class="mcp-token-list mt-4 grid gap-3 pr-1"><div v-for="item in tokens" :key="item.id" class="grid gap-3 rounded-[20px] border border-stone-200 bg-white/70 p-4 md:grid-cols-[1fr_auto] md:items-center"><div><div class="flex flex-wrap items-center gap-2"><span class="font-semibold text-stone-800">{{ item.client_label || item.client_type }}</span><span class="rounded-full px-2 py-0.5 text-2xs" :class="tokenStatus(item) === t('mcp.valid') ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-500'">{{ tokenStatus(item) }}</span></div><p class="mt-2 font-mono text-xs text-stone-500">{{ item.token_hint }}</p><p class="mt-1 text-2xs text-stone-400">{{ t('mcp.tokenCreatedUsed', { created: formatDate(item.created_at), used: formatDate(item.last_used_at) }) }}</p></div><button class="btn-secondary text-xs text-rose-700" :disabled="deletingId === item.id" @click="removeToken(item)">{{ t(deletingId === item.id ? 'mcp.deleting' : 'common.delete') }}</button></div></div>
+        <div v-if="tokens.length" class="mcp-token-list mt-4 grid gap-3 pr-1"><div v-for="item in tokens" :key="item.id" class="grid gap-3 rounded-[20px] border border-stone-200 bg-white/70 p-4 md:grid-cols-[1fr_auto] md:items-center"><div><div class="flex flex-wrap items-center gap-2"><span class="font-semibold text-stone-800">{{ item.client_label || item.client_type }}</span><span class="rounded-full px-2 py-0.5 text-2xs" :class="tokenStatus(item) === 'valid' ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-500'">{{ tokenStatusLabel(tokenStatus(item)) }}</span></div><p class="mt-2 font-mono text-xs text-stone-500">{{ item.token_hint }}</p><p class="mt-1 text-2xs text-stone-400">{{ t('mcp.tokenCreatedUsed', { created: formatDate(item.created_at), used: formatDate(item.last_used_at) }) }}</p></div><button class="btn-secondary text-xs text-rose-700" :disabled="deletingId === item.id" @click="removeToken(item)">{{ t(deletingId === item.id ? 'mcp.deleting' : 'common.delete') }}</button></div></div>
         <p v-else-if="!loadingTokens" class="mt-4 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">{{ t('mcp.noTokens') }}</p>
       </section>
 
