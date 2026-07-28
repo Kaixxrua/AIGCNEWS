@@ -5,6 +5,18 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import httpx
 
+from backend.app.services.mcp.protocol import (
+    MCP_PROTOCOL_VERSION,
+    McpProtocolError,
+    extract_protocol_version,
+    extract_tools,
+    initialized_payload,
+    initialize_payload,
+    response_id_matches,
+    tools_list_payload,
+    validate_json_rpc_data,
+)
+from backend.app.services.mcp.transport import StreamableHttpTransport
 from backend.app.services.outbound_target_policy import (
     OutboundTargetPolicyError,
     PinnedHttpTarget,
@@ -12,10 +24,7 @@ from backend.app.services.outbound_target_policy import (
 )
 
 MAX_MESSAGE_LENGTH = 500
-MAX_TOOLS = 20
-MAX_DESCRIPTION_LENGTH = 240
 MAX_RESPONSE_BYTES = 1_000_000
-MCP_PROTOCOL_VERSION = "2025-06-18"
 
 
 class McpConnectionTestError(ValueError):
@@ -68,70 +77,11 @@ def _pin_mcp_target(
         raise McpConnectionTestError(_policy_error_message(exc)) from exc
 
 
-def _mcp_payload(method: str, params: Dict[str, Any] | None = None, request_id: Optional[int] = 1) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {
-        "jsonrpc": "2.0",
-        "method": method,
-    }
-    if request_id is not None:
-        payload["id"] = request_id
-    if params is not None:
-        payload["params"] = params
-    return payload
-
-
-def _extract_tools(data: Any) -> List[Dict[str, str]]:
-    if not isinstance(data, dict):
-        return []
-    result = data.get("result")
-    if not isinstance(result, dict):
-        return []
-    raw_tools = result.get("tools")
-    if not isinstance(raw_tools, list):
-        return []
-
-    tools: List[Dict[str, str]] = []
-    for tool in raw_tools[:MAX_TOOLS]:
-        if not isinstance(tool, dict):
-            continue
-        name = str(tool.get("name") or "").strip()
-        if not name:
-            continue
-        description = str(tool.get("description") or "").strip()
-        if len(description) > MAX_DESCRIPTION_LENGTH:
-            description = description[: MAX_DESCRIPTION_LENGTH - 1] + "…"
-        tools.append({"name": name, "description": description})
-    return tools
-
-
-def _extract_protocol_version(data: Any) -> str:
-    if not isinstance(data, dict):
-        return ""
-    result = data.get("result")
-    if not isinstance(result, dict):
-        return ""
-    return str(result.get("protocolVersion") or "").strip()
-
-
-def _response_id_matches(data: Dict[str, Any], expected_id: Optional[int]) -> bool:
-    if expected_id is None:
-        return True
-    return data.get("id") in {expected_id, str(expected_id)}
-
-
 def _validate_json_rpc_data(data: Any, *, expected_id: Optional[int]) -> Dict[str, Any]:
-    if not isinstance(data, dict):
-        raise McpConnectionTestError("MCP Server 响应格式不是 JSON 对象。")
-    if data.get("error"):
-        error = data.get("error")
-        if isinstance(error, dict):
-            message = error.get("message") or error.get("code") or error
-        else:
-            message = error
-        raise McpConnectionTestError(f"MCP Server JSON-RPC 错误：{message}")
-    if not _response_id_matches(data, expected_id):
-        raise McpConnectionTestError("MCP Server JSON-RPC 响应 id 与请求不匹配。")
-    return data
+    try:
+        return validate_json_rpc_data(data, expected_id=expected_id)
+    except McpProtocolError as exc:
+        raise McpConnectionTestError(str(exc)) from exc
 
 
 def _parse_sse_event(event_data: List[str]) -> List[Dict[str, Any]]:
@@ -175,7 +125,7 @@ def _json_from_sse(raw_text: str, *, expected_id: Optional[int]) -> Dict[str, An
         raise McpConnectionTestError("MCP Server 返回了 SSE，但未包含有效 JSON-RPC 数据。")
     if expected_id is not None:
         for item in candidates:
-            if _response_id_matches(item, expected_id):
+            if response_id_matches(item, expected_id):
                 return _validate_json_rpc_data(item, expected_id=expected_id)
     return _validate_json_rpc_data(candidates[-1], expected_id=expected_id)
 
@@ -193,7 +143,7 @@ def _json_from_sse_stream(response: httpx.Response, *, expected_id: Optional[int
             last_candidate = item
             if item.get("error") and (item.get("id") in {None, expected_id, str(expected_id)}):
                 return _validate_json_rpc_data(item, expected_id=None)
-            if _response_id_matches(item, expected_id):
+            if response_id_matches(item, expected_id):
                 return _validate_json_rpc_data(item, expected_id=expected_id)
         return None
 
@@ -248,13 +198,7 @@ def _post_json_rpc(
     # Streamable HTTP MCP servers may return text/event-stream responses that stay
     # open. Stream the response and stop reading as soon as the matching JSON-RPC
     # result arrives, rather than waiting for the HTTP body to close.
-    with client.stream(
-        "POST",
-        target.request_url,
-        json=payload,
-        headers=target.headers,
-        extensions=target.extensions,
-    ) as response:
+    with StreamableHttpTransport.stream_post(client, target, payload) as response:
         headers = httpx.Headers(response.headers)
         if response.status_code in {401, 403}:
             raise McpConnectionTestError("MCP Server 鉴权失败，请检查 Token。")
@@ -290,26 +234,20 @@ def test_mcp_server_connection(
         if auth_type == "bearer" and token:
             headers["Authorization"] = f"Bearer {token}"
 
-        initialize_params = {
-            "protocolVersion": MCP_PROTOCOL_VERSION,
-            "capabilities": {},
-            "clientInfo": {"name": "aigc-news-admin", "version": "1.0.0"},
-        }
-        with client_factory(
-            timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
-            follow_redirects=False,
-            trust_env=False,
+        transport_adapter = StreamableHttpTransport(
             headers=headers,
-        ) as client:
+            client_factory=client_factory,
+        )
+        with transport_adapter.open() as client:
             initialize_data, initialize_headers = _post_json_rpc(
                 client,
                 target,
-                _mcp_payload("initialize", initialize_params, 1),
+                initialize_payload(),
             )
             session_id = initialize_headers.get("mcp-session-id")
             if session_id:
                 client.headers["Mcp-Session-Id"] = session_id
-            negotiated_version = _extract_protocol_version(initialize_data)
+            negotiated_version = extract_protocol_version(initialize_data)
             if negotiated_version:
                 client.headers["MCP-Protocol-Version"] = negotiated_version
 
@@ -319,15 +257,15 @@ def test_mcp_server_connection(
                 _post_json_rpc(
                     client,
                     target,
-                    _mcp_payload("notifications/initialized", request_id=None),
+                    initialized_payload(),
                     expect_response=False,
                 )
             except McpConnectionTestError:
                 raise
             except httpx.RequestError:
                 raise
-            tools_data, _ = _post_json_rpc(client, target, _mcp_payload("tools/list", {}, 2))
-            tools = _extract_tools(tools_data)
+            tools_data, _ = _post_json_rpc(client, target, tools_list_payload())
+            tools = extract_tools(tools_data)
             message = "连接成功。"
             if tools:
                 message = f"连接成功，发现 {len(tools)} 个工具。"

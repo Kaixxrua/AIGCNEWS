@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
@@ -45,9 +46,10 @@ def mask_token(token: str | None) -> str | None:
 def project_server(
     row: Mapping[str, Any],
     *,
-    tools: tuple[dict[str, str], ...] = (),
+    tools: tuple[dict[str, str], ...] | None = None,
 ) -> SafeMcpServerProjection:
     token = str(row.get("auth_token") or "")
+    projected_tools = tools if tools is not None else parse_stored_tools(row.get("last_tools_json"))
     return SafeMcpServerProjection(
         id=int(row.get("id") or 0),
         server_key=str(row.get("server_key") or ""),
@@ -61,11 +63,35 @@ def project_server(
         enabled=bool(row.get("enabled")),
         last_test_status=str(row.get("last_test_status") or "unknown"),
         last_test_message=str(row.get("last_test_message") or ""),
-        tools=tools,
+        tools=projected_tools,
         last_test_at=_optional_string(row.get("last_test_at")),
         created_at=_optional_string(row.get("created_at")),
         updated_at=_optional_string(row.get("updated_at")),
     )
+
+
+def parse_stored_tools(raw_value: Any) -> tuple[dict[str, str], ...]:
+    if not raw_value:
+        return ()
+    if isinstance(raw_value, list):
+        data = raw_value
+    else:
+        try:
+            data = json.loads(str(raw_value))
+        except (TypeError, json.JSONDecodeError):
+            return ()
+    if not isinstance(data, list):
+        return ()
+    tools = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name:
+            tools.append(
+                {"name": name, "description": str(item.get("description") or "").strip()}
+            )
+    return tuple(tools)
 
 
 def _optional_string(value: Any) -> str | None:

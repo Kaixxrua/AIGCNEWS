@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from datetime import date as DateType
@@ -25,9 +24,9 @@ from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingManager,
 )
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
+from backend.app.services.mcp.admin_service import McpAdminService, project_server
 from backend.app.services.runtime_provider.control_plane import (
     RuntimeProviderUpdate,
-    mask_api_key,
     project_provider_config,
 )
 
@@ -209,52 +208,10 @@ class McpServerTestResponse(BaseModel):
     tools: list[McpToolSummary] = Field(default_factory=list)
 
 
-def _parse_mcp_tools(raw_value: Any) -> list[McpToolSummary]:
-    if not raw_value:
-        return []
-    if isinstance(raw_value, list):
-        data = raw_value
-    else:
-        try:
-            data = json.loads(str(raw_value))
-        except (TypeError, json.JSONDecodeError):
-            data = []
-    if not isinstance(data, list):
-        return []
-
-    tools: list[McpToolSummary] = []
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name") or "").strip()
-        if not name:
-            continue
-        tools.append(McpToolSummary(name=name, description=str(item.get("description") or "").strip()))
-    return tools
-
-
 def _mcp_server_config_response(row: dict) -> McpServerConfigResponse:
-    auth_token = row.get("auth_token") or ""
-    last_test_at = row.get("last_test_at")
-    created_at = row.get("created_at")
-    updated_at = row.get("updated_at")
-    return McpServerConfigResponse(
-        id=int(row.get("id") or 0),
-        server_key=(row.get("server_key") or ""),
-        display_name=(row.get("display_name") or ""),
-        description=(row.get("description") or ""),
-        url=(row.get("url") or ""),
-        transport=(row.get("transport") or "streamable_http"),
-        auth_type=(row.get("auth_type") or "none"),
-        auth_token_configured=bool(auth_token),
-        auth_token_masked=mask_api_key(auth_token),
-        enabled=bool(row.get("enabled")),
-        last_test_status=(row.get("last_test_status") or "unknown"),
-        last_test_message=(row.get("last_test_message") or ""),
-        last_test_at=str(last_test_at) if last_test_at else None,
-        tools=_parse_mcp_tools(row.get("last_tools_json")),
-        created_at=str(created_at) if created_at else None,
-        updated_at=str(updated_at) if updated_at else None,
+    return McpServerConfigResponse.model_validate(
+        project_server(row),
+        from_attributes=True,
     )
 
 
@@ -526,18 +483,20 @@ async def test_mcp_server(
     """测试 MCP Server 连通性，只执行 initialize / tools/list，不调用任意工具。"""
     from backend.app.services.mcp_connection_tester import test_mcp_server_connection
 
-    row = await asyncio.to_thread(repository.get_mcp_server_config, server_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
-
-    result = await asyncio.to_thread(test_mcp_server_connection, row)
-    updated = await asyncio.to_thread(
-        repository.update_mcp_server_test_result,
+    outcome = await asyncio.to_thread(
+        McpAdminService(repository).test_connection,
         server_id,
-        result,
+        test_mcp_server_connection,
     )
-    server = _mcp_server_config_response(updated or row)
-    return McpServerTestResponse(status=result.get("status", "failed"), message=result.get("message", ""), server=server, tools=server.tools)
+    if outcome is None:
+        raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
+    server = _mcp_server_config_response(dict(outcome.server))
+    return McpServerTestResponse(
+        status=outcome.result.get("status", "failed"),
+        message=outcome.result.get("message", ""),
+        server=server,
+        tools=server.tools,
+    )
 
 
 # ── 路由 ─────────────────────────────────────────────────────────────────────
