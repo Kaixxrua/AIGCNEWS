@@ -110,12 +110,10 @@ def get_mcp_access_token_authenticator(request: Request):
     if not authorization.lower().startswith("bearer "):
         return None
 
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    database = getattr(request.app.state, "database", None)
-    if database is None:
-        raise RuntimeError("Database lifecycle is not configured")
-    return MySQLRepository(database=database).mcp_access_tokens
+    repositories = getattr(request.app.state, "application_repositories", None)
+    if repositories is None:
+        raise RuntimeError("Application repositories are not configured")
+    return repositories.mcp_access_tokens
 
 
 async def OptionalMcpUser(

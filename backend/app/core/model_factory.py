@@ -28,9 +28,11 @@ def _resolve_provider(preferred: str | None) -> str:
 
 
 def _get_runtime_provider_setting_reader():
-    from backend.app.repositories.mysql_repo import MySQLRepository
+    from backend.app.repositories.application_repository_context import (
+        get_configured_application_repositories,
+    )
 
-    return MySQLRepository().runtime_provider_settings
+    return get_configured_application_repositories().runtime_provider_settings
 
 
 def _get_runtime_provider_setting(provider: str | None = None) -> dict[str, Any]:

@@ -30,6 +30,9 @@ from backend.app.api import routes_ops
 from backend.app.core.config import settings
 from backend.app.core.database import mysql_database
 from backend.app.core.postgres_database import postgres_database
+from backend.app.repositories.application_repository_context import (
+    configure_application_repositories,
+)
 from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
     normalize_application_database_backend,
@@ -142,6 +145,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         mysql=mysql_database,
         postgres=postgres_database,
     )
+    configure_application_repositories(app.state.application_repositories)
     if shadow_requested and postgres_opened:
         from backend.app.services.project_catalog_shadow import (
             start_project_catalog_shadow,
@@ -257,6 +261,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 )
             ),
         )
+        configure_application_repositories(None)
         if postgres_opened:
             postgres_database.close()
             print("[Shutdown] PostgreSQL connection pool closed.")

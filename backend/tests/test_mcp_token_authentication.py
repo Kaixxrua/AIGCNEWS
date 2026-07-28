@@ -3,10 +3,38 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from backend.app.core import auth
+
+
+class McpTokenRepositoryResolutionTests(unittest.TestCase):
+    def test_non_bearer_request_does_not_require_repositories(self) -> None:
+        request = MagicMock(spec=Request)
+        request.headers = {}
+
+        self.assertIsNone(auth.get_mcp_access_token_authenticator(request))
+
+    def test_bearer_request_uses_application_composition_root(self) -> None:
+        repository = MagicMock()
+        request = MagicMock(spec=Request)
+        request.headers = {"authorization": "Bearer raw-secret"}
+        request.app.state.application_repositories.mcp_access_tokens = repository
+
+        self.assertIs(auth.get_mcp_access_token_authenticator(request), repository)
+
+    def test_bearer_request_requires_application_composition_root(self) -> None:
+        app = FastAPI()
+        request = MagicMock(spec=Request)
+        request.headers = {"authorization": "Bearer raw-secret"}
+        request.app = app
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Application repositories are not configured",
+        ):
+            auth.get_mcp_access_token_authenticator(request)
 
 
 class McpTokenAuthenticationTests(unittest.TestCase):
