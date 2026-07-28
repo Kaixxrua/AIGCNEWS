@@ -137,6 +137,24 @@ def test_source_row_codecs_reject_lossy_nulls_and_normalize_types() -> None:
     assert row["active"] is True
     assert row["recommended_at"] == datetime(2026, 1, 1, tzinfo=timezone.utc)
 
+    postgres_text_row = service._encode_source_row(
+        recommendation,
+        {
+            "repo_id": "owner/repo",
+            "active": True,
+            "recommended_by_user_id": None,
+            "recommended_at": "2026-07-22 06:59:25.390628+00",
+            "updated_at": "2026-07-22 06:59:25.39062+00",
+        },
+        source_timezone="UTC",
+    )
+    assert postgres_text_row["recommended_at"] == datetime(
+        2026, 7, 22, 6, 59, 25, 390628, tzinfo=timezone.utc
+    )
+    assert postgres_text_row["updated_at"] == datetime(
+        2026, 7, 22, 6, 59, 25, 390620, tzinfo=timezone.utc
+    )
+
     candidate_row = candidate()
     candidate_row["stars"] = None
     with pytest.raises(ProjectCatalogTransferSafetyError, match="not nullable"):

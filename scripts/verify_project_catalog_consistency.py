@@ -26,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--source-timezone", default="UTC")
     parser.add_argument("--stability-passes", type=int, default=2)
+    parser.add_argument("--release-id", default=None)
     return parser
 
 
@@ -38,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
             batch_size=args.batch_size,
             source_timezone=args.source_timezone,
             stability_passes=args.stability_passes,
+            release_id=args.release_id,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True, default=str))
         ready = result.get("readiness_status", "ready") == "ready"

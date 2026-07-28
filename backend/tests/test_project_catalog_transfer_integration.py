@@ -216,7 +216,7 @@ def test_live_full_catalog_batch_write_persists_and_repairs_sequences() -> None:
     rows = _rows()
     try:
         applied = PostgresMigrationRunner(database).apply()
-        assert [migration.version for migration in applied] == [1, 2, 3, 4]
+        assert [migration.version for migration in applied] == [1, 2, 3, 4, 5]
         assert set(rows) == {spec.name for spec in TABLE_TRANSFER_SPECS}
 
         with database.transaction() as connection:

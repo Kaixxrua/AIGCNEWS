@@ -351,6 +351,65 @@ def test_exact_barrier_proof_canonicalizes_json_key_order() -> None:
     assert proof["extra_applied"] == 0
 
 
+def test_barrier_proof_requires_bound_quiet_window_attestation() -> None:
+    mysql_connection = MagicMock()
+    mysql_cursor = mysql_connection.cursor.return_value.__enter__.return_value
+    mysql_cursor.fetchone.return_value = {
+        "pending": 0, "leased": 0, "retry": 0, "processed": 0, "dead": 0,
+        "source_high_water": 0,
+    }
+    mysql_cursor.fetchall.return_value = []
+    postgres_connection = MagicMock()
+    postgres_connection.cursor.return_value.__enter__.return_value.fetchall.return_value = []
+    worker = ProjectCatalogSyncWorker(
+        TransactionalDatabase(mysql_connection),  # type: ignore[arg-type]
+        writer=MagicMock(),
+        postgres=TransactionalDatabase(postgres_connection),  # type: ignore[arg-type]
+    )
+
+    proof = worker.prove_barrier(
+        0,
+        quiet_window_seconds=30,
+        producer_freeze=True,
+        quiet_window_started_at="2026-07-27T00:00:00Z",
+        quiet_window_ended_at="2026-07-27T00:00:31Z",
+        release_id="release-33",
+        target_database="catalog",
+        target_schema="public",
+    )
+
+    assert proof["barrier_proven"] is True
+    assert proof["quiet_window_attested"] is True
+    assert proof["release_id"] == "release-33"
+    assert proof["target"] == {"database": "catalog", "schema": "public"}
+    assert proof["attestation_version"] == 1
+
+
+def test_barrier_proof_rejects_unfrozen_quiet_window() -> None:
+    mysql_connection = MagicMock()
+    cursor = mysql_connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = {
+        "pending": 0, "leased": 0, "retry": 0, "processed": 0, "dead": 0,
+        "source_high_water": 0,
+    }
+    cursor.fetchall.return_value = []
+    postgres_connection = MagicMock()
+    postgres_connection.cursor.return_value.__enter__.return_value.fetchall.return_value = []
+    worker = ProjectCatalogSyncWorker(
+        TransactionalDatabase(mysql_connection),  # type: ignore[arg-type]
+        writer=MagicMock(),
+        postgres=TransactionalDatabase(postgres_connection),  # type: ignore[arg-type]
+    )
+    proof = worker.prove_barrier(
+        0,
+        quiet_window_seconds=30,
+        quiet_window_started_at="2026-07-27T00:00:00Z",
+        quiet_window_ended_at="2026-07-27T00:01:00Z",
+    )
+    assert proof["barrier_proven"] is False
+    assert proof["quiet_window_attested"] is False
+
+
 def test_barrier_proof_pages_past_duplicate_at_barrier_id() -> None:
     mysql_connection = MagicMock()
     mysql_cursor = mysql_connection.cursor.return_value.__enter__.return_value

@@ -16,6 +16,7 @@ from backend.app.services.project_catalog_transfer import (
     ProjectCatalogTransferService,
     ProjectCatalogTransferSafetyError,
     TableTransferSpec,
+    source_identity_sha256,
 )
 
 
@@ -51,6 +52,11 @@ class SyncBatchResult:
 class OutboxBarrier:
     id: int
     captured_at: str
+    attestation_version: int = 1
+    release_id: str | None = None
+    source_identity_sha256: str | None = None
+    target_database: str | None = None
+    target_schema: str | None = None
 
 
 class ProjectCatalogReconciliationWriter:
@@ -224,6 +230,30 @@ class ProjectCatalogSyncWorker:
         self._batch_size = max(1, int(batch_size or settings.project_catalog_sync_batch_size))
         self._lease_seconds = max(1, int(lease_seconds or settings.project_catalog_sync_lease_seconds))
         self._max_attempts = max(1, int(max_attempts or settings.project_catalog_sync_max_attempts))
+
+    @staticmethod
+    def _attestation_scope(
+        *,
+        release_id: str | None,
+        target_database: str | None,
+        target_schema: str | None,
+    ) -> dict[str, Any]:
+        values = (release_id, target_database, target_schema)
+        if any(value is not None for value in values) and not all(
+            value is not None and str(value).strip() for value in values
+        ):
+            raise ValueError(
+                "release ID, target database, and target schema must be supplied together"
+            )
+        return {
+            "attestation_version": 1,
+            "release_id": release_id.strip() if release_id is not None else None,
+            "source_identity_sha256": source_identity_sha256(settings),
+            "target": {
+                "database": target_database.strip() if target_database is not None else None,
+                "schema": target_schema.strip() if target_schema is not None else None,
+            },
+        }
 
     def run_once(self, *, barrier_id: int | None = None) -> SyncBatchResult:
         events = self.claim(barrier_id=barrier_id)
@@ -401,7 +431,18 @@ class ProjectCatalogSyncWorker:
             raise ValueError("outbox barrier must be non-negative")
         return value
 
-    def capture_barrier(self) -> OutboxBarrier:
+    def capture_barrier(
+        self,
+        *,
+        release_id: str | None = None,
+        target_database: str | None = None,
+        target_schema: str | None = None,
+    ) -> OutboxBarrier:
+        scope = self._attestation_scope(
+            release_id=release_id,
+            target_database=target_database,
+            target_schema=target_schema,
+        )
         if not bool(getattr(settings, "project_catalog_outbox_capture_enabled", False)):
             raise ProjectCatalogSyncError("project catalog outbox capture is disabled")
         with self._mysql.transaction() as connection:
@@ -414,6 +455,11 @@ class ProjectCatalogSyncWorker:
         return OutboxBarrier(
             id=int(row.get("barrier_id") or 0),
             captured_at=datetime.now(timezone.utc).isoformat(),
+            attestation_version=scope["attestation_version"],
+            release_id=scope["release_id"],
+            source_identity_sha256=scope["source_identity_sha256"],
+            target_database=scope["target"]["database"],
+            target_schema=scope["target"]["schema"],
         )
 
     @staticmethod
@@ -504,8 +550,46 @@ class ProjectCatalogSyncWorker:
         barrier_id: int,
         *,
         page_size: int | None = None,
+        quiet_window_seconds: float = 0.0,
+        producer_freeze: bool = False,
+        quiet_window_started_at: str | None = None,
+        quiet_window_ended_at: str | None = None,
+        release_id: str | None = None,
+        target_database: str | None = None,
+        target_schema: str | None = None,
     ) -> dict[str, Any]:
         barrier = self._validate_barrier(barrier_id)
+        quiet_window = float(quiet_window_seconds)
+        if quiet_window < 0:
+            raise ValueError("quiet window must be non-negative")
+        quiet_inputs = (quiet_window_started_at, quiet_window_ended_at)
+        if any(value is not None for value in quiet_inputs) != all(
+            value is not None for value in quiet_inputs
+        ):
+            raise ValueError("quiet window start and end must be supplied together")
+        observed_seconds: float | None = None
+        if quiet_window_started_at is not None and quiet_window_ended_at is not None:
+            try:
+                started = datetime.fromisoformat(quiet_window_started_at.replace("Z", "+00:00"))
+                ended = datetime.fromisoformat(quiet_window_ended_at.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("quiet window timestamps must be ISO-8601") from exc
+            if started.tzinfo is None or ended.tzinfo is None:
+                raise ValueError("quiet window timestamps must be timezone-aware")
+            observed_seconds = (ended - started).total_seconds()
+            if observed_seconds < 0:
+                raise ValueError("quiet window end must not precede start")
+        attestation_requested = quiet_window > 0 or producer_freeze or observed_seconds is not None
+        quiet_attested = (
+            bool(producer_freeze)
+            and observed_seconds is not None
+            and observed_seconds >= quiet_window
+        ) if attestation_requested else True
+        scope = self._attestation_scope(
+            release_id=release_id,
+            target_database=target_database,
+            target_schema=target_schema,
+        )
         size = ProjectCatalogTransferService._validate_batch_size(
             int(page_size or self._batch_size)
         )
@@ -518,7 +602,8 @@ class ProjectCatalogSyncWorker:
                         SUM(status = 'leased') AS leased,
                         SUM(status = 'retry') AS retry,
                         SUM(status = 'processed') AS processed,
-                        SUM(status = 'dead') AS dead
+                        SUM(status = 'dead') AS dead,
+                        COALESCE(MAX(id), 0) AS source_high_water
                     FROM project_catalog_outbox
                     WHERE id <= %s
                     """,
@@ -562,14 +647,24 @@ class ProjectCatalogSyncWorker:
                     compared += 1
                 source = next(source_events, None)
                 applied = next(applied_events, None)
+        source_high_water = int(status.get("source_high_water") or 0)
         proven = (
             not any(blocking.values())
             and missing == extra == mismatched == duplicates == 0
             and compared == int(status.get("processed") or 0)
+            and quiet_attested
         )
         return {
+            **scope,
             "barrier_id": barrier,
             "barrier_proven": proven,
+            "quiet_window_seconds": quiet_window,
+            "quiet_window_started_at": quiet_window_started_at,
+            "quiet_window_ended_at": quiet_window_ended_at,
+            "quiet_window_observed_seconds": observed_seconds,
+            "producer_freeze_attested": bool(producer_freeze),
+            "quiet_window_attested": quiet_attested,
+            "source_high_water_at_barrier": source_high_water,
             "blocking": blocking,
             "processed": int(status.get("processed") or 0),
             "compared": compared,

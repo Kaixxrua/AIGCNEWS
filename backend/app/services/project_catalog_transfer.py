@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ class TableTransferSpec:
     boolean_columns: tuple[str, ...] = ()
     datetime_columns: tuple[str, ...] = ()
     non_null_default_columns: tuple[str, ...] = ()
+    fixed_char_columns: tuple[str, ...] = ()
     identity_column: str | None = None
     natural_key_columns: tuple[str, ...] = ()
     text_cursor_columns: tuple[str, ...] = ()
@@ -39,6 +41,7 @@ def _spec(
     boolean_columns: tuple[str, ...] = (),
     datetime_columns: tuple[str, ...] = (),
     non_null_default_columns: tuple[str, ...] = (),
+    fixed_char_columns: tuple[str, ...] = (),
     identity_column: str | None = None,
     natural_key_columns: tuple[str, ...] = (),
     text_cursor_columns: tuple[str, ...] = (),
@@ -52,6 +55,7 @@ def _spec(
         boolean_columns=boolean_columns,
         datetime_columns=datetime_columns,
         non_null_default_columns=non_null_default_columns,
+        fixed_char_columns=fixed_char_columns,
         identity_column=identity_column,
         natural_key_columns=natural_key_columns,
         text_cursor_columns=text_cursor_columns or tuple(
@@ -165,6 +169,17 @@ TABLE_TRANSFER_SPECS = (
         ),
         ("repo_id",),
         dependencies=("github_repo_candidates",),
+        datetime_columns=(
+            "readme_checked_at",
+            "readme_fetched_at",
+            "readme_repo_pushed_at",
+            "readme_next_retry_at",
+            "index_next_retry_at",
+            "indexed_at",
+            "updated_at",
+        ),
+        non_null_default_columns=("readme_sha256",),
+        fixed_char_columns=("readme_sha256",),
     ),
     _spec(
         "tool_websites",
@@ -874,13 +889,27 @@ class ProjectCatalogTransferService:
         for column in spec.boolean_columns:
             value = encoded[column]
             encoded[column] = None if value is None else bool(value)
+        for column in spec.fixed_char_columns:
+            value = encoded[column]
+            if isinstance(value, str):
+                encoded[column] = value.rstrip(" ")
         source_zone = ZoneInfo(source_timezone)
         for column in spec.datetime_columns:
             value = encoded[column]
             if value is None:
                 continue
             if isinstance(value, str):
-                value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                normalized_value = value.replace("Z", "+00:00")
+                if normalized_value.endswith(("+00", "-00")):
+                    normalized_value = f"{normalized_value}:00"
+                fraction = re.search(r"\.(\d+)(?=[+-]\d{2}:\d{2}$|$)", normalized_value)
+                if fraction and len(fraction.group(1)) < 6:
+                    normalized_value = (
+                        normalized_value[: fraction.start(1)]
+                        + fraction.group(1).ljust(6, "0")
+                        + normalized_value[fraction.end(1) :]
+                    )
+                value = datetime.fromisoformat(normalized_value)
             if not isinstance(value, datetime):
                 raise ProjectCatalogTransferSafetyError(
                     f"source column {spec.name}.{column} is not a datetime"

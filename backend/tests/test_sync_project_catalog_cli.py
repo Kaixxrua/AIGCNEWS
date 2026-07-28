@@ -52,6 +52,36 @@ def test_prove_barrier_returns_nonzero_when_not_ready(capsys) -> None:
     worker.prove_barrier.assert_called_once_with(9)
 
 
+def test_prove_barrier_passes_versioned_bound_quiet_attestation(capsys) -> None:
+    worker = MagicMock()
+    worker.prove_barrier.return_value = {"barrier_id": 9, "barrier_proven": True}
+    with (
+        patch.object(sync_project_catalog, "ProjectCatalogReconciliationWriter"),
+        patch.object(sync_project_catalog, "ProjectCatalogSyncWorker", return_value=worker),
+        patch.object(sync_project_catalog.mysql_database, "close"),
+        patch.object(sync_project_catalog.postgres_database, "close"),
+    ):
+        code = sync_project_catalog.main([
+            "prove-barrier", "--barrier-id", "9",
+            "--quiet-window-seconds", "30", "--producer-freeze",
+            "--quiet-window-started-at", "2026-07-27T00:00:00Z",
+            "--quiet-window-ended-at", "2026-07-27T00:00:31Z",
+            "--release-id", "release-33", "--target-database", "catalog",
+            "--target-schema", "public",
+        ])
+    assert code == 0
+    worker.prove_barrier.assert_called_once_with(
+        9,
+        quiet_window_seconds=30.0,
+        producer_freeze=True,
+        quiet_window_started_at="2026-07-27T00:00:00Z",
+        quiet_window_ended_at="2026-07-27T00:00:31Z",
+        release_id="release-33",
+        target_database="catalog",
+        target_schema="public",
+    )
+
+
 def test_drain_requires_apply_and_passes_production_authorization(capsys) -> None:
     worker = MagicMock()
     worker.prove_barrier.return_value = {"barrier_id": 9, "barrier_proven": False}

@@ -91,7 +91,7 @@ def test_unstable_source_is_never_reported_as_match() -> None:
         patch.object(
             service,
             "_digest_source_catalog",
-            side_effect=[first_report, second_report],
+            side_effect=[first_report, second_report, first_report, second_report],
         ),
         patch.object(service, "_digest_target_catalog", return_value=second_report),
         patch.object(service, "_reference_checks", return_value={"orphans": 0}),
@@ -108,6 +108,34 @@ def test_unstable_source_is_never_reported_as_match() -> None:
         )
     assert result["stable"] is False
     assert result["status"] == "mismatch"
+    assert result["attempts_completed"] == 2
+    assert all(not attempt["stable"] for attempt in result["attempts"])
+
+
+def test_bracket_retries_and_accepts_first_stable_attempt() -> None:
+    service = ProjectCatalogConsistencyService(mysql=object(), postgres=object())  # type: ignore[arg-type]
+    first = TableDigest(1, "a" * 64, "b" * 64, {"id": 1}, {"id": 1})
+    changed = TableDigest(1, "a" * 64, "c" * 64, {"id": 1}, {"id": 1})
+    first_report = {spec.name: first for spec in TABLE_TRANSFER_SPEC_BY_NAME.values()}
+    changed_report = {spec.name: changed for spec in TABLE_TRANSFER_SPEC_BY_NAME.values()}
+    target = type("Target", (), {"database": "test", "schema": "public", "schema_version": 2})()
+    with (
+        patch.object(service._transfer, "_inspect_target", return_value=target),
+        patch.object(
+            service,
+            "_digest_source_catalog",
+            side_effect=[first_report, changed_report, changed_report, changed_report],
+        ),
+        patch.object(service, "_digest_target_catalog", side_effect=[first_report, changed_report]),
+        patch.object(service, "_reference_checks", return_value={"orphans": 0}),
+        patch.object(service, "_sequence_checks", return_value={"status": "ready", "tables": []}),
+    ):
+        result = service.verify(
+            target_database="test", target_schema="public", stability_passes=2
+        )
+    assert result["status"] == "match"
+    assert result["attempts_completed"] == 2
+    assert [attempt["stable"] for attempt in result["attempts"]] == [False, True]
 
 
 def test_digest_order_is_explicit_not_database_collation_dependent() -> None:

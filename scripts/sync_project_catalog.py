@@ -38,6 +38,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lease-seconds", type=int, default=None)
     parser.add_argument("--max-attempts", type=int, default=None)
     parser.add_argument("--source-timezone", default="UTC")
+    parser.add_argument("--quiet-window-seconds", type=float, default=0.0)
+    parser.add_argument("--producer-freeze", action="store_true")
+    parser.add_argument("--quiet-window-started-at", default=None)
+    parser.add_argument("--quiet-window-ended-at", default=None)
+    parser.add_argument("--release-id", default=None)
+    parser.add_argument("--target-database", default=None)
+    parser.add_argument("--target-schema", default=None)
     return parser
 
 
@@ -54,17 +61,43 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "status":
             result = {"status": "ok", **worker.status()}
         elif args.command == "capture-barrier":
-            barrier = worker.capture_barrier()
+            barrier = worker.capture_barrier(
+                release_id=args.release_id,
+                target_database=args.target_database,
+                target_schema=args.target_schema,
+            )
             result = {
                 "status": "captured",
                 "barrier_id": barrier.id,
                 "captured_at": barrier.captured_at,
+                "attestation_version": barrier.attestation_version,
+                "release_id": barrier.release_id,
+                "source_identity_sha256": barrier.source_identity_sha256,
+                "target": {
+                    "database": barrier.target_database,
+                    "schema": barrier.target_schema,
+                },
             }
         elif args.command in {"prove-barrier", "drain-to-barrier"}:
             if args.barrier_id is None:
                 raise ValueError("--barrier-id is required")
+            proof_args = {}
+            if args.quiet_window_seconds:
+                proof_args["quiet_window_seconds"] = args.quiet_window_seconds
+            if args.producer_freeze:
+                proof_args["producer_freeze"] = True
+            if args.quiet_window_started_at is not None:
+                proof_args["quiet_window_started_at"] = args.quiet_window_started_at
+            if args.quiet_window_ended_at is not None:
+                proof_args["quiet_window_ended_at"] = args.quiet_window_ended_at
+            if args.release_id is not None:
+                proof_args["release_id"] = args.release_id
+            if args.target_database is not None:
+                proof_args["target_database"] = args.target_database
+            if args.target_schema is not None:
+                proof_args["target_schema"] = args.target_schema
             if args.command == "prove-barrier":
-                proof = worker.prove_barrier(args.barrier_id)
+                proof = worker.prove_barrier(args.barrier_id, **proof_args)
                 result = {
                     "status": "ready" if proof["barrier_proven"] else "not_ready",
                     **proof,
@@ -72,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
             elif not args.apply:
                 result = {
                     "status": "dry_run",
-                    **worker.prove_barrier(args.barrier_id),
+                    **worker.prove_barrier(args.barrier_id, **proof_args),
                 }
             else:
                 result = worker.drain_to_barrier(

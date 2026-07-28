@@ -16,6 +16,7 @@ from backend.app.services.project_catalog_transfer import (
     ProjectCatalogTransferService,
     TableTransferSpec,
     TargetIdentity,
+    source_identity_sha256,
 )
 
 
@@ -116,19 +117,45 @@ class ProjectCatalogConsistencyService:
         batch_size: int = DEFAULT_BATCH_SIZE,
         source_timezone: str = "UTC",
         stability_passes: int = 2,
+        release_id: str | None = None,
     ) -> dict[str, Any]:
         batch_size = self._transfer._validate_batch_size(batch_size)
         source_timezone = self._transfer._validate_source_timezone(source_timezone)
         passes = int(stability_passes)
         if passes < 1 or passes > 3:
             raise ValueError("stability passes must be between 1 and 3")
+        release = release_id.strip() if release_id is not None else None
+        if release_id is not None and not release:
+            raise ValueError("release ID must not be empty")
         target = self._transfer._inspect_target(target_database, target_schema)
-        source_reports = [
-            self._digest_source_catalog(batch_size, source_timezone)
-            for _ in range(passes)
-        ]
-        target_report = self._digest_target_catalog(batch_size, source_timezone)
-        source_stable = all(report == source_reports[0] for report in source_reports[1:])
+        # Every attempt is a complete S1 -> T -> S2 bracket. A changing source
+        # invalidates that attempt; a later attempt may still establish a stable
+        # observation without mixing snapshots from different attempts.
+        attempts: list[dict[str, Any]] = []
+        source_reports: list[dict[str, TableDigest]] = []
+        target_report: dict[str, TableDigest] = {}
+        source_stable = False
+        for attempt_number in range(1, passes + 1):
+            started_at = datetime.now(timezone.utc).isoformat()
+            source_1 = self._digest_source_catalog(batch_size, source_timezone)
+            target_candidate = self._digest_target_catalog(batch_size, source_timezone)
+            source_2 = self._digest_source_catalog(batch_size, source_timezone)
+            completed_at = datetime.now(timezone.utc).isoformat()
+            stable = source_1 == source_2
+            attempts.append(
+                {
+                    "attempt": attempt_number,
+                    "started_at": started_at,
+                    "completed_at": completed_at,
+                    "stable": stable,
+                    "observation_order": ["source_1", "target", "source_2"],
+                }
+            )
+            source_reports = [source_1, source_2]
+            target_report = target_candidate
+            if stable:
+                source_stable = True
+                break
         table_reports = []
         all_match = True
         for spec in TABLE_TRANSFER_SPECS:
@@ -154,12 +181,24 @@ class ProjectCatalogConsistencyService:
             "readiness_status": "ready" if ready else "not_ready",
             "stable": source_stable,
             "source_passes": passes,
+            "attempts_allowed": passes,
+            "attempts_completed": len(attempts),
+            "attempts": attempts,
             "tables": table_reports,
             "references": references,
             "identity_sequences": sequences["tables"],
             "target_database": target.database,
             "target_schema": target.schema,
             "schema_version": target.schema_version,
+            "attestation_version": 1,
+            "release_id": release,
+            "source_identity_sha256": source_identity_sha256(self._transfer._config),
+            "target": {
+                "database": target.database,
+                "schema": target.schema,
+                "schema_version": target.schema_version,
+            },
+            "observation_order": ["source_1", "target", "source_2"],
         }
 
     def _sequence_checks(self, target: TargetIdentity) -> dict[str, Any]:
