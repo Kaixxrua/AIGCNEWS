@@ -5,6 +5,20 @@ from typing import Any, Literal, Protocol
 
 
 @dataclass(frozen=True)
+class ProjectLexicalConcept:
+    concept_id: str
+    primary_terms: tuple[str, ...]
+    aliases: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProjectLexicalRetrievalPlan:
+    normalized_query: str
+    strict_terms: tuple[str, ...]
+    concepts: tuple[ProjectLexicalConcept, ...] = ()
+
+
+@dataclass(frozen=True)
 class ProjectLexicalCandidate:
     repo_id: str
     lane: Literal["strict", "relaxed"]
@@ -37,7 +51,7 @@ class ProjectCatalogRepository(Protocol):
     def find_lexical_candidate_lanes(
         self,
         *,
-        q: str,
+        q: str | ProjectLexicalRetrievalPlan,
         category: str = "",
         subcategory: str = "",
         language: str = "",

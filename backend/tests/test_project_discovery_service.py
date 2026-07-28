@@ -204,6 +204,12 @@ class ProjectDiscoveryTests(unittest.TestCase):
             ["owner/shared", "owner/semantic", "owner/lexical"],
         )
         self.assertEqual(result["sort"], "relevance")
+        self.assertEqual(
+            repo.find_lexical_candidate_repo_ids.call_args.kwargs["q"],
+            "智能体工作流",
+        )
+        selected_intent = semantic.search_repo_ids.call_args.args[0]
+        self.assertEqual(selected_intent.concept_ids, ("workflow",))
 
     def test_v2_strategy_uses_typed_lanes_and_exact_lookup_protection(self) -> None:
         class V2Repository:
@@ -248,6 +254,9 @@ class ProjectDiscoveryTests(unittest.TestCase):
 
         repo.find_lexical_candidate_repo_ids.assert_not_called()
         repo.find_lexical_candidate_lanes.assert_called_once()
+        plan = repo.find_lexical_candidate_lanes.call_args.kwargs["q"]
+        self.assertEqual(plan.normalized_query, "DeusData/codebase-memory-mcp")
+        self.assertEqual(plan.strict_terms, ("DeusData", "codebase-memory-mcp"))
         self.assertEqual(
             repo.list_projects.call_args.kwargs["candidate_repo_ids"][0],
             "DeusData/codebase-memory-mcp",
@@ -256,7 +265,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
     def test_shadow_strategy_keeps_legacy_authority(self) -> None:
         class ShadowRepository:
             def find_lexical_candidate_repo_ids(self, **_kwargs):
-                raise AssertionError("shadow should use the typed lane read once")
+                return ["owner/legacy"]
 
             def find_lexical_candidate_lanes(self, **_kwargs):
                 return ProjectLexicalCandidateLanes(
@@ -287,9 +296,11 @@ class ProjectDiscoveryTests(unittest.TestCase):
         finally:
             project_discovery.settings.project_ai_search_strategy = "legacy"
 
-        self.assertEqual(result["items"][0]["full_name"], "owner/strict")
+        self.assertEqual(result["items"][0]["full_name"], "owner/legacy")
         manager.submit.assert_called_once()
-        self.assertEqual(manager.submit.call_args.kwargs["legacy_repo_ids"], ["owner/strict"])
+        self.assertEqual(manager.submit.call_args.kwargs["legacy_repo_ids"], ["owner/legacy"])
+        self.assertIsNone(manager.submit.call_args.kwargs.get("lanes"))
+        self.assertTrue(callable(manager.submit.call_args.kwargs["lanes_call"]))
 
     def test_explicit_non_relevance_sort_does_not_activate_v2(self) -> None:
         repo = MagicMock()

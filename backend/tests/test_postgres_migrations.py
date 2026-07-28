@@ -280,6 +280,17 @@ def test_applied_event_schema_is_versioned_and_key_only() -> None:
     assert "description text" not in migration.sql.lower()
 
 
+def test_project_catalog_trigram_search_is_versioned_and_transactional() -> None:
+    migration = discover_migrations()[4]
+    assert migration.filename == "0005_project_catalog_trigram_search.sql"
+    assert "CREATE EXTENSION IF NOT EXISTS pg_trgm" in migration.sql
+    assert migration.sql.count("USING GIN") == 2
+    assert "idx_gh_candidates_lexical_document_trgm" in migration.sql
+    assert "idx_gh_enrichments_lexical_document_trgm" in migration.sql
+    assert "gin_trgm_ops" in migration.sql
+    assert "CONCURRENTLY" not in migration.sql.upper()
+
+
 def test_live_postgres_apply_twice_and_introspect_schema() -> None:
     dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
     if not dsn:
@@ -304,7 +315,7 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             )
 
         runner = PostgresMigrationRunner(DirectDatabase())  # type: ignore[arg-type]
-        assert [migration.version for migration in runner.apply()] == [1, 2, 3, 4]
+        assert [migration.version for migration in runner.apply()] == [1, 2, 3, 4, 5]
         assert runner.apply() == []
 
         with connection.cursor() as cursor:
@@ -363,6 +374,8 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             "idx_gh_repo_alias_canonical",
             "idx_gh_snapshots_date_repo",
             "idx_project_semantic_index_status",
+            "idx_gh_candidates_lexical_document_trgm",
+            "idx_gh_enrichments_lexical_document_trgm",
         } <= indexes
         assert {"PRIMARY KEY", "UNIQUE"} <= candidate_constraints
         assert {

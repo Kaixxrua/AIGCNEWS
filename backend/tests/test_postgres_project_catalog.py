@@ -11,6 +11,8 @@ import pytest
 from backend.app.repositories.project_catalog import (
     ProjectCatalogRepository,
     ProjectLexicalCandidate,
+    ProjectLexicalConcept,
+    ProjectLexicalRetrievalPlan,
 )
 from backend.app.repositories.project_catalog_normalization import (
     format_project_category_counts,
@@ -127,10 +129,10 @@ def test_empty_lexical_lanes_short_circuit_without_transaction() -> None:
 
 
 def test_lexical_lanes_are_typed_filtered_and_independently_bounded() -> None:
-    database = Database([
-        [{"repo_id": "owner/strict", "term_coverage": 3, "match_strength": 4}],
-        [{"repo_id": "owner/relaxed", "term_coverage": 1, "match_strength": 1}],
-    ])
+    database = Database([[
+        {"lane": "strict", "repo_id": "owner/strict", "term_coverage": 3, "match_strength": 4},
+        {"lane": "relaxed", "repo_id": "owner/relaxed", "term_coverage": 1, "match_strength": 1},
+    ]])
     result = PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(
         q="agent 100%_safe",
         category="agents_automation",
@@ -147,24 +149,68 @@ def test_lexical_lanes_are_typed_filtered_and_independently_bounded() -> None:
     assert result.relaxed == (
         ProjectLexicalCandidate("owner/relaxed", "relaxed", term_coverage=1, match_strength=1),
     )
-    strict_sql, strict_params = database.cursor.calls[1]
-    relaxed_sql, relaxed_params = database.cursor.calls[2]
-    for sql in (strict_sql, relaxed_sql):
-        assert "github_repo_aliases ga" in sql
-        assert "ga.alias_repo_id IS NULL" in sql
-        assert "COALESCE(c.stars, 0) >= %s" in sql
-        assert "ge.category_slug = %s" in sql
-        assert "ge.subcategory_slug = %s" in sql
-        assert "LOWER(COALESCE(c.language, '')) = LOWER(%s)" in sql
-        assert "COALESCE(ge.tags_json::text, '') ILIKE %s" in sql
-        assert "unnest(%s::text[])" in sql
-        assert "100%_safe" not in sql
-    assert "term_coverage = %s" in strict_sql
-    assert "term_coverage > 0" in relaxed_sql
-    assert strict_params[-2:] == (3, 150)
-    assert relaxed_params[-1] == 150
-    assert ["%agent%", "%100%", "%safe%"] in strict_params
+    sql, params = database.cursor.calls[1]
+    assert "eligible AS MATERIALIZED" in sql
+    assert "raw_hits AS MATERIALIZED" in sql
+    assert "scored AS MATERIALIZED" in sql
+    assert "github_repo_aliases ga" in sql
+    assert "NOT EXISTS" in sql
+    assert "COALESCE(c.stars, 0) >= %s" in sql
+    assert "ge.category_slug = %s" in sql
+    assert "ge.subcategory_slug = %s" in sql
+    assert "LOWER(COALESCE(c.language, '')) = LOWER(%s)" in sql
+    assert "COALESCE(ge.tags_json::text, '') ILIKE %s" in sql
+    assert "UNION ALL" in sql
+    assert "SELECT DISTINCT repo_id, group_id" in sql
+    assert "unnest(" not in sql
+    assert "bool_or(" not in sql
+    assert "COALESCE(c.full_name, '') || ' '" in sql
+    assert "COALESCE(ge.description_zh, '') || ' '" in sql
+    assert "100%_safe" not in sql
+    assert "term_coverage = %s" in sql
+    assert "term_coverage > 0" in sql
+    assert params[-3:] == (3, 150, 150)
+    assert "%agent%" in params
+    assert "%100%" in params
+    assert "%safe%" in params
+    assert len(database.cursor.calls) == 2
     assert database.entered == database.exited == 1
+
+
+def test_typed_lexical_plan_counts_each_concept_once_and_binds_aliases() -> None:
+    database = Database([[]])
+    plan = ProjectLexicalRetrievalPlan(
+        normalized_query="local agent runtime",
+        strict_terms=("local",),
+        concepts=(
+            ProjectLexicalConcept(
+                concept_id="agent",
+                primary_terms=("智能体",),
+                aliases=("agent", "agent framework"),
+            ),
+        ),
+    )
+
+    PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(q=plan)
+
+    sql, params = database.cursor.calls[1]
+    assert "SELECT DISTINCT repo_id, group_id" in sql
+    assert params.count("term:0") == 2
+    assert params.count("concept:agent") == 6
+    for pattern in ("%local%", "%智能体%", "%agent%", "%agent framework%"):
+        assert params.count(pattern) == 2
+    assert params[-3:] == (2, 150, 150)
+    assert "智能体" not in sql
+    assert "agent framework" not in sql
+    assert len(database.cursor.calls) == 2
+
+
+def test_empty_typed_lexical_plan_short_circuits_without_transaction() -> None:
+    database = Database([])
+    plan = ProjectLexicalRetrievalPlan(normalized_query="", strict_terms=(), concepts=())
+
+    assert not PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(q=plan).strict
+    assert database.entered == 0
 
 
 def test_relevance_hydration_preserves_candidate_order_parameters() -> None:

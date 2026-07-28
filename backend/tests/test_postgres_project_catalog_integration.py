@@ -9,6 +9,11 @@ from typing import Any, Iterator
 
 import pytest
 
+from backend.app.repositories.project_catalog import (
+    ProjectLexicalConcept,
+    ProjectLexicalRetrievalPlan,
+)
+
 # Import application settings away from the repository root so pydantic cannot
 # discover a developer or production-like .env file during this opt-in test.
 _TESTS_DIR = Path(__file__).resolve().parent
@@ -146,6 +151,30 @@ def test_real_catalog_queries_match_committed_expected_results(catalog: Any) -> 
         min_stars=500,
         enriched_only=True,
     )
+    assert [item.repo_id for item in lanes.strict] == []
+    assert [item.repo_id for item in lanes.relaxed] == ["acme/alpha", "acme/beta"]
+    assert [item.term_coverage for item in lanes.relaxed] == [1, 1]
+
+
+def test_real_catalog_typed_concepts_match_aliases_once_per_group(catalog: Any) -> None:
+    plan = ProjectLexicalRetrievalPlan(
+        normalized_query="local agent runtime",
+        strict_terms=("local",),
+        concepts=(
+            ProjectLexicalConcept(
+                concept_id="agent",
+                primary_terms=("智能体",),
+                aliases=("agent", "workflow"),
+            ),
+        ),
+    )
+
+    lanes = catalog.find_lexical_candidate_lanes(
+        q=plan,
+        min_stars=500,
+        enriched_only=True,
+    )
+
     assert [item.repo_id for item in lanes.strict] == []
     assert [item.repo_id for item in lanes.relaxed] == ["acme/alpha", "acme/beta"]
     assert [item.term_coverage for item in lanes.relaxed] == [1, 1]

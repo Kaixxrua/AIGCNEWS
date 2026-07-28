@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.repositories.mysql_repo import MySQLRepository
-from backend.app.repositories.project_catalog import ProjectLexicalCandidateLanes
+from backend.app.repositories.project_catalog import (
+    ProjectLexicalCandidateLanes,
+    ProjectLexicalRetrievalPlan,
+)
 
 
 class MySQLProjectCatalogRepository:
@@ -38,7 +41,7 @@ class MySQLProjectCatalogRepository:
     def find_lexical_candidate_lanes(
         self,
         *,
-        q: str,
+        q: str | ProjectLexicalRetrievalPlan,
         category: str = "",
         subcategory: str = "",
         language: str = "",

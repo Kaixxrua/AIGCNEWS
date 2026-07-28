@@ -23,6 +23,7 @@ from backend.app.services.project_semantic_search import get_project_semantic_se
 from backend.app.services.search_semantics import (
     ProjectSearchIntent,
     build_client_project_search_intent,
+    build_project_lexical_retrieval_plan,
     build_project_search_intent,
     normalize_search_query,
 )
@@ -168,6 +169,7 @@ async def search_projects(
     if client_intent_used:
         intent = build_client_project_search_intent(query, client_intent or {})
     lexical_query = " ".join(intent.lexical_terms) or intent.normalized_query
+    lexical_plan = build_project_lexical_retrieval_plan(intent)
 
     repository = (
         repository_factory()
@@ -189,10 +191,10 @@ async def search_projects(
         strategy = "legacy"
     if mode == "ai" and query and effective_sort == "relevance" and callable(lexical_candidate_search):
         hybrid_attempted = True
-        use_lanes = strategy in {"shadow", "v2"} and callable(lexical_lane_search)
+        use_lanes = strategy == "v2" and callable(lexical_lane_search)
         lexical_task = asyncio.to_thread(
             lexical_lane_search if use_lanes else lexical_candidate_search,
-            q=lexical_query,
+            q=lexical_plan if use_lanes else lexical_query,
             category=category,
             subcategory=subcategory,
             language=language,
@@ -246,11 +248,21 @@ async def search_projects(
             )
         else:
             candidate_repo_ids = legacy_repo_ids
-        if strategy == "shadow" and lanes is not None:
+        if strategy == "shadow" and callable(lexical_lane_search):
             from backend.app.services.project_search_shadow import (
                 get_project_search_shadow_manager,
             )
 
+            lane_arguments = {
+                "q": lexical_plan,
+                "category": category,
+                "subcategory": subcategory,
+                "language": language,
+                "min_stars": min_stars,
+                "enriched_only": True,
+                "strict_limit": 150,
+                "relaxed_limit": 150,
+            }
             get_project_search_shadow_manager(settings).submit(
                 arguments={
                     "query": query,
@@ -258,9 +270,11 @@ async def search_projects(
                     "subcategory": subcategory,
                     "language": language,
                     "scope": scope,
+                    "strict_term_count": len(lexical_plan.strict_terms),
+                    "concept_count": len(lexical_plan.concepts),
                 },
                 legacy_repo_ids=legacy_repo_ids,
-                lanes=lanes,
+                lanes_call=lambda: lexical_lane_search(**lane_arguments),
                 semantic_repo_ids=candidate_search.semantic_repo_ids,
                 exact_repo_id=exact_repo_id,
             )

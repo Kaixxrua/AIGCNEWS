@@ -3,7 +3,11 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from backend.app.repositories.mysql_repo import MySQLRepository
-from backend.app.repositories.project_catalog import ProjectLexicalCandidate
+from backend.app.repositories.project_catalog import (
+    ProjectLexicalCandidate,
+    ProjectLexicalConcept,
+    ProjectLexicalRetrievalPlan,
+)
 
 
 def _repository_with_cursor() -> tuple[MySQLRepository, MagicMock, MagicMock]:
@@ -83,6 +87,44 @@ def test_lexical_lanes_are_typed_filtered_and_independently_bounded() -> None:
     assert "term_coverage > 0" in relaxed_sql
     assert strict_params[-2:] == (3, 150)
     assert relaxed_params[-1] == 150
+    connection.commit.assert_called_once_with()
+    connection.close.assert_called_once_with()
+
+
+def test_typed_lexical_plan_requires_terms_and_concepts_independently() -> None:
+    repository, cursor, connection = _repository_with_cursor()
+    cursor.fetchall.side_effect = [[], []]
+    plan = ProjectLexicalRetrievalPlan(
+        normalized_query="Python MCP agent",
+        strict_terms=("Python",),
+        concepts=(
+            ProjectLexicalConcept(
+                concept_id="mcp",
+                primary_terms=("MCP",),
+                aliases=("model context protocol", "100%_safe"),
+            ),
+            ProjectLexicalConcept(
+                concept_id="agent",
+                primary_terms=("agent",),
+                aliases=("智能体",),
+            ),
+        ),
+    )
+
+    repository.find_lexical_candidate_lanes(q=plan)
+
+    strict_call, relaxed_call = cursor.execute.call_args_list
+    strict_sql, strict_params = strict_call.args
+    relaxed_sql, relaxed_params = relaxed_call.args
+    assert "term_coverage = %s" in strict_sql
+    assert strict_params[-2:] == (3, 150)
+    assert relaxed_params[-1] == 150
+    assert "100%_safe" not in strict_sql
+    assert "%100=%=_safe%" in strict_params
+    assert strict_params.count("%MCP%") == 7
+    assert strict_params.count("%model context protocol%") == 7
+    assert strict_params.count("%100=%=_safe%") == 7
+    assert strict_params == relaxed_params[:-1] + (3, 150)
     connection.commit.assert_called_once_with()
     connection.close.assert_called_once_with()
 

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "description": "Judged Chinese project-search queries; judgments are independent from system output.",
+  "cases": [
+    {
+      "id": "codebase-memory-zh",
+      "query": "适合 AI 编程智能体的代码库持久记忆工具",
+      "intent": "broad_chinese",
+      "must_find": ["DeusData/codebase-memory-mcp"],
+      "judgments": {"DeusData/codebase-memory-mcp": 3}
+    },
+    {
+      "id": "context-compression-zh",
+      "query": "减少 token 消耗的上下文管理和压缩项目",
+      "intent": "broad_chinese",
+      "must_find": ["mksglu/context-mode"],
+      "judgments": {"mksglu/context-mode": 3}
+    },
+    {
+      "id": "agent-task-tracking-zh",
+      "query": "Agent 任务跟踪和依赖管理工具",
+      "intent": "broad_chinese",
+      "must_find": ["gastownhall/beads"],
+      "judgments": {"gastownhall/beads": 3}
+    },
+    {
+      "id": "coding-productivity-zh",
+      "query": "提升 AI 编程开发效率和编码速度的项目",
+      "intent": "broad_chinese",
+      "must_find": ["DeusData/codebase-memory-mcp", "gastownhall/beads", "mksglu/context-mode"],
+      "judgments": {
+        "DeusData/codebase-memory-mcp": 3,
+        "gastownhall/beads": 2,
+        "mksglu/context-mode": 2
+      }
+    },
+    {
+      "id": "mixed-mcp-memory",
+      "query": "MCP 代码库记忆工具",
+      "intent": "mixed_chinese_technical",
+      "must_find": ["DeusData/codebase-memory-mcp"],
+      "judgments": {"DeusData/codebase-memory-mcp": 3}
+    },
+    {
+      "id": "exact-repo",
+      "query": "DeusData/codebase-memory-mcp",
+      "intent": "exact_lookup",
+      "must_find": ["DeusData/codebase-memory-mcp"],
+      "judgments": {"DeusData/codebase-memory-mcp": 3}
+    },
+    {
+      "id": "filtered-context",
+      "query": "上下文压缩",
+      "intent": "filtered_chinese",
+      "filters": {"category": "coding_tools", "language": "TypeScript"},
+      "must_find": ["mksglu/context-mode"],
+      "judgments": {"mksglu/context-mode": 3}
+    },
+    {
+      "id": "unknown-product-negative",
+      "query": "星火项目",
+      "intent": "unknown_name",
+      "must_find": [],
+      "judgments": {}
+    }
+  ]
+}

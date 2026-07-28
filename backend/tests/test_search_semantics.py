@@ -4,6 +4,7 @@ import pytest
 
 from backend.app.services.search_semantics import (
     build_client_project_search_intent,
+    build_project_lexical_retrieval_plan,
     build_project_search_intent,
 )
 
@@ -16,7 +17,48 @@ def test_project_intent_normalizes_request_and_expands_known_bilingual_concepts(
     assert intent.language == "mixed"
     assert intent.semantic_queries[0] == intent.normalized_query
     assert "workflow automation" in intent.semantic_queries[1]
-    assert isinstance(intent.lexical_terms, tuple)
+    assert intent.lexical_terms == ("Agent", "工作流")
+
+
+def test_project_intent_extracts_bounded_chinese_concepts_and_aliases() -> None:
+    intent = build_project_search_intent(
+        "提升 AI 编程智能体编码速度 项目记忆 上下文压缩和任务依赖管理"
+    )
+    plan = build_project_lexical_retrieval_plan(intent)
+
+    assert intent.lexical_terms == (
+        "AI",
+        "编程智能体",
+        "编码速度",
+        "项目记忆",
+        "上下文压缩",
+        "任务依赖管理",
+    )
+    assert intent.concept_ids == (
+        "coding_assistant",
+        "coding_productivity",
+        "codebase_memory",
+        "context_management",
+        "agent_task_tracking",
+    )
+    assert "codebase memory" in intent.semantic_queries[1]
+    assert "context compression" in intent.semantic_queries[1]
+    assert plan.strict_terms == ()
+    assert {concept.concept_id for concept in plan.concepts} == set(intent.concept_ids)
+    assert all(
+        alias not in plan.strict_terms
+        for concept in plan.concepts
+        for alias in concept.aliases
+    )
+
+
+def test_longest_chinese_phrase_wins_and_unknown_name_is_not_translated() -> None:
+    intent = build_project_search_intent("星火智能体工作流")
+
+    assert intent.lexical_terms == ("智能体工作流",)
+    assert intent.concept_ids == ("workflow",)
+    assert intent.intent_class == "general_discovery"
+    assert "星火" not in " ".join(intent.bilingual_aliases)
 
 
 def test_project_intent_preserves_technical_tokens() -> None:

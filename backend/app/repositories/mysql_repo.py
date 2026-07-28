@@ -36,6 +36,7 @@ from backend.app.repositories.mysql_mcp_server_repository import (
 from backend.app.repositories.project_catalog import (
     ProjectLexicalCandidate,
     ProjectLexicalCandidateLanes,
+    ProjectLexicalRetrievalPlan,
 )
 from backend.app.repositories.mysql_rank_snapshot_repository import (
     MySQLRankSnapshotRepository,
@@ -3413,7 +3414,7 @@ class MySQLRepository:
     def find_lexical_candidate_lanes(
         self,
         *,
-        q: str,
+        q: str | ProjectLexicalRetrievalPlan,
         category: str = "",
         subcategory: str = "",
         language: str = "",
@@ -3423,12 +3424,28 @@ class MySQLRepository:
         strict_limit: int = 150,
         relaxed_limit: int = 150,
     ) -> ProjectLexicalCandidateLanes:
-        terms = project_search_terms(q)
-        if not terms:
+        if isinstance(q, ProjectLexicalRetrievalPlan):
+            strict_terms = tuple(term for term in q.strict_terms if term.strip())
+            concept_groups = tuple(
+                tuple(
+                    dict.fromkeys(
+                        term
+                        for term in (*concept.primary_terms, *concept.aliases)
+                        if term.strip()
+                    )
+                )
+                for concept in q.concepts
+            )
+            concept_groups = tuple(group for group in concept_groups if group)
+            normalized_query = normalize_search_query(q.normalized_query)
+        else:
+            strict_terms = tuple(project_search_terms(q))
+            concept_groups = ()
+            normalized_query = normalize_search_query(q)
+        if not strict_terms and not concept_groups:
             return ProjectLexicalCandidateLanes()
         strict_limit = max(1, min(int(strict_limit or 150), 150))
         relaxed_limit = max(1, min(int(relaxed_limit or 150), 150))
-        normalized_query = normalize_search_query(q)
         prefix = f"{_escape_like_literal(normalized_query)}%"
         filters = ["COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL"]
         filter_params: List[Any] = [min_stars]
@@ -3457,10 +3474,18 @@ class MySQLRepository:
             "COALESCE(c.language, '') LIKE %s ESCAPE '=' OR COALESCE(c.topics_json, '') LIKE %s ESCAPE '=' OR "
             "COALESCE(ge.tags_json, '') LIKE %s ESCAPE '=')"
         )
-        coverage_expression = " + ".join(f"CASE WHEN {term_match} THEN 1 ELSE 0 END" for _ in terms)
+        coverage_clauses: List[str] = []
         coverage_params: List[Any] = []
-        for term in terms:
+        for term in strict_terms:
+            coverage_clauses.append(f"CASE WHEN {term_match} THEN 1 ELSE 0 END")
             coverage_params.extend([f"%{_escape_like_literal(term)}%"] * 7)
+        for concept_group in concept_groups:
+            group_match = " OR ".join(term_match for _ in concept_group)
+            coverage_clauses.append(f"CASE WHEN ({group_match}) THEN 1 ELSE 0 END")
+            for term in concept_group:
+                coverage_params.extend([f"%{_escape_like_literal(term)}%"] * 7)
+        coverage_expression = " + ".join(coverage_clauses)
+        required_coverage = len(coverage_clauses)
         scored_sql = f"""
             SELECT
                 c.repo_id,
@@ -3503,7 +3528,7 @@ class MySQLRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     lane_sql(strict=True),
-                    tuple(scored_params + [len(terms), strict_limit]),
+                    tuple(scored_params + [required_coverage, strict_limit]),
                 )
                 strict_rows = cur.fetchall()
                 cur.execute(

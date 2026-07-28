@@ -9,6 +9,7 @@ from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgr
 from backend.app.repositories.project_catalog import (
     ProjectLexicalCandidate,
     ProjectLexicalCandidateLanes,
+    ProjectLexicalRetrievalPlan,
 )
 from backend.app.repositories.project_catalog_normalization import (
     format_project_category_counts,
@@ -120,7 +121,7 @@ class PostgresProjectCatalogRepository:
     def find_lexical_candidate_lanes(
         self,
         *,
-        q: str,
+        q: str | ProjectLexicalRetrievalPlan,
         category: str = "",
         subcategory: str = "",
         language: str = "",
@@ -130,14 +131,27 @@ class PostgresProjectCatalogRepository:
         strict_limit: int = 150,
         relaxed_limit: int = 150,
     ) -> ProjectLexicalCandidateLanes:
-        terms = project_search_terms(q)
-        if not terms:
+        if isinstance(q, ProjectLexicalRetrievalPlan):
+            normalized_query = " ".join(q.normalized_query.split())
+            strict_terms = tuple(term for term in q.strict_terms if term.strip())
+            concepts = tuple(
+                (concept.concept_id, tuple(dict.fromkeys(
+                    term.strip() for term in (*concept.primary_terms, *concept.aliases) if term.strip()
+                )))
+                for concept in q.concepts
+            )
+            concepts = tuple((concept_id, terms) for concept_id, terms in concepts if terms)
+        else:
+            normalized_query = " ".join(str(q or "").split())
+            strict_terms = tuple(project_search_terms(q))
+            concepts = ()
+        required_coverage = len(strict_terms) + len(concepts)
+        if not required_coverage:
             return ProjectLexicalCandidateLanes()
         strict_limit = max(1, min(int(strict_limit or 150), 150))
         relaxed_limit = max(1, min(int(relaxed_limit or 150), 150))
-        normalized_query = " ".join(str(q or "").split())
         prefix = f"{escape_like_literal(normalized_query)}%"
-        filters = ["COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL"]
+        filters = ["COALESCE(c.stars, 0) >= %s"]
         filter_params: list[Any] = [min_stars]
         if enriched_only:
             filters.append("ge.status = 'succeeded'")
@@ -157,68 +171,108 @@ class PostgresProjectCatalogRepository:
         if tag:
             filters.append("COALESCE(ge.tags_json::text, '') ILIKE %s")
             filter_params.append(f'%"{tag.strip()}"%')
-
-        term_match = (
-            "(c.full_name ILIKE term.pattern ESCAPE '=' OR COALESCE(c.title, '') ILIKE term.pattern ESCAPE '=' OR "
-            "COALESCE(c.description, '') ILIKE term.pattern ESCAPE '=' OR COALESCE(ge.description_zh, '') ILIKE term.pattern ESCAPE '=' OR "
-            "COALESCE(c.language, '') ILIKE term.pattern ESCAPE '=' OR COALESCE(c.topics_json, '') ILIKE term.pattern ESCAPE '=' OR "
-            "COALESCE(ge.tags_json::text, '') ILIKE term.pattern ESCAPE '=')"
+        filters.append(
+            "NOT EXISTS (SELECT 1 FROM github_repo_aliases ga "
+            "WHERE ga.alias_repo_id = c.repo_id "
+            "AND ga.canonical_repo_id <> c.repo_id)"
         )
-        scored_sql = f"""
-            SELECT
-                c.repo_id,
-                c.full_name,
-                COALESCE(c.stars, 0) AS stars,
-                COUNT(*) FILTER (WHERE {term_match})::integer AS term_coverage,
-                CASE
-                    WHEN LOWER(c.full_name) = LOWER(%s) THEN 4
-                    WHEN LOWER(COALESCE(c.title, '')) = LOWER(%s) THEN 3
-                    WHEN c.full_name ILIKE %s ESCAPE '=' THEN 2
-                    WHEN COALESCE(c.title, '') ILIKE %s ESCAPE '=' THEN 1
-                    ELSE 0
-                END AS match_strength
-            FROM github_repo_candidates c
-            LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id
-            LEFT JOIN github_repo_aliases ga
-              ON ga.alias_repo_id = c.repo_id
-             AND ga.canonical_repo_id <> c.repo_id
-            CROSS JOIN unnest(%s::text[]) AS term(pattern)
-            WHERE {' AND '.join(filters)}
-            GROUP BY c.repo_id, c.full_name, c.title, c.stars
-        """
-        term_patterns = [f"%{escape_like_literal(term)}%" for term in terms]
-        scored_params = [normalized_query, normalized_query, prefix, prefix, term_patterns] + filter_params
 
-        def lane_sql(*, strict: bool) -> str:
-            qualification = "term_coverage = %s" if strict else "term_coverage > 0"
-            ordering = (
-                "match_strength DESC, stars DESC, full_name ASC"
-                if strict
-                else "term_coverage DESC, match_strength DESC, stars DESC, full_name ASC"
+        candidate_document = "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '') || ' ' || COALESCE(c.description, '') || ' ' || COALESCE(c.language, '') || ' ' || COALESCE(c.topics_json, ''))"
+        enrichment_document = "LOWER(COALESCE(ge.description_zh, '') || ' ' || COALESCE(ge.tags_json::text, ''))"
+        rows: list[tuple[str, str]] = []
+        for index, term in enumerate(strict_terms):
+            rows.append((f"term:{index}", f"%{escape_like_literal(term)}%"))
+        for concept_id, terms in concepts:
+            for term in terms:
+                rows.append((f"concept:{concept_id}", f"%{escape_like_literal(term)}%"))
+        group_ids = tuple(dict.fromkeys(group_id for group_id, _ in rows))
+        hit_parts: list[str] = []
+        hit_params: list[Any] = []
+        for group_id, pattern in rows:
+            hit_parts.extend(
+                (
+                    f"""
+                        SELECT c.repo_id, %s::text AS group_id
+                        FROM github_repo_candidates c
+                        JOIN eligible e ON e.repo_id = c.repo_id
+                        WHERE {candidate_document} ILIKE %s ESCAPE '='
+                    """,
+                    f"""
+                        SELECT ge.repo_id, %s::text AS group_id
+                        FROM github_repo_enrichments ge
+                        JOIN eligible e ON e.repo_id = ge.repo_id
+                        WHERE {enrichment_document} ILIKE %s ESCAPE '='
+                    """,
+                )
             )
-            return f"""
-                SELECT repo_id, term_coverage, match_strength
-                FROM ({scored_sql}) scored
-                WHERE {qualification}
-                ORDER BY {ordering}
-                LIMIT %s
-            """
+            hit_params.extend((group_id, pattern, group_id, pattern))
+        sql = f"""
+            WITH eligible AS MATERIALIZED (
+                SELECT c.repo_id, c.full_name, c.title, COALESCE(c.stars, 0) AS stars
+                FROM github_repo_candidates c
+                LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id
+                WHERE {' AND '.join(filters)}
+            ), raw_hits AS MATERIALIZED (
+                SELECT DISTINCT repo_id, group_id
+                FROM ({' UNION ALL '.join(hit_parts)}) branch_hits
+            ), scored AS MATERIALIZED (
+                SELECT
+                    e.repo_id,
+                    e.full_name,
+                    e.stars,
+                    COUNT(*)::integer AS term_coverage,
+                    CASE
+                        WHEN LOWER(e.full_name) = LOWER(%s) THEN 4
+                        WHEN LOWER(COALESCE(e.title, '')) = LOWER(%s) THEN 3
+                        WHEN e.full_name ILIKE %s ESCAPE '=' THEN 2
+                        WHEN COALESCE(e.title, '') ILIKE %s ESCAPE '=' THEN 1
+                        ELSE 0
+                    END AS match_strength
+                FROM raw_hits hit
+                JOIN eligible e ON e.repo_id = hit.repo_id
+                GROUP BY e.repo_id, e.full_name, e.title, e.stars
+            ), bounded_lanes AS (
+                (SELECT 'strict'::text AS lane, 0 AS lane_order,
+                        repo_id, term_coverage, match_strength, stars, full_name
+                 FROM scored
+                 WHERE term_coverage = %s
+                 ORDER BY match_strength DESC, stars DESC, full_name ASC
+                 LIMIT %s)
+                UNION ALL
+                (SELECT 'relaxed'::text AS lane, 1 AS lane_order,
+                        repo_id, term_coverage, match_strength, stars, full_name
+                 FROM scored
+                 WHERE term_coverage > 0
+                 ORDER BY term_coverage DESC, match_strength DESC, stars DESC, full_name ASC
+                 LIMIT %s)
+            )
+            SELECT lane, repo_id, term_coverage, match_strength
+            FROM bounded_lanes
+            ORDER BY lane_order,
+                     CASE WHEN lane_order = 1 THEN term_coverage END DESC,
+                     match_strength DESC, stars DESC, full_name ASC
+        """
+        params = tuple(
+            filter_params
+            + hit_params
+            + [
+                normalized_query,
+                normalized_query,
+                prefix,
+                prefix,
+                len(group_ids),
+                strict_limit,
+                relaxed_limit,
+            ]
+        )
 
         with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
-                cursor.execute(
-                    lane_sql(strict=True),
-                    tuple(scored_params + [len(terms), strict_limit]),
-                )
-                strict_rows = cursor.fetchall()
-                cursor.execute(
-                    lane_sql(strict=False),
-                    tuple(scored_params + [relaxed_limit]),
-                )
-                relaxed_rows = cursor.fetchall()
+                cursor.execute(sql, params)
+                lane_rows = cursor.fetchall()
 
-        def candidates(rows: list[dict[str, Any]], lane: str) -> tuple[ProjectLexicalCandidate, ...]:
+        def candidates(lane: str) -> tuple[ProjectLexicalCandidate, ...]:
             return tuple(
                 ProjectLexicalCandidate(
                     repo_id=str(row.get("repo_id") or ""),
@@ -226,13 +280,13 @@ class PostgresProjectCatalogRepository:
                     term_coverage=int(row.get("term_coverage") or 0),
                     match_strength=int(row.get("match_strength") or 0),
                 )
-                for row in rows
-                if row.get("repo_id")
+                for row in lane_rows
+                if row.get("repo_id") and row.get("lane") == lane
             )
 
         return ProjectLexicalCandidateLanes(
-            strict=candidates(strict_rows, "strict"),
-            relaxed=candidates(relaxed_rows, "relaxed"),
+            strict=candidates("strict"),
+            relaxed=candidates("relaxed"),
         )
 
     def list_projects(
@@ -403,7 +457,8 @@ class PostgresProjectCatalogRepository:
         aggregate = f"WITH category_rows AS ({' UNION ALL '.join(parts)}) SELECT category_slug,category_name,subcategory_slug,subcategory_name,SUM(count) count FROM category_rows GROUP BY category_slug,category_name,subcategory_slug,subcategory_name"
         date = _today(); start,end = _today_range()
         if source in {"all","github"}:
-            today_sql=f"SELECT COUNT(*) count FROM (SELECT c_top.repo_id FROM github_repo_candidates c_top JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE AND gm_top.daily_star_growth>0 WHERE COALESCE(c_top.stars,0)>=%s {'AND ge_top.status=\'succeeded\'' if enriched_only else ''} ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,gm_top.stars DESC NULLS LAST,c_top.full_name ASC LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) top JOIN github_repo_candidates c ON c.repo_id=top.repo_id JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id {gh_join} WHERE TRUE {gh_filter}"
+            top_status_gh = "AND ge_top.status='succeeded'" if enriched_only else ""
+            today_sql=f"SELECT COUNT(*) count FROM (SELECT c_top.repo_id FROM github_repo_candidates c_top JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE AND gm_top.daily_star_growth>0 WHERE COALESCE(c_top.stars,0)>=%s {top_status_gh} ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,gm_top.stars DESC NULLS LAST,c_top.full_name ASC LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) top JOIN github_repo_candidates c ON c.repo_id=top.repo_id JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id {gh_join} WHERE TRUE {gh_filter}"
             today_params=[date,min_stars]+gh_user
         else:
             today_sql=f"SELECT COUNT(*) count FROM tool_websites w JOIN tool_website_enrichments we ON we.website_id=w.id {web_join} WHERE w.first_seen_at>=%s AND w.first_seen_at<%s {status_web} {visibility} {web_filter}"
