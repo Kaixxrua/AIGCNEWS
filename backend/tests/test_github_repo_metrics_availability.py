@@ -85,11 +85,13 @@ class GitHubRepoAvailabilityRefreshTests(unittest.TestCase):
         ]
 
         with (
-            patch.object(metrics, "MySQLRepository", return_value=repository),
             patch.object(metrics, "fetch_github_repo_metrics_batch", return_value=outcomes),
             patch.object(metrics, "_local_today", return_value=metrics.date(2026, 7, 23)),
         ):
-            result = metrics.refresh_github_project_metric_snapshots(metric_date="2026-07-23")
+            result = metrics.refresh_github_project_metric_snapshots(
+                metric_date="2026-07-23",
+                db=repository,
+            )
 
         repository.record_github_repo_not_found.assert_called_once()
         repository.mark_github_repo_available.assert_called_once()

@@ -10,7 +10,12 @@ from typing import Any, Dict, List
 from zoneinfo import ZoneInfo
 
 from backend.app.core.config import settings
-from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.application_repository_context import (
+    get_configured_application_repositories,
+)
+from backend.app.repositories.project_write_repository import (
+    GitHubProjectIngestionRepository,
+)
 from backend.app.services.ingestion.source_github import fetch_github_repo_metrics_batch
 
 logger = logging.getLogger(__name__)
@@ -145,11 +150,12 @@ def refresh_github_project_metric_snapshots(
     metric_date: str | date | None = None,
     dry_run: bool = False,
     _local_date: date | None = None,
+    db: GitHubProjectIngestionRepository | None = None,
 ) -> Dict[str, Any]:
     """Refresh today's lightweight GitHub metrics and write raw snapshots."""
 
     snapshot_date = _live_metric_date(metric_date, local_today=_local_date)
-    db = MySQLRepository()
+    db = db or get_configured_application_repositories().github_ingestion
     captured_at = _utcnow()
     targets = db.list_github_project_metric_targets(min_stars=min_stars, limit=limit)
     full_names = [str(item.get("full_name") or "").strip() for item in targets if item.get("full_name")]
@@ -231,10 +237,11 @@ def compute_github_daily_metrics(
     metric_date: str | date | None = None,
     min_stars: int = DEFAULT_MIN_STARS,
     repo_ids: List[str] | None = None,
+    db: GitHubProjectIngestionRepository | None = None,
 ) -> Dict[str, Any]:
     """Compute exact day-over-day growth and scale-adjusted hot scores."""
 
-    db = MySQLRepository()
+    db = db or get_configured_application_repositories().github_ingestion
     metric_date_str = _date_str(metric_date)
     current_date = date.fromisoformat(metric_date_str)
     previous_date = (current_date - timedelta(days=1)).isoformat()
@@ -420,7 +427,9 @@ def refresh_and_compute_github_project_metrics(
     limit: int = 0,
     metric_date: str | date | None = None,
     dry_run: bool = False,
+    db: GitHubProjectIngestionRepository | None = None,
 ) -> Dict[str, Any]:
+    db = db or get_configured_application_repositories().github_ingestion
     local_today = _local_today()
     resolved_date = _live_metric_date(metric_date, local_today=local_today)
     refresh_result = refresh_github_project_metric_snapshots(
@@ -429,12 +438,14 @@ def refresh_and_compute_github_project_metrics(
         metric_date=resolved_date,
         dry_run=dry_run,
         _local_date=local_today,
+        db=db,
     )
     metrics_result = None
     if not dry_run:
         metrics_result = compute_github_daily_metrics(
             metric_date=resolved_date,
             min_stars=min_stars,
+            db=db,
         )
     return {
         "status": "success" if not dry_run else "dry_run",

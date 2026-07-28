@@ -56,8 +56,10 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         repository = MagicMock()
         repository.get_github_daily_metric_inputs.return_value = [row]
         repository.upsert_github_daily_metrics.return_value = 1
-        with patch.object(metrics, "MySQLRepository", return_value=repository):
-            result = metrics.compute_github_daily_metrics(metric_date=self.metric_date)
+        result = metrics.compute_github_daily_metrics(
+            metric_date=self.metric_date,
+            db=repository,
+        )
         payload = repository.upsert_github_daily_metrics.call_args.args[0][0]
         return {"result": result, "payload": payload}
 

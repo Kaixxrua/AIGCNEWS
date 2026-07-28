@@ -33,6 +33,7 @@ finally:
 
 class GitHubMetricDateTests(unittest.TestCase):
     def test_combined_refresh_passes_one_current_date_to_both_stages(self) -> None:
+        repository = MagicMock()
         with (
             patch.object(metrics, "_local_today", return_value=datetime(2026, 7, 14).date()),
             patch.object(
@@ -46,7 +47,10 @@ class GitHubMetricDateTests(unittest.TestCase):
                 return_value={"status": "success"},
             ) as compute,
         ):
-            result = metrics.refresh_and_compute_github_project_metrics(limit=80)
+            result = metrics.refresh_and_compute_github_project_metrics(
+                limit=80,
+                db=repository,
+            )
 
         self.assertEqual(result["metric_date"], "2026-07-14")
         self.assertEqual(refresh.call_args.kwargs["metric_date"], "2026-07-14")
@@ -57,17 +61,18 @@ class GitHubMetricDateTests(unittest.TestCase):
         self.assertEqual(compute.call_args.kwargs["metric_date"], "2026-07-14")
 
     def test_live_snapshot_refresh_rejects_yesterday_before_database_access(self) -> None:
+        repository = MagicMock()
         with (
             patch.object(metrics, "_local_today", return_value=datetime(2026, 7, 14).date()),
-            patch.object(metrics, "MySQLRepository") as repository,
             patch.object(metrics, "fetch_github_repo_metrics_batch") as fetch,
         ):
             with self.assertRaises(ValueError):
                 metrics.refresh_github_project_metric_snapshots(
-                    metric_date="2026-07-13"
+                    metric_date="2026-07-13",
+                    db=repository,
                 )
 
-        repository.assert_not_called()
+        repository.list_github_project_metric_targets.assert_not_called()
         fetch.assert_not_called()
 
 
