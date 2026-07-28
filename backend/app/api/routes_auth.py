@@ -21,7 +21,6 @@ from backend.app.core.auth import (
     verify_password,
 )
 from backend.app.repositories.mcp_access_token_repository import McpAccessTokenManager
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.auth import account_lifecycle
 from backend.app.services.auth.adapters import build_account_lifecycle
