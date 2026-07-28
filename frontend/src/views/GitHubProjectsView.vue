@@ -2,32 +2,14 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { compareLocaleStrings } from '../i18n/formatters'
-import {
-  addMyToolWebsite,
-  addMyToolWebsiteManual,
-  favoriteProject,
-  fetchMyProjectCollection,
-  fetchMyProjectTags,
-  fetchProjectCategories,
-  fetchProjects,
-  fetchProjectTaxonomy,
-  recommendGitHubProject,
-  removeMyToolWebsite,
-  unfavoriteProject,
-  unrecommendGitHubProject,
-  updateMyToolWebsite,
-  type GitHubProjectCategory,
-  type GitHubProjectItem,
-  type GitHubProjectSort,
-  type GitHubProjectTag,
-  type ProjectScope,
-  type ProjectSource,
-  type ManualToolWebsitePayload,
-  type ProjectTaxonomyItem,
-  type ProjectViewSource,
-  type ToolWebsiteUpdatePayload,
-} from '../services/api'
+import type {
+  GitHubProjectItem,
+  GitHubProjectSort,
+  ManualToolWebsitePayload,
+  ProjectScope,
+  ProjectViewSource,
+  ToolWebsiteUpdatePayload,
+} from '../services/projects/projectApi'
 import router from '../router'
 import { useAuthStore } from '../stores/authStore'
 import ProjectResultCard from '../components/projects/ProjectResultCard.vue'
@@ -35,103 +17,71 @@ import ToolWebsiteAddDialog from '../components/projects/ToolWebsiteAddDialog.vu
 import ToolWebsiteEditDialog from '../components/projects/ToolWebsiteEditDialog.vue'
 import ProjectFiltersPanel from '../components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '../components/projects/ProjectPagination.vue'
-import {
-  defaultProjectSortForScope,
-  defaultProjectSortForSource,
-  useProjectRouteState,
-} from '../composables/useProjectRouteState'
+import { useProjectCatalogController } from '../composables/useProjectCatalogController'
+import { defaultProjectSortForScope, defaultProjectSortForSource, useProjectRouteState } from '../composables/useProjectRouteState'
 import {
   canEditWebsiteProject,
   canFavoriteProject,
   canRecommendProject,
   isWebsite,
-  projectFavoritePayload,
   projectKey,
   projectLogoKey,
-  projectName,
   type ProjectChip,
 } from '../features/projects/projectPresentation'
 
 defineOptions({ name: 'GitHubProjectsView' })
 const { t } = useI18n()
-
 const authStore = useAuthStore()
 const route = useRoute()
-const categories = ref<GitHubProjectCategory[]>([])
-const personalTags = ref<GitHubProjectTag[]>([])
-const projects = ref<GitHubProjectItem[]>([])
+const source = ref<ProjectViewSource>('all')
 const selectedScope = ref<ProjectScope>('all')
 const selectedCategory = ref('all')
 const selectedSubcategory = ref('all')
 const searchQuery = ref('')
 const debouncedQuery = ref('')
-const source = ref<ProjectViewSource>('all')
 const selectedLanguage = ref('')
 const selectedTag = ref('')
 const sort = ref<GitHubProjectSort>('stars')
 const page = ref(1)
-const pageSize = ref(24)
 const pageJump = ref('')
-const total = ref(0)
-const loading = ref(false)
-const categoriesLoading = ref(false)
-const tagsLoading = ref(false)
-const errorMsg = ref('')
-const successMsg = ref('')
 const addDialogOpen = ref(false)
-const taxonomy = ref<ProjectTaxonomyItem[]>([])
-const taxonomyLoading = ref(false)
-const addingTool = ref(false)
-const addToolError = ref('')
 const editDialogOpen = ref(false)
 const editTarget = ref<GitHubProjectItem | null>(null)
-const editError = ref('')
-const savingEdit = ref(false)
-const deletingWebsiteId = ref<number | string | null>(null)
-const favoriteBusyKey = ref('')
-const recommendBusyKey = ref('')
-const currentRequestId = ref(0)
-const categoryRequestId = ref(0)
-const tagRequestId = ref(0)
-const isViewActive = ref(true)
 const VIEW_REFRESH_INTERVAL = 60_000
-let lastSuccessfulFetchAt = 0
 let hasActivatedOnce = false
 let searchTimer: number | undefined
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
 
-const {
-  applyRouteState,
-  currentProjectsRedirect,
-  endStateBatch,
-  isApplyingRouteState,
-  isReplacingRoute,
-  replaceRouteFromState,
-} = useProjectRouteState(route, router, {
-  source,
-  selectedScope,
-  selectedCategory,
-  selectedSubcategory,
-  searchQuery,
-  debouncedQuery,
-  selectedLanguage,
-  selectedTag,
-  sort,
-  page,
+const { applyRouteState, currentProjectsRedirect, endStateBatch, isApplyingRouteState, isReplacingRoute, replaceRouteFromState } = useProjectRouteState(route, router, {
+  source, selectedScope, selectedCategory, selectedSubcategory, searchQuery, debouncedQuery, selectedLanguage, selectedTag, sort, page,
 })
 
-const defaultSortForSource = defaultProjectSortForSource
-const defaultSortForScope = (scopeValue: ProjectScope, sourceValue: ProjectViewSource = source.value) => (
-  defaultProjectSortForScope(scopeValue, sourceValue)
-)
+const controller = useProjectCatalogController({
+  routeState: { source, selectedScope, selectedCategory, selectedSubcategory, searchQuery, debouncedQuery, selectedLanguage, selectedTag, sort, page },
+  t,
+  isLoggedIn: () => authStore.isLoggedIn,
+  isAdmin: () => authStore.isAdmin,
+  currentRedirect: currentProjectsRedirect,
+  navigateToLogin: async (redirect) => { await router.push({ path: '/login', query: { redirect } }) },
+  replaceRouteFromState,
+})
 
+const {
+  addToolError, addingTool, categories, categoriesLoading, deletingWebsiteId, editError, errorMsg,
+  favoriteBusyKey, isMyCollection, isPersonalView, isViewActive, lastSuccessfulFetchAt, loadCategories,
+  loadPersonalTags, loadProjects, loadTaxonomy, loading, pageSize, personalTags, projects, recommendBusyKey,
+  recommendProject, requiresPersonalLogin, savingEdit, successMsg, tagsLoading, taxonomy, taxonomyLoading,
+  toggleFavorite, total,
+} = controller
+
+const defaultSortForSource = defaultProjectSortForSource
+const defaultSortForScope = (scopeValue: ProjectScope, sourceValue: ProjectViewSource = source.value) => defaultProjectSortForScope(scopeValue, sourceValue)
 const sourceOptions = computed<SourceOption[]>(() => [
   { value: 'all', label: t('projects.source.allLabel'), hint: t('projects.source.allHint') },
   { value: 'website', label: t('projects.source.websiteLabel'), hint: t('projects.source.websiteHint'), authOnly: true },
   { value: 'favorites', label: t('projects.source.favoritesLabel'), hint: t('projects.source.favoritesHint'), authOnly: true },
 ])
-
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const hasPrev = computed(() => page.value > 1)
 const hasNext = computed(() => page.value < totalPages.value)
@@ -143,64 +93,36 @@ const semanticCategories = computed(() => categories.value.filter((item) => (ite
 const activeCategory = computed(() => semanticCategories.value.find((item) => item.slug === selectedCategory.value))
 const visibleSubcategories = computed(() => activeCategory.value?.children ?? [])
 const activeSubcategory = computed(() => visibleSubcategories.value.find((item) => item.slug === selectedSubcategory.value))
-const publicSource = computed<ProjectSource>(() => (source.value === 'website' ? 'website' : 'github'))
-const isPersonalView = computed(() => source.value === 'favorites' || source.value === 'website')
-const requiresPersonalLogin = computed(() => isPersonalView.value && !authStore.isLoggedIn)
-const isMyCollection = computed(() => isPersonalView.value)
 const isWebsiteOnlyView = computed(() => source.value === 'website')
 const sourceLabel = computed(() => sourceOptions.value.find((item) => item.value === source.value)?.label ?? t('projects.all'))
-const personalLoginCopy = computed(() => (
-  isWebsiteOnlyView.value
-    ? {
-        kicker: t('projects.loginWebsiteKicker'),
-        title: t('projects.loginWebsiteTitle'),
-        description: t('projects.loginWebsiteDescription'),
-      }
-    : {
-        kicker: t('projects.loginFavoritesKicker'),
-        title: t('projects.loginFavoritesTitle'),
-        description: t('projects.loginFavoritesDescription'),
-      }
-))
-const starsBadgeLabel = computed(() => {
-  if (source.value === 'all') return 'GitHub Stars > 500'
-  return ''
-})
+const personalLoginCopy = computed(() => isWebsiteOnlyView.value
+  ? { kicker: t('projects.loginWebsiteKicker'), title: t('projects.loginWebsiteTitle'), description: t('projects.loginWebsiteDescription') }
+  : { kicker: t('projects.loginFavoritesKicker'), title: t('projects.loginFavoritesTitle'), description: t('projects.loginFavoritesDescription') })
+const starsBadgeLabel = computed(() => source.value === 'all' ? 'GitHub Stars > 500' : '')
 const activeFilterLabel = computed(() => {
   if (selectedTag.value) return t('projects.filterTag', { tag: selectedTag.value })
   if (selectedLanguage.value) return t('projects.filterLanguage', { language: selectedLanguage.value })
   if (isPersonalView.value) return t('projects.noTagFilter')
   if (selectedScope.value === 'recommended') return recommendedScope.value?.name || t('projects.recommended')
   if (selectedScope.value === 'today') return todayScope.value?.name || t('projects.today')
-  if (activeCategory.value && activeSubcategory.value) {
-    return `${activeCategory.value.name} / ${activeSubcategory.value.name}`
-  }
+  if (activeCategory.value && activeSubcategory.value) return `${activeCategory.value.name} / ${activeSubcategory.value.name}`
   if (activeCategory.value) return activeCategory.value.name
   return t('projects.allCategories')
 })
-const hasActiveFilter = computed(() => (
-  selectedScope.value !== 'all'
-  || selectedCategory.value !== 'all'
-  || selectedSubcategory.value !== 'all'
-  || !!selectedLanguage.value
-  || !!selectedTag.value
-))
+const hasActiveFilter = computed(() => selectedScope.value !== 'all' || selectedCategory.value !== 'all' || selectedSubcategory.value !== 'all' || !!selectedLanguage.value || !!selectedTag.value)
 
-const repoName = projectName
-const logoKey = projectLogoKey
 const brokenLogoKeys = ref<Set<string>>(new Set())
 const loadedLogoKeys = ref<Set<string>>(new Set())
 const isWebsiteLogoLoaded = (repo: GitHubProjectItem) => {
-  const key = logoKey(repo)
+  const key = projectLogoKey(repo)
   return Boolean(key && loadedLogoKeys.value.has(key))
 }
 const markWebsiteLogoLoaded = (repo: GitHubProjectItem) => {
-  const key = logoKey(repo)
-  if (!key || loadedLogoKeys.value.has(key)) return
-  loadedLogoKeys.value = new Set([...loadedLogoKeys.value, key])
+  const key = projectLogoKey(repo)
+  if (key && !loadedLogoKeys.value.has(key)) loadedLogoKeys.value = new Set([...loadedLogoKeys.value, key])
 }
 const hideBrokenLogo = (repo: GitHubProjectItem) => {
-  const key = logoKey(repo)
+  const key = projectLogoKey(repo)
   if (!key) return
   brokenLogoKeys.value = new Set([...brokenLogoKeys.value, key])
   if (loadedLogoKeys.value.has(key)) {
@@ -209,191 +131,19 @@ const hideBrokenLogo = (repo: GitHubProjectItem) => {
     loadedLogoKeys.value = nextLoadedKeys
   }
 }
-const favoritePayload = projectFavoritePayload
 const canFavorite = canFavoriteProject
 const canRecommendCard = (repo: GitHubProjectItem) => canRecommendProject(repo, authStore.isAdmin)
 const canEditCard = (repo: GitHubProjectItem) => canEditWebsiteProject(repo, isWebsiteOnlyView.value)
-
-const upsertProjectItem = (item: GitHubProjectItem) => {
-  const key = projectKey(item)
-  const index = projects.value.findIndex((repo) => projectKey(repo) === key)
-  if (index >= 0) {
-    projects.value.splice(index, 1, item)
-  } else {
-    projects.value = [item, ...projects.value]
-    total.value += 1
-  }
-}
-
-const mergePersonalTagsFromItems = (items: GitHubProjectItem[]) => {
-  if (!isPersonalView.value) return
-  const ignoredTags = new Set(['AI 工具', '网页收藏'])
-  const counts = new Map(personalTags.value.map((item) => [item.label, item.count]))
-  for (const item of items) {
-    for (const rawTag of item.tags ?? []) {
-      const label = String(rawTag).trim()
-      if (!label || ignoredTags.has(label)) continue
-      counts.set(label, Math.max(counts.get(label) ?? 0, 1))
-    }
-  }
-  personalTags.value = Array.from(counts.entries())
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count || compareLocaleStrings(a.label, b.label))
-}
-
-const loadPersonalTags = async () => {
-  const requestId = tagRequestId.value + 1
-  tagRequestId.value = requestId
-  if (!isPersonalView.value || requiresPersonalLogin.value) {
-    personalTags.value = []
-    tagsLoading.value = false
-    return
-  }
-  const tagSource = publicSource.value
-  tagsLoading.value = true
-  try {
-    const data = await fetchMyProjectTags(tagSource)
-    if (requestId !== tagRequestId.value || !isPersonalView.value || tagSource !== publicSource.value) return
-    personalTags.value = data.items
-  } catch (error) {
-    if (requestId !== tagRequestId.value) return
-    console.error('Failed to load personal tags:', error)
-    personalTags.value = []
-  } finally {
-    if (requestId === tagRequestId.value) {
-      tagsLoading.value = false
-    }
-  }
-}
-
-const loadCategories = async () => {
-  const requestId = categoryRequestId.value + 1
-  categoryRequestId.value = requestId
-  const categorySource = publicSource.value
-  if (isPersonalView.value) {
-    categories.value = []
-    categoriesLoading.value = false
-    if (selectedCategory.value !== 'all' || selectedSubcategory.value !== 'all' || selectedScope.value !== 'all') {
-      selectedCategory.value = 'all'
-      selectedSubcategory.value = 'all'
-      selectedScope.value = 'all'
-    }
-    return
-  }
-  categoriesLoading.value = true
-  try {
-    const data = await fetchProjectCategories(categorySource)
-    if (requestId !== categoryRequestId.value || isPersonalView.value || categorySource !== publicSource.value) return
-    categories.value = data.items.length
-      ? data.items
-      : [{ slug: 'all', name: '全部', count: 0, kind: 'scope', scope: 'all', children: [] }]
-    let filterChanged = false
-    if (selectedCategory.value !== 'all' && !semanticCategories.value.some((item) => item.slug === selectedCategory.value)) {
-      selectedCategory.value = 'all'
-      selectedSubcategory.value = 'all'
-      filterChanged = true
-    }
-    if (selectedSubcategory.value !== 'all' && !visibleSubcategories.value.some((item) => item.slug === selectedSubcategory.value)) {
-      selectedSubcategory.value = 'all'
-      filterChanged = true
-    }
-    if (filterChanged && !isApplyingRouteState.value) {
-      page.value = 1
-      void replaceRouteFromState()
-      loadProjects({ clearSuccess: false })
-    }
-  } catch (error) {
-    if (requestId !== categoryRequestId.value) return
-    console.error('Failed to load project categories:', error)
-    categories.value = [{ slug: 'all', name: '全部', count: 0, kind: 'scope', scope: 'all', children: [] }]
-  } finally {
-    if (requestId === categoryRequestId.value) {
-      categoriesLoading.value = false
-    }
-  }
-}
-
-const loadTaxonomy = async () => {
-  if (!authStore.isLoggedIn || taxonomy.value.length || taxonomyLoading.value) return
-  taxonomyLoading.value = true
-  try {
-    const data = await fetchProjectTaxonomy()
-    taxonomy.value = data.items
-  } catch (error) {
-    console.error('Failed to load project taxonomy:', error)
-  } finally {
-    taxonomyLoading.value = false
-  }
-}
-
-const loadProjects = async (options: { clearSuccess?: boolean; preserveContent?: boolean } = {}) => {
-  const requestId = currentRequestId.value + 1
-  currentRequestId.value = requestId
-  errorMsg.value = ''
-  if (options.clearSuccess !== false) successMsg.value = ''
-  if (requiresPersonalLogin.value) {
-    projects.value = []
-    total.value = 0
-    loading.value = false
-    return
-  }
-  if (!options.preserveContent) loading.value = true
-
-  try {
-    const loadParams = () => ({
-      source: publicSource.value,
-      scope: selectedScope.value,
-      category: selectedCategory.value === 'all' ? '' : selectedCategory.value,
-      subcategory: selectedSubcategory.value === 'all' ? '' : selectedSubcategory.value,
-      q: debouncedQuery.value.trim(),
-      language: selectedLanguage.value,
-      tag: isPersonalView.value ? selectedTag.value : '',
-      page: page.value,
-      page_size: pageSize.value,
-      sort: sort.value,
-    })
-    let data = isMyCollection.value
-      ? await fetchMyProjectCollection(loadParams())
-      : await fetchProjects(loadParams())
-    if (requestId !== currentRequestId.value) return
-    const maxPage = Math.max(1, Math.ceil(data.total / pageSize.value))
-    if (page.value > maxPage) {
-      page.value = maxPage
-      void replaceRouteFromState()
-      data = isMyCollection.value
-        ? await fetchMyProjectCollection(loadParams())
-        : await fetchProjects(loadParams())
-      if (requestId !== currentRequestId.value) return
-    }
-    projects.value = data.items
-    total.value = data.total
-    lastSuccessfulFetchAt = Date.now()
-    mergePersonalTagsFromItems(data.items)
-  } catch (error) {
-    if (requestId !== currentRequestId.value) return
-    console.error('Failed to load projects:', error)
-    if (!options.preserveContent) {
-      errorMsg.value = t(isMyCollection.value ? 'projects.loadFavoritesFailed' : 'projects.loadLibraryFailed')
-      projects.value = []
-      total.value = 0
-    }
-  } finally {
-    if (requestId === currentRequestId.value) {
-      loading.value = false
-    }
-  }
-}
 
 const resetAndLoad = () => {
   if (isApplyingRouteState.value) return
   page.value = 1
   void replaceRouteFromState()
-  loadProjects()
+  void loadProjects()
 }
-
+const resetScopeToAll = () => { selectedScope.value = 'all' }
 const changeSource = (nextSource: ProjectViewSource) => {
   if (source.value === nextSource) return
-  const nextSort = defaultSortForSource(nextSource)
   isApplyingRouteState.value = true
   source.value = nextSource
   resetScopeToAll()
@@ -402,37 +152,23 @@ const changeSource = (nextSource: ProjectViewSource) => {
   selectedLanguage.value = ''
   selectedTag.value = ''
   page.value = 1
-  sort.value = nextSort
+  sort.value = defaultSortForSource(nextSource)
   endStateBatch()
   void replaceRouteFromState(true)
-  loadCategories()
-  loadProjects()
+  void loadCategories()
+  void loadPersonalTags()
+  void loadProjects()
 }
-
-const selectScope = (scope: ProjectScope) => {
-  if (
-    selectedScope.value === scope
-    && selectedCategory.value === 'all'
-    && selectedSubcategory.value === 'all'
-    && !selectedLanguage.value
-  ) return
-  selectedScope.value = scope
+const selectScope = (scopeValue: ProjectScope) => {
+  if (selectedScope.value === scopeValue && selectedCategory.value === 'all' && selectedSubcategory.value === 'all' && !selectedLanguage.value) return
+  selectedScope.value = scopeValue
   selectedCategory.value = 'all'
   selectedSubcategory.value = 'all'
   selectedLanguage.value = ''
   selectedTag.value = ''
-  sort.value = defaultSortForScope(scope)
+  sort.value = defaultSortForScope(scopeValue)
 }
-
-const resetScopeToAll = () => {
-  selectedScope.value = 'all'
-}
-
-const clearLanguageFilter = () => {
-  if (!selectedLanguage.value) return
-  selectedLanguage.value = ''
-}
-
+const clearLanguageFilter = () => { if (selectedLanguage.value) selectedLanguage.value = '' }
 const selectPersonalTag = (tag: string) => {
   const cleanTag = tag.trim()
   if (!cleanTag || selectedTag.value === cleanTag) return
@@ -443,13 +179,7 @@ const selectPersonalTag = (tag: string) => {
   selectedTag.value = cleanTag
   page.value = 1
 }
-
-const clearPersonalTag = () => {
-  if (!selectedTag.value) return
-  selectedTag.value = ''
-  page.value = 1
-}
-
+const clearPersonalTag = () => { if (selectedTag.value) { selectedTag.value = ''; page.value = 1 } }
 const selectCategory = (slug: string) => {
   if (selectedScope.value === 'all' && selectedCategory.value === slug && selectedSubcategory.value === 'all') return
   resetScopeToAll()
@@ -458,7 +188,6 @@ const selectCategory = (slug: string) => {
   selectedLanguage.value = ''
   selectedTag.value = ''
 }
-
 const selectSubcategory = (slug: string) => {
   if (selectedSubcategory.value === slug) return
   resetScopeToAll()
@@ -466,357 +195,95 @@ const selectSubcategory = (slug: string) => {
   selectedLanguage.value = ''
   selectedTag.value = ''
 }
-
 const handleChipClick = (chip: ProjectChip) => {
   page.value = 1
   if (chip.type === 'subcategory') {
-    resetScopeToAll()
-    selectedCategory.value = chip.categorySlug || selectedCategory.value
-    selectedSubcategory.value = chip.value
-    selectedLanguage.value = ''
-    selectedTag.value = ''
-    searchQuery.value = ''
-    debouncedQuery.value = ''
-    return
+    resetScopeToAll(); selectedCategory.value = chip.categorySlug || selectedCategory.value; selectedSubcategory.value = chip.value; selectedLanguage.value = ''; selectedTag.value = ''; searchQuery.value = ''; debouncedQuery.value = ''; return
   }
   if (chip.type === 'category') {
-    resetScopeToAll()
-    selectedCategory.value = chip.value
-    selectedSubcategory.value = 'all'
-    selectedLanguage.value = ''
-    selectedTag.value = ''
-    searchQuery.value = ''
-    debouncedQuery.value = ''
-    return
+    resetScopeToAll(); selectedCategory.value = chip.value; selectedSubcategory.value = 'all'; selectedLanguage.value = ''; selectedTag.value = ''; searchQuery.value = ''; debouncedQuery.value = ''; return
   }
   if (chip.type === 'language') {
-    if (source.value === 'website') {
-      source.value = 'all'
-      loadCategories()
-    }
-    resetScopeToAll()
-    selectedCategory.value = 'all'
-    selectedSubcategory.value = 'all'
-    selectedLanguage.value = chip.value
-    selectedTag.value = ''
-    searchQuery.value = ''
-    debouncedQuery.value = ''
-    return
+    if (source.value === 'website') { source.value = 'all'; void loadCategories() }
+    resetScopeToAll(); selectedCategory.value = 'all'; selectedSubcategory.value = 'all'; selectedLanguage.value = chip.value; selectedTag.value = ''; searchQuery.value = ''; debouncedQuery.value = ''; return
   }
-  if (chip.type === 'tag' && isPersonalView.value) {
-    searchQuery.value = ''
-    debouncedQuery.value = ''
-    selectPersonalTag(chip.value)
-    return
-  }
-  resetScopeToAll()
-  selectedCategory.value = 'all'
-  selectedSubcategory.value = 'all'
-  selectedLanguage.value = ''
-  selectedTag.value = ''
-  searchQuery.value = chip.value
-  debouncedQuery.value = chip.value
+  if (chip.type === 'tag' && isPersonalView.value) { searchQuery.value = ''; debouncedQuery.value = ''; selectPersonalTag(chip.value); return }
+  resetScopeToAll(); selectedCategory.value = 'all'; selectedSubcategory.value = 'all'; selectedLanguage.value = ''; selectedTag.value = ''; searchQuery.value = chip.value; debouncedQuery.value = chip.value
 }
-
 const goPage = (nextPage: number) => {
   const target = Math.max(1, Math.min(totalPages.value, nextPage))
   pageJump.value = ''
   if (target === page.value) return
   page.value = target
   void replaceRouteFromState()
-  loadProjects()
+  void loadProjects()
 }
-
 const jumpToPage = () => {
   const parsed = Number(pageJump.value)
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    pageJump.value = ''
-    return
-  }
+  if (!Number.isFinite(parsed) || parsed < 1) { pageJump.value = ''; return }
   goPage(Math.floor(parsed))
 }
-
 watch(searchQuery, (value) => {
   if (searchTimer) window.clearTimeout(searchTimer)
-  searchTimer = window.setTimeout(() => {
-    debouncedQuery.value = value
-  }, 280)
+  searchTimer = window.setTimeout(() => { debouncedQuery.value = value }, 280)
 })
 
-const goToPersonalLogin = () => {
-  router.push({ path: '/login', query: { redirect: currentProjectsRedirect() } })
-}
-
+const goToPersonalLogin = () => { router.push({ path: '/login', query: { redirect: currentProjectsRedirect() } }) }
 const openAddDialog = () => {
-  if (!authStore.isLoggedIn) {
-    router.push({ path: '/login', query: { redirect: '/projects?source=website' } })
-    return
-  }
+  if (!authStore.isLoggedIn) { router.push({ path: '/login', query: { redirect: '/projects?source=website' } }); return }
   addToolError.value = ''
   addDialogOpen.value = true
-  loadTaxonomy()
+  void loadTaxonomy()
 }
-
-const closeAddDialog = () => {
-  if (addingTool.value) return
-  addDialogOpen.value = false
-  addToolError.value = ''
-}
-
+const closeAddDialog = () => { if (!addingTool.value) { addDialogOpen.value = false; addToolError.value = '' } }
 const openEditDialog = (repo: GitHubProjectItem) => {
   if (!canEditCard(repo)) return
   editTarget.value = repo
   editError.value = ''
   editDialogOpen.value = true
-  loadTaxonomy()
+  void loadTaxonomy()
 }
-
 const closeEditDialog = () => {
   if (savingEdit.value) return
   editDialogOpen.value = false
   editError.value = ''
   editTarget.value = null
 }
-
-const submitEditWebsite = async (
-  websiteId: string | number,
-  payload: ToolWebsiteUpdatePayload,
-) => {
-  savingEdit.value = true
-  editError.value = ''
-  successMsg.value = ''
-  try {
-    const result = await updateMyToolWebsite(websiteId, payload)
-    if (result.item) {
-      upsertProjectItem(result.item)
-      mergePersonalTagsFromItems([result.item])
-    }
-    successMsg.value = result.message || '网页收藏信息已更新。'
-    editDialogOpen.value = false
-    editTarget.value = null
-    await Promise.all([loadPersonalTags(), loadProjects({ clearSuccess: false })])
-  } catch (error: any) {
-    editError.value = error?.response?.data?.detail || error?.message || String(error)
-  } finally {
-    savingEdit.value = false
-  }
+const submitEditWebsite = async (websiteId: string | number, payload: ToolWebsiteUpdatePayload) => {
+  if (!await controller.submitEditWebsite(websiteId, payload)) return
+  editDialogOpen.value = false
+  editTarget.value = null
 }
-
-const refreshAfterWebsiteMutation = async () => {
-  if (source.value !== 'website') {
-    source.value = 'website'
-    sort.value = defaultSortForSource('website')
-  }
-  resetScopeToAll()
-  selectedCategory.value = 'all'
-  selectedSubcategory.value = 'all'
-  selectedLanguage.value = ''
-  selectedTag.value = ''
-  searchQuery.value = ''
-  debouncedQuery.value = ''
-  page.value = 1
-  void replaceRouteFromState(true)
-  await Promise.all([loadCategories(), loadPersonalTags(), loadProjects({ clearSuccess: false })])
+const submitToolWebsite = async (request: string | ManualToolWebsitePayload) => {
+  if (await controller.submitToolWebsite(request)) addDialogOpen.value = false
 }
-
-const reloadAfterCollectionRemoval = async () => {
-  if (!isMyCollection.value) return
-  const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
-  if (page.value > maxPage) {
-    page.value = maxPage
-    void replaceRouteFromState()
-  }
-  await Promise.all([loadCategories(), loadPersonalTags(), loadProjects({ clearSuccess: false })])
-}
-
-const recommendProject = async (repo: GitHubProjectItem) => {
-  if (!canRecommendCard(repo)) return
-  const key = projectKey(repo)
-  if (recommendBusyKey.value) return
-  const wasRecommended = Boolean(repo.is_recommended)
-  if (wasRecommended && !window.confirm(`确定取消「${repoName(repo)}」的站长推荐吗？`)) return
-  recommendBusyKey.value = key
-  errorMsg.value = ''
-  successMsg.value = ''
-  try {
-    const payload = { repo_id: repo.repo_id, full_name: repo.full_name }
-    const result = wasRecommended
-      ? await unrecommendGitHubProject(payload)
-      : await recommendGitHubProject(payload)
-    repo.is_recommended = result.is_recommended
-    repo.recommended_at = result.recommended_at ?? null
-    successMsg.value = result.message || (wasRecommended ? '已取消站长推荐。' : '已加入站长推荐。')
-    if (wasRecommended && selectedScope.value === 'recommended') {
-      projects.value = projects.value.filter((item) => projectKey(item) !== key)
-      total.value = Math.max(0, total.value - 1)
-    }
-    await loadCategories()
-  } catch (error: any) {
-    errorMsg.value = error?.response?.data?.detail || String(error)
-  } finally {
-    recommendBusyKey.value = ''
-  }
-}
-
-const toggleFavorite = async (repo: GitHubProjectItem) => {
-  if (!authStore.isLoggedIn) {
-    router.push({ path: '/login', query: { redirect: currentProjectsRedirect() } })
-    return
-  }
-  if (!canFavorite(repo)) return
-  const key = projectKey(repo)
-  if (favoriteBusyKey.value) return
-  const previous = Boolean(repo.is_favorited)
-  const previousAt = repo.favorited_at ?? null
-  favoriteBusyKey.value = key
-  errorMsg.value = ''
-  successMsg.value = ''
-  repo.is_favorited = !previous
-  repo.favorited_at = previous ? null : new Date().toISOString()
-  try {
-    const payload = favoritePayload(repo)
-    const result = previous ? await unfavoriteProject(payload) : await favoriteProject(payload)
-    repo.is_favorited = result.is_favorited
-    repo.favorited_at = result.favorited_at ?? repo.favorited_at ?? null
-    successMsg.value = result.message
-    if (isMyCollection.value && previous) {
-      projects.value = projects.value.filter((item) => projectKey(item) !== key)
-      total.value = Math.max(0, total.value - 1)
-      await reloadAfterCollectionRemoval()
-    }
-  } catch (error: any) {
-    repo.is_favorited = previous
-    repo.favorited_at = previousAt
-    errorMsg.value = error?.response?.data?.detail || String(error)
-  } finally {
-    favoriteBusyKey.value = ''
-  }
-}
-
-const submitToolWebsite = async (
-  request: string | ManualToolWebsitePayload,
-) => {
-  addingTool.value = true
-  addToolError.value = ''
-  successMsg.value = ''
-  try {
-    const result = typeof request === 'string'
-      ? await addMyToolWebsite(request)
-      : await addMyToolWebsiteManual(request)
-    if (result.item) mergePersonalTagsFromItems([result.item])
-    successMsg.value = result.message || (result.duplicate ? '网页收藏已存在。' : '网页收藏已添加。')
-    addDialogOpen.value = false
-    await refreshAfterWebsiteMutation()
-  } catch (error: any) {
-    addToolError.value = error?.response?.data?.detail || error?.message || String(error)
-  } finally {
-    addingTool.value = false
-  }
-}
-
-const removeToolWebsite = async (repo: GitHubProjectItem) => {
-  if (!isWebsite(repo) || !repo.website_id || deletingWebsiteId.value) return
-  const name = repoName(repo) || '这个工具网页'
-  const message = `确定把「${name}」移出你的个人网页收藏吗？不会影响其他用户。`
-  if (!window.confirm(message)) return
-  deletingWebsiteId.value = repo.website_id
-  errorMsg.value = ''
-  successMsg.value = ''
-  try {
-    const result = await removeMyToolWebsite(repo.website_id)
-    successMsg.value = result.message || '已移出我的收藏。'
-    projects.value = projects.value.filter((item) => projectKey(item) !== projectKey(repo))
-    total.value = Math.max(0, total.value - 1)
-    await reloadAfterCollectionRemoval()
-  } catch (error: any) {
-    errorMsg.value = error?.response?.data?.detail || String(error)
-  } finally {
-    deletingWebsiteId.value = null
-  }
-}
+const removeToolWebsite = (repo: GitHubProjectItem) => controller.removeToolWebsite(repo)
 
 watch([selectedScope, selectedCategory, selectedSubcategory, selectedLanguage, selectedTag, debouncedQuery, sort], resetAndLoad)
-watch(
-  () => route.query,
-  () => {
-    if (!isViewActive.value || route.name !== 'github-projects' || isReplacingRoute.value) return
-    if (!applyRouteState()) return
-    loadCategories()
-    loadPersonalTags()
-    loadProjects()
-  },
-  { deep: true },
-)
+watch(() => route.query, () => {
+  if (!isViewActive.value || route.name !== 'github-projects' || isReplacingRoute.value) return
+  if (applyRouteState()) void controller.refreshReads()
+}, { deep: true })
 watch(() => authStore.isLoggedIn, (loggedIn) => {
-  if (!loggedIn && isPersonalView.value) {
-    currentRequestId.value += 1
-    tagRequestId.value += 1
-    projects.value = []
-    personalTags.value = []
-    total.value = 0
-    loading.value = false
-    tagsLoading.value = false
-    errorMsg.value = ''
-    successMsg.value = ''
-    addDialogOpen.value = false
-    editDialogOpen.value = false
-    editTarget.value = null
-    return
+  if (!loggedIn) {
+    controller.handleLogout()
+    if (isPersonalView.value) { addDialogOpen.value = false; editDialogOpen.value = false; editTarget.value = null; return }
   }
-  loadCategories()
-  loadPersonalTags()
-  loadProjects()
-  if (loggedIn) loadTaxonomy()
+  void controller.refreshReads()
 })
-
 const stopViewReads = () => {
-  if (searchTimer) {
-    window.clearTimeout(searchTimer)
-    searchTimer = undefined
-  }
-  currentRequestId.value += 1
-  categoryRequestId.value += 1
-  tagRequestId.value += 1
+  if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = undefined }
+  controller.deactivate()
 }
-
-const refreshProjectsInBackground = async () => {
-  await Promise.all([
-    loadCategories(),
-    loadPersonalTags(),
-    loadProjects({ clearSuccess: false, preserveContent: true }),
-  ])
-  if (authStore.isLoggedIn) await loadTaxonomy()
-}
-
-onMounted(() => {
-  if (!applyRouteState()) return
-  loadCategories()
-  loadPersonalTags()
-  loadProjects()
-  if (authStore.isLoggedIn) loadTaxonomy()
-})
-
+const refreshProjectsInBackground = () => controller.refreshReads({ clearSuccess: false, preserveContent: true })
+onMounted(() => { if (applyRouteState()) void controller.refreshReads() })
 onActivated(() => {
-  isViewActive.value = true
-  if (!hasActivatedOnce) {
-    hasActivatedOnce = true
-    return
-  }
-  if (searchQuery.value !== debouncedQuery.value) {
-    searchTimer = window.setTimeout(() => {
-      debouncedQuery.value = searchQuery.value
-    }, 280)
-  }
-  if (Date.now() - lastSuccessfulFetchAt >= VIEW_REFRESH_INTERVAL) {
-    void refreshProjectsInBackground()
-  }
+  controller.activate()
+  if (!hasActivatedOnce) { hasActivatedOnce = true; return }
+  if (searchQuery.value !== debouncedQuery.value) searchTimer = window.setTimeout(() => { debouncedQuery.value = searchQuery.value }, 280)
+  if (Date.now() - lastSuccessfulFetchAt.value >= VIEW_REFRESH_INTERVAL) void refreshProjectsInBackground()
 })
-
-onDeactivated(() => {
-  isViewActive.value = false
-  stopViewReads()
-})
-
+onDeactivated(stopViewReads)
 onBeforeUnmount(stopViewReads)
 </script>
 
@@ -896,10 +363,10 @@ onBeforeUnmount(stopViewReads)
         <p class="projects-kicker">{{ personalLoginCopy.kicker }}</p>
         <h2 id="personal-login-title">{{ personalLoginCopy.title }}</h2>
         <p>{{ personalLoginCopy.description }}</p>
-        <div class="projects-login-prompt__notes" aria-label="登录后可用功能">
-          <span>{{ isWebsiteOnlyView ? '私人收藏夹' : '收藏同步' }}</span>
-          <span>标签整理</span>
-          <span>跨设备访问</span>
+        <div class="projects-login-prompt__notes" :aria-label="t('projects.loginFeatures')">
+          <span>{{ t(isWebsiteOnlyView ? 'projects.privateShelf' : 'projects.favoriteSync') }}</span>
+          <span>{{ t('projects.tagOrganization') }}</span>
+          <span>{{ t('projects.crossDevice') }}</span>
         </div>
       </div>
       <button type="button" class="projects-login-prompt__action" @click="goToPersonalLogin">
@@ -934,8 +401,8 @@ onBeforeUnmount(stopViewReads)
 
     <section v-else-if="projects.length === 0 && !errorMsg" class="empty-state glass-card">
       <p class="projects-kicker">EMPTY COLLECTION</p>
-      <h2>{{ searchQuery || hasActiveFilter ? '没有找到匹配条目' : (isWebsiteOnlyView ? '你的网页收藏还空着' : (source === 'favorites' ? '你的 GitHub 收藏还空着' : '项目库正在等待收录')) }}</h2>
-      <p>{{ searchQuery || hasActiveFilter ? '试试清空关键词、切换来源或切换分类。' : (isWebsiteOnlyView ? '点击右上角添加你自己的网页收藏。' : (source === 'favorites' ? '点击 GitHub 项目卡片上的收藏按钮加入这里。' : 'GitHub 项目会自动回填分类；登录后可以维护自己的网页收藏。')) }}</p>
+      <h2>{{ t(searchQuery || hasActiveFilter ? 'projects.emptyMatchTitle' : isWebsiteOnlyView ? 'projects.emptyWebsiteTitle' : source === 'favorites' ? 'projects.emptyFavoritesTitle' : 'projects.emptyLibraryTitle') }}</h2>
+      <p>{{ t(searchQuery || hasActiveFilter ? 'projects.emptyMatchHint' : isWebsiteOnlyView ? 'projects.emptyWebsiteHint' : source === 'favorites' ? 'projects.emptyFavoritesHint' : 'projects.emptyLibraryHint') }}</p>
     </section>
 
     <section v-else class="projects-grid" :aria-label="t('navigation.projects')">

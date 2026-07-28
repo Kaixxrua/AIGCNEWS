@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { compareLocaleStrings } from '../i18n/formatters'
 import {
   addMyToolWebsite,
@@ -56,8 +56,22 @@ export type ProjectCatalogApi = typeof defaultApi
 
 type Translate = (key: string, params?: Record<string, unknown>) => string
 
+export interface ProjectCatalogRouteStateRefs {
+  source: Ref<ProjectViewSource>
+  selectedScope: Ref<ProjectScope>
+  selectedCategory: Ref<string>
+  selectedSubcategory: Ref<string>
+  searchQuery: Ref<string>
+  debouncedQuery: Ref<string>
+  selectedLanguage: Ref<string>
+  selectedTag: Ref<string>
+  sort: Ref<GitHubProjectSort>
+  page: Ref<number>
+}
+
 export interface ProjectCatalogControllerOptions {
   api?: ProjectCatalogApi
+  routeState?: ProjectCatalogRouteStateRefs
   t?: Translate
   isLoggedIn?: () => boolean
   isAdmin?: () => boolean
@@ -100,15 +114,16 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
   const personalTags = ref<GitHubProjectTag[]>([])
   const projects = ref<GitHubProjectItem[]>([])
   const taxonomy = ref<ProjectTaxonomyItem[]>([])
-  const source = ref<ProjectViewSource>('all')
-  const selectedScope = ref<ProjectScope>('all')
-  const selectedCategory = ref('all')
-  const selectedSubcategory = ref('all')
-  const debouncedQuery = ref('')
-  const selectedLanguage = ref('')
-  const selectedTag = ref('')
-  const sort = ref<GitHubProjectSort>('stars')
-  const page = ref(1)
+  const source = options.routeState?.source ?? ref<ProjectViewSource>('all')
+  const selectedScope = options.routeState?.selectedScope ?? ref<ProjectScope>('all')
+  const selectedCategory = options.routeState?.selectedCategory ?? ref('all')
+  const selectedSubcategory = options.routeState?.selectedSubcategory ?? ref('all')
+  const searchQuery = options.routeState?.searchQuery ?? ref('')
+  const debouncedQuery = options.routeState?.debouncedQuery ?? ref('')
+  const selectedLanguage = options.routeState?.selectedLanguage ?? ref('')
+  const selectedTag = options.routeState?.selectedTag ?? ref('')
+  const sort = options.routeState?.sort ?? ref<GitHubProjectSort>('stars')
+  const page = options.routeState?.page ?? ref(1)
   const pageSize = ref(options.pageSize ?? 24)
   const total = ref(0)
 
@@ -181,6 +196,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     selectedSubcategory.value = 'all'
     selectedLanguage.value = ''
     selectedTag.value = ''
+    searchQuery.value = ''
     debouncedQuery.value = ''
     page.value = 1
     sort.value = defaultProjectSortForSource('website')
@@ -436,13 +452,15 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
       const result = typeof request === 'string'
         ? await api.addMyToolWebsite(request)
         : await api.addMyToolWebsiteManual(request)
-      if (!activeGeneration(generation)) return
+      if (!activeGeneration(generation)) return false
       resetFiltersForWebsiteView()
       successMsg.value = result.message || t(result.duplicate ? 'projects.websiteExists' : 'projects.websiteAdded')
       void replaceRoute(true)
       await Promise.all([loadCategories(), loadPersonalTags(), loadProjects({ clearSuccess: false })])
+      return activeGeneration(generation)
     } catch (error) {
       if (activeGeneration(generation)) addToolError.value = errorDetail(error)
+      return false
     } finally {
       if (activeGeneration(generation)) addingTool.value = false
     }
@@ -455,15 +473,17 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     successMsg.value = ''
     try {
       const result = await api.updateMyToolWebsite(websiteId, payload)
-      if (!activeGeneration(generation)) return
+      if (!activeGeneration(generation)) return false
       if (result.item) {
         upsertProjectItem(result.item)
         mergePersonalTagsFromItems([result.item])
       }
       successMsg.value = result.message || t('projects.websiteUpdated')
       await Promise.all([loadPersonalTags(), loadProjects({ clearSuccess: false })])
+      return activeGeneration(generation)
     } catch (error) {
       if (activeGeneration(generation)) editError.value = errorDetail(error)
+      return false
     } finally {
       if (activeGeneration(generation)) savingEdit.value = false
     }
@@ -472,7 +492,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
   const removeToolWebsite = async (item: GitHubProjectItem) => {
     if (!isWebsite(item) || !item.website_id || deletingWebsiteId.value) return
     const name = projectName(item) || t('projects.thisWebsite')
-    if (!confirmAction(`确定把「${name}」移出你的个人网页收藏吗？不会影响其他用户。`)) return
+    if (!confirmAction(t('projects.confirmRemoveWebsite', { name }))) return
     const generation = viewGeneration
     deletingWebsiteId.value = item.website_id
     errorMsg.value = ''
@@ -536,6 +556,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     recommendProject,
     refreshReads,
     requiresPersonalLogin,
+    searchQuery,
     savingEdit,
     selectedCategory,
     selectedLanguage,

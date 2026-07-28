@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import type { GitHubProjectItem, GitHubProjectsResponse } from '../services/projects/projectApi'
 import { useProjectCatalogController, type ProjectCatalogApi } from './useProjectCatalogController'
@@ -45,6 +46,30 @@ const githubItem = (overrides: Partial<GitHubProjectItem> = {}): GitHubProjectIt
 })
 
 describe('project catalog controller', () => {
+  it('uses shared route-state refs when the view provides them', () => {
+    const routeState = {
+      source: ref<'all' | 'favorites' | 'website'>('all'),
+      selectedScope: ref<'all' | 'today' | 'recommended'>('all'),
+      selectedCategory: ref('all'),
+      selectedSubcategory: ref('all'),
+      searchQuery: ref(''),
+      debouncedQuery: ref(''),
+      selectedLanguage: ref(''),
+      selectedTag: ref(''),
+      sort: ref<'stars' | 'updated' | 'recent' | 'name' | 'hot'>('stars'),
+      page: ref(1),
+    }
+    const controller = useProjectCatalogController({ api: createApi(), routeState })
+
+    controller.source.value = 'website'
+    controller.searchQuery.value = 'shared search'
+    controller.page.value = 3
+
+    expect(routeState.source.value).toBe('website')
+    expect(routeState.searchQuery.value).toBe('shared search')
+    expect(routeState.page.value).toBe(3)
+  })
+
   it('owns public and personal read parameters while rejecting superseded responses', async () => {
     const api = createApi()
     const first = deferred<GitHubProjectsResponse>()
