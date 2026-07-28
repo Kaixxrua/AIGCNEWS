@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -28,6 +28,28 @@ def test_canonical_encoding_is_typed_and_distinguishes_null_empty_and_false() ->
     assert b'"null"' in encoded
     assert b'"datetime_utc"' in encoded
     assert encoded != canonical_row_bytes(spec, dict(base, recommended_by_user_id=0))
+
+
+def test_canonical_datetime_hashes_equal_instants_identically() -> None:
+    spec = TABLE_TRANSFER_SPEC_BY_NAME["github_repo_recommendations"]
+    base = {
+        "repo_id": "owner/repo",
+        "active": True,
+        "recommended_by_user_id": None,
+        "recommended_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 1, 2, tzinfo=timezone.utc),
+    }
+    shifted = dict(
+        base,
+        recommended_at=datetime(
+            2026,
+            1,
+            1,
+            8,
+            tzinfo=timezone(timedelta(hours=8)),
+        ),
+    )
+    assert canonical_row_bytes(spec, base) == canonical_row_bytes(spec, shifted)
 
 
 def test_canonical_datetime_requires_timezone() -> None:

@@ -114,7 +114,10 @@ def create_mysql_pool(
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=False,
-        setsession=["SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"],
+        setsession=[
+            "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
+            "SET time_zone = '+00:00'",
+        ],
     )
     return cast(ConnectionPool, pool)
 

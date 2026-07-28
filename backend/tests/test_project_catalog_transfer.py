@@ -137,6 +137,21 @@ def test_source_row_codecs_reject_lossy_nulls_and_normalize_types() -> None:
     assert row["active"] is True
     assert row["recommended_at"] == datetime(2026, 1, 1, tzinfo=timezone.utc)
 
+    utc_row = service._encode_source_row(
+        recommendation,
+        {
+            "repo_id": "owner/repo",
+            "active": 1,
+            "recommended_by_user_id": None,
+            "recommended_at": datetime(2026, 1, 1, 8),
+            "updated_at": datetime(2026, 1, 1, 8),
+        },
+        source_timezone="UTC",
+    )
+    assert utc_row["recommended_at"] == datetime(
+        2026, 1, 1, 8, tzinfo=timezone.utc
+    )
+
     postgres_text_row = service._encode_source_row(
         recommendation,
         {

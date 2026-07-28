@@ -266,7 +266,10 @@ class CreateMySQLPoolTests(unittest.TestCase):
             charset="utf8mb4",
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=False,
-            setsession=["SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"],
+            setsession=[
+                "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
+                "SET time_zone = '+00:00'",
+            ],
         )
 
     def test_supports_existing_configuration_defaults(self) -> None:
