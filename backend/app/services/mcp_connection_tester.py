@@ -12,6 +12,7 @@ from backend.app.services.mcp.protocol import (
     extract_tools,
     initialized_payload,
     initialize_payload,
+    parse_sse_event,
     response_id_matches,
     tools_list_payload,
     validate_json_rpc_data,
@@ -84,52 +85,6 @@ def _validate_json_rpc_data(data: Any, *, expected_id: Optional[int]) -> Dict[st
         raise McpConnectionTestError(str(exc)) from exc
 
 
-def _parse_sse_event(event_data: List[str]) -> List[Dict[str, Any]]:
-    if not event_data:
-        return []
-    raw_event = "\n".join(event_data).strip()
-    event_data.clear()
-    if not raw_event or raw_event == "[DONE]":
-        return []
-    try:
-        parsed = json.loads(raw_event)
-    except json.JSONDecodeError:
-        return []
-    if isinstance(parsed, dict):
-        return [parsed]
-    if isinstance(parsed, list):
-        return [item for item in parsed if isinstance(item, dict)]
-    return []
-
-
-def _json_from_sse(raw_text: str, *, expected_id: Optional[int]) -> Dict[str, Any]:
-    """Extract a JSON-RPC object from a complete SSE response body."""
-
-    event_data: List[str] = []
-    candidates: List[Dict[str, Any]] = []
-
-    def flush_event() -> None:
-        candidates.extend(_parse_sse_event(event_data))
-
-    for line in raw_text.splitlines():
-        if not line.strip():
-            flush_event()
-            continue
-        if line.startswith(":"):
-            continue
-        if line.startswith("data:"):
-            event_data.append(line[5:].lstrip())
-    flush_event()
-
-    if not candidates:
-        raise McpConnectionTestError("MCP Server 返回了 SSE，但未包含有效 JSON-RPC 数据。")
-    if expected_id is not None:
-        for item in candidates:
-            if response_id_matches(item, expected_id):
-                return _validate_json_rpc_data(item, expected_id=expected_id)
-    return _validate_json_rpc_data(candidates[-1], expected_id=expected_id)
-
-
 def _json_from_sse_stream(response: httpx.Response, *, expected_id: Optional[int]) -> Dict[str, Any]:
     """Read an SSE stream only until the expected JSON-RPC response arrives."""
 
@@ -152,7 +107,7 @@ def _json_from_sse_stream(response: httpx.Response, *, expected_id: Optional[int
         if bytes_seen > MAX_RESPONSE_BYTES:
             raise McpConnectionTestError("MCP Server 响应过大，已停止解析。")
         if not line.strip():
-            matched = handle_candidates(_parse_sse_event(event_data))
+            matched = handle_candidates(parse_sse_event(event_data))
             if matched is not None:
                 return matched
             continue
@@ -161,7 +116,7 @@ def _json_from_sse_stream(response: httpx.Response, *, expected_id: Optional[int
         if line.startswith("data:"):
             event_data.append(line[5:].lstrip())
 
-    matched = handle_candidates(_parse_sse_event(event_data))
+    matched = handle_candidates(parse_sse_event(event_data))
     if matched is not None:
         return matched
     if last_candidate is not None:
