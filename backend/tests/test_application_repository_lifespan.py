@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from fastapi import FastAPI
+
+from backend.app import main
+
+
+def test_lifespan_builds_mysql_application_composition_without_postgres(monkeypatch) -> None:
+    repositories = MagicMock()
+    monkeypatch.setattr(main, "settings", SimpleNamespace(
+        application_database_backend="mysql",
+        project_catalog_backend="mysql",
+        project_catalog_outbox_capture_enabled=False,
+        project_catalog_sync_worker_enabled=False,
+        project_catalog_shadow_enabled=False,
+        project_semantic_search_enabled=False,
+        scheduler_enabled=False,
+        redis_host="unreachable",
+        redis_port=6379,
+        redis_db=0,
+        redis_password="",
+        env="test",
+    ))
+    monkeypatch.setattr(main, "create_application_repositories", MagicMock(return_value=repositories))
+    monkeypatch.setattr(main.postgres_database, "open", MagicMock())
+    monkeypatch.setattr(main.mysql_database, "close", MagicMock())
+    monkeypatch.setattr(main, "Redis", MagicMock(side_effect=RuntimeError("offline")))
+    monkeypatch.setattr(main, "_warmup_reranker", lambda: asyncio.sleep(0))
+
+    app = FastAPI()
+
+    async def exercise() -> None:
+        async with main.lifespan(app):
+            assert app.state.application_repositories is repositories
+            assert app.state.application_database_backend == "mysql"
+
+    asyncio.run(exercise())
+    main.postgres_database.open.assert_not_called()
+
+
+def test_lifespan_opens_postgres_for_postgres_application_backend(monkeypatch) -> None:
+    repositories = MagicMock()
+    monkeypatch.setattr(main, "settings", SimpleNamespace(
+        application_database_backend="postgres",
+        project_catalog_backend="mysql",
+        project_catalog_outbox_capture_enabled=False,
+        project_catalog_sync_worker_enabled=False,
+        project_catalog_shadow_enabled=False,
+        project_semantic_search_enabled=False,
+        scheduler_enabled=False,
+        redis_host="unreachable",
+        redis_port=6379,
+        redis_db=0,
+        redis_password="",
+        env="test",
+    ))
+    monkeypatch.setattr(main, "create_application_repositories", MagicMock(return_value=repositories))
+    open_pool = MagicMock()
+    close_pool = MagicMock()
+    monkeypatch.setattr(main.postgres_database, "open", open_pool)
+    monkeypatch.setattr(main.postgres_database, "close", close_pool)
+    monkeypatch.setattr(main.mysql_database, "close", MagicMock())
+    monkeypatch.setattr(main, "Redis", MagicMock(side_effect=RuntimeError("offline")))
+    monkeypatch.setattr(main, "_warmup_reranker", lambda: asyncio.sleep(0))
+
+    app = FastAPI()
+
+    async def exercise() -> None:
+        async with main.lifespan(app):
+            assert app.state.application_repositories is repositories
+            assert app.state.application_database_backend == "postgres"
+
+    asyncio.run(exercise())
+    open_pool.assert_called_once_with()
+    close_pool.assert_called_once_with()

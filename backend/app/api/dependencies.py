@@ -3,45 +3,57 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from backend.app.core.database import DatabaseLifecycle
-from backend.app.repositories.mysql_briefing_repository import MySQLBriefingRepository
-from backend.app.repositories.mysql_briefing_subscription_repository import (
-    MySQLBriefingSubscriptionRepository,
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
 )
-from backend.app.repositories.mysql_conversation_repository import (
-    MySQLConversationRepository,
+from backend.app.repositories.briefing_repository import (
+    BriefingContentRepository,
+    BriefingSubscriptionRepository,
 )
-from backend.app.repositories.mysql_document_repository import MySQLDocumentRepository
-from backend.app.repositories.mysql_evaluation_repository import (
-    MySQLEvaluationRepository,
-)
-from backend.app.repositories.mysql_ingestion_task_repository import (
-    MySQLIngestionTaskRepository,
-)
-from backend.app.repositories.mysql_mcp_access_token_repository import (
-    MySQLMcpAccessTokenRepository,
-)
-from backend.app.repositories.mysql_mcp_server_repository import (
-    MySQLMcpServerConfigRepository,
-)
-from backend.app.repositories.mysql_rank_snapshot_repository import (
-    MySQLRankSnapshotRepository,
-)
+from backend.app.repositories.conversation_repository import ConversationRepository
+from backend.app.repositories.document_repository import DocumentRepository, PapersReader
+from backend.app.repositories.evaluation_repository import EvaluationRepository
+from backend.app.repositories.mcp_access_token_repository import McpAccessTokenRepository
+from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
-from backend.app.repositories.mysql_runtime_provider_repository import (
-    MySQLRuntimeProviderSettingRepository,
+from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
+from backend.app.repositories.runtime_provider_repository import (
+    RuntimeProviderSettingRepository,
 )
-from backend.app.repositories.mysql_user_account_repository import (
-    MySQLUserAccountRepository,
+from backend.app.repositories.task_repository import (
+    IngestionTaskAdminRepository,
+    IngestionTaskWriter,
+    LatestTaskReader,
+    MonitorTaskRepository,
+    RecentTaskReader,
 )
+from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 
 
+class ApplicationIngestionTaskRepository(
+    IngestionTaskWriter,
+    LatestTaskReader,
+    RecentTaskReader,
+    MonitorTaskRepository,
+    IngestionTaskAdminRepository,
+):
+    pass
+
+
 def get_database(request: Request) -> DatabaseLifecycle:
-    """Return the database lifecycle configured by the application lifespan."""
+    """Return the MySQL lifecycle retained for compatibility-only call sites."""
     database = getattr(request.app.state, "database", None)
     if database is None:
         raise RuntimeError("Database lifecycle is not configured")
     return database
+
+
+def get_application_repositories(request: Request) -> ApplicationRepositories:
+    repositories = getattr(request.app.state, "application_repositories", None)
+    if repositories is None:
+        raise RuntimeError("Application repositories are not configured")
+    return repositories
 
 
 def get_mysql_repository(
@@ -52,80 +64,69 @@ def get_mysql_repository(
 
 
 def get_ingestion_task_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLIngestionTaskRepository:
-    """Return task persistence while preserving compatibility schema setup."""
-    return MySQLRepository(database=database).ingestion_tasks
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> ApplicationIngestionTaskRepository:
+    return repositories.ingestion_tasks
 
 
 def get_briefing_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLBriefingRepository:
-    """Return briefing persistence while preserving compatibility schema setup."""
-    return MySQLRepository(database=database).briefings
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> BriefingContentRepository:
+    return repositories.briefings
 
 
 def get_briefing_subscription_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLBriefingSubscriptionRepository:
-    """Return user subscription persistence through the compatibility facade."""
-    return MySQLRepository(database=database).briefing_subscriptions
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> BriefingSubscriptionRepository:
+    return repositories.briefing_subscriptions
 
 
 def get_evaluation_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLEvaluationRepository:
-    """Return RAG evaluation persistence through the compatibility facade."""
-    return MySQLRepository(database=database).evaluations
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> EvaluationRepository:
+    return repositories.evaluations
 
 
 def get_mcp_server_config_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLMcpServerConfigRepository:
-    """Return MCP Server configuration from the application-owned lifecycle."""
-    return MySQLMcpServerConfigRepository(database)
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> McpServerConfigRepository:
+    return repositories.mcp_server_configs
 
 
 def get_mcp_access_token_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLMcpAccessTokenRepository:
-    """Return MCP access-token persistence through the compatibility facade."""
-    return MySQLRepository(database=database).mcp_access_tokens
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> McpAccessTokenRepository:
+    return repositories.mcp_access_tokens
 
 
 def get_user_account_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLUserAccountRepository:
-    """Return user account persistence from the application-owned lifecycle."""
-    return MySQLUserAccountRepository(database)
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> UserAccountRepository:
+    return repositories.users
 
 
 def get_runtime_provider_setting_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLRuntimeProviderSettingRepository:
-    """Return runtime model configuration from the application-owned lifecycle."""
-    return MySQLRuntimeProviderSettingRepository(database)
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> RuntimeProviderSettingRepository:
+    return repositories.runtime_provider_settings
 
 
 def get_conversation_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLConversationRepository:
-    """Return owner-scoped conversation persistence through the facade."""
-    return MySQLRepository(database=database).conversations
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> ConversationRepository:
+    return repositories.conversations
 
 
 def get_document_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLDocumentRepository:
-    """Return document persistence through the compatibility facade."""
-    return MySQLRepository(database=database).documents
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> DocumentRepository:
+    return repositories.documents
 
 
 def get_papers_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLDocumentRepository:
-    """Return the narrow document reader used by Papers routes."""
-    return MySQLDocumentRepository(database)
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> PapersReader:
+    return repositories.documents
 
 
 def get_pdf_relay() -> HttpxPdfRelay:
@@ -134,7 +135,6 @@ def get_pdf_relay() -> HttpxPdfRelay:
 
 
 def get_rank_snapshot_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLRankSnapshotRepository:
-    """Return document rank snapshots through the compatibility facade."""
-    return MySQLRepository(database=database).rank_snapshots
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> RankSnapshotRepository:
+    return repositories.rank_snapshots

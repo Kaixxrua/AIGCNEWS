@@ -45,152 +45,48 @@ class DatabaseDependencyTests(unittest.TestCase):
         self.assertIs(result, repository)
         repository_type.assert_called_once_with(database=database)
 
-    def test_get_ingestion_task_repository_uses_compatibility_component(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        task_repository = MagicMock()
-        repository = MagicMock(ingestion_tasks=task_repository)
+    def test_repository_dependencies_return_composition_root_members(self) -> None:
+        repositories = MagicMock()
+        mapping = {
+            dependencies.get_ingestion_task_repository: "ingestion_tasks",
+            dependencies.get_briefing_repository: "briefings",
+            dependencies.get_briefing_subscription_repository: "briefing_subscriptions",
+            dependencies.get_evaluation_repository: "evaluations",
+            dependencies.get_mcp_server_config_repository: "mcp_server_configs",
+            dependencies.get_mcp_access_token_repository: "mcp_access_tokens",
+            dependencies.get_user_account_repository: "users",
+            dependencies.get_conversation_repository: "conversations",
+            dependencies.get_document_repository: "documents",
+            dependencies.get_papers_repository: "documents",
+            dependencies.get_rank_snapshot_repository: "rank_snapshots",
+            dependencies.get_runtime_provider_setting_repository: (
+                "runtime_provider_settings"
+            ),
+        }
 
-        with patch.object(
-            dependencies,
-            "MySQLRepository",
-            return_value=repository,
-        ) as repository_type:
-            result = dependencies.get_ingestion_task_repository(database)
+        for provider, attribute in mapping.items():
+            self.assertIs(provider(repositories), getattr(repositories, attribute))
 
-        self.assertIs(result, task_repository)
-        repository_type.assert_called_once_with(database=database)
+    def test_get_application_repositories_returns_composition_root(self) -> None:
+        app = FastAPI()
+        repositories = MagicMock()
+        app.state.application_repositories = repositories
+        request = MagicMock(spec=Request)
+        request.app = app
 
-    def test_get_briefing_repository_uses_compatibility_component(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        briefing_repository = MagicMock()
-        repository = MagicMock(briefings=briefing_repository)
+        self.assertIs(
+            dependencies.get_application_repositories(request), repositories
+        )
 
-        with patch.object(
-            dependencies,
-            "MySQLRepository",
-            return_value=repository,
-        ) as repository_type:
-            result = dependencies.get_briefing_repository(database)
+    def test_get_application_repositories_requires_lifespan_setup(self) -> None:
+        app = FastAPI()
+        request = MagicMock(spec=Request)
+        request.app = app
 
-        self.assertIs(result, briefing_repository)
-        repository_type.assert_called_once_with(database=database)
-
-    def test_get_briefing_subscription_repository_uses_component(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        subscription_repository = MagicMock()
-        repository = MagicMock(briefing_subscriptions=subscription_repository)
-
-        with patch.object(
-            dependencies,
-            "MySQLRepository",
-            return_value=repository,
-        ) as repository_type:
-            result = dependencies.get_briefing_subscription_repository(database)
-
-        self.assertIs(result, subscription_repository)
-        repository_type.assert_called_once_with(database=database)
-
-    def test_get_evaluation_repository_uses_component(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        evaluation_repository = MagicMock()
-        repository = MagicMock(evaluations=evaluation_repository)
-
-        with patch.object(
-            dependencies,
-            "MySQLRepository",
-            return_value=repository,
-        ) as repository_type:
-            result = dependencies.get_evaluation_repository(database)
-
-        self.assertIs(result, evaluation_repository)
-        repository_type.assert_called_once_with(database=database)
-
-    def test_get_mcp_server_config_repository_uses_narrow_adapter(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        mcp_repository = MagicMock()
-
-        with patch.object(
-            dependencies,
-            "MySQLMcpServerConfigRepository",
-            return_value=mcp_repository,
-        ) as repository_type:
-            result = dependencies.get_mcp_server_config_repository(database)
-
-        self.assertIs(result, mcp_repository)
-        repository_type.assert_called_once_with(database)
-
-    def test_get_mcp_access_token_repository_uses_component(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        token_repository = MagicMock()
-        repository = MagicMock(mcp_access_tokens=token_repository)
-
-        with patch.object(
-            dependencies,
-            "MySQLRepository",
-            return_value=repository,
-        ) as repository_type:
-            result = dependencies.get_mcp_access_token_repository(database)
-
-        self.assertIs(result, token_repository)
-        repository_type.assert_called_once_with(database=database)
-
-    def test_get_user_account_repository_uses_narrow_adapter(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        account_repository = MagicMock()
-
-        with patch.object(
-            dependencies,
-            "MySQLUserAccountRepository",
-            return_value=account_repository,
-        ) as repository_type:
-            result = dependencies.get_user_account_repository(database)
-
-        self.assertIs(result, account_repository)
-        repository_type.assert_called_once_with(database)
-
-    def test_get_conversation_repository_uses_component(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        conversation_repository = MagicMock()
-        repository = MagicMock(conversations=conversation_repository)
-
-        with patch.object(
-            dependencies,
-            "MySQLRepository",
-            return_value=repository,
-        ) as repository_type:
-            result = dependencies.get_conversation_repository(database)
-
-        self.assertIs(result, conversation_repository)
-        repository_type.assert_called_once_with(database=database)
-
-    def test_get_document_repository_uses_component(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        document_repository = MagicMock()
-        repository = MagicMock(documents=document_repository)
-
-        with patch.object(
-            dependencies,
-            "MySQLRepository",
-            return_value=repository,
-        ) as repository_type:
-            result = dependencies.get_document_repository(database)
-
-        self.assertIs(result, document_repository)
-        repository_type.assert_called_once_with(database=database)
-
-    def test_get_papers_repository_uses_document_repository_directly(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        repository = MagicMock()
-
-        with patch.object(
-            dependencies,
-            "MySQLDocumentRepository",
-            return_value=repository,
-        ) as repository_type:
-            result = dependencies.get_papers_repository(database)
-
-        self.assertIs(result, repository)
-        repository_type.assert_called_once_with(database)
+        with self.assertRaisesRegex(
+            RuntimeError, "Application repositories are not configured"
+        ):
+            dependencies.get_application_repositories(request)
 
     def test_get_pdf_relay_builds_httpx_adapter(self) -> None:
         relay = MagicMock()
@@ -198,35 +94,6 @@ class DatabaseDependencyTests(unittest.TestCase):
             result = dependencies.get_pdf_relay()
         self.assertIs(result, relay)
         relay_type.assert_called_once_with()
-
-    def test_get_rank_snapshot_repository_uses_component(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        snapshot_repository = MagicMock()
-        repository = MagicMock(rank_snapshots=snapshot_repository)
-
-        with patch.object(
-            dependencies,
-            "MySQLRepository",
-            return_value=repository,
-        ) as repository_type:
-            result = dependencies.get_rank_snapshot_repository(database)
-
-        self.assertIs(result, snapshot_repository)
-        repository_type.assert_called_once_with(database=database)
-
-    def test_get_runtime_provider_repository_uses_narrow_adapter(self) -> None:
-        database = MagicMock(spec=DatabaseLifecycle)
-        runtime_repository = MagicMock()
-
-        with patch.object(
-            dependencies,
-            "MySQLRuntimeProviderSettingRepository",
-            return_value=runtime_repository,
-        ) as repository_type:
-            result = dependencies.get_runtime_provider_setting_repository(database)
-
-        self.assertIs(result, runtime_repository)
-        repository_type.assert_called_once_with(database)
 
     def test_task_repository_dependency_can_be_overridden(self) -> None:
         app = FastAPI()
