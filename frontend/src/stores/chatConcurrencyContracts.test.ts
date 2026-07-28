@@ -20,34 +20,27 @@ function expectInOrder(source: string, fragments: string[]) {
 }
 
 describe('chat concurrency extraction contracts', () => {
-  it('keeps conversation deletion server-first and post-delete selection global-only', () => {
+  it('delegates optimistic deletion and deterministic global fallback to the lifecycle coordinator', () => {
     const action = sourceBetween(
       chatStoreSource,
       'async deleteActiveConversation()',
       'addPendingAttachment(',
     )
 
-    // Characterize the safe ordering without blessing the current swallowed-error path.
     expectInOrder(action, [
-      'await apiDeleteConversation(convId)',
-      'const { [convId]: _removedConv',
-      "await this.loadConversations('global')",
-      ".filter((c) => c.scope === 'global')",
-      ".sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))",
-      'await this.openConversation(firstConv.id)',
+      'await coordinator.deleteConversation(convId)',
+      "await coordinator.replaceConversationList({ scope: 'global' })",
+      "const aTime = a.updatedAt ?? a.createdAt ?? ''",
+      "return bTime.localeCompare(aTime) || a.id.localeCompare(b.id)",
+      'await coordinator.selectConversation(fallback.id)',
     ])
-    expect(action).toContain("await this.createNewConversation('global')")
+    expect(action).toContain("await coordinator.createAndSelect({ scope: 'global' })")
+    expect(action).not.toContain('catch')
   })
 
   it('keeps abort ownership and attachment consumption at explicit store seams', () => {
     const abortAction = sourceBetween(chatStoreSource, 'abortGeneration()', 'async deleteMessage(')
-    expectInOrder(abortAction, [
-      '_activeConnection.controller.abort()',
-      '_activeConnection = null',
-      'this.isStreaming = false',
-      "this.streamPhase = 'idle'",
-      'item.isStreaming ? { ...item, isStreaming: false, isThinking: false } : item',
-    ])
+    expect(abortAction).toContain('coordinatorFor(this as ChatStoreContext).abortActiveRun()')
 
     const sendAction = sourceBetween(chatStoreSource, 'async sendMessage(', 'async _streamToAssistant(')
     expectInOrder(sendAction, [
@@ -80,11 +73,13 @@ describe('chat concurrency extraction contracts', () => {
   it('keeps stream callback ownership on captured conversation and assistant IDs', () => {
     const streamAction = sourceBetween(chatStoreSource, 'async _streamToAssistant(', '\n    },\n  },')
 
-    expect(streamAction).toContain('onMessage: (payload: unknown) => {')
+    expect(streamAction).toContain('coordinator.startStreamRun({')
+    expect(streamAction).toContain('onEvent: (payload: unknown) => {')
     expect(streamAction).toContain('onDone: () => {')
     expect(streamAction).toContain('onError: (error: unknown) => {')
+    expect(streamAction).toContain('onAbort: (_reason, context) => {')
     expect(streamAction).toContain('this.patchMessage(params.conversationId, params.assistantTempId, {')
-    expect(streamAction).toContain('_activeConnection = connection')
+    expect(streamAction).toContain('this.patchMessage(context.conversationId, context.messageId, {')
 
     // The extraction boundary must continue forwarding ownership callbacks unchanged.
     expect(chatStreamBoundarySource).toContain("callbacks: Omit<SseConnectParams, 'url' | 'body'>")

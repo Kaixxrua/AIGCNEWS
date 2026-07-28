@@ -6,7 +6,7 @@ import type {
 } from './chatModel'
 
 export interface ConversationListSelector {
-  scope: ConversationScope
+  scope?: ConversationScope
   scopeKey?: string
 }
 
@@ -25,6 +25,7 @@ export interface ChatLifecycleApis {
   listConversations(selector: ConversationListSelector): Promise<ConversationSummary[]>
   fetchConversationDetail(conversationId: string): Promise<ConversationDetail>
   createConversation(input: CreateConversationInput): Promise<ConversationSummary>
+  ensureConversation(input: CreateConversationInput): Promise<ConversationSummary>
   deleteConversation(conversationId: string): Promise<void>
 }
 
@@ -49,7 +50,7 @@ export interface StreamRunContext {
 
 export interface StreamRunCallbacks<TEvent = unknown> {
   onEvent(event: TEvent, context: StreamRunContext): void
-  onDone(context: StreamRunContext): void
+  onDone(context: StreamRunContext): unknown
   onError(error: unknown, context: StreamRunContext): void
   onAbort?(reason: 'aborted' | 'superseded', context: StreamRunContext): void
   restoreAttachments?(attachments: readonly ChatAttachmentRef[], context: StreamRunContext): void
@@ -157,6 +158,11 @@ export class ChatLifecycleCoordinator {
     return cloneState(this.state)
   }
 
+  synchronizeState(state: ChatLifecycleState): void {
+    this.assertUsable()
+    this.state = cloneState(state)
+  }
+
   subscribe(listener: ChatLifecycleStateListener): () => void {
     this.assertUsable()
     this.listeners.add(listener)
@@ -208,23 +214,11 @@ export class ChatLifecycleCoordinator {
   }
 
   async createAndSelect(input: CreateConversationInput): Promise<ConversationSummary | null> {
-    this.assertUsable()
-    const generation = this.generation
-    const revision = ++this.selectionRevision
-    const conversation = await this.apis.createConversation(input)
-    if (!this.isCurrent(generation) || this.tombstones.has(conversation.id)) return null
+    return this.resolveAndSelect(() => this.apis.createConversation(input), true)
+  }
 
-    const nextState: ChatLifecycleState = {
-      ...this.state,
-      conversationMap: { ...this.state.conversationMap, [conversation.id]: conversation },
-      messageMap: { ...this.state.messageMap, [conversation.id]: [] },
-    }
-    if (revision === this.selectionRevision) {
-      nextState.activeConversationId = conversation.id
-      nextState.activeScope = conversation.scope
-    }
-    this.commit(nextState)
-    return conversation
+  async ensureAndSelect(input: CreateConversationInput): Promise<ConversationSummary | null> {
+    return this.resolveAndSelect(() => this.apis.ensureConversation(input), false)
   }
 
   async deleteConversation(conversationId: string): Promise<void> {
@@ -306,9 +300,9 @@ export class ChatLifecycleCoordinator {
       },
       onDone: () => {
         if (!isOwner()) return
+        if (input.callbacks.onDone(context) === false) return
         run.terminalReason = 'done'
         this.activeRun = null
-        input.callbacks.onDone(context)
       },
       onError: (error) => {
         if (!isOwner()) return
@@ -340,6 +334,10 @@ export class ChatLifecycleCoordinator {
     this.terminateRun(this.activeRun, 'aborted')
   }
 
+  ownsStreamRun(runId: number): boolean {
+    return this.activeRun?.context.runId === runId && this.activeRun.terminalReason === null
+  }
+
   dispose(): void {
     if (this.disposed) return
     this.terminateRun(this.activeRun, 'aborted')
@@ -348,6 +346,31 @@ export class ChatLifecycleCoordinator {
     this.selectionRevision += 1
     this.listRevisions.clear()
     this.listeners.clear()
+  }
+
+  private async resolveAndSelect(
+    resolve: () => Promise<ConversationSummary>,
+    initializeMessages: boolean,
+  ): Promise<ConversationSummary | null> {
+    this.assertUsable()
+    const generation = this.generation
+    const revision = ++this.selectionRevision
+    const conversation = await resolve()
+    if (!this.isCurrent(generation) || this.tombstones.has(conversation.id)) return null
+
+    const nextState: ChatLifecycleState = {
+      ...this.state,
+      conversationMap: { ...this.state.conversationMap, [conversation.id]: conversation },
+      messageMap: initializeMessages
+        ? { ...this.state.messageMap, [conversation.id]: [] }
+        : this.state.messageMap,
+    }
+    if (revision === this.selectionRevision) {
+      nextState.activeConversationId = conversation.id
+      nextState.activeScope = conversation.scope
+    }
+    this.commit(nextState)
+    return conversation
   }
 
   private terminateRun(run: OwnedRun | null, reason: 'aborted' | 'superseded'): void {

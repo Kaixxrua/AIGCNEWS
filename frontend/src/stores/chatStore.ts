@@ -13,8 +13,11 @@ import {
   connectChatStream,
   initialChatStreamEventState,
   reduceChatStreamEvent,
-  type SseConnection,
 } from '../features/chat/chatStreamBoundary'
+import {
+  ChatLifecycleCoordinator,
+  type ChatLifecycleState,
+} from '../features/chat/chatLifecycleCoordinator'
 import {
   buildChatHistory,
   normalizeChatAttachment,
@@ -53,7 +56,78 @@ interface ChatState {
   settings: ChatSettings
 }
 
-let _activeConnection: SseConnection | null = null
+type ChatStoreContext = ChatState & {
+  $id: string
+  $dispose(): void
+}
+
+const _coordinators = new WeakMap<object, ChatLifecycleCoordinator>()
+
+function lifecycleState(store: ChatStoreContext): ChatLifecycleState {
+  return {
+    activeConversationId: store.activeConversationId,
+    activeScope: store.activeScope,
+    conversationMap: store.conversationMap,
+    messageMap: store.messageMap,
+  }
+}
+
+function applyLifecycleState(store: ChatStoreContext, state: ChatLifecycleState) {
+  store.activeConversationId = state.activeConversationId
+  store.activeScope = state.activeScope
+  store.conversationMap = state.conversationMap
+  store.messageMap = state.messageMap
+}
+
+function coordinatorFor(store: ChatStoreContext): ChatLifecycleCoordinator {
+  const existing = _coordinators.get(store)
+  if (existing) {
+    existing.synchronizeState(lifecycleState(store))
+    return existing
+  }
+  const coordinator = new ChatLifecycleCoordinator({
+    async listConversations(selector) {
+      const response = await fetchConversations({ scope: selector.scope, page: 1, page_size: 50 })
+      return response.items
+        .map(normalizeConversation)
+        .filter((conversation) => selector.scopeKey === undefined || conversation.scopeKey === selector.scopeKey)
+    },
+    async fetchConversationDetail(conversationId) {
+      const detail = await fetchConversationDetail(conversationId)
+      const conversation = normalizeConversation(detail.conversation)
+      return {
+        conversation,
+        messages: detail.messages.map((item) => normalizeChatMessage(item, conversation.id)),
+      }
+    },
+    async createConversation(input) {
+      return normalizeConversation(await createConversation({
+        scope: input.scope,
+        scope_key: input.scopeKey ?? null,
+        title: input.title,
+      }))
+    },
+    async ensureConversation(input) {
+      return normalizeConversation(await ensureConversation({
+        scope: input.scope,
+        scope_key: input.scopeKey ?? null,
+        title: input.title,
+      }))
+    },
+    async deleteConversation(conversationId) {
+      await apiDeleteConversation(conversationId)
+    },
+  }, lifecycleState(store))
+  coordinator.subscribe((state) => applyLifecycleState(store, state))
+  const originalDispose = store.$dispose.bind(store)
+  store.$dispose = () => {
+    coordinator.dispose()
+    _coordinators.delete(store)
+    originalDispose()
+  }
+  _coordinators.set(store, coordinator)
+  return coordinator
+}
 
 export const useChatStore = defineStore('chat', {
   state: (): ChatState => ({
@@ -97,13 +171,7 @@ export const useChatStore = defineStore('chat', {
      * 强制创建新会话并切换到该会话（解决 ensure 只返回已有会话的问题）。
      */
     async createNewConversation(scope: ConversationScope = 'global', title?: string) {
-      const dto = await createConversation({ scope, title })
-      const summary = normalizeConversation(dto)
-      this.conversationMap = { ...this.conversationMap, [summary.id]: summary }
-      this.messageMap = { ...this.messageMap, [summary.id]: [] }
-      this.activeConversationId = summary.id
-      this.activeScope = summary.scope
-      return summary
+      return coordinatorFor(this as ChatStoreContext).createAndSelect({ scope, title })
     },
 
     /**
@@ -112,27 +180,18 @@ export const useChatStore = defineStore('chat', {
     async deleteActiveConversation() {
       const convId = this.activeConversationId
       if (!convId) return
-      try {
-        await apiDeleteConversation(convId)
-      } catch (e) {
-        console.error('[chatStore] 删除会话失败', e)
-      }
-      // 从本地状态中移除
-      const { [convId]: _removedConv, ...restConvMap } = this.conversationMap
-      this.conversationMap = restConvMap
-      const { [convId]: _removedMsgs, ...restMsgMap } = this.messageMap
-      this.messageMap = restMsgMap
-      this.activeConversationId = null
-      // 重新加载会话列表，切换到最新的全局会话或创建新的
-      await this.loadConversations('global')
-      const globalConvs = Object.values(this.conversationMap)
-        .filter((c) => c.scope === 'global')
-        .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
-      const firstConv = globalConvs[0]
-      if (firstConv) {
-        await this.openConversation(firstConv.id)
+      const coordinator = coordinatorFor(this as ChatStoreContext)
+      await coordinator.deleteConversation(convId)
+      const globalConversations = await coordinator.replaceConversationList({ scope: 'global' })
+      const fallback = [...globalConversations].sort((a, b) => {
+        const aTime = a.updatedAt ?? a.createdAt ?? ''
+        const bTime = b.updatedAt ?? b.createdAt ?? ''
+        return bTime.localeCompare(aTime) || a.id.localeCompare(b.id)
+      })[0]
+      if (fallback) {
+        await coordinator.selectConversation(fallback.id)
       } else {
-        await this.createNewConversation('global')
+        await coordinator.createAndSelect({ scope: 'global' })
       }
     },
 
@@ -155,39 +214,23 @@ export const useChatStore = defineStore('chat', {
     },
 
     async loadConversations(scope?: ConversationScope) {
-      const response = await fetchConversations({ scope, page: 1, page_size: 50 })
-      const merged = { ...this.conversationMap }
-      for (const item of response.items) {
-        const normalized = normalizeConversation(item)
-        merged[normalized.id] = normalized
-      }
-      this.conversationMap = merged
-      return response.items.map((item) => normalizeConversation(item))
+      return coordinatorFor(this as ChatStoreContext).replaceConversationList({ scope })
     },
 
     async openConversation(conversationId: string | number) {
-      const id = String(conversationId)
       this.loadingHistory = true
       try {
-        const detail = await fetchConversationDetail(id)
-        const conversation = normalizeConversation(detail.conversation)
-        const messages = detail.messages.map((item) => normalizeChatMessage(item, conversation.id))
-        this.conversationMap = { ...this.conversationMap, [conversation.id]: conversation }
-        this.messageMap = { ...this.messageMap, [conversation.id]: messages }
-        this.activeConversationId = conversation.id
-        this.activeScope = conversation.scope
+        await coordinatorFor(this as ChatStoreContext).selectConversation(String(conversationId))
       } finally {
         this.loadingHistory = false
       }
     },
 
     async ensureScopeConversation(scope: ConversationScope, scopeKey?: string | null, title?: string) {
-      const summary = normalizeConversation(await ensureConversation({ scope, scope_key: scopeKey ?? null, title }))
-      this.conversationMap = { ...this.conversationMap, [summary.id]: summary }
-      this.activeConversationId = summary.id
-      this.activeScope = summary.scope
-      if (!this.messageMap[summary.id]) {
-        await this.openConversation(summary.id)
+      const coordinator = coordinatorFor(this as ChatStoreContext)
+      const summary = await coordinator.ensureAndSelect({ scope, scopeKey: scopeKey ?? undefined, title })
+      if (summary && !this.messageMap[summary.id]) {
+        await coordinator.selectConversation(summary.id)
       }
       return summary
     },
@@ -268,19 +311,7 @@ export const useChatStore = defineStore('chat', {
     },
 
     abortGeneration() {
-      if (_activeConnection) {
-        _activeConnection.controller.abort()
-        _activeConnection = null
-      }
-      this.isStreaming = false
-      this.streamPhase = 'idle'
-      const conversationId = this.activeConversationId
-      if (!conversationId) return
-      const current = this.messageMap[conversationId] || []
-      this.messageMap = {
-        ...this.messageMap,
-        [conversationId]: current.map((item) => item.isStreaming ? { ...item, isStreaming: false, isThinking: false } : item),
-      }
+      coordinatorFor(this as ChatStoreContext).abortActiveRun()
     },
 
     async deleteMessage(messageId: string) {
@@ -414,9 +445,8 @@ export const useChatStore = defineStore('chat', {
       const { temperature } = this.settings
       let eventState = initialChatStreamEventState(params.conversationId)
       let sseFinished = false
-
-      this.isStreaming = true
-      this.streamPhase = eventState.phase
+      const coordinator = coordinatorFor(this as ChatStoreContext)
+      let runValid = true
 
       const contentQueue: string[] = []
       const thinkingQueue: string[] = []
@@ -437,7 +467,6 @@ export const useChatStore = defineStore('chat', {
 
         this.isStreaming = false
         this.streamPhase = 'idle'
-        _activeConnection = null
         if (eventState.persistedConversationId) {
           await this.openConversation(eventState.persistedConversationId)
           // openConversation 会用后端 DTO 覆盖消息列表。
@@ -458,6 +487,11 @@ export const useChatStore = defineStore('chat', {
       const startTyping = () => {
         if (typingTimer !== null) return
         typingTimer = setInterval(() => {
+          if (!runValid) {
+            if (typingTimer !== null) clearInterval(typingTimer)
+            typingTimer = null
+            return
+          }
           const current = (this.messageMap[params.conversationId] || []).find((item) => item.id === params.assistantTempId)
           if (!current) return
 
@@ -518,19 +552,36 @@ export const useChatStore = defineStore('chat', {
         }, 16)
       }
 
-      const connection = connectChatStream({
-        text: params.text,
+      const run = coordinator.startStreamRun({
+        command: {
+          text: params.text,
+          conversationId: params.conversationId,
+          history: params.history,
+          temperature,
+          // scope 取决于会话本身的 scope，而非 paperId 是否存在
+          scope: this.conversationMap[params.conversationId]?.scope ?? 'global',
+          webSearch: this.settings.webSearch,
+          attachments: params.attachments,
+          paperId: params.paperId,
+          regenerateMessageId: params.regenerateMessageId,
+        },
         conversationId: params.conversationId,
-        history: params.history,
-        temperature,
-        // scope 取决于会话本身的 scope，而非 paperId 是否存在
-        scope: this.conversationMap[params.conversationId]?.scope ?? 'global',
-        webSearch: this.settings.webSearch,
+        messageId: params.assistantTempId,
         attachments: params.attachments,
-        paperId: params.paperId,
-        regenerateMessageId: params.regenerateMessageId,
-      }, {
-        onMessage: (payload: unknown) => {
+        attachmentRestoration: 'never',
+        connect: (command, callbacks) => {
+          const connection = connectChatStream(command, {
+            onMessage: callbacks.onEvent,
+            onDone: callbacks.onDone,
+            onError: callbacks.onError,
+          })
+          return {
+            abort: () => connection.controller.abort(),
+            promise: connection.promise,
+          }
+        },
+        callbacks: {
+          onEvent: (payload: unknown) => {
           const transition = reduceChatStreamEvent(eventState, payload)
           eventState = transition.state
           this.streamPhase = eventState.phase
@@ -562,19 +613,21 @@ export const useChatStore = defineStore('chat', {
               isStreaming: false,
             })
             this.isStreaming = false
-            _activeConnection = null
+            this.streamPhase = 'error'
           }
-        },
-        onDone: () => {
-          sseFinished = true
-          if (thinkingQueue.length === 0 && contentQueue.length === 0) {
-            if (typingTimer !== null) {
-              clearInterval(typingTimer)
-              typingTimer = null
+          },
+          onDone: () => {
+            sseFinished = true
+            if (thinkingQueue.length === 0 && contentQueue.length === 0) {
+              if (typingTimer !== null) {
+                clearInterval(typingTimer)
+                typingTimer = null
+              }
+              void finishStreaming()
+              return
             }
-            void finishStreaming()
-          }
-        },
+            return false
+          },
         onError: (error: unknown) => {
           sseFinished = true
           if (typingTimer !== null) {
@@ -594,12 +647,26 @@ export const useChatStore = defineStore('chat', {
           })
           this.streamPhase = 'error'
           this.isStreaming = false
-          _activeConnection = null
+        },
+        onAbort: (_reason, context) => {
+          runValid = false
+          if (typingTimer !== null) {
+            clearInterval(typingTimer)
+            typingTimer = null
+          }
+          this.patchMessage(context.conversationId, context.messageId, {
+            isThinking: false,
+            isStreaming: false,
+          })
+          this.isStreaming = false
+          this.streamPhase = 'idle'
+          },
         },
       })
 
-      _activeConnection = connection
-      await connection.promise
+      this.isStreaming = true
+      this.streamPhase = eventState.phase
+      await run.promise
     },
   },
 })

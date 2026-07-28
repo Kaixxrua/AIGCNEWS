@@ -54,6 +54,7 @@ function apis(overrides: Partial<ChatLifecycleApis> = {}): ChatLifecycleApis {
     listConversations: vi.fn().mockResolvedValue([]),
     fetchConversationDetail: vi.fn(),
     createConversation: vi.fn(),
+    ensureConversation: vi.fn(),
     deleteConversation: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }

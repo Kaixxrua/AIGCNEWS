@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   ensureConversation: vi.fn(),
   fetchConversationDetail: vi.fn(),
   fetchConversations: vi.fn(),
+  createConversation: vi.fn(),
+  deleteConversation: vi.fn(),
 }))
 
 vi.mock('../composables/useEventSource', () => ({
@@ -18,8 +20,8 @@ vi.mock('../services/http/apiClient', () => ({
 }))
 
 vi.mock('../services/chat/chatApi', () => ({
-  createConversation: vi.fn(),
-  deleteConversation: vi.fn(),
+  createConversation: mocks.createConversation,
+  deleteConversation: mocks.deleteConversation,
   deleteConversationMessage: vi.fn(),
   ensureConversation: mocks.ensureConversation,
   fetchConversationDetail: mocks.fetchConversationDetail,
@@ -95,6 +97,48 @@ describe('chat store domain contracts', () => {
       thinkingPreview: `${'x'.repeat(80)}…`, thinkingDurationSec: 0, isStreaming: false, sources: [],
       attachments: [{ id: '3', name: 'figure.png', mimeType: 'image/png', modality: 'image', parseStatus: 'uploaded' }],
     })
+  })
+
+  it('makes the latest selection win when detail requests resolve out of order', async () => {
+    let resolveFirst!: (value: unknown) => void
+    let resolveSecond!: (value: unknown) => void
+    mocks.fetchConversationDetail
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve }))
+    const store = useChatStore()
+
+    const first = store.openConversation('first')
+    const second = store.openConversation('second')
+    resolveSecond({
+      conversation: { id: 'second', title: 'Second', scope: 'global', message_count: 0 },
+      messages: [],
+    })
+    await second
+    resolveFirst({
+      conversation: { id: 'first', title: 'First', scope: 'global', message_count: 0 },
+      messages: [],
+    })
+    await first
+
+    expect(store.activeConversationId).toBe('second')
+    expect(store.conversationMap.first).toBeUndefined()
+  })
+
+  it('rolls back optimistic deletion and surfaces the failure', async () => {
+    const failure = new Error('delete failed')
+    mocks.deleteConversation.mockRejectedValue(failure)
+    const store = prepareStreamingStore()
+    const originalMessages = store.messageMap['7']
+
+    const deleting = store.deleteActiveConversation()
+    expect(store.activeConversationId).toBeNull()
+    expect(store.conversationMap['7']).toBeUndefined()
+    await expect(deleting).rejects.toBe(failure)
+
+    expect(store.activeConversationId).toBe('7')
+    expect(store.conversationMap['7']?.title).toBe('Global')
+    expect(store.messageMap['7']).toEqual(originalMessages)
+    expect(mocks.fetchConversations).not.toHaveBeenCalled()
   })
 
   it('builds bounded non-empty history and disables it at zero turns', () => {
@@ -177,6 +221,40 @@ describe('chat store domain contracts', () => {
     expect(store.messages[0]?.content).toBe('persisted')
     expect(store.isStreaming).toBe(false)
     expect(store.streamPhase).toBe('idle')
+  })
+
+  it('supersedes the old stream and ignores stale callbacks that target newer state', async () => {
+    const firstController = new AbortController()
+    const secondController = new AbortController()
+    const handlers: Array<Record<string, (...args: unknown[]) => void>> = []
+    mocks.connect
+      .mockImplementationOnce((params: Record<string, (...args: unknown[]) => void>) => {
+        handlers.push(params)
+        return { controller: firstController, promise: Promise.resolve() }
+      })
+      .mockImplementationOnce((params: Record<string, (...args: unknown[]) => void>) => {
+        handlers.push(params)
+        return { controller: secondController, promise: Promise.resolve() }
+      })
+    const store = prepareStreamingStore()
+
+    await store._streamToAssistant({ text: 'one', conversationId: '7', assistantTempId: 'temp', history: [] })
+    store.messageMap['7'] = [
+      { ...message('temp', 'assistant', ''), isStreaming: true },
+      { ...message('temp-2', 'assistant', ''), isStreaming: true },
+    ]
+    await store._streamToAssistant({ text: 'two', conversationId: '7', assistantTempId: 'temp-2', history: [] })
+
+    expect(firstController.signal.aborted).toBe(true)
+    expect(store.isStreaming).toBe(true)
+    handlers[0]?.onMessage?.({ type: 'content', data: 'stale' })
+    handlers[0]?.onError?.(new Error('stale'))
+    handlers[0]?.onDone?.()
+    expect(store.messageMap['7']?.[1]?.content).toBe('')
+    expect(store.isStreaming).toBe(true)
+    handlers[1]?.onError?.(new Error('owned'))
+    expect(store.messageMap['7']?.[1]?.content).toBe('流式请求失败：owned')
+    expect(store.isStreaming).toBe(false)
   })
 
   it('keeps one active connection, aborts it, and presents rate limits distinctly', async () => {
