@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Mapping
 
 from backend.app.core.database import DatabaseLifecycle, mysql_database
@@ -63,13 +64,24 @@ _SENSITIVE_NAME_RE = re.compile(
     r"(?:api[_-]?key|auth|credential|password|secret|token)", re.IGNORECASE
 )
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_$]+$")
+DEFAULT_MANIFEST_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "migrations"
+    / "mysql_to_postgres_manifest.json"
+)
 
 
 class MySQLSchemaInventoryService:
     """Collect read-only, secret-safe evidence about the live MySQL schema."""
 
-    def __init__(self, database: DatabaseLifecycle = mysql_database) -> None:
+    def __init__(
+        self,
+        database: DatabaseLifecycle = mysql_database,
+        *,
+        manifest_path: Path | str = DEFAULT_MANIFEST_PATH,
+    ) -> None:
         self._database = database
+        self._manifest_path = Path(manifest_path)
 
     def collect(self, *, exact_counts: bool = True) -> dict[str, Any]:
         with self._database.connection() as connection:
@@ -104,16 +116,21 @@ class MySQLSchemaInventoryService:
                         }
                     )
 
-        unknown_tables = sorted(
-            table["table_name"]
-            for table in table_records
-            if table["classification"] == "unknown"
-        )
-        missing_application_tables = sorted(
-            APPLICATION_TABLES.difference(
-                str(table["table_name"]) for table in table_records
-            )
-        )
+        manifest = self._load_manifest()
+        manifest_tables = set(manifest["tables"])
+        live_tables = {str(table["table_name"]) for table in table_records}
+        unknown_tables = sorted(live_tables.difference(manifest_tables))
+        missing_manifest_tables = sorted(manifest_tables.difference(live_tables))
+        missing_application_tables = sorted(APPLICATION_TABLES.difference(live_tables))
+        for table in table_records:
+            manifest_entry = manifest["tables"].get(str(table["table_name"]))
+            if manifest_entry is not None:
+                table["classification"] = manifest_entry["classification"]
+                table["disposition"] = manifest_entry["disposition"]
+                if "target" in manifest_entry:
+                    table["target"] = manifest_entry["target"]
+                if "reason" in manifest_entry:
+                    table["reason"] = manifest_entry["reason"]
         artifact: dict[str, Any] = {
             "artifact_version": 1,
             "kind": "mysql_schema_inventory",
@@ -126,14 +143,37 @@ class MySQLSchemaInventoryService:
             "summary": {
                 "table_count": len(table_records),
                 "unknown_tables": unknown_tables,
+                "missing_manifest_tables": missing_manifest_tables,
                 "missing_application_tables": missing_application_tables,
                 "ready_for_schema_design": not unknown_tables
+                and not missing_manifest_tables
                 and not missing_application_tables,
             },
             "tables": table_records,
         }
         artifact["artifact_sha256"] = self._digest(artifact)
         return artifact
+
+    def _load_manifest(self) -> dict[str, Any]:
+        manifest = json.loads(self._manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("manifest_version") != 1:
+            raise ValueError("unsupported MySQL-to-PostgreSQL manifest version")
+        tables = manifest.get("tables")
+        if not isinstance(tables, dict) or not tables:
+            raise ValueError("MySQL-to-PostgreSQL manifest tables are required")
+        allowed_dispositions = {
+            "migrate",
+            "already_migrated",
+            "archive_only",
+            "retire_after_cutover",
+        }
+        for table_name, entry in tables.items():
+            self._quoted_identifier(str(table_name))
+            if not isinstance(entry, dict):
+                raise ValueError("MySQL-to-PostgreSQL manifest entry must be an object")
+            if entry.get("disposition") not in allowed_dispositions:
+                raise ValueError("invalid MySQL-to-PostgreSQL table disposition")
+        return manifest
 
     @staticmethod
     def _identity(cursor: Any) -> tuple[str, str, str]:

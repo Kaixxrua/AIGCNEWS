@@ -7,6 +7,26 @@ from contextlib import contextmanager
 from backend.app.services.mysql_schema_inventory import MySQLSchemaInventoryService
 
 
+def write_manifest(tmp_path, *table_names: str):
+    path = tmp_path / "manifest.json"
+    path.write_text(
+        json.dumps(
+            {
+                "manifest_version": 1,
+                "tables": {
+                    name: {
+                        "classification": "application" if name == "users" else "archive",
+                        "disposition": "migrate" if name == "users" else "archive_only",
+                    }
+                    for name in table_names
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 class FakeCursor:
     def __init__(self) -> None:
         self._rows: list[dict[str, object]] = []
@@ -117,13 +137,16 @@ class FakeDatabase:
         yield self._connection
 
 
-def test_inventory_is_read_only_classified_and_secret_safe() -> None:
+def test_inventory_is_read_only_classified_and_secret_safe(tmp_path) -> None:
     cursor = FakeCursor()
-    artifact = MySQLSchemaInventoryService(FakeDatabase(cursor)).collect()
+    artifact = MySQLSchemaInventoryService(
+        FakeDatabase(cursor), manifest_path=write_manifest(tmp_path, "users")
+    ).collect()
 
     assert cursor.executed[0][0] == "SET TRANSACTION READ ONLY"
     assert cursor.executed[1][0] == "START TRANSACTION WITH CONSISTENT SNAPSHOT"
     assert artifact["summary"]["unknown_tables"] == ["unexpected_table"]
+    assert artifact["summary"]["missing_manifest_tables"] == []
     assert artifact["summary"]["ready_for_schema_design"] is False
     users = next(table for table in artifact["tables"] if table["table_name"] == "users")
     assert users["classification"] == "application"
@@ -137,17 +160,40 @@ def test_inventory_is_read_only_classified_and_secret_safe() -> None:
     ).hexdigest()
 
 
-def test_inventory_can_skip_expensive_exact_counts() -> None:
+def test_inventory_can_skip_expensive_exact_counts(tmp_path) -> None:
     cursor = FakeCursor()
-    artifact = MySQLSchemaInventoryService(FakeDatabase(cursor)).collect(exact_counts=False)
+    artifact = MySQLSchemaInventoryService(
+        FakeDatabase(cursor),
+        manifest_path=write_manifest(tmp_path, "users", "unexpected_table"),
+    ).collect(exact_counts=False)
 
     assert all(table["exact_row_count"] is None for table in artifact["tables"])
     assert not any(sql.startswith("SELECT COUNT(*)") for sql, _ in cursor.executed)
 
 
-def test_inventory_digest_is_bound_to_artifact() -> None:
+def test_inventory_applies_archive_disposition_from_manifest(tmp_path) -> None:
     cursor = FakeCursor()
-    artifact = MySQLSchemaInventoryService(FakeDatabase(cursor)).collect()
+    artifact = MySQLSchemaInventoryService(
+        FakeDatabase(cursor),
+        manifest_path=write_manifest(tmp_path, "users", "unexpected_table"),
+    ).collect()
+
+    archived = next(
+        table
+        for table in artifact["tables"]
+        if table["table_name"] == "unexpected_table"
+    )
+    assert archived["classification"] == "archive"
+    assert archived["disposition"] == "archive_only"
+    assert artifact["summary"]["unknown_tables"] == []
+
+
+def test_inventory_digest_is_bound_to_artifact(tmp_path) -> None:
+    cursor = FakeCursor()
+    artifact = MySQLSchemaInventoryService(
+        FakeDatabase(cursor),
+        manifest_path=write_manifest(tmp_path, "users", "unexpected_table"),
+    ).collect()
 
     digest = artifact.pop("artifact_sha256")
     assert digest == MySQLSchemaInventoryService._digest(artifact)

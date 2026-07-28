@@ -1,0 +1,153 @@
+{
+  "manifest_version": 1,
+  "source_database": "rag_aigc",
+  "source_engine": "MySQL 8",
+  "target_engine": "PostgreSQL 16",
+  "tables": {
+    "app_mysql_schema_migrations": {
+      "classification": "operational",
+      "disposition": "retire_after_cutover",
+      "reason": "MySQL-only migration ledger; PostgreSQL has app_schema_migrations"
+    },
+    "briefing_subscriptions": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "briefing_subscriptions"
+    },
+    "briefings": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "briefings"
+    },
+    "chat_attachments": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "chat_attachments"
+    },
+    "chat_messages": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "chat_messages"
+    },
+    "conversations": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "conversations"
+    },
+    "document_rank_snapshots": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "document_rank_snapshots"
+    },
+    "documents": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "documents"
+    },
+    "github_project_semantic_sources": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "github_project_semantic_sources"
+    },
+    "github_repo_aliases": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "github_repo_aliases"
+    },
+    "github_repo_candidates": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "github_repo_candidates"
+    },
+    "github_repo_daily_metrics": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "github_repo_daily_metrics"
+    },
+    "github_repo_dedupe_backup": {
+      "classification": "archive",
+      "disposition": "archive_only",
+      "reason": "One 2026-07-03 deduplication backup run; 216 payload snapshots; no runtime references; retained in immutable final MySQL backup"
+    },
+    "github_repo_enrichments": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "github_repo_enrichments"
+    },
+    "github_repo_recommendations": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "github_repo_recommendations"
+    },
+    "github_repo_snapshots": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "github_repo_snapshots"
+    },
+    "github_trending_hits": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "github_trending_hits"
+    },
+    "ingestion_tasks": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "ingestion_tasks"
+    },
+    "mcp_server_configs": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "mcp_server_configs"
+    },
+    "project_catalog_outbox": {
+      "classification": "operational",
+      "disposition": "retire_after_cutover",
+      "reason": "MySQL-to-PostgreSQL bridge retained only through final barrier proof"
+    },
+    "project_favorites": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "project_favorites"
+    },
+    "rag_evaluations": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "rag_evaluations"
+    },
+    "runtime_provider_settings": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "runtime_provider_settings"
+    },
+    "tool_website_enrichments": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "tool_website_enrichments"
+    },
+    "tool_websites": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "tool_websites"
+    },
+    "user_mcp_tokens": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "user_mcp_tokens"
+    },
+    "user_tool_website_overrides": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "user_tool_website_overrides"
+    },
+    "user_tool_websites": {
+      "classification": "catalog",
+      "disposition": "already_migrated",
+      "target": "user_tool_websites"
+    },
+    "users": {
+      "classification": "application",
+      "disposition": "migrate",
+      "target": "users"
+    }
+  }
+}
