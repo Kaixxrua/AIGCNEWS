@@ -40,6 +40,9 @@ from backend.app.repositories.postgres_document_repository import (
 from backend.app.repositories.postgres_evaluation_repository import (
     PostgresEvaluationRepository,
 )
+from backend.app.repositories.postgres_github_project_semantic_repository import (
+    PostgresGitHubProjectSemanticSourceRepository,
+)
 from backend.app.repositories.postgres_ingestion_task_repository import (
     PostgresIngestionTaskRepository,
 )
@@ -49,6 +52,16 @@ from backend.app.repositories.postgres_mcp_access_token_repository import (
 from backend.app.repositories.postgres_mcp_server_repository import (
     PostgresMcpServerConfigRepository,
 )
+from backend.app.repositories.postgres_project_enrichment_repository import (
+    PostgresGitHubProjectEnrichmentRepository,
+    PostgresToolWebsiteEnrichmentRepository,
+)
+from backend.app.repositories.postgres_project_ingestion_repository import (
+    PostgresGitHubProjectIngestionRepository,
+)
+from backend.app.repositories.postgres_project_write_repository import (
+    PostgresProjectWriteRepository,
+)
 from backend.app.repositories.postgres_rank_snapshot_repository import (
     PostgresRankSnapshotRepository,
 )
@@ -57,6 +70,14 @@ from backend.app.repositories.postgres_runtime_provider_repository import (
 )
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
+)
+from backend.app.repositories.project_write_repository import (
+    GitHubProjectEnrichmentRepository,
+    GitHubProjectIngestionRepository,
+    GitHubProjectRecommendationRepository,
+    GitHubProjectSemanticSourceRepository,
+    ToolWebsiteEnrichmentRepository,
+    UserProjectCollectionRepository,
 )
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.runtime_provider_repository import (
@@ -96,6 +117,12 @@ class ApplicationRepositories:
     runtime_provider_settings: RuntimeProviderSettingRepository
     mcp_server_configs: McpServerConfigRepository
     mcp_access_tokens: McpAccessTokenRepository
+    github_ingestion: GitHubProjectIngestionRepository
+    github_enrichment: GitHubProjectEnrichmentRepository
+    tool_website_enrichment: ToolWebsiteEnrichmentRepository
+    project_collections: UserProjectCollectionRepository
+    project_recommendations: GitHubProjectRecommendationRepository
+    github_semantic_sources: GitHubProjectSemanticSourceRepository
 
 
 def normalize_application_database_backend(value: Any) -> str:
@@ -126,6 +153,14 @@ def create_application_repositories(
             runtime_provider_settings=PostgresRuntimeProviderSettingRepository(postgres),
             mcp_server_configs=PostgresMcpServerConfigRepository(postgres),
             mcp_access_tokens=PostgresMcpAccessTokenRepository(postgres),
+            github_ingestion=PostgresGitHubProjectIngestionRepository(postgres),
+            github_enrichment=PostgresGitHubProjectEnrichmentRepository(postgres),
+            tool_website_enrichment=PostgresToolWebsiteEnrichmentRepository(postgres),
+            project_collections=PostgresProjectWriteRepository(postgres),
+            project_recommendations=PostgresProjectWriteRepository(postgres),
+            github_semantic_sources=PostgresGitHubProjectSemanticSourceRepository(
+                postgres
+            ),
         )
 
     compatibility = MySQLRepository(database=mysql)
@@ -142,4 +177,10 @@ def create_application_repositories(
         runtime_provider_settings=compatibility.runtime_provider_settings,
         mcp_server_configs=MySQLMcpServerConfigRepository(mysql),
         mcp_access_tokens=compatibility.mcp_access_tokens,
+        github_ingestion=compatibility,
+        github_enrichment=compatibility,
+        tool_website_enrichment=compatibility,
+        project_collections=compatibility,
+        project_recommendations=compatibility,
+        github_semantic_sources=compatibility,
     )

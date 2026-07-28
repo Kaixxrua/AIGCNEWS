@@ -28,6 +28,9 @@ from backend.app.repositories.postgres_document_repository import (
 from backend.app.repositories.postgres_evaluation_repository import (
     PostgresEvaluationRepository,
 )
+from backend.app.repositories.postgres_github_project_semantic_repository import (
+    PostgresGitHubProjectSemanticSourceRepository,
+)
 from backend.app.repositories.postgres_ingestion_task_repository import (
     PostgresIngestionTaskRepository,
 )
@@ -36,6 +39,16 @@ from backend.app.repositories.postgres_mcp_access_token_repository import (
 )
 from backend.app.repositories.postgres_mcp_server_repository import (
     PostgresMcpServerConfigRepository,
+)
+from backend.app.repositories.postgres_project_enrichment_repository import (
+    PostgresGitHubProjectEnrichmentRepository,
+    PostgresToolWebsiteEnrichmentRepository,
+)
+from backend.app.repositories.postgres_project_ingestion_repository import (
+    PostgresGitHubProjectIngestionRepository,
+)
+from backend.app.repositories.postgres_project_write_repository import (
+    PostgresProjectWriteRepository,
 )
 from backend.app.repositories.postgres_rank_snapshot_repository import (
     PostgresRankSnapshotRepository,
@@ -87,6 +100,12 @@ def test_factory_builds_postgres_protocol_adapters() -> None:
         "runtime_provider_settings": PostgresRuntimeProviderSettingRepository,
         "mcp_server_configs": PostgresMcpServerConfigRepository,
         "mcp_access_tokens": PostgresMcpAccessTokenRepository,
+        "github_ingestion": PostgresGitHubProjectIngestionRepository,
+        "github_enrichment": PostgresGitHubProjectEnrichmentRepository,
+        "tool_website_enrichment": PostgresToolWebsiteEnrichmentRepository,
+        "project_collections": PostgresProjectWriteRepository,
+        "project_recommendations": PostgresProjectWriteRepository,
+        "github_semantic_sources": PostgresGitHubProjectSemanticSourceRepository,
     }
     for name, adapter in expected.items():
         repository = getattr(repositories, name)
@@ -124,6 +143,12 @@ def test_factory_preserves_mysql_compatibility_facade(monkeypatch) -> None:
             repositories.evaluations,
             repositories.runtime_provider_settings,
             repositories.mcp_access_tokens,
+            repositories.github_ingestion,
+            repositories.github_enrichment,
+            repositories.tool_website_enrichment,
+            repositories.project_collections,
+            repositories.project_recommendations,
+            repositories.github_semantic_sources,
         )
     }
     assert compatibility_databases == {mysql}
