@@ -1,0 +1,83 @@
+# Linux 服务器开机启动
+
+主项目由 Docker Compose project `docker` 管理。Docker restart policy 负责容器进程恢复，systemd unit 在服务器启动时执行一次全栈协调并等待健康检查通过。
+
+## 手工恢复 Milvus
+
+不得使用 `docker compose down -v`，也不得删除 `docker/volumes/{etcd,minio,milvus}`。依赖异常时按顺序恢复：
+
+```bash
+docker start milvus-etcd
+# 等待 docker inspect 显示 healthy
+docker start milvus-minio
+# 等待 docker inspect 显示 healthy
+docker start milvus-standalone
+curl --fail http://127.0.0.1:9091/healthz
+```
+
+验证后端实际连接：
+
+```bash
+docker exec aigc-backend python -c \
+  "from backend.app.monitoring.health import _check_milvus; print(_check_milvus())"
+```
+
+结果应为 `status: ok`，并包含 collection 数量。
+
+## 验证并启动全栈
+
+PriceAI 的现有环境文件 `/home/kaixxrua/.priceai-node.env` 必须提供：
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+不要在日志或终端输出变量值。
+
+管理脚本会按 dotenv 语义读取项目 `.env` 和 `/home/kaixxrua/.priceai-node.env`，无需用 shell `source`（配置中可能包含空格或 cron 表达式）。
+
+```bash
+scripts/manage_main_stack.sh config
+scripts/manage_main_stack.sh up
+scripts/manage_main_stack.sh status
+```
+
+`up` 不构建镜像、不拉取镜像，并最多等待 300 秒。发布新镜像或重建应用应走独立部署流程。
+
+## 安装 systemd unit
+
+```bash
+sudo install -m 0644 \
+  deploy/systemd/aigcnews-compose@.service \
+  /etc/systemd/system/aigcnews-compose@.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now aigcnews-compose@kaixxrua.service
+```
+
+查看状态和日志：
+
+```bash
+systemctl status aigcnews-compose@kaixxrua.service
+journalctl -u aigcnews-compose@kaixxrua.service
+scripts/manage_main_stack.sh status
+```
+
+unit 以实例用户运行 Compose，不使用 root 创建容器或持久化文件。unit 没有 `ExecStop`：服务器关机时不拆除 Compose project，下一次开机由 Docker restart policy 和 systemd 共同恢复。
+
+## 健康验证
+
+```bash
+curl --fail http://127.0.0.1:9091/healthz
+curl --fail http://127.0.0.1:8000/api/live
+curl --fail http://127.0.0.1:8000/api/ready
+docker compose --project-name docker --file docker/docker-compose.yml ps
+```
+
+`/api/ready` 验证后端项目目录依赖；Milvus 必须同时使用 `/healthz` 和后端内 collection 探测验证。
+
+## 故障处理约束
+
+- 不要执行 `docker compose down --volumes` 或删除 bind mount 数据目录。
+- 不要修改 Compose project name；否则可能创建第二套容器和网络。
+- etcd 或 MinIO 不健康时不要反复启动 Milvus，先检查对应容器日志和宿主机磁盘延迟。
+- systemd 启动失败时先运行 `scripts/manage_main_stack.sh config`，再检查 `journalctl` 和 `docker compose ... logs <service>`。
+- 真正重启服务器应安排维护窗口；安装 unit 后可先用 `systemctl restart aigcnews-compose@kaixxrua.service` 验证协调流程。

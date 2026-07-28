@@ -1,4 +1,4 @@
-version: "3.9"
+name: docker
 
 services:
 
@@ -9,8 +9,14 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - mysql-aigc
-      - redis
+      mysql-aigc:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+      project-catalog-postgres:
+        condition: service_healthy
     env_file:
       - ../.env
     environment:
@@ -24,8 +30,8 @@ services:
       - http_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - https_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - all_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,mysql-aigc,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
-      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,mysql-aigc,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,mysql-aigc,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,mysql-aigc,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
     extra_hosts:
       - "host.docker.internal:172.19.0.1"
     volumes:
@@ -33,6 +39,42 @@ services:
       - ../storage/papers:/src/storage/papers
       - ../storage/hf_cache/huggingface:/root/.cache/huggingface
     command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5)"]
+      interval: 10s
+      timeout: 7s
+      retries: 18
+      start_period: 30s
+
+  project-catalog-postgres:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE:?set POSTGRES_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - project_catalog_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  project-catalog-ops:
+    build: ../backend
+    profiles: ["project-catalog-ops"]
+    env_file:
+      - ../.env
+    working_dir: /src
+    volumes:
+      - ../backend:/src/backend:ro
+      - ../scripts:/src/scripts:ro
+    security_opt:
+      - no-new-privileges:true
 
   frontend-web:
     build: ../frontend
@@ -43,7 +85,7 @@ services:
       - "443:443"
     depends_on:
       backend-api:
-        condition: service_started
+        condition: service_healthy
       priceai:
         condition: service_healthy
 
@@ -51,8 +93,8 @@ services:
     build:
       context: ../../PriceAI
       args:
-        NEXT_PUBLIC_SUPABASE_URL: ${PRICEAI_NEXT_PUBLIC_SUPABASE_URL:?set PRICEAI_NEXT_PUBLIC_SUPABASE_URL}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${PRICEAI_NEXT_PUBLIC_SUPABASE_ANON_KEY:?set PRICEAI_NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set NEXT_PUBLIC_SUPABASE_ANON_KEY}
         NEXT_PUBLIC_UMAMI_ALLOWED_DOMAINS: price.gptsakura.com
     image: priceai-node-standalone:local
     container_name: priceai
@@ -78,6 +120,7 @@ services:
   etcd:
     container_name: milvus-etcd
     image: quay.io/coreos/etcd:v3.5.5
+    restart: unless-stopped
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
       - ETCD_AUTO_COMPACTION_RETENTION=1000
@@ -92,13 +135,15 @@ services:
       - ./volumes/etcd:/etcd
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   minio:
     container_name: milvus-minio
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    restart: unless-stopped
     environment:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
@@ -110,13 +155,15 @@ services:
       - ./volumes/minio:/minio_data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   milvus:
     container_name: milvus-standalone
     image: milvusdb/milvus:v2.4.6
+    restart: unless-stopped
     command: ["milvus", "run", "standalone"]
     environment:
       ETCD_ENDPOINTS: etcd:2379
@@ -127,22 +174,33 @@ services:
       - "19530:19530"
       - "9091:9091"
     depends_on:
-      - etcd
-      - minio
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
 
   attu:
     container_name: milvus-attu
     image: zilliz/attu:v2.4
+    restart: unless-stopped
     ports:
       - "8001:3000"
     environment:
       MILVUS_URL: milvus:19530
     depends_on:
-      - milvus
+      milvus:
+        condition: service_healthy
 
   neo4j:
     container_name: neo4j
     image: neo4j:5.18.0
+    restart: unless-stopped
     ports:
       - "7475:7474"
       - "7688:7687"
@@ -166,6 +224,12 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --innodb_buffer_pool_size=128M
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
@@ -176,8 +240,15 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   mysql_data:
   redis_data:
+  project_catalog_postgres_data:
 

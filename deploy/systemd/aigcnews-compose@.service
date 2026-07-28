@@ -1,0 +1,19 @@
+[Unit]
+Description=AIGCNEWS Compose stack for %i
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=%i
+WorkingDirectory=/home/%i/AIGCNEWS
+EnvironmentFile=/home/%i/AIGCNEWS/.env
+EnvironmentFile=/home/%i/.priceai-node.env
+ExecStart=/home/%i/AIGCNEWS/scripts/manage_main_stack.sh up
+ExecReload=/home/%i/AIGCNEWS/scripts/manage_main_stack.sh up
+TimeoutStartSec=360
+
+[Install]
+WantedBy=multi-user.target
