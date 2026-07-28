@@ -9,6 +9,12 @@ from typing import Any, Iterable, Mapping
 RSS_MAX_ITEMS = 15
 
 
+def parse_rss(content: bytes) -> Any:
+    import feedparser  # type: ignore
+
+    return feedparser.parse(content)
+
+
 def clean_html(text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = html.unescape(text)
@@ -91,6 +97,26 @@ def project_rss_entries(
         )
         rank += 1
     return results
+
+
+_HOMEPAGE_PATTERNS = (
+    re.compile(
+        r'<a[^>]+class="ourHed"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+        re.DOTALL,
+    ),
+    re.compile(
+        r'<strong><a[^>]+href="([^"]+)"[^>]*>(.*?)</a></strong>',
+        re.DOTALL,
+    ),
+)
+
+
+def extract_homepage_matches(page: str) -> list[tuple[str, str]]:
+    return [
+        (match.group(1), match.group(2))
+        for pattern in _HOMEPAGE_PATTERNS
+        for match in pattern.finditer(page)
+    ]
 
 
 def project_homepage_matches(

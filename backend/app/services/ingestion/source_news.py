@@ -29,9 +29,7 @@ RAG 导入设计思路
 """
 
 import logging
-import re
 from datetime import date, datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
 from typing import List, Optional
 
 from backend.app.services.ingestion.sources import news_policy
@@ -41,63 +39,11 @@ logger = logging.getLogger(__name__)
 
 TECHMEME_RSS_URL = "https://www.techmeme.com/feed.xml"
 TECHMEME_HOME_URL = "https://www.techmeme.com/"
+_RSS_MAX_ITEMS = news_policy.RSS_MAX_ITEMS
 
-# Techmeme RSS 官方上限：约 15 条滚动更新条目
-# 这是 Techmeme 的设计限制，不是代码 bug
-_RSS_MAX_ITEMS = 15
-
-
-def _parse_entry_date(entry) -> str:
-    """解析 RSS entry 的发布日期，返回 YYYY-MM-DD 字符串。"""
-    if hasattr(entry, "published_parsed") and entry.published_parsed:
-        t = entry.published_parsed
-        return f"{t.tm_year:04d}-{t.tm_mon:02d}-{t.tm_mday:02d}"
-
-    published = (entry.get("published") or entry.get("updated") or "").strip()
-    if published:
-        try:
-            return parsedate_to_datetime(published).date().isoformat()
-        except Exception:
-            pass
-
-    return ""
-
-
-def _clean_html(text: str) -> str:
-    """去除 HTML 标签和 HTML 实体，保留纯文本。"""
-    text = re.sub(r"<[^>]+>", " ", text)
-    # 解码常见 HTML 实体
-    import html as _html
-
-    text = _html.unescape(text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-
-def _within_period(day_str: str, period: str, anchor: date) -> bool:
-    """判断日期字符串是否在指定周期窗口内。
-
-    daily  → anchor-1 ~ anchor（接受今天和昨天，兼容美东时区差异）
-    weekly → anchor-6 ~ anchor
-    monthly→ anchor-29 ~ anchor
-    """
-    if not day_str:
-        return True
-
-    try:
-        day = datetime.fromisoformat(day_str[:10]).date()
-    except ValueError:
-        return True
-
-    period = (period or "daily").lower().strip()
-    if period == "weekly":
-        start = anchor - timedelta(days=6)
-    elif period == "monthly":
-        start = anchor - timedelta(days=29)
-    else:
-        # daily: 接受今天和昨天，避免美东时区导致当天新闻被过滤
-        start = anchor - timedelta(days=1)
-    return start <= day <= anchor
+_parse_entry_date = news_policy.parse_entry_date
+_clean_html = news_policy.clean_html
+_within_period = news_policy.within_period
 
 
 def _fetch_rss_articles(
@@ -108,13 +54,10 @@ def _fetch_rss_articles(
 ) -> List[dict]:
     """从 Techmeme RSS 采集文章。"""
     try:
-        import feedparser  # type: ignore
+        feed = news_policy.parse_rss(TechmemeTransport().fetch_rss())
     except ImportError:
         logger.error("[News] feedparser 未安装，请执行: pip install feedparser")
         return []
-
-    try:
-        feed = feedparser.parse(TechmemeTransport().fetch_rss())
     except Exception as exc:
         logger.error("[News] 无法获取或解析 Techmeme RSS: %s", exc)
         return []
@@ -160,29 +103,8 @@ def _fetch_homepage_articles(
         )
         return []
 
-    # 解析 Techmeme 主页的新闻条目
-    # Techmeme 的主要新闻标题在 class="topmenu" 和主内容区域
-    # 每个新闻块通常包含一个 strong 标签内的链接
-    results: List[dict] = []
-
-    # 匹配主要新闻标题链接：<a href="..." class="ourHed">标题</a>
-    # Techmeme 使用 class="ourHed" 标记编辑选定的标题
-    patterns = [
-        # 主要标题（ourHed class）
-        re.compile(
-            r'<a[^>]+class="ourHed"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', re.DOTALL
-        ),
-        # 备用模式：strong 内的链接
-        re.compile(r'<strong><a[^>]+href="([^"]+)"[^>]*>(.*?)</a></strong>', re.DOTALL),
-    ]
-
-    matches = (
-        (match.group(1), match.group(2))
-        for pattern in patterns
-        for match in pattern.finditer(html)
-    )
     results = news_policy.project_homepage_matches(
-        matches,
+        news_policy.extract_homepage_matches(html),
         limit=limit,
         period=period,
         anchor=anchor,

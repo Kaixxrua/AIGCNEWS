@@ -22,57 +22,21 @@ source_channel 值：hn_daily_html
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-
-import httpx
 
 from backend.app.services.ingestion.sources import hackernews_policy
 from backend.app.services.ingestion.sources.hackernews_transport import (
     HackerNewsTransport,
+    httpx,
 )
 
 logger = logging.getLogger(__name__)
 
-# HN 官方 Firebase API
 _HN_TOP_STORIES_URL = "https://hacker-news.firebaseio.com/v0/topstories.json"
 _HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item/{item_id}.json"
-
-# 取首页前 30 条
 _TOP_N = 30
-
-# 24 小时时间窗口
 _MAX_AGE_HOURS = 24
-
-# 并发控制（Firebase API 较宽松，可全量并发）
 _SEMAPHORE_LIMIT = 30
-
-
-async def _fetch_item_async(
-    client: httpx.AsyncClient,
-    semaphore: asyncio.Semaphore,
-    item_id: int,
-) -> Optional[Dict[str, Any]]:
-    """异步拉取单个 HN story 详情。"""
-    async with semaphore:
-        try:
-            resp = await client.get(
-                _HN_ITEM_URL.format(item_id=item_id),
-                timeout=10,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if (
-                data
-                and data.get("type") == "story"
-                and not data.get("dead")
-                and not data.get("deleted")
-            ):
-                return data
-            return None
-        except Exception as exc:
-            logger.debug("[HackerNews] 拉取 item %d 失败: %s", item_id, exc)
-            return None
 
 
 async def fetch_hackernews_items_async(
