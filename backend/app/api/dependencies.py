@@ -103,8 +103,8 @@ def get_user_account_repository(
 def get_runtime_provider_setting_repository(
     database: DatabaseLifecycle = Depends(get_database),
 ) -> MySQLRuntimeProviderSettingRepository:
-    """Return runtime model configuration through the compatibility facade."""
-    return MySQLRepository(database=database).runtime_provider_settings
+    """Return runtime model configuration from the application-owned lifecycle."""
+    return MySQLRuntimeProviderSettingRepository(database)
 
 
 def get_conversation_repository(

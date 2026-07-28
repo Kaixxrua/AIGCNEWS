@@ -215,20 +215,19 @@ class DatabaseDependencyTests(unittest.TestCase):
         self.assertIs(result, snapshot_repository)
         repository_type.assert_called_once_with(database=database)
 
-    def test_get_runtime_provider_repository_uses_component(self) -> None:
+    def test_get_runtime_provider_repository_uses_narrow_adapter(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         runtime_repository = MagicMock()
-        repository = MagicMock(runtime_provider_settings=runtime_repository)
 
         with patch.object(
             dependencies,
-            "MySQLRepository",
-            return_value=repository,
+            "MySQLRuntimeProviderSettingRepository",
+            return_value=runtime_repository,
         ) as repository_type:
             result = dependencies.get_runtime_provider_setting_repository(database)
 
         self.assertIs(result, runtime_repository)
-        repository_type.assert_called_once_with(database=database)
+        repository_type.assert_called_once_with(database)
 
     def test_task_repository_dependency_can_be_overridden(self) -> None:
         app = FastAPI()
