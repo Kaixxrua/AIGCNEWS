@@ -14,6 +14,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from backend.app.core.config import settings
 from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.project_write_repository import (
+    GitHubProjectEnrichmentRepository,
+)
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingReader,
 )
@@ -97,7 +100,7 @@ def _model_metadata(reader: RuntimeProviderSettingReader) -> Dict[str, str]:
 class GitHubProjectEnricher:
     def __init__(
         self,
-        db: MySQLRepository | None = None,
+        db: GitHubProjectEnrichmentRepository | None = None,
         *,
         runtime_settings: RuntimeProviderSettingReader | None = None,
     ) -> None:

@@ -7,6 +7,9 @@ from zoneinfo import ZoneInfo
 
 from backend.app.core.config import settings
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.project_write_repository import (
+    GitHubProjectIngestionRepository,
+)
 from backend.app.services.ingestion.source_github import (
     fetch_github_candidate_repos,
     fetch_github_repo_metrics_batch,
@@ -44,7 +47,7 @@ def record_github_trending_hits(
     period: str,
     observed_date: str | None = None,
     captured_at: str | None = None,
-    db: MySQLRepository | None = None,
+    db: GitHubProjectIngestionRepository | None = None,
 ) -> Dict[str, Any]:
     """Persist structured Trending observations and return canonical repo IDs."""
     normalized_period = (period or "daily").lower().strip()

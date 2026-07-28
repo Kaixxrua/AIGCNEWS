@@ -13,6 +13,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from backend.app.core.config import settings
 from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.project_write_repository import (
+    ToolWebsiteEnrichmentRepository,
+)
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingReader,
 )
@@ -85,7 +88,7 @@ def _fallback_description(metadata: ToolWebsiteMetadata) -> str:
 class ToolWebsiteEnricher:
     def __init__(
         self,
-        db: MySQLRepository | None = None,
+        db: ToolWebsiteEnrichmentRepository | None = None,
         *,
         runtime_settings: RuntimeProviderSettingReader | None = None,
     ) -> None:

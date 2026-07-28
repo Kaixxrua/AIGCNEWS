@@ -13,6 +13,9 @@ import httpx
 from backend.app.core.config import settings
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_vector_repo import ProjectVectorChunk, ProjectVectorRepository
+from backend.app.repositories.project_write_repository import (
+    GitHubProjectSemanticSourceRepository,
+)
 from backend.app.services.ingestion.source_github import fetch_github_readme_snapshot
 
 logger = logging.getLogger(__name__)
@@ -94,7 +97,7 @@ class GitHubProjectSemanticIndexer:
     def __init__(
         self,
         *,
-        db: MySQLRepository | None = None,
+        db: GitHubProjectSemanticSourceRepository | None = None,
         vectors: ProjectVectorRepository | None = None,
         embeddings: Any = None,
     ) -> None:
