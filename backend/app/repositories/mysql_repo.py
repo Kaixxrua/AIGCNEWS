@@ -3397,7 +3397,7 @@ class MySQLRepository:
                     ELSE 4
                 END,
                 COALESCE(c.stars, 0) DESC,
-                c.full_name ASC
+                BINARY c.repo_id ASC
             LIMIT %s
         """
         query_params = params + [normalized_query, normalized_query, prefix, prefix, limit]
@@ -3511,9 +3511,9 @@ class MySQLRepository:
         def lane_sql(*, strict: bool) -> str:
             qualification = "term_coverage = %s" if strict else "term_coverage > 0"
             ordering = (
-                "match_strength DESC, stars DESC, full_name ASC"
+                "match_strength DESC, stars DESC, BINARY repo_id ASC"
                 if strict
-                else "term_coverage DESC, match_strength DESC, stars DESC, full_name ASC"
+                else "term_coverage DESC, match_strength DESC, stars DESC, BINARY repo_id ASC"
             )
             return f"""
                 SELECT repo_id, term_coverage, match_strength

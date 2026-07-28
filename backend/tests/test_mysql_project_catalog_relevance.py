@@ -85,6 +85,8 @@ def test_lexical_lanes_are_typed_filtered_and_independently_bounded() -> None:
         assert "100%_safe" not in sql
     assert "term_coverage = %s" in strict_sql
     assert "term_coverage > 0" in relaxed_sql
+    assert "stars DESC, BINARY repo_id ASC" in strict_sql
+    assert "stars DESC, BINARY repo_id ASC" in relaxed_sql
     assert strict_params[-2:] == (3, 150)
     assert relaxed_params[-1] == 150
     connection.commit.assert_called_once_with()

@@ -169,6 +169,7 @@ def test_lexical_lanes_are_typed_filtered_and_independently_bounded() -> None:
     assert "100%_safe" not in sql
     assert "term_coverage = %s" in sql
     assert "term_coverage > 0" in sql
+    assert sql.count('repo_id COLLATE "C" ASC') == 3
     assert params[-3:] == (3, 150, 150)
     assert "%agent%" in params
     assert "%100%" in params

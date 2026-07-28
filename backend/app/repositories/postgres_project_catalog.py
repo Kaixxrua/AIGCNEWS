@@ -109,7 +109,7 @@ class PostgresProjectCatalogRepository:
             LEFT JOIN github_repo_aliases ga ON ga.alias_repo_id=c.repo_id AND ga.canonical_repo_id<>c.repo_id
             WHERE {' AND '.join(filters)}
             ORDER BY CASE WHEN LOWER(c.full_name)=LOWER(%s) THEN 0 WHEN LOWER(COALESCE(c.title,''))=LOWER(%s) THEN 1 WHEN c.full_name ILIKE %s ESCAPE '=' THEN 2 WHEN COALESCE(c.title,'') ILIKE %s ESCAPE '=' THEN 3 ELSE 4 END,
-                COALESCE(c.stars,0) DESC,c.full_name ASC LIMIT %s"""
+                COALESCE(c.stars,0) DESC,c.repo_id COLLATE "C" ASC LIMIT %s"""
         params.extend([normalized_query, normalized_query, prefix, prefix, limit])
         with self._transaction() as connection:
             with connection.cursor() as cursor:
@@ -236,21 +236,21 @@ class PostgresProjectCatalogRepository:
                         repo_id, term_coverage, match_strength, stars, full_name
                  FROM scored
                  WHERE term_coverage = %s
-                 ORDER BY match_strength DESC, stars DESC, full_name ASC
+                 ORDER BY match_strength DESC, stars DESC, repo_id COLLATE "C" ASC
                  LIMIT %s)
                 UNION ALL
                 (SELECT 'relaxed'::text AS lane, 1 AS lane_order,
                         repo_id, term_coverage, match_strength, stars, full_name
                  FROM scored
                  WHERE term_coverage > 0
-                 ORDER BY term_coverage DESC, match_strength DESC, stars DESC, full_name ASC
+                 ORDER BY term_coverage DESC, match_strength DESC, stars DESC, repo_id COLLATE "C" ASC
                  LIMIT %s)
             )
             SELECT lane, repo_id, term_coverage, match_strength
             FROM bounded_lanes
             ORDER BY lane_order,
                      CASE WHEN lane_order = 1 THEN term_coverage END DESC,
-                     match_strength DESC, stars DESC, full_name ASC
+                     match_strength DESC, stars DESC, repo_id COLLATE "C" ASC
         """
         params = tuple(
             filter_params
