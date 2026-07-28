@@ -29,6 +29,7 @@ class TableTransferSpec:
     identity_column: str | None = None
     natural_key_columns: tuple[str, ...] = ()
     text_cursor_columns: tuple[str, ...] = ()
+    json_columns: tuple[str, ...] = ()
 
 
 def _spec(
@@ -45,6 +46,7 @@ def _spec(
     identity_column: str | None = None,
     natural_key_columns: tuple[str, ...] = (),
     text_cursor_columns: tuple[str, ...] = (),
+    json_columns: tuple[str, ...] = (),
 ) -> TableTransferSpec:
     return TableTransferSpec(
         name=name,
@@ -63,6 +65,7 @@ def _spec(
             for column in cursor_columns
             if column in {"repo_id", "alias_repo_id", "metric_date"}
         ),
+        json_columns=json_columns,
     )
 
 
@@ -374,6 +377,8 @@ class ProjectCatalogTransferService:
         config: Any | None = None,
         sleep: Callable[[float], None] = time.sleep,
         random_value: Callable[[], float] = random.random,
+        table_specs: tuple[TableTransferSpec, ...] = TABLE_TRANSFER_SPECS,
+        minimum_schema_version: int = MIN_TRANSFER_SCHEMA_VERSION,
     ) -> None:
         if config is None:
             from backend.app.core.config import settings
@@ -384,6 +389,10 @@ class ProjectCatalogTransferService:
         self._config = config
         self._sleep = sleep
         self._random_value = random_value
+        self._table_specs = tuple(table_specs)
+        if not self._table_specs:
+            raise ValueError("at least one transfer table spec is required")
+        self._minimum_schema_version = int(minimum_schema_version)
 
     def plan(
         self,
@@ -475,7 +484,7 @@ class ProjectCatalogTransferService:
         target = self._inspect_target(target_database, target_schema)
         tables = []
         total_source_rows = 0
-        for spec in TABLE_TRANSFER_SPECS:
+        for spec in self._table_specs:
             source_count = self._source_table_count(spec)
             target_count = self._target_table_count(spec)
             total_source_rows += source_count
@@ -527,7 +536,7 @@ class ProjectCatalogTransferService:
             "batch_size": batch_size,
             "codec_version": 2,
             "source_timezone": source_timezone,
-            "tables": [spec.name for spec in TABLE_TRANSFER_SPECS],
+            "tables": [spec.name for spec in self._table_specs],
         }
         attempts = max(1, min(int(max_attempts), 10))
         for attempt in range(1, attempts + 1):
@@ -562,7 +571,7 @@ class ProjectCatalogTransferService:
     ) -> dict[str, Any]:
         lock_ids = [
             _advisory_lock_id(target_database, target_schema, spec.name)
-            for spec in TABLE_TRANSFER_SPECS
+            for spec in self._table_specs
         ]
         with self._postgres.connection() as connection:
             acquired: list[int] = []
@@ -576,7 +585,7 @@ class ProjectCatalogTransferService:
                 checkpoints = self._ensure_catalog_run_and_checkpoints(
                     connection, job_id=job_id, target=target, options=options
                 )
-                for spec in TABLE_TRANSFER_SPECS:
+                for spec in self._table_specs:
                     checkpoint = checkpoints[spec.name]
                     if checkpoint.status == "completed":
                         continue
@@ -613,12 +622,14 @@ class ProjectCatalogTransferService:
                             rows=rows,
                         )
                         checkpoints[spec.name] = checkpoint
-                sequence_repairs = self._repair_identity_sequences(connection)
+                sequence_repairs = self._repair_identity_sequences(
+                    connection, self._table_specs
+                )
                 self._mark_catalog_completed(connection, job_id)
                 return {
                     "status": "completed",
                     "job_id": job_id,
-                    "tables": [spec.name for spec in TABLE_TRANSFER_SPECS],
+                    "tables": [spec.name for spec in self._table_specs],
                     "rows_processed": sum(
                         checkpoint.rows_processed for checkpoint in checkpoints.values()
                     ),
@@ -760,9 +771,8 @@ class ProjectCatalogTransferService:
         with self._postgres.connection() as connection:
             return self._inspect_target_on_connection(connection, database, schema)
 
-    @staticmethod
     def _inspect_target_on_connection(
-        connection: Any, expected_database: str, expected_schema: str
+        self, connection: Any, expected_database: str, expected_schema: str
     ) -> TargetIdentity:
         if not expected_database.strip() or not expected_schema.strip():
             raise ProjectCatalogTransferSafetyError(
@@ -781,10 +791,10 @@ class ProjectCatalogTransferService:
             raise ProjectCatalogTransferSafetyError(
                 "target database/schema confirmation does not match the active connection"
             )
-        if version < MIN_TRANSFER_SCHEMA_VERSION:
+        if version < self._minimum_schema_version:
             raise ProjectCatalogTransferSafetyError(
                 f"PostgreSQL schema version {version} is below required version "
-                f"{MIN_TRANSFER_SCHEMA_VERSION}"
+                f"{self._minimum_schema_version}"
             )
         return TargetIdentity(database=database, schema=schema, schema_version=version)
 
@@ -1023,7 +1033,7 @@ class ProjectCatalogTransferService:
                         """,
                         (job_id,),
                     )
-                for spec in TABLE_TRANSFER_SPECS:
+                for spec in self._table_specs:
                     cursor.execute(
                         """
                         INSERT INTO project_catalog_migration_checkpoints
@@ -1057,7 +1067,7 @@ class ProjectCatalogTransferService:
                     _row_value(row, "source_prefix_digest_sha256", 5) or "0" * 64
                 ),
             )
-        missing = {spec.name for spec in TABLE_TRANSFER_SPECS} - checkpoints.keys()
+        missing = {spec.name for spec in self._table_specs} - checkpoints.keys()
         if missing:
             raise ProjectCatalogTransferSafetyError(
                 "catalog transfer checkpoint initialization is incomplete"
@@ -1078,7 +1088,10 @@ class ProjectCatalogTransferService:
         prefix_digest = extend_table_prefix_digest(
             checkpoint.source_prefix_digest, spec, rows
         )
-        placeholders = ", ".join(["%s"] * len(spec.columns))
+        placeholders = ", ".join(
+            "%s::jsonb" if column in spec.json_columns else "%s"
+            for column in spec.columns
+        )
         columns = ", ".join(spec.columns)
         conflict_columns = ", ".join(spec.conflict_columns)
         updates = ", ".join(
@@ -1177,11 +1190,14 @@ class ProjectCatalogTransferService:
         return prefix
 
     @staticmethod
-    def _repair_identity_sequences(connection: Any) -> list[dict[str, Any]]:
+    def _repair_identity_sequences(
+        connection: Any,
+        table_specs: tuple[TableTransferSpec, ...] = TABLE_TRANSFER_SPECS,
+    ) -> list[dict[str, Any]]:
         repairs: list[dict[str, Any]] = []
         with connection.transaction():
             with connection.cursor() as cursor:
-                for spec in TABLE_TRANSFER_SPECS:
+                for spec in table_specs:
                     if spec.identity_column is None:
                         continue
                     cursor.execute(

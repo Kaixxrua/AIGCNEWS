@@ -12,9 +12,12 @@ class ApplicationTableTransferSpec:
     dependencies: tuple[str, ...] = ()
     boolean_columns: tuple[str, ...] = ()
     datetime_columns: tuple[str, ...] = ()
-    json_columns: tuple[str, ...] = ()
+    non_null_default_columns: tuple[str, ...] = ()
+    fixed_char_columns: tuple[str, ...] = ()
     identity_column: str | None = None
+    natural_key_columns: tuple[str, ...] = ()
     text_cursor_columns: tuple[str, ...] = ()
+    json_columns: tuple[str, ...] = ()
 
 
 def _spec(
@@ -26,9 +29,12 @@ def _spec(
     dependencies: tuple[str, ...] = (),
     boolean_columns: tuple[str, ...] = (),
     datetime_columns: tuple[str, ...] = (),
-    json_columns: tuple[str, ...] = (),
+    non_null_default_columns: tuple[str, ...] = (),
+    fixed_char_columns: tuple[str, ...] = (),
     identity_column: str | None = None,
+    natural_key_columns: tuple[str, ...] = (),
     text_cursor_columns: tuple[str, ...] = (),
+    json_columns: tuple[str, ...] = (),
 ) -> ApplicationTableTransferSpec:
     return ApplicationTableTransferSpec(
         name=name,
@@ -38,9 +44,12 @@ def _spec(
         dependencies=dependencies,
         boolean_columns=boolean_columns,
         datetime_columns=datetime_columns,
-        json_columns=json_columns,
+        non_null_default_columns=non_null_default_columns,
+        fixed_char_columns=fixed_char_columns,
         identity_column=identity_column,
+        natural_key_columns=natural_key_columns,
         text_cursor_columns=text_cursor_columns,
+        json_columns=json_columns,
     )
 
 
