@@ -70,13 +70,10 @@ const controller = useProjectCatalogController({
 const {
   addToolError, addingTool, categories, categoriesLoading, deletingWebsiteId, editError, errorMsg,
   favoriteBusyKey, isMyCollection, isPersonalView, isViewActive, lastSuccessfulFetchAt, loadCategories,
-  loadPersonalTags, loadProjects, loadTaxonomy, loading, pageSize, personalTags, projects, recommendBusyKey,
-  recommendProject, requiresPersonalLogin, savingEdit, successMsg, tagsLoading, taxonomy, taxonomyLoading,
-  toggleFavorite, total,
+  loadProjects, loadTaxonomy, loading, pageSize, personalTags, projects, recommendBusyKey,
+  recommendProject, refreshReads, removeToolWebsite, requiresPersonalLogin, savingEdit, successMsg, tagsLoading,
+  taxonomy, taxonomyLoading, toggleFavorite, total,
 } = controller
-
-const defaultSortForSource = defaultProjectSortForSource
-const defaultSortForScope = (scopeValue: ProjectScope, sourceValue: ProjectViewSource = source.value) => defaultProjectSortForScope(scopeValue, sourceValue)
 const sourceOptions = computed<SourceOption[]>(() => [
   { value: 'all', label: t('projects.source.allLabel'), hint: t('projects.source.allHint') },
   { value: 'website', label: t('projects.source.websiteLabel'), hint: t('projects.source.websiteHint'), authOnly: true },
@@ -152,12 +149,10 @@ const changeSource = (nextSource: ProjectViewSource) => {
   selectedLanguage.value = ''
   selectedTag.value = ''
   page.value = 1
-  sort.value = defaultSortForSource(nextSource)
+  sort.value = defaultProjectSortForSource(nextSource)
   endStateBatch()
   void replaceRouteFromState(true)
-  void loadCategories()
-  void loadPersonalTags()
-  void loadProjects()
+  void refreshReads()
 }
 const selectScope = (scopeValue: ProjectScope) => {
   if (selectedScope.value === scopeValue && selectedCategory.value === 'all' && selectedSubcategory.value === 'all' && !selectedLanguage.value) return
@@ -166,7 +161,7 @@ const selectScope = (scopeValue: ProjectScope) => {
   selectedSubcategory.value = 'all'
   selectedLanguage.value = ''
   selectedTag.value = ''
-  sort.value = defaultSortForScope(scopeValue)
+  sort.value = defaultProjectSortForScope(scopeValue, source.value)
 }
 const clearLanguageFilter = () => { if (selectedLanguage.value) selectedLanguage.value = '' }
 const selectPersonalTag = (tag: string) => {
@@ -257,31 +252,31 @@ const submitEditWebsite = async (websiteId: string | number, payload: ToolWebsit
 const submitToolWebsite = async (request: string | ManualToolWebsitePayload) => {
   if (await controller.submitToolWebsite(request)) addDialogOpen.value = false
 }
-const removeToolWebsite = (repo: GitHubProjectItem) => controller.removeToolWebsite(repo)
 
 watch([selectedScope, selectedCategory, selectedSubcategory, selectedLanguage, selectedTag, debouncedQuery, sort], resetAndLoad)
 watch(() => route.query, () => {
   if (!isViewActive.value || route.name !== 'github-projects' || isReplacingRoute.value) return
-  if (applyRouteState()) void controller.refreshReads()
+  if (applyRouteState()) void refreshReads()
 }, { deep: true })
 watch(() => authStore.isLoggedIn, (loggedIn) => {
   if (!loggedIn) {
     controller.handleLogout()
     if (isPersonalView.value) { addDialogOpen.value = false; editDialogOpen.value = false; editTarget.value = null; return }
   }
-  void controller.refreshReads()
+  void refreshReads()
 })
 const stopViewReads = () => {
   if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = undefined }
   controller.deactivate()
 }
-const refreshProjectsInBackground = () => controller.refreshReads({ clearSuccess: false, preserveContent: true })
-onMounted(() => { if (applyRouteState()) void controller.refreshReads() })
+onMounted(() => { if (applyRouteState()) void refreshReads() })
 onActivated(() => {
   controller.activate()
   if (!hasActivatedOnce) { hasActivatedOnce = true; return }
   if (searchQuery.value !== debouncedQuery.value) searchTimer = window.setTimeout(() => { debouncedQuery.value = searchQuery.value }, 280)
-  if (Date.now() - lastSuccessfulFetchAt.value >= VIEW_REFRESH_INTERVAL) void refreshProjectsInBackground()
+  if (Date.now() - lastSuccessfulFetchAt.value >= VIEW_REFRESH_INTERVAL) {
+    void refreshReads({ clearSuccess: false, preserveContent: true })
+  }
 })
 onDeactivated(stopViewReads)
 onBeforeUnmount(stopViewReads)

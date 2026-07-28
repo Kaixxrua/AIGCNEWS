@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest'
 import source from './GitHubProjectsView.vue?raw'
 
 describe('GitHub projects view orchestration contract', () => {
-  it('uses the project catalog controller and narrow project service types', () => {
+  it('uses the project catalog controller without request or mutation compatibility wrappers', () => {
     expect(source).toContain("import { useProjectCatalogController } from '../composables/useProjectCatalogController'")
     expect(source).toContain("from '../services/projects/projectApi'")
     expect(source).not.toContain("from '../services/api'")
     expect(source).toContain('const controller = useProjectCatalogController({')
+    expect(source).toContain('recommendProject, refreshReads, removeToolWebsite, requiresPersonalLogin')
+    expect(source).not.toContain('const removeToolWebsite =')
+    expect(source).not.toContain('const refreshProjectsInBackground =')
+    expect(source).not.toContain('const defaultSortForSource =')
+    expect(source).not.toContain('const defaultSortForScope =')
   })
 
   it('shares route state refs with the controller', () => {
@@ -29,7 +34,7 @@ describe('GitHub projects view orchestration contract', () => {
     expect(source).toContain('controller.activate()')
     expect(source).toContain('onDeactivated(stopViewReads)')
     expect(source).toContain('onBeforeUnmount(stopViewReads)')
-    expect(source).toContain('controller.refreshReads({ clearSuccess: false, preserveContent: true })')
+    expect(source).toContain('refreshReads({ clearSuccess: false, preserveContent: true })')
   })
 
   it('closes dialogs only after successful active mutations', () => {
