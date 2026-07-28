@@ -23,6 +23,8 @@ from backend.app.core.auth import (
 from backend.app.repositories.mcp_access_token_repository import McpAccessTokenManager
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.services.auth import account_lifecycle
+from backend.app.services.auth.adapters import build_account_lifecycle
 from backend.app.services.email_service import EmailService, build_email_service
 
 router = APIRouter()
@@ -160,14 +162,12 @@ async def send_password_reset_otp(
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    email = str(body.email).lower()
-    user = await asyncio.to_thread(repository.get_user_by_email, email)
-    email_svc = _get_email_service(request)
-    await email_svc.send_otp(
-        email,
-        purpose="password_reset",
-        deliver=user is not None,
+    lifecycle = build_account_lifecycle(
+        repository=repository,
+        otp=_get_email_service(request),
+        password_hasher=hash_password,
     )
+    await lifecycle.request_password_reset_otp(email=str(body.email))
     return {"detail": "如果该邮箱已注册，验证码将发送至该邮箱"}
 
 
@@ -180,36 +180,27 @@ async def reset_password(
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
-    email = str(body.email).lower()
-    email_svc = _get_email_service(request)
-    verified = await email_svc.verify_otp(
-        email,
-        body.email_code,
-        consume=False,
-        purpose="password_reset",
+    lifecycle = build_account_lifecycle(
+        repository=repository,
+        otp=_get_email_service(request),
+        password_hasher=hash_password,
     )
-
-    user = await asyncio.to_thread(repository.get_user_by_email, email)
-    if not verified or user is None:
+    try:
+        await lifecycle.reset_password(
+            email=str(body.email),
+            email_code=body.email_code,
+            new_password=body.new_password,
+        )
+    except account_lifecycle.InvalidOtp as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="验证码错误或已过期",
-        )
-
-    hashed = hash_password(body.new_password)
-    affected = await asyncio.to_thread(
-        repository.update_user_password,
-        user_id=int(user["id"]),
-        email=email,
-        hashed_password=hashed,
-    )
-    if affected != 1:
+        ) from exc
+    except account_lifecycle.PasswordResetFailed as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="密码重置失败，请稍后重试",
-        )
-
-    await email_svc.consume_otp(email, purpose="password_reset")
+        ) from exc
     return {"detail": "密码重置成功"}
 
 
@@ -227,43 +218,28 @@ async def register(
     3. bcrypt 哈希密码后写库
     4. 消耗验证码
     """
-    # Step 1: 校验邮箱验证码（先不消耗）
-    email_svc = _get_email_service(request)
-    verified = await email_svc.verify_otp(
-        str(body.email), body.email_code, consume=False
+    lifecycle = build_account_lifecycle(
+        repository=repository,
+        otp=_get_email_service(request),
+        password_hasher=hash_password,
     )
-    if not verified:
+    try:
+        result = await lifecycle.register(
+            email=str(body.email),
+            email_code=body.email_code,
+            password=body.password,
+        )
+    except account_lifecycle.InvalidOtp as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="验证码错误或已过期",
-        )
-
-    # Step 2: 检查邮箱是否已注册
-    existing = await asyncio.to_thread(
-        repository.get_user_by_email,
-        str(body.email),
-    )
-    if existing is not None:
+        ) from exc
+    except account_lifecycle.AccountAlreadyExists as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="该邮箱已注册",
-        )
-
-    # Step 3: 哈希密码并写库
-    hashed = hash_password(body.password)
-    new_id = await asyncio.to_thread(
-        repository.create_user_with_email,
-        str(body.email),
-        hashed,
-        "",
-        "user",
-        "",  # username 默认为空
-    )
-
-    # Step 4: 全部成功后消耗验证码
-    await email_svc.consume_otp(str(body.email))
-
-    return {"detail": "注册成功", "user_id": new_id}
+        ) from exc
+    return {"detail": "注册成功", "user_id": result.user_id}
 
 
 @router.post("/auth/login", summary="登录（邮箱 + 密码）")
@@ -277,27 +253,25 @@ async def login(
     - 查库验证邮箱 + 密码
     - 签发 JWT（payload 含 user_id、role、email）
     """
-    user = await asyncio.to_thread(
-        repository.get_user_by_email,
-        str(body.email),
+    lifecycle = build_account_lifecycle(
+        repository=repository,
+        password_verifier=verify_password,
+        token_issuer=create_access_token,
     )
-    if user is None or not verify_password(body.password, user["hashed_password"]):
+    try:
+        result = await lifecycle.login(
+            email=str(body.email),
+            password=body.password,
+        )
+    except account_lifecycle.InvalidCredentials as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="邮箱或密码错误",
-        )
-
-    token = create_access_token(
-        {
-            "user_id": user["id"],
-            "role": user["role"],
-            "email": user["email"],
-        }
-    )
+        ) from exc
     return {
-        "access_token": token,
-        "token_type": "bearer",
-        "role": user["role"],
+        "access_token": result.access_token,
+        "token_type": result.token_type,
+        "role": result.role,
     }
 
 
