@@ -13,7 +13,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.app.core.config import settings
 from backend.app.core.model_factory import get_chat_model
-from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.application_repository_context import (
+    get_configured_application_repositories,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
 )
@@ -104,7 +106,7 @@ class GitHubProjectEnricher:
         *,
         runtime_settings: RuntimeProviderSettingReader | None = None,
     ) -> None:
-        self.db = db or MySQLRepository()
+        self.db = db or get_configured_application_repositories().github_enrichment
         self.llm = get_chat_model(temperature=0)
         self.model_meta = _model_metadata(
             runtime_settings or self.db.runtime_provider_settings
@@ -277,8 +279,9 @@ def enrich_github_projects(
     retry_failed: bool = True,
     refresh_changed: bool = False,
     concurrency: int = 1,
+    db: GitHubProjectEnrichmentRepository | None = None,
 ) -> Dict[str, Any]:
-    return GitHubProjectEnricher().enrich_batch(
+    return GitHubProjectEnricher(db=db).enrich_batch(
         limit=limit,
         force=force,
         dry_run=dry_run,
