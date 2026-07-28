@@ -48,6 +48,7 @@ from backend.app.api.dependencies import (
     get_briefing_repository,
 )
 from backend.app.core.auth import get_mcp_access_token_authenticator
+from backend.app.services.mcp.inbound import catalog, responses
 
 
 PUBLIC_TOOL_NAMES = [
@@ -267,6 +268,33 @@ class McpInboundProtocolTests(unittest.TestCase):
             message="Method not found",
             request_id="unknown",
         )
+
+    def test_catalog_compatibility_aliases_and_registry_pairing(self) -> None:
+        self.assertIs(routes_mcp.MCP_TOOLS, catalog.MCP_TOOLS)
+        self.assertIs(routes_mcp._PRIVATE_MCP_TOOLS, catalog._PRIVATE_MCP_TOOLS)
+        self.assertIs(routes_mcp.MCP_RESOURCES, catalog.MCP_RESOURCES)
+        self.assertIs(routes_mcp.MCP_RESOURCE_TEMPLATES, catalog.MCP_RESOURCE_TEMPLATES)
+        self.assertIs(routes_mcp.MCP_PROMPTS, catalog.MCP_PROMPTS)
+        self.assertIs(routes_mcp._tool_response, responses._tool_response)
+        self.assertIs(routes_mcp._resource_content, responses._resource_content)
+
+        expected_names = [*PUBLIC_TOOL_NAMES, PRIVATE_TOOL_NAME]
+        self.assertEqual(list(routes_mcp.MCP_TOOL_REGISTRY), expected_names)
+        self.assertEqual(set(catalog.MCP_TOOL_DEFINITIONS), set(expected_names))
+        self.assertEqual(set(catalog.MCP_TOOL_INPUT_MODELS), set(expected_names))
+        for name, registration in routes_mcp.MCP_TOOL_REGISTRY.items():
+            with self.subTest(name=name):
+                self.assertIs(
+                    registration["definition"], catalog.MCP_TOOL_DEFINITIONS[name]
+                )
+                self.assertIs(
+                    registration["input_model"], catalog.MCP_TOOL_INPUT_MODELS[name]
+                )
+                self.assertIs(registration["handler"], routes_mcp._TOOL_HANDLERS[name])
+                self.assertEqual(
+                    registration["definition"]["inputSchema"],
+                    registration["input_model"].model_json_schema(),
+                )
 
     def test_public_resources_templates_and_prompts_inventory_order(self) -> None:
         tools = self.rpc("tools/list").json()["result"]["tools"]
