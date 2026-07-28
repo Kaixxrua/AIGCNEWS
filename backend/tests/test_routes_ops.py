@@ -9,12 +9,18 @@ from fastapi.testclient import TestClient
 from backend.app.api import routes_ops
 from backend.app.api.dependencies import (
     get_document_repository,
+    get_github_project_enrichment_repository,
+    get_github_project_recommendation_repository,
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
     get_runtime_provider_setting_repository,
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
+from backend.app.repositories.project_write_repository import (
+    GitHubProjectEnrichmentRepository,
+    GitHubProjectRecommendationRepository,
+)
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingManager,
 )
@@ -265,6 +271,81 @@ class OperationsRouteTests(unittest.TestCase):
 
         self.assertIn(response.status_code, (401, 403))
         repository.list_mcp_server_configs.assert_not_called()
+
+    def test_project_recommendation_routes_use_injected_repository(self) -> None:
+        repository = MagicMock(spec=GitHubProjectRecommendationRepository)
+        repository.recommend_github_project.return_value = {
+            "repo_id": "repo-1",
+            "full_name": "acme/project",
+            "is_recommended": True,
+        }
+        repository.unrecommend_github_project.return_value = {
+            "repo_id": "repo-1",
+            "full_name": "acme/project",
+            "is_recommended": False,
+            "removed": True,
+        }
+        client = self._project_ops_client(recommendations=repository)
+
+        recommended = client.post(
+            "/api/ops/github-projects/recommendations",
+            json={"repo_id": "repo-1"},
+        )
+        removed = client.request(
+            "DELETE",
+            "/api/ops/github-projects/recommendations",
+            json={"full_name": "acme/project"},
+        )
+
+        self.assertEqual(recommended.status_code, 200)
+        self.assertTrue(recommended.json()["is_recommended"])
+        self.assertEqual(removed.status_code, 200)
+        self.assertTrue(removed.json()["removed"])
+        repository.recommend_github_project.assert_called_once_with(
+            repo_id="repo-1",
+            full_name="",
+            recommended_by_user_id=9,
+        )
+        repository.unrecommend_github_project.assert_called_once_with(
+            repo_id=None,
+            full_name="acme/project",
+        )
+
+    def test_project_enrichment_status_uses_injected_repository(self) -> None:
+        repository = MagicMock(spec=GitHubProjectEnrichmentRepository)
+        repository.get_github_project_enrichment_status.return_value = {
+            "total": 12,
+            "enriched": 7,
+        }
+        client = self._project_ops_client(enrichment=repository)
+
+        response = client.get("/api/ops/github-projects/enrichment-status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"total": 12, "enriched": 7})
+        repository.get_github_project_enrichment_status.assert_called_once_with()
+
+    @staticmethod
+    def _project_ops_client(
+        *,
+        recommendations: GitHubProjectRecommendationRepository | None = None,
+        enrichment: GitHubProjectEnrichmentRepository | None = None,
+    ) -> TestClient:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {
+            "role": "admin",
+            "user_id": 9,
+        }
+        if recommendations is not None:
+            app.dependency_overrides[
+                get_github_project_recommendation_repository
+            ] = lambda: recommendations
+        if enrichment is not None:
+            app.dependency_overrides[
+                get_github_project_enrichment_repository
+            ] = lambda: enrichment
+        return TestClient(app)
 
     @staticmethod
     def _provider_client(repository: RuntimeProviderSettingManager) -> TestClient:

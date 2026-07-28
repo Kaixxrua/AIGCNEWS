@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 
 from backend.app.api.dependencies import (
     get_document_repository,
+    get_github_project_enrichment_repository,
+    get_github_project_recommendation_repository,
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
     get_mysql_repository,
@@ -20,6 +22,10 @@ from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.document_repository import DocumentAdminWriter
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.project_write_repository import (
+    GitHubProjectEnrichmentRepository,
+    GitHubProjectRecommendationRepository,
+)
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingManager,
 )
@@ -757,20 +763,20 @@ async def enrich_github_project_library(
 async def recommend_github_project(
     request: GitHubProjectRecommendRequest,
     user: dict = Depends(RequireAdmin),
+    repository: GitHubProjectRecommendationRepository = Depends(
+        get_github_project_recommendation_repository
+    ),
 ) -> GitHubProjectRecommendResponse:
     """将 GitHub 项目加入站长推荐。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
     raw_user_id = user.get("user_id") or user.get("id") or user.get("sub") if isinstance(user, dict) else None
     try:
         admin_user_id = int(raw_user_id) if raw_user_id else None
     except (TypeError, ValueError):
         admin_user_id = None
 
-    db = MySQLRepository()
     try:
         result = await asyncio.to_thread(
-            db.recommend_github_project,
+            repository.recommend_github_project,
             repo_id=request.repo_id,
             full_name=request.full_name,
             recommended_by_user_id=admin_user_id,
@@ -790,14 +796,14 @@ async def recommend_github_project(
 async def unrecommend_github_project(
     request: GitHubProjectRecommendRequest,
     _: dict = Depends(RequireAdmin),
+    repository: GitHubProjectRecommendationRepository = Depends(
+        get_github_project_recommendation_repository
+    ),
 ) -> GitHubProjectRecommendResponse:
     """取消 GitHub 项目的站长推荐。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
     try:
         result = await asyncio.to_thread(
-            db.unrecommend_github_project,
+            repository.unrecommend_github_project,
             repo_id=request.repo_id,
             full_name=request.full_name,
         )
@@ -810,12 +816,16 @@ async def unrecommend_github_project(
 
 
 @router.get("/ops/github-projects/enrichment-status", tags=["Ops"])
-async def github_project_enrichment_status(_: dict = Depends(RequireAdmin)):
+async def github_project_enrichment_status(
+    _: dict = Depends(RequireAdmin),
+    repository: GitHubProjectEnrichmentRepository = Depends(
+        get_github_project_enrichment_repository
+    ),
+):
     """查看 GitHub 项目库富化进度。"""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    return await asyncio.to_thread(db.get_github_project_enrichment_status)
+    return await asyncio.to_thread(
+        repository.get_github_project_enrichment_status
+    )
 
 
 @router.post(
