@@ -135,20 +135,19 @@ class DatabaseDependencyTests(unittest.TestCase):
         self.assertIs(result, token_repository)
         repository_type.assert_called_once_with(database=database)
 
-    def test_get_user_account_repository_uses_component(self) -> None:
+    def test_get_user_account_repository_uses_narrow_adapter(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         account_repository = MagicMock()
-        repository = MagicMock(user_accounts=account_repository)
 
         with patch.object(
             dependencies,
-            "MySQLRepository",
-            return_value=repository,
+            "MySQLUserAccountRepository",
+            return_value=account_repository,
         ) as repository_type:
             result = dependencies.get_user_account_repository(database)
 
         self.assertIs(result, account_repository)
-        repository_type.assert_called_once_with(database=database)
+        repository_type.assert_called_once_with(database)
 
     def test_get_conversation_repository_uses_component(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)

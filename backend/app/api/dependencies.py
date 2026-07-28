@@ -96,8 +96,8 @@ def get_mcp_access_token_repository(
 def get_user_account_repository(
     database: DatabaseLifecycle = Depends(get_database),
 ) -> MySQLUserAccountRepository:
-    """Return user account persistence through the compatibility facade."""
-    return MySQLRepository(database=database).user_accounts
+    """Return user account persistence from the application-owned lifecycle."""
+    return MySQLUserAccountRepository(database)
 
 
 def get_runtime_provider_setting_repository(
