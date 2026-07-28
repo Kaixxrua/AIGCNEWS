@@ -181,9 +181,19 @@ def main(argv: list[str] | None = None) -> int:
     from fastapi.testclient import TestClient
     from backend.app.core.auth import RequireAdmin
     from backend.app import main as application
+    from backend.app.api import routes_report
+
+    async def deterministic_briefing_stream(*args: Any, **kwargs: Any):
+        yield "data: " + json.dumps(
+            {"type": "progress", "data": "rehearsal"},
+            separators=(",", ":"),
+        ) + "\n\n"
+        yield "data: [DONE]\n\n"
 
     application.start_scheduler = lambda: None
     application.stop_scheduler = lambda: None
+    original_briefing_stream = routes_report._briefing_stream
+    routes_report._briefing_stream = deterministic_briefing_stream
     application.app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin", "id": 0}
     try:
         with TestClient(application.app) as client:
@@ -195,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
                 shadow = response.json()
     finally:
         application.app.dependency_overrides.pop(RequireAdmin, None)
+        routes_report._briefing_stream = original_briefing_stream
 
     failures = [case["case_id"] for case in cases if case["status_code"] != 200]
     mismatch_count = len(failures)
