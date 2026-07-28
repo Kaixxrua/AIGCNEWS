@@ -14,12 +14,12 @@ SEMAPHORE_LIMIT = 30
 class HackerNewsTransport:
     def __init__(
         self,
-        client_factory: Callable[..., Any] = httpx.AsyncClient,
+        client_factory: Callable[..., Any] | None = None,
         *,
         top_n: int = TOP_N,
         semaphore_limit: int = SEMAPHORE_LIMIT,
     ) -> None:
-        self._client_factory = client_factory
+        self._client_factory = client_factory or httpx.AsyncClient
         self._top_n = top_n
         self._semaphore_limit = semaphore_limit
 

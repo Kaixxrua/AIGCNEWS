@@ -34,6 +34,9 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import List, Optional
 
+from backend.app.services.ingestion.sources import news_policy
+from backend.app.services.ingestion.sources.news_transport import TechmemeTransport
+
 logger = logging.getLogger(__name__)
 
 TECHMEME_RSS_URL = "https://www.techmeme.com/feed.xml"
@@ -103,11 +106,7 @@ def _fetch_rss_articles(
     anchor: date,
     source_channel: str,
 ) -> List[dict]:
-    """从 Techmeme RSS 采集文章。
-
-    ⚠️ Techmeme RSS 单次最多返回约 15 条（官方限制），
-    这不是代码层面的 bug，而是数据源本身的约束。
-    """
+    """从 Techmeme RSS 采集文章。"""
     try:
         import feedparser  # type: ignore
     except ImportError:
@@ -115,71 +114,23 @@ def _fetch_rss_articles(
         return []
 
     try:
-        import httpx
-
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            ),
-        }
-        with httpx.Client(timeout=20, follow_redirects=True, headers=headers) as client:
-            response = client.get(TECHMEME_RSS_URL)
-            response.raise_for_status()
-        feed = feedparser.parse(response.content)
+        feed = feedparser.parse(TechmemeTransport().fetch_rss())
     except Exception as exc:
         logger.error("[News] 无法获取或解析 Techmeme RSS: %s", exc)
         return []
 
-    total_entries = len(feed.entries)
     logger.info(
         "[News] Techmeme RSS 返回 %d 条条目（官方上限约 %d 条）",
-        total_entries,
+        len(feed.entries),
         _RSS_MAX_ITEMS,
     )
-
-    results: List[dict] = []
-    rank = 1
-
-    for entry in feed.entries[:_RSS_MAX_ITEMS]:
-        if len(results) >= limit:
-            break
-
-        title = entry.get("title", "").strip()
-        if not title:
-            continue
-
-        raw_summary = entry.get("summary", "") or entry.get("description", "") or ""
-        summary = _clean_html(raw_summary)[:600]
-
-        url = entry.get("link", "")
-        published = _parse_entry_date(entry)
-
-        if not _within_period(published, period, anchor):
-            rank += 1
-            continue
-
-        results.append(
-            {
-                "title": title,
-                "abstract": summary,
-                "summary": summary,
-                "url": url,
-                "pdf_url": "",
-                "source": "news",
-                "source_channel": source_channel,
-                "channel": source_channel,
-                "score": 2.0,
-                "raw_score": 2.0,
-                "rank_in_period": rank,
-                "tags": ["Techmeme", period],
-                "published_date": published,
-                "feed_name": "Techmeme",
-            }
-        )
-        rank += 1
-
-    return results
+    return news_policy.project_rss_entries(
+        feed.entries,
+        limit=limit,
+        period=period,
+        anchor=anchor,
+        source_channel=source_channel,
+    )
 
 
 def _fetch_homepage_articles(
@@ -194,21 +145,8 @@ def _fetch_homepage_articles(
     解析 Techmeme 主页的新闻标题和链接，获取 RSS 未覆盖的条目。
     Techmeme 主页通常包含 30-50 条新闻。
     """
-    import httpx
-
     try:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-        with httpx.Client(timeout=20, follow_redirects=True, headers=headers) as client:
-            resp = client.get(TECHMEME_HOME_URL)
-            resp.raise_for_status()
-            html = resp.text
+        html = TechmemeTransport().fetch_homepage()
     except Exception as exc:
         logger.warning(
             "[News] Techmeme 主页抓取失败（非致命，RSS 数据仍可用）: %s", exc
@@ -238,47 +176,19 @@ def _fetch_homepage_articles(
         re.compile(r'<strong><a[^>]+href="([^"]+)"[^>]*>(.*?)</a></strong>', re.DOTALL),
     ]
 
-    seen_urls = set(existing_urls)
-    rank_offset = len(existing_urls) + 1
-
-    for pattern in patterns:
-        for m in pattern.finditer(html):
-            if len(results) >= limit:
-                break
-
-            url = m.group(1).strip()
-            title = _clean_html(m.group(2)).strip()
-
-            if not title or not url:
-                continue
-
-            # 跳过已在 RSS 中出现的 URL
-            if url in seen_urls:
-                continue
-            seen_urls.add(url)
-
-            # 跳过 Techmeme 内部链接
-            if "techmeme.com" in url:
-                continue
-
-            results.append(
-                {
-                    "title": title,
-                    "abstract": title,  # 主页没有摘要，用标题代替
-                    "summary": title,
-                    "url": url,
-                    "pdf_url": "",
-                    "source": "news",
-                    "source_channel": source_channel,
-                    "channel": source_channel,
-                    "score": 1.5,  # 主页补充数据分数略低于 RSS
-                    "raw_score": 1.5,
-                    "rank_in_period": rank_offset + len(results),
-                    "tags": ["Techmeme", period, "html"],
-                    "published_date": anchor.isoformat(),  # 主页无精确时间，用 anchor 日期
-                    "feed_name": "Techmeme",
-                }
-            )
+    matches = (
+        (match.group(1), match.group(2))
+        for pattern in patterns
+        for match in pattern.finditer(html)
+    )
+    results = news_policy.project_homepage_matches(
+        matches,
+        limit=limit,
+        period=period,
+        anchor=anchor,
+        source_channel=source_channel,
+        existing_urls=existing_urls,
+    )
 
     logger.info(
         "[News] Techmeme 主页 HTML 额外提取 %d 条（去重后，排除 RSS 已有的 %d 条）",

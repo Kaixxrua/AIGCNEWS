@@ -27,6 +27,11 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from backend.app.services.ingestion.sources import hackernews_policy
+from backend.app.services.ingestion.sources.hackernews_transport import (
+    HackerNewsTransport,
+)
+
 logger = logging.getLogger(__name__)
 
 # HN 官方 Firebase API
@@ -93,105 +98,42 @@ async def fetch_hackernews_items_async(
     source_channel = "hn_daily_html"
     now_ts = time.time()
 
-    # Step 1: 获取 topstories ID 列表（前 30）
+    adapter = HackerNewsTransport()
     try:
-        async with httpx.AsyncClient(
-            timeout=15, trust_env=True, follow_redirects=True
-        ) as client:
-            resp = await client.get(_HN_TOP_STORIES_URL)
-            resp.raise_for_status()
-            all_ids = resp.json()
+        top_ids = await adapter.fetch_top_ids()
     except Exception as exc:
         logger.error("[HackerNews] 获取 topstories 失败: %s", exc)
         return []
-
-    if not all_ids or not isinstance(all_ids, list):
-        logger.error("[HackerNews] topstories 返回数据异常: %s", type(all_ids))
+    if not top_ids:
+        logger.error("[HackerNews] topstories 返回数据异常: %s", list)
         return []
-
-    top_ids = all_ids[:_TOP_N]
     logger.info("[HackerNews] 获取 topstories 前 %d 个 ID", len(top_ids))
 
-    # Step 2: asyncio.gather 并发拉取每个 story 详情
-    semaphore = asyncio.Semaphore(_SEMAPHORE_LIMIT)
-    async with httpx.AsyncClient(
-        timeout=10, trust_env=True, follow_redirects=True
-    ) as client:
-        tasks = [_fetch_item_async(client, semaphore, item_id) for item_id in top_ids]
-        raw_results = await asyncio.gather(*tasks)
-
-    stories: List[Dict[str, Any]] = [r for r in raw_results if r is not None]
-
+    raw_results = await adapter.fetch_items(top_ids)
+    stories = [
+        story
+        for story in raw_results
+        if hackernews_policy.is_story(story)
+    ]
     logger.info(
         "[HackerNews] 成功拉取 %d / %d 条 story 详情（async 并发）",
         len(stories),
         len(top_ids),
     )
 
-    # Step 3: 24 小时时间过滤
-    cutoff_ts = now_ts - (_MAX_AGE_HOURS * 3600)
-    filtered: List[Dict[str, Any]] = []
-    for story in stories:
-        story_time = story.get("time", 0)
-        if story_time >= cutoff_ts:
-            filtered.append(story)
-        else:
-            logger.debug(
-                "[HackerNews] 排除超24h帖子: id=%s title='%s' age=%.1fh",
-                story.get("id"),
-                (story.get("title") or "")[:50],
-                (now_ts - story_time) / 3600,
-            )
-
+    filtered = hackernews_policy.filter_recent_stories(stories, now_ts=now_ts)
     logger.info(
         "[HackerNews] 24h 过滤: %d → %d 条（排除 %d 条超时帖子）",
         len(stories),
         len(filtered),
         len(stories) - len(filtered),
     )
-
-    # Step 4: 按 score (Points) 严格降序排列
-    filtered.sort(key=lambda x: int(x.get("score", 0)), reverse=True)
-
-    # Step 5: 截取 limit 条，构造标准化输出，赋予 rank_in_period
-    results: List[Dict[str, Any]] = []
-    for rank, story in enumerate(filtered[:limit], start=1):
-        hn_id = str(story.get("id", ""))
-        url = story.get("url") or f"https://news.ycombinator.com/item?id={hn_id}"
-        points = int(story.get("score", 0))
-        comments = int(story.get("descendants", 0))
-        story_time = story.get("time", 0)
-
-        # published_date 使用 story 的发布时间（UTC）
-        published_date = ""
-        if story_time:
-            try:
-                published_date = datetime.fromtimestamp(
-                    story_time, tz=timezone.utc
-                ).strftime("%Y-%m-%d")
-            except Exception:
-                pass
-
-        results.append(
-            {
-                "title": story.get("title", ""),
-                "url": url,
-                "abstract": story.get("title", ""),
-                "summary": story.get("title", ""),
-                "source": "hackernews",
-                "source_channel": source_channel,
-                "channel": source_channel,
-                "score": float(points),
-                "raw_score": float(points),
-                "votes": points,
-                "comments": comments,
-                "published_date": published_date,
-                "hn_id": hn_id,
-                "author": story.get("by", ""),
-                "rank_in_period": rank,
-                "tags": ["hackernews", "daily", "top30"],
-            }
-        )
+    ordered = hackernews_policy.sort_by_score(filtered)
+    results = hackernews_policy.project_stories(
+        ordered,
+        limit=limit,
+        source_channel=source_channel,
+    )
 
     logger.info(
         "[HackerNews] 最终返回 %d 条（Top score: %s, Min score: %s）",

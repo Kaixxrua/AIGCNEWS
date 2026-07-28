@@ -23,9 +23,9 @@ _HOME_HEADERS = {
 class TechmemeTransport:
     def __init__(
         self,
-        client_factory: Callable[..., Any] = httpx.Client,
+        client_factory: Callable[..., Any] | None = None,
     ) -> None:
-        self._client_factory = client_factory
+        self._client_factory = client_factory or httpx.Client
 
     def fetch_rss(self) -> bytes:
         with self._client_factory(
