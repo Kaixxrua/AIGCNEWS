@@ -6,9 +6,13 @@ from typing import Any, Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from backend.app.api.dependencies import get_user_project_collection_repository
 from backend.app.core.auth import OptionalUser, RequireUser
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
+from backend.app.repositories.project_write_repository import (
+    UserProjectCollectionRepository,
+)
 from backend.app.services.project_discovery import resolve_project_sort
 
 router = APIRouter()
@@ -434,19 +438,21 @@ async def list_my_project_collection(
     page_size: int = Query(default=24, ge=1, le=60),
     sort: GitHubProjectSort = Query(default="recent"),
     user: dict[str, Any] = Depends(RequireUser),
+    repository: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
 ) -> GitHubProjectsResponse:
     """当前登录用户的个人收藏夹；默认只返回 GitHub 项目收藏，source=website 返回个人网页。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     min_stars = 500
-    db = MySQLRepository()
     clean_category = category.strip()
     clean_subcategory = subcategory.strip()
     clean_q = q.strip()
     clean_tag = tag.strip()
     result = await asyncio.to_thread(
-        db.list_user_project_collection,
+        repository.list_user_project_collection,
         user_id=user_id,
         source="github" if source == "all" else source,
         scope=scope,
@@ -477,15 +483,17 @@ async def list_my_project_collection(
 async def list_my_project_categories(
     source: ProjectSource = Query(default="all"),
     user: dict[str, Any] = Depends(RequireUser),
+    repository: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
 ) -> GitHubProjectCategoriesResponse:
     """当前登录用户个人收藏夹分类；默认只统计 GitHub 收藏，source=website 统计个人网页。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     min_stars = 500
-    db = MySQLRepository()
     result = await asyncio.to_thread(
-        db.get_user_project_categories,
+        repository.get_user_project_categories,
         user_id=user_id,
         source="github" if source == "all" else source,
         min_stars=min_stars,
@@ -498,15 +506,17 @@ async def list_my_project_categories(
 async def list_my_project_tags(
     source: ProjectSource = Query(default="github"),
     user: dict[str, Any] = Depends(RequireUser),
+    repository: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
 ) -> GitHubProjectTagsResponse:
     """当前登录用户个人收藏夹真实标签；不返回预制分类或默认标签。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     effective_source = "website" if source == "website" else "github"
-    db = MySQLRepository()
     result = await asyncio.to_thread(
-        db.get_user_project_tags,
+        repository.get_user_project_tags,
         user_id=user_id,
         source=effective_source,
         min_stars=500,
@@ -523,15 +533,17 @@ async def list_my_project_tags(
 async def favorite_project(
     request: ProjectFavoriteRequest,
     user: dict[str, Any] = Depends(RequireUser),
+    repository: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
 ) -> ProjectFavoriteResponse:
     """收藏 GitHub 项目或工具网站到当前用户收藏夹。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
-    db = MySQLRepository()
     try:
         result = await asyncio.to_thread(
-            db.add_project_favorite,
+            repository.add_project_favorite,
             user_id=user_id,
             source=request.source,
             repo_id=request.repo_id,
@@ -551,12 +563,14 @@ async def unfavorite_project(
     repo_id: str | None = Query(default=None),
     website_id: str | None = Query(default=None),
     user: dict[str, Any] = Depends(RequireUser),
+    repository: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
 ) -> ProjectFavoriteResponse:
     """从当前用户收藏夹取消收藏 GitHub 项目或工具网站。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
-    db = MySQLRepository()
     try:
         favorite_request = _favorite_request_from_inputs(
             request,
@@ -565,7 +579,7 @@ async def unfavorite_project(
             website_id=website_id,
         )
         deleted = await asyncio.to_thread(
-            db.remove_project_favorite,
+            repository.remove_project_favorite,
             user_id=user_id,
             source=favorite_request.source,
             repo_id=favorite_request.repo_id,
@@ -729,12 +743,14 @@ async def update_my_tool_website(
     website_id: int,
     request: ToolWebsiteUpdateRequest,
     user: dict[str, Any] = Depends(RequireUser),
+    repository: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
 ) -> ToolWebsiteUpdateResponse:
     """手动编辑当前用户自己的网页收藏卡片信息，不修改全局网站元数据。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
-    db = MySQLRepository()
     try:
         payload = _tool_website_override_payload(
             user_id=user_id,
@@ -747,7 +763,10 @@ async def update_my_tool_website(
             tags=request.tags,
             image_url=request.image_url,
         )
-        item = await asyncio.to_thread(db.upsert_user_tool_website_override, payload)
+        item = await asyncio.to_thread(
+            repository.upsert_user_tool_website_override,
+            payload,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LookupError as exc:
@@ -759,13 +778,19 @@ async def update_my_tool_website(
 async def remove_my_tool_website(
     website_id: int,
     user: dict[str, Any] = Depends(RequireUser),
+    repository: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
 ) -> ToolWebsiteDeleteResponse:
     """只把工具网站移出当前用户收藏夹，不删除全局工具库。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
-    db = MySQLRepository()
-    deleted = await asyncio.to_thread(db.unlink_user_tool_website, user_id=user_id, website_id=website_id)
+    deleted = await asyncio.to_thread(
+        repository.unlink_user_tool_website,
+        user_id=user_id,
+        website_id=website_id,
+    )
     if not deleted:
         raise HTTPException(status_code=404, detail="该工具网站不在你的收藏夹中")
     return ToolWebsiteDeleteResponse(status="succeeded", message="已移出我的收藏。", deleted=True, website_id=website_id)
