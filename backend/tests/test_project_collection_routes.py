@@ -10,7 +10,7 @@ from backend.app.api.dependencies import (
     get_tool_website_enrichment_repository,
     get_user_project_collection_repository,
 )
-from backend.app.core.auth import RequireUser
+from backend.app.core.auth import OptionalUser, RequireUser
 from backend.app.repositories.project_write_repository import (
     ToolWebsiteEnrichmentRepository,
     UserProjectCollectionRepository,
@@ -32,6 +32,42 @@ def _client(
             get_tool_website_enrichment_repository
         ] = lambda: enrichment
     return TestClient(app)
+
+
+def test_legacy_github_projects_route_uses_catalog_repository(monkeypatch) -> None:
+    repository = MagicMock()
+    repository.list_projects.return_value = {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "page_size": 24,
+    }
+    monkeypatch.setattr(
+        routes_github_projects,
+        "get_project_catalog_repository",
+        MagicMock(return_value=repository),
+    )
+    app = FastAPI()
+    app.include_router(routes_github_projects.router, prefix="/api")
+    app.dependency_overrides[OptionalUser] = lambda: None
+
+    response = TestClient(app).get("/api/github/projects?q=agent")
+
+    assert response.status_code == 200
+    repository.list_projects.assert_called_once_with(
+        source="github",
+        scope="all",
+        category="",
+        subcategory="",
+        q="agent",
+        language="",
+        page=1,
+        page_size=24,
+        sort="stars",
+        min_stars=500,
+        enriched_only=True,
+        user_id=None,
+    )
 
 
 def test_collection_routes_use_injected_repository() -> None:

@@ -11,7 +11,6 @@ from backend.app.api.dependencies import (
     get_user_project_collection_repository,
 )
 from backend.app.core.auth import OptionalUser, RequireUser
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.repositories.project_write_repository import (
     ToolWebsiteEnrichmentRepository,
@@ -831,9 +830,11 @@ async def list_github_projects(
 ) -> GitHubProjectsResponse:
     """收藏夹式 GitHub 项目库：历史项目、stars > 500、AI 分类与中文描述。"""
     min_stars = 500
-    db = MySQLRepository()
+    db = get_project_catalog_repository()
     result = await asyncio.to_thread(
-        db.list_github_projects,
+        db.list_projects,
+        source="github",
+        scope="all",
         category=category.strip(),
         subcategory=subcategory.strip(),
         q=q.strip(),
@@ -843,6 +844,7 @@ async def list_github_projects(
         sort=sort,
         min_stars=min_stars,
         enriched_only=True,
+        user_id=None,
     )
     return GitHubProjectsResponse(
         items=result["items"],
