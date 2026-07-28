@@ -25,6 +25,11 @@ from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingManager,
 )
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
+from backend.app.services.runtime_provider.control_plane import (
+    RuntimeProviderUpdate,
+    mask_api_key,
+    project_provider_config,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -204,27 +209,6 @@ class McpServerTestResponse(BaseModel):
     tools: list[McpToolSummary] = Field(default_factory=list)
 
 
-def _mask_api_key(api_key: Optional[str]) -> Optional[str]:
-    if not api_key:
-        return None
-    if len(api_key) <= 8:
-        return "****"
-    return f"{api_key[:4]}****{api_key[-4:]}"
-
-
-def _provider_config_response(row: Optional[dict], provider: str) -> ProviderConfigResponse:
-    api_key = row.get("api_key") if row else None
-    updated_at = row.get("updated_at") if row else None
-    return ProviderConfigResponse(
-        provider=(row.get("provider") if row else provider),
-        base_url=(row.get("base_url") if row else "") or "",
-        model_name=(row.get("model_name") if row else "") or "",
-        api_key_configured=bool(api_key),
-        api_key_masked=_mask_api_key(api_key),
-        updated_at=str(updated_at) if updated_at else None,
-    )
-
-
 def _parse_mcp_tools(raw_value: Any) -> list[McpToolSummary]:
     if not raw_value:
         return []
@@ -263,7 +247,7 @@ def _mcp_server_config_response(row: dict) -> McpServerConfigResponse:
         transport=(row.get("transport") or "streamable_http"),
         auth_type=(row.get("auth_type") or "none"),
         auth_token_configured=bool(auth_token),
-        auth_token_masked=_mask_api_key(auth_token),
+        auth_token_masked=mask_api_key(auth_token),
         enabled=bool(row.get("enabled")),
         last_test_status=(row.get("last_test_status") or "unknown"),
         last_test_message=(row.get("last_test_message") or ""),
@@ -422,7 +406,10 @@ async def get_provider_config(
 ) -> ProviderConfigResponse:
     """读取唯一的运行时模型配置。响应只返回密钥是否已配置与脱敏值。"""
     row = await asyncio.to_thread(repository.get_runtime_provider_setting)
-    return _provider_config_response(row, "openai")
+    return ProviderConfigResponse.model_validate(
+        project_provider_config(row, fallback_provider="openai"),
+        from_attributes=True,
+    )
 
 
 @router.put("/ops/provider-config", response_model=ProviderConfigResponse, tags=["Ops"])
@@ -434,15 +421,19 @@ async def update_provider_config(
     ),
 ) -> ProviderConfigResponse:
     """更新唯一的运行时模型配置。api_key 留空时保留原值，clear_api_key=true 时清空。"""
+    update = RuntimeProviderUpdate.from_values(**request.model_dump())
     row = await asyncio.to_thread(
         repository.upsert_runtime_provider_setting,
-        request.provider,
-        request.base_url,
+        update.provider,
+        update.base_url,
         request.api_key,
-        request.clear_api_key,
-        request.model_name,
+        update.clear_api_key,
+        update.model_name,
     )
-    return _provider_config_response(row, request.provider)
+    return ProviderConfigResponse.model_validate(
+        project_provider_config(row, fallback_provider=update.provider),
+        from_attributes=True,
+    )
 
 
 # ── MCP Server 配置 ──────────────────────────────────────────────────────────
