@@ -6,11 +6,15 @@ from typing import Any, Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.app.api.dependencies import get_user_project_collection_repository
+from backend.app.api.dependencies import (
+    get_tool_website_enrichment_repository,
+    get_user_project_collection_repository,
+)
 from backend.app.core.auth import OptionalUser, RequireUser
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.repositories.project_write_repository import (
+    ToolWebsiteEnrichmentRepository,
     UserProjectCollectionRepository,
 )
 from backend.app.services.project_discovery import resolve_project_sort
@@ -604,6 +608,12 @@ async def unfavorite_project(
 async def add_my_tool_website(
     request: ToolWebsiteAddRequest,
     user: dict[str, Any] = Depends(RequireUser),
+    enrichment: ToolWebsiteEnrichmentRepository = Depends(
+        get_tool_website_enrichment_repository
+    ),
+    collection: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
 ) -> ToolWebsiteAddResponse:
     """普通用户自动添加工具网站到自己的收藏夹。"""
     user_id = _user_id(user)
@@ -618,7 +628,7 @@ async def add_my_tool_website(
 
     try:
         result = await asyncio.to_thread(
-            lambda: ToolWebsiteEnricher().add_and_enrich(
+            lambda: ToolWebsiteEnricher(enrichment).add_and_enrich(
                 url,
                 added_by_user_id=user_id,
                 visibility="private",
@@ -627,15 +637,14 @@ async def add_my_tool_website(
         item = result.get("item") or {}
         website_id = item.get("website_id")
         if website_id:
-            db = MySQLRepository()
             link_state = await asyncio.to_thread(
-                db.link_user_tool_website,
+                collection.link_user_tool_website,
                 user_id=user_id,
                 website_id=int(website_id),
                 added_via="existing" if result.get("duplicate") else "auto",
             )
             item = await asyncio.to_thread(
-                db.get_tool_website_item_for_user,
+                collection.get_tool_website_item_for_user,
                 user_id=user_id,
                 website_id=int(website_id),
             )
@@ -668,6 +677,12 @@ async def add_my_tool_website(
 async def add_my_tool_website_manual(
     request: ToolWebsiteManualAddRequest,
     user: dict[str, Any] = Depends(RequireUser),
+    enrichment: ToolWebsiteEnrichmentRepository = Depends(
+        get_tool_website_enrichment_repository
+    ),
+    collection: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
 ) -> ToolWebsiteAddResponse:
     """普通用户手动添加工具网站到自己的收藏夹。"""
     user_id = _user_id(user)
@@ -688,7 +703,7 @@ async def add_my_tool_website_manual(
 
     try:
         result = await asyncio.to_thread(
-            lambda: ToolWebsiteEnricher().add_manual(
+            lambda: ToolWebsiteEnricher(enrichment).add_manual(
                 url=url,
                 title=title,
                 description_zh=description_zh,
@@ -702,9 +717,8 @@ async def add_my_tool_website_manual(
         item = result.get("item") or {}
         website_id = item.get("website_id")
         if website_id:
-            db = MySQLRepository()
             link_state = await asyncio.to_thread(
-                db.link_user_tool_website,
+                collection.link_user_tool_website,
                 user_id=user_id,
                 website_id=int(website_id),
                 added_via="manual",
@@ -719,7 +733,10 @@ async def add_my_tool_website_manual(
                 tags=request.tags,
                 description=description_zh,
             )
-            item = await asyncio.to_thread(db.upsert_user_tool_website_override, override_payload)
+            item = await asyncio.to_thread(
+                collection.upsert_user_tool_website_override,
+                override_payload,
+            )
             if item:
                 item.update(link_state)
     except ToolWebsiteFetchError as exc:
