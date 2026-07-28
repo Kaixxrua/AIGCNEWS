@@ -1,0 +1,22 @@
+services:
+  postgres-backup-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: source_db
+      POSTGRES_USER: aigcnews_test
+      POSTGRES_PASSWORD: aigcnews_test
+    ports:
+      - "127.0.0.1:55433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - "${AIGCNEWS_PROJECT_ROOT:?set AIGCNEWS_PROJECT_ROOT}:/workspace:ro"
+      - "${AIGCNEWS_BACKUP_ARTIFACTS:?set AIGCNEWS_BACKUP_ARTIFACTS}:/artifacts"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aigcnews_test -d source_db"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+    security_opt:
+      - no-new-privileges:true
