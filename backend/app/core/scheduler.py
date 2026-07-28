@@ -34,6 +34,7 @@ from backend.app.core.scheduler_registry import (
     project_semantic_warmup_job_descriptor,
     resolve_source_job_callback,
 )
+from backend.app.repositories.conversation_repository import ConversationCleanupWriter
 
 logger = logging.getLogger(__name__)
 
@@ -398,16 +399,30 @@ async def _run_project_catalog_sync_job() -> None:
         logger.error("[Scheduler] 项目目录同步失败: %s", exc, exc_info=True)
 
 
-async def _run_conversation_cleanup_job() -> None:
+def _get_default_conversation_repository() -> ConversationCleanupWriter:
+    """Build the scheduler's current MySQL adapter behind an overrideable seam."""
+    from backend.app.core.database import mysql_database
+    from backend.app.repositories.mysql_conversation_repository import (
+        MySQLConversationCleanupWriter,
+    )
+
+    return MySQLConversationCleanupWriter(mysql_database)
+
+
+async def _run_conversation_cleanup_job(
+    conversation_repository: ConversationCleanupWriter | None = None,
+) -> None:
     logger.info("[Scheduler] 触发会话历史清理任务...")
     try:
-        from backend.app.repositories.mysql_repo import MySQLRepository
         from backend.app.services.chat.conversation_service import ConversationService
 
+        repository = (
+            _get_default_conversation_repository()
+            if conversation_repository is None
+            else conversation_repository
+        )
         deleted = await asyncio.to_thread(
-            ConversationService(
-                MySQLRepository().conversations
-            ).cleanup_stale_conversations,
+            ConversationService(repository).cleanup_stale_conversations,
         )
         logger.info("[Scheduler] 会话历史清理完成，删除 %d 条旧会话。", deleted)
     except Exception as exc:

@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from backend.app.repositories.conversation_repository import ConversationRepository
-from backend.app.repositories.mysql_repo import MySQLRepository
 
 
 DEFAULT_MAX_CONVERSATIONS = 10
@@ -22,14 +21,14 @@ class ConversationContext:
 class ConversationService:
     def __init__(
         self,
-        repo: ConversationRepository | None = None,
+        repo: ConversationRepository,
         *,
         max_conversations: int = DEFAULT_MAX_CONVERSATIONS,
         max_messages: int = DEFAULT_MAX_MESSAGES,
         cleanup_stale_days: int = DEFAULT_CLEANUP_STALE_DAYS,
         cleanup_batch_size: int = DEFAULT_CLEANUP_BATCH_SIZE,
     ) -> None:
-        self.repo = repo or MySQLRepository().conversations
+        self.repo = repo
         self.max_conversations = max_conversations
         self.max_messages = max_messages
         self.cleanup_stale_days = cleanup_stale_days
