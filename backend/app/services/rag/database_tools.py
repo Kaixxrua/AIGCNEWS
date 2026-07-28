@@ -12,14 +12,6 @@ from backend.app.repositories.document_repository import (
 from backend.app.services.rag.raw_openai_streamer import ToolCallResult
 
 
-def _get_document_readers() -> tuple[DocumentRankingReader, DocumentStatisticsReader]:
-    """Build the narrow document readers used by database-backed chat tools."""
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    documents = MySQLRepository().documents
-    return documents, documents
-
-
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     {
         "type": "function",
@@ -109,7 +101,9 @@ def execute_query_ranking(
 ) -> Dict[str, Any]:
     tz_cst = timezone(timedelta(hours=8))
     today = datetime.now(tz_cst).strftime("%Y-%m-%d")
-    ranking = ranking_reader or _get_document_readers()[0]
+    if ranking_reader is None:
+        raise ValueError("ranking_reader is required")
+    ranking = ranking_reader
     docs = list(
         ranking.get_today_ranked_documents(
             limit=limit,
@@ -149,10 +143,10 @@ def execute_query_knowledge_stats(
     ranking_reader: DocumentRankingReader | None = None,
     statistics_reader: DocumentStatisticsReader | None = None,
 ) -> Dict[str, Any]:
-    if ranking_reader is None or statistics_reader is None:
-        default_ranking, default_statistics = _get_document_readers()
-        ranking_reader = ranking_reader or default_ranking
-        statistics_reader = statistics_reader or default_statistics
+    if ranking_reader is None:
+        raise ValueError("ranking_reader is required")
+    if statistics_reader is None:
+        raise ValueError("statistics_reader is required")
     source_counts = statistics_reader.get_source_counts()
     docs = list(
         ranking_reader.get_knowledge_ranked_documents(
@@ -226,6 +220,9 @@ def build_tool_sources(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 async def run_tool_calls(
     tool_calls: List[ToolCallResult],
+    *,
+    ranking_reader: DocumentRankingReader,
+    statistics_reader: DocumentStatisticsReader,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], str]:
     tool_messages: List[Dict[str, Any]] = []
     all_tool_sources: List[Dict[str, Any]] = []
@@ -246,6 +243,11 @@ async def run_tool_calls(
             args = json.loads(tc.arguments)
         except json.JSONDecodeError:
             args = {}
+        if tc.name == "query_ranking":
+            args["ranking_reader"] = ranking_reader
+        elif tc.name == "query_knowledge_stats":
+            args["ranking_reader"] = ranking_reader
+            args["statistics_reader"] = statistics_reader
         try:
             result = await asyncio.to_thread(executor, **args)
         except Exception as exc:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import asyncio
+from pathlib import Path
 import re
 import sys
 import types
@@ -38,16 +40,6 @@ model_factory_module.get_chat_model = MagicMock
 model_factory_module.get_embedding_model = MagicMock
 sys.modules.setdefault("backend.app.core.model_factory", model_factory_module)
 
-mysql_module = types.ModuleType("backend.app.repositories.mysql_repo")
-
-
-class _RepositoryPlaceholder:
-    pass
-
-
-mysql_module.MySQLRepository = _RepositoryPlaceholder
-sys.modules.setdefault("backend.app.repositories.mysql_repo", mysql_module)
-
 for module_name, class_name in (
     ("backend.app.repositories.graph_repo", "GraphRepository"),
     ("backend.app.repositories.milvus_repo", "MilvusRepository"),
@@ -61,20 +53,38 @@ from backend.app.services.rag import database_tools
 from backend.app.services.rag.retriever import HybridRetriever
 
 
-def _normalized_sql(sql: str) -> str:
-    return " ".join(sql.split())
+TARGETED_DOCUMENT_CONSUMERS = (
+    Path(__file__).parents[1] / "app/services/rag/retriever.py",
+    Path(__file__).parents[1] / "app/services/rag/database_tools.py",
+    Path(__file__).parents[1] / "app/api/routes_mcp.py",
+)
 
 
-def _query_fixture(*, rows=(), source_counts=None):
-    cursor = MagicMock()
-    cursor.__enter__.return_value = cursor
-    cursor.fetchall.return_value = list(rows)
-    connection = MagicMock()
-    connection.cursor.return_value = cursor
-    repository = MagicMock()
-    repository._connect.return_value = connection
-    repository.documents.get_source_counts.return_value = source_counts or {}
-    return repository, connection, cursor
+def test_document_query_consumers_use_ports_without_sql_or_mysql_facade() -> None:
+    sql_keywords = re.compile(r"\b(?:SELECT|INSERT|UPDATE|DELETE)\b", re.IGNORECASE)
+    for path in TARGETED_DOCUMENT_CONSUMERS:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imported_names = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        }
+        called_attributes = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        string_literals = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+
+        assert "backend.app.repositories.mysql_repo" not in imported_names
+        assert "MySQLRepository" not in imported_names
+        assert "_connect" not in called_attributes
+        assert not any(sql_keywords.search(value) for value in string_literals)
 
 
 def _request(*, forwarded_proto: str | None = None) -> Request:

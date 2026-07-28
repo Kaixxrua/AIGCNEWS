@@ -40,7 +40,14 @@ async def collect(generator):
 def make_service():
     retriever = MagicMock()
     retriever.search = AsyncMock(return_value=[])
-    return chat_service.ChatService(retriever), retriever
+    return (
+        chat_service.ChatService(
+            retriever,
+            ranking_reader=MagicMock(),
+            statistics_reader=MagicMock(),
+        ),
+        retriever,
+    )
 
 
 def test_direct_request_skips_search_and_tool_decision():

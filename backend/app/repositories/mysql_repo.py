@@ -1306,59 +1306,6 @@ class MySQLRepository:
     def update_document_pdf_path(self, doc_id: str, local_pdf_path: str) -> None:
         return self.documents.update_document_pdf_path(doc_id, local_pdf_path)
 
-    def search_document_page(
-        self,
-        query: str,
-        *,
-        source: str | None = None,
-        page: int = 1,
-        page_size: int = 20,
-    ) -> Dict[str, Any]:
-        return self.documents.search_document_page(
-            query,
-            source=source,
-            page=page,
-            page_size=page_size,
-        )
-
-    def search_documents(
-        self,
-        query: str,
-        limit: int = 20,
-        *,
-        source: str | None = None,
-    ) -> List[Dict[str, Any]]:
-        return self.documents.search_documents(query, limit, source=source)
-
-    def get_existing_document_summaries(
-        self,
-        *,
-        ids: Optional[List[str]] = None,
-        urls: Optional[List[str]] = None,
-        titles: Optional[List[str]] = None,
-    ) -> Dict[str, str]:
-        return self.documents.get_existing_document_summaries(
-            ids=ids,
-            urls=urls,
-            titles=titles,
-        )
-
-    def get_top_documents(
-        self,
-        limit: int = 10,
-        source_type: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        return self.documents.get_top_documents(limit, source_type)
-
-    def get_latest_documents(self, limit: int = 10) -> List[Dict[str, Any]]:
-        return self.documents.get_latest_documents(limit)
-
-    def get_document_count(self) -> int:
-        return self.documents.get_document_count()
-
-    def get_source_counts(self) -> Dict[str, int]:
-        return self.documents.get_source_counts()
-
     def get_user_count(self) -> int:
         """返回已注册用户总数。"""
         return self.user_accounts.get_user_count()
@@ -1366,9 +1313,6 @@ class MySQLRepository:
     def get_today_registered_user_count(self) -> int:
         """返回今日注册用户数（CST）。"""
         return self.user_accounts.get_today_registered_user_count()
-
-    def get_today_document_count(self) -> int:
-        return self.documents.get_today_document_count()
 
     def count_user_messages_today(self, user_id: int) -> int:
         return self.conversations.count_user_messages_today(user_id)

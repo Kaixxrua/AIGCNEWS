@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator, Dict, List
 
+from backend.app.repositories.document_repository import (
+    DocumentRankingReader,
+    DocumentStatisticsReader,
+)
 from backend.app.services.project_discovery import search_projects
 from backend.app.services.rag.database_tools import TOOL_DEFINITIONS, run_tool_calls
 from backend.app.services.rag.development_orchestrator import classify_development_request
@@ -22,12 +26,23 @@ from backend.app.services.rag.web_search_service import (
 
 
 class ChatService:
-    def __init__(self, retriever: HybridRetriever) -> None:
+    def __init__(
+        self,
+        retriever: HybridRetriever,
+        *,
+        ranking_reader: DocumentRankingReader,
+        statistics_reader: DocumentStatisticsReader,
+    ) -> None:
         self.retriever = retriever
+        self._ranking_reader = ranking_reader
+        self._statistics_reader = statistics_reader
 
-    @staticmethod
-    async def _run_tool_calls(tool_calls: List[ToolCallResult]):
-        return await run_tool_calls(tool_calls)
+    async def _run_tool_calls(self, tool_calls: List[ToolCallResult]):
+        return await run_tool_calls(
+            tool_calls,
+            ranking_reader=self._ranking_reader,
+            statistics_reader=self._statistics_reader,
+        )
 
     async def stream_chat(
         self,

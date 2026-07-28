@@ -179,34 +179,22 @@ class MySQLRepositoryLifecycleTests(unittest.TestCase):
         self.assertIsNot(first, repository.user_accounts)
         database.connect.assert_not_called()
 
-    def test_document_compatibility_methods_delegate_to_component(self) -> None:
+    def test_document_write_and_admin_methods_delegate_to_component(self) -> None:
         database = MagicMock(spec=DatabaseLifecycle)
         repository = MySQLRepository(database=database)
         component = MagicMock()
-        component.search_document_page.return_value = {"items": []}
-        component.get_source_counts.return_value = {"arxiv": 2}
         component.clear_all_documents.return_value = 2
         repository._documents = component
 
-        page = repository.search_document_page(
-            "Agent",
-            source="arxiv",
-            page=2,
-            page_size=5,
-        )
-        counts = repository.get_source_counts()
+        repository.upsert_document({"id": "doc-1"})
+        repository.update_document_pdf_path("doc-1", "/tmp/doc-1.pdf")
         deleted = repository.clear_all_documents()
 
-        self.assertEqual(page, {"items": []})
-        self.assertEqual(counts, {"arxiv": 2})
         self.assertEqual(deleted, 2)
-        component.search_document_page.assert_called_once_with(
-            "Agent",
-            source="arxiv",
-            page=2,
-            page_size=5,
+        component.upsert_document.assert_called_once_with({"id": "doc-1"})
+        component.update_document_pdf_path.assert_called_once_with(
+            "doc-1", "/tmp/doc-1.pdf"
         )
-        component.get_source_counts.assert_called_once_with()
         component.clear_all_documents.assert_called_once_with()
         database.connect.assert_not_called()
 

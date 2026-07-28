@@ -13,7 +13,6 @@ from backend.app.repositories.document_repository import (
 )
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
-from backend.app.repositories.mysql_repo import MySQLRepository
 
 
 class HybridRetriever:
@@ -21,18 +20,13 @@ class HybridRetriever:
         self,
         milvus_repo: MilvusRepository,
         graph_repo: GraphRepository,
-        mysql_repo: MySQLRepository | None = None,
-        document_feed: DocumentFeedReader | None = None,
-        document_retrieval: DocumentRetrievalReader | None = None,
+        document_feed: DocumentFeedReader,
+        document_retrieval: DocumentRetrievalReader,
     ) -> None:
         self._milvus_repo = milvus_repo
         self._graph_repo = graph_repo
-        documents = None
-        if document_feed is None or document_retrieval is None:
-            compatibility_repository = mysql_repo or MySQLRepository()
-            documents = compatibility_repository.documents
-        self._document_feed = document_feed or documents
-        self._document_retrieval = document_retrieval or documents
+        self._document_feed = document_feed
+        self._document_retrieval = document_retrieval
         self._embeddings = get_embedding_model()
         self._llm = get_chat_model()
 
@@ -422,8 +416,19 @@ class HybridRetriever:
 
 
 if __name__ == "__main__":
+    from backend.app.repositories.application_repository_factory import (
+        create_application_repositories,
+    )
+    from backend.app.core.database import mysql_database
+    from backend.app.core.postgres_database import postgres_database
+
+    documents = create_application_repositories(
+        backend="mysql",
+        mysql=mysql_database,
+        postgres=postgres_database,
+    ).documents
     retriever = HybridRetriever(
-        MilvusRepository(), GraphRepository(), MySQLRepository()
+        MilvusRepository(), GraphRepository(), documents, documents
     )
     results = asyncio.run(
         retriever.search("Agents in Multi-modal environments", top_k=5)

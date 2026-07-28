@@ -68,6 +68,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                         request,
                         {"user_id": 3},
                         conversation_repository=repository,
+                        documents=MagicMock(),
                     )
                 ]
                 return events, to_thread, service_type
@@ -150,6 +151,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                         request,
                         {"user_id": 3},
                         conversation_repository=repository,
+                        documents=MagicMock(),
                     )
                 ]
                 get_attachment.assert_awaited_once_with("other-owner", 3)
@@ -239,6 +241,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                         request,
                         {"user_id": 3},
                         conversation_repository=repository,
+                        documents=MagicMock(),
                     )
                 ]
                 get_pdf_text.assert_awaited_once_with("pdf", 3)
@@ -278,6 +281,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                         request,
                         {"user_id": 3},
                         conversation_repository=MagicMock(),
+                        documents=MagicMock(),
                     )
                 ]
 

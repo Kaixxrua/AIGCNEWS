@@ -73,7 +73,11 @@ def test_non_development_generation_preserves_tool_rag_web_and_source_order():
         },
     )
     retriever.search = AsyncMock(return_value=[vector_doc])
-    service = chat_service.ChatService(retriever)
+    service = chat_service.ChatService(
+        retriever,
+        ranking_reader=MagicMock(),
+        statistics_reader=MagicMock(),
+    )
     tool_call = chat_service.ToolCallResult(
         id="call-1", name="query_ranking", arguments='{"source":"github","limit":3}'
     )
@@ -202,7 +206,13 @@ def test_tool_call_runner_preserves_input_order_and_error_messages():
         raise RuntimeError("database unavailable")
 
     with patch.dict(database_tools.TOOL_EXECUTORS, {"first": first, "second": second}):
-        messages, sources, context = asyncio.run(database_tools.run_tool_calls(calls))
+        messages, sources, context = asyncio.run(
+            database_tools.run_tool_calls(
+                calls,
+                ranking_reader=MagicMock(),
+                statistics_reader=MagicMock(),
+            )
+        )
 
     assert messages == [
         {"role": "tool", "tool_call_id": "one", "content": "first=1"},
@@ -257,9 +267,22 @@ def test_database_tool_boundary_preserves_exports_projection_and_runner():
     def first(value: int):
         return {"formatted": f"first={value}", "docs": docs}
 
+    ranking_reader = MagicMock()
+    statistics_reader = MagicMock()
+    service = chat_service.ChatService(
+        MagicMock(),
+        ranking_reader=ranking_reader,
+        statistics_reader=statistics_reader,
+    )
     with patch.dict(database_tools.TOOL_EXECUTORS, {"first": first}):
-        direct = asyncio.run(database_tools.run_tool_calls(calls))
-        facade = asyncio.run(chat_service.ChatService._run_tool_calls(calls))
+        direct = asyncio.run(
+            database_tools.run_tool_calls(
+                calls,
+                ranking_reader=ranking_reader,
+                statistics_reader=statistics_reader,
+            )
+        )
+        facade = asyncio.run(service._run_tool_calls(calls))
     assert facade == direct
 
 

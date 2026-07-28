@@ -15,7 +15,10 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from backend.app.api.dependencies import get_briefing_repository, get_papers_repository
+from backend.app.api.dependencies import (
+    get_application_repositories,
+    get_briefing_repository,
+)
 from backend.app.api.mcp_contracts import TOOL_INPUT_MODELS, input_schema, validate_iso_date
 from backend.app.api.routes_dashboard import (
     _compute_board_status,
@@ -27,9 +30,17 @@ from backend.app.api.routes_dashboard import (
 )
 from backend.app.api.routes_papers import _enrich_pdf_url, _safe_doc
 from backend.app.core.auth import OptionalMcpUser
+from backend.app.repositories.application_repository_factory import ApplicationRepositories
 from backend.app.repositories.briefing_repository import BriefingReader
-from backend.app.repositories.document_repository import PapersReader
-from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.document_repository import (
+    DocumentSearchReader,
+    DocumentStatisticsReader,
+    PapersReader,
+)
+from backend.app.repositories.project_write_repository import (
+    UserProjectCollectionRepository,
+)
+from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
 from backend.app.services.project_discovery import public_project_item, search_projects
@@ -418,12 +429,7 @@ async def _search_indexed_documents(
     q = args["q"]
     page = args.get("page", 1)
     limit = args.get("limit", 10)
-    compatibility_repository = MySQLRepository()
-    documents = getattr(
-        compatibility_repository,
-        "documents",
-        compatibility_repository,
-    )
+    documents: DocumentSearchReader = request.state.document_repository
     result = await asyncio.to_thread(
         documents.search_document_page,
         q,
@@ -479,7 +485,7 @@ async def _tool_get_top_items(request: Request, args: dict[str, Any]) -> dict[st
     date_value = args.get("date") or ""
     limit = args.get("limit", 10)
 
-    db = MySQLRepository()
+    rank_snapshots: RankSnapshotReader = request.state.rank_snapshot_repository
     snapshot_date = _resolve_snapshot_date(date_value or None)
     board = _compute_board_status(snapshot_date)
     if board["is_embargoed"]:
@@ -494,7 +500,14 @@ async def _tool_get_top_items(request: Request, args: dict[str, Any]) -> dict[st
         }
 
     source_type = None if source == "all" else source
-    docs = await asyncio.to_thread(_get_docs_for_date, db, snapshot_date, period, source_type, 500)
+    docs = await asyncio.to_thread(
+        _get_docs_for_date,
+        rank_snapshots,
+        snapshot_date,
+        period,
+        source_type,
+        500,
+    )
     items = [_public_doc(dict(doc), request, dashboard=True) for doc in _dedupe_docs(docs)[:limit]]
     return {
         "items": items,
@@ -578,8 +591,11 @@ async def _tool_search_my_project_favorites(request: Request, args: dict[str, An
         if offset < 0 or marker_limit != limit or offset % limit:
             raise McpToolInputError("marker is invalid or was issued for a different limit.")
     page = offset // limit + 1
+    project_collections: UserProjectCollectionRepository = (
+        request.state.project_collection_repository
+    )
     result = await asyncio.to_thread(
-        MySQLRepository().list_user_project_collection,
+        project_collections.list_user_project_collection,
         user_id=user_id,
         source="github",
         scope="all",
@@ -708,8 +724,8 @@ async def _resource_dashboard_summary(request: Request, uri: str, query: dict[st
         except ValueError as exc:
             raise McpResourceInputError(str(exc)) from exc
 
-    db = MySQLRepository()
-    document_statistics = db.documents
+    document_statistics: DocumentStatisticsReader = request.state.document_repository
+    rank_snapshots: RankSnapshotReader = request.state.rank_snapshot_repository
     snapshot_date = _resolve_snapshot_date(date_value or None)
     board = _compute_board_status(snapshot_date)
     source_counts = await asyncio.to_thread(document_statistics.get_source_counts)
@@ -736,7 +752,14 @@ async def _resource_dashboard_summary(request: Request, uri: str, query: dict[st
             },
         )
 
-    docs = await asyncio.to_thread(_get_docs_for_date, db, snapshot_date, period, None, 500)
+    docs = await asyncio.to_thread(
+        _get_docs_for_date,
+        rank_snapshots,
+        snapshot_date,
+        period,
+        None,
+        500,
+    )
     deduped = _dedupe_docs(docs)
     top10 = [_public_doc(dict(doc), request, dashboard=True) for doc in deduped[:10]]
     return _resource_content(
@@ -978,10 +1001,13 @@ async def mcp_endpoint(
     request: Request,
     mcp_user: dict[str, Any] | None = Depends(OptionalMcpUser),
     briefing_repository: BriefingReader = Depends(get_briefing_repository),
-    papers_repository: PapersReader = Depends(get_papers_repository),
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> Response:
     request.state.mcp_user = mcp_user
-    request.state.papers_repository = papers_repository
+    request.state.papers_repository = repositories.documents
+    request.state.document_repository = repositories.documents
+    request.state.rank_snapshot_repository = repositories.rank_snapshots
+    request.state.project_collection_repository = repositories.project_collections
     content_length = request.headers.get("content-length")
     if content_length:
         try:

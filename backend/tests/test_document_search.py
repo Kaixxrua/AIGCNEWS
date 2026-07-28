@@ -33,7 +33,6 @@ from fastapi.testclient import TestClient
 from backend.app.api import routes_papers
 from backend.app.api.dependencies import get_document_repository
 from backend.app.repositories.mysql_repo import (
-    MySQLRepository,
     _document_search_candidates,
     _escape_like_literal,
     _normalize_document_search_query,
@@ -66,31 +65,6 @@ class DocumentQueryTests(unittest.TestCase):
 
     def test_like_metacharacters_are_literal(self) -> None:
         self.assertEqual(_escape_like_literal("50%_done=ok"), "50=%=_done==ok")
-
-    def test_repository_search_uses_shared_fields_and_stable_order(self) -> None:
-        cursor = MagicMock()
-        cursor.fetchone.return_value = {"cnt": 1}
-        cursor.fetchall.return_value = [{"id": "doc-1", "title": "Agent"}]
-        connection = MagicMock()
-        connection.cursor.return_value.__enter__.return_value = cursor
-        repository = object.__new__(MySQLRepository)
-        repository._documents = MagicMock()
-        repository._documents.search_documents.return_value = [
-            {"id": "doc-1", "title": "Agent"}
-        ]
-
-        rows = repository.search_documents(
-            "我想要学习Agent相关的内容，帮我找一点资料进行学习",
-            500,
-        )
-
-        self.assertEqual(rows, [{"id": "doc-1", "title": "Agent"}])
-        repository._documents.search_documents.assert_called_once_with(
-            "我想要学习Agent相关的内容，帮我找一点资料进行学习",
-            500,
-            source=None,
-        )
-
 
 class PaperRouteTests(unittest.TestCase):
     def setUp(self) -> None:

@@ -19,15 +19,6 @@ if "fastapi_cache.decorator" not in sys.modules:
     sys.modules.setdefault("fastapi_cache", fastapi_cache)
     sys.modules.setdefault("fastapi_cache.decorator", fastapi_cache_decorator)
 
-if "backend.app.repositories.mysql_repo" not in sys.modules:
-    repository_module = types.ModuleType("backend.app.repositories.mysql_repo")
-
-    class _RepositoryPlaceholder:
-        pass
-
-    repository_module.MySQLRepository = _RepositoryPlaceholder
-    sys.modules["backend.app.repositories.mysql_repo"] = repository_module
-
 if "backend.app.core.config" not in sys.modules:
     config_module = types.ModuleType("backend.app.core.config")
     config_module.settings = types.SimpleNamespace(
@@ -55,9 +46,12 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_mcp
 from backend.app.api.mcp_contracts import SearchGitHubAIProjectsInput
-from backend.app.api.dependencies import get_briefing_repository, get_papers_repository
+from backend.app.api.dependencies import (
+    get_application_repositories,
+    get_briefing_repository,
+)
 from backend.app.repositories.briefing_repository import BriefingReader
-from backend.app.repositories.document_repository import PapersReader
+from backend.app.repositories.document_repository import DocumentRepository, PapersReader
 from backend.app.services import project_discovery
 from backend.app.services.ingestion import source_github_mcp
 
@@ -496,11 +490,18 @@ class McpProtocolTests(unittest.TestCase):
     def setUp(self) -> None:
         app = FastAPI()
         self.briefing_repository = MagicMock(spec=BriefingReader)
-        self.papers_repository = MagicMock(spec=PapersReader)
+        self.papers_repository = MagicMock(spec=DocumentRepository)
+        self.application_repositories = types.SimpleNamespace(
+            documents=self.papers_repository,
+            rank_snapshots=MagicMock(),
+            project_collections=MagicMock(),
+        )
         app.dependency_overrides[get_briefing_repository] = (
             lambda: self.briefing_repository
         )
-        app.dependency_overrides[get_papers_repository] = lambda: self.papers_repository
+        app.dependency_overrides[get_application_repositories] = (
+            lambda: self.application_repositories
+        )
         app.include_router(routes_mcp.router, prefix="/api")
         self.client = TestClient(app)
 
@@ -704,8 +705,7 @@ class McpProtocolTests(unittest.TestCase):
         self.assertIn("cannot override a client's own system prompt", projects)
 
     def test_search_papers_uses_shared_repository_and_hides_local_path(self) -> None:
-        repository = MagicMock()
-        repository.documents = repository
+        repository = self.papers_repository
         repository.search_document_page.return_value = {
             "items": [
                 {
@@ -717,19 +717,18 @@ class McpProtocolTests(unittest.TestCase):
             ],
             "total": 1,
         }
-        with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
-            response = self.client.post(
-                "/api/mcp",
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 5,
-                    "method": "tools/call",
-                    "params": {
-                        "name": "search_papers",
-                        "arguments": {"q": "  Agent  ", "limit": 20},
-                    },
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_papers",
+                    "arguments": {"q": "  Agent  ", "limit": 20},
                 },
-            )
+            },
+        )
 
         repository.search_document_page.assert_called_once_with(
             "Agent", source="arxiv", page=1, page_size=20
@@ -767,7 +766,11 @@ class McpProtocolTests(unittest.TestCase):
         }
         self.client.app.dependency_overrides[routes_mcp.OptionalMcpUser] = authenticated_user
         try:
-            with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
+            with patch.object(
+                self.application_repositories,
+                "project_collections",
+                repository,
+            ):
                 response = self.client.post(
                     "/api/mcp",
                     json={
@@ -794,7 +797,11 @@ class McpProtocolTests(unittest.TestCase):
         ]
         self.client.app.dependency_overrides[routes_mcp.OptionalMcpUser] = authenticated_user
         try:
-            with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
+            with patch.object(
+                self.application_repositories,
+                "project_collections",
+                repository,
+            ):
                 first = self.client.post(
                     "/api/mcp",
                     json={"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "search_my_project_favorites", "arguments": {"tag": "agent", "limit": 10}}},
@@ -948,16 +955,15 @@ class McpProtocolTests(unittest.TestCase):
         )
 
     def test_generic_query_is_required(self) -> None:
-        with patch.object(routes_mcp, "MySQLRepository"):
-            response = self.client.post(
-                "/api/mcp",
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 5,
-                    "method": "tools/call",
-                    "params": {"name": "search_github_projects", "arguments": {}},
-                },
-            )
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {"name": "search_github_projects", "arguments": {}},
+            },
+        )
         result = response.json()["result"]
         self.assertTrue(result["isError"])
         self.assertIn("q", result["content"][0]["text"])
@@ -1003,19 +1009,17 @@ class McpProtocolTests(unittest.TestCase):
         self.assertTrue(response.json()["result"]["isError"])
 
     def test_search_documents_keeps_all_source_semantics(self) -> None:
-        repository = MagicMock()
-        repository.documents = repository
+        repository = self.papers_repository
         repository.search_document_page.return_value = {"items": [], "total": 0}
-        with patch.object(routes_mcp, "MySQLRepository", return_value=repository):
-            response = self.client.post(
-                "/api/mcp",
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 32,
-                    "method": "tools/call",
-                    "params": {"name": "search_documents", "arguments": {"q": "inference news"}},
-                },
-            )
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 32,
+                "method": "tools/call",
+                "params": {"name": "search_documents", "arguments": {"q": "inference news"}},
+            },
+        )
         self.assertFalse(response.json()["result"]["isError"])
         repository.search_document_page.assert_called_once_with(
             "inference news", source=None, page=1, page_size=10
