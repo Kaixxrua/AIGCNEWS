@@ -6,7 +6,9 @@ from typing import Any, Dict, List
 from zoneinfo import ZoneInfo
 
 from backend.app.core.config import settings
-from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.application_repository_context import (
+    get_configured_application_repositories,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectIngestionRepository,
 )
@@ -53,7 +55,7 @@ def record_github_trending_hits(
     normalized_period = (period or "daily").lower().strip()
     if normalized_period not in _PERIOD_TO_DAYS:
         raise ValueError(f"Unsupported period: {period}")
-    active_db = db or MySQLRepository()
+    active_db = db or get_configured_application_repositories().github_ingestion
     active_date = observed_date or _today_str()
     active_captured_at = captured_at or _utcnow()
     repo_ids: List[str] = []
@@ -124,9 +126,10 @@ def refresh_github_hot_candidates(
     limit: int = 80,
     *,
     observed_date: str | None = None,
+    db: GitHubProjectIngestionRepository | None = None,
 ) -> Dict[str, Any]:
     """抓取 Trending + Search 候选，并写入 repo candidates / snapshots / trending hits。"""
-    db = MySQLRepository()
+    db = db or get_configured_application_repositories().github_ingestion
     resolved_date = observed_date or _today_str()
     captured_at = _utcnow()
 
@@ -274,12 +277,17 @@ def refresh_github_hot_candidates(
     }
 
 
-def get_github_hot_rank(period: str = "daily", limit: int = 10) -> Dict[str, Any]:
+def get_github_hot_rank(
+    period: str = "daily",
+    limit: int = 10,
+    *,
+    db: GitHubProjectIngestionRepository | None = None,
+) -> Dict[str, Any]:
     normalized = (period or "daily").lower().strip()
     if normalized not in _PERIOD_TO_DAYS:
         raise ValueError(f"Unsupported period: {period}")
 
-    db = MySQLRepository()
+    db = db or get_configured_application_repositories().github_ingestion
     items = db.get_github_hot_repos(normalized, limit=limit)
     return {
         "period": normalized,
