@@ -20,6 +20,7 @@ from backend.app.services.project_catalog_consistency import (  # noqa: E402
 )
 from backend.app.services.project_catalog_evidence import (  # noqa: E402
     build_project_catalog_evidence,
+    sanitize_evidence_input,
     write_project_catalog_evidence,
 )
 from backend.app.services.project_catalog_sequence import (  # noqa: E402
@@ -44,7 +45,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--barrier-id", required=True, type=int)
     parser.add_argument("--output", required=True)
     parser.add_argument("--validity-seconds", type=int, default=1800)
+    parser.add_argument(
+        "--image-digest",
+        help="immutable backend image reference or sha256 digest (required for v2)",
+    )
+    parser.add_argument(
+        "--topology-file",
+        help="deployed topology file hashed locally (required for v2)",
+    )
+    parser.add_argument("--shadow-evidence", help="versioned shadow evidence (v2)")
     parser.add_argument("--smoke-evidence", required=True)
+    parser.add_argument("--rollback-evidence", help="versioned rollback evidence (v2)")
     return parser
 
 
@@ -60,10 +71,15 @@ def _revision(value: str) -> str:
     ).stdout.strip()
 
 
-def _smoke_evidence(path: str, *, revision: str) -> dict[str, object]:
+def _json_object(path: str, *, kind: str) -> dict[str, object]:
     result = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(result, dict):
-        raise ValueError("smoke evidence must be an object")
+        raise ValueError(f"{kind} evidence must be an object")
+    return result
+
+
+def _legacy_smoke_evidence(path: str, *, revision: str) -> dict[str, object]:
+    result = _json_object(path, kind="smoke")
     if result.get("revision") != revision:
         raise ValueError("smoke evidence revision does not match")
     if not str(result.get("suite") or "").strip():
@@ -71,8 +87,6 @@ def _smoke_evidence(path: str, *, revision: str) -> dict[str, object]:
     if result.get("status") not in {"passed", "failed"}:
         raise ValueError("smoke evidence status is invalid")
     supplied_digest = str(result.get("result_sha256") or "").strip().lower()
-    if len(supplied_digest) != 64:
-        raise ValueError("smoke evidence digest is invalid")
     digest_payload = dict(result)
     digest_payload.pop("result_sha256", None)
     expected_digest = hashlib.sha256(
@@ -88,11 +102,64 @@ def _smoke_evidence(path: str, *, revision: str) -> dict[str, object]:
     return result
 
 
+def _topology_sha256(path: str) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _versioned_evidence(
+    path: str,
+    *,
+    kind: str,
+    release_id: str,
+    revision: str,
+    image_digest: str,
+    topology_sha256: str,
+) -> dict[str, object]:
+    return sanitize_evidence_input(
+        _json_object(path, kind=kind),
+        kind=kind,
+        release_id=release_id,
+        revision=revision,
+        image_sha256=image_digest,
+        topology_sha256=topology_sha256,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         revision = _revision(args.revision)
-        smoke = _smoke_evidence(args.smoke_evidence, revision=revision)
+        extended_values = (
+            args.image_digest,
+            args.topology_file,
+            args.shadow_evidence,
+            args.rollback_evidence,
+        )
+        extended = any(value is not None for value in extended_values)
+        if extended and not all(value is not None for value in extended_values):
+            raise ValueError(
+                "image, topology, shadow, and rollback inputs are required together"
+            )
+        topology_sha256 = _topology_sha256(args.topology_file) if extended else None
+        if extended:
+            evidence_args = {
+                "release_id": args.release_id,
+                "revision": revision,
+                "image_digest": args.image_digest,
+                "topology_sha256": topology_sha256,
+            }
+            shadow = _versioned_evidence(
+                args.shadow_evidence, kind="shadow", **evidence_args
+            )
+            smoke = _versioned_evidence(
+                args.smoke_evidence, kind="smoke", **evidence_args
+            )
+            rollback = _versioned_evidence(
+                args.rollback_evidence, kind="rollback", **evidence_args
+            )
+        else:
+            shadow = rollback = None
+            smoke = _legacy_smoke_evidence(args.smoke_evidence, revision=revision)
         worker = ProjectCatalogSyncWorker()
         barrier = worker.prove_barrier(args.barrier_id)
         consistency = ProjectCatalogConsistencyService().verify(
@@ -117,6 +184,10 @@ def main(argv: list[str] | None = None) -> int:
             sync_enabled=bool(settings.project_catalog_sync_worker_enabled),
             validity_seconds=args.validity_seconds,
             source_identity_sha256=source_identity_sha256(settings),
+            image_digest=args.image_digest if extended else None,
+            topology_sha256=topology_sha256,
+            shadow=shadow,
+            rollback=rollback,
         )
         write_project_catalog_evidence(args.output, artifact)
         print(
