@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { GitHubProjectItem, ProjectTaxonomyItem, ToolWebsiteUpdatePayload } from '../../services/projects/projectApi'
 import { projectName } from '../../features/projects/projectPresentation'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   open: boolean
@@ -52,11 +55,11 @@ const submit = () => {
   const cleanTitle = title.value.trim()
   const cleanDescription = description.value.trim()
   if (!cleanTitle) {
-    localError.value = '请输入工具名称。'
+    localError.value = t('projects.dialog.nameRequired')
     return
   }
   if (!cleanDescription) {
-    localError.value = '请输入中文说明。'
+    localError.value = t('projects.dialog.descriptionRequired')
     return
   }
   localError.value = ''
@@ -88,47 +91,47 @@ watch([category, () => props.taxonomy], () => {
     <Transition name="tool-modal">
       <div v-if="active && open" class="tool-modal" role="presentation" @click.self="close">
         <form class="tool-modal__panel" @submit.prevent="submit">
-          <button type="button" class="tool-modal__close" :disabled="busy" aria-label="关闭编辑网页收藏弹窗" @click="close">×</button>
+          <button type="button" class="tool-modal__close" :disabled="busy" :aria-label="t('projects.dialog.closeEdit')" @click="close">×</button>
           <p class="projects-kicker">EDIT WEB TOOL</p>
-          <h2>编辑网页收藏</h2>
-          <p class="tool-modal__hint">这些修改只会影响你的个人网页收藏卡片，不会修改其他用户看到的同一网站信息。</p>
+          <h2>{{ t('projects.dialog.editTitle') }}</h2>
+          <p class="tool-modal__hint">{{ t('projects.dialog.editHint') }}</p>
 
           <div class="tool-modal__manual-grid">
             <label class="tool-modal__field">
-              <span>工具名称</span>
-              <input v-model="title" type="text" placeholder="例如：Linux.do" :disabled="busy" autofocus />
+              <span>{{ t('projects.dialog.name') }}</span>
+              <input v-model="title" type="text" :placeholder="t('projects.dialog.namePlaceholder')" :disabled="busy" autofocus />
             </label>
             <label class="tool-modal__field tool-modal__field--wide">
-              <span>中文说明</span>
-              <textarea v-model="description" rows="3" placeholder="一句话说明这个网站能解决什么问题、适合什么场景。" :disabled="busy" />
+              <span>{{ t('projects.dialog.description') }}</span>
+              <textarea v-model="description" rows="3" :placeholder="t('projects.dialog.descriptionPlaceholder')" :disabled="busy" />
             </label>
             <label class="tool-modal__field">
-              <span>一级分类</span>
+              <span>{{ t('projects.dialog.primaryCategory') }}</span>
               <select v-model="category" :disabled="busy || taxonomyLoading">
                 <option v-for="item in taxonomy" :key="item.slug" :value="item.slug">{{ item.name }}</option>
               </select>
             </label>
             <label class="tool-modal__field">
-              <span>二级分类</span>
+              <span>{{ t('projects.dialog.subcategory') }}</span>
               <select v-model="subcategory" :disabled="busy || taxonomyLoading">
                 <option v-for="item in subcategoryOptions" :key="item.slug" :value="item.slug">{{ item.name }}</option>
               </select>
             </label>
             <label class="tool-modal__field tool-modal__field--wide">
-              <span>标签（用逗号分隔）</span>
-              <input v-model="tags" type="text" placeholder="社区, 教程, 效率工具" :disabled="busy" />
+              <span>{{ t('projects.dialog.tags') }}</span>
+              <input v-model="tags" type="text" :placeholder="t('projects.dialog.tagsPlaceholder')" :disabled="busy" />
             </label>
             <label class="tool-modal__field tool-modal__field--wide">
-              <span>图标 URL（可选）</span>
+              <span>{{ t('projects.dialog.iconUrl') }}</span>
               <input v-model="imageUrl" type="text" inputmode="url" placeholder="https://example.com/favicon.ico" :disabled="busy" />
             </label>
-            <p v-if="target?.url" class="tool-modal__readonly">原始链接：{{ target.url }}</p>
+            <p v-if="target?.url" class="tool-modal__readonly">{{ t('projects.dialog.originalUrl', { url: target.url }) }}</p>
           </div>
 
           <p v-if="displayedError" class="tool-modal__error">{{ displayedError }}</p>
           <div class="tool-modal__actions">
-            <button type="button" class="btn-secondary" :disabled="busy" @click="close">取消</button>
-            <button type="submit" class="projects-add-submit" :disabled="busy">{{ busy ? '保存中…' : '保存修改' }}</button>
+            <button type="button" class="btn-secondary" :disabled="busy" @click="close">{{ t('common.cancel') }}</button>
+            <button type="submit" class="projects-add-submit" :disabled="busy">{{ t(busy ? 'projects.dialog.saving' : 'projects.dialog.saveChanges') }}</button>
           </div>
         </form>
       </div>

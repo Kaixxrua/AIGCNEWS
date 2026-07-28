@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 /**
  * PdfCanvasViewer.vue — PDF.js 纯 Canvas 渲染器（禁 iframe）
  *
@@ -83,11 +85,11 @@ onUnmounted(unmount)
         />
       </div>
       <div class="pdf-progress-label">
-        <span v-if="progressPhase === 'parsing'">解析 PDF…</span>
+        <span v-if="progressPhase === 'parsing'">{{ t('paper.pdfParsing') }}</span>
         <span v-else-if="progressPhase === 'rendering' && totalPages > 0">
-          渲染中 {{ loadedPages }}/{{ totalPages }} 页
+          {{ t('paper.pdfRendering', { loaded: loadedPages, total: totalPages }) }}
         </span>
-        <span v-else>加载中…</span>
+        <span v-else>{{ t('paper.pdfLoading') }}</span>
         <span class="pdf-progress-pct">{{ progressPercent }}%</span>
       </div>
     </div>
@@ -104,7 +106,7 @@ onUnmounted(unmount)
       <!-- 加载状态（仅在进度条前显示 spinner） -->
       <div v-if="isLoading && loadedPages === 0" class="pdf-status">
         <div class="pdf-spinner" />
-        <span class="pdf-status-text">PDF 加载中…</span>
+        <span class="pdf-status-text">PDF {{ t('paper.pdfLoading') }}</span>
       </div>
 
       <!-- 错误状态 -->
@@ -117,7 +119,7 @@ onUnmounted(unmount)
 
       <!-- 无 URL 提示 -->
       <div v-else-if="!props.pdfUrl" class="pdf-status">
-        <span class="pdf-status-text">暂无 PDF 文件</span>
+        <span class="pdf-status-text">{{ t('paper.pdfMissing') }}</span>
       </div>
 
       <!-- 右键选区蓝框 -->

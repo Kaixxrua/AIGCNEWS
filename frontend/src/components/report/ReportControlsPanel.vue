@@ -156,7 +156,7 @@ const emit = defineEmits<{
       >{{ t(`report.period.${p.key}`) }}</button>
       <span v-if="DAILY_ONLY_TYPES.has(selectedType)" class="flex items-center gap-0.5 text-2xs text-stone-400 ml-0.5">
         <Pin class="h-2.5 w-2.5 shrink-0" />
-        仅日报
+        {{ t('report.dailyOnly') }}
       </span>
     </div>
 

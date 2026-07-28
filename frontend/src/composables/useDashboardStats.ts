@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { useTransition, TransitionPresets } from '@vueuse/core'
+import { formatLocaleNumber } from '../i18n/formatters'
 import {
   statCards,
   visitorCards,
@@ -57,13 +58,13 @@ export const useDashboardStats = (getStats: () => Stats) => {
   const getVisitorAnimatedValue = (index: number): string => {
     const transition = animatedVisitors[index]
     const value = transition ? transition.value : 0
-    return Math.round(value ?? 0).toLocaleString()
+    return formatLocaleNumber(Math.round(value ?? 0))
   }
 
   const getUserCountParts = (): string => {
     const stats = getStats()
-    const registered = Number(stats.registered_users ?? 0).toLocaleString()
-    const todayRegistered = Number(stats.today_registered_users ?? 0).toLocaleString()
+    const registered = formatLocaleNumber(Number(stats.registered_users ?? 0))
+    const todayRegistered = formatLocaleNumber(Number(stats.today_registered_users ?? 0))
     return `${registered}+${todayRegistered}`
   }
 

@@ -57,7 +57,7 @@ const emit = defineEmits<{
         @click="emit('ingestSource', src.key)"
       >
         <component :is="src.icon" class="h-3.5 w-3.5 shrink-0" />
-        <span>{{ src.label }}</span>
+        <span>{{ t(`monitor.sources.${src.labelKey}`) }}</span>
         <span v-if="ingestingSource === src.key" class="inline-block h-3 w-3 rounded-full border-2 border-stone-300 border-t-stone-600 animate-spin ml-0.5" />
       </button>
     </div>

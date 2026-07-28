@@ -53,11 +53,11 @@ const openFilePicker = () => {
       <button
         class="web-search-toggle"
         :class="webSearchEnabled ? 'web-search-toggle--active' : ''"
-        :title="webSearchEnabled ? '关闭联网搜索' : '开启联网搜索'"
+        :title="t(webSearchEnabled ? 'chat.disableWebSearch' : 'chat.enableWebSearch')"
         @click="webSearchEnabled = !webSearchEnabled"
       >
         <Globe class="h-3.5 w-3.5" />
-        <span>联网搜索</span>
+        <span>{{ t('chat.webSearch') }}</span>
         <span v-if="webSearchEnabled" class="web-search-dot" />
       </button>
     </div> -->

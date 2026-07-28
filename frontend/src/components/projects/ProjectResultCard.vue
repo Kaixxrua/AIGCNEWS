@@ -196,7 +196,7 @@ const description = computed(() => projectDescription(
             <path d="M12 3a13.5 13.5 0 0 1 0 18" />
             <path d="M12 3a13.5 13.5 0 0 0 0 18" />
           </svg>
-          {{ repo.domain || '网页收藏' }}
+          {{ repo.domain || t('projects.websiteFavorite') }}
         </span>
         <span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { Clipboard, Eye } from 'lucide-vue-next'
 import type { PaperReaderMessage } from '../../features/papers/paperReaderModel'
 
@@ -17,8 +19,8 @@ const emit = defineEmits<{ toggleThinking: [messageId: string] }>()
     <svg class="h-12 w-12 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
     </svg>
-    <p class="text-sm font-medium">开始对话</p>
-    <p class="text-xs text-center max-w-[220px]">结合当前论文内容向 AI 提问</p>
+    <p class="text-sm font-medium">{{ t('paper.startTitle') }}</p>
+    <p class="text-xs text-center max-w-[220px]">{{ t('paper.startDescription') }}</p>
   </div>
 
   <div v-for="msg in messages" :key="msg.id" class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
@@ -26,7 +28,7 @@ const emit = defineEmits<{ toggleThinking: [messageId: string] }>()
     <div class="max-w-[85%]" :class="msg.role === 'user' ? '' : 'flex-1'">
       <div v-if="msg.role === 'user'" class="rounded-[18px] rounded-br-sm bg-stone-700 px-3.5 py-2.5 text-xs leading-6 text-white">
         <div v-if="msg.imageBase64" class="mb-2 rounded-lg overflow-hidden border border-white/20">
-          <img :src="msg.imageBase64" alt="截图" class="w-full max-h-[200px] object-contain bg-white/10" />
+          <img :src="msg.imageBase64" :alt="t('paper.screenshotAlt')" class="w-full max-h-[200px] object-contain bg-white/10" />
         </div>
         {{ msg.content }}
       </div>
@@ -34,7 +36,7 @@ const emit = defineEmits<{ toggleThinking: [messageId: string] }>()
       <div v-else class="space-y-1.5">
         <details v-if="msg.visionExtract" class="rounded-xl overflow-hidden" style="border: 1px solid rgba(168,162,158,0.18)">
           <summary class="cursor-pointer px-3 py-2 text-2xs font-medium text-stone-400 select-none hover:bg-stone-50">
-            <Eye class="h-3 w-3 inline-block mr-1" />视觉提取内容（点击展开）
+            <Eye class="h-3 w-3 inline-block mr-1" />{{ t('paper.visionExtract') }}
           </summary>
           <pre class="px-3 pb-3 pt-1 text-2xs leading-5 text-stone-500 whitespace-pre-wrap break-all">{{ msg.visionExtract }}</pre>
         </details>
@@ -46,8 +48,8 @@ const emit = defineEmits<{ toggleThinking: [messageId: string] }>()
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.346A3 3 0 0115 18H9a3 3 0 01-2.12-.879l-.347-.346a5 5 0 010-7.072z"/>
             </svg>
             <span class="flex-1 text-xs font-medium thinking-label">
-              <template v-if="msg.isThinking"><span class="thinking-dots-text">正在深度思考</span></template>
-              <template v-else>已完成深度思考<span v-if="(msg.thinkingDurationSec || 0) > 0" class="thinking-duration">（用时 {{ msg.thinkingDurationSec }} 秒）</span></template>
+              <template v-if="msg.isThinking"><span class="thinking-dots-text">{{ t('paper.thinking') }}</span></template>
+              <template v-else>{{ t('paper.thought') }}<span v-if="(msg.thinkingDurationSec || 0) > 0" class="thinking-duration">{{ t('paper.thoughtDuration', { seconds: msg.thinkingDurationSec }) }}</span></template>
             </span>
             <svg v-if="!msg.isThinking" class="h-3.5 w-3.5 shrink-0 text-stone-400 transition-transform duration-300" :class="isThinkingExpanded(msg.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
@@ -57,7 +59,7 @@ const emit = defineEmits<{ toggleThinking: [messageId: string] }>()
             <div v-if="msg.thinking || msg.isThinking" v-show="msg.isThinking || isThinkingExpanded(msg.id)" class="thinking-body px-3.5 pb-2.5">
               <div class="thinking-content-inner">
                 <p v-if="msg.thinking" class="font-mono text-[11px] leading-[1.7] text-stone-500 whitespace-pre-wrap break-words">{{ msg.thinking }}</p>
-                <p v-else-if="msg.isThinking" class="text-[11px] text-stone-400 italic">正在检索与生成中…</p>
+                <p v-else-if="msg.isThinking" class="text-[11px] text-stone-400 italic">{{ t('paper.retrieving') }}</p>
                 <span v-if="msg.isThinking" class="thinking-cursor" />
               </div>
             </div>
@@ -69,8 +71,8 @@ const emit = defineEmits<{ toggleThinking: [messageId: string] }>()
         </div>
         <div v-if="msg.content" class="rounded-[18px] rounded-bl-sm px-3.5 py-2.5" style="background: rgba(255,255,255,0.9); border: 1px solid rgba(168,162,158,0.18)">
           <div class="flex justify-end gap-1 mb-1">
-            <button class="text-2xs px-2 py-0.5 rounded-md bg-stone-100 text-stone-400 hover:text-stone-600 transition" @click="copyFormulas(msg.content)" title="复制公式 LaTeX 源码">
-              <Clipboard class="h-3 w-3" /> 复制公式
+            <button class="text-2xs px-2 py-0.5 rounded-md bg-stone-100 text-stone-400 hover:text-stone-600 transition" @click="copyFormulas(msg.content)" :title="t('paper.copyFormulaTitle')">
+              <Clipboard class="h-3 w-3" /> {{ t('paper.copyFormula') }}
             </button>
           </div>
           <div class="prose-content text-xs leading-6 text-stone-700" v-html="renderMarkdown(msg.content)"/>

@@ -7,6 +7,16 @@ import {
   updateDocumentLocale,
 } from './locale'
 
+const catalogLeaves = (value: unknown, prefix = ''): Record<string, string> => {
+  if (!value || typeof value !== 'object') return {}
+  return Object.fromEntries(Object.entries(value).flatMap(([key, child]) => {
+    const path = prefix ? `${prefix}.${key}` : key
+    return child && typeof child === 'object'
+      ? Object.entries(catalogLeaves(child, path))
+      : [[path, String(child)]]
+  }))
+}
+
 const catalogShape = (value: unknown): unknown => {
   if (!value || typeof value !== 'object') return typeof value
   return Object.fromEntries(
@@ -40,5 +50,15 @@ describe('application locale contract', () => {
 
   it('keeps every catalog leaf structurally aligned', () => {
     expect(catalogShape(messages['zh-CN'])).toEqual(catalogShape(messages['en-US']))
+  })
+
+  it('provides an explicit Chinese value for every business catalog leaf', () => {
+    const zhLeaves = catalogLeaves(messages['zh-CN'])
+    const enLeaves = catalogLeaves(messages['en-US'])
+    const intentionallyShared = /(?:appName|chinese|english|github|hn|hackernews|producthunt|emailPlaceholder|recommendedBadge|stars|sortStars|forks|rag|arxivDesc|githubDesc|producthuntDesc|hackernewsDesc)$/
+    const inherited = Object.keys(zhLeaves).filter(
+      key => zhLeaves[key] === enLeaves[key] && !intentionallyShared.test(key),
+    )
+    expect(inherited).toEqual([])
   })
 })
