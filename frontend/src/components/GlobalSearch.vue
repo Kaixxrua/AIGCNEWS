@@ -5,12 +5,14 @@
  */
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import GlobalSearchInput from './search/GlobalSearchInput.vue'
 import GlobalSearchResults from './search/GlobalSearchResults.vue'
 import { useGlobalSearch } from '../composables/useGlobalSearch'
 import { searchPapers, fetchTop10Today } from '../services/papers/paperApi'
 
 const router = useRouter()
+const { t } = useI18n()
 const inputRef = ref<InstanceType<typeof GlobalSearchInput> | null>(null)
 const {
   query,
@@ -59,7 +61,7 @@ const {
         class="absolute left-0 right-0 top-full mt-1.5 rounded-2xl px-4 py-3 text-xs text-stone-400 shadow-lg"
         style="background: rgba(255,255,255,0.97); border: 1px solid rgba(168,162,158,0.20);"
       >
-        无匹配结果
+        {{ t('search.noResults') }}
       </div>
     </Transition>
   </div>

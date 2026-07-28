@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { isNavigationItemActive, type NavigationItem } from '../../features/navigation/navigationModel'
 
 const props = defineProps<{
@@ -14,6 +15,7 @@ const emit = defineEmits<{
   logout: []
 }>()
 
+const { t } = useI18n()
 const hoveredNav = ref<string | null>(null)
 const hoveredAuth = ref(false)
 </script>
@@ -26,7 +28,7 @@ const hoveredAuth = ref(false)
       :key="item.to"
       :to="item.to"
       v-show="!item.requiresAdmin || props.isAdmin"
-      :aria-label="item.label"
+      :aria-label="t(item.labelKey)"
       :aria-current="isNavigationItemActive(item, props.currentPath) ? 'page' : undefined"
       class="dock-item"
       :class="{ 'dock-item--active': isNavigationItemActive(item, props.currentPath) }"
@@ -36,7 +38,7 @@ const hoveredAuth = ref(false)
       <span class="dock-icon" v-html="item.icon" />
       <Transition name="dock-label">
         <span v-if="hoveredNav === item.to" class="dock-label">
-          {{ item.label }}
+          {{ t(item.labelKey) }}
         </span>
       </Transition>
     </RouterLink>
@@ -46,7 +48,7 @@ const hoveredAuth = ref(false)
     <button
       v-if="!props.isLoggedIn"
       class="dock-item dock-item--login"
-      aria-label="登录账号"
+      :aria-label="t('navigation.loginAccount')"
       @click="emit('login')"
       @mouseenter="hoveredAuth = true"
       @mouseleave="hoveredAuth = false"
@@ -59,14 +61,14 @@ const hoveredAuth = ref(false)
         </svg>
       </span>
       <Transition name="dock-label">
-        <span v-if="hoveredAuth" class="dock-label">登录账号</span>
+        <span v-if="hoveredAuth" class="dock-label">{{ t('navigation.loginAccount') }}</span>
       </Transition>
     </button>
     <!-- 已登录：红色登出按钮 -->
     <button
       v-else
       class="dock-item dock-item--logout"
-      aria-label="退出登录"
+      :aria-label="t('navigation.logout')"
       @click="emit('logout')"
       @mouseenter="hoveredAuth = true"
       @mouseleave="hoveredAuth = false"
@@ -79,7 +81,7 @@ const hoveredAuth = ref(false)
         </svg>
       </span>
       <Transition name="dock-label">
-        <span v-if="hoveredAuth" class="dock-label">退出登录</span>
+        <span v-if="hoveredAuth" class="dock-label">{{ t('navigation.logout') }}</span>
       </Transition>
     </button>
   </nav>

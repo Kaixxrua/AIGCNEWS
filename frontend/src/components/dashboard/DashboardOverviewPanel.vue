@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import GlassCalendar from '../GlassCalendar.vue'
 import {
   isSourceStatCard,
@@ -15,6 +16,8 @@ defineProps<{
   getAnimatedValue: (index: number) => string
   getVisitorDisplayValue: (cardKey: string, index: number) => string
 }>()
+
+const { t } = useI18n()
 
 const emit = defineEmits<{
   selectSource: [key: TabKey]
@@ -47,14 +50,14 @@ const emit = defineEmits<{
             :class="[activeTab === card.key ? 'dashboard-source-card--active' : '', 'glass-card card-hover']"
             :style="{ animationDelay: (index * 0.08 + 0.1) + 's' }"
             :aria-pressed="activeTab === card.key"
-            :aria-label="`查看${card.label}排行榜`"
+            :aria-label="t('dashboard.sourceRanking', { source: t(`dashboard.stats.${card.labelKey}`) })"
             @click="emit('selectSource', card.key)"
           >
             <span class="flex items-center gap-2">
               <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" :class="[card.iconBg, card.iconColor]">
                 <span class="w-3 h-3 flex items-center justify-center" v-html="card.icon" />
               </span>
-              <span class="text-xs font-medium" :class="card.labelColor || 'text-stone-500'">{{ card.label }}</span>
+              <span class="text-xs font-medium" :class="card.labelColor || 'text-stone-500'">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
             </span>
             <span class="text-lg font-bold tabular-nums" :class="card.numColor">{{ getAnimatedValue(index) }}</span>
           </button>
@@ -68,7 +71,7 @@ const emit = defineEmits<{
               <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" :class="[card.iconBg, card.iconColor]">
                 <span class="w-3 h-3 flex items-center justify-center" v-html="card.icon" />
               </span>
-              <span class="text-xs font-medium" :class="card.labelColor">{{ card.label }}</span>
+              <span class="text-xs font-medium" :class="card.labelColor">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
             </span>
             <span class="text-lg font-bold tabular-nums" :class="card.numColor">{{ getAnimatedValue(index) }}</span>
           </div>
@@ -87,7 +90,7 @@ const emit = defineEmits<{
             <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" :class="[card.iconBg, card.iconColor]">
               <span class="w-3 h-3 flex items-center justify-center" v-html="card.icon" />
             </div>
-            <span class="text-xs font-medium text-stone-400">{{ card.label }}</span>
+            <span class="text-xs font-medium text-stone-400">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
           </div>
           <span class="text-lg font-bold tabular-nums" :class="card.numColor">{{ getVisitorDisplayValue(card.key, index) }}</span>
         </div>

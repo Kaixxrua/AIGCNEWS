@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
 import ReportContentPanel from '../components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '../components/report/ReportControlsPanel.vue'
@@ -22,6 +23,7 @@ import {
   type SubscriptionListResponse,
 } from '../features/report/reportViewModel'
 
+const { t } = useI18n()
 const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
@@ -170,7 +172,7 @@ const {
       <ReportContentPanel
         :report-content="reportContent"
         :is-generating="isGenerating"
-        :current-type-label="currentTypeInfo?.label"
+        :current-type-label="currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : ''"
         :auto-scroll="autoScroll"
         :render-markdown="renderMarkdown"
         @resume-auto-scroll="resumeAutoScroll"

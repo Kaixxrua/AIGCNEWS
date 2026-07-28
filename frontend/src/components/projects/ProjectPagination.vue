@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 defineProps<{
   page: number
   totalPages: number
@@ -16,17 +18,17 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <nav class="projects-pagination glass-card" aria-label="项目分页">
-    <p>第 {{ page }} / {{ totalPages }} 页 · {{ total }} 个条目</p>
+  <nav class="projects-pagination glass-card" :aria-label="t('projects.pagination')">
+    <p>{{ t('projects.pageSummary', { page, totalPages, total }) }}</p>
     <div class="projects-pagination__controls">
-      <button class="btn-secondary" :disabled="!hasPrev" @click="emit('goPage', page - 1)">上一页</button>
-      <form class="projects-pagination__jump" aria-label="跳转页码" @submit.prevent="emit('jumpToPage')">
-        <span>跳至</span>
-        <input :value="pageJump" type="number" inputmode="numeric" min="1" :max="totalPages" :placeholder="String(page)" aria-label="输入要跳转的页码" @input="emit('update:pageJump', ($event.target as HTMLInputElement).value)" />
-        <span>页</span>
-        <button class="btn-secondary" type="submit">跳转</button>
+      <button class="btn-secondary" :disabled="!hasPrev" @click="emit('goPage', page - 1)">{{ t('projects.previous') }}</button>
+      <form class="projects-pagination__jump" :aria-label="t('projects.pageJump')" @submit.prevent="emit('jumpToPage')">
+        <span>{{ t('projects.jumpTo') }}</span>
+        <input :value="pageJump" type="number" inputmode="numeric" min="1" :max="totalPages" :placeholder="String(page)" :aria-label="t('projects.pageInput')" @input="emit('update:pageJump', ($event.target as HTMLInputElement).value)" />
+        <span>{{ t('common.page') }}</span>
+        <button class="btn-secondary" type="submit">{{ t('projects.jump') }}</button>
       </form>
-      <button class="btn-secondary" :disabled="!hasNext" @click="emit('goPage', page + 1)">下一页</button>
+      <button class="btn-secondary" :disabled="!hasNext" @click="emit('goPage', page + 1)">{{ t('projects.next') }}</button>
     </div>
   </nav>
 </template>

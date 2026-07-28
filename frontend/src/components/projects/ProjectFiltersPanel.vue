@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type {
   GitHubProjectCategory,
   GitHubProjectSort,
@@ -8,6 +9,8 @@ import type {
 } from '../../services/projects/projectApi'
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
+
+const { t } = useI18n()
 
 const props = defineProps<{
   sourceOptions: SourceOption[]
@@ -48,7 +51,7 @@ const emit = defineEmits<{
 
 <template>
   <section class="projects-toolbar glass-card">
-    <div class="projects-source-tabs" aria-label="来源筛选">
+    <div class="projects-source-tabs" :aria-label="t('projects.sourceFilter')">
       <button v-for="item in sourceOptions" :key="item.value" type="button" class="projects-source-tab" :class="source === item.value ? 'projects-source-tab--active' : ''" @click="emit('changeSource', item.value)">
         <strong>{{ item.label }}</strong>
         <small>{{ item.hint }}</small>
@@ -60,40 +63,40 @@ const emit = defineEmits<{
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
       </svg>
-      <input :value="searchQuery" class="input" type="search" placeholder="搜索项目名、网站、中文描述、语言或标签" @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)" />
+      <input :value="searchQuery" class="input" type="search" :placeholder="t('projects.searchPlaceholder')" @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)" />
       <button v-if="selectedLanguage" type="button" class="projects-search__filter" @click="emit('clearLanguage')">{{ selectedLanguage }} ×</button>
     </div>
 
     <label v-if="!requiresPersonalLogin" class="projects-sort">
-      <span>排序</span>
+      <span>{{ t('projects.sort') }}</span>
       <select :value="sort" :disabled="selectedScope === 'today'" @change="emit('update:sort', ($event.target as HTMLSelectElement).value as GitHubProjectSort)">
-        <option v-if="!isWebsiteOnlyView" value="hot">{{ selectedScope === 'today' ? '热度前 50' : '热度优先' }}</option>
-        <option value="stars">Stars 优先</option>
-        <option value="updated">最近更新</option>
-        <option value="recent">最近收录</option>
-        <option value="name">名称</option>
+        <option v-if="!isWebsiteOnlyView" value="hot">{{ t(selectedScope === 'today' ? 'projects.sortHotTop' : 'projects.sortHot') }}</option>
+        <option value="stars">{{ t('projects.sortStars') }}</option>
+        <option value="updated">{{ t('projects.sortUpdated') }}</option>
+        <option value="recent">{{ t('projects.sortRecent') }}</option>
+        <option value="name">{{ t('projects.sortName') }}</option>
       </select>
     </label>
   </section>
 
-  <section v-if="!requiresPersonalLogin && !isPersonalView" class="projects-category-panel glass-card" aria-label="项目分类筛选">
-    <div class="projects-categories" aria-label="一级分类筛选">
-      <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><span>{{ allScope?.name || '全部' }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
-      <button type="button" class="projects-category projects-category--recommend" :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'recommended')"><span>{{ recommendedScope?.name || '站长推荐' }}</span><small>{{ recommendedScope?.count ?? 0 }}</small></button>
-      <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><span>{{ todayScope?.name || '今日暴涨' }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
+  <section v-if="!requiresPersonalLogin && !isPersonalView" class="projects-category-panel glass-card" :aria-label="t('projects.categoryFilter')">
+    <div class="projects-categories" :aria-label="t('projects.primaryCategoryFilter')">
+      <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><span>{{ allScope?.name || t('projects.all') }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
+      <button type="button" class="projects-category projects-category--recommend" :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'recommended')"><span>{{ recommendedScope?.name || t('projects.recommended') }}</span><small>{{ recommendedScope?.count ?? 0 }}</small></button>
+      <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><span>{{ todayScope?.name || t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
       <button v-for="category in semanticCategories" :key="category.slug" type="button" class="projects-category" :class="selectedScope === 'all' && selectedCategory === category.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectCategory', category.slug)"><span>{{ category.name }}</span><small>{{ category.count }}</small></button>
     </div>
-    <div v-if="visibleSubcategories.length" class="projects-subcategories" aria-label="二级分类筛选">
-      <span class="projects-subcategories__label">{{ activeCategory?.name }} · 二级分类</span>
-      <button type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', 'all')"><span>全部</span><small>{{ activeCategory?.count ?? 0 }}</small></button>
+    <div v-if="visibleSubcategories.length" class="projects-subcategories" :aria-label="t('projects.subcategoryFilter')">
+      <span class="projects-subcategories__label">{{ t('projects.subcategory', { category: activeCategory?.name || '' }) }}</span>
+      <button type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', 'all')"><span>{{ t('projects.all') }}</span><small>{{ activeCategory?.count ?? 0 }}</small></button>
       <button v-for="subcategory in visibleSubcategories" :key="subcategory.slug" type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === subcategory.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', subcategory.slug)"><span>{{ subcategory.name }}</span><small>{{ subcategory.count }}</small></button>
     </div>
   </section>
 
-  <section v-else-if="!requiresPersonalLogin && (personalTags.length || selectedTag)" class="projects-category-panel projects-tag-panel glass-card" aria-label="个人标签筛选">
-    <div class="projects-categories" aria-label="个人标签筛选">
+  <section v-else-if="!requiresPersonalLogin && (personalTags.length || selectedTag)" class="projects-category-panel projects-tag-panel glass-card" :aria-label="t('projects.personalTagFilter')">
+    <div class="projects-categories" :aria-label="t('projects.personalTagFilter')">
       <button v-for="tag in personalTags" :key="tag.label" type="button" class="projects-category projects-category--tag" :class="selectedTag === tag.label ? 'tab-active' : 'tab-inactive'" :disabled="tagsLoading" @click="emit('selectPersonalTag', tag.label)"><span>{{ tag.label }}</span><small>{{ tag.count }}</small></button>
-      <button v-if="selectedTag" type="button" class="projects-category projects-category--sub" :disabled="tagsLoading" @click="emit('clearPersonalTag')">清除标签</button>
+      <button v-if="selectedTag" type="button" class="projects-category projects-category--sub" :disabled="tagsLoading" @click="emit('clearPersonalTag')">{{ t('projects.clearTag') }}</button>
     </div>
   </section>
 </template>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
 import AuthFeedback from '../components/auth/AuthFeedback.vue'
 import AuthPageHeader from '../components/auth/AuthPageHeader.vue'
@@ -12,6 +13,7 @@ import { useAuthStore } from '../stores/authStore'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const authStore = useAuthStore()
 
 const redirect = computed(() => getSafeInternalRedirect(route.query.redirect))
@@ -44,7 +46,7 @@ const {
     <div class="w-full max-w-sm py-4">
 
       <!-- 标题区 -->
-      <AuthPageHeader title="AIGC 资讯 · 注册" description="创建您的账号，开启 AI 资讯之旅">
+      <AuthPageHeader :title="t('auth.registerTitle')" :description="t('auth.registerDescription')">
         <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
           <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
           <circle cx="12" cy="7" r="4"/>
@@ -67,14 +69,14 @@ const {
 
         <!-- 邮箱验证码 -->
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-stone-500">验证码</label>
+          <label class="text-xs font-medium text-stone-500">{{ t('auth.otp') }}</label>
           <input
             v-model="otp"
             type="text"
             inputmode="numeric"
             maxlength="6"
             class="input tracking-widest"
-            placeholder="6 位数字验证码"
+            :placeholder="t('auth.otpPlaceholder')"
             autocomplete="one-time-code"
             :disabled="loading"
           />
@@ -83,9 +85,9 @@ const {
         <PasswordConfirmationFields
           v-model:password="password"
           v-model:confirm-password="confirmPwd"
-          password-label="密码"
-          confirm-password-label="确认密码"
-          confirm-password-placeholder="再次输入密码"
+          :password-label="t('auth.password')"
+          :confirm-password-label="t('auth.confirmPassword')"
+          :confirm-password-placeholder="t('auth.confirmPasswordPlaceholder')"
           :disabled="loading"
         />
 
@@ -104,7 +106,7 @@ const {
               ? 'bg-accent border-ink'
               : 'bg-white border-stone-300 hover:border-ink hover:bg-accent-soft'"
             :aria-pressed="agreedToTerms"
-            aria-label="同意用户协议与免责声明"
+            :aria-label="t('auth.agreeAria')"
             @click="agreedToTerms = !agreedToTerms"
           >
             <svg v-if="agreedToTerms" viewBox="0 0 12 12" fill="none" stroke="#171a09" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
@@ -112,11 +114,11 @@ const {
             </svg>
           </button>
           <label class="text-xs text-stone-500 leading-relaxed cursor-pointer select-none" @click="agreedToTerms = !agreedToTerms">
-            我已阅读并同意
-            <RouterLink to="/disclaimer" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>《用户协议与免责声明》</RouterLink>
-            及
-            <RouterLink to="/privacy" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>《隐私政策》</RouterLink>
-            ，包括但不限于 AI 内容免责、禁止违法输入等条款
+            {{ t('auth.agreeTerms') }}
+            <RouterLink to="/disclaimer" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>{{ t('auth.terms') }}</RouterLink>
+            {{ t('auth.and') }}
+            <RouterLink to="/privacy" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>{{ t('footer.privacy') }}</RouterLink>
+            {{ t('auth.termsSuffix') }}
           </label>
         </div>
 
@@ -133,15 +135,15 @@ const {
             <line x1="19" y1="8" x2="19" y2="14"/>
             <line x1="22" y1="11" x2="16" y2="11"/>
           </svg>
-          {{ loading ? '注册中…' : '注册' }}
+          {{ loading ? t('auth.registering') : t('auth.register') }}
         </button>
       </div>
 
       <!-- 底部登录链接 -->
       <p class="mt-5 text-center text-sm text-stone-400 stagger-enter" style="animation-delay: 0.2s">
-        已有账号？
+        {{ t('auth.hasAccount') }}
         <RouterLink :to="{ path: '/login', query: redirectQuery }" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors">
-          去登录
+          {{ t('auth.goLogin') }}
         </RouterLink>
       </p>
 

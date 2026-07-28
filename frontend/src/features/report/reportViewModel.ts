@@ -1,18 +1,18 @@
 import { Circle, Code2, FileText, Globe, Newspaper, Rocket } from 'lucide-vue-next'
 
 export const REPORT_TYPES = [
-  { key: 'all',         label: '综合简报', icon: Globe,     desc: '全源汇总' },
-  { key: 'arxiv',       label: '学术报告', icon: FileText,  desc: 'HF Papers' },
-  { key: 'github',      label: '工程报告', icon: Code2,     desc: 'GitHub Hot' },
-  { key: 'news',        label: '行业报告', icon: Newspaper, desc: 'RSS 新闻' },
-  { key: 'producthunt', label: '产品报告', icon: Rocket,    desc: 'Product Hunt' },
-  { key: 'hackernews',  label: '社区报告', icon: Circle,    desc: 'Hacker News' },
+  { key: 'all',         labelKey: 'allLabel', icon: Globe, descKey: 'allDesc' },
+  { key: 'arxiv',       labelKey: 'arxivLabel', icon: FileText, descKey: 'arxivDesc' },
+  { key: 'github',      labelKey: 'githubLabel', icon: Code2, descKey: 'githubDesc' },
+  { key: 'news',        labelKey: 'newsLabel', icon: Newspaper, descKey: 'newsDesc' },
+  { key: 'producthunt', labelKey: 'producthuntLabel', icon: Rocket, descKey: 'producthuntDesc' },
+  { key: 'hackernews',  labelKey: 'hackernewsLabel', icon: Circle, descKey: 'hackernewsDesc' },
 ] as const
 
 export const PERIOD_TYPES = [
-  { key: 'daily',   label: '日报' },
-  { key: 'weekly',  label: '周报' },
-  { key: 'monthly', label: '月报' },
+  { key: 'daily' },
+  { key: 'weekly' },
+  { key: 'monthly' },
 ] as const
 
 export type ReportKey = (typeof REPORT_TYPES)[number]['key']

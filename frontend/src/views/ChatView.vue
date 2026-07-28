@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useChatStore, type ChatSettings } from '../stores/chatStore'
 import { useAuthStore } from '../stores/authStore'
 import { useLatexRenderer } from '../composables/useLatexRenderer'
@@ -12,6 +13,7 @@ import { useChatAttachments } from '../composables/useChatAttachments'
 import { useChatViewport } from '../composables/useChatViewport'
 import { getStreamPhaseLabel } from '../features/chat/chatPresentation'
 
+const { t } = useI18n()
 const store = useChatStore()
 const authStore = useAuthStore()
 const router = useRouter()
@@ -53,7 +55,7 @@ const {
 } = useChatViewport(listRef, messages)
 
 /** 流式阶段文案映射 */
-const streamPhaseLabel = computed(() => getStreamPhaseLabel(store.streamPhase))
+const streamPhaseLabel = computed(() => t(`chat.${getStreamPhaseLabel(store.streamPhase)}`))
 
 onMounted(async () => {
   document.addEventListener('click', handleFormulaCopy)
@@ -115,7 +117,7 @@ const handleSend = async () => {
   autoScroll.value = true
   isSending.value = true
   try {
-    await store.sendMessage(text || '请结合附件内容进行分析。')
+    await store.sendMessage(text || t('chat.analyzeAttachments'))
     clearAttachmentMetas()
   }
   finally { isSending.value = false }
@@ -163,7 +165,7 @@ const cancelSettings = () => { showSettings.value = false }
           <!-- 侧边栏折叠按钮 -->
           <button
             class="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition"
-            :title="showSidebar ? '收起会话列表' : '展开会话列表'"
+            :title="t(showSidebar ? 'chat.collapseSidebar' : 'chat.expandSidebar')"
             @click="showSidebar = !showSidebar"
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -179,10 +181,10 @@ const cancelSettings = () => { showSettings.value = false }
           </div>
           <div class="min-w-0">
             <h2 class="truncate text-sm font-semibold text-stone-800 font-serif">
-              {{ store.activeConversation?.title || 'RAG 智能助手' }}
+              {{ store.activeConversation?.title || t('chat.assistant') }}
             </h2>
             <p class="text-2xs text-stone-400">
-              记忆 {{ store.settings.maxHistoryTurns }} 轮 · T={{ store.settings.temperature.toFixed(1) }}
+              {{ t('chat.memory', { turns: store.settings.maxHistoryTurns, temperature: store.settings.temperature.toFixed(1) }) }}
             </p>
           </div>
         </div>
@@ -200,7 +202,7 @@ const cancelSettings = () => { showSettings.value = false }
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/>
             </svg>
-            清空
+            {{ t('chat.clear') }}
           </button>
           <button class="rounded-full p-2 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600" @click="openSettings">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -235,7 +237,7 @@ const cancelSettings = () => { showSettings.value = false }
       <div v-if="!autoScroll" class="pointer-events-none absolute bottom-20 right-5 z-10">
         <button class="pointer-events-auto btn-primary text-xs" @click="resumeAutoScroll">
           <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-          回到底部
+          {{ t('chat.backToBottom') }}
         </button>
       </div>
 
@@ -261,9 +263,9 @@ const cancelSettings = () => { showSettings.value = false }
             <path d="M8 9h8M8 13h5"/>
           </svg>
         </div>
-        <h1 class="text-xl font-semibold text-stone-800 font-serif">服务暂未开放敬请期待</h1>
+        <h1 class="text-xl font-semibold text-stone-800 font-serif">{{ t('chat.unavailableTitle') }}</h1>
         <p class="mt-3 text-sm leading-6 text-stone-500">
-          聊天与 AI 对话功能正在维护升级中，开放后将第一时间恢复使用。
+          {{ t('chat.unavailableDescription') }}
         </p>
       </div>
     </div>

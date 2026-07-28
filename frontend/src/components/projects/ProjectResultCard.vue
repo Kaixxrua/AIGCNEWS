@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import type { AppLocale } from '../../i18n'
 import type { GitHubProjectItem, GitHubProjectSort, ProjectScope } from '../../services/projects/projectApi'
 import {
-  fallbackProjectDescription,
+  projectDescription,
   favoriteButtonLabel,
   formattedProjectHotScore,
   formatProjectCount,
@@ -11,16 +13,18 @@ import {
   isWebsite,
   projectDailyGrowth,
   projectDailyGrowthTitle,
-  projectLinkLabel,
+  projectLinkLabelKey,
   projectLogoKey,
   projectName,
-  projectSourceBadge,
+  projectSourceBadgeKey,
   projectUrl,
   recommendButtonLabel,
   shouldShowProjectHotScore,
   websiteLogoInitial,
   type ProjectChip,
 } from '../../features/projects/projectPresentation'
+
+const { locale, t } = useI18n()
 
 const props = defineProps<{
   repo: GitHubProjectItem
@@ -58,6 +62,10 @@ const websiteLogoUrl = computed(() => (
   logoKey.value && !props.logoBroken ? (props.repo.image_url || '') : ''
 ))
 const displayTags = computed(() => projectDisplayTags(props.repo, props.isPersonalView))
+const description = computed(() => projectDescription(
+  props.repo, locale.value as AppLocale,
+  t(isWebsite(props.repo) ? 'projects.fallbackWebsite' : 'projects.fallbackProject'),
+))
 </script>
 
 <template>
@@ -79,7 +87,7 @@ const displayTags = computed(() => projectDisplayTags(props.repo, props.isPerson
             class="project-card__logo"
             :class="logoLoaded ? 'project-card__logo--loaded' : ''"
             :src="repo.image_url || ''"
-            :alt="`${projectName(repo)} 图标`"
+            :alt="t('projects.iconAlt', { name: projectName(repo) })"
             width="42"
             height="42"
             decoding="async"
@@ -91,12 +99,12 @@ const displayTags = computed(() => projectDisplayTags(props.repo, props.isPerson
         </div>
         <div>
           <div class="project-card__source-row">
-            <span class="project-card__source">{{ projectSourceBadge(repo) }}</span>
+            <span class="project-card__source">{{ projectSourceBadgeKey(repo) ? t(`projects.${projectSourceBadgeKey(repo)}`) : 'GitHub' }}</span>
             <span
               v-if="!isWebsite(repo) && repo.availability_status === 'not_found'"
               class="project-card__availability"
             >
-              仓库不可用
+              {{ t('projects.unavailable') }}
             </span>
           </div>
           <h2 :title="projectName(repo)">{{ projectName(repo) }}</h2>
@@ -110,9 +118,9 @@ const displayTags = computed(() => projectDisplayTags(props.repo, props.isPerson
           :href="projectUrl(repo)"
           target="_blank"
           rel="noopener noreferrer"
-          :aria-label="isWebsite(repo) ? '打开网页收藏' : '打开 GitHub 仓库'"
+          :aria-label="t(isWebsite(repo) ? 'projects.openWebsite' : 'projects.openRepository')"
         >
-          {{ projectLinkLabel(repo) }}
+          {{ projectLinkLabelKey(repo) ? t(`projects.${projectLinkLabelKey(repo)}`) : 'GitHub' }}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M7 17L17 7" />
             <path d="M9 7h8v8" />
@@ -148,7 +156,7 @@ const displayTags = computed(() => projectDisplayTags(props.repo, props.isPerson
           :disabled="savingEdit"
           @click="emit('edit', repo)"
         >
-          编辑
+          {{ t('projects.edit') }}
         </button>
         <button
           v-if="showDelete"
@@ -157,16 +165,16 @@ const displayTags = computed(() => projectDisplayTags(props.repo, props.isPerson
           :disabled="deleting"
           @click="emit('delete', repo)"
         >
-          {{ deleting ? '处理中' : '删除' }}
+          {{ deleting ? t('common.processing') : t('projects.delete') }}
         </button>
       </div>
     </header>
 
     <p class="project-card__description">
-      {{ repo.description_zh || repo.description || fallbackProjectDescription(repo) }}
+      {{ description }}
     </p>
 
-    <div class="project-card__tags" aria-label="分类标签">
+    <div class="project-card__tags" :aria-label="t('projects.categoryTags')">
       <button
         v-for="chip in displayTags"
         :key="`${chip.type}:${chip.value}`"
@@ -179,7 +187,7 @@ const displayTags = computed(() => projectDisplayTags(props.repo, props.isPerson
       </button>
     </div>
 
-    <footer class="project-card__stats" :aria-label="isWebsite(repo) ? '网页收藏信息' : 'GitHub 指标'">
+    <footer class="project-card__stats" :aria-label="t(isWebsite(repo) ? 'projects.websiteInfo' : 'projects.githubMetrics')">
       <template v-if="isWebsite(repo)">
         <span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -197,7 +205,7 @@ const displayTags = computed(() => projectDisplayTags(props.repo, props.isPerson
             <rect x="3" y="4" width="18" height="18" rx="2" />
             <path d="M3 10h18" />
           </svg>
-          {{ formatProjectShortDate(repo.first_seen_at) }} 收录
+          {{ t('projects.collectedOn', { date: formatProjectShortDate(repo.first_seen_at, t('projects.collectedFallback'), locale as AppLocale) }) }}
         </span>
       </template>
       <template v-else>
@@ -205,17 +213,17 @@ const displayTags = computed(() => projectDisplayTags(props.repo, props.isPerson
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="m12 2.2 2.9 5.88 6.5.94-4.7 4.58 1.1 6.47L12 17.02l-5.8 3.05 1.1-6.47-4.7-4.58 6.5-.94L12 2.2Z" />
           </svg>
-          {{ formatProjectCount(repo.stars) }} stars
+          {{ t('projects.stars', { count: formatProjectCount(repo.stars, locale as AppLocale) }) }}
         </span>
         <span :title="projectDailyGrowthTitle(repo)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 17l6-6 4 4 8-8" />
             <path d="M15 7h6v6" />
           </svg>
-          +{{ formatProjectCount(projectDailyGrowth(repo)) }} 今日
+          {{ t('projects.todayGrowth', { count: formatProjectCount(projectDailyGrowth(repo), locale as AppLocale) }) }}
         </span>
-        <span v-if="shouldShowProjectHotScore(repo, sort, scope)" title="热度分由规模校正增长、增长加速度、绝对增长、维护活跃和社区参与组成">
-          热度 {{ formattedProjectHotScore(repo) }}
+        <span v-if="shouldShowProjectHotScore(repo, sort, scope)" :title="t('projects.hotScoreTitle')">
+          {{ t('projects.hotScore', { score: formattedProjectHotScore(repo) }) }}
         </span>
         <span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -226,7 +234,7 @@ const displayTags = computed(() => projectDisplayTags(props.repo, props.isPerson
             <path d="M18 7v3a5 5 0 0 1-5 5h-1" />
             <path d="M12 15v2" />
           </svg>
-          {{ formatProjectCount(repo.forks) }} forks
+          {{ t('projects.forks', { count: formatProjectCount(repo.forks, locale as AppLocale) }) }}
         </span>
       </template>
     </footer>

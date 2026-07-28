@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { ref } from 'vue'
 import { Clipboard, SquareCode } from 'lucide-vue-next'
 import type { ChatMessage } from '../../stores/chatStore'
@@ -42,8 +44,8 @@ const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
           <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
         </svg>
       </div>
-      <p class="text-sm font-medium text-stone-500 font-serif">开始一段对话</p>
-      <p class="text-xs text-center max-w-xs text-stone-400">输入问题，RAG 助手将基于知识库给出准确答案并提供参考来源</p>
+      <p class="text-sm font-medium text-stone-500 font-serif">{{ t('chat.startTitle') }}</p>
+      <p class="text-xs text-center max-w-xs text-stone-400">{{ t('chat.startDescription') }}</p>
     </div>
 
     <div
@@ -79,10 +81,10 @@ const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.346A3 3 0 0115 18H9a3 3 0 01-2.12-.879l-.347-.346a5 5 0 010-7.072z"/>
               </svg>
               <span class="flex-1 text-xs font-medium thinking-label">
-                <template v-if="msg.isThinking"><span class="thinking-dots-text">正在深度思考</span></template>
+                <template v-if="msg.isThinking"><span class="thinking-dots-text">{{ t('chat.thinking') }}</span></template>
                 <template v-else>
-                  已完成深度思考
-                  <span v-if="msg.thinkingDurationSec > 0" class="thinking-duration">（用时 {{ msg.thinkingDurationSec }} 秒）</span>
+                  {{ t('chat.thought') }}
+                  <span v-if="msg.thinkingDurationSec > 0" class="thinking-duration">{{ t('chat.thoughtDuration', { seconds: msg.thinkingDurationSec }) }}</span>
                 </template>
               </span>
               <svg
@@ -103,7 +105,7 @@ const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
               >
                 <div class="thinking-content-inner">
                   <p v-if="msg.thinking" class="font-mono text-[11px] leading-[1.7] text-stone-500 whitespace-pre-wrap break-words">{{ msg.thinking }}</p>
-                  <p v-else-if="msg.isThinking" class="text-[11px] text-stone-400 italic">正在检索与生成中…</p>
+                  <p v-else-if="msg.isThinking" class="text-[11px] text-stone-400 italic">{{ t('chat.retrieving') }}</p>
                   <span v-if="msg.isThinking" class="thinking-cursor" />
                 </div>
               </div>
@@ -118,8 +120,8 @@ const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
 
           <div v-if="msg.content" class="rounded-[20px] rounded-bl-md px-4 py-3" style="background: rgba(255,255,255,0.85); border: 1px solid rgba(168,162,158,0.20)">
             <div class="flex justify-end gap-1 mb-1">
-              <button class="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-md bg-stone-100 text-stone-400 hover:text-stone-600 transition" title="复制公式 LaTeX 源码" @click="copyFormulas(msg.content)">
-                <Clipboard class="h-3 w-3" /> 复制公式
+              <button class="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-md bg-stone-100 text-stone-400 hover:text-stone-600 transition" :title="t('chat.copyFormulaTitle')" @click="copyFormulas(msg.content)">
+                <Clipboard class="h-3 w-3" /> {{ t('chat.copyFormula') }}
               </button>
               <button
                 class="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-md transition"
@@ -127,7 +129,7 @@ const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
                 @click="toggleRaw(idx)"
               >
                 <SquareCode class="h-3 w-3" />
-                {{ rawModeSet.has(idx) ? '渲染公式' : '源码' }}
+                {{ t(rawModeSet.has(idx) ? 'chat.renderFormula' : 'chat.sourceCode') }}
               </button>
             </div>
             <div v-if="!rawModeSet.has(idx)" class="prose-content text-sm leading-7 text-stone-700" v-html="renderMarkdown(msg.content)" />
@@ -135,12 +137,12 @@ const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
           </div>
 
           <div class="flex items-center gap-2 px-1 pt-1 text-2xs text-stone-400">
-            <button class="transition hover:text-stone-600" @click="emit('regenerate', msg.id)">重新生成</button>
-            <button class="transition hover:text-red-500" @click="emit('delete', msg.id)">删除</button>
+            <button class="transition hover:text-stone-600" @click="emit('regenerate', msg.id)">{{ t('chat.regenerate') }}</button>
+            <button class="transition hover:text-red-500" @click="emit('delete', msg.id)">{{ t('chat.delete') }}</button>
           </div>
 
           <div v-if="msg.sources?.length" class="space-y-1.5 pt-1">
-            <p class="text-2xs font-semibold uppercase tracking-widest text-stone-400 px-1">参考来源 · {{ msg.sources.length }} 条</p>
+            <p class="text-2xs font-semibold uppercase tracking-widest text-stone-400 px-1">{{ t('chat.references', { count: msg.sources.length }) }}</p>
             <div class="flex flex-col gap-1.5">
               <div
                 v-for="(source, sidx) in msg.sources"

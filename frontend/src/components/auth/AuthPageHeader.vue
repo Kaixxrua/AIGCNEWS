@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import LocaleToggle from '../LocaleToggle.vue'
 defineProps<{
   title: string
   description: string
@@ -6,7 +7,8 @@ defineProps<{
 </script>
 
 <template>
-  <div class="mb-8 text-center stagger-enter">
+  <div class="relative mb-8 text-center stagger-enter">
+    <div class="absolute right-0 top-0"><LocaleToggle /></div>
     <div class="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-stone-100">
       <slot />
     </div>

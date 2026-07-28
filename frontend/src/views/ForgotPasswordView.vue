@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AuthFeedback from '../components/auth/AuthFeedback.vue'
 import AuthPageHeader from '../components/auth/AuthPageHeader.vue'
@@ -11,6 +12,7 @@ import { api } from '../services/http/apiClient'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 const redirect = computed(() => getSafeInternalRedirect(route.query.redirect))
 const redirectQuery = computed(() => ({ redirect: redirect.value }))
@@ -41,7 +43,7 @@ const {
     <div class="w-full max-w-sm py-4">
 
       <!-- 标题区 -->
-      <AuthPageHeader title="AIGC 资讯 · 重置密码" description="通过邮箱验证码设置新密码">
+      <AuthPageHeader :title="t('auth.forgotTitle')" :description="t('auth.forgotDescription')">
         <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
           <path d="M7 11V8a5 5 0 0110 0v3"/>
           <rect x="5" y="11" width="14" height="10" rx="2"/>
@@ -66,14 +68,14 @@ const {
 
         <!-- 邮箱验证码 -->
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-stone-500">验证码</label>
+          <label class="text-xs font-medium text-stone-500">{{ t('auth.otp') }}</label>
           <input
             v-model="otp"
             type="text"
             inputmode="numeric"
             maxlength="6"
             class="input tracking-widest"
-            placeholder="6 位数字验证码"
+            :placeholder="t('auth.otpPlaceholder')"
             autocomplete="one-time-code"
             :disabled="loading || resetDone"
           />
@@ -82,9 +84,9 @@ const {
         <PasswordConfirmationFields
           v-model:password="password"
           v-model:confirm-password="confirmPwd"
-          password-label="新密码"
-          confirm-password-label="确认新密码"
-          confirm-password-placeholder="再次输入新密码"
+          :password-label="t('auth.newPassword')"
+          :confirm-password-label="t('auth.confirmPassword')"
+          :confirm-password-placeholder="t('auth.confirmPasswordPlaceholder')"
           :disabled="loading || resetDone"
           submit-on-enter
           @submit="handleReset"
@@ -107,15 +109,15 @@ const {
             <path d="M3 12a9 9 0 101.6-5.1"/>
             <polyline points="3 4 3 10 9 10"/>
           </svg>
-          {{ loading ? '重置中…' : '重置密码' }}
+          {{ loading ? t('auth.resetting') : t('auth.reset') }}
         </button>
       </div>
 
       <!-- 返回登录链接 -->
       <p class="mt-5 text-center text-sm text-stone-400 stagger-enter" style="animation-delay: 0.2s">
-        想起密码了？
+        {{ t('auth.rememberPassword') }}
         <RouterLink :to="{ path: '/login', query: redirectQuery }" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors">
-          返回登录
+          {{ t('auth.backToLogin') }}
         </RouterLink>
       </p>
 

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "test:unit": "vitest run",
     "preview": "vite preview"
   },
@@ -25,6 +26,7 @@
     "three": "^0.183.2",
     "vanta": "^0.5.24",
     "vue": "^3.5.25",
+    "vue-i18n": "^11.4.8",
     "vue-router": "^5.0.3"
   },
   "devDependencies": {

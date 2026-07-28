@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { formatLocaleDate } from '../i18n/formatters'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   modelValue?: string
@@ -14,14 +18,8 @@ const today = new Date()
 const viewYear = ref(today.getFullYear())
 const viewMonth = ref(today.getMonth())
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
-
-const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-
-const monthLabel = computed(() => `${MONTH_NAMES[viewMonth.value]} ${viewYear.value}`)
+const monthLabel = computed(() => formatLocaleDate(new Date(viewYear.value, viewMonth.value, 1), { year: 'numeric', month: 'long' }))
+const weekdayLabels = computed(() => Array.from({ length: 7 }, (_, day) => formatLocaleDate(new Date(2023, 0, day + 1), { weekday: 'narrow' })))
 
 const prevMonth = () => {
   if (viewMonth.value === 0) { viewMonth.value = 11; viewYear.value-- }
@@ -103,7 +101,7 @@ const selectDate = (day: CalendarDay) => {
       <div class="flex items-center gap-0.5">
         <button
           class="flex h-5 w-5 items-center justify-center rounded-full text-stone-500 transition hover:bg-accent-soft hover:text-ink"
-          @click="prevMonth"
+          :aria-label="t('dashboard.previousMonth')" @click="prevMonth"
         >
           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6" />
@@ -111,7 +109,7 @@ const selectDate = (day: CalendarDay) => {
         </button>
         <button
           class="flex h-5 w-5 items-center justify-center rounded-full text-stone-500 transition hover:bg-accent-soft hover:text-ink"
-          @click="nextMonth"
+          :aria-label="t('dashboard.nextMonth')" @click="nextMonth"
         >
           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="9 18 15 12 9 6" />
@@ -122,8 +120,8 @@ const selectDate = (day: CalendarDay) => {
 
     <div class="grid grid-cols-7">
       <span
-        v-for="label in WEEKDAY_LABELS"
-        :key="label"
+        v-for="(label, weekdayIndex) in weekdayLabels"
+        :key="weekdayIndex"
         class="text-center font-medium text-stone-400 select-none" style="font-size: 9px; line-height: 16px"
       >
         {{ label }}
@@ -144,7 +142,7 @@ const selectDate = (day: CalendarDay) => {
           'calendar-day--disabled': !day.hasSnapshot && selectedDate !== day.date,
         }"
         :disabled="!day.hasSnapshot"
-        :title="day.hasSnapshot ? `${day.date} — 有采集快照` : day.date"
+        :title="day.hasSnapshot ? t('dashboard.snapshotAvailable', { date: day.date }) : day.date"
         @click="selectDate(day)"
       >
         {{ day.day }}

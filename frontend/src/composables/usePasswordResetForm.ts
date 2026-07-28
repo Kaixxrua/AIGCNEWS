@@ -1,4 +1,5 @@
 import { computed, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   getErrorDetail,
   isRateLimited,
@@ -16,6 +17,7 @@ interface PasswordResetFormDependencies {
 }
 
 export const usePasswordResetForm = ({ post, replaceLogin }: PasswordResetFormDependencies) => {
+  const { t } = useI18n()
   const email = ref('')
   const otp = ref('')
   const password = ref('')
@@ -42,7 +44,7 @@ export const usePasswordResetForm = ({ post, replaceLogin }: PasswordResetFormDe
     errorMsg.value = ''
     successMsg.value = ''
     if (!emailValid.value) {
-      errorMsg.value = '请输入有效的邮箱地址'
+      errorMsg.value = t('auth.invalidEmailGeneric')
       return
     }
     if (countdown.value > 0 || resetDone.value) return
@@ -51,11 +53,11 @@ export const usePasswordResetForm = ({ post, replaceLogin }: PasswordResetFormDe
     try {
       await post('/auth/send-password-reset-otp', { email: email.value.trim() })
       startCountdown()
-      successMsg.value = '如果该邮箱已注册，验证码将发送至该邮箱'
+      successMsg.value = t('auth.otpSentIfRegistered')
     } catch (e: unknown) {
       errorMsg.value = isRateLimited(e)
-        ? '请 60 秒后再试'
-        : getErrorDetail(e, '发送验证码失败，请稍后再试')
+        ? t('auth.rateLimited')
+        : getErrorDetail(e, t('auth.sendOtpFailed'))
     } finally {
       otpLoading.value = false
     }
@@ -64,10 +66,10 @@ export const usePasswordResetForm = ({ post, replaceLogin }: PasswordResetFormDe
   const handleReset = async () => {
     errorMsg.value = ''
     successMsg.value = ''
-    if (!emailValid.value) { errorMsg.value = '请输入有效的邮箱地址'; return }
-    if (!isValidOtp(otp.value)) { errorMsg.value = '验证码应为 6 位数字'; return }
-    if (!isValidPassword(password.value)) { errorMsg.value = '密码至少需要 6 个字符'; return }
-    if (!passwordsMatch(password.value, confirmPwd.value)) { errorMsg.value = '两次密码输入不一致'; return }
+    if (!emailValid.value) { errorMsg.value = t('auth.invalidEmailGeneric'); return }
+    if (!isValidOtp(otp.value)) { errorMsg.value = t('auth.invalidOtp'); return }
+    if (!isValidPassword(password.value)) { errorMsg.value = t('auth.passwordMin'); return }
+    if (!passwordsMatch(password.value, confirmPwd.value)) { errorMsg.value = t('auth.passwordMismatch'); return }
 
     loading.value = true
     try {
@@ -77,15 +79,15 @@ export const usePasswordResetForm = ({ post, replaceLogin }: PasswordResetFormDe
         new_password: password.value,
       })
       resetDone.value = true
-      successMsg.value = '密码重置成功，即将返回登录页…'
+      successMsg.value = t('auth.resetSuccess')
       resetCountdown()
       redirectTimer = setTimeout(() => {
         void replaceLogin()
       }, PASSWORD_RESET_REDIRECT_DELAY_MS)
     } catch (e: unknown) {
       errorMsg.value = isRateLimited(e)
-        ? '请 60 秒后再试'
-        : getErrorDetail(e, '密码重置失败，请稍后再试')
+        ? t('auth.rateLimited')
+        : getErrorDetail(e, t('auth.resetFailed'))
     } finally {
       loading.value = false
     }

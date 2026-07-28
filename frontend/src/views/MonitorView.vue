@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/authStore'
 import McpServerConfigPanel from '../components/monitor/McpServerConfigPanel.vue'
 import MonitorAdminActionControls from '../components/monitor/MonitorAdminActionControls.vue'
@@ -8,6 +9,7 @@ import MonitorTaskPanel from '../components/monitor/MonitorTaskPanel.vue'
 import ProviderConfigPanel from '../components/monitor/ProviderConfigPanel.vue'
 import { useMonitorPageController } from '../composables/useMonitorPageController'
 
+const { t } = useI18n()
 const authStore = useAuthStore()
 const {
   tasks, total, page, schedulerStatus, loading, errorMsg, successMsg, providerConfig, providerForm,
@@ -29,13 +31,13 @@ onMounted(refreshData)
     <!-- 页头 -->
     <div class="stagger-enter flex flex-wrap items-center justify-between gap-3 shrink-0">
       <div>
-        <h1 class="text-2xl font-bold text-stone-800 tracking-tight font-serif">运维监控</h1>
-        <p class="mt-0.5 text-sm text-stone-400">任务历史 · 调度器状态 · 数据管理</p>
+        <h1 class="text-2xl font-bold text-stone-800 tracking-tight font-serif">{{ t('monitor.title') }}</h1>
+        <p class="mt-0.5 text-sm text-stone-400">{{ t('monitor.subtitle') }}</p>
       </div>
       <div class="flex flex-wrap gap-2">
         <button class="btn-secondary" :disabled="loading" @click="refreshData">
           <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-          {{ loading ? '刷新中…' : '刷新' }}
+          {{ t(loading ? 'common.refreshing' : 'common.refresh') }}
         </button>
         <!-- Admin 专属：同步 / 强制同步 / 清空数据 -->
         <MonitorAdminActionControls

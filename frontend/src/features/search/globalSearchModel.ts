@@ -6,12 +6,12 @@ export const GLOBAL_SEARCH_BLUR_DELAY_MS = 200
 export const GLOBAL_SEARCH_RESULT_LIMIT = 20
 export const GLOBAL_SEARCH_SUMMARY_LENGTH = 80
 
-const SOURCE_LABELS: Readonly<Record<string, string>> = {
-  arxiv: 'Paper',
-  github: 'GitHub',
-  news: 'News',
-  producthunt: 'PH',
-  hackernews: 'HN',
+const SOURCE_LABEL_KEYS: Readonly<Record<string, string>> = {
+  arxiv: 'search.paper',
+  github: 'search.github',
+  news: 'search.news',
+  producthunt: 'search.producthunt',
+  hackernews: 'search.hackernews',
 }
 
 export type GlobalSearchDestination =
@@ -33,8 +33,8 @@ export const getGlobalSearchDestination = (
   return { kind: 'none' }
 }
 
-export const getSearchSourceLabel = (source?: string): string =>
-  SOURCE_LABELS[source || ''] ?? source ?? '?'
+export const getSearchSourceLabelKey = (source?: string): string | null =>
+  SOURCE_LABEL_KEYS[source || ''] ?? null
 
 export const getSearchSummaryPreview = (summary?: string | null): string =>
   `${(summary || '').slice(0, GLOBAL_SEARCH_SUMMARY_LENGTH)}…`

@@ -1,4 +1,5 @@
 import { computed, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   getErrorDetail,
   hasTrimmedValue,
@@ -19,6 +20,7 @@ interface RegisterFormDependencies {
 }
 
 export const useRegisterForm = ({ post, login, replace }: RegisterFormDependencies) => {
+  const { t } = useI18n()
   const email = ref('')
   const otp = ref('')
   const password = ref('')
@@ -41,7 +43,7 @@ export const useRegisterForm = ({ post, login, replace }: RegisterFormDependenci
   const sendOtp = async () => {
     errorMsg.value = ''
     if (!emailValid.value) {
-      errorMsg.value = '请输入有效的邮箱地址'
+      errorMsg.value = t('auth.invalidEmailGeneric')
       return
     }
     if (countdown.value > 0) return
@@ -49,7 +51,7 @@ export const useRegisterForm = ({ post, login, replace }: RegisterFormDependenci
     try {
       await post('/auth/send-email-otp', { email: email.value.trim() })
       startCountdown()
-      successMsg.value = '验证码已发送，请查收邮件'
+      successMsg.value = t('auth.otpSent')
       const timer = setTimeout(() => {
         successMsg.value = ''
         successTimers.delete(timer)
@@ -57,9 +59,9 @@ export const useRegisterForm = ({ post, login, replace }: RegisterFormDependenci
       successTimers.add(timer)
     } catch (e: unknown) {
       if (isRateLimited(e)) {
-        errorMsg.value = '请 60 秒后再试'
+        errorMsg.value = t('auth.rateLimited')
       } else {
-        errorMsg.value = getErrorDetail(e, '发送验证码失败，请稍后再试')
+        errorMsg.value = getErrorDetail(e, t('auth.sendOtpFailed'))
       }
     } finally {
       otpLoading.value = false
@@ -68,11 +70,11 @@ export const useRegisterForm = ({ post, login, replace }: RegisterFormDependenci
 
   const handleRegister = async () => {
     errorMsg.value = ''
-    if (!emailValid.value) { errorMsg.value = '请输入有效的邮箱地址'; return }
-    if (!hasTrimmedValue(otp.value) || !isValidOtp(otp.value)) { errorMsg.value = '验证码应为 6 位数字'; return }
-    if (!isValidPassword(password.value)) { errorMsg.value = '密码至少需要 6 个字符'; return }
-    if (!passwordsMatch(password.value, confirmPwd.value)) { errorMsg.value = '两次密码输入不一致'; return }
-    if (!agreedToTerms.value) { errorMsg.value = '请阅读并同意《用户协议与免责声明》后再注册'; return }
+    if (!emailValid.value) { errorMsg.value = t('auth.invalidEmailGeneric'); return }
+    if (!hasTrimmedValue(otp.value) || !isValidOtp(otp.value)) { errorMsg.value = t('auth.invalidOtp'); return }
+    if (!isValidPassword(password.value)) { errorMsg.value = t('auth.passwordMin'); return }
+    if (!passwordsMatch(password.value, confirmPwd.value)) { errorMsg.value = t('auth.passwordMismatch'); return }
+    if (!agreedToTerms.value) { errorMsg.value = t('auth.mustAgree'); return }
 
     loading.value = true
     try {
@@ -83,12 +85,12 @@ export const useRegisterForm = ({ post, login, replace }: RegisterFormDependenci
         password: password.value,
       })
       await login(normalizedEmail, password.value)
-      successMsg.value = '注册成功！正在为您自动登录…'
+      successMsg.value = t('auth.registerSuccess')
       redirectTimer = setTimeout(() => {
         void replace()
       }, REGISTER_REDIRECT_DELAY_MS)
     } catch (e: unknown) {
-      errorMsg.value = getErrorDetail(e, '注册失败，请稍后再试')
+      errorMsg.value = getErrorDetail(e, t('auth.registerFailed'))
     } finally {
       loading.value = false
     }

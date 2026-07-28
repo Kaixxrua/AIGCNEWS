@@ -2,6 +2,7 @@
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
 import GlobalSearch from '../components/GlobalSearch.vue'
+import LocaleToggle from '../components/LocaleToggle.vue'
 import AppDock from '../components/layout/AppDock.vue'
 import LayoutFooter from '../components/layout/LayoutFooter.vue'
 import {
@@ -31,7 +32,10 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         class="absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
         style="z-index: 100; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised);"
       >
-        <GlobalSearch />
+        <div class="flex w-full max-w-lg items-center justify-center gap-2">
+          <GlobalSearch />
+          <LocaleToggle />
+        </div>
       </div>
 
       <!-- 内容区（搜索条占位 44px） -->

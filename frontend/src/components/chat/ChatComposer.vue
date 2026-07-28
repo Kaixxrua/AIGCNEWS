@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { ref } from 'vue'
 import { FileText, Image } from 'lucide-vue-next'
 
@@ -65,7 +67,7 @@ const openFilePicker = () => {
           :value="modelValue"
           rows="1"
           class="input max-h-36 min-h-[48px] resize-y"
-          :placeholder="'输入问题…（Enter 发送，Shift+Enter 换行）'"
+          :placeholder="t('chat.placeholder')"
           :disabled="isSending"
           @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
           @keydown="emit('keydown', $event)"
@@ -82,7 +84,7 @@ const openFilePicker = () => {
       <button
         class="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-600"
         :disabled="isSending || isUploading"
-        :title="isUploading ? '上传中…' : '添加附件'"
+        :title="t(isUploading ? 'chat.uploading' : 'chat.addAttachment')"
         @click="openFilePicker"
       >
         <svg v-if="!isUploading" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -94,7 +96,7 @@ const openFilePicker = () => {
       <button
         v-if="isStreaming"
         class="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-xl bg-stone-700 text-white transition hover:bg-stone-800"
-        title="停止生成"
+        :title="t('chat.stop')"
         @click="emit('abort')"
       >
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>

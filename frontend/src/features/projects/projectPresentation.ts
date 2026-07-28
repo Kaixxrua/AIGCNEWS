@@ -1,3 +1,5 @@
+import { formatLocaleCompactNumber, formatLocaleDate } from '../../i18n/formatters'
+import type { AppLocale } from '../../i18n'
 import type {
   GitHubProjectItem,
   GitHubProjectSort,
@@ -26,14 +28,9 @@ export const projectUrl = (project: GitHubProjectItem) => {
   return ''
 }
 
-export const projectSourceBadge = (project: GitHubProjectItem) => {
-  if (isWebsite(project)) return '网页收藏'
-  return project.is_recommended ? 'GitHub · 站长推荐' : 'GitHub'
-}
+export const projectSourceBadgeKey = (project: GitHubProjectItem) => isWebsite(project) ? 'websiteFavorite' : project.is_recommended ? 'recommendedBadge' : ''
 
-export const projectLinkLabel = (project: GitHubProjectItem) => (
-  isWebsite(project) ? '访问网站' : 'GitHub'
-)
+export const projectLinkLabelKey = (project: GitHubProjectItem) => isWebsite(project) ? 'visitWebsite' : ''
 
 export const projectKey = (project: GitHubProjectItem) => (
   isWebsite(project)
@@ -83,9 +80,16 @@ export const recommendButtonLabel = (project: GitHubProjectItem, busy: boolean) 
   return project.is_recommended ? '取消推荐' : '设为站长推荐'
 }
 
-export const fallbackProjectDescription = (project: GitHubProjectItem) => (
-  isWebsite(project) ? '这个工具网页暂时没有中文简介。' : '这个项目暂时没有中文简介。'
-)
+export const projectDescription = (
+  project: GitHubProjectItem,
+  locale: AppLocale,
+  fallback: string,
+) => {
+  const preferred = locale === 'zh-CN'
+    ? [project.description_zh, project.description]
+    : [project.description, project.description_zh]
+  return preferred.find(value => typeof value === 'string' && value.trim())?.trim() || fallback
+}
 
 export const projectDisplayTags = (
   project: GitHubProjectItem,
@@ -126,22 +130,11 @@ export const projectDisplayTags = (
   return [{ type: 'tag', label, value: label }]
 }
 
-export const formatProjectCount = (value: GitHubProjectItem['stars']) => {
-  const numeric = Number(value ?? 0)
-  if (!Number.isFinite(numeric)) return '0'
+export const formatProjectCount = (value: GitHubProjectItem['stars'], locale?: AppLocale) =>
+  formatLocaleCompactNumber(Number(value ?? 0), locale)
 
-  return new Intl.NumberFormat('en', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(numeric)
-}
-
-export const formatProjectShortDate = (value: string | null | undefined) => {
-  if (!value) return '已收藏'
-  const date = new Date(value.endsWith('Z') || value.includes('+') ? value : `${value}Z`)
-  if (Number.isNaN(date.getTime())) return '已收藏'
-  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' }).format(date)
-}
+export const formatProjectShortDate = (value: string | null | undefined, fallback: string, locale?: AppLocale) =>
+  value ? formatLocaleDate(value, { month: '2-digit', day: '2-digit' }, locale) : fallback
 
 export const projectDailyGrowth = (project: GitHubProjectItem) => {
   const numeric = Number(project.daily_star_growth ?? 0)
@@ -164,17 +157,7 @@ export const projectDailyGrowthSource = (project: GitHubProjectItem) => {
   return available && project.previous_snapshot_date ? 'snapshot_delta' : 'unavailable'
 }
 
-const formatGrowthObservedAt = (value: string | null | undefined) => {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
+const formatGrowthObservedAt = (value: string | null | undefined, locale?: AppLocale) => value ? formatLocaleDate(value, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }, locale) : ''
 
 export const projectDailyGrowthTitle = (project: GitHubProjectItem) => {
   const source = projectDailyGrowthSource(project)

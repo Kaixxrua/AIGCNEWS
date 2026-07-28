@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { compareLocaleStrings } from '../i18n/formatters'
 import {
   addMyToolWebsite,
   addMyToolWebsiteManual,
@@ -51,6 +53,7 @@ import {
 } from '../features/projects/projectPresentation'
 
 defineOptions({ name: 'GitHubProjectsView' })
+const { t } = useI18n()
 
 const authStore = useAuthStore()
 const route = useRoute()
@@ -124,9 +127,9 @@ const defaultSortForScope = (scopeValue: ProjectScope, sourceValue: ProjectViewS
 )
 
 const sourceOptions = computed<SourceOption[]>(() => [
-  { value: 'all', label: 'GitHub 项目', hint: '公共开源项目' },
-  { value: 'website', label: '我的网页', hint: '个人网页收藏', authOnly: true },
-  { value: 'favorites', label: '我的收藏', hint: 'GitHub 项目收藏', authOnly: true },
+  { value: 'all', label: t('projects.source.allLabel'), hint: t('projects.source.allHint') },
+  { value: 'website', label: t('projects.source.websiteLabel'), hint: t('projects.source.websiteHint'), authOnly: true },
+  { value: 'favorites', label: t('projects.source.favoritesLabel'), hint: t('projects.source.favoritesHint'), authOnly: true },
 ])
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
@@ -145,18 +148,18 @@ const isPersonalView = computed(() => source.value === 'favorites' || source.val
 const requiresPersonalLogin = computed(() => isPersonalView.value && !authStore.isLoggedIn)
 const isMyCollection = computed(() => isPersonalView.value)
 const isWebsiteOnlyView = computed(() => source.value === 'website')
-const sourceLabel = computed(() => sourceOptions.value.find((item) => item.value === source.value)?.label ?? '全部')
+const sourceLabel = computed(() => sourceOptions.value.find((item) => item.value === source.value)?.label ?? t('projects.all'))
 const personalLoginCopy = computed(() => (
   isWebsiteOnlyView.value
     ? {
-        kicker: 'YOUR PRIVATE WEB SHELF',
-        title: '登录后，继续整理你的网页世界',
-        description: '保存常用网站、补充中文说明，并把散落在浏览器里的灵感整理成只属于你的收藏夹。',
+        kicker: t('projects.loginWebsiteKicker'),
+        title: t('projects.loginWebsiteTitle'),
+        description: t('projects.loginWebsiteDescription'),
       }
     : {
-        kicker: 'YOUR STARRED PROJECTS',
-        title: '登录后，查看你的 GitHub 收藏',
-        description: '把感兴趣的开源项目留在这里，按标签、更新时间和收藏顺序快速找回来。',
+        kicker: t('projects.loginFavoritesKicker'),
+        title: t('projects.loginFavoritesTitle'),
+        description: t('projects.loginFavoritesDescription'),
       }
 ))
 const starsBadgeLabel = computed(() => {
@@ -164,16 +167,16 @@ const starsBadgeLabel = computed(() => {
   return ''
 })
 const activeFilterLabel = computed(() => {
-  if (selectedTag.value) return `标签：${selectedTag.value}`
-  if (selectedLanguage.value) return `语言：${selectedLanguage.value}`
-  if (isPersonalView.value) return '未筛选标签'
-  if (selectedScope.value === 'recommended') return recommendedScope.value?.name || '站长推荐'
-  if (selectedScope.value === 'today') return todayScope.value?.name || '今日暴涨'
+  if (selectedTag.value) return t('projects.filterTag', { tag: selectedTag.value })
+  if (selectedLanguage.value) return t('projects.filterLanguage', { language: selectedLanguage.value })
+  if (isPersonalView.value) return t('projects.noTagFilter')
+  if (selectedScope.value === 'recommended') return recommendedScope.value?.name || t('projects.recommended')
+  if (selectedScope.value === 'today') return todayScope.value?.name || t('projects.today')
   if (activeCategory.value && activeSubcategory.value) {
     return `${activeCategory.value.name} / ${activeSubcategory.value.name}`
   }
   if (activeCategory.value) return activeCategory.value.name
-  return '全部分类'
+  return t('projects.allCategories')
 })
 const hasActiveFilter = computed(() => (
   selectedScope.value !== 'all'
@@ -235,7 +238,7 @@ const mergePersonalTagsFromItems = (items: GitHubProjectItem[]) => {
   }
   personalTags.value = Array.from(counts.entries())
     .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'zh-CN'))
+    .sort((a, b) => b.count - a.count || compareLocaleStrings(a.label, b.label))
 }
 
 const loadPersonalTags = async () => {
@@ -370,7 +373,7 @@ const loadProjects = async (options: { clearSuccess?: boolean; preserveContent?:
     if (requestId !== currentRequestId.value) return
     console.error('Failed to load projects:', error)
     if (!options.preserveContent) {
-      errorMsg.value = isMyCollection.value ? '我的收藏暂时加载失败，请稍后重试。' : '项目库暂时加载失败，请稍后重试。'
+      errorMsg.value = t(isMyCollection.value ? 'projects.loadFavoritesFailed' : 'projects.loadLibraryFailed')
       projects.value = []
       total.value = 0
     }
@@ -822,13 +825,13 @@ onBeforeUnmount(stopViewReads)
     <section class="projects-hero glass-card">
       <div class="projects-hero__text">
         <p class="projects-kicker">AI TOOL ATLAS</p>
-        <h1>AI 项目与工具库</h1>
-        <p>浏览 stars &gt; 500 的 GitHub AI 项目；登录后可建立只属于你的网页收藏夹，自动分类并生成中文短描述。</p>
+        <h1>{{ t('navigation.projects') }}</h1>
+        <p>{{ t('projects.publicLibrary') }}</p>
       </div>
 
       <div class="projects-hero__side">
-        <div class="projects-hero__stats" aria-label="项目库统计">
-          <span>{{ total }} 个条目</span>
+        <div class="projects-hero__stats" :aria-label="t('projects.results', { count: total })">
+          <span>{{ t('projects.results', { count: total }) }}</span>
           <span>{{ sourceLabel }}</span>
           <span v-if="starsBadgeLabel">{{ starsBadgeLabel }}</span>
           <span>{{ activeFilterLabel }}</span>
@@ -837,11 +840,11 @@ onBeforeUnmount(stopViewReads)
           v-if="isWebsiteOnlyView && !requiresPersonalLogin"
           type="button"
           class="projects-add-btn"
-          :title="isMyCollection && !authStore.isLoggedIn ? '登录后添加个人网站' : ''"
+          :title="isMyCollection && !authStore.isLoggedIn ? t('projects.loginAction') : ''"
           @click="openAddDialog"
         >
           <span>＋</span>
-          添加网页收藏
+          {{ t('projects.addWebsite') }}
         </button>
       </div>
     </section>
@@ -900,7 +903,7 @@ onBeforeUnmount(stopViewReads)
         </div>
       </div>
       <button type="button" class="projects-login-prompt__action" @click="goToPersonalLogin">
-        登录后查看
+        {{ t('projects.loginAction') }}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M5 12h14" />
           <path d="m14 7 5 5-5 5" />
@@ -913,7 +916,7 @@ onBeforeUnmount(stopViewReads)
       {{ errorMsg }}
     </section>
 
-    <section v-if="loading" class="projects-grid" aria-label="收藏列表加载中">
+    <section v-if="loading" class="projects-grid" :aria-label="t('common.loading')">
       <article v-for="index in 9" :key="index" class="project-card project-card--skeleton glass-card">
         <div class="h-4 w-2/3 rounded-full bg-stone-200/80" />
         <div class="space-y-2">
@@ -935,7 +938,7 @@ onBeforeUnmount(stopViewReads)
       <p>{{ searchQuery || hasActiveFilter ? '试试清空关键词、切换来源或切换分类。' : (isWebsiteOnlyView ? '点击右上角添加你自己的网页收藏。' : (source === 'favorites' ? '点击 GitHub 项目卡片上的收藏按钮加入这里。' : 'GitHub 项目会自动回填分类；登录后可以维护自己的网页收藏。')) }}</p>
     </section>
 
-    <section v-else class="projects-grid" aria-label="AI 项目与网页收藏列表">
+    <section v-else class="projects-grid" :aria-label="t('navigation.projects')">
       <ProjectResultCard
         v-for="(repo, index) in projects"
         :key="repo.id ?? repo.repo_id ?? repo.website_id ?? repo.full_name ?? index"

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 defineProps<{
   password: string
   confirmPassword: string
@@ -23,13 +25,13 @@ const emit = defineEmits<{
       :value="password"
       type="password"
       class="input"
-      placeholder="至少 6 个字符"
+      :placeholder="t('auth.newPasswordPlaceholder')"
       autocomplete="new-password"
       :disabled="disabled"
       @input="emit('update:password', ($event.target as HTMLInputElement).value)"
     />
     <Transition name="fade-msg">
-      <p v-if="password && password.length < 6" class="text-2xs text-rose-500 pl-1">密码至少需要 6 个字符</p>
+      <p v-if="password && password.length < 6" class="text-2xs text-rose-500 pl-1">{{ t('auth.passwordMin') }}</p>
     </Transition>
   </div>
 
@@ -46,7 +48,7 @@ const emit = defineEmits<{
       @keydown.enter="submitOnEnter && emit('submit')"
     />
     <Transition name="fade-msg">
-      <p v-if="confirmPassword && password !== confirmPassword" class="text-2xs text-rose-500 pl-1">两次密码输入不一致</p>
+      <p v-if="confirmPassword && password !== confirmPassword" class="text-2xs text-rose-500 pl-1">{{ t('auth.passwordMismatch') }}</p>
     </Transition>
   </div>
 </template>

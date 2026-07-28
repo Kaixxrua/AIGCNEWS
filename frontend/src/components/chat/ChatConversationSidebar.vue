@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import type { ConversationSummary } from '../../stores/chatStore'
 
 defineProps<{
@@ -20,10 +22,10 @@ const emit = defineEmits<{
   >
     <!-- 侧边栏标题 + 新建按钮 -->
     <div class="flex items-center justify-between px-3 py-3 shrink-0" style="border-bottom: 1px solid rgba(168,162,158,0.15)">
-      <span class="text-xs font-semibold text-stone-500 tracking-wide">历史会话</span>
+      <span class="text-xs font-semibold text-stone-500 tracking-wide">{{ t('chat.history') }}</span>
       <button
         class="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition text-xs"
-        title="新建对话"
+        :title="t('chat.newConversation')"
         @click="emit('create')"
       >
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -51,16 +53,16 @@ const emit = defineEmits<{
           : 'hover:bg-stone-100 text-stone-600'"
         @click="emit('open', conv.id)"
       >
-        <p class="truncate text-xs font-medium leading-5">{{ conv.title || '新对话' }}</p>
+        <p class="truncate text-xs font-medium leading-5">{{ conv.title || t('chat.newConversation') }}</p>
         <p
           class="truncate text-2xs leading-4 mt-0.5"
           :class="conv.id === activeConversationId ? 'text-stone-300' : 'text-stone-400'"
         >
-          {{ conv.lastMessagePreview || '暂无消息' }}
+          {{ conv.lastMessagePreview || t('chat.noMessage') }}
         </p>
       </div>
       <div v-if="!conversations.length" class="px-4 py-6 text-center text-xs text-stone-400">
-        暂无历史会话
+        {{ t('chat.noHistory') }}
       </div>
     </div>
   </aside>

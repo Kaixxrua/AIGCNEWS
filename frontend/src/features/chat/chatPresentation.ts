@@ -51,10 +51,10 @@ export const sourceTypeBadgeClass = (type: string): string => {
 
 export const getStreamPhaseLabel = (phase: StreamPhase): string => {
   switch (phase) {
-    case 'searching': return '正在检索资料…'
-    case 'reranking': return '正在精排匹配…'
-    case 'answering': return '正在生成回答…'
-    case 'error': return '请求出错'
+    case 'searching': return 'searching'
+    case 'reranking': return 'reranking'
+    case 'answering': return 'answering'
+    case 'error': return 'requestError'
     default: return ''
   }
 }

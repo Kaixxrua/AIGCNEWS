@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 defineProps<{
   brandName: string
 }>()
@@ -7,15 +10,15 @@ defineProps<{
 <template>
   <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 生态合作） ═══ -->
   <div class="dock-footer">
-    <span>Powered by {{ brandName }}</span>
+    <span>{{ t('footer.poweredBy', { brandName }) }}</span>
     <span class="footer-sep">·</span>
-    <RouterLink to="/disclaimer" class="footer-link">免责声明</RouterLink>
+    <RouterLink to="/disclaimer" class="footer-link">{{ t('footer.disclaimer') }}</RouterLink>
     <span class="footer-sep">·</span>
-    <RouterLink to="/privacy" class="footer-link">隐私政策</RouterLink>
+    <RouterLink to="/privacy" class="footer-link">{{ t('footer.privacy') }}</RouterLink>
     <span class="footer-sep">·</span>
-    <RouterLink to="/mcp" class="footer-link">MCP 接入</RouterLink>
+    <RouterLink to="/mcp" class="footer-link">{{ t('footer.mcp') }}</RouterLink>
     <span class="footer-sep">·</span>
-    <span>生态合作联系：<a href="mailto:kaixxrua@gmail.com" class="footer-link">kaixxrua@gmail.com</a></span>
+    <span>{{ t('footer.ecosystem') }}<a href="mailto:kaixxrua@gmail.com" class="footer-link">kaixxrua@gmail.com</a></span>
   </div>
 </template>
 

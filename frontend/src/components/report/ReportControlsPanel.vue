@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { BellOff, BellRing, Mail, Pin, Send } from 'lucide-vue-next'
 import {
   DAILY_ONLY_TYPES,
@@ -47,17 +49,17 @@ const emit = defineEmits<{
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div class="flex items-center gap-2 min-w-0">
       <component v-if="currentTypeInfo?.icon" :is="currentTypeInfo.icon" class="h-5 w-5 text-stone-500 shrink-0" />
-      <h1 class="text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo?.label || '自动化简报' }}</h1>
-      <span class="text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ currentPeriodInfo?.label }} · {{ currentTypeInfo?.desc }}</span>
+      <h1 class="text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : t('report.titleFallback') }}</h1>
+      <span class="text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ currentPeriodInfo ? t(`report.period.${currentPeriodInfo.key}`) : '' }} · {{ currentTypeInfo ? t(`report.type.${currentTypeInfo.descKey}`) : '' }}</span>
     </div>
     <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
       <div v-if="isCached && !isGenerating" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
         <span class="status-dot bg-brand-green" />
-        <span class="text-2xs font-medium text-green-700">已缓存</span>
+        <span class="text-2xs font-medium text-green-700">{{ t('report.cached') }}</span>
       </div>
       <div v-if="isGenerating" class="stream-indicator">
         <span class="stream-dot" />
-        <span>生成中</span>
+        <span>{{ t('report.generating') }}</span>
       </div>
 
       <!-- 订阅/取消订阅按钮 -->
@@ -72,7 +74,7 @@ const emit = defineEmits<{
         <span v-if="isSubscribing" class="h-3 w-3 rounded-full border-2 border-current/40 border-t-current animate-spin" />
         <BellOff v-else-if="isCurrentSubscribed" class="h-3 w-3" />
         <BellRing v-else class="h-3 w-3" />
-        {{ isCurrentSubscribed ? '取消订阅' : '订阅' }}
+        {{ t(isCurrentSubscribed ? 'report.unsubscribe' : 'report.subscribe') }}
       </button>
 
       <!-- 发送到邮箱 -->
@@ -84,7 +86,7 @@ const emit = defineEmits<{
       >
         <span v-if="isSendingEmail" class="h-3 w-3 rounded-full border-2 border-stone-400/40 border-t-stone-500 animate-spin" />
         <Send v-else class="h-3 w-3" />
-        发送简报
+        {{ t('report.sendBriefing') }}
       </button>
 
       <!-- 操作成功提示 -->
@@ -100,19 +102,19 @@ const emit = defineEmits<{
         @click="emit('manageSubscriptions')"
       >
         <BellRing class="h-3 w-3" />
-        管理订阅
+        {{ t('report.manageSubscriptions') }}
       </button>
 
       <!-- Admin: 生成相关控件 -->
       <template v-if="isAdmin">
         <span v-if="isGenerating" class="flex items-center gap-1 text-2xs" :class="autoScroll ? 'text-cyan-600' : 'text-stone-400'">
           <span class="status-dot" :class="autoScroll ? 'bg-cyan-500 animate-[pulseDot_2s_ease-in-out_infinite]' : 'bg-stone-400'" />
-          {{ autoScroll ? '跟随' : '解锁' }}
+          {{ t(autoScroll ? 'report.following' : 'report.unlocked') }}
         </span>
         <button class="btn-primary gap-1.5 text-xs py-1.5 px-3" :disabled="isGenerating" @click="emit('generate')">
           <span v-if="isGenerating" class="h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
           <svg v-else class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          {{ isGenerating ? '生成中…' : isCached ? '重新生成' : '生成' }}
+          {{ isGenerating ? t('report.generating') : t(isCached ? 'report.regenerate' : 'report.generate') }}
         </button>
       </template>
     </div>
@@ -133,7 +135,7 @@ const emit = defineEmits<{
         @click="emit('update:selectedType', type.key)"
       >
         <component :is="type.icon" class="h-3 w-3 shrink-0" />
-        <span>{{ type.label }}</span>
+        <span>{{ t(`report.type.${type.labelKey}`) }}</span>
       </button>
     </div>
 
@@ -151,7 +153,7 @@ const emit = defineEmits<{
         ]"
         :disabled="isGenerating || isPeriodDisabled(p.key)"
         @click="!isPeriodDisabled(p.key) && emit('update:selectedPeriod', p.key)"
-      >{{ p.label }}</button>
+      >{{ t(`report.period.${p.key}`) }}</button>
       <span v-if="DAILY_ONLY_TYPES.has(selectedType)" class="flex items-center gap-0.5 text-2xs text-stone-400 ml-0.5">
         <Pin class="h-2.5 w-2.5 shrink-0" />
         仅日报

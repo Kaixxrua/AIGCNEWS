@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   modelValue: string
@@ -37,7 +40,8 @@ defineExpose({
       ref="inputRef"
       :value="props.modelValue"
       type="text"
-      placeholder="搜索论文、项目…"
+      :placeholder="t('search.placeholder')"
+      :aria-label="t('common.search')"
       class="flex-1 bg-transparent text-xs text-stone-700 outline-none placeholder:text-stone-400 min-w-0"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       @focus="emit('focus')"

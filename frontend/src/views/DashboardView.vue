@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '../composables/useDashboardData'
 import { useDashboardStats } from '../composables/useDashboardStats'
 import DashboardEmptyState from '../components/dashboard/DashboardEmptyState.vue'
@@ -8,6 +9,7 @@ import { CalendarDays } from 'lucide-vue-next'
 import type { Stats } from '../features/dashboard/dashboardViewModel'
 
 defineOptions({ name: 'DashboardView' })
+const { t } = useI18n()
 
 let currentStats: () => Stats = () => ({})
 const {
@@ -49,7 +51,7 @@ currentStats = () => stats.value
 
     <!-- 页头 — 简洁标题 -->
     <div class="stagger-enter flex items-center justify-between shrink-0">
-      <h1 class="text-xl font-semibold text-stone-800 tracking-tight font-serif">Dashboard</h1>
+      <h1 class="text-xl font-semibold text-stone-800 tracking-tight font-serif">{{ t('dashboard.title') }}</h1>
       <div v-if="!loading && isViewingHistory" class="flex items-center gap-1.5 text-xs text-stone-400">
         <CalendarDays class="h-3.5 w-3.5" />
         <span class="text-stone-700 font-medium">{{ currentDate }}</span>

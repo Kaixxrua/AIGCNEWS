@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 defineProps<{
   variant: 'embargoed' | 'no-data'
 }>()
@@ -18,14 +20,13 @@ defineProps<{
         </svg>
       </div>
     </div>
-    <h3 class="text-xl font-semibold text-stone-700 font-serif tracking-tight">昨日榜单数据整理中</h3>
+    <h3 class="text-xl font-semibold text-stone-700 font-serif tracking-tight">{{ t('dashboard.embargoTitle') }}</h3>
     <p class="mt-2 text-sm text-stone-400 leading-relaxed max-w-xs">
-      最终排位将于今日 <span class="font-semibold text-amber-600">15:00</span>
-      <span class="text-stone-300">(UTC+8)</span> 准时发布，敬请期待
+      {{ t('dashboard.embargoDescription', { time: '15:00', timezone: 'UTC+8' }) }}
     </p>
     <div class="mt-5 flex items-center gap-1.5 text-xs text-stone-300">
       <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" />
-      数据归档进行中…
+      {{ t('dashboard.archiving') }}
     </div>
   </div>
 
@@ -39,8 +40,8 @@ defineProps<{
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="16" x2="15" y2="16"/>
       </svg>
     </div>
-    <h3 class="text-lg font-medium text-stone-500 font-serif">该日期暂无数据</h3>
-    <p class="mt-1 text-sm text-stone-400">请尝试在日历中选择其他日期</p>
+    <h3 class="text-lg font-medium text-stone-500 font-serif">{{ t('dashboard.noDateData') }}</h3>
+    <p class="mt-1 text-sm text-stone-400">{{ t('dashboard.chooseOtherDate') }}</p>
   </div>
 </template>
 

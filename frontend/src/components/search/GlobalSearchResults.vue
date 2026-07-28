@@ -1,6 +1,13 @@
 <script setup lang="ts">
-import { getSearchSourceLabel, getSearchSummaryPreview } from '../../features/search/globalSearchModel'
+import { useI18n } from 'vue-i18n'
+import { getSearchSourceLabelKey, getSearchSummaryPreview } from '../../features/search/globalSearchModel'
 import type { PaperItem } from '../../services/papers/paperApi'
+
+const { t } = useI18n()
+const sourceLabel = (source?: string) => {
+  const key = getSearchSourceLabelKey(source)
+  return key ? t(key) : (source ?? '?')
+}
 
 const props = defineProps<{
   query: string
@@ -19,7 +26,7 @@ const emit = defineEmits<{
   >
     <!-- 列表头部 -->
     <p class="px-3 py-1.5 text-2xs font-semibold uppercase tracking-widest text-stone-400">
-      {{ props.query.trim() ? `搜索结果 · ${props.results.length} 条` : '今日热门推荐' }}
+      {{ props.query.trim() ? t('search.resultCount', { count: props.results.length }) : t('search.trending') }}
     </p>
 
     <button
@@ -31,7 +38,7 @@ const emit = defineEmits<{
       <!-- 来源标签 -->
       <span
         class="mt-0.5 shrink-0 rounded-md border px-1.5 py-0.5 text-2xs font-medium text-stone-500 border-stone-200 bg-white"
-      >{{ getSearchSourceLabel(item.source) }}</span>
+      >{{ sourceLabel(item.source) }}</span>
 
       <!-- 标题 + 摘要 -->
       <span class="min-w-0 flex-1">

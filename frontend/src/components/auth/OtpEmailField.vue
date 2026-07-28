@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 defineProps<{
   email: string
   emailValid: boolean
@@ -17,13 +19,13 @@ const emit = defineEmits<{
 
 <template>
   <div class="space-y-1.5">
-    <label class="text-xs font-medium text-stone-500">邮箱</label>
+    <label class="text-xs font-medium text-stone-500">{{ t('auth.email') }}</label>
     <div class="flex flex-col gap-2 sm:flex-row">
       <input
         :value="email"
         type="email"
         class="input flex-1"
-        placeholder="you@example.com"
+        :placeholder="t('auth.emailPlaceholder')"
         autocomplete="email"
         :disabled="loading || disabled"
         @input="emit('update:email', ($event.target as HTMLInputElement).value)"
@@ -35,12 +37,12 @@ const emit = defineEmits<{
         @click="emit('sendOtp')"
       >
         <span v-if="otpLoading" class="h-3.5 w-3.5 rounded-full border-2 border-stone-300 border-t-stone-600 animate-spin" />
-        <span v-else-if="countdown > 0">重新获取({{ countdown }}s)</span>
-        <span v-else>获取验证码</span>
+        <span v-else-if="countdown > 0">{{ t('auth.resendOtp', { countdown }) }}</span>
+        <span v-else>{{ t('auth.getOtp') }}</span>
       </button>
     </div>
     <Transition name="fade-msg">
-      <p v-if="email && !emailValid" class="text-2xs text-rose-500 pl-1">请输入正确格式的邮箱地址</p>
+      <p v-if="email && !emailValid" class="text-2xs text-rose-500 pl-1">{{ t('auth.invalidEmail') }}</p>
     </Transition>
   </div>
 </template>
