@@ -16,7 +16,6 @@ from backend.app.repositories.application_repository_context import (
 def test_lifespan_builds_postgres_application_composition(monkeypatch) -> None:
     repositories = MagicMock()
     monkeypatch.setattr(main, "settings", SimpleNamespace(
-        application_database_backend="postgres",
         project_catalog_backend="postgres",
         project_catalog_outbox_capture_enabled=False,
         project_catalog_sync_worker_enabled=False,
@@ -49,6 +48,6 @@ def test_lifespan_builds_postgres_application_composition(monkeypatch) -> None:
     asyncio.run(exercise())
     with pytest.raises(RuntimeError, match="Application repositories are not configured"):
         get_configured_application_repositories()
-    factory.assert_called_once_with(backend="postgres", postgres=main.postgres_database)
+    factory.assert_called_once_with(postgres=main.postgres_database)
     open_pool.assert_called_once_with()
     close_pool.assert_called_once_with()

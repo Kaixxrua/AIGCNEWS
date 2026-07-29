@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-
-if TYPE_CHECKING:
-    from backend.app.core.database import DatabaseLifecycle
 from backend.app.repositories.attachment_repository import AttachmentRepository
 from backend.app.repositories.briefing_repository import (
     BriefingContentRepository,
@@ -120,87 +116,27 @@ class ApplicationRepositories:
     github_semantic_sources: GitHubProjectSemanticSourceRepository
 
 
-def normalize_application_database_backend(value: Any) -> str:
-    backend = str(value or "postgres").strip().lower()
-    if backend not in {"mysql", "postgres"}:
-        raise ValueError("application_database_backend must be mysql or postgres")
-    return backend
-
-
 def create_application_repositories(
     *,
-    backend: str,
     postgres: PostgresDatabaseLifecycle,
-    mysql: DatabaseLifecycle | None = None,
 ) -> ApplicationRepositories:
-    selected = normalize_application_database_backend(backend)
-    if selected == "postgres":
-        return ApplicationRepositories(
-            users=PostgresUserAccountRepository(postgres),
-            conversations=PostgresConversationRepository(postgres),
-            attachments=PostgresAttachmentRepository(postgres),
-            documents=PostgresDocumentRepository(postgres),
-            ingestion_tasks=PostgresIngestionTaskRepository(postgres),
-            rank_snapshots=PostgresRankSnapshotRepository(postgres),
-            briefings=PostgresBriefingRepository(postgres),
-            briefing_subscriptions=PostgresBriefingSubscriptionRepository(postgres),
-            evaluations=PostgresEvaluationRepository(postgres),
-            runtime_provider_settings=PostgresRuntimeProviderSettingRepository(postgres),
-            mcp_server_configs=PostgresMcpServerConfigRepository(postgres),
-            mcp_access_tokens=PostgresMcpAccessTokenRepository(postgres),
-            github_ingestion=PostgresGitHubProjectIngestionRepository(postgres),
-            github_enrichment=PostgresGitHubProjectEnrichmentRepository(postgres),
-            tool_website_enrichment=PostgresToolWebsiteEnrichmentRepository(postgres),
-            project_collections=PostgresProjectWriteRepository(postgres),
-            project_recommendations=PostgresProjectWriteRepository(postgres),
-            github_semantic_sources=PostgresGitHubProjectSemanticSourceRepository(
-                postgres
-            ),
-        )
-
-    if mysql is None:
-        raise ValueError("mysql lifecycle is required for the MySQL compatibility backend")
-
-    from backend.app.repositories.mysql_mcp_server_repository import (
-        MySQLMcpServerConfigRepository,
-    )
-    from backend.app.repositories.mysql_project_catalog import (
-        MySQLProjectCatalogRepository,
-    )
-    from backend.app.repositories.mysql_project_write_repository import (
-        MySQLProjectWriteRepository,
-    )
-    from backend.app.repositories.mysql_repo import MySQLRepository
-    from backend.app.repositories.mysql_user_account_repository import (
-        MySQLUserAccountRepository,
-    )
-    from backend.app.repositories.mysql_user_project_collection_repository import (
-        MySQLUserProjectCollectionRepository,
-    )
-
-    compatibility = MySQLRepository(database=mysql)
-    project_writes = MySQLProjectWriteRepository(mysql)
-    project_catalog = MySQLProjectCatalogRepository(compatibility)
     return ApplicationRepositories(
-        users=MySQLUserAccountRepository(mysql),
-        conversations=compatibility.conversations,
-        attachments=compatibility,
-        documents=compatibility.documents,
-        ingestion_tasks=compatibility.ingestion_tasks,
-        rank_snapshots=compatibility.rank_snapshots,
-        briefings=compatibility.briefings,
-        briefing_subscriptions=compatibility.briefing_subscriptions,
-        evaluations=compatibility.evaluations,
-        runtime_provider_settings=compatibility.runtime_provider_settings,
-        mcp_server_configs=MySQLMcpServerConfigRepository(mysql),
-        mcp_access_tokens=compatibility.mcp_access_tokens,
-        github_ingestion=project_writes,
-        github_enrichment=compatibility,
-        tool_website_enrichment=compatibility,
-        project_collections=MySQLUserProjectCollectionRepository(
-            mysql,
-            project_catalog=project_catalog,
-        ),
-        project_recommendations=project_writes,
-        github_semantic_sources=compatibility,
+        users=PostgresUserAccountRepository(postgres),
+        conversations=PostgresConversationRepository(postgres),
+        attachments=PostgresAttachmentRepository(postgres),
+        documents=PostgresDocumentRepository(postgres),
+        ingestion_tasks=PostgresIngestionTaskRepository(postgres),
+        rank_snapshots=PostgresRankSnapshotRepository(postgres),
+        briefings=PostgresBriefingRepository(postgres),
+        briefing_subscriptions=PostgresBriefingSubscriptionRepository(postgres),
+        evaluations=PostgresEvaluationRepository(postgres),
+        runtime_provider_settings=PostgresRuntimeProviderSettingRepository(postgres),
+        mcp_server_configs=PostgresMcpServerConfigRepository(postgres),
+        mcp_access_tokens=PostgresMcpAccessTokenRepository(postgres),
+        github_ingestion=PostgresGitHubProjectIngestionRepository(postgres),
+        github_enrichment=PostgresGitHubProjectEnrichmentRepository(postgres),
+        tool_website_enrichment=PostgresToolWebsiteEnrichmentRepository(postgres),
+        project_collections=PostgresProjectWriteRepository(postgres),
+        project_recommendations=PostgresProjectWriteRepository(postgres),
+        github_semantic_sources=PostgresGitHubProjectSemanticSourceRepository(postgres),
     )

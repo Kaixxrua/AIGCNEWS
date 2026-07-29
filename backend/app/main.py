@@ -34,7 +34,6 @@ from backend.app.repositories.application_repository_context import (
 )
 from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
-    normalize_application_database_backend,
 )
 from backend.app.core.project_catalog_runtime import validate_project_catalog_runtime
 from backend.app.core.scheduler import start_scheduler, stop_scheduler
@@ -107,18 +106,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         sync_worker_enabled=bool(settings.project_catalog_sync_worker_enabled),
         shadow_enabled=bool(settings.project_catalog_shadow_enabled),
     )
-    application_database_backend = normalize_application_database_backend(
-        getattr(settings, "application_database_backend", "postgres")
-    )
-    if application_database_backend != "postgres":
-        raise ValueError("APPLICATION_DATABASE_BACKEND must be postgres")
     app.state.database = postgres_database
     app.state.postgres_database = postgres_database
-    app.state.application_database_backend = application_database_backend
+    app.state.application_database_backend = "postgres"
     await asyncio.to_thread(postgres_database.open)
     postgres_opened = True
     app.state.application_repositories = create_application_repositories(
-        backend=application_database_backend,
         postgres=postgres_database,
     )
     configure_application_repositories(app.state.application_repositories)

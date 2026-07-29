@@ -1,179 +1,26 @@
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from backend.app.api import routes_github_projects, routes_mcp
 from backend.app.repositories import project_catalog_factory
-from backend.app.repositories.mysql_project_catalog import MySQLProjectCatalogRepository
 from backend.app.services import project_discovery
 from backend.app.services.mcp.inbound import tools as inbound_tools
 
 
-def test_mysql_adapter_forwards_list_projects_unchanged() -> None:
-    expected = {"items": [], "total": 0}
-    repository = MagicMock()
-    repository.list_projects.return_value = expected
-    adapter = MySQLProjectCatalogRepository(repository)
-    candidate_repo_ids = ["owner/one", "owner/two"]
-
-    result = adapter.list_projects(
-        source="github",
-        scope="recommended",
-        category="agents_automation",
-        subcategory="agent_framework",
-        q="agent runtime",
-        language="Python",
-        tag="MCP",
-        page=2,
-        page_size=7,
-        sort="recent",
-        min_stars=700,
-        enriched_only=False,
-        user_id=42,
-        favorites_only=True,
-        candidate_repo_ids=candidate_repo_ids,
-    )
-
-    assert result is expected
-    repository.list_projects.assert_called_once_with(
-        source="github",
-        scope="recommended",
-        category="agents_automation",
-        subcategory="agent_framework",
-        q="agent runtime",
-        language="Python",
-        tag="MCP",
-        page=2,
-        page_size=7,
-        sort="recent",
-        min_stars=700,
-        enriched_only=False,
-        user_id=42,
-        favorites_only=True,
-        candidate_repo_ids=candidate_repo_ids,
-    )
-
-
-def test_mysql_adapter_forwards_categories_and_errors() -> None:
-    expected = {"items": [], "total": 0}
-    repository = MagicMock()
-    repository.get_project_categories.return_value = expected
-    adapter = MySQLProjectCatalogRepository(repository)
-
-    result = adapter.get_project_categories(
-        source="github",
-        min_stars=900,
-        enriched_only=False,
-        user_id=8,
-        favorites_only=True,
-    )
-
-    assert result is expected
-    repository.get_project_categories.assert_called_once_with(
-        source="github",
-        min_stars=900,
-        enriched_only=False,
-        user_id=8,
-        favorites_only=True,
-    )
-
-    error = RuntimeError("mysql unavailable")
-    repository.list_projects.side_effect = error
-    with pytest.raises(RuntimeError) as caught:
-        adapter.list_projects()
-    assert caught.value is error
-
-
-@pytest.mark.parametrize("backend", ["mysql", "MYSQL", " MySQL "])
-def test_factory_builds_mysql_adapter(backend: str) -> None:
+def test_factory_builds_postgres_adapter() -> None:
     adapter = MagicMock()
-    config = SimpleNamespace(project_catalog_backend=backend)
 
-    with (
-        patch.object(project_catalog_factory, "settings", config),
-        patch(
-            "backend.app.repositories.mysql_project_catalog."
-            "MySQLProjectCatalogRepository",
-            return_value=adapter,
-        ) as adapter_type,
-    ):
+    with patch.object(
+        project_catalog_factory,
+        "PostgresProjectCatalogRepository",
+        return_value=adapter,
+    ) as adapter_type:
         result = project_catalog_factory.get_project_catalog_repository()
 
     assert result is adapter
     adapter_type.assert_called_once_with()
-
-
-@pytest.mark.parametrize("backend", ["postgres", "POSTGRES", " Postgres "])
-def test_factory_builds_postgres_adapter(backend: str) -> None:
-    adapter = MagicMock()
-    config = SimpleNamespace(project_catalog_backend=backend)
-
-    with (
-        patch.object(project_catalog_factory, "settings", config),
-        patch(
-            "backend.app.repositories.postgres_project_catalog."
-            "PostgresProjectCatalogRepository",
-            return_value=adapter,
-        ) as adapter_type,
-    ):
-        result = project_catalog_factory.get_project_catalog_repository()
-
-    assert result is adapter
-    adapter_type.assert_called_once_with()
-
-
-@pytest.mark.parametrize("backend", ["sqlite", ""])
-def test_factory_rejects_unavailable_backends(backend: str) -> None:
-    config = SimpleNamespace(project_catalog_backend=backend)
-
-    with patch.object(project_catalog_factory, "settings", config):
-        with pytest.raises(ValueError, match="PROJECT_CATALOG_BACKEND") as caught:
-            project_catalog_factory.get_project_catalog_repository()
-
-    assert repr(backend) in str(caught.value)
-    assert "mysql" in str(caught.value)
-    assert "postgres" in str(caught.value)
-
-
-def test_factory_wraps_mysql_only_when_shadow_manager_is_available() -> None:
-    active = MagicMock()
-    shadow = MagicMock()
-    manager = MagicMock()
-    config = SimpleNamespace(
-        project_catalog_backend="mysql",
-        project_catalog_shadow_enabled=True,
-        project_catalog_shadow_backend="postgres",
-        project_catalog_shadow_timeout_seconds=2.0,
-    )
-    with (
-        patch.object(project_catalog_factory, "settings", config),
-        patch(
-            "backend.app.repositories.mysql_project_catalog."
-            "MySQLProjectCatalogRepository",
-            return_value=active,
-        ),
-        patch(
-            "backend.app.services.project_catalog_shadow."
-            "get_project_catalog_shadow_manager",
-            return_value=manager,
-        ),
-        patch(
-            "backend.app.repositories.postgres_project_catalog."
-            "PostgresProjectCatalogRepository",
-            return_value=shadow,
-        ),
-        patch(
-            "backend.app.services.project_catalog_shadow."
-            "ShadowComparingProjectCatalogRepository"
-        ) as decorator,
-    ):
-        project_catalog_factory.get_project_catalog_repository()
-
-    decorator.assert_called_once_with(active, shadow, manager)
 
 
 def test_discovery_uses_lazy_catalog_factory_by_default() -> None:

@@ -419,14 +419,9 @@ if __name__ == "__main__":
     from backend.app.repositories.application_repository_factory import (
         create_application_repositories,
     )
-    from backend.app.core.database import mysql_database
     from backend.app.core.postgres_database import postgres_database
 
-    documents = create_application_repositories(
-        backend="mysql",
-        mysql=mysql_database,
-        postgres=postgres_database,
-    ).documents
+    documents = create_application_repositories(postgres=postgres_database).documents
     retriever = HybridRetriever(
         MilvusRepository(), GraphRepository(), documents, documents
     )

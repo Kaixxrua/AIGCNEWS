@@ -11,7 +11,6 @@ from backend.app import main
 
 def _settings() -> SimpleNamespace:
     return SimpleNamespace(
-        application_database_backend="postgres",
         project_catalog_backend="postgres",
         project_catalog_outbox_capture_enabled=False,
         project_catalog_sync_worker_enabled=False,
@@ -54,7 +53,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(app.state.application_repositories, repositories)
                 database.close.assert_not_called()
 
-            factory.assert_called_once_with(backend="postgres", postgres=database)
+            factory.assert_called_once_with(postgres=database)
             redis_client.aclose.assert_awaited_once_with()
             database.close.assert_called_once_with()
 
