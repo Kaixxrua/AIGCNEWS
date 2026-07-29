@@ -48,7 +48,7 @@ for module_name, class_name in (
     setattr(module, class_name, type(class_name, (), {}))
     sys.modules.setdefault(module_name, module)
 
-from backend.app.api import routes_mcp
+from backend.app.services.mcp.inbound import tools as inbound_tools
 from backend.app.services.rag import database_tools
 from backend.app.services.rag.retriever import HybridRetriever
 
@@ -272,6 +272,17 @@ def test_knowledge_stats_uses_logical_counts_and_reader_source_scope(
         assert "news 来源共 3 条，以下按热度排序前 7 条" in result["formatted"]
 
 
+def _mcp_tool_context(*, forwarded_proto: str | None = None):
+    return inbound_tools.McpToolContext(
+        user=None,
+        documents=MagicMock(),
+        papers=MagicMock(),
+        rank_snapshots=MagicMock(),
+        project_collection=MagicMock(),
+        request=_request(forwarded_proto=forwarded_proto),
+    )
+
+
 def test_mcp_paper_detail_uses_reader_and_public_projection() -> None:
     repository = MagicMock()
     repository.get_paper_detail.return_value = {
@@ -282,8 +293,8 @@ def test_mcp_paper_detail_uses_reader_and_public_projection() -> None:
         "local_pdf_path": "/srv/papers/paper-1.pdf",
     }
     result = asyncio.run(
-        routes_mcp._tool_get_paper_detail(
-            _request(forwarded_proto="https"),
+        inbound_tools._tool_get_paper_detail(
+            _mcp_tool_context(forwarded_proto="https"),
             {"paper_id": "paper-1"},
             repository,
         )
@@ -305,12 +316,12 @@ def test_mcp_paper_detail_reports_missing_document() -> None:
     repository = MagicMock()
     repository.get_paper_detail.return_value = None
     with pytest.raises(
-        routes_mcp.McpToolInputError,
+        inbound_tools.McpToolInputError,
         match=re.escape("Document 'missing' not found."),
     ):
         asyncio.run(
-            routes_mcp._tool_get_paper_detail(
-                _request(), {"paper_id": "missing"}, repository
+            inbound_tools._tool_get_paper_detail(
+                _mcp_tool_context(), {"paper_id": "missing"}, repository
             )
         )
 

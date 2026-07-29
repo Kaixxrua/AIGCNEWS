@@ -11,11 +11,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.app.api import routes_github_projects, routes_mcp
+from backend.app.api import routes_github_projects
 from backend.app.repositories.mysql_project_catalog import MySQLProjectCatalogRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_catalog import ProjectCatalogRepository
 from backend.app.services import project_discovery
+from backend.app.services.mcp.inbound import responses as inbound_responses
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "project_catalog_cases.json"
 PUBLIC_PROJECT_FIELDS = {
@@ -337,7 +338,7 @@ def test_rest_project_and_category_serialization_is_frozen() -> None:
 def test_mcp_tool_response_matches_structured_content_and_public_fields() -> None:
     fixture = load_catalog_cases()
     public_item = project_discovery.public_project_item(fixture["projects"]["alpha"])
-    response = routes_mcp._tool_response({"items": [public_item], "total": 1})
+    response = inbound_responses._tool_response({"items": [public_item], "total": 1})
 
     assert response["isError"] is False
     assert response["content"] == [

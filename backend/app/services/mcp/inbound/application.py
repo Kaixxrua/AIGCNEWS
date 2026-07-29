@@ -345,16 +345,12 @@ def _resource_tool_args(
 
 
 async def _read_resource(
-    context: McpToolContext | Any,
+    context: McpToolContext,
     uri: Any,
     briefing_repository: BriefingReader,
 ) -> dict[str, Any]:
     path, query = _parse_resource_uri(uri)
-    tool_context = (
-        context
-        if isinstance(context, McpToolContext)
-        else McpToolContext.from_request(context)
-    )
+    tool_context = context
 
     try:
         if path == "dashboard/summary":

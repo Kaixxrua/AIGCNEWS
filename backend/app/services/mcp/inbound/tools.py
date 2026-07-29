@@ -55,26 +55,8 @@ class McpToolContext:
     def authorization(self) -> McpAuthorizationContext:
         return McpAuthorizationContext(self.user)
 
-    @classmethod
-    def from_request(cls, request: Request) -> McpToolContext:
-        return cls(
-            user=getattr(request.state, "mcp_user", None),
-            documents=request.state.document_repository,
-            papers=request.state.papers_repository,
-            rank_snapshots=request.state.rank_snapshot_repository,
-            project_collection=request.state.project_collection_repository,
-            request=request,
-        )
 
-
-ToolContextLike = McpToolContext | Request
-ToolHandler = Callable[[ToolContextLike, dict[str, Any]], Awaitable[dict[str, Any]]]
-
-
-def _context(value: ToolContextLike) -> McpToolContext:
-    if isinstance(value, McpToolContext):
-        return value
-    return McpToolContext.from_request(value)
+ToolHandler = Callable[[McpToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 def _clean_string(
@@ -133,12 +115,12 @@ def _public_project_item(item: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _search_indexed_documents(
-    context: ToolContextLike,
+    context: McpToolContext,
     args: dict[str, Any],
     *,
     source: str | None,
 ) -> dict[str, Any]:
-    tool_context = _context(context)
+    tool_context = context
     q = args["q"]
     page = args.get("page", 1)
     limit = args.get("limit", 10)
@@ -165,13 +147,13 @@ async def _search_indexed_documents(
 
 
 async def _tool_search_papers(
-    context: ToolContextLike, args: dict[str, Any]
+    context: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
     return await _search_indexed_documents(context, args, source="arxiv")
 
 
 async def _tool_search_documents(
-    context: ToolContextLike, args: dict[str, Any]
+    context: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
     source = args["source"]
     return await _search_indexed_documents(
@@ -182,13 +164,13 @@ async def _tool_search_documents(
 
 
 async def _tool_get_paper_detail(
-    context: ToolContextLike,
+    context: McpToolContext,
     args: dict[str, Any],
     papers: PapersReader | None = None,
 ) -> dict[str, Any]:
-    request = context.request if isinstance(context, McpToolContext) else context
+    request = context.request
     paper_id = _clean_string(args, "paper_id", required=True, max_len=128)
-    reader = papers or _context(context).papers
+    reader = papers or context.papers
     row = await asyncio.to_thread(reader.get_paper_detail, paper_id)
     if row is None:
         raise McpToolInputError(f"Document {paper_id!r} not found.")
@@ -197,9 +179,9 @@ async def _tool_get_paper_detail(
 
 
 async def _tool_get_top_items(
-    context: ToolContextLike, args: dict[str, Any]
+    context: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
-    tool_context = _context(context)
+    tool_context = context
     source = args.get("source", "all")
     period = args.get("period", "daily")
     date_value = args.get("date") or ""
@@ -271,27 +253,27 @@ async def _search_project_library(
 
 
 async def _tool_search_github_projects(
-    _context_value: ToolContextLike, args: dict[str, Any]
+    _context_value: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
     return await _search_project_library(args, mode="generic")
 
 
 async def _tool_search_github_ai_projects(
-    _context_value: ToolContextLike, args: dict[str, Any]
+    _context_value: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
     return await _search_project_library(args, mode="ai")
 
 
 async def _tool_get_project_library(
-    _context_value: ToolContextLike, args: dict[str, Any]
+    _context_value: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
     return await _search_project_library(args, mode="ai")
 
 
 async def _tool_search_my_project_favorites(
-    context: ToolContextLike, args: dict[str, Any]
+    context: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
-    tool_context = _context(context)
+    tool_context = context
     authorization = tool_context.authorization
     user_id = authorization.user_id
     if user_id <= 0:
@@ -362,7 +344,7 @@ async def _tool_search_my_project_favorites(
 
 
 async def _tool_get_project_categories(
-    _context_value: ToolContextLike, args: dict[str, Any]
+    _context_value: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
     if args:
         raise McpToolInputError("get_project_categories 不接受参数。")
@@ -421,7 +403,7 @@ def _validated_tool_args(name: str, arguments: Any) -> dict[str, Any]:
 
 
 async def _call_tool(
-    context: ToolContextLike, name: str, arguments: Any
+    context: McpToolContext, name: str, arguments: Any
 ) -> dict[str, Any]:
     handler = _TOOL_HANDLERS.get(name)
     if handler is None:

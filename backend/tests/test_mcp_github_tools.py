@@ -45,7 +45,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_mcp
-from backend.app.api.mcp_contracts import SearchGitHubAIProjectsInput
+from backend.app.api.mcp_contracts import SearchGitHubAIProjectsInput, input_schema
 from backend.app.api.dependencies import (
     get_application_repositories,
     get_briefing_repository,
@@ -54,12 +54,14 @@ from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentRepository, PapersReader
 from backend.app.services import project_discovery
 from backend.app.services.ingestion import source_github_mcp
+from backend.app.services.mcp.inbound import catalog as inbound_catalog
+from backend.app.services.mcp.inbound import responses as inbound_responses
 from backend.app.services.mcp.inbound import tools as inbound_tools
 
 
 class ToolMetadataTests(unittest.TestCase):
     def test_tool_names_and_routing_boundaries(self) -> None:
-        tools = {tool["name"]: tool for tool in routes_mcp.MCP_TOOLS}
+        tools = {tool["name"]: tool for tool in inbound_catalog.MCP_TOOLS}
         self.assertEqual(len(tools), 8)
         self.assertTrue(
             {
@@ -120,7 +122,7 @@ class ToolMetadataTests(unittest.TestCase):
             sort_schema = tools[tool_name]["inputSchema"]["properties"]["sort"]
             self.assertIn("relevance", json.dumps(sort_schema))
         for tool_name in ("search_github_projects", "search_my_project_favorites"):
-            schema = routes_mcp.input_schema(tool_name)
+            schema = input_schema(tool_name)
             sort_schema = schema["properties"]["sort"]
             self.assertNotIn("relevance", json.dumps(sort_schema))
             self.assertNotIn("intent", schema["properties"])
@@ -384,7 +386,7 @@ class ProjectHandlerTests(unittest.TestCase):
             patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository({"items": [], "total": 0})),
             patch.object(inbound_tools, "search_github_projects_fallback", return_value=fallback_result) as fallback,
         ):
-            result = asyncio.run(routes_mcp._search_project_library({"q": "screenshot rounded"}, mode="generic"))
+            result = asyncio.run(inbound_tools._search_project_library({"q": "screenshot rounded"}, mode="generic"))
         self.assertEqual(fallback.call_args.kwargs["mode"], "generic")
         self.assertEqual(fallback.call_args.kwargs["min_stars"], 500)
         self.assertEqual(result["result_origin"], "github_api_fallback")
@@ -399,15 +401,15 @@ class ProjectHandlerTests(unittest.TestCase):
                 return_value={"items": [], "total": 0, "github_total_count": 0, "queries": [], "error": "", "cache_hit": False},
             ) as fallback,
         ):
-            asyncio.run(routes_mcp._tool_search_github_ai_projects(None, {"q": "RAG", "sort": "stars"}))
+            asyncio.run(inbound_tools._tool_search_github_ai_projects(None, {"q": "RAG", "sort": "stars"}))
         self.assertEqual(fallback.call_args.kwargs["mode"], "ai")
         self.assertEqual(fallback.call_args.kwargs["min_stars"], 500)
 
     def test_ai_and_legacy_handlers_forward_host_intent(self) -> None:
         intent = HostIntentContractTests()._intent()
         for handler in (
-            routes_mcp._tool_search_github_ai_projects,
-            routes_mcp._tool_get_project_library,
+            inbound_tools._tool_search_github_ai_projects,
+            inbound_tools._tool_get_project_library,
         ):
             with self.subTest(handler=handler.__name__):
                 with patch.object(inbound_tools, "search_projects", new=AsyncMock(return_value={})) as search:
@@ -421,7 +423,7 @@ class ProjectHandlerTests(unittest.TestCase):
             patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository(local)),
             patch.object(inbound_tools, "search_github_projects_fallback") as fallback,
         ):
-            result = asyncio.run(routes_mcp._search_project_library({"q": "local"}, mode="generic"))
+            result = asyncio.run(inbound_tools._search_project_library({"q": "local"}, mode="generic"))
         fallback.assert_not_called()
         self.assertFalse(result["fallback_used"])
         self.assertEqual(result["items"][0]["result_origin"], "aigc_news_local")
@@ -431,12 +433,12 @@ class ProjectHandlerTests(unittest.TestCase):
             patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository({"items": [], "total": 0})),
             patch.object(inbound_tools, "search_github_projects_fallback") as fallback,
         ):
-            result = asyncio.run(routes_mcp._search_project_library({"scope": "today"}, mode="ai"))
+            result = asyncio.run(inbound_tools._search_project_library({"scope": "today"}, mode="ai"))
         fallback.assert_not_called()
         self.assertFalse(result["fallback_used"])
 
     def test_project_projection_is_compact(self) -> None:
-        projected = routes_mcp._public_project_item(
+        projected = inbound_tools._public_project_item(
             {
                 "id": "x",
                 "full_name": "owner/repo",
@@ -457,7 +459,7 @@ class ProjectHandlerTests(unittest.TestCase):
         self.assertNotIn("hot_score_growth", projected)
 
     def test_worst_case_project_response_stays_under_48_kib(self) -> None:
-        item = routes_mcp._public_project_item(
+        item = inbound_tools._public_project_item(
             {
                 "id": "github-direct:owner/repository-name",
                 "full_name": "owner/repository-name",
@@ -480,7 +482,7 @@ class ProjectHandlerTests(unittest.TestCase):
                 "is_recommended": True,
             }
         )
-        tool_result = routes_mcp._tool_response({"items": [item for _ in range(20)], "total": 20})
+        tool_result = inbound_responses._tool_response({"items": [item for _ in range(20)], "total": 20})
         envelope = {"jsonrpc": "2.0", "id": 1, "result": tool_result}
         encoded = json.dumps(envelope, ensure_ascii=False).encode("utf-8")
         self.assertLess(len(encoded), 48 * 1024)
@@ -606,8 +608,8 @@ class McpProtocolTests(unittest.TestCase):
         )
         self.assertEqual(initialized.status_code, 200)
         initialize_result = initialized.json()["result"]
-        self.assertEqual(initialize_result["protocolVersion"], routes_mcp.MCP_PROTOCOL_VERSION)
-        self.assertEqual(initialize_result["serverInfo"]["name"], routes_mcp.MCP_SERVER_NAME)
+        self.assertEqual(initialize_result["protocolVersion"], inbound_catalog.MCP_PROTOCOL_VERSION)
+        self.assertEqual(initialize_result["serverInfo"]["name"], inbound_catalog.MCP_SERVER_NAME)
         self.assertIn("tools", initialize_result["capabilities"])
         instructions = initialize_result["instructions"].lower()
         for trigger in ("find", "search", "recommend", "compare", "reuse"):
@@ -870,8 +872,8 @@ class McpProtocolTests(unittest.TestCase):
         generic_handler = AsyncMock(return_value=compact)
         ai_handler = AsyncMock(return_value=compact)
         legacy_handler = AsyncMock(return_value=compact)
-        handlers = dict(routes_mcp._TOOL_HANDLERS)
-        routes_mcp._TOOL_HANDLERS.update(
+        handlers = dict(inbound_tools._TOOL_HANDLERS)
+        inbound_tools._TOOL_HANDLERS.update(
             {
                 "search_github_projects": generic_handler,
                 "search_github_ai_projects": ai_handler,
@@ -896,8 +898,8 @@ class McpProtocolTests(unittest.TestCase):
                 )
             ]
         finally:
-            routes_mcp._TOOL_HANDLERS.clear()
-            routes_mcp._TOOL_HANDLERS.update(handlers)
+            inbound_tools._TOOL_HANDLERS.clear()
+            inbound_tools._TOOL_HANDLERS.update(handlers)
         self.assertTrue(all(not response.json()["result"]["isError"] for response in responses))
         generic_handler.assert_awaited_once()
         ai_handler.assert_awaited_once()

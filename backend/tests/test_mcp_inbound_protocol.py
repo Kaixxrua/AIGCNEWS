@@ -48,7 +48,7 @@ from backend.app.api.dependencies import (
     get_briefing_repository,
 )
 from backend.app.core.auth import get_mcp_access_token_authenticator
-from backend.app.services.mcp.inbound import application, catalog, context, responses, tools
+from backend.app.services.mcp.inbound import application, catalog, context, tools
 
 
 PUBLIC_TOOL_NAMES = [
@@ -117,7 +117,7 @@ class McpInboundProtocolTests(unittest.TestCase):
         )
         self.assertEqual(
             response.headers["mcp-protocol-version"],
-            routes_mcp.MCP_PROTOCOL_VERSION,
+            catalog.MCP_PROTOCOL_VERSION,
         )
 
     def test_parse_and_body_limits(self) -> None:
@@ -133,7 +133,7 @@ class McpInboundProtocolTests(unittest.TestCase):
                     message="Parse error",
                 )
 
-        oversized = b" " * (routes_mcp.MAX_REQUEST_BYTES + 1)
+        oversized = b" " * (catalog.MAX_REQUEST_BYTES + 1)
         self.assert_rpc_error(
             self.client.post(
                 "/api/mcp",
@@ -215,7 +215,7 @@ class McpInboundProtocolTests(unittest.TestCase):
         self.assertEqual(notification.content, b"")
         self.assertEqual(
             notification.headers["mcp-protocol-version"],
-            routes_mcp.MCP_PROTOCOL_VERSION,
+            catalog.MCP_PROTOCOL_VERSION,
         )
         self.assert_rpc_error(
             self.client.post(
@@ -242,7 +242,7 @@ class McpInboundProtocolTests(unittest.TestCase):
                         "prompts": {"listChanged": False},
                     },
                     "serverInfo": {"name": "aigc-news", "version": "1.1.0"},
-                    "instructions": routes_mcp.MCP_HOST_INSTRUCTIONS,
+                    "instructions": catalog.MCP_HOST_INSTRUCTIONS,
                 },
             },
         )
@@ -340,32 +340,12 @@ class McpInboundProtocolTests(unittest.TestCase):
         with self.assertRaises(AttributeError):
             response.status_code = 200
 
-    def test_catalog_compatibility_aliases_and_registry_pairing(self) -> None:
-        self.assertIs(routes_mcp.MCP_TOOLS, catalog.MCP_TOOLS)
-        self.assertIs(routes_mcp._PRIVATE_MCP_TOOLS, catalog._PRIVATE_MCP_TOOLS)
-        self.assertIs(routes_mcp.MCP_RESOURCES, catalog.MCP_RESOURCES)
-        self.assertIs(routes_mcp.MCP_RESOURCE_TEMPLATES, catalog.MCP_RESOURCE_TEMPLATES)
-        self.assertIs(routes_mcp.MCP_PROMPTS, catalog.MCP_PROMPTS)
-        self.assertIs(routes_mcp._tool_response, responses._tool_response)
-        self.assertIs(routes_mcp._resource_content, responses._resource_content)
-        self.assertIs(routes_mcp.McpToolContext, tools.McpToolContext)
-        self.assertIs(routes_mcp.McpAuthorizationContext, context.McpAuthorizationContext)
-        self.assertIs(routes_mcp.McpSessionTransport, context.McpSessionTransport)
-        self.assertIs(routes_mcp.parse_mcp_request, context.parse_mcp_request)
-        self.assertIs(
-            routes_mcp.McpProtocolApplication,
-            application.McpProtocolApplication,
-        )
-        self.assertIs(routes_mcp._read_resource, application._read_resource)
-        self.assertIs(routes_mcp._get_prompt, application._get_prompt)
-        self.assertIs(routes_mcp._call_tool, tools._call_tool)
-        self.assertIs(routes_mcp._TOOL_HANDLERS, tools._TOOL_HANDLERS)
-
+    def test_canonical_registry_pairs_catalog_models_and_handlers(self) -> None:
         expected_names = [*PUBLIC_TOOL_NAMES, PRIVATE_TOOL_NAME]
-        self.assertEqual(list(routes_mcp.MCP_TOOL_REGISTRY), expected_names)
+        self.assertEqual(list(tools.MCP_TOOL_REGISTRY), expected_names)
         self.assertEqual(set(catalog.MCP_TOOL_DEFINITIONS), set(expected_names))
         self.assertEqual(set(catalog.MCP_TOOL_INPUT_MODELS), set(expected_names))
-        for name, registration in routes_mcp.MCP_TOOL_REGISTRY.items():
+        for name, registration in tools.MCP_TOOL_REGISTRY.items():
             with self.subTest(name=name):
                 self.assertIs(
                     registration["definition"], catalog.MCP_TOOL_DEFINITIONS[name]
@@ -373,7 +353,7 @@ class McpInboundProtocolTests(unittest.TestCase):
                 self.assertIs(
                     registration["input_model"], catalog.MCP_TOOL_INPUT_MODELS[name]
                 )
-                self.assertIs(registration["handler"], routes_mcp._TOOL_HANDLERS[name])
+                self.assertIs(registration["handler"], tools._TOOL_HANDLERS[name])
                 self.assertEqual(
                     registration["definition"]["inputSchema"],
                     registration["input_model"].model_json_schema(),
@@ -475,7 +455,7 @@ class McpInboundProtocolTests(unittest.TestCase):
         )
 
         handler = AsyncMock(side_effect=RuntimeError("private implementation detail"))
-        with patch.dict(routes_mcp._TOOL_HANDLERS, {"search_papers": handler}):
+        with patch.dict(tools._TOOL_HANDLERS, {"search_papers": handler}):
             failed = self.rpc(
                 "tools/call",
                 request_id=7,
@@ -486,9 +466,9 @@ class McpInboundProtocolTests(unittest.TestCase):
         self.assertNotIn("private implementation detail", failed["content"][0]["text"])
 
     def test_tool_and_resource_results_are_truncated(self) -> None:
-        oversized = "x" * (routes_mcp.MAX_TOOL_RESULT_CHARS + 1)
+        oversized = "x" * (catalog.MAX_TOOL_RESULT_CHARS + 1)
         handler = AsyncMock(return_value={"value": oversized})
-        with patch.dict(routes_mcp._TOOL_HANDLERS, {"search_papers": handler}):
+        with patch.dict(tools._TOOL_HANDLERS, {"search_papers": handler}):
             tool_result = self.rpc(
                 "tools/call",
                 params={"name": "search_papers", "arguments": {"q": "agent"}},
@@ -497,7 +477,7 @@ class McpInboundProtocolTests(unittest.TestCase):
         self.assertTrue(tool_result["structuredContent"]["truncated"])
         self.assertEqual(
             len(tool_result["structuredContent"]["preview"]),
-            routes_mcp.MAX_TOOL_RESULT_CHARS,
+            catalog.MAX_TOOL_RESULT_CHARS,
         )
         self.assertEqual(
             json.loads(tool_result["content"][0]["text"]),
@@ -505,7 +485,7 @@ class McpInboundProtocolTests(unittest.TestCase):
         )
 
         self.briefing_repository.get_briefing_by_date.return_value = {
-            "content": "y" * (routes_mcp.MAX_RESOURCE_TEXT_CHARS + 1)
+            "content": "y" * (catalog.MAX_RESOURCE_TEXT_CHARS + 1)
         }
         resource = self.rpc(
             "resources/read",
@@ -513,7 +493,7 @@ class McpInboundProtocolTests(unittest.TestCase):
         ).json()["result"]["contents"][0]
         self.assertEqual(
             resource["text"],
-            "y" * routes_mcp.MAX_RESOURCE_TEXT_CHARS + "\n\n[truncated]",
+            "y" * catalog.MAX_RESOURCE_TEXT_CHARS + "\n\n[truncated]",
         )
 
     def test_invalid_authorization_header_is_http_401_not_jsonrpc(self) -> None:

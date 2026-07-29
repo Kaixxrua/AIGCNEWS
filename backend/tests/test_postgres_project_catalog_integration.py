@@ -205,7 +205,7 @@ def test_real_catalog_scope_favorites_and_categories(catalog: Any) -> None:
 
 
 def test_real_rows_preserve_serialization_and_mcp_contract(catalog: Any) -> None:
-    from backend.app.api.routes_mcp import _tool_response
+    from backend.app.services.mcp.inbound.responses import _tool_response
 
     row = catalog.list_projects(
         source="github", category="rag_knowledge", min_stars=500

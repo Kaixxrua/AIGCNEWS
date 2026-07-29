@@ -214,7 +214,7 @@ def test_mcp_project_search_does_not_pin_mysql_repository() -> None:
     search = AsyncMock(return_value={"items": [], "total": 0})
 
     with patch.object(inbound_tools, "search_projects", search):
-        asyncio.run(routes_mcp._search_project_library({"q": "workflow"}, mode="generic"))
+        asyncio.run(inbound_tools._search_project_library({"q": "workflow"}, mode="generic"))
 
     assert "repository_factory" not in search.call_args.kwargs
 
