@@ -59,6 +59,21 @@ class ConversationServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "message_not_found"):
             service.delete_message(user_id=3, message_id=99)
 
+    def test_visual_regeneration_is_rejected_before_destructive_prepare(self) -> None:
+        repository = MagicMock(spec=ConversationRepository)
+        repository.get_owned_message_regeneration_preflight.return_value = {
+            "id": 9,
+            "attachments": [{"modality": "vision"}],
+        }
+        service = ConversationService(repository)
+
+        with self.assertRaisesRegex(
+            ValueError, "visual_message_regeneration_not_supported"
+        ):
+            service.regenerate_from_message(user_id=3, message_id=9)
+
+        repository.prepare_owned_regeneration.assert_not_called()
+
     def test_cleanup_preserves_configured_bounds(self) -> None:
         repository = MagicMock(spec=ConversationRepository)
         repository.cleanup_stale_conversations.return_value = 4

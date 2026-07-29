@@ -71,6 +71,7 @@ def test_public_signatures_match_conversation_protocol() -> None:
         "ensure_conversation",
         "create_conversation",
         "delete_owned_conversation",
+        "get_owned_message_regeneration_preflight",
         "append_message_pair",
         "delete_owned_message_branch",
         "prepare_owned_regeneration",
@@ -155,6 +156,29 @@ def test_append_pair_uses_returning_jsonb_and_one_transaction() -> None:
     assert all("%s::jsonb" in sql and "RETURNING *" in sql for sql, _ in message_inserts)
     assert result["assistant_message"]["sources"] == [{"id": "doc"}]
     assert [message["id"] for message in result["messages"]] == [11, 12]
+    assert database.entered == database.exited == 1
+
+
+def test_regeneration_preflight_reads_owned_message_without_mutation() -> None:
+    target = {
+        "id": 11,
+        "conversation_id": 7,
+        "thinking": "",
+        "sources_json": [],
+        "attachments_json": [{"modality": "vision"}],
+        "status": "done",
+    }
+    database = Database([target])
+
+    result = PostgresConversationRepository(
+        database
+    ).get_owned_message_regeneration_preflight(user_id=3, message_id=11)
+
+    sql, params = database.cursor.calls[0]
+    assert "c.user_id = %s" in sql
+    assert "DELETE" not in sql.upper() and "FOR UPDATE" not in sql.upper()
+    assert params == (11, 3)
+    assert result is not None and result["attachments"] == [{"modality": "vision"}]
     assert database.entered == database.exited == 1
 
 

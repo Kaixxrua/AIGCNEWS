@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import traceback
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -26,55 +25,25 @@ from backend.app.models.schema_chat import (
     EnsureConversationRequest,
     RegenerateRequest,
 )
-from backend.app.repositories.conversation_repository import (
-    ConversationQuotaReader,
-    ConversationRepository,
-)
+from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.repositories.document_repository import DocumentRepository
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.services.chat.conversation_service import ConversationService
+from backend.app.services.chat.quota_policy import check_user_message_limit
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.retriever import HybridRetriever
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-def _check_user_message_limit(
-    user_payload: dict,
-    quota_reader: ConversationQuotaReader,
-) -> None:
-    """检查普通用户每日消息限额，超限则抛出 HTTP 429。
-
-    admin 用户不受限；配置项 USER_DAILY_MESSAGE_LIMIT=0 时不限制。
-    """
-    limit = settings.USER_DAILY_MESSAGE_LIMIT
-    if limit <= 0:
-        return
-    if user_payload.get("role") == "admin":
-        return
-    user_id = int(user_payload.get("user_id") or 0)
-    if user_id <= 0:
-        return
-    today_count = quota_reader.count_user_messages_today(user_id)
-    if today_count >= limit:
-        logger.info(
-            "[MessageLimit] 用户 %s 今日消息数 %d 已达上限 %d",
-            user_id,
-            today_count,
-            limit,
-        )
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "error": "message_limit_exceeded",
-                "message": f"今日消息已达上限（{limit} 条），请明天再试",
-                "limit": limit,
-                "used": today_count,
-            },
-        )
+def _check_user_message_limit(user_payload: dict, quota_reader: ConversationRepository) -> None:
+    """Compatibility seam for the shared chat quota policy."""
+    check_user_message_limit(
+        user_payload,
+        quota_reader,
+        limit=settings.USER_DAILY_MESSAGE_LIMIT,
+    )
 
 
 def _build_attachment_refs(attachment_ids: List[str]) -> List[Dict[str, Any]]:
@@ -393,6 +362,11 @@ async def regenerate_message(
             message_id=message_id,
         )
     except ValueError as exc:
+        if str(exc) == "visual_message_regeneration_not_supported":
+            raise HTTPException(
+                status_code=409,
+                detail="视觉消息需要重新上传截图后才能重新生成",
+            ) from exc
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     messages = regen_result["messages"]

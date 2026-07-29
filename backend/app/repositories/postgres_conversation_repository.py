@@ -178,6 +178,26 @@ class PostgresConversationRepository:
                 )
                 return cursor.rowcount > 0
 
+    def get_owned_message_regeneration_preflight(
+        self,
+        *,
+        user_id: int,
+        message_id: int,
+    ) -> dict[str, Any] | None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT m.*
+                    FROM chat_messages m
+                    JOIN conversations c ON c.id = m.conversation_id
+                    WHERE m.id = %s AND c.user_id = %s
+                    """,
+                    (message_id, user_id),
+                )
+                row = cursor.fetchone()
+        return _deserialize_message(row) if row is not None else None
+
     def append_message_pair(
         self,
         *,

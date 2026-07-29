@@ -90,6 +90,44 @@ class VisionRelayTests(unittest.TestCase):
             ],
         )
 
+    def test_success_persists_answer_and_emits_conversation_before_done(self) -> None:
+        persisted_answers: list[str] = []
+
+        async def load_image(_image_id: str):
+            return "image", "image/png"
+
+        async def provider_stream(**_kwargs):
+            yield ProviderEvent("content", "first")
+            yield ProviderEvent("content", " second")
+
+        async def persist_completed(answer: str):
+            persisted_answers.append(answer)
+            return {
+                "conversation": {"id": 7},
+                "assistant_message": {"id": 12},
+            }
+
+        chunks = asyncio.run(
+            collect(
+                image_id="image-id",
+                question="q",
+                paper_id=None,
+                history=[],
+                image_loader=load_image,
+                provider_stream=provider_stream,
+                persist_completed=persist_completed,
+            )
+        )
+
+        self.assertEqual(persisted_answers, ["first second"])
+        self.assertEqual(
+            chunks[-2:],
+            [
+                'data: {"type": "conversation", "data": {"conversation_id": 7, "message_id": 12}}\n\n',
+                DONE_EVENT,
+            ],
+        )
+
     def test_terminal_provider_error_reports_and_emits_one_done(self) -> None:
         report_error = Mock()
 

@@ -27,15 +27,19 @@ from __future__ import annotations
 
 import asyncio
 import traceback
-from typing import AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
+from backend.app.api.dependencies import get_conversation_repository
 from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
+from backend.app.repositories.conversation_repository import ConversationRepository
+from backend.app.services.chat.conversation_service import ConversationService
+from backend.app.services.chat.quota_policy import check_user_message_limit
 from backend.app.services.vision import relay as vision_relay_service
 from backend.app.services.vision.image_cache import ScreenshotImageCache
 from backend.app.services.vision.provider import VISION_SYSTEM, VisionProvider
@@ -63,6 +67,7 @@ class UploadScreenshotResponse(BaseModel):
 
 
 class VisionRelayRequest(BaseModel):
+    conversation_id: Optional[int] = None
     paper_id: Optional[str] = None
     question: str = Field(..., min_length=1, max_length=2000)
     image_id: str = Field(
@@ -76,7 +81,7 @@ class VisionRelayRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _sse(event_type: str, data: str) -> str:
+def _sse(event_type: str, data: Any) -> str:
     """兼容既有 monkeypatch seam，实际编码由 relay 边界持有。"""
     return vision_relay_service.encode_sse(event_type, data)
 
@@ -103,7 +108,12 @@ async def upload_screenshot(
 # ---------------------------------------------------------------------------
 
 
-async def _vision_relay_stream(req: VisionRelayRequest) -> AsyncGenerator[str, None]:
+async def _vision_relay_stream(
+    req: VisionRelayRequest,
+    *,
+    user_id: int | None = None,
+    conversation_repository: ConversationRepository | None = None,
+) -> AsyncGenerator[str, None]:
     """兼容路由私有入口，将旧 globals 晚绑定转发给 relay 协调边界。"""
 
     provider = VisionProvider(
@@ -111,6 +121,29 @@ async def _vision_relay_stream(req: VisionRelayRequest) -> AsyncGenerator[str, N
         client_factory=httpx.AsyncClient,
         sleep=asyncio.sleep,
     )
+    persist_completed = None
+    if user_id is not None and conversation_repository is not None:
+        conversation_service = ConversationService(conversation_repository)
+
+        async def persist_completed(answer: str) -> dict[str, Any]:
+            return await asyncio.to_thread(
+                conversation_service.append_message_pair,
+                user_id=user_id,
+                conversation_id=req.conversation_id,
+                scope="paper" if req.paper_id else "global",
+                scope_key=req.paper_id,
+                user_message=req.question.strip(),
+                assistant_content=answer,
+                attachments=[
+                    {
+                        "modality": "vision",
+                        "image_retained": False,
+                        "regeneration_requires_new_image": True,
+                    }
+                ],
+                title=req.question.strip()[:60] or None,
+            )
+
     async for chunk in vision_relay_service.stream_vision_relay(
         image_id=req.image_id,
         question=req.question,
@@ -120,6 +153,7 @@ async def _vision_relay_stream(req: VisionRelayRequest) -> AsyncGenerator[str, N
         provider_stream=provider.stream,
         encode_event=_sse,
         report_error=traceback.print_exc,
+        persist_completed=persist_completed,
     ):
         yield chunk
 
@@ -132,15 +166,25 @@ async def _vision_relay_stream(req: VisionRelayRequest) -> AsyncGenerator[str, N
 @router.post("/chat/vision-relay")
 async def vision_relay(
     request_body: VisionRelayRequest,
-    _: dict = Depends(RequireUser),
+    user: dict = Depends(RequireUser),
+    conversations: ConversationRepository = Depends(get_conversation_repository),
 ) -> StreamingResponse:
     """
     单棒流式视觉问答（Zero-Disk）：
     - 前端先调用 /chat/upload-screenshot 上传截图，拿到 image_id
     - 本接口从内存缓存取 base64，用 httpx 直调 SiliconFlow API 流式输出
     """
+    check_user_message_limit(
+        user,
+        conversations,
+        limit=settings.USER_DAILY_MESSAGE_LIMIT,
+    )
     return StreamingResponse(
-        _vision_relay_stream(request_body),
+        _vision_relay_stream(
+            request_body,
+            user_id=int(user.get("user_id") or 0),
+            conversation_repository=conversations,
+        ),
         media_type="text/event-stream; charset=utf-8",
         headers={
             "Cache-Control": "no-cache, no-transform",

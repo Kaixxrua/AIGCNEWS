@@ -152,6 +152,18 @@ class ConversationService:
         user_id: int,
         message_id: int,
     ) -> Dict[str, Any]:
+        target = self.repo.get_owned_message_regeneration_preflight(
+            user_id=user_id,
+            message_id=message_id,
+        )
+        if target is None:
+            raise ValueError("message_not_found")
+        attachments = target.get("attachments") or []
+        if any(
+            isinstance(item, dict) and item.get("modality") == "vision"
+            for item in attachments
+        ):
+            raise ValueError("visual_message_regeneration_not_supported")
         result = self.repo.prepare_owned_regeneration(
             user_id=user_id,
             message_id=message_id,

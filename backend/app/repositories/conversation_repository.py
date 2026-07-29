@@ -54,6 +54,17 @@ class ConversationWriter(Protocol):
     ) -> bool: ...
 
 
+class ConversationRegenerationReader(Protocol):
+    """Read one owner-scoped message before destructive regeneration work."""
+
+    def get_owned_message_regeneration_preflight(
+        self,
+        *,
+        user_id: int,
+        message_id: int,
+    ) -> dict[str, Any] | None: ...
+
+
 class ConversationMessageWriter(Protocol):
     """Apply owner-scoped message mutations as atomic operations."""
 
@@ -110,6 +121,7 @@ class ConversationCleanupWriter(Protocol):
 class ConversationRepository(
     ConversationReader,
     ConversationWriter,
+    ConversationRegenerationReader,
     ConversationMessageWriter,
     ConversationQuotaReader,
     ConversationCleanupWriter,

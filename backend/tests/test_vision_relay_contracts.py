@@ -4,12 +4,13 @@ import asyncio
 import json
 import unittest
 from collections.abc import Iterable
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_vision
+from backend.app.api.dependencies import get_conversation_repository
 from backend.app.core.auth import RequireUser
 
 
@@ -86,6 +87,15 @@ class VisionRelayContractsTests(unittest.TestCase):
     def setUp(self) -> None:
         routes_vision._image_cache._entries.clear()
         self.app = FastAPI()
+        self.conversations = MagicMock()
+        self.conversations.count_user_messages_today.return_value = 0
+        self.conversations.append_message_pair.return_value = {
+            "conversation": {"id": 7},
+            "assistant_message": {"id": 12},
+        }
+        self.app.dependency_overrides[get_conversation_repository] = (
+            lambda: self.conversations
+        )
         self.app.include_router(routes_vision.router, prefix="/api")
 
     def tearDown(self) -> None:
@@ -160,8 +170,34 @@ class VisionRelayContractsTests(unittest.TestCase):
         request = routes_vision.UploadScreenshotRequest(image_base64="abcdefghij")
         relay = routes_vision.VisionRelayRequest(question="q", image_id="id")
         self.assertEqual(request.mime_type, "image/jpeg")
+        self.assertIsNone(relay.conversation_id)
         self.assertIsNone(relay.paper_id)
         self.assertEqual(relay.history, [])
+
+    def test_quota_rejects_before_cache_or_provider_work(self) -> None:
+        self.conversations.count_user_messages_today.return_value = 20
+        with (
+            patch.object(routes_vision.settings, "USER_DAILY_MESSAGE_LIMIT", 20),
+            patch.object(routes_vision._image_cache, "get", new=AsyncMock()) as image_get,
+            patch.object(routes_vision.httpx, "AsyncClient") as client_type,
+        ):
+            response = self.authenticated_client().post(
+                "/api/chat/vision-relay",
+                json={"question": "q", "image_id": "image-id"},
+            )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(
+            response.json()["detail"],
+            {
+                "error": "message_limit_exceeded",
+                "message": "今日消息已达上限（20 条），请明天再试",
+                "limit": 20,
+                "used": 20,
+            },
+        )
+        image_get.assert_not_awaited()
+        client_type.assert_not_called()
 
     def test_upload_strips_data_uri_and_freezes_uuid_mime_ttl_and_write_eviction(self) -> None:
         routes_vision._image_cache._entries.update(
@@ -326,10 +362,34 @@ class VisionRelayContractsTests(unittest.TestCase):
                 {"type": "status", "data": "🔍 正在分析图像内容…"},
                 {"type": "content", "data": "第一段"},
                 {"type": "content", "data": "第二段"},
+                {
+                    "type": "conversation",
+                    "data": {"conversation_id": 7, "message_id": 12},
+                },
                 "[DONE]",
             ],
         )
         self.assertEqual(response.text.count("data: [DONE]\n\n"), 1)
+        kwargs = self.conversations.append_message_pair.call_args.kwargs
+        self.assertEqual(kwargs["conversation_id"], None)
+        self.assertEqual(kwargs["scope"], "paper")
+        self.assertEqual(kwargs["scope_key"], "paper-16")
+        self.assertEqual(kwargs["user_message"], "解释截图")
+        self.assertEqual(kwargs["assistant_content"], "第一段第二段")
+        self.assertEqual(
+            kwargs["attachments"],
+            [
+                {
+                    "modality": "vision",
+                    "image_retained": False,
+                    "regeneration_requires_new_image": True,
+                }
+            ],
+        )
+        serialized = json.dumps(kwargs, ensure_ascii=False)
+        self.assertNotIn("raw-base64", serialized)
+        self.assertNotIn("data:image", serialized)
+        self.assertNotIn("image-id", serialized)
 
     def test_non_rate_failures_retry_twice_with_exponential_sleeps(self) -> None:
         routes_vision._image_cache._entries["image-id"] = ("image", "image/png", 999.0)
@@ -459,6 +519,7 @@ class VisionRelayContractsTests(unittest.TestCase):
             (
                 'data: {"type": "status", "data": "🔍 正在分析图像内容…"}\n\n'
                 'data: {"type": "content", "data": "字节"}\n\n'
+                'data: {"type": "conversation", "data": {"conversation_id": 7, "message_id": 12}}\n\n'
                 "data: [DONE]\n\n"
             ).encode("utf-8"),
         )
