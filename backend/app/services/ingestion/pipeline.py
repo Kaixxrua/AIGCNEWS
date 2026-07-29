@@ -29,13 +29,18 @@ from fastapi_cache import FastAPICache
 from redis.asyncio import Redis
 
 from backend.app.core.config import settings
+from backend.app.repositories.application_repository_context import (
+    get_configured_application_repositories,
+)
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
+)
 from backend.app.repositories.document_repository import (
     DocumentSearchReader,
     DocumentWriter,
 )
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.task_repository import (
     IngestionTaskWriter,
@@ -211,17 +216,17 @@ def _select_top(
 
 def _ingest_documents(
     papers: List[dict],
-    db: MySQLRepository,
     task_id: int,
     source_label: str,
     snapshot_date: Optional[str] = None,
-    document_writer: DocumentWriter | None = None,
-    rank_snapshots: RankSnapshotRepository | None = None,
+    *,
+    document_writer: DocumentWriter,
+    rank_snapshots: RankSnapshotRepository,
 ) -> int:
     del task_id
     adapter = IngestionPersistenceAdapter(
-        documents=document_writer or db.documents,
-        rank_snapshots=rank_snapshots or db.rank_snapshots,
+        documents=document_writer,
+        rank_snapshots=rank_snapshots,
         vector_writer_factory=MilvusRepository,
         graph_extractor_factory=GraphExtractor,
         graph_writer_factory=GraphRepository,
@@ -267,14 +272,18 @@ class IngestionOrchestrator:
         top_n: int = _TOP_N_PER_SOURCE,
         target_date: Optional[str] = None,
         task_writer: IngestionTaskWriter | None = None,
+        repositories: ApplicationRepositories | None = None,
     ):
         self.limit = limit
         self.top_n = top_n
         self.target_date = target_date
         self.snapshot_date = target_date or today_cst()
 
-        self.db = MySQLRepository()
-        self.task_writer = task_writer or self.db.ingestion_tasks
+        self.repositories = repositories or get_configured_application_repositories()
+        self.documents = self.repositories.documents
+        self.rank_snapshots = self.repositories.rank_snapshots
+        self.github_ingestion = self.repositories.github_ingestion
+        self.task_writer = task_writer or self.repositories.ingestion_tasks
 
         # 实例化所有爬虫
         self._crawlers: Dict[str, BaseCrawler] = {}
@@ -339,7 +348,7 @@ class IngestionOrchestrator:
         )
         selected = _apply_existing_summary_short_circuit(
             selected,
-            self.db.documents,
+            self.documents,
             label,
         )
         # source_name 是纯名称（如 "arxiv"），用于 _ENRICH_MAP 查找
@@ -352,12 +361,11 @@ class IngestionOrchestrator:
         count = await asyncio.to_thread(
             _ingest_documents,
             selected,
-            self.db,
             task_id,
             label,
             snapshot_date or self.snapshot_date,
-            self.db.documents,
-            self.db.rank_snapshots,
+            document_writer=self.documents,
+            rank_snapshots=self.rank_snapshots,
         )
         return count
 
@@ -368,7 +376,7 @@ class IngestionOrchestrator:
           - 每篇 PDF 下载间隔 3s（防封杀）
           - 串行下载（max_workers=1）
           - 落盘到 storage/papers/{arxiv_id}.pdf
-          - 更新 MySQL local_pdf_path
+          - 更新关系数据库 documents.local_pdf_path
         """
         # 过滤出有 arxiv_id 的论文（不再依赖 pdf_pending 标记，因为已修复 enricher）
         arxiv_papers = [p for p in papers if p.get("arxiv_id") and p.get("pdf_url")]
@@ -380,7 +388,7 @@ class IngestionOrchestrator:
             len(arxiv_papers),
         )
 
-        db = self.db  # 传引用给后台线程
+        documents = self.documents  # 传引用给后台线程
 
         def _bg_pdf_download():
             try:
@@ -388,7 +396,7 @@ class IngestionOrchestrator:
                 dl_ok, idx_ok = download_and_index_arxiv_pdfs(
                     arxiv_papers,
                     milvus_repo=milvus_repo,
-                    mysql_repo=db.documents,
+                    mysql_repo=documents,
                     sleep_between=3.0,
                     max_workers=1,
                 )
@@ -563,7 +571,11 @@ def run_smart_ingestion(
 ) -> None:
     """智能采集：检测今天是否已有成功任务，若无则执行采集。"""
     _run_smart_ingestion_with(
-        reader if reader is not None else MySQLRepository().ingestion_tasks,
+        (
+            reader
+            if reader is not None
+            else get_configured_application_repositories().ingestion_tasks
+        ),
         runner if runner is not None else run_ingestion_pipeline,
         limit,
         date.today(),

@@ -37,7 +37,9 @@ class SnapshotDateFlowTests(unittest.IsolatedAsyncioTestCase):
         orchestrator = object.__new__(IngestionOrchestrator)
         orchestrator.top_n = 10
         orchestrator.snapshot_date = "2026-07-13"
-        orchestrator.db = MagicMock()
+        orchestrator.documents = MagicMock()
+        orchestrator.rank_snapshots = MagicMock()
+        orchestrator.github_ingestion = MagicMock()
 
         with (
             patch("backend.app.services.ingestion.pipeline._select_top", return_value=[{"title": "paper"}]),
@@ -50,8 +52,11 @@ class SnapshotDateFlowTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(count, 1)
-        self.assertEqual(to_thread.call_args.args[5], "2026-07-12")
-        self.assertIs(to_thread.call_args.args[7], orchestrator.db.rank_snapshots)
+        self.assertEqual(to_thread.call_args.args[4], "2026-07-12")
+        self.assertIs(
+            to_thread.call_args.kwargs["rank_snapshots"],
+            orchestrator.rank_snapshots,
+        )
 
     def test_reconciliation_is_bounded_and_oldest_first(self) -> None:
         snapshots = MagicMock()

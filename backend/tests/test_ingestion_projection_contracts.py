@@ -170,12 +170,11 @@ class PersistenceProjectionContractTests(unittest.TestCase):
             graph_extractor.return_value.extract.return_value = []
             count = _ingest_documents(
                 papers,
-                db,
                 42,
                 "mixed",
                 "2026-07-24",
-                writer,
-                snapshots,
+                document_writer=writer,
+                rank_snapshots=snapshots,
             )
 
         self.assertEqual(count, 2)
@@ -219,12 +218,11 @@ class PersistenceProjectionContractTests(unittest.TestCase):
             extractor_type.return_value.extract.return_value = ["graph-document"]
             count = _ingest_documents(
                 [reused_paper, new_paper],
-                db,
                 42,
                 "arxiv_daily",
                 "2026-07-24",
-                writer,
-                snapshots,
+                document_writer=writer,
+                rank_snapshots=snapshots,
             )
 
         self.assertEqual(count, 2)
@@ -244,12 +242,11 @@ class PersistenceProjectionContractTests(unittest.TestCase):
         ):
             count = _ingest_documents(
                 [{"source": "news", "title": "Item", "url": "https://item"}],
-                db,
                 1,
                 "news_daily",
                 "2026-07-24",
-                db.documents,
-                db.rank_snapshots,
+                document_writer=db.documents,
+                rank_snapshots=db.rank_snapshots,
             )
 
         self.assertEqual(count, 1)

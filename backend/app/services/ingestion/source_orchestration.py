@@ -14,7 +14,7 @@ _PERIODS = ("daily", "weekly", "monthly")
 class IngestionOrchestrationHost(Protocol):
     limit: int
     target_date: str | None
-    db: object
+    github_ingestion: object
     _crawlers: dict[str, BaseCrawler]
 
     @property
@@ -72,7 +72,7 @@ class MultiSourceIngestionRuntime:
             crawl_result.items,
             period=period,
             observed_date=crawl_result.snapshot_date,
-            db=self.host.db,
+            db=self.host.github_ingestion,
         )
         if period != "daily" or not hit_result["repo_ids"]:
             return
@@ -85,6 +85,7 @@ class MultiSourceIngestionRuntime:
             compute_github_daily_metrics,
             metric_date=crawl_result.snapshot_date,
             repo_ids=hit_result["repo_ids"],
+            db=self.host.github_ingestion,
         )
         logger.info(
             "[Orchestrator][github_daily] Trending 增长已同步：hits=%d metrics=%d fallback=%d",

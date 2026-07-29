@@ -38,30 +38,27 @@ class IngestionTaskWriterTests(unittest.TestCase):
 
         with (
             patch(
-                "backend.app.services.ingestion.pipeline.MySQLRepository",
+                "backend.app.services.ingestion.pipeline.get_configured_application_repositories",
                 return_value=repository,
             ),
             patch.object(IngestionOrchestrator, "_CRAWLER_CLASSES", []),
         ):
             orchestrator = IngestionOrchestrator()
 
-        self.assertIs(orchestrator.db, repository)
+        self.assertIs(orchestrator.repositories, repository)
         self.assertIs(orchestrator.task_writer, writer)
 
     def test_injected_writer_keeps_data_repository_separate(self) -> None:
         repository = MagicMock()
         writer = MagicMock(spec=IngestionTaskWriter)
 
-        with (
-            patch(
-                "backend.app.services.ingestion.pipeline.MySQLRepository",
-                return_value=repository,
-            ),
-            patch.object(IngestionOrchestrator, "_CRAWLER_CLASSES", []),
-        ):
-            orchestrator = IngestionOrchestrator(task_writer=writer)
+        with patch.object(IngestionOrchestrator, "_CRAWLER_CLASSES", []):
+            orchestrator = IngestionOrchestrator(
+                task_writer=writer,
+                repositories=repository,
+            )
 
-        self.assertIs(orchestrator.db, repository)
+        self.assertIs(orchestrator.repositories, repository)
         self.assertIs(orchestrator.task_writer, writer)
 
     def test_run_single_source_uses_writer_on_success(self) -> None:
@@ -167,7 +164,10 @@ class IngestionTaskWriterTests(unittest.TestCase):
         orchestrator.top_n = 10
         orchestrator.target_date = None
         orchestrator.snapshot_date = "2026-07-22"
-        orchestrator.db = repository
+        orchestrator.repositories = repository
+        orchestrator.documents = repository.documents
+        orchestrator.rank_snapshots = repository.rank_snapshots
+        orchestrator.github_ingestion = repository.github_ingestion
         orchestrator.task_writer = writer
         orchestrator._crawlers = {"news": crawler}
         orchestrator._start_arxiv_pdf_background = MagicMock()

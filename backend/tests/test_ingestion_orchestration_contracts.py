@@ -33,7 +33,9 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
         orchestrator.top_n = 10
         orchestrator.target_date = None
         orchestrator.snapshot_date = "2026-07-24"
-        orchestrator.db = MagicMock()
+        orchestrator.documents = MagicMock()
+        orchestrator.rank_snapshots = MagicMock()
+        orchestrator.github_ingestion = MagicMock()
         orchestrator.task_writer = MagicMock()
         orchestrator.task_writer.create_task.return_value = 42
         orchestrator._crawlers = crawlers
@@ -178,12 +180,27 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
 
         orchestrator._enrich_and_ingest = AsyncMock(side_effect=ingest)
         with (
-            patch("backend.app.services.ingestion.pipeline.asyncio.to_thread", new=AsyncMock(side_effect=to_thread)),
-            patch("backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely", new=AsyncMock()),
+            patch(
+                "backend.app.services.ingestion.pipeline.asyncio.to_thread",
+                new=AsyncMock(side_effect=to_thread),
+            ) as pipeline_to_thread,
+            patch(
+                "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+                new=AsyncMock(),
+            ),
         ):
             result = await orchestrator.run_single_source("github", ["weekly", "daily"])
 
         self.assertEqual(events, ["hits:weekly", "ingest:github_weekly", "hits:daily", "metrics", "ingest:github_daily"])
+        to_thread_mock = pipeline_to_thread
+        self.assertTrue(
+            all(
+                call_item.kwargs.get("db") is orchestrator.github_ingestion
+                for call_item in to_thread_mock.await_args_list
+                if call_item.args[0].__name__
+                in {"record_github_trending_hits", "compute_github_daily_metrics"}
+            )
+        )
         self.assertEqual(result, {"github": 2, "ingested_total": 2})
         crawler.fetch.assert_has_awaits(
             [

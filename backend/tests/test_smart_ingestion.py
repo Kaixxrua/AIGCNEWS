@@ -109,11 +109,11 @@ class SmartIngestionInjectionTests(unittest.TestCase):
         runner = MagicMock()
 
         with patch(
-            "backend.app.services.ingestion.pipeline.MySQLRepository"
-        ) as repository_type:
+            "backend.app.services.ingestion.pipeline.get_configured_application_repositories"
+        ) as repository_provider:
             run_smart_ingestion(7, reader=reader, runner=runner)
 
-        repository_type.assert_not_called()
+        repository_provider.assert_not_called()
 
     def test_default_path_uses_repository_and_pipeline_runner(self) -> None:
         reader = MagicMock(spec=LatestTaskReader)
@@ -121,16 +121,16 @@ class SmartIngestionInjectionTests(unittest.TestCase):
 
         with (
             patch(
-                "backend.app.services.ingestion.pipeline.MySQLRepository",
+                "backend.app.services.ingestion.pipeline.get_configured_application_repositories",
                 return_value=MagicMock(ingestion_tasks=reader),
-            ) as repository_type,
+            ) as repository_provider,
             patch(
                 "backend.app.services.ingestion.pipeline.run_ingestion_pipeline"
             ) as runner,
         ):
             run_smart_ingestion(7)
 
-        repository_type.assert_called_once_with()
+        repository_provider.assert_called_once_with()
         reader.get_latest_task.assert_called_once_with()
         runner.assert_called_once_with(7)
 
@@ -144,7 +144,7 @@ class SmartIngestionInjectionTests(unittest.TestCase):
 
         with (
             patch(
-                "backend.app.services.ingestion.pipeline.MySQLRepository",
+                "backend.app.services.ingestion.pipeline.get_configured_application_repositories",
                 return_value=MagicMock(ingestion_tasks=reader),
             ),
             patch(
