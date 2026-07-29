@@ -10,6 +10,9 @@ from backend.app.repositories.mysql_mcp_server_repository import (
 from backend.app.repositories.mysql_user_account_repository import (
     MySQLUserAccountRepository,
 )
+from backend.app.repositories.mysql_user_project_collection_repository import (
+    MySQLUserProjectCollectionRepository,
+)
 from backend.app.repositories.postgres_attachment_repository import (
     PostgresAttachmentRepository,
 )
@@ -128,6 +131,9 @@ def test_factory_preserves_mysql_compatibility_facade(monkeypatch) -> None:
 
     assert isinstance(repositories.users, MySQLUserAccountRepository)
     assert isinstance(repositories.mcp_server_configs, MySQLMcpServerConfigRepository)
+    assert isinstance(
+        repositories.project_collections, MySQLUserProjectCollectionRepository
+    )
     assert repositories.users._database is mysql
     assert repositories.mcp_server_configs._database is mysql
     compatibility_databases = {

@@ -8,16 +8,22 @@ import pytest
 
 from backend.app.repositories import mysql_repo
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.mysql_user_project_collection_repository import (
+    MySQLUserProjectCollectionRepository,
+)
 from backend.app.services.mcp.inbound import tools as mcp_tools
 from backend.app.services.mcp.inbound.tools import McpToolContext
 
 
-def _repository_with_connection() -> tuple[MySQLRepository, MagicMock, MagicMock]:
-    repository = object.__new__(MySQLRepository)
+def _repository_with_connection() -> tuple[
+    MySQLUserProjectCollectionRepository, MagicMock, MagicMock
+]:
+    compatibility = object.__new__(MySQLRepository)
     connection = MagicMock()
     cursor = MagicMock()
     connection.cursor.return_value.__enter__.return_value = cursor
-    repository._connect = MagicMock(return_value=connection)
+    compatibility._connect = MagicMock(return_value=connection)
+    repository = MySQLUserProjectCollectionRepository(compatibility)
     return repository, connection, cursor
 
 
@@ -121,7 +127,7 @@ def test_personal_collection_uses_link_or_favorite_visibility_unlike_public() ->
     public_cursor.fetchone.return_value = {"cnt": 0}
     public_cursor.fetchall.return_value = []
 
-    public.list_projects(source="website", enriched_only=True)
+    public._repository.list_projects(source="website", enriched_only=True)
 
     public_count_sql = _normalized_sql(public_cursor.execute.call_args_list[0].args[0])
     public_params = public_cursor.execute.call_args_list[0].args[1]
@@ -171,7 +177,7 @@ def test_unlink_atomically_cleans_only_owner_scoped_collection_rows() -> None:
 
 def test_github_favorite_uses_canonical_id_owner_key_and_idempotent_insert() -> None:
     repository, connection, cursor = _repository_with_connection()
-    repository._resolve_github_repo_id_cur = MagicMock(return_value="canonical-42")
+    repository._repository._resolve_github_repo_id_cur = MagicMock(return_value="canonical-42")
     created_at = datetime(2026, 7, 29, tzinfo=timezone.utc)
     cursor.fetchone.side_effect = [
         {"repo_id": "canonical-42"},
@@ -189,7 +195,7 @@ def test_github_favorite_uses_canonical_id_owner_key_and_idempotent_insert() -> 
             repo_id="Owner/Repo",
         )
 
-    repository._resolve_github_repo_id_cur.assert_called_once_with(
+    repository._repository._resolve_github_repo_id_cur.assert_called_once_with(
         cursor, "Owner/Repo", "Owner/Repo"
     )
     candidate_sql, candidate_params = cursor.execute.call_args_list[0].args

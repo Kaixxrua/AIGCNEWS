@@ -22,6 +22,9 @@ from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.mysql_user_account_repository import (
     MySQLUserAccountRepository,
 )
+from backend.app.repositories.mysql_user_project_collection_repository import (
+    MySQLUserProjectCollectionRepository,
+)
 from backend.app.repositories.postgres_attachment_repository import (
     PostgresAttachmentRepository,
 )
@@ -126,7 +129,7 @@ class ApplicationRepositories:
 
 
 def normalize_application_database_backend(value: Any) -> str:
-    backend = str(value or "mysql").strip().lower()
+    backend = str(value or "postgres").strip().lower()
     if backend not in {"mysql", "postgres"}:
         raise ValueError("application_database_backend must be mysql or postgres")
     return backend
@@ -180,7 +183,7 @@ def create_application_repositories(
         github_ingestion=compatibility,
         github_enrichment=compatibility,
         tool_website_enrichment=compatibility,
-        project_collections=compatibility,
+        project_collections=MySQLUserProjectCollectionRepository(compatibility),
         project_recommendations=compatibility,
         github_semantic_sources=compatibility,
     )
