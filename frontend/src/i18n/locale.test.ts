@@ -1,5 +1,6 @@
+import { baseCompile } from '@intlify/message-compiler'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { messages } from './index'
+import { i18n, messages } from './index'
 import {
   LOCALE_STORAGE_KEY,
   persistAppLocale,
@@ -50,6 +51,26 @@ describe('application locale contract', () => {
 
   it('keeps every catalog leaf structurally aligned', () => {
     expect(catalogShape(messages['zh-CN'])).toEqual(catalogShape(messages['en-US']))
+  })
+
+  it('compiles every catalog message without syntax errors', () => {
+    const failures: string[] = []
+
+    for (const [locale, catalog] of Object.entries(messages)) {
+      for (const [key, message] of Object.entries(catalogLeaves(catalog))) {
+        baseCompile(message, {
+          onError: error => failures.push(`${locale}:${key} [${error.code}] ${error.message}`),
+        })
+      }
+    }
+
+    expect(failures).toEqual([])
+  })
+
+  it.each(['zh-CN', 'en-US'] as const)('renders literal email addresses in %s', (locale) => {
+    i18n.global.locale.value = locale
+    expect(i18n.global.t('auth.emailPlaceholder')).toBe('you@example.com')
+    expect(i18n.global.t('legal.disclaimer.upstream')).toContain('kaixxrua@gmail.com')
   })
 
   it('provides an explicit Chinese value for every business catalog leaf', () => {
