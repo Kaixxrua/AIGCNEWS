@@ -37,7 +37,9 @@ from backend.app.core.scheduler_registry import (
 from backend.app.repositories.application_repository_context import (
     get_configured_application_repositories,
 )
+from backend.app.repositories.briefing_repository import ActiveBriefingSubscriberReader
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
+from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 
 logger = logging.getLogger(__name__)
 
@@ -56,18 +58,23 @@ def _get_github_job_lock() -> asyncio.Lock:
     return _github_job_lock
 
 
-def _missing_recent_arxiv_daily_dates() -> List[str]:
+def _missing_recent_arxiv_daily_dates(
+    rank_snapshots: RankSnapshotRepository | None = None,
+) -> List[str]:
     """Return missing recent HF daily dates, bounded to avoid startup storms."""
-    from backend.app.repositories.mysql_repo import MySQLRepository
     from backend.app.services.ingestion.base_crawler import today_cst
 
+    repository = (
+        rank_snapshots
+        or get_configured_application_repositories().rank_snapshots
+    )
     today = date.fromisoformat(today_cst())
     candidates = [
         (today - timedelta(days=offset)).isoformat()
         for offset in range(_ARXIV_RECONCILE_DAYS, 0, -1)
     ]
     existing = set(
-        MySQLRepository().rank_snapshots.get_snapshot_dates(
+        repository.get_snapshot_dates(
             limit=_ARXIV_RECONCILE_DAYS,
             source="arxiv",
             period="daily",
@@ -281,12 +288,15 @@ async def _send_briefing_to_subscribers(
     period: str,
     date_str: str,
     content: str,
+    subscriptions: ActiveBriefingSubscriberReader | None = None,
 ) -> int:
-    from backend.app.repositories.mysql_repo import MySQLRepository
     from backend.app.services.email_service import build_email_service
 
-    db = MySQLRepository()
-    subscribers = db.get_active_subscribers(source=source, period=period)
+    repository = (
+        subscriptions
+        or get_configured_application_repositories().briefing_subscriptions
+    )
+    subscribers = repository.get_active_subscribers(source=source, period=period)
     if not subscribers:
         return 0
 
@@ -415,13 +425,8 @@ async def _run_project_catalog_sync_job() -> None:
 
 
 def _get_default_conversation_repository() -> ConversationCleanupWriter:
-    """Build the scheduler's current MySQL adapter behind an overrideable seam."""
-    from backend.app.core.database import mysql_database
-    from backend.app.repositories.mysql_conversation_repository import (
-        MySQLConversationCleanupWriter,
-    )
-
-    return MySQLConversationCleanupWriter(mysql_database)
+    """Return the configured conversation cleanup repository."""
+    return get_configured_application_repositories().conversations
 
 
 async def _run_conversation_cleanup_job(

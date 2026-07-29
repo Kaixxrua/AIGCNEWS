@@ -55,7 +55,7 @@ class ConversationInjectionSeamTests(unittest.TestCase):
             limit=5,
         )
 
-    def test_cleanup_job_retains_explicit_default_adapter_seam(self) -> None:
+    def test_cleanup_job_uses_configured_default_repository(self) -> None:
         repository = MagicMock()
         repository.cleanup_stale_conversations.return_value = 2
 

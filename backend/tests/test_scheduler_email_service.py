@@ -15,21 +15,16 @@ class SchedulerEmailServiceTests(unittest.IsolatedAsyncioTestCase):
         email_service = MagicMock()
         email_service.send_briefing = AsyncMock()
 
-        with (
-            patch(
-                "backend.app.repositories.mysql_repo.MySQLRepository",
-                return_value=repository,
-            ),
-            patch(
-                "backend.app.services.email_service.build_email_service",
-                return_value=email_service,
-            ) as factory,
-        ):
+        with patch(
+            "backend.app.services.email_service.build_email_service",
+            return_value=email_service,
+        ) as factory:
             sent = await scheduler._send_briefing_to_subscribers(
                 source="github",
                 period="daily",
                 date_str="2026-07-22",
                 content="briefing content",
+                subscriptions=repository,
             )
 
         self.assertEqual(sent, 1)
