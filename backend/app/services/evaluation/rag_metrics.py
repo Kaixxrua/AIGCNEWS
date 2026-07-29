@@ -3,8 +3,10 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from backend.app.repositories.application_repository_context import (
+    get_configured_application_repositories,
+)
 from backend.app.repositories.evaluation_repository import EvaluationRepository
-from backend.app.repositories.mysql_repo import MySQLRepository
 
 
 def _jaccard_similarity(set_a: set, set_b: set) -> float:
@@ -34,7 +36,10 @@ class RAGMetricsService:
     """
 
     def __init__(self, repository: Optional[EvaluationRepository] = None) -> None:
-        self._repository = repository or MySQLRepository().evaluations
+        self._repository = (
+            repository
+            or get_configured_application_repositories().evaluations
+        )
 
     # ------------------------------------------------------------------
     # Core metric functions

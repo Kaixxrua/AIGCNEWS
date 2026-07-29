@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from backend.app.repositories.evaluation_repository import EvaluationRepository
@@ -52,16 +53,16 @@ class RAGMetricsServiceTests(unittest.TestCase):
 
     def test_default_repository_uses_evaluation_component(self) -> None:
         evaluation_repository = MagicMock(spec=EvaluationRepository)
-        facade = MagicMock(evaluations=evaluation_repository)
+        repositories = SimpleNamespace(evaluations=evaluation_repository)
 
         with patch(
-            "backend.app.services.evaluation.rag_metrics.MySQLRepository",
-            return_value=facade,
-        ) as repository_type:
+            "backend.app.services.evaluation.rag_metrics.get_configured_application_repositories",
+            return_value=repositories,
+        ) as repository_provider:
             service = RAGMetricsService()
 
         self.assertIs(service._repository, evaluation_repository)
-        repository_type.assert_called_once_with()
+        repository_provider.assert_called_once_with()
 
 
 if __name__ == "__main__":
