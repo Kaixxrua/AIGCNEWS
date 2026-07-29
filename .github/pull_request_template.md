@@ -7,7 +7,7 @@
 - 层级：<!-- L0/L1/L2/L3/L4/L5/L6 -->
 - 风险：<!-- Green/Yellow/Red -->
 - 依赖 PR：<!-- 无或链接 -->
-- 热点文件锁：<!-- 无 / mysql_repo.py / GitHubProjectsView.vue -->
+- 热点文件锁：<!-- 无 / postgres_project_catalog.py / GitHubProjectsView.vue -->
 
 ## 行为与契约
 

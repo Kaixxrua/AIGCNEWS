@@ -14,5 +14,5 @@
 
 - 遵循已批准的分层渐进式重构方案：Contract → Extract → Adapt → Switch → Delete。
 - 保持 REST、MCP、SSE、SQL 查询行为和路由行为兼容；行为变化必须单独说明并增加契约测试。
-- 热点文件 `backend/app/repositories/mysql_repo.py` 与 `frontend/src/views/GitHubProjectsView.vue` 同一时间只允许一个写入者。
+- 热点文件 `backend/app/repositories/postgres_project_catalog.py` 与 `frontend/src/views/GitHubProjectsView.vue` 同一时间只允许一个写入者。
 - 安全、权限、事务、schema migration、MCP/SSE wire format 属于 Red 变更，必须进行额外验证。

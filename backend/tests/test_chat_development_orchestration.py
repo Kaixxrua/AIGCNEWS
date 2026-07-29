@@ -1,34 +1,6 @@
 import asyncio
-import sys
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
-
-config = types.ModuleType("backend.app.core.config")
-config.settings = types.SimpleNamespace(
-    thinking_model_name="test-model",
-    chat_model_name="test-model",
-    llm_temperature=0.2,
-    llm_max_tokens=1024,
-    mcp_github_fallback_enabled=False,
-    mcp_github_fallback_use_token=False,
-    mcp_github_fallback_timeout_seconds=8.0,
-    github_token="",
-)
-sys.modules["backend.app.core.config"] = config
-
-langchain_core = types.ModuleType("langchain_core")
-langchain_documents = types.ModuleType("langchain_core.documents")
-langchain_documents.Document = type("Document", (), {})
-sys.modules.setdefault("langchain_core", langchain_core)
-sys.modules.setdefault("langchain_core.documents", langchain_documents)
-
-retriever_module = types.ModuleType("backend.app.services.rag.retriever")
-retriever_module.HybridRetriever = object
-sys.modules.setdefault("backend.app.services.rag.retriever", retriever_module)
-reranker_module = types.ModuleType("backend.app.services.rag.reranker")
-reranker_module.RELEVANCE_THRESHOLD = 0.0
-reranker_module.rerank = AsyncMock()
-sys.modules.setdefault("backend.app.services.rag.reranker", reranker_module)
 
 from backend.app.services.rag import chat_service
 

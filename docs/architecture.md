@@ -27,7 +27,7 @@
 | **定时调度** | APScheduler（AsyncIOScheduler） |
 | **Embedding** | OpenAI / HuggingFace / Ollama（可切换） |
 | **Reranker** | Pro/BAAI/bge-reranker-v2-m3（硅基流动 /v1/rerank API，远程精排） |
-| **容器化** | Docker Compose（9 个服务） |
+| **容器化** | Docker Compose（常规运行 10 个服务，另有 1 个 profile-gated 运维服务） |
 | **反向代理** | Nginx（前端 SPA） |
 
 ### 1.3 整体架构
@@ -269,8 +269,8 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 - **配置项**: `SILICONFLOW_API_KEY`、`RERANKER_MODEL_NAME`（均在 `.env` 中配置）
 - **无本地模型**：不再依赖 sentence-transformers / 本地 GPU，冷启动即用
 
-#### `generator.py` / `citation_mapper.py`
-- 均为 `# TODO: placeholder`，功能已内联到 `chat_service.py`
+#### `generator.py`
+- 提供聊天完成、流式生成和 Web 搜索适配；`citation_mapper.py` 占位壳已在确认无调用者后删除
 
 ### 3.2 简报生成服务 — `backend/app/services/briefing/`
 
@@ -412,8 +412,8 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 
 ### 3.8 索引服务 — `backend/app/services/indexing/`
 
-- `chunker.py`、`embedder.py`、`vector_store.py` 均为 `# TODO: placeholder`
-- 实际切片/嵌入/向量存储功能分散在 `milvus_repo.py` 和 `arxiv_pdf_downloader.py` 中
+- GitHub 项目语义索引由 `github_project_semantic_indexer.py` 实现
+- 通用文档切片、嵌入与向量存储由 `milvus_repo.py` 和采集服务实现；无调用者的 `chunker.py`、`embedder.py`、`vector_store.py` 占位壳已删除
 
 ---
 
@@ -649,9 +649,9 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 - 发送消息透传 `paper_id` 供后端 RAG 检索论文内容；后端会将该 ID 注入 query 并触发关系型 repository 文档 ID 精确召回，`scope` 字段由会话自身决定（非 paperId 硬编码）
 - **历史会话面板**：左上角按钮展开全局会话列表（与 ChatView 一致），显示当前会话标题，支持切换和新建
 - 切换会话调用 `chatStore.openConversation()`，完全同步 `activeConversationId`
-- 页面消息区由 `chatStore.messageMap[currentConversationId]` 驱动，视觉问答消息仍以页面临时态补充展示；标题栏“删除”按钮调用 `chatStore.deleteActiveConversation()` 删除当前全局会话并切换/创建后续会话
+- 页面消息区由 `chatStore.messageMap[currentConversationId]` 驱动；视觉问答先写入同一消息树的乐观状态，收到终态 `conversation` 事件后重新加载服务端会话；标题栏“删除”按钮调用 `chatStore.deleteActiveConversation()` 删除当前全局会话并切换/创建后续会话
 - **深度思考框**：从 `chatStore` 消息同步 `hasThinking/isThinking/thinkingDurationSec/thinking` 字段，复用与 ChatView 一致的“正在深度思考 / 已完成深度思考（用时 N 秒）”折叠式思考框体验；由于组件样式为 scoped，论文页单独声明 `.thinking-*` 样式
-- 视觉问答请求已透传 `conversation_id` 与 `paper_id`，为后续多模态会话统一持久化预留接口
+- 视觉问答请求透传 `conversation_id` 与 `paper_id`；成功后持久化文本问题、完整回答和 `modality=vision` 元数据，截图内容与临时 `image_id` 不落盘，重新生成需要新截图
 
 ---
 
@@ -698,7 +698,7 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 | `backend/app/services/chat/attachment_service.py` | 聊天附件元数据与 PDF 文本提取 |
 | `backend/app/repositories/application_repository_factory.py` | 组装应用 repository Protocol 的 PostgreSQL 实现 |
 | `backend/app/core/postgres_database.py` | PostgreSQL 连接生命周期与事务基础设施 |
-| `backend/app/repositories/mysql_repo.py` | 遗留迁移/恢复适配；不属于应用运行时 |
+| `backend/app/services/application_transfer_service.py` | MySQL → PostgreSQL 迁移协调；仅用于有边界的运维流程 |
 | `backend/app/core/config.py` | 应用配置（含 SMTP_HOST/PORT/USERNAME/PASSWORD/FROM_EMAIL 等邮件配置项） |
 | `backend/app/core/scheduler.py` | 定时采集、简报生成、会话清理调度 |
 | `frontend/src/stores/authStore.ts` | 认证状态（AuthUser.email 为主标识）、login/logout/fetchMe |
@@ -714,10 +714,17 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 
 ---
 
-## 十、当前已知限制
+## 十、当前已知限制与明确延期
 
-1. [`routes_vision.py`](backend/app/api/routes_vision.py) 当前仍以临时视觉消息流为主，尚未将视觉问答结果正式持久化进 `conversations/chat_messages`。
-2. 索引服务目录中的 `chunker.py`、`embedder.py`、`vector_store.py` 仍为占位实现。
+1. 视觉问答仅持久化文本消息对与安全的 modality 元数据；出于 Zero-Disk 约束不保存截图，因此历史视觉消息不能在没有新截图时重新生成。
+2. `backend/app/services/briefing/podcast_adapter.py` 仍是未启用的产品能力占位，不属于本轮 repository 重构完成条件。
+3. 生产 MySQL 容器停用、凭据撤销、观察期及最终数据卷删除属于独立运维授权边界；仓库侧完成不代表这些操作已执行。
+
+### 10.1 2026-07 渐进式重构收口
+
+- **完成**：repository Protocol 与 FastAPI lifespan composition root、PostgreSQL-only 应用运行时、主 Compose 移除 MySQL、REST/MCP/SSE 调用方切换、聊天及视觉消息持久化、前端统一会话状态、无调用者占位壳清理。
+- **被后续设计取代**：MySQL 主从/影子读长期共存方案、运行时数据库选择开关、独立的视觉消息状态树；历史设计保留在已标记为历史快照的文档中。
+- **明确延期**：播客适配器、视觉截图长期存储与无图重生成、生产 MySQL 最终退役操作。
 
 > **历史事件记录（当时术语按原样保留；其中 MySQL 指当时关系数据库实现）**
 >

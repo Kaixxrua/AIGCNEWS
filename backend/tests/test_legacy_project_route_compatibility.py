@@ -323,9 +323,9 @@ def test_legacy_categories_match_canonical_github_shape_and_filters() -> None:
     assert legacy.json() == canonical.json()
     payload = legacy.json()
     assert payload["items"][:3] == [
-        {"slug": "all", "name": "全部", "count": 12, "kind": "scope", "scope": "all", "children": []},
-        {"slug": "recommended", "name": "站长推荐", "count": 5, "kind": "scope", "scope": "recommended", "children": []},
-        {"slug": "today", "name": "今日暴涨", "count": 3, "kind": "scope", "scope": "today", "children": []},
+        {"slug": "all", "name": "全部", "name_zh": "全部", "name_en": "All", "count": 12, "kind": "scope", "scope": "all", "children": []},
+        {"slug": "recommended", "name": "站长推荐", "name_zh": "站长推荐", "name_en": "Recommended", "count": 5, "kind": "scope", "scope": "recommended", "children": []},
+        {"slug": "today", "name": "今日暴涨", "name_zh": "今日暴涨", "name_en": "Trending Today", "count": 3, "kind": "scope", "scope": "today", "children": []},
     ]
     assert payload["min_stars"] == 500
     assert payload["source"] == "github"

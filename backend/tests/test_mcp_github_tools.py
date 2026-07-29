@@ -459,7 +459,7 @@ class ProjectHandlerTests(unittest.TestCase):
         self.assertNotIn("is_favorited", projected)
         self.assertNotIn("hot_score_growth", projected)
 
-    def test_worst_case_project_response_stays_under_48_kib(self) -> None:
+    def test_worst_case_project_response_stays_under_tool_limit(self) -> None:
         item = project_discovery.public_project_item(
             {
                 "id": "github-direct:owner/repository-name",
@@ -486,7 +486,7 @@ class ProjectHandlerTests(unittest.TestCase):
         tool_result = inbound_responses._tool_response({"items": [item for _ in range(20)], "total": 20})
         envelope = {"jsonrpc": "2.0", "id": 1, "result": tool_result}
         encoded = json.dumps(envelope, ensure_ascii=False).encode("utf-8")
-        self.assertLess(len(encoded), 48 * 1024)
+        self.assertLess(len(encoded), inbound_responses.MAX_TOOL_RESULT_CHARS)
         self.assertNotIn('"truncated": true', encoded.decode("utf-8"))
 
 

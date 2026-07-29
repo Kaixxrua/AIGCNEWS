@@ -23,11 +23,13 @@ RUNTIME_TABLES = {
 }
 
 
-def test_application_runtime_migration_is_contiguous_version_six() -> None:
+def test_postgres_migrations_are_contiguous_and_include_application_runtime() -> None:
     migrations = discover_migrations(MIGRATIONS_DIR)
 
-    assert migrations[-1].version == 6
-    assert migrations[-1].filename == "0006_application_runtime.sql"
+    assert [migration.version for migration in migrations] == list(
+        range(1, migrations[-1].version + 1)
+    )
+    assert migrations[5].filename == "0006_application_runtime.sql"
 
 
 def test_application_runtime_migration_defines_every_manifest_runtime_table() -> None:

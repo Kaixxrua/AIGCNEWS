@@ -1,45 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import types
-from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
-config = types.ModuleType("backend.app.core.config")
-config.settings = types.SimpleNamespace(
-    thinking_model_name="thinking-model",
-    chat_model_name="chat-model",
-    llm_temperature=0.2,
-    llm_max_tokens=4096,
-    mcp_github_fallback_enabled=False,
-    mcp_github_fallback_use_token=False,
-    mcp_github_fallback_timeout_seconds=8.0,
-    github_token="",
-)
-sys.modules["backend.app.core.config"] = config
-
-langchain_core = types.ModuleType("langchain_core")
-langchain_documents = types.ModuleType("langchain_core.documents")
-
-
-@dataclass
-class Document:
-    page_content: str
-    metadata: dict
-
-
-langchain_documents.Document = Document
-sys.modules.setdefault("langchain_core", langchain_core)
-sys.modules.setdefault("langchain_core.documents", langchain_documents)
-
-retriever_module = types.ModuleType("backend.app.services.rag.retriever")
-retriever_module.HybridRetriever = object
-sys.modules.setdefault("backend.app.services.rag.retriever", retriever_module)
-reranker_module = types.ModuleType("backend.app.services.rag.reranker")
-reranker_module.RELEVANCE_THRESHOLD = 0.25
-reranker_module.rerank = AsyncMock()
-sys.modules.setdefault("backend.app.services.rag.reranker", reranker_module)
+from langchain_core.documents import Document
 
 from backend.app.services.rag import chat_service, database_tools, generator
 
@@ -51,8 +16,8 @@ async def collect(generator):
 def test_non_development_generation_preserves_tool_rag_web_and_source_order():
     retriever = MagicMock()
     vector_doc = Document(
-        "vector context",
-        {
+        page_content="vector context",
+        metadata={
             "id": "rag-1",
             "retriever": "vector",
             "score": 0.2,
@@ -62,8 +27,8 @@ def test_non_development_generation_preserves_tool_rag_web_and_source_order():
         },
     )
     ranked_doc = Document(
-        "ranked context",
-        {
+        page_content="ranked context",
+        metadata={
             "id": "rag-1",
             "retriever": "vector",
             "rerank_score": 8.5,
@@ -164,14 +129,14 @@ def test_non_development_generation_preserves_tool_rag_web_and_source_order():
     retriever.search.assert_awaited_once_with("今日有哪些项目？")
     web.assert_awaited_once_with("今日有哪些项目？", max_results=6)
     rerank.assert_awaited_once_with(
-        "今日有哪些项目？", [vector_doc], threshold=0.25
+        "今日有哪些项目？", [vector_doc], threshold=generator.RELEVANCE_THRESHOLD
     )
     run_tools.assert_awaited_once_with([tool_call])
     assert decide.await_args.kwargs["tools"] is chat_service.TOOL_DEFINITIONS
     assert decide.await_args.kwargs["tool_choice"] == "auto"
-    assert streamed_calls[0]["model"] == "thinking-model"
+    assert streamed_calls[0]["model"] == generator.settings.thinking_model_name
     assert streamed_calls[0]["temperature"] == 0.4
-    assert streamed_calls[0]["max_tokens"] == 4096
+    assert streamed_calls[0]["max_tokens"] == generator.settings.llm_max_tokens
     messages = streamed_calls[0]["messages"]
     assert [message["role"] for message in messages] == [
         "system",
@@ -374,8 +339,8 @@ def test_generation_orchestrator_preserves_project_search_adapter_arguments():
 
 def test_generation_orchestrator_uses_injected_rag_web_tool_and_model_adapters():
     raw_doc = Document(
-        "raw",
-        {
+        page_content="raw",
+        metadata={
             "id": "rag-1",
             "retriever": "vector",
             "score": 0.2,
@@ -385,8 +350,8 @@ def test_generation_orchestrator_uses_injected_rag_web_tool_and_model_adapters()
         },
     )
     ranked_doc = Document(
-        "ranked",
-        {
+        page_content="ranked",
+        metadata={
             "id": "rag-1",
             "retriever": "vector",
             "rerank_score": 9.0,
@@ -473,6 +438,6 @@ def test_generation_orchestrator_uses_injected_rag_web_tool_and_model_adapters()
     retriever.search.assert_awaited_once_with("query")
     completion.assert_awaited_once()
     web_searcher.assert_awaited_once_with("query", max_results=6)
-    reranker.assert_awaited_once_with("query", [raw_doc], threshold=0.25)
+    reranker.assert_awaited_once_with("query", [raw_doc], threshold=generator.RELEVANCE_THRESHOLD)
     database_runner.assert_awaited_once_with([tool_call])
     assert stream_calls[0]["temperature"] == 0.4
