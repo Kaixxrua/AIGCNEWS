@@ -47,6 +47,12 @@ class PostgresBriefingRepository:
             (date_str,),
         )
 
+    def get_briefing(self, briefing_id: int) -> dict[str, Any] | None:
+        return self._fetchone(
+            "SELECT * FROM briefings WHERE id = %s",
+            (briefing_id,),
+        )
+
     def list_briefings(self, limit: int = 30) -> list[dict[str, Any]]:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:

@@ -4640,6 +4640,9 @@ class MySQLRepository:
     def get_briefing_by_date(self, date_str: str) -> Optional[Dict[str, Any]]:
         return self.briefings.get_briefing_by_date(date_str)
 
+    def get_briefing(self, briefing_id: int) -> Optional[Dict[str, Any]]:
+        return self.briefings.get_briefing(briefing_id)
+
     def list_briefings(self, limit: int = 30) -> List[Dict[str, Any]]:
         return self.briefings.list_briefings(limit)
 

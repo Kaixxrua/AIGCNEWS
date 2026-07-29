@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.repositories.briefing_repository import BriefingContentRepository
@@ -9,39 +10,57 @@ from backend.app.services.briefing.daily_briefing import DailyBriefingService
 
 
 class DailyBriefingRepositoryTests(unittest.TestCase):
-    def test_default_briefing_repository_uses_mysql_component(self) -> None:
+    def test_default_repositories_use_application_components(self) -> None:
         briefing_repository = MagicMock(spec=BriefingContentRepository)
+        document_feed = MagicMock()
         snapshot_reader = MagicMock()
-        mysql_repository = MagicMock(
+        repositories = SimpleNamespace(
             briefings=briefing_repository,
+            documents=document_feed,
             rank_snapshots=snapshot_reader,
         )
 
-        with patch(
-            "backend.app.services.briefing.daily_briefing.get_chat_model",
-            return_value=MagicMock(),
+        with (
+            patch(
+                "backend.app.services.briefing.daily_briefing.get_configured_application_repositories",
+                return_value=repositories,
+            ) as repository_provider,
+            patch(
+                "backend.app.services.briefing.daily_briefing.get_chat_model",
+                return_value=MagicMock(),
+            ),
         ):
-            service = DailyBriefingService(mysql_repo=mysql_repository)
+            service = DailyBriefingService()
 
-        self.assertIs(service._db, mysql_repository)
+        repository_provider.assert_called_once_with()
         self.assertIs(service._briefings, briefing_repository)
+        self.assertIs(service._document_feed, document_feed)
         self.assertIs(service._rank_snapshots, snapshot_reader)
 
-    def test_injected_briefing_repository_remains_separate(self) -> None:
+    def test_fully_injected_repositories_avoid_application_context(self) -> None:
         briefing_repository = MagicMock(spec=BriefingContentRepository)
-        mysql_repository = MagicMock()
+        document_feed = MagicMock()
+        snapshot_reader = MagicMock()
 
-        with patch(
-            "backend.app.services.briefing.daily_briefing.get_chat_model",
-            return_value=MagicMock(),
+        with (
+            patch(
+                "backend.app.services.briefing.daily_briefing.get_configured_application_repositories"
+            ) as repository_provider,
+            patch(
+                "backend.app.services.briefing.daily_briefing.get_chat_model",
+                return_value=MagicMock(),
+            ),
         ):
             service = DailyBriefingService(
-                mysql_repo=mysql_repository,
                 briefing_repository=briefing_repository,
+                document_feed=document_feed,
+                rank_snapshot_reader=snapshot_reader,
             )
 
-        self.assertIs(service._db, mysql_repository)
+        repository_provider.assert_not_called()
         self.assertIs(service._briefings, briefing_repository)
+        self.assertIs(service._document_feed, document_feed)
+        self.assertIs(service._rank_snapshots, snapshot_reader)
 
     def test_cached_stream_uses_briefing_repository_and_preserves_events(self) -> None:
         repository = MagicMock(spec=BriefingContentRepository)
@@ -82,24 +101,30 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
         repository.save_briefing.assert_not_called()
         self.assertEqual(events[-1]["type"], "done")
 
-    def test_history_uses_briefing_repository(self) -> None:
+    def test_reads_delegate_to_briefing_repository(self) -> None:
         repository = MagicMock(spec=BriefingContentRepository)
         repository.list_briefings.return_value = [{"id": 42}]
+        repository.get_briefing.return_value = {"id": 42, "content": "briefing"}
         service = self._service(repository)
 
         self.assertEqual(service.get_history(limit=7), [{"id": 42}])
+        self.assertEqual(
+            service.get_briefing(42),
+            {"id": 42, "content": "briefing"},
+        )
         repository.list_briefings.assert_called_once_with(limit=7)
+        repository.get_briefing.assert_called_once_with(42)
 
     @staticmethod
     def _service(repository: BriefingContentRepository) -> DailyBriefingService:
-        mysql_repository = MagicMock()
         with patch(
             "backend.app.services.briefing.daily_briefing.get_chat_model",
             return_value=AsyncMock(),
         ):
             return DailyBriefingService(
-                mysql_repo=mysql_repository,
                 briefing_repository=repository,
+                document_feed=MagicMock(),
+                rank_snapshot_reader=MagicMock(),
             )
 
     @staticmethod

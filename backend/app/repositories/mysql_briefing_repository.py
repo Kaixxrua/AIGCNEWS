@@ -49,6 +49,14 @@ class MySQLBriefingRepository:
             conn.commit()
             return dict(row) if row else None
 
+    def get_briefing(self, briefing_id: int) -> dict[str, Any] | None:
+        with self._database.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM briefings WHERE id = %s", (briefing_id,))
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
     def list_briefings(self, limit: int = 30) -> list[dict[str, Any]]:
         sql = """
             SELECT id, date, created_at,

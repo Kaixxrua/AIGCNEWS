@@ -5,10 +5,12 @@ import traceback
 from typing import Any, AsyncGenerator, Dict, List
 
 from backend.app.core.model_factory import get_chat_model
+from backend.app.repositories.application_repository_context import (
+    get_configured_application_repositories,
+)
 from backend.app.repositories.briefing_repository import BriefingContentRepository
 from backend.app.repositories.document_repository import DocumentFeedReader
 from backend.app.repositories.milvus_repo import MilvusRepository
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.services.briefing.preparation import (
     PreparedBriefing,
@@ -341,16 +343,21 @@ class DailyBriefingService:
 
     def __init__(
         self,
-        mysql_repo: MySQLRepository | None = None,
         top_k: int = 10,
         briefing_repository: BriefingContentRepository | None = None,
         document_feed: DocumentFeedReader | None = None,
         rank_snapshot_reader: RankSnapshotReader | None = None,
     ) -> None:
-        self._db = mysql_repo or MySQLRepository()
-        self._briefings = briefing_repository or self._db.briefings
-        self._document_feed = document_feed or self._db.documents
-        self._rank_snapshots = rank_snapshot_reader or self._db.rank_snapshots
+        repositories = None
+        if (
+            briefing_repository is None
+            or document_feed is None
+            or rank_snapshot_reader is None
+        ):
+            repositories = get_configured_application_repositories()
+        self._briefings = briefing_repository or repositories.briefings
+        self._document_feed = document_feed or repositories.documents
+        self._rank_snapshots = rank_snapshot_reader or repositories.rank_snapshots
         self._top_k = top_k
         self._llm = get_chat_model()
 
@@ -659,8 +666,4 @@ class DailyBriefingService:
         return self._briefings.list_briefings(limit=limit)
 
     def get_briefing(self, briefing_id: int) -> Dict[str, Any] | None:
-        with self._db._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM briefings WHERE id=?", (briefing_id,)
-            ).fetchone()
-        return dict(row) if row else None
+        return self._briefings.get_briefing(briefing_id)

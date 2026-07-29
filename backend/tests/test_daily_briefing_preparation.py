@@ -493,16 +493,16 @@ def _service(*, top_k: int = 10) -> DailyBriefingService:
     briefings.save_briefing.return_value = 73
     document_feed = MagicMock()
     rank_snapshots = MagicMock()
-    mysql_repository = MagicMock(
-        briefings=briefings,
-        documents=document_feed,
-        rank_snapshots=rank_snapshots,
-    )
     with patch(
         "backend.app.services.briefing.daily_briefing.get_chat_model",
         return_value=MagicMock(astream=MagicMock()),
     ):
-        return DailyBriefingService(mysql_repo=mysql_repository, top_k=top_k)
+        return DailyBriefingService(
+            top_k=top_k,
+            briefing_repository=briefings,
+            document_feed=document_feed,
+            rank_snapshot_reader=rank_snapshots,
+        )
 
 
 def _github_doc(

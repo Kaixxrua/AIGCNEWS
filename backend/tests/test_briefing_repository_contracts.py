@@ -24,6 +24,7 @@ class BriefingRepositoryContractTests(unittest.TestCase):
         self.assertTrue(callable(contract.save_briefing))
         self.assertTrue(callable(contract.get_latest_briefing))
         self.assertTrue(callable(contract.get_briefing_by_date))
+        self.assertTrue(callable(contract.get_briefing))
         self.assertTrue(callable(contract.list_briefings))
 
     def test_writer_spec_does_not_expose_reads(self) -> None:
@@ -38,10 +39,12 @@ class BriefingRepositoryContractTests(unittest.TestCase):
         repository = MagicMock(spec=BriefingReader)
         repository.get_latest_briefing.return_value = {"id": 42}
         repository.get_briefing_by_date.return_value = {"id": 42}
+        repository.get_briefing.return_value = {"id": 42}
         repository.list_briefings.return_value = [{"id": 42}]
 
         self.assertEqual(repository.get_latest_briefing(), {"id": 42})
         self.assertEqual(repository.get_briefing_by_date("2026-07-22"), {"id": 42})
+        self.assertEqual(repository.get_briefing(42), {"id": 42})
         self.assertEqual(repository.list_briefings(limit=7), [{"id": 42}])
         with self.assertRaises(AttributeError):
             repository.save_briefing("2026-07-22", "content")
