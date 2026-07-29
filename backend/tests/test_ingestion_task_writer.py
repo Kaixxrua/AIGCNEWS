@@ -48,7 +48,25 @@ class IngestionTaskWriterTests(unittest.TestCase):
         self.assertIs(orchestrator.repositories, repository)
         self.assertIs(orchestrator.task_writer, writer)
 
-    def test_injected_writer_keeps_data_repository_separate(self) -> None:
+    def test_borrowed_repositories_own_all_default_ingestion_components(self) -> None:
+        repository = MagicMock()
+
+        with (
+            patch(
+                "backend.app.services.ingestion.pipeline.get_configured_application_repositories"
+            ) as configured_repositories,
+            patch.object(IngestionOrchestrator, "_CRAWLER_CLASSES", []),
+        ):
+            orchestrator = IngestionOrchestrator(repositories=repository)
+
+        configured_repositories.assert_not_called()
+        self.assertIs(orchestrator.repositories, repository)
+        self.assertIs(orchestrator.documents, repository.documents)
+        self.assertIs(orchestrator.rank_snapshots, repository.rank_snapshots)
+        self.assertIs(orchestrator.github_ingestion, repository.github_ingestion)
+        self.assertIs(orchestrator.task_writer, repository.ingestion_tasks)
+
+    def test_explicit_task_writer_overrides_borrowed_repository_component_only(self) -> None:
         repository = MagicMock()
         writer = MagicMock(spec=IngestionTaskWriter)
 
@@ -59,7 +77,11 @@ class IngestionTaskWriterTests(unittest.TestCase):
             )
 
         self.assertIs(orchestrator.repositories, repository)
+        self.assertIs(orchestrator.documents, repository.documents)
+        self.assertIs(orchestrator.rank_snapshots, repository.rank_snapshots)
+        self.assertIs(orchestrator.github_ingestion, repository.github_ingestion)
         self.assertIs(orchestrator.task_writer, writer)
+        self.assertIsNot(orchestrator.task_writer, repository.ingestion_tasks)
 
     def test_run_single_source_uses_writer_on_success(self) -> None:
         orchestrator, writer, repository = self._orchestrator_with_crawler()

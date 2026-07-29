@@ -138,15 +138,34 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events, ["finish", "cache", "pdf"])
         orchestrator._start_arxiv_pdf_background.assert_called_once_with([paper])
 
-    async def test_run_all_continues_after_one_gathered_crawler_exception(self) -> None:
-        broken = _Crawler("news", ["daily"], {})
-        broken.fetch = AsyncMock(side_effect=RuntimeError("crawl failed"))
+    async def test_run_all_continues_after_fetch_exception_and_failed_result(self) -> None:
+        exception_source = _Crawler("news", ["daily"], {})
+        exception_source.fetch = AsyncMock(side_effect=RuntimeError("crawl failed"))
+        failed_result_source = _Crawler(
+            "producthunt",
+            ["daily"],
+            {
+                "daily": CrawlResult(
+                    source="producthunt",
+                    source_channel="producthunt_daily",
+                    snapshot_date="2026-07-24",
+                    period="daily",
+                    error="upstream rejected request",
+                )
+            },
+        )
         good = _Crawler(
             "arxiv",
             ["daily"],
             {"daily": _result("arxiv", "daily", [{"title": "Paper"}])},
         )
-        orchestrator = self._orchestrator({"news": broken, "arxiv": good})
+        orchestrator = self._orchestrator(
+            {
+                "news": exception_source,
+                "producthunt": failed_result_source,
+                "arxiv": good,
+            }
+        )
 
         with patch(
             "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
@@ -155,10 +174,54 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
             result = await orchestrator.run_all()
 
         self.assertEqual(result["news"], 0)
+        self.assertEqual(result["producthunt"], 0)
         self.assertEqual(result["arxiv"], 1)
+        orchestrator._enrich_and_ingest.assert_awaited_once()
         orchestrator.task_writer.finish_task.assert_called_once_with(
             42, status="success", error_msg=None, item_count=1
         )
+
+    async def test_run_all_primary_persistence_failure_is_fail_closed(self) -> None:
+        crawler = _Crawler(
+            "news",
+            ["daily"],
+            {"daily": _result("news", "daily", [{"title": "Item"}])},
+        )
+        orchestrator = self._orchestrator({"news": crawler})
+        error = RuntimeError("document persistence failed")
+        orchestrator._enrich_and_ingest = AsyncMock(side_effect=error)
+
+        with self.assertRaises(RuntimeError) as context:
+            await orchestrator.run_all()
+
+        self.assertIs(context.exception, error)
+        orchestrator.task_writer.finish_task.assert_called_once_with(
+            42,
+            status="failed",
+            error_msg="document persistence failed",
+            item_count=0,
+        )
+        orchestrator._start_arxiv_pdf_background.assert_not_called()
+
+    async def test_cache_clear_failure_is_nonfatal_after_successful_persistence(self) -> None:
+        crawler = _Crawler(
+            "news",
+            ["daily"],
+            {"daily": _result("news", "daily", [{"title": "Item"}])},
+        )
+        orchestrator = self._orchestrator({"news": crawler})
+
+        with patch(
+            "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+            new=AsyncMock(side_effect=RuntimeError("redis unavailable")),
+        ):
+            result = await orchestrator.run_all()
+
+        self.assertEqual(result, {"news": 1, "huggingface": 0, "ingested_total": 1})
+        orchestrator.task_writer.finish_task.assert_called_once_with(
+            42, status="success", error_msg=None, item_count=1
+        )
+        orchestrator._start_arxiv_pdf_background.assert_called_once_with([])
 
     async def test_run_single_source_preserves_requested_period_order_and_github_timing(self) -> None:
         daily = _result("github", "daily", [{"title": "Daily"}], "2026-07-24")
