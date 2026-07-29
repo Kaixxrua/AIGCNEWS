@@ -315,6 +315,10 @@ def test_normalization_matches_mysql_shape_and_json_text_semantics() -> None:
     assert item["category_slug"] == "other"
     assert item["subcategory_slug"] == "other_uncategorized"
     assert item["category_name"] == "其他网站"
+    assert item["category_name_zh"] == "其他网站"
+    assert item["category_name_en"] == "Other"
+    assert item["subcategory_name"] == "未分类"
+    assert item["subcategory_name_en"] == "Uncategorized"
 
 
 def test_dynamic_category_formatting_preserves_taxonomy_and_defaults() -> None:
@@ -323,4 +327,10 @@ def test_dynamic_category_formatting_preserves_taxonomy_and_defaults() -> None:
         {"category_slug": "other", "category_name": "", "subcategory_slug": "", "subcategory_name": "", "count": 2},
     ])
     assert result["total"] == 5
-    assert result["items"][-1] == {"slug": "custom", "name": "Custom", "count": 3, "kind": "category", "children": [{"slug": "x", "name": "X", "count": 3}]}
+    custom = result["items"][-1]
+    assert custom["slug"] == "custom"
+    assert custom["name"] == custom["name_zh"] == "Custom"
+    assert custom["name_en"] == "Other"
+    assert custom["children"] == [
+        {"slug": "x", "name": "X", "name_zh": "X", "name_en": "x", "count": 3}
+    ]

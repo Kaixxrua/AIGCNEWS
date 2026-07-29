@@ -109,6 +109,15 @@ def test_transfer_specs_capture_composite_cursor_codecs_and_identities() -> None
         "updated_at",
     )
     assert {
+        "category_name_zh", "category_name_en",
+        "subcategory_name_zh", "subcategory_name_en",
+    } <= set(by_name["github_repo_enrichments"].columns)
+    assert "description_en" in by_name["tool_website_enrichments"].columns
+    assert {
+        "description_en", "category_name_zh", "category_name_en",
+        "subcategory_name_zh", "subcategory_name_en",
+    } <= set(by_name["user_tool_website_overrides"].columns)
+    assert {
         spec.name for spec in TABLE_TRANSFER_SPECS if spec.identity_column == "id"
     } == {
         "github_repo_snapshots",

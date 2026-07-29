@@ -25,10 +25,15 @@ PUBLIC_PROJECT_FIELDS = {
     "url",
     "description",
     "description_zh",
+    "description_en",
     "category_slug",
     "category_name",
+    "category_name_zh",
+    "category_name_en",
     "subcategory_slug",
     "subcategory_name",
+    "subcategory_name_zh",
+    "subcategory_name_en",
     "tags",
     "topics",
     "language",
@@ -45,6 +50,28 @@ PUBLIC_PROJECT_FIELDS = {
 
 def load_catalog_cases() -> dict[str, Any]:
     return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+
+
+def test_taxonomy_exposes_complete_bilingual_labels_with_chinese_legacy_aliases() -> None:
+    from backend.app.services.ingestion.project_taxonomy import PROJECT_TAXONOMY, WEBSITE_TAXONOMY
+
+    for taxonomy in (PROJECT_TAXONOMY, WEBSITE_TAXONOMY):
+        for category in taxonomy:
+            assert category["name"] == category["name_zh"]
+            assert category["name_en"]
+            for child in category["children"]:
+                assert child["name"] == child["name_zh"]
+                assert child["name_en"]
+
+
+def test_project_api_taxonomy_keeps_legacy_name_chinese() -> None:
+    items = routes_github_projects._taxonomy_items()
+    assert items
+    assert all(item["name"] == item["name_zh"] and item["name_en"] for item in items)
+    assert all(
+        child["name"] == child["name_zh"] and child["name_en"]
+        for item in items for child in item["children"]
+    )
 
 
 class ScriptedCatalogRepository:

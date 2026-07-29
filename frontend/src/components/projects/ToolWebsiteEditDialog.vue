@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { AppLocale } from '../../i18n'
 import type { GitHubProjectItem, ProjectTaxonomyItem, ToolWebsiteUpdatePayload } from '../../services/projects/projectApi'
-import { projectName } from '../../features/projects/projectPresentation'
+import { localizedCategoryName, projectDescription, projectName } from '../../features/projects/projectPresentation'
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
+const taxonomyLabel = (item: ProjectTaxonomyItem | ProjectTaxonomyItem['children'][number]) => localizedCategoryName(item, locale.value as AppLocale)
 
 const props = defineProps<{
   open: boolean
@@ -36,7 +38,7 @@ const initializeForm = () => {
   const target = props.target
   if (!target) return
   title.value = target.title || projectName(target)
-  description.value = target.description_zh || target.description || ''
+  description.value = projectDescription(target, locale.value as AppLocale, '')
   category.value = target.category_slug || 'other'
   subcategory.value = target.subcategory_slug || ''
   tags.value = (target.tags ?? []).join(', ')
@@ -108,13 +110,13 @@ watch([category, () => props.taxonomy], () => {
             <label class="tool-modal__field">
               <span>{{ t('projects.dialog.primaryCategory') }}</span>
               <select v-model="category" :disabled="busy || taxonomyLoading">
-                <option v-for="item in taxonomy" :key="item.slug" :value="item.slug">{{ item.name }}</option>
+                <option v-for="item in taxonomy" :key="item.slug" :value="item.slug">{{ taxonomyLabel(item) }}</option>
               </select>
             </label>
             <label class="tool-modal__field">
               <span>{{ t('projects.dialog.subcategory') }}</span>
               <select v-model="subcategory" :disabled="busy || taxonomyLoading">
-                <option v-for="item in subcategoryOptions" :key="item.slug" :value="item.slug">{{ item.name }}</option>
+                <option v-for="item in subcategoryOptions" :key="item.slug" :value="item.slug">{{ taxonomyLabel(item) }}</option>
               </select>
             </label>
             <label class="tool-modal__field tool-modal__field--wide">

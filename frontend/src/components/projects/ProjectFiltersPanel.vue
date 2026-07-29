@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import type { AppLocale } from '../../i18n'
+import { localizedCategoryName } from '../../features/projects/projectPresentation'
 import type {
   GitHubProjectCategory,
   GitHubProjectSort,
@@ -10,7 +12,8 @@ import type {
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
+const label = (item: GitHubProjectCategory | undefined) => localizedCategoryName(item, locale.value as AppLocale)
 
 const props = defineProps<{
   sourceOptions: SourceOption[]
@@ -81,15 +84,15 @@ const emit = defineEmits<{
 
   <section v-if="!requiresPersonalLogin && !isPersonalView" class="projects-category-panel glass-card" :aria-label="t('projects.categoryFilter')">
     <div class="projects-categories" :aria-label="t('projects.primaryCategoryFilter')">
-      <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><span>{{ allScope?.name || t('projects.all') }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
-      <button type="button" class="projects-category projects-category--recommend" :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'recommended')"><span>{{ recommendedScope?.name || t('projects.recommended') }}</span><small>{{ recommendedScope?.count ?? 0 }}</small></button>
-      <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><span>{{ todayScope?.name || t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
-      <button v-for="category in semanticCategories" :key="category.slug" type="button" class="projects-category" :class="selectedScope === 'all' && selectedCategory === category.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectCategory', category.slug)"><span>{{ category.name }}</span><small>{{ category.count }}</small></button>
+      <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><span>{{ label(allScope) || t('projects.all') }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
+      <button type="button" class="projects-category projects-category--recommend" :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'recommended')"><span>{{ label(recommendedScope) || t('projects.recommended') }}</span><small>{{ recommendedScope?.count ?? 0 }}</small></button>
+      <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><span>{{ label(todayScope) || t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
+      <button v-for="category in semanticCategories" :key="category.slug" type="button" class="projects-category" :class="selectedScope === 'all' && selectedCategory === category.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectCategory', category.slug)"><span>{{ label(category) }}</span><small>{{ category.count }}</small></button>
     </div>
     <div v-if="visibleSubcategories.length" class="projects-subcategories" :aria-label="t('projects.subcategoryFilter')">
-      <span class="projects-subcategories__label">{{ t('projects.subcategory', { category: activeCategory?.name || '' }) }}</span>
+      <span class="projects-subcategories__label">{{ t('projects.subcategory', { category: label(activeCategory) || '' }) }}</span>
       <button type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', 'all')"><span>{{ t('projects.all') }}</span><small>{{ activeCategory?.count ?? 0 }}</small></button>
-      <button v-for="subcategory in visibleSubcategories" :key="subcategory.slug" type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === subcategory.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', subcategory.slug)"><span>{{ subcategory.name }}</span><small>{{ subcategory.count }}</small></button>
+      <button v-for="subcategory in visibleSubcategories" :key="subcategory.slug" type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === subcategory.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', subcategory.slug)"><span>{{ label(subcategory) }}</span><small>{{ subcategory.count }}</small></button>
     </div>
   </section>
 

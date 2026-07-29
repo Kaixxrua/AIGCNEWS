@@ -102,6 +102,11 @@ class ToolWebsiteEnrichmentRepository(Protocol):
 
     def get_tool_website_item(self, website_id: int) -> dict[str, Any] | None: ...
 
+    def list_tool_websites_needing_bilingual_enrichment(
+        self, *, after_website_id: int = 0, limit: int = 50,
+        prompt_version: str = "v1", retry_failed: bool = True,
+    ) -> list[dict[str, Any]]: ...
+
     def upsert_tool_website_enrichment(self, payload: dict[str, Any]) -> None: ...
 
     def mark_tool_website_enrichment_failed(

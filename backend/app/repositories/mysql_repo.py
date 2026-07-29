@@ -53,6 +53,7 @@ from backend.app.repositories.mysql_user_account_repository import (
 from backend.app.services.ingestion.project_taxonomy import (
     CATEGORY_BY_SLUG,
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
+    ENGLISH_LABEL_BY_SLUG,
     PROJECT_TAXONOMY,
     SUBCATEGORY_BY_CATEGORY_SLUG,
     WEBSITE_CATEGORY_BY_SLUG,
@@ -311,6 +312,14 @@ def _normalize_project_row(row: Dict[str, Any]) -> Dict[str, Any]:
             subcategory_slug,
             item.get("subcategory_name") or "未分类",
         )
+    category_name_zh = item.get("category_name_zh") or item.get("category_name") or "其他"
+    subcategory_name_zh = item.get("subcategory_name_zh") or item.get("subcategory_name") or "未分类"
+    item["category_name_zh"] = category_name_zh
+    item["category_name_en"] = item.get("category_name_en") or ENGLISH_LABEL_BY_SLUG.get(category_slug, "Other")
+    item["subcategory_name_zh"] = subcategory_name_zh
+    item["subcategory_name_en"] = item.get("subcategory_name_en") or ENGLISH_LABEL_BY_SLUG.get(subcategory_slug, "Uncategorized")
+    item["category_name"] = category_name_zh
+    item["subcategory_name"] = subcategory_name_zh
     return item
 
 
@@ -743,8 +752,12 @@ class MySQLRepository:
                 repo_id VARCHAR(255) NOT NULL PRIMARY KEY,
                 category_slug VARCHAR(64) NOT NULL,
                 category_name VARCHAR(128) NOT NULL,
+                category_name_zh VARCHAR(128) NOT NULL DEFAULT '',
+                category_name_en VARCHAR(128) NOT NULL DEFAULT '',
                 subcategory_slug VARCHAR(64) NOT NULL DEFAULT '',
                 subcategory_name VARCHAR(128) NOT NULL DEFAULT '',
+                subcategory_name_zh VARCHAR(128) NOT NULL DEFAULT '',
+                subcategory_name_en VARCHAR(128) NOT NULL DEFAULT '',
                 description_zh VARCHAR(512) NOT NULL,
                 tags_json TEXT,
                 confidence DOUBLE DEFAULT 0.0,
@@ -823,9 +836,14 @@ class MySQLRepository:
                 website_id BIGINT NOT NULL PRIMARY KEY,
                 category_slug VARCHAR(64) NOT NULL,
                 category_name VARCHAR(128) NOT NULL,
+                category_name_zh VARCHAR(128) NOT NULL DEFAULT '',
+                category_name_en VARCHAR(128) NOT NULL DEFAULT '',
                 subcategory_slug VARCHAR(64) NOT NULL DEFAULT '',
                 subcategory_name VARCHAR(128) NOT NULL DEFAULT '',
+                subcategory_name_zh VARCHAR(128) NOT NULL DEFAULT '',
+                subcategory_name_en VARCHAR(128) NOT NULL DEFAULT '',
                 description_zh VARCHAR(512) NOT NULL,
+                description_en VARCHAR(512) NOT NULL DEFAULT '',
                 tags_json TEXT,
                 confidence DOUBLE DEFAULT 0.0,
                 source_fingerprint CHAR(64) NOT NULL,
@@ -917,10 +935,15 @@ class MySQLRepository:
                 description TEXT,
                 image_url VARCHAR(1024) DEFAULT '',
                 description_zh VARCHAR(512) DEFAULT '',
+                description_en VARCHAR(512) DEFAULT '',
                 category_slug VARCHAR(64) DEFAULT '',
                 category_name VARCHAR(128) DEFAULT '',
+                category_name_zh VARCHAR(128) DEFAULT '',
+                category_name_en VARCHAR(128) DEFAULT '',
                 subcategory_slug VARCHAR(64) DEFAULT '',
                 subcategory_name VARCHAR(128) DEFAULT '',
+                subcategory_name_zh VARCHAR(128) DEFAULT '',
+                subcategory_name_en VARCHAR(128) DEFAULT '',
                 tags_json TEXT,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1203,16 +1226,30 @@ class MySQLRepository:
                     "ALTER TABLE github_repo_daily_metrics ADD INDEX idx_gh_daily_metrics_date_hot (metric_date, hot_score)",
                     "ALTER TABLE github_repo_daily_metrics ADD INDEX idx_gh_daily_metrics_date_growth (metric_date, daily_star_growth)",
                     "ALTER TABLE github_repo_enrichments ADD INDEX idx_gh_enrich_repo_status_category (repo_id, status, category_slug)",
-                    "ALTER TABLE github_repo_enrichments ADD COLUMN subcategory_slug VARCHAR(64) NOT NULL DEFAULT '' AFTER category_name",
+                    "ALTER TABLE github_repo_enrichments ADD COLUMN category_name_zh VARCHAR(128) NOT NULL DEFAULT '' AFTER category_name",
+                    "ALTER TABLE github_repo_enrichments ADD COLUMN category_name_en VARCHAR(128) NOT NULL DEFAULT '' AFTER category_name_zh",
+                    "ALTER TABLE github_repo_enrichments ADD COLUMN subcategory_slug VARCHAR(64) NOT NULL DEFAULT '' AFTER category_name_en",
                     "ALTER TABLE github_repo_enrichments ADD COLUMN subcategory_name VARCHAR(128) NOT NULL DEFAULT '' AFTER subcategory_slug",
+                    "ALTER TABLE github_repo_enrichments ADD COLUMN subcategory_name_zh VARCHAR(128) NOT NULL DEFAULT '' AFTER subcategory_name",
+                    "ALTER TABLE github_repo_enrichments ADD COLUMN subcategory_name_en VARCHAR(128) NOT NULL DEFAULT '' AFTER subcategory_name_zh",
                     "ALTER TABLE github_repo_enrichments ADD INDEX idx_gh_repo_enrich_subcategory (subcategory_slug, status)",
                     "ALTER TABLE github_repo_enrichments ADD INDEX idx_gh_repo_enrich_category_subcategory (category_slug, subcategory_slug, status)",
                     "ALTER TABLE tool_websites ADD COLUMN visibility ENUM('public', 'private') NOT NULL DEFAULT 'public' AFTER source_fingerprint",
                     "ALTER TABLE tool_websites ADD COLUMN added_by_user_id INT NULL AFTER visibility",
                     "ALTER TABLE tool_websites ADD INDEX idx_tool_website_visibility (visibility, first_seen_at)",
                     "ALTER TABLE tool_websites ADD INDEX idx_tool_website_added_by_user (added_by_user_id)",
-                    "ALTER TABLE tool_website_enrichments ADD COLUMN subcategory_slug VARCHAR(64) NOT NULL DEFAULT '' AFTER category_name",
+                    "ALTER TABLE tool_website_enrichments ADD COLUMN category_name_zh VARCHAR(128) NOT NULL DEFAULT '' AFTER category_name",
+                    "ALTER TABLE tool_website_enrichments ADD COLUMN category_name_en VARCHAR(128) NOT NULL DEFAULT '' AFTER category_name_zh",
+                    "ALTER TABLE tool_website_enrichments ADD COLUMN subcategory_slug VARCHAR(64) NOT NULL DEFAULT '' AFTER category_name_en",
                     "ALTER TABLE tool_website_enrichments ADD COLUMN subcategory_name VARCHAR(128) NOT NULL DEFAULT '' AFTER subcategory_slug",
+                    "ALTER TABLE tool_website_enrichments ADD COLUMN subcategory_name_zh VARCHAR(128) NOT NULL DEFAULT '' AFTER subcategory_name",
+                    "ALTER TABLE tool_website_enrichments ADD COLUMN subcategory_name_en VARCHAR(128) NOT NULL DEFAULT '' AFTER subcategory_name_zh",
+                    "ALTER TABLE tool_website_enrichments ADD COLUMN description_en VARCHAR(512) NOT NULL DEFAULT '' AFTER description_zh",
+                    "ALTER TABLE user_tool_website_overrides ADD COLUMN description_en VARCHAR(512) NOT NULL DEFAULT '' AFTER description_zh",
+                    "ALTER TABLE user_tool_website_overrides ADD COLUMN category_name_zh VARCHAR(128) NOT NULL DEFAULT '' AFTER category_name",
+                    "ALTER TABLE user_tool_website_overrides ADD COLUMN category_name_en VARCHAR(128) NOT NULL DEFAULT '' AFTER category_name_zh",
+                    "ALTER TABLE user_tool_website_overrides ADD COLUMN subcategory_name_zh VARCHAR(128) NOT NULL DEFAULT '' AFTER subcategory_name",
+                    "ALTER TABLE user_tool_website_overrides ADD COLUMN subcategory_name_en VARCHAR(128) NOT NULL DEFAULT '' AFTER subcategory_name_zh",
                     "ALTER TABLE tool_website_enrichments ADD INDEX idx_tool_website_enrich_subcategory (subcategory_slug, status)",
                     "ALTER TABLE tool_website_enrichments ADD INDEX idx_tool_website_enrich_category_subcategory (category_slug, subcategory_slug, status)",
                 ]
@@ -1487,6 +1524,35 @@ class MySQLRepository:
         finally:
             conn.close()
 
+    def list_tool_websites_needing_bilingual_enrichment(
+        self, *, after_website_id: int = 0, limit: int = 50,
+        prompt_version: str = "v1", retry_failed: bool = True,
+    ) -> List[Dict[str, Any]]:
+        filters = [
+            "w.id > %s",
+            "(e.website_id IS NULL OR e.prompt_version NOT LIKE %s OR COALESCE(e.description_en, '') = '')",
+        ]
+        if not retry_failed:
+            filters.append("(e.status IS NULL OR e.status != 'failed')")
+        sql = f"""
+            SELECT w.id AS website_id, w.canonical_url, w.domain, w.title, w.description,
+                   w.image_url, w.raw_metadata_json, w.source_fingerprint
+            FROM tool_websites w
+            LEFT JOIN tool_website_enrichments e ON e.website_id = w.id
+            WHERE {' AND '.join(filters)}
+            ORDER BY w.id ASC
+            LIMIT %s
+        """
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (max(0, int(after_website_id)), f"{prompt_version}%", max(1, min(int(limit), 500))))
+                rows = cur.fetchall()
+            conn.commit()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
     def get_tool_website_enrichment(self, website_id: int) -> Optional[Dict[str, Any]]:
         conn = self._connect()
         try:
@@ -1618,7 +1684,13 @@ class MySQLRepository:
         data = dict(payload)
         data.setdefault("tags_json", _json_dumps(data.get("tags") or []))
         data["subcategory_slug"] = data.get("subcategory_slug") or ""
-        data["subcategory_name"] = data.get("subcategory_name") or ""
+        data["subcategory_name"] = data.get("subcategory_name_zh") or data.get("subcategory_name") or ""
+        data["category_name_zh"] = data.get("category_name_zh") or data.get("category_name") or ""
+        data["category_name_en"] = data.get("category_name_en") or ENGLISH_LABEL_BY_SLUG.get(str(data.get("category_slug") or ""), "Other")
+        data["subcategory_name_zh"] = data.get("subcategory_name_zh") or data["subcategory_name"]
+        data["subcategory_name_en"] = data.get("subcategory_name_en") or ENGLISH_LABEL_BY_SLUG.get(data["subcategory_slug"], "Uncategorized")
+        data["category_name"] = data["category_name_zh"]
+        data.setdefault("description_en", "")
         data.setdefault("confidence", 0.0)
         data.setdefault("model_provider", "")
         data.setdefault("model_name", "")
@@ -1628,20 +1700,27 @@ class MySQLRepository:
         data.setdefault("updated_at", now)
         sql = """
             INSERT INTO tool_website_enrichments (
-                website_id, category_slug, category_name, subcategory_slug, subcategory_name, description_zh, tags_json,
-                confidence, source_fingerprint, prompt_version, model_provider, model_name,
+                website_id, category_slug, category_name, category_name_zh, category_name_en,
+                subcategory_slug, subcategory_name, subcategory_name_zh, subcategory_name_en,
+                description_zh, description_en, tags_json, confidence, source_fingerprint, prompt_version, model_provider, model_name,
                 status, error_msg, enriched_at, updated_at
             ) VALUES (
-                %(website_id)s, %(category_slug)s, %(category_name)s, %(subcategory_slug)s, %(subcategory_name)s, %(description_zh)s, %(tags_json)s,
-                %(confidence)s, %(source_fingerprint)s, %(prompt_version)s, %(model_provider)s, %(model_name)s,
+                %(website_id)s, %(category_slug)s, %(category_name)s, %(category_name_zh)s, %(category_name_en)s,
+                %(subcategory_slug)s, %(subcategory_name)s, %(subcategory_name_zh)s, %(subcategory_name_en)s,
+                %(description_zh)s, %(description_en)s, %(tags_json)s, %(confidence)s, %(source_fingerprint)s, %(prompt_version)s, %(model_provider)s, %(model_name)s,
                 %(status)s, %(error_msg)s, %(enriched_at)s, %(updated_at)s
             )
             ON DUPLICATE KEY UPDATE
                 category_slug=VALUES(category_slug),
                 category_name=VALUES(category_name),
+                category_name_zh=VALUES(category_name_zh),
+                category_name_en=VALUES(category_name_en),
                 subcategory_slug=VALUES(subcategory_slug),
                 subcategory_name=VALUES(subcategory_name),
+                subcategory_name_zh=VALUES(subcategory_name_zh),
+                subcategory_name_en=VALUES(subcategory_name_en),
                 description_zh=VALUES(description_zh),
+                description_en=VALUES(description_en),
                 tags_json=VALUES(tags_json),
                 confidence=VALUES(confidence),
                 source_fingerprint=VALUES(source_fingerprint),
@@ -1730,10 +1809,15 @@ class MySQLRepository:
                 COALESCE(NULLIF(w.image_url, ''), CONCAT(SUBSTRING_INDEX(w.canonical_url, '/', 3), '/favicon.ico')) AS image_url,
                 w.description,
                 e.description_zh,
+                e.description_en,
                 e.category_slug,
-                e.category_name,
+                COALESCE(NULLIF(e.category_name_zh, ''), e.category_name) AS category_name,
+                e.category_name_zh,
+                e.category_name_en,
                 e.subcategory_slug,
-                e.subcategory_name,
+                COALESCE(NULLIF(e.subcategory_name_zh, ''), e.subcategory_name) AS subcategory_name,
+                e.subcategory_name_zh,
+                e.subcategory_name_en,
                 e.tags_json,
                 NULL AS language,
                 '[]' AS topics_json,
@@ -2038,10 +2122,13 @@ class MySQLRepository:
         website_effective_description = "COALESCE(NULLIF(uo.description, ''), w.description)" if user_id else "w.description"
         website_effective_image_url = "COALESCE(NULLIF(uo.image_url, ''), NULLIF(w.image_url, ''), CONCAT(SUBSTRING_INDEX(w.canonical_url, '/', 3), '/favicon.ico'))" if user_id else "COALESCE(NULLIF(w.image_url, ''), CONCAT(SUBSTRING_INDEX(w.canonical_url, '/', 3), '/favicon.ico'))"
         website_effective_category_slug = "COALESCE(NULLIF(uo.category_slug, ''), we.category_slug)" if user_id else "we.category_slug"
-        website_effective_category_name = "COALESCE(NULLIF(uo.category_name, ''), we.category_name)" if user_id else "we.category_name"
+        website_effective_category_name = "COALESCE(NULLIF(uo.category_name_zh, ''), we.category_name_zh, NULLIF(uo.category_name, ''), we.category_name)" if user_id else "COALESCE(NULLIF(we.category_name_zh, ''), we.category_name)"
+        website_effective_category_name_en = "COALESCE(NULLIF(uo.category_name_en, ''), we.category_name_en)" if user_id else "we.category_name_en"
         website_effective_subcategory_slug = "COALESCE(NULLIF(uo.subcategory_slug, ''), we.subcategory_slug)" if user_id else "we.subcategory_slug"
-        website_effective_subcategory_name = "COALESCE(NULLIF(uo.subcategory_name, ''), we.subcategory_name)" if user_id else "we.subcategory_name"
+        website_effective_subcategory_name = "COALESCE(NULLIF(uo.subcategory_name_zh, ''), we.subcategory_name_zh, NULLIF(uo.subcategory_name, ''), we.subcategory_name)" if user_id else "COALESCE(NULLIF(we.subcategory_name_zh, ''), we.subcategory_name)"
+        website_effective_subcategory_name_en = "COALESCE(NULLIF(uo.subcategory_name_en, ''), we.subcategory_name_en)" if user_id else "we.subcategory_name_en"
         website_effective_description_zh = "COALESCE(NULLIF(uo.description_zh, ''), we.description_zh)" if user_id else "we.description_zh"
+        website_effective_description_en = "COALESCE(NULLIF(uo.description_en, ''), we.description_en)" if user_id else "we.description_en"
         website_effective_tags_json = "COALESCE(NULLIF(uo.tags_json, ''), we.tags_json)" if user_id else "we.tags_json"
 
         github_filters = ["COALESCE(c.stars, 0) >= %s"]
@@ -2248,10 +2335,15 @@ class MySQLRepository:
                 NULL AS image_url,
                 c.description,
                 ge.description_zh,
+                NULL AS description_en,
                 ge.category_slug,
-                ge.category_name,
+                COALESCE(NULLIF(ge.category_name_zh, ''), ge.category_name) AS category_name,
+                ge.category_name_zh,
+                ge.category_name_en,
                 ge.subcategory_slug,
-                ge.subcategory_name,
+                COALESCE(NULLIF(ge.subcategory_name_zh, ''), ge.subcategory_name) AS subcategory_name,
+                ge.subcategory_name_zh,
+                ge.subcategory_name_en,
                 ge.tags_json,
                 c.language,
                 c.topics_json,
@@ -2290,10 +2382,15 @@ class MySQLRepository:
                 {website_effective_image_url} AS image_url,
                 {website_effective_description} AS description,
                 {website_effective_description_zh} AS description_zh,
+                {website_effective_description_en} AS description_en,
                 {website_effective_category_slug} AS category_slug,
                 {website_effective_category_name} AS category_name,
+                {website_effective_category_name} AS category_name_zh,
+                {website_effective_category_name_en} AS category_name_en,
                 {website_effective_subcategory_slug} AS subcategory_slug,
                 {website_effective_subcategory_name} AS subcategory_name,
+                {website_effective_subcategory_name} AS subcategory_name_zh,
+                {website_effective_subcategory_name_en} AS subcategory_name_en,
                 {website_effective_tags_json} AS tags_json,
                 NULL AS language,
                 '[]' AS topics_json,
@@ -2588,8 +2685,9 @@ class MySQLRepository:
                 c.repo_id, c.full_name, c.title, c.url, c.description, c.language,
                 c.topics_json, c.pushed_at, c.stars, c.forks,
                 ge.description_zh, ge.category_slug, ge.category_name,
-                ge.subcategory_slug, ge.subcategory_name, ge.tags_json,
-                ss.readme_text, ss.readme_sha256, ss.readme_etag,
+                ge.category_name_zh, ge.category_name_en, ge.subcategory_slug,
+                ge.subcategory_name, ge.subcategory_name_zh, ge.subcategory_name_en,
+                ge.tags_json, ss.readme_text, ss.readme_sha256, ss.readme_etag,
                 ss.readme_status, ss.readme_checked_at, ss.readme_fetched_at,
                 ss.readme_repo_pushed_at,
                 ss.source_fingerprint, ss.indexed_fingerprint, ss.index_status,
@@ -2847,7 +2945,13 @@ class MySQLRepository:
         data = dict(payload)
         data.setdefault("tags_json", _json_dumps(data.get("tags") or []))
         data["subcategory_slug"] = data.get("subcategory_slug") or ""
-        data["subcategory_name"] = data.get("subcategory_name") or ""
+        data["subcategory_name"] = data.get("subcategory_name_zh") or data.get("subcategory_name") or ""
+        data["category_name_zh"] = data.get("category_name_zh") or data.get("category_name") or ""
+        data["category_name_en"] = data.get("category_name_en") or ENGLISH_LABEL_BY_SLUG.get(str(data.get("category_slug") or ""), "Other")
+        data["subcategory_name_zh"] = data.get("subcategory_name_zh") or data["subcategory_name"]
+        data["subcategory_name_en"] = data.get("subcategory_name_en") or ENGLISH_LABEL_BY_SLUG.get(data["subcategory_slug"], "Uncategorized")
+        data["category_name"] = data["category_name_zh"]
+        data.setdefault("description_en", "")
         data.setdefault("confidence", 0.0)
         data.setdefault("model_provider", "")
         data.setdefault("model_name", "")
@@ -2857,19 +2961,25 @@ class MySQLRepository:
         data.setdefault("updated_at", now)
         sql = """
             INSERT INTO github_repo_enrichments (
-                repo_id, category_slug, category_name, subcategory_slug, subcategory_name, description_zh, tags_json,
-                confidence, source_fingerprint, prompt_version, model_provider, model_name,
-                status, error_msg, enriched_at, updated_at
+                repo_id, category_slug, category_name, category_name_zh, category_name_en,
+                subcategory_slug, subcategory_name, subcategory_name_zh, subcategory_name_en,
+                description_zh, tags_json, confidence, source_fingerprint, prompt_version,
+                model_provider, model_name, status, error_msg, enriched_at, updated_at
             ) VALUES (
-                %(repo_id)s, %(category_slug)s, %(category_name)s, %(subcategory_slug)s, %(subcategory_name)s, %(description_zh)s, %(tags_json)s,
-                %(confidence)s, %(source_fingerprint)s, %(prompt_version)s, %(model_provider)s, %(model_name)s,
-                %(status)s, %(error_msg)s, %(enriched_at)s, %(updated_at)s
+                %(repo_id)s, %(category_slug)s, %(category_name)s, %(category_name_zh)s, %(category_name_en)s,
+                %(subcategory_slug)s, %(subcategory_name)s, %(subcategory_name_zh)s, %(subcategory_name_en)s,
+                %(description_zh)s, %(tags_json)s, %(confidence)s, %(source_fingerprint)s, %(prompt_version)s,
+                %(model_provider)s, %(model_name)s, %(status)s, %(error_msg)s, %(enriched_at)s, %(updated_at)s
             )
             ON DUPLICATE KEY UPDATE
                 category_slug=VALUES(category_slug),
                 category_name=VALUES(category_name),
+                category_name_zh=VALUES(category_name_zh),
+                category_name_en=VALUES(category_name_en),
                 subcategory_slug=VALUES(subcategory_slug),
                 subcategory_name=VALUES(subcategory_name),
+                subcategory_name_zh=VALUES(subcategory_name_zh),
+                subcategory_name_en=VALUES(subcategory_name_en),
                 description_zh=VALUES(description_zh),
                 tags_json=VALUES(tags_json),
                 confidence=VALUES(confidence),

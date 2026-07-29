@@ -77,6 +77,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
             subcategory_slug="model_platforms",
             subcategory_name="模型平台",
             description_zh="提供 AI 模型相关服务。",
+            description_en="Provides practical access to AI model services.",
             tags=["模型服务"],
             confidence=0.9,
         )
@@ -110,6 +111,8 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
 
         self.enricher._enrich_one.assert_called_once_with(self.metadata)
         self.db.upsert_tool_website_enrichment.assert_called_once()
+        payload = self.db.upsert_tool_website_enrichment.call_args.args[0]
+        self.assertEqual(payload["description_en"], self.enrichment.description_en)
         self.assertFalse(result["duplicate"])
         self.assertEqual(result["item"]["website_id"], 9)
         self.assertFalse(self.db.upsert_tool_website.call_args.kwargs["update_existing"])
@@ -160,6 +163,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
             '{"category_slug":"models_infra",'
             '"subcategory_slug":"model_management",'
             '"description_zh":"提供 AI 模型相关服务。",'
+            '"description_en":"Provides practical access to AI model services.",'
             '"tags":["模型服务"],"confidence":0.9}'
         )
 
@@ -167,6 +171,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
 
         self.assertEqual(result.category_slug, "models_infra")
         self.assertEqual(result.subcategory_slug, "model_management")
+        self.assertEqual(result.description_en, "Provides practical access to AI model services.")
         self.assertEqual(result.tags, ["模型服务"])
 
     def test_enrich_one_accepts_anthropic_thinking_and_text_blocks(self) -> None:

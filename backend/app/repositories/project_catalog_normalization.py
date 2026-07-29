@@ -7,6 +7,7 @@ from typing import Any
 from backend.app.services.ingestion.project_taxonomy import (
     CATEGORY_BY_SLUG,
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
+    ENGLISH_LABEL_BY_SLUG,
     PROJECT_TAXONOMY,
     SUBCATEGORY_BY_CATEGORY_SLUG,
     WEBSITE_CATEGORY_BY_SLUG,
@@ -88,12 +89,19 @@ def normalize_project_row(row: dict[str, Any]) -> dict[str, Any]:
     subcategory_slug = item.get("subcategory_slug") or defaults.get(category_slug, "")
     item["category_slug"] = category_slug
     item["subcategory_slug"] = subcategory_slug
-    item["category_name"] = category_names.get(
-        category_slug, item.get("category_name") or ("其他网站" if website else "其他")
+    category_name_zh = category_names.get(
+        category_slug, item.get("category_name_zh") or item.get("category_name") or ("其他网站" if website else "其他")
     )
-    item["subcategory_name"] = subcategory_names.get(category_slug, {}).get(
-        subcategory_slug, item.get("subcategory_name") or "未分类"
+    subcategory_name_zh = subcategory_names.get(category_slug, {}).get(
+        subcategory_slug, item.get("subcategory_name_zh") or item.get("subcategory_name") or "未分类"
     )
+    item["category_name_zh"] = category_name_zh
+    item["category_name_en"] = item.get("category_name_en") or ENGLISH_LABEL_BY_SLUG.get(category_slug, "Other")
+    item["subcategory_name_zh"] = subcategory_name_zh
+    item["subcategory_name_en"] = item.get("subcategory_name_en") or ENGLISH_LABEL_BY_SLUG.get(subcategory_slug, "Uncategorized")
+    # Generic aliases remain Chinese until consumers explicitly select a locale.
+    item["category_name"] = category_name_zh
+    item["subcategory_name"] = subcategory_name_zh
     return item
 
 
@@ -140,14 +148,16 @@ def format_project_category_counts(
         slug = category["slug"]
         seen.add(slug)
         items.append({
-            "slug": slug, "name": category["name"], "count": category_counts.get(slug, 0),
+            "slug": slug, "name": category["name_zh"], "name_zh": category["name_zh"],
+            "name_en": category["name_en"], "count": category_counts.get(slug, 0),
             "kind": "category",
-            "children": [{"slug": child["slug"], "name": child["name"], "count": child_counts.get((slug, child["slug"]), 0)} for child in category.get("children", [])],
+            "children": [{"slug": child["slug"], "name": child["name_zh"], "name_zh": child["name_zh"], "name_en": child["name_en"], "count": child_counts.get((slug, child["slug"]), 0)} for child in category.get("children", [])],
         })
     for slug in sorted((key for key in category_counts if key not in seen), key=lambda key: (-category_counts[key], category_names.get(key, key))):
         children = [
-            {"slug": child, "name": child_names.get((slug, child), child), "count": count}
+            {"slug": child, "name": child_names.get((slug, child), child), "name_zh": child_names.get((slug, child), child), "name_en": ENGLISH_LABEL_BY_SLUG.get(child, child), "count": count}
             for (parent, child), count in child_counts.items() if parent == slug
         ]
-        items.append({"slug": slug, "name": category_names.get(slug, "其他"), "count": category_counts[slug], "kind": "category", "children": children})
+        name_zh = category_names.get(slug, "其他")
+        items.append({"slug": slug, "name": name_zh, "name_zh": name_zh, "name_en": ENGLISH_LABEL_BY_SLUG.get(slug, "Other"), "count": category_counts[slug], "kind": "category", "children": children})
     return {"items": items, "total": sum(category_counts.values()), "today_count": int(today_count or 0), "recommended_count": int(recommended_count or 0)}

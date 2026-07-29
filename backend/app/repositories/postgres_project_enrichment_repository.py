@@ -10,6 +10,7 @@ from backend.app.repositories.postgres_runtime_provider_repository import (
     PostgresRuntimeProviderSettingRepository,
 )
 from backend.app.repositories.project_catalog_normalization import normalize_project_row
+from backend.app.services.ingestion.project_taxonomy import ENGLISH_LABEL_BY_SLUG
 
 
 def _utcnow() -> str:
@@ -139,8 +140,14 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         now = _utcnow()
         data = dict(payload)
         data.setdefault("tags_json", json.dumps(data.get("tags") or [], ensure_ascii=False))
+        data.setdefault("description_en", "")
         data["subcategory_slug"] = data.get("subcategory_slug") or ""
-        data["subcategory_name"] = data.get("subcategory_name") or ""
+        data["subcategory_name"] = data.get("subcategory_name_zh") or data.get("subcategory_name") or ""
+        data["category_name_zh"] = data.get("category_name_zh") or data.get("category_name") or ""
+        data["category_name_en"] = data.get("category_name_en") or ENGLISH_LABEL_BY_SLUG.get(str(data.get("category_slug") or ""), "Other")
+        data["subcategory_name_zh"] = data.get("subcategory_name_zh") or data["subcategory_name"]
+        data["subcategory_name_en"] = data.get("subcategory_name_en") or ENGLISH_LABEL_BY_SLUG.get(data["subcategory_slug"], "Uncategorized")
+        data["category_name"] = data["category_name_zh"]
         data.setdefault("confidence", 0.0)
         data.setdefault("model_provider", "")
         data.setdefault("model_name", "")
@@ -154,13 +161,15 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                 cursor.execute(
                     """
                     INSERT INTO github_repo_enrichments (
-                        repo_id, category_slug, category_name, subcategory_slug,
-                        subcategory_name, description_zh, tags_json, confidence,
+                        repo_id, category_slug, category_name, category_name_zh, category_name_en,
+                        subcategory_slug, subcategory_name, subcategory_name_zh, subcategory_name_en,
+                        description_zh, tags_json, confidence,
                         source_fingerprint, prompt_version, model_provider, model_name,
                         status, error_msg, enriched_at, updated_at
                     ) VALUES (
                         %(repo_id)s, %(category_slug)s, %(category_name)s,
-                        %(subcategory_slug)s, %(subcategory_name)s, %(description_zh)s,
+                        %(category_name_zh)s, %(category_name_en)s, %(subcategory_slug)s,
+                        %(subcategory_name)s, %(subcategory_name_zh)s, %(subcategory_name_en)s, %(description_zh)s,
                         %(tags_json)s, %(confidence)s, %(source_fingerprint)s,
                         %(prompt_version)s, %(model_provider)s, %(model_name)s,
                         %(status)s, %(error_msg)s, %(enriched_at)s, %(updated_at)s
@@ -168,8 +177,12 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     ON CONFLICT (repo_id) DO UPDATE SET
                         category_slug=EXCLUDED.category_slug,
                         category_name=EXCLUDED.category_name,
+                        category_name_zh=EXCLUDED.category_name_zh,
+                        category_name_en=EXCLUDED.category_name_en,
                         subcategory_slug=EXCLUDED.subcategory_slug,
                         subcategory_name=EXCLUDED.subcategory_name,
+                        subcategory_name_zh=EXCLUDED.subcategory_name_zh,
+                        subcategory_name_en=EXCLUDED.subcategory_name_en,
                         description_zh=EXCLUDED.description_zh,
                         tags_json=EXCLUDED.tags_json,
                         confidence=EXCLUDED.confidence,
@@ -283,6 +296,27 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
                 row = cursor.fetchone() or {}
         return dict(row)
 
+    def list_tool_websites_needing_bilingual_enrichment(
+        self, *, after_website_id: int = 0, limit: int = 50,
+        prompt_version: str = "v1", retry_failed: bool = True,
+    ) -> list[dict[str, Any]]:
+        retry_filter = "" if retry_failed else "AND (e.status IS NULL OR e.status != 'failed')"
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(f"""
+                    SELECT w.id AS website_id, w.canonical_url, w.domain, w.title,
+                           w.description, w.image_url, w.raw_metadata_json, w.source_fingerprint
+                    FROM tool_websites w
+                    LEFT JOIN tool_website_enrichments e ON e.website_id = w.id
+                    WHERE w.id > %s
+                      AND (e.website_id IS NULL OR e.prompt_version NOT LIKE %s
+                           OR COALESCE(e.description_en, '') = '')
+                      {retry_filter}
+                    ORDER BY w.id ASC LIMIT %s
+                """, (max(0, int(after_website_id)), f"{prompt_version}%", max(1, min(int(limit), 500))))
+                rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
     def get_tool_website_enrichment(self, website_id: int) -> dict[str, Any] | None:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
@@ -298,8 +332,9 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
                         w.id AS website_id, COALESCE(NULLIF(w.title,''),w.domain) AS full_name,
                         w.title, w.canonical_url AS url, w.domain,
                         COALESCE(NULLIF(w.image_url,''), split_part(w.canonical_url,'/',1) || '//' || split_part(w.canonical_url,'/',3) || '/favicon.ico') AS image_url,
-                        w.description, e.description_zh, e.category_slug, e.category_name,
-                        e.subcategory_slug, e.subcategory_name, e.tags_json,
+                        w.description, e.description_zh, e.description_en, e.category_slug, e.category_name,
+                        e.category_name_zh, e.category_name_en, e.subcategory_slug, e.subcategory_name,
+                        e.subcategory_name_zh, e.subcategory_name_en, e.tags_json,
                         NULL AS language, '[]' AS topics_json, 0 AS stars, 0 AS forks,
                         0 AS watchers, 0 AS open_issues, NULL AS created_at, NULL AS pushed_at,
                         w.first_seen_at, w.last_seen_at, NULL AS last_snapshot_at,
@@ -316,8 +351,14 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
         now = _utcnow()
         data = dict(payload)
         data.setdefault("tags_json", json.dumps(data.get("tags") or [], ensure_ascii=False))
+        data.setdefault("description_en", "")
         data["subcategory_slug"] = data.get("subcategory_slug") or ""
-        data["subcategory_name"] = data.get("subcategory_name") or ""
+        data["subcategory_name"] = data.get("subcategory_name_zh") or data.get("subcategory_name") or ""
+        data["category_name_zh"] = data.get("category_name_zh") or data.get("category_name") or ""
+        data["category_name_en"] = data.get("category_name_en") or ENGLISH_LABEL_BY_SLUG.get(str(data.get("category_slug") or ""), "Other")
+        data["subcategory_name_zh"] = data.get("subcategory_name_zh") or data["subcategory_name"]
+        data["subcategory_name_en"] = data.get("subcategory_name_en") or ENGLISH_LABEL_BY_SLUG.get(data["subcategory_slug"], "Uncategorized")
+        data["category_name"] = data["category_name_zh"]
         for key, default in (("confidence", 0.0), ("model_provider", ""),
                              ("model_name", ""), ("status", "succeeded"),
                              ("error_msg", None), ("enriched_at", now), ("updated_at", now)):
@@ -326,15 +367,21 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
             with connection.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO tool_website_enrichments (website_id,category_slug,category_name,
-                        subcategory_slug,subcategory_name,description_zh,tags_json,confidence,
+                        category_name_zh,category_name_en,subcategory_slug,subcategory_name,
+                        subcategory_name_zh,subcategory_name_en,description_zh,description_en,tags_json,confidence,
                         source_fingerprint,prompt_version,model_provider,model_name,status,error_msg,enriched_at,updated_at)
-                    VALUES (%(website_id)s,%(category_slug)s,%(category_name)s,%(subcategory_slug)s,
-                        %(subcategory_name)s,%(description_zh)s,%(tags_json)s,%(confidence)s,
+                    VALUES (%(website_id)s,%(category_slug)s,%(category_name)s,%(category_name_zh)s,
+                        %(category_name_en)s,%(subcategory_slug)s,%(subcategory_name)s,
+                        %(subcategory_name_zh)s,%(subcategory_name_en)s,%(description_zh)s,
+                        %(description_en)s,%(tags_json)s,%(confidence)s,
                         %(source_fingerprint)s,%(prompt_version)s,%(model_provider)s,%(model_name)s,
                         %(status)s,%(error_msg)s,%(enriched_at)s,%(updated_at)s)
                     ON CONFLICT (website_id) DO UPDATE SET category_slug=EXCLUDED.category_slug,
-                        category_name=EXCLUDED.category_name,subcategory_slug=EXCLUDED.subcategory_slug,
-                        subcategory_name=EXCLUDED.subcategory_name,description_zh=EXCLUDED.description_zh,
+                        category_name=EXCLUDED.category_name,category_name_zh=EXCLUDED.category_name_zh,
+                        category_name_en=EXCLUDED.category_name_en,subcategory_slug=EXCLUDED.subcategory_slug,
+                        subcategory_name=EXCLUDED.subcategory_name,subcategory_name_zh=EXCLUDED.subcategory_name_zh,
+                        subcategory_name_en=EXCLUDED.subcategory_name_en,description_zh=EXCLUDED.description_zh,
+                        description_en=EXCLUDED.description_en,
                         tags_json=EXCLUDED.tags_json,confidence=EXCLUDED.confidence,
                         source_fingerprint=EXCLUDED.source_fingerprint,prompt_version=EXCLUDED.prompt_version,
                         model_provider=EXCLUDED.model_provider,model_name=EXCLUDED.model_name,

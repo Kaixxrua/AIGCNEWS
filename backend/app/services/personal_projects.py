@@ -9,6 +9,7 @@ from backend.app.repositories.project_write_repository import (
     UserProjectCollectionRepository,
 )
 from backend.app.services.ingestion.project_taxonomy import (
+    ENGLISH_LABEL_BY_SLUG,
     WEBSITE_CATEGORY_BY_SLUG,
     WEBSITE_DEFAULT_SUBCATEGORY_BY_CATEGORY,
     WEBSITE_SUBCATEGORY_BY_CATEGORY_SLUG,
@@ -94,6 +95,7 @@ def build_tool_website_override(
     subcategory_slug: str,
     tags: list[str],
     description: str = "",
+    description_en: str = "",
     image_url: str = "",
 ) -> dict[str, Any]:
     owner_id = _require_owner(user_id)
@@ -127,10 +129,15 @@ def build_tool_website_override(
         "description": clean_text(description, max_len=2000),
         "image_url": clean_text(image_url, max_len=1024),
         "description_zh": clean_description_zh,
+        "description_en": clean_text(description_en, max_len=512),
         "category_slug": clean_category,
         "category_name": WEBSITE_CATEGORY_BY_SLUG[clean_category],
+        "category_name_zh": WEBSITE_CATEGORY_BY_SLUG[clean_category],
+        "category_name_en": ENGLISH_LABEL_BY_SLUG[clean_category],
         "subcategory_slug": clean_subcategory,
         "subcategory_name": subcategory_name,
+        "subcategory_name_zh": subcategory_name,
+        "subcategory_name_en": ENGLISH_LABEL_BY_SLUG[clean_subcategory],
         "tags": clean_tags,
     }
 
@@ -280,6 +287,7 @@ class PersonalProjectsService:
         category_slug: str,
         subcategory_slug: str,
         tags: list[str],
+        description_en: str = "",
     ) -> dict[str, Any]:
         owner_id = _require_owner(user_id)
         clean_url = (url or "").strip()
@@ -318,6 +326,7 @@ class PersonalProjectsService:
                     website_id=int(website_id),
                     title=clean_title,
                     description_zh=clean_description_zh,
+                    description_en=description_en,
                     category_slug=category_slug,
                     subcategory_slug=subcategory_slug,
                     tags=tags,
@@ -360,6 +369,7 @@ class PersonalProjectsService:
         subcategory_slug: str,
         tags: list[str],
         image_url: str,
+        description_en: str = "",
     ) -> dict[str, Any]:
         payload = build_tool_website_override(
             user_id=user_id,
@@ -367,6 +377,7 @@ class PersonalProjectsService:
             title=title,
             description=description,
             description_zh=description_zh,
+            description_en=description_en,
             category_slug=category_slug,
             subcategory_slug=subcategory_slug,
             tags=tags,

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { AppLocale } from '../../i18n'
+import { localizedCategoryName } from '../../features/projects/projectPresentation'
 import type { ManualToolWebsitePayload, ProjectTaxonomyItem } from '../../services/projects/projectApi'
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
+const taxonomyLabel = (item: ProjectTaxonomyItem | ProjectTaxonomyItem['children'][number]) => localizedCategoryName(item, locale.value as AppLocale)
 
 const props = defineProps<{
   open: boolean
@@ -127,13 +130,13 @@ watch([category, () => props.taxonomy], () => {
             <label class="tool-modal__field">
               <span>{{ t('projects.dialog.primaryCategory') }}</span>
               <select v-model="category" :disabled="busy || taxonomyLoading">
-                <option v-for="item in taxonomy" :key="item.slug" :value="item.slug">{{ item.name }}</option>
+                <option v-for="item in taxonomy" :key="item.slug" :value="item.slug">{{ taxonomyLabel(item) }}</option>
               </select>
             </label>
             <label class="tool-modal__field">
               <span>{{ t('projects.dialog.subcategory') }}</span>
               <select v-model="subcategory" :disabled="busy || taxonomyLoading">
-                <option v-for="item in subcategoryOptions" :key="item.slug" :value="item.slug">{{ item.name }}</option>
+                <option v-for="item in subcategoryOptions" :key="item.slug" :value="item.slug">{{ taxonomyLabel(item) }}</option>
               </select>
             </label>
             <label class="tool-modal__field tool-modal__field--wide">

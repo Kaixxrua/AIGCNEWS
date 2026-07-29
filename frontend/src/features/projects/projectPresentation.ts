@@ -80,20 +80,51 @@ export const recommendButtonLabel = (project: GitHubProjectItem, busy: boolean) 
   return project.is_recommended ? '取消推荐' : '设为站长推荐'
 }
 
+type LocalizedName = {
+  name?: string | null
+  name_zh?: string | null
+  name_en?: string | null
+}
+
+export const localizedProjectName = (value: LocalizedName | null | undefined, locale: AppLocale) => {
+  const preferred = locale === 'zh-CN'
+    ? [value?.name_zh, value?.name, value?.name_en]
+    : [value?.name_en, value?.name, value?.name_zh]
+  return preferred.find(label => typeof label === 'string' && label.trim())?.trim() || ''
+}
+
+export const localizedCategoryName = (
+  value: LocalizedName | null | undefined,
+  locale: AppLocale,
+) => localizedProjectName(value, locale)
+
 export const projectDescription = (
   project: GitHubProjectItem,
   locale: AppLocale,
   fallback: string,
 ) => {
   const preferred = locale === 'zh-CN'
-    ? [project.description_zh, project.description]
-    : [project.description, project.description_zh]
+    ? [project.description_zh, project.description_en, project.description]
+    : [project.description_en, project.description, project.description_zh]
   return preferred.find(value => typeof value === 'string' && value.trim())?.trim() || fallback
 }
+
+export const projectCategoryName = (project: GitHubProjectItem, locale: AppLocale) => localizedProjectName({
+  name: project.category_name,
+  name_zh: project.category_name_zh,
+  name_en: project.category_name_en,
+}, locale)
+
+export const projectSubcategoryName = (project: GitHubProjectItem, locale: AppLocale) => localizedProjectName({
+  name: project.subcategory_name,
+  name_zh: project.subcategory_name_zh,
+  name_en: project.subcategory_name_en,
+}, locale)
 
 export const projectDisplayTags = (
   project: GitHubProjectItem,
   isPersonalView: boolean,
+  locale: AppLocale = 'zh-CN',
 ): ProjectChip[] => {
   const result: ProjectChip[] = []
   const labels = new Set<string>()
@@ -104,16 +135,18 @@ export const projectDisplayTags = (
     result.push({ ...chip, label: cleanLabel })
   }
 
-  if (project.subcategory_name && project.subcategory_slug) {
+  const subcategoryLabel = projectSubcategoryName(project, locale)
+  const categoryLabel = projectCategoryName(project, locale)
+  if (subcategoryLabel && project.subcategory_slug) {
     pushChip({
       type: 'subcategory',
-      label: project.subcategory_name,
+      label: subcategoryLabel,
       categorySlug: project.category_slug || '',
       value: project.subcategory_slug,
     })
   }
-  if (project.category_name && project.category_slug) {
-    pushChip({ type: 'category', label: project.category_name, value: project.category_slug })
+  if (categoryLabel && project.category_slug) {
+    pushChip({ type: 'category', label: categoryLabel, value: project.category_slug })
   }
   const ignoredPersonalTags = new Set(['AI 工具', '网页收藏'])
   for (const tag of project.tags ?? []) {

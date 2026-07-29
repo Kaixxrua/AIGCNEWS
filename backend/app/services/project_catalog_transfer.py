@@ -93,8 +93,9 @@ TABLE_TRANSFER_SPECS = (
     _spec(
         "github_repo_enrichments",
         (
-            "repo_id", "category_slug", "category_name", "subcategory_slug",
-            "subcategory_name", "description_zh", "tags_json", "confidence",
+            "repo_id", "category_slug", "category_name", "category_name_zh",
+            "category_name_en", "subcategory_slug", "subcategory_name",
+            "subcategory_name_zh", "subcategory_name_en", "description_zh", "tags_json", "confidence",
             "source_fingerprint", "prompt_version", "model_provider", "model_name",
             "status", "error_msg", "enriched_at", "updated_at",
         ),
@@ -200,8 +201,10 @@ TABLE_TRANSFER_SPECS = (
     _spec(
         "tool_website_enrichments",
         (
-            "website_id", "category_slug", "category_name", "subcategory_slug",
-            "subcategory_name", "description_zh", "tags_json", "confidence",
+            "website_id", "category_slug", "category_name", "category_name_zh",
+            "category_name_en", "subcategory_slug", "subcategory_name",
+            "subcategory_name_zh", "subcategory_name_en", "description_zh", "description_en",
+            "tags_json", "confidence",
             "source_fingerprint", "prompt_version", "model_provider", "model_name",
             "status", "error_msg", "enriched_at", "updated_at",
         ),
@@ -230,15 +233,17 @@ TABLE_TRANSFER_SPECS = (
         "user_tool_website_overrides",
         (
             "id", "user_id", "website_id", "title", "description", "image_url",
-            "description_zh", "category_slug", "category_name", "subcategory_slug",
-            "subcategory_name", "tags_json", "created_at", "updated_at",
+            "description_zh", "description_en", "category_slug", "category_name",
+            "category_name_zh", "category_name_en", "subcategory_slug", "subcategory_name",
+            "subcategory_name_zh", "subcategory_name_en", "tags_json", "created_at", "updated_at",
         ),
         ("id",),
         dependencies=("tool_websites",),
         datetime_columns=("created_at", "updated_at"),
         non_null_default_columns=(
-            "title", "image_url", "description_zh", "category_slug", "category_name",
-            "subcategory_slug", "subcategory_name",
+            "title", "image_url", "description_zh", "description_en", "category_slug", "category_name",
+            "category_name_zh", "category_name_en", "subcategory_slug", "subcategory_name",
+            "subcategory_name_zh", "subcategory_name_en",
         ),
         identity_column="id",
         natural_key_columns=("user_id", "website_id"),

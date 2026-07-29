@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from backend.app.core.config import settings
 from backend.app.core.database import DatabaseLifecycle, mysql_database
 from backend.app.repositories.project_catalog_normalization import normalize_project_row
+from backend.app.services.ingestion.project_taxonomy import ENGLISH_LABEL_BY_SLUG
 
 
 class _PersonalProjectCatalog(Protocol):
@@ -442,10 +443,13 @@ class MySQLUserProjectCollectionRepository:
                 COALESCE(NULLIF(uo.image_url, ''), NULLIF(w.image_url, ''), CONCAT(SUBSTRING_INDEX(w.canonical_url, '/', 3), '/favicon.ico')) AS image_url,
                 COALESCE(NULLIF(uo.description, ''), w.description) AS description,
                 COALESCE(NULLIF(uo.description_zh, ''), e.description_zh) AS description_zh,
+                COALESCE(NULLIF(uo.description_en, ''), e.description_en) AS description_en,
                 COALESCE(NULLIF(uo.category_slug, ''), e.category_slug) AS category_slug,
-                COALESCE(NULLIF(uo.category_name, ''), e.category_name) AS category_name,
+                COALESCE(NULLIF(uo.category_name_zh, ''), e.category_name_zh, NULLIF(uo.category_name, ''), e.category_name) AS category_name_zh,
+                COALESCE(NULLIF(uo.category_name_en, ''), e.category_name_en) AS category_name_en,
                 COALESCE(NULLIF(uo.subcategory_slug, ''), e.subcategory_slug) AS subcategory_slug,
-                COALESCE(NULLIF(uo.subcategory_name, ''), e.subcategory_name) AS subcategory_name,
+                COALESCE(NULLIF(uo.subcategory_name_zh, ''), e.subcategory_name_zh, NULLIF(uo.subcategory_name, ''), e.subcategory_name) AS subcategory_name_zh,
+                COALESCE(NULLIF(uo.subcategory_name_en, ''), e.subcategory_name_en) AS subcategory_name_en,
                 COALESCE(NULLIF(uo.tags_json, ''), e.tags_json) AS tags_json,
                 NULL AS language,
                 '[]' AS topics_json,
@@ -504,10 +508,15 @@ class MySQLUserProjectCollectionRepository:
         data.setdefault("description", "")
         data.setdefault("image_url", "")
         data.setdefault("description_zh", "")
+        data.setdefault("description_en", "")
         data.setdefault("category_slug", "")
-        data.setdefault("category_name", "")
+        data["category_name_zh"] = data.get("category_name_zh") or data.get("category_name") or ""
+        data["category_name_en"] = data.get("category_name_en") or ENGLISH_LABEL_BY_SLUG.get(data["category_slug"], "")
+        data["category_name"] = data["category_name_zh"]
         data.setdefault("subcategory_slug", "")
-        data.setdefault("subcategory_name", "")
+        data["subcategory_name_zh"] = data.get("subcategory_name_zh") or data.get("subcategory_name") or ""
+        data["subcategory_name_en"] = data.get("subcategory_name_en") or ENGLISH_LABEL_BY_SLUG.get(data["subcategory_slug"], "")
+        data["subcategory_name"] = data["subcategory_name_zh"]
         conn = self._connect()
         try:
             with conn.cursor() as cur:
@@ -520,21 +529,28 @@ class MySQLUserProjectCollectionRepository:
                 cur.execute(
                     """
                     INSERT INTO user_tool_website_overrides (
-                        user_id, website_id, title, description, image_url, description_zh,
-                        category_slug, category_name, subcategory_slug, subcategory_name, tags_json
+                        user_id, website_id, title, description, image_url, description_zh, description_en,
+                        category_slug, category_name, category_name_zh, category_name_en,
+                        subcategory_slug, subcategory_name, subcategory_name_zh, subcategory_name_en, tags_json
                     ) VALUES (
-                        %(user_id)s, %(website_id)s, %(title)s, %(description)s, %(image_url)s, %(description_zh)s,
-                        %(category_slug)s, %(category_name)s, %(subcategory_slug)s, %(subcategory_name)s, %(tags_json)s
+                        %(user_id)s, %(website_id)s, %(title)s, %(description)s, %(image_url)s, %(description_zh)s, %(description_en)s,
+                        %(category_slug)s, %(category_name)s, %(category_name_zh)s, %(category_name_en)s,
+                        %(subcategory_slug)s, %(subcategory_name)s, %(subcategory_name_zh)s, %(subcategory_name_en)s, %(tags_json)s
                     )
                     ON DUPLICATE KEY UPDATE
                         title=VALUES(title),
                         description=VALUES(description),
                         image_url=VALUES(image_url),
                         description_zh=VALUES(description_zh),
+                        description_en=VALUES(description_en),
                         category_slug=VALUES(category_slug),
                         category_name=VALUES(category_name),
+                        category_name_zh=VALUES(category_name_zh),
+                        category_name_en=VALUES(category_name_en),
                         subcategory_slug=VALUES(subcategory_slug),
                         subcategory_name=VALUES(subcategory_name),
+                        subcategory_name_zh=VALUES(subcategory_name_zh),
+                        subcategory_name_en=VALUES(subcategory_name_en),
                         tags_json=VALUES(tags_json),
                         updated_at=CURRENT_TIMESTAMP
                     """,

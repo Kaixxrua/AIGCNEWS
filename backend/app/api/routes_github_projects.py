@@ -36,10 +36,15 @@ class GitHubProjectItem(BaseModel):
     image_url: str | None = None
     description: str | None = None
     description_zh: str | None = None
+    description_en: str | None = None
     category_slug: str | None = None
     category_name: str | None = None
+    category_name_zh: str | None = None
+    category_name_en: str | None = None
     subcategory_slug: str | None = None
     subcategory_name: str | None = None
+    subcategory_name_zh: str | None = None
+    subcategory_name_en: str | None = None
     tags: list[str] = Field(default_factory=list)
     language: str | None = None
     topics: list[str] = Field(default_factory=list)
@@ -97,12 +102,16 @@ class GitHubProjectsResponse(BaseModel):
 class GitHubProjectSubcategory(BaseModel):
     slug: str
     name: str
+    name_zh: str = ""
+    name_en: str = ""
     count: int
 
 
 class GitHubProjectCategory(BaseModel):
     slug: str
     name: str
+    name_zh: str = ""
+    name_en: str = ""
     count: int
     kind: str = "category"
     scope: str | None = None
@@ -126,6 +135,7 @@ class ToolWebsiteManualAddRequest(BaseModel):
     url: str = Field(default="", max_length=1024)
     title: str = Field(default="", max_length=512)
     description_zh: str = Field(default="", max_length=512)
+    description_en: str = Field(default="", max_length=512)
     category_slug: str = Field(default="other", max_length=64)
     subcategory_slug: str = Field(default="", max_length=64)
     tags: list[str] = Field(default_factory=list, max_length=8)
@@ -142,6 +152,7 @@ class ToolWebsiteUpdateRequest(BaseModel):
     title: str = Field(default="", max_length=512)
     description: str = Field(default="", max_length=2000)
     description_zh: str = Field(default="", max_length=512)
+    description_en: str = Field(default="", max_length=512)
     category_slug: str = Field(default="other", max_length=64)
     subcategory_slug: str = Field(default="", max_length=64)
     tags: list[str] = Field(default_factory=list, max_length=8)
@@ -207,6 +218,8 @@ class ProjectFavoriteResponse(BaseModel):
 class ProjectTaxonomyItem(BaseModel):
     slug: str
     name: str
+    name_zh: str
+    name_en: str
     children: list[dict[str, str]] = Field(default_factory=list)
 
 
@@ -232,11 +245,11 @@ def _categories_response(result: dict[str, Any], *, min_stars: int, source: str)
     category_items = result.get("items") or []
     today_label = "今日添加" if source == "website" else "今日暴涨"
     scope_items = [
-        {"slug": "all", "name": "全部", "count": total, "kind": "scope", "scope": "all", "children": []},
+        {"slug": "all", "name": "全部", "name_zh": "全部", "name_en": "All", "count": total, "kind": "scope", "scope": "all", "children": []},
     ]
     if source != "website":
-        scope_items.append({"slug": "recommended", "name": "站长推荐", "count": recommended_count, "kind": "scope", "scope": "recommended", "children": []})
-    scope_items.append({"slug": "today", "name": today_label, "count": today_count, "kind": "scope", "scope": "today", "children": []})
+        scope_items.append({"slug": "recommended", "name": "站长推荐", "name_zh": "站长推荐", "name_en": "Recommended", "count": recommended_count, "kind": "scope", "scope": "recommended", "children": []})
+    scope_items.append({"slug": "today", "name": today_label, "name_zh": today_label, "name_en": "Added Today" if source == "website" else "Trending Today", "count": today_count, "kind": "scope", "scope": "today", "children": []})
     return GitHubProjectCategoriesResponse(
         items=[
             *scope_items,
@@ -283,9 +296,11 @@ def _taxonomy_items() -> list[dict[str, Any]]:
     return [
         {
             "slug": category["slug"],
-            "name": category["name"],
+            "name": category["name_zh"],
+            "name_zh": category["name_zh"],
+            "name_en": category["name_en"],
             "children": [
-                {"slug": child["slug"], "name": child["name"]}
+                {"slug": child["slug"], "name": child["name_zh"], "name_zh": child["name_zh"], "name_en": child["name_en"]}
                 for child in category.get("children", [])
             ],
         }
@@ -567,6 +582,7 @@ async def add_my_tool_website_manual(
             url=request.url,
             title=request.title,
             description_zh=request.description_zh,
+            description_en=request.description_en,
             category_slug=request.category_slug,
             subcategory_slug=request.subcategory_slug,
             tags=request.tags,
@@ -596,6 +612,7 @@ async def update_my_tool_website(
             title=request.title,
             description=request.description,
             description_zh=request.description_zh,
+            description_en=request.description_en,
             category_slug=request.category_slug,
             subcategory_slug=request.subcategory_slug,
             tags=request.tags,

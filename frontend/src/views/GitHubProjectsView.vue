@@ -2,6 +2,7 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import type { AppLocale } from '../i18n'
 import type {
   GitHubProjectItem,
   GitHubProjectSort,
@@ -24,13 +25,15 @@ import {
   canFavoriteProject,
   canRecommendProject,
   isWebsite,
+  localizedCategoryName,
   projectKey,
   projectLogoKey,
   type ProjectChip,
 } from '../features/projects/projectPresentation'
 
 defineOptions({ name: 'GitHubProjectsView' })
-const { t } = useI18n()
+const { locale, t } = useI18n()
+const categoryLabel = (item: Parameters<typeof localizedCategoryName>[0]) => localizedCategoryName(item, locale.value as AppLocale)
 const authStore = useAuthStore()
 const route = useRoute()
 const source = ref<ProjectViewSource>('all')
@@ -100,10 +103,10 @@ const activeFilterLabel = computed(() => {
   if (selectedTag.value) return t('projects.filterTag', { tag: selectedTag.value })
   if (selectedLanguage.value) return t('projects.filterLanguage', { language: selectedLanguage.value })
   if (isPersonalView.value) return t('projects.noTagFilter')
-  if (selectedScope.value === 'recommended') return recommendedScope.value?.name || t('projects.recommended')
-  if (selectedScope.value === 'today') return todayScope.value?.name || t('projects.today')
-  if (activeCategory.value && activeSubcategory.value) return `${activeCategory.value.name} / ${activeSubcategory.value.name}`
-  if (activeCategory.value) return activeCategory.value.name
+  if (selectedScope.value === 'recommended') return categoryLabel(recommendedScope.value) || t('projects.recommended')
+  if (selectedScope.value === 'today') return categoryLabel(todayScope.value) || t('projects.today')
+  if (activeCategory.value && activeSubcategory.value) return `${categoryLabel(activeCategory.value)} / ${categoryLabel(activeSubcategory.value)}`
+  if (activeCategory.value) return categoryLabel(activeCategory.value)
   return t('projects.allCategories')
 })
 const hasActiveFilter = computed(() => selectedScope.value !== 'all' || selectedCategory.value !== 'all' || selectedSubcategory.value !== 'all' || !!selectedLanguage.value || !!selectedTag.value)

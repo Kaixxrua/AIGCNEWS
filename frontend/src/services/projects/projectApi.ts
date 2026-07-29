@@ -10,12 +10,16 @@ export type ProjectScope = 'all' | 'today' | 'recommended'
 export interface GitHubProjectSubcategory {
   slug: string
   name: string
+  name_zh?: string
+  name_en?: string
   count: number
 }
 
 export interface GitHubProjectCategory {
   slug: string
   name: string
+  name_zh?: string
+  name_en?: string
   count: number
   kind?: 'scope' | 'category'
   scope?: ProjectScope
@@ -34,10 +38,15 @@ export interface GitHubProjectItem {
   image_url?: string | null
   description?: string | null
   description_zh?: string | null
+  description_en?: string | null
   category_slug?: string | null
   category_name?: string | null
+  category_name_zh?: string | null
+  category_name_en?: string | null
   subcategory_slug?: string | null
   subcategory_name?: string | null
+  subcategory_name_zh?: string | null
+  subcategory_name_en?: string | null
   tags?: string[]
   language?: string | null
   topics?: string[]
@@ -131,6 +140,7 @@ export interface ToolWebsiteUpdatePayload {
   title: string
   description?: string
   description_zh: string
+  description_en?: string
   category_slug: string
   subcategory_slug?: string
   tags?: string[]
@@ -178,7 +188,9 @@ export interface GitHubProjectRecommendResponse {
 export interface ProjectTaxonomyItem {
   slug: string
   name: string
-  children: Array<{ slug: string; name: string }>
+  name_zh?: string
+  name_en?: string
+  children: Array<{ slug: string; name: string; name_zh: string; name_en: string }>
 }
 
 export interface ProjectTaxonomyResponse {
@@ -189,6 +201,7 @@ export interface ManualToolWebsitePayload {
   url: string
   title: string
   description_zh: string
+  description_en?: string
   category_slug: string
   subcategory_slug?: string
   tags?: string[]

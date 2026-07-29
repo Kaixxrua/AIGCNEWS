@@ -61,7 +61,7 @@ const logoKey = computed(() => projectLogoKey(props.repo))
 const websiteLogoUrl = computed(() => (
   logoKey.value && !props.logoBroken ? (props.repo.image_url || '') : ''
 ))
-const displayTags = computed(() => projectDisplayTags(props.repo, props.isPersonalView))
+const displayTags = computed(() => projectDisplayTags(props.repo, props.isPersonalView, locale.value as AppLocale))
 const description = computed(() => projectDescription(
   props.repo, locale.value as AppLocale,
   t(isWebsite(props.repo) ? 'projects.fallbackWebsite' : 'projects.fallbackProject'),

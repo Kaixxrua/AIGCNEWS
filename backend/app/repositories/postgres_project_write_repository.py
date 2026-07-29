@@ -9,6 +9,7 @@ from backend.app.repositories.postgres_project_catalog import (
     PostgresProjectCatalogRepository,
 )
 from backend.app.repositories.project_catalog_normalization import normalize_project_row
+from backend.app.services.ingestion.project_taxonomy import ENGLISH_LABEL_BY_SLUG
 
 
 def _iso(value: Any) -> str | None:
@@ -321,10 +322,13 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                        regexp_replace(w.canonical_url, '^(([^/]+/){2}[^/]+).*$', '\\1') || '/favicon.ico') AS image_url,
                    COALESCE(NULLIF(uo.description, ''), w.description) AS description,
                    COALESCE(NULLIF(uo.description_zh, ''), e.description_zh) AS description_zh,
+                   COALESCE(NULLIF(uo.description_en, ''), e.description_en) AS description_en,
                    COALESCE(NULLIF(uo.category_slug, ''), e.category_slug) AS category_slug,
-                   COALESCE(NULLIF(uo.category_name, ''), e.category_name) AS category_name,
+                   COALESCE(NULLIF(uo.category_name_zh, ''), e.category_name_zh, NULLIF(uo.category_name, ''), e.category_name) AS category_name_zh,
+                   COALESCE(NULLIF(uo.category_name_en, ''), e.category_name_en) AS category_name_en,
                    COALESCE(NULLIF(uo.subcategory_slug, ''), e.subcategory_slug) AS subcategory_slug,
-                   COALESCE(NULLIF(uo.subcategory_name, ''), e.subcategory_name) AS subcategory_name,
+                   COALESCE(NULLIF(uo.subcategory_name_zh, ''), e.subcategory_name_zh, NULLIF(uo.subcategory_name, ''), e.subcategory_name) AS subcategory_name_zh,
+                   COALESCE(NULLIF(uo.subcategory_name_en, ''), e.subcategory_name_en) AS subcategory_name_en,
                    COALESCE(NULLIF(uo.tags_json::text, ''), e.tags_json::text) AS tags_json,
                    NULL::text AS language, '[]' AS topics_json, 0 AS stars, 0 AS forks,
                    0 AS watchers, 0 AS open_issues, NULL::text AS created_at,
@@ -352,9 +356,16 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
         if user_id <= 0 or website_id <= 0:
             raise ValueError("用户或工具网站无效")
         tags_json = data.get("tags_json") or json.dumps(data.get("tags") or [], ensure_ascii=False)
+        data["category_name_zh"] = data.get("category_name_zh") or data.get("category_name") or ""
+        data["category_name_en"] = data.get("category_name_en") or ENGLISH_LABEL_BY_SLUG.get(str(data.get("category_slug") or ""), "")
+        data["category_name"] = data["category_name_zh"]
+        data["subcategory_name_zh"] = data.get("subcategory_name_zh") or data.get("subcategory_name") or ""
+        data["subcategory_name_en"] = data.get("subcategory_name_en") or ENGLISH_LABEL_BY_SLUG.get(str(data.get("subcategory_slug") or ""), "")
+        data["subcategory_name"] = data["subcategory_name_zh"]
         fields = tuple(str(data.get(name) or "") for name in (
-            "title", "description", "image_url", "description_zh", "category_slug",
-            "category_name", "subcategory_slug", "subcategory_name"
+            "title", "description", "image_url", "description_zh", "description_en",
+            "category_slug", "category_name", "category_name_zh", "category_name_en",
+            "subcategory_slug", "subcategory_name", "subcategory_name_zh", "subcategory_name_en"
         ))
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
@@ -366,15 +377,19 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                     raise LookupError("该工具网站不在你的收藏夹中")
                 cursor.execute(
                     """INSERT INTO user_tool_website_overrides
-                           (user_id, website_id, title, description, image_url, description_zh,
-                            category_slug, category_name, subcategory_slug, subcategory_name, tags_json)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           (user_id, website_id, title, description, image_url, description_zh, description_en,
+                            category_slug, category_name, category_name_zh, category_name_en,
+                            subcategory_slug, subcategory_name, subcategory_name_zh, subcategory_name_en, tags_json)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (user_id, website_id) DO UPDATE SET
                            title=EXCLUDED.title, description=EXCLUDED.description,
                            image_url=EXCLUDED.image_url, description_zh=EXCLUDED.description_zh,
-                           category_slug=EXCLUDED.category_slug, category_name=EXCLUDED.category_name,
-                           subcategory_slug=EXCLUDED.subcategory_slug,
-                           subcategory_name=EXCLUDED.subcategory_name, tags_json=EXCLUDED.tags_json,
+                           description_en=EXCLUDED.description_en, category_slug=EXCLUDED.category_slug,
+                           category_name=EXCLUDED.category_name, category_name_zh=EXCLUDED.category_name_zh,
+                           category_name_en=EXCLUDED.category_name_en, subcategory_slug=EXCLUDED.subcategory_slug,
+                           subcategory_name=EXCLUDED.subcategory_name,
+                           subcategory_name_zh=EXCLUDED.subcategory_name_zh,
+                           subcategory_name_en=EXCLUDED.subcategory_name_en, tags_json=EXCLUDED.tags_json,
                            updated_at=CURRENT_TIMESTAMP""",
                     (user_id, website_id, *fields, tags_json),
                 )

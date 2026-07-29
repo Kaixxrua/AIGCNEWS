@@ -246,6 +246,28 @@ def test_initial_schema_preserves_mysql_text_search_and_sort_fields() -> None:
     assert "readme_text TEXT" in migration.sql
 
 
+def test_bilingual_taxonomy_schema_is_additive_and_backfills_by_slug() -> None:
+    migration = discover_migrations()[6]
+    assert migration.filename == "0007_bilingual_project_taxonomy.sql"
+    for table in (
+        "github_repo_enrichments",
+        "tool_website_enrichments",
+        "user_tool_website_overrides",
+    ):
+        assert f"ALTER TABLE {table}" in migration.sql
+    for column in (
+        "category_name_zh", "category_name_en",
+        "subcategory_name_zh", "subcategory_name_en",
+    ):
+        assert migration.sql.count(f"ADD COLUMN {column}") == 3
+    assert migration.sql.count("ADD COLUMN description_en") == 2
+    assert "project_taxonomy_en_labels" in migration.sql
+    assert "WHERE label.slug = enrichment.category_slug" in migration.sql
+    assert "WHERE label.slug = enrichment.subcategory_slug" in migration.sql
+    assert "description_en = description" not in migration.sql
+    assert "description_en = description_zh" not in migration.sql
+
+
 def test_transfer_control_schema_is_versioned_and_avoids_sensitive_payloads() -> None:
     migration = discover_migrations()[1]
 
