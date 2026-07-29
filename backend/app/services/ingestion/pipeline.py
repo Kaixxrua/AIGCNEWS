@@ -430,6 +430,37 @@ class IngestionOrchestrator:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
+def _compose_ingestion_orchestrator(
+    *,
+    limit: int,
+    top_n: int,
+    target_date: Optional[str],
+    dependencies: IngestionDependencies | None = None,
+) -> IngestionOrchestrator:
+    return IngestionOrchestrator(
+        limit=limit,
+        top_n=top_n,
+        target_date=target_date,
+        dependencies=dependencies or provide_ingestion_dependencies(),
+    )
+
+
+def _run_ingestion_pipeline_with_dependencies(
+    dependencies: IngestionDependencies,
+    *,
+    limit: int,
+    top_n: int = _TOP_N_PER_SOURCE,
+    target_date: Optional[str] = None,
+) -> Dict[str, int]:
+    orchestrator = _compose_ingestion_orchestrator(
+        limit=limit,
+        top_n=top_n,
+        target_date=target_date,
+        dependencies=dependencies,
+    )
+    return asyncio.run(orchestrator.run_all())
+
+
 def run_ingestion_pipeline(
     limit: int = _FETCH_LIMIT,
     top_n: int = _TOP_N_PER_SOURCE,
@@ -447,12 +478,12 @@ def run_ingestion_pipeline(
     Returns:
         各数据源的最终入库数量字典，包含 ingested_total 键。
     """
-    orchestrator = IngestionOrchestrator(
+    return _run_ingestion_pipeline_with_dependencies(
+        provide_ingestion_dependencies(),
         limit=limit,
         top_n=top_n,
         target_date=target_date,
     )
-    return asyncio.run(orchestrator.run_all())
 
 
 def run_single_source_pipeline(
@@ -473,7 +504,7 @@ def run_single_source_pipeline(
     Returns:
         {source_name: count, "ingested_total": count}
     """
-    orchestrator = IngestionOrchestrator(
+    orchestrator = _compose_ingestion_orchestrator(
         limit=limit,
         top_n=top_n,
         target_date=target_date,
@@ -487,7 +518,7 @@ async def run_ingestion_pipeline_async(
     target_date: Optional[str] = None,
 ) -> Dict[str, int]:
     """异步入口。"""
-    orchestrator = IngestionOrchestrator(
+    orchestrator = _compose_ingestion_orchestrator(
         limit=limit,
         top_n=top_n,
         target_date=target_date,
@@ -502,7 +533,7 @@ async def run_single_source_async(
     target_date: Optional[str] = None,
 ) -> Dict[str, int]:
     """单源采集的异步版本。"""
-    orchestrator = IngestionOrchestrator(
+    orchestrator = _compose_ingestion_orchestrator(
         limit=limit,
         top_n=top_n,
         target_date=target_date,
@@ -561,13 +592,32 @@ def run_smart_ingestion(
     runner: Callable[[int], Any] | None = None,
 ) -> None:
     """智能采集：检测今天是否已有成功任务，若无则执行采集。"""
+    dependencies = None
+    if reader is None or runner is None:
+        dependencies = provide_ingestion_dependencies()
+
+    default_runner = None
+    if runner is None:
+        assert dependencies is not None
+
+        def default_runner(requested_limit: int) -> Dict[str, int]:
+            return _run_ingestion_pipeline_with_dependencies(
+                dependencies,
+                limit=requested_limit,
+            )
+
+    default_reader = (
+        dependencies.repositories.ingestion_tasks
+        if dependencies is not None
+        else None
+    )
+    resolved_reader = reader if reader is not None else default_reader
+    resolved_runner = runner if runner is not None else default_runner
+    assert resolved_reader is not None
+    assert resolved_runner is not None
     _run_smart_ingestion_with(
-        (
-            reader
-            if reader is not None
-            else get_configured_application_repositories().ingestion_tasks
-        ),
-        runner if runner is not None else run_ingestion_pipeline,
+        resolved_reader,
+        resolved_runner,
         limit,
         date.today(),
     )

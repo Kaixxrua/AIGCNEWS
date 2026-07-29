@@ -115,24 +115,26 @@ class SmartIngestionInjectionTests(unittest.TestCase):
 
         repository_provider.assert_not_called()
 
-    def test_default_path_uses_repository_and_pipeline_runner(self) -> None:
+    def test_default_path_uses_composed_reader_and_pipeline_runner(self) -> None:
         reader = MagicMock(spec=LatestTaskReader)
         reader.get_latest_task.return_value = None
+        dependencies = MagicMock()
+        dependencies.repositories.ingestion_tasks = reader
 
         with (
             patch(
-                "backend.app.services.ingestion.pipeline.get_configured_application_repositories",
-                return_value=MagicMock(ingestion_tasks=reader),
-            ) as repository_provider,
+                "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies",
+                return_value=dependencies,
+            ) as provider,
             patch(
-                "backend.app.services.ingestion.pipeline.run_ingestion_pipeline"
+                "backend.app.services.ingestion.pipeline._run_ingestion_pipeline_with_dependencies"
             ) as runner,
         ):
             run_smart_ingestion(7)
 
-        repository_provider.assert_called_once_with()
+        provider.assert_called_once_with()
         reader.get_latest_task.assert_called_once_with()
-        runner.assert_called_once_with(7)
+        runner.assert_called_once_with(dependencies, limit=7)
 
     def test_default_path_skips_after_success_today(self) -> None:
         reader = MagicMock(spec=LatestTaskReader)
@@ -142,13 +144,15 @@ class SmartIngestionInjectionTests(unittest.TestCase):
             "started_at": date.today().isoformat(),
         }
 
+        dependencies = MagicMock()
+        dependencies.repositories.ingestion_tasks = reader
         with (
             patch(
-                "backend.app.services.ingestion.pipeline.get_configured_application_repositories",
-                return_value=MagicMock(ingestion_tasks=reader),
+                "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies",
+                return_value=dependencies,
             ),
             patch(
-                "backend.app.services.ingestion.pipeline.run_ingestion_pipeline"
+                "backend.app.services.ingestion.pipeline._run_ingestion_pipeline_with_dependencies"
             ) as runner,
         ):
             run_smart_ingestion()

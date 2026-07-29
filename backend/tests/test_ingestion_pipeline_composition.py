@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.services.ingestion.composition import (
@@ -66,12 +68,17 @@ class IngestionDependencyCompositionTests(unittest.TestCase):
 
 
 class IngestionPublicEntrypointTests(unittest.IsolatedAsyncioTestCase):
-    def test_sync_full_entrypoint_delegates_parameters_and_run_all(self) -> None:
+    def test_sync_full_entrypoint_provides_dependencies_and_delegates_parameters(self) -> None:
+        dependencies = MagicMock()
         orchestrator = MagicMock()
         pending = object()
         orchestrator.run_all.return_value = pending
 
         with (
+            patch(
+                "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies",
+                return_value=dependencies,
+            ) as provider,
             patch(
                 "backend.app.services.ingestion.pipeline.IngestionOrchestrator",
                 return_value=orchestrator,
@@ -83,17 +90,28 @@ class IngestionPublicEntrypointTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = run_ingestion_pipeline(limit=7, top_n=4, target_date="2026-07-25")
 
-        factory.assert_called_once_with(limit=7, top_n=4, target_date="2026-07-25")
+        provider.assert_called_once_with()
+        factory.assert_called_once_with(
+            limit=7,
+            top_n=4,
+            target_date="2026-07-25",
+            dependencies=dependencies,
+        )
         orchestrator.run_all.assert_called_once_with()
         run.assert_called_once_with(pending)
         self.assertEqual(result, {"ingested_total": 3})
 
     def test_sync_single_entrypoint_delegates_periods(self) -> None:
+        dependencies = MagicMock()
         orchestrator = MagicMock()
         pending = object()
         orchestrator.run_single_source.return_value = pending
 
         with (
+            patch(
+                "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies",
+                return_value=dependencies,
+            ) as provider,
             patch(
                 "backend.app.services.ingestion.pipeline.IngestionOrchestrator",
                 return_value=orchestrator,
@@ -111,7 +129,13 @@ class IngestionPublicEntrypointTests(unittest.IsolatedAsyncioTestCase):
                 periods=["weekly", "daily"],
             )
 
-        factory.assert_called_once_with(limit=8, top_n=5, target_date="2026-07-25")
+        provider.assert_called_once_with()
+        factory.assert_called_once_with(
+            limit=8,
+            top_n=5,
+            target_date="2026-07-25",
+            dependencies=dependencies,
+        )
         orchestrator.run_single_source.assert_called_once_with(
             "news", periods=["weekly", "daily"]
         )
@@ -119,38 +143,115 @@ class IngestionPublicEntrypointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"news": 2, "ingested_total": 2})
 
     async def test_async_full_entrypoint_delegates_to_run_all(self) -> None:
+        dependencies = MagicMock()
         orchestrator = MagicMock()
         orchestrator.run_all = AsyncMock(return_value={"ingested_total": 1})
 
-        with patch(
-            "backend.app.services.ingestion.pipeline.IngestionOrchestrator",
-            return_value=orchestrator,
-        ) as factory:
+        with (
+            patch(
+                "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies",
+                return_value=dependencies,
+            ) as provider,
+            patch(
+                "backend.app.services.ingestion.pipeline.IngestionOrchestrator",
+                return_value=orchestrator,
+            ) as factory,
+        ):
             result = await run_ingestion_pipeline_async(
                 limit=9, top_n=6, target_date="2026-07-25"
             )
 
-        factory.assert_called_once_with(limit=9, top_n=6, target_date="2026-07-25")
+        provider.assert_called_once_with()
+        factory.assert_called_once_with(
+            limit=9,
+            top_n=6,
+            target_date="2026-07-25",
+            dependencies=dependencies,
+        )
         orchestrator.run_all.assert_awaited_once_with()
         self.assertEqual(result, {"ingested_total": 1})
 
     async def test_async_single_entrypoint_delegates_to_run_single_source(self) -> None:
+        dependencies = MagicMock()
         orchestrator = MagicMock()
         orchestrator.run_single_source = AsyncMock(
             return_value={"arxiv": 1, "ingested_total": 1}
         )
 
-        with patch(
-            "backend.app.services.ingestion.pipeline.IngestionOrchestrator",
-            return_value=orchestrator,
-        ) as factory:
+        with (
+            patch(
+                "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies",
+                return_value=dependencies,
+            ) as provider,
+            patch(
+                "backend.app.services.ingestion.pipeline.IngestionOrchestrator",
+                return_value=orchestrator,
+            ) as factory,
+        ):
             result = await run_single_source_async(
                 "arxiv", limit=10, top_n=7, target_date="2026-07-25"
             )
 
-        factory.assert_called_once_with(limit=10, top_n=7, target_date="2026-07-25")
+        provider.assert_called_once_with()
+        factory.assert_called_once_with(
+            limit=10,
+            top_n=7,
+            target_date="2026-07-25",
+            dependencies=dependencies,
+        )
         orchestrator.run_single_source.assert_awaited_once_with("arxiv")
         self.assertEqual(result, {"arxiv": 1, "ingested_total": 1})
+
+
+class IngestionCompositionArchitectureTests(unittest.TestCase):
+    def test_public_entrypoints_construct_orchestrators_through_composition_helper(self) -> None:
+        pipeline_path = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "services"
+            / "ingestion"
+            / "pipeline.py"
+        )
+        module = ast.parse(
+            pipeline_path.read_text(encoding="utf-8"),
+            filename=str(pipeline_path),
+        )
+        functions = {
+            node.name: node
+            for node in module.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
+        for name in (
+            "run_ingestion_pipeline",
+            "run_single_source_pipeline",
+            "run_ingestion_pipeline_async",
+            "run_single_source_async",
+        ):
+            with self.subTest(entrypoint=name):
+                called_names = {
+                    node.func.id
+                    for node in ast.walk(functions[name])
+                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                }
+                self.assertNotIn("IngestionOrchestrator", called_names)
+                self.assertTrue(
+                    {"_compose_ingestion_orchestrator", "_run_ingestion_pipeline_with_dependencies"}
+                    & called_names
+                )
+
+        composed_calls = [
+            node
+            for node in ast.walk(functions["_compose_ingestion_orchestrator"])
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "IngestionOrchestrator"
+        ]
+        self.assertEqual(len(composed_calls), 1)
+        self.assertIn(
+            "dependencies",
+            {keyword.arg for keyword in composed_calls[0].keywords},
+        )
 
 
 class ArxivPdfBackgroundTests(unittest.TestCase):
