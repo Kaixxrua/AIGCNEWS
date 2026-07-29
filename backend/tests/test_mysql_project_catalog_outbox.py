@@ -176,3 +176,25 @@ def test_daily_metric_capture_preserves_executemany_rowcount() -> None:
     ]
     connection.commit.assert_called_once_with()
     connection.close.assert_called_once_with()
+
+
+def test_daily_metric_outbox_failure_prevents_transaction_commit() -> None:
+    repository, connection, cursor = _repository_with_connection()
+    cursor.rowcount = 1
+    cursor.execute.side_effect = RuntimeError("outbox unavailable")
+
+    with (
+        patch.object(
+            mysql_repo.settings,
+            "project_catalog_outbox_capture_enabled",
+            True,
+        ),
+        pytest.raises(RuntimeError, match="outbox unavailable"),
+    ):
+        repository.upsert_github_daily_metrics(
+            [{"repo_id": "repo-1", "metric_date": "2026-07-22"}]
+        )
+
+    cursor.executemany.assert_called_once()
+    connection.commit.assert_not_called()
+    connection.close.assert_called_once_with()
