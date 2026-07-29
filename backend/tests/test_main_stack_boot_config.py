@@ -49,11 +49,14 @@ def test_main_stack_orchestrator_has_static_safety_guards() -> None:
     assert "set -Eeuo pipefail" in text
     assert '--project-name "${EXPECTED_PROJECT}"' in text
     assert "compose config --quiet" in text
-    assert "--no-build --pull never --wait --wait-timeout 300" in text
+    assert "--remove-orphans --no-build --pull never --wait --wait-timeout 300" in text
     assert '--env-file "${APP_ENV_FILE}"' in text
     assert '--env-file "${PRICEAI_ENV_FILE}"' in text
     assert "sudo" not in text
     assert "down --volumes" not in text
+    assert "down -v" not in text
+    assert "volume rm" not in text
+    assert "volume prune" not in text
 
 
 def test_main_stack_systemd_unit_is_non_destructive() -> None:

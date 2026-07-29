@@ -58,7 +58,7 @@ main() {
     up)
       validate_inputs
       compose config --quiet
-      compose up --detach --no-build --pull never --wait --wait-timeout 300
+      compose up --detach --remove-orphans --no-build --pull never --wait --wait-timeout 300
       ;;
     status)
       validate_inputs
