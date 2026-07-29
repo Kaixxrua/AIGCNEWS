@@ -29,36 +29,13 @@ def test_legacy_categories_use_catalog_factory() -> None:
     assert result.total == 0
 
 
-def test_shadow_status_route_is_admin_dependency_and_sanitized() -> None:
-    snapshot = {
-        "enabled": True,
-        "active_backend": "mysql",
-        "recent_cases": [{"argument_sha256": "a" * 64, "outcome": "match"}],
-    }
-    with patch(
-        "backend.app.services.project_catalog_shadow.project_catalog_shadow_snapshot",
-        return_value=snapshot,
-    ):
-        result = asyncio.run(routes_ops.project_catalog_shadow_status({"role": "admin"}))
-    assert result == snapshot
-    assert "password" not in str(result)
-
-
-def test_finalize_shadow_route_drains_both_named_epochs() -> None:
-    catalog = {"epoch": "catalog-v2", "lifecycle": "finalized"}
+def test_finalize_shadow_route_drains_search_epoch() -> None:
     search = {"epoch": "search-v2", "lifecycle": "finalized"}
-    with (
-        patch(
-            "backend.app.services.project_catalog_shadow.finalize_project_catalog_shadow",
-            return_value=catalog,
-        ) as finalize_catalog,
-        patch(
-            "backend.app.services.project_search_shadow.finalize_project_search_shadow",
-            return_value=search,
-        ) as finalize_search,
-    ):
+    with patch(
+        "backend.app.services.project_search_shadow.finalize_project_search_shadow",
+        return_value=search,
+    ) as finalize_search:
         result = asyncio.run(routes_ops.finalize_project_shadow({"role": "admin"}))
 
-    assert result == {"catalog": catalog, "search": search}
-    finalize_catalog.assert_called_once()
+    assert result == {"search": search}
     finalize_search.assert_called_once()

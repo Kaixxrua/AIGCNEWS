@@ -18,7 +18,6 @@ def test_search_strategy_defaults_to_legacy_and_rejects_unknown_values() -> None
     config = Settings(_env_file=None)
     assert config.project_ai_search_strategy == "legacy"
     assert config.project_search_shadow_epoch == "default"
-    assert config.project_catalog_shadow_epoch == "default"
     with pytest.raises(ValidationError):
         Settings(_env_file=None, project_ai_search_strategy="unknown")
 

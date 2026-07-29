@@ -35,7 +35,6 @@ from backend.app.repositories.application_repository_context import (
 from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
-from backend.app.core.project_catalog_runtime import validate_project_catalog_runtime
 from backend.app.core.scheduler import start_scheduler, stop_scheduler
 
 
@@ -100,12 +99,6 @@ async def _warmup_project_semantic_search() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """FastAPI lifespan：启动时预热模型、初始化 Redis Cache、开启调度器；关闭时优雅释放资源。"""
-    project_catalog_backend = validate_project_catalog_runtime(
-        backend=settings.project_catalog_backend,
-        outbox_capture_enabled=bool(settings.project_catalog_outbox_capture_enabled),
-        sync_worker_enabled=bool(settings.project_catalog_sync_worker_enabled),
-        shadow_enabled=bool(settings.project_catalog_shadow_enabled),
-    )
     app.state.database = postgres_database
     app.state.postgres_database = postgres_database
     app.state.application_database_backend = "postgres"

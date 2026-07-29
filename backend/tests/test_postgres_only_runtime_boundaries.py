@@ -30,7 +30,6 @@ blocked = sorted(
     or name == "backend.app.core.database"
     or name.startswith("backend.app.repositories.mysql_")
     or name == "backend.app.repositories.mysql_repo"
-    or name == "backend.app.services.project_catalog_shadow"
 )
 print(json.dumps(blocked))
 """

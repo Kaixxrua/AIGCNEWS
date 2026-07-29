@@ -60,25 +60,14 @@ class Settings(BaseSettings):
     mysql_user: str = "root"
     mysql_password: str = ""
     mysql_database: str = "rag_aigc"
-    application_database_backend: str = "postgres"
-    project_catalog_backend: str = "postgres"
     project_catalog_outbox_capture_enabled: bool = False
     project_catalog_sync_worker_enabled: bool = False
     project_catalog_sync_poll_seconds: int = 5
     project_catalog_sync_batch_size: int = 100
     project_catalog_sync_lease_seconds: int = 60
     project_catalog_sync_max_attempts: int = 10
-    project_catalog_shadow_enabled: bool = False
-    project_catalog_shadow_backend: str = "postgres"
-    project_catalog_shadow_sample_rate: float = 0.0
-    project_catalog_shadow_workers: int = 2
-    project_catalog_shadow_capacity: int = 8
-    project_catalog_shadow_timeout_seconds: float = 3.0
-    project_catalog_shadow_recent_case_limit: int = 20
-    project_catalog_shadow_shutdown_timeout_seconds: float = 5.0
-    project_catalog_shadow_epoch: str = "default"
 
-    # PostgreSQL 备选项目目录配置
+    # PostgreSQL 应用数据库配置
     postgres_host: str = ""
     postgres_port: int = 5432
     postgres_user: str = ""

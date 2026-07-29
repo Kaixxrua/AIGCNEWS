@@ -924,16 +924,6 @@ async def project_catalog_readiness(_: dict = Depends(RequireAdmin)):
     return await asyncio.to_thread(project_catalog_runtime_readiness)
 
 
-@router.get("/ops/project-catalog/shadow-status", tags=["Ops"])
-async def project_catalog_shadow_status(_: dict = Depends(RequireAdmin)):
-    """返回有界且脱敏的项目目录 shadow read 运行证据。"""
-    from backend.app.services.project_catalog_shadow import (
-        project_catalog_shadow_snapshot,
-    )
-
-    return project_catalog_shadow_snapshot()
-
-
 @router.get("/ops/project-search/shadow-status", tags=["Ops"])
 async def project_search_shadow_status(_: dict = Depends(RequireAdmin)):
     """返回不含查询文本或候选 ID 的项目搜索 shadow 诊断。"""
@@ -946,22 +936,15 @@ async def project_search_shadow_status(_: dict = Depends(RequireAdmin)):
 
 @router.post("/ops/project-shadow/finalize", tags=["Ops"])
 async def finalize_project_shadow(_: dict = Depends(RequireAdmin)):
-    """停止接收新 shadow 调用，排空并返回两个具名 epoch 的最终证据。"""
+    """停止接收新搜索 shadow 调用，排空并返回具名 epoch 的最终证据。"""
     from backend.app.core.config import settings
-    from backend.app.services.project_catalog_shadow import (
-        finalize_project_catalog_shadow,
-    )
     from backend.app.services.project_search_shadow import (
         finalize_project_search_shadow,
     )
 
-    catalog_timeout = float(settings.project_catalog_shadow_shutdown_timeout_seconds)
     search_timeout = float(settings.project_search_shadow_shutdown_timeout_seconds)
-    catalog, search = await asyncio.gather(
-        asyncio.to_thread(finalize_project_catalog_shadow, catalog_timeout),
-        asyncio.to_thread(finalize_project_search_shadow, search_timeout),
-    )
-    return {"catalog": catalog, "search": search}
+    search = await asyncio.to_thread(finalize_project_search_shadow, search_timeout)
+    return {"search": search}
 
 
 @router.get("/ops/scheduler/status", tags=["Ops"])

@@ -7,7 +7,6 @@ from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.task_repository import RecentTaskReader
-from backend.app.services.project_catalog_shadow import project_catalog_shadow_snapshot
 
 _START_TIME = datetime.now(timezone.utc)
 
@@ -49,7 +48,6 @@ def collect_metrics(
         "briefing_count": briefing_count,
         "tasks": task_summary,
         "rag_evaluation": eval_summary,
-        "project_catalog_shadow": project_catalog_shadow_snapshot(),
     }
 
 

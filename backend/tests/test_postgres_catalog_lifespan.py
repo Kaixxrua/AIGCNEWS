@@ -20,11 +20,6 @@ class _App:
 
 def _settings() -> SimpleNamespace:
     return SimpleNamespace(
-        application_database_backend="postgres",
-        project_catalog_backend="postgres",
-        project_catalog_outbox_capture_enabled=False,
-        project_catalog_sync_worker_enabled=False,
-        project_catalog_shadow_enabled=False,
         project_semantic_search_enabled=False,
         scheduler_enabled=False,
         redis_host="localhost",
