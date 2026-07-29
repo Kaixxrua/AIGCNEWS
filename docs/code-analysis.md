@@ -1,5 +1,9 @@
 # AIGC_NEWS 项目代码深度分析报告
 
+> **历史分析 / 已由当前架构取代（2026-07-29）**
+>
+> 本文是 2026 年 3 月的代码快照，文件行数、MySQL 主路径、安全发现与改造建议可能已失效，不得作为当前数据库或运行时事实。当前架构见 [`architecture.md`](architecture.md)；MySQL 最终退役见 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md)。
+
 > 生成时间: 2026-03-17  
 > 目的: 为架构设计文档收集信息，覆盖前端聊天、PDF阅读器、布局样式、认证、后端认证、聊天多模态、数据库共 7 大模块 20+ 文件
 

@@ -1,6 +1,8 @@
 # AIGC_NEWS 项目功能架构
 
-> 最后更新：2026-07-09（新增 GitHub 项目库每日精确增长快照、热度排序与 MCP/前端展示说明）
+> 最后更新：2026-07-29（数据库退役当前态：PostgreSQL 16 为唯一关系型运行时，MySQL 仅用于迁移与恢复）
+>
+> **数据库当前态**：应用通过 repository Protocol 依赖数据能力，由 FastAPI lifespan 作为 composition root 组装 PostgreSQL repository；主 Compose 仅包含 PostgreSQL 16，不包含 MySQL。最终退役操作见 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md)。
 
 ---
 
@@ -19,7 +21,7 @@
 | **LLM 引擎** | OpenAI / Anthropic / Ollama（通过 LangChain 抽象） |
 | **向量数据库** | Milvus 2.4（HNSW 索引 + COSINE 度量） |
 | **图数据库** | Neo4j 5.18（知识图谱） |
-| **关系数据库** | MySQL 8.0（主存储） + SQLite（遗留备用） |
+| **关系数据库** | PostgreSQL 16（唯一应用运行时）；MySQL 仅限迁移/恢复，SQLite 为非运行时遗留代码 |
 | **缓存** | Redis 7（API 缓存 + Email OTP 验证码 + 防刷） |
 | **对象存储** | MinIO（Milvus 依赖） |
 | **定时调度** | APScheduler（AsyncIOScheduler） |
@@ -47,10 +49,10 @@
                                │
 ┌──────────────────────────────▼────────────────────────────────────┐
 │                        数据存储层                                  │
-│  ┌────────┐  ┌──────────┐  ┌───────┐  ┌───────┐  ┌───────────┐  │
-│  │ MySQL  │  │ Milvus   │  │ Neo4j │  │ Redis │  │ PDF 存储  │  │
-│  │ 8.0    │  │ 2.4      │  │ 5.18  │  │ 7     │  │ (本地)    │  │
-│  └────────┘  └──────────┘  └───────┘  └───────┘  └───────────┘  │
+│  ┌────────────┐ ┌──────────┐  ┌───────┐  ┌───────┐  ┌─────────┐ │
+│  │ PostgreSQL │ │ Milvus   │  │ Neo4j │  │ Redis │  │ PDF存储 │ │
+│  │ 16         │ │ 2.4      │  │ 5.18  │  │ 7     │  │ (本地)  │ │
+│  └────────────┘ └──────────┘  └───────┘  └───────┘  └─────────┘ │
 └──────────────────────────────────────────────────────────────────-┘
                                │
 ┌──────────────────────────────▼────────────────────────────────────┐
@@ -93,7 +95,7 @@ SSE 事件流：`status → sources → thinking → content → conversation �
 
 - **普通用户每日消息限额**：`/chat/stream` 和 `/chat/messages/{id}/regenerate` 在流式开始前检查当日已发送消息数（`count_user_messages_today()`），超过 `USER_DAILY_MESSAGE_LIMIT`（默认 20 条）时返回 HTTP 429，`detail` 包含 `error: "message_limit_exceeded"` + 友好提示。admin 用户不受限。
 
-- **真流式架构**：`_stream_persisted_chat` 直接遍历 `stream_chat()` 的 AsyncGenerator，每收到一个 payload 立即 `yield` 给前端（边收边发），消除原有"先收完再发"的 60s 阻塞。持久化（MySQL 落盘）改为 SSE 流结束后才执行。
+- **真流式架构**：`_stream_persisted_chat` 直接遍历 `stream_chat()` 的 AsyncGenerator，每收到一个 payload 立即 `yield` 给前端（边收边发），消除原有"先收完再发"的 60s 阻塞。持久化（关系数据库落盘）改为 SSE 流结束后才执行。
 - `web_search=true` 时，后端并发执行 RAG 检索 + 联网搜索，搜索结果作为额外上下文注入 Prompt，搜索结果来源以 `source="web"` 包含在 sources 事件中
 
 ### 2.3 视觉问答路由 — `routes_vision.py`
@@ -248,13 +250,13 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 #### `retriever.py`
 - **核心类**: `HybridRetriever`
 - **混合检索策略**:
-  1. **MySQL 文档 ID 精确召回**: 从 query 中提取 32 位 `documents.id`（论文阅读页会通过 `paper_id` 注入当前论文 ID），直接按主键查询 MySQL，命中文档设置 `match_type=mysql_id`、`force_include=true`、`rerank_score=10.0` 并优先注入上下文；ArXiv 且 `local_pdf_path` 存在时补充本地 PDF 前 20000 字符正文，保证“详细讲一下这篇论文”等泛化问题也能读到目标论文内容
-  2. **MySQL 标题召回**: 对用户输入中的英文关键词执行 title 近似匹配，优先召回标题高度命中的已收录论文/项目；当命中 ArXiv 且 `local_pdf_path` 存在时，会从本地 PDF 补充前 6000 字符正文片段，避免只使用 MySQL 中 500 字符元数据摘要导致回答误判“摘要被截断”
+  1. **关系型 repository 文档 ID 精确召回**: 从 query 中提取 32 位 `documents.id`（论文阅读页会通过 `paper_id` 注入当前论文 ID），通过 document repository 按主键查询 PostgreSQL；命中后使用历史兼容元数据值 `match_type=mysql_id`、`force_include=true`、`rerank_score=10.0` 并优先注入上下文。ArXiv 且 `local_pdf_path` 存在时补充本地 PDF 前 20000 字符正文，保证“详细讲一下这篇论文”等泛化问题也能读到目标论文内容
+  2. **关系型 repository 标题召回**: 对用户输入中的英文关键词执行 title 近似匹配，优先召回标题高度命中的已收录论文/项目；当命中 ArXiv 且 `local_pdf_path` 存在时，会从本地 PDF 补充前 6000 字符正文片段，避免只使用关系表中的 500 字符元数据摘要导致回答误判“摘要被截断”
   3. **Milvus 向量检索**: 按 query embedding 相似度搜索，HNSW 索引；若 ID 召回命中，会把目标论文标题拼入向量检索 query，提升同论文 PDF 分块召回概率
   4. **Neo4j 图检索**: 按关键词匹配知识图谱实体和关系
-  5. **MySQL Fallback**: 当 Milvus 不可用时，关键词匹配 MySQL 文档
+  5. **关系型 repository Fallback**: 当 Milvus 不可用时，通过 document repository 在 PostgreSQL 中执行关键词匹配
   6. **Source Fallback**: 每个来源（arxiv/news/github）额外取 3-5 条保证覆盖
-- **去重合并**: MySQL ID 精确命中文档优先，其次标题命中文档，然后 Round-Robin 均衡各来源文档，ID/URL/标题去重
+- **去重合并**: repository ID 精确命中文档优先，其次标题命中文档，然后 Round-Robin 均衡各来源文档，ID/URL/标题去重
 - **关键词提取**: 简单 token 化 + 停用词过滤
 
 #### `reranker.py`
@@ -279,7 +281,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 - **3 种周期**: daily / weekly / monthly
 - **数据来源优先级**: 快照表 → documents 表 + channel 过滤 → 最新文档兜底
 - **截断续写**: 检测 LLM 输出是否被截断，最多自动续写 5 轮
-- **缓存策略**: 按 `{date}_{source}_{period}` 作为 key 持久化到 MySQL briefings 表
+- **缓存策略**: 按 `{date}_{source}_{period}` 作为 key 持久化到 PostgreSQL `briefings` 表
 - **SSE 流式输出**: `start → content(多次) → done`
 - **Tag 标签（Bug3 修复 + 优化）**: 所有 6 个 Prompt 模板均已升级为细粒度领域标签系统——每个一级/二级标题后必须附加 `\`#来源\` \`#领域\``，来源标签（必选1个，如 `#arxiv` `#github`）+ 领域标签（必选1-2个，如 `#LLM` `#Agent` `#RAG` `#推理优化` `#模型压缩` 等），每个源类型有独立的领域标签候选列表，**禁止使用过于宽泛的 #ai #tool #trending**
 
@@ -290,7 +292,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 
 #### `pipeline.py`（核心编排器）
 - **核心类**: `IngestionOrchestrator`
-- **架构**: 5 个独立爬虫 → 内容丰富 → 三库写入（MySQL + Milvus + Neo4j）
+- **架构**: 5 个独立爬虫 → 内容丰富 → 三库写入（PostgreSQL + Milvus + Neo4j）
 - **入口函数**:
   - `run_ingestion_pipeline()`: 全量采集
   - `run_single_source_pipeline()`: 单源采集
@@ -300,7 +302,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
   2. 已有 summary 短路复用（避免重复 LLM 调用）
   3. 内容丰富（enrich_papers）
   4. Top-N 筛选（按 raw_score 排序）
-  5. 三库写入（MySQL upsert + Milvus 向量索引 + Neo4j 图谱抽取）
+  5. 三库写入（repository upsert + Milvus 向量索引 + Neo4j 图谱抽取）
   6. 排行快照写入（document_rank_snapshots 表）
   7. 后台 PDF 补全（ArXiv 论文异步下载 + 解析）
   8. Dashboard 缓存清理
@@ -346,7 +348,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 - 低频慢速 PDF 落盘（每次 sleep 3-5s 防封杀）
 - PyMuPDF (fitz) 解析 PDF 全文
 - RecursiveCharacterTextSplitter 切片写入 Milvus
-- 更新 MySQL `documents.local_pdf_path` 字段
+- 通过 document repository 更新 `documents.local_pdf_path` 字段
 
 #### `graph_extractor.py`（图谱抽取器）
 - 使用 LangChain `LLMGraphTransformer` 从论文中提取实体和关系
@@ -383,7 +385,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 - **recall_score**: 基于 Jaccard 的 token 级别召回率
 - **citation_score**: 答案中引用来源的覆盖率
 - **subjective_score**: 主观评分（占位，默认 0）
-- 评估结果持久化到 MySQL `rag_evaluations` 表
+- 评估结果通过 evaluation repository 持久化到 PostgreSQL `rag_evaluations` 表
 
 ### 3.6 邮件服务 — `email_service.py`
 
@@ -417,9 +419,11 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 
 ## 四、数据存储层
 
-### 4.1 MySQL 8.0 — `mysql_repo.py`
+### 4.1 PostgreSQL 16 — repository Protocol 与 composition root
 
-**核心类**: `MySQLRepository`（连接池：PooledDB，最大 20 连接）
+PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE 调用方依赖 `backend/app/repositories/*_repository.py` 中按能力拆分的 Protocol，不依赖具体数据库类；`backend/app/repositories/application_repository_factory.py` 负责构造 PostgreSQL 实现，`backend/app/main.py` 的 FastAPI lifespan 是 composition root，统一打开/关闭连接并将 repository 集合注入应用。
+
+主 `docker/docker-compose.yml` 只声明 `project-catalog-postgres`，不声明 MySQL。MySQL 相关 Compose、repository 与迁移工具只用于有边界的迁移、核对和恢复，不属于应用启动或请求路径；其最终退役按 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md) 执行。
 
 **数据库表结构**:
 
@@ -441,7 +445,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 | `github_trending_hits` | GitHub Trending 命中记录 | repo_id, period, rank, observed_date, period_star_growth, period_growth_observed_at |
 
 **关键操作**:
-- `upsert_document()`: ON DUPLICATE KEY UPDATE，GREATEST() 语义确保多周期 upsert 不丢失
+- `upsert_document()`: PostgreSQL `ON CONFLICT DO UPDATE`，以 `GREATEST()` 语义确保多周期 upsert 不丢失
 - `upsert_rank_snapshot()`: 排行快照 UPSERT，跨 channel 分数同步
 - `get_snapshot_documents()`: JOIN 快照表查询指定日期的文档排行
 - `get_or_create_conversation()`: 按 `scope/scope_key` 获取或创建会话
@@ -451,7 +455,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 - `cleanup_stale_conversations()`: 删除最近 7 天未访问队列中最旧的 5 条会话
 - `get_user_count()`: 返回 users 表已注册用户总数（Bug2 新增）
 - `get_today_document_count()`: 返回 CST 今日新增文档数（Bug2 新增，按 created_at 前 10 字符过滤）
-- `count_user_messages_today()`: 统计指定用户今日（CST）发送的消息数（JOIN conversations + chat_messages，role='user'，CONVERT_TZ 转 CST），用于每日消息限额检查
+- `count_user_messages_today()`: 统计指定用户今日（CST）发送的消息数（JOIN conversations + chat_messages，`role='user'`，按 PostgreSQL 时区表达式换算 CST），用于每日消息限额检查
 
 ### 4.2 Milvus 2.4 — `milvus_repo.py`
 
@@ -476,10 +480,11 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 | `search()` | 按关键词匹配图谱节点及其邻居，返回 `Entity(name) -[REL]-> Entity(name)` 格式文档 |
 | `add_graph_documents()` | 写入节点（Paper/Author/Concept）和关系（MERGE 幂等） |
 
-### 4.4 SQLite — `sqlite_repo.py`
+### 4.4 遗留关系数据库边界
 
-- 遗留备用存储，表结构与 MySQL 类似
-- 当前项目已全面切换到 MySQL，SQLite 代码保留但不再是主路径
+- MySQL：仅限迁移核对、备份恢复和经授权回滚，不是应用运行时。
+- SQLite：遗留代码，不是备用运行时，也不在主 Compose 中启动。
+- 任何新增业务持久化都应先定义 repository Protocol，再由 composition root 组装 PostgreSQL 实现。
 
 ### 4.5 Redis 7
 
@@ -641,7 +646,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 #### `PaperReadView.vue`
 - **共用全局会话（Bug5 最终方案）**：`currentConversationId` 直接映射为 `chatStore.activeConversationId`，与 ChatView 完全共享同一会话状态
 - 进入论文页时不再创建 `scope=paper` 专属会话；若无活跃会话则调用 `ensureGlobalConversation()`
-- 发送消息透传 `paper_id` 供后端 RAG 检索论文内容；后端会将该 ID 注入 query 并触发 MySQL 文档 ID 精确召回，`scope` 字段由会话自身决定（非 paperId 硬编码）
+- 发送消息透传 `paper_id` 供后端 RAG 检索论文内容；后端会将该 ID 注入 query 并触发关系型 repository 文档 ID 精确召回，`scope` 字段由会话自身决定（非 paperId 硬编码）
 - **历史会话面板**：左上角按钮展开全局会话列表（与 ChatView 一致），显示当前会话标题，支持切换和新建
 - 切换会话调用 `chatStore.openConversation()`，完全同步 `activeConversationId`
 - 页面消息区由 `chatStore.messageMap[currentConversationId]` 驱动，视觉问答消息仍以页面临时态补充展示；标题栏“删除”按钮调用 `chatStore.deleteActiveConversation()` 删除当前全局会话并切换/创建后续会话
@@ -674,7 +679,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 
 1. 每次消息写入后，服务层调用会话级与用户级 LRU 裁剪
 2. [`scheduler.py`](backend/app/core/scheduler.py) 每 7 天执行一次 `conversation_cleanup`
-3. [`mysql_repo.py`](backend/app/repositories/mysql_repo.py) 删除 7 天未访问的最旧 5 条会话及其级联消息
+3. conversation repository 删除 7 天未访问的最旧 5 条会话及其级联消息
 4. 前端按需重新拉取列表，不依赖本地永久缓存
 
 ---
@@ -691,7 +696,9 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 | `backend/app/services/email_service.py` | 邮件OTP服务（aiosmtplib + Redis防刷 + dev模式日志降级） |
 | `backend/app/services/chat/conversation_service.py` | 会话持久化、裁剪、重生成、清理 |
 | `backend/app/services/chat/attachment_service.py` | 聊天附件元数据与 PDF 文本提取 |
-| `backend/app/repositories/mysql_repo.py` | MySQL 表初始化、文档/任务/评估/会话/用户数据读写 |
+| `backend/app/repositories/application_repository_factory.py` | 组装应用 repository Protocol 的 PostgreSQL 实现 |
+| `backend/app/core/postgres_database.py` | PostgreSQL 连接生命周期与事务基础设施 |
+| `backend/app/repositories/mysql_repo.py` | 遗留迁移/恢复适配；不属于应用运行时 |
 | `backend/app/core/config.py` | 应用配置（含 SMTP_HOST/PORT/USERNAME/PASSWORD/FROM_EMAIL 等邮件配置项） |
 | `backend/app/core/scheduler.py` | 定时采集、简报生成、会话清理调度 |
 | `frontend/src/stores/authStore.ts` | 认证状态（AuthUser.email 为主标识）、login/logout/fetchMe |
@@ -712,6 +719,8 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 1. [`routes_vision.py`](backend/app/api/routes_vision.py) 当前仍以临时视觉消息流为主，尚未将视觉问答结果正式持久化进 `conversations/chat_messages`。
 2. 索引服务目录中的 `chunker.py`、`embedder.py`、`vector_store.py` 仍为占位实现。
 
+> **历史事件记录（当时术语按原样保留；其中 MySQL 指当时关系数据库实现）**
+>
 > **已解决（2026-03-17）**：
 > - [`ChatView.vue`](frontend/src/views/ChatView.vue) 已新增历史会话侧边栏（Bug4），并在 `onMounted` 时自动初始化会话，消息被吞问题已修复。
 > - GitHub stars/forks/language 字段现已写入 Milvus 向量内容并在 LLM 上下文中显示（Bug1）。

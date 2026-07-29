@@ -1,6 +1,10 @@
 # Project catalog PostgreSQL public-read cutover
 
-This runbook switches only the frozen public project-catalog read protocol. MySQL remains authoritative for every catalog write, personal/private reads, legacy `GET /github/projects`, authentication, and other application data. PostgreSQL remains an asynchronous public-read replica. Milvus is not part of this procedure.
+> **历史运行手册 / 已由当前架构取代（2026-07-29）**
+>
+> 本文仅保留项目目录公开读切换阶段的审计上下文，文中的 MySQL 权威、outbox 同步和旧切换开关不再代表当前运行态，也不得用于现网操作。当前架构见 [`architecture.md`](architecture.md)；最终 MySQL 退役与回滚见 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md)。
+
+This historical runbook switched only the frozen public project-catalog read protocol. MySQL remains authoritative for every catalog write, personal/private reads, legacy `GET /github/projects`, authentication, and other application data. PostgreSQL remains an asynchronous public-read replica. Milvus is not part of this procedure.
 
 Implementing or merging Phase 5 does not authorize a production database operation, environment edit, restart, cutover, rollback, commit, or push.
 

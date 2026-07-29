@@ -1,6 +1,10 @@
 # 架构重构计划书：元数据与排行快照分离 + 多源爬虫任务解耦
 
-> 版本: v1.0 | 日期: 2026-03-11 | 状态: 待确认
+> **历史计划 / 已由当前架构取代（2026-07-29）**
+>
+> 本文是 2026 年 3 月的阶段性重构计划，其中 SQLite、三库写入和待办状态均不代表当前实现，不得据此实施数据库变更。当前架构见 [`../docs/architecture.md`](../docs/architecture.md)；MySQL 最终退役见 [`../docs/mysql-retirement-runbook.md`](../docs/mysql-retirement-runbook.md)。
+
+> 版本: v1.0 | 日期: 2026-03-11 | 状态: 历史归档
 
 ---
 
