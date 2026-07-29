@@ -166,6 +166,25 @@ _PERIOD_LABEL: dict[str, str] = {
     "monthly": "本月",
 }
 
+_BRIEFING_LANGUAGES = ("zh-CN", "en")
+_LANGUAGE_INSTRUCTIONS = {
+    "zh-CN": "\n\n请只使用简体中文撰写完整简报。标题、分析、日期与说明均使用中文；URL、产品名和代码标识保留原文。",
+    "en": "\n\nWrite the complete briefing in natural English only. Use English for headings, analysis, dates, and explanations; preserve URLs, product names, and code identifiers verbatim.",
+}
+
+
+def normalize_briefing_locale(locale: str | None) -> str:
+    return "en" if str(locale or "").lower().startswith("en") else "zh-CN"
+
+
+def select_briefing_content(item: Dict[str, Any], locale: str | None) -> str:
+    selected = normalize_briefing_locale(locale)
+    if selected == "en":
+        candidates = (item.get("content_en"), item.get("content"), item.get("content_zh"))
+    else:
+        candidates = (item.get("content_zh"), item.get("content"), item.get("content_en"))
+    return next((str(value) for value in candidates if str(value or "").strip()), "")
+
 # source → (prompt_template, cache_key_suffix)
 _SOURCE_CONFIG: Dict[str, tuple[str, str]] = {
     "all": (_PROMPT_ALL, ""),
@@ -434,6 +453,8 @@ class DailyBriefingService:
         source: str = "all",
         period: str = "daily",
         force_regenerate: bool = True,
+        locale: str = "zh-CN",
+        generate_bilingual: bool = False,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream the briefing generation process as SSE payloads.
@@ -451,6 +472,7 @@ class DailyBriefingService:
           - {"type": "error",    "data": str}
         """
         today = target_date or today_cst()
+        requested_locale = normalize_briefing_locale(locale)
         context = normalize_briefing_context(
             target_date=today,
             source=source,
@@ -479,7 +501,7 @@ class DailyBriefingService:
                             "period": period,
                         },
                     }
-                    yield {"type": "content", "data": existing["content"]}
+                    yield {"type": "content", "data": select_briefing_content(existing, requested_locale)}
                     yield {"type": "done", "data": {"briefing_id": existing["id"]}}
                     return
 
@@ -520,8 +542,10 @@ class DailyBriefingService:
                 "找到 %d 条文档，source=%s，开始构建 Prompt...", len(docs), source
             )
             prompt = prepared.prompt or ""
+            if generate_bilingual:
+                prompt += _LANGUAGE_INSTRUCTIONS[requested_locale]
 
-            # 4. Stream LLM generation（支持截断续写）
+            # 4. Stream the requested language first（支持截断续写）
             full_content: List[str] = []
 
             # 首次生成：边接收 LLM token 边转发给前端，避免 SSE 长时间空闲断流
@@ -580,8 +604,24 @@ class DailyBriefingService:
                 return
 
             if complete_text.strip():
-                briefing_id = self._briefings.save_briefing(cache_date, complete_text)
-                logger.info("日报已持久化，id=%d, source=%s", briefing_id, source)
+                if generate_bilingual:
+                    alternate_locale = next(item for item in _BRIEFING_LANGUAGES if item != requested_locale)
+                    alternate_prompt = (prepared.prompt or "") + _LANGUAGE_INSTRUCTIONS[alternate_locale]
+                    alternate_parts = [token async for token in self._stream_llm_round(alternate_prompt)]
+                    alternate_text = "".join(alternate_parts)
+                    if not alternate_text.strip() or _looks_like_block_response(alternate_text):
+                        yield {"type": "error", "data": "双语简报的另一语言生成失败，未保存不完整缓存。"}
+                        return
+                    contents = {requested_locale: complete_text, alternate_locale: alternate_text}
+                    briefing_id = self._briefings.save_briefing(
+                        cache_date,
+                        contents["zh-CN"],
+                        content_zh=contents["zh-CN"],
+                        content_en=contents["en"],
+                    )
+                    logger.info("双语简报已持久化，id=%d, source=%s", briefing_id, source)
+                else:
+                    briefing_id = self._briefings.save_briefing(cache_date, complete_text)
             else:
                 briefing_id = -1
                 logger.warning("LLM 未输出任何内容，跳过持久化")

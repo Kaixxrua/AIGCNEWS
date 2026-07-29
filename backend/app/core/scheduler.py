@@ -347,6 +347,7 @@ async def _run_daily_briefing_job() -> None:
                 source=source,
                 period=period,
                 force_regenerate=False,
+                generate_bilingual=True,
             ):
                 payload_type = payload.get("type")
                 if payload_type == "start":

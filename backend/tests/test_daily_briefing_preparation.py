@@ -402,6 +402,38 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
         )
         self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
 
+    def test_bilingual_generation_streams_requested_locale_and_persists_both(self) -> None:
+        service = DailyBriefingPreparationContractTests._service()
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            DailyBriefingPreparationContractTests._github_doc("project")
+        ]
+        chinese = "中" * 201 + "。"
+        english = "English briefing " * 20 + "."
+        service._llm.astream.side_effect = (
+            DailyBriefingPreparationContractTests._astream_side_effect([english, chinese])
+        )
+
+        events = DailyBriefingPreparationContractTests._collect(
+            service.stream_generate(
+                "2026-07-22",
+                source="github",
+                locale="en-US",
+                generate_bilingual=True,
+            )
+        )
+
+        self.assertEqual(
+            [event["data"] for event in events if event["type"] == "content"],
+            [english],
+        )
+        service._briefings.save_briefing.assert_called_once_with(
+            "2026-07-22_github_daily",
+            chinese,
+            content_zh=chinese,
+            content_en=english,
+        )
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
+
     def test_blocked_llm_response_emits_error_and_is_never_persisted(self) -> None:
         service = DailyBriefingPreparationContractTests._service()
         service._rank_snapshots.get_snapshot_documents.return_value = [

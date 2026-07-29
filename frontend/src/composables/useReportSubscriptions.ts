@@ -14,7 +14,7 @@ interface ReportSubscriptionOperations {
   loadSubscriptions: () => Promise<SubscriptionListResponse | undefined>
   subscribeSources: (payload: { sources: ReportKey[]; period: 'daily' }) => Promise<BatchSubscriptionResponse | undefined>
   unsubscribe: (payload: { source: ReportKey; period: 'daily' }) => Promise<void>
-  sendToEmail: (payload: { source: ReportKey; period: PeriodKey; date: string }) => Promise<ReportMessageResponse | undefined>
+  sendToEmail: (payload: { source: ReportKey; period: PeriodKey; date: string; locale: string }) => Promise<ReportMessageResponse | undefined>
 }
 
 interface UseReportSubscriptionsOptions {
@@ -22,6 +22,7 @@ interface UseReportSubscriptionsOptions {
   selectedSource: Ref<ReportKey>
   selectedPeriod: Ref<PeriodKey>
   selectedDate: Ref<string>
+  locale: Ref<string>
   operations: ReportSubscriptionOperations
   redirectToLogin: () => void
   setError: (message: string) => void
@@ -35,6 +36,7 @@ export const useReportSubscriptions = ({
   selectedSource,
   selectedPeriod,
   selectedDate,
+  locale,
   operations,
   redirectToLogin,
   setError,
@@ -171,6 +173,7 @@ export const useReportSubscriptions = ({
         source: selectedSource.value,
         period: selectedPeriod.value,
         date: selectedDate.value,
+        locale: locale.value,
       })
       emailSentMsg.value = data?.message || '已发送'
       setTimeout(() => { emailSentMsg.value = '' }, 4000)

@@ -22,7 +22,11 @@ from backend.app.repositories.briefing_repository import (
     BriefingSubscriptionRepository,
 )
 from backend.app.repositories.evaluation_repository import EvaluationRepository
-from backend.app.services.briefing.daily_briefing import DailyBriefingService
+from backend.app.services.briefing.daily_briefing import (
+    DailyBriefingService,
+    normalize_briefing_locale,
+    select_briefing_content,
+)
 from backend.app.services.email_service import EmailService, build_email_service
 
 logger = logging.getLogger(__name__)
@@ -43,6 +47,7 @@ class GenerateReportRequest(BaseModel):
     )
     period: str = "daily"  # "daily" | "weekly" | "monthly"
     force_regenerate: bool = True  # 始终重新生成（不走缓存）
+    locale: str = "zh-CN"
 
 
 # -----------------------------------------------------------------------
@@ -55,6 +60,7 @@ async def _briefing_stream(
     source: str = "all",
     period: str = "daily",
     force_regenerate: bool = True,
+    locale: str = "zh-CN",
 ) -> AsyncGenerator[str, None]:
     stream: AsyncGenerator[dict, None] | None = None
     next_payload: asyncio.Task | None = None
@@ -65,6 +71,8 @@ async def _briefing_stream(
             source=source,
             period=period,
             force_regenerate=force_regenerate,
+            locale=locale,
+            generate_bilingual=True,
         )
 
         while True:
@@ -128,6 +136,7 @@ async def stream_daily_report(
             source=source,
             period=period,
             force_regenerate=request.force_regenerate,
+            locale=normalize_briefing_locale(request.locale),
         ),
         media_type="text/event-stream",
         headers={
@@ -169,6 +178,7 @@ async def get_latest_briefing(
     ),
     period: str = Query(default="daily", description="daily/weekly/monthly"),
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD，可选"),
+    locale: str = Query(default="zh-CN", description="zh-CN/en"),
     repository: BriefingReader = Depends(get_briefing_repository),
 ):
     """返回指定类型与周期的简报缓存。
@@ -194,7 +204,7 @@ async def get_latest_briefing(
     return {
         "id": item.get("id"),
         "date": item.get("date"),
-        "content": item.get("content", ""),
+        "content": select_briefing_content(item, locale),
         "source": source,
         "period": period,
         "cache_key": cache_key,
@@ -273,6 +283,7 @@ class SubscribeRequest(BaseModel):
     source: str = "all"
     period: str = "daily"
     date: Optional[str] = None
+    locale: str = "zh-CN"
 
 
 class BatchSubscribeRequest(BaseModel):
@@ -289,6 +300,7 @@ async def _send_cached_briefing_to_email(
     source: str,
     period: str,
     date_str: Optional[str],
+    locale: str = "zh-CN",
 ) -> str:
     """发送已生成的简报缓存到指定邮箱，返回实际使用的报告日期。"""
     target = _resolve_report_date(period, date_str)
@@ -305,7 +317,7 @@ async def _send_cached_briefing_to_email(
     email_svc = _get_email_service(request)
     await email_svc.send_briefing(
         to_email=email,
-        briefing_content=item.get("content", ""),
+        briefing_content=select_briefing_content(item, locale),
         source=source,
         period=period,
         date_str=target,
@@ -450,5 +462,6 @@ async def send_briefing_to_email(
         source=source,
         period=period,
         date_str=body.date,
+        locale=body.locale,
     )
     return {"message": f"简报已发送至 {email}", "sent_date": sent_date}

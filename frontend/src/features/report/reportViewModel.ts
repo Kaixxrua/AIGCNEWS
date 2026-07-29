@@ -41,6 +41,8 @@ export interface ReportMessageResponse {
 
 export interface ReportResponse {
   content: string
+  content_zh?: string
+  content_en?: string
   date: string
   id: number
 }

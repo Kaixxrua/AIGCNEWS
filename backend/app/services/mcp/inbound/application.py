@@ -327,7 +327,10 @@ async def _resource_report_latest(
     item = await asyncio.to_thread(repository.get_briefing_by_date, cache_key)
     if item is None:
         raise McpResourceInputError(f"Briefing {cache_key!r} not found.")
-    return _resource_content(uri, item.get("content", ""), mime_type="text/markdown")
+    locale = _clean_string(query, "locale", max_len=16, default="zh-CN")
+    from backend.app.services.briefing.daily_briefing import select_briefing_content
+
+    return _resource_content(uri, select_briefing_content(item, locale), mime_type="text/markdown")
 
 
 def _resource_tool_args(

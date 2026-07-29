@@ -16,14 +16,22 @@ class MySQLBriefingRepository:
     def __init__(self, database: DatabaseLifecycle) -> None:
         self._database = database
 
-    def save_briefing(self, date_str: str, content: str) -> int:
+    def save_briefing(
+        self,
+        date_str: str,
+        content: str,
+        *,
+        content_zh: str = "",
+        content_en: str = "",
+    ) -> int:
+        content_zh = content_zh or content
         sql = """
-            INSERT INTO briefings (date, content, created_at)
-            VALUES (%s, %s, %s)
+            INSERT INTO briefings (date, content, content_zh, content_en, created_at)
+            VALUES (%s, %s, %s, %s, %s)
         """
         with self._database.transaction() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (date_str, content, _utcnow()))
+                cur.execute(sql, (date_str, content_zh, content_zh, content_en, _utcnow()))
                 briefing_id = cur.lastrowid
             return briefing_id  # type: ignore[return-value]
 

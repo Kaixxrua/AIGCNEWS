@@ -636,6 +636,8 @@ class MySQLRepository:
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 date VARCHAR(64) NOT NULL,
                 content MEDIUMTEXT NOT NULL,
+                content_zh MEDIUMTEXT,
+                content_en MEDIUMTEXT,
                 created_at VARCHAR(64)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
@@ -1226,6 +1228,8 @@ class MySQLRepository:
                     "ALTER TABLE github_repo_daily_metrics ADD INDEX idx_gh_daily_metrics_date_hot (metric_date, hot_score)",
                     "ALTER TABLE github_repo_daily_metrics ADD INDEX idx_gh_daily_metrics_date_growth (metric_date, daily_star_growth)",
                     "ALTER TABLE github_repo_enrichments ADD INDEX idx_gh_enrich_repo_status_category (repo_id, status, category_slug)",
+                    "ALTER TABLE briefings ADD COLUMN content_zh MEDIUMTEXT AFTER content",
+                    "ALTER TABLE briefings ADD COLUMN content_en MEDIUMTEXT AFTER content_zh",
                     "ALTER TABLE github_repo_enrichments ADD COLUMN category_name_zh VARCHAR(128) NOT NULL DEFAULT '' AFTER category_name",
                     "ALTER TABLE github_repo_enrichments ADD COLUMN category_name_en VARCHAR(128) NOT NULL DEFAULT '' AFTER category_name_zh",
                     "ALTER TABLE github_repo_enrichments ADD COLUMN subcategory_slug VARCHAR(64) NOT NULL DEFAULT '' AFTER category_name_en",
@@ -3146,8 +3150,12 @@ class MySQLRepository:
     # Briefings
     # ------------------------------------------------------------------
 
-    def save_briefing(self, date_str: str, content: str) -> int:
-        return self.briefings.save_briefing(date_str, content)
+    def save_briefing(
+        self, date_str: str, content: str, *, content_zh: str = "", content_en: str = ""
+    ) -> int:
+        return self.briefings.save_briefing(
+            date_str, content, content_zh=content_zh, content_en=content_en
+        )
 
     def get_latest_briefing(self) -> Optional[Dict[str, Any]]:
         return self.briefings.get_latest_briefing()

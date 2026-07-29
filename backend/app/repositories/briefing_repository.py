@@ -6,7 +6,14 @@ from typing import Any, Protocol
 class BriefingWriter(Protocol):
     """Write boundary for generated briefing content."""
 
-    def save_briefing(self, date_str: str, content: str) -> int: ...
+    def save_briefing(
+        self,
+        date_str: str,
+        content: str,
+        *,
+        content_zh: str = "",
+        content_en: str = "",
+    ) -> int: ...
 
 
 class BriefingReader(Protocol):

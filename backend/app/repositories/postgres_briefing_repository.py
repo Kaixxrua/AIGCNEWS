@@ -16,16 +16,24 @@ class PostgresBriefingRepository:
     def __init__(self, database: PostgresDatabaseLifecycle) -> None:
         self._database = database
 
-    def save_briefing(self, date_str: str, content: str) -> int:
+    def save_briefing(
+        self,
+        date_str: str,
+        content: str,
+        *,
+        content_zh: str = "",
+        content_en: str = "",
+    ) -> int:
+        content_zh = content_zh or content
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO briefings (date, content, created_at)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO briefings (date, content, created_at, content_zh, content_en)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (date_str, content, _utcnow()),
+                    (date_str, content_zh, _utcnow(), content_zh, content_en),
                 )
                 row = cursor.fetchone()
                 if row is None:

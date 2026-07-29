@@ -268,6 +268,15 @@ def test_bilingual_taxonomy_schema_is_additive_and_backfills_by_slug() -> None:
     assert "description_en = description_zh" not in migration.sql
 
 
+def test_bilingual_briefing_schema_preserves_legacy_content() -> None:
+    migration = discover_migrations()[7]
+    assert migration.filename == "0008_bilingual_briefings.sql"
+    assert "ALTER TABLE briefings" in migration.sql
+    assert "ADD COLUMN content_zh" in migration.sql
+    assert "ADD COLUMN content_en" in migration.sql
+    assert "UPDATE briefings SET content_zh = content" in migration.sql
+
+
 def test_transfer_control_schema_is_versioned_and_avoids_sensitive_payloads() -> None:
     migration = discover_migrations()[1]
 

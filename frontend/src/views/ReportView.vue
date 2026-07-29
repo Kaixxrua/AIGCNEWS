@@ -23,7 +23,7 @@ import {
   type SubscriptionListResponse,
 } from '../features/report/reportViewModel'
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
@@ -48,11 +48,11 @@ const {
       const res = await api.get<ReportResponse>('/report/latest', { params })
       return res.data
     },
-    connectReportStream: ({ source, date, period, onMessage, onDone, onError }) => {
+    connectReportStream: ({ source, date, period, locale: reportLocale, onMessage, onDone, onError }) => {
       const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
       return connect({
         url: `${baseURL}/report/daily/stream`,
-        body: { source, date, period, force_regenerate: true },
+        body: { source, date, period, locale: reportLocale, force_regenerate: true },
         onMessage,
         onDone,
         onError,
@@ -61,6 +61,7 @@ const {
   },
   resetAutoScroll,
   scrollToBottom,
+  locale,
 })
 
 const isPeriodDisabled = (periodKey: PeriodKey): boolean =>
@@ -94,6 +95,7 @@ const {
   selectedSource: selectedType,
   selectedPeriod,
   selectedDate,
+  locale,
   operations: {
     loadSubscriptions: async () => {
       const res = await api.get<SubscriptionListResponse>('/report/subscriptions')

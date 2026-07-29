@@ -1,4 +1,4 @@
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, type Ref } from 'vue'
 import {
   coercePeriodForReport,
   coerceReportStreamText,
@@ -13,11 +13,13 @@ interface ReportControllerOperations {
     source: ReportKey
     period: PeriodKey
     date: string
+    locale: string
   }) => Promise<ReportResponse | undefined>
   connectReportStream: (options: {
     source: ReportKey
     period: PeriodKey
     date: string
+    locale: string
     onMessage: (payload: unknown) => void | Promise<void>
     onDone: () => void
     onError: (error: unknown) => void
@@ -28,12 +30,14 @@ interface UseReportControllerOptions {
   operations: ReportControllerOperations
   resetAutoScroll: () => void
   scrollToBottom: () => Promise<void>
+  locale: Ref<string>
 }
 
 export const useReportController = ({
   operations,
   resetAutoScroll,
   scrollToBottom,
+  locale,
 }: UseReportControllerOptions) => {
   const reportContent = ref('')
   const isGenerating = ref(false)
@@ -49,6 +53,7 @@ export const useReportController = ({
         source: selectedSource.value,
         period: selectedPeriod.value,
         date: selectedDate.value,
+        locale: locale.value,
       })
       if (data?.content) {
         reportContent.value = data.content
@@ -75,6 +80,7 @@ export const useReportController = ({
       source: selectedSource.value,
       date: selectedDate.value,
       period: selectedPeriod.value,
+      locale: locale.value,
       onMessage: async (payload: unknown) => {
         const event = payload as ReportStreamEvent
         if (event.type === 'content' || event.type === 'chunk') {
@@ -100,7 +106,7 @@ export const useReportController = ({
     selectedPeriod.value = coercePeriodForReport(source, selectedPeriod.value)
   })
 
-  watch([selectedSource, selectedPeriod, selectedDate], () => {
+  watch([selectedSource, selectedPeriod, selectedDate, locale], () => {
     if (isGenerating.value) return
     void loadCachedReport()
   })
