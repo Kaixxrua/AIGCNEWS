@@ -26,17 +26,18 @@ describe('LocaleToggle', () => {
     app.mount(host)
     unmount = () => { app.unmount(); host.remove() }
 
-    const select = host.querySelector('select') as HTMLSelectElement
-    expect(select.getAttribute('aria-label')).toBe('语言')
+    const button = host.querySelector('button') as HTMLButtonElement
+    expect(button.getAttribute('aria-label')).toBe('语言：English')
+    expect(button.querySelector('svg')).not.toBeNull()
+    expect(host.querySelector('select')).toBeNull()
 
-    select.value = 'en-US'
-    select.dispatchEvent(new Event('change', { bubbles: true }))
+    button.click()
     await nextTick()
 
     expect(i18n.global.locale.value).toBe('en-US')
     expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en-US')
     expect(document.documentElement.lang).toBe('en-US')
-    expect(select.getAttribute('aria-label')).toBe('Language')
+    expect(button.getAttribute('aria-label')).toBe('Language：中文')
   })
 
   it('resolves navigation label keys reactively from the active catalog', () => {
