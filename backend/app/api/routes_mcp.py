@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import uuid
 from datetime import date as _date, datetime as _dt, timedelta as _td
-from json import JSONDecodeError
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -54,6 +51,12 @@ from backend.app.services.mcp.inbound.catalog import (
     _PROJECT_FALLBACK_POLICY,
     _SOURCE_CHOICES,
 )
+from backend.app.services.mcp.inbound.context import (
+    McpAuthorizationContext,
+    McpRequestError,
+    McpSessionTransport,
+    parse_mcp_request,
+)
 from backend.app.services.mcp.inbound.responses import (
     _json_safe,
     _resource_content,
@@ -86,6 +89,8 @@ from backend.app.services.mcp.inbound.tools import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_MCP_SESSION_TRANSPORT = McpSessionTransport()
+
 
 class McpResourceInputError(ValueError):
     """Raised when MCP resource parameters are invalid."""
@@ -97,10 +102,9 @@ class McpPromptInputError(ValueError):
 
 
 def _mcp_headers(session_id: str | None = None) -> dict[str, str]:
-    headers = {"MCP-Protocol-Version": MCP_PROTOCOL_VERSION}
-    if session_id:
-        headers["Mcp-Session-Id"] = session_id
-    return headers
+    """Compatibility seam for the existing route response helpers."""
+
+    return _MCP_SESSION_TRANSPORT.headers(session_id)
 
 
 def _jsonrpc_result(request_id: Any, result: dict[str, Any], *, session_id: str | None = None) -> JSONResponse:
@@ -410,67 +414,34 @@ async def mcp_endpoint(
     briefing_repository: BriefingReader = Depends(get_briefing_repository),
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> Response:
-    request.state.mcp_user = mcp_user
+    authorization = McpAuthorizationContext(mcp_user)
+    request.state.mcp_user = authorization.user
     request.state.papers_repository = repositories.documents
     request.state.document_repository = repositories.documents
     request.state.rank_snapshot_repository = repositories.rank_snapshots
     request.state.project_collection_repository = repositories.project_collections
     tool_context = McpToolContext(
-        user=mcp_user,
+        user=authorization.user,
         documents=repositories.documents,
         papers=repositories.documents,
         rank_snapshots=repositories.rank_snapshots,
         project_collection=repositories.project_collections,
         request=request,
     )
-    content_length = request.headers.get("content-length")
-    if content_length:
-        try:
-            if int(content_length) > MAX_REQUEST_BYTES:
-                return _jsonrpc_error(None, _JSONRPC_INVALID_REQUEST, "Request body too large")
-        except ValueError:
-            return _jsonrpc_error(None, _JSONRPC_INVALID_REQUEST, "Invalid Content-Length")
-
-    raw = await request.body()
-    if len(raw) > MAX_REQUEST_BYTES:
-        return _jsonrpc_error(None, _JSONRPC_INVALID_REQUEST, "Request body too large")
-
     try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, JSONDecodeError):
-        return _jsonrpc_error(None, _JSONRPC_PARSE_ERROR, "Parse error")
+        inbound = await parse_mcp_request(request)
+    except McpRequestError as exc:
+        return _jsonrpc_error(exc.request_id, exc.code, exc.message)
 
-    if isinstance(payload, list):
-        return _jsonrpc_error(None, _JSONRPC_INVALID_REQUEST, "Batch JSON-RPC requests are not supported")
-    if not isinstance(payload, dict):
-        return _jsonrpc_error(None, _JSONRPC_INVALID_REQUEST, "Invalid Request")
+    request_id = inbound.request_id
+    method = inbound.method
+    params = inbound.params
 
-    request_id = payload.get("id")
-    if request_id is not None and not isinstance(request_id, (str, int, float)):
-        return _jsonrpc_error(None, _JSONRPC_INVALID_REQUEST, "Invalid request id")
-    if payload.get("jsonrpc") != "2.0":
-        return _jsonrpc_error(request_id, _JSONRPC_INVALID_REQUEST, "Invalid JSON-RPC version")
-
-    method = payload.get("method")
-    if not isinstance(method, str) or not method:
-        return _jsonrpc_error(request_id, _JSONRPC_INVALID_REQUEST, "Missing method")
-
-    if "params" not in payload:
-        params: dict[str, Any] = {}
-    else:
-        raw_params = payload["params"]
-        if not isinstance(raw_params, dict):
-            return _jsonrpc_error(request_id, _JSONRPC_INVALID_PARAMS, "params must be an object")
-        params = raw_params
-
-    if method == "notifications/initialized" and "id" not in payload:
+    if inbound.is_initialized_notification:
         return Response(status_code=204, headers=_mcp_headers())
 
-    if "id" not in payload:
-        return _jsonrpc_error(None, _JSONRPC_INVALID_REQUEST, "Request id is required")
-
     if method == "initialize":
-        session_id = f"aigc-news-{uuid.uuid4().hex}"
+        session_id = _MCP_SESSION_TRANSPORT.new_session_id()
         return _jsonrpc_result(
             request_id,
             {
@@ -487,7 +458,9 @@ async def mcp_endpoint(
         )
 
     if method == "tools/list":
-        tools = MCP_TOOLS + (_PRIVATE_MCP_TOOLS if mcp_user else [])
+        tools = MCP_TOOLS + (
+            _PRIVATE_MCP_TOOLS if authorization.is_authenticated else []
+        )
         return _jsonrpc_result(request_id, {"tools": tools})
 
     if method == "tools/call":
@@ -495,7 +468,7 @@ async def mcp_endpoint(
         if not isinstance(name, str) or not name:
             return _jsonrpc_error(request_id, _JSONRPC_INVALID_PARAMS, "tools/call params.name is required")
         arguments = params.get("arguments", {}) if isinstance(params, dict) else {}
-        if name == "search_my_project_favorites" and not mcp_user:
+        if name == "search_my_project_favorites" and not authorization.is_authenticated:
             result = _tool_error("Authentication is required for this tool.")
         else:
             result = await _call_tool(tool_context, name, arguments)

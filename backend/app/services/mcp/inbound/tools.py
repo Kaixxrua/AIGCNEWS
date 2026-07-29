@@ -28,6 +28,7 @@ from backend.app.services.mcp.inbound.catalog import (
     MCP_TOOL_INPUT_MODELS,
     _PROJECT_SORT_CHOICES,
 )
+from backend.app.services.mcp.inbound.context import McpAuthorizationContext
 from backend.app.services.mcp.inbound.responses import _tool_error, _tool_response
 from backend.app.services.papers.presentation import project_pdf_media_url, safe_document
 from backend.app.services.project_discovery import public_project_item, search_projects
@@ -49,6 +50,10 @@ class McpToolContext:
     rank_snapshots: RankSnapshotReader
     project_collection: UserProjectCollectionRepository
     request: Request
+
+    @property
+    def authorization(self) -> McpAuthorizationContext:
+        return McpAuthorizationContext(self.user)
 
     @classmethod
     def from_request(cls, request: Request) -> McpToolContext:
@@ -287,14 +292,11 @@ async def _tool_search_my_project_favorites(
     context: ToolContextLike, args: dict[str, Any]
 ) -> dict[str, Any]:
     tool_context = _context(context)
-    user = tool_context.user
-    try:
-        user_id = int((user or {}).get("user_id") or 0)
-    except (TypeError, ValueError):
-        user_id = 0
+    authorization = tool_context.authorization
+    user_id = authorization.user_id
     if user_id <= 0:
         raise McpToolInputError("Authentication is required for this tool.")
-    if "projects:favorites:read" not in (user or {}).get("scopes", frozenset()):
+    if not authorization.has_scope("projects:favorites:read"):
         raise McpToolInputError("This token requires the projects:favorites:read scope.")
     q = _clean_string(args, "q", max_len=120)
     category = _clean_string(args, "category", max_len=64)

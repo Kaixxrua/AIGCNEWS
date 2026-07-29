@@ -48,7 +48,7 @@ from backend.app.api.dependencies import (
     get_briefing_repository,
 )
 from backend.app.core.auth import get_mcp_access_token_authenticator
-from backend.app.services.mcp.inbound import catalog, responses, tools
+from backend.app.services.mcp.inbound import catalog, context, responses, tools
 
 
 PUBLIC_TOOL_NAMES = [
@@ -261,6 +261,26 @@ class McpInboundProtocolTests(unittest.TestCase):
         self.assertNotIn("mcp-session-id", without_session.headers)
         self.assertNotIn("mcp-session-id", with_unknown_session.headers)
 
+    def test_session_transport_seam_controls_initialize_only(self) -> None:
+        transport = MagicMock(spec=context.McpSessionTransport)
+        transport.new_session_id.return_value = "aigc-news-fixed-session"
+        transport.headers.side_effect = context.McpSessionTransport().headers
+
+        with patch.object(routes_mcp, "_MCP_SESSION_TRANSPORT", transport):
+            initialized = self.rpc("initialize", request_id="init")
+            listed = self.rpc(
+                "tools/list",
+                request_id=2,
+                headers={"Mcp-Session-Id": "ignored-client-session"},
+            )
+
+        self.assertEqual(
+            initialized.headers["mcp-session-id"], "aigc-news-fixed-session"
+        )
+        self.assertNotIn("mcp-session-id", listed.headers)
+        transport.new_session_id.assert_called_once_with()
+        transport.headers.assert_any_call("aigc-news-fixed-session")
+
     def test_unknown_method_uses_jsonrpc_method_not_found(self) -> None:
         self.assert_rpc_error(
             self.rpc("unknown/method", request_id="unknown", params={}),
@@ -278,6 +298,9 @@ class McpInboundProtocolTests(unittest.TestCase):
         self.assertIs(routes_mcp._tool_response, responses._tool_response)
         self.assertIs(routes_mcp._resource_content, responses._resource_content)
         self.assertIs(routes_mcp.McpToolContext, tools.McpToolContext)
+        self.assertIs(routes_mcp.McpAuthorizationContext, context.McpAuthorizationContext)
+        self.assertIs(routes_mcp.McpSessionTransport, context.McpSessionTransport)
+        self.assertIs(routes_mcp.parse_mcp_request, context.parse_mcp_request)
         self.assertIs(routes_mcp._call_tool, tools._call_tool)
         self.assertIs(routes_mcp._TOOL_HANDLERS, tools._TOOL_HANDLERS)
 
