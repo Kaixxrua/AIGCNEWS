@@ -110,10 +110,6 @@ def _public_doc(
     return enriched
 
 
-def _public_project_item(item: dict[str, Any]) -> dict[str, Any]:
-    return public_project_item(item)
-
-
 async def _search_indexed_documents(
     context: McpToolContext,
     args: dict[str, Any],
@@ -264,12 +260,6 @@ async def _tool_search_github_ai_projects(
     return await _search_project_library(args, mode="ai")
 
 
-async def _tool_get_project_library(
-    context: McpToolContext, args: dict[str, Any]
-) -> dict[str, Any]:
-    return await _tool_search_github_ai_projects(context, args)
-
-
 async def _tool_search_my_project_favorites(
     context: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
@@ -322,7 +312,7 @@ async def _tool_search_my_project_favorites(
         min_stars=500,
         enriched_only=True,
     )
-    items = [_public_project_item(item) for item in result.get("items") or []]
+    items = [public_project_item(item) for item in result.get("items") or []]
     total = int(result.get("total") or 0)
     next_offset = offset + len(items)
     next_marker = None
@@ -372,7 +362,7 @@ _TOOL_HANDLERS: dict[str, ToolHandler] = {
     "get_top_items": _tool_get_top_items,
     "search_github_projects": _tool_search_github_projects,
     "search_github_ai_projects": _tool_search_github_ai_projects,
-    "get_project_library": _tool_get_project_library,
+    "get_project_library": _tool_search_github_ai_projects,
     "get_project_categories": _tool_get_project_categories,
     "search_my_project_favorites": _tool_search_my_project_favorites,
 }

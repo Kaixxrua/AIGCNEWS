@@ -405,17 +405,18 @@ class ProjectHandlerTests(unittest.TestCase):
         self.assertEqual(fallback.call_args.kwargs["mode"], "ai")
         self.assertEqual(fallback.call_args.kwargs["min_stars"], 500)
 
-    def test_ai_and_legacy_handlers_forward_host_intent(self) -> None:
+    def test_ai_handler_forwards_host_intent(self) -> None:
         intent = HostIntentContractTests()._intent()
-        for handler in (
-            inbound_tools._tool_search_github_ai_projects,
-            inbound_tools._tool_get_project_library,
-        ):
-            with self.subTest(handler=handler.__name__):
-                with patch.object(inbound_tools, "search_projects", new=AsyncMock(return_value={})) as search:
-                    asyncio.run(handler(None, {"q": "MCP Python SDK", "intent": intent}))
-                self.assertEqual(search.call_args.kwargs["client_intent"], intent)
-                self.assertEqual(search.call_args.kwargs["query"], "MCP Python SDK")
+        with patch.object(
+            inbound_tools, "search_projects", new=AsyncMock(return_value={})
+        ) as search:
+            asyncio.run(
+                inbound_tools._tool_search_github_ai_projects(
+                    None, {"q": "MCP Python SDK", "intent": intent}
+                )
+            )
+        self.assertEqual(search.call_args.kwargs["client_intent"], intent)
+        self.assertEqual(search.call_args.kwargs["query"], "MCP Python SDK")
 
     def test_local_hit_suppresses_fallback(self) -> None:
         local = {"items": [{"id": "x", "full_name": "owner/local", "stars": 900}], "total": 1}
@@ -438,7 +439,7 @@ class ProjectHandlerTests(unittest.TestCase):
         self.assertFalse(result["fallback_used"])
 
     def test_project_projection_is_compact(self) -> None:
-        projected = inbound_tools._public_project_item(
+        projected = project_discovery.public_project_item(
             {
                 "id": "x",
                 "full_name": "owner/repo",
@@ -459,7 +460,7 @@ class ProjectHandlerTests(unittest.TestCase):
         self.assertNotIn("hot_score_growth", projected)
 
     def test_worst_case_project_response_stays_under_48_kib(self) -> None:
-        item = inbound_tools._public_project_item(
+        item = project_discovery.public_project_item(
             {
                 "id": "github-direct:owner/repository-name",
                 "full_name": "owner/repository-name",

@@ -22,7 +22,6 @@ finally:
 
 class GitHubProjectMetricProjectionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.legacy_source = inspect.getsource(MySQLRepository.list_github_projects)
         self.unified_source = inspect.getsource(MySQLRepository.list_projects)
         self.categories_source = inspect.getsource(MySQLRepository.get_project_categories)
 
@@ -37,9 +36,6 @@ class GitHubProjectMetricProjectionTests(unittest.TestCase):
         self.assertIn("AND gm.metric_date = %s", source)
         self.assertIn("gm.metric_date AS snapshot_date", source)
         self.assertIn("COALESCE(gm.daily_growth_source, 'unavailable')", source)
-
-    def test_legacy_list_uses_one_atomic_metric_projection(self) -> None:
-        self._assert_atomic_metric_projection(self.legacy_source)
 
     def test_unified_list_uses_one_atomic_metric_projection(self) -> None:
         self._assert_atomic_metric_projection(self.unified_source)
@@ -59,11 +55,6 @@ class GitHubProjectMetricProjectionTests(unittest.TestCase):
         self.assertIn("gm_top.daily_star_growth > 0", self.categories_source)
 
     def test_sorting_uses_projected_aliases(self) -> None:
-        self.assertIn(
-            '"hot": "hot_score DESC, daily_star_growth DESC, stars DESC, c.full_name ASC"',
-            self.legacy_source,
-        )
-        self.assertIn('"stars": "stars DESC, forks DESC, c.full_name ASC"', self.legacy_source)
         self.assertIn(
             '"hot": "hot_score DESC, daily_star_growth DESC, stars DESC, full_name ASC"',
             self.unified_source,

@@ -49,7 +49,7 @@ from backend.app.services.mcp.inbound.tools import (
     _public_doc,
     _tool_get_paper_detail,
     _tool_get_project_categories,
-    _tool_get_project_library,
+    _tool_search_github_ai_projects,
     _tool_get_top_items,
     _validated_tool_args,
 )
@@ -373,7 +373,7 @@ async def _read_resource(
         if path == "projects/library":
             return _resource_content(
                 uri,
-                await _tool_get_project_library(
+                await _tool_search_github_ai_projects(
                     tool_context,
                     _validated_tool_args(
                         "get_project_library",

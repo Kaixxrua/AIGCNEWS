@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -161,21 +163,66 @@ def test_legacy_http_aliases_delegate_to_canonical_route_handlers() -> None:
     list_categories.assert_awaited_once_with(source="github", user=None)
 
 
-def test_mcp_legacy_library_delegates_to_canonical_ai_handler() -> None:
-    context = MagicMock()
-    arguments = {"q": "agent sdk", "limit": 7}
-    expected = {"items": [], "total": 0}
-    with patch.object(
-        inbound_tools,
-        "_tool_search_github_ai_projects",
-        new=AsyncMock(return_value=expected),
-    ) as canonical:
-        result = asyncio.run(
-            inbound_tools._tool_get_project_library(context, arguments)
-        )
+def test_mcp_legacy_library_registry_aliases_canonical_ai_handler() -> None:
+    assert (
+        inbound_tools.MCP_TOOL_REGISTRY["get_project_library"]["handler"]
+        is inbound_tools.MCP_TOOL_REGISTRY["search_github_ai_projects"]["handler"]
+    )
 
-    assert result is expected
-    canonical.assert_awaited_once_with(context, arguments)
+
+def test_legacy_project_queries_cannot_reintroduce_duplicate_implementations() -> None:
+    app_root = Path(__file__).parents[1] / "app"
+    route_module = ast.parse(
+        (app_root / "api" / "routes_github_projects.py").read_text(encoding="utf-8")
+    )
+    route_functions = {
+        node.name: node
+        for node in route_module.body
+        if isinstance(node, ast.AsyncFunctionDef)
+    }
+    expected_alias_calls = {
+        "list_github_projects": "list_projects",
+        "list_github_project_categories": "list_project_categories",
+    }
+    for alias_name, canonical_name in expected_alias_calls.items():
+        alias = route_functions[alias_name]
+        assert len(alias.body) == 2
+        return_statement = alias.body[-1]
+        assert isinstance(return_statement, ast.Return)
+        assert isinstance(return_statement.value, ast.Await)
+        call = return_statement.value.value
+        assert isinstance(call, ast.Call)
+        assert isinstance(call.func, ast.Name)
+        assert call.func.id == canonical_name
+
+    repository_module = ast.parse(
+        (app_root / "repositories" / "mysql_repo.py").read_text(encoding="utf-8")
+    )
+    repository = next(
+        node
+        for node in repository_module.body
+        if isinstance(node, ast.ClassDef) and node.name == "MySQLRepository"
+    )
+    repository_methods = {
+        node.name
+        for node in repository.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "list_github_projects" not in repository_methods
+    assert "get_github_project_categories" not in repository_methods
+
+    tools_module = ast.parse(
+        (app_root / "services" / "mcp" / "inbound" / "tools.py").read_text(
+            encoding="utf-8"
+        )
+    )
+    tool_functions = {
+        node.name
+        for node in tools_module.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "_tool_get_project_library" not in tool_functions
+    assert "_public_project_item" not in tool_functions
 
 
 def test_legacy_projects_defaults_preserve_public_github_wire_shape() -> None:
