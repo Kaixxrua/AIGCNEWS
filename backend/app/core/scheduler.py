@@ -34,6 +34,9 @@ from backend.app.core.scheduler_registry import (
     project_semantic_warmup_job_descriptor,
     resolve_source_job_callback,
 )
+from backend.app.repositories.application_repository_context import (
+    get_configured_application_repositories,
+)
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
 
 logger = logging.getLogger(__name__)
@@ -166,11 +169,13 @@ async def _refresh_current_github_project_metrics(metric_date: str) -> Dict[str,
         refresh_and_compute_github_project_metrics,
     )
 
+    repositories = get_configured_application_repositories()
     return await asyncio.to_thread(
         refresh_and_compute_github_project_metrics,
         min_stars=_GITHUB_METRICS_MIN_STARS,
         limit=_GITHUB_METRICS_REFRESH_LIMIT,
         metric_date=metric_date,
+        db=repositories.github_ingestion,
     )
 
 
@@ -190,16 +195,16 @@ async def _run_github_project_metrics_refresh_job() -> None:
 
 
 async def _reconcile_current_github_project_metrics() -> None:
-    from backend.app.repositories.mysql_repo import MySQLRepository
     from backend.app.services.ingestion.github_project_metrics_service import (
         current_github_metric_date,
     )
 
     metric_date = current_github_metric_date()
     try:
+        repository = get_configured_application_repositories().github_ingestion
         async with _get_github_job_lock():
             status = await asyncio.to_thread(
-                MySQLRepository().get_github_metric_refresh_status,
+                repository.get_github_metric_refresh_status,
                 metric_date=metric_date,
                 min_stars=_GITHUB_METRICS_MIN_STARS,
                 limit=_GITHUB_METRICS_REFRESH_LIMIT,
@@ -220,7 +225,12 @@ async def _run_github_hot_job() -> None:
             refresh_github_hot_candidates,
         )
 
-        await asyncio.to_thread(refresh_github_hot_candidates, 80)
+        repository = get_configured_application_repositories().github_ingestion
+        await asyncio.to_thread(
+            refresh_github_hot_candidates,
+            80,
+            db=repository,
+        )
         logger.info("[Scheduler] GitHub 热度快照刷新完成。")
     except Exception as exc:
         logger.error("[Scheduler] GitHub 热度快照刷新失败: %s", exc, exc_info=True)
@@ -233,7 +243,12 @@ async def _run_github_project_enrichment_job() -> None:
             enrich_github_projects,
         )
 
-        result = await asyncio.to_thread(enrich_github_projects, limit=50)
+        repository = get_configured_application_repositories().github_enrichment
+        result = await asyncio.to_thread(
+            enrich_github_projects,
+            limit=50,
+            db=repository,
+        )
         logger.info("[Scheduler] GitHub 项目库 AI 分类富化完成：%s", result)
     except Exception as exc:
         logger.error("[Scheduler] GitHub 项目库 AI 分类富化失败: %s", exc, exc_info=True)
