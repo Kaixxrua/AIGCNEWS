@@ -28,7 +28,6 @@ from backend.app.api import (
 )
 from backend.app.api import routes_ops
 from backend.app.core.config import settings
-from backend.app.core.database import mysql_database
 from backend.app.core.postgres_database import postgres_database
 from backend.app.repositories.application_repository_context import (
     configure_application_repositories,
@@ -111,60 +110,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     application_database_backend = normalize_application_database_backend(
         getattr(settings, "application_database_backend", "postgres")
     )
-    app.state.database = (
-        postgres_database
-        if application_database_backend == "postgres"
-        else mysql_database
-    )
+    if application_database_backend != "postgres":
+        raise ValueError("APPLICATION_DATABASE_BACKEND must be postgres")
+    app.state.database = postgres_database
     app.state.postgres_database = postgres_database
     app.state.application_database_backend = application_database_backend
-    postgres_required = (
-        application_database_backend == "postgres"
-        or project_catalog_backend == "postgres"
-        or bool(getattr(settings, "project_catalog_sync_worker_enabled", False))
-    )
-    mysql_required = (
-        application_database_backend == "mysql"
-        or project_catalog_backend == "mysql"
-        or bool(getattr(settings, "project_catalog_sync_worker_enabled", False))
-    )
-    shadow_requested = (
-        project_catalog_backend == "mysql"
-        and bool(getattr(settings, "project_catalog_shadow_enabled", False))
-        and str(
-            getattr(settings, "project_catalog_shadow_backend", "postgres") or ""
-        ).strip().lower()
-        == "postgres"
-    )
-    mysql_opened = False
-    if mysql_required:
-        await asyncio.to_thread(mysql_database.connect)
-        mysql_opened = True
-    postgres_opened = False
-    if postgres_required:
-        await asyncio.to_thread(postgres_database.open)
-        postgres_opened = True
-    elif shadow_requested:
-        try:
-            await asyncio.to_thread(postgres_database.open)
-            postgres_opened = True
-        except Exception as exc:
-            print(
-                "[Startup] Project catalog shadow unavailable "
-                f"(non-fatal): {type(exc).__name__}"
-            )
+    await asyncio.to_thread(postgres_database.open)
+    postgres_opened = True
     app.state.application_repositories = create_application_repositories(
         backend=application_database_backend,
-        mysql=mysql_database,
         postgres=postgres_database,
     )
     configure_application_repositories(app.state.application_repositories)
-    if shadow_requested and postgres_opened:
-        from backend.app.services.project_catalog_shadow import (
-            start_project_catalog_shadow,
-        )
-
-        start_project_catalog_shadow(settings)
 
     # 在后台异步预热模型，不阻塞服务启动
     asyncio.create_task(_warmup_reranker())
@@ -245,21 +202,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 print("[Shutdown] Redis cache connection closed.")
             except Exception as exc:
                 print(f"[Shutdown] Redis close failed (non-fatal): {exc}")
-        if shadow_requested:
-            from backend.app.services.project_catalog_shadow import (
-                stop_project_catalog_shadow,
-            )
-
-            await asyncio.to_thread(
-                stop_project_catalog_shadow,
-                float(
-                    getattr(
-                        settings,
-                        "project_catalog_shadow_shutdown_timeout_seconds",
-                        5.0,
-                    )
-                ),
-            )
         from backend.app.services.project_search_shadow import (
             stop_project_search_shadow,
         )
@@ -278,9 +220,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if postgres_opened:
             postgres_database.close()
             print("[Shutdown] PostgreSQL connection pool closed.")
-        if mysql_opened:
-            mysql_database.close()
-            print("[Shutdown] MySQL connection pool closed.")
 
 
 app = FastAPI(

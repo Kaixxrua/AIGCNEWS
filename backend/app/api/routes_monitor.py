@@ -40,7 +40,7 @@ async def readiness() -> dict[str, object]:
 
 @router.get("/monitor/health")
 async def health_check(_: dict = Depends(RequireUser)):
-    """Full health check across all services (Milvus, Neo4j, Ollama, SQLite)."""
+    """Full health check across PostgreSQL and supporting services."""
     from backend.app.monitoring.health import run_health_checks
 
     result = await asyncio.to_thread(run_health_checks)

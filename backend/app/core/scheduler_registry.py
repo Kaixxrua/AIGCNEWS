@@ -21,7 +21,6 @@ JobSource = Literal[
     "github_project_metrics_refresh",
     "daily_briefing",
     "project_semantic_warmup",
-    "project_catalog_sync",
     "conversation_cleanup",
 ]
 
@@ -168,21 +167,6 @@ CONVERSATION_CLEANUP_JOB = CronJobDescriptor(
     name="会话历史定期清理（7 天清 5 条）",
     schedule=CronSchedule(day="*/7", hour=3, minute=30),
 )
-
-
-def project_catalog_sync_job_descriptor(
-    poll_seconds: int,
-    *,
-    timezone: str,
-) -> IntervalJobDescriptor:
-    return IntervalJobDescriptor(
-        id="project_catalog_sync",
-        source="project_catalog_sync",
-        name="MySQL 到 PostgreSQL 项目目录同步",
-        schedule=IntervalSchedule(seconds=max(1, int(poll_seconds))),
-        timezone=timezone,
-        misfire_grace_time=max(30, int(poll_seconds) * 2),
-    )
 
 
 def resolve_source_job_callback(

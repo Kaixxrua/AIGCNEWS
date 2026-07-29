@@ -228,29 +228,15 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             },
         )
 
-        catalog = calls["project_catalog_sync"]
-        self.assertIsInstance(catalog["trigger"], IntervalTrigger)
-        self.assertEqual(catalog["trigger"].interval.total_seconds(), 7)
-        self.assertEqual(str(catalog["trigger"].timezone), "Asia/Shanghai")
-        self.assertEqual(
-            {key: catalog[key] for key in ("name", "replace_existing", "max_instances", "coalesce", "misfire_grace_time")},
-            {
-                "name": "MySQL 到 PostgreSQL 项目目录同步",
-                "replace_existing": True,
-                "max_instances": 1,
-                "coalesce": True,
-                "misfire_grace_time": 30,
-            },
-        )
+        self.assertNotIn("project_catalog_sync", calls)
 
         start_index = events.index("start")
         self.assertEqual(
-            events[start_index : start_index + 5],
+            events[start_index : start_index + 4],
             [
                 "start",
                 "create_task:_reconcile_recent_arxiv_daily_snapshots",
                 "create_task:_reconcile_current_github_project_metrics",
-                "create_task:_run_project_catalog_sync_job",
                 "get_jobs",
             ],
         )

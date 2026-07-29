@@ -130,8 +130,8 @@ def normalize_application_database_backend(value: Any) -> str:
 def create_application_repositories(
     *,
     backend: str,
-    mysql: DatabaseLifecycle,
     postgres: PostgresDatabaseLifecycle,
+    mysql: DatabaseLifecycle | None = None,
 ) -> ApplicationRepositories:
     selected = normalize_application_database_backend(backend)
     if selected == "postgres":
@@ -157,6 +157,9 @@ def create_application_repositories(
                 postgres
             ),
         )
+
+    if mysql is None:
+        raise ValueError("mysql lifecycle is required for the MySQL compatibility backend")
 
     from backend.app.repositories.mysql_mcp_server_repository import (
         MySQLMcpServerConfigRepository,

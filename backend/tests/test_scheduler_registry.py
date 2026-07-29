@@ -17,7 +17,6 @@ from backend.app.core.scheduler_registry import (
     CronSchedule,
     IntervalJobDescriptor,
     build_trigger,
-    project_catalog_sync_job_descriptor,
     project_scheduler_status,
     project_semantic_warmup_job_descriptor,
     resolve_source_job_callback,
@@ -108,7 +107,7 @@ class SchedulerDescriptorTests(unittest.TestCase):
             self.assertEqual(_cron_fields(trigger), fields)
             self.assertEqual(str(trigger.timezone), "Asia/Shanghai")
 
-    def test_optional_interval_factories_preserve_timezone_and_catalog_clamp(self) -> None:
+    def test_semantic_interval_factory_preserves_timezone(self) -> None:
         semantic = project_semantic_warmup_job_descriptor(timezone="UTC")
         semantic_trigger = build_trigger(semantic)
         self.assertIsInstance(semantic, IntervalJobDescriptor)
@@ -117,18 +116,6 @@ class SchedulerDescriptorTests(unittest.TestCase):
         self.assertEqual(str(semantic_trigger.timezone), "UTC")
         self.assertTrue(semantic.coalesce)
         self.assertEqual(semantic.misfire_grace_time, 300)
-
-        catalog = project_catalog_sync_job_descriptor(0, timezone="UTC")
-        catalog_trigger = build_trigger(catalog)
-        self.assertIsInstance(catalog_trigger, IntervalTrigger)
-        self.assertEqual(catalog_trigger.interval.total_seconds(), 1)
-        self.assertEqual(str(catalog_trigger.timezone), "UTC")
-        self.assertTrue(catalog.coalesce)
-        self.assertEqual(catalog.misfire_grace_time, 30)
-
-        slow_catalog = project_catalog_sync_job_descriptor(20, timezone="UTC")
-        self.assertEqual(slow_catalog.schedule.seconds, 20)
-        self.assertEqual(slow_catalog.misfire_grace_time, 40)
 
     def test_build_trigger_returns_fresh_instances_without_mutating_descriptor(self) -> None:
         descriptor = CronJobDescriptor(

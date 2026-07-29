@@ -10,34 +10,18 @@ from backend.app import main
 from backend.app.core.project_catalog_runtime import validate_project_catalog_runtime
 
 
-@pytest.mark.parametrize(
-    ("backend", "capture", "sync", "shadow", "expected"),
-    [
-        ("mysql", False, False, False, "mysql"),
-        (" MYSQL ", True, False, True, "mysql"),
-        ("mysql", True, True, True, "mysql"),
-        ("postgres", False, False, False, "postgres"),
-        ("postgres", True, True, False, "postgres"),
-    ],
-)
-def test_runtime_matrix_accepts_safe_configurations(
-    backend: str,
-    capture: bool,
-    sync: bool,
-    shadow: bool,
-    expected: str,
-) -> None:
+def test_runtime_accepts_postgres_only_configuration() -> None:
     assert validate_project_catalog_runtime(
-        backend=backend,
-        outbox_capture_enabled=capture,
-        sync_worker_enabled=sync,
-        shadow_enabled=shadow,
-    ) == expected
+        backend=" POSTGRES ",
+        outbox_capture_enabled=False,
+        sync_worker_enabled=False,
+        shadow_enabled=False,
+    ) == "postgres"
 
 
-@pytest.mark.parametrize("backend", ["", "sqlite", "mariadb"])
-def test_runtime_matrix_rejects_unsupported_backends(backend: str) -> None:
-    with pytest.raises(ValueError, match="PROJECT_CATALOG_BACKEND"):
+@pytest.mark.parametrize("backend", ["", "sqlite", "mariadb", "mysql"])
+def test_runtime_rejects_non_postgres_backends(backend: str) -> None:
+    with pytest.raises(ValueError, match="must be postgres"):
         validate_project_catalog_runtime(
             backend=backend,
             outbox_capture_enabled=False,
@@ -46,32 +30,26 @@ def test_runtime_matrix_rejects_unsupported_backends(backend: str) -> None:
         )
 
 
-def test_runtime_matrix_rejects_mysql_sync_without_capture() -> None:
-    with pytest.raises(ValueError, match="OUTBOX_CAPTURE_ENABLED=true"):
-        validate_project_catalog_runtime(
-            backend="mysql",
-            outbox_capture_enabled=False,
-            sync_worker_enabled=True,
-            shadow_enabled=False,
-        )
-
-
-def test_runtime_matrix_rejects_postgres_sync_without_capture() -> None:
-    with pytest.raises(ValueError, match="OUTBOX_CAPTURE_ENABLED=true"):
+@pytest.mark.parametrize(
+    ("capture", "sync"),
+    [(True, False), (False, True), (True, True)],
+)
+def test_runtime_rejects_legacy_capture_or_sync(capture: bool, sync: bool) -> None:
+    with pytest.raises(ValueError, match="capture and sync disabled"):
         validate_project_catalog_runtime(
             backend="postgres",
-            outbox_capture_enabled=False,
-            sync_worker_enabled=True,
+            outbox_capture_enabled=capture,
+            sync_worker_enabled=sync,
             shadow_enabled=False,
         )
 
 
-def test_runtime_matrix_rejects_postgres_shadow() -> None:
+def test_runtime_rejects_shadow() -> None:
     with pytest.raises(ValueError, match="SHADOW_ENABLED=false"):
         validate_project_catalog_runtime(
             backend="postgres",
-            outbox_capture_enabled=True,
-            sync_worker_enabled=True,
+            outbox_capture_enabled=False,
+            sync_worker_enabled=False,
             shadow_enabled=True,
         )
 
@@ -81,7 +59,7 @@ def test_lifespan_validates_before_opening_resources() -> None:
     unsafe_settings = SimpleNamespace(
         project_catalog_backend="mysql",
         project_catalog_outbox_capture_enabled=False,
-        project_catalog_sync_worker_enabled=True,
+        project_catalog_sync_worker_enabled=False,
         project_catalog_shadow_enabled=False,
     )
 
@@ -92,7 +70,7 @@ def test_lifespan_validates_before_opening_resources() -> None:
             patch.object(main, "Redis") as redis_type,
             patch.object(main, "start_scheduler") as start_scheduler,
         ):
-            with pytest.raises(ValueError, match="OUTBOX_CAPTURE_ENABLED=true"):
+            with pytest.raises(ValueError, match="must be postgres"):
                 async with main.lifespan(app):
                     pass
             to_thread.assert_not_called()

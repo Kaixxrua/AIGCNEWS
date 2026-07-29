@@ -4,6 +4,7 @@ import time
 from typing import Any, Dict
 
 from backend.app.core.config import settings
+from backend.app.core.postgres_database import postgres_database
 
 
 def _check_milvus() -> Dict[str, Any]:
@@ -50,23 +51,15 @@ def _check_ollama() -> Dict[str, Any]:
         return {"status": "error", "detail": str(exc)}
 
 
-def _check_mysql() -> Dict[str, Any]:
+def _check_postgres() -> Dict[str, Any]:
     try:
-        import pymysql
-
-        conn = pymysql.connect(
-            host=settings.mysql_host,
-            port=settings.mysql_port,
-            user=settings.mysql_user,
-            password=settings.mysql_password,
-            database=settings.mysql_database,
-            connect_timeout=3,
-        )
-        conn.ping(reconnect=False)
-        conn.close()
+        with postgres_database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1 AS healthy")
+                cursor.fetchone()
         return {"status": "ok"}
     except Exception as exc:
-        return {"status": "error", "detail": str(exc)}
+        return {"status": "error", "detail": type(exc).__name__}
 
 
 def _check_redis() -> Dict[str, Any]:
@@ -95,7 +88,7 @@ def run_health_checks() -> Dict[str, Any]:
         "milvus": _check_milvus(),
         "neo4j": _check_neo4j(),
         "ollama": _check_ollama(),
-        "mysql": _check_mysql(),
+        "postgres": _check_postgres(),
         "redis": _check_redis(),
     }
     elapsed = round(time.monotonic() - t0, 3)
