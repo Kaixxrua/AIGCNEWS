@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from backend.app.core.config import settings
-from backend.app.repositories.mysql_project_catalog import MySQLProjectCatalogRepository
 from backend.app.repositories.project_catalog import ProjectCatalogRepository
 
 
 def get_project_catalog_repository() -> ProjectCatalogRepository:
     backend = str(settings.project_catalog_backend or "").strip().lower()
     if backend == "mysql":
+        from backend.app.repositories.mysql_project_catalog import (
+            MySQLProjectCatalogRepository,
+        )
+
         active = MySQLProjectCatalogRepository()
         if not bool(getattr(settings, "project_catalog_shadow_enabled", False)):
             return active

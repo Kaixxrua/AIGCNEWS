@@ -72,7 +72,7 @@ class Lifecycle:
 
 
 def test_backend_normalization_is_explicit() -> None:
-    assert normalize_application_database_backend(None) == "mysql"
+    assert normalize_application_database_backend(None) == "postgres"
     assert normalize_application_database_backend(" POSTGRES ") == "postgres"
 
     try:
@@ -122,7 +122,7 @@ def test_factory_builds_postgres_protocol_adapters() -> None:
 def test_factory_preserves_mysql_compatibility_facade(monkeypatch) -> None:
     mysql = Lifecycle()
     monkeypatch.setattr(
-        "backend.app.repositories.application_repository_factory.MySQLRepository._init_schema",
+        "backend.app.repositories.mysql_repo.MySQLRepository._init_schema",
         lambda self: None,
     )
 

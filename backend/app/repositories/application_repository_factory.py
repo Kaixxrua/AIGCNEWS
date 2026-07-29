@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from backend.app.core.database import DatabaseLifecycle
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
+
+if TYPE_CHECKING:
+    from backend.app.core.database import DatabaseLifecycle
 from backend.app.repositories.attachment_repository import AttachmentRepository
 from backend.app.repositories.briefing_repository import (
     BriefingContentRepository,
@@ -15,20 +17,6 @@ from backend.app.repositories.document_repository import DocumentRepository
 from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.repositories.mcp_access_token_repository import McpAccessTokenRepository
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
-from backend.app.repositories.mysql_mcp_server_repository import (
-    MySQLMcpServerConfigRepository,
-)
-from backend.app.repositories.mysql_project_catalog import MySQLProjectCatalogRepository
-from backend.app.repositories.mysql_project_write_repository import (
-    MySQLProjectWriteRepository,
-)
-from backend.app.repositories.mysql_repo import MySQLRepository
-from backend.app.repositories.mysql_user_account_repository import (
-    MySQLUserAccountRepository,
-)
-from backend.app.repositories.mysql_user_project_collection_repository import (
-    MySQLUserProjectCollectionRepository,
-)
 from backend.app.repositories.postgres_attachment_repository import (
     PostgresAttachmentRepository,
 )
@@ -169,6 +157,23 @@ def create_application_repositories(
                 postgres
             ),
         )
+
+    from backend.app.repositories.mysql_mcp_server_repository import (
+        MySQLMcpServerConfigRepository,
+    )
+    from backend.app.repositories.mysql_project_catalog import (
+        MySQLProjectCatalogRepository,
+    )
+    from backend.app.repositories.mysql_project_write_repository import (
+        MySQLProjectWriteRepository,
+    )
+    from backend.app.repositories.mysql_repo import MySQLRepository
+    from backend.app.repositories.mysql_user_account_repository import (
+        MySQLUserAccountRepository,
+    )
+    from backend.app.repositories.mysql_user_project_collection_repository import (
+        MySQLUserProjectCollectionRepository,
+    )
 
     compatibility = MySQLRepository(database=mysql)
     project_writes = MySQLProjectWriteRepository(mysql)

@@ -95,8 +95,8 @@ def test_factory_builds_mysql_adapter(backend: str) -> None:
 
     with (
         patch.object(project_catalog_factory, "settings", config),
-        patch.object(
-            project_catalog_factory,
+        patch(
+            "backend.app.repositories.mysql_project_catalog."
             "MySQLProjectCatalogRepository",
             return_value=adapter,
         ) as adapter_type,
@@ -151,8 +151,8 @@ def test_factory_wraps_mysql_only_when_shadow_manager_is_available() -> None:
     )
     with (
         patch.object(project_catalog_factory, "settings", config),
-        patch.object(
-            project_catalog_factory,
+        patch(
+            "backend.app.repositories.mysql_project_catalog."
             "MySQLProjectCatalogRepository",
             return_value=active,
         ),
