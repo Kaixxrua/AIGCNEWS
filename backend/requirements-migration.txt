@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# MySQL-to-PostgreSQL inventory, transfer, reconciliation, and recovery tools only.
+pymysql
+DBUtils
