@@ -21,8 +21,7 @@ async def main():
     logger.info("🚀 Starting Multi-Source Ingestion (Arxiv + GitHub + News)...")
     try:
         # limit=10 表示每个源抓取 10 条
-        # enable_ai_scoring=False：跳过 LLM 评分，避免 429 限流，尽快完成入库
-        stats = await run_ingestion_pipeline_async(limit=10, enable_ai_scoring=False)
+        stats = await run_ingestion_pipeline_async(limit=10)
 
         logger.info("✅ Ingestion Completed Successfully!")
         logger.info("📊 Ingestion Stats:")

@@ -11,6 +11,7 @@ sys.modules.setdefault("backend.app.core.config", config)
 
 from backend.app.core import scheduler
 from backend.app.services.ingestion.crawlers.arxiv_crawler import ArxivCrawler
+from backend.app.services.ingestion.composition import IngestionDependencies
 
 try:
     from backend.app.services.ingestion.pipeline import IngestionOrchestrator
@@ -40,6 +41,18 @@ class SnapshotDateFlowTests(unittest.IsolatedAsyncioTestCase):
         orchestrator.documents = MagicMock()
         orchestrator.rank_snapshots = MagicMock()
         orchestrator.github_ingestion = MagicMock()
+        repositories = MagicMock()
+        orchestrator.dependencies = IngestionDependencies(
+            repositories=repositories,
+            task_writer=MagicMock(),
+            vector_writer_factory=MagicMock(),
+            graph_extractor_factory=MagicMock(),
+            graph_writer_factory=MagicMock(),
+            pdf_vector_writer_factory=MagicMock(),
+            pdf_indexer=MagicMock(),
+            cache_invalidator=AsyncMock(),
+            crawler_factories=(),
+        )
 
         with (
             patch("backend.app.services.ingestion.pipeline._select_top", return_value=[{"title": "paper"}]),

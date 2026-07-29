@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -52,15 +53,8 @@ class IngestionDependencyCompositionTests(unittest.TestCase):
             crawler_factories=(),
         )
 
-        with (
-            patch(
-                "backend.app.services.ingestion.pipeline.get_configured_application_repositories"
-            ) as configured,
-            patch.object(IngestionOrchestrator, "_CRAWLER_CLASSES", []),
-        ):
-            orchestrator = IngestionOrchestrator(dependencies=dependencies)
+        orchestrator = IngestionOrchestrator(dependencies=dependencies)
 
-        configured.assert_not_called()
         self.assertIs(orchestrator.dependencies, dependencies)
         self.assertIs(orchestrator.repositories, repositories)
         self.assertIs(orchestrator.documents, repositories.documents)
@@ -253,13 +247,72 @@ class IngestionCompositionArchitectureTests(unittest.TestCase):
             {keyword.arg for keyword in composed_calls[0].keywords},
         )
 
+    def test_run_ingestion_script_uses_current_async_facade_signature(self) -> None:
+        script_path = Path(__file__).resolve().parents[2] / "run_ingestion.py"
+        module = ast.parse(
+            script_path.read_text(encoding="utf-8"),
+            filename=str(script_path),
+        )
+        calls = [
+            node
+            for node in ast.walk(module)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "run_ingestion_pipeline_async"
+        ]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            {keyword.arg for keyword in calls[0].keywords},
+            {"limit"},
+        )
+
+    def test_pipeline_does_not_construct_concrete_dependencies_or_read_process_context(self) -> None:
+        pipeline_path = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "services"
+            / "ingestion"
+            / "pipeline.py"
+        )
+        module = ast.parse(
+            pipeline_path.read_text(encoding="utf-8"),
+            filename=str(pipeline_path),
+        )
+        forbidden_calls = {
+            "ArxivCrawler",
+            "GitHubCrawler",
+            "NewsCrawler",
+            "ProductHuntCrawler",
+            "HackerNewsCrawler",
+            "MilvusRepository",
+            "GraphExtractor",
+            "GraphRepository",
+            "get_configured_application_repositories",
+        }
+        called_names = {
+            node.func.id
+            for node in ast.walk(module)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        self.assertEqual(called_names & forbidden_calls, set())
+
 
 class ArxivPdfBackgroundTests(unittest.TestCase):
     @staticmethod
     def _orchestrator() -> IngestionOrchestrator:
-        orchestrator = IngestionOrchestrator.__new__(IngestionOrchestrator)
-        orchestrator.documents = MagicMock()
-        return orchestrator
+        repositories = MagicMock()
+        dependencies = IngestionDependencies(
+            repositories=repositories,
+            task_writer=repositories.ingestion_tasks,
+            vector_writer_factory=MagicMock(),
+            graph_extractor_factory=MagicMock(),
+            graph_writer_factory=MagicMock(),
+            pdf_vector_writer_factory=MagicMock(),
+            pdf_indexer=MagicMock(),
+            cache_invalidator=AsyncMock(),
+            crawler_factories=(),
+        )
+        return IngestionOrchestrator(dependencies)
 
     def test_background_is_daemon_nonblocking_and_filters_pdf_candidates(self) -> None:
         orchestrator = self._orchestrator()
@@ -277,16 +330,15 @@ class ArxivPdfBackgroundTests(unittest.TestCase):
             {"arxiv_id": "2607.2"},
             {"pdf_url": "https://arxiv/3.pdf"},
         ]
-        with (
-            patch("backend.app.services.ingestion.pipeline.threading.Thread", FakeThread),
-            patch("backend.app.services.ingestion.pipeline.download_and_index_arxiv_pdfs") as download,
+        with patch(
+            "backend.app.services.ingestion.pipeline.threading.Thread", FakeThread
         ):
             orchestrator._start_arxiv_pdf_background(papers)
 
         self.assertEqual(captured["name"], "arxiv-pdf-download")
         self.assertIs(captured["daemon"], True)
         self.assertIs(captured["started"], True)
-        download.assert_not_called()
+        orchestrator.dependencies.pdf_indexer.assert_not_called()
 
     def test_background_passes_fixed_download_parameters(self) -> None:
         orchestrator = self._orchestrator()
@@ -300,20 +352,14 @@ class ArxivPdfBackgroundTests(unittest.TestCase):
             def start(self) -> None:
                 self.target()
 
-        with (
-            patch("backend.app.services.ingestion.pipeline.threading.Thread", ImmediateThread),
-            patch(
-                "backend.app.services.ingestion.pipeline.MilvusRepository",
-                return_value=vector_writer,
-            ),
-            patch(
-                "backend.app.services.ingestion.pipeline.download_and_index_arxiv_pdfs",
-                return_value=(1, 1),
-            ) as download,
+        orchestrator.dependencies.pdf_vector_writer_factory.return_value = vector_writer
+        orchestrator.dependencies.pdf_indexer.return_value = (1, 1)
+        with patch(
+            "backend.app.services.ingestion.pipeline.threading.Thread", ImmediateThread
         ):
             orchestrator._start_arxiv_pdf_background([paper])
 
-        download.assert_called_once_with(
+        orchestrator.dependencies.pdf_indexer.assert_called_once_with(
             [paper],
             milvus_repo=vector_writer,
             mysql_repo=orchestrator.documents,
@@ -340,14 +386,13 @@ class ArxivPdfBackgroundTests(unittest.TestCase):
             (MagicMock(), MagicMock(side_effect=RuntimeError("download failed"))),
         )
         for vector_factory, download in failures:
+            orchestrator.dependencies = replace(
+                orchestrator.dependencies,
+                pdf_vector_writer_factory=vector_factory,
+                pdf_indexer=download,
+            )
             with self.subTest(download_fails=bool(download.side_effect)), patch(
                 "backend.app.services.ingestion.pipeline.threading.Thread", ImmediateThread
-            ), patch(
-                "backend.app.services.ingestion.pipeline.MilvusRepository",
-                new=vector_factory,
-            ), patch(
-                "backend.app.services.ingestion.pipeline.download_and_index_arxiv_pdfs",
-                new=download,
             ):
                 orchestrator._start_arxiv_pdf_background([paper])
 

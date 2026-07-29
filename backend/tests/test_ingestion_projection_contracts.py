@@ -162,20 +162,17 @@ class PersistenceProjectionContractTests(unittest.TestCase):
             },
         ]
 
-        with (
-            patch("backend.app.services.ingestion.pipeline.MilvusRepository"),
-            patch("backend.app.services.ingestion.pipeline.GraphExtractor") as graph_extractor,
-            patch("backend.app.services.ingestion.pipeline.GraphRepository"),
-        ):
-            graph_extractor.return_value.extract.return_value = []
-            count = _ingest_documents(
-                papers,
-                42,
-                "mixed",
-                "2026-07-24",
-                document_writer=writer,
-                rank_snapshots=snapshots,
-            )
+        count = _ingest_documents(
+            papers,
+            42,
+            "mixed",
+            "2026-07-24",
+            document_writer=writer,
+            rank_snapshots=snapshots,
+            vector_writer_factory=MagicMock(),
+            graph_extractor_factory=MagicMock(),
+            graph_writer_factory=MagicMock(),
+        )
 
         self.assertEqual(count, 2)
         first_write = next(index for index, event in enumerate(events) if event[0] == "document")
@@ -209,21 +206,22 @@ class PersistenceProjectionContractTests(unittest.TestCase):
             "existing_summary_reused": True,
         }
 
-        with (
-            patch("backend.app.services.ingestion.pipeline.MilvusRepository") as milvus_type,
-            patch("backend.app.services.ingestion.pipeline.GraphExtractor") as extractor_type,
-            patch("backend.app.services.ingestion.pipeline.GraphRepository") as graph_type,
-        ):
-            milvus_type.return_value.add_documents.side_effect = RuntimeError("milvus failed")
-            extractor_type.return_value.extract.return_value = ["graph-document"]
-            count = _ingest_documents(
-                [reused_paper, new_paper],
-                42,
-                "arxiv_daily",
-                "2026-07-24",
-                document_writer=writer,
-                rank_snapshots=snapshots,
-            )
+        milvus_type = MagicMock()
+        extractor_type = MagicMock()
+        graph_type = MagicMock()
+        milvus_type.return_value.add_documents.side_effect = RuntimeError("milvus failed")
+        extractor_type.return_value.extract.return_value = ["graph-document"]
+        count = _ingest_documents(
+            [reused_paper, new_paper],
+            42,
+            "arxiv_daily",
+            "2026-07-24",
+            document_writer=writer,
+            rank_snapshots=snapshots,
+            vector_writer_factory=milvus_type,
+            graph_extractor_factory=extractor_type,
+            graph_writer_factory=graph_type,
+        )
 
         self.assertEqual(count, 2)
         self.assertEqual(writer.upsert_document.call_count, 2)
@@ -235,19 +233,19 @@ class PersistenceProjectionContractTests(unittest.TestCase):
 
     def test_non_arxiv_source_never_constructs_graph_dependencies(self) -> None:
         db = MagicMock()
-        with (
-            patch("backend.app.services.ingestion.pipeline.MilvusRepository"),
-            patch("backend.app.services.ingestion.pipeline.GraphExtractor") as extractor_type,
-            patch("backend.app.services.ingestion.pipeline.GraphRepository") as graph_type,
-        ):
-            count = _ingest_documents(
-                [{"source": "news", "title": "Item", "url": "https://item"}],
-                1,
-                "news_daily",
-                "2026-07-24",
-                document_writer=db.documents,
-                rank_snapshots=db.rank_snapshots,
-            )
+        extractor_type = MagicMock()
+        graph_type = MagicMock()
+        count = _ingest_documents(
+            [{"source": "news", "title": "Item", "url": "https://item"}],
+            1,
+            "news_daily",
+            "2026-07-24",
+            document_writer=db.documents,
+            rank_snapshots=db.rank_snapshots,
+            vector_writer_factory=MagicMock(),
+            graph_extractor_factory=extractor_type,
+            graph_writer_factory=graph_type,
+        )
 
         self.assertEqual(count, 1)
         extractor_type.assert_not_called()

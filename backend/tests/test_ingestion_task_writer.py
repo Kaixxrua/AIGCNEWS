@@ -5,7 +5,29 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.repositories.task_repository import IngestionTaskWriter
 from backend.app.services.ingestion.base_crawler import CrawlResult
+from backend.app.services.ingestion.composition import (
+    IngestionDependencies,
+    provide_ingestion_dependencies,
+)
 from backend.app.services.ingestion.pipeline import IngestionOrchestrator
+
+
+def _dependencies(repository, writer=None) -> IngestionDependencies:
+    provided = provide_ingestion_dependencies(
+        repositories=repository,
+        task_writer=writer,
+    )
+    return IngestionDependencies(
+        repositories=provided.repositories,
+        task_writer=provided.task_writer,
+        vector_writer_factory=provided.vector_writer_factory,
+        graph_extractor_factory=provided.graph_extractor_factory,
+        graph_writer_factory=provided.graph_writer_factory,
+        pdf_vector_writer_factory=provided.pdf_vector_writer_factory,
+        pdf_indexer=provided.pdf_indexer,
+        cache_invalidator=provided.cache_invalidator,
+        crawler_factories=(),
+    )
 
 
 class IngestionTaskWriterTests(unittest.TestCase):
@@ -32,49 +54,31 @@ class IngestionTaskWriterTests(unittest.TestCase):
             item_count=3,
         )
 
-    def test_default_writer_uses_data_repository_task_component(self) -> None:
+    def test_composed_writer_uses_repository_task_component(self) -> None:
         writer = MagicMock(spec=IngestionTaskWriter)
         repository = MagicMock(ingestion_tasks=writer)
 
-        with (
-            patch(
-                "backend.app.services.ingestion.pipeline.get_configured_application_repositories",
-                return_value=repository,
-            ),
-            patch.object(IngestionOrchestrator, "_CRAWLER_CLASSES", []),
-        ):
-            orchestrator = IngestionOrchestrator()
+        orchestrator = IngestionOrchestrator(_dependencies(repository))
 
         self.assertIs(orchestrator.repositories, repository)
         self.assertIs(orchestrator.task_writer, writer)
 
-    def test_borrowed_repositories_own_all_default_ingestion_components(self) -> None:
+    def test_composed_repositories_own_all_ingestion_components(self) -> None:
         repository = MagicMock()
 
-        with (
-            patch(
-                "backend.app.services.ingestion.pipeline.get_configured_application_repositories"
-            ) as configured_repositories,
-            patch.object(IngestionOrchestrator, "_CRAWLER_CLASSES", []),
-        ):
-            orchestrator = IngestionOrchestrator(repositories=repository)
+        orchestrator = IngestionOrchestrator(_dependencies(repository))
 
-        configured_repositories.assert_not_called()
         self.assertIs(orchestrator.repositories, repository)
         self.assertIs(orchestrator.documents, repository.documents)
         self.assertIs(orchestrator.rank_snapshots, repository.rank_snapshots)
         self.assertIs(orchestrator.github_ingestion, repository.github_ingestion)
         self.assertIs(orchestrator.task_writer, repository.ingestion_tasks)
 
-    def test_explicit_task_writer_overrides_borrowed_repository_component_only(self) -> None:
+    def test_composed_task_writer_overrides_repository_component_only(self) -> None:
         repository = MagicMock()
         writer = MagicMock(spec=IngestionTaskWriter)
 
-        with patch.object(IngestionOrchestrator, "_CRAWLER_CLASSES", []):
-            orchestrator = IngestionOrchestrator(
-                task_writer=writer,
-                repositories=repository,
-            )
+        orchestrator = IngestionOrchestrator(_dependencies(repository, writer))
 
         self.assertIs(orchestrator.repositories, repository)
         self.assertIs(orchestrator.documents, repository.documents)
@@ -87,8 +91,9 @@ class IngestionTaskWriterTests(unittest.TestCase):
         orchestrator, writer, repository = self._orchestrator_with_crawler()
         orchestrator._enrich_and_ingest = AsyncMock(return_value=3)
 
-        with patch(
-            "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+        with patch.object(
+            orchestrator,
+            "_cache_invalidator",
             new=AsyncMock(),
         ):
             result = self._run(orchestrator.run_single_source("news", ["daily"]))
@@ -125,8 +130,9 @@ class IngestionTaskWriterTests(unittest.TestCase):
         orchestrator, writer, repository = self._orchestrator_with_crawler()
         orchestrator._enrich_and_ingest = AsyncMock(return_value=2)
 
-        with patch(
-            "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+        with patch.object(
+            orchestrator,
+            "_cache_invalidator",
             new=AsyncMock(),
         ):
             result = self._run(orchestrator.run_all())
@@ -191,6 +197,7 @@ class IngestionTaskWriterTests(unittest.TestCase):
         orchestrator.rank_snapshots = repository.rank_snapshots
         orchestrator.github_ingestion = repository.github_ingestion
         orchestrator.task_writer = writer
+        orchestrator._cache_invalidator = AsyncMock()
         orchestrator._crawlers = {"news": crawler}
         orchestrator._start_arxiv_pdf_background = MagicMock()
         return orchestrator, writer, repository

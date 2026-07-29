@@ -103,17 +103,17 @@ class SmartIngestionInjectionTests(unittest.TestCase):
 
         self.assertIsNone(run_smart_ingestion(7, reader=reader, runner=runner))
 
-    def test_injected_reader_avoids_default_repository(self) -> None:
+    def test_injected_reader_and_runner_avoid_default_composition(self) -> None:
         reader = MagicMock(spec=LatestTaskReader)
         reader.get_latest_task.return_value = None
         runner = MagicMock()
 
         with patch(
-            "backend.app.services.ingestion.pipeline.get_configured_application_repositories"
-        ) as repository_provider:
+            "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies"
+        ) as provider:
             run_smart_ingestion(7, reader=reader, runner=runner)
 
-        repository_provider.assert_not_called()
+        provider.assert_not_called()
 
     def test_default_path_uses_composed_reader_and_pipeline_runner(self) -> None:
         reader = MagicMock(spec=LatestTaskReader)

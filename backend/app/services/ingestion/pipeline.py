@@ -25,49 +25,24 @@ import threading
 from datetime import date
 from typing import Any, Callable, Dict, List, Optional
 
-from backend.app.repositories.application_repository_context import (
-    get_configured_application_repositories,
-)
-from backend.app.repositories.application_repository_factory import (
-    ApplicationRepositories,
-)
 from backend.app.repositories.document_repository import (
     DocumentSearchReader,
     DocumentWriter,
 )
-from backend.app.repositories.graph_repo import GraphRepository
-from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.task_repository import (
     IngestionTaskWriter,
     LatestTaskReader,
 )
-from backend.app.services.ingestion.graph_extractor import GraphExtractor
-from backend.app.services.ingestion.cache_invalidation import (
-    clear_dashboard_cache_safely as _clear_dashboard_cache_safely,
-)
 from backend.app.services.ingestion.composition import (
     IngestionDependencies,
     provide_ingestion_dependencies,
 )
-from backend.app.services.ingestion.content_enricher import (
-    enrich_papers,
-    enrich_arxiv_pdfs_background,
-)
-from backend.app.services.ingestion.arxiv_pdf_downloader import (
-    download_and_index_arxiv_pdfs,
-)
+from backend.app.services.ingestion.content_enricher import enrich_papers
 from backend.app.services.ingestion.base_crawler import (
     BaseCrawler,
     CrawlResult,
     today_cst,
-)
-from backend.app.services.ingestion.crawlers import (
-    ArxivCrawler,
-    GitHubCrawler,
-    NewsCrawler,
-    ProductHuntCrawler,
-    HackerNewsCrawler,
 )
 from backend.app.services.ingestion.document_projection import (
     document_id as _doc_id,
@@ -161,17 +136,17 @@ def _ingest_documents(
     *,
     document_writer: DocumentWriter,
     rank_snapshots: RankSnapshotRepository,
-    vector_writer_factory: Callable[[], object] | None = None,
-    graph_extractor_factory: Callable[[], object] | None = None,
-    graph_writer_factory: Callable[[], object] | None = None,
+    vector_writer_factory: Callable[[], object],
+    graph_extractor_factory: Callable[[], object],
+    graph_writer_factory: Callable[[], object],
 ) -> int:
     del task_id
     adapter = IngestionPersistenceAdapter(
         documents=document_writer,
         rank_snapshots=rank_snapshots,
-        vector_writer_factory=vector_writer_factory or MilvusRepository,
-        graph_extractor_factory=graph_extractor_factory or GraphExtractor,
-        graph_writer_factory=graph_writer_factory or GraphRepository,
+        vector_writer_factory=vector_writer_factory,
+        graph_extractor_factory=graph_extractor_factory,
+        graph_writer_factory=graph_writer_factory,
     )
     return adapter.persist(
         papers,
@@ -194,61 +169,35 @@ class IngestionOrchestrator:
       - 统一处理快照日期、内容丰富、后台 PDF 补全
 
     使用方式：
-        orchestrator = IngestionOrchestrator()
+        orchestrator = IngestionOrchestrator(provide_ingestion_dependencies())
         stats = orchestrator.run_all()                      # 全量采集
         stats = orchestrator.run_single_source("github")    # 单源调度
     """
 
-    # 已注册的爬虫（按优先级排列）
-    _CRAWLER_CLASSES: List[type] = [
-        ArxivCrawler,
-        GitHubCrawler,
-        NewsCrawler,
-        ProductHuntCrawler,
-        HackerNewsCrawler,
-    ]
-
     def __init__(
         self,
+        dependencies: IngestionDependencies,
+        *,
         limit: int = _FETCH_LIMIT,
         top_n: int = _TOP_N_PER_SOURCE,
         target_date: Optional[str] = None,
-        task_writer: IngestionTaskWriter | None = None,
-        repositories: ApplicationRepositories | None = None,
-        dependencies: IngestionDependencies | None = None,
     ):
         self.limit = limit
         self.top_n = top_n
         self.target_date = target_date
         self.snapshot_date = target_date or today_cst()
 
-        injected_dependencies = dependencies is not None
-        if dependencies is None:
-            borrowed_repositories = (
-                repositories or get_configured_application_repositories()
-            )
-            dependencies = provide_ingestion_dependencies(
-                repositories=borrowed_repositories,
-                task_writer=task_writer,
-            )
         self.dependencies = dependencies
         self.repositories = dependencies.repositories
         self.documents = self.repositories.documents
         self.rank_snapshots = self.repositories.rank_snapshots
         self.github_ingestion = self.repositories.github_ingestion
-        self.task_writer = task_writer or dependencies.task_writer
+        self.task_writer = dependencies.task_writer
         self._cache_invalidator = dependencies.cache_invalidator
 
-        # Commit 37 will switch default construction to the provider factories. For
-        # now only an explicitly injected composition owns crawler construction.
-        crawler_factories = (
-            dependencies.crawler_factories
-            if injected_dependencies
-            else self._CRAWLER_CLASSES
-        )
         self._crawlers: Dict[str, BaseCrawler] = {}
-        for cls in crawler_factories:
-            crawler = cls()
+        for factory in dependencies.crawler_factories:
+            crawler = factory()
             self._crawlers[crawler.source_name] = crawler
 
     @property
@@ -318,7 +267,6 @@ class IngestionOrchestrator:
             source_key=source_name,  # ← 修复 Bug1：传纯名称，不拼接 period
             delay=enrich_delay,
         )
-        dependencies = getattr(self, "dependencies", None)
         count = await asyncio.to_thread(
             _ingest_documents,
             selected,
@@ -327,21 +275,9 @@ class IngestionOrchestrator:
             snapshot_date or self.snapshot_date,
             document_writer=self.documents,
             rank_snapshots=self.rank_snapshots,
-            vector_writer_factory=(
-                dependencies.vector_writer_factory
-                if dependencies is not None
-                else MilvusRepository
-            ),
-            graph_extractor_factory=(
-                dependencies.graph_extractor_factory
-                if dependencies is not None
-                else GraphExtractor
-            ),
-            graph_writer_factory=(
-                dependencies.graph_writer_factory
-                if dependencies is not None
-                else GraphRepository
-            ),
+            vector_writer_factory=self.dependencies.vector_writer_factory,
+            graph_extractor_factory=self.dependencies.graph_extractor_factory,
+            graph_writer_factory=self.dependencies.graph_writer_factory,
         )
         return count
 
@@ -368,19 +304,8 @@ class IngestionOrchestrator:
 
         def _bg_pdf_download():
             try:
-                dependencies = getattr(self, "dependencies", None)
-                vector_factory = (
-                    dependencies.pdf_vector_writer_factory
-                    if dependencies is not None
-                    else MilvusRepository
-                )
-                pdf_indexer = (
-                    dependencies.pdf_indexer
-                    if dependencies is not None
-                    else download_and_index_arxiv_pdfs
-                )
-                milvus_repo = vector_factory()
-                dl_ok, idx_ok = pdf_indexer(
+                milvus_repo = self.dependencies.pdf_vector_writer_factory()
+                dl_ok, idx_ok = self.dependencies.pdf_indexer(
                     arxiv_papers,
                     milvus_repo=milvus_repo,
                     mysql_repo=documents,
@@ -404,11 +329,7 @@ class IngestionOrchestrator:
         logger.info("[Orchestrator] 后台 PDF 下载线程已启动（daemon=True）。")
 
     async def _clear_dashboard_cache(self) -> None:
-        await getattr(
-            self,
-            "_cache_invalidator",
-            _clear_dashboard_cache_safely,
-        )()
+        await self._cache_invalidator()
 
     async def run_single_source(
         self,
@@ -438,10 +359,10 @@ def _compose_ingestion_orchestrator(
     dependencies: IngestionDependencies | None = None,
 ) -> IngestionOrchestrator:
     return IngestionOrchestrator(
+        dependencies=dependencies or provide_ingestion_dependencies(),
         limit=limit,
         top_n=top_n,
         target_date=target_date,
-        dependencies=dependencies or provide_ingestion_dependencies(),
     )
 
 

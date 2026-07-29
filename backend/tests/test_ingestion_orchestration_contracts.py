@@ -38,6 +38,7 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
         orchestrator.github_ingestion = MagicMock()
         orchestrator.task_writer = MagicMock()
         orchestrator.task_writer.create_task.return_value = 42
+        orchestrator._cache_invalidator = AsyncMock()
         orchestrator._crawlers = crawlers
         orchestrator._enrich_and_ingest = AsyncMock(side_effect=lambda **kwargs: len(kwargs["papers"]))
         orchestrator._start_arxiv_pdf_background = MagicMock()
@@ -75,8 +76,9 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
             return 1
 
         orchestrator._enrich_and_ingest = AsyncMock(side_effect=ingest)
-        with patch(
-            "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+        with patch.object(
+            orchestrator,
+            "_cache_invalidator",
             new=AsyncMock(),
         ):
             result = await orchestrator.run_all()
@@ -129,8 +131,9 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
         async def clear_cache() -> None:
             events.append("cache")
 
-        with patch(
-            "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+        with patch.object(
+            orchestrator,
+            "_cache_invalidator",
             new=AsyncMock(side_effect=clear_cache),
         ):
             await orchestrator.run_all()
@@ -167,8 +170,9 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        with patch(
-            "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+        with patch.object(
+            orchestrator,
+            "_cache_invalidator",
             new=AsyncMock(),
         ):
             result = await orchestrator.run_all()
@@ -211,8 +215,9 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
         )
         orchestrator = self._orchestrator({"news": crawler})
 
-        with patch(
-            "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+        with patch.object(
+            orchestrator,
+            "_cache_invalidator",
             new=AsyncMock(side_effect=RuntimeError("redis unavailable")),
         ):
             result = await orchestrator.run_all()
@@ -247,8 +252,9 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
                 "backend.app.services.ingestion.pipeline.asyncio.to_thread",
                 new=AsyncMock(side_effect=to_thread),
             ) as pipeline_to_thread,
-            patch(
-                "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+            patch.object(
+                orchestrator,
+                "_cache_invalidator",
                 new=AsyncMock(),
             ),
         ):
@@ -298,8 +304,9 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
         orchestrator._start_arxiv_pdf_background.side_effect = lambda papers: events.append("pdf")
         orchestrator.task_writer.finish_task.side_effect = lambda *args, **kwargs: events.append("finish")
 
-        with patch(
-            "backend.app.services.ingestion.pipeline._clear_dashboard_cache_safely",
+        with patch.object(
+            orchestrator,
+            "_cache_invalidator",
             new=AsyncMock(side_effect=lambda: events.append("cache")),
         ):
             await orchestrator.run_single_source("arxiv", ["daily"])
