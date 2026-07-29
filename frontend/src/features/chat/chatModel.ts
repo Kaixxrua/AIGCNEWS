@@ -53,9 +53,15 @@ export function normalizeChatAttachment(
     id: String(raw.id ?? ''),
     name: String(raw.name ?? raw.file_name ?? ''),
     mimeType: String(raw.mimeType ?? raw.mime_type ?? ''),
-    modality: raw.modality === 'pdf' ? 'pdf' : 'image',
+    modality: raw.modality === 'pdf' || raw.modality === 'vision' ? raw.modality : 'image',
     parseStatus: (raw.parseStatus ?? raw.parse_status ?? 'uploaded') as ChatAttachmentRef['parseStatus'],
     progress: typeof raw.progress === 'number' ? raw.progress : undefined,
+    imageRetained: typeof (raw.imageRetained ?? raw.image_retained) === 'boolean'
+      ? Boolean(raw.imageRetained ?? raw.image_retained)
+      : undefined,
+    regenerationRequiresNewImage: typeof (raw.regenerationRequiresNewImage ?? raw.regeneration_requires_new_image) === 'boolean'
+      ? Boolean(raw.regenerationRequiresNewImage ?? raw.regeneration_requires_new_image)
+      : undefined,
   }
 }
 

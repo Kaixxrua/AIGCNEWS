@@ -31,6 +31,8 @@ interface PaperReaderControllerOptions<TPaper extends PaperReaderPaper> {
   openConversation: (conversationId: string) => Promise<unknown>
   ensureGlobalConversation: (title?: string) => Promise<unknown>
   deleteActiveConversation: () => Promise<unknown>
+  appendLocalMessage: (conversationId: string, message: ChatMessage) => void
+  patchMessage: (conversationId: string, messageId: string, patch: Partial<ChatMessage>) => void
   sendMessage: (text: string, paperId?: string, conversationId?: string) => Promise<unknown>
   uploadScreenshot: (payload: { image_base64: string; mime_type: string }) => Promise<{ image_id: string }>
   connectEventSource: (params: SseConnectParams) => SseConnection
@@ -44,7 +46,6 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   const showConvPanel = ref(false)
   const inputText = ref('')
   const chatListRef = ref<HTMLElement | null>(null)
-  const visionMessages = ref<PaperReaderMessage[]>([])
   const thinkingExpanded = ref<Record<string, boolean>>({})
   const visionPopup = ref<VisionPopup | null>(null)
   const popupInputRef = ref<HTMLInputElement | null>(null)
@@ -52,12 +53,11 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
 
   const currentConversationId = computed(() => options.activeConversationId.value)
   const conversationList = computed(() => filterAndSortGlobalConversations(Object.values(options.conversationMap.value)))
-  const chatMessages = computed<PaperReaderMessage[]>(() => {
+  const messages = computed<PaperReaderMessage[]>(() => {
     const active = currentConversationId.value
     if (!active) return []
     return (options.messageMap.value[active] || []).map(mapChatStoreMessage)
   })
-  const messages = computed<PaperReaderMessage[]>(() => [...chatMessages.value, ...visionMessages.value])
   const activeConversationTitle = computed(() => {
     const id = currentConversationId.value
     if (!id) return 'AI 对话'
@@ -97,20 +97,17 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   const switchConversation = async (conversationId: string) => {
     showConvPanel.value = false
     if (conversationId === options.activeConversationId.value) return
-    visionMessages.value = []
     await options.openConversation(conversationId)
   }
 
   const newConversation = async () => {
     showConvPanel.value = false
-    visionMessages.value = []
     await options.ensureGlobalConversation('新对话')
     await options.loadConversations()
   }
 
   const deleteCurrentConversation = async () => {
     if (!currentConversationId.value) return
-    visionMessages.value = []
     showConvPanel.value = false
     await options.deleteActiveConversation()
     await options.loadConversations()
@@ -145,67 +142,117 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
     popupInputRef.value?.focus()
   }
   const closePopup = () => { visionPopup.value = null }
-  const patchVisionMessage = (id: string, patch: Partial<PaperReaderMessage>) => {
-    visionMessages.value = visionMessages.value.map((item) => item.id === id ? { ...item, ...patch } : item)
-  }
+
+  const createTemporaryMessage = (
+    conversationId: string,
+    id: string,
+    role: ChatMessage['role'],
+    content: string,
+    isStreaming: boolean,
+  ): ChatMessage => ({
+    id,
+    conversationId,
+    role,
+    content,
+    thinking: '',
+    thinkingPreview: '',
+    hasThinking: false,
+    isThinking: false,
+    thinkingDurationSec: 0,
+    isStreaming,
+    sources: [],
+    attachments: [],
+  })
 
   const sendVision = async () => {
     if (!visionPopup.value?.question.trim() || isSending.value || !currentConversationId.value) return
     const question = visionPopup.value.question.trim()
     const base64 = visionPopup.value.base64
+    const conversationId = currentConversationId.value
+    const history = (options.messageMap.value[conversationId] || [])
+      .filter((message) => message.role !== 'assistant' || message.content)
+      .slice(-12)
+      .map((message) => ({ role: message.role, content: message.content }))
     closePopup()
 
-    const userId = `vision_user_${Date.now()}`
-    const assistantId = `vision_assistant_${Date.now()}`
-    visionMessages.value = [
-      ...visionMessages.value,
-      { id: userId, role: 'user', content: `[截图追问] ${question}`, imageBase64: base64 },
-      { id: assistantId, role: 'assistant', content: '', isStreaming: true },
-    ]
+    const requestId = Date.now()
+    const userId = `vision_user_${requestId}`
+    const assistantId = `vision_assistant_${requestId}`
+    options.appendLocalMessage(
+      conversationId,
+      createTemporaryMessage(conversationId, userId, 'user', `[截图追问] ${question}`, false),
+    )
+    options.appendLocalMessage(
+      conversationId,
+      createTemporaryMessage(conversationId, assistantId, 'assistant', '', true),
+    )
 
     let imageId: string
     try {
       const upload = await options.uploadScreenshot({ image_base64: base64, mime_type: 'image/jpeg' })
       imageId = upload.image_id
     } catch (error) {
-      patchVisionMessage(assistantId, { isStreaming: false, content: `[上传失败] 截图上传失败：${error}` })
+      options.patchMessage(conversationId, assistantId, {
+        isStreaming: false,
+        content: `[上传失败] 截图上传失败：${error}`,
+      })
       return
     }
 
-    await options.connectEventSource({
+    let terminalConversationReceived = false
+    let terminalSync: Promise<unknown> | null = null
+    const connection = options.connectEventSource({
       url: options.visionRelayUrl,
       body: {
-        conversation_id: currentConversationId.value,
+        conversation_id: conversationId,
         paper_id: options.paperId.value || null,
         question,
         image_id: imageId,
-        history: chatMessages.value
-          .filter((message) => message.role !== 'assistant' || message.content)
-          .slice(-12)
-          .map((message) => ({ role: message.role, content: message.content })),
+        history,
       },
       onMessage: (payload: unknown) => {
-        const event = payload as { type: string; data?: string }
+        const event = payload as { type: string; data?: unknown }
         if (event.type === 'status') return
-        if (event.type === 'vision_extract') {
-          patchVisionMessage(assistantId, { visionExtract: event.data ?? '' })
+        if (event.type === 'conversation' && event.data && typeof event.data === 'object') {
+          terminalConversationReceived = true
+          const persistedId = String((event.data as { conversation_id?: string | number }).conversation_id ?? conversationId)
+          terminalSync = (async () => {
+            await options.loadConversations()
+            await options.openConversation(persistedId)
+          })()
           return
         }
         if (event.type === 'content') {
-          const current = visionMessages.value.find((item) => item.id === assistantId)
-          patchVisionMessage(assistantId, { content: `${current?.content || ''}${event.data ?? ''}` })
+          const current = (options.messageMap.value[conversationId] || []).find((item) => item.id === assistantId)
+          options.patchMessage(conversationId, assistantId, {
+            content: `${current?.content || ''}${String(event.data ?? '')}`,
+          })
           void scrollBottom()
         }
-        if (event.type === 'error') patchVisionMessage(assistantId, { isStreaming: false, content: `[错误] ${event.data ?? '未知错误'}` })
+        if (event.type === 'error') {
+          options.patchMessage(conversationId, assistantId, {
+            isStreaming: false,
+            content: `[错误] ${String(event.data ?? '未知错误')}`,
+          })
+        }
       },
       onDone: () => {
-        const current = visionMessages.value.find((item) => item.id === assistantId)
-        patchVisionMessage(assistantId, { isStreaming: false, content: current?.content || '（模型未返回内容）' })
+        if (terminalConversationReceived) return
+        const current = (options.messageMap.value[conversationId] || []).find((item) => item.id === assistantId)
+        options.patchMessage(conversationId, assistantId, {
+          isStreaming: false,
+          content: current?.content || '（模型未返回内容）',
+        })
       },
       onError: (error: unknown) => {
-        patchVisionMessage(assistantId, { isStreaming: false, content: `[请求失败] ${error}` })
+        options.patchMessage(conversationId, assistantId, {
+          isStreaming: false,
+          content: `[请求失败] ${error}`,
+        })
       },
     })
+    await connection.promise
+    await terminalSync
   }
 
   const sendText = async () => {

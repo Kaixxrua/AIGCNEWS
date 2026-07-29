@@ -10,8 +10,9 @@ export interface PaperReaderMessage {
   isThinking?: boolean
   thinkingDurationSec?: number
   isStreaming?: boolean
-  visionExtract?: string
-  imageBase64?: string
+  isVisual?: boolean
+  screenshotRetained?: boolean
+  regenerationRequiresNewImage?: boolean
   showRaw?: boolean
 }
 
@@ -44,6 +45,7 @@ export function filterAndSortGlobalConversations(
 }
 
 export function mapChatStoreMessage(message: ChatMessage): PaperReaderMessage {
+  const visualAttachment = message.attachments.find((attachment) => attachment.modality === 'vision')
   return {
     id: message.id,
     role: message.role,
@@ -54,6 +56,9 @@ export function mapChatStoreMessage(message: ChatMessage): PaperReaderMessage {
     isThinking: message.isThinking,
     thinkingDurationSec: message.thinkingDurationSec,
     isStreaming: message.isStreaming,
+    isVisual: !!visualAttachment,
+    screenshotRetained: visualAttachment?.imageRetained,
+    regenerationRequiresNewImage: visualAttachment?.regenerationRequiresNewImage,
     showRaw: false,
   }
 }

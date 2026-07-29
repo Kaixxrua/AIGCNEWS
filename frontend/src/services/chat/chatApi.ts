@@ -4,9 +4,11 @@ export interface ChatAttachmentRef {
   id: string
   name: string
   mimeType: string
-  modality: 'image' | 'pdf'
+  modality: 'image' | 'pdf' | 'vision'
   parseStatus: 'uploaded' | 'processing' | 'ready' | 'failed'
   progress?: number
+  imageRetained?: boolean
+  regenerationRequiresNewImage?: boolean
 }
 
 export interface ChatMessageDTO {
@@ -21,11 +23,13 @@ export interface ChatMessageDTO {
   is_streaming?: boolean
   sources?: unknown[]
   attachments?: Array<{
-    id: number | string
+    id?: number | string
     name?: string
     mime_type?: string
-    modality?: 'image' | 'pdf'
+    modality?: 'image' | 'pdf' | 'vision'
     parse_status?: 'uploaded' | 'processing' | 'ready' | 'failed'
+    image_retained?: boolean
+    regeneration_requires_new_image?: boolean
   }>
   created_at?: string
   updated_at?: string

@@ -34,6 +34,9 @@ const toggleThinking = (msgId: string) => {
   thinkingExpanded.value = { ...thinkingExpanded.value, [msgId]: !thinkingExpanded.value[msgId] }
 }
 const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
+const visualAttachment = (message: ChatMessage) => message.attachments.find((attachment) => attachment.modality === 'vision')
+const hasUnretainedScreenshot = (message: ChatMessage) => visualAttachment(message)?.imageRetained === false
+const canRegenerate = (message: ChatMessage) => !visualAttachment(message)?.regenerationRequiresNewImage
 </script>
 
 <template>
@@ -63,7 +66,12 @@ const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
         <div
           v-if="msg.role === 'user'"
           class="inline-block rounded-[20px] rounded-br-md bg-stone-700 px-4 py-3 text-sm leading-6 text-white shadow-sm"
-        >{{ msg.content }}</div>
+        >
+          <p v-if="hasUnretainedScreenshot(msg)" class="mb-2 rounded-md border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs font-medium text-stone-100">
+            截图内容未保存
+          </p>
+          {{ msg.content }}
+        </div>
 
         <div v-else class="space-y-2">
           <div
@@ -137,7 +145,7 @@ const isThinkingExpanded = (msgId: string) => !!thinkingExpanded.value[msgId]
           </div>
 
           <div class="flex items-center gap-2 px-1 pt-1 text-2xs text-stone-400">
-            <button class="transition hover:text-stone-600" @click="emit('regenerate', msg.id)">{{ t('chat.regenerate') }}</button>
+            <button v-if="canRegenerate(msg)" class="transition hover:text-stone-600" @click="emit('regenerate', msg.id)">{{ t('chat.regenerate') }}</button>
             <button class="transition hover:text-red-500" @click="emit('delete', msg.id)">{{ t('chat.delete') }}</button>
           </div>
 

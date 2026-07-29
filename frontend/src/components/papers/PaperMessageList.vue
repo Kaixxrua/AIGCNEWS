@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import { Clipboard, Eye } from 'lucide-vue-next'
+import { Clipboard } from 'lucide-vue-next'
 import type { PaperReaderMessage } from '../../features/papers/paperReaderModel'
 
 defineProps<{
@@ -27,20 +27,13 @@ const emit = defineEmits<{ toggleThinking: [messageId: string] }>()
     <div v-if="msg.role === 'assistant'" class="mr-2 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-700 text-white text-2xs font-bold">AI</div>
     <div class="max-w-[85%]" :class="msg.role === 'user' ? '' : 'flex-1'">
       <div v-if="msg.role === 'user'" class="rounded-[18px] rounded-br-sm bg-stone-700 px-3.5 py-2.5 text-xs leading-6 text-white">
-        <div v-if="msg.imageBase64" class="mb-2 rounded-lg overflow-hidden border border-white/20">
-          <img :src="msg.imageBase64" :alt="t('paper.screenshotAlt')" class="w-full max-h-[200px] object-contain bg-white/10" />
-        </div>
+        <p v-if="msg.isVisual && msg.screenshotRetained === false" class="mb-2 rounded-md border border-white/20 bg-white/10 px-2.5 py-1.5 text-2xs font-medium text-stone-100">
+          截图内容未保存
+        </p>
         {{ msg.content }}
       </div>
 
       <div v-else class="space-y-1.5">
-        <details v-if="msg.visionExtract" class="rounded-xl overflow-hidden" style="border: 1px solid rgba(168,162,158,0.18)">
-          <summary class="cursor-pointer px-3 py-2 text-2xs font-medium text-stone-400 select-none hover:bg-stone-50">
-            <Eye class="h-3 w-3 inline-block mr-1" />{{ t('paper.visionExtract') }}
-          </summary>
-          <pre class="px-3 pb-3 pt-1 text-2xs leading-5 text-stone-500 whitespace-pre-wrap break-all">{{ msg.visionExtract }}</pre>
-        </details>
-
         <div v-if="msg.hasThinking || msg.isThinking || msg.thinking" class="thinking-block overflow-hidden" :class="msg.isThinking ? 'thinking-block--active' : ''">
           <button class="thinking-header flex w-full items-center gap-2 px-3.5 py-2.5 text-left" :class="msg.isThinking ? 'cursor-default' : 'cursor-pointer'" @click="!msg.isThinking && emit('toggleThinking', msg.id)">
             <span v-if="msg.isThinking" class="thinking-spinner" />
