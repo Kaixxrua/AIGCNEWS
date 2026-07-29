@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+BACKEND = ROOT / "backend"
+
+
+def test_production_runtime_imports_no_mysql_modules() -> None:
+    script = """
+import json
+import sys
+
+import backend.app.main
+import backend.app.api.dependencies
+import backend.app.core.scheduler
+import backend.app.repositories.application_repository_factory
+import backend.app.repositories.project_catalog_factory
+
+blocked = sorted(
+    name
+    for name in sys.modules
+    if name == "pymysql"
+    or name.startswith("pymysql.")
+    or name == "DBUtils"
+    or name.startswith("DBUtils.")
+    or name == "backend.app.core.database"
+    or name.startswith("backend.app.repositories.mysql_")
+    or name == "backend.app.repositories.mysql_repo"
+    or name == "backend.app.services.project_catalog_shadow"
+)
+print(json.dumps(blocked))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == []
+
+
+def test_production_image_excludes_migration_dependencies() -> None:
+    requirements = (BACKEND / "requirements.txt").read_text(encoding="utf-8").lower()
+    dockerfile = (BACKEND / "Dockerfile").read_text(encoding="utf-8").lower()
+
+    assert "pymysql" not in requirements
+    assert "dbutils" not in requirements
+    assert "requirements-migration.txt" not in dockerfile
+
+
+def test_mysql_dependencies_are_confined_to_migration_operator() -> None:
+    requirements = (BACKEND / "requirements-migration.txt").read_text(
+        encoding="utf-8"
+    ).lower()
+    dockerfile = (BACKEND / "Dockerfile.migration").read_text(encoding="utf-8")
+    compose = (ROOT / "docker" / "docker-compose.mysql-migration.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "pymysql" in requirements
+    assert "dbutils" in requirements
+    assert "requirements-migration.txt" in dockerfile
+    assert "mysql-migration-ops:" in compose
+    assert 'profiles: ["mysql-migration"]' in compose
+    assert "Dockerfile.migration" in compose
+    assert "../backend:/src/backend:ro" in compose
+    assert "../scripts:/src/scripts:ro" in compose
+    assert "mysql-aigc:" not in compose
