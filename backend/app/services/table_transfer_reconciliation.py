@@ -143,7 +143,10 @@ class TableTransferReconciliationService:
                     connection, spec, batch_size, source_timezone
                 )
                 identity = self._identity_check(connection, spec, source[3], target_digest[3])
-                matches = source[:3] == target_digest[:3] and identity["status"] == "match"
+                matches = source[:3] == target_digest[:3] and identity["status"] in {
+                    "match",
+                    "not_applicable",
+                }
                 tables.append(
                     {
                         "table": spec.name,

@@ -8,6 +8,7 @@ import pytest
 
 from backend.app.services.application_data_transfer import APPLICATION_TABLE_TRANSFER_BY_NAME
 from backend.app.services.table_transfer_reconciliation import (
+    TableTransferReconciliationService,
     TransferReconciliationError,
     canonical_row_bytes,
 )
@@ -37,6 +38,42 @@ def test_reconciliation_canonical_digest_normalizes_bool_datetime_and_json() -> 
         updated_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc),
     )
     assert canonical_row_bytes(spec, mysql_row) == canonical_row_bytes(spec, postgres_row)
+
+
+def test_reconciliation_accepts_table_without_identity_column() -> None:
+    spec = APPLICATION_TABLE_TRANSFER_BY_NAME["documents"]
+    postgres = MagicMock()
+    service = TableTransferReconciliationService(
+        mysql=MagicMock(),
+        postgres=postgres,
+        table_specs=(spec,),
+        check_foreign_keys=False,
+    )
+    digest = (1, "key-digest", "row-digest", None)
+
+    with (
+        patch.object(
+            service,
+            "_confirm_target",
+            return_value=MagicMock(
+                database="app_test",
+                schema="public",
+                schema_version=6,
+            ),
+        ),
+        patch.object(service, "_require_terminal_checkpoints"),
+        patch.object(service, "_digest_source", return_value=digest),
+        patch.object(service, "_digest_target", return_value=digest),
+    ):
+        result = service.verify(
+            job_id="complete-job",
+            target_database="app_test",
+            target_schema="public",
+        )
+
+    assert result["tables"][0]["identity"] == {"status": "not_applicable"}
+    assert result["tables"][0]["status"] == "match"
+    assert result["status"] == "match"
 
 
 def test_reconciliation_rejects_invalid_json_without_exposing_value() -> None:
