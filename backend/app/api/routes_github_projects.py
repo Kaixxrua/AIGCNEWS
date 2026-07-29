@@ -644,36 +644,17 @@ async def list_github_projects(
     sort: GitHubProjectSort = Query(default="stars"),
 ) -> GitHubProjectsResponse:
     """收藏夹式 GitHub 项目库：历史项目、stars > 500、AI 分类与中文描述。"""
-    min_stars = 500
-    db = get_project_catalog_repository()
-    result = await asyncio.to_thread(
-        db.list_projects,
+    return await list_projects(
         source="github",
         scope="all",
-        category=category.strip(),
-        subcategory=subcategory.strip(),
-        q=q.strip(),
-        language=language.strip(),
+        category=category,
+        subcategory=subcategory,
+        q=q,
+        language=language,
         page=page,
         page_size=page_size,
         sort=sort,
-        min_stars=min_stars,
-        enriched_only=True,
-        user_id=None,
-    )
-    return GitHubProjectsResponse(
-        items=result["items"],
-        total=int(result["total"]),
-        page=int(result["page"]),
-        page_size=int(result["page_size"]),
-        has_next=int(result["page"]) * int(result["page_size"]) < int(result["total"]),
-        min_stars=min_stars,
-        scope="all",
-        category=category.strip(),
-        subcategory=subcategory.strip(),
-        q=q.strip(),
-        sort=sort,
-        source="github",
+        user=None,
     )
 
 
@@ -684,12 +665,4 @@ async def list_github_projects(
 )
 async def list_github_project_categories() -> GitHubProjectCategoriesResponse:
     """返回 GitHub 项目库 AI 分类及数量。"""
-    min_stars = 500
-    db = get_project_catalog_repository()
-    result = await asyncio.to_thread(
-        db.get_project_categories,
-        source="github",
-        min_stars=min_stars,
-        enriched_only=True,
-    )
-    return _categories_response(result, min_stars=min_stars, source="github")
+    return await list_project_categories(source="github", user=None)

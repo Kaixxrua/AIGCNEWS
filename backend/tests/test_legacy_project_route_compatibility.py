@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -96,6 +97,85 @@ def _call_tool(client: TestClient, name: str, arguments: dict, request_id: int =
             "params": {"name": name, "arguments": arguments},
         },
     )
+
+
+def test_legacy_http_aliases_delegate_to_canonical_route_handlers() -> None:
+    project_response = routes_github_projects.GitHubProjectsResponse(
+        items=[],
+        total=0,
+        page=1,
+        page_size=24,
+        has_next=False,
+        min_stars=500,
+        scope="all",
+        category="",
+        subcategory="",
+        q="",
+        sort="stars",
+        source="github",
+    )
+    category_response = routes_github_projects.GitHubProjectCategoriesResponse(
+        items=[], total=0, min_stars=500, source="github"
+    )
+    with (
+        patch.object(
+            routes_github_projects,
+            "list_projects",
+            new=AsyncMock(return_value=project_response),
+        ) as list_projects,
+        patch.object(
+            routes_github_projects,
+            "list_project_categories",
+            new=AsyncMock(return_value=category_response),
+        ) as list_categories,
+    ):
+        projects = asyncio.run(
+            routes_github_projects.list_github_projects(
+                category=" agents ",
+                subcategory=" frameworks ",
+                q=" sdk ",
+                language=" Python ",
+                page=2,
+                page_size=7,
+                sort="updated",
+            )
+        )
+        categories = asyncio.run(
+            routes_github_projects.list_github_project_categories()
+        )
+
+    assert projects is project_response
+    assert categories is category_response
+    list_projects.assert_awaited_once_with(
+        source="github",
+        scope="all",
+        category=" agents ",
+        subcategory=" frameworks ",
+        q=" sdk ",
+        language=" Python ",
+        page=2,
+        page_size=7,
+        sort="updated",
+        user=None,
+    )
+    list_categories.assert_awaited_once_with(source="github", user=None)
+
+
+def test_mcp_legacy_library_delegates_to_canonical_ai_handler() -> None:
+    context = MagicMock()
+    arguments = {"q": "agent sdk", "limit": 7}
+    expected = {"items": [], "total": 0}
+    with patch.object(
+        inbound_tools,
+        "_tool_search_github_ai_projects",
+        new=AsyncMock(return_value=expected),
+    ) as canonical:
+        result = asyncio.run(
+            inbound_tools._tool_get_project_library(context, arguments)
+        )
+
+    assert result is expected
+    canonical.assert_awaited_once_with(context, arguments)
 
 
 def test_legacy_projects_defaults_preserve_public_github_wire_shape() -> None:

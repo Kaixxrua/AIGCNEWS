@@ -265,9 +265,9 @@ async def _tool_search_github_ai_projects(
 
 
 async def _tool_get_project_library(
-    _context_value: McpToolContext, args: dict[str, Any]
+    context: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
-    return await _search_project_library(args, mode="ai")
+    return await _tool_search_github_ai_projects(context, args)
 
 
 async def _tool_search_my_project_favorites(
