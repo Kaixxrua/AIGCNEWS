@@ -4,7 +4,10 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
+from psycopg import errors
+
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
+from backend.app.repositories.mcp_server_repository import McpServerConfigConflictError
 
 
 McpServerDefault = tuple[str, str, str]
@@ -92,30 +95,35 @@ class PostgresMcpServerConfigRepository:
         if auth_type == "none":
             clean_auth_token = None
 
-        with self._database.transaction() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO mcp_server_configs
-                        (server_key, display_name, description, url, transport, auth_type, auth_token, enabled)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id
-                    """,
-                    (
-                        server_key,
-                        display_name,
-                        description,
-                        url,
-                        transport,
-                        auth_type,
-                        clean_auth_token,
-                        bool(payload.get("enabled", True)),
-                    ),
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    raise RuntimeError("PostgreSQL MCP server insert did not return an id")
-                server_id = int(row["id"])
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO mcp_server_configs
+                            (server_key, display_name, description, url, transport, auth_type, auth_token, enabled)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        (
+                            server_key,
+                            display_name,
+                            description,
+                            url,
+                            transport,
+                            auth_type,
+                            clean_auth_token,
+                            bool(payload.get("enabled", True)),
+                        ),
+                    )
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise RuntimeError("PostgreSQL MCP server insert did not return an id")
+                    server_id = int(row["id"])
+        except errors.UniqueViolation as exc:
+            if exc.diag.constraint_name == "uq_mcp_server_configs_key":
+                raise McpServerConfigConflictError("server_key already exists") from exc
+            raise
 
         row = self.get_mcp_server_config(server_id)
         return row or {}
@@ -164,34 +172,39 @@ class PostgresMcpServerConfigRepository:
             effective_auth_token = existing.get("auth_token")
         enabled = bool(payload.get("enabled", bool(existing.get("enabled"))))
 
-        with self._database.transaction() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    UPDATE mcp_server_configs
-                    SET server_key = %s,
-                        display_name = %s,
-                        description = %s,
-                        url = %s,
-                        transport = %s,
-                        auth_type = %s,
-                        auth_token = %s,
-                        enabled = %s,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                    """,
-                    (
-                        server_key,
-                        display_name,
-                        description,
-                        url,
-                        transport,
-                        auth_type,
-                        effective_auth_token,
-                        enabled,
-                        server_id,
-                    ),
-                )
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE mcp_server_configs
+                        SET server_key = %s,
+                            display_name = %s,
+                            description = %s,
+                            url = %s,
+                            transport = %s,
+                            auth_type = %s,
+                            auth_token = %s,
+                            enabled = %s,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                        """,
+                        (
+                            server_key,
+                            display_name,
+                            description,
+                            url,
+                            transport,
+                            auth_type,
+                            effective_auth_token,
+                            enabled,
+                            server_id,
+                        ),
+                    )
+        except errors.UniqueViolation as exc:
+            if exc.diag.constraint_name == "uq_mcp_server_configs_key":
+                raise McpServerConfigConflictError("server_key already exists") from exc
+            raise
 
         return self.get_mcp_server_config(server_id)
 

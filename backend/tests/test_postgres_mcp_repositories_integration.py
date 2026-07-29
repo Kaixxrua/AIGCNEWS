@@ -10,6 +10,7 @@ from backend.app.core.postgres_database import (
     create_postgres_pool,
 )
 from backend.app.core.postgres_migrations import PostgresMigrationRunner
+from backend.app.repositories.mcp_server_repository import McpServerConfigConflictError
 from backend.app.repositories.postgres_mcp_access_token_repository import (
     PostgresMcpAccessTokenRepository,
 )
@@ -100,7 +101,7 @@ def test_postgres_mcp_server_repository_round_trip_and_unique_sqlstate(database)
     )
     assert cleared["auth_token"] is None
 
-    with pytest.raises(Exception) as context:
+    with pytest.raises(McpServerConfigConflictError):
         repository.create_mcp_server_config(
             {
                 "server_key": "private",
@@ -108,7 +109,6 @@ def test_postgres_mcp_server_repository_round_trip_and_unique_sqlstate(database)
                 "url": "https://duplicate.example/mcp",
             }
         )
-    assert getattr(context.value, "sqlstate", None) == "23505"
 
     assert repository.delete_mcp_server_config(created["id"])
     assert repository.get_mcp_server_config(created["id"]) is None

@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 
+class McpServerConfigConflictError(Exception):
+    """A unique MCP Server configuration field conflicts with another row."""
+
+
 class McpServerConfigSeeder(Protocol):
     """Initialize editable MCP Server rows from configured defaults."""
 

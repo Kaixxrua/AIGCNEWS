@@ -16,7 +16,10 @@ from backend.app.api.dependencies import (
     get_runtime_provider_setting_repository,
 )
 from backend.app.core.auth import RequireAdmin
-from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
+from backend.app.repositories.mcp_server_repository import (
+    McpServerConfigConflictError,
+    McpServerConfigRepository,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectRecommendationRepository,
@@ -185,8 +188,6 @@ class OperationsRouteTests(unittest.TestCase):
         repository.list_mcp_server_configs.assert_called_once_with()
 
     def test_mcp_server_create_forwards_validated_payload_and_maps_duplicate(self) -> None:
-        from pymysql.err import IntegrityError
-
         repository = MagicMock(spec=McpServerConfigRepository)
         repository.create_mcp_server_config.return_value = self._mcp_row(auth_token="new-secret")
         client = self._mcp_client(repository)
@@ -210,9 +211,29 @@ class OperationsRouteTests(unittest.TestCase):
             }
         )
 
-        repository.create_mcp_server_config.side_effect = IntegrityError()
+        repository.create_mcp_server_config.side_effect = McpServerConfigConflictError()
         duplicate = client.post("/api/ops/mcp-servers", json=payload)
         self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(
+            duplicate.json(),
+            {"detail": "server_key 已存在，请换一个标识"},
+        )
+
+    def test_mcp_server_update_maps_duplicate_to_conflict(self) -> None:
+        repository = MagicMock(spec=McpServerConfigRepository)
+        repository.update_mcp_server_config.side_effect = McpServerConfigConflictError()
+        client = self._mcp_client(repository)
+
+        response = client.put(
+            "/api/ops/mcp-servers/42",
+            json=self._mcp_request(),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json(),
+            {"detail": "server_key 已存在，请换一个标识"},
+        )
 
     def test_mcp_server_update_delete_preserve_missing_mappings(self) -> None:
         repository = MagicMock(spec=McpServerConfigRepository)

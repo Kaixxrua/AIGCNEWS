@@ -4,7 +4,10 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
+from pymysql.err import IntegrityError
+
 from backend.app.core.database import DatabaseLifecycle
+from backend.app.repositories.mcp_server_repository import McpServerConfigConflictError
 
 
 McpServerDefault = tuple[str, str, str]
@@ -98,26 +101,31 @@ class MySQLMcpServerConfigRepository:
         if auth_type == "none":
             clean_auth_token = None
 
-        with self._database.transaction() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO mcp_server_configs
-                        (server_key, display_name, description, url, transport, auth_type, auth_token, enabled)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        server_key,
-                        display_name,
-                        description,
-                        url,
-                        transport,
-                        auth_type,
-                        clean_auth_token,
-                        enabled,
-                    ),
-                )
-                server_id = int(cur.lastrowid)
+        try:
+            with self._database.transaction() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO mcp_server_configs
+                            (server_key, display_name, description, url, transport, auth_type, auth_token, enabled)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            server_key,
+                            display_name,
+                            description,
+                            url,
+                            transport,
+                            auth_type,
+                            clean_auth_token,
+                            enabled,
+                        ),
+                    )
+                    server_id = int(cur.lastrowid)
+        except IntegrityError as exc:
+            if exc.args and exc.args[0] == 1062:
+                raise McpServerConfigConflictError("server_key already exists") from exc
+            raise
 
         row = self.get_mcp_server_config(server_id)
         return row or {}
@@ -167,34 +175,39 @@ class MySQLMcpServerConfigRepository:
             effective_auth_token = existing.get("auth_token")
         enabled = 1 if payload.get("enabled", bool(existing.get("enabled"))) else 0
 
-        with self._database.transaction() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE mcp_server_configs
-                    SET server_key = %s,
-                        display_name = %s,
-                        description = %s,
-                        url = %s,
-                        transport = %s,
-                        auth_type = %s,
-                        auth_token = %s,
-                        enabled = %s,
-                        updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (
-                        server_key,
-                        display_name,
-                        description,
-                        url,
-                        transport,
-                        auth_type,
-                        effective_auth_token,
-                        enabled,
-                        server_id,
-                    ),
-                )
+        try:
+            with self._database.transaction() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE mcp_server_configs
+                        SET server_key = %s,
+                            display_name = %s,
+                            description = %s,
+                            url = %s,
+                            transport = %s,
+                            auth_type = %s,
+                            auth_token = %s,
+                            enabled = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (
+                            server_key,
+                            display_name,
+                            description,
+                            url,
+                            transport,
+                            auth_type,
+                            effective_auth_token,
+                            enabled,
+                            server_id,
+                        ),
+                    )
+        except IntegrityError as exc:
+            if exc.args and exc.args[0] == 1062:
+                raise McpServerConfigConflictError("server_key already exists") from exc
+            raise
 
         return self.get_mcp_server_config(server_id)
 

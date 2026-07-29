@@ -19,7 +19,10 @@ from backend.app.api.dependencies import (
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.document_repository import DocumentAdminWriter
-from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
+from backend.app.repositories.mcp_server_repository import (
+    McpServerConfigConflictError,
+    McpServerConfigRepository,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectRecommendationRepository,
@@ -422,12 +425,10 @@ async def create_mcp_server(
     ),
 ) -> McpServerConfigResponse:
     """创建 MCP Server 配置。auth_token 只写入，不明文返回。"""
-    from pymysql.err import IntegrityError
-
     payload = _mcp_payload(request)
     try:
         row = await asyncio.to_thread(repository.create_mcp_server_config, payload)
-    except IntegrityError as exc:
+    except McpServerConfigConflictError as exc:
         raise HTTPException(status_code=409, detail="server_key 已存在，请换一个标识") from exc
     return _mcp_server_config_response(row)
 
@@ -442,8 +443,6 @@ async def update_mcp_server(
     ),
 ) -> McpServerConfigResponse:
     """更新 MCP Server 配置。auth_token 留空时保留，clear_auth_token=true 时清空。"""
-    from pymysql.err import IntegrityError
-
     payload = _mcp_payload(request)
     try:
         row = await asyncio.to_thread(
@@ -451,7 +450,7 @@ async def update_mcp_server(
             server_id,
             payload,
         )
-    except IntegrityError as exc:
+    except McpServerConfigConflictError as exc:
         raise HTTPException(status_code=409, detail="server_key 已存在，请换一个标识") from exc
     if not row:
         raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
