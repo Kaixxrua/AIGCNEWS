@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.mysql_user_project_collection_repository import (
+    MySQLUserProjectCollectionRepository,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectIngestionRepository,
@@ -19,14 +22,20 @@ def test_mysql_repository_structurally_satisfies_project_write_protocols() -> No
     recommendation: GitHubProjectRecommendationRepository = repository
     semantic: GitHubProjectSemanticSourceRepository = repository
     websites: ToolWebsiteEnrichmentRepository = repository
-    collections: UserProjectCollectionRepository = repository
 
     assert ingestion is repository
     assert enrichment is repository
     assert recommendation is repository
     assert semantic is repository
     assert websites is repository
-    assert collections is repository
+
+
+def test_mysql_collection_adapter_satisfies_personal_collection_protocol() -> None:
+    repository: UserProjectCollectionRepository = object.__new__(
+        MySQLUserProjectCollectionRepository
+    )
+
+    assert isinstance(repository, MySQLUserProjectCollectionRepository)
 
 
 def test_project_write_protocols_cover_all_runtime_operations() -> None:
@@ -85,4 +94,9 @@ def test_project_write_protocols_cover_all_runtime_operations() -> None:
 
     for protocol, methods in expected.items():
         assert methods.issubset(protocol.__dict__)
-        assert methods.issubset(MySQLRepository.__dict__)
+        implementation = (
+            MySQLUserProjectCollectionRepository
+            if protocol is UserProjectCollectionRepository
+            else MySQLRepository
+        )
+        assert methods.issubset(implementation.__dict__)

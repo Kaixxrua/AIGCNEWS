@@ -424,7 +424,6 @@ class MySQLRepository:
         self._mcp_access_tokens: MySQLMcpAccessTokenRepository | None = None
         self._user_accounts: MySQLUserAccountRepository | None = None
         self._runtime_provider_settings: MySQLRuntimeProviderSettingRepository | None = None
-        self._project_collections: Any | None = None
         if not MySQLRepository._schema_initialized:
             with MySQLRepository._schema_lock:
                 if not MySQLRepository._schema_initialized:
@@ -546,16 +545,6 @@ class MySQLRepository:
                 self._database
             )
         return self._runtime_provider_settings
-
-    @property
-    def project_collections(self):
-        if getattr(self, "_project_collections", None) is None:
-            from backend.app.repositories.mysql_user_project_collection_repository import (
-                MySQLUserProjectCollectionRepository,
-            )
-
-            self._project_collections = MySQLUserProjectCollectionRepository(self)
-        return self._project_collections
 
     def resolve_github_repo_id(self, repo_id: str = "", full_name: str = "") -> str:
         """Return the canonical repo_id for a GitHub repository identity."""
@@ -2819,54 +2808,6 @@ class MySQLRepository:
         finally:
             conn.close()
 
-    def add_project_favorite(
-        self,
-        *,
-        user_id: int,
-        source: str,
-        repo_id: Any = None,
-        website_id: Any = None,
-    ) -> Dict[str, Any]:
-        return self.project_collections.add_project_favorite(
-            user_id=user_id,
-            source=source,
-            repo_id=repo_id,
-            website_id=website_id,
-        )
-
-    def remove_project_favorite(
-        self,
-        *,
-        user_id: int,
-        source: str,
-        repo_id: Any = None,
-        website_id: Any = None,
-    ) -> bool:
-        return self.project_collections.remove_project_favorite(
-            user_id=user_id,
-            source=source,
-            repo_id=repo_id,
-            website_id=website_id,
-        )
-
-    def link_user_tool_website(
-        self,
-        *,
-        user_id: int,
-        website_id: int,
-        added_via: str = "auto",
-    ) -> Dict[str, Any]:
-        return self.project_collections.link_user_tool_website(
-            user_id=user_id,
-            website_id=website_id,
-            added_via=added_via,
-        )
-
-    def unlink_user_tool_website(self, *, user_id: int, website_id: int) -> bool:
-        return self.project_collections.unlink_user_tool_website(
-            user_id=user_id, website_id=website_id
-        )
-
     def get_tool_website_item(self, website_id: int) -> Optional[Dict[str, Any]]:
         sql = """
             SELECT
@@ -2918,16 +2859,6 @@ class MySQLRepository:
             return _normalize_project_row(row) if row else None
         finally:
             conn.close()
-
-    def get_tool_website_item_for_user(
-        self, *, user_id: int, website_id: int
-    ) -> Optional[Dict[str, Any]]:
-        return self.project_collections.get_tool_website_item_for_user(
-            user_id=user_id, website_id=website_id
-        )
-
-    def upsert_user_tool_website_override(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self.project_collections.upsert_user_tool_website_override(payload)
 
     def find_lexical_candidate_repo_ids(
         self,
@@ -3732,39 +3663,6 @@ class MySQLRepository:
             int(today_row.get("count") if today_row else 0),
             taxonomy=WEBSITE_TAXONOMY if source == "website" else PROJECT_TAXONOMY,
             recommended_count=int(recommended_row.get("count") if recommended_row else 0),
-        )
-
-    def list_user_project_collection(self, *, user_id: int, **kwargs: Any) -> Dict[str, Any]:
-        return self.project_collections.list_user_project_collection(user_id=user_id, **kwargs)
-
-    def get_user_project_categories(
-        self,
-        *,
-        user_id: int,
-        source: str = "all",
-        min_stars: int = 500,
-        enriched_only: bool = True,
-    ) -> Dict[str, Any]:
-        return self.project_collections.get_user_project_categories(
-            user_id=user_id,
-            source=source,
-            min_stars=min_stars,
-            enriched_only=enriched_only,
-        )
-
-    def get_user_project_tags(
-        self,
-        *,
-        user_id: int,
-        source: str = "github",
-        min_stars: int = 500,
-        enriched_only: bool = True,
-    ) -> Dict[str, Any]:
-        return self.project_collections.get_user_project_tags(
-            user_id=user_id,
-            source=source,
-            min_stars=min_stars,
-            enriched_only=enriched_only,
         )
 
     def list_github_projects_for_semantic_sync(

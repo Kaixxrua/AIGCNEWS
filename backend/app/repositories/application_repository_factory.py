@@ -18,6 +18,7 @@ from backend.app.repositories.mcp_server_repository import McpServerConfigReposi
 from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
+from backend.app.repositories.mysql_project_catalog import MySQLProjectCatalogRepository
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.mysql_user_account_repository import (
     MySQLUserAccountRepository,
@@ -167,6 +168,7 @@ def create_application_repositories(
         )
 
     compatibility = MySQLRepository(database=mysql)
+    project_catalog = MySQLProjectCatalogRepository(compatibility)
     return ApplicationRepositories(
         users=MySQLUserAccountRepository(mysql),
         conversations=compatibility.conversations,
@@ -183,7 +185,10 @@ def create_application_repositories(
         github_ingestion=compatibility,
         github_enrichment=compatibility,
         tool_website_enrichment=compatibility,
-        project_collections=MySQLUserProjectCollectionRepository(compatibility),
+        project_collections=MySQLUserProjectCollectionRepository(
+            mysql,
+            project_catalog=project_catalog,
+        ),
         project_recommendations=compatibility,
         github_semantic_sources=compatibility,
     )

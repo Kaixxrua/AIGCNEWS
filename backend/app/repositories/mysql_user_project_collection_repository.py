@@ -1,25 +1,134 @@
 from __future__ import annotations
 
-from typing import Any
+import json
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Protocol
 
-from backend.app.repositories.mysql_repo import (
-    MySQLRepository,
-    _json_dumps,
-    _json_loads_list,
-    _normalize_project_row,
-    _to_iso_string,
-)
+from backend.app.core.config import settings
+from backend.app.core.database import DatabaseLifecycle, mysql_database
+from backend.app.repositories.project_catalog_normalization import normalize_project_row
+
+
+class _PersonalProjectCatalog(Protocol):
+    def list_projects(self, **kwargs: Any) -> dict[str, Any]: ...
+
+    def get_project_categories(self, **kwargs: Any) -> dict[str, Any]: ...
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value or [], ensure_ascii=False)
+
+
+def _json_loads_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if not value:
+        return []
+    try:
+        data = json.loads(str(value))
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(item).strip() for item in data if str(item).strip()]
+
+
+def _to_iso_string(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.isoformat().replace("+00:00", "Z")
+    return str(value)
 
 
 class MySQLUserProjectCollectionRepository:
     """MySQL adapter for a user's personal project collection."""
 
-    def __init__(self, repository: MySQLRepository | None = None) -> None:
-        self._repository = repository if repository is not None else MySQLRepository()
-        self._database = getattr(self._repository, "_database", None)
+    def __init__(
+        self,
+        database: DatabaseLifecycle | None = None,
+        *,
+        project_catalog: _PersonalProjectCatalog,
+    ) -> None:
+        self._database = database or mysql_database
+        self._project_catalog = project_catalog
 
     def _connect(self):
-        return self._repository._connect()
+        return self._database.connect()
+
+    @staticmethod
+    def _record_project_catalog_change_cur(
+        cur: Any,
+        *,
+        aggregate_type: str,
+        aggregate_key: dict[str, Any],
+        operation: str = "reconcile",
+        source_method: str,
+    ) -> None:
+        if not bool(getattr(settings, "project_catalog_outbox_capture_enabled", False)):
+            return
+        cur.execute(
+            """
+            INSERT INTO project_catalog_outbox (
+                event_id, aggregate_type, aggregate_key, operation, source_method
+            ) VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                str(uuid.uuid4()),
+                aggregate_type,
+                json.dumps(
+                    aggregate_key,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                operation,
+                source_method,
+            ),
+        )
+
+    @staticmethod
+    def _resolve_github_repo_id_cur(
+        cur: Any, repo_id: str = "", full_name: str = ""
+    ) -> str:
+        repo_id = (repo_id or "").strip()
+        full_name = (full_name or "").strip()
+        if repo_id:
+            cur.execute(
+                """
+                SELECT canonical_repo_id
+                FROM github_repo_aliases
+                WHERE alias_repo_id = %s
+                LIMIT 1
+                """,
+                (repo_id,),
+            )
+            row = cur.fetchone()
+            if row and row.get("canonical_repo_id"):
+                return str(row["canonical_repo_id"])
+
+        if full_name:
+            cur.execute(
+                """
+                SELECT repo_id
+                FROM github_repo_candidates
+                WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(%s))
+                ORDER BY (repo_id = full_name) DESC,
+                         COALESCE(stars, 0) DESC,
+                         COALESCE(last_seen_at, '') DESC
+                LIMIT 1
+                """,
+                (full_name,),
+            )
+            row = cur.fetchone()
+            if row and row.get("repo_id"):
+                return str(row["repo_id"])
+        return full_name or repo_id
 
     def _favorite_project_key_cur(
         self,
@@ -36,7 +145,7 @@ class MySQLUserProjectCollectionRepository:
             identity = str(repo_id or "").strip()
             if not identity:
                 raise ValueError("repo_id 不能为空")
-            resolved = self._repository._resolve_github_repo_id_cur(
+            resolved = self._resolve_github_repo_id_cur(
                 cur, identity, identity
             )
             cur.execute(
@@ -126,7 +235,7 @@ class MySQLUserProjectCollectionRepository:
                     (user_id, project_source, project_id),
                 )
                 row = cur.fetchone() or {}
-                self._repository._record_project_catalog_change_cur(
+                self._record_project_catalog_change_cur(
                     cur,
                     aggregate_type="project_favorites",
                     aggregate_key={
@@ -187,7 +296,7 @@ class MySQLUserProjectCollectionRepository:
                 )
                 deleted_favorite = cur.rowcount > 0
                 if deleted_favorite:
-                    self._repository._record_project_catalog_change_cur(
+                    self._record_project_catalog_change_cur(
                         cur,
                         aggregate_type="project_favorites",
                         aggregate_key={
@@ -242,7 +351,7 @@ class MySQLUserProjectCollectionRepository:
                     (user_id, website_id),
                 )
                 row = cur.fetchone() or {}
-                self._repository._record_project_catalog_change_cur(
+                self._record_project_catalog_change_cur(
                     cur,
                     aggregate_type="user_tool_websites",
                     aggregate_key={"user_id": user_id, "website_id": website_id},
@@ -283,7 +392,7 @@ class MySQLUserProjectCollectionRepository:
                 )
                 deleted_favorite = cur.rowcount > 0
                 if deleted_override:
-                    self._repository._record_project_catalog_change_cur(
+                    self._record_project_catalog_change_cur(
                         cur,
                         aggregate_type="user_tool_website_overrides",
                         aggregate_key={"user_id": user_id, "website_id": website_id},
@@ -291,7 +400,7 @@ class MySQLUserProjectCollectionRepository:
                         source_method="unlink_user_tool_website",
                     )
                 if deleted_favorite:
-                    self._repository._record_project_catalog_change_cur(
+                    self._record_project_catalog_change_cur(
                         cur,
                         aggregate_type="project_favorites",
                         aggregate_key={
@@ -303,7 +412,7 @@ class MySQLUserProjectCollectionRepository:
                         source_method="unlink_user_tool_website",
                     )
                 if deleted_link:
-                    self._repository._record_project_catalog_change_cur(
+                    self._record_project_catalog_change_cur(
                         cur,
                         aggregate_type="user_tool_websites",
                         aggregate_key={"user_id": user_id, "website_id": website_id},
@@ -377,7 +486,7 @@ class MySQLUserProjectCollectionRepository:
                 cur.execute(sql, (user_id, user_id, user_id, website_id))
                 row = cur.fetchone()
             conn.commit()
-            return _normalize_project_row(row) if row else None
+            return normalize_project_row(row) if row else None
         finally:
             conn.close()
 
@@ -431,7 +540,7 @@ class MySQLUserProjectCollectionRepository:
                     """,
                     data,
                 )
-                self._repository._record_project_catalog_change_cur(
+                self._record_project_catalog_change_cur(
                     cur,
                     aggregate_type="user_tool_website_overrides",
                     aggregate_key={"user_id": user_id, "website_id": website_id},
@@ -450,7 +559,7 @@ class MySQLUserProjectCollectionRepository:
     def list_user_project_collection(
         self, *, user_id: int, **kwargs: Any
     ) -> dict[str, Any]:
-        return self._repository.list_projects(
+        return self._project_catalog.list_projects(
             user_id=user_id, favorites_only=True, **kwargs
         )
 
@@ -462,7 +571,7 @@ class MySQLUserProjectCollectionRepository:
         min_stars: int = 500,
         enriched_only: bool = True,
     ) -> dict[str, Any]:
-        return self._repository.get_project_categories(
+        return self._project_catalog.get_project_categories(
             source=source,
             min_stars=min_stars,
             enriched_only=enriched_only,

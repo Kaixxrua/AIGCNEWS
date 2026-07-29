@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.app.repositories import mysql_repo
-from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories import mysql_user_project_collection_repository
 from backend.app.repositories.mysql_user_project_collection_repository import (
     MySQLUserProjectCollectionRepository,
 )
@@ -18,17 +19,73 @@ from backend.app.services.mcp.inbound.tools import McpToolContext
 def _repository_with_connection() -> tuple[
     MySQLUserProjectCollectionRepository, MagicMock, MagicMock
 ]:
-    compatibility = object.__new__(MySQLRepository)
+    database = MagicMock()
+    project_catalog = MagicMock()
     connection = MagicMock()
     cursor = MagicMock()
     connection.cursor.return_value.__enter__.return_value = cursor
-    compatibility._connect = MagicMock(return_value=connection)
-    repository = MySQLUserProjectCollectionRepository(compatibility)
+    database.connect.return_value = connection
+    repository = MySQLUserProjectCollectionRepository(
+        database,
+        project_catalog=project_catalog,
+    )
     return repository, connection, cursor
 
 
 def _normalized_sql(value: str) -> str:
     return " ".join(value.split())
+
+
+def test_personal_collection_sql_is_owned_by_dedicated_adapter() -> None:
+    repository_path = Path(__file__).parents[1] / "app/repositories/mysql_repo.py"
+    adapter_path = (
+        Path(__file__).parents[1]
+        / "app/repositories/mysql_user_project_collection_repository.py"
+    )
+    facade_tree = ast.parse(repository_path.read_text(encoding="utf-8"))
+    adapter_tree = ast.parse(adapter_path.read_text(encoding="utf-8"))
+    personal_methods = {
+        "add_project_favorite",
+        "remove_project_favorite",
+        "link_user_tool_website",
+        "unlink_user_tool_website",
+        "get_tool_website_item_for_user",
+        "upsert_user_tool_website_override",
+        "list_user_project_collection",
+        "get_user_project_categories",
+        "get_user_project_tags",
+    }
+
+    facade_class = next(
+        node
+        for node in facade_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "MySQLRepository"
+    )
+    facade_methods = {
+        node.name for node in facade_class.body if isinstance(node, ast.FunctionDef)
+    }
+    adapter_class = next(
+        node
+        for node in adapter_tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "MySQLUserProjectCollectionRepository"
+    )
+    adapter_methods = {
+        node.name for node in adapter_class.body if isinstance(node, ast.FunctionDef)
+    }
+    adapter_imports = {
+        alias.name
+        for node in adapter_tree.body
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+
+    assert personal_methods.isdisjoint(facade_methods)
+    assert personal_methods.issubset(adapter_methods)
+    assert "MySQLRepository" not in adapter_imports
+    assert "backend.app.repositories.mysql_repo" not in adapter_path.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_website_favorite_rejects_cross_owner_access() -> None:
@@ -102,42 +159,56 @@ def test_user_website_item_uses_owner_scoped_overlay_and_coalesce() -> None:
     connection.close.assert_called_once_with()
 
 
-def test_personal_collection_uses_link_or_favorite_visibility_unlike_public() -> None:
-    personal, personal_connection, personal_cursor = _repository_with_connection()
-    personal_cursor.fetchone.return_value = {"cnt": 0}
-    personal_cursor.fetchall.return_value = []
+def test_personal_collection_delegates_only_catalog_read_to_narrow_port() -> None:
+    repository, connection, _ = _repository_with_connection()
+    repository._project_catalog.list_projects.return_value = {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "page_size": 24,
+    }
 
-    personal.list_user_project_collection(
+    result = repository.list_user_project_collection(
         user_id=7,
         source="website",
         enriched_only=True,
     )
 
-    personal_count_sql = _normalized_sql(personal_cursor.execute.call_args_list[0].args[0])
-    personal_params = personal_cursor.execute.call_args_list[0].args[1]
-    assert "LEFT JOIN project_favorites pf ON pf.user_id = %s" in personal_count_sql
-    assert "LEFT JOIN user_tool_websites utw ON utw.user_id = %s" in personal_count_sql
-    assert "LEFT JOIN user_tool_website_overrides uo ON uo.user_id = %s" in personal_count_sql
-    assert "(pf.id IS NOT NULL OR utw.id IS NOT NULL)" in personal_count_sql
-    assert "w.visibility" not in personal_count_sql
-    assert personal_params == (7, 7, 7)
-    personal_connection.commit.assert_called_once_with()
+    assert result["items"] == []
+    repository._project_catalog.list_projects.assert_called_once_with(
+        user_id=7,
+        favorites_only=True,
+        source="website",
+        enriched_only=True,
+    )
+    connection.commit.assert_not_called()
+    connection.close.assert_not_called()
 
-    public, public_connection, public_cursor = _repository_with_connection()
-    public_cursor.fetchone.return_value = {"cnt": 0}
-    public_cursor.fetchall.return_value = []
 
-    public._repository.list_projects(source="website", enriched_only=True)
+def test_collection_outbox_preserves_canonical_event_shape() -> None:
+    cursor = MagicMock()
 
-    public_count_sql = _normalized_sql(public_cursor.execute.call_args_list[0].args[0])
-    public_params = public_cursor.execute.call_args_list[0].args[1]
-    assert "w.visibility" in public_count_sql
-    assert "= _utf8mb4'public'" in public_count_sql
-    assert "project_favorites" not in public_count_sql
-    assert "user_tool_websites" not in public_count_sql
-    assert "user_tool_website_overrides" not in public_count_sql
-    assert public_params == ()
-    public_connection.commit.assert_called_once_with()
+    with patch.object(
+        mysql_user_project_collection_repository.settings,
+        "project_catalog_outbox_capture_enabled",
+        True,
+    ):
+        MySQLUserProjectCollectionRepository._record_project_catalog_change_cur(
+            cursor,
+            aggregate_type="project_favorites",
+            aggregate_key={"user_id": 7, "project_source": "github", "project_id": "42"},
+            operation="delete",
+            source_method="remove_project_favorite",
+        )
+
+    sql, params = cursor.execute.call_args.args
+    assert "INSERT INTO project_catalog_outbox" in sql
+    assert params[1:] == (
+        "project_favorites",
+        '{"project_id":"42","project_source":"github","user_id":7}',
+        "delete",
+        "remove_project_favorite",
+    )
 
 
 def test_unlink_atomically_cleans_only_owner_scoped_collection_rows() -> None:
@@ -145,7 +216,7 @@ def test_unlink_atomically_cleans_only_owner_scoped_collection_rows() -> None:
     cursor.rowcount = 1
 
     with patch.object(
-        mysql_repo.settings,
+        mysql_user_project_collection_repository.settings,
         "project_catalog_outbox_capture_enabled",
         False,
     ):
@@ -177,7 +248,7 @@ def test_unlink_atomically_cleans_only_owner_scoped_collection_rows() -> None:
 
 def test_github_favorite_uses_canonical_id_owner_key_and_idempotent_insert() -> None:
     repository, connection, cursor = _repository_with_connection()
-    repository._repository._resolve_github_repo_id_cur = MagicMock(return_value="canonical-42")
+    repository._resolve_github_repo_id_cur = MagicMock(return_value="canonical-42")
     created_at = datetime(2026, 7, 29, tzinfo=timezone.utc)
     cursor.fetchone.side_effect = [
         {"repo_id": "canonical-42"},
@@ -185,7 +256,7 @@ def test_github_favorite_uses_canonical_id_owner_key_and_idempotent_insert() -> 
     ]
 
     with patch.object(
-        mysql_repo.settings,
+        mysql_user_project_collection_repository.settings,
         "project_catalog_outbox_capture_enabled",
         False,
     ):
@@ -195,7 +266,7 @@ def test_github_favorite_uses_canonical_id_owner_key_and_idempotent_insert() -> 
             repo_id="Owner/Repo",
         )
 
-    repository._repository._resolve_github_repo_id_cur.assert_called_once_with(
+    repository._resolve_github_repo_id_cur.assert_called_once_with(
         cursor, "Owner/Repo", "Owner/Repo"
     )
     candidate_sql, candidate_params = cursor.execute.call_args_list[0].args

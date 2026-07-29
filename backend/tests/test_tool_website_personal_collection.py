@@ -12,6 +12,9 @@ if _langchain_core is not None and not hasattr(_langchain_core, "__path__"):
     sys.modules.pop("langchain_core.documents", None)
 
 from backend.app.repositories.mysql_repo import MySQLRepository
+from backend.app.repositories.mysql_user_project_collection_repository import (
+    MySQLUserProjectCollectionRepository,
+)
 from backend.app.services.ingestion.project_taxonomy import (
     PROMPT_VERSION,
     EnrichmentResult,
@@ -206,14 +209,28 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
 
 
 class PersonalWebsiteQueryTests(unittest.TestCase):
-    def _repository(self) -> tuple[MySQLRepository, RecordingConnection]:
+    def _catalog_repository(self) -> tuple[MySQLRepository, RecordingConnection]:
         repository = MySQLRepository.__new__(MySQLRepository)
         connection = RecordingConnection()
         repository._connect = MagicMock(return_value=connection)
         return repository, connection
 
+    def _collection_repository(
+        self,
+    ) -> tuple[MySQLUserProjectCollectionRepository, RecordingConnection]:
+        catalog, connection = self._catalog_repository()
+        database = MagicMock()
+        database.connect.return_value = connection
+        return (
+            MySQLUserProjectCollectionRepository(
+                database,
+                project_catalog=catalog,
+            ),
+            connection,
+        )
+
     def test_personal_collection_accepts_current_users_link_without_enrichment(self) -> None:
-        repository, connection = self._repository()
+        repository, connection = self._collection_repository()
 
         with patch(
             "backend.app.repositories.mysql_repo._today_local_date",
@@ -237,7 +254,7 @@ class PersonalWebsiteQueryTests(unittest.TestCase):
         self.assertEqual(params[:3], (7, 7, 7))
 
     def test_public_website_listing_still_requires_global_enrichment(self) -> None:
-        repository, connection = self._repository()
+        repository, connection = self._catalog_repository()
 
         with patch(
             "backend.app.repositories.mysql_repo._today_local_date",
@@ -253,7 +270,7 @@ class PersonalWebsiteQueryTests(unittest.TestCase):
         self.assertIn("w.visibility", sql)
 
     def test_github_collection_still_requires_global_enrichment(self) -> None:
-        repository, connection = self._repository()
+        repository, connection = self._collection_repository()
 
         with patch(
             "backend.app.repositories.mysql_repo._today_local_date",
@@ -270,7 +287,7 @@ class PersonalWebsiteQueryTests(unittest.TestCase):
         self.assertNotIn("OR uo.id IS NOT NULL", sql)
 
     def test_personal_website_tags_accept_current_users_override(self) -> None:
-        repository, connection = self._repository()
+        repository, connection = self._collection_repository()
 
         result = repository.get_user_project_tags(
             user_id=7,
