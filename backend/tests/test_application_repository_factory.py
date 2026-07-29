@@ -7,6 +7,9 @@ from backend.app.repositories.application_repository_factory import (
 from backend.app.repositories.mysql_mcp_server_repository import (
     MySQLMcpServerConfigRepository,
 )
+from backend.app.repositories.mysql_project_write_repository import (
+    MySQLProjectWriteRepository,
+)
 from backend.app.repositories.mysql_user_account_repository import (
     MySQLUserAccountRepository,
 )
@@ -134,6 +137,9 @@ def test_factory_preserves_mysql_compatibility_facade(monkeypatch) -> None:
     assert isinstance(
         repositories.project_collections, MySQLUserProjectCollectionRepository
     )
+    assert isinstance(repositories.github_ingestion, MySQLProjectWriteRepository)
+    assert isinstance(repositories.project_recommendations, MySQLProjectWriteRepository)
+    assert repositories.github_ingestion is repositories.project_recommendations
     assert repositories.users._database is mysql
     assert repositories.mcp_server_configs._database is mysql
     compatibility_databases = {

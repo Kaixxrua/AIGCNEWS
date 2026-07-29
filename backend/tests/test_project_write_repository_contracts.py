@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from backend.app.repositories.mysql_project_write_repository import (
+    MySQLProjectWriteRepository,
+)
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.mysql_user_project_collection_repository import (
     MySQLUserProjectCollectionRepository,
@@ -28,6 +31,18 @@ def test_mysql_repository_structurally_satisfies_project_write_protocols() -> No
     assert recommendation is repository
     assert semantic is repository
     assert websites is repository
+
+
+def test_mysql_project_write_adapter_satisfies_narrow_write_protocols() -> None:
+    repository = object.__new__(MySQLProjectWriteRepository)
+
+    ingestion: GitHubProjectIngestionRepository = repository
+    recommendation: GitHubProjectRecommendationRepository = repository
+
+    assert ingestion is repository
+    assert recommendation is repository
+    assert not hasattr(repository, "get_github_projects_needing_enrichment")
+    assert not hasattr(repository, "upsert_github_project_semantic_source")
 
 
 def test_mysql_collection_adapter_satisfies_personal_collection_protocol() -> None:

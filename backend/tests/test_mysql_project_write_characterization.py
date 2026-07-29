@@ -7,6 +7,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from backend.app.repositories import mysql_repo
+from backend.app.repositories.mysql_project_write_repository import (
+    MySQLProjectWriteRepository,
+)
 from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
@@ -65,6 +68,25 @@ def test_four_project_write_protocols_have_exact_capabilities() -> None:
         "upsert_github_project_semantic_source",
         "get_github_project_semantic_status",
     }
+
+
+def test_extracted_adapter_owns_only_ingestion_and_recommendation_capabilities() -> None:
+    ingestion_methods = {
+        name
+        for name in GitHubProjectIngestionRepository.__dict__
+        if not name.startswith("_")
+    }
+    recommendation_methods = {
+        name
+        for name in GitHubProjectRecommendationRepository.__dict__
+        if not name.startswith("_")
+    }
+
+    assert ingestion_methods | recommendation_methods <= set(
+        MySQLProjectWriteRepository.__dict__
+    )
+    assert not hasattr(MySQLProjectWriteRepository, "upsert_github_repo_enrichment")
+    assert not hasattr(MySQLProjectWriteRepository, "upsert_github_project_semantic_source")
 
 
 def test_four_project_write_protocol_signatures_match_mysql_implementation() -> None:
