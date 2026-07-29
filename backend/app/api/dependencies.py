@@ -35,6 +35,7 @@ from backend.app.repositories.task_repository import (
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
+from backend.app.services.personal_projects import PersonalProjectsService
 
 
 class ApplicationIngestionTaskRepository(
@@ -142,6 +143,17 @@ def get_user_project_collection_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> UserProjectCollectionRepository:
     return repositories.project_collections
+
+
+def get_personal_projects_service(
+    collection: UserProjectCollectionRepository = Depends(
+        get_user_project_collection_repository
+    ),
+    enrichment: ToolWebsiteEnrichmentRepository = Depends(
+        get_tool_website_enrichment_repository
+    ),
+) -> PersonalProjectsService:
+    return PersonalProjectsService(collection=collection, enrichment=enrichment)
 
 
 def get_github_project_recommendation_repository(

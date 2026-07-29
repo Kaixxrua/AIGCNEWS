@@ -6,15 +6,14 @@ from typing import Any, Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.app.api.dependencies import (
-    get_tool_website_enrichment_repository,
-    get_user_project_collection_repository,
-)
+from backend.app.api.dependencies import get_personal_projects_service
 from backend.app.core.auth import OptionalUser, RequireUser
 from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
-from backend.app.repositories.project_write_repository import (
-    ToolWebsiteEnrichmentRepository,
-    UserProjectCollectionRepository,
+from backend.app.services.personal_projects import (
+    InvalidPersonalProjectRequest,
+    PersonalProjectNotFound,
+    PersonalProjectsService,
+    PersonalWebsiteOperationFailed,
 )
 from backend.app.services.project_discovery import resolve_project_sort
 
@@ -294,64 +293,6 @@ def _taxonomy_items() -> list[dict[str, Any]]:
     ]
 
 
-def _tool_website_override_payload(
-    *,
-    user_id: int,
-    website_id: int,
-    title: str,
-    description_zh: str,
-    category_slug: str,
-    subcategory_slug: str,
-    tags: list[str],
-    description: str = "",
-    image_url: str = "",
-) -> dict[str, Any]:
-    from backend.app.services.ingestion.project_taxonomy import (
-        WEBSITE_CATEGORY_BY_SLUG,
-        WEBSITE_DEFAULT_SUBCATEGORY_BY_CATEGORY,
-        WEBSITE_SUBCATEGORY_BY_CATEGORY_SLUG,
-        clean_text,
-        normalize_subcategory,
-    )
-
-    clean_title = clean_text(title, max_len=512)
-    clean_description_zh = clean_text(description_zh, max_len=160)
-    if not clean_title:
-        raise ValueError("工具名称不能为空")
-    if not clean_description_zh:
-        raise ValueError("中文说明不能为空")
-
-    clean_category = clean_text(category_slug, max_len=64)
-    if clean_category not in WEBSITE_CATEGORY_BY_SLUG:
-        clean_category = "other"
-    clean_subcategory, subcategory_name = normalize_subcategory(
-        clean_category,
-        subcategory_slug,
-        subcategory_by_category_slug=WEBSITE_SUBCATEGORY_BY_CATEGORY_SLUG,
-        default_subcategory_by_category=WEBSITE_DEFAULT_SUBCATEGORY_BY_CATEGORY,
-    )
-    clean_tags: list[str] = []
-    for tag in tags or []:
-        clean_tag = clean_text(tag, max_len=24)
-        if clean_tag and clean_tag not in clean_tags:
-            clean_tags.append(clean_tag)
-        if len(clean_tags) >= 4:
-            break
-    return {
-        "user_id": user_id,
-        "website_id": website_id,
-        "title": clean_title,
-        "description": clean_text(description, max_len=2000),
-        "image_url": clean_text(image_url, max_len=1024),
-        "description_zh": clean_description_zh,
-        "category_slug": clean_category,
-        "category_name": WEBSITE_CATEGORY_BY_SLUG[clean_category],
-        "subcategory_slug": clean_subcategory,
-        "subcategory_name": subcategory_name,
-        "tags": clean_tags,
-    }
-
-
 @router.get("/projects", response_model=GitHubProjectsResponse, tags=["Projects"])
 async def list_projects(
     source: ProjectSource = Query(default="all"),
@@ -441,9 +382,7 @@ async def list_my_project_collection(
     page_size: int = Query(default=24, ge=1, le=60),
     sort: GitHubProjectSort = Query(default="recent"),
     user: dict[str, Any] = Depends(RequireUser),
-    repository: UserProjectCollectionRepository = Depends(
-        get_user_project_collection_repository
-    ),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> GitHubProjectsResponse:
     """当前登录用户的个人收藏夹；默认只返回 GitHub 项目收藏，source=website 返回个人网页。"""
     user_id = _user_id(user)
@@ -454,8 +393,7 @@ async def list_my_project_collection(
     clean_subcategory = subcategory.strip()
     clean_q = q.strip()
     clean_tag = tag.strip()
-    result = await asyncio.to_thread(
-        repository.list_user_project_collection,
+    result = await service.list_collection(
         user_id=user_id,
         source="github" if source == "all" else source,
         scope=scope,
@@ -486,17 +424,14 @@ async def list_my_project_collection(
 async def list_my_project_categories(
     source: ProjectSource = Query(default="all"),
     user: dict[str, Any] = Depends(RequireUser),
-    repository: UserProjectCollectionRepository = Depends(
-        get_user_project_collection_repository
-    ),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> GitHubProjectCategoriesResponse:
     """当前登录用户个人收藏夹分类；默认只统计 GitHub 收藏，source=website 统计个人网页。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     min_stars = 500
-    result = await asyncio.to_thread(
-        repository.get_user_project_categories,
+    result = await service.get_categories(
         user_id=user_id,
         source="github" if source == "all" else source,
         min_stars=min_stars,
@@ -509,17 +444,14 @@ async def list_my_project_categories(
 async def list_my_project_tags(
     source: ProjectSource = Query(default="github"),
     user: dict[str, Any] = Depends(RequireUser),
-    repository: UserProjectCollectionRepository = Depends(
-        get_user_project_collection_repository
-    ),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> GitHubProjectTagsResponse:
     """当前登录用户个人收藏夹真实标签；不返回预制分类或默认标签。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     effective_source = "website" if source == "website" else "github"
-    result = await asyncio.to_thread(
-        repository.get_user_project_tags,
+    result = await service.get_tags(
         user_id=user_id,
         source=effective_source,
         min_stars=500,
@@ -536,25 +468,22 @@ async def list_my_project_tags(
 async def favorite_project(
     request: ProjectFavoriteRequest,
     user: dict[str, Any] = Depends(RequireUser),
-    repository: UserProjectCollectionRepository = Depends(
-        get_user_project_collection_repository
-    ),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ProjectFavoriteResponse:
     """收藏 GitHub 项目或工具网站到当前用户收藏夹。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     try:
-        result = await asyncio.to_thread(
-            repository.add_project_favorite,
+        result = await service.add_favorite(
             user_id=user_id,
             source=request.source,
             repo_id=request.repo_id,
             website_id=request.website_id,
         )
-    except ValueError as exc:
+    except InvalidPersonalProjectRequest as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except LookupError as exc:
+    except PersonalProjectNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ProjectFavoriteResponse(status="succeeded", message="已加入我的收藏。", **result)
 
@@ -566,9 +495,7 @@ async def unfavorite_project(
     repo_id: str | None = Query(default=None),
     website_id: str | None = Query(default=None),
     user: dict[str, Any] = Depends(RequireUser),
-    repository: UserProjectCollectionRepository = Depends(
-        get_user_project_collection_repository
-    ),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ProjectFavoriteResponse:
     """从当前用户收藏夹取消收藏 GitHub 项目或工具网站。"""
     user_id = _user_id(user)
@@ -581,16 +508,15 @@ async def unfavorite_project(
             repo_id=repo_id,
             website_id=website_id,
         )
-        deleted = await asyncio.to_thread(
-            repository.remove_project_favorite,
+        deleted = await service.remove_favorite(
             user_id=user_id,
             source=favorite_request.source,
             repo_id=favorite_request.repo_id,
             website_id=favorite_request.website_id,
         )
-    except ValueError as exc:
+    except (ValueError, InvalidPersonalProjectRequest) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except LookupError as exc:
+    except PersonalProjectNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ProjectFavoriteResponse(
         status="succeeded",
@@ -607,151 +533,49 @@ async def unfavorite_project(
 async def add_my_tool_website(
     request: ToolWebsiteAddRequest,
     user: dict[str, Any] = Depends(RequireUser),
-    enrichment: ToolWebsiteEnrichmentRepository = Depends(
-        get_tool_website_enrichment_repository
-    ),
-    collection: UserProjectCollectionRepository = Depends(
-        get_user_project_collection_repository
-    ),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ToolWebsiteAddResponse:
     """普通用户自动添加工具网站到自己的收藏夹。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
-    url = (request.url or "").strip()
-    if not url:
-        raise HTTPException(status_code=400, detail="URL 不能为空")
-
-    from backend.app.services.ingestion.tool_website_fetcher import ToolWebsiteFetchError
-    from backend.app.services.ingestion.tool_website_enricher import ToolWebsiteEnricher
-
     try:
-        result = await asyncio.to_thread(
-            lambda: ToolWebsiteEnricher(enrichment).add_and_enrich(
-                url,
-                added_by_user_id=user_id,
-                visibility="private",
-            )
+        result = await service.add_tool_website(
+            user_id=user_id,
+            url=request.url,
         )
-        item = result.get("item") or {}
-        website_id = item.get("website_id")
-        if website_id:
-            link_state = await asyncio.to_thread(
-                collection.link_user_tool_website,
-                user_id=user_id,
-                website_id=int(website_id),
-                added_via="existing" if result.get("duplicate") else "auto",
-            )
-            item = await asyncio.to_thread(
-                collection.get_tool_website_item_for_user,
-                user_id=user_id,
-                website_id=int(website_id),
-            )
-            if item:
-                item.update(link_state)
-    except ToolWebsiteFetchError as exc:
+    except InvalidPersonalProjectRequest as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except (ValueError, LookupError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"工具网站添加或富化失败：{exc}") from exc
-
-    duplicate = bool(result.get("duplicate"))
-    enrichment_failed = bool(result.get("enrichment_failed"))
-    if duplicate:
-        message = "工具网站已存在，已加入我的收藏。"
-    elif enrichment_failed:
-        message = "工具网站已添加到我的收藏，AI 分类服务暂时不可用，可稍后编辑分类。"
-    else:
-        message = "工具网站已添加到我的收藏。"
-    return ToolWebsiteAddResponse(
-        status="succeeded",
-        message=message,
-        duplicate=duplicate,
-        item=item,
-    )
+    except PersonalWebsiteOperationFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return ToolWebsiteAddResponse(**result)
 
 
 @router.post("/projects/me/tool-websites/manual", response_model=ToolWebsiteAddResponse, tags=["Projects"])
 async def add_my_tool_website_manual(
     request: ToolWebsiteManualAddRequest,
     user: dict[str, Any] = Depends(RequireUser),
-    enrichment: ToolWebsiteEnrichmentRepository = Depends(
-        get_tool_website_enrichment_repository
-    ),
-    collection: UserProjectCollectionRepository = Depends(
-        get_user_project_collection_repository
-    ),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ToolWebsiteAddResponse:
     """普通用户手动添加工具网站到自己的收藏夹。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
-    url = (request.url or "").strip()
-    title = (request.title or "").strip()
-    description_zh = (request.description_zh or "").strip()
-    if not url:
-        raise HTTPException(status_code=400, detail="URL 不能为空")
-    if not title:
-        raise HTTPException(status_code=400, detail="工具名称不能为空")
-    if not description_zh:
-        raise HTTPException(status_code=400, detail="中文说明不能为空")
-
-    from backend.app.services.ingestion.tool_website_fetcher import ToolWebsiteFetchError
-    from backend.app.services.ingestion.tool_website_enricher import ToolWebsiteEnricher
-
     try:
-        result = await asyncio.to_thread(
-            lambda: ToolWebsiteEnricher(enrichment).add_manual(
-                url=url,
-                title=title,
-                description_zh=description_zh,
-                category_slug=request.category_slug,
-                subcategory_slug=request.subcategory_slug,
-                tags=request.tags,
-                added_by_user_id=user_id,
-                visibility="private",
-            )
+        result = await service.add_tool_website_manual(
+            user_id=user_id,
+            url=request.url,
+            title=request.title,
+            description_zh=request.description_zh,
+            category_slug=request.category_slug,
+            subcategory_slug=request.subcategory_slug,
+            tags=request.tags,
         )
-        item = result.get("item") or {}
-        website_id = item.get("website_id")
-        if website_id:
-            link_state = await asyncio.to_thread(
-                collection.link_user_tool_website,
-                user_id=user_id,
-                website_id=int(website_id),
-                added_via="manual",
-            )
-            override_payload = _tool_website_override_payload(
-                user_id=user_id,
-                website_id=int(website_id),
-                title=title,
-                description_zh=description_zh,
-                category_slug=request.category_slug,
-                subcategory_slug=request.subcategory_slug,
-                tags=request.tags,
-                description=description_zh,
-            )
-            item = await asyncio.to_thread(
-                collection.upsert_user_tool_website_override,
-                override_payload,
-            )
-            if item:
-                item.update(link_state)
-    except ToolWebsiteFetchError as exc:
+    except InvalidPersonalProjectRequest as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except (ValueError, LookupError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"工具网站手动添加失败：{exc}") from exc
-
-    duplicate = bool(result.get("duplicate"))
-    return ToolWebsiteAddResponse(
-        status="succeeded",
-        message="工具网站已存在，已加入我的收藏。" if duplicate else "工具网站已手动添加到我的收藏。",
-        duplicate=duplicate,
-        item=item,
-    )
+    except PersonalWebsiteOperationFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return ToolWebsiteAddResponse(**result)
 
 
 @router.patch("/projects/me/tool-websites/{website_id}", response_model=ToolWebsiteUpdateResponse, tags=["Projects"])
@@ -759,16 +583,14 @@ async def update_my_tool_website(
     website_id: int,
     request: ToolWebsiteUpdateRequest,
     user: dict[str, Any] = Depends(RequireUser),
-    repository: UserProjectCollectionRepository = Depends(
-        get_user_project_collection_repository
-    ),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ToolWebsiteUpdateResponse:
     """手动编辑当前用户自己的网页收藏卡片信息，不修改全局网站元数据。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     try:
-        payload = _tool_website_override_payload(
+        item = await service.update_tool_website(
             user_id=user_id,
             website_id=website_id,
             title=request.title,
@@ -779,13 +601,9 @@ async def update_my_tool_website(
             tags=request.tags,
             image_url=request.image_url,
         )
-        item = await asyncio.to_thread(
-            repository.upsert_user_tool_website_override,
-            payload,
-        )
-    except ValueError as exc:
+    except InvalidPersonalProjectRequest as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except LookupError as exc:
+    except PersonalProjectNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ToolWebsiteUpdateResponse(status="succeeded", message="网页收藏信息已更新。", item=item)
 
@@ -794,16 +612,13 @@ async def update_my_tool_website(
 async def remove_my_tool_website(
     website_id: int,
     user: dict[str, Any] = Depends(RequireUser),
-    repository: UserProjectCollectionRepository = Depends(
-        get_user_project_collection_repository
-    ),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ToolWebsiteDeleteResponse:
     """只把工具网站移出当前用户收藏夹，不删除全局工具库。"""
     user_id = _user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
-    deleted = await asyncio.to_thread(
-        repository.unlink_user_tool_website,
+    deleted = await service.remove_tool_website(
         user_id=user_id,
         website_id=website_id,
     )
