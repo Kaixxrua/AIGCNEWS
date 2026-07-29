@@ -10,6 +10,7 @@ from backend.app.api import routes_github_projects, routes_mcp
 from backend.app.repositories import project_catalog_factory
 from backend.app.repositories.mysql_project_catalog import MySQLProjectCatalogRepository
 from backend.app.services import project_discovery
+from backend.app.services.mcp.inbound import tools as inbound_tools
 
 
 def test_mysql_adapter_forwards_list_projects_unchanged() -> None:
@@ -212,7 +213,7 @@ def test_explicit_discovery_repository_factory_takes_precedence() -> None:
 def test_mcp_project_search_does_not_pin_mysql_repository() -> None:
     search = AsyncMock(return_value={"items": [], "total": 0})
 
-    with patch.object(routes_mcp, "search_projects", search):
+    with patch.object(inbound_tools, "search_projects", search):
         asyncio.run(routes_mcp._search_project_library({"q": "workflow"}, mode="generic"))
 
     assert "repository_factory" not in search.call_args.kwargs

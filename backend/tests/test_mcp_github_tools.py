@@ -54,6 +54,7 @@ from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentRepository, PapersReader
 from backend.app.services import project_discovery
 from backend.app.services.ingestion import source_github_mcp
+from backend.app.services.mcp.inbound import tools as inbound_tools
 
 
 class ToolMetadataTests(unittest.TestCase):
@@ -381,7 +382,7 @@ class ProjectHandlerTests(unittest.TestCase):
         }
         with (
             patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository({"items": [], "total": 0})),
-            patch.object(routes_mcp, "search_github_projects_fallback", return_value=fallback_result) as fallback,
+            patch.object(inbound_tools, "search_github_projects_fallback", return_value=fallback_result) as fallback,
         ):
             result = asyncio.run(routes_mcp._search_project_library({"q": "screenshot rounded"}, mode="generic"))
         self.assertEqual(fallback.call_args.kwargs["mode"], "generic")
@@ -393,7 +394,7 @@ class ProjectHandlerTests(unittest.TestCase):
         with (
             patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository({"items": [], "total": 0})),
             patch.object(
-                routes_mcp,
+                inbound_tools,
                 "search_github_projects_fallback",
                 return_value={"items": [], "total": 0, "github_total_count": 0, "queries": [], "error": "", "cache_hit": False},
             ) as fallback,
@@ -409,7 +410,7 @@ class ProjectHandlerTests(unittest.TestCase):
             routes_mcp._tool_get_project_library,
         ):
             with self.subTest(handler=handler.__name__):
-                with patch.object(routes_mcp, "search_projects", new=AsyncMock(return_value={})) as search:
+                with patch.object(inbound_tools, "search_projects", new=AsyncMock(return_value={})) as search:
                     asyncio.run(handler(None, {"q": "MCP Python SDK", "intent": intent}))
                 self.assertEqual(search.call_args.kwargs["client_intent"], intent)
                 self.assertEqual(search.call_args.kwargs["query"], "MCP Python SDK")
@@ -418,7 +419,7 @@ class ProjectHandlerTests(unittest.TestCase):
         local = {"items": [{"id": "x", "full_name": "owner/local", "stars": 900}], "total": 1}
         with (
             patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository(local)),
-            patch.object(routes_mcp, "search_github_projects_fallback") as fallback,
+            patch.object(inbound_tools, "search_github_projects_fallback") as fallback,
         ):
             result = asyncio.run(routes_mcp._search_project_library({"q": "local"}, mode="generic"))
         fallback.assert_not_called()
@@ -428,7 +429,7 @@ class ProjectHandlerTests(unittest.TestCase):
     def test_today_miss_does_not_fallback(self) -> None:
         with (
             patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository({"items": [], "total": 0})),
-            patch.object(routes_mcp, "search_github_projects_fallback") as fallback,
+            patch.object(inbound_tools, "search_github_projects_fallback") as fallback,
         ):
             result = asyncio.run(routes_mcp._search_project_library({"scope": "today"}, mode="ai"))
         fallback.assert_not_called()

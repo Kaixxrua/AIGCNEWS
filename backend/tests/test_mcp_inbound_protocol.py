@@ -48,7 +48,7 @@ from backend.app.api.dependencies import (
     get_briefing_repository,
 )
 from backend.app.core.auth import get_mcp_access_token_authenticator
-from backend.app.services.mcp.inbound import catalog, responses
+from backend.app.services.mcp.inbound import catalog, responses, tools
 
 
 PUBLIC_TOOL_NAMES = [
@@ -277,6 +277,9 @@ class McpInboundProtocolTests(unittest.TestCase):
         self.assertIs(routes_mcp.MCP_PROMPTS, catalog.MCP_PROMPTS)
         self.assertIs(routes_mcp._tool_response, responses._tool_response)
         self.assertIs(routes_mcp._resource_content, responses._resource_content)
+        self.assertIs(routes_mcp.McpToolContext, tools.McpToolContext)
+        self.assertIs(routes_mcp._call_tool, tools._call_tool)
+        self.assertIs(routes_mcp._TOOL_HANDLERS, tools._TOOL_HANDLERS)
 
         expected_names = [*PUBLIC_TOOL_NAMES, PRIVATE_TOOL_NAME]
         self.assertEqual(list(routes_mcp.MCP_TOOL_REGISTRY), expected_names)
