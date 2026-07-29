@@ -21,7 +21,6 @@ from backend.app.api.dependencies import (
 from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.document_repository import DocumentAdminWriter
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectRecommendationRepository,
@@ -664,18 +663,6 @@ async def delete_tool_website(
 ) -> ToolWebsiteDeleteResponse:
     """公共网页收藏已下线；用户只能移出自己的个人网页收藏。"""
     raise HTTPException(status_code=410, detail="公共网页收藏已下线，请从个人收藏夹移出网页收藏")
-    from backend.app.repositories.mysql_repo import MySQLRepository
-
-    db = MySQLRepository()
-    deleted = await asyncio.to_thread(db.delete_tool_website, website_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="工具网站不存在或已删除")
-    return ToolWebsiteDeleteResponse(
-        status="succeeded",
-        message="工具网站已删除。",
-        deleted=True,
-        website_id=website_id,
-    )
 
 
 @router.get(
