@@ -8,12 +8,16 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_monitor
 from backend.app.api.dependencies import (
+    get_briefing_repository,
+    get_document_repository,
     get_evaluation_repository,
     get_ingestion_task_repository,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
+from backend.app.repositories.briefing_repository import BriefingReader
+from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
-from backend.app.repositories.task_repository import MonitorTaskRepository
+from backend.app.repositories.task_repository import MonitorTaskRepository, RecentTaskReader
 
 
 class MonitorRouteTests(unittest.TestCase):
@@ -22,6 +26,9 @@ class MonitorRouteTests(unittest.TestCase):
         app.include_router(routes_monitor.router, prefix="/api")
         collector = MagicMock(return_value={"uptime_seconds": 1.0})
         evaluation_reader = MagicMock(spec=EvaluationSummaryReader)
+        task_reader = MagicMock(spec=RecentTaskReader)
+        document_statistics = MagicMock(spec=DocumentStatisticsReader)
+        briefing_reader = MagicMock(spec=BriefingReader)
 
         def override_require_user() -> dict[str, str]:
             return {"role": "user"}
@@ -30,6 +37,9 @@ class MonitorRouteTests(unittest.TestCase):
         app.dependency_overrides[
             get_evaluation_repository
         ] = lambda: evaluation_reader
+        app.dependency_overrides[get_ingestion_task_repository] = lambda: task_reader
+        app.dependency_overrides[get_document_repository] = lambda: document_statistics
+        app.dependency_overrides[get_briefing_repository] = lambda: briefing_reader
 
         with unittest.mock.patch(
             "backend.app.monitoring.metrics.collect_metrics",
@@ -39,7 +49,12 @@ class MonitorRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"uptime_seconds": 1.0})
-        collector.assert_called_once_with(evaluation_reader=evaluation_reader)
+        collector.assert_called_once_with(
+            task_reader=task_reader,
+            evaluation_reader=evaluation_reader,
+            document_statistics=document_statistics,
+            briefing_reader=briefing_reader,
+        )
 
     def test_recent_tasks_uses_repository_dependency(self) -> None:
         app = FastAPI()
