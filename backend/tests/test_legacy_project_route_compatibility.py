@@ -195,22 +195,6 @@ def test_legacy_project_queries_cannot_reintroduce_duplicate_implementations() -
         assert isinstance(call.func, ast.Name)
         assert call.func.id == canonical_name
 
-    repository_module = ast.parse(
-        (app_root / "repositories" / "mysql_repo.py").read_text(encoding="utf-8")
-    )
-    repository = next(
-        node
-        for node in repository_module.body
-        if isinstance(node, ast.ClassDef) and node.name == "MySQLRepository"
-    )
-    repository_methods = {
-        node.name
-        for node in repository.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-    assert "list_github_projects" not in repository_methods
-    assert "get_github_project_categories" not in repository_methods
-
     tools_module = ast.parse(
         (app_root / "services" / "mcp" / "inbound" / "tools.py").read_text(
             encoding="utf-8"

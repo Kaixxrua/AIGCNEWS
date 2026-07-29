@@ -6,11 +6,6 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-if "backend.app.repositories.mysql_repo" not in sys.modules:
-    repository_module = types.ModuleType("backend.app.repositories.mysql_repo")
-    repository_module.MySQLRepository = object
-    sys.modules["backend.app.repositories.mysql_repo"] = repository_module
-
 if "backend.app.core.config" not in sys.modules:
     config_module = types.ModuleType("backend.app.core.config")
     config_module.settings = types.SimpleNamespace(

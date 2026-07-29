@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
     IngestionTaskWriter,
@@ -12,14 +11,6 @@ from backend.app.repositories.task_repository import (
 
 
 class IngestionTaskRepositoryTests(unittest.TestCase):
-    def test_mysql_repository_exposes_ingestion_task_writer_contract(self) -> None:
-        repository = MySQLRepository.__new__(MySQLRepository)
-
-        contract: IngestionTaskWriter = repository
-
-        self.assertTrue(callable(contract.create_task))
-        self.assertTrue(callable(contract.finish_task))
-
     def test_protocol_spec_only_exposes_task_writes(self) -> None:
         repository = MagicMock(spec=IngestionTaskWriter)
         repository.create_task.return_value = 42
@@ -31,13 +22,6 @@ class IngestionTaskRepositoryTests(unittest.TestCase):
         with self.assertRaises(AttributeError):
             repository.list_tasks(1, 10)
 
-    def test_mysql_repository_exposes_latest_task_reader_contract(self) -> None:
-        repository = MySQLRepository.__new__(MySQLRepository)
-
-        contract: LatestTaskReader = repository
-
-        self.assertTrue(callable(contract.get_latest_task))
-
     def test_latest_task_reader_spec_is_read_only(self) -> None:
         repository = MagicMock(spec=LatestTaskReader)
         repository.get_latest_task.return_value = {"id": 42}
@@ -45,13 +29,6 @@ class IngestionTaskRepositoryTests(unittest.TestCase):
         self.assertEqual(repository.get_latest_task(), {"id": 42})
         with self.assertRaises(AttributeError):
             repository.finish_task(42)
-
-    def test_mysql_repository_exposes_task_admin_contract(self) -> None:
-        repository = MySQLRepository.__new__(MySQLRepository)
-
-        contract: IngestionTaskAdminRepository = repository
-
-        self.assertTrue(callable(contract.clear_all_tasks))
 
     def test_task_admin_spec_only_exposes_destructive_operation(self) -> None:
         repository = MagicMock(spec=IngestionTaskAdminRepository)

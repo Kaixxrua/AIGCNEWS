@@ -362,7 +362,7 @@ def _chunk_and_index(
         doc_id: 文档 ID（md5 hash）
         full_text: PDF 提取的纯文本
         milvus_repo: MilvusRepository 实例
-        mysql_repo: MySQLRepository 实例（可选）
+        document_repository: 文档仓储实例（可选）
 
     Returns:
         True = 成功写入 Milvus
@@ -451,7 +451,7 @@ def download_and_index_arxiv_pdfs(
     Args:
         papers: paper dict 列表，必须含 arxiv_id 和 pdf_url
         milvus_repo: MilvusRepository 实例（可选）
-        mysql_repo: MySQLRepository 实例（可选，用于更新 local_pdf_path）
+        document_repository: 文档仓储实例（可选，用于更新 local_pdf_path）
         sleep_between: 每次下载之间的间隔秒数
         max_workers: 并发下载线程数（生产建议保持 1）
 

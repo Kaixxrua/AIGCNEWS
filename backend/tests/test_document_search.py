@@ -32,11 +32,10 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_papers
 from backend.app.api.dependencies import get_document_repository
-from backend.app.repositories.mysql_repo import (
+from backend.app.repositories.postgres_document_repository import (
     _document_search_candidates,
-    _escape_like_literal,
-    _normalize_document_search_query,
 )
+from backend.app.services.search_semantics import escape_like_literal, normalize_search_query
 
 
 class DocumentQueryTests(unittest.TestCase):
@@ -55,7 +54,7 @@ class DocumentQueryTests(unittest.TestCase):
                 self.assertEqual(_document_search_candidates(query), [query])
 
     def test_normalization_and_terms_are_bounded(self) -> None:
-        self.assertEqual(_normalize_document_search_query("  ＡＩ   Agent  "), "AI Agent")
+        self.assertEqual(normalize_search_query("  ＡＩ   Agent  "), "AI Agent")
         candidates = _document_search_candidates(
             "help me find Agent agent MCP RAG planning memory tools tutorials examples"
         )
@@ -64,7 +63,7 @@ class DocumentQueryTests(unittest.TestCase):
         self.assertEqual(len({item.casefold() for item in relaxed}), len(relaxed))
 
     def test_like_metacharacters_are_literal(self) -> None:
-        self.assertEqual(_escape_like_literal("50%_done=ok"), "50=%=_done==ok")
+        self.assertEqual(escape_like_literal("50%_done=ok"), "50=%=_done==ok")
 
 class PaperRouteTests(unittest.TestCase):
     def setUp(self) -> None:

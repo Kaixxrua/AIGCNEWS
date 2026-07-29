@@ -17,11 +17,6 @@ if "backend.app.repositories.milvus_repo" not in sys.modules:
     milvus_module.MilvusRepository = MagicMock
     sys.modules["backend.app.repositories.milvus_repo"] = milvus_module
 
-if "backend.app.repositories.mysql_repo" not in sys.modules:
-    mysql_module = types.ModuleType("backend.app.repositories.mysql_repo")
-    mysql_module.MySQLRepository = MagicMock
-    sys.modules["backend.app.repositories.mysql_repo"] = mysql_module
-
 from backend.app.services.briefing.daily_briefing import (
     _BLOCK_RESPONSE_ERROR,
     _CONTINUATION_PROMPT,

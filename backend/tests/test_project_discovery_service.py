@@ -4,10 +4,6 @@ import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
-repository_module = types.ModuleType("backend.app.repositories.mysql_repo")
-repository_module.MySQLRepository = MagicMock
-sys.modules.setdefault("backend.app.repositories.mysql_repo", repository_module)
-
 config_module = types.ModuleType("backend.app.core.config")
 config_module.settings = types.SimpleNamespace(
     mcp_github_fallback_enabled=True,

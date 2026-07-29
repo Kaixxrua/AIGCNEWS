@@ -12,8 +12,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from backend.app.api import routes_github_projects
-from backend.app.repositories.mysql_project_catalog import MySQLProjectCatalogRepository
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_catalog import ProjectCatalogRepository
 from backend.app.services import project_discovery
 from backend.app.services.mcp.inbound import responses as inbound_responses
@@ -145,22 +143,12 @@ def _without_annotations(function: Any) -> inspect.Signature:
     return signature.replace(parameters=parameters, return_annotation=inspect.Signature.empty)
 
 
-def test_mysql_catalog_read_signatures_are_frozen() -> None:
-    candidate_signature = _without_annotations(ProjectCatalogRepository.find_lexical_candidate_repo_ids)
-    assert _without_annotations(MySQLProjectCatalogRepository.find_lexical_candidate_repo_ids) == candidate_signature
-    assert _without_annotations(MySQLRepository.find_lexical_candidate_repo_ids) == candidate_signature
-    lanes_signature = _without_annotations(ProjectCatalogRepository.find_lexical_candidate_lanes)
-    assert _without_annotations(MySQLProjectCatalogRepository.find_lexical_candidate_lanes) == lanes_signature
-    assert _without_annotations(MySQLRepository.find_lexical_candidate_lanes) == lanes_signature
+def test_catalog_read_signatures_are_frozen() -> None:
     list_signature = _without_annotations(ScriptedCatalogRepository.list_projects)
     categories_signature = _without_annotations(ScriptedCatalogRepository.get_project_categories)
 
     assert _without_annotations(ProjectCatalogRepository.list_projects) == list_signature
-    assert _without_annotations(MySQLProjectCatalogRepository.list_projects) == list_signature
-    assert _without_annotations(MySQLRepository.list_projects) == list_signature
     assert _without_annotations(ProjectCatalogRepository.get_project_categories) == categories_signature
-    assert _without_annotations(MySQLProjectCatalogRepository.get_project_categories) == categories_signature
-    assert _without_annotations(MySQLRepository.get_project_categories) == categories_signature
 
 
 @pytest.mark.parametrize("case_index", [0, 1])

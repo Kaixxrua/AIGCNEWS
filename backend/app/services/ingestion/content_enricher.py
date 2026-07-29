@@ -380,7 +380,7 @@ def enrich_arxiv_pdfs_background(
     Args:
         papers: pdf_pending=True 的 arxiv paper dict 列表
         milvus_repo: MilvusRepository 实例（用于更新向量）
-        mysql_repo: MySQLRepository 实例（可选，用于更新 summary 字段）
+        document_repository: 文档仓储实例（可选，用于更新 summary 字段）
         delay: 每篇 PDF 下载之间的间隔（秒）
         max_workers: 并行下载线程数
 

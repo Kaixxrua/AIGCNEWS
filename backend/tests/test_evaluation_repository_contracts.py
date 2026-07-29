@@ -9,19 +9,9 @@ from backend.app.repositories.evaluation_repository import (
     EvaluationSummaryReader,
     EvaluationWriter,
 )
-from backend.app.repositories.mysql_repo import MySQLRepository
 
 
 class EvaluationRepositoryContractTests(unittest.TestCase):
-    def test_mysql_repository_exposes_combined_contract(self) -> None:
-        repository = MySQLRepository.__new__(MySQLRepository)
-
-        contract: EvaluationRepository = repository
-
-        self.assertTrue(callable(contract.save_evaluation))
-        self.assertTrue(callable(contract.get_eval_summary))
-        self.assertTrue(callable(contract.list_evaluations))
-
     def test_writer_spec_does_not_expose_reads(self) -> None:
         repository = MagicMock(spec=EvaluationWriter)
         repository.save_evaluation.return_value = 42

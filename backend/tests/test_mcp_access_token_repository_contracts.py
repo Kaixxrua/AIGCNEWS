@@ -8,20 +8,9 @@ from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenManager,
     McpAccessTokenRepository,
 )
-from backend.app.repositories.mysql_repo import MySQLRepository
 
 
 class McpAccessTokenRepositoryContractTests(unittest.TestCase):
-    def test_mysql_repository_exposes_combined_contract(self) -> None:
-        repository = MySQLRepository.__new__(MySQLRepository)
-
-        contract: McpAccessTokenRepository = repository
-
-        self.assertTrue(callable(contract.create_user_mcp_token))
-        self.assertTrue(callable(contract.list_user_mcp_tokens))
-        self.assertTrue(callable(contract.delete_user_mcp_token))
-        self.assertTrue(callable(contract.get_user_by_mcp_token_hash))
-
     def test_manager_spec_does_not_expose_authentication_lookup(self) -> None:
         repository = MagicMock(spec=McpAccessTokenManager)
         repository.list_user_mcp_tokens.return_value = [{"id": 42}]

@@ -11,10 +11,6 @@ if _langchain_core is not None and not hasattr(_langchain_core, "__path__"):
     sys.modules.pop("langchain_core", None)
     sys.modules.pop("langchain_core.documents", None)
 
-from backend.app.repositories.mysql_repo import MySQLRepository
-from backend.app.repositories.mysql_user_project_collection_repository import (
-    MySQLUserProjectCollectionRepository,
-)
 from backend.app.services.ingestion.project_taxonomy import (
     PROMPT_VERSION,
     EnrichmentResult,
@@ -22,40 +18,6 @@ from backend.app.services.ingestion.project_taxonomy import (
 )
 from backend.app.services.ingestion.tool_website_enricher import ToolWebsiteEnricher
 from backend.app.services.ingestion.tool_website_fetcher import ToolWebsiteMetadata
-
-
-class RecordingCursor:
-    def __init__(self, executions: list[tuple[str, tuple]]) -> None:
-        self.executions = executions
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, traceback) -> None:
-        return None
-
-    def execute(self, sql: str, params: tuple = ()) -> None:
-        self.executions.append((sql, params))
-
-    def fetchone(self):
-        return {"cnt": 0}
-
-    def fetchall(self):
-        return []
-
-
-class RecordingConnection:
-    def __init__(self) -> None:
-        self.executions: list[tuple[str, tuple]] = []
-
-    def cursor(self) -> RecordingCursor:
-        return RecordingCursor(self.executions)
-
-    def commit(self) -> None:
-        return None
-
-    def close(self) -> None:
-        return None
 
 
 class ToolWebsiteEnricherTests(unittest.TestCase):
@@ -211,102 +173,3 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
             extract_message_text(message),
             '{"category_slug":"models_infra","confidence":0.9}',
         )
-
-
-class PersonalWebsiteQueryTests(unittest.TestCase):
-    def _catalog_repository(self) -> tuple[MySQLRepository, RecordingConnection]:
-        repository = MySQLRepository.__new__(MySQLRepository)
-        connection = RecordingConnection()
-        repository._connect = MagicMock(return_value=connection)
-        return repository, connection
-
-    def _collection_repository(
-        self,
-    ) -> tuple[MySQLUserProjectCollectionRepository, RecordingConnection]:
-        catalog, connection = self._catalog_repository()
-        database = MagicMock()
-        database.connect.return_value = connection
-        return (
-            MySQLUserProjectCollectionRepository(
-                database,
-                project_catalog=catalog,
-            ),
-            connection,
-        )
-
-    def test_personal_collection_accepts_current_users_link_without_enrichment(self) -> None:
-        repository, connection = self._collection_repository()
-
-        with patch(
-            "backend.app.repositories.mysql_repo._today_local_date",
-            return_value="2026-07-20",
-        ):
-            repository.list_user_project_collection(
-                user_id=7,
-                source="website",
-                enriched_only=True,
-            )
-
-        sql, params = connection.executions[0]
-        self.assertIn(
-            "we.status COLLATE utf8mb4_unicode_ci = _utf8mb4'succeeded' "
-            "COLLATE utf8mb4_unicode_ci OR uo.id IS NOT NULL OR utw.id IS NOT NULL",
-            sql,
-        )
-        self.assertIn("utw.user_id = %s", sql)
-        self.assertIn("uo.user_id = %s", sql)
-        self.assertIn("(pf.id IS NOT NULL OR utw.id IS NOT NULL)", sql)
-        self.assertEqual(params[:3], (7, 7, 7))
-
-    def test_public_website_listing_still_requires_global_enrichment(self) -> None:
-        repository, connection = self._catalog_repository()
-
-        with patch(
-            "backend.app.repositories.mysql_repo._today_local_date",
-            return_value="2026-07-20",
-        ):
-            repository.list_projects(source="website", enriched_only=True)
-
-        sql, _params = connection.executions[0]
-        self.assertIn("we.status", sql)
-        self.assertNotIn("OR uo.id IS NOT NULL", sql)
-        self.assertNotIn("OR utw.id IS NOT NULL", sql)
-        self.assertNotIn("utw.user_id = %s", sql)
-        self.assertIn("w.visibility", sql)
-
-    def test_github_collection_still_requires_global_enrichment(self) -> None:
-        repository, connection = self._collection_repository()
-
-        with patch(
-            "backend.app.repositories.mysql_repo._today_local_date",
-            return_value="2026-07-20",
-        ):
-            repository.list_user_project_collection(
-                user_id=7,
-                source="github",
-                enriched_only=True,
-            )
-
-        sql, _params = connection.executions[0]
-        self.assertIn("ge.status", sql)
-        self.assertNotIn("OR uo.id IS NOT NULL", sql)
-
-    def test_personal_website_tags_accept_current_users_override(self) -> None:
-        repository, connection = self._collection_repository()
-
-        result = repository.get_user_project_tags(
-            user_id=7,
-            source="website",
-            enriched_only=True,
-        )
-
-        sql, params = connection.executions[0]
-        self.assertIn("OR uo.id IS NOT NULL", sql)
-        self.assertIn("uo.user_id = %s", sql)
-        self.assertIn("COALESCE(NULLIF(uo.tags_json, ''), we.tags_json)", sql)
-        self.assertEqual(params, (7, 7))
-        self.assertEqual(result["items"], [])
-
-
-if __name__ == "__main__":
-    unittest.main()

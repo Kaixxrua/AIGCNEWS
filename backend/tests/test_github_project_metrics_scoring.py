@@ -6,15 +6,10 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 _config_name = "backend.app.core.config"
-_repository_name = "backend.app.repositories.mysql_repo"
 _previous_config = sys.modules.get(_config_name)
-_previous_repository = sys.modules.get(_repository_name)
 _config_stub = types.ModuleType(_config_name)
 _config_stub.settings = MagicMock(scheduler_timezone="Asia/Shanghai")
-_repository_stub = types.ModuleType(_repository_name)
-_repository_stub.MySQLRepository = MagicMock
 sys.modules[_config_name] = _config_stub
-sys.modules[_repository_name] = _repository_stub
 try:
     from backend.app.services.ingestion import github_hot_service as hot
     from backend.app.services.ingestion import github_project_metrics_service as metrics
@@ -23,10 +18,6 @@ finally:
         sys.modules.pop(_config_name, None)
     else:
         sys.modules[_config_name] = _previous_config
-    if _previous_repository is None:
-        sys.modules.pop(_repository_name, None)
-    else:
-        sys.modules[_repository_name] = _previous_repository
 
 
 class GitHubProjectMetricScoringTests(unittest.TestCase):

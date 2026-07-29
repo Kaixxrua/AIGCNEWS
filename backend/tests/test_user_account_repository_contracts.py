@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.user_account_repository import (
     UserAccountReader,
     UserAccountRepository,
@@ -13,19 +12,6 @@ from backend.app.repositories.user_account_repository import (
 
 
 class UserAccountRepositoryContractTests(unittest.TestCase):
-    def test_mysql_repository_exposes_combined_contract(self) -> None:
-        repository = MySQLRepository.__new__(MySQLRepository)
-
-        contract: UserAccountRepository = repository
-
-        self.assertTrue(callable(contract.get_user_by_phone))
-        self.assertTrue(callable(contract.get_user_by_email))
-        self.assertTrue(callable(contract.create_user))
-        self.assertTrue(callable(contract.update_user_password))
-        self.assertTrue(callable(contract.create_user_with_email))
-        self.assertTrue(callable(contract.get_user_count))
-        self.assertTrue(callable(contract.get_today_registered_user_count))
-
     def test_reader_spec_does_not_expose_writes_or_statistics(self) -> None:
         repository = MagicMock(spec=UserAccountReader)
         repository.get_user_by_email.return_value = {

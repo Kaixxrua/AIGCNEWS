@@ -10,23 +10,9 @@ from backend.app.repositories.mcp_server_repository import (
     McpServerConfigWriter,
     McpServerTestResultWriter,
 )
-from backend.app.repositories.mysql_repo import MySQLRepository
 
 
 class McpServerConfigRepositoryContractTests(unittest.TestCase):
-    def test_mysql_repository_exposes_combined_contract(self) -> None:
-        repository = MySQLRepository.__new__(MySQLRepository)
-
-        contract: McpServerConfigRepository = repository
-
-        self.assertTrue(callable(contract._seed_default_mcp_server_configs))
-        self.assertTrue(callable(contract.list_mcp_server_configs))
-        self.assertTrue(callable(contract.get_mcp_server_config))
-        self.assertTrue(callable(contract.create_mcp_server_config))
-        self.assertTrue(callable(contract.update_mcp_server_config))
-        self.assertTrue(callable(contract.delete_mcp_server_config))
-        self.assertTrue(callable(contract.update_mcp_server_test_result))
-
     def test_seeder_spec_does_not_expose_reads_or_writes(self) -> None:
         repository = MagicMock(spec=McpServerConfigSeeder)
 

@@ -14,10 +14,10 @@ from backend.app.repositories.document_repository import (
     DocumentStatisticsReader,
     DocumentWriter,
 )
-from backend.app.repositories.mysql_repo import (
+from backend.app.repositories.postgres_document_repository import (
     _document_search_candidates,
-    _escape_like_literal,
 )
+from backend.app.services.search_semantics import escape_like_literal
 
 
 def _without_annotations(function: Any) -> inspect.Signature:
@@ -88,7 +88,7 @@ class DocumentRepositoryContractTests(unittest.TestCase):
         self.assertNotIn("AI", candidates[1:])
 
     def test_like_escape_treats_wildcards_and_escape_literal_as_text(self) -> None:
-        self.assertEqual(_escape_like_literal("50%_done=yes"), "50=%=_done==yes")
+        self.assertEqual(escape_like_literal("50%_done=yes"), "50=%=_done==yes")
 
 
 if __name__ == "__main__":

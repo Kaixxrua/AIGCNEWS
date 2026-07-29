@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.task_repository import (
     MonitorTaskRepository,
     RecentTaskReader,
@@ -11,13 +10,6 @@ from backend.app.repositories.task_repository import (
 
 
 class MonitorTaskRepositoryTests(unittest.TestCase):
-    def test_mysql_repository_exposes_monitor_task_contract(self) -> None:
-        repository = MySQLRepository.__new__(MySQLRepository)
-
-        contract: MonitorTaskRepository = repository
-
-        self.assertTrue(callable(contract.list_tasks))
-
     def test_protocol_spec_only_exposes_monitor_query(self) -> None:
         repository = MagicMock(spec=MonitorTaskRepository)
 
