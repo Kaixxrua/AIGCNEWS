@@ -30,14 +30,6 @@ class RecentTaskReader(Protocol):
     def get_recent_tasks(self, limit: int = 100) -> list[dict[str, Any]]: ...
 
 
-class MonitorMetricsRepository(Protocol):
-    """Non-task read boundary used by monitor metrics."""
-
-    def get_document_count(self) -> int: ...
-
-    def list_briefings(self, limit: int = 30) -> list[dict[str, Any]]: ...
-
-
 class MonitorTaskRepository(Protocol):
     """Read-only task query boundary used by monitor endpoints."""
 

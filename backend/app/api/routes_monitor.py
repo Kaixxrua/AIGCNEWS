@@ -5,12 +5,16 @@ import asyncio
 from fastapi import APIRouter, Depends
 
 from backend.app.api.dependencies import (
+    get_briefing_repository,
+    get_document_repository,
     get_evaluation_repository,
     get_ingestion_task_repository,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
+from backend.app.repositories.briefing_repository import BriefingReader
+from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
-from backend.app.repositories.task_repository import MonitorTaskRepository
+from backend.app.repositories.task_repository import MonitorTaskRepository, RecentTaskReader
 
 router = APIRouter()
 
@@ -46,16 +50,20 @@ async def health_check(_: dict = Depends(RequireUser)):
 @router.get("/monitor/metrics")
 async def system_metrics(
     _: dict = Depends(RequireUser),
-    evaluation_reader: EvaluationSummaryReader = Depends(
-        get_evaluation_repository
-    ),
+    evaluation_reader: EvaluationSummaryReader = Depends(get_evaluation_repository),
+    task_reader: RecentTaskReader = Depends(get_ingestion_task_repository),
+    document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
+    briefing_reader: BriefingReader = Depends(get_briefing_repository),
 ):
     """Collect runtime metrics: uptime, document count, task stats, eval summary."""
     from backend.app.monitoring.metrics import collect_metrics
 
     result = await asyncio.to_thread(
         collect_metrics,
+        task_reader=task_reader,
         evaluation_reader=evaluation_reader,
+        document_statistics=document_statistics,
+        briefing_reader=briefing_reader,
     )
     return result
 
