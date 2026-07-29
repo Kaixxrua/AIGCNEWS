@@ -48,7 +48,7 @@ from backend.app.api.dependencies import (
     get_briefing_repository,
 )
 from backend.app.core.auth import get_mcp_access_token_authenticator
-from backend.app.services.mcp.inbound import catalog, context, responses, tools
+from backend.app.services.mcp.inbound import application, catalog, context, responses, tools
 
 
 PUBLIC_TOOL_NAMES = [
@@ -289,6 +289,57 @@ class McpInboundProtocolTests(unittest.TestCase):
             request_id="unknown",
         )
 
+    def test_route_composes_immutable_context_and_delegates_dispatch(self) -> None:
+        projection = application.McpProtocolResponse(
+            status_code=200,
+            body={"jsonrpc": "2.0", "id": 11, "result": {"tools": []}},
+            headers={"MCP-Protocol-Version": "2025-06-18"},
+        )
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(return_value=projection)
+
+        with patch.object(
+            routes_mcp,
+            "McpProtocolApplication",
+            return_value=dispatcher,
+        ) as application_factory:
+            response = self.rpc("tools/list", request_id=11)
+
+        self.assertEqual(response.json(), projection.body)
+        dispatcher.dispatch.assert_awaited_once()
+        inbound = dispatcher.dispatch.await_args.args[0]
+        self.assertEqual(inbound.method, "tools/list")
+        dependencies = application_factory.call_args.args[0]
+        self.assertIsInstance(dependencies, application.McpProtocolDependencies)
+        self.assertIs(dependencies.tools.documents, self.repositories.documents)
+        self.assertIs(
+            dependencies.tools.project_collection,
+            self.repositories.project_collections,
+        )
+        self.assertIs(dependencies.briefing_repository, self.briefing_repository)
+        self.assertIs(dependencies.session_transport, routes_mcp._MCP_SESSION_TRANSPORT)
+
+    def test_protocol_dependencies_and_response_are_immutable(self) -> None:
+        dependencies = application.McpProtocolDependencies(
+            authorization=context.McpAuthorizationContext(None),
+            tools=tools.McpToolContext(
+                user=None,
+                documents=MagicMock(),
+                papers=MagicMock(),
+                rank_snapshots=MagicMock(),
+                project_collection=MagicMock(),
+                request=MagicMock(),
+            ),
+            briefing_repository=MagicMock(),
+            session_transport=context.McpSessionTransport(),
+        )
+        response = application.McpProtocolResponse(204, None, {})
+
+        with self.assertRaises(AttributeError):
+            dependencies.briefing_repository = MagicMock()
+        with self.assertRaises(AttributeError):
+            response.status_code = 200
+
     def test_catalog_compatibility_aliases_and_registry_pairing(self) -> None:
         self.assertIs(routes_mcp.MCP_TOOLS, catalog.MCP_TOOLS)
         self.assertIs(routes_mcp._PRIVATE_MCP_TOOLS, catalog._PRIVATE_MCP_TOOLS)
@@ -301,6 +352,12 @@ class McpInboundProtocolTests(unittest.TestCase):
         self.assertIs(routes_mcp.McpAuthorizationContext, context.McpAuthorizationContext)
         self.assertIs(routes_mcp.McpSessionTransport, context.McpSessionTransport)
         self.assertIs(routes_mcp.parse_mcp_request, context.parse_mcp_request)
+        self.assertIs(
+            routes_mcp.McpProtocolApplication,
+            application.McpProtocolApplication,
+        )
+        self.assertIs(routes_mcp._read_resource, application._read_resource)
+        self.assertIs(routes_mcp._get_prompt, application._get_prompt)
         self.assertIs(routes_mcp._call_tool, tools._call_tool)
         self.assertIs(routes_mcp._TOOL_HANDLERS, tools._TOOL_HANDLERS)
 
