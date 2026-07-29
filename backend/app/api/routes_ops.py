@@ -15,7 +15,6 @@ from backend.app.api.dependencies import (
     get_github_project_recommendation_repository,
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
-    get_mysql_repository,
     get_runtime_provider_setting_repository,
 )
 from backend.app.core.auth import RequireAdmin

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import Depends, Request
 
-from backend.app.core.database import DatabaseLifecycle
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
@@ -15,7 +14,6 @@ from backend.app.repositories.document_repository import DocumentRepository, Pap
 from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.repositories.mcp_access_token_repository import McpAccessTokenRepository
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
-from backend.app.repositories.mysql_repo import MySQLRepository
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectIngestionRepository,
@@ -49,26 +47,11 @@ class ApplicationIngestionTaskRepository(
     pass
 
 
-def get_database(request: Request) -> DatabaseLifecycle:
-    """Return the MySQL lifecycle retained for compatibility-only call sites."""
-    database = getattr(request.app.state, "database", None)
-    if database is None:
-        raise RuntimeError("Database lifecycle is not configured")
-    return database
-
-
 def get_application_repositories(request: Request) -> ApplicationRepositories:
     repositories = getattr(request.app.state, "application_repositories", None)
     if repositories is None:
         raise RuntimeError("Application repositories are not configured")
     return repositories
-
-
-def get_mysql_repository(
-    database: DatabaseLifecycle = Depends(get_database),
-) -> MySQLRepository:
-    """Build the compatibility repository with the application-owned lifecycle."""
-    return MySQLRepository(database=database)
 
 
 def get_ingestion_task_repository(
