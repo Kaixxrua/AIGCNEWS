@@ -20,11 +20,10 @@ def validate_project_catalog_runtime(
         )
 
     if normalized_backend == "postgres":
-        if not outbox_capture_enabled or not sync_worker_enabled:
+        if sync_worker_enabled and not outbox_capture_enabled:
             raise ValueError(
-                "PostgreSQL project catalog requires "
-                "PROJECT_CATALOG_OUTBOX_CAPTURE_ENABLED=true and "
-                "PROJECT_CATALOG_SYNC_WORKER_ENABLED=true"
+                "PostgreSQL project catalog sync requires "
+                "PROJECT_CATALOG_OUTBOX_CAPTURE_ENABLED=true"
             )
         if shadow_enabled:
             raise ValueError(

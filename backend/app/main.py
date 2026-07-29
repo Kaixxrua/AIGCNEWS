@@ -109,14 +109,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         shadow_enabled=bool(settings.project_catalog_shadow_enabled),
     )
     application_database_backend = normalize_application_database_backend(
-        getattr(settings, "application_database_backend", "mysql")
+        getattr(settings, "application_database_backend", "postgres")
     )
-    app.state.database = mysql_database
+    app.state.database = (
+        postgres_database
+        if application_database_backend == "postgres"
+        else mysql_database
+    )
     app.state.postgres_database = postgres_database
     app.state.application_database_backend = application_database_backend
     postgres_required = (
         application_database_backend == "postgres"
         or project_catalog_backend == "postgres"
+        or bool(getattr(settings, "project_catalog_sync_worker_enabled", False))
+    )
+    mysql_required = (
+        application_database_backend == "mysql"
+        or project_catalog_backend == "mysql"
         or bool(getattr(settings, "project_catalog_sync_worker_enabled", False))
     )
     shadow_requested = (
@@ -127,6 +136,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ).strip().lower()
         == "postgres"
     )
+    mysql_opened = False
+    if mysql_required:
+        await asyncio.to_thread(mysql_database.connect)
+        mysql_opened = True
     postgres_opened = False
     if postgres_required:
         await asyncio.to_thread(postgres_database.open)
@@ -265,8 +278,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if postgres_opened:
             postgres_database.close()
             print("[Shutdown] PostgreSQL connection pool closed.")
-        mysql_database.close()
-        print("[Shutdown] MySQL connection pool closed.")
+        if mysql_opened:
+            mysql_database.close()
+            print("[Shutdown] MySQL connection pool closed.")
 
 
 app = FastAPI(

@@ -60,8 +60,8 @@ class Settings(BaseSettings):
     mysql_user: str = "root"
     mysql_password: str = ""
     mysql_database: str = "rag_aigc"
-    application_database_backend: str = "mysql"
-    project_catalog_backend: str = "mysql"
+    application_database_backend: str = "postgres"
+    project_catalog_backend: str = "postgres"
     project_catalog_outbox_capture_enabled: bool = False
     project_catalog_sync_worker_enabled: bool = False
     project_catalog_sync_poll_seconds: int = 5

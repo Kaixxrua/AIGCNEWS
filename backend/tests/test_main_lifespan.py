@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -21,7 +22,23 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             coroutine.close()
             return MagicMock()
 
+        config = SimpleNamespace(
+            application_database_backend="mysql",
+            project_catalog_backend="mysql",
+            project_catalog_outbox_capture_enabled=False,
+            project_catalog_sync_worker_enabled=False,
+            project_catalog_shadow_enabled=False,
+            project_semantic_search_enabled=False,
+            scheduler_enabled=True,
+            redis_host="localhost",
+            redis_port=6379,
+            redis_db=0,
+            redis_password="",
+            env="test",
+        )
+
         with (
+            patch.object(main, "settings", config),
             patch.object(main, "mysql_database", database),
             patch.object(main, "Redis", return_value=redis_client),
             patch.object(main.FastAPICache, "init"),
@@ -48,7 +65,23 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             coroutine.close()
             return MagicMock()
 
+        config = SimpleNamespace(
+            application_database_backend="mysql",
+            project_catalog_backend="mysql",
+            project_catalog_outbox_capture_enabled=False,
+            project_catalog_sync_worker_enabled=False,
+            project_catalog_shadow_enabled=False,
+            project_semantic_search_enabled=False,
+            scheduler_enabled=True,
+            redis_host="localhost",
+            redis_port=6379,
+            redis_db=0,
+            redis_password="",
+            env="test",
+        )
+
         with (
+            patch.object(main, "settings", config),
             patch.object(main, "mysql_database", database),
             patch.object(main, "Redis", return_value=redis_client),
             patch.object(main, "start_scheduler"),

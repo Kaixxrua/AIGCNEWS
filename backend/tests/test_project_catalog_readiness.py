@@ -45,16 +45,20 @@ def test_mysql_readiness_does_not_require_postgres() -> None:
     assert postgres.calls == 0
 
 
-def test_postgres_readiness_requires_both_databases() -> None:
+def test_postgres_readiness_does_not_require_mysql_without_sync() -> None:
+    mysql = Database(error=RuntimeError("not used"))
+    postgres = Database()
+
     result = project_catalog_runtime_readiness(
-        config=config("postgres", capture=True, sync=True),
-        mysql=Database(),  # type: ignore[arg-type]
-        postgres=Database(error=RuntimeError("dsn secret")),  # type: ignore[arg-type]
+        config=config("postgres", capture=False, sync=False),
+        mysql=mysql,  # type: ignore[arg-type]
+        postgres=postgres,  # type: ignore[arg-type]
     )
 
-    assert result["runtime_ready"] is False
-    assert result["error_class"] == "RuntimeError"
-    assert "secret" not in str(result)
+    assert result["runtime_ready"] is True
+    assert mysql.calls == 0
+    assert postgres.calls == 1
+    assert result["checks"] == {"configuration": "ok", "postgres": "ok"}
 
 
 def test_postgres_readiness_rejects_dead_or_retrying_sync() -> None:
@@ -79,18 +83,3 @@ def test_postgres_readiness_rejects_dead_or_retrying_sync() -> None:
 
     assert result["runtime_ready"] is False
     assert result["checks"]["sync"] == "error"
-
-
-def test_unsafe_runtime_is_not_ready_without_database_calls() -> None:
-    mysql = Database()
-    postgres = Database()
-
-    result = project_catalog_runtime_readiness(
-        config=config("postgres", capture=False, sync=False),
-        mysql=mysql,  # type: ignore[arg-type]
-        postgres=postgres,  # type: ignore[arg-type]
-    )
-
-    assert result["runtime_ready"] is False
-    assert result["checks"] == {"configuration": "error"}
-    assert mysql.calls == postgres.calls == 0

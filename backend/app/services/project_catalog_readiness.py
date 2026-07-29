@@ -55,13 +55,16 @@ def project_catalog_runtime_readiness(
             "error_class": type(exc).__name__,
         }
     try:
-        _ping_mysql(mysql)
-        checks["mysql"] = "ok"
-        if backend == "postgres" or bool(
+        sync_enabled = bool(
             getattr(config, "project_catalog_sync_worker_enabled", False)
-        ):
+        )
+        if backend == "mysql" or sync_enabled:
+            _ping_mysql(mysql)
+            checks["mysql"] = "ok"
+        if backend == "postgres" or sync_enabled:
             _ping_postgres(postgres)
             checks["postgres"] = "ok"
+        if sync_enabled:
             sync_status = ProjectCatalogSyncWorker(
                 mysql=mysql,
                 postgres=postgres,

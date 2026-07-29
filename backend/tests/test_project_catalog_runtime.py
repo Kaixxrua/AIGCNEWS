@@ -16,6 +16,7 @@ from backend.app.core.project_catalog_runtime import validate_project_catalog_ru
         ("mysql", False, False, False, "mysql"),
         (" MYSQL ", True, False, True, "mysql"),
         ("mysql", True, True, True, "mysql"),
+        ("postgres", False, False, False, "postgres"),
         ("postgres", True, True, False, "postgres"),
     ],
 )
@@ -55,16 +56,12 @@ def test_runtime_matrix_rejects_mysql_sync_without_capture() -> None:
         )
 
 
-@pytest.mark.parametrize(("capture", "sync"), [(False, False), (False, True), (True, False)])
-def test_runtime_matrix_rejects_postgres_without_capture_and_sync(
-    capture: bool,
-    sync: bool,
-) -> None:
-    with pytest.raises(ValueError, match="SYNC_WORKER_ENABLED=true"):
+def test_runtime_matrix_rejects_postgres_sync_without_capture() -> None:
+    with pytest.raises(ValueError, match="OUTBOX_CAPTURE_ENABLED=true"):
         validate_project_catalog_runtime(
             backend="postgres",
-            outbox_capture_enabled=capture,
-            sync_worker_enabled=sync,
+            outbox_capture_enabled=False,
+            sync_worker_enabled=True,
             shadow_enabled=False,
         )
 

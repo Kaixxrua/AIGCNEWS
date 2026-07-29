@@ -21,9 +21,10 @@ class _App:
 def _settings(backend: str) -> SimpleNamespace:
     postgres_selected = backend.strip().lower() == "postgres"
     return SimpleNamespace(
+        application_database_backend=backend,
         project_catalog_backend=backend,
-        project_catalog_outbox_capture_enabled=postgres_selected,
-        project_catalog_sync_worker_enabled=postgres_selected,
+        project_catalog_outbox_capture_enabled=False,
+        project_catalog_sync_worker_enabled=False,
         project_catalog_shadow_enabled=False,
         project_catalog_shadow_backend="postgres",
         project_catalog_shadow_shutdown_timeout_seconds=1.0,
@@ -83,7 +84,8 @@ def test_postgres_lifespan_opens_and_closes_selected_pool() -> None:
         ):
             create_task.side_effect = lambda coroutine: coroutine.close()
             async with main.lifespan(app):
-                pass
+                assert app.state.database is main.postgres_database
+                assert app.state.postgres_database is main.postgres_database
             assert to_thread.await_args_list[0].args == (postgres_open,)
             postgres_close.assert_called_once_with()
 
