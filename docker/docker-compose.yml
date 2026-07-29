@@ -9,8 +9,6 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      mysql-aigc:
-        condition: service_healthy
       redis:
         condition: service_healthy
       milvus:
@@ -30,8 +28,8 @@ services:
       - http_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - https_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - all_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,mysql-aigc,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
-      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,mysql-aigc,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
     extra_hosts:
       - "host.docker.internal:172.19.0.1"
     volumes:
@@ -209,28 +207,6 @@ services:
     volumes:
       - ../data/neo4j:/data
 
-  mysql-aigc:
-    image: mysql:8.0
-    container_name: mysql-aigc
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: root_password_here
-      MYSQL_DATABASE: rag_aigc
-      MYSQL_USER: aigc_admin
-      MYSQL_PASSWORD: Pp900900=
-      TZ: Asia/Shanghai
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --innodb_buffer_pool_size=128M
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
-
   redis:
     image: redis:7-alpine
     container_name: redis-aigc
@@ -248,7 +224,6 @@ services:
       start_period: 10s
 
 volumes:
-  mysql_data:
   redis_data:
   project_catalog_postgres_data:
 

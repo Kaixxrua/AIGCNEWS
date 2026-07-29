@@ -22,9 +22,20 @@ def test_main_compose_has_health_gated_boot_contract() -> None:
         )
     assert "http://127.0.0.1:9091/healthz" in text
     assert "http://127.0.0.1:8000/api/ready" in text
-    assert "mysqladmin ping" in text
+    for mysql_runtime_marker in (
+        "mysql-aigc",
+        "mysqladmin",
+        '"3306:3306"',
+        "mysql_data",
+    ):
+        assert mysql_runtime_marker not in text
     assert '["CMD", "redis-cli", "ping"]' in text
-    assert text.count("condition: service_healthy") >= 8
+    assert text.count("condition: service_healthy") == 8
+    backend_dependencies = text.split("  backend-api:", 1)[1].split(
+        "\n  project-catalog-postgres:\n", 1
+    )[0]
+    for dependency in ("redis", "milvus", "project-catalog-postgres"):
+        assert f"      {dependency}:\n        condition: service_healthy" in backend_dependencies
     assert "./volumes/etcd:/etcd" in text
     assert "./volumes/minio:/minio_data" in text
     assert "./volumes/milvus:/var/lib/milvus" in text
