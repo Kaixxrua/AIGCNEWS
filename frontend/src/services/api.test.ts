@@ -115,7 +115,7 @@ describe('frontend API transport contract', () => {
   it('single-flights non-auth 401 navigation and releases the guard after navigation settles', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
-    const authStore = { token: 'old-token', user: { id: 1 } as unknown }
+    const authStore = { token: 'old-token', user: { id: 1 } as unknown, status: 'authenticated' }
     const pinia = {}
     mocks.getActivePinia.mockReturnValue(pinia)
     mocks.useAuthStore.mockReturnValue(authStore)
@@ -132,7 +132,7 @@ describe('frontend API transport contract', () => {
     expect(alertSpy).toHaveBeenCalledOnce()
     expect(mocks.routerPush).toHaveBeenCalledOnce()
     expect(localStorage.getItem('auth_token')).toBeNull()
-    expect(authStore).toEqual({ token: null, user: null })
+    expect(authStore).toEqual({ token: null, user: null, status: 'anonymous' })
 
     finishNavigation()
     await expect(first).rejects.toBe(firstError)
@@ -147,7 +147,7 @@ describe('frontend API transport contract', () => {
   it.each(['/auth/login', '/auth/me', '/auth/me/mcp-tokens'])('cleans auth state but suppresses login navigation for %s', async (url) => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
-    const authStore = { token: 'old-token', user: { id: 1 } as unknown }
+    const authStore = { token: 'old-token', user: { id: 1 } as unknown, status: 'authenticated' }
     mocks.getActivePinia.mockReturnValue({})
     mocks.useAuthStore.mockReturnValue(authStore)
     localStorage.setItem('auth_token', 'old-token')
@@ -156,7 +156,7 @@ describe('frontend API transport contract', () => {
     await expect(responseRejectedInterceptor(error)).rejects.toBe(error)
 
     expect(localStorage.getItem('auth_token')).toBeNull()
-    expect(authStore).toEqual({ token: null, user: null })
+    expect(authStore).toEqual({ token: null, user: null, status: 'anonymous' })
     expect(alertSpy).not.toHaveBeenCalled()
     expect(mocks.routerPush).not.toHaveBeenCalled()
   })

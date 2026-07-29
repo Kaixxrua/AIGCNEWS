@@ -1,7 +1,7 @@
 import type { RouteLocationNormalized, RouteLocationRaw } from 'vue-router'
 
 export interface RouteAuthState {
-  isLoggedIn: boolean
+  status: 'initializing' | 'authenticated' | 'anonymous' | 'degraded'
   isAdmin: boolean
 }
 
@@ -17,15 +17,15 @@ export const getRoutePolicyRedirect = (
   to: RouteLocationNormalized,
   auth: RouteAuthState,
 ): RouteLocationRaw | null => {
-  if (to.meta.requiresAuth && !auth.isLoggedIn) {
+  if (auth.status === 'anonymous' && (to.meta.requiresAuth || to.meta.requiresAdmin)) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
 
-  if (to.meta.requiresAdmin && !auth.isAdmin) {
+  if (auth.status === 'authenticated' && to.meta.requiresAdmin && !auth.isAdmin) {
     return { path: '/' }
   }
 
-  if (to.meta.guestOnly && auth.isLoggedIn) {
+  if (to.meta.guestOnly && auth.status === 'authenticated') {
     return { path: '/' }
   }
 

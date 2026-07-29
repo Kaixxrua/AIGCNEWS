@@ -1,5 +1,21 @@
 import axios from 'axios'
 
+function readAuthToken(): string | null {
+  try {
+    return localStorage.getItem('auth_token')
+  } catch {
+    return null
+  }
+}
+
+function removeAuthToken(): void {
+  try {
+    localStorage.removeItem('auth_token')
+  } catch {
+    // The store's in-memory state remains authoritative.
+  }
+}
+
 export const api = axios.create({
   baseURL: '/api',
   timeout: 60_000,
@@ -10,7 +26,7 @@ export const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('auth_token')
+    const token = readAuthToken()
     if (token) {
       config.headers = config.headers ?? {}
       config.headers['Authorization'] = `Bearer ${token}`
@@ -42,7 +58,7 @@ api.interceptors.response.use(
     if (status === 401 && !_is401Handling) {
       const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/me')
 
-      localStorage.removeItem('auth_token')
+      removeAuthToken()
       try {
         const { useAuthStore } = await import('../../stores/authStore')
         const { getActivePinia } = await import('pinia')
@@ -51,6 +67,7 @@ api.interceptors.response.use(
           const authStore = useAuthStore(pinia)
           authStore.token = null
           authStore.user = null
+          authStore.status = 'anonymous'
         }
       } catch (_) {
         /* ignore */
