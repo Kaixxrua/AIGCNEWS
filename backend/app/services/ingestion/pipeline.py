@@ -25,10 +25,6 @@ import threading
 from datetime import date
 from typing import Any, Callable, Dict, List, Optional
 
-from fastapi_cache import FastAPICache
-from redis.asyncio import Redis
-
-from backend.app.core.config import settings
 from backend.app.repositories.application_repository_context import (
     get_configured_application_repositories,
 )
@@ -47,6 +43,13 @@ from backend.app.repositories.task_repository import (
     LatestTaskReader,
 )
 from backend.app.services.ingestion.graph_extractor import GraphExtractor
+from backend.app.services.ingestion.cache_invalidation import (
+    clear_dashboard_cache_safely as _clear_dashboard_cache_safely,
+)
+from backend.app.services.ingestion.composition import (
+    IngestionDependencies,
+    provide_ingestion_dependencies,
+)
 from backend.app.services.ingestion.content_enricher import (
     enrich_papers,
     enrich_arxiv_pdfs_background,
@@ -81,70 +84,6 @@ from backend.app.services.ingestion.source_orchestration import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-async def _clear_dashboard_cache_safely() -> None:
-    """清理 dashboard cache。
-
-    避免直接复用 FastAPICache 在应用启动事件循环中初始化的 backend，
-    从而触发 "Future attached to a different loop"。
-
-    这里为当前协程所在 loop 临时创建一个短生命周期 Redis 客户端，
-    使用多种 pattern 兜底清除 dashboard 缓存键——
-    因为 FastAPICache._prefix 可能是私有属性取不到真实值，
-    导致单一 pattern 无法匹配实际 key。
-    """
-    redis_client = Redis(
-        host=settings.redis_host,
-        port=settings.redis_port,
-        db=settings.redis_db,
-        password=settings.redis_password or None,
-        decode_responses=False,
-    )
-    try:
-        # 尝试从 FastAPICache 取 prefix（可能为空字符串或私有属性不可达）
-        _raw_prefix = getattr(FastAPICache, "_prefix", "") or ""
-
-        # 多种 pattern 兜底：
-        # 核心 prefix 是 main.py 中写死的 "aigc-cache:"，同时兼容其他情况
-        patterns = list(
-            dict.fromkeys(  # 去重同时保持顺序
-                [
-                    "aigc-cache:dashboard:*",  # 主路径：main.py 中配置的实际 prefix
-                    f"{_raw_prefix}dashboard:*",  # FastAPICache 运行时取到的 prefix（可能与上方相同）
-                    "dashboard:*",  # 无 prefix 情况
-                    "*:dashboard:*",  # 任意 prefix 通配（最宽泛）
-                ]
-            )
-        )
-
-        total_deleted = 0
-        for pattern in patterns:
-            keys = await redis_client.keys(pattern)
-            if keys:
-                await redis_client.delete(*keys)
-                total_deleted += len(keys)
-                logger.info(
-                    "[Orchestrator] dashboard cache: pattern=%r 删除 %d keys。",
-                    pattern,
-                    len(keys),
-                )
-
-        if total_deleted == 0:
-            logger.info(
-                "[Orchestrator] dashboard cache: 未找到可删除的 key（可能已过期）。"
-            )
-        else:
-            logger.info(
-                "[Orchestrator] dashboard cache cleared，共删除 %d keys。",
-                total_deleted,
-            )
-    finally:
-        close_method = getattr(redis_client, "aclose", None)
-        if close_method is not None:
-            await close_method()
-        else:
-            await redis_client.close()
 
 
 # ── 采集配置 ──────────────────────────────────────────────────────────────────
@@ -222,14 +161,17 @@ def _ingest_documents(
     *,
     document_writer: DocumentWriter,
     rank_snapshots: RankSnapshotRepository,
+    vector_writer_factory: Callable[[], object] | None = None,
+    graph_extractor_factory: Callable[[], object] | None = None,
+    graph_writer_factory: Callable[[], object] | None = None,
 ) -> int:
     del task_id
     adapter = IngestionPersistenceAdapter(
         documents=document_writer,
         rank_snapshots=rank_snapshots,
-        vector_writer_factory=MilvusRepository,
-        graph_extractor_factory=GraphExtractor,
-        graph_writer_factory=GraphRepository,
+        vector_writer_factory=vector_writer_factory or MilvusRepository,
+        graph_extractor_factory=graph_extractor_factory or GraphExtractor,
+        graph_writer_factory=graph_writer_factory or GraphRepository,
     )
     return adapter.persist(
         papers,
@@ -273,21 +215,39 @@ class IngestionOrchestrator:
         target_date: Optional[str] = None,
         task_writer: IngestionTaskWriter | None = None,
         repositories: ApplicationRepositories | None = None,
+        dependencies: IngestionDependencies | None = None,
     ):
         self.limit = limit
         self.top_n = top_n
         self.target_date = target_date
         self.snapshot_date = target_date or today_cst()
 
-        self.repositories = repositories or get_configured_application_repositories()
+        injected_dependencies = dependencies is not None
+        if dependencies is None:
+            borrowed_repositories = (
+                repositories or get_configured_application_repositories()
+            )
+            dependencies = provide_ingestion_dependencies(
+                repositories=borrowed_repositories,
+                task_writer=task_writer,
+            )
+        self.dependencies = dependencies
+        self.repositories = dependencies.repositories
         self.documents = self.repositories.documents
         self.rank_snapshots = self.repositories.rank_snapshots
         self.github_ingestion = self.repositories.github_ingestion
-        self.task_writer = task_writer or self.repositories.ingestion_tasks
+        self.task_writer = task_writer or dependencies.task_writer
+        self._cache_invalidator = dependencies.cache_invalidator
 
-        # 实例化所有爬虫
+        # Commit 37 will switch default construction to the provider factories. For
+        # now only an explicitly injected composition owns crawler construction.
+        crawler_factories = (
+            dependencies.crawler_factories
+            if injected_dependencies
+            else self._CRAWLER_CLASSES
+        )
         self._crawlers: Dict[str, BaseCrawler] = {}
-        for cls in self._CRAWLER_CLASSES:
+        for cls in crawler_factories:
             crawler = cls()
             self._crawlers[crawler.source_name] = crawler
 
@@ -358,6 +318,7 @@ class IngestionOrchestrator:
             source_key=source_name,  # ← 修复 Bug1：传纯名称，不拼接 period
             delay=enrich_delay,
         )
+        dependencies = getattr(self, "dependencies", None)
         count = await asyncio.to_thread(
             _ingest_documents,
             selected,
@@ -366,6 +327,21 @@ class IngestionOrchestrator:
             snapshot_date or self.snapshot_date,
             document_writer=self.documents,
             rank_snapshots=self.rank_snapshots,
+            vector_writer_factory=(
+                dependencies.vector_writer_factory
+                if dependencies is not None
+                else MilvusRepository
+            ),
+            graph_extractor_factory=(
+                dependencies.graph_extractor_factory
+                if dependencies is not None
+                else GraphExtractor
+            ),
+            graph_writer_factory=(
+                dependencies.graph_writer_factory
+                if dependencies is not None
+                else GraphRepository
+            ),
         )
         return count
 
@@ -392,8 +368,19 @@ class IngestionOrchestrator:
 
         def _bg_pdf_download():
             try:
-                milvus_repo = MilvusRepository()
-                dl_ok, idx_ok = download_and_index_arxiv_pdfs(
+                dependencies = getattr(self, "dependencies", None)
+                vector_factory = (
+                    dependencies.pdf_vector_writer_factory
+                    if dependencies is not None
+                    else MilvusRepository
+                )
+                pdf_indexer = (
+                    dependencies.pdf_indexer
+                    if dependencies is not None
+                    else download_and_index_arxiv_pdfs
+                )
+                milvus_repo = vector_factory()
+                dl_ok, idx_ok = pdf_indexer(
                     arxiv_papers,
                     milvus_repo=milvus_repo,
                     mysql_repo=documents,
@@ -417,7 +404,11 @@ class IngestionOrchestrator:
         logger.info("[Orchestrator] 后台 PDF 下载线程已启动（daemon=True）。")
 
     async def _clear_dashboard_cache(self) -> None:
-        await _clear_dashboard_cache_safely()
+        await getattr(
+            self,
+            "_cache_invalidator",
+            _clear_dashboard_cache_safely,
+        )()
 
     async def run_single_source(
         self,

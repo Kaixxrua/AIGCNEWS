@@ -3,6 +3,10 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from backend.app.services.ingestion.composition import (
+    IngestionDependencies,
+    provide_ingestion_dependencies,
+)
 from backend.app.services.ingestion.pipeline import (
     IngestionOrchestrator,
     run_ingestion_pipeline,
@@ -10,6 +14,55 @@ from backend.app.services.ingestion.pipeline import (
     run_single_source_async,
     run_single_source_pipeline,
 )
+
+
+class IngestionDependencyCompositionTests(unittest.TestCase):
+    def test_provider_borrows_repositories_and_exposes_owned_factories(self) -> None:
+        repositories = MagicMock()
+        writer = MagicMock()
+
+        dependencies = provide_ingestion_dependencies(
+            repositories=repositories,
+            task_writer=writer,
+        )
+
+        self.assertIs(dependencies.repositories, repositories)
+        self.assertIs(dependencies.task_writer, writer)
+        self.assertTrue(callable(dependencies.vector_writer_factory))
+        self.assertTrue(callable(dependencies.graph_extractor_factory))
+        self.assertTrue(callable(dependencies.graph_writer_factory))
+        self.assertTrue(callable(dependencies.pdf_vector_writer_factory))
+        self.assertTrue(callable(dependencies.pdf_indexer))
+        self.assertTrue(callable(dependencies.cache_invalidator))
+        self.assertEqual(len(dependencies.crawler_factories), 5)
+
+    def test_orchestrator_accepts_complete_composition_without_global_lookup(self) -> None:
+        repositories = MagicMock()
+        dependencies = IngestionDependencies(
+            repositories=repositories,
+            task_writer=repositories.ingestion_tasks,
+            vector_writer_factory=MagicMock(),
+            graph_extractor_factory=MagicMock(),
+            graph_writer_factory=MagicMock(),
+            pdf_vector_writer_factory=MagicMock(),
+            pdf_indexer=MagicMock(),
+            cache_invalidator=AsyncMock(),
+            crawler_factories=(),
+        )
+
+        with (
+            patch(
+                "backend.app.services.ingestion.pipeline.get_configured_application_repositories"
+            ) as configured,
+            patch.object(IngestionOrchestrator, "_CRAWLER_CLASSES", []),
+        ):
+            orchestrator = IngestionOrchestrator(dependencies=dependencies)
+
+        configured.assert_not_called()
+        self.assertIs(orchestrator.dependencies, dependencies)
+        self.assertIs(orchestrator.repositories, repositories)
+        self.assertIs(orchestrator.documents, repositories.documents)
+        self.assertIs(orchestrator.task_writer, repositories.ingestion_tasks)
 
 
 class IngestionPublicEntrypointTests(unittest.IsolatedAsyncioTestCase):

@@ -137,8 +137,10 @@ class IngestionPersistenceAdapter:
                         new_documents
                     )
                     graph_writer = self.graph_writer_factory()
-                    graph_writer.add_graph_documents(graph_documents)
-                    graph_writer.close()
+                    try:
+                        graph_writer.add_graph_documents(graph_documents)
+                    finally:
+                        graph_writer.close()
                 except Exception as exc:
                     logger.error(
                         "[Pipeline][%s] Neo4j 写入失败: %s", source_label, exc

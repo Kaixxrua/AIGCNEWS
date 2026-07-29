@@ -222,6 +222,21 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         graph.add_graph_documents.assert_called_once_with(graph_documents)
         graph.close.assert_called_once_with()
 
+    def test_owned_graph_writer_closes_when_write_raises(self) -> None:
+        adapter, documents, _, _, extractor, graph = self._adapter()
+        extractor.extract.return_value = [MagicMock()]
+        graph.add_graph_documents.side_effect = RuntimeError("neo4j unavailable")
+
+        count = adapter.persist(
+            [{"source": "arxiv", "channel": "daily", "title": "Paper"}],
+            source_label="arxiv_daily",
+            snapshot_date="2026-07-24",
+        )
+
+        self.assertEqual(count, 1)
+        documents.upsert_document.assert_called_once()
+        graph.close.assert_called_once_with()
+
     def test_graph_conditions_skip_non_arxiv_and_reused_documents(self) -> None:
         adapter, _, _, _, extractor, _ = self._adapter()
         adapter.persist(
