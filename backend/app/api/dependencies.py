@@ -38,6 +38,8 @@ from backend.app.services.briefing.composition import provide_daily_briefing_ser
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
+from backend.app.services.rag.chat_service import ChatService
+from backend.app.services.rag.composition import RagChatServiceProvider
 
 
 class ApplicationIngestionTaskRepository(
@@ -115,6 +117,13 @@ def get_conversation_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> ConversationRepository:
     return repositories.conversations
+
+
+def get_rag_chat_service(request: Request) -> ChatService:
+    provider = getattr(request.app.state, "rag_chat_service_provider", None)
+    if not isinstance(provider, RagChatServiceProvider):
+        raise RuntimeError("RAG chat service provider is not configured")
+    return provider.get()
 
 
 def get_document_repository(

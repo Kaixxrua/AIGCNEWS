@@ -12,7 +12,7 @@ from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
 from backend.app.api.dependencies import (
     get_conversation_repository,
-    get_document_repository,
+    get_rag_chat_service,
 )
 from backend.app.models.schema_chat import (
     ChatStreamRequest,
@@ -26,13 +26,9 @@ from backend.app.models.schema_chat import (
     RegenerateRequest,
 )
 from backend.app.repositories.conversation_repository import ConversationRepository
-from backend.app.repositories.document_repository import DocumentRepository
-from backend.app.repositories.graph_repo import GraphRepository
-from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.chat.quota_policy import check_user_message_limit
 from backend.app.services.rag.chat_service import ChatService
-from backend.app.services.rag.retriever import HybridRetriever
 
 router = APIRouter()
 
@@ -58,7 +54,7 @@ async def _stream_persisted_chat(
     message_override: Optional[str] = None,
     conversation_id_override: Optional[int] = None,
     conversation_repository: ConversationRepository,
-    documents: DocumentRepository,
+    rag_service: ChatService,
 ) -> AsyncGenerator[str, None]:
     """真流式 SSE：边收边 yield，持久化后置异步。"""
     try:
@@ -66,17 +62,6 @@ async def _stream_persisted_chat(
         if user_id <= 0:
             raise ValueError("invalid_user")
 
-        retriever = HybridRetriever(
-            MilvusRepository(),
-            GraphRepository(),
-            documents,
-            documents,
-        )
-        rag_service = ChatService(
-            retriever,
-            ranking_reader=documents,
-            statistics_reader=documents,
-        )
         conversation_service = ConversationService(conversation_repository)
 
         attachment_context = ""
@@ -200,7 +185,7 @@ async def stream_chat(
     request: ChatStreamRequest,
     user: dict = Depends(RequireUser),
     conversations: ConversationRepository = Depends(get_conversation_repository),
-    documents: DocumentRepository = Depends(get_document_repository),
+    rag_service: ChatService = Depends(get_rag_chat_service),
 ) -> StreamingResponse:
     _check_user_message_limit(user, conversations)
     return StreamingResponse(
@@ -208,7 +193,7 @@ async def stream_chat(
             request,
             user,
             conversation_repository=conversations,
-            documents=documents,
+            rag_service=rag_service,
         ),
         media_type="text/event-stream; charset=utf-8",
         headers={
@@ -351,7 +336,7 @@ async def regenerate_message(
     request: RegenerateRequest,
     user: dict = Depends(RequireUser),
     conversations: ConversationRepository = Depends(get_conversation_repository),
-    documents: DocumentRepository = Depends(get_document_repository),
+    rag_service: ChatService = Depends(get_rag_chat_service),
 ) -> StreamingResponse:
     _check_user_message_limit(user, conversations)
     service = ConversationService(conversations)
@@ -398,7 +383,7 @@ async def regenerate_message(
             message_override=user_message,
             conversation_id_override=int(target["conversation_id"]),
             conversation_repository=conversations,
-            documents=documents,
+            rag_service=rag_service,
         ),
         media_type="text/event-stream; charset=utf-8",
         headers={

@@ -36,6 +36,7 @@ from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
 from backend.app.core.scheduler import start_scheduler, stop_scheduler
+from backend.app.services.rag.composition import RagChatServiceProvider
 
 
 # ── 访客统计中间件 ─────────────────────────────────────────────────────────────
@@ -108,6 +109,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         postgres=postgres_database,
     )
     configure_application_repositories(app.state.application_repositories)
+    app.state.rag_chat_service_provider = RagChatServiceProvider(
+        app.state.application_repositories
+    )
 
     # 在后台异步预热模型，不阻塞服务启动
     asyncio.create_task(_warmup_reranker())
@@ -202,6 +206,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 )
             ),
         )
+        rag_provider = getattr(app.state, "rag_chat_service_provider", None)
+        if rag_provider is not None:
+            rag_provider.close()
         configure_application_repositories(None)
         if postgres_opened:
             postgres_database.close()

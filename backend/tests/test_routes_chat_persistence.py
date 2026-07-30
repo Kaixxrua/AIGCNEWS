@@ -52,8 +52,6 @@ class ChatPersistenceRouteTests(unittest.TestCase):
 
         async def collect():
             with (
-                patch.object(routes_chat, "HybridRetriever", return_value=MagicMock()),
-                patch.object(routes_chat, "ChatService", return_value=rag_service),
                 patch.object(routes_chat, "ConversationService") as service_type,
                 patch.object(
                     routes_chat.asyncio,
@@ -68,7 +66,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                         request,
                         {"user_id": 3},
                         conversation_repository=repository,
-                        documents=MagicMock(),
+                        rag_service=rag_service,
                     )
                 ]
                 return events, to_thread, service_type
@@ -132,8 +130,6 @@ class ChatPersistenceRouteTests(unittest.TestCase):
 
         async def collect() -> list[str]:
             with (
-                patch.object(routes_chat, "HybridRetriever", return_value=MagicMock()),
-                patch.object(routes_chat, "ChatService", return_value=rag_service),
                 patch.object(routes_chat, "ConversationService"),
                 patch.object(
                     routes_chat.asyncio,
@@ -151,7 +147,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                         request,
                         {"user_id": 3},
                         conversation_repository=repository,
-                        documents=MagicMock(),
+                        rag_service=rag_service,
                     )
                 ]
                 get_attachment.assert_awaited_once_with("other-owner", 3)
@@ -215,8 +211,6 @@ class ChatPersistenceRouteTests(unittest.TestCase):
 
         async def collect() -> AsyncMock:
             with (
-                patch.object(routes_chat, "HybridRetriever", return_value=MagicMock()),
-                patch.object(routes_chat, "ChatService", return_value=rag_service),
                 patch.object(routes_chat, "ConversationService") as service_type,
                 patch.object(
                     routes_chat.asyncio,
@@ -241,7 +235,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                         request,
                         {"user_id": 3},
                         conversation_repository=repository,
-                        documents=MagicMock(),
+                        rag_service=rag_service,
                     )
                 ]
                 get_pdf_text.assert_awaited_once_with("pdf", 3)
@@ -271,19 +265,15 @@ class ChatPersistenceRouteTests(unittest.TestCase):
         request = ChatStreamRequest(message="question", history=[])
 
         async def collect() -> list[str]:
-            with (
-                patch.object(routes_chat, "HybridRetriever", return_value=MagicMock()),
-                patch.object(routes_chat, "ChatService", return_value=rag_service),
-            ):
-                return [
-                    event
-                    async for event in routes_chat._stream_persisted_chat(
-                        request,
-                        {"user_id": 3},
-                        conversation_repository=MagicMock(),
-                        documents=MagicMock(),
-                    )
-                ]
+            return [
+                event
+                async for event in routes_chat._stream_persisted_chat(
+                    request,
+                    {"user_id": 3},
+                    conversation_repository=MagicMock(),
+                    rag_service=rag_service,
+                )
+            ]
 
         events = asyncio.run(collect())
 
