@@ -148,6 +148,34 @@ class DatabaseDependencyTests(unittest.TestCase):
             website_taxonomy=taxonomy,
         )
 
+    def test_monitoring_dependencies_use_application_owned_runtime(self) -> None:
+        runtime = MagicMock()
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        app.state.monitoring_runtime = runtime
+        request.app = app
+
+        self.assertIs(dependencies.get_monitoring_runtime(request), runtime)
+        self.assertIs(
+            dependencies.get_health_check_service(request),
+            runtime.health_checks,
+        )
+        self.assertIs(
+            dependencies.get_readiness_check(request),
+            runtime.readiness,
+        )
+
+    def test_monitoring_runtime_requires_lifespan_setup(self) -> None:
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        request.app = app
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Application monitoring is not configured",
+        ):
+            dependencies.get_monitoring_runtime(request)
+
     def test_project_search_runtime_uses_application_owned_runtime(self) -> None:
         runtime = MagicMock()
         request = MagicMock(spec=Request)

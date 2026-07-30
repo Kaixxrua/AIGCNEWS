@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import Depends, Request
 
-from backend.app.monitoring.health import HealthCheckService, provide_health_check_service
+from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
@@ -62,8 +62,19 @@ from backend.app.services.runtime_provider.admin_service import RuntimeProviderA
 from backend.app.services.scheduler_admin import SchedulerAdminService
 
 
-def get_health_check_service() -> HealthCheckService:
-    return provide_health_check_service()
+def get_monitoring_runtime(request: Request) -> Any:
+    runtime = getattr(request.app.state, "monitoring_runtime", None)
+    if runtime is None:
+        raise RuntimeError("Application monitoring is not configured")
+    return runtime
+
+
+def get_health_check_service(request: Request) -> HealthCheckService:
+    return get_monitoring_runtime(request).health_checks
+
+
+def get_readiness_check(request: Request) -> ReadinessCheck:
+    return get_monitoring_runtime(request).readiness
 
 
 def get_ingestion_admin_service() -> IngestionAdminService:

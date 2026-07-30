@@ -13,6 +13,7 @@ from backend.app.api.dependencies import (
     get_evaluation_repository,
     get_health_check_service,
     get_ingestion_task_repository,
+    get_readiness_check,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.repositories.briefing_repository import BriefingReader
@@ -22,6 +23,40 @@ from backend.app.repositories.task_repository import MonitorTaskRepository, Rece
 
 
 class MonitorRouteTests(unittest.TestCase):
+    def test_readiness_uses_injected_check(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        check = MagicMock(
+            return_value={
+                "backend": "postgres",
+                "runtime_ready": True,
+            }
+        )
+        app.dependency_overrides[get_readiness_check] = lambda: check
+
+        response = TestClient(app).get("/api/ready")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), check.return_value)
+        check.assert_called_once_with()
+
+    def test_readiness_preserves_unavailable_projection(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        check = MagicMock(
+            return_value={
+                "backend": "postgres",
+                "runtime_ready": False,
+            }
+        )
+        app.dependency_overrides[get_readiness_check] = lambda: check
+
+        response = TestClient(app).get("/api/ready")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"detail": check.return_value})
+        check.assert_called_once_with()
+
     def test_health_check_uses_injected_service(self) -> None:
         app = FastAPI()
         app.include_router(routes_monitor.router, prefix="/api")

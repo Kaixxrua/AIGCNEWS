@@ -10,9 +10,10 @@ from backend.app.api.dependencies import (
     get_evaluation_repository,
     get_health_check_service,
     get_ingestion_task_repository,
+    get_readiness_check,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
-from backend.app.monitoring.health import HealthCheckService
+from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
@@ -27,12 +28,10 @@ async def liveness() -> dict[str, str]:
 
 
 @router.get("/ready")
-async def readiness() -> dict[str, object]:
-    from backend.app.services.project_catalog_readiness import (
-        project_catalog_runtime_readiness,
-    )
-
-    result = await asyncio.to_thread(project_catalog_runtime_readiness)
+async def readiness(
+    check: ReadinessCheck = Depends(get_readiness_check),
+) -> dict[str, object]:
+    result = await asyncio.to_thread(check)
     if result.get("runtime_ready"):
         return result
     from fastapi import HTTPException

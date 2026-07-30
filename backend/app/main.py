@@ -36,6 +36,7 @@ from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
 from backend.app.core.scheduler import create_scheduler_runtime
+from backend.app.monitoring.health import create_application_monitoring_runtime
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.rag.composition import RagChatServiceProvider
 
@@ -125,10 +126,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.application_database_backend = "postgres"
     app.state.redis = None
     app.state.project_search_runtime = None
+    app.state.monitoring_runtime = None
 
     try:
         await asyncio.to_thread(postgres_database.open)
         postgres_opened = True
+        app.state.monitoring_runtime = create_application_monitoring_runtime(
+            postgres=postgres_database,
+        )
         app.state.application_repositories = create_application_repositories(
             postgres=postgres_database,
         )
@@ -245,6 +250,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 configure_application_repositories(None)
             except Exception as exc:
                 print(f"[Shutdown] Repository context close failed (non-fatal): {exc}")
+        app.state.monitoring_runtime = None
         if postgres_opened:
             try:
                 postgres_database.close()

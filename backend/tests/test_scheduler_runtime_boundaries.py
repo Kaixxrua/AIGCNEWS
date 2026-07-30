@@ -39,7 +39,11 @@ class SchedulerRuntimeBoundaryTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        for attribute in ("scheduler_runtime", "project_search_runtime"):
+        for attribute in (
+            "scheduler_runtime",
+            "project_search_runtime",
+            "monitoring_runtime",
+        ):
             assignments: list[Path] = []
             reads: list[Path] = []
             for path in app_directory.rglob("*.py"):

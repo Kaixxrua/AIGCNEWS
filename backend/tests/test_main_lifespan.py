@@ -36,9 +36,15 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         project_search_runtime.close = AsyncMock()
         rag_provider = MagicMock()
         scheduler_runtime = MagicMock()
+        monitoring_runtime = MagicMock()
         with (
             patch.object(main, "settings", _settings()),
             patch.object(main, "postgres_database", database),
+            patch.object(
+                main,
+                "create_application_monitoring_runtime",
+                return_value=monitoring_runtime,
+            ) as monitoring_factory,
             patch.object(main, "create_application_repositories", return_value=repositories) as factory,
             patch.object(
                 main,
@@ -64,10 +70,12 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(app.state.application_repositories, repositories)
                 self.assertIs(app.state.scheduler_runtime, scheduler_runtime)
                 self.assertIs(app.state.project_search_runtime, project_search_runtime)
+                self.assertIs(app.state.monitoring_runtime, monitoring_runtime)
                 scheduler_runtime.start.assert_not_called()
                 scheduler_runtime.stop.assert_not_called()
                 database.close.assert_not_called()
 
+            monitoring_factory.assert_called_once_with(postgres=database)
             factory.assert_called_once_with(postgres=database)
             rag_provider_type.assert_called_once_with(
                 repositories,
@@ -84,6 +92,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             rag_provider.close.assert_called_once_with()
             redis_client.aclose.assert_awaited_once_with()
             database.close.assert_called_once_with()
+            self.assertIsNone(app.state.monitoring_runtime)
 
     async def test_disabled_scheduler_ignores_invalid_timezone(self) -> None:
         app = FastAPI()
