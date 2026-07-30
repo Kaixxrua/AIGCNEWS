@@ -51,12 +51,12 @@ _SYSTEM_PROMPT = f"""\
 1. 从给定一级分类中选择最合适的 category_slug，优先按“用户拿它来做什么”分类，而不是按底层技术名词分类。
 2. 从该一级分类下选择最合适的 subcategory_slug。
 3. 写一句中文短描述，说明这个项目能解决什么问题、适合什么使用场景。
-4. 给 1-4 个中文短标签。
+4. 给 1-4 个中文短标签，并按相同顺序给出等量、自然的英文短标签。
 
 {CATEGORY_PROMPT}
 
 只返回 JSON，不要 Markdown，不要解释。格式：
-{{"category_slug":"coding_tools","subcategory_slug":"ide_plugins","description_zh":"一句 40 到 90 个中文字符的短描述。","tags":["IDE 插件","代码助手"],"confidence":0.86}}
+{{"category_slug":"coding_tools","subcategory_slug":"ide_plugins","description_zh":"一句 40 到 90 个中文字符的短描述。","tags_zh":["IDE 插件","代码助手"],"tags_en":["IDE plugin","Coding assistant"],"confidence":0.86}}
 """
 
 
@@ -107,10 +107,16 @@ class GitHubProjectEnricher:
         runtime_settings: RuntimeProviderSettingReader | None = None,
     ) -> None:
         self.db = db or get_configured_application_repositories().github_enrichment
-        self.llm = get_chat_model(temperature=0)
+        self._llm = None
         self.model_meta = _model_metadata(
             runtime_settings or self.db.runtime_provider_settings
         )
+
+    @property
+    def llm(self):
+        if self._llm is None:
+            self._llm = get_chat_model(temperature=0)
+        return self._llm
 
     def enrich_batch(
         self,
@@ -199,6 +205,8 @@ class GitHubProjectEnricher:
                     "subcategory_name": result.subcategory_name,
                     "description_zh": result.description_zh,
                     "tags_json": json.dumps(result.tags, ensure_ascii=False),
+                    "tags_zh_json": json.dumps(result.tags, ensure_ascii=False),
+                    "tags_en_json": json.dumps(result.tags_en, ensure_ascii=False),
                     "confidence": result.confidence,
                     "source_fingerprint": source_fingerprint,
                     "prompt_version": PROMPT_VERSION,
@@ -225,6 +233,45 @@ class GitHubProjectEnricher:
                 **self.model_meta,
             )
             return False
+
+    def backfill_bilingual_tags(
+        self, *, after_repo_id: str = "", limit: int = 50,
+        min_stars: int = DEFAULT_MIN_STARS, dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        rows = self.db.list_github_projects_needing_bilingual_tags(
+            after_repo_id=after_repo_id,
+            limit=limit,
+            min_stars=min_stars,
+        )
+        succeeded = failed = 0
+        failures: list[dict[str, Any]] = []
+        for row in rows:
+            if dry_run:
+                continue
+            repo_id = str(row.get("repo_id") or "")
+            try:
+                result = self._enrich_one(row)
+                self.db.update_github_repo_system_tags(
+                    repo_id=repo_id,
+                    tags_zh_json=json.dumps(result.tags, ensure_ascii=False),
+                    tags_en_json=json.dumps(result.tags_en, ensure_ascii=False),
+                    prompt_version=PROMPT_VERSION,
+                    **self.model_meta,
+                )
+                succeeded += 1
+            except Exception as exc:  # noqa: BLE001 - preserve successful enrichment
+                failed += 1
+                failures.append({"repo_id": repo_id, "error": str(exc)[:300]})
+        next_cursor = str(rows[-1]["repo_id"]) if rows else str(after_repo_id or "")
+        return {
+            "status": "dry_run" if dry_run else ("partial" if failed else "success"),
+            "processed": len(rows),
+            "succeeded": succeeded,
+            "failed": failed,
+            "next_cursor": next_cursor,
+            "has_more": len(rows) >= max(1, min(int(limit), 500)),
+            "failures": failures,
+        }
 
     def _enrich_one(self, repo: Dict[str, Any]) -> EnrichmentResult:
         messages = [

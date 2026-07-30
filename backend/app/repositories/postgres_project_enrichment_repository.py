@@ -202,6 +202,49 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     data,
                 )
 
+    def list_github_projects_needing_bilingual_tags(
+        self, *, after_repo_id: str = "", limit: int = 50, min_stars: int = 500,
+    ) -> list[dict[str, Any]]:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT c.repo_id, c.full_name, c.description, c.language,
+                           c.topics_json, c.stars, e.tags_json, e.tags_zh_json,
+                           e.description_zh, e.source_fingerprint
+                    FROM github_repo_candidates c
+                    JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
+                    WHERE c.repo_id > %s
+                      AND COALESCE(c.stars, 0) >= %s
+                      AND e.status = 'succeeded'
+                      AND COALESCE(e.tags_en_json, '') = ''
+                    ORDER BY c.repo_id COLLATE "C" ASC
+                    LIMIT %s
+                    """,
+                    (str(after_repo_id or ""), max(0, int(min_stars)), max(1, min(int(limit), 500))),
+                )
+                rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def update_github_repo_system_tags(
+        self, *, repo_id: str, tags_zh_json: str, tags_en_json: str,
+        prompt_version: str, model_provider: str = "", model_name: str = "",
+    ) -> None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                canonical_id = self._canonical_repo_id(cursor, str(repo_id or ""))
+                cursor.execute(
+                    """
+                    UPDATE github_repo_enrichments
+                    SET tags_json=%s, tags_zh_json=%s, tags_en_json=%s,
+                        prompt_version=%s, model_provider=%s, model_name=%s,
+                        updated_at=%s
+                    WHERE repo_id=%s AND status='succeeded'
+                    """,
+                    (tags_zh_json, tags_zh_json, tags_en_json, prompt_version,
+                     model_provider, model_name, _utcnow(), canonical_id),
+                )
+
     def mark_github_repo_enrichment_failed(
         self, repo_id: str, *, source_fingerprint: str, prompt_version: str,
         error_msg: str, model_provider: str = "", model_name: str = "",
@@ -397,6 +440,50 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
                         status=EXCLUDED.status,error_msg=EXCLUDED.error_msg,
                         enriched_at=EXCLUDED.enriched_at,updated_at=EXCLUDED.updated_at
                 """, data)
+
+    def list_tool_websites_needing_bilingual_tags(
+        self, *, after_website_id: int = 0, limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT w.id AS website_id, w.canonical_url, w.domain, w.title,
+                           w.description, w.image_url, w.raw_metadata_json,
+                           w.source_fingerprint, e.tags_json, e.tags_zh_json,
+                           e.description_zh
+                    FROM tool_websites w
+                    JOIN tool_website_enrichments e ON e.website_id = w.id
+                    WHERE w.id > %s
+                      AND e.status = 'succeeded'
+                      AND COALESCE(e.tags_en_json, '') = ''
+                      AND e.prompt_version NOT LIKE '%%-manual'
+                    ORDER BY w.id ASC
+                    LIMIT %s
+                    """,
+                    (max(0, int(after_website_id)), max(1, min(int(limit), 500))),
+                )
+                rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def update_tool_website_system_tags(
+        self, *, website_id: int, tags_zh_json: str, tags_en_json: str,
+        prompt_version: str, model_provider: str = "", model_name: str = "",
+    ) -> None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE tool_website_enrichments
+                    SET tags_json=%s, tags_zh_json=%s, tags_en_json=%s,
+                        prompt_version=%s, model_provider=%s, model_name=%s,
+                        updated_at=%s
+                    WHERE website_id=%s AND status='succeeded'
+                      AND prompt_version NOT LIKE '%%-manual'
+                    """,
+                    (tags_zh_json, tags_zh_json, tags_en_json, prompt_version,
+                     model_provider, model_name, _utcnow(), int(website_id)),
+                )
 
     def mark_tool_website_enrichment_failed(
         self, website_id: int, *, source_fingerprint: str, prompt_version: str,

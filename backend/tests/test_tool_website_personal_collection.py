@@ -41,6 +41,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
             description_zh="提供 AI 模型相关服务。",
             description_en="Provides practical access to AI model services.",
             tags=["模型服务"],
+            tags_en=["Model service"],
             confidence=0.9,
         )
         self.db = MagicMock()
@@ -126,7 +127,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
             '"subcategory_slug":"model_management",'
             '"description_zh":"提供 AI 模型相关服务。",'
             '"description_en":"Provides practical access to AI model services.",'
-            '"tags":["模型服务"],"confidence":0.9}'
+            '"tags_zh":["模型服务"],"tags_en":["Model service"],"confidence":0.9}'
         )
 
         result = self.enricher._enrich_one(self.metadata)
@@ -135,6 +136,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
         self.assertEqual(result.subcategory_slug, "model_management")
         self.assertEqual(result.description_en, "Provides practical access to AI model services.")
         self.assertEqual(result.tags, ["模型服务"])
+        self.assertEqual(result.tags_en, ["Model service"])
 
     def test_enrich_one_accepts_anthropic_thinking_and_text_blocks(self) -> None:
         self.enricher._llm = MagicMock()
@@ -146,7 +148,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
                     '{"category_slug":"models_infra",'
                     '"subcategory_slug":"model_management",'
                     '"description_zh":"提供 AI 模型相关服务。",'
-                    '"tags":["模型服务"],"confidence":0.9}'
+                    '"tags_zh":["模型服务"],"tags_en":["Model service"],"confidence":0.9}'
                 ),
             },
         ]
@@ -155,6 +157,40 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
 
         self.assertEqual(result.category_slug, "models_infra")
         self.assertEqual(result.subcategory_slug, "model_management")
+        self.assertEqual(result.tags_en, ["Model service"])
+
+    def test_bilingual_tag_backfill_dry_run_advances_without_model_or_writes(self) -> None:
+        self.db.list_tool_websites_needing_bilingual_tags.return_value = [
+            {"website_id": 9}, {"website_id": 12},
+        ]
+        self.enricher._enrich_one = MagicMock()
+
+        result = self.enricher.backfill_bilingual_tags(
+            after_website_id=3, limit=2, dry_run=True,
+        )
+
+        self.assertEqual(result["status"], "dry_run")
+        self.assertEqual(result["next_cursor"], 12)
+        self.assertTrue(result["has_more"])
+        self.enricher._enrich_one.assert_not_called()
+        self.db.update_tool_website_system_tags.assert_not_called()
+
+    def test_bilingual_tag_backfill_failure_preserves_existing_enrichment(self) -> None:
+        self.db.list_tool_websites_needing_bilingual_tags.return_value = [{
+            "website_id": 9,
+            "canonical_url": self.metadata.canonical_url,
+            "domain": self.metadata.domain,
+            "title": self.metadata.title,
+            "description": self.metadata.description,
+            "source_fingerprint": self.metadata.source_fingerprint,
+        }]
+        self.enricher._enrich_one = MagicMock(side_effect=RuntimeError("model failed"))
+
+        result = self.enricher.backfill_bilingual_tags(limit=1)
+
+        self.assertEqual(result["status"], "partial")
+        self.db.update_tool_website_system_tags.assert_not_called()
+        self.db.mark_tool_website_enrichment_failed.assert_not_called()
 
     def test_extract_message_text_supports_object_blocks_and_ignores_thinking(self) -> None:
         class ContentBlock:

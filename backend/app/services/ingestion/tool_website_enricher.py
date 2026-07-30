@@ -53,12 +53,12 @@ _SYSTEM_PROMPT = f"""\
 2. 从该一级分类下选择最合适的 subcategory_slug。
 3. 写一句自然的中文短描述，说明这个网页/站点能解决什么问题、适合什么使用场景。
 4. 独立写一句自然的英文短描述；不要逐字翻译、不要复制原始描述，表达同一核心用途。
-5. 给 1-4 个中文短标签。
+5. 给 1-4 个中文短标签，并按相同顺序给出等量、自然的英文短标签。
 
 {WEBSITE_CATEGORY_PROMPT}
 
 只返回 JSON，不要 Markdown，不要解释。格式：
-{{"category_slug":"productivity_tools","subcategory_slug":"writing_docs","description_zh":"一句 40 到 90 个中文字符的短描述。","description_en":"A natural one-sentence English description of the site's purpose and use case.","tags":["效率工具","网页工具"],"confidence":0.86}}
+{{"category_slug":"productivity_tools","subcategory_slug":"writing_docs","description_zh":"一句 40 到 90 个中文字符的短描述。","description_en":"A natural one-sentence English description of the site's purpose and use case.","tags_zh":["效率工具","网页工具"],"tags_en":["Productivity tool","Web tool"],"confidence":0.86}}
 """
 
 
@@ -281,6 +281,8 @@ class ToolWebsiteEnricher:
                 "description_zh": result.description_zh,
                 "description_en": result.description_en,
                 "tags_json": json.dumps(result.tags, ensure_ascii=False),
+                "tags_zh_json": json.dumps(result.tags, ensure_ascii=False),
+                "tags_en_json": json.dumps(result.tags_en, ensure_ascii=False),
                 "confidence": result.confidence,
                 "source_fingerprint": metadata.source_fingerprint,
                 "prompt_version": prompt_version,
@@ -339,6 +341,61 @@ class ToolWebsiteEnricher:
                     continue
                 break
         raise last_error or RuntimeError("工具网站富化失败")
+
+    def backfill_bilingual_tags(
+        self, *, after_website_id: int = 0, limit: int = 50,
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        rows = self.db.list_tool_websites_needing_bilingual_tags(
+            after_website_id=after_website_id,
+            limit=limit,
+        )
+        succeeded = failed = 0
+        failures: list[dict[str, Any]] = []
+        for row in rows:
+            website_id = int(row["website_id"])
+            if dry_run:
+                continue
+            raw_metadata = row.get("raw_metadata_json") or {}
+            if isinstance(raw_metadata, str):
+                try:
+                    raw_metadata = json.loads(raw_metadata)
+                except (TypeError, ValueError):
+                    raw_metadata = {}
+            metadata = ToolWebsiteMetadata(
+                canonical_url=str(row.get("canonical_url") or ""),
+                normalized_url=str(row.get("canonical_url") or ""),
+                normalized_url_hash="",
+                domain=str(row.get("domain") or ""),
+                title=str(row.get("title") or ""),
+                description=str(row.get("description") or ""),
+                image_url=str(row.get("image_url") or ""),
+                raw_metadata=raw_metadata if isinstance(raw_metadata, dict) else {},
+                source_fingerprint=str(row.get("source_fingerprint") or ""),
+            )
+            try:
+                result = self._enrich_one(metadata)
+                self.db.update_tool_website_system_tags(
+                    website_id=website_id,
+                    tags_zh_json=json.dumps(result.tags, ensure_ascii=False),
+                    tags_en_json=json.dumps(result.tags_en, ensure_ascii=False),
+                    prompt_version=PROMPT_VERSION,
+                    **self.model_meta,
+                )
+                succeeded += 1
+            except Exception as exc:  # noqa: BLE001 - preserve successful enrichment
+                failed += 1
+                failures.append({"website_id": website_id, "error": str(exc)[:300]})
+        next_cursor = int(rows[-1]["website_id"]) if rows else max(0, int(after_website_id))
+        return {
+            "status": "dry_run" if dry_run else ("partial" if failed else "success"),
+            "processed": len(rows),
+            "succeeded": succeeded,
+            "failed": failed,
+            "next_cursor": next_cursor,
+            "has_more": len(rows) >= max(1, min(int(limit), 500)),
+            "failures": failures,
+        }
 
     def backfill_bilingual_descriptions(
         self, *, after_website_id: int = 0, limit: int = 50,

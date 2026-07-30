@@ -68,6 +68,15 @@ class GitHubProjectEnrichmentRepository(Protocol):
 
     def upsert_github_repo_enrichment(self, payload: dict[str, Any]) -> None: ...
 
+    def list_github_projects_needing_bilingual_tags(
+        self, *, after_repo_id: str = "", limit: int = 50, min_stars: int = 500,
+    ) -> list[dict[str, Any]]: ...
+
+    def update_github_repo_system_tags(
+        self, *, repo_id: str, tags_zh_json: str, tags_en_json: str,
+        prompt_version: str, model_provider: str = "", model_name: str = "",
+    ) -> None: ...
+
     def mark_github_repo_enrichment_failed(
         self,
         repo_id: str,
@@ -108,6 +117,15 @@ class ToolWebsiteEnrichmentRepository(Protocol):
     ) -> list[dict[str, Any]]: ...
 
     def upsert_tool_website_enrichment(self, payload: dict[str, Any]) -> None: ...
+
+    def list_tool_websites_needing_bilingual_tags(
+        self, *, after_website_id: int = 0, limit: int = 50,
+    ) -> list[dict[str, Any]]: ...
+
+    def update_tool_website_system_tags(
+        self, *, website_id: int, tags_zh_json: str, tags_en_json: str,
+        prompt_version: str, model_provider: str = "", model_name: str = "",
+    ) -> None: ...
 
     def mark_tool_website_enrichment_failed(
         self,

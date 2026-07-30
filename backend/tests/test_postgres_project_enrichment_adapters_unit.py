@@ -67,6 +67,55 @@ def test_github_candidate_selection_preserves_fingerprint_and_refresh_semantics(
     assert "DISTINCT ON (repo_id)" in cursor.execute.call_args_list[0].args[0]
 
 
+def test_bilingual_tag_backfill_queries_are_cursor_ordered_and_system_only() -> None:
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    github = PostgresGitHubProjectEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+    github.list_github_projects_needing_bilingual_tags(
+        after_repo_id="10", limit=25, min_stars=500,
+    )
+    sql, params = cursor.execute.call_args.args
+    assert "c.repo_id > %s" in sql
+    assert "e.status = 'succeeded'" in sql
+    assert "COALESCE(e.tags_en_json, '') = ''" in sql
+    assert 'ORDER BY c.repo_id COLLATE "C" ASC' in sql
+    assert params == ("10", 500, 25)
+
+    website = PostgresToolWebsiteEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+    website.list_tool_websites_needing_bilingual_tags(after_website_id=4, limit=20)
+    sql, params = cursor.execute.call_args.args
+    assert "w.id > %s" in sql
+    assert "e.status = 'succeeded'" in sql
+    assert "COALESCE(e.tags_en_json, '') = ''" in sql
+    assert "prompt_version NOT LIKE '%%-manual'" in sql
+    assert "user_tool_website_overrides" not in sql
+    assert params == (4, 20)
+
+
+def test_targeted_bilingual_tag_updates_do_not_mark_or_rewrite_user_data() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.return_value = None
+    github = PostgresGitHubProjectEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+    github.update_github_repo_system_tags(
+        repo_id="1", tags_zh_json='["中文"]', tags_en_json='["English"]',
+        prompt_version="v5",
+    )
+    sql = cursor.execute.call_args_list[-1].args[0]
+    assert "UPDATE github_repo_enrichments" in sql
+    assert "status='succeeded'" in sql
+    assert "user_tool_website_overrides" not in sql
+
+    website = PostgresToolWebsiteEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+    website.update_tool_website_system_tags(
+        website_id=2, tags_zh_json='["中文"]', tags_en_json='["English"]',
+        prompt_version="v5",
+    )
+    sql = cursor.execute.call_args.args[0]
+    assert "UPDATE tool_website_enrichments" in sql
+    assert "prompt_version NOT LIKE '%%-manual'" in sql
+    assert "user_tool_website_overrides" not in sql
+
+
 def test_failure_writes_defaults_truncates_error_and_resolves_alias() -> None:
     cursor = MagicMock()
     cursor.fetchone.return_value = {"canonical_repo_id": "canonical"}

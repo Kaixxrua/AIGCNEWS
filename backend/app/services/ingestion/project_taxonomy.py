@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-PROMPT_VERSION = "v4"
+PROMPT_VERSION = "v5"
 
 PROJECT_TAXONOMY: List[Dict[str, Any]] = [
     {
@@ -460,6 +460,7 @@ class EnrichmentResult:
     tags: List[str]
     confidence: float
     description_en: str = ""
+    tags_en: List[str] = field(default_factory=list)
 
 
 def clean_text(value: Any, *, max_len: int = 512) -> str:
@@ -527,7 +528,12 @@ def clamp_confidence(value: Any) -> float:
     return max(0.0, min(1.0, numeric))
 
 
-def normalize_tags(value: Any, fallback: str = "") -> List[str]:
+def normalize_tags(
+    value: Any,
+    fallback: str = "",
+    *,
+    default: str = "AI 工具",
+) -> List[str]:
     if isinstance(value, list):
         raw_tags = value
     elif value:
@@ -545,7 +551,7 @@ def normalize_tags(value: Any, fallback: str = "") -> List[str]:
 
     if not tags and fallback:
         tags.append(fallback)
-    return tags or ["AI 工具"]
+    return tags or ([default] if default else [])
 
 
 def normalize_subcategory(
@@ -591,7 +597,12 @@ def normalize_enrichment(
     # English copy must be model-authored; never derive it from Chinese or raw metadata.
     description_en = clean_text(data.get("description_en"), max_len=320)
 
-    tags = normalize_tags(data.get("tags"), fallback_tag)
+    tags = normalize_tags(data.get("tags_zh", data.get("tags")), fallback_tag)
+    tags_en = normalize_tags(data.get("tags_en"), default="")
+    if not tags_en or len(tags_en) != len(tags):
+        raise ValueError("模型必须返回与中文标签一一对应的英文标签")
+    if any(re.search(r"[㐀-鿿]", tag) for tag in tags_en):
+        raise ValueError("英文标签不得包含中文")
     return EnrichmentResult(
         category_slug=category_slug,
         category_name=categories[category_slug],
@@ -601,4 +612,5 @@ def normalize_enrichment(
         tags=tags,
         confidence=clamp_confidence(data.get("confidence")),
         description_en=description_en,
+        tags_en=tags_en,
     )
