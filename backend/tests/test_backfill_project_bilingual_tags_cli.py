@@ -15,9 +15,11 @@ def test_cli_forwards_cursors_and_dry_run(capsys) -> None:
     website.backfill_bilingual_tags.return_value = {
         "status": "dry_run", "processed": 1, "next_cursor": 9,
     }
-    with patch.object(cli, "GitHubProjectEnricher", return_value=github), patch.object(
+    with patch.object(cli, "configure_application_repositories"), patch.object(
+        cli, "create_application_repositories",
+    ), patch.object(cli, "GitHubProjectEnricher", return_value=github), patch.object(
         cli, "ToolWebsiteEnricher", return_value=website,
-    ):
+    ), patch.object(cli.postgres_database, "close"):
         code = cli.main([
             "--source", "all", "--after-repo-id", "10",
             "--after-website-id", "4", "--limit", "25",
@@ -37,7 +39,11 @@ def test_cli_forwards_cursors_and_dry_run(capsys) -> None:
 def test_cli_returns_failure_for_partial_backfill(capsys) -> None:
     github = MagicMock()
     github.backfill_bilingual_tags.return_value = {"status": "partial"}
-    with patch.object(cli, "GitHubProjectEnricher", return_value=github):
+    with patch.object(cli, "configure_application_repositories"), patch.object(
+        cli, "create_application_repositories",
+    ), patch.object(cli, "GitHubProjectEnricher", return_value=github), patch.object(
+        cli.postgres_database, "close",
+    ):
         code = cli.main(["--source", "github"])
 
     assert code == 1
