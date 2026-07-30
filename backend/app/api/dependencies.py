@@ -10,7 +10,11 @@ from backend.app.repositories.briefing_repository import (
     BriefingSubscriptionRepository,
 )
 from backend.app.repositories.conversation_repository import ConversationRepository
-from backend.app.repositories.document_repository import DocumentRepository, PapersReader
+from backend.app.repositories.document_repository import (
+    DocumentAdminWriter,
+    DocumentRepository,
+    PapersReader,
+)
 from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.repositories.mcp_access_token_repository import McpAccessTokenRepository
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
@@ -38,6 +42,7 @@ from backend.app.services.briefing.composition import provide_daily_briefing_ser
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
+from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
@@ -180,6 +185,15 @@ def get_papers_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> PapersReader:
     return repositories.documents
+
+
+def get_data_cleanup_admin_service(
+    documents: DocumentAdminWriter = Depends(get_document_repository),
+    tasks: IngestionTaskAdminRepository = Depends(get_ingestion_task_repository),
+) -> DataCleanupAdminService:
+    from backend.app.repositories.milvus_repo import MilvusRepository
+
+    return DataCleanupAdminService(documents, tasks, MilvusRepository())
 
 
 def get_github_project_ingestion_repository(

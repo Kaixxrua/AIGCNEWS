@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from backend.app.api.dependencies import (
     get_dashboard_cache_admin_service,
+    get_data_cleanup_admin_service,
     get_document_repository,
     get_github_project_enrichment_repository,
     get_github_project_recommendation_repository,
@@ -34,6 +35,7 @@ from backend.app.repositories.runtime_provider_repository import (
 )
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
+from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.mcp.admin_service import McpAdminService, project_server
 from backend.app.services.runtime_provider.control_plane import (
     RuntimeProviderUpdate,
@@ -571,10 +573,7 @@ async def ingest_by_date(
 @router.post("/ops/clear-data", response_model=ClearDataResponse, tags=["Ops"])
 async def clear_all_data(
     _: dict = Depends(RequireAdmin),
-    documents: DocumentAdminWriter = Depends(get_document_repository),
-    task_repository: IngestionTaskAdminRepository = Depends(
-        get_ingestion_task_repository
-    ),
+    service: DataCleanupAdminService = Depends(get_data_cleanup_admin_service),
 ) -> ClearDataResponse:
     """
     清空所有已存储数据：
@@ -585,24 +584,10 @@ async def clear_all_data(
 
     ⚠️ 此操作不可逆，请谨慎使用。
     """
-    from backend.app.repositories.milvus_repo import MilvusRepository
-
-    # 1. 清空 SQLite
-    deleted_docs = await asyncio.to_thread(documents.clear_all_documents)
-    deleted_tasks = await asyncio.to_thread(task_repository.clear_all_tasks)
-    logger.info(
-        "[Ops] 已清空 SQLite：documents=%d, tasks=%d", deleted_docs, deleted_tasks
-    )
-
-    # 2. 清空 Milvus
-    milvus_ok = False
-    try:
-        milvus_repo = MilvusRepository()
-        milvus_ok = await asyncio.to_thread(milvus_repo.drop_collection)
-        logger.info("[Ops] Milvus 集合已删除：%s", milvus_ok)
-    except Exception as exc:
-        logger.warning("[Ops] Milvus 清空失败（可能尚未初始化）：%s", exc)
-
+    result = await service.clear_all()
+    deleted_docs = int(result["deleted_documents"])
+    deleted_tasks = int(result["deleted_tasks"])
+    milvus_ok = bool(result["vector_dropped"])
     return ClearDataResponse(
         status="success",
         message=f"已清空 {deleted_docs} 条文档、{deleted_tasks} 条任务记录，Milvus 集合{'已删除' if milvus_ok else '清空失败（已跳过）'}。",
