@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 _scheduler: AsyncIOScheduler | None = None
 _github_job_lock: asyncio.Lock | None = None
+_startup_reconciliation_tasks: set[asyncio.Task[Any]] = set()
 _ARXIV_RECONCILE_DAYS = 2
 _GITHUB_METRICS_REFRESH_LIMIT = 0  # 0 表示刷新全部符合条件的项目
 _GITHUB_METRICS_MIN_STARS = 500
@@ -501,8 +502,13 @@ def start_scheduler() -> None:
 
     scheduler.start()
     loop = asyncio.get_running_loop()
-    loop.create_task(_reconcile_recent_arxiv_daily_snapshots())
-    loop.create_task(_reconcile_current_github_project_metrics())
+    for coroutine in (
+        _reconcile_recent_arxiv_daily_snapshots(),
+        _reconcile_current_github_project_metrics(),
+    ):
+        task = loop.create_task(coroutine)
+        _startup_reconciliation_tasks.add(task)
+        task.add_done_callback(_startup_reconciliation_tasks.discard)
 
     jobs = scheduler.get_jobs()
     logger.info("[Scheduler] APScheduler 已启动，共 %d 个调度任务：", len(jobs))
@@ -515,6 +521,10 @@ def stop_scheduler() -> None:
     if scheduler.running:
         scheduler.shutdown(wait=False)
         logger.info("[Scheduler] APScheduler 已停止。")
+    for task in tuple(_startup_reconciliation_tasks):
+        if not task.done():
+            task.cancel()
+    _startup_reconciliation_tasks.clear()
 
 
 def get_scheduler_status() -> List[Dict[str, Any]]:

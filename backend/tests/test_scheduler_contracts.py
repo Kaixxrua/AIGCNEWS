@@ -41,10 +41,13 @@ class _RecordingLoop:
     def __init__(self, events: list[str]) -> None:
         self.events = events
 
-    def create_task(self, coroutine: object) -> None:
+    def create_task(self, coroutine: object) -> MagicMock:
         name = coroutine.cr_code.co_name  # type: ignore[attr-defined]
         self.events.append(f"create_task:{name}")
         coroutine.close()  # type: ignore[attr-defined]
+        task = MagicMock()
+        task.done.return_value = True
+        return task
 
 
 def _cron_fields(trigger: CronTrigger) -> dict[str, str]:
@@ -305,6 +308,22 @@ class SchedulerLifecycleAndStatusContractTests(unittest.TestCase):
                 },
             ],
         )
+
+    def test_stop_cancels_unfinished_startup_reconciliation_tasks(self) -> None:
+        events: list[str] = []
+        stopped = _RecordingScheduler(events, running=False)
+        pending = MagicMock()
+        pending.done.return_value = False
+        completed = MagicMock()
+        completed.done.return_value = True
+        scheduler._startup_reconciliation_tasks.update({pending, completed})
+
+        with patch.object(scheduler, "get_scheduler", return_value=stopped):
+            scheduler.stop_scheduler()
+
+        pending.cancel.assert_called_once_with()
+        completed.cancel.assert_not_called()
+        self.assertEqual(scheduler._startup_reconciliation_tasks, set())
 
     def test_stop_only_shuts_down_running_scheduler_without_waiting(self) -> None:
         events: list[str] = []
