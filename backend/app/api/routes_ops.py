@@ -15,6 +15,7 @@ from backend.app.api.dependencies import (
     get_document_repository,
     get_github_project_enrichment_repository,
     get_github_project_recommendation_repository,
+    get_ingestion_admin_service,
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
     get_runtime_provider_setting_repository,
@@ -36,6 +37,7 @@ from backend.app.repositories.runtime_provider_repository import (
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
+from backend.app.services.ingestion_admin import IngestionAdminService, VALID_SOURCES
 from backend.app.services.mcp.admin_service import McpAdminService, project_server
 from backend.app.services.runtime_provider.control_plane import (
     RuntimeProviderUpdate,
@@ -259,52 +261,6 @@ def _mcp_payload(request: McpServerConfigRequest) -> dict[str, Any]:
 # ── 后台任务包装 ─────────────────────────────────────────────────────────────
 
 
-def _bg_smart_ingest(limit: int) -> None:
-    """在线程中运行 run_smart_ingestion（同步函数）。"""
-    from backend.app.services.ingestion.pipeline import run_smart_ingestion
-
-    run_smart_ingestion(limit=limit)
-
-
-def _bg_force_ingest(limit: int) -> None:
-    """强制触发一次完整 pipeline，不做日期检测。"""
-    from backend.app.services.ingestion.pipeline import run_ingestion_pipeline
-
-    run_ingestion_pipeline(limit=limit)
-
-
-def _bg_ingest_by_date(target_date: str, limit: int) -> None:
-    """按指定日期触发采集（在目标日期范围内的数据）。
-
-    pipeline 内部会自行创建 task 记录，此处直接调用即可。
-    """
-    import re
-    from backend.app.services.ingestion.pipeline import run_ingestion_pipeline
-
-    logger.info("[Ops] 开始按日期采集：target_date=%s, limit=%d", target_date, limit)
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", target_date):
-        logger.error("[Ops] 日期格式错误：%s", target_date)
-        return
-
-    try:
-        result = run_ingestion_pipeline(limit=limit, target_date=target_date)
-        ingested = result.get("ingested_total", 0) if isinstance(result, dict) else 0
-        logger.info("[Ops] 按日期采集完成：date=%s, ingested=%d", target_date, ingested)
-    except Exception as exc:
-        logger.exception("[Ops] 按日期采集失败：date=%s", target_date)
-
-
-# 可用的单源名称（与 IngestionOrchestrator 注册的爬虫 source_name 一致）
-_VALID_SOURCES = {"arxiv", "github", "news", "producthunt", "hackernews"}
-
-
-def _bg_single_source_ingest(source_name: str, limit: int) -> None:
-    """在线程中运行 run_single_source_pipeline（同步函数）。"""
-    from backend.app.services.ingestion.pipeline import run_single_source_pipeline
-
-    run_single_source_pipeline(source_name=source_name, limit=limit)
-
-
 def _bg_refresh_github_hot(limit: int) -> None:
     """刷新 GitHub 候选池 / Trending / 快照数据并同步当日指标。"""
     from backend.app.services.ingestion.github_hot_service import (
@@ -516,6 +472,7 @@ async def trigger_ingest(
     request: IngestRequest,
     background_tasks: BackgroundTasks,
     _: dict = Depends(RequireAdmin),
+    service: IngestionAdminService = Depends(get_ingestion_admin_service),
 ) -> IngestResponse:
     """
     手动触发数据采集任务。
@@ -524,14 +481,14 @@ async def trigger_ingest(
     - **force=true**：强制模式，直接抓取最新数据，不做日期检测。
     """
     if request.force:
-        background_tasks.add_task(_bg_force_ingest, request.limit)
+        background_tasks.add_task(service.force_ingest, request.limit)
         logger.info("[Ops] 强制采集任务已加入后台队列，limit=%d", request.limit)
         return IngestResponse(
             status="queued",
             message=f"强制采集任务已提交（limit={request.limit}），后台执行中。",
         )
     else:
-        background_tasks.add_task(_bg_smart_ingest, request.limit)
+        background_tasks.add_task(service.smart_ingest, request.limit)
         logger.info("[Ops] 智能采集任务已加入后台队列，limit=%d", request.limit)
         return IngestResponse(
             status="queued",
@@ -544,6 +501,7 @@ async def ingest_by_date(
     request: IngestByDateRequest,
     background_tasks: BackgroundTasks,
     _: dict = Depends(RequireAdmin),
+    service: IngestionAdminService = Depends(get_ingestion_admin_service),
 ) -> IngestResponse:
     """
     按指定日期触发数据采集。
@@ -558,7 +516,7 @@ async def ingest_by_date(
             status_code=400, detail="target_date 格式错误，应为 YYYY-MM-DD"
         )
 
-    background_tasks.add_task(_bg_ingest_by_date, request.target_date, request.limit)
+    background_tasks.add_task(service.ingest_by_date, request.target_date, request.limit)
     logger.info(
         "[Ops] 按日期采集任务已加入后台队列：date=%s, limit=%d",
         request.target_date,
@@ -868,6 +826,7 @@ async def ingest_single_source(
     limit: int = Query(default=20, ge=5, le=100),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
     _: dict = Depends(RequireAdmin),
+    service: IngestionAdminService = Depends(get_ingestion_admin_service),
 ) -> IngestResponse:
     """
     按数据源独立采集（单源模式）。
@@ -879,14 +838,14 @@ async def ingest_single_source(
     - **limit**：每源最多抓取条数（默认 20）
     """
     source_lower = source.strip().lower()
-    if source_lower not in _VALID_SOURCES:
+    if source_lower not in VALID_SOURCES:
         raise HTTPException(
             status_code=400,
-            detail=f"未知数据源 '{source}'，可选值：{', '.join(sorted(_VALID_SOURCES))}",
+            detail=f"未知数据源 '{source}'，可选值：{', '.join(sorted(VALID_SOURCES))}",
         )
 
     assert background_tasks is not None
-    background_tasks.add_task(_bg_single_source_ingest, source_lower, limit)
+    background_tasks.add_task(service.ingest_source, source_lower, limit)
     logger.info(
         "[Ops] 单源采集任务已加入后台队列：source=%s, limit=%d", source_lower, limit
     )
@@ -900,7 +859,7 @@ async def ingest_single_source(
 async def list_available_sources(_: dict = Depends(RequireAdmin)):
     """返回所有可用的数据源名称列表（前端下拉 / 按钮渲染用）。"""
     return {
-        "sources": sorted(_VALID_SOURCES),
+        "sources": sorted(VALID_SOURCES),
     }
 
 

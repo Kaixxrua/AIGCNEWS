@@ -43,6 +43,7 @@ from backend.app.services.briefing.composition import provide_daily_briefing_ser
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
+from backend.app.services.ingestion_admin import IngestionAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
@@ -53,6 +54,10 @@ from backend.app.services.scheduler_admin import SchedulerAdminService
 
 def get_health_check_service() -> HealthCheckService:
     return provide_health_check_service()
+
+
+def get_ingestion_admin_service() -> IngestionAdminService:
+    return IngestionAdminService()
 
 
 class ApplicationIngestionTaskRepository(
