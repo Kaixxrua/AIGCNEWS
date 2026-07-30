@@ -44,6 +44,26 @@ class DatabaseDependencyTests(unittest.TestCase):
         for provider, attribute in mapping.items():
             self.assertIs(provider(repositories), getattr(repositories, attribute))
 
+    def test_mcp_admin_service_wraps_repository_and_connection_tester(self) -> None:
+        repository = MagicMock()
+        tester = MagicMock()
+
+        with (
+            patch.object(
+                dependencies,
+                "McpAdminService",
+                return_value=MagicMock(),
+            ) as service_type,
+            patch(
+                "backend.app.services.mcp_connection_tester.test_mcp_server_connection",
+                tester,
+            ),
+        ):
+            result = dependencies.get_mcp_admin_service(repository)
+
+        self.assertIs(result, service_type.return_value)
+        service_type.assert_called_once_with(repository, tester)
+
     def test_briefing_admin_service_wraps_injected_generator(self) -> None:
         briefing = MagicMock()
 

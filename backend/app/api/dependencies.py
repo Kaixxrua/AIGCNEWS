@@ -47,6 +47,7 @@ from backend.app.services.dashboard_cache_admin import DashboardCacheAdminServic
 from backend.app.services.github_project_admin import GitHubProjectAdminService
 from backend.app.services.ingestion_admin import IngestionAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
+from backend.app.services.mcp.admin_service import McpAdminService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
@@ -123,6 +124,14 @@ def get_mcp_server_config_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> McpServerConfigRepository:
     return repositories.mcp_server_configs
+
+
+def get_mcp_admin_service(
+    repository: McpServerConfigRepository = Depends(get_mcp_server_config_repository),
+) -> McpAdminService:
+    from backend.app.services.mcp_connection_tester import test_mcp_server_connection
+
+    return McpAdminService(repository, test_mcp_server_connection)
 
 
 def get_mcp_access_token_repository(

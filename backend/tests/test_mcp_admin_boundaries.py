@@ -10,8 +10,14 @@ class McpAdminBoundaryTests(unittest.TestCase):
         app_directory = Path(__file__).parents[1] / "app"
         expectations = {
             app_directory / "api" / "routes_ops.py": {
-                "required": {"McpAdminService", "project_server"},
-                "forbidden_functions": {"_parse_mcp_tools"},
+                "required": {"McpAdminService", "get_mcp_admin_service"},
+                "forbidden_imports": {
+                    "McpServerConfigRepository",
+                    "project_server",
+                    "test_mcp_server_connection",
+                    "validate_mcp_http_url",
+                },
+                "forbidden_functions": {"_mcp_payload", "_parse_mcp_tools"},
             },
             app_directory / "services" / "mcp_connection_tester.py": {
                 "required": {
@@ -46,6 +52,7 @@ class McpAdminBoundaryTests(unittest.TestCase):
                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
                 }
                 self.assertTrue(expectation["required"] <= imported)
+                self.assertFalse(expectation.get("forbidden_imports", set()) & imported)
                 self.assertFalse(expectation["forbidden_functions"] & functions)
 
     def test_connection_tester_compatibility_exports_remain_available(self) -> None:

@@ -1,12 +1,35 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
+
+from backend.app.repositories.mcp_server_repository import McpServerConfigConflictError
+from backend.app.services.mcp_connection_tester import (
+    McpConnectionTestError,
+    validate_mcp_http_url,
+)
 
 
 class McpConfigStore(Protocol):
+    def list_mcp_server_configs(self) -> list[dict[str, Any]]: ...
+
     def get_mcp_server_config(self, server_id: int) -> Mapping[str, Any] | None: ...
+
+    def create_mcp_server_config(
+        self,
+        payload: dict[str, Any],
+    ) -> Mapping[str, Any]: ...
+
+    def update_mcp_server_config(
+        self,
+        server_id: int,
+        payload: dict[str, Any],
+    ) -> Mapping[str, Any] | None: ...
+
+    def delete_mcp_server_config(self, server_id: int) -> bool: ...
 
     def update_mcp_server_test_result(
         self,
@@ -101,17 +124,96 @@ def _optional_string(value: Any) -> str | None:
 @dataclass(frozen=True, slots=True)
 class ConnectionTestOutcome:
     result: dict[str, Any]
-    server: Mapping[str, Any]
+    server: Mapping[str, Any] | SafeMcpServerProjection
+
+
+class McpAdminValidationError(ValueError):
+    pass
+
+
+class McpAdminNotFoundError(LookupError):
+    pass
+
+
+class McpAdminConflictError(RuntimeError):
+    pass
+
+
+McpConnectionTester = Callable[[dict[str, Any]], Mapping[str, Any]]
 
 
 class McpAdminService:
-    def __init__(self, store: McpConfigStore) -> None:
+    def __init__(
+        self,
+        store: McpConfigStore,
+        tester: McpConnectionTester | None = None,
+    ) -> None:
         self._store = store
+        self._tester = tester
+
+    async def list_servers(self) -> list[SafeMcpServerProjection]:
+        rows = await asyncio.to_thread(self._store.list_mcp_server_configs)
+        return [project_server(row) for row in rows]
+
+    async def create_server(
+        self,
+        values: Mapping[str, Any],
+    ) -> SafeMcpServerProjection:
+        payload = normalize_server_payload(values)
+        try:
+            row = await asyncio.to_thread(
+                self._store.create_mcp_server_config,
+                payload,
+            )
+        except McpServerConfigConflictError as exc:
+            raise McpAdminConflictError("server_key 已存在，请换一个标识") from exc
+        return project_server(row)
+
+    async def update_server(
+        self,
+        server_id: int,
+        values: Mapping[str, Any],
+    ) -> SafeMcpServerProjection:
+        payload = normalize_server_payload(values)
+        try:
+            row = await asyncio.to_thread(
+                self._store.update_mcp_server_config,
+                server_id,
+                payload,
+            )
+        except McpServerConfigConflictError as exc:
+            raise McpAdminConflictError("server_key 已存在，请换一个标识") from exc
+        if row is None:
+            raise McpAdminNotFoundError("MCP Server 配置不存在")
+        return project_server(row)
+
+    async def delete_server(self, server_id: int) -> None:
+        deleted = await asyncio.to_thread(
+            self._store.delete_mcp_server_config,
+            server_id,
+        )
+        if not deleted:
+            raise McpAdminNotFoundError("MCP Server 配置不存在")
+
+    async def test_server(self, server_id: int) -> ConnectionTestOutcome:
+        if self._tester is None:
+            raise RuntimeError("MCP connection tester is not configured")
+        outcome = await asyncio.to_thread(
+            self.test_connection,
+            server_id,
+            self._tester,
+        )
+        if outcome is None:
+            raise McpAdminNotFoundError("MCP Server 配置不存在")
+        return ConnectionTestOutcome(
+            result=outcome.result,
+            server=project_server(outcome.server),
+        )
 
     def test_connection(
         self,
         server_id: int,
-        tester,
+        tester: McpConnectionTester,
     ) -> ConnectionTestOutcome | None:
         row = self._store.get_mcp_server_config(server_id)
         if row is None:
@@ -119,3 +221,29 @@ class McpAdminService:
         result = tester(dict(row))
         updated = self._store.update_mcp_server_test_result(server_id, result)
         return ConnectionTestOutcome(result=dict(result), server=updated or row)
+
+
+def normalize_server_payload(values: Mapping[str, Any]) -> dict[str, Any]:
+    server_key = str(values.get("server_key") or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9_-]{2,64}", server_key):
+        raise McpAdminValidationError(
+            "server_key 仅支持 2-64 位小写字母、数字、下划线和短横线"
+        )
+    display_name = str(values.get("display_name") or "").strip()
+    if not display_name:
+        raise McpAdminValidationError("请填写 MCP Server 名称")
+    try:
+        url = validate_mcp_http_url(str(values.get("url") or ""))
+    except McpConnectionTestError as exc:
+        raise McpAdminValidationError(str(exc)) from exc
+    return {
+        "server_key": server_key,
+        "display_name": display_name,
+        "description": str(values.get("description") or "").strip(),
+        "url": url,
+        "transport": values.get("transport", "streamable_http"),
+        "auth_type": values.get("auth_type", "none"),
+        "auth_token": values.get("auth_token"),
+        "clear_auth_token": bool(values.get("clear_auth_token", False)),
+        "enabled": bool(values.get("enabled", True)),
+    }

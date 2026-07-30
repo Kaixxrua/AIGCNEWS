@@ -19,16 +19,12 @@ from backend.app.api.dependencies import (
     get_github_project_recommendation_repository,
     get_ingestion_admin_service,
     get_ingestion_task_repository,
-    get_mcp_server_config_repository,
+    get_mcp_admin_service,
     get_runtime_provider_setting_repository,
     get_scheduler_admin_service,
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.document_repository import DocumentAdminWriter
-from backend.app.repositories.mcp_server_repository import (
-    McpServerConfigConflictError,
-    McpServerConfigRepository,
-)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectRecommendationRepository,
@@ -42,7 +38,13 @@ from backend.app.services.dashboard_cache_admin import DashboardCacheAdminServic
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
 from backend.app.services.ingestion_admin import IngestionAdminService, VALID_SOURCES
-from backend.app.services.mcp.admin_service import McpAdminService, project_server
+from backend.app.services.mcp.admin_service import (
+    McpAdminConflictError,
+    McpAdminNotFoundError,
+    McpAdminService,
+    McpAdminValidationError,
+    SafeMcpServerProjection,
+)
 from backend.app.services.runtime_provider.control_plane import (
     RuntimeProviderUpdate,
     project_provider_config,
@@ -227,39 +229,10 @@ class McpServerTestResponse(BaseModel):
     tools: list[McpToolSummary] = Field(default_factory=list)
 
 
-def _mcp_server_config_response(row: dict) -> McpServerConfigResponse:
-    return McpServerConfigResponse.model_validate(
-        project_server(row),
-        from_attributes=True,
-    )
-
-
-def _mcp_payload(request: McpServerConfigRequest) -> dict[str, Any]:
-    server_key = request.server_key.strip().lower()
-    if not re.fullmatch(r"[a-z0-9_-]{2,64}", server_key):
-        raise HTTPException(status_code=400, detail="server_key 仅支持 2-64 位小写字母、数字、下划线和短横线")
-    display_name = request.display_name.strip()
-    if not display_name:
-        raise HTTPException(status_code=400, detail="请填写 MCP Server 名称")
-
-    from backend.app.services.mcp_connection_tester import McpConnectionTestError, validate_mcp_http_url
-
-    try:
-        url = validate_mcp_http_url(request.url)
-    except McpConnectionTestError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return {
-        "server_key": server_key,
-        "display_name": display_name,
-        "description": request.description.strip(),
-        "url": url,
-        "transport": request.transport,
-        "auth_type": request.auth_type,
-        "auth_token": request.auth_token,
-        "clear_auth_token": request.clear_auth_token,
-        "enabled": request.enabled,
-    }
+def _mcp_server_config_response(
+    projection: SafeMcpServerProjection,
+) -> McpServerConfigResponse:
+    return McpServerConfigResponse.model_validate(projection, from_attributes=True)
 
 
 # ── 后台任务包装 ─────────────────────────────────────────────────────────────
@@ -313,13 +286,11 @@ async def update_provider_config(
 @router.get("/ops/mcp-servers", response_model=McpServerConfigListResponse, tags=["Ops"])
 async def list_mcp_servers(
     _: dict = Depends(RequireAdmin),
-    repository: McpServerConfigRepository = Depends(
-        get_mcp_server_config_repository
-    ),
+    service: McpAdminService = Depends(get_mcp_admin_service),
 ) -> McpServerConfigListResponse:
     """列出 MCP Server 配置。响应不会返回明文 Token。"""
-    rows = await asyncio.to_thread(repository.list_mcp_server_configs)
-    items = [_mcp_server_config_response(row) for row in rows]
+    projections = await service.list_servers()
+    items = [_mcp_server_config_response(item) for item in projections]
     return McpServerConfigListResponse(items=items, total=len(items))
 
 
@@ -327,17 +298,16 @@ async def list_mcp_servers(
 async def create_mcp_server(
     request: McpServerConfigRequest,
     _: dict = Depends(RequireAdmin),
-    repository: McpServerConfigRepository = Depends(
-        get_mcp_server_config_repository
-    ),
+    service: McpAdminService = Depends(get_mcp_admin_service),
 ) -> McpServerConfigResponse:
     """创建 MCP Server 配置。auth_token 只写入，不明文返回。"""
-    payload = _mcp_payload(request)
     try:
-        row = await asyncio.to_thread(repository.create_mcp_server_config, payload)
-    except McpServerConfigConflictError as exc:
-        raise HTTPException(status_code=409, detail="server_key 已存在，请换一个标识") from exc
-    return _mcp_server_config_response(row)
+        projection = await service.create_server(request.model_dump())
+    except McpAdminValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except McpAdminConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _mcp_server_config_response(projection)
 
 
 @router.put("/ops/mcp-servers/{server_id}", response_model=McpServerConfigResponse, tags=["Ops"])
@@ -345,40 +315,31 @@ async def update_mcp_server(
     server_id: int,
     request: McpServerConfigRequest,
     _: dict = Depends(RequireAdmin),
-    repository: McpServerConfigRepository = Depends(
-        get_mcp_server_config_repository
-    ),
+    service: McpAdminService = Depends(get_mcp_admin_service),
 ) -> McpServerConfigResponse:
     """更新 MCP Server 配置。auth_token 留空时保留，clear_auth_token=true 时清空。"""
-    payload = _mcp_payload(request)
     try:
-        row = await asyncio.to_thread(
-            repository.update_mcp_server_config,
-            server_id,
-            payload,
-        )
-    except McpServerConfigConflictError as exc:
-        raise HTTPException(status_code=409, detail="server_key 已存在，请换一个标识") from exc
-    if not row:
-        raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
-    return _mcp_server_config_response(row)
+        projection = await service.update_server(server_id, request.model_dump())
+    except McpAdminValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except McpAdminConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except McpAdminNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _mcp_server_config_response(projection)
 
 
 @router.delete("/ops/mcp-servers/{server_id}", response_model=McpServerDeleteResponse, tags=["Ops"])
 async def delete_mcp_server(
     server_id: int,
     _: dict = Depends(RequireAdmin),
-    repository: McpServerConfigRepository = Depends(
-        get_mcp_server_config_repository
-    ),
+    service: McpAdminService = Depends(get_mcp_admin_service),
 ) -> McpServerDeleteResponse:
     """删除 MCP Server 配置。"""
-    deleted = await asyncio.to_thread(
-        repository.delete_mcp_server_config,
-        server_id,
-    )
-    if not deleted:
-        raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
+    try:
+        await service.delete_server(server_id)
+    except McpAdminNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return McpServerDeleteResponse(status="succeeded", message="MCP Server 配置已删除。", deleted=True, id=server_id)
 
 
@@ -386,21 +347,15 @@ async def delete_mcp_server(
 async def test_mcp_server(
     server_id: int,
     _: dict = Depends(RequireAdmin),
-    repository: McpServerConfigRepository = Depends(
-        get_mcp_server_config_repository
-    ),
+    service: McpAdminService = Depends(get_mcp_admin_service),
 ) -> McpServerTestResponse:
     """测试 MCP Server 连通性，只执行 initialize / tools/list，不调用任意工具。"""
-    from backend.app.services.mcp_connection_tester import test_mcp_server_connection
-
-    outcome = await asyncio.to_thread(
-        McpAdminService(repository).test_connection,
-        server_id,
-        test_mcp_server_connection,
-    )
-    if outcome is None:
-        raise HTTPException(status_code=404, detail="MCP Server 配置不存在")
-    server = _mcp_server_config_response(dict(outcome.server))
+    try:
+        outcome = await service.test_server(server_id)
+    except McpAdminNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    assert isinstance(outcome.server, SafeMcpServerProjection)
+    server = _mcp_server_config_response(outcome.server)
     return McpServerTestResponse(
         status=outcome.result.get("status", "failed"),
         message=outcome.result.get("message", ""),
