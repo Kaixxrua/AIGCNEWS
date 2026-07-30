@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -31,9 +32,12 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         redis_client.keys = AsyncMock(return_value=[])
         redis_client.aclose = AsyncMock()
 
+        warmup_task = MagicMock()
+        warmup_task.done.return_value = True
+
         def close_warmup_coroutine(coroutine):
             coroutine.close()
-            return MagicMock()
+            return warmup_task
 
         with (
             patch.object(main, "settings", _settings()),
@@ -47,11 +51,38 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(app.state.database, database)
                 self.assertIs(app.state.postgres_database, database)
                 self.assertIs(app.state.application_repositories, repositories)
+                self.assertIs(app.state.reranker_warmup_task, warmup_task)
                 database.close.assert_not_called()
 
             factory.assert_called_once_with(postgres=database)
             redis_client.aclose.assert_awaited_once_with()
             database.close.assert_called_once_with()
+
+    async def test_cancels_unfinished_reranker_warmup_on_shutdown(self) -> None:
+        app = FastAPI()
+        database = MagicMock()
+        redis_client = MagicMock()
+        redis_client.ping = AsyncMock()
+        redis_client.keys = AsyncMock(return_value=[])
+        redis_client.aclose = AsyncMock()
+        pending = asyncio.get_running_loop().create_future()
+
+        def close_warmup_coroutine(coroutine):
+            coroutine.close()
+            return pending
+
+        with (
+            patch.object(main, "settings", _settings()),
+            patch.object(main, "postgres_database", database),
+            patch.object(main, "create_application_repositories", return_value=MagicMock()),
+            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main.FastAPICache, "init"),
+            patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
+        ):
+            async with main.lifespan(app):
+                pass
+
+        self.assertTrue(pending.cancelled())
 
     async def test_closes_postgres_when_redis_initialization_fails(self) -> None:
         app = FastAPI()
@@ -59,9 +90,12 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         redis_client = MagicMock()
         redis_client.ping = AsyncMock(side_effect=RuntimeError("redis unavailable"))
 
+        warmup_task = MagicMock()
+        warmup_task.done.return_value = True
+
         def close_warmup_coroutine(coroutine):
             coroutine.close()
-            return MagicMock()
+            return warmup_task
 
         with (
             patch.object(main, "settings", _settings()),

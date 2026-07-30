@@ -114,7 +114,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     # 在后台异步预热模型，不阻塞服务启动
-    asyncio.create_task(_warmup_reranker())
+    reranker_warmup_task = asyncio.create_task(_warmup_reranker())
+    app.state.reranker_warmup_task = reranker_warmup_task
     semantic_warmup_task = None
     if settings.project_semantic_search_enabled:
         semantic_warmup_task = asyncio.create_task(_warmup_project_semantic_search())
@@ -161,6 +162,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         if scheduler_enabled:
             stop_scheduler()
+        if not reranker_warmup_task.done():
+            reranker_warmup_task.cancel()
+            try:
+                await reranker_warmup_task
+            except asyncio.CancelledError:
+                pass
         if semantic_warmup_task is not None and not semantic_warmup_task.done():
             semantic_warmup_task.cancel()
             try:
