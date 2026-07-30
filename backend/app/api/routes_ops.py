@@ -13,6 +13,7 @@ from backend.app.api.dependencies import (
     get_dashboard_cache_admin_service,
     get_data_cleanup_admin_service,
     get_document_repository,
+    get_github_project_admin_service,
     get_github_project_enrichment_repository,
     get_github_project_recommendation_repository,
     get_ingestion_admin_service,
@@ -37,6 +38,7 @@ from backend.app.repositories.runtime_provider_repository import (
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
+from backend.app.services.github_project_admin import GitHubProjectAdminService
 from backend.app.services.ingestion_admin import IngestionAdminService, VALID_SOURCES
 from backend.app.services.mcp.admin_service import McpAdminService, project_server
 from backend.app.services.runtime_provider.control_plane import (
@@ -259,65 +261,6 @@ def _mcp_payload(request: McpServerConfigRequest) -> dict[str, Any]:
 
 
 # ── 后台任务包装 ─────────────────────────────────────────────────────────────
-
-
-def _bg_refresh_github_hot(limit: int) -> None:
-    """刷新 GitHub 候选池 / Trending / 快照数据并同步当日指标。"""
-    from backend.app.services.ingestion.github_hot_service import (
-        refresh_github_hot_candidates,
-    )
-    from backend.app.services.ingestion.github_project_metrics_service import (
-        compute_github_daily_metrics,
-    )
-
-    refresh_result = refresh_github_hot_candidates(limit=limit)
-    compute_github_daily_metrics(
-        metric_date=refresh_result.get("date"),
-        repo_ids=refresh_result.get("daily_repo_ids") or None,
-    )
-
-
-def _bg_enrich_github_projects(
-    limit: int,
-    force: bool,
-    dry_run: bool,
-    retry_failed: bool = True,
-    refresh_changed: bool = False,
-) -> None:
-    """富化 GitHub 项目库分类与中文描述。"""
-    from backend.app.services.ingestion.github_project_enricher import (
-        enrich_github_projects,
-    )
-
-    result = enrich_github_projects(
-        limit=limit,
-        force=force,
-        dry_run=dry_run,
-        retry_failed=retry_failed,
-        refresh_changed=refresh_changed,
-    )
-    logger.info("[Ops] GitHub 项目库富化任务完成：%s", result)
-
-
-def _bg_refresh_github_project_metrics(
-    *,
-    min_stars: int,
-    limit: int,
-    metric_date: Optional[str],
-    dry_run: bool,
-) -> None:
-    """刷新 GitHub 项目轻量指标快照并重算每日热度。"""
-    from backend.app.services.ingestion.github_project_metrics_service import (
-        refresh_and_compute_github_project_metrics,
-    )
-
-    result = refresh_and_compute_github_project_metrics(
-        min_stars=min_stars,
-        limit=limit,
-        metric_date=metric_date,
-        dry_run=dry_run,
-    )
-    logger.info("[Ops] GitHub 项目每日指标刷新任务完成：%s", result)
 
 
 # ── 运行时模型配置 ─────────────────────────────────────────────────────────────
@@ -560,10 +503,11 @@ async def refresh_github_hot(
     limit: int = Query(default=80, ge=20, le=200),
     background_tasks: BackgroundTasks = None,
     _: dict = Depends(RequireAdmin),
+    service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
 ) -> IngestResponse:
     """手动刷新 GitHub 热榜候选池与快照。"""
     assert background_tasks is not None
-    background_tasks.add_task(_bg_refresh_github_hot, limit)
+    background_tasks.add_task(service.refresh_hot, limit)
     logger.info("[Ops] GitHub 热榜刷新任务已加入后台队列，limit=%d", limit)
     return IngestResponse(
         status="queued",
@@ -643,16 +587,13 @@ async def enrich_github_project_library(
     request: GitHubProjectsEnrichRequest,
     background_tasks: BackgroundTasks = None,
     _: dict = Depends(RequireAdmin),
+    service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
 ) -> GitHubProjectsEnrichResponse:
     """手动触发 GitHub 项目库 AI 分类与中文描述富化。"""
     limit = max(1, min(int(request.limit or 50), 500))
     if request.dry_run:
-        from backend.app.services.ingestion.github_project_enricher import (
-            enrich_github_projects,
-        )
-
         result = await asyncio.to_thread(
-            enrich_github_projects,
+            service.enrich,
             limit=limit,
             force=request.force,
             dry_run=True,
@@ -667,7 +608,7 @@ async def enrich_github_project_library(
 
     assert background_tasks is not None
     background_tasks.add_task(
-        _bg_enrich_github_projects,
+        service.enrich,
         limit,
         request.force,
         False,
@@ -769,17 +710,14 @@ async def refresh_github_project_metrics(
     request: GitHubProjectsMetricsRequest,
     background_tasks: BackgroundTasks = None,
     _: dict = Depends(RequireAdmin),
+    service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
 ) -> GitHubProjectsEnrichResponse:
     """手动刷新 GitHub 项目每日快照，并在非 dry-run 时重算热度分。"""
     min_stars = max(0, int(request.min_stars or 0))
     limit = max(0, min(int(request.limit or 0), 20000))
     if request.dry_run:
-        from backend.app.services.ingestion.github_project_metrics_service import (
-            refresh_and_compute_github_project_metrics,
-        )
-
         result = await asyncio.to_thread(
-            refresh_and_compute_github_project_metrics,
+            service.refresh_metrics,
             min_stars=min_stars,
             limit=limit,
             metric_date=request.metric_date,
@@ -789,7 +727,7 @@ async def refresh_github_project_metrics(
 
     assert background_tasks is not None
     background_tasks.add_task(
-        _bg_refresh_github_project_metrics,
+        service.refresh_metrics,
         min_stars=min_stars,
         limit=limit,
         metric_date=request.metric_date,
@@ -806,12 +744,11 @@ async def refresh_github_project_metrics(
 async def recompute_github_project_metrics(
     request: GitHubProjectsMetricsRecomputeRequest,
     _: dict = Depends(RequireAdmin),
+    service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
 ) -> GitHubProjectsEnrichResponse:
     """基于连续快照或同日 Trending 日榜值，重算某天增长和热度分。"""
-    from backend.app.services.ingestion.github_project_metrics_service import compute_github_daily_metrics
-
     result = await asyncio.to_thread(
-        compute_github_daily_metrics,
+        service.recompute_metrics,
         metric_date=request.metric_date,
         min_stars=max(0, int(request.min_stars or 0)),
     )
