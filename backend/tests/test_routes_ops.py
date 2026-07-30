@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -427,6 +427,63 @@ class OperationsRouteTests(unittest.TestCase):
         job.modify.assert_called_once_with(next_run_time=None)
         scheduler.wakeup.assert_called_once_with()
 
+    def test_dashboard_cache_clear_uses_all_patterns_and_closes_client(self) -> None:
+        redis_client = MagicMock()
+        redis_client.keys = AsyncMock(
+            side_effect=[
+                [b"aigc-cache:dashboard:one"],
+                [],
+                [b"dashboard:two", b"dashboard:three"],
+                [],
+            ]
+        )
+        redis_client.delete = AsyncMock()
+        redis_client.aclose = AsyncMock()
+
+        with (
+            patch("redis.asyncio.Redis", return_value=redis_client) as redis_type,
+            patch("fastapi_cache.FastAPICache._prefix", "custom:", create=True),
+        ):
+            response = self._scheduler_client().post(
+                "/api/ops/cache/clear-dashboard"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+        self.assertIn("共删除 3 个 Redis key", response.json()["message"])
+        from backend.app.core.config import settings
+
+        redis_type.assert_called_once_with(
+            host=settings.redis_host,
+            port=settings.redis_port,
+            db=settings.redis_db,
+            password=settings.redis_password or None,
+            decode_responses=False,
+        )
+        self.assertEqual(
+            [call.args[0] for call in redis_client.keys.await_args_list],
+            [
+                "aigc-cache:dashboard:*",
+                "custom:dashboard:*",
+                "dashboard:*",
+                "*:dashboard:*",
+            ],
+        )
+        self.assertEqual(redis_client.delete.await_count, 2)
+        redis_client.aclose.assert_awaited_once_with()
+
+    def test_dashboard_cache_clear_closes_client_when_lookup_fails(self) -> None:
+        redis_client = MagicMock()
+        redis_client.keys = AsyncMock(side_effect=RuntimeError("redis failed"))
+        redis_client.aclose = AsyncMock()
+
+        with patch("redis.asyncio.Redis", return_value=redis_client):
+            with self._scheduler_client(raise_server_exceptions=False) as client:
+                response = client.post("/api/ops/cache/clear-dashboard")
+
+        self.assertEqual(response.status_code, 500)
+        redis_client.aclose.assert_awaited_once_with()
+
     def test_scheduler_routes_require_admin_before_scheduler_access(self) -> None:
         app = FastAPI()
         app.include_router(routes_ops.router, prefix="/api")
@@ -440,11 +497,11 @@ class OperationsRouteTests(unittest.TestCase):
         get_scheduler.assert_not_called()
 
     @staticmethod
-    def _scheduler_client() -> TestClient:
+    def _scheduler_client(*, raise_server_exceptions: bool = True) -> TestClient:
         app = FastAPI()
         app.include_router(routes_ops.router, prefix="/api")
         app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
-        return TestClient(app)
+        return TestClient(app, raise_server_exceptions=raise_server_exceptions)
 
     @staticmethod
     def _project_ops_client(
