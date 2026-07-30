@@ -14,7 +14,7 @@ from backend.app.services.rag.raw_openai_streamer import (
     ChatCompletionResult,
     ToolCallResult,
 )
-from backend.app.services.rag.retriever import HybridRetriever
+from backend.app.services.rag.ports import RagRetriever
 from backend.app.services.rag.reranker import rerank, RELEVANCE_THRESHOLD  # type: ignore[import]
 from backend.app.services.rag.web_search_service import (
     web_search,
@@ -152,7 +152,7 @@ def _extract_thinking_and_content(chunk: Any) -> Tuple[str, str]:
 class GenerationOrchestrator:
     def __init__(
         self,
-        retriever: HybridRetriever,
+        retriever: RagRetriever,
         *,
         stream_completion: Any = stream_chat_completions,
         completion: Any = chat_completions,

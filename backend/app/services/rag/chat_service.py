@@ -10,6 +10,7 @@ from backend.app.services.project_discovery import search_projects
 from backend.app.services.rag.database_tools import TOOL_DEFINITIONS, run_tool_calls
 from backend.app.services.rag.development_orchestrator import classify_development_request
 from backend.app.services.rag.generator import GenerationOrchestrator, MAX_HISTORY_TURNS
+from backend.app.services.rag.ports import RagRetriever
 from backend.app.services.rag.raw_openai_streamer import (
     ChatCompletionResult,
     ToolCallResult,
@@ -17,7 +18,6 @@ from backend.app.services.rag.raw_openai_streamer import (
     stream_chat_completions,
 )
 from backend.app.services.rag.reranker import rerank
-from backend.app.services.rag.retriever import HybridRetriever
 from backend.app.services.rag.web_search_service import (
     WebSearchResult,
     format_search_results_as_context,
@@ -28,7 +28,7 @@ from backend.app.services.rag.web_search_service import (
 class ChatService:
     def __init__(
         self,
-        retriever: HybridRetriever,
+        retriever: RagRetriever,
         *,
         ranking_reader: DocumentRankingReader,
         statistics_reader: DocumentStatisticsReader,

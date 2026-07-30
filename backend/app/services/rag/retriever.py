@@ -6,20 +6,18 @@ from typing import Iterable, List
 
 from langchain_core.documents import Document
 
-from backend.app.core.model_factory import get_chat_model, get_embedding_model
 from backend.app.repositories.document_repository import (
     DocumentFeedReader,
     DocumentRetrievalReader,
 )
-from backend.app.repositories.graph_repo import GraphRepository
-from backend.app.repositories.milvus_repo import MilvusRepository
+from backend.app.services.rag.ports import GraphRetrievalReader, VectorRetrievalReader
 
 
 class HybridRetriever:
     def __init__(
         self,
-        milvus_repo: MilvusRepository,
-        graph_repo: GraphRepository,
+        milvus_repo: VectorRetrievalReader,
+        graph_repo: GraphRetrievalReader,
         document_feed: DocumentFeedReader,
         document_retrieval: DocumentRetrievalReader,
     ) -> None:
@@ -27,8 +25,6 @@ class HybridRetriever:
         self._graph_repo = graph_repo
         self._document_feed = document_feed
         self._document_retrieval = document_retrieval
-        self._embeddings = get_embedding_model()
-        self._llm = get_chat_model()
 
     @staticmethod
     def _extract_keywords(query: str, max_keywords: int = 2) -> List[str]:
