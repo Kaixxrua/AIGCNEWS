@@ -331,14 +331,14 @@ async def _run_daily_briefing_job() -> None:
     logger.info(
         "[Scheduler] 触发每日自动简报生成（%d 个维度）...", len(_BRIEFING_TASKS)
     )
-    from backend.app.services.briefing.daily_briefing import DailyBriefingService
+    from backend.app.services.briefing.composition import provide_daily_briefing_service
 
+    service = provide_daily_briefing_service()
     success = 0
     for task in _BRIEFING_TASKS:
         source = task["source"]
         period = task["period"]
         try:
-            service = DailyBriefingService()
             content_parts: list[str] = []
             report_date = ""
             briefing_id = -1

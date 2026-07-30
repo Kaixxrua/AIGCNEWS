@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from backend.app.api.dependencies import (
     get_briefing_repository,
     get_briefing_subscription_repository,
+    get_daily_briefing_service,
     get_evaluation_repository,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
@@ -56,6 +57,7 @@ class GenerateReportRequest(BaseModel):
 
 
 async def _briefing_stream(
+    service: DailyBriefingService,
     target_date: Optional[str],
     source: str = "all",
     period: str = "daily",
@@ -65,7 +67,6 @@ async def _briefing_stream(
     stream: AsyncGenerator[dict, None] | None = None
     next_payload: asyncio.Task | None = None
     try:
-        service = DailyBriefingService()
         stream = service.stream_generate(
             target_date,
             source=source,
@@ -112,6 +113,7 @@ async def _briefing_stream(
 async def stream_daily_report(
     request: GenerateReportRequest,
     _: dict = Depends(RequireAdmin),
+    service: DailyBriefingService = Depends(get_daily_briefing_service),
 ) -> StreamingResponse:
     """Generate today's (or a specific date's) briefing and stream via SSE.
 
@@ -132,6 +134,7 @@ async def stream_daily_report(
     period = request.period if request.period in _VALID_PERIODS else "daily"
     return StreamingResponse(
         _briefing_stream(
+            service,
             request.date,
             source=source,
             period=period,
@@ -227,10 +230,12 @@ async def list_briefings(
 
 
 @router.get("/report/{briefing_id}")
-async def get_briefing(briefing_id: int):
+async def get_briefing(
+    briefing_id: int,
+    repository: BriefingReader = Depends(get_briefing_repository),
+):
     """Return the full content of a specific briefing by ID."""
-    service = DailyBriefingService()
-    item = service.get_briefing(briefing_id)
+    item = repository.get_briefing(briefing_id)
     if item is None:
         return JSONResponse(
             status_code=404,

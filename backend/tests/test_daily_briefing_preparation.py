@@ -1,21 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import sys
-import types
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-
-if "backend.app.core.model_factory" not in sys.modules:
-    model_factory_module = types.ModuleType("backend.app.core.model_factory")
-    model_factory_module.get_chat_model = MagicMock
-    sys.modules["backend.app.core.model_factory"] = model_factory_module
-
-if "backend.app.repositories.milvus_repo" not in sys.modules:
-    milvus_module = types.ModuleType("backend.app.repositories.milvus_repo")
-    milvus_module.MilvusRepository = MagicMock
-    sys.modules["backend.app.repositories.milvus_repo"] = milvus_module
 
 from backend.app.services.briefing.daily_briefing import (
     _BLOCK_RESPONSE_ERROR,
@@ -520,16 +508,13 @@ def _service(*, top_k: int = 10) -> DailyBriefingService:
     briefings.save_briefing.return_value = 73
     document_feed = MagicMock()
     rank_snapshots = MagicMock()
-    with patch(
-        "backend.app.services.briefing.daily_briefing.get_chat_model",
-        return_value=MagicMock(astream=MagicMock()),
-    ):
-        return DailyBriefingService(
-            top_k=top_k,
-            briefing_repository=briefings,
-            document_feed=document_feed,
-            rank_snapshot_reader=rank_snapshots,
-        )
+    return DailyBriefingService(
+        top_k=top_k,
+        briefing_repository=briefings,
+        document_feed=document_feed,
+        rank_snapshot_reader=rank_snapshots,
+        model=MagicMock(astream=MagicMock()),
+    )
 
 
 def _github_doc(

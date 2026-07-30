@@ -2,15 +2,10 @@ from __future__ import annotations
 
 import logging
 import traceback
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Protocol
 
-from backend.app.core.model_factory import get_chat_model
-from backend.app.repositories.application_repository_context import (
-    get_configured_application_repositories,
-)
 from backend.app.repositories.briefing_repository import BriefingContentRepository
 from backend.app.repositories.document_repository import DocumentFeedReader
-from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.services.briefing.preparation import (
     PreparedBriefing,
@@ -318,43 +313,10 @@ def _filter_blocked_docs(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return clean_docs
 
 
-def _milvus_doc_to_briefing_doc(doc: Any, fallback_source: str = "github") -> Dict[str, Any]:
-    """将 Milvus/LangChain Document 转为简报生成使用的 dict 结构。"""
-    meta = dict(getattr(doc, "metadata", None) or {})
-    page_content = str(getattr(doc, "page_content", "") or "")
-    source = str(meta.get("source") or fallback_source).lower()
-    stars = meta.get("stars") or meta.get("raw_score") or meta.get("score") or 0
-    raw_score = meta.get("raw_score") or stars
+class BriefingModel(Protocol):
+    """Streaming model boundary used by briefing generation."""
 
-    return {
-        "id": str(meta.get("id") or meta.get("pk") or ""),
-        "source": source,
-        "source_channel": meta.get("source_channel") or meta.get("channel") or "",
-        "channel": meta.get("source_channel") or meta.get("channel") or "",
-        "title": meta.get("title") or "无标题",
-        "summary": page_content,
-        "url": meta.get("url") or "",
-        "published_date": meta.get("published_date") or "",
-        "score": meta.get("score") or raw_score or 0.0,
-        "raw_score": raw_score or 0.0,
-        "stars": stars or 0,
-        "language": meta.get("language") or "",
-    }
-
-
-def _dedupe_docs(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """按 id/title/url 去重，避免 Milvus chunk 级结果重复进入 Prompt。"""
-    seen: set[str] = set()
-    result: List[Dict[str, Any]] = []
-    for doc in docs:
-        key = str(doc.get("id") or doc.get("url") or doc.get("title") or "").strip()
-        if not key:
-            key = str(len(result))
-        if key in seen:
-            continue
-        seen.add(key)
-        result.append(doc)
-    return result
+    def astream(self, prompt: str) -> AsyncIterator[Any]: ...
 
 
 class DailyBriefingService:
@@ -362,64 +324,18 @@ class DailyBriefingService:
 
     def __init__(
         self,
+        *,
+        briefing_repository: BriefingContentRepository,
+        document_feed: DocumentFeedReader,
+        rank_snapshot_reader: RankSnapshotReader,
+        model: BriefingModel,
         top_k: int = 10,
-        briefing_repository: BriefingContentRepository | None = None,
-        document_feed: DocumentFeedReader | None = None,
-        rank_snapshot_reader: RankSnapshotReader | None = None,
     ) -> None:
-        repositories = None
-        if (
-            briefing_repository is None
-            or document_feed is None
-            or rank_snapshot_reader is None
-        ):
-            repositories = get_configured_application_repositories()
-        self._briefings = briefing_repository or repositories.briefings
-        self._document_feed = document_feed or repositories.documents
-        self._rank_snapshots = rank_snapshot_reader or repositories.rank_snapshots
+        self._briefings = briefing_repository
+        self._document_feed = document_feed
+        self._rank_snapshots = rank_snapshot_reader
         self._top_k = top_k
-        self._llm = get_chat_model()
-
-    def _get_github_docs_from_milvus(self, period: str) -> List[Dict[str, Any]]:
-        """GitHub 简报优先从 Milvus 取 README 丰富内容。"""
-        expected_channel = _PERIOD_CHANNEL_MAP.get("github", {}).get(period, "")
-        try:
-            milvus_repo = MilvusRepository()
-            vector_docs = milvus_repo.search_by_source("github", top_k=self._top_k * 5)
-        except Exception as exc:
-            logger.warning("Milvus 获取 GitHub 简报文档失败，回退 MySQL: %s", exc)
-            return []
-
-        docs = [_milvus_doc_to_briefing_doc(doc, "github") for doc in vector_docs]
-        if expected_channel:
-            period_docs = [
-                doc
-                for doc in docs
-                if (doc.get("source_channel") or doc.get("channel") or "")
-                == expected_channel
-            ]
-            if period_docs:
-                docs = period_docs
-            else:
-                logger.info(
-                    "Milvus 未找到 channel=%s 的 GitHub 文档，使用 Milvus GitHub 全量结果兜底",
-                    expected_channel,
-                )
-
-        docs = [doc for doc in docs if doc.get("source") == "github"]
-        docs = _dedupe_docs(docs)
-        docs.sort(
-            key=lambda d: (d.get("raw_score") or d.get("stars") or d.get("score") or 0),
-            reverse=True,
-        )
-        docs = docs[: self._top_k]
-        logger.info(
-            "Milvus 返回 GitHub 简报文档 %d 条 (period=%s, channel=%s)",
-            len(docs),
-            period,
-            expected_channel,
-        )
-        return docs
+        self._llm = model
 
     def _prepare_briefing(
         self,

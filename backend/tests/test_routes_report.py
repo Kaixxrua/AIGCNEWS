@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI, Request
@@ -13,6 +15,21 @@ from backend.app.repositories.briefing_repository import (
 )
 from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.services.email_service import EmailService
+
+
+class ReportRouteArchitectureTests(unittest.TestCase):
+    def test_report_routes_do_not_construct_briefing_infrastructure(self) -> None:
+        source = Path(routes_report.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        calls = {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+
+        self.assertNotIn("DailyBriefingService", calls)
+        self.assertNotIn("get_chat_model", calls)
+        self.assertNotIn("MilvusRepository", calls)
 
 
 class ReportEmailServiceWiringTests(unittest.TestCase):
@@ -98,6 +115,31 @@ class ReportBriefingRepositoryTests(unittest.TestCase):
 
         self.assertEqual(result, {"items": [{"id": 42}], "total": 1})
         repository.list_briefings.assert_called_once_with(limit=7)
+
+    def test_by_id_uses_repository(self) -> None:
+        repository = MagicMock(spec=BriefingReader)
+        repository.get_briefing.return_value = {"id": 42, "content": "briefing"}
+
+        result = asyncio.run(
+            routes_report.get_briefing(42, repository=repository)
+        )
+
+        self.assertEqual(result, {"id": 42, "content": "briefing"})
+        repository.get_briefing.assert_called_once_with(42)
+
+    def test_by_id_missing_preserves_response(self) -> None:
+        repository = MagicMock(spec=BriefingReader)
+        repository.get_briefing.return_value = None
+
+        response = asyncio.run(
+            routes_report.get_briefing(42, repository=repository)
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(
+            response.body.decode(),
+            '{"detail":"Briefing 42 not found"}',
+        )
 
     def test_email_helper_uses_explicit_repository(self) -> None:
         repository = MagicMock(spec=BriefingReader)

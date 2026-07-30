@@ -34,6 +34,8 @@ from backend.app.repositories.task_repository import (
     RecentTaskReader,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.services.briefing.composition import provide_daily_briefing_service
+from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
 
@@ -71,6 +73,12 @@ def get_briefing_subscription_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> BriefingSubscriptionRepository:
     return repositories.briefing_subscriptions
+
+
+def get_daily_briefing_service(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> DailyBriefingService:
+    return provide_daily_briefing_service(repositories=repositories)
 
 
 def get_evaluation_repository(

@@ -1003,14 +1003,14 @@ _BRIEFING_TASKS = [
 
 async def _bg_generate_all_briefings(force_regenerate: bool) -> None:
     """后台生成全维度每日简报（与 scheduler 中的逻辑一致）。"""
-    from backend.app.services.briefing.daily_briefing import DailyBriefingService
+    from backend.app.services.briefing.composition import provide_daily_briefing_service
 
+    service = provide_daily_briefing_service()
     success = 0
     for task in _BRIEFING_TASKS:
         source = task["source"]
         period = task["period"]
         try:
-            service = DailyBriefingService()
             async for _ in service.stream_generate(
                 target_date=None,
                 source=source,
