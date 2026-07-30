@@ -48,6 +48,9 @@ export interface GitHubProjectItem {
   subcategory_name_zh?: string | null
   subcategory_name_en?: string | null
   tags?: string[]
+  tags_zh?: string[]
+  tags_en?: string[]
+  tags_origin?: 'system' | 'user'
   language?: string | null
   topics?: string[]
   stars?: number | string | null

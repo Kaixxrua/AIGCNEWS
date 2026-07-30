@@ -116,3 +116,5 @@ def test_website_failure_uses_same_enrichment_upsert_defaults() -> None:
     assert params["status"] == "failed"
     assert params["category_slug"] == "other"
     assert params["tags_json"] == "[]"
+    assert params["tags_zh_json"] == "[]"
+    assert params["tags_en_json"] is None

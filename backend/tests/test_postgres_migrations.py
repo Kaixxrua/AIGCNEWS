@@ -277,6 +277,19 @@ def test_bilingual_briefing_schema_preserves_legacy_content() -> None:
     assert "UPDATE briefings SET content_zh = content" in migration.sql
 
 
+def test_bilingual_project_tags_schema_is_additive_and_preserves_legacy_values() -> None:
+    migration = discover_migrations()[8]
+    assert migration.filename == "0009_bilingual_project_tags.sql"
+    for table in ("github_repo_enrichments", "tool_website_enrichments"):
+        assert f"ALTER TABLE {table}" in migration.sql
+        assert f"UPDATE {table}" in migration.sql
+    assert migration.sql.count("ADD COLUMN tags_zh_json TEXT") == 2
+    assert migration.sql.count("ADD COLUMN tags_en_json TEXT") == 2
+    assert migration.sql.count("SET tags_zh_json = tags_json") == 2
+    assert "user_tool_website_overrides" not in migration.sql
+    assert "SET tags_en_json" not in migration.sql
+
+
 def test_transfer_control_schema_is_versioned_and_avoids_sensitive_payloads() -> None:
     migration = discover_migrations()[1]
 
@@ -346,7 +359,7 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             )
 
         runner = PostgresMigrationRunner(DirectDatabase())  # type: ignore[arg-type]
-        assert [migration.version for migration in runner.apply()] == [1, 2, 3, 4, 5]
+        assert [migration.version for migration in runner.apply()] == list(range(1, 10))
         assert runner.apply() == []
 
         with connection.cursor() as cursor:
@@ -388,6 +401,17 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
                 (schema_name,),
             )
             candidate_columns = {row[0] for row in cursor.fetchall()}
+            cursor.execute(
+                """
+                SELECT table_name, column_name
+                FROM information_schema.columns
+                WHERE table_schema = %s
+                  AND table_name IN ('github_repo_enrichments', 'tool_website_enrichments')
+                  AND column_name IN ('tags_zh_json', 'tags_en_json')
+                """,
+                (schema_name,),
+            )
+            bilingual_tag_columns = set(cursor.fetchall())
 
         assert {
             "app_schema_migrations",
@@ -414,6 +438,12 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             "not_found_count",
             "availability_checked_at",
         } <= candidate_columns
+        assert bilingual_tag_columns == {
+            ("github_repo_enrichments", "tags_zh_json"),
+            ("github_repo_enrichments", "tags_en_json"),
+            ("tool_website_enrichments", "tags_zh_json"),
+            ("tool_website_enrichments", "tags_en_json"),
+        }
     finally:
         connection.rollback()
         try:

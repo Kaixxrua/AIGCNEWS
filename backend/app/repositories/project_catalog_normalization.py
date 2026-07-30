@@ -60,7 +60,14 @@ def normalize_project_row(row: dict[str, Any]) -> dict[str, Any]:
     """Reproduce the public MySQL catalog row shape without coupling adapters."""
     item = dict(row)
     item["topics"] = _json_list(item.pop("topics_json", None))
-    item["tags"] = _json_list(item.pop("tags_json", None))
+    tags = _json_list(item.pop("tags_json", None))
+    tags_zh = _json_list(item.pop("tags_zh_json", None))
+    tags_en = _json_list(item.pop("tags_en_json", None))
+    tags_origin = "user" if item.pop("tags_origin", None) == "user" else "system"
+    item["tags"] = tags
+    item["tags_zh"] = [] if tags_origin == "user" else (tags_zh or tags)
+    item["tags_en"] = [] if tags_origin == "user" else tags_en
+    item["tags_origin"] = tags_origin
     for key in ("stars", "forks", "watchers", "open_issues", "daily_star_growth"):
         item[key] = _integer(item.get(key))
     item["rank_in_period"] = _integer(item.get("rank_in_period")) or None

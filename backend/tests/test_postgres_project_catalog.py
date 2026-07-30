@@ -307,6 +307,9 @@ def test_normalization_matches_mysql_shape_and_json_text_semantics() -> None:
     }
     item = normalize_project_row(row)
     assert item["tags"] == ["AI", "docs"]
+    assert item["tags_zh"] == ["AI", "docs"]
+    assert item["tags_en"] == []
+    assert item["tags_origin"] == "system"
     assert item["topics"] == ["web"]
     assert "tags_json" not in item and "topics_json" not in item
     assert item["stars"] == 0 and item["rank_in_period"] is None
@@ -319,6 +322,29 @@ def test_normalization_matches_mysql_shape_and_json_text_semantics() -> None:
     assert item["category_name_en"] == "Other"
     assert item["subcategory_name"] == "未分类"
     assert item["subcategory_name_en"] == "Uncategorized"
+
+
+def test_normalization_exposes_bilingual_system_tags_and_raw_user_tags() -> None:
+    system = normalize_project_row({
+        "tags_json": '["稳定值"]',
+        "tags_zh_json": '["中文标签"]',
+        "tags_en_json": '["English tag"]',
+    })
+    assert system["tags"] == ["稳定值"]
+    assert system["tags_zh"] == ["中文标签"]
+    assert system["tags_en"] == ["English tag"]
+    assert system["tags_origin"] == "system"
+
+    user = normalize_project_row({
+        "tags_json": '["用户原文"]',
+        "tags_zh_json": '["不应暴露"]',
+        "tags_en_json": '["Must not leak"]',
+        "tags_origin": "user",
+    })
+    assert user["tags"] == ["用户原文"]
+    assert user["tags_zh"] == []
+    assert user["tags_en"] == []
+    assert user["tags_origin"] == "user"
 
 
 def test_dynamic_category_formatting_preserves_taxonomy_and_defaults() -> None:

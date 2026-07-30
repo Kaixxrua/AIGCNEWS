@@ -46,6 +46,9 @@ class GitHubProjectItem(BaseModel):
     subcategory_name_zh: str | None = None
     subcategory_name_en: str | None = None
     tags: list[str] = Field(default_factory=list)
+    tags_zh: list[str] = Field(default_factory=list)
+    tags_en: list[str] = Field(default_factory=list)
+    tags_origin: Literal["system", "user"] = "system"
     language: str | None = None
     topics: list[str] = Field(default_factory=list)
     stars: int = 0

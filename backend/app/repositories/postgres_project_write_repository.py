@@ -330,6 +330,12 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                    COALESCE(NULLIF(uo.subcategory_name_zh, ''), e.subcategory_name_zh, NULLIF(uo.subcategory_name, ''), e.subcategory_name) AS subcategory_name_zh,
                    COALESCE(NULLIF(uo.subcategory_name_en, ''), e.subcategory_name_en) AS subcategory_name_en,
                    COALESCE(NULLIF(uo.tags_json::text, ''), e.tags_json::text) AS tags_json,
+                   CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL
+                        ELSE e.tags_zh_json::text END AS tags_zh_json,
+                   CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL
+                        ELSE e.tags_en_json::text END AS tags_en_json,
+                   CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN 'user'
+                        ELSE 'system' END AS tags_origin,
                    NULL::text AS language, '[]' AS topics_json, 0 AS stars, 0 AS forks,
                    0 AS watchers, 0 AS open_issues, NULL::text AS created_at,
                    NULL::text AS pushed_at, w.first_seen_at, w.last_seen_at,

@@ -140,6 +140,8 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         now = _utcnow()
         data = dict(payload)
         data.setdefault("tags_json", json.dumps(data.get("tags") or [], ensure_ascii=False))
+        data.setdefault("tags_zh_json", data["tags_json"])
+        data.setdefault("tags_en_json", None)
         data.setdefault("description_en", "")
         data["subcategory_slug"] = data.get("subcategory_slug") or ""
         data["subcategory_name"] = data.get("subcategory_name_zh") or data.get("subcategory_name") or ""
@@ -163,14 +165,14 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     INSERT INTO github_repo_enrichments (
                         repo_id, category_slug, category_name, category_name_zh, category_name_en,
                         subcategory_slug, subcategory_name, subcategory_name_zh, subcategory_name_en,
-                        description_zh, tags_json, confidence,
+                        description_zh, tags_json, tags_zh_json, tags_en_json, confidence,
                         source_fingerprint, prompt_version, model_provider, model_name,
                         status, error_msg, enriched_at, updated_at
                     ) VALUES (
                         %(repo_id)s, %(category_slug)s, %(category_name)s,
                         %(category_name_zh)s, %(category_name_en)s, %(subcategory_slug)s,
                         %(subcategory_name)s, %(subcategory_name_zh)s, %(subcategory_name_en)s, %(description_zh)s,
-                        %(tags_json)s, %(confidence)s, %(source_fingerprint)s,
+                        %(tags_json)s, %(tags_zh_json)s, %(tags_en_json)s, %(confidence)s, %(source_fingerprint)s,
                         %(prompt_version)s, %(model_provider)s, %(model_name)s,
                         %(status)s, %(error_msg)s, %(enriched_at)s, %(updated_at)s
                     )
@@ -185,6 +187,8 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                         subcategory_name_en=EXCLUDED.subcategory_name_en,
                         description_zh=EXCLUDED.description_zh,
                         tags_json=EXCLUDED.tags_json,
+                        tags_zh_json=EXCLUDED.tags_zh_json,
+                        tags_en_json=EXCLUDED.tags_en_json,
                         confidence=EXCLUDED.confidence,
                         source_fingerprint=EXCLUDED.source_fingerprint,
                         prompt_version=EXCLUDED.prompt_version,
@@ -335,6 +339,7 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
                         w.description, e.description_zh, e.description_en, e.category_slug, e.category_name,
                         e.category_name_zh, e.category_name_en, e.subcategory_slug, e.subcategory_name,
                         e.subcategory_name_zh, e.subcategory_name_en, e.tags_json,
+                        e.tags_zh_json, e.tags_en_json, 'system' AS tags_origin,
                         NULL AS language, '[]' AS topics_json, 0 AS stars, 0 AS forks,
                         0 AS watchers, 0 AS open_issues, NULL AS created_at, NULL AS pushed_at,
                         w.first_seen_at, w.last_seen_at, NULL AS last_snapshot_at,
@@ -351,6 +356,8 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
         now = _utcnow()
         data = dict(payload)
         data.setdefault("tags_json", json.dumps(data.get("tags") or [], ensure_ascii=False))
+        data.setdefault("tags_zh_json", data["tags_json"])
+        data.setdefault("tags_en_json", None)
         data.setdefault("description_en", "")
         data["subcategory_slug"] = data.get("subcategory_slug") or ""
         data["subcategory_name"] = data.get("subcategory_name_zh") or data.get("subcategory_name") or ""
@@ -368,12 +375,13 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
                 cursor.execute("""
                     INSERT INTO tool_website_enrichments (website_id,category_slug,category_name,
                         category_name_zh,category_name_en,subcategory_slug,subcategory_name,
-                        subcategory_name_zh,subcategory_name_en,description_zh,description_en,tags_json,confidence,
+                        subcategory_name_zh,subcategory_name_en,description_zh,description_en,
+                        tags_json,tags_zh_json,tags_en_json,confidence,
                         source_fingerprint,prompt_version,model_provider,model_name,status,error_msg,enriched_at,updated_at)
                     VALUES (%(website_id)s,%(category_slug)s,%(category_name)s,%(category_name_zh)s,
                         %(category_name_en)s,%(subcategory_slug)s,%(subcategory_name)s,
                         %(subcategory_name_zh)s,%(subcategory_name_en)s,%(description_zh)s,
-                        %(description_en)s,%(tags_json)s,%(confidence)s,
+                        %(description_en)s,%(tags_json)s,%(tags_zh_json)s,%(tags_en_json)s,%(confidence)s,
                         %(source_fingerprint)s,%(prompt_version)s,%(model_provider)s,%(model_name)s,
                         %(status)s,%(error_msg)s,%(enriched_at)s,%(updated_at)s)
                     ON CONFLICT (website_id) DO UPDATE SET category_slug=EXCLUDED.category_slug,
@@ -382,7 +390,8 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
                         subcategory_name=EXCLUDED.subcategory_name,subcategory_name_zh=EXCLUDED.subcategory_name_zh,
                         subcategory_name_en=EXCLUDED.subcategory_name_en,description_zh=EXCLUDED.description_zh,
                         description_en=EXCLUDED.description_en,
-                        tags_json=EXCLUDED.tags_json,confidence=EXCLUDED.confidence,
+                        tags_json=EXCLUDED.tags_json,tags_zh_json=EXCLUDED.tags_zh_json,
+                        tags_en_json=EXCLUDED.tags_en_json,confidence=EXCLUDED.confidence,
                         source_fingerprint=EXCLUDED.source_fingerprint,prompt_version=EXCLUDED.prompt_version,
                         model_provider=EXCLUDED.model_provider,model_name=EXCLUDED.model_name,
                         status=EXCLUDED.status,error_msg=EXCLUDED.error_msg,

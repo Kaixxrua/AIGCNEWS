@@ -112,7 +112,12 @@ def test_transfer_specs_capture_composite_cursor_codecs_and_identities() -> None
         "category_name_zh", "category_name_en",
         "subcategory_name_zh", "subcategory_name_en",
     } <= set(by_name["github_repo_enrichments"].columns)
-    assert "description_en" in by_name["tool_website_enrichments"].columns
+    assert {"tags_zh_json", "tags_en_json"} <= set(
+        by_name["github_repo_enrichments"].columns
+    )
+    assert {"description_en", "tags_zh_json", "tags_en_json"} <= set(
+        by_name["tool_website_enrichments"].columns
+    )
     assert {
         "description_en", "category_name_zh", "category_name_en",
         "subcategory_name_zh", "subcategory_name_en",

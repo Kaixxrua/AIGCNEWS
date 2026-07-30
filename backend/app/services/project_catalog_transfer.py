@@ -95,7 +95,8 @@ TABLE_TRANSFER_SPECS = (
         (
             "repo_id", "category_slug", "category_name", "category_name_zh",
             "category_name_en", "subcategory_slug", "subcategory_name",
-            "subcategory_name_zh", "subcategory_name_en", "description_zh", "tags_json", "confidence",
+            "subcategory_name_zh", "subcategory_name_en", "description_zh", "tags_json",
+            "tags_zh_json", "tags_en_json", "confidence",
             "source_fingerprint", "prompt_version", "model_provider", "model_name",
             "status", "error_msg", "enriched_at", "updated_at",
         ),
@@ -204,7 +205,7 @@ TABLE_TRANSFER_SPECS = (
             "website_id", "category_slug", "category_name", "category_name_zh",
             "category_name_en", "subcategory_slug", "subcategory_name",
             "subcategory_name_zh", "subcategory_name_en", "description_zh", "description_en",
-            "tags_json", "confidence",
+            "tags_json", "tags_zh_json", "tags_en_json", "confidence",
             "source_fingerprint", "prompt_version", "model_provider", "model_name",
             "status", "error_msg", "enriched_at", "updated_at",
         ),
