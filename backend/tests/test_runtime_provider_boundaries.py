@@ -10,7 +10,15 @@ class RuntimeProviderBoundaryTests(unittest.TestCase):
         app_directory = Path(__file__).parents[1] / "app"
         expectations = {
             app_directory / "api" / "routes_ops.py": {
-                "required": {"RuntimeProviderUpdate", "project_provider_config"},
+                "required": {
+                    "RuntimeProviderAdminService",
+                    "get_runtime_provider_admin_service",
+                },
+                "forbidden_imports": {
+                    "RuntimeProviderSettingManager",
+                    "RuntimeProviderUpdate",
+                    "project_provider_config",
+                },
                 "forbidden_functions": {"_mask_api_key", "_provider_config_response"},
             },
             app_directory / "core" / "model_factory.py": {
@@ -39,6 +47,7 @@ class RuntimeProviderBoundaryTests(unittest.TestCase):
                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
                 }
                 self.assertTrue(expectation["required"] <= imported)
+                self.assertFalse(expectation.get("forbidden_imports", set()) & imported)
                 self.assertFalse(expectation["forbidden_functions"] & functions)
 
     def test_public_model_factory_signatures_remain_available(self) -> None:

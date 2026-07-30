@@ -20,7 +20,7 @@ from backend.app.api.dependencies import (
     get_ingestion_admin_service,
     get_ingestion_task_repository,
     get_mcp_admin_service,
-    get_runtime_provider_setting_repository,
+    get_runtime_provider_admin_service,
     get_scheduler_admin_service,
 )
 from backend.app.core.auth import RequireAdmin
@@ -28,9 +28,6 @@ from backend.app.repositories.document_repository import DocumentAdminWriter
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectRecommendationRepository,
-)
-from backend.app.repositories.runtime_provider_repository import (
-    RuntimeProviderSettingManager,
 )
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 from backend.app.services.briefing_admin import BriefingAdminService
@@ -45,10 +42,7 @@ from backend.app.services.mcp.admin_service import (
     McpAdminValidationError,
     SafeMcpServerProjection,
 )
-from backend.app.services.runtime_provider.control_plane import (
-    RuntimeProviderUpdate,
-    project_provider_config,
-)
+from backend.app.services.runtime_provider.admin_service import RuntimeProviderAdminService
 from backend.app.services.scheduler_admin import SchedulerAdminService
 
 router = APIRouter()
@@ -244,40 +238,26 @@ def _mcp_server_config_response(
 @router.get("/ops/provider-config", response_model=ProviderConfigResponse, tags=["Ops"])
 async def get_provider_config(
     _: dict = Depends(RequireAdmin),
-    repository: RuntimeProviderSettingManager = Depends(
-        get_runtime_provider_setting_repository
+    service: RuntimeProviderAdminService = Depends(
+        get_runtime_provider_admin_service
     ),
 ) -> ProviderConfigResponse:
     """读取唯一的运行时模型配置。响应只返回密钥是否已配置与脱敏值。"""
-    row = await asyncio.to_thread(repository.get_runtime_provider_setting)
-    return ProviderConfigResponse.model_validate(
-        project_provider_config(row, fallback_provider="openai"),
-        from_attributes=True,
-    )
+    projection = await service.get_config()
+    return ProviderConfigResponse.model_validate(projection, from_attributes=True)
 
 
 @router.put("/ops/provider-config", response_model=ProviderConfigResponse, tags=["Ops"])
 async def update_provider_config(
     request: ProviderConfigRequest,
     _: dict = Depends(RequireAdmin),
-    repository: RuntimeProviderSettingManager = Depends(
-        get_runtime_provider_setting_repository
+    service: RuntimeProviderAdminService = Depends(
+        get_runtime_provider_admin_service
     ),
 ) -> ProviderConfigResponse:
     """更新唯一的运行时模型配置。api_key 留空时保留原值，clear_api_key=true 时清空。"""
-    update = RuntimeProviderUpdate.from_values(**request.model_dump())
-    row = await asyncio.to_thread(
-        repository.upsert_runtime_provider_setting,
-        update.provider,
-        update.base_url,
-        request.api_key,
-        update.clear_api_key,
-        update.model_name,
-    )
-    return ProviderConfigResponse.model_validate(
-        project_provider_config(row, fallback_provider=update.provider),
-        from_attributes=True,
-    )
+    projection = await service.update_config(request.model_dump())
+    return ProviderConfigResponse.model_validate(projection, from_attributes=True)
 
 
 # ── MCP Server 配置 ──────────────────────────────────────────────────────────

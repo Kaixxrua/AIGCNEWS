@@ -52,6 +52,7 @@ from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.composition import RagChatServiceProvider
+from backend.app.services.runtime_provider.admin_service import RuntimeProviderAdminService
 from backend.app.services.scheduler_admin import SchedulerAdminService
 
 
@@ -150,6 +151,14 @@ def get_runtime_provider_setting_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> RuntimeProviderSettingRepository:
     return repositories.runtime_provider_settings
+
+
+def get_runtime_provider_admin_service(
+    repository: RuntimeProviderSettingRepository = Depends(
+        get_runtime_provider_setting_repository
+    ),
+) -> RuntimeProviderAdminService:
+    return RuntimeProviderAdminService(repository)
 
 
 def get_conversation_repository(
