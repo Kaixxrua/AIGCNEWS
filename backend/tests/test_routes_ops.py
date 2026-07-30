@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_ops
 from backend.app.api.dependencies import (
+    get_dashboard_cache_admin_service,
     get_document_repository,
     get_github_project_enrichment_repository,
     get_github_project_recommendation_repository,

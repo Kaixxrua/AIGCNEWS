@@ -37,6 +37,7 @@ from backend.app.repositories.user_account_repository import UserAccountReposito
 from backend.app.services.briefing.composition import provide_daily_briefing_service
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.chat.conversation_service import ConversationService
+from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
@@ -138,6 +139,35 @@ def get_scheduler_admin_service() -> SchedulerAdminService:
     from backend.app.core.scheduler import get_scheduler
 
     return SchedulerAdminService(get_scheduler())
+
+
+def get_dashboard_cache_admin_service() -> DashboardCacheAdminService:
+    from fastapi_cache import FastAPICache
+    from redis.asyncio import Redis
+
+    from backend.app.core.config import settings
+
+    def client_factory() -> Redis:
+        return Redis(
+            host=settings.redis_host,
+            port=settings.redis_port,
+            db=settings.redis_db,
+            password=settings.redis_password or None,
+            decode_responses=False,
+        )
+
+    async def close_client(client: Redis) -> None:
+        close_method = getattr(client, "aclose", None)
+        if close_method is not None:
+            await close_method()
+        else:
+            await client.close()
+
+    return DashboardCacheAdminService(
+        client_factory,
+        close_client,
+        cache_prefix=getattr(FastAPICache, "_prefix", "") or "",
+    )
 
 
 def get_document_repository(

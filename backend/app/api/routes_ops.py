@@ -10,6 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.app.api.dependencies import (
+    get_dashboard_cache_admin_service,
     get_document_repository,
     get_github_project_enrichment_repository,
     get_github_project_recommendation_repository,
@@ -32,6 +33,7 @@ from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingManager,
 )
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
+from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.mcp.admin_service import McpAdminService, project_server
 from backend.app.services.runtime_provider.control_plane import (
     RuntimeProviderUpdate,
@@ -1046,51 +1048,12 @@ async def generate_all_briefings(
 
 
 @router.post("/ops/cache/clear-dashboard", response_model=IngestResponse, tags=["Ops"])
-async def clear_dashboard_cache(_: dict = Depends(RequireAdmin)) -> IngestResponse:
-    """手动清除 dashboard Redis 缓存，强制下次请求重新查询数据库。
-
-    使用多种 pattern 兜底，确保 aigc-cache:dashboard:* 等所有相关 key 被删除。
-    """
-    from fastapi_cache import FastAPICache
-    from redis.asyncio import Redis as AsyncRedis
-
-    from backend.app.core.config import settings
-
-    redis_client = AsyncRedis(
-        host=settings.redis_host,
-        port=settings.redis_port,
-        db=settings.redis_db,
-        password=settings.redis_password or None,
-        decode_responses=False,
-    )
-    total_deleted = 0
-    try:
-        _raw_prefix = getattr(FastAPICache, "_prefix", "") or ""
-        patterns = list(
-            dict.fromkeys(
-                [
-                    "aigc-cache:dashboard:*",
-                    f"{_raw_prefix}dashboard:*",
-                    "dashboard:*",
-                    "*:dashboard:*",
-                ]
-            )
-        )
-        for pattern in patterns:
-            keys = await redis_client.keys(pattern)
-            if keys:
-                await redis_client.delete(*keys)
-                total_deleted += len(keys)
-                logger.info(
-                    "[Ops] cache clear: pattern=%r 删除 %d keys", pattern, len(keys)
-                )
-    finally:
-        close_method = getattr(redis_client, "aclose", None)
-        if close_method:
-            await close_method()
-        else:
-            await redis_client.close()
-
+async def clear_dashboard_cache(
+    _: dict = Depends(RequireAdmin),
+    service: DashboardCacheAdminService = Depends(get_dashboard_cache_admin_service),
+) -> IngestResponse:
+    """手动清除 dashboard Redis 缓存，强制下次请求重新查询数据库。"""
+    total_deleted = await service.clear()
     logger.info("[Ops] dashboard cache 清除完成，共删除 %d keys。", total_deleted)
     return IngestResponse(
         status="ok",
