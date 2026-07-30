@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.api import routes_github_projects, routes_mcp, routes_ops
 from backend.app.services.mcp.inbound import tools as inbound_tools
@@ -31,11 +31,12 @@ def test_legacy_categories_use_catalog_factory() -> None:
 
 def test_finalize_shadow_route_drains_search_epoch() -> None:
     search = {"epoch": "search-v2", "lifecycle": "finalized"}
-    with patch(
-        "backend.app.services.project_search_shadow.finalize_project_search_shadow",
-        return_value=search,
-    ) as finalize_search:
-        result = asyncio.run(routes_ops.finalize_project_shadow({"role": "admin"}))
+    service = MagicMock()
+    service.finalize_project_shadow = AsyncMock(return_value={"search": search})
+
+    result = asyncio.run(
+        routes_ops.finalize_project_shadow({"role": "admin"}, service)
+    )
 
     assert result == {"search": search}
-    finalize_search.assert_called_once()
+    service.finalize_project_shadow.assert_awaited_once_with()

@@ -15,6 +15,7 @@ from backend.app.api.dependencies import (
     get_github_project_recommendation_admin_service,
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
+    get_ops_diagnostics_service,
     get_runtime_provider_setting_repository,
     get_scheduler_admin_service,
 )
@@ -71,6 +72,87 @@ class OperationsRouteTests(unittest.TestCase):
 
         self.assertIn(response.status_code, (401, 403))
         service.generate_all.assert_not_called()
+
+    def test_diagnostics_routes_use_injected_service(self) -> None:
+        service = MagicMock()
+        service.project_taxonomy.return_value = [
+            {
+                "slug": "developer-tools",
+                "name": "开发工具",
+                "children": [{"slug": "code", "name": "代码"}],
+            }
+        ]
+        service.project_catalog_readiness = AsyncMock(
+            return_value={"runtime_ready": True}
+        )
+        service.project_search_shadow_status.return_value = {
+            "epoch": "search-v2"
+        }
+        service.finalize_project_shadow = AsyncMock(
+            return_value={
+                "search": {
+                    "epoch": "search-v2",
+                    "lifecycle": "finalized",
+                }
+            }
+        )
+        client = self._diagnostics_client(service)
+
+        taxonomy = client.get("/api/ops/project-taxonomy")
+        readiness = client.get("/api/ops/project-catalog/readiness")
+        shadow = client.get("/api/ops/project-search/shadow-status")
+        finalization = client.post("/api/ops/project-shadow/finalize")
+
+        self.assertEqual(taxonomy.status_code, 200)
+        self.assertEqual(
+            taxonomy.json(),
+            {
+                "items": [
+                    {
+                        "slug": "developer-tools",
+                        "name": "开发工具",
+                        "children": [{"slug": "code", "name": "代码"}],
+                    }
+                ]
+            },
+        )
+        self.assertEqual(readiness.json(), {"runtime_ready": True})
+        self.assertEqual(shadow.json(), {"epoch": "search-v2"})
+        self.assertEqual(
+            finalization.json(),
+            {
+                "search": {
+                    "epoch": "search-v2",
+                    "lifecycle": "finalized",
+                }
+            },
+        )
+        service.project_taxonomy.assert_called_once_with()
+        service.project_catalog_readiness.assert_awaited_once_with()
+        service.project_search_shadow_status.assert_called_once_with()
+        service.finalize_project_shadow.assert_awaited_once_with()
+
+    def test_diagnostics_routes_require_admin_before_service_access(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        service = MagicMock()
+        app.dependency_overrides[get_ops_diagnostics_service] = lambda: service
+        client = TestClient(app)
+
+        responses = (
+            client.get("/api/ops/project-taxonomy"),
+            client.get("/api/ops/project-catalog/readiness"),
+            client.get("/api/ops/project-search/shadow-status"),
+            client.post("/api/ops/project-shadow/finalize"),
+        )
+
+        self.assertTrue(
+            all(response.status_code in (401, 403) for response in responses)
+        )
+        service.project_taxonomy.assert_not_called()
+        service.project_catalog_readiness.assert_not_called()
+        service.project_search_shadow_status.assert_not_called()
+        service.finalize_project_shadow.assert_not_called()
 
     def test_clear_data_uses_separate_task_admin_repository(self) -> None:
         app = FastAPI()
@@ -534,6 +616,14 @@ class OperationsRouteTests(unittest.TestCase):
         self.assertIn(status_response.status_code, (401, 403))
         self.assertIn(trigger_response.status_code, (401, 403))
         get_scheduler.assert_not_called()
+
+    @staticmethod
+    def _diagnostics_client(service: MagicMock) -> TestClient:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[get_ops_diagnostics_service] = lambda: service
+        return TestClient(app)
 
     @staticmethod
     def _scheduler_client(*, raise_server_exceptions: bool = True) -> TestClient:

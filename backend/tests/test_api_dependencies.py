@@ -107,6 +107,54 @@ class DatabaseDependencyTests(unittest.TestCase):
         self.assertIs(result, service_type.return_value)
         service_type.assert_called_once_with(briefing)
 
+    def test_ops_diagnostics_service_composes_runtime_dependencies(self) -> None:
+        readiness = MagicMock()
+        snapshot = MagicMock()
+        finalizer = MagicMock()
+        taxonomy = ({"slug": "developer-tools", "name": "开发工具"},)
+
+        with (
+            patch.object(
+                dependencies,
+                "OpsDiagnosticsService",
+                return_value=MagicMock(),
+            ) as service_type,
+            patch(
+                "backend.app.services.project_catalog_readiness."
+                "project_catalog_runtime_readiness",
+                readiness,
+            ),
+            patch(
+                "backend.app.services.project_search_shadow."
+                "project_search_shadow_snapshot",
+                snapshot,
+            ),
+            patch(
+                "backend.app.services.project_search_shadow."
+                "finalize_project_search_shadow",
+                finalizer,
+            ),
+            patch(
+                "backend.app.services.ingestion.project_taxonomy.WEBSITE_TAXONOMY",
+                taxonomy,
+            ),
+            patch(
+                "backend.app.core.config.settings."
+                "project_search_shadow_shutdown_timeout_seconds",
+                4.5,
+            ),
+        ):
+            result = dependencies.get_ops_diagnostics_service()
+
+        self.assertIs(result, service_type.return_value)
+        service_type.assert_called_once_with(
+            readiness=readiness,
+            shadow_snapshot=snapshot,
+            shadow_finalizer=finalizer,
+            shadow_shutdown_timeout=4.5,
+            website_taxonomy=taxonomy,
+        )
+
     def test_conversation_service_wraps_injected_repository(self) -> None:
         repository = MagicMock()
 

@@ -19,6 +19,7 @@ from backend.app.api.dependencies import (
     get_ingestion_admin_service,
     get_ingestion_task_repository,
     get_mcp_admin_service,
+    get_ops_diagnostics_service,
     get_runtime_provider_admin_service,
     get_scheduler_admin_service,
 )
@@ -35,6 +36,7 @@ from backend.app.services.github_project_recommendation_admin import (
     GitHubProjectRecommendationAdminService,
 )
 from backend.app.services.ingestion_admin import IngestionAdminService, VALID_SOURCES
+from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.mcp.admin_service import (
     McpAdminConflictError,
     McpAdminNotFoundError,
@@ -496,23 +498,12 @@ async def delete_tool_website(
     response_model=ProjectTaxonomyResponse,
     tags=["Ops"],
 )
-async def get_project_taxonomy(_: dict = Depends(RequireAdmin)) -> ProjectTaxonomyResponse:
+async def get_project_taxonomy(
+    _: dict = Depends(RequireAdmin),
+    service: OpsDiagnosticsService = Depends(get_ops_diagnostics_service),
+) -> ProjectTaxonomyResponse:
     """返回管理员手动添加工具网页时可选的分类体系。"""
-    from backend.app.services.ingestion.project_taxonomy import WEBSITE_TAXONOMY
-
-    items = []
-    for category in WEBSITE_TAXONOMY:
-        items.append(
-            {
-                "slug": category["slug"],
-                "name": category["name"],
-                "children": [
-                    {"slug": child["slug"], "name": child["name"]}
-                    for child in category.get("children", [])
-                ],
-            }
-        )
-    return ProjectTaxonomyResponse(items=items)
+    return ProjectTaxonomyResponse(items=service.project_taxonomy())
 
 
 @router.post(
@@ -735,35 +726,29 @@ async def list_available_sources(_: dict = Depends(RequireAdmin)):
 
 
 @router.get("/ops/project-catalog/readiness", tags=["Ops"])
-async def project_catalog_readiness(_: dict = Depends(RequireAdmin)):
-    from backend.app.services.project_catalog_readiness import (
-        project_catalog_runtime_readiness,
-    )
-
-    return await asyncio.to_thread(project_catalog_runtime_readiness)
+async def project_catalog_readiness(
+    _: dict = Depends(RequireAdmin),
+    service: OpsDiagnosticsService = Depends(get_ops_diagnostics_service),
+):
+    return await service.project_catalog_readiness()
 
 
 @router.get("/ops/project-search/shadow-status", tags=["Ops"])
-async def project_search_shadow_status(_: dict = Depends(RequireAdmin)):
+async def project_search_shadow_status(
+    _: dict = Depends(RequireAdmin),
+    service: OpsDiagnosticsService = Depends(get_ops_diagnostics_service),
+):
     """返回不含查询文本或候选 ID 的项目搜索 shadow 诊断。"""
-    from backend.app.services.project_search_shadow import (
-        project_search_shadow_snapshot,
-    )
-
-    return project_search_shadow_snapshot()
+    return service.project_search_shadow_status()
 
 
 @router.post("/ops/project-shadow/finalize", tags=["Ops"])
-async def finalize_project_shadow(_: dict = Depends(RequireAdmin)):
+async def finalize_project_shadow(
+    _: dict = Depends(RequireAdmin),
+    service: OpsDiagnosticsService = Depends(get_ops_diagnostics_service),
+):
     """停止接收新搜索 shadow 调用，排空并返回具名 epoch 的最终证据。"""
-    from backend.app.core.config import settings
-    from backend.app.services.project_search_shadow import (
-        finalize_project_search_shadow,
-    )
-
-    search_timeout = float(settings.project_search_shadow_shutdown_timeout_seconds)
-    search = await asyncio.to_thread(finalize_project_search_shadow, search_timeout)
-    return {"search": search}
+    return await service.finalize_project_shadow()
 
 
 @router.get("/ops/scheduler/status", tags=["Ops"])

@@ -51,6 +51,7 @@ from backend.app.services.github_project_recommendation_admin import (
 from backend.app.services.ingestion_admin import IngestionAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.mcp.admin_service import McpAdminService
+from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
@@ -187,6 +188,28 @@ def get_scheduler_admin_service() -> SchedulerAdminService:
     from backend.app.core.scheduler import get_scheduler
 
     return SchedulerAdminService(get_scheduler())
+
+
+def get_ops_diagnostics_service() -> OpsDiagnosticsService:
+    from backend.app.core.config import settings
+    from backend.app.services.ingestion.project_taxonomy import WEBSITE_TAXONOMY
+    from backend.app.services.project_catalog_readiness import (
+        project_catalog_runtime_readiness,
+    )
+    from backend.app.services.project_search_shadow import (
+        finalize_project_search_shadow,
+        project_search_shadow_snapshot,
+    )
+
+    return OpsDiagnosticsService(
+        readiness=project_catalog_runtime_readiness,
+        shadow_snapshot=project_search_shadow_snapshot,
+        shadow_finalizer=finalize_project_search_shadow,
+        shadow_shutdown_timeout=float(
+            settings.project_search_shadow_shutdown_timeout_seconds
+        ),
+        website_taxonomy=WEBSITE_TAXONOMY,
+    )
 
 
 def get_dashboard_cache_admin_service() -> DashboardCacheAdminService:
