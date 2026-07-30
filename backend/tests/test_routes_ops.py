@@ -12,8 +12,7 @@ from backend.app.api.dependencies import (
     get_briefing_admin_service,
     get_dashboard_cache_admin_service,
     get_document_repository,
-    get_github_project_enrichment_repository,
-    get_github_project_recommendation_repository,
+    get_github_project_recommendation_admin_service,
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
     get_runtime_provider_setting_repository,
@@ -32,6 +31,9 @@ from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingManager,
 )
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
+from backend.app.services.github_project_recommendation_admin import (
+    GitHubProjectRecommendationAdminService,
+)
 
 
 class OperationsRouteTests(unittest.TestCase):
@@ -552,14 +554,14 @@ class OperationsRouteTests(unittest.TestCase):
             "role": "admin",
             "user_id": 9,
         }
-        if recommendations is not None:
+        if recommendations is not None or enrichment is not None:
+            service = GitHubProjectRecommendationAdminService(
+                recommendations or MagicMock(),
+                enrichment or MagicMock(),
+            )
             app.dependency_overrides[
-                get_github_project_recommendation_repository
-            ] = lambda: recommendations
-        if enrichment is not None:
-            app.dependency_overrides[
-                get_github_project_enrichment_repository
-            ] = lambda: enrichment
+                get_github_project_recommendation_admin_service
+            ] = lambda: service
         return TestClient(app)
 
     @staticmethod

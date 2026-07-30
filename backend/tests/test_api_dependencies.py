@@ -44,6 +44,23 @@ class DatabaseDependencyTests(unittest.TestCase):
         for provider, attribute in mapping.items():
             self.assertIs(provider(repositories), getattr(repositories, attribute))
 
+    def test_github_recommendation_admin_service_wraps_ports(self) -> None:
+        recommendations = MagicMock()
+        enrichment = MagicMock()
+
+        with patch.object(
+            dependencies,
+            "GitHubProjectRecommendationAdminService",
+            return_value=MagicMock(),
+        ) as service_type:
+            result = dependencies.get_github_project_recommendation_admin_service(
+                recommendations,
+                enrichment,
+            )
+
+        self.assertIs(result, service_type.return_value)
+        service_type.assert_called_once_with(recommendations, enrichment)
+
     def test_runtime_provider_admin_service_wraps_repository(self) -> None:
         repository = MagicMock()
 

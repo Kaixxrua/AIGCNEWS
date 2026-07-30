@@ -15,8 +15,7 @@ from backend.app.api.dependencies import (
     get_data_cleanup_admin_service,
     get_document_repository,
     get_github_project_admin_service,
-    get_github_project_enrichment_repository,
-    get_github_project_recommendation_repository,
+    get_github_project_recommendation_admin_service,
     get_ingestion_admin_service,
     get_ingestion_task_repository,
     get_mcp_admin_service,
@@ -25,15 +24,16 @@ from backend.app.api.dependencies import (
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.document_repository import DocumentAdminWriter
-from backend.app.repositories.project_write_repository import (
-    GitHubProjectEnrichmentRepository,
-    GitHubProjectRecommendationRepository,
-)
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
+from backend.app.services.github_project_recommendation_admin import (
+    GitHubProjectAdminNotFoundError,
+    GitHubProjectAdminValidationError,
+    GitHubProjectRecommendationAdminService,
+)
 from backend.app.services.ingestion_admin import IngestionAdminService, VALID_SOURCES
 from backend.app.services.mcp.admin_service import (
     McpAdminConflictError,
@@ -573,29 +573,26 @@ async def enrich_github_project_library(
 async def recommend_github_project(
     request: GitHubProjectRecommendRequest,
     user: dict = Depends(RequireAdmin),
-    repository: GitHubProjectRecommendationRepository = Depends(
-        get_github_project_recommendation_repository
+    service: GitHubProjectRecommendationAdminService = Depends(
+        get_github_project_recommendation_admin_service
     ),
 ) -> GitHubProjectRecommendResponse:
     """将 GitHub 项目加入站长推荐。"""
-    raw_user_id = user.get("user_id") or user.get("id") or user.get("sub") if isinstance(user, dict) else None
     try:
-        admin_user_id = int(raw_user_id) if raw_user_id else None
-    except (TypeError, ValueError):
-        admin_user_id = None
-
-    try:
-        result = await asyncio.to_thread(
-            repository.recommend_github_project,
+        outcome = await service.recommend(
             repo_id=request.repo_id,
             full_name=request.full_name,
-            recommended_by_user_id=admin_user_id,
+            admin_identity=user,
         )
-    except ValueError as exc:
+    except GitHubProjectAdminValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except LookupError as exc:
+    except GitHubProjectAdminNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return GitHubProjectRecommendResponse(status="succeeded", message="已加入站长推荐。", **result)
+    return GitHubProjectRecommendResponse(
+        status="succeeded",
+        message=outcome.message,
+        **outcome.result,
+    )
 
 
 @router.delete(
@@ -606,36 +603,36 @@ async def recommend_github_project(
 async def unrecommend_github_project(
     request: GitHubProjectRecommendRequest,
     _: dict = Depends(RequireAdmin),
-    repository: GitHubProjectRecommendationRepository = Depends(
-        get_github_project_recommendation_repository
+    service: GitHubProjectRecommendationAdminService = Depends(
+        get_github_project_recommendation_admin_service
     ),
 ) -> GitHubProjectRecommendResponse:
     """取消 GitHub 项目的站长推荐。"""
     try:
-        result = await asyncio.to_thread(
-            repository.unrecommend_github_project,
+        outcome = await service.unrecommend(
             repo_id=request.repo_id,
             full_name=request.full_name,
         )
-    except ValueError as exc:
+    except GitHubProjectAdminValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except LookupError as exc:
+    except GitHubProjectAdminNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    message = "已取消站长推荐。" if result.get("removed") else "该项目当前不是站长推荐。"
-    return GitHubProjectRecommendResponse(status="succeeded", message=message, **result)
+    return GitHubProjectRecommendResponse(
+        status="succeeded",
+        message=outcome.message,
+        **outcome.result,
+    )
 
 
 @router.get("/ops/github-projects/enrichment-status", tags=["Ops"])
 async def github_project_enrichment_status(
     _: dict = Depends(RequireAdmin),
-    repository: GitHubProjectEnrichmentRepository = Depends(
-        get_github_project_enrichment_repository
+    service: GitHubProjectRecommendationAdminService = Depends(
+        get_github_project_recommendation_admin_service
     ),
 ):
     """查看 GitHub 项目库富化进度。"""
-    return await asyncio.to_thread(
-        repository.get_github_project_enrichment_status
-    )
+    return await service.get_enrichment_status()
 
 
 @router.post(

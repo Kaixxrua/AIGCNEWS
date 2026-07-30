@@ -45,6 +45,9 @@ from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
+from backend.app.services.github_project_recommendation_admin import (
+    GitHubProjectRecommendationAdminService,
+)
 from backend.app.services.ingestion_admin import IngestionAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.mcp.admin_service import McpAdminService
@@ -275,6 +278,17 @@ def get_github_project_recommendation_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> GitHubProjectRecommendationRepository:
     return repositories.project_recommendations
+
+
+def get_github_project_recommendation_admin_service(
+    recommendations: GitHubProjectRecommendationRepository = Depends(
+        get_github_project_recommendation_repository
+    ),
+    enrichment: GitHubProjectEnrichmentRepository = Depends(
+        get_github_project_enrichment_repository
+    ),
+) -> GitHubProjectRecommendationAdminService:
+    return GitHubProjectRecommendationAdminService(recommendations, enrichment)
 
 
 def get_github_project_semantic_source_repository(
