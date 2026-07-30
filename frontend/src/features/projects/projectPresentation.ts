@@ -150,18 +150,26 @@ export const projectDisplayTags = (
     pushChip({ type: 'category', label: categoryLabel, value: project.category_slug })
   }
   const ignoredPersonalTags = new Set(['AI 工具', '网页收藏'])
-  for (const tag of project.tags ?? []) {
-    const label = String(tag).trim()
-    if (isPersonalView && ignoredPersonalTags.has(label)) continue
-    pushChip({ type: 'tag', label, value: label })
+  const stableTags = project.tags ?? []
+  const localizedTags = project.tags_origin === 'user'
+    ? stableTags
+    : locale === 'zh-CN'
+      ? (project.tags_zh?.length ? project.tags_zh : stableTags)
+      : (project.tags_en?.length ? project.tags_en : stableTags)
+  for (const [index, tag] of stableTags.entries()) {
+    const value = String(tag).trim()
+    const label = String(localizedTags[index] ?? tag).trim()
+    if (isPersonalView && ignoredPersonalTags.has(value)) continue
+    pushChip({ type: 'tag', label, value })
   }
   if (project.language) {
     pushChip({ type: 'language', label: project.language, value: project.language })
   }
   if (result.length) return result
   if (isPersonalView) return []
-  const label = isWebsite(project) ? fallbackLabels.website : fallbackLabels.project
-  return [{ type: 'tag', label, value: label }]
+  const website = isWebsite(project)
+  const label = website ? fallbackLabels.website : fallbackLabels.project
+  return [{ type: 'tag', label, value: website ? '网页收藏' : 'AI 项目' }]
 }
 
 export const formatProjectCount = (value: GitHubProjectItem['stars'], locale?: AppLocale) =>

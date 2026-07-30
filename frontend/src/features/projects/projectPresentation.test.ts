@@ -47,6 +47,41 @@ describe('projectPresentation localization', () => {
     expect(projectDisplayTags(emptyProject, false, 'en-US', {
       project: 'AI project',
       website: 'Website favorite',
-    })).toEqual([{ type: 'tag', label: 'AI project', value: 'AI project' }])
+    })).toEqual([{ type: 'tag', label: 'AI project', value: 'AI 项目' }])
+  })
+
+  it('localizes system tags while preserving stable filter values', () => {
+    const bilingual = {
+      ...project,
+      tags: ['代码助手', 'IDE 插件'],
+      tags_zh: ['代码助手', 'IDE 插件'],
+      tags_en: ['Coding assistant', 'IDE plugin'],
+      tags_origin: 'system' as const,
+    }
+    expect(projectDisplayTags(bilingual, false, 'en-US').slice(2)).toEqual([
+      { type: 'tag', label: 'Coding assistant', value: '代码助手' },
+      { type: 'tag', label: 'IDE plugin', value: 'IDE 插件' },
+    ])
+    expect(projectDisplayTags(bilingual, false, 'zh-CN').slice(2)).toEqual([
+      { type: 'tag', label: '代码助手', value: '代码助手' },
+      { type: 'tag', label: 'IDE 插件', value: 'IDE 插件' },
+    ])
+  })
+
+  it('keeps user-authored and legacy tags unchanged in every locale', () => {
+    const personal = {
+      repo_id: 1,
+      full_name: 'owner/project',
+      tags: ['个人标签'],
+      tags_zh: ['不应显示'],
+      tags_en: ['Must not display'],
+      tags_origin: 'user' as const,
+    }
+    expect(projectDisplayTags(personal, true, 'en-US')).toEqual([
+      { type: 'tag', label: '个人标签', value: '个人标签' },
+    ])
+    expect(projectDisplayTags({ repo_id: 2, full_name: 'legacy', tags: ['旧标签'] }, false, 'en-US')).toEqual([
+      { type: 'tag', label: '旧标签', value: '旧标签' },
+    ])
   })
 })
