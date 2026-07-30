@@ -290,6 +290,17 @@ def test_bilingual_project_tags_schema_is_additive_and_preserves_legacy_values()
     assert "SET tags_en_json" not in migration.sql
 
 
+def test_daily_hot_v5_default_is_versioned_without_rewriting_history() -> None:
+    migration = discover_migrations()[9]
+    normalized = " ".join(migration.sql.split())
+
+    assert migration.filename == "0010_github_daily_hot_v5_default.sql"
+    assert "ALTER TABLE github_repo_daily_metrics" in normalized
+    assert "ALTER COLUMN score_version SET DEFAULT 'daily_hot_v5'" in normalized
+    assert "UPDATE" not in migration.sql.upper()
+    assert "DROP COLUMN" not in migration.sql.upper()
+
+
 def test_transfer_control_schema_is_versioned_and_avoids_sensitive_payloads() -> None:
     migration = discover_migrations()[1]
 
@@ -359,7 +370,7 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             )
 
         runner = PostgresMigrationRunner(DirectDatabase())  # type: ignore[arg-type]
-        assert [migration.version for migration in runner.apply()] == list(range(1, 10))
+        assert [migration.version for migration in runner.apply()] == list(range(1, 11))
         assert runner.apply() == []
 
         with connection.cursor() as cursor:
@@ -412,6 +423,17 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
                 (schema_name,),
             )
             bilingual_tag_columns = set(cursor.fetchall())
+            cursor.execute(
+                """
+                SELECT column_default
+                FROM information_schema.columns
+                WHERE table_schema = %s
+                  AND table_name = 'github_repo_daily_metrics'
+                  AND column_name = 'score_version'
+                """,
+                (schema_name,),
+            )
+            score_version_default = cursor.fetchone()[0]
 
         assert {
             "app_schema_migrations",
@@ -444,6 +466,7 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             ("tool_website_enrichments", "tags_zh_json"),
             ("tool_website_enrichments", "tags_en_json"),
         }
+        assert score_version_default == "'daily_hot_v5'::character varying"
     finally:
         connection.rollback()
         try:

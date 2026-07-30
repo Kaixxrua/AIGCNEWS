@@ -54,7 +54,35 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         payload = repository.upsert_github_daily_metrics.call_args.args[0][0]
         return {"result": result, "payload": payload}
 
-    def test_acceleration_confidence_scales_normalized_score(self) -> None:
+    def test_acceleration_curve_uses_log_ratio_interpolation(self) -> None:
+        cases = (
+            (0.125, 0.0),
+            (0.25, 0.0),
+            (0.375, 11.6993),
+            (0.5, 20.0),
+            (0.75, 31.6993),
+            (1.0, 40.0),
+            (1.5, 60.4737),
+            (2.0, 75.0),
+            (3.0, 89.6241),
+            (4.0, 100.0),
+            (8.0, 100.0),
+        )
+        baseline = 100.0
+        for ratio, expected in cases:
+            with self.subTest(ratio=ratio):
+                daily_growth = ratio * (baseline + 1.0) - 1.0
+                self.assertAlmostEqual(
+                    metrics._growth_acceleration_curve(daily_growth, baseline),
+                    expected,
+                    places=4,
+                )
+
+    def test_non_positive_growth_has_no_acceleration(self) -> None:
+        self.assertEqual(metrics._growth_acceleration_curve(0.0, 0.0), 0.0)
+        self.assertEqual(metrics._growth_acceleration_curve(-1.0, 100.0), 0.0)
+
+    def test_acceleration_confidence_scales_curve_score(self) -> None:
         scores = []
         for sample_count in (0, 1, 2, 3, 5):
             computed = self._compute(baseline_7d=0.0, baseline_sample_count=sample_count)
@@ -66,8 +94,46 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         self.assertEqual(scores[3], 100.0)
         self.assertEqual(scores[4], 100.0)
 
-    def test_growth_at_or_below_baseline_has_no_acceleration(self) -> None:
-        computed = self._compute(baseline_7d=250.0, baseline_sample_count=3)
+    def test_positive_growth_at_and_below_baseline_scores_smoothly(self) -> None:
+        at_half_baseline = self._compute(
+            stars=1050,
+            baseline_7d=101.0,
+            baseline_sample_count=3,
+        )
+        at_baseline = self._compute(
+            stars=1100,
+            baseline_7d=100.0,
+            baseline_sample_count=3,
+        )
+
+        self.assertEqual(
+            at_half_baseline["payload"]["growth_acceleration_score"],
+            20.0,
+        )
+        self.assertEqual(
+            at_baseline["payload"]["growth_acceleration_score"],
+            40.0,
+        )
+
+    def test_growth_just_below_four_times_baseline_is_near_full_score(self) -> None:
+        computed = self._compute(
+            stars=1399,
+            baseline_7d=100.0,
+            baseline_sample_count=3,
+        )
+
+        self.assertAlmostEqual(
+            computed["payload"]["growth_acceleration_score"],
+            99.6411,
+            places=4,
+        )
+
+    def test_zero_snapshot_growth_remains_zero_with_zero_baseline(self) -> None:
+        computed = self._compute(
+            stars=1000,
+            baseline_7d=0.0,
+            baseline_sample_count=3,
+        )
         self.assertEqual(computed["payload"]["growth_acceleration_score"], 0.0)
 
     def test_complete_community_pair_scores_growth(self) -> None:
@@ -104,10 +170,10 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         self.assertEqual(payload["daily_star_growth"], 75)
         self.assertEqual(payload["community_engagement_score"], 0.0)
 
-    def test_recomputed_rows_use_v4(self) -> None:
+    def test_recomputed_rows_use_v5(self) -> None:
         computed = self._compute()
-        self.assertEqual(computed["payload"]["score_version"], "daily_hot_v4")
-        self.assertEqual(computed["result"]["score_version"], "daily_hot_v4")
+        self.assertEqual(computed["payload"]["score_version"], "daily_hot_v5")
+        self.assertEqual(computed["result"]["score_version"], "daily_hot_v5")
 
     def test_api_snapshot_payload_marks_community_metrics_complete(self) -> None:
         payload = metrics._snapshot_payload(

@@ -535,7 +535,7 @@ class PostgresGitHubProjectIngestionRepository:
             "maintenance_activity_score": 0.0,
             "community_engagement_score": 0.0,
             "hot_score": 0.0,
-            "score_version": "daily_hot_v4",
+            "score_version": "daily_hot_v5",
         }
         for metric in metrics:
             payload = dict(metric)

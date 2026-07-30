@@ -21,12 +21,18 @@ from backend.app.services.ingestion.source_github import fetch_github_repo_metri
 logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_STARS = 500
-DEFAULT_SCORE_VERSION = "daily_hot_v4"
+DEFAULT_SCORE_VERSION = "daily_hot_v5"
 _FULL_ACCELERATION_CONFIDENCE_SAMPLES = 3
 _SCALE_GROWTH_REFERENCE = math.log1p(4.0)
-_ACCELERATION_REFERENCE = math.log1p(3.0)
 _ABSOLUTE_GROWTH_REFERENCE = math.log1p(1000.0)
 _COMMUNITY_REFERENCE = 0.6 * math.log1p(100.0) + 0.4 * math.log1p(10.0)
+_ACCELERATION_RATIO_ANCHORS = (
+    (0.25, 0.0),
+    (0.5, 20.0),
+    (1.0, 40.0),
+    (2.0, 75.0),
+    (4.0, 100.0),
+)
 
 
 def _utcnow() -> str:
@@ -96,6 +102,29 @@ def _normalize_against_reference(raw: float, reference: float) -> float:
     if raw <= 0 or reference <= 0:
         return 0.0
     return round(min(raw / reference, 1.0) * 100.0, 4)
+
+
+def _growth_acceleration_curve(daily_growth: float, baseline_7d: float) -> float:
+    """Map growth momentum to a continuous 0..100 score in log-ratio space."""
+
+    if daily_growth <= 0:
+        return 0.0
+    ratio = (daily_growth + 1.0) / (max(baseline_7d, 0.0) + 1.0)
+    if ratio <= _ACCELERATION_RATIO_ANCHORS[0][0]:
+        return _ACCELERATION_RATIO_ANCHORS[0][1]
+    if ratio >= _ACCELERATION_RATIO_ANCHORS[-1][0]:
+        return _ACCELERATION_RATIO_ANCHORS[-1][1]
+
+    for (lower_ratio, lower_score), (upper_ratio, upper_score) in zip(
+        _ACCELERATION_RATIO_ANCHORS,
+        _ACCELERATION_RATIO_ANCHORS[1:],
+    ):
+        if ratio <= upper_ratio:
+            position = math.log(ratio / lower_ratio) / math.log(
+                upper_ratio / lower_ratio
+            )
+            return lower_score + position * (upper_score - lower_score)
+    return _ACCELERATION_RATIO_ANCHORS[-1][1]
 
 
 def _maintenance_score(metric_date: str, pushed_at: Any) -> float:
@@ -305,10 +334,9 @@ def compute_github_daily_metrics(
 
         if available:
             scale_raw = math.log1p(daily_growth / math.sqrt(scale_base_stars))
-            acceleration_raw = (
-                math.log1p(max(daily_growth - baseline_7d, 0.0) / (baseline_7d + 1.0))
-                if baseline_sample_count > 0
-                else 0.0
+            acceleration_curve_score = _growth_acceleration_curve(
+                daily_growth,
+                baseline_7d,
             )
             absolute_raw = math.log1p(daily_growth)
             community_raw = (
@@ -318,7 +346,8 @@ def compute_github_daily_metrics(
                 else 0.0
             )
         else:
-            scale_raw = acceleration_raw = absolute_raw = community_raw = 0.0
+            scale_raw = absolute_raw = community_raw = 0.0
+            acceleration_curve_score = 0.0
         staged.append(
             {
                 "repo_id": row.get("repo_id"),
@@ -337,7 +366,7 @@ def compute_github_daily_metrics(
                 "daily_growth_observed_at": growth_observed_at,
                 "maintenance_activity_score": _maintenance_score(metric_date_str, row.get("repo_pushed_at")),
                 "_scale_raw": scale_raw,
-                "_acceleration_raw": acceleration_raw,
+                "_acceleration_curve_score": acceleration_curve_score,
                 "_acceleration_confidence": min(
                     max(baseline_sample_count, 0)
                     / _FULL_ACCELERATION_CONFIDENCE_SAMPLES,
@@ -366,10 +395,7 @@ def compute_github_daily_metrics(
         scale_score = _normalize_against_reference(float(item.pop("_scale_raw")), _SCALE_GROWTH_REFERENCE) if available else 0.0
         acceleration_score = (
             round(
-                _normalize_against_reference(
-                    float(item.pop("_acceleration_raw")),
-                    _ACCELERATION_REFERENCE,
-                )
+                float(item.pop("_acceleration_curve_score"))
                 * float(item.pop("_acceleration_confidence")),
                 4,
             )

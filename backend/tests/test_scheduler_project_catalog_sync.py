@@ -17,7 +17,11 @@ class ProjectCatalogSyncSchedulerTests(unittest.TestCase):
             patch("backend.app.core.config.settings.project_catalog_sync_worker_enabled", True),
             patch.object(scheduler.asyncio, "get_running_loop") as get_loop,
         ):
-            get_loop.return_value.create_task.side_effect = lambda coroutine: coroutine.close()
+            def close_coroutine(coroutine):
+                coroutine.close()
+                return MagicMock()
+
+            get_loop.return_value.create_task.side_effect = close_coroutine
             scheduler.start_scheduler()
 
         job_ids = {

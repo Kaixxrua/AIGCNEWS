@@ -42,7 +42,13 @@ def test_postgres_lifespan_opens_and_closes_selected_pool() -> None:
             patch.object(main.postgres_database, "close") as postgres_close,
             patch.object(main, "create_application_repositories", return_value=MagicMock()),
         ):
-            create_task.side_effect = lambda coroutine: coroutine.close()
+            def close_coroutine(coroutine) -> MagicMock:
+                coroutine.close()
+                task = MagicMock()
+                task.done.return_value = True
+                return task
+
+            create_task.side_effect = close_coroutine
             async with main.lifespan(app):
                 assert app.state.database is main.postgres_database
                 assert app.state.postgres_database is main.postgres_database
