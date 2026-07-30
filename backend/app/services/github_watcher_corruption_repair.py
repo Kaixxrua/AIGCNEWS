@@ -11,6 +11,7 @@ _MINIMUM_SCHEMA_VERSION = 10
 _MAX_BATCH_SIZE = 1000
 _SAMPLE_LIMIT = 20
 _ADVISORY_LOCK_ID = 3_704_219_885_127_739_101
+_LEGACY_CORRUPTION_END_DATE = "2026-07-30"
 
 
 class GitHubWatcherRepairSafetyError(RuntimeError):
@@ -78,15 +79,25 @@ class GitHubWatcherCorruptionRepairService:
             }
             if apply and selected:
                 counts = self._apply_batch(connection, selected)
+            next_cursor = (
+                str(selected[-1]["snapshot_date"]),
+                str(selected[-1]["repo_id"]),
+            ) if selected else cursor
             has_more = self._has_corrupted_snapshots_after(
                 connection,
-                cursor=(
-                    str(selected[-1]["snapshot_date"]),
-                    str(selected[-1]["repo_id"]),
-                )
-                if selected
-                else cursor,
+                cursor=next_cursor,
             )
+            if apply and not has_more:
+                remaining = self._find_corrupted_snapshots(
+                    connection,
+                    batch_size=1,
+                    cursor=None,
+                    for_update=False,
+                )
+                if remaining:
+                    raise GitHubWatcherRepairSafetyError(
+                        "corrupted snapshots remain behind the repair cursor"
+                    )
 
         next_cursor = None
         if selected:
@@ -159,7 +170,7 @@ class GitHubWatcherCorruptionRepairService:
         for_update: bool,
     ) -> list[dict[str, Any]]:
         cursor_sql = ""
-        params: list[Any] = []
+        params: list[Any] = [_LEGACY_CORRUPTION_END_DATE]
         if cursor is not None:
             cursor_sql = " AND (snapshot_date, repo_id) > (%s, %s)"
             params.extend(cursor)
@@ -170,7 +181,8 @@ class GitHubWatcherCorruptionRepairService:
                 "SELECT id,repo_id,snapshot_date,stars,watchers "
                 "FROM github_repo_snapshots "
                 "WHERE community_metrics_complete IS TRUE "
-                "AND watchers=stars AND stars>=500"
+                "AND watchers=stars AND stars>=500 "
+                "AND snapshot_date<=%s"
                 + cursor_sql
                 + " ORDER BY snapshot_date,repo_id LIMIT %s"
                 + lock_sql,
@@ -185,15 +197,16 @@ class GitHubWatcherCorruptionRepairService:
         cursor: tuple[str, str] | None,
     ) -> bool:
         cursor_sql = ""
-        params: tuple[Any, ...] = ()
+        params: tuple[Any, ...] = (_LEGACY_CORRUPTION_END_DATE,)
         if cursor is not None:
             cursor_sql = " AND (snapshot_date, repo_id) > (%s, %s)"
-            params = cursor
+            params = (_LEGACY_CORRUPTION_END_DATE, *cursor)
         with connection.cursor() as db_cursor:
             db_cursor.execute(
                 "SELECT EXISTS(SELECT 1 FROM github_repo_snapshots "
                 "WHERE community_metrics_complete IS TRUE "
-                "AND watchers=stars AND stars>=500"
+                "AND watchers=stars AND stars>=500 "
+                "AND snapshot_date<=%s"
                 + cursor_sql
                 + ") AS has_more",
                 params,
@@ -232,9 +245,18 @@ class GitHubWatcherCorruptionRepairService:
             snapshots_quarantined = cursor.rowcount
 
             cursor.execute(
-                "UPDATE github_repo_candidates SET watchers=0 "
-                "WHERE repo_id=ANY(%s) AND watchers=stars AND stars>=500",
-                (repo_ids,),
+                "WITH latest_complete AS ("
+                "SELECT DISTINCT ON (repo_id) repo_id,watchers "
+                "FROM github_repo_snapshots "
+                "WHERE repo_id=ANY(%s) AND community_metrics_complete IS TRUE "
+                "ORDER BY repo_id,snapshot_date DESC,captured_at DESC) "
+                "UPDATE github_repo_candidates AS candidate SET "
+                "watchers=COALESCE(latest_complete.watchers,0) "
+                "FROM (SELECT UNNEST(%s::text[]) repo_id) affected "
+                "LEFT JOIN latest_complete USING (repo_id) "
+                "WHERE candidate.repo_id=affected.repo_id "
+                "AND candidate.watchers<>COALESCE(latest_complete.watchers,0)",
+                (repo_ids, repo_ids),
             )
             candidates_cleared = cursor.rowcount
 

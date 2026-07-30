@@ -131,7 +131,8 @@ def test_apply_batch_quarantines_snapshots_and_rebuilds_only_community_contribut
 
     calls = cursor.execute.call_args_list
     assert "community_metrics_complete=FALSE" in calls[0].args[0]
-    assert "UPDATE github_repo_candidates SET watchers=0" in calls[1].args[0]
+    assert "WITH latest_complete AS" in calls[1].args[0]
+    assert "COALESCE(latest_complete.watchers,0)" in calls[1].args[0]
     assert "SET watchers=0" in calls[2].args[0]
     rebuild_sql = calls[3].args[0]
     assert "daily_fork_growth=0" in rebuild_sql
@@ -149,6 +150,36 @@ def test_apply_batch_quarantines_snapshots_and_rebuilds_only_community_contribut
         "daily_watchers_cleared": 1,
         "daily_metrics_rebuilt": 1,
     }
+
+
+def test_apply_fails_when_corruption_reappears_behind_cursor() -> None:
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = {"acquired": True}
+    service = _service(connection)
+    stale = {
+        "id": 1,
+        "repo_id": "acme/stale",
+        "snapshot_date": "2026-07-20",
+        "stars": 700,
+        "watchers": 700,
+    }
+    with (
+        patch.object(service, "_inspect_target", return_value=_target()),
+        patch.object(service, "_find_corrupted_snapshots", side_effect=[[], [stale]]),
+        patch.object(service, "_has_corrupted_snapshots_after", return_value=False),
+    ):
+        with pytest.raises(
+            GitHubWatcherRepairSafetyError,
+            match="behind the repair cursor",
+        ):
+            service.repair(
+                target_database="catalog_test",
+                target_schema="public",
+                after_snapshot_date="2026-07-28",
+                after_repo_id="acme/repo",
+                apply=True,
+            )
 
 
 def test_batch_size_and_cursor_are_bounded() -> None:
