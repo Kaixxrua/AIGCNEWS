@@ -69,9 +69,6 @@ class GitHubMetricDateTests(unittest.TestCase):
 
 
 class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self) -> None:
-        scheduler._github_job_lock = None
-
     def test_refresh_status_decision_uses_coverage_and_freshness(self) -> None:
         now = datetime.now(timezone.utc)
         fresh = {
@@ -252,6 +249,7 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
             entered -= 1
             return {}
 
+        lock = asyncio.Lock()
         with (
             patch(
                 "backend.app.services.ingestion.github_project_metrics_service.current_github_metric_date",
@@ -264,8 +262,12 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             await asyncio.gather(
-                scheduler._run_github_project_metrics_refresh_job(),
-                scheduler._run_github_project_metrics_refresh_job(),
+                scheduler._run_github_project_metrics_refresh_job(
+                    github_lock=lock,
+                ),
+                scheduler._run_github_project_metrics_refresh_job(
+                    github_lock=lock,
+                ),
             )
 
         self.assertEqual(maximum, 1)

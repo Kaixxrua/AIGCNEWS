@@ -35,6 +35,7 @@ from backend.app.repositories.task_repository import IngestionTaskAdminRepositor
 from backend.app.services.github_project_recommendation_admin import (
     GitHubProjectRecommendationAdminService,
 )
+from backend.app.services.scheduler_admin import SchedulerAdminService
 
 
 class OperationsRouteTests(unittest.TestCase):
@@ -484,8 +485,9 @@ class OperationsRouteTests(unittest.TestCase):
         paused_job.trigger = "interval[1:00:00]"
         scheduler.get_jobs.return_value = [daily_job, paused_job]
 
-        with patch("backend.app.core.scheduler.get_scheduler", return_value=scheduler):
-            response = self._scheduler_client().get("/api/ops/scheduler/status")
+        response = self._scheduler_client(scheduler=scheduler).get(
+            "/api/ops/scheduler/status"
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -515,11 +517,10 @@ class OperationsRouteTests(unittest.TestCase):
         scheduler = MagicMock()
         scheduler.get_job.return_value = None
 
-        with patch("backend.app.core.scheduler.get_scheduler", return_value=scheduler):
-            response = self._scheduler_client().post(
-                "/api/ops/scheduler/trigger",
-                params={"job_id": "missing"},
-            )
+        response = self._scheduler_client(scheduler=scheduler).post(
+            "/api/ops/scheduler/trigger",
+            params={"job_id": "missing"},
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -534,11 +535,10 @@ class OperationsRouteTests(unittest.TestCase):
         job = MagicMock()
         scheduler.get_job.return_value = job
 
-        with patch("backend.app.core.scheduler.get_scheduler", return_value=scheduler):
-            response = self._scheduler_client().post(
-                "/api/ops/scheduler/trigger",
-                params={"job_id": "daily"},
-            )
+        response = self._scheduler_client(scheduler=scheduler).post(
+            "/api/ops/scheduler/trigger",
+            params={"job_id": "daily"},
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -608,14 +608,16 @@ class OperationsRouteTests(unittest.TestCase):
     def test_scheduler_routes_require_admin_before_scheduler_access(self) -> None:
         app = FastAPI()
         app.include_router(routes_ops.router, prefix="/api")
+        service = MagicMock()
+        app.dependency_overrides[get_scheduler_admin_service] = lambda: service
 
-        with patch("backend.app.core.scheduler.get_scheduler") as get_scheduler:
-            status_response = TestClient(app).get("/api/ops/scheduler/status")
-            trigger_response = TestClient(app).post("/api/ops/scheduler/trigger")
+        status_response = TestClient(app).get("/api/ops/scheduler/status")
+        trigger_response = TestClient(app).post("/api/ops/scheduler/trigger")
 
         self.assertIn(status_response.status_code, (401, 403))
         self.assertIn(trigger_response.status_code, (401, 403))
-        get_scheduler.assert_not_called()
+        service.status.assert_not_called()
+        service.trigger.assert_not_called()
 
     @staticmethod
     def _diagnostics_client(service: MagicMock) -> TestClient:
@@ -626,10 +628,18 @@ class OperationsRouteTests(unittest.TestCase):
         return TestClient(app)
 
     @staticmethod
-    def _scheduler_client(*, raise_server_exceptions: bool = True) -> TestClient:
+    def _scheduler_client(
+        *,
+        scheduler: MagicMock | None = None,
+        raise_server_exceptions: bool = True,
+    ) -> TestClient:
         app = FastAPI()
         app.include_router(routes_ops.router, prefix="/api")
         app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        if scheduler is not None:
+            app.dependency_overrides[get_scheduler_admin_service] = lambda: (
+                SchedulerAdminService(scheduler)
+            )
         return TestClient(app, raise_server_exceptions=raise_server_exceptions)
 
     @staticmethod

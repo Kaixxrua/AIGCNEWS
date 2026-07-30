@@ -190,8 +190,8 @@ def main(argv: list[str] | None = None) -> int:
         ) + "\n\n"
         yield "data: [DONE]\n\n"
 
-    application.start_scheduler = lambda: None
-    application.stop_scheduler = lambda: None
+    original_scheduler_enabled = application.settings.scheduler_enabled
+    application.settings.scheduler_enabled = False
     original_briefing_stream = routes_report._briefing_stream
     routes_report._briefing_stream = deterministic_briefing_stream
     application.app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin", "id": 0}
@@ -206,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         application.app.dependency_overrides.pop(RequireAdmin, None)
         routes_report._briefing_stream = original_briefing_stream
+        application.settings.scheduler_enabled = original_scheduler_enabled
 
     failures = [case["case_id"] for case in cases if case["status_code"] != 200]
     mismatch_count = len(failures)

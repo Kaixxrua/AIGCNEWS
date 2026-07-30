@@ -71,13 +71,13 @@ def test_postgres_open_failure_aborts_startup() -> None:
             patch.object(main.asyncio, "to_thread", side_effect=invoke),
             patch.object(main.postgres_database, "open", side_effect=error),
             patch.object(main.postgres_database, "close") as postgres_close,
-            patch.object(main, "start_scheduler") as start_scheduler,
+            patch.object(main, "create_scheduler_runtime") as scheduler_factory,
         ):
             with pytest.raises(RuntimeError) as caught:
                 async with main.lifespan(app):
                     pass
             assert caught.value is error
-            start_scheduler.assert_not_called()
+            scheduler_factory.assert_not_called()
             postgres_close.assert_not_called()
 
     asyncio.run(run())

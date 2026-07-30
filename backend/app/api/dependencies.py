@@ -184,10 +184,11 @@ def get_rag_chat_service(request: Request) -> ChatService:
     return provider.get()
 
 
-def get_scheduler_admin_service() -> SchedulerAdminService:
-    from backend.app.core.scheduler import get_scheduler
-
-    return SchedulerAdminService(get_scheduler())
+def get_scheduler_admin_service(request: Request) -> SchedulerAdminService:
+    runtime = getattr(request.app.state, "scheduler_runtime", None)
+    if runtime is None:
+        raise RuntimeError("Application scheduler is not configured")
+    return SchedulerAdminService(runtime.scheduler)
 
 
 def get_ops_diagnostics_service() -> OpsDiagnosticsService:

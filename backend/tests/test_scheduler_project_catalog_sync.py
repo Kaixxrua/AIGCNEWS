@@ -12,17 +12,17 @@ class ProjectCatalogSyncSchedulerTests(unittest.TestCase):
         fake_scheduler.running = False
         fake_scheduler.get_jobs.return_value = []
 
-        with (
-            patch.object(scheduler, "get_scheduler", return_value=fake_scheduler),
-            patch("backend.app.core.config.settings.project_catalog_sync_worker_enabled", True),
-            patch.object(scheduler.asyncio, "get_running_loop") as get_loop,
-        ):
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=fake_scheduler,
+        )
+        with patch.object(scheduler.asyncio, "get_running_loop") as get_loop:
             def close_coroutine(coroutine):
                 coroutine.close()
                 return MagicMock()
 
             get_loop.return_value.create_task.side_effect = close_coroutine
-            scheduler.start_scheduler()
+            runtime.start()
 
         job_ids = {
             item.kwargs.get("id")

@@ -86,17 +86,22 @@ class SnapshotDateFlowTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_reconciliation_skips_when_date_lookup_fails(self) -> None:
+        snapshots = MagicMock()
         with patch(
             "backend.app.core.scheduler.asyncio.to_thread",
             new=AsyncMock(side_effect=RuntimeError("database unavailable")),
         ) as to_thread:
-            await scheduler._reconcile_recent_arxiv_daily_snapshots()
+            await scheduler._reconcile_recent_arxiv_daily_snapshots(snapshots)
 
-        to_thread.assert_awaited_once_with(scheduler._missing_recent_arxiv_daily_dates)
+        to_thread.assert_awaited_once_with(
+            scheduler._missing_recent_arxiv_daily_dates,
+            snapshots,
+        )
 
     async def test_reconciliation_continues_after_one_date_fails(self) -> None:
         pipeline = types.ModuleType("backend.app.services.ingestion.pipeline")
         pipeline.run_single_source_pipeline = MagicMock()
+        snapshots = MagicMock()
         with (
             patch(
                 "backend.app.core.scheduler._missing_recent_arxiv_daily_dates",
@@ -111,7 +116,7 @@ class SnapshotDateFlowTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(side_effect=[["2026-07-11", "2026-07-12"], RuntimeError("crawl failed"), {}]),
             ) as to_thread,
         ):
-            await scheduler._reconcile_recent_arxiv_daily_snapshots()
+            await scheduler._reconcile_recent_arxiv_daily_snapshots(snapshots)
 
         self.assertEqual(to_thread.await_count, 3)
         self.assertEqual(to_thread.await_args_list[1].args[1], "arxiv")

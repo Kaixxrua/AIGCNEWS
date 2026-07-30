@@ -26,17 +26,18 @@ class ProjectSemanticWarmupSchedulerTests(unittest.IsolatedAsyncioTestCase):
         fake_scheduler.running = False
         fake_scheduler.get_jobs.return_value = []
 
-        with (
-            patch.object(scheduler, "get_scheduler", return_value=fake_scheduler),
-            patch("backend.app.core.config.settings.project_semantic_search_enabled", True),
-            patch.object(scheduler.asyncio, "get_running_loop") as get_loop,
-        ):
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=fake_scheduler,
+            semantic_search_enabled=True,
+        )
+        with patch.object(scheduler.asyncio, "get_running_loop") as get_loop:
             def close_coroutine(coroutine):
                 coroutine.close()
                 return MagicMock()
 
             get_loop.return_value.create_task.side_effect = close_coroutine
-            scheduler.start_scheduler()
+            runtime.start()
 
         call = next(
             item

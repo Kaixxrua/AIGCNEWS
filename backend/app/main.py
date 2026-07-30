@@ -35,7 +35,7 @@ from backend.app.repositories.application_repository_context import (
 from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
-from backend.app.core.scheduler import start_scheduler, stop_scheduler
+from backend.app.core.scheduler import create_scheduler_runtime
 from backend.app.services.rag.composition import RagChatServiceProvider
 
 
@@ -155,13 +155,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         print(f"[Startup] Redis cache init failed (non-fatal): {exc}")
 
     scheduler_enabled = bool(getattr(settings, "scheduler_enabled", True))
+    scheduler_runtime = create_scheduler_runtime(
+        app.state.application_repositories,
+        enabled=scheduler_enabled,
+    )
+    app.state.scheduler_runtime = scheduler_runtime
     if scheduler_enabled:
-        start_scheduler()
+        scheduler_runtime.start()
     try:
         yield
     finally:
-        if scheduler_enabled:
-            stop_scheduler()
+        scheduler_runtime.stop()
         if not reranker_warmup_task.done():
             reranker_warmup_task.cancel()
             try:

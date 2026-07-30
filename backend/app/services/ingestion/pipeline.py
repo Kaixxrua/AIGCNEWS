@@ -413,6 +413,8 @@ def run_single_source_pipeline(
     top_n: int = _TOP_N_PER_SOURCE,
     target_date: Optional[str] = None,
     periods: Optional[List[str]] = None,
+    *,
+    dependencies: IngestionDependencies | None = None,
 ) -> Dict[str, int]:
     """单源采集入口（Phase 4 调度器使用）。
 
@@ -429,6 +431,7 @@ def run_single_source_pipeline(
         limit=limit,
         top_n=top_n,
         target_date=target_date,
+        dependencies=dependencies,
     )
     return asyncio.run(orchestrator.run_single_source(source_name, periods=periods))
 

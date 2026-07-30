@@ -155,6 +155,34 @@ class DatabaseDependencyTests(unittest.TestCase):
             website_taxonomy=taxonomy,
         )
 
+    def test_scheduler_admin_service_uses_application_owned_runtime(self) -> None:
+        scheduler_control = MagicMock()
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        app.state.scheduler_runtime = MagicMock(scheduler=scheduler_control)
+        request.app = app
+
+        with patch.object(
+            dependencies,
+            "SchedulerAdminService",
+            return_value=MagicMock(),
+        ) as service_type:
+            result = dependencies.get_scheduler_admin_service(request)
+
+        self.assertIs(result, service_type.return_value)
+        service_type.assert_called_once_with(scheduler_control)
+
+    def test_scheduler_admin_service_requires_lifespan_setup(self) -> None:
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        request.app = app
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Application scheduler is not configured",
+        ):
+            dependencies.get_scheduler_admin_service(request)
+
     def test_conversation_service_wraps_injected_repository(self) -> None:
         repository = MagicMock()
 

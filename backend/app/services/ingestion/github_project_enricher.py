@@ -18,6 +18,8 @@ from backend.app.repositories.application_repository_context import (
 )
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
+    GitHubProjectIngestionRepository,
+    GitHubProjectSemanticSourceRepository,
 )
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingReader,
@@ -345,6 +347,9 @@ def run_github_project_daily_pipeline(
     enrich_limit: int = DEFAULT_BATCH_LIMIT,
     min_stars: int = DEFAULT_MIN_STARS,
     dry_run: bool = False,
+    ingestion: GitHubProjectIngestionRepository | None = None,
+    enrichment: GitHubProjectEnrichmentRepository | None = None,
+    semantic_sources: GitHubProjectSemanticSourceRepository | None = None,
 ) -> Dict[str, Any]:
     """Daily GitHub library pipeline: ingest/update metrics, score, then enrich new projects only.
 
@@ -361,10 +366,12 @@ def run_github_project_daily_pipeline(
         refresh_result = refresh_github_hot_candidates(
             limit=refresh_limit,
             observed_date=metric_date,
+            db=ingestion,
         )
         metric_result = refresh_and_compute_github_project_metrics(
             min_stars=min_stars,
             metric_date=metric_date,
+            db=ingestion,
         )
 
     enrich_result = enrich_github_projects(
@@ -375,6 +382,7 @@ def run_github_project_daily_pipeline(
         retry_failed=True,
         refresh_changed=False,
         concurrency=1,
+        db=enrichment,
     )
     semantic_result: Dict[str, Any] = {"status": "disabled"}
     if settings.project_semantic_indexing_enabled:
@@ -386,6 +394,7 @@ def run_github_project_daily_pipeline(
             semantic_result = sync_github_project_semantic_index(
                 min_stars=min_stars,
                 dry_run=dry_run,
+                db=semantic_sources,
             )
         except Exception as exc:
             logger.warning("GitHub project semantic sync failed without aborting daily pipeline: %s", exc)

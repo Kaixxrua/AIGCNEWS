@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -62,30 +61,22 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         catalog_sync_enabled: bool = False,
         poll_seconds: int = 7,
     ) -> tuple[_RecordingScheduler, list[str]]:
+        del catalog_sync_enabled, poll_seconds
         events: list[str] = []
         fake_scheduler = _RecordingScheduler(events)
         loop = _RecordingLoop(events)
-        with (
-            patch.object(scheduler, "get_scheduler", return_value=fake_scheduler),
-            patch.object(scheduler.asyncio, "get_running_loop", return_value=loop),
-            patch(
-                "backend.app.core.config.settings.project_semantic_search_enabled",
-                semantic_enabled,
-            ),
-            patch(
-                "backend.app.core.config.settings.project_catalog_sync_worker_enabled",
-                catalog_sync_enabled,
-            ),
-            patch(
-                "backend.app.core.config.settings.project_catalog_sync_poll_seconds",
-                poll_seconds,
-            ),
-            patch(
-                "backend.app.core.config.settings.scheduler_timezone",
-                "Asia/Shanghai",
-            ),
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=fake_scheduler,  # type: ignore[arg-type]
+            semantic_search_enabled=semantic_enabled,
+            timezone_name="Asia/Shanghai",
+        )
+        with patch.object(
+            scheduler.asyncio,
+            "get_running_loop",
+            return_value=loop,
         ):
-            scheduler.start_scheduler()
+            runtime.start()
         return fake_scheduler, events
 
     def test_registers_base_jobs_in_order_with_frozen_triggers_and_options(self) -> None:
@@ -197,16 +188,70 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             ),
         ):
             fake_scheduler, _ = self._start_scheduler()
+            callbacks = {
+                kwargs["id"]: callback
+                for callback, kwargs in fake_scheduler.add_job_calls
+            }
+            asyncio.run(callbacks["github_project_daily_pipeline"]())  # type: ignore[operator]
+            asyncio.run(callbacks["github_project_metrics_refresh"]())  # type: ignore[operator]
+            asyncio.run(callbacks["arxiv_papers"]())  # type: ignore[operator]
+        daily_pipeline.assert_awaited_once()
+        metrics_refresh.assert_awaited_once()
+        single_source.assert_awaited_once()
 
-        callbacks = {
-            kwargs["id"]: callback
-            for callback, kwargs in fake_scheduler.add_job_calls
-        }
-        self.assertIs(callbacks["github_project_daily_pipeline"], daily_pipeline)
-        self.assertIs(callbacks["github_project_metrics_refresh"], metrics_refresh)
+    def test_runtime_callbacks_forward_owned_repositories_and_lock(self) -> None:
+        repositories = MagicMock()
+        runtime = scheduler.ApplicationSchedulerRuntime(repositories)
+        single_source = AsyncMock()
+        daily_pipeline = AsyncMock()
+        metrics_refresh = AsyncMock()
+        daily_briefing = AsyncMock()
+        conversation_cleanup = AsyncMock()
 
-        asyncio.run(callbacks["arxiv_papers"]())  # type: ignore[operator]
-        single_source.assert_awaited_once_with("arxiv")
+        with (
+            patch.object(scheduler, "_run_single_source_job", new=single_source),
+            patch.object(
+                scheduler,
+                "_run_github_project_daily_pipeline_job",
+                new=daily_pipeline,
+            ),
+            patch.object(
+                scheduler,
+                "_run_github_project_metrics_refresh_job",
+                new=metrics_refresh,
+            ),
+            patch.object(
+                scheduler,
+                "_run_daily_briefing_job",
+                new=daily_briefing,
+            ),
+            patch.object(
+                scheduler,
+                "_run_conversation_cleanup_job",
+                new=conversation_cleanup,
+            ),
+        ):
+            asyncio.run(runtime._run_single_source_job("github"))
+            asyncio.run(runtime._run_github_project_daily_pipeline_job())
+            asyncio.run(runtime._run_github_project_metrics_refresh_job())
+            asyncio.run(runtime._run_daily_briefing_job())
+            asyncio.run(runtime._run_conversation_cleanup_job())
+
+        single_source.assert_awaited_once_with(
+            "github",
+            repositories=repositories,
+            github_lock=runtime._github_job_lock,
+        )
+        daily_pipeline.assert_awaited_once_with(
+            repositories=repositories,
+            github_lock=runtime._github_job_lock,
+        )
+        metrics_refresh.assert_awaited_once_with(
+            repository=repositories.github_ingestion,
+            github_lock=runtime._github_job_lock,
+        )
+        daily_briefing.assert_awaited_once_with(repositories)
+        conversation_cleanup.assert_awaited_once_with(repositories.conversations)
 
     def test_optional_jobs_freeze_intervals_options_and_startup_order(self) -> None:
         fake_scheduler, events = self._start_scheduler(
@@ -247,11 +292,12 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
     def test_running_scheduler_skips_registration_and_startup_work(self) -> None:
         events: list[str] = []
         fake_scheduler = _RecordingScheduler(events, running=True)
-        with (
-            patch.object(scheduler, "get_scheduler", return_value=fake_scheduler),
-            patch.object(scheduler.asyncio, "get_running_loop") as get_loop,
-        ):
-            scheduler.start_scheduler()
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=fake_scheduler,  # type: ignore[arg-type]
+        )
+        with patch.object(scheduler.asyncio, "get_running_loop") as get_loop:
+            runtime.start()
 
         self.assertEqual(events, [])
         self.assertEqual(fake_scheduler.add_job_calls, [])
@@ -261,8 +307,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
 class SchedulerLifecycleAndStatusContractTests(unittest.TestCase):
     def test_status_is_empty_when_stopped_and_projects_running_jobs_in_order(self) -> None:
         stopped = SimpleNamespace(running=False)
-        with patch.object(scheduler, "get_scheduler", return_value=stopped):
-            self.assertEqual(scheduler.get_scheduler_status(), [])
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=stopped,  # type: ignore[arg-type]
+        )
+        self.assertEqual(runtime.status(), [])
 
         first_time = datetime(2026, 7, 27, 1, 2, tzinfo=timezone.utc)
         jobs = [
@@ -284,8 +333,11 @@ class SchedulerLifecycleAndStatusContractTests(unittest.TestCase):
             ),
         ]
         running = SimpleNamespace(running=True, get_jobs=MagicMock(return_value=jobs))
-        with patch.object(scheduler, "get_scheduler", return_value=running):
-            status = scheduler.get_scheduler_status()
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=running,  # type: ignore[arg-type]
+        )
+        status = runtime.status()
 
         self.assertEqual(
             status,
@@ -312,55 +364,39 @@ class SchedulerLifecycleAndStatusContractTests(unittest.TestCase):
     def test_stop_cancels_unfinished_startup_reconciliation_tasks(self) -> None:
         events: list[str] = []
         stopped = _RecordingScheduler(events, running=False)
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=stopped,  # type: ignore[arg-type]
+        )
         pending = MagicMock()
         pending.done.return_value = False
         completed = MagicMock()
         completed.done.return_value = True
-        scheduler._startup_reconciliation_tasks.update({pending, completed})
+        runtime._startup_reconciliation_tasks.update({pending, completed})
 
-        with patch.object(scheduler, "get_scheduler", return_value=stopped):
-            scheduler.stop_scheduler()
+        runtime.stop()
 
         pending.cancel.assert_called_once_with()
         completed.cancel.assert_not_called()
-        self.assertEqual(scheduler._startup_reconciliation_tasks, set())
+        self.assertEqual(runtime._startup_reconciliation_tasks, set())
 
     def test_stop_only_shuts_down_running_scheduler_without_waiting(self) -> None:
         events: list[str] = []
         running = _RecordingScheduler(events, running=True)
-        with patch.object(scheduler, "get_scheduler", return_value=running):
-            scheduler.stop_scheduler()
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=running,  # type: ignore[arg-type]
+        )
+        runtime.stop()
         self.assertEqual(events, ["shutdown:False"])
 
         stopped = _RecordingScheduler(events, running=False)
-        with patch.object(scheduler, "get_scheduler", return_value=stopped):
-            scheduler.stop_scheduler()
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=stopped,  # type: ignore[arg-type]
+        )
+        runtime.stop()
         self.assertEqual(events, ["shutdown:False"])
-
-    def test_lifespan_starts_before_yield_and_stops_after_exit(self) -> None:
-        events: list[str] = []
-
-        @asynccontextmanager
-        async def exercise_lifespan():
-            async with scheduler.lifespan_scheduler(object()):
-                events.append("inside")
-                yield
-
-        async def run() -> None:
-            async with exercise_lifespan():
-                self.assertEqual(events, ["start", "inside"])
-
-        with (
-            patch.object(scheduler, "start_scheduler", side_effect=lambda: events.append("start")) as start,
-            patch.object(scheduler, "stop_scheduler", side_effect=lambda: events.append("stop")) as stop,
-        ):
-            import asyncio
-
-            asyncio.run(run())
-
-        self.assertEqual(events, ["start", "inside", "stop"])
-        self.assertEqual(start.call_args_list, [call()])
-        self.assertEqual(stop.call_args_list, [call()])
 
 
 if __name__ == "__main__":
