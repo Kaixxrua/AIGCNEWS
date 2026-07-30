@@ -97,87 +97,136 @@ async def _warmup_project_semantic_search() -> None:
         print(f"[Startup] Project semantic search warmup failed (non-fatal): {exc}")
 
 
+async def _cancel_background_task(
+    task: asyncio.Task[object] | None,
+    *,
+    name: str,
+) -> None:
+    if task is None or task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:
+        print(f"[Shutdown] {name} task close failed (non-fatal): {exc}")
+
+
+async def _close_redis_client(redis_client: Redis) -> None:
+    close_method = getattr(redis_client, "aclose", None)
+    if close_method is not None:
+        await close_method()
+    else:
+        await redis_client.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """FastAPI lifespan：启动时预热模型、初始化 Redis Cache、开启调度器；关闭时优雅释放资源。"""
+    """Own application resources from startup through failure-isolated shutdown."""
+    postgres_opened = False
+    repositories_configured = False
+    rag_provider: RagChatServiceProvider | None = None
+    reranker_warmup_task: asyncio.Task[object] | None = None
+    semantic_warmup_task: asyncio.Task[object] | None = None
+    redis_client: Redis | None = None
+    scheduler_runtime = None
+
     app.state.database = postgres_database
     app.state.postgres_database = postgres_database
     app.state.application_database_backend = "postgres"
-    await asyncio.to_thread(postgres_database.open)
-    postgres_opened = True
-    app.state.application_repositories = create_application_repositories(
-        postgres=postgres_database,
-    )
-    configure_application_repositories(app.state.application_repositories)
-    app.state.rag_chat_service_provider = RagChatServiceProvider(
-        app.state.application_repositories
-    )
+    app.state.redis = None
 
-    # 在后台异步预热模型，不阻塞服务启动
-    reranker_warmup_task = asyncio.create_task(_warmup_reranker())
-    app.state.reranker_warmup_task = reranker_warmup_task
-    semantic_warmup_task = None
-    if settings.project_semantic_search_enabled:
-        semantic_warmup_task = asyncio.create_task(_warmup_project_semantic_search())
-        app.state.semantic_warmup_task = semantic_warmup_task
-
-    redis_client: Redis | None = None
     try:
-        redis_client = Redis(
-            host=settings.redis_host,
-            port=settings.redis_port,
-            db=settings.redis_db,
-            password=settings.redis_password or None,
-            decode_responses=False,
+        await asyncio.to_thread(postgres_database.open)
+        postgres_opened = True
+        app.state.application_repositories = create_application_repositories(
+            postgres=postgres_database,
         )
-        await redis_client.ping()
+        configure_application_repositories(app.state.application_repositories)
+        repositories_configured = True
+        rag_provider = RagChatServiceProvider(app.state.application_repositories)
+        app.state.rag_chat_service_provider = rag_provider
 
-        # 开发环境：热重载时自动清除 API 缓存（aigc-cache:* 前缀），实现"保存即刷新"零感知体验
-        # 注意：不能用 flushdb()，会清除 SMS 验证码等业务数据
-        if settings.env.lower() in ("development", "dev"):
-            cache_keys = await redis_client.keys("aigc-cache:*")
-            if cache_keys:
-                await redis_client.delete(*cache_keys)
-                print(
-                    f"[Startup][DEV] Cleared {len(cache_keys)} cache keys — reload complete."
-                )
-            else:
-                print("[Startup][DEV] No cache keys to clear.")
+        # 在后台异步预热模型，不阻塞服务启动
+        reranker_warmup_task = asyncio.create_task(_warmup_reranker())
+        app.state.reranker_warmup_task = reranker_warmup_task
+        if settings.project_semantic_search_enabled:
+            semantic_warmup_task = asyncio.create_task(
+                _warmup_project_semantic_search()
+            )
+            app.state.semantic_warmup_task = semantic_warmup_task
 
-        FastAPICache.init(
-            RedisBackend(redis_client),
-            prefix="aigc-cache:",
+        try:
+            redis_client = Redis(
+                host=settings.redis_host,
+                port=settings.redis_port,
+                db=settings.redis_db,
+                password=settings.redis_password or None,
+                decode_responses=False,
+            )
+            await redis_client.ping()
+
+            # 开发环境：热重载时自动清除 API 缓存（aigc-cache:* 前缀），实现"保存即刷新"零感知体验
+            # 注意：不能用 flushdb()，会清除 SMS 验证码等业务数据
+            if settings.env.lower() in ("development", "dev"):
+                cache_keys = await redis_client.keys("aigc-cache:*")
+                if cache_keys:
+                    await redis_client.delete(*cache_keys)
+                    print(
+                        f"[Startup][DEV] Cleared {len(cache_keys)} cache keys — reload complete."
+                    )
+                else:
+                    print("[Startup][DEV] No cache keys to clear.")
+
+            FastAPICache.reset()
+            FastAPICache.init(
+                RedisBackend(redis_client),
+                prefix="aigc-cache:",
+            )
+            app.state.redis = redis_client
+            print("[Startup] Redis cache initialized.")
+        except Exception as exc:
+            app.state.redis = None
+            FastAPICache.reset()
+            if redis_client is not None:
+                try:
+                    await _close_redis_client(redis_client)
+                except Exception as close_exc:
+                    print(
+                        "[Startup] Redis close after init failure failed "
+                        f"(non-fatal): {close_exc}"
+                    )
+                else:
+                    redis_client = None
+            print(f"[Startup] Redis cache init failed (non-fatal): {exc}")
+
+        scheduler_enabled = bool(getattr(settings, "scheduler_enabled", True))
+        scheduler_runtime = create_scheduler_runtime(
+            app.state.application_repositories,
+            enabled=scheduler_enabled,
         )
-        app.state.redis = redis_client
-        print("[Startup] Redis cache initialized.")
-    except Exception as exc:
-        app.state.redis = None
-        print(f"[Startup] Redis cache init failed (non-fatal): {exc}")
+        app.state.scheduler_runtime = scheduler_runtime
+        if scheduler_enabled:
+            scheduler_runtime.start()
 
-    scheduler_enabled = bool(getattr(settings, "scheduler_enabled", True))
-    scheduler_runtime = create_scheduler_runtime(
-        app.state.application_repositories,
-        enabled=scheduler_enabled,
-    )
-    app.state.scheduler_runtime = scheduler_runtime
-    if scheduler_enabled:
-        scheduler_runtime.start()
-    try:
         yield
     finally:
-        scheduler_runtime.stop()
-        if not reranker_warmup_task.done():
-            reranker_warmup_task.cancel()
+        if scheduler_runtime is not None:
             try:
-                await reranker_warmup_task
-            except asyncio.CancelledError:
-                pass
-        if semantic_warmup_task is not None and not semantic_warmup_task.done():
-            semantic_warmup_task.cancel()
-            try:
-                await semantic_warmup_task
-            except asyncio.CancelledError:
-                pass
+                scheduler_runtime.stop()
+            except Exception as exc:
+                print(f"[Shutdown] Scheduler close failed (non-fatal): {exc}")
+
+        await _cancel_background_task(
+            semantic_warmup_task,
+            name="Project semantic search warmup",
+        )
+        await _cancel_background_task(
+            reranker_warmup_task,
+            name="Cross-Encoder warmup",
+        )
+
         try:
             from backend.app.services.project_semantic_search import (
                 close_project_semantic_search,
@@ -192,38 +241,51 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await close_project_reranker()
         except Exception as exc:
             print(f"[Shutdown] Project reranker close failed (non-fatal): {exc}")
-        redis_in_app = getattr(app.state, "redis", None)
-        if redis_in_app is not None:
+
+        FastAPICache.reset()
+        if redis_client is not None:
             try:
-                close_method = getattr(redis_in_app, "aclose", None)
-                if close_method is not None:
-                    await close_method()
-                else:
-                    await redis_in_app.close()
+                await _close_redis_client(redis_client)
                 print("[Shutdown] Redis cache connection closed.")
             except Exception as exc:
                 print(f"[Shutdown] Redis close failed (non-fatal): {exc}")
-        from backend.app.services.project_search_shadow import (
-            stop_project_search_shadow,
-        )
+            finally:
+                app.state.redis = None
 
-        await asyncio.to_thread(
-            stop_project_search_shadow,
-            float(
-                getattr(
-                    settings,
-                    "project_search_shadow_shutdown_timeout_seconds",
-                    5.0,
-                )
-            ),
-        )
-        rag_provider = getattr(app.state, "rag_chat_service_provider", None)
+        try:
+            from backend.app.services.project_search_shadow import (
+                stop_project_search_shadow,
+            )
+
+            await asyncio.to_thread(
+                stop_project_search_shadow,
+                float(
+                    getattr(
+                        settings,
+                        "project_search_shadow_shutdown_timeout_seconds",
+                        5.0,
+                    )
+                ),
+            )
+        except Exception as exc:
+            print(f"[Shutdown] Project search shadow close failed (non-fatal): {exc}")
+
         if rag_provider is not None:
-            rag_provider.close()
-        configure_application_repositories(None)
+            try:
+                rag_provider.close()
+            except Exception as exc:
+                print(f"[Shutdown] RAG provider close failed (non-fatal): {exc}")
+        if repositories_configured:
+            try:
+                configure_application_repositories(None)
+            except Exception as exc:
+                print(f"[Shutdown] Repository context close failed (non-fatal): {exc}")
         if postgres_opened:
-            postgres_database.close()
-            print("[Shutdown] PostgreSQL connection pool closed.")
+            try:
+                postgres_database.close()
+                print("[Shutdown] PostgreSQL connection pool closed.")
+            except Exception as exc:
+                print(f"[Shutdown] PostgreSQL close failed (non-fatal): {exc}")
 
 
 app = FastAPI(

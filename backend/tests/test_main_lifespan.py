@@ -184,6 +184,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         database = MagicMock()
         redis_client = MagicMock()
         redis_client.ping = AsyncMock(side_effect=RuntimeError("redis unavailable"))
+        redis_client.aclose = AsyncMock()
 
         warmup_task = MagicMock()
         warmup_task.done.return_value = True
@@ -197,12 +198,147 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             patch.object(main, "postgres_database", database),
             patch.object(main, "create_application_repositories", return_value=MagicMock()),
             patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main.FastAPICache, "reset") as cache_reset,
             patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
         ):
             async with main.lifespan(app):
                 self.assertIsNone(app.state.redis)
 
+            redis_client.aclose.assert_awaited_once_with()
+            self.assertGreaterEqual(cache_reset.call_count, 2)
             database.close.assert_called_once_with()
+
+    async def test_retries_redis_close_after_initial_cleanup_fails(self) -> None:
+        app = FastAPI()
+        database = MagicMock()
+        redis_client = MagicMock()
+        redis_client.ping = AsyncMock(side_effect=RuntimeError("redis unavailable"))
+        redis_client.aclose = AsyncMock(
+            side_effect=[RuntimeError("close unavailable"), None]
+        )
+        warmup_task = MagicMock()
+        warmup_task.done.return_value = True
+
+        def close_warmup_coroutine(coroutine):
+            coroutine.close()
+            return warmup_task
+
+        with (
+            patch.object(main, "settings", _settings()),
+            patch.object(main, "postgres_database", database),
+            patch.object(
+                main,
+                "create_application_repositories",
+                return_value=MagicMock(),
+            ),
+            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(
+                main.asyncio,
+                "create_task",
+                side_effect=close_warmup_coroutine,
+            ),
+        ):
+            async with main.lifespan(app):
+                self.assertIsNone(app.state.redis)
+
+        self.assertEqual(redis_client.aclose.await_count, 2)
+        database.close.assert_called_once_with()
+
+    async def test_rolls_back_resources_when_scheduler_start_fails(self) -> None:
+        app = FastAPI()
+        database = MagicMock()
+        repositories = MagicMock()
+        rag_provider = MagicMock()
+        scheduler_runtime = MagicMock()
+        scheduler_runtime.start.side_effect = RuntimeError("scheduler failed")
+        redis_client = MagicMock()
+        redis_client.ping = AsyncMock()
+        redis_client.keys = AsyncMock(return_value=[])
+        redis_client.aclose = AsyncMock()
+        warmup_task = MagicMock()
+        warmup_task.done.return_value = True
+
+        def close_warmup_coroutine(coroutine):
+            coroutine.close()
+            return warmup_task
+
+        with (
+            patch.object(main, "settings", _settings(scheduler_enabled=True)),
+            patch.object(main, "postgres_database", database),
+            patch.object(
+                main,
+                "create_application_repositories",
+                return_value=repositories,
+            ),
+            patch.object(
+                main,
+                "RagChatServiceProvider",
+                return_value=rag_provider,
+            ),
+            patch.object(
+                main,
+                "create_scheduler_runtime",
+                return_value=scheduler_runtime,
+            ),
+            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "scheduler failed"):
+                async with main.lifespan(app):
+                    pass
+
+        scheduler_runtime.stop.assert_called_once_with()
+        redis_client.aclose.assert_awaited_once_with()
+        rag_provider.close.assert_called_once_with()
+        database.close.assert_called_once_with()
+
+    async def test_cleanup_failures_do_not_skip_remaining_resources(self) -> None:
+        app = FastAPI()
+        database = MagicMock()
+        repositories = MagicMock()
+        rag_provider = MagicMock()
+        rag_provider.close.side_effect = RuntimeError("rag close failed")
+        scheduler_runtime = MagicMock()
+        scheduler_runtime.stop.side_effect = RuntimeError("scheduler close failed")
+        redis_client = MagicMock()
+        redis_client.ping = AsyncMock()
+        redis_client.keys = AsyncMock(return_value=[])
+        redis_client.aclose = AsyncMock(side_effect=RuntimeError("redis close failed"))
+        warmup_task = MagicMock()
+        warmup_task.done.return_value = True
+
+        def close_warmup_coroutine(coroutine):
+            coroutine.close()
+            return warmup_task
+
+        with (
+            patch.object(main, "settings", _settings()),
+            patch.object(main, "postgres_database", database),
+            patch.object(
+                main,
+                "create_application_repositories",
+                return_value=repositories,
+            ),
+            patch.object(
+                main,
+                "RagChatServiceProvider",
+                return_value=rag_provider,
+            ),
+            patch.object(
+                main,
+                "create_scheduler_runtime",
+                return_value=scheduler_runtime,
+            ),
+            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
+        ):
+            async with main.lifespan(app):
+                pass
+
+        scheduler_runtime.stop.assert_called_once_with()
+        redis_client.aclose.assert_awaited_once_with()
+        rag_provider.close.assert_called_once_with()
+        database.close.assert_called_once_with()
 
 
 if __name__ == "__main__":
