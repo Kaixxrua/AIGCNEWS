@@ -81,5 +81,6 @@ def test_chat_route_does_not_construct_rag_infrastructure() -> None:
     assert "GraphRepository" not in calls
     assert "HybridRetriever" not in calls
     assert "ChatService" not in calls
+    assert "ConversationService" not in calls
     assert "backend.app.repositories.milvus_repo" not in imports
     assert "backend.app.repositories.graph_repo" not in imports

@@ -8,13 +8,16 @@ from unittest.mock import MagicMock, patch
 from fastapi.params import Depends
 
 from backend.app.api import routes_chat
-from backend.app.api.dependencies import get_conversation_repository
+from backend.app.api.dependencies import (
+    get_conversation_repository,
+    get_conversation_service,
+)
 from backend.app.core import scheduler
 from backend.app.services.chat.conversation_service import ConversationService
 
 
 class ConversationInjectionSeamTests(unittest.TestCase):
-    def test_all_conversation_routes_use_the_existing_repository_dependency(self) -> None:
+    def test_all_conversation_routes_use_the_application_service_dependency(self) -> None:
         route_functions = (
             routes_chat.stream_chat,
             routes_chat.ensure_conversation,
@@ -27,6 +30,15 @@ class ConversationInjectionSeamTests(unittest.TestCase):
         )
 
         for route_function in route_functions:
+            with self.subTest(route=route_function.__name__):
+                parameter = inspect.signature(route_function).parameters[
+                    "conversation_service"
+                ]
+                self.assertIsInstance(parameter.default, Depends)
+                self.assertIs(parameter.default.dependency, get_conversation_service)
+
+    def test_quota_routes_keep_the_repository_reader_dependency(self) -> None:
+        for route_function in (routes_chat.stream_chat, routes_chat.regenerate_message):
             with self.subTest(route=route_function.__name__):
                 parameter = inspect.signature(route_function).parameters["conversations"]
                 self.assertIsInstance(parameter.default, Depends)

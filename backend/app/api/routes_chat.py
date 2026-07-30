@@ -12,6 +12,7 @@ from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
 from backend.app.api.dependencies import (
     get_conversation_repository,
+    get_conversation_service,
     get_rag_chat_service,
 )
 from backend.app.models.schema_chat import (
@@ -53,7 +54,7 @@ async def _stream_persisted_chat(
     history_override: Optional[List[dict]] = None,
     message_override: Optional[str] = None,
     conversation_id_override: Optional[int] = None,
-    conversation_repository: ConversationRepository,
+    conversation_service: ConversationService,
     rag_service: ChatService,
 ) -> AsyncGenerator[str, None]:
     """真流式 SSE：边收边 yield，持久化后置异步。"""
@@ -61,8 +62,6 @@ async def _stream_persisted_chat(
         user_id = int(user_payload.get("user_id") or 0)
         if user_id <= 0:
             raise ValueError("invalid_user")
-
-        conversation_service = ConversationService(conversation_repository)
 
         attachment_context = ""
         attachment_ids = request.attachment_ids or []
@@ -185,6 +184,7 @@ async def stream_chat(
     request: ChatStreamRequest,
     user: dict = Depends(RequireUser),
     conversations: ConversationRepository = Depends(get_conversation_repository),
+    conversation_service: ConversationService = Depends(get_conversation_service),
     rag_service: ChatService = Depends(get_rag_chat_service),
 ) -> StreamingResponse:
     _check_user_message_limit(user, conversations)
@@ -192,7 +192,7 @@ async def stream_chat(
         _stream_persisted_chat(
             request,
             user,
-            conversation_repository=conversations,
+            conversation_service=conversation_service,
             rag_service=rag_service,
         ),
         media_type="text/event-stream; charset=utf-8",
@@ -209,11 +209,10 @@ async def stream_chat(
 async def ensure_conversation(
     request: EnsureConversationRequest,
     user: dict = Depends(RequireUser),
-    conversations: ConversationRepository = Depends(get_conversation_repository),
+    conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationSummaryDTO:
-    service = ConversationService(conversations)
     conversation = await asyncio.to_thread(
-        service.ensure_conversation,
+        conversation_service.ensure_conversation,
         user_id=int(user["user_id"]),
         scope=request.scope,
         scope_key=request.scope_key,
@@ -226,12 +225,11 @@ async def ensure_conversation(
 async def create_conversation(
     request: CreateConversationRequest,
     user: dict = Depends(RequireUser),
-    conversations: ConversationRepository = Depends(get_conversation_repository),
+    conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationSummaryDTO:
     """强制创建新会话（不复用已有会话）。"""
-    service = ConversationService(conversations)
     conversation = await asyncio.to_thread(
-        service.create_new_conversation,
+        conversation_service.create_new_conversation,
         user_id=int(user["user_id"]),
         scope=request.scope,
         scope_key=request.scope_key,
@@ -247,12 +245,11 @@ async def create_conversation(
 async def delete_conversation(
     conversation_id: int,
     user: dict = Depends(RequireUser),
-    conversations: ConversationRepository = Depends(get_conversation_repository),
+    conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> DeleteConversationResponse:
     """删除指定会话及其所有消息。"""
-    service = ConversationService(conversations)
     success = await asyncio.to_thread(
-        service.delete_conversation,
+        conversation_service.delete_conversation,
         user_id=int(user["user_id"]),
         conversation_id=conversation_id,
     )
@@ -270,11 +267,10 @@ async def get_conversations(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     user: dict = Depends(RequireUser),
-    conversations: ConversationRepository = Depends(get_conversation_repository),
+    conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationListResponse:
-    service = ConversationService(conversations)
     result = await asyncio.to_thread(
-        service.list_conversations,
+        conversation_service.list_conversations,
         user_id=int(user["user_id"]),
         scope=scope,
         page=page,
@@ -289,12 +285,11 @@ async def get_conversations(
 async def get_conversation_detail(
     conversation_id: int,
     user: dict = Depends(RequireUser),
-    conversations: ConversationRepository = Depends(get_conversation_repository),
+    conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationDetailResponse:
-    service = ConversationService(conversations)
     try:
         context = await asyncio.to_thread(
-            service.get_conversation_context,
+            conversation_service.get_conversation_context,
             user_id=int(user["user_id"]),
             conversation_id=conversation_id,
         )
@@ -312,12 +307,11 @@ async def get_conversation_detail(
 async def delete_message(
     message_id: int,
     user: dict = Depends(RequireUser),
-    conversations: ConversationRepository = Depends(get_conversation_repository),
+    conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> DeleteMessageResponse:
-    service = ConversationService(conversations)
     try:
         result = await asyncio.to_thread(
-            service.delete_message,
+            conversation_service.delete_message,
             user_id=int(user["user_id"]),
             message_id=message_id,
         )
@@ -336,13 +330,13 @@ async def regenerate_message(
     request: RegenerateRequest,
     user: dict = Depends(RequireUser),
     conversations: ConversationRepository = Depends(get_conversation_repository),
+    conversation_service: ConversationService = Depends(get_conversation_service),
     rag_service: ChatService = Depends(get_rag_chat_service),
 ) -> StreamingResponse:
     _check_user_message_limit(user, conversations)
-    service = ConversationService(conversations)
     try:
         regen_result = await asyncio.to_thread(
-            service.regenerate_from_message,
+            conversation_service.regenerate_from_message,
             user_id=int(user["user_id"]),
             message_id=message_id,
         )
@@ -382,7 +376,7 @@ async def regenerate_message(
             history_override=history,
             message_override=user_message,
             conversation_id_override=int(target["conversation_id"]),
-            conversation_repository=conversations,
+            conversation_service=conversation_service,
             rag_service=rag_service,
         ),
         media_type="text/event-stream; charset=utf-8",

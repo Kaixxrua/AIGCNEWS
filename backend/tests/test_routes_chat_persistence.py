@@ -50,28 +50,27 @@ class ChatPersistenceRouteTests(unittest.TestCase):
             web_search=True,
         )
 
+        conversation_service = MagicMock()
+        conversation_service.append_message_pair = repository.append_message_pair
+
         async def collect():
-            with (
-                patch.object(routes_chat, "ConversationService") as service_type,
-                patch.object(
-                    routes_chat.asyncio,
-                    "to_thread",
-                    new=AsyncMock(return_value=repository.append_message_pair.return_value),
-                ) as to_thread,
-            ):
-                service_type.return_value.append_message_pair = repository.append_message_pair
+            with patch.object(
+                routes_chat.asyncio,
+                "to_thread",
+                new=AsyncMock(return_value=repository.append_message_pair.return_value),
+            ) as to_thread:
                 events = [
                     event
                     async for event in routes_chat._stream_persisted_chat(
                         request,
                         {"user_id": 3},
-                        conversation_repository=repository,
+                        conversation_service=conversation_service,
                         rag_service=rag_service,
                     )
                 ]
-                return events, to_thread, service_type
+                return events, to_thread
 
-        events, to_thread, service_type = asyncio.run(collect())
+        events, to_thread = asyncio.run(collect())
 
         self.assertEqual(
             events,
@@ -97,7 +96,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
             ],
         )
         to_thread.assert_awaited_once_with(
-            service_type.return_value.append_message_pair,
+            conversation_service.append_message_pair,
             user_id=3,
             conversation_id=None,
             scope="global",
@@ -128,9 +127,10 @@ class ChatPersistenceRouteTests(unittest.TestCase):
             message="question", history=[], attachment_ids=["other-owner"]
         )
 
+        conversation_service = MagicMock()
+
         async def collect() -> list[str]:
             with (
-                patch.object(routes_chat, "ConversationService"),
                 patch.object(
                     routes_chat.asyncio,
                     "to_thread",
@@ -146,7 +146,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                     async for event in routes_chat._stream_persisted_chat(
                         request,
                         {"user_id": 3},
-                        conversation_repository=repository,
+                        conversation_service=conversation_service,
                         rag_service=rag_service,
                     )
                 ]
@@ -209,9 +209,11 @@ class ChatPersistenceRouteTests(unittest.TestCase):
             attachment_ids=["pdf", "processing", "missing", "image"],
         )
 
+        conversation_service = MagicMock()
+        conversation_service.append_message_pair = repository.append_message_pair
+
         async def collect() -> AsyncMock:
             with (
-                patch.object(routes_chat, "ConversationService") as service_type,
                 patch.object(
                     routes_chat.asyncio,
                     "to_thread",
@@ -226,15 +228,12 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                     new=AsyncMock(return_value="x" * 9000),
                 ) as get_pdf_text,
             ):
-                service_type.return_value.append_message_pair = (
-                    repository.append_message_pair
-                )
                 _ = [
                     event
                     async for event in routes_chat._stream_persisted_chat(
                         request,
                         {"user_id": 3},
-                        conversation_repository=repository,
+                        conversation_service=conversation_service,
                         rag_service=rag_service,
                     )
                 ]
@@ -263,6 +262,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
 
         rag_service.stream_chat = stream_chat
         request = ChatStreamRequest(message="question", history=[])
+        conversation_service = MagicMock()
 
         async def collect() -> list[str]:
             return [
@@ -270,7 +270,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                 async for event in routes_chat._stream_persisted_chat(
                     request,
                     {"user_id": 3},
-                    conversation_repository=MagicMock(),
+                    conversation_service=conversation_service,
                     rag_service=rag_service,
                 )
             ]

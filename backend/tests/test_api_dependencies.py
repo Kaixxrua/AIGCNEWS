@@ -44,6 +44,19 @@ class DatabaseDependencyTests(unittest.TestCase):
         for provider, attribute in mapping.items():
             self.assertIs(provider(repositories), getattr(repositories, attribute))
 
+    def test_conversation_service_wraps_injected_repository(self) -> None:
+        repository = MagicMock()
+
+        with patch.object(
+            dependencies,
+            "ConversationService",
+            return_value=MagicMock(),
+        ) as service_type:
+            result = dependencies.get_conversation_service(repository)
+
+        self.assertIs(result, service_type.return_value)
+        service_type.assert_called_once_with(repository)
+
     def test_get_application_repositories_returns_composition_root(self) -> None:
         app = FastAPI()
         repositories = MagicMock()

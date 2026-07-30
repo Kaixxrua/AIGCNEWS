@@ -36,6 +36,7 @@ from backend.app.repositories.task_repository import (
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.briefing.composition import provide_daily_briefing_service
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
+from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
@@ -117,6 +118,12 @@ def get_conversation_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> ConversationRepository:
     return repositories.conversations
+
+
+def get_conversation_service(
+    repository: ConversationRepository = Depends(get_conversation_repository),
+) -> ConversationService:
+    return ConversationService(repository)
 
 
 def get_rag_chat_service(request: Request) -> ChatService:
