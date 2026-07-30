@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Mapping
 from typing import Any, Dict
 
 from backend.app.core.config import settings
@@ -81,22 +82,43 @@ def _check_redis() -> Dict[str, Any]:
         return {"status": "error", "detail": str(exc)}
 
 
+HealthCheck = Callable[[], Dict[str, Any]]
+
+
+class HealthCheckService:
+    """Run named infrastructure probes and project the combined status."""
+
+    def __init__(self, checks: Mapping[str, HealthCheck]) -> None:
+        self._checks = checks
+
+    def run(self) -> Dict[str, Any]:
+        started_at = time.monotonic()
+        services = {name: check() for name, check in self._checks.items()}
+        elapsed = round(time.monotonic() - started_at, 3)
+        overall = (
+            "ok"
+            if all(check["status"] == "ok" for check in services.values())
+            else "degraded"
+        )
+        return {
+            "status": overall,
+            "elapsed_seconds": elapsed,
+            "services": services,
+        }
+
+
+def provide_health_check_service() -> HealthCheckService:
+    return HealthCheckService(
+        {
+            "milvus": _check_milvus,
+            "neo4j": _check_neo4j,
+            "ollama": _check_ollama,
+            "postgres": _check_postgres,
+            "redis": _check_redis,
+        }
+    )
+
+
 def run_health_checks() -> Dict[str, Any]:
     """Run all health checks and return a combined report."""
-    t0 = time.monotonic()
-    checks = {
-        "milvus": _check_milvus(),
-        "neo4j": _check_neo4j(),
-        "ollama": _check_ollama(),
-        "postgres": _check_postgres(),
-        "redis": _check_redis(),
-    }
-    elapsed = round(time.monotonic() - t0, 3)
-
-    overall = "ok" if all(c["status"] == "ok" for c in checks.values()) else "degraded"
-
-    return {
-        "status": overall,
-        "elapsed_seconds": elapsed,
-        "services": checks,
-    }
+    return provide_health_check_service().run()

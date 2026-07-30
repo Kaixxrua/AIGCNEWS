@@ -8,9 +8,11 @@ from backend.app.api.dependencies import (
     get_briefing_repository,
     get_document_repository,
     get_evaluation_repository,
+    get_health_check_service,
     get_ingestion_task_repository,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
+from backend.app.monitoring.health import HealthCheckService
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
@@ -39,12 +41,12 @@ async def readiness() -> dict[str, object]:
 
 
 @router.get("/monitor/health")
-async def health_check(_: dict = Depends(RequireUser)):
+async def health_check(
+    _: dict = Depends(RequireUser),
+    service: HealthCheckService = Depends(get_health_check_service),
+):
     """Full health check across PostgreSQL and supporting services."""
-    from backend.app.monitoring.health import run_health_checks
-
-    result = await asyncio.to_thread(run_health_checks)
-    return result
+    return await asyncio.to_thread(service.run)
 
 
 @router.get("/monitor/metrics")

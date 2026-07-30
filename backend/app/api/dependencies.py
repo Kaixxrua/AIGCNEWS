@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import Depends, Request
 
+from backend.app.monitoring.health import HealthCheckService, provide_health_check_service
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
@@ -48,6 +49,10 @@ from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.composition import RagChatServiceProvider
 from backend.app.services.scheduler_admin import SchedulerAdminService
+
+
+def get_health_check_service() -> HealthCheckService:
+    return provide_health_check_service()
 
 
 class ApplicationIngestionTaskRepository(

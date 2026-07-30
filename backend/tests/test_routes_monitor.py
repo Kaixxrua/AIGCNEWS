@@ -11,6 +11,7 @@ from backend.app.api.dependencies import (
     get_briefing_repository,
     get_document_repository,
     get_evaluation_repository,
+    get_health_check_service,
     get_ingestion_task_repository,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
@@ -21,6 +22,35 @@ from backend.app.repositories.task_repository import MonitorTaskRepository, Rece
 
 
 class MonitorRouteTests(unittest.TestCase):
+    def test_health_check_uses_injected_service(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        service = MagicMock()
+        service.run.return_value = {
+            "status": "degraded",
+            "elapsed_seconds": 0.123,
+            "services": {"postgres": {"status": "error"}},
+        }
+        app.dependency_overrides[RequireUser] = lambda: {"role": "user"}
+        app.dependency_overrides[get_health_check_service] = lambda: service
+
+        response = TestClient(app).get("/api/monitor/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), service.run.return_value)
+        service.run.assert_called_once_with()
+
+    def test_health_check_requires_user_before_service_calls(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        service = MagicMock()
+        app.dependency_overrides[get_health_check_service] = lambda: service
+
+        response = TestClient(app).get("/api/monitor/health")
+
+        self.assertIn(response.status_code, (401, 403))
+        service.run.assert_not_called()
+
     def test_system_metrics_passes_evaluation_repository_to_collector(self) -> None:
         app = FastAPI()
         app.include_router(routes_monitor.router, prefix="/api")
