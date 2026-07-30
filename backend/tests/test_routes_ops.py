@@ -15,6 +15,7 @@ from backend.app.api.dependencies import (
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
     get_runtime_provider_setting_repository,
+    get_scheduler_admin_service,
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.mcp_server_repository import (

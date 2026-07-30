@@ -16,6 +16,7 @@ from backend.app.api.dependencies import (
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
     get_runtime_provider_setting_repository,
+    get_scheduler_admin_service,
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.repositories.document_repository import DocumentAdminWriter
@@ -36,6 +37,7 @@ from backend.app.services.runtime_provider.control_plane import (
     RuntimeProviderUpdate,
     project_provider_config,
 )
+from backend.app.services.scheduler_admin import SchedulerAdminService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -948,45 +950,22 @@ async def finalize_project_shadow(_: dict = Depends(RequireAdmin)):
 
 
 @router.get("/ops/scheduler/status", tags=["Ops"])
-async def scheduler_status(_: dict = Depends(RequireAdmin)):
+async def scheduler_status(
+    _: dict = Depends(RequireAdmin),
+    service: SchedulerAdminService = Depends(get_scheduler_admin_service),
+):
     """查询 APScheduler 当前状态与已注册任务列表。"""
-    from backend.app.core.scheduler import get_scheduler
-
-    scheduler = get_scheduler()
-    jobs = []
-    for job in scheduler.get_jobs():
-        next_run = job.next_run_time.isoformat() if job.next_run_time else None
-        jobs.append(
-            {
-                "id": job.id,
-                "name": job.name,
-                "next_run_time": next_run,
-                "trigger": str(job.trigger),
-            }
-        )
-    return {
-        "running": scheduler.running,
-        "jobs": jobs,
-        "job_count": len(jobs),
-    }
+    return service.status()
 
 
 @router.post("/ops/scheduler/trigger", tags=["Ops"])
 async def trigger_scheduled_job(
     job_id: str = Query(default="daily_smart_ingestion"),
     _: dict = Depends(RequireAdmin),
+    service: SchedulerAdminService = Depends(get_scheduler_admin_service),
 ):
     """立即触发指定的定时任务（用于调试）。"""
-    from backend.app.core.scheduler import get_scheduler
-
-    scheduler = get_scheduler()
-    job = scheduler.get_job(job_id)
-    if job is None:
-        return {"status": "error", "message": f"Job '{job_id}' 不存在。"}
-
-    job.modify(next_run_time=None)
-    scheduler.wakeup()
-    return {"status": "triggered", "message": f"Job '{job_id}' 已触发执行。"}
+    return service.trigger(job_id)
 
 
 # ── 每日简报生成 ─────────────────────────────────────────────────────────────

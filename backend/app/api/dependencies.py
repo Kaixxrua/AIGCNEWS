@@ -41,6 +41,7 @@ from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.composition import RagChatServiceProvider
+from backend.app.services.scheduler_admin import SchedulerAdminService
 
 
 class ApplicationIngestionTaskRepository(
@@ -131,6 +132,12 @@ def get_rag_chat_service(request: Request) -> ChatService:
     if not isinstance(provider, RagChatServiceProvider):
         raise RuntimeError("RAG chat service provider is not configured")
     return provider.get()
+
+
+def get_scheduler_admin_service() -> SchedulerAdminService:
+    from backend.app.core.scheduler import get_scheduler
+
+    return SchedulerAdminService(get_scheduler())
 
 
 def get_document_repository(
