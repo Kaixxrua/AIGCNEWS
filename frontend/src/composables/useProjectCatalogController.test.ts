@@ -186,6 +186,35 @@ describe('project catalog controller', () => {
     expect(replaceRouteFromState).not.toHaveBeenCalled()
   })
 
+  it('uses localized success messages instead of API response prose', async () => {
+    const api = createApi()
+    vi.mocked(api.favoriteProject).mockResolvedValue({
+      status: 'succeeded',
+      source: 'github',
+      is_favorited: true,
+      favorited_at: '2026-07-29T00:00:00.000Z',
+      message: '已加入我的收藏。',
+    })
+    vi.mocked(api.unfavoriteProject).mockResolvedValue({
+      status: 'succeeded',
+      source: 'github',
+      is_favorited: false,
+      favorited_at: null,
+      message: '已取消收藏。',
+    })
+    const t = vi.fn((key: string) => ({
+      'projects.favoriteAdded': 'Project added to favorites.',
+      'projects.favoriteRemoved': 'Project removed from favorites.',
+    }[key] ?? key))
+    const controller = useProjectCatalogController({ api, isLoggedIn: () => true, t })
+    const item = githubItem()
+
+    await controller.toggleFavorite(item)
+    expect(controller.successMsg.value).toBe('Project added to favorites.')
+    await controller.toggleFavorite(item)
+    expect(controller.successMsg.value).toBe('Project removed from favorites.')
+  })
+
   it('rolls back the initiating favorite item after failure even when its view is stale', async () => {
     const api = createApi()
     const favorite = deferred<Awaited<ReturnType<ProjectCatalogApi['favoriteProject']>>>()

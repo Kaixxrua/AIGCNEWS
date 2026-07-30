@@ -5,7 +5,7 @@ import type { AppLocale } from '../../i18n'
 import type { GitHubProjectItem, GitHubProjectSort, ProjectScope } from '../../services/projects/projectApi'
 import {
   projectDescription,
-  favoriteButtonLabel,
+  favoriteButtonLabelKey,
   formattedProjectHotScore,
   formatProjectCount,
   formatProjectShortDate,
@@ -18,7 +18,7 @@ import {
   projectName,
   projectSourceBadgeKey,
   projectUrl,
-  recommendButtonLabel,
+  recommendButtonLabelKey,
   shouldShowProjectHotScore,
   websiteLogoInitial,
   type ProjectChip,
@@ -61,7 +61,15 @@ const logoKey = computed(() => projectLogoKey(props.repo))
 const websiteLogoUrl = computed(() => (
   logoKey.value && !props.logoBroken ? (props.repo.image_url || '') : ''
 ))
-const displayTags = computed(() => projectDisplayTags(props.repo, props.isPersonalView, locale.value as AppLocale))
+const displayTags = computed(() => projectDisplayTags(
+  props.repo,
+  props.isPersonalView,
+  locale.value as AppLocale,
+  {
+    project: t('projects.genericProjectTag'),
+    website: t('projects.genericWebsiteTag'),
+  },
+))
 const description = computed(() => projectDescription(
   props.repo, locale.value as AppLocale,
   t(isWebsite(props.repo) ? 'projects.fallbackWebsite' : 'projects.fallbackProject'),
@@ -135,7 +143,7 @@ const description = computed(() => projectDescription(
           :disabled="recommendActionsBusy"
           @click="emit('recommend', repo)"
         >
-          {{ recommendButtonLabel(repo, recommendBusy) }}
+          {{ t(recommendButtonLabelKey(repo, recommendBusy)) }}
         </button>
         <button
           v-if="!isWebsite(repo)"
@@ -147,7 +155,7 @@ const description = computed(() => projectDescription(
           @click="emit('favorite', repo)"
         >
           <span>{{ repo.is_favorited ? '★' : '☆' }}</span>
-          {{ favoriteButtonLabel(repo, favoriteBusy, isLoggedIn) }}
+          {{ t(favoriteButtonLabelKey(repo, favoriteBusy, isLoggedIn)) }}
         </button>
         <button
           v-if="canEdit"

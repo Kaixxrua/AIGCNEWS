@@ -65,19 +65,19 @@ export const canEditWebsiteProject = (project: GitHubProjectItem, isWebsiteOnlyV
   isWebsiteOnlyView && isWebsite(project) && Boolean(project.user_added) && Boolean(project.website_id)
 )
 
-export const favoriteButtonLabel = (
+export const favoriteButtonLabelKey = (
   project: GitHubProjectItem,
   busy: boolean,
   isLoggedIn: boolean,
 ) => {
-  if (busy) return '处理中'
-  if (!project.is_favorited) return isLoggedIn ? '收藏' : '登录收藏'
-  return isWebsite(project) && project.user_added ? '已加入' : '已收藏'
+  if (busy) return 'common.processing'
+  if (!project.is_favorited) return isLoggedIn ? 'projects.favorite' : 'projects.loginFavorite'
+  return isWebsite(project) && project.user_added ? 'projects.added' : 'projects.favorited'
 }
 
-export const recommendButtonLabel = (project: GitHubProjectItem, busy: boolean) => {
-  if (busy) return '处理中'
-  return project.is_recommended ? '取消推荐' : '设为站长推荐'
+export const recommendButtonLabelKey = (project: GitHubProjectItem, busy: boolean) => {
+  if (busy) return 'common.processing'
+  return project.is_recommended ? 'projects.unrecommend' : 'projects.recommend'
 }
 
 type LocalizedName = {
@@ -125,6 +125,7 @@ export const projectDisplayTags = (
   project: GitHubProjectItem,
   isPersonalView: boolean,
   locale: AppLocale = 'zh-CN',
+  fallbackLabels: { project: string; website: string } = { project: 'AI 项目', website: '网页收藏' },
 ): ProjectChip[] => {
   const result: ProjectChip[] = []
   const labels = new Set<string>()
@@ -159,7 +160,7 @@ export const projectDisplayTags = (
   }
   if (result.length) return result
   if (isPersonalView) return []
-  const label = isWebsite(project) ? '网页收藏' : 'AI 项目'
+  const label = isWebsite(project) ? fallbackLabels.website : fallbackLabels.project
   return [{ type: 'tag', label, value: label }]
 }
 

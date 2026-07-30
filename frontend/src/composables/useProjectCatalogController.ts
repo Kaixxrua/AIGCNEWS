@@ -398,7 +398,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
       if (!activeGeneration(generation)) return
       item.is_favorited = result.is_favorited
       item.favorited_at = result.favorited_at ?? item.favorited_at ?? null
-      successMsg.value = result.message
+      successMsg.value = t(previous ? 'projects.favoriteRemoved' : 'projects.favoriteAdded')
       if (isMyCollection.value && previous) {
         projects.value = projects.value.filter((project) => projectKey(project) !== key)
         total.value = Math.max(0, total.value - 1)
@@ -430,7 +430,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
       if (!activeGeneration(generation)) return
       item.is_recommended = result.is_recommended
       item.recommended_at = result.recommended_at ?? null
-      successMsg.value = result.message || t(wasRecommended ? 'projects.recommendationRemoved' : 'projects.recommendationAdded')
+      successMsg.value = t(wasRecommended ? 'projects.recommendationRemoved' : 'projects.recommendationAdded')
       if (wasRecommended && selectedScope.value === 'recommended') {
         projects.value = projects.value.filter((project) => projectKey(project) !== key)
         total.value = Math.max(0, total.value - 1)

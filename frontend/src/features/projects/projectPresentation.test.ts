@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  favoriteButtonLabelKey,
   localizedCategoryName,
   projectCategoryName,
   projectDescription,
   projectDisplayTags,
+  recommendButtonLabelKey,
 } from './projectPresentation'
 
 const project = {
@@ -29,5 +31,22 @@ describe('projectPresentation localization', () => {
     expect(projectDescription(project, 'en-US', 'fallback')).toBe('Natural English description.')
     expect(projectDescription({ ...project, description_en: '' }, 'en-US', 'fallback')).toBe('raw metadata')
     expect(projectDescription(project, 'zh-CN', 'fallback')).toBe('中文说明')
+  })
+
+  it('returns locale keys for card actions', () => {
+    expect(favoriteButtonLabelKey({ ...project, is_favorited: false }, false, false)).toBe('projects.loginFavorite')
+    expect(favoriteButtonLabelKey({ ...project, is_favorited: false }, false, true)).toBe('projects.favorite')
+    expect(favoriteButtonLabelKey({ ...project, is_favorited: true }, false, true)).toBe('projects.favorited')
+    expect(favoriteButtonLabelKey({ ...project, is_favorited: false }, true, true)).toBe('common.processing')
+    expect(recommendButtonLabelKey({ ...project, is_recommended: false }, false)).toBe('projects.recommend')
+    expect(recommendButtonLabelKey({ ...project, is_recommended: true }, false)).toBe('projects.unrecommend')
+  })
+
+  it('uses localized fallback labels without changing their stable chip values', () => {
+    const emptyProject = { repo_id: 1, full_name: 'owner/project' }
+    expect(projectDisplayTags(emptyProject, false, 'en-US', {
+      project: 'AI project',
+      website: 'Website favorite',
+    })).toEqual([{ type: 'tag', label: 'AI project', value: 'AI project' }])
   })
 })
