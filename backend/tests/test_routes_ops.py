@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from fastapi import FastAPI
@@ -345,6 +346,104 @@ class OperationsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"total": 12, "enriched": 7})
         repository.get_github_project_enrichment_status.assert_called_once_with()
+
+    def test_scheduler_status_preserves_registered_job_projection(self) -> None:
+        scheduler = MagicMock()
+        scheduler.running = True
+        daily_job = MagicMock()
+        daily_job.id = "daily"
+        daily_job.name = "Daily ingestion"
+        daily_job.next_run_time = datetime(2026, 7, 31, 1, 2, tzinfo=timezone.utc)
+        daily_job.trigger = "cron[hour='1']"
+        paused_job = MagicMock()
+        paused_job.id = "paused"
+        paused_job.name = "Paused job"
+        paused_job.next_run_time = None
+        paused_job.trigger = "interval[1:00:00]"
+        scheduler.get_jobs.return_value = [daily_job, paused_job]
+
+        with patch("backend.app.core.scheduler.get_scheduler", return_value=scheduler):
+            response = self._scheduler_client().get("/api/ops/scheduler/status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "running": True,
+                "jobs": [
+                    {
+                        "id": "daily",
+                        "name": "Daily ingestion",
+                        "next_run_time": "2026-07-31T01:02:00+00:00",
+                        "trigger": "cron[hour='1']",
+                    },
+                    {
+                        "id": "paused",
+                        "name": "Paused job",
+                        "next_run_time": None,
+                        "trigger": "interval[1:00:00]",
+                    },
+                ],
+                "job_count": 2,
+            },
+        )
+        scheduler.get_jobs.assert_called_once_with()
+
+    def test_scheduler_trigger_reports_missing_job_without_wakeup(self) -> None:
+        scheduler = MagicMock()
+        scheduler.get_job.return_value = None
+
+        with patch("backend.app.core.scheduler.get_scheduler", return_value=scheduler):
+            response = self._scheduler_client().post(
+                "/api/ops/scheduler/trigger",
+                params={"job_id": "missing"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"status": "error", "message": "Job 'missing' 不存在。"},
+        )
+        scheduler.get_job.assert_called_once_with("missing")
+        scheduler.wakeup.assert_not_called()
+
+    def test_scheduler_trigger_modifies_job_and_wakes_scheduler(self) -> None:
+        scheduler = MagicMock()
+        job = MagicMock()
+        scheduler.get_job.return_value = job
+
+        with patch("backend.app.core.scheduler.get_scheduler", return_value=scheduler):
+            response = self._scheduler_client().post(
+                "/api/ops/scheduler/trigger",
+                params={"job_id": "daily"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"status": "triggered", "message": "Job 'daily' 已触发执行。"},
+        )
+        job.modify.assert_called_once_with(next_run_time=None)
+        scheduler.wakeup.assert_called_once_with()
+
+    def test_scheduler_routes_require_admin_before_scheduler_access(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+
+        with patch("backend.app.core.scheduler.get_scheduler") as get_scheduler:
+            status_response = TestClient(app).get("/api/ops/scheduler/status")
+            trigger_response = TestClient(app).post("/api/ops/scheduler/trigger")
+
+        self.assertIn(status_response.status_code, (401, 403))
+        self.assertIn(trigger_response.status_code, (401, 403))
+        get_scheduler.assert_not_called()
+
+    @staticmethod
+    def _scheduler_client() -> TestClient:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        return TestClient(app)
 
     @staticmethod
     def _project_ops_client(
