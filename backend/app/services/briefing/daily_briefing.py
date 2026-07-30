@@ -617,9 +617,3 @@ class DailyBriefingService:
             return True
 
         return False
-
-    def get_history(self, limit: int = 30) -> List[Dict[str, Any]]:
-        return self._briefings.list_briefings(limit=limit)
-
-    def get_briefing(self, briefing_id: int) -> Dict[str, Any] | None:
-        return self._briefings.get_briefing(briefing_id)

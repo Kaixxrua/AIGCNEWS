@@ -285,9 +285,6 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 - **SSE 流式输出**: `start → content(多次) → done`
 - **Tag 标签（Bug3 修复 + 优化）**: 所有 6 个 Prompt 模板均已升级为细粒度领域标签系统——每个一级/二级标题后必须附加 `\`#来源\` \`#领域\``，来源标签（必选1个，如 `#arxiv` `#github`）+ 领域标签（必选1-2个，如 `#LLM` `#Agent` `#RAG` `#推理优化` `#模型压缩` 等），每个源类型有独立的领域标签候选列表，**禁止使用过于宽泛的 #ai #tool #trending**
 
-#### `podcast_adapter.py`
-- `# TODO: placeholder`（播客适配器，待实现）
-
 ### 3.3 数据采集服务 — `backend/app/services/ingestion/`
 
 #### `pipeline.py`（核心编排器）
@@ -717,14 +714,13 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 ## 十、当前已知限制与明确延期
 
 1. 视觉问答仅持久化文本消息对与安全的 modality 元数据；出于 Zero-Disk 约束不保存截图，因此历史视觉消息不能在没有新截图时重新生成。
-2. `backend/app/services/briefing/podcast_adapter.py` 仍是未启用的产品能力占位，不属于本轮 repository 重构完成条件。
-3. 生产 MySQL 容器停用、凭据撤销、观察期及最终数据卷删除属于独立运维授权边界；仓库侧完成不代表这些操作已执行。
+2. 生产 MySQL 容器停用、凭据撤销、观察期及最终数据卷删除属于独立运维授权边界；仓库侧完成不代表这些操作已执行。
 
 ### 10.1 2026-07 渐进式重构收口
 
 - **完成**：repository Protocol 与 FastAPI lifespan composition root、PostgreSQL-only 应用运行时、主 Compose 移除 MySQL、REST/MCP/SSE 调用方切换、聊天及视觉消息持久化、前端统一会话状态、无调用者占位壳清理。
 - **被后续设计取代**：MySQL 主从/影子读长期共存方案、运行时数据库选择开关、独立的视觉消息状态树；历史设计保留在已标记为历史快照的文档中。
-- **明确延期**：播客适配器、视觉截图长期存储与无图重生成、生产 MySQL 最终退役操作。
+- **明确延期**：视觉截图长期存储与无图重生成、生产 MySQL 最终退役操作。
 
 > **历史事件记录（当时术语按原样保留；其中 MySQL 指当时关系数据库实现）**
 >

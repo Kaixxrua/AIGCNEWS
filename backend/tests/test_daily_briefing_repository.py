@@ -119,20 +119,6 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
         repository.save_briefing.assert_not_called()
         self.assertEqual(events[-1]["type"], "done")
 
-    def test_reads_delegate_to_briefing_repository(self) -> None:
-        repository = MagicMock(spec=BriefingContentRepository)
-        repository.list_briefings.return_value = [{"id": 42}]
-        repository.get_briefing.return_value = {"id": 42, "content": "briefing"}
-        service = self._service(repository)
-
-        self.assertEqual(service.get_history(limit=7), [{"id": 42}])
-        self.assertEqual(
-            service.get_briefing(42),
-            {"id": 42, "content": "briefing"},
-        )
-        repository.list_briefings.assert_called_once_with(limit=7)
-        repository.get_briefing.assert_called_once_with(42)
-
     @staticmethod
     def _service(repository: BriefingContentRepository) -> DailyBriefingService:
         return DailyBriefingService(
