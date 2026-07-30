@@ -23,7 +23,8 @@ class GitHubRepoMetricsFetchTests(unittest.TestCase):
             "html_url": "https://github.com/owner/repo",
             "stargazers_count": 12,
             "forks_count": 3,
-            "watchers_count": 4,
+            "watchers_count": 12,
+            "subscribers_count": 4,
             "open_issues_count": 1,
         }
         with self._client(lambda _request: httpx.Response(200, json=payload)) as client:
@@ -31,6 +32,21 @@ class GitHubRepoMetricsFetchTests(unittest.TestCase):
 
         self.assertEqual(result.status, "succeeded")
         self.assertEqual(result.metrics["stars"], 12)
+        self.assertEqual(result.metrics["watchers"], 4)
+        self.assertTrue(result.metrics["community_metrics_complete"])
+
+    def test_search_shape_does_not_treat_watchers_count_as_subscribers(self) -> None:
+        payload = {
+            "node_id": "repo-1",
+            "full_name": "owner/repo",
+            "stargazers_count": 12,
+            "watchers_count": 12,
+        }
+        with self._client(lambda _request: httpx.Response(200, json=payload)) as client:
+            result = fetch_github_repo_metrics("owner/repo", client=client, use_token=False)
+
+        self.assertEqual(result.metrics["watchers"], 0)
+        self.assertFalse(result.metrics["community_metrics_complete"])
 
     def test_only_404_is_not_found(self) -> None:
         for status_code, expected in (

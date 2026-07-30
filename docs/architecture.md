@@ -362,6 +362,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 - 优先基于连续自然日快照计算精确 `daily_star_growth`；缺少昨天快照时，仅对同日 GitHub Trending 日榜项目采用页面报告的 `stars today`
 - 通过 `daily_growth_source` 区分 `snapshot_delta`、`github_trending_daily` 与 `unavailable`；周榜/月榜增长不会作为今日增长
 - 写入 `github_repo_daily_metrics`，按规模校正增长、增长加速度、绝对增长、维护活跃、社区参与计算 `hot_score`
+- 内部 `watchers` 专指 GitHub 通知订阅者：REST 使用 `subscribers_count`，GraphQL 使用 `watchers.totalCount`；REST `watchers_count` 是 stars 的兼容别名，禁止作为社区指标。Search/Trending 缺少订阅者明细时标记 `community_metrics_complete=false`，不会计算社区增长
 - `daily_hot_v5` 的增长加速度使用平滑比例 `(daily_growth + 1) / (7d baseline + 1)`，在 `0.25/0`、`0.5/20`、`1/40`、`2/75`、`4/100` 锚点间按对数比例连续插值并在区间外钳制；非正增长为 0，最终仍乘 `min(有效基线样本数 / 3, 1)` 置信度
 - 新计算或重算的指标写入 `daily_hot_v5`；历史评分保留原版本，除非显式重算对应日期
 - 项目库 `sort=hot` 使用 `hot_score DESC, daily_star_growth DESC`，今日暴涨展示两种有效当日来源中的全局热度前 50

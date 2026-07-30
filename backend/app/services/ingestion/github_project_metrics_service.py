@@ -151,6 +151,7 @@ def _candidate_payload(repo: Dict[str, Any], *, existing: Dict[str, Any] | None,
         "stars": int(repo.get("stars") or 0),
         "forks": int(repo.get("forks") or 0),
         "watchers": int(repo.get("watchers") or 0),
+        "community_metrics_complete": bool(repo.get("community_metrics_complete")),
         "source_channels": _merge_channels(str((existing or {}).get("source_channels") or ""), "daily_metrics"),
         "last_snapshot_at": captured_at,
     }
@@ -165,7 +166,9 @@ def _snapshot_payload(repo: Dict[str, Any], *, metric_date: str, captured_at: st
         "stars": int(repo.get("stars") or 0),
         "forks": int(repo.get("forks") or 0),
         "watchers": int(repo.get("watchers") or 0),
-        "community_metrics_complete": 1,
+        "community_metrics_complete": (
+            1 if repo.get("community_metrics_complete") else 0
+        ),
         "open_issues": int(repo.get("open_issues") or 0),
         "repo_created_at": repo.get("created_at") or "",
         "repo_pushed_at": repo.get("pushed_at") or "",

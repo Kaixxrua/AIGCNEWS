@@ -207,6 +207,12 @@ def _fetch_readme(
     return snapshot.text if snapshot.status == "succeeded" else ""
 
 
+def _rest_community_metrics(item: Dict[str, Any]) -> tuple[int, bool]:
+    if "subscribers_count" not in item:
+        return 0, False
+    return int(item.get("subscribers_count") or 0), True
+
+
 def _parse_item(item: dict, client: httpx.Client, use_token: bool = True) -> dict:
     lang = item.get("language") or ""
     desc = item.get("description") or ""
@@ -222,6 +228,7 @@ def _parse_item(item: dict, client: httpx.Client, use_token: bool = True) -> dic
         combined_abstract = f"{summary}\n\nREADME:\n{readme_text}".strip()
 
     repo_id = str(item.get("node_id") or item.get("id", "") or full_name)
+    watchers, community_metrics_complete = _rest_community_metrics(item)
     return {
         "repo_id": repo_id,
         "full_name": full_name,
@@ -240,7 +247,8 @@ def _parse_item(item: dict, client: httpx.Client, use_token: bool = True) -> dic
         "language": lang,
         "stars": int(item.get("stargazers_count", 0) or 0),
         "forks": int(item.get("forks_count", 0) or 0),
-        "watchers": int(item.get("watchers_count", 0) or 0),
+        "watchers": watchers,
+        "community_metrics_complete": community_metrics_complete,
         "open_issues": int(item.get("open_issues_count", 0) or 0),
         "created_at": (item.get("created_at") or "")[:10],
         "pushed_at": (item.get("pushed_at") or "")[:10],
@@ -336,6 +344,7 @@ def _parse_metrics_item(item: Dict[str, Any]) -> Dict[str, Any]:
     full_name = str(item.get("full_name") or item.get("name") or "").strip()
     lang = item.get("language") or ""
     topics = item.get("topics") if isinstance(item.get("topics"), list) else []
+    watchers, community_metrics_complete = _rest_community_metrics(item)
     return {
         "repo_id": str(item.get("node_id") or item.get("id") or full_name),
         "full_name": full_name,
@@ -348,7 +357,8 @@ def _parse_metrics_item(item: Dict[str, Any]) -> Dict[str, Any]:
         "tags": ([lang] if lang else []) + topics[:5],
         "stars": int(item.get("stargazers_count") or 0),
         "forks": int(item.get("forks_count") or 0),
-        "watchers": int(item.get("watchers_count") or 0),
+        "watchers": watchers,
+        "community_metrics_complete": community_metrics_complete,
         "open_issues": int(item.get("open_issues_count") or 0),
         "created_at": (item.get("created_at") or "")[:10],
         "pushed_at": (item.get("pushed_at") or "")[:10],
@@ -444,6 +454,8 @@ def _parse_graphql_repo(node: Dict[str, Any]) -> Dict[str, Any]:
         "stars": int((node.get("stargazerCount") or 0)),
         "forks": int((node.get("forkCount") or 0)),
         "watchers": int(((node.get("watchers") or {}).get("totalCount") or 0)),
+        "community_metrics_complete": isinstance(node.get("watchers"), dict)
+        and "totalCount" in node["watchers"],
         "open_issues": int(((node.get("issues") or {}).get("totalCount") or 0)),
         "created_at": str(node.get("createdAt") or "")[:10],
         "pushed_at": str(node.get("pushedAt") or "")[:10],
@@ -493,7 +505,7 @@ def fetch_github_repo_metrics_batch(
                           primaryLanguage {{ name }}
                           stargazerCount
                           forkCount
-                          watchers {{ totalCount }}
+                          watchers(first: 1) {{ totalCount }}
                           issues(states: OPEN) {{ totalCount }}
                           createdAt
                           pushedAt

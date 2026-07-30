@@ -206,6 +206,33 @@ class HostIntentContractTests(unittest.TestCase):
 
 
 class QueryModeTests(unittest.TestCase):
+    def test_search_normalization_never_treats_watchers_count_as_subscribers(self) -> None:
+        normalized = source_github_mcp._normalize_repo(
+            {
+                "id": 1,
+                "full_name": "owner/repo",
+                "stargazers_count": 700,
+                "watchers_count": 700,
+            }
+        )
+
+        self.assertEqual(normalized["watchers"], 0)
+        self.assertFalse(normalized["community_metrics_complete"])
+
+    def test_normalization_accepts_explicit_subscribers_count(self) -> None:
+        normalized = source_github_mcp._normalize_repo(
+            {
+                "id": 1,
+                "full_name": "owner/repo",
+                "stargazers_count": 700,
+                "watchers_count": 700,
+                "subscribers_count": 12,
+            }
+        )
+
+        self.assertEqual(normalized["watchers"], 12)
+        self.assertTrue(normalized["community_metrics_complete"])
+
     def setUp(self) -> None:
         source_github_mcp._clear_fallback_cache()
 

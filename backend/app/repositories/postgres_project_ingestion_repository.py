@@ -103,6 +103,9 @@ class PostgresGitHubProjectIngestionRepository:
         payload.setdefault("stars", 0)
         payload.setdefault("forks", 0)
         payload.setdefault("watchers", 0)
+        payload["community_metrics_complete"] = bool(
+            payload.get("community_metrics_complete")
+        )
         payload.setdefault("source_channels", "trending_daily" if ensure else "")
         now = _utcnow()
         payload.setdefault("first_seen_at", now)
@@ -133,7 +136,12 @@ class PostgresGitHubProjectIngestionRepository:
                 pushed_at=GREATEST(COALESCE(github_repo_candidates.pushed_at, ''), COALESCE(EXCLUDED.pushed_at, '')),
                 stars=GREATEST(COALESCE(github_repo_candidates.stars, 0), COALESCE(EXCLUDED.stars, 0)),
                 forks=GREATEST(COALESCE(github_repo_candidates.forks, 0), COALESCE(EXCLUDED.forks, 0)),
-                watchers=GREATEST(COALESCE(github_repo_candidates.watchers, 0), COALESCE(EXCLUDED.watchers, 0)),
+                watchers=CASE
+                    WHEN %(community_metrics_complete)s IS TRUE
+                     AND COALESCE(EXCLUDED.last_snapshot_at, '') >= COALESCE(github_repo_candidates.last_snapshot_at, '')
+                    THEN EXCLUDED.watchers
+                    ELSE github_repo_candidates.watchers
+                END,
                 source_channels=EXCLUDED.source_channels,
                 first_seen_at=LEAST(COALESCE(NULLIF(github_repo_candidates.first_seen_at, ''), EXCLUDED.first_seen_at), EXCLUDED.first_seen_at),
                 last_seen_at=GREATEST(COALESCE(github_repo_candidates.last_seen_at, ''), COALESCE(EXCLUDED.last_seen_at, '')),
@@ -262,13 +270,16 @@ class PostgresGitHubProjectIngestionRepository:
                             WHEN github_repo_snapshots.community_metrics_complete IS TRUE THEN github_repo_snapshots.forks
                             ELSE GREATEST(COALESCE(github_repo_snapshots.forks,0),COALESCE(EXCLUDED.forks,0)) END,
                         watchers=CASE
-                            WHEN EXCLUDED.community_metrics_complete IS TRUE AND github_repo_snapshots.community_metrics_complete IS NOT TRUE THEN EXCLUDED.watchers
-                            WHEN EXCLUDED.community_metrics_complete IS TRUE AND github_repo_snapshots.community_metrics_complete IS TRUE THEN GREATEST(COALESCE(github_repo_snapshots.watchers,0),COALESCE(EXCLUDED.watchers,0))
-                            WHEN github_repo_snapshots.community_metrics_complete IS TRUE THEN github_repo_snapshots.watchers
-                            ELSE GREATEST(COALESCE(github_repo_snapshots.watchers,0),COALESCE(EXCLUDED.watchers,0)) END,
+                            WHEN EXCLUDED.community_metrics_complete IS TRUE
+                             AND (github_repo_snapshots.community_metrics_complete IS NOT TRUE
+                               OR COALESCE(EXCLUDED.captured_at,'') >= COALESCE(github_repo_snapshots.captured_at,''))
+                            THEN EXCLUDED.watchers
+                            ELSE github_repo_snapshots.watchers END,
                         community_metrics_complete=CASE
-                            WHEN github_repo_snapshots.community_metrics_complete IS TRUE OR EXCLUDED.community_metrics_complete IS TRUE THEN TRUE
-                            WHEN github_repo_snapshots.community_metrics_complete IS FALSE OR EXCLUDED.community_metrics_complete IS FALSE THEN FALSE
+                            WHEN github_repo_snapshots.community_metrics_complete IS TRUE THEN TRUE
+                            WHEN EXCLUDED.community_metrics_complete IS TRUE THEN TRUE
+                            WHEN github_repo_snapshots.community_metrics_complete IS FALSE
+                              OR EXCLUDED.community_metrics_complete IS FALSE THEN FALSE
                             ELSE NULL END,
                         open_issues=GREATEST(COALESCE(github_repo_snapshots.open_issues,0),COALESCE(EXCLUDED.open_issues,0)),
                         repo_created_at=COALESCE(NULLIF(github_repo_snapshots.repo_created_at,''),EXCLUDED.repo_created_at),

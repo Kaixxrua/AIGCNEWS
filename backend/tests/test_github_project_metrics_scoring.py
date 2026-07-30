@@ -175,13 +175,23 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         self.assertEqual(computed["payload"]["score_version"], "daily_hot_v5")
         self.assertEqual(computed["result"]["score_version"], "daily_hot_v5")
 
-    def test_api_snapshot_payload_marks_community_metrics_complete(self) -> None:
-        payload = metrics._snapshot_payload(
+    def test_snapshot_payload_propagates_community_metrics_completeness(self) -> None:
+        complete = metrics._snapshot_payload(
+            {
+                "repo_id": "repo-1",
+                "full_name": "owner/repo",
+                "community_metrics_complete": True,
+            },
+            metric_date=self.metric_date,
+            captured_at="now",
+        )
+        incomplete = metrics._snapshot_payload(
             {"repo_id": "repo-1", "full_name": "owner/repo"},
             metric_date=self.metric_date,
             captured_at="now",
         )
-        self.assertEqual(payload["community_metrics_complete"], 1)
+        self.assertEqual(complete["community_metrics_complete"], 1)
+        self.assertEqual(incomplete["community_metrics_complete"], 0)
 
 
 class GitHubTrendingSnapshotTests(unittest.TestCase):

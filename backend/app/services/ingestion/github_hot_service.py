@@ -174,7 +174,9 @@ def refresh_github_hot_candidates(
             **repo,
             "repo_id": full_name,
             "source_channels": source_channels,
-            "_community_metrics_complete": True,
+            "_community_metrics_complete": bool(
+                repo.get("community_metrics_complete")
+            ),
         }
 
     try:
@@ -189,11 +191,16 @@ def refresh_github_hot_candidates(
             continue
         existing = candidate_map.get(repo_id)
         repo["repo_id"] = repo_id
-        repo["_community_metrics_complete"] = True
+        repo["_community_metrics_complete"] = bool(
+            repo.get("community_metrics_complete")
+        )
         repo["source_channels"] = _merge_channels(
             (existing or {}).get("source_channels", ""),
             "search_candidates",
         )
+        if existing and existing.get("_community_metrics_complete"):
+            repo["watchers"] = existing.get("watchers", 0)
+            repo["_community_metrics_complete"] = True
         candidate_map[repo_id] = repo if existing is None else {**existing, **repo}
 
     repo_count = 0
@@ -218,6 +225,9 @@ def refresh_github_hot_candidates(
                 "stars": int(repo.get("stars") or 0),
                 "forks": int(repo.get("forks") or 0),
                 "watchers": int(repo.get("watchers") or 0),
+                "community_metrics_complete": bool(
+                    repo.get("_community_metrics_complete")
+                ),
                 "source_channels": channels,
                 "last_snapshot_at": captured_at,
             }
