@@ -32,13 +32,9 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         redis_client.keys = AsyncMock(return_value=[])
         redis_client.aclose = AsyncMock()
 
-        warmup_task = MagicMock()
-        warmup_task.done.return_value = True
-
-        def close_warmup_coroutine(coroutine):
-            coroutine.close()
-            return warmup_task
-
+        project_search_runtime = MagicMock()
+        project_search_runtime.close = AsyncMock()
+        rag_provider = MagicMock()
         scheduler_runtime = MagicMock()
         with (
             patch.object(main, "settings", _settings()),
@@ -49,24 +45,43 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "create_scheduler_runtime",
                 return_value=scheduler_runtime,
             ) as scheduler_factory,
+            patch.object(
+                main,
+                "ApplicationProjectSearchRuntime",
+                return_value=project_search_runtime,
+            ),
+            patch.object(
+                main,
+                "RagChatServiceProvider",
+                return_value=rag_provider,
+            ) as rag_provider_type,
             patch.object(main, "Redis", return_value=redis_client),
             patch.object(main.FastAPICache, "init"),
-            patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
         ):
             async with main.lifespan(app):
                 self.assertIs(app.state.database, database)
                 self.assertIs(app.state.postgres_database, database)
                 self.assertIs(app.state.application_repositories, repositories)
                 self.assertIs(app.state.scheduler_runtime, scheduler_runtime)
-                self.assertIs(app.state.reranker_warmup_task, warmup_task)
+                self.assertIs(app.state.project_search_runtime, project_search_runtime)
                 scheduler_runtime.start.assert_not_called()
                 scheduler_runtime.stop.assert_not_called()
                 database.close.assert_not_called()
 
             factory.assert_called_once_with(postgres=database)
-            scheduler_factory.assert_called_once_with(repositories, enabled=False)
+            rag_provider_type.assert_called_once_with(
+                repositories,
+                project_searcher=project_search_runtime.search_projects,
+            )
+            scheduler_factory.assert_called_once_with(
+                repositories,
+                enabled=False,
+                semantic_search_warmup=project_search_runtime.warmup_semantic_search,
+            )
             scheduler_runtime.start.assert_not_called()
             scheduler_runtime.stop.assert_called_once_with()
+            project_search_runtime.close.assert_awaited_once_with()
+            rag_provider.close.assert_called_once_with()
             redis_client.aclose.assert_awaited_once_with()
             database.close.assert_called_once_with()
 
@@ -113,6 +128,8 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         database = MagicMock()
         repositories = MagicMock()
         scheduler_runtime = MagicMock()
+        project_search_runtime = MagicMock()
+        project_search_runtime.close = AsyncMock()
         redis_client = MagicMock()
         redis_client.ping = AsyncMock()
         redis_client.keys = AsyncMock(return_value=[])
@@ -137,6 +154,11 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "create_scheduler_runtime",
                 return_value=scheduler_runtime,
             ) as scheduler_factory,
+            patch.object(
+                main,
+                "ApplicationProjectSearchRuntime",
+                return_value=project_search_runtime,
+            ),
             patch.object(main, "Redis", return_value=redis_client),
             patch.object(main.FastAPICache, "init"),
             patch.object(
@@ -150,10 +172,15 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 scheduler_runtime.start.assert_called_once_with()
                 scheduler_runtime.stop.assert_not_called()
 
-        scheduler_factory.assert_called_once_with(repositories, enabled=True)
+        scheduler_factory.assert_called_once_with(
+            repositories,
+            enabled=True,
+            semantic_search_warmup=project_search_runtime.warmup_semantic_search,
+        )
         scheduler_runtime.stop.assert_called_once_with()
+        project_search_runtime.close.assert_awaited_once_with()
 
-    async def test_cancels_unfinished_reranker_warmup_on_shutdown(self) -> None:
+    async def test_cancels_unfinished_semantic_warmup_on_shutdown(self) -> None:
         app = FastAPI()
         database = MagicMock()
         redis_client = MagicMock()
@@ -166,8 +193,10 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             coroutine.close()
             return pending
 
+        configured_settings = _settings()
+        configured_settings.project_semantic_search_enabled = True
         with (
-            patch.object(main, "settings", _settings()),
+            patch.object(main, "settings", configured_settings),
             patch.object(main, "postgres_database", database),
             patch.object(main, "create_application_repositories", return_value=MagicMock()),
             patch.object(main, "Redis", return_value=redis_client),
@@ -175,7 +204,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
         ):
             async with main.lifespan(app):
-                pass
+                self.assertIs(app.state.semantic_warmup_task, pending)
 
         self.assertTrue(pending.cancelled())
 

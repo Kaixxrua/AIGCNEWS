@@ -3,7 +3,7 @@ from __future__ import annotations
 """Application-lifetime composition for chat retrieval services."""
 
 from threading import Lock
-from typing import Callable
+from typing import Any, Awaitable, Callable
 
 from backend.app.repositories.application_repository_factory import ApplicationRepositories
 from backend.app.repositories.graph_repo import GraphRepository
@@ -14,6 +14,7 @@ from backend.app.services.rag.retriever import HybridRetriever
 
 VectorReaderFactory = Callable[[], VectorRetrievalReader]
 GraphReaderFactory = Callable[[], GraphRetrievalReader]
+ProjectSearcher = Callable[..., Awaitable[dict[str, Any]]]
 
 
 class RagChatServiceProvider:
@@ -25,10 +26,12 @@ class RagChatServiceProvider:
         *,
         vector_reader_factory: VectorReaderFactory = MilvusRepository,
         graph_reader_factory: GraphReaderFactory = GraphRepository,
+        project_searcher: ProjectSearcher | None = None,
     ) -> None:
         self._repositories = repositories
         self._vector_reader_factory = vector_reader_factory
         self._graph_reader_factory = graph_reader_factory
+        self._project_searcher = project_searcher
         self._lock = Lock()
         self._service: ChatService | None = None
         self._graph_reader: GraphRetrievalReader | None = None
@@ -47,10 +50,15 @@ class RagChatServiceProvider:
                     self._repositories.documents,
                     self._repositories.documents,
                 )
+                service_arguments = {
+                    "ranking_reader": self._repositories.documents,
+                    "statistics_reader": self._repositories.documents,
+                }
+                if self._project_searcher is not None:
+                    service_arguments["project_searcher"] = self._project_searcher
                 service = ChatService(
                     retriever,
-                    ranking_reader=self._repositories.documents,
-                    statistics_reader=self._repositories.documents,
+                    **service_arguments,
                 )
             except Exception:
                 close = getattr(graph_reader, "close", None)

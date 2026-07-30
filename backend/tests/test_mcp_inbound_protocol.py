@@ -46,6 +46,7 @@ from backend.app.api import routes_mcp
 from backend.app.api.dependencies import (
     get_application_repositories,
     get_briefing_repository,
+    get_project_search_runtime,
 )
 from backend.app.core.auth import get_mcp_access_token_authenticator
 from backend.app.services.mcp.inbound import application, catalog, context, tools
@@ -82,6 +83,8 @@ class McpInboundProtocolTests(unittest.TestCase):
         self.briefing_repository = MagicMock()
         self.token_repository = MagicMock()
         self.project_collections = MagicMock()
+        self.project_search_runtime = MagicMock()
+        self.project_search_runtime.search_projects = AsyncMock()
         self.repositories = types.SimpleNamespace(
             documents=MagicMock(),
             rank_snapshots=MagicMock(),
@@ -92,6 +95,9 @@ class McpInboundProtocolTests(unittest.TestCase):
         )
         app.dependency_overrides[get_application_repositories] = (
             lambda: self.repositories
+        )
+        app.dependency_overrides[get_project_search_runtime] = (
+            lambda: self.project_search_runtime
         )
         app.dependency_overrides[get_mcp_access_token_authenticator] = (
             lambda: self.token_repository

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -31,7 +31,13 @@ def test_lifespan_builds_postgres_application_composition(monkeypatch) -> None:
     monkeypatch.setattr(main.postgres_database, "open", open_pool)
     monkeypatch.setattr(main.postgres_database, "close", close_pool)
     monkeypatch.setattr(main, "Redis", MagicMock(side_effect=RuntimeError("offline")))
-    monkeypatch.setattr(main, "_warmup_reranker", lambda: asyncio.sleep(0))
+    project_search_runtime = MagicMock()
+    project_search_runtime.close = AsyncMock()
+    monkeypatch.setattr(
+        main,
+        "ApplicationProjectSearchRuntime",
+        MagicMock(return_value=project_search_runtime),
+    )
 
     app = FastAPI()
 

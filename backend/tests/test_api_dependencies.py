@@ -109,9 +109,12 @@ class DatabaseDependencyTests(unittest.TestCase):
 
     def test_ops_diagnostics_service_composes_runtime_dependencies(self) -> None:
         readiness = MagicMock()
-        snapshot = MagicMock()
-        finalizer = MagicMock()
+        runtime = MagicMock()
         taxonomy = ({"slug": "developer-tools", "name": "开发工具"},)
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        app.state.project_search_runtime = runtime
+        request.app = app
 
         with (
             patch.object(
@@ -125,16 +128,6 @@ class DatabaseDependencyTests(unittest.TestCase):
                 readiness,
             ),
             patch(
-                "backend.app.services.project_search_shadow."
-                "project_search_shadow_snapshot",
-                snapshot,
-            ),
-            patch(
-                "backend.app.services.project_search_shadow."
-                "finalize_project_search_shadow",
-                finalizer,
-            ),
-            patch(
                 "backend.app.services.ingestion.project_taxonomy.WEBSITE_TAXONOMY",
                 taxonomy,
             ),
@@ -144,16 +137,36 @@ class DatabaseDependencyTests(unittest.TestCase):
                 4.5,
             ),
         ):
-            result = dependencies.get_ops_diagnostics_service()
+            result = dependencies.get_ops_diagnostics_service(request)
 
         self.assertIs(result, service_type.return_value)
         service_type.assert_called_once_with(
             readiness=readiness,
-            shadow_snapshot=snapshot,
-            shadow_finalizer=finalizer,
+            shadow_snapshot=runtime.project_search_shadow_snapshot,
+            shadow_finalizer=runtime.finalize_project_search_shadow,
             shadow_shutdown_timeout=4.5,
             website_taxonomy=taxonomy,
         )
+
+    def test_project_search_runtime_uses_application_owned_runtime(self) -> None:
+        runtime = MagicMock()
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        app.state.project_search_runtime = runtime
+        request.app = app
+
+        self.assertIs(dependencies.get_project_search_runtime(request), runtime)
+
+    def test_project_search_runtime_requires_lifespan_setup(self) -> None:
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        request.app = app
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Project search runtime is not configured",
+        ):
+            dependencies.get_project_search_runtime(request)
 
     def test_scheduler_admin_service_uses_application_owned_runtime(self) -> None:
         scheduler_control = MagicMock()

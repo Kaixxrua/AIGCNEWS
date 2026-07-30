@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, List
 
 from backend.app.repositories.document_repository import (
     DocumentRankingReader,
@@ -24,6 +24,8 @@ from backend.app.services.rag.web_search_service import (
     web_search,
 )
 
+ProjectSearcher = Callable[..., Awaitable[dict[str, Any]]]
+
 
 class ChatService:
     def __init__(
@@ -32,10 +34,12 @@ class ChatService:
         *,
         ranking_reader: DocumentRankingReader,
         statistics_reader: DocumentStatisticsReader,
+        project_searcher: ProjectSearcher = search_projects,
     ) -> None:
         self.retriever = retriever
         self._ranking_reader = ranking_reader
         self._statistics_reader = statistics_reader
+        self._project_searcher = project_searcher
 
     async def _run_tool_calls(self, tool_calls: List[ToolCallResult]):
         return await run_tool_calls(
@@ -62,7 +66,7 @@ class ChatService:
             database_tool_runner=self._run_tool_calls,
             tool_definitions=TOOL_DEFINITIONS,
             development_classifier=classify_development_request,
-            project_searcher=search_projects,
+            project_searcher=self._project_searcher,
         )
         async for event in orchestrator.stream_chat(
             query,

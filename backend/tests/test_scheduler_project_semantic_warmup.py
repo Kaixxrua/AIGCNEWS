@@ -9,6 +9,17 @@ from backend.app.core import scheduler
 
 
 class ProjectSemanticWarmupSchedulerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_job_calls_injected_warmup(self) -> None:
+        warmup = MagicMock(return_value={"status": "success"})
+        with patch.object(
+            scheduler.asyncio,
+            "to_thread",
+            new=AsyncMock(return_value={"status": "success"}),
+        ) as to_thread:
+            await scheduler._run_project_semantic_warmup_job(warmup)
+
+        to_thread.assert_awaited_once_with(warmup)
+
     async def test_job_calls_internal_warmup(self) -> None:
         service = types.ModuleType("backend.app.services.project_semantic_search")
         service.warmup_project_semantic_search = MagicMock(return_value={"status": "success"})

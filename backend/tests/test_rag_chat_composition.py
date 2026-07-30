@@ -18,10 +18,12 @@ def _repositories():
 def test_provider_lazily_reuses_service_and_closes_owned_graph_reader() -> None:
     vector = MagicMock()
     graph = MagicMock()
+    project_searcher = MagicMock()
     provider = RagChatServiceProvider(
         _repositories(),
         vector_reader_factory=MagicMock(return_value=vector),
         graph_reader_factory=MagicMock(return_value=graph),
+        project_searcher=project_searcher,
     )
 
     first = provider.get()
@@ -29,6 +31,7 @@ def test_provider_lazily_reuses_service_and_closes_owned_graph_reader() -> None:
     provider.close()
 
     assert first is second
+    assert first._project_searcher is project_searcher
     graph.close.assert_called_once_with()
 
 

@@ -50,6 +50,7 @@ class McpToolContext:
     rank_snapshots: RankSnapshotReader
     project_collection: UserProjectCollectionRepository
     request: Request
+    project_searcher: Callable[..., Awaitable[dict[str, Any]]] = search_projects
 
     @property
     def authorization(self) -> McpAuthorizationContext:
@@ -223,6 +224,7 @@ async def _search_project_library(
     args: dict[str, Any],
     *,
     mode: str,
+    project_searcher: Callable[..., Awaitable[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     generic = mode == "generic"
     q = args.get("q", "")
@@ -233,7 +235,8 @@ async def _search_project_library(
     sort = args.get("sort")
     page = args.get("page", 1)
     limit = args.get("limit", 10)
-    return await search_projects(
+    search = project_searcher or search_projects
+    return await search(
         query=q,
         mode="generic" if generic else "ai",
         language=language,
@@ -249,15 +252,27 @@ async def _search_project_library(
 
 
 async def _tool_search_github_projects(
-    _context_value: McpToolContext, args: dict[str, Any]
+    context: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
-    return await _search_project_library(args, mode="generic")
+    return await _search_project_library(
+        args,
+        mode="generic",
+        project_searcher=(
+            context.project_searcher if context is not None else search_projects
+        ),
+    )
 
 
 async def _tool_search_github_ai_projects(
-    _context_value: McpToolContext, args: dict[str, Any]
+    context: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
-    return await _search_project_library(args, mode="ai")
+    return await _search_project_library(
+        args,
+        mode="ai",
+        project_searcher=(
+            context.project_searcher if context is not None else search_projects
+        ),
+    )
 
 
 async def _tool_search_my_project_favorites(

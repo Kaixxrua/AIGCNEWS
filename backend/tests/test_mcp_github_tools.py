@@ -49,6 +49,7 @@ from backend.app.api.mcp_contracts import SearchGitHubAIProjectsInput, input_sch
 from backend.app.api.dependencies import (
     get_application_repositories,
     get_briefing_repository,
+    get_project_search_runtime,
 )
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentRepository, PapersReader
@@ -527,11 +528,17 @@ class McpProtocolTests(unittest.TestCase):
             rank_snapshots=MagicMock(),
             project_collections=MagicMock(),
         )
+        self.project_search_runtime = types.SimpleNamespace(
+            search_projects=project_discovery.search_projects,
+        )
         app.dependency_overrides[get_briefing_repository] = (
             lambda: self.briefing_repository
         )
         app.dependency_overrides[get_application_repositories] = (
             lambda: self.application_repositories
+        )
+        app.dependency_overrides[get_project_search_runtime] = (
+            lambda: self.project_search_runtime
         )
         app.include_router(routes_mcp.router, prefix="/api")
         self.client = TestClient(app)

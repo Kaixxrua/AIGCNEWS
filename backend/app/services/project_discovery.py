@@ -149,6 +149,7 @@ async def search_projects(
     fallback_search: Any = search_github_projects_fallback,
     semantic_search_factory: Any | None = None,
     reranker_factory: Any | None = None,
+    shadow_manager_factory: Any | None = None,
 ) -> dict[str, Any]:
     generic = mode == "generic"
     query = normalize_search_query(str(query or ""))[:120]
@@ -257,9 +258,14 @@ async def search_projects(
         else:
             candidate_repo_ids = legacy_repo_ids
         if strategy == "shadow" and callable(lexical_lane_search):
-            from backend.app.services.project_search_shadow import (
-                get_project_search_shadow_manager,
-            )
+            if shadow_manager_factory is None:
+                from backend.app.services.project_search_shadow import (
+                    get_project_search_shadow_manager,
+                )
+
+                shadow_manager_factory = lambda: get_project_search_shadow_manager(
+                    settings
+                )
 
             lane_arguments = {
                 "q": lexical_plan,
@@ -271,7 +277,7 @@ async def search_projects(
                 "strict_limit": 150,
                 "relaxed_limit": 150,
             }
-            get_project_search_shadow_manager(settings).submit(
+            shadow_manager_factory().submit(
                 arguments={
                     "query": query,
                     "category": category,

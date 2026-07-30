@@ -278,17 +278,14 @@ class ProjectDiscoveryTests(unittest.TestCase):
         manager = MagicMock()
         project_discovery.settings.project_ai_search_strategy = "shadow"
         try:
-            with unittest.mock.patch(
-                "backend.app.services.project_search_shadow.get_project_search_shadow_manager",
-                return_value=manager,
-            ):
-                result = asyncio.run(
-                    project_discovery.search_projects(
-                        query="agent learning",
-                        mode="ai",
-                        repository_factory=ShadowRepository,
-                    )
+            result = asyncio.run(
+                project_discovery.search_projects(
+                    query="agent learning",
+                    mode="ai",
+                    repository_factory=ShadowRepository,
+                    shadow_manager_factory=lambda: manager,
                 )
+            )
         finally:
             project_discovery.settings.project_ai_search_strategy = "legacy"
 

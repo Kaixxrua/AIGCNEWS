@@ -36,6 +36,7 @@ from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
 from backend.app.core.scheduler import create_scheduler_runtime
+from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.rag.composition import RagChatServiceProvider
 
 
@@ -73,25 +74,12 @@ class VisitorTrackingMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-async def _warmup_reranker() -> None:
-    """后台预热 Cross-Encoder 模型，不阻塞服务启动。"""
-    try:
-        from backend.app.services.rag.reranker import _get_cross_encoder
-
-        await _get_cross_encoder()
-        print("[Startup] Cross-Encoder model warmed up.")
-    except Exception as exc:
-        print(f"[Startup] Cross-Encoder warmup failed (non-fatal): {exc}")
-
-
-async def _warmup_project_semantic_search() -> None:
+async def _warmup_project_semantic_search(
+    runtime: ApplicationProjectSearchRuntime,
+) -> None:
     """后台预热项目语义搜索链路，不阻塞服务启动。"""
     try:
-        from backend.app.services.project_semantic_search import (
-            warmup_project_semantic_search,
-        )
-
-        result = await asyncio.to_thread(warmup_project_semantic_search)
+        result = await asyncio.to_thread(runtime.warmup_semantic_search)
         print(f"[Startup] Project semantic search warmup: {result.get('status')}.")
     except Exception as exc:
         print(f"[Startup] Project semantic search warmup failed (non-fatal): {exc}")
@@ -126,8 +114,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Own application resources from startup through failure-isolated shutdown."""
     postgres_opened = False
     repositories_configured = False
+    project_search_runtime: ApplicationProjectSearchRuntime | None = None
     rag_provider: RagChatServiceProvider | None = None
-    reranker_warmup_task: asyncio.Task[object] | None = None
     semantic_warmup_task: asyncio.Task[object] | None = None
     redis_client: Redis | None = None
     scheduler_runtime = None
@@ -136,6 +124,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.postgres_database = postgres_database
     app.state.application_database_backend = "postgres"
     app.state.redis = None
+    app.state.project_search_runtime = None
 
     try:
         await asyncio.to_thread(postgres_database.open)
@@ -145,15 +134,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         configure_application_repositories(app.state.application_repositories)
         repositories_configured = True
-        rag_provider = RagChatServiceProvider(app.state.application_repositories)
+        project_search_runtime = ApplicationProjectSearchRuntime()
+        app.state.project_search_runtime = project_search_runtime
+        rag_provider = RagChatServiceProvider(
+            app.state.application_repositories,
+            project_searcher=project_search_runtime.search_projects,
+        )
         app.state.rag_chat_service_provider = rag_provider
 
-        # 在后台异步预热模型，不阻塞服务启动
-        reranker_warmup_task = asyncio.create_task(_warmup_reranker())
-        app.state.reranker_warmup_task = reranker_warmup_task
+        # 在后台异步预热项目语义搜索，不阻塞服务启动
         if settings.project_semantic_search_enabled:
             semantic_warmup_task = asyncio.create_task(
-                _warmup_project_semantic_search()
+                _warmup_project_semantic_search(project_search_runtime)
             )
             app.state.semantic_warmup_task = semantic_warmup_task
 
@@ -205,6 +197,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         scheduler_runtime = create_scheduler_runtime(
             app.state.application_repositories,
             enabled=scheduler_enabled,
+            semantic_search_warmup=(
+                project_search_runtime.warmup_semantic_search
+            ),
         )
         app.state.scheduler_runtime = scheduler_runtime
         if scheduler_enabled:
@@ -222,25 +217,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             semantic_warmup_task,
             name="Project semantic search warmup",
         )
-        await _cancel_background_task(
-            reranker_warmup_task,
-            name="Cross-Encoder warmup",
-        )
-
-        try:
-            from backend.app.services.project_semantic_search import (
-                close_project_semantic_search,
-            )
-
-            await asyncio.to_thread(close_project_semantic_search)
-        except Exception as exc:
-            print(f"[Shutdown] Project semantic search close failed (non-fatal): {exc}")
-        try:
-            from backend.app.services.project_reranker import close_project_reranker
-
-            await close_project_reranker()
-        except Exception as exc:
-            print(f"[Shutdown] Project reranker close failed (non-fatal): {exc}")
+        if project_search_runtime is not None:
+            try:
+                await project_search_runtime.close()
+            except Exception as exc:
+                print(f"[Shutdown] Project search runtime close failed (non-fatal): {exc}")
+            finally:
+                app.state.project_search_runtime = None
 
         FastAPICache.reset()
         if redis_client is not None:
@@ -251,24 +234,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 print(f"[Shutdown] Redis close failed (non-fatal): {exc}")
             finally:
                 app.state.redis = None
-
-        try:
-            from backend.app.services.project_search_shadow import (
-                stop_project_search_shadow,
-            )
-
-            await asyncio.to_thread(
-                stop_project_search_shadow,
-                float(
-                    getattr(
-                        settings,
-                        "project_search_shadow_shutdown_timeout_seconds",
-                        5.0,
-                    )
-                ),
-            )
-        except Exception as exc:
-            print(f"[Shutdown] Project search shadow close failed (non-fatal): {exc}")
 
         if rag_provider is not None:
             try:

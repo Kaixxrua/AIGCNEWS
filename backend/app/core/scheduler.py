@@ -465,13 +465,17 @@ async def _run_daily_briefing_job(
     )
 
 
-async def _run_project_semantic_warmup_job() -> None:
+async def _run_project_semantic_warmup_job(
+    warmup: Any | None = None,
+) -> None:
     try:
-        from backend.app.services.project_semantic_search import (
-            warmup_project_semantic_search,
-        )
+        if warmup is None:
+            from backend.app.services.project_semantic_search import (
+                warmup_project_semantic_search,
+            )
 
-        result = await asyncio.to_thread(warmup_project_semantic_search)
+            warmup = warmup_project_semantic_search
+        result = await asyncio.to_thread(warmup)
         if result.get("status") == "failed":
             logger.warning("[Scheduler] 项目语义搜索预热失败：%s", result)
         else:
@@ -532,11 +536,13 @@ class ApplicationSchedulerRuntime:
         *,
         scheduler: AsyncIOScheduler | None = None,
         semantic_search_enabled: bool = False,
+        semantic_search_warmup: Any | None = None,
         timezone_name: str = "Asia/Shanghai",
     ) -> None:
         self.repositories = repositories
         self.scheduler = scheduler or AsyncIOScheduler(timezone=timezone_name)
         self._semantic_search_enabled = semantic_search_enabled
+        self._semantic_search_warmup = semantic_search_warmup
         self._timezone_name = timezone_name
         self._github_job_lock = asyncio.Lock()
         self._startup_reconciliation_tasks: set[asyncio.Task[Any]] = set()
@@ -565,6 +571,11 @@ class ApplicationSchedulerRuntime:
 
     async def _run_conversation_cleanup_job(self) -> None:
         await _run_conversation_cleanup_job(self.repositories.conversations)
+
+    async def _run_project_semantic_warmup_job(self) -> None:
+        await _run_project_semantic_warmup_job(
+            self._semantic_search_warmup,
+        )
 
     def start(self) -> None:
         if self.scheduler.running:
@@ -609,7 +620,7 @@ class ApplicationSchedulerRuntime:
                 project_semantic_warmup_job_descriptor(
                     timezone=self._timezone_name,
                 ),
-                _run_project_semantic_warmup_job,
+                self._run_project_semantic_warmup_job,
             )
             logger.info("[Scheduler] 注册项目语义搜索预热任务（每 30 分钟）")
 
@@ -659,6 +670,7 @@ def create_scheduler_runtime(
     repositories: ApplicationRepositories,
     *,
     enabled: bool = True,
+    semantic_search_warmup: Any | None = None,
 ) -> ApplicationSchedulerRuntime:
     from backend.app.core.config import settings
 
@@ -673,5 +685,6 @@ def create_scheduler_runtime(
         semantic_search_enabled=bool(
             getattr(settings, "project_semantic_search_enabled", False)
         ),
+        semantic_search_warmup=semantic_search_warmup,
         timezone_name=timezone_name,
     )

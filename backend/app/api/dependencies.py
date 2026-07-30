@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import Depends, Request
 
 from backend.app.monitoring.health import HealthCheckService, provide_health_check_service
@@ -184,6 +186,13 @@ def get_rag_chat_service(request: Request) -> ChatService:
     return provider.get()
 
 
+def get_project_search_runtime(request: Request) -> Any:
+    runtime = getattr(request.app.state, "project_search_runtime", None)
+    if runtime is None:
+        raise RuntimeError("Project search runtime is not configured")
+    return runtime
+
+
 def get_scheduler_admin_service(request: Request) -> SchedulerAdminService:
     runtime = getattr(request.app.state, "scheduler_runtime", None)
     if runtime is None:
@@ -191,21 +200,20 @@ def get_scheduler_admin_service(request: Request) -> SchedulerAdminService:
     return SchedulerAdminService(runtime.scheduler)
 
 
-def get_ops_diagnostics_service() -> OpsDiagnosticsService:
+def get_ops_diagnostics_service(request: Request) -> OpsDiagnosticsService:
     from backend.app.core.config import settings
     from backend.app.services.ingestion.project_taxonomy import WEBSITE_TAXONOMY
     from backend.app.services.project_catalog_readiness import (
         project_catalog_runtime_readiness,
     )
-    from backend.app.services.project_search_shadow import (
-        finalize_project_search_shadow,
-        project_search_shadow_snapshot,
-    )
 
+    runtime = getattr(request.app.state, "project_search_runtime", None)
+    if runtime is None:
+        raise RuntimeError("Project search runtime is not configured")
     return OpsDiagnosticsService(
         readiness=project_catalog_runtime_readiness,
-        shadow_snapshot=project_search_shadow_snapshot,
-        shadow_finalizer=finalize_project_search_shadow,
+        shadow_snapshot=runtime.project_search_shadow_snapshot,
+        shadow_finalizer=runtime.finalize_project_search_shadow,
         shadow_shutdown_timeout=float(
             settings.project_search_shadow_shutdown_timeout_seconds
         ),

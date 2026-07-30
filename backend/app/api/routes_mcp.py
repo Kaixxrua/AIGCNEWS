@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from backend.app.api.dependencies import (
     get_application_repositories,
     get_briefing_repository,
+    get_project_search_runtime,
 )
 from backend.app.core.auth import OptionalMcpUser
 from backend.app.repositories.application_repository_factory import ApplicationRepositories
@@ -48,6 +49,7 @@ async def mcp_endpoint(
     mcp_user: dict[str, Any] | None = Depends(OptionalMcpUser),
     briefing_repository: BriefingReader = Depends(get_briefing_repository),
     repositories: ApplicationRepositories = Depends(get_application_repositories),
+    project_search_runtime: Any = Depends(get_project_search_runtime),
 ) -> Response:
     authorization = McpAuthorizationContext(mcp_user)
     tool_context = McpToolContext(
@@ -57,6 +59,7 @@ async def mcp_endpoint(
         rank_snapshots=repositories.rank_snapshots,
         project_collection=repositories.project_collections,
         request=request,
+        project_searcher=project_search_runtime.search_projects,
     )
     application = McpProtocolApplication(
         McpProtocolDependencies(

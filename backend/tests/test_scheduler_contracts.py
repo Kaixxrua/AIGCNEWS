@@ -201,12 +201,17 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
 
     def test_runtime_callbacks_forward_owned_repositories_and_lock(self) -> None:
         repositories = MagicMock()
-        runtime = scheduler.ApplicationSchedulerRuntime(repositories)
+        semantic_warmup_callback = MagicMock()
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            repositories,
+            semantic_search_warmup=semantic_warmup_callback,
+        )
         single_source = AsyncMock()
         daily_pipeline = AsyncMock()
         metrics_refresh = AsyncMock()
         daily_briefing = AsyncMock()
         conversation_cleanup = AsyncMock()
+        semantic_warmup = AsyncMock()
 
         with (
             patch.object(scheduler, "_run_single_source_job", new=single_source),
@@ -230,12 +235,18 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "_run_conversation_cleanup_job",
                 new=conversation_cleanup,
             ),
+            patch.object(
+                scheduler,
+                "_run_project_semantic_warmup_job",
+                new=semantic_warmup,
+            ),
         ):
             asyncio.run(runtime._run_single_source_job("github"))
             asyncio.run(runtime._run_github_project_daily_pipeline_job())
             asyncio.run(runtime._run_github_project_metrics_refresh_job())
             asyncio.run(runtime._run_daily_briefing_job())
             asyncio.run(runtime._run_conversation_cleanup_job())
+            asyncio.run(runtime._run_project_semantic_warmup_job())
 
         single_source.assert_awaited_once_with(
             "github",
@@ -252,6 +263,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         )
         daily_briefing.assert_awaited_once_with(repositories)
         conversation_cleanup.assert_awaited_once_with(repositories.conversations)
+        semantic_warmup.assert_awaited_once_with(semantic_warmup_callback)
 
     def test_optional_jobs_freeze_intervals_options_and_startup_order(self) -> None:
         fake_scheduler, events = self._start_scheduler(
