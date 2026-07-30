@@ -44,6 +44,19 @@ class DatabaseDependencyTests(unittest.TestCase):
         for provider, attribute in mapping.items():
             self.assertIs(provider(repositories), getattr(repositories, attribute))
 
+    def test_briefing_admin_service_wraps_injected_generator(self) -> None:
+        briefing = MagicMock()
+
+        with patch.object(
+            dependencies,
+            "BriefingAdminService",
+            return_value=MagicMock(),
+        ) as service_type:
+            result = dependencies.get_briefing_admin_service(briefing)
+
+        self.assertIs(result, service_type.return_value)
+        service_type.assert_called_once_with(briefing)
+
     def test_conversation_service_wraps_injected_repository(self) -> None:
         repository = MagicMock()
 

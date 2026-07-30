@@ -10,6 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.app.api.dependencies import (
+    get_briefing_admin_service,
     get_dashboard_cache_admin_service,
     get_data_cleanup_admin_service,
     get_document_repository,
@@ -36,6 +37,7 @@ from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingManager,
 )
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
+from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
@@ -853,53 +855,6 @@ async def trigger_scheduled_job(
 
 # ── 每日简报生成 ─────────────────────────────────────────────────────────────
 
-_BRIEFING_TASKS = [
-    {"source": "all", "period": "daily"},
-    {"source": "arxiv", "period": "daily"},
-    {"source": "github", "period": "daily"},
-    {"source": "news", "period": "daily"},
-    {"source": "producthunt", "period": "daily"},
-    {"source": "hackernews", "period": "daily"},
-]
-
-
-async def _bg_generate_all_briefings(force_regenerate: bool) -> None:
-    """后台生成全维度每日简报（与 scheduler 中的逻辑一致）。"""
-    from backend.app.services.briefing.composition import provide_daily_briefing_service
-
-    service = provide_daily_briefing_service()
-    success = 0
-    for task in _BRIEFING_TASKS:
-        source = task["source"]
-        period = task["period"]
-        try:
-            async for _ in service.stream_generate(
-                target_date=None,
-                source=source,
-                period=period,
-                force_regenerate=force_regenerate,
-            ):
-                pass
-            success += 1
-            logger.info("[Ops] 简报生成完成: source=%s period=%s", source, period)
-        except Exception as exc:
-            logger.error(
-                "[Ops] 简报生成失败: source=%s period=%s error=%s",
-                source,
-                period,
-                exc,
-                exc_info=True,
-            )
-    logger.info("[Ops] 全维度简报生成完毕，%d/%d 成功。", success, len(_BRIEFING_TASKS))
-
-
-def _run_briefings_sync(force_regenerate: bool) -> None:
-    """在线程中运行异步简报生成。"""
-    import asyncio
-
-    asyncio.run(_bg_generate_all_briefings(force_regenerate))
-
-
 @router.post("/ops/briefing/generate-all", response_model=IngestResponse, tags=["Ops"])
 async def generate_all_briefings(
     force_regenerate: bool = Query(
@@ -907,6 +862,7 @@ async def generate_all_briefings(
     ),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
     _: dict = Depends(RequireAdmin),
+    service: BriefingAdminService = Depends(get_briefing_admin_service),
 ) -> IngestResponse:
     """
     手动触发全维度每日简报生成。
@@ -918,7 +874,7 @@ async def generate_all_briefings(
     - **force_regenerate=false**：已生成过则跳过，避免重复消耗 LLM。
     """
     assert background_tasks is not None
-    background_tasks.add_task(_run_briefings_sync, force_regenerate)
+    background_tasks.add_task(service.generate_all, force_regenerate)
     logger.info(
         "[Ops] 全维度简报生成任务已加入后台队列，force_regenerate=%s", force_regenerate
     )

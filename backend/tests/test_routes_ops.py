@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_ops
 from backend.app.api.dependencies import (
+    get_briefing_admin_service,
     get_dashboard_cache_admin_service,
     get_document_repository,
     get_github_project_enrichment_repository,
@@ -34,6 +35,41 @@ from backend.app.repositories.task_repository import IngestionTaskAdminRepositor
 
 
 class OperationsRouteTests(unittest.TestCase):
+    def test_generate_all_briefings_queues_injected_service(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        service = MagicMock()
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[get_briefing_admin_service] = lambda: service
+
+        with patch.object(service, "generate_all", new=AsyncMock()) as generate_all:
+            response = TestClient(app).post(
+                "/api/ops/briefing/generate-all",
+                params={"force_regenerate": "false"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "status": "queued",
+                "message": "全维度每日简报生成任务已提交（force_regenerate=False），后台执行中。",
+                "task_id": None,
+            },
+        )
+        generate_all.assert_awaited_once_with(False)
+
+    def test_generate_all_briefings_requires_admin_before_queueing(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        service = MagicMock()
+        app.dependency_overrides[get_briefing_admin_service] = lambda: service
+
+        response = TestClient(app).post("/api/ops/briefing/generate-all")
+
+        self.assertIn(response.status_code, (401, 403))
+        service.generate_all.assert_not_called()
+
     def test_clear_data_uses_separate_task_admin_repository(self) -> None:
         app = FastAPI()
         app.include_router(routes_ops.router, prefix="/api")

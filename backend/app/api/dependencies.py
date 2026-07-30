@@ -41,6 +41,7 @@ from backend.app.repositories.task_repository import (
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.briefing.composition import provide_daily_briefing_service
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
+from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
@@ -104,6 +105,12 @@ def get_daily_briefing_service(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> DailyBriefingService:
     return provide_daily_briefing_service(repositories=repositories)
+
+
+def get_briefing_admin_service(
+    briefing: DailyBriefingService = Depends(get_daily_briefing_service),
+) -> BriefingAdminService:
+    return BriefingAdminService(briefing)
 
 
 def get_evaluation_repository(
