@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import List
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -28,6 +29,17 @@ class MilvusRepository:
             "db_name": settings.milvus_db_name,
         }
         self._collection_name = settings.milvus_collection_name
+        self._close_lock = threading.Lock()
+        self._closed = False
+
+    def close(self) -> None:
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+            http_client = getattr(self._embeddings, "http_client", None)
+            if http_client is not None:
+                http_client.close()
 
     def is_available(self) -> bool:
         try:

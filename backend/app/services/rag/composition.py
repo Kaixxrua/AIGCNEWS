@@ -34,6 +34,7 @@ class RagChatServiceProvider:
         self._project_searcher = project_searcher
         self._lock = Lock()
         self._service: ChatService | None = None
+        self._vector_reader: VectorRetrievalReader | None = None
         self._graph_reader: GraphRetrievalReader | None = None
 
     def get(self) -> ChatService:
@@ -42,7 +43,11 @@ class RagChatServiceProvider:
                 return self._service
 
             vector_reader = self._vector_reader_factory()
-            graph_reader = self._graph_reader_factory()
+            try:
+                graph_reader = self._graph_reader_factory()
+            except Exception:
+                self._close_reader(vector_reader)
+                raise
             try:
                 retriever = HybridRetriever(
                     vector_reader,
@@ -61,21 +66,29 @@ class RagChatServiceProvider:
                     **service_arguments,
                 )
             except Exception:
-                close = getattr(graph_reader, "close", None)
-                if close is not None:
-                    close()
+                self._close_reader(graph_reader)
+                self._close_reader(vector_reader)
                 raise
 
+            self._vector_reader = vector_reader
             self._graph_reader = graph_reader
             self._service = service
             return service
 
+    @staticmethod
+    def _close_reader(reader: object) -> None:
+        close = getattr(reader, "close", None)
+        if close is not None:
+            close()
+
     def close(self) -> None:
         with self._lock:
+            vector_reader = self._vector_reader
             graph_reader = self._graph_reader
+            self._vector_reader = None
             self._graph_reader = None
             self._service = None
         if graph_reader is not None:
-            close = getattr(graph_reader, "close", None)
-            if close is not None:
-                close()
+            self._close_reader(graph_reader)
+        if vector_reader is not None:
+            self._close_reader(vector_reader)

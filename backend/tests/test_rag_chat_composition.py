@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from fastapi import FastAPI, Request
 
@@ -15,7 +15,7 @@ def _repositories():
     return SimpleNamespace(documents=MagicMock())
 
 
-def test_provider_lazily_reuses_service_and_closes_owned_graph_reader() -> None:
+def test_provider_lazily_reuses_service_and_closes_owned_readers() -> None:
     vector = MagicMock()
     graph = MagicMock()
     project_searcher = MagicMock()
@@ -29,18 +29,20 @@ def test_provider_lazily_reuses_service_and_closes_owned_graph_reader() -> None:
     first = provider.get()
     second = provider.get()
     provider.close()
+    provider.close()
 
     assert first is second
     assert first._project_searcher is project_searcher
     graph.close.assert_called_once_with()
+    vector.close.assert_called_once_with()
 
 
-def test_provider_closes_graph_reader_when_composition_fails() -> None:
-    graph = MagicMock()
+def test_provider_does_not_construct_graph_when_vector_factory_fails() -> None:
+    graph_factory = MagicMock()
     provider = RagChatServiceProvider(
         _repositories(),
         vector_reader_factory=MagicMock(side_effect=RuntimeError("vector failed")),
-        graph_reader_factory=MagicMock(return_value=graph),
+        graph_reader_factory=graph_factory,
     )
 
     try:
@@ -50,7 +52,49 @@ def test_provider_closes_graph_reader_when_composition_fails() -> None:
     else:
         raise AssertionError("provider should propagate composition failure")
 
-    graph.close.assert_not_called()
+    graph_factory.assert_not_called()
+
+
+def test_provider_closes_vector_when_graph_factory_fails() -> None:
+    vector = MagicMock()
+    provider = RagChatServiceProvider(
+        _repositories(),
+        vector_reader_factory=MagicMock(return_value=vector),
+        graph_reader_factory=MagicMock(side_effect=RuntimeError("graph failed")),
+    )
+
+    try:
+        provider.get()
+    except RuntimeError as exc:
+        assert str(exc) == "graph failed"
+    else:
+        raise AssertionError("provider should propagate composition failure")
+
+    vector.close.assert_called_once_with()
+
+
+def test_provider_closes_both_readers_when_composition_fails() -> None:
+    vector = MagicMock()
+    graph = MagicMock()
+    provider = RagChatServiceProvider(
+        _repositories(),
+        vector_reader_factory=MagicMock(return_value=vector),
+        graph_reader_factory=MagicMock(return_value=graph),
+    )
+
+    with patch(
+        "backend.app.services.rag.composition.HybridRetriever",
+        side_effect=RuntimeError("composition failed"),
+    ):
+        try:
+            provider.get()
+        except RuntimeError as exc:
+            assert str(exc) == "composition failed"
+        else:
+            raise AssertionError("provider should propagate composition failure")
+
+    graph.close.assert_called_once_with()
+    vector.close.assert_called_once_with()
 
 
 def test_fastapi_dependency_reads_application_provider() -> None:
