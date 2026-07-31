@@ -176,6 +176,7 @@ const description = computed(() => projectDescription(
           {{ deleting ? t('common.processing') : t('projects.delete') }}
         </button>
       </div>
+
     </header>
 
     <p class="project-card__description">
@@ -275,7 +276,7 @@ const description = computed(() => projectDescription(
 .project-card > * { position: relative; z-index: 1; }
 .project-card__pin { position: absolute; top: 14px; right: 16px; width: 8px; height: 8px; border-radius: 999px; background: var(--projects-accent); box-shadow: 0 0 0 5px var(--projects-accent-soft); }
 .project-card__pin--website { background: var(--projects-warm); box-shadow: 0 0 0 5px var(--projects-warm-soft); }
-.project-card__header { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: space-between; gap: 14px; padding-right: 14px; }
+.project-card__header { display: grid; grid-template-columns: minmax(0, 1fr) var(--projects-card-action-width, 152px); align-items: start; gap: 14px; padding-right: 14px; }
 .project-card__header > * { min-width: 0; }
 .project-card__identity { display: flex; align-items: flex-start; min-width: 0; flex: 1 1 220px; gap: 12px; }
 .project-card__identity > div:last-child { min-width: 0; }
@@ -338,13 +339,13 @@ const description = computed(() => projectDescription(
 
 @media (max-width: 720px) {
   .project-card { min-width: 0; }
-  .project-card__header { flex-direction: column; padding-right: 0; }
+  .project-card__header { display: flex; flex-direction: column; padding-right: 0; }
   .project-card__actions { width: 100%; min-width: 0; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
   .project-card__action { width: auto; min-width: 124px; max-width: 100%; }
 }
 
 @container (max-width: 520px) {
-  .project-card__header { flex-direction: column; padding-right: 0; }
+  .project-card__header { display: flex; flex-direction: column; padding-right: 0; }
   .project-card__actions { width: 100%; min-width: 0; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
   .project-card__action { width: auto; min-width: 124px; max-width: 100%; }
   .project-card__stats { flex-wrap: wrap; }

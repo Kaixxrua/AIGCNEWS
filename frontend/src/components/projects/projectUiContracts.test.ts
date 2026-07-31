@@ -23,6 +23,7 @@ describe('project UI sizing contracts', () => {
   it('normalizes card actions within a group while allowing narrow cards to wrap', () => {
     expect(cardSource).toContain('class="project-card__action project-card__link"')
     expect(cardSource).toContain('class="project-card__action project-card__favorite"')
+    expect(cardSource).toContain('grid-template-columns: minmax(0, 1fr) var(--projects-card-action-width, 152px)')
     expect(cardSource).toContain('width: var(--projects-card-action-width, 152px)')
     expect(cardSource).toContain('min-height: var(--projects-control-compact-height, 36px)')
     expect(cardSource).toContain('@container (max-width: 520px)')
