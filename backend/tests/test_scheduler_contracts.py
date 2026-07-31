@@ -27,6 +27,9 @@ class _RecordingScheduler:
         self.events.append("start")
         self.running = True
 
+    def pause(self) -> None:
+        self.events.append("pause")
+
     def shutdown(self, *, wait: bool) -> None:
         self.events.append(f"shutdown:{wait}")
         self.running = False
@@ -373,42 +376,99 @@ class SchedulerLifecycleAndStatusContractTests(unittest.TestCase):
             ],
         )
 
-    def test_stop_cancels_unfinished_startup_reconciliation_tasks(self) -> None:
-        events: list[str] = []
-        stopped = _RecordingScheduler(events, running=False)
-        runtime = scheduler.ApplicationSchedulerRuntime(
-            MagicMock(),
-            scheduler=stopped,  # type: ignore[arg-type]
-        )
-        pending = MagicMock()
-        pending.done.return_value = False
-        completed = MagicMock()
-        completed.done.return_value = True
-        runtime._startup_reconciliation_tasks.update({pending, completed})
+    def test_stop_drains_owned_tasks_before_returning(self) -> None:
+        async def run() -> None:
+            events: list[str] = []
+            stopped = _RecordingScheduler(events, running=False)
+            runtime = scheduler.ApplicationSchedulerRuntime(
+                MagicMock(),
+                scheduler=stopped,  # type: ignore[arg-type]
+            )
+            release = asyncio.Event()
 
-        runtime.stop()
+            async def operation() -> None:
+                events.append("operation:start")
+                await release.wait()
+                events.append("operation:done")
 
-        pending.cancel.assert_called_once_with()
-        completed.cancel.assert_not_called()
-        self.assertEqual(runtime._startup_reconciliation_tasks, set())
+            task = asyncio.create_task(operation())
+            runtime._active_tasks.add(task)
+            await asyncio.sleep(0)
+            stop_task = asyncio.create_task(runtime.stop())
+            await asyncio.sleep(0)
 
-    def test_stop_only_shuts_down_running_scheduler_without_waiting(self) -> None:
+            self.assertFalse(stop_task.done())
+            release.set()
+            await stop_task
+            self.assertEqual(events, ["operation:start", "operation:done"])
+            self.assertEqual(runtime._active_tasks, set())
+
+        asyncio.run(run())
+
+    def test_stop_pauses_scheduler_before_shutdown_and_is_idempotent(self) -> None:
         events: list[str] = []
         running = _RecordingScheduler(events, running=True)
         runtime = scheduler.ApplicationSchedulerRuntime(
             MagicMock(),
             scheduler=running,  # type: ignore[arg-type]
         )
-        runtime.stop()
-        self.assertEqual(events, ["shutdown:False"])
 
-        stopped = _RecordingScheduler(events, running=False)
-        runtime = scheduler.ApplicationSchedulerRuntime(
-            MagicMock(),
-            scheduler=stopped,  # type: ignore[arg-type]
-        )
-        runtime.stop()
-        self.assertEqual(events, ["shutdown:False"])
+        asyncio.run(runtime.stop())
+        asyncio.run(runtime.stop())
+
+        self.assertEqual(events, ["pause", "shutdown:False"])
+
+    def test_stop_logs_expired_grace_period_but_still_drains(self) -> None:
+        async def run(warning: MagicMock) -> None:
+            runtime = scheduler.ApplicationSchedulerRuntime(
+                MagicMock(),
+                scheduler=_RecordingScheduler([], running=False),  # type: ignore[arg-type]
+                shutdown_grace_seconds=0.0,
+            )
+            release = asyncio.Event()
+
+            async def operation() -> None:
+                await release.wait()
+
+            task = asyncio.create_task(operation())
+            runtime._active_tasks.add(task)
+            stop_task = asyncio.create_task(runtime.stop())
+            for _ in range(10):
+                await asyncio.sleep(0)
+                if warning.called:
+                    break
+
+            warning.assert_called_once()
+            self.assertFalse(stop_task.done())
+            release.set()
+            await stop_task
+            self.assertEqual(runtime._active_tasks, set())
+
+        with patch.object(scheduler.logger, "warning") as warning:
+            asyncio.run(run(warning))
+
+    def test_tracked_job_survives_scheduler_wrapper_cancellation(self) -> None:
+        async def run() -> None:
+            runtime = scheduler.ApplicationSchedulerRuntime(MagicMock())
+            release = asyncio.Event()
+            completed = asyncio.Event()
+
+            async def operation() -> None:
+                await release.wait()
+                completed.set()
+
+            wrapper = asyncio.create_task(runtime._run_tracked(operation))
+            await asyncio.sleep(0)
+            wrapper.cancel()
+            await asyncio.sleep(0)
+
+            self.assertFalse(wrapper.done())
+            release.set()
+            await wrapper
+            self.assertTrue(completed.is_set())
+            self.assertEqual(runtime._active_tasks, set())
+
+        asyncio.run(run())
 
 
 if __name__ == "__main__":

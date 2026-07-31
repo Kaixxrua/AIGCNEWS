@@ -214,7 +214,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         if scheduler_runtime is not None:
             try:
-                scheduler_runtime.stop()
+                await scheduler_runtime.stop()
             except Exception as exc:
                 print(f"[Shutdown] Scheduler close failed (non-fatal): {exc}")
 

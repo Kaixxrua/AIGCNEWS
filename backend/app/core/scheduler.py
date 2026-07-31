@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
 
@@ -537,50 +538,86 @@ class ApplicationSchedulerRuntime:
         scheduler: AsyncIOScheduler | None = None,
         semantic_search_enabled: bool = False,
         semantic_search_warmup: Any | None = None,
+        shutdown_grace_seconds: float = 30.0,
         timezone_name: str = "Asia/Shanghai",
     ) -> None:
         self.repositories = repositories
         self.scheduler = scheduler or AsyncIOScheduler(timezone=timezone_name)
         self._semantic_search_enabled = semantic_search_enabled
         self._semantic_search_warmup = semantic_search_warmup
+        self._shutdown_grace_seconds = max(0.0, float(shutdown_grace_seconds))
         self._timezone_name = timezone_name
         self._github_job_lock = asyncio.Lock()
-        self._startup_reconciliation_tasks: set[asyncio.Task[Any]] = set()
+        self._active_tasks: set[asyncio.Task[Any]] = set()
+        self._stopping = False
+        self._stop_lock = asyncio.Lock()
+
+    async def _run_tracked(
+        self,
+        operation: Callable[[], Awaitable[Any]],
+    ) -> None:
+        if self._stopping:
+            logger.info("[Scheduler] 正在停止，跳过新调度任务。")
+            return
+        task = asyncio.create_task(operation())
+        self._active_tasks.add(task)
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # APScheduler cancels its wrapper futures during shutdown. Keep the
+            # owned operation alive and join it before repositories are closed.
+            await task
+        finally:
+            if task.done():
+                self._active_tasks.discard(task)
 
     async def _run_single_source_job(self, source_name: str) -> None:
-        await _run_single_source_job(
-            source_name,
-            repositories=self.repositories,
-            github_lock=self._github_job_lock,
+        await self._run_tracked(
+            lambda: _run_single_source_job(
+                source_name,
+                repositories=self.repositories,
+                github_lock=self._github_job_lock,
+            )
         )
 
     async def _run_github_project_daily_pipeline_job(self) -> None:
-        await _run_github_project_daily_pipeline_job(
-            repositories=self.repositories,
-            github_lock=self._github_job_lock,
+        await self._run_tracked(
+            lambda: _run_github_project_daily_pipeline_job(
+                repositories=self.repositories,
+                github_lock=self._github_job_lock,
+            )
         )
 
     async def _run_github_project_metrics_refresh_job(self) -> None:
-        await _run_github_project_metrics_refresh_job(
-            repository=self.repositories.github_ingestion,
-            github_lock=self._github_job_lock,
+        await self._run_tracked(
+            lambda: _run_github_project_metrics_refresh_job(
+                repository=self.repositories.github_ingestion,
+                github_lock=self._github_job_lock,
+            )
         )
 
     async def _run_daily_briefing_job(self) -> None:
-        await _run_daily_briefing_job(self.repositories)
+        await self._run_tracked(
+            lambda: _run_daily_briefing_job(self.repositories)
+        )
 
     async def _run_conversation_cleanup_job(self) -> None:
-        await _run_conversation_cleanup_job(self.repositories.conversations)
+        await self._run_tracked(
+            lambda: _run_conversation_cleanup_job(self.repositories.conversations)
+        )
 
     async def _run_project_semantic_warmup_job(self) -> None:
-        await _run_project_semantic_warmup_job(
-            self._semantic_search_warmup,
+        await self._run_tracked(
+            lambda: _run_project_semantic_warmup_job(
+                self._semantic_search_warmup,
+            )
         )
 
     def start(self) -> None:
         if self.scheduler.running:
             logger.info("[Scheduler] 已在运行，跳过重复启动。")
             return
+        self._stopping = False
 
         callbacks = {
             "_run_single_source_job": self._run_single_source_job,
@@ -643,22 +680,39 @@ class ApplicationSchedulerRuntime:
             ),
         ):
             task = loop.create_task(coroutine)
-            self._startup_reconciliation_tasks.add(task)
-            task.add_done_callback(self._startup_reconciliation_tasks.discard)
+            self._active_tasks.add(task)
 
         jobs = self.scheduler.get_jobs()
         logger.info("[Scheduler] APScheduler 已启动，共 %d 个调度任务：", len(jobs))
         for job in jobs:
             logger.info("  📅 %s | %s | 下次执行: %s", job.id, job.name, job.next_run_time)
 
-    def stop(self) -> None:
-        if self.scheduler.running:
-            self.scheduler.shutdown(wait=False)
-            logger.info("[Scheduler] APScheduler 已停止。")
-        for task in tuple(self._startup_reconciliation_tasks):
-            if not task.done():
-                task.cancel()
-        self._startup_reconciliation_tasks.clear()
+    async def stop(self) -> None:
+        async with self._stop_lock:
+            if self._stopping:
+                return
+            self._stopping = True
+            if self.scheduler.running:
+                self.scheduler.pause()
+                self.scheduler.shutdown(wait=False)
+                await asyncio.sleep(0)
+
+            tasks = tuple(self._active_tasks)
+            if tasks:
+                _, pending = await asyncio.wait(
+                    tasks,
+                    timeout=self._shutdown_grace_seconds,
+                )
+                if pending:
+                    logger.warning(
+                        "[Scheduler] %d 个任务超过 %.1f 秒关闭宽限期，"
+                        "继续等待以保护应用资源。",
+                        len(pending),
+                        self._shutdown_grace_seconds,
+                    )
+                    await asyncio.gather(*pending, return_exceptions=True)
+            self._active_tasks.clear()
+            logger.info("[Scheduler] APScheduler 及运行中任务已停止。")
 
     def status(self) -> List[Dict[str, Any]]:
         if not self.scheduler.running:
@@ -686,5 +740,8 @@ def create_scheduler_runtime(
             getattr(settings, "project_semantic_search_enabled", False)
         ),
         semantic_search_warmup=semantic_search_warmup,
+        shutdown_grace_seconds=float(
+            getattr(settings, "scheduler_shutdown_grace_seconds", 30.0)
+        ),
         timezone_name=timezone_name,
     )

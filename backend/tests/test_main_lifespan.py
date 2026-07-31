@@ -36,6 +36,11 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         project_search_runtime.close = AsyncMock()
         rag_provider = MagicMock()
         scheduler_runtime = MagicMock()
+        shutdown_events: list[str] = []
+        scheduler_runtime.stop = AsyncMock(
+            side_effect=lambda: shutdown_events.append("scheduler")
+        )
+        database.close.side_effect = lambda: shutdown_events.append("postgres")
         monitoring_runtime = MagicMock()
         with (
             patch.object(main, "settings", _settings()),
@@ -87,11 +92,12 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 semantic_search_warmup=project_search_runtime.warmup_semantic_search,
             )
             scheduler_runtime.start.assert_not_called()
-            scheduler_runtime.stop.assert_called_once_with()
+            scheduler_runtime.stop.assert_awaited_once_with()
             project_search_runtime.close.assert_awaited_once_with()
             rag_provider.close.assert_called_once_with()
             redis_client.aclose.assert_awaited_once_with()
             database.close.assert_called_once_with()
+            self.assertEqual(shutdown_events, ["scheduler", "postgres"])
             self.assertIsNone(app.state.monitoring_runtime)
 
     async def test_disabled_scheduler_ignores_invalid_timezone(self) -> None:
@@ -137,6 +143,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         database = MagicMock()
         repositories = MagicMock()
         scheduler_runtime = MagicMock()
+        scheduler_runtime.stop = AsyncMock()
         project_search_runtime = MagicMock()
         project_search_runtime.close = AsyncMock()
         redis_client = MagicMock()
@@ -186,7 +193,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             enabled=True,
             semantic_search_warmup=project_search_runtime.warmup_semantic_search,
         )
-        scheduler_runtime.stop.assert_called_once_with()
+        scheduler_runtime.stop.assert_awaited_once_with()
         project_search_runtime.close.assert_awaited_once_with()
 
     async def test_cancels_unfinished_semantic_warmup_on_shutdown(self) -> None:
@@ -288,6 +295,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         repositories = MagicMock()
         rag_provider = MagicMock()
         scheduler_runtime = MagicMock()
+        scheduler_runtime.stop = AsyncMock()
         scheduler_runtime.start.side_effect = RuntimeError("scheduler failed")
         redis_client = MagicMock()
         redis_client.ping = AsyncMock()
@@ -325,7 +333,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 async with main.lifespan(app):
                     pass
 
-        scheduler_runtime.stop.assert_called_once_with()
+        scheduler_runtime.stop.assert_awaited_once_with()
         redis_client.aclose.assert_awaited_once_with()
         rag_provider.close.assert_called_once_with()
         database.close.assert_called_once_with()
@@ -337,6 +345,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         rag_provider = MagicMock()
         rag_provider.close.side_effect = RuntimeError("rag close failed")
         scheduler_runtime = MagicMock()
+        scheduler_runtime.stop = AsyncMock()
         scheduler_runtime.stop.side_effect = RuntimeError("scheduler close failed")
         redis_client = MagicMock()
         redis_client.ping = AsyncMock()
@@ -373,7 +382,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             async with main.lifespan(app):
                 pass
 
-        scheduler_runtime.stop.assert_called_once_with()
+        scheduler_runtime.stop.assert_awaited_once_with()
         redis_client.aclose.assert_awaited_once_with()
         rag_provider.close.assert_called_once_with()
         database.close.assert_called_once_with()
