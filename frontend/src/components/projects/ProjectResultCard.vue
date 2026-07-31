@@ -122,7 +122,7 @@ const description = computed(() => projectDescription(
       <div class="project-card__actions">
         <a
           v-if="projectUrl(repo)"
-          class="project-card__link"
+          class="project-card__action project-card__link"
           :href="projectUrl(repo)"
           target="_blank"
           rel="noopener noreferrer"
@@ -137,7 +137,7 @@ const description = computed(() => projectDescription(
         <button
           v-if="canRecommend"
           type="button"
-          class="project-card__recommend"
+          class="project-card__action project-card__recommend"
           :class="repo.is_recommended ? 'project-card__recommend--active' : ''"
           :aria-pressed="Boolean(repo.is_recommended)"
           :disabled="recommendActionsBusy"
@@ -148,7 +148,7 @@ const description = computed(() => projectDescription(
         <button
           v-if="!isWebsite(repo)"
           type="button"
-          class="project-card__favorite"
+          class="project-card__action project-card__favorite"
           :class="repo.is_favorited ? 'project-card__favorite--active' : ''"
           :aria-pressed="Boolean(repo.is_favorited)"
           :disabled="favoriteActionsBusy || !canFavorite"
@@ -160,7 +160,7 @@ const description = computed(() => projectDescription(
         <button
           v-if="canEdit"
           type="button"
-          class="project-card__edit"
+          class="project-card__action project-card__edit"
           :disabled="savingEdit"
           @click="emit('edit', repo)"
         >
@@ -169,7 +169,7 @@ const description = computed(() => projectDescription(
         <button
           v-if="showDelete"
           type="button"
-          class="project-card__delete"
+          class="project-card__action project-card__delete"
           :disabled="deleting"
           @click="emit('delete', repo)"
         >
@@ -288,8 +288,9 @@ const description = computed(() => projectDescription(
 .project-card__source { display: inline-flex; width: fit-content; margin-bottom: 7px; border-radius: 999px; padding: 3px 8px; color: var(--projects-accent); background: rgba(245, 245, 244, 0.82); border: 1px solid var(--projects-accent-border); font-size: 10px; font-weight: 800; letter-spacing: 0.08em; }
 .project-card__header h2 { color: #292524; font-size: 18px; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .project-card__domain { margin-top: 4px; color: var(--projects-warm); font-size: 12px; font-weight: 700; }
-.project-card__actions { display: flex; align-items: flex-end; flex: 0 1 auto; flex-direction: column; gap: 7px; min-width: min(100%, 160px); }
-.project-card__link, .project-card__favorite, .project-card__recommend, .project-card__edit, .project-card__delete { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex-shrink: 0; border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; transition: all 160ms ease; }
+.project-card__actions { display: flex; align-items: flex-end; flex: 0 1 auto; flex-direction: column; gap: 7px; width: var(--projects-card-action-width, 152px); min-width: min(100%, var(--projects-card-action-width, 152px)); }
+.project-card__action { display: inline-flex; width: 100%; min-height: var(--projects-control-compact-height, 36px); box-sizing: border-box; align-items: center; justify-content: center; gap: 5px; flex-shrink: 0; border-radius: 999px; padding: 0 10px; font-size: 12px; font-weight: 700; line-height: 1.2; text-align: center; transition: all 160ms ease; }
+.project-card__link, .project-card__favorite, .project-card__recommend, .project-card__edit, .project-card__delete { width: 100%; }
 .project-card__link { color: #44403c; background: rgba(255, 255, 255, 0.74); border: 1px solid rgba(168, 162, 158, 0.24); }
 .project-card__favorite { color: #a16207; background: rgba(255, 251, 235, 0.76); border: 1px solid rgba(245, 158, 11, 0.24); }
 .project-card__recommend { color: #be123c; background: rgba(255, 241, 242, 0.78); border: 1px solid rgba(244, 63, 94, 0.24); }
@@ -338,12 +339,14 @@ const description = computed(() => projectDescription(
 @media (max-width: 720px) {
   .project-card { min-width: 0; }
   .project-card__header { flex-direction: column; padding-right: 0; }
-  .project-card__actions { width: 100%; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+  .project-card__actions { width: 100%; min-width: 0; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+  .project-card__action { width: auto; min-width: 124px; max-width: 100%; }
 }
 
 @container (max-width: 520px) {
   .project-card__header { flex-direction: column; padding-right: 0; }
-  .project-card__actions { width: 100%; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+  .project-card__actions { width: 100%; min-width: 0; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+  .project-card__action { width: auto; min-width: 124px; max-width: 100%; }
   .project-card__stats { flex-wrap: wrap; }
 }
 </style>

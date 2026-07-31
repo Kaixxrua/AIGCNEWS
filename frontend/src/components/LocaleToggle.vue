@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { setAppLocale } from '../i18n'
+import { useLocaleTransition } from '../composables/useLocaleTransition'
 
 const { locale, t } = useI18n()
+const { isLocaleTransitioning, switchLocale } = useLocaleTransition()
 
 const targetLocale = computed(() => locale.value === 'zh-CN' ? 'en-US' : 'zh-CN')
 const targetLanguage = computed(() => (
   targetLocale.value === 'zh-CN' ? t('common.chinese') : t('common.english')
 ))
 
-const toggleLocale = () => setAppLocale(targetLocale.value)
+const toggleLocale = () => { void switchLocale(targetLocale.value) }
 </script>
 
 <template>
@@ -18,6 +19,8 @@ const toggleLocale = () => setAppLocale(targetLocale.value)
     type="button"
     class="locale-toggle"
     :aria-label="`${t('common.language')}：${targetLanguage}`"
+    :aria-busy="isLocaleTransitioning"
+    :disabled="isLocaleTransitioning"
     :title="targetLanguage"
     @click="toggleLocale"
   >
@@ -58,6 +61,7 @@ const toggleLocale = () => setAppLocale(targetLocale.value)
 }
 
 .locale-toggle:active { transform: rotate(-3deg) scale(0.92); }
+.locale-toggle:disabled { cursor: wait; opacity: 0.72; }
 .locale-toggle:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
 
 .locale-icon { width: 23px; height: 23px; overflow: visible; }

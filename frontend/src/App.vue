@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
+import { useLocaleTransition } from './composables/useLocaleTransition'
+
+const { isLocaleTransitioning } = useLocaleTransition()
 </script>
 
 <template>
@@ -19,4 +22,14 @@ import { RouterView } from 'vue-router'
 
   <!-- ═══ 顶层路由出口（Layout 或 Login/Register） ═══ -->
   <RouterView />
+
+  <Transition name="locale-refresh">
+    <div
+      v-if="isLocaleTransitioning"
+      class="locale-refresh"
+      aria-hidden="true"
+    >
+      <span class="locale-refresh__sweep" />
+    </div>
+  </Transition>
 </template>

@@ -6,6 +6,7 @@ import { LOCALE_STORAGE_KEY } from '../i18n/locale'
 import { NAV_ITEMS } from '../features/navigation/navigationModel'
 
 let unmount: (() => void) | undefined
+const originalMatchMedia = window.matchMedia
 
 describe('LocaleToggle', () => {
   beforeEach(() => {
@@ -16,9 +17,10 @@ describe('LocaleToggle', () => {
   afterEach(() => {
     unmount?.()
     unmount = undefined
+    window.matchMedia = originalMatchMedia
   })
 
-  it('changes the application locale immediately without reloading', async () => {
+  it('changes the application locale through the refresh transition without reloading', async () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
     const app = createApp(LocaleToggle)
@@ -32,12 +34,42 @@ describe('LocaleToggle', () => {
     expect(host.querySelector('select')).toBeNull()
 
     button.click()
+    await new Promise(resolve => window.setTimeout(resolve, 320))
     await nextTick()
 
     expect(i18n.global.locale.value).toBe('en-US')
     expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en-US')
     expect(document.documentElement.lang).toBe('en-US')
     expect(button.getAttribute('aria-label')).toBe('Language：中文')
+    expect(button.disabled).toBe(false)
+  })
+
+  it('does not delay locale changes when reduced motion is preferred', async () => {
+    const matchMedia = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia
+
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const app = createApp(LocaleToggle)
+    app.use(i18n)
+    app.mount(host)
+    unmount = () => { app.unmount(); host.remove() }
+
+    const button = host.querySelector('button') as HTMLButtonElement
+    button.click()
+    await nextTick()
+
+    expect(i18n.global.locale.value).toBe('en-US')
+    window.matchMedia = matchMedia
   })
 
   it('resolves navigation label keys reactively from the active catalog', () => {

@@ -416,6 +416,41 @@
   transform: translateY(-6px);
 }
 
+/* ═══ 语言纸面刷新过渡 ═══ */
+.locale-refresh {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    linear-gradient(110deg, rgba(247, 245, 238, 0.70), rgba(255, 253, 245, 0.46)),
+    repeating-linear-gradient(0deg, transparent 0 5px, rgba(17, 17, 15, 0.018) 5px 6px);
+  backdrop-filter: blur(1.5px);
+}
+
+.locale-refresh__sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -24%;
+  width: 24%;
+  border-right: 1px solid rgba(17, 17, 15, 0.38);
+  background: linear-gradient(90deg, transparent, rgba(199, 244, 50, 0.82));
+  box-shadow: 12px 0 30px rgba(199, 244, 50, 0.30);
+  animation: localeRefreshSweep 270ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.locale-refresh-enter-active,
+.locale-refresh-leave-active { transition: opacity 90ms ease; }
+.locale-refresh-enter-from,
+.locale-refresh-leave-to { opacity: 0; }
+
+@keyframes localeRefreshSweep {
+  from { transform: translateX(0); }
+  to { transform: translateX(520%); }
+}
+
 /* ═══ 进度条过渡动画 ═══ */
 @keyframes progressIndeterminate {
   0% { transform: translateX(-100%); }

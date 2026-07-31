@@ -483,6 +483,9 @@ onBeforeUnmount(stopViewReads)
   --projects-warm-soft: rgba(245, 158, 11, 0.12);
   --projects-success: #047857;
   --projects-error: #be123c;
+  --projects-control-height: 44px;
+  --projects-control-compact-height: 36px;
+  --projects-card-action-width: 152px;
   position: relative;
   height: 100%;
   overflow-y: auto;
@@ -590,15 +593,15 @@ onBeforeUnmount(stopViewReads)
   font-weight: 700;
 }
 
-.projects-add-btn,
-.projects-add-submit {
+.projects-add-btn {
   display: inline-flex;
+  min-height: var(--projects-control-height);
   align-items: center;
   justify-content: center;
   gap: 8px;
   border: 0;
   border-radius: 999px;
-  padding: 11px 16px;
+  padding: 0 16px;
   color: #fff;
   background: #44403c;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.10);
@@ -608,8 +611,7 @@ onBeforeUnmount(stopViewReads)
   transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease, background 160ms ease;
 }
 
-.projects-add-btn:hover,
-.projects-add-submit:hover {
+.projects-add-btn:hover {
   background: #292524;
   transform: translateY(-1px);
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.14);
@@ -620,7 +622,6 @@ onBeforeUnmount(stopViewReads)
   line-height: 1;
 }
 
-.projects-add-submit:disabled,
 .projects-add-btn:disabled {
   cursor: wait;
   opacity: 0.68;
@@ -720,9 +721,10 @@ onBeforeUnmount(stopViewReads)
   align-items: center;
   justify-content: center;
   gap: 10px;
+  min-height: var(--projects-control-height);
   border: 0;
   border-radius: 999px;
-  padding: 13px 19px;
+  padding: 0 19px;
   color: #fff;
   background: #292524;
   box-shadow: 0 16px 34px rgba(41, 37, 36, 0.16);
@@ -901,7 +903,6 @@ onBeforeUnmount(stopViewReads)
 }
 
 .projects-add-btn,
-.projects-add-submit,
 .projects-login-prompt__action {
   border: 1px solid #11110f;
   border-radius: 4px;
@@ -910,7 +911,6 @@ onBeforeUnmount(stopViewReads)
   box-shadow: none;
 }
 .projects-add-btn:hover,
-.projects-add-submit:hover,
 .projects-login-prompt__action:hover {
   color: var(--projects-paper-light);
   background: #11110f;
