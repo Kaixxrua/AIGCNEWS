@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from backend.app.repositories.application_repository_context import (
-    configure_application_repositories,
-)
+import pytest
+
 from backend.app.repositories.project_write_repository import (
     GitHubProjectIngestionRepository,
 )
@@ -34,20 +32,9 @@ def test_hot_rank_uses_explicit_repository() -> None:
     repository.get_github_hot_repos.assert_called_once_with("weekly", limit=4)
 
 
-def test_hot_rank_uses_configured_application_repository() -> None:
-    repository = MagicMock(spec=GitHubProjectIngestionRepository)
-    repository.get_github_hot_repos.return_value = []
-    repository.get_github_snapshot_count.return_value = 0
-    configure_application_repositories(
-        SimpleNamespace(github_ingestion=repository)
-    )
-    try:
-        result = github_hot_service.get_github_hot_rank()
-    finally:
-        configure_application_repositories(None)
-
-    assert result["total"] == 0
-    repository.get_github_hot_repos.assert_called_once_with("daily", limit=10)
+def test_hot_rank_requires_repository() -> None:
+    with pytest.raises(TypeError):
+        github_hot_service.get_github_hot_rank()
 
 
 def test_refresh_candidates_uses_explicit_repository(monkeypatch) -> None:

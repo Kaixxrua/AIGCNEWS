@@ -79,14 +79,6 @@ def get_readiness_check(request: Request) -> ReadinessCheck:
     return get_monitoring_runtime(request).readiness
 
 
-def get_ingestion_admin_service() -> IngestionAdminService:
-    return IngestionAdminService()
-
-
-def get_github_project_admin_service() -> GitHubProjectAdminService:
-    return GitHubProjectAdminService()
-
-
 class ApplicationIngestionTaskRepository(
     IngestionTaskWriter,
     LatestTaskReader,
@@ -108,6 +100,18 @@ def get_ingestion_task_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> ApplicationIngestionTaskRepository:
     return repositories.ingestion_tasks
+
+
+def get_ingestion_admin_service(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> IngestionAdminService:
+    return IngestionAdminService(repositories)
+
+
+def get_github_project_admin_service(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> GitHubProjectAdminService:
+    return GitHubProjectAdminService(repositories)
 
 
 def get_briefing_repository(

@@ -23,6 +23,7 @@ ANTHROPIC_PROVIDER = "anthropic"
 HUGGINGFACE_PROVIDER = "huggingface"
 
 _model_provider_runtime: Any | None = None
+_runtime_setting_reader: Any | None = None
 _runtime_lock = threading.Lock()
 
 
@@ -31,6 +32,13 @@ def configure_model_provider_runtime(runtime: Any | None) -> None:
     global _model_provider_runtime
     with _runtime_lock:
         _model_provider_runtime = runtime
+
+
+def configure_runtime_provider_settings(reader: Any | None) -> None:
+    """Bind runtime provider settings to the application-owned repository reader."""
+    global _runtime_setting_reader
+    with _runtime_lock:
+        _runtime_setting_reader = reader
 
 
 def _configured_model_provider_runtime() -> Any | None:
@@ -48,11 +56,11 @@ def _resolve_provider(preferred: str | None) -> str:
 
 
 def _get_runtime_provider_setting_reader():
-    from backend.app.repositories.application_repository_context import (
-        get_configured_application_repositories,
-    )
-
-    return get_configured_application_repositories().runtime_provider_settings
+    with _runtime_lock:
+        reader = _runtime_setting_reader
+    if reader is None:
+        raise RuntimeError("Runtime provider settings are not configured")
+    return reader
 
 
 def _get_runtime_provider_setting(provider: str | None = None) -> dict[str, Any]:

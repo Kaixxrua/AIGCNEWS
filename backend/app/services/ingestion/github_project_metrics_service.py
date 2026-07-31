@@ -10,9 +10,6 @@ from typing import Any, Dict, List
 from zoneinfo import ZoneInfo
 
 from backend.app.core.config import settings
-from backend.app.repositories.application_repository_context import (
-    get_configured_application_repositories,
-)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectIngestionRepository,
 )
@@ -182,12 +179,11 @@ def refresh_github_project_metric_snapshots(
     metric_date: str | date | None = None,
     dry_run: bool = False,
     _local_date: date | None = None,
-    db: GitHubProjectIngestionRepository | None = None,
+    db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
     """Refresh today's lightweight GitHub metrics and write raw snapshots."""
 
     snapshot_date = _live_metric_date(metric_date, local_today=_local_date)
-    db = db or get_configured_application_repositories().github_ingestion
     captured_at = _utcnow()
     targets = db.list_github_project_metric_targets(min_stars=min_stars, limit=limit)
     full_names = [str(item.get("full_name") or "").strip() for item in targets if item.get("full_name")]
@@ -269,11 +265,10 @@ def compute_github_daily_metrics(
     metric_date: str | date | None = None,
     min_stars: int = DEFAULT_MIN_STARS,
     repo_ids: List[str] | None = None,
-    db: GitHubProjectIngestionRepository | None = None,
+    db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
     """Compute exact day-over-day growth and scale-adjusted hot scores."""
 
-    db = db or get_configured_application_repositories().github_ingestion
     metric_date_str = _date_str(metric_date)
     current_date = date.fromisoformat(metric_date_str)
     previous_date = (current_date - timedelta(days=1)).isoformat()
@@ -456,9 +451,8 @@ def refresh_and_compute_github_project_metrics(
     limit: int = 0,
     metric_date: str | date | None = None,
     dry_run: bool = False,
-    db: GitHubProjectIngestionRepository | None = None,
+    db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
-    db = db or get_configured_application_repositories().github_ingestion
     local_today = _local_today()
     resolved_date = _live_metric_date(metric_date, local_today=local_today)
     refresh_result = refresh_github_project_metric_snapshots(

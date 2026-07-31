@@ -51,38 +51,20 @@ class ConversationInjectionSeamTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             ConversationService()  # type: ignore[call-arg]
 
-    def test_cleanup_job_uses_injected_repository_without_default_construction(self) -> None:
+    def test_cleanup_job_uses_injected_repository(self) -> None:
         repository = MagicMock()
         repository.cleanup_stale_conversations.return_value = 3
 
-        with patch.object(
-            scheduler,
-            "_get_default_conversation_repository",
-        ) as get_default:
-            asyncio.run(scheduler._run_conversation_cleanup_job(repository))
+        asyncio.run(scheduler._run_conversation_cleanup_job(repository))
 
-        get_default.assert_not_called()
         repository.cleanup_stale_conversations.assert_called_once_with(
             stale_days=7,
             limit=5,
         )
 
-    def test_cleanup_job_uses_configured_default_repository(self) -> None:
-        repository = MagicMock()
-        repository.cleanup_stale_conversations.return_value = 2
-
-        with patch.object(
-            scheduler,
-            "_get_default_conversation_repository",
-            return_value=repository,
-        ) as get_default:
+    def test_cleanup_job_requires_repository(self) -> None:
+        with self.assertRaises(TypeError):
             asyncio.run(scheduler._run_conversation_cleanup_job())
-
-        get_default.assert_called_once_with()
-        repository.cleanup_stale_conversations.assert_called_once_with(
-            stale_days=7,
-            limit=5,
-        )
 
 
 if __name__ == "__main__":

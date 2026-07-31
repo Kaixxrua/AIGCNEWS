@@ -11,9 +11,6 @@ from typing import Any
 import httpx
 
 from backend.app.core.config import settings
-from backend.app.repositories.application_repository_context import (
-    get_configured_application_repositories,
-)
 from backend.app.repositories.project_vector_repo import ProjectVectorChunk, ProjectVectorRepository
 from backend.app.repositories.project_write_repository import (
     GitHubProjectSemanticSourceRepository,
@@ -99,11 +96,11 @@ class GitHubProjectSemanticIndexer:
     def __init__(
         self,
         *,
-        db: GitHubProjectSemanticSourceRepository | None = None,
+        db: GitHubProjectSemanticSourceRepository,
         vectors: ProjectVectorRepository | None = None,
         embeddings: Any = None,
     ) -> None:
-        self.db = db or get_configured_application_repositories().github_semantic_sources
+        self.db = db
         self.vectors = vectors
         self.embeddings = embeddings
 
@@ -267,7 +264,7 @@ class GitHubProjectSemanticIndexer:
 
 def sync_github_project_semantic_index(
     *,
-    db: GitHubProjectSemanticSourceRepository | None = None,
+    db: GitHubProjectSemanticSourceRepository,
     **kwargs: Any,
 ) -> dict[str, Any]:
     if not settings.project_semantic_indexing_enabled and not kwargs.pop("force", False):

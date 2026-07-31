@@ -9,9 +9,13 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi_cache.decorator import cache
 
 from backend.app.api.dependencies import (
+    get_application_repositories,
     get_document_repository,
     get_rank_snapshot_repository,
     get_user_account_repository,
+)
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
 )
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
@@ -334,9 +338,15 @@ async def get_visitor_count(
 async def get_github_hot_list(
     period: str = Query(default="daily", pattern="^(daily|weekly|monthly)$"),
     limit: int = Query(default=10, ge=1, le=50),
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
 ):
     """Return GitHub hot repositories ranked by growth + baseline + age correction."""
     from backend.app.services.ingestion.github_hot_service import get_github_hot_rank
 
-    result = await asyncio.to_thread(get_github_hot_rank, period, limit)
+    result = await asyncio.to_thread(
+        get_github_hot_rank,
+        period,
+        limit,
+        db=repositories.github_ingestion,
+    )
     return result

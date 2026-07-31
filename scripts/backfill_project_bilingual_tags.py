@@ -34,19 +34,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    configure_application_repositories(
-        create_application_repositories(postgres=postgres_database)
-    )
+    repositories = create_application_repositories(postgres=postgres_database)
+    configure_application_repositories(repositories)
     result: dict[str, object] = {"status": "dry_run" if args.dry_run else "success"}
     if args.source in {"github", "all"}:
-        result["github"] = GitHubProjectEnricher().backfill_bilingual_tags(
+        result["github"] = GitHubProjectEnricher(
+            repositories.github_enrichment
+        ).backfill_bilingual_tags(
             after_repo_id=args.after_repo_id,
             limit=args.limit,
             min_stars=args.min_stars,
             dry_run=args.dry_run,
         )
     if args.source in {"website", "all"}:
-        result["website"] = ToolWebsiteEnricher().backfill_bilingual_tags(
+        result["website"] = ToolWebsiteEnricher(
+            repositories.tool_website_enrichment
+        ).backfill_bilingual_tags(
             after_website_id=args.after_website_id,
             limit=args.limit,
             dry_run=args.dry_run,

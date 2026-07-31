@@ -5,7 +5,6 @@ import sys
 import types
 import unittest
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 _config_name = "backend.app.core.config"
@@ -104,11 +103,6 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
         }
         with (
             patch.object(
-                scheduler,
-                "get_configured_application_repositories",
-                return_value=SimpleNamespace(github_ingestion=repo),
-            ),
-            patch.object(
                 metrics,
                 "current_github_metric_date",
                 return_value="2026-07-14",
@@ -119,7 +113,7 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(),
             ) as refresh,
         ):
-            await scheduler._reconcile_current_github_project_metrics()
+            await scheduler._reconcile_current_github_project_metrics(repo)
 
         refresh.assert_not_awaited()
 
@@ -133,11 +127,6 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
         }
         with (
             patch.object(
-                scheduler,
-                "get_configured_application_repositories",
-                return_value=SimpleNamespace(github_ingestion=repo),
-            ),
-            patch.object(
                 metrics,
                 "current_github_metric_date",
                 return_value="2026-07-14",
@@ -148,9 +137,9 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value={}),
             ) as refresh,
         ):
-            await scheduler._reconcile_current_github_project_metrics()
+            await scheduler._reconcile_current_github_project_metrics(repo)
 
-        refresh.assert_awaited_once_with("2026-07-14")
+        refresh.assert_awaited_once_with("2026-07-14", repo)
         repo.get_github_metric_refresh_status.assert_called_once_with(
             metric_date="2026-07-14",
             min_stars=500,
@@ -165,20 +154,16 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
         refresh = MagicMock(return_value={})
         service_module.refresh_and_compute_github_project_metrics = refresh
 
-        with (
-            patch.dict(
-                sys.modules,
-                {
-                    "backend.app.services.ingestion.github_project_metrics_service": service_module,
-                },
-            ),
-            patch.object(
-                scheduler,
-                "get_configured_application_repositories",
-                return_value=SimpleNamespace(github_ingestion=repository),
-            ),
+        with patch.dict(
+            sys.modules,
+            {
+                "backend.app.services.ingestion.github_project_metrics_service": service_module,
+            },
         ):
-            await scheduler._refresh_current_github_project_metrics("2026-07-14")
+            await scheduler._refresh_current_github_project_metrics(
+                "2026-07-14",
+                repository,
+            )
 
         refresh.assert_called_once_with(
             min_stars=500,
@@ -195,20 +180,13 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
         refresh = MagicMock()
         service_module.refresh_github_hot_candidates = refresh
 
-        with (
-            patch.dict(
-                sys.modules,
-                {
-                    "backend.app.services.ingestion.github_hot_service": service_module,
-                },
-            ),
-            patch.object(
-                scheduler,
-                "get_configured_application_repositories",
-                return_value=SimpleNamespace(github_ingestion=repository),
-            ),
+        with patch.dict(
+            sys.modules,
+            {
+                "backend.app.services.ingestion.github_hot_service": service_module,
+            },
         ):
-            await scheduler._run_github_hot_job()
+            await scheduler._run_github_hot_job(repository)
 
         refresh.assert_called_once_with(80, db=repository)
 
@@ -220,20 +198,13 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
         enrich = MagicMock(return_value={"status": "success"})
         service_module.enrich_github_projects = enrich
 
-        with (
-            patch.dict(
-                sys.modules,
-                {
-                    "backend.app.services.ingestion.github_project_enricher": service_module,
-                },
-            ),
-            patch.object(
-                scheduler,
-                "get_configured_application_repositories",
-                return_value=SimpleNamespace(github_enrichment=repository),
-            ),
+        with patch.dict(
+            sys.modules,
+            {
+                "backend.app.services.ingestion.github_project_enricher": service_module,
+            },
         ):
-            await scheduler._run_github_project_enrichment_job()
+            await scheduler._run_github_project_enrichment_job(repository)
 
         enrich.assert_called_once_with(limit=50, db=repository)
 
@@ -241,7 +212,7 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
         entered = 0
         maximum = 0
 
-        async def body(_: str) -> dict[str, object]:
+        async def body(_: str, __: object) -> dict[str, object]:
             nonlocal entered, maximum
             entered += 1
             maximum = max(maximum, entered)
@@ -261,11 +232,14 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
                 side_effect=body,
             ),
         ):
+            repository = MagicMock()
             await asyncio.gather(
                 scheduler._run_github_project_metrics_refresh_job(
+                    repository=repository,
                     github_lock=lock,
                 ),
                 scheduler._run_github_project_metrics_refresh_job(
+                    repository=repository,
                     github_lock=lock,
                 ),
             )

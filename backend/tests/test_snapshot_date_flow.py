@@ -91,7 +91,10 @@ class SnapshotDateFlowTests(unittest.IsolatedAsyncioTestCase):
             "backend.app.core.scheduler.asyncio.to_thread",
             new=AsyncMock(side_effect=RuntimeError("database unavailable")),
         ) as to_thread:
-            await scheduler._reconcile_recent_arxiv_daily_snapshots(snapshots)
+            await scheduler._reconcile_recent_arxiv_daily_snapshots(
+                snapshots,
+                repositories=MagicMock(),
+            )
 
         to_thread.assert_awaited_once_with(
             scheduler._missing_recent_arxiv_daily_dates,
@@ -116,7 +119,10 @@ class SnapshotDateFlowTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(side_effect=[["2026-07-11", "2026-07-12"], RuntimeError("crawl failed"), {}]),
             ) as to_thread,
         ):
-            await scheduler._reconcile_recent_arxiv_daily_snapshots(snapshots)
+            await scheduler._reconcile_recent_arxiv_daily_snapshots(
+                snapshots,
+                repositories=MagicMock(),
+            )
 
         self.assertEqual(to_thread.await_count, 3)
         self.assertEqual(to_thread.await_args_list[1].args[1], "arxiv")

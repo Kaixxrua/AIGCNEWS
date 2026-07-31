@@ -12,7 +12,7 @@ from __future__ import annotations
   关键改进：
   - 爬虫与编排解耦：crawlers/*.py 各自封装采集逻辑，pipeline.py 只做编排
   - 新增 run_single_source()：支持按源独立调度（Phase 4 智能调度器需要）
-  - 向后兼容：run_ingestion_pipeline() / run_smart_ingestion() 外部接口不变
+  - 公开入口由应用组合根显式提供依赖，避免隐式进程级仓储回退
 
 M14 变更（已保留）：
   - Arxiv 两阶段：摘要快速入库 → 后台异步 PDF 补全
@@ -34,10 +34,7 @@ from backend.app.repositories.task_repository import (
     IngestionTaskWriter,
     LatestTaskReader,
 )
-from backend.app.services.ingestion.composition import (
-    IngestionDependencies,
-    provide_ingestion_dependencies,
-)
+from backend.app.services.ingestion.composition import IngestionDependencies
 from backend.app.services.ingestion.content_enricher import enrich_papers
 from backend.app.services.ingestion.base_crawler import (
     BaseCrawler,
@@ -169,7 +166,8 @@ class IngestionOrchestrator:
       - 统一处理快照日期、内容丰富、后台 PDF 补全
 
     使用方式：
-        orchestrator = IngestionOrchestrator(provide_ingestion_dependencies())
+        dependencies = provide_ingestion_dependencies(repositories=repositories)
+        orchestrator = IngestionOrchestrator(dependencies)
         stats = orchestrator.run_all()                      # 全量采集
         stats = orchestrator.run_single_source("github")    # 单源调度
     """
@@ -347,8 +345,17 @@ class IngestionOrchestrator:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 公开 API（向后兼容）
+# 公开 API（显式依赖入口）
 # ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _require_dependencies(
+    dependencies: IngestionDependencies | None,
+    entrypoint: str,
+) -> IngestionDependencies:
+    if dependencies is None:
+        raise TypeError(f"{entrypoint} requires explicit dependencies")
+    return dependencies
 
 
 def _compose_ingestion_orchestrator(
@@ -356,10 +363,10 @@ def _compose_ingestion_orchestrator(
     limit: int,
     top_n: int,
     target_date: Optional[str],
-    dependencies: IngestionDependencies | None = None,
+    dependencies: IngestionDependencies,
 ) -> IngestionOrchestrator:
     return IngestionOrchestrator(
-        dependencies=dependencies or provide_ingestion_dependencies(),
+        dependencies=dependencies,
         limit=limit,
         top_n=top_n,
         target_date=target_date,
@@ -386,21 +393,25 @@ def run_ingestion_pipeline(
     limit: int = _FETCH_LIMIT,
     top_n: int = _TOP_N_PER_SOURCE,
     target_date: Optional[str] = None,
+    *,
+    dependencies: IngestionDependencies | None = None,
 ) -> Dict[str, int]:
-    """运行全量采集 Pipeline（向后兼容入口）。
+    """运行全量采集 Pipeline（显式依赖入口）。
 
-    委托给 IngestionOrchestrator.run_all()，保持外部调用接口不变。
+    委托给 IngestionOrchestrator.run_all()，保持外部调用接口不变；
+    公开入口由应用组合根显式提供依赖，避免隐式进程级仓储回退。
 
     Args:
         limit: 每源最多抓取条数（初始广撒网）
         top_n: 每源最终保留入库的 Top-N 数量
         target_date: 可选，格式 YYYY-MM-DD。指定后作为快照日期和各源的基准日期。
+        dependencies: 由应用组合根提供的采集依赖。
 
     Returns:
         各数据源的最终入库数量字典，包含 ingested_total 键。
     """
     return _run_ingestion_pipeline_with_dependencies(
-        provide_ingestion_dependencies(),
+        _require_dependencies(dependencies, "run_ingestion_pipeline"),
         limit=limit,
         top_n=top_n,
         target_date=target_date,
@@ -431,7 +442,7 @@ def run_single_source_pipeline(
         limit=limit,
         top_n=top_n,
         target_date=target_date,
-        dependencies=dependencies,
+        dependencies=_require_dependencies(dependencies, "run_single_source_pipeline"),
     )
     return asyncio.run(orchestrator.run_single_source(source_name, periods=periods))
 
@@ -440,12 +451,15 @@ async def run_ingestion_pipeline_async(
     limit: int = _FETCH_LIMIT,
     top_n: int = _TOP_N_PER_SOURCE,
     target_date: Optional[str] = None,
+    *,
+    dependencies: IngestionDependencies | None = None,
 ) -> Dict[str, int]:
     """异步入口。"""
     orchestrator = _compose_ingestion_orchestrator(
         limit=limit,
         top_n=top_n,
         target_date=target_date,
+        dependencies=_require_dependencies(dependencies, "run_ingestion_pipeline_async"),
     )
     return await orchestrator.run_all()
 
@@ -455,12 +469,15 @@ async def run_single_source_async(
     limit: int = _FETCH_LIMIT,
     top_n: int = _TOP_N_PER_SOURCE,
     target_date: Optional[str] = None,
+    *,
+    dependencies: IngestionDependencies | None = None,
 ) -> Dict[str, int]:
     """单源采集的异步版本。"""
     orchestrator = _compose_ingestion_orchestrator(
         limit=limit,
         top_n=top_n,
         target_date=target_date,
+        dependencies=_require_dependencies(dependencies, "run_single_source_async"),
     )
     return await orchestrator.run_single_source(source_name)
 
@@ -516,32 +533,13 @@ def run_smart_ingestion(
     runner: Callable[[int], Any] | None = None,
 ) -> None:
     """智能采集：检测今天是否已有成功任务，若无则执行采集。"""
-    dependencies = None
-    if reader is None or runner is None:
-        dependencies = provide_ingestion_dependencies()
-
-    default_runner = None
+    if reader is None:
+        raise TypeError("run_smart_ingestion requires explicit reader")
     if runner is None:
-        assert dependencies is not None
-
-        def default_runner(requested_limit: int) -> Dict[str, int]:
-            return _run_ingestion_pipeline_with_dependencies(
-                dependencies,
-                limit=requested_limit,
-            )
-
-    default_reader = (
-        dependencies.repositories.ingestion_tasks
-        if dependencies is not None
-        else None
-    )
-    resolved_reader = reader if reader is not None else default_reader
-    resolved_runner = runner if runner is not None else default_runner
-    assert resolved_reader is not None
-    assert resolved_runner is not None
+        raise TypeError("run_smart_ingestion requires explicit runner")
     _run_smart_ingestion_with(
-        resolved_reader,
-        resolved_runner,
+        reader,
+        runner,
         limit,
         date.today(),
     )

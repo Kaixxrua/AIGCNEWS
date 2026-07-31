@@ -10,6 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from backend.app.core.postgres_database import postgres_database  # noqa: E402
+from backend.app.repositories.application_repository_factory import (  # noqa: E402
+    create_application_repositories,
+)
 from backend.app.services.ingestion.tool_website_enricher import ToolWebsiteEnricher  # noqa: E402
 
 
@@ -20,12 +24,18 @@ def main() -> int:
     parser.add_argument("--no-retry-failed", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    result = ToolWebsiteEnricher().backfill_bilingual_descriptions(
-        after_website_id=args.after_website_id,
-        limit=args.limit,
-        retry_failed=not args.no_retry_failed,
-        dry_run=args.dry_run,
-    )
+    repositories = create_application_repositories(postgres=postgres_database)
+    try:
+        result = ToolWebsiteEnricher(
+            repositories.tool_website_enrichment
+        ).backfill_bilingual_descriptions(
+            after_website_id=args.after_website_id,
+            limit=args.limit,
+            retry_failed=not args.no_retry_failed,
+            dry_run=args.dry_run,
+        )
+    finally:
+        postgres_database.close()
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["status"] in {"success", "dry_run"} else 1
 

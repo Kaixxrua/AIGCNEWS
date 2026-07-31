@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from backend.app.repositories.application_repository_context import (
-    configure_application_repositories,
-)
+import pytest
+
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectSemanticSourceRepository,
@@ -33,33 +31,33 @@ def test_enrichment_helper_forwards_explicit_repository(monkeypatch) -> None:
     assert enricher.enrich_batch.call_args.kwargs["limit"] == 3
 
 
-def test_enricher_default_uses_configured_application_repository(monkeypatch) -> None:
+def test_enricher_uses_explicit_repository(monkeypatch) -> None:
     repository = MagicMock(spec=GitHubProjectEnrichmentRepository)
     repository.runtime_provider_settings.get_runtime_provider_setting.return_value = {}
-    configure_application_repositories(
-        SimpleNamespace(github_enrichment=repository)
-    )
     monkeypatch.setattr(github_project_enricher, "get_chat_model", MagicMock())
-    try:
-        enricher = github_project_enricher.GitHubProjectEnricher()
-    finally:
-        configure_application_repositories(None)
+
+    enricher = github_project_enricher.GitHubProjectEnricher(repository)
 
     assert enricher.db is repository
 
 
-def test_tool_website_enricher_default_uses_configured_repository() -> None:
+def test_enricher_requires_repository() -> None:
+    with pytest.raises(TypeError):
+        github_project_enricher.GitHubProjectEnricher()
+
+
+def test_tool_website_enricher_uses_explicit_repository() -> None:
     repository = MagicMock(spec=ToolWebsiteEnrichmentRepository)
     repository.runtime_provider_settings.get_runtime_provider_setting.return_value = {}
-    configure_application_repositories(
-        SimpleNamespace(tool_website_enrichment=repository)
-    )
-    try:
-        enricher = ToolWebsiteEnricher()
-    finally:
-        configure_application_repositories(None)
+
+    enricher = ToolWebsiteEnricher(repository)
 
     assert enricher.db is repository
+
+
+def test_tool_website_enricher_requires_repository() -> None:
+    with pytest.raises(TypeError):
+        ToolWebsiteEnricher()
 
 
 def test_semantic_helper_forwards_explicit_repository(monkeypatch) -> None:
@@ -88,14 +86,21 @@ def test_semantic_helper_forwards_explicit_repository(monkeypatch) -> None:
     indexer.sync_batch.assert_called_once_with(limit=4)
 
 
-def test_semantic_indexer_default_uses_configured_repository() -> None:
+def test_semantic_indexer_uses_explicit_repository() -> None:
     repository = MagicMock(spec=GitHubProjectSemanticSourceRepository)
-    configure_application_repositories(
-        SimpleNamespace(github_semantic_sources=repository)
+
+    indexer = github_project_semantic_indexer.GitHubProjectSemanticIndexer(
+        db=repository,
     )
-    try:
-        indexer = github_project_semantic_indexer.GitHubProjectSemanticIndexer()
-    finally:
-        configure_application_repositories(None)
 
     assert indexer.db is repository
+
+
+def test_semantic_indexer_requires_repository() -> None:
+    with pytest.raises(TypeError):
+        github_project_semantic_indexer.GitHubProjectSemanticIndexer()
+
+
+def test_semantic_helper_requires_repository() -> None:
+    with pytest.raises(TypeError):
+        github_project_semantic_indexer.sync_github_project_semantic_index(limit=4)

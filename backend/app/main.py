@@ -30,6 +30,7 @@ from backend.app.api import routes_ops
 from backend.app.core.config import settings
 from backend.app.core.model_factory import (
     configure_model_provider_runtime,
+    configure_runtime_provider_settings,
     create_chat_model,
     create_embedding_model,
 )
@@ -149,6 +150,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             postgres=postgres_database,
         )
         configure_application_repositories(app.state.application_repositories)
+        configure_runtime_provider_settings(
+            app.state.application_repositories.runtime_provider_settings
+        )
         repositories_configured = True
         operations_runtime = ApplicationOperationsRuntime(
             shutdown_grace_seconds=float(
@@ -285,6 +289,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 app.state.model_provider_runtime = None
         if repositories_configured:
             try:
+                configure_runtime_provider_settings(None)
                 configure_application_repositories(None)
             except Exception as exc:
                 print(f"[Shutdown] Repository context close failed (non-fatal): {exc}")

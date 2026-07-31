@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from backend.app.repositories.application_repository_context import (
-    get_configured_application_repositories,
-)
 from backend.app.repositories.evaluation_repository import EvaluationRepository
 
 
@@ -35,11 +32,8 @@ class RAGMetricsService:
       - subjective_score: (placeholder) always 0 unless explicitly provided
     """
 
-    def __init__(self, repository: Optional[EvaluationRepository] = None) -> None:
-        self._repository = (
-            repository
-            or get_configured_application_repositories().evaluations
-        )
+    def __init__(self, repository: EvaluationRepository) -> None:
+        self._repository = repository
 
     # ------------------------------------------------------------------
     # Core metric functions

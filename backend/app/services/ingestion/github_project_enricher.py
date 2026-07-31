@@ -13,9 +13,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.app.core.config import settings
 from backend.app.core.model_factory import get_chat_model
-from backend.app.repositories.application_repository_context import (
-    get_configured_application_repositories,
-)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectIngestionRepository,
@@ -104,11 +101,11 @@ def _model_metadata(reader: RuntimeProviderSettingReader) -> Dict[str, str]:
 class GitHubProjectEnricher:
     def __init__(
         self,
-        db: GitHubProjectEnrichmentRepository | None = None,
+        db: GitHubProjectEnrichmentRepository,
         *,
         runtime_settings: RuntimeProviderSettingReader | None = None,
     ) -> None:
-        self.db = db or get_configured_application_repositories().github_enrichment
+        self.db = db
         self._llm = None
         self.model_meta = _model_metadata(
             runtime_settings or self.db.runtime_provider_settings
@@ -328,7 +325,7 @@ def enrich_github_projects(
     retry_failed: bool = True,
     refresh_changed: bool = False,
     concurrency: int = 1,
-    db: GitHubProjectEnrichmentRepository | None = None,
+    db: GitHubProjectEnrichmentRepository,
 ) -> Dict[str, Any]:
     return GitHubProjectEnricher(db=db).enrich_batch(
         limit=limit,
@@ -347,9 +344,9 @@ def run_github_project_daily_pipeline(
     enrich_limit: int = DEFAULT_BATCH_LIMIT,
     min_stars: int = DEFAULT_MIN_STARS,
     dry_run: bool = False,
-    ingestion: GitHubProjectIngestionRepository | None = None,
-    enrichment: GitHubProjectEnrichmentRepository | None = None,
-    semantic_sources: GitHubProjectSemanticSourceRepository | None = None,
+    ingestion: GitHubProjectIngestionRepository,
+    enrichment: GitHubProjectEnrichmentRepository,
+    semantic_sources: GitHubProjectSemanticSourceRepository,
 ) -> Dict[str, Any]:
     """Daily GitHub library pipeline: ingest/update metrics, score, then enrich new projects only.
 

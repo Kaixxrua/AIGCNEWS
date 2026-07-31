@@ -5,10 +5,15 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from backend.app.repositories.application_repository_factory import ApplicationRepositories
+
 logger = logging.getLogger(__name__)
 
 
 class GitHubProjectAdminService:
+    def __init__(self, repositories: ApplicationRepositories) -> None:
+        self._repositories = repositories
+
     def refresh_hot(self, limit: int) -> None:
         from backend.app.services.ingestion.github_hot_service import (
             refresh_github_hot_candidates,
@@ -17,10 +22,14 @@ class GitHubProjectAdminService:
             compute_github_daily_metrics,
         )
 
-        refresh_result = refresh_github_hot_candidates(limit=limit)
+        refresh_result = refresh_github_hot_candidates(
+            limit=limit,
+            db=self._repositories.github_ingestion,
+        )
         compute_github_daily_metrics(
             metric_date=refresh_result.get("date"),
             repo_ids=refresh_result.get("daily_repo_ids") or None,
+            db=self._repositories.github_ingestion,
         )
 
     def enrich(
@@ -41,6 +50,7 @@ class GitHubProjectAdminService:
             dry_run=dry_run,
             retry_failed=retry_failed,
             refresh_changed=refresh_changed,
+            db=self._repositories.github_enrichment,
         )
         logger.info("[Ops] GitHub 项目库富化任务完成：%s", result)
         return result
@@ -62,6 +72,7 @@ class GitHubProjectAdminService:
             limit=limit,
             metric_date=metric_date,
             dry_run=dry_run,
+            db=self._repositories.github_ingestion,
         )
         logger.info("[Ops] GitHub 项目每日指标刷新任务完成：%s", result)
         return result
@@ -79,4 +90,5 @@ class GitHubProjectAdminService:
         return compute_github_daily_metrics(
             metric_date=metric_date,
             min_stars=min_stars,
+            db=self._repositories.github_ingestion,
         )

@@ -33,7 +33,7 @@ class DailyBriefingArchitectureTests(unittest.TestCase):
 
 
 class DailyBriefingRepositoryTests(unittest.TestCase):
-    def test_provider_wires_application_components_and_model(self) -> None:
+    def test_provider_wires_explicit_repositories_and_model(self) -> None:
         briefing_repository = MagicMock(spec=BriefingContentRepository)
         document_feed = MagicMock()
         snapshot_reader = MagicMock()
@@ -44,19 +44,21 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
             rank_snapshots=snapshot_reader,
         )
 
-        with patch(
-            "backend.app.services.briefing.composition.get_configured_application_repositories",
-            return_value=repositories,
-        ) as repository_provider:
-            service = provide_daily_briefing_service(model=model)
+        service = provide_daily_briefing_service(
+            repositories=repositories,
+            model=model,
+        )
 
-        repository_provider.assert_called_once_with()
         self.assertIs(service._briefings, briefing_repository)
         self.assertIs(service._document_feed, document_feed)
         self.assertIs(service._rank_snapshots, snapshot_reader)
         self.assertIs(service._llm, model)
 
-    def test_explicit_provider_dependencies_avoid_application_context(self) -> None:
+    def test_provider_requires_explicit_repositories(self) -> None:
+        with self.assertRaises(TypeError):
+            provide_daily_briefing_service(model=MagicMock())
+
+    def test_explicit_provider_dependencies_forward_top_k(self) -> None:
         repositories = SimpleNamespace(
             briefings=MagicMock(spec=BriefingContentRepository),
             documents=MagicMock(),
@@ -64,16 +66,12 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
         )
         model = MagicMock()
 
-        with patch(
-            "backend.app.services.briefing.composition.get_configured_application_repositories"
-        ) as repository_provider:
-            service = provide_daily_briefing_service(
-                repositories=repositories,
-                model=model,
-                top_k=7,
-            )
+        service = provide_daily_briefing_service(
+            repositories=repositories,
+            model=model,
+            top_k=7,
+        )
 
-        repository_provider.assert_not_called()
         self.assertIs(service._briefings, repositories.briefings)
         self.assertIs(service._document_feed, repositories.documents)
         self.assertIs(service._rank_snapshots, repositories.rank_snapshots)

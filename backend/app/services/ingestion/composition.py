@@ -5,9 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Sequence
 
-from backend.app.repositories.application_repository_context import (
-    get_configured_application_repositories,
-)
 from backend.app.repositories.application_repository_factory import ApplicationRepositories
 from backend.app.repositories.task_repository import IngestionTaskWriter
 from backend.app.services.ingestion.base_crawler import BaseCrawler
@@ -40,7 +37,7 @@ class IngestionDependencies:
 
 def provide_ingestion_dependencies(
     *,
-    repositories: ApplicationRepositories | None = None,
+    repositories: ApplicationRepositories,
     task_writer: IngestionTaskWriter | None = None,
 ) -> IngestionDependencies:
     """Build production ingestion dependencies without a DI framework."""
@@ -61,10 +58,11 @@ def provide_ingestion_dependencies(
     )
     from backend.app.services.ingestion.graph_extractor import GraphExtractor
 
-    borrowed = repositories or get_configured_application_repositories()
     return IngestionDependencies(
-        repositories=borrowed,
-        task_writer=task_writer or borrowed.ingestion_tasks,
+        repositories=repositories,
+        task_writer=(
+            repositories.ingestion_tasks if task_writer is None else task_writer
+        ),
         vector_writer_factory=MilvusRepository,
         graph_extractor_factory=GraphExtractor,
         graph_writer_factory=GraphRepository,

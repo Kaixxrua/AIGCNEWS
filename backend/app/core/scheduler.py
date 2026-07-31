@@ -33,9 +33,6 @@ from backend.app.core.scheduler_registry import (
     project_semantic_warmup_job_descriptor,
     resolve_source_job_callback,
 )
-from backend.app.repositories.application_repository_context import (
-    get_configured_application_repositories,
-)
 from backend.app.repositories.application_repository_factory import ApplicationRepositories
 from backend.app.repositories.briefing_repository import ActiveBriefingSubscriberReader
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
@@ -50,15 +47,12 @@ _GITHUB_METRICS_MAX_AGE = timedelta(hours=2, minutes=15)
 
 
 def _missing_recent_arxiv_daily_dates(
-    rank_snapshots: RankSnapshotRepository | None = None,
+    rank_snapshots: RankSnapshotRepository,
 ) -> List[str]:
     """Return missing recent HF daily dates, bounded to avoid startup storms."""
     from backend.app.services.ingestion.base_crawler import today_cst
 
-    repository = (
-        rank_snapshots
-        or get_configured_application_repositories().rank_snapshots
-    )
+    repository = rank_snapshots
     today = date.fromisoformat(today_cst())
     candidates = [
         (today - timedelta(days=offset)).isoformat()
@@ -75,17 +69,11 @@ def _missing_recent_arxiv_daily_dates(
 
 
 async def _reconcile_recent_arxiv_daily_snapshots(
-    rank_snapshots: RankSnapshotRepository | None = None,
+    rank_snapshots: RankSnapshotRepository,
     *,
-    repositories: ApplicationRepositories | None = None,
+    repositories: ApplicationRepositories,
 ) -> None:
-    active_repositories = repositories
     snapshots = rank_snapshots
-    if snapshots is None:
-        active_repositories = (
-            active_repositories or get_configured_application_repositories()
-        )
-        snapshots = active_repositories.rank_snapshots
     try:
         missing_dates = await asyncio.to_thread(
             _missing_recent_arxiv_daily_dates,
@@ -100,18 +88,17 @@ async def _reconcile_recent_arxiv_daily_snapshots(
         try:
             from backend.app.services.ingestion.pipeline import run_single_source_pipeline
 
+            from backend.app.services.ingestion.composition import (
+                provide_ingestion_dependencies,
+            )
+
             arguments: dict[str, Any] = {
                 "target_date": target_date,
                 "periods": ["daily"],
+                "dependencies": provide_ingestion_dependencies(
+                    repositories=repositories,
+                ),
             }
-            if active_repositories is not None:
-                from backend.app.services.ingestion.composition import (
-                    provide_ingestion_dependencies,
-                )
-
-                arguments["dependencies"] = provide_ingestion_dependencies(
-                    repositories=active_repositories,
-                )
             await asyncio.to_thread(
                 run_single_source_pipeline,
                 "arxiv",
@@ -124,11 +111,11 @@ async def _reconcile_recent_arxiv_daily_snapshots(
 async def _run_single_source_job(
     source_name: str,
     *,
-    repositories: ApplicationRepositories | None = None,
+    repositories: ApplicationRepositories,
     github_lock: asyncio.Lock | None = None,
 ) -> None:
     logger.info("[Scheduler] 触发 %s 采集任务...", source_name)
-    active_repositories = repositories or get_configured_application_repositories()
+    active_repositories = repositories
     lock = github_lock if source_name == "github" else None
     try:
         from backend.app.services.ingestion.composition import (
@@ -160,11 +147,11 @@ async def _run_single_source_job(
 
 async def _run_github_project_daily_pipeline_job(
     *,
-    repositories: ApplicationRepositories | None = None,
+    repositories: ApplicationRepositories,
     github_lock: asyncio.Lock | None = None,
 ) -> None:
     logger.info("[Scheduler] 触发 GitHub 项目库每日流水线...")
-    active_repositories = repositories or get_configured_application_repositories()
+    active_repositories = repositories
     lock = github_lock or asyncio.Lock()
     try:
         from backend.app.services.ingestion.github_project_enricher import (
@@ -211,16 +198,13 @@ def _github_refresh_needed(status: Dict[str, Any]) -> bool:
 
 async def _refresh_current_github_project_metrics(
     metric_date: str,
-    repository: Any | None = None,
+    repository: Any,
 ) -> Dict[str, Any]:
     from backend.app.services.ingestion.github_project_metrics_service import (
         refresh_and_compute_github_project_metrics,
     )
 
-    active_repository = (
-        repository
-        or get_configured_application_repositories().github_ingestion
-    )
+    active_repository = repository
     return await asyncio.to_thread(
         refresh_and_compute_github_project_metrics,
         min_stars=_GITHUB_METRICS_MIN_STARS,
@@ -232,7 +216,7 @@ async def _refresh_current_github_project_metrics(
 
 async def _run_github_project_metrics_refresh_job(
     *,
-    repository: Any | None = None,
+    repository: Any,
     github_lock: asyncio.Lock | None = None,
 ) -> None:
     from backend.app.services.ingestion.github_project_metrics_service import (
@@ -244,20 +228,17 @@ async def _run_github_project_metrics_refresh_job(
     lock = github_lock or asyncio.Lock()
     try:
         async with lock:
-            if repository is None:
-                result = await _refresh_current_github_project_metrics(metric_date)
-            else:
-                result = await _refresh_current_github_project_metrics(
-                    metric_date,
-                    repository,
-                )
+            result = await _refresh_current_github_project_metrics(
+                metric_date,
+                repository,
+            )
         logger.info("[Scheduler] GitHub 当天指标刷新完成：%s", result)
     except Exception as exc:
         logger.error("[Scheduler] GitHub 当天指标刷新失败: %s", exc, exc_info=True)
 
 
 async def _reconcile_current_github_project_metrics(
-    repository: Any | None = None,
+    repository: Any,
     *,
     github_lock: asyncio.Lock | None = None,
 ) -> None:
@@ -266,10 +247,7 @@ async def _reconcile_current_github_project_metrics(
     )
 
     metric_date = current_github_metric_date()
-    active_repository = (
-        repository
-        or get_configured_application_repositories().github_ingestion
-    )
+    active_repository = repository
     lock = github_lock or asyncio.Lock()
     try:
         async with lock:
@@ -283,25 +261,21 @@ async def _reconcile_current_github_project_metrics(
                 logger.info("[Scheduler] GitHub 当天指标完整且新鲜，跳过启动补跑：%s", status)
                 return
             logger.info("[Scheduler] GitHub 当天指标缺失或过期，执行启动补跑：%s", status)
-            if repository is None:
-                await _refresh_current_github_project_metrics(metric_date)
-            else:
-                await _refresh_current_github_project_metrics(
-                    metric_date,
-                    active_repository,
-                )
+            await _refresh_current_github_project_metrics(
+                metric_date,
+                active_repository,
+            )
     except Exception as exc:
         logger.warning("[Scheduler] GitHub 当天指标启动补跑失败: %s", exc, exc_info=True)
 
 
-async def _run_github_hot_job() -> None:
+async def _run_github_hot_job(repository: Any) -> None:
     logger.info("[Scheduler] 触发 GitHub 热度快照刷新...")
     try:
         from backend.app.services.ingestion.github_hot_service import (
             refresh_github_hot_candidates,
         )
 
-        repository = get_configured_application_repositories().github_ingestion
         await asyncio.to_thread(
             refresh_github_hot_candidates,
             80,
@@ -312,14 +286,13 @@ async def _run_github_hot_job() -> None:
         logger.error("[Scheduler] GitHub 热度快照刷新失败: %s", exc, exc_info=True)
 
 
-async def _run_github_project_enrichment_job() -> None:
+async def _run_github_project_enrichment_job(repository: Any) -> None:
     logger.info("[Scheduler] 触发 GitHub 项目库 AI 分类富化...")
     try:
         from backend.app.services.ingestion.github_project_enricher import (
             enrich_github_projects,
         )
 
-        repository = get_configured_application_repositories().github_enrichment
         result = await asyncio.to_thread(
             enrich_github_projects,
             limit=50,
@@ -330,12 +303,20 @@ async def _run_github_project_enrichment_job() -> None:
         logger.error("[Scheduler] GitHub 项目库 AI 分类富化失败: %s", exc, exc_info=True)
 
 
-async def _run_smart_ingestion_job() -> None:
+async def _run_smart_ingestion_job(
+    reader: Any,
+    runner: Callable[[int], Any],
+) -> None:
     logger.info("[Scheduler] 触发智能全量采集任务...")
     try:
         from backend.app.services.ingestion.pipeline import run_smart_ingestion
 
-        await asyncio.to_thread(run_smart_ingestion, 20)
+        await asyncio.to_thread(
+            run_smart_ingestion,
+            20,
+            reader=reader,
+            runner=runner,
+        )
         logger.info("[Scheduler] 智能全量采集任务完成。")
     except Exception as exc:
         logger.error("[Scheduler] 智能全量采集失败: %s", exc, exc_info=True)
@@ -357,15 +338,11 @@ async def _send_briefing_to_subscribers(
     period: str,
     date_str: str,
     content: str,
-    subscriptions: ActiveBriefingSubscriberReader | None = None,
+    subscriptions: ActiveBriefingSubscriberReader,
 ) -> int:
     from backend.app.services.email_service import build_email_service
 
-    repository = (
-        subscriptions
-        or get_configured_application_repositories().briefing_subscriptions
-    )
-    subscribers = repository.get_active_subscribers(source=source, period=period)
+    subscribers = subscriptions.get_active_subscribers(source=source, period=period)
     if not subscribers:
         return 0
 
@@ -398,15 +375,14 @@ async def _send_briefing_to_subscribers(
 
 
 async def _run_daily_briefing_job(
-    repositories: ApplicationRepositories | None = None,
+    repositories: ApplicationRepositories,
 ) -> None:
     logger.info(
         "[Scheduler] 触发每日自动简报生成（%d 个维度）...", len(_BRIEFING_TASKS)
     )
     from backend.app.services.briefing.composition import provide_daily_briefing_service
 
-    active_repositories = repositories or get_configured_application_repositories()
-    service = provide_daily_briefing_service(repositories=active_repositories)
+    service = provide_daily_briefing_service(repositories=repositories)
     success = 0
     for task in _BRIEFING_TASKS:
         source = task["source"]
@@ -444,7 +420,7 @@ async def _run_daily_briefing_job(
                     period=period,
                     date_str=report_date,
                     content=content,
-                    subscriptions=active_repositories.briefing_subscriptions,
+                    subscriptions=repositories.briefing_subscriptions,
                 )
                 logger.info(
                     "[Scheduler] 订阅简报发送完成: source=%s period=%s sent=%d",
@@ -485,25 +461,15 @@ async def _run_project_semantic_warmup_job(
         logger.warning("[Scheduler] 项目语义搜索预热失败: %s", exc)
 
 
-def _get_default_conversation_repository() -> ConversationCleanupWriter:
-    """Return the configured conversation cleanup repository."""
-    return get_configured_application_repositories().conversations
-
-
 async def _run_conversation_cleanup_job(
-    conversation_repository: ConversationCleanupWriter | None = None,
+    conversation_repository: ConversationCleanupWriter,
 ) -> None:
     logger.info("[Scheduler] 触发会话历史清理任务...")
     try:
         from backend.app.services.chat.conversation_service import ConversationService
 
-        repository = (
-            _get_default_conversation_repository()
-            if conversation_repository is None
-            else conversation_repository
-        )
         deleted = await asyncio.to_thread(
-            ConversationService(repository).cleanup_stale_conversations,
+            ConversationService(conversation_repository).cleanup_stale_conversations,
         )
         logger.info("[Scheduler] 会话历史清理完成，删除 %d 条旧会话。", deleted)
     except Exception as exc:
@@ -672,6 +638,7 @@ class ApplicationSchedulerRuntime:
         loop = asyncio.get_running_loop()
         for coroutine in (
             _reconcile_recent_arxiv_daily_snapshots(
+                self.repositories.rank_snapshots,
                 repositories=self.repositories,
             ),
             _reconcile_current_github_project_metrics(

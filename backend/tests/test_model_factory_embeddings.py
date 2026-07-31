@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from backend.app.core import model_factory
 
 
@@ -30,19 +32,23 @@ def test_runtime_setting_reader_receives_normalized_lookup_argument() -> None:
     reader.get_runtime_provider_setting.assert_called_once_with("openai")
 
 
-def test_runtime_reader_factory_uses_configured_repository_component() -> None:
-    repositories = MagicMock()
-    reader = repositories.runtime_provider_settings
+def test_runtime_reader_factory_uses_configured_reader() -> None:
+    reader = MagicMock()
 
-    with patch(
-        "backend.app.repositories.application_repository_context."
-        "get_configured_application_repositories",
-        return_value=repositories,
-    ) as get_repositories:
+    model_factory.configure_runtime_provider_settings(reader)
+    try:
         result = model_factory._get_runtime_provider_setting_reader()
+    finally:
+        model_factory.configure_runtime_provider_settings(None)
 
     assert result is reader
-    get_repositories.assert_called_once_with()
+
+
+def test_runtime_reader_factory_requires_configuration() -> None:
+    model_factory.configure_runtime_provider_settings(None)
+
+    with pytest.raises(RuntimeError, match="not configured"):
+        model_factory._get_runtime_provider_setting_reader()
 
 
 def test_siliconflow_embedding_base_url_reuses_siliconflow_key() -> None:

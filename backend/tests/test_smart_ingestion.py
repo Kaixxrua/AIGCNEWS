@@ -103,61 +103,14 @@ class SmartIngestionInjectionTests(unittest.TestCase):
 
         self.assertIsNone(run_smart_ingestion(7, reader=reader, runner=runner))
 
-    def test_injected_reader_and_runner_avoid_default_composition(self) -> None:
+    def test_missing_reader_requires_explicit_injection(self) -> None:
+        with self.assertRaises(TypeError):
+            run_smart_ingestion(7, runner=MagicMock())
+
+    def test_missing_runner_requires_explicit_injection(self) -> None:
         reader = MagicMock(spec=LatestTaskReader)
-        reader.get_latest_task.return_value = None
-        runner = MagicMock()
-
-        with patch(
-            "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies"
-        ) as provider:
-            run_smart_ingestion(7, reader=reader, runner=runner)
-
-        provider.assert_not_called()
-
-    def test_default_path_uses_composed_reader_and_pipeline_runner(self) -> None:
-        reader = MagicMock(spec=LatestTaskReader)
-        reader.get_latest_task.return_value = None
-        dependencies = MagicMock()
-        dependencies.repositories.ingestion_tasks = reader
-
-        with (
-            patch(
-                "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies",
-                return_value=dependencies,
-            ) as provider,
-            patch(
-                "backend.app.services.ingestion.pipeline._run_ingestion_pipeline_with_dependencies"
-            ) as runner,
-        ):
-            run_smart_ingestion(7)
-
-        provider.assert_called_once_with()
-        reader.get_latest_task.assert_called_once_with()
-        runner.assert_called_once_with(dependencies, limit=7)
-
-    def test_default_path_skips_after_success_today(self) -> None:
-        reader = MagicMock(spec=LatestTaskReader)
-        reader.get_latest_task.return_value = {
-            "id": 42,
-            "status": "success",
-            "started_at": date.today().isoformat(),
-        }
-
-        dependencies = MagicMock()
-        dependencies.repositories.ingestion_tasks = reader
-        with (
-            patch(
-                "backend.app.services.ingestion.pipeline.provide_ingestion_dependencies",
-                return_value=dependencies,
-            ),
-            patch(
-                "backend.app.services.ingestion.pipeline._run_ingestion_pipeline_with_dependencies"
-            ) as runner,
-        ):
-            run_smart_ingestion()
-
-        runner.assert_not_called()
+        with self.assertRaises(TypeError):
+            run_smart_ingestion(7, reader=reader)
 
 
 if __name__ == "__main__":
