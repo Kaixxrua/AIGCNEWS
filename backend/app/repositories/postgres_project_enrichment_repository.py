@@ -214,10 +214,12 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                            e.description_zh, e.source_fingerprint
                     FROM github_repo_candidates c
                     JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
+                    LEFT JOIN github_repo_aliases a ON a.alias_repo_id = c.repo_id
                     WHERE c.repo_id > %s
                       AND COALESCE(c.stars, 0) >= %s
                       AND e.status = 'succeeded'
                       AND COALESCE(e.tags_en_json, '') = ''
+                      AND a.alias_repo_id IS NULL
                     ORDER BY c.repo_id COLLATE "C" ASC
                     LIMIT %s
                     """,

@@ -78,6 +78,8 @@ def test_bilingual_tag_backfill_queries_are_cursor_ordered_and_system_only() -> 
     assert "c.repo_id > %s" in sql
     assert "e.status = 'succeeded'" in sql
     assert "COALESCE(e.tags_en_json, '') = ''" in sql
+    assert "LEFT JOIN github_repo_aliases a ON a.alias_repo_id = c.repo_id" in sql
+    assert "a.alias_repo_id IS NULL" in sql
     assert 'ORDER BY c.repo_id COLLATE "C" ASC' in sql
     assert params == ("10", 500, 25)
 
