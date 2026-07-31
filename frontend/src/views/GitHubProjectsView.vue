@@ -485,7 +485,8 @@ onBeforeUnmount(stopViewReads)
   --projects-error: #be123c;
   --projects-control-height: 44px;
   --projects-control-compact-height: 36px;
-  --projects-card-action-width: 152px;
+  --projects-card-action-width: 48px;
+  --projects-card-action-size: 40px;
   position: relative;
   height: 100%;
   overflow-y: auto;

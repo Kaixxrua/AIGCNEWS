@@ -20,14 +20,25 @@ describe('project UI sizing contracts', () => {
     expect(filtersSource).toContain('overflow-x: auto')
   })
 
-  it('normalizes card actions within a group while allowing narrow cards to wrap', () => {
+  it('uses a tooltip-enabled icon rail with a mobile text fallback', () => {
+    expect(cardSource).not.toContain('project-card__pin')
+    expect(cardSource).toContain('role="group"')
     expect(cardSource).toContain('class="project-card__action project-card__link"')
-    expect(cardSource).toContain('class="project-card__action project-card__favorite"')
-    expect(cardSource).toContain('grid-template-columns: minmax(0, 1fr) var(--projects-card-action-width, 152px)')
-    expect(cardSource).toContain('width: var(--projects-card-action-width, 152px)')
-    expect(cardSource).toContain('min-height: var(--projects-control-compact-height, 36px)')
+    expect(cardSource).toContain('class="project-card__action-icon"')
+    expect(cardSource).toContain('class="project-card__action-label"')
+    expect(cardSource).toContain('class="project-card__tooltip" role="tooltip"')
+    expect(cardSource).toContain(':aria-describedby="`project-action-${index}-favorite-tooltip`"')
+    expect(cardSource).toContain(':aria-label="t(favoriteButtonLabelKey(repo, favoriteBusy, isLoggedIn))"')
+    expect(cardSource).toContain(':title="t(recommendButtonLabelKey(repo, recommendBusy))"')
+    expect(cardSource).toContain('grid-template-columns: minmax(0, 1fr) var(--projects-card-action-width, 48px)')
+    expect(cardSource).toContain('width: var(--projects-card-action-size, 40px)')
+    expect(cardSource).toContain('min-height: var(--projects-card-action-size, 40px)')
     expect(cardSource).toContain('@container (max-width: 520px)')
-    expect(cardSource).toContain('min-width: 124px')
+    expect(cardSource).toContain('flex-wrap: wrap')
+    expect(cardSource).toContain(':aria-pressed="Boolean(repo.is_favorited)"')
+    expect(cardSource).toContain(':disabled="recommendActionsBusy"')
+    expect(viewSource).toContain('--projects-card-action-width: 48px')
+    expect(viewSource).toContain('--projects-card-action-size: 40px')
   })
 
   it('keeps pagination controls equal-height with responsive wrapping', () => {
