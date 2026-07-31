@@ -70,9 +70,11 @@ jobs:
       POSTGRES_USER: aigcnews_test
       POSTGRES_PASSWORD: aigcnews_test
       POSTGRES_DATABASE: aigcnews_test
+      POSTGRES_DB: aigcnews_test
       POSTGRES_SSLMODE: disable
       POSTGRES_POOL_MIN_SIZE: "1"
       POSTGRES_POOL_MAX_SIZE: "4"
+      POSTGRES_INTEGRATION: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -93,6 +95,7 @@ jobs:
       - name: Validate project-catalog rehearsal configuration
         env:
           REHEARSAL_BACKEND_IMAGE: ghcr.io/example/aigcnews-backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          REHEARSAL_RELEASE_ID: ci-${{ github.sha }}
           REHEARSAL_ENV_FILE: ${{ runner.temp }}/aigcnews-rehearsal.env
           REHEARSAL_MYSQL_ROOT_PASSWORD: ci-placeholder-not-used
           REHEARSAL_MYSQL_DATABASE: aigcnews_rehearsal
@@ -121,6 +124,21 @@ jobs:
         run: >-
           python -m pytest -q -p langchain_core.documents
           backend/tests/test_postgres_project_catalog_integration.py
+
+      # Integration suites stay file-isolated for the same legacy stub reason.
+      - name: Run gated PostgreSQL repository integration suites
+        shell: bash
+        run: |
+          while IFS= read -r test_file; do
+            python -m pytest -q -p langchain_core.documents "$test_file" || exit 1
+          done <<'EOF'
+          backend/tests/test_postgres_user_account_repository_integration.py
+          backend/tests/test_postgres_conversation_repository_integration.py
+          backend/tests/test_postgres_attachment_repository_integration.py
+          backend/tests/test_postgres_mcp_repositories_integration.py
+          backend/tests/test_application_transfer_service_integration.py
+          backend/tests/test_table_transfer_reconciliation_postgresql16_integration.py
+          EOF
 
   frontend-build:
     name: Frontend build
