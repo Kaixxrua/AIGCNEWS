@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   favoriteButtonLabelKey,
   localizedCategoryName,
+  localizedPersonalTagLabel,
   projectCategoryName,
   projectDescription,
   projectDisplayTags,
@@ -66,6 +67,22 @@ describe('projectPresentation localization', () => {
       { type: 'tag', label: '代码助手', value: '代码助手' },
       { type: 'tag', label: 'IDE 插件', value: 'IDE 插件' },
     ])
+  })
+
+  it('localizes personal system tags without changing their filter values', () => {
+    const systemTag = {
+      value: '着色器效果', label: '着色器效果', label_zh: '着色器效果', label_en: 'Shader effects',
+      count: 1, tags_origin: 'system' as const,
+    }
+    const userTag = {
+      value: '我的标签', label: '我的标签', label_zh: '不应显示', label_en: 'Must not display',
+      count: 1, tags_origin: 'user' as const,
+    }
+
+    expect(localizedPersonalTagLabel(systemTag, 'en-US')).toBe('Shader effects')
+    expect(localizedPersonalTagLabel(systemTag, 'zh-CN')).toBe('着色器效果')
+    expect(localizedPersonalTagLabel(userTag, 'en-US')).toBe('我的标签')
+    expect(systemTag.value).toBe('着色器效果')
   })
 
   it('keeps user-authored and legacy tags unchanged in every locale', () => {

@@ -73,7 +73,10 @@ def test_collection_routes_use_injected_service_and_normalize_queries() -> None:
     }
     service.get_categories.return_value = {"items": [], "total": 0}
     service.get_tags.return_value = {
-        "items": [{"label": "agent", "count": 2}], "total": 1
+        "items": [{
+            "label": "agent", "value": "agent", "label_zh": "智能体", "label_en": "Agent",
+            "count": 2, "tags_origin": "system",
+        }], "total": 1
     }
     client = _client(service)
 
@@ -88,7 +91,10 @@ def test_collection_routes_use_injected_service_and_normalize_queries() -> None:
     assert categories.status_code == 200
     assert categories.json()["source"] == "website"
     assert tags.status_code == 200
-    assert tags.json()["items"] == [{"label": "agent", "count": 2}]
+    assert tags.json()["items"] == [{
+        "label": "agent", "value": "agent", "label_zh": "智能体", "label_en": "Agent",
+        "count": 2, "tags_origin": "system",
+    }]
     assert service.list_collection.call_args.kwargs["user_id"] == 7
     assert service.list_collection.call_args.kwargs["source"] == "website"
     assert service.list_collection.call_args.kwargs["category"] == "agent"

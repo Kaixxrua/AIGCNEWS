@@ -433,7 +433,11 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
         source = source if source in {"github", "website"} else "github"
         if source == "website":
             status = "AND (we.status = 'succeeded' OR uo.id IS NOT NULL)" if enriched_only else ""
-            sql = f"""SELECT COALESCE(NULLIF(uo.tags_json::text, ''), we.tags_json::text) AS tags_json
+            sql = f"""SELECT
+                          COALESCE(NULLIF(uo.tags_json::text, ''), we.tags_json::text) AS tags_json,
+                          CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL ELSE we.tags_zh_json::text END AS tags_zh_json,
+                          CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL ELSE we.tags_en_json::text END AS tags_en_json,
+                          CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN 'user' ELSE 'system' END AS tags_origin
                       FROM tool_websites w
                       JOIN user_tool_websites utw ON utw.user_id = %s AND utw.website_id = w.id
                       LEFT JOIN tool_website_enrichments we ON we.website_id = w.id
@@ -442,7 +446,10 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
             params = (user_id, user_id)
         else:
             status = "AND ge.status = 'succeeded'" if enriched_only else ""
-            sql = f"""SELECT ge.tags_json::text AS tags_json
+            sql = f"""SELECT ge.tags_json::text AS tags_json,
+                             ge.tags_zh_json::text AS tags_zh_json,
+                             ge.tags_en_json::text AS tags_en_json,
+                             'system' AS tags_origin
                       FROM github_repo_candidates c
                       JOIN project_favorites pf ON pf.user_id = %s
                            AND pf.project_source = 'github' AND pf.project_id = c.repo_id
@@ -453,13 +460,27 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
             with connection.cursor() as cursor:
                 cursor.execute(sql, params)
                 rows = cursor.fetchall()
-        counts: dict[str, int] = {}
+        counts: dict[str, dict[str, Any]] = {}
         for row in rows:
-            for tag in _json_list(row.get("tags_json")):
-                if tag not in {"AI 工具", "网页收藏"}:
-                    counts[tag] = counts.get(tag, 0) + 1
-        items = [
-            {"label": label, "count": count}
-            for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-        ]
+            stable_tags = _json_list(row.get("tags_json"))
+            origin = "user" if row.get("tags_origin") == "user" else "system"
+            zh_tags = stable_tags if origin == "user" else (_json_list(row.get("tags_zh_json")) or stable_tags)
+            en_tags = stable_tags if origin == "user" else (_json_list(row.get("tags_en_json")) or stable_tags)
+            for index, value in enumerate(stable_tags):
+                if value in {"AI 工具", "网页收藏"}:
+                    continue
+                item = counts.setdefault(value, {
+                    "label": value,
+                    "value": value,
+                    "label_zh": str(zh_tags[index] if index < len(zh_tags) else value).strip() or value,
+                    "label_en": str(en_tags[index] if index < len(en_tags) else value).strip() or value,
+                    "count": 0,
+                    "tags_origin": origin,
+                })
+                item["count"] += 1
+                if origin == "user":
+                    item["label_zh"] = value
+                    item["label_en"] = value
+                    item["tags_origin"] = "user"
+        items = sorted(counts.values(), key=lambda item: (-int(item["count"]), str(item["value"])))
         return {"items": items, "total": len(items), "source": source}

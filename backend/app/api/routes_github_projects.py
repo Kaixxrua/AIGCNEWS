@@ -169,8 +169,14 @@ class ToolWebsiteUpdateResponse(BaseModel):
 
 
 class GitHubProjectTag(BaseModel):
+    """A personal tag with a stable filter value and localized labels."""
+
     label: str
-    count: int
+    value: str = ""
+    label_zh: str = ""
+    label_en: str = ""
+    count: int = 0
+    tags_origin: Literal["system", "user"] = "system"
 
 
 class GitHubProjectTagsResponse(BaseModel):

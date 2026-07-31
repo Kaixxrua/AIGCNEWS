@@ -98,6 +98,21 @@ export const localizedCategoryName = (
   locale: AppLocale,
 ) => localizedProjectName(value, locale)
 
+export type PersonalProjectTag = {
+  value: string
+  label: string
+  label_zh?: string
+  label_en?: string
+  count: number
+  tags_origin?: 'system' | 'user'
+}
+
+export const localizedPersonalTagLabel = (tag: PersonalProjectTag, locale: AppLocale) => {
+  if (tag.tags_origin === 'user') return tag.value || tag.label
+  const preferred = locale === 'zh-CN' ? tag.label_zh : tag.label_en
+  return preferred?.trim() || tag.value || tag.label
+}
+
 export const projectDescription = (
   project: GitHubProjectItem,
   locale: AppLocale,

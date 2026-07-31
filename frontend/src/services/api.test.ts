@@ -241,9 +241,9 @@ describe('frontend API endpoint and DTO contract', () => {
       items: [], total: 2, today_count: 1, recommended_count: 0, min_stars: 500, source: 'github',
     })
 
-    mocks.get.mockResolvedValueOnce({ data: { items: [{ label: '  Vue  ', count: '3' }, { label: '   ', count: 8 }] } })
+    mocks.get.mockResolvedValueOnce({ data: { items: [{ value: 'Vue', label: '  Vue  ', label_zh: 'Vue', label_en: 'Vue', tags_origin: 'system', count: '3' }, { label: '   ', count: 8 }] } })
     await expect(fetchMyProjectTags('website')).resolves.toEqual({
-      items: [{ label: 'Vue', count: 3 }], total: 1, source: 'website',
+      items: [{ value: 'Vue', label: 'Vue', label_zh: 'Vue', label_en: 'Vue', tags_origin: 'system', count: 3 }], total: 1, source: 'website',
     })
 
     mocks.get.mockResolvedValueOnce({ data: { period: '', items: null, total: 0 } })

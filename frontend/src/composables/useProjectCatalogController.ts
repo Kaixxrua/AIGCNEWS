@@ -1,5 +1,4 @@
 import { computed, ref, type Ref } from 'vue'
-import { compareLocaleStrings } from '../i18n/formatters'
 import {
   addMyToolWebsite,
   addMyToolWebsiteManual,
@@ -225,20 +224,6 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     }
   }
 
-  const mergePersonalTagsFromItems = (items: GitHubProjectItem[]) => {
-    if (!isPersonalView.value) return
-    const ignoredTags = new Set(['AI 工具', '网页收藏'])
-    const counts = new Map(personalTags.value.map((item) => [item.label, item.count]))
-    for (const item of items) {
-      for (const rawTag of item.tags ?? []) {
-        const label = String(rawTag).trim()
-        if (label && !ignoredTags.has(label)) counts.set(label, Math.max(counts.get(label) ?? 0, 1))
-      }
-    }
-    personalTags.value = Array.from(counts, ([label, count]) => ({ label, count }))
-      .sort((left, right) => right.count - left.count || compareLocaleStrings(left.label, right.label))
-  }
-
   const loadPersonalTags = async () => {
     const request = ++tagRequestGeneration
     const generation = viewGeneration
@@ -348,7 +333,6 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
       projects.value = data.items
       total.value = data.total
       lastSuccessfulFetchAt.value = now()
-      mergePersonalTagsFromItems(data.items)
     } catch (error) {
       if (!activeGeneration(generation) || request !== projectRequestGeneration) return
       console.error('Failed to load projects:', error)
@@ -476,7 +460,6 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
       if (!activeGeneration(generation)) return false
       if (result.item) {
         upsertProjectItem(result.item)
-        mergePersonalTagsFromItems([result.item])
       }
       successMsg.value = result.message || t('projects.websiteUpdated')
       await Promise.all([loadPersonalTags(), loadProjects({ clearSuccess: false })])

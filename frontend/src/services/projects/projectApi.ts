@@ -115,8 +115,14 @@ export interface GitHubProjectCategoriesResponse {
 }
 
 export interface GitHubProjectTag {
+  /** Stable legacy tag value used by the `tag=` filter. */
+  value: string
+  /** Backward-compatible stable label. */
   label: string
+  label_zh?: string
+  label_en?: string
   count: number
+  tags_origin?: 'system' | 'user'
 }
 
 export interface GitHubProjectTagsResponse {
@@ -290,8 +296,19 @@ export async function fetchMyProjectTags(
   const res = await api.get('/projects/me/tags', { params: { source } })
   const items = Array.isArray(res.data?.items)
     ? res.data.items
-        .map((item: any) => ({ label: String(item?.label ?? '').trim(), count: Number(item?.count ?? 0) }))
-        .filter((item: GitHubProjectTag) => item.label)
+        .map((item: any) => {
+          const value = String(item?.value ?? '').trim() || String(item?.label ?? '').trim()
+          const origin = item?.tags_origin === 'user' ? 'user' : 'system'
+          return {
+            value,
+            label: String(item?.label ?? '').trim() || value,
+            label_zh: String(item?.label_zh ?? '').trim() || value,
+            label_en: String(item?.label_en ?? '').trim() || value,
+            count: Number(item?.count ?? 0),
+            tags_origin: origin,
+          } satisfies GitHubProjectTag
+        })
+        .filter((item: GitHubProjectTag) => item.value)
     : []
   return {
     items,

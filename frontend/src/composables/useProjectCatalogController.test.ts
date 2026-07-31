@@ -141,7 +141,7 @@ describe('project catalog controller', () => {
 
     projects.resolve(projectsResponse([githubItem()]))
     categories.resolve({ items: [{ slug: 'agents', name: 'Agents', count: 1 }], total: 1, min_stars: 500 })
-    tags.resolve({ items: [{ label: 'research', count: 1 }], total: 1 })
+    tags.resolve({ items: [{ value: 'research', label: 'research', label_zh: 'research', label_en: 'research', tags_origin: 'user', count: 1 }], total: 1 })
     taxonomy.resolve({ items: [{ slug: 'agents', name: 'Agents', children: [] }] })
     await Promise.all([projectRead, categoryRead, tagRead, taxonomyRead])
 

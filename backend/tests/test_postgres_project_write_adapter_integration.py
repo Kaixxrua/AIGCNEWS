@@ -68,10 +68,10 @@ def write_repository() -> Iterator[tuple[Any, PostgresProjectWriteRepository]]:
                    VALUES ('legacy-1', 'canonical-1', 'old/Project');
                    INSERT INTO github_repo_enrichments
                        (repo_id, category_slug, category_name, subcategory_slug,
-                        subcategory_name, description_zh, tags_json,
+                        subcategory_name, description_zh, tags_json, tags_zh_json, tags_en_json,
                         source_fingerprint, prompt_version, status)
                    VALUES ('canonical-1', 'agent', 'Agent', 'workflow', 'Workflow',
-                           '项目', '[\"MCP\", \"AI 工具\"]', repeat('a', 64), 'v1', 'succeeded');
+                           '项目', '[\"MCP\", \"AI 工具\"]', '[\"MCP\", \"AI 工具\"]', '[\"MCP\", \"AI tools\"]', repeat('a', 64), 'v1', 'succeeded');
                    INSERT INTO tool_websites
                        (id, canonical_url, normalized_url_hash, domain, title,
                         source_fingerprint, visibility, added_by_user_id)
@@ -79,10 +79,10 @@ def write_repository() -> Iterator[tuple[Any, PostgresProjectWriteRepository]]:
                            'tool.example', 'Tool', repeat('c', 64), 'private', 7);
                    INSERT INTO tool_website_enrichments
                        (website_id, category_slug, category_name, subcategory_slug,
-                        subcategory_name, description_zh, tags_json,
+                        subcategory_name, description_zh, tags_json, tags_zh_json, tags_en_json,
                         source_fingerprint, prompt_version, status)
                    VALUES (11, 'productivity', 'Productivity', 'notes', 'Notes',
-                           '工具', '[\"base\"]', repeat('d', 64), 'v1', 'succeeded')"""
+                           '工具', '[\"base\"]', '[\"基础\"]', '[\"Base\"]', repeat('d', 64), 'v1', 'succeeded')"""
             )
         yield database, PostgresProjectWriteRepository(database)
     finally:
@@ -108,7 +108,10 @@ def test_real_postgres_canonical_favorite_and_recommendation(
     assert recommendation["repo_id"] == "canonical-1"
     assert recommendation["is_recommended"] is True
     assert repository.get_user_project_tags(user_id=7) == {
-        "items": [{"label": "MCP", "count": 1}],
+        "items": [{
+            "label": "MCP", "value": "MCP", "label_zh": "MCP", "label_en": "MCP",
+            "count": 1, "tags_origin": "system",
+        }],
         "total": 1,
         "source": "github",
     }
@@ -150,7 +153,10 @@ def test_real_postgres_tool_collection_override_and_atomic_unlink(
     assert collection["total"] == 1
     assert collection["items"][0]["category_slug"] == "custom"
     assert repository.get_user_project_tags(user_id=7, source="website") == {
-        "items": [{"label": "mine", "count": 1}],
+        "items": [{
+            "label": "mine", "value": "mine", "label_zh": "mine", "label_en": "mine",
+            "count": 1, "tags_origin": "user",
+        }],
         "total": 1,
         "source": "website",
     }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import type { AppLocale } from '../../i18n'
-import { localizedCategoryName } from '../../features/projects/projectPresentation'
+import { localizedCategoryName, localizedPersonalTagLabel } from '../../features/projects/projectPresentation'
 import type {
   GitHubProjectCategory,
   GitHubProjectSort,
@@ -98,7 +98,7 @@ const emit = defineEmits<{
 
   <section v-else-if="!requiresPersonalLogin && (personalTags.length || selectedTag)" class="projects-category-panel projects-tag-panel glass-card" :aria-label="t('projects.personalTagFilter')">
     <div class="projects-categories" :aria-label="t('projects.personalTagFilter')">
-      <button v-for="tag in personalTags" :key="tag.label" type="button" class="projects-category projects-category--tag" :class="selectedTag === tag.label ? 'tab-active' : 'tab-inactive'" :disabled="tagsLoading" @click="emit('selectPersonalTag', tag.label)"><span>{{ tag.label }}</span><small>{{ tag.count }}</small></button>
+      <button v-for="tag in personalTags" :key="tag.value" type="button" class="projects-category projects-category--tag" :class="selectedTag === tag.value ? 'tab-active' : 'tab-inactive'" :disabled="tagsLoading" @click="emit('selectPersonalTag', tag.value)"><span>{{ localizedPersonalTagLabel(tag, locale as AppLocale) }}</span><small>{{ tag.count }}</small></button>
       <button v-if="selectedTag" type="button" class="projects-category projects-category--sub" :disabled="tagsLoading" @click="emit('clearPersonalTag')">{{ t('projects.clearTag') }}</button>
     </div>
   </section>
