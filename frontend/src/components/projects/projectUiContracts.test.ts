@@ -22,7 +22,8 @@ describe('project UI sizing contracts', () => {
 
   it('uses a tooltip-enabled icon rail with a mobile text fallback', () => {
     expect(cardSource).not.toContain('project-card__pin')
-    expect(cardSource).toContain('role="group"')
+    expect(cardSource).toContain('<div class="project-card__body">')
+    expect(cardSource).toContain('<aside class="project-card__rail"')
     expect(cardSource).toContain('class="project-card__action project-card__link"')
     expect(cardSource).toContain('class="project-card__action-icon"')
     expect(cardSource).toContain('class="project-card__action-label"')
@@ -30,14 +31,14 @@ describe('project UI sizing contracts', () => {
     expect(cardSource).toContain(':aria-describedby="`project-action-${index}-favorite-tooltip`"')
     expect(cardSource).toContain(':aria-label="t(favoriteButtonLabelKey(repo, favoriteBusy, isLoggedIn))"')
     expect(cardSource).toContain(':title="t(recommendButtonLabelKey(repo, recommendBusy))"')
-    expect(cardSource).toContain('grid-template-columns: minmax(0, 1fr) var(--projects-card-action-width, 48px)')
+    expect(cardSource).toContain('grid-template-columns: minmax(0, 1fr) var(--projects-card-rail-width, 48px)')
     expect(cardSource).toContain('width: var(--projects-card-action-size, 40px)')
     expect(cardSource).toContain('min-height: var(--projects-card-action-size, 40px)')
     expect(cardSource).toContain('@container (max-width: 520px)')
     expect(cardSource).toContain('flex-wrap: wrap')
     expect(cardSource).toContain(':aria-pressed="Boolean(repo.is_favorited)"')
     expect(cardSource).toContain(':disabled="recommendActionsBusy"')
-    expect(viewSource).toContain('--projects-card-action-width: 48px')
+    expect(viewSource).toContain('--projects-card-rail-width: 48px')
     expect(viewSource).toContain('--projects-card-action-size: 40px')
   })
 
