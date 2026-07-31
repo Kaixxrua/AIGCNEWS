@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import Any, Optional
 
 from langchain_ollama import ChatOllama, OllamaEmbeddings
@@ -20,6 +21,25 @@ OPENAI_PROVIDER = "openai"
 OLLAMA_PROVIDER = "ollama"
 ANTHROPIC_PROVIDER = "anthropic"
 HUGGINGFACE_PROVIDER = "huggingface"
+
+_model_provider_runtime: Any | None = None
+_runtime_lock = threading.Lock()
+
+
+def configure_model_provider_runtime(runtime: Any | None) -> None:
+    """Bind compatibility factory calls to the application-owned runtime."""
+    global _model_provider_runtime
+    with _runtime_lock:
+        _model_provider_runtime = runtime
+
+
+def _configured_model_provider_runtime() -> Any | None:
+    with _runtime_lock:
+        return _model_provider_runtime
+
+
+def model_provider_runtime_is_configured() -> bool:
+    return _configured_model_provider_runtime() is not None
 
 
 def _resolve_provider(preferred: str | None) -> str:
@@ -91,6 +111,13 @@ def _provider_constructors() -> ProviderConstructors:
 
 
 def get_chat_model(temperature: float | None = None):
+    runtime = _configured_model_provider_runtime()
+    if runtime is not None:
+        return runtime.get_chat_model(temperature)
+    return create_chat_model(temperature)
+
+
+def create_chat_model(temperature: float | None = None):
     """
     根据运维页保存的运行时配置（优先）或 settings.LLM_PROVIDER 返回对应的 Chat 模型实例。
 
@@ -171,6 +198,13 @@ def get_chat_model(temperature: float | None = None):
 
 
 def get_embedding_model():
+    runtime = _configured_model_provider_runtime()
+    if runtime is not None:
+        return runtime.get_embedding_model()
+    return create_embedding_model()
+
+
+def create_embedding_model():
     """
     根据配置返回对应的 Embeddings 实例。
 

@@ -63,16 +63,31 @@ class DatabaseDependencyTests(unittest.TestCase):
 
     def test_runtime_provider_admin_service_wraps_repository(self) -> None:
         repository = MagicMock()
+        runtime = MagicMock(spec=dependencies.ApplicationModelProviderRuntime)
 
         with patch.object(
             dependencies,
             "RuntimeProviderAdminService",
             return_value=MagicMock(),
         ) as service_type:
-            result = dependencies.get_runtime_provider_admin_service(repository)
+            result = dependencies.get_runtime_provider_admin_service(repository, runtime)
 
         self.assertIs(result, service_type.return_value)
-        service_type.assert_called_once_with(repository)
+        service_type.assert_called_once_with(
+            repository,
+            invalidate_models=runtime.invalidate,
+        )
+
+    def test_model_provider_runtime_requires_lifespan_setup(self) -> None:
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        request.app = app
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Application model provider runtime is not configured",
+        ):
+            dependencies.get_model_provider_runtime(request)
 
     def test_mcp_admin_service_wraps_repository_and_connection_tester(self) -> None:
         repository = MagicMock()

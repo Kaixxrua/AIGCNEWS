@@ -40,6 +40,10 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             side_effect=lambda: shutdown_events.append("operations")
         )
         rag_provider = MagicMock()
+        model_provider_runtime = MagicMock()
+        model_provider_runtime.close = AsyncMock(
+            side_effect=lambda: shutdown_events.append("models")
+        )
         scheduler_runtime = MagicMock()
         scheduler_runtime.stop = AsyncMock(
             side_effect=lambda: shutdown_events.append("scheduler")
@@ -67,6 +71,11 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             ) as operations_type,
             patch.object(
                 main,
+                "ApplicationModelProviderRuntime",
+                return_value=model_provider_runtime,
+            ) as model_provider_type,
+            patch.object(
+                main,
                 "ApplicationProjectSearchRuntime",
                 return_value=project_search_runtime,
             ),
@@ -84,6 +93,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(app.state.application_repositories, repositories)
                 self.assertIs(app.state.scheduler_runtime, scheduler_runtime)
                 self.assertIs(app.state.operations_runtime, operations_runtime)
+                self.assertIs(app.state.model_provider_runtime, model_provider_runtime)
                 self.assertIs(app.state.project_search_runtime, project_search_runtime)
                 self.assertIs(app.state.monitoring_runtime, monitoring_runtime)
                 scheduler_runtime.start.assert_not_called()
@@ -111,8 +121,10 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             database.close.assert_called_once_with()
             self.assertEqual(
                 shutdown_events,
-                ["scheduler", "operations", "postgres"],
+                ["scheduler", "operations", "models", "postgres"],
             )
+            model_provider_runtime.close.assert_awaited_once_with()
+            self.assertIsNone(app.state.model_provider_runtime)
             self.assertIsNone(app.state.monitoring_runtime)
             self.assertIsNone(app.state.operations_runtime)
 

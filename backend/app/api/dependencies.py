@@ -60,6 +60,7 @@ from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.composition import RagChatServiceProvider
 from backend.app.services.runtime_provider.admin_service import RuntimeProviderAdminService
+from backend.app.services.runtime_provider.runtime import ApplicationModelProviderRuntime
 from backend.app.services.scheduler_admin import SchedulerAdminService
 
 
@@ -171,12 +172,32 @@ def get_runtime_provider_setting_repository(
     return repositories.runtime_provider_settings
 
 
+def get_model_provider_runtime(request: Request) -> ApplicationModelProviderRuntime:
+    runtime = getattr(request.app.state, "model_provider_runtime", None)
+    if not isinstance(runtime, ApplicationModelProviderRuntime):
+        raise RuntimeError("Application model provider runtime is not configured")
+    return runtime
+
+
+def get_optional_model_provider_runtime(
+    request: Request,
+) -> ApplicationModelProviderRuntime | None:
+    runtime = getattr(request.app.state, "model_provider_runtime", None)
+    return runtime if isinstance(runtime, ApplicationModelProviderRuntime) else None
+
+
 def get_runtime_provider_admin_service(
     repository: RuntimeProviderSettingRepository = Depends(
         get_runtime_provider_setting_repository
     ),
+    runtime: ApplicationModelProviderRuntime | None = Depends(
+        get_optional_model_provider_runtime
+    ),
 ) -> RuntimeProviderAdminService:
-    return RuntimeProviderAdminService(repository)
+    invalidate_models = (
+        runtime.invalidate if isinstance(runtime, ApplicationModelProviderRuntime) else None
+    )
+    return RuntimeProviderAdminService(repository, invalidate_models=invalidate_models)
 
 
 def get_conversation_repository(

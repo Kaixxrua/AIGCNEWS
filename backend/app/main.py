@@ -28,6 +28,11 @@ from backend.app.api import (
 )
 from backend.app.api import routes_ops
 from backend.app.core.config import settings
+from backend.app.core.model_factory import (
+    configure_model_provider_runtime,
+    create_chat_model,
+    create_embedding_model,
+)
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.core.postgres_database import postgres_database
 from backend.app.repositories.application_repository_context import (
@@ -40,6 +45,7 @@ from backend.app.core.scheduler import create_scheduler_runtime
 from backend.app.monitoring.health import create_application_monitoring_runtime
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.rag.composition import RagChatServiceProvider
+from backend.app.services.runtime_provider.runtime import ApplicationModelProviderRuntime
 
 
 # ── 访客统计中间件 ─────────────────────────────────────────────────────────────
@@ -121,6 +127,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     semantic_warmup_task: asyncio.Task[object] | None = None
     redis_client: Redis | None = None
     operations_runtime: ApplicationOperationsRuntime | None = None
+    model_provider_runtime: ApplicationModelProviderRuntime | None = None
     scheduler_runtime = None
 
     app.state.database = postgres_database
@@ -130,6 +137,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.project_search_runtime = None
     app.state.monitoring_runtime = None
     app.state.operations_runtime = None
+    app.state.model_provider_runtime = None
 
     try:
         await asyncio.to_thread(postgres_database.open)
@@ -148,6 +156,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
         )
         app.state.operations_runtime = operations_runtime
+        model_provider_runtime = ApplicationModelProviderRuntime(
+            chat_factory=create_chat_model,
+            embedding_factory=create_embedding_model,
+        )
+        configure_model_provider_runtime(model_provider_runtime)
+        app.state.model_provider_runtime = model_provider_runtime
         project_search_runtime = ApplicationProjectSearchRuntime()
         app.state.project_search_runtime = project_search_runtime
         rag_provider = RagChatServiceProvider(
@@ -261,6 +275,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 rag_provider.close()
             except Exception as exc:
                 print(f"[Shutdown] RAG provider close failed (non-fatal): {exc}")
+        if model_provider_runtime is not None:
+            try:
+                await model_provider_runtime.close()
+            except Exception as exc:
+                print(f"[Shutdown] Model provider runtime close failed (non-fatal): {exc}")
+            finally:
+                configure_model_provider_runtime(None)
+                app.state.model_provider_runtime = None
         if repositories_configured:
             try:
                 configure_application_repositories(None)

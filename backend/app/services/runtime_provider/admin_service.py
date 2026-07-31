@@ -3,6 +3,7 @@ from __future__ import annotations
 """Administrative runtime model configuration commands."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any, Mapping
 
 from backend.app.repositories.runtime_provider_repository import (
@@ -16,8 +17,14 @@ from backend.app.services.runtime_provider.control_plane import (
 
 
 class RuntimeProviderAdminService:
-    def __init__(self, settings: RuntimeProviderSettingManager) -> None:
+    def __init__(
+        self,
+        settings: RuntimeProviderSettingManager,
+        *,
+        invalidate_models: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         self._settings = settings
+        self._invalidate_models = invalidate_models
 
     async def get_config(self) -> SafeProviderProjection:
         row = await asyncio.to_thread(self._settings.get_runtime_provider_setting)
@@ -42,4 +49,6 @@ class RuntimeProviderAdminService:
             update.clear_api_key,
             update.model_name,
         )
+        if self._invalidate_models is not None:
+            await self._invalidate_models()
         return project_provider_config(row, fallback_provider=update.provider)

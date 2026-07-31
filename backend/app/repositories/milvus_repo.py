@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import List
+from typing import Any, List
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -15,12 +15,16 @@ except ImportError:
 from langchain_core.documents import Document
 
 from backend.app.core.config import settings
-from backend.app.core.model_factory import get_embedding_model
+from backend.app.core.model_factory import (
+    get_embedding_model,
+    model_provider_runtime_is_configured,
+)
 
 
 class MilvusRepository:
-    def __init__(self) -> None:
-        self._embeddings = get_embedding_model()
+    def __init__(self, embeddings: Any | None = None) -> None:
+        self._owns_embeddings = embeddings is None and not model_provider_runtime_is_configured()
+        self._embeddings = embeddings if embeddings is not None else get_embedding_model()
         self._connection_args = {
             "host": settings.milvus_host,
             "port": settings.milvus_port,
@@ -37,6 +41,8 @@ class MilvusRepository:
             if self._closed:
                 return
             self._closed = True
+            if not self._owns_embeddings:
+                return
             http_client = getattr(self._embeddings, "http_client", None)
             if http_client is not None:
                 http_client.close()
