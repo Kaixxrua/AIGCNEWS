@@ -752,7 +752,7 @@ onBeforeUnmount(stopViewReads)
   gap: 16px;
 }
 
-.project-card {
+.project-card--skeleton {
   position: relative;
   display: flex;
   min-height: 248px;
@@ -762,7 +762,7 @@ onBeforeUnmount(stopViewReads)
   padding: 22px;
 }
 
-.project-card::before {
+.project-card--skeleton::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -774,7 +774,6 @@ onBeforeUnmount(stopViewReads)
 }
 
 .project-card--skeleton {
-  min-height: 248px;
   animation: pulse 1.5s ease-in-out infinite;
 }
 

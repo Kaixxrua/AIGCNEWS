@@ -384,12 +384,6 @@ const description = computed(() => projectDescription(
 }
 
 @container (max-width: 520px) {
-  .project-card { display: flex; margin-right: 0; flex-direction: column; }
-  .project-card__body { min-height: 0; padding: 22px; }
-  .project-card__rail { position: static; width: 100%; min-width: 0; align-items: flex-start; flex-direction: row; flex-wrap: wrap; gap: 7px; padding: 12px 0 0; }
-  .project-card__action { width: auto; min-width: var(--projects-card-action-size, 40px); max-width: 100%; border-left: 1px solid #11110f; border-left-color: #11110f; border-radius: 4px; padding: 0 10px; }
-  .project-card__action-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; clip-path: none; white-space: normal; }
-  .project-card__tooltip { display: none; }
   .project-card__stats { flex-wrap: wrap; }
 }
 </style>

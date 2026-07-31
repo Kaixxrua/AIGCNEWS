@@ -38,10 +38,13 @@ describe('project UI sizing contracts', () => {
     expect(cardSource).toContain('width: var(--projects-card-action-size, 40px)')
     expect(cardSource).toContain('min-height: var(--projects-card-action-size, 40px)')
     expect(cardSource).toContain('@container (max-width: 520px)')
+    expect(cardSource).not.toMatch(/@container \(max-width: 520px\) \{[\s\S]*?project-card__rail \{ position: static;/)
     expect(cardSource).toContain('flex-wrap: wrap')
     expect(cardSource).toContain(':aria-pressed="Boolean(repo.is_favorited)"')
     expect(cardSource).toContain(':disabled="recommendActionsBusy"')
     expect(viewSource).toContain('--projects-card-action-size: 40px')
+    expect(viewSource).not.toMatch(/\.project-card \{\s*position: relative;\s*display: flex;/)
+    expect(viewSource).toContain('.project-card--skeleton {')
   })
 
   it('keeps pagination controls equal-height with responsive wrapping', () => {
