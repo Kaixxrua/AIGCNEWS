@@ -34,9 +34,13 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
 
         project_search_runtime = MagicMock()
         project_search_runtime.close = AsyncMock()
+        shutdown_events: list[str] = []
+        operations_runtime = MagicMock()
+        operations_runtime.stop = AsyncMock(
+            side_effect=lambda: shutdown_events.append("operations")
+        )
         rag_provider = MagicMock()
         scheduler_runtime = MagicMock()
-        shutdown_events: list[str] = []
         scheduler_runtime.stop = AsyncMock(
             side_effect=lambda: shutdown_events.append("scheduler")
         )
@@ -58,6 +62,11 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             ) as scheduler_factory,
             patch.object(
                 main,
+                "ApplicationOperationsRuntime",
+                return_value=operations_runtime,
+            ) as operations_type,
+            patch.object(
+                main,
                 "ApplicationProjectSearchRuntime",
                 return_value=project_search_runtime,
             ),
@@ -74,6 +83,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(app.state.postgres_database, database)
                 self.assertIs(app.state.application_repositories, repositories)
                 self.assertIs(app.state.scheduler_runtime, scheduler_runtime)
+                self.assertIs(app.state.operations_runtime, operations_runtime)
                 self.assertIs(app.state.project_search_runtime, project_search_runtime)
                 self.assertIs(app.state.monitoring_runtime, monitoring_runtime)
                 scheduler_runtime.start.assert_not_called()
@@ -82,6 +92,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
 
             monitoring_factory.assert_called_once_with(postgres=database)
             factory.assert_called_once_with(postgres=database)
+            operations_type.assert_called_once_with(shutdown_grace_seconds=30.0)
             rag_provider_type.assert_called_once_with(
                 repositories,
                 project_searcher=project_search_runtime.search_projects,
@@ -93,12 +104,17 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             )
             scheduler_runtime.start.assert_not_called()
             scheduler_runtime.stop.assert_awaited_once_with()
+            operations_runtime.stop.assert_awaited_once_with()
             project_search_runtime.close.assert_awaited_once_with()
             rag_provider.close.assert_called_once_with()
             redis_client.aclose.assert_awaited_once_with()
             database.close.assert_called_once_with()
-            self.assertEqual(shutdown_events, ["scheduler", "postgres"])
+            self.assertEqual(
+                shutdown_events,
+                ["scheduler", "operations", "postgres"],
+            )
             self.assertIsNone(app.state.monitoring_runtime)
+            self.assertIsNone(app.state.operations_runtime)
 
     async def test_disabled_scheduler_ignores_invalid_timezone(self) -> None:
         app = FastAPI()

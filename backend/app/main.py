@@ -28,6 +28,7 @@ from backend.app.api import (
 )
 from backend.app.api import routes_ops
 from backend.app.core.config import settings
+from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.core.postgres_database import postgres_database
 from backend.app.repositories.application_repository_context import (
     configure_application_repositories,
@@ -119,6 +120,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     rag_provider: RagChatServiceProvider | None = None
     semantic_warmup_task: asyncio.Task[object] | None = None
     redis_client: Redis | None = None
+    operations_runtime: ApplicationOperationsRuntime | None = None
     scheduler_runtime = None
 
     app.state.database = postgres_database
@@ -127,6 +129,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.redis = None
     app.state.project_search_runtime = None
     app.state.monitoring_runtime = None
+    app.state.operations_runtime = None
 
     try:
         await asyncio.to_thread(postgres_database.open)
@@ -139,6 +142,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         configure_application_repositories(app.state.application_repositories)
         repositories_configured = True
+        operations_runtime = ApplicationOperationsRuntime(
+            shutdown_grace_seconds=float(
+                getattr(settings, "operations_shutdown_grace_seconds", 30.0)
+            )
+        )
+        app.state.operations_runtime = operations_runtime
         project_search_runtime = ApplicationProjectSearchRuntime()
         app.state.project_search_runtime = project_search_runtime
         rag_provider = RagChatServiceProvider(
@@ -217,6 +226,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 await scheduler_runtime.stop()
             except Exception as exc:
                 print(f"[Shutdown] Scheduler close failed (non-fatal): {exc}")
+        if operations_runtime is not None:
+            try:
+                await operations_runtime.stop()
+            except Exception as exc:
+                print(f"[Shutdown] Operations close failed (non-fatal): {exc}")
+            finally:
+                app.state.operations_runtime = None
 
         await _cancel_background_task(
             semantic_warmup_task,

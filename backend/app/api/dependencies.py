@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import Depends, Request
 
+from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
@@ -201,6 +202,13 @@ def get_project_search_runtime(request: Request) -> Any:
     runtime = getattr(request.app.state, "project_search_runtime", None)
     if runtime is None:
         raise RuntimeError("Project search runtime is not configured")
+    return runtime
+
+
+def get_operations_runtime(request: Request) -> ApplicationOperationsRuntime:
+    runtime = getattr(request.app.state, "operations_runtime", None)
+    if not isinstance(runtime, ApplicationOperationsRuntime):
+        raise RuntimeError("Application operations runtime is not configured")
     return runtime
 
 

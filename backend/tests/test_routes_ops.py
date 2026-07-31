@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,6 +16,7 @@ from backend.app.api.dependencies import (
     get_github_project_recommendation_admin_service,
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
+    get_operations_runtime,
     get_ops_diagnostics_service,
     get_runtime_provider_setting_repository,
     get_scheduler_admin_service,
@@ -39,18 +41,38 @@ from backend.app.services.scheduler_admin import SchedulerAdminService
 
 
 class OperationsRouteTests(unittest.TestCase):
+    def test_routes_do_not_use_request_scoped_background_tasks(self) -> None:
+        source = routes_ops.__file__
+        assert source is not None
+        with open(source, encoding="utf-8") as route_file:
+            tree = ast.parse(route_file.read())
+
+        imported_names = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        }
+        referenced_names = {
+            node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+        }
+
+        self.assertNotIn("BackgroundTasks", imported_names)
+        self.assertNotIn("BackgroundTasks", referenced_names)
+
     def test_generate_all_briefings_queues_injected_service(self) -> None:
         app = FastAPI()
         app.include_router(routes_ops.router, prefix="/api")
         service = MagicMock()
+        operations = MagicMock()
         app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
         app.dependency_overrides[get_briefing_admin_service] = lambda: service
+        app.dependency_overrides[get_operations_runtime] = lambda: operations
 
-        with patch.object(service, "generate_all", new=AsyncMock()) as generate_all:
-            response = TestClient(app).post(
-                "/api/ops/briefing/generate-all",
-                params={"force_regenerate": "false"},
-            )
+        response = TestClient(app).post(
+            "/api/ops/briefing/generate-all",
+            params={"force_regenerate": "false"},
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -61,18 +83,21 @@ class OperationsRouteTests(unittest.TestCase):
                 "task_id": None,
             },
         )
-        generate_all.assert_awaited_once_with(False)
+        operations.submit.assert_called_once_with(service.generate_all, False)
 
     def test_generate_all_briefings_requires_admin_before_queueing(self) -> None:
         app = FastAPI()
         app.include_router(routes_ops.router, prefix="/api")
         service = MagicMock()
+        operations = MagicMock()
         app.dependency_overrides[get_briefing_admin_service] = lambda: service
+        app.dependency_overrides[get_operations_runtime] = lambda: operations
 
         response = TestClient(app).post("/api/ops/briefing/generate-all")
 
         self.assertIn(response.status_code, (401, 403))
         service.generate_all.assert_not_called()
+        operations.submit.assert_not_called()
 
     def test_diagnostics_routes_use_injected_service(self) -> None:
         service = MagicMock()

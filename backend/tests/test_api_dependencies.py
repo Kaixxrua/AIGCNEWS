@@ -196,6 +196,26 @@ class DatabaseDependencyTests(unittest.TestCase):
         ):
             dependencies.get_project_search_runtime(request)
 
+    def test_operations_runtime_uses_application_owned_runtime(self) -> None:
+        runtime = dependencies.ApplicationOperationsRuntime()
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        app.state.operations_runtime = runtime
+        request.app = app
+
+        self.assertIs(dependencies.get_operations_runtime(request), runtime)
+
+    def test_operations_runtime_requires_lifespan_setup(self) -> None:
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        request.app = app
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Application operations runtime is not configured",
+        ):
+            dependencies.get_operations_runtime(request)
+
     def test_scheduler_admin_service_uses_application_owned_runtime(self) -> None:
         scheduler_control = MagicMock()
         request = MagicMock(spec=Request)

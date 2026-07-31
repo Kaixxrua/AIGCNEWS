@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     project_search_shadow_recent_case_limit: int = 20
     project_search_shadow_shutdown_timeout_seconds: float = 5.0
     scheduler_shutdown_grace_seconds: float = 30.0
+    operations_shutdown_grace_seconds: float = 30.0
     project_search_shadow_epoch: str = "default"
     project_semantic_indexing_enabled: bool = False
     project_semantic_collection_name: str = "aigc_github_projects_v1"

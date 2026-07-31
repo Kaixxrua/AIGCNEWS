@@ -6,7 +6,7 @@ import re
 from datetime import date as DateType
 from typing import Any, Dict, Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.app.api.dependencies import (
@@ -19,11 +19,13 @@ from backend.app.api.dependencies import (
     get_ingestion_admin_service,
     get_ingestion_task_repository,
     get_mcp_admin_service,
+    get_operations_runtime,
     get_ops_diagnostics_service,
     get_runtime_provider_admin_service,
     get_scheduler_admin_service,
 )
 from backend.app.core.auth import RequireAdmin
+from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.repositories.document_repository import DocumentAdminWriter
 from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 from backend.app.services.briefing_admin import BriefingAdminService
@@ -352,8 +354,8 @@ async def test_mcp_server(
 @router.post("/ops/ingest", response_model=IngestResponse, tags=["Ops"])
 async def trigger_ingest(
     request: IngestRequest,
-    background_tasks: BackgroundTasks,
     _: dict = Depends(RequireAdmin),
+    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
     service: IngestionAdminService = Depends(get_ingestion_admin_service),
 ) -> IngestResponse:
     """
@@ -363,14 +365,14 @@ async def trigger_ingest(
     - **force=true**：强制模式，直接抓取最新数据，不做日期检测。
     """
     if request.force:
-        background_tasks.add_task(service.force_ingest, request.limit)
+        operations.submit(service.force_ingest, request.limit)
         logger.info("[Ops] 强制采集任务已加入后台队列，limit=%d", request.limit)
         return IngestResponse(
             status="queued",
             message=f"强制采集任务已提交（limit={request.limit}），后台执行中。",
         )
     else:
-        background_tasks.add_task(service.smart_ingest, request.limit)
+        operations.submit(service.smart_ingest, request.limit)
         logger.info("[Ops] 智能采集任务已加入后台队列，limit=%d", request.limit)
         return IngestResponse(
             status="queued",
@@ -381,8 +383,8 @@ async def trigger_ingest(
 @router.post("/ops/ingest-by-date", response_model=IngestResponse, tags=["Ops"])
 async def ingest_by_date(
     request: IngestByDateRequest,
-    background_tasks: BackgroundTasks,
     _: dict = Depends(RequireAdmin),
+    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
     service: IngestionAdminService = Depends(get_ingestion_admin_service),
 ) -> IngestResponse:
     """
@@ -398,7 +400,7 @@ async def ingest_by_date(
             status_code=400, detail="target_date 格式错误，应为 YYYY-MM-DD"
         )
 
-    background_tasks.add_task(service.ingest_by_date, request.target_date, request.limit)
+    operations.submit(service.ingest_by_date, request.target_date, request.limit)
     logger.info(
         "[Ops] 按日期采集任务已加入后台队列：date=%s, limit=%d",
         request.target_date,
@@ -440,13 +442,12 @@ async def clear_all_data(
 @router.post("/ops/github-hot/refresh", response_model=IngestResponse, tags=["Ops"])
 async def refresh_github_hot(
     limit: int = Query(default=80, ge=20, le=200),
-    background_tasks: BackgroundTasks = None,
     _: dict = Depends(RequireAdmin),
+    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
     service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
 ) -> IngestResponse:
     """手动刷新 GitHub 热榜候选池与快照。"""
-    assert background_tasks is not None
-    background_tasks.add_task(service.refresh_hot, limit)
+    operations.submit(service.refresh_hot, limit)
     logger.info("[Ops] GitHub 热榜刷新任务已加入后台队列，limit=%d", limit)
     return IngestResponse(
         status="queued",
@@ -513,8 +514,8 @@ async def get_project_taxonomy(
 )
 async def enrich_github_project_library(
     request: GitHubProjectsEnrichRequest,
-    background_tasks: BackgroundTasks = None,
     _: dict = Depends(RequireAdmin),
+    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
     service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
 ) -> GitHubProjectsEnrichResponse:
     """手动触发 GitHub 项目库 AI 分类与中文描述富化。"""
@@ -534,8 +535,7 @@ async def enrich_github_project_library(
             result=result,
         )
 
-    assert background_tasks is not None
-    background_tasks.add_task(
+    operations.submit(
         service.enrich,
         limit,
         request.force,
@@ -633,8 +633,8 @@ async def github_project_enrichment_status(
 )
 async def refresh_github_project_metrics(
     request: GitHubProjectsMetricsRequest,
-    background_tasks: BackgroundTasks = None,
     _: dict = Depends(RequireAdmin),
+    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
     service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
 ) -> GitHubProjectsEnrichResponse:
     """手动刷新 GitHub 项目每日快照，并在非 dry-run 时重算热度分。"""
@@ -650,8 +650,7 @@ async def refresh_github_project_metrics(
         )
         return GitHubProjectsEnrichResponse(status="dry_run", message="GitHub 项目每日指标 dry-run 完成。", result=result)
 
-    assert background_tasks is not None
-    background_tasks.add_task(
+    operations.submit(
         service.refresh_metrics,
         min_stars=min_stars,
         limit=limit,
@@ -686,8 +685,8 @@ async def ingest_single_source(
         ..., description="数据源名称：arxiv / github / news / producthunt / hackernews"
     ),
     limit: int = Query(default=20, ge=5, le=100),
-    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
     _: dict = Depends(RequireAdmin),
+    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
     service: IngestionAdminService = Depends(get_ingestion_admin_service),
 ) -> IngestResponse:
     """
@@ -706,8 +705,7 @@ async def ingest_single_source(
             detail=f"未知数据源 '{source}'，可选值：{', '.join(sorted(VALID_SOURCES))}",
         )
 
-    assert background_tasks is not None
-    background_tasks.add_task(service.ingest_source, source_lower, limit)
+    operations.submit(service.ingest_source, source_lower, limit)
     logger.info(
         "[Ops] 单源采集任务已加入后台队列：source=%s, limit=%d", source_lower, limit
     )
@@ -777,8 +775,8 @@ async def generate_all_briefings(
     force_regenerate: bool = Query(
         default=True, description="是否强制重新生成（忽略缓存）"
     ),
-    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
     _: dict = Depends(RequireAdmin),
+    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
     service: BriefingAdminService = Depends(get_briefing_admin_service),
 ) -> IngestResponse:
     """
@@ -790,8 +788,7 @@ async def generate_all_briefings(
     - **force_regenerate=true**（默认）：强制重新生成，忽略已有缓存。
     - **force_regenerate=false**：已生成过则跳过，避免重复消耗 LLM。
     """
-    assert background_tasks is not None
-    background_tasks.add_task(service.generate_all, force_regenerate)
+    operations.submit(service.generate_all, force_regenerate)
     logger.info(
         "[Ops] 全维度简报生成任务已加入后台队列，force_regenerate=%s", force_regenerate
     )
