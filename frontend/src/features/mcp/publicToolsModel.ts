@@ -13,9 +13,9 @@ export const PUBLIC_TOOLS: readonly PublicTool[] = [
   { name: 'search_papers', description: '检索公开 arXiv 论文与学术文献。' },
   { name: 'search_documents', description: '检索新闻、论文、GitHub 等跨来源索引内容。' },
   { name: 'get_paper_detail', description: '读取单篇公开索引文档的详细元数据。' },
-  { name: 'get_top_items', description: '读取 daily / weekly / monthly 公开排行。' },
+  { name: 'get_top_items', description: '读取日榜、周榜和月榜公开排行。' },
   { name: 'search_github_projects', description: '优先搜索非 AI 项目、组件、SDK、框架、模板与开源软件。' },
-  { name: 'search_github_ai_projects', description: '优先搜索本地 AI / Agent / MCP / RAG / LLM 项目库。' },
+  { name: 'search_github_ai_projects', description: '优先搜索本地 AI / 智能体 / MCP / RAG / LLM 项目库。' },
   { name: 'get_project_library', description: '兼容读取 GitHub AI 项目库。' },
   { name: 'get_project_categories', description: '读取 AI 项目分类与数量。' },
 ]

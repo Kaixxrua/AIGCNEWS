@@ -16,6 +16,8 @@ describe('public MCP tool display model', () => {
     expect(tools).toHaveLength(8)
     expect(tools.map((tool) => tool.name)).toEqual(PUBLIC_TOOLS.map((tool) => tool.name))
     expect(tools.every((tool) => /[㐀-鿿]/u.test(tool.description))).toBe(true)
+    expect(tools.find((tool) => tool.name === 'get_top_items')?.description).toBe('读取日榜、周榜和月榜公开排行。')
+    expect(tools.find((tool) => tool.name === 'search_github_ai_projects')?.description).toContain('智能体')
   })
 
   it('replaces server descriptions for known tools with local Chinese copy', () => {

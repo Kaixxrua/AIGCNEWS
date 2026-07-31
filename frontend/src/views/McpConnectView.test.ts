@@ -31,6 +31,20 @@ describe('MCP connect view controller boundary', () => {
     expect(script).not.toContain('copyTimer')
   })
 
+  it('localizes every human-readable MCP heading and hero label', () => {
+    expect(template).toContain("t(`mcp.${pillKey}`)")
+    expect(template).toContain("t('mcp.serverEyebrow')")
+    expect(template).toContain("t('mcp.publicEndpoint')")
+    expect(template).toContain("t('mcp.authenticatedSetup')")
+    expect(template).toContain("t('mcp.tokenManagement')")
+    expect(template).toContain("t('mcp.routing')")
+    expect(template).toContain("t('mcp.aiArtifacts')")
+    expect(template).not.toContain('>Public endpoint</p>')
+    expect(template).not.toContain('>Authenticated setup</p>')
+    expect(template).not.toContain('>Token management</p>')
+    expect(template).not.toContain('>MCP-first routing</p>')
+  })
+
   it('keeps only presentation formatting in the view while preserving transient command privacy', () => {
     expect(script).toContain('const setupScopeLabel = computed(')
     expect(script).toContain('const setupTargetDescription = computed(')

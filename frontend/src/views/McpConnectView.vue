@@ -50,10 +50,11 @@ const {
   translate: t,
 })
 
+const heroPillKeys = ['streamableHttp', 'publicTools', 'privateFavorites'] as const
 const shellOptions = [
-  { id: 'powershell' as const, label: 'PowerShell' },
-  { id: 'cmd' as const, label: 'Command Prompt' },
-  { id: 'bash' as const, label: 'Bash / zsh' },
+  { id: 'powershell' as const, label: 'PowerShell', labelKey: '' },
+  { id: 'cmd' as const, label: '', labelKey: 'mcp.commandPrompt' },
+  { id: 'bash' as const, label: 'Bash / zsh', labelKey: '' },
 ]
 const clientOptions = mcpClientOptions
 const setupErrorDisplay = computed(() => resolveMcpFeedback(setupError.value, t))
@@ -101,14 +102,14 @@ onBeforeUnmount(dispose)
         <div class="relative z-10 grid gap-4 xl:grid-cols-[1.05fr_0.95fr] xl:items-center">
           <div>
             <div class="mb-3 flex flex-wrap gap-2">
-              <span v-for="pill in ['Streamable HTTP', 'Public tools', 'Private favorites']" :key="pill" class="rounded-full border border-cyan-200/60 bg-cyan-50/75 px-2.5 py-1 text-2xs font-semibold uppercase tracking-[0.12em] text-cyan-700">{{ pill }}</span>
+              <span v-for="pillKey in heroPillKeys" :key="pillKey" class="rounded-full border border-cyan-200/60 bg-cyan-50/75 px-2.5 py-1 text-2xs font-semibold uppercase tracking-[0.12em] text-cyan-700">{{ t(`mcp.${pillKey}`) }}</span>
             </div>
-            <p class="text-2xs font-semibold uppercase tracking-[0.28em] text-stone-400">AIGC_NEWS MCP Server</p>
+            <p class="text-2xs font-semibold uppercase tracking-[0.28em] text-stone-400">{{ t('mcp.serverEyebrow') }}</p>
             <h1 class="mt-2 max-w-3xl font-serif text-2xl font-semibold leading-tight text-stone-900 md:text-3xl">{{ t('mcp.title') }}</h1>
             <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('mcp.description') }}</p>
           </div>
           <div class="rounded-[20px] border border-white/90 bg-white/75 p-4 shadow-sm">
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">Public endpoint</p>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.publicEndpoint') }}</p>
             <div class="mt-2 rounded-2xl border border-stone-200 bg-stone-50/80 px-3 py-2 font-mono text-xs text-stone-700">{{ normalizedEndpoint }}</div>
             <div class="mt-2 flex flex-col gap-2 sm:flex-row"><input v-model.trim="endpointUrl" class="input min-w-0 flex-1 font-mono text-xs" :aria-label="t('mcp.endpointAria')" /><button class="btn-secondary justify-center text-xs" :disabled="testing || Boolean(endpointWarning)" @click="testPublicHandshake">{{ t(testing ? 'mcp.testing' : 'mcp.publicHandshake') }}</button></div>
             <p v-if="endpointWarning" class="mt-2 text-xs text-rose-700">{{ endpointWarning }}</p>
@@ -120,7 +121,7 @@ onBeforeUnmount(dispose)
 
       <section class="glass-card p-5 md:p-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
-          <div><p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">Authenticated setup</p><h2 class="mt-1 text-xl font-semibold text-stone-800">{{ t('mcp.setupTitle') }}</h2><p class="mt-2 text-sm text-stone-500">{{ t('mcp.setupDescription') }}</p></div>
+          <div><p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.authenticatedSetup') }}</p><h2 class="mt-1 text-xl font-semibold text-stone-800">{{ t('mcp.setupTitle') }}</h2><p class="mt-2 text-sm text-stone-500">{{ t('mcp.setupDescription') }}</p></div>
           <button v-if="!authStore.isLoggedIn" class="btn-primary" @click="router.push('/login')">{{ t('mcp.loginToConfigure') }}</button>
           <span v-else class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">{{ t('mcp.loggedIn') }}</span>
         </div>
@@ -130,7 +131,7 @@ onBeforeUnmount(dispose)
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.stepChoose') }}</p>
             <div class="mt-4 grid gap-2 sm:grid-cols-2"><button v-for="client in clientOptions" :key="client.id" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-white'" @click="selectedClient = client.id"><span class="flex flex-wrap items-center gap-2"><span class="text-sm font-semibold text-stone-800">{{ client.label }}</span><span class="rounded-full bg-stone-100 px-2 py-0.5 text-2xs font-semibold text-stone-500">{{ t(`mcp.scope.${setupScopeKeys[client.setupScope]}`) }}</span></span><span class="mt-1 block text-2xs leading-4 text-stone-400">{{ client.description }}</span></button></div>
             <p class="mt-5 text-sm font-semibold text-stone-700">{{ t('mcp.terminal') }}</p>
-            <div class="mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-white text-stone-600'" @click="selectedShell = shell.id">{{ shell.label }}</button></div>
+            <div class="mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-white text-stone-600'" @click="selectedShell = shell.id">{{ shell.labelKey ? t(shell.labelKey) : shell.label }}</button></div>
             <label class="mt-5 block text-xs font-semibold text-stone-600">{{ t('mcp.deviceLabel') }}</label><input v-model="clientLabel" maxlength="128" class="input mt-2" :placeholder="t('mcp.devicePlaceholder')" />
           </div>
 
@@ -149,18 +150,18 @@ onBeforeUnmount(dispose)
       </section>
 
       <section v-if="authStore.isLoggedIn" class="glass-card p-5 md:p-6">
-        <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">Token management</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.tokenTitle') }}</h2></div><button class="btn-secondary text-xs" :disabled="loadingTokens" @click="loadTokens">{{ t(loadingTokens ? 'common.refreshing' : 'common.refresh') }}</button></div>
+        <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.tokenManagement') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.tokenTitle') }}</h2></div><button class="btn-secondary text-xs" :disabled="loadingTokens" @click="loadTokens">{{ t(loadingTokens ? 'common.refreshing' : 'common.refresh') }}</button></div>
         <div v-if="tokens.length" class="mcp-token-list mt-4 grid gap-3 pr-1"><div v-for="item in tokens" :key="item.id" class="grid gap-3 rounded-[20px] border border-stone-200 bg-white/70 p-4 md:grid-cols-[1fr_auto] md:items-center"><div><div class="flex flex-wrap items-center gap-2"><span class="font-semibold text-stone-800">{{ item.client_label || item.client_type }}</span><span class="rounded-full px-2 py-0.5 text-2xs" :class="tokenStatus(item) === 'valid' ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-500'">{{ tokenStatusLabel(tokenStatus(item)) }}</span></div><p class="mt-2 font-mono text-xs text-stone-500">{{ item.token_hint }}</p><p class="mt-1 text-2xs text-stone-400">{{ t('mcp.tokenCreatedUsed', { created: formatDate(item.created_at), used: formatDate(item.last_used_at) }) }}</p></div><button class="btn-secondary text-xs text-rose-700" :disabled="deletingId === item.id" @click="removeToken(item)">{{ t(deletingId === item.id ? 'mcp.deleting' : 'common.delete') }}</button></div></div>
         <p v-else-if="!loadingTokens" class="mt-4 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">{{ t('mcp.noTokens') }}</p>
       </section>
 
       <section class="glass-card p-5 md:p-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
-          <div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">MCP-first routing</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.routingTitle') }}</h2><p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('mcp.routingDescription') }}</p></div>
+          <div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.routing') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.routingTitle') }}</h2><p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('mcp.routingDescription') }}</p></div>
           <button class="btn-secondary text-xs" @click="copyHostInstruction">{{ t(copiedKey === 'host-instruction' ? 'mcp.copied' : 'mcp.copyHost') }}</button>
         </div>
         <div class="mt-4 grid gap-3 md:grid-cols-3">
-          <div class="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4"><p class="font-mono text-2xs font-semibold text-cyan-800">AI / Agent / MCP / RAG</p><p class="mt-2 text-xs leading-5 text-cyan-900">search_github_ai_projects</p></div>
+          <div class="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4"><p class="font-mono text-2xs font-semibold text-cyan-800">{{ t('mcp.aiArtifacts') }}</p><p class="mt-2 text-xs leading-5 text-cyan-900">search_github_ai_projects</p></div>
           <div class="rounded-2xl border border-stone-200 bg-white/70 p-4"><p class="font-mono text-2xs font-semibold text-stone-600">{{ t('mcp.nonAi') }}</p><p class="mt-2 text-xs leading-5 text-stone-800">search_github_projects</p></div>
           <div class="rounded-2xl border border-violet-100 bg-violet-50/60 p-4"><p class="font-mono text-2xs font-semibold text-violet-700">{{ t('mcp.papers') }}</p><p class="mt-2 text-xs leading-5 text-violet-900">search_papers</p></div>
         </div>
