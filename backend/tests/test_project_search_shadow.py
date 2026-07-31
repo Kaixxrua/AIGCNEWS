@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from threading import Event
 
@@ -94,7 +95,7 @@ def test_search_shadow_runs_candidate_lanes_inside_worker() -> None:
     assert manager.close(1)
 
 
-def test_search_shadow_named_epoch_accounting_and_bounded_finalization() -> None:
+def test_search_shadow_named_epoch_accounting_and_quiescent_finalization() -> None:
     manager = ProjectSearchShadowManager(
         workers=1,
         capacity=1,
@@ -117,9 +118,17 @@ def test_search_shadow_named_epoch_accounting_and_bounded_finalization() -> None
         semantic_repo_ids=[],
     )
 
-    started = time.monotonic()
-    assert manager.close(0.01) is False
-    assert time.monotonic() - started < 0.2
+    close_done = Event()
+    close_result: list[bool] = []
+
+    def close_manager() -> None:
+        close_result.append(manager.close(0.01))
+        close_done.set()
+
+    close_thread = threading.Thread(target=close_manager)
+    close_thread.start()
+    time.sleep(0.05)
+    assert not close_done.is_set()
     snapshot = manager.snapshot()
     assert snapshot["epoch"] == "search-v2"
     assert snapshot["lifecycle"] == "draining"
@@ -139,13 +148,19 @@ def test_search_shadow_named_epoch_accounting_and_bounded_finalization() -> None
     assert accounting["complete_coverage"] is False
     assert snapshot["sample_rate"] == 1
     assert "private query" not in str(snapshot)
+    assert not manager.submit(
+        arguments={"query": "late private query"},
+        legacy_repo_ids=[],
+        lanes=ProjectLexicalCandidateLanes(),
+        semantic_repo_ids=[],
+    )
     release.set()
-    for _ in range(50):
-        if manager.snapshot()["lifecycle"] == "finalized":
-            break
-        time.sleep(0.01)
+    close_thread.join(1)
+    assert close_done.is_set()
+    assert close_result == [False]
     final = manager.snapshot()
     assert final["lifecycle"] == "finalized"
     assert final["accounting"]["completed_terminal"] == 1
     assert final["accounting"]["accounting_valid"] is True
     assert final["accounting"]["complete_coverage"] is False
+    assert manager.close(0) is True

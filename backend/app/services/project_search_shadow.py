@@ -67,6 +67,9 @@ class ProjectSearchShadowManager:
         self._accepted = 0
         self._futures: set[Future[Any]] = set()
         self._lock = threading.Lock()
+        self._submission_lock = threading.Lock()
+        self._close_lock = threading.Lock()
+        self._executor_shutdown = False
         self._accepting = True
 
     def submit(
@@ -83,35 +86,36 @@ class ProjectSearchShadowManager:
         if not _should_sample(fingerprint, self._sample_rate):
             self._record("skipped_sampled")
             return False
-        with self._lock:
-            accepting = self._accepting
-        if not accepting:
-            self._record("skipped_unavailable")
-            return False
-        if not self._slots.acquire(blocking=False):
-            self._record("skipped_saturated")
-            return False
         started = time.monotonic()
-        try:
-            future = self._executor.submit(
-                self._run,
-                fingerprint,
-                tuple(legacy_repo_ids),
-                lanes,
-                lanes_call,
-                tuple(semantic_repo_ids),
-                exact_repo_id,
-                started,
-            )
-        except BaseException:
-            self._slots.release()
-            self._record("submit_error")
-            return False
-        with self._lock:
-            self._futures.add(future)
-            self._accepted += 1
-        future.add_done_callback(self._done)
-        return True
+        with self._submission_lock:
+            with self._lock:
+                accepting = self._accepting
+            if not accepting:
+                self._record("skipped_unavailable")
+                return False
+            if not self._slots.acquire(blocking=False):
+                self._record("skipped_saturated")
+                return False
+            try:
+                future = self._executor.submit(
+                    self._run,
+                    fingerprint,
+                    tuple(legacy_repo_ids),
+                    lanes,
+                    lanes_call,
+                    tuple(semantic_repo_ids),
+                    exact_repo_id,
+                    started,
+                )
+            except BaseException:
+                self._slots.release()
+                self._record("submit_error")
+                return False
+            with self._lock:
+                self._futures.add(future)
+                self._accepted += 1
+            future.add_done_callback(self._done)
+            return True
 
     def _run(
         self,
@@ -262,18 +266,39 @@ class ProjectSearchShadowManager:
                 "recent_cases": list(self._recent),
             }
 
-    def close(self, timeout_seconds: float) -> bool:
+    def stop_accepting(self) -> None:
+        with self._submission_lock:
+            with self._lock:
+                self._accepting = False
+                futures = tuple(self._futures)
+            for future in futures:
+                future.cancel()
+
+    def drain(self, timeout_seconds: float) -> bool:
         with self._lock:
-            self._accepting = False
             futures = tuple(self._futures)
         if futures:
             wait(futures, timeout=max(0.0, timeout_seconds))
-        self._executor.shutdown(wait=False, cancel_futures=False)
         with self._lock:
-            self._finalization_timed_out = bool(self._futures)
-            if not self._futures:
+            timed_out = bool(self._futures)
+            self._finalization_timed_out = timed_out
+            if not timed_out:
                 self._finalized_at = datetime.now(timezone.utc).isoformat()
-            return not self._finalization_timed_out
+            return not timed_out
+
+    def close(self, timeout_seconds: float) -> bool:
+        with self._close_lock:
+            self.stop_accepting()
+            completed = self.drain(timeout_seconds)
+            with self._lock:
+                should_shutdown = not self._executor_shutdown
+                self._executor_shutdown = True
+            if should_shutdown:
+                self._executor.shutdown(wait=True, cancel_futures=True)
+            with self._lock:
+                if not self._futures and self._finalized_at is None:
+                    self._finalized_at = datetime.now(timezone.utc).isoformat()
+            return completed
 
 
 _manager: ProjectSearchShadowManager | None = None
