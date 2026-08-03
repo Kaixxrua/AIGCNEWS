@@ -71,9 +71,12 @@ class SmsService:
             await self._redis.set(lock_key, "1", ex=_LOCK_TTL)
 
         if self._sms_api_key:
-            # TODO: 调用云厂商短信 API（如阿里云 / 腾讯云）
+            # 延期说明：云厂商短信通道（阿里云/腾讯云）属于未授权的外部网络
+            # 集成，本重构计划明确不引入 vendor SDK 与真实密钥。当前即使
+            # 配置了 api_key 也只记录日志、不出网；接入真实通道前需要
+            # 独立授权并补充契约测试（见 docs/architecture.md 安全边界）。
             logger.info(
-                "[SMS] TODO: 调用云厂商 API 发送短信给 %s，api_key=%s…",
+                "[SMS] deferred: 未接入云厂商短信通道，跳过实际发送 phone=%s api_key=%s",
                 phone,
                 self._sms_api_key[:4] + "****",
             )
