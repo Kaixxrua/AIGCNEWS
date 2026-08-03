@@ -14,6 +14,7 @@ from backend.app.api import routes_github_projects, routes_mcp
 from backend.app.api.dependencies import (
     get_application_repositories,
     get_briefing_repository,
+    get_project_search_runtime,
 )
 from backend.app.core.auth import OptionalMcpUser, OptionalUser
 from backend.app.services.mcp.inbound import tools as inbound_tools
@@ -82,11 +83,17 @@ def _mcp_client(*, user: dict | None = None) -> TestClient:
         rank_snapshots=MagicMock(),
         project_collections=MagicMock(),
     )
+    project_search_runtime = SimpleNamespace(search_projects=AsyncMock())
     app.dependency_overrides[get_briefing_repository] = lambda: MagicMock()
     app.dependency_overrides[get_application_repositories] = lambda: repositories
+    app.dependency_overrides[get_project_search_runtime] = (
+        lambda: project_search_runtime
+    )
     app.dependency_overrides[OptionalMcpUser] = lambda: user
     app.include_router(routes_mcp.router, prefix="/api")
-    return TestClient(app)
+    client = TestClient(app)
+    client._project_search_runtime = project_search_runtime  # type: ignore[attr-defined]
+    return client
 
 
 def _call_tool(client: TestClient, name: str, arguments: dict, request_id: int = 1):
@@ -387,11 +394,10 @@ def test_get_project_library_matches_canonical_ai_tool_defaults_and_wire_shape()
         "fallback_policy": "local_first_github_only_when_semantics_preserved",
     }
     client = _mcp_client()
-    with patch.object(
-        inbound_tools, "search_projects", new=AsyncMock(return_value=canonical_result)
-    ) as search:
-        legacy = _call_tool(client, "get_project_library", {}, 1)
-        canonical = _call_tool(client, "search_github_ai_projects", {}, 2)
+    search = client._project_search_runtime.search_projects  # type: ignore[attr-defined]
+    search.return_value = canonical_result
+    legacy = _call_tool(client, "get_project_library", {}, 1)
+    canonical = _call_tool(client, "search_github_ai_projects", {}, 2)
     client.close()
 
     assert legacy.status_code == canonical.status_code == 200
@@ -430,27 +436,32 @@ def test_get_project_library_matches_canonical_ai_filters_and_is_auth_neutral() 
         _mcp_client(),
         _mcp_client(user={"user_id": 42, "scopes": frozenset()}),
     ]
-    with patch.object(
-        inbound_tools, "search_projects", new=AsyncMock(return_value=result)
-    ) as search:
-        anonymous = _call_tool(clients[0], "get_project_library", arguments, 1)
-        authenticated = _call_tool(clients[1], "get_project_library", arguments, 2)
-        canonical = _call_tool(clients[1], "search_github_ai_projects", arguments, 3)
+    searches = [
+        client._project_search_runtime.search_projects  # type: ignore[attr-defined]
+        for client in clients
+    ]
+    for search in searches:
+        search.return_value = result
+    anonymous = _call_tool(clients[0], "get_project_library", arguments, 1)
+    authenticated = _call_tool(clients[1], "get_project_library", arguments, 2)
+    canonical = _call_tool(clients[1], "search_github_ai_projects", arguments, 3)
     for client in clients:
         client.close()
 
     assert anonymous.json()["result"] == authenticated.json()["result"]
     assert authenticated.json()["result"] == canonical.json()["result"]
-    assert search.await_count == 3
-    for call in search.await_args_list:
-        assert call.kwargs["query"] == "agent sdk"
-        assert call.kwargs["category"] == "agents_automation"
-        assert call.kwargs["subcategory"] == "agent_frameworks"
-        assert call.kwargs["language"] == "Python"
-        assert call.kwargs["scope"] == "recommended"
-        assert call.kwargs["sort"] == "recent"
-        assert call.kwargs["page"] == 2
-        assert call.kwargs["limit"] == 7
+    assert searches[0].await_count == 1
+    assert searches[1].await_count == 2
+    for search in searches:
+        for call in search.await_args_list:
+            assert call.kwargs["query"] == "agent sdk"
+            assert call.kwargs["category"] == "agents_automation"
+            assert call.kwargs["subcategory"] == "agent_frameworks"
+            assert call.kwargs["language"] == "Python"
+            assert call.kwargs["scope"] == "recommended"
+            assert call.kwargs["sort"] == "recent"
+            assert call.kwargs["page"] == 2
+            assert call.kwargs["limit"] == 7
 
 
 @pytest.mark.parametrize(
@@ -467,9 +478,9 @@ def test_get_project_library_preserves_canonical_ai_validation_errors(
     arguments: dict,
 ) -> None:
     client = _mcp_client()
-    with patch.object(inbound_tools, "search_projects", new=AsyncMock()) as search:
-        legacy = _call_tool(client, "get_project_library", arguments, 1)
-        canonical = _call_tool(client, "search_github_ai_projects", arguments, 2)
+    search = client._project_search_runtime.search_projects  # type: ignore[attr-defined]
+    legacy = _call_tool(client, "get_project_library", arguments, 1)
+    canonical = _call_tool(client, "search_github_ai_projects", arguments, 2)
     client.close()
 
     assert legacy.status_code == canonical.status_code == 200
