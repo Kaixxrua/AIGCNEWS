@@ -9,6 +9,11 @@ created 日期区间递归二分，直到每个分片的结果数低于安全上
 用法：
     python scripts/backfill_github_stars_500_1000.py --dry-run --limit 200
     python scripts/backfill_github_stars_500_1000.py --limit 5000
+    # 对齐 growth_search 口径（新+火+活跃）：stars 不封顶、固定 created/pushed 截止
+    python scripts/backfill_github_stars_500_1000.py \
+        --min-stars 500 --max-stars 0 \
+        --created-start 2025-01-10 --pushed-after 2025-07-09 \
+        --channel growth_search_2025_500_created_20250109_pushed_20250709
 """
 from __future__ import annotations
 
@@ -45,10 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
         description="Backfill GitHub repos in a stars band into the project library"
     )
     parser.add_argument("--min-stars", type=int, default=500, help="入库 star 下限（硬门槛，低于此值一律跳过）")
-    parser.add_argument("--max-stars", type=int, default=999, help="回填 star 上限")
+    parser.add_argument("--max-stars", type=int, default=999, help="回填 star 上限；0 表示不封顶")
     parser.add_argument("--limit", type=int, default=5000, help="最多写入多少条候选")
     parser.add_argument("--created-start", default="2008-01-01", help="created 分片起点 YYYY-MM-DD")
     parser.add_argument("--created-end", default="", help="created 分片终点 YYYY-MM-DD（默认今天）")
+    parser.add_argument("--pushed-after", default="", help="只收录最后 push 晚于该日期的仓库 YYYY-MM-DD（默认不限）")
+    parser.add_argument("--channel", default=DEFAULT_CHANNEL, help="写入 source_channels 的渠道标记")
     parser.add_argument("--per-shard-cap", type=int, default=SHARD_COUNT_CAP, help="单分片结果数安全上限")
     parser.add_argument("--request-interval", type=float, default=0.0, help="请求间隔秒数（默认按 token 有无自适应）")
     parser.add_argument("--dry-run", action="store_true", help="只抓取统计，不写数据库")
@@ -71,8 +78,19 @@ def _headers(use_token: bool) -> dict[str, str]:
     return headers
 
 
-def _stars_query(min_stars: int, max_stars: int, start: date, end: date) -> str:
-    return f"stars:{min_stars}..{max_stars} created:{start.isoformat()}..{end.isoformat()}"
+def _stars_query(
+    min_stars: int,
+    max_stars: int,
+    start: date,
+    end: date,
+    *,
+    pushed_after: str = "",
+) -> str:
+    stars = f"stars:{min_stars}..{max_stars}" if max_stars else f"stars:>={min_stars}"
+    query = f"{stars} created:{start.isoformat()}..{end.isoformat()}"
+    if pushed_after:
+        query += f" pushed:>{pushed_after}"
+    return query
 
 
 def daterange_shards(
@@ -197,18 +215,27 @@ def load_existing_channels(db: Any, repo_ids: list[str]) -> dict[str, str]:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.min_stars < 0 or args.max_stars < args.min_stars:
-        raise SystemExit("--max-stars 必须 >= --min-stars >= 0")
+    if args.min_stars < 0 or (args.max_stars and args.max_stars < args.min_stars):
+        raise SystemExit("--max-stars 必须 >= --min-stars >= 0（0 表示不封顶）")
     created_start = date.fromisoformat(args.created_start)
     created_end = date.fromisoformat(args.created_end) if args.created_end else date.today()
     if created_end < created_start:
         raise SystemExit("--created-end 必须不早于 --created-start")
+    pushed_after = args.pushed_after.strip()
+    if pushed_after:
+        try:
+            date.fromisoformat(pushed_after)
+        except ValueError:
+            raise SystemExit("--pushed-after 必须是 YYYY-MM-DD") from None
+    channel = args.channel.strip() or DEFAULT_CHANNEL
 
     client = SearchClient(interval=args.request_interval)
     summary: dict[str, Any] = {
         "status": "dry_run" if args.dry_run else "success",
         "min_stars": args.min_stars,
         "max_stars": args.max_stars,
+        "pushed_after": pushed_after,
+        "channel": channel,
         "limit": args.limit,
     }
     try:
@@ -216,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             created_start,
             created_end,
             lambda s, e: client.total_count(
-                _stars_query(args.min_stars, args.max_stars, s, e)
+                _stars_query(args.min_stars, args.max_stars, s, e, pushed_after=pushed_after)
             ),
             cap=args.per_shard_cap,
         )
@@ -229,12 +256,12 @@ def main(argv: list[str] | None = None) -> int:
 
         ingestion = None if args.dry_run else PostgresGitHubProjectIngestionRepository(postgres_database)
         seen: set[str] = set()
-        fetched = upserted = skipped_low_stars = skipped_duplicates = 0
+        fetched = upserted = skipped_low_stars = skipped_duplicates = new_candidates = 0
         stop = False
         for start, end, available in shards:
             if stop:
                 break
-            query = _stars_query(args.min_stars, args.max_stars, start, end)
+            query = _stars_query(args.min_stars, args.max_stars, start, end, pushed_after=pushed_after)
             pages = min(10, (min(available, args.limit - upserted) + 99) // 100)
             for page in range(1, pages + 1):
                 if upserted >= args.limit:
@@ -265,8 +292,10 @@ def main(argv: list[str] | None = None) -> int:
                         ingestion._database, [p["repo_id"] for p in batch]
                     )
                     for payload in batch:
+                        if payload["repo_id"] not in channels:
+                            new_candidates += 1
                         payload["source_channels"] = merge_channels(
-                            channels.get(payload["repo_id"], ""), DEFAULT_CHANNEL
+                            channels.get(payload["repo_id"], ""), channel
                         )
                         ingestion.upsert_github_repo_candidate(payload)
                 upserted += len(batch)
@@ -279,6 +308,8 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "fetched": fetched,
                 "upserted": upserted,
+                "new_candidates": new_candidates,
+                "existing_candidates_updated": upserted - new_candidates,
                 "skipped_low_stars": skipped_low_stars,
                 "skipped_duplicates": skipped_duplicates,
                 "api_requests": client.requests,

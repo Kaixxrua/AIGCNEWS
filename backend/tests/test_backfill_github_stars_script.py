@@ -100,3 +100,39 @@ def test_stars_query_format() -> None:
     assert backfill._stars_query(500, 999, date(2020, 1, 1), date(2020, 6, 30)) == (
         "stars:500..999 created:2020-01-01..2020-06-30"
     )
+
+
+def test_stars_query_open_ended_when_max_stars_zero() -> None:
+    assert backfill._stars_query(500, 0, date(2025, 1, 10), date(2026, 8, 3)) == (
+        "stars:>=500 created:2025-01-10..2026-08-03"
+    )
+
+
+def test_stars_query_appends_pushed_after() -> None:
+    assert backfill._stars_query(
+        500, 0, date(2025, 1, 10), date(2026, 8, 3), pushed_after="2025-07-09"
+    ) == "stars:>=500 created:2025-01-10..2026-08-03 pushed:>2025-07-09"
+    assert backfill._stars_query(
+        500, 999, date(2020, 1, 1), date(2020, 6, 30), pushed_after="2025-07-09"
+    ) == "stars:500..999 created:2020-01-01..2020-06-30 pushed:>2025-07-09"
+
+
+def test_main_rejects_max_stars_below_min() -> None:
+    import pytest
+
+    with pytest.raises(SystemExit):
+        backfill.main(["--min-stars", "500", "--max-stars", "400"])
+
+
+def test_main_accepts_open_ended_max_stars() -> None:
+    args = backfill.build_parser().parse_args(["--min-stars", "500", "--max-stars", "0"])
+    assert args.max_stars == 0
+    # 0 表示不封顶，不应触发 min/max 校验（校验逻辑见 main，此处仅断言解析结果）
+    assert not (args.max_stars and args.max_stars < args.min_stars)
+
+
+def test_main_rejects_invalid_pushed_after() -> None:
+    import pytest
+
+    with pytest.raises(SystemExit):
+        backfill.main(["--pushed-after", "2025-13-40"])
