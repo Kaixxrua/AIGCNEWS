@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from backend.app.api.mcp_contracts import TOOL_INPUT_MODELS, input_schema
+from backend.app.services.mcp.contracts import TOOL_INPUT_MODELS, input_schema
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 MCP_SERVER_NAME = "aigc-news"

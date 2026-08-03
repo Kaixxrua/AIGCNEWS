@@ -16,13 +16,13 @@ from backend.app.api.dependencies import (
     get_briefing_repository,
     get_project_search_runtime,
 )
-from backend.app.api.mcp_contracts import SearchGitHubAIProjectsInput, input_schema
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import (
     DocumentRepository,
 )
 from backend.app.services import project_discovery
 from backend.app.services.ingestion import source_github_mcp
+from backend.app.services.mcp.contracts import SearchGitHubAIProjectsInput, input_schema
 from backend.app.services.mcp.inbound import (
     catalog as inbound_catalog,
     responses as inbound_responses,

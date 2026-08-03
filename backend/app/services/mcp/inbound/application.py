@@ -7,7 +7,6 @@ from datetime import date as _date, timedelta as _td
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from backend.app.api.mcp_contracts import validate_iso_date
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
@@ -18,6 +17,7 @@ from backend.app.services.dashboard.policy import (
     score_categories as _score_categories,
 )
 from backend.app.services.dashboard.query_service import DashboardQueryService
+from backend.app.services.mcp.contracts import validate_iso_date
 from backend.app.services.mcp.inbound.catalog import (
     _JSONRPC_INTERNAL_ERROR,
     _JSONRPC_INVALID_PARAMS,
