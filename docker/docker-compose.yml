@@ -7,7 +7,9 @@ services:
     container_name: aigc-backend
     restart: always
     ports:
-      - "8000:8000"
+      # 仅绑定回环地址：公网/LAN 访问必须经 nginx（TLS+安全控制），
+      # 本机调试仍可用 http://127.0.0.1:8000。
+      - "127.0.0.1:8000:8000"
     depends_on:
       redis:
         condition: service_healthy

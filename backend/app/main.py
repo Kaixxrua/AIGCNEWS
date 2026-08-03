@@ -321,10 +321,15 @@ app.mount(
     name="papers",
 )
 
-# 配置 CORS：允许前端 (localhost:5173) 访问后端
+# 配置 CORS：仅允许白名单来源（本地开发 + 生产域名），不再通配。
+_cors_allowed_origins = [
+    origin.strip()
+    for origin in getattr(settings, "cors_allowed_origins", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_allowed_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

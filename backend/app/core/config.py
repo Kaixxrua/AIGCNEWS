@@ -170,6 +170,10 @@ class Settings(BaseSettings):
     api_port: int = 8000
     api_prefix: str = "/api"
 
+    # CORS 允许的来源（逗号分隔）。浏览器直连 API 的场景只有前端，
+    # 不再允许任意来源。
+    cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173,https://aigcnews.cn,https://www.aigcnews.cn"
+
     sse_heartbeat_interval: int = 15
 
     scheduler_enabled: bool = True
