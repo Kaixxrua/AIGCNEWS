@@ -41,3 +41,6 @@ test-results/
 
 # Private project-search judgments and web snapshots
 benchmarks/project-search/private/
+
+# One-shot MySQL retirement evidence and dumps (keep out of VCS)
+migration-artifacts/
