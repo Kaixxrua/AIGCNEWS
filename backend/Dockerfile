@@ -1,13 +1,15 @@
-FROM python:3.10-slim
+# 基础镜像按 digest 锁定（更新方式：docker pull python:3.12-slim 后
+# docker inspect --format '{{index .RepoDigests 0}}' 取新值替换）。
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 
 # 设置工作目录为 src
 WORKDIR /src
 
-# 先拷贝依赖文件
-COPY requirements.txt .
+# 拷贝依赖锁定文件（requirements.lock 由 uv pip compile 生成，见 requirements.txt 文首）
+COPY requirements.lock .
 
 # 极速安装依赖（腾讯云镜像源）
-RUN pip install --no-cache-dir -i https://mirrors.cloud.tencent.com/pypi/simple -r requirements.txt
+RUN pip install --no-cache-dir -i https://mirrors.cloud.tencent.com/pypi/simple -r requirements.lock
 
 # 【核心修复】把后端代码整个打包进一个叫 backend 的文件夹里！
 COPY . /src/backend

@@ -1,13 +1,16 @@
 # 阶段一：使用 Node.js 编译 Vue 代码
-FROM node:22-alpine AS builder
+# 基础镜像按 digest 锁定（更新方式：docker pull <tag> 后
+# docker inspect --format '{{index .RepoDigests 0}}' 取新值替换）。
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --registry=https://registry.npmmirror.com
+# npm ci 严格按 package-lock.json 复现安装
+RUN npm ci --registry=https://registry.npmmirror.com
 COPY . .
 RUN npm run build
 
 # 阶段二：使用轻量级 Nginx 提供网页访问服务（含 HTTPS）
-FROM nginx:alpine
+FROM nginx:alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752
 # 覆盖默认 Nginx 配置（HTTP 重定向 + HTTPS + Vue Router History 模式）
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 # 把编译好的 dist 文件夹放进 Nginx
