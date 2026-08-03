@@ -1,0 +1,43 @@
+# pytest 与覆盖率配置。运行测试请从仓库根目录显式执行
+# `python -m pytest backend/tests`（与 CI 一致），不要在根目录裸跑
+# pytest：pytest 的 conftest 预扫描发生在 ini 读取之前，会触碰
+# docker volumes 等容器创建的 root 属主目录并报权限错误。
+[tool.pytest.ini_options]
+addopts = "-ra"
+markers = [
+    "integration: 需要真实外部服务（如 PostgreSQL）的门控集成测试",
+    "slow: 耗时较长的测试",
+]
+
+[tool.coverage.run]
+# 相对仓库根目录（与 CI 及上文注释约定的运行方式一致）。
+source = ["backend/app"]
+omit = ["*/__pycache__/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "assert_never\\(.*\\)",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+# 存量违例基线（2026-08-03 摸底：E501×1773、E402×217、E702×27、E701×4），
+# 随整改计划逐步收敛后从此处移除：
+# - E501 超长行：以超长 SQL 字符串为主，随 postgres_project_catalog 可读化收敛
+# - E402 模块级导入未置顶：条件导入与路径设置文件较多，单独收敛
+# - E701/E702 单行多语句：集中于 postgres_project_catalog.py 热点文件
+ignore = ["E501", "E402", "E701", "E702"]
+
+# 测试与代码均以 `backend.app.*` 绝对导入（仓库根为 sys.path），
+# 无论从仓库根还是 backend/ 运行都按 first-party 处理，保持既有排序口径。
+[tool.ruff.lint.isort]
+known-first-party = ["backend", "scripts"]
+combine-as-imports = true

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Mapping
 
 import httpx
 

@@ -8,13 +8,13 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.responses import StreamingResponse
 
-from backend.app.core.auth import RequireUser
-from backend.app.core.config import settings
 from backend.app.api.dependencies import (
     get_conversation_repository,
     get_conversation_service,
     get_rag_chat_service,
 )
+from backend.app.core.auth import RequireUser
+from backend.app.core.config import settings
 from backend.app.models.schema_chat import (
     ChatStreamRequest,
     ConversationDetailResponse,

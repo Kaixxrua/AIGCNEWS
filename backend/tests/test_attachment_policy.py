@@ -4,9 +4,9 @@ import base64
 import unittest
 
 from backend.app.services.chat.attachment_policy import (
-    AttachmentValidationError,
     MAX_IMAGE_BYTES,
     MAX_PDF_BYTES,
+    AttachmentValidationError,
     safe_display_filename,
     validate_image_attachment,
     validate_pdf_attachment,

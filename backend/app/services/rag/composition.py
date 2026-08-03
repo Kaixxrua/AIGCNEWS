@@ -5,7 +5,9 @@ from __future__ import annotations
 from threading import Lock
 from typing import Any, Awaitable, Callable
 
-from backend.app.repositories.application_repository_factory import ApplicationRepositories
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
+)
 from backend.app.repositories.graph_repo import GraphRepository
 from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.services.rag.chat_service import ChatService

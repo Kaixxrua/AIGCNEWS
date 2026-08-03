@@ -11,7 +11,6 @@ from backend.app.services.indexing.github_project_semantic_indexer import (
     project_semantic_fingerprint,
 )
 
-
 PROJECT = {
     "repo_id": "owner/repo",
     "full_name": "owner/repo",

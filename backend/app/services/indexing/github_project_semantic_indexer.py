@@ -11,7 +11,10 @@ from typing import Any
 import httpx
 
 from backend.app.core.config import settings
-from backend.app.repositories.project_vector_repo import ProjectVectorChunk, ProjectVectorRepository
+from backend.app.repositories.project_vector_repo import (
+    ProjectVectorChunk,
+    ProjectVectorRepository,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectSemanticSourceRepository,
 )

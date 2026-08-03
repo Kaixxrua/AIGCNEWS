@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
 from backend.app.core.database import DatabaseLifecycle, mysql_database
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 from backend.app.services.project_catalog_sequence import ProjectCatalogSequenceService
 from backend.app.services.project_catalog_transfer import (
     DEFAULT_BATCH_SIZE,

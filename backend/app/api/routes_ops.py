@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import date as DateType
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,11 +12,9 @@ from backend.app.api.dependencies import (
     get_briefing_admin_service,
     get_dashboard_cache_admin_service,
     get_data_cleanup_admin_service,
-    get_document_repository,
     get_github_project_admin_service,
     get_github_project_recommendation_admin_service,
     get_ingestion_admin_service,
-    get_ingestion_task_repository,
     get_mcp_admin_service,
     get_operations_runtime,
     get_ops_diagnostics_service,
@@ -26,8 +23,6 @@ from backend.app.api.dependencies import (
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.core.operations import ApplicationOperationsRuntime
-from backend.app.repositories.document_repository import DocumentAdminWriter
-from backend.app.repositories.task_repository import IngestionTaskAdminRepository
 from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
@@ -37,8 +32,7 @@ from backend.app.services.github_project_recommendation_admin import (
     GitHubProjectAdminValidationError,
     GitHubProjectRecommendationAdminService,
 )
-from backend.app.services.ingestion_admin import IngestionAdminService, VALID_SOURCES
-from backend.app.services.ops_diagnostics import OpsDiagnosticsService
+from backend.app.services.ingestion_admin import VALID_SOURCES, IngestionAdminService
 from backend.app.services.mcp.admin_service import (
     McpAdminConflictError,
     McpAdminNotFoundError,
@@ -46,7 +40,10 @@ from backend.app.services.mcp.admin_service import (
     McpAdminValidationError,
     SafeMcpServerProjection,
 )
-from backend.app.services.runtime_provider.admin_service import RuntimeProviderAdminService
+from backend.app.services.ops_diagnostics import OpsDiagnosticsService
+from backend.app.services.runtime_provider.admin_service import (
+    RuntimeProviderAdminService,
+)
 from backend.app.services.scheduler_admin import SchedulerAdminService
 
 router = APIRouter()
@@ -393,7 +390,6 @@ async def ingest_by_date(
     - **target_date**：目标日期，格式 YYYY-MM-DD。
     - **limit**：每个数据源的抓取数量上限（默认 30）。
     """
-    import re
 
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", request.target_date):
         raise HTTPException(

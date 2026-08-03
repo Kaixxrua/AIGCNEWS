@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
-
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 
 MIGRATION_FILE_RE = re.compile(r"^(?P<version>\d{4})_(?P<name>[a-z0-9][a-z0-9_]*)\.sql$")
 DEFAULT_MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations" / "postgres"

@@ -13,7 +13,11 @@ from typing import Any, Callable, Iterable, Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from backend.app.core.database import DatabaseLifecycle, mysql_database
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
+
 
 @dataclass(frozen=True)
 class TableTransferSpec:
@@ -866,7 +870,7 @@ class ProjectCatalogTransferService:
         cursor_sql = ", ".join(cursor_expressions)
         if after:
             placeholders = ", ".join(
-                f"BINARY %s" if column in spec.text_cursor_columns else "%s"
+                "BINARY %s" if column in spec.text_cursor_columns else "%s"
                 for column in spec.cursor_columns
             )
             where = f"WHERE ({cursor_sql}) > ({placeholders})"

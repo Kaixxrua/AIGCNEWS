@@ -22,13 +22,13 @@ from backend.app.api import (
     routes_github_projects,
     routes_mcp,
     routes_monitor,
+    routes_ops,
     routes_papers,
     routes_report,
     routes_vision,
 )
-from backend.app.api import routes_ops
-from backend.app.core.config import settings
 from backend.app.core.auth import validate_jwt_secret
+from backend.app.core.config import settings
 from backend.app.core.model_factory import (
     configure_model_provider_runtime,
     configure_runtime_provider_settings,
@@ -37,18 +37,19 @@ from backend.app.core.model_factory import (
 )
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.core.postgres_database import postgres_database
+from backend.app.core.scheduler import create_scheduler_runtime
+from backend.app.monitoring.health import create_application_monitoring_runtime
 from backend.app.repositories.application_repository_context import (
     configure_application_repositories,
 )
 from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
-from backend.app.core.scheduler import create_scheduler_runtime
-from backend.app.monitoring.health import create_application_monitoring_runtime
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.rag.composition import RagChatServiceProvider
-from backend.app.services.runtime_provider.runtime import ApplicationModelProviderRuntime
-
+from backend.app.services.runtime_provider.runtime import (
+    ApplicationModelProviderRuntime,
+)
 
 # ── 访客统计中间件 ─────────────────────────────────────────────────────────────
 # 使用 Redis SET 记录每天不同 IP 地址的访问者

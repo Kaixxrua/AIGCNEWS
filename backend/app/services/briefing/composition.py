@@ -3,8 +3,13 @@ from __future__ import annotations
 """Framework-light dependency composition for briefing generation."""
 
 from backend.app.core.model_factory import get_chat_model
-from backend.app.repositories.application_repository_factory import ApplicationRepositories
-from backend.app.services.briefing.daily_briefing import BriefingModel, DailyBriefingService
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
+)
+from backend.app.services.briefing.daily_briefing import (
+    BriefingModel,
+    DailyBriefingService,
+)
 
 
 def provide_daily_briefing_service(

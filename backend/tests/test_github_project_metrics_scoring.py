@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from backend.app.services.ingestion import github_hot_service as hot
-from backend.app.services.ingestion import github_project_metrics_service as metrics
+from backend.app.services.ingestion import github_hot_service as hot, github_project_metrics_service as metrics
 
 
 class GitHubProjectMetricScoringTests(unittest.TestCase):

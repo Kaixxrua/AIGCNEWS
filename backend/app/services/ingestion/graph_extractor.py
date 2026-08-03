@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Iterable, List
 
-from langchain_experimental.graph_transformers import LLMGraphTransformer
 from langchain_core.documents import Document
+from langchain_experimental.graph_transformers import LLMGraphTransformer
 
 from backend.app.core.model_factory import get_chat_model
 

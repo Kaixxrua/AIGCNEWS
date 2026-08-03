@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 MAX_TOOLS = 20

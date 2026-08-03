@@ -8,7 +8,6 @@ from typing import Any, Iterable
 
 from backend.app.core.database import DatabaseLifecycle, mysql_database
 
-
 MIGRATION_FILE_RE = re.compile(r"^(?P<version>\d{4})_(?P<name>[a-z0-9][a-z0-9_]*)\.sql$")
 DEFAULT_MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations" / "mysql"
 MIGRATION_LOCK_NAME = "aigcnews:project_catalog:mysql_migrations"

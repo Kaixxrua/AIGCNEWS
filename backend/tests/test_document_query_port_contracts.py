@@ -2,19 +2,17 @@ from __future__ import annotations
 
 import ast
 import asyncio
-from pathlib import Path
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from starlette.requests import Request
 
-
 from backend.app.services.mcp.inbound import tools as inbound_tools
 from backend.app.services.rag import database_tools
 from backend.app.services.rag.retriever import HybridRetriever
-
 
 TARGETED_DOCUMENT_CONSUMERS = (
     Path(__file__).parents[1] / "app/services/rag/retriever.py",

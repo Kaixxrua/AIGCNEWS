@@ -4,7 +4,7 @@ import unittest
 from email import message_from_bytes
 from email.header import decode_header, make_header
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 

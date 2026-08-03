@@ -9,7 +9,6 @@ from psycopg import errors
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.repositories.mcp_server_repository import McpServerConfigConflictError
 
-
 McpServerDefault = tuple[str, str, str]
 
 

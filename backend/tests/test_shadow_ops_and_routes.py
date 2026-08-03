@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.app.api import routes_github_projects, routes_mcp, routes_ops
+from backend.app.api import routes_github_projects, routes_ops
 from backend.app.services.mcp.inbound import tools as inbound_tools
 
 

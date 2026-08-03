@@ -9,11 +9,11 @@ from typing import Any
 from starlette.requests import Request
 
 from backend.app.services.mcp.inbound.catalog import (
-    MCP_PROTOCOL_VERSION,
-    MAX_REQUEST_BYTES,
     _JSONRPC_INVALID_PARAMS,
     _JSONRPC_INVALID_REQUEST,
     _JSONRPC_PARSE_ERROR,
+    MAX_REQUEST_BYTES,
+    MCP_PROTOCOL_VERSION,
 )
 
 

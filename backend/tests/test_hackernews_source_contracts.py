@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from backend.app.services.ingestion import source_hackernews
 from backend.app.services.ingestion.crawlers import hackernews_crawler

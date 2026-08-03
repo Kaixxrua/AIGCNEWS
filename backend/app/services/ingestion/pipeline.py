@@ -31,22 +31,18 @@ from backend.app.repositories.document_repository import (
 )
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.task_repository import (
-    IngestionTaskWriter,
     LatestTaskReader,
+)
+from backend.app.services.ingestion.base_crawler import (
+    BaseCrawler,
+    today_cst,
 )
 from backend.app.services.ingestion.composition import IngestionDependencies
 from backend.app.services.ingestion.content_enricher import enrich_papers
-from backend.app.services.ingestion.base_crawler import (
-    BaseCrawler,
-    CrawlResult,
-    today_cst,
-)
 from backend.app.services.ingestion.document_projection import (
     document_id as _doc_id,
     paper_identity_keys as _paper_identity_keys,
-    project_documents as _to_documents,
     select_top_for_write,
-    sort_papers_for_write as _sort_papers_for_write,
 )
 from backend.app.services.ingestion.persistence_adapter import (
     IngestionPersistenceAdapter,

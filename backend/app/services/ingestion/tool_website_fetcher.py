@@ -8,7 +8,7 @@ import re
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any, Dict
-from urllib.parse import urldefrag, urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 from bs4 import BeautifulSoup

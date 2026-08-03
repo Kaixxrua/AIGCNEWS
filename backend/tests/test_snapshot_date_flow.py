@@ -6,8 +6,8 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.core import scheduler
-from backend.app.services.ingestion.crawlers.arxiv_crawler import ArxivCrawler
 from backend.app.services.ingestion.composition import IngestionDependencies
+from backend.app.services.ingestion.crawlers.arxiv_crawler import ArxivCrawler
 
 try:
     from backend.app.services.ingestion.pipeline import IngestionOrchestrator

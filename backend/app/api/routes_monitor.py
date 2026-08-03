@@ -17,7 +17,10 @@ from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
-from backend.app.repositories.task_repository import MonitorTaskRepository, RecentTaskReader
+from backend.app.repositories.task_repository import (
+    MonitorTaskRepository,
+    RecentTaskReader,
+)
 
 router = APIRouter()
 

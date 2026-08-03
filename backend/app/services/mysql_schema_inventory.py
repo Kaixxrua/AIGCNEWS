@@ -9,7 +9,6 @@ from typing import Any, Mapping
 
 from backend.app.core.database import DatabaseLifecycle, mysql_database
 
-
 APPLICATION_TABLES = frozenset(
     {
         "briefing_subscriptions",

@@ -8,26 +8,28 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 from langchain_core.documents import Document
 
 from backend.app.core.config import settings
-from backend.app.services.rag.raw_openai_streamer import (
-    stream_chat_completions,
-    chat_completions,
-    ChatCompletionResult,
-    ToolCallResult,
-)
-from backend.app.services.rag.ports import RagRetriever
-from backend.app.services.rag.reranker import rerank, RELEVANCE_THRESHOLD  # type: ignore[import]
-from backend.app.services.rag.web_search_service import (
-    web_search,
-    format_search_results_as_context,
-    WebSearchResult,
-)
 from backend.app.services.rag.database_tools import TOOL_DEFINITIONS, run_tool_calls
 from backend.app.services.rag.development_orchestrator import (
     DevelopmentDecision,
     assess_candidate,
     classify_development_request,
 )
-
+from backend.app.services.rag.ports import RagRetriever
+from backend.app.services.rag.raw_openai_streamer import (
+    ChatCompletionResult,
+    ToolCallResult,
+    chat_completions,
+    stream_chat_completions,
+)
+from backend.app.services.rag.reranker import (  # type: ignore[import]
+    RELEVANCE_THRESHOLD,
+    rerank,
+)
+from backend.app.services.rag.web_search_service import (
+    WebSearchResult,
+    format_search_results_as_context,
+    web_search,
+)
 
 # 默认保留最近几轮历史（每轮 = user + assistant 各一条）
 MAX_HISTORY_TURNS = 5

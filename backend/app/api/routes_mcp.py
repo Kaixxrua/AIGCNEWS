@@ -11,7 +11,9 @@ from backend.app.api.dependencies import (
     get_project_search_runtime,
 )
 from backend.app.core.auth import OptionalMcpUser
-from backend.app.repositories.application_repository_factory import ApplicationRepositories
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
+)
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.services.mcp.inbound.application import (
     McpProtocolApplication,

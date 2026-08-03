@@ -6,7 +6,6 @@ from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
 
-
 _lock = Lock()
 _repositories: ApplicationRepositories | None = None
 

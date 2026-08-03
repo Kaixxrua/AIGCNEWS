@@ -5,7 +5,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-
 REGISTRATION_PURPOSE = "registration"
 PASSWORD_RESET_PURPOSE = "password_reset"
 

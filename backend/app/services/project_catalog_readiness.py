@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 
 
 def _ping_postgres(database: PostgresDatabaseLifecycle) -> None:

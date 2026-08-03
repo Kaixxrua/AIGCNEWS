@@ -5,7 +5,10 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 from backend.app.repositories.postgres_runtime_provider_repository import (
     PostgresRuntimeProviderSettingRepository,
 )

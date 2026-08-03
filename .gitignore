@@ -44,3 +44,8 @@ benchmarks/project-search/private/
 
 # One-shot MySQL retirement evidence and dumps (keep out of VCS)
 migration-artifacts/
+
+# Coverage artifacts
+.coverage
+.coverage.*
+htmlcov/

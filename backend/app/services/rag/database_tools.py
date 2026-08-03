@@ -11,7 +11,6 @@ from backend.app.repositories.document_repository import (
 )
 from backend.app.services.rag.raw_openai_streamer import ToolCallResult
 
-
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     {
         "type": "function",

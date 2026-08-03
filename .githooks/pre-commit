@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# AIGCNEWS pre-commit：ruff 快检 + 受影响后端测试快筛。
+# 启用方式（仓库已配置 core.hooksPath=.githooks 时无需操作）：
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
+if [[ -z "$staged" ]]; then
+  exit 0
+fi
+
+backend_changed=0
+frontend_changed=0
+while IFS= read -r path; do
+  case "$path" in
+    backend/*.py) backend_changed=1 ;;
+    frontend/src/*|frontend/*.ts|frontend/*.json) frontend_changed=1 ;;
+  esac
+done <<< "$staged"
+
+# 1. ruff：只检查暂存的 Python 文件，规则基线见 backend/pyproject.toml。
+if [[ "$backend_changed" == "1" ]]; then
+  ruff_bin="backend/.venv/bin/ruff"
+  if [[ ! -x "$ruff_bin" ]]; then
+    echo "[pre-commit] 未找到 $ruff_bin，跳过 ruff（可执行 uv pip install -r backend/requirements-dev.txt）" >&2
+  else
+    staged_py=$(grep -E '\.py$' <<< "$staged" || true)
+    if [[ -n "$staged_py" ]]; then
+      echo "[pre-commit] ruff check 暂存文件"
+      xargs "$ruff_bin" check <<< "$staged_py"
+    fi
+  fi
+fi
+
+# 2. 受影响测试快筛：backend/app 变更时映射同名测试文件存在则运行。
+if [[ "$backend_changed" == "1" ]]; then
+  tests=()
+  while IFS= read -r path; do
+    case "$path" in
+      backend/tests/*.py) tests+=("$path") ;;
+      backend/app/*.py)
+        base=$(basename "$path" .py)
+        candidate="backend/tests/test_${base}.py"
+        [[ -f "$candidate" ]] && tests+=("$candidate")
+        ;;
+    esac
+  done <<< "$staged"
+  if [[ "${#tests[@]}" -gt 0 ]]; then
+    echo "[pre-commit] 受影响测试快筛: ${tests[*]}"
+    backend/.venv/bin/python -m pytest -q -p langchain_core.documents "${tests[@]}"
+  fi
+fi
+
+# 3. 前端暂存变更：仅做类型检查（全量单测留给 CI）。
+if [[ "$frontend_changed" == "1" ]]; then
+  echo "[pre-commit] 前端类型检查"
+  (cd frontend && npx vue-tsc --noEmit)
+fi

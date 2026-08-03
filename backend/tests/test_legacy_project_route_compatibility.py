@@ -19,7 +19,6 @@ from backend.app.api.dependencies import (
 from backend.app.core.auth import OptionalMcpUser, OptionalUser
 from backend.app.services.mcp.inbound import tools as inbound_tools
 
-
 PROJECT_RESULT = {
     "items": [
         {

@@ -11,8 +11,8 @@ BaseCrawler 提供统一的接口约定和异常隔离保证。
   - pipeline.py 是轻量编排器（调度爬虫 → 内容丰富 → 三库写入）
 """
 
-import logging
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone

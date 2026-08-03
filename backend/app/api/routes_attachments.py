@@ -8,20 +8,20 @@ GET  /api/chat/attachments/{id}     — 查询附件状态
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from backend.app.core.auth import RequireUser
-from backend.app.services.chat.attachment_service import (
-    upload_image,
-    upload_pdf,
-    get_attachment,
-)
 from backend.app.services.chat.attachment_policy import (
-    AttachmentValidationError,
     MAX_PDF_BYTES,
+    AttachmentValidationError,
     validate_image_attachment,
     validate_pdf_attachment,
+)
+from backend.app.services.chat.attachment_service import (
+    get_attachment,
+    upload_image,
+    upload_pdf,
 )
 
 router = APIRouter()

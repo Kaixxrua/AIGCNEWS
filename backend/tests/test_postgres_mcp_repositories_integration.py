@@ -18,7 +18,6 @@ from backend.app.repositories.postgres_mcp_server_repository import (
     PostgresMcpServerConfigRepository,
 )
 
-
 pytestmark = pytest.mark.skipif(
     os.getenv("POSTGRES_INTEGRATION") != "1",
     reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",

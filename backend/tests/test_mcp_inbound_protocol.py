@@ -17,7 +17,6 @@ from backend.app.api.dependencies import (
 from backend.app.core.auth import get_mcp_access_token_authenticator
 from backend.app.services.mcp.inbound import application, catalog, context, tools
 
-
 PUBLIC_TOOL_NAMES = [
     "search_papers",
     "search_documents",

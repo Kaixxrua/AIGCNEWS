@@ -18,7 +18,6 @@ from backend.app.services.application_data_transfer import (
 from backend.app.services.application_transfer_service import ApplicationTransferService
 from backend.app.services.project_catalog_transfer import TableCheckpoint
 
-
 pytestmark = pytest.mark.skipif(
     os.getenv("POSTGRES_INTEGRATION") != "1",
     reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",

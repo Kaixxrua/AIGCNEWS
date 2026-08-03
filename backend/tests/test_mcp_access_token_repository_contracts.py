@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenAuthenticator,
     McpAccessTokenManager,
-    McpAccessTokenRepository,
 )
 
 

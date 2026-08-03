@@ -6,8 +6,8 @@ from collections.abc import Iterable
 from unittest.mock import AsyncMock
 
 from backend.app.services.vision.provider import (
-    ProviderEvent,
     VISION_SYSTEM,
+    ProviderEvent,
     VisionProvider,
 )
 

@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 from backend.app.repositories.user_account_repository import (
     UserAccountReader,
-    UserAccountRepository,
     UserAccountWriter,
     UserStatisticsReader,
 )

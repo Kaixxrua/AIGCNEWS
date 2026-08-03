@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "eval_project_search_quality.py"
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "project_search_quality_cases.json"
 SPEC = importlib.util.spec_from_file_location("eval_project_search_quality", SCRIPT_PATH)

@@ -14,7 +14,6 @@ from backend.app.repositories.postgres_attachment_repository import (
     PostgresAttachmentRepository,
 )
 
-
 pytestmark = pytest.mark.skipif(
     os.getenv("POSTGRES_INTEGRATION") != "1",
     reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",

@@ -22,7 +22,10 @@ from backend.app.api.dependencies import (
     get_papers_repository,
     get_pdf_relay,
 )
-from backend.app.repositories.document_repository import DocumentSearchReader, PapersReader
+from backend.app.repositories.document_repository import (
+    DocumentSearchReader,
+    PapersReader,
+)
 from backend.app.services.papers.arxiv_identity import (
     ARXIV_REQUEST_HEADERS,
     arxiv_pdf_url,

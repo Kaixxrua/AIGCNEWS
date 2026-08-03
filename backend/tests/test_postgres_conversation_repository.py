@@ -5,8 +5,6 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.repositories.postgres_conversation_repository import (
     PostgresConversationRepository,

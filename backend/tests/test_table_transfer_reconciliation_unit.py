@@ -6,7 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.app.services.application_data_transfer import APPLICATION_TABLE_TRANSFER_BY_NAME
+from backend.app.services.application_data_transfer import (
+    APPLICATION_TABLE_TRANSFER_BY_NAME,
+)
 from backend.app.services.table_transfer_reconciliation import (
     TableTransferReconciliationService,
     TransferReconciliationError,

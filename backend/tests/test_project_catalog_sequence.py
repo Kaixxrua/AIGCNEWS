@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Iterator
 from unittest.mock import MagicMock, patch
 
 from backend.app.services.project_catalog_sequence import (

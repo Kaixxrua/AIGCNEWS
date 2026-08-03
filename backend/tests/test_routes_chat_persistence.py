@@ -110,7 +110,6 @@ class ChatPersistenceRouteTests(unittest.TestCase):
         )
 
     def test_cross_owner_attachment_is_ignored_without_changing_sse(self) -> None:
-        repository = MagicMock()
         persisted = {
             "conversation": {"id": 7},
             "assistant_message": {"id": 12},

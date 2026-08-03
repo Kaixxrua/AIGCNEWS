@@ -8,6 +8,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from backend.app.repositories.postgres_project_catalog import (
+    PostgresProjectCatalogRepository,
+)
 from backend.app.repositories.project_catalog import (
     ProjectCatalogRepository,
     ProjectLexicalCandidate,
@@ -18,7 +21,6 @@ from backend.app.repositories.project_catalog_normalization import (
     format_project_category_counts,
     normalize_project_row,
 )
-from backend.app.repositories.postgres_project_catalog import PostgresProjectCatalogRepository
 
 
 class Cursor:

@@ -19,20 +19,20 @@ from backend.app.services.dashboard.policy import (
 )
 from backend.app.services.dashboard.query_service import DashboardQueryService
 from backend.app.services.mcp.inbound.catalog import (
-    MCP_HOST_INSTRUCTIONS,
-    MCP_PROMPTS,
-    MCP_PROTOCOL_VERSION,
-    MCP_RESOURCES,
-    MCP_RESOURCE_TEMPLATES,
-    MCP_SERVER_NAME,
-    MCP_SERVER_VERSION,
-    MCP_TOOLS,
     _JSONRPC_INTERNAL_ERROR,
     _JSONRPC_INVALID_PARAMS,
     _JSONRPC_METHOD_NOT_FOUND,
     _PERIOD_CHOICES,
     _PRIVATE_MCP_TOOLS,
     _SOURCE_CHOICES,
+    MCP_HOST_INSTRUCTIONS,
+    MCP_PROMPTS,
+    MCP_PROTOCOL_VERSION,
+    MCP_RESOURCE_TEMPLATES,
+    MCP_RESOURCES,
+    MCP_SERVER_NAME,
+    MCP_SERVER_VERSION,
+    MCP_TOOLS,
 )
 from backend.app.services.mcp.inbound.context import (
     McpAuthorizationContext,
@@ -49,8 +49,8 @@ from backend.app.services.mcp.inbound.tools import (
     _public_doc,
     _tool_get_paper_detail,
     _tool_get_project_categories,
-    _tool_search_github_ai_projects,
     _tool_get_top_items,
+    _tool_search_github_ai_projects,
     _validated_tool_args,
 )
 

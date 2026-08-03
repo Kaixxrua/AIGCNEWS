@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 from backend.app.repositories.evaluation_repository import (
     EvaluationListReader,
-    EvaluationRepository,
     EvaluationSummaryReader,
     EvaluationWriter,
 )

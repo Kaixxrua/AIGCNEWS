@@ -4,7 +4,10 @@ import json
 from typing import Any
 
 from backend.app.core.database import DatabaseLifecycle, mysql_database
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 from backend.app.services.application_data_transfer import (
     APPLICATION_TABLE_TRANSFER_SPECS,
     ApplicationTableTransferSpec,

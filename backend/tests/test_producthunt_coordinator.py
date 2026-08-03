@@ -7,9 +7,11 @@ from typing import Any
 
 import pytest
 
-from backend.app.services.ingestion import producthunt_coordinator as coordinator
-from backend.app.services.ingestion import producthunt_parser as parser
-from backend.app.services.ingestion import source_producthunt as ph
+from backend.app.services.ingestion import (
+    producthunt_coordinator as coordinator,
+    producthunt_parser as parser,
+    source_producthunt as ph,
+)
 
 
 def _post(**overrides: Any) -> dict[str, Any]:

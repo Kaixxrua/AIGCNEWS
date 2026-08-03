@@ -33,7 +33,9 @@ from backend.app.core.scheduler_registry import (
     project_semantic_warmup_job_descriptor,
     resolve_source_job_callback,
 )
-from backend.app.repositories.application_repository_factory import ApplicationRepositories
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
+)
 from backend.app.repositories.briefing_repository import ActiveBriefingSubscriberReader
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
@@ -86,10 +88,11 @@ async def _reconcile_recent_arxiv_daily_snapshots(
     for target_date in missing_dates:
         logger.info("[Scheduler] 补齐缺失 Arxiv 日榜快照: %s", target_date)
         try:
-            from backend.app.services.ingestion.pipeline import run_single_source_pipeline
-
             from backend.app.services.ingestion.composition import (
                 provide_ingestion_dependencies,
+            )
+            from backend.app.services.ingestion.pipeline import (
+                run_single_source_pipeline,
             )
 
             arguments: dict[str, Any] = {

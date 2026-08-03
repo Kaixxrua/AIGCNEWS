@@ -5,7 +5,11 @@ import unittest
 from unittest.mock import Mock
 
 from backend.app.services.vision.provider import ProviderEvent
-from backend.app.services.vision.relay import DONE_EVENT, encode_sse, stream_vision_relay
+from backend.app.services.vision.relay import (
+    DONE_EVENT,
+    encode_sse,
+    stream_vision_relay,
+)
 
 
 async def collect(**kwargs) -> list[str]:

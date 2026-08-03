@@ -18,7 +18,9 @@ from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
 from backend.app.repositories.document_repository import DocumentStatisticsReader
-from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
+from backend.app.repositories.project_catalog_factory import (
+    get_project_catalog_repository,
+)
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.repositories.user_account_repository import UserStatisticsReader
 from backend.app.services.dashboard import policy
@@ -68,7 +70,7 @@ def _dashboard_cache_key_builder(
     关键修复：当 date 参数未传入时，显式注入 CST 当天日期到 key 中，
     防止跨日后命中前一天缓存（原先无 date 参数时 key 完全相同）。
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
 
     query_params = dict(request.query_params) if request is not None else {}
 

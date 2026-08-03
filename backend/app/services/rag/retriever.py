@@ -409,22 +409,3 @@ class HybridRetriever:
         return self._merge_documents(
             id_docs, title_docs, sqlite_docs, merged, graph_docs
         )
-
-
-if __name__ == "__main__":
-    from backend.app.repositories.application_repository_factory import (
-        create_application_repositories,
-    )
-    from backend.app.core.postgres_database import postgres_database
-
-    documents = create_application_repositories(postgres=postgres_database).documents
-    retriever = HybridRetriever(
-        MilvusRepository(), GraphRepository(), documents, documents
-    )
-    results = asyncio.run(
-        retriever.search("Agents in Multi-modal environments", top_k=5)
-    )
-    print(f"[HybridRetriever] Retrieved {len(results)} documents.")
-    for doc in results[:2]:
-        print("-" * 80)
-        print(doc.page_content)

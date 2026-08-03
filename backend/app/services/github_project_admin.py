@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from backend.app.repositories.application_repository_factory import ApplicationRepositories
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
+)
 
 logger = logging.getLogger(__name__)
 

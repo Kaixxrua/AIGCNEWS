@@ -6,9 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, create_postgres_pool
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    create_postgres_pool,
+)
 from backend.app.core.postgres_migrations import PostgresMigrationRunner
-from backend.app.services.application_data_transfer import APPLICATION_TABLE_TRANSFER_BY_NAME
+from backend.app.services.application_data_transfer import (
+    APPLICATION_TABLE_TRANSFER_BY_NAME,
+)
 from backend.app.services.table_transfer_reconciliation import (
     TableTransferReconciliationService,
     TransferReconciliationError,

@@ -9,7 +9,6 @@ from backend.app.services.application_data_transfer import (
     validate_application_transfer_specs,
 )
 
-
 MANIFEST = Path(__file__).resolve().parents[1] / "migrations" / "mysql_to_postgres_manifest.json"
 
 

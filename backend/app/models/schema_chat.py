@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-
 ConversationScope = Literal["global", "paper"]
 ChatRole = Literal["user", "assistant"]
 StreamPhase = Literal["idle", "searching", "reranking", "answering", "error"]

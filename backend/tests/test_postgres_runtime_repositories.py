@@ -4,7 +4,9 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 from backend.app.repositories.document_repository import DocumentRepository
-from backend.app.repositories.postgres_document_repository import PostgresDocumentRepository
+from backend.app.repositories.postgres_document_repository import (
+    PostgresDocumentRepository,
+)
 from backend.app.repositories.postgres_ingestion_task_repository import (
     PostgresIngestionTaskRepository,
 )

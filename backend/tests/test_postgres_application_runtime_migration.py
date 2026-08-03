@@ -4,7 +4,6 @@ from pathlib import Path
 
 from backend.app.core.postgres_migrations import discover_migrations
 
-
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "postgres"
 RUNTIME_TABLES = {
     "briefing_subscriptions",

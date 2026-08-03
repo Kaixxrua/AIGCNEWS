@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional
 
 from backend.app.repositories.conversation_repository import ConversationRepository
 
-
 DEFAULT_MAX_CONVERSATIONS = 10
 DEFAULT_MAX_MESSAGES = 10
 DEFAULT_CLEANUP_STALE_DAYS = 7

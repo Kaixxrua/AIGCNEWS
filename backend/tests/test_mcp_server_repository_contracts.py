@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 from backend.app.repositories.mcp_server_repository import (
     McpServerConfigReader,
-    McpServerConfigRepository,
     McpServerConfigSeeder,
     McpServerConfigWriter,
     McpServerTestResultWriter,

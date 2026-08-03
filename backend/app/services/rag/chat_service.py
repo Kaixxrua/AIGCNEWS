@@ -8,18 +8,22 @@ from backend.app.repositories.document_repository import (
 )
 from backend.app.services.project_discovery import search_projects
 from backend.app.services.rag.database_tools import TOOL_DEFINITIONS, run_tool_calls
-from backend.app.services.rag.development_orchestrator import classify_development_request
-from backend.app.services.rag.generator import GenerationOrchestrator, MAX_HISTORY_TURNS
+from backend.app.services.rag.development_orchestrator import (
+    classify_development_request,
+)
+from backend.app.services.rag.generator import MAX_HISTORY_TURNS, GenerationOrchestrator
 from backend.app.services.rag.ports import RagRetriever
+
+# 公共门面再导出：既有测试以本模块为 patch 点。
 from backend.app.services.rag.raw_openai_streamer import (
-    ChatCompletionResult,
+    ChatCompletionResult as ChatCompletionResult,
     ToolCallResult,
     chat_completions,
     stream_chat_completions,
 )
 from backend.app.services.rag.reranker import rerank
 from backend.app.services.rag.web_search_service import (
-    WebSearchResult,
+    WebSearchResult as WebSearchResult,
     format_search_results_as_context,
     web_search,
 )

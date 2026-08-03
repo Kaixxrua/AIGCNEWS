@@ -6,7 +6,10 @@ from typing import Any
 from psycopg import sql
 
 from backend.app.core.database import DatabaseLifecycle, mysql_database
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 from backend.app.services.project_catalog_transfer import (
     TABLE_TRANSFER_SPECS,
     ProjectCatalogTransferSafetyError,

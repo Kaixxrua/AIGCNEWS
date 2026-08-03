@@ -19,7 +19,10 @@ from backend.app.api.dependencies import (
 from backend.app.api.routes_papers import proxy_arxiv_pdf, router
 from backend.app.services.papers.arxiv_identity import extract_arxiv_id
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
-from backend.app.services.papers.presentation import project_pdf_media_url, safe_document
+from backend.app.services.papers.presentation import (
+    project_pdf_media_url,
+    safe_document,
+)
 
 
 class SearchRepository:

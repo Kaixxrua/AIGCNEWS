@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
+from backend.app.services.ingestion.document_projection import (
+    project_documents as _to_documents,
+)
 from backend.app.services.ingestion.pipeline import (
     _apply_existing_summary_short_circuit,
     _doc_id,
     _ingest_documents,
     _select_top,
-    _to_documents,
 )
 
 
@@ -142,7 +144,6 @@ class PersistenceProjectionContractTests(unittest.TestCase):
         snapshots.upsert_rank_snapshot.side_effect = lambda **kwargs: events.append(
             ("snapshot", kwargs["doc_id"], kwargs["snapshot_date"])
         )
-        db = MagicMock(documents=writer, rank_snapshots=snapshots)
         papers = [
             {
                 "source": "news",
@@ -191,7 +192,6 @@ class PersistenceProjectionContractTests(unittest.TestCase):
         snapshots = MagicMock()
         snapshots.delete_snapshots_by_channel.side_effect = RuntimeError("delete failed")
         snapshots.upsert_rank_snapshot.side_effect = RuntimeError("snapshot failed")
-        db = MagicMock(documents=writer, rank_snapshots=snapshots)
         new_paper = {
             "source": "arxiv",
             "source_channel": "huggingface_daily_html",

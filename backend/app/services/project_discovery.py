@@ -8,7 +8,9 @@ from typing import Any, Literal
 
 from backend.app.core.config import settings
 from backend.app.repositories.project_catalog import ProjectLexicalCandidateLanes
-from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
+from backend.app.repositories.project_catalog_factory import (
+    get_project_catalog_repository,
+)
 from backend.app.services.ingestion.source_github_mcp import (
     PUBLIC_PROJECT_MIN_STARS,
     search_github_projects_fallback,
@@ -263,9 +265,8 @@ async def search_projects(
                     get_project_search_shadow_manager,
                 )
 
-                shadow_manager_factory = lambda: get_project_search_shadow_manager(
-                    settings
-                )
+                def shadow_manager_factory():
+                    return get_project_search_shadow_manager(settings)
 
             lane_arguments = {
                 "q": lexical_plan,

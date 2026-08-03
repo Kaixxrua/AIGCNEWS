@@ -4,7 +4,10 @@ import json
 from datetime import date, datetime
 from typing import Any
 
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 from backend.app.repositories.postgres_project_catalog import (
     PostgresProjectCatalogRepository,
 )

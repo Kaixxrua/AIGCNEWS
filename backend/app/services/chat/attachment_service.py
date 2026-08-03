@@ -19,11 +19,13 @@ import uuid
 from typing import Dict, List, Optional, Tuple
 
 from backend.app.core.config import settings
+
+# 公共门面再导出：routes_chat 惰性导入与既有测试均以本模块为访问点。
 from backend.app.services.chat.attachment_lifecycle import (
     AttachmentLifecycle,
     AttachmentMeta,
     AttachmentRegistry,
-    AttachmentStatus,
+    AttachmentStatus as AttachmentStatus,
     AttachmentType,
 )
 from backend.app.services.chat.attachment_policy import ValidatedImage, ValidatedPdf
@@ -32,7 +34,6 @@ from backend.app.services.chat.attachment_storage import (
     PdfStorage,
     extract_pdf_text,
 )
-
 
 # Public compatibility view used by existing tests and in-process callers.
 _image_cache: Dict[str, Tuple[str, str, float]] = {}

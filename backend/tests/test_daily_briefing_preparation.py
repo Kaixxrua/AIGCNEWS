@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from backend.app.services.briefing.daily_briefing import (
     _BLOCK_RESPONSE_ERROR,

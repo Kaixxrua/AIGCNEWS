@@ -3,7 +3,9 @@ from __future__ import annotations
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
-from backend.app.services.project_catalog_readiness import project_catalog_runtime_readiness
+from backend.app.services.project_catalog_readiness import (
+    project_catalog_runtime_readiness,
+)
 
 
 class Database:

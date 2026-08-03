@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -12,7 +11,10 @@ from backend.app.api.dependencies import get_document_repository
 from backend.app.repositories.postgres_document_repository import (
     _document_search_candidates,
 )
-from backend.app.services.search_semantics import escape_like_literal, normalize_search_query
+from backend.app.services.search_semantics import (
+    escape_like_literal,
+    normalize_search_query,
+)
 
 
 class DocumentQueryTests(unittest.TestCase):

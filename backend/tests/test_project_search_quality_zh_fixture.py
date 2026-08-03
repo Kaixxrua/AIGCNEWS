@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 FIXTURE = Path(__file__).parent / "fixtures" / "project_search_quality_zh_cases.json"
 
 

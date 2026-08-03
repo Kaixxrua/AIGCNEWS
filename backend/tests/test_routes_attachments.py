@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException
 
 from backend.app.api import routes_attachments
+from backend.app.services.chat.attachment_policy import MAX_PDF_BYTES
 from backend.app.services.chat.attachment_service import (
     AttachmentMeta,
     AttachmentStatus,
     AttachmentType,
 )
-from backend.app.services.chat.attachment_policy import MAX_PDF_BYTES
 
 
 class AttachmentRouteTests(unittest.TestCase):

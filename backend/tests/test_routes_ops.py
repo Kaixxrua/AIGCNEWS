@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 from backend.app.api import routes_ops
 from backend.app.api.dependencies import (
     get_briefing_admin_service,
-    get_dashboard_cache_admin_service,
     get_document_repository,
     get_github_project_recommendation_admin_service,
     get_ingestion_task_repository,

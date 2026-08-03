@@ -74,7 +74,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 main,
                 "ApplicationModelProviderRuntime",
                 return_value=model_provider_runtime,
-            ) as model_provider_type,
+            ),
             patch.object(
                 main,
                 "ApplicationProjectSearchRuntime",

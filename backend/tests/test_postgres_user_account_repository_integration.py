@@ -13,7 +13,6 @@ from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
 
-
 pytestmark = pytest.mark.skipif(
     os.getenv("POSTGRES_INTEGRATION") != "1",
     reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",

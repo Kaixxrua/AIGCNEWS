@@ -1,15 +1,7 @@
 from __future__ import annotations
 
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
-
-# Some older test modules leave a minimal langchain_core stub in sys.modules.
-# Remove it so this module can import the real message classes during discovery.
-_langchain_core = sys.modules.get("langchain_core")
-if _langchain_core is not None and not hasattr(_langchain_core, "__path__"):
-    sys.modules.pop("langchain_core", None)
-    sys.modules.pop("langchain_core.documents", None)
 
 from backend.app.services.ingestion.project_taxonomy import (
     PROMPT_VERSION,

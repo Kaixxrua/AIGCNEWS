@@ -25,9 +25,11 @@ import time
 from typing import Any, Dict, List, Optional
 
 from backend.app.services.ingestion.sources import hackernews_policy
+
+# 公共门面再导出：既有测试以本模块的 httpx 为 patch 点。
 from backend.app.services.ingestion.sources.hackernews_transport import (
     HackerNewsTransport,
-    httpx,
+    httpx as httpx,
 )
 
 logger = logging.getLogger(__name__)

@@ -1,2 +1,4 @@
 -r requirements.txt
 pytest>=8.2,<9
+pytest-cov>=6,<8
+ruff>=0.16,<0.17

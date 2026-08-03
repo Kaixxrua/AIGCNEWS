@@ -11,9 +11,16 @@ from pydantic import ValidationError
 from starlette.requests import Request
 
 from backend.app.api.mcp_contracts import TOOL_INPUT_MODELS
-from backend.app.repositories.document_repository import DocumentSearchReader, PapersReader
-from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
-from backend.app.repositories.project_write_repository import UserProjectCollectionRepository
+from backend.app.repositories.document_repository import (
+    DocumentSearchReader,
+    PapersReader,
+)
+from backend.app.repositories.project_catalog_factory import (
+    get_project_catalog_repository,
+)
+from backend.app.repositories.project_write_repository import (
+    UserProjectCollectionRepository,
+)
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.services.dashboard.policy import (
     compute_board_status,
@@ -22,15 +29,20 @@ from backend.app.services.dashboard.policy import (
     resolve_snapshot_date,
 )
 from backend.app.services.dashboard.query_service import DashboardQueryService
-from backend.app.services.ingestion.source_github_mcp import search_github_projects_fallback
+from backend.app.services.ingestion.source_github_mcp import (
+    search_github_projects_fallback,
+)
 from backend.app.services.mcp.inbound.catalog import (
+    _PROJECT_SORT_CHOICES,
     MCP_TOOL_DEFINITIONS,
     MCP_TOOL_INPUT_MODELS,
-    _PROJECT_SORT_CHOICES,
 )
 from backend.app.services.mcp.inbound.context import McpAuthorizationContext
 from backend.app.services.mcp.inbound.responses import _tool_error, _tool_response
-from backend.app.services.papers.presentation import project_pdf_media_url, safe_document
+from backend.app.services.papers.presentation import (
+    project_pdf_media_url,
+    safe_document,
+)
 from backend.app.services.project_discovery import public_project_item, search_projects
 
 logger = logging.getLogger(__name__)

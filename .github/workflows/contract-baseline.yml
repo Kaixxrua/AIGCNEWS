@@ -34,13 +34,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.txt
-          python -m pip install "pytest>=8.2,<9"
+          python -m pip install "pytest>=8.2,<9" "pytest-cov>=6,<8" "ruff>=0.16,<0.17"
+
+      - name: Lint backend with ruff
+        run: ruff check backend/app backend/tests
 
       # 单进程全套件已在干净检出归档上连续验证通过（1150 passed）；
       # 逐文件隔离循环与遗留进程级替身均已退役。
+      # 覆盖率仅上报 term-missing，暂不设阈值门禁。
       - name: Run backend test suite
         shell: bash
-        run: python -m pytest -q -p langchain_core.documents backend/tests
+        run: >-
+          python -m pytest -q -p langchain_core.documents
+          --cov=backend/app --cov-report=term-missing --cov-config=backend/pyproject.toml
+          backend/tests
 
   postgres-integration:
     name: PostgreSQL 16 integration
@@ -111,7 +118,8 @@ jobs:
       - name: Apply PostgreSQL migrations explicitly
         run: python scripts/migrate_postgres.py apply
 
-      # Keep these files in separate processes because legacy tests install global stubs.
+      # Integration suites share one PostgreSQL service container, so they run
+      # file-isolated to avoid cross-suite database state leakage.
       - name: Verify PostgreSQL migrations and trigram indexes
         run: >-
           python -m pytest -q -p langchain_core.documents
@@ -122,7 +130,7 @@ jobs:
           python -m pytest -q -p langchain_core.documents
           backend/tests/test_postgres_project_catalog_integration.py
 
-      # Integration suites stay file-isolated for the same legacy stub reason.
+      # Same shared-database reason as above: file isolation, not stub defense.
       - name: Run gated PostgreSQL repository integration suites
         shell: bash
         run: |

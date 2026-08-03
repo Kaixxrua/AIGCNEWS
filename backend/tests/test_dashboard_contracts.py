@@ -16,7 +16,6 @@ from backend.app.api.dependencies import get_rank_snapshot_repository
 from backend.app.services.dashboard import policy
 from backend.app.services.dashboard.query_service import DashboardQueryService
 
-
 COMPATIBILITY_HELPERS = (
     "_compute_board_status",
     "_dedupe_docs",

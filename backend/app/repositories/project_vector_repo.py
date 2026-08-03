@@ -66,7 +66,13 @@ class ProjectVectorRepository:
             if self._collection is not None:
                 return self._collection
             self._connect()
-            from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, utility
+            from pymilvus import (
+                Collection,
+                CollectionSchema,
+                DataType,
+                FieldSchema,
+                utility,
+            )
 
             if utility.has_collection(self.collection_name, using=self._alias):
                 collection = Collection(self.collection_name, using=self._alias)

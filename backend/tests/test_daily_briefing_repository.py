@@ -5,7 +5,7 @@ import asyncio
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from backend.app.repositories.briefing_repository import BriefingContentRepository
 from backend.app.services.briefing.composition import provide_daily_briefing_service

@@ -10,11 +10,14 @@ from typing import Any, Iterator, Mapping
 
 from backend.app.core.config import settings
 from backend.app.core.database import DatabaseLifecycle, mysql_database
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 from backend.app.services.project_catalog_transfer import (
     TABLE_TRANSFER_SPEC_BY_NAME,
-    ProjectCatalogTransferService,
     ProjectCatalogTransferSafetyError,
+    ProjectCatalogTransferService,
     TableTransferSpec,
     source_identity_sha256,
 )

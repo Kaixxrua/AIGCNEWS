@@ -6,7 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.app.repositories.mcp_access_token_repository import McpAccessTokenRepository
+from backend.app.repositories.mcp_access_token_repository import (
+    McpAccessTokenRepository,
+)
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.postgres_mcp_access_token_repository import (
     PostgresMcpAccessTokenRepository,

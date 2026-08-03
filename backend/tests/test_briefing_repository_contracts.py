@@ -5,9 +5,7 @@ from unittest.mock import MagicMock
 
 from backend.app.repositories.briefing_repository import (
     ActiveBriefingSubscriberReader,
-    BriefingContentRepository,
     BriefingReader,
-    BriefingSubscriptionRepository,
     BriefingSubscriptionWriter,
     BriefingWriter,
     UserBriefingSubscriptionReader,

@@ -4,7 +4,7 @@ import os
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Iterator
+from typing import Any
 
 import pytest
 

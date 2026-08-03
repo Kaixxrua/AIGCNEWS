@@ -4,10 +4,13 @@ import hashlib
 import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from backend.app.core.database import DatabaseLifecycle, mysql_database
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 from backend.app.services.application_data_transfer import (
     APPLICATION_TABLE_TRANSFER_SPECS,
     ApplicationTableTransferSpec,

@@ -24,9 +24,9 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.app.repositories.document_repository import DocumentWriter
-
 import httpx
+
+from backend.app.repositories.document_repository import DocumentWriter
 
 logger = logging.getLogger(__name__)
 
@@ -322,6 +322,7 @@ def _extract_text_from_local_pdf(local_path: str) -> str:
     # 最终回退到 pypdf
     try:
         import io
+
         import pypdf  # type: ignore
 
         with open(local_path, "rb") as f:
@@ -371,8 +372,8 @@ def _chunk_and_index(
         return False
 
     try:
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
         from langchain_core.documents import Document
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
 
         abstract = paper.get("abstract", "") or paper.get("summary", "")
         combined = (

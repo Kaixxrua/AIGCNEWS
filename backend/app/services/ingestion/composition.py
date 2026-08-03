@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Sequence
 
-from backend.app.repositories.application_repository_factory import ApplicationRepositories
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
+)
 from backend.app.repositories.task_repository import IngestionTaskWriter
 from backend.app.services.ingestion.base_crawler import BaseCrawler
 

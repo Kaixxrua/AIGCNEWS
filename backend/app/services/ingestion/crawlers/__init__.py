@@ -6,11 +6,11 @@
 
 from backend.app.services.ingestion.crawlers.arxiv_crawler import ArxivCrawler
 from backend.app.services.ingestion.crawlers.github_crawler import GitHubCrawler
+from backend.app.services.ingestion.crawlers.hackernews_crawler import HackerNewsCrawler
 from backend.app.services.ingestion.crawlers.news_crawler import NewsCrawler
 from backend.app.services.ingestion.crawlers.producthunt_crawler import (
     ProductHuntCrawler,
 )
-from backend.app.services.ingestion.crawlers.hackernews_crawler import HackerNewsCrawler
 
 __all__ = [
     "ArxivCrawler",

@@ -45,7 +45,8 @@ def project_api_items(
             f"https://www.producthunt.com/posts/{slug}" if slug else ""
         )
         votes = int(node.get("votesCount") or 0)
-        comments = int(node.get("commentsCount") or 0)
+        # commentsCount 不进入投影输出，但坏数据必须拒绝该条目（契约测试要求 ValueError）。
+        _comments = int(node.get("commentsCount") or 0)
 
         featured_at_str = node.get("featuredAt", "")
         feat_date = parse_featured_at(featured_at_str)

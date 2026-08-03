@@ -10,7 +10,6 @@ from backend.app.repositories.project_vector_repo import ProjectVectorRepository
 from backend.app.services.search_semantics import (
     ProjectSearchIntent,
     build_project_search_intent,
-    normalize_search_query,
 )
 
 logger = logging.getLogger(__name__)

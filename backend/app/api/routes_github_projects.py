@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 
 from backend.app.api.dependencies import get_personal_projects_service
 from backend.app.core.auth import OptionalUser, RequireUser
-from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
+from backend.app.repositories.project_catalog_factory import (
+    get_project_catalog_repository,
+)
 from backend.app.services.personal_projects import (
     InvalidPersonalProjectRequest,
     PersonalProjectNotFound,
@@ -378,7 +380,6 @@ async def list_project_categories(
     user: dict[str, Any] | None = Depends(OptionalUser),
 ) -> GitHubProjectCategoriesResponse:
     """返回公共 GitHub 项目库分类及数量；个人网页分类使用 /projects/me/categories。"""
-    user_id = _user_id(user)
     if source == "website":
         raise HTTPException(status_code=404, detail="网页收藏分类仅在个人收藏夹中可见")
     effective_source: ProjectSource = "github"

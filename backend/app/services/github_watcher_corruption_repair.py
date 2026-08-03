@@ -5,7 +5,10 @@ from datetime import date, timedelta
 from typing import Any
 
 from backend.app.core.config import settings
-from backend.app.core.postgres_database import PostgresDatabaseLifecycle, postgres_database
+from backend.app.core.postgres_database import (
+    PostgresDatabaseLifecycle,
+    postgres_database,
+)
 
 _MINIMUM_SCHEMA_VERSION = 10
 _MAX_BATCH_SIZE = 1000

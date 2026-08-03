@@ -11,7 +11,10 @@ import httpx
 
 from backend.app.core.config import settings
 from backend.app.services.ingestion.source_github import GITHUB_API_BASE, _build_headers
-from backend.app.services.search_semantics import normalize_search_query, project_search_terms
+from backend.app.services.search_semantics import (
+    normalize_search_query,
+    project_search_terms,
+)
 
 logger = logging.getLogger(__name__)
 

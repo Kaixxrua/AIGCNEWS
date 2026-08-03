@@ -9,9 +9,11 @@ from typing import Any
 import pytest
 
 from backend.app.core.config import settings
-from backend.app.services.ingestion import producthunt_policy as policy
-from backend.app.services.ingestion import producthunt_projection as projection
-from backend.app.services.ingestion import producthunt_transport as transport
+from backend.app.services.ingestion import (
+    producthunt_policy as policy,
+    producthunt_projection as projection,
+    producthunt_transport as transport,
+)
 
 
 class _FrozenDateTime(datetime):

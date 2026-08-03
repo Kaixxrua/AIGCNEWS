@@ -20,7 +20,9 @@ from backend.app.repositories.document_repository import (
     PapersReader,
 )
 from backend.app.repositories.evaluation_repository import EvaluationRepository
-from backend.app.repositories.mcp_access_token_repository import McpAccessTokenRepository
+from backend.app.repositories.mcp_access_token_repository import (
+    McpAccessTokenRepository,
+)
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
@@ -47,20 +49,24 @@ from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
+from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
 from backend.app.services.github_project_recommendation_admin import (
     GitHubProjectRecommendationAdminService,
 )
 from backend.app.services.ingestion_admin import IngestionAdminService
-from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.mcp.admin_service import McpAdminService
 from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.composition import RagChatServiceProvider
-from backend.app.services.runtime_provider.admin_service import RuntimeProviderAdminService
-from backend.app.services.runtime_provider.runtime import ApplicationModelProviderRuntime
+from backend.app.services.runtime_provider.admin_service import (
+    RuntimeProviderAdminService,
+)
+from backend.app.services.runtime_provider.runtime import (
+    ApplicationModelProviderRuntime,
+)
 from backend.app.services.scheduler_admin import SchedulerAdminService
 
 

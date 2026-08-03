@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from backend.app.repositories.application_repository_factory import ApplicationRepositories
+from backend.app.repositories.application_repository_factory import (
+    ApplicationRepositories,
+)
 from backend.app.services.ingestion.composition import provide_ingestion_dependencies
 
 logger = logging.getLogger(__name__)
