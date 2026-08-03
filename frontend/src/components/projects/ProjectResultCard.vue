@@ -347,6 +347,20 @@ const description = computed(() => projectDescription(
 .project-card__favorite:disabled, .project-card__recommend:disabled, .project-card__edit:disabled, .project-card__delete:disabled { cursor: wait; opacity: 0.65; transform: none; }
 .project-card__tooltip { position: absolute; right: calc(100% + 8px); top: 50%; z-index: 4; width: max-content; max-width: 152px; padding: 5px 8px; color: var(--projects-paper-light); background: #11110f; border: 1px solid #11110f; border-radius: 4px; font-size: 11px; font-weight: 700; line-height: 1.35; white-space: normal; pointer-events: none; opacity: 0; visibility: hidden; transform: translateY(-50%) translateX(4px); transition: opacity 140ms ease, visibility 140ms ease, transform 140ms ease; }
 .project-card__action:hover .project-card__tooltip, .project-card__action:focus-visible .project-card__tooltip { opacity: 1; visibility: visible; transform: translateY(-50%) translateX(0); }
+.project-card__body { transition: transform 180ms ease, box-shadow 180ms ease; }
+@media (hover: hover) {
+  .project-card:hover .project-card__body, .project-card:focus-within .project-card__body { transform: translate(-2px, -4px) rotate(-0.4deg); box-shadow: 8px 8px 0 #11110f; }
+  .project-card:hover .project-card__action, .project-card:focus-within .project-card__action { animation: projectCardTabPop 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+  .project-card:hover .project-card__action:nth-child(2), .project-card:focus-within .project-card__action:nth-child(2) { animation-delay: 40ms; }
+  .project-card:hover .project-card__action:nth-child(3), .project-card:focus-within .project-card__action:nth-child(3) { animation-delay: 80ms; }
+  .project-card:hover .project-card__action:nth-child(4), .project-card:focus-within .project-card__action:nth-child(4) { animation-delay: 120ms; }
+  .project-card:hover .project-card__action:nth-child(5), .project-card:focus-within .project-card__action:nth-child(5) { animation-delay: 160ms; }
+}
+@keyframes projectCardTabPop {
+  from { transform: translateX(0); }
+  55% { transform: translateX(7px); }
+  to { transform: translateX(4px); }
+}
 .project-card__description { display: -webkit-box; min-height: 60px; overflow: hidden; color: #57534e; font-size: 14px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .project-card__tags { display: flex; flex-wrap: wrap; gap: 7px; }
 .project-chip { max-width: 100%; cursor: pointer; white-space: normal; overflow-wrap: anywhere; text-align: left; transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease; }
