@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import traceback
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.responses import StreamingResponse
@@ -28,6 +28,10 @@ from backend.app.models.schema_chat import (
 )
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.services.chat.conversation_service import ConversationService
+from backend.app.services.chat.persisted_chat_stream import (
+    DEFAULT_CHAT_TEMPERATURE,
+    stream_persisted_chat_events,
+)
 from backend.app.services.chat.quota_policy import (
     MessageLimitExceededError,
     check_user_message_limit,
@@ -57,10 +61,6 @@ def _check_user_message_limit(user_payload: dict, quota_reader: ConversationRepo
         ) from exc
 
 
-def _build_attachment_refs(attachment_ids: List[str]) -> List[Dict[str, Any]]:
-    return [{"id": attachment_id} for attachment_id in attachment_ids if attachment_id]
-
-
 async def _stream_persisted_chat(
     request: ChatStreamRequest,
     user_payload: dict,
@@ -71,120 +71,27 @@ async def _stream_persisted_chat(
     conversation_service: ConversationService,
     rag_service: ChatService,
 ) -> AsyncGenerator[str, None]:
-    """真流式 SSE：边收边 yield，持久化后置异步。"""
+    """SSE 传输编排：帧序列化 / 错误帧 / [DONE] 终止帧。
+
+    业务编排（附件解析、消息增强、流后持久化）已下沉
+    services/chat/persisted_chat_stream.py，此处仅保留线格式。
+    """
     try:
-        user_id = int(user_payload.get("user_id") or 0)
-        if user_id <= 0:
-            raise ValueError("invalid_user")
-
-        attachment_context = ""
-        attachment_ids = request.attachment_ids or []
-        owned_attachment_ids: List[str] = []
-        if attachment_ids:
-            from backend.app.services.chat.attachment_service import (
-                AttachmentStatus,
-                AttachmentType,
-                get_attachment,
-                get_pdf_text,
-            )
-
-            for aid in attachment_ids:
-                meta = await get_attachment(aid, user_id)
-                if meta is None or meta.status != AttachmentStatus.READY:
-                    continue
-                owned_attachment_ids.append(aid)
-                if meta.type == AttachmentType.PDF:
-                    pdf_text = await get_pdf_text(aid, user_id)
-                    if pdf_text:
-                        truncated = pdf_text[:8000]
-                        attachment_context += (
-                            f"\n\n[用户上传的 PDF 文件: {meta.filename}]\n"
-                            f"{truncated}\n"
-                            f"[PDF 内容结束，共 {meta.page_count} 页]\n"
-                        )
-                elif meta.type == AttachmentType.IMAGE:
-                    attachment_context += f"\n\n[用户上传了图片: {meta.filename}，如需视觉分析请使用视觉问答功能]\n"
-
-        raw_message = (
-            message_override if message_override is not None else request.message
-        ).strip()
-        enhanced_message = raw_message
-        if attachment_context:
-            enhanced_message = (
-                f"{enhanced_message}\n\n--- 附件内容 ---{attachment_context}"
-            )
-        if request.paper_id:
-            enhanced_message = (
-                f"（当前用户正在阅读论文 ID: {request.paper_id}）\n{enhanced_message}"
-            )
-
-        history = (
-            history_override
-            if history_override is not None
-            else [
-                item.model_dump() if hasattr(item, "model_dump") else dict(item)
-                for item in request.history
-            ]
-        )
-
-        # ── 真流式：边收边 yield，同时收集用于持久化 ──────────────
-        sources: List[Dict[str, Any]] = []
-        thinking_parts: List[str] = []
-        content_parts: List[str] = []
-
-        async for payload in rag_service.stream_chat(
-            enhanced_message,
-            history=history,
-            temperature=request.temperature or 0.7,
-            web_search_enabled=request.web_search,
+        async for payload in stream_persisted_chat_events(
+            request,
+            user_payload,
+            history_override=history_override,
+            message_override=message_override,
+            conversation_id_override=conversation_id_override,
+            conversation_service=conversation_service,
+            rag_service=rag_service,
         ):
-            # 收集用于后续持久化
-            payload_type = payload.get("type")
-            if payload_type == "sources" and isinstance(payload.get("data"), list):
-                sources = payload["data"]
-            elif payload_type == "thinking":
-                thinking_parts.append(str(payload.get("data") or ""))
-            elif payload_type == "content":
-                content_parts.append(str(payload.get("data") or ""))
-
             # 立即 yield 给前端
             try:
                 data = json.dumps(payload, ensure_ascii=False, default=str)
             except Exception:
                 data = json.dumps({"type": "error", "data": "serialize_error"})
             yield f"data: {data}\n\n"
-
-        # ── 后置持久化（流结束后） ──────────────────────────────
-        thinking_text = "".join(thinking_parts)
-        answer_text = "".join(content_parts)
-        # paper_id 只表示“当前阅读论文”的 RAG 上下文，不能强制改变会话作用域；
-        # PaperReadView 现在与 ChatView 共用 global 会话，scope 必须跟随请求中的会话自身。
-        requested_scope = request.scope or "global"
-        scope = requested_scope if requested_scope in ("global", "paper") else "global"
-        scope_key = request.paper_id if scope == "paper" else None
-        persisted = await asyncio.to_thread(
-            conversation_service.append_message_pair,
-            user_id=user_id,
-            conversation_id=conversation_id_override or request.conversation_id,
-            scope=scope,
-            scope_key=scope_key,
-            user_message=raw_message,
-            assistant_content=answer_text,
-            assistant_thinking=thinking_text,
-            sources=sources,
-            attachments=_build_attachment_refs(owned_attachment_ids),
-            title=raw_message[:60] if raw_message else None,
-        )
-
-        conversation_payload = {
-            "type": "conversation",
-            "data": {
-                "conversation_id": persisted["conversation"]["id"],
-                "message_id": persisted["assistant_message"]["id"],
-            },
-        }
-        yield f"data: {json.dumps(conversation_payload, ensure_ascii=False, default=str)}\n\n"
-
     except Exception as exc:
         traceback.print_exc()
         error_payload = json.dumps({"type": "error", "data": str(exc)})
@@ -373,7 +280,7 @@ async def regenerate_message(
     stream_request = ChatStreamRequest(
         message=user_message,
         history=history,
-        temperature=request.temperature or 0.7,
+        temperature=request.temperature or DEFAULT_CHAT_TEMPERATURE,
         attachment_ids=[],
         conversation_id=int(target["conversation_id"]),
         paper_id=(
