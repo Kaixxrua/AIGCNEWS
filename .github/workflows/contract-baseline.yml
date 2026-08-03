@@ -140,6 +140,35 @@ jobs:
           backend/tests/test_table_transfer_reconciliation_postgresql16_integration.py
           EOF
 
+  compose-smoke:
+    name: Compose and image smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      POSTGRES_DATABASE: ci_placeholder
+      POSTGRES_USER: ci_placeholder
+      POSTGRES_PASSWORD: ci_placeholder
+      NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.example.com
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate main compose file
+        run: docker compose --file docker/docker-compose.yml config --quiet
+
+      - name: Validate backup-test compose file
+        run: |
+          mkdir -p "$RUNNER_TEMP/backup-artifacts"
+          AIGCNEWS_PROJECT_ROOT="$GITHUB_WORKSPACE" \
+          AIGCNEWS_BACKUP_ARTIFACTS="$RUNNER_TEMP/backup-artifacts" \
+            docker compose --file docker/docker-compose.postgres-backup-test.yml config --quiet
+
+      # The frontend image must build from a clean checkout: SSL material is
+      # gitignored and mounted at runtime, never copied into the image.
+      - name: Build frontend image from clean checkout
+        run: docker build --tag aigcnews-frontend-ci frontend/
+
   frontend-build:
     name: Frontend build
     runs-on: ubuntu-latest
