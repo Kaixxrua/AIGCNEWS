@@ -15,8 +15,11 @@ services:
         condition: service_healthy
       project-catalog-postgres:
         condition: service_healthy
+    # .env 只存在于部署主机（已被 gitignore）；required: false 使干净检出
+    # （CI compose-smoke、归档验证）可以校验配置，部署时仍照常读取。
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     environment:
       - HF_ENDPOINT=https://hf-mirror.com
       - HF_HUB_OFFLINE=0
@@ -66,7 +69,8 @@ services:
     build: ../backend
     profiles: ["project-catalog-ops"]
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     working_dir: /src
     volumes:
       - ../backend:/src/backend:ro
@@ -102,7 +106,8 @@ services:
     restart: unless-stopped
     init: true
     env_file:
-      - ../../.priceai-node.env
+      - path: ../../.priceai-node.env
+        required: false
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
