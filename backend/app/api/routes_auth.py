@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import secrets
 from datetime import datetime, timezone
@@ -24,9 +25,48 @@ from backend.app.repositories.mcp_access_token_repository import McpAccessTokenM
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.auth import account_lifecycle
 from backend.app.services.auth.adapters import build_account_lifecycle
+from backend.app.services.auth.rate_limit import RateLimitExceededError, hit_rate_limit
 from backend.app.services.email_service import EmailService, build_email_service
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# 认证敏感端点 IP 级固定窗口限速（防在线爆破与 OTP 滥用）
+_AUTH_RATE_LIMIT_WINDOW_SECONDS = 600
+_OTP_SEND_RATE_LIMIT = 5
+_AUTH_ATTEMPT_RATE_LIMIT = 10
+
+
+def _client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+async def _enforce_rate_limit(request: Request, *, action: str, limit: int) -> None:
+    """执行 IP 级限速；Redis 不可用时放行并告警（可用性优先于限速严格性）。"""
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        return
+    try:
+        await hit_rate_limit(
+            redis_client,
+            action=action,
+            identity=_client_ip(request),
+            limit=limit,
+            window_seconds=_AUTH_RATE_LIMIT_WINDOW_SECONDS,
+        )
+    except RateLimitExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="请求过于频繁，请稍后再试",
+        ) from exc
+    except Exception:
+        logger.warning(
+            "[Auth] rate limit check failed, allowing request", exc_info=True
+        )
 
 
 def _get_email_service(request: Request) -> EmailService:
@@ -144,9 +184,10 @@ async def send_email_otp(body: SendEmailOtpRequest, request: Request) -> dict[st
     """
     发送邮箱验证码。
 
-    - 60 秒防刷（Redis email:lock）
+    - 60 秒防刷（Redis email:lock）+ IP 级限速
     - dev 模式（SMTP_HOST 为空）将 OTP 打印到日志
     """
+    await _enforce_rate_limit(request, action="auth.send_email_otp", limit=_OTP_SEND_RATE_LIMIT)
     email_svc = _get_email_service(request)
     await email_svc.send_otp(str(body.email))
     return {"detail": "验证码已发送"}
@@ -161,6 +202,7 @@ async def send_password_reset_otp(
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
+    await _enforce_rate_limit(request, action="auth.send_reset_otp", limit=_OTP_SEND_RATE_LIMIT)
     lifecycle = build_account_lifecycle(
         repository=repository,
         otp=_get_email_service(request),
@@ -179,6 +221,7 @@ async def reset_password(
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
+    await _enforce_rate_limit(request, action="auth.reset_password", limit=_AUTH_ATTEMPT_RATE_LIMIT)
     lifecycle = build_account_lifecycle(
         repository=repository,
         otp=_get_email_service(request),
@@ -217,6 +260,7 @@ async def register(
     3. bcrypt 哈希密码后写库
     4. 消耗验证码
     """
+    await _enforce_rate_limit(request, action="auth.register", limit=_AUTH_ATTEMPT_RATE_LIMIT)
     lifecycle = build_account_lifecycle(
         repository=repository,
         otp=_get_email_service(request),
@@ -244,6 +288,7 @@ async def register(
 @router.post("/auth/login", summary="登录（邮箱 + 密码）")
 async def login(
     body: LoginRequest,
+    request: Request,
     repository: UserAccountRepository = Depends(get_user_account_repository),
 ) -> dict[str, Any]:
     """
@@ -252,6 +297,7 @@ async def login(
     - 查库验证邮箱 + 密码
     - 签发 JWT（payload 含 user_id、role、email）
     """
+    await _enforce_rate_limit(request, action="auth.login", limit=_AUTH_ATTEMPT_RATE_LIMIT)
     lifecycle = build_account_lifecycle(
         repository=repository,
         password_verifier=verify_password,
