@@ -1,1 +1,4 @@
-# TODO: backend image placeholder 
+# 已退役：规范后端镜像定义位于 ../backend/Dockerfile。
+# 主编排 docker/docker-compose.yml 与 CI 均直接引用该文件；
+# 本占位文件保留为空镜像标记，防止历史脚本引用报“文件不存在”，
+# 不再接收任何内容，也不作为构建输入。

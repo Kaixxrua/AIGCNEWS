@@ -12,7 +12,7 @@ docker start milvus-etcd
 docker start milvus-minio
 # 等待 docker inspect 显示 healthy
 docker start milvus-standalone
-curl --fail http://127.0.0.1:9091/healthz
+docker exec milvus-standalone curl -f http://127.0.0.1:9091/healthz
 ```
 
 验证后端实际连接：
@@ -66,13 +66,19 @@ unit 以实例用户运行 Compose，不使用 root 创建容器或持久化文�
 ## 健康验证
 
 ```bash
-curl --fail http://127.0.0.1:9091/healthz
+docker exec milvus-standalone curl -f http://127.0.0.1:9091/healthz
 curl --fail http://127.0.0.1:8000/api/live
 curl --fail http://127.0.0.1:8000/api/ready
 docker compose --project-name docker --file docker/docker-compose.yml ps
 ```
 
 `/api/ready` 验证后端项目目录依赖；Milvus 必须同时使用 `/healthz` 和后端内 collection 探测验证。
+
+## 端口与证书边界
+
+- Milvus、MinIO、Attu、Neo4j、Redis 只在编排网络内 `expose`，不向宿主机发布端口；`priceai` 同样仅 `expose`，由前端 nginx 反代。宿主机只发布 `8000`（后端）、`80/443`（前端 nginx）。
+- 后端经编排网络按服务名访问依赖（`MILVUS_HOST=milvus`、`NEO4J_URI=bolt://neo4j:7687`、`REDIS_HOST=redis` 等，见 `.env`）。宿主机侧临时调试用 `docker exec <container> ...` 或 `docker compose ... port-forward` 式临时映射，不把管理端口长期发布到宿主机。
+- 前端镜像不包含 SSL 证书；`frontend-web` 以只读卷挂载 `frontend/ssl` 到 `/etc/nginx/ssl`。重建前端容器前确认该目录存在且包含 nginx.conf 引用的四个证书/私钥文件（该目录被 gitignore，不进仓库、不进镜像）。
 
 ## 故障处理约束
 

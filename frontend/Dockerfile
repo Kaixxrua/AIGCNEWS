@@ -12,10 +12,8 @@ FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 # 把编译好的 dist 文件夹放进 Nginx
 COPY --from=builder /app/dist /usr/share/nginx/html
-# 将 SSL 证书复制进镜像
-COPY ssl/aigcnews.cn_bundle.crt /etc/nginx/ssl/aigcnews.cn_bundle.crt
-COPY ssl/aigcnews.cn.key        /etc/nginx/ssl/aigcnews.cn.key
-COPY ssl/sub2api.aigcnews.cn_bundle.crt /etc/nginx/ssl/sub2api.aigcnews.cn_bundle.crt
-COPY ssl/sub2api.aigcnews.cn.key        /etc/nginx/ssl/sub2api.aigcnews.cn.key
+# SSL 证书目录；证书与私钥不入镜像（ssl/ 已被 gitignore，干净检出中不存在）。
+# 运行时通过卷挂载提供：docker/docker-compose.yml 挂载 ../frontend/ssl → /etc/nginx/ssl:ro
+RUN mkdir -p /etc/nginx/ssl
 EXPOSE 80 443
 CMD ["nginx", "-g", "daemon off;"]
