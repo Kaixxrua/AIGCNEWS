@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Iterable, List, Optional
 
@@ -7,6 +8,8 @@ from langchain_core.documents import Document
 from neo4j import GraphDatabase
 
 from backend.app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_label(label: str, fallback: str = "Entity") -> str:
@@ -92,7 +95,7 @@ class GraphRepository:
                     )
                 return docs
         except Exception as exc:
-            print(f"[Neo4j] Failed to search graph: {exc}")
+            logger.warning("[Neo4j] Failed to search graph: %s", exc)
             return []
 
     def add_graph_documents(self, graph_docs: Iterable) -> None:
@@ -145,6 +148,6 @@ class GraphRepository:
                             target_id=target_id,
                             properties=rel_props,
                         )
-            print("[Neo4j] Graph documents inserted successfully.")
+            logger.info("[Neo4j] Graph documents inserted successfully.")
         except Exception as exc:
-            print(f"[Neo4j] Failed to add graph documents: {exc}")
+            logger.warning("[Neo4j] Failed to add graph documents: %s", exc)

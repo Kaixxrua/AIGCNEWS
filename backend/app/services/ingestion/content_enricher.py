@@ -101,8 +101,8 @@ def _fetch_pdf_text(pdf_url: str, timeout: int = 30) -> str:
         for page in pages:
             try:
                 parts.append(page.extract_text() or "")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[ContentEnricher] skip unreadable PDF page: %s", exc)
         text = "\n".join(parts)
         # 折叠多余空白
         text = re.sub(r"\n{3,}", "\n\n", text).strip()

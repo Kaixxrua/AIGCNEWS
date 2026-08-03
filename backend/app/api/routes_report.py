@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import traceback
 from datetime import date as _date, datetime as _dt, timedelta as _td
 from typing import AsyncGenerator, Optional
 
@@ -36,6 +35,9 @@ from backend.app.services.email_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+# SSE 错误帧的通用对外文案：原始异常只进服务端日志，不外泄给客户端。
+_STREAM_ERROR_MESSAGE = "服务内部错误，请稍后重试"
 
 router = APIRouter()
 
@@ -101,17 +103,17 @@ async def _briefing_stream(
             except Exception:
                 data = json.dumps({"type": "error", "data": "serialize_error"})
             yield f"data: {data}\n\n"
-    except Exception as exc:
-        traceback.print_exc()
-        yield f"data: {json.dumps({'type': 'error', 'data': str(exc)})}\n\n"
+    except Exception:
+        logger.exception("[Report] briefing stream failed")
+        yield f"data: {json.dumps({'type': 'error', 'data': _STREAM_ERROR_MESSAGE})}\n\n"
     finally:
         if next_payload is not None and not next_payload.done():
             next_payload.cancel()
         if stream is not None:
             try:
                 await stream.aclose()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[Report] briefing stream close failed: %s", exc)
         yield "data: [DONE]\n\n"
 
 

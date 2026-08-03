@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import html
+import logging
 import re
 from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any, Iterable, Mapping
+
+logger = logging.getLogger(__name__)
 
 RSS_MAX_ITEMS = 15
 
@@ -33,8 +36,8 @@ def parse_entry_date(entry: Any) -> str:
     if published:
         try:
             return parsedate_to_datetime(published).date().isoformat()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[NewsPolicy] unparseable entry date %r: %s", published, exc)
     return ""
 
 

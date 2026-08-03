@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import traceback
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Protocol
 
 from backend.app.repositories.briefing_repository import BriefingContentRepository
@@ -553,7 +552,11 @@ class DailyBriefingService:
                 )
                 yield {"type": "error", "data": _BLOCK_RESPONSE_ERROR}
                 return
-            traceback.print_exc()
+            logger.error(
+                "简报生成流异常: source=%s",
+                source,
+                exc_info=True,
+            )
             yield {"type": "error", "data": err_text}
 
     async def _stream_llm_round(self, prompt: str) -> AsyncGenerator[str, None]:

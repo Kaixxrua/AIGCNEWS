@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
+
+logger = logging.getLogger(__name__)
 
 MAX_AGE_HOURS = 24
 
@@ -50,8 +53,8 @@ def project_stories(
                     story_time,
                     tz=timezone.utc,
                 ).strftime("%Y-%m-%d")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[HackernewsPolicy] bad story time %r: %s", story_time, exc)
         title = story.get("title", "")
         points = int(story.get("score", 0))
         results.append(

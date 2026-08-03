@@ -26,7 +26,7 @@ POST /api/chat/vision-relay
 from __future__ import annotations
 
 import asyncio
-import traceback
+import logging
 from typing import Any, AsyncGenerator, List, Optional
 
 import httpx
@@ -49,10 +49,17 @@ from backend.app.services.vision.provider import VISION_SYSTEM, VisionProvider
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
+
 # 兼容既有模块内访问；消息载荷由 provider 边界持有。
 _VISION_SYSTEM = VISION_SYSTEM
 
 _image_cache = ScreenshotImageCache()
+
+
+def _report_relay_error() -> None:
+    """relay 流失败时的服务端错误上报：原始异常只进日志，不外泄给客户端。"""
+    logger.exception("[Vision] relay stream failed")
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +162,7 @@ async def _vision_relay_stream(
         image_loader=_image_cache.get,
         provider_stream=provider.stream,
         encode_event=_sse,
-        report_error=traceback.print_exc,
+        report_error=_report_relay_error,
         persist_completed=persist_completed,
     ):
         yield chunk

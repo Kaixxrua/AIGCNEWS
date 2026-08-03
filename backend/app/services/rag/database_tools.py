@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
 
@@ -10,6 +11,8 @@ from backend.app.repositories.document_repository import (
     DocumentStatisticsReader,
 )
 from backend.app.services.rag.raw_openai_streamer import ToolCallResult
+
+logger = logging.getLogger(__name__)
 
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     {
@@ -266,7 +269,7 @@ async def run_tool_calls(
     results = await asyncio.gather(*tasks, return_exceptions=True)
     for result in results:
         if isinstance(result, Exception):
-            print(f"[ChatService] Tool execution error: {result}")
+            logger.warning("[ChatService] Tool execution error: %s", result)
             continue
         message, sources, context = result
         tool_messages.append(message)

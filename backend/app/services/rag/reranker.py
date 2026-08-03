@@ -10,12 +10,15 @@ API 文档：https://docs.siliconflow.cn/reference/rerank
 
 from __future__ import annotations
 
+import logging
 from typing import List
 
 import httpx
 from langchain_core.documents import Document
 
 from backend.app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Cross-Encoder 相关性分数阈值（relevance_score 经 sigmoid 后约为概率值）
 # SiliconFlow rerank API 返回 relevance_score：范围约 0~1
@@ -55,7 +58,7 @@ async def rerank(
 
     api_key = settings.siliconflow_api_key
     if not api_key:
-        print("[Reranker] siliconflow_api_key not set, skipping rerank")
+        logger.info("[Reranker] siliconflow_api_key not set, skipping rerank")
         for doc in docs:
             doc.metadata = dict(doc.metadata or {})
             doc.metadata.setdefault("rerank_score", 0.0)
@@ -105,22 +108,24 @@ async def rerank(
             response.raise_for_status()
             data = response.json()
     except httpx.TimeoutException:
-        print("[Reranker] API request timeout, skipping rerank")
+        logger.warning("[Reranker] API request timeout, skipping rerank")
         return rerank_targets + passthrough_docs
     except httpx.HTTPStatusError as exc:
-        print(
-            f"[Reranker] API error {exc.response.status_code}: {exc.response.text[:200]}, skipping rerank"
+        logger.warning(
+            "[Reranker] API error %s: %s, skipping rerank",
+            exc.response.status_code,
+            exc.response.text[:200],
         )
         return rerank_targets + passthrough_docs
     except Exception as exc:
-        print(f"[Reranker] Unexpected error: {exc}, skipping rerank")
+        logger.warning("[Reranker] Unexpected error: %s, skipping rerank", exc)
         return rerank_targets + passthrough_docs
 
     # 解析返回结果
     # SiliconFlow 返回格式：{"results": [{"index": 0, "relevance_score": 0.98}, ...]}
     results = data.get("results", [])
     if not results:
-        print("[Reranker] Empty results from API, skipping rerank")
+        logger.info("[Reranker] Empty results from API, skipping rerank")
         return rerank_targets + passthrough_docs
 
     # 建立 index -> score 映射
@@ -138,8 +143,11 @@ async def rerank(
         retriever_type = str(meta.get("retriever") or "")
         title = str(meta.get("title") or "")[:40]
 
-        print(
-            f"[Reranker] score={raw_score:.4f} retriever={retriever_type} title={title!r}"
+        logger.debug(
+            "[Reranker] score=%.4f retriever=%s title=%r",
+            raw_score,
+            retriever_type,
+            title,
         )
 
         # vector 文档：必须通过阈值
@@ -159,8 +167,12 @@ async def rerank(
         for doc in ranked
         if str((doc.metadata or {}).get("retriever") or "") == "vector"
     )
-    print(
-        f"[Reranker] reranked={len(rerank_targets)} passthrough={len(passthrough_docs)}"
-        f" → {len(ranked)} passed ({vector_count} vector, threshold={threshold})"
+    logger.info(
+        "[Reranker] reranked=%s passthrough=%s → %s passed (%s vector, threshold=%s)",
+        len(rerank_targets),
+        len(passthrough_docs),
+        len(ranked),
+        vector_count,
+        threshold,
     )
     return ranked + passthrough_docs

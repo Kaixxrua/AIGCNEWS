@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Iterable, List
 
 from langchain_core.documents import Document
 from langchain_experimental.graph_transformers import LLMGraphTransformer
 
 from backend.app.core.model_factory import get_chat_model
+
+logger = logging.getLogger(__name__)
 
 
 class GraphExtractor:
@@ -22,5 +25,5 @@ class GraphExtractor:
         try:
             return self._transformer.convert_to_graph_documents(list(docs))
         except Exception as exc:
-            print(f"[GraphExtractor] Failed to extract graph documents: {exc}")
+            logger.warning("[GraphExtractor] Failed to extract graph documents: %s", exc)
             return []

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import traceback
+import logging
 from typing import AsyncGenerator, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -39,6 +39,11 @@ from backend.app.services.chat.quota_policy import (
 from backend.app.services.rag.chat_service import ChatService
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
+
+# SSE 错误帧的通用对外文案：原始异常只进服务端日志，不外泄给客户端。
+_STREAM_ERROR_MESSAGE = "服务内部错误，请稍后重试"
 
 
 def _check_user_message_limit(user_payload: dict, quota_reader: ConversationRepository) -> None:
@@ -92,9 +97,9 @@ async def _stream_persisted_chat(
             except Exception:
                 data = json.dumps({"type": "error", "data": "serialize_error"})
             yield f"data: {data}\n\n"
-    except Exception as exc:
-        traceback.print_exc()
-        error_payload = json.dumps({"type": "error", "data": str(exc)})
+    except Exception:
+        logger.exception("[Chat] persisted stream failed")
+        error_payload = json.dumps({"type": "error", "data": _STREAM_ERROR_MESSAGE})
         yield f"data: {error_payload}\n\n"
     finally:
         yield "data: [DONE]\n\n"

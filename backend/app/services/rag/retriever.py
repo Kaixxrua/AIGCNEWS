@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from typing import Iterable, List
 
@@ -11,6 +12,8 @@ from backend.app.repositories.document_repository import (
     DocumentRetrievalReader,
 )
 from backend.app.services.rag.ports import GraphRetrievalReader, VectorRetrievalReader
+
+logger = logging.getLogger(__name__)
 
 
 class HybridRetriever:
@@ -135,9 +138,10 @@ class HybridRetriever:
                     if pdf_text:
                         pdf_excerpt = pdf_text[:20000].strip()
                 except Exception as exc:
-                    print(
-                        f"[HybridRetriever] failed to load local PDF excerpt "
-                        f"{local_pdf_path}: {exc}"
+                    logger.warning(
+                        "[HybridRetriever] failed to load local PDF excerpt %s: %s",
+                        local_pdf_path,
+                        exc,
                     )
 
             metadata = {
@@ -249,9 +253,10 @@ class HybridRetriever:
                     if pdf_text:
                         pdf_excerpt = pdf_text[:6000].strip()
                 except Exception as exc:
-                    print(
-                        f"[HybridRetriever] failed to load local PDF excerpt "
-                        f"{local_pdf_path}: {exc}"
+                    logger.warning(
+                        "[HybridRetriever] failed to load local PDF excerpt %s: %s",
+                        local_pdf_path,
+                        exc,
                     )
 
             metadata = {

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
-import traceback
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
@@ -30,6 +30,11 @@ from backend.app.services.rag.web_search_service import (
     format_search_results_as_context,
     web_search,
 )
+
+logger = logging.getLogger(__name__)
+
+# SSE 错误帧的通用对外文案：原始异常只进服务端日志，不外泄给客户端。
+_STREAM_ERROR_MESSAGE = "服务内部错误，请稍后重试"
 
 # 默认保留最近几轮历史（每轮 = user + assistant 各一条）
 MAX_HISTORY_TURNS = 5
@@ -414,9 +419,12 @@ class GenerationOrchestrator:
             effective_model = settings.thinking_model_name or settings.chat_model_name
             effective_temp = temperature if temperature is not None else settings.llm_temperature
             decision = self._development_classifier(query, history or [])
-            print(
-                "[ChatService] development route=%s score=%s reasons=%s mode=%s"
-                % (decision.route, decision.score, list(decision.reasons), decision.search_mode)
+            logger.info(
+                "[ChatService] development route=%s score=%s reasons=%s mode=%s",
+                decision.route,
+                decision.score,
+                list(decision.reasons),
+                decision.search_mode,
             )
 
             if decision.route == "clarify":
@@ -477,7 +485,7 @@ class GenerationOrchestrator:
             # 提取 RAG 结果
             raw_docs = task_results.get("rag", [])
             if isinstance(raw_docs, Exception):
-                print(f"[ChatService] RAG search error: {raw_docs}")
+                logger.warning("[ChatService] RAG search error: %s", raw_docs)
                 raw_docs = []
 
             # 提取联网搜索结果
@@ -492,7 +500,7 @@ class GenerationOrchestrator:
             if isinstance(td, ChatCompletionResult):
                 tool_decision = td
             elif isinstance(td, Exception):
-                print(f"[ChatService] Tool decision error: {td}")
+                logger.warning("[ChatService] Tool decision error: %s", td)
 
             # 3. 执行工具调用（如果 LLM 返回了 tool_calls）
             tool_messages: List[Dict[str, Any]] = []
@@ -500,9 +508,10 @@ class GenerationOrchestrator:
             tool_context = ""
 
             if tool_decision and tool_decision.tool_calls:
-                print(
-                    f"[ChatService] LLM requested {len(tool_decision.tool_calls)} tool call(s): "
-                    f"{[tc.name for tc in tool_decision.tool_calls]}"
+                logger.info(
+                    "[ChatService] LLM requested %s tool call(s): %s",
+                    len(tool_decision.tool_calls),
+                    [tc.name for tc in tool_decision.tool_calls],
                 )
                 yield {"type": "status", "data": "querying database"}
                 tool_messages, tool_sources, tool_context = await self._run_tool_calls(
@@ -521,9 +530,10 @@ class GenerationOrchestrator:
             )
 
             if best_vector_score > VECTOR_SCORE_SKIP_THRESHOLD or not vector_docs:
-                print(
-                    f"[ChatService] Skipping rerank: best_vector_score={best_vector_score:.4f}"
-                    f" > {VECTOR_SCORE_SKIP_THRESHOLD} or no vector docs"
+                logger.info(
+                    "[ChatService] Skipping rerank: best_vector_score=%.4f > %s or no vector docs",
+                    best_vector_score,
+                    VECTOR_SCORE_SKIP_THRESHOLD,
                 )
                 ranked_docs = raw_docs
                 for doc in ranked_docs:
@@ -601,6 +611,6 @@ class GenerationOrchestrator:
                 if delta.content:
                     yield {"type": "content", "data": delta.content}
 
-        except Exception as exc:
-            traceback.print_exc()
-            yield {"type": "error", "data": str(exc)}
+        except Exception:
+            logger.exception("[ChatService] stream failed")
+            yield {"type": "error", "data": _STREAM_ERROR_MESSAGE}

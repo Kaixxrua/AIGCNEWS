@@ -434,7 +434,7 @@ class VisionRelayContractsTests(unittest.TestCase):
             patch.object(routes_vision._image_cache, "_clock", return_value=100.0),
             patch.object(routes_vision.httpx, "AsyncClient", provider.client_type),
             patch.object(routes_vision.asyncio, "sleep", sleep),
-            patch.object(routes_vision.traceback, "print_exc"),
+            patch.object(routes_vision, "_report_relay_error"),
         ):
             response = self.authenticated_client().post(
                 "/api/chat/vision-relay",
@@ -486,7 +486,7 @@ class VisionRelayContractsTests(unittest.TestCase):
         self.assertEqual(captured["paper_id"], "paper-18")
         self.assertEqual(captured["history"], request.history)
         self.assertIs(captured["encode_event"], routes_vision._sse)
-        self.assertIs(captured["report_error"], routes_vision.traceback.print_exc)
+        self.assertIs(captured["report_error"], routes_vision._report_relay_error)
         self.assertTrue(callable(captured["image_loader"]))
         self.assertTrue(callable(captured["provider_stream"]))
 

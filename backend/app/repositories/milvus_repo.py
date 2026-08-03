@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any, List
 
@@ -19,6 +20,8 @@ from backend.app.core.model_factory import (
     get_embedding_model,
     model_provider_runtime_is_configured,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MilvusRepository:
@@ -61,7 +64,7 @@ class MilvusRepository:
             )
             return True
         except Exception as exc:
-            print(f"[Milvus] unavailable: {exc}")
+            logger.warning("[Milvus] unavailable: %s", exc)
             return False
 
     @staticmethod
@@ -94,7 +97,7 @@ class MilvusRepository:
     def add_documents(self, docs: List[Document], already_split: bool = False) -> bool:
         try:
             if not docs:
-                print("[Milvus] No documents to add.")
+                logger.info("[Milvus] No documents to add.")
                 return True
 
             # 在切分之前先对 GitHub 文档追加结构化字段，
@@ -125,7 +128,7 @@ class MilvusRepository:
                     "DataNotMatchException" in err_str
                     or "doesn't match with schema" in err_str
                 ):
-                    print(f"[Milvus] Schema 不匹配，重建 Collection: {exc}")
+                    logger.warning("[Milvus] Schema 不匹配，重建 Collection: %s", exc)
                     vector_store = Milvus(
                         embedding_function=self._embeddings,
                         collection_name=self._collection_name,
@@ -137,12 +140,14 @@ class MilvusRepository:
                     vector_store.add_documents(docs)
                 else:
                     raise
-            print(
-                f"[Milvus] Inserted {len(docs)} chunks into '{self._collection_name}'."
+            logger.info(
+                "[Milvus] Inserted %s chunks into '%s'.",
+                len(docs),
+                self._collection_name,
             )
             return True
         except Exception as exc:
-            print(f"[Milvus] Failed to add documents: {exc}")
+            logger.warning("[Milvus] Failed to add documents: %s", exc)
             return False
 
     def drop_collection(self) -> bool:
@@ -160,12 +165,12 @@ class MilvusRepository:
             )
             if utility.has_collection(self._collection_name):
                 utility.drop_collection(self._collection_name)
-                print(f"[Milvus] Collection '{self._collection_name}' 已删除。")
+                logger.info("[Milvus] Collection '%s' 已删除。", self._collection_name)
             else:
-                print(f"[Milvus] Collection '{self._collection_name}' 不存在，跳过。")
+                logger.info("[Milvus] Collection '%s' 不存在，跳过。", self._collection_name)
             return True
         except Exception as exc:
-            print(f"[Milvus] 删除 Collection 失败: {exc}")
+            logger.warning("[Milvus] 删除 Collection 失败: %s", exc)
             return False
 
     def search(self, query: str, top_k: int = 5) -> List[Document]:
@@ -192,7 +197,7 @@ class MilvusRepository:
                 docs.append(doc)
             return docs
         except Exception as exc:
-            print(f"[Milvus] Failed to search documents: {exc}")
+            logger.warning("[Milvus] Failed to search documents: %s", exc)
             return []
 
     def search_by_source(self, source: str, top_k: int = 3) -> List[Document]:
@@ -242,5 +247,5 @@ class MilvusRepository:
                 docs.append(doc)
             return docs
         except Exception as exc:
-            print(f"[Milvus] search_by_source failed ({source}): {exc}")
+            logger.warning("[Milvus] search_by_source failed (%s): %s", source, exc)
             return []

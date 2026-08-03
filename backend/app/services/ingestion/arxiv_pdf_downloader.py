@@ -243,8 +243,8 @@ def _download_one_pdf(
         if os.path.exists(local_path):
             try:
                 os.remove(local_path)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("[ArxivDownloader] 残破文件清理失败 %s: %s", local_path, exc)
         return None
 
 
@@ -271,8 +271,8 @@ def _extract_text_from_local_pdf(local_path: str) -> str:
                 text = page.get_text("text")
                 if text:
                     parts.append(text)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[ArxivDownloader] PyMuPDF 跳过无法解析的页面: %s", exc)
         doc.close()
         full_text = "\n".join(parts)
         full_text = re.sub(r"\n{3,}", "\n\n", full_text).strip()
@@ -299,8 +299,10 @@ def _extract_text_from_local_pdf(local_path: str) -> str:
                     text = page.extract_text()
                     if text:
                         parts.append(text)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "[ArxivDownloader] pdfplumber 跳过无法解析的页面: %s", exc
+                    )
         full_text = "\n".join(parts)
         full_text = re.sub(r"\n{3,}", "\n\n", full_text).strip()
         if full_text:
@@ -327,8 +329,8 @@ def _extract_text_from_local_pdf(local_path: str) -> str:
         for page in reader.pages[:_PDF_MAX_PAGES]:
             try:
                 parts.append(page.extract_text() or "")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[ArxivDownloader] pypdf 跳过无法解析的页面: %s", exc)
         full_text = "\n".join(parts)
         full_text = re.sub(r"\n{3,}", "\n\n", full_text).strip()
         return full_text[:_MAX_CONTENT_CHARS]

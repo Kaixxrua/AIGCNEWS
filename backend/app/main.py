@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -52,6 +53,12 @@ from backend.app.services.runtime_provider.runtime import (
     ApplicationModelProviderRuntime,
 )
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 # ── 访客统计中间件 ─────────────────────────────────────────────────────────────
 # 使用 Redis SET 记录每天不同 IP 地址的访问者
 # Key 格式：visitor:{YYYY-MM-DD}（CST 时区），TTL 48 小时，自动过期清理
@@ -92,9 +99,9 @@ async def _warmup_project_semantic_search(
     """后台预热项目语义搜索链路，不阻塞服务启动。"""
     try:
         result = await asyncio.to_thread(runtime.warmup_semantic_search)
-        print(f"[Startup] Project semantic search warmup: {result.get('status')}.")
+        logger.info("[Startup] Project semantic search warmup: %s.", result.get("status"))
     except Exception as exc:
-        print(f"[Startup] Project semantic search warmup failed (non-fatal): {exc}")
+        logger.warning("[Startup] Project semantic search warmup failed (non-fatal): %s", exc)
 
 
 async def _cancel_background_task(
@@ -110,7 +117,7 @@ async def _cancel_background_task(
     except asyncio.CancelledError:
         pass
     except Exception as exc:
-        print(f"[Shutdown] {name} task close failed (non-fatal): {exc}")
+        logger.warning("[Shutdown] %s task close failed (non-fatal): %s", name, exc)
 
 
 @asynccontextmanager
@@ -189,11 +196,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 cache_keys = await redis_client.keys("aigc-cache:*")
                 if cache_keys:
                     await redis_client.delete(*cache_keys)
-                    print(
-                        f"[Startup][DEV] Cleared {len(cache_keys)} cache keys — reload complete."
+                    logger.info(
+                        "[Startup][DEV] Cleared %s cache keys — reload complete.",
+                        len(cache_keys),
                     )
                 else:
-                    print("[Startup][DEV] No cache keys to clear.")
+                    logger.info("[Startup][DEV] No cache keys to clear.")
 
             FastAPICache.reset()
             FastAPICache.init(
@@ -201,7 +209,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 prefix="aigc-cache:",
             )
             app.state.redis = redis_client
-            print("[Startup] Redis cache initialized.")
+            logger.info("[Startup] Redis cache initialized.")
         except Exception as exc:
             app.state.redis = None
             FastAPICache.reset()
@@ -209,13 +217,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 try:
                     await close_redis_client(redis_client)
                 except Exception as close_exc:
-                    print(
-                        "[Startup] Redis close after init failure failed "
-                        f"(non-fatal): {close_exc}"
+                    logger.warning(
+                        "[Startup] Redis close after init failure failed (non-fatal): %s",
+                        close_exc,
                     )
                 else:
                     redis_client = None
-            print(f"[Startup] Redis cache init failed (non-fatal): {exc}")
+            logger.warning("[Startup] Redis cache init failed (non-fatal): %s", exc)
 
         scheduler_enabled = bool(getattr(settings, "scheduler_enabled", True))
         scheduler_runtime = create_scheduler_runtime(
@@ -235,12 +243,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             try:
                 await scheduler_runtime.stop()
             except Exception as exc:
-                print(f"[Shutdown] Scheduler close failed (non-fatal): {exc}")
+                logger.warning("[Shutdown] Scheduler close failed (non-fatal): %s", exc)
         if operations_runtime is not None:
             try:
                 await operations_runtime.stop()
             except Exception as exc:
-                print(f"[Shutdown] Operations close failed (non-fatal): {exc}")
+                logger.warning("[Shutdown] Operations close failed (non-fatal): %s", exc)
             finally:
                 app.state.operations_runtime = None
 
@@ -252,7 +260,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             try:
                 await project_search_runtime.close()
             except Exception as exc:
-                print(f"[Shutdown] Project search runtime close failed (non-fatal): {exc}")
+                logger.warning("[Shutdown] Project search runtime close failed (non-fatal): %s", exc)
             finally:
                 app.state.project_search_runtime = None
 
@@ -260,9 +268,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if redis_client is not None:
             try:
                 await close_redis_client(redis_client)
-                print("[Shutdown] Redis cache connection closed.")
+                logger.info("[Shutdown] Redis cache connection closed.")
             except Exception as exc:
-                print(f"[Shutdown] Redis close failed (non-fatal): {exc}")
+                logger.warning("[Shutdown] Redis close failed (non-fatal): %s", exc)
             finally:
                 app.state.redis = None
 
@@ -270,12 +278,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             try:
                 rag_provider.close()
             except Exception as exc:
-                print(f"[Shutdown] RAG provider close failed (non-fatal): {exc}")
+                logger.warning("[Shutdown] RAG provider close failed (non-fatal): %s", exc)
         if model_provider_runtime is not None:
             try:
                 await model_provider_runtime.close()
             except Exception as exc:
-                print(f"[Shutdown] Model provider runtime close failed (non-fatal): {exc}")
+                logger.warning("[Shutdown] Model provider runtime close failed (non-fatal): %s", exc)
             finally:
                 configure_model_provider_runtime(None)
                 app.state.model_provider_runtime = None
@@ -284,14 +292,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 configure_runtime_provider_settings(None)
                 configure_application_repositories(None)
             except Exception as exc:
-                print(f"[Shutdown] Repository context close failed (non-fatal): {exc}")
+                logger.warning("[Shutdown] Repository context close failed (non-fatal): %s", exc)
         app.state.monitoring_runtime = None
         if postgres_opened:
             try:
                 postgres_database.close()
-                print("[Shutdown] PostgreSQL connection pool closed.")
+                logger.info("[Shutdown] PostgreSQL connection pool closed.")
             except Exception as exc:
-                print(f"[Shutdown] PostgreSQL close failed (non-fatal): {exc}")
+                logger.warning("[Shutdown] PostgreSQL close failed (non-fatal): %s", exc)
 
 
 app = FastAPI(
