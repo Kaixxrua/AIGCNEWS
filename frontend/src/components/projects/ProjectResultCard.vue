@@ -284,8 +284,6 @@ const description = computed(() => projectDescription(
   flex-direction: column;
   margin-right: var(--projects-card-action-size, 34px);
   overflow: visible;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 520px;
 }
 
 .project-card__body {
@@ -296,6 +294,8 @@ const description = computed(() => projectDescription(
   flex-direction: column;
   gap: 18px;
   overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 520px;
   border: 1px solid #11110f;
   border-radius: 6px;
   padding: 22px;
