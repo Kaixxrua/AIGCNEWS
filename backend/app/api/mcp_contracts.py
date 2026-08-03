@@ -92,7 +92,13 @@ class SearchGitHubProjectsInput(McpInputModel):
         ),
     )
     language: StrictStr = Field(default="", max_length=64)
-    sort: ProjectSort = "stars"
+    sort: ProjectDiscoverySort | None = Field(
+        default=None,
+        description=(
+            "Omit to rank non-empty queries by relevance via hybrid lexical and semantic retrieval; "
+            "explicit stars, hot, updated, recent, or name sorts remain authoritative."
+        ),
+    )
     page: StrictInt = Field(default=1, ge=1)
     limit: StrictInt = Field(default=10, ge=1, le=20)
 

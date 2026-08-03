@@ -88,11 +88,12 @@ class ToolMetadataTests(unittest.TestCase):
         for tool_name in ("search_github_ai_projects", "get_project_library"):
             sort_schema = tools[tool_name]["inputSchema"]["properties"]["sort"]
             self.assertIn("relevance", json.dumps(sort_schema))
-        for tool_name in ("search_github_projects", "search_my_project_favorites"):
-            schema = input_schema(tool_name)
-            sort_schema = schema["properties"]["sort"]
-            self.assertNotIn("relevance", json.dumps(sort_schema))
-            self.assertNotIn("intent", schema["properties"])
+        generic_schema = input_schema("search_github_projects")
+        self.assertIn("relevance", json.dumps(generic_schema["properties"]["sort"]))
+        self.assertNotIn("intent", generic_schema["properties"])
+        favorites_schema = input_schema("search_my_project_favorites")
+        self.assertNotIn("relevance", json.dumps(favorites_schema["properties"]["sort"]))
+        self.assertNotIn("intent", favorites_schema["properties"])
         for tool_name in ("search_github_ai_projects", "get_project_library"):
             self.assertIn("intent", tools[tool_name]["inputSchema"]["properties"])
         for description in (generic, ai, legacy):

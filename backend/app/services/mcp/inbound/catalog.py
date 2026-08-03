@@ -171,7 +171,9 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "For AI, Agent, MCP, RAG, or LLM engineering artifacts use search_github_ai_projects; for explicitly scholarly deliverables "
             "use search_papers. Translate "
             "non-English intent into a concise GitHub query while preserving product names and requested features. Inspect specific "
-            "returned repositories only when their metadata is insufficient to verify a requested feature."
+            "returned repositories only when their metadata is insufficient to verify a requested feature. Non-empty queries default "
+            "to relevance ranking via hybrid lexical and semantic retrieval; explicit stars, hot, updated, recent, or name sorts "
+            "remain authoritative."
         ),
         "inputSchema": input_schema("search_github_projects"),
     },
