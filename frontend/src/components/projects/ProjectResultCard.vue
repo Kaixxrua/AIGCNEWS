@@ -279,14 +279,17 @@ const description = computed(() => projectDescription(
 .project-card {
   container-type: inline-size;
   position: relative;
+  display: flex;
   min-width: 0;
   min-height: 248px;
+  flex-direction: column;
   margin-right: var(--projects-card-action-size, 40px);
   overflow: visible;
 }
 
 .project-card__body {
   display: flex;
+  flex: 1;
   min-width: 0;
   min-height: 248px;
   flex-direction: column;

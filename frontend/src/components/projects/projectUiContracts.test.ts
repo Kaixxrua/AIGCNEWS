@@ -36,6 +36,7 @@ describe('project UI sizing contracts', () => {
     expect(cardSource).toContain('border-left: 0')
     expect(cardSource).toContain('border-radius: 0 4px 4px 0')
     expect(cardSource).toContain('box-shadow: 3px 3px 0 #11110f')
+    expect(cardSource).toContain('flex: 1')
     expect(cardSource).toContain('width: var(--projects-card-action-size, 40px)')
     expect(cardSource).toContain('min-height: var(--projects-card-action-size, 40px)')
     expect(cardSource).toContain('@container (max-width: 520px)')
