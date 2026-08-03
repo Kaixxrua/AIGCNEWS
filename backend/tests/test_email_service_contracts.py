@@ -6,12 +6,16 @@ from email.header import decode_header, make_header
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from fastapi import HTTPException
-
 from backend.app.services.email.message_renderer import EmailMessageRenderer
 from backend.app.services.email.otp_store import RedisOtpStore
 from backend.app.services.email.smtp_transport import SmtpDeliveryError, SmtpTransport
-from backend.app.services.email_service import EmailService, build_email_service
+from backend.app.services.email_service import (
+    BriefingDeliveryError,
+    EmailService,
+    OtpDeliveryUnavailableError,
+    OtpSendRateLimitedError,
+    build_email_service,
+)
 
 
 class FakeRedis:
@@ -90,20 +94,18 @@ class EmailOtpContractTests(unittest.IsolatedAsyncioTestCase):
         redis.values["email:lock:user@example.com"] = b"1"
         service = EmailService(redis)
 
-        with self.assertRaises(HTTPException) as context:
+        with self.assertRaises(OtpSendRateLimitedError) as context:
             await service.send_otp("USER@example.com", deliver=False)
 
-        self.assertEqual(context.exception.status_code, 429)
         self.assertEqual(context.exception.detail, "请求过于频繁，请 60 秒后再试")
         self.assertEqual(redis.calls, [("get", "email:lock:user@example.com")])
 
     async def test_unavailable_redis_preserves_send_and_verify_divergence(self) -> None:
         service = EmailService(None)
 
-        with self.assertRaises(HTTPException) as context:
+        with self.assertRaises(OtpDeliveryUnavailableError) as context:
             await service.send_otp("user@example.com", deliver=False)
 
-        self.assertEqual(context.exception.status_code, 503)
         self.assertEqual(context.exception.detail, "验证码服务暂不可用，请稍后重试")
         self.assertFalse(await service.verify_otp("user@example.com", "123456"))
 
@@ -248,13 +250,12 @@ class EmailDeliveryContractTests(unittest.IsolatedAsyncioTestCase):
             "\n".join(logs.output),
         )
 
-    async def test_briefing_dev_mode_is_503_with_exact_detail(self) -> None:
+    async def test_briefing_dev_mode_raises_delivery_error_with_exact_detail(self) -> None:
         service = EmailService(None)
 
-        with self.assertRaises(HTTPException) as context:
+        with self.assertRaises(BriefingDeliveryError) as context:
             await service.send_briefing("reader@example.com", "content")
 
-        self.assertEqual(context.exception.status_code, 503)
         self.assertEqual(context.exception.detail, "SMTP 未配置，无法发送真实邮件")
 
     async def test_send_otp_preserves_subject_plain_mime_and_lowercase_recipient(self) -> None:
@@ -352,13 +353,12 @@ class EmailDeliveryContractTests(unittest.IsolatedAsyncioTestCase):
                 side_effect=TimeoutError("boom"),
             ),
         ):
-            with self.assertRaises(HTTPException) as plain_context:
+            with self.assertRaises(OtpDeliveryUnavailableError) as plain_context:
                 await service.send_otp("to@example.test")
             redis.values.pop("email:lock:to@example.test")
-            with self.assertRaises(HTTPException) as html_context:
+            with self.assertRaises(BriefingDeliveryError) as html_context:
                 await service.send_briefing("to@example.test", "content")
 
-        self.assertEqual(plain_context.exception.status_code, 503)
         self.assertEqual(
             plain_context.exception.detail,
             "邮件发送失败（TimeoutError），请检查 SMTP 配置后重试",

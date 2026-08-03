@@ -7,8 +7,6 @@ import logging
 import secrets
 import string
 
-from fastapi import HTTPException, status
-
 from backend.app.core.config import settings
 from backend.app.services.email.message_renderer import EmailMessageRenderer
 from backend.app.services.email.otp_store import (
@@ -20,6 +18,30 @@ from backend.app.services.email.otp_store import (
 from backend.app.services.email.smtp_transport import SmtpDeliveryError, SmtpTransport
 
 logger = logging.getLogger(__name__)
+
+
+class EmailServiceError(Exception):
+    """邮件服务领域错误基类。
+
+    detail 为可安全回显给客户端的文案；HTTP 状态码由路由层映射，
+    服务层不感知传输协议。
+    """
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+class OtpDeliveryUnavailableError(EmailServiceError):
+    """验证码存储或投递通道不可用（路由层映射 503）。"""
+
+
+class OtpSendRateLimitedError(EmailServiceError):
+    """OTP 发送冷却期命中（路由层映射 429）。"""
+
+
+class BriefingDeliveryError(EmailServiceError):
+    """简报邮件投递失败（路由层映射 503）。"""
 
 
 def _gen_otp(length: int = 6) -> str:
@@ -72,15 +94,9 @@ class EmailService:
             await self._otp_store.store(email_lower, otp, purpose=purpose)
         except OtpStoreUnavailableError as exc:
             logger.warning("[EMAIL] Redis 不可用，无法生成可验证的 OTP。")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="验证码服务暂不可用，请稍后重试",
-            ) from exc
+            raise OtpDeliveryUnavailableError("验证码服务暂不可用，请稍后重试") from exc
         except OtpCooldownError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="请求过于频繁，请 60 秒后再试",
-            ) from exc
+            raise OtpSendRateLimitedError("请求过于频繁，请 60 秒后再试") from exc
 
         if not deliver:
             return
@@ -120,9 +136,8 @@ class EmailService:
                 exc.error_type,
                 cause,
             )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"邮件发送失败（{exc.error_type}），请检查 SMTP 配置后重试",
+            raise OtpDeliveryUnavailableError(
+                f"邮件发送失败（{exc.error_type}），请检查 SMTP 配置后重试"
             ) from cause
 
     async def verify_otp(
@@ -168,10 +183,7 @@ class EmailService:
                 to_email,
                 subject,
             )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="SMTP 未配置，无法发送真实邮件",
-            )
+            raise BriefingDeliveryError("SMTP 未配置，无法发送真实邮件")
 
         logger.info("[EMAIL] 正在发送简报邮件 to=%s subject=%s", to_email, subject)
         try:
@@ -185,9 +197,8 @@ class EmailService:
                 exc.error_type,
                 cause,
             )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"简报邮件发送失败（{exc.error_type}），请检查 SMTP 配置后重试",
+            raise BriefingDeliveryError(
+                f"简报邮件发送失败（{exc.error_type}），请检查 SMTP 配置后重试"
             ) from cause
 
 

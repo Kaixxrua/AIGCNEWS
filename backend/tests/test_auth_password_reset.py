@@ -3,13 +3,13 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_auth
 from backend.app.api.dependencies import get_user_account_repository
 from backend.app.core.auth import verify_password
-from backend.app.services.email_service import EmailService
+from backend.app.services.email_service import EmailService, OtpDeliveryUnavailableError
 
 
 class FakeRedis:
@@ -42,9 +42,9 @@ class FakeRedis:
 class EmailResetOtpTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_rejects_when_redis_is_unavailable(self) -> None:
         service = EmailService(redis_client=None)
-        with self.assertRaises(HTTPException) as context:
+        with self.assertRaises(OtpDeliveryUnavailableError) as context:
             await service.send_otp("user@example.com", deliver=False)
-        self.assertEqual(context.exception.status_code, 503)
+        self.assertEqual(context.exception.detail, "验证码服务暂不可用，请稍后重试")
 
     async def test_registration_and_reset_codes_are_isolated(self) -> None:
         redis = FakeRedis()

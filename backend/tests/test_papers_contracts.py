@@ -18,7 +18,7 @@ from backend.app.api.dependencies import (
 )
 from backend.app.api.routes_papers import proxy_arxiv_pdf, router
 from backend.app.services.papers.arxiv_identity import extract_arxiv_id
-from backend.app.services.papers.pdf_relay import HttpxPdfRelay
+from backend.app.services.papers.pdf_relay import HttpxPdfRelay, PdfRelayUpstreamError
 from backend.app.services.papers.presentation import (
     project_pdf_media_url,
     safe_document,
@@ -55,7 +55,7 @@ class PapersRepository:
 
 
 class FakeRelay:
-    def __init__(self, chunks=(b"first", b"second"), error: HTTPException | None = None):
+    def __init__(self, chunks=(b"first", b"second"), error: Exception | None = None):
         self.chunks = chunks
         self.error = error
         self.calls: list[tuple[str, dict[str, str]]] = []
@@ -177,8 +177,8 @@ class PapersContractsTests(unittest.TestCase):
         self.assertEqual(self.relay.calls[0][1]["Accept"], "application/pdf,*/*")
         self.assertTrue(self.relay.closed)
 
-    def test_remote_pdf_upstream_error_preserves_status_detail_and_closure(self) -> None:
-        error = HTTPException(status_code=503, detail="arxiv returned 503 for https://arxiv.org/pdf/2603.12255.pdf")
+    def test_remote_pdf_upstream_error_maps_domain_error_at_route_edge(self) -> None:
+        error = PdfRelayUpstreamError(503, "https://arxiv.org/pdf/2603.12255.pdf")
         relay = FakeRelay(error=error)
         self.papers.pdf_sources["paper-1"] = {
             "local_pdf_path": None, "url": "https://arxiv.org/abs/2603.12255", "source": "arxiv"
@@ -197,7 +197,7 @@ class PapersContractsTests(unittest.TestCase):
             return raised.exception
 
         raised = asyncio.run(consume())
-        self.assertEqual((raised.status_code, raised.detail), (503, error.detail))
+        self.assertEqual((raised.status_code, raised.detail), (503, str(error)))
         self.assertTrue(relay.closed)
 
     def test_httpx_relay_preserves_transport_options_chunk_size_and_closure(self) -> None:
@@ -244,13 +244,14 @@ class PapersContractsTests(unittest.TestCase):
 
         async def consume():
             with patch("backend.app.services.papers.pdf_relay.httpx.AsyncClient", Client):
-                with self.assertRaises(HTTPException) as raised:
+                with self.assertRaises(PdfRelayUpstreamError) as raised:
                     async for _ in HttpxPdfRelay().stream("https://arxiv.test/a.pdf", {}):
                         pass
                 return raised.exception
 
         raised = asyncio.run(consume())
-        self.assertEqual((raised.status_code, raised.detail), (502, "arxiv returned 502 for https://arxiv.test/a.pdf"))
+        self.assertEqual(raised.status_code, 502)
+        self.assertEqual(str(raised), "arxiv returned 502 for https://arxiv.test/a.pdf")
         self.assertEqual(events, ["response-close", "client-close"])
 
 

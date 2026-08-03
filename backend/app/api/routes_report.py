@@ -29,7 +29,11 @@ from backend.app.services.briefing.daily_briefing import (
     normalize_briefing_locale,
     select_briefing_content,
 )
-from backend.app.services.email_service import EmailService, build_email_service
+from backend.app.services.email_service import (
+    BriefingDeliveryError,
+    EmailService,
+    build_email_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -322,13 +326,16 @@ async def _send_cached_briefing_to_email(
         )
 
     email_svc = _get_email_service(request)
-    await email_svc.send_briefing(
-        to_email=email,
-        briefing_content=select_briefing_content(item, locale),
-        source=source,
-        period=period,
-        date_str=target,
-    )
+    try:
+        await email_svc.send_briefing(
+            to_email=email,
+            briefing_content=select_briefing_content(item, locale),
+            source=source,
+            period=period,
+            date_str=target,
+        )
+    except BriefingDeliveryError as exc:
+        raise HTTPException(status_code=503, detail=exc.detail) from exc
     return target
 
 

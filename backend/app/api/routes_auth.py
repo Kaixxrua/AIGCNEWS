@@ -26,7 +26,12 @@ from backend.app.repositories.user_account_repository import UserAccountReposito
 from backend.app.services.auth import account_lifecycle
 from backend.app.services.auth.adapters import build_account_lifecycle
 from backend.app.services.auth.rate_limit import RateLimitExceededError, hit_rate_limit
-from backend.app.services.email_service import EmailService, build_email_service
+from backend.app.services.email_service import (
+    EmailService,
+    OtpDeliveryUnavailableError,
+    OtpSendRateLimitedError,
+    build_email_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +194,12 @@ async def send_email_otp(body: SendEmailOtpRequest, request: Request) -> dict[st
     """
     await _enforce_rate_limit(request, action="auth.send_email_otp", limit=_OTP_SEND_RATE_LIMIT)
     email_svc = _get_email_service(request)
-    await email_svc.send_otp(str(body.email))
+    try:
+        await email_svc.send_otp(str(body.email))
+    except OtpSendRateLimitedError as exc:
+        raise HTTPException(status_code=429, detail=exc.detail) from exc
+    except OtpDeliveryUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=exc.detail) from exc
     return {"detail": "验证码已发送"}
 
 
@@ -208,7 +218,12 @@ async def send_password_reset_otp(
         otp=_get_email_service(request),
         password_hasher=hash_password,
     )
-    await lifecycle.request_password_reset_otp(email=str(body.email))
+    try:
+        await lifecycle.request_password_reset_otp(email=str(body.email))
+    except OtpSendRateLimitedError as exc:
+        raise HTTPException(status_code=429, detail=exc.detail) from exc
+    except OtpDeliveryUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=exc.detail) from exc
     return {"detail": "如果该邮箱已注册，验证码将发送至该邮箱"}
 
 

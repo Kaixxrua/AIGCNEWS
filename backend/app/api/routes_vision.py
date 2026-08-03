@@ -30,7 +30,7 @@ import traceback
 from typing import Any, AsyncGenerator, List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
@@ -39,7 +39,10 @@ from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.services.chat.conversation_service import ConversationService
-from backend.app.services.chat.quota_policy import check_user_message_limit
+from backend.app.services.chat.quota_policy import (
+    MessageLimitExceededError,
+    check_user_message_limit,
+)
 from backend.app.services.vision import relay as vision_relay_service
 from backend.app.services.vision.image_cache import ScreenshotImageCache
 from backend.app.services.vision.provider import VISION_SYSTEM, VisionProvider
@@ -174,11 +177,22 @@ async def vision_relay(
     - 前端先调用 /chat/upload-screenshot 上传截图，拿到 image_id
     - 本接口从内存缓存取 base64，用 httpx 直调 SiliconFlow API 流式输出
     """
-    check_user_message_limit(
-        user,
-        conversations,
-        limit=settings.USER_DAILY_MESSAGE_LIMIT,
-    )
+    try:
+        check_user_message_limit(
+            user,
+            conversations,
+            limit=settings.USER_DAILY_MESSAGE_LIMIT,
+        )
+    except MessageLimitExceededError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "message_limit_exceeded",
+                "message": str(exc),
+                "limit": exc.limit,
+                "used": exc.used,
+            },
+        ) from exc
     return StreamingResponse(
         _vision_relay_stream(
             request_body,

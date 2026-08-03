@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import AsyncIterator
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -32,7 +33,7 @@ from backend.app.services.papers.arxiv_identity import (
     extract_arxiv_id,
     pdf_response_headers,
 )
-from backend.app.services.papers.pdf_relay import PdfRelay
+from backend.app.services.papers.pdf_relay import PdfRelay, PdfRelayUpstreamError
 from backend.app.services.papers.presentation import (
     local_pdf_redirect_url,
     project_pdf_media_url,
@@ -50,6 +51,19 @@ def _enrich_pdf_url(doc: Dict[str, Any], request: Request) -> Dict[str, Any]:
 def _safe_doc(row: Dict[str, Any]) -> Dict[str, Any]:
     """Compatibility wrapper for the extracted safe serialization policy."""
     return safe_document(row)
+
+
+async def _relay_pdf_stream(
+    relay: PdfRelay,
+    url: str,
+    headers: Dict[str, str],
+) -> AsyncIterator[bytes]:
+    """Relay the upstream PDF stream, mapping domain errors to HTTP at the edge."""
+    try:
+        async for chunk in relay.stream(url, headers):
+            yield chunk
+    except PdfRelayUpstreamError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.get("/papers/search")
@@ -115,7 +129,7 @@ async def proxy_arxiv_pdf(
         )
 
     return StreamingResponse(
-        relay.stream(arxiv_pdf_url(arxiv_id), ARXIV_REQUEST_HEADERS),
+        _relay_pdf_stream(relay, arxiv_pdf_url(arxiv_id), ARXIV_REQUEST_HEADERS),
         media_type="application/pdf",
         headers=pdf_response_headers(arxiv_id),
     )

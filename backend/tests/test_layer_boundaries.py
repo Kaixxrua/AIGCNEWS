@@ -28,3 +28,19 @@ def test_services_layer_does_not_import_api_layer() -> None:
         ):
             offenders.append(str(path))
     assert offenders == [], f"services → api 反向依赖: {offenders}"
+
+
+def test_services_layer_does_not_import_fastapi_http_exception() -> None:
+    """服务层禁止 import fastapi.HTTPException：抛领域异常，HTTP 映射在路由层。"""
+    offenders: list[str] = []
+    for path in sorted(_SERVICES_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith("fastapi")
+                and any(alias.name == "HTTPException" for alias in node.names)
+            ):
+                offenders.append(str(path))
+    assert offenders == [], f"services 层 import HTTPException: {offenders}"

@@ -28,7 +28,10 @@ from backend.app.models.schema_chat import (
 )
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.services.chat.conversation_service import ConversationService
-from backend.app.services.chat.quota_policy import check_user_message_limit
+from backend.app.services.chat.quota_policy import (
+    MessageLimitExceededError,
+    check_user_message_limit,
+)
 from backend.app.services.rag.chat_service import ChatService
 
 router = APIRouter()
@@ -36,11 +39,22 @@ router = APIRouter()
 
 def _check_user_message_limit(user_payload: dict, quota_reader: ConversationRepository) -> None:
     """Compatibility seam for the shared chat quota policy."""
-    check_user_message_limit(
-        user_payload,
-        quota_reader,
-        limit=settings.USER_DAILY_MESSAGE_LIMIT,
-    )
+    try:
+        check_user_message_limit(
+            user_payload,
+            quota_reader,
+            limit=settings.USER_DAILY_MESSAGE_LIMIT,
+        )
+    except MessageLimitExceededError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "message_limit_exceeded",
+                "message": str(exc),
+                "limit": exc.limit,
+                "used": exc.used,
+            },
+        ) from exc
 
 
 def _build_attachment_refs(attachment_ids: List[str]) -> List[Dict[str, Any]]:
