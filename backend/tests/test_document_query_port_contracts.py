@@ -4,49 +4,12 @@ import ast
 import asyncio
 from pathlib import Path
 import re
-import sys
-import types
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
 from starlette.requests import Request
 
-
-# Keep this contract file isolated from runtime model/database configuration and .env.
-config_module = types.ModuleType("backend.app.core.config")
-config_module.settings = types.SimpleNamespace(
-    mcp_github_fallback_enabled=False,
-    mcp_github_fallback_use_token=False,
-    mcp_github_fallback_timeout_seconds=8.0,
-    project_semantic_search_enabled=False,
-    project_semantic_query_timeout_seconds=1.5,
-    github_token="",
-    ACCESS_TOKEN_EXPIRE_MINUTES=60,
-    JWT_SECRET_KEY="test-secret",
-    JWT_ALGORITHM="HS256",
-    SMTP_HOST="",
-    SMTP_PORT=587,
-    SMTP_USERNAME="",
-    SMTP_PASSWORD="",
-    SMTP_FROM_EMAIL="",
-    SMTP_FROM_NAME="",
-    SMTP_USE_TLS=True,
-)
-sys.modules.setdefault("backend.app.core.config", config_module)
-
-model_factory_module = types.ModuleType("backend.app.core.model_factory")
-model_factory_module.get_chat_model = MagicMock
-model_factory_module.get_embedding_model = MagicMock
-sys.modules.setdefault("backend.app.core.model_factory", model_factory_module)
-
-for module_name, class_name in (
-    ("backend.app.repositories.graph_repo", "GraphRepository"),
-    ("backend.app.repositories.milvus_repo", "MilvusRepository"),
-):
-    module = types.ModuleType(module_name)
-    setattr(module, class_name, type(class_name, (), {}))
-    sys.modules.setdefault(module_name, module)
 
 from backend.app.services.mcp.inbound import tools as inbound_tools
 from backend.app.services.rag import database_tools

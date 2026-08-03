@@ -1,27 +1,7 @@
 import asyncio
-import sys
 import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock
-
-config_module = types.ModuleType("backend.app.core.config")
-config_module.settings = types.SimpleNamespace(
-    mcp_github_fallback_enabled=True,
-    mcp_github_fallback_use_token=False,
-    mcp_github_fallback_timeout_seconds=8.0,
-    project_semantic_search_enabled=False,
-    project_ai_search_strategy="legacy",
-    project_search_shadow_sample_rate=0.0,
-    project_search_shadow_workers=1,
-    project_search_shadow_capacity=1,
-    project_search_shadow_timeout_seconds=1.0,
-    project_search_shadow_recent_case_limit=10,
-    project_semantic_query_timeout_seconds=6.0,
-    project_reranker_enabled=False,
-    project_reranker_candidate_limit=20,
-    github_token="",
-)
-sys.modules.setdefault("backend.app.core.config", config_module)
 
 from backend.app.repositories.project_catalog import (
     ProjectLexicalCandidate,

@@ -5,10 +5,6 @@ import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-config = types.ModuleType("backend.app.core.config")
-config.settings = MagicMock()
-sys.modules.setdefault("backend.app.core.config", config)
-
 from backend.app.core import scheduler
 from backend.app.services.ingestion.crawlers.arxiv_crawler import ArxivCrawler
 from backend.app.services.ingestion.composition import IngestionDependencies
