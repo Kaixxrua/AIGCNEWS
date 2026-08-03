@@ -140,7 +140,9 @@ class Settings(BaseSettings):
     huggingface_token: str = ""
 
     # JWT 鉴权配置
-    JWT_SECRET_KEY: str = "change-me-in-production"
+    # 无默认值：缺失或仍为公开示例值时应用拒绝启动（见 core/auth.validate_jwt_secret）。
+    # 生成方式：openssl rand -hex 32
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7天
 

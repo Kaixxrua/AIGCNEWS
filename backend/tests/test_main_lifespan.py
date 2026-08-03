@@ -19,6 +19,7 @@ def _settings(*, scheduler_enabled: bool = False) -> SimpleNamespace:
         redis_db=0,
         redis_password="",
         env="test",
+        JWT_SECRET_KEY="test-only-jwt-secret-key-with-32+chars",
     )
 
 

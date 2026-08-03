@@ -36,6 +36,33 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
+# 历史上随仓库公开的示例密钥：任何出现在此集合中的值都必须视为已泄漏。
+KNOWN_INSECURE_JWT_SECRETS: frozenset[str] = frozenset(
+    {
+        "change-me-in-production",
+        "change-me-in-production-use-a-long-random-string",
+    }
+)
+
+MIN_JWT_SECRET_LENGTH = 32
+
+
+def validate_jwt_secret(secret: str) -> None:
+    """Fail fast when the JWT signing secret is missing, leaked, or too weak.
+
+    使用公开默认密钥意味着任何人都能离线伪造 admin token，因此必须拒绝启动。
+    """
+    if not secret or secret in KNOWN_INSECURE_JWT_SECRETS:
+        raise RuntimeError(
+            "JWT_SECRET_KEY 未配置或仍为公开的示例值，拒绝启动。"
+            "请使用 `openssl rand -hex 32` 生成强随机密钥并写入 .env。"
+        )
+    if len(secret) < MIN_JWT_SECRET_LENGTH:
+        raise RuntimeError(
+            f"JWT_SECRET_KEY 长度不足 {MIN_JWT_SECRET_LENGTH} 字符，拒绝启动。"
+            "请使用 `openssl rand -hex 32` 生成强随机密钥并写入 .env。"
+        )
+
 
 def create_access_token(data: dict[str, Any]) -> str:
     """生成 JWT，过期时间 = 当前时间 + ACCESS_TOKEN_EXPIRE_MINUTES。"""

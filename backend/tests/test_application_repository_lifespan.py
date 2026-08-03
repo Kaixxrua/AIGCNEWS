@@ -23,6 +23,7 @@ def test_lifespan_builds_postgres_application_composition(monkeypatch) -> None:
         redis_db=0,
         redis_password="",
         env="test",
+        JWT_SECRET_KEY="test-only-jwt-secret-key-with-32+chars",
     ))
     factory = MagicMock(return_value=repositories)
     monkeypatch.setattr(main, "create_application_repositories", factory)

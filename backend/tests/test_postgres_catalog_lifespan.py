@@ -27,6 +27,7 @@ def _settings() -> SimpleNamespace:
         redis_db=0,
         redis_password="",
         env="production",
+        JWT_SECRET_KEY="test-only-jwt-secret-key-with-32+chars",
     )
 
 

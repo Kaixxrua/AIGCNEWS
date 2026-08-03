@@ -28,6 +28,7 @@ from backend.app.api import (
 )
 from backend.app.api import routes_ops
 from backend.app.core.config import settings
+from backend.app.core.auth import validate_jwt_secret
 from backend.app.core.model_factory import (
     configure_model_provider_runtime,
     configure_runtime_provider_settings,
@@ -121,6 +122,9 @@ async def _close_redis_client(redis_client: Redis) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Own application resources from startup through failure-isolated shutdown."""
+    # 安全检查必须先于一切资源初始化：公开/缺失的 JWT 密钥等于管理端点完全失守。
+    validate_jwt_secret(getattr(settings, "JWT_SECRET_KEY", ""))
+
     postgres_opened = False
     repositories_configured = False
     project_search_runtime: ApplicationProjectSearchRuntime | None = None
