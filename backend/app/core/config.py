@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     milvus_metric_type: str = "COSINE"
     project_semantic_search_enabled: bool = False
     project_ai_search_strategy: Literal["legacy", "shadow", "v2"] = "legacy"
+    project_search_adoption_weight: float = 0.006
     project_search_shadow_sample_rate: float = 0.0
     project_search_shadow_workers: int = 2
     project_search_shadow_capacity: int = 8
@@ -124,10 +125,6 @@ class Settings(BaseSettings):
     kimi_base_url: str = "https://api.moonshot.cn/v1"
     kimi_model: str = "kimi-k2-turbo-preview"
 
-    # 旧三方搜索 API Keys（保留兼容，已废弃）
-    tavily_api_key: str = ""
-    brave_search_api_key: str = ""
-
     arxiv_mcp_url: str = ""
     github_mcp_url: str = ""
     news_source_url: str = ""
@@ -148,7 +145,6 @@ class Settings(BaseSettings):
 
     # Redis OTP 配置
     REDIS_URL: str = "redis://localhost:6379/0"
-    SMS_API_KEY: str = ""  # 保留兼容旧字段，新流程使用 EmailService
 
     # SMTP 邮件配置（Phase 4 邮箱验证码）
     # SMTP_HOST 为空时进入 dev 模式，验证码打印到日志
@@ -172,6 +168,11 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173,https://aigcnews.cn,https://www.aigcnews.cn"
 
     sse_heartbeat_interval: int = 15
+
+    # 生产环境危险操作的第二授权通道（独立于 CLI 参数的环境授权，
+    # 双通道同时满足才放行；settings 启动时从环境读取一次）。
+    github_watcher_repair_production_authorized: bool = False
+    project_catalog_migration_production_authorized: bool = False
 
     scheduler_enabled: bool = True
     scheduler_timezone: str = "Asia/Shanghai"

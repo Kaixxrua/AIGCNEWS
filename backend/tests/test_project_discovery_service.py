@@ -1,6 +1,7 @@
 import asyncio
 import types
 import unittest
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.repositories.project_catalog import (
@@ -642,6 +643,95 @@ class ProjectDiscoveryTests(unittest.TestCase):
             repo.list_projects.call_args.kwargs["candidate_repo_ids"][0],
             "owner/exact-tool",
         )
+
+    def _run_v2_adoption_search(self, repo: Any) -> list[str]:
+        original_strategy = project_discovery.settings.project_ai_search_strategy
+        original_weight = project_discovery.settings.project_search_adoption_weight
+        original_semantic = project_discovery.settings.project_semantic_search_enabled
+        project_discovery.settings.project_ai_search_strategy = "v2"
+        project_discovery.settings.project_search_adoption_weight = 0.006
+        project_discovery.settings.project_semantic_search_enabled = False
+        try:
+            asyncio.run(
+                project_discovery.search_projects(
+                    query="AI coding agent CLI",
+                    mode="ai",
+                    repository_factory=lambda: repo,
+                )
+            )
+        finally:
+            project_discovery.settings.project_ai_search_strategy = original_strategy
+            project_discovery.settings.project_search_adoption_weight = original_weight
+            project_discovery.settings.project_semantic_search_enabled = original_semantic
+        return repo.list_projects.call_args.kwargs["candidate_repo_ids"]
+
+    def _build_v2_adoption_repository(self, *, with_stars_map: bool) -> Any:
+        class AdoptionRepository:
+            def __init__(self) -> None:
+                self.find_lexical_candidate_repo_ids = MagicMock(return_value=[])
+                self.find_lexical_candidate_lanes = MagicMock(
+                    return_value=ProjectLexicalCandidateLanes(
+                        strict=(
+                            ProjectLexicalCandidate(
+                                "owner/fresh-fit", "strict", term_coverage=3
+                            ),
+                        ),
+                        relaxed=tuple(
+                            ProjectLexicalCandidate(
+                                f"owner/filler-{index}", "relaxed", term_coverage=1
+                            )
+                            for index in range(29)
+                        )
+                        + (
+                            ProjectLexicalCandidate(
+                                "owner/veteran", "relaxed", term_coverage=1
+                            ),
+                        ),
+                    )
+                )
+                if with_stars_map:
+                    self.get_project_stars_map = MagicMock(
+                        return_value={
+                            "owner/veteran": 106_000,
+                            "owner/fresh-fit": 20_000,
+                            **{
+                                f"owner/filler-{index}": 800
+                                for index in range(29)
+                            },
+                        }
+                    )
+                self.list_projects = MagicMock(
+                    return_value={
+                        "items": [{"full_name": "owner/fresh-fit", "stars": 20_000}],
+                        "total": 1,
+                    }
+                )
+
+        return AdoptionRepository()
+
+    def test_v2_strategy_adoption_stars_rescue_buried_high_star_candidate(self) -> None:
+        without_stars = self._run_v2_adoption_search(
+            self._build_v2_adoption_repository(with_stars_map=False)
+        )
+        with_stars = self._run_v2_adoption_search(
+            self._build_v2_adoption_repository(with_stars_map=True)
+        )
+
+        # 无星数来源时保持纯拟合行为：元老只有 deep relaxed 单 lane，被埋
+        self.assertGreater(without_stars.index("owner/veteran"), 4)
+        # 有采用度压舱石时：元老被救到第 2 位，拟合冠军仍居首
+        self.assertEqual(with_stars[0], "owner/fresh-fit")
+        self.assertEqual(with_stars[1], "owner/veteran")
+        self.assertEqual(set(with_stars), set(without_stars))
+
+    def test_v2_strategy_adoption_lookup_failure_falls_back_to_fit_only(self) -> None:
+        repo = self._build_v2_adoption_repository(with_stars_map=True)
+        repo.get_project_stars_map = MagicMock(side_effect=RuntimeError("pg down"))
+
+        ranked = self._run_v2_adoption_search(repo)
+
+        self.assertEqual(ranked[0], "owner/fresh-fit")
+        self.assertGreater(ranked.index("owner/veteran"), 4)
 
     def test_scope_defaults_resolve_consistently(self) -> None:
         self.assertEqual(project_discovery.resolve_project_sort("all", None), "stars")

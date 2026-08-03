@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -47,6 +49,8 @@ def rank_v2_project_candidate_ids(
     exact_repo_id: str = "",
     rank_constant: int = 60,
     limit: int = 200,
+    adoption_stars: Mapping[str, int] | None = None,
+    adoption_weight: float = 0.0,
 ) -> list[str]:
     scores: dict[str, float] = {}
     best_rank: dict[str, int] = {}
@@ -69,6 +73,22 @@ def rank_v2_project_candidate_ids(
             if candidate is not None:
                 coverage[repo_id] = max(coverage.get(repo_id, 0), candidate.term_coverage)
                 strength[repo_id] = max(strength.get(repo_id, 0), candidate.match_strength)
+    # 采用度压舱石：只对拟合 lane 已选出的候选加分，fame 无法单飞入榜。
+    # log 压缩 + 相对候选集最大值归一，让 10 万星元老从 lane 位次噪声里被救回，
+    # 而权重上限保证多 lane 拟合冠军不被罢黜。
+    if adoption_weight > 0 and isinstance(adoption_stars, Mapping):
+        eligible = [
+            (repo_id, int(stars))
+            for raw_repo_id, stars in adoption_stars.items()
+            if (repo_id := str(raw_repo_id or "").strip()) in scores
+            and isinstance(stars, (int, float))
+            and int(stars) > 0
+        ]
+        if eligible:
+            denominator = math.log1p(max(stars for _, stars in eligible))
+            if denominator > 0:
+                for repo_id, stars in eligible:
+                    scores[repo_id] += adoption_weight * (math.log1p(stars) / denominator)
     normalized_exact = exact_repo_id.strip().casefold()
     return sorted(
         scores,

@@ -251,11 +251,34 @@ async def search_projects(
         )
         exact_repo_id = query if _EXACT_REPO_QUERY.fullmatch(query) else ""
         if strategy == "v2" and lanes is not None:
+            adoption_stars: dict[str, int] = {}
+            adoption_weight = float(
+                getattr(settings, "project_search_adoption_weight", 0.0) or 0.0
+            )
+            stars_lookup = _declared_callable(repository, "get_project_stars_map")
+            if adoption_weight > 0 and callable(stars_lookup):
+                candidate_id_pool = list(
+                    dict.fromkeys(
+                        [candidate.repo_id for candidate in lanes.strict]
+                        + [candidate.repo_id for candidate in lanes.relaxed]
+                        + list(candidate_search.semantic_repo_ids)
+                    )
+                )
+                try:
+                    adoption_stars = await asyncio.to_thread(stars_lookup, candidate_id_pool)
+                except Exception:
+                    logger.warning(
+                        "project search adoption stars lookup failed; falling back to fit-only ranking",
+                        exc_info=True,
+                    )
+                    adoption_stars = {}
             candidate_repo_ids = rank_v2_project_candidate_ids(
                 lanes.strict,
                 lanes.relaxed,
                 candidate_search.semantic_repo_ids,
                 exact_repo_id=exact_repo_id,
+                adoption_stars=adoption_stars,
+                adoption_weight=adoption_weight,
             )
         else:
             candidate_repo_ids = legacy_repo_ids

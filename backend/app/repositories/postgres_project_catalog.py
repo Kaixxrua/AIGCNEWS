@@ -295,6 +295,30 @@ class PostgresProjectCatalogRepository:
             relaxed=candidates("relaxed"),
         )
 
+    def get_project_stars_map(self, repo_ids: list[str]) -> dict[str, int]:
+        """采用度压舱石的星数查询；awesome/清单类仓库不参与采用度加成，防清单劫持。"""
+        ids = [str(value).strip() for value in repo_ids if str(value or "").strip()][:400]
+        if not ids:
+            return {}
+        with self._transaction() as connection:
+            with connection.cursor() as cursor:
+                self._begin_read(cursor)
+                cursor.execute(
+                    """
+                    SELECT repo_id, COALESCE(stars, 0) AS stars
+                    FROM github_repo_candidates
+                    WHERE repo_id = ANY(%s)
+                      AND POSITION(%s IN LOWER(full_name)) = 0
+                    """,
+                    (ids, "awesome"),
+                )
+                rows = cursor.fetchall()
+        return {
+            str(row.get("repo_id") or ""): int(row.get("stars") or 0)
+            for row in rows
+            if row.get("repo_id")
+        }
+
     def list_projects(
         self,
         *,
