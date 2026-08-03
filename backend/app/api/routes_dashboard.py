@@ -18,12 +18,41 @@ from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
 from backend.app.repositories.document_repository import DocumentStatisticsReader
+from backend.app.repositories.project_catalog_factory import get_project_catalog_repository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.repositories.user_account_repository import UserStatisticsReader
 from backend.app.services.dashboard import policy
 from backend.app.services.dashboard.query_service import DashboardQueryService
 
 router = APIRouter()
+
+
+async def _github_library_count() -> Optional[int]:
+    """项目库 GitHub 收录总量（与 /projects 列表同一查询口径）。
+
+    documents 表里的 github 行只是 trending 快照流水，数量远小于
+    用户实际可浏览的项目库；统计卡片应展示项目库收录量。
+    查询失败时返回 None，由调用方回退到 documents 表计数。
+    """
+
+    def _query() -> int:
+        result = get_project_catalog_repository().list_projects(
+            source="github", scope="all", page=1, page_size=1, sort="stars"
+        )
+        return int(result.get("total") or 0)
+
+    try:
+        return await asyncio.to_thread(_query)
+    except Exception:
+        return None
+
+
+async def _get_source_counts(document_statistics: DocumentStatisticsReader) -> dict[str, int]:
+    source_counts = await asyncio.to_thread(document_statistics.get_source_counts)
+    github_library_count = await _github_library_count()
+    if github_library_count is not None:
+        source_counts = {**source_counts, "github": github_library_count}
+    return source_counts
 
 
 def _dashboard_cache_key_builder(
@@ -231,7 +260,7 @@ async def get_dashboard_summary(
 
     # 静默期拦截：返回空排行数据，但统计卡片仍显示全库累计数量
     if board["is_embargoed"]:
-        source_counts_embargo = await asyncio.to_thread(document_statistics.get_source_counts)
+        source_counts_embargo = await _get_source_counts(document_statistics)
         total_embargo = sum(source_counts_embargo.values())
         registered_users = await asyncio.to_thread(user_statistics.get_user_count)
         today_registered_users = await asyncio.to_thread(
@@ -266,7 +295,7 @@ async def get_dashboard_summary(
     # ── 统计卡片数据 ──────────────────────────────────────────────
     # 始终使用全库累计统计，数字不随日期切换而变化，
     # 展示的是每个来源在数据库中的实际入库总量。
-    source_counts = await asyncio.to_thread(document_statistics.get_source_counts)
+    source_counts = await _get_source_counts(document_statistics)
     total_documents = sum(source_counts.values())
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
     today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)

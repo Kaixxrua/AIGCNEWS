@@ -361,3 +361,75 @@ def test_radar_scoring_preserves_weighting_rounding_and_neutral_floor() -> None:
         {"name": "数据与评测", "value": 77},
         {"name": "系统与部署", "value": 30},
     ]
+
+
+class FakeDocumentStatistics:
+    def get_source_counts(self) -> dict[str, int]:
+        return {"arxiv": 5, "github": 461, "news": 7}
+
+    def get_today_document_count(self) -> int:
+        return 3
+
+
+class FakeUserStatistics:
+    def get_user_count(self) -> int:
+        return 13
+
+    def get_today_registered_user_count(self) -> int:
+        return 0
+
+
+def _summary_client(monkeypatch, catalog_factory) -> TestClient:
+    from backend.app.api.dependencies import (
+        get_document_repository,
+        get_user_account_repository,
+    )
+
+    monkeypatch.setattr(routes_dashboard, "get_project_catalog_repository", catalog_factory)
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_rank_snapshot_repository] = lambda: FakeRankSnapshotReader()
+    app.dependency_overrides[get_document_repository] = lambda: FakeDocumentStatistics()
+    app.dependency_overrides[get_user_account_repository] = lambda: FakeUserStatistics()
+    return TestClient(app)
+
+
+def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class FakeCatalog:
+        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
+            calls.append(kwargs)
+            return {"items": [], "total": 6983, "page": 1, "page_size": 1}
+
+    client = _summary_client(monkeypatch, lambda: FakeCatalog())
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
+    try:
+        response = client.get("/api/dashboard/summary?period=daily&date=2020-01-02")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    stats = response.json()["stats"]
+    assert stats["source_counts"] == {"arxiv": 5, "github": 6983, "news": 7}
+    assert stats["total_documents"] == 5 + 6983 + 7
+    assert calls == [
+        {"source": "github", "scope": "all", "page": 1, "page_size": 1, "sort": "stars"}
+    ]
+
+
+def test_summary_github_stat_falls_back_to_documents_when_catalog_unavailable(monkeypatch) -> None:
+    def broken_factory():
+        raise RuntimeError("catalog down")
+
+    client = _summary_client(monkeypatch, broken_factory)
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
+    try:
+        response = client.get("/api/dashboard/summary?period=weekly&date=2020-01-02")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    stats = response.json()["stats"]
+    assert stats["source_counts"] == {"arxiv": 5, "github": 461, "news": 7}
+    assert stats["total_documents"] == 5 + 461 + 7
