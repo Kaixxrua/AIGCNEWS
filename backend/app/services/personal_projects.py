@@ -4,17 +4,17 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
-from backend.app.repositories.project_write_repository import (
-    ToolWebsiteEnrichmentRepository,
-    UserProjectCollectionRepository,
-)
-from backend.app.services.ingestion.project_taxonomy import (
+from backend.app.domain.project_taxonomy import (
     ENGLISH_LABEL_BY_SLUG,
     WEBSITE_CATEGORY_BY_SLUG,
     WEBSITE_DEFAULT_SUBCATEGORY_BY_CATEGORY,
     WEBSITE_SUBCATEGORY_BY_CATEGORY_SLUG,
     clean_text,
     normalize_subcategory,
+)
+from backend.app.repositories.project_write_repository import (
+    ToolWebsiteEnrichmentRepository,
+    UserProjectCollectionRepository,
 )
 from backend.app.services.ingestion.tool_website_fetcher import ToolWebsiteFetchError
 

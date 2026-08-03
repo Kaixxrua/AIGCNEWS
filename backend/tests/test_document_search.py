@@ -8,12 +8,12 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_papers
 from backend.app.api.dependencies import get_document_repository
-from backend.app.repositories.postgres_document_repository import (
-    _document_search_candidates,
-)
-from backend.app.services.search_semantics import (
+from backend.app.domain.search_semantics import (
     escape_like_literal,
     normalize_search_query,
+)
+from backend.app.repositories.postgres_document_repository import (
+    _document_search_candidates,
 )
 
 

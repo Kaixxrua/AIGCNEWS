@@ -302,7 +302,7 @@ def _projects_response(
 
 
 def _taxonomy_items() -> list[dict[str, Any]]:
-    from backend.app.services.ingestion.project_taxonomy import WEBSITE_TAXONOMY
+    from backend.app.domain.project_taxonomy import WEBSITE_TAXONOMY
 
     return [
         {

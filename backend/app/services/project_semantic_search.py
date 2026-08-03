@@ -6,11 +6,11 @@ from threading import Lock
 from typing import Any
 
 from backend.app.core.config import settings
-from backend.app.repositories.project_vector_repo import ProjectVectorRepository
-from backend.app.services.search_semantics import (
+from backend.app.domain.search_semantics import (
     ProjectSearchIntent,
     build_project_search_intent,
 )
+from backend.app.repositories.project_vector_repo import ProjectVectorRepository
 
 logger = logging.getLogger(__name__)
 _WARMUP_QUERY = "AI developer tools and open source projects"

@@ -54,7 +54,7 @@ def load_catalog_cases() -> dict[str, Any]:
 
 
 def test_taxonomy_exposes_complete_bilingual_labels_with_chinese_legacy_aliases() -> None:
-    from backend.app.services.ingestion.project_taxonomy import (
+    from backend.app.domain.project_taxonomy import (
         PROJECT_TAXONOMY,
         WEBSITE_TAXONOMY,
     )

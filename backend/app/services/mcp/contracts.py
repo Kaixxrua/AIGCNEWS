@@ -14,11 +14,11 @@ from pydantic import (
     model_validator,
 )
 
-from backend.app.services.ingestion.project_taxonomy import (
+from backend.app.domain.project_taxonomy import (
     CATEGORY_BY_SLUG,
     SUBCATEGORY_BY_CATEGORY_SLUG,
 )
-from backend.app.services.search_semantics import (
+from backend.app.domain.search_semantics import (
     ProjectIntentClass,
     ProjectQueryLanguage,
     build_client_project_search_intent,

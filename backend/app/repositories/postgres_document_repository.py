@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-from backend.app.services.search_semantics import (
+from backend.app.domain.search_semantics import (
     TECHNICAL_TOKEN_RE,
     escape_like_literal,
     normalize_search_query,

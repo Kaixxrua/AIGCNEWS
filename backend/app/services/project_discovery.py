@@ -7,6 +7,13 @@ import re
 from typing import Any, Literal
 
 from backend.app.core.config import settings
+from backend.app.domain.search_semantics import (
+    ProjectSearchIntent,
+    build_client_project_search_intent,
+    build_project_lexical_retrieval_plan,
+    build_project_search_intent,
+    normalize_search_query,
+)
 from backend.app.repositories.project_catalog import ProjectLexicalCandidateLanes
 from backend.app.repositories.project_catalog_factory import (
     get_project_catalog_repository,
@@ -22,13 +29,6 @@ from backend.app.services.project_search_ranking import (
     rank_v2_project_candidate_ids,
 )
 from backend.app.services.project_semantic_search import get_project_semantic_search
-from backend.app.services.search_semantics import (
-    ProjectSearchIntent,
-    build_client_project_search_intent,
-    build_project_lexical_retrieval_plan,
-    build_project_search_intent,
-    normalize_search_query,
-)
 
 logger = logging.getLogger(__name__)
 

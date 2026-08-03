@@ -8,11 +8,11 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
+from backend.app.domain.project_taxonomy import ENGLISH_LABEL_BY_SLUG
 from backend.app.repositories.postgres_project_catalog import (
     PostgresProjectCatalogRepository,
 )
 from backend.app.repositories.project_catalog_normalization import normalize_project_row
-from backend.app.services.ingestion.project_taxonomy import ENGLISH_LABEL_BY_SLUG
 
 
 def _iso(value: Any) -> str | None:

@@ -9,6 +9,16 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
+from backend.app.domain.project_taxonomy import (
+    DEFAULT_SUBCATEGORY_BY_CATEGORY,
+    PROJECT_TAXONOMY,
+    WEBSITE_DEFAULT_SUBCATEGORY_BY_CATEGORY,
+    WEBSITE_TAXONOMY,
+)
+from backend.app.domain.search_semantics import (
+    escape_like_literal,
+    project_search_terms,
+)
 from backend.app.repositories.project_catalog import (
     ProjectLexicalCandidate,
     ProjectLexicalCandidateLanes,
@@ -17,16 +27,6 @@ from backend.app.repositories.project_catalog import (
 from backend.app.repositories.project_catalog_normalization import (
     format_project_category_counts,
     normalize_project_row,
-)
-from backend.app.services.ingestion.project_taxonomy import (
-    DEFAULT_SUBCATEGORY_BY_CATEGORY,
-    PROJECT_TAXONOMY,
-    WEBSITE_DEFAULT_SUBCATEGORY_BY_CATEGORY,
-    WEBSITE_TAXONOMY,
-)
-from backend.app.services.search_semantics import (
-    escape_like_literal,
-    project_search_terms,
 )
 
 GITHUB_PROJECT_TODAY_LIMIT = 50

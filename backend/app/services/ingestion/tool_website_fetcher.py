@@ -14,7 +14,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from backend.app.core.config import settings
-from backend.app.services.ingestion.project_taxonomy import clean_text
+from backend.app.domain.project_taxonomy import clean_text
 from backend.app.services.outbound_target_policy import (
     OutboundTargetPolicyError,
     normalize_http_url,

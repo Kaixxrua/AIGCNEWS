@@ -143,7 +143,7 @@ class DatabaseDependencyTests(unittest.TestCase):
                 readiness,
             ),
             patch(
-                "backend.app.services.ingestion.project_taxonomy.WEBSITE_TAXONOMY",
+                "backend.app.domain.project_taxonomy.WEBSITE_TAXONOMY",
                 taxonomy,
             ),
             patch(

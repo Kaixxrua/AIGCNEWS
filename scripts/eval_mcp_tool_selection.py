@@ -11,7 +11,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-
 EXACT_PROMPT = "帮我找一下有没有github开源的哪个Windows的截图软件截图效果和macos的ishot一样，截图出来的图片是可以自定义为圆角的"
 PROBES = {
     "exact": {

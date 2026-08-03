@@ -179,9 +179,10 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("--baseline is required for postgres and rollback phases")
 
     from fastapi.testclient import TestClient
-    from backend.app.core.auth import RequireAdmin
+
     from backend.app import main as application
     from backend.app.api import routes_report
+    from backend.app.core.auth import RequireAdmin
 
     async def deterministic_briefing_stream(*args: Any, **kwargs: Any):
         yield "data: " + json.dumps(

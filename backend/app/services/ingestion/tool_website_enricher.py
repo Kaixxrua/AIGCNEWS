@@ -12,13 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.app.core.config import settings
 from backend.app.core.model_factory import get_chat_model
-from backend.app.repositories.project_write_repository import (
-    ToolWebsiteEnrichmentRepository,
-)
-from backend.app.repositories.runtime_provider_repository import (
-    RuntimeProviderSettingReader,
-)
-from backend.app.services.ingestion.project_taxonomy import (
+from backend.app.domain.project_taxonomy import (
     PROMPT_VERSION,
     WEBSITE_CATEGORY_BY_SLUG,
     WEBSITE_CATEGORY_PROMPT,
@@ -31,6 +25,12 @@ from backend.app.services.ingestion.project_taxonomy import (
     normalize_subcategory,
     normalize_tags,
     parse_json_object,
+)
+from backend.app.repositories.project_write_repository import (
+    ToolWebsiteEnrichmentRepository,
+)
+from backend.app.repositories.runtime_provider_repository import (
+    RuntimeProviderSettingReader,
 )
 from backend.app.services.ingestion.tool_website_fetcher import (
     ToolWebsiteMetadata,

@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from backend.app.domain.project_taxonomy import normalize_enrichment
 from backend.app.services.ingestion.github_project_enricher import GitHubProjectEnricher
-from backend.app.services.ingestion.project_taxonomy import normalize_enrichment
 
 
 def make_enricher() -> tuple[GitHubProjectEnricher, MagicMock]:

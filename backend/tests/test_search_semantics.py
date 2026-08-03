@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.app.services.search_semantics import (
+from backend.app.domain.search_semantics import (
     build_client_project_search_intent,
     build_project_lexical_retrieval_plan,
     build_project_search_intent,

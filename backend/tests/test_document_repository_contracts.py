@@ -4,6 +4,7 @@ import inspect
 import unittest
 from typing import Any
 
+from backend.app.domain.search_semantics import escape_like_literal
 from backend.app.repositories.document_repository import (
     DocumentAdminWriter,
     DocumentFeedReader,
@@ -17,7 +18,6 @@ from backend.app.repositories.document_repository import (
 from backend.app.repositories.postgres_document_repository import (
     _document_search_candidates,
 )
-from backend.app.services.search_semantics import escape_like_literal
 
 
 def _without_annotations(function: Any) -> inspect.Signature:

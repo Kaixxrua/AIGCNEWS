@@ -252,7 +252,7 @@ def get_scheduler_admin_service(request: Request) -> SchedulerAdminService:
 
 def get_ops_diagnostics_service(request: Request) -> OpsDiagnosticsService:
     from backend.app.core.config import settings
-    from backend.app.services.ingestion.project_taxonomy import WEBSITE_TAXONOMY
+    from backend.app.domain.project_taxonomy import WEBSITE_TAXONOMY
     from backend.app.services.project_catalog_readiness import (
         project_catalog_runtime_readiness,
     )

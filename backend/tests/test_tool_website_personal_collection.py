@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-from backend.app.services.ingestion.project_taxonomy import (
+from backend.app.domain.project_taxonomy import (
     PROMPT_VERSION,
     EnrichmentResult,
     extract_message_text,

@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.app.services.ingestion.project_taxonomy import (
+from backend.app.domain.project_taxonomy import (
     CATEGORY_BY_SLUG,
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
     ENGLISH_LABEL_BY_SLUG,

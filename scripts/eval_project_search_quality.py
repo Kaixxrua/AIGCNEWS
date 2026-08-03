@@ -8,7 +8,6 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Iterable
 
-
 INPUT_SCHEMA_VERSION = 1
 REPORT_SCHEMA_VERSION = 2
 DEFAULT_CUTOFFS = (3, 5, 10, 20)

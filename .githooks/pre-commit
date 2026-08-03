@@ -30,7 +30,9 @@ if [[ "$backend_changed" == "1" ]]; then
     staged_py=$(grep -E '\.py$' <<< "$staged" || true)
     if [[ -n "$staged_py" ]]; then
       echo "[pre-commit] ruff check 暂存文件"
-      xargs "$ruff_bin" check <<< "$staged_py"
+      # 显式指定基线配置：scripts/ 等仓库根目录文件无法自动发现
+      # backend/pyproject.toml，否则会按 ruff 内置默认规则误报。
+      xargs "$ruff_bin" check --config backend/pyproject.toml <<< "$staged_py"
     fi
   fi
 fi

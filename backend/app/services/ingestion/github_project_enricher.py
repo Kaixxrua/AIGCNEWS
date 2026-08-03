@@ -13,6 +13,15 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.app.core.config import settings
 from backend.app.core.model_factory import get_chat_model
+from backend.app.domain.project_taxonomy import (
+    CATEGORY_PROMPT,
+    PROMPT_VERSION,
+    EnrichmentResult,
+    clean_text,
+    extract_message_text,
+    normalize_enrichment,
+    parse_json_object,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectIngestionRepository,
@@ -27,15 +36,6 @@ from backend.app.services.ingestion.github_hot_service import (
 from backend.app.services.ingestion.github_project_metrics_service import (
     current_github_metric_date,
     refresh_and_compute_github_project_metrics,
-)
-from backend.app.services.ingestion.project_taxonomy import (
-    CATEGORY_PROMPT,
-    PROMPT_VERSION,
-    EnrichmentResult,
-    clean_text,
-    extract_message_text,
-    normalize_enrichment,
-    parse_json_object,
 )
 
 logger = logging.getLogger(__name__)
