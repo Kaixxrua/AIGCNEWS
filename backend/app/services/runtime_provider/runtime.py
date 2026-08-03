@@ -15,22 +15,29 @@ class ApplicationModelProviderRuntime:
     def __init__(
         self,
         *,
-        chat_factory: Callable[[float | None], Any],
+        chat_factory: Callable[[float | None, str | None], Any],
         embedding_factory: Callable[[], Any],
     ) -> None:
         self._chat_factory = chat_factory
         self._embedding_factory = embedding_factory
-        self._chat_models: dict[float | None, Any] = {}
+        self._chat_models: dict[tuple[float | None, str | None], Any] = {}
         self._embedding_model: Any | None = None
         self._lock = threading.Lock()
         self._closed = False
 
-    def get_chat_model(self, temperature: float | None = None) -> Any:
+    def get_chat_model(
+        self,
+        temperature: float | None = None,
+        reasoning_effort: str | None = None,
+    ) -> Any:
         with self._lock:
             self._ensure_open()
-            if temperature not in self._chat_models:
-                self._chat_models[temperature] = self._chat_factory(temperature)
-            return self._chat_models[temperature]
+            key = (temperature, reasoning_effort)
+            if key not in self._chat_models:
+                self._chat_models[key] = self._chat_factory(
+                    temperature, reasoning_effort
+                )
+            return self._chat_models[key]
 
     def get_embedding_model(self) -> Any:
         with self._lock:

@@ -21,7 +21,9 @@ from backend.app.repositories.project_write_repository import (
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingReader,
 )
-from backend.app.services.ingestion.github_hot_service import refresh_github_hot_candidates
+from backend.app.services.ingestion.github_hot_service import (
+    refresh_github_hot_candidates,
+)
 from backend.app.services.ingestion.github_project_metrics_service import (
     current_github_metric_date,
     refresh_and_compute_github_project_metrics,
@@ -33,7 +35,6 @@ from backend.app.services.ingestion.project_taxonomy import (
     clean_text,
     extract_message_text,
     normalize_enrichment,
-    normalize_tags,
     parse_json_object,
 )
 
@@ -41,6 +42,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_STARS = 500
 DEFAULT_BATCH_LIMIT = 50
+# 项目分类/短描述富化显式使用 medium 推理强度，不依赖中转默认档
+ENRICHMENT_REASONING_EFFORT = "medium"
 _MAX_RETRIES = 4
 _RETRY_BASE_DELAY = 15.0
 _REQUEST_INTERVAL = 3.0
@@ -114,7 +117,10 @@ class GitHubProjectEnricher:
     @property
     def llm(self):
         if self._llm is None:
-            self._llm = get_chat_model(temperature=0)
+            self._llm = get_chat_model(
+                temperature=0,
+                reasoning_effort=ENRICHMENT_REASONING_EFFORT,
+            )
         return self._llm
 
     def enrich_batch(

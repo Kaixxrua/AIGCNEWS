@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Optional
+from typing import Any
 
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 
@@ -15,7 +15,6 @@ from backend.app.services.runtime_provider.control_plane import (
     normalize_provider,
     resolve_chat_config,
 )
-
 
 OPENAI_PROVIDER = "openai"
 OLLAMA_PROVIDER = "ollama"
@@ -122,14 +121,20 @@ def _provider_constructors() -> ProviderConstructors:
     )
 
 
-def get_chat_model(temperature: float | None = None):
+def get_chat_model(
+    temperature: float | None = None,
+    reasoning_effort: str | None = None,
+):
     runtime = _configured_model_provider_runtime()
     if runtime is not None:
-        return runtime.get_chat_model(temperature)
-    return create_chat_model(temperature)
+        return runtime.get_chat_model(temperature, reasoning_effort)
+    return create_chat_model(temperature, reasoning_effort)
 
 
-def create_chat_model(temperature: float | None = None):
+def create_chat_model(
+    temperature: float | None = None,
+    reasoning_effort: str | None = None,
+):
     """
     根据运维页保存的运行时配置（优先）或 settings.LLM_PROVIDER 返回对应的 Chat 模型实例。
 
@@ -139,6 +144,8 @@ def create_chat_model(temperature: float | None = None):
     - ollama    使用 ChatOllama 本地模型
 
     可传入 temperature 覆盖 settings 中的默认值。
+    reasoning_effort 仅作用于 OpenAI 兼容分支；为 None 时不下发该参数，
+    保持其他调用方与既有行为一致。
     """
     runtime_config = _get_runtime_provider_setting()
     resolved = resolve_chat_config(
@@ -187,18 +194,19 @@ def create_chat_model(temperature: float | None = None):
 
     # ── OpenAI / 兼容代理 ───────────────────────────────────────────────
     if provider == OPENAI_PROVIDER:
-        return constructors.create_openai_chat(
-            {
-                "api_key": resolved.api_key,
-                "base_url": resolved.base_url,
-                "model": resolved.model_name,
-                "temperature": resolved.temperature,
-                "max_tokens": settings.llm_max_tokens,
-                "streaming": True,
-                "max_retries": 2,
-                "default_headers": {"User-Agent": COMPATIBLE_RELAY_USER_AGENT},
-            }
-        )
+        openai_kwargs: dict = {
+            "api_key": resolved.api_key,
+            "base_url": resolved.base_url,
+            "model": resolved.model_name,
+            "temperature": resolved.temperature,
+            "max_tokens": settings.llm_max_tokens,
+            "streaming": True,
+            "max_retries": 2,
+            "default_headers": {"User-Agent": COMPATIBLE_RELAY_USER_AGENT},
+        }
+        if reasoning_effort:
+            openai_kwargs["reasoning_effort"] = reasoning_effort
+        return constructors.create_openai_chat(openai_kwargs)
 
     # ── Ollama 本地模型 ─────────────────────────────────────────────────
     return constructors.create_ollama_chat(

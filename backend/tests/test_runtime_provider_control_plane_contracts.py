@@ -76,6 +76,40 @@ class RuntimeProviderModelFactoryContracts(unittest.TestCase):
         )
         self.assertFalse(factory._use_responses_api(object(), {}))
 
+    def test_openai_reasoning_effort_reaches_constructor_only_when_set(self) -> None:
+        runtime = {
+            "provider": "openai",
+            "api_key": "runtime-openai-key",
+            "base_url": "https://runtime-openai.test/v1",
+            "model_name": "runtime-chat-model",
+        }
+
+        with (
+            patch.object(model_factory, "settings", _model_settings()),
+            patch.object(
+                model_factory,
+                "_get_runtime_provider_setting",
+                return_value=runtime,
+            ),
+            patch("langchain_openai.ChatOpenAI") as factory,
+        ):
+            model_factory.get_chat_model(temperature=0, reasoning_effort="medium")
+
+        self.assertEqual(factory.call_args.kwargs["reasoning_effort"], "medium")
+
+        with (
+            patch.object(model_factory, "settings", _model_settings()),
+            patch.object(
+                model_factory,
+                "_get_runtime_provider_setting",
+                return_value=runtime,
+            ),
+            patch("langchain_openai.ChatOpenAI") as factory,
+        ):
+            model_factory.get_chat_model(temperature=0)
+
+        self.assertNotIn("reasoning_effort", factory.call_args.kwargs)
+
     def test_blank_runtime_values_fall_back_to_static_openai_settings(self) -> None:
         runtime = {
             "provider": "openai",

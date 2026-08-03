@@ -14,8 +14,11 @@ def test_runtime_caches_chat_by_temperature_and_embedding_independently() -> Non
     chats: list[object] = []
     embeddings: list[object] = []
 
-    def chat_factory(temperature: float | None) -> object:
-        model = (temperature, object())
+    def chat_factory(
+        temperature: float | None,
+        reasoning_effort: str | None = None,
+    ) -> object:
+        model = (temperature, reasoning_effort, object())
         chats.append(model)
         return model
 
@@ -32,8 +35,10 @@ def test_runtime_caches_chat_by_temperature_and_embedding_independently() -> Non
     assert runtime.get_chat_model() is runtime.get_chat_model()
     assert runtime.get_chat_model(0) is runtime.get_chat_model(0)
     assert runtime.get_chat_model() is not runtime.get_chat_model(0)
+    assert runtime.get_chat_model(0, "medium") is runtime.get_chat_model(0, "medium")
+    assert runtime.get_chat_model(0) is not runtime.get_chat_model(0, "medium")
     assert runtime.get_embedding_model() is runtime.get_embedding_model()
-    assert len(chats) == 2
+    assert len(chats) == 3
     assert len(embeddings) == 1
 
 
