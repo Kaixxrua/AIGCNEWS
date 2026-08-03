@@ -70,6 +70,9 @@ class RuntimeProviderModelFactoryContracts(unittest.TestCase):
             max_tokens=2048,
             streaming=True,
             max_retries=2,
+            default_headers={
+                "User-Agent": model_factory.COMPATIBLE_RELAY_USER_AGENT
+            },
         )
         self.assertFalse(factory._use_responses_api(object(), {}))
 
