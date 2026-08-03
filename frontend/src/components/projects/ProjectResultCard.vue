@@ -203,7 +203,7 @@ const description = computed(() => projectDescription(
         :title="t(isWebsite(repo) ? 'projects.openWebsite' : 'projects.openRepository')"
         :aria-describedby="`project-action-${index}-link-tooltip`"
       >
-        <ExternalLink class="project-card__action-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+        <ExternalLink class="project-card__action-icon" :size="15" :stroke-width="1.8" aria-hidden="true" />
         <span class="project-card__action-label">{{ projectLinkLabelKey(repo) ? t(`projects.${projectLinkLabelKey(repo)}`) : 'GitHub' }}</span>
         <span :id="`project-action-${index}-link-tooltip`" class="project-card__tooltip" role="tooltip">{{ t(isWebsite(repo) ? 'projects.openWebsite' : 'projects.openRepository') }}</span>
       </a>
@@ -220,7 +220,7 @@ const description = computed(() => projectDescription(
         :disabled="recommendActionsBusy"
         @click="emit('recommend', repo)"
       >
-        <Sparkles class="project-card__action-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+        <Sparkles class="project-card__action-icon" :size="15" :stroke-width="1.8" aria-hidden="true" />
         <span class="project-card__action-label">{{ t(recommendButtonLabelKey(repo, recommendBusy)) }}</span>
         <span :id="`project-action-${index}-recommend-tooltip`" class="project-card__tooltip" role="tooltip">{{ t(recommendButtonLabelKey(repo, recommendBusy)) }}</span>
       </button>
@@ -237,7 +237,7 @@ const description = computed(() => projectDescription(
         :disabled="favoriteActionsBusy || !canFavorite"
         @click="emit('favorite', repo)"
       >
-        <Star class="project-card__action-icon" :size="18" :stroke-width="1.8" :fill="repo.is_favorited ? 'currentColor' : 'none'" aria-hidden="true" />
+        <Star class="project-card__action-icon" :size="15" :stroke-width="1.8" :fill="repo.is_favorited ? 'currentColor' : 'none'" aria-hidden="true" />
         <span class="project-card__action-label">{{ t(favoriteButtonLabelKey(repo, favoriteBusy, isLoggedIn)) }}</span>
         <span :id="`project-action-${index}-favorite-tooltip`" class="project-card__tooltip" role="tooltip">{{ t(favoriteButtonLabelKey(repo, favoriteBusy, isLoggedIn)) }}</span>
       </button>
@@ -252,7 +252,7 @@ const description = computed(() => projectDescription(
         :disabled="savingEdit"
         @click="emit('edit', repo)"
       >
-        <Pencil class="project-card__action-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+        <Pencil class="project-card__action-icon" :size="15" :stroke-width="1.8" aria-hidden="true" />
         <span class="project-card__action-label">{{ t('projects.edit') }}</span>
         <span :id="`project-action-${index}-edit-tooltip`" class="project-card__tooltip" role="tooltip">{{ t('projects.edit') }}</span>
       </button>
@@ -267,7 +267,7 @@ const description = computed(() => projectDescription(
         :disabled="deleting"
         @click="emit('delete', repo)"
       >
-        <Trash2 class="project-card__action-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+        <Trash2 class="project-card__action-icon" :size="15" :stroke-width="1.8" aria-hidden="true" />
         <span class="project-card__action-label">{{ deleting ? t('common.processing') : t('projects.delete') }}</span>
         <span :id="`project-action-${index}-delete-tooltip`" class="project-card__tooltip" role="tooltip">{{ deleting ? t('common.processing') : t('projects.delete') }}</span>
       </button>
@@ -283,7 +283,7 @@ const description = computed(() => projectDescription(
   min-width: 0;
   min-height: 248px;
   flex-direction: column;
-  margin-right: var(--projects-card-action-size, 40px);
+  margin-right: var(--projects-card-action-size, 34px);
   overflow: visible;
 }
 
@@ -327,17 +327,17 @@ const description = computed(() => projectDescription(
 .project-card__source { display: inline-flex; width: fit-content; margin-bottom: 7px; border-radius: 999px; padding: 3px 8px; color: var(--projects-accent); background: rgba(245, 245, 244, 0.82); border: 1px solid var(--projects-accent-border); font-size: 10px; font-weight: 800; letter-spacing: 0.08em; }
 .project-card__header h2 { color: #292524; font-size: 18px; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .project-card__domain { margin-top: 4px; color: var(--projects-warm); font-size: 12px; font-weight: 700; }
-.project-card__rail { position: absolute; top: 22px; right: calc(-1 * var(--projects-card-action-size, 40px)); z-index: 3; display: flex; width: var(--projects-card-action-size, 40px); flex-direction: column; gap: 10px; }
-.project-card__action { position: relative; display: inline-flex; width: var(--projects-card-action-size, 40px); min-width: var(--projects-card-action-size, 40px); min-height: var(--projects-card-action-size, 40px); box-sizing: border-box; align-items: center; justify-content: center; gap: 5px; flex-shrink: 0; border: 1px solid #11110f; border-left: 0; border-radius: 0 4px 4px 0; padding: 0; box-shadow: 3px 3px 0 #11110f; font-size: 12px; font-weight: 700; line-height: 1.2; text-align: center; text-decoration: none; transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, opacity 160ms ease, transform 160ms ease; }
-.project-card__action-icon { display: inline-flex; width: 18px; height: 18px; flex: 0 0 18px; }
+.project-card__rail { position: absolute; top: 22px; right: calc(-1 * var(--projects-card-action-size, 34px)); z-index: 3; display: flex; width: var(--projects-card-action-size, 34px); flex-direction: column; gap: 8px; }
+.project-card__action { position: relative; display: inline-flex; width: var(--projects-card-action-size, 34px); min-width: var(--projects-card-action-size, 34px); min-height: var(--projects-card-action-size, 34px); box-sizing: border-box; align-items: center; justify-content: center; gap: 5px; flex-shrink: 0; border: 1px solid #11110f; border-left: 0; border-radius: 0 4px 4px 0; padding: 0; box-shadow: 2px 2px 0 #11110f; font-size: 12px; font-weight: 700; line-height: 1.2; text-align: center; text-decoration: none; transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, opacity 160ms ease, transform 160ms ease; }
+.project-card__action-icon { display: inline-flex; width: 15px; height: 15px; flex: 0 0 15px; }
 .project-card__action-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .project-card__link { color: #11110f; background: var(--projects-acid); }
 .project-card__favorite { color: #78350f; background: var(--projects-paper-light); }
-.project-card__recommend { color: #155e75; background: #ecfeff; }
-.project-card__edit { color: var(--projects-accent); background: #ecfeff; }
-.project-card__delete { color: #991b1b; background: #fef2f2; }
+.project-card__recommend { color: #155e75; background: var(--projects-paper-light); }
+.project-card__edit { color: var(--projects-accent); background: var(--projects-paper-light); }
+.project-card__delete { color: #991b1b; background: var(--projects-paper-light); }
 .project-card__favorite--active, .project-card__recommend--active { color: #11110f; background: var(--projects-acid); }
-.project-card__link:hover, .project-card__favorite:hover, .project-card__recommend:hover, .project-card__edit:hover, .project-card__delete:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 #11110f; }
+.project-card__link:hover, .project-card__favorite:hover, .project-card__recommend:hover, .project-card__edit:hover, .project-card__delete:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 #11110f; }
 .project-card__link:hover, .project-card__link:focus-visible { color: #fffdf5; background: #11110f; }
 .project-card__favorite:hover, .project-card__favorite:focus-visible { background: #fef3c7; }
 .project-card__recommend:hover, .project-card__recommend:focus-visible, .project-card__edit:hover, .project-card__edit:focus-visible { background: var(--projects-acid-soft); }
@@ -360,9 +360,9 @@ const description = computed(() => projectDescription(
 .project-card__logo { border-color: #11110f; border-radius: 4px; box-shadow: none; }
 .project-card__source { border-color: #11110f; border-radius: 4px; color: #11110f; background: var(--projects-acid); box-shadow: none; }
 .project-card__action { border-color: #11110f; border-left-color: transparent; }
-.project-card__recommend { color: #155e75; background: #ecfeff; }
+.project-card__recommend { color: #155e75; background: var(--projects-paper-light); }
 .project-card__favorite { color: #78350f; background: var(--projects-paper-light); }
-.project-card__delete { color: #991b1b; background: #fef2f2; }
+.project-card__delete { color: #991b1b; background: var(--projects-paper-light); }
 .project-card__stats { border-top: 1px solid #11110f; color: #11110f; }
 .project-card__stats svg { color: #11110f; }
 .project-card__link:hover, .project-card__favorite:hover, .project-card__recommend:hover, .project-card__edit:hover, .project-chip:hover, .project-chip:focus-visible, .project-chip--language:hover, .project-chip--language:focus-visible { border-color: #11110f; color: #11110f; background: var(--projects-acid-soft); transform: none; }
@@ -381,7 +381,7 @@ const description = computed(() => projectDescription(
   .project-card { display: flex; min-width: 0; margin-right: 0; flex-direction: column; }
   .project-card__body { min-height: 0; padding: 22px; }
   .project-card__rail { position: static; width: 100%; min-width: 0; align-items: flex-start; flex-direction: row; flex-wrap: wrap; gap: 7px; padding: 12px 0 0; }
-  .project-card__action { width: auto; min-width: var(--projects-card-action-size, 40px); max-width: 100%; border-left: 1px solid #11110f; border-left-color: #11110f; border-radius: 4px; padding: 0 10px; }
+  .project-card__action { width: auto; min-width: var(--projects-card-action-size, 34px); max-width: 100%; border-left: 1px solid #11110f; border-left-color: #11110f; border-radius: 4px; padding: 0 10px; }
   .project-card__action-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; clip-path: none; white-space: normal; }
   .project-card__tooltip { display: none; }
 }
