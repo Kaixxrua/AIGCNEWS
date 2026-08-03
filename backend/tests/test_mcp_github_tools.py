@@ -378,6 +378,7 @@ class ProjectHandlerTests(unittest.TestCase):
         }
         with (
             patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository({"items": [], "total": 0})),
+            patch.object(project_discovery.settings, "project_semantic_search_enabled", False),
             patch.object(inbound_tools, "search_github_projects_fallback", return_value=fallback_result) as fallback,
         ):
             result = asyncio.run(inbound_tools._search_project_library({"q": "screenshot rounded"}, mode="generic"))
@@ -933,6 +934,7 @@ class McpProtocolTests(unittest.TestCase):
         source_github_mcp._clear_fallback_cache()
         with (
             patch.object(project_discovery, "get_project_catalog_repository", return_value=repository),
+            patch.object(project_discovery.settings, "project_semantic_search_enabled", False),
             patch.object(source_github_mcp, "_search_once", return_value={"items": github_items, "total_count": 3, "error": ""}) as search_once,
         ):
             responses = [

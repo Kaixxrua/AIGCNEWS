@@ -83,7 +83,7 @@
         "language": "",
         "page": 2,
         "page_size": 1,
-        "sort": "stars",
+        "sort": "relevance",
         "min_stars": 500,
         "enriched_only": true,
         "user_id": null
@@ -96,7 +96,7 @@
         "page_size": 1,
         "has_next": false,
         "scope": "all",
-        "sort": "stars",
+        "sort": "relevance",
         "result_origin": "aigc_news_local",
         "fallback_used": false,
         "fallback_reason": "",

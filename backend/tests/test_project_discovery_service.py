@@ -1,7 +1,7 @@
 import asyncio
 import types
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.repositories.project_catalog import (
     ProjectLexicalCandidate,
@@ -41,15 +41,16 @@ class ProjectDiscoveryTests(unittest.TestCase):
             "queries": ["screenshot stars:>=500"],
         }
         fallback = MagicMock(return_value=fallback_result)
-        result = asyncio.run(
-            project_discovery.search_projects(
-                query="screenshot",
-                mode="generic",
-                limit=5,
-                repository_factory=lambda: repo,
-                fallback_search=fallback,
+        with patch.object(project_discovery.settings, "project_semantic_search_enabled", False):
+            result = asyncio.run(
+                project_discovery.search_projects(
+                    query="screenshot",
+                    mode="generic",
+                    limit=5,
+                    repository_factory=lambda: repo,
+                    fallback_search=fallback,
+                )
             )
-        )
         self.assertTrue(result["fallback_used"])
         self.assertEqual(result["result_origin"], "github_api_fallback")
         self.assertEqual(fallback.call_args.kwargs["mode"], "generic")
@@ -497,10 +498,11 @@ class ProjectDiscoveryTests(unittest.TestCase):
         self.assertTrue(result["fallback_used"])
         fallback.assert_called_once()
 
-    def test_generic_search_never_calls_semantic_search(self) -> None:
+    def test_generic_search_uses_semantic_retry_when_no_lexical_candidates(self) -> None:
         repo = MagicMock()
         repo.list_projects.return_value = {"items": [], "total": 0}
         semantic = MagicMock()
+        semantic.search_repo_ids.return_value = []
         fallback = MagicMock(return_value={"items": [], "total": 0})
         project_discovery.settings.project_semantic_search_enabled = True
         try:
@@ -515,7 +517,131 @@ class ProjectDiscoveryTests(unittest.TestCase):
             )
         finally:
             project_discovery.settings.project_semantic_search_enabled = False
-        semantic.assert_not_called()
+        semantic.search_repo_ids.assert_called_once()
+        fallback.assert_called_once()
+
+    def test_generic_relevance_search_fuses_lexical_and_semantic_candidates(self) -> None:
+        class HybridRepository:
+            def __init__(self) -> None:
+                self.find_lexical_candidate_repo_ids = MagicMock(
+                    return_value=["owner/lexical", "owner/shared"]
+                )
+                self.list_projects = MagicMock(
+                    return_value={
+                        "items": [{"id": "1", "full_name": "owner/shared", "stars": 800}],
+                        "total": 1,
+                    }
+                )
+
+        repo = HybridRepository()
+        semantic = MagicMock()
+        semantic.search_repo_ids.return_value = [
+            types.SimpleNamespace(repo_id="owner/semantic", score=0.9),
+            types.SimpleNamespace(repo_id="owner/shared", score=0.8),
+        ]
+        project_discovery.settings.project_semantic_search_enabled = True
+        try:
+            result = asyncio.run(
+                project_discovery.search_projects(
+                    query="智能体工作流",
+                    mode="generic",
+                    repository_factory=lambda: repo,
+                    semantic_search_factory=lambda: semantic,
+                )
+            )
+        finally:
+            project_discovery.settings.project_semantic_search_enabled = False
+
+        call = repo.list_projects.call_args.kwargs
+        self.assertEqual(call["q"], "")
+        self.assertEqual(call["sort"], "relevance")
+        self.assertEqual(
+            call["candidate_repo_ids"],
+            ["owner/shared", "owner/semantic", "owner/lexical"],
+        )
+        self.assertEqual(result["sort"], "relevance")
+        self.assertEqual(result["search_mode"], "generic")
+        selected_intent = semantic.search_repo_ids.call_args.args[0]
+        self.assertEqual(selected_intent.schema_version, "project-search-intent-v1")
+        self.assertEqual(selected_intent.concept_ids, ("workflow",))
+
+    def test_generic_explicit_sort_keeps_legacy_keyword_search(self) -> None:
+        class HybridRepository:
+            def __init__(self) -> None:
+                self.find_lexical_candidate_repo_ids = MagicMock(return_value=["owner/lexical"])
+                self.list_projects = MagicMock(
+                    return_value={
+                        "items": [{"id": "1", "full_name": "owner/tool", "stars": 900}],
+                        "total": 1,
+                    }
+                )
+
+        repo = HybridRepository()
+        fallback = MagicMock()
+        result = asyncio.run(
+            project_discovery.search_projects(
+                query="screenshot",
+                mode="generic",
+                sort="stars",
+                repository_factory=lambda: repo,
+                fallback_search=fallback,
+            )
+        )
+
+        repo.find_lexical_candidate_repo_ids.assert_not_called()
+        call = repo.list_projects.call_args.kwargs
+        self.assertEqual(call["q"], "screenshot")
+        self.assertEqual(call["sort"], "stars")
+        self.assertEqual(result["sort"], "stars")
+        fallback.assert_not_called()
+
+    def test_generic_v2_strategy_uses_exact_lookup_protection(self) -> None:
+        class V2Repository:
+            def __init__(self) -> None:
+                self.find_lexical_candidate_repo_ids = MagicMock(return_value=[])
+                self.find_lexical_candidate_lanes = MagicMock(
+                    return_value=ProjectLexicalCandidateLanes(
+                        strict=(
+                            ProjectLexicalCandidate(
+                                "owner/popular", "strict", term_coverage=2, match_strength=3
+                            ),
+                        ),
+                        relaxed=(
+                            ProjectLexicalCandidate(
+                                "owner/exact-tool",
+                                "relaxed",
+                                term_coverage=1,
+                                match_strength=1,
+                            ),
+                        ),
+                    )
+                )
+                self.list_projects = MagicMock(
+                    return_value={
+                        "items": [{"full_name": "owner/exact-tool", "stars": 900}],
+                        "total": 1,
+                    }
+                )
+
+        repo = V2Repository()
+        project_discovery.settings.project_ai_search_strategy = "v2"
+        try:
+            asyncio.run(
+                project_discovery.search_projects(
+                    query="owner/exact-tool",
+                    mode="generic",
+                    repository_factory=lambda: repo,
+                )
+            )
+        finally:
+            project_discovery.settings.project_ai_search_strategy = "legacy"
+
+        repo.find_lexical_candidate_repo_ids.assert_not_called()
+        repo.find_lexical_candidate_lanes.assert_called_once()
+        self.assertEqual(
+            repo.list_projects.call_args.kwargs["candidate_repo_ids"][0],
+            "owner/exact-tool",
+        )
 
     def test_scope_defaults_resolve_consistently(self) -> None:
         self.assertEqual(project_discovery.resolve_project_sort("all", None), "stars")

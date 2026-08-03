@@ -163,7 +163,7 @@ async def search_projects(
         scope,
         sort,
         has_query=bool(query),
-        prefer_relevance=mode == "ai",
+        prefer_relevance=True,
     )
     page = max(1, int(page or 1))
     limit = max(1, min(int(limit or 10), 20))
@@ -198,7 +198,7 @@ async def search_projects(
     strategy = str(getattr(settings, "project_ai_search_strategy", "legacy") or "legacy").strip().lower()
     if strategy not in {"legacy", "shadow", "v2"}:
         strategy = "legacy"
-    if mode == "ai" and query and effective_sort == "relevance" and callable(lexical_candidate_search):
+    if query and effective_sort == "relevance" and callable(lexical_candidate_search):
         hybrid_attempted = True
         use_lanes = strategy == "v2" and callable(lexical_lane_search)
         lexical_task = asyncio.to_thread(
@@ -405,7 +405,7 @@ async def search_projects(
     if total > 0:
         return base
 
-    if not hybrid_attempted and mode == "ai" and query and settings.project_semantic_search_enabled:
+    if not hybrid_attempted and query and settings.project_semantic_search_enabled:
         try:
             semantic_search = (
                 semantic_search_factory()
