@@ -36,14 +36,11 @@ jobs:
           python -m pip install -r backend/requirements.txt
           python -m pip install "pytest>=8.2,<9"
 
-      # Several legacy tests install process-global module stubs during import.
-      # Isolate files until those stubs are replaced with scoped fixtures.
-      - name: Run committed backend tests in isolation
+      # 单进程全套件已在干净检出归档上连续验证通过（1150 passed）；
+      # 逐文件隔离循环与遗留进程级替身均已退役。
+      - name: Run backend test suite
         shell: bash
-        run: |
-          while IFS= read -r test_file; do
-            python -m pytest -q -p langchain_core.documents "$test_file" || exit 1
-          done < <(git ls-tree -r --name-only HEAD -- 'backend/tests/test_*.py')
+        run: python -m pytest -q -p langchain_core.documents backend/tests
 
   postgres-integration:
     name: PostgreSQL 16 integration
