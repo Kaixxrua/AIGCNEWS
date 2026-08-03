@@ -120,7 +120,7 @@ services:
 
   etcd:
     container_name: milvus-etcd
-    image: quay.io/coreos/etcd:v3.5.5
+    image: quay.io/coreos/etcd:v3.5.5@sha256:89b6debd43502d1088f3e02f39442fd3e951aa52bee846ed601cf4477114b89e
     restart: unless-stopped
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
@@ -143,7 +143,7 @@ services:
 
   minio:
     container_name: milvus-minio
-    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z@sha256:6d770d7f255cda1f18d841ffc4365cb7e0d237f6af6a15fcdb587480cd7c3b93
     restart: unless-stopped
     environment:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
@@ -164,7 +164,7 @@ services:
 
   milvus:
     container_name: milvus-standalone
-    image: milvusdb/milvus:v2.4.6
+    image: milvusdb/milvus:v2.4.6@sha256:1658525cd8858683f6ba98458f4ad46e409ee75b25d609c983194ec509175267
     restart: unless-stopped
     command: ["milvus", "run", "standalone"]
     environment:
@@ -189,7 +189,7 @@ services:
 
   attu:
     container_name: milvus-attu
-    image: zilliz/attu:v2.4
+    image: zilliz/attu:v2.4@sha256:36a242d51dbd48e75d8378cd735807502403e4040928d77e92aefc644679855f
     restart: unless-stopped
     expose:
       - "3000"
@@ -201,7 +201,7 @@ services:
 
   neo4j:
     container_name: neo4j
-    image: neo4j:5.18.0
+    image: neo4j:5.18.0@sha256:b018c04b0d01e7b6b3ff001d297fe2b80d0612a49516a7d20b0beb7f784994bb
     restart: unless-stopped
     # backend 通过编排网络按服务名连接，宿主机 7688/7475 保持外部兼容
     expose:
@@ -213,7 +213,7 @@ services:
       - ../data/neo4j:/data
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     container_name: redis-aigc
     restart: always
     expose:
