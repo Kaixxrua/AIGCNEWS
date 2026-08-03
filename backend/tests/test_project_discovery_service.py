@@ -736,6 +736,127 @@ class ProjectDiscoveryTests(unittest.TestCase):
         self.assertEqual(ranked[0], "owner/fresh-fit")
         self.assertGreater(ranked.index("owner/veteran"), 4)
 
+    def test_normalize_request_generic_mode_discards_taxonomy_and_scope(self) -> None:
+        request = project_discovery._normalize_search_request(
+            query="agent",
+            mode="generic",
+            language=" Python ",
+            client_intent={"language": "en"},
+            category="agents_automation",
+            subcategory="agent_framework",
+            scope="today",
+            sort=None,
+            page=0,
+            limit=100,
+        )
+        self.assertEqual(request.category, "")
+        self.assertEqual(request.subcategory, "")
+        self.assertEqual(request.scope, "all")
+        self.assertEqual(request.language, "Python")
+        self.assertEqual(request.page, 1)
+        self.assertEqual(request.limit, 20)
+        self.assertFalse(request.client_intent_used)
+
+    def test_normalize_request_uses_host_intent_only_for_ai_relevance(self) -> None:
+        request = project_discovery._normalize_search_request(
+            query="MCP Python SDK",
+            mode="ai",
+            language="",
+            client_intent={
+                "language": "en",
+                "intent_class": "sdk",
+                "lexical_terms": ["MCP", "Python", "SDK"],
+                "semantic_queries": ["MCP Python SDK examples"],
+                "must_have": ["MCP"],
+            },
+            category="",
+            subcategory="",
+            scope="all",
+            sort="stars",
+            page=1,
+            limit=10,
+        )
+        # 显式非相关性排序时不采用宿主意图
+        self.assertFalse(request.client_intent_used)
+        self.assertEqual(request.effective_sort, "stars")
+
+        relevance_request = project_discovery._normalize_search_request(
+            query="MCP Python SDK",
+            mode="ai",
+            language="",
+            client_intent={
+                "language": "en",
+                "intent_class": "sdk",
+                "lexical_terms": ["MCP", "Python", "SDK"],
+                "semantic_queries": ["MCP Python SDK examples"],
+                "must_have": ["MCP"],
+            },
+            category="",
+            subcategory="",
+            scope="all",
+            sort=None,
+            page=1,
+            limit=10,
+        )
+        self.assertTrue(relevance_request.client_intent_used)
+        self.assertEqual(relevance_request.lexical_query, "MCP Python SDK")
+        self.assertEqual(relevance_request.intent.must_have, ("MCP",))
+
+    def test_resolve_strategy_falls_back_to_legacy(self) -> None:
+        original = project_discovery.settings.project_ai_search_strategy
+        try:
+            for raw, expected in [("V2", "v2"), ("shadow", "shadow"), ("bogus", "legacy"), ("", "legacy")]:
+                project_discovery.settings.project_ai_search_strategy = raw
+                self.assertEqual(project_discovery._resolve_strategy(), expected)
+        finally:
+            project_discovery.settings.project_ai_search_strategy = original
+
+    def test_github_fallback_skip_reason_priority_order(self) -> None:
+        base_kwargs = {
+            "query": "agent",
+            "mode": "ai",
+            "language": "",
+            "client_intent": None,
+            "category": "",
+            "subcategory": "",
+            "scope": "all",
+            "sort": None,
+            "page": 1,
+            "limit": 10,
+        }
+        request = project_discovery._normalize_search_request(**base_kwargs)
+        self.assertEqual(project_discovery._github_fallback_skip_reason(request), "")
+
+        paged = project_discovery._normalize_search_request(
+            **{**base_kwargs, "page": 2, "scope": "today", "category": "agents_automation"}
+        )
+        self.assertEqual(
+            project_discovery._github_fallback_skip_reason(paged),
+            "fallback_is_first_page_only",
+        )
+
+        scoped = project_discovery._normalize_search_request(
+            **{**base_kwargs, "scope": "recommended", "category": "agents_automation"}
+        )
+        self.assertEqual(
+            project_discovery._github_fallback_skip_reason(scoped),
+            "scope_requires_local_metrics",
+        )
+
+        taxonomy = project_discovery._normalize_search_request(
+            **{**base_kwargs, "subcategory": "agent_framework", "sort": "recent"}
+        )
+        self.assertEqual(
+            project_discovery._github_fallback_skip_reason(taxonomy),
+            "taxonomy_filter_requires_local_classification",
+        )
+
+        recent = project_discovery._normalize_search_request(**{**base_kwargs, "sort": "recent"})
+        self.assertEqual(
+            project_discovery._github_fallback_skip_reason(recent),
+            "sort_not_equivalent_on_github_search",
+        )
+
     def test_scope_defaults_resolve_consistently(self) -> None:
         self.assertEqual(project_discovery.resolve_project_sort("all", None), "stars")
         self.assertEqual(
