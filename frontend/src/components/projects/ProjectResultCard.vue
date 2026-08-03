@@ -79,7 +79,7 @@ const description = computed(() => projectDescription(
 
 <template>
   <article
-    class="project-card stagger-enter"
+    class="project-card"
     :class="{ 'project-card--not-found': !isWebsite(repo) && repo.availability_status === 'not_found' }"
     :style="{ animationDelay: `${Math.min(index, 12) * 36}ms` }"
   >
@@ -277,7 +277,6 @@ const description = computed(() => projectDescription(
 
 <style scoped>
 .project-card {
-  container-type: inline-size;
   position: relative;
   display: flex;
   min-width: 0;
@@ -285,6 +284,8 @@ const description = computed(() => projectDescription(
   flex-direction: column;
   margin-right: var(--projects-card-action-size, 34px);
   overflow: visible;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 520px;
 }
 
 .project-card__body {
@@ -391,7 +392,10 @@ const description = computed(() => projectDescription(
   .project-card__tooltip { display: none; }
 }
 
-@container (max-width: 520px) {
-  .project-card__stats { flex-wrap: wrap; }
+@keyframes projectCardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
+
+.project-card { animation: projectCardIn 0.32s ease both; }
 </style>
