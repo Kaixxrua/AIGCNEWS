@@ -1,3 +1,8 @@
+# 直接依赖（宽松声明）。完整版本锁定见 requirements.lock（uv pip compile 生成）。
+# 生产/CI 以 lock 为准安装；本文件变更后必须重新生成锁定，CI 有一致性校验：
+#   uv pip freeze --python backend/.venv/bin/python > /tmp/constraints.txt
+#   uv pip compile backend/requirements.txt --constraint /tmp/constraints.txt \
+#       --python-version 3.12 -o backend/requirements.lock
 fastapi
 uvicorn[standard]
 langchain
@@ -21,7 +26,6 @@ beautifulsoup4
 pypdf
 pymupdf
 pdfplumber
-sentence-transformers
 
 psycopg[binary]>=3.2,<4
 psycopg_pool>=3.2,<4
