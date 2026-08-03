@@ -134,7 +134,10 @@ def test_non_development_generation_preserves_tool_rag_web_and_source_order():
     run_tools.assert_awaited_once_with([tool_call])
     assert decide.await_args.kwargs["tools"] is chat_service.TOOL_DEFINITIONS
     assert decide.await_args.kwargs["tool_choice"] == "auto"
-    assert streamed_calls[0]["model"] == generator.settings.thinking_model_name
+    # 生产契约：thinking_model_name 留空时回退 chat_model_name（generator.effective_model）
+    assert streamed_calls[0]["model"] == (
+        generator.settings.thinking_model_name or generator.settings.chat_model_name
+    )
     assert streamed_calls[0]["temperature"] == 0.4
     assert streamed_calls[0]["max_tokens"] == generator.settings.llm_max_tokens
     messages = streamed_calls[0]["messages"]
