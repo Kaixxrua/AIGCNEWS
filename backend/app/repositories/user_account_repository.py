@@ -34,7 +34,6 @@ class UserAccountWriter(Protocol):
         self,
         email: str,
         hashed_password: str,
-        invite_code_used: str = "",
         role: str = "user",
         username: str = "",
     ) -> int: ...

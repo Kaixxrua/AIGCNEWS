@@ -40,7 +40,6 @@ def test_postgres_user_repository_round_trip_and_statistics(database) -> None:
     user_id = repository.create_user_with_email(
         "Reader@Example.COM",
         "hash-v1",
-        invite_code_used="invite",
         username="reader",
     )
 

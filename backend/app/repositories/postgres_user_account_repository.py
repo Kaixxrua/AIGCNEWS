@@ -88,7 +88,6 @@ class PostgresUserAccountRepository:
         self,
         email: str,
         hashed_password: str,
-        invite_code_used: str = "",
         role: str = "user",
         username: str = "",
     ) -> int:
@@ -99,13 +98,12 @@ class PostgresUserAccountRepository:
                 username,
                 hashed_password,
                 role,
-                email_verified,
-                invite_code_used
+                email_verified
             )
-            VALUES (%s, %s, %s, %s, TRUE, %s)
+            VALUES (%s, %s, %s, %s, TRUE)
             RETURNING id
             """,
-            (email.lower(), username, hashed_password, role, invite_code_used),
+            (email.lower(), username, hashed_password, role),
         )
 
     def _fetchone(

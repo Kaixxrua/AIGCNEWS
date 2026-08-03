@@ -66,7 +66,7 @@ def test_create_users_use_returning_and_preserve_defaults() -> None:
     assert "RETURNING id" in phone_call.args[0]
     assert phone_call.args[1] == ("13800000000", "reader", "hash", "user")
     assert "email_verified" in email_call.args[0]
-    assert email_call.args[1] == ("reader@example.com", "", "hash", "user", "")
+    assert email_call.args[1] == ("reader@example.com", "", "hash", "user")
     assert database.transaction_count == 2
 
 

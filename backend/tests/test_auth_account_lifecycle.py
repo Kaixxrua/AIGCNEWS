@@ -32,7 +32,6 @@ class FakeRepository:
         self,
         email: str,
         hashed_password: str,
-        invite_code_used: str = "",
         role: str = "user",
         username: str = "",
     ) -> int:
@@ -41,7 +40,6 @@ class FakeRepository:
                 "create_user_with_email",
                 email,
                 hashed_password,
-                invite_code_used,
                 role,
                 username,
             )
@@ -139,7 +137,6 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     "create_user_with_email",
                     "Reader@example.com",
                     "stored-password-hash",
-                    "",
                     "user",
                     "",
                 ),

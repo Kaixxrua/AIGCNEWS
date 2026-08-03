@@ -19,7 +19,6 @@ class AccountRepository(Protocol):
         self,
         email: str,
         hashed_password: str,
-        invite_code_used: str = "",
         role: str = "user",
         username: str = "",
     ) -> int: ...
@@ -161,7 +160,6 @@ class AccountLifecycle:
             self._repository.create_user_with_email,
             normalized_email,
             hashed_password,
-            "",
             "user",
             "",
         )

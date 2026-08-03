@@ -27,7 +27,6 @@ class FakeUserAccountRepository:
         self,
         email: str,
         hashed_password: str,
-        invite_code_used: str = "",
         role: str = "user",
         username: str = "",
     ) -> int:
@@ -36,7 +35,6 @@ class FakeUserAccountRepository:
                 "create_user_with_email",
                 email,
                 hashed_password,
-                invite_code_used,
                 role,
                 username,
             )
@@ -212,7 +210,6 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                     "create_user_with_email",
                     "Reader@example.com",
                     "stored-password-hash",
-                    "",
                     "user",
                     "",
                 ),

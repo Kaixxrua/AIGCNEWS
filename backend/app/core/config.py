@@ -160,9 +160,6 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "AIGC_NEWS"
     SMTP_USE_TLS: bool = True
 
-    # 注册邀请码（内测阶段固定值，可通过环境变量覆盖）
-    AUTH_REGISTER_INVITE_CODE: str = "internal_testing"
-
     # 普通用户每日消息上限（0 = 不限制，仅对 role='user' 生效，admin 不受限）
     USER_DAILY_MESSAGE_LIMIT: int = 20
 

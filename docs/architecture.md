@@ -514,7 +514,7 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 | 步骤 | 说明 |
 |------|------|
 | 发送验证码 | `POST /api/auth/send-email-otp { email }` → Redis OTP TTL 5min + 防刷锁 60s |
-| 注册 | `POST /api/auth/register { email, email_code, invite_code, password }` → 校验邀请码 `internal_testing` → 校验 OTP → 写库 |
+| 注册 | `POST /api/auth/register { email, email_code, password }` → 校验 OTP（5 次尝试上限）→ 写库（开放注册，IP 限速 10 次/10 分钟） |
 | 登录 | `POST /api/auth/login { email, password }` → 返回 JWT |
 | 获取信息 | `GET /api/auth/me` → `{ user_id, email, role }` |
 

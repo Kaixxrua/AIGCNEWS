@@ -53,7 +53,7 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
         args = self.repository.create_user_with_email.call_args.args
         self.assertEqual(args[0], "reader@example.com")
         self.assertNotEqual(args[1], "abcdef")
-        self.assertEqual(args[2:], ("", "user", ""))
+        self.assertEqual(args[2:], ("user", ""))
         self.assertEqual(events, ["insert", "consume"])
 
     def test_register_duplicate_preserves_conflict_without_consuming_otp(self) -> None:
