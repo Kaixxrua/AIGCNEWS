@@ -10,12 +10,13 @@ OtpPurpose = Literal["registration", "password_reset"]
 
 OTP_CODE_PREFIX = "email:code:"
 OTP_LOCK_PREFIX = "email:lock:"
+OTP_ATTEMPTS_PREFIX = "email:attempts:"
 RESET_CODE_PREFIX = "email:reset:code:"
 RESET_LOCK_PREFIX = "email:reset:lock:"
 RESET_ATTEMPTS_PREFIX = "email:reset:attempts:"
 OTP_TTL = 300
 LOCK_TTL = 60
-RESET_MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = 5
 
 
 class OtpStoreUnavailableError(RuntimeError):
@@ -26,7 +27,12 @@ class OtpCooldownError(RuntimeError):
     """Raised when an OTP lock is already present."""
 
 
-def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str | None]:
+def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str]:
+    """返回 (code_key, lock_key, attempts_key)；两种用途都必须有尝试计数键。
+
+    历史上 registration 的 attempts_key 为 None（无限次尝试），6 位验证码
+    在 5 分钟 TTL 内可被穷举，因此两种用途统一为 MAX_ATTEMPTS 次上限。
+    """
     email_lower = email.lower()
     if purpose == "password_reset":
         return (
@@ -37,7 +43,7 @@ def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str | None]:
     return (
         f"{OTP_CODE_PREFIX}{email_lower}",
         f"{OTP_LOCK_PREFIX}{email_lower}",
-        None,
+        f"{OTP_ATTEMPTS_PREFIX}{email_lower}",
     )
 
 
@@ -68,8 +74,7 @@ class RedisOtpStore:
 
         await self._redis.set(code_key, code, ex=OTP_TTL)
         await self._redis.set(lock_key, "1", ex=LOCK_TTL)
-        if attempts_key is not None:
-            await self._redis.delete(attempts_key)
+        await self._redis.delete(attempts_key)
 
     async def verify(
         self,
@@ -93,19 +98,15 @@ class RedisOtpStore:
                 await self.consume(email, purpose=purpose)
             return True
 
-        if attempts_key is not None:
-            attempts = await self._redis.incr(attempts_key)
-            if attempts == 1:
-                await self._redis.expire(attempts_key, OTP_TTL)
-            if attempts >= RESET_MAX_ATTEMPTS:
-                await self._redis.delete(code_key, attempts_key)
+        attempts = await self._redis.incr(attempts_key)
+        if attempts == 1:
+            await self._redis.expire(attempts_key, OTP_TTL)
+        if attempts >= MAX_ATTEMPTS:
+            await self._redis.delete(code_key, attempts_key)
         return False
 
     async def consume(self, email: str, *, purpose: OtpPurpose) -> None:
         if not self.available:
             return
         code_key, _lock_key, attempts_key = otp_keys(email, purpose)
-        keys = [code_key]
-        if attempts_key is not None:
-            keys.append(attempts_key)
-        await self._redis.delete(*keys)
+        await self._redis.delete(code_key, attempts_key)

@@ -61,6 +61,7 @@ class EmailOtpContractTests(unittest.IsolatedAsyncioTestCase):
                 ("get", "email:lock:user@example.com"),
                 ("set", "email:code:user@example.com", "123456", 300),
                 ("set", "email:lock:user@example.com", "1", 60),
+                ("delete", "email:attempts:user@example.com"),
             ],
         )
 
@@ -400,6 +401,32 @@ class ExtractedEmailBoundaryTests(unittest.IsolatedAsyncioTestCase):
                 "email:reset:code:user@example.com",
                 "email:reset:attempts:user@example.com",
             ),
+        )
+
+    async def test_registration_otp_enforces_max_attempts_like_password_reset(self) -> None:
+        redis = FakeRedis()
+        store = RedisOtpStore(redis)
+
+        await store.store("USER@example.com", "123456", purpose="registration")
+        for _ in range(5):
+            self.assertFalse(
+                await store.verify(
+                    "USER@example.com",
+                    "000000",
+                    purpose="registration",
+                    consume=True,
+                )
+            )
+
+        # 第 5 次错误尝试后验证码即被销毁，即使输入正确也无法通过
+        self.assertNotIn("email:code:user@example.com", redis.values)
+        self.assertFalse(
+            await store.verify(
+                "USER@example.com",
+                "123456",
+                purpose="registration",
+                consume=True,
+            )
         )
 
     async def test_smtp_transport_preserves_mime_tls_credentials_and_error_type(self) -> None:
