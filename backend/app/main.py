@@ -37,6 +37,7 @@ from backend.app.core.model_factory import (
 )
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.core.postgres_database import postgres_database
+from backend.app.core.redis_client import close_redis_client, create_redis_client
 from backend.app.core.scheduler import create_scheduler_runtime
 from backend.app.monitoring.health import create_application_monitoring_runtime
 from backend.app.repositories.application_repository_context import (
@@ -112,14 +113,6 @@ async def _cancel_background_task(
         print(f"[Shutdown] {name} task close failed (non-fatal): {exc}")
 
 
-async def _close_redis_client(redis_client: Redis) -> None:
-    close_method = getattr(redis_client, "aclose", None)
-    if close_method is not None:
-        await close_method()
-    else:
-        await redis_client.close()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Own application resources from startup through failure-isolated shutdown."""
@@ -187,13 +180,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             app.state.semantic_warmup_task = semantic_warmup_task
 
         try:
-            redis_client = Redis(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                db=settings.redis_db,
-                password=settings.redis_password or None,
-                decode_responses=False,
-            )
+            redis_client = create_redis_client()
             await redis_client.ping()
 
             # 开发环境：热重载时自动清除 API 缓存（aigc-cache:* 前缀），实现"保存即刷新"零感知体验
@@ -220,7 +207,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             FastAPICache.reset()
             if redis_client is not None:
                 try:
-                    await _close_redis_client(redis_client)
+                    await close_redis_client(redis_client)
                 except Exception as close_exc:
                     print(
                         "[Startup] Redis close after init failure failed "
@@ -272,7 +259,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         FastAPICache.reset()
         if redis_client is not None:
             try:
-                await _close_redis_client(redis_client)
+                await close_redis_client(redis_client)
                 print("[Shutdown] Redis cache connection closed.")
             except Exception as exc:
                 print(f"[Shutdown] Redis close failed (non-fatal): {exc}")

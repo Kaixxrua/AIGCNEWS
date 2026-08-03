@@ -5,8 +5,10 @@ from typing import Any
 from fastapi import Depends, Request
 
 from backend.app.core.operations import ApplicationOperationsRuntime
+from backend.app.core.redis_client import close_redis_client, create_redis_client
 from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
 from backend.app.repositories.application_repository_factory import (
+    ApplicationIngestionTaskRepository,
     ApplicationRepositories,
 )
 from backend.app.repositories.briefing_repository import (
@@ -38,10 +40,6 @@ from backend.app.repositories.runtime_provider_repository import (
 )
 from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
-    IngestionTaskWriter,
-    LatestTaskReader,
-    MonitorTaskRepository,
-    RecentTaskReader,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.briefing.composition import provide_daily_briefing_service
@@ -83,16 +81,6 @@ def get_health_check_service(request: Request) -> HealthCheckService:
 
 def get_readiness_check(request: Request) -> ReadinessCheck:
     return get_monitoring_runtime(request).readiness
-
-
-class ApplicationIngestionTaskRepository(
-    IngestionTaskWriter,
-    LatestTaskReader,
-    RecentTaskReader,
-    MonitorTaskRepository,
-    IngestionTaskAdminRepository,
-):
-    pass
 
 
 def get_application_repositories(request: Request) -> ApplicationRepositories:
@@ -273,29 +261,10 @@ def get_ops_diagnostics_service(request: Request) -> OpsDiagnosticsService:
 
 def get_dashboard_cache_admin_service() -> DashboardCacheAdminService:
     from fastapi_cache import FastAPICache
-    from redis.asyncio import Redis
-
-    from backend.app.core.config import settings
-
-    def client_factory() -> Redis:
-        return Redis(
-            host=settings.redis_host,
-            port=settings.redis_port,
-            db=settings.redis_db,
-            password=settings.redis_password or None,
-            decode_responses=False,
-        )
-
-    async def close_client(client: Redis) -> None:
-        close_method = getattr(client, "aclose", None)
-        if close_method is not None:
-            await close_method()
-        else:
-            await client.close()
 
     return DashboardCacheAdminService(
-        client_factory,
-        close_client,
+        create_redis_client,
+        close_redis_client,
         cache_prefix=getattr(FastAPICache, "_prefix", "") or "",
     )
 

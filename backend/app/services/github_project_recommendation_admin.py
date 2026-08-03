@@ -6,6 +6,8 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
+from backend.app.core.auth import extract_user_id
+
 
 class RecommendationWriter(Protocol):
     def recommend_github_project(
@@ -62,7 +64,7 @@ class GitHubProjectRecommendationAdminService:
         full_name: str,
         admin_identity: Mapping[str, Any] | None,
     ) -> RecommendationOutcome:
-        admin_user_id = _admin_user_id(admin_identity)
+        admin_user_id = extract_user_id(admin_identity)
         try:
             result = await asyncio.to_thread(
                 self._recommendations.recommend_github_project,
@@ -103,13 +105,3 @@ class GitHubProjectRecommendationAdminService:
         return await asyncio.to_thread(
             self._enrichment_status.get_github_project_enrichment_status
         )
-
-
-def _admin_user_id(identity: Mapping[str, Any] | None) -> int | None:
-    if not identity:
-        return None
-    raw_user_id = identity.get("user_id") or identity.get("id") or identity.get("sub")
-    try:
-        return int(raw_user_id) if raw_user_id else None
-    except (TypeError, ValueError):
-        return None

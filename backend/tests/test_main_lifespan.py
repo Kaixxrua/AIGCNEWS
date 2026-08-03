@@ -85,7 +85,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "RagChatServiceProvider",
                 return_value=rag_provider,
             ) as rag_provider_type,
-            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main, "create_redis_client", return_value=redis_client),
             patch.object(main.FastAPICache, "init"),
         ):
             async with main.lifespan(app):
@@ -153,7 +153,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "create_application_repositories",
                 return_value=MagicMock(),
             ),
-            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main, "create_redis_client", return_value=redis_client),
             patch.object(main.FastAPICache, "init"),
             patch.object(
                 main.asyncio,
@@ -204,7 +204,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "ApplicationProjectSearchRuntime",
                 return_value=project_search_runtime,
             ),
-            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main, "create_redis_client", return_value=redis_client),
             patch.object(main.FastAPICache, "init"),
             patch.object(
                 main.asyncio,
@@ -244,7 +244,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             patch.object(main, "settings", configured_settings),
             patch.object(main, "postgres_database", database),
             patch.object(main, "create_application_repositories", return_value=MagicMock()),
-            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main, "create_redis_client", return_value=redis_client),
             patch.object(main.FastAPICache, "init"),
             patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
         ):
@@ -271,7 +271,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             patch.object(main, "settings", _settings()),
             patch.object(main, "postgres_database", database),
             patch.object(main, "create_application_repositories", return_value=MagicMock()),
-            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main, "create_redis_client", return_value=redis_client),
             patch.object(main.FastAPICache, "reset") as cache_reset,
             patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
         ):
@@ -305,7 +305,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "create_application_repositories",
                 return_value=MagicMock(),
             ),
-            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main, "create_redis_client", return_value=redis_client),
             patch.object(
                 main.asyncio,
                 "create_task",
@@ -355,7 +355,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "create_scheduler_runtime",
                 return_value=scheduler_runtime,
             ),
-            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main, "create_redis_client", return_value=redis_client),
             patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
         ):
             with self.assertRaisesRegex(RuntimeError, "scheduler failed"):
@@ -405,7 +405,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 "create_scheduler_runtime",
                 return_value=scheduler_runtime,
             ),
-            patch.object(main, "Redis", return_value=redis_client),
+            patch.object(main, "create_redis_client", return_value=redis_client),
             patch.object(main.asyncio, "create_task", side_effect=close_warmup_coroutine),
         ):
             async with main.lifespan(app):

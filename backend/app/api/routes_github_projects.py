@@ -4,10 +4,26 @@ import asyncio
 from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
 
 from backend.app.api.dependencies import get_personal_projects_service
-from backend.app.core.auth import OptionalUser, RequireUser
+from backend.app.core.auth import OptionalUser, RequireUser, extract_user_id
+from backend.app.models.schema_projects import (
+    GitHubProjectCategoriesResponse,
+    GitHubProjectSort,
+    GitHubProjectsResponse,
+    GitHubProjectTagsResponse,
+    ProjectFavoriteRequest,
+    ProjectFavoriteResponse,
+    ProjectScope,
+    ProjectSource,
+    ProjectTaxonomyResponse,
+    ToolWebsiteAddRequest,
+    ToolWebsiteAddResponse,
+    ToolWebsiteDeleteResponse,
+    ToolWebsiteManualAddRequest,
+    ToolWebsiteUpdateRequest,
+    ToolWebsiteUpdateResponse,
+)
 from backend.app.repositories.project_catalog_factory import (
     get_project_catalog_repository,
 )
@@ -20,184 +36,6 @@ from backend.app.services.personal_projects import (
 from backend.app.services.project_discovery import resolve_project_sort
 
 router = APIRouter()
-
-GitHubProjectSort = Literal["hot", "stars", "updated", "recent", "name"]
-ProjectSource = Literal["all", "github", "website"]
-ProjectScope = Literal["all", "today", "recommended"]
-
-
-class GitHubProjectItem(BaseModel):
-    id: str | None = None
-    source: str = "github"
-    repo_id: str | int | None = None
-    website_id: str | int | None = None
-    full_name: str
-    title: str | None = None
-    url: str | None = None
-    domain: str | None = None
-    image_url: str | None = None
-    description: str | None = None
-    description_zh: str | None = None
-    description_en: str | None = None
-    category_slug: str | None = None
-    category_name: str | None = None
-    category_name_zh: str | None = None
-    category_name_en: str | None = None
-    subcategory_slug: str | None = None
-    subcategory_name: str | None = None
-    subcategory_name_zh: str | None = None
-    subcategory_name_en: str | None = None
-    tags: list[str] = Field(default_factory=list)
-    tags_zh: list[str] = Field(default_factory=list)
-    tags_en: list[str] = Field(default_factory=list)
-    tags_origin: Literal["system", "user"] = "system"
-    language: str | None = None
-    topics: list[str] = Field(default_factory=list)
-    stars: int = 0
-    forks: int = 0
-    watchers: int = 0
-    open_issues: int = 0
-    created_at: str | None = None
-    pushed_at: str | None = None
-    first_seen_at: str | None = None
-    last_seen_at: str | None = None
-    last_snapshot_at: str | None = None
-    availability_status: str = "active"
-    snapshot_date: str | None = None
-    captured_at: str | None = None
-    rank_in_period: int | None = None
-    raw_score: float = 0.0
-    score: float = 0.0
-    daily_star_growth: int = 0
-    daily_growth_available: bool = False
-    daily_growth_source: str = "unavailable"
-    daily_growth_observed_at: str | None = None
-    daily_growth_date: str | None = None
-    previous_snapshot_date: str | None = None
-    hot_score: float = 0.0
-    scale_corrected_growth_score: float = 0.0
-    growth_acceleration_score: float = 0.0
-    absolute_growth_score: float = 0.0
-    maintenance_activity_score: float = 0.0
-    community_engagement_score: float = 0.0
-    confidence: float = 0.0
-    is_favorited: bool = False
-    favorited_at: str | None = None
-    is_recommended: bool = False
-    recommended_at: str | None = None
-    user_added: bool = False
-    user_added_at: str | None = None
-
-
-class GitHubProjectsResponse(BaseModel):
-    items: list[GitHubProjectItem]
-    total: int
-    page: int
-    page_size: int
-    has_next: bool
-    min_stars: int
-    scope: str = "all"
-    category: str = ""
-    subcategory: str = ""
-    q: str = ""
-    sort: str = "stars"
-    source: str = "github"
-
-
-class GitHubProjectSubcategory(BaseModel):
-    slug: str
-    name: str
-    name_zh: str = ""
-    name_en: str = ""
-    count: int
-
-
-class GitHubProjectCategory(BaseModel):
-    slug: str
-    name: str
-    name_zh: str = ""
-    name_en: str = ""
-    count: int
-    kind: str = "category"
-    scope: str | None = None
-    children: list[GitHubProjectSubcategory] = Field(default_factory=list)
-
-
-class GitHubProjectCategoriesResponse(BaseModel):
-    items: list[GitHubProjectCategory]
-    total: int
-    today_count: int = 0
-    recommended_count: int = 0
-    min_stars: int
-    source: str = "github"
-
-
-class ToolWebsiteAddRequest(BaseModel):
-    url: str = Field(default="", max_length=1024)
-
-
-class ToolWebsiteManualAddRequest(BaseModel):
-    url: str = Field(default="", max_length=1024)
-    title: str = Field(default="", max_length=512)
-    description_zh: str = Field(default="", max_length=512)
-    description_en: str = Field(default="", max_length=512)
-    category_slug: str = Field(default="other", max_length=64)
-    subcategory_slug: str = Field(default="", max_length=64)
-    tags: list[str] = Field(default_factory=list, max_length=8)
-
-
-class ToolWebsiteAddResponse(BaseModel):
-    status: str
-    message: str
-    duplicate: bool = False
-    item: dict[str, Any] | None = None
-
-
-class ToolWebsiteUpdateRequest(BaseModel):
-    title: str = Field(default="", max_length=512)
-    description: str = Field(default="", max_length=2000)
-    description_zh: str = Field(default="", max_length=512)
-    description_en: str = Field(default="", max_length=512)
-    category_slug: str = Field(default="other", max_length=64)
-    subcategory_slug: str = Field(default="", max_length=64)
-    tags: list[str] = Field(default_factory=list, max_length=8)
-    image_url: str = Field(default="", max_length=1024)
-
-
-class ToolWebsiteUpdateResponse(BaseModel):
-    status: str
-    message: str
-    item: dict[str, Any] | None = None
-
-
-class GitHubProjectTag(BaseModel):
-    """A personal tag with a stable filter value and localized labels."""
-
-    label: str
-    value: str = ""
-    label_zh: str = ""
-    label_en: str = ""
-    count: int = 0
-    tags_origin: Literal["system", "user"] = "system"
-
-
-class GitHubProjectTagsResponse(BaseModel):
-    items: list[GitHubProjectTag]
-    total: int
-    source: str = "github"
-
-
-class ToolWebsiteDeleteResponse(BaseModel):
-    status: str
-    message: str
-    deleted: bool = False
-    website_id: int
-
-
-class ProjectFavoriteRequest(BaseModel):
-    source: Literal["github", "website"]
-    repo_id: str | int | None = None
-    website_id: str | int | None = None
 
 
 def _favorite_request_from_inputs(
@@ -213,40 +51,6 @@ def _favorite_request_from_inputs(
     if clean_source not in {"github", "website"}:
         raise ValueError("source 只能是 github 或 website")
     return ProjectFavoriteRequest(source=clean_source, repo_id=repo_id, website_id=website_id)
-
-
-class ProjectFavoriteResponse(BaseModel):
-    status: str
-    message: str
-    source: str
-    repo_id: str | int | None = None
-    website_id: str | int | None = None
-    is_favorited: bool = False
-    favorited_at: str | None = None
-    deleted: bool = False
-
-
-class ProjectTaxonomyItem(BaseModel):
-    slug: str
-    name: str
-    name_zh: str
-    name_en: str
-    children: list[dict[str, str]] = Field(default_factory=list)
-
-
-class ProjectTaxonomyResponse(BaseModel):
-    items: list[ProjectTaxonomyItem]
-
-
-def _user_id(user: dict[str, Any] | None) -> int | None:
-    if not isinstance(user, dict):
-        return None
-    raw = user.get("user_id") or user.get("id") or user.get("sub")
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        return None
-    return value if value > 0 else None
 
 
 def _categories_response(result: dict[str, Any], *, min_stars: int, source: str) -> GitHubProjectCategoriesResponse:
@@ -333,7 +137,7 @@ async def list_projects(
     user: dict[str, Any] | None = Depends(OptionalUser),
 ) -> GitHubProjectsResponse:
     """公共 AI 项目库：只展示 GitHub 项目；网页收藏只存在于个人收藏夹。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if source == "website":
         raise HTTPException(status_code=404, detail="网页收藏仅在个人收藏夹中可见")
     effective_source: ProjectSource = "github"
@@ -410,7 +214,7 @@ async def list_my_project_collection(
     service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> GitHubProjectsResponse:
     """当前登录用户的个人收藏夹；默认只返回 GitHub 项目收藏，source=website 返回个人网页。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     min_stars = 500
@@ -452,7 +256,7 @@ async def list_my_project_categories(
     service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> GitHubProjectCategoriesResponse:
     """当前登录用户个人收藏夹分类；默认只统计 GitHub 收藏，source=website 统计个人网页。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     min_stars = 500
@@ -472,7 +276,7 @@ async def list_my_project_tags(
     service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> GitHubProjectTagsResponse:
     """当前登录用户个人收藏夹真实标签；不返回预制分类或默认标签。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     effective_source = "website" if source == "website" else "github"
@@ -496,7 +300,7 @@ async def favorite_project(
     service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ProjectFavoriteResponse:
     """收藏 GitHub 项目或工具网站到当前用户收藏夹。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     try:
@@ -523,7 +327,7 @@ async def unfavorite_project(
     service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ProjectFavoriteResponse:
     """从当前用户收藏夹取消收藏 GitHub 项目或工具网站。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     try:
@@ -561,7 +365,7 @@ async def add_my_tool_website(
     service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ToolWebsiteAddResponse:
     """普通用户自动添加工具网站到自己的收藏夹。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     try:
@@ -583,7 +387,7 @@ async def add_my_tool_website_manual(
     service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ToolWebsiteAddResponse:
     """普通用户手动添加工具网站到自己的收藏夹。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     try:
@@ -612,7 +416,7 @@ async def update_my_tool_website(
     service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ToolWebsiteUpdateResponse:
     """手动编辑当前用户自己的网页收藏卡片信息，不修改全局网站元数据。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     try:
@@ -642,7 +446,7 @@ async def remove_my_tool_website(
     service: PersonalProjectsService = Depends(get_personal_projects_service),
 ) -> ToolWebsiteDeleteResponse:
     """只把工具网站移出当前用户收藏夹，不删除全局工具库。"""
-    user_id = _user_id(user)
+    user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
     deleted = await service.remove_tool_website(

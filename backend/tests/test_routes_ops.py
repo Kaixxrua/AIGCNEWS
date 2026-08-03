@@ -586,7 +586,7 @@ class OperationsRouteTests(unittest.TestCase):
         redis_client.aclose = AsyncMock()
 
         with (
-            patch("redis.asyncio.Redis", return_value=redis_client) as redis_type,
+            patch("backend.app.core.redis_client.Redis", return_value=redis_client) as redis_type,
             patch("fastapi_cache.FastAPICache._prefix", "custom:", create=True),
         ):
             response = self._scheduler_client().post(
@@ -622,7 +622,7 @@ class OperationsRouteTests(unittest.TestCase):
         redis_client.keys = AsyncMock(side_effect=RuntimeError("redis failed"))
         redis_client.aclose = AsyncMock()
 
-        with patch("redis.asyncio.Redis", return_value=redis_client):
+        with patch("backend.app.core.redis_client.Redis", return_value=redis_client):
             with self._scheduler_client(raise_server_exceptions=False) as client:
                 response = client.post("/api/ops/cache/clear-dashboard")
 

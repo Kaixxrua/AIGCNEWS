@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Mapping
 
 import bcrypt
 from fastapi import Depends, HTTPException, Request, status
@@ -124,6 +124,22 @@ async def OptionalUser(
         return decode_access_token(credentials.credentials)
     except HTTPException:
         return None
+
+
+def extract_user_id(identity: Mapping[str, Any] | None) -> int | None:
+    """从 JWT payload / 身份映射中提取正整数 user_id，非法值一律返回 None。
+
+    路由层与服务层共享同一提取规则（user_id → id → sub 依次回退），
+    避免各调用点各自解析导致口径漂移。
+    """
+    if not isinstance(identity, Mapping):
+        return None
+    raw = identity.get("user_id") or identity.get("id") or identity.get("sub")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def hash_mcp_token(token: str) -> str:

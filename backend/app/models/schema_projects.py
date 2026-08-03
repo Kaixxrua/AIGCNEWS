@@ -1,0 +1,206 @@
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+GitHubProjectSort = Literal["hot", "stars", "updated", "recent", "name"]
+ProjectSource = Literal["all", "github", "website"]
+ProjectScope = Literal["all", "today", "recommended"]
+
+
+class GitHubProjectItem(BaseModel):
+    id: str | None = None
+    source: str = "github"
+    repo_id: str | int | None = None
+    website_id: str | int | None = None
+    full_name: str
+    title: str | None = None
+    url: str | None = None
+    domain: str | None = None
+    image_url: str | None = None
+    description: str | None = None
+    description_zh: str | None = None
+    description_en: str | None = None
+    category_slug: str | None = None
+    category_name: str | None = None
+    category_name_zh: str | None = None
+    category_name_en: str | None = None
+    subcategory_slug: str | None = None
+    subcategory_name: str | None = None
+    subcategory_name_zh: str | None = None
+    subcategory_name_en: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    tags_zh: list[str] = Field(default_factory=list)
+    tags_en: list[str] = Field(default_factory=list)
+    tags_origin: Literal["system", "user"] = "system"
+    language: str | None = None
+    topics: list[str] = Field(default_factory=list)
+    stars: int = 0
+    forks: int = 0
+    watchers: int = 0
+    open_issues: int = 0
+    created_at: str | None = None
+    pushed_at: str | None = None
+    first_seen_at: str | None = None
+    last_seen_at: str | None = None
+    last_snapshot_at: str | None = None
+    availability_status: str = "active"
+    snapshot_date: str | None = None
+    captured_at: str | None = None
+    rank_in_period: int | None = None
+    raw_score: float = 0.0
+    score: float = 0.0
+    daily_star_growth: int = 0
+    daily_growth_available: bool = False
+    daily_growth_source: str = "unavailable"
+    daily_growth_observed_at: str | None = None
+    daily_growth_date: str | None = None
+    previous_snapshot_date: str | None = None
+    hot_score: float = 0.0
+    scale_corrected_growth_score: float = 0.0
+    growth_acceleration_score: float = 0.0
+    absolute_growth_score: float = 0.0
+    maintenance_activity_score: float = 0.0
+    community_engagement_score: float = 0.0
+    confidence: float = 0.0
+    is_favorited: bool = False
+    favorited_at: str | None = None
+    is_recommended: bool = False
+    recommended_at: str | None = None
+    user_added: bool = False
+    user_added_at: str | None = None
+
+
+class GitHubProjectsResponse(BaseModel):
+    items: list[GitHubProjectItem]
+    total: int
+    page: int
+    page_size: int
+    has_next: bool
+    min_stars: int
+    scope: str = "all"
+    category: str = ""
+    subcategory: str = ""
+    q: str = ""
+    sort: str = "stars"
+    source: str = "github"
+
+
+class GitHubProjectSubcategory(BaseModel):
+    slug: str
+    name: str
+    name_zh: str = ""
+    name_en: str = ""
+    count: int
+
+
+class GitHubProjectCategory(BaseModel):
+    slug: str
+    name: str
+    name_zh: str = ""
+    name_en: str = ""
+    count: int
+    kind: str = "category"
+    scope: str | None = None
+    children: list[GitHubProjectSubcategory] = Field(default_factory=list)
+
+
+class GitHubProjectCategoriesResponse(BaseModel):
+    items: list[GitHubProjectCategory]
+    total: int
+    today_count: int = 0
+    recommended_count: int = 0
+    min_stars: int
+    source: str = "github"
+
+
+class ToolWebsiteAddRequest(BaseModel):
+    url: str = Field(default="", max_length=1024)
+
+
+class ToolWebsiteManualAddRequest(BaseModel):
+    url: str = Field(default="", max_length=1024)
+    title: str = Field(default="", max_length=512)
+    description_zh: str = Field(default="", max_length=512)
+    description_en: str = Field(default="", max_length=512)
+    category_slug: str = Field(default="other", max_length=64)
+    subcategory_slug: str = Field(default="", max_length=64)
+    tags: list[str] = Field(default_factory=list, max_length=8)
+
+
+class ToolWebsiteAddResponse(BaseModel):
+    status: str
+    message: str
+    duplicate: bool = False
+    item: dict[str, Any] | None = None
+
+
+class ToolWebsiteUpdateRequest(BaseModel):
+    title: str = Field(default="", max_length=512)
+    description: str = Field(default="", max_length=2000)
+    description_zh: str = Field(default="", max_length=512)
+    description_en: str = Field(default="", max_length=512)
+    category_slug: str = Field(default="other", max_length=64)
+    subcategory_slug: str = Field(default="", max_length=64)
+    tags: list[str] = Field(default_factory=list, max_length=8)
+    image_url: str = Field(default="", max_length=1024)
+
+
+class ToolWebsiteUpdateResponse(BaseModel):
+    status: str
+    message: str
+    item: dict[str, Any] | None = None
+
+
+class GitHubProjectTag(BaseModel):
+    """A personal tag with a stable filter value and localized labels."""
+
+    label: str
+    value: str = ""
+    label_zh: str = ""
+    label_en: str = ""
+    count: int = 0
+    tags_origin: Literal["system", "user"] = "system"
+
+
+class GitHubProjectTagsResponse(BaseModel):
+    items: list[GitHubProjectTag]
+    total: int
+    source: str = "github"
+
+
+class ToolWebsiteDeleteResponse(BaseModel):
+    status: str
+    message: str
+    deleted: bool = False
+    website_id: int
+
+
+class ProjectFavoriteRequest(BaseModel):
+    source: Literal["github", "website"]
+    repo_id: str | int | None = None
+    website_id: str | int | None = None
+
+
+class ProjectFavoriteResponse(BaseModel):
+    status: str
+    message: str
+    source: str
+    repo_id: str | int | None = None
+    website_id: str | int | None = None
+    is_favorited: bool = False
+    favorited_at: str | None = None
+    deleted: bool = False
+
+
+class ProjectTaxonomyItem(BaseModel):
+    slug: str
+    name: str
+    name_zh: str
+    name_en: str
+    children: list[dict[str, str]] = Field(default_factory=list)
+
+
+class ProjectTaxonomyResponse(BaseModel):
+    items: list[ProjectTaxonomyItem]
