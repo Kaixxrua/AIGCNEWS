@@ -1,23 +1,10 @@
 from __future__ import annotations
 
-import sys
-import types
 import unittest
 from unittest.mock import MagicMock, patch
 
-_config_name = "backend.app.core.config"
-_previous_config = sys.modules.get(_config_name)
-_config_stub = types.ModuleType(_config_name)
-_config_stub.settings = MagicMock(scheduler_timezone="Asia/Shanghai")
-sys.modules[_config_name] = _config_stub
-try:
-    from backend.app.services.ingestion import github_hot_service as hot
-    from backend.app.services.ingestion import github_project_metrics_service as metrics
-finally:
-    if _previous_config is None:
-        sys.modules.pop(_config_name, None)
-    else:
-        sys.modules[_config_name] = _previous_config
+from backend.app.services.ingestion import github_hot_service as hot
+from backend.app.services.ingestion import github_project_metrics_service as metrics
 
 
 class GitHubProjectMetricScoringTests(unittest.TestCase):

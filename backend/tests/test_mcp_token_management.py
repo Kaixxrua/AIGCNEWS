@@ -1,30 +1,8 @@
 from __future__ import annotations
 
-import sys
-import types
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
-
-if "backend.app.core.config" not in sys.modules:
-    config_module = types.ModuleType("backend.app.core.config")
-    config_module.settings = types.SimpleNamespace(
-        ACCESS_TOKEN_EXPIRE_MINUTES=60,
-        JWT_SECRET_KEY="test-secret",
-        JWT_ALGORITHM="HS256",
-        SMTP_HOST="",
-        SMTP_PORT=587,
-        SMTP_USERNAME="",
-        SMTP_PASSWORD="",
-        SMTP_FROM_EMAIL="",
-        SMTP_FROM_NAME="",
-        SMTP_USE_TLS=True,
-        mcp_github_fallback_enabled=True,
-        mcp_github_fallback_use_token=False,
-        mcp_github_fallback_timeout_seconds=8.0,
-        github_token="",
-    )
-    sys.modules["backend.app.core.config"] = config_module
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

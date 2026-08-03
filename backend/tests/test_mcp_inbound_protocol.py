@@ -1,43 +1,9 @@
 from __future__ import annotations
 
 import json
-import sys
 import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
-
-if "fastapi_cache.decorator" not in sys.modules:
-    fastapi_cache = types.ModuleType("fastapi_cache")
-    fastapi_cache_decorator = types.ModuleType("fastapi_cache.decorator")
-
-    def _cache(*_args, **_kwargs):
-        return lambda function: function
-
-    fastapi_cache_decorator.cache = _cache
-    sys.modules.setdefault("fastapi_cache", fastapi_cache)
-    sys.modules.setdefault("fastapi_cache.decorator", fastapi_cache_decorator)
-
-if "backend.app.core.config" not in sys.modules:
-    config_module = types.ModuleType("backend.app.core.config")
-    config_module.settings = types.SimpleNamespace(
-        mcp_github_fallback_enabled=True,
-        mcp_github_fallback_use_token=False,
-        mcp_github_fallback_timeout_seconds=8.0,
-        project_semantic_search_enabled=False,
-        project_semantic_query_timeout_seconds=1.5,
-        github_token="",
-        ACCESS_TOKEN_EXPIRE_MINUTES=60,
-        JWT_SECRET_KEY="test-secret",
-        JWT_ALGORITHM="HS256",
-        SMTP_HOST="",
-        SMTP_PORT=587,
-        SMTP_USERNAME="",
-        SMTP_PASSWORD="",
-        SMTP_FROM_EMAIL="",
-        SMTP_FROM_NAME="",
-        SMTP_USE_TLS=True,
-    )
-    sys.modules["backend.app.core.config"] = config_module
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

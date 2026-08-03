@@ -7,19 +7,8 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-_config_name = "backend.app.core.config"
-_previous_config = sys.modules.get(_config_name)
-_config_stub = types.ModuleType(_config_name)
-_config_stub.settings = MagicMock(scheduler_timezone="Asia/Shanghai")
-sys.modules[_config_name] = _config_stub
-try:
-    from backend.app.core import scheduler
-    from backend.app.services.ingestion import github_project_metrics_service as metrics
-finally:
-    if _previous_config is None:
-        sys.modules.pop(_config_name, None)
-    else:
-        sys.modules[_config_name] = _previous_config
+from backend.app.core import scheduler
+from backend.app.services.ingestion import github_project_metrics_service as metrics
 
 
 class GitHubMetricDateTests(unittest.TestCase):
