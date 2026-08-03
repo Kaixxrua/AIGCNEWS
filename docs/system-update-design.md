@@ -1,5 +1,11 @@
 # 系统更新架构与逻辑设计文档
 
+> **历史设计稿 / 部分内容已实现或失效（2026-08-03）**
+>
+> 本文是 2026 年 3 月 17 日的设计稿，其中 MySQL/SQLite 写入路径、注册邀请码
+> 等描述已与当前实现不符（邀请码配置已于 2026-08-03 移除，注册保持开放），
+> 不得据此实施任何变更。当前实现以 [architecture.md](architecture.md) 为准。
+
 > 适用项目：AIGC_NEWS  
 > 参考现状文档：[docs/architecture.md](docs/architecture.md)、[docs/code-analysis.md](docs/code-analysis.md)  
 > 设计日期：2026-03-17

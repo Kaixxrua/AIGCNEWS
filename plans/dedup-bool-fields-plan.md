@@ -1,5 +1,11 @@
 # 主表去重 + 布尔字段标记周期 技术方案
 
+> **历史计划 / 已由当前架构取代（2026-08-03）**
+>
+> 本文是 2026 年 3 月基于 MySQL/SQLite 时代的技术方案，文中引用的 `backend/app/repositories/mysql_repo.py`、三库写入路径与相关行号均已不存在，不得据此实施任何变更。当前架构见 [`../docs/architecture.md`](../docs/architecture.md)；MySQL 最终退役见 [`../docs/mysql-retirement-runbook.md`](../docs/mysql-retirement-runbook.md)。
+
+---
+
 ## 0. 背景与目标
 
 当前问题发生在 [`IngestionOrchestrator.run_all()`](backend/app/services/ingestion/pipeline.py:533) 与 [`BaseCrawler.fetch_all_periods()`](backend/app/services/ingestion/base_crawler.py:156) 的组合流程中：
