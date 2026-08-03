@@ -395,7 +395,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 - 生产模式：通过 `aiosmtplib` 异步发送 SMTP 邮件（支持 STARTTLS / SSL）
 - `_send_email()` 发送纯文本邮件（OTP），`_send_html_email()` 发送 HTML 邮件（简报推送）
 - Key 前缀：`email:code:{email}` / `email:lock:{email}`
-- 保留 `sms_service.py`：兼容旧代码引用，但新注册流程不再使用
+- 保留 `sms_service.py`：当前全仓库无调用方，作为延期能力保留；云厂商短信通道（阿里云/腾讯云）属于未授权的外部网络集成，接入前需独立授权并补契约测试（即使配置 api_key 也只记录日志、不出网）
 
 ### 3.7 会话服务 — `backend/app/services/chat/`
 
@@ -422,6 +422,8 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 ### 4.1 PostgreSQL 16 — repository Protocol 与 composition root
 
 PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE 调用方依赖 `backend/app/repositories/*_repository.py` 中按能力拆分的 Protocol，不依赖具体数据库类；`backend/app/repositories/application_repository_factory.py` 负责构造 PostgreSQL 实现，`backend/app/main.py` 的 FastAPI lifespan 是 composition root，统一打开/关闭连接并将 repository 集合注入应用。
+
+服务层不再存在进程级仓储回退：采集、简报、RAG 评估、GitHub 富化/指标/热度、语义索引等入口一律要求显式注入依赖，仅应用组合根（`main.py` lifespan）与有边界的 CLI/脚本组合点（如 `run_ingestion.py`、`scripts/backfill_*.py`）可以装配仓储。模型运行时的提供商设置读取器同样由 lifespan 显式绑定（`configure_runtime_provider_settings`），关闭时解绑；未绑定时读取直接报错而非隐式回退。架构测试以 AST 扫描固化：生产代码中仅 `main.py` 允许引用仓储装配上下文。
 
 主 `docker/docker-compose.yml` 只声明 `project-catalog-postgres`，不声明 MySQL。MySQL 相关 Compose、repository 与迁移工具只用于有边界的迁移、核对和恢复，不属于应用启动或请求路径；其最终退役按 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md) 执行。
 
@@ -718,8 +720,15 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 
 1. 视觉问答仅持久化文本消息对与安全的 modality 元数据；出于 Zero-Disk 约束不保存截图，因此历史视觉消息不能在没有新截图时重新生成。
 2. 生产 MySQL 容器停用、凭据撤销、观察期及最终数据卷删除属于独立运维授权边界；仓库侧完成不代表这些操作已执行。
+3. 云厂商短信通道（阿里云/腾讯云）未接入；`sms_service.py` 保留为无调用方的延期能力，接入前需独立授权。
+4. 生产 `PROJECT_CATALOG_BACKEND=postgres` 切换、生产 schema apply、真实凭据轮换、生产容器重建与外网验证均属于独立部署授权，不在代码重构范围内。
 
-### 10.1 2026-07 渐进式重构收口
+### 10.1 2026-08 重构收尾
+
+- **完成**：服务层显式依赖注入收口（移除进程级仓储回退，AST 门禁固化）、CI 演练配置修复与 PostgreSQL 16 门禁集成套件启用、Compose/镜像冒烟 CI 作业、容器边界加固（内部服务不再向宿主机发布端口、第三方镜像 sha256 摘要固定、前端 SSL 证书改为运行时只读挂载、干净检出可构建）、占位模块与失效包标记清理。
+- **运维边界文档化**：端口与证书边界见 [`linux-server-boot.md`](linux-server-boot.md)。
+
+### 10.2 2026-07 渐进式重构收口
 
 - **完成**：repository Protocol 与 FastAPI lifespan composition root、PostgreSQL-only 应用运行时、主 Compose 移除 MySQL、REST/MCP/SSE 调用方切换、聊天及视觉消息持久化、前端统一会话状态、无调用者占位壳清理。
 - **被后续设计取代**：MySQL 主从/影子读长期共存方案、运行时数据库选择开关、独立的视觉消息状态树；历史设计保留在已标记为历史快照的文档中。

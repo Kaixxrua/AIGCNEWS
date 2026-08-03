@@ -32,15 +32,18 @@ npm install
 start.bat up
 ```
 
-默认访问地址：
-- Milvus gRPC: `localhost:19530`
-- Milvus HTTP: `localhost:9091`
-- Attu 管理界面: `http://localhost:8000`
-- Neo4j Browser: `http://localhost:7475`
-- Neo4j Bolt: `bolt://localhost:7688`
+默认访问地址（应用服务）：
+- 后端 API: `http://localhost:8000`（`/api/live`、`/api/ready` 健康检查）
+- 前端: `http://localhost`（80/443，生产域名证书见 `frontend/ssl/`）
 
-默认账号与密码：
-- Neo4j: `neo4j / your_password`（请在 `.env` 中修改）
+基础设施（Milvus / MinIO / Attu / Neo4j / Redis）只在编排网络内部暴露，
+不再向宿主机发布端口；后端通过服务名访问（`milvus:19530`、`neo4j:7687`、
+`redis:6379`）。宿主机侧临时调试用 `docker exec <容器> ...`，运维细节见
+[`docs/linux-server-boot.md`](docs/linux-server-boot.md)。
+
+默认账号与密码（可用 `.env` 中的 `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` /
+`NEO4J_PASSWORD` 覆盖）：
+- Neo4j: `neo4j / 12345678`（请在 `.env` 中修改）
 - MinIO: `minioadmin / minioadmin`
 
 ### 4) 启动开发服务
