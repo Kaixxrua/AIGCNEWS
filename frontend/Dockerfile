@@ -16,4 +16,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # 运行时通过卷挂载提供：docker/docker-compose.yml 挂载 ../frontend/ssl → /etc/nginx/ssl:ro
 RUN mkdir -p /etc/nginx/ssl
 EXPOSE 80 443
+# 镜像级健康检查：TCP 探测 HTTP/HTTPS 监听（nginx:alpine 自带 busybox nc）
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["sh", "-c", "nc -z 127.0.0.1 80 && nc -z 127.0.0.1 443"]
 CMD ["nginx", "-g", "daemon off;"]

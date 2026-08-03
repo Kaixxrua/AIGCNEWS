@@ -20,8 +20,25 @@ ENV HF_ENDPOINT=https://hf-mirror.com
 ENV HF_HUB_OFFLINE=0
 ENV TRANSFORMERS_OFFLINE=0
 
+# 最小权限运行：固定 uid/gid 1000 的 app 用户，与部署主机实例用户
+# （应用目录与存储卷属主）一致。绑定挂载的代码/存储保持可写，
+# 容器内不再向宿主目录写入 root 属主文件（如 __pycache__）。
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid app --create-home --shell /usr/sbin/nologin app \
+    && mkdir -p /src/storage/papers /hf-cache \
+    && chown -R app:app /src/storage /hf-cache
+
+# HuggingFace 缓存落在非 root 可写路径；compose 将 ../storage/hf_cache/huggingface 挂载到这里
+ENV HF_HOME=/hf-cache
+
 # 暴露端口
 EXPOSE 8000
+
+# 镜像级健康检查（compose 中的 healthcheck 定义优先于此处，行为一致）
+HEALTHCHECK --interval=10s --timeout=7s --start-period=30s --retries=18 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5)"]
+
+USER app
 
 # 启动命令也改成带有 backend 前缀（注意这里 CMD 和 [ 之间有空格啦！）
 CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

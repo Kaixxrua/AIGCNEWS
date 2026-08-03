@@ -24,6 +24,8 @@ services:
       - HF_ENDPOINT=https://hf-mirror.com
       - HF_HUB_OFFLINE=0
       - TRANSFORMERS_OFFLINE=0
+      # 与镜像内 HF_HOME 一致；下方挂载点必须保持同一路径
+      - HF_HOME=/hf-cache
       - OUTBOUND_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - HTTP_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - HTTPS_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
@@ -38,8 +40,13 @@ services:
     volumes:
       - ../backend:/src/backend
       - ../storage/papers:/src/storage/papers
-      - ../storage/hf_cache/huggingface:/root/.cache/huggingface
+      # 容器以非 root（uid 1000）运行，缓存挂在镜像声明的 HF_HOME
+      - ../storage/hf_cache/huggingface:/hf-cache
     command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5)"]
       interval: 10s
@@ -93,6 +100,24 @@ services:
     volumes:
       # SSL 证书与私钥留在宿主机，只读挂载，不进镜像、不进仓库
       - ../frontend/ssl:/etc/nginx/ssl:ro
+    # nginx master 需要绑定 80/443 并读取宿主证书，保留 root 启动，
+    # 只授予 root-master nginx 的最小 capability 集：
+    #   NET_BIND_SERVICE 绑定端口；SETUID/SETGID 派生 nginx(uid 101) worker；
+    #   CHOWN 把 tmpfs 上的临时目录 chown 给 worker。
+    # 根文件系统只读，CHOWN 的作用域仅限两个 tmpfs。
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
+      - CHOWN
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
 
   priceai:
     build:

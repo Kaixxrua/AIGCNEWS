@@ -63,6 +63,13 @@ scripts/manage_main_stack.sh status
 
 unit 以实例用户运行 Compose，不使用 root 创建容器或持久化文件。unit 没有 `ExecStop`：服务器关机时不拆除 Compose project，下一次开机由 Docker restart policy 和 systemd 共同恢复。
 
+## 容器最小权限边界
+
+- `backend-api` 以镜像内非 root 用户 `app`（uid/gid 1000，与实例用户一致）运行，并启用 `no-new-privileges` 与 `cap_drop: ALL`；HuggingFace 缓存挂载点为镜像声明的 `HF_HOME=/hf-cache`（宿主目录仍是 `storage/hf_cache/huggingface`）。
+- 首次以非 root 镜像重建后端前，若宿主存储目录留有 root 属主文件（历史容器以 root 写入，如 `storage/papers`、`storage/hf_cache`），先执行一次性属主修复：`sudo chown -R 1000:1000 storage/papers storage/hf_cache`，否则应用无法覆写旧文件。
+- `frontend-web` 的 nginx master 保留 root 启动（绑定 80/443、读取宿主证书），但只授予 root-master nginx 的最小 capability 集：`NET_BIND_SERVICE`（绑定端口）、`SETUID`/`SETGID`（派生 nginx worker）、`CHOWN`（把 tmpfs 上的临时目录 chown 给 worker）；容器根文件系统只读，可写路径仅 `/var/cache/nginx`、`/var/run` 两个 tmpfs，CHOWN 的作用域因此仅限于这两个 tmpfs。
+- 后端与前端镜像均内置 `HEALTHCHECK`；Compose 中的 healthcheck 定义与镜像行为一致并优先生效。
+
 ## 健康验证
 
 ```bash
