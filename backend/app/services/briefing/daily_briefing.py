@@ -51,7 +51,7 @@ _BLOCK_RESPONSE_ERROR = (
 )
 
 
-_PROMPT_ALL = """你是一位专业的 AIGC 技术资讯编辑。请根据以下{period_label}热点内容（综合学术论文、开源项目、行业新闻），撰写一份**内容详尽、深度全面**的综合{period_label}报。
+_PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以下{period_label}热点内容（综合学术论文、开源项目、行业新闻），撰写一份**内容详尽、深度全面**的综合{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
@@ -69,7 +69,7 @@ _PROMPT_ALL = """你是一位专业的 AIGC 技术资讯编辑。请根据以下
 **生成日期：** {date}
 """
 
-_PROMPT_ARXIV = """你是一位专业的 AI 学术研究分析师。请根据以下{period_label} Arxiv 学术论文，撰写一份**内容详尽、深度全面**的学术{period_label}报。
+_PROMPT_ARXIV = r"""你是一位专业的 AI 学术研究分析师。请根据以下{period_label} Arxiv 学术论文，撰写一份**内容详尽、深度全面**的学术{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
@@ -86,7 +86,7 @@ _PROMPT_ARXIV = """你是一位专业的 AI 学术研究分析师。请根据以
 **生成日期：** {date}
 """
 
-_PROMPT_GITHUB = """你是一位专业的 AI 工程技术分析师。请根据以下{period_label} GitHub 热门开源项目，撰写一份**内容详尽、深度全面**的工程{period_label}报。
+_PROMPT_GITHUB = r"""你是一位专业的 AI 工程技术分析师。请根据以下{period_label} GitHub 热门开源项目，撰写一份**内容详尽、深度全面**的工程{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
@@ -103,7 +103,7 @@ _PROMPT_GITHUB = """你是一位专业的 AI 工程技术分析师。请根据�
 **生成日期：** {date}
 """
 
-_PROMPT_NEWS = """你是一位专业的 AI 行业分析师。请根据以下{period_label} AI 行业新闻，撰写一份**内容详尽、深度全面**的商业{period_label}报。
+_PROMPT_NEWS = r"""你是一位专业的 AI 行业分析师。请根据以下{period_label} AI 行业新闻，撰写一份**内容详尽、深度全面**的商业{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
@@ -121,7 +121,7 @@ _PROMPT_NEWS = """你是一位专业的 AI 行业分析师。请根据以下{per
 """
 
 
-_PROMPT_PRODUCTHUNT = """你是一位专业的 AI 产品分析师。请根据以下{period_label} Product Hunt 热门 AI 产品，撰写一份**内容详尽、深度全面**的产品{period_label}报。
+_PROMPT_PRODUCTHUNT = r"""你是一位专业的 AI 产品分析师。请根据以下{period_label} Product Hunt 热门 AI 产品，撰写一份**内容详尽、深度全面**的产品{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
@@ -138,7 +138,7 @@ _PROMPT_PRODUCTHUNT = """你是一位专业的 AI 产品分析师。请根据以
 **生成日期：** {date}
 """
 
-_PROMPT_HACKERNEWS = """你是一位专业的技术社区观察员。请根据以下{period_label} Hacker News AI 相关热门讨论，撰写一份**内容详尽、深度全面**的社区洞察{period_label}报。
+_PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据以下{period_label} Hacker News AI 相关热门讨论，撰写一份**内容详尽、深度全面**的社区洞察{period_label}报。
 
 **要求：**
 1. 使用 Markdown 格式输出
