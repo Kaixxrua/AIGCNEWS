@@ -83,9 +83,12 @@ docker compose --project-name docker --file docker/docker-compose.yml ps
 
 ## 端口与证书边界
 
-- Milvus、MinIO、Attu、Neo4j、Redis 只在编排网络内 `expose`，不向宿主机发布端口；`priceai` 同样仅 `expose`，由前端 nginx 反代。宿主机只发布 `8000`（后端）、`80/443`（前端 nginx）。
+- Milvus、MinIO、Attu、Neo4j、Redis 只在编排网络内 `expose`，不向宿主机发布端口；`priceai` 同样仅 `expose`，由前端 nginx 反代。宿主机只发布 `127.0.0.1:8000`（后端，仅回环）、`80/443`（前端 nginx）。
 - 后端经编排网络按服务名访问依赖（`MILVUS_HOST=milvus`、`NEO4J_URI=bolt://neo4j:7687`、`REDIS_HOST=redis` 等，见 `.env`）。宿主机侧临时调试用 `docker exec <container> ...` 或 `docker compose ... port-forward` 式临时映射，不把管理端口长期发布到宿主机。
 - 前端镜像不包含 SSL 证书；`frontend-web` 以只读卷挂载 `frontend/ssl` 到 `/etc/nginx/ssl`。重建前端容器前确认该目录存在且包含 nginx.conf 引用的四个证书/私钥文件（该目录被 gitignore，不进仓库、不进镜像）。
+- **私钥属主约定**：`frontend/ssl/*.key` 必须为 `root:root`（权限 600）。加固后的 `frontend-web` `cap_drop: ALL`，容器内 nginx master 以 uid 0 运行但没有 `CAP_DAC_OVERRIDE`，读不动 `kaixxrua:kaixxrua 600` 的私钥（2026-08-03 曾因此 crash loop）。证书续期/替换后务必 `chown root:root *.key`。
+- **响应头与限流分层**：HTML 页面（`aigcnews.cn/` 静态资源）由远程 Caddy VPS 发布层负责，其安全响应头在 Caddy 侧配置；本 nginx 负责 `/api/*` 流量——安全响应头、`limit_req` 限流（认证 10 次/分、一般 20 次/秒）、`client_max_body_size 60m`、真实客户端 IP 还原。验证响应头时用 `/api/live` 等 API 路径，不要用首页（首页不经过本 nginx）。
+- **真实 IP 还原**：cloudflared 以宿主机 WireGuard 地址（`10.20.0.1`）回源，主 server 用 `set_real_ip_from 10.20.0.1` + `real_ip_header CF-Connecting-IP` 还原真实客户端；转发给后端的 `X-Forwarded-For` 以还原值为准（后端限流按首跳取值）。若 cloudflared 部署形态变化（容器化或更换回源地址），必须同步该白名单，否则限流退化为全局限流。
 
 ## 故障处理约束
 
