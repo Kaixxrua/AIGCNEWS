@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from backend.app.core.config import settings
 from backend.app.repositories.document_repository import DocumentWriter
 
 logger = logging.getLogger(__name__)
@@ -168,12 +169,7 @@ def _parse_entry(entry: ET.Element) -> Optional[Dict[str, Any]]:
 
 def _get_storage_dir() -> str:
     """获取 PDF 存储目录，确保目录存在。"""
-    try:
-        from backend.app.core.config import settings
-
-        storage_dir = settings.papers_storage_dir
-    except Exception:
-        storage_dir = os.getenv("PAPERS_STORAGE_DIR", "storage/papers")
+    storage_dir = settings.papers_storage_dir
     os.makedirs(storage_dir, exist_ok=True)
     return storage_dir
 

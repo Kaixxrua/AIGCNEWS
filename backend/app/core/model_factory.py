@@ -272,9 +272,13 @@ def create_embedding_model():
     if provider == HUGGINGFACE_PROVIDER:
         import os
 
-        # 优先使用 hf-mirror.com 镜像（国内服务器访问 huggingface.co 不通）
-        if not os.environ.get("HF_ENDPOINT"):
-            os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+        # 镜像端点统一由 settings.hf_endpoint（HF_ENDPOINT 启动时读取一次）提供；
+        # 留空时沿用 hf-mirror.com 默认（国内服务器访问 huggingface.co 不通）。
+        # huggingface_hub 在调用时读 HF_ENDPOINT 环境变量（库的合同），
+        # 因此此处仍需写回环境——但真相来源已收拢到 settings。
+        os.environ["HF_ENDPOINT"] = (
+            settings.hf_endpoint.strip() or "https://hf-mirror.com"
+        )
 
         # 强制离线加载：模型已在本地缓存，禁止网络请求
         # 新版 sentence-transformers 会检查 adapter_config.json（PEFT 适配器）

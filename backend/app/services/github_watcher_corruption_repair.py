@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import date, timedelta
 from typing import Any
 
@@ -305,9 +304,11 @@ class GitHubWatcherCorruptionRepairService:
 
     def _validate_production_authorization(self, cli_authorized: bool) -> None:
         environment = str(getattr(self._config, "env", "development") or "").lower()
-        env_authorized = os.getenv(
-            "GITHUB_WATCHER_REPAIR_PRODUCTION_AUTHORIZED", ""
-        ).strip().lower() in {"1", "true", "yes"}
+        # 第二授权通道：settings.github_watcher_repair_production_authorized
+        # （环境变量 GITHUB_WATCHER_REPAIR_PRODUCTION_AUTHORIZED 启动时读取一次）。
+        env_authorized = bool(
+            getattr(self._config, "github_watcher_repair_production_authorized", False)
+        )
         if environment == "production" and not (cli_authorized and env_authorized):
             raise GitHubWatcherRepairSafetyError(
                 "production watcher repair requires independent CLI and environment authorization"

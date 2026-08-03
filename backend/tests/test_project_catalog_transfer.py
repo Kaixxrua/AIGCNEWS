@@ -31,12 +31,17 @@ class ErrorWithSqlstate(RuntimeError):
         self.sqlstate = sqlstate
 
 
-def settings(*, env: str = "development") -> SimpleNamespace:
+def settings(
+    *,
+    env: str = "development",
+    migration_authorized: bool = False,
+) -> SimpleNamespace:
     return SimpleNamespace(
         env=env,
         mysql_host="mysql.internal",
         mysql_port=3306,
         mysql_database="catalog_source",
+        project_catalog_migration_production_authorized=migration_authorized,
     )
 
 
@@ -366,16 +371,17 @@ def test_load_without_apply_remains_a_plan() -> None:
     plan.assert_called_once()
 
 
-def test_production_requires_two_independent_authorizations(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_production_requires_two_independent_authorizations() -> None:
+    # CLI 已授权但环境第二通道未授权 → 拒绝
     service = ProjectCatalogTransferService(mysql=object(), postgres=object(), config=settings(env="production"))  # type: ignore[arg-type]
-    monkeypatch.delenv("PROJECT_CATALOG_MIGRATION_PRODUCTION_AUTHORIZED", raising=False)
     with pytest.raises(ProjectCatalogTransferSafetyError, match="independent"):
         service._validate_production_authorization(True)
 
-    monkeypatch.setenv("PROJECT_CATALOG_MIGRATION_PRODUCTION_AUTHORIZED", "true")
+    # 环境第二通道已授权但 CLI 未授权 → 拒绝；双通道齐备 → 放行
+    authorized = ProjectCatalogTransferService(mysql=object(), postgres=object(), config=settings(env="production", migration_authorized=True))  # type: ignore[arg-type]
     with pytest.raises(ProjectCatalogTransferSafetyError, match="independent"):
-        service._validate_production_authorization(False)
-    service._validate_production_authorization(True)
+        authorized._validate_production_authorization(False)
+    authorized._validate_production_authorization(True)
 
 
 class BatchCursor:

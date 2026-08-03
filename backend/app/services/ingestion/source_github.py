@@ -4,7 +4,6 @@ import base64
 import hashlib
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -31,7 +30,8 @@ _PER_TOPIC_LIMIT = 10
 
 
 def _get_token() -> str:
-    return (settings.github_token or os.getenv("GITHUB_TOKEN", "")).strip()
+    # settings.github_token 由 pydantic-settings 自动读取 GITHUB_TOKEN 环境变量。
+    return settings.github_token.strip()
 
 
 def _build_headers(use_token: bool = True) -> dict:

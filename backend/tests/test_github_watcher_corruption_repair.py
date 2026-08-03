@@ -21,10 +21,22 @@ class TransactionalDatabase:
         yield self.connection
 
 
-def _service(connection: MagicMock, *, env: str = "development") -> GitHubWatcherCorruptionRepairService:
+def _service(
+    connection: MagicMock,
+    *,
+    env: str = "development",
+    repair_authorized: bool = False,
+) -> GitHubWatcherCorruptionRepairService:
     return GitHubWatcherCorruptionRepairService(
         postgres=TransactionalDatabase(connection),  # type: ignore[arg-type]
-        config=type("Config", (), {"env": env})(),
+        config=type(
+            "Config",
+            (),
+            {
+                "env": env,
+                "github_watcher_repair_production_authorized": repair_authorized,
+            },
+        )(),
     )
 
 
@@ -200,24 +212,21 @@ def test_batch_size_and_cursor_are_bounded() -> None:
 
 
 def test_production_apply_requires_two_independent_authorizations() -> None:
-    service = _service(MagicMock(), env="production")
-    with patch.dict("os.environ", {}, clear=True):
-        with pytest.raises(GitHubWatcherRepairSafetyError):
-            service.repair(
-                target_database="catalog_test",
-                target_schema="public",
-                apply=True,
-                production_authorized=True,
-            )
-    with patch.dict(
-        "os.environ",
-        {"GITHUB_WATCHER_REPAIR_PRODUCTION_AUTHORIZED": "true"},
-        clear=True,
-    ):
-        with pytest.raises(GitHubWatcherRepairSafetyError):
-            service.repair(
-                target_database="catalog_test",
-                target_schema="public",
-                apply=True,
-                production_authorized=False,
-            )
+    # CLI 已授权但环境第二通道未授权 → 拒绝
+    service = _service(MagicMock(), env="production", repair_authorized=False)
+    with pytest.raises(GitHubWatcherRepairSafetyError):
+        service.repair(
+            target_database="catalog_test",
+            target_schema="public",
+            apply=True,
+            production_authorized=True,
+        )
+    # 环境第二通道已授权但 CLI 未授权 → 拒绝
+    service = _service(MagicMock(), env="production", repair_authorized=True)
+    with pytest.raises(GitHubWatcherRepairSafetyError):
+        service.repair(
+            target_database="catalog_test",
+            target_schema="public",
+            apply=True,
+            production_authorized=False,
+        )

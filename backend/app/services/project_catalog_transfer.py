@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import random
 import re
 import time
@@ -1686,9 +1685,13 @@ class ProjectCatalogTransferService:
 
     def _validate_production_authorization(self, cli_authorized: bool) -> None:
         environment = str(getattr(self._config, "env", "development") or "").lower()
-        env_authorized = os.getenv(
-            "PROJECT_CATALOG_MIGRATION_PRODUCTION_AUTHORIZED", ""
-        ).strip().lower() in {"1", "true", "yes"}
+        # 第二授权通道：settings.project_catalog_migration_production_authorized
+        # （环境变量 PROJECT_CATALOG_MIGRATION_PRODUCTION_AUTHORIZED 启动时读取一次）。
+        env_authorized = bool(
+            getattr(
+                self._config, "project_catalog_migration_production_authorized", False
+            )
+        )
         if environment == "production" and not (cli_authorized and env_authorized):
             raise ProjectCatalogTransferSafetyError(
                 "production migration requires independent CLI and environment authorization"

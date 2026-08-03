@@ -17,13 +17,14 @@ v3 变更：
 
 import asyncio
 import logging
-import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from bs4 import BeautifulSoup
+
+from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +34,8 @@ _HF_DEFAULT_BASE = "https://huggingface.co"
 
 
 def _get_hf_base() -> str:
-    """读取 HF_ENDPOINT 配置（优先 settings，回退环境变量），返回 base URL。"""
-    base = ""
-    try:
-        from backend.app.core.config import settings
-
-        base = (settings.hf_endpoint or "").strip().rstrip("/")
-    except Exception:
-        pass
-    if not base:
-        base = os.getenv("HF_ENDPOINT", "").strip().rstrip("/")
+    """读取 HF 镜像配置（settings.hf_endpoint 自动映射 HF_ENDPOINT），返回 base URL。"""
+    base = settings.hf_endpoint.strip().rstrip("/")
     if not base:
         base = _HF_DEFAULT_BASE
     return base
@@ -79,15 +72,7 @@ def _get_headers() -> Dict[str, str]:
             "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
     }
-    token = ""
-    try:
-        from backend.app.core.config import settings
-
-        token = settings.huggingface_token
-    except Exception:
-        pass
-    if not token:
-        token = os.getenv("HUGGINGFACE_TOKEN", "")
+    token = settings.huggingface_token.strip()
     if token:
         headers["Authorization"] = f"Bearer {token}"
         logger.debug("[Arxiv][HF] 已注入 HuggingFace Token")

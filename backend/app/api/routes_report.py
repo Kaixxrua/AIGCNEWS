@@ -18,6 +18,7 @@ from backend.app.api.dependencies import (
     get_evaluation_repository,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
+from backend.app.core.config import settings
 from backend.app.repositories.briefing_repository import (
     BriefingReader,
     BriefingSubscriptionRepository,
@@ -34,7 +35,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_SSE_HEARTBEAT_INTERVAL_SECONDS = 10.0
+# SSE 心跳间隔统一由 settings.sse_heartbeat_interval（SSE_HEARTBEAT_INTERVAL）提供。
+_SSE_HEARTBEAT_INTERVAL_SECONDS = float(settings.sse_heartbeat_interval)
 
 
 _VALID_SOURCES = {"all", "arxiv", "github", "news", "producthunt", "hackernews"}

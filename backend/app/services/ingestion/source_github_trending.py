@@ -32,13 +32,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 from datetime import date
 from typing import Any, Dict, List
 
 import httpx
 from bs4 import BeautifulSoup
+
+from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -73,15 +74,7 @@ def _get_headers() -> Dict[str, str]:
         "Accept-Language": "en-US,en;q=0.9",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
-    token = ""
-    try:
-        from backend.app.core.config import settings
-
-        token = settings.github_token
-    except Exception:
-        pass
-    if not token:
-        token = os.getenv("GITHUB_TOKEN", "")
+    token = settings.github_token.strip()
     if token:
         headers["Authorization"] = f"token {token}"
         logger.debug("[GitHub Trending] 已注入 GitHub Token")
