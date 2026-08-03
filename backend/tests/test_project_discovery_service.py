@@ -234,7 +234,10 @@ class ProjectDiscoveryTests(unittest.TestCase):
         repo.find_lexical_candidate_lanes.assert_called_once()
         plan = repo.find_lexical_candidate_lanes.call_args.kwargs["q"]
         self.assertEqual(plan.normalized_query, "DeusData/codebase-memory-mcp")
-        self.assertEqual(plan.strict_terms, ("DeusData", "codebase-memory-mcp"))
+        # mcp 概念在 "-mcp" 后缀上按词边界命中并消费该 span，
+        # 因此字面词只剩 owner 段；概念组负责 mcp 语义。
+        self.assertEqual(plan.strict_terms, ("DeusData",))
+        self.assertEqual({concept.concept_id for concept in plan.concepts}, {"mcp"})
         self.assertEqual(
             repo.list_projects.call_args.kwargs["candidate_repo_ids"][0],
             "DeusData/codebase-memory-mcp",
