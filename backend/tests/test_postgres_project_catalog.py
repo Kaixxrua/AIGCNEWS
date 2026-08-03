@@ -208,6 +208,43 @@ def test_typed_lexical_plan_counts_each_concept_once_and_binds_aliases() -> None
     assert len(database.cursor.calls) == 2
 
 
+def test_lexical_lanes_placeholder_count_and_param_order_align() -> None:
+    database = Database([[]])
+    plan = ProjectLexicalRetrievalPlan(
+        normalized_query="ai agent",
+        strict_terms=("ai", "agent"),
+        concepts=(
+            ProjectLexicalConcept(
+                concept_id="agent",
+                primary_terms=("agent",),
+                aliases=("智能体",),
+            ),
+        ),
+    )
+
+    PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(
+        q=plan, category="agents", tag="llm", strict_limit=100, relaxed_limit=80,
+    )
+
+    sql, params = database.cursor.calls[1]
+    # 每个 %s 占位符必须恰好绑定一个参数（契约见 postgres_project_catalog 参数顺序注释）。
+    assert sql.count("%s") == len(params)
+    # 1. filter_params：min_stars、category、tag（enriched 状态过滤无参数）
+    assert params[:3] == (500, "agents", '%"llm"%')
+    # 2. hit_params：term:0、term:1、concept:agent 各词/别名 × 两个文档分支，
+    #    每行交错绑定 (group_id, pattern, group_id, pattern)
+    assert params[3:19] == (
+        "term:0", "%ai%", "term:0", "%ai%",
+        "term:1", "%agent%", "term:1", "%agent%",
+        "concept:agent", "%agent%", "concept:agent", "%agent%",
+        "concept:agent", "%智能体%", "concept:agent", "%智能体%",
+    )
+    # 3. scored 匹配强度：normalized_query ×2（精确等值）+ prefix ×2（前缀）
+    assert params[19:23] == ("ai agent", "ai agent", "ai agent%", "ai agent%")
+    # 4. 车道边界：覆盖组数（term:0/term:1/concept:agent）、strict_limit、relaxed_limit
+    assert params[23:] == (3, 100, 80)
+
+
 def test_empty_typed_lexical_plan_short_circuits_without_transaction() -> None:
     database = Database([])
     plan = ProjectLexicalRetrievalPlan(normalized_query="", strict_terms=(), concepts=())

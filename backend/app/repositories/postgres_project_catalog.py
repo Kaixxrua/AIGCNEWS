@@ -31,6 +31,113 @@ from backend.app.repositories.project_catalog_normalization import (
 
 GITHUB_PROJECT_TODAY_LIMIT = 50
 
+# ── 词法检索的字段级匹配片段 ─────────────────────────────────────────────
+# 每个搜索词在所有字段上做 OR 匹配；参数按字段顺序逐一绑定（[like] * len(fields)）。
+_GH_TERM_MATCH_FIELDS = (
+    "c.full_name",
+    "c.title",
+    "c.description",
+    "COALESCE(ge.description_zh, '')",
+    "COALESCE(c.language, '')",
+    "COALESCE(c.topics_json, '')",
+    "COALESCE(ge.tags_json::text, '')",
+)
+_GH_TERM_MATCH_FIELDS_WITH_I18N_TAGS = (
+    *_GH_TERM_MATCH_FIELDS,
+    "COALESCE(ge.tags_zh_json::text, '')",
+    "COALESCE(ge.tags_en_json::text, '')",
+)
+
+
+def _term_match_filter(fields: tuple[str, ...]) -> str:
+    """生成 (field ILIKE %s ESCAPE '=' OR ...) 形式的字段组过滤片段。"""
+    return "(" + " OR ".join(f"{field} ILIKE %s ESCAPE '='" for field in fields) + ")"
+
+
+# ── list_projects 统一行结构的逐列清单 ──────────────────────────────────
+# github 与 website 两个 UNION ALL 分支的列按位置一一对应；任何一侧增删列
+# 都必须同步另一侧以及 project_catalog_normalization.normalize_project_row。
+_GH_SELECT_COLUMNS = (
+    "'github:'||c.repo_id id",
+    "'github' source",
+    "c.repo_id",
+    "NULL::bigint website_id",
+    "c.full_name",
+    "c.title",
+    "c.url",
+    "NULL::text domain",
+    "NULL::text image_url",
+    "c.description",
+    "ge.description_zh",
+    "NULL::text description_en",
+    "ge.category_slug",
+    "COALESCE(NULLIF(ge.category_name_zh,''),ge.category_name) category_name",
+    "ge.category_name_zh",
+    "ge.category_name_en",
+    "ge.subcategory_slug",
+    "COALESCE(NULLIF(ge.subcategory_name_zh,''),ge.subcategory_name) subcategory_name",
+    "ge.subcategory_name_zh",
+    "ge.subcategory_name_en",
+    "ge.tags_json::text tags_json",
+    "ge.tags_zh_json::text tags_zh_json",
+    "ge.tags_en_json::text tags_en_json",
+    "'system'::text tags_origin",
+    "c.language",
+    "c.topics_json",
+    "CASE WHEN gm.repo_id IS NOT NULL THEN gm.stars ELSE COALESCE(c.stars,0) END stars",
+    "CASE WHEN gm.repo_id IS NOT NULL THEN gm.forks ELSE COALESCE(c.forks,0) END forks",
+    "CASE WHEN gm.repo_id IS NOT NULL THEN gm.watchers ELSE COALESCE(c.watchers,0) END watchers",
+    "CASE WHEN gm.repo_id IS NOT NULL THEN gm.open_issues ELSE 0 END open_issues",
+    "c.created_at",
+    "c.pushed_at",
+    "c.first_seen_at",
+    "c.last_seen_at",
+    "c.last_snapshot_at",
+    "gm.metric_date snapshot_date",
+    "c.last_snapshot_at captured_at",
+    "NULL::integer rank_in_period",
+    "COALESCE(gm.daily_star_growth,0) raw_score",
+    "COALESCE(gm.hot_score,0) score",
+    "gm.metric_date daily_growth_date",
+    "gm.previous_snapshot_date",
+    "COALESCE(gm.daily_star_growth,0) daily_star_growth",
+    "COALESCE(gm.daily_growth_available,FALSE) daily_growth_available",
+    "COALESCE(gm.daily_growth_source,'unavailable') daily_growth_source",
+    "gm.daily_growth_observed_at",
+    "COALESCE(gm.hot_score,0) hot_score",
+    "COALESCE(gm.scale_corrected_growth_score,0) scale_corrected_growth_score",
+    "COALESCE(gm.growth_acceleration_score,0) growth_acceleration_score",
+    "COALESCE(gm.absolute_growth_score,0) absolute_growth_score",
+    "COALESCE(gm.maintenance_activity_score,0) maintenance_activity_score",
+    "COALESCE(gm.community_engagement_score,0) community_engagement_score",
+    "ge.confidence",
+)
+# 收藏列依赖 user_id（gh_favorites/web_favorites 片段），推荐列依赖 gr 关联，
+# 二者按此顺序拼接在静态列之后。
+_GH_SELECT_TAIL_COLUMNS = (
+    "(gr.repo_id IS NOT NULL) is_recommended",
+    "gr.recommended_at",
+)
+_WEB_SELECT_TAIL_COLUMNS = (
+    "FALSE is_recommended",
+    "NULL::timestamptz recommended_at",
+)
+# 未登录（user_id 为空）时两个分支共用的收藏列占位。
+_ANONYMOUS_FAVORITE_COLUMNS = (
+    "FALSE is_favorited, NULL::timestamptz favorited_at,"
+    " FALSE user_added, NULL::timestamptz user_added_at,"
+    " NULL::timestamptz collection_at"
+)
+_GH_SELECT_FROM = (
+    " FROM github_repo_candidates c"
+    " LEFT JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
+    " LEFT JOIN github_repo_recommendations gr ON gr.repo_id=c.repo_id AND gr.active=TRUE"
+)
+_WEB_SELECT_FROM = (
+    " FROM tool_websites w"
+    " LEFT JOIN tool_website_enrichments we ON we.website_id=w.id"
+)
+
 
 def _today() -> str:
     zone = getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai"
@@ -107,8 +214,8 @@ class PostgresProjectCatalogRepository:
             filters.append("COALESCE(ge.tags_json::text, '') ILIKE %s"); params.append(f'%"{tag.strip()}"%')
         for term in terms:
             like = f"%{escape_like_literal(term)}%"
-            filters.append("(c.full_name ILIKE %s ESCAPE '=' OR c.title ILIKE %s ESCAPE '=' OR c.description ILIKE %s ESCAPE '=' OR COALESCE(ge.description_zh, '') ILIKE %s ESCAPE '=' OR COALESCE(c.language, '') ILIKE %s ESCAPE '=' OR COALESCE(c.topics_json, '') ILIKE %s ESCAPE '=' OR COALESCE(ge.tags_json::text, '') ILIKE %s ESCAPE '=')")
-            params.extend([like] * 7)
+            filters.append(_term_match_filter(_GH_TERM_MATCH_FIELDS))
+            params.extend([like] * len(_GH_TERM_MATCH_FIELDS))
         prefix = f"{escape_like_literal(normalized_query)}%"
         sql = f"""SELECT c.repo_id FROM github_repo_candidates c
             LEFT JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id
@@ -183,8 +290,14 @@ class PostgresProjectCatalogRepository:
             "AND ga.canonical_repo_id <> c.repo_id)"
         )
 
-        candidate_document = "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '') || ' ' || COALESCE(c.description, '') || ' ' || COALESCE(c.language, '') || ' ' || COALESCE(c.topics_json, ''))"
-        enrichment_document = "LOWER(COALESCE(ge.description_zh, '') || ' ' || COALESCE(ge.tags_json::text, ''))"
+        candidate_document = (
+            "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '')"
+            " || ' ' || COALESCE(c.description, '') || ' ' || COALESCE(c.language, '')"
+            " || ' ' || COALESCE(c.topics_json, ''))"
+        )
+        enrichment_document = (
+            "LOWER(COALESCE(ge.description_zh, '') || ' ' || COALESCE(ge.tags_json::text, ''))"
+        )
         rows: list[tuple[str, str]] = []
         for index, term in enumerate(strict_terms):
             rows.append((f"term:{index}", f"%{escape_like_literal(term)}%"))
@@ -258,6 +371,12 @@ class PostgresProjectCatalogRepository:
                      CASE WHEN lane_order = 1 THEN term_coverage END DESC,
                      match_strength DESC, stars DESC, repo_id COLLATE "C" ASC
         """
+        # 参数顺序契约（必须与上方 SQL 文本中 %s 的出现顺序严格一一对应）：
+        #   1. filter_params —— eligible CTE 的 WHERE 条件（min_stars 及各维度过滤）
+        #   2. hit_params    —— raw_hits 每个词/别名两行分支，每行 4 个参数：
+        #                       (group_id, pattern) ×（候选文档分支 + 增强文档分支）
+        #   3. scored 匹配强度 —— normalized_query ×2（精确等值）+ prefix ×2（前缀）
+        #   4. 车道边界      —— len(group_ids)（strict 覆盖度）、strict_limit、relaxed_limit
         params = tuple(
             filter_params
             + hit_params
@@ -409,9 +528,22 @@ class PostgresProjectCatalogRepository:
                 gh_filters.append("FALSE"); web_filters.append("FALSE")
             for term in terms:
                 like = f"%{escape_like_literal(term)}%"
-                gh_filters.append("(c.full_name ILIKE %s ESCAPE '=' OR c.title ILIKE %s ESCAPE '=' OR c.description ILIKE %s ESCAPE '=' OR COALESCE(ge.description_zh, '') ILIKE %s ESCAPE '=' OR COALESCE(c.language, '') ILIKE %s ESCAPE '=' OR COALESCE(c.topics_json, '') ILIKE %s ESCAPE '=' OR COALESCE(ge.tags_json::text, '') ILIKE %s ESCAPE '=' OR COALESCE(ge.tags_zh_json::text, '') ILIKE %s ESCAPE '=' OR COALESCE(ge.tags_en_json::text, '') ILIKE %s ESCAPE '=')")
-                gh_filter_params.extend([like] * 9)
-                web_filters.append(f"({effective['title']} ILIKE %s ESCAPE '=' OR w.domain ILIKE %s ESCAPE '=' OR {effective['description']} ILIKE %s ESCAPE '=' OR w.canonical_url ILIKE %s ESCAPE '=' OR COALESCE({effective['description_zh']}, '') ILIKE %s ESCAPE '=' OR COALESCE({effective['tags']}, '') ILIKE %s ESCAPE '=' OR COALESCE({effective['tags_zh']}, '') ILIKE %s ESCAPE '=' OR COALESCE({effective['tags_en']}, '') ILIKE %s ESCAPE '=')")
+                gh_filters.append(_term_match_filter(_GH_TERM_MATCH_FIELDS_WITH_I18N_TAGS))
+                gh_filter_params.extend([like] * len(_GH_TERM_MATCH_FIELDS_WITH_I18N_TAGS))
+                web_filters.append(
+                    _term_match_filter(
+                        (
+                            effective["title"],
+                            "w.domain",
+                            effective["description"],
+                            "w.canonical_url",
+                            f"COALESCE({effective['description_zh']}, '')",
+                            f"COALESCE({effective['tags']}, '')",
+                            f"COALESCE({effective['tags_zh']}, '')",
+                            f"COALESCE({effective['tags_en']}, '')",
+                        )
+                    )
+                )
                 web_filter_params.extend([like] * 8)
         clean_tag = (tag or "").strip()
         if clean_tag:
@@ -423,31 +555,139 @@ class PostgresProjectCatalogRepository:
             web_filters.append("(pf.id IS NOT NULL OR utw.id IS NOT NULL)")
 
         date = _today()
-        hot_join = "LEFT JOIN github_repo_daily_metrics gm ON gm.repo_id = c.repo_id AND gm.metric_date = %s"
+        hot_join = (
+            "LEFT JOIN github_repo_daily_metrics gm"
+            " ON gm.repo_id = c.repo_id AND gm.metric_date = %s"
+        )
         gh_params: list[Any] = [date]
         if scope == "today":
             status = "AND ge_top.status = 'succeeded'" if enriched_only else ""
-            hot_join += f""" JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE AND gm_top.daily_star_growth>0 LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id WHERE COALESCE(c_top.stars,0)>=%s {status} ORDER BY gm_top.hot_score DESC NULLS LAST, gm_top.daily_star_growth DESC NULLS LAST, gm_top.stars DESC NULLS LAST, c_top.full_name ASC LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) today_top ON today_top.repo_id=c.repo_id"""
+            # 今日暴涨：先按热度取 Top-N 作为内层驱动表，再回连主表取全列。
+            hot_join += (
+                " JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top"
+                " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
+                " AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE"
+                " AND gm_top.daily_star_growth>0"
+                " LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
+                f" WHERE COALESCE(c_top.stars,0)>=%s {status}"
+                " ORDER BY gm_top.hot_score DESC NULLS LAST,"
+                " gm_top.daily_star_growth DESC NULLS LAST,"
+                " gm_top.stars DESC NULLS LAST, c_top.full_name ASC"
+                f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) today_top"
+                " ON today_top.repo_id=c.repo_id"
+            )
             gh_params.extend([date, min_stars])
         gh_user_join = ""
         web_user_join = ""
         if user_id:
-            gh_user_join = "LEFT JOIN project_favorites pf ON pf.user_id=%s AND pf.project_source='github' AND pf.project_id=c.repo_id"
-            web_user_join = "LEFT JOIN project_favorites pf ON pf.user_id=%s AND pf.project_source='website' AND pf.project_id=w.id::text LEFT JOIN user_tool_websites utw ON utw.user_id=%s AND utw.website_id=w.id LEFT JOIN user_tool_website_overrides uo ON uo.user_id=%s AND uo.website_id=w.id"
+            gh_user_join = (
+                "LEFT JOIN project_favorites pf"
+                " ON pf.user_id=%s AND pf.project_source='github' AND pf.project_id=c.repo_id"
+            )
+            web_user_join = (
+                "LEFT JOIN project_favorites pf"
+                " ON pf.user_id=%s AND pf.project_source='website' AND pf.project_id=w.id::text"
+                " LEFT JOIN user_tool_websites utw ON utw.user_id=%s AND utw.website_id=w.id"
+                " LEFT JOIN user_tool_website_overrides uo ON uo.user_id=%s AND uo.website_id=w.id"
+            )
             gh_params.append(user_id)
         gh_params.extend(gh_filter_params)
         web_params = ([user_id, user_id, user_id] if user_id else []) + web_filter_params
-        gh_favorites = "(pf.id IS NOT NULL) is_favorited, pf.created_at favorited_at, FALSE user_added, NULL::timestamptz user_added_at, pf.created_at collection_at" if user_id else "FALSE is_favorited, NULL::timestamptz favorited_at, FALSE user_added, NULL::timestamptz user_added_at, NULL::timestamptz collection_at"
-        web_favorites = "(pf.id IS NOT NULL) is_favorited, pf.created_at favorited_at, (utw.id IS NOT NULL) user_added, utw.created_at user_added_at, COALESCE(pf.created_at,utw.created_at) collection_at" if user_id else "FALSE is_favorited, NULL::timestamptz favorited_at, FALSE user_added, NULL::timestamptz user_added_at, NULL::timestamptz collection_at"
-        gh_select = f"""SELECT 'github:'||c.repo_id id,'github' source,c.repo_id,NULL::bigint website_id,c.full_name,c.title,c.url,NULL::text domain,NULL::text image_url,c.description,ge.description_zh,NULL::text description_en,ge.category_slug,COALESCE(NULLIF(ge.category_name_zh,''),ge.category_name) category_name,ge.category_name_zh,ge.category_name_en,ge.subcategory_slug,COALESCE(NULLIF(ge.subcategory_name_zh,''),ge.subcategory_name) subcategory_name,ge.subcategory_name_zh,ge.subcategory_name_en,ge.tags_json::text tags_json,ge.tags_zh_json::text tags_zh_json,ge.tags_en_json::text tags_en_json,'system'::text tags_origin,c.language,c.topics_json,CASE WHEN gm.repo_id IS NOT NULL THEN gm.stars ELSE COALESCE(c.stars,0) END stars,CASE WHEN gm.repo_id IS NOT NULL THEN gm.forks ELSE COALESCE(c.forks,0) END forks,CASE WHEN gm.repo_id IS NOT NULL THEN gm.watchers ELSE COALESCE(c.watchers,0) END watchers,CASE WHEN gm.repo_id IS NOT NULL THEN gm.open_issues ELSE 0 END open_issues,c.created_at,c.pushed_at,c.first_seen_at,c.last_seen_at,c.last_snapshot_at,gm.metric_date snapshot_date,c.last_snapshot_at captured_at,NULL::integer rank_in_period,COALESCE(gm.daily_star_growth,0) raw_score,COALESCE(gm.hot_score,0) score,gm.metric_date daily_growth_date,gm.previous_snapshot_date,COALESCE(gm.daily_star_growth,0) daily_star_growth,COALESCE(gm.daily_growth_available,FALSE) daily_growth_available,COALESCE(gm.daily_growth_source,'unavailable') daily_growth_source,gm.daily_growth_observed_at,COALESCE(gm.hot_score,0) hot_score,COALESCE(gm.scale_corrected_growth_score,0) scale_corrected_growth_score,COALESCE(gm.growth_acceleration_score,0) growth_acceleration_score,COALESCE(gm.absolute_growth_score,0) absolute_growth_score,COALESCE(gm.maintenance_activity_score,0) maintenance_activity_score,COALESCE(gm.community_engagement_score,0) community_engagement_score,ge.confidence,{gh_favorites[0:]},(gr.repo_id IS NOT NULL) is_recommended,gr.recommended_at FROM github_repo_candidates c LEFT JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id LEFT JOIN github_repo_recommendations gr ON gr.repo_id=c.repo_id AND gr.active=TRUE {hot_join} {gh_user_join} WHERE {' AND '.join(gh_filters)}"""
-        web_select = f"""SELECT 'website:'||w.id::text id,'website' source,NULL::text repo_id,w.id website_id,{effective['full_name']} full_name,{effective['title']} title,w.canonical_url url,w.domain,{effective['image']} image_url,{effective['description']} description,{effective['description_zh']} description_zh,{effective['description_en']} description_en,{effective['category_slug']} category_slug,{effective['category_name']} category_name,{effective['category_name']} category_name_zh,{effective['category_name_en']} category_name_en,{effective['subcategory_slug']} subcategory_slug,{effective['subcategory_name']} subcategory_name,{effective['subcategory_name']} subcategory_name_zh,{effective['subcategory_name_en']} subcategory_name_en,{effective['tags']} tags_json,{effective['tags_zh']} tags_zh_json,{effective['tags_en']} tags_en_json,{effective['tags_origin']} tags_origin,NULL::text language,'[]' topics_json,0::bigint stars,0::bigint forks,0::bigint watchers,0::bigint open_issues,NULL::text created_at,NULL::text pushed_at,w.first_seen_at::text first_seen_at,w.last_seen_at::text last_seen_at,NULL::text last_snapshot_at,NULL::text snapshot_date,NULL::text captured_at,NULL::integer rank_in_period,0::bigint raw_score,0::double precision score,NULL::text daily_growth_date,NULL::text previous_snapshot_date,0::bigint daily_star_growth,FALSE daily_growth_available,'unavailable' daily_growth_source,NULL::timestamptz daily_growth_observed_at,0::double precision hot_score,0::double precision scale_corrected_growth_score,0::double precision growth_acceleration_score,0::double precision absolute_growth_score,0::double precision maintenance_activity_score,0::double precision community_engagement_score,we.confidence,{web_favorites},FALSE is_recommended,NULL::timestamptz recommended_at FROM tool_websites w LEFT JOIN tool_website_enrichments we ON we.website_id=w.id {web_user_join} WHERE {' AND '.join(web_filters)}"""
-        parts: list[str] = []; params: list[Any] = []
-        if source in {"all", "github"}: parts.append(gh_select); params.extend(gh_params)
-        if source in {"all", "website"}: parts.append(web_select); params.extend(web_params)
+        if user_id:
+            gh_favorites = (
+                "(pf.id IS NOT NULL) is_favorited, pf.created_at favorited_at,"
+                " FALSE user_added, NULL::timestamptz user_added_at,"
+                " pf.created_at collection_at"
+            )
+            web_favorites = (
+                "(pf.id IS NOT NULL) is_favorited, pf.created_at favorited_at,"
+                " (utw.id IS NOT NULL) user_added, utw.created_at user_added_at,"
+                " COALESCE(pf.created_at,utw.created_at) collection_at"
+            )
+        else:
+            gh_favorites = _ANONYMOUS_FAVORITE_COLUMNS
+            web_favorites = _ANONYMOUS_FAVORITE_COLUMNS
+        web_columns = (
+            "'website:'||w.id::text id",
+            "'website' source",
+            "NULL::text repo_id",
+            "w.id website_id",
+            f"{effective['full_name']} full_name",
+            f"{effective['title']} title",
+            "w.canonical_url url",
+            "w.domain",
+            f"{effective['image']} image_url",
+            f"{effective['description']} description",
+            f"{effective['description_zh']} description_zh",
+            f"{effective['description_en']} description_en",
+            f"{effective['category_slug']} category_slug",
+            f"{effective['category_name']} category_name",
+            f"{effective['category_name']} category_name_zh",
+            f"{effective['category_name_en']} category_name_en",
+            f"{effective['subcategory_slug']} subcategory_slug",
+            f"{effective['subcategory_name']} subcategory_name",
+            f"{effective['subcategory_name']} subcategory_name_zh",
+            f"{effective['subcategory_name_en']} subcategory_name_en",
+            f"{effective['tags']} tags_json",
+            f"{effective['tags_zh']} tags_zh_json",
+            f"{effective['tags_en']} tags_en_json",
+            f"{effective['tags_origin']} tags_origin",
+            "NULL::text language",
+            "'[]' topics_json",
+            "0::bigint stars",
+            "0::bigint forks",
+            "0::bigint watchers",
+            "0::bigint open_issues",
+            "NULL::text created_at",
+            "NULL::text pushed_at",
+            "w.first_seen_at::text first_seen_at",
+            "w.last_seen_at::text last_seen_at",
+            "NULL::text last_snapshot_at",
+            "NULL::text snapshot_date",
+            "NULL::text captured_at",
+            "NULL::integer rank_in_period",
+            "0::bigint raw_score",
+            "0::double precision score",
+            "NULL::text daily_growth_date",
+            "NULL::text previous_snapshot_date",
+            "0::bigint daily_star_growth",
+            "FALSE daily_growth_available",
+            "'unavailable' daily_growth_source",
+            "NULL::timestamptz daily_growth_observed_at",
+            "0::double precision hot_score",
+            "0::double precision scale_corrected_growth_score",
+            "0::double precision growth_acceleration_score",
+            "0::double precision absolute_growth_score",
+            "0::double precision maintenance_activity_score",
+            "0::double precision community_engagement_score",
+            "we.confidence",
+        )
+        gh_select = (
+            f"SELECT {','.join((*_GH_SELECT_COLUMNS, gh_favorites, *_GH_SELECT_TAIL_COLUMNS))}"
+            f"{_GH_SELECT_FROM} {hot_join} {gh_user_join} WHERE {' AND '.join(gh_filters)}"
+        )
+        web_select = (
+            f"SELECT {','.join((*web_columns, web_favorites, *_WEB_SELECT_TAIL_COLUMNS))}"
+            f"{_WEB_SELECT_FROM} {web_user_join} WHERE {' AND '.join(web_filters)}"
+        )
+        parts: list[str] = []
+        params: list[Any] = []
+        if source in {"all", "github"}:
+            parts.append(gh_select)
+            params.extend(gh_params)
+        if source in {"all", "website"}:
+            parts.append(web_select)
+            params.extend(web_params)
         base = f"WITH project_rows AS ({' UNION ALL '.join(parts)})"
         if scope == "today": sort = "hot"
         recent = "COALESCE(recommended_at,collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)" if scope == "recommended" else "COALESCE(collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)"
-        orders = {"hot":"hot_score DESC NULLS LAST,daily_star_growth DESC NULLS LAST,stars DESC,full_name ASC","stars":"stars DESC,forks DESC,full_name ASC","updated":"COALESCE(NULLIF(pushed_at,''),last_seen_at::text,first_seen_at::text) DESC NULLS LAST,stars DESC,full_name ASC","recent":f"{recent} DESC NULLS LAST,stars DESC,full_name ASC","name":"full_name ASC"}
+        orders = {
+            "hot": "hot_score DESC NULLS LAST,daily_star_growth DESC NULLS LAST,stars DESC,full_name ASC",
+            "stars": "stars DESC,forks DESC,full_name ASC",
+            "updated": "COALESCE(NULLIF(pushed_at,''),last_seen_at::text,first_seen_at::text) DESC NULLS LAST,stars DESC,full_name ASC",
+            "recent": f"{recent} DESC NULLS LAST,stars DESC,full_name ASC",
+            "name": "full_name ASC",
+        }
         order = orders.get(sort, orders["hot"] if scope == "today" else orders["stars"])
         order_params: list[Any] = []
         if sort == "relevance" and candidates is not None:
@@ -475,39 +715,121 @@ class PostgresProjectCatalogRepository:
         source = source if source in {"all", "github", "website"} else "all"
         user_id = int(user_id) if user_id else None
         favorites_only = bool(favorites_only and user_id)
-        gh_join = ""; web_join = ""; gh_filter = ""; web_filter = ""; gh_user: list[Any] = []; web_user: list[Any] = []
+        gh_join = ""
+        web_join = ""
+        gh_filter = ""
+        web_filter = ""
+        gh_user: list[Any] = []
+        web_user: list[Any] = []
         if user_id:
-            gh_join = "LEFT JOIN project_favorites pf ON pf.user_id=%s AND pf.project_source='github' AND pf.project_id=c.repo_id"; gh_user=[user_id]
-            web_join = "LEFT JOIN project_favorites pf ON pf.user_id=%s AND pf.project_source='website' AND pf.project_id=w.id::text LEFT JOIN user_tool_websites utw ON utw.user_id=%s AND utw.website_id=w.id"; web_user=[user_id,user_id]
-            if favorites_only: gh_filter="AND pf.id IS NOT NULL"; web_filter="AND (pf.id IS NOT NULL OR utw.id IS NOT NULL)"
+            gh_join = (
+                "LEFT JOIN project_favorites pf"
+                " ON pf.user_id=%s AND pf.project_source='github' AND pf.project_id=c.repo_id"
+            )
+            gh_user = [user_id]
+            web_join = (
+                "LEFT JOIN project_favorites pf"
+                " ON pf.user_id=%s AND pf.project_source='website' AND pf.project_id=w.id::text"
+                " LEFT JOIN user_tool_websites utw ON utw.user_id=%s AND utw.website_id=w.id"
+            )
+            web_user = [user_id, user_id]
+            if favorites_only:
+                gh_filter = "AND pf.id IS NOT NULL"
+                web_filter = "AND (pf.id IS NOT NULL OR utw.id IS NOT NULL)"
         status_gh = "AND ge.status='succeeded'" if enriched_only else ""
         status_web = "AND we.status='succeeded'" if enriched_only else ""
         visibility = "" if favorites_only else "AND w.visibility='public'"
-        parts: list[str]=[]; params: list[Any]=[]
-        if source in {"all","github"}:
-            parts.append(f"SELECT ge.category_slug,ge.category_name,COALESCE(NULLIF(ge.subcategory_slug,''),'') subcategory_slug,COALESCE(NULLIF(ge.subcategory_name,''),'') subcategory_name,COUNT(*) count FROM github_repo_candidates c JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id {gh_join} WHERE COALESCE(c.stars,0)>=%s {status_gh} {gh_filter} GROUP BY ge.category_slug,ge.category_name,ge.subcategory_slug,ge.subcategory_name")
-            params.extend(gh_user+[min_stars])
-        if source in {"all","website"}:
-            parts.append(f"SELECT we.category_slug,we.category_name,COALESCE(NULLIF(we.subcategory_slug,''),'') subcategory_slug,COALESCE(NULLIF(we.subcategory_name,''),'') subcategory_name,COUNT(*) count FROM tool_websites w JOIN tool_website_enrichments we ON we.website_id=w.id {web_join} WHERE TRUE {status_web} {visibility} {web_filter} GROUP BY we.category_slug,we.category_name,we.subcategory_slug,we.subcategory_name")
+        parts: list[str] = []
+        params: list[Any] = []
+        if source in {"all", "github"}:
+            parts.append(
+                "SELECT ge.category_slug,ge.category_name,"
+                "COALESCE(NULLIF(ge.subcategory_slug,''),'') subcategory_slug,"
+                "COALESCE(NULLIF(ge.subcategory_name,''),'') subcategory_name,COUNT(*) count"
+                " FROM github_repo_candidates c"
+                " JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
+                f" {gh_join}"
+                " WHERE COALESCE(c.stars,0)>=%s"
+                f" {status_gh} {gh_filter}"
+                " GROUP BY ge.category_slug,ge.category_name,ge.subcategory_slug,ge.subcategory_name"
+            )
+            params.extend(gh_user + [min_stars])
+        if source in {"all", "website"}:
+            parts.append(
+                "SELECT we.category_slug,we.category_name,"
+                "COALESCE(NULLIF(we.subcategory_slug,''),'') subcategory_slug,"
+                "COALESCE(NULLIF(we.subcategory_name,''),'') subcategory_name,COUNT(*) count"
+                " FROM tool_websites w"
+                " JOIN tool_website_enrichments we ON we.website_id=w.id"
+                f" {web_join}"
+                " WHERE TRUE"
+                f" {status_web} {visibility} {web_filter}"
+                " GROUP BY we.category_slug,we.category_name,we.subcategory_slug,we.subcategory_name"
+            )
             params.extend(web_user)
-        aggregate = f"WITH category_rows AS ({' UNION ALL '.join(parts)}) SELECT category_slug,category_name,subcategory_slug,subcategory_name,SUM(count) count FROM category_rows GROUP BY category_slug,category_name,subcategory_slug,subcategory_name"
-        date = _today(); start,end = _today_range()
-        if source in {"all","github"}:
+        aggregate = (
+            f"WITH category_rows AS ({' UNION ALL '.join(parts)})"
+            " SELECT category_slug,category_name,subcategory_slug,subcategory_name,SUM(count) count"
+            " FROM category_rows"
+            " GROUP BY category_slug,category_name,subcategory_slug,subcategory_name"
+        )
+        date = _today()
+        start, end = _today_range()
+        if source in {"all", "github"}:
             top_status_gh = "AND ge_top.status='succeeded'" if enriched_only else ""
-            today_sql=f"SELECT COUNT(*) count FROM (SELECT c_top.repo_id FROM github_repo_candidates c_top JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE AND gm_top.daily_star_growth>0 WHERE COALESCE(c_top.stars,0)>=%s {top_status_gh} ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,gm_top.stars DESC NULLS LAST,c_top.full_name ASC LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) top JOIN github_repo_candidates c ON c.repo_id=top.repo_id JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id {gh_join} WHERE TRUE {gh_filter}"
-            today_params=[date,min_stars]+gh_user
+            today_sql = (
+                "SELECT COUNT(*) count FROM (SELECT c_top.repo_id"
+                " FROM github_repo_candidates c_top"
+                " JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
+                " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
+                " AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE"
+                " AND gm_top.daily_star_growth>0"
+                " WHERE COALESCE(c_top.stars,0)>=%s"
+                f" {top_status_gh}"
+                " ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,"
+                "gm_top.stars DESC NULLS LAST,c_top.full_name ASC"
+                f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) top"
+                " JOIN github_repo_candidates c ON c.repo_id=top.repo_id"
+                " JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
+                f" {gh_join}"
+                " WHERE TRUE"
+                f" {gh_filter}"
+            )
+            today_params = [date, min_stars] + gh_user
         else:
-            today_sql=f"SELECT COUNT(*) count FROM tool_websites w JOIN tool_website_enrichments we ON we.website_id=w.id {web_join} WHERE w.first_seen_at>=%s AND w.first_seen_at<%s {status_web} {visibility} {web_filter}"
-            today_params=web_user+[start,end]
-        if source in {"all","github"}:
-            recommended_sql=f"SELECT COUNT(*) count FROM github_repo_candidates c JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id JOIN github_repo_recommendations gr ON gr.repo_id=c.repo_id AND gr.active=TRUE {gh_join} WHERE COALESCE(c.stars,0)>=%s {status_gh} {gh_filter}"
-            recommended_params=gh_user+[min_stars]
+            today_sql = (
+                "SELECT COUNT(*) count FROM tool_websites w"
+                " JOIN tool_website_enrichments we ON we.website_id=w.id"
+                f" {web_join}"
+                " WHERE w.first_seen_at>=%s AND w.first_seen_at<%s"
+                f" {status_web} {visibility} {web_filter}"
+            )
+            today_params = web_user + [start, end]
+        if source in {"all", "github"}:
+            recommended_sql = (
+                "SELECT COUNT(*) count FROM github_repo_candidates c"
+                " JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
+                " JOIN github_repo_recommendations gr ON gr.repo_id=c.repo_id AND gr.active=TRUE"
+                f" {gh_join}"
+                " WHERE COALESCE(c.stars,0)>=%s"
+                f" {status_gh} {gh_filter}"
+            )
+            recommended_params = gh_user + [min_stars]
         else:
-            recommended_sql="SELECT 0 count"; recommended_params=[]
+            recommended_sql = "SELECT 0 count"
+            recommended_params = []
         with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
-                cursor.execute(aggregate,tuple(params)); rows=cursor.fetchall()
-                cursor.execute(today_sql,tuple(today_params)); today_row=cursor.fetchone()
-                cursor.execute(recommended_sql,tuple(recommended_params)); recommended_row=cursor.fetchone()
-        return format_project_category_counts(list(rows),int(today_row["count"] if today_row else 0),taxonomy=WEBSITE_TAXONOMY if source=="website" else PROJECT_TAXONOMY,recommended_count=int(recommended_row["count"] if recommended_row else 0))
+                cursor.execute(aggregate, tuple(params))
+                rows = cursor.fetchall()
+                cursor.execute(today_sql, tuple(today_params))
+                today_row = cursor.fetchone()
+                cursor.execute(recommended_sql, tuple(recommended_params))
+                recommended_row = cursor.fetchone()
+        return format_project_category_counts(
+            list(rows),
+            int(today_row["count"] if today_row else 0),
+            taxonomy=WEBSITE_TAXONOMY if source == "website" else PROJECT_TAXONOMY,
+            recommended_count=int(recommended_row["count"] if recommended_row else 0),
+        )
