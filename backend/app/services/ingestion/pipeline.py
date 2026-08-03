@@ -282,7 +282,7 @@ class IngestionOrchestrator:
     def _start_arxiv_pdf_background(self, papers: List[dict]) -> None:
         """启动后台线程：下载 Arxiv PDF 落盘 → PyMuPDF 解析 → 切片写入 Milvus（非阻塞）。
 
-        使用新的 ArxivPdfDownloader 替代旧的 enrich_arxiv_pdfs_background：
+        经组合的 pdf_indexer（ArxivPdfDownloader）执行：
           - 每篇 PDF 下载间隔 3s（防封杀）
           - 串行下载（max_workers=1）
           - 落盘到 storage/papers/{arxiv_id}.pdf
@@ -306,7 +306,7 @@ class IngestionOrchestrator:
                 dl_ok, idx_ok = self.dependencies.pdf_indexer(
                     arxiv_papers,
                     milvus_repo=milvus_repo,
-                    mysql_repo=documents,
+                    document_writer=documents,
                     sleep_between=3.0,
                     max_workers=1,
                 )

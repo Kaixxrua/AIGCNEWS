@@ -353,16 +353,16 @@ def _chunk_and_index(
     doc_id: str,
     full_text: str,
     milvus_repo: Any,
-    mysql_repo: Any,
+    document_writer: Any,
 ) -> bool:
-    """将 PDF 全文切片后写入 Milvus，并更新 MySQL local_pdf_path。
+    """将 PDF 全文切片后写入 Milvus，并更新文档 local_pdf_path。
 
     Args:
         paper: paper dict（含 arxiv_id/title/published_date/url/pdf_url 等）
         doc_id: 文档 ID（md5 hash）
         full_text: PDF 提取的纯文本
         milvus_repo: MilvusRepository 实例
-        document_repository: 文档仓储实例（可选）
+        document_writer: 文档写入端口（可选，更新 local_pdf_path）
 
     Returns:
         True = 成功写入 Milvus
@@ -438,11 +438,11 @@ def _chunk_and_index(
 def download_and_index_arxiv_pdfs(
     papers: List[Dict[str, Any]],
     milvus_repo: Optional[Any] = None,
-    mysql_repo: Optional[DocumentWriter] = None,
+    document_writer: Optional[DocumentWriter] = None,
     sleep_between: float = 3.0,
     max_workers: int = 1,
 ) -> Tuple[int, int]:
-    """后台批量下载 Arxiv PDF，解析全文，切片写入 Milvus，更新 MySQL。
+    """后台批量下载 Arxiv PDF，解析全文，切片写入 Milvus，更新文档库。
 
     "低频慢速"策略：
       - max_workers=1（默认串行，避免并发请求 arXiv）
@@ -451,7 +451,7 @@ def download_and_index_arxiv_pdfs(
     Args:
         papers: paper dict 列表，必须含 arxiv_id 和 pdf_url
         milvus_repo: MilvusRepository 实例（可选）
-        document_repository: 文档仓储实例（可选，用于更新 local_pdf_path）
+        document_writer: 文档写入端口（可选，用于更新 local_pdf_path）
         sleep_between: 每次下载之间的间隔秒数
         max_workers: 并发下载线程数（生产建议保持 1）
 
@@ -484,18 +484,20 @@ def download_and_index_arxiv_pdfs(
         if not local_path:
             return False, False
 
-        # Step 2: 更新 MySQL local_pdf_path
+        # Step 2: 更新文档 local_pdf_path
         doc_id = calc_doc_id(paper)
-        if mysql_repo is not None:
+        if document_writer is not None:
             try:
-                mysql_repo.update_document_pdf_path(doc_id, local_path)
+                document_writer.update_document_pdf_path(doc_id, local_path)
                 logger.debug(
-                    "[ArxivDownloader] MySQL local_pdf_path 更新: %s → %s",
+                    "[ArxivDownloader] local_pdf_path 更新: %s → %s",
                     arxiv_id,
                     local_path,
                 )
             except Exception as exc:
-                logger.warning("[ArxivDownloader] MySQL 更新失败 %s: %s", arxiv_id, exc)
+                logger.warning(
+                    "[ArxivDownloader] local_pdf_path 更新失败 %s: %s", arxiv_id, exc
+                )
 
         # Step 3: 解析 PDF 文本
         full_text = _extract_text_from_local_pdf(local_path)
@@ -509,7 +511,7 @@ def download_and_index_arxiv_pdfs(
             doc_id=doc_id,
             full_text=full_text,
             milvus_repo=milvus_repo,
-            mysql_repo=mysql_repo,
+            document_writer=document_writer,
         )
         return True, indexed
 
@@ -543,7 +545,7 @@ def download_and_index_arxiv_pdfs(
 async def download_and_index_arxiv_pdfs_async(
     papers: List[Dict[str, Any]],
     milvus_repo: Optional[Any] = None,
-    mysql_repo: Optional[DocumentWriter] = None,
+    document_writer: Optional[DocumentWriter] = None,
     sleep_between: float = 3.0,
     max_workers: int = 1,
 ) -> Tuple[int, int]:
@@ -552,7 +554,7 @@ async def download_and_index_arxiv_pdfs_async(
         download_and_index_arxiv_pdfs,
         papers,
         milvus_repo,
-        mysql_repo,
+        document_writer,
         sleep_between,
         max_workers,
     )

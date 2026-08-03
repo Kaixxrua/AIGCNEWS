@@ -363,7 +363,7 @@ class ArxivPdfBackgroundTests(unittest.TestCase):
         orchestrator.dependencies.pdf_indexer.assert_called_once_with(
             [paper],
             milvus_repo=vector_writer,
-            mysql_repo=orchestrator.documents,
+            document_writer=orchestrator.documents,
             sleep_between=3.0,
             max_workers=1,
         )
