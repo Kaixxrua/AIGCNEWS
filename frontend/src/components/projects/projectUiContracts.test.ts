@@ -43,6 +43,7 @@ describe('project UI sizing contracts', () => {
     expect(cardSource).not.toMatch(/@container \(max-width: 520px\) \{[\s\S]*?project-card__rail \{ position: static;/)
     expect(cardSource).toContain('flex-wrap: wrap')
     expect(cardSource).toContain('.project-card:hover .project-card__rail, .project-card:focus-within .project-card__rail')
+    expect(cardSource).toContain('opacity: 0.35')
     expect(cardSource).toContain('@media (hover: none)')
     expect(cardSource).toContain(':aria-pressed="Boolean(repo.is_favorited)"')
     expect(cardSource).toContain(':disabled="recommendActionsBusy"')
