@@ -200,24 +200,24 @@
   --paper: #0e1210;
   --paper-raised: #171c19;
   --paper-muted: #090d0b;
-  --ink: #dbd9cd;
-  --ink-secondary: #abaca0;
-  --ink-muted: #8e8f84;
-  --rule: #3d3d36;
-  --rule-strong: #838276;
+  --ink: #eeede4;
+  --ink-secondary: #c6c7bc;
+  --ink-muted: #a6a89d;
+  --rule: #4b504b;
+  --rule-strong: #d9d9cf;
   --acid: #c9e842;
   --acid-soft: #2e3319;
   --acid-strong: #b7d434;
   --acid-ink: #171a09;
 
-  --hard-ink: #d0cfc3;
+  --hard-ink: #e7e6dc;
   --shadow-hard: #a8b83a;
   --shadow-ink-soft: rgba(168, 184, 58, 0.48);
 
   --ink-faint: #5f6056;
-  --ink-solid: #3a3b33;
-  --ink-solid-hover: #505147;
-  --ink-on-solid: #e6e5da;
+  --ink-solid: #303730;
+  --ink-solid-hover: #465046;
+  --ink-on-solid: #f4f3ea;
 
   --card-rgb: 23 28 25;
   --stone-50-rgb: 32 32 28;
@@ -226,11 +226,11 @@
   --stone-300-rgb: 80 80 71;
   --stone-400-rgb: 113 113 101;
   --stone-500-rgb: 142 142 130;
-  --stone-600-rgb: 173 173 160;
-  --stone-700-rgb: 190 190 176;
-  --stone-800-rgb: 206 206 192;
-  --stone-900-rgb: 216 216 202;
-  --stone-950-rgb: 222 221 207;
+  --stone-600-rgb: 190 191 181;
+  --stone-700-rgb: 205 206 196;
+  --stone-800-rgb: 220 220 211;
+  --stone-900-rgb: 232 232 223;
+  --stone-950-rgb: 240 239 231;
 
   --glow-warm-rgb: 164 181 88;
   --cream-rgb: 30 35 31;
@@ -281,10 +281,10 @@
 
   --logo-tile: #e7e9d3;
 
-  --projects-accent: #d2d1c5;
+  --projects-accent: #eeede4;
   --projects-accent-soft: rgba(201, 232, 66, 0.16);
-  --projects-accent-border: #d2d1c5;
-  --projects-warm: #d2d1c5;
+  --projects-accent-border: #eeede4;
+  --projects-warm: #eeede4;
   --projects-warm-soft: rgba(201, 232, 66, 0.12);
   --projects-paper: #0b100d;
   --projects-paper-light: #171c19;
@@ -315,8 +315,8 @@
   --projects-ghost-surface-card: #2b2b27;
   --chat-paper: #121815;
   --chat-paper-rgb: 18 24 21;
-  --chat-ink: #d6d4c7;
-  --chat-ink-rgb: 214 212 199;
+  --chat-ink: #e7e6dc;
+  --chat-ink-rgb: 231 230 220;
   --chat-shadow-rgb: 168 184 58;
   --chat-on-acid: #191a16;
   --chat-input-bg: #171e1a;
@@ -345,8 +345,8 @@
   --notice-ok-bg: rgba(52, 211, 153, 0.08);
   --notice-ok-border: rgba(52, 211, 153, 0.18);
   --panel-edge-info: rgba(165, 180, 252, 0.25);
-  --dash-muted: #a3a096;
-  --ink-grid-rgb: 200 200 188;
+  --dash-muted: #b8b8ad;
+  --ink-grid-rgb: 220 220 211;
   --projects-paper-light-rgb: 35 35 31;
   --mcp-btn-label: #171a09;
   --mcp-icon-ink: #22d3ee;
