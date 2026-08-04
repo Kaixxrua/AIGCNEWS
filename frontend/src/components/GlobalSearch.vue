@@ -59,7 +59,7 @@ const {
       <div
         v-if="showDropdown && !loading && results.length === 0 && query.trim()"
         class="absolute left-0 right-0 top-full mt-1.5 rounded-2xl px-4 py-3 text-xs text-stone-400 shadow-lg"
-        style="background: rgba(255,255,255,0.97); border: 1px solid rgba(168,162,158,0.20);"
+        style="background: rgb(var(--card-rgb) / 0.97); border: 1px solid rgb(var(--stone-400-rgb) / 0.2);"
       >
         {{ t('search.noResults') }}
       </div>

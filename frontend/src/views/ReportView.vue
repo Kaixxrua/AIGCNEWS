@@ -185,12 +185,10 @@ const {
 
 <style scoped>
 .report-shell {
-  --paper: #f4f0e6;
-  --paper-raised: #fffdf6;
-  --ink: #191a16;
-  --rule: rgba(25, 26, 22, 0.76);
-  --lime: #c7ff2e;
-  --lime-soft: #f1f9d2;
+  --paper: var(--chat-paper);
+  --paper-raised: var(--paper-warm);
+  --ink: var(--chat-ink);
+  --rule: rgb(var(--chat-ink-rgb) / 0.76);
   background: var(--paper);
   color: var(--ink);
 }
@@ -199,7 +197,7 @@ const {
   border: 1px solid var(--rule);
   border-radius: 6px;
   background: var(--paper-raised);
-  box-shadow: 3px 3px 0 rgba(25, 26, 22, 0.1);
+  box-shadow: 3px 3px 0 rgb(var(--chat-shadow-rgb) / 0.1);
   backdrop-filter: none;
 }
 
@@ -210,32 +208,32 @@ const {
 .report-shell :deep(input:focus-visible) {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px var(--lime);
+  box-shadow: 0 0 0 4px var(--acid-bright);
 }
 
 .report-shell :deep(.btn-primary) {
   border: 1px solid var(--ink);
   border-radius: 4px;
   background: var(--ink);
-  color: #fffdf6;
+  color: var(--paper-raised);
   box-shadow: none;
 }
 
 .report-shell :deep(.btn-primary:hover:not(:disabled)) {
-  background: var(--lime);
-  color: var(--ink);
+  background: var(--acid-bright);
+  color: var(--chat-on-acid);
 }
 
 .report-shell :deep(.tab-active) {
   border-color: var(--ink);
-  background: var(--lime);
-  color: var(--ink);
+  background: var(--acid-bright);
+  color: var(--chat-on-acid);
   box-shadow: inset 0 -3px 0 var(--ink);
 }
 
 .report-shell :deep(.tab-inactive:hover) {
   border-color: var(--ink);
-  background: var(--lime-soft);
+  background: var(--acid-mist);
   color: var(--ink);
 }
 
@@ -243,20 +241,20 @@ const {
 .report-shell :deep(button[class*="border-indigo"]),
 .report-shell :deep(button[class*="bg-cyan"]) {
   border-color: var(--ink) !important;
-  background: var(--lime) !important;
-  color: var(--ink) !important;
+  background: var(--acid-bright) !important;
+  color: var(--chat-on-acid) !important;
 }
 
 .report-shell :deep([class*="text-cyan"]),
-.report-shell :deep([class*="text-indigo"]) { color: #4b6100 !important; }
-.report-shell :deep([class*="bg-cyan"]) { background-color: var(--lime) !important; }
+.report-shell :deep([class*="text-indigo"]) { color: var(--on-acid) !important; }
+.report-shell :deep([class*="bg-cyan"]) { background-color: var(--acid-bright) !important; }
 
 .report-shell :deep(.space-y-2 > div:nth-child(2)) {
-  border-top-color: rgba(25, 26, 22, 0.24) !important;
+  border-top-color: rgb(var(--chat-ink-rgb) / 0.24) !important;
 }
 
 .report-shell :deep(input[type="date"]) {
-  border-color: rgba(25, 26, 22, 0.45);
+  border-color: rgb(var(--chat-ink-rgb) / 0.45);
   background: var(--paper-raised);
 }
 </style>

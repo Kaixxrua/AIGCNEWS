@@ -167,6 +167,20 @@
   /* 科技青三元组（alpha 派生用）与 PDF chrome 底 */
   --tech-primary-rgb: 6 182 212;
   --pdf-chrome-bg: #f8f8f8;
+  /* 仪表盘/简报提示条家族（浅色 = 原 amber/emerald 字面量） */
+  --acid-mist: #f1f9d2;
+  --notice-warn-bg: rgba(255, 251, 235, 0.5);
+  --notice-warn-bg-strong: rgba(255, 251, 235, 0.9);
+  --notice-warn-border: rgba(217, 119, 6, 0.1);
+  --notice-warn-edge: #fef3c7;
+  --notice-warn-ink: #92400e;
+  --notice-warn-ink-soft: #b45309;
+  --notice-ok-bg: rgba(236, 253, 245, 0.3);
+  --notice-ok-border: rgba(16, 185, 129, 0.08);
+  --panel-edge-info: #e0e7ff;
+  /* 仪表盘页杂色文字与网格线（浅色 = 原字面量） */
+  --dash-muted: #68655d;
+  --ink-grid-rgb: 17 17 15;
 }
 
 :root[data-theme='dark'] {
@@ -308,6 +322,18 @@
   --success-bg-strong: rgba(74, 222, 128, 0.18);
   --tech-primary-rgb: 34 211 238;
   --pdf-chrome-bg: #20201d;
+  --acid-mist: #2e3319;
+  --notice-warn-bg: rgba(251, 191, 36, 0.1);
+  --notice-warn-bg-strong: rgba(251, 191, 36, 0.14);
+  --notice-warn-border: rgba(251, 191, 36, 0.22);
+  --notice-warn-edge: rgba(251, 191, 36, 0.3);
+  --notice-warn-ink: #fbbf24;
+  --notice-warn-ink-soft: #fcd34d;
+  --notice-ok-bg: rgba(52, 211, 153, 0.08);
+  --notice-ok-border: rgba(52, 211, 153, 0.18);
+  --panel-edge-info: rgba(165, 180, 252, 0.25);
+  --dash-muted: #a3a096;
+  --ink-grid-rgb: 238 238 229;
 }
 
 /* App.vue 固定背景层（浅色渲染与原内联样式逐字节等价） */

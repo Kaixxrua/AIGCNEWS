@@ -108,15 +108,15 @@ currentStats = () => stats.value
 
 <style scoped>
 .dashboard-page {
-  --paper: #f3f0e6;
-  --paper-light: #fffdf5;
-  --ink: #11110f;
-  --muted: #68655d;
-  --acid: #c7f432;
-  --acid-soft: #f1f8d2;
+  --paper: var(--projects-paper);
+  --paper-light: var(--projects-paper-light);
+  --ink: var(--projects-accent);
+  --muted: var(--dash-muted);
+  --acid: var(--projects-acid);
+  --acid-soft: var(--projects-acid-soft);
   color: var(--ink);
   background-color: var(--paper);
-  background-image: linear-gradient(rgba(17, 17, 15, .035) 1px, transparent 1px);
+  background-image: linear-gradient(rgb(var(--ink-grid-rgb) / .035) 1px, transparent 1px);
   background-size: 100% 32px;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
@@ -129,30 +129,30 @@ currentStats = () => stats.value
   border: 1px solid var(--ink);
   border-radius: 5px;
   background: var(--paper-light);
-  box-shadow: 3px 3px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
   backdrop-filter: none;
 }
-.dashboard-page :deep(.card-hover:hover) { border-color: var(--ink); background: var(--acid-soft); box-shadow: 3px 3px 0 var(--ink); transform: none; }
+.dashboard-page :deep(.card-hover:hover) { border-color: var(--ink); background: var(--acid-soft); box-shadow: 3px 3px 0 var(--shadow-hard); transform: none; }
 .dashboard-page :deep(.text-stone-300),
 .dashboard-page :deep(.text-stone-400) { color: var(--muted); }
 .dashboard-page :deep(.rounded-full),
 .dashboard-page :deep(.rounded-xl),
 .dashboard-page :deep(.rounded-2xl) { border-radius: 4px; }
 
-.dashboard-page :deep(.bg-slate-800) { border: 1px solid var(--ink); color: var(--ink); background: var(--acid); box-shadow: 3px 3px 0 var(--ink); }
-.dashboard-page :deep(.bg-slate-800:hover) { color: var(--ink); background: var(--acid); }
+.dashboard-page :deep(.bg-slate-800) { border: 1px solid var(--ink); color: var(--projects-on-acid); background: var(--acid); box-shadow: 3px 3px 0 var(--shadow-hard); }
+.dashboard-page :deep(.bg-slate-800:hover) { color: var(--projects-on-acid); background: var(--acid); }
 .dashboard-page :deep(.bg-slate-800 .text-white),
 .dashboard-page :deep(.bg-slate-800 .text-slate-300) { color: inherit; }
 .dashboard-page :deep(.dashboard-source-card--active) {
   border-color: var(--ink);
   background: var(--acid);
-  box-shadow: inset 0 -3px 0 var(--ink), 3px 3px 0 var(--ink);
+  box-shadow: inset 0 -3px 0 var(--ink), 3px 3px 0 var(--shadow-hard);
 }
 .dashboard-page :deep(.dashboard-source-card--active .text-blue-600),
 .dashboard-page :deep(.dashboard-source-card--active .text-gray-800),
 .dashboard-page :deep(.dashboard-source-card--active .text-amber-600),
 .dashboard-page :deep(.dashboard-source-card--active .text-rose-600),
-.dashboard-page :deep(.dashboard-source-card--active .text-orange-500) { color: var(--ink) !important; }
+.dashboard-page :deep(.dashboard-source-card--active .text-orange-500) { color: var(--projects-on-acid) !important; }
 
 @media (prefers-reduced-motion: reduce) {
   .dashboard-page *, .dashboard-page *::before, .dashboard-page *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }

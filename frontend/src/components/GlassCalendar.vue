@@ -88,10 +88,10 @@ const selectDate = (day: CalendarDay) => {
   <div
     class="stagger-enter flex flex-col rounded-xl px-2 py-1.5"
     style="
-      background: rgba(255, 255, 255, 0.85);
+      background: rgb(var(--card-rgb) / 0.85);
       backdrop-filter: blur(16px) saturate(180%);
       -webkit-backdrop-filter: blur(16px) saturate(180%);
-      border: 1px solid rgba(168, 162, 158, 0.20);
+      border: 1px solid rgb(var(--stone-400-rgb) / 0.2);
       box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
       animation-delay: 0.15s;
     "
@@ -184,9 +184,9 @@ const selectDate = (day: CalendarDay) => {
 }
 
 .calendar-day--today {
-  color: #44403c; /* stone-700 */
+  color: rgb(var(--stone-700-rgb));
   font-weight: 700;
-  background: #f5f5f4; /* stone-100 */
+  background: rgb(var(--stone-100-rgb));
 }
 
 .calendar-day--active {
@@ -213,7 +213,7 @@ const selectDate = (day: CalendarDay) => {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: #a8a29e; /* stone-400 */
+  background: rgb(var(--stone-400-rgb));
   pointer-events: none;
 }
 </style>

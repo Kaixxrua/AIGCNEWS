@@ -28,7 +28,7 @@ defineExpose({
   <div
     class="flex items-center gap-2 rounded-2xl px-3 py-1.5 text-sm transition-all"
     :class="props.focused
-      ? 'bg-white border border-stone-300 shadow-md'
+      ? 'bg-card border border-stone-300 shadow-md'
       : 'bg-stone-100/80 border border-transparent'"
   >
     <!-- 搜索图标 -->

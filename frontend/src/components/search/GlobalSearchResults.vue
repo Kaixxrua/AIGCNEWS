@@ -22,7 +22,7 @@ const emit = defineEmits<{
 <template>
   <div
     class="absolute left-0 right-0 top-full mt-1.5 max-h-72 overflow-y-auto rounded-2xl py-1 shadow-xl"
-    style="background: rgba(255,255,255,0.97); border: 1px solid rgba(168,162,158,0.20); backdrop-filter: blur(16px);"
+    style="background: rgb(var(--card-rgb) / 0.97); border: 1px solid rgb(var(--stone-400-rgb) / 0.2); backdrop-filter: blur(16px);"
   >
     <!-- 列表头部 -->
     <p class="px-3 py-1.5 text-2xs font-semibold uppercase tracking-widest text-stone-400">
@@ -37,7 +37,7 @@ const emit = defineEmits<{
     >
       <!-- 来源标签 -->
       <span
-        class="mt-0.5 shrink-0 rounded-md border px-1.5 py-0.5 text-2xs font-medium text-stone-500 border-stone-200 bg-white"
+        class="mt-0.5 shrink-0 rounded-md border px-1.5 py-0.5 text-2xs font-medium text-stone-500 border-stone-200 bg-card"
       >{{ sourceLabel(item.source) }}</span>
 
       <!-- 标题 + 摘要 -->

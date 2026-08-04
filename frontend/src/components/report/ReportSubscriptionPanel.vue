@@ -23,21 +23,21 @@ const emit = defineEmits<{
 
 <template>
   <!-- 游客订阅登录提示 -->
-  <div v-if="showLoginPrompt" class="rounded-2xl border border-amber-100 bg-amber-50/90 p-3 shadow-sm">
+  <div v-if="showLoginPrompt" class="rounded-2xl border p-3 shadow-sm" style="border-color: var(--notice-warn-edge); background: var(--notice-warn-bg-strong)">
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center gap-2 text-sm text-amber-800">
+      <div class="flex items-center gap-2 text-sm" style="color: var(--notice-warn-ink)">
         <BellRing class="h-4 w-4 shrink-0" />
         <span>{{ t('report.loginRequired') }}</span>
       </div>
       <div class="flex items-center gap-2">
-        <button class="rounded-full px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100" @click="emit('closeLoginPrompt')">{{ t('report.later') }}</button>
+        <button class="rounded-full px-3 py-1.5 text-xs font-medium hover:bg-[var(--notice-warn-edge)]" style="color: var(--notice-warn-ink-soft)" @click="emit('closeLoginPrompt')">{{ t('report.later') }}</button>
         <button class="rounded-full bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700" @click="emit('loginAndRedirect')">{{ t('report.goLogin') }}</button>
       </div>
     </div>
   </div>
 
   <!-- 日报订阅领域选择 -->
-  <div v-if="showSubscribePanel" class="rounded-2xl border border-indigo-100 bg-white/90 p-3 shadow-sm">
+  <div v-if="showSubscribePanel" class="rounded-2xl border bg-card/90 p-3 shadow-sm" style="border-color: var(--panel-edge-info)">
     <div class="flex items-start justify-between gap-3">
       <div>
         <p class="text-sm font-semibold text-stone-700">{{ t('report.chooseDomains') }}</p>
@@ -54,7 +54,7 @@ const emit = defineEmits<{
         class="flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all duration-200"
         :class="selectedSubscribeSources.includes(type.key)
           ? 'border-indigo-200 bg-indigo-50 text-indigo-800'
-          : 'border-stone-100 bg-white/70 text-stone-600 hover:bg-accent-soft'"
+          : 'border-stone-100 bg-card/70 text-stone-600 hover:bg-accent-soft'"
         :disabled="isSubscribing"
         @click="emit('toggleSubscribeSource', type.key)"
       >
@@ -79,7 +79,7 @@ const emit = defineEmits<{
         :disabled="isSubscribing || !selectedSubscribeSources.length"
         @click="emit('confirmSubscribeSources')"
       >
-        <span v-if="isSubscribing" class="h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+        <span v-if="isSubscribing" class="h-3 w-3 rounded-full border-2 animate-spin" style="border-color: color-mix(in srgb, currentColor 40%, transparent); border-top-color: currentColor" />
         {{ t('report.confirmDomains', { count: selectedSubscribeSources.length }) }}
       </button>
     </div>

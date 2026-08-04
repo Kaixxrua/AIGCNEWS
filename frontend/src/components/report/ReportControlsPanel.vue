@@ -112,7 +112,7 @@ const emit = defineEmits<{
           {{ t(autoScroll ? 'report.following' : 'report.unlocked') }}
         </span>
         <button class="btn-primary gap-1.5 text-xs py-1.5 px-3" :disabled="isGenerating" @click="emit('generate')">
-          <span v-if="isGenerating" class="h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+          <span v-if="isGenerating" class="h-3 w-3 rounded-full border-2 animate-spin" style="border-color: color-mix(in srgb, currentColor 40%, transparent); border-top-color: currentColor" />
           <svg v-else class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           {{ isGenerating ? t('report.generating') : t(isCached ? 'report.regenerate' : 'report.generate') }}
         </button>
@@ -121,7 +121,7 @@ const emit = defineEmits<{
   </div>
 
   <!-- 第二行：源选择 + 周期选择 -->
-  <div class="flex flex-wrap items-center gap-2" style="border-top: 1px solid rgba(168,162,158,0.10); padding-top: 8px">
+  <div class="flex flex-wrap items-center gap-2" style="border-top: 1px solid rgb(var(--stone-400-rgb) / 0.1); padding-top: 8px">
     <div class="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
       <button
         v-for="type in REPORT_TYPES"
@@ -130,7 +130,7 @@ const emit = defineEmits<{
         :class="selectedType === type.key
           ? 'tab-active shadow-sm'
           : 'tab-inactive'"
-        :style="selectedType !== type.key ? 'background: rgba(255,255,255,0.6); border: 1px solid rgba(168,162,158,0.20)' : ''"
+        :style="selectedType !== type.key ? 'background: rgb(var(--card-rgb) / 0.6); border: 1px solid rgb(var(--stone-400-rgb) / 0.2)' : ''"
         :disabled="isGenerating"
         @click="emit('update:selectedType', type.key)"
       >

@@ -87,17 +87,17 @@ export const getModuleTags = (doc: TopDoc): string[] => {
 }
 
 const SOURCE_CONFIG: Record<string, { label: string; dot: string; badge: string }> = {
-  github:      { label: 'GitHub',  dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
-  arxiv:       { label: 'Arxiv',   dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
-  news:        { label: 'News',    dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
-  huggingface: { label: 'HF',      dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
-  producthunt: { label: 'PH',      dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
-  hackernews:  { label: 'HN',      dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
-  x:           { label: 'X',       dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
+  github:      { label: 'GitHub',  dot: 'bg-stone-400',  badge: 'bg-card text-stone-600 border border-stone-200' },
+  arxiv:       { label: 'Arxiv',   dot: 'bg-stone-400',  badge: 'bg-card text-stone-600 border border-stone-200' },
+  news:        { label: 'News',    dot: 'bg-stone-400',  badge: 'bg-card text-stone-600 border border-stone-200' },
+  huggingface: { label: 'HF',      dot: 'bg-stone-400',  badge: 'bg-card text-stone-600 border border-stone-200' },
+  producthunt: { label: 'PH',      dot: 'bg-stone-400',  badge: 'bg-card text-stone-600 border border-stone-200' },
+  hackernews:  { label: 'HN',      dot: 'bg-stone-400',  badge: 'bg-card text-stone-600 border border-stone-200' },
+  x:           { label: 'X',       dot: 'bg-stone-400',  badge: 'bg-card text-stone-600 border border-stone-200' },
 }
 
 export const getSourceConfig = (src?: string) =>
-  SOURCE_CONFIG[src || ''] ?? { label: src || '?', dot: 'bg-stone-300', badge: 'bg-white text-stone-500 border border-stone-200' }
+  SOURCE_CONFIG[src || ''] ?? { label: src || '?', dot: 'bg-stone-300', badge: 'bg-card text-stone-500 border border-stone-200' }
 
 export const aiScoreDisplay = (score?: number) => {
   if (score === undefined || score === null) return null
