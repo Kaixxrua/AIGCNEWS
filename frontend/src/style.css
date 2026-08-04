@@ -211,8 +211,8 @@
   --acid-ink: #171a09;
 
   --hard-ink: #d0cfc3;
-  --shadow-hard: #637021;
-  --shadow-ink-soft: rgba(99, 112, 33, 0.5);
+  --shadow-hard: #7f8f2b;
+  --shadow-ink-soft: rgba(127, 143, 43, 0.5);
 
   --ink-faint: #5f6056;
   --ink-solid: #3a3b33;
@@ -352,10 +352,10 @@
   --mcp-icon-ink: #22d3ee;
   --mcp-icon-edge: rgba(34, 211, 238, 0.3);
   --token-valid-bg: rgba(52, 211, 153, 0.12);
-  --toast-shadow: rgba(99, 112, 33, 0.6);
+  --toast-shadow: rgba(127, 143, 43, 0.6);
   --dock-danger-hover: rgba(239, 68, 68, 0.18);
   --dock-on-ink-label: #171a09;
-  --dock-shadow: #637021;
+  --dock-shadow: #7f8f2b;
   --btn-primary-label: var(--paper-raised);
 }
 
