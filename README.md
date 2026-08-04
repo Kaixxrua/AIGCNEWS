@@ -40,69 +40,111 @@ Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://rep
 
 ## Web 站点
 
-同一份数据的人类可读界面：Dashboard 榜单与趋势雷达、GitHub AI 项目库（分类 / 筛选 / 收藏）、论文与跨来源索引、每日研究简报。前端 Vue 3 + Vite，后端 FastAPI，关系型数据存 PostgreSQL。
+同一份数据的人类可读界面：Dashboard 榜单与趋势雷达、GitHub AI 项目库（分类 / 筛选 / 收藏）、论文与跨来源索引、每日研究简报。前端 Vue 3 + Vite，后端 FastAPI，关系型数据存 PostgreSQL 16。
 
-## 快速开始 (Quick Start)
+## 快速开始（Linux / WSL2）
+
+### 前置要求
+
+| 工具 | 版本 | 说明 |
+| --- | --- | --- |
+| Python | 3.12 | 后端运行时（镜像按 digest 锁定 `python:3.12-slim`） |
+| Node.js | 22 | 前端构建与测试（与 CI 一致） |
+| Docker + Compose | v2 | 基础设施与生产栈编排 |
 
 ### 1) 准备环境变量
-1. 复制示例文件并重命名为 `.env`：
-   ```bash
-   copy .env.example .env
-   ```
-2. 编辑 `.env`，根据本机环境填写参数。
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env` 填写本机参数。**`JWT_SECRET_KEY` 必须设置为强随机值**，缺失、等于示例值或长度不足 32 字符时应用拒绝启动（见 [docs/adr/0001](docs/adr/0001-jwt-secret-rotation-and-startup-guard.md)）：
+
+```bash
+openssl rand -hex 32
+```
 
 ### 2) 安装依赖
-在 Windows 下建议直接使用启动脚本：
 
 ```bash
-start.bat setup
+python3.12 -m venv backend/.venv
+backend/.venv/bin/python -m pip install --upgrade pip
+backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
+cd frontend && npm ci && cd ..
 ```
 
-等价的手动命令：
+`requirements-dev.txt` 在锁定的 `requirements.lock` 之上追加 pytest / pytest-cov / ruff，与 CI 使用同一份依赖基线。
+
+### 3) 启动完整栈
 
 ```bash
-python -m venv .venv
-.\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -r backend\requirements.txt
+scripts/manage_main_stack.sh up
+```
+
+该命令 reconcile 整个 Compose 栈（后端 API、前端、PostgreSQL、Redis、Milvus、MinIO 等）并等待健康检查通过。常用子命令：`config`（校验编排，不打印秘密）、`status`、`logs`。
+
+### 4) 本地开发（容器外热重载）
+
+```bash
+# 后端（读取 settings 中的 API_HOST / API_PORT，默认 8000）
+backend/.venv/bin/python run_server.py
+
+# 前端（Vite 开发服务器，默认 5173）
+cd frontend && npm run dev
+```
+
+## 端口与健康检查
+
+| 地址 | 用途 |
+| --- | --- |
+| `http://localhost`（80/443） | 前端站点（生产域名证书见 `frontend/ssl/`，key 必须 `root:root` 600） |
+| `http://localhost:5173` | Vite 开发服务器 |
+| `http://127.0.0.1:8000` | 后端 API（仅回环绑定；`/api/live`、`/api/ready` 健康检查） |
+| `http://localhost:8000/api/mcp` | 本地 MCP endpoint |
+
+基础设施（PostgreSQL / Redis / Milvus / MinIO / Attu）只在编排网络内部暴露，不向宿主机发布端口；后端通过服务名访问。宿主机侧临时调试用 `docker exec <容器> ...`，运维细节见 [docs/linux-server-boot.md](docs/linux-server-boot.md)。
+
+## 测试与质量检查
+
+```bash
+# 后端全套件（必须从仓库根目录运行，与 CI 一致）
+backend/.venv/bin/python -m pytest backend/tests -q
+
+# 后端 lint
+backend/.venv/bin/python -m ruff check backend/app backend/tests --config backend/pyproject.toml
+
+# 前端：单元测试、类型检查、lint、构建
 cd frontend
-npm install
+npm run test:unit
+npm run typecheck
+npm run lint
+npm run build
+
+# 编排校验
+docker compose -f docker/docker-compose.yml config --quiet
 ```
 
-### 3) 启动基础设施（Milvus + Attu + Neo4j）
+提交信息遵循 Conventional Commits（`<type>(<scope>): <subject>`，scope 必填），细节见 [docs/git-workflow.md](docs/git-workflow.md)。
 
-```bash
-start.bat up
+## 目录结构
+
+```text
+backend/            FastAPI 应用（app/）、测试（tests/）、迁移（migrations/）、依赖锁定
+frontend/           Vue 3 + Vite 站点（src/）、nginx 配置、前端镜像
+docker/             Compose 编排与备份演练编排
+docs/               项目文档（索引见 docs/README.md，决策记录见 docs/adr/）
+scripts/            栈管理、迁移、备份与数据回填脚本
+.github/workflows/  CI：后端测试、PostgreSQL 集成、前端构建与 lint、编排冒烟
+.githooks/          commit-msg 提交信息校验（git config core.hooksPath .githooks）
 ```
 
-默认访问地址（应用服务）：
-- 后端 API: `http://localhost:8000`（`/api/live`、`/api/ready` 健康检查）
-- 前端: `http://localhost`（80/443，生产域名证书见 `frontend/ssl/`）
+## 架构与文档
 
-基础设施（Milvus / MinIO / Attu / Neo4j / Redis）只在编排网络内部暴露，
-不再向宿主机发布端口；后端通过服务名访问（`milvus:19530`、`neo4j:7687`、
-`redis:6379`）。宿主机侧临时调试用 `docker exec <容器> ...`，运维细节见
-[`docs/linux-server-boot.md`](docs/linux-server-boot.md)。
+- [docs/project-overview.md](docs/project-overview.md) —— 项目全景：产品、架构、数据、部署与工程状态
+- [docs/architecture.md](docs/architecture.md) —— 功能架构当前态（PostgreSQL 16 为唯一关系型运行时）
+- [docs/mcp-server.md](docs/mcp-server.md) —— AIGC Radar MCP 协议参数与策略
+- [docs/README.md](docs/README.md) —— 全部文档索引（含历史归档标注）
 
-默认账号与密码（可用 `.env` 中的 `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` /
-`NEO4J_PASSWORD` 覆盖）：
-- Neo4j: `neo4j / 12345678`（请在 `.env` 中修改）
-- MinIO: `minioadmin / minioadmin`
+## License
 
-### 4) 启动开发服务
-
-```bash
-start.bat dev
-```
-
-启动后：
-- 后端 FastAPI: `http://localhost:8000`
-- 前端 Vite: `http://localhost:5173`
-
----
-
-## 常用命令
-
-- `start.bat setup`：创建虚拟环境并安装后端与前端依赖
-- `start.bat up`：启动 Milvus + Attu + Neo4j
-- `start.bat down`：停止基础设施容器
-- `start.bat dev`：启动后端与前端开发服务器
+[MIT](LICENSE) © 2026 Kaixxrua
