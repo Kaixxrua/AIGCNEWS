@@ -5,6 +5,7 @@ import {
   getMcpAuthPresentation,
   getMcpTransportPresentation,
   getStatusConfig,
+  toMcpToolCallRows,
 } from './monitorViewModel'
 
 describe('monitor presentation localization boundary', () => {
@@ -20,6 +21,7 @@ describe('monitor presentation localization boundary', () => {
       ['hackernews', 'hackernews'],
       ['producthunt', 'producthunt'],
       ['news', 'news'],
+      ['x', 'x'],
     ])
   })
 
@@ -30,5 +32,21 @@ describe('monitor presentation localization boundary', () => {
     expect(getMcpAuthPresentation('bearer')).toEqual({ label: 'Bearer Token', labelKey: '' })
     expect(getMcpAuthPresentation('none')).toEqual({ label: '', labelKey: 'noAuth' })
     expect(getMcpAuthPresentation('custom')).toEqual({ label: 'custom', labelKey: '' })
+  })
+
+  it('maps tool-call snapshots to rows sorted by calls desc then name', () => {
+    expect(toMcpToolCallRows(null)).toEqual([])
+    expect(toMcpToolCallRows({ tools: {} })).toEqual([])
+    expect(toMcpToolCallRows({
+      tools: {
+        search_papers: { calls: 2, last_called_at: '2026-08-04T02:00:00+00:00' },
+        get_project_library: { calls: 5, last_called_at: '2026-08-04T01:00:00+00:00' },
+        get_top_items: { calls: 5, last_called_at: '' },
+      },
+    })).toEqual([
+      { name: 'get_project_library', calls: 5, lastCalledAt: '2026-08-04T01:00:00+00:00' },
+      { name: 'get_top_items', calls: 5, lastCalledAt: null },
+      { name: 'search_papers', calls: 2, lastCalledAt: '2026-08-04T02:00:00+00:00' },
+    ])
   })
 })

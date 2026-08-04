@@ -21,6 +21,20 @@ describe('Monitor API contract', () => {
     await expect(monitorApi.fetchMcpServers()).resolves.toEqual([])
   })
 
+  it('normalizes the MCP tool call metrics section with safe defaults', async () => {
+    transport.get.mockResolvedValueOnce({ data: {} })
+    await expect(monitorApi.fetchMcpToolCalls()).resolves.toEqual({ since: '', total_calls: 0, tools: {} })
+    expect(transport.get).toHaveBeenLastCalledWith('/monitor/metrics')
+
+    const tools = { get_top_items: { calls: 3, last_called_at: '2026-08-04T01:00:00+00:00' } }
+    transport.get.mockResolvedValueOnce({
+      data: { mcp_tool_calls: { since: '2026-08-04T00:00:00+00:00', total_calls: 3, tools } },
+    })
+    await expect(monitorApi.fetchMcpToolCalls()).resolves.toEqual({
+      since: '2026-08-04T00:00:00+00:00', total_calls: 3, tools,
+    })
+  })
+
   it('never sends masked provider secrets and preserves explicit clear semantics', async () => {
     transport.put.mockResolvedValue({ data: { provider: 'openai' } })
     const form = createProviderForm({

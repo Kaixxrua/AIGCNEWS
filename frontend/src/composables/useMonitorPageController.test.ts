@@ -6,6 +6,7 @@ import { useMonitorPageController } from './useMonitorPageController'
 const createApi = (): MonitorApi => ({
   fetchTasks: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 10 })),
   fetchSchedulerStatus: vi.fn(async () => ({ running: false, job_count: 0, jobs: [] })),
+  fetchMcpToolCalls: vi.fn(async () => ({ since: '', total_calls: 0, tools: {} })),
   fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), fetchMcpServers: vi.fn(async () => []),
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
@@ -25,8 +26,21 @@ describe('Monitor page controller contract', () => {
     await controller.refreshData()
     expect(api.fetchTasks).toHaveBeenCalledWith(1, 10)
     expect(api.fetchSchedulerStatus).toHaveBeenCalledOnce()
+    expect(api.fetchMcpToolCalls).toHaveBeenCalledOnce()
     expect(api.fetchProviderConfig).not.toHaveBeenCalled()
     expect(api.fetchMcpServers).not.toHaveBeenCalled()
+  })
+
+  it('stores fetched MCP tool call metrics on refresh', async () => {
+    const { api, controller } = createController()
+    const snapshot = {
+      since: '2026-08-04T00:00:00+00:00',
+      total_calls: 2,
+      tools: { get_project_library: { calls: 2, last_called_at: '2026-08-04T01:00:00+00:00' } },
+    }
+    vi.mocked(api.fetchMcpToolCalls).mockResolvedValue(snapshot)
+    await controller.refreshData()
+    expect(controller.mcpToolCalls.value).toEqual(snapshot)
   })
 
   it('preserves source/date ingestion payload delegation and delayed refreshes', async () => {

@@ -71,7 +71,85 @@ export interface McpServerForm {
   enabled: boolean
 }
 
-export type SourceKey = 'arxiv' | 'github' | 'hackernews' | 'producthunt' | 'news'
+export type SourceKey = 'arxiv' | 'github' | 'hackernews' | 'producthunt' | 'news' | 'x'
+
+export interface GithubCrawlForm {
+  minStars: number
+  maxStars: number
+  createdStart: string
+  createdEnd: string
+  pushedAfter: string
+  limit: number
+  enrich: boolean
+  dryRun: boolean
+}
+
+export interface GithubCrawlTriggerResult {
+  status: string
+  message: string
+  channel: string
+  first_seen_after: string
+  result?: { shards?: Record<string, number>; total_available?: number } | null
+}
+
+export interface GithubCrawlStatus {
+  status: string
+  channel: string
+  first_seen_after: string
+  task_id: number | null
+  task_status: string
+  item_count: number
+  error_msg: string | null
+  started_at: string | null
+  finished_at: string | null
+  candidates_upserted: number
+  scope_total: number
+  enriched_succeeded: number
+  enriched_failed: number
+}
+
+export interface GithubCrawlStatusQuery {
+  channel?: string
+  first_seen_after?: string
+  min_stars?: number
+}
+
+export const createGithubCrawlForm = (today: string): GithubCrawlForm => ({
+  minStars: 500,
+  maxStars: 0,
+  createdStart: '2008-01-01',
+  createdEnd: today,
+  pushedAfter: '',
+  limit: 5000,
+  enrich: true,
+  dryRun: false,
+})
+
+export const buildGithubCrawlPayload = (form: GithubCrawlForm) => ({
+  min_stars: form.minStars,
+  max_stars: form.maxStars,
+  created_start: form.createdStart,
+  created_end: form.createdEnd || null,
+  pushed_after: form.pushedAfter || null,
+  limit: form.limit,
+  enrich: form.enrich,
+  dry_run: form.dryRun,
+})
+
+export interface McpToolCallEntry {
+  calls: number
+  last_called_at: string
+}
+
+export interface McpToolCallMetricsSnapshot {
+  since: string
+  total_calls: number
+  tools: Record<string, McpToolCallEntry>
+}
+
+export const createEmptyMcpToolCallMetrics = (): McpToolCallMetricsSnapshot => ({
+  since: '', total_calls: 0, tools: {},
+})
 
 export const createProviderForm = (config?: ProviderConfig | null): ProviderForm => ({
   provider: config?.provider || 'openai',

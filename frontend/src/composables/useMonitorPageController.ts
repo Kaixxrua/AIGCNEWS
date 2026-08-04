@@ -2,7 +2,7 @@ import { computed, ref, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import {
   createEmptyMcpForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
-  type McpServerConfig, type SourceKey,
+  type McpServerConfig, type McpToolCallMetricsSnapshot, type SourceKey,
 } from '@/features/monitor/monitorModel'
 
 interface MonitorPageControllerOptions {
@@ -35,6 +35,7 @@ export const useMonitorPageController = ({
   const page = ref(1)
   const pageSize = ref(10)
   const schedulerStatus = ref<Awaited<ReturnType<MonitorApi['fetchSchedulerStatus']>> | null>(null)
+  const mcpToolCalls = ref<McpToolCallMetricsSnapshot | null>(null)
   const loading = ref(false)
   const errorMsg = ref('')
   const successMsg = ref('')
@@ -73,6 +74,10 @@ export const useMonitorPageController = ({
     try { schedulerStatus.value = await api.fetchSchedulerStatus() }
     catch (error) { console.error('Failed to fetch scheduler status', error) }
   }
+  const fetchMcpToolCalls = async () => {
+    try { mcpToolCalls.value = await api.fetchMcpToolCalls() }
+    catch (error) { console.error('Failed to fetch MCP tool call metrics', error) }
+  }
   const fetchProviderConfig = async () => {
     if (!isAdmin.value) return
     loadingProviderConfig.value = true
@@ -91,7 +96,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchProviderConfig(), fetchMcpServers()])
+    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -195,12 +200,12 @@ export const useMonitorPageController = ({
   }
 
   return {
-    tasks, total, page, pageSize, schedulerStatus, loading, errorMsg, successMsg, providerConfig, providerForm,
+    tasks, total, page, pageSize, schedulerStatus, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
     loadingProviderConfig, savingProviderConfig, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
-    fetchSchedulerStatus, fetchProviderConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, resetMcpForm,
-    editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
+    fetchSchedulerStatus, fetchMcpToolCalls, fetchProviderConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig,
+    resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
   }
 }

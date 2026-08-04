@@ -3,6 +3,7 @@ import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
 import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
+import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
 import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
 import MonitorTaskPanel from '@/components/monitor/MonitorTaskPanel.vue'
@@ -12,7 +13,7 @@ import { useMonitorPageController } from '@/composables/useMonitorPageController
 const { t } = useI18n()
 const authStore = useAuthStore()
 const {
-  tasks, total, page, schedulerStatus, loading, errorMsg, successMsg, providerConfig, providerForm,
+  tasks, total, page, schedulerStatus, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
   loadingProviderConfig, savingProviderConfig, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
@@ -106,6 +107,11 @@ onMounted(refreshData)
       :ingesting-source="ingestingSource"
       @ingest-by-date="ingestByDate"
       @ingest-source="ingestSingleSource"
+    />
+
+    <McpToolCallsPanel
+      :snapshot="mcpToolCalls"
+      :loading="loading"
     />
 
     <MonitorTaskPanel

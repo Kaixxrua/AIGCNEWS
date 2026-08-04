@@ -1,9 +1,11 @@
-import { FileText, GitBranch, Newspaper, Rocket, Triangle } from 'lucide-vue-next'
+import { FileText, GitBranch, Newspaper, Rocket, Triangle, Twitter } from 'lucide-vue-next'
 import { formatLocaleDate } from '@/i18n/formatters'
 
 export type {
   McpServerConfig,
   McpServerForm,
+  McpToolCallEntry,
+  McpToolCallMetricsSnapshot,
   ProviderConfig,
   ProviderForm,
   SchedulerStatus,
@@ -11,7 +13,7 @@ export type {
   Task,
 } from './monitorModel'
 
-import type { McpServerConfig, SourceKey } from './monitorModel'
+import type { McpServerConfig, McpToolCallMetricsSnapshot, SourceKey } from './monitorModel'
 
 export interface SourceItem {
   key: SourceKey
@@ -33,6 +35,7 @@ export const SOURCE_LIST: SourceItem[] = [
   { key: 'hackernews', labelKey: 'hackernews', icon: Triangle, color: 'bg-white', textColor: 'text-stone-600' },
   { key: 'producthunt', labelKey: 'producthunt', icon: Rocket, color: 'bg-white', textColor: 'text-stone-600' },
   { key: 'news', labelKey: 'news', icon: Newspaper, color: 'bg-white', textColor: 'text-stone-600' },
+  { key: 'x', labelKey: 'x', icon: Twitter, color: 'bg-white', textColor: 'text-stone-600' },
 ]
 
 export const formatDate = (value: string | null | undefined): string => (
@@ -83,3 +86,21 @@ export const getMcpServerInitial = (server: McpServerConfig) => {
   const value = (server.display_name || server.server_key || 'M').trim()
   return value.slice(0, 1).toUpperCase()
 }
+
+export interface McpToolCallRow {
+  name: string
+  calls: number
+  lastCalledAt: string | null
+}
+
+export const toMcpToolCallRows = (
+  snapshot: Pick<McpToolCallMetricsSnapshot, 'tools'> | null | undefined,
+): McpToolCallRow[] => (
+  Object.entries(snapshot?.tools ?? {})
+    .map(([name, entry]) => ({
+      name,
+      calls: Number(entry?.calls) || 0,
+      lastCalledAt: entry?.last_called_at || null,
+    }))
+    .sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name))
+)

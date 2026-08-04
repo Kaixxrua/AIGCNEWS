@@ -1,12 +1,15 @@
 import { api } from '@/services/http/apiClient'
 import type {
-  McpServerConfig, McpServerForm, PagedResult, ProviderConfig, ProviderForm, SchedulerStatus, SourceKey,
+  GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
+  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm,
+  SchedulerStatus, SourceKey,
 } from '@/features/monitor/monitorModel'
-import { buildMcpPayload, buildProviderPayload } from '@/features/monitor/monitorModel'
+import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, createEmptyMcpToolCallMetrics } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
   fetchSchedulerStatus(): Promise<SchedulerStatus>
+  fetchMcpToolCalls(): Promise<McpToolCallMetricsSnapshot>
   fetchProviderConfig(): Promise<ProviderConfig>
   saveProviderConfig(form: ProviderForm): Promise<ProviderConfig>
   fetchMcpServers(): Promise<McpServerConfig[]>
@@ -19,6 +22,8 @@ export interface MonitorApi {
   syncData(force: boolean): Promise<{ message?: string }>
   ingestByDate(targetDate: string): Promise<{ message?: string }>
   clearAllData(): Promise<{ message?: string }>
+  crawlGithubProjects(form: GithubCrawlForm): Promise<GithubCrawlTriggerResult>
+  fetchGithubCrawlStatus(query?: GithubCrawlStatusQuery): Promise<GithubCrawlStatus>
 }
 
 export const monitorApi: MonitorApi = {
@@ -27,6 +32,16 @@ export const monitorApi: MonitorApi = {
     return { items: data?.items || [], total: data?.total || 0, page: data?.page || page, page_size: data?.page_size || pageSize }
   },
   async fetchSchedulerStatus() { return (await api.get('/ops/scheduler/status')).data },
+  async fetchMcpToolCalls() {
+    const { data } = await api.get('/monitor/metrics')
+    const section = data?.mcp_tool_calls
+    if (!section || typeof section !== 'object') return createEmptyMcpToolCallMetrics()
+    return {
+      since: typeof section.since === 'string' ? section.since : '',
+      total_calls: Number(section.total_calls) || 0,
+      tools: section.tools && typeof section.tools === 'object' ? section.tools : {},
+    }
+  },
   async fetchProviderConfig() { return (await api.get('/ops/provider-config')).data },
   async saveProviderConfig(form) { return (await api.put('/ops/provider-config', buildProviderPayload(form))).data },
   async fetchMcpServers() {
@@ -49,4 +64,17 @@ export const monitorApi: MonitorApi = {
   async syncData(force) { return (await api.post('/ops/ingest', { limit: 20, force })).data },
   async ingestByDate(targetDate) { return (await api.post('/ops/ingest-by-date', { target_date: targetDate, limit: 30 })).data },
   async clearAllData() { return (await api.post('/ops/clear-data')).data },
+  async crawlGithubProjects(form) {
+    // dry-run 分片计数可能超过默认 60s 超时（先例：testMcpServer）
+    return (await api.post('/ops/github-projects/crawl', buildGithubCrawlPayload(form), { timeout: 180_000 })).data
+  },
+  async fetchGithubCrawlStatus(query) {
+    const params = Object.fromEntries(
+      Object.entries(query || {}).filter(([, value]) => value !== undefined && value !== ''),
+    )
+    return (await api.get(
+      '/ops/github-projects/crawl/status',
+      Object.keys(params).length ? { params } : undefined,
+    )).data
+  },
 }
