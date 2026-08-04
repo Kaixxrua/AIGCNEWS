@@ -1,4 +1,4 @@
-import { Circle, Code2, FileText, Globe, Newspaper, Rocket } from 'lucide-vue-next'
+import { Circle, Code2, FileText, Globe, Newspaper, Rocket, Twitter } from 'lucide-vue-next'
 
 export const REPORT_TYPES = [
   { key: 'all',         labelKey: 'allLabel', icon: Globe, descKey: 'allDesc' },
@@ -7,6 +7,7 @@ export const REPORT_TYPES = [
   { key: 'news',        labelKey: 'newsLabel', icon: Newspaper, descKey: 'newsDesc' },
   { key: 'producthunt', labelKey: 'producthuntLabel', icon: Rocket, descKey: 'producthuntDesc' },
   { key: 'hackernews',  labelKey: 'hackernewsLabel', icon: Circle, descKey: 'hackernewsDesc' },
+  { key: 'x',           labelKey: 'xLabel', icon: Twitter, descKey: 'xDesc' },
 ] as const
 
 export const PERIOD_TYPES = [
@@ -18,7 +19,7 @@ export const PERIOD_TYPES = [
 export type ReportKey = (typeof REPORT_TYPES)[number]['key']
 export type PeriodKey = (typeof PERIOD_TYPES)[number]['key']
 
-export const DAILY_ONLY_TYPES = new Set<ReportKey>(['all', 'news', 'producthunt', 'hackernews'])
+export const DAILY_ONLY_TYPES = new Set<ReportKey>(['all', 'news', 'producthunt', 'hackernews', 'x'])
 
 export interface Subscription {
   source: string

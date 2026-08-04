@@ -12,6 +12,7 @@ const SOURCE_LABEL_KEYS: Readonly<Record<string, string>> = {
   news: 'search.news',
   producthunt: 'search.producthunt',
   hackernews: 'search.hackernews',
+  x: 'search.x',
 }
 
 export type GlobalSearchDestination =

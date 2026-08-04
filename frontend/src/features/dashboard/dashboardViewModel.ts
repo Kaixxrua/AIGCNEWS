@@ -9,6 +9,7 @@ import {
   Rocket,
   Star,
   ThumbsUp,
+  Twitter,
   type LucideIcon,
 } from 'lucide-vue-next'
 
@@ -62,6 +63,7 @@ export const TABS = [
   { key: 'news',        labelKey: 'news',     icon: Newspaper,  color: 'brand-amber' },
   { key: 'producthunt', labelKey: 'products', icon: Rocket,     color: 'brand-rose' },
   { key: 'hackernews',  labelKey: 'hn',       icon: Circle,     color: 'brand-amber' },
+  { key: 'x',           labelKey: 'x',        icon: Twitter,    color: 'brand-blue' },
 ] as const
 
 export const PERIODS = [
@@ -70,7 +72,7 @@ export const PERIODS = [
   { key: 'monthly' },
 ] as const
 
-export const DAILY_ONLY_TABS = new Set(['news', 'producthunt', 'hackernews'])
+export const DAILY_ONLY_TABS = new Set(['news', 'producthunt', 'hackernews', 'x'])
 
 export type TabKey = (typeof TABS)[number]['key']
 export type PeriodKey = (typeof PERIODS)[number]['key']
@@ -91,6 +93,7 @@ const SOURCE_CONFIG: Record<string, { label: string; dot: string; badge: string 
   huggingface: { label: 'HF',      dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
   producthunt: { label: 'PH',      dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
   hackernews:  { label: 'HN',      dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
+  x:           { label: 'X',       dot: 'bg-stone-400',  badge: 'bg-white text-stone-600 border border-stone-200' },
 }
 
 export const getSourceConfig = (src?: string) =>
@@ -101,12 +104,13 @@ export const aiScoreDisplay = (score?: number) => {
   return `${score}/10`
 }
 
-export const scoreDisplay = (doc: TopDoc, formatNumber: (value: number) => string = String): { icon: LucideIcon; text: string; unitKey?: 'votes' | 'points' } => {
+export const scoreDisplay = (doc: TopDoc, formatNumber: (value: number) => string = String): { icon: LucideIcon; text: string; unitKey?: 'votes' | 'points' | 'likes' } => {
   if (doc.source === 'github')      return { icon: Star,     text: formatNumber(doc.stars ?? Math.round(doc.raw_score ?? doc.score ?? 0)) }
   if (doc.source === 'huggingface') return { icon: Heart,    text: formatNumber(Math.round(doc.raw_score ?? doc.likes ?? doc.score ?? 0)) }
   if (doc.source === 'news')        return { icon: Newspaper, text: `${doc.feed_name || 'News'}` }
   if (doc.source === 'producthunt') return { icon: ThumbsUp, text: formatNumber(Math.round(doc.raw_score ?? doc.votes ?? doc.score ?? 0)), unitKey: 'votes' }
   if (doc.source === 'hackernews')  return { icon: ArrowUp,  text: formatNumber(Math.round(doc.raw_score ?? doc.score ?? 0)), unitKey: 'points' }
+  if (doc.source === 'x')           return { icon: Heart,    text: formatNumber(Math.round(doc.likes ?? doc.raw_score ?? doc.score ?? 0)), unitKey: 'likes' }
   return { icon: Flame, text: formatNumber(Math.round(doc.raw_score ?? doc.score ?? 0)) }
 }
 
@@ -142,6 +146,11 @@ export const statCards = [
     labelKey: 'hn', key: 'hackernews', dark: false,
     iconBg: 'bg-orange-50', iconColor: 'text-orange-500', numColor: 'text-orange-500',
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`,
+  },
+  {
+    labelKey: 'x', key: 'x', dark: false,
+    iconBg: 'bg-sky-50', iconColor: 'text-sky-500', numColor: 'text-sky-600',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"/></svg>`,
   },
 ]
 
