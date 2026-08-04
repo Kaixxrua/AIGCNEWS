@@ -9,6 +9,12 @@
 | [project-overview.md](project-overview.md) | 项目全景概述：产品、架构、数据、部署与工程状态 |
 | [architecture.md](architecture.md) | 功能架构当前态（数据库：PostgreSQL 16 唯一关系型运行时） |
 
+## 对外接口
+
+| 文档 | 内容 |
+|---|---|
+| [mcp-server.md](mcp-server.md) | AIGC Radar MCP（旗舰接口）：协议参数、MCP-first 策略、fallback 语义与鉴权 |
+
 ## 开发规范
 
 | 文档 | 内容 |
