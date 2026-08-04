@@ -248,8 +248,10 @@ def _parse_paper_detail(html: str, arxiv_id: str) -> Optional[Dict[str, Any]]:
     abstract = max(paragraphs, key=len) if paragraphs else ""
 
     # ── 作者：<span class="author ..."> ──
+    # 注意：BS4 对多值 class 属性会把谓词函数逐个作用于单个 class 字符串，
+    # 因此这里直接对单个 class 名做子串匹配（不能再对 c 做 " ".join）。
     author_spans = soup.find_all(
-        "span", class_=lambda c: c and "author" in " ".join(c).lower()
+        "span", class_=lambda c: bool(c) and "author" in c.lower()
     )
     authors = [s.get_text(strip=True).rstrip(",").strip() for s in author_spans[:5]]
 
