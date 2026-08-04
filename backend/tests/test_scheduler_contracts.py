@@ -93,6 +93,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "news_techmeme",
                 "producthunt",
                 "hackernews",
+                "x_watchlist",
                 "github_project_daily_pipeline",
                 "github_project_metrics_refresh",
                 "daily_briefing",
@@ -106,6 +107,13 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             ("news_techmeme", "Techmeme 科技新闻采集", {"minute": "3", "second": "0"}, False, 7200),
             ("producthunt", "Product Hunt 新品采集", {"minute": "4", "second": "0"}, False, 7200),
             ("hackernews", "Hacker News AI 热帖采集", {"minute": "5", "second": "0"}, False, 7200),
+            (
+                "x_watchlist",
+                "X 关注账号推文采集",
+                {"hour": "*/2", "minute": "6", "second": "0"},
+                True,
+                3600,
+            ),
             (
                 "github_project_daily_pipeline",
                 "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",
@@ -122,7 +130,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             ),
         ]
         for (_, kwargs), (job_id, name, fields, coalesce, grace) in zip(
-            fake_scheduler.add_job_calls[:7], expected_source_jobs, strict=True
+            fake_scheduler.add_job_calls[:8], expected_source_jobs, strict=True
         ):
             self.assertEqual(kwargs["id"], job_id)
             self.assertEqual(kwargs["name"], name)
@@ -140,7 +148,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             self.assertEqual(actual_fields, fields)
             self.assertEqual(str(trigger.timezone), "Asia/Shanghai")
 
-        briefing = fake_scheduler.add_job_calls[7][1]
+        briefing = fake_scheduler.add_job_calls[8][1]
         self.assertEqual(
             {key: briefing[key] for key in ("id", "name", "replace_existing", "max_instances", "misfire_grace_time")},
             {
@@ -156,7 +164,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             {"hour": "8", "minute": "0", "second": "0"},
         )
 
-        cleanup = fake_scheduler.add_job_calls[8][1]
+        cleanup = fake_scheduler.add_job_calls[9][1]
         self.assertEqual(
             {key: cleanup[key] for key in ("id", "name", "replace_existing", "max_instances", "misfire_grace_time")},
             {

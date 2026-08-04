@@ -136,6 +136,17 @@ class Settings(BaseSettings):
     producthunt_api_token: str = ""
     huggingface_token: str = ""
 
+    # ── X/Twitter 采集（twitter-cli，主账号 cookie 凭据，有风控风险）─────
+    # cookie 提取 / 失效重配 / 风险说明见 docs/x-source-runbook.md。
+    # 采集层直接读同名 env（规避 Settings 缓存导致测试不可注入），
+    # 此处字段用于运维可见性与文档化。
+    twitter_auth_token: str = ""
+    twitter_ct0: str = ""
+    # 关注账号 watchlist（逗号分隔），如：openai,anthropic,karpathy
+    twitter_watch_handles: str = ""
+    twitter_tweets_per_account: int = 20
+    twitter_inter_account_delay_seconds: float = 5.0
+
     # JWT 鉴权配置
     # 无默认值：缺失或仍为公开示例值时应用拒绝启动（见 core/auth.validate_jwt_secret）。
     # 生成方式：openssl rand -hex 32

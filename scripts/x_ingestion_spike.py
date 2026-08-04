@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""X/Twitter 采集 spike：用真实 cookie 验证 transport + policy 全链路。
+
+上线前验收与 cookie 重配后的标准检查手段（见 docs/x-source-runbook.md）。
+
+用法：
+    python scripts/x_ingestion_spike.py                      # watchlist 首个账号拉 5 条
+    python scripts/x_ingestion_spike.py --handle openai --count 5
+
+凭据：读取仓库根目录 .env 的 TWITTER_AUTH_TOKEN / TWITTER_CT0 /
+TWITTER_WATCH_HANDLES。
+
+退出码：0 = 拉到至少 1 条可入库推文；1 = 凭据缺失/失效/限流/0 条。
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from dotenv import load_dotenv
+
+load_dotenv(ROOT / ".env")
+
+from backend.app.services.ingestion.sources import x_policy, x_transport
+
+
+async def _run(handle: str, count: int) -> int:
+    transport = x_transport.XTransport()
+    try:
+        tweets_by_handle = await transport.fetch_watchlist_tweets([handle], count)
+    except (
+        x_transport.XAuthNotConfigured,
+        x_transport.XAuthAbort,
+        x_transport.XRateLimitAbort,
+    ) as exc:
+        print(f"[spike] 中止级失败: {exc}", file=sys.stderr)
+        return 1
+
+    tweets = tweets_by_handle.get(handle, [])
+    if not tweets:
+        print(
+            f"[spike] @{handle} 未拉到推文（账号不存在/已改名/被跳过）",
+            file=sys.stderr,
+        )
+        return 1
+
+    items = x_policy.project_tweets(tweets, limit=count)
+    print(f"[spike] @{handle} 拉到 {len(tweets)} 条，可入库 {len(items)} 条：")
+    for item in items:
+        print(
+            f"  #{item['rank_in_period']} score={item['score']:.1f} "
+            f"{item['published_date']} {item['url']}"
+        )
+        print(f"     {item['title']}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="X/Twitter 采集 spike（真实 cookie 全链路验证）"
+    )
+    parser.add_argument(
+        "--handle",
+        default="",
+        help="目标账号（缺省取 TWITTER_WATCH_HANDLES 第一个）",
+    )
+    parser.add_argument("--count", type=int, default=5, help="抓取条数（默认 5）")
+    args = parser.parse_args()
+
+    handle = args.handle.strip().lstrip("@").lower()
+    if not handle:
+        handles = x_policy.parse_watch_handles(
+            os.environ.get("TWITTER_WATCH_HANDLES", "")
+        )
+        if not handles:
+            print(
+                "[spike] 未指定 --handle 且 TWITTER_WATCH_HANDLES 为空",
+                file=sys.stderr,
+            )
+            return 1
+        handle = handles[0]
+
+    return asyncio.run(_run(handle, max(args.count, 1)))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

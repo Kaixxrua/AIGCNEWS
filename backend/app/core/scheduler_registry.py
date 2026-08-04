@@ -17,6 +17,7 @@ JobSource = Literal[
     "news",
     "producthunt",
     "hackernews",
+    "x",
     "github_project_daily_pipeline",
     "github_project_metrics_refresh",
     "daily_briefing",
@@ -121,6 +122,16 @@ SOURCE_JOB_DESCRIPTORS: tuple[CronJobDescriptor, ...] = (
         schedule=CronSchedule(minute=5),
         coalesce=False,
         misfire_grace_time=7200,
+    ),
+    # X 采集降频为每 2 小时一轮（其余源 hourly）：主账号 cookie 凭据，
+    # 温和节奏优先；错过点火合并一次即可（coalesce=True）
+    CronJobDescriptor(
+        id="x_watchlist",
+        source="x",
+        name="X 关注账号推文采集",
+        schedule=CronSchedule(hour="*/2", minute=6),
+        coalesce=True,
+        misfire_grace_time=3600,
     ),
     CronJobDescriptor(
         id="github_project_daily_pipeline",

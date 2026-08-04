@@ -10,7 +10,7 @@ from backend.app.repositories.application_repository_factory import (
 from backend.app.services.ingestion.composition import provide_ingestion_dependencies
 
 logger = logging.getLogger(__name__)
-VALID_SOURCES = frozenset({"arxiv", "github", "news", "producthunt", "hackernews"})
+VALID_SOURCES = frozenset({"arxiv", "github", "news", "producthunt", "hackernews", "x"})
 
 
 class IngestionAdminService:

@@ -40,6 +40,14 @@ class SchedulerDescriptorTests(unittest.TestCase):
             ("producthunt", "producthunt", "Product Hunt 新品采集", {"minute": "4", "second": "0"}, False, 7200),
             ("hackernews", "hackernews", "Hacker News AI 热帖采集", {"minute": "5", "second": "0"}, False, 7200),
             (
+                "x_watchlist",
+                "x",
+                "X 关注账号推文采集",
+                {"hour": "*/2", "minute": "6", "second": "0"},
+                True,
+                3600,
+            ),
+            (
                 "github_project_daily_pipeline",
                 "github_project_daily_pipeline",
                 "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",

@@ -23,6 +23,7 @@ from backend.app.services.ingestion.base_crawler import (
 )
 from backend.app.services.ingestion.sources import x_policy
 from backend.app.services.ingestion.sources.x_transport import (
+    DEFAULT_INTER_ACCOUNT_DELAY,
     XAuthAbort,
     XAuthNotConfigured,
     XRateLimitAbort,
@@ -39,22 +40,50 @@ def _env_watchlist_provider() -> list[str]:
     return x_policy.parse_watch_handles(os.environ.get("TWITTER_WATCH_HANDLES", ""))
 
 
+def _env_tweets_per_account() -> int:
+    """TWITTER_TWEETS_PER_ACCOUNT env，非法/缺省回落 DEFAULT_TWEETS_PER_ACCOUNT。"""
+    raw = os.environ.get("TWITTER_TWEETS_PER_ACCOUNT", "").strip()
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    return DEFAULT_TWEETS_PER_ACCOUNT
+
+
+def _env_inter_account_delay() -> float:
+    """TWITTER_INTER_ACCOUNT_DELAY_SECONDS env，非法/缺省回落默认基线。"""
+    raw = os.environ.get("TWITTER_INTER_ACCOUNT_DELAY_SECONDS", "").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_INTER_ACCOUNT_DELAY
+    return value if value > 0 else DEFAULT_INTER_ACCOUNT_DELAY
+
+
 class XCrawler(BaseCrawler):
     """X/Twitter 爬虫（数据源：twitter-cli 内部 GraphQL，cookie 凭据）。
 
     watchlist_provider: () -> list[str]，可注入（P3 切换为 DB 实现）。
-    transport: 可注入 fake，生产默认 XTransport()。
+    transport: 可注入 fake；缺省构造 XTransport 并读
+        TWITTER_INTER_ACCOUNT_DELAY_SECONDS 作为账号间隔基线。
+    tweets_per_account: 缺省读 TWITTER_TWEETS_PER_ACCOUNT env（回落 20）。
     """
 
     def __init__(
         self,
         transport: Optional[XTransport] = None,
         watchlist_provider: Optional[Callable[[], list[str]]] = None,
-        tweets_per_account: int = DEFAULT_TWEETS_PER_ACCOUNT,
+        tweets_per_account: Optional[int] = None,
     ) -> None:
-        self._transport = transport if transport is not None else XTransport()
+        self._transport = (
+            transport
+            if transport is not None
+            else XTransport(inter_account_delay=_env_inter_account_delay())
+        )
         self._watchlist_provider = watchlist_provider or _env_watchlist_provider
-        self._tweets_per_account = tweets_per_account
+        self._tweets_per_account = (
+            tweets_per_account
+            if tweets_per_account is not None
+            else _env_tweets_per_account()
+        )
 
     @property
     def source_name(self) -> str:
