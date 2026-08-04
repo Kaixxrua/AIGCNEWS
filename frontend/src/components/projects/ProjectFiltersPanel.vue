@@ -66,7 +66,16 @@ const emit = defineEmits<{
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
       </svg>
-      <input :value="searchQuery" class="input" type="search" :placeholder="t('projects.searchPlaceholder')" @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)" />
+      <input :value="searchQuery" class="input" :class="selectedLanguage ? 'projects-search__input--with-filter' : ''" type="search" :placeholder="t('projects.searchPlaceholder')" @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)" />
+      <button
+        v-if="searchQuery"
+        type="button"
+        class="projects-search__clear"
+        :class="selectedLanguage ? 'projects-search__clear--with-filter' : ''"
+        :aria-label="t('projects.clearSearch')"
+        :title="t('projects.clearSearch')"
+        @click="emit('update:searchQuery', '')"
+      >×</button>
       <button v-if="selectedLanguage" type="button" class="projects-search__filter" @click="emit('clearLanguage')">{{ selectedLanguage }} ×</button>
     </div>
 
@@ -115,7 +124,12 @@ const emit = defineEmits<{
 .projects-source-tab--active strong { color: #11110f; }
 .projects-search { position: relative; min-width: 180px; flex: 1 1 260px; }
 .projects-search svg { position: absolute; left: 16px; top: 50%; z-index: 1; width: 17px; height: 17px; color: #a8a29e; transform: translateY(-50%); }
-.projects-search .input { width: 100%; height: var(--projects-control-height, 44px); box-sizing: border-box; padding-right: 112px; padding-left: 44px; border: 1px solid #11110f; border-radius: 4px; background: var(--projects-paper-light); box-shadow: none; }
+.projects-search .input { width: 100%; height: var(--projects-control-height, 44px); box-sizing: border-box; padding-right: 42px; padding-left: 44px; border: 1px solid #11110f; border-radius: 4px; background: var(--projects-paper-light); box-shadow: none; }
+.projects-search .input.projects-search__input--with-filter { padding-right: 142px; }
+.projects-search .input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.projects-search__clear { position: absolute; right: 10px; top: 50%; z-index: 2; display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 4px; padding: 0; color: #a8a29e; background: transparent; font-size: 16px; line-height: 1; transform: translateY(-50%); transition: color 160ms ease, background 160ms ease, border-color 160ms ease; }
+.projects-search__clear:hover, .projects-search__clear:focus-visible { border-color: #11110f; color: #11110f; background: var(--projects-acid-soft); outline: none; }
+.projects-search__clear--with-filter { right: 112px; }
 .projects-search .input:focus { border-color: #11110f; box-shadow: 0 0 0 3px var(--projects-acid); }
 .projects-search__filter { position: absolute; right: 8px; top: 50%; z-index: 2; max-width: 96px; min-height: 28px; overflow: hidden; transform: translateY(-50%); border: 1px solid #11110f; border-radius: 4px; padding: 3px 8px; color: var(--projects-warm); background: var(--projects-paper-light); box-shadow: none; font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .projects-sort { display: inline-flex; min-width: 0; align-items: center; gap: 8px; color: #78716c; font-size: 12px; font-weight: 700; }
