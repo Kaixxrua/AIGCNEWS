@@ -197,24 +197,24 @@
   --paper: #1b1b18;
   --paper-raised: #232320;
   --paper-muted: #141412;
-  --ink: #ecebe4;
-  --ink-secondary: #b6b7ac;
+  --ink: #dbd9cd;
+  --ink-secondary: #abaca0;
   --ink-muted: #8e8f84;
   --rule: #3d3d36;
-  --rule-strong: #d6d5cb;
-  --acid: #d8f14b;
+  --rule-strong: #838276;
+  --acid: #c9e842;
   --acid-soft: #2e3319;
-  --acid-strong: #c2df3a;
+  --acid-strong: #b7d434;
   --acid-ink: #171a09;
 
-  --hard-ink: #e8e7de;
+  --hard-ink: #d0cfc3;
   --shadow-hard: rgba(0, 0, 0, 0.55);
   --shadow-ink-soft: rgba(0, 0, 0, 0.45);
 
   --ink-faint: #5f6056;
   --ink-solid: #3a3b33;
   --ink-solid-hover: #505147;
-  --ink-on-solid: #f5f5ef;
+  --ink-on-solid: #e6e5da;
 
   --card-rgb: 34 34 30;
   --stone-50-rgb: 32 32 28;
@@ -224,10 +224,10 @@
   --stone-400-rgb: 113 113 101;
   --stone-500-rgb: 142 142 130;
   --stone-600-rgb: 173 173 160;
-  --stone-700-rgb: 210 210 198;
-  --stone-800-rgb: 230 230 220;
-  --stone-900-rgb: 240 240 231;
-  --stone-950-rgb: 246 245 239;
+  --stone-700-rgb: 190 190 176;
+  --stone-800-rgb: 206 206 192;
+  --stone-900-rgb: 216 216 202;
+  --stone-950-rgb: 222 221 207;
 
   --glow-warm-rgb: 214 197 165;
   --cream-rgb: 36 35 29;
@@ -236,11 +236,11 @@
   --shimmer: #8d7c5f;
   --paper-warm: #26251f;
 
-  --acid-bright: #d8f14b;
+  --acid-bright: #c9e842;
   --on-acid: #171a09;
 
-  --scrollbar: rgba(238, 238, 229, 0.22);
-  --scrollbar-hover: rgba(238, 238, 229, 0.36);
+  --scrollbar: rgba(200, 200, 188, 0.22);
+  --scrollbar-hover: rgba(200, 200, 188, 0.36);
 
   --danger: #dc2626;
   --danger-strong: #991b1b;
@@ -273,19 +273,19 @@
 
   --veil-from: rgba(27, 27, 24, 0.72);
   --veil-to: rgba(18, 18, 15, 0.50);
-  --veil-line: rgba(236, 235, 228, 0.28);
+  --veil-line: rgba(210, 209, 197, 0.24);
   --veil-grain: rgba(236, 235, 228, 0.02);
 
   --logo-tile: #e7e9d3;
 
-  --projects-accent: #e8e7de;
-  --projects-accent-soft: rgba(216, 241, 75, 0.16);
-  --projects-accent-border: #e8e7de;
-  --projects-warm: #e8e7de;
-  --projects-warm-soft: rgba(216, 241, 75, 0.12);
+  --projects-accent: #d2d1c5;
+  --projects-accent-soft: rgba(201, 232, 66, 0.16);
+  --projects-accent-border: #d2d1c5;
+  --projects-warm: #d2d1c5;
+  --projects-warm-soft: rgba(201, 232, 66, 0.12);
   --projects-paper: #181814;
   --projects-paper-light: #23231f;
-  --projects-acid: #d8f14b;
+  --projects-acid: #c9e842;
   --projects-acid-soft: #2b3016;
   --projects-success: #34d399;
   --projects-error: #fb7185;
@@ -312,8 +312,8 @@
   --projects-ghost-surface-card: #2b2b27;
   --chat-paper: #22201a;
   --chat-paper-rgb: 34 32 26;
-  --chat-ink: #e9e8df;
-  --chat-ink-rgb: 233 232 223;
+  --chat-ink: #d6d4c7;
+  --chat-ink-rgb: 214 212 199;
   --chat-shadow-rgb: 0 0 0;
   --chat-on-acid: #191a16;
   --chat-input-bg: #2a2924;
@@ -343,7 +343,7 @@
   --notice-ok-border: rgba(52, 211, 153, 0.18);
   --panel-edge-info: rgba(165, 180, 252, 0.25);
   --dash-muted: #a3a096;
-  --ink-grid-rgb: 238 238 229;
+  --ink-grid-rgb: 200 200 188;
   --projects-paper-light-rgb: 35 35 31;
   --mcp-btn-label: #171a09;
   --mcp-icon-ink: #22d3ee;
