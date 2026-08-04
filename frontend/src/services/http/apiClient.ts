@@ -1,20 +1,7 @@
 import axios from 'axios'
-
-function readAuthToken(): string | null {
-  try {
-    return localStorage.getItem('auth_token')
-  } catch {
-    return null
-  }
-}
-
-function removeAuthToken(): void {
-  try {
-    localStorage.removeItem('auth_token')
-  } catch {
-    // The store's in-memory state remains authoritative.
-  }
-}
+import { showToast } from '@/composables/useToast'
+import { i18n } from '@/i18n'
+import { readAuthToken, removeAuthToken } from '@/services/http/authTokenStorage'
 
 export const api = axios.create({
   baseURL: '/api',
@@ -77,7 +64,7 @@ api.interceptors.response.use(
         _is401Handling = true
         try {
           const { default: router } = await import('@/router/index')
-          alert('登录已过期，请重新登录')
+          showToast(i18n.global.t('auth.sessionExpired'))
           await router.push('/login')
         } finally {
           _is401Handling = false

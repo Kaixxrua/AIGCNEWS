@@ -5,11 +5,12 @@ import {
   loginWithPassword,
   type AuthUserDTO,
 } from '@/services/auth/authApi'
+import { AUTH_TOKEN_KEY } from '@/services/http/authTokenStorage'
 
 export type AuthUser = AuthUserDTO
 export type AuthStatus = 'initializing' | 'authenticated' | 'anonymous' | 'degraded'
 
-const TOKEN_KEY = 'auth_token'
+const TOKEN_KEY = AUTH_TOKEN_KEY
 const PENDING_CHAT_KEY = 'pending_chat_message'
 
 function readStorage(key: string): string | null {

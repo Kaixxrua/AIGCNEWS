@@ -13,6 +13,8 @@ import MarkdownIt from 'markdown-it'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { copyToClipboard } from './useClipboard'
+import { showToast } from './useToast'
+import { i18n } from '@/i18n'
 
 const markdown = new MarkdownIt({ html: true, linkify: true, breaks: true })
 
@@ -140,11 +142,11 @@ export function extractLatexSources(content: string): string[] {
 export async function copyFormulas(content: string): Promise<void> {
   const formulas = extractLatexSources(content)
   if (!formulas.length) {
-    alert('未检测到公式')
+    showToast(i18n.global.t('common.noFormulas'))
     return
   }
   await copyToClipboard(formulas.join('\n\n'))
-  alert(`已复制 ${formulas.length} 条公式`)
+  showToast(i18n.global.t('common.formulasCopied', { count: formulas.length }))
 }
 
 /**

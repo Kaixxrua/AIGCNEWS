@@ -1,3 +1,5 @@
+import { readAuthToken } from '@/services/http/authTokenStorage'
+
 export type SseConnectParams = {
   url: string
   body: Record<string, unknown>
@@ -54,7 +56,7 @@ export function useEventSource() {
     const promise = (async () => {
       try {
         // 从 localStorage 读取 token，附加到 Authorization header
-        const token = localStorage.getItem('auth_token')
+        const token = readAuthToken()
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',

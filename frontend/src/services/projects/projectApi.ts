@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- API 边界 normalizer 基线：
    响应载荷先按 any 归一化再收窄到导出类型，随后端契约类型化逐步移除。 */
 import { api } from '@/services/http/apiClient'
+import { i18n } from '@/i18n'
 
 const TOOL_WEBSITE_ADD_TIMEOUT = 120_000
 
@@ -332,7 +333,7 @@ export async function favoriteProject(payload: ProjectFavoritePayload): Promise<
   const res = await api.post('/projects/me/favorites', payload)
   return {
     status: res.data?.status ?? 'succeeded',
-    message: res.data?.message ?? '已加入我的收藏。',
+    message: res.data?.message ?? i18n.global.t('projects.favoriteAddedPersonal'),
     source: res.data?.source ?? payload.source,
     repo_id: res.data?.repo_id ?? payload.repo_id ?? null,
     website_id: res.data?.website_id ?? payload.website_id ?? null,
@@ -349,7 +350,7 @@ export async function unfavoriteProject(payload: ProjectFavoritePayload): Promis
   const res = await api.delete('/projects/me/favorites', { params })
   return {
     status: res.data?.status ?? 'succeeded',
-    message: res.data?.message ?? '已取消收藏。',
+    message: res.data?.message ?? i18n.global.t('projects.favoriteRemovedPersonal'),
     source: res.data?.source ?? payload.source,
     repo_id: res.data?.repo_id ?? payload.repo_id ?? null,
     website_id: res.data?.website_id ?? payload.website_id ?? null,
@@ -379,26 +380,26 @@ export async function recommendGitHubProject(
   payload: GitHubProjectRecommendPayload,
 ): Promise<GitHubProjectRecommendResponse> {
   const res = await api.post('/ops/github-projects/recommendations', payload)
-  return normalizeGitHubProjectRecommendResponse(res.data, payload, '已加入站长推荐。')
+  return normalizeGitHubProjectRecommendResponse(res.data, payload, i18n.global.t('projects.recommendationAdded'))
 }
 
 export async function unrecommendGitHubProject(
   payload: GitHubProjectRecommendPayload,
 ): Promise<GitHubProjectRecommendResponse> {
   const res = await api.delete('/ops/github-projects/recommendations', { data: payload })
-  return normalizeGitHubProjectRecommendResponse(res.data, payload, '已取消站长推荐。')
+  return normalizeGitHubProjectRecommendResponse(res.data, payload, i18n.global.t('projects.recommendationRemoved'))
 }
 
 export async function addMyToolWebsite(url: string): Promise<ToolWebsiteAddResponse> {
   const res = await api.post('/projects/me/tool-websites', { url }, { timeout: TOOL_WEBSITE_ADD_TIMEOUT })
-  return normalizeToolWebsiteAddResponse(res.data, '工具网站已加入我的收藏。')
+  return normalizeToolWebsiteAddResponse(res.data, i18n.global.t('projects.websiteAddedPersonal'))
 }
 
 export async function addMyToolWebsiteManual(
   payload: ManualToolWebsitePayload,
 ): Promise<ToolWebsiteAddResponse> {
   const res = await api.post('/projects/me/tool-websites/manual', payload, { timeout: TOOL_WEBSITE_ADD_TIMEOUT })
-  return normalizeToolWebsiteAddResponse(res.data, '工具网站已手动加入我的收藏。')
+  return normalizeToolWebsiteAddResponse(res.data, i18n.global.t('projects.websiteAddedManual'))
 }
 
 function normalizeToolWebsiteDeleteResponse(data: any, websiteId: number | string, fallbackMessage: string): ToolWebsiteDeleteResponse {
@@ -412,7 +413,7 @@ function normalizeToolWebsiteDeleteResponse(data: any, websiteId: number | strin
 
 export async function removeMyToolWebsite(websiteId: number | string): Promise<ToolWebsiteDeleteResponse> {
   const res = await api.delete(`/projects/me/tool-websites/${websiteId}`)
-  return normalizeToolWebsiteDeleteResponse(res.data, websiteId, '已移出我的收藏。')
+  return normalizeToolWebsiteDeleteResponse(res.data, websiteId, i18n.global.t('projects.websiteRemoved'))
 }
 
 export async function updateMyToolWebsite(
@@ -422,7 +423,7 @@ export async function updateMyToolWebsite(
   const res = await api.patch(`/projects/me/tool-websites/${websiteId}`, payload)
   return {
     status: res.data?.status ?? 'succeeded',
-    message: res.data?.message ?? '网页收藏信息已更新。',
+    message: res.data?.message ?? i18n.global.t('projects.websiteUpdated'),
     item: res.data?.item ?? null,
   }
 }

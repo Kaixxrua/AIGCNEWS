@@ -2,6 +2,8 @@ import { ref, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
+import { showToast } from '@/composables/useToast'
+import { i18n } from '@/i18n'
 import {
   getAttachmentStatus,
   uploadImageAttachment,
@@ -56,7 +58,7 @@ export const useChatAttachments = (inputText: Ref<string>) => {
       } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
         meta = await uploadPdfAttachment(file)
       } else {
-        alert('仅支持图片或 PDF 文件')
+        showToast(i18n.global.t('chat.attachmentsUnsupported'))
         input.value = ''
         return
       }
@@ -71,7 +73,7 @@ export const useChatAttachments = (inputText: Ref<string>) => {
       }
     } catch (error) {
       console.error('[Attachment upload error]', error)
-      alert('附件上传失败，请稍后重试')
+      showToast(i18n.global.t('chat.attachmentUploadFailed'))
     } finally {
       isUploading.value = false
       input.value = ''
