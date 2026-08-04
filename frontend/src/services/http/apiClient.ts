@@ -60,7 +60,7 @@ api.interceptors.response.use(
 
       removeAuthToken()
       try {
-        const { useAuthStore } = await import('../../stores/authStore')
+        const { useAuthStore } = await import('@/stores/authStore')
         const { getActivePinia } = await import('pinia')
         const pinia = getActivePinia()
         if (pinia) {
@@ -76,7 +76,7 @@ api.interceptors.response.use(
       if (!isAuthEndpoint) {
         _is401Handling = true
         try {
-          const { default: router } = await import('../../router/index')
+          const { default: router } = await import('@/router/index')
           alert('登录已过期，请重新登录')
           await router.push('/login')
         } finally {

@@ -1,4 +1,6 @@
-import { api } from '../http/apiClient'
+/* eslint-disable @typescript-eslint/no-explicit-any -- API 边界 normalizer 基线：
+   响应载荷先按 any 归一化再收窄到导出类型，随后端契约类型化逐步移除。 */
+import { api } from '@/services/http/apiClient'
 
 const TOOL_WEBSITE_ADD_TIMEOUT = 120_000
 

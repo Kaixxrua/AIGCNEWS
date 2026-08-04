@@ -1,4 +1,4 @@
-import type { ChatMessage, ConversationSummary } from '../../stores/chatStore'
+import type { ChatMessage, ConversationSummary } from '@/stores/chatStore'
 
 export interface PaperReaderMessage {
   id: string

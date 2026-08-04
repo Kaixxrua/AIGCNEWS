@@ -2,16 +2,16 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
-import ReportContentPanel from '../components/report/ReportContentPanel.vue'
-import ReportControlsPanel from '../components/report/ReportControlsPanel.vue'
-import ReportSubscriptionPanel from '../components/report/ReportSubscriptionPanel.vue'
-import { api } from '../services/http/apiClient'
-import { useEventSource } from '../composables/useEventSource'
-import { useFollowViewport } from '../composables/useFollowViewport'
-import { useReportController } from '../composables/useReportController'
-import { useReportSubscriptions } from '../composables/useReportSubscriptions'
-import { useLatexRenderer } from '../composables/useLatexRenderer'
-import { useAuthStore } from '../stores/authStore'
+import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
+import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
+import ReportSubscriptionPanel from '@/components/report/ReportSubscriptionPanel.vue'
+import { api } from '@/services/http/apiClient'
+import { useEventSource } from '@/composables/useEventSource'
+import { useFollowViewport } from '@/composables/useFollowViewport'
+import { useReportController } from '@/composables/useReportController'
+import { useReportSubscriptions } from '@/composables/useReportSubscriptions'
+import { useLatexRenderer } from '@/composables/useLatexRenderer'
+import { useAuthStore } from '@/stores/authStore'
 import {
   getPeriodTypeInfo,
   getReportTypeInfo,
@@ -21,7 +21,7 @@ import {
   type ReportMessageResponse,
   type ReportResponse,
   type SubscriptionListResponse,
-} from '../features/report/reportViewModel'
+} from '@/features/report/reportViewModel'
 
 const { locale, t } = useI18n()
 const authStore = useAuthStore()

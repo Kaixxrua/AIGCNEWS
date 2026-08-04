@@ -11,11 +11,11 @@ const { t } = useI18n()
 import { watch, onMounted, onUnmounted } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import type { PdfProgress } from '../features/papers/pdfViewerModel'
-import { usePdfDocumentRenderer } from '../composables/usePdfDocumentRenderer'
-import { usePdfRegionCapture } from '../composables/usePdfRegionCapture'
+import type { PdfProgress } from '@/features/papers/pdfViewerModel'
+import { usePdfDocumentRenderer } from '@/composables/usePdfDocumentRenderer'
+import { usePdfRegionCapture } from '@/composables/usePdfRegionCapture'
 
-export type { PdfProgress } from '../features/papers/pdfViewerModel'
+export type { PdfProgress } from '@/features/papers/pdfViewerModel'
 
 // Vite ?url 语法确保 Worker 被正确打包
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl

@@ -4,7 +4,7 @@ import type {
   GitHubProjectSort,
   ProjectScope,
   ProjectViewSource,
-} from '../services/projects/projectApi'
+} from '@/services/projects/projectApi'
 
 type ProjectRouteQuery = Record<string, string>
 

@@ -1,13 +1,13 @@
 import { ref, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '../stores/authStore'
-import { useChatStore } from '../stores/chatStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useChatStore } from '@/stores/chatStore'
 import {
   getAttachmentStatus,
   uploadImageAttachment,
   uploadPdfAttachment,
   type AttachmentMeta,
-} from '../services/attachments/attachmentApi'
+} from '@/services/attachments/attachmentApi'
 
 export const useChatAttachments = (inputText: Ref<string>) => {
   const store = useChatStore()

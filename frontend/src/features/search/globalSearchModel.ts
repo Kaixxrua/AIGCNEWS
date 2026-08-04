@@ -1,5 +1,5 @@
 import type { RouteLocationRaw } from 'vue-router'
-import type { PaperItem } from '../../services/papers/paperApi'
+import type { PaperItem } from '@/services/papers/paperApi'
 
 export const GLOBAL_SEARCH_DEBOUNCE_MS = 300
 export const GLOBAL_SEARCH_BLUR_DELAY_MS = 200

@@ -6,7 +6,7 @@ import {
   type ReportKey,
   type ReportResponse,
   type ReportStreamEvent,
-} from '../features/report/reportViewModel'
+} from '@/features/report/reportViewModel'
 
 interface ReportControllerOperations {
   loadCachedReport: (params: {

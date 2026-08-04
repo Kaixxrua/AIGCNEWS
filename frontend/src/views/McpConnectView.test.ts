@@ -6,7 +6,7 @@ const template = source.match(/<template>([\s\S]*?)<\/template>/)?.[1] ?? ''
 
 describe('MCP connect view controller boundary', () => {
   it('delegates connection orchestration to useMcpConnectController', () => {
-    expect(script).toContain("import { useMcpConnectController } from '../composables/useMcpConnectController'")
+    expect(script).toContain("import { useMcpConnectController } from '@/composables/useMcpConnectController'")
     expect(script).toContain('} = useMcpConnectController({')
     expect(script).toContain('isLoggedIn: () => authStore.isLoggedIn')
     expect(script).toContain("navigateToLogin: async () => { await router.push('/login') }")
@@ -19,10 +19,10 @@ describe('MCP connect view controller boundary', () => {
   })
 
   it('does not import direct transport, handshake, discovery, or command generation dependencies', () => {
-    expect(script).not.toContain("from '../services/mcp/mcpTokenApi'")
-    expect(script).not.toContain("from '../features/mcp/mcpHandshake'")
-    expect(script).not.toContain("from '../features/mcp/publicToolsModel'")
-    expect(script).not.toContain("from '../features/mcp/mcpCommandGenerator'")
+    expect(script).not.toContain("from '@/services/mcp/mcpTokenApi'")
+    expect(script).not.toContain("from '@/features/mcp/mcpHandshake'")
+    expect(script).not.toContain("from '@/features/mcp/publicToolsModel'")
+    expect(script).not.toContain("from '@/features/mcp/mcpCommandGenerator'")
     expect(script).not.toContain("from 'axios'")
     expect(script).not.toContain('performPublicMcpHandshake')
     expect(script).not.toContain('generateMcpClientCommand')

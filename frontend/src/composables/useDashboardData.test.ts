@@ -10,7 +10,7 @@ const defaultDashboardApi = vi.hoisted(() => ({
 }))
 vi.mock('../services/dashboard/dashboardApi', () => ({ dashboardApi: defaultDashboardApi }))
 
-import type { DashboardApi } from '../services/dashboard/dashboardApi'
+import type { DashboardApi } from '@/services/dashboard/dashboardApi'
 import { useDashboardData } from './useDashboardData'
 
 type DashboardData = ReturnType<typeof useDashboardData>

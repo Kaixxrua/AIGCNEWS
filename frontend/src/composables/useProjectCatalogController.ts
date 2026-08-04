@@ -24,7 +24,7 @@ import {
   type ProjectTaxonomyItem,
   type ProjectViewSource,
   type ToolWebsiteUpdatePayload,
-} from '../services/projects/projectApi'
+} from '@/services/projects/projectApi'
 import {
   canFavoriteProject,
   canRecommendProject,
@@ -32,7 +32,7 @@ import {
   projectFavoritePayload,
   projectKey,
   projectName,
-} from '../features/projects/projectPresentation'
+} from '@/features/projects/projectPresentation'
 import { defaultProjectSortForSource } from './useProjectRouteState'
 
 const defaultApi = {

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { useDashboardData } from '../composables/useDashboardData'
-import { useDashboardStats } from '../composables/useDashboardStats'
-import DashboardEmptyState from '../components/dashboard/DashboardEmptyState.vue'
-import DashboardOverviewPanel from '../components/dashboard/DashboardOverviewPanel.vue'
-import DashboardRankingPanel from '../components/dashboard/DashboardRankingPanel.vue'
+import { useDashboardData } from '@/composables/useDashboardData'
+import { useDashboardStats } from '@/composables/useDashboardStats'
+import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
+import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
+import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import { CalendarDays } from 'lucide-vue-next'
-import type { Stats } from '../features/dashboard/dashboardViewModel'
+import type { Stats } from '@/features/dashboard/dashboardViewModel'
 
 defineOptions({ name: 'DashboardView' })
 const { t } = useI18n()

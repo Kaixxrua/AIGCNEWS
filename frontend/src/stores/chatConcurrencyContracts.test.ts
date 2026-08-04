@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import chatStoreSource from './chatStore.ts?raw'
-import chatStreamBoundarySource from '../features/chat/chatStreamBoundary.ts?raw'
+import chatStreamBoundarySource from '@/features/chat/chatStreamBoundary.ts?raw'
 
 function sourceBetween(source: string, start: string, end: string): string {
   const startIndex = source.indexOf(start)

@@ -9,6 +9,7 @@ import {
   Rocket,
   Star,
   ThumbsUp,
+  type LucideIcon,
 } from 'lucide-vue-next'
 
 export interface TopDoc {
@@ -100,7 +101,7 @@ export const aiScoreDisplay = (score?: number) => {
   return `${score}/10`
 }
 
-export const scoreDisplay = (doc: TopDoc, formatNumber: (value: number) => string = String): { icon: any; text: string; unitKey?: 'votes' | 'points' } => {
+export const scoreDisplay = (doc: TopDoc, formatNumber: (value: number) => string = String): { icon: LucideIcon; text: string; unitKey?: 'votes' | 'points' } => {
   if (doc.source === 'github')      return { icon: Star,     text: formatNumber(doc.stars ?? Math.round(doc.raw_score ?? doc.score ?? 0)) }
   if (doc.source === 'huggingface') return { icon: Heart,    text: formatNumber(Math.round(doc.raw_score ?? doc.likes ?? doc.score ?? 0)) }
   if (doc.source === 'news')        return { icon: Newspaper, text: `${doc.feed_name || 'News'}` }

@@ -4,7 +4,7 @@ import paginationSource from './ProjectPagination.vue?raw'
 import cardSource from './ProjectResultCard.vue?raw'
 import addDialogSource from './ToolWebsiteAddDialog.vue?raw'
 import editDialogSource from './ToolWebsiteEditDialog.vue?raw'
-import viewSource from '../../views/GitHubProjectsView.vue?raw'
+import viewSource from '@/views/GitHubProjectsView.vue?raw'
 
 const cssVariableFallback = (source: string, variable: string, fallback: string) => {
   expect(source).toContain(`var(${variable}, ${fallback})`)

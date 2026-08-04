@@ -10,7 +10,7 @@ import {
   passwordsMatch,
   REGISTER_REDIRECT_DELAY_MS,
   REGISTER_SUCCESS_MESSAGE_DURATION_MS,
-} from '../features/auth/authViewModel'
+} from '@/features/auth/authViewModel'
 import { useOtpCountdown } from './useOtpCountdown'
 
 interface RegisterFormDependencies {

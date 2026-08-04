@@ -2,9 +2,9 @@
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { BellRing } from 'lucide-vue-next'
-import { REPORT_TYPES, type ReportKey } from '../../features/report/reportViewModel'
+import { REPORT_TYPES, type ReportKey } from '@/features/report/reportViewModel'
 
-const props = defineProps<{
+defineProps<{
   showLoginPrompt: boolean
   showSubscribePanel: boolean
   isSubscribing: boolean

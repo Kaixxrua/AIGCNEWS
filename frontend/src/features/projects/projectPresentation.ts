@@ -1,11 +1,11 @@
-import { formatLocaleCompactNumber, formatLocaleDate } from '../../i18n/formatters'
-import type { AppLocale } from '../../i18n'
+import { formatLocaleCompactNumber, formatLocaleDate } from '@/i18n/formatters'
+import type { AppLocale } from '@/i18n'
 import type {
   GitHubProjectItem,
   GitHubProjectSort,
   ProjectFavoritePayload,
   ProjectScope,
-} from '../../services/projects/projectApi'
+} from '@/services/projects/projectApi'
 
 export type ProjectChip =
   | { type: 'subcategory'; label: string; categorySlug: string; value: string }

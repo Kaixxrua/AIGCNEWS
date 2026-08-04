@@ -1,9 +1,9 @@
 import { computed, ref, type ComputedRef } from 'vue'
-import { monitorApi, type MonitorApi } from '../services/monitor/monitorApi'
+import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import {
   createEmptyMcpForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
   type McpServerConfig, type SourceKey,
-} from '../features/monitor/monitorModel'
+} from '@/features/monitor/monitorModel'
 
 interface MonitorPageControllerOptions {
   isAdmin: ComputedRef<boolean>
@@ -13,7 +13,15 @@ interface MonitorPageControllerOptions {
   now?: () => Date
 }
 
-const detail = (error: any) => error?.response?.data?.detail || String(error)
+interface AxiosLikeError {
+  response?: { status?: number; data?: { detail?: string } }
+}
+
+const asAxiosLike = (error: unknown): AxiosLikeError | null =>
+  error && typeof error === 'object' && 'response' in error ? (error as AxiosLikeError) : null
+
+const statusOf = (error: unknown) => asAxiosLike(error)?.response?.status
+const detail = (error: unknown): string => asAxiosLike(error)?.response?.data?.detail || String(error)
 
 export const useMonitorPageController = ({
   isAdmin,
@@ -147,7 +155,7 @@ export const useMonitorPageController = ({
     if (ingestingSource.value) return
     clearMessages(); ingestingSource.value = source
     try { const result = await api.ingestSource(source); successMsg.value = result.message || `「${source}」采集任务已提交，后台执行中…`; delayedRefresh(4000) }
-    catch (error: any) { const status = error?.response?.status; errorMsg.value = status === 409 ? '当前已有任务正在运行，请等待完成后再试。' : status === 400 ? detail(error) || '未知数据源' : detail(error) }
+    catch (error) { const status = statusOf(error); errorMsg.value = status === 409 ? '当前已有任务正在运行，请等待完成后再试。' : status === 400 ? detail(error) || '未知数据源' : detail(error) }
     finally { ingestingSource.value = null }
   }
   const generateAllBriefings = async (forceRegenerate = true) => {
@@ -168,7 +176,7 @@ export const useMonitorPageController = ({
     if (syncing.value || isTaskRunning.value) return
     clearMessages(); syncing.value = true
     try { await api.syncData(force); successMsg.value = force ? '强制采集任务已提交，后台执行中…' : '智能同步任务已提交，后台执行中…'; delayedRefresh(3000) }
-    catch (error: any) { errorMsg.value = error?.response?.status === 409 ? '当前已有任务正在运行，请等待完成后再试。' : detail(error) }
+    catch (error) { errorMsg.value = statusOf(error) === 409 ? '当前已有任务正在运行，请等待完成后再试。' : detail(error) }
     finally { syncing.value = false }
   }
   const ingestByDate = async () => {
@@ -176,7 +184,7 @@ export const useMonitorPageController = ({
     if (!targetDate.value) { errorMsg.value = '请选择目标日期'; return }
     clearMessages(); ingestingByDate.value = true
     try { const result = await api.ingestByDate(targetDate.value); successMsg.value = result.message || `已提交 ${targetDate.value} 的采集任务，后台执行中…`; delayedRefresh(4000) }
-    catch (error: any) { const status = error?.response?.status; errorMsg.value = status === 409 ? '当前已有任务正在运行，请等待完成后再试。' : status === 400 ? detail(error) || '日期格式错误' : detail(error) }
+    catch (error) { const status = statusOf(error); errorMsg.value = status === 409 ? '当前已有任务正在运行，请等待完成后再试。' : status === 400 ? detail(error) || '日期格式错误' : detail(error) }
     finally { ingestingByDate.value = false }
   }
   const clearAllData = async () => {

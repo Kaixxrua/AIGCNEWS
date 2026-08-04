@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import LocaleToggle from '../LocaleToggle.vue'
+import LocaleToggle from '@/components/LocaleToggle.vue'
 defineProps<{
   title: string
   description: string

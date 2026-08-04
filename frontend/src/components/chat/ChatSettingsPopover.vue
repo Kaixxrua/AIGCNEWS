@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import type { ChatSettings } from '../../stores/chatStore'
+import type { ChatSettings } from '@/stores/chatStore'
 
 defineProps<{
   visible: boolean
@@ -27,6 +27,7 @@ const emit = defineEmits<{
           <span>{{ t('chat.historyTurns') }}</span>
           <span class="font-bold text-stone-800">{{ settings.maxHistoryTurns }}</span>
         </label>
+        <!-- eslint-disable-next-line vue/no-mutating-props -- settings 为父组件传入的响应式设置对象，双向绑定属有意设计 -->
         <input v-model.number="settings.maxHistoryTurns" type="range" min="0" max="20" step="1" class="w-full accent-stone-600 h-1.5 rounded-full" />
         <div class="flex justify-between text-2xs text-stone-400"><span>{{ t('chat.noMemory') }}</span><span>20</span></div>
       </div>
@@ -35,6 +36,7 @@ const emit = defineEmits<{
           <span>Temperature</span>
           <span class="font-bold text-stone-800">{{ settings.temperature.toFixed(1) }}</span>
         </label>
+        <!-- eslint-disable-next-line vue/no-mutating-props -- settings 为父组件传入的响应式设置对象，双向绑定属有意设计 -->
         <input v-model.number="settings.temperature" type="range" min="0" max="2" step="0.1" class="w-full accent-stone-600 h-1.5 rounded-full" />
         <div class="flex justify-between text-2xs text-stone-400"><span>{{ t('chat.precise') }}</span><span>{{ t('chat.creative') }}</span></div>
       </div>

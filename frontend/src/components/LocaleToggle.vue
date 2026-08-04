@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useLocaleTransition } from '../composables/useLocaleTransition'
+import { useLocaleTransition } from '@/composables/useLocaleTransition'
 
 const { locale, t } = useI18n()
 const { isLocaleTransitioning, switchLocale } = useLocaleTransition()

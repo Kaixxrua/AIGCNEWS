@@ -12,7 +12,7 @@ import {
   type PeriodKey,
   type TabKey,
   type TopDoc,
-} from '../../features/dashboard/dashboardViewModel'
+} from '@/features/dashboard/dashboardViewModel'
 
 defineProps<{
   activeTab: TabKey

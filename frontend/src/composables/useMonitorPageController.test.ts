@@ -1,6 +1,6 @@
 import { computed } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { MonitorApi } from '../services/monitor/monitorApi'
+import type { MonitorApi } from '@/services/monitor/monitorApi'
 import { useMonitorPageController } from './useMonitorPageController'
 
 const createApi = (): MonitorApi => ({

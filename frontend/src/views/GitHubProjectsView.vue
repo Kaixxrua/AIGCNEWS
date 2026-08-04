@@ -2,7 +2,7 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import type { AppLocale } from '../i18n'
+import type { AppLocale } from '@/i18n'
 import type {
   GitHubProjectItem,
   GitHubProjectSort,
@@ -10,16 +10,16 @@ import type {
   ProjectScope,
   ProjectViewSource,
   ToolWebsiteUpdatePayload,
-} from '../services/projects/projectApi'
-import router from '../router'
-import { useAuthStore } from '../stores/authStore'
-import ProjectResultCard from '../components/projects/ProjectResultCard.vue'
-import ToolWebsiteAddDialog from '../components/projects/ToolWebsiteAddDialog.vue'
-import ToolWebsiteEditDialog from '../components/projects/ToolWebsiteEditDialog.vue'
-import ProjectFiltersPanel from '../components/projects/ProjectFiltersPanel.vue'
-import ProjectPagination from '../components/projects/ProjectPagination.vue'
-import { useProjectCatalogController } from '../composables/useProjectCatalogController'
-import { defaultProjectSortForScope, defaultProjectSortForSource, useProjectRouteState } from '../composables/useProjectRouteState'
+} from '@/services/projects/projectApi'
+import router from '@/router'
+import { useAuthStore } from '@/stores/authStore'
+import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
+import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
+import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
+import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
+import ProjectPagination from '@/components/projects/ProjectPagination.vue'
+import { useProjectCatalogController } from '@/composables/useProjectCatalogController'
+import { defaultProjectSortForScope, defaultProjectSortForSource, useProjectRouteState } from '@/composables/useProjectRouteState'
 import {
   canEditWebsiteProject,
   canFavoriteProject,
@@ -29,7 +29,7 @@ import {
   projectKey,
   projectLogoKey,
   type ProjectChip,
-} from '../features/projects/projectPresentation'
+} from '@/features/projects/projectPresentation'
 
 defineOptions({ name: 'GitHubProjectsView' })
 const { locale, t } = useI18n()

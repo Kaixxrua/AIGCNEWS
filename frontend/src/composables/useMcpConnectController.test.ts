@@ -1,7 +1,7 @@
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { McpHandshakeOptions } from '../features/mcp/mcpHandshake'
-import type { McpTokenMetadata } from '../services/mcp/mcpTokenApi'
+import type { McpHandshakeOptions } from '@/features/mcp/mcpHandshake'
+import type { McpTokenMetadata } from '@/services/mcp/mcpTokenApi'
 import {
   useMcpConnectController,
   type McpConnectApi,

@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchCurrentUser } from '../services/auth/authApi'
+import { fetchCurrentUser } from '@/services/auth/authApi'
 import { useAuthStore } from './authStore'
 
 vi.mock('../services/auth/authApi', () => ({

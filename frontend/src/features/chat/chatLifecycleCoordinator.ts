@@ -1,4 +1,4 @@
-import type { ChatAttachmentRef } from '../../services/chat/chatApi'
+import type { ChatAttachmentRef } from '@/services/chat/chatApi'
 import type {
   ChatMessage,
   ConversationScope,

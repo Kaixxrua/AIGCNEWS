@@ -8,12 +8,12 @@ import {
   REPORT_TYPES,
   type PeriodKey,
   type ReportKey,
-} from '../../features/report/reportViewModel'
+} from '@/features/report/reportViewModel'
 
 type ReportTypeInfo = (typeof REPORT_TYPES)[number]
 type PeriodTypeInfo = (typeof PERIOD_TYPES)[number]
 
-const props = defineProps<{
+defineProps<{
   currentTypeInfo?: ReportTypeInfo
   currentPeriodInfo?: PeriodTypeInfo
   selectedType: ReportKey

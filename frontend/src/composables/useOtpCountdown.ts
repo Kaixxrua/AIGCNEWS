@@ -2,7 +2,7 @@ import { onUnmounted, ref } from 'vue'
 import {
   OTP_COUNTDOWN_INTERVAL_MS,
   OTP_COUNTDOWN_SECONDS,
-} from '../features/auth/authViewModel'
+} from '@/features/auth/authViewModel'
 
 interface OtpCountdownOptions {
   clearBeforeStart?: boolean

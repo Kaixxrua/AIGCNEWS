@@ -1,5 +1,5 @@
 import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
-import type { ChatMessage } from '../stores/chatStore'
+import type { ChatMessage } from '@/stores/chatStore'
 
 export const useChatViewport = (
   listRef: Ref<HTMLElement | null>,

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import type { SseConnectParams } from './useEventSource'
-import type { ChatMessage, ConversationSummary } from '../stores/chatStore'
+import type { ChatMessage, ConversationSummary } from '@/stores/chatStore'
 import { usePaperReaderController } from './usePaperReaderController'
 
 const conversation = (id: string): ConversationSummary => ({

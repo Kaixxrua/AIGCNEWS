@@ -7,7 +7,7 @@ import {
   getStatusConfig,
   type SchedulerStatus,
   type Task,
-} from '../../features/monitor/monitorViewModel'
+} from '@/features/monitor/monitorViewModel'
 
 defineProps<{
   isAdmin: boolean

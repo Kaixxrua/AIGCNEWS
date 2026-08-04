@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAuthStore } from '../stores/authStore'
-import McpServerConfigPanel from '../components/monitor/McpServerConfigPanel.vue'
-import MonitorAdminActionControls from '../components/monitor/MonitorAdminActionControls.vue'
-import MonitorIngestionControls from '../components/monitor/MonitorIngestionControls.vue'
-import MonitorTaskPanel from '../components/monitor/MonitorTaskPanel.vue'
-import ProviderConfigPanel from '../components/monitor/ProviderConfigPanel.vue'
-import { useMonitorPageController } from '../composables/useMonitorPageController'
+import { useAuthStore } from '@/stores/authStore'
+import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
+import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
+import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
+import MonitorTaskPanel from '@/components/monitor/MonitorTaskPanel.vue'
+import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
+import { useMonitorPageController } from '@/composables/useMonitorPageController'
 
 const { t } = useI18n()
 const authStore = useAuthStore()

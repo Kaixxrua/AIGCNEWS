@@ -10,7 +10,7 @@ import {
   getStatusConfig,
   type McpServerConfig,
   type McpServerForm,
-} from '../../features/monitor/monitorViewModel'
+} from '@/features/monitor/monitorViewModel'
 
 const { t } = useI18n()
 

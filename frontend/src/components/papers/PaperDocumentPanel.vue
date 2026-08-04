@@ -2,10 +2,10 @@
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { Camera } from 'lucide-vue-next'
-import PdfCanvasViewer from '../PdfCanvasViewer.vue'
-import type { PaperReaderPaper } from '../../composables/usePaperReaderController'
-import type { PdfProgress } from '../../features/papers/pdfViewerModel'
-import type { VisionPopup, VisionRegionCapture } from '../../features/papers/paperReaderModel'
+import PdfCanvasViewer from '@/components/PdfCanvasViewer.vue'
+import type { PaperReaderPaper } from '@/composables/usePaperReaderController'
+import type { PdfProgress } from '@/features/papers/pdfViewerModel'
+import type { VisionPopup, VisionRegionCapture } from '@/features/papers/paperReaderModel'
 
 defineProps<{
   paper: PaperReaderPaper | null

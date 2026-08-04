@@ -322,21 +322,23 @@ const explicitBusinessTranslations: Record<string, string> = {
   'paper.pdfMissing': '暂无 PDF 文件'
 }
 
-const applyFlat = (target: any, values: Record<string, string>) => {
+type MessageTree = Record<string, unknown>
+
+const applyFlat = (target: MessageTree, values: Record<string, string>): MessageTree => {
   for (const [path, value] of Object.entries(values)) {
     const parts = path.split('.')
     const key = parts.pop()!
-    const parent = parts.reduce((node, part) => node[part], target)
+    const parent = parts.reduce<MessageTree>((node, part) => node[part] as MessageTree, target)
     parent[key] = value
   }
   return target
 }
 
-const deepMerge = (base: any, patch: any): any => Object.fromEntries(
+const deepMerge = (base: MessageTree, patch: MessageTree): MessageTree => Object.fromEntries(
   Object.entries(base).map(([key, value]) => [
     key,
     value && typeof value === 'object' && !Array.isArray(value)
-      ? deepMerge(value, patch?.[key] ?? {})
+      ? deepMerge(value as MessageTree, (patch?.[key] ?? {}) as MessageTree)
       : patch?.[key] ?? value,
   ]),
 )

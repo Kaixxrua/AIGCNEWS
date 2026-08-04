@@ -1,9 +1,9 @@
 import { createApp, nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import LocaleToggle from './LocaleToggle.vue'
-import i18n, { setAppLocale } from '../i18n'
-import { LOCALE_STORAGE_KEY } from '../i18n/locale'
-import { NAV_ITEMS } from '../features/navigation/navigationModel'
+import i18n, { setAppLocale } from '@/i18n'
+import { LOCALE_STORAGE_KEY } from '@/i18n/locale'
+import { NAV_ITEMS } from '@/features/navigation/navigationModel'
 
 let unmount: (() => void) | undefined
 const originalMatchMedia = window.matchMedia

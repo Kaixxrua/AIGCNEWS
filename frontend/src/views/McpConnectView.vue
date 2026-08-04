@@ -2,12 +2,12 @@
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { useClipboard } from '../composables/useClipboard'
-import { useMcpConnectController } from '../composables/useMcpConnectController'
-import { mcpClientOptions, type McpClientOption } from '../features/mcp/mcpClientCatalog'
-import { resolveMcpFeedback } from '../features/mcp/mcpFeedback'
-import { formatLocaleDate } from '../i18n/formatters'
-import { useAuthStore } from '../stores/authStore'
+import { useClipboard } from '@/composables/useClipboard'
+import { useMcpConnectController } from '@/composables/useMcpConnectController'
+import { mcpClientOptions, type McpClientOption } from '@/features/mcp/mcpClientCatalog'
+import { resolveMcpFeedback } from '@/features/mcp/mcpFeedback'
+import { formatLocaleDate } from '@/i18n/formatters'
+import { useAuthStore } from '@/stores/authStore'
 
 const { t } = useI18n()
 const router = useRouter()

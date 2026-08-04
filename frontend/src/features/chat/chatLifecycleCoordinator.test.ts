@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ChatAttachmentRef } from '../../services/chat/chatApi'
+import type { ChatAttachmentRef } from '@/services/chat/chatApi'
 import type { ChatMessage, ConversationSummary } from './chatModel'
 import {
   ChatLifecycleCoordinator,

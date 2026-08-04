@@ -8,7 +8,7 @@ import {
   isValidPassword,
   PASSWORD_RESET_REDIRECT_DELAY_MS,
   passwordsMatch,
-} from '../features/auth/authViewModel'
+} from '@/features/auth/authViewModel'
 import { useOtpCountdown } from './useOtpCountdown'
 
 interface PasswordResetFormDependencies {

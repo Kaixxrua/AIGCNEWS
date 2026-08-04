@@ -2,7 +2,7 @@ import type {
   ChatAttachmentRef,
   ChatMessageDTO,
   ConversationSummaryDTO,
-} from '../../services/chat/chatApi'
+} from '@/services/chat/chatApi'
 
 export type ChatRole = 'user' | 'assistant'
 export type ConversationScope = 'global' | 'paper'

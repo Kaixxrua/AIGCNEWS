@@ -2,13 +2,13 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import AuthFeedback from '../components/auth/AuthFeedback.vue'
-import AuthPageHeader from '../components/auth/AuthPageHeader.vue'
-import OtpEmailField from '../components/auth/OtpEmailField.vue'
-import PasswordConfirmationFields from '../components/auth/PasswordConfirmationFields.vue'
-import { usePasswordResetForm } from '../composables/usePasswordResetForm'
-import { getSafeInternalRedirect } from '../features/auth/authViewModel'
-import { api } from '../services/http/apiClient'
+import AuthFeedback from '@/components/auth/AuthFeedback.vue'
+import AuthPageHeader from '@/components/auth/AuthPageHeader.vue'
+import OtpEmailField from '@/components/auth/OtpEmailField.vue'
+import PasswordConfirmationFields from '@/components/auth/PasswordConfirmationFields.vue'
+import { usePasswordResetForm } from '@/composables/usePasswordResetForm'
+import { getSafeInternalRedirect } from '@/features/auth/authViewModel'
+import { api } from '@/services/http/apiClient'
 
 const router = useRouter()
 const route = useRoute()

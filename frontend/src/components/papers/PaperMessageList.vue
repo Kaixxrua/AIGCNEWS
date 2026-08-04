@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { Clipboard } from 'lucide-vue-next'
-import type { PaperReaderMessage } from '../../features/papers/paperReaderModel'
+import type { PaperReaderMessage } from '@/features/papers/paperReaderModel'
 
 defineProps<{
   messages: PaperReaderMessage[]

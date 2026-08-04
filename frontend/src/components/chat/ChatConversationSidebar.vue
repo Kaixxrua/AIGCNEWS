@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import type { ConversationSummary } from '../../stores/chatStore'
+import type { ConversationSummary } from '@/stores/chatStore'
 
 defineProps<{
   conversations: ConversationSummary[]

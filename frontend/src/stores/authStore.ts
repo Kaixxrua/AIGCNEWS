@@ -4,7 +4,7 @@ import {
   fetchCurrentUser,
   loginWithPassword,
   type AuthUserDTO,
-} from '../services/auth/authApi'
+} from '@/services/auth/authApi'
 
 export type AuthUser = AuthUserDTO
 export type AuthStatus = 'initializing' | 'authenticated' | 'anonymous' | 'degraded'
@@ -88,7 +88,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     status.value = 'anonymous'
     removeStorage(TOKEN_KEY)
-    import('../router/index').then(({ default: router }) => {
+    import('@/router/index').then(({ default: router }) => {
       router.push('/login')
     })
   }

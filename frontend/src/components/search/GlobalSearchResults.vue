@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { getSearchSourceLabelKey, getSearchSummaryPreview } from '../../features/search/globalSearchModel'
-import type { PaperItem } from '../../services/papers/paperApi'
+import { getSearchSourceLabelKey, getSearchSummaryPreview } from '@/features/search/globalSearchModel'
+import type { PaperItem } from '@/services/papers/paperApi'
 
 const { t } = useI18n()
 const sourceLabel = (source?: string) => {

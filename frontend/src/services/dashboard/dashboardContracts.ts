@@ -1,4 +1,4 @@
-import type { PeriodKey, Stats, TabKey, TopDoc } from '../../features/dashboard/dashboardViewModel'
+import type { PeriodKey, Stats, TabKey, TopDoc } from '@/features/dashboard/dashboardViewModel'
 
 export interface DashboardSummaryWireResponse {
   stats?: Stats | null

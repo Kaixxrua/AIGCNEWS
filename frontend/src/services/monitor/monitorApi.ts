@@ -1,8 +1,8 @@
-import { api } from '../http/apiClient'
+import { api } from '@/services/http/apiClient'
 import type {
   McpServerConfig, McpServerForm, PagedResult, ProviderConfig, ProviderForm, SchedulerStatus, SourceKey,
-} from '../../features/monitor/monitorModel'
-import { buildMcpPayload, buildProviderPayload } from '../../features/monitor/monitorModel'
+} from '@/features/monitor/monitorModel'
+import { buildMcpPayload, buildProviderPayload } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   mcpClientOptions,
   type McpShellId,
-} from '../features/mcp/mcpClientCatalog'
-import { generateMcpClientCommand } from '../features/mcp/mcpCommandGenerator'
+} from '@/features/mcp/mcpClientCatalog'
+import { generateMcpClientCommand } from '@/features/mcp/mcpCommandGenerator'
 
 const shells: McpShellId[] = ['powershell', 'cmd', 'bash']
 const endpoint = 'https://example.test/a path/符号?value=$&|;'

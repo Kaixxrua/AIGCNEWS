@@ -3,13 +3,13 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { ref } from 'vue'
 import { Clipboard, SquareCode } from 'lucide-vue-next'
-import type { ChatMessage } from '../../stores/chatStore'
+import type { ChatMessage } from '@/stores/chatStore'
 import {
   getSourceTitle,
   getSourceType,
   getSourceUrl,
   sourceTypeBadgeClass,
-} from '../../features/chat/chatPresentation'
+} from '@/features/chat/chatPresentation'
 
 defineProps<{
   messages: ChatMessage[]

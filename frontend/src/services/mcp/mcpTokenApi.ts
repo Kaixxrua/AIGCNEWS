@@ -1,4 +1,4 @@
-import { api } from '../http/apiClient'
+import { api } from '@/services/http/apiClient'
 
 export type McpClientType = 'claude' | 'cursor' | 'vscode' | 'other'
 

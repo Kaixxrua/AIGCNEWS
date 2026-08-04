@@ -5,7 +5,7 @@ import {
   type PdfDocumentRendererOptions,
   type PdfPageEntry,
   type PdfProgress,
-} from '../features/papers/pdfViewerModel'
+} from '@/features/papers/pdfViewerModel'
 
 export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
   const containerRef = ref<HTMLDivElement | null>(null)

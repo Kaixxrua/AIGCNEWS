@@ -2,8 +2,8 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ExternalLink, Pencil, Sparkles, Star, Trash2 } from 'lucide-vue-next'
-import type { AppLocale } from '../../i18n'
-import type { GitHubProjectItem, GitHubProjectSort, ProjectScope } from '../../services/projects/projectApi'
+import type { AppLocale } from '@/i18n'
+import type { GitHubProjectItem, GitHubProjectSort, ProjectScope } from '@/services/projects/projectApi'
 import {
   projectDescription,
   favoriteButtonLabelKey,
@@ -23,7 +23,7 @@ import {
   shouldShowProjectHotScore,
   websiteLogoInitial,
   type ProjectChip,
-} from '../../features/projects/projectPresentation'
+} from '@/features/projects/projectPresentation'
 
 const { locale, t } = useI18n()
 

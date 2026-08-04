@@ -3,9 +3,9 @@ import source from './GitHubProjectsView.vue?raw'
 
 describe('GitHub projects view orchestration contract', () => {
   it('uses the project catalog controller without request or mutation compatibility wrappers', () => {
-    expect(source).toContain("import { useProjectCatalogController } from '../composables/useProjectCatalogController'")
-    expect(source).toContain("from '../services/projects/projectApi'")
-    expect(source).not.toContain("from '../services/api'")
+    expect(source).toContain("import { useProjectCatalogController } from '@/composables/useProjectCatalogController'")
+    expect(source).toContain("from '@/services/projects/projectApi'")
+    expect(source).not.toContain("from '@/services/api'")
     expect(source).toContain('const controller = useProjectCatalogController({')
     expect(source).toContain('recommendProject, refreshReads, removeToolWebsite, requiresPersonalLogin')
     expect(source).not.toContain('const removeToolWebsite =')

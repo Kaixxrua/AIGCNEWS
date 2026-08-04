@@ -4,7 +4,7 @@ const transport = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(),
 vi.mock('../http/apiClient', () => ({ api: transport }))
 
 import { monitorApi } from './monitorApi'
-import { createEmptyMcpForm, createProviderForm } from '../../features/monitor/monitorModel'
+import { createEmptyMcpForm, createProviderForm } from '@/features/monitor/monitorModel'
 
 describe('Monitor API contract', () => {
   beforeEach(() => Object.values(transport).forEach((mock) => mock.mockReset()))

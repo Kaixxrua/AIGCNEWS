@@ -1,4 +1,4 @@
-import type { StreamPhase } from '../../stores/chatStore'
+import type { StreamPhase } from '@/stores/chatStore'
 
 export interface SourceFlat {
   id?: string

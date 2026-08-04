@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, toRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import PaperConversationPanel from '../components/papers/PaperConversationPanel.vue'
-import PaperDocumentPanel from '../components/papers/PaperDocumentPanel.vue'
-import { useEventSource } from '../composables/useEventSource'
-import { useLatexRenderer } from '../composables/useLatexRenderer'
-import { usePaperReaderController } from '../composables/usePaperReaderController'
-import { api } from '../services/http/apiClient'
-import { fetchPaperDetail, type PaperItem } from '../services/papers/paperApi'
-import { useChatStore } from '../stores/chatStore'
+import PaperConversationPanel from '@/components/papers/PaperConversationPanel.vue'
+import PaperDocumentPanel from '@/components/papers/PaperDocumentPanel.vue'
+import { useEventSource } from '@/composables/useEventSource'
+import { useLatexRenderer } from '@/composables/useLatexRenderer'
+import { usePaperReaderController } from '@/composables/usePaperReaderController'
+import { api } from '@/services/http/apiClient'
+import { fetchPaperDetail, type PaperItem } from '@/services/papers/paperApi'
+import { useChatStore } from '@/stores/chatStore'
 
 const route = useRoute()
 const router = useRouter()

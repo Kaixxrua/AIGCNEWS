@@ -8,7 +8,7 @@ import {
   type ReportMessageResponse,
   type Subscription,
   type SubscriptionListResponse,
-} from '../features/report/reportViewModel'
+} from '@/features/report/reportViewModel'
 
 interface ReportSubscriptionOperations {
   loadSubscriptions: () => Promise<SubscriptionListResponse | undefined>

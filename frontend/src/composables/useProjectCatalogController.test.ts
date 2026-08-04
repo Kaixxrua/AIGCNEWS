@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
-import type { GitHubProjectItem, GitHubProjectsResponse } from '../services/projects/projectApi'
+import type { GitHubProjectItem, GitHubProjectsResponse } from '@/services/projects/projectApi'
 import { useProjectCatalogController, type ProjectCatalogApi } from './useProjectCatalogController'
 
 const deferred = <T>() => {

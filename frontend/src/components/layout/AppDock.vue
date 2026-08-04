@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { isNavigationItemActive, type NavigationItem } from '../../features/navigation/navigationModel'
+import { isNavigationItemActive, type NavigationItem } from '@/features/navigation/navigationModel'
 
 const props = defineProps<{
   items: readonly NavigationItem[]

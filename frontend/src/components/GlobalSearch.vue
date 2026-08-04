@@ -8,8 +8,8 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import GlobalSearchInput from './search/GlobalSearchInput.vue'
 import GlobalSearchResults from './search/GlobalSearchResults.vue'
-import { useGlobalSearch } from '../composables/useGlobalSearch'
-import { searchPapers, fetchTop10Today } from '../services/papers/paperApi'
+import { useGlobalSearch } from '@/composables/useGlobalSearch'
+import { searchPapers, fetchTop10Today } from '@/services/papers/paperApi'
 
 const router = useRouter()
 const { t } = useI18n()

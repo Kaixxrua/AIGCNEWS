@@ -4,7 +4,7 @@ const { t } = useI18n()
 import {
   SOURCE_LIST,
   type SourceKey,
-} from '../../features/monitor/monitorViewModel'
+} from '@/features/monitor/monitorViewModel'
 
 defineProps<{
   targetDate: string

@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import type {
   PdfRegionCaptureOptions,
   PdfRegionSelection,
-} from '../features/papers/pdfViewerModel'
+} from '@/features/papers/pdfViewerModel'
 
 export function usePdfRegionCapture(options: PdfRegionCaptureOptions) {
   const selectionBox = ref<PdfRegionSelection | null>(null)

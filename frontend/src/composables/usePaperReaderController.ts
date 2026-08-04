@@ -7,9 +7,9 @@ import {
   type PaperReaderMessage,
   type VisionPopup,
   type VisionRegionCapture,
-} from '../features/papers/paperReaderModel'
-import type { ChatMessage, ConversationSummary } from '../stores/chatStore'
-import type { PdfProgress } from '../features/papers/pdfViewerModel'
+} from '@/features/papers/paperReaderModel'
+import type { ChatMessage, ConversationSummary } from '@/stores/chatStore'
+import type { PdfProgress } from '@/features/papers/pdfViewerModel'
 
 export interface PaperReaderPaper {
   id: string

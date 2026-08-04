@@ -6,7 +6,7 @@ import type {
   GitHubProjectSort,
   ProjectScope,
   ProjectViewSource,
-} from '../services/projects/projectApi'
+} from '@/services/projects/projectApi'
 
 const createHarness = (query: Record<string, unknown> = {}, fullPath = '/projects') => {
   const route = reactive({

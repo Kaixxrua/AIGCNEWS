@@ -1,19 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getRoutePolicyRedirect } from '../features/navigation/routePolicy'
-import LayoutView from '../views/LayoutView.vue'
+import { getRoutePolicyRedirect } from '@/features/navigation/routePolicy'
+import LayoutView from '@/views/LayoutView.vue'
 
-const DashboardView = () => import('../views/DashboardView.vue')
-const GitHubProjectsView = () => import('../views/GitHubProjectsView.vue')
-const ChatView = () => import('../views/ChatView.vue')
-const ReportView = () => import('../views/ReportView.vue')
-const MonitorView = () => import('../views/MonitorView.vue')
-const LoginView = () => import('../views/LoginView.vue')
-const RegisterView = () => import('../views/RegisterView.vue')
-const ForgotPasswordView = () => import('../views/ForgotPasswordView.vue')
-const PaperReadView = () => import('../views/PaperReadView.vue')
-const DisclaimerView = () => import('../views/DisclaimerView.vue')
-const PrivacyView = () => import('../views/PrivacyView.vue')
-const McpConnectView = () => import('../views/McpConnectView.vue')
+const DashboardView = () => import('@/views/DashboardView.vue')
+const GitHubProjectsView = () => import('@/views/GitHubProjectsView.vue')
+const ChatView = () => import('@/views/ChatView.vue')
+const ReportView = () => import('@/views/ReportView.vue')
+const MonitorView = () => import('@/views/MonitorView.vue')
+const LoginView = () => import('@/views/LoginView.vue')
+const RegisterView = () => import('@/views/RegisterView.vue')
+const ForgotPasswordView = () => import('@/views/ForgotPasswordView.vue')
+const PaperReadView = () => import('@/views/PaperReadView.vue')
+const DisclaimerView = () => import('@/views/DisclaimerView.vue')
+const PrivacyView = () => import('@/views/PrivacyView.vue')
+const McpConnectView = () => import('@/views/McpConnectView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -96,7 +96,7 @@ const router = createRouter({
 
 // ── 全局路由守卫 ──────────────────────────────────────────────────────────────
 router.beforeEach(async (to, _from, next) => {
-  const { useAuthStore } = await import('../stores/authStore')
+  const { useAuthStore } = await import('@/stores/authStore')
   const { getActivePinia } = await import('pinia')
   const pinia = getActivePinia()
   if (!pinia) { next(); return }

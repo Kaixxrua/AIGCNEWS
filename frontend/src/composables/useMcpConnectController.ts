@@ -5,26 +5,26 @@ import {
   type McpClientId,
   type McpClientOption,
   type McpShellId,
-} from '../features/mcp/mcpClientCatalog'
-import { generateMcpClientCommand } from '../features/mcp/mcpCommandGenerator'
+} from '@/features/mcp/mcpClientCatalog'
+import { generateMcpClientCommand } from '@/features/mcp/mcpCommandGenerator'
 import {
   feedbackKey,
   feedbackLiteral,
   type McpFeedback,
   type McpFeedbackTranslator,
-} from '../features/mcp/mcpFeedback'
+} from '@/features/mcp/mcpFeedback'
 import {
   performPublicMcpHandshake,
   type McpHandshakeOptions,
   type McpHandshakePhase,
   type McpHandshakePhaseStatus,
-} from '../features/mcp/mcpHandshake'
+} from '@/features/mcp/mcpHandshake'
 import {
   displayedPublicTools as resolveDisplayedPublicTools,
   isActivePublicToolDiscovery,
   normalizePublicTools,
   type PublicToolDiscoveryState,
-} from '../features/mcp/publicToolsModel'
+} from '@/features/mcp/publicToolsModel'
 import {
   createMcpToken,
   deleteMcpToken,
@@ -32,7 +32,7 @@ import {
   type CreateMcpTokenPayload,
   type CreateMcpTokenResponse,
   type McpTokenMetadata,
-} from '../services/mcp/mcpTokenApi'
+} from '@/services/mcp/mcpTokenApi'
 
 const SCOPE = 'projects:favorites:read'
 const COPY_NOTICE_MS = 1800

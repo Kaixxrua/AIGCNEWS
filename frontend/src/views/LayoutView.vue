@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { RouterView, useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '../stores/authStore'
-import GlobalSearch from '../components/GlobalSearch.vue'
-import LocaleToggle from '../components/LocaleToggle.vue'
-import AppDock from '../components/layout/AppDock.vue'
-import LayoutFooter from '../components/layout/LayoutFooter.vue'
+import { useAuthStore } from '@/stores/authStore'
+import GlobalSearch from '@/components/GlobalSearch.vue'
+import LocaleToggle from '@/components/LocaleToggle.vue'
+import AppDock from '@/components/layout/AppDock.vue'
+import LayoutFooter from '@/components/layout/LayoutFooter.vue'
 import {
   KEEP_ALIVE_MAX,
   KEEP_ALIVE_VIEW_NAMES,
   NAV_ITEMS,
-} from '../features/navigation/navigationModel'
+} from '@/features/navigation/navigationModel'
 
 const route = useRoute()
 const router = useRouter()

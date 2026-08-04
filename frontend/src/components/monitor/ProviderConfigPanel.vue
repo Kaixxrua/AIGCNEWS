@@ -5,7 +5,7 @@ import {
   formatDate,
   type ProviderConfig,
   type ProviderForm,
-} from '../../features/monitor/monitorViewModel'
+} from '@/features/monitor/monitorViewModel'
 
 const props = defineProps<{
   config: ProviderConfig | null
@@ -19,6 +19,7 @@ const emit = defineEmits<{
 }>()
 
 const updateForm = <K extends keyof ProviderForm>(field: K, value: ProviderForm[K]) => {
+  // eslint-disable-next-line vue/no-mutating-props -- form 为父组件传入的草稿对象，此处为受控表单的有意回写
   props.form[field] = value
 }
 </script>

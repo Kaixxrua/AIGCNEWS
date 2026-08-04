@@ -1,4 +1,4 @@
-import { api } from '../http/apiClient'
+import { api } from '@/services/http/apiClient'
 
 export interface PaperItem {
   id: string

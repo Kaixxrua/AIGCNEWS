@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { AppLocale } from '../../i18n'
-import type { GitHubProjectItem, ProjectTaxonomyItem, ToolWebsiteUpdatePayload } from '../../services/projects/projectApi'
-import { localizedCategoryName, projectDescription, projectName } from '../../features/projects/projectPresentation'
+import type { AppLocale } from '@/i18n'
+import type { GitHubProjectItem, ProjectTaxonomyItem, ToolWebsiteUpdatePayload } from '@/services/projects/projectApi'
+import { localizedCategoryName, projectDescription, projectName } from '@/features/projects/projectPresentation'
 
 const { locale, t } = useI18n()
 const taxonomyLabel = (item: ProjectTaxonomyItem | ProjectTaxonomyItem['children'][number]) => localizedCategoryName(item, locale.value as AppLocale)

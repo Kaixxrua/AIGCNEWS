@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { formatLocaleDate } from '../i18n/formatters'
+import { formatLocaleDate } from '@/i18n/formatters'
 
 const { t } = useI18n()
 

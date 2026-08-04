@@ -8,16 +8,16 @@ import {
   fetchConversationDetail,
   fetchConversations,
   deleteConversationMessage,
-} from '../services/chat/chatApi'
+} from '@/services/chat/chatApi'
 import {
   connectChatStream,
   initialChatStreamEventState,
   reduceChatStreamEvent,
-} from '../features/chat/chatStreamBoundary'
+} from '@/features/chat/chatStreamBoundary'
 import {
   ChatLifecycleCoordinator,
   type ChatLifecycleState,
-} from '../features/chat/chatLifecycleCoordinator'
+} from '@/features/chat/chatLifecycleCoordinator'
 import {
   buildChatHistory,
   normalizeChatAttachment,
@@ -28,7 +28,7 @@ import {
   type ConversationScope,
   type ConversationSummary,
   type StreamPhase,
-} from '../features/chat/chatModel'
+} from '@/features/chat/chatModel'
 
 export type {
   ChatMessage,
@@ -37,7 +37,7 @@ export type {
   ConversationScope,
   ConversationSummary,
   StreamPhase,
-} from '../features/chat/chatModel'
+} from '@/features/chat/chatModel'
 
 let _msgIdCounter = 0
 function nextLocalMsgId(): string {
@@ -455,7 +455,7 @@ export const useChatStore = defineStore('chat', {
       let typingTimer: ReturnType<typeof setInterval> | null = null
 
       // 思维链计时：记录首次收到 thinking/content 事件的时间
-      let thinkingStartMs = Date.now()
+      const thinkingStartMs = Date.now()
       let thinkingEndMs = 0
       let contentStarted = false
 

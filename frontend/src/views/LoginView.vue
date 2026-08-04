@@ -2,10 +2,10 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import AuthFeedback from '../components/auth/AuthFeedback.vue'
-import AuthPageHeader from '../components/auth/AuthPageHeader.vue'
-import { useAuthStore } from '../stores/authStore'
-import { getErrorDetail, getSafeInternalRedirect, hasTrimmedValue } from '../features/auth/authViewModel'
+import AuthFeedback from '@/components/auth/AuthFeedback.vue'
+import AuthPageHeader from '@/components/auth/AuthPageHeader.vue'
+import { useAuthStore } from '@/stores/authStore'
+import { getErrorDetail, getSafeInternalRedirect, hasTrimmedValue } from '@/features/auth/authViewModel'
 
 const router = useRouter()
 const route = useRoute()

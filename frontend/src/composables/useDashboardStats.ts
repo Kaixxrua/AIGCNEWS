@@ -1,11 +1,11 @@
 import { computed, ref } from 'vue'
 import { useTransition, TransitionPresets } from '@vueuse/core'
-import { formatLocaleNumber } from '../i18n/formatters'
+import { formatLocaleNumber } from '@/i18n/formatters'
 import {
   statCards,
   visitorCards,
   type Stats,
-} from '../features/dashboard/dashboardViewModel'
+} from '@/features/dashboard/dashboardViewModel'
 
 export const useDashboardStats = (getStats: () => Stats) => {
   const countUpDisabled = ref(false)

@@ -1,5 +1,5 @@
 import { FileText, GitBranch, Newspaper, Rocket, Triangle } from 'lucide-vue-next'
-import { formatLocaleDate } from '../../i18n/formatters'
+import { formatLocaleDate } from '@/i18n/formatters'
 
 export type {
   McpServerConfig,

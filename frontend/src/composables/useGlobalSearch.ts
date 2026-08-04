@@ -5,8 +5,8 @@ import {
   GLOBAL_SEARCH_DEBOUNCE_MS,
   GLOBAL_SEARCH_RESULT_LIMIT,
   getGlobalSearchDestination,
-} from '../features/search/globalSearchModel'
-import type { PaperItem } from '../services/papers/paperApi'
+} from '@/features/search/globalSearchModel'
+import type { PaperItem } from '@/services/papers/paperApi'
 
 interface GlobalSearchInputHandle {
   focus: () => void

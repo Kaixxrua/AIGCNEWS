@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { AppLocale } from '../../i18n'
-import { localizedCategoryName, localizedPersonalTagLabel } from '../../features/projects/projectPresentation'
+import type { AppLocale } from '@/i18n'
+import { localizedCategoryName, localizedPersonalTagLabel } from '@/features/projects/projectPresentation'
 import type {
   GitHubProjectCategory,
   GitHubProjectSort,
   GitHubProjectTag,
   ProjectScope,
   ProjectViewSource,
-} from '../../services/projects/projectApi'
+} from '@/services/projects/projectApi'
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
 
 const { locale, t } = useI18n()
 const label = (item: GitHubProjectCategory | undefined) => localizedCategoryName(item, locale.value as AppLocale)
 
-const props = defineProps<{
+defineProps<{
   sourceOptions: SourceOption[]
   source: ProjectViewSource
   requiresPersonalLogin: boolean

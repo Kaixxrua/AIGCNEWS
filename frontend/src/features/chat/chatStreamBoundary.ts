@@ -2,11 +2,11 @@ import {
   useEventSource,
   type SseConnectParams,
   type SseConnection,
-} from '../../composables/useEventSource'
-import type { ChatAttachmentRef } from '../../services/chat/chatApi'
-import { api } from '../../services/http/apiClient'
+} from '@/composables/useEventSource'
+import type { ChatAttachmentRef } from '@/services/chat/chatApi'
+import { api } from '@/services/http/apiClient'
 
-export type { SseConnection } from '../../composables/useEventSource'
+export type { SseConnection } from '@/composables/useEventSource'
 import type { ConversationScope, StreamPhase } from './chatModel'
 
 export interface ChatStreamCommand {

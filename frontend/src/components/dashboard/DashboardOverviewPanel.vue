@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import GlassCalendar from '../GlassCalendar.vue'
+import GlassCalendar from '@/components/GlassCalendar.vue'
 import {
   isSourceStatCard,
   statCards,
   visitorCards,
   type TabKey,
-} from '../../features/dashboard/dashboardViewModel'
+} from '@/features/dashboard/dashboardViewModel'
 
 defineProps<{
   loading: boolean

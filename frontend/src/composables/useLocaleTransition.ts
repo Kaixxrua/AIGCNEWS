@@ -1,5 +1,5 @@
 import { nextTick, readonly, ref } from 'vue'
-import { setAppLocale, type AppLocale } from '../i18n'
+import { setAppLocale, type AppLocale } from '@/i18n'
 
 const COVER_DELAY_MS = 90
 const REVEAL_DELAY_MS = 180

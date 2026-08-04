@@ -7,10 +7,10 @@ import {
   ref,
   watch,
 } from 'vue'
-import { dashboardApi as defaultDashboardApi } from '../services/dashboard/dashboardApi'
+import { dashboardApi as defaultDashboardApi } from '@/services/dashboard/dashboardApi'
 import type {
   DashboardApi,
-} from '../services/dashboard/dashboardContracts'
+} from '@/services/dashboard/dashboardContracts'
 import {
   DAILY_ONLY_TABS,
   isSourceStatCard,
@@ -18,7 +18,7 @@ import {
   type Stats,
   type TabKey,
   type TopDoc,
-} from '../features/dashboard/dashboardViewModel'
+} from '@/features/dashboard/dashboardViewModel'
 
 interface DashboardDataOptions {
   updateStatSources: (stats: Stats) => void
