@@ -1,0 +1,16 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.kaixxrua/aigc-radar",
+  "description": "AIGC discovery data platform: local-first search over arXiv AI papers, curated GitHub AI projects, and daily/weekly AIGC rankings. Public read-only tools, no auth required.",
+  "version": "1.2.0",
+  "repository": {
+    "source": "github",
+    "url": "https://github.com/Kaixxrua/AIGC_NEWS"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://aigcnews.cn/api/mcp"
+    }
+  ]
+}
