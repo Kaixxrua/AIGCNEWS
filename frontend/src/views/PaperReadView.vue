@@ -98,11 +98,10 @@ onUnmounted(() => document.removeEventListener('click', handleFormulaCopy))
 
 <style scoped>
 .paper-read-shell {
-  --paper: #f4f0e6;
-  --paper-raised: #fffdf6;
-  --ink: #191a16;
-  --rule: rgba(25, 26, 22, 0.72);
-  --lime: #c7ff2e;
+  --paper: var(--chat-paper);
+  --paper-raised: var(--paper-warm);
+  --ink: var(--chat-ink);
+  --rule: rgb(var(--chat-ink-rgb) / 0.72);
   background: var(--paper);
   color: var(--ink);
 }
@@ -127,31 +126,31 @@ onUnmounted(() => document.removeEventListener('click', handleFormulaCopy))
 .paper-read-shell :deep(input:focus-visible) {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px var(--lime);
+  box-shadow: 0 0 0 4px var(--acid-bright);
 }
 
-.paper-read-shell :deep(button[class*="bg-stone-700"]) {
+.paper-read-shell :deep(button[class*="bg-ink-solid"]) {
   border: 1px solid var(--ink);
   background: var(--ink) !important;
   color: var(--paper-raised) !important;
 }
 
-.paper-read-shell :deep(button[class*="bg-stone-700"]:hover:not(:disabled)) {
-  background: var(--lime) !important;
-  color: var(--ink) !important;
+.paper-read-shell :deep(button[class*="bg-ink-solid"]:hover:not(:disabled)) {
+  background: var(--acid-bright) !important;
+  color: var(--chat-on-acid) !important;
 }
 
-.paper-read-shell :deep([class*="text-cyan"]) { color: #4b6100 !important; }
-.paper-read-shell :deep([class*="bg-cyan"]) { background-color: var(--lime) !important; }
+.paper-read-shell :deep([class*="text-cyan"]) { color: var(--on-acid) !important; }
+.paper-read-shell :deep([class*="bg-cyan"]) { background-color: var(--acid-bright) !important; }
 
 .paper-read-shell :deep(textarea),
 .paper-read-shell :deep(input) {
-  border-color: rgba(25, 26, 22, 0.52);
-  background: #fffef9;
+  border-color: rgb(var(--chat-ink-rgb) / 0.52);
+  background: var(--chat-input-bg);
 }
 
 .paper-read-shell :deep(.absolute.inset-0.z-\[60\]) {
-  background: rgba(244, 240, 230, 0.9);
+  background: rgb(var(--chat-paper-rgb) / 0.9);
   backdrop-filter: none;
 }
 
@@ -159,13 +158,13 @@ onUnmounted(() => document.removeEventListener('click', handleFormulaCopy))
   border-color: var(--ink);
   border-radius: 6px;
   background: var(--paper-raised);
-  box-shadow: 6px 6px 0 rgba(25, 26, 22, 0.16);
+  box-shadow: 6px 6px 0 rgb(var(--chat-shadow-rgb) / 0.16);
 }
 
 .paper-read-shell :deep(.absolute.top-full) {
   border-color: var(--ink) !important;
   border-radius: 4px;
   background: var(--paper-raised) !important;
-  box-shadow: 4px 4px 0 rgba(25, 26, 22, 0.14);
+  box-shadow: 4px 4px 0 rgb(var(--chat-shadow-rgb) / 0.14);
 }
 </style>

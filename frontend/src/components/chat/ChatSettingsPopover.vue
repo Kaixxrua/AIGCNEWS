@@ -55,9 +55,9 @@ const emit = defineEmits<{
 .chat-settings-popover input:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px var(--lime);
+  box-shadow: 0 0 0 4px var(--acid-bright);
 }
-.chat-settings-popover input[type="range"] { accent-color: var(--lime); }
+.chat-settings-popover input[type="range"] { accent-color: var(--acid-bright); }
 .settings-panel-enter-active,
 .settings-panel-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;

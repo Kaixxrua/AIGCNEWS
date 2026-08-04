@@ -147,9 +147,9 @@ onUnmounted(unmount)
 .pdf-progress-header {
   flex-shrink: 0;
   padding: 6px 12px 4px;
-  background: rgba(255, 255, 255, 0.6);
+  background: rgb(var(--card-rgb) / 0.6);
   backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(168, 162, 158, 0.08);
+  border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.08);
 }
 
 .pdf-progress-bar {
@@ -157,14 +157,14 @@ onUnmounted(unmount)
   height: 3px;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(168, 162, 158, 0.12);
+  background: rgb(var(--stone-400-rgb) / 0.12);
 }
 
 .pdf-progress-fill {
   height: 100%;
   border-radius: 999px;
   transition: width 0.3s ease-out;
-  background: linear-gradient(90deg, #06b6d4, #8b5cf6);
+  background: linear-gradient(90deg, var(--tech-primary), #8b5cf6);
 }
 
 .pdf-progress-label {
@@ -173,13 +173,13 @@ onUnmounted(unmount)
   align-items: center;
   margin-top: 3px;
   font-size: 11px;
-  color: #78716c;
+  color: rgb(var(--stone-500-rgb));
 }
 
 .pdf-progress-pct {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: #06b6d4;
+  color: var(--tech-primary);
 }
 
 /* ═══ PDF Canvas 容器 ═══ */
@@ -193,7 +193,7 @@ onUnmounted(unmount)
   padding: 16px 12px;
   box-sizing: border-box;
   user-select: none;
-  background: #f8f8f8;
+  background: var(--pdf-chrome-bg);
   cursor: crosshair;
 }
 
@@ -222,7 +222,7 @@ onUnmounted(unmount)
   width: 32px;
   height: 32px;
   border: 3px solid #e5e7eb;
-  border-top-color: #06b6d4;
+  border-top-color: var(--tech-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -256,8 +256,8 @@ onUnmounted(unmount)
 
 .selection-rect {
   position: absolute;
-  border: 2px solid #06b6d4;
-  background: rgba(6, 182, 212, 0.10);
+  border: 2px solid var(--tech-primary);
+  background: rgb(var(--tech-primary-rgb) / 0.10);
   pointer-events: none;
   z-index: 10;
   border-radius: 2px;

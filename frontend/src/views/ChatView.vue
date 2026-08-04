@@ -159,7 +159,7 @@ const cancelSettings = () => { showSettings.value = false }
 
       <!-- 标题栏 -->
       <header class="stagger-enter chat-header flex flex-wrap items-center justify-between px-3 py-3.5 sm:px-5 shrink-0"
-        style="border-bottom: 1px solid rgba(168,162,158,0.15)"
+        style="border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.15)"
       >
         <div class="flex min-w-0 items-center gap-2 sm:gap-3">
           <!-- 侧边栏折叠按钮 -->
@@ -255,7 +255,7 @@ const cancelSettings = () => { showSettings.value = false }
         @send="handleSend"
       />
     </section>
-    <div class="absolute inset-0 z-50 flex items-center justify-center bg-white/70 px-6 backdrop-blur-sm">
+    <div class="absolute inset-0 z-50 flex items-center justify-center bg-card/70 px-6 backdrop-blur-sm">
       <div class="glass-card max-w-md px-8 py-10 text-center shadow-2xl">
         <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-stone-100">
           <svg class="h-8 w-8 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -275,11 +275,10 @@ const cancelSettings = () => { showSettings.value = false }
 
 <style scoped>
 .chat-shell {
-  --paper: #f4f0e6;
-  --paper-raised: #fffdf6;
-  --ink: #191a16;
-  --rule: rgba(25, 26, 22, 0.72);
-  --lime: #c7ff2e;
+  --paper: var(--chat-paper);
+  --paper-raised: var(--paper-warm);
+  --ink: var(--chat-ink);
+  --rule: rgb(var(--chat-ink-rgb) / 0.72);
   background: var(--paper);
   color: var(--ink);
 }
@@ -293,7 +292,7 @@ const cancelSettings = () => { showSettings.value = false }
   border: 1px solid var(--rule);
   border-radius: 6px;
   background: var(--paper-raised);
-  box-shadow: 3px 3px 0 rgba(25, 26, 22, 0.12);
+  box-shadow: 3px 3px 0 rgb(var(--chat-shadow-rgb) / 0.12);
   backdrop-filter: none;
 }
 
@@ -306,7 +305,7 @@ const cancelSettings = () => { showSettings.value = false }
 .chat-shell input:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px var(--lime);
+  box-shadow: 0 0 0 4px var(--acid-bright);
 }
 
 .chat-shell :deep(.btn-primary) {
@@ -318,15 +317,15 @@ const cancelSettings = () => { showSettings.value = false }
 }
 
 .chat-shell :deep(.btn-primary:hover:not(:disabled)) {
-  background: var(--lime);
-  color: var(--ink);
+  background: var(--acid-bright);
+  color: var(--chat-on-acid);
 }
 
-.chat-shell [class*="text-cyan"] { color: #4b6100 !important; }
-.chat-shell [class*="bg-cyan"] { background-color: var(--lime) !important; }
+.chat-shell [class*="text-cyan"] { color: var(--on-acid) !important; }
+.chat-shell [class*="bg-cyan"] { background-color: var(--acid-bright) !important; }
 
 .chat-shell > .absolute.inset-0 {
-  background: rgba(244, 240, 230, 0.9);
+  background: rgb(var(--chat-paper-rgb) / 0.9);
   backdrop-filter: none;
 }
 
@@ -334,7 +333,7 @@ const cancelSettings = () => { showSettings.value = false }
   border: 1px solid var(--ink);
   border-radius: 6px;
   background: var(--paper-raised);
-  box-shadow: 6px 6px 0 rgba(25, 26, 22, 0.16);
+  box-shadow: 6px 6px 0 rgb(var(--chat-shadow-rgb) / 0.16);
 }
 
 @media (max-width: 639px) {

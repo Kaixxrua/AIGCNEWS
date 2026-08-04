@@ -35,7 +35,7 @@ const openFilePicker = () => {
 </script>
 
 <template>
-  <footer class="chat-composer stagger-enter shrink-0 p-4" style="border-top: 1px solid rgba(168,162,158,0.15); animation-delay: 0.2s">
+  <footer class="chat-composer stagger-enter shrink-0 p-4" style="border-top: 1px solid rgb(var(--stone-400-rgb) / 0.15); animation-delay: 0.2s">
     <div v-if="attachments.length" class="mb-3 flex flex-wrap gap-2">
       <div
         v-for="attachment in attachments"
@@ -95,7 +95,7 @@ const openFilePicker = () => {
       <!-- 发送 / 停止按钮 -->
       <button
         v-if="isStreaming"
-        class="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-xl bg-stone-700 text-white transition hover:bg-stone-800"
+        class="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-xl bg-ink-solid text-ink-on-solid transition hover:bg-ink-solid-hover"
         :title="t('chat.stop')"
         @click="emit('abort')"
       >
@@ -126,7 +126,7 @@ const openFilePicker = () => {
 .chat-composer input:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px var(--lime);
+  box-shadow: 0 0 0 4px var(--acid-bright);
 }
 .chat-composer :deep(.btn-primary) {
   border: 1px solid var(--ink);
@@ -136,15 +136,15 @@ const openFilePicker = () => {
   box-shadow: none;
 }
 .chat-composer :deep(.btn-primary:hover:not(:disabled)) {
-  background: var(--lime);
-  color: var(--ink);
+  background: var(--acid-bright);
+  color: var(--chat-on-acid);
 }
-.chat-composer [class*="text-cyan"] { color: #4b6100 !important; }
-.chat-composer [class*="bg-cyan"] { background-color: var(--lime) !important; }
+.chat-composer [class*="text-cyan"] { color: var(--on-acid) !important; }
+.chat-composer [class*="bg-cyan"] { background-color: var(--acid-bright) !important; }
 .chat-composer textarea,
 .chat-composer input:not([type="range"]) {
-  border-color: rgba(25, 26, 22, 0.52);
-  background: #fffef9;
+  border-color: rgb(var(--chat-ink-rgb) / 0.52);
+  background: var(--chat-input-bg);
 }
 .web-search-toggle {
   display: inline-flex;
@@ -152,9 +152,9 @@ const openFilePicker = () => {
   gap: 5px;
   padding: 4px 10px;
   border-radius: 20px;
-  border: 1px solid rgba(168,162,158,0.28);
-  background: rgba(255,255,255,0.7);
-  color: #a8a29e;
+  border: 1px solid rgb(var(--stone-400-rgb) / 0.28);
+  background: rgb(var(--card-rgb) / 0.7);
+  color: rgb(var(--stone-400-rgb));
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -162,25 +162,25 @@ const openFilePicker = () => {
   position: relative;
 }
 .web-search-toggle:hover {
-  border-color: rgba(120, 100, 70, 0.35);
-  color: #7c6f5c;
-  background: rgba(255,252,245,0.9);
+  border-color: rgb(var(--glow-warm-rgb) / 0.35);
+  color: var(--warm-ink);
+  background: rgb(var(--cream-rgb) / 0.9);
 }
 .web-search-toggle--active {
-  border-color: rgba(34, 197, 94, 0.45);
-  color: #16a34a;
-  background: rgba(240, 253, 244, 0.9);
+  border-color: var(--success-border);
+  color: var(--success-ink);
+  background: var(--success-bg);
 }
 .web-search-toggle--active:hover {
-  border-color: rgba(34, 197, 94, 0.65);
-  background: rgba(220, 252, 231, 0.95);
+  border-color: var(--success-border-strong);
+  background: var(--success-bg-strong);
 }
 .web-search-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #22c55e;
+  background: var(--success-strong);
   animation: pulse-green 1.5s ease-in-out infinite;
 }
 @keyframes pulse-green {

@@ -27,6 +27,7 @@
   /* ink 扩展 */
   --ink-faint: #a4a498;
   --ink-solid: #44403c;
+  --ink-solid-hover: #292524;
   --ink-on-solid: #ffffff;
 
   /* 毛玻璃卡片 + stone 三元组（浅色 = tailwind stone 原阶，供 rgb(var(--x) / a) 使用） */
@@ -138,6 +139,34 @@
   --projects-ghost-surface-hover: #deded9;
   --projects-ghost-surface: #e5e5e5;
   --projects-ghost-surface-card: #e7e7e2;
+  /* chat/paper-read 域平行调色板（页面级 --paper/--ink/--rule 重定义的单一源；浅色 = 原字面量） */
+  --chat-paper: #f4f0e6;
+  --chat-paper-rgb: 244 240 230;
+  --chat-ink: #191a16;
+  --chat-ink-rgb: 25 26 22;
+  --chat-shadow-rgb: 25 26 22;
+  /* 亮 acid-bright 面上的墨色文字——两态相同 */
+  --chat-on-acid: #191a16;
+  --chat-input-bg: #fffef9;
+  /* 奶油面/微光扩展（thinking 块 active 态与点缀，浅色 = 原字面量） */
+  --cream-bright-rgb: 255 253 248;
+  --cream-warm-rgb: 252 249 242;
+  --shimmer-rgb: 160 128 96;
+  --shimmer-bright: #c8a870;
+  --warm-ink-faint: #b0a090;
+  /* web 来源徽章 */
+  --badge-web-ink: #15803d;
+  --badge-web-bg: #dcfce7;
+  /* 成功绿（聊天附件就绪/上传态，浅色 = 原字面量） */
+  --success-ink: #16a34a;
+  --success-strong: #22c55e;
+  --success-border: rgba(34, 197, 94, 0.45);
+  --success-border-strong: rgba(34, 197, 94, 0.65);
+  --success-bg: rgba(240, 253, 244, 0.9);
+  --success-bg-strong: rgba(220, 252, 231, 0.95);
+  /* 科技青三元组（alpha 派生用）与 PDF chrome 底 */
+  --tech-primary-rgb: 6 182 212;
+  --pdf-chrome-bg: #f8f8f8;
 }
 
 :root[data-theme='dark'] {
@@ -160,6 +189,7 @@
 
   --ink-faint: #5f6056;
   --ink-solid: #3a3b33;
+  --ink-solid-hover: #505147;
   --ink-on-solid: #f5f5ef;
 
   --card-rgb: 34 34 30;
@@ -256,6 +286,28 @@
   --projects-ghost-surface-hover: #343431;
   --projects-ghost-surface: #2f2f2b;
   --projects-ghost-surface-card: #2b2b27;
+  --chat-paper: #22201a;
+  --chat-paper-rgb: 34 32 26;
+  --chat-ink: #e9e8df;
+  --chat-ink-rgb: 233 232 223;
+  --chat-shadow-rgb: 0 0 0;
+  --chat-on-acid: #191a16;
+  --chat-input-bg: #2a2924;
+  --cream-bright-rgb: 38 37 31;
+  --cream-warm-rgb: 35 34 29;
+  --shimmer-rgb: 141 124 95;
+  --shimmer-bright: #7a6a4f;
+  --warm-ink-faint: #6f6759;
+  --badge-web-ink: #4ade80;
+  --badge-web-bg: rgba(74, 222, 128, 0.14);
+  --success-ink: #4ade80;
+  --success-strong: #4ade80;
+  --success-border: rgba(74, 222, 128, 0.4);
+  --success-border-strong: rgba(74, 222, 128, 0.6);
+  --success-bg: rgba(74, 222, 128, 0.12);
+  --success-bg-strong: rgba(74, 222, 128, 0.18);
+  --tech-primary-rgb: 34 211 238;
+  --pdf-chrome-bg: #20201d;
 }
 
 /* App.vue 固定背景层（浅色渲染与原内联样式逐字节等价） */

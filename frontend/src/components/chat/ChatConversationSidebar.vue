@@ -18,10 +18,10 @@ const emit = defineEmits<{
 <template>
   <aside
     class="chat-sidebar flex flex-col shrink-0 border-r overflow-hidden"
-    style="width: 220px; border-color: rgba(168,162,158,0.18); background: rgba(255,255,255,0.6)"
+    style="width: 220px; border-color: rgb(var(--stone-400-rgb) / 0.18); background: rgb(var(--card-rgb) / 0.6)"
   >
     <!-- 侧边栏标题 + 新建按钮 -->
-    <div class="flex items-center justify-between px-3 py-3 shrink-0" style="border-bottom: 1px solid rgba(168,162,158,0.15)">
+    <div class="flex items-center justify-between px-3 py-3 shrink-0" style="border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.15)">
       <span class="text-xs font-semibold text-stone-500 tracking-wide">{{ t('chat.history') }}</span>
       <button
         class="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition text-xs"
@@ -76,8 +76,8 @@ const emit = defineEmits<{
 
 .chat-sidebar [class*="bg-stone-700"] {
   border: 1px solid var(--ink);
-  background: var(--lime) !important;
-  color: var(--ink) !important;
+  background: var(--acid-bright) !important;
+  color: var(--chat-on-acid) !important;
 }
 
 @media (max-width: 639px) {
@@ -86,7 +86,7 @@ const emit = defineEmits<{
     inset: 0 auto 0 0;
     z-index: 45;
     width: min(84vw, 300px) !important;
-    box-shadow: 12px 0 28px rgba(68,64,60,0.12);
+    box-shadow: 12px 0 28px rgb(var(--stone-700-rgb) / 0.12);
   }
 }
 </style>

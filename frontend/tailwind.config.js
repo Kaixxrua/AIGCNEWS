@@ -34,6 +34,7 @@ export default {
           muted: 'var(--ink-muted)',
           faint: 'var(--ink-faint)',
           solid: 'var(--ink-solid)',
+          'solid-hover': 'var(--ink-solid-hover)',
           'on-solid': 'var(--ink-on-solid)',
         },
         accent: {
