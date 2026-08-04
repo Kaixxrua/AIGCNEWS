@@ -42,6 +42,7 @@ from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.briefing.composition import provide_daily_briefing_service
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.briefing_admin import BriefingAdminService
@@ -66,6 +67,7 @@ from backend.app.services.runtime_provider.runtime import (
     ApplicationModelProviderRuntime,
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
+from backend.app.services.x_watch.admin_service import XWatchAdminService
 
 
 def get_monitoring_runtime(request: Request) -> Any:
@@ -150,6 +152,20 @@ def get_mcp_admin_service(
     from backend.app.services.mcp_connection_tester import test_mcp_server_connection
 
     return McpAdminService(repository, test_mcp_server_connection)
+
+
+def get_x_watch_account_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> XWatchAccountRepository:
+    return repositories.x_watch_accounts
+
+
+def get_x_watch_admin_service(
+    repository: XWatchAccountRepository = Depends(get_x_watch_account_repository),
+) -> XWatchAdminService:
+    from backend.app.services.x_watch.probe import test_x_watch_account
+
+    return XWatchAdminService(repository, test_x_watch_account)
 
 
 def get_mcp_access_token_repository(

@@ -18,6 +18,7 @@ from backend.app.api.dependencies import (
     get_ops_diagnostics_service,
     get_runtime_provider_admin_service,
     get_scheduler_admin_service,
+    get_x_watch_admin_service,
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.core.operations import ApplicationOperationsRuntime
@@ -40,6 +41,11 @@ from backend.app.models.schema_ops import (
     ProjectTaxonomyResponse,
     ProviderConfigRequest,
     ProviderConfigResponse,
+    XWatchAccountDeleteResponse,
+    XWatchAccountListResponse,
+    XWatchAccountRequest,
+    XWatchAccountResponse,
+    XWatchAccountTestResponse,
 )
 from backend.app.models.schema_projects import (
     ToolWebsiteAddRequest,
@@ -69,6 +75,13 @@ from backend.app.services.runtime_provider.admin_service import (
     RuntimeProviderAdminService,
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
+from backend.app.services.x_watch.admin_service import (
+    SafeXWatchAccountProjection,
+    XWatchAdminConflictError,
+    XWatchAdminNotFoundError,
+    XWatchAdminService,
+    XWatchAdminValidationError,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -192,6 +205,94 @@ async def test_mcp_server(
         message=outcome.result.get("message", ""),
         server=server,
         tools=server.tools,
+    )
+
+
+# ── X 关注账号 ───────────────────────────────────────────────────────────────
+
+
+def _x_watch_account_response(
+    projection: SafeXWatchAccountProjection,
+) -> XWatchAccountResponse:
+    return XWatchAccountResponse.model_validate(projection, from_attributes=True)
+
+
+@router.get("/ops/x-watch-accounts", response_model=XWatchAccountListResponse, tags=["Ops"])
+async def list_x_watch_accounts(
+    _: dict = Depends(RequireAdmin),
+    service: XWatchAdminService = Depends(get_x_watch_admin_service),
+) -> XWatchAccountListResponse:
+    """列出 X 采集关注账号（数据库 watchlist，空表时按 env 句柄自举）。"""
+    projections = await service.list_accounts()
+    items = [_x_watch_account_response(item) for item in projections]
+    return XWatchAccountListResponse(items=items, total=len(items))
+
+
+@router.post("/ops/x-watch-accounts", response_model=XWatchAccountResponse, tags=["Ops"])
+async def create_x_watch_account(
+    request: XWatchAccountRequest,
+    _: dict = Depends(RequireAdmin),
+    service: XWatchAdminService = Depends(get_x_watch_admin_service),
+) -> XWatchAccountResponse:
+    """新增 X 关注账号。screen_name 归一化为小写无 @ 形式。"""
+    try:
+        projection = await service.create_account(request.model_dump())
+    except XWatchAdminValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except XWatchAdminConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _x_watch_account_response(projection)
+
+
+@router.put("/ops/x-watch-accounts/{account_id}", response_model=XWatchAccountResponse, tags=["Ops"])
+async def update_x_watch_account(
+    account_id: int,
+    request: XWatchAccountRequest,
+    _: dict = Depends(RequireAdmin),
+    service: XWatchAdminService = Depends(get_x_watch_admin_service),
+) -> XWatchAccountResponse:
+    """整体更新 X 关注账号（handle/开关/排序）。"""
+    try:
+        projection = await service.update_account(account_id, request.model_dump())
+    except XWatchAdminValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except XWatchAdminConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except XWatchAdminNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _x_watch_account_response(projection)
+
+
+@router.delete("/ops/x-watch-accounts/{account_id}", response_model=XWatchAccountDeleteResponse, tags=["Ops"])
+async def delete_x_watch_account(
+    account_id: int,
+    _: dict = Depends(RequireAdmin),
+    service: XWatchAdminService = Depends(get_x_watch_admin_service),
+) -> XWatchAccountDeleteResponse:
+    """删除 X 关注账号。"""
+    try:
+        await service.delete_account(account_id)
+    except XWatchAdminNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return XWatchAccountDeleteResponse(status="succeeded", message="X 关注账号已删除。", deleted=True, id=account_id)
+
+
+@router.post("/ops/x-watch-accounts/{account_id}/test", response_model=XWatchAccountTestResponse, tags=["Ops"])
+async def test_x_watch_account_route(
+    account_id: int,
+    _: dict = Depends(RequireAdmin),
+    service: XWatchAdminService = Depends(get_x_watch_admin_service),
+) -> XWatchAccountTestResponse:
+    """探测单个 X 账号：拉取近期推文，同时验证 handle 有效性与 cookie 凭据。"""
+    try:
+        outcome = await service.test_account(account_id)
+    except XWatchAdminNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    assert isinstance(outcome.account, SafeXWatchAccountProjection)
+    return XWatchAccountTestResponse(
+        status=outcome.result.get("status", "failed"),
+        message=outcome.result.get("message", ""),
+        account=_x_watch_account_response(outcome.account),
     )
 
 

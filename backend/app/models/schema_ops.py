@@ -152,3 +152,43 @@ class McpServerTestResponse(BaseModel):
     message: str
     server: McpServerConfigResponse
     tools: list[McpToolSummary] = Field(default_factory=list)
+
+
+class XWatchAccountRequest(BaseModel):
+    screen_name: str = Field(default="", max_length=64)
+    display_name: str = Field(default="", max_length=128)
+    note: str = Field(default="", max_length=2000)
+    enabled: bool = True
+    sort_order: int = 0
+
+
+class XWatchAccountResponse(BaseModel):
+    id: int
+    screen_name: str
+    display_name: str = ""
+    note: str = ""
+    enabled: bool
+    sort_order: int = 0
+    last_test_status: str = "unknown"
+    last_test_message: str = ""
+    last_test_at: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class XWatchAccountListResponse(BaseModel):
+    items: list[XWatchAccountResponse]
+    total: int
+
+
+class XWatchAccountDeleteResponse(BaseModel):
+    status: str
+    message: str
+    deleted: bool
+    id: int
+
+
+class XWatchAccountTestResponse(BaseModel):
+    status: str
+    message: str
+    account: XWatchAccountResponse
