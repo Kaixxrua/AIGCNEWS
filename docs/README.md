@@ -51,6 +51,6 @@
 
 | 目录 | 内容 |
 |---|---|
-| [adr/](adr/) | 架构决策记录（Architecture Decision Records） |
+| [adr/](adr/) | 架构决策记录（Architecture Decision Records）：[0001 JWT 密钥轮换与启动守卫](adr/0001-jwt-secret-rotation-and-startup-guard.md) |
 | [api/](api/) | API 专项文档（预留） |
 | [prompts/](prompts/) | Prompt 模板与说明（预留） |
