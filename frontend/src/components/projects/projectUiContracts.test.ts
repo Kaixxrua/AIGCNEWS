@@ -16,7 +16,7 @@ describe('project UI sizing contracts', () => {
     expect(filtersSource).toContain('min-height: var(--projects-control-height, 44px)')
     expect(filtersSource).toContain('height: var(--projects-control-height, 44px)')
     expect(filtersSource).toContain('min-height: var(--projects-control-compact-height, 36px)')
-    expect(filtersSource).toContain('padding-right: 112px')
+    expect(filtersSource).toContain('padding-right: 142px')
     expect(filtersSource).toContain('overflow-x: auto')
   })
 
