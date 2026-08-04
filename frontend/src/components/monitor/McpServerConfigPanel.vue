@@ -47,16 +47,16 @@ const updateForm = <K extends keyof McpServerForm>(field: K, value: McpServerFor
       <div class="relative flex flex-wrap items-start justify-between gap-3">
         <div class="max-w-3xl">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="flex h-8 w-8 items-center justify-center rounded-2xl border border-cyan-100 bg-white/80 text-cyan-700 shadow-sm">
+            <span class="flex h-8 w-8 items-center justify-center rounded-2xl border border-[var(--mcp-icon-edge)] bg-card/80 text-[var(--mcp-icon-ink)] shadow-sm">
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
             </span>
             <h3 class="text-sm font-semibold text-stone-700">{{ t('monitor.mcpTitle') }}</h3>
-            <span class="badge border border-stone-200 bg-white/80 text-stone-500">{{ t('monitor.mcpCount', { count: servers.length }) }}</span>
+            <span class="badge border border-stone-200 bg-card/80 text-stone-500">{{ t('monitor.mcpCount', { count: servers.length }) }}</span>
             <span class="badge border border-cyan-100 bg-cyan-50 text-cyan-700">Streamable HTTP</span>
           </div>
           <p class="mt-2 text-xs leading-5 text-stone-500">{{ t('monitor.mcpDescription') }}</p>
           <div class="mt-3 flex flex-wrap gap-2">
-            <span v-for="item in MCP_TEST_SCOPE" :key="item.title" class="rounded-full border border-white/80 bg-white/70 px-3 py-1 text-2xs text-stone-500 shadow-sm">
+            <span v-for="item in MCP_TEST_SCOPE" :key="item.title" class="rounded-full border border-card/80 bg-card/70 px-3 py-1 text-2xs text-stone-500 shadow-sm">
               <span class="font-mono text-cyan-700">{{ item.title }}</span>
               <span class="ml-1 text-stone-400">{{ t(`monitor.mcpTestScope.${item.descriptionKey}`) }}</span>
             </span>
@@ -70,13 +70,13 @@ const updateForm = <K extends keyof McpServerForm>(field: K, value: McpServerFor
     </div>
 
     <div class="grid gap-4 p-5 xl:grid-cols-[minmax(320px,0.95fr)_minmax(420px,1.25fr)]">
-      <div class="rounded-[22px] border border-stone-200/70 bg-white/60 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+      <div class="rounded-[22px] border border-stone-200/70 bg-card/60 p-4 shadow-[inset_0_1px_0_rgb(var(--card-rgb)_/_0.7)]">
         <div class="mb-3 flex items-start justify-between gap-2">
           <div>
             <h4 class="text-xs font-semibold uppercase tracking-widest text-stone-400">{{ t(formMode === 'edit' ? 'monitor.editServer' : 'monitor.addServer') }}</h4>
             <p class="mt-1 text-2xs text-stone-400">{{ t('monitor.keyHint') }}</p>
           </div>
-          <button v-if="formMode === 'edit'" class="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-stone-400 hover:text-stone-700" @click="emit('reset')">{{ t('monitor.cancelEdit') }}</button>
+          <button v-if="formMode === 'edit'" class="rounded-full border border-stone-200 bg-card px-2.5 py-1 text-xs font-medium text-stone-400 hover:text-stone-700" @click="emit('reset')">{{ t('monitor.cancelEdit') }}</button>
         </div>
         <div class="space-y-3">
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -132,7 +132,7 @@ const updateForm = <K extends keyof McpServerForm>(field: K, value: McpServerFor
         </div>
       </div>
 
-      <div class="min-h-[260px] rounded-[22px] border border-stone-200/70 bg-white/45 p-4">
+      <div class="min-h-[260px] rounded-[22px] border border-stone-200/70 bg-card/45 p-4">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h4 class="text-xs font-semibold uppercase tracking-widest text-stone-400">Server Registry</h4>
@@ -145,12 +145,12 @@ const updateForm = <K extends keyof McpServerForm>(field: K, value: McpServerFor
         <div v-if="loading && !servers.length" class="flex h-full min-h-[180px] items-center justify-center gap-2 text-sm text-stone-400">
           <span class="inline-block h-4 w-4 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" />{{ t('monitor.loadingServers') }}
         </div>
-        <div v-else-if="!servers.length" class="flex h-full min-h-[180px] flex-col items-center justify-center rounded-[18px] border border-dashed border-stone-200 bg-white/55 text-center text-sm text-stone-400">
+        <div v-else-if="!servers.length" class="flex h-full min-h-[180px] flex-col items-center justify-center rounded-[18px] border border-dashed border-stone-200 bg-card/55 text-center text-sm text-stone-400">
           <p class="font-medium text-stone-500">{{ t('monitor.emptyServers') }}</p>
           <p class="mt-1 text-xs">{{ t('monitor.emptyServersHint') }}</p>
         </div>
         <div v-else class="space-y-3">
-          <div v-for="server in servers" :key="server.id" class="rounded-[20px] border border-stone-200/70 bg-white/75 p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+          <div v-for="server in servers" :key="server.id" class="rounded-[20px] border border-stone-200/70 bg-card/75 p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
             <div class="flex flex-wrap items-start gap-3">
               <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-stone-200 bg-gradient-to-br from-white to-cyan-50 font-serif text-base font-semibold text-cyan-700">
                 {{ getMcpServerInitial(server) }}
@@ -175,7 +175,7 @@ const updateForm = <K extends keyof McpServerForm>(field: K, value: McpServerFor
                 <p v-if="server.description" class="mt-2 line-clamp-2 text-xs leading-5 text-stone-500">{{ server.description }}</p>
               </div>
               <div class="flex shrink-0 flex-wrap gap-1.5">
-                <button class="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-stone-500 hover:bg-stone-50" @click="emit('edit', server)">{{ t('common.edit') }}</button>
+                <button class="rounded-full border border-stone-200 bg-card px-2.5 py-1 text-xs font-medium text-stone-500 hover:bg-stone-50" @click="emit('edit', server)">{{ t('common.edit') }}</button>
                 <button
                   class="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs font-medium text-cyan-700 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
                   :disabled="!!testingServerId || !server.enabled"

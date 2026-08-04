@@ -35,7 +35,7 @@ const { toasts } = useToasts()
   padding: 10px 18px;
   color: var(--paper-raised, #fffdf5);
   background: var(--ink, #11110f);
-  box-shadow: 4px 4px 0 rgba(17, 17, 15, 0.18);
+  box-shadow: 4px 4px 0 var(--toast-shadow);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.4;

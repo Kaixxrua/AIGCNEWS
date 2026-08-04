@@ -193,15 +193,15 @@ const hoveredAuth = ref(false)
 
 .dock-item--login { color: var(--acid-ink); background: var(--acid); }
 .dock-item--login:hover {
-  color: var(--acid);
+  color: var(--dock-login-hover-label);
   background: var(--ink);
   transform: translateY(-2px);
 }
 
-.dock-item--logout { color: #dc2626; }
+.dock-item--logout { color: var(--error-accent); }
 .dock-item--logout:hover {
-  color: #b91c1c;
-  background: rgba(254, 226, 226, 0.6);
+  color: var(--danger);
+  background: var(--dock-danger-hover);
   transform: translateY(-2px);
 }
 

@@ -32,7 +32,7 @@ const emit = defineEmits<{
       />
       <button
         class="shrink-0 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-medium sm:w-auto transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
-        style="background: rgba(255,255,255,0.80); border: 1px solid rgba(168,162,158,0.25); color: #57534e; backdrop-filter: blur(10px); white-space: nowrap"
+        style="background: rgb(var(--card-rgb) / 0.8); border: 1px solid rgb(var(--stone-400-rgb) / 0.25); color: rgb(var(--stone-600-rgb)); backdrop-filter: blur(10px); white-space: nowrap"
         :disabled="otpBtnDisabled || loading"
         @click="emit('sendOtp')"
       >

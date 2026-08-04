@@ -30,12 +30,12 @@ export const MCP_TEST_SCOPE = [
 ]
 
 export const SOURCE_LIST: SourceItem[] = [
-  { key: 'arxiv', labelKey: 'arxiv', icon: FileText, color: 'bg-white', textColor: 'text-stone-600' },
-  { key: 'github', labelKey: 'github', icon: GitBranch, color: 'bg-white', textColor: 'text-stone-600' },
-  { key: 'hackernews', labelKey: 'hackernews', icon: Triangle, color: 'bg-white', textColor: 'text-stone-600' },
-  { key: 'producthunt', labelKey: 'producthunt', icon: Rocket, color: 'bg-white', textColor: 'text-stone-600' },
-  { key: 'news', labelKey: 'news', icon: Newspaper, color: 'bg-white', textColor: 'text-stone-600' },
-  { key: 'x', labelKey: 'x', icon: Twitter, color: 'bg-white', textColor: 'text-stone-600' },
+  { key: 'arxiv', labelKey: 'arxiv', icon: FileText, color: 'bg-card', textColor: 'text-stone-600' },
+  { key: 'github', labelKey: 'github', icon: GitBranch, color: 'bg-card', textColor: 'text-stone-600' },
+  { key: 'hackernews', labelKey: 'hackernews', icon: Triangle, color: 'bg-card', textColor: 'text-stone-600' },
+  { key: 'producthunt', labelKey: 'producthunt', icon: Rocket, color: 'bg-card', textColor: 'text-stone-600' },
+  { key: 'news', labelKey: 'news', icon: Newspaper, color: 'bg-card', textColor: 'text-stone-600' },
+  { key: 'x', labelKey: 'x', icon: Twitter, color: 'bg-card', textColor: 'text-stone-600' },
 ]
 
 export const formatDate = (value: string | null | undefined): string => (

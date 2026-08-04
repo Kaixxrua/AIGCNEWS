@@ -35,7 +35,7 @@ const emit = defineEmits<{
           <span class="ml-auto text-xs text-stone-400">{{ t('monitor.jobCount', { count: schedulerStatus.job_count }) }}</span>
         </div>
         <div class="space-y-2 overflow-y-auto">
-          <div v-for="job in schedulerStatus.jobs" :key="job.id" class="rounded-2xl p-3" style="background: rgba(255,255,255,0.6); border: 1px solid rgba(168,162,158,0.15)">
+          <div v-for="job in schedulerStatus.jobs" :key="job.id" class="rounded-2xl p-3" style="background: rgb(var(--card-rgb) / 0.6); border: 1px solid rgb(var(--stone-400-rgb) / 0.15)">
             <p class="text-xs font-medium text-stone-600">{{ job.name }}</p>
             <p class="mt-1 text-2xs text-stone-400">{{ job.next_run_time ? t('monitor.nextRun', { date: formatDate(job.next_run_time) }) : t('monitor.unscheduled') }}</p>
           </div>
@@ -47,15 +47,15 @@ const emit = defineEmits<{
     </div>
 
     <div class="stagger-enter glass-card overflow-hidden flex flex-col" :class="isAdmin ? 'lg:col-span-2' : 'lg:col-span-1'" style="animation-delay: 0.3s">
-      <div class="flex items-center justify-between px-5 py-3.5 shrink-0" style="border-bottom: 1px solid rgba(168,162,158,0.15)">
+      <div class="flex items-center justify-between px-5 py-3.5 shrink-0" style="border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.15)">
         <h3 class="text-sm font-semibold text-stone-700">{{ t('monitor.recentTasks') }}</h3>
-        <span class="badge bg-white text-stone-500 border border-stone-200">{{ t('monitor.totalItems', { count: total }) }}</span>
+        <span class="badge bg-card text-stone-500 border border-stone-200">{{ t('monitor.totalItems', { count: total }) }}</span>
       </div>
 
       <div class="overflow-x-auto flex-1">
         <table class="min-w-full">
           <thead>
-            <tr style="border-bottom: 1px solid rgba(168,162,158,0.15); background: rgba(250,250,249,0.5)">
+            <tr style="border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.15); background: rgb(var(--stone-50-rgb) / 0.5)">
               <th class="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-stone-400">ID</th>
               <th class="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-stone-400">{{ t('monitor.taskName') }}</th>
               <th class="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wider text-stone-400">{{ t('monitor.status') }}</th>
@@ -69,7 +69,7 @@ const emit = defineEmits<{
               <td colspan="6" class="px-4 py-8 text-center text-sm text-stone-400"><span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></td>
             </tr>
             <tr v-else-if="!tasks.length"><td colspan="6" class="px-4 py-8 text-center text-sm text-stone-400">{{ t('monitor.noTasks') }}</td></tr>
-            <tr v-for="task in tasks" :key="task.id" class="transition-colors hover:bg-stone-50/50" :style="tasks.indexOf(task) % 2 !== 0 ? 'background: rgba(250,250,249,0.4)' : ''">
+            <tr v-for="task in tasks" :key="task.id" class="transition-colors hover:bg-stone-50/50" :style="tasks.indexOf(task) % 2 !== 0 ? 'background: rgb(var(--stone-50-rgb) / 0.4)' : ''">
               <td class="whitespace-nowrap px-4 py-3 text-xs text-stone-400 font-mono">#{{ task.id }}</td>
               <td class="px-4 py-3 text-xs font-medium text-stone-700 max-w-[200px] truncate">{{ task.task_name }}</td>
               <td class="whitespace-nowrap px-4 py-3">
@@ -86,7 +86,7 @@ const emit = defineEmits<{
         </table>
       </div>
 
-      <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-top: 1px solid rgba(168,162,158,0.15)">
+      <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-top: 1px solid rgb(var(--stone-400-rgb) / 0.15)">
         <p class="text-xs text-stone-400">{{ t('monitor.pageSummary', { page, totalPages, total }) }}</p>
         <div class="flex items-center gap-1">
           <button class="rounded-full px-2.5 py-1 text-xs font-medium text-stone-400 hover:bg-accent-soft disabled:opacity-30 disabled:cursor-not-allowed transition" :disabled="page <= 1" @click="emit('goPage', 1)">«</button>

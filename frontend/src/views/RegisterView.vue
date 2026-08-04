@@ -104,12 +104,12 @@ const {
             class="mt-0.5 shrink-0 w-4 h-4 rounded border transition-all duration-150 flex items-center justify-center"
             :class="agreedToTerms
               ? 'bg-accent border-ink'
-              : 'bg-white border-stone-300 hover:border-ink hover:bg-accent-soft'"
+              : 'bg-card border-stone-300 hover:border-ink hover:bg-accent-soft'"
             :aria-pressed="agreedToTerms"
             :aria-label="t('auth.agreeAria')"
             @click="agreedToTerms = !agreedToTerms"
           >
-            <svg v-if="agreedToTerms" viewBox="0 0 12 12" fill="none" stroke="#171a09" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
+            <svg v-if="agreedToTerms" viewBox="0 0 12 12" fill="none" style="stroke: var(--acid-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
               <polyline points="2,6 5,9 10,3"/>
             </svg>
           </button>
@@ -128,7 +128,7 @@ const {
           :disabled="loading || !agreedToTerms"
           @click="handleRegister"
         >
-          <span v-if="loading" class="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+          <span v-if="loading" class="h-4 w-4 rounded-full border-2 animate-spin" style="border-color: color-mix(in srgb, currentColor 40%, transparent); border-top-color: currentColor" />
           <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/>
             <circle cx="9" cy="7" r="4"/>

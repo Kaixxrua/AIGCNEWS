@@ -36,7 +36,7 @@ defineProps<{
   gap: 0 2px;
   font-size: 10px;
   font-weight: 400;
-  color: rgba(168, 162, 158, 0.7);
+  color: rgb(var(--stone-400-rgb) / 0.7);
   letter-spacing: 0.02em;
   white-space: nowrap;
   pointer-events: auto;
@@ -49,13 +49,13 @@ defineProps<{
 }
 
 .footer-link {
-  color: rgba(168, 162, 158, 0.7);
+  color: rgb(var(--stone-400-rgb) / 0.7);
   text-decoration: none;
   transition: color 0.2s;
 }
 
 .footer-link:hover {
-  color: #78716c;
+  color: rgb(var(--stone-500-rgb));
   text-decoration: underline;
 }
 

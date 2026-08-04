@@ -104,7 +104,7 @@ const {
           :disabled="loading || resetDone"
           @click="handleReset"
         >
-          <span v-if="loading" class="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+          <span v-if="loading" class="h-4 w-4 rounded-full border-2 animate-spin" style="border-color: color-mix(in srgb, currentColor 40%, transparent); border-top-color: currentColor" />
           <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 12a9 9 0 101.6-5.1"/>
             <polyline points="3 4 3 10 9 10"/>

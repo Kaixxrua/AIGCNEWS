@@ -181,6 +181,16 @@
   /* 仪表盘页杂色文字与网格线（浅色 = 原字面量） */
   --dash-muted: #68655d;
   --ink-grid-rgb: 17 17 15;
+  /* MCP/监控页补充（浅色 = 原字面量） */
+  --projects-paper-light-rgb: 255 253 245;
+  --mcp-btn-label: #c7f432;
+  --mcp-icon-ink: #0e7490;
+  --mcp-icon-edge: #cffafe;
+  --token-valid-bg: #ecfdf5;
+  /* 全局 toast 与 dock 补充（浅色 = 原字面量） */
+  --toast-shadow: rgba(17, 17, 15, 0.18);
+  --dock-danger-hover: rgba(254, 226, 226, 0.6);
+  --dock-login-hover-label: #d8f14b;
 }
 
 :root[data-theme='dark'] {
@@ -334,6 +344,14 @@
   --panel-edge-info: rgba(165, 180, 252, 0.25);
   --dash-muted: #a3a096;
   --ink-grid-rgb: 238 238 229;
+  --projects-paper-light-rgb: 35 35 31;
+  --mcp-btn-label: #171a09;
+  --mcp-icon-ink: #22d3ee;
+  --mcp-icon-edge: rgba(34, 211, 238, 0.3);
+  --token-valid-bg: rgba(52, 211, 153, 0.12);
+  --toast-shadow: rgba(0, 0, 0, 0.5);
+  --dock-danger-hover: rgba(239, 68, 68, 0.18);
+  --dock-login-hover-label: #171a09;
 }
 
 /* App.vue 固定背景层（浅色渲染与原内联样式逐字节等价） */
