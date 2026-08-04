@@ -28,12 +28,25 @@ class PostgresXWatchAccountRepository:
         self._defaults = tuple(defaults)
 
     def _seed_default_x_watch_accounts(self) -> None:
+        """空表自举：仅在表为空时写入 env 默认句柄。
+
+        逐行 ON CONFLICT 自举会把管理员已删除的账号重新写回；空表语义
+        下删除单个账号不受影响，清空全部账号则回到 env 默认列表。
+        ON CONFLICT 仍保留，兜住两个进程同时自举的竞态。
+        """
         handles = [handle for raw in self._defaults if (handle := normalize_x_screen_name(raw))]
         if not handles:
             return
 
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) AS n FROM x_watch_accounts")
+                row = cursor.fetchone()
+                existing = int(
+                    (row["n"] if isinstance(row, dict) else row[0]) if row else 0
+                )
+                if existing > 0:
+                    return
                 for screen_name in handles:
                     cursor.execute(
                         """

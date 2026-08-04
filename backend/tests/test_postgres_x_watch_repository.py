@@ -55,17 +55,19 @@ def test_normalize_x_screen_name_strips_at_and_case() -> None:
     assert normalize_x_screen_name(42) == ""
 
 
-def test_seed_uses_conflict_handling_and_list_orders_enabled_first() -> None:
+def test_seed_bootstraps_only_when_table_empty() -> None:
     repository, database, cursor = repository_with_cursor(
         (" @OpenAI ", "", "karpathy"),
     )
+    cursor.fetchone.return_value = {"n": 0}
     row = {"id": 42, "screen_name": "openai", "enabled": True}
     cursor.fetchall.return_value = [row]
 
     result = repository.list_x_watch_accounts()
 
-    assert cursor.execute.call_count == 3
-    seed_openai, seed_karpathy, listing = cursor.execute.call_args_list
+    assert cursor.execute.call_count == 4
+    count_query, seed_openai, seed_karpathy, listing = cursor.execute.call_args_list
+    assert "COUNT(*)" in count_query.args[0]
     assert "ON CONFLICT (screen_name) DO NOTHING" in seed_openai.args[0]
     assert seed_openai.args[1][0] == "openai"
     assert seed_karpathy.args[1][0] == "karpathy"
@@ -73,6 +75,19 @@ def test_seed_uses_conflict_handling_and_list_orders_enabled_first() -> None:
     assert result == [row]
     assert result[0] is not row
     assert database.transaction_count == 2
+
+
+def test_seed_is_skipped_when_table_not_empty() -> None:
+    repository, _, cursor = repository_with_cursor(("openai",))
+    cursor.fetchone.return_value = {"n": 3}
+    cursor.fetchall.return_value = [{"id": 1, "screen_name": "openai"}]
+
+    result = repository.list_x_watch_accounts()
+
+    count_query, listing = cursor.execute.call_args_list
+    assert "COUNT(*)" in count_query.args[0]
+    assert "INSERT" not in listing.args[0]
+    assert result == [{"id": 1, "screen_name": "openai"}]
 
 
 def test_create_normalizes_screen_name_and_uses_returning() -> None:
@@ -173,6 +188,7 @@ def test_update_test_result_returns_none_when_row_missing() -> None:
 
 def test_list_enabled_x_handles_filters_and_normalizes() -> None:
     repository, _, cursor = repository_with_cursor(("openai",))
+    cursor.fetchone.return_value = {"n": 0}
     cursor.fetchall.return_value = [
         {"screen_name": " @OpenAI "},
         {"screen_name": "anthropicai"},
@@ -181,7 +197,8 @@ def test_list_enabled_x_handles_filters_and_normalizes() -> None:
 
     handles = repository.list_enabled_x_handles()
 
-    seed, listing = cursor.execute.call_args_list
+    count_query, seed, listing = cursor.execute.call_args_list
+    assert "COUNT(*)" in count_query.args[0]
     assert "ON CONFLICT (screen_name) DO NOTHING" in seed.args[0]
     assert "WHERE enabled" in listing.args[0]
     assert "ORDER BY sort_order ASC, screen_name ASC, id ASC" in listing.args[0]

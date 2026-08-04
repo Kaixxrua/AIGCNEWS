@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
@@ -123,6 +124,16 @@ class ApplicationRepositories:
     x_watch_accounts: XWatchAccountRepository
 
 
+def _env_x_watch_handles() -> tuple[str, ...]:
+    """TWITTER_WATCH_HANDLES 的粗解析（逗号分隔）；仓储种子再做 @/小写归一。
+
+    采集层刻意直接读 env（绕开 Settings @lru_cache 的测试脚注），此处沿用
+    同一约定，保证种子列表与 XCrawler env 兜底读取一致。
+    """
+    raw = os.environ.get("TWITTER_WATCH_HANDLES", "")
+    return tuple(part for piece in raw.split(",") if (part := piece.strip()))
+
+
 def create_application_repositories(
     *,
     postgres: PostgresDatabaseLifecycle,
@@ -146,5 +157,8 @@ def create_application_repositories(
         project_collections=PostgresProjectWriteRepository(postgres),
         project_recommendations=PostgresProjectWriteRepository(postgres),
         github_semantic_sources=PostgresGitHubProjectSemanticSourceRepository(postgres),
-        x_watch_accounts=PostgresXWatchAccountRepository(postgres),
+        x_watch_accounts=PostgresXWatchAccountRepository(
+            postgres,
+            defaults=_env_x_watch_handles(),
+        ),
     )

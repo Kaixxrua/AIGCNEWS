@@ -78,6 +78,10 @@ def provide_ingestion_dependencies(
             NewsCrawler,
             ProductHuntCrawler,
             HackerNewsCrawler,
-            XCrawler,
+            # X watchlist 走数据库（D3 接缝）：空表时仓储按 env 句柄自举，
+            # 监控页 /ops/x-watch-accounts 管理后即成为唯一事实源。
+            lambda: XCrawler(
+                watchlist_provider=repositories.x_watch_accounts.list_enabled_x_handles,
+            ),
         ),
     )

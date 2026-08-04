@@ -93,3 +93,21 @@ def test_factory_builds_postgres_protocol_adapters() -> None:
         repository = getattr(repositories, name)
         assert isinstance(repository, adapter)
         assert repository._database is postgres
+
+
+def test_factory_seeds_x_watch_defaults_from_env() -> None:
+    from unittest.mock import patch
+
+    with patch.dict(
+        "os.environ",
+        {"TWITTER_WATCH_HANDLES": "openai, @AnthropicAI ,, karpathy"},
+    ):
+        repositories = create_application_repositories(
+            postgres=Lifecycle(),  # type: ignore[arg-type]
+        )
+
+    assert repositories.x_watch_accounts._defaults == (
+        "openai",
+        "@AnthropicAI",
+        "karpathy",
+    )

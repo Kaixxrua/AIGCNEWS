@@ -39,6 +39,20 @@ class IngestionDependencyCompositionTests(unittest.TestCase):
         self.assertTrue(callable(dependencies.cache_invalidator))
         self.assertEqual(len(dependencies.crawler_factories), 6)
 
+    def test_x_crawler_factory_reads_watchlist_from_repositories(self) -> None:
+        repositories = MagicMock()
+
+        dependencies = provide_ingestion_dependencies(
+            repositories=repositories,
+            task_writer=MagicMock(),
+        )
+        x_crawler = dependencies.crawler_factories[-1]()
+
+        self.assertIs(
+            x_crawler._watchlist_provider,
+            repositories.x_watch_accounts.list_enabled_x_handles,
+        )
+
     def test_orchestrator_accepts_complete_composition_without_global_lookup(self) -> None:
         repositories = MagicMock()
         dependencies = IngestionDependencies(
