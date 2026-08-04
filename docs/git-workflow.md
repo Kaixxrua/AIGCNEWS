@@ -7,12 +7,12 @@
 提交标题使用 Conventional Commits：
 
 ```text
-<type>(<scope>)!: <subject>
+<type>(<scope>): <subject>
 ```
 
 - `type`：必填，表示变更性质。
 - `scope`：必填，使用小写 kebab-case，表示主要影响域。
-- `!`：可选，仅用于不兼容变更。
+- `!`：可选，仅用于不兼容变更，且必须同时配 `BREAKING CHANGE:` footer（见第 2 节）；普通变更不得使用 `!`。
 - `subject`：必填，使用简洁中文或英文，描述结果而非过程；标题总长度不超过 100 个字符。
 - 冒号后必须有一个空格。
 

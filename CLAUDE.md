@@ -2,7 +2,7 @@
 
 ## Git 与 PR
 
-- 所有提交必须遵守 `docs/git-workflow.md`，标题格式为 `<type>(<scope>)!: <subject>`；`scope` 必填。
+- 所有提交必须遵守 `docs/git-workflow.md`，标题格式为 `<type>(<scope>): <subject>`；`scope` 必填；`!` 仅用于不兼容变更，且必须配 `BREAKING CHANGE:` footer。
 - 一个提交对应一个 PR-sized 工作单元；仅暂存本次工作涉及的文件，不得夹带、覆盖或回滚用户已有修改。
 - 提交前必须运行与影响面匹配的测试、类型检查或构建。检查失败时不得提交或推送，并应如实报告。
 - 当前项目采用主干开发：完成并验证一个 PR-sized 工作单元后，直接提交并推送到 `main`。

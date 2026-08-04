@@ -15,11 +15,12 @@ if [[ ! "$subject" =~ $pattern ]]; then
   cat >&2 <<'EOF'
 提交信息不符合 AIGCNEWS 规范。
 
-格式：<type>(<scope>)!: <subject>
+格式：<type>(<scope>): <subject>
 示例：feat(projects): 增加个人工具网站收藏
 
 允许的 type：feat、fix、refactor、perf、test、docs、build、ci、chore、revert
 scope 必填并使用小写 kebab-case。详见 docs/git-workflow.md。
+! 仅用于不兼容变更（写在 scope 后），且必须配 BREAKING CHANGE: footer。
 EOF
   exit 1
 fi

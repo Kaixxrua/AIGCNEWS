@@ -5,3 +5,9 @@
 # Behavior impact:
 #
 # Refs: #issue
+#
+# type：feat | fix | refactor | perf | test | docs | build | ci | chore | revert
+# scope：必填，小写 kebab-case（如 auth、projects、mcp、frontend、deps、ci）
+# !：仅用于不兼容变更，写在 scope 后（如 feat(api)!: ...），
+#     且必须在 footer 配 BREAKING CHANGE: 说明迁移方式；普通变更不得使用。
+# 详见 docs/git-workflow.md
