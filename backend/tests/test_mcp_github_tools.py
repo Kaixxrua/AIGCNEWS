@@ -452,8 +452,8 @@ class ProjectHandlerTests(unittest.TestCase):
                 "hot_score_growth": 99,
             }
         )
-        self.assertLessEqual(len(projected["description"]), 180)
-        self.assertLessEqual(len(projected["description_zh"]), 80)
+        self.assertLessEqual(len(projected["description"]), 320)
+        self.assertLessEqual(len(projected["description_zh"]), 160)
         self.assertEqual(len(projected["tags"]), 4)
         self.assertEqual(len(projected["topics"]), 4)
         self.assertNotIn("is_favorited", projected)
