@@ -22,7 +22,7 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             "description": (
                 "查询数据库中的排行榜数据。当用户询问今日/本周/本月的排行榜、"
                 "top N、热门项目、trending 等问题时调用此工具。"
-                "支持的来源：github、arxiv、news、producthunt、hackernews，"
+                "支持的来源：github、arxiv、news、producthunt、hackernews、x（仅日榜），"
                 "或 all 查询全部来源。"
             ),
             "parameters": {
@@ -36,6 +36,7 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                             "news",
                             "producthunt",
                             "hackernews",
+                            "x",
                             "all",
                         ],
                         "description": "数据来源，all 表示查询所有来源",
@@ -76,6 +77,7 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                             "news",
                             "producthunt",
                             "hackernews",
+                            "x",
                             "all",
                         ],
                         "description": "数据来源筛选，all 表示查询所有来源",

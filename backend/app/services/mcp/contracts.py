@@ -24,7 +24,7 @@ from backend.app.domain.search_semantics import (
     build_client_project_search_intent,
 )
 
-SourceChoice = Literal["all", "arxiv", "github", "news", "producthunt", "hackernews"]
+SourceChoice = Literal["all", "arxiv", "github", "news", "producthunt", "hackernews", "x"]
 PeriodChoice = Literal["daily", "weekly", "monthly"]
 ProjectScope = Literal["all", "today", "recommended"]
 ProjectSort = Literal["hot", "stars", "updated", "recent", "name"]

@@ -45,14 +45,14 @@ router = APIRouter()
 _SSE_HEARTBEAT_INTERVAL_SECONDS = float(settings.sse_heartbeat_interval)
 
 
-_VALID_SOURCES = {"all", "arxiv", "github", "news", "producthunt", "hackernews"}
+_VALID_SOURCES = {"all", "arxiv", "github", "news", "producthunt", "hackernews", "x"}
 _VALID_PERIODS = {"daily", "weekly", "monthly"}
 
 
 class GenerateReportRequest(BaseModel):
     date: Optional[str] = None  # ISO date string, e.g. "2025-03-01"; defaults to today
     source: str = (
-        "all"  # "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews"
+        "all"  # "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews" | "x"
     )
     period: str = "daily"  # "daily" | "weekly" | "monthly"
     force_regenerate: bool = True  # 始终重新生成（不走缓存）
@@ -132,6 +132,7 @@ async def stream_daily_report(
       - news        → 行业报告（RSS）
       - producthunt → 产品报告（Product Hunt 热榜）
       - hackernews  → 社区报告（Hacker News AI 热帖）
+      - x           → X 动态报告（关注账号推文，仅日报）
 
     period 参数：
       - daily   → 日报
@@ -185,7 +186,7 @@ def _resolve_report_date(period: str, date_str: Optional[str]) -> str:
 @router.get("/report/latest")
 async def get_latest_briefing(
     source: str = Query(
-        default="all", description="all/arxiv/github/news/producthunt/hackernews"
+        default="all", description="all/arxiv/github/news/producthunt/hackernews/x"
     ),
     period: str = Query(default="daily", description="daily/weekly/monthly"),
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD，可选"),

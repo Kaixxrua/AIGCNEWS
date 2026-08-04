@@ -21,7 +21,7 @@ _JSONRPC_METHOD_NOT_FOUND = -32601
 _JSONRPC_INVALID_PARAMS = -32602
 _JSONRPC_INTERNAL_ERROR = -32603
 
-_SOURCE_CHOICES = {"all", "arxiv", "github", "news", "producthunt", "hackernews"}
+_SOURCE_CHOICES = {"all", "arxiv", "github", "news", "producthunt", "hackernews", "x"}
 _PERIOD_CHOICES = {"daily", "weekly", "monthly"}
 _PROJECT_SCOPE_CHOICES = {"all", "today", "recommended"}
 _PROJECT_SORT_CHOICES = {"hot", "stars", "updated", "recent", "name"}
@@ -92,7 +92,7 @@ MCP_PROMPTS: list[dict[str, Any]] = [
         "arguments": [
             {
                 "name": "source",
-                "description": "Optional source filter: all, arxiv, github, news, producthunt, hackernews.",
+                "description": "Optional source filter: all, arxiv, github, news, producthunt, hackernews, x.",
                 "required": False,
             },
             {"name": "topic", "description": "Optional topic or keyword focus.", "required": False},

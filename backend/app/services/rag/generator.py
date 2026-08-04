@@ -54,6 +54,7 @@ PROMPT_TEMPLATE = (
     "  - [news] = AI 行业新闻\n"
     "  - [producthunt] = Product Hunt 新产品\n"
     "  - [hackernews] = Hacker News 热帖\n"
+    "  - [x] = X/Twitter 关注账号推文\n"
     "  - [neo4j] = 知识图谱实体\n"
     "  - [web-N] = 互联网实时搜索结果\n"
     "  - [db-query] = 数据库实时查询结果\n"
