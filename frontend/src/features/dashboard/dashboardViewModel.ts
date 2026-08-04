@@ -9,9 +9,9 @@ import {
   Rocket,
   Star,
   ThumbsUp,
-  Twitter,
   type LucideIcon,
 } from 'lucide-vue-next'
+import { XLogoIcon } from '@/components/icons/XLogoIcon'
 
 export interface TopDoc {
   id?: number | string
@@ -63,7 +63,7 @@ export const TABS = [
   { key: 'news',        labelKey: 'news',     icon: Newspaper,  color: 'brand-amber' },
   { key: 'producthunt', labelKey: 'products', icon: Rocket,     color: 'brand-rose' },
   { key: 'hackernews',  labelKey: 'hn',       icon: Circle,     color: 'brand-amber' },
-  { key: 'x',           labelKey: 'x',        icon: Twitter,    color: 'brand-blue' },
+  { key: 'x',           labelKey: 'x',        icon: XLogoIcon,  color: 'brand-blue' },
 ] as const
 
 export const PERIODS = [

@@ -1,5 +1,7 @@
-import { FileText, GitBranch, Newspaper, Rocket, Triangle, Twitter } from 'lucide-vue-next'
+import { FileText, GitBranch, Newspaper, Rocket, Triangle } from 'lucide-vue-next'
 import { formatLocaleDate } from '@/i18n/formatters'
+import { XLogoIcon } from '@/components/icons/XLogoIcon'
+import type { Component } from 'vue'
 
 export type {
   McpServerConfig,
@@ -18,7 +20,7 @@ import type { McpServerConfig, McpToolCallMetricsSnapshot, SourceKey } from './m
 export interface SourceItem {
   key: SourceKey
   labelKey: string
-  icon: typeof FileText
+  icon: Component
   color: string
   textColor: string
 }
@@ -35,7 +37,7 @@ export const SOURCE_LIST: SourceItem[] = [
   { key: 'hackernews', labelKey: 'hackernews', icon: Triangle, color: 'bg-card', textColor: 'text-stone-600' },
   { key: 'producthunt', labelKey: 'producthunt', icon: Rocket, color: 'bg-card', textColor: 'text-stone-600' },
   { key: 'news', labelKey: 'news', icon: Newspaper, color: 'bg-card', textColor: 'text-stone-600' },
-  { key: 'x', labelKey: 'x', icon: Twitter, color: 'bg-card', textColor: 'text-stone-600' },
+  { key: 'x', labelKey: 'x', icon: XLogoIcon, color: 'bg-card', textColor: 'text-stone-600' },
 ]
 
 export const formatDate = (value: string | null | undefined): string => (
