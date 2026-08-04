@@ -426,12 +426,12 @@ class SchedulerLifecycleAndStatusContractTests(unittest.TestCase):
 
         self.assertEqual(events, ["pause", "shutdown:False"])
 
-    def test_stop_logs_expired_grace_period_but_still_drains(self) -> None:
-        async def run(warning: MagicMock) -> None:
+    def test_stop_extends_grace_once_and_drains_task_finishing_in_window(self) -> None:
+        async def run(warning: MagicMock, error: MagicMock) -> None:
             runtime = scheduler.ApplicationSchedulerRuntime(
                 MagicMock(),
                 scheduler=_RecordingScheduler([], running=False),  # type: ignore[arg-type]
-                shutdown_grace_seconds=0.0,
+                shutdown_grace_seconds=30.0,
             )
             release = asyncio.Event()
 
@@ -440,20 +440,69 @@ class SchedulerLifecycleAndStatusContractTests(unittest.TestCase):
 
             task = asyncio.create_task(operation())
             runtime._active_tasks.add(task)
-            stop_task = asyncio.create_task(runtime.stop())
-            for _ in range(10):
-                await asyncio.sleep(0)
-                if warning.called:
-                    break
 
+            real_wait = asyncio.wait
+            wait_calls: list[float] = []
+
+            async def fake_wait(
+                fs: object, *, timeout: float
+            ) -> tuple[set[object], set[object]]:
+                wait_calls.append(timeout)
+                if len(wait_calls) == 1:
+                    # 首个宽限期到期时任务仍在运行。
+                    return set(), set(fs)  # type: ignore[arg-type]
+                release.set()
+                return await real_wait(fs, timeout=timeout)  # type: ignore[arg-type]
+
+            with patch.object(scheduler.asyncio, "wait", fake_wait):
+                await runtime.stop()
+
+            self.assertEqual(wait_calls, [30.0, 30.0])
             warning.assert_called_once()
-            self.assertFalse(stop_task.done())
-            release.set()
-            await stop_task
+            error.assert_not_called()
+            self.assertFalse(task.cancelled())
             self.assertEqual(runtime._active_tasks, set())
 
-        with patch.object(scheduler.logger, "warning") as warning:
-            asyncio.run(run(warning))
+        with (
+            patch.object(scheduler.logger, "warning") as warning,
+            patch.object(scheduler.logger, "error") as error,
+        ):
+            asyncio.run(run(warning, error))
+
+    def test_stop_cancels_tasks_outliving_extended_grace_period(self) -> None:
+        async def run(warning: MagicMock, error: MagicMock) -> None:
+            runtime = scheduler.ApplicationSchedulerRuntime(
+                MagicMock(),
+                scheduler=_RecordingScheduler([], running=False),  # type: ignore[arg-type]
+                shutdown_grace_seconds=0.0,
+            )
+            never = asyncio.Event()
+
+            async def operation() -> None:
+                await never.wait()
+
+            task = asyncio.create_task(operation())
+            runtime._active_tasks.add(task)
+
+            async def fake_wait(
+                fs: object, *, timeout: float
+            ) -> tuple[set[object], set[object]]:
+                # 两个宽限窗口到期时任务都未结束。
+                return set(), set(fs)  # type: ignore[arg-type]
+
+            with patch.object(scheduler.asyncio, "wait", fake_wait):
+                await asyncio.wait_for(runtime.stop(), timeout=5.0)
+
+            warning.assert_called_once()
+            error.assert_called_once()
+            self.assertTrue(task.cancelled())
+            self.assertEqual(runtime._active_tasks, set())
+
+        with (
+            patch.object(scheduler.logger, "warning") as warning,
+            patch.object(scheduler.logger, "error") as error,
+        ):
+            asyncio.run(run(warning, error))
 
     def test_tracked_job_survives_scheduler_wrapper_cancellation(self) -> None:
         async def run() -> None:

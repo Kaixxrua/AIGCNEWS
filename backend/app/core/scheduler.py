@@ -677,10 +677,24 @@ class ApplicationSchedulerRuntime:
                 if pending:
                     logger.warning(
                         "[Scheduler] %d 个任务超过 %.1f 秒关闭宽限期，"
-                        "继续等待以保护应用资源。",
+                        "为保护应用资源额外等待 %.1f 秒后将强制取消。",
                         len(pending),
                         self._shutdown_grace_seconds,
+                        self._shutdown_grace_seconds,
                     )
+                    _, pending = await asyncio.wait(
+                        pending,
+                        timeout=self._shutdown_grace_seconds,
+                    )
+                if pending:
+                    logger.error(
+                        "[Scheduler] %d 个任务在 %.1f 秒内仍未结束，强制取消 "
+                        "(底层 to_thread 线程仍会跑完，仅放弃等待)。",
+                        len(pending),
+                        self._shutdown_grace_seconds * 2,
+                    )
+                    for task in pending:
+                        task.cancel()
                     await asyncio.gather(*pending, return_exceptions=True)
             self._active_tasks.clear()
             logger.info("[Scheduler] APScheduler 及运行中任务已停止。")
