@@ -49,6 +49,7 @@ class BriefingPurePreparationTests(unittest.TestCase):
                 "techmeme_daily_rss",
                 "producthunt_daily_html",
                 "hn_daily_html",
+                "x_daily_watchlist",
             ),
         )
 

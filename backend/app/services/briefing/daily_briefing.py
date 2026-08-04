@@ -60,7 +60,7 @@ _PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以�
 5. 语言专业且详尽，面向技术从业者
 6. 最后附上日期和数据来源
 7. **务必覆盖所有提供的内容，不要遗漏任何一条**
-8. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#arxiv` `#github` `#news` `#producthunt` `#hackernews`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#RAG` `#代码生成` `#图像生成` `#视频生成` `#语音合成` `#强化学习` `#数据集` `#评测基准` `#推理优化` `#模型压缩` `#开源模型` `#商业化` `#安全对齐` `#具身智能` `#知识图谱` `#MLOps` `#AI基础设施`。禁止使用过于宽泛的标签如 #ai #tool #trending
+8. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#arxiv` `#github` `#news` `#producthunt` `#hackernews` `#x`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#RAG` `#代码生成` `#图像生成` `#视频生成` `#语音合成` `#强化学习` `#数据集` `#评测基准` `#推理优化` `#模型压缩` `#开源模型` `#商业化` `#安全对齐` `#具身智能` `#知识图谱` `#MLOps` `#AI基础设施`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
 **{period_label}热点内容（共 {count} 条）：**
 {articles}
@@ -154,6 +154,23 @@ _PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据�
 **生成日期：** {date}
 """
 
+_PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下{period_label} X（Twitter）上 AI 公司与知名开发者官方账号的热门推文，撰写一份**内容详尽、深度全面**的 X 动态{period_label}报。
+
+**要求：**
+1. 使用 Markdown 格式输出
+2. 包含"官方发布与公告"、"研究与技术分享"、"行业观点与洞察"、"值得关注"四个章节
+3. **每条推文都必须详细分析**，包括：发布者与身份、核心内容、背景与影响、社区热度（点赞/转发/书签互动数据解读）（每条至少 4-6 句话）
+4. 对官方账号动态反映出的行业趋势进行深入洞察
+5. 语言通俗易懂，面向 AI 从业者与技术爱好者
+6. **务必覆盖所有提供的推文，不要遗漏任何一条**
+7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#x`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#开源模型` `#产品发布` `#研究论文` `#商业化` `#安全对齐` `#AI基础设施` `#开发者工具` `#观点争议` `#监管政策`。禁止使用过于宽泛的标签如 #ai #tool #trending
+
+**{period_label} X 关注账号热门推文（共 {count} 条）：**
+{articles}
+
+**生成日期：** {date}
+"""
+
 _PERIOD_LABEL: dict[str, str] = {
     "daily": "今日",
     "weekly": "本周",
@@ -187,6 +204,7 @@ _SOURCE_CONFIG: Dict[str, tuple[str, str]] = {
     "news": (_PROMPT_NEWS, "_news"),
     "producthunt": (_PROMPT_PRODUCTHUNT, "_producthunt"),
     "hackernews": (_PROMPT_HACKERNEWS, "_hackernews"),
+    "x": (_PROMPT_X, "_x"),
 }
 
 
@@ -212,6 +230,10 @@ _PERIOD_CHANNEL_MAP: dict[str, dict[str, str]] = {
     "hackernews": {
         "daily": "hn_daily_html",
         # hackernews 目前仅有日榜数据
+    },
+    "x": {
+        "daily": "x_daily_watchlist",
+        # x 仅支持日榜（推文无周/月榜语义）
     },
 }
 
@@ -376,7 +398,7 @@ class DailyBriefingService:
 
         Args:
             target_date: ISO date string，默认今天
-            source: "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews"
+            source: "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews" | "x"
             period: "daily" | "weekly" | "monthly"
             force_regenerate: 若为 True（默认），始终重新生成，不使用缓存
 

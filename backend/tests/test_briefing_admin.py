@@ -46,5 +46,6 @@ def test_generate_all_reuses_generator_and_isolates_dimension_failures() -> None
         "news",
         "producthunt",
         "hackernews",
+        "x",
     ]
     assert all(call["force_regenerate"] is True for call in generator.calls)

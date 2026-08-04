@@ -14,6 +14,7 @@ BRIEFING_DIMENSIONS = (
     ("news", "daily"),
     ("producthunt", "daily"),
     ("hackernews", "daily"),
+    ("x", "daily"),
 )
 
 
