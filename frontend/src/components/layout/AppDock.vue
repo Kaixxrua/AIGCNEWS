@@ -159,7 +159,7 @@ const hoveredAuth = ref(false)
   white-space: nowrap;
   font-size: 11px;
   font-weight: 600;
-  color: var(--acid);
+  color: var(--dock-on-ink-label);
   background: var(--ink);
   padding: 4px 10px;
   border-radius: 5px;
@@ -193,7 +193,7 @@ const hoveredAuth = ref(false)
 
 .dock-item--login { color: var(--acid-ink); background: var(--acid); }
 .dock-item--login:hover {
-  color: var(--dock-login-hover-label);
+  color: var(--dock-on-ink-label);
   background: var(--ink);
   transform: translateY(-2px);
 }

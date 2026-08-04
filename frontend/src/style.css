@@ -190,7 +190,9 @@
   /* 全局 toast 与 dock 补充（浅色 = 原字面量） */
   --toast-shadow: rgba(17, 17, 15, 0.18);
   --dock-danger-hover: rgba(254, 226, 226, 0.6);
-  --dock-login-hover-label: #d8f14b;
+  --dock-on-ink-label: #d8f14b;
+  /* ink 底控件文字色（浅色 = 荧光绿原样；深色随 ink 变浅反转为暗字） */
+  --btn-primary-label: var(--acid);
 }
 
 :root[data-theme='dark'] {
@@ -351,7 +353,8 @@
   --token-valid-bg: rgba(52, 211, 153, 0.12);
   --toast-shadow: rgba(0, 0, 0, 0.5);
   --dock-danger-hover: rgba(239, 68, 68, 0.18);
-  --dock-login-hover-label: #171a09;
+  --dock-on-ink-label: #171a09;
+  --btn-primary-label: var(--paper-raised);
 }
 
 /* App.vue 固定背景层（浅色渲染与原内联样式逐字节等价） */
@@ -483,7 +486,7 @@
     border-radius: var(--control-radius);
   }
   .btn-primary {
-    color: var(--acid);
+    color: var(--btn-primary-label);
     background: var(--ink);
     border: 2px solid var(--ink);
   }
