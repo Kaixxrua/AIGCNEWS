@@ -29,6 +29,8 @@ data/
 storage/papers/*.pdf
 # HuggingFace 模型缓存（大文件，不入 git）
 storage/hf_cache/
+# MCP 工具调用计数持久化文件（运行态数据，不入 git）
+storage/metrics/
 
 # SSL 证书私钥（极度机密，绝不入 git）
 **/*.key

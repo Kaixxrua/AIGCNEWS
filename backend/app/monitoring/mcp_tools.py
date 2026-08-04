@@ -1,21 +1,95 @@
 from __future__ import annotations
 
+import json
+import logging
+import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, Optional, Protocol
+
+from backend.app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class McpToolCallStore(Protocol):
+    """Persistence boundary for MCP tool-call counter state."""
+
+    def load(self) -> Optional[Dict[str, Any]]:
+        """Return the persisted payload, or ``None`` when missing/unreadable."""
+        ...
+
+    def save(self, payload: Dict[str, Any]) -> None:
+        """Persist the payload, replacing any previous state."""
+        ...
+
+
+class JsonMcpToolCallStore:
+    """Single-writer JSON file store with atomic replace and tolerant reads."""
+
+    def __init__(self, path: str) -> None:
+        self._path = Path(path)
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def load(self) -> Optional[Dict[str, Any]]:
+        try:
+            raw = self._path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            logger.warning(
+                "mcp tool call metrics unreadable, starting empty path=%s err=%s",
+                self._path,
+                exc,
+            )
+            return None
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            logger.warning(
+                "mcp tool call metrics corrupt, starting empty path=%s", self._path
+            )
+            return None
+        return data if isinstance(data, dict) else None
+
+    def save(self, payload: Dict[str, Any]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._path.with_name(self._path.name + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, self._path)
+
+
+def _parse_iso(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 class McpToolCallMetrics:
-    """Thread-safe process-local counter for inbound MCP ``tools/call`` dispatches.
+    """Thread-safe counter for inbound MCP ``tools/call`` dispatches.
 
     Counts every validated tool-call attempt by name, including unknown tools
     and calls that later fail authorization or validation, so deprecated-tool
-    usage stays observable from the monitor metrics endpoint. Counts reset on
-    process restart; pair with ``uptime_seconds`` when reading snapshots.
+    usage stays observable from the monitor metrics endpoint.
+
+    With a ``store`` attached, state hydrates lazily on first use and persists
+    on every ``record``, so counts and the first-use ``since`` timestamp
+    survive process restarts. Persistence failures are logged and never break
+    dispatch. Without a store the counter stays process-local and resets on
+    restart; pair with ``uptime_seconds`` when reading such snapshots.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, store: McpToolCallStore | None = None) -> None:
         self._lock = threading.Lock()
+        self._store = store
+        self._loaded = store is None
         self._since = datetime.now(timezone.utc)
         self._calls: Dict[str, int] = {}
         self._last_called_at: Dict[str, datetime] = {}
@@ -23,21 +97,69 @@ class McpToolCallMetrics:
     def record(self, tool_name: str) -> None:
         now = datetime.now(timezone.utc)
         with self._lock:
+            self._ensure_loaded()
             self._calls[tool_name] = self._calls.get(tool_name, 0) + 1
             self._last_called_at[tool_name] = now
+            if self._store is not None:
+                try:
+                    self._store.save(self._snapshot())
+                except Exception:
+                    logger.exception("mcp tool call metrics persist failed")
 
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
-            tools = {
-                name: {
-                    "calls": self._calls[name],
-                    "last_called_at": self._last_called_at[name].isoformat(),
-                }
-                for name in sorted(self._calls)
+            self._ensure_loaded()
+            return self._snapshot()
+
+    def _ensure_loaded(self) -> None:
+        """Hydrate from the store exactly once; caller must hold ``_lock``."""
+        if self._loaded:
+            return
+        self._loaded = True
+        payload = self._store.load() if self._store is not None else None
+        if not payload:
+            return
+        tools = payload.get("tools")
+        if isinstance(tools, dict):
+            for name, entry in tools.items():
+                if not isinstance(name, str) or not isinstance(entry, dict):
+                    continue
+                calls = entry.get("calls")
+                last_called_at = _parse_iso(entry.get("last_called_at"))
+                if (
+                    not isinstance(calls, int)
+                    or calls <= 0
+                    or last_called_at is None
+                ):
+                    continue
+                self._calls[name] = calls
+                self._last_called_at[name] = last_called_at
+        since = _parse_iso(payload.get("since"))
+        if since is not None:
+            self._since = since
+
+    def _snapshot(self) -> Dict[str, Any]:
+        """Build the wire payload; caller must hold ``_lock``."""
+        tools = {
+            name: {
+                "calls": self._calls[name],
+                "last_called_at": self._last_called_at[name].isoformat(),
             }
-            total_calls = sum(self._calls.values())
-            since = self._since.isoformat()
-        return {"since": since, "total_calls": total_calls, "tools": tools}
+            for name in sorted(self._calls)
+        }
+        return {
+            "since": self._since.isoformat(),
+            "total_calls": sum(self._calls.values()),
+            "tools": tools,
+        }
 
 
-MCP_TOOL_CALL_METRICS = McpToolCallMetrics()
+MCP_TOOL_CALL_METRICS = McpToolCallMetrics(
+    store=JsonMcpToolCallStore(
+        getattr(
+            settings,
+            "mcp_tool_call_metrics_path",
+            "storage/metrics/mcp_tool_calls.json",
+        )
+    )
+)

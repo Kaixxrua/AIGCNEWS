@@ -198,6 +198,9 @@ class Settings(BaseSettings):
     # PDF 持久化存储目录（容器内路径，对应 docker-compose volume 映射）
     papers_storage_dir: str = "storage/papers"
 
+    # MCP 工具调用计数持久化文件（容器内路径，对应 docker-compose volume 映射）
+    mcp_tool_call_metrics_path: str = "storage/metrics/mcp_tool_calls.json"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

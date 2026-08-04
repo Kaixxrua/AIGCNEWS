@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import types
 import unittest
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -16,7 +19,7 @@ from backend.app.api.dependencies import (
 )
 from backend.app.core.auth import get_mcp_access_token_authenticator
 from backend.app.monitoring import metrics as monitor_metrics
-from backend.app.monitoring.mcp_tools import McpToolCallMetrics
+from backend.app.monitoring.mcp_tools import JsonMcpToolCallStore, McpToolCallMetrics
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
@@ -57,6 +60,117 @@ class McpToolCallMetricsUnitTests(unittest.TestCase):
         first.record("get_top_items")
 
         self.assertEqual(second.snapshot()["total_calls"], 0)
+
+
+class McpToolCallPersistenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "nested" / "mcp_tool_calls.json"
+        self.store = JsonMcpToolCallStore(str(self.path))
+
+    def test_new_instance_recovers_counts_and_since_across_restart(self) -> None:
+        first = McpToolCallMetrics(store=self.store)
+        first.record("get_project_library")
+        first.record("search_github_ai_projects")
+        first.record("get_project_library")
+        original_since = first.snapshot()["since"]
+
+        restarted = McpToolCallMetrics(store=self.store)
+        snapshot = restarted.snapshot()
+
+        self.assertEqual(snapshot["total_calls"], 3)
+        self.assertEqual(snapshot["tools"]["get_project_library"]["calls"], 2)
+        self.assertEqual(
+            snapshot["tools"]["search_github_ai_projects"]["calls"], 1
+        )
+        self.assertEqual(snapshot["since"], original_since)
+
+        restarted.record("get_project_library")
+        self.assertEqual(
+            restarted.snapshot()["tools"]["get_project_library"]["calls"], 3
+        )
+
+    def test_persisted_file_matches_snapshot_shape_without_tmp_leftover(self) -> None:
+        metrics = McpToolCallMetrics(store=self.store)
+        metrics.record("search_papers")
+
+        persisted = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(set(persisted), {"since", "total_calls", "tools"})
+        self.assertEqual(persisted["total_calls"], 1)
+        self.assertEqual(persisted["tools"]["search_papers"]["calls"], 1)
+        datetime.fromisoformat(persisted["since"])
+        datetime.fromisoformat(
+            persisted["tools"]["search_papers"]["last_called_at"]
+        )
+        self.assertFalse(self.path.with_name(self.path.name + ".tmp").exists())
+
+    def test_missing_file_starts_empty(self) -> None:
+        metrics = McpToolCallMetrics(store=self.store)
+
+        self.assertEqual(metrics.snapshot()["total_calls"], 0)
+        self.assertFalse(self.path.exists())
+
+    def test_corrupt_file_starts_empty_and_recovers_on_record(self) -> None:
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text("{not json", encoding="utf-8")
+        metrics = McpToolCallMetrics(store=self.store)
+
+        self.assertEqual(metrics.snapshot()["total_calls"], 0)
+
+        metrics.record("get_top_items")
+        persisted = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["tools"]["get_top_items"]["calls"], 1)
+
+    def test_invalid_entries_are_skipped_on_load(self) -> None:
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text(
+            json.dumps(
+                {
+                    "since": "2026-08-04T00:00:00+00:00",
+                    "total_calls": 99,
+                    "tools": {
+                        "valid_tool": {
+                            "calls": 2,
+                            "last_called_at": "2026-08-04T01:00:00+00:00",
+                        },
+                        "zero_calls": {
+                            "calls": 0,
+                            "last_called_at": "2026-08-04T01:00:00+00:00",
+                        },
+                        "bad_timestamp": {"calls": 5, "last_called_at": "n/a"},
+                        "not_a_mapping": "oops",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        metrics = McpToolCallMetrics(store=self.store)
+
+        snapshot = metrics.snapshot()
+        self.assertEqual(list(snapshot["tools"]), ["valid_tool"])
+        self.assertEqual(snapshot["total_calls"], 2)
+        self.assertEqual(snapshot["since"], "2026-08-04T00:00:00+00:00")
+
+    def test_save_failure_does_not_break_record(self) -> None:
+        failing_store = MagicMock()
+        failing_store.load.return_value = None
+        failing_store.save.side_effect = OSError("disk full")
+        metrics = McpToolCallMetrics(store=failing_store)
+
+        with self.assertLogs("backend.app.monitoring.mcp_tools", level="ERROR"):
+            metrics.record("get_project_library")
+
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["total_calls"], 1)
+        self.assertEqual(snapshot["tools"]["get_project_library"]["calls"], 1)
+
+    def test_snapshot_does_not_write_to_store(self) -> None:
+        metrics = McpToolCallMetrics(store=self.store)
+
+        metrics.snapshot()
+
+        self.assertFalse(self.path.exists())
 
 
 class McpToolCallDispatchTests(unittest.IsolatedAsyncioTestCase):
