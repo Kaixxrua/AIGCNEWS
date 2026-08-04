@@ -301,6 +301,20 @@ def test_daily_hot_v5_default_is_versioned_without_rewriting_history() -> None:
     assert "DROP COLUMN" not in migration.sql.upper()
 
 
+def test_x_watch_accounts_schema_is_additive_and_keys_screen_name() -> None:
+    migration = discover_migrations()[10]
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert migration.filename == "0011_x_watch_accounts.sql"
+    assert "CREATE TABLE x_watch_accounts" in migration.sql
+    assert "CONSTRAINT uq_x_watch_accounts_screen_name UNIQUE (screen_name)" in migration.sql
+    assert "enabled BOOLEAN NOT NULL DEFAULT TRUE" in migration.sql
+    assert "ALTER TABLE" not in normalized
+    assert "DROP" not in normalized
+    # UPDATE 语句会以 "UPDATE " 开头出现；列名 UPDATED_AT 不含该片段
+    assert "UPDATE " not in normalized
+
+
 def test_transfer_control_schema_is_versioned_and_avoids_sensitive_payloads() -> None:
     migration = discover_migrations()[1]
 

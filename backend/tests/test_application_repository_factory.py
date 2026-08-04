@@ -52,6 +52,9 @@ from backend.app.repositories.postgres_runtime_provider_repository import (
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
+from backend.app.repositories.postgres_x_watch_repository import (
+    PostgresXWatchAccountRepository,
+)
 
 
 class Lifecycle:
@@ -84,6 +87,7 @@ def test_factory_builds_postgres_protocol_adapters() -> None:
         "project_collections": PostgresProjectWriteRepository,
         "project_recommendations": PostgresProjectWriteRepository,
         "github_semantic_sources": PostgresGitHubProjectSemanticSourceRepository,
+        "x_watch_accounts": PostgresXWatchAccountRepository,
     }
     for name, adapter in expected.items():
         repository = getattr(repositories, name)

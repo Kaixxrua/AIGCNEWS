@@ -64,6 +64,9 @@ from backend.app.repositories.postgres_runtime_provider_repository import (
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
+from backend.app.repositories.postgres_x_watch_repository import (
+    PostgresXWatchAccountRepository,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectIngestionRepository,
@@ -84,6 +87,7 @@ from backend.app.repositories.task_repository import (
     RecentTaskReader,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 
 
 class ApplicationIngestionTaskRepository(
@@ -116,6 +120,7 @@ class ApplicationRepositories:
     project_collections: UserProjectCollectionRepository
     project_recommendations: GitHubProjectRecommendationRepository
     github_semantic_sources: GitHubProjectSemanticSourceRepository
+    x_watch_accounts: XWatchAccountRepository
 
 
 def create_application_repositories(
@@ -141,4 +146,5 @@ def create_application_repositories(
         project_collections=PostgresProjectWriteRepository(postgres),
         project_recommendations=PostgresProjectWriteRepository(postgres),
         github_semantic_sources=PostgresGitHubProjectSemanticSourceRepository(postgres),
+        x_watch_accounts=PostgresXWatchAccountRepository(postgres),
     )
