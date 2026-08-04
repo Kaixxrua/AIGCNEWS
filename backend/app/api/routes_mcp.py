@@ -11,6 +11,7 @@ from backend.app.api.dependencies import (
     get_project_search_runtime,
 )
 from backend.app.core.auth import OptionalMcpUser
+from backend.app.monitoring.mcp_tools import MCP_TOOL_CALL_METRICS
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
@@ -69,6 +70,7 @@ async def mcp_endpoint(
             tools=tool_context,
             briefing_repository=briefing_repository,
             session_transport=_MCP_SESSION_TRANSPORT,
+            tool_call_metrics=MCP_TOOL_CALL_METRICS,
         )
     )
 

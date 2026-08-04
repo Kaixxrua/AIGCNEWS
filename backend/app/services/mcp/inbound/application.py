@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date as _date, timedelta as _td
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from backend.app.monitoring.mcp_tools import (
+    MCP_TOOL_CALL_METRICS,
+    McpToolCallMetrics,
+)
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
@@ -73,6 +77,9 @@ class McpProtocolDependencies:
     tools: McpToolContext
     briefing_repository: BriefingReader
     session_transport: McpSessionTransport
+    tool_call_metrics: McpToolCallMetrics = field(
+        default_factory=lambda: MCP_TOOL_CALL_METRICS
+    )
 
 
 @dataclass(frozen=True)
@@ -162,6 +169,7 @@ class McpProtocolApplication:
                     _JSONRPC_INVALID_PARAMS,
                     "tools/call params.name is required",
                 )
+            self._dependencies.tool_call_metrics.record(name)
             arguments = params.get("arguments", {})
             if (
                 name == "search_my_project_favorites"
@@ -337,13 +345,15 @@ def _resource_tool_args(
     query: dict[str, str], *, integer_fields: set[str]
 ) -> dict[str, Any]:
     args: dict[str, Any] = dict(query)
-    for field in integer_fields:
-        if field not in args:
+    for integer_field in integer_fields:
+        if integer_field not in args:
             continue
         try:
-            args[field] = int(args[field])
+            args[integer_field] = int(args[integer_field])
         except (TypeError, ValueError):
-            raise McpResourceInputError(f"{field} must be an integer.") from None
+            raise McpResourceInputError(
+                f"{integer_field} must be an integer."
+            ) from None
     return args
 
 

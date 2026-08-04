@@ -3,6 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from backend.app.monitoring.mcp_tools import (
+    MCP_TOOL_CALL_METRICS,
+    McpToolCallMetrics,
+)
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
@@ -17,10 +21,12 @@ def collect_metrics(
     evaluation_reader: EvaluationSummaryReader,
     document_statistics: DocumentStatisticsReader,
     briefing_reader: BriefingReader,
+    mcp_tool_calls: McpToolCallMetrics | None = None,
 ) -> Dict[str, Any]:
     """Collect runtime metrics for the monitor dashboard."""
 
     uptime_seconds = (datetime.now(timezone.utc) - _START_TIME).total_seconds()
+    tool_calls = (mcp_tool_calls or MCP_TOOL_CALL_METRICS).snapshot()
 
     try:
         task_summary = _task_summary(task_reader)
@@ -48,6 +54,7 @@ def collect_metrics(
         "briefing_count": briefing_count,
         "tasks": task_summary,
         "rag_evaluation": eval_summary,
+        "mcp_tool_calls": tool_calls,
     }
 
 
