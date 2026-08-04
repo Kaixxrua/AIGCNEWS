@@ -1,0 +1,4 @@
+# 构建上下文净化：builder 阶段在镜像内执行 npm install / npm run build，
+# 宿主 node_modules 与 dist 不应进入构建上下文（否则覆盖镜像内安装结果）。
+node_modules/
+dist/

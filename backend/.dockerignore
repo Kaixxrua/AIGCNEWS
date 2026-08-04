@@ -1,0 +1,9 @@
+# 构建上下文净化：容器以系统 Python 运行，本地虚拟环境与缓存产物不进镜像。
+# 此前每个 18GB 镜像含 5.5GB 无用 .venv，且每次构建向 buildkit 传输等量上下文。
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+storage/
