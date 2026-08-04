@@ -2,9 +2,9 @@ import { api } from '@/services/http/apiClient'
 import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm,
-  SchedulerStatus, SourceKey,
+  SchedulerStatus, SourceKey, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, createEmptyMcpToolCallMetrics } from '@/features/monitor/monitorModel'
+import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
@@ -16,6 +16,10 @@ export interface MonitorApi {
   saveMcpServer(form: McpServerForm): Promise<McpServerConfig>
   testMcpServer(id: number): Promise<{ server?: McpServerConfig; status?: string; message?: string }>
   deleteMcpServer(id: number): Promise<{ message?: string }>
+  fetchXWatchAccounts(): Promise<XWatchAccount[]>
+  saveXWatchAccount(form: XWatchAccountForm): Promise<XWatchAccount>
+  deleteXWatchAccount(id: number): Promise<{ message?: string; deleted?: boolean }>
+  testXWatchAccount(id: number): Promise<{ status?: string; message?: string; account?: XWatchAccount }>
   ingestSource(source: SourceKey): Promise<{ message?: string }>
   generateAllBriefings(forceRegenerate: boolean): Promise<{ message?: string }>
   clearDashboardCache(): Promise<{ message?: string }>
@@ -56,6 +60,19 @@ export const monitorApi: MonitorApi = {
   },
   async testMcpServer(id) { return (await api.post(`/ops/mcp-servers/${id}/test`, null, { timeout: 30_000 })).data },
   async deleteMcpServer(id) { return (await api.delete(`/ops/mcp-servers/${id}`)).data },
+  async fetchXWatchAccounts() {
+    const { data } = await api.get('/ops/x-watch-accounts')
+    return Array.isArray(data?.items) ? data.items : []
+  },
+  async saveXWatchAccount(form) {
+    const payload = buildXWatchPayload(form)
+    return form.id
+      ? (await api.put(`/ops/x-watch-accounts/${form.id}`, payload)).data
+      : (await api.post('/ops/x-watch-accounts', payload)).data
+  },
+  async deleteXWatchAccount(id) { return (await api.delete(`/ops/x-watch-accounts/${id}`)).data },
+  // 测试会真实请求 X 拉取推文（先例：testMcpServer 的 30s 超时）
+  async testXWatchAccount(id) { return (await api.post(`/ops/x-watch-accounts/${id}/test`, null, { timeout: 30_000 })).data },
   async ingestSource(source) { return (await api.post('/ops/ingest-source', null, { params: { source, limit: 20 } })).data },
   async generateAllBriefings(forceRegenerate) {
     return (await api.post('/ops/briefing/generate-all', null, { params: { force_regenerate: forceRegenerate } })).data

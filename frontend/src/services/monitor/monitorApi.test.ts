@@ -83,6 +83,41 @@ describe('Monitor API contract', () => {
     expect(transport.post).toHaveBeenLastCalledWith('/ops/ingest-by-date', { target_date: '2026-07-20', limit: 30 })
   })
 
+  it('preserves X watch account endpoints, payload mapping, and 30 second test timeout', async () => {
+    const xAccount = {
+      id: 3, screen_name: 'openai', display_name: 'OpenAI', note: '', enabled: true,
+      sort_order: 1, last_test_status: 'success', last_test_message: '', last_test_at: null,
+      created_at: null, updated_at: null,
+    }
+    transport.get.mockResolvedValue({ data: { items: [xAccount] } })
+    await expect(monitorApi.fetchXWatchAccounts()).resolves.toEqual([xAccount])
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/x-watch-accounts')
+
+    transport.get.mockResolvedValue({ data: {} })
+    await expect(monitorApi.fetchXWatchAccounts()).resolves.toEqual([])
+
+    transport.post.mockResolvedValue({ data: xAccount })
+    const form = {
+      id: null, screen_name: 'openai', display_name: 'OpenAI', note: '官方', enabled: true, sort_order: 1,
+    }
+    await monitorApi.saveXWatchAccount(form)
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/x-watch-accounts', {
+      screen_name: 'openai', display_name: 'OpenAI', note: '官方', enabled: true, sort_order: 1,
+    })
+
+    transport.put.mockResolvedValue({ data: xAccount })
+    await monitorApi.saveXWatchAccount({ ...form, id: 3 })
+    expect(transport.put).toHaveBeenLastCalledWith('/ops/x-watch-accounts/3',
+      expect.objectContaining({ screen_name: 'openai', sort_order: 1 }))
+
+    await monitorApi.testXWatchAccount(3)
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/x-watch-accounts/3/test', null, { timeout: 30_000 })
+
+    transport.delete.mockResolvedValue({ data: { deleted: true, id: 3 } })
+    await monitorApi.deleteXWatchAccount(3)
+    expect(transport.delete).toHaveBeenLastCalledWith('/ops/x-watch-accounts/3')
+  })
+
   it('preserves GitHub crawl trigger payload, snake_case mapping, and extended timeout', async () => {
     transport.post.mockResolvedValue({ data: { status: 'queued' } })
     const form = { ...createGithubCrawlForm('2026-08-04'), pushedAfter: '2025-07-09' }

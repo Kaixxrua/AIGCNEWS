@@ -43,6 +43,7 @@ const createApi = (): MonitorApi => ({
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
+  fetchXWatchAccounts: vi.fn(async () => []), saveXWatchAccount: vi.fn(), deleteXWatchAccount: vi.fn(), testXWatchAccount: vi.fn(),
 })
 
 const createController = (api = createApi(), isAdmin = true) => {

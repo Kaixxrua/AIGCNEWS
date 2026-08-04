@@ -207,3 +207,59 @@ export const removeMcpServer = (servers: McpServerConfig[], id: number) => serve
 export const replaceMcpServer = (servers: McpServerConfig[], updated?: McpServerConfig) => (
   updated ? servers.map((item) => item.id === updated.id ? updated : item) : servers
 )
+
+export interface XWatchAccount {
+  id: number
+  screen_name: string
+  display_name: string
+  note: string
+  enabled: boolean
+  sort_order: number
+  last_test_status: string
+  last_test_message: string
+  last_test_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface XWatchAccountForm {
+  id: number | null
+  screen_name: string
+  display_name: string
+  note: string
+  enabled: boolean
+  sort_order: number
+}
+
+export const createEmptyXWatchForm = (): XWatchAccountForm => ({
+  id: null, screen_name: '', display_name: '', note: '', enabled: true, sort_order: 0,
+})
+
+export const createXWatchForm = (account: XWatchAccount): XWatchAccountForm => ({
+  id: account.id,
+  screen_name: account.screen_name,
+  display_name: account.display_name || '',
+  note: account.note || '',
+  enabled: account.enabled,
+  sort_order: account.sort_order,
+})
+
+export const buildXWatchPayload = (form: XWatchAccountForm) => ({
+  screen_name: form.screen_name,
+  display_name: form.display_name,
+  note: form.note,
+  enabled: form.enabled,
+  sort_order: form.sort_order,
+})
+
+export const upsertXWatchAccount = (accounts: XWatchAccount[], saved: XWatchAccount) => {
+  const index = accounts.findIndex((item) => item.id === saved.id)
+  if (index < 0) return [saved, ...accounts]
+  return accounts.map((item, itemIndex) => itemIndex === index ? saved : item)
+}
+
+export const removeXWatchAccount = (accounts: XWatchAccount[], id: number) => accounts.filter((item) => item.id !== id)
+
+export const replaceXWatchAccount = (accounts: XWatchAccount[], updated?: XWatchAccount) => (
+  updated ? accounts.map((item) => item.id === updated.id ? updated : item) : accounts
+)

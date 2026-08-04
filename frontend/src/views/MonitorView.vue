@@ -9,6 +9,7 @@ import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionC
 import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
 import MonitorTaskPanel from '@/components/monitor/MonitorTaskPanel.vue'
 import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
+import XWatchCard from '@/components/monitor/XWatchCard.vue'
 import { useMonitorPageController } from '@/composables/useMonitorPageController'
 
 const { t } = useI18n()
@@ -99,6 +100,9 @@ onMounted(refreshData)
       @test="testMcpServer"
       @delete="deleteMcpServer"
     />
+
+    <!-- Admin 专属：X 关注账号 -->
+    <XWatchCard v-if="authStore.isAdmin" />
 
     <!-- Admin 专属：采集控制 -->
     <MonitorIngestionControls
