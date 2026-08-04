@@ -158,6 +158,34 @@ def test_all_source_query_keeps_source_order_exact_channels_and_limit() -> None:
     ]
 
 
+def test_x_source_query_reads_watchlist_channel_and_joins_daily_all() -> None:
+    date = "2025-01-02"
+    x_doc = {"id": "tweet", "source": "x"}
+    reader = FakeRankSnapshotReader({(date, "x_daily_watchlist", "x"): [x_doc]})
+
+    assert routes_dashboard._get_docs_for_date(reader, date, "daily", "x", 25) == [x_doc]
+    assert reader.document_calls == [(date, "x_daily_watchlist", "x", 25)]
+
+    # X 无周/月频道：单源周/月查询不产生任何读取
+    weekly_reader = FakeRankSnapshotReader()
+    assert routes_dashboard._get_docs_for_date(weekly_reader, date, "weekly", "x", 25) == []
+    assert weekly_reader.document_calls == []
+
+    # daily 混合流：x 频道在 hackernews 之后按序读取
+    all_reader = FakeRankSnapshotReader()
+    assert routes_dashboard._get_docs_for_date(all_reader, date, "daily", None, 41) == []
+    assert all_reader.document_calls == [
+        (date, "huggingface_daily_html", "arxiv", 41),
+        (date, "github_trending_daily", "github", 41),
+        (date, "github_hot_daily", "github", 41),
+        (date, "github_fallback", "github", 41),
+        (date, "techmeme_daily_rss", "news", 41),
+        (date, "producthunt_daily_html", "producthunt", 41),
+        (date, "hn_daily_html", "hackernews", 41),
+        (date, "x_daily_watchlist", "x", 41),
+    ]
+
+
 def test_query_service_matches_legacy_fallback_output_and_call_order() -> None:
     date = "2025-01-02"
     documents = {

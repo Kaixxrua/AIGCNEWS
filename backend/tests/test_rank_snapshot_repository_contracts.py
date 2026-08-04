@@ -66,6 +66,7 @@ class RankSnapshotRepositoryContractTests(unittest.TestCase):
             ("huggingface_monthly_html",),
         )
         self.assertEqual(SNAPSHOT_PERIOD_CHANNELS["news"], {"daily": ("techmeme_daily_rss",)})
+        self.assertEqual(SNAPSHOT_PERIOD_CHANNELS["x"], {"daily": ("x_daily_watchlist",)})
 
 
 if __name__ == "__main__":

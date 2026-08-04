@@ -74,6 +74,7 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "news": 1.0,
     "producthunt": 1.0,
     "hackernews": 1.0,
+    "x": 1.0,
 }
 
 PRODUCTHUNT_PERIOD_CHANNELS = {

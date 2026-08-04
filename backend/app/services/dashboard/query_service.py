@@ -33,6 +33,10 @@ SOURCE_PERIOD_CHANNELS: dict[str, dict[str, str]] = {
         "weekly": "hn_weekly_html",
         "monthly": "hn_monthly_html",
     },
+    # X 仅 daily：推文无周/月榜语义（采集器 supported_periods=["daily"]）
+    "x": {
+        "daily": "x_daily_watchlist",
+    },
 }
 
 SAME_PERIOD_FALLBACKS: dict[str, dict[str, tuple[str, ...]]] = {

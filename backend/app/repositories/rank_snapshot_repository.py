@@ -24,6 +24,7 @@ SNAPSHOT_PERIOD_CHANNELS: dict[str, dict[str, tuple[str, ...]]] = {
         "weekly": ("hn_weekly_html",),
         "monthly": ("hn_monthly_html",),
     },
+    "x": {"daily": ("x_daily_watchlist",)},
 }
 
 
