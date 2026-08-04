@@ -101,7 +101,7 @@ const hoveredAuth = ref(false)
   background: var(--paper-raised);
   border: 1px solid var(--rule-strong);
   border-radius: 10px;
-  box-shadow: 4px 4px 0 var(--ink);
+  box-shadow: 4px 4px 0 var(--dock-shadow);
 }
 
 .dock-item {
