@@ -45,6 +45,17 @@ describe('MCP connect view controller boundary', () => {
     expect(template).not.toContain('>MCP-first routing</p>')
   })
 
+  it('localizes client catalog and public tool copy through i18n keys', () => {
+    expect(template).toContain('clientDisplayLabel(client)')
+    expect(template).toContain('t(client.descriptionKey)')
+    expect(template).toContain('clientConfigTarget(clientOption)')
+    expect(template).toContain('t(tool.descriptionKey)')
+    expect(template).not.toContain('{{ client.label }}')
+    expect(template).not.toContain('{{ client.description }}')
+    expect(template).not.toContain('{{ clientOption.configPath }}')
+    expect(template).not.toContain('{{ tool.description }}')
+  })
+
   it('keeps only presentation formatting in the view while preserving transient command privacy', () => {
     expect(script).toContain('const setupScopeLabel = computed(')
     expect(script).toContain('const setupTargetDescription = computed(')

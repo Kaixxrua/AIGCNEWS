@@ -4,40 +4,41 @@ import {
   isActivePublicToolDiscovery,
   normalizePublicTools,
   PUBLIC_TOOLS,
+  UNKNOWN_TOOL_DESCRIPTION_KEY,
   type PublicToolDiscoveryState,
 } from './publicToolsModel'
 
 const endpoint = 'https://example.test/api/mcp'
 
 describe('public MCP tool display model', () => {
-  it('provides the eight public tools with Chinese descriptions by default', () => {
+  it('provides the eight public tools with localizable description keys by default', () => {
     const tools = displayedPublicTools(endpoint, { status: 'idle', endpoint })
 
     expect(tools).toHaveLength(8)
     expect(tools.map((tool) => tool.name)).toEqual(PUBLIC_TOOLS.map((tool) => tool.name))
-    expect(tools.every((tool) => /[㐀-鿿]/u.test(tool.description))).toBe(true)
-    expect(tools.find((tool) => tool.name === 'get_top_items')?.description).toBe('读取日榜、周榜和月榜公开排行。')
-    expect(tools.find((tool) => tool.name === 'search_github_ai_projects')?.description).toContain('智能体')
+    expect(tools.every((tool) => tool.descriptionKey.startsWith('mcp.tools.'))).toBe(true)
+    expect(tools.find((tool) => tool.name === 'get_top_items')?.descriptionKey).toBe('mcp.tools.get_top_items')
+    expect(tools.find((tool) => tool.name === 'search_github_ai_projects')?.descriptionKey).toBe('mcp.tools.search_github_ai_projects')
   })
 
-  it('replaces server descriptions for known tools with local Chinese copy', () => {
+  it('replaces server descriptions for known tools with local description keys', () => {
     const tools = normalizePublicTools([
       { name: 'search_papers', description: 'English server description' },
     ])
 
     expect(tools).toEqual([
-      { name: 'search_papers', description: '检索公开 arXiv 论文与学术文献。' },
+      { name: 'search_papers', descriptionKey: 'mcp.tools.search_papers' },
     ])
     expect(JSON.stringify(tools)).not.toContain('English server description')
   })
 
-  it('uses a Chinese fallback for unknown tools without exposing server copy', () => {
+  it('uses a fallback description key for unknown tools without exposing server copy', () => {
     const tools = normalizePublicTools([
       { name: 'future_public_tool', description: 'English future tool' },
     ])
 
     expect(tools).toEqual([
-      { name: 'future_public_tool', description: '该端点提供的公开 MCP 工具。' },
+      { name: 'future_public_tool', descriptionKey: UNKNOWN_TOOL_DESCRIPTION_KEY },
     ])
     expect(JSON.stringify(tools)).not.toContain('English future tool')
   })
@@ -67,7 +68,7 @@ describe('public MCP tool display model', () => {
       status: 'success',
       endpoint: 'https://old.example/api/mcp',
       runId: 1,
-      tools: [{ name: 'old_tool', description: '旧工具' }],
+      tools: [{ name: 'old_tool', descriptionKey: UNKNOWN_TOOL_DESCRIPTION_KEY }],
     }
 
     expect(displayedPublicTools(endpoint, state)).toEqual(PUBLIC_TOOLS)

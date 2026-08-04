@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useClipboard } from '../composables/useClipboard'
 import { useMcpConnectController } from '../composables/useMcpConnectController'
-import { mcpClientOptions } from '../features/mcp/mcpClientCatalog'
+import { mcpClientOptions, type McpClientOption } from '../features/mcp/mcpClientCatalog'
 import { resolveMcpFeedback } from '../features/mcp/mcpFeedback'
 import { formatLocaleDate } from '../i18n/formatters'
 import { useAuthStore } from '../stores/authStore'
@@ -16,6 +16,7 @@ const { copy } = useClipboard()
 const SCOPE = 'projects:favorites:read'
 
 const {
+  clientDisplayLabel,
   clientLabel,
   clientOption,
   copiedKey,
@@ -68,21 +69,22 @@ const setupScopeKeys = {
   'import-file': 'importFile',
 } as const
 const setupScopeLabel = computed(() => t(`mcp.scope.${setupScopeKeys[clientOption.value.setupScope]}`))
+const clientConfigTarget = (option: McpClientOption) => (option.configPathKey ? t(option.configPathKey) : option.configPath)
 const setupTargetDescription = computed(() => {
   if (clientOption.value.id === 'claude-code') return t('mcp.resultClaudeCode')
-  if (clientOption.value.id === 'continue') return t('mcp.resultContinue', { path: clientOption.value.configPath })
+  if (clientOption.value.id === 'continue') return t('mcp.resultContinue', { path: clientConfigTarget(clientOption.value) })
   if (clientOption.value.id === 'vscode') return t('mcp.resultVsCode')
   if (clientOption.value.id === 'codex') return selectedShell.value === 'bash'
     ? t('mcp.codexResult')
     : t('mcp.resultCodexWindows')
-  return t('mcp.resultImport', { path: clientOption.value.configPath })
+  return t('mcp.resultImport', { path: clientConfigTarget(clientOption.value) })
 })
 const setupResultDescription = computed(() => {
   if (clientOption.value.id === 'claude-code') return t('mcp.hintClaudeCode')
   if (clientOption.value.id === 'continue') return t('mcp.hintContinue')
   if (clientOption.value.id === 'vscode') return t('mcp.hintVsCode')
   if (clientOption.value.id === 'codex') return t('mcp.hintCodex')
-  return t('mcp.hintImport', { path: clientOption.value.configPath })
+  return t('mcp.hintImport', { path: clientConfigTarget(clientOption.value) })
 })
 const tokenStatusLabel = (status: ReturnType<typeof tokenStatus>) => t(`mcp.${status}`)
 const formatDate = (value?: string | null) => value
@@ -129,7 +131,7 @@ onBeforeUnmount(dispose)
         <div v-if="authStore.isLoggedIn" class="mt-6 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
           <div class="rounded-[24px] border border-stone-200/80 bg-white/65 p-5">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.stepChoose') }}</p>
-            <div class="mt-4 grid gap-2 sm:grid-cols-2"><button v-for="client in clientOptions" :key="client.id" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-white'" @click="selectedClient = client.id"><span class="flex flex-wrap items-center gap-2"><span class="text-sm font-semibold text-stone-800">{{ client.label }}</span><span class="rounded-full bg-stone-100 px-2 py-0.5 text-2xs font-semibold text-stone-500">{{ t(`mcp.scope.${setupScopeKeys[client.setupScope]}`) }}</span></span><span class="mt-1 block text-2xs leading-4 text-stone-400">{{ client.description }}</span></button></div>
+            <div class="mt-4 grid gap-2 sm:grid-cols-2"><button v-for="client in clientOptions" :key="client.id" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-white'" @click="selectedClient = client.id"><span class="flex flex-wrap items-center gap-2"><span class="text-sm font-semibold text-stone-800">{{ clientDisplayLabel(client) }}</span><span class="rounded-full bg-stone-100 px-2 py-0.5 text-2xs font-semibold text-stone-500">{{ t(`mcp.scope.${setupScopeKeys[client.setupScope]}`) }}</span></span><span class="mt-1 block text-2xs leading-4 text-stone-400">{{ t(client.descriptionKey) }}</span></button></div>
             <p class="mt-5 text-sm font-semibold text-stone-700">{{ t('mcp.terminal') }}</p>
             <div class="mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-white text-stone-600'" @click="selectedShell = shell.id">{{ shell.labelKey ? t(shell.labelKey) : shell.label }}</button></div>
             <label class="mt-5 block text-xs font-semibold text-stone-600">{{ t('mcp.deviceLabel') }}</label><input v-model="clientLabel" maxlength="128" class="input mt-2" :placeholder="t('mcp.devicePlaceholder')" />
@@ -138,7 +140,7 @@ onBeforeUnmount(dispose)
           <div class="rounded-[24px] border border-stone-200/80 bg-stone-50/70 p-5">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.stepConfirm') }}</p>
             <div class="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4"><p class="text-sm font-semibold text-cyan-900">{{ t('mcp.permission') }}</p><p class="mt-1 font-mono text-2xs text-cyan-700">{{ SCOPE }}</p><p class="mt-2 text-xs leading-5 text-cyan-800/80">{{ t('mcp.bearerMemory') }}</p></div>
-            <div class="mt-4 rounded-2xl border border-stone-200 bg-white/75 p-4"><div class="flex flex-wrap items-center gap-2"><span class="rounded-full bg-stone-100 px-2.5 py-1 text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span><span class="text-xs font-semibold text-stone-700">{{ clientOption.configPath }}</span></div><p class="mt-2 text-xs leading-5 text-stone-500">{{ setupTargetDescription }}</p></div>
+            <div class="mt-4 rounded-2xl border border-stone-200 bg-white/75 p-4"><div class="flex flex-wrap items-center gap-2"><span class="rounded-full bg-stone-100 px-2.5 py-1 text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span><span class="text-xs font-semibold text-stone-700">{{ clientConfigTarget(clientOption) }}</span></div><p class="mt-2 text-xs leading-5 text-stone-500">{{ setupTargetDescription }}</p></div>
             <p class="mt-3 text-xs leading-5 text-stone-500">{{ t('mcp.multipleTokens') }}</p>
             <button class="btn-primary mt-3 w-full justify-center" :disabled="creating" @click="startSetup">{{ t(creating ? 'mcp.creating' : clientOption.setupScope === 'import-file' ? 'mcp.generateImport' : 'mcp.generateCommand') }}</button>
             <div v-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">{{ t('mcp.bearerWarning') }}</p><p class="mt-1 text-xs font-semibold leading-5 text-amber-800">{{ t('mcp.bearerWarningDetail') }}</p><p class="mt-2 text-xs leading-5 text-amber-700">{{ t('mcp.hiddenConfig', { result: setupResultDescription }) }}</p><button class="btn-primary mt-3 text-xs" @click="copyGeneratedCommand">{{ t(copiedKey === 'command' ? 'mcp.copiedClipboard' : 'mcp.copyOneTime') }}</button></div>
@@ -170,7 +172,7 @@ onBeforeUnmount(dispose)
 
       <section class="glass-card p-5">
         <div class="flex flex-wrap items-center justify-between gap-2"><div><p class="text-sm font-semibold text-stone-800">{{ t('mcp.publicTools') }}</p><p class="mt-1 text-xs text-stone-500">{{ t('mcp.publicToolsDescription') }}</p></div><span class="rounded-full bg-stone-100 px-3 py-1 text-2xs text-stone-500">{{ t('mcp.toolCount', { count: displayedPublicTools.length }) }}</span></div>
-        <div class="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3"><div v-for="tool in displayedPublicTools" :key="tool.name" class="rounded-2xl border border-stone-200 bg-white/70 px-3 py-2"><p class="font-mono text-2xs font-semibold text-stone-700">{{ tool.name }}</p><p class="mt-1 text-2xs leading-4 text-stone-400">{{ tool.description }}</p></div></div>
+        <div class="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3"><div v-for="tool in displayedPublicTools" :key="tool.name" class="rounded-2xl border border-stone-200 bg-white/70 px-3 py-2"><p class="font-mono text-2xs font-semibold text-stone-700">{{ tool.name }}</p><p class="mt-1 text-2xs leading-4 text-stone-400">{{ t(tool.descriptionKey) }}</p></div></div>
       </section>
       </div>
     </div>

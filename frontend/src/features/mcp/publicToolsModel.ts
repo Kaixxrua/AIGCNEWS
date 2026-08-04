@@ -1,6 +1,6 @@
 export interface PublicTool {
   name: string
-  description: string
+  descriptionKey: string
 }
 
 export type PublicToolDiscoveryState =
@@ -9,19 +9,20 @@ export type PublicToolDiscoveryState =
   | { status: 'success'; endpoint: string; runId: number; tools: PublicTool[] }
   | { status: 'error'; endpoint: string; runId: number }
 
+export const UNKNOWN_TOOL_DESCRIPTION_KEY = 'mcp.tools.unknown'
+
 export const PUBLIC_TOOLS: readonly PublicTool[] = [
-  { name: 'search_papers', description: '检索公开 arXiv 论文与学术文献。' },
-  { name: 'search_documents', description: '检索新闻、论文、GitHub 等跨来源索引内容。' },
-  { name: 'get_paper_detail', description: '读取单篇公开索引文档的详细元数据。' },
-  { name: 'get_top_items', description: '读取日榜、周榜和月榜公开排行。' },
-  { name: 'search_github_projects', description: '优先搜索非 AI 项目、组件、SDK、框架、模板与开源软件。' },
-  { name: 'search_github_ai_projects', description: '优先搜索本地 AI / 智能体 / MCP / RAG / LLM 项目库。' },
-  { name: 'get_project_library', description: '兼容读取 GitHub AI 项目库。' },
-  { name: 'get_project_categories', description: '读取 AI 项目分类与数量。' },
+  { name: 'search_papers', descriptionKey: 'mcp.tools.search_papers' },
+  { name: 'search_documents', descriptionKey: 'mcp.tools.search_documents' },
+  { name: 'get_paper_detail', descriptionKey: 'mcp.tools.get_paper_detail' },
+  { name: 'get_top_items', descriptionKey: 'mcp.tools.get_top_items' },
+  { name: 'search_github_projects', descriptionKey: 'mcp.tools.search_github_projects' },
+  { name: 'search_github_ai_projects', descriptionKey: 'mcp.tools.search_github_ai_projects' },
+  { name: 'get_project_library', descriptionKey: 'mcp.tools.get_project_library' },
+  { name: 'get_project_categories', descriptionKey: 'mcp.tools.get_project_categories' },
 ]
 
-const UNKNOWN_TOOL_DESCRIPTION = '该端点提供的公开 MCP 工具。'
-const localizedDescriptions = new Map(PUBLIC_TOOLS.map((tool) => [tool.name, tool.description]))
+const localizedDescriptionKeys = new Map(PUBLIC_TOOLS.map((tool) => [tool.name, tool.descriptionKey]))
 
 export function normalizePublicTools(value: unknown[]): PublicTool[] {
   const seen = new Set<string>()
@@ -36,7 +37,7 @@ export function normalizePublicTools(value: unknown[]): PublicTool[] {
     seen.add(name)
     tools.push({
       name,
-      description: localizedDescriptions.get(name) ?? UNKNOWN_TOOL_DESCRIPTION,
+      descriptionKey: localizedDescriptionKeys.get(name) ?? UNKNOWN_TOOL_DESCRIPTION_KEY,
     })
   }
 

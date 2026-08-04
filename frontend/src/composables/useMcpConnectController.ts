@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import {
   mcpClientOptions,
   type McpClientId,
+  type McpClientOption,
   type McpShellId,
 } from '../features/mcp/mcpClientCatalog'
 import { generateMcpClientCommand } from '../features/mcp/mcpCommandGenerator'
@@ -124,6 +125,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     }
   })
   const clientOption = computed(() => mcpClientOptions.find((item) => item.id === selectedClient.value)!)
+  const clientDisplayLabel = (option: McpClientOption) => (option.labelKey ? translate(option.labelKey) : option.label)
   const discoveryState = ref<PublicToolDiscoveryState>({ status: 'idle', endpoint: normalizedEndpoint.value })
   const testing = computed(() => discoveryState.value.status === 'running')
   const displayedPublicTools = computed(() => resolveDisplayedPublicTools(normalizedEndpoint.value, discoveryState.value))
@@ -205,11 +207,12 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     const shell = selectedShell.value
     const endpoint = normalizedEndpoint.value
     const label = clientLabel.value.trim()
+    const displayLabel = clientDisplayLabel(selectedOption)
     creating.value = true
     try {
       const result = await api.createMcpToken({
         client_type: selectedOption.apiType,
-        client_label: label ? `${selectedOption.label} · ${label}` : selectedOption.label,
+        client_label: label ? `${displayLabel} · ${label}` : displayLabel,
         scopes: [SCOPE],
       })
       if (activeLifecycle(lifecycle) && generation === setupGeneration) {
@@ -325,6 +328,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
   }
 
   return {
+    clientDisplayLabel,
     clientLabel,
     clientOption,
     clearTransientCommand,
