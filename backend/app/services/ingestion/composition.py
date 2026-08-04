@@ -57,6 +57,7 @@ def provide_ingestion_dependencies(
         HackerNewsCrawler,
         NewsCrawler,
         ProductHuntCrawler,
+        XCrawler,
     )
     from backend.app.services.ingestion.graph_extractor import GraphExtractor
 
@@ -77,5 +78,6 @@ def provide_ingestion_dependencies(
             NewsCrawler,
             ProductHuntCrawler,
             HackerNewsCrawler,
+            XCrawler,
         ),
     )

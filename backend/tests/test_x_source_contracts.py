@@ -270,5 +270,92 @@ class XTransportContracts(unittest.IsolatedAsyncioTestCase):
         client_type.assert_called_once_with("tok", "ct0")
 
 
+class _FakeTransport:
+    """crawler 测试用 fake transport（async 方法）。"""
+
+    def __init__(self, result=None, error: Exception | None = None) -> None:
+        self._result = result if result is not None else {}
+        self._error = error
+        self.calls: list[tuple] = []
+
+    async def fetch_watchlist_tweets(self, handles, count_per_user):
+        self.calls.append((list(handles), count_per_user))
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+
+class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
+    def _crawler(self, transport, handles=("openai",)):
+        from backend.app.services.ingestion.crawlers import x_crawler
+
+        return x_crawler.XCrawler(
+            transport=transport,
+            watchlist_provider=lambda: list(handles),
+            tweets_per_account=7,
+        )
+
+    async def test_fetch_projects_tweets_with_fixed_channel_and_snapshot(self) -> None:
+        from backend.app.services.ingestion.crawlers import x_crawler
+
+        transport = _FakeTransport(
+            result={"openai": [_tweet("1002", likes=10, retweets=2, replies=1, bookmarks=3, views=100)]}
+        )
+        crawler = self._crawler(transport)
+
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-04"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(transport.calls, [(["openai"], 7)])
+        self.assertIsNone(result.error)
+        self.assertEqual(result.source, "x")
+        self.assertEqual(result.source_channel, "x_daily_watchlist")
+        self.assertEqual(result.snapshot_date, "2026-08-04")
+        self.assertEqual(result.period, "daily")
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.items[0]["tweet_id"], "1002")
+        self.assertEqual(result.items[0]["source"], "x")
+        self.assertEqual(result.items[0]["source_channel"], "x_daily_watchlist")
+        self.assertEqual(result.items[0]["channel"], "x_daily_watchlist")
+
+    async def test_empty_watchlist_returns_ok_zero_items(self) -> None:
+        transport = _FakeTransport()
+        crawler = self._crawler(transport, handles=())
+
+        result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertIsNone(result.error)
+        self.assertEqual(result.items, [])
+        self.assertEqual(transport.calls, [])  # 未触碰 transport
+
+    async def test_auth_failures_become_error_result_with_channel(self) -> None:
+        for error, marker in (
+            (x_transport.XAuthNotConfigured("x_auth_not_configured: set ..."), "x_auth_not_configured"),
+            (x_transport.XAuthAbort("x_auth_expired: dead cookie"), "x_auth_expired"),
+            (x_transport.XRateLimitAbort("x_rate_limited: 429"), "x_rate_limited"),
+        ):
+            with self.subTest(marker=marker):
+                crawler = self._crawler(_FakeTransport(error=error))
+                result = await crawler._do_fetch(period="daily", limit=25)
+                self.assertEqual(result.items, [])
+                self.assertEqual(result.source_channel, "x_daily_watchlist")
+                self.assertIn(marker, result.error)
+
+    async def test_fetch_isolates_unexpected_exceptions(self) -> None:
+        def _boom():
+            raise RuntimeError("provider exploded")
+
+        from backend.app.services.ingestion.crawlers import x_crawler
+
+        crawler = x_crawler.XCrawler(
+            transport=_FakeTransport(),
+            watchlist_provider=_boom,
+        )
+        result = await crawler.fetch(period="daily", limit=25)
+        self.assertIsNotNone(result.error)
+        self.assertIn("provider exploded", result.error)
+        self.assertEqual(result.source_channel, "x_daily_error")
+
+
 if __name__ == "__main__":
     unittest.main()

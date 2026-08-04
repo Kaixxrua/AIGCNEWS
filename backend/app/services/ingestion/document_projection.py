@@ -23,6 +23,12 @@ def document_id(paper: dict) -> str:
         )
         return hashlib.md5(f"github:{key}".encode()).hexdigest()
 
+    if source == "x":
+        # 推文以 tweet_id 为稳定身份，避免 URL 策略漂移导致重复入库
+        tweet_id = paper.get("tweet_id")
+        if tweet_id:
+            return hashlib.md5(f"x:{tweet_id}".encode()).hexdigest()
+
     key = paper.get("url") or paper.get("title") or str(paper)
     return hashlib.md5(f"{source}:{key}".encode()).hexdigest()
 

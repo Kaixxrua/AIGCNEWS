@@ -8,6 +8,7 @@ from backend.app.services.ingestion.content_enrichment_policy import (
     ContentEnrichmentPolicy,
     compose_huggingface_content,
     compose_producthunt_content,
+    compose_x_content,
     select_github_content,
     select_hackernews_content,
     select_news_content,
@@ -93,6 +94,11 @@ async def enrich_news(
 def enrich_producthunt(paper: Dict[str, Any]) -> Dict[str, Any]:
     """Compose Product Hunt content without an additional fetch."""
     return apply_content_policy(paper, compose_producthunt_content(paper))
+
+
+def enrich_x(paper: Dict[str, Any]) -> Dict[str, Any]:
+    """Compose X tweet content without an additional fetch."""
+    return apply_content_policy(paper, compose_x_content(paper))
 
 
 async def enrich_hackernews(

@@ -188,6 +188,23 @@ class ContentEnricherSourceCompositionContractTests(unittest.IsolatedAsyncioTest
         content_enricher.enrich_producthunt(title)
         self.assertEqual(title["full_text"], "Launch only")
 
+    async def test_x_composes_author_header_with_full_text(self) -> None:
+        paper = {
+            "title": "truncated title",
+            "summary": "full tweet text",
+            "author": "openai",
+        }
+        self.assertIs(content_enricher.enrich_x(paper), paper)
+        self.assertEqual(paper["full_text"], "# @openai\n\nfull tweet text")
+
+        no_author = {"title": "only title"}
+        content_enricher.enrich_x(no_author)
+        self.assertEqual(no_author["full_text"], "# X 推文\n\nonly title")
+
+        empty = {"author": "openai"}
+        content_enricher.enrich_x(empty)
+        self.assertEqual(empty["full_text"], "# @openai")
+
     async def test_hackernews_external_page_requires_more_than_200_chars(self) -> None:
         accepted = {
             "title": "Story",

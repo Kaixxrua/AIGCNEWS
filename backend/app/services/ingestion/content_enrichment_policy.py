@@ -120,6 +120,21 @@ def compose_producthunt_content(
     return ContentEnrichmentPolicy(full_text=full_text[:MAX_CONTENT_CHARS])
 
 
+def compose_x_content(
+    paper: Mapping[str, Any],
+) -> ContentEnrichmentPolicy:
+    """组合 X 推文作者行与全文（推文自含内容，无需抓取外链）。"""
+    author = paper.get("author", "")
+    text = (
+        paper.get("summary", "")
+        or paper.get("abstract", "")
+        or paper.get("title", "")
+    )
+    header = f"@{author}" if author else "X 推文"
+    full_text = f"# {header}\n\n{text}" if text else f"# {header}"
+    return ContentEnrichmentPolicy(full_text=full_text[:MAX_CONTENT_CHARS])
+
+
 def select_hackernews_content(
     paper: Mapping[str, Any],
     page_text: Optional[str] = None,

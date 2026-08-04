@@ -258,6 +258,11 @@ def enrich_producthunt(paper: Dict[str, Any]) -> Dict[str, Any]:
     return content_enrichment_coordinator.enrich_producthunt(paper)
 
 
+def enrich_x(paper: Dict[str, Any]) -> Dict[str, Any]:
+    """X/Twitter：兼容入口，委托非 PDF 内容协调器。"""
+    return content_enrichment_coordinator.enrich_x(paper)
+
+
 async def enrich_hackernews(
     paper: Dict[str, Any],
     page_fetcher: Optional[PageContentFetcher] = None,
@@ -279,6 +284,7 @@ _ENRICH_MAP = {
     "news": enrich_news,
     "producthunt": enrich_producthunt,
     "hackernews": enrich_hackernews,
+    "x": enrich_x,
 }
 
 

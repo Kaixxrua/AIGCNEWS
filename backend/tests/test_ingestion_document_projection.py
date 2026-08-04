@@ -42,6 +42,22 @@ class IngestionDocumentProjectionTests(unittest.TestCase):
             document_id({"source": "news", "url": "https://item", "title": "ignored"}),
             hashlib.md5(b"news:https://item").hexdigest(),
         )
+        # x 源以 tweet_id 为稳定身份（URL 漂移不产生重复）
+        self.assertEqual(
+            document_id(
+                {
+                    "source": "x",
+                    "tweet_id": "2083948654377996480",
+                    "url": "https://ignored",
+                }
+            ),
+            hashlib.md5(b"x:2083948654377996480").hexdigest(),
+        )
+        # 缺 tweet_id 时回退通用 url 分支
+        self.assertEqual(
+            document_id({"source": "x", "url": "https://x.com/a/status/1"}),
+            hashlib.md5(b"x:https://x.com/a/status/1").hexdigest(),
+        )
 
     def test_projection_preserves_content_precedence_metadata_and_defaults(self) -> None:
         documents = project_documents(

@@ -11,6 +11,7 @@ from backend.app.services.ingestion.crawlers.news_crawler import NewsCrawler
 from backend.app.services.ingestion.crawlers.producthunt_crawler import (
     ProductHuntCrawler,
 )
+from backend.app.services.ingestion.crawlers.x_crawler import XCrawler
 
 __all__ = [
     "ArxivCrawler",
@@ -18,4 +19,5 @@ __all__ = [
     "NewsCrawler",
     "ProductHuntCrawler",
     "HackerNewsCrawler",
+    "XCrawler",
 ]
