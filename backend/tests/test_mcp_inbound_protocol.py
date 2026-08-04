@@ -212,13 +212,13 @@ class McpInboundProtocolTests(unittest.TestCase):
                         "resources": {"subscribe": False, "listChanged": False},
                         "prompts": {"listChanged": False},
                     },
-                    "serverInfo": {"name": "aigc-news", "version": "1.1.0"},
+                    "serverInfo": {"name": "aigc-radar", "version": "1.2.0"},
                     "instructions": catalog.MCP_HOST_INSTRUCTIONS,
                 },
             },
         )
         session_id = response.headers["mcp-session-id"]
-        self.assertRegex(session_id, r"^aigc-news-[0-9a-f]{32}$")
+        self.assertRegex(session_id, r"^aigc-radar-[0-9a-f]{32}$")
         self.assertEqual(response.headers["mcp-protocol-version"], "2025-06-18")
 
         without_session = self.rpc("tools/list", request_id=2)
@@ -234,7 +234,7 @@ class McpInboundProtocolTests(unittest.TestCase):
 
     def test_session_transport_seam_controls_initialize_only(self) -> None:
         transport = MagicMock(spec=context.McpSessionTransport)
-        transport.new_session_id.return_value = "aigc-news-fixed-session"
+        transport.new_session_id.return_value = "aigc-radar-fixed-session"
         transport.headers.side_effect = context.McpSessionTransport().headers
 
         with patch.object(routes_mcp, "_MCP_SESSION_TRANSPORT", transport):
@@ -246,11 +246,11 @@ class McpInboundProtocolTests(unittest.TestCase):
             )
 
         self.assertEqual(
-            initialized.headers["mcp-session-id"], "aigc-news-fixed-session"
+            initialized.headers["mcp-session-id"], "aigc-radar-fixed-session"
         )
         self.assertNotIn("mcp-session-id", listed.headers)
         transport.new_session_id.assert_called_once_with()
-        transport.headers.assert_any_call("aigc-news-fixed-session")
+        transport.headers.assert_any_call("aigc-radar-fixed-session")
 
     def test_unknown_method_uses_jsonrpc_method_not_found(self) -> None:
         self.assert_rpc_error(

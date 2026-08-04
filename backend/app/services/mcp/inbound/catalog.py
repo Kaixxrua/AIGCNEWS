@@ -6,8 +6,8 @@ from typing import Any
 from backend.app.services.mcp.contracts import TOOL_INPUT_MODELS, input_schema
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
-MCP_SERVER_NAME = "aigc-news"
-MCP_SERVER_VERSION = "1.1.0"
+MCP_SERVER_NAME = "aigc-radar"
+MCP_SERVER_VERSION = "1.2.0"
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_TOOL_RESULT_CHARS = 100_000
 MAX_RESOURCE_TEXT_CHARS = 100_000

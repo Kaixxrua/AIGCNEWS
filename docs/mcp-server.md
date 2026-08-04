@@ -1,8 +1,11 @@
 # AIGC Radar MCP Server 协议与策略
 
-AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.name` 为 `aigc-news`，版本见
+AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.name` 为 `aigc-radar`，版本见
 [`backend/app/services/mcp/inbound/catalog.py`](../backend/app/services/mcp/inbound/catalog.py)）。
 本文是协议参数、内置策略与鉴权语义的权威文档；README 仅保留接入概览。
+
+> 命名说明：`serverInfo.name` 与 session id 前缀已随品牌更名迁移至 `aigc-radar`；
+> `aigc-news://` 资源 URI 是稳定标识符，永久保持不变，客户端可安全存储。
 
 ## 传输与协议
 

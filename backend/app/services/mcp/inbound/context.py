@@ -74,7 +74,7 @@ class McpSessionTransport:
         return headers
 
     def new_session_id(self) -> str:
-        return f"aigc-news-{uuid.uuid4().hex}"
+        return f"aigc-radar-{uuid.uuid4().hex}"
 
 
 async def parse_mcp_request(request: Request) -> McpInboundRequest:
