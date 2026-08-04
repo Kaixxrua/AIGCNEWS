@@ -361,9 +361,9 @@ const description = computed(() => projectDescription(
   55% { transform: translateX(7px); }
   to { transform: translateX(4px); }
 }
-.project-card__description { display: -webkit-box; min-height: 60px; overflow: hidden; color: #57534e; font-size: 14px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.project-card__tags { display: flex; flex-wrap: wrap; gap: 7px; }
-.project-chip { max-width: 100%; cursor: pointer; white-space: normal; overflow-wrap: anywhere; text-align: left; transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease; }
+.project-card__description { color: #57534e; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.project-card__tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.project-chip { max-width: 100%; padding: 1px 8px; cursor: pointer; white-space: normal; overflow-wrap: anywhere; text-align: left; font-size: 11px; line-height: 1.45; transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease; }
 .project-chip:hover, .project-chip:focus-visible { color: var(--projects-accent); background: rgba(236, 254, 255, 0.76); border-color: var(--projects-accent-border); transform: translateY(-1px); outline: none; }
 .project-chip--language:hover, .project-chip--language:focus-visible { color: var(--projects-warm); background: rgba(255, 251, 235, 0.86); border-color: rgba(245, 158, 11, 0.28); }
 .project-card__stats { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; margin-top: auto; padding-top: 14px; border-top: 1px dashed rgba(168, 162, 158, 0.24); color: #78716c; font-size: 12px; font-weight: 700; }
