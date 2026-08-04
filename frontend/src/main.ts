@@ -4,9 +4,11 @@ import './style.css'
 import App from './App.vue'
 import router from './router/index'
 import i18n, { installI18n } from './i18n'
+import { installAppTheme } from './theme'
 
 const app = createApp(App)
 installI18n()
+installAppTheme()
 const pinia = createPinia()
 
 app.use(pinia)

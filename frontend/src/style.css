@@ -17,7 +17,227 @@
   --acid-ink: #171a09;
   --module-radius: 12px;
   --control-radius: 8px;
-  --shadow-low: 2px 2px 0 rgba(21, 21, 18, 0.12);
+
+  /* 硬边与阴影（border/color 用 --hard-ink，box-shadow 用 --shadow-hard） */
+  --hard-ink: #11110f;
+  --shadow-hard: #11110f;
+  --shadow-ink-soft: rgba(21, 21, 18, 0.12);
+  --shadow-low: 2px 2px 0 var(--shadow-ink-soft);
+
+  /* ink 扩展 */
+  --ink-faint: #a4a498;
+  --ink-solid: #44403c;
+  --ink-on-solid: #ffffff;
+
+  /* 毛玻璃卡片 + stone 三元组（浅色 = tailwind stone 原阶，供 rgb(var(--x) / a) 使用） */
+  --card-rgb: 255 255 255;
+  --stone-50-rgb: 250 250 249;
+  --stone-100-rgb: 245 245 244;
+  --stone-200-rgb: 231 229 228;
+  --stone-300-rgb: 214 211 209;
+  --stone-400-rgb: 168 162 158;
+  --stone-500-rgb: 120 113 108;
+  --stone-600-rgb: 87 83 78;
+  --stone-700-rgb: 68 64 60;
+  --stone-800-rgb: 41 37 36;
+  --stone-900-rgb: 28 25 23;
+  --stone-950-rgb: 12 10 9;
+
+  /* 暖色聊天光晕与奶油面 */
+  --glow-warm-rgb: 120 100 70;
+  --cream-rgb: 255 252 245;
+  --cream-deep-rgb: 250 247 240;
+  --warm-ink: #7c6f5c;
+  --shimmer: #a08060;
+  --paper-warm: #fffdf6;
+
+  /* acid 扩展（--acid-bright 取代页面级 --lime） */
+  --acid-bright: #c7ff2e;
+  --on-acid: #4b6100;
+
+  /* 滚动条 */
+  --scrollbar: rgba(168, 162, 158, 0.25);
+  --scrollbar-hover: rgba(168, 162, 158, 0.40);
+
+  /* 危险/错误 */
+  --danger: #b91c1c;
+  --danger-strong: #7f1d1d;
+  --danger-ink: #ffffff;
+  --error-ink: #991b1b;
+  --error-bg: #fef2f2;
+  --error-bg-strong: #fee2e2;
+  --error-accent: #dc2626;
+
+  /* 科技青 */
+  --tech-primary: #06b6d4;
+
+  /* 来源徽章（ink/bg/border 三元组） */
+  --badge-arxiv-ink: #3b82f6;
+  --badge-arxiv-bg: rgba(59, 130, 246, 0.08);
+  --badge-arxiv-border: rgba(59, 130, 246, 0.20);
+  --badge-github-ink: #64748b;
+  --badge-github-bg: rgba(100, 116, 139, 0.08);
+  --badge-github-border: rgba(100, 116, 139, 0.20);
+  --badge-news-ink: #d97706;
+  --badge-news-bg: rgba(245, 158, 11, 0.08);
+  --badge-news-border: rgba(245, 158, 11, 0.20);
+  --badge-neo4j-ink: #8b5cf6;
+  --badge-neo4j-bg: rgba(139, 92, 246, 0.08);
+  --badge-neo4j-border: rgba(139, 92, 246, 0.20);
+  --badge-milvus-ink: #06b6d4;
+  --badge-milvus-bg: rgba(6, 182, 212, 0.08);
+  --badge-milvus-border: rgba(6, 182, 212, 0.20);
+  --badge-default-ink: #57534e;
+  --badge-default-bg: rgba(245, 245, 244, 0.8);
+  --badge-default-border: rgba(168, 162, 158, 0.20);
+
+  /* locale 刷新幕布 */
+  --veil-from: rgba(247, 245, 238, 0.70);
+  --veil-to: rgba(255, 253, 245, 0.46);
+  --veil-line: rgba(17, 17, 15, 0.38);
+  --veil-grain: rgba(17, 17, 15, 0.018);
+
+  /* favicon 瓦片——两态刻意保持浅色（favicon 为浅色底设计） */
+  --logo-tile: #f4f9d4;
+
+  /* projects 族全局唯一源（项目页域内 border/color 用 --projects-accent） */
+  --projects-accent: #11110f;
+  --projects-accent-soft: rgba(199, 244, 50, 0.28);
+  --projects-accent-border: #11110f;
+  --projects-warm: #11110f;
+  --projects-warm-soft: rgba(199, 244, 50, 0.22);
+  --projects-paper: #f3f0e6;
+  --projects-paper-light: #fffdf5;
+  --projects-acid: #c7f432;
+  --projects-acid-soft: #f1f8d2;
+  --projects-success: #047857;
+  --projects-error: #be123c;
+  --projects-control-height: 44px;
+  --projects-control-compact-height: 36px;
+  --projects-card-action-size: 34px;
+}
+
+:root[data-theme='dark'] {
+  --paper: #1b1b18;
+  --paper-raised: #232320;
+  --paper-muted: #141412;
+  --ink: #ecebe4;
+  --ink-secondary: #b6b7ac;
+  --ink-muted: #8e8f84;
+  --rule: #3d3d36;
+  --rule-strong: #d6d5cb;
+  --acid: #d8f14b;
+  --acid-soft: #2e3319;
+  --acid-strong: #c2df3a;
+  --acid-ink: #171a09;
+
+  --hard-ink: #e8e7de;
+  --shadow-hard: rgba(0, 0, 0, 0.55);
+  --shadow-ink-soft: rgba(0, 0, 0, 0.45);
+
+  --ink-faint: #5f6056;
+  --ink-solid: #3a3b33;
+  --ink-on-solid: #f5f5ef;
+
+  --card-rgb: 34 34 30;
+  --stone-50-rgb: 32 32 28;
+  --stone-100-rgb: 40 40 35;
+  --stone-200-rgb: 60 60 53;
+  --stone-300-rgb: 80 80 71;
+  --stone-400-rgb: 113 113 101;
+  --stone-500-rgb: 142 142 130;
+  --stone-600-rgb: 173 173 160;
+  --stone-700-rgb: 210 210 198;
+  --stone-800-rgb: 230 230 220;
+  --stone-900-rgb: 240 240 231;
+  --stone-950-rgb: 246 245 239;
+
+  --glow-warm-rgb: 214 197 165;
+  --cream-rgb: 36 35 29;
+  --cream-deep-rgb: 32 31 26;
+  --warm-ink: #a89a83;
+  --shimmer: #8d7c5f;
+  --paper-warm: #26251f;
+
+  --acid-bright: #d8f14b;
+  --on-acid: #171a09;
+
+  --scrollbar: rgba(238, 238, 229, 0.22);
+  --scrollbar-hover: rgba(238, 238, 229, 0.36);
+
+  --danger: #dc2626;
+  --danger-strong: #991b1b;
+  --danger-ink: #ffffff;
+  --error-ink: #fca5a5;
+  --error-bg: rgba(239, 68, 68, 0.10);
+  --error-bg-strong: rgba(239, 68, 68, 0.16);
+  --error-accent: #ef4444;
+
+  --tech-primary: #22d3ee;
+
+  --badge-arxiv-ink: #60a5fa;
+  --badge-arxiv-bg: rgba(96, 165, 250, 0.15);
+  --badge-arxiv-border: rgba(96, 165, 250, 0.35);
+  --badge-github-ink: #94a3b8;
+  --badge-github-bg: rgba(148, 163, 184, 0.15);
+  --badge-github-border: rgba(148, 163, 184, 0.32);
+  --badge-news-ink: #fbbf24;
+  --badge-news-bg: rgba(251, 191, 36, 0.14);
+  --badge-news-border: rgba(251, 191, 36, 0.32);
+  --badge-neo4j-ink: #a78bfa;
+  --badge-neo4j-bg: rgba(167, 139, 250, 0.15);
+  --badge-neo4j-border: rgba(167, 139, 250, 0.35);
+  --badge-milvus-ink: #22d3ee;
+  --badge-milvus-bg: rgba(34, 211, 238, 0.14);
+  --badge-milvus-border: rgba(34, 211, 238, 0.32);
+  --badge-default-ink: #adada0;
+  --badge-default-bg: rgba(40, 40, 35, 0.8);
+  --badge-default-border: rgba(113, 113, 101, 0.35);
+
+  --veil-from: rgba(27, 27, 24, 0.72);
+  --veil-to: rgba(18, 18, 15, 0.50);
+  --veil-line: rgba(236, 235, 228, 0.28);
+  --veil-grain: rgba(236, 235, 228, 0.02);
+
+  --logo-tile: #e7e9d3;
+
+  --projects-accent: #e8e7de;
+  --projects-accent-soft: rgba(216, 241, 75, 0.16);
+  --projects-accent-border: #e8e7de;
+  --projects-warm: #e8e7de;
+  --projects-warm-soft: rgba(216, 241, 75, 0.12);
+  --projects-paper: #181814;
+  --projects-paper-light: #23231f;
+  --projects-acid: #d8f14b;
+  --projects-acid-soft: #2b3016;
+  --projects-success: #34d399;
+  --projects-error: #fb7185;
+}
+
+/* App.vue 固定背景层（浅色渲染与原内联样式逐字节等价） */
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  pointer-events: none;
+  background: var(--paper);
+}
+
+.app-noise {
+  position: fixed;
+  inset: 0;
+  z-index: -8;
+  pointer-events: none;
+  opacity: 0.025;
+  mix-blend-mode: multiply;
+  background-image: url('data:image/svg+xml,%3Csvg viewBox=%220 0 256 256%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.75%22 numOctaves=%224%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22/%3E%3C/svg%3E');
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+:root[data-theme='dark'] .app-noise {
+  mix-blend-mode: screen;
+  opacity: 0.05;
 }
 
 @layer base {

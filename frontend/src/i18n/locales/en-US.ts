@@ -1,6 +1,7 @@
 const enUS = {
   infrastructure: { appName: 'AIGC News', loading: 'Loading…', unavailable: 'Unavailable' },
   common: { confirm: 'Confirm', cancel: 'Cancel', save: 'Save', close: 'Close', retry: 'Retry', search: 'Search', noData: 'No data', language: 'Language', chinese: '中文', english: 'English', back: 'Back', edit: 'Edit', delete: 'Delete', refresh: 'Refresh', refreshing: 'Refreshing…', loading: 'Loading…', processing: 'Processing…', send: 'Send', previous: 'Previous', next: 'Next', page: 'Page', unknown: 'Unknown', never: 'Never' },
+  theme: { toggle: 'Theme', light: 'Light mode', dark: 'Dark mode' },
   navigation: { home: 'Home', dashboard: 'Dashboard', papers: 'Papers', projects: 'Projects', chat: 'Chat', report: 'Report', mcp: 'MCP', monitor: 'Monitor', loginAccount: 'Log in', logout: 'Log out' },
   search: { placeholder: 'Search papers and projects…', noResults: 'No matching results', resultCount: '{count} search results', trending: "Today's top picks", paper: 'Paper', github: 'GitHub', news: 'News', producthunt: 'PH', hackernews: 'HN' },
   footer: { poweredBy: 'Powered by {brandName}', disclaimer: 'Disclaimer', privacy: 'Privacy Policy', mcp: 'MCP Access', ecosystem: 'Partnerships: ' },

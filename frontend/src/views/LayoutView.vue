@@ -3,6 +3,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import GlobalSearch from '@/components/GlobalSearch.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 import AppDock from '@/components/layout/AppDock.vue'
 import LayoutFooter from '@/components/layout/LayoutFooter.vue'
 import {
@@ -34,6 +35,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       >
         <div class="flex w-full max-w-lg items-center justify-center gap-2">
           <GlobalSearch />
+          <ThemeToggle />
           <LocaleToggle />
         </div>
       </div>
@@ -81,7 +83,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
   border-radius: 14px;
   background: var(--paper-raised);
   border: 1px solid var(--rule-strong);
-  box-shadow: 7px 7px 0 rgba(21, 21, 18, 0.12);
+  box-shadow: 7px 7px 0 var(--shadow-ink-soft);
   overflow: hidden;
   display: flex;
   flex-direction: column;
