@@ -476,29 +476,20 @@ onBeforeUnmount(stopViewReads)
 
 <style scoped>
 .projects-page {
-  --projects-accent: #11110f;
-  --projects-success: #047857;
-  --projects-error: #be123c;
-  --projects-control-height: 44px;
-  --projects-control-compact-height: 36px;
-  --projects-card-action-size: 34px;
-  --projects-paper: #f3f0e6;
-  --projects-paper-light: #fffdf5;
-  --projects-acid: #c7f432;
   position: relative;
   height: 100%;
   overflow-y: auto;
   padding: 24px 24px 96px;
-  color: #11110f;
+  color: var(--projects-accent);
   background: var(--projects-paper);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
 .projects-page :deep(.glass-card) {
-  border: 1px solid #11110f;
+  border: 1px solid var(--projects-accent);
   border-radius: 6px;
   background: var(--projects-paper-light);
-  box-shadow: 4px 4px 0 #11110f;
+  box-shadow: 4px 4px 0 var(--shadow-hard);
   backdrop-filter: none;
 }
 
@@ -520,8 +511,8 @@ onBeforeUnmount(stopViewReads)
   pointer-events: none;
   opacity: 0.22;
   background-image:
-    linear-gradient(rgba(168, 162, 158, 0.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(168, 162, 158, 0.09) 1px, transparent 1px);
+    linear-gradient(rgb(var(--stone-400-rgb) / 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--stone-400-rgb) / 0.09) 1px, transparent 1px);
   background-size: 28px 28px;
 }
 
@@ -543,13 +534,13 @@ onBeforeUnmount(stopViewReads)
   content: '■';
   margin-right: 8px;
   color: var(--projects-acid);
-  -webkit-text-stroke: 1px #11110f;
+  -webkit-text-stroke: 1px var(--projects-accent);
 }
 
 .projects-hero h1,
 .empty-state h2,
 .projects-login-prompt__copy h2 {
-  color: #11110f;
+  color: var(--projects-accent);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-weight: 900;
   letter-spacing: -0.055em;
@@ -563,7 +554,7 @@ onBeforeUnmount(stopViewReads)
 .projects-hero p:not(.projects-kicker),
 .empty-state p:not(.projects-kicker) {
   margin-top: 12px;
-  color: #78716c;
+  color: rgb(var(--stone-500-rgb));
   font-size: 14px;
   line-height: 1.8;
 }
@@ -587,10 +578,10 @@ onBeforeUnmount(stopViewReads)
 }
 
 .projects-hero__stats span {
-  border: 1px solid #11110f;
+  border: 1px solid var(--projects-accent);
   border-radius: 4px;
   padding: 8px 12px;
-  color: #57534e;
+  color: rgb(var(--stone-600-rgb));
   background: var(--projects-paper-light);
   font-size: 12px;
   font-weight: 700;
@@ -602,10 +593,10 @@ onBeforeUnmount(stopViewReads)
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid #11110f;
+  border: 1px solid var(--projects-accent);
   border-radius: 4px;
   padding: 0 16px;
-  color: #11110f;
+  color: var(--projects-on-acid);
   background: var(--projects-acid);
   font-size: 13px;
   font-weight: 800;
@@ -615,7 +606,7 @@ onBeforeUnmount(stopViewReads)
 
 .projects-add-btn:hover {
   color: var(--projects-paper-light);
-  background: #11110f;
+  background: var(--projects-accent);
 }
 
 .projects-add-btn span {
@@ -648,8 +639,8 @@ onBeforeUnmount(stopViewReads)
   pointer-events: none;
   opacity: 0.52;
   background-image:
-    linear-gradient(rgba(168, 162, 158, 0.10) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(168, 162, 158, 0.10) 1px, transparent 1px);
+    linear-gradient(rgb(var(--stone-400-rgb) / 0.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--stone-400-rgb) / 0.10) 1px, transparent 1px);
   background-size: 28px 28px;
   mask-image: linear-gradient(90deg, #000, transparent 72%);
 }
@@ -664,11 +655,11 @@ onBeforeUnmount(stopViewReads)
   width: 74px;
   height: 74px;
   place-items: center;
-  border: 1px solid #11110f;
+  border: 1px solid var(--projects-accent);
   border-radius: 6px;
-  color: #11110f;
+  color: var(--projects-on-acid);
   background: var(--projects-acid);
-  box-shadow: 4px 4px 0 #11110f;
+  box-shadow: 4px 4px 0 var(--shadow-hard);
 }
 
 .projects-login-prompt__mark svg {
@@ -688,7 +679,7 @@ onBeforeUnmount(stopViewReads)
 .projects-login-prompt__copy > p:not(.projects-kicker) {
   max-width: 620px;
   margin-top: 12px;
-  color: #78716c;
+  color: rgb(var(--stone-500-rgb));
   font-size: 14px;
   line-height: 1.8;
 }
@@ -701,10 +692,10 @@ onBeforeUnmount(stopViewReads)
 }
 
 .projects-login-prompt__notes span {
-  border: 1px solid #11110f;
+  border: 1px solid var(--projects-accent);
   border-radius: 4px;
   padding: 6px 10px;
-  color: #57534e;
+  color: rgb(var(--stone-600-rgb));
   background: var(--projects-paper-light);
   font-size: 11px;
   font-weight: 800;
@@ -716,10 +707,10 @@ onBeforeUnmount(stopViewReads)
   justify-content: center;
   gap: 10px;
   min-height: var(--projects-control-height);
-  border: 1px solid #11110f;
+  border: 1px solid var(--projects-accent);
   border-radius: 4px;
   padding: 0 19px;
-  color: #11110f;
+  color: var(--projects-on-acid);
   background: var(--projects-acid);
   font-size: 13px;
   font-weight: 800;
@@ -729,7 +720,7 @@ onBeforeUnmount(stopViewReads)
 
 .projects-login-prompt__action:hover {
   color: var(--projects-paper-light);
-  background: #11110f;
+  background: var(--projects-accent);
 }
 
 .projects-login-prompt__action svg {
@@ -761,8 +752,8 @@ onBeforeUnmount(stopViewReads)
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88), transparent 42%),
-    radial-gradient(circle at 14% 0%, rgba(168, 162, 158, 0.10), transparent 34%);
+    linear-gradient(135deg, rgb(var(--card-rgb) / 0.88), transparent 42%),
+    radial-gradient(circle at 14% 0%, rgb(var(--stone-400-rgb) / 0.10), transparent 34%);
   opacity: 0.92;
 }
 
@@ -785,9 +776,9 @@ onBeforeUnmount(stopViewReads)
 
 .projects-toast--success,
 .projects-toast--error {
-  color: #44403c;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(168, 162, 158, 0.24);
+  color: rgb(var(--stone-700-rgb));
+  background: rgb(var(--card-rgb) / 0.82);
+  border: 1px solid rgb(var(--stone-400-rgb) / 0.24);
   border-left-width: 3px;
 }
 

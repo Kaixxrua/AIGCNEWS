@@ -115,6 +115,29 @@
   --projects-control-height: 44px;
   --projects-control-compact-height: 36px;
   --projects-card-action-size: 34px;
+  /* 亮 acid 面上的文字——酸绿底两态相同，故其上的墨色两态相同 */
+  --projects-on-acid: #11110f;
+  /* projects 卡片语义色（收藏=琥珀，推荐=青；浅色 = 原字面量） */
+  --projects-favorite-ink: #78350f;
+  --projects-favorite-bg: #fef3c7;
+  --projects-favorite-tint: rgba(255, 251, 235, 0.86);
+  --projects-favorite-border: rgba(245, 158, 11, 0.28);
+  --projects-recommend-ink: #155e75;
+  --projects-recommend-tint: rgba(236, 254, 255, 0.76);
+  /* ghost 中性灰阶（项目缺失/不可用态，浅色 = 原字面量） */
+  --projects-ghost-ink: #333333;
+  --projects-ghost-ink-soft: #444444;
+  --projects-ghost-text: #555550;
+  --projects-ghost-border: #666666;
+  --projects-ghost-border-strong: #666662;
+  --projects-ghost-line: #888883;
+  --projects-ghost-line-strong: #8a8a85;
+  --projects-ghost-shadow: #a5a5a0;
+  --projects-ghost-surface-active: #b8b8b3;
+  --projects-ghost-surface-chip: #d6d6d1;
+  --projects-ghost-surface-hover: #deded9;
+  --projects-ghost-surface: #e5e5e5;
+  --projects-ghost-surface-card: #e7e7e2;
 }
 
 :root[data-theme='dark'] {
@@ -212,6 +235,27 @@
   --projects-acid-soft: #2b3016;
   --projects-success: #34d399;
   --projects-error: #fb7185;
+  /* 亮 acid 面上的文字——酸绿底两态相同，故其上的墨色两态相同 */
+  --projects-on-acid: #11110f;
+  --projects-favorite-ink: #fbbf24;
+  --projects-favorite-bg: rgba(251, 191, 36, 0.16);
+  --projects-favorite-tint: rgba(251, 191, 36, 0.14);
+  --projects-favorite-border: rgba(251, 191, 36, 0.35);
+  --projects-recommend-ink: #67e8f9;
+  --projects-recommend-tint: rgba(103, 232, 249, 0.12);
+  --projects-ghost-ink: #d4d4ce;
+  --projects-ghost-ink-soft: #bebeb8;
+  --projects-ghost-text: #adada6;
+  --projects-ghost-border: #98988f;
+  --projects-ghost-border-strong: #94948c;
+  --projects-ghost-line: #7b7b73;
+  --projects-ghost-line-strong: #76766e;
+  --projects-ghost-shadow: rgba(0, 0, 0, 0.5);
+  --projects-ghost-surface-active: #4b4b45;
+  --projects-ghost-surface-chip: #3b3b36;
+  --projects-ghost-surface-hover: #343431;
+  --projects-ghost-surface: #2f2f2b;
+  --projects-ghost-surface-card: #2b2b27;
 }
 
 /* App.vue 固定背景层（浅色渲染与原内联样式逐字节等价） */
