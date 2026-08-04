@@ -197,9 +197,9 @@
 }
 
 :root[data-theme='dark'] {
-  --paper: #121613;
-  --paper-raised: #1a1f1b;
-  --paper-muted: #0d110f;
+  --paper: #0e1210;
+  --paper-raised: #171c19;
+  --paper-muted: #090d0b;
   --ink: #dbd9cd;
   --ink-secondary: #abaca0;
   --ink-muted: #8e8f84;
@@ -219,7 +219,7 @@
   --ink-solid-hover: #505147;
   --ink-on-solid: #e6e5da;
 
-  --card-rgb: 26 31 27;
+  --card-rgb: 23 28 25;
   --stone-50-rgb: 32 32 28;
   --stone-100-rgb: 40 40 35;
   --stone-200-rgb: 60 60 53;
@@ -237,7 +237,7 @@
   --cream-deep-rgb: 26 31 28;
   --warm-ink: #b8c878;
   --shimmer: #a9bb55;
-  --paper-warm: #202621;
+  --paper-warm: #1b211d;
 
   --acid-bright: #c9e842;
   --on-acid: #171a09;
@@ -286,8 +286,8 @@
   --projects-accent-border: #d2d1c5;
   --projects-warm: #d2d1c5;
   --projects-warm-soft: rgba(201, 232, 66, 0.12);
-  --projects-paper: #101512;
-  --projects-paper-light: #1a1f1b;
+  --projects-paper: #0b100d;
+  --projects-paper-light: #171c19;
   --projects-acid: #c9e842;
   --projects-acid-soft: #2b3016;
   --projects-success: #34d399;
@@ -313,13 +313,13 @@
   --projects-ghost-surface-hover: #343431;
   --projects-ghost-surface: #2f2f2b;
   --projects-ghost-surface-card: #2b2b27;
-  --chat-paper: #171b18;
-  --chat-paper-rgb: 23 27 24;
+  --chat-paper: #121815;
+  --chat-paper-rgb: 18 24 21;
   --chat-ink: #d6d4c7;
   --chat-ink-rgb: 214 212 199;
   --chat-shadow-rgb: 168 184 58;
   --chat-on-acid: #191a16;
-  --chat-input-bg: #1d241f;
+  --chat-input-bg: #171e1a;
   --cream-bright-rgb: 34 40 35;
   --cream-warm-rgb: 29 35 31;
   --shimmer-rgb: 169 187 85;
