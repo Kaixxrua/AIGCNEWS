@@ -298,10 +298,10 @@
   }
   ::-webkit-scrollbar-thumb {
     @apply rounded-full;
-    background: rgba(168, 162, 158, 0.25); /* stone-400 */
+    background: var(--scrollbar);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(168, 162, 158, 0.40);
+    background: var(--scrollbar-hover);
   }
 }
 
@@ -362,11 +362,11 @@
     background: var(--acid-soft);
   }
   .btn-danger {
-    color: #fff;
-    background: #b91c1c;
-    border: 2px solid #7f1d1d;
+    color: var(--danger-ink);
+    background: var(--danger);
+    border: 2px solid var(--danger-strong);
   }
-  .btn-danger:hover:not(:disabled) { background: #7f1d1d; }
+  .btn-danger:hover:not(:disabled) { background: var(--danger-strong); }
   .btn-ghost {
     color: var(--ink-secondary);
     border: 1px solid transparent;
@@ -400,39 +400,39 @@
   /* ═══ 来源徽章分色 ═══ */
   .badge-arxiv {
     @apply badge;
-    color: #3b82f6;
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.20);
+    color: var(--badge-arxiv-ink);
+    background: var(--badge-arxiv-bg);
+    border: 1px solid var(--badge-arxiv-border);
   }
   .badge-github {
     @apply badge;
-    color: #64748b;
-    background: rgba(100, 116, 139, 0.08);
-    border: 1px solid rgba(100, 116, 139, 0.20);
+    color: var(--badge-github-ink);
+    background: var(--badge-github-bg);
+    border: 1px solid var(--badge-github-border);
   }
   .badge-news {
     @apply badge;
-    color: #d97706;
-    background: rgba(245, 158, 11, 0.08);
-    border: 1px solid rgba(245, 158, 11, 0.20);
+    color: var(--badge-news-ink);
+    background: var(--badge-news-bg);
+    border: 1px solid var(--badge-news-border);
   }
   .badge-neo4j {
     @apply badge;
-    color: #8b5cf6;
-    background: rgba(139, 92, 246, 0.08);
-    border: 1px solid rgba(139, 92, 246, 0.20);
+    color: var(--badge-neo4j-ink);
+    background: var(--badge-neo4j-bg);
+    border: 1px solid var(--badge-neo4j-border);
   }
   .badge-milvus {
     @apply badge;
-    color: #06b6d4;
-    background: rgba(6, 182, 212, 0.08);
-    border: 1px solid rgba(6, 182, 212, 0.20);
+    color: var(--badge-milvus-ink);
+    background: var(--badge-milvus-bg);
+    border: 1px solid var(--badge-milvus-border);
   }
   .badge-default {
     @apply badge;
-    color: #57534e;
-    background: rgba(245, 245, 244, 0.8);
-    border: 1px solid rgba(168, 162, 158, 0.20);
+    color: var(--badge-default-ink);
+    background: var(--badge-default-bg);
+    border: 1px solid var(--badge-default-border);
   }
 
   /* ═══ 输入框：纸面 + 清晰规则 ═══ */
@@ -451,7 +451,7 @@
 
   /* ═══ 分割线（极淡暖色） ═══ */
   .divider {
-    border-top: 1px solid rgba(168, 162, 158, 0.15);
+    border-top: 1px solid rgb(var(--stone-400-rgb) / 0.15);
   }
 
   /* ═══ 状态点 ═══ */
@@ -462,7 +462,7 @@
   /* ═══ PDF 进度条 ═══ */
   .pdf-progress-bar {
     @apply w-full h-1 rounded-full overflow-hidden;
-    background: rgba(168, 162, 158, 0.12);
+    background: rgb(var(--stone-400-rgb) / 0.12);
   }
   .pdf-progress-fill {
     @apply h-full rounded-full transition-all duration-300 ease-out;
@@ -524,7 +524,7 @@
 
   .gradient-text {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, #44403c, #78716c);
+    background-image: linear-gradient(135deg, rgb(var(--stone-700-rgb)), rgb(var(--stone-500-rgb)));
   }
 
   .gradient-text-tech {
@@ -536,34 +536,34 @@
 
   /* 内部分隔：用交替暖色背景 */
   .row-alt:nth-child(even) {
-    background: rgba(245, 245, 244, 0.5); /* stone-100 */
+    background: rgb(var(--stone-100-rgb) / 0.5);
   }
 }
 
 /* ═══ prose markdown 基础样式（暖调书卷气） ═══ */
-.prose-content h1 { @apply text-xl font-bold mb-3 mt-5; color: #1c1917; font-family: 'Playfair Display', Georgia, serif; }
-.prose-content h2 { @apply text-lg font-semibold mb-2 mt-4; color: #292524; font-family: 'Playfair Display', Georgia, serif; }
-.prose-content h3 { @apply text-base font-semibold mb-2 mt-3; color: #57534e; }
-.prose-content p  { @apply text-sm leading-7 mb-3; color: #78716c; }
-.prose-content ul { @apply mb-3 list-disc pl-5 space-y-1 text-sm; color: #78716c; }
-.prose-content ol { @apply mb-3 list-decimal pl-5 space-y-1 text-sm; color: #78716c; }
+.prose-content h1 { @apply text-xl font-bold mb-3 mt-5; color: rgb(var(--stone-900-rgb)); font-family: 'Playfair Display', Georgia, serif; }
+.prose-content h2 { @apply text-lg font-semibold mb-2 mt-4; color: rgb(var(--stone-800-rgb)); font-family: 'Playfair Display', Georgia, serif; }
+.prose-content h3 { @apply text-base font-semibold mb-2 mt-3; color: rgb(var(--stone-600-rgb)); }
+.prose-content p  { @apply text-sm leading-7 mb-3; color: rgb(var(--stone-500-rgb)); }
+.prose-content ul { @apply mb-3 list-disc pl-5 space-y-1 text-sm; color: rgb(var(--stone-500-rgb)); }
+.prose-content ol { @apply mb-3 list-decimal pl-5 space-y-1 text-sm; color: rgb(var(--stone-500-rgb)); }
 .prose-content li { @apply leading-6; }
 .prose-content blockquote {
   @apply my-3 pl-4 italic text-sm;
-  color: #a8a29e;
+  color: rgb(var(--stone-400-rgb));
   border-left: 3px solid var(--acid-strong);
 }
 .prose-content code {
   @apply px-2 py-0.5 font-mono text-xs;
   border-radius: 4px;
-  color: #57534e;
-  background: rgba(245, 245, 244, 0.8);
+  color: rgb(var(--stone-600-rgb));
+  background: rgb(var(--stone-100-rgb) / 0.8);
 }
 .prose-content pre {
   @apply mb-3 overflow-x-auto rounded-[20px] p-5 font-mono text-xs leading-relaxed;
-  background: rgba(245, 245, 244, 0.6);
-  color: #44403c;
-  border: 1px solid rgba(168, 162, 158, 0.15);
+  background: rgb(var(--stone-100-rgb) / 0.6);
+  color: rgb(var(--stone-700-rgb));
+  border: 1px solid rgb(var(--stone-400-rgb) / 0.15);
 }
 /* pre 内的 code 不再加额外背景/圆角 */
 .prose-content pre code {
@@ -571,33 +571,33 @@
   background: transparent;
   color: inherit;
 }
-.prose-content hr  { border-top: 1px solid rgba(168, 162, 158, 0.15); @apply my-5; }
+.prose-content hr  { border-top: 1px solid rgb(var(--stone-400-rgb) / 0.15); @apply my-5; }
 .prose-content a   { @apply font-semibold underline underline-offset-2; color: var(--ink); text-decoration-color: var(--acid-strong); text-decoration-thickness: 2px; }
 .prose-content a:hover { background: var(--acid-soft); }
 .prose-content a { overflow-wrap: anywhere; }
-.prose-content strong { @apply font-semibold; color: #292524; }
+.prose-content strong { @apply font-semibold; color: rgb(var(--stone-800-rgb)); }
 
 /* 表格样式（暖调纸质） */
 .prose-content table {
   @apply w-full mb-4 text-sm border-collapse;
   min-width: 520px;
-  border: 1px solid rgba(168, 162, 158, 0.20);
+  border: 1px solid rgb(var(--stone-400-rgb) / 0.20);
   border-radius: 12px;
   overflow: hidden;
 }
-.prose-content thead { background: rgba(245, 245, 244, 0.6); }
+.prose-content thead { background: rgb(var(--stone-100-rgb) / 0.6); }
 .prose-content th {
   @apply px-4 py-2.5 text-left font-semibold text-xs;
-  color: #57534e;
-  border-bottom: 1px solid rgba(168, 162, 158, 0.20);
+  color: rgb(var(--stone-600-rgb));
+  border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.20);
 }
 .prose-content td {
   @apply px-4 py-2 text-sm;
-  color: #78716c;
-  border-bottom: 1px solid rgba(168, 162, 158, 0.10);
+  color: rgb(var(--stone-500-rgb));
+  border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.10);
 }
 .prose-content tbody tr:last-child td { border-bottom: none; }
-.prose-content tbody tr:hover { background: rgba(245, 245, 244, 0.4); }
+.prose-content tbody tr:hover { background: rgb(var(--stone-100-rgb) / 0.4); }
 
 /* ═══ 简报增强 prose 样式 ═══ */
 .prose-report h2 {
@@ -644,8 +644,8 @@
   overflow: hidden;
   pointer-events: none;
   background:
-    linear-gradient(110deg, rgba(247, 245, 238, 0.70), rgba(255, 253, 245, 0.46)),
-    repeating-linear-gradient(0deg, transparent 0 5px, rgba(17, 17, 15, 0.018) 5px 6px);
+    linear-gradient(110deg, var(--veil-from), var(--veil-to)),
+    repeating-linear-gradient(0deg, transparent 0 5px, var(--veil-grain) 5px 6px);
   backdrop-filter: blur(1.5px);
 }
 
@@ -655,7 +655,7 @@
   bottom: 0;
   left: -24%;
   width: 24%;
-  border-right: 1px solid rgba(17, 17, 15, 0.38);
+  border-right: 1px solid var(--veil-line);
   background: linear-gradient(90deg, transparent, rgba(199, 244, 50, 0.82));
   box-shadow: 12px 0 30px rgba(199, 244, 50, 0.30);
   animation: localeRefreshSweep 270ms cubic-bezier(0.4, 0, 0.2, 1) both;
