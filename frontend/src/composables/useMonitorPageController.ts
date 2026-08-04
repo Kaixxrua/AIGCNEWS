@@ -1,8 +1,9 @@
 import { computed, ref, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
+import { i18n } from '@/i18n'
 import {
-  createEmptyMcpForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
-  type McpServerConfig, type McpToolCallMetricsSnapshot, type SourceKey,
+  createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  type GithubCrawlStatus, type McpServerConfig, type McpToolCallMetricsSnapshot, type SourceKey,
 } from '@/features/monitor/monitorModel'
 
 interface MonitorPageControllerOptions {
@@ -59,6 +60,11 @@ export const useMonitorPageController = ({
   const ingestingSource = ref<SourceKey | null>(null)
   const clearing = ref(false)
   const showClearConfirm = ref(false)
+  const crawlForm = ref(createGithubCrawlForm(today))
+  const crawling = ref(false)
+  const crawlPolling = ref(false)
+  const crawlStatus = ref<GithubCrawlStatus | null>(null)
+  const activeCrawlRun = ref<{ channel: string; first_seen_after: string } | null>(null)
   const isTaskRunning = computed(() => tasks.value.length > 0 && tasks.value[0]?.status === 'running')
   const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
   const clearMessages = () => { errorMsg.value = ''; successMsg.value = '' }
@@ -96,7 +102,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers()])
+    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -156,6 +162,66 @@ export const useMonitorPageController = ({
     finally { deletingMcpServerId.value = null }
   }
   const delayedRefresh = (secondDelay: number) => { schedule(fetchTasks, 1000); schedule(fetchTasks, secondDelay) }
+  const CRAWL_POLL_INTERVAL = 3000
+  const isCrawlTerminal = (status: string) => status === 'success' || status === 'failed'
+  const pollGithubCrawlStatus = async () => {
+    if (!crawlPolling.value) return
+    try {
+      const status = await api.fetchGithubCrawlStatus(activeCrawlRun.value || undefined)
+      crawlStatus.value = status
+      if (isCrawlTerminal(status.task_status)) {
+        crawlPolling.value = false
+        activeCrawlRun.value = null
+        if (status.task_status === 'success') successMsg.value = i18n.global.t('monitor.crawl.runFinished')
+        else errorMsg.value = i18n.global.t('monitor.crawl.runFailed', { error: status.error_msg || '' })
+        await fetchTasks()
+        return
+      }
+    } catch (error) {
+      // 轮询错误容忍：容器重启等瞬态故障不断链
+      console.error('Failed to poll GitHub crawl status', error)
+    }
+    if (crawlPolling.value) schedule(() => { void pollGithubCrawlStatus() }, CRAWL_POLL_INTERVAL)
+  }
+  const beginCrawlPolling = (run: { channel: string; first_seen_after: string }) => {
+    activeCrawlRun.value = run
+    crawlPolling.value = true
+    schedule(() => { void pollGithubCrawlStatus() }, CRAWL_POLL_INTERVAL)
+  }
+  const resumeGithubCrawlPolling = async () => {
+    if (!isAdmin.value || crawlPolling.value) return
+    try {
+      const status = await api.fetchGithubCrawlStatus()
+      if (!status.task_id) return
+      crawlStatus.value = status
+      if (status.task_status === 'running') {
+        beginCrawlPolling({ channel: status.channel, first_seen_after: status.first_seen_after })
+      }
+    } catch (error) { console.error('Failed to fetch GitHub crawl status', error) }
+  }
+  const startGithubCrawl = async () => {
+    if (crawling.value || crawlPolling.value) return
+    clearMessages()
+    const form = crawlForm.value
+    if (form.maxStars > 0 && form.maxStars < form.minStars) { errorMsg.value = i18n.global.t('monitor.crawl.invalidWindow'); return }
+    if (form.createdStart && form.createdEnd && form.createdEnd < form.createdStart) { errorMsg.value = i18n.global.t('monitor.crawl.invalidDates'); return }
+    crawling.value = true
+    try {
+      const result = await api.crawlGithubProjects(form)
+      if (result.status === 'dry_run') {
+        successMsg.value = i18n.global.t('monitor.crawl.dryRunDone', {
+          shards: Object.keys(result.result?.shards || {}).length,
+          total: result.result?.total_available ?? 0,
+        })
+        return
+      }
+      successMsg.value = result.message || i18n.global.t('monitor.crawl.submitted')
+      delayedRefresh(4000)
+      beginCrawlPolling({ channel: result.channel, first_seen_after: result.first_seen_after })
+    } catch (error) {
+      errorMsg.value = statusOf(error) === 409 ? i18n.global.t('monitor.crawl.conflict') : detail(error)
+    } finally { crawling.value = false }
+  }
   const ingestSingleSource = async (source: SourceKey) => {
     if (ingestingSource.value) return
     clearMessages(); ingestingSource.value = source
@@ -207,5 +273,6 @@ export const useMonitorPageController = ({
     fetchSchedulerStatus, fetchMcpToolCalls, fetchProviderConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig,
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
+    crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
   }
 }

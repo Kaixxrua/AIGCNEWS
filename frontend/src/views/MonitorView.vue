@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
+import GithubCrawlControls from '@/components/monitor/GithubCrawlControls.vue'
 import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
 import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
@@ -20,6 +21,7 @@ const {
   fetchMcpServers, refreshData, goPage, saveProviderConfig, resetMcpForm, editMcpServer, saveMcpServer,
   testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings, clearDashboardCache, syncDataNow,
   ingestByDate, clearAllData,
+  crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
 } = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
 
 onMounted(refreshData)
@@ -107,6 +109,16 @@ onMounted(refreshData)
       :ingesting-source="ingestingSource"
       @ingest-by-date="ingestByDate"
       @ingest-source="ingestSingleSource"
+    />
+
+    <!-- Admin 专属：GitHub 搜索爬取 -->
+    <GithubCrawlControls
+      v-if="authStore.isAdmin"
+      v-model:form="crawlForm"
+      :crawling="crawling"
+      :crawl-polling="crawlPolling"
+      :crawl-status="crawlStatus"
+      @start="startGithubCrawl"
     />
 
     <McpToolCallsPanel

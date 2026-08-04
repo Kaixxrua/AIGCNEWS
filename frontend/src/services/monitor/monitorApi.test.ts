@@ -4,7 +4,7 @@ const transport = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(),
 vi.mock('../http/apiClient', () => ({ api: transport }))
 
 import { monitorApi } from './monitorApi'
-import { createEmptyMcpForm, createProviderForm } from '@/features/monitor/monitorModel'
+import { createEmptyMcpForm, createGithubCrawlForm, createProviderForm } from '@/features/monitor/monitorModel'
 
 describe('Monitor API contract', () => {
   beforeEach(() => Object.values(transport).forEach((mock) => mock.mockReset()))
@@ -81,5 +81,30 @@ describe('Monitor API contract', () => {
     expect(transport.post).toHaveBeenLastCalledWith('/ops/ingest', { limit: 20, force: true })
     await monitorApi.ingestByDate('2026-07-20')
     expect(transport.post).toHaveBeenLastCalledWith('/ops/ingest-by-date', { target_date: '2026-07-20', limit: 30 })
+  })
+
+  it('preserves GitHub crawl trigger payload, snake_case mapping, and extended timeout', async () => {
+    transport.post.mockResolvedValue({ data: { status: 'queued' } })
+    const form = { ...createGithubCrawlForm('2026-08-04'), pushedAfter: '2025-07-09' }
+    await monitorApi.crawlGithubProjects(form)
+    expect(transport.post).toHaveBeenCalledWith('/ops/github-projects/crawl', {
+      min_stars: 500, max_stars: 0, created_start: '2008-01-01', created_end: '2026-08-04',
+      pushed_after: '2025-07-09', limit: 5000, enrich: true, dry_run: false,
+    }, { timeout: 180_000 })
+
+    await monitorApi.crawlGithubProjects({ ...createGithubCrawlForm('2026-08-04'), createdEnd: '', pushedAfter: '' })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/github-projects/crawl',
+      expect.objectContaining({ created_end: null, pushed_after: null }), { timeout: 180_000 })
+  })
+
+  it('omits empty GitHub crawl status query params', async () => {
+    transport.get.mockResolvedValue({ data: { status: 'idle' } })
+    await monitorApi.fetchGithubCrawlStatus()
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/github-projects/crawl/status', undefined)
+
+    await monitorApi.fetchGithubCrawlStatus({ channel: 'admin_crawl_x', first_seen_after: '', min_stars: 600 })
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/github-projects/crawl/status', {
+      params: { channel: 'admin_crawl_x', min_stars: 600 },
+    })
   })
 })
