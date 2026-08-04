@@ -10,16 +10,16 @@ AI 发现数据平台：持续索引 arXiv 论文、GitHub AI 项目、科技新
 AIGC Radar 是本项目的旗舰入口：一个 Streamable HTTP MCP Server，让 Claude Code 等 MCP 客户端直接检索平台数据，并内置 MCP-first 的开源项目发现与复用策略（本地优先、500 Stars 准入、限量只读 GitHub fallback）。
 
 ```text
-http://localhost:8000/api/mcp
+https://aigcnews.cn/api/mcp
 ```
 
 接入 Claude Code：
 
 ```bash
-claude mcp add --transport http aigc-radar http://localhost:8000/api/mcp
+claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 ```
 
-任何支持 Streamable HTTP 的 MCP 客户端都可以直接指向该 URL；生产环境把主机替换为部署域名即可。
+任何支持 Streamable HTTP 的 MCP 客户端都可以直接指向该 URL；Web 站点内置 9 类客户端（Cursor、Codex、VS Code、Windsurf 等）的一键导入配置；仅支持 stdio 的客户端可经 `npx mcp-remote https://aigcnews.cn/api/mcp` 桥接。自托管本地开发时 endpoint 为 `http://localhost:8000/api/mcp`。
 
 公开工具（无需鉴权，全部只读）：
 

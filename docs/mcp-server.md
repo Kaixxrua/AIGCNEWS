@@ -7,6 +7,15 @@ AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.nam
 > 命名说明：`serverInfo.name` 与 session id 前缀已随品牌更名迁移至 `aigc-radar`；
 > `aigc-news://` 资源 URI 是稳定标识符，永久保持不变，客户端可安全存储。
 
+## 客户端接入
+
+- 生产 endpoint：`https://aigcnews.cn/api/mcp`（Streamable HTTP）；自托管本地开发为 `http://localhost:8000/api/mcp`
+- Claude Code：`claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp`
+- 站内 onboarding：Web 站点为 Claude Code、Cursor、Codex、OpenCode、Cline / Roo Code、Continue、
+  Windsurf、VS Code 与通用 JSON 共 9 类客户端生成导入配置与命令
+- 仅支持 stdio 的客户端：经社区标准桥 `npx mcp-remote https://aigcnews.cn/api/mcp` 接入；
+  需要私有工具时追加 `--header "Authorization: Bearer <MCP access token>"`
+
 ## 传输与协议
 
 - 端点：`POST /api/mcp`（本地开发为 `http://localhost:8000/api/mcp`），Streamable HTTP 传输
