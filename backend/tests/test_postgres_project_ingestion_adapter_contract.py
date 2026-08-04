@@ -19,6 +19,7 @@ def test_postgres_ingestion_adapter_covers_protocol_operations() -> None:
 
     assert expected == {
         "upsert_github_repo_candidate",
+        "get_github_repo_source_channels",
         "mark_github_repo_available",
         "record_github_repo_not_found",
         "ensure_github_repo_candidate",

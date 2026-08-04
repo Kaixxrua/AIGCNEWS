@@ -10,6 +10,10 @@ from backend.app.repositories.runtime_provider_repository import (
 class GitHubProjectIngestionRepository(Protocol):
     def upsert_github_repo_candidate(self, repo: dict[str, Any]) -> None: ...
 
+    def get_github_repo_source_channels(
+        self, repo_ids: list[str]
+    ) -> dict[str, str]: ...
+
     def mark_github_repo_available(
         self, full_name: str, *, checked_at: str
     ) -> bool: ...
@@ -90,6 +94,24 @@ class GitHubProjectEnrichmentRepository(Protocol):
 
     def get_github_project_enrichment_status(
         self, *, min_stars: int = 500
+    ) -> dict[str, Any]: ...
+
+    def count_github_run_enrichment_candidates(
+        self, *, channel: str, first_seen_after: str, min_stars: int = 500
+    ) -> int: ...
+
+    def list_github_run_enrichment_candidates(
+        self,
+        *,
+        channel: str,
+        first_seen_after: str,
+        min_stars: int = 500,
+        after_repo_id: str = "",
+        limit: int = 200,
+    ) -> list[dict[str, Any]]: ...
+
+    def get_github_run_crawl_status(
+        self, *, channel: str, first_seen_after: str, min_stars: int = 500
     ) -> dict[str, Any]: ...
 
 

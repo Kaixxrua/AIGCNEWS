@@ -12,6 +12,7 @@ from backend.app.api import routes_ops
 from backend.app.api.dependencies import (
     get_briefing_admin_service,
     get_document_repository,
+    get_github_project_crawl_admin_service,
     get_github_project_recommendation_admin_service,
     get_ingestion_task_repository,
     get_mcp_server_config_repository,
@@ -493,6 +494,211 @@ class OperationsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"total": 12, "enriched": 7})
         repository.get_github_project_enrichment_status.assert_called_once_with()
+
+    def test_github_crawl_queues_plan_and_returns_channel(self) -> None:
+        service = MagicMock()
+        operations = MagicMock()
+        client = self._crawl_client(service, operations)
+
+        response = client.post(
+            "/api/ops/github-projects/crawl",
+            json={
+                "min_stars": 600,
+                "max_stars": 0,
+                "created_start": "2025-01-01",
+                "created_end": "2026-08-04",
+                "limit": 100,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "queued")
+        self.assertTrue(body["channel"].startswith("admin_crawl_"))
+        self.assertTrue(body["first_seen_after"])
+        service.try_acquire_crawl.assert_called_once_with()
+        operations.submit.assert_called_once()
+        submit_args = operations.submit.call_args.args
+        self.assertEqual(submit_args[0], service.crawl_and_enrich)
+        plan = submit_args[1]
+        self.assertEqual(plan["min_stars"], 600)
+        self.assertEqual(plan["max_stars"], 0)
+        self.assertEqual(plan["limit"], 100)
+        self.assertEqual(plan["created_end"].isoformat(), "2026-08-04")
+        self.assertTrue(plan["enrich"])
+        service.crawl_dry_run.assert_not_called()
+
+    def test_github_crawl_dry_run_runs_inline_without_submit(self) -> None:
+        service = MagicMock()
+        service.crawl_dry_run.return_value = {
+            "status": "dry_run",
+            "shards": {"2026-01-01..2026-01-01": 42},
+            "total_available": 42,
+        }
+        operations = MagicMock()
+        client = self._crawl_client(service, operations)
+
+        response = client.post(
+            "/api/ops/github-projects/crawl",
+            json={
+                "dry_run": True,
+                "created_start": "2026-01-01",
+                "created_end": "2026-01-01",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "dry_run")
+        self.assertEqual(body["result"]["total_available"], 42)
+        service.crawl_dry_run.assert_called_once()
+        service.try_acquire_crawl.assert_not_called()
+        operations.submit.assert_not_called()
+
+    def test_github_crawl_returns_conflict_when_lock_held(self) -> None:
+        service = MagicMock()
+        service.try_acquire_crawl.return_value = False
+        operations = MagicMock()
+        client = self._crawl_client(service, operations)
+
+        response = client.post("/api/ops/github-projects/crawl", json={})
+
+        self.assertEqual(response.status_code, 409)
+        operations.submit.assert_not_called()
+
+    def test_github_crawl_releases_lock_when_runtime_refuses_submit(self) -> None:
+        service = MagicMock()
+        operations = MagicMock()
+        operations.submit.return_value = False
+        client = self._crawl_client(service, operations)
+
+        response = client.post("/api/ops/github-projects/crawl", json={})
+
+        self.assertEqual(response.status_code, 503)
+        service.release_crawl.assert_called_once_with()
+
+    def test_github_crawl_rejects_invalid_window(self) -> None:
+        service = MagicMock()
+        operations = MagicMock()
+        client = self._crawl_client(service, operations)
+
+        max_below_min = client.post(
+            "/api/ops/github-projects/crawl",
+            json={"min_stars": 500, "max_stars": 400},
+        )
+        inverted_dates = client.post(
+            "/api/ops/github-projects/crawl",
+            json={"created_start": "2026-08-04", "created_end": "2025-01-01"},
+        )
+        impossible_date = client.post(
+            "/api/ops/github-projects/crawl",
+            json={"created_start": "2026-13-40"},
+        )
+
+        self.assertEqual(max_below_min.status_code, 400)
+        self.assertEqual(inverted_dates.status_code, 400)
+        self.assertEqual(impossible_date.status_code, 400)
+        service.try_acquire_crawl.assert_not_called()
+        operations.submit.assert_not_called()
+
+    def test_github_crawl_validates_payload_shape(self) -> None:
+        service = MagicMock()
+        operations = MagicMock()
+        client = self._crawl_client(service, operations)
+
+        negative_stars = client.post(
+            "/api/ops/github-projects/crawl", json={"min_stars": -1}
+        )
+        bad_date_format = client.post(
+            "/api/ops/github-projects/crawl", json={"created_start": "2026/01/01"}
+        )
+
+        self.assertEqual(negative_stars.status_code, 422)
+        self.assertEqual(bad_date_format.status_code, 422)
+        service.try_acquire_crawl.assert_not_called()
+        operations.submit.assert_not_called()
+
+    def test_github_crawl_routes_require_admin(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        service = MagicMock()
+        operations = MagicMock()
+        app.dependency_overrides[
+            get_github_project_crawl_admin_service
+        ] = lambda: service
+        app.dependency_overrides[get_operations_runtime] = lambda: operations
+        client = TestClient(app)
+
+        crawl = client.post("/api/ops/github-projects/crawl", json={})
+        status = client.get("/api/ops/github-projects/crawl/status")
+
+        self.assertIn(crawl.status_code, (401, 403))
+        self.assertIn(status.status_code, (401, 403))
+        service.try_acquire_crawl.assert_not_called()
+        service.crawl_status.assert_not_called()
+        operations.submit.assert_not_called()
+
+    def test_github_crawl_status_passthrough_and_maps_value_error(self) -> None:
+        service = MagicMock()
+        service.crawl_status.return_value = {
+            "status": "running",
+            "channel": "admin_crawl_x",
+            "first_seen_after": "2026-08-04T12:30:15+00:00",
+            "task_id": 7,
+            "task_status": "running",
+            "item_count": 0,
+            "error_msg": None,
+            "started_at": "2026-08-04T12:30:15+00:00",
+            "finished_at": None,
+            "candidates_upserted": 10,
+            "scope_total": 8,
+            "enriched_succeeded": 5,
+            "enriched_failed": 1,
+        }
+        operations = MagicMock()
+        client = self._crawl_client(service, operations)
+
+        response = client.get(
+            "/api/ops/github-projects/crawl/status",
+            params={"channel": "admin_crawl_x"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "running")
+        self.assertEqual(body["channel"], "admin_crawl_x")
+        self.assertEqual(body["candidates_upserted"], 10)
+        self.assertEqual(body["enriched_succeeded"], 5)
+        service.crawl_status.assert_called_once_with(
+            channel="admin_crawl_x", first_seen_after="", min_stars=None
+        )
+
+        response = client.get(
+            "/api/ops/github-projects/crawl/status",
+            params={"min_stars": 600},
+        )
+        self.assertEqual(response.status_code, 200)
+        service.crawl_status.assert_called_with(
+            channel="", first_seen_after="", min_stars=600
+        )
+
+        service.crawl_status.side_effect = ValueError("anchor 必须是 ISO 8601")
+        bad = client.get(
+            "/api/ops/github-projects/crawl/status",
+            params={"first_seen_after": "not-a-date"},
+        )
+        self.assertEqual(bad.status_code, 400)
+
+    @staticmethod
+    def _crawl_client(service: MagicMock, operations: MagicMock) -> TestClient:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[
+            get_github_project_crawl_admin_service
+        ] = lambda: service
+        app.dependency_overrides[get_operations_runtime] = lambda: operations
+        return TestClient(app)
 
     def test_scheduler_status_preserves_registered_job_projection(self) -> None:
         scheduler = MagicMock()

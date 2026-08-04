@@ -24,6 +24,12 @@ class LatestTaskReader(Protocol):
     def get_latest_task(self) -> dict[str, Any] | None: ...
 
 
+class LatestTaskByNameReader(Protocol):
+    """Read boundary for the most recent task with an exact name."""
+
+    def get_latest_task_by_name(self, task_name: str) -> dict[str, Any] | None: ...
+
+
 class RecentTaskReader(Protocol):
     """Read boundary for recent ingestion task metrics."""
 

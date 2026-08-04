@@ -58,6 +58,28 @@ class PostgresIngestionTaskRepository:
                 row = cursor.fetchone()
                 return dict(row) if row else None
 
+    def get_latest_task_by_name(self, task_name: str) -> dict[str, Any] | None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT * FROM ingestion_tasks "
+                    "WHERE task_name = %s ORDER BY id DESC LIMIT 1",
+                    (task_name,),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+
+    def get_latest_task_by_prefix(self, prefix: str) -> dict[str, Any] | None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT * FROM ingestion_tasks "
+                    "WHERE starts_with(task_name, %s) ORDER BY id DESC LIMIT 1",
+                    (prefix,),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+
     def get_recent_tasks(self, limit: int = 100) -> list[dict[str, Any]]:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:

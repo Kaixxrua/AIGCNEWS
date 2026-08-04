@@ -162,6 +162,20 @@ class PostgresGitHubProjectIngestionRepository:
                     full_name=payload["full_name"],
                 )
 
+    def get_github_repo_source_channels(
+        self, repo_ids: list[str]
+    ) -> dict[str, str]:
+        if not repo_ids:
+            return {}
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT repo_id, COALESCE(source_channels, '') AS channels "
+                    "FROM github_repo_candidates WHERE repo_id = ANY(%s)",
+                    (repo_ids,),
+                )
+                return {row["repo_id"]: row["channels"] for row in cursor.fetchall()}
+
     def ensure_github_repo_candidate(self, repo: dict[str, Any]) -> str:
         payload = self._candidate_payload(repo, ensure=True)
         sql = """

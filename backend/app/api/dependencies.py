@@ -50,6 +50,9 @@ from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
+from backend.app.services.github_project_crawl_admin import (
+    GitHubProjectCrawlAdminService,
+)
 from backend.app.services.github_project_recommendation_admin import (
     GitHubProjectRecommendationAdminService,
 )
@@ -108,6 +111,12 @@ def get_github_project_admin_service(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> GitHubProjectAdminService:
     return GitHubProjectAdminService(repositories)
+
+
+def get_github_project_crawl_admin_service(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> GitHubProjectCrawlAdminService:
+    return GitHubProjectCrawlAdminService(repositories)
 
 
 def get_briefing_repository(

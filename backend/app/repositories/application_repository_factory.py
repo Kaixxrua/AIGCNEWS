@@ -83,6 +83,7 @@ from backend.app.repositories.runtime_provider_repository import (
 from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
     IngestionTaskWriter,
+    LatestTaskByNameReader,
     LatestTaskReader,
     MonitorTaskRepository,
     RecentTaskReader,
@@ -94,6 +95,7 @@ from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 class ApplicationIngestionTaskRepository(
     IngestionTaskWriter,
     LatestTaskReader,
+    LatestTaskByNameReader,
     RecentTaskReader,
     MonitorTaskRepository,
     IngestionTaskAdminRepository,

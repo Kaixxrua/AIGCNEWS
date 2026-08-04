@@ -44,6 +44,21 @@ def _github_fingerprint(row: dict[str, Any]) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+# 单次爬取运行的富化范围（三重去重，绝不触碰项目库存量）：
+# 渠道标记 + first_seen_at 锚点 + 排除已成功富化。CLI 脚本
+# scripts/enrich_github_projects_run.py 与本模块共用此片段，保持单一事实源。
+_RUN_SCOPE_WHERE = """
+    FROM github_repo_candidates c
+    WHERE c.source_channels LIKE %s
+      AND c.first_seen_at >= %s
+      AND COALESCE(c.stars, 0) >= %s
+      AND NOT EXISTS (
+          SELECT 1 FROM github_repo_enrichments e
+          WHERE e.repo_id = c.repo_id AND e.status = 'succeeded'
+      )
+"""
+
+
 class _PostgresEnrichmentRepositoryBase:
     def __init__(self, database: PostgresDatabaseLifecycle = postgres_database) -> None:
         self._database = database
@@ -295,6 +310,80 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                 "by_category": [{"slug": item.get("slug") or "other",
                                  "name": item.get("name") or "其他",
                                  "count": int(item.get("count") or 0)} for item in categories]}
+
+    def count_github_run_enrichment_candidates(
+        self, *, channel: str, first_seen_after: str, min_stars: int = 500
+    ) -> int:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) AS n" + _RUN_SCOPE_WHERE,
+                    (f"%{channel}%", first_seen_after, min_stars),
+                )
+                row = cursor.fetchone()
+                return int(row["n"] if row else 0)
+
+    def list_github_run_enrichment_candidates(
+        self,
+        *,
+        channel: str,
+        first_seen_after: str,
+        min_stars: int = 500,
+        after_repo_id: str = "",
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """按 repo_id 键集分页取本次运行范围内的候选，附富化所需指纹与规范化字段。"""
+        capped_limit = max(1, min(int(limit or 200), 500))
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
+                           c.language, c.topics_json, c.created_at, c.pushed_at,
+                           c.source_channels, c.first_seen_at, c.last_seen_at,
+                           c.last_snapshot_at,
+                           COALESCE(c.stars, 0) AS stars,
+                           COALESCE(c.forks, 0) AS forks,
+                           COALESCE(c.watchers, 0) AS watchers
+                    """
+                    + _RUN_SCOPE_WHERE
+                    + "  AND c.repo_id > %s ORDER BY c.repo_id LIMIT %s",
+                    (f"%{channel}%", first_seen_after, min_stars, after_repo_id, capped_limit),
+                )
+                rows = cursor.fetchall()
+
+        selected: list[dict[str, Any]] = []
+        for source_row in rows:
+            row = dict(source_row)
+            row["source_fingerprint"] = _github_fingerprint(row)
+            selected.append(normalize_project_row(row))
+        return selected
+
+    def get_github_run_crawl_status(
+        self, *, channel: str, first_seen_after: str, min_stars: int = 500
+    ) -> dict[str, Any]:
+        """本次运行的实时计数：分母固定、富化分子爬升，供运维页轮询进度。"""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) AS candidates_upserted,
+                           COUNT(*) FILTER (WHERE COALESCE(c.stars, 0) >= %s) AS scope_total,
+                           COUNT(*) FILTER (WHERE COALESCE(c.stars, 0) >= %s AND e.status = 'succeeded') AS enriched_succeeded,
+                           COUNT(*) FILTER (WHERE COALESCE(c.stars, 0) >= %s AND e.status = 'failed') AS enriched_failed
+                    FROM github_repo_candidates c
+                    LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
+                    WHERE c.source_channels LIKE %s AND c.first_seen_at >= %s
+                    """,
+                    (min_stars, min_stars, min_stars, f"%{channel}%", first_seen_after),
+                )
+                row = cursor.fetchone() or {}
+        return {
+            "candidates_upserted": int(row.get("candidates_upserted") or 0),
+            "scope_total": int(row.get("scope_total") or 0),
+            "enriched_succeeded": int(row.get("enriched_succeeded") or 0),
+            "enriched_failed": int(row.get("enriched_failed") or 0),
+        }
 
 
 class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase):

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from datetime import date
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -11,6 +13,7 @@ from backend.app.api.dependencies import (
     get_dashboard_cache_admin_service,
     get_data_cleanup_admin_service,
     get_github_project_admin_service,
+    get_github_project_crawl_admin_service,
     get_github_project_recommendation_admin_service,
     get_ingestion_admin_service,
     get_mcp_admin_service,
@@ -26,6 +29,9 @@ from backend.app.models.schema_ops import (
     ClearDataResponse,
     GitHubProjectRecommendRequest,
     GitHubProjectRecommendResponse,
+    GitHubProjectsCrawlRequest,
+    GitHubProjectsCrawlResponse,
+    GitHubProjectsCrawlStatusResponse,
     GitHubProjectsEnrichRequest,
     GitHubProjectsEnrichResponse,
     GitHubProjectsMetricsRecomputeRequest,
@@ -57,6 +63,10 @@ from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
+from backend.app.services.github_project_crawl_admin import (
+    GitHubProjectCrawlAdminService,
+    plan_crawl,
+)
 from backend.app.services.github_project_recommendation_admin import (
     GitHubProjectAdminNotFoundError,
     GitHubProjectAdminValidationError,
@@ -501,6 +511,97 @@ async def enrich_github_project_library(
         status="queued",
         message=f"GitHub 项目库富化任务已提交（limit={limit}），后台执行中。",
     )
+
+
+@router.post(
+    "/ops/github-projects/crawl",
+    response_model=GitHubProjectsCrawlResponse,
+    tags=["Ops"],
+)
+async def crawl_github_project_library(
+    request: GitHubProjectsCrawlRequest,
+    _: dict = Depends(RequireAdmin),
+    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
+    service: GitHubProjectCrawlAdminService = Depends(get_github_project_crawl_admin_service),
+) -> GitHubProjectsCrawlResponse:
+    """手动触发 GitHub 搜索爬取（可选爬完后自动富化本次新抓项目）。"""
+    try:
+        plan = plan_crawl(
+            min_stars=request.min_stars,
+            max_stars=request.max_stars,
+            limit=request.limit,
+            created_start=date.fromisoformat(request.created_start),
+            created_end=(
+                date.fromisoformat(request.created_end)
+                if request.created_end
+                else date.today()
+            ),
+            pushed_after=request.pushed_after or "",
+            enrich=request.enrich,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if request.dry_run:
+        result = await asyncio.to_thread(service.crawl_dry_run, plan)
+        return GitHubProjectsCrawlResponse(
+            status="dry_run",
+            message=(
+                f"GitHub 搜索爬取 dry-run 完成：分片 {len(result.get('shards') or {})} 个，"
+                f"可抓取约 {result.get('total_available', 0)} 个仓库。"
+            ),
+            channel=plan["channel"],
+            first_seen_after=plan["first_seen_after"],
+            result=result,
+        )
+
+    if not service.try_acquire_crawl():
+        raise HTTPException(
+            status_code=409,
+            detail="已有 GitHub 搜索爬取任务在执行中，请等待其完成后再触发。",
+        )
+    if not operations.submit(service.crawl_and_enrich, plan):
+        service.release_crawl()
+        raise HTTPException(
+            status_code=503, detail="后台执行器正在停止，暂时无法接受新任务。"
+        )
+    logger.info(
+        "[Ops] GitHub 搜索爬取任务已提交 channel=%s enrich=%s limit=%d",
+        plan["channel"],
+        plan["enrich"],
+        plan["limit"],
+    )
+    return GitHubProjectsCrawlResponse(
+        status="queued",
+        message=f"GitHub 搜索爬取任务已提交（channel={plan['channel']}），后台执行中。",
+        channel=plan["channel"],
+        first_seen_after=plan["first_seen_after"],
+    )
+
+
+@router.get(
+    "/ops/github-projects/crawl/status",
+    response_model=GitHubProjectsCrawlStatusResponse,
+    tags=["Ops"],
+)
+async def github_projects_crawl_status(
+    _: dict = Depends(RequireAdmin),
+    channel: str = Query(default="", max_length=255),
+    first_seen_after: str = Query(default="", max_length=64),
+    min_stars: Optional[int] = Query(default=None, ge=0),
+    service: GitHubProjectCrawlAdminService = Depends(get_github_project_crawl_admin_service),
+) -> GitHubProjectsCrawlStatusResponse:
+    """查询某次（默认最近一次）GitHub 搜索爬取运行的任务状态与实时计数。"""
+    try:
+        status = await asyncio.to_thread(
+            service.crawl_status,
+            channel=channel,
+            first_seen_after=first_seen_after,
+            min_stars=min_stars,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GitHubProjectsCrawlStatusResponse(**status)
 
 
 @router.post(

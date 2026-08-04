@@ -29,6 +29,7 @@ if str(ROOT) not in sys.path:
 
 from backend.app.core.postgres_database import postgres_database  # noqa: E402
 from backend.app.repositories.postgres_project_enrichment_repository import (  # noqa: E402
+    _RUN_SCOPE_WHERE,
     PostgresGitHubProjectEnrichmentRepository,
     _github_fingerprint,
 )
@@ -63,18 +64,6 @@ def parse_iso(value: str) -> str:
     except ValueError:
         raise SystemExit("--first-seen-after 必须是 ISO 8601 时间，如 2026-08-03T06:30:00+00:00") from None
     return value
-
-
-_RUN_SCOPE_WHERE = """
-    FROM github_repo_candidates c
-    WHERE c.source_channels LIKE %s
-      AND c.first_seen_at >= %s
-      AND COALESCE(c.stars, 0) >= %s
-      AND NOT EXISTS (
-          SELECT 1 FROM github_repo_enrichments e
-          WHERE e.repo_id = c.repo_id AND e.status = 'succeeded'
-      )
-"""
 
 
 def count_run_candidates(

@@ -193,6 +193,39 @@ class GitHubProjectEnricher:
             "concurrency": concurrency,
         }
 
+    def enrich_rows(
+        self, rows: list[Dict[str, Any]], *, concurrency: int = 3
+    ) -> Dict[str, Any]:
+        """富化一批已选定的行（调用方负责范围筛选），返回处理计数。
+
+        与 enrich_batch 的区别：不向仓储查询候选，直接处理传入行。
+        供"单次爬取运行内自动富化"等已精确圈定范围的场景使用。
+        """
+        concurrency = max(1, min(int(concurrency or 1), 10))
+        succeeded = 0
+        failed = 0
+        if concurrency <= 1:
+            for repo in rows:
+                if self._enrich_and_store(repo):
+                    succeeded += 1
+                else:
+                    failed += 1
+        else:
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                futures = [executor.submit(self._enrich_and_store, repo) for repo in rows]
+                for future in as_completed(futures):
+                    if future.result():
+                        succeeded += 1
+                    else:
+                        failed += 1
+        return {
+            "status": "success",
+            "processed": len(rows),
+            "succeeded": succeeded,
+            "failed": failed,
+            "concurrency": concurrency,
+        }
+
     def _enrich_and_store(self, repo: Dict[str, Any]) -> bool:
         repo_id = str(repo.get("repo_id") or "").strip()
         source_fingerprint = str(repo.get("source_fingerprint") or "").strip()

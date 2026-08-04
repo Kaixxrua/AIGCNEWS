@@ -70,6 +70,45 @@ class GitHubProjectsEnrichResponse(BaseModel):
     result: Optional[Dict[str, Any]] = None
 
 
+class GitHubProjectsCrawlRequest(BaseModel):
+    """GitHub 搜索爬取触发参数；max_stars=0 表示不封顶。"""
+
+    min_stars: int = Field(default=500, ge=0)
+    max_stars: int = Field(default=0, ge=0)
+    created_start: str = Field(default="2008-01-01", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    created_end: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    pushed_after: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    limit: int = Field(default=5000, ge=1, le=20000)
+    enrich: bool = True
+    dry_run: bool = False
+
+
+class GitHubProjectsCrawlResponse(BaseModel):
+    status: str
+    message: str
+    channel: str = ""
+    first_seen_after: str = ""
+    result: Optional[Dict[str, Any]] = None
+
+
+class GitHubProjectsCrawlStatusResponse(BaseModel):
+    """爬取运行状态 + 实时计数（无任务时 status=idle）。"""
+
+    status: str = "idle"
+    channel: str = ""
+    first_seen_after: str = ""
+    task_id: Optional[int] = None
+    task_status: str = ""
+    item_count: int = 0
+    error_msg: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    candidates_upserted: int = 0
+    scope_total: int = 0
+    enriched_succeeded: int = 0
+    enriched_failed: int = 0
+
+
 class ProjectTaxonomyItem(BaseModel):
     """管理端诊断投影：只暴露 slug/name/children（线格式与面向用户的多语种分类不同）。"""
 
