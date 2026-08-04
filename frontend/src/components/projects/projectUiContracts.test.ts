@@ -1,75 +1,412 @@
+import { mount } from '@vue/test-utils'
+import { createI18n } from 'vue-i18n'
 import { describe, expect, it } from 'vitest'
-import filtersSource from './ProjectFiltersPanel.vue?raw'
-import paginationSource from './ProjectPagination.vue?raw'
-import cardSource from './ProjectResultCard.vue?raw'
-import addDialogSource from './ToolWebsiteAddDialog.vue?raw'
-import editDialogSource from './ToolWebsiteEditDialog.vue?raw'
-import viewSource from '@/views/GitHubProjectsView.vue?raw'
+import ProjectFiltersPanel from './ProjectFiltersPanel.vue'
+import ProjectPagination from './ProjectPagination.vue'
+import ProjectResultCard from './ProjectResultCard.vue'
+import ToolWebsiteAddDialog from './ToolWebsiteAddDialog.vue'
+import ToolWebsiteEditDialog from './ToolWebsiteEditDialog.vue'
+import type {
+  GitHubProjectCategory,
+  GitHubProjectItem,
+  GitHubProjectSort,
+  GitHubProjectTag,
+  ProjectScope,
+  ProjectTaxonomyItem,
+  ProjectViewSource,
+} from '@/services/projects/projectApi'
 
-const cssVariableFallback = (source: string, variable: string, fallback: string) => {
-  expect(source).toContain(`var(${variable}, ${fallback})`)
+const i18n = createI18n({
+  legacy: false,
+  locale: 'zh-CN',
+  messages: {},
+  missingWarn: false,
+  fallbackWarn: false,
+})
+
+const mountOptions = {
+  global: {
+    plugins: [i18n],
+    stubs: { Teleport: true },
+  },
 }
 
-describe('project UI sizing contracts', () => {
-  it('uses one page-scoped control height contract for filter controls', () => {
-    expect(filtersSource).toContain('class="projects-source-tab"')
-    expect(filtersSource).toContain('min-height: var(--projects-control-height, 44px)')
-    expect(filtersSource).toContain('height: var(--projects-control-height, 44px)')
-    expect(filtersSource).toContain('min-height: var(--projects-control-compact-height, 36px)')
-    expect(filtersSource).toContain('padding-right: 142px')
-    expect(filtersSource).toContain('overflow-x: auto')
+const githubRepo = (patch: Partial<GitHubProjectItem> = {}): GitHubProjectItem => ({
+  full_name: 'acme/radar',
+  url: 'https://github.com/acme/radar',
+  description: 'A radar for AI projects',
+  language: 'TypeScript',
+  stars: 1234,
+  forks: 56,
+  topics: ['ai', 'radar'],
+  tags: ['agent'],
+  source: 'github',
+  ...patch,
+})
+
+const cardProps = (patch: Record<string, unknown> = {}) => ({
+  repo: githubRepo(),
+  index: 0,
+  isPersonalView: false,
+  canFavorite: true,
+  canRecommend: true,
+  canEdit: false,
+  showDelete: false,
+  isLoggedIn: true,
+  favoriteBusy: false,
+  favoriteActionsBusy: false,
+  recommendBusy: false,
+  recommendActionsBusy: false,
+  savingEdit: false,
+  deleting: false,
+  logoLoaded: false,
+  logoBroken: false,
+  sort: 'hot' as const,
+  scope: 'all' as const,
+  ...patch,
+})
+
+type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
+
+interface FiltersProps {
+  sourceOptions: SourceOption[]
+  source: ProjectViewSource
+  requiresPersonalLogin: boolean
+  searchQuery: string
+  selectedLanguage: string
+  sort: GitHubProjectSort
+  selectedScope: ProjectScope
+  isWebsiteOnlyView: boolean
+  isPersonalView: boolean
+  categoriesLoading: boolean
+  tagsLoading: boolean
+  allScope?: GitHubProjectCategory
+  recommendedScope?: GitHubProjectCategory
+  todayScope?: GitHubProjectCategory
+  semanticCategories: GitHubProjectCategory[]
+  activeCategory?: GitHubProjectCategory
+  visibleSubcategories: GitHubProjectCategory[]
+  selectedCategory: string
+  selectedSubcategory: string
+  personalTags: GitHubProjectTag[]
+  selectedTag: string
+}
+
+const filtersProps = (patch: Partial<FiltersProps> = {}): FiltersProps => ({
+  sourceOptions: [
+    { value: 'github', label: 'GitHub', hint: 'repos' },
+    { value: 'website', label: 'Websites', hint: 'tools' },
+  ],
+  source: 'github',
+  requiresPersonalLogin: false,
+  searchQuery: '',
+  selectedLanguage: '',
+  sort: 'hot',
+  selectedScope: 'all',
+  isWebsiteOnlyView: false,
+  isPersonalView: false,
+  categoriesLoading: false,
+  tagsLoading: false,
+  semanticCategories: [],
+  visibleSubcategories: [],
+  selectedCategory: 'all',
+  selectedSubcategory: 'all',
+  personalTags: [],
+  selectedTag: '',
+  ...patch,
+})
+
+describe('project card rail behavior', () => {
+  it('renders the action rail with tooltip wiring and favorite aria state', () => {
+    const wrapper = mount(ProjectResultCard, {
+      ...mountOptions,
+      props: cardProps({ repo: githubRepo({ is_favorited: true } as Partial<GitHubProjectItem>) }),
+    })
+
+    const rail = wrapper.find('aside.project-card__rail')
+    expect(rail.exists()).toBe(true)
+    const link = wrapper.find('a.project-card__link')
+    expect(link.attributes('href')).toBe('https://github.com/acme/radar')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('aria-describedby')).toBe('project-action-0-link-tooltip')
+    expect(wrapper.find('#project-action-0-link-tooltip').attributes('role')).toBe('tooltip')
+
+    const favorite = wrapper.find('button.project-card__favorite')
+    expect(favorite.exists()).toBe(true)
+    expect(favorite.attributes('aria-pressed')).toBe('true')
+    expect(favorite.attributes('aria-describedby')).toBe('project-action-0-favorite-tooltip')
+    expect(favorite.classes()).toContain('project-card__favorite--active')
   })
 
-  it('uses a tooltip-enabled icon rail with a mobile text fallback', () => {
-    expect(cardSource).not.toContain('project-card__pin')
-    expect(cardSource).toContain('<div class="project-card__body">')
-    expect(cardSource).toContain('<aside class="project-card__rail"')
-    expect(cardSource).toContain('class="project-card__action project-card__link"')
-    expect(cardSource).toContain('class="project-card__action-icon"')
-    expect(cardSource).toContain('class="project-card__action-label"')
-    expect(cardSource).toContain('class="project-card__tooltip" role="tooltip"')
-    expect(cardSource).toContain(':aria-describedby="`project-action-${index}-favorite-tooltip`"')
-    expect(cardSource).toContain(':aria-label="t(favoriteButtonLabelKey(repo, favoriteBusy, isLoggedIn))"')
-    expect(cardSource).toContain(':title="t(recommendButtonLabelKey(repo, recommendBusy))"')
-    expect(cardSource).toContain('right: calc(-1 * var(--projects-card-action-size, 34px))')
-    expect(cardSource).toContain('margin-right: var(--projects-card-action-size, 34px)')
-    expect(cardSource).toContain('border-left: 0')
-    expect(cardSource).toContain('border-radius: 0 4px 4px 0')
-    expect(cardSource).toContain('box-shadow: 2px 2px 0 #11110f')
-    expect(cardSource).toContain('flex: 1')
-    expect(cardSource).toContain('width: var(--projects-card-action-size, 34px)')
-    expect(cardSource).toContain('min-height: var(--projects-card-action-size, 34px)')
-    expect(cardSource).not.toContain('@container')
-    expect(cardSource).toContain('content-visibility: auto')
-    expect(cardSource).toContain('contain-intrinsic-size: auto 520px')
-    expect(cardSource).not.toContain('stagger-enter')
-    expect(cardSource).toContain('animation: projectCardIn 0.32s ease both')
-    expect(cardSource).toContain('flex-wrap: wrap')
-    expect(cardSource).not.toContain('opacity: 0.35')
-    expect(cardSource).not.toContain('.project-card:hover .project-card__rail')
-    expect(cardSource).toContain('@media (hover: hover)')
-    expect(cardSource).toContain('rotate(-0.4deg)')
-    expect(cardSource).toContain('box-shadow: 8px 8px 0 #11110f')
-    expect(cardSource).toContain('@keyframes projectCardTabPop')
-    expect(cardSource).toContain(':aria-pressed="Boolean(repo.is_favorited)"')
-    expect(cardSource).toContain(':disabled="recommendActionsBusy"')
-    expect(viewSource).toContain('--projects-card-action-size: 34px')
-    expect(viewSource).not.toMatch(/\.project-card \{\s*position: relative;\s*display: flex;/)
-    expect(viewSource).toContain('.project-card--skeleton {')
+  it('emits favorite and recommend with the repo payload', async () => {
+    const repo = githubRepo()
+    const wrapper = mount(ProjectResultCard, {
+      ...mountOptions,
+      props: cardProps({ repo }),
+    })
+
+    await wrapper.find('button.project-card__favorite').trigger('click')
+    await wrapper.find('button.project-card__recommend').trigger('click')
+
+    expect(wrapper.emitted('favorite')).toEqual([[repo]])
+    expect(wrapper.emitted('recommend')).toEqual([[repo]])
   })
 
-  it('keeps pagination controls equal-height with responsive wrapping', () => {
-    expect(paginationSource).toContain('projects-pagination__button')
-    cssVariableFallback(paginationSource, '--projects-control-height', '44px')
-    expect(paginationSource).toContain('height: var(--projects-control-height, 44px)')
-    expect(paginationSource).toContain('flex-wrap: wrap')
+  it('disables rail actions while their actions are busy', () => {
+    const wrapper = mount(ProjectResultCard, {
+      ...mountOptions,
+      props: cardProps({ favoriteActionsBusy: true, recommendActionsBusy: true }),
+    })
+
+    expect(wrapper.find('button.project-card__favorite').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button.project-card__recommend').attributes('disabled')).toBeDefined()
   })
 
-  it('normalizes dialog tabs and footer actions without relying on parent scoped styles', () => {
-    expect(addDialogSource).toContain('class="tool-modal__actions"')
-    expect(editDialogSource).toContain('class="tool-modal__actions"')
-    expect(viewSource).toContain('.projects-add-btn')
-    expect(viewSource).toContain('.projects-login-prompt__action')
-    expect(viewSource).not.toContain('.projects-add-submit')
+  it('hides edit and delete actions unless granted and emits them when shown', async () => {
+    const repo = githubRepo()
+    const hidden = mount(ProjectResultCard, { ...mountOptions, props: cardProps({ repo }) })
+    expect(hidden.find('button.project-card__edit').exists()).toBe(false)
+    expect(hidden.find('button.project-card__delete').exists()).toBe(false)
+
+    const shown = mount(ProjectResultCard, {
+      ...mountOptions,
+      props: cardProps({ repo, canEdit: true, showDelete: true }),
+    })
+    await shown.find('button.project-card__edit').trigger('click')
+    await shown.find('button.project-card__delete').trigger('click')
+    expect(shown.emitted('edit')).toEqual([[repo]])
+    expect(shown.emitted('delete')).toEqual([[repo]])
+  })
+
+  it('emits chipClick with the clicked chip', async () => {
+    const wrapper = mount(ProjectResultCard, { ...mountOptions, props: cardProps() })
+    const chip = wrapper.find('.project-chip')
+    expect(chip.exists()).toBe(true)
+
+    await chip.trigger('click')
+
+    const events = wrapper.emitted('chipClick')
+    expect(events).toHaveLength(1)
+    expect(events![0]![0]).toMatchObject({ value: expect.any(String), type: expect.any(String) })
+  })
+})
+
+describe('filters panel behavior', () => {
+  it('renders source tabs with the active state and emits changeSource', async () => {
+    const wrapper = mount(ProjectFiltersPanel, { ...mountOptions, props: filtersProps() })
+    const tabs = wrapper.findAll('button.projects-source-tab')
+    expect(tabs).toHaveLength(2)
+    expect(tabs[0]!.classes()).toContain('projects-source-tab--active')
+    expect(tabs[1]!.classes()).not.toContain('projects-source-tab--active')
+
+    await tabs[1]!.trigger('click')
+
+    expect(wrapper.emitted('changeSource')).toEqual([['website']])
+  })
+
+  it('emits update:searchQuery on typing and clears via the clear button', async () => {
+    const wrapper = mount(ProjectFiltersPanel, {
+      ...mountOptions,
+      props: filtersProps({ searchQuery: 'radar' }),
+    })
+
+    const input = wrapper.find('input[type="search"]')
+    await input.setValue('llm')
+    expect(wrapper.emitted('update:searchQuery')?.[0]).toEqual(['llm'])
+
+    await wrapper.find('button.projects-search__clear').trigger('click')
+    expect(wrapper.emitted('update:searchQuery')?.[1]).toEqual([''])
+  })
+
+  it('emits update:sort from the sort select and disables it for the today scope', async () => {
+    const wrapper = mount(ProjectFiltersPanel, { ...mountOptions, props: filtersProps() })
+    const select = wrapper.find('.projects-sort select')
+    expect(select.attributes('disabled')).toBeUndefined()
+
+    await select.setValue('stars')
+    expect(wrapper.emitted('update:sort')).toEqual([['stars']])
+
+    const today = mount(ProjectFiltersPanel, {
+      ...mountOptions,
+      props: filtersProps({ selectedScope: 'today' }),
+    })
+    expect(today.find('.projects-sort select').attributes('disabled')).toBeDefined()
+  })
+
+  it('emits scope and category selections from the category rows', async () => {
+    const wrapper = mount(ProjectFiltersPanel, {
+      ...mountOptions,
+      props: filtersProps({
+        allScope: { slug: 'all', name: 'All', count: 12 },
+        recommendedScope: { slug: 'recommended', name: 'Recommended', count: 3 },
+        semanticCategories: [{ slug: 'agents', name: 'Agents', count: 5, children: [] }],
+      }),
+    })
+
+    await wrapper.find('button.projects-category--scope').trigger('click')
+    await wrapper.find('button.projects-category--recommend').trigger('click')
+    await wrapper.find('button.projects-category:not(.projects-category--scope):not(.projects-category--recommend):not(.projects-category--today):not(.projects-category--sub):not(.projects-category--tag)').trigger('click')
+
+    expect(wrapper.emitted('selectScope')).toEqual([['all'], ['recommended']])
+    expect(wrapper.emitted('selectCategory')).toEqual([['agents']])
+  })
+})
+
+describe('pagination behavior', () => {
+  const paginationProps = (patch: Record<string, unknown> = {}) => ({
+    page: 2,
+    totalPages: 5,
+    total: 100,
+    hasPrev: true,
+    hasNext: true,
+    pageJump: '',
+    ...patch,
+  })
+
+  it('emits goPage with adjacent page numbers and respects boundaries', async () => {
+    const wrapper = mount(ProjectPagination, { ...mountOptions, props: paginationProps() })
+    const buttons = wrapper.findAll('button.projects-pagination__button')
+    expect(buttons[0]!.attributes('disabled')).toBeUndefined()
+    expect(buttons[2]!.attributes('disabled')).toBeUndefined()
+
+    await buttons[0]!.trigger('click')
+    await buttons[2]!.trigger('click')
+    expect(wrapper.emitted('goPage')).toEqual([[1], [3]])
+
+    const first = mount(ProjectPagination, {
+      ...mountOptions,
+      props: paginationProps({ page: 1, hasPrev: false }),
+    })
+    const last = mount(ProjectPagination, {
+      ...mountOptions,
+      props: paginationProps({ page: 5, hasNext: false }),
+    })
+    expect(first.findAll('button.projects-pagination__button')[0]!.attributes('disabled')).toBeDefined()
+    expect(last.findAll('button.projects-pagination__button')[2]!.attributes('disabled')).toBeDefined()
+  })
+
+  it('mirrors the jump input via update:pageJump and submits jumpToPage', async () => {
+    const wrapper = mount(ProjectPagination, { ...mountOptions, props: paginationProps() })
+
+    await wrapper.find('input[type="number"]').setValue('4')
+    expect(wrapper.emitted('update:pageJump')).toEqual([['4']])
+
+    await wrapper.find('form.projects-pagination__jump').trigger('submit')
+    expect(wrapper.emitted('jumpToPage')).toHaveLength(1)
+  })
+})
+
+describe('tool website dialogs behavior', () => {
+  const taxonomy: ProjectTaxonomyItem[] = [
+    {
+      slug: 'other',
+      name: 'Other',
+      children: [{ slug: 'other_uncategorized', name: 'Uncategorized', name_zh: '未分类', name_en: 'Uncategorized' }],
+    },
+  ]
+
+  interface AddDialogProps {
+    open: boolean
+    active: boolean
+    isMyCollection: boolean
+    taxonomy: ProjectTaxonomyItem[]
+    taxonomyLoading: boolean
+    busy: boolean
+    error: string
+  }
+
+  const addProps = (patch: Partial<AddDialogProps> = {}): AddDialogProps => ({
+    open: true,
+    active: true,
+    isMyCollection: false,
+    taxonomy,
+    taxonomyLoading: false,
+    busy: false,
+    error: '',
+    ...patch,
+  })
+
+  it('add dialog renders footer actions and guards close while busy', async () => {
+    const wrapper = mount(ToolWebsiteAddDialog, { ...mountOptions, props: addProps() })
+    expect(wrapper.find('.tool-modal__actions').exists()).toBe(true)
+
+    await wrapper.find('button.tool-modal__close').trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+
+    const busyDialog = mount(ToolWebsiteAddDialog, { ...mountOptions, props: addProps({ busy: true }) })
+    expect(busyDialog.find('button.tool-modal__close').attributes('disabled')).toBeDefined()
+    await busyDialog.find('button.tool-modal__close').trigger('click')
+    expect(busyDialog.emitted('close')).toBeUndefined()
+  })
+
+  it('add dialog requires a URL before emitting submitAuto', async () => {
+    const wrapper = mount(ToolWebsiteAddDialog, { ...mountOptions, props: addProps() })
+
+    await wrapper.find('form.tool-modal__panel').trigger('submit')
+    expect(wrapper.emitted('submitAuto')).toBeUndefined()
+
+    await wrapper.find('input').setValue(' https://example.com/tool ')
+    await wrapper.find('form.tool-modal__panel').trigger('submit')
+    expect(wrapper.emitted('submitAuto')).toEqual([['https://example.com/tool']])
+  })
+
+  it('add dialog validates manual fields and emits submitManual with parsed tags', async () => {
+    const wrapper = mount(ToolWebsiteAddDialog, { ...mountOptions, props: addProps() })
+    const tabButtons = wrapper.findAll('.tool-modal__tabs button')
+    await tabButtons[1]!.trigger('click')
+
+    const inputs = wrapper.findAll('input')
+    await inputs[0]!.setValue('https://example.com/tool')
+    await wrapper.find('form.tool-modal__panel').trigger('submit')
+    expect(wrapper.emitted('submitManual')).toBeUndefined()
+
+    await inputs[1]!.setValue('Example Tool')
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('A useful tool')
+    await wrapper.find('form.tool-modal__panel').trigger('submit')
+
+    expect(wrapper.emitted('submitManual')).toEqual([
+      [
+        {
+          url: 'https://example.com/tool',
+          title: 'Example Tool',
+          description_zh: 'A useful tool',
+          category_slug: 'other',
+          subcategory_slug: 'other_uncategorized',
+          tags: [],
+        },
+      ],
+    ])
+  })
+
+  it('edit dialog renders footer actions, pre-fills from target, and emits submit', async () => {
+    const target = githubRepo({
+      website_id: 42,
+      title: 'Existing Tool',
+      description: 'Existing description',
+      tags: ['ai', 'tool'],
+    })
+    const wrapper = mount(ToolWebsiteEditDialog, {
+      ...mountOptions,
+      props: {
+        open: false,
+        active: true,
+        target,
+        taxonomy,
+        taxonomyLoading: false,
+        busy: false,
+        error: '',
+      },
+    })
+    await wrapper.setProps({ open: true })
+
+    expect(wrapper.find('.tool-modal__actions').exists()).toBe(true)
+    expect((wrapper.find('input').element as HTMLInputElement).value).toBe('Existing Tool')
+
+    await wrapper.find('form').trigger('submit')
+    const events = wrapper.emitted('submit')
+    expect(events).toHaveLength(1)
+    expect(events![0]![0]).toBe(42)
+    expect(events![0]![1]).toMatchObject({ title: 'Existing Tool', tags: ['ai', 'tool'] })
   })
 })
