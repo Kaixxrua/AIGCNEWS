@@ -6,6 +6,7 @@ const DashboardView = () => import('@/views/DashboardView.vue')
 const GitHubProjectsView = () => import('@/views/GitHubProjectsView.vue')
 const ChatView = () => import('@/views/ChatView.vue')
 const ReportView = () => import('@/views/ReportView.vue')
+const XBoardView = () => import('@/views/XBoardView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
 const LoginView = () => import('@/views/LoginView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
@@ -61,6 +62,11 @@ const router = createRouter({
           path: 'report',
           name: 'report',
           component: ReportView,
+        },
+        {
+          path: 'x',
+          name: 'x-board',
+          component: XBoardView,
         },
         {
           path: 'mcp',
