@@ -38,3 +38,5 @@ aiosmtplib
 email-validator
 # 联网搜索后端（DuckDuckGo 免费兜底）
 duckduckgo-search>=6.0.0
+# X/Twitter 内部 GraphQL 客户端（cookie 凭证，source=x 采集）
+twitter-cli>=0.8.5
