@@ -541,7 +541,7 @@ async def ingest_single_source(
     前端监测页面可为每个数据源提供独立的"采集"按钮，
     调用此接口时仅采集指定源，不影响其他源。
 
-    - **source**：数据源名称（arxiv / github / news / producthunt / hackernews）
+    - **source**：数据源名称（arxiv / github / news / producthunt / hackernews / x）
     - **limit**：每源最多抓取条数（默认 20）
     """
     source_lower = source.strip().lower()
