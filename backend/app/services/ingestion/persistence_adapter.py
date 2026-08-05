@@ -25,16 +25,21 @@ def project_document_write(
     ai_score = document.metadata.get("ai_score") or paper.get("ai_score")
     score = ai_score if ai_score is not None else 0.0
     media = paper.get("media")
+    source = paper.get("source", source_label)
+    summary = paper.get("abstract") or paper.get("summary") or ""
+    if source != "x":
+        summary = summary[:500]
     return {
         "id": document.metadata["id"],
-        "source": paper.get("source", source_label),
+        "source": source,
         "source_channel": paper.get(
             "source_channel", paper.get("channel", "")
         ),
         "title": paper.get("title"),
         "url": paper.get("url"),
-        "summary": (paper.get("abstract") or paper.get("summary") or "")[:500],
+        "summary": summary,
         "published_date": paper.get("published_date"),
+        "published_at": paper.get("published_at"),
         "tags": paper.get("tags", []),
         "score": score,
         "raw_score": paper.get("raw_score", paper.get("score", 0.0)),
@@ -47,6 +52,7 @@ def project_document_write(
         "in_weekly": int(paper.get("in_weekly", 0)),
         "in_monthly": int(paper.get("in_monthly", 0)),
         "media": json.dumps(media, ensure_ascii=False) if media else None,
+        "author_avatar_url": paper.get("author_avatar_url"),
     }
 
 

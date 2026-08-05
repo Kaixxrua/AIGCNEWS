@@ -116,15 +116,30 @@ class XPolicyContracts(unittest.TestCase):
                 "quotes": 0,
                 "views": 100,
                 "bookmarks": 3,
+                "published_at": "2026-08-02T16:10:51+00:00",
                 "published_date": "2026-08-02",
                 "tweet_id": "1002",
                 "author": "openai",
                 "author_name": "OpenAI",
+                "author_avatar_url": "",
                 "rank_in_period": 1,
                 "tags": ["x", "daily", "openai"],
                 "media": [],
             },
         )
+
+    def test_project_tweets_extracts_avatar_url(self) -> None:
+        tweet = _tweet("1010", text="avatar")
+        tweet.author.profile_image_url = "https://pbs.twimg.com/profile_images/a.jpg"
+        items = x_policy.project_tweets([tweet], limit=5)
+        self.assertEqual(items[0]["author_avatar_url"], "https://pbs.twimg.com/profile_images/a.jpg")
+
+    def test_project_tweets_extracts_published_at(self) -> None:
+        items = x_policy.project_tweets(
+            [_tweet("1011", text="ts", created_at="Sun Aug 03 08:30:00 +0000 2026")], limit=5
+        )
+        self.assertEqual(items[0]["published_at"], "2026-08-03T08:30:00+00:00")
+        self.assertEqual(items[0]["published_date"], "2026-08-03")
 
     def test_project_tweets_extracts_media_metadata(self) -> None:
         tweet = _tweet("1008", text="with media")
@@ -148,7 +163,7 @@ class XPolicyContracts(unittest.TestCase):
         items = x_policy.project_tweets([tweet], limit=5)
         self.assertEqual(items[0]["media"], [])
 
-    def test_project_tweets_limit_and_title_truncation(self) -> None:
+    def test_project_tweets_preserves_full_text(self) -> None:
         long_text = "line one\n" + "x" * 200
         tweets = [
             _tweet(str(2000 + i), text=long_text, likes=i)
@@ -159,9 +174,9 @@ class XPolicyContracts(unittest.TestCase):
         # 按 likes 降序（其余指标为 0，log10(max(1,1))=0）
         self.assertEqual([item["likes"] for item in items], [4, 3, 2])
         for item in items:
-            self.assertEqual(len(item["title"]), 100)
-            self.assertTrue(item["title"].endswith("..."))
+            # 标题折叠空白但不截断，summary 保留原文
             self.assertNotIn("\n", item["title"])
+            self.assertEqual(len(item["title"]), len(long_text.replace("\n", " ")))
         # 全文保留在 summary/abstract
         self.assertEqual(items[0]["summary"], long_text)
 

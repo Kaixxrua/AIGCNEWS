@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,17 @@ from backend.app.repositories.rank_snapshot_repository import SNAPSHOT_PERIOD_CH
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _deserialize_row_media(row: dict[str, Any]) -> dict[str, Any]:
+    """把 documents.media 的 JSON 字符串反序列化为列表；失败则保留原值。"""
+    media = row.get("media")
+    if isinstance(media, str) and media:
+        try:
+            row["media"] = json.loads(media)
+        except json.JSONDecodeError:
+            row["media"] = None
+    return row
 
 
 class PostgresRankSnapshotRepository:
@@ -86,7 +98,8 @@ class PostgresRankSnapshotRepository:
         params.append(limit)
         sql = f"""
             SELECT d.id, d.source, d.title, d.url, d.summary, d.published_date,
-                   d.tags, d.indexed, d.created_at,
+                   d.published_at, d.tags, d.indexed, d.created_at,
+                   d.media, d.author_avatar_url,
                    COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
                    COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
                    COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
@@ -198,4 +211,4 @@ class PostgresRankSnapshotRepository:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(sql, params)
-                return [dict(row) for row in cursor.fetchall()]
+                return [_deserialize_row_media(dict(row)) for row in cursor.fetchall()]

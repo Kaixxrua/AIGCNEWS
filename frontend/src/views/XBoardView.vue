@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { countTweets, extractXHandle, flattenTweets, hasMedia, mediaItems, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { countTweets, extractXHandle, flattenTweets, hasMedia, mediaItems, tweetText, tweetTimestamp, authorAvatarUrl } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
 
@@ -79,7 +79,15 @@ onBeforeUnmount(dispose)
           class="tweet-card break-inside-avoid"
         >
           <div class="flex flex-wrap items-center gap-2 border-b border-stone-200/60 bg-gradient-to-br from-white/80 via-stone-50/50 to-stone-100/60 px-4 py-3">
-            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-stone-900 font-mono text-[10px] font-bold text-white">𝕏</span>
+            <img
+              v-if="authorAvatarUrl(tweet)"
+              :src="authorAvatarUrl(tweet)"
+              :alt="extractXHandle(tweet.url) || ''"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+              class="h-6 w-6 shrink-0 rounded-lg object-cover"
+            />
+            <span v-else class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-stone-900 font-mono text-[10px] font-bold text-white">𝕏</span>
             <a
               v-if="extractXHandle(tweet.url)"
               class="truncate text-xs font-semibold text-stone-700 hover:text-stone-900"
@@ -119,10 +127,9 @@ onBeforeUnmount(dispose)
 
           <!-- 文字区 -->
           <div class="px-4 py-3">
-            <a :href="tweet.url" target="_blank" rel="noopener noreferrer" class="block text-sm leading-5 text-stone-700 hover:text-stone-900">
-              {{ tweet.title }}
+            <a :href="tweet.url" target="_blank" rel="noopener noreferrer" class="block whitespace-pre-line text-sm leading-5 text-stone-700 hover:text-stone-900">
+              {{ tweetText(tweet) }}
             </a>
-            <p v-if="tweet.summary && tweet.summary !== tweet.title" class="mt-1 line-clamp-4 whitespace-pre-line text-xs leading-5 text-stone-500">{{ tweet.summary }}</p>
             <p v-if="formatTime(tweet)" class="mt-2 text-2xs text-stone-400">{{ formatTime(tweet) }}</p>
           </div>
         </article>

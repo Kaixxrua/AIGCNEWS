@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  authorAvatarUrl,
   countTweets,
   extractXHandle,
   flattenTweets,
@@ -7,6 +8,7 @@ import {
   hasMedia,
   mediaItems,
   tweetScore,
+  tweetText,
   tweetTimestamp,
 } from './xBoardViewModel'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
@@ -33,8 +35,17 @@ describe('xBoardViewModel', () => {
     expect(tweetScore({})).toBe(0)
     expect(tweetScore({ raw_score: 'NaN-ish' as unknown as number })).toBe(0)
     expect(tweetTimestamp({ published_at: '2026-08-04T01:00:00Z' })).toBe('2026-08-04T01:00:00Z')
-    expect(tweetTimestamp({ created_at: 'c', published_date: 'p' })).toBe('c')
+    expect(tweetTimestamp({ published_at: 'p', created_at: 'c', published_date: 'd' })).toBe('p')
+    expect(tweetTimestamp({ created_at: 'c', published_date: 'd' })).toBe('d')
     expect(tweetTimestamp({})).toBe('')
+  })
+
+  it('extracts avatar url and full tweet text', () => {
+    expect(authorAvatarUrl({ author_avatar_url: 'https://x.com/a.jpg' })).toBe('https://x.com/a.jpg')
+    expect(authorAvatarUrl({})).toBeUndefined()
+    expect(tweetText({ summary: 'full', title: 'short' })).toBe('full')
+    expect(tweetText({ title: 'only' })).toBe('only')
+    expect(tweetText({})).toBe('')
   })
 
   it('detects and lists media items safely', () => {

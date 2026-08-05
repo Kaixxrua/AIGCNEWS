@@ -22,9 +22,6 @@ logger = logging.getLogger(__name__)
 X_SOURCE = "x"
 X_CHANNEL = "x_daily_watchlist"
 
-_TITLE_MAX_CHARS = 100
-# twitter-cli 返回的 created_at 为 Twitter legacy 格式，
-# 如 "Sat Aug 02 16:10:51 +0000 2026"
 _TWEET_TIME_FORMAT = "%a %b %d %H:%M:%S %z %Y"
 
 
@@ -77,19 +74,25 @@ def compute_engagement_score(
     )
 
 
+def parse_tweet_datetime(created_at: str) -> datetime | None:
+    """legacy 时间串 → UTC datetime；解析失败返回 None。"""
+    if not created_at:
+        return None
+    try:
+        parsed = datetime.strptime(created_at, _TWEET_TIME_FORMAT)
+        return parsed.astimezone(timezone.utc)
+    except (ValueError, TypeError) as exc:
+        logger.debug("[XPolicy] bad tweet created_at %r: %s", created_at, exc)
+        return None
+
+
 def parse_tweet_date(created_at: str) -> str:
     """legacy 时间串 → UTC 日期 YYYY-MM-DD（与 HN policy 同一时区约定）。
 
     解析失败返回空串并 debug 日志（HN 先例：不因此丢弃条目）。
     """
-    if not created_at:
-        return ""
-    try:
-        parsed = datetime.strptime(created_at, _TWEET_TIME_FORMAT)
-        return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d")
-    except (ValueError, TypeError) as exc:
-        logger.debug("[XPolicy] bad tweet created_at %r: %s", created_at, exc)
-        return ""
+    parsed = parse_tweet_datetime(created_at)
+    return parsed.strftime("%Y-%m-%d") if parsed else ""
 
 
 def compose_tweet_url(screen_name: str, tweet_id: str) -> str:
@@ -113,14 +116,6 @@ def _project_tweet_media(tweet: Any) -> list[dict]:
         for item in media
         if getattr(item, "url", "")
     ]
-
-
-def _truncate_title(text: str) -> str:
-    """推文转单行标题：折叠空白，超限截断。"""
-    collapsed = " ".join(text.split())
-    if len(collapsed) <= _TITLE_MAX_CHARS:
-        return collapsed
-    return collapsed[: _TITLE_MAX_CHARS - 3].rstrip() + "..."
 
 
 def project_tweets(
@@ -154,13 +149,20 @@ def project_tweets(
         author = getattr(tweet, "author", None)
         screen_name = str(getattr(author, "screen_name", "") or "")
         author_name = str(getattr(author, "name", "") or "")
+        author_avatar_url = str(
+            getattr(author, "profile_image_url", "")
+            or getattr(author, "profile_image_url_https", "")
+            or ""
+        )
         text = str(getattr(tweet, "text", "") or "")
         metrics = getattr(tweet, "metrics", None)
         score = _score(tweet)
         media = _project_tweet_media(tweet)
+        created_at = str(getattr(tweet, "created_at", "") or "")
+        parsed_dt = parse_tweet_datetime(created_at)
         results.append(
             {
-                "title": _truncate_title(text),
+                "title": " ".join(text.split()),
                 "url": compose_tweet_url(screen_name, tweet_id),
                 "abstract": text,
                 "summary": text,
@@ -175,12 +177,12 @@ def project_tweets(
                 "quotes": int(getattr(metrics, "quotes", 0) or 0),
                 "views": int(getattr(metrics, "views", 0) or 0),
                 "bookmarks": int(getattr(metrics, "bookmarks", 0) or 0),
-                "published_date": parse_tweet_date(
-                    str(getattr(tweet, "created_at", "") or "")
-                ),
+                "published_at": parsed_dt.isoformat() if parsed_dt else "",
+                "published_date": parsed_dt.strftime("%Y-%m-%d") if parsed_dt else "",
                 "tweet_id": tweet_id,
                 "author": screen_name,
                 "author_name": author_name,
+                "author_avatar_url": author_avatar_url,
                 "rank_in_period": rank,
                 "tags": [X_SOURCE, "daily", screen_name],
                 "media": media,

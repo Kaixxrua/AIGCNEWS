@@ -25,6 +25,7 @@ export interface TopDoc {
   snapshot_date?: string
   source?: string
   url?: string
+  author_avatar_url?: string
   stars?: number
   language?: string
   feed_name?: string

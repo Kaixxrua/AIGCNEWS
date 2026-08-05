@@ -70,12 +70,12 @@ def _document_search_candidates(query: str, *, max_terms: int = 5) -> list[str]:
 def _document_projection() -> str:
     return """
         SELECT d.id, d.source, d.source_channel, d.title, d.url, d.summary,
-               d.published_date, d.tags, d.score, d.raw_score,
+               d.published_date, d.published_at, d.tags, d.score, d.raw_score,
                COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
-               d.in_monthly, d.local_pdf_path, d.media, d.created_at
+               d.in_monthly, d.local_pdf_path, d.media, d.author_avatar_url, d.created_at
         FROM documents d
         LEFT JOIN github_repo_candidates c
           ON d.source = 'github' AND (c.full_name = d.title OR c.url = d.url)
@@ -118,6 +118,8 @@ class PostgresDocumentRepository:
         doc.setdefault("rank_in_period", 9999)
         doc.setdefault("local_pdf_path", None)
         doc.setdefault("media", None)
+        doc.setdefault("published_at", None)
+        doc.setdefault("author_avatar_url", None)
         if isinstance(doc.get("tags"), list):
             doc["tags"] = json.dumps(doc["tags"], ensure_ascii=False)
         if isinstance(doc.get("media"), list):
@@ -131,18 +133,19 @@ class PostgresDocumentRepository:
                     """
                     INSERT INTO documents
                         (id, source, source_channel, title, url, summary, published_date,
-                         tags, score, raw_score, stars, forks, language, rank_in_period,
-                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, created_at)
+                         published_at, tags, score, raw_score, stars, forks, language, rank_in_period,
+                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, author_avatar_url, created_at)
                     VALUES
                         (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s,
-                         %(summary)s, %(published_date)s, %(tags)s, %(score)s,
+                         %(summary)s, %(published_date)s, %(published_at)s, %(tags)s, %(score)s,
                          %(raw_score)s, %(stars)s, %(forks)s, %(language)s,
                          %(rank_in_period)s, %(indexed)s, %(in_daily)s, %(in_weekly)s,
-                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(created_at)s)
+                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(author_avatar_url)s, %(created_at)s)
                     ON CONFLICT (id) DO UPDATE SET
                         source_channel=EXCLUDED.source_channel, title=EXCLUDED.title,
                         url=EXCLUDED.url, summary=EXCLUDED.summary,
                         published_date=COALESCE(NULLIF(EXCLUDED.published_date, ''), documents.published_date),
+                        published_at=COALESCE(NULLIF(EXCLUDED.published_at, ''), documents.published_at),
                         tags=EXCLUDED.tags, score=GREATEST(documents.score, EXCLUDED.score),
                         raw_score=GREATEST(documents.raw_score, EXCLUDED.raw_score),
                         stars=COALESCE(NULLIF(EXCLUDED.stars, 0), documents.stars),
@@ -154,7 +157,8 @@ class PostgresDocumentRepository:
                         in_weekly=(documents.in_weekly OR EXCLUDED.in_weekly),
                         in_monthly=(documents.in_monthly OR EXCLUDED.in_monthly),
                         local_pdf_path=COALESCE(EXCLUDED.local_pdf_path, documents.local_pdf_path),
-                        media=COALESCE(NULLIF(EXCLUDED.media, ''), documents.media)
+                        media=COALESCE(NULLIF(EXCLUDED.media, ''), documents.media),
+                        author_avatar_url=COALESCE(NULLIF(EXCLUDED.author_avatar_url, ''), documents.author_avatar_url)
                     """,
                     params,
                 )

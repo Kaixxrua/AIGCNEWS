@@ -21,7 +21,13 @@ export const tweetScore = (doc: TopDoc): number => {
 }
 
 export const tweetTimestamp = (doc: TopDoc): string => (
-  doc.published_at || doc.created_at || doc.published_date || ''
+  doc.published_at || doc.published_date || ''
+)
+
+export const authorAvatarUrl = (doc: TopDoc): string | undefined => doc.author_avatar_url
+
+export const tweetText = (doc: TopDoc): string => (
+  doc.summary || doc.title || ''
 )
 
 export const hasMedia = (doc: TopDoc): boolean =>
