@@ -227,12 +227,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning("[Startup] Redis cache init failed (non-fatal): %s", exc)
 
         scheduler_enabled = bool(getattr(settings, "scheduler_enabled", True))
+        job_configs = {}
+        if scheduler_enabled:
+            try:
+                configs = await asyncio.to_thread(
+                    app.state.application_repositories.scheduler_job_configs.list_scheduler_job_configs,
+                )
+                job_configs = {config.job_id: config for config in configs}
+            except Exception as exc:
+                logger.warning("[Startup] 加载调度器配置失败（非致命）: %s", exc)
         scheduler_runtime = create_scheduler_runtime(
             app.state.application_repositories,
             enabled=scheduler_enabled,
             semantic_search_warmup=(
                 project_search_runtime.warmup_semantic_search
             ),
+            job_config_overrides=job_configs,
         )
         app.state.scheduler_runtime = scheduler_runtime
         app.state.x_operation_lock = scheduler_runtime.x_operation_lock

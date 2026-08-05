@@ -38,6 +38,8 @@ const runningCrawlStatus = (overrides: Partial<GithubCrawlStatus> = {}): GithubC
 const createApi = (): MonitorApi => ({
   fetchTasks: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 10 })),
   fetchSchedulerStatus: vi.fn(async () => ({ running: false, job_count: 0, jobs: [] })),
+  fetchSchedulerConfigs: vi.fn(async () => []),
+  saveSchedulerConfig: vi.fn(),
   fetchMcpToolCalls: vi.fn(async () => ({ since: '', total_calls: 0, tools: {} })),
   fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), fetchMcpServers: vi.fn(async () => []),
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
@@ -64,6 +66,36 @@ describe('Monitor page controller contract', () => {
     expect(api.fetchMcpToolCalls).toHaveBeenCalledOnce()
     expect(api.fetchProviderConfig).not.toHaveBeenCalled()
     expect(api.fetchMcpServers).not.toHaveBeenCalled()
+  })
+
+  it('loads scheduler configs for admins and validates save constraints', async () => {
+    const { api, controller } = createController()
+    const job = { job_id: 'ingest:arxiv', name: 'arXiv', start_time: '08:00', end_time: '20:00', interval_minutes: 120, enabled: true }
+    vi.mocked(api.fetchSchedulerConfigs).mockResolvedValue([job])
+    await controller.fetchSchedulerConfigs()
+    expect(controller.schedulerConfigs.value).toEqual([job])
+
+    controller.editSchedulerConfig(job)
+    expect(controller.editingSchedulerJobId.value).toBe('ingest:arxiv')
+
+    controller.schedulerConfigForm.value.start_time = '21:00'
+    controller.schedulerConfigForm.value.end_time = '08:00'
+    await controller.saveSchedulerConfig()
+    expect(controller.errorMsg.value).toBe('结束时间必须晚于开始时间。')
+
+    controller.schedulerConfigForm.value.start_time = '08:00'
+    controller.schedulerConfigForm.value.end_time = '20:00'
+    controller.schedulerConfigForm.value.interval_minutes = 0
+    await controller.saveSchedulerConfig()
+    expect(controller.errorMsg.value).toBe('轮询时间必须大于 0。')
+
+    vi.mocked(api.saveSchedulerConfig).mockResolvedValue(job)
+    controller.schedulerConfigForm.value.interval_minutes = 120
+    const payload = controller.schedulerConfigForm.value
+    await controller.saveSchedulerConfig()
+    expect(api.saveSchedulerConfig).toHaveBeenCalledWith(payload)
+    expect(controller.editingSchedulerJobId.value).toBeNull()
+    expect(controller.successMsg.value).toContain('配置已保存')
   })
 
   it('stores fetched MCP tool call metrics on refresh', async () => {

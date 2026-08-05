@@ -10,6 +10,8 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from backend.app.core import scheduler
+from backend.app.core.scheduler_triggers import DailyWindowIntervalTrigger
+from backend.app.repositories.scheduler_job_config_repository import SchedulerJobConfig
 
 
 class _RecordingScheduler:
@@ -347,6 +349,47 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "get_jobs",
             ],
         )
+
+    def test_job_config_overrides_replace_triggers_and_skip_disabled_jobs(self) -> None:
+        from datetime import time
+
+        events: list[str] = []
+        fake_scheduler = _RecordingScheduler(events)
+        overrides = {
+            "arxiv_papers": SchedulerJobConfig(
+                job_id="arxiv_papers",
+                start_time=time(9, 0),
+                end_time=time(17, 0),
+                interval_minutes=90,
+                enabled=True,
+            ),
+            "daily_briefing": SchedulerJobConfig(
+                job_id="daily_briefing",
+                start_time=time(8, 0),
+                end_time=time(8, 1),
+                interval_minutes=1440,
+                enabled=False,
+            ),
+        }
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=fake_scheduler,  # type: ignore[arg-type]
+            job_config_overrides=overrides,
+        )
+        with patch.object(scheduler.asyncio, "get_running_loop", return_value=_RecordingLoop(events)):
+            runtime.start()
+
+        calls = {kwargs["id"]: kwargs for _, kwargs in fake_scheduler.add_job_calls}
+        self.assertIn("arxiv_papers", calls)
+        self.assertIsInstance(calls["arxiv_papers"]["trigger"], DailyWindowIntervalTrigger)
+        self.assertEqual(calls["arxiv_papers"]["trigger"].start_time, time(9, 0))
+        self.assertEqual(calls["arxiv_papers"]["trigger"].end_time, time(17, 0))
+        self.assertEqual(calls["arxiv_papers"]["trigger"].interval.total_seconds(), 5400)
+
+        self.assertNotIn("daily_briefing", calls)
+
+        # Jobs without overrides keep their default cron triggers.
+        self.assertIsInstance(calls["github_trending"]["trigger"], CronTrigger)
 
     def test_running_scheduler_skips_registration_and_startup_work(self) -> None:
         events: list[str] = []

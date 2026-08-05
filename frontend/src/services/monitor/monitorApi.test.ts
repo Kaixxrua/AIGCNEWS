@@ -4,7 +4,16 @@ const transport = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(),
 vi.mock('../http/apiClient', () => ({ api: transport }))
 
 import { monitorApi } from './monitorApi'
-import { createEmptyMcpForm, createEmptyXCredentialForm, createGithubCrawlForm, createProviderForm } from '@/features/monitor/monitorModel'
+import { createEmptyMcpForm, createEmptySchedulerJobConfigForm, createEmptyXCredentialForm, createGithubCrawlForm, createProviderForm } from '@/features/monitor/monitorModel'
+
+const schedulerConfig = {
+  job_id: 'ingest:arxiv',
+  name: 'arXiv ingestion',
+  start_time: '08:00',
+  end_time: '20:00',
+  interval_minutes: 120,
+  enabled: true,
+}
 
 describe('Monitor API contract', () => {
   beforeEach(() => Object.values(transport).forEach((mock) => mock.mockReset()))
@@ -19,6 +28,23 @@ describe('Monitor API contract', () => {
     expect(transport.get).toHaveBeenLastCalledWith('/ops/scheduler/status')
     transport.get.mockResolvedValueOnce({ data: { items: null } })
     await expect(monitorApi.fetchMcpServers()).resolves.toEqual([])
+  })
+
+  it('preserves scheduler config list and update endpoints', async () => {
+    transport.get.mockResolvedValueOnce({ data: { items: [schedulerConfig] } })
+    await expect(monitorApi.fetchSchedulerConfigs()).resolves.toEqual([schedulerConfig])
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/scheduler/config')
+
+    transport.get.mockResolvedValueOnce({ data: {} })
+    await expect(monitorApi.fetchSchedulerConfigs()).resolves.toEqual([])
+
+    transport.put.mockResolvedValueOnce({ data: { item: schedulerConfig } })
+    const form = createEmptySchedulerJobConfigForm(schedulerConfig)
+    await expect(monitorApi.saveSchedulerConfig(form)).resolves.toEqual(schedulerConfig)
+    expect(transport.put).toHaveBeenLastCalledWith(
+      '/ops/scheduler/config/ingest%3Aarxiv',
+      { start_time: '08:00', end_time: '20:00', interval_minutes: 120, enabled: true },
+    )
   })
 
   it('normalizes the MCP tool call metrics section with safe defaults', async () => {

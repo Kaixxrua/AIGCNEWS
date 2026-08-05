@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 from dataclasses import FrozenInstanceError
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from types import SimpleNamespace
 
 from apscheduler.triggers.cron import CronTrigger
@@ -16,11 +16,16 @@ from backend.app.core.scheduler_registry import (
     CronJobDescriptor,
     CronSchedule,
     IntervalJobDescriptor,
+    IntervalSchedule,
+    WindowedIntervalJobDescriptor,
+    apply_job_config,
     build_trigger,
     project_scheduler_status,
     project_semantic_warmup_job_descriptor,
     resolve_source_job_callback,
 )
+from backend.app.core.scheduler_triggers import DailyWindowIntervalTrigger
+from backend.app.repositories.scheduler_job_config_repository import SchedulerJobConfig
 
 
 def _cron_fields(trigger: CronTrigger) -> dict[str, str]:
@@ -255,6 +260,96 @@ class SchedulerStatusProjectionTests(unittest.TestCase):
             ],
         )
         self.assertEqual(project_scheduler_status([]), [])
+
+
+class JobConfigOverrideTests(unittest.TestCase):
+    def test_disabled_config_returns_none(self) -> None:
+        descriptor = CronJobDescriptor(
+            id="test",
+            source="arxiv",
+            name="Test",
+            schedule=CronSchedule(minute=1),
+        )
+        config = SchedulerJobConfig(
+            job_id="test",
+            start_time=time(8, 0),
+            end_time=time(20, 0),
+            interval_minutes=60,
+            enabled=False,
+        )
+        self.assertIsNone(apply_job_config(descriptor, config))
+
+    def test_cron_descriptor_becomes_windowed(self) -> None:
+        descriptor = CronJobDescriptor(
+            id="arxiv_papers",
+            source="arxiv",
+            name="Papers",
+            schedule=CronSchedule(minute=1),
+            coalesce=False,
+            misfire_grace_time=7200,
+        )
+        config = SchedulerJobConfig(
+            job_id="arxiv_papers",
+            start_time=time(9, 0),
+            end_time=time(17, 0),
+            interval_minutes=90,
+        )
+        overridden = apply_job_config(descriptor, config)
+        self.assertIsInstance(overridden, WindowedIntervalJobDescriptor)
+        assert isinstance(overridden, WindowedIntervalJobDescriptor)
+        self.assertEqual(overridden.start_time, time(9, 0))
+        self.assertEqual(overridden.end_time, time(17, 0))
+        self.assertEqual(overridden.interval_minutes, 90)
+        self.assertEqual(overridden.coalesce, False)
+        self.assertEqual(overridden.misfire_grace_time, 7200)
+        trigger = build_trigger(overridden)
+        self.assertIsInstance(trigger, DailyWindowIntervalTrigger)
+
+    def test_interval_descriptor_becomes_windowed(self) -> None:
+        descriptor = IntervalJobDescriptor(
+            id="warmup",
+            source="project_semantic_warmup",
+            name="Warmup",
+            schedule=IntervalSchedule(minutes=30),
+            timezone="Asia/Shanghai",
+            coalesce=True,
+            misfire_grace_time=300,
+        )
+        config = SchedulerJobConfig(
+            job_id="warmup",
+            start_time=time(0, 0),
+            end_time=time(23, 59),
+            interval_minutes=15,
+        )
+        overridden = apply_job_config(descriptor, config)
+        self.assertIsInstance(overridden, WindowedIntervalJobDescriptor)
+        assert isinstance(overridden, WindowedIntervalJobDescriptor)
+        self.assertEqual(overridden.interval_minutes, 15)
+        self.assertEqual(overridden.timezone, "Asia/Shanghai")
+        self.assertEqual(overridden.coalesce, True)
+        self.assertEqual(overridden.misfire_grace_time, 300)
+
+    def test_windowed_descriptor_updates_schedule_fields(self) -> None:
+        descriptor = WindowedIntervalJobDescriptor(
+            id="warmup",
+            source="project_semantic_warmup",
+            name="Warmup",
+            start_time=time(0, 0),
+            end_time=time(23, 59),
+            interval_minutes=30,
+        )
+        config = SchedulerJobConfig(
+            job_id="warmup",
+            start_time=time(10, 0),
+            end_time=time(11, 0),
+            interval_minutes=5,
+        )
+        overridden = apply_job_config(descriptor, config)
+        self.assertIsInstance(overridden, WindowedIntervalJobDescriptor)
+        assert isinstance(overridden, WindowedIntervalJobDescriptor)
+        self.assertEqual(overridden.start_time, time(10, 0))
+        self.assertEqual(overridden.end_time, time(11, 0))
+        self.assertEqual(overridden.interval_minutes, 5)
 
 
 if __name__ == "__main__":

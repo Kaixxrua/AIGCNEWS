@@ -22,6 +22,7 @@ from backend.app.api.dependencies import (
     get_ops_diagnostics_service,
     get_runtime_provider_admin_service,
     get_scheduler_admin_service,
+    get_scheduler_config_admin_service,
     get_x_credential_admin_service,
     get_x_watch_account_repository,
     get_x_watch_admin_service,
@@ -53,6 +54,10 @@ from backend.app.models.schema_ops import (
     ProjectTaxonomyResponse,
     ProviderConfigRequest,
     ProviderConfigResponse,
+    SchedulerConfigListResponse,
+    SchedulerConfigUpdateRequest,
+    SchedulerConfigUpdateResponse,
+    SchedulerJobConfigItem,
     XCredentialDeleteResponse,
     XCredentialListResponse,
     XCredentialRequest,
@@ -99,6 +104,7 @@ from backend.app.services.runtime_provider.admin_service import (
     RuntimeProviderAdminService,
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
+from backend.app.services.scheduler_config_admin import SchedulerConfigAdminService
 from backend.app.services.x_credentials.admin_service import (
     SafeXCredentialProjection,
     XCredentialAdminNotFoundError,
@@ -980,6 +986,61 @@ async def trigger_scheduled_job(
 ):
     """立即触发指定的定时任务（用于调试）。"""
     return service.trigger(job_id)
+
+
+@router.get(
+    "/ops/scheduler/config",
+    response_model=SchedulerConfigListResponse,
+    tags=["Ops"],
+)
+async def list_scheduler_configs(
+    _: dict = Depends(RequireAdmin),
+    service: SchedulerConfigAdminService = Depends(get_scheduler_config_admin_service),
+) -> SchedulerConfigListResponse:
+    """列出所有可配置定时任务的起止时间与轮询间隔。
+
+    未保存过配置的任务返回硬编码默认值。
+    """
+    projections = await asyncio.to_thread(service.list_configs)
+    items = [
+        SchedulerJobConfigItem.model_validate(projection, from_attributes=True)
+        for projection in projections
+    ]
+    return SchedulerConfigListResponse(items=items, total=len(items))
+
+
+@router.put(
+    "/ops/scheduler/config/{job_id}",
+    response_model=SchedulerConfigUpdateResponse,
+    tags=["Ops"],
+)
+async def update_scheduler_config(
+    job_id: str,
+    request: SchedulerConfigUpdateRequest,
+    _: dict = Depends(RequireAdmin),
+    service: SchedulerConfigAdminService = Depends(get_scheduler_config_admin_service),
+) -> SchedulerConfigUpdateResponse:
+    """更新单个定时任务的时间窗口与轮询间隔。
+
+    修改在调度器重启后生效；当前运行中的任务仍按旧触发器执行。
+    """
+    try:
+        projection = await asyncio.to_thread(
+            service.update_config,
+            job_id,
+            start_time=request.start_time,
+            end_time=request.end_time,
+            interval_minutes=request.interval_minutes,
+            enabled=request.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return SchedulerConfigUpdateResponse(
+        status="success",
+        message=f"定时任务 {job_id} 配置已保存，重启后生效。",
+        item=SchedulerJobConfigItem.model_validate(projection, from_attributes=True),
+    )
 
 
 # ── 每日简报生成 ─────────────────────────────────────────────────────────────

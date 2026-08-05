@@ -338,7 +338,20 @@ const explicitBusinessTranslations: Record<string, string> = {
   'paper.pdfRendering': '正在渲染第 {loaded}/{total} 页',
   'paper.pdfLoading': '加载中…',
   'paper.pdfLoadingLong': '正在加载 PDF…',
-  'paper.pdfMissing': '暂无 PDF 文件'
+  'paper.pdfMissing': '暂无 PDF 文件',
+  'monitor.schedulerConfig.title': '定时任务配置',
+  'monitor.schedulerConfig.count': '{count} 个任务',
+  'monitor.schedulerConfig.jobName': '任务名称',
+  'monitor.schedulerConfig.window': '时间窗口',
+  'monitor.schedulerConfig.interval': '轮询间隔',
+  'monitor.schedulerConfig.intervalMinutes': '轮询时间（分钟）',
+  'monitor.schedulerConfig.startTime': '开始时间',
+  'monitor.schedulerConfig.endTime': '结束时间',
+  'monitor.schedulerConfig.status': '状态',
+  'monitor.schedulerConfig.active': '启用',
+  'monitor.schedulerConfig.paused': '停用',
+  'monitor.schedulerConfig.enabled': '启用该任务',
+  'monitor.schedulerConfig.restartHint': '保存后需重启后端服务方可生效；当前运行中的任务仍按旧配置执行。'
 }
 
 type MessageTree = Record<string, unknown>

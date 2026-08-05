@@ -111,6 +111,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             scheduler_factory.assert_called_once_with(
                 repositories,
                 enabled=False,
+                job_config_overrides={},
                 semantic_search_warmup=project_search_runtime.warmup_semantic_search,
             )
             scheduler_runtime.start.assert_not_called()
@@ -220,6 +221,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         scheduler_factory.assert_called_once_with(
             repositories,
             enabled=True,
+            job_config_overrides={},
             semantic_search_warmup=project_search_runtime.warmup_semantic_search,
         )
         scheduler_runtime.stop.assert_awaited_once_with()

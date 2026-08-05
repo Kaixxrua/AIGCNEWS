@@ -2,13 +2,15 @@ import { api } from '@/services/http/apiClient'
 import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm,
-  SchedulerStatus, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
+  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics } from '@/features/monitor/monitorModel'
+import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
   fetchSchedulerStatus(): Promise<SchedulerStatus>
+  fetchSchedulerConfigs(): Promise<SchedulerJobConfig[]>
+  saveSchedulerConfig(form: SchedulerJobConfigForm): Promise<SchedulerJobConfig>
   fetchMcpToolCalls(): Promise<McpToolCallMetricsSnapshot>
   fetchProviderConfig(): Promise<ProviderConfig>
   saveProviderConfig(form: ProviderForm): Promise<ProviderConfig>
@@ -40,6 +42,14 @@ export const monitorApi: MonitorApi = {
     return { items: data?.items || [], total: data?.total || 0, page: data?.page || page, page_size: data?.page_size || pageSize }
   },
   async fetchSchedulerStatus() { return (await api.get('/ops/scheduler/status')).data },
+  async fetchSchedulerConfigs() {
+    const { data } = await api.get('/ops/scheduler/config')
+    return Array.isArray(data?.items) ? data.items : []
+  },
+  async saveSchedulerConfig(form) {
+    const payload = buildSchedulerJobConfigPayload(form)
+    return (await api.put(`/ops/scheduler/config/${encodeURIComponent(form.job_id)}`, payload)).data?.item
+  },
   async fetchMcpToolCalls() {
     const { data } = await api.get('/monitor/metrics')
     const section = data?.mcp_tool_calls

@@ -9,6 +9,7 @@ import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionC
 import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
 import MonitorTaskPanel from '@/components/monitor/MonitorTaskPanel.vue'
 import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
+import SchedulerConfigPanel from '@/components/monitor/SchedulerConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
 import XWatchCard from '@/components/monitor/XWatchCard.vue'
 import WechatAccountPanel from '@/components/wechat/WechatAccountPanel.vue'
@@ -17,13 +18,14 @@ import { useMonitorPageController } from '@/composables/useMonitorPageController
 const { t } = useI18n()
 const authStore = useAuthStore()
 const {
-  tasks, total, page, schedulerStatus, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
+  tasks, total, page, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
   loadingProviderConfig, savingProviderConfig, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
   fetchMcpServers, refreshData, goPage, saveProviderConfig, resetMcpForm, editMcpServer, saveMcpServer,
   testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings, clearDashboardCache, syncDataNow,
   ingestByDate, clearAllData,
+  editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
   crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
 } = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
 
@@ -84,6 +86,19 @@ onMounted(refreshData)
       :loading="loadingProviderConfig"
       :saving="savingProviderConfig"
       @save="saveProviderConfig"
+    />
+
+    <!-- Admin 专属：定时任务配置 -->
+    <SchedulerConfigPanel
+      v-if="authStore.isAdmin"
+      :configs="schedulerConfigs"
+      :form="schedulerConfigForm"
+      :loading="loadingSchedulerConfigs"
+      :saving="savingSchedulerConfig"
+      :editing-job-id="editingSchedulerJobId"
+      @edit="editSchedulerConfig"
+      @cancel="cancelSchedulerConfigEdit"
+      @save="saveSchedulerConfig"
     />
 
     <!-- Admin 专属：MCP Server 配置 -->

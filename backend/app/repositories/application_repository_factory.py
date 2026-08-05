@@ -67,6 +67,9 @@ from backend.app.repositories.postgres_rank_snapshot_repository import (
 from backend.app.repositories.postgres_runtime_provider_repository import (
     PostgresRuntimeProviderSettingRepository,
 )
+from backend.app.repositories.postgres_scheduler_job_config_repository import (
+    PostgresSchedulerJobConfigRepository,
+)
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
@@ -96,6 +99,9 @@ from backend.app.repositories.project_write_repository import (
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingRepository,
+)
+from backend.app.repositories.scheduler_job_config_repository import (
+    SchedulerJobConfigRepository,
 )
 from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
@@ -139,6 +145,7 @@ class ApplicationRepositories:
     briefing_subscriptions: BriefingSubscriptionRepository
     evaluations: EvaluationRepository
     runtime_provider_settings: RuntimeProviderSettingRepository
+    scheduler_job_configs: SchedulerJobConfigRepository
     mcp_server_configs: McpServerConfigRepository
     mcp_access_tokens: McpAccessTokenRepository
     github_ingestion: GitHubProjectIngestionRepository
@@ -207,6 +214,7 @@ def create_application_repositories(
         briefing_subscriptions=PostgresBriefingSubscriptionRepository(postgres),
         evaluations=PostgresEvaluationRepository(postgres),
         runtime_provider_settings=PostgresRuntimeProviderSettingRepository(postgres),
+        scheduler_job_configs=PostgresSchedulerJobConfigRepository(postgres),
         mcp_server_configs=PostgresMcpServerConfigRepository(postgres),
         mcp_access_tokens=PostgresMcpAccessTokenRepository(postgres),
         github_ingestion=PostgresGitHubProjectIngestionRepository(postgres),

@@ -8,6 +8,40 @@ export interface Task {
   finished_at: string | null
 }
 
+export interface SchedulerJobConfig {
+  job_id: string
+  name: string
+  start_time: string
+  end_time: string
+  interval_minutes: number
+  enabled: boolean
+}
+
+export interface SchedulerJobConfigForm {
+  job_id: string
+  name: string
+  start_time: string
+  end_time: string
+  interval_minutes: number
+  enabled: boolean
+}
+
+export const createEmptySchedulerJobConfigForm = (job?: SchedulerJobConfig): SchedulerJobConfigForm => ({
+  job_id: job?.job_id || '',
+  name: job?.name || '',
+  start_time: job?.start_time || '00:00',
+  end_time: job?.end_time || '23:59',
+  interval_minutes: job?.interval_minutes || 60,
+  enabled: job?.enabled ?? true,
+})
+
+export const buildSchedulerJobConfigPayload = (form: SchedulerJobConfigForm) => ({
+  start_time: form.start_time,
+  end_time: form.end_time,
+  interval_minutes: form.interval_minutes,
+  enabled: form.enabled,
+})
+
 export interface SchedulerStatus {
   running: boolean
   job_count: number

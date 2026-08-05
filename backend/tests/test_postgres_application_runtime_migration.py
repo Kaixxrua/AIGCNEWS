@@ -29,8 +29,8 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 13
-    assert migrations[-1].filename == "0013_wechat_official_accounts.sql"
+    assert migrations[-1].version == 16
+    assert migrations[-1].filename == "0016_scheduler_job_config.sql"
 
 
 def test_wechat_official_accounts_migration_defines_secret_safe_tables() -> None:
@@ -52,8 +52,11 @@ def test_wechat_official_accounts_migration_defines_secret_safe_tables() -> None
     assert "account_id," in sql
     assert "stable_article_key" in sql
     assert "encrypted_uuid_cookie TEXT NOT NULL" in sql
+    assert "encrypted_uuid_cookie_nonce TEXT NOT NULL" in sql
     assert "encrypted_token TEXT NOT NULL" in sql
+    assert "encrypted_token_nonce TEXT NOT NULL" in sql
     assert "encrypted_cookie TEXT NOT NULL" in sql
+    assert "encrypted_cookie_nonce TEXT NOT NULL" in sql
     assert "encryption_key_version VARCHAR(64) NOT NULL" in sql
     assert "owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE" in sql
     assert "account_id BIGINT NOT NULL REFERENCES wechat_official_accounts(id) ON DELETE CASCADE" in sql

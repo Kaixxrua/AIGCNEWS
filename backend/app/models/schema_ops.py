@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import time
 from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -294,3 +295,30 @@ class XCredentialTestResponse(BaseModel):
     status: str
     message: str
     credential: XCredentialResponse
+
+
+class SchedulerJobConfigItem(BaseModel):
+    job_id: str
+    name: str
+    start_time: time
+    end_time: time
+    interval_minutes: int = Field(..., ge=1)
+    enabled: bool = True
+
+
+class SchedulerConfigListResponse(BaseModel):
+    items: list[SchedulerJobConfigItem]
+    total: int
+
+
+class SchedulerConfigUpdateRequest(BaseModel):
+    start_time: time
+    end_time: time
+    interval_minutes: int = Field(..., ge=1)
+    enabled: bool = True
+
+
+class SchedulerConfigUpdateResponse(BaseModel):
+    status: str
+    message: str
+    item: SchedulerJobConfigItem

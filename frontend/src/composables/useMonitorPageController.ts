@@ -3,7 +3,8 @@ import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
   createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
-  type GithubCrawlStatus, type McpServerConfig, type McpToolCallMetricsSnapshot, type SourceKey,
+  createEmptySchedulerJobConfigForm,
+  type GithubCrawlStatus, type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
 
 interface MonitorPageControllerOptions {
@@ -36,6 +37,11 @@ export const useMonitorPageController = ({
   const page = ref(1)
   const pageSize = ref(10)
   const schedulerStatus = ref<Awaited<ReturnType<MonitorApi['fetchSchedulerStatus']>> | null>(null)
+  const schedulerConfigs = ref<SchedulerJobConfig[]>([])
+  const schedulerConfigForm = ref<SchedulerJobConfigForm>(createEmptySchedulerJobConfigForm())
+  const loadingSchedulerConfigs = ref(false)
+  const savingSchedulerConfig = ref(false)
+  const editingSchedulerJobId = ref<string | null>(null)
   const mcpToolCalls = ref<McpToolCallMetricsSnapshot | null>(null)
   const loading = ref(false)
   const errorMsg = ref('')
@@ -80,6 +86,13 @@ export const useMonitorPageController = ({
     try { schedulerStatus.value = await api.fetchSchedulerStatus() }
     catch (error) { console.error('Failed to fetch scheduler status', error) }
   }
+  const fetchSchedulerConfigs = async () => {
+    if (!isAdmin.value) return
+    loadingSchedulerConfigs.value = true
+    try { schedulerConfigs.value = await api.fetchSchedulerConfigs() }
+    catch (error) { console.error('Failed to fetch scheduler configs', error) }
+    finally { loadingSchedulerConfigs.value = false }
+  }
   const fetchMcpToolCalls = async () => {
     try { mcpToolCalls.value = await api.fetchMcpToolCalls() }
     catch (error) { console.error('Failed to fetch MCP tool call metrics', error) }
@@ -102,7 +115,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -119,6 +132,36 @@ export const useMonitorPageController = ({
       successMsg.value = '模型服务配置已保存。新建模型实例时会自动使用最新配置。'
     } catch (error) { errorMsg.value = detail(error) }
     finally { savingProviderConfig.value = false }
+  }
+  const editSchedulerConfig = (job: SchedulerJobConfig) => {
+    clearMessages()
+    editingSchedulerJobId.value = job.job_id
+    schedulerConfigForm.value = createEmptySchedulerJobConfigForm(job)
+  }
+  const cancelSchedulerConfigEdit = () => {
+    editingSchedulerJobId.value = null
+    schedulerConfigForm.value = createEmptySchedulerJobConfigForm()
+  }
+  const saveSchedulerConfig = async () => {
+    if (savingSchedulerConfig.value) return
+    clearMessages()
+    const form = schedulerConfigForm.value
+    if (!form.job_id) { errorMsg.value = '请选择要更新的定时任务。'; return }
+    if (form.start_time >= form.end_time) { errorMsg.value = '结束时间必须晚于开始时间。'; return }
+    if (form.interval_minutes <= 0) { errorMsg.value = '轮询时间必须大于 0。'; return }
+    savingSchedulerConfig.value = true
+    try {
+      const saved = await api.saveSchedulerConfig(form)
+      if (saved) {
+        const index = schedulerConfigs.value.findIndex((item) => item.job_id === saved.job_id)
+        if (index >= 0) schedulerConfigs.value[index] = saved
+        else schedulerConfigs.value = [...schedulerConfigs.value, saved]
+      }
+      editingSchedulerJobId.value = null
+      schedulerConfigForm.value = createEmptySchedulerJobConfigForm()
+      successMsg.value = `定时任务 ${form.name || form.job_id} 配置已保存，重启后生效。`
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { savingSchedulerConfig.value = false }
   }
   const resetMcpForm = () => { mcpForm.value = createEmptyMcpForm() }
   const editMcpServer = (server: McpServerConfig) => { clearMessages(); mcpForm.value = createMcpForm(server) }
@@ -266,11 +309,12 @@ export const useMonitorPageController = ({
   }
 
   return {
-    tasks, total, page, pageSize, schedulerStatus, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
+    tasks, total, page, pageSize, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
     loadingProviderConfig, savingProviderConfig, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
-    fetchSchedulerStatus, fetchMcpToolCalls, fetchProviderConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig,
+    fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig,
+    editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
     crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,

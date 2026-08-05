@@ -18,7 +18,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -28,6 +28,7 @@ from backend.app.core.scheduler_registry import (
     SOURCE_JOB_DESCRIPTORS,
     JobDescriptor,
     SchedulerCallback,
+    apply_job_config,
     build_trigger,
     project_scheduler_status,
     project_semantic_warmup_job_descriptor,
@@ -550,6 +551,7 @@ class ApplicationSchedulerRuntime:
         semantic_search_warmup: Any | None = None,
         shutdown_grace_seconds: float = 30.0,
         timezone_name: str = "Asia/Shanghai",
+        job_config_overrides: Mapping[str, Any] | None = None,
     ) -> None:
         self.repositories = repositories
         self.scheduler = scheduler or AsyncIOScheduler(timezone=timezone_name)
@@ -557,6 +559,7 @@ class ApplicationSchedulerRuntime:
         self._semantic_search_warmup = semantic_search_warmup
         self._shutdown_grace_seconds = max(0.0, float(shutdown_grace_seconds))
         self._timezone_name = timezone_name
+        self._job_config_overrides: Mapping[str, Any] = job_config_overrides or {}
         self._github_job_lock = asyncio.Lock()
         self._x_operation_lock = asyncio.Lock()
         self._active_tasks: set[asyncio.Task[Any]] = set()
@@ -643,6 +646,15 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    def _effective_descriptor(
+        self,
+        descriptor: JobDescriptor,
+    ) -> JobDescriptor | None:
+        override = self._job_config_overrides.get(descriptor.id)
+        if override is None:
+            return descriptor
+        return apply_job_config(descriptor, override)
+
     def start(self) -> None:
         if self.scheduler.running:
             logger.info("[Scheduler] 已在运行，跳过重复启动。")
@@ -660,44 +672,60 @@ class ApplicationSchedulerRuntime:
             "_run_x_credentials_probe_job": self._run_x_credentials_probe_job,
         }
         for descriptor in SOURCE_JOB_DESCRIPTORS:
+            effective = self._effective_descriptor(descriptor)
+            if effective is None:
+                logger.info("[Scheduler] 跳过已停用的采集任务: %s", descriptor.id)
+                continue
             _register_job(
                 self.scheduler,
-                descriptor,
-                resolve_source_job_callback(descriptor.source, callbacks),
+                effective,
+                resolve_source_job_callback(effective.source, callbacks),
             )
             logger.info(
-                "[Scheduler] 注册采集任务: %s (%s) cron=%s",
-                descriptor.id,
-                descriptor.name,
-                descriptor.schedule.as_kwargs(),
+                "[Scheduler] 注册采集任务: %s (%s) trigger=%s",
+                effective.id,
+                effective.name,
+                str(build_trigger(effective)),
             )
 
-        _register_job(
-            self.scheduler,
-            DAILY_BRIEFING_JOB,
-            self._run_daily_briefing_job,
-        )
-        logger.info(
-            "[Scheduler] 注册简报任务: daily_briefing (每日 08:00，共 %d 个维度)",
-            len(_BRIEFING_TASKS),
-        )
-
-        if self._semantic_search_enabled:
+        daily_briefing = self._effective_descriptor(DAILY_BRIEFING_JOB)
+        if daily_briefing is not None:
             _register_job(
                 self.scheduler,
-                project_semantic_warmup_job_descriptor(
-                    timezone=self._timezone_name,
-                ),
-                self._run_project_semantic_warmup_job,
+                daily_briefing,
+                self._run_daily_briefing_job,
             )
-            logger.info("[Scheduler] 注册项目语义搜索预热任务（每 30 分钟）")
+            logger.info(
+                "[Scheduler] 注册简报任务: daily_briefing (共 %d 个维度)",
+                len(_BRIEFING_TASKS),
+            )
+        else:
+            logger.info("[Scheduler] 跳过已停用的简报任务: daily_briefing")
 
-        _register_job(
-            self.scheduler,
-            CONVERSATION_CLEANUP_JOB,
-            self._run_conversation_cleanup_job,
-        )
-        logger.info("[Scheduler] 注册会话清理任务: conversation_cleanup (每 7 天 03:30)")
+        if self._semantic_search_enabled:
+            semantic_descriptor = self._effective_descriptor(
+                project_semantic_warmup_job_descriptor(timezone=self._timezone_name)
+            )
+            if semantic_descriptor is not None:
+                _register_job(
+                    self.scheduler,
+                    semantic_descriptor,
+                    self._run_project_semantic_warmup_job,
+                )
+                logger.info("[Scheduler] 注册项目语义搜索预热任务（每 %d 分钟）", getattr(semantic_descriptor, "interval_minutes", 30))
+            else:
+                logger.info("[Scheduler] 跳过已停用的语义搜索预热任务")
+
+        conversation_cleanup = self._effective_descriptor(CONVERSATION_CLEANUP_JOB)
+        if conversation_cleanup is not None:
+            _register_job(
+                self.scheduler,
+                conversation_cleanup,
+                self._run_conversation_cleanup_job,
+            )
+            logger.info("[Scheduler] 注册会话清理任务: conversation_cleanup")
+        else:
+            logger.info("[Scheduler] 跳过已停用的会话清理任务: conversation_cleanup")
 
         self.scheduler.start()
         loop = asyncio.get_running_loop()
@@ -771,6 +799,7 @@ def create_scheduler_runtime(
     *,
     enabled: bool = True,
     semantic_search_warmup: Any | None = None,
+    job_config_overrides: Mapping[str, Any] | None = None,
 ) -> ApplicationSchedulerRuntime:
     from backend.app.core.config import settings
 
@@ -790,4 +819,5 @@ def create_scheduler_runtime(
             getattr(settings, "scheduler_shutdown_grace_seconds", 30.0)
         ),
         timezone_name=timezone_name,
+        job_config_overrides=job_config_overrides,
     )

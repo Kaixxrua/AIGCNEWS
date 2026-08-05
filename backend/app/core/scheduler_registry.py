@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time
 from typing import Any, Literal, Protocol, TypedDict
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+
+from backend.app.core.scheduler_triggers import DailyWindowIntervalTrigger
 
 CronValue = int | str
 JobSource = Literal[
@@ -77,8 +79,23 @@ class IntervalJobDescriptor:
     misfire_grace_time: int = 300
 
 
-JobDescriptor = CronJobDescriptor | IntervalJobDescriptor
-SchedulerTrigger = CronTrigger | IntervalTrigger
+@dataclass(frozen=True)
+class WindowedIntervalJobDescriptor:
+    id: str
+    source: JobSource
+    name: str
+    start_time: time
+    end_time: time
+    interval_minutes: int
+    timezone: str = "Asia/Shanghai"
+    replace_existing: bool = True
+    max_instances: int = 1
+    coalesce: bool | None = True
+    misfire_grace_time: int = 3600
+
+
+JobDescriptor = CronJobDescriptor | IntervalJobDescriptor | WindowedIntervalJobDescriptor
+SchedulerTrigger = CronTrigger | IntervalTrigger | DailyWindowIntervalTrigger
 SchedulerCallback = Callable[[], Awaitable[None]]
 SingleSourceCallback = Callable[[str], Awaitable[None]]
 
@@ -217,10 +234,78 @@ def build_trigger(descriptor: JobDescriptor) -> SchedulerTrigger:
             **descriptor.schedule.as_kwargs(),
             timezone=descriptor.timezone,
         )
+    if isinstance(descriptor, WindowedIntervalJobDescriptor):
+        return DailyWindowIntervalTrigger(
+            start_time=descriptor.start_time,
+            end_time=descriptor.end_time,
+            interval_minutes=descriptor.interval_minutes,
+            timezone=descriptor.timezone,
+        )
     return IntervalTrigger(
         seconds=descriptor.schedule.seconds,
         minutes=descriptor.schedule.minutes,
         timezone=descriptor.timezone,
+    )
+
+
+def apply_job_config(
+    descriptor: JobDescriptor,
+    config: Any,
+) -> JobDescriptor | None:
+    """Return a windowed descriptor when ``config`` overrides ``descriptor``.
+
+    Returns ``None`` when the job is explicitly disabled. All other descriptor
+    options (coalesce, misfire grace time, etc.) are copied from the default
+    descriptor so behavior stays consistent after an override.
+    """
+    if not config.enabled:
+        return None
+
+    start = config.start_time
+    end = config.end_time
+    interval = config.interval_minutes
+
+    if isinstance(descriptor, CronJobDescriptor):
+        return WindowedIntervalJobDescriptor(
+            id=descriptor.id,
+            source=descriptor.source,
+            name=descriptor.name,
+            start_time=start,
+            end_time=end,
+            interval_minutes=interval,
+            timezone=descriptor.timezone,
+            replace_existing=descriptor.replace_existing,
+            max_instances=descriptor.max_instances,
+            coalesce=descriptor.coalesce,
+            misfire_grace_time=descriptor.misfire_grace_time,
+        )
+    if isinstance(descriptor, IntervalJobDescriptor):
+        return WindowedIntervalJobDescriptor(
+            id=descriptor.id,
+            source=descriptor.source,
+            name=descriptor.name,
+            start_time=start,
+            end_time=end,
+            interval_minutes=interval,
+            timezone=descriptor.timezone,
+            replace_existing=descriptor.replace_existing,
+            max_instances=descriptor.max_instances,
+            coalesce=descriptor.coalesce,
+            misfire_grace_time=descriptor.misfire_grace_time,
+        )
+    # Already windowed: just swap the schedule fields.
+    return WindowedIntervalJobDescriptor(
+        id=descriptor.id,
+        source=descriptor.source,
+        name=descriptor.name,
+        start_time=start,
+        end_time=end,
+        interval_minutes=interval,
+        timezone=descriptor.timezone,
+        replace_existing=descriptor.replace_existing,
+        max_instances=descriptor.max_instances,
+        coalesce=descriptor.coalesce,
+        misfire_grace_time=descriptor.misfire_grace_time,
     )
 
 
