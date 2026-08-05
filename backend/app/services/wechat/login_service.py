@@ -12,11 +12,13 @@ from backend.app.repositories.wechat_session_repository import (
     WeChatSessionRepository,
 )
 from backend.app.services.wechat.errors import (
+    WeChatAccountContextError,
     WeChatLoginFailed,
     WeChatQrExpired,
+    WeChatSessionExpired,
     WeChatUpstreamError,
 )
-from backend.app.services.wechat.parser import map_scan_status
+from backend.app.services.wechat.parser import extract_account_info_from_home, map_scan_status
 from backend.app.services.wechat.transport import (
     WeChatMpTransport,
     _build_cookie_header,
@@ -181,7 +183,15 @@ class WeChatLoginService:
 
         token, _ = parse_biz_login_response(body)
         merged_cookies = _merge_cookie_dict(cookies, response.cookies)
+        # The uuid cookie only belongs to the QR login handshake; the real MP
+        # admin session is carried by the cookies returned after login.
+        merged_cookies.pop("uuid", None)
         cookie_header = _build_cookie_header(merged_cookies)
+        api_cookies = {
+            item.strip().split("=", 1)[0]: item.strip().split("=", 1)[1]
+            for item in cookie_header.split(";")
+            if "=" in item
+        }
 
         session = self._sessions.save_wechat_session(
             owner_id,
@@ -193,6 +203,37 @@ class WeChatLoginService:
                 "account_avatar_url": "",
                 "last_validated_at": self._now().isoformat(),
                 "last_used_at": self._now().isoformat(),
+            },
+        )
+
+        try:
+            home_response = await self._transport.fetch_home_page(
+                token=token, cookies=api_cookies
+            )
+        except WeChatSecretBoxError as exc:
+            self._sessions.mark_wechat_session_invalid(
+                owner_id, "WECHAT_SESSION_EXPIRED"
+            )
+            raise WeChatUpstreamError("微信加密配置未就绪") from exc
+
+        if home_response.status_code != 200:
+            self._sessions.mark_wechat_session_invalid(
+                owner_id, "WECHAT_SESSION_EXPIRED"
+            )
+            raise WeChatSessionExpired()
+
+        account_info = extract_account_info_from_home(home_response.text())
+        if not account_info.get("account_name"):
+            self._sessions.mark_wechat_session_invalid(
+                owner_id, "WECHAT_ACCOUNT_CONTEXT_INVALID"
+            )
+            raise WeChatAccountContextError()
+
+        session = self._sessions.save_wechat_session(
+            owner_id,
+            {
+                **account_info,
+                "last_validated_at": self._now().isoformat(),
             },
         )
         self._attempts.update_login_attempt(

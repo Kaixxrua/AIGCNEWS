@@ -58,3 +58,19 @@ class WeChatAccountNotFound(WeChatError):
 class WeChatSyncRunning(WeChatError):
     def __init__(self, message: str = "同步任务正在运行") -> None:
         super().__init__("WECHAT_SYNC_RUNNING", message)
+
+
+class WeChatAccountContextError(WeChatError):
+    """The logged-in WeChat account cannot use the requested MP admin feature.
+
+    Common causes:
+    - The QR code was scanned with a Mini Program account instead of an
+      Official / Service account (公众号/服务号).
+    - The target official account has disabled "allow finding by name".
+    """
+
+    def __init__(
+        self,
+        message: str = "当前微信账号无法使用该功能，请使用公众号/服务号管理员账号重新扫码，或确认目标公众号已开启名称搜索",
+    ) -> None:
+        super().__init__("WECHAT_ACCOUNT_CONTEXT_INVALID", message)

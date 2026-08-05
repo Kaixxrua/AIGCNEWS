@@ -264,6 +264,19 @@ class WeChatMpTransport:
             cookies=cookies,
         )
 
+    async def fetch_home_page(
+        self,
+        *,
+        token: str,
+        cookies: dict[str, str],
+    ) -> WeChatUpstreamResponse:
+        return await self._request(
+            "GET",
+            "/cgi-bin/home",
+            query=f"t=home/index&token={token}&lang=zh_CN",
+            cookies=cookies,
+        )
+
     async def appmsg_publish(
         self,
         *,

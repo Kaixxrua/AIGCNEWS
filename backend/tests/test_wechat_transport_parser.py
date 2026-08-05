@@ -16,6 +16,7 @@ from backend.app.services.wechat.parser import (
     QR_STATUS_WAITING,
     build_stable_article_key,
     decode_publish_page,
+    extract_account_info_from_home,
     extract_token_from_redirect_url,
     map_scan_status,
     normalize_article_metadata,
@@ -305,3 +306,31 @@ def test_check_base_resp_maps_ret_1000_to_login_failed() -> None:
 
     with pytest.raises(WeChatLoginFailed, match="请重试"):
         check_base_resp_or_raise({"base_resp": {"ret": 1000}})
+
+
+def test_check_base_resp_maps_ret_200002_to_account_context_error() -> None:
+    from backend.app.services.wechat.errors import WeChatAccountContextError
+    from backend.app.services.wechat.parser import check_base_resp_or_raise
+
+    with pytest.raises(WeChatAccountContextError):
+        check_base_resp_or_raise({"base_resp": {"ret": 200002}})
+
+
+def test_extract_account_info_from_home_parses_nickname_and_avatar() -> None:
+    html = (
+        '<script>var wx = {}; wx.cgiData = {};'
+        'wx.cgiData.nick_name = "TestAccount";'
+        'wx.cgiData.head_img = "https://example.com/avatar.png";</script>'
+    )
+    info = extract_account_info_from_home(html)
+    assert info == {
+        "account_name": "TestAccount",
+        "account_avatar_url": "https://example.com/avatar.png",
+    }
+
+
+def test_extract_account_info_from_home_returns_empty_when_missing() -> None:
+    assert extract_account_info_from_home("<html></html>") == {
+        "account_name": "",
+        "account_avatar_url": "",
+    }

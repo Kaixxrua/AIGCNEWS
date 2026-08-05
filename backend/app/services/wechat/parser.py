@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from backend.app.services.wechat.errors import (
+    WeChatAccountContextError,
     WeChatLoginFailed,
     WeChatSessionExpired,
     WeChatUpstreamError,
@@ -32,6 +34,22 @@ def extract_token_from_redirect_url(redirect_url: str) -> str | None:
     return values[0] if values else None
 
 
+def extract_account_info_from_home(html: str) -> dict[str, str]:
+    """Extract nickname and avatar from the WeChat MP home page HTML."""
+    nick_match = re.search(
+        r'wx\.cgiData\.nick_name\s*=\s*"(?P<nick>[^"]+)"',
+        html,
+    )
+    avatar_match = re.search(
+        r'wx\.cgiData\.head_img\s*=\s*"(?P<img>[^"]+)"',
+        html,
+    )
+    return {
+        "account_name": nick_match.group("nick") if nick_match else "",
+        "account_avatar_url": avatar_match.group("img") if avatar_match else "",
+    }
+
+
 def _clean_base_resp(body: dict[str, Any]) -> dict[str, Any]:
     return body.get("base_resp") or {}
 
@@ -49,6 +67,9 @@ def check_base_resp_or_raise(body: dict[str, Any]) -> None:
 
     if ret in (1000, "1000"):
         raise WeChatLoginFailed("扫码确认超时或微信系统繁忙，请重试")
+
+    if ret in (200002, "200002"):
+        raise WeChatAccountContextError()
 
     logger.warning("WeChat upstream error: ret=%s", ret)
     raise WeChatUpstreamError(f"微信错误 {ret}")
