@@ -47,6 +47,49 @@ onMounted(() => {
     </div>
 
     <div class="p-5">
+      <!-- 搜索并添加公众号 -->
+      <div class="monitor-surface mb-4 p-4">
+        <h4 class="text-xs font-semibold uppercase tracking-widest monitor-caption">{{ t('wechat.searchTitle') }}</h4>
+        <div class="mt-2 flex gap-2">
+          <input
+            v-model="controller.searchQuery.value"
+            type="text"
+            class="monitor-input flex-1 text-sm"
+            :placeholder="t('wechat.searchPlaceholder')"
+            @keydown.enter="controller.searchAccounts(controller.searchQuery.value)"
+          />
+          <button
+            class="monitor-btn-primary"
+            :disabled="controller.isSearching.value"
+            @click="controller.searchAccounts(controller.searchQuery.value)"
+          >
+            {{ controller.isSearching.value ? t('wechat.searching') : t('wechat.search') }}
+          </button>
+        </div>
+
+        <div v-if="controller.searchResults.value.length" class="mt-3 max-h-48 space-y-2 overflow-auto">
+          <div
+            v-for="account in controller.searchResults.value"
+            :key="account.fakeid"
+            class="monitor-surface flex items-center justify-between gap-2 rounded-md p-2"
+          >
+            <div class="flex min-w-0 items-center gap-2">
+              <img v-if="account.avatar_url" :src="account.avatar_url" class="h-8 w-8 rounded-full object-cover" />
+              <div v-else class="monitor-avatar flex h-8 w-8 items-center justify-center text-xs">
+                {{ (account.nickname || account.alias || '微').slice(0, 1) }}
+              </div>
+              <div class="min-w-0">
+                <p class="truncate text-xs font-semibold">{{ account.nickname || account.alias || t('wechat.unnamedAccount') }}</p>
+                <p class="truncate text-2xs monitor-caption">{{ account.signature }}</p>
+              </div>
+            </div>
+            <button class="monitor-btn-secondary shrink-0 text-xs" @click="controller.saveAccount(account)">
+              {{ t('wechat.save') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="monitor-surface mb-4 p-4">
         <h4 class="text-xs font-semibold uppercase tracking-widest monitor-caption">{{ t('wechat.savedAccounts') }}</h4>
         <div v-if="!controller.accounts.value.length" class="monitor-empty mt-3 flex h-32 flex-col items-center justify-center rounded-md text-center text-sm">

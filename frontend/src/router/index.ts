@@ -7,6 +7,7 @@ const GitHubProjectsView = () => import('@/views/GitHubProjectsView.vue')
 const ChatView = () => import('@/views/ChatView.vue')
 const ReportView = () => import('@/views/ReportView.vue')
 const XBoardView = () => import('@/views/XBoardView.vue')
+const WechatView = () => import('@/views/WechatView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
 const LoginView = () => import('@/views/LoginView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
@@ -67,6 +68,12 @@ const router = createRouter({
           path: 'x',
           name: 'x-board',
           component: XBoardView,
+        },
+        {
+          path: 'wechat',
+          name: 'wechat',
+          component: WechatView,
+          meta: { requiresAdmin: true },
         },
         {
           path: 'mcp',
