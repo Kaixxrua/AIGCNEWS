@@ -16,6 +16,7 @@ export interface XWatchApi {
   saveXWatchAccount: MonitorApi['saveXWatchAccount']
   deleteXWatchAccount: MonitorApi['deleteXWatchAccount']
   testXWatchAccount: MonitorApi['testXWatchAccount']
+  ingestSource: MonitorApi['ingestSource']
 }
 
 export type XWatchTranslate = (key: string, params?: Record<string, unknown>) => string
@@ -41,6 +42,7 @@ export const useXWatchController = (options: XWatchControllerOptions = {}) => {
   const togglingId = ref<number | null>(null)
   const testingId = ref<number | null>(null)
   const deletingId = ref<number | null>(null)
+  const ingesting = ref(false)
   const errorMsg = ref('')
   const noticeMsg = ref('')
   const isActive = ref(true)
@@ -130,6 +132,22 @@ export const useXWatchController = (options: XWatchControllerOptions = {}) => {
     }
   }
 
+  const ingestX = async () => {
+    if (ingesting.value) return
+    errorMsg.value = ''
+    noticeMsg.value = ''
+    ingesting.value = true
+    try {
+      const result = await api.ingestSource('x')
+      if (!isActive.value) return
+      noticeMsg.value = result.message || translate('monitor.xWatch.ingestSubmitted')
+    } catch (error) {
+      if (isActive.value) errorMsg.value = errorText(error, 'monitor.xWatch.ingestFailed')
+    } finally {
+      if (isActive.value) ingesting.value = false
+    }
+  }
+
   const removeAccount = async (account: XWatchAccount) => {
     if (deletingId.value !== null) return
     if (!confirmAction(translate('monitor.xWatch.deleteConfirm', { name: account.screen_name }))) return
@@ -156,6 +174,7 @@ export const useXWatchController = (options: XWatchControllerOptions = {}) => {
     togglingId.value = null
     testingId.value = null
     deletingId.value = null
+    ingesting.value = false
   }
 
   return {
@@ -165,6 +184,8 @@ export const useXWatchController = (options: XWatchControllerOptions = {}) => {
     editAccount,
     errorMsg,
     form,
+    ingestX,
+    ingesting,
     loadAccounts,
     loading,
     noticeMsg,

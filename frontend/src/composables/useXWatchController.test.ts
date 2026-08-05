@@ -40,6 +40,7 @@ const createApi = (): XWatchApi => ({
     message: '拉取成功',
     account: account({ last_test_status: 'success' }),
   })),
+  ingestSource: vi.fn(async () => ({ message: 'X 采集已提交' })),
 })
 
 const translate = (key: string, params?: Record<string, unknown>) => (
@@ -133,6 +134,20 @@ describe('useXWatchController', () => {
     await controller.testAccount(firstAccount(controller))
     expect(controller.errorMsg.value).toBe('boom')
     expect(controller.testingId.value).toBeNull()
+  })
+
+  it('submits an X ingestion job and surfaces backend message', async () => {
+    const api = createApi()
+    const controller = useXWatchController({ api, translate })
+    await controller.ingestX()
+    expect(api.ingestSource).toHaveBeenCalledWith('x')
+    expect(controller.noticeMsg.value).toBe('X 采集已提交')
+    expect(controller.ingesting.value).toBe(false)
+
+    api.ingestSource = vi.fn(async () => { throw new Error('queue full') })
+    await controller.ingestX()
+    expect(controller.errorMsg.value).toBe('queue full')
+    expect(controller.ingesting.value).toBe(false)
   })
 
   it('ignores late completions after dispose', async () => {
