@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -10,6 +11,35 @@ class Settings(BaseSettings):
 
     # 直连失败时供安全网页抓取器显式使用；不读取环境代理变量。
     outbound_proxy: str = ""
+
+    # 微信公众号后台网页登录会话。密钥必须是 32 字节随机值的 URL-safe Base64，
+    # 只由部署环境提供；缺失或非法时微信功能拒绝处理 secret，不降级为明文。
+    wechat_session_encryption_key: str = ""
+    wechat_session_encryption_key_version: str = "v1"
+    wechat_http_timeout_seconds: float = 15.0
+    wechat_login_attempt_ttl_seconds: int = 300
+    wechat_session_estimated_ttl_seconds: int = 604800
+    wechat_sync_max_pages: int = 20
+    wechat_sync_max_articles: int = 500
+    wechat_sync_inter_page_delay_seconds: float = 1.0
+
+    @field_validator("wechat_session_encryption_key_version")
+    @classmethod
+    def _validate_wechat_key_version(cls, value: str) -> str:
+        if not value or len(value) > 64:
+            raise ValueError("wechat_session_encryption_key_version must be 1..64 characters")
+        return value
+
+    @field_validator("wechat_session_encryption_key")
+    @classmethod
+    def _validate_wechat_key(cls, value: str) -> str:
+        if not value:
+            return value
+        if value.startswith("CHANGEME"):
+            raise ValueError(
+                "wechat_session_encryption_key must not use the example placeholder"
+            )
+        return value
 
     milvus_host: str = "localhost"
     milvus_port: int = 19530

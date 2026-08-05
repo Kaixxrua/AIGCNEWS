@@ -27,6 +27,7 @@ from backend.app.api import (
     routes_papers,
     routes_report,
     routes_vision,
+    routes_wechat,
 )
 from backend.app.core.auth import validate_jwt_secret
 from backend.app.core.config import settings
@@ -347,3 +348,4 @@ app.include_router(routes_mcp.router, prefix="/api", tags=["MCP"])
 app.include_router(routes_monitor.router, prefix="/api", tags=["Monitor"])
 app.include_router(routes_report.router, prefix="/api", tags=["Report"])
 app.include_router(routes_ops.router, prefix="/api", tags=["Ops"])
+app.include_router(routes_wechat.router, prefix="/api", tags=["WeChat"])

@@ -3,7 +3,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from backend.app.core.config import settings
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
+from backend.app.domain.wechat_secret_box import (
+    WeChatSecretBox,
+    WeChatSecretBoxError,
+)
 from backend.app.repositories.attachment_repository import AttachmentRepository
 from backend.app.repositories.briefing_repository import (
     BriefingContentRepository,
@@ -65,6 +70,15 @@ from backend.app.repositories.postgres_runtime_provider_repository import (
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
+from backend.app.repositories.postgres_wechat_account_repository import (
+    PostgresWeChatOfficialAccountRepository,
+)
+from backend.app.repositories.postgres_wechat_article_repository import (
+    PostgresWeChatArticleRepository,
+)
+from backend.app.repositories.postgres_wechat_session_repository import (
+    PostgresWeChatSessionRepository,
+)
 from backend.app.repositories.postgres_x_credentials_repository import (
     PostgresXCredentialRepository,
 )
@@ -92,6 +106,12 @@ from backend.app.repositories.task_repository import (
     RecentTaskReader,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.repositories.wechat_account_repository import WeChatOfficialAccountRepository
+from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
+from backend.app.repositories.wechat_session_repository import (
+    WeChatLoginAttemptRepository,
+    WeChatSessionRepository,
+)
 from backend.app.repositories.x_credentials_repository import XCredentialRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 
@@ -129,6 +149,10 @@ class ApplicationRepositories:
     github_semantic_sources: GitHubProjectSemanticSourceRepository
     x_credentials: XCredentialRepository
     x_watch_accounts: XWatchAccountRepository
+    wechat_login_attempts: WeChatLoginAttemptRepository
+    wechat_sessions: WeChatSessionRepository
+    wechat_accounts: WeChatOfficialAccountRepository
+    wechat_articles: WeChatArticleRepository
 
 
 def _env_x_watch_handles() -> tuple[str, ...]:
@@ -148,6 +172,24 @@ def _env_x_credentials() -> tuple[str, str] | None:
     if not auth_token or not ct0:
         return None
     return auth_token, ct0
+
+
+def _wechat_secret_box() -> WeChatSecretBox | None:
+    """Build the configured WeChat secret box, returning None when not configured."""
+    key = settings.wechat_session_encryption_key
+    if not key:
+        return None
+    try:
+        return WeChatSecretBox.from_urlsafe_base64(
+            key,
+            settings.wechat_session_encryption_key_version,
+        )
+    except WeChatSecretBoxError as exc:
+        # Do not block application startup; WeChat endpoints will fail on use.
+        import logging
+
+        logging.getLogger(__name__).warning("WeChat encryption key invalid: %s", exc)
+        return None
 
 
 def create_application_repositories(
@@ -181,4 +223,14 @@ def create_application_repositories(
             postgres,
             defaults=_env_x_watch_handles(),
         ),
+        wechat_login_attempts=PostgresWeChatSessionRepository(
+            postgres,
+            secret_box=_wechat_secret_box(),
+        ),
+        wechat_sessions=PostgresWeChatSessionRepository(
+            postgres,
+            secret_box=_wechat_secret_box(),
+        ),
+        wechat_accounts=PostgresWeChatOfficialAccountRepository(postgres),
+        wechat_articles=PostgresWeChatArticleRepository(postgres),
     )

@@ -43,6 +43,14 @@ from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.repositories.wechat_account_repository import (
+    WeChatOfficialAccountRepository,
+)
+from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
+from backend.app.repositories.wechat_session_repository import (
+    WeChatLoginAttemptRepository,
+    WeChatSessionRepository,
+)
 from backend.app.repositories.x_credentials_repository import XCredentialRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.briefing.composition import provide_daily_briefing_service
@@ -72,6 +80,10 @@ from backend.app.services.runtime_provider.runtime import (
     ApplicationModelProviderRuntime,
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
+from backend.app.services.wechat.account_service import WeChatAccountService
+from backend.app.services.wechat.login_service import WeChatLoginService
+from backend.app.services.wechat.sync_service import WeChatSyncService
+from backend.app.services.wechat.transport import WeChatMpTransport
 from backend.app.services.x_credentials.admin_service import XCredentialAdminService
 from backend.app.services.x_watch.admin_service import XWatchAdminService
 
@@ -441,3 +453,81 @@ def get_rank_snapshot_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> RankSnapshotRepository:
     return repositories.rank_snapshots
+
+
+def get_wechat_login_attempt_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> WeChatLoginAttemptRepository:
+    return repositories.wechat_login_attempts
+
+
+def get_wechat_session_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> WeChatSessionRepository:
+    return repositories.wechat_sessions
+
+
+def get_wechat_account_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> WeChatOfficialAccountRepository:
+    return repositories.wechat_accounts
+
+
+def get_wechat_article_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> WeChatArticleRepository:
+    return repositories.wechat_articles
+
+
+def get_wechat_mp_transport() -> WeChatMpTransport:
+    from backend.app.core.config import settings
+
+    return WeChatMpTransport(proxy=settings.outbound_proxy or None)
+
+
+def get_wechat_login_service(
+    attempts: WeChatLoginAttemptRepository = Depends(get_wechat_login_attempt_repository),
+    sessions: WeChatSessionRepository = Depends(get_wechat_session_repository),
+    transport: WeChatMpTransport = Depends(get_wechat_mp_transport),
+) -> WeChatLoginService:
+    from backend.app.core.config import settings
+
+    return WeChatLoginService(
+        attempts,
+        sessions,
+        transport,
+        login_attempt_ttl_seconds=int(
+            getattr(settings, "wechat_login_attempt_ttl_seconds", 300)
+        ),
+    )
+
+
+def get_wechat_account_service(
+    accounts: WeChatOfficialAccountRepository = Depends(get_wechat_account_repository),
+    sessions: WeChatSessionRepository = Depends(get_wechat_session_repository),
+    transport: WeChatMpTransport = Depends(get_wechat_mp_transport),
+) -> WeChatAccountService:
+    return WeChatAccountService(accounts, sessions, transport)
+
+
+def get_wechat_sync_service(
+    accounts: WeChatOfficialAccountRepository = Depends(get_wechat_account_repository),
+    articles: WeChatArticleRepository = Depends(get_wechat_article_repository),
+    sessions: WeChatSessionRepository = Depends(get_wechat_session_repository),
+    transport: WeChatMpTransport = Depends(get_wechat_mp_transport),
+    operations_runtime: ApplicationOperationsRuntime = Depends(get_operations_runtime),
+) -> WeChatSyncService:
+    from backend.app.core.config import settings
+
+    return WeChatSyncService(
+        accounts,
+        articles,
+        sessions,
+        transport,
+        operations_runtime,
+        max_pages=int(getattr(settings, "wechat_sync_max_pages", 20)),
+        max_articles=int(getattr(settings, "wechat_sync_max_articles", 500)),
+        inter_page_delay_seconds=float(
+            getattr(settings, "wechat_sync_inter_page_delay_seconds", 1.0)
+        ),
+    )

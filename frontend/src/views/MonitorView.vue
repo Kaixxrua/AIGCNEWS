@@ -11,6 +11,7 @@ import MonitorTaskPanel from '@/components/monitor/MonitorTaskPanel.vue'
 import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
 import XWatchCard from '@/components/monitor/XWatchCard.vue'
+import WechatAccountPanel from '@/components/wechat/WechatAccountPanel.vue'
 import { useMonitorPageController } from '@/composables/useMonitorPageController'
 
 const { t } = useI18n()
@@ -107,6 +108,9 @@ onMounted(refreshData)
 
     <!-- Admin 专属：X 账号凭证 -->
     <XCredentialCard v-if="authStore.isAdmin" />
+
+    <!-- Admin 专属：微信公众号 -->
+    <WechatAccountPanel v-if="authStore.isAdmin" />
 
     <!-- Admin 专属：采集控制 -->
     <MonitorIngestionControls
