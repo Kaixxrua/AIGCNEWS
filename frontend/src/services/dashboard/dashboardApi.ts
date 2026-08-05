@@ -71,6 +71,11 @@ export const dashboardApi: DashboardApi = {
       snapshot_count: response.data?.snapshot_count,
     }
   },
+
+  async deleteDocument(docId: string) {
+    const response = await api.delete<{ status: string; message: string; doc_id: string; deleted: boolean }>(`/ops/documents/${encodeURIComponent(docId)}`)
+    return response.data
+  },
 }
 
 export function fetchSnapshotDates(

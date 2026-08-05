@@ -2,16 +2,17 @@ import { describe, expect, it, vi } from 'vitest'
 import { useXBoardController, type XBoardApi } from './useXBoardController'
 import type { DashboardTop } from '@/services/dashboard/dashboardContracts'
 
-const doc = (url: string, rawScore: number, overrides: Record<string, unknown> = {}) => ({ title: url, url, raw_score: rawScore, ...overrides })
+const doc = (id: string, url: string, rawScore: number, overrides: Record<string, unknown> = {}) => ({ id, title: url, url, raw_score: rawScore, ...overrides })
 
 const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
   fetchTop: vi.fn(async (): Promise<DashboardTop> => ({
     items: [
-      doc('https://x.com/openai/status/1', 5),
-      doc('https://x.com/karpathy/status/2', 50),
+      doc('x:1', 'https://x.com/openai/status/1', 5),
+      doc('x:2', 'https://x.com/karpathy/status/2', 50),
     ],
   })),
   fetchSnapshotDates: vi.fn(async () => ['2026-08-04', '2026-08-03']),
+  deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),
   ...overrides,
 })
 
@@ -35,8 +36,8 @@ describe('useXBoardController', () => {
     const api = createApi({
       fetchTop: vi.fn(async (): Promise<DashboardTop> => ({
         items: [
-          doc('https://x.com/openai/status/1', 5, { media }),
-          doc('https://x.com/karpathy/status/2', 50),
+          doc('x:1', 'https://x.com/openai/status/1', 5, { media }),
+          doc('x:2', 'https://x.com/karpathy/status/2', 50),
         ],
       })),
     })
@@ -101,9 +102,48 @@ describe('useXBoardController', () => {
     // fetchTop 在快照日期 resolve 之后才会被调用；先等它真正发出再 dispose
     await vi.waitFor(() => expect(resolveTop).toBeDefined())
     controller.dispose()
-    resolveTop?.({ items: [doc('https://x.com/openai/status/9', 1)] })
+    resolveTop?.({ items: [doc('x:9', 'https://x.com/openai/status/9', 1)] })
     await pending
     expect(controller.docs.value).toHaveLength(0)
     expect(controller.loading.value).toBe(false)
+  })
+
+  it('tracks admin tweet selection and deletes selected tweets', async () => {
+    const api = createApi()
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+
+    controller.toggleSelection('x:1')
+    expect(controller.selectedIds.value.has('x:1')).toBe(true)
+
+    controller.selectAll()
+    expect(controller.selectedIds.value.size).toBe(2)
+
+    controller.clearSelection()
+    expect(controller.selectedIds.value.size).toBe(0)
+
+    controller.toggleSelection('x:1')
+    const deleted = await controller.deleteSelected()
+    expect(deleted).toBe(1)
+    expect(api.deleteDocument).toHaveBeenCalledWith('x:1')
+    expect(controller.selectedIds.value.size).toBe(0)
+  })
+
+  it('keeps unselected ids after partial delete failure', async () => {
+    const api = createApi({
+      deleteDocument: vi.fn(async (docId: string) =>
+        docId === 'x:1'
+          ? { status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true }
+          : { status: 'ok', message: 'not found', doc_id: docId, deleted: false }
+      ),
+    })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    controller.selectAll()
+
+    const deleted = await controller.deleteSelected()
+    expect(deleted).toBe(1)
+    expect(controller.selectedIds.value.has('x:2')).toBe(true)
+    expect(controller.selectedIds.value.has('x:1')).toBe(false)
   })
 })

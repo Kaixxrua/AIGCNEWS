@@ -116,3 +116,24 @@ def test_deserialize_row_media_missing_key_untouched() -> None:
     row = {"id": "x:nomedia"}
     result = _deserialize_row_media(row)
     assert "media" not in result
+
+
+def test_delete_document_removes_document_and_snapshots() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    deleted = repository.delete_document("x:1001")
+
+    assert deleted is True
+    assert cursor.execute.called
+    calls = [call.args[0] for call in cursor.execute.call_args_list]
+    assert any("DELETE FROM document_rank_snapshots" in sql for sql in calls)
+    assert any("DELETE FROM documents" in sql for sql in calls)
+
+
+def test_delete_document_returns_false_when_missing() -> None:
+    repository, _, cursor = repository_with_cursor()
+    cursor.rowcount = 0
+
+    deleted = repository.delete_document("x:missing")
+
+    assert deleted is False

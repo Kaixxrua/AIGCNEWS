@@ -12,6 +12,7 @@ from backend.app.api.dependencies import (
     get_briefing_admin_service,
     get_dashboard_cache_admin_service,
     get_data_cleanup_admin_service,
+    get_document_repository,
     get_github_project_admin_service,
     get_github_project_crawl_admin_service,
     get_github_project_recommendation_admin_service,
@@ -29,6 +30,7 @@ from backend.app.core.auth import RequireAdmin
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.models.schema_ops import (
     ClearDataResponse,
+    DocumentDeleteResponse,
     GitHubProjectRecommendRequest,
     GitHubProjectRecommendResponse,
     GitHubProjectsCrawlRequest,
@@ -66,6 +68,7 @@ from backend.app.models.schema_projects import (
     ToolWebsiteDeleteResponse,
     ToolWebsiteManualAddRequest,
 )
+from backend.app.repositories.document_repository import DocumentRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
@@ -506,6 +509,24 @@ async def clear_all_data(
         deleted_documents=deleted_docs,
         deleted_tasks=deleted_tasks,
         milvus_dropped=milvus_ok,
+    )
+
+
+@router.delete("/ops/documents/{doc_id}", response_model=DocumentDeleteResponse, tags=["Ops"])
+async def delete_document(
+    doc_id: str,
+    _: dict = Depends(RequireAdmin),
+    documents: DocumentRepository = Depends(get_document_repository),
+) -> DocumentDeleteResponse:
+    """按 doc_id 删除文档及其排行快照；删除失败返回 404。"""
+    deleted = await asyncio.to_thread(documents.delete_document, doc_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"文档不存在: {doc_id}")
+    return DocumentDeleteResponse(
+        status="success",
+        message=f"已删除文档 {doc_id}",
+        doc_id=doc_id,
+        deleted=True,
     )
 
 

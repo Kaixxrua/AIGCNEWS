@@ -7,6 +7,7 @@ import { groupTweetsByHandle } from '@/features/xboard/xBoardViewModel'
 export interface XBoardApi {
   fetchTop: DashboardApi['fetchTop']
   fetchSnapshotDates: DashboardApi['fetchSnapshotDates']
+  deleteDocument: DashboardApi['deleteDocument']
 }
 
 export type XBoardTranslate = (key: string) => string
@@ -31,8 +32,10 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const availableDates = ref<string[]>([])
   const docs = ref<TopDoc[]>([])
   const loading = ref(false)
+  const deleting = ref(false)
   const errorMsg = ref('')
   const isActive = ref(true)
+  const selectedIds = ref<Set<string>>(new Set())
 
   const sections = computed(() => groupTweetsByHandle(docs.value))
 
@@ -76,6 +79,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const onDateChange = (date: string) => {
     if (!date || date === selectedDate.value) return
     selectedDate.value = date
+    selectedIds.value.clear()
     void loadTweets(date)
   }
 
@@ -88,8 +92,45 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     loading.value = false
   }
 
+  const toggleSelection = (docId: string) => {
+    const next = new Set(selectedIds.value)
+    if (next.has(docId)) next.delete(docId)
+    else next.add(docId)
+    selectedIds.value = next
+  }
+
+  const selectAll = () => {
+    selectedIds.value = new Set(docs.value.map((doc) => doc.id).filter(Boolean) as string[])
+  }
+
+  const clearSelection = () => {
+    selectedIds.value = new Set()
+  }
+
+  const deleteSelected = async (): Promise<number> => {
+    const ids = Array.from(selectedIds.value)
+    if (!ids.length) return 0
+    deleting.value = true
+    errorMsg.value = ''
+    let deletedCount = 0
+    try {
+      const results = await Promise.all(ids.map((id) => api.deleteDocument(id).catch(() => ({ deleted: false, doc_id: id }))))
+      deletedCount = results.filter((r) => r.deleted).length
+      selectedIds.value = new Set(ids.filter((id) => !results.find((r) => r.doc_id === id)?.deleted))
+      await refresh()
+    } catch (error) {
+      errorMsg.value = error instanceof Error && error.message ? error.message : translate('xboard.deleteFailed')
+    } finally {
+      deleting.value = false
+    }
+    return deletedCount
+  }
+
   return {
     availableDates,
+    clearSelection,
+    deleteSelected,
+    deleting,
     dispose,
     docs,
     errorMsg,
@@ -99,7 +140,10 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     refresh,
     sections,
     selectedDate,
+    selectedIds,
+    selectAll,
     today,
+    toggleSelection,
   }
 }
 

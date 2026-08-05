@@ -154,6 +154,7 @@ describe('Dashboard request lifecycle contract', () => {
       fetchSnapshotDates: vi.fn(async () => []),
       fetchVisitorCount: vi.fn(async () => ({ registeredUsers: 0, todayRegisteredUsers: 0, userCount: 0 })),
       fetchGitHubHotRepos: vi.fn(async () => ({ period: 'daily', items: [] })),
+      deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),
     }
     const mounted = mountDashboard({ dashboardApi: injectedApi, now: () => new Date(2026, 6, 27, 12).getTime() })
     await flush()

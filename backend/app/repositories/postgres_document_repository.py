@@ -163,6 +163,19 @@ class PostgresDocumentRepository:
                     params,
                 )
 
+    def delete_document(self, doc_id: str) -> bool:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM document_rank_snapshots WHERE doc_id = %s",
+                    (doc_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM documents WHERE id = %s",
+                    (doc_id,),
+                )
+                return bool(cursor.rowcount)
+
     def update_document_pdf_path(self, doc_id: str, local_pdf_path: str) -> None:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:

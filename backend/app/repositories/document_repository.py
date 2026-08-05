@@ -10,6 +10,8 @@ class DocumentWriter(Protocol):
 
     def update_document_pdf_path(self, doc_id: str, local_pdf_path: str) -> None: ...
 
+    def delete_document(self, doc_id: str) -> bool: ...
+
 
 class DocumentSearchReader(Protocol):
     """Search document content with stable pagination and ordering."""

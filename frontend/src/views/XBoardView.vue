@@ -4,23 +4,41 @@ import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
 import { countTweets, extractXHandle, flattenTweets, hasMedia, mediaItems, tweetText, tweetTimestamp, authorAvatarUrl } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
+import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.isAdmin)
 
 const {
-  sections, docs, selectedDate, today, loading, errorMsg,
-  load, onDateChange, refresh, dispose,
+  sections, docs, selectedDate, today, loading, deleting, errorMsg,
+  selectedIds,
+  load, onDateChange, refresh, dispose, toggleSelection, selectAll, clearSelection, deleteSelected,
 } = useXBoardController({ translate: t })
 
 const masonryTweets = computed(() => flattenTweets(sections.value))
 const totalTweets = () => countTweets(sections.value)
+const selectedCount = computed(() => selectedIds.value.size)
+const hasSelection = computed(() => selectedCount.value > 0)
 
 const formatTime = (doc: TopDoc) => (
   tweetTimestamp(doc).slice(0, 16).replace('T', ' ')
 )
 
 const isVideo = (item: TweetMediaItem) => item.type === 'video' || item.type === 'animated_gif'
+
+const isSelected = (doc: TopDoc) => doc.id ? selectedIds.value.has(String(doc.id)) : false
+
+const handleDeleteSelected = async () => {
+  if (!hasSelection.value) return
+  const confirmed = window.confirm(t('xboard.deleteConfirm', { count: selectedCount.value }))
+  if (!confirmed) return
+  const deleted = await deleteSelected()
+  if (deleted > 0) {
+    window.alert(t('xboard.deleteSuccess', { count: deleted }))
+  }
+}
 
 onMounted(load)
 onBeforeUnmount(dispose)
@@ -54,6 +72,39 @@ onBeforeUnmount(dispose)
         </div>
       </div>
 
+      <!-- 管理员多选工具栏 -->
+      <div v-if="isAdmin" class="stagger-enter flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200/60 bg-white/60 px-4 py-2 backdrop-blur-sm">
+        <div class="flex items-center gap-3 text-sm text-stone-600">
+          <label class="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-stone-300 text-stone-700 focus:ring-stone-500"
+              :checked="hasSelection && selectedCount === masonryTweets.length"
+              :indeterminate.prop="hasSelection && selectedCount < masonryTweets.length"
+              @change="hasSelection ? clearSelection() : selectAll()"
+            />
+            <span>{{ t('xboard.selectAll') }}</span>
+          </label>
+          <span v-if="hasSelection" class="text-xs text-stone-400">{{ selectedCount }} / {{ masonryTweets.length }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            v-if="hasSelection"
+            class="btn-secondary text-xs"
+            @click="clearSelection"
+          >
+            {{ t('xboard.clearSelection') }}
+          </button>
+          <button
+            class="btn-danger text-xs"
+            :disabled="!hasSelection || deleting"
+            @click="handleDeleteSelected"
+          >
+            {{ deleting ? t('common.processing') : t('xboard.deleteSelectedCount', { count: selectedCount }) }}
+          </button>
+        </div>
+      </div>
+
       <!-- 错误提示 -->
       <div v-if="errorMsg" class="shrink-0 glass-card flex items-center justify-between px-5 py-3 text-sm text-rose-600">
         <span>{{ errorMsg }}</span>
@@ -79,6 +130,13 @@ onBeforeUnmount(dispose)
           class="tweet-card break-inside-avoid"
         >
           <div class="flex flex-wrap items-center gap-2 border-b border-stone-200/60 bg-gradient-to-br from-white/80 via-stone-50/50 to-stone-100/60 px-4 py-3">
+            <input
+              v-if="isAdmin && tweet.id"
+              type="checkbox"
+              class="h-4 w-4 shrink-0 rounded border-stone-300 text-stone-700 focus:ring-stone-500"
+              :checked="isSelected(tweet)"
+              @change="toggleSelection(String(tweet.id))"
+            />
             <img
               v-if="authorAvatarUrl(tweet)"
               :src="authorAvatarUrl(tweet)"
@@ -142,38 +200,39 @@ onBeforeUnmount(dispose)
 
 <style scoped>
 .masonry-grid {
-  column-count: 1;
-  column-gap: 1rem;
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
 }
 
 @media (min-width: 768px) {
   .masonry-grid {
-    column-count: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1024px) {
   .masonry-grid {
-    column-count: 3;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1280px) {
   .masonry-grid {
-    column-count: 4;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 .tweet-card {
-  margin-bottom: 1rem;
-  display: inline-block;
+  display: block;
   width: 100%;
   overflow: hidden;
   border-radius: 0.75rem;
   border: 1px solid rgba(var(--rule), 0.5);
   background: rgba(var(--paper), 0.7);
   backdrop-filter: blur(8px);
-  break-inside: avoid;
+  align-self: start;
 }
 
 @media (prefers-color-scheme: dark) {

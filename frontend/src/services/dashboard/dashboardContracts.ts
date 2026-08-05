@@ -90,4 +90,5 @@ export interface DashboardApi {
   fetchSnapshotDates(params: DashboardSnapshotDatesParams): Promise<string[]>
   fetchVisitorCount(signal?: AbortSignal): Promise<DashboardVisitorCount>
   fetchGitHubHotRepos(period?: GitHubHotPeriod, limit?: number): Promise<GitHubHotResponse>
+  deleteDocument(docId: string): Promise<{ status: string; message: string; doc_id: string; deleted: boolean }>
 }

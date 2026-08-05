@@ -29,6 +29,13 @@ class ClearDataResponse(BaseModel):
     milvus_dropped: bool
 
 
+class DocumentDeleteResponse(BaseModel):
+    status: str
+    message: str
+    doc_id: str
+    deleted: bool
+
+
 class GitHubProjectsEnrichRequest(BaseModel):
     limit: int = 50
     force: bool = False
