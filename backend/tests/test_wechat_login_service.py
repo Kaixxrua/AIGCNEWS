@@ -80,6 +80,31 @@ def test_get_qr_code_requires_valid_attempt() -> None:
         asyncio.run(service.get_qr_code_image(1, uuid4()))
 
 
+def test_get_qr_code_passes_uuid_cookie() -> None:
+    service, attempts, _, transport = _make_service()
+    attempts.get_login_attempt.return_value = {
+        "uuid_cookie": "uuid=abc123",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+    }
+    headers = MagicMock()
+    headers.get_list.return_value = []
+    transport.get_qr_code = AsyncMock(
+        return_value=WeChatUpstreamResponse(
+            status_code=200,
+            headers=headers,
+            content=b"\x89PNG\r\n\x1a\n",
+            cookies={},
+        )
+    )
+
+    content, media_type = asyncio.run(service.get_qr_code_image(1, uuid4()))
+
+    assert content == b"\x89PNG\r\n\x1a\n"
+    transport.get_qr_code.assert_called_once()
+    _, kwargs = transport.get_qr_code.call_args
+    assert kwargs.get("cookies") == {"uuid": "abc123"}
+
+
 def test_complete_login_fails_when_not_confirmed() -> None:
     service, attempts, _, transport = _make_service()
     attempts.get_login_attempt.return_value = {

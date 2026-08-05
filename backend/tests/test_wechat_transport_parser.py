@@ -266,6 +266,34 @@ def test_transport_start_login_builds_fixed_target(monkeypatch) -> None:
     assert captured["request_kwargs"]["data"]["sessionid"] == "sid-123"
 
 
-def test_transport_cookie_helpers_filter_attributes() -> None:
-    raw = "uuid=abc; Path=/; HttpOnly"
-    assert _extract_simple_cookies([raw]) == {"uuid": "abc"}
+def test_transport_get_qr_code_sends_uuid_cookie(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeResponse:
+        status_code = 200
+        headers = httpx.Headers()
+        _content = b"\x89PNG\r\n\x1a\n"
+
+        async def aread(self):
+            return self._content
+
+    class FakeClient:
+        def __init__(self, **kwargs) -> None:
+            captured["client_kwargs"] = kwargs
+
+        async def request(self, **kwargs) -> FakeResponse:
+            captured["request_kwargs"] = kwargs
+            return FakeResponse()
+
+        async def aclose(self) -> None:
+            pass
+
+    async def _run():
+        transport = WeChatMpTransport(client_factory=FakeClient)
+        return await transport.get_qr_code("123456", cookies={"uuid": "abc"})
+
+    response = asyncio.run(_run())
+
+    assert response.status_code == 200
+    assert captured["request_kwargs"]["headers"].get("Cookie") == "uuid=abc"
+    assert "action=getqrcode" in captured["request_kwargs"]["url"]

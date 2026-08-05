@@ -193,11 +193,17 @@ class WeChatMpTransport:
             data=data,
         )
 
-    async def get_qr_code(self, random_value: str) -> WeChatUpstreamResponse:
+    async def get_qr_code(
+        self,
+        random_value: str,
+        *,
+        cookies: dict[str, str] | None = None,
+    ) -> WeChatUpstreamResponse:
         return await self._request(
             "GET",
             "/cgi-bin/scanloginqrcode",
             query=f"action=getqrcode&random={random_value}",
+            cookies=cookies,
         )
 
     async def ask_scan_status(

@@ -104,8 +104,14 @@ class WeChatLoginService:
         if attempt is None or self._is_expired(attempt):
             raise WeChatQrExpired()
 
+        uuid_cookie = attempt.get("uuid_cookie", "")
+        cookies = dict(
+            item.strip().split("=", 1)
+            for item in uuid_cookie.split(";")
+            if "=" in item
+        )
         random_value = str(int(self._now().timestamp() * 1000))
-        response = await self._transport.get_qr_code(random_value)
+        response = await self._transport.get_qr_code(random_value, cookies=cookies)
         content_type = response.headers.get("content-type", "image/png")
         return response.content, content_type
 
