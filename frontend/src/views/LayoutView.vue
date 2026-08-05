@@ -40,8 +40,9 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         </div>
       </div>
 
-      <!-- 内容区（搜索条占位 44px） -->
-      <div class="absolute inset-0 pt-[44px] flex flex-col">
+      <!-- 内容区（搜索条占位 44px；pb-7 保证末端内容不被悬浮 dock 遮挡，
+           部分浏览器不会把滚动容器的 end padding 计入可滚动区域） -->
+      <div class="absolute inset-0 pt-[44px] pb-7 flex flex-col">
         <router-view v-slot="{ Component }">
           <KeepAlive :include="KEEP_ALIVE_VIEW_NAMES" :max="KEEP_ALIVE_MAX">
             <component :is="Component" :key="route.path" class="view-container" />
