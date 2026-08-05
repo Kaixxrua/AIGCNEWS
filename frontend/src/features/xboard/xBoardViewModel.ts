@@ -24,7 +24,12 @@ export const tweetTimestamp = (doc: TopDoc): string => (
   doc.published_at || doc.published_date || ''
 )
 
-export const authorAvatarUrl = (doc: TopDoc): string | undefined => doc.author_avatar_url
+export const authorAvatarUrl = (doc: TopDoc): string | undefined => {
+  if (doc.author_avatar_url) return doc.author_avatar_url
+  const handle = extractXHandle(doc.url)
+  if (handle) return `https://unavatar.io/x/${handle}`
+  return undefined
+}
 
 export const tweetText = (doc: TopDoc): string => (
   doc.summary || doc.title || ''

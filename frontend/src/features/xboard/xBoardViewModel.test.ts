@@ -42,6 +42,7 @@ describe('xBoardViewModel', () => {
 
   it('extracts avatar url and full tweet text', () => {
     expect(authorAvatarUrl({ author_avatar_url: 'https://x.com/a.jpg' })).toBe('https://x.com/a.jpg')
+    expect(authorAvatarUrl({ url: 'https://x.com/openai/status/1' })).toBe('https://unavatar.io/x/openai')
     expect(authorAvatarUrl({})).toBeUndefined()
     expect(tweetText({ summary: 'full', title: 'short' })).toBe('full')
     expect(tweetText({ title: 'only' })).toBe('only')
