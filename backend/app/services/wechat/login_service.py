@@ -161,6 +161,11 @@ class WeChatLoginService:
             raise WeChatQrExpired()
 
         status = attempt.get("status")
+        # Idempotent: repeated clicks after a successful completion return the
+        # active session instead of a "not confirmed" or "already completed" error.
+        if status == "completed":
+            return _session_to_summary(self._sessions.get_wechat_session(owner_id))
+
         if status not in ("confirmed", "scanned_waiting_confirmation"):
             raise WeChatLoginFailed("扫码尚未确认")
 

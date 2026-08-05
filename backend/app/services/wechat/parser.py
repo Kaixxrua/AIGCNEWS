@@ -47,6 +47,9 @@ def check_base_resp_or_raise(body: dict[str, Any]) -> None:
     if ret in (200003, "200003"):
         raise WeChatSessionExpired()
 
+    if ret in (1000, "1000"):
+        raise WeChatLoginFailed("扫码确认超时或微信系统繁忙，请重试")
+
     logger.warning("WeChat upstream error: ret=%s", ret)
     raise WeChatUpstreamError(f"微信错误 {ret}")
 

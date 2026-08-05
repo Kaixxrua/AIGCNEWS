@@ -297,3 +297,11 @@ def test_transport_get_qr_code_sends_uuid_cookie(monkeypatch) -> None:
     assert response.status_code == 200
     assert captured["request_kwargs"]["headers"].get("Cookie") == "uuid=abc"
     assert "action=getqrcode" in captured["request_kwargs"]["url"]
+
+
+def test_check_base_resp_maps_ret_1000_to_login_failed() -> None:
+    from backend.app.services.wechat.errors import WeChatLoginFailed
+    from backend.app.services.wechat.parser import check_base_resp_or_raise
+
+    with pytest.raises(WeChatLoginFailed, match="请重试"):
+        check_base_resp_or_raise({"base_resp": {"ret": 1000}})

@@ -115,3 +115,21 @@ def test_complete_login_fails_when_not_confirmed() -> None:
 
     with pytest.raises(WeChatLoginFailed, match="扫码尚未确认"):
         asyncio.run(service.complete_login(1, uuid4()))
+
+
+def test_complete_login_returns_existing_session_when_already_completed() -> None:
+    service, attempts, sessions, transport = _make_service()
+    attempts.get_login_attempt.return_value = {
+        "status": "completed",
+        "uuid_cookie": "uuid=abc",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+    }
+    sessions.get_wechat_session.return_value = {
+        "status": "active",
+        "account_name": "Test",
+    }
+
+    summary = asyncio.run(service.complete_login(1, uuid4()))
+
+    assert summary["connected"] is True
+    transport.biz_login.assert_not_called()
