@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   countTweets,
   extractXHandle,
+  flattenTweets,
   groupTweetsByHandle,
+  hasMedia,
+  mediaItems,
   tweetScore,
   tweetTimestamp,
 } from './xBoardViewModel'
@@ -32,6 +35,31 @@ describe('xBoardViewModel', () => {
     expect(tweetTimestamp({ published_at: '2026-08-04T01:00:00Z' })).toBe('2026-08-04T01:00:00Z')
     expect(tweetTimestamp({ created_at: 'c', published_date: 'p' })).toBe('c')
     expect(tweetTimestamp({})).toBe('')
+  })
+
+  it('detects and lists media items safely', () => {
+    expect(hasMedia({})).toBe(false)
+    expect(hasMedia({ media: [] })).toBe(false)
+    const doc = tweet('openai', '1', {
+      media: [{ type: 'photo', url: 'https://pbs.twimg.com/a.jpg', width: 100, height: 100 }],
+    })
+    expect(hasMedia(doc)).toBe(true)
+    expect(mediaItems(doc)).toEqual([{ type: 'photo', url: 'https://pbs.twimg.com/a.jpg', width: 100, height: 100 }])
+    expect(mediaItems({})).toEqual([])
+  })
+
+  it('flattens grouped sections into a single ordered list', () => {
+    const docs = [
+      tweet('openai', '1', { raw_score: 5 }),
+      tweet('karpathy', '2', { raw_score: 50 }),
+      tweet('openai', '3', { raw_score: 30 }),
+    ]
+    const sections = groupTweetsByHandle(docs)
+    expect(flattenTweets(sections).map((doc) => doc.url)).toEqual([
+      'https://x.com/karpathy/status/2',
+      'https://x.com/openai/status/3',
+      'https://x.com/openai/status/1',
+    ])
   })
 
   it('groups by handle with in-section score ordering and section max-score ordering', () => {

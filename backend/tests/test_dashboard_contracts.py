@@ -298,7 +298,53 @@ def test_top_route_preserves_dedupe_limit_and_forwarded_pdf_url() -> None:
     ]
 
 
-def test_extracted_policy_matches_legacy_document_projection() -> None:
+def test_top_route_preserves_x_media_metadata() -> None:
+    snapshot_date = "2020-01-02"
+    reader = FakeRankSnapshotReader(
+        {
+            (snapshot_date, "x_daily_watchlist", "x"): [
+                {
+                    "id": "x:1001",
+                    "source": "x",
+                    "source_channel": "x_daily_watchlist",
+                    "url": "https://x.com/openai/status/1001",
+                    "title": "tweet with media",
+                    "raw_score": 100,
+                    "media": [
+                        {"type": "photo", "url": "https://pbs.twimg.com/a.jpg", "width": 1200, "height": 800}
+                    ],
+                },
+                {
+                    "id": "x:1002",
+                    "source": "x",
+                    "source_channel": "x_daily_watchlist",
+                    "url": "https://x.com/openai/status/1002",
+                    "title": "plain tweet",
+                    "raw_score": 50,
+                },
+            ]
+        }
+    )
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_rank_snapshot_repository] = lambda: reader
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
+    try:
+        response = TestClient(app).get(
+            f"/api/dashboard/top?source=x&period=daily&limit=10&date={snapshot_date}",
+        )
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["items"]) == 2
+    assert payload["items"][0]["media"] == [
+        {"type": "photo", "url": "https://pbs.twimg.com/a.jpg", "width": 1200, "height": 800}
+    ]
+    assert payload["items"][1].get("media") is None
+
     docs = [
         {
             "id": "github-weekly",

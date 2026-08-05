@@ -1,23 +1,26 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { countTweets, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { countTweets, extractXHandle, flattenTweets, hasMedia, mediaItems, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
+import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
 
 const { t } = useI18n()
 
-// 自包含视图：日期选择 + source=x 日榜拉取 + 按账号分组（分组逻辑在 xBoardViewModel）
 const {
   sections, docs, selectedDate, today, loading, errorMsg,
   load, onDateChange, refresh, dispose,
 } = useXBoardController({ translate: t })
 
+const masonryTweets = computed(() => flattenTweets(sections.value))
 const totalTweets = () => countTweets(sections.value)
 
-const formatTime = (doc: Parameters<typeof tweetTimestamp>[0]) => (
+const formatTime = (doc: TopDoc) => (
   tweetTimestamp(doc).slice(0, 16).replace('T', ' ')
 )
+
+const isVideo = (item: TweetMediaItem) => item.type === 'video' || item.type === 'animated_gif'
 
 onMounted(load)
 onBeforeUnmount(dispose)
@@ -63,49 +66,112 @@ onBeforeUnmount(dispose)
       <div v-if="loading && !docs.length" class="glass-card flex min-h-[240px] items-center justify-center gap-2 text-sm text-stone-400">
         <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-stone-200 border-t-stone-500" />{{ t('xboard.loading') }}
       </div>
-      <div v-else-if="!sections.length" class="glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
+      <div v-else-if="!masonryTweets.length" class="glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
         <p class="font-medium text-stone-500">{{ t('xboard.empty') }}</p>
         <p class="mt-1 text-xs">{{ t('xboard.emptyHint') }}</p>
       </div>
 
-      <!-- 账号分区 -->
-      <div v-else class="grid gap-5 xl:grid-cols-2">
-        <section v-for="section in sections" :key="section.handle || '_unknown'" class="stagger-enter glass-card shrink-0 overflow-hidden p-0">
-          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200/60 bg-gradient-to-br from-white/80 via-stone-50/50 to-stone-100/60 px-5 py-3.5">
-            <div class="flex min-w-0 items-center gap-2">
-              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-stone-900 font-mono text-xs font-bold text-white">𝕏</span>
-              <a
-                v-if="section.handle"
-                class="truncate text-sm font-semibold text-stone-700 hover:text-stone-900"
-                :href="`https://x.com/${section.handle}`"
-                target="_blank"
-                rel="noopener noreferrer"
-              >@{{ section.handle }}</a>
-              <span v-else class="truncate text-sm font-semibold text-stone-500">{{ t('xboard.unknownHandle') }}</span>
-              <span class="badge border border-stone-200 bg-white/80 text-stone-500">{{ t('xboard.tweets', { count: section.tweets.length }) }}</span>
-            </div>
-            <span class="text-2xs text-stone-400">{{ t('xboard.maxScore', { score: Math.round(section.maxScore) }) }}</span>
+      <!-- 瀑布流推文墙 -->
+      <div v-else class="masonry-grid">
+        <article
+          v-for="tweet in masonryTweets"
+          :key="tweet.url || tweet.title"
+          class="tweet-card break-inside-avoid"
+        >
+          <div class="flex flex-wrap items-center gap-2 border-b border-stone-200/60 bg-gradient-to-br from-white/80 via-stone-50/50 to-stone-100/60 px-4 py-3">
+            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-stone-900 font-mono text-[10px] font-bold text-white">𝕏</span>
+            <a
+              v-if="extractXHandle(tweet.url)"
+              class="truncate text-xs font-semibold text-stone-700 hover:text-stone-900"
+              :href="`https://x.com/${extractXHandle(tweet.url)}`"
+              target="_blank"
+              rel="noopener noreferrer"
+            >@{{ extractXHandle(tweet.url) }}</a>
+            <span v-else class="truncate text-xs font-semibold text-stone-500">{{ t('xboard.unknownHandle') }}</span>
+            <span class="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-stone-200 bg-white/80 px-2 py-0.5 text-2xs font-medium text-stone-500">
+              <component :is="scoreDisplay(tweet).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(tweet).text }}
+            </span>
           </div>
-          <ul class="divide-y divide-stone-100">
-            <li v-for="tweet in section.tweets" :key="tweet.url || tweet.title" class="px-5 py-3 transition hover:bg-stone-50/60">
-              <div class="flex items-start gap-3">
-                <span class="mt-0.5 flex shrink-0 items-center gap-1 rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-2xs font-medium text-stone-500">
-                  <component :is="scoreDisplay(tweet).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(tweet).text }}
-                </span>
-                <div class="min-w-0 flex-1">
-                  <a :href="tweet.url" target="_blank" rel="noopener noreferrer" class="block text-sm leading-5 text-stone-700 hover:text-stone-900">
-                    {{ tweet.title }}
-                  </a>
-                  <p v-if="tweet.summary && tweet.summary !== tweet.title" class="mt-1 line-clamp-3 whitespace-pre-line text-xs leading-5 text-stone-500">{{ tweet.summary }}</p>
-                  <p v-if="formatTime(tweet)" class="mt-1 text-2xs text-stone-400">{{ formatTime(tweet) }}</p>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </section>
+
+          <!-- 媒体区 -->
+          <div v-if="hasMedia(tweet)" class="flex flex-col gap-0">
+            <template v-for="(item, index) in mediaItems(tweet)" :key="`${tweet.url}-${index}`">
+              <img
+                v-if="!isVideo(item)"
+                :src="item.url"
+                :alt="tweet.title"
+                loading="lazy"
+                decoding="async"
+                referrerpolicy="no-referrer"
+                class="w-full object-cover"
+                :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
+              />
+              <video
+                v-else
+                :src="item.url"
+                controls
+                preload="metadata"
+                class="w-full bg-stone-900"
+                :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
+              />
+            </template>
+          </div>
+
+          <!-- 文字区 -->
+          <div class="px-4 py-3">
+            <a :href="tweet.url" target="_blank" rel="noopener noreferrer" class="block text-sm leading-5 text-stone-700 hover:text-stone-900">
+              {{ tweet.title }}
+            </a>
+            <p v-if="tweet.summary && tweet.summary !== tweet.title" class="mt-1 line-clamp-4 whitespace-pre-line text-xs leading-5 text-stone-500">{{ tweet.summary }}</p>
+            <p v-if="formatTime(tweet)" class="mt-2 text-2xs text-stone-400">{{ formatTime(tweet) }}</p>
+          </div>
+        </article>
       </div>
 
-      <p v-if="sections.length" class="shrink-0 text-center text-2xs text-stone-300">{{ t('xboard.tweets', { count: totalTweets() }) }}</p>
+      <p v-if="masonryTweets.length" class="shrink-0 text-center text-2xs text-stone-300">{{ t('xboard.tweets', { count: totalTweets() }) }}</p>
     </div>
   </div>
 </template>
+
+<style scoped>
+.masonry-grid {
+  column-count: 1;
+  column-gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .masonry-grid {
+    column-count: 2;
+  }
+}
+
+@media (min-width: 1024px) {
+  .masonry-grid {
+    column-count: 3;
+  }
+}
+
+@media (min-width: 1280px) {
+  .masonry-grid {
+    column-count: 4;
+  }
+}
+
+.tweet-card {
+  margin-bottom: 1rem;
+  display: inline-block;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(var(--rule), 0.5);
+  background: rgba(var(--paper), 0.7);
+  backdrop-filter: blur(8px);
+  break-inside: avoid;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tweet-card {
+    background: rgba(var(--card-rgb), 0.45);
+  }
+}
+</style>

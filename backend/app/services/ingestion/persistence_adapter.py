@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Callable
 
@@ -23,6 +24,7 @@ def project_document_write(
     """Project one enriched item to the document repository write shape."""
     ai_score = document.metadata.get("ai_score") or paper.get("ai_score")
     score = ai_score if ai_score is not None else 0.0
+    media = paper.get("media")
     return {
         "id": document.metadata["id"],
         "source": paper.get("source", source_label),
@@ -44,6 +46,7 @@ def project_document_write(
         "in_daily": int(paper.get("in_daily", 0)),
         "in_weekly": int(paper.get("in_weekly", 0)),
         "in_monthly": int(paper.get("in_monthly", 0)),
+        "media": json.dumps(media, ensure_ascii=False) if media else None,
     }
 
 

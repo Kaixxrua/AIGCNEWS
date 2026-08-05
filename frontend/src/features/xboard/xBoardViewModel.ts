@@ -24,6 +24,12 @@ export const tweetTimestamp = (doc: TopDoc): string => (
   doc.published_at || doc.created_at || doc.published_date || ''
 )
 
+export const hasMedia = (doc: TopDoc): boolean =>
+  Array.isArray(doc.media) && doc.media.length > 0
+
+export const mediaItems = (doc: TopDoc): NonNullable<TopDoc['media']> =>
+  doc.media ?? []
+
 const sortTweets = (tweets: TopDoc[]): TopDoc[] => (
   [...tweets].sort((a, b) => (
     tweetScore(b) - tweetScore(a) || tweetTimestamp(b).localeCompare(tweetTimestamp(a))
@@ -52,6 +58,14 @@ export const groupTweetsByHandle = (docs: TopDoc[]): XBoardSection[] => {
     return b.maxScore - a.maxScore || a.handle.localeCompare(b.handle)
   })
 }
+
+/**
+ * 把分组后的推文按分数/时间顺序摊平为单列表，供瀑布流直接渲染。
+ * 顺序：先按 section 最高分降序，section 内再按推文分降序（与 groupTweetsByHandle 一致）。
+ */
+export const flattenTweets = (sections: XBoardSection[]): TopDoc[] => (
+  sections.flatMap((section) => section.tweets)
+)
 
 export const countTweets = (sections: XBoardSection[]): number => (
   sections.reduce((total, section) => total + section.tweets.length, 0)

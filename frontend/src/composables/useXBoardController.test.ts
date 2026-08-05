@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { useXBoardController, type XBoardApi } from './useXBoardController'
 import type { DashboardTop } from '@/services/dashboard/dashboardContracts'
 
-const doc = (url: string, rawScore: number) => ({ title: url, url, raw_score: rawScore })
+const doc = (url: string, rawScore: number, overrides: Record<string, unknown> = {}) => ({ title: url, url, raw_score: rawScore, ...overrides })
 
 const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
   fetchTop: vi.fn(async (): Promise<DashboardTop> => ({
@@ -28,6 +28,24 @@ describe('useXBoardController', () => {
     expect(controller.selectedDate.value).toBe('2026-08-04')
     expect(controller.sections.value.map((section) => section.handle)).toEqual(['karpathy', 'openai'])
     expect(controller.loading.value).toBe(false)
+  })
+
+  it('preserves media metadata from API response', async () => {
+    const media = [{ type: 'photo', url: 'https://pbs.twimg.com/a.jpg', width: 1200, height: 800 }]
+    const api = createApi({
+      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({
+        items: [
+          doc('https://x.com/openai/status/1', 5, { media }),
+          doc('https://x.com/karpathy/status/2', 50),
+        ],
+      })),
+    })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+
+    expect(controller.docs.value[0]?.media).toEqual(media)
+    const flattened = controller.sections.value.flatMap((section) => section.tweets)
+    expect(flattened.find((tweet) => tweet.url === 'https://x.com/openai/status/1')?.media).toEqual(media)
   })
 
   it('falls back to the latest snapshot date when today has no data yet', async () => {

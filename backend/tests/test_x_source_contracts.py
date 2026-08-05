@@ -16,7 +16,7 @@ from twitter_cli.exceptions import (
     NotFoundError,
     RateLimitError,
 )
-from twitter_cli.models import Author, Metrics, Tweet, UserProfile
+from twitter_cli.models import Author, Metrics, Tweet, TweetMedia, UserProfile
 
 from backend.app.services.ingestion.sources import x_policy, x_transport
 
@@ -122,8 +122,31 @@ class XPolicyContracts(unittest.TestCase):
                 "author_name": "OpenAI",
                 "rank_in_period": 1,
                 "tags": ["x", "daily", "openai"],
+                "media": [],
             },
         )
+
+    def test_project_tweets_extracts_media_metadata(self) -> None:
+        tweet = _tweet("1008", text="with media")
+        tweet.media = [
+            TweetMedia(type="photo", url="https://pbs.twimg.com/media/a.jpg", width=1200, height=800),
+            TweetMedia(type="video", url="https://video.twimg.com/b.mp4", width=640, height=360),
+        ]
+        items = x_policy.project_tweets([tweet], limit=5)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(
+            items[0]["media"],
+            [
+                {"type": "photo", "url": "https://pbs.twimg.com/media/a.jpg", "width": 1200, "height": 800},
+                {"type": "video", "url": "https://video.twimg.com/b.mp4", "width": 640, "height": 360},
+            ],
+        )
+
+    def test_project_tweets_skips_media_without_url(self) -> None:
+        tweet = _tweet("1009", text="empty media")
+        tweet.media = [TweetMedia(type="photo", url="", width=0, height=0)]
+        items = x_policy.project_tweets([tweet], limit=5)
+        self.assertEqual(items[0]["media"], [])
 
     def test_project_tweets_limit_and_title_truncation(self) -> None:
         long_text = "line one\n" + "x" * 200

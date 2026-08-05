@@ -97,6 +97,24 @@ def compose_tweet_url(screen_name: str, tweet_id: str) -> str:
     return f"https://x.com/{screen_name}/status/{tweet_id}"
 
 
+def _project_tweet_media(tweet: Any) -> list[dict]:
+    """把 twitter-cli 的 Tweet.media 投影为可序列化的元数据列表。
+
+    结构: [{"type": "photo|video|animated_gif", "url": "...", "width": 123, "height": 456}]
+    """
+    media = getattr(tweet, "media", None) or []
+    return [
+        {
+            "type": str(getattr(item, "type", "") or ""),
+            "url": str(getattr(item, "url", "") or ""),
+            "width": getattr(item, "width", None),
+            "height": getattr(item, "height", None),
+        }
+        for item in media
+        if getattr(item, "url", "")
+    ]
+
+
 def _truncate_title(text: str) -> str:
     """推文转单行标题：折叠空白，超限截断。"""
     collapsed = " ".join(text.split())
@@ -139,6 +157,7 @@ def project_tweets(
         text = str(getattr(tweet, "text", "") or "")
         metrics = getattr(tweet, "metrics", None)
         score = _score(tweet)
+        media = _project_tweet_media(tweet)
         results.append(
             {
                 "title": _truncate_title(text),
@@ -164,6 +183,7 @@ def project_tweets(
                 "author_name": author_name,
                 "rank_in_period": rank,
                 "tags": [X_SOURCE, "daily", screen_name],
+                "media": media,
             }
         )
     return results

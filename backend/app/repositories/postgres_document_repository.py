@@ -75,7 +75,7 @@ def _document_projection() -> str:
                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
-               d.in_monthly, d.local_pdf_path, d.created_at
+               d.in_monthly, d.local_pdf_path, d.media, d.created_at
         FROM documents d
         LEFT JOIN github_repo_candidates c
           ON d.source = 'github' AND (c.full_name = d.title OR c.url = d.url)
@@ -84,6 +84,17 @@ def _document_projection() -> str:
             FROM github_repo_snapshots ORDER BY repo_id, snapshot_date DESC
         ) gs ON gs.repo_id = c.repo_id
     """
+
+
+def _deserialize_row_media(row: dict[str, Any]) -> dict[str, Any]:
+    """把 documents.media 的 JSON 字符串反序列化为列表；失败则保留原值。"""
+    media = row.get("media")
+    if isinstance(media, str) and media:
+        try:
+            row["media"] = json.loads(media)
+        except json.JSONDecodeError:
+            row["media"] = None
+    return row
 
 
 class PostgresDocumentRepository:
@@ -106,8 +117,11 @@ class PostgresDocumentRepository:
         doc.setdefault("source_channel", "")
         doc.setdefault("rank_in_period", 9999)
         doc.setdefault("local_pdf_path", None)
+        doc.setdefault("media", None)
         if isinstance(doc.get("tags"), list):
             doc["tags"] = json.dumps(doc["tags"], ensure_ascii=False)
+        if isinstance(doc.get("media"), list):
+            doc["media"] = json.dumps(doc["media"], ensure_ascii=False)
         params = dict(doc)
         for key in ("indexed", "in_daily", "in_weekly", "in_monthly"):
             params[key] = bool(params[key])
@@ -118,13 +132,13 @@ class PostgresDocumentRepository:
                     INSERT INTO documents
                         (id, source, source_channel, title, url, summary, published_date,
                          tags, score, raw_score, stars, forks, language, rank_in_period,
-                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, created_at)
+                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, created_at)
                     VALUES
                         (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s,
                          %(summary)s, %(published_date)s, %(tags)s, %(score)s,
                          %(raw_score)s, %(stars)s, %(forks)s, %(language)s,
                          %(rank_in_period)s, %(indexed)s, %(in_daily)s, %(in_weekly)s,
-                         %(in_monthly)s, %(local_pdf_path)s, %(created_at)s)
+                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(created_at)s)
                     ON CONFLICT (id) DO UPDATE SET
                         source_channel=EXCLUDED.source_channel, title=EXCLUDED.title,
                         url=EXCLUDED.url, summary=EXCLUDED.summary,
@@ -139,7 +153,8 @@ class PostgresDocumentRepository:
                         in_daily=(documents.in_daily OR EXCLUDED.in_daily),
                         in_weekly=(documents.in_weekly OR EXCLUDED.in_weekly),
                         in_monthly=(documents.in_monthly OR EXCLUDED.in_monthly),
-                        local_pdf_path=COALESCE(EXCLUDED.local_pdf_path, documents.local_pdf_path)
+                        local_pdf_path=COALESCE(EXCLUDED.local_pdf_path, documents.local_pdf_path),
+                        media=COALESCE(NULLIF(EXCLUDED.media, ''), documents.media)
                     """,
                     params,
                 )
@@ -396,14 +411,14 @@ class PostgresDocumentRepository:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(sql, params)
-                return [dict(row) for row in cursor.fetchall()]
+                return [_deserialize_row_media(dict(row)) for row in cursor.fetchall()]
 
     def _fetch_one(self, sql: str, params: tuple[Any, ...]) -> dict[str, Any] | None:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(sql, params)
                 row = cursor.fetchone()
-                return dict(row) if row else None
+                return _deserialize_row_media(dict(row)) if row else None
 
     def _fetch_count(self, sql: str, params: tuple[Any, ...] = ()) -> int:
         row = self._fetch_one(sql, params)
