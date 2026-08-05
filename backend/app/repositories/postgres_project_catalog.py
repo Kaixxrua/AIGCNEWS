@@ -30,6 +30,8 @@ from backend.app.repositories.project_catalog_normalization import (
 )
 
 GITHUB_PROJECT_TODAY_LIMIT = 50
+# 公共 relevance 排序使用强字段匹配；当强命中项目不足该阈值时降级使用弱字段。
+RELEVANCE_STRONG_MATCH_THRESHOLD = 5
 
 # ── 词法检索的字段级匹配片段 ─────────────────────────────────────────────
 # 每个搜索词在所有字段上做 OR 匹配；参数按字段顺序逐一绑定（[like] * len(fields)）。
@@ -44,6 +46,15 @@ _GH_TERM_MATCH_FIELDS = (
 )
 _GH_TERM_MATCH_FIELDS_WITH_I18N_TAGS = (
     *_GH_TERM_MATCH_FIELDS,
+    "COALESCE(ge.tags_zh_json::text, '')",
+    "COALESCE(ge.tags_en_json::text, '')",
+)
+# 公共 relevance 排序优先要求命中的字段：仓库名、标题、系统标签。
+# 弱字段（描述、语言、topics）只在强命中不足时作为降级召回。
+_GH_STRONG_TERM_MATCH_FIELDS = (
+    "c.full_name",
+    "c.title",
+    "COALESCE(ge.tags_json::text, '')",
     "COALESCE(ge.tags_zh_json::text, '')",
     "COALESCE(ge.tags_en_json::text, '')",
 )
@@ -198,7 +209,7 @@ class PostgresProjectCatalogRepository:
             return []
         limit = max(1, min(int(limit or 200), 200))
         normalized_query = " ".join(str(q or "").split())
-        filters = ["COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL"]
+        filters = ["COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL", "c.availability_status = 'active'"]
         params: list[Any] = [min_stars]
         if enriched_only:
             filters.append("ge.status = 'succeeded'")
@@ -264,7 +275,7 @@ class PostgresProjectCatalogRepository:
         strict_limit = max(1, min(int(strict_limit or 150), 150))
         relaxed_limit = max(1, min(int(relaxed_limit or 150), 150))
         prefix = f"{escape_like_literal(normalized_query)}%"
-        filters = ["COALESCE(c.stars, 0) >= %s"]
+        filters = ["COALESCE(c.stars, 0) >= %s", "c.availability_status = 'active'"]
         filter_params: list[Any] = [min_stars]
         if enriched_only:
             filters.append("ge.status = 'succeeded'")
@@ -472,7 +483,7 @@ class PostgresProjectCatalogRepository:
                 return {"items": [], "total": 0, "page": page, "page_size": page_size}
             source = "github"
 
-        gh_filters = ["COALESCE(c.stars, 0) >= %s"]
+        gh_filters = ["COALESCE(c.stars, 0) >= %s", "c.availability_status = 'active'"]
         gh_filter_params: list[Any] = [min_stars]
         web_filters = ["TRUE"]
         web_filter_params: list[Any] = []
@@ -522,6 +533,14 @@ class PostgresProjectCatalogRepository:
         if language:
             gh_filters.append("LOWER(COALESCE(c.language, '')) = LOWER(%s)"); gh_filter_params.append(language)
             web_filters.append("FALSE")
+        # relevance 排序的公共关键词搜索优先要求强字段命中；强命中不足时降级使用弱字段。
+        strong_match_threshold = (
+            RELEVANCE_STRONG_MATCH_THRESHOLD
+            if sort == "relevance" and q and candidates is None
+            else 0
+        )
+        gh_strong_conditions: list[str] = []
+        gh_strong_params: list[Any] = []
         if q:
             terms = project_search_terms(q)
             if not terms:
@@ -530,6 +549,9 @@ class PostgresProjectCatalogRepository:
                 like = f"%{escape_like_literal(term)}%"
                 gh_filters.append(_term_match_filter(_GH_TERM_MATCH_FIELDS_WITH_I18N_TAGS))
                 gh_filter_params.extend([like] * len(_GH_TERM_MATCH_FIELDS_WITH_I18N_TAGS))
+                if strong_match_threshold:
+                    gh_strong_conditions.append(_term_match_filter(_GH_STRONG_TERM_MATCH_FIELDS))
+                    gh_strong_params.extend([like] * len(_GH_STRONG_TERM_MATCH_FIELDS))
                 web_filters.append(
                     _term_match_filter(
                         (
@@ -592,6 +614,9 @@ class PostgresProjectCatalogRepository:
             )
             gh_params.append(user_id)
         gh_params.extend(gh_filter_params)
+        # 强字段命中表达式位于 SELECT 列表，在 SQL 文本中排在 FROM/JOIN/WHERE
+        # 之前，因此它的参数必须放在 gh_params 最前面。
+        gh_params = gh_strong_params + gh_params
         web_params = ([user_id, user_id, user_id] if user_id else []) + web_filter_params
         if user_id:
             gh_favorites = (
@@ -662,12 +687,18 @@ class PostgresProjectCatalogRepository:
             "0::double precision community_engagement_score",
             "we.confidence",
         )
+        gh_select_columns = [*_GH_SELECT_COLUMNS, gh_favorites, *_GH_SELECT_TAIL_COLUMNS]
+        web_select_columns = [*web_columns, web_favorites, *_WEB_SELECT_TAIL_COLUMNS]
+        if strong_match_threshold:
+            gh_strong_match_expr = f"({' AND '.join(gh_strong_conditions)})"
+            gh_select_columns.insert(len(_GH_SELECT_COLUMNS), f"({gh_strong_match_expr})::boolean has_strong_match")
+            web_select_columns.insert(len(web_columns), "TRUE::boolean has_strong_match")
         gh_select = (
-            f"SELECT {','.join((*_GH_SELECT_COLUMNS, gh_favorites, *_GH_SELECT_TAIL_COLUMNS))}"
+            f"SELECT {','.join(gh_select_columns)}"
             f"{_GH_SELECT_FROM} {hot_join} {gh_user_join} WHERE {' AND '.join(gh_filters)}"
         )
         web_select = (
-            f"SELECT {','.join((*web_columns, web_favorites, *_WEB_SELECT_TAIL_COLUMNS))}"
+            f"SELECT {','.join(web_select_columns)}"
             f"{_WEB_SELECT_FROM} {web_user_join} WHERE {' AND '.join(web_filters)}"
         )
         parts: list[str] = []
@@ -678,7 +709,22 @@ class PostgresProjectCatalogRepository:
         if source in {"all", "website"}:
             parts.append(web_select)
             params.extend(web_params)
+        # relevance 排序的公共关键词搜索优先要求强字段命中；强命中不足时降级使用弱字段。
+        strong_match_threshold = (
+            RELEVANCE_STRONG_MATCH_THRESHOLD
+            if sort == "relevance" and q and candidates is None
+            else 0
+        )
         base = f"WITH project_rows AS ({' UNION ALL '.join(parts)})"
+        if strong_match_threshold:
+            base += ", counts AS (SELECT COUNT(*) AS total_all, COUNT(*) FILTER (WHERE has_strong_match) AS total_strong FROM project_rows)"
+            count_sql = base + " SELECT COUNT(*) AS cnt FROM project_rows WHERE has_strong_match OR (SELECT total_strong FROM counts) < %s"
+            rows_sql_prefix = base + " SELECT * FROM project_rows WHERE has_strong_match OR (SELECT total_strong FROM counts) < %s ORDER BY {order} LIMIT %s OFFSET %s"
+            threshold_params: list[Any] = [strong_match_threshold]
+        else:
+            count_sql = base + " SELECT COUNT(*) AS cnt FROM project_rows"
+            rows_sql_prefix = base + " SELECT * FROM project_rows ORDER BY {order} LIMIT %s OFFSET %s"
+            threshold_params = []
         if scope == "today": sort = "hot"
         recent = "COALESCE(recommended_at,collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)" if scope == "recommended" else "COALESCE(collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)"
         orders = {
@@ -713,10 +759,12 @@ class PostgresProjectCatalogRepository:
         with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
-                cursor.execute(base + " SELECT COUNT(*) AS cnt FROM project_rows", tuple(params))
+                cursor.execute(count_sql, tuple(params + threshold_params))
                 count_row = cursor.fetchone()
-                cursor.execute(base + f" SELECT * FROM project_rows ORDER BY {order} LIMIT %s OFFSET %s", tuple(params + order_params + [page_size, (page - 1) * page_size]))
+                cursor.execute(rows_sql_prefix.replace("{order}", order, 1), tuple(params + threshold_params + order_params + [page_size, (page - 1) * page_size]))
                 rows = cursor.fetchall()
+        for row in rows:
+            row.pop("has_strong_match", None)
         return {"items": [normalize_project_row(row) for row in rows], "total": int(count_row["cnt"] if count_row else 0), "page": page, "page_size": page_size}
 
     def get_project_categories(

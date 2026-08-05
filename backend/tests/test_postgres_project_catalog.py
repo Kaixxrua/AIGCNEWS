@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from backend.app.repositories.postgres_project_catalog import (
+    RELEVANCE_STRONG_MATCH_THRESHOLD,
     PostgresProjectCatalogRepository,
 )
 from backend.app.repositories.project_catalog import (
@@ -416,3 +417,65 @@ def test_dynamic_category_formatting_preserves_taxonomy_and_defaults() -> None:
     assert custom["children"] == [
         {"slug": "x", "name": "X", "name_zh": "X", "name_en": "x", "count": 3}
     ]
+
+
+def test_public_github_list_projects_requires_active_availability_status() -> None:
+    database = Database([{"cnt": 0}, []])
+    PostgresProjectCatalogRepository(database).list_projects(source="github")
+    for sql, _params in database.cursor.calls[1:]:
+        assert "c.availability_status = 'active'" in sql
+
+
+def test_lexical_candidate_repo_ids_requires_active_availability_status() -> None:
+    database = Database([[{"repo_id": "owner/repo"}]])
+    PostgresProjectCatalogRepository(database).find_lexical_candidate_repo_ids(q="agent")
+    sql, _params = database.cursor.calls[1]
+    assert "c.availability_status = 'active'" in sql
+
+
+def test_lexical_candidate_lanes_eligible_requires_active_availability_status() -> None:
+    database = Database([[]])
+    PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(q="agent")
+    sql, _params = database.cursor.calls[1]
+    assert "c.availability_status = 'active'" in sql
+
+
+def test_relevance_sort_uses_strong_field_match_branch() -> None:
+    database = Database([{"cnt": 1}, []])
+    PostgresProjectCatalogRepository(database).list_projects(
+        q="word", sort="relevance", source="github"
+    )
+    count_sql, _count_params = database.cursor.calls[1]
+    rows_sql, rows_params = database.cursor.calls[2]
+    assert "has_strong_match" in count_sql
+    assert "has_strong_match" in rows_sql
+    assert "total_strong" in count_sql
+    assert "total_strong" in rows_sql
+    assert RELEVANCE_STRONG_MATCH_THRESHOLD in rows_params
+    # 强字段：仓库名、标题、系统标签（含 i18n）。
+    assert "c.full_name ILIKE %s ESCAPE '='" in rows_sql
+    assert "c.title ILIKE %s ESCAPE '='" in rows_sql
+    assert "ge.tags_json::text" in rows_sql
+    # 弱字段（描述、语言、topics）仍在 WHERE 中用于 broad 集合，但不参与 has_strong_match。
+    assert "c.description ILIKE %s ESCAPE '='" in rows_sql
+    assert "c.topics_json" in rows_sql
+    assert "COALESCE(c.language, '')" in rows_sql
+
+
+def test_non_relevance_sort_retains_broad_keyword_filter() -> None:
+    database = Database([{"cnt": 1}, []])
+    PostgresProjectCatalogRepository(database).list_projects(
+        q="word", sort="stars", source="github"
+    )
+    rows_sql, _rows_params = database.cursor.calls[2]
+    assert "has_strong_match" not in rows_sql
+    assert "c.description ILIKE %s ESCAPE '='" in rows_sql
+    assert "c.topics_json" in rows_sql
+    assert "COALESCE(c.language, '')" in rows_sql
+
+
+def test_empty_query_does_not_add_strong_match_column() -> None:
+    database = Database([{"cnt": 0}, []])
+    PostgresProjectCatalogRepository(database).list_projects(sort="relevance", source="github")
+    rows_sql, _rows_params = database.cursor.calls[2]
+    assert "has_strong_match" not in rows_sql
