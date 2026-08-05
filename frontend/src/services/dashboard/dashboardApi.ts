@@ -36,17 +36,18 @@ export const dashboardApi: DashboardApi = {
     }
   },
 
-  async fetchTop({ source, period, date, limit = 10, signal }) {
-    const response = await api.get<DashboardTopWireResponse>('/dashboard/top', {
-      params: { limit, source, period, date },
-      signal,
-    })
+  async fetchTop({ source, period, date, limit = 10, signal, cacheBuster }) {
+    const params: Record<string, unknown> = { limit, source, period, date }
+    if (cacheBuster) params._t = cacheBuster
+    const response = await api.get<DashboardTopWireResponse>('/dashboard/top', { params, signal })
     return { items: Array.isArray(response.data?.items) ? response.data.items : [] }
   },
 
-  async fetchSnapshotDates({ limit = 60, source, period, signal }) {
+  async fetchSnapshotDates({ limit = 60, source, period, signal, cacheBuster }) {
+    const params: Record<string, unknown> = { limit, source, period }
+    if (cacheBuster) params._t = cacheBuster
     const response = await api.get<DashboardSnapshotDatesWireResponse>('/dashboard/snapshot-dates', {
-      params: { limit, source, period },
+      params,
       signal,
     })
     return Array.isArray(response.data?.dates) ? response.data.dates : []

@@ -45,6 +45,7 @@ export interface DashboardSummaryParams {
 export interface DashboardTopParams extends DashboardSummaryParams {
   source: TabKey
   limit?: number
+  cacheBuster?: number
 }
 
 export interface DashboardSnapshotDatesParams {
@@ -52,6 +53,7 @@ export interface DashboardSnapshotDatesParams {
   source?: TabKey
   period?: PeriodKey
   signal?: AbortSignal
+  cacheBuster?: number
 }
 
 export type GitHubHotPeriod = 'daily' | 'weekly' | 'monthly'

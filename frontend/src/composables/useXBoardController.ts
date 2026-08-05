@@ -51,7 +51,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     loading.value = true
     errorMsg.value = ''
     try {
-      const result = await api.fetchTop({ source: 'x', period: 'daily', date, limit: TOP_LIMIT, signal: controller.signal })
+      const result = await api.fetchTop({ source: 'x', period: 'daily', date, limit: TOP_LIMIT, signal: controller.signal, cacheBuster: Date.now() })
       if (isActive.value && request === generation) docs.value = result.items
     } catch (error) {
       if (isActive.value && request === generation && !controller.signal.aborted) {
@@ -66,7 +66,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     if (!isActive.value) return
     try {
       // 快照日期用于把默认日期回退到最近一个有数据的日期（今天可能还没跑采集）
-      const dates = await api.fetchSnapshotDates({ source: 'x', period: 'daily', limit: SNAPSHOT_DATE_LIMIT })
+      const dates = await api.fetchSnapshotDates({ source: 'x', period: 'daily', limit: SNAPSHOT_DATE_LIMIT, cacheBuster: Date.now() })
       if (isActive.value) {
         availableDates.value = dates
         if (!dates.includes(selectedDate.value) && dates[0]) selectedDate.value = dates[0]
