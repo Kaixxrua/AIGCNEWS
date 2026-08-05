@@ -114,7 +114,13 @@ class WeChatLoginService:
         if not expires_at:
             return True
         try:
-            return datetime.fromisoformat(expires_at) < self._now()
+            if isinstance(expires_at, datetime):
+                deadline = expires_at
+            else:
+                deadline = datetime.fromisoformat(expires_at)
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=timezone.utc)
+            return deadline < self._now()
         except (TypeError, ValueError):
             return True
 
