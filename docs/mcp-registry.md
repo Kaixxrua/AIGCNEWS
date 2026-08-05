@@ -5,8 +5,12 @@
 
 ## 元数据维护原则
 
-- `version` 必须与生产环境 `initialize` 返回的 `serverInfo.version` 一致（当前 `1.2.0`）。
-  serverInfo 更名/升版的提交部署上线**之后**再 publish，否则 registry 元数据与实际服务不一致。
+- `name` / `title` / `description` / `version` 与生产一致性由 `backend/tests/test_mcp_registry_metadata.py`
+  守护：`version` 必须等于生产环境 `initialize` 返回的 `serverInfo.version`（当前 `1.2.0`），
+  `description` 不得超过官方 schema 的 100 字符上限。serverInfo 更名/升版的提交部署上线**之后**再
+  publish，否则 registry 元数据与实际服务不一致。
+- `title`（AIGC Radar MCP）是目录站展示名，`icons[0].src` 指向生产 PNG logo，
+  `websiteUrl` 指向 Web 站点首页；改域名时三处与 `remotes[0].url` 一起改。
 - `remotes[0].url` 指向生产公网 endpoint（当前 `https://aigcnews.cn/api/mcp`）。
   更换域名或路径时同步修改本文件并重新 publish。
 - 命名空间 `io.github.kaixxrua` 绑定 GitHub 账号 Kaixxrua，publish 时用该账号完成 GitHub OAuth。
@@ -27,8 +31,9 @@ mcp-publisher login github
 mcp-publisher validate
 ```
 
-注意：本文件撰写时（2026-08-04）离线环境无法核验最新 schema 版本，`server.json` 的 `$schema`
-以 validate 结果为准——若校验器提示 schema 版本过旧，按其提示升级 `$schema` URL 后重跑。
+注意：`server.json` 已于 2026-08-05 对照当时最新的官方 schema（2025-10-17 版）完成在线校验，
+`description` ≤100 字符等硬约束由上述测试持续守护。若日后 `mcp-publisher validate` 提示有更新的
+schema 版本，按其提示升级 `$schema` URL 并重跑测试。
 
 ```bash
 # 4. 发布（在生产部署了对应 serverInfo 版本之后执行）

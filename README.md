@@ -7,7 +7,7 @@ AI 发现数据平台：持续索引 arXiv 论文、GitHub AI 项目、科技新
 
 ## AIGC Radar MCP（旗舰接口）
 
-AIGC Radar 是本项目的旗舰入口：一个 Streamable HTTP MCP Server，让 Claude Code 等 MCP 客户端直接检索平台数据，并内置 MCP-first 的开源项目发现与复用策略（本地优先、500 Stars 准入、限量只读 GitHub fallback）。
+AIGC Radar 是本项目的旗舰入口：一个 Streamable HTTP MCP Server，让 Claude Code 等 MCP 客户端直接检索平台数据，并内置 MCP-first 的开源项目发现与复用策略（本地优先、500 Stars 准入、限量只读 GitHub fallback）。与通用舆情/热点聚合类 MCP 不同，它是一个 AI 垂直结构化索引：arXiv 论文、精选富化的 GitHub AI 项目库（分类体系、中英标签、星标增长快照）与多源日/周/月榜单，托管即连、公开只读。
 
 ```text
 https://aigcnews.cn/api/mcp
