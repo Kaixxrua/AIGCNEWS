@@ -4,7 +4,7 @@ const transport = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(),
 vi.mock('../http/apiClient', () => ({ api: transport }))
 
 import { monitorApi } from './monitorApi'
-import { createEmptyMcpForm, createGithubCrawlForm, createProviderForm } from '@/features/monitor/monitorModel'
+import { createEmptyMcpForm, createEmptyXCredentialForm, createGithubCrawlForm, createProviderForm } from '@/features/monitor/monitorModel'
 
 describe('Monitor API contract', () => {
   beforeEach(() => Object.values(transport).forEach((mock) => mock.mockReset()))
@@ -118,7 +118,63 @@ describe('Monitor API contract', () => {
     expect(transport.delete).toHaveBeenLastCalledWith('/ops/x-watch-accounts/3')
   })
 
-  it('preserves GitHub crawl trigger payload, snake_case mapping, and extended timeout', async () => {
+  it('preserves X credential endpoints, safe secret payloads, and 30 second test timeout', async () => {
+    const credential = {
+      id: 7,
+      display_name: 'Primary X',
+      note: 'main cookie pair',
+      enabled: true,
+      sort_order: 0,
+      auth_token_configured: true,
+      auth_token_masked: 'auth****oken',
+      ct0_configured: true,
+      ct0_masked: 'ct0****token',
+      last_test_status: 'succeeded',
+      last_test_message: 'OK',
+      last_test_at: null,
+      created_at: null,
+      updated_at: null,
+    }
+    transport.get.mockResolvedValue({ data: { items: [credential] } })
+    await expect(monitorApi.fetchXCredentials()).resolves.toEqual([credential])
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/x-credentials')
+
+    transport.get.mockResolvedValue({ data: {} })
+    await expect(monitorApi.fetchXCredentials()).resolves.toEqual([])
+
+    transport.post.mockResolvedValue({ data: credential })
+    const form = createEmptyXCredentialForm()
+    form.display_name = 'Primary X'
+    form.note = 'main cookie pair'
+    form.auth_token = 'auth-secret'
+    form.ct0 = 'ct0-secret'
+    await monitorApi.saveXCredential(form)
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/x-credentials', {
+      display_name: 'Primary X', note: 'main cookie pair', enabled: true, sort_order: 0,
+      auth_token: 'auth-secret', ct0: 'ct0-secret',
+    })
+
+    form.id = 7
+    form.auth_token = ''
+    form.ct0 = ''
+    transport.put.mockResolvedValue({ data: credential })
+    await monitorApi.saveXCredential(form)
+    expect(transport.put).toHaveBeenLastCalledWith('/ops/x-credentials/7', {
+      display_name: 'Primary X', note: 'main cookie pair', enabled: true, sort_order: 0,
+      auth_token: null, ct0: null,
+    })
+    expect(JSON.stringify(transport.put.mock.calls)).not.toContain('auth****oken')
+    expect(JSON.stringify(transport.put.mock.calls)).not.toContain('ct0****token')
+
+    transport.post.mockResolvedValue({ data: { status: 'succeeded', message: 'OK', credential } })
+    await monitorApi.testXCredential(7)
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/x-credentials/7/test', null, { timeout: 30_000 })
+
+    transport.delete.mockResolvedValue({ data: { deleted: true, id: 7 } })
+    await monitorApi.deleteXCredential(7)
+    expect(transport.delete).toHaveBeenLastCalledWith('/ops/x-credentials/7')
+  })
+  it('preserves GitHub crawl payloads and long request timeout', async () => {
     transport.post.mockResolvedValue({ data: { status: 'queued' } })
     const form = { ...createGithubCrawlForm('2026-08-04'), pushedAfter: '2025-07-09' }
     await monitorApi.crawlGithubProjects(form)

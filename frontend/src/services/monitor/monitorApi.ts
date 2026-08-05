@@ -2,9 +2,9 @@ import { api } from '@/services/http/apiClient'
 import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm,
-  SchedulerStatus, SourceKey, XWatchAccount, XWatchAccountForm,
+  SchedulerStatus, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics } from '@/features/monitor/monitorModel'
+import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
@@ -20,6 +20,10 @@ export interface MonitorApi {
   saveXWatchAccount(form: XWatchAccountForm): Promise<XWatchAccount>
   deleteXWatchAccount(id: number): Promise<{ message?: string; deleted?: boolean }>
   testXWatchAccount(id: number): Promise<{ status?: string; message?: string; account?: XWatchAccount }>
+  fetchXCredentials(): Promise<XCredential[]>
+  saveXCredential(form: XCredentialForm): Promise<XCredential>
+  deleteXCredential(id: number): Promise<{ message?: string; deleted?: boolean }>
+  testXCredential(id: number): Promise<{ status?: string; message?: string; credential?: XCredential }>
   ingestSource(source: SourceKey): Promise<{ message?: string }>
   generateAllBriefings(forceRegenerate: boolean): Promise<{ message?: string }>
   clearDashboardCache(): Promise<{ message?: string }>
@@ -73,6 +77,18 @@ export const monitorApi: MonitorApi = {
   async deleteXWatchAccount(id) { return (await api.delete(`/ops/x-watch-accounts/${id}`)).data },
   // 测试会真实请求 X 拉取推文（先例：testMcpServer 的 30s 超时）
   async testXWatchAccount(id) { return (await api.post(`/ops/x-watch-accounts/${id}/test`, null, { timeout: 30_000 })).data },
+  async fetchXCredentials() {
+    const { data } = await api.get('/ops/x-credentials')
+    return Array.isArray(data?.items) ? data.items : []
+  },
+  async saveXCredential(form) {
+    const payload = buildXCredentialPayload(form)
+    return form.id
+      ? (await api.put(`/ops/x-credentials/${form.id}`, payload)).data
+      : (await api.post('/ops/x-credentials', payload)).data
+  },
+  async deleteXCredential(id) { return (await api.delete(`/ops/x-credentials/${id}`)).data },
+  async testXCredential(id) { return (await api.post(`/ops/x-credentials/${id}/test`, null, { timeout: 30_000 })).data },
   async ingestSource(source) { return (await api.post('/ops/ingest-source', null, { params: { source, limit: 20 } })).data },
   async generateAllBriefings(forceRegenerate) {
     return (await api.post('/ops/briefing/generate-all', null, { params: { force_regenerate: forceRegenerate } })).data

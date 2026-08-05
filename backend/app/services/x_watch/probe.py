@@ -23,9 +23,23 @@ logger = logging.getLogger(__name__)
 PROBE_TWEET_COUNT = 2
 
 
-def test_x_watch_account(handle: str) -> Mapping[str, Any]:
-    """同步探测入口（调用方经 asyncio.to_thread 转入线程池）。"""
-    transport = XTransport(inter_account_delay=0.0)
+def test_x_watch_account(
+    handle: str,
+    credential: Mapping[str, Any] | None = None,
+) -> Mapping[str, Any]:
+    """同步探测入口（调用方经 asyncio.to_thread 转入线程池）。
+
+    Args:
+        handle: 要探测的 X 账号 handle。
+        credential: 可选指定凭证；未指定时保留旧的 env 凭据行为作为兼容路径。
+    """
+    if credential is not None:
+        transport = XTransport(
+            credential_provider=lambda: [dict(credential)],
+            inter_account_delay=0.0,
+        )
+    else:
+        transport = XTransport(inter_account_delay=0.0)
     return probe_x_watch_account(handle, transport)
 
 
@@ -33,15 +47,15 @@ def probe_x_watch_account(handle: str, transport: Any) -> Mapping[str, Any]:
     """用给定传输层探测单账号，返回 {"status", "message"} 结果。"""
     try:
         result = asyncio.run(transport.fetch_watchlist_tweets([handle], PROBE_TWEET_COUNT))
-    except XAuthNotConfigured as exc:
-        return {"status": "failed", "message": str(exc)}
-    except XAuthAbort as exc:
-        return {"status": "failed", "message": str(exc)}
-    except XRateLimitAbort as exc:
-        return {"status": "failed", "message": str(exc)}
-    except Exception as exc:  # 传输层以外的意外故障（网络、解析等）
+    except XAuthNotConfigured:
+        return {"status": "failed", "message": "x_auth_not_configured"}
+    except XAuthAbort:
+        return {"status": "failed", "message": "x_auth_expired"}
+    except XRateLimitAbort:
+        return {"status": "failed", "message": "x_rate_limited"}
+    except Exception:  # 传输层以外的意外故障（网络、解析等）
         logger.exception("[XWatchProbe] 账号 %s 探测出现意外异常", handle)
-        return {"status": "failed", "message": f"x_probe_error: {exc}"}
+        return {"status": "failed", "message": "x_probe_error"}
 
     if handle not in result:
         return {

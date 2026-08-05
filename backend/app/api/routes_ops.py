@@ -21,6 +21,8 @@ from backend.app.api.dependencies import (
     get_ops_diagnostics_service,
     get_runtime_provider_admin_service,
     get_scheduler_admin_service,
+    get_x_credential_admin_service,
+    get_x_watch_account_repository,
     get_x_watch_admin_service,
 )
 from backend.app.core.auth import RequireAdmin
@@ -47,6 +49,11 @@ from backend.app.models.schema_ops import (
     ProjectTaxonomyResponse,
     ProviderConfigRequest,
     ProviderConfigResponse,
+    XCredentialDeleteResponse,
+    XCredentialListResponse,
+    XCredentialRequest,
+    XCredentialResponse,
+    XCredentialTestResponse,
     XWatchAccountDeleteResponse,
     XWatchAccountListResponse,
     XWatchAccountRequest,
@@ -59,6 +66,7 @@ from backend.app.models.schema_projects import (
     ToolWebsiteDeleteResponse,
     ToolWebsiteManualAddRequest,
 )
+from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
@@ -85,6 +93,12 @@ from backend.app.services.runtime_provider.admin_service import (
     RuntimeProviderAdminService,
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
+from backend.app.services.x_credentials.admin_service import (
+    SafeXCredentialProjection,
+    XCredentialAdminNotFoundError,
+    XCredentialAdminService,
+    XCredentialAdminValidationError,
+)
 from backend.app.services.x_watch.admin_service import (
     SafeXWatchAccountProjection,
     XWatchAdminConflictError,
@@ -304,6 +318,105 @@ async def test_x_watch_account_route(
         message=outcome.result.get("message", ""),
         account=_x_watch_account_response(outcome.account),
     )
+
+
+# ── X 账号凭证 ───────────────────────────────────────────────────────────────
+
+
+def _x_credential_response(
+    projection: SafeXCredentialProjection,
+) -> XCredentialResponse:
+    return XCredentialResponse.model_validate(projection, from_attributes=True)
+
+
+@router.get("/ops/x-credentials", response_model=XCredentialListResponse, tags=["Ops"])
+async def list_x_credentials(
+    _: dict = Depends(RequireAdmin),
+    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
+) -> XCredentialListResponse:
+    """列出 X 采集凭证（仅返回配置状态与脱敏值，不返回明文 cookie）。"""
+    projections = await service.list_credentials()
+    items = [_x_credential_response(item) for item in projections]
+    return XCredentialListResponse(items=items, total=len(items))
+
+
+@router.post("/ops/x-credentials", response_model=XCredentialResponse, tags=["Ops"])
+async def create_x_credential(
+    request: XCredentialRequest,
+    _: dict = Depends(RequireAdmin),
+    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
+) -> XCredentialResponse:
+    """新增 X 采集凭证。auth_token 与 ct0 只写入，不明文返回。"""
+    try:
+        projection = await service.create_credential(request.model_dump())
+    except XCredentialAdminValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _x_credential_response(projection)
+
+
+@router.put("/ops/x-credentials/{credential_id}", response_model=XCredentialResponse, tags=["Ops"])
+async def update_x_credential(
+    credential_id: int,
+    request: XCredentialRequest,
+    _: dict = Depends(RequireAdmin),
+    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
+) -> XCredentialResponse:
+    """更新 X 采集凭证。两个 secret 留空表示保留当前值，不能更新为半残 pair。"""
+    try:
+        projection = await service.update_credential(credential_id, request.model_dump())
+    except XCredentialAdminValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except XCredentialAdminNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _x_credential_response(projection)
+
+
+@router.delete("/ops/x-credentials/{credential_id}", response_model=XCredentialDeleteResponse, tags=["Ops"])
+async def delete_x_credential(
+    credential_id: int,
+    _: dict = Depends(RequireAdmin),
+    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
+) -> XCredentialDeleteResponse:
+    """删除 X 采集凭证。"""
+    try:
+        await service.delete_credential(credential_id)
+    except XCredentialAdminNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return XCredentialDeleteResponse(
+        status="succeeded",
+        message="X 凭证已删除。",
+        deleted=True,
+        id=credential_id,
+    )
+
+
+@router.post("/ops/x-credentials/{credential_id}/test", response_model=XCredentialTestResponse, tags=["Ops"])
+async def test_x_credential_route(
+    credential_id: int,
+    _: dict = Depends(RequireAdmin),
+    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
+    watch_repository: XWatchAccountRepository = Depends(get_x_watch_account_repository),
+) -> XCredentialTestResponse:
+    """测试单个 X 凭证：使用第一个启用 watch handle 做真实请求，不允许 fallback。"""
+    handle = _first_enabled_x_handle(watch_repository)
+    try:
+        outcome = await service.test_credential(credential_id, handle)
+    except XCredentialAdminNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    assert isinstance(outcome.credential, SafeXCredentialProjection)
+    return XCredentialTestResponse(
+        status=outcome.result.get("status", "failed"),
+        message=outcome.result.get("message", ""),
+        credential=_x_credential_response(outcome.credential),
+    )
+
+
+def _first_enabled_x_handle(watch_repository: XWatchAccountRepository) -> str:
+    """返回第一个启用的 X watch handle；没有时让 probe 返回稳定失败标记。"""
+    handles = watch_repository.list_enabled_x_handles()
+    if handles:
+        return str(handles[0] or "")
+    return ""
 
 
 # ── 路由 ─────────────────────────────────────────────────────────────────────

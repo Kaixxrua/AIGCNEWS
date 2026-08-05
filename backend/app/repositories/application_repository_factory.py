@@ -65,6 +65,9 @@ from backend.app.repositories.postgres_runtime_provider_repository import (
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
+from backend.app.repositories.postgres_x_credentials_repository import (
+    PostgresXCredentialRepository,
+)
 from backend.app.repositories.postgres_x_watch_repository import (
     PostgresXWatchAccountRepository,
 )
@@ -89,6 +92,7 @@ from backend.app.repositories.task_repository import (
     RecentTaskReader,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.repositories.x_credentials_repository import XCredentialRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 
 
@@ -123,6 +127,7 @@ class ApplicationRepositories:
     project_collections: UserProjectCollectionRepository
     project_recommendations: GitHubProjectRecommendationRepository
     github_semantic_sources: GitHubProjectSemanticSourceRepository
+    x_credentials: XCredentialRepository
     x_watch_accounts: XWatchAccountRepository
 
 
@@ -134,6 +139,15 @@ def _env_x_watch_handles() -> tuple[str, ...]:
     """
     raw = os.environ.get("TWITTER_WATCH_HANDLES", "")
     return tuple(part for piece in raw.split(",") if (part := piece.strip()))
+
+
+def _env_x_credentials() -> tuple[str, str] | None:
+    """读取旧部署的完整 cookie pair，仅作为空表首次 bootstrap 来源。"""
+    auth_token = os.environ.get("TWITTER_AUTH_TOKEN", "").strip()
+    ct0 = os.environ.get("TWITTER_CT0", "").strip()
+    if not auth_token or not ct0:
+        return None
+    return auth_token, ct0
 
 
 def create_application_repositories(
@@ -159,6 +173,10 @@ def create_application_repositories(
         project_collections=PostgresProjectWriteRepository(postgres),
         project_recommendations=PostgresProjectWriteRepository(postgres),
         github_semantic_sources=PostgresGitHubProjectSemanticSourceRepository(postgres),
+        x_credentials=PostgresXCredentialRepository(
+            postgres,
+            bootstrap=_env_x_credentials(),
+        ),
         x_watch_accounts=PostgresXWatchAccountRepository(
             postgres,
             defaults=_env_x_watch_handles(),

@@ -48,6 +48,14 @@ class SchedulerDescriptorTests(unittest.TestCase):
                 3600,
             ),
             (
+                "x_credentials_probe",
+                "x_credentials_probe",
+                "X 凭证池定时测活",
+                {"hour": "*/2", "minute": "8", "second": "0"},
+                True,
+                3600,
+            ),
+            (
                 "github_project_daily_pipeline",
                 "github_project_daily_pipeline",
                 "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",
@@ -164,6 +172,16 @@ class SchedulerCallbackResolutionTests(unittest.TestCase):
                 namespace,
             ),
             replacement,
+        )
+
+    def test_resolves_x_credentials_probe_callback_from_namespace(self) -> None:
+        async def probe() -> None:
+            return None
+
+        namespace = {"_run_x_credentials_probe_job": probe}
+        self.assertIs(
+            resolve_source_job_callback("x_credentials_probe", namespace),
+            probe,
         )
 
     def test_source_callback_preserves_source_default_and_registration_binding(self) -> None:

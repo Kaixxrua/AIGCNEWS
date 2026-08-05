@@ -44,6 +44,7 @@ const createApi = (): MonitorApi => ({
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
   fetchXWatchAccounts: vi.fn(async () => []), saveXWatchAccount: vi.fn(), deleteXWatchAccount: vi.fn(), testXWatchAccount: vi.fn(),
+  fetchXCredentials: vi.fn(async () => []), saveXCredential: vi.fn(), deleteXCredential: vi.fn(), testXCredential: vi.fn(),
 })
 
 const createController = (api = createApi(), isAdmin = true) => {

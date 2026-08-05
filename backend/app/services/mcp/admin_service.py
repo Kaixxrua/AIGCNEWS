@@ -11,6 +11,7 @@ from backend.app.services.mcp_connection_tester import (
     McpConnectionTestError,
     validate_mcp_http_url,
 )
+from backend.app.services.secret_masking import mask_token
 
 
 class McpConfigStore(Protocol):
@@ -56,14 +57,6 @@ class SafeMcpServerProjection:
     last_test_at: str | None
     created_at: str | None
     updated_at: str | None
-
-
-def mask_token(token: str | None) -> str | None:
-    if not token:
-        return None
-    if len(token) <= 8:
-        return "****"
-    return f"{token[:4]}****{token[-4:]}"
 
 
 def project_server(

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 
 from backend.app.services.ingestion.base_crawler import (
     BaseCrawler,
@@ -71,12 +71,16 @@ class XCrawler(BaseCrawler):
         self,
         transport: Optional[XTransport] = None,
         watchlist_provider: Optional[Callable[[], list[str]]] = None,
+        credential_provider: Optional[Callable[[], list[dict[str, Any]]]] = None,
         tweets_per_account: Optional[int] = None,
     ) -> None:
         self._transport = (
             transport
             if transport is not None
-            else XTransport(inter_account_delay=_env_inter_account_delay())
+            else XTransport(
+                credential_provider=credential_provider,
+                inter_account_delay=_env_inter_account_delay(),
+            )
         )
         self._watchlist_provider = watchlist_provider or _env_watchlist_provider
         self._tweets_per_account = (

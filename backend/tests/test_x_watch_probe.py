@@ -43,23 +43,23 @@ class XWatchProbeTests(unittest.TestCase):
 
     def test_auth_not_configured_is_loud_failure(self) -> None:
         transport = FakeTransport(
-            error=XAuthNotConfigured("x_auth_not_configured: set TWITTER_AUTH_TOKEN and TWITTER_CT0")
+            error=XAuthNotConfigured("x_auth_not_configured")
         )
 
         outcome = probe_x_watch_account("openai", transport)
 
         self.assertEqual(outcome["status"], "failed")
-        self.assertIn("x_auth_not_configured", outcome["message"])
+        self.assertEqual(outcome["message"], "x_auth_not_configured")
 
     def test_auth_abort_and_rate_limit_propagate_markers(self) -> None:
         for error, marker in (
-            (XAuthAbort("x_auth_expired: 401"), "x_auth_expired"),
-            (XRateLimitAbort("x_rate_limited: 429"), "x_rate_limited"),
+            (XAuthAbort("x_auth_expired"), "x_auth_expired"),
+            (XRateLimitAbort("x_rate_limited"), "x_rate_limited"),
         ):
             with self.subTest(marker=marker):
                 outcome = probe_x_watch_account("openai", FakeTransport(error=error))
                 self.assertEqual(outcome["status"], "failed")
-                self.assertIn(marker, outcome["message"])
+                self.assertEqual(outcome["message"], marker)
 
     def test_unexpected_error_is_contained_with_marker(self) -> None:
         transport = FakeTransport(error=RuntimeError("boom"))
@@ -68,7 +68,7 @@ class XWatchProbeTests(unittest.TestCase):
             outcome = probe_x_watch_account("openai", transport)
 
         self.assertEqual(outcome["status"], "failed")
-        self.assertIn("x_probe_error", outcome["message"])
+        self.assertEqual(outcome["message"], "x_probe_error")
 
 
 if __name__ == "__main__":

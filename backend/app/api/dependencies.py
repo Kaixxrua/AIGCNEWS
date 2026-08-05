@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+from typing import Any, Mapping
 
 from fastapi import Depends, Request
 
@@ -42,6 +43,7 @@ from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.repositories.x_credentials_repository import XCredentialRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.briefing.composition import provide_daily_briefing_service
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
@@ -70,6 +72,7 @@ from backend.app.services.runtime_provider.runtime import (
     ApplicationModelProviderRuntime,
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
+from backend.app.services.x_credentials.admin_service import XCredentialAdminService
 from backend.app.services.x_watch.admin_service import XWatchAdminService
 
 
@@ -169,12 +172,68 @@ def get_x_watch_account_repository(
     return repositories.x_watch_accounts
 
 
+def get_x_credential_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> XCredentialRepository:
+    return repositories.x_credentials
+
+
+def get_optional_x_credential_repository(
+    request: Request,
+) -> XCredentialRepository | None:
+    """Return the DB credential store when the application runtime is available.
+
+    The optional form preserves the legacy X watch probe dependency seam used by
+    isolated route tests and by older callers that still rely on env credentials.
+    Production composition always provides ``application_repositories``.
+    """
+    repositories = getattr(request.app.state, "application_repositories", None)
+    return repositories.x_credentials if repositories is not None else None
+
+
+def get_x_operation_lock(request: Request) -> asyncio.Lock:
+    """Return the shared X/Twitter operation lock from the app runtime.
+
+    If the application runtime is not configured (e.g. isolated route tests),
+    return a fresh lock so endpoints remain testable without a scheduler.
+    """
+    lock = getattr(request.app.state, "x_operation_lock", None)
+    if isinstance(lock, asyncio.Lock):
+        return lock
+    return asyncio.Lock()
+
+
 def get_x_watch_admin_service(
     repository: XWatchAccountRepository = Depends(get_x_watch_account_repository),
+    credential_repository: XCredentialRepository | None = Depends(
+        get_optional_x_credential_repository
+    ),
+    x_lock: asyncio.Lock = Depends(get_x_operation_lock),
 ) -> XWatchAdminService:
     from backend.app.services.x_watch.probe import test_x_watch_account
 
-    return XWatchAdminService(repository, test_x_watch_account)
+    def tester(handle: str) -> Mapping[str, Any]:
+        if credential_repository is None:
+            return test_x_watch_account(handle)
+        credentials = credential_repository.list_enabled_x_credentials()
+        if not credentials:
+            return {"status": "failed", "message": "x_auth_not_configured"}
+        return test_x_watch_account(handle, credentials[0])
+
+    return XWatchAdminService(repository, tester, x_lock=x_lock)
+
+
+def get_x_credential_admin_service(
+    repository: XCredentialRepository = Depends(get_x_credential_repository),
+    watch_repository: XWatchAccountRepository = Depends(get_x_watch_account_repository),
+    x_lock: asyncio.Lock = Depends(get_x_operation_lock),
+) -> XCredentialAdminService:
+    from backend.app.services.x_credentials.probe import probe_x_credential
+
+    def tester(credential: Mapping[str, Any], handle: str) -> Mapping[str, Any]:
+        return probe_x_credential(credential, handle)
+
+    return XCredentialAdminService(repository, tester, x_lock=x_lock)
 
 
 def get_mcp_access_token_repository(

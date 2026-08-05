@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import unittest
+from typing import Any, Mapping
 from unittest.mock import MagicMock
 
 from backend.app.repositories.x_watch_repository import XWatchAccountConflictError
@@ -134,6 +136,39 @@ class XWatchAdminServiceTests(unittest.TestCase):
         self.assertIsNone(outcome)
         tester.assert_not_called()
         store.update_x_watch_test_result.assert_not_called()
+
+    def test_account_test_serializes_with_x_lock(self) -> None:
+        timestamps: list[tuple[str, float]] = []
+        call_count = {"n": 0}
+
+        def slow_tester(handle: str) -> Mapping[str, Any]:
+            call_count["n"] += 1
+            timestamps.append(("enter", time.monotonic()))
+            time.sleep(0.05)
+            timestamps.append(("exit", time.monotonic()))
+            return {"status": "succeeded", "message": "ok"}
+
+        row = {"id": 1, "screen_name": "openai"}
+        store = MagicMock()
+        store.get_x_watch_account.return_value = row
+        store.update_x_watch_test_result.return_value = row
+        service = XWatchAdminService(store, slow_tester, x_lock=asyncio.Lock())
+
+        async def run_both() -> None:
+            await asyncio.gather(
+                service.test_account(1),
+                service.test_account(2),
+            )
+
+        asyncio.run(run_both())
+
+        self.assertEqual(len(timestamps), 4)
+        sorted_timestamps = sorted(timestamps, key=lambda item: item[1])
+        self.assertEqual(sorted_timestamps[0][0], "enter")
+        self.assertEqual(sorted_timestamps[1][0], "exit")
+        self.assertEqual(sorted_timestamps[2][0], "enter")
+        self.assertEqual(sorted_timestamps[3][0], "exit")
+        self.assertEqual(call_count["n"], 2)
 
 
 if __name__ == "__main__":

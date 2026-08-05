@@ -18,6 +18,7 @@ JobSource = Literal[
     "producthunt",
     "hackernews",
     "x",
+    "x_credentials_probe",
     "github_project_daily_pipeline",
     "github_project_metrics_refresh",
     "daily_briefing",
@@ -133,6 +134,15 @@ SOURCE_JOB_DESCRIPTORS: tuple[CronJobDescriptor, ...] = (
         coalesce=True,
         misfire_grace_time=3600,
     ),
+    # X 凭证池测活：与采集错开 2 分钟，串行执行，避免与采集并发请求 X
+    CronJobDescriptor(
+        id="x_credentials_probe",
+        source="x_credentials_probe",
+        name="X 凭证池定时测活",
+        schedule=CronSchedule(hour="*/2", minute=8),
+        coalesce=True,
+        misfire_grace_time=3600,
+    ),
     CronJobDescriptor(
         id="github_project_daily_pipeline",
         source="github_project_daily_pipeline",
@@ -188,6 +198,7 @@ def resolve_source_job_callback(
     callback_name = {
         "github_project_daily_pipeline": "_run_github_project_daily_pipeline_job",
         "github_project_metrics_refresh": "_run_github_project_metrics_refresh_job",
+        "x_credentials_probe": "_run_x_credentials_probe_job",
     }.get(source)
     if callback_name is not None:
         return namespace[callback_name]

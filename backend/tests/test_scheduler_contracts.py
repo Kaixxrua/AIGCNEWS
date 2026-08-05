@@ -94,6 +94,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "producthunt",
                 "hackernews",
                 "x_watchlist",
+                "x_credentials_probe",
                 "github_project_daily_pipeline",
                 "github_project_metrics_refresh",
                 "daily_briefing",
@@ -115,6 +116,13 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 3600,
             ),
             (
+                "x_credentials_probe",
+                "X 凭证池定时测活",
+                {"hour": "*/2", "minute": "8", "second": "0"},
+                True,
+                3600,
+            ),
+            (
                 "github_project_daily_pipeline",
                 "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",
                 {"hour": "2", "minute": "0", "second": "0"},
@@ -130,7 +138,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             ),
         ]
         for (_, kwargs), (job_id, name, fields, coalesce, grace) in zip(
-            fake_scheduler.add_job_calls[:8], expected_source_jobs, strict=True
+            fake_scheduler.add_job_calls[:9], expected_source_jobs, strict=True
         ):
             self.assertEqual(kwargs["id"], job_id)
             self.assertEqual(kwargs["name"], name)
@@ -148,7 +156,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             self.assertEqual(actual_fields, fields)
             self.assertEqual(str(trigger.timezone), "Asia/Shanghai")
 
-        briefing = fake_scheduler.add_job_calls[8][1]
+        briefing = fake_scheduler.add_job_calls[9][1]
         self.assertEqual(
             {key: briefing[key] for key in ("id", "name", "replace_existing", "max_instances", "misfire_grace_time")},
             {
@@ -164,7 +172,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             {"hour": "8", "minute": "0", "second": "0"},
         )
 
-        cleanup = fake_scheduler.add_job_calls[9][1]
+        cleanup = fake_scheduler.add_job_calls[10][1]
         self.assertEqual(
             {key: cleanup[key] for key in ("id", "name", "replace_existing", "max_instances", "misfire_grace_time")},
             {
@@ -184,6 +192,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         single_source = AsyncMock()
         daily_pipeline = AsyncMock()
         metrics_refresh = AsyncMock()
+        x_credentials_probe = AsyncMock()
 
         with (
             patch.object(scheduler, "_run_single_source_job", new=single_source),
@@ -197,6 +206,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "_run_github_project_metrics_refresh_job",
                 new=metrics_refresh,
             ),
+            patch.object(
+                scheduler,
+                "_run_x_credentials_probe_job",
+                new=x_credentials_probe,
+            ),
         ):
             fake_scheduler, _ = self._start_scheduler()
             callbacks = {
@@ -206,9 +220,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             asyncio.run(callbacks["github_project_daily_pipeline"]())  # type: ignore[operator]
             asyncio.run(callbacks["github_project_metrics_refresh"]())  # type: ignore[operator]
             asyncio.run(callbacks["arxiv_papers"]())  # type: ignore[operator]
+            asyncio.run(callbacks["x_credentials_probe"]())  # type: ignore[operator]
         daily_pipeline.assert_awaited_once()
         metrics_refresh.assert_awaited_once()
         single_source.assert_awaited_once()
+        x_credentials_probe.assert_awaited_once()
 
     def test_runtime_callbacks_forward_owned_repositories_and_lock(self) -> None:
         repositories = MagicMock()
@@ -220,6 +236,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         single_source = AsyncMock()
         daily_pipeline = AsyncMock()
         metrics_refresh = AsyncMock()
+        x_credentials_probe = AsyncMock()
         daily_briefing = AsyncMock()
         conversation_cleanup = AsyncMock()
         semantic_warmup = AsyncMock()
@@ -238,6 +255,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             ),
             patch.object(
                 scheduler,
+                "_run_x_credentials_probe_job",
+                new=x_credentials_probe,
+            ),
+            patch.object(
+                scheduler,
                 "_run_daily_briefing_job",
                 new=daily_briefing,
             ),
@@ -253,16 +275,26 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             ),
         ):
             asyncio.run(runtime._run_single_source_job("github"))
+            asyncio.run(runtime._run_single_source_job("x"))
             asyncio.run(runtime._run_github_project_daily_pipeline_job())
             asyncio.run(runtime._run_github_project_metrics_refresh_job())
+            asyncio.run(runtime._run_x_credentials_probe_job())
             asyncio.run(runtime._run_daily_briefing_job())
             asyncio.run(runtime._run_conversation_cleanup_job())
             asyncio.run(runtime._run_project_semantic_warmup_job())
 
-        single_source.assert_awaited_once_with(
+        self.assertEqual(single_source.await_count, 2)
+        single_source.assert_any_await(
             "github",
             repositories=repositories,
             github_lock=runtime._github_job_lock,
+            x_lock=runtime._x_operation_lock,
+        )
+        single_source.assert_any_await(
+            "x",
+            repositories=repositories,
+            github_lock=runtime._github_job_lock,
+            x_lock=runtime._x_operation_lock,
         )
         daily_pipeline.assert_awaited_once_with(
             repositories=repositories,
@@ -271,6 +303,10 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         metrics_refresh.assert_awaited_once_with(
             repository=repositories.github_ingestion,
             github_lock=runtime._github_job_lock,
+        )
+        x_credentials_probe.assert_awaited_once_with(
+            repositories=repositories,
+            x_lock=runtime._x_operation_lock,
         )
         daily_briefing.assert_awaited_once_with(repositories)
         conversation_cleanup.assert_awaited_once_with(repositories.conversations)

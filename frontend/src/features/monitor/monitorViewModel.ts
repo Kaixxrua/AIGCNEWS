@@ -32,12 +32,12 @@ export const MCP_TEST_SCOPE = [
 ]
 
 export const SOURCE_LIST: SourceItem[] = [
-  { key: 'arxiv', labelKey: 'arxiv', icon: FileText, color: 'bg-card', textColor: 'text-stone-600' },
-  { key: 'github', labelKey: 'github', icon: GitBranch, color: 'bg-card', textColor: 'text-stone-600' },
-  { key: 'hackernews', labelKey: 'hackernews', icon: Triangle, color: 'bg-card', textColor: 'text-stone-600' },
-  { key: 'producthunt', labelKey: 'producthunt', icon: Rocket, color: 'bg-card', textColor: 'text-stone-600' },
-  { key: 'news', labelKey: 'news', icon: Newspaper, color: 'bg-card', textColor: 'text-stone-600' },
-  { key: 'x', labelKey: 'x', icon: XLogoIcon, color: 'bg-card', textColor: 'text-stone-600' },
+  { key: 'arxiv', labelKey: 'arxiv', icon: FileText, color: '', textColor: '' },
+  { key: 'github', labelKey: 'github', icon: GitBranch, color: '', textColor: '' },
+  { key: 'hackernews', labelKey: 'hackernews', icon: Triangle, color: '', textColor: '' },
+  { key: 'producthunt', labelKey: 'producthunt', icon: Rocket, color: '', textColor: '' },
+  { key: 'news', labelKey: 'news', icon: Newspaper, color: '', textColor: '' },
+  { key: 'x', labelKey: 'x', icon: XLogoIcon, color: '', textColor: '' },
 ]
 
 export const formatDate = (value: string | null | undefined): string => (
@@ -58,16 +58,16 @@ export const formatTime = (value: string | null | undefined): string => (
 )
 
 const STATUS_CONFIG: Record<string, { labelKey: string; rawLabel: string; dot: string; bg: string; text: string }> = {
-  success: { labelKey: 'success', rawLabel: '', dot: 'bg-brand-green', bg: 'bg-green-50', text: 'text-green-700' },
-  succeeded: { labelKey: 'success', rawLabel: '', dot: 'bg-brand-green', bg: 'bg-green-50', text: 'text-green-700' },
-  failed: { labelKey: 'failed', rawLabel: '', dot: 'bg-brand-rose', bg: 'bg-rose-50', text: 'text-rose-600' },
-  running: { labelKey: 'running', rawLabel: '', dot: 'bg-brand-blue', bg: 'bg-blue-50', text: 'text-blue-600' },
-  unknown: { labelKey: 'unknownStatus', rawLabel: '', dot: 'bg-stone-300', bg: 'bg-stone-50', text: 'text-stone-500' },
+  success: { labelKey: 'success', rawLabel: '', dot: 'monitor-status-dot-success', bg: 'monitor-status-success', text: '' },
+  succeeded: { labelKey: 'success', rawLabel: '', dot: 'monitor-status-dot-success', bg: 'monitor-status-success', text: '' },
+  failed: { labelKey: 'failed', rawLabel: '', dot: 'monitor-status-dot-error', bg: 'monitor-status-error', text: '' },
+  running: { labelKey: 'running', rawLabel: '', dot: 'monitor-status-dot-running', bg: 'monitor-status-running', text: '' },
+  unknown: { labelKey: 'unknownStatus', rawLabel: '', dot: 'monitor-status-dot-unknown', bg: 'monitor-status-unknown', text: '' },
 }
 
 export const getStatusConfig = (status: string) => (
   STATUS_CONFIG[(status || 'unknown').toLowerCase()]
-  ?? { labelKey: '', rawLabel: status, dot: 'bg-stone-400', bg: 'bg-stone-50', text: 'text-stone-500' }
+  ?? { labelKey: '', rawLabel: status, dot: 'monitor-status-dot-unknown', bg: 'monitor-status-unknown', text: '' }
 )
 
 export const getMcpTransportPresentation = (transport: string) => (

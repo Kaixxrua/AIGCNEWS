@@ -384,7 +384,7 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             )
 
         runner = PostgresMigrationRunner(DirectDatabase())  # type: ignore[arg-type]
-        assert [migration.version for migration in runner.apply()] == list(range(1, 11))
+        assert [migration.version for migration in runner.apply()] == list(range(1, 13))
         assert runner.apply() == []
 
         with connection.cursor() as cursor:

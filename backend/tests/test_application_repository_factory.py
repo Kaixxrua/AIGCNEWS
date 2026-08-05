@@ -52,6 +52,9 @@ from backend.app.repositories.postgres_runtime_provider_repository import (
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
+from backend.app.repositories.postgres_x_credentials_repository import (
+    PostgresXCredentialRepository,
+)
 from backend.app.repositories.postgres_x_watch_repository import (
     PostgresXWatchAccountRepository,
 )
@@ -87,6 +90,7 @@ def test_factory_builds_postgres_protocol_adapters() -> None:
         "project_collections": PostgresProjectWriteRepository,
         "project_recommendations": PostgresProjectWriteRepository,
         "github_semantic_sources": PostgresGitHubProjectSemanticSourceRepository,
+        "x_credentials": PostgresXCredentialRepository,
         "x_watch_accounts": PostgresXWatchAccountRepository,
     }
     for name, adapter in expected.items():
@@ -100,7 +104,12 @@ def test_factory_seeds_x_watch_defaults_from_env() -> None:
 
     with patch.dict(
         "os.environ",
-        {"TWITTER_WATCH_HANDLES": "openai, @AnthropicAI ,, karpathy"},
+        {
+            "TWITTER_WATCH_HANDLES": "openai, @AnthropicAI ,, karpathy",
+            "TWITTER_AUTH_TOKEN": "dummy-auth-token",
+            "TWITTER_CT0": "dummy-ct0-token",
+        },
+        clear=True,
     ):
         repositories = create_application_repositories(
             postgres=Lifecycle(),  # type: ignore[arg-type]
@@ -111,3 +120,22 @@ def test_factory_seeds_x_watch_defaults_from_env() -> None:
         "@AnthropicAI",
         "karpathy",
     )
+    assert repositories.x_credentials._bootstrap == (
+        "dummy-auth-token",
+        "dummy-ct0-token",
+    )
+
+
+def test_factory_does_not_bootstrap_incomplete_x_credentials_pair() -> None:
+    from unittest.mock import patch
+
+    with patch.dict(
+        "os.environ",
+        {"TWITTER_AUTH_TOKEN": "dummy-auth-token", "TWITTER_CT0": ""},
+        clear=True,
+    ):
+        repositories = create_application_repositories(
+            postgres=Lifecycle(),  # type: ignore[arg-type]
+        )
+
+    assert repositories.x_credentials._bootstrap is None

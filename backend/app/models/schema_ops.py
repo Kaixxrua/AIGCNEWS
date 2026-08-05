@@ -231,3 +231,47 @@ class XWatchAccountTestResponse(BaseModel):
     status: str
     message: str
     account: XWatchAccountResponse
+
+
+class XCredentialRequest(BaseModel):
+    display_name: str = Field(default="", max_length=128)
+    note: str = Field(default="", max_length=2000)
+    enabled: bool = True
+    sort_order: int = 0
+    auth_token: Optional[str] = Field(default=None, max_length=8192)
+    ct0: Optional[str] = Field(default=None, max_length=8192)
+
+
+class XCredentialResponse(BaseModel):
+    id: int
+    display_name: str = ""
+    note: str = ""
+    enabled: bool
+    sort_order: int = 0
+    auth_token_configured: bool
+    auth_token_masked: Optional[str] = None
+    ct0_configured: bool
+    ct0_masked: Optional[str] = None
+    last_test_status: str = "unknown"
+    last_test_message: str = ""
+    last_test_at: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class XCredentialListResponse(BaseModel):
+    items: list[XCredentialResponse]
+    total: int
+
+
+class XCredentialDeleteResponse(BaseModel):
+    status: str
+    message: str
+    deleted: bool
+    id: int
+
+
+class XCredentialTestResponse(BaseModel):
+    status: str
+    message: str
+    credential: XCredentialResponse

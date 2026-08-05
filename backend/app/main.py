@@ -234,6 +234,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ),
         )
         app.state.scheduler_runtime = scheduler_runtime
+        app.state.x_operation_lock = scheduler_runtime.x_operation_lock
         if scheduler_enabled:
             scheduler_runtime.start()
 

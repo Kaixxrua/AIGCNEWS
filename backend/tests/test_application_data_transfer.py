@@ -54,6 +54,11 @@ def test_application_transfer_specs_preserve_sensitive_and_typed_fields() -> Non
     assert attachments.dependencies == ("users", "conversations")
 
 
+def test_postgres_only_runtime_credentials_are_not_mysql_transfer_input() -> None:
+    assert "x_credentials" not in APPLICATION_TABLE_TRANSFER_BY_NAME
+    assert all(spec.name != "x_credentials" for spec in APPLICATION_TABLE_TRANSFER_SPECS)
+
+
 def test_all_generated_ids_have_identity_repair_metadata() -> None:
     identity_tables = {
         "users",

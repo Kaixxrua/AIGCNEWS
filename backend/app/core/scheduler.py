@@ -39,6 +39,7 @@ from backend.app.repositories.application_repository_factory import (
 from backend.app.repositories.briefing_repository import ActiveBriefingSubscriberReader
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
+from backend.app.services.x_credentials.probe import probe_all_x_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -116,10 +117,11 @@ async def _run_single_source_job(
     *,
     repositories: ApplicationRepositories,
     github_lock: asyncio.Lock | None = None,
+    x_lock: asyncio.Lock | None = None,
 ) -> None:
     logger.info("[Scheduler] 触发 %s 采集任务...", source_name)
     active_repositories = repositories
-    lock = github_lock if source_name == "github" else None
+    lock = github_lock if source_name == "github" else x_lock if source_name == "x" else None
     try:
         from backend.app.services.ingestion.composition import (
             provide_ingestion_dependencies,
@@ -480,6 +482,44 @@ async def _run_conversation_cleanup_job(
         logger.error("[Scheduler] 会话历史清理失败: %s", exc, exc_info=True)
 
 
+async def _run_x_credentials_probe_job(
+    *,
+    repositories: ApplicationRepositories,
+    x_lock: asyncio.Lock | None = None,
+) -> None:
+    """Probe all enabled X credentials serially and persist results.
+
+    Shares the X operation lock with the X ingestion job so the two never
+    hit X concurrently.
+    """
+    logger.info("[Scheduler] 触发 X 凭证池测活...")
+    try:
+        credentials = await asyncio.to_thread(
+            repositories.x_credentials.list_enabled_x_credentials,
+        )
+        handles = await asyncio.to_thread(
+            repositories.x_watch_accounts.list_enabled_x_handles,
+        )
+        handle = handles[0] if handles else ""
+
+        lock = x_lock or asyncio.Lock()
+        async with lock:
+            results = await asyncio.to_thread(
+                probe_all_x_credentials,
+                credentials,
+                handle,
+                update_result=repositories.x_credentials.update_x_credential_test_result,
+            )
+        succeeded = sum(1 for result in results if result.get("status") == "succeeded")
+        logger.info(
+            "[Scheduler] X 凭证池测活完成：%d/%d 成功。",
+            succeeded,
+            len(results),
+        )
+    except Exception as exc:
+        logger.error("[Scheduler] X 凭证池测活失败: %s", exc, exc_info=True)
+
+
 def _register_job(
     scheduler: AsyncIOScheduler,
     descriptor: JobDescriptor,
@@ -518,9 +558,20 @@ class ApplicationSchedulerRuntime:
         self._shutdown_grace_seconds = max(0.0, float(shutdown_grace_seconds))
         self._timezone_name = timezone_name
         self._github_job_lock = asyncio.Lock()
+        self._x_operation_lock = asyncio.Lock()
         self._active_tasks: set[asyncio.Task[Any]] = set()
         self._stopping = False
         self._stop_lock = asyncio.Lock()
+
+    @property
+    def x_operation_lock(self) -> asyncio.Lock:
+        """Shared lock used to serialize all X/Twitter network requests.
+
+        Routes and scheduled jobs must acquire this lock before issuing X
+        requests so manual tests, scheduled probes, and ingestion never run
+        concurrently against X.
+        """
+        return self._x_operation_lock
 
     async def _run_tracked(
         self,
@@ -547,6 +598,7 @@ class ApplicationSchedulerRuntime:
                 source_name,
                 repositories=self.repositories,
                 github_lock=self._github_job_lock,
+                x_lock=self._x_operation_lock,
             )
         )
 
@@ -563,6 +615,14 @@ class ApplicationSchedulerRuntime:
             lambda: _run_github_project_metrics_refresh_job(
                 repository=self.repositories.github_ingestion,
                 github_lock=self._github_job_lock,
+            )
+        )
+
+    async def _run_x_credentials_probe_job(self) -> None:
+        await self._run_tracked(
+            lambda: _run_x_credentials_probe_job(
+                repositories=self.repositories,
+                x_lock=self._x_operation_lock,
             )
         )
 
@@ -597,6 +657,7 @@ class ApplicationSchedulerRuntime:
             "_run_github_project_metrics_refresh_job": (
                 self._run_github_project_metrics_refresh_job
             ),
+            "_run_x_credentials_probe_job": self._run_x_credentials_probe_job,
         }
         for descriptor in SOURCE_JOB_DESCRIPTORS:
             _register_job(

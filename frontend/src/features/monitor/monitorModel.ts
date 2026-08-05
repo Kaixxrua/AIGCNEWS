@@ -263,3 +263,73 @@ export const removeXWatchAccount = (accounts: XWatchAccount[], id: number) => ac
 export const replaceXWatchAccount = (accounts: XWatchAccount[], updated?: XWatchAccount) => (
   updated ? accounts.map((item) => item.id === updated.id ? updated : item) : accounts
 )
+
+export interface XCredential {
+  id: number
+  display_name: string
+  note: string
+  enabled: boolean
+  sort_order: number
+  auth_token_configured: boolean
+  auth_token_masked: string | null
+  ct0_configured: boolean
+  ct0_masked: string | null
+  last_test_status: string
+  last_test_message: string
+  last_test_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface XCredentialForm {
+  id: number | null
+  display_name: string
+  note: string
+  enabled: boolean
+  sort_order: number
+  auth_token: string
+  ct0: string
+}
+
+export const createEmptyXCredentialForm = (): XCredentialForm => ({
+  id: null,
+  display_name: '',
+  note: '',
+  enabled: true,
+  sort_order: 0,
+  auth_token: '',
+  ct0: '',
+})
+
+export const createXCredentialForm = (credential: XCredential): XCredentialForm => ({
+  id: credential.id,
+  display_name: credential.display_name || '',
+  note: credential.note || '',
+  enabled: credential.enabled,
+  sort_order: credential.sort_order,
+  // Secrets are write-only. Editing a credential must never copy masked values into the form.
+  auth_token: '',
+  ct0: '',
+})
+
+export const buildXCredentialPayload = (form: XCredentialForm) => ({
+  display_name: form.display_name,
+  note: form.note,
+  enabled: form.enabled,
+  sort_order: form.sort_order,
+  // null has backend-defined retain semantics; never send a masked response value.
+  auth_token: form.auth_token || null,
+  ct0: form.ct0 || null,
+})
+
+export const upsertXCredential = (credentials: XCredential[], saved: XCredential) => {
+  const index = credentials.findIndex((item) => item.id === saved.id)
+  if (index < 0) return [saved, ...credentials]
+  return credentials.map((item, itemIndex) => itemIndex === index ? saved : item)
+}
+
+export const removeXCredential = (credentials: XCredential[], id: number) => credentials.filter((item) => item.id !== id)
+
+export const replaceXCredential = (credentials: XCredential[], updated?: XCredential) => (
+  updated ? credentials.map((item) => item.id === updated.id ? updated : item) : credentials
+)

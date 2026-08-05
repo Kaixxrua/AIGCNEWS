@@ -249,6 +249,97 @@ class XTransportContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([t.id for t in result["karpathy"]], ["b1"])
         self.assertNotIn("sama", result)  # 其他异常 → 跳过
 
+    async def test_auth_fallback_retries_complete_generator_watchlist(self) -> None:
+        primary = _FakeClient()
+        primary.fetch_user.side_effect = [
+            UserProfile(id="11", name="OpenAI", screen_name="openai"),
+            UserProfile(id="22", name="Karpathy", screen_name="karpathy"),
+        ]
+        primary.fetch_user_tweets.side_effect = [
+            [_tweet("primary-partial", screen_name="openai")],
+            AuthenticationError("expired"),
+        ]
+        backup = _FakeClient()
+        backup.fetch_user_tweets.side_effect = [
+            [_tweet("backup-openai", screen_name="openai")],
+            [_tweet("backup-karpathy", screen_name="karpathy")],
+        ]
+        factory = Mock(side_effect=[primary, backup])
+        transport = x_transport.XTransport(
+            credential_provider=lambda: [
+                {"display_name": "primary", "auth_token": "auth-1", "ct0": "ct0-1", "enabled": True},
+                {"display_name": "backup", "auth_token": "auth-2", "ct0": "ct0-2", "enabled": True},
+            ],
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        result = await transport.fetch_watchlist_tweets(
+            (handle for handle in ("openai", "karpathy")),
+            count_per_user=5,
+        )
+
+        self.assertEqual([tweet.id for tweet in result["openai"]], ["backup-openai"])
+        self.assertEqual([tweet.id for tweet in result["karpathy"]], ["backup-karpathy"])
+        self.assertNotIn("primary-partial", [tweet.id for tweets in result.values() for tweet in tweets])
+        self.assertEqual(factory.call_args_list, [
+            unittest.mock.call("auth-1", "ct0-1"),
+            unittest.mock.call("auth-2", "ct0-2"),
+        ])
+        backup.fetch_user_tweets.assert_has_calls([
+            unittest.mock.call("11", 5),
+            unittest.mock.call("22", 5),
+        ])
+
+    async def test_rate_limit_does_not_rotate_to_backup_credential(self) -> None:
+        primary = _FakeClient()
+        primary.fetch_user.return_value = UserProfile(
+            id="11", name="OpenAI", screen_name="openai"
+        )
+        primary.fetch_user_tweets.side_effect = RateLimitError("429")
+        backup = _FakeClient()
+        factory = Mock(side_effect=[primary, backup])
+        transport = x_transport.XTransport(
+            credential_provider=lambda: [
+                {"auth_token": "auth-1", "ct0": "ct0-1", "enabled": True},
+                {"auth_token": "auth-2", "ct0": "ct0-2", "enabled": True},
+            ],
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        with self.assertRaisesRegex(x_transport.XRateLimitAbort, "x_rate_limited"):
+            await transport.fetch_watchlist_tweets(["openai"])
+
+        factory.assert_called_once_with("auth-1", "ct0-1")
+        backup.fetch_user.assert_not_called()
+        backup.fetch_user_tweets.assert_not_called()
+
+    async def test_all_auth_failures_raise_stable_pool_marker(self) -> None:
+        clients = [_FakeClient(), _FakeClient()]
+        for client in clients:
+            client.fetch_user.side_effect = AuthenticationError("secret-bearing failure")
+        transport = x_transport.XTransport(
+            credential_provider=lambda: [
+                {"auth_token": "auth-1", "ct0": "ct0-1", "enabled": True},
+                {"auth_token": "auth-2", "ct0": "ct0-2", "enabled": True},
+            ],
+            credential_factory=Mock(side_effect=clients),
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        with self.assertRaisesRegex(
+            x_transport.XAuthAbort,
+            "^x_auth_all_credentials_failed$",
+        ):
+            await transport.fetch_watchlist_tweets(["openai"])
+
     async def test_default_factory_requires_credentials(self) -> None:
         transport = x_transport.XTransport()  # 默认工厂
         with patch.dict("os.environ", {}, clear=True):
@@ -399,6 +490,224 @@ class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result.error)
         self.assertIn("provider exploded", result.error)
         self.assertEqual(result.source_channel, "x_daily_error")
+
+
+class XTransportCredentialProviderContracts(unittest.IsolatedAsyncioTestCase):
+    async def test_primary_success_avoids_backup(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def factory(auth_token: str, ct0: str) -> _FakeClient:
+            client = _FakeClient()
+            calls.append((auth_token, ct0))
+            client.fetch_user.return_value = UserProfile(
+                id="11", name="OpenAI", screen_name="openai"
+            )
+            client.fetch_user_tweets.return_value = [_tweet("1001")]
+            return client
+
+        def provider():
+            return [
+                {"id": 1, "enabled": True, "auth_token": "primary", "ct0": "c1"},
+                {"id": 2, "enabled": True, "auth_token": "backup", "ct0": "c2"},
+            ]
+
+        transport = x_transport.XTransport(
+            credential_provider=provider,
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        result = await transport.fetch_watchlist_tweets(["openai"])
+
+        self.assertEqual(calls, [("primary", "c1")])
+        self.assertIn("openai", result)
+
+    async def test_auth_fallback_retries_complete_watchlist_and_discards_partial(self) -> None:
+        calls: list[tuple[str, str]] = []
+        tweets_for_backup = [_tweet("backup-tweet")]
+
+        def factory(auth_token: str, ct0: str) -> _FakeClient:
+            client = _FakeClient()
+            calls.append((auth_token, ct0))
+            if auth_token == "primary":
+                client.fetch_user.side_effect = [
+                    UserProfile(id="11", name="OpenAI", screen_name="openai"),
+                    AuthenticationError("dead"),
+                ]
+                client.fetch_user_tweets.return_value = [_tweet("primary-tweet")]
+            else:
+                client.fetch_user.side_effect = [
+                    UserProfile(id="22", name="OpenAI", screen_name="openai"),
+                    UserProfile(id="33", name="Karpathy", screen_name="karpathy"),
+                ]
+                client.fetch_user_tweets.side_effect = [
+                    tweets_for_backup,
+                    [_tweet("karpathy-backup")],
+                ]
+            return client
+
+        def provider():
+            return [
+                {"id": 1, "enabled": True, "auth_token": "primary", "ct0": "c1"},
+                {"id": 2, "enabled": True, "auth_token": "backup", "ct0": "c2"},
+            ]
+
+        transport = x_transport.XTransport(
+            credential_provider=provider,
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        result = await transport.fetch_watchlist_tweets(["openai", "karpathy"])
+
+        self.assertEqual(calls, [("primary", "c1"), ("backup", "c2")])
+        self.assertEqual([t.id for t in result["openai"]], ["backup-tweet"])
+        self.assertEqual([t.id for t in result["karpathy"]], ["karpathy-backup"])
+
+    async def test_rate_limit_does_not_rotate_account(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def factory(auth_token: str, ct0: str) -> _FakeClient:
+            client = _FakeClient()
+            calls.append((auth_token, ct0))
+            client.fetch_user.return_value = UserProfile(
+                id="11", name="OpenAI", screen_name="openai"
+            )
+            client.fetch_user_tweets.side_effect = RateLimitError("429")
+            return client
+
+        def provider():
+            return [
+                {"id": 1, "enabled": True, "auth_token": "primary", "ct0": "c1"},
+                {"id": 2, "enabled": True, "auth_token": "backup", "ct0": "c2"},
+            ]
+
+        transport = x_transport.XTransport(
+            credential_provider=provider,
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        with self.assertRaises(x_transport.XRateLimitAbort):
+            await transport.fetch_watchlist_tweets(["openai"])
+
+        self.assertEqual(calls, [("primary", "c1")])
+
+    async def test_all_credentials_authentication_failed(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def factory(auth_token: str, ct0: str) -> _FakeClient:
+            client = _FakeClient()
+            calls.append((auth_token, ct0))
+            client.fetch_user.side_effect = AuthenticationError("dead")
+            return client
+
+        def provider():
+            return [
+                {"id": 1, "enabled": True, "auth_token": "first", "ct0": "c1"},
+                {"id": 2, "enabled": True, "auth_token": "second", "ct0": "c2"},
+            ]
+
+        transport = x_transport.XTransport(
+            credential_provider=provider,
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        with self.assertRaises(x_transport.XAuthAbort) as ctx:
+            await transport.fetch_watchlist_tweets(["openai"])
+
+        self.assertIn("x_auth_all_credentials_failed", str(ctx.exception))
+        self.assertEqual(calls, [("first", "c1"), ("second", "c2")])
+
+    async def test_disabled_or_incomplete_credentials_are_skipped(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def factory(auth_token: str, ct0: str) -> _FakeClient:
+            client = _FakeClient()
+            calls.append((auth_token, ct0))
+            client.fetch_user.return_value = UserProfile(
+                id="11", name="OpenAI", screen_name="openai"
+            )
+            client.fetch_user_tweets.return_value = [_tweet("ok")]
+            return client
+
+        def provider():
+            return [
+                {"id": 1, "enabled": False, "auth_token": "disabled", "ct0": "c1"},
+                {"id": 2, "enabled": True, "auth_token": "", "ct0": "c2"},
+                {"id": 3, "enabled": True, "auth_token": "valid", "ct0": "c3"},
+            ]
+
+        transport = x_transport.XTransport(
+            credential_provider=provider,
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        result = await transport.fetch_watchlist_tweets(["openai"])
+
+        self.assertEqual(calls, [("valid", "c3")])
+        self.assertIn("openai", result)
+
+    async def test_empty_provider_raises_auth_not_configured(self) -> None:
+        transport = x_transport.XTransport(
+            credential_provider=lambda: [],
+            credential_factory=_FakeClient,
+            inter_account_delay=0.0,
+        )
+
+        with self.assertRaises(x_transport.XAuthNotConfigured) as ctx:
+            await transport.fetch_watchlist_tweets(["openai"])
+
+        self.assertIn("x_auth_not_configured", str(ctx.exception))
+
+    async def test_generator_watchlist_is_re_materialized_on_fallback(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def factory(auth_token: str, ct0: str) -> _FakeClient:
+            client = _FakeClient()
+            calls.append((auth_token, ct0))
+            if auth_token == "primary":
+                client.fetch_user.side_effect = AuthenticationError("dead")
+            else:
+                client.fetch_user.return_value = UserProfile(
+                    id="11", name="OpenAI", screen_name="openai"
+                )
+                client.fetch_user_tweets.return_value = [_tweet("ok")]
+            return client
+
+        def provider():
+            return [
+                {"id": 1, "enabled": True, "auth_token": "primary", "ct0": "c1"},
+                {"id": 2, "enabled": True, "auth_token": "backup", "ct0": "c2"},
+            ]
+
+        transport = x_transport.XTransport(
+            credential_provider=provider,
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        def handle_generator():
+            yield "openai"
+
+        result = await transport.fetch_watchlist_tweets(handle_generator())
+
+        self.assertEqual(calls, [("primary", "c1"), ("backup", "c2")])
+        self.assertIn("openai", result)
 
 
 if __name__ == "__main__":

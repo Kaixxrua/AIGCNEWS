@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# This manifest-backed transfer copies legacy MySQL application tables. New
+# PostgreSQL-only runtime tables, including x_credentials, are provisioned by
+# PostgreSQL migrations and retained by PostgreSQL backup/restore instead of
+# being presented as MySQL source tables.
 
 @dataclass(frozen=True)
 class ApplicationTableTransferSpec:

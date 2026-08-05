@@ -99,9 +99,11 @@ class XWatchAdminService:
         self,
         store: XWatchStore,
         tester: XWatchTester | None = None,
+        x_lock: asyncio.Lock | None = None,
     ) -> None:
         self._store = store
         self._tester = tester
+        self._x_lock = x_lock
 
     async def list_accounts(self) -> list[SafeXWatchAccountProjection]:
         rows = await asyncio.to_thread(self._store.list_x_watch_accounts)
@@ -150,11 +152,19 @@ class XWatchAdminService:
     async def test_account(self, account_id: int) -> XWatchTestOutcome:
         if self._tester is None:
             raise RuntimeError("X watch account tester is not configured")
-        outcome = await asyncio.to_thread(
-            self.test_connection,
-            account_id,
-            self._tester,
-        )
+        if self._x_lock is None:
+            outcome = await asyncio.to_thread(
+                self.test_connection,
+                account_id,
+                self._tester,
+            )
+        else:
+            async with self._x_lock:
+                outcome = await asyncio.to_thread(
+                    self.test_connection,
+                    account_id,
+                    self._tester,
+                )
         if outcome is None:
             raise XWatchAdminNotFoundError("X 关注账号不存在")
         return XWatchTestOutcome(
