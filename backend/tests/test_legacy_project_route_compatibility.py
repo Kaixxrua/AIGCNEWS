@@ -497,6 +497,8 @@ def test_get_project_library_matches_canonical_ai_filters_and_is_auth_neutral() 
         {"sort": "invalid"},
         {"category": "not-a-category"},
         {"unexpected": True},
+        {"language": "en"},
+        {"language": "中文"},
     ],
 )
 def test_get_project_library_preserves_canonical_ai_validation_errors(

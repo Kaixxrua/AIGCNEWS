@@ -22,7 +22,12 @@ from backend.app.repositories.document_repository import (
 )
 from backend.app.services import project_discovery
 from backend.app.services.ingestion import source_github_mcp
-from backend.app.services.mcp.contracts import SearchGitHubAIProjectsInput, input_schema
+from backend.app.services.mcp.contracts import (
+    SearchGitHubAIProjectsInput,
+    SearchGitHubProjectsInput,
+    SearchMyProjectFavoritesInput,
+    input_schema,
+)
 from backend.app.services.mcp.inbound import (
     catalog as inbound_catalog,
     responses as inbound_responses,
@@ -175,6 +180,114 @@ class HostIntentContractTests(unittest.TestCase):
                     SearchGitHubAIProjectsInput.model_validate(
                         {"q": "MCP Python SDK", "intent": intent}
                     )
+
+
+class RepositoryLanguageContractTests(unittest.TestCase):
+    """Regression tests for the repository-programming-language filter contract.
+
+    The top-level ``language`` argument on project search tools is a GitHub
+    repository programming-language filter, not the user's content/query
+    language. These tests make sure obvious content-language values are
+    rejected while legitimate repository languages keep flowing through.
+    """
+
+    _PROJECT_LANGUAGE_MODELS: list[tuple[str, type]] = [
+        ("search_github_projects", SearchGitHubProjectsInput),
+        ("search_github_ai_projects", SearchGitHubAIProjectsInput),
+        ("get_project_library", SearchGitHubAIProjectsInput),
+        ("search_my_project_favorites", SearchMyProjectFavoritesInput),
+    ]
+
+    _BAD_REPOSITORY_LANGUAGES = [
+        "zh",
+        "EN",
+        "中文",
+        "英文",
+        "chinese",
+        "English",
+        "mixed",
+        "und",
+        "zh-CN",
+        "zh-TW",
+        "en-US",
+        "en-GB",
+    ]
+
+    _VALID_REPOSITORY_LANGUAGES = [
+        "Python",
+        "C++",
+        "C#",
+        "Jupyter Notebook",
+        "JavaScript",
+        "Rust",
+        "Go",
+    ]
+
+    def _base_payload(self, tool_name: str) -> dict:
+        return {"q": "agent"} if tool_name != "search_my_project_favorites" else {}
+
+    def test_schema_description_warns_against_content_language(self) -> None:
+        for tool_name, _ in self._PROJECT_LANGUAGE_MODELS:
+            with self.subTest(tool=tool_name):
+                schema = input_schema(tool_name)
+                desc = schema["properties"]["language"].get("description", "").lower()
+                self.assertIn("programming language", desc)
+                self.assertIn("zh", desc)
+                self.assertIn("en", desc)
+
+    def test_content_language_values_are_rejected(self) -> None:
+        for tool_name, model in self._PROJECT_LANGUAGE_MODELS:
+            base = self._base_payload(tool_name)
+            for value in self._BAD_REPOSITORY_LANGUAGES:
+                with self.subTest(tool=tool_name, language=value):
+                    with self.assertRaises(Exception) as ctx:
+                        model.model_validate({**base, "language": value})
+                    message = str(ctx.exception).lower()
+                    self.assertIn("language", message)
+                    self.assertIn("programming language", message)
+                    self.assertIn("zh", message)
+                    self.assertIn("en", message)
+
+    def test_valid_repository_languages_are_accepted(self) -> None:
+        for tool_name, model in self._PROJECT_LANGUAGE_MODELS:
+            base = self._base_payload(tool_name)
+            for value in self._VALID_REPOSITORY_LANGUAGES:
+                with self.subTest(tool=tool_name, language=value):
+                    validated = model.model_validate({**base, "language": value})
+                    self.assertEqual(validated.language, value)
+
+    def test_intent_language_is_independent_of_repository_language(self) -> None:
+        intent = {
+            "schema_version": "project-search-intent-client-v1",
+            "language": "en",
+            "intent_class": "examples",
+            "lexical_terms": ["agent", "course"],
+            "semantic_queries": ["agent design course"],
+        }
+        with_filter = SearchGitHubAIProjectsInput.model_validate(
+            {"q": "agent course", "language": "Python", "intent": intent}
+        )
+        self.assertEqual(with_filter.language, "Python")
+        self.assertEqual(with_filter.intent.language, "en")
+
+        without_filter = SearchGitHubAIProjectsInput.model_validate(
+            {"q": "agent course", "intent": intent}
+        )
+        self.assertEqual(without_filter.language, "")
+        self.assertEqual(without_filter.intent.language, "en")
+
+    def test_intent_language_rejects_repository_language_values(self) -> None:
+        intent = {
+            "schema_version": "project-search-intent-client-v1",
+            "language": "Python",
+            "intent_class": "examples",
+            "lexical_terms": ["agent"],
+            "semantic_queries": ["agent course"],
+        }
+        with self.assertRaises(Exception):
+            SearchGitHubAIProjectsInput.model_validate(
+                {"q": "agent course", "intent": intent}
+            )
 
 
 class QueryModeTests(unittest.TestCase):
@@ -1018,6 +1131,33 @@ class McpProtocolTests(unittest.TestCase):
             },
         )
         self.assertTrue(response.json()["result"]["isError"])
+
+    def test_repository_language_misuse_short_circuits_before_search(self) -> None:
+        for request_id, tool_name, language in (
+            (40, "search_github_projects", "zh"),
+            (41, "search_github_ai_projects", "中文"),
+            (42, "get_project_library", "en-US"),
+        ):
+            with self.subTest(tool=tool_name, language=language):
+                response = self.client.post(
+                    "/api/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "method": "tools/call",
+                        "params": {
+                            "name": tool_name,
+                            "arguments": {"q": "agent course", "language": language},
+                        },
+                    },
+                )
+                result = response.json()["result"]
+                self.assertTrue(result["isError"])
+                text = result["content"][0]["text"].lower()
+                self.assertIn("language", text)
+                self.assertIn("programming language", text)
+                self.assertIn("zh", text)
+                self.assertIn("en", text)
 
     def test_search_documents_keeps_all_source_semantics(self) -> None:
         repository = self.papers_repository

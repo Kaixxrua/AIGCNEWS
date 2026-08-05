@@ -105,7 +105,7 @@ MCP_PROMPTS: list[dict[str, Any]] = [
         "arguments": [
             {"name": "topic", "description": "Optional search topic, e.g. RAG Web UI local deploy.", "required": False},
             {"name": "category", "description": "Optional project category slug.", "required": False},
-            {"name": "language", "description": "Optional programming language filter.", "required": False},
+            {"name": "language", "description": "Optional GitHub repository programming language filter, e.g. Python or C++. Do not use zh, en, 中文, or 英文.", "required": False},
         ],
     },
 ]
@@ -173,7 +173,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "non-English intent into a concise GitHub query while preserving product names and requested features. Inspect specific "
             "returned repositories only when their metadata is insufficient to verify a requested feature. Non-empty queries default "
             "to relevance ranking via hybrid lexical and semantic retrieval; explicit stars, hot, updated, recent, or name sorts "
-            "remain authoritative."
+            "remain authoritative. The top-level language argument is a GitHub repository programming-language filter "
+            "(for example, Python or C++); do not pass query-language values such as zh, en, 中文, or 英文 as repository languages."
         ),
         "inputSchema": input_schema("search_github_projects"),
     },
@@ -199,7 +200,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "options and await the user's choice. Non-empty queries default to relevance ranking; explicit stars, hot, updated, recent, "
             "or name sorts remain authoritative, and today scope always uses hot. A capable MCP host may include the optional versioned intent "
             "object using full conversation context; preserve exact technical names. Intent affects relevance only, while explicit top-level "
-            "filters and sort remain authoritative. It supports language filters, categories, and station recommendations. "
+            "filters and sort remain authoritative. It supports repository programming language filters (for example Python or C++), "
+            "categories, and station recommendations. The top-level language argument is a GitHub repository programming-language filter; "
+            "do not pass query-language values such as zh, en, 中文, or 英文 as repository languages. For query-language metadata use "
+            "intent.language with zh, en, mixed, or und. "
             "For non-AI GitHub or open-source software, call search_github_projects instead. Use returned AIGC_NEWS fields such as "
             "description_zh, tags, categories, language, stars, daily_star_growth, hot_score, and URL before inspecting repositories. "
             "If local results are zero, this tool may perform a bounded read-only AI-focused GitHub Search fallback labeled github_api_fallback."
@@ -213,7 +217,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "Existing clients may keep using it. New requests should use search_github_ai_projects for AI projects or "
             "search_github_projects for non-AI GitHub/open-source software. Non-empty queries default to relevance; capable hosts may "
             "supply the same optional versioned intent used by search_github_ai_projects. Intent affects relevance only and explicit "
-            "top-level filters remain authoritative. sort=hot uses exact consecutive daily snapshots when available. All local and "
+            "top-level filters remain authoritative. The top-level language argument is a GitHub repository programming-language filter "
+            "(for example Python or C++); do not pass query-language values such as zh, en, 中文, or 英文 as repository languages. "
+            "For query-language metadata use intent.language with zh, en, mixed, or und. "
+            "sort=hot uses exact consecutive daily snapshots when available. All local and "
             "direct GitHub fallback results enforce a minimum of 500 GitHub stars. Native WebSearch candidates must have a verified "
             "current count of at least 500; omit unverifiable or below-threshold candidates. Direct AI-focused GitHub fallback is "
             "attempted only after local results are zero."

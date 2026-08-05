@@ -5,6 +5,7 @@ from datetime import date
 from typing import Annotated, Literal
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -32,6 +33,41 @@ ProjectDiscoverySort = Literal["relevance", "hot", "stars", "updated", "recent",
 IntentText30 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=30)]
 IntentText40 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=40)]
 IntentText120 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=120)]
+
+# 这些值表示查询/内容语言，而非 GitHub 仓库编程语言，
+# 传给顶层 language 会产生误导性零结果。
+_FORBIDDEN_REPO_LANGUAGE_VALUES = {
+    "zh",
+    "en",
+    "mixed",
+    "und",
+    "中文",
+    "英文",
+    "chinese",
+    "english",
+}
+
+
+def _validate_repo_language(value: str) -> str:
+    """Reject query/content-language values masquerading as repository language filters."""
+    normalized = value.strip().casefold()
+    # Locale forms such as zh-CN, en-US, zh-TW, en-GB should also be rejected.
+    base_locale = normalized.split("-", 1)[0]
+    if normalized in _FORBIDDEN_REPO_LANGUAGE_VALUES or base_locale in {"zh", "en"}:
+        raise ValueError(
+            "language must be a GitHub repository programming language filter "
+            "(e.g. Python, C++, JavaScript). Do not pass query/content-language "
+            "values such as zh, en, 中文, or 英文; use intent.language for "
+            "zh/en/mixed/und query language."
+        )
+    return value
+
+
+RepositoryLanguage = Annotated[
+    StrictStr,
+    StringConstraints(max_length=64),
+    AfterValidator(_validate_repo_language),
+]
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -91,7 +127,15 @@ class SearchGitHubProjectsInput(McpInputModel):
             "open-source implementations, SDKs, frameworks, components, templates, examples, or tutorials."
         ),
     )
-    language: StrictStr = Field(default="", max_length=64)
+    language: RepositoryLanguage = Field(
+        default="",
+        max_length=64,
+        description=(
+            "Optional GitHub repository programming language filter, such as Python, C++, "
+            "JavaScript, or Jupyter Notebook. Do not use query-language values such as "
+            "zh, en, 中文, or 英文."
+        ),
+    )
     sort: ProjectDiscoverySort | None = Field(
         default=None,
         description=(
@@ -105,7 +149,9 @@ class SearchGitHubProjectsInput(McpInputModel):
 
 class ClientProjectSearchIntentInput(McpInputModel):
     schema_version: Literal["project-search-intent-client-v1"]
-    language: ProjectQueryLanguage
+    language: ProjectQueryLanguage = Field(
+        description="Query language: zh, en, mixed, or und. This is independent of the top-level repository language filter."
+    )
     intent_class: ProjectIntentClass = "general_discovery"
     lexical_terms: list[IntentText40] = Field(min_length=1, max_length=8)
     semantic_queries: list[IntentText120] = Field(min_length=1, max_length=3)
@@ -128,7 +174,15 @@ class SearchGitHubAIProjectsInput(McpInputModel):
     q: StrictStr = Field(default="", max_length=120)
     category: StrictStr = Field(default="", max_length=64)
     subcategory: StrictStr = Field(default="", max_length=64)
-    language: StrictStr = Field(default="", max_length=64)
+    language: RepositoryLanguage = Field(
+        default="",
+        max_length=64,
+        description=(
+            "Optional GitHub repository programming language filter, such as Python, C++, "
+            "JavaScript, or Jupyter Notebook. Do not use query-language values such as "
+            "zh, en, 中文, or 英文; for query language use intent.language (zh/en/mixed/und)."
+        ),
+    )
     intent: ClientProjectSearchIntentInput | None = Field(
         default=None,
         description="Optional host-generated relevance intent; explicit top-level filters remain authoritative.",
@@ -176,7 +230,15 @@ class SearchMyProjectFavoritesInput(McpInputModel):
     q: StrictStr = Field(default="", max_length=120)
     category: StrictStr = Field(default="", max_length=64)
     subcategory: StrictStr = Field(default="", max_length=64)
-    language: StrictStr = Field(default="", max_length=64)
+    language: RepositoryLanguage = Field(
+        default="",
+        max_length=64,
+        description=(
+            "Optional GitHub repository programming language filter, such as Python, C++, "
+            "JavaScript, or Jupyter Notebook. Do not use query-language values such as "
+            "zh, en, 中文, or 英文."
+        ),
+    )
     tag: StrictStr = Field(default="", max_length=64)
     sort: ProjectSort = "recent"
     limit: StrictInt = Field(default=10, ge=1, le=20)
