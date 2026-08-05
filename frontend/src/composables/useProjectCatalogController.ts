@@ -211,7 +211,9 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     tag: isPersonalView.value ? selectedTag.value : '',
     page: page.value,
     page_size: pageSize.value,
-    sort: sort.value,
+    sort: isPersonalView.value && sort.value === 'relevance'
+      ? defaultProjectSortForSource(source.value)
+      : sort.value,
   })
 
   const upsertProjectItem = (item: GitHubProjectItem) => {

@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 GitHubProjectSort = Literal["hot", "stars", "updated", "recent", "name"]
+PublicProjectSort = Literal["hot", "stars", "updated", "recent", "name", "relevance"]
 ProjectSource = Literal["all", "github", "website"]
 ProjectScope = Literal["all", "today", "recommended"]
 

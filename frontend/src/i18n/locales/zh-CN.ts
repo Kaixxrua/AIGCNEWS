@@ -221,6 +221,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'projects.source.favoritesHint': '收藏的 GitHub 项目',
   'projects.sortHotTop': '热度前 50',
   'projects.sortHot': '热度',
+  'projects.sortRelevance': '相关度',
   'projects.sortStars': 'Stars',
   'projects.sortUpdated': '最近更新',
   'projects.sortRecent': '最近添加',

@@ -269,6 +269,23 @@ def test_relevance_hydration_preserves_candidate_order_parameters() -> None:
     assert rows_params[-3:] == (["owner/beta", "owner/alpha"], 24, 0)
 
 
+def test_plain_query_relevance_orders_by_name_and_title_match_strength() -> None:
+    database = Database([{"cnt": 1}, []])
+    PostgresProjectCatalogRepository(database).list_projects(
+        q="langchain",
+        sort="relevance",
+        source="github",
+    )
+    rows_sql, rows_params = database.cursor.calls[2]
+    assert "CASE WHEN LOWER(full_name)=LOWER(%s) THEN 0" in rows_sql
+    assert "WHEN LOWER(COALESCE(title,''))=LOWER(%s) THEN 1" in rows_sql
+    assert "WHEN full_name ILIKE %s ESCAPE '=' THEN 2" in rows_sql
+    assert "WHEN COALESCE(title,'') ILIKE %s ESCAPE '=' THEN 3" in rows_sql
+    assert "stars DESC, forks DESC, full_name ASC" in rows_sql
+    assert rows_params.count("langchain") >= 2
+    assert any(str(value) == "langchain%" for value in rows_params)
+
+
 def test_representative_website_user_overrides_and_favorites_branch() -> None:
     database = Database([{"cnt": 0}, []])
     PostgresProjectCatalogRepository(database).list_projects(

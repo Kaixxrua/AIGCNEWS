@@ -344,6 +344,32 @@ def test_legacy_categories_match_canonical_github_shape_and_filters() -> None:
         }
 
 
+def test_canonical_query_defaults_to_relevance_and_honors_explicit_sort() -> None:
+    repository = MagicMock()
+    repository.list_projects.return_value = {
+        "items": [], "total": 0, "page": 1, "page_size": 24
+    }
+    client = _project_routes_client(repository, user={"user_id": 42})
+    try:
+        default_response = client.get("/api/projects?q=langchain")
+        assert default_response.status_code == 200
+        assert repository.list_projects.call_args.kwargs["sort"] == "relevance"
+        assert repository.list_projects.call_args.kwargs["q"] == "langchain"
+        assert repository.list_projects.call_args.kwargs["user_id"] == 42
+
+        repository.list_projects.reset_mock()
+        explicit_response = client.get("/api/projects?q=langchain&sort=stars")
+        assert explicit_response.status_code == 200
+        assert repository.list_projects.call_args.kwargs["sort"] == "stars"
+
+        repository.list_projects.reset_mock()
+        empty_response = client.get("/api/projects?sort=relevance")
+        assert empty_response.status_code == 200
+        assert repository.list_projects.call_args.kwargs["sort"] == "stars"
+    finally:
+        _close_project_routes_client(client)
+
+
 @pytest.mark.parametrize(
     ("path", "expected_status"),
     [

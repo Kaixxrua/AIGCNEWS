@@ -17,6 +17,7 @@ from backend.app.models.schema_projects import (
     ProjectScope,
     ProjectSource,
     ProjectTaxonomyResponse,
+    PublicProjectSort,
     ToolWebsiteAddRequest,
     ToolWebsiteAddResponse,
     ToolWebsiteDeleteResponse,
@@ -133,7 +134,7 @@ async def list_projects(
     language: str = Query(default="", max_length=64),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=24, ge=1, le=60),
-    sort: GitHubProjectSort | None = Query(default=None),
+    sort: PublicProjectSort | None = Query(default=None),
     user: dict[str, Any] | None = Depends(OptionalUser),
 ) -> GitHubProjectsResponse:
     """公共 AI 项目库：只展示 GitHub 项目；网页收藏只存在于个人收藏夹。"""
@@ -146,7 +147,9 @@ async def list_projects(
     clean_category = category.strip()
     clean_subcategory = subcategory.strip()
     clean_q = q.strip()
-    effective_sort = resolve_project_sort(scope, sort)
+    effective_sort = resolve_project_sort(
+        scope, sort, has_query=bool(clean_q), prefer_relevance=True
+    )
     result = await asyncio.to_thread(
         db.list_projects,
         source=effective_source,

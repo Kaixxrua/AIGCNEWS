@@ -23,7 +23,7 @@ type ProjectRouteState = {
 
 const validSources: ProjectViewSource[] = ['all', 'website', 'favorites']
 const validScopes: ProjectScope[] = ['all', 'today', 'recommended']
-const validSorts: GitHubProjectSort[] = ['hot', 'stars', 'updated', 'recent', 'name']
+const validSorts: GitHubProjectSort[] = ['hot', 'stars', 'updated', 'recent', 'name', 'relevance']
 
 const queryValue = (value: unknown) => {
   if (Array.isArray(value)) return String(value[0] ?? '').trim()
@@ -45,6 +45,17 @@ export const defaultProjectSortForScope = (
 ): GitHubProjectSort => {
   if (scope === 'today' && source === 'all') return 'hot'
   if (scope === 'recommended' && source === 'all') return 'recent'
+  return defaultProjectSortForSource(source)
+}
+
+export const defaultProjectSortForQuery = (
+  scope: ProjectScope,
+  source: ProjectViewSource,
+  query: string,
+): GitHubProjectSort => {
+  if (scope === 'today' && source === 'all') return 'hot'
+  if (scope === 'recommended' && source === 'all') return 'recent'
+  if (source === 'all' && query.trim()) return 'relevance'
   return defaultProjectSortForSource(source)
 }
 
@@ -85,7 +96,11 @@ export const useProjectRouteState = (
     if (state.selectedLanguage.value) query.language = state.selectedLanguage.value
     const isPersonalView = state.source.value === 'favorites' || state.source.value === 'website'
     if (isPersonalView && state.selectedTag.value) query.tag = state.selectedTag.value
-    const defaultSort = defaultProjectSortForScope(state.selectedScope.value, state.source.value)
+    const defaultSort = defaultProjectSortForQuery(
+      state.selectedScope.value,
+      state.source.value,
+      cleanQuery,
+    )
     if (state.sort.value !== defaultSort && (state.sort.value !== 'hot' || state.source.value === 'all')) {
       query.sort = state.sort.value
     }
@@ -116,15 +131,18 @@ export const useProjectRouteState = (
     const nextScope = validScopes.includes(routeScope as ProjectScope)
       ? routeScope as ProjectScope
       : 'all'
+    const nextQuery = queryValue(route.query.q)
     const routeSort = queryValue(route.query.sort)
+    const isPublic = nextSource === 'all'
+    const defaultSort = defaultProjectSortForQuery(nextScope, nextSource, nextQuery)
     const routeSortAllowed = validSorts.includes(routeSort as GitHubProjectSort)
       && (routeSort !== 'hot' || nextSource === 'all')
+      && (routeSort !== 'relevance' || (isPublic && Boolean(nextQuery)))
     const nextSort = nextScope === 'today'
       ? 'hot'
       : (routeSortAllowed
           ? routeSort as GitHubProjectSort
-          : defaultProjectSortForScope(nextScope, nextSource))
-    const nextQuery = queryValue(route.query.q)
+          : defaultSort)
 
     isApplyingRouteState.value = true
     state.source.value = nextSource

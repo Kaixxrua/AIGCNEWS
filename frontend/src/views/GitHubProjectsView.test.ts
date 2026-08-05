@@ -38,6 +38,7 @@ vi.mock('@/composables/useProjectRouteState', async () => {
     useProjectRouteState: () => routeStateBox.current,
     defaultProjectSortForScope: () => 'stars',
     defaultProjectSortForSource: () => 'stars',
+    defaultProjectSortForQuery: () => 'stars',
   }
 })
 

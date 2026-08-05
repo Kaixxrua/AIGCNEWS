@@ -46,6 +46,20 @@ const githubItem = (overrides: Partial<GitHubProjectItem> = {}): GitHubProjectIt
 })
 
 describe('project catalog controller', () => {
+  it('normalizes relevance sort away for personal collections', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchMyProjectCollection).mockResolvedValue(projectsResponse([githubItem({ repo_id: 3 })]))
+    const controller = useProjectCatalogController({ api, isLoggedIn: () => true })
+    controller.source.value = 'favorites'
+    controller.debouncedQuery.value = 'mcp'
+    controller.sort.value = 'relevance'
+    await controller.loadProjects()
+
+    expect(api.fetchMyProjectCollection).toHaveBeenCalledWith(expect.objectContaining({
+      sort: 'recent',
+    }))
+  })
+
   it('uses shared route-state refs when the view provides them', () => {
     const routeState = {
       source: ref<'all' | 'favorites' | 'website'>('all'),

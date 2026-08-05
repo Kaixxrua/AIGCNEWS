@@ -1,7 +1,7 @@
 import { nextTick, reactive, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
-import { useProjectRouteState } from './useProjectRouteState'
+import { defaultProjectSortForQuery, useProjectRouteState } from './useProjectRouteState'
 import type {
   GitHubProjectSort,
   ProjectScope,
@@ -147,9 +147,46 @@ describe('project route state contract', () => {
     await nextTick()
   })
 
-  it('preserves only project-page login redirects', () => {
-    expect(createHarness({}, '/projects?source=favorites').routeState.currentProjectsRedirect())
-      .toBe('/projects?source=favorites')
-    expect(createHarness({}, '/monitor').routeState.currentProjectsRedirect()).toBe('/projects')
+  it('defaults public query sort to relevance and preserves explicit choices', async () => {
+    const harness = createHarness({ q: 'langchain' })
+    harness.routeState.applyRouteState()
+    expect(harness.state.sort.value).toBe('relevance')
+    vi.runAllTimers()
+
+    harness.state.sort.value = 'stars'
+    await harness.routeState.replaceRouteFromState()
+    expect(harness.replace).toHaveBeenCalledWith({
+      path: '/projects',
+      query: { q: 'langchain', sort: 'stars' },
+    })
+  })
+
+  it('drops relevance for personal sources and empty public queries', () => {
+    const personal = createHarness({ source: 'favorites', q: 'mcp', sort: 'relevance' })
+    personal.routeState.applyRouteState()
+    expect(personal.state.sort.value).toBe('recent')
+
+    const emptyPublic = createHarness({ sort: 'relevance' })
+    emptyPublic.routeState.applyRouteState()
+    expect(emptyPublic.state.sort.value).toBe('stars')
+  })
+
+  it('suppresses relevance sort from URL when it matches the query default', async () => {
+    const harness = createHarness({ q: 'langchain', sort: 'relevance' })
+    harness.routeState.applyRouteState()
+    vi.runAllTimers()
+    harness.state.page.value = 2
+    await harness.routeState.replaceRouteFromState()
+    expect(harness.replace).toHaveBeenCalledWith({
+      path: '/projects',
+      query: { q: 'langchain', page: '2' },
+    })
+  })
+
+  it('exposes the query-aware default helper', () => {
+    expect(defaultProjectSortForQuery('all', 'all', 'langchain')).toBe('relevance')
+    expect(defaultProjectSortForQuery('all', 'all', '')).toBe('stars')
+    expect(defaultProjectSortForQuery('today', 'all', 'langchain')).toBe('hot')
+    expect(defaultProjectSortForQuery('all', 'favorites', 'mcp')).toBe('recent')
   })
 })

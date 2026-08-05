@@ -688,11 +688,28 @@ class PostgresProjectCatalogRepository:
             "recent": f"{recent} DESC NULLS LAST,stars DESC,full_name ASC",
             "name": "full_name ASC",
         }
-        order = orders.get(sort, orders["hot"] if scope == "today" else orders["stars"])
         order_params: list[Any] = []
-        if sort == "relevance" and candidates is not None:
-            order = "array_position(%s::text[],repo_id),full_name ASC"
-            order_params.append(candidates)
+        if sort == "relevance":
+            if candidates is not None:
+                order = "array_position(%s::text[],repo_id),full_name ASC"
+                order_params.append(candidates)
+            elif q:
+                normalized_query = " ".join(str(q).split())
+                prefix = f"{escape_like_literal(normalized_query)}%"
+                order = (
+                    "CASE"
+                    " WHEN LOWER(full_name)=LOWER(%s) THEN 0"
+                    " WHEN LOWER(COALESCE(title,''))=LOWER(%s) THEN 1"
+                    " WHEN full_name ILIKE %s ESCAPE '=' THEN 2"
+                    " WHEN COALESCE(title,'') ILIKE %s ESCAPE '=' THEN 3"
+                    " ELSE 4 END,"
+                    "stars DESC, forks DESC, full_name ASC"
+                )
+                order_params.extend([normalized_query, normalized_query, prefix, prefix])
+            else:
+                order = orders["stars"]
+        else:
+            order = orders.get(sort, orders["hot"] if scope == "today" else orders["stars"])
         with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)

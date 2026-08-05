@@ -19,7 +19,7 @@ import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.v
 import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '@/components/projects/ProjectPagination.vue'
 import { useProjectCatalogController } from '@/composables/useProjectCatalogController'
-import { defaultProjectSortForScope, defaultProjectSortForSource, useProjectRouteState } from '@/composables/useProjectRouteState'
+import { defaultProjectSortForQuery, useProjectRouteState } from '@/composables/useProjectRouteState'
 import {
   canEditWebsiteProject,
   canFavoriteProject,
@@ -45,6 +45,7 @@ const debouncedQuery = ref('')
 const selectedLanguage = ref('')
 const selectedTag = ref('')
 const sort = ref<GitHubProjectSort>('stars')
+const sortIsExplicit = ref(false)
 const page = ref(1)
 const pageJump = ref('')
 const addDialogOpen = ref(false)
@@ -152,7 +153,8 @@ const changeSource = (nextSource: ProjectViewSource) => {
   selectedLanguage.value = ''
   selectedTag.value = ''
   page.value = 1
-  sort.value = defaultProjectSortForSource(nextSource)
+  sortIsExplicit.value = false
+  sort.value = defaultProjectSortForQuery(selectedScope.value, nextSource, debouncedQuery.value)
   endStateBatch()
   void replaceRouteFromState(true)
   void refreshReads()
@@ -164,7 +166,8 @@ const selectScope = (scopeValue: ProjectScope) => {
   selectedSubcategory.value = 'all'
   selectedLanguage.value = ''
   selectedTag.value = ''
-  sort.value = defaultProjectSortForScope(scopeValue, source.value)
+  sortIsExplicit.value = false
+  sort.value = defaultProjectSortForQuery(scopeValue, source.value, debouncedQuery.value)
 }
 const clearLanguageFilter = () => { if (selectedLanguage.value) selectedLanguage.value = '' }
 const selectPersonalTag = (tag: string) => {
@@ -225,6 +228,11 @@ watch(searchQuery, (value) => {
   if (searchTimer) window.clearTimeout(searchTimer)
   searchTimer = window.setTimeout(() => { debouncedQuery.value = value }, 280)
 })
+watch(debouncedQuery, (value) => {
+  if (!sortIsExplicit.value) {
+    sort.value = defaultProjectSortForQuery(selectedScope.value, source.value, value)
+  }
+})
 
 const goToPersonalLogin = () => { router.push({ path: '/login', query: { redirect: currentProjectsRedirect() } }) }
 const openAddDialog = () => {
@@ -259,7 +267,11 @@ const submitToolWebsite = async (request: string | ManualToolWebsitePayload) => 
 watch([selectedScope, selectedCategory, selectedSubcategory, selectedLanguage, selectedTag, debouncedQuery, sort], resetAndLoad)
 watch(() => route.query, () => {
   if (!isViewActive.value || route.name !== 'github-projects' || isReplacingRoute.value) return
-  if (applyRouteState()) void refreshReads()
+  const hadSort = Boolean(String(route.query.sort ?? '').trim())
+  if (applyRouteState()) {
+    sortIsExplicit.value = hadSort
+    void refreshReads()
+  }
 }, { deep: true })
 watch(() => authStore.isLoggedIn, (loggedIn) => {
   if (!loggedIn) {
@@ -272,7 +284,13 @@ const stopViewReads = () => {
   if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = undefined }
   controller.deactivate()
 }
-onMounted(() => { if (applyRouteState()) void refreshReads() })
+onMounted(() => {
+  const hadSort = Boolean(String(route.query.sort ?? '').trim())
+  if (applyRouteState()) {
+    sortIsExplicit.value = hadSort
+    void refreshReads()
+  }
+})
 onActivated(() => {
   controller.activate()
   if (!hasActivatedOnce) { hasActivatedOnce = true; return }
@@ -336,6 +354,7 @@ onBeforeUnmount(stopViewReads)
       :selected-subcategory="selectedSubcategory"
       :personal-tags="personalTags"
       :selected-tag="selectedTag"
+      @update:sort="sortIsExplicit = true"
       @change-source="changeSource"
       @clear-language="clearLanguageFilter"
       @select-scope="selectScope"

@@ -82,6 +82,7 @@ const emit = defineEmits<{
     <label v-if="!requiresPersonalLogin" class="projects-sort">
       <span>{{ t('projects.sort') }}</span>
       <select :value="sort" :disabled="selectedScope === 'today'" @change="emit('update:sort', ($event.target as HTMLSelectElement).value as GitHubProjectSort)">
+        <option v-if="!isWebsiteOnlyView && !isPersonalView" value="relevance">{{ t('projects.sortRelevance') }}</option>
         <option v-if="!isWebsiteOnlyView" value="hot">{{ t(selectedScope === 'today' ? 'projects.sortHotTop' : 'projects.sortHot') }}</option>
         <option value="stars">{{ t('projects.sortStars') }}</option>
         <option value="updated">{{ t('projects.sortUpdated') }}</option>

@@ -5,7 +5,7 @@ import { i18n } from '@/i18n'
 
 const TOOL_WEBSITE_ADD_TIMEOUT = 120_000
 
-export type GitHubProjectSort = 'hot' | 'stars' | 'updated' | 'recent' | 'name'
+export type GitHubProjectSort = 'hot' | 'stars' | 'updated' | 'recent' | 'name' | 'relevance'
 export type ProjectSource = 'all' | 'github' | 'website'
 export type ProjectViewSource = ProjectSource | 'favorites'
 export type ProjectScope = 'all' | 'today' | 'recommended'
