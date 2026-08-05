@@ -76,6 +76,11 @@ export const dashboardApi: DashboardApi = {
     const response = await api.delete<{ status: string; message: string; doc_id: string; deleted: boolean }>(`/ops/documents/${encodeURIComponent(docId)}`)
     return response.data
   },
+
+  async bulkDeleteDocuments(docIds: string[]) {
+    const response = await api.post<{ status: string; message: string; doc_ids: string[]; deleted_count: number; not_found_count: number }>('/ops/documents/bulk-delete', { doc_ids: docIds })
+    return response.data
+  },
 }
 
 export function fetchSnapshotDates(

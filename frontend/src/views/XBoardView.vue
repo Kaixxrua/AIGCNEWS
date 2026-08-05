@@ -34,9 +34,12 @@ const handleDeleteSelected = async () => {
   if (!hasSelection.value) return
   const confirmed = window.confirm(t('xboard.deleteConfirm', { count: selectedCount.value }))
   if (!confirmed) return
-  const deleted = await deleteSelected()
-  if (deleted > 0) {
-    window.alert(t('xboard.deleteSuccess', { count: deleted }))
+  const { deleted, notFound } = await deleteSelected()
+  if (deleted > 0 || notFound > 0) {
+    const parts = []
+    if (deleted > 0) parts.push(t('xboard.deleteSuccess', { count: deleted }))
+    if (notFound > 0) parts.push(t('xboard.deleteNotFound', { count: notFound }))
+    window.alert(parts.join('\n'))
   }
 }
 

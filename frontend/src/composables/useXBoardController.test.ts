@@ -13,6 +13,7 @@ const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
   })),
   fetchSnapshotDates: vi.fn(async () => ['2026-08-04', '2026-08-03']),
   deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),
+  bulkDeleteDocuments: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_ids: ['x:1'], deleted_count: 1, not_found_count: 0 })),
   ...overrides,
 })
 
@@ -123,26 +124,28 @@ describe('useXBoardController', () => {
     expect(controller.selectedIds.value.size).toBe(0)
 
     controller.toggleSelection('x:1')
-    const deleted = await controller.deleteSelected()
-    expect(deleted).toBe(1)
-    expect(api.deleteDocument).toHaveBeenCalledWith('x:1')
+    const result = await controller.deleteSelected()
+    expect(result).toEqual({ deleted: 1, notFound: 0 })
+    expect(api.bulkDeleteDocuments).toHaveBeenCalledWith(['x:1'])
     expect(controller.selectedIds.value.size).toBe(0)
   })
 
   it('keeps unselected ids after partial delete failure', async () => {
     const api = createApi({
-      deleteDocument: vi.fn(async (docId: string) =>
-        docId === 'x:1'
-          ? { status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true }
-          : { status: 'ok', message: 'not found', doc_id: docId, deleted: false }
-      ),
+      bulkDeleteDocuments: vi.fn(async () => ({
+        status: 'ok',
+        message: 'partial',
+        doc_ids: ['x:1'],
+        deleted_count: 1,
+        not_found_count: 1,
+      })),
     })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
     controller.selectAll()
 
-    const deleted = await controller.deleteSelected()
-    expect(deleted).toBe(1)
+    const result = await controller.deleteSelected()
+    expect(result).toEqual({ deleted: 1, notFound: 1 })
     expect(controller.selectedIds.value.has('x:2')).toBe(true)
     expect(controller.selectedIds.value.has('x:1')).toBe(false)
   })

@@ -91,4 +91,5 @@ export interface DashboardApi {
   fetchVisitorCount(signal?: AbortSignal): Promise<DashboardVisitorCount>
   fetchGitHubHotRepos(period?: GitHubHotPeriod, limit?: number): Promise<GitHubHotResponse>
   deleteDocument(docId: string): Promise<{ status: string; message: string; doc_id: string; deleted: boolean }>
+  bulkDeleteDocuments(docIds: string[]): Promise<{ status: string; message: string; doc_ids: string[]; deleted_count: number; not_found_count: number }>
 }

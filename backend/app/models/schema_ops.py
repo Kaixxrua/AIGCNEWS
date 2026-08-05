@@ -36,6 +36,18 @@ class DocumentDeleteResponse(BaseModel):
     deleted: bool
 
 
+class BulkDocumentDeleteRequest(BaseModel):
+    doc_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class BulkDocumentDeleteResponse(BaseModel):
+    status: str
+    message: str
+    doc_ids: list[str]
+    deleted_count: int
+    not_found_count: int
+
+
 class GitHubProjectsEnrichRequest(BaseModel):
     limit: int = 50
     force: bool = False

@@ -8,6 +8,7 @@ export interface XBoardApi {
   fetchTop: DashboardApi['fetchTop']
   fetchSnapshotDates: DashboardApi['fetchSnapshotDates']
   deleteDocument: DashboardApi['deleteDocument']
+  bulkDeleteDocuments: DashboardApi['bulkDeleteDocuments']
 }
 
 export type XBoardTranslate = (key: string) => string
@@ -107,23 +108,26 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     selectedIds.value = new Set()
   }
 
-  const deleteSelected = async (): Promise<number> => {
+  const deleteSelected = async (): Promise<{ deleted: number; notFound: number }> => {
     const ids = Array.from(selectedIds.value)
-    if (!ids.length) return 0
+    if (!ids.length) return { deleted: 0, notFound: 0 }
     deleting.value = true
     errorMsg.value = ''
-    let deletedCount = 0
+    let result = { deleted: 0, notFound: 0 }
     try {
-      const results = await Promise.all(ids.map((id) => api.deleteDocument(id).catch(() => ({ deleted: false, doc_id: id }))))
-      deletedCount = results.filter((r) => r.deleted).length
-      selectedIds.value = new Set(ids.filter((id) => !results.find((r) => r.doc_id === id)?.deleted))
+      const response = await api.bulkDeleteDocuments(ids)
+      result = {
+        deleted: response.deleted_count ?? 0,
+        notFound: response.not_found_count ?? 0,
+      }
+      selectedIds.value = new Set(ids.filter((id) => !response.doc_ids?.includes(id)))
       await refresh()
     } catch (error) {
       errorMsg.value = error instanceof Error && error.message ? error.message : translate('xboard.deleteFailed')
     } finally {
       deleting.value = false
     }
-    return deletedCount
+    return result
   }
 
   return {

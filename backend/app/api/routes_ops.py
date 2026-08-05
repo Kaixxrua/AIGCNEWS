@@ -29,6 +29,8 @@ from backend.app.api.dependencies import (
 from backend.app.core.auth import RequireAdmin
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.models.schema_ops import (
+    BulkDocumentDeleteRequest,
+    BulkDocumentDeleteResponse,
     ClearDataResponse,
     DocumentDeleteResponse,
     GitHubProjectRecommendRequest,
@@ -83,6 +85,7 @@ from backend.app.services.github_project_recommendation_admin import (
     GitHubProjectAdminValidationError,
     GitHubProjectRecommendationAdminService,
 )
+from backend.app.services.ingestion.cache_invalidation import clear_dashboard_cache_safely
 from backend.app.services.ingestion_admin import VALID_SOURCES, IngestionAdminService
 from backend.app.services.mcp.admin_service import (
     McpAdminConflictError,
@@ -522,11 +525,40 @@ async def delete_document(
     deleted = await asyncio.to_thread(documents.delete_document, doc_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"文档不存在: {doc_id}")
+    await clear_dashboard_cache_safely()
     return DocumentDeleteResponse(
         status="success",
         message=f"已删除文档 {doc_id}",
         doc_id=doc_id,
         deleted=True,
+    )
+
+
+@router.post("/ops/documents/bulk-delete", response_model=BulkDocumentDeleteResponse, tags=["Ops"])
+async def bulk_delete_documents(
+    request: BulkDocumentDeleteRequest,
+    _: dict = Depends(RequireAdmin),
+    documents: DocumentRepository = Depends(get_document_repository),
+) -> BulkDocumentDeleteResponse:
+    """批量删除文档及其排行快照；返回实际删除与未找到的计数。"""
+    deleted_ids: list[str] = []
+    not_found_ids: list[str] = []
+
+    def _delete_all() -> None:
+        for doc_id in request.doc_ids:
+            if documents.delete_document(doc_id):
+                deleted_ids.append(doc_id)
+            else:
+                not_found_ids.append(doc_id)
+
+    await asyncio.to_thread(_delete_all)
+    await clear_dashboard_cache_safely()
+    return BulkDocumentDeleteResponse(
+        status="success",
+        message=f"已删除 {len(deleted_ids)} 条文档，{len(not_found_ids)} 条未找到",
+        doc_ids=deleted_ids,
+        deleted_count=len(deleted_ids),
+        not_found_count=len(not_found_ids),
     )
 
 
