@@ -132,7 +132,7 @@ const updateForm = <K extends keyof McpServerForm>(field: K, value: McpServerFor
         </div>
       </div>
 
-      <div class="min-h-[260px] rounded-[22px] border border-stone-200/70 bg-card/45 p-4">
+      <div class="flex min-h-[260px] flex-col rounded-[22px] border border-stone-200/70 bg-card/45 p-4">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h4 class="text-xs font-semibold uppercase tracking-widest text-stone-400">Server Registry</h4>
@@ -142,10 +142,10 @@ const updateForm = <K extends keyof McpServerForm>(field: K, value: McpServerFor
             <span class="inline-block h-3 w-3 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" />{{ t('monitor.synchronizing') }}
           </span>
         </div>
-        <div v-if="loading && !servers.length" class="flex h-full min-h-[180px] items-center justify-center gap-2 text-sm text-stone-400">
+        <div v-if="loading && !servers.length" class="flex flex-1 min-h-[180px] items-center justify-center gap-2 text-sm text-stone-400">
           <span class="inline-block h-4 w-4 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" />{{ t('monitor.loadingServers') }}
         </div>
-        <div v-else-if="!servers.length" class="flex h-full min-h-[180px] flex-col items-center justify-center rounded-[18px] border border-dashed border-stone-200 bg-card/55 text-center text-sm text-stone-400">
+        <div v-else-if="!servers.length" class="flex flex-1 min-h-[180px] flex-col items-center justify-center rounded-[18px] border border-dashed border-stone-200 bg-card/55 text-center text-sm text-stone-400">
           <p class="font-medium text-stone-500">{{ t('monitor.emptyServers') }}</p>
           <p class="mt-1 text-xs">{{ t('monitor.emptyServersHint') }}</p>
         </div>

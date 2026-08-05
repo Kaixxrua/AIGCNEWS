@@ -101,7 +101,7 @@ onBeforeUnmount(dispose)
         </div>
       </div>
 
-      <div class="monitor-surface min-h-[260px] p-4">
+      <div class="monitor-surface flex min-h-[260px] flex-col p-4">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h4 class="text-xs font-semibold uppercase tracking-widest monitor-caption">{{ t('monitor.xCredentials.title') }}</h4>
@@ -111,10 +111,10 @@ onBeforeUnmount(dispose)
             <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />{{ t('monitor.synchronizing') }}
           </span>
         </div>
-        <div v-if="loading && !credentials.length" class="flex h-full min-h-[180px] items-center justify-center gap-2 text-sm monitor-caption">
+        <div v-if="loading && !credentials.length" class="flex flex-1 min-h-[180px] items-center justify-center gap-2 text-sm monitor-caption">
           <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />{{ t('monitor.xCredentials.loading') }}
         </div>
-        <div v-else-if="!credentials.length" class="monitor-empty flex h-full min-h-[180px] flex-col items-center justify-center rounded-md text-center text-sm">
+        <div v-else-if="!credentials.length" class="monitor-empty flex flex-1 min-h-[180px] flex-col items-center justify-center rounded-md text-center text-sm">
           <p class="font-medium">{{ t('monitor.xCredentials.empty') }}</p>
           <p class="mt-1 max-w-sm text-xs">{{ t('monitor.xCredentials.emptyHint') }}</p>
         </div>
