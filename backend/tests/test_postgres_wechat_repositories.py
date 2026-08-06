@@ -18,6 +18,9 @@ from backend.app.repositories.postgres_wechat_article_repository import (
     PostgresWeChatArticleRepository,
     WeChatArticleConflictError,
 )
+from backend.app.repositories.postgres_wechat_follow_repository import (
+    PostgresWeChatFollowRepository,
+)
 from backend.app.repositories.postgres_wechat_session_repository import (
     PostgresWeChatSessionRepository,
 )
@@ -25,10 +28,12 @@ from backend.app.repositories.wechat_account_repository import (
     WeChatOfficialAccountRepository,
 )
 from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
+from backend.app.repositories.wechat_follow_repository import WeChatFollowRepository
 from backend.app.repositories.wechat_session_repository import (
     WeChatLoginAttemptRepository,
     WeChatSessionRepository,
 )
+from backend.app.services.wechat.errors import WeChatAccountNotFound
 
 
 class FakeDatabase:
@@ -274,3 +279,140 @@ def test_article_upsert_maps_unique_violation() -> None:
             42,
             [{"stable_article_key": "k", "itemidx": 1, "raw_metadata": {}}],
         )
+
+
+# ----------------------------------------------------------------------
+# Follow repository (platform catalog + per-user follows)
+# ----------------------------------------------------------------------
+
+
+def _follow_repo(cursor: MagicMock) -> PostgresWeChatFollowRepository:
+    return PostgresWeChatFollowRepository(FakeDatabase(cursor))
+
+
+def _catalog_row(**overrides):
+    row = {
+        "id": 7,
+        "owner_id": 1,
+        "fakeid": "MzIxxx",
+        "nickname": "AI 迷思录",
+        "alias": "aimisi",
+        "avatar_url": "https://avatar",
+        "signature": "sig",
+        "enabled": True,
+        "sort_order": 0,
+        "last_sync_status": "never",
+        "last_sync_message": "",
+        "last_sync_at": None,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    row.update(overrides)
+    return row
+
+
+def test_follow_adapter_conforms_to_protocol() -> None:
+    repo = PostgresWeChatFollowRepository(FakeDatabase(MagicMock()))
+    contract: WeChatFollowRepository = repo
+    assert callable(contract.follow_account)
+    assert callable(contract.list_catalog_with_follow_state)
+
+
+def test_catalog_lists_enabled_accounts_with_follow_state() -> None:
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        {**_catalog_row(id=7), "follow_user_id": 3},
+        {**_catalog_row(id=8), "follow_user_id": None},
+    ]
+    repo = _follow_repo(cursor)
+
+    items = repo.list_catalog_with_follow_state(3)
+
+    call = cursor.execute.call_args
+    assert "LEFT JOIN wechat_account_follows" in call.args[0]
+    assert "WHERE a.enabled" in call.args[0]
+    assert call.args[1] == (3,)
+    assert [item["followed"] for item in items] == [True, False]
+    assert "follow_user_id" not in items[0]
+
+
+def test_get_enabled_catalog_account_filters_disabled() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.return_value = None
+    repo = _follow_repo(cursor)
+
+    assert repo.get_enabled_catalog_account(7) is None
+    call = cursor.execute.call_args
+    assert "WHERE a.enabled AND a.id = %s" in call.args[0]
+
+
+def test_follow_account_inserts_idempotently() -> None:
+    cursor = MagicMock()
+    cursor.rowcount = 0  # ON CONFLICT DO NOTHING hit an existing row
+    repo = _follow_repo(cursor)
+
+    assert repo.follow_account(3, 7) is False
+    call = cursor.execute.call_args
+    assert "ON CONFLICT (user_id, account_id) DO NOTHING" in call.args[0]
+    assert call.args[1] == (3, 7)
+
+
+def test_follow_account_maps_foreign_key_violation_to_not_found() -> None:
+    cursor = MagicMock()
+    repo = _follow_repo(cursor)
+
+    class FakeFkViolation(errors.ForeignKeyViolation):
+        pass
+
+    cursor.execute.side_effect = FakeFkViolation("missing account")
+
+    with pytest.raises(WeChatAccountNotFound):
+        repo.follow_account(3, 999)
+
+
+def test_unfollow_account_returns_whether_row_removed() -> None:
+    cursor = MagicMock()
+    cursor.rowcount = 1
+    repo = _follow_repo(cursor)
+
+    assert repo.unfollow_account(3, 7) is True
+    call = cursor.execute.call_args
+    assert "DELETE FROM wechat_account_follows" in call.args[0]
+    assert call.args[1] == (3, 7)
+
+
+def test_list_followed_account_ids_only_returns_enabled() -> None:
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [{"account_id": 7}, {"account_id": 9}]
+    repo = _follow_repo(cursor)
+
+    assert repo.list_followed_account_ids(3) == [7, 9]
+    call = cursor.execute.call_args
+    assert "JOIN wechat_official_accounts a ON a.id = f.account_id" in call.args[0]
+    assert "a.enabled" in call.args[0]
+
+
+def test_list_recent_articles_for_accounts_empty_input() -> None:
+    cursor = MagicMock()
+    repo = _article_repo(cursor)
+    assert repo.list_recent_articles_for_accounts([], per_account=5) == {}
+    cursor.execute.assert_not_called()
+
+
+def test_list_recent_articles_for_accounts_groups_rows_per_account() -> None:
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        {"id": 1, "account_id": 7, "title": "A", "stable_article_key": "k1"},
+        {"id": 2, "account_id": 7, "title": "B", "stable_article_key": "k2"},
+        {"id": 3, "account_id": 9, "title": "C", "stable_article_key": "k3"},
+    ]
+    repo = _article_repo(cursor)
+
+    grouped = repo.list_recent_articles_for_accounts([7, 9, 7, 11], per_account=3)
+
+    call = cursor.execute.call_args
+    assert "CROSS JOIN LATERAL" in call.args[0]
+    assert call.args[1] == ([7, 9, 11], 3)  # deduped input
+    assert [a["title"] for a in grouped[7]] == ["A", "B"]
+    assert [a["title"] for a in grouped[9]] == ["C"]
+    assert grouped[11] == []

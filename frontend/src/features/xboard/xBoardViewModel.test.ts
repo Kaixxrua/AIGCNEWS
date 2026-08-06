@@ -106,6 +106,22 @@ describe('xBoardViewModel', () => {
     expect(items[1]?.poster_url).toBeUndefined()
   })
 
+  it('mediaItems prefers the crawled poster_url over the extraction endpoint', () => {
+    const poster = 'https://pbs.twimg.com/amplify_video_thumb/1/img/x.jpg'
+    const doc = tweet('openai', '1', {
+      media: [
+        { type: 'video', url: 'https://video.twimg.com/a.mp4', width: 1920, height: 1080, poster_url: poster },
+        { type: 'animated_gif', url: 'https://video.twimg.com/g.mp4', poster_url: poster },
+      ],
+    })
+    const items = mediaItems(doc)
+    // 采集期落库的官方封面：经代理同源化，不再走抽帧端点
+    expect(items[0]?.poster_url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(poster)}`)
+    expect(items[1]?.poster_url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(poster)}`)
+    // url 改写不受影响
+    expect(items[0]?.url).toBe(`/api/media/x/proxy?url=${encodeURIComponent('https://video.twimg.com/a.mp4')}`)
+  })
+
   it('flattens grouped sections into a single ordered list', () => {
     const docs = [
       tweet('openai', '1', { raw_score: 5 }),

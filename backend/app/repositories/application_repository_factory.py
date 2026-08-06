@@ -79,6 +79,9 @@ from backend.app.repositories.postgres_wechat_account_repository import (
 from backend.app.repositories.postgres_wechat_article_repository import (
     PostgresWeChatArticleRepository,
 )
+from backend.app.repositories.postgres_wechat_follow_repository import (
+    PostgresWeChatFollowRepository,
+)
 from backend.app.repositories.postgres_wechat_session_repository import (
     PostgresWeChatSessionRepository,
 )
@@ -114,6 +117,7 @@ from backend.app.repositories.task_repository import (
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.repositories.wechat_account_repository import WeChatOfficialAccountRepository
 from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
+from backend.app.repositories.wechat_follow_repository import WeChatFollowRepository
 from backend.app.repositories.wechat_session_repository import (
     WeChatLoginAttemptRepository,
     WeChatSessionRepository,
@@ -160,6 +164,7 @@ class ApplicationRepositories:
     wechat_sessions: WeChatSessionRepository
     wechat_accounts: WeChatOfficialAccountRepository
     wechat_articles: WeChatArticleRepository
+    wechat_follows: WeChatFollowRepository
 
 
 def _env_x_watch_handles() -> tuple[str, ...]:
@@ -241,4 +246,5 @@ def create_application_repositories(
         ),
         wechat_accounts=PostgresWeChatOfficialAccountRepository(postgres),
         wechat_articles=PostgresWeChatArticleRepository(postgres),
+        wechat_follows=PostgresWeChatFollowRepository(postgres),
     )

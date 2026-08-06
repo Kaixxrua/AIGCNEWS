@@ -66,12 +66,21 @@ export const posterMediaUrl = (url: string): string => {
   return `${X_MEDIA_POSTER_PATH}?url=${encodeURIComponent(url)}`
 }
 
+/**
+ * 视频/GIF 封面优先级：采集期落库的 X 官方封面（poster_url，经代理同源化）
+ * > 服务端抽帧端点（存量数据无 poster_url 时兜底，见 routes_x_media.py）。
+ */
+const resolvePosterUrl = (item: { url: string; poster_url?: string }): string => {
+  if (item.poster_url) return proxiedMediaUrl(item.poster_url)
+  return posterMediaUrl(item.url)
+}
+
 export const mediaItems = (doc: TopDoc): NonNullable<TopDoc['media']> =>
   (doc.media ?? []).map((item) => ({
     ...item,
     url: proxiedMediaUrl(item.url),
     ...(item.type === 'video' || item.type === 'animated_gif'
-      ? { poster_url: posterMediaUrl(item.url) }
+      ? { poster_url: resolvePosterUrl(item) }
       : {}),
   }))
 

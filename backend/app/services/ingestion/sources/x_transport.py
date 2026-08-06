@@ -40,6 +40,56 @@ DEFAULT_INTER_ACCOUNT_DELAY = 5.0
 # screen_name(lower) -> (user_id, 过期时间戳)
 _USER_ID_CACHE: dict[str, tuple[str, float]] = {}
 
+_MEDIA_VIDEO_TYPES = frozenset({"video", "animated_gif"})
+_MEDIA_KNOWN_TYPES = _MEDIA_VIDEO_TYPES | {"photo"}
+
+# 非 None 表示封面补丁已安装，值为被包装的原始函数（测试恢复用）
+_ORIGINAL_EXTRACT_MEDIA: Any = None
+
+
+def _install_media_poster_patch() -> None:
+    """给 twitter-cli 的 _extract_media 打补丁：视频/GIF 回填官方封面 URL。
+
+    twitter-cli 0.8.5 的 TweetMedia 只有 url（视频取最高码率 mp4 直链），
+    丢弃了 legacy.extended_entities.media[].media_url_https —— 即 X 官方
+    封面图。前端点击播放占位优先用官方封面；本补丁让新采集数据直接落库，
+    存量数据仍由服务端抽帧端点 /api/media/x/poster 兜底。
+
+    补丁策略：包装原函数（调用点在 parser.py 内部，模块级查找可拦截），
+    按序配对原始 media 列表回填 poster_url（TweetMedia 无 slots，可后置
+    赋值，与测试模拟 is_promoted 同一先例）。原函数对每个已知类型恰好
+    产出一条且保序；长度不一致（上游未来改版）时放弃回填，行为等同无
+    补丁。安装失败仅记 warning，绝不阻断采集。
+    """
+    global _ORIGINAL_EXTRACT_MEDIA
+    if _ORIGINAL_EXTRACT_MEDIA is not None:
+        return
+    try:
+        from twitter_cli import parser as tw_parser
+
+        original_extract = tw_parser._extract_media
+
+        def extract_media_with_poster(legacy: Any) -> list[Any]:
+            items = original_extract(legacy)
+            raw_items = [
+                m
+                for m in (tw_parser._deep_get(legacy, "extended_entities", "media") or [])
+                if m.get("type") in _MEDIA_KNOWN_TYPES
+            ]
+            if len(raw_items) != len(items):
+                return items
+            for item, raw in zip(items, raw_items):
+                if item.type in _MEDIA_VIDEO_TYPES:
+                    poster = str(raw.get("media_url_https") or "")
+                    if poster:
+                        item.poster_url = poster
+            return items
+
+        tw_parser._extract_media = extract_media_with_poster
+        _ORIGINAL_EXTRACT_MEDIA = original_extract
+    except Exception:
+        logger.warning("[XTransport] media poster patch 安装失败", exc_info=True)
+
 
 def clear_user_id_cache() -> None:
     """清空 user_id 缓存（测试缝 + 运维排障用）。"""
@@ -62,6 +112,7 @@ def _default_client_factory() -> Any:
     """从环境变量构造真实 TwitterClient（延迟导入，测试注入 fake 时不触碰）。"""
     from twitter_cli.client import TwitterClient
 
+    _install_media_poster_patch()
     auth_token = os.environ.get("TWITTER_AUTH_TOKEN", "").strip()
     ct0 = os.environ.get("TWITTER_CT0", "").strip()
     if not auth_token or not ct0:
@@ -75,6 +126,7 @@ def _default_credential_factory(auth_token: str, ct0: str) -> Any:
     """按给定 cookie pair 构造真实 TwitterClient（延迟导入）。"""
     from twitter_cli.client import TwitterClient
 
+    _install_media_poster_patch()
     return TwitterClient(auth_token, ct0)
 
 

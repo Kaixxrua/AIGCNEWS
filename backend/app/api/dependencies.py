@@ -50,6 +50,7 @@ from backend.app.repositories.wechat_account_repository import (
     WeChatOfficialAccountRepository,
 )
 from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
+from backend.app.repositories.wechat_follow_repository import WeChatFollowRepository
 from backend.app.repositories.wechat_session_repository import (
     WeChatLoginAttemptRepository,
     WeChatSessionRepository,
@@ -493,6 +494,12 @@ def get_wechat_article_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> WeChatArticleRepository:
     return repositories.wechat_articles
+
+
+def get_wechat_follow_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> WeChatFollowRepository:
+    return repositories.wechat_follows
 
 
 def get_wechat_mp_transport() -> WeChatMpTransport:

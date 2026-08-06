@@ -163,6 +163,38 @@ class XPolicyContracts(unittest.TestCase):
         items = x_policy.project_tweets([tweet], limit=5)
         self.assertEqual(items[0]["media"], [])
 
+    def test_project_tweets_media_includes_poster_url_when_present(self) -> None:
+        tweet = _tweet("1010", text="video with poster")
+        video = TweetMedia(
+            type="video", url="https://video.twimg.com/b.mp4", width=640, height=360
+        )
+        # 与 x_transport 封面补丁同一姿势：无 slots dataclass 后置赋值
+        video.poster_url = "https://pbs.twimg.com/amplify_video_thumb/b.jpg"
+        photo = TweetMedia(
+            type="photo", url="https://pbs.twimg.com/media/a.jpg", width=1, height=1
+        )
+        tweet.media = [video, photo]
+        items = x_policy.project_tweets([tweet], limit=5)
+        self.assertEqual(
+            items[0]["media"],
+            [
+                {
+                    "type": "video",
+                    "url": "https://video.twimg.com/b.mp4",
+                    "width": 640,
+                    "height": 360,
+                    "poster_url": "https://pbs.twimg.com/amplify_video_thumb/b.jpg",
+                },
+                # 照片无 poster_url 属性 → 不带该键，旧形状不变
+                {
+                    "type": "photo",
+                    "url": "https://pbs.twimg.com/media/a.jpg",
+                    "width": 1,
+                    "height": 1,
+                },
+            ],
+        )
+
     def test_project_tweets_preserves_full_text(self) -> None:
         long_text = "line one\n" + "x" * 200
         tweets = [
@@ -746,6 +778,107 @@ class XTransportCredentialProviderContracts(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(calls, [("primary", "c1"), ("backup", "c2")])
         self.assertIn("openai", result)
+
+
+def _legacy_with_media(media: list[dict]) -> dict:
+    return {"extended_entities": {"media": media}}
+
+
+def _video_media_item(media_id: str) -> dict:
+    return {
+        "type": "video",
+        "media_url_https": f"https://pbs.twimg.com/amplify_video_thumb/{media_id}.jpg",
+        "original_info": {"width": 1280, "height": 720},
+        "video_info": {
+            "variants": [
+                {
+                    "content_type": "video/mp4",
+                    "bitrate": 2176000,
+                    "url": f"https://video.twimg.com/amplify_video/{media_id}/vid/1280x720/a.mp4?tag=29",
+                },
+                {
+                    "content_type": "video/mp4",
+                    "bitrate": 832000,
+                    "url": f"https://video.twimg.com/amplify_video/{media_id}/vid/640x360/b.mp4?tag=29",
+                },
+                {"content_type": "application/x-mpegURL", "url": "https://video.twimg.com/x.m3u8"},
+            ]
+        },
+    }
+
+
+class XMediaPosterPatchContracts(unittest.TestCase):
+    """x_transport 封面补丁：包装 twitter-cli 真实 _extract_media 的契约。
+
+    每个用例装补丁前记录现场、结束后恢复，避免污染同进程其他用例。
+    """
+
+    def setUp(self) -> None:
+        from twitter_cli import parser as tw_parser
+
+        self._tw_parser = tw_parser
+        self._saved_extract = tw_parser._extract_media
+        self._saved_flag = x_transport._ORIGINAL_EXTRACT_MEDIA
+
+    def tearDown(self) -> None:
+        self._tw_parser._extract_media = self._saved_extract
+        x_transport._ORIGINAL_EXTRACT_MEDIA = self._saved_flag
+
+    def _install(self) -> None:
+        # 从干净状态安装：模拟生产首次构造真实 client 的路径
+        self._tw_parser._extract_media = self._saved_extract
+        x_transport._ORIGINAL_EXTRACT_MEDIA = None
+        x_transport._install_media_poster_patch()
+
+    def test_patch_backfills_poster_for_video_and_gif_not_photo(self) -> None:
+        self._install()
+        legacy = _legacy_with_media(
+            [
+                {
+                    "type": "photo",
+                    "media_url_https": "https://pbs.twimg.com/media/p.jpg",
+                    "original_info": {"width": 1200, "height": 800},
+                },
+                _video_media_item("v1"),
+                {**_video_media_item("g1"), "type": "animated_gif"},
+            ]
+        )
+
+        items = self._tw_parser._extract_media(legacy)
+
+        self.assertEqual([item.type for item in items], ["photo", "video", "animated_gif"])
+        # 原行为保留：视频 url 仍取最高码率 mp4
+        self.assertEqual(items[1].url, "https://video.twimg.com/amplify_video/v1/vid/1280x720/a.mp4?tag=29")
+        self.assertFalse(hasattr(items[0], "poster_url"))
+        self.assertEqual(
+            items[1].poster_url, "https://pbs.twimg.com/amplify_video_thumb/v1.jpg"
+        )
+        self.assertEqual(
+            items[2].poster_url, "https://pbs.twimg.com/amplify_video_thumb/g1.jpg"
+        )
+
+    def test_patch_skips_backfill_when_poster_missing(self) -> None:
+        self._install()
+        item = _video_media_item("v2")
+        del item["media_url_https"]
+        items = self._tw_parser._extract_media(_legacy_with_media([item]))
+        self.assertFalse(hasattr(items[0], "poster_url"))
+
+    def test_patch_install_is_idempotent(self) -> None:
+        self._install()
+        wrapped = self._tw_parser._extract_media
+        original = x_transport._ORIGINAL_EXTRACT_MEDIA
+        self.assertIsNotNone(original)
+
+        x_transport._install_media_poster_patch()  # 第二次安装：不重复包装
+        self.assertIs(self._tw_parser._extract_media, wrapped)
+        self.assertIs(x_transport._ORIGINAL_EXTRACT_MEDIA, original)
+
+    def test_credential_factory_installs_patch(self) -> None:
+        x_transport._ORIGINAL_EXTRACT_MEDIA = None
+        client = x_transport._default_credential_factory("tok", "ct0")
+        self.assertIsNotNone(client)
+        self.assertIsNotNone(x_transport._ORIGINAL_EXTRACT_MEDIA)
 
 
 if __name__ == "__main__":

@@ -129,3 +129,38 @@ class PostgresWeChatArticleRepository(WeChatArticleRepository):
                         ) from exc
                     raise
                 return cursor.rowcount
+
+    def list_recent_articles_for_accounts(
+        self,
+        account_ids: list[int],
+        *,
+        per_account: int = 5,
+    ) -> dict[int, list[dict[str, Any]]]:
+        if not account_ids:
+            return {}
+        # Dedupe so repeated ids cannot multiply the lateral-join rows.
+        unique_ids = list(dict.fromkeys(int(a) for a in account_ids))
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT recent.*
+                    FROM unnest(%s::bigint[]) AS input(account_id)
+                    CROSS JOIN LATERAL (
+                        SELECT id, account_id, stable_article_key, message_id,
+                               itemidx, title, digest, author, article_url,
+                               cover_url, source_url, published_at, raw_metadata,
+                               created_at, updated_at
+                        FROM wechat_articles
+                        WHERE account_id = input.account_id
+                        ORDER BY published_at DESC NULLS LAST, id DESC
+                        LIMIT %s
+                    ) recent
+                    """,
+                    (unique_ids, per_account),
+                )
+                grouped: dict[int, list[dict[str, Any]]] = {a: [] for a in unique_ids}
+                for row in cursor.fetchall():
+                    data = dict(row)
+                    grouped.setdefault(int(data["account_id"]), []).append(data)
+                return grouped

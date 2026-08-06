@@ -104,18 +104,25 @@ def _project_tweet_media(tweet: Any) -> list[dict]:
     """把 twitter-cli 的 Tweet.media 投影为可序列化的元数据列表。
 
     结构: [{"type": "photo|video|animated_gif", "url": "...", "width": 123, "height": 456}]
+    视频/GIF 经 x_transport 封面补丁回填 poster_url（X 官方封面图）时
+    带出该键；无补丁对象/照片不带，保持旧形状不变。
     """
     media = getattr(tweet, "media", None) or []
-    return [
-        {
+    items: list[dict] = []
+    for item in media:
+        if not getattr(item, "url", ""):
+            continue
+        entry = {
             "type": str(getattr(item, "type", "") or ""),
             "url": str(getattr(item, "url", "") or ""),
             "width": getattr(item, "width", None),
             "height": getattr(item, "height", None),
         }
-        for item in media
-        if getattr(item, "url", "")
-    ]
+        poster = str(getattr(item, "poster_url", "") or "")
+        if poster:
+            entry["poster_url"] = poster
+        items.append(entry)
+    return items
 
 
 def project_tweets(

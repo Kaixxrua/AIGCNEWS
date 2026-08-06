@@ -7,6 +7,7 @@ from backend.app.repositories.wechat_account_repository import (
     WeChatOfficialAccountRepository,
 )
 from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
+from backend.app.repositories.wechat_follow_repository import WeChatFollowRepository
 from backend.app.repositories.wechat_session_repository import (
     WeChatLoginAttemptRepository,
     WeChatSessionRepository,
@@ -34,6 +35,13 @@ def test_protocols_define_expected_methods() -> None:
     assert callable(WeChatArticleRepository.list_wechat_articles)
     assert callable(WeChatArticleRepository.count_wechat_articles)
     assert callable(WeChatArticleRepository.upsert_wechat_articles)
+    assert callable(WeChatArticleRepository.list_recent_articles_for_accounts)
+
+    assert callable(WeChatFollowRepository.list_catalog_with_follow_state)
+    assert callable(WeChatFollowRepository.get_enabled_catalog_account)
+    assert callable(WeChatFollowRepository.follow_account)
+    assert callable(WeChatFollowRepository.unfollow_account)
+    assert callable(WeChatFollowRepository.list_followed_account_ids)
 
 
 class FakeDatabase:

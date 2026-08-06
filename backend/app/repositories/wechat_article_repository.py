@@ -23,3 +23,12 @@ class WeChatArticleRepository(Protocol):
         account_id: int,
         articles: list[dict[str, Any]],
     ) -> int: ...
+
+    def list_recent_articles_for_accounts(
+        self,
+        account_ids: list[int],
+        *,
+        per_account: int = 5,
+    ) -> dict[int, list[dict[str, Any]]]:
+        """Return up to `per_account` newest articles for each given account id."""
+        ...
