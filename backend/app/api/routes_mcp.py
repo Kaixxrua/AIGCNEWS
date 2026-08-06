@@ -16,6 +16,7 @@ from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
 from backend.app.repositories.briefing_repository import BriefingReader
+from backend.app.services.auth.rate_limit import RateLimitExceededError
 from backend.app.services.mcp.inbound.application import (
     McpProtocolApplication,
     McpProtocolDependencies,
@@ -26,6 +27,10 @@ from backend.app.services.mcp.inbound.context import (
     McpRequestError,
     McpSessionTransport,
     parse_mcp_request,
+)
+from backend.app.services.mcp.inbound.rate_limit import (
+    enforce_mcp_rate_limit,
+    mcp_rate_limited_projection,
 )
 from backend.app.services.mcp.inbound.tools import McpToolContext
 
@@ -78,4 +83,10 @@ async def mcp_endpoint(
         inbound = await parse_mcp_request(request)
     except McpRequestError as exc:
         return _http_response(application.error(exc.request_id, exc.code, exc.message))
+    try:
+        await enforce_mcp_rate_limit(
+            request, method=inbound.method, user_id=authorization.user_id
+        )
+    except RateLimitExceededError:
+        return _http_response(mcp_rate_limited_projection(inbound.request_id))
     return _http_response(await application.dispatch(inbound))

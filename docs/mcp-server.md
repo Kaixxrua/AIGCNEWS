@@ -111,6 +111,19 @@ Prompts：
   解锁私有工具 `search_my_project_favorites`；token 无效返回 401。
 - MCP access token 由站内账号体系签发与管理，与登录 JWT 相互独立。
 
+## 限流
+
+端点按 Redis 固定窗口限流（窗口 60 秒，实现见 `backend/app/services/mcp/inbound/rate_limit.py`）：
+
+| 调用方 | 协议方法（initialize / tools/list / resources / prompts） | tools/call |
+| --- | --- | --- |
+| 匿名（按客户端 IP，取 X-Forwarded-For 首跳） | 60 次/分 | 30 次/分 |
+| 认证（按用户 id） | 240 次/分 | 120 次/分 |
+
+- 超限返回 HTTP 429，响应体为 JSON-RPC error（code `-32000`），并带 `Retry-After: 60` 头。
+- 解析失败的畸形请求直接返回 JSON-RPC 错误，不计入配额。
+- Redis 不可用时放行（可用性优先于限流严格性），与认证端点限流策略一致。
+
 ## 与 `/api/ops/mcp-servers` 的区别
 
 管理员页面中的 `/api/ops/mcp-servers` 是配置**外部** MCP Server 的出站管理能力（含连接测试），
