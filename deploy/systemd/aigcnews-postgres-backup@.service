@@ -1,0 +1,18 @@
+[Unit]
+Description=AIGCNEWS PostgreSQL scheduled backup for %i
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=%i
+WorkingDirectory=/home/%i/AIGCNEWS
+Environment=BACKUP_ENV_FILE=/home/%i/.aigcnews-postgres-backup.env
+Environment=AIGCNEWS_BACKUP_DIR=/home/%i/backups/aigcnews
+ExecStartPre=/usr/bin/mkdir -p /home/%i/backups/aigcnews
+ExecStart=/home/%i/AIGCNEWS/scripts/backup_postgres_application_scheduled.sh
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target

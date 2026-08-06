@@ -27,6 +27,40 @@ export PGPASSFILE=/run/secrets/postgres-pgpass
 
 成功后生成 PostgreSQL custom-format dump 和同名 `.sha256` 证据。脚本拒绝覆盖已有 dump。
 
+## 定时备份（systemd timer）
+
+`scripts/backup_postgres_application_scheduled.sh` 为上面的备份脚本加上定时运行所需的三件事：时间戳命名（`aigcnews-YYYYMMDD-HHMMSS.dump`）、保留策略（默认保留最新 14 份，`AIGCNEWS_BACKUP_RETENTION` 可调）、凭据环境文件注入（`BACKUP_ENV_FILE`）。配套单元：`deploy/systemd/aigcnews-postgres-backup@.service` + `.timer`（每日 03:17，随机延迟 15 分钟，错过补跑）。
+
+1. 准备凭据环境文件（`chmod 600`，不要提交到任何仓库）：
+
+   ```bash
+   # ~/.aigcnews-postgres-backup.env
+   PGHOST=127.0.0.1
+   PGPORT=5432
+   PGUSER=backup_operator
+   PGDATABASE=aigcnews
+   PGPASSFILE=/home/kaixxrua/.pgpass
+   ```
+
+   Compose 部署的数据库默认只在容器网络内可达：给 postgres 服务加 `127.0.0.1:5432:5432` 端口映射（override 文件）后按上例连接，或改用其他可达路径。不要为备份把数据库暴露到公网。
+
+2. 安装并启用（以部署用户 `kaixxrua` 为例）：
+
+   ```bash
+   sudo cp deploy/systemd/aigcnews-postgres-backup@.{service,timer} /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now aigcnews-postgres-backup@kaixxrua.timer
+   systemctl list-timers aigcnews-postgres-backup@kaixxrua.timer
+   ```
+
+3. 首次启用后手动触发一次并核对制品：`sudo systemctl start aigcnews-postgres-backup@kaixxrua.service`，dump 与 `.sha256` 默认落在 `~/backups/aigcnews/`（service 的 `AIGCNEWS_BACKUP_DIR` 可改）。
+
+语义与限制：
+
+- 每日一次 = **RPO 不超过 24 小时**；需要更小 RPO 时必须上 WAL 归档/PITR，本流程不覆盖。
+- 单机磁盘上的 dump 不抗主机/磁盘故障，应再有一层异地副本（rsync/rclone 到另一台机器或对象存储），异地层同样按敏感制品处理。
+- timer 失败会体现在 `systemctl status aigcnews-postgres-backup@*.service`；建议把失败告警纳入既有监控通道（当前无自动告警，需人工巡检或自行接入通知）。
+
 ## 恢复到明确确认的空目标
 
 先由管理员创建全新数据库并授予恢复账号权限。不要复用生产数据库，不要对现有数据库执行 restore。脚本不会 drop、clean 或删除任何对象；目标非空时会在 `pg_restore` 前失败。

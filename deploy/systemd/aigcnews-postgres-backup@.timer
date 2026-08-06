@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily AIGCNEWS PostgreSQL backup for %i
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target
