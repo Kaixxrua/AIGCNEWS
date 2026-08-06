@@ -192,3 +192,23 @@ export const distributeColumns = <T>(items: T[], columnCount: number): T[][] => 
   items.forEach((item, index) => columns[index % count]?.push(item))
   return columns
 }
+
+/** 全天推文客户端分页：页数下限 1（空列表也按 1 页算，避免 0 页状态）。 */
+export const pageCount = (total: number, pageSize: number): number => {
+  const size = Math.max(1, Math.floor(pageSize) || 1)
+  return Math.max(1, Math.ceil(Math.max(0, total) / size))
+}
+
+/** 页码夹取到 [1, totalPages]；非法输入（NaN/Infinity/小数）先取整再夹。 */
+export const clampPage = (page: number, totalPages: number): number => {
+  const pages = Math.max(1, Math.floor(totalPages) || 1)
+  const value = Number.isFinite(page) ? Math.floor(page) : 1
+  return Math.min(pages, Math.max(1, value))
+}
+
+/** 取当前页切片；页码越界时内部先夹取，调用方无需预校验。 */
+export const paginateItems = <T>(items: T[], page: number, pageSize: number): T[] => {
+  const size = Math.max(1, Math.floor(pageSize) || 1)
+  const current = clampPage(page, pageCount(items.length, size))
+  return items.slice((current - 1) * size, current * size)
+}

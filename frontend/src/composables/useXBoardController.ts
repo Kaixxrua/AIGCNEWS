@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import type { DashboardApi } from '@/services/dashboard/dashboardContracts'
 import { dashboardApi } from '@/services/dashboard/dashboardApi'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
-import { groupTweetsByHandle } from '@/features/xboard/xBoardViewModel'
+import { clampPage, groupTweetsByHandle, pageCount } from '@/features/xboard/xBoardViewModel'
 
 export interface XBoardApi {
   fetchTop: DashboardApi['fetchTop']
@@ -20,7 +20,9 @@ export interface XBoardControllerOptions {
 }
 
 const SNAPSHOT_DATE_LIMIT = 60
-const TOP_LIMIT = 50
+// 看板展示当天全部推文：一次拉全天（后端 limit 上限/DB 读取上限均为 500），客户端分页
+const TOP_LIMIT = 500
+export const XBOARD_PAGE_SIZE = 20
 
 // XBoardView 自包含控制器：拉取快照日期与 source=x 推文，分组逻辑在 xBoardViewModel。
 export const useXBoardController = (options: XBoardControllerOptions = {}) => {
@@ -37,8 +39,18 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const errorMsg = ref('')
   const isActive = ref(true)
   const selectedIds = ref<Set<string>>(new Set())
+  const page = ref(1)
 
   const sections = computed(() => groupTweetsByHandle(docs.value))
+  const totalPages = computed(() => pageCount(docs.value.length, XBOARD_PAGE_SIZE))
+  // 只读夹取页：删除清空末页等场景自动回落，无需 watcher
+  const currentPage = computed(() => clampPage(page.value, totalPages.value))
+  const hasPrev = computed(() => currentPage.value > 1)
+  const hasNext = computed(() => currentPage.value < totalPages.value)
+
+  const goPage = (next: number) => {
+    page.value = clampPage(next, totalPages.value)
+  }
 
   let generation = 0
   let abortController: AbortController | null = null
@@ -81,10 +93,14 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     if (!date || date === selectedDate.value) return
     selectedDate.value = date
     selectedIds.value.clear()
+    page.value = 1
     void loadTweets(date)
   }
 
-  const refresh = () => loadTweets(selectedDate.value)
+  const refresh = () => {
+    page.value = 1
+    return loadTweets(selectedDate.value)
+  }
 
   const dispose = () => {
     isActive.value = false
@@ -100,8 +116,18 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     selectedIds.value = next
   }
 
-  const selectAll = () => {
-    selectedIds.value = new Set(docs.value.map((doc) => doc.id).filter(Boolean) as string[])
+  const selectAll = (ids?: string[]) => {
+    const pool = ids ?? (docs.value.map((doc) => doc.id).filter(Boolean) as string[])
+    selectedIds.value = new Set(pool)
+  }
+
+  /** 页级全选切换：给定 id 全部已选则移除，否则并入（供「本页全选」复选框）。 */
+  const toggleSelectAll = (ids: string[]) => {
+    if (!ids.length) return
+    const next = new Set(selectedIds.value)
+    if (ids.every((id) => next.has(id))) ids.forEach((id) => next.delete(id))
+    else ids.forEach((id) => next.add(id))
+    selectedIds.value = next
   }
 
   const clearSelection = () => {
@@ -121,7 +147,8 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
         notFound: response.not_found_count ?? 0,
       }
       selectedIds.value = new Set(ids.filter((id) => !response.doc_ids?.includes(id)))
-      await refresh()
+      // 删除后重拉不走 refresh()：保留当前页码，由 currentPage 夹取自动回落
+      await loadTweets(selectedDate.value)
     } catch (error) {
       errorMsg.value = error instanceof Error && error.message ? error.message : translate('xboard.deleteFailed')
     } finally {
@@ -133,21 +160,28 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   return {
     availableDates,
     clearSelection,
+    currentPage,
     deleteSelected,
     deleting,
     dispose,
     docs,
     errorMsg,
+    goPage,
+    hasNext,
+    hasPrev,
     load,
     loading,
     onDateChange,
+    pageSize: XBOARD_PAGE_SIZE,
     refresh,
     sections,
     selectedDate,
     selectedIds,
     selectAll,
     today,
+    toggleSelectAll,
     toggleSelection,
+    totalPages,
   }
 }
 

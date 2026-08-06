@@ -25,7 +25,7 @@ describe('useXBoardController', () => {
 
     expect(api.fetchSnapshotDates).toHaveBeenCalledWith(expect.objectContaining({ source: 'x', period: 'daily' }))
     expect(api.fetchTop).toHaveBeenCalledWith(expect.objectContaining({
-      source: 'x', period: 'daily', date: '2026-08-04', limit: 50,
+      source: 'x', period: 'daily', date: '2026-08-04', limit: 500,
     }))
     expect(controller.selectedDate.value).toBe('2026-08-04')
     expect(controller.sections.value.map((section) => section.handle)).toEqual(['karpathy', 'openai'])
@@ -148,5 +148,107 @@ describe('useXBoardController', () => {
     expect(result).toEqual({ deleted: 1, notFound: 1 })
     expect(controller.selectedIds.value.has('x:2')).toBe(true)
     expect(controller.selectedIds.value.has('x:1')).toBe(false)
+  })
+
+  const docPage = (count: number) =>
+    Array.from({ length: count }, (_, index) => doc(`x:${index + 1}`, `https://x.com/openai/status/${index + 1}`, index))
+
+  const createPagedApi = (count: number, overrides: Partial<XBoardApi> = {}) => createApi({
+    fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: docPage(count) })),
+    ...overrides,
+  })
+
+  it('fetches the whole day with limit 500 and paginates client-side at 20 per page', async () => {
+    const api = createPagedApi(45)
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+
+    expect(api.fetchTop).toHaveBeenCalledWith(expect.objectContaining({ limit: 500 }))
+    expect(controller.pageSize).toBe(20)
+    expect(controller.totalPages.value).toBe(3)
+    expect(controller.currentPage.value).toBe(1)
+    expect(controller.hasPrev.value).toBe(false)
+    expect(controller.hasNext.value).toBe(true)
+
+    controller.goPage(2)
+    expect(controller.currentPage.value).toBe(2)
+    expect(controller.hasPrev.value).toBe(true)
+    expect(controller.hasNext.value).toBe(true)
+
+    controller.goPage(3)
+    expect(controller.hasNext.value).toBe(false)
+
+    // goPage 内部夹取越界页
+    controller.goPage(99)
+    expect(controller.currentPage.value).toBe(3)
+    controller.goPage(0)
+    expect(controller.currentPage.value).toBe(1)
+  })
+
+  it('resets to page 1 on date change and refresh', async () => {
+    const api = createPagedApi(45)
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    controller.goPage(2)
+
+    controller.onDateChange('2026-08-03')
+    await vi.waitFor(() => {
+      expect(api.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-08-03' }))
+    })
+    expect(controller.currentPage.value).toBe(1)
+
+    controller.goPage(3)
+    await controller.refresh()
+    expect(controller.currentPage.value).toBe(1)
+  })
+
+  it('clamps the page back after delete empties the last page', async () => {
+    // 21 条 = 2 页，末页仅 1 条；删除末页唯一条目后应自动回夹到第 1 页
+    let items = docPage(21)
+    const api = createApi({
+      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items })),
+      bulkDeleteDocuments: vi.fn(async () => {
+        items = items.slice(0, 20)
+        return { status: 'ok', message: 'deleted', doc_ids: ['x:21'], deleted_count: 1, not_found_count: 0 }
+      }),
+    })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    expect(controller.totalPages.value).toBe(2)
+
+    controller.goPage(2)
+    controller.toggleSelection('x:21')
+    await controller.deleteSelected()
+
+    expect(controller.docs.value).toHaveLength(20)
+    expect(controller.totalPages.value).toBe(1)
+    expect(controller.currentPage.value).toBe(1)
+  })
+
+  it('toggleSelectAll only affects the given page ids and selection survives page turns', async () => {
+    const api = createPagedApi(45)
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+
+    const pageOneIds = controller.docs.value.slice(0, 20).map((item) => String(item.id))
+    controller.toggleSelectAll(pageOneIds)
+    expect(controller.selectedIds.value.size).toBe(20)
+
+    // 跨页选择保留（翻页不清空选中集）
+    controller.goPage(2)
+    expect(controller.selectedIds.value.size).toBe(20)
+
+    // 给定 id 全部已选 → 再触发即移除
+    controller.toggleSelectAll(pageOneIds)
+    expect(controller.selectedIds.value.size).toBe(0)
+
+    // 部分已选 → 并入剩余
+    controller.toggleSelection('x:1')
+    controller.toggleSelectAll(pageOneIds)
+    expect(controller.selectedIds.value.size).toBe(20)
+
+    // 空集 no-op
+    controller.toggleSelectAll([])
+    expect(controller.selectedIds.value.size).toBe(20)
   })
 })

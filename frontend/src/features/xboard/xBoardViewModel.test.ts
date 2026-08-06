@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   authorAvatarUrl,
   authorDisplayName,
+  clampPage,
   countTweets,
   displayTweetText,
   distributeColumns,
@@ -11,6 +12,8 @@ import {
   groupTweetsByHandle,
   hasMedia,
   mediaItems,
+  pageCount,
+  paginateItems,
   posterMediaUrl,
   proxiedMediaUrl,
   timelineTweets,
@@ -247,5 +250,40 @@ describe('xBoardViewModel', () => {
     // 非法列数兜底为 1；小数为取整
     expect(distributeColumns([1, 2], 0)).toEqual([[1, 2]])
     expect(distributeColumns([1, 2, 3], 2.7)).toEqual([[1, 3], [2]])
+  })
+
+  it('pageCount floors at 1 page and handles empty, boundary and large totals', () => {
+    expect(pageCount(0, 20)).toBe(1) // 空列表按 1 页算，避免 0 页状态
+    expect(pageCount(20, 20)).toBe(1)
+    expect(pageCount(21, 20)).toBe(2)
+    expect(pageCount(500, 20)).toBe(25)
+    expect(pageCount(-5, 20)).toBe(1)
+    // 非法 pageSize 兜底为每页 1 条
+    expect(pageCount(3, 0)).toBe(3)
+    expect(pageCount(3, Number.NaN)).toBe(3)
+    expect(pageCount(3, 2.9)).toBe(2)
+  })
+
+  it('clampPage floors and clamps into [1, totalPages]', () => {
+    expect(clampPage(1, 3)).toBe(1)
+    expect(clampPage(3, 3)).toBe(3)
+    expect(clampPage(0, 3)).toBe(1)
+    expect(clampPage(-2, 3)).toBe(1)
+    expect(clampPage(99, 3)).toBe(3)
+    expect(clampPage(2.9, 3)).toBe(2)
+    expect(clampPage(Number.NaN, 3)).toBe(1)
+    expect(clampPage(Number.POSITIVE_INFINITY, 3)).toBe(1)
+    // 非法 totalPages 兜底 1 页
+    expect(clampPage(5, 0)).toBe(1)
+  })
+
+  it('paginateItems slices the requested page and clamps out-of-range pages internally', () => {
+    const items = Array.from({ length: 45 }, (_, index) => index)
+    expect(paginateItems(items, 1, 20)).toEqual(items.slice(0, 20))
+    expect(paginateItems(items, 3, 20)).toEqual(items.slice(40, 45))
+    // 越界页内部先夹取，调用方无需预校验
+    expect(paginateItems(items, 99, 20)).toEqual(items.slice(40, 45))
+    expect(paginateItems(items, 0, 20)).toEqual(items.slice(0, 20))
+    expect(paginateItems([], 1, 20)).toEqual([])
   })
 })

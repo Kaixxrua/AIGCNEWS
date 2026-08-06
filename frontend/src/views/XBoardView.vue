@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, authorDisplayName, displayTweetText, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, timelineTweets, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, displayTweetText, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, paginateItems, timelineTweets, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
@@ -13,16 +13,23 @@ const isAdmin = computed(() => authStore.isAdmin)
 
 const {
   docs, selectedDate, today, loading, deleting, errorMsg,
-  selectedIds,
-  load, onDateChange, refresh, dispose, toggleSelection, selectAll, clearSelection, deleteSelected,
+  selectedIds, currentPage, totalPages, hasPrev, hasNext, pageSize,
+  load, onDateChange, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
 } = useXBoardController({ translate: t })
 
 // 时间序（新→旧）+ 行主序分列：左上 = 最新推文，从左到右、从上到下。
 // CSS columns 是列主序（先填满一列），无法满足该排序，故 JS 分列。
 const timelineDocs = computed(() => timelineTweets(docs.value))
+// 全天推文客户端分页：时间线排序与瀑布流分列仅在当前页内进行
+const pagedTimelineDocs = computed(() => paginateItems(timelineDocs.value, currentPage.value, pageSize))
 const totalTweets = () => timelineDocs.value.length
 const selectedCount = computed(() => selectedIds.value.size)
 const hasSelection = computed(() => selectedCount.value > 0)
+
+// 页级全选（防止一键选中不可见条目误删）：复选框状态按当前页 id 计算
+const pageIds = computed(() => pagedTimelineDocs.value.map((doc) => String(doc.id)).filter(Boolean))
+const allPageSelected = computed(() => pageIds.value.length > 0 && pageIds.value.every((id) => selectedIds.value.has(id)))
+const somePageSelected = computed(() => !allPageSelected.value && pageIds.value.some((id) => selectedIds.value.has(id)))
 
 const computeColumnCount = () => {
   const width = window.innerWidth
@@ -30,7 +37,14 @@ const computeColumnCount = () => {
 }
 const columnCount = ref(computeColumnCount())
 const updateColumnCount = () => { columnCount.value = computeColumnCount() }
-const masonryColumns = computed(() => distributeColumns(timelineDocs.value, columnCount.value))
+const masonryColumns = computed(() => distributeColumns(pagedTimelineDocs.value, columnCount.value))
+
+// 翻页回顶：滚动的是内层 overflow-y-auto 容器而非 window
+const scrollEl = ref<HTMLElement | null>(null)
+const onGoPage = (next: number) => {
+  goPage(next)
+  scrollEl.value?.scrollTo({ top: 0 })
+}
 
 // 发布时间：落库是 UTC ISO，展示换算成用户系统时区（不传 timeZone → 本地）。
 const formatTime = (doc: TopDoc) => formatLocalTime(tweetTimestamp(doc))
@@ -90,7 +104,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="xboard-page flex h-full min-h-0 flex-col overflow-hidden">
-    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-6 pb-24">
+    <div ref="scrollEl" class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-6 pb-24">
 
       <!-- 页头 -->
       <div class="stagger-enter flex shrink-0 flex-wrap items-center justify-between gap-3">
@@ -123,9 +137,9 @@ onBeforeUnmount(() => {
             <input
               type="checkbox"
               class="h-4 w-4"
-              :checked="hasSelection && selectedCount === timelineDocs.length"
-              :indeterminate.prop="hasSelection && selectedCount < timelineDocs.length"
-              @change="hasSelection ? clearSelection() : selectAll()"
+              :checked="allPageSelected"
+              :indeterminate.prop="somePageSelected"
+              @change="toggleSelectAll(pageIds)"
             />
             <span>{{ t('xboard.selectAll') }}</span>
           </label>
@@ -273,6 +287,23 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <!-- 全天推文分页条：仅超过一页时出现 -->
+      <div
+        v-if="totalPages > 1"
+        class="xboard-pagination stagger-enter flex shrink-0 flex-wrap items-center justify-center gap-3 px-4 py-2"
+        :aria-label="t('xboard.pagination')"
+      >
+        <button class="btn-secondary text-xs" :disabled="!hasPrev" @click="onGoPage(currentPage - 1)">
+          {{ t('common.previous') }}
+        </button>
+        <span class="text-xs text-stone-500">
+          {{ t('xboard.pageSummary', { page: currentPage, totalPages, total: timelineDocs.length }) }}
+        </span>
+        <button class="btn-secondary text-xs" :disabled="!hasNext" @click="onGoPage(currentPage + 1)">
+          {{ t('common.next') }}
+        </button>
+      </div>
+
       <p v-if="timelineDocs.length" class="shrink-0 text-center text-2xs text-stone-300">{{ t('xboard.tweets', { count: totalTweets() }) }}</p>
     </div>
 
@@ -353,6 +384,13 @@ onBeforeUnmount(() => {
 }
 
 .xboard-toolbar {
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  background: var(--projects-paper-light);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
+}
+
+.xboard-pagination {
   border: 1px solid var(--ink);
   border-radius: 5px;
   background: var(--projects-paper-light);
