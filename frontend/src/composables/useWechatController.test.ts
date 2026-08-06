@@ -216,6 +216,25 @@ describe('useWechatController', () => {
     expect(controller.notice.value).toContain('已提交')
   })
 
+  it('surfaces FastAPI detail.message from 409 responses', async () => {
+    const api = createApi()
+    vi.mocked(api.searchAccounts).mockRejectedValue({
+      response: {
+        data: {
+          detail: {
+            code: 'WECHAT_ACCOUNT_CONTEXT_INVALID',
+            message: '当前微信账号无法使用该功能，请使用公众号/服务号管理员账号重新扫码',
+          },
+        },
+      },
+      message: 'Request failed with status code 409',
+    })
+
+    const controller = useWechatController({ api })
+    await controller.searchAccounts('AI')
+    expect(controller.error.value).toBe('当前微信账号无法使用该功能，请使用公众号/服务号管理员账号重新扫码')
+  })
+
   it('disposes resources on unmount', async () => {
     const api = createApi()
     vi.mocked(api.createLoginSession).mockResolvedValue({

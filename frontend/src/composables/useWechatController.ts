@@ -14,13 +14,21 @@ import type { WeChatApi } from '@/services/wechat/wechatApi'
 const POLL_INTERVAL_MS = 2000
 
 interface ApiErrorLike {
-  response?: { data?: { message?: string } }
+  response?: {
+    data?: {
+      message?: string
+      detail?: { message?: string; code?: string } | string
+    }
+  }
   message?: string
 }
 
 function getErrorMessage(err: unknown, fallback: string): string {
   const e = err as ApiErrorLike
-  return e.response?.data?.message ?? e.message ?? fallback
+  const data = e.response?.data
+  const detail = data?.detail
+  const detailMessage = typeof detail === 'string' ? detail : detail?.message
+  return data?.message ?? detailMessage ?? e.message ?? fallback
 }
 
 export interface UseWechatControllerOptions {
