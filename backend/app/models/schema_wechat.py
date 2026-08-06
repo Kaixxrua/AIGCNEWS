@@ -85,9 +85,17 @@ class WeChatArticleResponse(BaseModel):
     article_url: str = ""
     cover_url: str = ""
     source_url: str = ""
+    has_content: bool = False
     published_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class WeChatArticleDetailResponse(WeChatArticleResponse):
+    """Single-article view: adds the sanitized full-text body."""
+
+    content_html: str = ""
+    content_fetched_at: datetime | None = None
 
 
 class WeChatArticleListResponse(BaseModel):

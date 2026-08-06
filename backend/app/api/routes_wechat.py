@@ -17,6 +17,7 @@ from backend.app.api.dependencies import (
 from backend.app.core.auth import RequireAdmin, RequireUser, extract_user_id
 from backend.app.models.schema_wechat import (
     WeChatAccountSaveRequest,
+    WeChatArticleDetailResponse,
     WeChatArticleListResponse,
     WeChatCatalogListResponse,
     WeChatErrorResponse,
@@ -280,3 +281,20 @@ async def get_wechat_feed(
 ) -> dict[str, Any]:
     items = service.get_feed(user_id, per_account=per_account)
     return {"items": items, "per_account": per_account}
+
+
+@router.get(
+    "/accounts/{account_id}/articles/{article_id}",
+    response_model=WeChatArticleDetailResponse,
+)
+async def get_wechat_article_detail(
+    account_id: int,
+    article_id: int,
+    user_id: int = Depends(_user_id),
+    service: WeChatFollowService = Depends(get_wechat_follow_service),
+) -> dict[str, Any]:
+    """Full-text body of one article; follower-facing like the feed."""
+    try:
+        return service.get_article_detail(user_id, account_id, article_id)
+    except WeChatError as exc:
+        _handle_wechat_error(exc)

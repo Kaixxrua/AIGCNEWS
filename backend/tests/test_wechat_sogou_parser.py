@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from backend.app.services.wechat_sogou.parser import (
+    extract_article_content,
     extract_article_identity,
     extract_signed_url_from_redirect,
     is_antispider_content,
@@ -105,6 +106,37 @@ def test_parse_article_search_page_unescapes_cover_url() -> None:
 
     assert len(items) == 1
     assert items[0]["cover_url"] == "//img01.sogoucdn.com/v2/thumb?appid=201147&url=abc.jpg"
+
+
+def test_extract_article_content_returns_sanitized_body() -> None:
+    content = extract_article_content(_fixture("article_page.html"))
+
+    # Body text and allowed structure survive.
+    assert "什么是 AI 安全？" in content
+    assert "<blockquote>" in content
+    # Unknown tags are unwrapped but their text is kept.
+    assert "mpvoice" not in content
+    assert "语音内容占位" in content
+    # data-src becomes the real img src, HTML entities unescaped.
+    assert 'src="https://mmbiz.qpic.cn/mmbiz_png/abc/640?wx_fmt=png&amp;from=appmsg"' in content
+    assert "placeholder.gif" not in content
+    # Typography styles survive; dangerous declarations are dropped.
+    assert "font-weight: bold" in content
+    assert "position" not in content
+    assert "url(" not in content
+    # Scripts, event handlers, javascript: URLs, tracking attrs removed.
+    assert "<script" not in content
+    assert "steal(" not in content
+    assert "onclick" not in content
+    assert "data-w" not in content
+    assert "javascript:" not in content
+    # Safe links keep href and gain rel/target hardening.
+    assert 'href="https://example.com/ref"' in content
+    assert 'rel="noopener noreferrer"' in content
+
+
+def test_extract_article_content_returns_empty_without_container() -> None:
+    assert extract_article_content("<html><body><p>no js_content</p></body></html>") == ""
 
 
 def test_normalize_account_name_strips_spaces_and_case() -> None:

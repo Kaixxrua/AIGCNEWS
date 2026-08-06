@@ -33,6 +33,7 @@ def test_protocols_define_expected_methods() -> None:
     assert callable(WeChatOfficialAccountRepository.delete_wechat_account)
 
     assert callable(WeChatArticleRepository.list_wechat_articles)
+    assert callable(WeChatArticleRepository.get_wechat_article)
     assert callable(WeChatArticleRepository.count_wechat_articles)
     assert callable(WeChatArticleRepository.upsert_wechat_articles)
     assert callable(WeChatArticleRepository.list_recent_articles_for_accounts)

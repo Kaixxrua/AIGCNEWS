@@ -24,12 +24,39 @@ class PostgresWeChatArticleRepository(WeChatArticleRepository):
 
     @staticmethod
     def _select_sql() -> str:
+        # List queries stay light: only the has_content flag, never the
+        # MB-scale content_html blob. Use get_wechat_article for the body.
         return """
             SELECT id, account_id, stable_article_key, message_id, itemidx,
                    title, digest, author, article_url, cover_url, source_url,
-                   published_at, raw_metadata, created_at, updated_at
+                   published_at, raw_metadata, created_at, updated_at,
+                   (content_html <> '') AS has_content
             FROM wechat_articles
         """
+
+    def get_wechat_article(
+        self,
+        owner_id: int,
+        account_id: int,
+        article_id: int,
+    ) -> dict[str, Any] | None:
+        # Owner isolation is enforced via the account foreign key.
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, account_id, stable_article_key, message_id, itemidx,
+                           title, digest, author, article_url, cover_url, source_url,
+                           published_at, raw_metadata, created_at, updated_at,
+                           (content_html <> '') AS has_content,
+                           content_html, content_fetched_at
+                    FROM wechat_articles
+                    WHERE account_id = %s AND id = %s
+                    """,
+                    (account_id, article_id),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
 
     def list_wechat_articles(
         self,
@@ -93,6 +120,8 @@ class PostgresWeChatArticleRepository(WeChatArticleRepository):
                     str(article.get("source_url") or "").strip(),
                     article.get("published_at"),
                     json.dumps(article.get("raw_metadata") or {}),
+                    str(article.get("content_html") or ""),
+                    article.get("content_fetched_at"),
                 )
             )
 
@@ -104,8 +133,9 @@ class PostgresWeChatArticleRepository(WeChatArticleRepository):
                         INSERT INTO wechat_articles (
                             account_id, stable_article_key, message_id, itemidx,
                             title, digest, author, article_url, cover_url,
-                            source_url, published_at, raw_metadata
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                            source_url, published_at, raw_metadata,
+                            content_html, content_fetched_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
                         ON CONFLICT (account_id, stable_article_key) DO UPDATE SET
                             message_id = EXCLUDED.message_id,
                             itemidx = EXCLUDED.itemidx,
@@ -117,6 +147,16 @@ class PostgresWeChatArticleRepository(WeChatArticleRepository):
                             source_url = EXCLUDED.source_url,
                             published_at = EXCLUDED.published_at,
                             raw_metadata = EXCLUDED.raw_metadata,
+                            -- Never clobber an existing body with an empty one:
+                            -- the MP-admin path syncs metadata only.
+                            content_html = CASE
+                                WHEN EXCLUDED.content_html <> '' THEN EXCLUDED.content_html
+                                ELSE wechat_articles.content_html
+                            END,
+                            content_fetched_at = COALESCE(
+                                EXCLUDED.content_fetched_at,
+                                wechat_articles.content_fetched_at
+                            ),
                             updated_at = CURRENT_TIMESTAMP
                         """,
                         rows,
@@ -150,7 +190,8 @@ class PostgresWeChatArticleRepository(WeChatArticleRepository):
                         SELECT id, account_id, stable_article_key, message_id,
                                itemidx, title, digest, author, article_url,
                                cover_url, source_url, published_at, raw_metadata,
-                               created_at, updated_at
+                               created_at, updated_at,
+                               (content_html <> '') AS has_content
                         FROM wechat_articles
                         WHERE account_id = input.account_id
                         ORDER BY published_at DESC NULLS LAST, id DESC

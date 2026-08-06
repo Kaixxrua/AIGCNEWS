@@ -76,3 +76,22 @@ class WeChatFollowService:
                 }
             )
         return feed
+
+    def get_article_detail(
+        self,
+        user_id: int,
+        account_id: int,
+        article_id: int,
+    ) -> dict[str, Any]:
+        """Return one article's full body, gated by the follow boundary.
+
+        Full text is a follower-facing surface, matching the feed: the user
+        must follow the account, otherwise 404 (no existence leak).
+        """
+        followed_ids = self._follows.list_followed_account_ids(user_id)
+        if account_id not in followed_ids:
+            raise WeChatAccountNotFound()
+        article = self._articles.get_wechat_article(user_id, account_id, article_id)
+        if article is None:
+            raise WeChatAccountNotFound()
+        return article

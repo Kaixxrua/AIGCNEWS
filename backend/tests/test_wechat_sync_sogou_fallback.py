@@ -91,6 +91,10 @@ def test_sync_falls_back_to_sogou_on_rate_limit() -> None:
     assert metadatas[0]["stable_article_key"] == "2247483765-1"
     assert metadatas[0]["message_id"] == "2247483765"
     assert metadatas[0]["title"] == "如何快速入门AI安全领域?"
+    # The full body is extracted and sanitized from the already-fetched page.
+    assert "什么是 AI 安全？" in metadatas[0]["content_html"]
+    assert "<script" not in metadatas[0]["content_html"]
+    assert metadatas[0]["content_fetched_at"]
     result = accounts.update_wechat_account_sync_result.call_args[0][2]
     assert result["status"] == "succeeded"
     assert "搜狗" in result["message"]

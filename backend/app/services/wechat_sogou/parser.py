@@ -102,3 +102,85 @@ def extract_article_identity(body: str) -> dict[str, Any]:
 def normalize_account_name(name: str) -> str:
     """Normalize an account name for exact-match filtering."""
     return re.sub(r"\s+", "", name).lower()
+
+
+# ---------------------------------------------------------------------------
+# Article body extraction & sanitization
+# ---------------------------------------------------------------------------
+
+# Structural tags found in real WeChat article bodies. Anything else is
+# unwrapped (children kept) so text survives unknown markup.
+_CONTENT_ALLOWED_TAGS = frozenset(
+    {
+        "section", "span", "p", "div", "br", "hr",
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "strong", "b", "em", "i", "u", "s", "blockquote",
+        "ul", "ol", "li", "a", "img", "figure", "figcaption",
+        "table", "thead", "tbody", "tr", "td", "th", "caption",
+        "code", "pre", "sup", "sub",
+    }
+)
+_CONTENT_DROP_TAGS = ("script", "style", "iframe", "noscript", "svg", "form", "object", "embed")
+# CSS declarations matching these are removed (overlay / exfiltration
+# vectors); typography declarations (font, color, margin, ...) are kept
+# so the article keeps its original look.
+_STYLE_FORBIDDEN_RE = re.compile(r"url\s*\(|expression|@import|behavior|javascript|position|z-index", re.I)
+
+
+def _filter_style(style: str) -> str:
+    kept = []
+    for declaration in style.split(";"):
+        declaration = declaration.strip()
+        if declaration and not _STYLE_FORBIDDEN_RE.search(declaration):
+            kept.append(declaration)
+    return "; ".join(kept)
+
+
+def _sanitize_content_node(node: Any) -> None:
+    """In-place allowlist sanitization of a BeautifulSoup subtree."""
+    from bs4 import Comment
+
+    for child in list(node.descendants):
+        if isinstance(child, Comment):
+            child.extract()
+    for tag in node.find_all(True):
+        if tag.name not in _CONTENT_ALLOWED_TAGS:
+            tag.unwrap()
+            continue
+        attrs = dict(tag.attrs)
+        tag.attrs = {}
+        if tag.name == "img":
+            src = html_lib.unescape(str(attrs.get("data-src") or attrs.get("src") or ""))
+            if src.startswith("http://") or src.startswith("https://") or src.startswith("//"):
+                tag["src"] = src
+            alt = str(attrs.get("alt") or "").strip()
+            if alt:
+                tag["alt"] = alt
+        elif tag.name == "a":
+            href = html_lib.unescape(str(attrs.get("href") or "")).strip()
+            if href.startswith("http://") or href.startswith("https://"):
+                tag["href"] = href
+                tag["rel"] = "noopener noreferrer"
+                tag["target"] = "_blank"
+        style = _filter_style(str(attrs.get("style") or ""))
+        if style:
+            tag["style"] = style
+
+
+def extract_article_content(body: str) -> str:
+    """Extract and sanitize the article body (<div id="js_content">).
+
+    Returns sanitized inner HTML preserving WeChat typography (inline
+    styles minus dangerous declarations). Images keep their real URLs
+    (data-src -> src). Empty string when the page has no body.
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(body, "html.parser")
+    container = soup.find(id="js_content")
+    if container is None:
+        return ""
+    for tag in container.find_all(_CONTENT_DROP_TAGS):
+        tag.decompose()
+    _sanitize_content_node(container)
+    return container.decode_contents().strip()

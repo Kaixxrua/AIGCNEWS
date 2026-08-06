@@ -15,6 +15,15 @@ class WeChatArticleRepository(Protocol):
         limit: int = 20,
     ) -> list[dict[str, Any]]: ...
 
+    def get_wechat_article(
+        self,
+        owner_id: int,
+        account_id: int,
+        article_id: int,
+    ) -> dict[str, Any] | None:
+        """Return one article including content_html, or None if missing."""
+        ...
+
     def count_wechat_articles(self, owner_id: int, account_id: int) -> int: ...
 
     def upsert_wechat_articles(

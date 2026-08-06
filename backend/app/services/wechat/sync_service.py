@@ -25,6 +25,7 @@ from backend.app.services.wechat.parser import (
 )
 from backend.app.services.wechat.transport import WeChatMpTransport
 from backend.app.services.wechat_sogou.parser import (
+    extract_article_content,
     extract_article_identity,
     normalize_account_name,
     parse_article_search_page,
@@ -267,7 +268,8 @@ class WeChatSyncService:
                 item["link_path"], referer=search_referer
             )
             article_page = await self._sogou.fetch_article_page(signed_url)
-            identity = extract_article_identity(article_page.text())
+            page_html = article_page.text()
+            identity = extract_article_identity(page_html)
             # Cross-source identity check: the article page's biz must match
             # the account fakeid whenever Sogou attributes it to the account.
             if identity["biz"] and identity["biz"] != fakeid:
@@ -278,22 +280,28 @@ class WeChatSyncService:
                     fakeid,
                 )
                 continue
-            metadatas.append(
-                normalize_article_metadata(
-                    {
-                        "appmsgid": identity["mid"] or None,
-                        "itemidx": int(identity["idx"] or 1),
-                        "title": identity["msg_title"] or item["title"],
-                        "digest": item["summary"],
-                        "author": identity["nickname"] or nickname,
-                        "link": signed_url,
-                        "cover": item["cover_url"],
-                        "create_time": item["published_ts"],
-                        "sogou_source": True,
-                        "sogou_user_name": identity["user_name"],
-                    }
-                )
+            # The full article page is already in hand: extract and sanitize
+            # the body now. Signed URLs expire, so content cannot be
+            # backfilled lazily later.
+            content_html = extract_article_content(page_html)
+            metadata = normalize_article_metadata(
+                {
+                    "appmsgid": identity["mid"] or None,
+                    "itemidx": int(identity["idx"] or 1),
+                    "title": identity["msg_title"] or item["title"],
+                    "digest": item["summary"],
+                    "author": identity["nickname"] or nickname,
+                    "link": signed_url,
+                    "cover": item["cover_url"],
+                    "create_time": item["published_ts"],
+                    "sogou_source": True,
+                    "sogou_user_name": identity["user_name"],
+                }
             )
+            if content_html:
+                metadata["content_html"] = content_html
+                metadata["content_fetched_at"] = datetime.now(timezone.utc).isoformat()
+            metadatas.append(metadata)
             await asyncio.sleep(self._sogou_delay)
 
         if not metadatas:

@@ -85,6 +85,7 @@ def test_article_adapter_conforms_to_protocol() -> None:
     repo = PostgresWeChatArticleRepository(FakeDatabase(MagicMock()))
     contract: WeChatArticleRepository = repo
     assert callable(contract.upsert_wechat_articles)
+    assert callable(contract.get_wechat_article)
 
 
 def test_create_login_attempt_encrypts_uuid_cookie() -> None:
@@ -251,8 +252,65 @@ def test_article_upsert_serializes_raw_metadata() -> None:
 
     assert count == 2
     call = cursor.executemany.call_args
-    assert json.loads(call.args[1][0][-1]) == {"key": "value"}
+    # Tuple order: ..., published_at, raw_metadata, content_html, content_fetched_at
+    assert json.loads(call.args[1][0][-3]) == {"key": "value"}
+    assert call.args[1][0][-2] == ""  # metadata-only payloads carry no body
+    assert call.args[1][0][-1] is None
     assert "ON CONFLICT (account_id, stable_article_key)" in call.args[0]
+
+
+def test_article_upsert_content_never_clobbered_by_empty() -> None:
+    cursor = MagicMock()
+    repo = _article_repo(cursor)
+    cursor.rowcount = 1
+
+    repo.upsert_wechat_articles(
+        1,
+        42,
+        [
+            {
+                "stable_article_key": "1001-1",
+                "title": "T1",
+                "content_html": "<p>正文</p>",
+                "content_fetched_at": "2026-08-06T07:44:00+00:00",
+            }
+        ],
+    )
+
+    call = cursor.executemany.call_args
+    assert call.args[1][0][-2] == "<p>正文</p>"
+    assert call.args[1][0][-1] == "2026-08-06T07:44:00+00:00"
+    # Empty incoming bodies must not erase a stored body (MP-admin path
+    # syncs metadata only).
+    assert "WHEN EXCLUDED.content_html <> '' THEN EXCLUDED.content_html" in call.args[0]
+    assert "ELSE wechat_articles.content_html" in call.args[0]
+
+
+def test_get_wechat_article_returns_row_with_content() -> None:
+    cursor = MagicMock()
+    repo = _article_repo(cursor)
+    cursor.fetchone.return_value = {
+        "id": 11,
+        "account_id": 42,
+        "content_html": "<p>正文</p>",
+        "has_content": True,
+    }
+
+    article = repo.get_wechat_article(1, 42, 11)
+
+    assert article is not None
+    assert article["content_html"] == "<p>正文</p>"
+    sql = cursor.execute.call_args.args[0]
+    assert "content_html" in sql and "content_fetched_at" in sql
+    assert cursor.execute.call_args.args[1] == (42, 11)
+
+
+def test_get_wechat_article_returns_none_when_missing() -> None:
+    cursor = MagicMock()
+    repo = _article_repo(cursor)
+    cursor.fetchone.return_value = None
+
+    assert repo.get_wechat_article(1, 42, 999) is None
 
 
 def test_article_upsert_empty_list_returns_zero() -> None:

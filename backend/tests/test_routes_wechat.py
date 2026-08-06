@@ -215,6 +215,42 @@ def test_feed_rejects_out_of_range_per_account() -> None:
     assert client.get("/api/ops/wechat/feed?per_account=11").status_code == 422
 
 
+def test_article_detail_returns_full_body() -> None:
+    service = MagicMock()
+    service.get_article_detail.return_value = {
+        "id": 11,
+        "account_id": 7,
+        "stable_article_key": "2247483765-1",
+        "title": "文章A",
+        "has_content": True,
+        "content_html": "<p>正文</p>",
+        "content_fetched_at": "2026-08-06T07:44:00+00:00",
+        "published_at": None,
+    }
+    client = _client(follow_service=service)
+    response = client.get("/api/ops/wechat/accounts/7/articles/11")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["content_html"] == "<p>正文</p>"
+    assert data["has_content"] is True
+    assert data["content_fetched_at"] == "2026-08-06T07:44:00Z"
+    service.get_article_detail.assert_called_once_with(1, 7, 11)
+
+
+def test_article_detail_not_followed_returns_404() -> None:
+    service = MagicMock()
+    service.get_article_detail.side_effect = WeChatAccountNotFound()
+    client = _client(follow_service=service)
+    response = client.get("/api/ops/wechat/accounts/999/articles/11")
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "WECHAT_ACCOUNT_NOT_FOUND"
+
+
+def test_article_detail_rejects_unauthenticated() -> None:
+    client = TestClient(app)
+    assert client.get("/api/ops/wechat/accounts/7/articles/11").status_code == 401
+
+
 def test_user_endpoints_reject_unauthenticated() -> None:
     client = TestClient(app)
     assert client.get("/api/ops/wechat/catalog").status_code == 401
