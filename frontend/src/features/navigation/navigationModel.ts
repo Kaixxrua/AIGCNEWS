@@ -46,6 +46,13 @@ export const NAV_ITEMS: readonly NavigationItem[] = [
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4C5.36 4 2 6.91 2 10.5c0 1.96 1.13 3.72 2.94 4.96L4 19l3.85-1.93c.67.18 1.38.28 2.12.28.23 0 .46-.01.68-.03"/><path d="M14.5 9c3.87 0 7 2.69 7 6s-3.13 6-7 6c-.63 0-1.24-.06-1.83-.18L11 21.5l.5-2.5c-1.5-1.1-2.5-2.77-2.5-4.62 0-3.31 3.13-6 7-6z"/><circle cx="8" cy="10.5" r=".8" fill="currentColor" stroke="none"/><circle cx="13" cy="10.5" r=".8" fill="currentColor" stroke="none"/><circle cx="16.5" cy="14" r=".6" fill="currentColor" stroke="none"/><circle cx="20.5" cy="14" r=".6" fill="currentColor" stroke="none"/></svg>`,
   },
   {
+    to: '/subscriptions',
+    labelKey: 'navigation.subscriptions',
+    exact: false,
+    requiresAuth: true,
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>`,
+  },
+  {
     to: '/mcp',
     labelKey: 'navigation.mcp',
     exact: false,

@@ -91,3 +91,4 @@ secret，绝不降级为明文；email 渠道无凭据不受影响。生成方�
 - 服务层：`backend/app/services/push/`（`channel_service.py`、`subscription_service.py`、`dispatch_service.py`、`webhook_service.py`、`secrets.py`、`errors.py`）
 - 仓储：`backend/app/repositories/{push_channel,user_subscription,push_delivery}_repository.py` + `postgres_*` 实现
 - 路由：`backend/app/api/routes_push.py`；契约测试：`backend/tests/test_push_channels.py`、`backend/tests/test_push_dispatch.py`、`backend/tests/test_push_webhook.py`
+- 前端：`/subscriptions`「我的订阅」页（`frontend/src/views/SubscriptionsView.vue` + `composables/useSubscriptionsController.ts` + `services/subscriptions/` + `features/subscriptions/`），渠道绑定（邮箱验证码 / webhook 探测）与订阅 CRUD，登录可见

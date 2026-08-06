@@ -8,6 +8,7 @@ const ChatView = () => import('@/views/ChatView.vue')
 const ReportView = () => import('@/views/ReportView.vue')
 const XBoardView = () => import('@/views/XBoardView.vue')
 const WechatView = () => import('@/views/WechatView.vue')
+const SubscriptionsView = () => import('@/views/SubscriptionsView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
 const LoginView = () => import('@/views/LoginView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
@@ -73,6 +74,12 @@ const router = createRouter({
           path: 'wechat',
           name: 'wechat',
           component: WechatView,
+          meta: { requiresAuth: true },
+        },
+        {
+          path: 'subscriptions',
+          name: 'subscriptions',
+          component: SubscriptionsView,
           meta: { requiresAuth: true },
         },
         {

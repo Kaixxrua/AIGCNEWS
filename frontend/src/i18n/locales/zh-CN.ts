@@ -4,7 +4,7 @@ const overrides = {
   infrastructure: { appName: 'AIGC 新闻', loading: '加载中…', unavailable: '暂不可用' },
   common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
-  navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', mcp: 'MCP 接入', monitor: '监控', loginAccount: '登录账号', logout: '退出登录' },
+  navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', monitor: '监控', loginAccount: '登录账号', logout: '退出登录' },
   search: { placeholder: '搜索论文、项目…', noResults: '无匹配结果', resultCount: '搜索结果 · {count} 条', trending: '今日热门推荐', paper: '论文', github: 'GitHub', news: '新闻', producthunt: 'PH', hackernews: 'HN', x: 'X' },
   footer: { poweredBy: '由 {brandName} 提供支持', disclaimer: '免责声明', privacy: '隐私政策', mcp: 'MCP 接入', ecosystem: '生态合作联系：' },
   auth: {
@@ -35,6 +35,33 @@ const overrides = {
     }
   },
   wechat: { panelTitle: '微信公众号', panelDescription: '首次扫码后在服务端持久化加密微信网页会话。可搜索公众号、保存指定账号、查看文章列表并提交后台同步任务；微信会话过期后需要重新扫码。', connected: '已连接', disconnected: '未连接', login: '微信扫码登录', reconnect: '重新扫码', refresh: '刷新', loginTitle: '微信登录', loginDescription: '请打开手机微信扫描二维码。登录会话加密保存在服务端，不会回传到浏览器。', loadingQr: '正在加载二维码…', refreshQr: '刷新二维码', cancel: '取消', completeLogin: '完成登录', savedAccounts: '已保存账号', noAccounts: '暂无已保存账号，搜索后保存。', unnamedAccount: '未命名账号', searchTitle: '搜索公众号', searchPlaceholder: '例如：OpenAI', search: '搜索', searching: '搜索中…', save: '保存', articlesTitle: '文章 · {name}', noArticles: '暂无文章，点击同步拉取。', untitledArticle: '（无标题文章）', sync: '同步文章', syncing: '同步中…', status: { waiting_scan: '等待扫码', scanned_waiting_confirmation: '已扫码，请在手机确认', confirmed: '已确认，正在完成登录…', completed: '登录完成', qr_expired: '二维码已过期', failed: '登录失败', cancelled: '已取消' }, hint: { openWechat: '请打开微信扫描上方二维码。', confirmOnPhone: '请在手机微信点击“确认登录”。', almostDone: '正在服务端完成登录…', qrExpired: '二维码已过期，请刷新重试。', loginFailed: '登录失败，请刷新二维码重试。' }, feedTitle: '微信公众号', feedDescription: '关注你感兴趣的公众号，在这里阅读它们的最新消息。', follow: '关注', followed: '已关注', catalogTitle: '关注公众号', catalogEmpty: '暂无可关注的公众号。', directoryTitle: '目录', directoryAll: '全部', feedEmpty: '还没有关注任何公众号', feedEmptyHint: '在左侧关注框中挑选感兴趣的公众号，它们的最新消息会显示在这里。', noRecentArticles: '暂无最近消息。', collapseFollowBox: '收起关注框', expandFollowBox: '展开关注框', readOriginal: '阅读原文', fullTextLoading: '全文加载中…', fullTextFailed: '全文加载失败', retry: '重试' },
+  subscriptions: {
+    title: '我的订阅', description: '绑定推送渠道，按来源与频率订阅，新内容自动送达', refresh: '刷新',
+    channels: {
+      title: '推送渠道', count: '{count} 个渠道', emailLabel: '邮箱',
+      emailTitle: '添加邮箱渠道', emailPlaceholder: "you{'@'}example.com", emailSubmit: '发送验证码',
+      otpHint: '验证码已发送到邮箱，5 分钟内有效', otpPlaceholder: '6 位验证码', otpSubmit: '完成验证',
+      webhookTitle: '添加 Webhook 渠道', webhookPlaceholder: 'https:// 开头的机器人 Webhook 地址', webhookSubmit: '验证并添加',
+      webhookHint: '按域名自动识别企业微信 / 钉钉 / 飞书，其余按通用 JSON 投递；创建时会发送一条探测消息',
+      verified: '已验证', unverified: '未验证', disabled: '已停用', enable: '启用', disable: '停用',
+      test: '发送测试', delete: '删除', deleteConfirm: '删除该渠道将同时删除其全部订阅，确定删除？',
+      empty: '还没有渠道，先添加一个邮箱或 Webhook',
+      platform: { wecom: '企业微信', dingtalk: '钉钉', lark: '飞书', generic: '通用 Webhook' },
+    },
+    subs: {
+      title: '订阅', count: '{count} 条订阅', source: '来源', frequency: '频率', channel: '渠道',
+      selectChannel: '选择渠道', noBindableChannel: '暂无可用渠道：请先添加并完成验证', create: '创建订阅',
+      paused: '已暂停', pause: '暂停', resume: '恢复', delete: '删除', deleteConfirm: '确定删除该订阅？',
+      empty: '还没有订阅',
+    },
+    sources: { all: '全部', arxiv: 'arXiv 论文', github: 'GitHub 项目', news: '科技新闻', producthunt: 'Product Hunt', hackernews: 'Hacker News', x: 'X 动态', dailyhot: '全网热榜' },
+    frequencies: { daily: '日报', weekly: '周报', monthly: '月报' },
+    notice: {
+      'otp-sent': '验证码已发送，请查收邮件', 'channel-verified': '渠道验证成功', 'webhook-created': 'Webhook 渠道已验证并添加',
+      'test-sent': '测试消息已发送', 'subscription-created': '订阅已创建', 'subscription-deleted': '订阅已删除', 'channel-deleted': '渠道已删除',
+    },
+    errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试' },
+  },
 } as const
 
 const explicitBusinessTranslations: Record<string, string> = {
