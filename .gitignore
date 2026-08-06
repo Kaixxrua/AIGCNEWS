@@ -33,6 +33,11 @@ storage/hf_cache/
 storage/metrics/
 # 微信公众号图片代理缓存（运行态数据，不入 git）
 storage/wechat/
+# X 媒体缓存（海报/视频代理产物，运行态数据，不入 git）
+storage/x_media/
+# 以 backend/ 或 frontend/ 为 CWD 运行时泄漏的嵌套 storage 产物
+backend/storage/
+frontend/storage/
 
 # SSL 证书私钥（极度机密，绝不入 git）
 **/*.key
