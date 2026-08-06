@@ -69,6 +69,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DATABASE:?set POSTGRES_DATABASE}
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    # 仅绑定回环：供宿主机定时备份脚本（pg_dump/psql 校验）直连，不公网暴露
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - project_catalog_postgres_data:/var/lib/postgresql/data
     healthcheck:
