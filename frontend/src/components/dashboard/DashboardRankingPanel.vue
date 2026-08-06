@@ -34,7 +34,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="dashboard-ranking-panel stagger-enter glass-card flex-1 min-h-0 flex flex-col overflow-hidden" style="animation-delay: 0.6s">
-    <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" style="border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.15)">
+    <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2" style="border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.15)">
       <div class="flex flex-wrap gap-1" role="tablist" :aria-label="t('dashboard.rankingSources')">
         <button v-for="tab in TABS" :key="tab.key" class="flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200" :class="activeTab === tab.key ? 'tab-active' : 'tab-inactive'" role="tab" :aria-selected="activeTab === tab.key" @click="emit('selectSource', tab.key)">
           <component :is="tab.icon" class="h-3.5 w-3.5" />{{ t(`dashboard.stats.${tab.labelKey}`) }}
@@ -46,8 +46,8 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <div v-if="!isFinalized && !tabLoading" class="flex items-center gap-2 px-4 py-1.5 text-xs" style="border-bottom: 1px solid var(--notice-warn-border); background: var(--notice-warn-bg)"><Zap class="h-3.5 w-3.5 animate-pulse text-amber-500"/><span class="text-stone-600">{{ t('dashboard.liveDraft') }}</span></div>
-    <div v-else-if="isFinalized && !tabLoading" class="flex items-center gap-2 px-4 py-1.5 text-xs" style="border-bottom: 1px solid var(--notice-ok-border); background: var(--notice-ok-bg)"><CheckCircle2 class="h-3.5 w-3.5 text-emerald-500"/><span class="text-stone-400">{{ t('dashboard.finalized') }}</span></div>
+    <div v-if="!isFinalized && !tabLoading" class="flex items-center gap-2 px-4 py-1 text-xs" style="border-bottom: 1px solid var(--notice-warn-border); background: var(--notice-warn-bg)"><Zap class="h-3.5 w-3.5 animate-pulse text-amber-500"/><span class="text-stone-600">{{ t('dashboard.liveDraft') }}</span></div>
+    <div v-else-if="isFinalized && !tabLoading" class="flex items-center gap-2 px-4 py-1 text-xs" style="border-bottom: 1px solid var(--notice-ok-border); background: var(--notice-ok-bg)"><CheckCircle2 class="h-3.5 w-3.5 text-emerald-500"/><span class="text-stone-400">{{ t('dashboard.finalized') }}</span></div>
 
     <div class="flex-1 overflow-y-auto">
       <div v-if="tabLoading" class="flex items-center justify-center py-8"><span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
@@ -57,7 +57,7 @@ const emit = defineEmits<{
       </div>
       <ol v-else>
         <li v-for="(doc, idx) in tabList" :key="idx" class="group transition-colors duration-150" :class="idx % 2 === 0 ? '' : 'bg-stone-50/50'" style="border: none">
-          <a :href="doc.url || undefined" :target="doc.url ? '_blank' : undefined" :rel="doc.url ? 'noopener noreferrer' : undefined" class="flex items-start gap-2.5 px-4 py-2.5" :class="doc.url ? 'hover:bg-stone-50 cursor-pointer' : 'pointer-events-none'">
+          <a :href="doc.url || undefined" :target="doc.url ? '_blank' : undefined" :rel="doc.url ? 'noopener noreferrer' : undefined" class="flex items-start gap-2.5 px-4 py-1.5" :class="doc.url ? 'hover:bg-stone-50 cursor-pointer' : 'pointer-events-none'">
             <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold" :class="idx < 3 ? 'bg-ink-solid text-ink-on-solid' : 'bg-stone-100 text-stone-400'">{{ idx + 1 }}</span>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-start gap-2"><p class="min-w-0 flex-1 text-sm font-medium text-stone-700 leading-tight group-hover:text-stone-900 line-clamp-2 sm:line-clamp-1" :class="doc.url ? 'group-hover:underline underline-offset-2' : ''">{{ doc.title || t('dashboard.untitled') }}</p><div class="flex shrink-0 items-center gap-1.5 ml-2"><span v-if="doc.ai_score !== undefined && doc.ai_score !== null" class="badge bg-card text-stone-600 border border-stone-200" :title="doc.ai_reason || t('dashboard.aiScore')">{{ aiScoreDisplay(doc.ai_score) }}</span><span class="badge border" :class="getSourceConfig(doc.source).badge"><span class="status-dot shrink-0" :class="getSourceConfig(doc.source).dot" />{{ getSourceConfig(doc.source).label }}</span></div></div>
@@ -79,5 +79,6 @@ ol > li { border-top: 1px solid var(--ink) !important; background: transparent; 
 ol > li:first-child { border-top: 0 !important; }
 ol > li a:hover { color: var(--ink); background: var(--acid-soft); }
 ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), ol > li a:hover :deep(.text-stone-300) { color: inherit; }
-:deep(.badge) { border-color: var(--ink); border-radius: 3px; background: var(--paper-light); }
+/* 榜单行内徽章紧凑化：10 条榜单一屏放下 */
+:deep(.badge) { border-color: var(--ink); border-radius: 3px; background: var(--paper-light); padding: 0 5px; font-size: 10px; line-height: 16px; }
 </style>

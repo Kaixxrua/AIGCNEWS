@@ -48,7 +48,7 @@ currentStats = () => stats.value
 </script>
 
 <template>
-  <div class="dashboard-page flex h-full flex-col gap-2 overflow-y-auto px-6 py-3 pb-16">
+  <div class="dashboard-page flex h-full flex-col gap-1.5 overflow-y-auto px-6 py-2.5 pb-5">
 
     <!-- 页头 — 简洁标题 -->
     <div class="stagger-enter flex items-center justify-between shrink-0">

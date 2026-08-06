@@ -113,7 +113,7 @@ const emit = defineEmits<{
 
 @media (min-width: 1024px) {
   .stat-cell {
-    height: 52px;
+    height: 48px;
     flex: 1 1 0;
     border: 0;
     border-radius: 0;
