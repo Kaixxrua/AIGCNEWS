@@ -32,60 +32,72 @@ const { t } = useI18n()
     <span class="follow-rail-text">{{ t('wechat.catalogTitle') }}</span>
   </button>
 
-  <!-- 展开态：悬浮关注框 -->
-  <aside v-else class="follow-box">
-    <div class="follow-box-header">
-      <h2 class="follow-box-title">{{ t('wechat.catalogTitle') }}</h2>
-      <button
-        type="button"
-        class="follow-box-collapse"
-        :aria-label="t('wechat.collapseFollowBox')"
-        @click="emit('toggleCollapsed')"
-      >
-        ‹
-      </button>
-    </div>
-
-    <p v-if="props.loading" class="follow-box-empty">{{ t('common.loading') }}</p>
-    <p v-else-if="props.catalog.length === 0" class="follow-box-empty">
-      {{ t('wechat.catalogEmpty') }}
-    </p>
-
-    <ul v-else class="follow-box-list">
-      <li v-for="account in props.catalog" :key="account.id" class="follow-box-item">
-        <img
-          v-if="account.avatar_url"
-          :src="account.avatar_url"
-          :alt="account.nickname"
-          class="follow-box-avatar"
-          loading="lazy"
-          referrerpolicy="no-referrer"
-        />
-        <span v-else class="follow-box-avatar follow-box-avatar--placeholder">
-          {{ (account.nickname || '?').slice(0, 1) }}
-        </span>
-        <span class="follow-box-name" :title="account.nickname">
-          {{ account.nickname || t('wechat.unnamedAccount') }}
-        </span>
+  <!-- 展开态：悬浮关注框（绝对定位浮层，覆盖卡片而非挤占布局） -->
+  <div v-else class="follow-slot">
+    <aside class="follow-box">
+      <div class="follow-box-header">
+        <h2 class="follow-box-title">{{ t('wechat.catalogTitle') }}</h2>
         <button
           type="button"
-          class="follow-box-btn"
-          :class="{ 'follow-box-btn--followed': account.followed }"
-          :disabled="props.pendingFollowIds.has(account.id)"
-          @click="emit('toggleFollow', account)"
+          class="follow-box-collapse"
+          :aria-label="t('wechat.collapseFollowBox')"
+          @click="emit('toggleCollapsed')"
         >
-          {{ account.followed ? t('wechat.followed') : t('wechat.follow') }}
+          ‹
         </button>
-      </li>
-    </ul>
-  </aside>
+      </div>
+
+      <p v-if="props.loading" class="follow-box-empty">{{ t('common.loading') }}</p>
+      <p v-else-if="props.catalog.length === 0" class="follow-box-empty">
+        {{ t('wechat.catalogEmpty') }}
+      </p>
+
+      <ul v-else class="follow-box-list">
+        <li v-for="account in props.catalog" :key="account.id" class="follow-box-item">
+          <img
+            v-if="account.avatar_url"
+            :src="account.avatar_url"
+            :alt="account.nickname"
+            class="follow-box-avatar"
+            loading="lazy"
+            referrerpolicy="no-referrer"
+          />
+          <span v-else class="follow-box-avatar follow-box-avatar--placeholder">
+            {{ (account.nickname || '?').slice(0, 1) }}
+          </span>
+          <span class="follow-box-name" :title="account.nickname">
+            {{ account.nickname || t('wechat.unnamedAccount') }}
+          </span>
+          <button
+            type="button"
+            class="follow-box-btn"
+            :class="{ 'follow-box-btn--followed': account.followed }"
+            :disabled="props.pendingFollowIds.has(account.id)"
+            @click="emit('toggleFollow', account)"
+          >
+            {{ account.followed ? t('wechat.followed') : t('wechat.follow') }}
+          </button>
+        </li>
+      </ul>
+    </aside>
+  </div>
 </template>
 
 <style scoped>
-.follow-box {
+/* 展开时布局流中只保留与细条同宽的占位，面板向右覆盖卡片，不挤压布局 */
+.follow-slot {
   position: sticky;
   top: 24px;
   align-self: flex-start;
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.follow-box {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 30;
   width: 260px;
   max-height: calc(100vh - 140px);
   display: flex;
@@ -93,9 +105,8 @@ const { t } = useI18n()
   border: 1px solid var(--projects-accent);
   border-radius: 8px;
   background: var(--projects-paper-light);
-  box-shadow: 4px 4px 0 var(--shadow-hard);
+  box-shadow: 6px 6px 0 var(--shadow-hard), 0 12px 32px rgb(0 0 0 / 0.18);
   overflow: hidden;
-  flex-shrink: 0;
 }
 
 .follow-box-header {
@@ -260,10 +271,16 @@ const { t } = useI18n()
 }
 
 @media (max-width: 768px) {
+  .follow-slot {
+    position: static;
+    width: 100%;
+  }
+
   .follow-box {
     position: static;
     width: 100%;
     max-height: 320px;
+    box-shadow: 4px 4px 0 var(--shadow-hard);
   }
 
   .follow-rail {

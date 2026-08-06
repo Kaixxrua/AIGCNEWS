@@ -183,14 +183,27 @@ describe('useWechatFollowController', () => {
 
   it('persists follow box collapsed state in localStorage', () => {
     const controller = useWechatFollowController({ api: createApi() })
-    expect(controller.followBoxCollapsed.value).toBe(false)
+    expect(controller.followBoxCollapsed.value).toBe(true) // 默认收起
 
     controller.toggleFollowBoxCollapsed()
-    expect(controller.followBoxCollapsed.value).toBe(true)
-    expect(window.localStorage.getItem('wechat:followBoxCollapsed')).toBe('1')
+    expect(controller.followBoxCollapsed.value).toBe(false)
+    expect(window.localStorage.getItem('wechat:followBoxCollapsed')).toBe('0')
 
     const restored = useWechatFollowController({ api: createApi() })
-    expect(restored.followBoxCollapsed.value).toBe(true)
+    expect(restored.followBoxCollapsed.value).toBe(false)
+  })
+
+  it('defaults to collapsed when localStorage is unavailable', () => {
+    const getSpy = vi
+      .spyOn(Storage.prototype, 'getItem')
+      .mockImplementation(() => {
+        throw new Error('denied')
+      })
+
+    const controller = useWechatFollowController({ api: createApi() })
+    expect(controller.followBoxCollapsed.value).toBe(true)
+
+    getSpy.mockRestore()
   })
 
   it('stops loading after dispose', async () => {

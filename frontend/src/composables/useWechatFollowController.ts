@@ -28,9 +28,10 @@ function getErrorMessage(err: unknown, fallback: string): string {
 
 function readCollapsedPreference(): boolean {
   try {
-    return window.localStorage.getItem(FOLLOW_BOX_COLLAPSED_KEY) === '1'
+    // 默认收起；只有用户显式展开过（存 '0'）才保持展开。
+    return window.localStorage.getItem(FOLLOW_BOX_COLLAPSED_KEY) !== '0'
   } catch {
-    return false
+    return true
   }
 }
 
