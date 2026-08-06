@@ -31,6 +31,8 @@ storage/papers/*.pdf
 storage/hf_cache/
 # MCP 工具调用计数持久化文件（运行态数据，不入 git）
 storage/metrics/
+# 微信公众号图片代理缓存（运行态数据，不入 git）
+storage/wechat/
 
 # SSL 证书私钥（极度机密，绝不入 git）
 **/*.key

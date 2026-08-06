@@ -264,6 +264,9 @@ class Settings(BaseSettings):
     # X 视频封面抽帧缓存目录（容器内路径，对应 docker-compose volume 映射）
     x_media_cache_dir: str = "storage/x_media"
 
+    # 微信公众号图片代理缓存目录（容器内路径，对应 docker-compose volume 映射）
+    wechat_media_cache_dir: str = "storage/wechat"
+
     # MCP 工具调用计数持久化文件（容器内路径，对应 docker-compose volume 映射）
     mcp_tool_call_metrics_path: str = "storage/metrics/mcp_tool_calls.json"
 

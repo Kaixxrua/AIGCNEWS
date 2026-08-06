@@ -46,6 +46,8 @@ services:
       - ../storage/metrics:/src/storage/metrics
       # X 视频封面抽帧缓存（uid 1000 写入；首次部署前宿主机预建并属主 1000）
       - ../storage/x_media:/src/storage/x_media
+      # 微信公众号图片代理缓存（uid 1000 写入；首次部署前宿主机预建并属主 1000）
+      - ../storage/wechat:/src/storage/wechat
       # 容器以非 root（uid 1000）运行，缓存挂在镜像声明的 HF_HOME
       - ../storage/hf_cache/huggingface:/hf-cache
     command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
