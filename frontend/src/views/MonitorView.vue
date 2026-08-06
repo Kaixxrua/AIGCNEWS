@@ -34,7 +34,7 @@ onMounted(refreshData)
 
 <template>
   <div class="monitor-page monitor-view flex h-full min-h-0 flex-col overflow-hidden">
-    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-6 pb-24">
+    <div class="flex flex-col gap-5">
 
     <!-- 页头 -->
     <div class="stagger-enter flex flex-wrap items-center justify-between gap-3 shrink-0">
@@ -172,7 +172,7 @@ onMounted(refreshData)
   position: relative;
   height: 100%;
   overflow-y: auto;
-  padding: 24px 24px 96px;
+  padding: 24px 24px 64px;
   color: var(--projects-accent);
   background: var(--projects-paper);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
@@ -180,7 +180,7 @@ onMounted(refreshData)
 
 @media (max-width: 720px) {
   .monitor-page {
-    padding: 16px 16px 96px;
+    padding: 16px 16px 64px;
   }
 }
 
