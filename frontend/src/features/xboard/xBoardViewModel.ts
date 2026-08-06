@@ -39,7 +39,16 @@ export const hasMedia = (doc: TopDoc): boolean =>
   Array.isArray(doc.media) && doc.media.length > 0
 
 const X_MEDIA_PROXY_PATH = '/api/media/x/proxy'
+const X_MEDIA_POSTER_PATH = '/api/media/x/poster'
 const X_MEDIA_HOSTS = new Set(['pbs.twimg.com', 'video.twimg.com', 'abs.twimg.com'])
+
+const isTwimgUrl = (url: string): boolean => {
+  try {
+    return X_MEDIA_HOSTS.has(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
 
 /**
  * twimg CDN 在部分网络不可达（video.twimg.com 常被单独封锁，图片能加载
@@ -47,16 +56,24 @@ const X_MEDIA_HOSTS = new Set(['pbs.twimg.com', 'video.twimg.com', 'abs.twimg.co
  * 原样透传（后端代理另有主机白名单校验，此处只做渲染层改写）。
  */
 export const proxiedMediaUrl = (url: string): string => {
-  try {
-    if (!X_MEDIA_HOSTS.has(new URL(url).hostname)) return url
-    return `${X_MEDIA_PROXY_PATH}?url=${encodeURIComponent(url)}`
-  } catch {
-    return url
-  }
+  if (!isTwimgUrl(url)) return url
+  return `${X_MEDIA_PROXY_PATH}?url=${encodeURIComponent(url)}`
+}
+
+/** 视频封面：服务端抽帧端点（仅 twimg 视频 URL 有意义，其余返回空串由模板兜底）。 */
+export const posterMediaUrl = (url: string): string => {
+  if (!isTwimgUrl(url)) return ''
+  return `${X_MEDIA_POSTER_PATH}?url=${encodeURIComponent(url)}`
 }
 
 export const mediaItems = (doc: TopDoc): NonNullable<TopDoc['media']> =>
-  (doc.media ?? []).map((item) => ({ ...item, url: proxiedMediaUrl(item.url) }))
+  (doc.media ?? []).map((item) => ({
+    ...item,
+    url: proxiedMediaUrl(item.url),
+    ...(item.type === 'video' || item.type === 'animated_gif'
+      ? { poster_url: posterMediaUrl(item.url) }
+      : {}),
+  }))
 
 const sortTweets = (tweets: TopDoc[]): TopDoc[] => (
   [...tweets].sort((a, b) => (

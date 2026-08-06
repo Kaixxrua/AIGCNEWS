@@ -206,9 +206,20 @@ onBeforeUnmount(dispose)
                 :aria-label="t('xboard.playVideo')"
                 @click="playVideo(mediaKey(tweet, index))"
               >
+                <!-- 服务端抽帧封面；加载失败（404/网络）隐藏 img，回退深色占位 -->
+                <img
+                  v-if="item.poster_url"
+                  :src="item.poster_url"
+                  :alt="tweet.title"
+                  loading="lazy"
+                  decoding="async"
+                  referrerpolicy="no-referrer"
+                  class="absolute inset-0 h-full w-full object-cover"
+                  @error="($event.target as HTMLImageElement).style.display = 'none'"
+                />
                 <span class="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_60%)]" />
-                <span class="relative flex h-14 w-14 items-center justify-center rounded-full bg-white/15 backdrop-blur-sm transition group-hover:scale-105 group-hover:bg-white/25">
-                  <svg class="ml-1 h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                <span class="relative flex h-14 w-14 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition group-hover:scale-105 group-hover:bg-black/55">
+                  <svg class="ml-1 h-6 w-6 text-white drop-shadow" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 </span>
                 <span v-if="item.type === 'animated_gif'" class="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-white">GIF</span>
               </button>

@@ -7,6 +7,7 @@ import {
   groupTweetsByHandle,
   hasMedia,
   mediaItems,
+  posterMediaUrl,
   proxiedMediaUrl,
   tweetScore,
   tweetText,
@@ -79,6 +80,15 @@ describe('xBoardViewModel', () => {
     expect(proxiedMediaUrl('')).toBe('')
   })
 
+  it('derives poster urls only for twimg videos', () => {
+    const video = 'https://video.twimg.com/amplify_video/1/vid/a.mp4?tag=29'
+    expect(posterMediaUrl(video)).toBe(`/api/media/x/poster?url=${encodeURIComponent(video)}`)
+    // 非 twimg / 非法 URL 不派生封面，模板回退深色占位
+    expect(posterMediaUrl('https://example.com/a.mp4')).toBe('')
+    expect(posterMediaUrl('not-a-url')).toBe('')
+    expect(posterMediaUrl('')).toBe('')
+  })
+
   it('mediaItems rewrites only url and keeps the rest of the item intact', () => {
     const doc = tweet('openai', '1', {
       media: [
@@ -89,7 +99,11 @@ describe('xBoardViewModel', () => {
     const items = mediaItems(doc)
     expect(items[0]).toMatchObject({ type: 'video', width: 1920, height: 1080 })
     expect(items[0]?.url).toContain('/api/media/x/proxy?url=')
+    expect(items[0]?.poster_url).toBe(
+      `/api/media/x/poster?url=${encodeURIComponent('https://video.twimg.com/a.mp4')}`,
+    )
     expect(items[1]).toEqual({ type: 'photo', url: 'https://elsewhere.cdn/b.jpg', width: 10, height: 10 })
+    expect(items[1]?.poster_url).toBeUndefined()
   })
 
   it('flattens grouped sections into a single ordered list', () => {

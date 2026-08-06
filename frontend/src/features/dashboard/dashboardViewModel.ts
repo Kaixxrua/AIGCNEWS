@@ -45,6 +45,8 @@ export interface TweetMediaItem {
   url: string
   width?: number
   height?: number
+  /** 视频封面（服务端抽帧代理地址，仅 video/animated_gif；由 mediaItems 注入） */
+  poster_url?: string
 }
 
 export interface Stats {

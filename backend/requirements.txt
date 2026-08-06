@@ -40,3 +40,5 @@ email-validator
 duckduckgo-search>=6.0.0
 # X/Twitter 内部 GraphQL 客户端（cookie 凭证，source=x 采集）
 twitter-cli>=0.8.5
+# X 视频封面抽帧（自带静态 ffmpeg 二进制，无需 apt 安装）
+imageio-ffmpeg>=0.5

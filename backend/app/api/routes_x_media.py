@@ -1,14 +1,22 @@
-"""X/Twitter 媒体流式代理：把 twimg CDN 的图片/视频经服务端转发给浏览器。
+"""X/Twitter 媒体流式代理与视频封面：把 twimg CDN 资源经服务端转发给浏览器。
 
 背景：X 媒体直链（pbs.twimg.com / video.twimg.com）在部分网络不可达
 （video.twimg.com 常被单独封锁，图片可加载但视频无法播放）；服务端
 出站走 WireGuard 网关 socks 代理可正常回源，故以同源流式代理兜底。
 
 GET /api/media/x/proxy?url=<https-url>
+  流式转发原图/原视频：透传 Range（视频 seek 依赖 206），上游状态码
+  原样回传；3xx 不跟随（跟随会放开白名单约束，统一按 502）。
+
+GET /api/media/x/poster?url=<https-video-url>
+  视频封面：twitter-cli 不落 media_url_https，库里只有 mp4 直链，前端
+  点击播放占位需要真封面。X 的 mp4 是 faststart（moov 在文件头），
+  拉取前 4MB 即可由 ffmpeg 抽出首帧；结果按 URL 哈希落盘缓存，新老
+  数据通吃、无需回填。抽帧失败/上游 404 记入短时负缓存（5 分钟），
+  避免每次渲染重复回源。
+
+共用约束：
   - 仅放行 twimg 主机白名单，防 SSRF 开放代理
-  - 透传 Range：视频 seek 依赖 206 Partial Content
-  - 上游状态码原样回传（404/416 等）；3xx 不跟随（twimg 正常不重定向，
-    跟随会放开白名单约束，统一按 502 处理）
   - 公开访问（与 /api/media/papers 静态挂载一致：媒体本身是公开内容，
     且 <img>/<video> 标签无法携带 Authorization 头）
 
@@ -18,14 +26,20 @@ GET /api/media/x/proxy?url=<https-url>
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import os
+import time
+from pathlib import Path
 from typing import AsyncGenerator
 from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
-from starlette.responses import StreamingResponse
+from starlette.responses import FileResponse, StreamingResponse
+
+from backend.app.core.config import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -157,3 +171,157 @@ async def proxy_x_media(request: Request, url: str = Query(..., min_length=1)):
         status_code=upstream.status_code,
         headers=response_headers,
     )
+
+
+# ── 视频封面抽帧 ─────────────────────────────────────────────────────────
+
+# faststart mp4：moov 在文件头，前 4MB 覆盖 moov + 首个 GOP，足够抽首帧
+_POSTER_PARTIAL_BYTES = 4 * 1024 * 1024
+_POSTER_CACHE_CONTROL = "public, max-age=604800"  # 封面按 URL 永久不变，缓存一周
+_POSTER_NEGATIVE_TTL_SECONDS = 300.0
+_FFMPEG_TIMEOUT_SECONDS = 30.0
+
+_poster_locks: dict[str, asyncio.Lock] = {}
+_poster_negative: dict[str, float] = {}  # url -> 负缓存过期时刻（time.monotonic）
+
+
+def _poster_cache_dir() -> Path:
+    """封面缓存目录（测试缝：monkeypatch 到 tmp_path）。"""
+    path = Path(settings.x_media_cache_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _poster_cache_path(url: str) -> Path:
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
+    return _poster_cache_dir() / f"{digest}.jpg"
+
+
+async def _fetch_partial(url: str) -> bytes:
+    """拉取视频文件头部；非 200/206 抛 HTTPException 由路由映射。"""
+    client = _get_upstream_client()
+    headers = {
+        "User-Agent": _UPSTREAM_USER_AGENT,
+        "Range": f"bytes=0-{_POSTER_PARTIAL_BYTES - 1}",
+    }
+    try:
+        request = client.build_request("GET", url, headers=headers)
+        response = await client.send(request)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="media upstream timeout") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("[XMediaPoster] upstream connect failed: %s", exc)
+        raise HTTPException(status_code=502, detail="media upstream unreachable") from exc
+    try:
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="media upstream not found")
+        if response.status_code not in (200, 206):
+            logger.warning(
+                "[XMediaPoster] unexpected upstream status %s for %s",
+                response.status_code,
+                url,
+            )
+            raise HTTPException(status_code=502, detail="media upstream error")
+        return response.content
+    finally:
+        await response.aclose()
+
+
+async def _run_ffmpeg_once(src: Path, tmp_out: Path, extra_args: list[str]) -> bool:
+    """执行一次抽帧；成功标志：退出码 0 且输出为非空文件。"""
+    import imageio_ffmpeg
+
+    proc = await asyncio.create_subprocess_exec(
+        imageio_ffmpeg.get_ffmpeg_exe(),
+        "-nostdin", "-v", "error",
+        *extra_args,
+        "-i", str(src),
+        "-frames:v", "1", "-q:v", "4",
+        "-y", str(tmp_out),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=_FFMPEG_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        logger.warning("[XMediaPoster] ffmpeg timeout for %s", src.name)
+        return False
+    if proc.returncode != 0:
+        logger.warning(
+            "[XMediaPoster] ffmpeg failed (%s): %s",
+            proc.returncode,
+            stderr.decode(errors="replace")[:300],
+        )
+        return False
+    return tmp_out.exists() and tmp_out.stat().st_size > 0
+
+
+async def _extract_first_frame(partial_mp4: bytes, out_path: Path) -> bool:
+    """用 imageio-ffmpeg 自带的静态 ffmpeg 从部分 mp4 抽帧（测试缝）。
+
+    优先取 1 秒处的帧：许多视频首帧是黑场/渐入，1 秒处更接近 X 官方
+    封面语义；前缀不足 1 秒（短视频或高码率）时回退第 0 帧。
+    输入经临时文件喂给 ffmpeg（部分 mp4 无法稳定走管道协议探测）。
+    """
+    work_dir = out_path.parent
+    src = work_dir / f".{out_path.stem}.src.mp4"
+    tmp_out = work_dir / f".{out_path.stem}.tmp.jpg"
+    src.write_bytes(partial_mp4)
+    try:
+        for seek_args in (["-ss", "1"], []):
+            if await _run_ffmpeg_once(src, tmp_out, seek_args):
+                tmp_out.replace(out_path)  # 原子落盘，避免并发读到半成品
+                return True
+            tmp_out.unlink(missing_ok=True)
+        return False
+    finally:
+        src.unlink(missing_ok=True)
+        tmp_out.unlink(missing_ok=True)
+
+
+def _poster_file_response(path: Path) -> FileResponse:
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": _POSTER_CACHE_CONTROL},
+    )
+
+
+def _mark_poster_negative(url: str) -> None:
+    _poster_negative[url] = time.monotonic() + _POSTER_NEGATIVE_TTL_SECONDS
+
+
+@router.get("/media/x/poster")
+async def x_media_poster(url: str = Query(..., min_length=1)):
+    target = validate_media_url(url)
+
+    cache_path = _poster_cache_path(target)
+    if cache_path.exists():
+        return _poster_file_response(cache_path)
+
+    if _poster_negative.get(target, 0.0) > time.monotonic():
+        raise HTTPException(status_code=404, detail="poster unavailable")
+
+    lock = _poster_locks.setdefault(target, asyncio.Lock())
+    async with lock:
+        try:
+            # 双检：等待锁期间并发请求可能已生成
+            if cache_path.exists():
+                return _poster_file_response(cache_path)
+            try:
+                partial = await _fetch_partial(target)
+            except HTTPException as exc:
+                # 上游 404 是稳定态，记负缓存；超时/连接错误是瞬态不记
+                if exc.status_code == 404:
+                    _mark_poster_negative(target)
+                raise
+            if not await _extract_first_frame(partial, cache_path):
+                _mark_poster_negative(target)
+                raise HTTPException(status_code=404, detail="poster extraction failed")
+            return _poster_file_response(cache_path)
+        finally:
+            _poster_locks.pop(target, None)

@@ -228,6 +228,9 @@ class Settings(BaseSettings):
     # PDF 持久化存储目录（容器内路径，对应 docker-compose volume 映射）
     papers_storage_dir: str = "storage/papers"
 
+    # X 视频封面抽帧缓存目录（容器内路径，对应 docker-compose volume 映射）
+    x_media_cache_dir: str = "storage/x_media"
+
     # MCP 工具调用计数持久化文件（容器内路径，对应 docker-compose volume 映射）
     mcp_tool_call_metrics_path: str = "storage/metrics/mcp_tool_calls.json"
 
