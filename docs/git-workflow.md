@@ -133,3 +133,9 @@ git config core.hooksPath .githooks
 ```bash
 git config --get core.hooksPath
 ```
+
+`.githooks/pre-commit` 按暂存文件的影响面执行三段门禁，任一失败即阻断提交：
+
+1. **ruff 快检**：仅检查暂存的 Python 文件（基线配置 `backend/pyproject.toml`）；
+2. **后端受影响测试快筛**：`backend/app` 变更映射同名测试文件、`backend/tests` 变更直接运行；
+3. **前端门禁**：全量类型检查（`vue-tsc --noEmit`）+ `vitest related` 只跑与暂存文件存在依赖关系的测试。

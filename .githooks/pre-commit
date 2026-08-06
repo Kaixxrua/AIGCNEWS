@@ -56,8 +56,15 @@ if [[ "$backend_changed" == "1" ]]; then
   fi
 fi
 
-# 3. 前端暂存变更：仅做类型检查（全量单测留给 CI）。
+# 3. 前端暂存变更：类型检查 + 受影响测试快筛（全量单测留给 CI）。
 if [[ "$frontend_changed" == "1" ]]; then
   echo "[pre-commit] 前端类型检查"
   (cd frontend && npx vue-tsc --noEmit)
+  # vitest related 追踪模块依赖图，只跑与暂存文件相关的测试；
+  # --passWithNoTests 兜底样式/配置类无关联测试的变更。
+  staged_fe=$(grep -E '^frontend/' <<< "$staged" | sed 's|^frontend/||' || true)
+  if [[ -n "$staged_fe" ]]; then
+    echo "[pre-commit] 前端受影响测试快筛"
+    (cd frontend && xargs npx vitest related --run --passWithNoTests <<< "$staged_fe")
+  fi
 fi
