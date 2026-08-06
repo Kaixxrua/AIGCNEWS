@@ -130,6 +130,35 @@ def _default_credential_factory(auth_token: str, ct0: str) -> Any:
     return TwitterClient(auth_token, ct0)
 
 
+# X 网页端「翻译帖子」同款端点（client-web main.js fetchTranslation）：
+# 目标语言由服务端按账号显示语言决定（destinationLanguage=None），
+# 账号语言为中文时返回中文译文。目标语言非 zh 的响应会被调用方丢弃。
+_TRANSLATION_URL_TEMPLATE = (
+    "https://api.x.com/1.1/strato/column/None/"
+    "tweetId={tweet_id},destinationLanguage=None,translationSource=Some(X),"
+    "feature=None,timeout=None,onlyCached=None/translation/service/translateTweet"
+)
+_TRANSLATION_INTER_DELAY = 0.4
+
+
+def _fetch_translation_payload(client: Any, tweet_id: str) -> dict[str, Any]:
+    """调用 translateTweet 返回原始 JSON；非 200 抛异常由调用方吞掉。
+
+    复用 twitter-cli 的共享 curl_cffi 会话（TLS 指纹）与 client 的鉴权
+    头构造（bearer + cookie + ct0），与抓取链路同一身份出口。
+    """
+    from twitter_cli import client as tw_client_mod
+
+    session = tw_client_mod._get_cffi_session()
+    url = _TRANSLATION_URL_TEMPLATE.format(tweet_id=tweet_id)
+    headers = client._build_headers(url, "GET")
+    response = session.get(url, headers=headers, timeout=30)
+    status = getattr(response, "status_code", 0)
+    if status != 200:
+        raise RuntimeError(f"translateTweet HTTP {status}")
+    return response.json()
+
+
 class XTransport:
     """X 关注账号推文抓取传输层。
 
@@ -183,6 +212,51 @@ class XTransport:
 
         client = self._client_factory()
         return await self._fetch_with_client(client, watchlist, count_per_user)
+
+    def fetch_tweet_translations(self, tweet_ids: Iterable[str]) -> dict[str, str]:
+        """尽力而为抓 X 自带中文翻译，返回 {tweet_id: 译文}。
+
+        同步方法（内部走 curl_cffi），调用方应经 asyncio.to_thread 转入
+        线程池。只保留 translationState=Success 且目标语言为 zh 的响应；
+        单条失败记 debug 跳过，客户端构造失败记 warning 返回空表——
+        任何异常都不上抛，翻译是增强不是阻断项。
+        """
+        ids = [str(tid).strip() for tid in tweet_ids if str(tid).strip()]
+        if not ids:
+            return {}
+        try:
+            client = self._translation_client()
+        except Exception:
+            logger.warning("[XTransport] 翻译客户端构造失败，本轮跳过翻译", exc_info=True)
+            return {}
+        result: dict[str, str] = {}
+        for index, tweet_id in enumerate(ids):
+            if index > 0:
+                time.sleep(_TRANSLATION_INTER_DELAY)
+            try:
+                payload = _fetch_translation_payload(client, tweet_id)
+            except Exception:
+                logger.debug("[XTransport] 推文 %s 翻译抓取失败，跳过", tweet_id, exc_info=True)
+                continue
+            text = str(payload.get("translation") or "").strip()
+            state = str(payload.get("translationState") or "")
+            destination = str(payload.get("destinationLanguage") or "")
+            if text and state == "Success" and destination.startswith("zh"):
+                result[tweet_id] = text
+        return result
+
+    def _translation_client(self) -> Any:
+        """翻译请求复用与抓取相同的凭据链：provider 首个启用凭据 > client_factory。"""
+        if self._credential_provider is not None:
+            for credential in self._credential_provider():
+                if not credential.get("enabled", True):
+                    continue
+                auth_token = str(credential.get("auth_token") or "").strip()
+                ct0 = str(credential.get("ct0") or "").strip()
+                if auth_token and ct0:
+                    return self._credential_factory(auth_token, ct0)
+            raise XAuthNotConfigured("x_auth_not_configured: no valid X credentials")
+        return self._client_factory()
 
     async def _fetch_with_client(
         self,

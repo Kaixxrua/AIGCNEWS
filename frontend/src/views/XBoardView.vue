@@ -2,12 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, timelineTweets, tweetText, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, displayTweetText, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, timelineTweets, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.isAdmin)
 
@@ -265,7 +265,7 @@ onBeforeUnmount(() => {
             <!-- 文字区 -->
             <div class="px-4 py-3">
               <a :href="tweet.url" target="_blank" rel="noopener noreferrer" class="tweet-text block whitespace-pre-line px-1 text-sm leading-5">
-                {{ tweetText(tweet) }}
+                {{ displayTweetText(tweet, locale) }}
               </a>
               <p v-if="formatTime(tweet)" class="tweet-time mt-2 px-1 text-2xs">{{ formatTime(tweet) }}</p>
             </div>

@@ -38,6 +38,8 @@ export interface TopDoc {
   tags?: string[]
   votes?: number
   media?: TweetMediaItem[]
+  /** 采集期落库的 X 自带中文翻译（仅 X 推文；zh 系界面语言优先展示） */
+  translation_zh?: string
 }
 
 export interface TweetMediaItem {

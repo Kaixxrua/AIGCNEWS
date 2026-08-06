@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   authorAvatarUrl,
   countTweets,
+  displayTweetText,
   distributeColumns,
   extractXHandle,
   flattenTweets,
@@ -212,6 +213,23 @@ describe('xBoardViewModel', () => {
     expect(formatLocalTime('')).toBe('')
     expect(formatLocalTime('not-a-date', 'UTC')).toBe('')
     expect(formatLocalTime('2026-13-99T99:99:99Z', 'UTC')).toBe('')
+  })
+
+  it('displayTweetText prefers the crawled X translation under zh locales only', () => {
+    const doc = tweet('openai', '1', {
+      summary: 'Original English text',
+      translation_zh: '中文译文',
+    })
+    expect(displayTweetText(doc, 'zh-CN')).toBe('中文译文')
+    expect(displayTweetText(doc, 'zh-TW')).toBe('中文译文')
+    expect(displayTweetText(doc, 'en-US')).toBe('Original English text')
+    expect(displayTweetText(doc, 'ja')).toBe('Original English text')
+  })
+
+  it('displayTweetText falls back to original when translation missing or blank', () => {
+    expect(displayTweetText(tweet('openai', '1', { summary: 'orig' }), 'zh-CN')).toBe('orig')
+    expect(displayTweetText(tweet('openai', '1', { summary: 'orig', translation_zh: '   ' }), 'zh-CN')).toBe('orig')
+    expect(displayTweetText(tweet('openai', '1', { title: 't', translation_zh: '译' }), 'zh-CN')).toBe('译')
   })
 
   it('distributeColumns deals items round-robin so cross-column reads stay row-major', () => {

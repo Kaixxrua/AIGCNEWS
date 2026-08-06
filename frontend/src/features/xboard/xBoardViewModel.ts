@@ -35,6 +35,16 @@ export const tweetText = (doc: TopDoc): string => (
   doc.summary || doc.title || ''
 )
 
+/**
+ * 正文按界面语言切换：zh 系界面语言优先展示采集期落库的 X 中文翻译
+ * （translation_zh，来自 X 自带 translateTweet），其余语言或无译文回退原文。
+ */
+export const displayTweetText = (doc: TopDoc, locale: string): string => {
+  const translation = typeof doc.translation_zh === 'string' ? doc.translation_zh.trim() : ''
+  if (translation && locale.toLowerCase().startsWith('zh')) return translation
+  return tweetText(doc)
+}
+
 export const hasMedia = (doc: TopDoc): boolean =>
   Array.isArray(doc.media) && doc.media.length > 0
 

@@ -137,3 +137,42 @@ def test_delete_document_returns_false_when_missing() -> None:
     deleted = repository.delete_document("x:missing")
 
     assert deleted is False
+
+
+def test_upsert_document_persists_translation_zh() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    repository.upsert_document(
+        {
+            "id": "x:2001",
+            "source": "x",
+            "source_channel": "x_daily_watchlist",
+            "title": "tweet",
+            "url": "https://x.com/openai/status/2001",
+            "summary": "original english text",
+            "translation_zh": "中文译文",
+        }
+    )
+
+    sql = cursor.execute.call_args.args[0]
+    params = cursor.execute.call_args.args[1]
+    assert "translation_zh" in sql
+    # 冲突更新走 COALESCE(NULLIF(...))：新值缺失时保留已有译文
+    assert "translation_zh=COALESCE(NULLIF(EXCLUDED.translation_zh, ''), documents.translation_zh)" in sql
+    assert params["translation_zh"] == "中文译文"
+
+
+def test_upsert_document_translation_zh_defaults_to_none() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    repository.upsert_document(
+        {
+            "id": "x:2002",
+            "source": "x",
+            "title": "tweet",
+            "url": "https://x.com/openai/status/2002",
+        }
+    )
+
+    params = cursor.execute.call_args.args[1]
+    assert params["translation_zh"] is None

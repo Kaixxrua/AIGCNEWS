@@ -12,6 +12,7 @@ from __future__ import annotations
 仅支持 daily 周期。
 """
 
+import asyncio
 import logging
 import os
 from typing import Any, Callable, List, Optional
@@ -58,6 +59,15 @@ def _env_inter_account_delay() -> float:
     return value if value > 0 else DEFAULT_INTER_ACCOUNT_DELAY
 
 
+def _needs_zh_translation(lang: str) -> bool:
+    """zh*（含 zh-cn/zh-tw）与 zxx（无语言内容，如纯媒体）不需要翻译。
+
+    lang 缺失时仍尝试翻译（X 服务端自行判定），宁可多请求不漏翻。
+    """
+    code = (lang or "").strip().lower()
+    return not code.startswith("zh") and code != "zxx"
+
+
 class XCrawler(BaseCrawler):
     """X/Twitter 爬虫（数据源：twitter-cli 内部 GraphQL，cookie 凭据）。
 
@@ -65,6 +75,9 @@ class XCrawler(BaseCrawler):
     transport: 可注入 fake；缺省构造 XTransport 并读
         TWITTER_INTER_ACCOUNT_DELAY_SECONDS 作为账号间隔基线。
     tweets_per_account: 缺省读 TWITTER_TWEETS_PER_ACCOUNT env（回落 20）。
+    translation_fetcher: 可注入的翻译抓取器 (tweet_ids) -> {id: 译文}；
+        缺省回落 transport.fetch_tweet_translations（duck-typed，旧 fake
+        transport 无此方法时自动跳过翻译附着）。
     """
 
     def __init__(
@@ -73,6 +86,7 @@ class XCrawler(BaseCrawler):
         watchlist_provider: Optional[Callable[[], list[str]]] = None,
         credential_provider: Optional[Callable[[], list[dict[str, Any]]]] = None,
         tweets_per_account: Optional[int] = None,
+        translation_fetcher: Optional[Callable[[list[str]], dict[str, str]]] = None,
     ) -> None:
         self._transport = (
             transport
@@ -88,6 +102,7 @@ class XCrawler(BaseCrawler):
             if tweets_per_account is not None
             else _env_tweets_per_account()
         )
+        self._translation_fetcher = translation_fetcher
 
     @property
     def source_name(self) -> str:
@@ -138,6 +153,7 @@ class XCrawler(BaseCrawler):
 
         tweets = [tweet for batch in tweets_by_handle.values() for tweet in batch]
         items = x_policy.project_tweets(tweets, limit=limit, source_channel=channel)
+        await self._attach_zh_translations(tweets, items)
         for item in items:
             item.setdefault("source", "x")
             item.setdefault("source_channel", channel)
@@ -158,3 +174,39 @@ class XCrawler(BaseCrawler):
             period="daily",
             items=items,
         )
+
+    async def _attach_zh_translations(self, tweets: list[Any], items: list[dict]) -> None:
+        """尽力而为：为最终入选的非中文推文附着 X 中文翻译（translation_zh）。
+
+        仅对 project_tweets 截断后的条目抓取（请求量有界）；翻译链路任何
+        失败只记日志，绝不影响主采集结果入库。
+        """
+        fetcher = self._translation_fetcher or getattr(
+            self._transport, "fetch_tweet_translations", None
+        )
+        if fetcher is None or not items:
+            return
+        lang_by_id = {
+            str(getattr(tweet, "id", "")): str(getattr(tweet, "lang", "") or "")
+            for tweet in tweets
+        }
+        targets = [
+            str(item["tweet_id"])
+            for item in items
+            if item.get("tweet_id")
+            and _needs_zh_translation(lang_by_id.get(str(item["tweet_id"]), ""))
+        ]
+        if not targets:
+            return
+        try:
+            translations = await asyncio.to_thread(fetcher, targets)
+        except Exception:
+            logger.warning("[X] 中文翻译抓取失败，跳过（不影响入库）", exc_info=True)
+            return
+        attached = 0
+        for item in items:
+            text = translations.get(str(item.get("tweet_id") or ""), "")
+            if text:
+                item["translation_zh"] = text
+                attached += 1
+        logger.info("[X] 中文翻译附着: %d/%d 条", attached, len(targets))

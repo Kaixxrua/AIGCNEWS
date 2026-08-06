@@ -881,5 +881,197 @@ class XMediaPosterPatchContracts(unittest.TestCase):
         self.assertIsNotNone(x_transport._ORIGINAL_EXTRACT_MEDIA)
 
 
+class XTranslationTransportContracts(unittest.TestCase):
+    """transport.fetch_tweet_translations：只保留 Success 且目标语言 zh 的响应。"""
+
+    def _transport(self, client: object | None = None) -> x_transport.XTransport:
+        return x_transport.XTransport(client_factory=lambda: client or Mock())
+
+    @staticmethod
+    def _payload(text: str = "中文译文", state: str = "Success", dest: str = "zh") -> dict:
+        return {
+            "translation": text,
+            "translationState": state,
+            "destinationLanguage": dest,
+        }
+
+    def test_success_zh_payload_is_kept(self) -> None:
+        transport = self._transport()
+        with patch.object(
+            x_transport, "_fetch_translation_payload", return_value=self._payload()
+        ) as fetch:
+            out = transport.fetch_tweet_translations(["3001"])
+        self.assertEqual(out, {"3001": "中文译文"})
+        fetch.assert_called_once()
+        self.assertEqual(fetch.call_args.args[1], "3001")
+
+    def test_failed_state_non_zh_destination_and_blank_text_are_dropped(self) -> None:
+        transport = self._transport()
+        payloads = iter([
+            self._payload(state="Failed"),
+            self._payload(dest="en"),
+            self._payload(text="   "),
+        ])
+        with patch.object(
+            x_transport,
+            "_fetch_translation_payload",
+            side_effect=lambda client, tid: next(payloads),
+        ), patch.object(x_transport.time, "sleep"):
+            out = transport.fetch_tweet_translations(["a", "b", "c"])
+        self.assertEqual(out, {})
+
+    def test_per_tweet_exception_skips_and_continues(self) -> None:
+        transport = self._transport()
+
+        def fake_fetch(client: object, tid: str) -> dict:
+            if tid == "x1":
+                raise RuntimeError("HTTP 429")
+            return self._payload(text=f"译:{tid}")
+
+        with patch.object(
+            x_transport, "_fetch_translation_payload", side_effect=fake_fetch
+        ), patch.object(x_transport.time, "sleep") as sleep_mock:
+            out = transport.fetch_tweet_translations(["x1", "x2"])
+        self.assertEqual(out, {"x2": "译:x2"})
+        sleep_mock.assert_called_once_with(x_transport._TRANSLATION_INTER_DELAY)
+
+    def test_client_construction_failure_returns_empty(self) -> None:
+        def broken_factory() -> object:
+            raise x_transport.XAuthNotConfigured("x_auth_not_configured: nope")
+
+        transport = x_transport.XTransport(client_factory=broken_factory)
+        self.assertEqual(transport.fetch_tweet_translations(["z1"]), {})
+
+    def test_credential_provider_path_uses_first_enabled_valid_credential(self) -> None:
+        made: list[tuple[str, str]] = []
+
+        def factory(auth_token: str, ct0: str) -> object:
+            made.append((auth_token, ct0))
+            return Mock()
+
+        transport = x_transport.XTransport(
+            credential_provider=lambda: [
+                {"auth_token": "", "ct0": "", "enabled": True},
+                {"auth_token": "a", "ct0": "b", "enabled": False},
+                {"auth_token": "tok", "ct0": "ct", "enabled": True},
+            ],
+            credential_factory=factory,
+        )
+        with patch.object(
+            x_transport, "_fetch_translation_payload", return_value=self._payload()
+        ), patch.object(x_transport.time, "sleep"):
+            out = transport.fetch_tweet_translations(["q1"])
+        self.assertEqual(made, [("tok", "ct")])
+        self.assertEqual(out, {"q1": "中文译文"})
+
+    def test_empty_ids_short_circuits_before_client_construction(self) -> None:
+        def forbidden_factory() -> object:
+            raise AssertionError("空 id 列表不应构造客户端")
+
+        transport = x_transport.XTransport(client_factory=forbidden_factory)
+        self.assertEqual(transport.fetch_tweet_translations(["", "   "]), {})
+
+
+class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
+    """翻译附着：非中文入选推文补 translation_zh，失败不影响入库。"""
+
+    def _crawler(self, transport, fetcher=None, handles=("openai",)):
+        from backend.app.services.ingestion.crawlers import x_crawler
+
+        return x_crawler.XCrawler(
+            transport=transport,
+            watchlist_provider=lambda: list(handles),
+            tweets_per_account=7,
+            translation_fetcher=fetcher,
+        )
+
+    @staticmethod
+    def _lang_tweet(tweet_id: str, lang: str) -> Tweet:
+        tweet = _tweet(tweet_id)
+        tweet.lang = lang  # 0.8.5 已有 lang 字段，显式设置覆盖默认 ""
+        return tweet
+
+    async def test_attaches_translation_only_for_non_zh_selected_tweets(self) -> None:
+        transport = _FakeTransport(
+            result={
+                "openai": [
+                    self._lang_tweet("2001", "en"),
+                    self._lang_tweet("2002", "zh"),
+                    self._lang_tweet("2003", "zxx"),
+                ]
+            }
+        )
+        seen: list[list[str]] = []
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            seen.append(list(ids))
+            return {"2001": "中文译文"}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(seen, [["2001"]])  # zh/zxx 不发起翻译请求
+        by_id = {item["tweet_id"]: item for item in result.items}
+        self.assertEqual(by_id["2001"].get("translation_zh"), "中文译文")
+        self.assertNotIn("translation_zh", by_id["2002"])
+        self.assertNotIn("translation_zh", by_id["2003"])
+
+    async def test_empty_lang_still_attempts_translation(self) -> None:
+        transport = _FakeTransport(result={"openai": [self._lang_tweet("2006", "")]})
+        seen: list[list[str]] = []
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            seen.append(list(ids))
+            return {}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(seen, [["2006"]])
+        self.assertNotIn("translation_zh", result.items[0])
+
+    async def test_translation_fetch_failure_does_not_fail_crawl(self) -> None:
+        transport = _FakeTransport(result={"openai": [self._lang_tweet("2004", "en")]})
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            raise RuntimeError("boom")
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertIsNone(result.error)
+        self.assertEqual(len(result.items), 1)
+        self.assertNotIn("translation_zh", result.items[0])
+
+    async def test_transport_fetcher_fallback_and_legacy_fake_skipped(self) -> None:
+        # 真实 transport 形态：自带 fetch_tweet_translations，无需注入 fetcher
+        en_tweet = self._lang_tweet("2005", "en")
+
+        class TransportWithTranslation(_FakeTransport):
+            def fetch_tweet_translations(self, ids: list[str]) -> dict[str, str]:
+                return {tid: f"译:{tid}" for tid in ids}
+
+        crawler = self._crawler(TransportWithTranslation(result={"openai": [en_tweet]}))
+        result = await crawler._do_fetch(period="daily", limit=25)
+        self.assertEqual(result.items[0].get("translation_zh"), "译:2005")
+
+        # 旧版 duck-typed fake 无此方法：静默跳过，不报错
+        crawler = self._crawler(_FakeTransport(result={"openai": [en_tweet]}))
+        result = await crawler._do_fetch(period="daily", limit=25)
+        self.assertIsNone(result.error)
+        self.assertNotIn("translation_zh", result.items[0])
+
+    def test_needs_zh_translation_lang_filter(self) -> None:
+        from backend.app.services.ingestion.crawlers.x_crawler import _needs_zh_translation
+
+        self.assertTrue(_needs_zh_translation("en"))
+        self.assertTrue(_needs_zh_translation("ja"))
+        self.assertTrue(_needs_zh_translation(""))  # 未知语言仍尝试，X 服务端自行判定
+        self.assertFalse(_needs_zh_translation("zh"))
+        self.assertFalse(_needs_zh_translation("zh-cn"))
+        self.assertFalse(_needs_zh_translation("zh-TW"))
+        self.assertFalse(_needs_zh_translation("zxx"))  # 无语言内容（纯媒体）
+
+
 if __name__ == "__main__":
     unittest.main()
