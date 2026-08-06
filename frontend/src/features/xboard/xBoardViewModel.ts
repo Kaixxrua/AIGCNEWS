@@ -124,3 +124,28 @@ export const flattenTweets = (sections: XBoardSection[]): TopDoc[] => (
 export const countTweets = (sections: XBoardSection[]): number => (
   sections.reduce((total, section) => total + section.tweets.length, 0)
 )
+
+/**
+ * 时间线排序：最新推文排最前（行主序瀑布流的数据源）。
+ * 缺时间戳的条目沉底不丢弃；同一时刻按互动分降序。
+ */
+export const timelineTweets = (docs: TopDoc[]): TopDoc[] => (
+  [...docs].sort((a, b) => {
+    const ta = tweetTimestamp(a)
+    const tb = tweetTimestamp(b)
+    if (!ta !== !tb) return ta ? -1 : 1
+    return tb.localeCompare(ta) || tweetScore(b) - tweetScore(a)
+  })
+)
+
+/**
+ * 行主序分列：第 i 条进第 i % columnCount 列——跨列横读仍是连续顺序，
+ * 满足「左上 = 最新一条，从左到右、从上到下」。CSS columns 是列主序
+ * （先填满一列再下一列），无法用纯 CSS 满足该排序，只能 JS 分列。
+ */
+export const distributeColumns = <T>(items: T[], columnCount: number): T[][] => {
+  const count = Math.max(1, Math.floor(columnCount) || 1)
+  const columns: T[][] = Array.from({ length: count }, () => [])
+  items.forEach((item, index) => columns[index % count]?.push(item))
+  return columns
+}

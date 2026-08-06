@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   authorAvatarUrl,
   countTweets,
+  distributeColumns,
   extractXHandle,
   flattenTweets,
   groupTweetsByHandle,
@@ -9,6 +10,7 @@ import {
   mediaItems,
   posterMediaUrl,
   proxiedMediaUrl,
+  timelineTweets,
   tweetScore,
   tweetText,
   tweetTimestamp,
@@ -174,5 +176,31 @@ describe('xBoardViewModel', () => {
   it('breaks section score ties by handle name', () => {
     const docs = [tweet('beta', '1', { raw_score: 10 }), tweet('alpha', '2', { raw_score: 10 })]
     expect(groupTweetsByHandle(docs).map((section) => section.handle)).toEqual(['alpha', 'beta'])
+  })
+
+  it('timelineTweets sorts newest first, ties by score, sinks docs without timestamps', () => {
+    const docs = [
+      tweet('openai', 'old', { published_at: '2026-08-01T01:00:00Z', raw_score: 999 }),
+      tweet('openai', 'new', { published_at: '2026-08-04T01:00:00Z', raw_score: 1 }),
+      tweet('openai', 'no-ts', { raw_score: 500 }),
+      tweet('openai', 'same-hi', { published_at: '2026-08-04T01:00:00Z', raw_score: 50 }),
+    ]
+    const ordered = timelineTweets(docs)
+    expect(ordered.map((doc) => doc.url)).toEqual([
+      'https://x.com/openai/status/same-hi', // 同一时刻分数高者在前
+      'https://x.com/openai/status/new',
+      'https://x.com/openai/status/old',
+      'https://x.com/openai/status/no-ts', // 无时间戳沉底不丢弃
+    ])
+    // 不就地修改入参
+    expect(docs[0]?.url).toBe('https://x.com/openai/status/old')
+  })
+
+  it('distributeColumns deals items round-robin so cross-column reads stay row-major', () => {
+    expect(distributeColumns([0, 1, 2, 3, 4, 5, 6], 3)).toEqual([[0, 3, 6], [1, 4], [2, 5]])
+    expect(distributeColumns([], 4)).toEqual([[], [], [], []])
+    // 非法列数兜底为 1；小数为取整
+    expect(distributeColumns([1, 2], 0)).toEqual([[1, 2]])
+    expect(distributeColumns([1, 2, 3], 2.7)).toEqual([[1, 3], [2]])
   })
 })
