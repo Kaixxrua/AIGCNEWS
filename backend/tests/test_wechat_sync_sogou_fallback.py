@@ -108,7 +108,7 @@ def test_sync_skips_articles_with_mismatched_biz() -> None:
     )
     # Article page whose biz belongs to a different account.
     wrong_biz_page = _fixture("article_page.html").replace(
-        'var biz = "Mzk1NzE0NDcyNg==";', 'var biz = "AAAAAAAAAAAAAA==";'
+        'var biz = "Mzk1NzE0NDcyNg=="', 'var biz = "AAAAAAAAAAAAAA=="'
     )
     sogou.fetch_article_page = AsyncMock(
         return_value=MagicMock(text=MagicMock(return_value=wrong_biz_page))

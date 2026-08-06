@@ -78,5 +78,19 @@ def test_extract_article_identity_reads_canonical_vars() -> None:
     assert identity["published_at"] == "2026-03-01T13:16:20+00:00"
 
 
+def test_extract_article_identity_tolerates_empty_string_fallback_chain() -> None:
+    # Real mp pages emit: var mid = "2247483765" || "" || "";
+    body = (
+        '<script>var biz = "Mzk1NzE0NDcyNg==" || "" || "";\n'
+        'var mid = "2247483765" || "" || "";\n'
+        'var idx = "1" || "" || "";</script>'
+    )
+    identity = extract_article_identity(body)
+
+    assert identity["biz"] == "Mzk1NzE0NDcyNg=="
+    assert identity["mid"] == "2247483765"
+    assert identity["idx"] == "1"
+
+
 def test_normalize_account_name_strips_spaces_and_case() -> None:
     assert normalize_account_name(" AI 迷思录 ") == normalize_account_name("ai迷思录")

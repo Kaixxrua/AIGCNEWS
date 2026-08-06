@@ -23,7 +23,9 @@ _ACCOUNT_RE = re.compile(r'<span class="all-time-y2">(?P<account>[\s\S]*?)</span
 _TIME_RE = re.compile(r"timeConvert\('(?P<ts>\d+)'\)")
 _COVER_RE = re.compile(r'<img src="(?P<src>[^"]+)"')
 _SIGNED_URL_PART_RE = re.compile(r"url \+= '(?P<part>[^']*)';")
-_VAR_RE_TEMPLATE = r'var {name} = ["\'](?P<value>[^"\']*)["\'];'
+# Real mp article pages emit fallback chains: var mid = "224..." || "" || "";
+# The value capture stops at the first closing quote, so no semicolon anchor.
+_VAR_RE_TEMPLATE = r'var {name} = ["\'](?P<value>[^"\']*)["\']'
 
 
 def _strip_markup(fragment: str) -> str:
