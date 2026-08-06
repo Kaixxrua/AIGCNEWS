@@ -151,7 +151,8 @@ export const useMonitorPageController = ({
     if (form.interval_minutes <= 0) { errorMsg.value = '轮询时间必须大于 0。'; return }
     savingSchedulerConfig.value = true
     try {
-      const saved = await api.saveSchedulerConfig(form)
+      const result = await api.saveSchedulerConfig(form)
+      const saved = result?.item
       if (saved) {
         const index = schedulerConfigs.value.findIndex((item) => item.job_id === saved.job_id)
         if (index >= 0) schedulerConfigs.value[index] = saved
@@ -159,7 +160,7 @@ export const useMonitorPageController = ({
       }
       editingSchedulerJobId.value = null
       schedulerConfigForm.value = createEmptySchedulerJobConfigForm()
-      successMsg.value = `定时任务 ${form.name || form.job_id} 配置已保存，重启后生效。`
+      successMsg.value = result?.message || `定时任务 ${form.name || form.job_id} 配置已保存并即时生效。`
     } catch (error) { errorMsg.value = detail(error) }
     finally { savingSchedulerConfig.value = false }
   }

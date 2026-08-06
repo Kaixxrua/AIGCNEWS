@@ -10,7 +10,7 @@ export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
   fetchSchedulerStatus(): Promise<SchedulerStatus>
   fetchSchedulerConfigs(): Promise<SchedulerJobConfig[]>
-  saveSchedulerConfig(form: SchedulerJobConfigForm): Promise<SchedulerJobConfig>
+  saveSchedulerConfig(form: SchedulerJobConfigForm): Promise<{ item?: SchedulerJobConfig; message?: string }>
   fetchMcpToolCalls(): Promise<McpToolCallMetricsSnapshot>
   fetchProviderConfig(): Promise<ProviderConfig>
   saveProviderConfig(form: ProviderForm): Promise<ProviderConfig>
@@ -48,7 +48,8 @@ export const monitorApi: MonitorApi = {
   },
   async saveSchedulerConfig(form) {
     const payload = buildSchedulerJobConfigPayload(form)
-    return (await api.put(`/ops/scheduler/config/${encodeURIComponent(form.job_id)}`, payload)).data?.item
+    const { data } = await api.put(`/ops/scheduler/config/${encodeURIComponent(form.job_id)}`, payload)
+    return { item: data?.item, message: typeof data?.message === 'string' ? data.message : undefined }
   },
   async fetchMcpToolCalls() {
     const { data } = await api.get('/monitor/metrics')

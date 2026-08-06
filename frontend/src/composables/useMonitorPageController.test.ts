@@ -89,13 +89,13 @@ describe('Monitor page controller contract', () => {
     await controller.saveSchedulerConfig()
     expect(controller.errorMsg.value).toBe('轮询时间必须大于 0。')
 
-    vi.mocked(api.saveSchedulerConfig).mockResolvedValue(job)
+    vi.mocked(api.saveSchedulerConfig).mockResolvedValue({ item: job, message: '定时任务 arXiv 配置已保存并即时生效。' })
     controller.schedulerConfigForm.value.interval_minutes = 120
     const payload = controller.schedulerConfigForm.value
     await controller.saveSchedulerConfig()
     expect(api.saveSchedulerConfig).toHaveBeenCalledWith(payload)
     expect(controller.editingSchedulerJobId.value).toBeNull()
-    expect(controller.successMsg.value).toContain('配置已保存')
+    expect(controller.successMsg.value).toBe('定时任务 arXiv 配置已保存并即时生效。')
   })
 
   it('stores fetched MCP tool call metrics on refresh', async () => {

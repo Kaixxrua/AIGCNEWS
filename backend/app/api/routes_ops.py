@@ -6,7 +6,7 @@ import re
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from backend.app.api.dependencies import (
     get_briefing_admin_service,
@@ -1017,12 +1017,13 @@ async def list_scheduler_configs(
 async def update_scheduler_config(
     job_id: str,
     request: SchedulerConfigUpdateRequest,
+    raw_request: Request,
     _: dict = Depends(RequireAdmin),
     service: SchedulerConfigAdminService = Depends(get_scheduler_config_admin_service),
 ) -> SchedulerConfigUpdateResponse:
     """更新单个定时任务的时间窗口与轮询间隔。
 
-    修改在调度器重启后生效；当前运行中的任务仍按旧触发器执行。
+    保存后立即应用到运行中的调度器；调度器未运行时，配置在下次启动时生效。
     """
     try:
         projection = await asyncio.to_thread(
@@ -1036,9 +1037,24 @@ async def update_scheduler_config(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    applied = False
+    runtime = getattr(raw_request.app.state, "scheduler_runtime", None)
+    if runtime is not None:
+        try:
+            applied = bool(runtime.apply_config_update(projection))
+        except Exception as exc:
+            logger.warning(
+                "[Ops] 调度器配置即时应用失败（已持久化，重启后生效）: %s", exc
+            )
+
+    message = (
+        f"定时任务 {job_id} 配置已保存并即时生效。"
+        if applied
+        else f"定时任务 {job_id} 配置已保存，重启后生效。"
+    )
     return SchedulerConfigUpdateResponse(
         status="success",
-        message=f"定时任务 {job_id} 配置已保存，重启后生效。",
+        message=message,
         item=SchedulerJobConfigItem.model_validate(projection, from_attributes=True),
     )
 

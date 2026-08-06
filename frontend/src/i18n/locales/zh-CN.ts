@@ -351,7 +351,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'monitor.schedulerConfig.active': '启用',
   'monitor.schedulerConfig.paused': '停用',
   'monitor.schedulerConfig.enabled': '启用该任务',
-  'monitor.schedulerConfig.restartHint': '保存后需重启后端服务方可生效；当前运行中的任务仍按旧配置执行。'
+  'monitor.schedulerConfig.restartHint': '保存后立即生效，运行中的调度任务将按新配置重新调度。'
 }
 
 type MessageTree = Record<string, unknown>

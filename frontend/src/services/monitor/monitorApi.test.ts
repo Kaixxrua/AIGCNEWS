@@ -38,9 +38,12 @@ describe('Monitor API contract', () => {
     transport.get.mockResolvedValueOnce({ data: {} })
     await expect(monitorApi.fetchSchedulerConfigs()).resolves.toEqual([])
 
-    transport.put.mockResolvedValueOnce({ data: { item: schedulerConfig } })
+    transport.put.mockResolvedValueOnce({ data: { item: schedulerConfig, message: '定时任务 ingest:arxiv 配置已保存并即时生效。' } })
     const form = createEmptySchedulerJobConfigForm(schedulerConfig)
-    await expect(monitorApi.saveSchedulerConfig(form)).resolves.toEqual(schedulerConfig)
+    await expect(monitorApi.saveSchedulerConfig(form)).resolves.toEqual({
+      item: schedulerConfig,
+      message: '定时任务 ingest:arxiv 配置已保存并即时生效。',
+    })
     expect(transport.put).toHaveBeenLastCalledWith(
       '/ops/scheduler/config/ingest%3Aarxiv',
       { start_time: '08:00', end_time: '20:00', interval_minutes: 120, enabled: true },

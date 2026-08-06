@@ -79,6 +79,66 @@ def test_update_scheduler_config_persists_and_returns_item() -> None:
     )
 
 
+def test_update_scheduler_config_applies_to_running_scheduler() -> None:
+    projection = SchedulerJobConfigProjection(
+        job_id="arxiv_papers",
+        name="HuggingFace Papers 论文采集",
+        start_time=time(9, 0),
+        end_time=time(17, 0),
+        interval_minutes=90,
+        enabled=True,
+    )
+    service = MagicMock(spec=SchedulerConfigAdminService)
+    service.update_config.return_value = projection
+    runtime = MagicMock()
+    runtime.apply_config_update.return_value = True
+
+    client = _config_client(service)
+    client.app.state.scheduler_runtime = runtime
+    response = client.put(
+        "/api/ops/scheduler/config/arxiv_papers",
+        json={
+            "start_time": "09:00:00",
+            "end_time": "17:00:00",
+            "interval_minutes": 90,
+            "enabled": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert "即时生效" in response.json()["message"]
+    runtime.apply_config_update.assert_called_once_with(projection)
+
+
+def test_update_scheduler_config_falls_back_when_apply_fails() -> None:
+    service = MagicMock(spec=SchedulerConfigAdminService)
+    service.update_config.return_value = SchedulerJobConfigProjection(
+        job_id="arxiv_papers",
+        name="HuggingFace Papers 论文采集",
+        start_time=time(9, 0),
+        end_time=time(17, 0),
+        interval_minutes=90,
+        enabled=True,
+    )
+    runtime = MagicMock()
+    runtime.apply_config_update.side_effect = RuntimeError("boom")
+
+    client = _config_client(service)
+    client.app.state.scheduler_runtime = runtime
+    response = client.put(
+        "/api/ops/scheduler/config/arxiv_papers",
+        json={
+            "start_time": "09:00:00",
+            "end_time": "17:00:00",
+            "interval_minutes": 90,
+            "enabled": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert "重启后生效" in response.json()["message"]
+
+
 def test_update_scheduler_config_returns_400_on_service_error() -> None:
     service = MagicMock(spec=SchedulerConfigAdminService)
     service.update_config.side_effect = ValueError("未知定时任务: missing")

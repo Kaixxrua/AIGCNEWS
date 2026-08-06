@@ -559,7 +559,7 @@ class ApplicationSchedulerRuntime:
         self._semantic_search_warmup = semantic_search_warmup
         self._shutdown_grace_seconds = max(0.0, float(shutdown_grace_seconds))
         self._timezone_name = timezone_name
-        self._job_config_overrides: Mapping[str, Any] = job_config_overrides or {}
+        self._job_config_overrides: Dict[str, Any] = dict(job_config_overrides or {})
         self._github_job_lock = asyncio.Lock()
         self._x_operation_lock = asyncio.Lock()
         self._active_tasks: set[asyncio.Task[Any]] = set()
@@ -655,13 +655,8 @@ class ApplicationSchedulerRuntime:
             return descriptor
         return apply_job_config(descriptor, override)
 
-    def start(self) -> None:
-        if self.scheduler.running:
-            logger.info("[Scheduler] 已在运行，跳过重复启动。")
-            return
-        self._stopping = False
-
-        callbacks = {
+    def _job_callbacks(self) -> Dict[str, Any]:
+        return {
             "_run_single_source_job": self._run_single_source_job,
             "_run_github_project_daily_pipeline_job": (
                 self._run_github_project_daily_pipeline_job
@@ -671,6 +666,79 @@ class ApplicationSchedulerRuntime:
             ),
             "_run_x_credentials_probe_job": self._run_x_credentials_probe_job,
         }
+
+    def _base_descriptor(self, job_id: str) -> JobDescriptor | None:
+        for descriptor in SOURCE_JOB_DESCRIPTORS:
+            if descriptor.id == job_id:
+                return descriptor
+        if job_id == DAILY_BRIEFING_JOB.id:
+            return DAILY_BRIEFING_JOB
+        if job_id == CONVERSATION_CLEANUP_JOB.id:
+            return CONVERSATION_CLEANUP_JOB
+        if job_id == "project_semantic_warmup" and self._semantic_search_enabled:
+            return project_semantic_warmup_job_descriptor(
+                timezone=self._timezone_name
+            )
+        return None
+
+    def _resolve_callback(self, descriptor: JobDescriptor) -> SchedulerCallback | None:
+        if descriptor.id == DAILY_BRIEFING_JOB.id:
+            return self._run_daily_briefing_job
+        if descriptor.id == CONVERSATION_CLEANUP_JOB.id:
+            return self._run_conversation_cleanup_job
+        if descriptor.source == "project_semantic_warmup":
+            if not self._semantic_search_enabled:
+                return None
+            return self._run_project_semantic_warmup_job
+        return resolve_source_job_callback(descriptor.source, self._job_callbacks())
+
+    def apply_config_update(self, config: Any) -> bool:
+        """将已保存的任务配置即时应用到运行中的调度器。
+
+        调度器未运行或任务不可在线管理时返回 False，配置将在下次启动时生效。
+        """
+        self._job_config_overrides[config.job_id] = config
+
+        descriptor = self._base_descriptor(config.job_id)
+        if descriptor is None or not self.scheduler.running:
+            return False
+
+        effective = self._effective_descriptor(descriptor)
+        existing = self.scheduler.get_job(config.job_id)
+        if effective is None:
+            if existing is not None:
+                self.scheduler.remove_job(config.job_id)
+                logger.info("[Scheduler] 已停用并移除任务: %s", config.job_id)
+            return True
+        if existing is not None:
+            self.scheduler.reschedule_job(
+                config.job_id,
+                trigger=build_trigger(effective),
+            )
+            logger.info(
+                "[Scheduler] 已即时更新任务触发器: %s trigger=%s",
+                config.job_id,
+                build_trigger(effective),
+            )
+            return True
+        callback = self._resolve_callback(effective)
+        if callback is None:
+            return False
+        _register_job(self.scheduler, effective, callback)
+        logger.info(
+            "[Scheduler] 已启用并注册任务: %s trigger=%s",
+            effective.id,
+            build_trigger(effective),
+        )
+        return True
+
+    def start(self) -> None:
+        if self.scheduler.running:
+            logger.info("[Scheduler] 已在运行，跳过重复启动。")
+            return
+        self._stopping = False
+
+        callbacks = self._job_callbacks()
         for descriptor in SOURCE_JOB_DESCRIPTORS:
             effective = self._effective_descriptor(descriptor)
             if effective is None:
