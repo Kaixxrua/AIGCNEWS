@@ -36,13 +36,17 @@ def project_document_write(
     summary = paper.get("abstract") or paper.get("summary") or ""
     if source != "x":
         summary = summary[:500]
+    # documents.title 为 VARCHAR(1024)：长文推文等超长标题截断防止写入越界
+    title = paper.get("title")
+    if isinstance(title, str) and len(title) > 1024:
+        title = title[:1024]
     return {
         "id": document.metadata["id"],
         "source": source,
         "source_channel": paper.get(
             "source_channel", paper.get("channel", "")
         ),
-        "title": paper.get("title"),
+        "title": title,
         "url": paper.get("url"),
         "summary": summary,
         "published_date": paper.get("published_date"),

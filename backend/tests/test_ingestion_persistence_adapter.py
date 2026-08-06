@@ -101,6 +101,27 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
 
         self.assertIsNone(write["author_name"])
 
+    def test_document_write_projection_truncates_long_title(self) -> None:
+        document = MagicMock(metadata={"id": "doc-x-long"})
+        paper = {
+            "source": "x",
+            "channel": "x_daily_watchlist",
+            "title": "长" * 1500,
+        }
+
+        write = project_document_write(paper, document, "x")
+
+        # documents.title 为 VARCHAR(1024)：超长标题截断防写入越界
+        self.assertEqual(len(write["title"]), 1024)
+
+    def test_document_write_projection_short_title_untouched(self) -> None:
+        document = MagicMock(metadata={"id": "doc-x-short"})
+        paper = {"source": "x", "channel": "x_daily_watchlist", "title": "Tweet"}
+
+        write = project_document_write(paper, document, "x")
+
+        self.assertEqual(write["title"], "Tweet")
+
     def test_persist_deletes_channels_before_deterministic_upserts(self) -> None:
         adapter, documents, snapshots, vectors, _, _ = self._adapter()
         events: list[tuple[str, str]] = []
