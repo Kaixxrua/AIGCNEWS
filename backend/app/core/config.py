@@ -267,6 +267,11 @@ class Settings(BaseSettings):
     # 微信公众号图片代理缓存目录（容器内路径，对应 docker-compose volume 映射）
     wechat_media_cache_dir: str = "storage/wechat"
 
+    # 媒体代理磁盘缓存预算（wechat 图片与 X 封面共用）：容量上限 + 留存时长，
+    # 超限按最旧优先驱逐，防止无认证代理被远程填盘
+    media_cache_max_bytes: int = 536870912  # 512 MiB
+    media_cache_max_age_seconds: int = 604800  # 7 天
+
     # MCP 工具调用计数持久化文件（容器内路径，对应 docker-compose volume 映射）
     mcp_tool_call_metrics_path: str = "storage/metrics/mcp_tool_calls.json"
 

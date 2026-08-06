@@ -33,6 +33,7 @@ from fastapi import APIRouter, HTTPException, Query
 from starlette.responses import FileResponse
 
 from backend.app.core.config import settings
+from backend.app.services.media_cache import enforce_cache_budget, prune_expired_entries
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -141,6 +142,7 @@ def _cached_file_response(path: Path) -> FileResponse:
 
 def _mark_negative(url: str) -> None:
     _negative_cache[url] = time.monotonic() + _NEGATIVE_TTL_SECONDS
+    prune_expired_entries(_negative_cache)
 
 
 async def _fetch_image(url: str) -> tuple[bytes, str]:
@@ -221,6 +223,11 @@ async def proxy_wechat_media(url: str = Query(..., min_length=1)):
             tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
             tmp_path.write_bytes(body)
             tmp_path.replace(cache_path)  # 原子落盘，避免并发读到半成品
+            await enforce_cache_budget(
+                _cache_dir(),
+                max_bytes=settings.media_cache_max_bytes,
+                max_age_seconds=settings.media_cache_max_age_seconds,
+            )
             return _cached_file_response(cache_path)
         finally:
             _image_locks.pop(target, None)

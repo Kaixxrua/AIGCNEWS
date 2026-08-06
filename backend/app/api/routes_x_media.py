@@ -40,6 +40,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from starlette.responses import FileResponse, StreamingResponse
 
 from backend.app.core.config import settings
+from backend.app.services.media_cache import enforce_cache_budget, prune_expired_entries
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -293,6 +294,7 @@ def _poster_file_response(path: Path) -> FileResponse:
 
 def _mark_poster_negative(url: str) -> None:
     _poster_negative[url] = time.monotonic() + _POSTER_NEGATIVE_TTL_SECONDS
+    prune_expired_entries(_poster_negative)
 
 
 @router.get("/media/x/poster")
@@ -322,6 +324,11 @@ async def x_media_poster(url: str = Query(..., min_length=1)):
             if not await _extract_first_frame(partial, cache_path):
                 _mark_poster_negative(target)
                 raise HTTPException(status_code=404, detail="poster extraction failed")
+            await enforce_cache_budget(
+                _poster_cache_dir(),
+                max_bytes=settings.media_cache_max_bytes,
+                max_age_seconds=settings.media_cache_max_age_seconds,
+            )
             return _poster_file_response(cache_path)
         finally:
             _poster_locks.pop(target, None)
