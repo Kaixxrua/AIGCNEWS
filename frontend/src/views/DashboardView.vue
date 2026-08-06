@@ -6,7 +6,7 @@ import GlassCalendar from '@/components/GlassCalendar.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
-import { CalendarDays } from 'lucide-vue-next'
+import { CalendarDays, ArrowRight, MailPlus } from 'lucide-vue-next'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 
 defineOptions({ name: 'DashboardView' })
@@ -139,6 +139,25 @@ currentStats = () => stats.value
               <polyline points="9 18 15 12 9 6" />
             </svg>
           </RouterLink>
+
+          <!-- 每日简报订阅入口 -->
+          <RouterLink
+            to="/report"
+            class="stagger-enter glass-card card-hover group flex flex-col gap-2 px-3 py-2.5 transition-colors"
+            style="animation-delay: 0.35s"
+          >
+            <span class="flex items-center gap-2">
+              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
+                <MailPlus class="h-4 w-4" />
+              </span>
+              <span class="text-sm font-bold text-stone-800">{{ t('dashboard.digest.title') }}</span>
+            </span>
+            <span class="text-2xs leading-relaxed text-stone-400">{{ t('dashboard.digest.description') }}</span>
+            <span class="digest-cta mt-auto inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink bg-ink px-2 py-1.5 text-xs font-bold text-accent transition-colors group-hover:bg-accent group-hover:text-accent-ink">
+              {{ t('dashboard.digest.cta') }}
+              <ArrowRight class="h-3.5 w-3.5" />
+            </span>
+          </RouterLink>
         </template>
       </aside>
     </div>
@@ -177,6 +196,8 @@ currentStats = () => stats.value
 /* 深色下 GitHub/X 指标的字面灰色不可读，统一映射为 ink */
 :root[data-theme='dark'] .dashboard-page :deep(.text-gray-800),
 :root[data-theme='dark'] .dashboard-page :deep(.text-gray-600) { color: var(--ink); }
+/* 深色下 ink 按钮底色翻为浅色，简报 CTA 标签改用 paper 保证对比度 */
+:root[data-theme='dark'] .dashboard-page .digest-cta { color: var(--paper); }
 .dashboard-page :deep(.rounded-full),
 .dashboard-page :deep(.rounded-xl),
 .dashboard-page :deep(.rounded-2xl) { border-radius: 4px; }
