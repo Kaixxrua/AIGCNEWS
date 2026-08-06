@@ -99,7 +99,7 @@ class PostgresRankSnapshotRepository:
         sql = f"""
             SELECT d.id, d.source, d.title, d.url, d.summary, d.published_date,
                    d.published_at, d.tags, d.indexed, d.created_at,
-                   d.media, d.author_avatar_url,
+                   d.media, d.author_avatar_url, d.translation_zh,
                    COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
                    COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
                    COALESCE(NULLIF(d.language, ''), c.language, '') AS language,

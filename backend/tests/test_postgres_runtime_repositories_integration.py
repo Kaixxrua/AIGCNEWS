@@ -166,3 +166,21 @@ def test_real_postgres_snapshots_sync_filter_order_and_delete(repositories) -> N
     assert snapshots.get_snapshot_source_counts("2026-07-28") == {"arxiv": 1, "github": 1}
     assert snapshots.get_snapshot_doc_ids("2026-07-28", "huggingface_daily_html") == {"doc-a"}
     assert snapshots.delete_snapshots_by_channel("2026-07-28", "huggingface_weekly_html") == 1
+
+
+def test_real_postgres_snapshot_read_projects_translation_zh(repositories) -> None:
+    documents, _, snapshots = repositories
+    documents.upsert_document(
+        _document(
+            "doc-x-zh",
+            source="x",
+            source_channel="x_daily_watchlist",
+            translation_zh="中文译文",
+        )
+    )
+    snapshots.upsert_rank_snapshot("doc-x-zh", "2026-07-29", "x_daily_watchlist", 1, 9.0, 9.0)
+
+    rows = snapshots.get_snapshot_documents("2026-07-29", source_channel="x_daily_watchlist")
+
+    assert len(rows) == 1
+    assert rows[0]["translation_zh"] == "中文译文"
