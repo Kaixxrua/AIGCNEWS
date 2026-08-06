@@ -142,13 +142,13 @@ onBeforeUnmount(dispose)
         <article
           v-for="tweet in masonryTweets"
           :key="tweet.url || tweet.title"
-          class="tweet-card break-inside-avoid"
+          class="tweet-card"
         >
-          <div class="flex flex-wrap items-center gap-2 border-b border-stone-200/60 bg-gradient-to-br from-white/80 via-stone-50/50 to-stone-100/60 px-4 py-3">
+          <div class="tweet-head flex flex-wrap items-center gap-2 px-4 py-3">
             <input
               v-if="isAdmin && tweet.id"
               type="checkbox"
-              class="h-4 w-4 shrink-0 rounded border-stone-300 text-stone-700 focus:ring-stone-500"
+              class="h-4 w-4 shrink-0 rounded"
               :checked="isSelected(tweet)"
               @change="toggleSelection(String(tweet.id))"
             />
@@ -160,22 +160,22 @@ onBeforeUnmount(dispose)
               referrerpolicy="no-referrer"
               class="h-6 w-6 shrink-0 rounded-lg object-cover"
             />
-            <span v-else class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-stone-900 font-mono text-[10px] font-bold text-white">𝕏</span>
+            <span v-else class="tweet-avatar-fallback flex h-6 w-6 shrink-0 items-center justify-center font-mono text-[10px] font-bold">𝕏</span>
             <a
               v-if="extractXHandle(tweet.url)"
-              class="truncate text-xs font-semibold text-stone-700 hover:text-stone-900"
+              class="tweet-handle truncate px-1 text-xs font-semibold"
               :href="`https://x.com/${extractXHandle(tweet.url)}`"
               target="_blank"
               rel="noopener noreferrer"
             >@{{ extractXHandle(tweet.url) }}</a>
-            <span v-else class="truncate text-xs font-semibold text-stone-500">{{ t('xboard.unknownHandle') }}</span>
-            <span class="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-stone-200 bg-white/80 px-2 py-0.5 text-2xs font-medium text-stone-500">
+            <span v-else class="tweet-handle truncate px-1 text-xs font-semibold">{{ t('xboard.unknownHandle') }}</span>
+            <span class="tweet-score ml-auto shrink-0">
               <component :is="scoreDisplay(tweet).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(tweet).text }}
             </span>
           </div>
 
           <!-- 媒体区 -->
-          <div v-if="hasMedia(tweet)" class="flex flex-col gap-0">
+          <div v-if="hasMedia(tweet)" class="tweet-media-list">
             <template v-for="(item, index) in mediaItems(tweet)" :key="mediaKey(tweet, index)">
               <img
                 v-if="!isVideo(item)"
@@ -201,7 +201,7 @@ onBeforeUnmount(dispose)
               <button
                 v-else
                 type="button"
-                class="group relative flex w-full items-center justify-center overflow-hidden bg-gradient-to-br from-stone-800 via-stone-900 to-black"
+                class="tweet-video-btn group relative flex w-full items-center justify-center"
                 :style="{ aspectRatio: item.width && item.height ? `${item.width} / ${item.height}` : '16 / 9' }"
                 :aria-label="t('xboard.playVideo')"
                 @click="playVideo(mediaKey(tweet, index))"
@@ -218,20 +218,20 @@ onBeforeUnmount(dispose)
                   @error="($event.target as HTMLImageElement).style.display = 'none'"
                 />
                 <span class="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_60%)]" />
-                <span class="relative flex h-14 w-14 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition group-hover:scale-105 group-hover:bg-black/55">
-                  <svg class="ml-1 h-6 w-6 text-white drop-shadow" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                <span class="tweet-play relative flex h-14 w-14 items-center justify-center rounded-full">
+                  <svg class="ml-1 h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 </span>
-                <span v-if="item.type === 'animated_gif'" class="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-white">GIF</span>
+                <span v-if="item.type === 'animated_gif'" class="tweet-gif-badge absolute left-2 top-2 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide">GIF</span>
               </button>
             </template>
           </div>
 
           <!-- 文字区 -->
           <div class="px-4 py-3">
-            <a :href="tweet.url" target="_blank" rel="noopener noreferrer" class="block whitespace-pre-line text-sm leading-5 text-stone-700 hover:text-stone-900">
+            <a :href="tweet.url" target="_blank" rel="noopener noreferrer" class="tweet-text block whitespace-pre-line text-sm leading-5">
               {{ tweetText(tweet) }}
             </a>
-            <p v-if="formatTime(tweet)" class="mt-2 text-2xs text-stone-400">{{ formatTime(tweet) }}</p>
+            <p v-if="formatTime(tweet)" class="tweet-time mt-2 text-2xs">{{ formatTime(tweet) }}</p>
           </div>
         </article>
       </div>
@@ -242,45 +242,142 @@ onBeforeUnmount(dispose)
 </template>
 
 <style scoped>
+/* 真瀑布流：CSS 多列。原 grid 方案同一行的卡片被拉到同一行高，
+   短推文下方出现大片留白；columns 让卡片按自身高度紧密堆叠。
+   顺序约定：按分数沿列向下排列（瀑布流标准读法）。 */
 .masonry-grid {
-  display: grid;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 1rem;
-  align-items: start;
+  columns: 1;
+  column-gap: 1rem;
 }
 
 @media (min-width: 768px) {
   .masonry-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    columns: 2;
   }
 }
 
 @media (min-width: 1024px) {
   .masonry-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    columns: 3;
   }
 }
 
 @media (min-width: 1280px) {
   .masonry-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    columns: 4;
   }
 }
 
+/* 卡片：全站纸面语言（paper-raised 平面 + rule 细边 + module 圆角），
+   hover 复用 card-hover 的硬边反馈（位移 + 硬影 + 深边）。
+   颜色全部走主题变量，data-theme 暗色自动适配。 */
 .tweet-card {
-  display: block;
+  display: inline-block; /* multicol 内防跨列撕裂的稳妥姿势 */
   width: 100%;
+  margin: 0 0 1rem;
+  vertical-align: top;
+  break-inside: avoid;
   overflow: hidden;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(var(--rule), 0.5);
-  background: rgba(var(--paper), 0.7);
-  backdrop-filter: blur(8px);
-  align-self: start;
+  border-radius: var(--module-radius);
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
-@media (prefers-color-scheme: dark) {
-  .tweet-card {
-    background: rgba(var(--card-rgb), 0.45);
-  }
+.tweet-card:hover {
+  border-color: var(--rule-strong);
+  box-shadow: var(--shadow-low);
+  transform: translate(-1px, -1px);
+}
+
+.tweet-head {
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-muted);
+}
+
+.tweet-handle {
+  border-radius: 4px;
+  color: var(--ink);
+}
+
+a.tweet-handle:hover {
+  background: var(--acid-soft);
+}
+
+.tweet-avatar-fallback {
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper-raised);
+}
+
+/* 分数徽章：对齐全局 .badge 语言（5px 小圆角 + 三色组） */
+.tweet-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  border-radius: 5px;
+  color: var(--badge-default-ink);
+  background: var(--badge-default-bg);
+  border: 1px solid var(--badge-default-border);
+}
+
+/* 媒体块：内嵌圆角 + 细边（X 式内嵌媒体，替代原来的通栏贴边） */
+.tweet-media-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+
+.tweet-media-list > * {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--control-radius);
+}
+
+/* 视频占位保持深色语义底；播放按钮复用 btn-primary 的墨底酸绿反转 */
+.tweet-video-btn {
+  cursor: pointer;
+  background: linear-gradient(150deg, #2a2723, #100e0c);
+}
+
+.tweet-play {
+  background: var(--ink);
+  color: var(--acid);
+  transition:
+    transform 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.tweet-video-btn:hover .tweet-play {
+  background: var(--acid);
+  color: var(--acid-ink);
+  transform: scale(1.06);
+}
+
+.tweet-gif-badge {
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--acid);
+}
+
+.tweet-text {
+  color: var(--ink-secondary);
+}
+
+.tweet-text:hover {
+  color: var(--ink);
+}
+
+.tweet-time {
+  color: var(--ink-muted);
 }
 </style>
