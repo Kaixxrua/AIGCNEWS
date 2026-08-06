@@ -5,6 +5,7 @@ import {
   distributeColumns,
   extractXHandle,
   flattenTweets,
+  formatLocalTime,
   groupTweetsByHandle,
   hasMedia,
   mediaItems,
@@ -194,6 +195,23 @@ describe('xBoardViewModel', () => {
     ])
     // 不就地修改入参
     expect(docs[0]?.url).toBe('https://x.com/openai/status/old')
+  })
+
+  it('formatLocalTime converts UTC ISO into the given timezone', () => {
+    const iso = '2026-08-04T13:04:00Z'
+    expect(formatLocalTime(iso, 'UTC')).toBe('2026-08-04 13:04')
+    expect(formatLocalTime(iso, 'Asia/Shanghai')).toBe('2026-08-04 21:04')
+    expect(formatLocalTime(iso, 'America/New_York')).toBe('2026-08-04 09:04') // 8 月 EDT=UTC-4
+    // 跨日：UTC 深夜 → 上海已是次日
+    expect(formatLocalTime('2026-08-04T16:30:00Z', 'Asia/Shanghai')).toBe('2026-08-05 00:30')
+    // +00:00 偏移形式同样可解析
+    expect(formatLocalTime('2026-08-04T13:04:00+00:00', 'UTC')).toBe('2026-08-04 13:04')
+  })
+
+  it('formatLocalTime returns empty string for unparseable or empty input', () => {
+    expect(formatLocalTime('')).toBe('')
+    expect(formatLocalTime('not-a-date', 'UTC')).toBe('')
+    expect(formatLocalTime('2026-13-99T99:99:99Z', 'UTC')).toBe('')
   })
 
   it('distributeColumns deals items round-robin so cross-column reads stay row-major', () => {

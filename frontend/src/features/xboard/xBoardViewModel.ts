@@ -139,6 +139,28 @@ export const timelineTweets = (docs: TopDoc[]): TopDoc[] => (
 )
 
 /**
+ * 发布时间格式化：落库 published_at 是带时区的 ISO（UTC），展示时换算成
+ * 用户系统时区（不传 timeZone 时 Intl 默认本地时区）。输出保持旧版
+ * 「YYYY-MM-DD HH:mm」形状；无法解析的输入返回空串由模板跳过渲染。
+ */
+export const formatLocalTime = (iso: string, timeZone?: string): string => {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      ...(timeZone ? { timeZone } : {}),
+    }).formatToParts(date)
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+    return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
+  } catch {
+    return ''
+  }
+}
+
+/**
  * 行主序分列：第 i 条进第 i % columnCount 列——跨列横读仍是连续顺序，
  * 满足「左上 = 最新一条，从左到右、从上到下」。CSS columns 是列主序
  * （先填满一列再下一列），无法用纯 CSS 满足该排序，只能 JS 分列。

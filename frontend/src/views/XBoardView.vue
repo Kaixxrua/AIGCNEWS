@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, distributeColumns, extractXHandle, hasMedia, mediaItems, timelineTweets, tweetText, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, timelineTweets, tweetText, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
@@ -32,9 +32,20 @@ const columnCount = ref(computeColumnCount())
 const updateColumnCount = () => { columnCount.value = computeColumnCount() }
 const masonryColumns = computed(() => distributeColumns(timelineDocs.value, columnCount.value))
 
-const formatTime = (doc: TopDoc) => (
-  tweetTimestamp(doc).slice(0, 16).replace('T', ' ')
-)
+// 发布时间：落库是 UTC ISO，展示换算成用户系统时区（不传 timeZone → 本地）。
+const formatTime = (doc: TopDoc) => formatLocalTime(tweetTimestamp(doc))
+
+// 图片放大预览（lightbox）：仅照片可点开；视频封面点击仍是播放。
+// ESC 或点击遮罩关闭；预览不阻断视频点击播放逻辑。
+const lightboxUrl = ref<string | null>(null)
+const openLightbox = (url: string) => { lightboxUrl.value = url }
+const closeLightbox = () => { lightboxUrl.value = null }
+const onLightboxKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && lightboxUrl.value) {
+    event.stopPropagation()
+    closeLightbox()
+  }
+}
 
 const isVideo = (item: TweetMediaItem) => item.type === 'video' || item.type === 'animated_gif'
 
@@ -67,10 +78,12 @@ const handleDeleteSelected = async () => {
 
 onMounted(() => {
   window.addEventListener('resize', updateColumnCount)
+  window.addEventListener('keydown', onLightboxKeydown)
   load()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateColumnCount)
+  window.removeEventListener('keydown', onLightboxKeydown)
   dispose()
 })
 </script>
@@ -205,8 +218,10 @@ onBeforeUnmount(() => {
                   loading="lazy"
                   decoding="async"
                   referrerpolicy="no-referrer"
-                  class="w-full object-cover"
+                  class="tweet-photo w-full cursor-zoom-in object-cover"
                   :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
+                  :aria-label="t('xboard.previewImage')"
+                  @click="openLightbox(item.url)"
                 />
                 <!-- 视频：未点击时渲染零流量占位，点击后挂载 <video> 经代理加载播放 -->
                 <video
@@ -260,6 +275,34 @@ onBeforeUnmount(() => {
 
       <p v-if="timelineDocs.length" class="shrink-0 text-center text-2xs text-stone-300">{{ t('xboard.tweets', { count: totalTweets() }) }}</p>
     </div>
+
+    <!-- 图片放大预览：点遮罩或 ESC 关闭，点图本身不关闭 -->
+    <Teleport to="body">
+      <div
+        v-if="lightboxUrl"
+        class="lightbox-backdrop"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('xboard.previewImage')"
+        @click="closeLightbox"
+      >
+        <button
+          type="button"
+          class="lightbox-close"
+          :aria-label="t('xboard.closePreview')"
+          @click="closeLightbox"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <img
+          :src="lightboxUrl"
+          :alt="t('xboard.previewImage')"
+          class="lightbox-image"
+          referrerpolicy="no-referrer"
+          @click.stop
+        />
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -430,5 +473,57 @@ a.tweet-text:hover {
 
 .tweet-time {
   color: var(--ink-muted);
+}
+
+/* ═══ 图片放大预览：墨色遮罩 + 硬边图框，对齐卡片配方 ═══ */
+.lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 4vw;
+  background: rgb(21 21 18 / 0.86); /* --ink 的透明化，深浅主题下都保持墨色 */
+  cursor: zoom-out;
+}
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  background: var(--projects-paper-light);
+  box-shadow: 4px 4px 0 var(--shadow-hard);
+  cursor: default;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--ink);
+  border-radius: var(--control-radius);
+  background: var(--ink);
+  color: var(--acid);
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.lightbox-close:hover {
+  background: var(--acid);
+  color: var(--projects-on-acid);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+  transform: translate(-1px, -1px);
 }
 </style>
