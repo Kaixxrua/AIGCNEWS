@@ -33,6 +33,18 @@ class InvalidChannelOtpError(PushDomainError):
     """渠道绑定验证码错误或已过期（路由层映射 400）。"""
 
 
+class WebhookUrlError(PushDomainError):
+    """Webhook URL 非法或不在允许范围（路由层映射 400）。"""
+
+
+class WebhookProbeFailedError(PushDomainError):
+    """Webhook 创建前探测投递失败（路由层映射 400）。"""
+
+
+class WebhookDeliveryError(PushDomainError):
+    """Webhook 运行时投递失败（路由层映射 502）。"""
+
+
 class SubscriptionNotFoundError(PushDomainError):
     """订阅不存在或不属于当前用户（路由层映射 404）。"""
 

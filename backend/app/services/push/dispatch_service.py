@@ -18,7 +18,13 @@ from backend.app.repositories.user_subscription_repository import (
     UserSubscriptionRepository,
 )
 from backend.app.services.briefing.daily_briefing import select_briefing_content
-from backend.app.services.push.channel_service import CHANNEL_TYPE_EMAIL
+from backend.app.services.email.message_renderer import SOURCE_LABELS
+from backend.app.services.push.channel_service import (
+    CHANNEL_TYPE_EMAIL,
+    CHANNEL_TYPE_WEBHOOK,
+)
+from backend.app.services.push.secrets import unseal_channel_config
+from backend.app.services.push.webhook_service import WebhookSender
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +32,15 @@ MAX_DELIVERY_ATTEMPTS = 3
 DEFAULT_LOCALE = "zh-CN"
 
 _FREQUENCIES: tuple[str, ...] = tuple(get_args(SubscriptionFrequency))
+_SUPPORTED_CHANNEL_TYPES = frozenset({CHANNEL_TYPE_EMAIL, CHANNEL_TYPE_WEBHOOK})
+_PERIOD_LABELS = {"daily": "日报", "weekly": "周报", "monthly": "月报"}
+_SECRET_BOX_UNSET = object()
+
+
+def _webhook_title(source: str, frequency: str, issue_date: str) -> str:
+    source_label = SOURCE_LABELS.get(source, source)
+    period_label = _PERIOD_LABELS.get(frequency, frequency)
+    return f"AIGC Radar · {source_label}{period_label} · {issue_date}"
 
 
 def _resolve_issue_date(period: str, today: date) -> str:
@@ -47,11 +62,15 @@ class SubscriptionDispatchService:
         deliveries: PushDeliveryRepository,
         briefings: BriefingContentRepository,
         email_service: Any | None = None,
+        secret_box: Any = _SECRET_BOX_UNSET,
+        webhook_sender: Any | None = None,
     ) -> None:
         self._subscriptions = subscriptions
         self._deliveries = deliveries
         self._briefings = briefings
         self._email_service = email_service
+        self._secret_box = secret_box
+        self._webhook_sender = webhook_sender
 
     async def dispatch_all(self, *, today: date | None = None) -> dict[str, int]:
         """枚举全部频率与来源执行一轮派发，返回计数摘要。"""
@@ -115,10 +134,11 @@ class SubscriptionDispatchService:
     ) -> str:
         """对单个订阅执行一次投递，返回 sent / skipped / failed。"""
         subscription_id = subscription["id"]
-        if subscription["channel_type"] != CHANNEL_TYPE_EMAIL:
+        channel_type = subscription["channel_type"]
+        if channel_type not in _SUPPORTED_CHANNEL_TYPES:
             logger.warning(
                 "[Dispatch] 暂不支持的渠道类型: channel_type=%s subscription=%s",
-                subscription["channel_type"],
+                channel_type,
                 subscription_id,
             )
             return "skipped"
@@ -150,14 +170,13 @@ class SubscriptionDispatchService:
                     return "skipped"
 
         attempts_next = delivery["attempts"] + 1
-        email_service = self._resolve_email_service()
         try:
-            await email_service.send_briefing(
-                to_email=subscription["target"],
-                briefing_content=content,
+            await self._send(
+                subscription=subscription,
+                content=content,
                 source=source,
-                period=frequency,
-                date_str=issue_date,
+                frequency=frequency,
+                issue_date=issue_date,
             )
         except Exception as exc:
             await asyncio.to_thread(
@@ -183,6 +202,55 @@ class SubscriptionDispatchService:
             attempts=attempts_next,
         )
         return "sent"
+
+    async def _send(
+        self,
+        *,
+        subscription: dict[str, Any],
+        content: str,
+        source: str,
+        frequency: str,
+        issue_date: str,
+    ) -> None:
+        """按渠道类型执行一次真实投递；失败抛异常由调用方记账。"""
+        if subscription["channel_type"] == CHANNEL_TYPE_EMAIL:
+            email_service = self._resolve_email_service()
+            await email_service.send_briefing(
+                to_email=subscription["target"],
+                briefing_content=content,
+                source=source,
+                period=frequency,
+                date_str=issue_date,
+            )
+            return
+        # webhook：投递凭据以密封配置为准（target 仅作地址展示与唯一约束）。
+        config = await asyncio.to_thread(
+            unseal_channel_config,
+            self._resolve_secret_box(),
+            subscription.get("encrypted_config") or "",
+        )
+        sender = self._resolve_webhook_sender()
+        await sender.send(
+            url=str(config.get("url") or ""),
+            title=_webhook_title(source, frequency, issue_date),
+            content=content,
+        )
+
+    def _resolve_secret_box(self) -> Any:
+        if self._secret_box is _SECRET_BOX_UNSET:
+            # 未注入时按当前配置即时构建（对齐 email_service 惯例）；
+            # 显式注入 None 表示密钥不可用，unseal 处拒绝并计入失败。
+            from backend.app.services.push.secrets import (
+                build_push_channel_secret_box,
+            )
+
+            self._secret_box = build_push_channel_secret_box()
+        return self._secret_box
+
+    def _resolve_webhook_sender(self) -> Any:
+        if self._webhook_sender is None:
+            self._webhook_sender = WebhookSender()
+        return self._webhook_sender
 
     def _resolve_email_service(self) -> Any:
         if self._email_service is None:

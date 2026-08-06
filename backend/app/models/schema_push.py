@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, TypeAdapter, field_validator, model_validator
 
 # 与简报管线（EmailMessageRenderer.SOURCE_LABELS / get_top_items）保持同一词汇表。
 SubscriptionSource = Literal[
@@ -12,10 +12,26 @@ SubscriptionSource = Literal[
 ]
 SubscriptionFrequency = Literal["daily", "weekly", "monthly"]
 
+_EMAIL_ADAPTER = TypeAdapter(EmailStr)
+_MAX_TARGET_LENGTH = 2048
+
 
 class CreatePushChannelRequest(BaseModel):
-    channel_type: Literal["email"] = "email"
-    target: EmailStr
+    channel_type: Literal["email", "webhook"] = "email"
+    target: str
+
+    @model_validator(mode="after")
+    def _validate_target_by_type(self) -> "CreatePushChannelRequest":
+        target = self.target.strip()
+        if not target or len(target) > _MAX_TARGET_LENGTH:
+            raise ValueError("target is required and must be at most 2048 chars")
+        if self.channel_type == "email":
+            # 保持 EmailStr 级别的 422 语义；webhook 的深度校验（https/SSRF）
+            # 在服务层完成，返回领域错误而非 422。
+            self.target = _EMAIL_ADAPTER.validate_python(target)
+        else:
+            self.target = target
+        return self
 
 
 class VerifyPushChannelRequest(BaseModel):

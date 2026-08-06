@@ -48,7 +48,7 @@ class FakePushChannelRepository:
         self.next_id = 1
 
     def create_channel(
-        self, *, user_id, channel_type, target, encrypted_config
+        self, *, user_id, channel_type, target, encrypted_config, verified=False
     ) -> dict | None:
         for row in self.rows.values():
             if (
@@ -63,7 +63,7 @@ class FakePushChannelRepository:
             "channel_type": channel_type,
             "target": target,
             "encrypted_config": encrypted_config,
-            "verified": False,
+            "verified": verified,
             "status": "active",
             "created_at": _NOW,
             "updated_at": _NOW,

@@ -457,11 +457,15 @@ async def _run_subscription_dispatch_job(
     """订阅简报派发：枚举频率 × 来源读缓存，经 push_deliveries 幂等投递。"""
     logger.info("[Scheduler] 触发订阅简报派发（全频率幂等投递）...")
     from backend.app.services.push.dispatch_service import SubscriptionDispatchService
+    from backend.app.services.push.secrets import build_push_channel_secret_box
+    from backend.app.services.push.webhook_service import WebhookSender
 
     service = SubscriptionDispatchService(
         subscriptions=repositories.user_subscriptions,
         deliveries=repositories.push_deliveries,
         briefings=repositories.briefings,
+        secret_box=build_push_channel_secret_box(),
+        webhook_sender=WebhookSender(),
     )
     try:
         summary = await service.dispatch_all()

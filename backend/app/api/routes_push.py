@@ -38,17 +38,26 @@ from backend.app.services.push.errors import (
     PushDomainError,
     SubscriptionDuplicateError,
     SubscriptionNotFoundError,
+    WebhookDeliveryError,
+    WebhookProbeFailedError,
+    WebhookUrlError,
+)
+from backend.app.services.push.secrets import (
+    PushChannelSecretError,
+    build_push_channel_secret_box,
 )
 from backend.app.services.push.subscription_service import UserSubscriptionService
+from backend.app.services.push.webhook_service import WebhookSender
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# 推送端点 IP 级固定窗口限速（防 OTP 滥用与测试邮件轰炸）
+# 推送端点 IP 级固定窗口限速（防 OTP 滥用与测试/探测投递轰炸）
 _PUSH_RATE_LIMIT_WINDOW_SECONDS = 600
 _CHANNEL_OTP_SEND_RATE_LIMIT = 5
 _CHANNEL_TEST_RATE_LIMIT = 5
+_CHANNEL_WEBHOOK_CREATE_RATE_LIMIT = 5
 
 
 def _client_ip(request: Request) -> str:
@@ -132,6 +141,8 @@ def _map_domain_error(exc: PushDomainError) -> HTTPException:
         return HTTPException(status_code=404, detail=exc.detail)
     if isinstance(exc, (PushChannelDuplicateError, SubscriptionDuplicateError)):
         return HTTPException(status_code=409, detail=exc.detail)
+    if isinstance(exc, WebhookDeliveryError):
+        return HTTPException(status_code=502, detail=exc.detail)
     return HTTPException(status_code=400, detail=exc.detail)
 
 
@@ -166,7 +177,7 @@ async def list_push_channels(
     "/push/me/channels",
     response_model=PushChannelResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="创建当前用户的推送渠道并签发绑定验证码",
+    summary="创建当前用户的推送渠道（email 签发验证码；webhook 探测即验证）",
 )
 async def create_push_channel(
     body: CreatePushChannelRequest,
@@ -176,13 +187,35 @@ async def create_push_channel(
     service: PushChannelService = Depends(get_push_channel_service),
 ) -> dict[str, Any]:
     _set_no_store(response)
+    if body.channel_type == "webhook":
+        await _enforce_rate_limit(
+            request,
+            action="push.channel_webhook",
+            limit=_CHANNEL_WEBHOOK_CREATE_RATE_LIMIT,
+        )
+        try:
+            channel, _created = await service.create_webhook_channel(
+                user_id=_user_id(current_user),
+                url=body.target,
+                secret_box=build_push_channel_secret_box(),
+                webhook_sender=WebhookSender(),
+            )
+        except (
+            PushChannelDuplicateError,
+            WebhookUrlError,
+            WebhookProbeFailedError,
+        ) as exc:
+            raise _map_domain_error(exc) from exc
+        except PushChannelSecretError as exc:
+            raise HTTPException(status_code=503, detail=exc.args[0]) from exc
+        return _channel_payload(channel)
     await _enforce_rate_limit(
         request, action="push.channel_otp", limit=_CHANNEL_OTP_SEND_RATE_LIMIT
     )
     try:
         channel, _created = await service.create_email_channel(
             user_id=_user_id(current_user),
-            email=str(body.target),
+            email=body.target,
             email_service=_get_email_service(request),
         )
     except (PushChannelDuplicateError,) as exc:
@@ -262,23 +295,28 @@ async def test_push_channel(
     current_user: dict[str, Any] = Depends(RequireUser),
     service: PushChannelService = Depends(get_push_channel_service),
 ) -> dict[str, Any]:
-    """向已验证渠道发送一封测试简报邮件（走真实 SMTP 管线）。"""
+    """向已验证渠道发送测试投递（email 走 SMTP；webhook 走平台载荷）。"""
     _set_no_store(response)
     await _enforce_rate_limit(
         request, action="push.channel_test", limit=_CHANNEL_TEST_RATE_LIMIT
     )
     try:
-        channel = await service.send_test_email(
+        channel = await service.send_test_message(
             user_id=_user_id(current_user),
             channel_id=channel_id,
             email_service=_get_email_service(request),
+            secret_box=build_push_channel_secret_box(),
+            webhook_sender=WebhookSender(),
         )
     except (
         PushChannelNotFoundError,
         PushChannelNotVerifiedError,
         PushChannelDisabledError,
+        WebhookDeliveryError,
     ) as exc:
         raise _map_domain_error(exc) from exc
+    except PushChannelSecretError as exc:
+        raise HTTPException(status_code=503, detail=exc.args[0]) from exc
     except BriefingDeliveryError as exc:
         raise _map_email_error(exc) from exc
     return _channel_payload(channel)

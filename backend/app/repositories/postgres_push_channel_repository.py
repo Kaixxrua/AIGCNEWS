@@ -24,18 +24,19 @@ class PostgresPushChannelRepository(PushChannelRepository):
         channel_type: str,
         target: str,
         encrypted_config: str | None,
+        verified: bool = False,
     ) -> dict[str, Any] | None:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
                     INSERT INTO push_channels
-                        (user_id, channel_type, target, encrypted_config)
-                    VALUES (%s, %s, %s, %s)
+                        (user_id, channel_type, target, encrypted_config, verified)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (user_id, channel_type, target) DO NOTHING
                     RETURNING {_CHANNEL_COLUMNS}
                     """,
-                    (user_id, channel_type, target, encrypted_config),
+                    (user_id, channel_type, target, encrypted_config, verified),
                 )
                 row = cursor.fetchone()
                 return dict(row) if row else None

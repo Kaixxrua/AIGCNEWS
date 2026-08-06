@@ -13,9 +13,16 @@ from backend.app.services.push.errors import (
     PushChannelDuplicateError,
     PushChannelNotFoundError,
     PushChannelNotVerifiedError,
+    WebhookProbeFailedError,
+)
+from backend.app.services.push.secrets import seal_channel_config, unseal_channel_config
+from backend.app.services.push.webhook_service import (
+    WebhookSender,
+    validate_webhook_url,
 )
 
 CHANNEL_TYPE_EMAIL = "email"
+CHANNEL_TYPE_WEBHOOK = "webhook"
 CHANNEL_STATUS_ACTIVE = "active"
 CHANNEL_STATUS_DISABLED = "disabled"
 CHANNEL_OTP_PURPOSE = "push_channel_verify"
@@ -28,6 +35,19 @@ _TEST_BRIEFING_CONTENT = """# AIGC Radar 推送渠道测试
 
 — AIGC Radar · aigcnews.cn
 """
+
+_TEST_WEBHOOK_TITLE = "AIGC Radar 推送渠道测试"
+_TEST_WEBHOOK_CONTENT = (
+    "这是一条渠道验证消息：你的 Webhook 推送渠道已配置成功。\n\n"
+    "订阅生效后，你将按设定的频率收到对应来源的 AI 垂直简报。\n\n"
+    "— AIGC Radar · aigcnews.cn"
+)
+
+_PROBE_WEBHOOK_TITLE = "AIGC Radar 渠道绑定验证"
+_PROBE_WEBHOOK_CONTENT = (
+    "你的 Webhook 推送渠道绑定成功。\n\n"
+    "回到 aigcnews.cn 为订阅选择该渠道后，即可按频率接收 AI 垂直简报。"
+)
 
 
 class PushChannelService:
@@ -85,6 +105,60 @@ class PushChannelService:
                 created = True
         await email_service.send_otp(target, purpose=CHANNEL_OTP_PURPOSE)
         return channel, created
+
+    async def create_webhook_channel(
+        self,
+        *,
+        user_id: int,
+        url: str,
+        secret_box: Any,
+        webhook_sender: WebhookSender,
+    ) -> tuple[dict[str, Any], bool]:
+        """创建 webhook 渠道：URL 校验 → 探测投递（即验证）→ 密封落库。
+
+        探测成功才允许落库，渠道落库即 verified；探测失败不留下不可用行。
+        encrypted_config 密封 ``{"url": ...}`` 作为投递凭据；加密密钥不可用
+        时 secrets 层抛 PushChannelSecretError，绝不降级为明文存储。
+        """
+        target = await asyncio.to_thread(validate_webhook_url, url)
+        existing = await asyncio.to_thread(
+            self._channels.find_channel_by_target,
+            user_id=user_id,
+            channel_type=CHANNEL_TYPE_WEBHOOK,
+            target=target,
+        )
+        if existing is not None and existing["verified"]:
+            raise PushChannelDuplicateError("该 Webhook 已绑定推送渠道")
+        try:
+            await webhook_sender.send(
+                url=target,
+                title=_PROBE_WEBHOOK_TITLE,
+                content=_PROBE_WEBHOOK_CONTENT,
+            )
+        except Exception as exc:
+            raise WebhookProbeFailedError(f"Webhook 探测失败：{exc}") from exc
+        if existing is not None:
+            # 防御分支：历史遗留的未验证 webhook 行，探测通过后补验证。
+            await asyncio.to_thread(
+                self._channels.mark_channel_verified,
+                user_id=user_id,
+                channel_id=existing["id"],
+            )
+            existing["verified"] = True
+            return existing, False
+        encrypted_config = seal_channel_config(secret_box, {"url": target})
+        channel = await asyncio.to_thread(
+            self._channels.create_channel,
+            user_id=user_id,
+            channel_type=CHANNEL_TYPE_WEBHOOK,
+            target=target,
+            encrypted_config=encrypted_config,
+            verified=True,
+        )
+        if channel is None:
+            # 并发插入撞唯一约束：按已绑定处理。
+            raise PushChannelDuplicateError("该 Webhook 已绑定推送渠道")
+        return channel, True
 
     async def verify_channel(
         self,
@@ -172,5 +246,48 @@ class PushChannelService:
             source="all",
             period="daily",
             date_str="渠道测试",
+        )
+        return channel
+
+    async def send_test_message(
+        self,
+        *,
+        user_id: int,
+        channel_id: int,
+        email_service: EmailService | None = None,
+        secret_box: Any = None,
+        webhook_sender: WebhookSender | None = None,
+    ) -> dict[str, Any]:
+        """按渠道类型分发测试投递：email 走 SMTP，webhook 走平台载荷。"""
+        channel = await asyncio.to_thread(
+            self._channels.get_channel,
+            user_id=user_id,
+            channel_id=channel_id,
+        )
+        if channel is None:
+            raise PushChannelNotFoundError("推送渠道不存在")
+        if channel["channel_type"] == CHANNEL_TYPE_EMAIL:
+            return await self.send_test_email(
+                user_id=user_id,
+                channel_id=channel_id,
+                email_service=email_service,
+            )
+        if channel["channel_type"] != CHANNEL_TYPE_WEBHOOK:
+            raise PushChannelNotFoundError("推送渠道不存在")
+        if not channel["verified"]:
+            raise PushChannelNotVerifiedError("推送渠道尚未验证")
+        if channel["status"] != CHANNEL_STATUS_ACTIVE:
+            raise PushChannelDisabledError("推送渠道已停用")
+        if webhook_sender is None:  # pragma: no cover - 防御性分支
+            raise PushChannelNotFoundError("推送渠道不存在")
+        config = await asyncio.to_thread(
+            unseal_channel_config,
+            secret_box,
+            channel["encrypted_config"] or "",
+        )
+        await webhook_sender.send(
+            url=str(config.get("url") or ""),
+            title=_TEST_WEBHOOK_TITLE,
+            content=_TEST_WEBHOOK_CONTENT,
         )
         return channel

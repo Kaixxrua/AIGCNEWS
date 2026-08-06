@@ -13,6 +13,7 @@ class PushChannelRepository(Protocol):
         channel_type: str,
         target: str,
         encrypted_config: str | None,
+        verified: bool = False,
     ) -> dict[str, Any] | None:
         """插入渠道并返回该行；唯一约束冲突时返回 None。"""
         ...

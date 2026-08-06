@@ -320,7 +320,7 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
 
     def test_unsupported_channel_type_skips_without_delivery(self) -> None:
         service, deliveries, _, email = self._make_service(
-            subscriptions=[_subscription(1, channel_type="webhook")],
+            subscriptions=[_subscription(1, channel_type="sms")],
             briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
         )
 
