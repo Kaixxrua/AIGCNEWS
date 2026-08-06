@@ -85,22 +85,12 @@ const selectDate = (day: CalendarDay) => {
 </script>
 
 <template>
-  <div
-    class="stagger-enter flex flex-col rounded-xl px-2 py-1.5"
-    style="
-      background: rgb(var(--card-rgb) / 0.85);
-      backdrop-filter: blur(16px) saturate(180%);
-      -webkit-backdrop-filter: blur(16px) saturate(180%);
-      border: 1px solid rgb(var(--stone-400-rgb) / 0.2);
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
-      animation-delay: 0.15s;
-    "
-  >
+  <div class="dash-calendar stagger-enter flex flex-col px-2 py-1.5" style="animation-delay: 0.2s">
     <div class="flex items-center justify-between mb-1">
       <h3 class="text-2xs font-semibold text-stone-700 tracking-tight font-serif">{{ monthLabel }}</h3>
       <div class="flex items-center gap-0.5">
         <button
-          class="flex h-5 w-5 items-center justify-center rounded-full text-stone-500 transition hover:bg-accent-soft hover:text-ink"
+          class="cal-nav"
           :aria-label="t('dashboard.previousMonth')" @click="prevMonth"
         >
           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -108,7 +98,7 @@ const selectDate = (day: CalendarDay) => {
           </svg>
         </button>
         <button
-          class="flex h-5 w-5 items-center justify-center rounded-full text-stone-500 transition hover:bg-accent-soft hover:text-ink"
+          class="cal-nav"
           :aria-label="t('dashboard.nextMonth')" @click="nextMonth"
         >
           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -156,17 +146,43 @@ const selectDate = (day: CalendarDay) => {
 </template>
 
 <style scoped>
+/* 硬边日历：与 dashboard 纸面/墨线/酸橙主题一致（变量由 .dashboard-page 提供） */
+.dash-calendar {
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  background: var(--paper-light);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
+}
+
+.cal-nav {
+  display: flex;
+  height: 20px;
+  width: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--muted, #797a70);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.cal-nav:hover {
+  border-color: var(--ink);
+  background: var(--acid-soft);
+  color: var(--ink);
+}
+
 .calendar-day {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 20px;
-  font-size: 9px;
+  height: 22px;
+  font-size: 10px;
   font-weight: 500;
-  border-radius: 50%;
-  transition: all 0.15s ease;
+  border-radius: 3px;
+  transition: background-color 0.15s ease, color 0.15s ease;
   cursor: pointer;
   user-select: none;
 }
@@ -174,6 +190,7 @@ const selectDate = (day: CalendarDay) => {
 .calendar-day:hover:not(:disabled) {
   color: var(--acid-ink);
   background: var(--acid-soft);
+  box-shadow: inset 0 0 0 1px var(--ink);
 }
 
 .calendar-day--disabled,
@@ -184,16 +201,16 @@ const selectDate = (day: CalendarDay) => {
 }
 
 .calendar-day--today {
-  color: rgb(var(--stone-700-rgb));
+  color: var(--ink);
   font-weight: 700;
-  background: rgb(var(--stone-100-rgb));
+  box-shadow: inset 0 0 0 1px var(--ink);
 }
 
 .calendar-day--active {
   color: var(--acid-ink) !important;
   background: var(--acid) !important;
   font-weight: 700;
-  box-shadow: inset 0 0 0 1px var(--rule-strong);
+  box-shadow: inset 0 0 0 1px var(--ink) !important;
 }
 
 .calendar-day--active:hover {
@@ -207,13 +224,13 @@ const selectDate = (day: CalendarDay) => {
 
 .snapshot-dot {
   position: absolute;
-  bottom: 0px;
+  bottom: 1px;
   left: 50%;
   transform: translateX(-50%);
   width: 3px;
   height: 3px;
-  border-radius: 50%;
-  background: rgb(var(--stone-400-rgb));
+  border-radius: 1px;
+  background: var(--ink);
   pointer-events: none;
 }
 </style>

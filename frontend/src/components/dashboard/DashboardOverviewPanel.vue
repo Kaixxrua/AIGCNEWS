@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import GlassCalendar from '@/components/GlassCalendar.vue'
 import {
   isSourceStatCard,
   statCards,
@@ -11,8 +10,6 @@ import {
 defineProps<{
   loading: boolean
   activeTab: TabKey
-  currentDate: string
-  availableDates: string[]
   getAnimatedValue: (index: number) => string
   getVisitorDisplayValue: (cardKey: string, index: number) => string
 }>()
@@ -21,110 +18,156 @@ const { t } = useI18n()
 
 const emit = defineEmits<{
   selectSource: [key: TabKey]
-  dateChange: [date: string]
 }>()
 </script>
 
 <template>
-  <div v-if="loading" class="flex flex-col gap-2 shrink-0 md:flex-row md:items-start">
-    <div class="flex-1 flex flex-col gap-2">
-      <div class="grid gap-2 grid-cols-2 sm:grid-cols-3">
-        <div v-for="i in 6" :key="i" class="glass-card h-[44px] animate-pulse" />
-      </div>
-      <div class="grid gap-2 grid-cols-2">
-        <div v-for="i in 2" :key="'v'+i" class="glass-card h-[44px] animate-pulse" />
-      </div>
-    </div>
-    <div class="w-[170px] shrink-0 glass-card h-[150px] animate-pulse" />
+  <!-- 统计带：单条分段条（lg+）/ 迷你卡片网格（<lg） -->
+  <div v-if="loading" class="stat-strip shrink-0" aria-hidden="true">
+    <div v-for="i in 9" :key="i" class="stat-cell animate-pulse" />
   </div>
 
-  <div v-else class="flex flex-col gap-2 shrink-0 md:flex-row md:items-start">
-    <div class="flex-1 flex flex-col gap-2">
-      <!-- 6 个数据源卡片 -->
-      <div class="grid gap-2 grid-cols-2 sm:grid-cols-3">
-        <template v-for="(card, index) in statCards" :key="card.key">
-          <button
-            v-if="isSourceStatCard(card.key)"
-            type="button"
-            class="dashboard-source-card stagger-enter h-[44px] px-2.5 flex items-center justify-between transition-colors"
-            :class="[activeTab === card.key ? 'dashboard-source-card--active' : '', 'glass-card card-hover']"
-            :style="{ animationDelay: (index * 0.08 + 0.1) + 's' }"
-            :aria-pressed="activeTab === card.key"
-            :aria-label="t('dashboard.sourceRanking', { source: t(`dashboard.stats.${card.labelKey}`) })"
-            @click="emit('selectSource', card.key)"
-          >
-            <span class="flex items-center gap-2">
-              <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" :class="[card.iconBg, card.iconColor]">
-                <span class="w-3 h-3 flex items-center justify-center" v-html="card.icon" />
-              </span>
-              <span class="text-xs font-medium" :class="card.labelColor || 'text-stone-500'">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
-            </span>
-            <span class="text-lg font-bold tabular-nums" :class="card.numColor">{{ getAnimatedValue(index) }}</span>
-          </button>
-          <div
-            v-else
-            class="stagger-enter h-[44px] px-2.5 flex items-center justify-between transition-colors rounded-xl shadow-sm"
-            :class="card.cardBg"
-            :style="{ animationDelay: (index * 0.08 + 0.1) + 's' }"
-          >
-            <span class="flex items-center gap-2">
-              <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" :class="[card.iconBg, card.iconColor]">
-                <span class="w-3 h-3 flex items-center justify-center" v-html="card.icon" />
-              </span>
-              <span class="text-xs font-medium" :class="card.labelColor">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
-            </span>
-            <span class="text-lg font-bold tabular-nums" :class="card.numColor">{{ getAnimatedValue(index) }}</span>
-          </div>
-        </template>
+  <div v-else class="stat-strip shrink-0">
+    <template v-for="(card, index) in statCards" :key="card.key">
+      <button
+        v-if="isSourceStatCard(card.key)"
+        type="button"
+        class="stat-cell stat-cell--btn stagger-enter"
+        :class="{ 'stat-cell--active': activeTab === card.key }"
+        :style="{ animationDelay: (index * 0.05 + 0.05) + 's' }"
+        :aria-pressed="activeTab === card.key"
+        :aria-label="t('dashboard.sourceRanking', { source: t(`dashboard.stats.${card.labelKey}`) })"
+        @click="emit('selectSource', card.key)"
+      >
+        <span class="stat-cell-head">
+          <span class="stat-cell-icon" :class="card.iconColor"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
+          <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
+        </span>
+        <span class="stat-cell-num" :class="card.numColor">{{ getAnimatedValue(index) }}</span>
+      </button>
+      <div
+        v-else
+        class="stat-cell stat-cell--total stagger-enter"
+        :style="{ animationDelay: (index * 0.05 + 0.05) + 's' }"
+      >
+        <span class="stat-cell-head">
+          <span class="stat-cell-icon"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
+          <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
+        </span>
+        <span class="stat-cell-num">{{ getAnimatedValue(index) }}</span>
       </div>
-
-      <!-- 2 个运营统计卡片 -->
-      <div class="grid gap-2 grid-cols-2">
-        <div
-          v-for="(card, index) in visitorCards"
-          :key="card.key"
-          class="stagger-enter glass-card h-[44px] px-2.5 flex items-center justify-between transition-colors"
-          :style="{ animationDelay: (index * 0.08 + 0.6) + 's' }"
-        >
-          <div class="flex items-center gap-2">
-            <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" :class="[card.iconBg, card.iconColor]">
-              <span class="w-3 h-3 flex items-center justify-center" v-html="card.icon" />
-            </div>
-            <span class="text-xs font-medium text-stone-400">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
-          </div>
-          <span class="text-lg font-bold tabular-nums" :class="card.numColor">{{ getVisitorDisplayValue(card.key, index) }}</span>
-        </div>
-      </div>
-      <!-- 快捷入口 -->
-      <div class="grid gap-2">
-        <RouterLink
-          to="/wechat"
-          class="stagger-enter glass-card card-hover flex h-[44px] items-center justify-between px-2.5 transition-colors"
-          :style="{ animationDelay: '0.7s' }"
-        >
-          <span class="flex items-center gap-2">
-            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9.5 4C5.36 4 2 6.91 2 10.5c0 1.96 1.13 3.72 2.94 4.96L4 19l3.85-1.93c.67.18 1.38.28 2.12.28.23 0 .46-.01.68-.03"/>
-                <path d="M14.5 9c3.87 0 7 2.69 7 6s-3.13 6-7 6c-.63 0-1.24-.06-1.83-.18L11 21.5l.5-2.5c-1.5-1.1-2.5-2.77-2.5-4.62 0-3.31 3.13-6 7-6z"/>
-              </svg>
-            </span>
-            <span class="text-xs font-medium text-stone-500">{{ t('wechat.panelTitle') }}</span>
-          </span>
-          <svg class="h-4 w-4 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </RouterLink>
-      </div>
-    </div>
-
-    <!-- 日历 -->
-    <div class="w-full shrink-0 md:w-[170px]">
-      <GlassCalendar
-        :model-value="currentDate"
-        :available-dates="availableDates"
-        @update:model-value="emit('dateChange', $event)"
-      />
+    </template>
+    <div
+      v-for="(card, index) in visitorCards"
+      :key="card.key"
+      class="stat-cell stagger-enter"
+      :style="{ animationDelay: (index * 0.05 + 0.45) + 's' }"
+    >
+      <span class="stat-cell-head">
+        <span class="stat-cell-icon" :class="card.iconColor"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
+        <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
+      </span>
+      <span class="stat-cell-num" :class="card.numColor">{{ getVisitorDisplayValue(card.key, index) }}</span>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 硬边统计带：小屏为迷你卡片网格，lg 起合并为单条分段条（变量由 .dashboard-page 提供） */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+@media (min-width: 640px) {
+  .stat-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+  .stat-strip {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--ink);
+    border-radius: 5px;
+    background: var(--paper-light);
+    box-shadow: 3px 3px 0 var(--shadow-hard);
+    overflow: hidden;
+  }
+}
+
+.stat-cell {
+  display: flex;
+  min-width: 0;
+  height: 48px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper-light);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+  text-align: left;
+}
+
+@media (min-width: 1024px) {
+  .stat-cell {
+    height: 52px;
+    flex: 1 1 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .stat-cell + .stat-cell { border-left: 1px solid var(--ink); }
+}
+
+.stat-cell--btn { cursor: pointer; transition: background-color 0.15s ease; }
+.stat-cell--btn:hover { background: var(--acid-soft); }
+
+.stat-cell--active,
+.stat-cell--active:hover { background: var(--acid); box-shadow: inset 0 -3px 0 var(--ink); }
+
+@media (max-width: 1023.98px) {
+  .stat-cell--active,
+  .stat-cell--active:hover { box-shadow: 2px 2px 0 var(--shadow-hard), inset 0 -3px 0 var(--ink); }
+}
+
+.stat-cell--active .stat-cell-num,
+.stat-cell--active .stat-cell-label,
+.stat-cell--active .stat-cell-icon { color: var(--projects-on-acid); }
+
+.stat-cell--total { background: var(--ink); }
+.stat-cell--total .stat-cell-num { color: var(--paper); }
+.stat-cell--total .stat-cell-label,
+.stat-cell--total .stat-cell-icon { color: var(--paper); opacity: 0.6; }
+
+.stat-cell-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  line-height: 1;
+}
+
+.stat-cell-icon { display: flex; flex-shrink: 0; align-items: center; }
+
+.stat-cell-label {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-cell-num {
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+</style>

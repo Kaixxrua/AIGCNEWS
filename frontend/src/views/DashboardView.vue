@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
+import GlassCalendar from '@/components/GlassCalendar.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
@@ -69,40 +70,78 @@ currentStats = () => stats.value
       {{ errorMsg }}
     </div>
 
-    <!-- 顶部区域：统计卡片 + 日历 -->
+    <!-- 顶部统计带：所有指标合并为一行分段条 -->
     <DashboardOverviewPanel
       :loading="loading"
       :active-tab="activeTab"
-      :current-date="currentDate"
-      :available-dates="availableDates"
       :get-animated-value="getAnimatedValue"
       :get-visitor-display-value="getVisitorDisplayValue"
       @select-source="selectSourceTab"
-      @date-change="onDateChange"
     />
 
-    <!-- 静默期专用空状态 (Embargo Empty State) -->
-    <DashboardEmptyState v-if="!loading && isEmbargoed" variant="embargoed" />
+    <!-- 主区域：榜单/空态占满剩余高度，日历与公众号入口收入右侧栏 -->
+    <div class="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
+      <!-- 加载中：左侧主区域骨架 -->
+      <div v-if="loading" class="glass-card order-2 min-w-0 flex-1 animate-pulse lg:order-1" />
 
-    <!-- 全局空状态（非静默期） -->
-    <DashboardEmptyState
-      v-else-if="!loading && !hasData && !tabLoading && !isEmbargoed"
-      variant="no-data"
-    />
+      <!-- 静默期专用空状态 (Embargo Empty State) -->
+      <DashboardEmptyState v-if="!loading && isEmbargoed" variant="embargoed" class="order-2 min-w-0 lg:order-1" />
 
-    <!-- 榜单面板（静默期时隐藏） -->
-    <DashboardRankingPanel
-      v-if="!loading && hasData && !isEmbargoed"
-      :active-tab="activeTab"
-      :active-period="activePeriod"
-      :tab-list="tabList"
-      :tab-loading="tabLoading"
-      :is-viewing-history="isViewingHistory"
-      :is-finalized="isFinalized"
-      :is-period-disabled="isPeriodDisabled"
-      @select-source="selectSourceTab"
-      @select-period="activePeriod = $event"
-    />
+      <!-- 全局空状态（非静默期） -->
+      <DashboardEmptyState
+        v-else-if="!loading && !hasData && !tabLoading && !isEmbargoed"
+        variant="no-data"
+        class="order-2 min-w-0 lg:order-1"
+      />
+
+      <!-- 榜单面板（静默期时隐藏） -->
+      <DashboardRankingPanel
+        v-if="!loading && hasData && !isEmbargoed"
+        class="order-2 min-w-0 lg:order-1"
+        :active-tab="activeTab"
+        :active-period="activePeriod"
+        :tab-list="tabList"
+        :tab-loading="tabLoading"
+        :is-viewing-history="isViewingHistory"
+        :is-finalized="isFinalized"
+        :is-period-disabled="isPeriodDisabled"
+        @select-source="selectSourceTab"
+        @select-period="activePeriod = $event"
+      />
+
+      <aside class="order-1 flex w-full max-w-[320px] shrink-0 flex-col gap-2 self-center lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch">
+        <template v-if="loading">
+          <div class="glass-card h-[164px] animate-pulse" />
+          <div class="glass-card h-[44px] animate-pulse" />
+        </template>
+        <template v-else>
+          <GlassCalendar
+            :model-value="currentDate"
+            :available-dates="availableDates"
+            @update:model-value="onDateChange"
+          />
+          <!-- 公众号快捷入口 -->
+          <RouterLink
+            to="/wechat"
+            class="stagger-enter glass-card card-hover flex min-h-[44px] shrink-0 items-center justify-between gap-2 px-2.5 py-1.5 transition-colors"
+            style="animation-delay: 0.3s"
+          >
+            <span class="flex items-center gap-2">
+              <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9.5 4C5.36 4 2 6.91 2 10.5c0 1.96 1.13 3.72 2.94 4.96L4 19l3.85-1.93c.67.18 1.38.28 2.12.28.23 0 .46-.01.68-.03"/>
+                  <path d="M14.5 9c3.87 0 7 2.69 7 6s-3.13 6-7 6c-.63 0-1.24-.06-1.83-.18L11 21.5l.5-2.5c-1.5-1.1-2.5-2.77-2.5-4.62 0-3.31 3.13-6 7-6z"/>
+                </svg>
+              </span>
+              <span class="text-xs font-medium text-stone-500">{{ t('wechat.panelTitle') }}</span>
+            </span>
+            <svg class="h-4 w-4 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </RouterLink>
+        </template>
+      </aside>
+    </div>
   </div>
 </template>
 
@@ -135,24 +174,12 @@ currentStats = () => stats.value
 .dashboard-page :deep(.card-hover:hover) { border-color: var(--ink); background: var(--acid-soft); box-shadow: 3px 3px 0 var(--shadow-hard); transform: none; }
 .dashboard-page :deep(.text-stone-300),
 .dashboard-page :deep(.text-stone-400) { color: var(--muted); }
+/* 深色下 GitHub/X 指标的字面灰色不可读，统一映射为 ink */
+:root[data-theme='dark'] .dashboard-page :deep(.text-gray-800),
+:root[data-theme='dark'] .dashboard-page :deep(.text-gray-600) { color: var(--ink); }
 .dashboard-page :deep(.rounded-full),
 .dashboard-page :deep(.rounded-xl),
 .dashboard-page :deep(.rounded-2xl) { border-radius: 4px; }
-
-.dashboard-page :deep(.bg-slate-800) { border: 1px solid var(--ink); color: var(--projects-on-acid); background: var(--acid); box-shadow: 3px 3px 0 var(--shadow-hard); }
-.dashboard-page :deep(.bg-slate-800:hover) { color: var(--projects-on-acid); background: var(--acid); }
-.dashboard-page :deep(.bg-slate-800 .text-white),
-.dashboard-page :deep(.bg-slate-800 .text-slate-300) { color: inherit; }
-.dashboard-page :deep(.dashboard-source-card--active) {
-  border-color: var(--ink);
-  background: var(--acid);
-  box-shadow: inset 0 -3px 0 var(--ink), 3px 3px 0 var(--shadow-hard);
-}
-.dashboard-page :deep(.dashboard-source-card--active .text-blue-600),
-.dashboard-page :deep(.dashboard-source-card--active .text-gray-800),
-.dashboard-page :deep(.dashboard-source-card--active .text-amber-600),
-.dashboard-page :deep(.dashboard-source-card--active .text-rose-600),
-.dashboard-page :deep(.dashboard-source-card--active .text-orange-500) { color: var(--projects-on-acid) !important; }
 
 @media (prefers-reduced-motion: reduce) {
   .dashboard-page *, .dashboard-page *::before, .dashboard-page *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
