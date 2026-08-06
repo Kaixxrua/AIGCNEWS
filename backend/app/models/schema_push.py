@@ -8,7 +8,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 
 # 与简报管线（EmailMessageRenderer.SOURCE_LABELS / get_top_items）保持同一词汇表。
 SubscriptionSource = Literal[
-    "all", "arxiv", "github", "news", "producthunt", "hackernews", "x"
+    "all", "arxiv", "github", "news", "producthunt", "hackernews", "x", "dailyhot"
 ]
 SubscriptionFrequency = Literal["daily", "weekly", "monthly"]
 

@@ -37,7 +37,7 @@ class IngestionDependencyCompositionTests(unittest.TestCase):
         self.assertTrue(callable(dependencies.pdf_vector_writer_factory))
         self.assertTrue(callable(dependencies.pdf_indexer))
         self.assertTrue(callable(dependencies.cache_invalidator))
-        self.assertEqual(len(dependencies.crawler_factories), 6)
+        self.assertEqual(len(dependencies.crawler_factories), 7)
 
     def test_x_crawler_factory_reads_watchlist_from_repositories(self) -> None:
         repositories = MagicMock()

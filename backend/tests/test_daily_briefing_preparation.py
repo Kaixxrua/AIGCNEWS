@@ -50,6 +50,7 @@ class BriefingPurePreparationTests(unittest.TestCase):
                 "producthunt_daily_html",
                 "hn_daily_html",
                 "x_daily_watchlist",
+                "dailyhot_daily",
             ),
         )
 

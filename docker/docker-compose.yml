@@ -35,8 +35,8 @@ services:
       - http_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - https_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - all_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
-      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,host.docker.internal
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal
     extra_hosts:
       - "host.docker.internal:172.19.0.1"
     volumes:
@@ -124,6 +124,35 @@ services:
     tmpfs:
       - /var/cache/nginx
       - /var/run
+
+  # DailyHot 聚合热榜上游（自托管 imsyy/DailyHotApi）：仅限编排内网，
+  # 不对宿主暴露端口。部署方式见 docs/dailyhot-source.md：
+  # 需与仓库同级检出 DailyHotApi 并预构建镜像（manage_main_stack.sh 为 --no-build）。
+  dailyhot:
+    profiles: ["dailyhot"]
+    build:
+      context: ../../DailyHotApi
+      target: runner
+    image: dailyhot-api:local
+    container_name: aigc-dailyhot
+    restart: unless-stopped
+    expose:
+      - "6688"
+    environment:
+      - PORT=6688
+      # 内网专用上游：关闭域名限制，缓存 1 小时（默认），关闭文件日志
+      - ALLOWED_DOMAIN=*
+      - ALLOWED_HOST=dailyhot
+      - USE_LOG_FILE=false
+      - FILTER_WEIBO_ADVERTISEMENT=true
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:6688/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
 
   priceai:
     build:

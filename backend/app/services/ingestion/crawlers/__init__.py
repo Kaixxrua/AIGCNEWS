@@ -5,6 +5,7 @@
 """
 
 from backend.app.services.ingestion.crawlers.arxiv_crawler import ArxivCrawler
+from backend.app.services.ingestion.crawlers.dailyhot_crawler import DailyHotCrawler
 from backend.app.services.ingestion.crawlers.github_crawler import GitHubCrawler
 from backend.app.services.ingestion.crawlers.hackernews_crawler import HackerNewsCrawler
 from backend.app.services.ingestion.crawlers.news_crawler import NewsCrawler
@@ -15,6 +16,7 @@ from backend.app.services.ingestion.crawlers.x_crawler import XCrawler
 
 __all__ = [
     "ArxivCrawler",
+    "DailyHotCrawler",
     "GitHubCrawler",
     "NewsCrawler",
     "ProductHuntCrawler",

@@ -154,6 +154,23 @@ _PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据�
 **生成日期：** {date}
 """
 
+_PROMPT_DAILYHOT = r"""你是一位专业的中文科技资讯编辑。请根据以下{period_label}中文互联网各大站点热榜条目（36氪、IT之家、少数派、掘金、知乎、虎嗅、极客公园、爱范儿等），撰写一份**内容详尽、深度全面**的全网热榜{period_label}报。
+
+**要求：**
+1. 使用 Markdown 格式输出
+2. 包含"AI 与大模型动态"、"产品与商业化"、"开发者与技术社区"、"其他值得关注"四个章节
+3. **每条热榜条目都必须详细分析**，包括：来源榜单、事件概述、背景与影响（每条至少 3-5 句话）
+4. AI 相关条目优先详写；对跨榜单共同反映出的行业趋势进行深入洞察
+5. 语言通俗易懂，面向 AI 从业者与技术爱好者
+6. **务必覆盖所有提供的条目，不要遗漏任何一条**
+7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#dailyhot`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#产品发布` `#商业化` `#开源模型` `#AI基础设施` `#开发者工具` `#监管政策` `#行业动态` `#硬件` `#其他`。禁止使用过于宽泛的标签如 #ai #tool #trending
+
+**{period_label}全网热榜条目（共 {count} 条）：**
+{articles}
+
+**生成日期：** {date}
+"""
+
 _PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下{period_label} X（Twitter）上 AI 公司与知名开发者官方账号的热门推文，撰写一份**内容详尽、深度全面**的 X 动态{period_label}报。
 
 **要求：**
@@ -205,6 +222,7 @@ _SOURCE_CONFIG: Dict[str, tuple[str, str]] = {
     "producthunt": (_PROMPT_PRODUCTHUNT, "_producthunt"),
     "hackernews": (_PROMPT_HACKERNEWS, "_hackernews"),
     "x": (_PROMPT_X, "_x"),
+    "dailyhot": (_PROMPT_DAILYHOT, "_dailyhot"),
 }
 
 
@@ -234,6 +252,10 @@ _PERIOD_CHANNEL_MAP: dict[str, dict[str, str]] = {
     "x": {
         "daily": "x_daily_watchlist",
         # x 仅支持日榜（推文无周/月榜语义）
+    },
+    "dailyhot": {
+        "daily": "dailyhot_daily",
+        # dailyhot 聚合热榜仅支持日榜
     },
 }
 

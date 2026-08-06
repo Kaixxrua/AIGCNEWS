@@ -45,7 +45,7 @@ router = APIRouter()
 _SSE_HEARTBEAT_INTERVAL_SECONDS = float(settings.sse_heartbeat_interval)
 
 
-_VALID_SOURCES = {"all", "arxiv", "github", "news", "producthunt", "hackernews", "x"}
+_VALID_SOURCES = {"all", "arxiv", "github", "news", "producthunt", "hackernews", "x", "dailyhot"}
 _VALID_PERIODS = {"daily", "weekly", "monthly"}
 
 

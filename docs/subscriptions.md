@@ -44,7 +44,8 @@
 | `PATCH /api/push/me/subscriptions/{id}` | 暂停/恢复（`status: active\|paused`） |
 | `DELETE /api/push/me/subscriptions/{id}` | 删除订阅 |
 
-`source` 词汇表与简报管线一致：`all / arxiv / github / news / producthunt / hackernews / x`。
+`source` 词汇表与简报管线一致：`all / arxiv / github / news / producthunt / hackernews / x / dailyhot`
+（`dailyhot` 为聚合热榜源，部署与配置见 [dailyhot-source.md](dailyhot-source.md)）。
 
 ## 验证码与限流
 

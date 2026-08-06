@@ -62,6 +62,14 @@ class SchedulerDescriptorTests(unittest.TestCase):
                 3600,
             ),
             (
+                "dailyhot_hotlists",
+                "dailyhot",
+                "DailyHot 聚合热榜采集",
+                {"minute": "7", "second": "0"},
+                False,
+                7200,
+            ),
+            (
                 "github_project_daily_pipeline",
                 "github_project_daily_pipeline",
                 "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",

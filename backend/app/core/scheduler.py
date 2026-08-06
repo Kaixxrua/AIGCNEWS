@@ -337,6 +337,7 @@ _BRIEFING_TASKS: List[Dict[str, str]] = [
     {"source": "producthunt", "period": "daily"},
     {"source": "hackernews", "period": "daily"},
     {"source": "x", "period": "daily"},
+    {"source": "dailyhot", "period": "daily"},
 ]
 
 

@@ -53,6 +53,7 @@ def provide_ingestion_dependencies(
     )
     from backend.app.services.ingestion.crawlers import (
         ArxivCrawler,
+        DailyHotCrawler,
         GitHubCrawler,
         HackerNewsCrawler,
         NewsCrawler,
@@ -78,6 +79,8 @@ def provide_ingestion_dependencies(
             NewsCrawler,
             ProductHuntCrawler,
             HackerNewsCrawler,
+            # DailyHot 上游为编排内网自托管服务；未部署时采集返回 error 不影响其他源。
+            DailyHotCrawler,
             # X watchlist 与凭据均走数据库（D3 接缝）：空表时仓储按 env 自举，
             # 监控页 /ops/x-watch-accounts 与 /ops/x-credentials 管理后即成为唯一事实源。
             lambda: XCrawler(

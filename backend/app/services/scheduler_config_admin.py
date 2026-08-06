@@ -51,6 +51,12 @@ DEFAULT_JOB_CONFIGS: dict[str, SchedulerJobConfig] = {
         end_time=time(23, 59),
         interval_minutes=120,
     ),
+    "dailyhot_hotlists": SchedulerJobConfig(
+        job_id="dailyhot_hotlists",
+        start_time=time(0, 0),
+        end_time=time(23, 59),
+        interval_minutes=60,
+    ),
     "github_project_daily_pipeline": SchedulerJobConfig(
         job_id="github_project_daily_pipeline",
         start_time=time(2, 0),
@@ -98,6 +104,7 @@ _JOB_NAMES: dict[str, str] = {
     "hackernews": "Hacker News AI 热帖采集",
     "x_watchlist": "X 关注账号推文采集",
     "x_credentials_probe": "X 凭证池定时测活",
+    "dailyhot_hotlists": "DailyHot 聚合热榜采集",
     "github_project_daily_pipeline": "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",
     "github_project_metrics_refresh": "GitHub 项目库当天指标每两小时刷新",
     "daily_briefing": "每日自动简报生成（全维度）",

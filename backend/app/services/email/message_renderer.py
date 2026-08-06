@@ -12,6 +12,7 @@ SOURCE_LABELS = {
     "producthunt": "产品报告",
     "hackernews": "社区报告",
     "x": "X 动态报告",
+    "dailyhot": "全网热榜报告",
 }
 PERIOD_LABELS = {
     "daily": "日报",

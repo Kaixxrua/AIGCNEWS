@@ -285,6 +285,8 @@ _ENRICH_MAP = {
     "producthunt": enrich_producthunt,
     "hackernews": enrich_hackernews,
     "x": enrich_x,
+    # dailyhot 条目为各站热榜新闻链接，复用 news 的页面抓取丰富链路。
+    "dailyhot": enrich_news,
 }
 
 

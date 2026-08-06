@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     wechat_session_encryption_key: str = ""
     wechat_session_encryption_key_version: str = "v1"
     wechat_http_timeout_seconds: float = 15.0
+
+    # DailyHot 聚合热榜上游（编排内网自托管 DailyHotApi，见 docs/dailyhot-source.md）。
+    # base_url 指向 compose 服务名；endpoints 逗号分隔，为 DailyHotApi 路由名。
+    dailyhot_api_base_url: str = "http://dailyhot:6688"
+    dailyhot_endpoints: str = "36kr,ithome,sspai,juejin,zhihu,huxiu,geekpark,ifanr"
+    dailyhot_per_endpoint_limit: int = 5
+    dailyhot_request_timeout_seconds: float = 8.0
     wechat_login_attempt_ttl_seconds: int = 300
     wechat_session_estimated_ttl_seconds: int = 604800
     wechat_sync_max_pages: int = 20

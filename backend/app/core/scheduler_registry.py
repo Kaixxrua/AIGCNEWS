@@ -21,6 +21,7 @@ JobSource = Literal[
     "hackernews",
     "x",
     "x_credentials_probe",
+    "dailyhot",
     "github_project_daily_pipeline",
     "github_project_metrics_refresh",
     "daily_briefing",
@@ -160,6 +161,15 @@ SOURCE_JOB_DESCRIPTORS: tuple[CronJobDescriptor, ...] = (
         schedule=CronSchedule(hour="*/2", minute=8),
         coalesce=True,
         misfire_grace_time=3600,
+    ),
+    # DailyHot 聚合热榜（编排内网自托管 DailyHotApi）：与其他采集源错开分钟
+    CronJobDescriptor(
+        id="dailyhot_hotlists",
+        source="dailyhot",
+        name="DailyHot 聚合热榜采集",
+        schedule=CronSchedule(minute=7),
+        coalesce=False,
+        misfire_grace_time=7200,
     ),
     CronJobDescriptor(
         id="github_project_daily_pipeline",
