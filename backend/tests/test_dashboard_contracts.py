@@ -298,6 +298,32 @@ def test_top_route_preserves_dedupe_limit_and_forwarded_pdf_url() -> None:
     ]
 
 
+def test_top_route_serves_limit_past_legacy_50_cap() -> None:
+    date = "2020-01-02"
+    docs = [
+        {"id": f"t{i}", "source": "x", "url": f"https://x.com/a/status/{i}"}
+        for i in range(60)
+    ]
+    reader = FakeRankSnapshotReader({(date, "x_daily_watchlist", "x"): docs})
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_rank_snapshot_repository] = lambda: reader
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
+    try:
+        client = TestClient(app)
+        ok = client.get(f"/api/dashboard/top?source=x&period=daily&limit=60&date={date}")
+        too_big = client.get(
+            f"/api/dashboard/top?source=x&period=daily&limit=501&date={date}"
+        )
+    finally:
+        FastAPICache.reset()
+
+    assert ok.status_code == 200
+    assert len(ok.json()["items"]) == 60
+    assert too_big.status_code == 422
+
+
 def test_top_route_preserves_x_media_metadata() -> None:
     snapshot_date = "2020-01-02"
     reader = FakeRankSnapshotReader(

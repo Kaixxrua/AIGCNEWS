@@ -59,6 +59,9 @@ logger = logging.getLogger(__name__)
 _FETCH_LIMIT = 25
 # 每个数据源独立保留的 Top-N 精华数量
 _TOP_N_PER_SOURCE = 10
+# 按源覆盖 Top-N：X 看板展示当天全部推文，入库保留全量（=抓取上限）；
+# 其余源保持 Top-10。键为纯源名（crawler.source_name）。
+_TOP_N_BY_SOURCE: Dict[str, int] = {"x": _FETCH_LIMIT}
 
 
 def _apply_existing_summary_short_circuit(
@@ -174,10 +177,14 @@ class IngestionOrchestrator:
         *,
         limit: int = _FETCH_LIMIT,
         top_n: int = _TOP_N_PER_SOURCE,
+        top_n_by_source: Optional[Dict[str, int]] = None,
         target_date: Optional[str] = None,
     ):
         self.limit = limit
         self.top_n = top_n
+        self.top_n_by_source = (
+            top_n_by_source if top_n_by_source is not None else _TOP_N_BY_SOURCE
+        )
         self.target_date = target_date
         self.snapshot_date = target_date or today_cst()
 
@@ -198,6 +205,14 @@ class IngestionOrchestrator:
     def registered_sources(self) -> List[str]:
         """返回所有已注册的数据源名称。"""
         return list(self._crawlers.keys())
+
+    def _effective_top_n(self, source_name: str) -> int:
+        """返回指定源的 Top-N：按源覆盖优先，未映射回落全局 top_n。
+
+        getattr 兜底：部分测试以 __new__ 构造 orchestrator 不设该属性。
+        """
+        overrides = getattr(self, "top_n_by_source", None) or _TOP_N_BY_SOURCE
+        return overrides.get(source_name, self.top_n)
 
     def _create_task(self, task_name: str) -> int:
         return self.task_writer.create_task(task_name)
@@ -246,7 +261,7 @@ class IngestionOrchestrator:
 
         selected = _select_top(
             papers,
-            top_n=self.top_n,
+            top_n=self._effective_top_n(source_name),
             source_label=label,
         )
         selected = _apply_existing_summary_short_circuit(

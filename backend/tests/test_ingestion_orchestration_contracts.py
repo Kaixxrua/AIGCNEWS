@@ -315,5 +315,55 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
         orchestrator._start_arxiv_pdf_background.assert_called_once_with([paper])
 
 
+class EffectiveTopNContractTests(unittest.IsolatedAsyncioTestCase):
+    def _bare_orchestrator(self) -> IngestionOrchestrator:
+        orchestrator = IngestionOrchestrator.__new__(IngestionOrchestrator)
+        orchestrator.top_n = 10
+        return orchestrator
+
+    def test_effective_top_n_defaults_to_full_fetch_for_x(self) -> None:
+        orchestrator = self._bare_orchestrator()
+
+        self.assertEqual(orchestrator._effective_top_n("x"), 25)
+        self.assertEqual(orchestrator._effective_top_n("arxiv"), 10)
+
+    def test_effective_top_n_respects_explicit_override(self) -> None:
+        orchestrator = self._bare_orchestrator()
+        orchestrator.top_n_by_source = {"x": 7}
+
+        self.assertEqual(orchestrator._effective_top_n("x"), 7)
+        self.assertEqual(orchestrator._effective_top_n("github"), 10)
+
+    async def test_enrich_and_ingest_passes_x_override_to_select_top(self) -> None:
+        orchestrator = self._bare_orchestrator()
+        orchestrator.snapshot_date = "2026-08-06"
+        orchestrator.documents = MagicMock()
+        orchestrator.rank_snapshots = MagicMock()
+        orchestrator.dependencies = MagicMock()
+
+        with (
+            patch(
+                "backend.app.services.ingestion.pipeline._select_top",
+                return_value=[{"title": "tweet"}],
+            ) as select_top,
+            patch(
+                "backend.app.services.ingestion.pipeline._apply_existing_summary_short_circuit",
+                side_effect=lambda papers, *_: papers,
+            ),
+            patch(
+                "backend.app.services.ingestion.pipeline.enrich_papers",
+                new=AsyncMock(side_effect=lambda papers, **_: papers),
+            ),
+            patch(
+                "backend.app.services.ingestion.pipeline.asyncio.to_thread",
+                new=AsyncMock(return_value=1),
+            ),
+        ):
+            count = await orchestrator._enrich_and_ingest("x", [{"title": "tweet"}], 1)
+
+        self.assertEqual(count, 1)
+        self.assertEqual(select_top.call_args.kwargs["top_n"], 25)
+
+
 if __name__ == "__main__":
     unittest.main()

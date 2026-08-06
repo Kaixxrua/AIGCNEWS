@@ -126,7 +126,7 @@ def _score_categories(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 @cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_top_list(
     request: Request,
-    limit: int = Query(default=10, ge=1, le=50),
+    limit: int = Query(default=10, ge=1, le=500),
     source: Optional[str] = Query(
         default=None, description="过滤来源：all/arxiv/github/news"
     ),

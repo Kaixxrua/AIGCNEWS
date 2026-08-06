@@ -108,6 +108,42 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         )
         vectors.add_documents.assert_called_once()
 
+    def test_persist_skips_delete_for_accumulate_snapshot_channels(self) -> None:
+        adapter, documents, snapshots, _, _, _ = self._adapter()
+        papers = [
+            {
+                "source": "x",
+                "channel": "x_daily_watchlist",
+                "title": "Tweet",
+                "url": "https://x.com/a/status/1",
+            }
+        ]
+
+        count = adapter.persist(papers, source_label="x", snapshot_date="2026-08-06")
+
+        self.assertEqual(count, 1)
+        snapshots.delete_snapshots_by_channel.assert_not_called()
+        snapshots.upsert_rank_snapshot.assert_called_once()
+
+    def test_persist_mixed_batch_deletes_only_replace_channels(self) -> None:
+        adapter, documents, snapshots, _, _, _ = self._adapter()
+        papers = [
+            {
+                "source": "x",
+                "channel": "x_daily_watchlist",
+                "title": "Tweet",
+                "url": "https://x.com/a/status/1",
+            },
+            {"source": "news", "channel": "news_daily", "title": "N", "url": "https://n"},
+        ]
+
+        adapter.persist(papers, source_label="mixed", snapshot_date="2026-08-06")
+
+        snapshots.delete_snapshots_by_channel.assert_called_once_with(
+            "2026-08-06", "news_daily"
+        )
+        self.assertEqual(snapshots.upsert_rank_snapshot.call_count, 2)
+
     def test_full_multi_store_event_ordering(self) -> None:
         events: list[str] = []
         documents = MagicMock()

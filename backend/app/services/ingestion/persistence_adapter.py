@@ -15,6 +15,13 @@ from backend.app.services.ingestion.document_projection import (
 
 logger = logging.getLogger(__name__)
 
+# 全天累积型快照 channel：同一 snapshot_date 内多轮采集取并集（X 看板展示
+# 当天全部推文）。upsert 冲突键 (doc_id, snapshot_date, source_channel) 保留
+# LEAST(rank_in_period)/GREATEST(raw_score, score)，天然幂等；删除推文仍经
+# delete_document 级联删快照。其余 channel 保持整 channel 替换语义。
+ACCUMULATE_SNAPSHOT_CHANNELS = frozenset({"x_daily_watchlist"})
+
+
 
 def project_document_write(
     paper: dict,
@@ -95,6 +102,8 @@ class IngestionPersistenceAdapter:
         channels.discard("")
 
         for channel in channels:
+            if channel in ACCUMULATE_SNAPSHOT_CHANNELS:
+                continue
             try:
                 self.rank_snapshots.delete_snapshots_by_channel(
                     snapshot_date, channel
