@@ -58,6 +58,27 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         self.assertEqual(write["in_daily"], 1)
         self.assertEqual(write["in_weekly"], 0)
 
+    def test_document_write_projection_passes_translation_zh_through(self) -> None:
+        document = MagicMock(metadata={"id": "doc-x"})
+        paper = {
+            "source": "x",
+            "channel": "x_daily_watchlist",
+            "title": "Tweet",
+            "translation_zh": "中文译文",
+        }
+
+        write = project_document_write(paper, document, "x")
+
+        self.assertEqual(write["translation_zh"], "中文译文")
+
+    def test_document_write_projection_translation_zh_defaults_to_none(self) -> None:
+        document = MagicMock(metadata={"id": "doc-y"})
+        paper = {"source": "x", "channel": "x_daily_watchlist", "title": "Tweet"}
+
+        write = project_document_write(paper, document, "x")
+
+        self.assertIsNone(write["translation_zh"])
+
     def test_persist_deletes_channels_before_deterministic_upserts(self) -> None:
         adapter, documents, snapshots, vectors, _, _ = self._adapter()
         events: list[tuple[str, str]] = []
