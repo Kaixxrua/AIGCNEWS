@@ -4,8 +4,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
-
-import httpx
+from urllib.parse import quote
 
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.repositories.wechat_account_repository import (
@@ -234,9 +233,13 @@ class WeChatSyncService:
         nickname = str(account["nickname"])
         target_name = normalize_account_name(nickname)
         fakeid = account["fakeid"]
+        # The referer ends up in an HTTP header, so it must be ASCII:
+        # httpx.QueryParams()["query"] returns the *decoded* value — use
+        # urllib.parse.quote to keep the nickname percent-encoded.
         search_referer = (
             "https://weixin.sogou.com/weixin?type=2&query="
-            + httpx.QueryParams({"query": nickname})["query"]
+            + quote(nickname)
+            + "&ie=utf8"
         )
 
         matched: list[dict[str, Any]] = []

@@ -80,6 +80,12 @@ def test_sync_falls_back_to_sogou_on_rate_limit() -> None:
 
     sogou.search_articles.assert_awaited()
     assert sogou.resolve_article_url.await_count == 3
+    # Regression: the referer goes into an HTTP header, so it must stay
+    # ASCII even though the account nickname contains CJK characters.
+    referer = sogou.resolve_article_url.call_args[1]["referer"]
+    assert referer.isascii()
+    # The CJK nickname must stay percent-encoded in the referer URL.
+    assert "Ai%E8%BF%B7%E6%80%9D%E5%BD%95" in referer
     metadatas = articles.upsert_wechat_articles.call_args[0][2]
     assert len(metadatas) == 3
     assert metadatas[0]["stable_article_key"] == "2247483765-1"
