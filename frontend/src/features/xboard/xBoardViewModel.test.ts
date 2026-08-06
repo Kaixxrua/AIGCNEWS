@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   authorAvatarUrl,
+  authorDisplayName,
   countTweets,
   displayTweetText,
   distributeColumns,
@@ -53,6 +54,14 @@ describe('xBoardViewModel', () => {
     expect(tweetText({ summary: 'full', title: 'short' })).toBe('full')
     expect(tweetText({ title: 'only' })).toBe('only')
     expect(tweetText({})).toBe('')
+  })
+
+  it('prefers stored author nickname and falls back to @handle', () => {
+    expect(authorDisplayName({ author_name: 'OpenAI', url: 'https://x.com/openai/status/1' })).toBe('OpenAI')
+    expect(authorDisplayName({ url: 'https://x.com/OpenAI/status/1' })).toBe('@openai')
+    expect(authorDisplayName({ author_name: '  ', url: 'https://x.com/openai/status/1' })).toBe('@openai')
+    expect(authorDisplayName({ author_name: 'Karpathy' })).toBe('Karpathy')
+    expect(authorDisplayName({})).toBe('')
   })
 
   it('detects and lists media items safely', () => {

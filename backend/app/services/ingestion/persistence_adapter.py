@@ -60,6 +60,7 @@ def project_document_write(
         "in_monthly": int(paper.get("in_monthly", 0)),
         "media": json.dumps(media, ensure_ascii=False) if media else None,
         "author_avatar_url": paper.get("author_avatar_url"),
+        "author_name": paper.get("author_name"),
         "translation_zh": paper.get("translation_zh"),
     }
 

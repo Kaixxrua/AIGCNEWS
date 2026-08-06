@@ -79,6 +79,28 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
 
         self.assertIsNone(write["translation_zh"])
 
+    def test_document_write_projection_passes_author_name_through(self) -> None:
+        document = MagicMock(metadata={"id": "doc-x-name"})
+        paper = {
+            "source": "x",
+            "channel": "x_daily_watchlist",
+            "title": "Tweet",
+            "author": "openai",
+            "author_name": "OpenAI",
+        }
+
+        write = project_document_write(paper, document, "x")
+
+        self.assertEqual(write["author_name"], "OpenAI")
+
+    def test_document_write_projection_author_name_defaults_to_none(self) -> None:
+        document = MagicMock(metadata={"id": "doc-x-noname"})
+        paper = {"source": "x", "channel": "x_daily_watchlist", "title": "Tweet"}
+
+        write = project_document_write(paper, document, "x")
+
+        self.assertIsNone(write["author_name"])
+
     def test_persist_deletes_channels_before_deterministic_upserts(self) -> None:
         adapter, documents, snapshots, vectors, _, _ = self._adapter()
         events: list[tuple[str, str]] = []

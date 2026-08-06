@@ -26,6 +26,8 @@ export interface TopDoc {
   source?: string
   url?: string
   author_avatar_url?: string
+  /** 采集期落库的 X 账号昵称（display name；仅 X 推文，旧数据为空时回退展示 @handle） */
+  author_name?: string
   stars?: number
   language?: string
   feed_name?: string

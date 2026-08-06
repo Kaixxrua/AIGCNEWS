@@ -176,3 +176,42 @@ def test_upsert_document_translation_zh_defaults_to_none() -> None:
 
     params = cursor.execute.call_args.args[1]
     assert params["translation_zh"] is None
+
+
+def test_upsert_document_persists_author_name() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    repository.upsert_document(
+        {
+            "id": "x:2003",
+            "source": "x",
+            "source_channel": "x_daily_watchlist",
+            "title": "tweet",
+            "url": "https://x.com/openai/status/2003",
+            "summary": "original english text",
+            "author_name": "OpenAI",
+        }
+    )
+
+    sql = cursor.execute.call_args.args[0]
+    params = cursor.execute.call_args.args[1]
+    assert "author_name" in sql
+    # 冲突更新走 COALESCE(NULLIF(...))：新值缺失时保留已有昵称
+    assert "author_name=COALESCE(NULLIF(EXCLUDED.author_name, ''), documents.author_name)" in sql
+    assert params["author_name"] == "OpenAI"
+
+
+def test_upsert_document_author_name_defaults_to_none() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    repository.upsert_document(
+        {
+            "id": "x:2004",
+            "source": "x",
+            "title": "tweet",
+            "url": "https://x.com/openai/status/2004",
+        }
+    )
+
+    params = cursor.execute.call_args.args[1]
+    assert params["author_name"] is None

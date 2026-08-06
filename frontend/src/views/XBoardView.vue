@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, displayTweetText, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, timelineTweets, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, displayTweetText, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, timelineTweets, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
@@ -189,7 +189,7 @@ onBeforeUnmount(() => {
               <img
                 v-if="authorAvatarUrl(tweet)"
                 :src="authorAvatarUrl(tweet)"
-                :alt="extractXHandle(tweet.url) || ''"
+                :alt="authorDisplayName(tweet)"
                 loading="lazy"
                 referrerpolicy="no-referrer"
                 class="tweet-avatar h-6 w-6 shrink-0 object-cover"
@@ -201,8 +201,8 @@ onBeforeUnmount(() => {
                 :href="`https://x.com/${extractXHandle(tweet.url)}`"
                 target="_blank"
                 rel="noopener noreferrer"
-              >@{{ extractXHandle(tweet.url) }}</a>
-              <span v-else class="tweet-handle truncate px-1 text-xs">{{ t('xboard.unknownHandle') }}</span>
+              >{{ authorDisplayName(tweet) }}</a>
+              <span v-else class="tweet-handle truncate px-1 text-xs">{{ authorDisplayName(tweet) || t('xboard.unknownHandle') }}</span>
               <span class="tweet-score ml-auto shrink-0">
                 <component :is="scoreDisplay(tweet).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(tweet).text }}
               </span>

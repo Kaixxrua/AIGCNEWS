@@ -31,6 +31,17 @@ export const authorAvatarUrl = (doc: TopDoc): string | undefined => {
   return undefined
 }
 
+/**
+ * 卡片作者显示名：优先采集期落库的 X 账号昵称（author_name），
+ * 旧推文无昵称时回退 @handle；URL 无法解析时为空串（渲染层兜底标签）。
+ */
+export const authorDisplayName = (doc: TopDoc): string => {
+  const nickname = typeof doc.author_name === 'string' ? doc.author_name.trim() : ''
+  if (nickname) return nickname
+  const handle = extractXHandle(doc.url)
+  return handle ? `@${handle}` : ''
+}
+
 export const tweetText = (doc: TopDoc): string => (
   doc.summary || doc.title || ''
 )
