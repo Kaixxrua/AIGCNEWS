@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 from backend.app.services.wechat.errors import (
     WeChatAccountContextError,
     WeChatLoginFailed,
+    WeChatRateLimited,
     WeChatSessionExpired,
     WeChatUpstreamError,
 )
@@ -71,7 +72,16 @@ def check_base_resp_or_raise(body: dict[str, Any]) -> None:
     if ret in (200002, "200002"):
         raise WeChatAccountContextError()
 
-    logger.warning("WeChat upstream error: ret=%s", ret)
+    if ret in (200013, "200013"):
+        # err_msg: "freq control" — WeChat risk-control rate limit on the
+        # session. Retrying immediately extends the block; tell the user to
+        # wait instead of hammering the endpoint.
+        logger.warning("WeChat rate limited: ret=%s err_msg=%s", ret, base_resp.get("err_msg"))
+        raise WeChatRateLimited(
+            "微信接口触发限流（freq control），请等待约 30 分钟后再试，频繁重试会延长限流时间"
+        )
+
+    logger.warning("WeChat upstream error: ret=%s err_msg=%s", ret, base_resp.get("err_msg"))
     raise WeChatUpstreamError(f"微信错误 {ret}")
 
 

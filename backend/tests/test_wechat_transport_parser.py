@@ -316,6 +316,14 @@ def test_check_base_resp_maps_ret_200002_to_account_context_error() -> None:
         check_base_resp_or_raise({"base_resp": {"ret": 200002}})
 
 
+def test_check_base_resp_maps_ret_200013_to_rate_limited() -> None:
+    from backend.app.services.wechat.errors import WeChatRateLimited
+    from backend.app.services.wechat.parser import check_base_resp_or_raise
+
+    with pytest.raises(WeChatRateLimited, match="限流"):
+        check_base_resp_or_raise({"base_resp": {"ret": 200013, "err_msg": "freq control"}})
+
+
 def test_extract_account_info_from_home_parses_nickname_and_avatar() -> None:
     html = (
         '<script>var wx = {}; wx.cgiData = {};'
