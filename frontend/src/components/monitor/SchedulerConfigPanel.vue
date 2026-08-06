@@ -22,6 +22,11 @@ const emit = defineEmits<{
 const isEditing = computed(() => props.editingJobId !== null)
 const editingJob = computed(() => props.configs.find((item) => item.job_id === props.editingJobId))
 
+const updateForm = <K extends keyof SchedulerJobConfigForm>(field: K, value: SchedulerJobConfigForm[K]) => {
+  // eslint-disable-next-line vue/no-mutating-props -- form 为父组件传入的草稿对象，此处为受控表单的有意回写
+  props.form[field] = value
+}
+
 const formatWindow = (job: SchedulerJobConfig) => `${job.start_time} – ${job.end_time}`
 const formatInterval = (minutes: number) => {
   if (minutes < 60) return `${minutes}m`
@@ -49,20 +54,20 @@ const formatInterval = (minutes: number) => {
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div class="flex flex-col gap-1">
             <label class="text-2xs monitor-caption">{{ t('monitor.schedulerConfig.startTime') }}</label>
-            <input v-model="form.start_time" type="time" class="input px-2 py-1.5 text-sm rounded border" />
+            <input :value="form.start_time" type="time" class="input px-2 py-1.5 text-sm rounded border" @input="updateForm('start_time', ($event.target as HTMLInputElement).value)" />
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-2xs monitor-caption">{{ t('monitor.schedulerConfig.endTime') }}</label>
-            <input v-model="form.end_time" type="time" class="input px-2 py-1.5 text-sm rounded border" />
+            <input :value="form.end_time" type="time" class="input px-2 py-1.5 text-sm rounded border" @input="updateForm('end_time', ($event.target as HTMLInputElement).value)" />
           </div>
           <div class="flex flex-col gap-1">
             <label class="text-2xs monitor-caption">{{ t('monitor.schedulerConfig.intervalMinutes') }}</label>
-            <input v-model.number="form.interval_minutes" type="number" min="1" class="input px-2 py-1.5 text-sm rounded border" />
+            <input :value="form.interval_minutes" type="number" min="1" class="input px-2 py-1.5 text-sm rounded border" @input="updateForm('interval_minutes', Number(($event.target as HTMLInputElement).value))" />
           </div>
         </div>
         <div class="mt-3 flex items-center gap-2">
           <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <input v-model="form.enabled" type="checkbox" class="h-4 w-4" />
+            <input :checked="form.enabled" type="checkbox" class="h-4 w-4" @change="updateForm('enabled', ($event.target as HTMLInputElement).checked)" />
             {{ t('monitor.schedulerConfig.enabled') }}
           </label>
         </div>
