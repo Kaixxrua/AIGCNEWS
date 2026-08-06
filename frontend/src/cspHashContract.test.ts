@@ -55,4 +55,10 @@ describe('CSP 安全响应头契约', () => {
     expect(csp).not.toContain('fonts.googleapis.com')
     expect(csp).not.toContain('fonts.gstatic.com')
   })
+
+  it('media-src 放行 HTTPS：X Board 视频直连 video.twimg.com 不被拦', () => {
+    // 缺省 media-src 会回退 default-src 'self'，跨域视频（X CDN）直接被 CSP 阻断。
+    const csp = extractCspHeaderValue(nginxConf)
+    expect(csp).toMatch(/media-src\s+'self'\s+https:/)
+  })
 })
