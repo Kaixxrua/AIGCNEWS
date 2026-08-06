@@ -17,14 +17,17 @@ from backend.app.services.wechat.login_service import WeChatLoginService, _sessi
 from backend.app.services.wechat.transport import WeChatUpstreamResponse
 
 
-def _fake_response(content: bytes = b'{"base_resp":{"ret":0}}') -> WeChatUpstreamResponse:
+def _fake_response(
+    content: bytes = b'{"base_resp":{"ret":0}}',
+    cookies: dict[str, str] | None = None,
+) -> WeChatUpstreamResponse:
     headers = MagicMock()
     headers.get_list.return_value = []
     return WeChatUpstreamResponse(
         status_code=200,
         headers=headers,
         content=content,
-        cookies={},
+        cookies=cookies or {},
     )
 
 
@@ -157,7 +160,8 @@ def test_complete_login_validates_session_and_saves_account_info() -> None:
     }
     transport.biz_login = AsyncMock(
         return_value=_fake_response(
-            b'{"base_resp":{"ret":0},"redirect_url":"/cgi-bin/home?token=9876543210"}'
+            b'{"base_resp":{"ret":0},"redirect_url":"/cgi-bin/home?token=9876543210"}',
+            cookies={"slave_sid": "session-sid", "slave_user": "gh_abc"},
         )
     )
     transport.fetch_home_page = AsyncMock(
@@ -165,10 +169,23 @@ def test_complete_login_validates_session_and_saves_account_info() -> None:
             'wx.cgiData.nick_name = "AdminAccount"; wx.cgiData.head_img = "https://x.png";'
         )
     )
-    sessions.save_wechat_session.side_effect = [
-        {"status": "active", "account_name": ""},
-        {"status": "active", "account_name": "AdminAccount"},
-    ]
+    # Mirror the real Postgres repository contract: token and cookie are
+    # mandatory on every save, so a metadata-only payload must fail here
+    # instead of slipping through to production (regression for the 500
+    # caused by a partial second save in complete_login).
+    saved_payloads: list[dict] = []
+
+    def _save_session(owner_id: int, payload: dict) -> dict:
+        if not payload.get("token") or not payload.get("cookie"):
+            raise ValueError("token and cookie are required")
+        saved_payloads.append(payload)
+        return {
+            "status": payload.get("status", "active"),
+            "account_name": payload.get("account_name", ""),
+            "account_avatar_url": payload.get("account_avatar_url", ""),
+        }
+
+    sessions.save_wechat_session.side_effect = _save_session
 
     summary = asyncio.run(service.complete_login(1, uuid4()))
 
@@ -176,6 +193,10 @@ def test_complete_login_validates_session_and_saves_account_info() -> None:
     _, kwargs = transport.fetch_home_page.call_args
     assert kwargs["token"] == "9876543210"
     assert "uuid" not in kwargs["cookies"]
+    assert len(saved_payloads) == 2
+    assert saved_payloads[1]["token"] == "9876543210"
+    assert saved_payloads[1]["cookie"]
+    assert saved_payloads[1]["account_name"] == "AdminAccount"
     assert summary["account_name"] == "AdminAccount"
 
 

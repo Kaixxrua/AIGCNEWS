@@ -229,11 +229,18 @@ class WeChatLoginService:
             )
             raise WeChatAccountContextError()
 
+        # save_wechat_session requires the full credential payload (token +
+        # cookie are re-encrypted on every upsert), so re-pass them here
+        # instead of issuing a partial metadata-only update.
         session = self._sessions.save_wechat_session(
             owner_id,
             {
+                "token": token,
+                "cookie": cookie_header,
+                "status": "active",
                 **account_info,
                 "last_validated_at": self._now().isoformat(),
+                "last_used_at": self._now().isoformat(),
             },
         )
         self._attempts.update_login_attempt(
