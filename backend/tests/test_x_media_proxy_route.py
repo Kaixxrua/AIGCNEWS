@@ -1,6 +1,6 @@
 """X 媒体代理路由契约测试。
 
-monkeypatch _create_upstream_client 注入 MockTransport，走真实 httpx 管线验证：
+monkeypatch _get_upstream_client 注入 MockTransport，走真实 httpx 管线验证：
 URL 白名单（SSRF 边界）、Range 透传、状态码语义、流式回包。
 """
 
@@ -29,7 +29,7 @@ def build_client(monkeypatch: pytest.MonkeyPatch):
                 follow_redirects=False,
             )
 
-        monkeypatch.setattr(routes_x_media, "_create_upstream_client", fake_client_factory)
+        monkeypatch.setattr(routes_x_media, "_get_upstream_client", fake_client_factory)
         app = FastAPI()
         app.include_router(routes_x_media.router, prefix="/api")
         return TestClient(app)

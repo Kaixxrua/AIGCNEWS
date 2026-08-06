@@ -84,13 +84,28 @@ def _outbound_proxy() -> str | None:
     return None
 
 
-def _create_upstream_client() -> httpx.AsyncClient:
-    """构造上游客户端（测试缝：单测 monkeypatch 此函数注入 mock transport）。"""
-    return httpx.AsyncClient(
-        proxy=_outbound_proxy(),
-        timeout=httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0),
-        follow_redirects=False,
-    )
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_upstream_client() -> httpx.AsyncClient:
+    """返回进程级共享客户端：连接池复用 TCP+TLS+socks 会话。
+
+    瀑布流页面一次渲染会并发拉取数十个媒体，每请求新建客户端意味着
+    每次都完整握手（经 socks 代理时尤其慢）。共享客户端经 keepalive
+    复用连接，是页面加载延迟的主要来源优化。
+
+    测试缝：单测 monkeypatch 此函数注入 mock transport 客户端。
+    事件循环内无 await 的原子区，首次并发创建至多浪费一个实例，无需锁。
+    """
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = httpx.AsyncClient(
+            proxy=_outbound_proxy(),
+            timeout=httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0),
+            follow_redirects=False,
+            limits=httpx.Limits(max_connections=64, max_keepalive_connections=32),
+        )
+    return _shared_client
 
 
 @router.get("/media/x/proxy")
@@ -103,21 +118,18 @@ async def proxy_x_media(request: Request, url: str = Query(..., min_length=1)):
         if value:
             upstream_headers[name] = value
 
-    client = _create_upstream_client()
+    client = _get_upstream_client()
     try:
         upstream_request = client.build_request("GET", target, headers=upstream_headers)
         upstream = await client.send(upstream_request, stream=True)
     except httpx.TimeoutException as exc:
-        await client.aclose()
         raise HTTPException(status_code=504, detail="media upstream timeout") from exc
     except httpx.HTTPError as exc:
-        await client.aclose()
         logger.warning("[XMediaProxy] upstream connect failed: %s", exc)
         raise HTTPException(status_code=502, detail="media upstream unreachable") from exc
 
     if 300 <= upstream.status_code < 400:
         await upstream.aclose()
-        await client.aclose()
         logger.warning(
             "[XMediaProxy] unexpected redirect %s for %s",
             upstream.status_code,
@@ -137,8 +149,8 @@ async def proxy_x_media(request: Request, url: str = Query(..., min_length=1)):
             async for chunk in upstream.aiter_bytes(64 * 1024):
                 yield chunk
         finally:
+            # 共享客户端不随请求关闭；仅释放本响应，连接归还连接池
             await upstream.aclose()
-            await client.aclose()
 
     return StreamingResponse(
         body_stream(),

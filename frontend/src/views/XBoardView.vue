@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
 import { countTweets, extractXHandle, flattenTweets, hasMedia, mediaItems, tweetText, tweetTimestamp, authorAvatarUrl } from '@/features/xboard/xBoardViewModel'
@@ -27,6 +27,18 @@ const formatTime = (doc: TopDoc) => (
 )
 
 const isVideo = (item: TweetMediaItem) => item.type === 'video' || item.type === 'animated_gif'
+
+// X 式点击播放：视频占位零流量（不经代理拉取元数据），点击后才挂载 <video>。
+// 键与模板 :key 同源（`${tweet.url}-${index}`），重载推文时清空避免自动重播。
+const playingMedia = ref<Set<string>>(new Set())
+const mediaKey = (tweet: TopDoc, index: number) => `${tweet.url}-${index}`
+const playVideo = (key: string) => {
+  const next = new Set(playingMedia.value)
+  next.add(key)
+  playingMedia.value = next
+}
+const isPlaying = (key: string) => playingMedia.value.has(key)
+watch(docs, () => { playingMedia.value = new Set() })
 
 const isSelected = (doc: TopDoc) => doc.id ? selectedIds.value.has(String(doc.id)) : false
 
@@ -164,7 +176,7 @@ onBeforeUnmount(dispose)
 
           <!-- 媒体区 -->
           <div v-if="hasMedia(tweet)" class="flex flex-col gap-0">
-            <template v-for="(item, index) in mediaItems(tweet)" :key="`${tweet.url}-${index}`">
+            <template v-for="(item, index) in mediaItems(tweet)" :key="mediaKey(tweet, index)">
               <img
                 v-if="!isVideo(item)"
                 :src="item.url"
@@ -175,14 +187,31 @@ onBeforeUnmount(dispose)
                 class="w-full object-cover"
                 :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
               />
+              <!-- 视频：未点击时渲染零流量占位，点击后挂载 <video> 经代理加载播放 -->
               <video
-                v-else
+                v-else-if="isPlaying(mediaKey(tweet, index))"
                 :src="item.url"
                 controls
-                preload="metadata"
+                autoplay
+                playsinline
+                preload="auto"
                 class="w-full bg-stone-900"
                 :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
               />
+              <button
+                v-else
+                type="button"
+                class="group relative flex w-full items-center justify-center overflow-hidden bg-gradient-to-br from-stone-800 via-stone-900 to-black"
+                :style="{ aspectRatio: item.width && item.height ? `${item.width} / ${item.height}` : '16 / 9' }"
+                :aria-label="t('xboard.playVideo')"
+                @click="playVideo(mediaKey(tweet, index))"
+              >
+                <span class="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_60%)]" />
+                <span class="relative flex h-14 w-14 items-center justify-center rounded-full bg-white/15 backdrop-blur-sm transition group-hover:scale-105 group-hover:bg-white/25">
+                  <svg class="ml-1 h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                </span>
+                <span v-if="item.type === 'animated_gif'" class="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-white">GIF</span>
+              </button>
             </template>
           </div>
 
