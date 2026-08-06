@@ -92,5 +92,20 @@ def test_extract_article_identity_tolerates_empty_string_fallback_chain() -> Non
     assert identity["idx"] == "1"
 
 
+def test_parse_article_search_page_unescapes_cover_url() -> None:
+    # Real Sogou result covers carry HTML entities: thumb?appid=201147&amp;url=...
+    body = (
+        '<li id="sogou_vr_11002601_box_0">'
+        '<img src="//img01.sogoucdn.com/v2/thumb?appid=201147&amp;url=abc.jpg"/>'
+        '<h3><a href="/link?url=xyz">标题</a></h3>'
+        '<span class="all-time-y2">某账号</span>'
+        "</li>"
+    )
+    items = parse_article_search_page(body)
+
+    assert len(items) == 1
+    assert items[0]["cover_url"] == "//img01.sogoucdn.com/v2/thumb?appid=201147&url=abc.jpg"
+
+
 def test_normalize_account_name_strips_spaces_and_case() -> None:
     assert normalize_account_name(" AI 迷思录 ") == normalize_account_name("ai迷思录")

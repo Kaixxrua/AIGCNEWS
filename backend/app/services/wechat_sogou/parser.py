@@ -60,7 +60,7 @@ def parse_article_search_page(body: str) -> list[dict[str, Any]]:
                 "summary": _strip_markup(summary_match.group("summary")) if summary_match else "",
                 "account_name": _strip_markup(account_match.group("account")) if account_match else "",
                 "link_path": html_lib.unescape(title_match.group("href")),
-                "cover_url": cover_match.group("src") if cover_match else "",
+                "cover_url": html_lib.unescape(cover_match.group("src")) if cover_match else "",
                 "published_ts": int(time_match.group("ts")) if time_match else None,
             }
         )
