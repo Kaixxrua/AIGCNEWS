@@ -26,6 +26,7 @@ from backend.app.core.scheduler_registry import (
     CONVERSATION_CLEANUP_JOB,
     DAILY_BRIEFING_JOB,
     SOURCE_JOB_DESCRIPTORS,
+    SUBSCRIPTION_DISPATCH_JOB,
     JobDescriptor,
     SchedulerCallback,
     apply_job_config,
@@ -449,6 +450,25 @@ async def _run_daily_briefing_job(
     )
 
 
+async def _run_subscription_dispatch_job(
+    repositories: ApplicationRepositories,
+) -> None:
+    """订阅简报派发：枚举频率 × 来源读缓存，经 push_deliveries 幂等投递。"""
+    logger.info("[Scheduler] 触发订阅简报派发（全频率幂等投递）...")
+    from backend.app.services.push.dispatch_service import SubscriptionDispatchService
+
+    service = SubscriptionDispatchService(
+        subscriptions=repositories.user_subscriptions,
+        deliveries=repositories.push_deliveries,
+        briefings=repositories.briefings,
+    )
+    try:
+        summary = await service.dispatch_all()
+        logger.info("[Scheduler] 订阅简报派发完成：%s", summary)
+    except Exception as exc:
+        logger.error("[Scheduler] 订阅简报派发失败: %s", exc, exc_info=True)
+
+
 async def _run_project_semantic_warmup_job(
     warmup: Any | None = None,
 ) -> None:
@@ -634,6 +654,11 @@ class ApplicationSchedulerRuntime:
             lambda: _run_daily_briefing_job(self.repositories)
         )
 
+    async def _run_subscription_dispatch_job(self) -> None:
+        await self._run_tracked(
+            lambda: _run_subscription_dispatch_job(self.repositories)
+        )
+
     async def _run_conversation_cleanup_job(self) -> None:
         await self._run_tracked(
             lambda: _run_conversation_cleanup_job(self.repositories.conversations)
@@ -673,6 +698,8 @@ class ApplicationSchedulerRuntime:
                 return descriptor
         if job_id == DAILY_BRIEFING_JOB.id:
             return DAILY_BRIEFING_JOB
+        if job_id == SUBSCRIPTION_DISPATCH_JOB.id:
+            return SUBSCRIPTION_DISPATCH_JOB
         if job_id == CONVERSATION_CLEANUP_JOB.id:
             return CONVERSATION_CLEANUP_JOB
         if job_id == "project_semantic_warmup" and self._semantic_search_enabled:
@@ -684,6 +711,8 @@ class ApplicationSchedulerRuntime:
     def _resolve_callback(self, descriptor: JobDescriptor) -> SchedulerCallback | None:
         if descriptor.id == DAILY_BRIEFING_JOB.id:
             return self._run_daily_briefing_job
+        if descriptor.id == SUBSCRIPTION_DISPATCH_JOB.id:
+            return self._run_subscription_dispatch_job
         if descriptor.id == CONVERSATION_CLEANUP_JOB.id:
             return self._run_conversation_cleanup_job
         if descriptor.source == "project_semantic_warmup":
@@ -769,6 +798,17 @@ class ApplicationSchedulerRuntime:
             )
         else:
             logger.info("[Scheduler] 跳过已停用的简报任务: daily_briefing")
+
+        subscription_dispatch = self._effective_descriptor(SUBSCRIPTION_DISPATCH_JOB)
+        if subscription_dispatch is not None:
+            _register_job(
+                self.scheduler,
+                subscription_dispatch,
+                self._run_subscription_dispatch_job,
+            )
+            logger.info("[Scheduler] 注册订阅派发任务: subscription_dispatch")
+        else:
+            logger.info("[Scheduler] 跳过已停用的订阅派发任务: subscription_dispatch")
 
         if self._semantic_search_enabled:
             semantic_descriptor = self._effective_descriptor(

@@ -29,8 +29,8 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 18
-    assert migrations[-1].filename == "0018_push_channels_subscriptions.sql"
+    assert migrations[-1].version == 19
+    assert migrations[-1].filename == "0019_push_deliveries.sql"
 
 
 def test_wechat_official_accounts_migration_defines_secret_safe_tables() -> None:

@@ -3,8 +3,9 @@
 用户域的订阅推送基础层：用户在站点上绑定推送渠道（当前仅 email），再按
 「来源 × 频率 × 渠道」创建订阅。本文是数据模型、API 与策略的权威文档。
 
-> 当前状态：基础层已上线（渠道绑定、订阅 CRUD、测试邮件）。定时调度投递
-> （push_deliveries 幂等表 + APScheduler 频率枚举批量派发）属于后续工作单元；
+> 当前状态：渠道绑定、订阅 CRUD、测试邮件与定时派发均已上线。
+> 派发（迁移 0019 `push_deliveries` + `subscription_dispatch` 调度任务，默认每
+> 半小时一轮）只读简报缓存做幂等投递，不触发简报生成。
 > 与既有 `briefing_subscriptions`（简报邮件订阅）的合并走
 > Contract → Extract → Adapt → Switch → Delete，本层上线前不影响其行为。
 
@@ -16,6 +17,17 @@
 - `user_subscriptions`：`(id, user_id, channel_id, source, frequency, status)`，
   唯一约束 `(user_id, channel_id, source, frequency)`；`frequency ∈ {daily, weekly, monthly}`，
   `status ∈ {active, paused}`。两表均 `ON DELETE CASCADE`：删渠道连带删订阅，删用户连带清空。
+
+## 派发模型（迁移 0019）
+
+- `push_deliveries`：`(id, subscription_id, item_key, status, attempts, last_error, sent_at)`，
+  唯一约束 `(subscription_id, item_key)` 保证同一订阅同一期次至多一条投递记录；
+  `status ∈ {pending, sent, failed}`，尝试上限 3 次，用尽后置 `failed` 终态不再重试。
+  `item_key` 即简报缓存 key（`{期次日期}_{来源?}_{频率}`，周报锚定周一、月报锚定 1 号）。
+- `subscription_dispatch` 调度任务（监控页可配起止与轮询）枚举全部频率 × 来源：
+  先读 `briefings` 缓存（daily 由 8:00 生成任务填充，weekly/monthly 依赖按需生成），
+  缓存缺失直接跳过；命中后对每条「订阅启用 + 渠道已验证启用」的订阅执行一次投递，
+  单订阅失败不影响其他订阅。新订阅在下一轮派发即可收到当前期次。
 
 ## API（均需登录，响应带 no-store）
 
@@ -51,6 +63,6 @@ secret，绝不降级为明文；email 渠道无凭据不受影响。生成方�
 
 ## 代码位置
 
-- 服务层：`backend/app/services/push/`（`channel_service.py`、`subscription_service.py`、`secrets.py`、`errors.py`）
-- 仓储：`backend/app/repositories/{push_channel,user_subscription}_repository.py` + `postgres_*` 实现
-- 路由：`backend/app/api/routes_push.py`；契约测试：`backend/tests/test_push_channels.py`
+- 服务层：`backend/app/services/push/`（`channel_service.py`、`subscription_service.py`、`dispatch_service.py`、`secrets.py`、`errors.py`）
+- 仓储：`backend/app/repositories/{push_channel,user_subscription,push_delivery}_repository.py` + `postgres_*` 实现
+- 路由：`backend/app/api/routes_push.py`；契约测试：`backend/tests/test_push_channels.py`、`backend/tests/test_push_dispatch.py`

@@ -24,6 +24,7 @@ JobSource = Literal[
     "github_project_daily_pipeline",
     "github_project_metrics_refresh",
     "daily_briefing",
+    "subscription_dispatch",
     "project_semantic_warmup",
     "conversation_cleanup",
 ]
@@ -183,6 +184,18 @@ DAILY_BRIEFING_JOB = CronJobDescriptor(
     source="daily_briefing",
     name="每日自动简报生成（全维度）",
     schedule=CronSchedule(hour=8, minute=0),
+)
+
+# 订阅派发只读简报缓存（不触发生成），每半小时一轮幂等投递：
+# daily 消费 8:00 生成任务填充的缓存，weekly/monthly 消费按需生成的缓存；
+# 与生成解耦，错过点火合并一次即可（coalesce=True）。
+SUBSCRIPTION_DISPATCH_JOB = CronJobDescriptor(
+    id="subscription_dispatch",
+    source="subscription_dispatch",
+    name="订阅简报派发（全频率幂等投递）",
+    schedule=CronSchedule(minute="*/30"),
+    coalesce=True,
+    misfire_grace_time=1800,
 )
 
 

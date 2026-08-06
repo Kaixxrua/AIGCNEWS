@@ -100,6 +100,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "github_project_daily_pipeline",
                 "github_project_metrics_refresh",
                 "daily_briefing",
+                "subscription_dispatch",
                 "conversation_cleanup",
             ],
         )
@@ -174,7 +175,24 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             {"hour": "8", "minute": "0", "second": "0"},
         )
 
-        cleanup = fake_scheduler.add_job_calls[10][1]
+        dispatch = fake_scheduler.add_job_calls[10][1]
+        self.assertEqual(
+            {key: dispatch[key] for key in ("id", "name", "replace_existing", "max_instances", "coalesce", "misfire_grace_time")},
+            {
+                "id": "subscription_dispatch",
+                "name": "订阅简报派发（全频率幂等投递）",
+                "replace_existing": True,
+                "max_instances": 1,
+                "coalesce": True,
+                "misfire_grace_time": 1800,
+            },
+        )
+        self.assertEqual(
+            {key: value for key, value in _cron_fields(dispatch["trigger"]).items() if value != "*"},
+            {"minute": "*/30", "second": "0"},
+        )
+
+        cleanup = fake_scheduler.add_job_calls[11][1]
         self.assertEqual(
             {key: cleanup[key] for key in ("id", "name", "replace_existing", "max_instances", "misfire_grace_time")},
             {
@@ -240,6 +258,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         metrics_refresh = AsyncMock()
         x_credentials_probe = AsyncMock()
         daily_briefing = AsyncMock()
+        subscription_dispatch = AsyncMock()
         conversation_cleanup = AsyncMock()
         semantic_warmup = AsyncMock()
 
@@ -267,6 +286,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             ),
             patch.object(
                 scheduler,
+                "_run_subscription_dispatch_job",
+                new=subscription_dispatch,
+            ),
+            patch.object(
+                scheduler,
                 "_run_conversation_cleanup_job",
                 new=conversation_cleanup,
             ),
@@ -282,6 +306,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             asyncio.run(runtime._run_github_project_metrics_refresh_job())
             asyncio.run(runtime._run_x_credentials_probe_job())
             asyncio.run(runtime._run_daily_briefing_job())
+            asyncio.run(runtime._run_subscription_dispatch_job())
             asyncio.run(runtime._run_conversation_cleanup_job())
             asyncio.run(runtime._run_project_semantic_warmup_job())
 
@@ -311,6 +336,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             x_lock=runtime._x_operation_lock,
         )
         daily_briefing.assert_awaited_once_with(repositories)
+        subscription_dispatch.assert_awaited_once_with(repositories)
         conversation_cleanup.assert_awaited_once_with(repositories.conversations)
         semantic_warmup.assert_awaited_once_with(semantic_warmup_callback)
 

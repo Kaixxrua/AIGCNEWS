@@ -64,6 +64,9 @@ from backend.app.repositories.postgres_project_write_repository import (
 from backend.app.repositories.postgres_push_channel_repository import (
     PostgresPushChannelRepository,
 )
+from backend.app.repositories.postgres_push_delivery_repository import (
+    PostgresPushDeliveryRepository,
+)
 from backend.app.repositories.postgres_rank_snapshot_repository import (
     PostgresRankSnapshotRepository,
 )
@@ -106,6 +109,7 @@ from backend.app.repositories.project_write_repository import (
     UserProjectCollectionRepository,
 )
 from backend.app.repositories.push_channel_repository import PushChannelRepository
+from backend.app.repositories.push_delivery_repository import PushDeliveryRepository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingRepository,
@@ -177,6 +181,7 @@ class ApplicationRepositories:
     wechat_follows: WeChatFollowRepository
     push_channels: PushChannelRepository
     user_subscriptions: UserSubscriptionRepository
+    push_deliveries: PushDeliveryRepository
 
 
 def _env_x_watch_handles() -> tuple[str, ...]:
@@ -261,4 +266,5 @@ def create_application_repositories(
         wechat_follows=PostgresWeChatFollowRepository(postgres),
         push_channels=PostgresPushChannelRepository(postgres),
         user_subscriptions=PostgresUserSubscriptionRepository(postgres),
+        push_deliveries=PostgresPushDeliveryRepository(postgres),
     )

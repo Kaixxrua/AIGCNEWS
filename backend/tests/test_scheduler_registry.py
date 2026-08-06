@@ -13,6 +13,7 @@ from backend.app.core.scheduler_registry import (
     CONVERSATION_CLEANUP_JOB,
     DAILY_BRIEFING_JOB,
     SOURCE_JOB_DESCRIPTORS,
+    SUBSCRIPTION_DISPATCH_JOB,
     CronJobDescriptor,
     CronSchedule,
     IntervalJobDescriptor,
@@ -127,6 +128,19 @@ class SchedulerDescriptorTests(unittest.TestCase):
             self.assertIsInstance(trigger, CronTrigger)
             self.assertEqual(_cron_fields(trigger), fields)
             self.assertEqual(str(trigger.timezone), "Asia/Shanghai")
+
+    def test_subscription_dispatch_descriptor_coalesces_half_hour_runs(self) -> None:
+        descriptor = SUBSCRIPTION_DISPATCH_JOB
+
+        self.assertEqual(descriptor.id, "subscription_dispatch")
+        self.assertEqual(descriptor.source, "subscription_dispatch")
+        self.assertEqual(descriptor.name, "订阅简报派发（全频率幂等投递）")
+        self.assertTrue(descriptor.coalesce)
+        self.assertEqual(descriptor.misfire_grace_time, 1800)
+        trigger = build_trigger(descriptor)
+        self.assertIsInstance(trigger, CronTrigger)
+        self.assertEqual(_cron_fields(trigger), {"minute": "*/30", "second": "0"})
+        self.assertEqual(str(trigger.timezone), "Asia/Shanghai")
 
     def test_semantic_interval_factory_preserves_timezone(self) -> None:
         semantic = project_semantic_warmup_job_descriptor(timezone="UTC")

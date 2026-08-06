@@ -548,6 +548,7 @@ def get_wechat_sync_service(
     operations_runtime: ApplicationOperationsRuntime = Depends(get_operations_runtime),
 ) -> WeChatSyncService:
     from backend.app.core.config import settings
+    from backend.app.services.wechat_sogou.transport import SogouWechatTransport
 
     return WeChatSyncService(
         accounts,
@@ -559,6 +560,14 @@ def get_wechat_sync_service(
         max_articles=int(getattr(settings, "wechat_sync_max_articles", 500)),
         inter_page_delay_seconds=float(
             getattr(settings, "wechat_sync_inter_page_delay_seconds", 1.0)
+        ),
+        # Direct connection: Sogou/mp are domestic targets; routing them
+        # through the overseas outbound proxy worsens anti-bot risk control.
+        sogou_transport=SogouWechatTransport(),
+        sogou_max_pages=int(getattr(settings, "wechat_sogou_sync_max_pages", 2)),
+        sogou_max_articles=int(getattr(settings, "wechat_sogou_sync_max_articles", 20)),
+        sogou_request_delay_seconds=float(
+            getattr(settings, "wechat_sogou_sync_request_delay_seconds", 1.5)
         ),
     )
 

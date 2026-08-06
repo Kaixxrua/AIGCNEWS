@@ -35,3 +35,10 @@ class UserSubscriptionRepository(Protocol):
 
     def delete_subscription(self, *, user_id: int, subscription_id: int) -> bool:
         ...
+
+    def list_active_dispatchable(self, *, frequency: str) -> list[dict[str, Any]]:
+        """返回该频率下可派发的订阅：订阅启用且渠道已验证、启用。
+
+        联表携带 channel_type 与 target，供派发服务直接投递。
+        """
+        ...

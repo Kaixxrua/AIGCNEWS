@@ -101,3 +101,24 @@ class PostgresUserSubscriptionRepository(UserSubscriptionRepository):
                     (user_id, subscription_id),
                 )
                 return cursor.rowcount > 0
+
+    def list_active_dispatchable(self, *, frequency: str) -> list[dict[str, Any]]:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        s.id, s.user_id, s.channel_id, s.source, s.frequency,
+                        s.status, s.created_at, s.updated_at,
+                        c.channel_type, c.target
+                    FROM user_subscriptions s
+                    JOIN push_channels c ON c.id = s.channel_id
+                    WHERE s.status = 'active'
+                      AND s.frequency = %s
+                      AND c.verified
+                      AND c.status = 'active'
+                    ORDER BY s.id ASC
+                    """,
+                    (frequency,),
+                )
+                return [dict(row) for row in cursor.fetchall()]
