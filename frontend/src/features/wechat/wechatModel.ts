@@ -90,6 +90,26 @@ export interface WeChatSyncSubmitResult {
   message: string
 }
 
+export interface WeChatCatalogAccount {
+  id: number
+  nickname: string
+  alias: string
+  avatar_url: string
+  signature: string
+  sort_order: number
+  followed: boolean
+}
+
+export interface WeChatFeedEntry {
+  account: WeChatCatalogAccount
+  articles: WeChatArticle[]
+}
+
+export interface WeChatFeedResult {
+  items: WeChatFeedEntry[]
+  per_account: number
+}
+
 export const createEmptyWeChatAccountForm = (): WeChatAccountForm => ({
   fakeid: '',
   nickname: '',

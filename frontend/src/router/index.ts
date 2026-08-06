@@ -73,7 +73,7 @@ const router = createRouter({
           path: 'wechat',
           name: 'wechat',
           component: WechatView,
-          meta: { requiresAdmin: true },
+          meta: { requiresAuth: true },
         },
         {
           path: 'mcp',

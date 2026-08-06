@@ -1,10 +1,39 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import WechatAccountPanel from '@/components/wechat/WechatAccountPanel.vue'
+import { useWechatFollowController } from '@/composables/useWechatFollowController'
+import WechatFollowBox from '@/components/wechat/WechatFollowBox.vue'
+import WechatAccountCard from '@/components/wechat/WechatAccountCard.vue'
 
 defineOptions({ name: 'WechatView' })
 
 const { t } = useI18n()
+
+const {
+  error,
+  catalog,
+  isCatalogLoading,
+  isFeedLoading,
+  pendingFollowIds,
+  expandedArticleKeys,
+  selectedAccountId,
+  followBoxCollapsed,
+  followedAccounts,
+  visibleFeed,
+  dispose,
+  loadCatalog,
+  loadFeed,
+  toggleFollow,
+  articleKey,
+  toggleArticleExpanded,
+  selectAccount,
+  toggleFollowBoxCollapsed,
+} = useWechatFollowController()
+
+onMounted(async () => {
+  await Promise.all([loadCatalog(), loadFeed()])
+})
+onBeforeUnmount(dispose)
 </script>
 
 <template>
@@ -13,12 +42,70 @@ const { t } = useI18n()
       <!-- 页头 -->
       <div class="stagger-enter flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div>
-          <h1 class="text-2xl font-bold tracking-tight">{{ t('wechat.panelTitle') }}</h1>
-          <p class="monitor-caption mt-0.5 text-sm">{{ t('wechat.panelDescription') }}</p>
+          <h1 class="text-2xl font-bold tracking-tight">{{ t('wechat.feedTitle') }}</h1>
+          <p class="wechat-caption mt-0.5 text-sm">{{ t('wechat.feedDescription') }}</p>
         </div>
       </div>
 
-      <WechatAccountPanel />
+      <p v-if="error" class="wechat-error shrink-0">{{ error }}</p>
+
+      <div class="wechat-body flex min-h-0 flex-1 items-start gap-5">
+        <!-- 悬浮关注框（可收缩为左侧细条） -->
+        <WechatFollowBox
+          :catalog="catalog"
+          :loading="isCatalogLoading"
+          :pending-follow-ids="pendingFollowIds"
+          :collapsed="followBoxCollapsed"
+          @toggle-follow="toggleFollow"
+          @toggle-collapsed="toggleFollowBoxCollapsed"
+        />
+
+        <div class="flex min-w-0 flex-1 flex-col gap-5">
+          <!-- 关注账号目录导航 -->
+          <nav v-if="followedAccounts.length > 0" class="wechat-directory shrink-0">
+            <span class="wechat-directory-label">{{ t('wechat.directoryTitle') }}</span>
+            <div class="wechat-directory-items">
+              <button
+                type="button"
+                class="wechat-directory-item"
+                :class="{ 'wechat-directory-item--active': selectedAccountId === null }"
+                @click="selectAccount(null)"
+              >
+                {{ t('wechat.directoryAll') }}
+              </button>
+              <button
+                v-for="account in followedAccounts"
+                :key="account.id"
+                type="button"
+                class="wechat-directory-item"
+                :class="{ 'wechat-directory-item--active': selectedAccountId === account.id }"
+                @click="selectAccount(account.id)"
+              >
+                {{ account.nickname || t('wechat.unnamedAccount') }}
+              </button>
+            </div>
+          </nav>
+
+          <!-- 账号卡片信息流 -->
+          <p v-if="isFeedLoading && visibleFeed.length === 0" class="wechat-empty">
+            {{ t('common.loading') }}
+          </p>
+          <div v-else-if="visibleFeed.length === 0" class="wechat-empty">
+            <p>{{ t('wechat.feedEmpty') }}</p>
+            <p class="mt-1 text-xs">{{ t('wechat.feedEmptyHint') }}</p>
+          </div>
+          <template v-else>
+            <WechatAccountCard
+              v-for="entry in visibleFeed"
+              :key="entry.account.id"
+              :entry="entry"
+              :expanded-article-keys="expandedArticleKeys"
+              :article-key="articleKey"
+              @toggle-article="toggleArticleExpanded"
+            />
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -28,153 +115,77 @@ const { t } = useI18n()
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
-.wechat-page :deep(.monitor-section-title) {
-  color: var(--projects-accent);
-  font-weight: 800;
-}
-
-.wechat-page :deep(.monitor-caption) {
+.wechat-caption {
   color: var(--ink-muted);
 }
 
-.wechat-page :deep(.monitor-surface) {
-  border: 1px solid var(--projects-accent);
+.wechat-error {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--error-accent);
   border-radius: 6px;
-  background: var(--projects-paper-light);
-  box-shadow: 4px 4px 0 var(--shadow-hard);
+  color: var(--error-ink);
+  background: var(--error-bg);
 }
 
-.wechat-page :deep(.monitor-btn-primary) {
-  display: inline-flex;
+.wechat-directory {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 14px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.wechat-directory-label {
   font-size: 12px;
   font-weight: 800;
-  line-height: 1;
-  border-radius: 4px;
-  border: 1px solid var(--projects-accent);
-  color: var(--projects-on-acid);
-  background: var(--projects-acid);
-  box-shadow: 3px 3px 0 var(--shadow-hard);
-  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+  color: var(--projects-accent);
+  flex-shrink: 0;
 }
 
-.wechat-page :deep(.monitor-btn-primary:hover:not(:disabled)) {
-  background: var(--acid-strong);
-  transform: translate(-1px, -1px);
-}
-
-.wechat-page :deep(.monitor-btn-primary:disabled) {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-
-.wechat-page :deep(.monitor-btn-secondary) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.wechat-directory-items {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 14px;
+}
+
+.wechat-directory-item {
+  padding: 5px 12px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
-  border-radius: 4px;
+  border-radius: 999px;
   border: 1px solid var(--projects-accent);
   color: var(--projects-accent);
   background: var(--projects-paper-light);
   transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease;
 }
 
-.wechat-page :deep(.monitor-btn-secondary:hover:not(:disabled)) {
-  background: var(--acid-soft);
-  color: var(--ink);
+.wechat-directory-item:hover {
   transform: translate(-1px, -1px);
   box-shadow: 2px 2px 0 var(--shadow-hard);
 }
 
-.wechat-page :deep(.monitor-btn-secondary:disabled) {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-
-.wechat-page :deep(.monitor-badge) {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.4;
-  border-radius: 4px;
-  border: 1px solid var(--projects-accent);
-  color: var(--ink-muted);
-  background: var(--projects-paper-light);
-}
-
-.wechat-page :deep(.monitor-status-success) {
-  color: var(--success-ink);
-  background: var(--success-bg);
-  border-color: var(--success-border);
-}
-
-.wechat-page :deep(.monitor-status-error) {
-  color: var(--error-ink);
-  background: var(--error-bg);
-  border-color: var(--error-accent);
-}
-
-.wechat-page :deep(.monitor-status-running) {
-  color: var(--tech-primary);
-  background: rgb(var(--tech-primary-rgb) / 0.12);
-  border-color: rgb(var(--tech-primary-rgb) / 0.3);
-}
-
-.wechat-page :deep(.monitor-avatar) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--projects-accent);
-  border-radius: 6px;
-  background: var(--paper-raised);
-  color: var(--projects-accent);
+.wechat-directory-item--active {
+  color: var(--projects-on-acid);
+  background: var(--projects-acid);
   box-shadow: 2px 2px 0 var(--shadow-hard);
 }
 
-.wechat-page :deep(.monitor-avatar-accent) {
-  background: var(--projects-acid);
-  color: var(--projects-on-acid);
-}
-
-.wechat-page :deep(.monitor-empty) {
+.wechat-empty {
+  padding: 32px 20px;
+  font-size: 13px;
+  text-align: center;
   border: 1px dashed var(--rule);
+  border-radius: 8px;
   background: rgb(var(--card-rgb) / 0.3);
   color: var(--ink-muted);
 }
 
-.wechat-page :deep(.monitor-divider) {
-  border-color: var(--rule);
-}
-
-.wechat-page :deep(.monitor-input) {
-  padding: 8px 10px;
-  border: 1px solid var(--projects-accent);
-  border-radius: 4px;
-  background: var(--projects-paper-light);
-  color: var(--ink);
-  outline: none;
-  transition: box-shadow 150ms ease, border-color 150ms ease;
-}
-
-.wechat-page :deep(.monitor-input:focus) {
-  border-color: var(--projects-accent);
-  box-shadow: 3px 3px 0 var(--shadow-hard);
-}
-
-.wechat-page :deep(.text-2xs) {
-  font-size: 0.65rem;
-  line-height: 0.875rem;
+@media (max-width: 768px) {
+  .wechat-body {
+    flex-direction: column;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
