@@ -38,8 +38,25 @@ export const tweetText = (doc: TopDoc): string => (
 export const hasMedia = (doc: TopDoc): boolean =>
   Array.isArray(doc.media) && doc.media.length > 0
 
+const X_MEDIA_PROXY_PATH = '/api/media/x/proxy'
+const X_MEDIA_HOSTS = new Set(['pbs.twimg.com', 'video.twimg.com', 'abs.twimg.com'])
+
+/**
+ * twimg CDN 在部分网络不可达（video.twimg.com 常被单独封锁，图片能加载
+ * 但视频无法播放）；经服务端同源流式代理转发兜底。非 twimg 或非法 URL
+ * 原样透传（后端代理另有主机白名单校验，此处只做渲染层改写）。
+ */
+export const proxiedMediaUrl = (url: string): string => {
+  try {
+    if (!X_MEDIA_HOSTS.has(new URL(url).hostname)) return url
+    return `${X_MEDIA_PROXY_PATH}?url=${encodeURIComponent(url)}`
+  } catch {
+    return url
+  }
+}
+
 export const mediaItems = (doc: TopDoc): NonNullable<TopDoc['media']> =>
-  doc.media ?? []
+  (doc.media ?? []).map((item) => ({ ...item, url: proxiedMediaUrl(item.url) }))
 
 const sortTweets = (tweets: TopDoc[]): TopDoc[] => (
   [...tweets].sort((a, b) => (

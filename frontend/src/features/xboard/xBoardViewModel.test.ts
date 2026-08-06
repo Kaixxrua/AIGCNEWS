@@ -7,6 +7,7 @@ import {
   groupTweetsByHandle,
   hasMedia,
   mediaItems,
+  proxiedMediaUrl,
   tweetScore,
   tweetText,
   tweetTimestamp,
@@ -56,8 +57,39 @@ describe('xBoardViewModel', () => {
       media: [{ type: 'photo', url: 'https://pbs.twimg.com/a.jpg', width: 100, height: 100 }],
     })
     expect(hasMedia(doc)).toBe(true)
-    expect(mediaItems(doc)).toEqual([{ type: 'photo', url: 'https://pbs.twimg.com/a.jpg', width: 100, height: 100 }])
+    expect(mediaItems(doc)).toEqual([
+      {
+        type: 'photo',
+        url: `/api/media/x/proxy?url=${encodeURIComponent('https://pbs.twimg.com/a.jpg')}`,
+        width: 100,
+        height: 100,
+      },
+    ])
     expect(mediaItems({})).toEqual([])
+  })
+
+  it('rewrites twimg media urls to the same-origin proxy and passes others through', () => {
+    const video = 'https://video.twimg.com/amplify_video/1/vid/avc1/1920x1080/a.mp4?tag=29'
+    expect(proxiedMediaUrl(video)).toBe(`/api/media/x/proxy?url=${encodeURIComponent(video)}`)
+    expect(proxiedMediaUrl('https://pbs.twimg.com/a.jpg')).toContain('/api/media/x/proxy?url=')
+    expect(proxiedMediaUrl('https://abs.twimg.com/hash.png')).toContain('/api/media/x/proxy?url=')
+    // 白名单外主机 / 非 URL 原样透传（后端代理仍会做二次校验）
+    expect(proxiedMediaUrl('https://example.com/a.jpg')).toBe('https://example.com/a.jpg')
+    expect(proxiedMediaUrl('not-a-url')).toBe('not-a-url')
+    expect(proxiedMediaUrl('')).toBe('')
+  })
+
+  it('mediaItems rewrites only url and keeps the rest of the item intact', () => {
+    const doc = tweet('openai', '1', {
+      media: [
+        { type: 'video', url: 'https://video.twimg.com/a.mp4', width: 1920, height: 1080 },
+        { type: 'photo', url: 'https://elsewhere.cdn/b.jpg', width: 10, height: 10 },
+      ],
+    })
+    const items = mediaItems(doc)
+    expect(items[0]).toMatchObject({ type: 'video', width: 1920, height: 1080 })
+    expect(items[0]?.url).toContain('/api/media/x/proxy?url=')
+    expect(items[1]).toEqual({ type: 'photo', url: 'https://elsewhere.cdn/b.jpg', width: 10, height: 10 })
   })
 
   it('flattens grouped sections into a single ordered list', () => {
