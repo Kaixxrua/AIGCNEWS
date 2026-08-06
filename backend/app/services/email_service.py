@@ -103,6 +103,8 @@ class EmailService:
 
         if purpose == "password_reset":
             subject, body = self._renderer.password_reset_otp(otp)
+        elif purpose == "push_channel_verify":
+            subject, body = self._renderer.channel_binding_otp(otp)
         else:
             subject, body = self._renderer.registration_otp(otp)
 

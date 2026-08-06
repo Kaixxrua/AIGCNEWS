@@ -35,6 +35,7 @@ from backend.app.repositories.project_write_repository import (
     ToolWebsiteEnrichmentRepository,
     UserProjectCollectionRepository,
 )
+from backend.app.repositories.push_channel_repository import PushChannelRepository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingRepository,
@@ -46,6 +47,9 @@ from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.repositories.user_subscription_repository import (
+    UserSubscriptionRepository,
+)
 from backend.app.repositories.wechat_account_repository import (
     WeChatOfficialAccountRepository,
 )
@@ -75,6 +79,8 @@ from backend.app.services.mcp.admin_service import McpAdminService
 from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
+from backend.app.services.push.channel_service import PushChannelService
+from backend.app.services.push.subscription_service import UserSubscriptionService
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.composition import RagChatServiceProvider
 from backend.app.services.runtime_provider.admin_service import (
@@ -562,3 +568,30 @@ def get_wechat_follow_service(
     articles: WeChatArticleRepository = Depends(get_wechat_article_repository),
 ) -> WeChatFollowService:
     return WeChatFollowService(follows, articles)
+
+
+def get_push_channel_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> PushChannelRepository:
+    return repositories.push_channels
+
+
+def get_user_subscription_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> UserSubscriptionRepository:
+    return repositories.user_subscriptions
+
+
+def get_push_channel_service(
+    channels: PushChannelRepository = Depends(get_push_channel_repository),
+) -> PushChannelService:
+    return PushChannelService(channels)
+
+
+def get_user_subscription_service(
+    subscriptions: UserSubscriptionRepository = Depends(
+        get_user_subscription_repository
+    ),
+    channels: PushChannelRepository = Depends(get_push_channel_repository),
+) -> UserSubscriptionService:
+    return UserSubscriptionService(subscriptions, channels)

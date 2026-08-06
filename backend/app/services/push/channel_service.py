@@ -1,0 +1,176 @@
+"""推送渠道的领域编排：创建（含验证码签发）、校验、停用与测试投递。"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+from backend.app.repositories.push_channel_repository import PushChannelRepository
+from backend.app.services.email_service import EmailService
+from backend.app.services.push.errors import (
+    InvalidChannelOtpError,
+    PushChannelDisabledError,
+    PushChannelDuplicateError,
+    PushChannelNotFoundError,
+    PushChannelNotVerifiedError,
+)
+
+CHANNEL_TYPE_EMAIL = "email"
+CHANNEL_STATUS_ACTIVE = "active"
+CHANNEL_STATUS_DISABLED = "disabled"
+CHANNEL_OTP_PURPOSE = "push_channel_verify"
+
+_TEST_BRIEFING_CONTENT = """# AIGC Radar 推送渠道测试
+
+这是一封渠道验证邮件：你的邮件推送渠道已配置成功。
+
+订阅生效后，你将按设定的频率收到对应来源的 AI 垂直简报。
+
+— AIGC Radar · aigcnews.cn
+"""
+
+
+class PushChannelService:
+    """用户推送渠道的领域服务。
+
+    同步仓储调用一律经 ``asyncio.to_thread`` 转移（对齐 account_lifecycle
+    的并发约定），邮件投递为原生异步。
+    """
+
+    def __init__(self, channels: PushChannelRepository) -> None:
+        self._channels = channels
+
+    async def create_email_channel(
+        self,
+        *,
+        user_id: int,
+        email: str,
+        email_service: EmailService,
+    ) -> tuple[dict[str, Any], bool]:
+        """创建 email 渠道并签发绑定验证码。
+
+        返回 (channel, created)。同一邮箱重复绑定时：已验证 → 409 领域错误；
+        未验证 → 重发验证码并返回既有渠道（created=False），避免重复行。
+        """
+        target = email.strip().lower()
+        existing = await asyncio.to_thread(
+            self._channels.find_channel_by_target,
+            user_id=user_id,
+            channel_type=CHANNEL_TYPE_EMAIL,
+            target=target,
+        )
+        if existing is not None and existing["verified"]:
+            raise PushChannelDuplicateError("该邮箱已绑定推送渠道")
+        channel = existing
+        created = False
+        if channel is None:
+            channel = await asyncio.to_thread(
+                self._channels.create_channel,
+                user_id=user_id,
+                channel_type=CHANNEL_TYPE_EMAIL,
+                target=target,
+                encrypted_config=None,
+            )
+            if channel is None:
+                # 并发插入撞唯一约束：按已存在处理，重发验证码。
+                channel = await asyncio.to_thread(
+                    self._channels.find_channel_by_target,
+                    user_id=user_id,
+                    channel_type=CHANNEL_TYPE_EMAIL,
+                    target=target,
+                )
+                if channel is None:  # pragma: no cover - 防御性分支
+                    raise PushChannelDuplicateError("该邮箱已绑定推送渠道")
+            else:
+                created = True
+        await email_service.send_otp(target, purpose=CHANNEL_OTP_PURPOSE)
+        return channel, created
+
+    async def verify_channel(
+        self,
+        *,
+        user_id: int,
+        channel_id: int,
+        code: str,
+        email_service: EmailService,
+    ) -> dict[str, Any]:
+        channel = await asyncio.to_thread(
+            self._channels.get_channel,
+            user_id=user_id,
+            channel_id=channel_id,
+        )
+        if channel is None:
+            raise PushChannelNotFoundError("推送渠道不存在")
+        if channel["verified"]:
+            return channel
+        ok = await email_service.verify_otp(
+            channel["target"],
+            code,
+            purpose=CHANNEL_OTP_PURPOSE,
+        )
+        if not ok:
+            raise InvalidChannelOtpError("验证码错误或已过期")
+        await asyncio.to_thread(
+            self._channels.mark_channel_verified,
+            user_id=user_id,
+            channel_id=channel_id,
+        )
+        channel["verified"] = True
+        return channel
+
+    def list_channels(self, *, user_id: int) -> list[dict[str, Any]]:
+        return self._channels.list_channels(user_id)
+
+    def set_channel_status(
+        self,
+        *,
+        user_id: int,
+        channel_id: int,
+        status: str,
+    ) -> dict[str, Any]:
+        updated = self._channels.set_channel_status(
+            user_id=user_id,
+            channel_id=channel_id,
+            status=status,
+        )
+        if not updated:
+            raise PushChannelNotFoundError("推送渠道不存在")
+        channel = self._channels.get_channel(user_id=user_id, channel_id=channel_id)
+        if channel is None:  # pragma: no cover - 防御性分支
+            raise PushChannelNotFoundError("推送渠道不存在")
+        return channel
+
+    def delete_channel(self, *, user_id: int, channel_id: int) -> None:
+        deleted = self._channels.delete_channel(user_id=user_id, channel_id=channel_id)
+        if not deleted:
+            raise PushChannelNotFoundError("推送渠道不存在")
+
+    async def send_test_email(
+        self,
+        *,
+        user_id: int,
+        channel_id: int,
+        email_service: EmailService,
+    ) -> dict[str, Any]:
+        """经真实 SMTP 管线向已验证渠道发送一封测试简报邮件。"""
+        channel = await asyncio.to_thread(
+            self._channels.get_channel,
+            user_id=user_id,
+            channel_id=channel_id,
+        )
+        if channel is None:
+            raise PushChannelNotFoundError("推送渠道不存在")
+        if not channel["verified"]:
+            raise PushChannelNotVerifiedError("推送渠道尚未验证")
+        if channel["status"] != CHANNEL_STATUS_ACTIVE:
+            raise PushChannelDisabledError("推送渠道已停用")
+        if channel["channel_type"] != CHANNEL_TYPE_EMAIL:
+            raise PushChannelNotFoundError("推送渠道不存在")
+        await email_service.send_briefing(
+            channel["target"],
+            _TEST_BRIEFING_CONTENT,
+            source="all",
+            period="daily",
+            date_str="渠道测试",
+        )
+        return channel

@@ -6,7 +6,7 @@ import hmac
 from collections.abc import Callable
 from typing import Literal
 
-OtpPurpose = Literal["registration", "password_reset"]
+OtpPurpose = Literal["registration", "password_reset", "push_channel_verify"]
 
 OTP_CODE_PREFIX = "email:code:"
 OTP_LOCK_PREFIX = "email:lock:"
@@ -14,6 +14,9 @@ OTP_ATTEMPTS_PREFIX = "email:attempts:"
 RESET_CODE_PREFIX = "email:reset:code:"
 RESET_LOCK_PREFIX = "email:reset:lock:"
 RESET_ATTEMPTS_PREFIX = "email:reset:attempts:"
+PUSH_CODE_PREFIX = "email:push:code:"
+PUSH_LOCK_PREFIX = "email:push:lock:"
+PUSH_ATTEMPTS_PREFIX = "email:push:attempts:"
 OTP_TTL = 300
 LOCK_TTL = 60
 MAX_ATTEMPTS = 5
@@ -39,6 +42,12 @@ def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str]:
             f"{RESET_CODE_PREFIX}{email_lower}",
             f"{RESET_LOCK_PREFIX}{email_lower}",
             f"{RESET_ATTEMPTS_PREFIX}{email_lower}",
+        )
+    if purpose == "push_channel_verify":
+        return (
+            f"{PUSH_CODE_PREFIX}{email_lower}",
+            f"{PUSH_LOCK_PREFIX}{email_lower}",
+            f"{PUSH_ATTEMPTS_PREFIX}{email_lower}",
         )
     return (
         f"{OTP_CODE_PREFIX}{email_lower}",

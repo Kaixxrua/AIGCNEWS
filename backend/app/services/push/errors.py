@@ -1,0 +1,41 @@
+"""订阅推送领域错误。
+
+detail 为可安全回显给客户端的文案；HTTP 状态码由路由层映射，
+服务层不感知传输协议。
+"""
+
+from __future__ import annotations
+
+
+class PushDomainError(Exception):
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+class PushChannelNotFoundError(PushDomainError):
+    """渠道不存在或不属于当前用户（路由层映射 404）。"""
+
+
+class PushChannelDuplicateError(PushDomainError):
+    """同一用户同一渠道类型下目标已绑定（路由层映射 409）。"""
+
+
+class PushChannelNotVerifiedError(PushDomainError):
+    """渠道尚未通过验证码校验（路由层映射 400）。"""
+
+
+class PushChannelDisabledError(PushDomainError):
+    """渠道已停用（路由层映射 400）。"""
+
+
+class InvalidChannelOtpError(PushDomainError):
+    """渠道绑定验证码错误或已过期（路由层映射 400）。"""
+
+
+class SubscriptionNotFoundError(PushDomainError):
+    """订阅不存在或不属于当前用户（路由层映射 404）。"""
+
+
+class SubscriptionDuplicateError(PushDomainError):
+    """同一渠道下来源与频率组合已订阅（路由层映射 409）。"""

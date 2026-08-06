@@ -15,6 +15,7 @@
 |---|---|
 | [mcp-server.md](mcp-server.md) | AIGC Radar MCP（旗舰接口）：协议参数、MCP-first 策略、fallback 语义与鉴权 |
 | [mcp-registry.md](mcp-registry.md) | AIGC Radar MCP 登记到官方 registry 与目录站的发布手册 |
+| [subscriptions.md](subscriptions.md) | 订阅推送：用户订阅与推送渠道的数据模型、API、验证码与凭据加密策略 |
 
 ## 开发规范
 

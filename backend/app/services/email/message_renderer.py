@@ -29,6 +29,19 @@ class EmailMessageRenderer:
     def password_reset_otp(self, otp: str) -> tuple[str, str]:
         return "【AIGC_NEWS】密码重置验证码", self.password_reset_otp_body(otp)
 
+    def channel_binding_otp(self, otp: str) -> tuple[str, str]:
+        return "【AIGC_NEWS】推送渠道绑定验证码", self.channel_binding_otp_body(otp)
+
+    def channel_binding_otp_body(self, otp: str) -> str:
+        return (
+            f"您好，\n\n"
+            f"您正在将该邮箱绑定为 AIGC_NEWS 的订阅推送渠道，验证码为：\n\n"
+            f"    {otp}\n\n"
+            f"验证码有效期为 5 分钟，请勿泄露给他人。\n\n"
+            f"如非本人操作，请忽略此邮件。\n\n"
+            f"— AIGC_NEWS"
+        )
+
     def registration_otp_body(self, otp: str) -> str:
         return (
             f"您好，\n\n"

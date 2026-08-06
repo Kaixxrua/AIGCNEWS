@@ -41,6 +41,32 @@ class Settings(BaseSettings):
             )
         return value
 
+    # 推送渠道凭据静态加密（webhook secret、bot token 等）。密钥必须是 32 字节
+    # 随机值的 URL-safe Base64，只由部署环境提供；缺失或非法时含凭据的渠道
+    # 类型拒绝处理 secret，不降级为明文（email 渠道无凭据，不受影响）。
+    push_channel_encryption_key: str = ""
+    push_channel_encryption_key_version: str = "v1"
+
+    @field_validator("push_channel_encryption_key_version")
+    @classmethod
+    def _validate_push_channel_key_version(cls, value: str) -> str:
+        if not value or len(value) > 64:
+            raise ValueError(
+                "push_channel_encryption_key_version must be 1..64 characters"
+            )
+        return value
+
+    @field_validator("push_channel_encryption_key")
+    @classmethod
+    def _validate_push_channel_key(cls, value: str) -> str:
+        if not value:
+            return value
+        if value.startswith("CHANGEME"):
+            raise ValueError(
+                "push_channel_encryption_key must not use the example placeholder"
+            )
+        return value
+
     milvus_host: str = "localhost"
     milvus_port: int = 19530
     milvus_user: str = ""

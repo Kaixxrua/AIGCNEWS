@@ -61,6 +61,9 @@ from backend.app.repositories.postgres_project_ingestion_repository import (
 from backend.app.repositories.postgres_project_write_repository import (
     PostgresProjectWriteRepository,
 )
+from backend.app.repositories.postgres_push_channel_repository import (
+    PostgresPushChannelRepository,
+)
 from backend.app.repositories.postgres_rank_snapshot_repository import (
     PostgresRankSnapshotRepository,
 )
@@ -72,6 +75,9 @@ from backend.app.repositories.postgres_scheduler_job_config_repository import (
 )
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
+)
+from backend.app.repositories.postgres_user_subscription_repository import (
+    PostgresUserSubscriptionRepository,
 )
 from backend.app.repositories.postgres_wechat_account_repository import (
     PostgresWeChatOfficialAccountRepository,
@@ -99,6 +105,7 @@ from backend.app.repositories.project_write_repository import (
     ToolWebsiteEnrichmentRepository,
     UserProjectCollectionRepository,
 )
+from backend.app.repositories.push_channel_repository import PushChannelRepository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingRepository,
@@ -115,6 +122,9 @@ from backend.app.repositories.task_repository import (
     RecentTaskReader,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.repositories.user_subscription_repository import (
+    UserSubscriptionRepository,
+)
 from backend.app.repositories.wechat_account_repository import WeChatOfficialAccountRepository
 from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
 from backend.app.repositories.wechat_follow_repository import WeChatFollowRepository
@@ -165,6 +175,8 @@ class ApplicationRepositories:
     wechat_accounts: WeChatOfficialAccountRepository
     wechat_articles: WeChatArticleRepository
     wechat_follows: WeChatFollowRepository
+    push_channels: PushChannelRepository
+    user_subscriptions: UserSubscriptionRepository
 
 
 def _env_x_watch_handles() -> tuple[str, ...]:
@@ -247,4 +259,6 @@ def create_application_repositories(
         wechat_accounts=PostgresWeChatOfficialAccountRepository(postgres),
         wechat_articles=PostgresWeChatArticleRepository(postgres),
         wechat_follows=PostgresWeChatFollowRepository(postgres),
+        push_channels=PostgresPushChannelRepository(postgres),
+        user_subscriptions=PostgresUserSubscriptionRepository(postgres),
     )
