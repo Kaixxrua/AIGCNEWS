@@ -86,6 +86,7 @@ from backend.app.services.runtime_provider.runtime import (
 from backend.app.services.scheduler_admin import SchedulerAdminService
 from backend.app.services.scheduler_config_admin import SchedulerConfigAdminService
 from backend.app.services.wechat.account_service import WeChatAccountService
+from backend.app.services.wechat.follow_service import WeChatFollowService
 from backend.app.services.wechat.login_service import WeChatLoginService
 from backend.app.services.wechat.sync_service import WeChatSyncService
 from backend.app.services.wechat.transport import WeChatMpTransport
@@ -554,3 +555,10 @@ def get_wechat_sync_service(
             getattr(settings, "wechat_sync_inter_page_delay_seconds", 1.0)
         ),
     )
+
+
+def get_wechat_follow_service(
+    follows: WeChatFollowRepository = Depends(get_wechat_follow_repository),
+    articles: WeChatArticleRepository = Depends(get_wechat_article_repository),
+) -> WeChatFollowService:
+    return WeChatFollowService(follows, articles)

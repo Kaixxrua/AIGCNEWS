@@ -20,6 +20,7 @@ from backend.app.repositories.postgres_wechat_article_repository import (
 )
 from backend.app.repositories.postgres_wechat_follow_repository import (
     PostgresWeChatFollowRepository,
+    WeChatFollowAccountNotFoundError,
 )
 from backend.app.repositories.postgres_wechat_session_repository import (
     PostgresWeChatSessionRepository,
@@ -33,7 +34,6 @@ from backend.app.repositories.wechat_session_repository import (
     WeChatLoginAttemptRepository,
     WeChatSessionRepository,
 )
-from backend.app.services.wechat.errors import WeChatAccountNotFound
 
 
 class FakeDatabase:
@@ -366,7 +366,7 @@ def test_follow_account_maps_foreign_key_violation_to_not_found() -> None:
 
     cursor.execute.side_effect = FakeFkViolation("missing account")
 
-    with pytest.raises(WeChatAccountNotFound):
+    with pytest.raises(WeChatFollowAccountNotFoundError):
         repo.follow_account(3, 999)
 
 

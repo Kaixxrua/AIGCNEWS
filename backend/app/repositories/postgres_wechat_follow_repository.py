@@ -6,13 +6,16 @@ from psycopg import errors
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.repositories.wechat_follow_repository import WeChatFollowRepository
-from backend.app.services.wechat.errors import WeChatAccountNotFound
 
 _ACCOUNT_COLUMNS = """
     a.id, a.owner_id, a.fakeid, a.nickname, a.alias, a.avatar_url,
     a.signature, a.enabled, a.sort_order, a.last_sync_status,
     a.last_sync_message, a.last_sync_at, a.created_at, a.updated_at
 """
+
+
+class WeChatFollowAccountNotFoundError(Exception):
+    """Raised when a follow insert violates the account foreign key."""
 
 
 class PostgresWeChatFollowRepository(WeChatFollowRepository):
@@ -71,8 +74,10 @@ class PostgresWeChatFollowRepository(WeChatFollowRepository):
                     )
                 except errors.ForeignKeyViolation as exc:
                     # The account vanished between the catalog check and the
-                    # insert; surface it as a domain 404 rather than a 500.
-                    raise WeChatAccountNotFound() from exc
+                    # insert; the service maps this to a domain 404.
+                    raise WeChatFollowAccountNotFoundError(
+                        f"wechat official account {account_id} does not exist"
+                    ) from exc
                 return cursor.rowcount > 0
 
     def unfollow_account(self, user_id: int, account_id: int) -> bool:

@@ -10,14 +10,18 @@ from backend.app.api.dependencies import (
     get_wechat_account_repository,
     get_wechat_account_service,
     get_wechat_article_repository,
+    get_wechat_follow_service,
     get_wechat_login_service,
     get_wechat_sync_service,
 )
-from backend.app.core.auth import RequireAdmin, extract_user_id
+from backend.app.core.auth import RequireAdmin, RequireUser, extract_user_id
 from backend.app.models.schema_wechat import (
     WeChatAccountSaveRequest,
     WeChatArticleListResponse,
+    WeChatCatalogListResponse,
     WeChatErrorResponse,
+    WeChatFeedResponse,
+    WeChatFollowStateResponse,
     WeChatLoginAttemptResponse,
     WeChatOfficialAccountListResponse,
     WeChatOfficialAccountResponse,
@@ -30,6 +34,7 @@ from backend.app.repositories.wechat_account_repository import (
 from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
 from backend.app.services.wechat.account_service import WeChatAccountService
 from backend.app.services.wechat.errors import WeChatError
+from backend.app.services.wechat.follow_service import WeChatFollowService
 from backend.app.services.wechat.login_service import WeChatLoginService
 from backend.app.services.wechat.sync_service import WeChatSyncService
 
@@ -37,6 +42,16 @@ router = APIRouter(prefix="/ops/wechat", tags=["WeChat"])
 
 
 def _owner_id(identity: dict[str, Any] = Depends(RequireAdmin)) -> int:
+    user_id = extract_user_id(identity)
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无法识别当前用户",
+        )
+    return user_id
+
+
+def _user_id(identity: dict[str, Any] = Depends(RequireUser)) -> int:
     user_id = extract_user_id(identity)
     if user_id is None:
         raise HTTPException(
@@ -221,3 +236,47 @@ async def sync_wechat_account(
         return await service.submit_sync(owner_id, account_id)
     except WeChatError as exc:
         _handle_wechat_error(exc)
+
+
+@router.get("/catalog", response_model=WeChatCatalogListResponse)
+async def list_wechat_catalog(
+    user_id: int = Depends(_user_id),
+    service: WeChatFollowService = Depends(get_wechat_follow_service),
+) -> dict[str, Any]:
+    items = service.list_catalog(user_id)
+    return {"items": items, "total": len(items)}
+
+
+@router.post(
+    "/accounts/{account_id}/follow", response_model=WeChatFollowStateResponse
+)
+async def follow_wechat_account(
+    account_id: int,
+    user_id: int = Depends(_user_id),
+    service: WeChatFollowService = Depends(get_wechat_follow_service),
+) -> dict[str, Any]:
+    try:
+        return service.follow(user_id, account_id)
+    except WeChatError as exc:
+        _handle_wechat_error(exc)
+
+
+@router.delete(
+    "/accounts/{account_id}/follow", response_model=WeChatFollowStateResponse
+)
+async def unfollow_wechat_account(
+    account_id: int,
+    user_id: int = Depends(_user_id),
+    service: WeChatFollowService = Depends(get_wechat_follow_service),
+) -> dict[str, Any]:
+    return service.unfollow(user_id, account_id)
+
+
+@router.get("/feed", response_model=WeChatFeedResponse)
+async def get_wechat_feed(
+    per_account: int = Query(5, ge=1, le=10),
+    user_id: int = Depends(_user_id),
+    service: WeChatFollowService = Depends(get_wechat_follow_service),
+) -> dict[str, Any]:
+    items = service.get_feed(user_id, per_account=per_account)
+    return {"items": items, "per_account": per_account}

@@ -101,3 +101,35 @@ class WeChatSyncSubmitResponse(BaseModel):
     status: Literal["submitted"] = "submitted"
     account_id: int
     message: str
+
+
+class WeChatCatalogAccountResponse(BaseModel):
+    """User-facing catalog account: display fields only, no owner/sync internals."""
+
+    id: int
+    nickname: str = ""
+    alias: str = ""
+    avatar_url: str = ""
+    signature: str = ""
+    sort_order: int = 0
+    followed: bool = False
+
+
+class WeChatCatalogListResponse(BaseModel):
+    items: list[WeChatCatalogAccountResponse]
+    total: int
+
+
+class WeChatFollowStateResponse(BaseModel):
+    account_id: int
+    followed: bool
+
+
+class WeChatFeedAccountEntry(BaseModel):
+    account: WeChatCatalogAccountResponse
+    articles: list[WeChatArticleResponse] = Field(default_factory=list)
+
+
+class WeChatFeedResponse(BaseModel):
+    items: list[WeChatFeedAccountEntry]
+    per_account: int = 5
