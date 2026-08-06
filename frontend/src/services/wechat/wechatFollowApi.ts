@@ -1,5 +1,6 @@
 import { api } from '@/services/http/apiClient'
 import type {
+  WeChatArticleDetail,
   WeChatCatalogAccount,
   WeChatFeedResult,
 } from '@/features/wechat/wechatModel'
@@ -9,6 +10,7 @@ export interface WeChatFollowApi {
   followAccount(accountId: number): Promise<{ account_id: number; followed: boolean }>
   unfollowAccount(accountId: number): Promise<{ account_id: number; followed: boolean }>
   fetchFeed(perAccount?: number): Promise<WeChatFeedResult>
+  fetchArticleDetail(accountId: number, articleId: number): Promise<WeChatArticleDetail>
 }
 
 const normalizeCatalogAccount = (raw: Partial<WeChatCatalogAccount> | null | undefined): WeChatCatalogAccount => ({
@@ -52,5 +54,12 @@ export const wechatFollowApi: WeChatFollowApi = {
       })),
       per_account: Number(data?.per_account) || perAccount,
     }
+  },
+
+  async fetchArticleDetail(accountId: number, articleId: number): Promise<WeChatArticleDetail> {
+    const { data } = await api.get(
+      `/ops/wechat/accounts/${encodeURIComponent(accountId)}/articles/${encodeURIComponent(articleId)}`,
+    )
+    return data
   },
 }

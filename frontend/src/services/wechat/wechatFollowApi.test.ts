@@ -82,4 +82,22 @@ describe('wechatFollowApi', () => {
     expect(result.per_account).toBe(8)
     expect(result.items).toEqual([])
   })
+
+  it('fetches article detail with encoded ids', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        id: 11,
+        account_id: 7,
+        stable_article_key: 'k7',
+        has_content: true,
+        content_html: '<section><p>正文</p></section>',
+        content_fetched_at: '2026-08-06T08:00:00Z',
+      },
+    })
+    const detail = await wechatFollowApi.fetchArticleDetail(7, 11)
+    expect(api.get).toHaveBeenCalledWith('/ops/wechat/accounts/7/articles/11')
+    expect(detail.content_html).toContain('正文')
+    expect(detail.has_content).toBe(true)
+    expect(detail.content_fetched_at).toBe('2026-08-06T08:00:00Z')
+  })
 })

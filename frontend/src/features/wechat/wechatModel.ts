@@ -72,9 +72,16 @@ export interface WeChatArticle {
   article_url: string
   cover_url: string
   source_url: string
+  has_content?: boolean
   published_at: string | null
   created_at: string | null
   updated_at: string | null
+}
+
+export interface WeChatArticleDetail extends WeChatArticle {
+  /** Sanitized server-side at ingest; re-sanitized client-side before render. */
+  content_html: string
+  content_fetched_at?: string | null
 }
 
 export interface WeChatArticleListResult {

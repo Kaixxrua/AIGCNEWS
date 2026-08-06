@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WeChatFollowApi } from '@/services/wechat/wechatFollowApi'
-import type { WeChatCatalogAccount, WeChatFeedResult } from '@/features/wechat/wechatModel'
+import type {
+  WeChatArticle,
+  WeChatArticleDetail,
+  WeChatCatalogAccount,
+  WeChatFeedResult,
+} from '@/features/wechat/wechatModel'
 import { useWechatFollowController } from './useWechatFollowController'
 
 const account = (id: number, followed = false): WeChatCatalogAccount => ({
@@ -13,27 +18,29 @@ const account = (id: number, followed = false): WeChatCatalogAccount => ({
   followed,
 })
 
+const article = (accountId: number, overrides: Partial<WeChatArticle> = {}): WeChatArticle => ({
+  id: accountId * 100,
+  account_id: accountId,
+  stable_article_key: `k${accountId}`,
+  message_id: '',
+  itemidx: 1,
+  title: `文章${accountId}`,
+  digest: '',
+  author: '',
+  article_url: '',
+  cover_url: '',
+  source_url: '',
+  has_content: false,
+  published_at: null,
+  created_at: null,
+  updated_at: null,
+  ...overrides,
+})
+
 const feedResult = (accountIds: number[]): WeChatFeedResult => ({
   items: accountIds.map((id) => ({
     account: account(id, true),
-    articles: [
-      {
-        id: id * 100,
-        account_id: id,
-        stable_article_key: `k${id}`,
-        message_id: '',
-        itemidx: 1,
-        title: `文章${id}`,
-        digest: '',
-        author: '',
-        article_url: '',
-        cover_url: '',
-        source_url: '',
-        published_at: null,
-        created_at: null,
-        updated_at: null,
-      },
-    ],
+    articles: [article(id)],
   })),
   per_account: 5,
 })
@@ -43,6 +50,7 @@ const createApi = (): WeChatFollowApi => ({
   followAccount: vi.fn(),
   unfollowAccount: vi.fn(),
   fetchFeed: vi.fn(),
+  fetchArticleDetail: vi.fn(),
 })
 
 describe('useWechatFollowController', () => {
@@ -166,6 +174,114 @@ describe('useWechatFollowController', () => {
   it('falls back to stable key when article id is null', () => {
     const controller = useWechatFollowController({ api: createApi() })
     expect(controller.articleKey(7, null, 'k7')).toBe('7:k7')
+  })
+
+  it('lazily loads sanitized article detail on first expand and caches it', async () => {
+    const api = createApi()
+    const target = article(7, { has_content: true })
+    const detail: WeChatArticleDetail = {
+      ...target,
+      content_html: '<section><p>正文</p><script>alert(1)</script></section>',
+      content_fetched_at: '2026-08-06T08:00:00Z',
+    }
+    vi.mocked(api.fetchArticleDetail).mockResolvedValue(detail)
+
+    const controller = useWechatFollowController({ api })
+    const key = controller.articleKey(7, target.id, target.stable_article_key)
+
+    controller.toggleArticleExpanded(key, 7, target)
+    await vi.waitFor(() => {
+      expect(controller.articleDetails.value.has(key)).toBe(true)
+    })
+
+    expect(api.fetchArticleDetail).toHaveBeenCalledWith(7, target.id)
+    const cached = controller.articleDetails.value.get(key)
+    expect(cached?.content_html).toContain('<p>正文</p>')
+    expect(cached?.content_html).not.toContain('script')
+    expect(controller.articleDetailLoading.value.has(key)).toBe(false)
+    expect(controller.articleDetailErrors.value.has(key)).toBe(false)
+
+    // 再次展开/收起不重复请求
+    controller.toggleArticleExpanded(key, 7, target)
+    controller.toggleArticleExpanded(key, 7, target)
+    await controller.ensureArticleDetail(key, 7, target)
+    expect(api.fetchArticleDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips detail loading when the article has no full text', async () => {
+    const api = createApi()
+    const controller = useWechatFollowController({ api })
+    const target = article(7) // has_content: false
+    const key = controller.articleKey(7, target.id, target.stable_article_key)
+
+    controller.toggleArticleExpanded(key, 7, target)
+    await controller.ensureArticleDetail(key, 7, target)
+
+    expect(api.fetchArticleDetail).not.toHaveBeenCalled()
+    expect(controller.articleDetails.value.has(key)).toBe(false)
+  })
+
+  it('skips detail loading when article id is null', async () => {
+    const api = createApi()
+    const controller = useWechatFollowController({ api })
+    const target = article(7, { id: null, has_content: true })
+    const key = controller.articleKey(7, null, target.stable_article_key)
+
+    await controller.ensureArticleDetail(key, 7, target)
+
+    expect(api.fetchArticleDetail).not.toHaveBeenCalled()
+  })
+
+  it('records detail load errors and retries on demand', async () => {
+    const api = createApi()
+    const target = article(7, { has_content: true })
+    vi.mocked(api.fetchArticleDetail).mockRejectedValueOnce({
+      response: { data: { detail: { message: '文章不存在' } } },
+    })
+
+    const controller = useWechatFollowController({ api })
+    const key = controller.articleKey(7, target.id, target.stable_article_key)
+
+    await controller.ensureArticleDetail(key, 7, target)
+    expect(controller.articleDetailErrors.value.get(key)).toBe('文章不存在')
+    expect(controller.articleDetails.value.has(key)).toBe(false)
+
+    // 失败后不会自动重试，需要显式 retry
+    await controller.ensureArticleDetail(key, 7, target)
+    expect(api.fetchArticleDetail).toHaveBeenCalledTimes(1)
+
+    vi.mocked(api.fetchArticleDetail).mockResolvedValueOnce({
+      ...target,
+      content_html: '<p>恢复</p>',
+      content_fetched_at: null,
+    })
+    controller.retryArticleDetail(key, 7, target)
+    await vi.waitFor(() => {
+      expect(controller.articleDetails.value.has(key)).toBe(true)
+    })
+    expect(api.fetchArticleDetail).toHaveBeenCalledTimes(2)
+    expect(controller.articleDetailErrors.value.has(key)).toBe(false)
+  })
+
+  it('ignores duplicate detail loads while one is in flight', async () => {
+    const api = createApi()
+    const target = article(7, { has_content: true })
+    let resolveDetail: ((value: WeChatArticleDetail) => void) | undefined
+    vi.mocked(api.fetchArticleDetail).mockImplementation(
+      () => new Promise((resolve) => { resolveDetail = resolve }),
+    )
+
+    const controller = useWechatFollowController({ api })
+    const key = controller.articleKey(7, target.id, target.stable_article_key)
+
+    const first = controller.ensureArticleDetail(key, 7, target)
+    await controller.ensureArticleDetail(key, 7, target) // 进行中被忽略
+    expect(api.fetchArticleDetail).toHaveBeenCalledTimes(1)
+    expect(controller.articleDetailLoading.value.has(key)).toBe(true)
+
+    resolveDetail?.({ ...target, content_html: '<p>x</p>', content_fetched_at: null })
+    await first
+    expect(controller.articleDetailLoading.value.has(key)).toBe(false)
   })
 
   it('filters visible feed by selected account and toggles selection off', async () => {

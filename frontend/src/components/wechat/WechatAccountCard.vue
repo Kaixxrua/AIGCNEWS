@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { WeChatArticle, WeChatFeedEntry } from '@/features/wechat/wechatModel'
+import type {
+  WeChatArticle,
+  WeChatArticleDetail,
+  WeChatFeedEntry,
+} from '@/features/wechat/wechatModel'
 
 defineOptions({ name: 'WechatAccountCard' })
 
@@ -8,10 +12,14 @@ const props = defineProps<{
   entry: WeChatFeedEntry
   expandedArticleKeys: Set<string>
   articleKey: (accountId: number, articleId: number | null, stableKey: string) => string
+  articleDetails: Map<string, WeChatArticleDetail>
+  articleDetailLoading: Set<string>
+  articleDetailErrors: Map<string, string>
 }>()
 
 const emit = defineEmits<{
-  toggleArticle: [key: string]
+  toggleArticle: [key: string, accountId: number, article: WeChatArticle]
+  retryDetail: [key: string, accountId: number, article: WeChatArticle]
 }>()
 
 const { t } = useI18n()
@@ -60,7 +68,7 @@ const keyFor = (article: WeChatArticle): string =>
           type="button"
           class="article-summary"
           :aria-expanded="expandedArticleKeys.has(keyFor(article))"
-          @click="emit('toggleArticle', keyFor(article))"
+          @click="emit('toggleArticle', keyFor(article), entry.account.id, article)"
         >
           <span class="article-chevron" :class="{ 'article-chevron--open': expandedArticleKeys.has(keyFor(article)) }">›</span>
           <span class="article-title">{{ article.title || t('wechat.untitledArticle') }}</span>
@@ -77,6 +85,33 @@ const keyFor = (article: WeChatArticle): string =>
             referrerpolicy="no-referrer"
           />
           <p v-if="article.digest" class="article-digest">{{ article.digest }}</p>
+
+          <!-- 全文正文（has_content 时懒加载，正文已在服务端+前端两道清洗） -->
+          <template v-if="article.has_content">
+            <p
+              v-if="articleDetailLoading.has(keyFor(article)) && !articleDetails.has(keyFor(article))"
+              class="article-content-loading"
+            >
+              {{ t('wechat.fullTextLoading') }}
+            </p>
+            <p v-else-if="articleDetailErrors.has(keyFor(article))" class="article-content-error">
+              {{ articleDetailErrors.get(keyFor(article)) }}
+              <button
+                type="button"
+                class="article-content-retry"
+                @click="emit('retryDetail', keyFor(article), entry.account.id, article)"
+              >
+                {{ t('wechat.retry') }}
+              </button>
+            </p>
+            <!-- eslint-disable-next-line vue/no-v-html -->
+            <div
+              v-else-if="articleDetails.has(keyFor(article))"
+              class="prose-content wechat-article-content"
+              v-html="articleDetails.get(keyFor(article))?.content_html"
+            ></div>
+          </template>
+
           <p v-if="article.author" class="article-author">{{ article.author }}</p>
           <a
             v-if="article.article_url"
@@ -235,6 +270,29 @@ const keyFor = (article: WeChatArticle): string =>
 .article-author {
   font-size: 11px;
   color: var(--ink-muted);
+}
+
+.article-content-loading {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.article-content-error {
+  font-size: 12px;
+  color: var(--danger-ink, #b3261e);
+}
+
+.article-content-retry {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--projects-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.article-content-retry:hover {
+  color: var(--acid-strong);
 }
 
 .article-link {

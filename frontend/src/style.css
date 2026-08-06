@@ -722,6 +722,28 @@
 .prose-content a { overflow-wrap: anywhere; }
 .prose-content strong { @apply font-semibold; color: rgb(var(--stone-800-rgb)); }
 
+/* 正文图片（公众号全文等 prose 场景通用） */
+.prose-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.75em auto;
+}
+
+/* ═══ 公众号全文正文 ═══ */
+.wechat-article-content {
+  font-size: 14px;
+  line-height: 1.75;
+  color: rgb(var(--stone-600-rgb));
+  overflow-wrap: anywhere;
+}
+.wechat-article-content section { @apply mb-3; }
+.wechat-article-content figure { @apply my-3; }
+.wechat-article-content figcaption {
+  @apply mt-1 text-center text-xs;
+  color: var(--ink-muted);
+}
+
 /* 表格样式（暖调纸质） */
 .prose-content table {
   @apply w-full mb-4 text-sm border-collapse;

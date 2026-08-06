@@ -20,11 +20,15 @@ const {
   followBoxCollapsed,
   followedAccounts,
   visibleFeed,
+  articleDetails,
+  articleDetailLoading,
+  articleDetailErrors,
   dispose,
   loadCatalog,
   loadFeed,
   toggleFollow,
   articleKey,
+  retryArticleDetail,
   toggleArticleExpanded,
   selectAccount,
   toggleFollowBoxCollapsed,
@@ -101,7 +105,11 @@ onBeforeUnmount(dispose)
               :entry="entry"
               :expanded-article-keys="expandedArticleKeys"
               :article-key="articleKey"
+              :article-details="articleDetails"
+              :article-detail-loading="articleDetailLoading"
+              :article-detail-errors="articleDetailErrors"
               @toggle-article="toggleArticleExpanded"
+              @retry-detail="retryArticleDetail"
             />
           </template>
         </div>

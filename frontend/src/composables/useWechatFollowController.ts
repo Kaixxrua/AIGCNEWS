@@ -1,8 +1,11 @@
 import { computed, onUnmounted, ref } from 'vue'
 import type {
+  WeChatArticle,
+  WeChatArticleDetail,
   WeChatCatalogAccount,
   WeChatFeedEntry,
 } from '@/features/wechat/wechatModel'
+import { sanitizeWechatArticleHtml } from '@/features/wechat/wechatArticleHtml'
 import { wechatFollowApi } from '@/services/wechat/wechatFollowApi'
 import type { WeChatFollowApi } from '@/services/wechat/wechatFollowApi'
 
@@ -63,6 +66,11 @@ export function useWechatFollowController(options: UseWechatFollowControllerOpti
   const expandedArticleKeys = ref<Set<string>>(new Set())
   const selectedAccountId = ref<number | null>(null)
   const followBoxCollapsed = ref(readCollapsedPreference())
+
+  // 全文详情：按 articleKey 懒加载并缓存（正文已清洗，可直接 v-html）
+  const articleDetails = ref<Map<string, WeChatArticleDetail>>(new Map())
+  const articleDetailLoading = ref<Set<string>>(new Set())
+  const articleDetailErrors = ref<Map<string, string>>(new Map())
 
   const followedAccounts = computed(() =>
     catalog.value.filter((account) => account.followed),
@@ -146,12 +154,57 @@ export function useWechatFollowController(options: UseWechatFollowControllerOpti
     return `${accountId}:${articleId ?? stableKey}`
   }
 
-  function toggleArticleExpanded(key: string) {
+  async function ensureArticleDetail(key: string, accountId: number, article: WeChatArticle) {
+    // 无正文（旧数据待回填）或已在缓存/加载中/失败态时不发起请求；
+    // 失败态只能经 retryArticleDetail 清错后重试，避免收起再展开反复打失败请求。
+    if (!article.has_content || article.id === null) return
+    if (
+      articleDetails.value.has(key) ||
+      articleDetailLoading.value.has(key) ||
+      articleDetailErrors.value.has(key)
+    ) {
+      return
+    }
+
+    const nextLoading = new Set(articleDetailLoading.value)
+    nextLoading.add(key)
+    articleDetailLoading.value = nextLoading
+    try {
+      const detail = await api.fetchArticleDetail(accountId, article.id)
+      detail.content_html = sanitizeWechatArticleHtml(detail.content_html)
+      const next = new Map(articleDetails.value)
+      next.set(key, detail)
+      articleDetails.value = next
+      const cleared = new Map(articleDetailErrors.value)
+      cleared.delete(key)
+      articleDetailErrors.value = cleared
+    } catch (err) {
+      const next = new Map(articleDetailErrors.value)
+      next.set(key, getErrorMessage(err, '加载全文失败'))
+      articleDetailErrors.value = next
+    } finally {
+      const settled = new Set(articleDetailLoading.value)
+      settled.delete(key)
+      articleDetailLoading.value = settled
+    }
+  }
+
+  function retryArticleDetail(key: string, accountId: number, article: WeChatArticle) {
+    const cleared = new Map(articleDetailErrors.value)
+    cleared.delete(key)
+    articleDetailErrors.value = cleared
+    void ensureArticleDetail(key, accountId, article)
+  }
+
+  function toggleArticleExpanded(key: string, accountId?: number, article?: WeChatArticle) {
     const next = new Set(expandedArticleKeys.value)
     if (next.has(key)) {
       next.delete(key)
     } else {
       next.add(key)
+      if (accountId !== undefined && article) {
+        void ensureArticleDetail(key, accountId, article)
+      }
     }
     expandedArticleKeys.value = next
   }
@@ -184,6 +237,9 @@ export function useWechatFollowController(options: UseWechatFollowControllerOpti
     followBoxCollapsed,
     followedAccounts,
     visibleFeed,
+    articleDetails,
+    articleDetailLoading,
+    articleDetailErrors,
     dispose,
     setError,
     clearError,
@@ -191,6 +247,8 @@ export function useWechatFollowController(options: UseWechatFollowControllerOpti
     loadFeed,
     toggleFollow,
     articleKey,
+    ensureArticleDetail,
+    retryArticleDetail,
     toggleArticleExpanded,
     isArticleExpanded,
     selectAccount,
