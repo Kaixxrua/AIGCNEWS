@@ -126,12 +126,6 @@ class Settings(BaseSettings):
     mysql_user: str = "root"
     mysql_password: str = ""
     mysql_database: str = "rag_aigc"
-    project_catalog_outbox_capture_enabled: bool = False
-    project_catalog_sync_worker_enabled: bool = False
-    project_catalog_sync_poll_seconds: int = 5
-    project_catalog_sync_batch_size: int = 100
-    project_catalog_sync_lease_seconds: int = 60
-    project_catalog_sync_max_attempts: int = 10
 
     # PostgreSQL 应用数据库配置
     postgres_host: str = ""
