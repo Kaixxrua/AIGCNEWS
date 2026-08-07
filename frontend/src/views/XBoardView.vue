@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, authorDisplayName, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, paginateItems, timelineTweets, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, distributeColumns, extractXHandle, formatLocalTime, hasMedia, hasQuote, mediaItems, paginateItems, quoteAvatarUrl, quoteMediaItems, quoteTextSegments, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
@@ -62,6 +62,10 @@ const onLightboxKeydown = (event: KeyboardEvent) => {
 }
 
 const isVideo = (item: TweetMediaItem) => item.type === 'video' || item.type === 'animated_gif'
+
+// 引用卡片内只渲染缩略图（整卡点击跳被引推文，不内嵌播放）：视频用封面，
+// 无封面（非 twimg 直链等）不渲染该媒体位
+const quoteMediaThumb = (item: TweetMediaItem) => (isVideo(item) ? (item.poster_url ?? '') : item.url)
 
 // X 式点击播放：视频占位零流量（不经代理拉取元数据），点击后才挂载 <video>。
 // 键与模板 :key 同源（`${tweet.url}-${index}`），重载推文时清空避免自动重播。
@@ -306,6 +310,51 @@ onBeforeUnmount(() => {
                   >{{ seg.text }}</a>
                 </template>
               </div>
+
+              <!-- 引用推文卡片：整卡一个锚点跳被引推文（无嵌套 a，与 X 行为一致） -->
+              <a
+                v-if="hasQuote(tweet)"
+                :href="tweetQuote(tweet)!.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="tweet-quote mx-1 mt-2 block"
+                @click.stop
+              >
+                <span class="tweet-quote-head flex items-center gap-1.5 px-3 pt-2">
+                  <img
+                    v-if="quoteAvatarUrl(tweetQuote(tweet)!)"
+                    :src="quoteAvatarUrl(tweetQuote(tweet)!)"
+                    :alt="tweetQuote(tweet)!.author_name || tweetQuote(tweet)!.author"
+                    loading="lazy"
+                    decoding="async"
+                    referrerpolicy="no-referrer"
+                    class="tweet-quote-avatar h-4 w-4 shrink-0 rounded-full object-cover"
+                  />
+                  <span class="truncate text-xs font-semibold text-stone-700">{{ tweetQuote(tweet)!.author_name || `@${tweetQuote(tweet)!.author}` }}</span>
+                  <span v-if="tweetQuote(tweet)!.author" class="tweet-quote-handle truncate text-2xs">@{{ tweetQuote(tweet)!.author }}</span>
+                </span>
+                <span v-if="tweetQuote(tweet)!.text" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
+                  <template v-for="(seg, segIndex) in quoteTextSegments(tweetQuote(tweet)!)" :key="segIndex">
+                    <span v-if="seg.isUrl" class="tweet-quote-link">{{ seg.text }}</span>
+                    <span v-else>{{ seg.text }}</span>
+                  </template>
+                </span>
+                <span v-if="quoteMediaItems(tweetQuote(tweet)!).length" class="tweet-quote-media block px-3 pb-2 pt-1.5">
+                  <template v-for="(item, mediaIndex) in quoteMediaItems(tweetQuote(tweet)!)" :key="mediaIndex">
+                    <img
+                      v-if="quoteMediaThumb(item)"
+                      :src="quoteMediaThumb(item)"
+                      :alt="tweetQuote(tweet)!.text || tweetQuote(tweet)!.author"
+                      loading="lazy"
+                      decoding="async"
+                      referrerpolicy="no-referrer"
+                      class="tweet-quote-photo w-full object-cover"
+                      :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
+                      @error="($event.target as HTMLImageElement).style.display = 'none'"
+                    />
+                  </template>
+                </span>
+              </a>
               <p v-if="formatTime(tweet)" class="tweet-time mt-2 px-1 text-2xs">{{ formatTime(tweet) }}</p>
             </div>
           </article>
@@ -563,6 +612,43 @@ a.tweet-link:hover {
 
 .tweet-time {
   color: var(--ink-muted);
+}
+
+/* 引用推文卡片：墨边小圆角内嵌块，hover 硬边位移（对齐视频播放键配方） */
+.tweet-quote {
+  overflow: hidden;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  background: var(--paper);
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+a.tweet-quote:hover {
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+  transform: translate(-1px, -1px);
+}
+
+.tweet-quote-avatar {
+  border: 1px solid var(--ink);
+}
+
+.tweet-quote-handle {
+  color: var(--ink-muted);
+}
+
+/* 引用正文里的链接不可独点（整卡已是锚点），下划线仅作视觉标识 */
+.tweet-quote-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.tweet-quote-photo {
+  max-height: 220px;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
 }
 
 /* ═══ 图片放大预览：墨色遮罩 + 硬边图框，对齐卡片配方 ═══ */

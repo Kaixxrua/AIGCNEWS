@@ -11,12 +11,17 @@ import {
   formatLocalTime,
   groupTweetsByHandle,
   hasMedia,
+  hasQuote,
   mediaItems,
   pageCount,
   paginateItems,
   posterMediaUrl,
   proxiedMediaUrl,
+  quoteAvatarUrl,
+  quoteMediaItems,
+  quoteTextSegments,
   timelineTweets,
+  tweetQuote,
   tweetScore,
   tweetText,
   tweetTextSegments,
@@ -278,6 +283,57 @@ describe('xBoardViewModel', () => {
     ])
     expect(tweetTextSegments(tweet('openai', '1', { summary: 'no links here' }), 'en-US'))
       .toEqual([{ text: 'no links here', isUrl: false }])
+  })
+
+  const quotedTweet = (overrides: Partial<NonNullable<TopDoc['quote']>> = {}) =>
+    tweet('minimax_ai', '2001', {
+      quote: {
+        url: 'https://x.com/comfyui/status/2000',
+        author: 'comfyui',
+        author_name: 'ComfyUI',
+        author_avatar_url: 'https://pbs.twimg.com/profile_images/q.jpg',
+        text: 'Livestream update https://example.com/live see you',
+        media: [
+          { type: 'photo', url: 'https://pbs.twimg.com/media/q.jpg', width: 800, height: 450 },
+        ],
+        published_at: '2026-08-07T01:00:00+00:00',
+        ...overrides,
+      },
+    })
+
+  it('hasQuote requires url plus text or media, rejecting malformed data', () => {
+    expect(hasQuote(quotedTweet())).toBe(true)
+    expect(hasQuote(tweet('openai', '1'))).toBe(false)
+    expect(hasQuote(tweet('openai', '1', { quote: null }))).toBe(false)
+    expect(hasQuote(quotedTweet({ url: '' }))).toBe(false)
+    expect(hasQuote(quotedTweet({ text: '', media: [] }))).toBe(false)
+    // 仅媒体无正文仍可成卡
+    expect(hasQuote(quotedTweet({ text: '' }))).toBe(true)
+    expect(tweetQuote(tweet('openai', '1'))).toBeNull()
+    expect(tweetQuote(quotedTweet())?.author).toBe('comfyui')
+  })
+
+  it('quoteTextSegments splits quote text with the same url rules', () => {
+    expect(quoteTextSegments(quotedTweet().quote!)).toEqual([
+      { text: 'Livestream update ', isUrl: false },
+      { text: 'https://example.com/live', isUrl: true },
+      { text: ' see you', isUrl: false },
+    ])
+    expect(quoteTextSegments(quotedTweet({ text: '' }).quote!)).toEqual([])
+  })
+
+  it('quoteMediaItems rewrites twimg urls through the proxy like outer media', () => {
+    const items = quoteMediaItems(quotedTweet().quote!)
+    expect(items).toHaveLength(1)
+    expect(items[0]?.url).toBe(`/api/media/x/proxy?url=${encodeURIComponent('https://pbs.twimg.com/media/q.jpg')}`)
+    expect(items[0]?.width).toBe(800)
+    expect(quoteMediaItems(quotedTweet({ media: [] }).quote!)).toEqual([])
+  })
+
+  it('quoteAvatarUrl prefers the stored avatar and falls back to unavatar', () => {
+    expect(quoteAvatarUrl(quotedTweet().quote!)).toBe('https://pbs.twimg.com/profile_images/q.jpg')
+    expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: '' }).quote!)).toBe('https://unavatar.io/x/comfyui')
+    expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: '', author: '' }).quote!)).toBeUndefined()
   })
 
   it('distributeColumns deals items round-robin so cross-column reads stay row-major', () => {

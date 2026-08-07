@@ -40,8 +40,23 @@ export interface TopDoc {
   tags?: string[]
   votes?: number
   media?: TweetMediaItem[]
+  /** 采集期落库的引用推文卡片（仅 X 引用推；被引删除/受保护时为空不渲染） */
+  quote?: TweetQuote | null
   /** 采集期落库的 X 自带中文翻译（仅 X 推文；zh 系界面语言优先展示） */
   translation_zh?: string
+}
+
+export interface TweetQuote {
+  /** 被引推文 canonical URL（卡片整卡跳转目标） */
+  url: string
+  /** 被引作者 handle（小写）与显示名 */
+  author: string
+  author_name: string
+  author_avatar_url?: string
+  /** 被引正文（采集期已剥媒体 t.co 尾巴并展开链接） */
+  text: string
+  media?: TweetMediaItem[]
+  published_at?: string
 }
 
 export interface TweetMediaItem {

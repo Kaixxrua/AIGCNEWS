@@ -69,8 +69,10 @@ const URL_TRAILING_PUNCT_RE = /[.,;:!?，。！？、；：]+$/
  * 正文分段渲染：URL 段独立锚点跳真实地址，文本段保持跳推文。
  * 整个文本块不再是单一锚点（嵌套 a 非法）， sibling 分段各自成链。
  */
-export const tweetTextSegments = (doc: TopDoc, locale: string): TweetTextSegment[] => {
-  const text = displayTweetText(doc, locale)
+export const tweetTextSegments = (doc: TopDoc, locale: string): TweetTextSegment[] =>
+  splitTextSegments(displayTweetText(doc, locale))
+
+const splitTextSegments = (text: string): TweetTextSegment[] => {
   const segments: TweetTextSegment[] = []
   let last = 0
   for (const match of text.matchAll(URL_IN_TEXT_RE)) {
@@ -98,6 +100,31 @@ export const tweetTextSegments = (doc: TopDoc, locale: string): TweetTextSegment
 
 export const hasMedia = (doc: TopDoc): boolean =>
   Array.isArray(doc.media) && doc.media.length > 0
+
+/** 引用卡片存在性：要求至少 url +（正文或媒体），坏数据不渲染。 */
+export const hasQuote = (doc: TopDoc): boolean => {
+  const quote = doc.quote
+  if (!quote || typeof quote.url !== 'string' || !quote.url) return false
+  return Boolean(quote.text) || (Array.isArray(quote.media) && quote.media.length > 0)
+}
+
+/** 引用卡片的展示对象：仅经 hasQuote 判定后调用，坏数据回退 null。 */
+export const tweetQuote = (doc: TopDoc): TopDoc['quote'] => (hasQuote(doc) ? (doc.quote ?? null) : null)
+
+/** 引用作者头像：落库地址优先，缺失时回退 unavatar（与外推头像同一策略）。 */
+export const quoteAvatarUrl = (quote: NonNullable<TopDoc['quote']>): string | undefined => {
+  if (quote.author_avatar_url) return quote.author_avatar_url
+  if (quote.author) return `https://unavatar.io/x/${quote.author}`
+  return undefined
+}
+
+/**
+ * 引用正文分段：复用正文同一 URL 正则做链接识别，但引用卡片整体已是
+ * 锚点（跳被引推文），嵌套锚点非法——故引用正文只做纯文本分段输出，
+ * 链接样式由渲染层以 span 呈现，点击仍跳被引推文（与 X 行为一致）。
+ */
+export const quoteTextSegments = (quote: NonNullable<TopDoc['quote']>): TweetTextSegment[] =>
+  splitTextSegments(quote.text ?? '')
 
 const X_MEDIA_PROXY_PATH = '/api/media/x/proxy'
 const X_MEDIA_POSTER_PATH = '/api/media/x/poster'
@@ -136,14 +163,21 @@ const resolvePosterUrl = (item: { url: string; poster_url?: string }): string =>
   return posterMediaUrl(item.url)
 }
 
-export const mediaItems = (doc: TopDoc): NonNullable<TopDoc['media']> =>
-  (doc.media ?? []).map((item) => ({
+const proxyMediaList = (items: NonNullable<TopDoc['media']>): NonNullable<TopDoc['media']> =>
+  items.map((item) => ({
     ...item,
     url: proxiedMediaUrl(item.url),
     ...(item.type === 'video' || item.type === 'animated_gif'
       ? { poster_url: resolvePosterUrl(item) }
       : {}),
   }))
+
+export const mediaItems = (doc: TopDoc): NonNullable<TopDoc['media']> =>
+  proxyMediaList(doc.media ?? [])
+
+/** 引用卡片媒体：与外推同一代理/封面规则。 */
+export const quoteMediaItems = (quote: NonNullable<TopDoc['quote']>): NonNullable<TopDoc['media']> =>
+  proxyMediaList(quote.media ?? [])
 
 const sortTweets = (tweets: TopDoc[]): TopDoc[] => (
   [...tweets].sort((a, b) => (
