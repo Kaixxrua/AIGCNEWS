@@ -7,10 +7,12 @@ import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import { CalendarDays, ArrowRight, MailPlus } from 'lucide-vue-next'
+import { useAuthStore } from '@/stores/authStore'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 
 defineOptions({ name: 'DashboardView' })
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 let currentStats: () => Stats = () => ({})
 const {
@@ -120,8 +122,9 @@ currentStats = () => stats.value
             :available-dates="availableDates"
             @update:model-value="onDateChange"
           />
-          <!-- 公众号快捷入口 -->
+          <!-- 公众号快捷入口（仅管理员） -->
           <RouterLink
+            v-if="authStore.isAdmin"
             to="/wechat"
             class="stagger-enter glass-card card-hover flex min-h-[44px] shrink-0 items-center justify-between gap-2 px-2.5 py-1.5 transition-colors"
             style="animation-delay: 0.3s"

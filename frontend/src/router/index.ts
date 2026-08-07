@@ -59,6 +59,7 @@ const router = createRouter({
           path: 'chat',
           name: 'chat',
           component: ChatView,
+          meta: { requiresAdmin: true },
         },
         {
           path: 'report',
@@ -74,7 +75,7 @@ const router = createRouter({
           path: 'wechat',
           name: 'wechat',
           component: WechatView,
-          meta: { requiresAuth: true },
+          meta: { requiresAdmin: true },
         },
         {
           path: 'subscriptions',
