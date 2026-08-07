@@ -195,6 +195,7 @@ class XCrawler(BaseCrawler):
             str(getattr(tweet, "id", "")): str(getattr(tweet, "lang", "") or "")
             for tweet in tweets
         }
+        tweets_by_id = {str(getattr(tweet, "id", "")): tweet for tweet in tweets}
         targets = [
             str(item["tweet_id"])
             for item in items
@@ -212,6 +213,15 @@ class XCrawler(BaseCrawler):
         for item in items:
             text = translations.get(str(item.get("tweet_id") or ""), "")
             if text:
+                # X 译文会剥掉全部链接：按实体补回缺失链接（媒体尾巴除外）
+                tweet = tweets_by_id.get(str(item.get("tweet_id") or ""))
+                if tweet is not None:
+                    text = x_policy.restore_translation_urls(
+                        text,
+                        str(getattr(tweet, "text", "") or ""),
+                        item.get("media") or [],
+                        getattr(tweet, "urls", None),
+                    )
                 item["translation_zh"] = text
                 attached += 1
         logger.info("[X] 中文翻译附着: %d/%d 条", attached, len(targets))

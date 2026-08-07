@@ -14,6 +14,7 @@ dict/对象进、dict 出的纯变换，transport 负责一切 IO。
 
 import logging
 import math
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
@@ -123,6 +124,64 @@ def compose_tweet_url(screen_name: str, tweet_id: str) -> str:
     return f"https://x.com/{screen_name}/status/{tweet_id}"
 
 
+_TCO_RE = re.compile(r"https://t\.co/[A-Za-z0-9]+")
+_TRAILING_TCO_RE = re.compile(r"\s*https://t\.co/[A-Za-z0-9]+\s*$")
+
+
+def _strip_media_tco(text: str, media: list[dict]) -> str:
+    """剥离 full_text 尾部由 X 自动追加的媒体 t.co 链接。
+
+    X 页面有媒体附件时不显示该链接（媒体卡片取而代之），仅有媒体列
+    为空时保留。已知边界：媒体+引用复合推文尾部可能是引用链接，一并
+    剥掉属可接受误差（组合罕见）。
+    """
+    if not media:
+        return text
+    return _TRAILING_TCO_RE.sub("", text)
+
+
+def _expanded_urls(urls: Any) -> list[str]:
+    return [str(u).strip() for u in (urls or []) if str(u).strip()]
+
+
+def clean_tweet_display_text(text: str, media: list[dict], urls: Any) -> str:
+    """把 full_text 转成 X 页面式显示文本：剥媒体尾巴 + t.co 展开为真实 URL。
+
+    twitter-cli 的 Tweet.urls 来自 entities.urls[].expanded_url，实体序与
+    文中 t.co 出现序一致（X 按文本顺序生成实体），故按位置配对展开；
+    数量不齐时未配对的 t.co 原样保留，绝不静默丢链接。
+    """
+    cleaned = _strip_media_tco(text, media)
+    expanded = _expanded_urls(urls)
+    if not expanded:
+        return cleaned
+    iterator = iter(expanded)
+    return _TCO_RE.sub(lambda m: next(iterator, m.group(0)), cleaned)
+
+
+def restore_translation_urls(translation: str, source_text: str, media: list[dict], urls: Any) -> str:
+    """补回 X 译文丢失的链接：translateTweet 响应会剥掉全部 URL。
+
+    媒体尾巴不补（媒体区已单独渲染）；t.co 或其展开式任一已在译文中
+    出现视为未丢失，不重复追加。缺失链接按实体序追加到译文末尾，
+    与 X 页面「翻译帖子」视图（译文 + 实体链接）对齐。
+    """
+    cleaned = _strip_media_tco(source_text, media)
+    links = _TCO_RE.findall(cleaned)
+    if not links:
+        return translation
+    expanded = _expanded_urls(urls)
+    missing: list[str] = []
+    for index, tco in enumerate(links):
+        target = expanded[index] if index < len(expanded) else tco
+        if tco in translation or target in translation:
+            continue
+        missing.append(target)
+    if not missing:
+        return translation
+    return translation.rstrip() + "\n" + "\n".join(missing)
+
+
 def _project_tweet_media(tweet: Any) -> list[dict]:
     """把 twitter-cli 的 Tweet.media 投影为可序列化的元数据列表。
 
@@ -184,10 +243,15 @@ def project_tweets(
             or getattr(author, "profile_image_url_https", "")
             or ""
         )
-        text = str(getattr(tweet, "text", "") or "")
+        # media 先于 text 计算：剥媒体 t.co 尾巴依赖媒体列
+        media = _project_tweet_media(tweet)
+        text = clean_tweet_display_text(
+            str(getattr(tweet, "text", "") or ""),
+            media,
+            getattr(tweet, "urls", None),
+        )
         metrics = getattr(tweet, "metrics", None)
         score = _score(tweet)
-        media = _project_tweet_media(tweet)
         created_at = str(getattr(tweet, "created_at", "") or "")
         parsed_dt = parse_tweet_datetime(created_at)
         results.append(

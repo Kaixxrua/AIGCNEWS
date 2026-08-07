@@ -249,6 +249,61 @@ class XPolicyContracts(unittest.TestCase):
         kept = x_policy.filter_tweets_to_snapshot_date(tweets, "")
         self.assertEqual(len(kept), 2)
 
+    def test_clean_display_text_strips_media_tco_tail_only_with_media(self) -> None:
+        text = "look at this https://t.co/AbCdEf"
+        media = [{"type": "photo", "url": "https://pbs.twimg.com/a.jpg"}]
+        self.assertEqual(x_policy.clean_tweet_display_text(text, media, []), "look at this")
+        # 无媒体时尾部 t.co 是普通链接，保留
+        self.assertEqual(x_policy.clean_tweet_display_text(text, [], []), text)
+
+    def test_clean_display_text_expands_tco_positionally(self) -> None:
+        text = "read https://t.co/LinkOne and https://t.co/LinkTwo now https://t.co/MediaTail"
+        media = [{"type": "photo", "url": "https://pbs.twimg.com/a.jpg"}]
+        urls = ["https://openai.com/a", "https://example.org/b"]
+        out = x_policy.clean_tweet_display_text(text, media, urls)
+        self.assertEqual(out, "read https://openai.com/a and https://example.org/b now")
+
+    def test_clean_display_text_keeps_unpaired_tco_when_urls_short(self) -> None:
+        text = "see https://t.co/One or https://t.co/Two"
+        out = x_policy.clean_tweet_display_text(text, [], ["https://openai.com/a"])
+        # 数量不齐：能配对的展开，未配对的原样保留 t.co，不静默丢链接
+        self.assertEqual(out, "see https://openai.com/a or https://t.co/Two")
+
+    def test_project_tweets_stores_cleaned_display_text(self) -> None:
+        tweet = _tweet("1015", text="new model https://t.co/Post https://t.co/MediaTail")
+        tweet.media = [TweetMedia(type="photo", url="https://pbs.twimg.com/a.jpg", width=1, height=1)]
+        tweet.urls = ["https://openai.com/index/new-model/"]
+        items = x_policy.project_tweets([tweet], limit=5)
+        self.assertEqual(items[0]["summary"], "new model https://openai.com/index/new-model/")
+        self.assertEqual(items[0]["title"], "new model https://openai.com/index/new-model/")
+
+    def test_restore_translation_urls_appends_missing_links(self) -> None:
+        source = "More info on eligibility: https://t.co/jzWCbyaIdg"
+        out = x_policy.restore_translation_urls(
+            "更多资格信息：", source, [], ["https://gemini.google/eligibility"]
+        )
+        self.assertEqual(out, "更多资格信息：\nhttps://gemini.google/eligibility")
+
+    def test_restore_translation_urls_skips_links_present_in_translation(self) -> None:
+        source = "read https://t.co/One and https://t.co/Two"
+        urls = ["https://openai.com/a", "https://example.org/b"]
+        # 译文保留 t.co 形态 → 不补；另一个被剥 → 补展开式
+        out = x_policy.restore_translation_urls(
+            "阅读 https://t.co/One 与另一篇", source, [], urls
+        )
+        self.assertEqual(out, "阅读 https://t.co/One 与另一篇\nhttps://example.org/b")
+        # 译文含展开式 → 也不重复补
+        out2 = x_policy.restore_translation_urls(
+            "阅读 https://openai.com/a 与 https://example.org/b", source, [], urls
+        )
+        self.assertEqual(out2, "阅读 https://openai.com/a 与 https://example.org/b")
+
+    def test_restore_translation_urls_never_appends_media_tail(self) -> None:
+        source = "好看 https://t.co/MediaTail"
+        media = [{"type": "photo", "url": "https://pbs.twimg.com/a.jpg"}]
+        out = x_policy.restore_translation_urls("好看", source, media, [])
+        self.assertEqual(out, "好看")
+
 
 class _FakeClient:
     """同步 fake：transport 经 asyncio.to_thread 调用，Mock 即可。"""
@@ -1071,6 +1126,30 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_id["2001"].get("translation_zh"), "中文译文")
         self.assertNotIn("translation_zh", by_id["2002"])
         self.assertNotIn("translation_zh", by_id["2003"])
+
+    async def test_translation_missing_links_are_restored_on_attach(self) -> None:
+        tweet = self._lang_tweet("2007", "en")
+        tweet.text = "More info on eligibility: https://t.co/jzWCbyaIdg"
+        tweet.urls = ["https://gemini.google/eligibility"]
+        transport = _FakeTransport(result={"openai": [tweet]})
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            # X translateTweet 会剥掉链接
+            return {"2007": "更多资格信息："}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(
+            result.items[0].get("translation_zh"),
+            "更多资格信息：\nhttps://gemini.google/eligibility",
+        )
+        # 正文同样被清洗为展开式
+        self.assertEqual(
+            result.items[0]["summary"],
+            "More info on eligibility: https://gemini.google/eligibility",
+        )
 
     async def test_empty_lang_still_attempts_translation(self) -> None:
         transport = _FakeTransport(result={"openai": [self._lang_tweet("2006", "")]})
