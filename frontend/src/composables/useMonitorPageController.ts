@@ -4,7 +4,7 @@ import { i18n } from '@/i18n'
 import {
   createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
   createEmptySchedulerJobConfigForm,
-  type GithubCrawlStatus, type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
+  type GithubCrawlStatus, type GithubEnrichmentStatus, type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
 
 interface MonitorPageControllerOptions {
@@ -71,6 +71,9 @@ export const useMonitorPageController = ({
   const crawlPolling = ref(false)
   const crawlStatus = ref<GithubCrawlStatus | null>(null)
   const activeCrawlRun = ref<{ channel: string; first_seen_after: string } | null>(null)
+  const enrichmentStatus = ref<GithubEnrichmentStatus | null>(null)
+  const loadingEnrichmentStatus = ref(false)
+  const retryingEnrichment = ref(false)
   const isTaskRunning = computed(() => tasks.value.length > 0 && tasks.value[0]?.status === 'running')
   const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
   const clearMessages = () => { errorMsg.value = ''; successMsg.value = '' }
@@ -113,9 +116,16 @@ export const useMonitorPageController = ({
     catch (error) { console.error('Failed to fetch MCP servers', error) }
     finally { loadingMcpServers.value = false }
   }
+  const fetchGithubEnrichmentStatus = async () => {
+    if (!isAdmin.value) return
+    loadingEnrichmentStatus.value = true
+    try { enrichmentStatus.value = await api.fetchGithubEnrichmentStatus() }
+    catch (error) { console.error('Failed to fetch GitHub enrichment status', error) }
+    finally { loadingEnrichmentStatus.value = false }
+  }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -266,6 +276,22 @@ export const useMonitorPageController = ({
       errorMsg.value = statusOf(error) === 409 ? i18n.global.t('monitor.crawl.conflict') : detail(error)
     } finally { crawling.value = false }
   }
+  const retryFailedEnrichments = async () => {
+    if (retryingEnrichment.value) return
+    clearMessages()
+    const failed = enrichmentStatus.value?.failed || 0
+    if (failed <= 0) { errorMsg.value = i18n.global.t('monitor.enrichment.noFailures'); return }
+    retryingEnrichment.value = true
+    try {
+      // 后端 enrich 上限 500；失败数即本次重试范围
+      const result = await api.retryFailedGithubEnrichment(Math.min(failed, 500))
+      successMsg.value = result.message || i18n.global.t('monitor.enrichment.retrySubmitted')
+      // 富化在后台执行，延迟回读状态（首次回读可能仍在运行，故排两次）
+      schedule(() => { void fetchGithubEnrichmentStatus() }, 5000)
+      schedule(() => { void fetchGithubEnrichmentStatus() }, 30000)
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { retryingEnrichment.value = false }
+  }
   const ingestSingleSource = async (source: SourceKey) => {
     if (ingestingSource.value) return
     clearMessages(); ingestingSource.value = source
@@ -319,5 +345,6 @@ export const useMonitorPageController = ({
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
     crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
+    enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, fetchGithubEnrichmentStatus, retryFailedEnrichments,
   }
 }

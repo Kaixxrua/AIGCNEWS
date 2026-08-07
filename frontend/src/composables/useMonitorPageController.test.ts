@@ -45,6 +45,8 @@ const createApi = (): MonitorApi => ({
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
+  fetchGithubEnrichmentStatus: vi.fn(async () => ({ eligible: 10, succeeded: 9, failed: 1, pending: 0 })),
+  retryFailedGithubEnrichment: vi.fn(async () => ({ status: 'queued', message: '' })),
   fetchXWatchAccounts: vi.fn(async () => []), saveXWatchAccount: vi.fn(), deleteXWatchAccount: vi.fn(), testXWatchAccount: vi.fn(),
   fetchXCredentials: vi.fn(async () => []), saveXCredential: vi.fn(), deleteXCredential: vi.fn(), testXCredential: vi.fn(),
 })
@@ -66,6 +68,8 @@ describe('Monitor page controller contract', () => {
     expect(api.fetchMcpToolCalls).toHaveBeenCalledOnce()
     expect(api.fetchProviderConfig).not.toHaveBeenCalled()
     expect(api.fetchMcpServers).not.toHaveBeenCalled()
+    expect(api.fetchGithubEnrichmentStatus).not.toHaveBeenCalled()
+    expect(controller.enrichmentStatus.value).toBeNull()
   })
 
   it('loads scheduler configs for admins and validates save constraints', async () => {
@@ -304,5 +308,59 @@ describe('Monitor GitHub crawl controls', () => {
     })
     expect(controller.crawlStatus.value?.candidates_upserted).toBe(9)
     expect(controller.crawlPolling.value).toBe(true)
+  })
+})
+
+describe('Monitor GitHub enrichment controls', () => {
+  beforeEach(() => vi.useFakeTimers())
+
+  it('loads enrichment status for admins on refresh', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 100, succeeded: 95, failed: 3, pending: 2 })
+    await controller.refreshData()
+    expect(api.fetchGithubEnrichmentStatus).toHaveBeenCalled()
+    expect(controller.enrichmentStatus.value).toEqual({ eligible: 100, succeeded: 95, failed: 3, pending: 2 })
+  })
+
+  it('retries failed enrichments capped at 500 and schedules status re-reads', async () => {
+    const { api, controller, schedule } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 1000, succeeded: 200, failed: 800, pending: 0 })
+    await controller.refreshData()
+
+    vi.mocked(api.retryFailedGithubEnrichment).mockResolvedValue({ status: 'queued', message: '富化任务已提交' })
+    await controller.retryFailedEnrichments()
+
+    expect(api.retryFailedGithubEnrichment).toHaveBeenCalledWith(500)
+    expect(controller.successMsg.value).toBe('富化任务已提交')
+    expect(controller.retryingEnrichment.value).toBe(false)
+    // 后台任务运行期间排两次状态回读（5s / 30s）
+    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 5000)
+    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 30000)
+
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockClear()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 1000, succeeded: 1000, failed: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(controller.enrichmentStatus.value?.failed).toBe(0)
+  })
+
+  it('blocks retry when there are no failures and never calls the API', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 10, failed: 0, pending: 0 })
+    await controller.refreshData()
+
+    await controller.retryFailedEnrichments()
+    expect(api.retryFailedGithubEnrichment).not.toHaveBeenCalled()
+    expect(controller.errorMsg.value).toBeTruthy()
+  })
+
+  it('surfaces retry submission errors and resets the pending flag', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 9, failed: 1, pending: 0 })
+    await controller.refreshData()
+
+    vi.mocked(api.retryFailedGithubEnrichment).mockRejectedValue({ response: { status: 500, data: { detail: 'queue broken' } } })
+    await controller.retryFailedEnrichments()
+    expect(controller.errorMsg.value).toBe('queue broken')
+    expect(controller.retryingEnrichment.value).toBe(false)
   })
 })

@@ -8,6 +8,8 @@ const props = defineProps<{
   currentPath: string
   isAdmin: boolean
   isLoggedIn: boolean
+  /** 需要在图标右上角显示告警红点的导航路径（如 ['/monitor']） */
+  alertItems?: readonly string[]
 }>()
 
 const emit = defineEmits<{
@@ -36,6 +38,12 @@ const hoveredAuth = ref(false)
       @mouseleave="hoveredNav = null"
     >
       <span class="dock-icon" v-html="item.icon" />
+      <span
+        v-if="props.alertItems?.includes(item.to)"
+        class="dock-alert-dot"
+        :title="t('navigation.monitorAlert')"
+        :aria-label="t('navigation.monitorAlert')"
+      />
       <Transition name="dock-label">
         <span v-if="hoveredNav === item.to" class="dock-label">
           {{ t(item.labelKey) }}
@@ -151,6 +159,24 @@ const hoveredAuth = ref(false)
   height: 20px;
 }
 
+.dock-alert-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--error-accent);
+  border: 1.5px solid var(--paper-raised);
+  pointer-events: none;
+  animation: dock-alert-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dock-alert-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.65; }
+}
+
 .dock-label {
   position: absolute;
   bottom: calc(100% + 10px);
@@ -229,5 +255,6 @@ const hoveredAuth = ref(false)
   .dock-item,
   .dock-label-enter-active,
   .dock-label-leave-active { transition: none; }
+  .dock-alert-dot { animation: none; }
 }
 </style>

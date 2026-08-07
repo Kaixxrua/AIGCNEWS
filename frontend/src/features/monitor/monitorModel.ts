@@ -142,6 +142,20 @@ export interface GithubCrawlStatus {
   enriched_failed: number
 }
 
+export interface GithubEnrichmentStatus {
+  eligible: number
+  succeeded: number
+  failed: number
+  pending: number
+  by_category?: Array<{ slug: string; name: string; count: number }>
+}
+
+export interface GithubEnrichmentTriggerResult {
+  status: string
+  message: string
+  result?: Record<string, unknown> | null
+}
+
 export interface GithubCrawlStatusQuery {
   channel?: string
   first_seen_after?: string

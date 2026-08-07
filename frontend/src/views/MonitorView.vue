@@ -2,7 +2,9 @@
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
+import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
 import GithubCrawlControls from '@/components/monitor/GithubCrawlControls.vue'
+import GithubEnrichmentPanel from '@/components/monitor/GithubEnrichmentPanel.vue'
 import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
 import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
@@ -17,6 +19,7 @@ import { useMonitorPageController } from '@/composables/useMonitorPageController
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const enrichmentAlert = useEnrichmentAlertStore()
 const {
   tasks, total, page, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
   loadingProviderConfig, savingProviderConfig, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
@@ -27,7 +30,14 @@ const {
   ingestByDate, clearAllData,
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
   crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
+  enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, fetchGithubEnrichmentStatus, retryFailedEnrichments,
 } = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
+
+// 手动重试后延迟同步导航 Dock 的富化失败红点（后台任务完成后计数才会下降）
+const handleRetryEnrichments = async () => {
+  await retryFailedEnrichments()
+  setTimeout(() => { void enrichmentAlert.refresh() }, 15_000)
+}
 
 onMounted(refreshData)
 </script>
@@ -146,6 +156,16 @@ onMounted(refreshData)
       :crawl-polling="crawlPolling"
       :crawl-status="crawlStatus"
       @start="startGithubCrawl"
+    />
+
+    <!-- Admin 专属：GitHub 项目库富化（失败重试入口） -->
+    <GithubEnrichmentPanel
+      v-if="authStore.isAdmin"
+      :status="enrichmentStatus"
+      :loading="loadingEnrichmentStatus"
+      :retrying="retryingEnrichment"
+      @refresh="fetchGithubEnrichmentStatus"
+      @retry="handleRetryEnrichments"
     />
 
     <McpToolCallsPanel

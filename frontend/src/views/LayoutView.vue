@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
+import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
 import GlobalSearch from '@/components/GlobalSearch.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -15,6 +17,9 @@ import {
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+// 实例化即开始对 admin 轮询富化失败状态；失败 > 0 时「监控」导航按钮显示红点
+const enrichmentAlert = useEnrichmentAlertStore()
+const dockAlertItems = computed(() => (enrichmentAlert.hasFailures ? ['/monitor'] : []))
 
 /** 品牌名称 — 从 Vite 环境变量读取，回退默认值 */
 const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
@@ -56,6 +61,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       :current-path="route.path"
       :is-admin="authStore.isAdmin"
       :is-logged-in="authStore.isLoggedIn"
+      :alert-items="dockAlertItems"
       @login="router.push('/login')"
       @logout="authStore.logout()"
     />
