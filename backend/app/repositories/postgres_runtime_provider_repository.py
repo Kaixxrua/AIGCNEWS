@@ -22,7 +22,7 @@ class PostgresRuntimeProviderSettingRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
-                    SELECT provider, base_url, api_key, model_name, updated_at
+                    SELECT provider, base_url, api_key, model_name, reasoning_effort, updated_at
                     FROM runtime_provider_settings
                     {where_clause}
                     ORDER BY updated_at DESC
@@ -40,11 +40,13 @@ class PostgresRuntimeProviderSettingRepository:
         api_key: str | None = None,
         clear_api_key: bool = False,
         model_name: str = "",
+        reasoning_effort: str = "",
     ) -> dict[str, Any]:
         provider_key = (provider or "").strip().lower()
         clean_base_url = (base_url or "").strip()
         clean_api_key = api_key.strip() if isinstance(api_key, str) else None
         clean_model_name = (model_name or "").strip()
+        clean_reasoning_effort = (reasoning_effort or "").strip().lower()
 
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
@@ -69,15 +71,16 @@ class PostgresRuntimeProviderSettingRepository:
                 cursor.execute(
                     """
                     INSERT INTO runtime_provider_settings
-                        (provider, base_url, api_key, model_name, updated_at)
-                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    RETURNING provider, base_url, api_key, model_name, updated_at
+                        (provider, base_url, api_key, model_name, reasoning_effort, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    RETURNING provider, base_url, api_key, model_name, reasoning_effort, updated_at
                     """,
                     (
                         provider_key,
                         clean_base_url,
                         effective_api_key,
                         clean_model_name,
+                        clean_reasoning_effort,
                     ),
                 )
                 row = cursor.fetchone()
@@ -87,4 +90,5 @@ class PostgresRuntimeProviderSettingRepository:
             "base_url": clean_base_url,
             "api_key": effective_api_key,
             "model_name": clean_model_name,
+            "reasoning_effort": clean_reasoning_effort,
         }

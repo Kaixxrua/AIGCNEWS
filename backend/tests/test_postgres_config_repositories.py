@@ -95,6 +95,7 @@ def test_provider_upsert_normalizes_values_preserves_secret_and_returns_row() ->
         "https://example.test",
         "existing-secret",
         "gpt-test",
+        "",
     )
     assert database.transaction_count == 1
 

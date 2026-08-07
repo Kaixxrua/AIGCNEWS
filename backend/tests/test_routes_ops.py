@@ -281,6 +281,7 @@ class OperationsRouteTests(unittest.TestCase):
             "base_url": "https://example.test",
             "api_key": "replacement-secret",
             "model_name": "example-model",
+            "reasoning_effort": "high",
         }
         client = self._provider_client(repository)
 
@@ -292,11 +293,13 @@ class OperationsRouteTests(unittest.TestCase):
                 "api_key": "replacement-secret",
                 "clear_api_key": False,
                 "model_name": "example-model",
+                "reasoning_effort": "high",
             },
         )
 
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("api_key", response.json())
+        self.assertEqual(response.json()["reasoning_effort"], "high")
         self.assertNotIn("replacement-secret", response.text)
         repository.upsert_runtime_provider_setting.assert_called_once_with(
             "anthropic",
@@ -304,7 +307,20 @@ class OperationsRouteTests(unittest.TestCase):
             "replacement-secret",
             False,
             "example-model",
+            "high",
         )
+
+    def test_provider_config_update_rejects_unknown_reasoning_effort(self) -> None:
+        repository = MagicMock(spec=RuntimeProviderSettingManager)
+        client = self._provider_client(repository)
+
+        response = client.put(
+            "/api/ops/provider-config",
+            json={"provider": "openai", "reasoning_effort": "ultra"},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        repository.upsert_runtime_provider_setting.assert_not_called()
 
     def test_provider_config_requires_admin_before_repository_calls(self) -> None:
         app = FastAPI()

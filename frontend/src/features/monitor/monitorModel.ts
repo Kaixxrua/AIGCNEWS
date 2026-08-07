@@ -55,6 +55,8 @@ export interface PagedResult {
   page_size: number
 }
 
+export type ReasoningEffort = '' | 'minimal' | 'low' | 'medium' | 'high'
+
 export interface ProviderConfig {
   provider: 'openai' | 'anthropic'
   base_url: string
@@ -62,6 +64,7 @@ export interface ProviderConfig {
   api_key_configured: boolean
   api_key_masked: string | null
   updated_at: string | null
+  reasoning_effort: ReasoningEffort | string
 }
 
 export interface ProviderForm {
@@ -70,6 +73,7 @@ export interface ProviderForm {
   model_name: string
   api_key: string
   clear_api_key: boolean
+  reasoning_effort: ReasoningEffort
 }
 
 export interface McpToolSummary { name: string; description: string }
@@ -199,12 +203,20 @@ export const createEmptyMcpToolCallMetrics = (): McpToolCallMetricsSnapshot => (
   since: '', total_calls: 0, tools: {},
 })
 
+const REASONING_EFFORT_VALUES: readonly ReasoningEffort[] = ['', 'minimal', 'low', 'medium', 'high']
+
+export const normalizeReasoningEffort = (value: string | null | undefined): ReasoningEffort => {
+  const normalized = (value || '').trim().toLowerCase() as ReasoningEffort
+  return (REASONING_EFFORT_VALUES as readonly string[]).includes(normalized) ? normalized : ''
+}
+
 export const createProviderForm = (config?: ProviderConfig | null): ProviderForm => ({
   provider: config?.provider || 'openai',
   base_url: config?.base_url || '',
   model_name: config?.model_name || '',
   api_key: '',
   clear_api_key: false,
+  reasoning_effort: normalizeReasoningEffort(config?.reasoning_effort),
 })
 
 export const createEmptyMcpForm = (): McpServerForm => ({
@@ -230,6 +242,7 @@ export const buildProviderPayload = (form: ProviderForm) => ({
   model_name: form.model_name,
   api_key: form.api_key || null,
   clear_api_key: form.clear_api_key,
+  reasoning_effort: form.reasoning_effort,
 })
 
 export const buildMcpPayload = (form: McpServerForm) => ({

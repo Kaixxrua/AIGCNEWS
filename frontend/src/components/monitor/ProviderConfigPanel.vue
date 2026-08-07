@@ -34,7 +34,7 @@ const updateForm = <K extends keyof ProviderForm>(field: K, value: ProviderForm[
       <span v-if="config?.updated_at" class="ml-auto text-2xs monitor-caption">{{ t('monitor.updatedAt', { date: formatDate(config.updated_at) }) }}</span>
     </div>
 
-    <div class="grid grid-cols-1 gap-3 lg:grid-cols-[150px_minmax(220px,1fr)_minmax(180px,0.8fr)_minmax(220px,1fr)_auto] lg:items-end">
+    <div class="grid grid-cols-1 gap-3 lg:grid-cols-[130px_minmax(200px,1fr)_minmax(160px,0.8fr)_minmax(130px,0.6fr)_minmax(190px,1fr)_auto] lg:items-end">
       <label class="block">
         <span class="mb-1 block text-xs monitor-caption">Provider</span>
         <select :value="form.provider" class="input w-full py-2 text-xs" :disabled="loading || saving" @change="updateForm('provider', ($event.target as HTMLSelectElement).value as ProviderForm['provider'])">
@@ -51,6 +51,16 @@ const updateForm = <K extends keyof ProviderForm>(field: K, value: ProviderForm[
         <input :value="form.model_name" type="text" class="input w-full py-2 text-xs" :placeholder="t('monitor.modelPlaceholder')" autocomplete="off" @input="updateForm('model_name', ($event.target as HTMLInputElement).value.trim())" />
       </label>
       <label class="block">
+        <span class="mb-1 block text-xs monitor-caption">{{ t('monitor.reasoningEffort') }}</span>
+        <select :value="form.reasoning_effort" class="input w-full py-2 text-xs" :disabled="loading || saving" @change="updateForm('reasoning_effort', ($event.target as HTMLSelectElement).value as ProviderForm['reasoning_effort'])">
+          <option value="">{{ t('monitor.reasoningEffortDefault') }}</option>
+          <option value="minimal">minimal</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+      </label>
+      <label class="block">
         <span class="mb-1 block text-xs monitor-caption">API Key</span>
         <input :value="form.api_key" type="password" class="input w-full py-2 text-xs" :placeholder="t('monitor.retainKey')" autocomplete="new-password" @input="updateForm('api_key', ($event.target as HTMLInputElement).value)" />
       </label>
@@ -65,6 +75,7 @@ const updateForm = <K extends keyof ProviderForm>(field: K, value: ProviderForm[
         {{ t('monitor.clearKey') }}
       </label>
       <span>{{ t('monitor.providerHint') }}</span>
+      <span>{{ t('monitor.reasoningEffortHint') }}</span>
     </div>
   </div>
 </template>

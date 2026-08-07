@@ -141,7 +141,7 @@ APPLICATION_TABLE_TRANSFER_SPECS = (
     ),
     _spec(
         "runtime_provider_settings",
-        ("provider", "base_url", "api_key", "updated_at", "model_name"),
+        ("provider", "base_url", "api_key", "updated_at", "model_name", "reasoning_effort"),
         ("provider",),
         datetime_columns=("updated_at",),
         text_cursor_columns=("provider",),

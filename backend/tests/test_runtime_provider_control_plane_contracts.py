@@ -110,6 +110,85 @@ class RuntimeProviderModelFactoryContracts(unittest.TestCase):
 
         self.assertNotIn("reasoning_effort", factory.call_args.kwargs)
 
+    def test_configured_reasoning_effort_applies_when_caller_omits_it(self) -> None:
+        runtime = {
+            "provider": "openai",
+            "api_key": "runtime-openai-key",
+            "base_url": "https://runtime-openai.test/v1",
+            "model_name": "runtime-chat-model",
+            "reasoning_effort": "high",
+        }
+
+        with (
+            patch.object(model_factory, "settings", _model_settings()),
+            patch.object(
+                model_factory,
+                "_get_runtime_provider_setting",
+                return_value=runtime,
+            ),
+            patch("langchain_openai.ChatOpenAI") as factory,
+        ):
+            model_factory.get_chat_model(temperature=0)
+
+        self.assertEqual(factory.call_args.kwargs["reasoning_effort"], "high")
+
+        with (
+            patch.object(model_factory, "settings", _model_settings()),
+            patch.object(
+                model_factory,
+                "_get_runtime_provider_setting",
+                return_value=runtime,
+            ),
+            patch("langchain_openai.ChatOpenAI") as factory,
+        ):
+            model_factory.get_chat_model(temperature=0, reasoning_effort="low")
+
+        self.assertEqual(factory.call_args.kwargs["reasoning_effort"], "low")
+
+    def test_get_configured_reasoning_effort_reads_runtime_row(self) -> None:
+        with patch.object(
+            model_factory,
+            "_get_runtime_provider_setting",
+            return_value={"reasoning_effort": " Low "},
+        ):
+            self.assertEqual(model_factory.get_configured_reasoning_effort(), "low")
+
+        with patch.object(
+            model_factory,
+            "_get_runtime_provider_setting",
+            return_value={},
+        ):
+            self.assertIsNone(model_factory.get_configured_reasoning_effort())
+            self.assertEqual(
+                model_factory.get_configured_reasoning_effort(fallback="medium"),
+                "medium",
+            )
+
+    def test_enricher_llm_uses_configured_reasoning_effort_with_medium_fallback(self) -> None:
+        from backend.app.services.ingestion import (
+            github_project_enricher as enricher_module,
+        )
+
+        reader = SimpleNamespace(
+            get_runtime_provider_setting=lambda: {"reasoning_effort": "high"}
+        )
+        db = SimpleNamespace(runtime_provider_settings=reader)
+        enricher = enricher_module.GitHubProjectEnricher(db)
+
+        with (
+            patch.object(
+                enricher_module,
+                "get_configured_reasoning_effort",
+                return_value="high",
+            ) as configured,
+            patch.object(enricher_module, "get_chat_model") as get_model,
+        ):
+            _ = enricher.llm
+            _ = enricher.llm
+
+        configured.assert_called_once_with(fallback="medium")
+        get_model.assert_called_once_with(temperature=0, reasoning_effort="high")
+
     def test_blank_runtime_values_fall_back_to_static_openai_settings(self) -> None:
         runtime = {
             "provider": "openai",
@@ -267,6 +346,7 @@ class RuntimeProviderRouteContracts(unittest.TestCase):
                 "api_key_configured": False,
                 "api_key_masked": None,
                 "updated_at": None,
+                "reasoning_effort": "",
             },
         )
 
@@ -323,6 +403,7 @@ class RuntimeProviderRouteContracts(unittest.TestCase):
             "",
             "",
             True,
+            "",
             "",
         )
         self.assertEqual(response.json()["api_key_masked"], None)

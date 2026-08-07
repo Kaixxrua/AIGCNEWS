@@ -79,6 +79,7 @@ def test_update_config_normalizes_fields_and_preserves_raw_key_intent() -> None:
                 "model_name": " example-model ",
                 "api_key": "",
                 "clear_api_key": True,
+                "reasoning_effort": " High ",
             }
         )
     )
@@ -89,6 +90,7 @@ def test_update_config_normalizes_fields_and_preserves_raw_key_intent() -> None:
         "",
         True,
         "example-model",
+        "high",
     )
     assert projection.provider == "anthropic"
     assert projection.api_key_configured is False

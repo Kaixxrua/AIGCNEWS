@@ -60,7 +60,7 @@ class RuntimeProviderRepositoryContractTests(unittest.TestCase):
                     RuntimeProviderSettingManager.upsert_runtime_provider_setting
                 )
             ),
-            "(self, provider, base_url='', api_key=None, clear_api_key=False, model_name='')",
+            "(self, provider, base_url='', api_key=None, clear_api_key=False, model_name='', reasoning_effort='')",
         )
 
 

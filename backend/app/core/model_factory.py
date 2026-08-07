@@ -13,6 +13,7 @@ from backend.app.services.runtime_provider.adapters import (
 from backend.app.services.runtime_provider.control_plane import (
     effective_value,
     normalize_provider,
+    normalize_reasoning_effort,
     resolve_chat_config,
 )
 
@@ -144,8 +145,8 @@ def create_chat_model(
     - ollama    使用 ChatOllama 本地模型
 
     可传入 temperature 覆盖 settings 中的默认值。
-    reasoning_effort 仅作用于 OpenAI 兼容分支；为 None 时不下发该参数，
-    保持其他调用方与既有行为一致。
+    reasoning_effort 仅作用于 OpenAI 兼容分支；为 None 时回落到运维页
+    保存的配置值，配置也为空则不下发该参数，保持既有行为一致。
     """
     runtime_config = _get_runtime_provider_setting()
     resolved = resolve_chat_config(
@@ -156,6 +157,7 @@ def create_chat_model(
         fallback_model_name=settings.chat_model_name,
         fallback_temperature=settings.llm_temperature,
         temperature=temperature,
+        reasoning_effort=reasoning_effort,
     )
     provider = resolved.provider
     constructors = _provider_constructors()
@@ -204,8 +206,8 @@ def create_chat_model(
             "max_retries": 2,
             "default_headers": {"User-Agent": COMPATIBLE_RELAY_USER_AGENT},
         }
-        if reasoning_effort:
-            openai_kwargs["reasoning_effort"] = reasoning_effort
+        if resolved.reasoning_effort:
+            openai_kwargs["reasoning_effort"] = resolved.reasoning_effort
         return constructors.create_openai_chat(openai_kwargs)
 
     # ── Ollama 本地模型 ─────────────────────────────────────────────────
@@ -216,6 +218,12 @@ def create_chat_model(
             "temperature": resolved.temperature,
         }
     )
+
+
+def get_configured_reasoning_effort(fallback: str | None = None) -> str | None:
+    """读取运维页保存的推理强度；未配置时返回 fallback。读取失败静默回落。"""
+    row = _get_runtime_provider_setting()
+    return normalize_reasoning_effort(row.get("reasoning_effort")) or fallback
 
 
 def get_embedding_model():

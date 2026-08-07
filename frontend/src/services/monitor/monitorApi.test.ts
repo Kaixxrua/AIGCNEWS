@@ -68,16 +68,26 @@ describe('Monitor API contract', () => {
     transport.put.mockResolvedValue({ data: { provider: 'openai' } })
     const form = createProviderForm({
       provider: 'openai', base_url: 'https://api.test', model_name: 'model', api_key_configured: true,
-      api_key_masked: 'sk-***', updated_at: null,
+      api_key_masked: 'sk-***', updated_at: null, reasoning_effort: 'high',
     })
+    expect(form.reasoning_effort).toBe('high')
     await monitorApi.saveProviderConfig(form)
     expect(transport.put).toHaveBeenCalledWith('/ops/provider-config', {
       provider: 'openai', base_url: 'https://api.test', model_name: 'model', api_key: null, clear_api_key: false,
+      reasoning_effort: 'high',
     })
     expect(JSON.stringify(transport.put.mock.calls)).not.toContain('sk-***')
     form.clear_api_key = true
     await monitorApi.saveProviderConfig(form)
     expect(transport.put).toHaveBeenLastCalledWith('/ops/provider-config', expect.objectContaining({ api_key: null, clear_api_key: true }))
+  })
+
+  it('normalizes missing or unknown provider reasoning effort to the default empty tier', () => {
+    expect(createProviderForm(null).reasoning_effort).toBe('')
+    expect(createProviderForm({
+      provider: 'openai', base_url: '', model_name: '', api_key_configured: false,
+      api_key_masked: null, updated_at: null, reasoning_effort: 'ultra',
+    }).reasoning_effort).toBe('')
   })
 
   it('preserves MCP create/update payloads, secret behavior, and 30 second test timeout', async () => {

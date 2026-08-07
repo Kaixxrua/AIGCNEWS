@@ -22,6 +22,7 @@ class RuntimeProviderSettingManager(RuntimeProviderSettingReader, Protocol):
         api_key: str | None = None,
         clear_api_key: bool = False,
         model_name: str = "",
+        reasoning_effort: str = "",
     ) -> dict[str, Any]: ...
 
 

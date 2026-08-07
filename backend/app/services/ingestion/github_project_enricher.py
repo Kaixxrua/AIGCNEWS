@@ -12,7 +12,10 @@ from typing import Any, Dict
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.app.core.config import settings
-from backend.app.core.model_factory import get_chat_model
+from backend.app.core.model_factory import (
+    get_chat_model,
+    get_configured_reasoning_effort,
+)
 from backend.app.domain.project_taxonomy import (
     CATEGORY_PROMPT,
     PROMPT_VERSION,
@@ -42,7 +45,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_STARS = 500
 DEFAULT_BATCH_LIMIT = 50
-# 项目分类/短描述富化显式使用 medium 推理强度，不依赖中转默认档
+# 项目分类/短描述富化的推理强度缺省档：运维页未配置时回落到 medium，
+# 不依赖中转网关的默认档；配置后以运维页为准
 ENRICHMENT_REASONING_EFFORT = "medium"
 _MAX_RETRIES = 4
 _RETRY_BASE_DELAY = 15.0
@@ -119,7 +123,9 @@ class GitHubProjectEnricher:
         if self._llm is None:
             self._llm = get_chat_model(
                 temperature=0,
-                reasoning_effort=ENRICHMENT_REASONING_EFFORT,
+                reasoning_effort=get_configured_reasoning_effort(
+                    fallback=ENRICHMENT_REASONING_EFFORT
+                ),
             )
         return self._llm
 

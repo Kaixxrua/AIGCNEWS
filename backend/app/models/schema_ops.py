@@ -147,6 +147,7 @@ class ProviderConfigRequest(BaseModel):
     model_name: str = ""
     api_key: Optional[str] = None
     clear_api_key: bool = False
+    reasoning_effort: Literal["", "minimal", "low", "medium", "high"] = ""
 
 
 class ProviderConfigResponse(BaseModel):
@@ -156,6 +157,7 @@ class ProviderConfigResponse(BaseModel):
     api_key_configured: bool
     api_key_masked: Optional[str] = None
     updated_at: Optional[str] = None
+    reasoning_effort: str = ""
 
 
 class McpServerConfigRequest(BaseModel):

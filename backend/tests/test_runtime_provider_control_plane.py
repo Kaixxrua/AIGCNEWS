@@ -10,6 +10,7 @@ from backend.app.services.runtime_provider.control_plane import (
     effective_value,
     mask_api_key,
     normalize_provider,
+    normalize_reasoning_effort,
     project_provider_config,
     resolve_chat_config,
 )
@@ -43,6 +44,44 @@ class RuntimeProviderControlPlaneTests(unittest.TestCase):
         self.assertEqual(update.provider, "openai")
         self.assertEqual(update.api_key, "replacement-secret")
         self.assertTrue(update.clear_api_key)
+
+    def test_reasoning_effort_normalization_rejects_unknown_values(self) -> None:
+        self.assertEqual(normalize_reasoning_effort(" High "), "high")
+        self.assertEqual(normalize_reasoning_effort("minimal"), "minimal")
+        self.assertEqual(normalize_reasoning_effort("bogus"), "")
+        self.assertEqual(normalize_reasoning_effort(None), "")
+
+    def test_chat_resolution_prefers_explicit_then_configured_reasoning_effort(self) -> None:
+        fallbacks = {
+            "fallback_provider": "openai",
+            "fallback_api_key": None,
+            "fallback_base_url": None,
+            "fallback_model_name": "fallback-model",
+            "fallback_temperature": 0.2,
+        }
+
+        configured = resolve_chat_config(
+            {"provider": "openai", "reasoning_effort": " High "},
+            **fallbacks,
+        )
+        self.assertEqual(configured.reasoning_effort, "high")
+
+        explicit = resolve_chat_config(
+            {"provider": "openai", "reasoning_effort": "high"},
+            reasoning_effort="low",
+            **fallbacks,
+        )
+        self.assertEqual(explicit.reasoning_effort, "low")
+
+        unset = resolve_chat_config({"provider": "openai"}, **fallbacks)
+        self.assertIsNone(unset.reasoning_effort)
+
+    def test_projection_exposes_normalized_reasoning_effort(self) -> None:
+        projection = project_provider_config(
+            {"provider": "openai", "reasoning_effort": " Minimal "}
+        )
+
+        self.assertEqual(projection.reasoning_effort, "minimal")
 
     def test_effective_values_ignore_blank_runtime_fields(self) -> None:
         row = {"api_key": "   ", "model_name": ""}

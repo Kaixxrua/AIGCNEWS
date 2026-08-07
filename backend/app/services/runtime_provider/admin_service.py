@@ -40,6 +40,7 @@ class RuntimeProviderAdminService:
             api_key=values.get("api_key"),
             clear_api_key=bool(values.get("clear_api_key", False)),
             model_name=str(values.get("model_name") or ""),
+            reasoning_effort=str(values.get("reasoning_effort") or ""),
         )
         row = await asyncio.to_thread(
             self._settings.upsert_runtime_provider_setting,
@@ -48,6 +49,7 @@ class RuntimeProviderAdminService:
             values.get("api_key"),
             update.clear_api_key,
             update.model_name,
+            update.reasoning_effort,
         )
         if self._invalidate_models is not None:
             await self._invalidate_models()

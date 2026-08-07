@@ -73,6 +73,22 @@ describe('Monitor page controller contract', () => {
     expect(controller.enrichmentStatus.value).toBeNull()
   })
 
+  it('populates provider form reasoning effort from config and forwards it on save', async () => {
+    const { api, controller } = createController()
+    const config = {
+      provider: 'openai' as const, base_url: 'https://api.test', model_name: 'model',
+      api_key_configured: true, api_key_masked: 'sk-***', updated_at: null, reasoning_effort: 'high',
+    }
+    vi.mocked(api.fetchProviderConfig).mockResolvedValue(config)
+    await controller.fetchProviderConfig()
+    expect(controller.providerForm.value.reasoning_effort).toBe('high')
+
+    vi.mocked(api.saveProviderConfig).mockResolvedValue(config)
+    await controller.saveProviderConfig()
+    expect(api.saveProviderConfig).toHaveBeenCalledWith(expect.objectContaining({ reasoning_effort: 'high' }))
+    expect(controller.providerForm.value.reasoning_effort).toBe('high')
+  })
+
   it('loads scheduler configs for admins and validates save constraints', async () => {
     const { api, controller } = createController()
     const job = { job_id: 'ingest:arxiv', name: 'arXiv', start_time: '08:00', end_time: '20:00', interval_minutes: 120, enabled: true }

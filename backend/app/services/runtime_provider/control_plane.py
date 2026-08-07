@@ -8,6 +8,9 @@ OPENAI_PROVIDER = "openai"
 OLLAMA_PROVIDER = "ollama"
 ANTHROPIC_PROVIDER = "anthropic"
 
+# OpenAI 兼容通道支持的推理强度档位；空串表示不下发该参数
+REASONING_EFFORT_VALUES = ("minimal", "low", "medium", "high")
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeProviderConfig:
@@ -15,6 +18,7 @@ class RuntimeProviderConfig:
     base_url: str
     model_name: str
     api_key: str | None
+    reasoning_effort: str = ""
 
     @classmethod
     def from_row(
@@ -31,6 +35,9 @@ class RuntimeProviderConfig:
             base_url=_text(row.get("base_url") if row else None),
             model_name=_text(row.get("model_name") if row else None),
             api_key=_optional_text(row.get("api_key") if row else None),
+            reasoning_effort=normalize_reasoning_effort(
+                row.get("reasoning_effort") if row else None
+            ),
         )
 
 
@@ -41,6 +48,7 @@ class RuntimeProviderUpdate:
     api_key: str | None = None
     clear_api_key: bool = False
     model_name: str = ""
+    reasoning_effort: str = ""
 
     @classmethod
     def from_values(
@@ -51,6 +59,7 @@ class RuntimeProviderUpdate:
         api_key: str | None = None,
         clear_api_key: bool = False,
         model_name: str = "",
+        reasoning_effort: str = "",
     ) -> RuntimeProviderUpdate:
         return cls(
             provider=normalize_provider(provider),
@@ -58,6 +67,7 @@ class RuntimeProviderUpdate:
             api_key=_optional_text(api_key),
             clear_api_key=clear_api_key,
             model_name=_text(model_name),
+            reasoning_effort=normalize_reasoning_effort(reasoning_effort),
         )
 
 
@@ -69,6 +79,7 @@ class SafeProviderProjection:
     api_key_configured: bool
     api_key_masked: str | None = None
     updated_at: str | None = None
+    reasoning_effort: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +89,7 @@ class EffectiveChatConfig:
     base_url: str | None
     model_name: str
     temperature: float
+    reasoning_effort: str | None = None
 
 
 def _text(value: Any) -> str:
@@ -96,6 +108,12 @@ def normalize_provider(
 ) -> str:
     normalized = _text(value).lower()
     return normalized or fallback
+
+
+def normalize_reasoning_effort(value: Any) -> str:
+    """未配置或无法识别的档位一律归一为 ''（不下发），避免向中转网关传非法参数。"""
+    normalized = _text(value).lower()
+    return normalized if normalized in REASONING_EFFORT_VALUES else ""
 
 
 def effective_value(
@@ -123,7 +141,13 @@ def resolve_chat_config(
     fallback_model_name: str,
     fallback_temperature: float,
     temperature: float | None = None,
+    reasoning_effort: str | None = None,
 ) -> EffectiveChatConfig:
+    # 推理强度优先级：调用方显式参数 > 运维页配置 > None（不下发）
+    configured_effort = normalize_reasoning_effort(
+        row.get("reasoning_effort") if row else None
+    )
+    explicit_effort = normalize_reasoning_effort(reasoning_effort)
     return EffectiveChatConfig(
         provider=normalize_provider(
             row.get("provider") if row else None,
@@ -133,6 +157,7 @@ def resolve_chat_config(
         base_url=effective_value(row, "base_url", fallback_base_url),
         model_name=effective_model_name(row, fallback_model_name),
         temperature=temperature if temperature is not None else fallback_temperature,
+        reasoning_effort=explicit_effort or configured_effort or None,
     )
 
 
@@ -165,4 +190,5 @@ def project_provider_config(
         api_key_configured=bool(config.api_key),
         api_key_masked=mask_api_key(config.api_key),
         updated_at=updated_at_value,
+        reasoning_effort=config.reasoning_effort,
     )
