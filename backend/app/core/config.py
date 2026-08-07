@@ -118,15 +118,6 @@ class Settings(BaseSettings):
     neo4j_username: str = "neo4j"
     neo4j_password: str = "12345678"
 
-    sqlite_path: str = "./data/sqlite/app.db"
-
-    # MySQL 连接配置
-    mysql_host: str = "localhost"
-    mysql_port: int = 3306
-    mysql_user: str = "root"
-    mysql_password: str = ""
-    mysql_database: str = "rag_aigc"
-
     # PostgreSQL 应用数据库配置
     postgres_host: str = ""
     postgres_port: int = 5432

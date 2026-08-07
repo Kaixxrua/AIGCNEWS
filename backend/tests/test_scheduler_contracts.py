@@ -63,10 +63,9 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         self,
         *,
         semantic_enabled: bool = False,
-        catalog_sync_enabled: bool = False,
         poll_seconds: int = 7,
     ) -> tuple[_RecordingScheduler, list[str]]:
-        del catalog_sync_enabled, poll_seconds
+        del poll_seconds
         events: list[str] = []
         fake_scheduler = _RecordingScheduler(events)
         loop = _RecordingLoop(events)
@@ -351,7 +350,6 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
     def test_optional_jobs_freeze_intervals_options_and_startup_order(self) -> None:
         fake_scheduler, events = self._start_scheduler(
             semantic_enabled=True,
-            catalog_sync_enabled=True,
             poll_seconds=7,
         )
         calls = {kwargs["id"]: kwargs for _, kwargs in fake_scheduler.add_job_calls}
