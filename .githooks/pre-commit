@@ -38,11 +38,13 @@ if [[ "$backend_changed" == "1" ]]; then
 fi
 
 # 2. 受影响测试快筛：backend/app 变更时映射同名测试文件存在则运行。
+# 仅 test_*.py 可直接作为 pytest 目标；conftest.py、fixtures 等辅助文件
+# 无测试用例，直接运行会因 "no tests ran"（exit 5）误杀提交。
 if [[ "$backend_changed" == "1" ]]; then
   tests=()
   while IFS= read -r path; do
     case "$path" in
-      backend/tests/*.py) tests+=("$path") ;;
+      backend/tests/test_*.py|backend/tests/*/test_*.py) tests+=("$path") ;;
       backend/app/*.py)
         base=$(basename "$path" .py)
         candidate="backend/tests/test_${base}.py"
