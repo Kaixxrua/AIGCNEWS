@@ -8,8 +8,10 @@ OPENAI_PROVIDER = "openai"
 OLLAMA_PROVIDER = "ollama"
 ANTHROPIC_PROVIDER = "anthropic"
 
-# OpenAI 兼容通道支持的推理强度档位；空串表示不下发该参数
+# 常用推理强度档位参考值（仅供提示；自填档位不受此枚举约束）；空串表示不下发该参数
 REASONING_EFFORT_VALUES = ("minimal", "low", "medium", "high")
+# reasoning_effort 列宽 VARCHAR(32)：归一时超出部分截断
+REASONING_EFFORT_MAX_LENGTH = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,9 +113,8 @@ def normalize_provider(
 
 
 def normalize_reasoning_effort(value: Any) -> str:
-    """未配置或无法识别的档位一律归一为 ''（不下发），避免向中转网关传非法参数。"""
-    normalized = _text(value).lower()
-    return normalized if normalized in REASONING_EFFORT_VALUES else ""
+    """自填档位原样保留（trim + 小写 + 截断列宽 32）；空串表示不下发该参数。"""
+    return _text(value).lower()[:REASONING_EFFORT_MAX_LENGTH]
 
 
 def effective_value(

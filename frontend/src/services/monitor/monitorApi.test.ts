@@ -82,12 +82,21 @@ describe('Monitor API contract', () => {
     expect(transport.put).toHaveBeenLastCalledWith('/ops/provider-config', expect.objectContaining({ api_key: null, clear_api_key: true }))
   })
 
-  it('normalizes missing or unknown provider reasoning effort to the default empty tier', () => {
+  it('preserves custom reasoning effort tiers and only normalizes case, whitespace and length', () => {
     expect(createProviderForm(null).reasoning_effort).toBe('')
     expect(createProviderForm({
       provider: 'openai', base_url: '', model_name: '', api_key_configured: false,
-      api_key_masked: null, updated_at: null, reasoning_effort: 'ultra',
-    }).reasoning_effort).toBe('')
+      api_key_masked: null, updated_at: null, reasoning_effort: 'xhigh',
+    }).reasoning_effort).toBe('xhigh')
+    // 与后端同一归一：trim + 小写 + 截断 32 列宽
+    expect(createProviderForm({
+      provider: 'openai', base_url: '', model_name: '', api_key_configured: false,
+      api_key_masked: null, updated_at: null, reasoning_effort: ' High ',
+    }).reasoning_effort).toBe('high')
+    expect(createProviderForm({
+      provider: 'openai', base_url: '', model_name: '', api_key_configured: false,
+      api_key_masked: null, updated_at: null, reasoning_effort: 'x'.repeat(40),
+    }).reasoning_effort).toBe('x'.repeat(32))
   })
 
   it('preserves MCP create/update payloads, secret behavior, and 30 second test timeout', async () => {

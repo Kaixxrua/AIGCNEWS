@@ -55,7 +55,9 @@ export interface PagedResult {
   page_size: number
 }
 
-export type ReasoningEffort = '' | 'minimal' | 'low' | 'medium' | 'high'
+// 推理强度为自填自由文本（原样透传给服务商）；常用档位 minimal/low/medium/high
+// 仅作建议值展示，不做枚举校验。空串表示不下发该参数。
+export type ReasoningEffort = string
 
 export interface ProviderConfig {
   provider: 'openai' | 'anthropic'
@@ -64,7 +66,7 @@ export interface ProviderConfig {
   api_key_configured: boolean
   api_key_masked: string | null
   updated_at: string | null
-  reasoning_effort: ReasoningEffort | string
+  reasoning_effort: ReasoningEffort
 }
 
 export interface ProviderForm {
@@ -203,12 +205,11 @@ export const createEmptyMcpToolCallMetrics = (): McpToolCallMetricsSnapshot => (
   since: '', total_calls: 0, tools: {},
 })
 
-const REASONING_EFFORT_VALUES: readonly ReasoningEffort[] = ['', 'minimal', 'low', 'medium', 'high']
+// 归一规则与后端 control_plane 一致：trim + 小写 + 截断列宽（VARCHAR(32)）
+export const REASONING_EFFORT_MAX_LENGTH = 32
 
-export const normalizeReasoningEffort = (value: string | null | undefined): ReasoningEffort => {
-  const normalized = (value || '').trim().toLowerCase() as ReasoningEffort
-  return (REASONING_EFFORT_VALUES as readonly string[]).includes(normalized) ? normalized : ''
-}
+export const normalizeReasoningEffort = (value: string | null | undefined): ReasoningEffort =>
+  (value || '').trim().toLowerCase().slice(0, REASONING_EFFORT_MAX_LENGTH)
 
 export const createProviderForm = (config?: ProviderConfig | null): ProviderForm => ({
   provider: config?.provider || 'openai',
@@ -242,7 +243,7 @@ export const buildProviderPayload = (form: ProviderForm) => ({
   model_name: form.model_name,
   api_key: form.api_key || null,
   clear_api_key: form.clear_api_key,
-  reasoning_effort: form.reasoning_effort,
+  reasoning_effort: normalizeReasoningEffort(form.reasoning_effort),
 })
 
 export const buildMcpPayload = (form: McpServerForm) => ({

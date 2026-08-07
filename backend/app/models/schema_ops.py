@@ -147,7 +147,8 @@ class ProviderConfigRequest(BaseModel):
     model_name: str = ""
     api_key: Optional[str] = None
     clear_api_key: bool = False
-    reasoning_effort: Literal["", "minimal", "low", "medium", "high"] = ""
+    # 自填自由文本（原样透传给服务商）；归一规则见 control_plane.normalize_reasoning_effort
+    reasoning_effort: str = ""
 
 
 class ProviderConfigResponse(BaseModel):

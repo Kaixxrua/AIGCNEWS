@@ -52,13 +52,8 @@ const updateForm = <K extends keyof ProviderForm>(field: K, value: ProviderForm[
       </label>
       <label class="block">
         <span class="mb-1 block text-xs monitor-caption">{{ t('monitor.reasoningEffort') }}</span>
-        <select :value="form.reasoning_effort" class="input w-full py-2 text-xs" :disabled="loading || saving" @change="updateForm('reasoning_effort', ($event.target as HTMLSelectElement).value as ProviderForm['reasoning_effort'])">
-          <option value="">{{ t('monitor.reasoningEffortDefault') }}</option>
-          <option value="minimal">minimal</option>
-          <option value="low">low</option>
-          <option value="medium">medium</option>
-          <option value="high">high</option>
-        </select>
+        <!-- 自填自由文本（原样透传服务商）；常用档位见 placeholder 建议，留空不下发 -->
+        <input :value="form.reasoning_effort" type="text" class="input w-full py-2 text-xs" :placeholder="t('monitor.reasoningEffortPlaceholder')" autocomplete="off" :disabled="loading || saving" @input="updateForm('reasoning_effort', ($event.target as HTMLInputElement).value)" />
       </label>
       <label class="block">
         <span class="mb-1 block text-xs monitor-caption">API Key</span>

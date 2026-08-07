@@ -45,11 +45,14 @@ class RuntimeProviderControlPlaneTests(unittest.TestCase):
         self.assertEqual(update.api_key, "replacement-secret")
         self.assertTrue(update.clear_api_key)
 
-    def test_reasoning_effort_normalization_rejects_unknown_values(self) -> None:
+    def test_reasoning_effort_normalization_accepts_free_text_tiers(self) -> None:
         self.assertEqual(normalize_reasoning_effort(" High "), "high")
         self.assertEqual(normalize_reasoning_effort("minimal"), "minimal")
-        self.assertEqual(normalize_reasoning_effort("bogus"), "")
+        # 自填档位原样透传（不再按枚举收敛），仅做 trim/小写/列宽截断
+        self.assertEqual(normalize_reasoning_effort("XHigh"), "xhigh")
+        self.assertEqual(normalize_reasoning_effort("x" * 40), "x" * 32)
         self.assertEqual(normalize_reasoning_effort(None), "")
+        self.assertEqual(normalize_reasoning_effort(""), "")
 
     def test_chat_resolution_prefers_explicit_then_configured_reasoning_effort(self) -> None:
         fallbacks = {
