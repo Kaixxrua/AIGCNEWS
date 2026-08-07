@@ -249,15 +249,23 @@ const keyFor = (article: WeChatArticle): string =>
 }
 
 .article-detail {
-  padding: 0 14px 12px 36px;
+  padding: 4px 14px 16px 36px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+
+/* 阅读列：宽屏下把展开详情收进居中的 42rem 栏（约 45 个中文字/行，
+   对齐公众号网页版 ~677px 栏宽），窄屏时 max-width 不生效、保持通栏 */
+.article-detail > * {
+  width: 100%;
+  max-width: 42rem;
+  margin-inline: auto;
 }
 
 .article-cover {
   width: 100%;
-  max-height: 160px;
+  max-height: 340px;
   object-fit: cover;
   border-radius: 6px;
   border: 1px solid var(--rule);

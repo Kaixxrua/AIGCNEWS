@@ -731,11 +731,24 @@
 }
 
 /* ═══ 公众号全文正文 ═══ */
+/* 长文阅读：字号/行高向公众号网页版（16px/677px 栏）靠拢；
+   栏宽限制在卡片组件侧（.article-detail 42rem 阅读列） */
 .wechat-article-content {
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 15px;
+  line-height: 1.85;
   color: rgb(var(--stone-600-rgb));
   overflow-wrap: anywhere;
+}
+/* prose-content 基础规则把 p/li 压成 14px/28px、列表容器 14px，
+   正文场景还原为容器继承 */
+.wechat-article-content p,
+.wechat-article-content li {
+  font-size: inherit;
+  line-height: inherit;
+}
+.wechat-article-content ul,
+.wechat-article-content ol {
+  font-size: inherit;
 }
 .wechat-article-content section { @apply mb-3; }
 .wechat-article-content figure { @apply my-3; }
