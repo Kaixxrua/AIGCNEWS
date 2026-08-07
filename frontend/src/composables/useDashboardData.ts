@@ -35,6 +35,24 @@ const isCanceledError = (error: unknown): boolean => {
   return candidate.name === 'CanceledError' || candidate.code === 'ERR_CANCELED'
 }
 
+/* live-stats 轮询（10s 短缓存）拥有的实时计数字段。summary 走 3600s Redis 缓存，
+   切 tab / KeepAlive 回页重新应用时不得用陈旧缓存覆盖这些较新的值，
+   否则 MCP 调用数等累计计数会出现"前进后回退"的跳变。 */
+const LIVE_COUNTER_FIELDS = [
+  'total_documents', 'source_counts',
+  'registered_users', 'today_registered_users', 'user_count',
+  'today_new_documents', 'mcp_total_calls',
+] as const
+
+const pickLiveCounters = (source: Stats): Stats => {
+  const picked: Stats = {}
+  for (const key of LIVE_COUNTER_FIELDS) {
+    const value = source[key]
+    if (value !== undefined) Object.assign(picked, { [key]: value })
+  }
+  return picked
+}
+
 export const useDashboardData = (options: DashboardDataOptions) => {
   const dashboardApi = options.dashboardApi ?? defaultDashboardApi
   const now = options.now ?? Date.now
@@ -49,6 +67,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const viewRefreshInterval = 60_000
   let lastSuccessfulFetchAt = 0
   let hasActivatedOnce = false
+  let liveCountersLoaded = false
   let dashboardController: AbortController | null = null
   let dashboardGeneration = 0
 
@@ -94,7 +113,9 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       dashboardApi.fetchTop({ limit: 10, source: tab, period, date: selectedDate, signal: controller.signal }),
     ])
     if (!isCurrentDashboardRequest(controller, generation)) return false
-    stats.value = summary.stats
+    // live 轮询已跑过后，实时计数字段以较新的 live 值为准，屏蔽 summary 的陈旧缓存
+    const liveCounters = liveCountersLoaded ? pickLiveCounters(stats.value) : null
+    stats.value = liveCounters ? { ...summary.stats, ...liveCounters } : summary.stats
     tabList.value = top.items
     isFinalized.value = summary.isFinalized
     isEmbargoed.value = summary.isEmbargoed
@@ -168,6 +189,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     try {
       const live = await fetchLiveStats()
       stats.value = { ...stats.value, ...live }
+      liveCountersLoaded = true
       options.updateStatSources(stats.value)
     } catch {
       /* 实时计数失败静默，保留当前展示值 */

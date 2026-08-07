@@ -143,6 +143,44 @@ describe('Dashboard request lifecycle contract', () => {
     mounted.app.unmount()
   })
 
+  it('keeps fresher live counters when a stale cached summary is re-applied', async () => {
+    // summary 走 3600s 缓存：首次加载含 mcp_total_calls=1232，live 轮询前进到 1233 后，
+    // 切 tab 重新应用同一份陈旧 summary 不得让计数回退（回归：首页 MCP 调用数 1233→1232）
+    defaultDashboardApi.fetchSummary.mockResolvedValue({
+      stats: { total_documents: 3, mcp_total_calls: 1232, source_counts: { arxiv: 3 } },
+      isFinalized: true, isEmbargoed: false,
+    })
+    liveStatsApi.fetchLiveStats.mockResolvedValue({ total_documents: 5, mcp_total_calls: 1233, source_counts: { arxiv: 5 } })
+    const mounted = mountDashboard()
+    await flush()
+
+    await mounted.dashboard.refreshLiveStats()
+    expect(mounted.dashboard.stats.value.mcp_total_calls).toBe(1233)
+
+    mounted.dashboard.activeTab.value = 'github'
+    await flush()
+
+    expect(mounted.dashboard.stats.value.mcp_total_calls).toBe(1233)
+    expect(mounted.dashboard.stats.value.total_documents).toBe(5)
+    expect(mounted.dashboard.stats.value.source_counts).toEqual({ arxiv: 5 })
+    mounted.app.unmount()
+  })
+
+  it('applies cached summary counters before the first live poll succeeds', async () => {
+    defaultDashboardApi.fetchSummary.mockResolvedValue({
+      stats: { total_documents: 3, mcp_total_calls: 1232 },
+      isFinalized: true, isEmbargoed: false,
+    })
+    const mounted = mountDashboard()
+    await flush()
+    expect(mounted.dashboard.stats.value.mcp_total_calls).toBe(1232)
+
+    mounted.dashboard.activeTab.value = 'github'
+    await flush()
+    expect(mounted.dashboard.stats.value.mcp_total_calls).toBe(1232)
+    mounted.app.unmount()
+  })
+
   it('aborts dashboard and availability requests on replacement and deactivation', async () => {
     const dashboardSignals: AbortSignal[] = []
     defaultDashboardApi.fetchSummary.mockImplementation(async ({ signal }) => {
