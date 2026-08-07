@@ -288,6 +288,9 @@ scripts/migrate_mysql_to_postgres.py
 scripts/verify_project_catalog_consistency.py
 ```
 
+（注：迁移与一致性核对脚本均为一次性工具，已随 2026-08 迁移期代码删除；
+`backend/migrations/postgres/` 与 `scripts/migrate_postgres.py` 持续在用。）
+
 ### 2.3 SQL 转换注意事项
 
 不要机械替换 SQL。逐条验证：

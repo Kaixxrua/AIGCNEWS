@@ -700,7 +700,6 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 | `backend/app/services/chat/attachment_service.py` | 聊天附件元数据与 PDF 文本提取 |
 | `backend/app/repositories/application_repository_factory.py` | 组装应用 repository Protocol 的 PostgreSQL 实现 |
 | `backend/app/core/postgres_database.py` | PostgreSQL 连接生命周期与事务基础设施 |
-| `backend/app/services/application_transfer_service.py` | MySQL → PostgreSQL 迁移协调；仅用于有边界的运维流程 |
 | `backend/app/core/config.py` | 应用配置（含 SMTP_HOST/PORT/USERNAME/PASSWORD/FROM_EMAIL 等邮件配置项） |
 | `backend/app/core/scheduler.py` | 定时采集、简报生成、会话清理调度 |
 | `frontend/src/stores/authStore.ts` | 认证状态（AuthUser.email 为主标识）、login/logout/fetchMe |

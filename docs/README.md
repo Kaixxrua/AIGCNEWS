@@ -32,7 +32,6 @@
 | [linux-server-boot.md](linux-server-boot.md) | Linux 服务器开机启动（Docker Compose + systemd） |
 | [postgres-application-backup-restore.md](postgres-application-backup-restore.md) | PostgreSQL 应用库备份与恢复验收 |
 | [mysql-retirement-runbook.md](mysql-retirement-runbook.md) | MySQL 最终退役运行手册（最终操作基线） |
-| [project-catalog-cutover-runbook.md](project-catalog-cutover-runbook.md) | 项目目录切换演练手册（历史操作记录） |
 
 ## 分析笔记
 
