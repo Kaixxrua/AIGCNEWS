@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MonitorApi } from '@/services/monitor/monitorApi'
 import type { GithubCrawlStatus } from '@/features/monitor/monitorModel'
@@ -71,6 +71,37 @@ describe('Monitor page controller contract', () => {
     expect(api.fetchMcpServers).not.toHaveBeenCalled()
     expect(api.fetchGithubEnrichmentStatus).not.toHaveBeenCalled()
     expect(controller.enrichmentStatus.value).toBeNull()
+  })
+
+  // 回归：main.ts 异步恢复登录态，刷新后 onMounted 时 isAdmin 仍为 false，
+  // admin 接口被跳过；恢复出管理员身份后必须补拉，否则配置面板空数据。
+  it('refetches admin-scoped data once admin auth restores after initial refresh', async () => {
+    const isAdmin = ref(false)
+    const api = createApi()
+    const schedule = vi.fn((callback: () => void, delay: number) => setTimeout(callback, delay))
+    const controller = useMonitorPageController({ isAdmin: computed(() => isAdmin.value), api, schedule, confirm: () => true })
+    await controller.refreshData()
+    expect(api.fetchProviderConfig).not.toHaveBeenCalled()
+    expect(api.fetchSchedulerConfigs).not.toHaveBeenCalled()
+
+    isAdmin.value = true
+    await nextTick()
+    expect(api.fetchSchedulerConfigs).toHaveBeenCalledOnce()
+    expect(api.fetchProviderConfig).toHaveBeenCalledOnce()
+    expect(api.fetchMcpServers).toHaveBeenCalledOnce()
+    expect(api.fetchGithubEnrichmentStatus).toHaveBeenCalledOnce()
+    expect(api.fetchGithubCrawlStatus).toHaveBeenCalledOnce()
+  })
+
+  it('does not duplicate admin fetches when admin auth is already known at mount', async () => {
+    const isAdmin = ref(true)
+    const api = createApi()
+    const schedule = vi.fn((callback: () => void, delay: number) => setTimeout(callback, delay))
+    const controller = useMonitorPageController({ isAdmin: computed(() => isAdmin.value), api, schedule, confirm: () => true })
+    await controller.refreshData()
+    await nextTick()
+    expect(api.fetchProviderConfig).toHaveBeenCalledOnce()
+    expect(api.fetchSchedulerConfigs).toHaveBeenCalledOnce()
   })
 
   it('populates provider form reasoning effort from config and forwards it on save', async () => {

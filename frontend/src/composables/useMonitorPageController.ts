@@ -1,4 +1,4 @@
-import { computed, ref, type ComputedRef } from 'vue'
+import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
@@ -377,6 +377,13 @@ export const useMonitorPageController = ({
     catch (error) { errorMsg.value = detail(error) }
     finally { clearing.value = false }
   }
+
+  // 刷新页面时 main.ts 异步恢复登录态，onMounted 触发 refreshData 时 isAdmin 仍为 false，
+  // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
+  watch(isAdmin, (admin, wasAdmin) => {
+    if (!admin || wasAdmin) return
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), resumeGithubCrawlPolling()])
+  })
 
   return {
     tasks, total, page, pageSize, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
