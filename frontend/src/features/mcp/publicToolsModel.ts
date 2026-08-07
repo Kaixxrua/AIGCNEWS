@@ -18,7 +18,6 @@ export const PUBLIC_TOOLS: readonly PublicTool[] = [
   { name: 'get_top_items', descriptionKey: 'mcp.tools.get_top_items' },
   { name: 'search_github_projects', descriptionKey: 'mcp.tools.search_github_projects' },
   { name: 'search_github_ai_projects', descriptionKey: 'mcp.tools.search_github_ai_projects' },
-  { name: 'get_project_library', descriptionKey: 'mcp.tools.get_project_library' },
   { name: 'get_project_categories', descriptionKey: 'mcp.tools.get_project_categories' },
 ]
 

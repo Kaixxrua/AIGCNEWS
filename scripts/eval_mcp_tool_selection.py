@@ -76,7 +76,6 @@ MCP_TOOLS = [
     "mcp__aigc-news__get_top_items",
     "mcp__aigc-news__search_github_projects",
     "mcp__aigc-news__search_github_ai_projects",
-    "mcp__aigc-news__get_project_library",
     "mcp__aigc-news__get_project_categories",
 ]
 HOST_TOOLS = ["Agent", "WebSearch", "WebFetch", "Bash", "Skill", "multi_tool_use.parallel"]

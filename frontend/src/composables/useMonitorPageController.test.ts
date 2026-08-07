@@ -155,7 +155,7 @@ describe('Monitor page controller contract', () => {
     const snapshot = {
       since: '2026-08-04T00:00:00+00:00',
       total_calls: 2,
-      tools: { get_project_library: { calls: 2, last_called_at: '2026-08-04T01:00:00+00:00' } },
+      tools: { search_github_ai_projects: { calls: 2, last_called_at: '2026-08-04T01:00:00+00:00' } },
     }
     vi.mocked(api.fetchMcpToolCalls).mockResolvedValue(snapshot)
     await controller.refreshData()

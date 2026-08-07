@@ -252,7 +252,6 @@ TOOL_INPUT_MODELS: dict[str, type[McpInputModel]] = {
     "get_top_items": GetTopItemsInput,
     "search_github_projects": SearchGitHubProjectsInput,
     "search_github_ai_projects": SearchGitHubAIProjectsInput,
-    "get_project_library": SearchGitHubAIProjectsInput,
     "get_project_categories": GetProjectCategoriesInput,
     "search_my_project_favorites": SearchMyProjectFavoritesInput,
 }

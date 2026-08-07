@@ -389,7 +389,6 @@ _TOOL_HANDLERS: dict[str, ToolHandler] = {
     "get_top_items": _tool_get_top_items,
     "search_github_projects": _tool_search_github_projects,
     "search_github_ai_projects": _tool_search_github_ai_projects,
-    "get_project_library": _tool_search_github_ai_projects,
     "get_project_categories": _tool_get_project_categories,
     "search_my_project_favorites": _tool_search_my_project_favorites,
 }

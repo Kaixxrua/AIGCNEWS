@@ -38,7 +38,7 @@ from backend.app.services.mcp.inbound import (
 class ToolMetadataTests(unittest.TestCase):
     def test_tool_names_and_routing_boundaries(self) -> None:
         tools = {tool["name"]: tool for tool in inbound_catalog.MCP_TOOLS}
-        self.assertEqual(len(tools), 8)
+        self.assertEqual(len(tools), 7)
         self.assertTrue(
             {
                 "search_papers",
@@ -47,14 +47,12 @@ class ToolMetadataTests(unittest.TestCase):
                 "get_top_items",
                 "search_github_projects",
                 "search_github_ai_projects",
-                "get_project_library",
                 "get_project_categories",
             }.issubset(tools)
         )
         generic = tools["search_github_projects"]["description"].lower()
         papers = tools["search_papers"]["description"].lower()
         ai = tools["search_github_ai_projects"]["description"].lower()
-        legacy = tools["get_project_library"]["description"].lower()
         for trigger in ("find", "search", "recommend", "compare", "reuse"):
             self.assertIn(trigger, generic)
             self.assertIn(trigger, ai)
@@ -94,7 +92,7 @@ class ToolMetadataTests(unittest.TestCase):
         self.assertIn("search_papers first only", ai)
         self.assertIn("dominant deliverable", ai)
         self.assertIn("default to relevance", ai)
-        for tool_name in ("search_github_ai_projects", "get_project_library"):
+        for tool_name in ("search_github_ai_projects",):
             sort_schema = tools[tool_name]["inputSchema"]["properties"]["sort"]
             self.assertIn("relevance", json.dumps(sort_schema))
         generic_schema = input_schema("search_github_projects")
@@ -103,9 +101,9 @@ class ToolMetadataTests(unittest.TestCase):
         favorites_schema = input_schema("search_my_project_favorites")
         self.assertNotIn("relevance", json.dumps(favorites_schema["properties"]["sort"]))
         self.assertNotIn("intent", favorites_schema["properties"])
-        for tool_name in ("search_github_ai_projects", "get_project_library"):
+        for tool_name in ("search_github_ai_projects",):
             self.assertIn("intent", tools[tool_name]["inputSchema"]["properties"])
-        for description in (generic, ai, legacy):
+        for description in (generic, ai):
             self.assertIn("500 github stars", description)
             self.assertIn("unverifiable or below-threshold", description)
         for description in (generic, ai):
@@ -117,7 +115,6 @@ class ToolMetadataTests(unittest.TestCase):
             self.assertIn("missing detail", description)
         self.assertIn("favorites", generic)
         self.assertIn("excludes", ai)
-        self.assertIn("legacy", legacy)
         self.assertEqual(tools["search_github_projects"]["inputSchema"]["required"], ["q"])
 
 
@@ -194,7 +191,6 @@ class RepositoryLanguageContractTests(unittest.TestCase):
     _PROJECT_LANGUAGE_MODELS: list[tuple[str, type]] = [
         ("search_github_projects", SearchGitHubProjectsInput),
         ("search_github_ai_projects", SearchGitHubAIProjectsInput),
-        ("get_project_library", SearchGitHubAIProjectsInput),
         ("search_my_project_favorites", SearchMyProjectFavoritesInput),
     ]
 
@@ -759,7 +755,7 @@ class McpProtocolTests(unittest.TestCase):
             "/api/mcp",
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
-        self.assertEqual(len(listed.json()["result"]["tools"]), 8)
+        self.assertEqual(len(listed.json()["result"]["tools"]), 7)
 
     def test_prompts_require_mcp_first_and_sequential_web_fallback(self) -> None:
         prompts = {}
@@ -875,7 +871,7 @@ class McpProtocolTests(unittest.TestCase):
         finally:
             self.client.app.dependency_overrides.clear()
         names = {tool["name"] for tool in listed.json()["result"]["tools"]}
-        self.assertEqual(len(names), 9)
+        self.assertEqual(len(names), 8)
         self.assertIn("search_my_project_favorites", names)
 
     def test_private_favorites_tool_is_owner_scoped(self) -> None:
@@ -991,13 +987,11 @@ class McpProtocolTests(unittest.TestCase):
         compact = {"items": [], "total": 0, "fallback_used": False}
         generic_handler = AsyncMock(return_value=compact)
         ai_handler = AsyncMock(return_value=compact)
-        legacy_handler = AsyncMock(return_value=compact)
         handlers = dict(inbound_tools._TOOL_HANDLERS)
         inbound_tools._TOOL_HANDLERS.update(
             {
                 "search_github_projects": generic_handler,
                 "search_github_ai_projects": ai_handler,
-                "get_project_library": legacy_handler,
             }
         )
         try:
@@ -1014,7 +1008,6 @@ class McpProtocolTests(unittest.TestCase):
                 for request_id, name, arguments in (
                     (3, "search_github_projects", {"q": "screenshot"}),
                     (4, "search_github_ai_projects", {"q": "RAG"}),
-                    (5, "get_project_library", {}),
                 )
             ]
         finally:
@@ -1023,7 +1016,6 @@ class McpProtocolTests(unittest.TestCase):
         self.assertTrue(all(not response.json()["result"]["isError"] for response in responses))
         generic_handler.assert_awaited_once()
         ai_handler.assert_awaited_once()
-        legacy_handler.assert_awaited_once()
 
     def test_generic_fallback_provenance_and_cache_reuse_through_json_rpc(self) -> None:
         repository = MagicMock()
@@ -1136,7 +1128,6 @@ class McpProtocolTests(unittest.TestCase):
         for request_id, tool_name, language in (
             (40, "search_github_projects", "zh"),
             (41, "search_github_ai_projects", "中文"),
-            (42, "get_project_library", "en-US"),
         ):
             with self.subTest(tool=tool_name, language=language):
                 response = self.client.post(

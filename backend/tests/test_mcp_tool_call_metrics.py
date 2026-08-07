@@ -38,17 +38,17 @@ class McpToolCallMetricsUnitTests(unittest.TestCase):
     def test_record_accumulates_counts_and_last_called_per_tool(self) -> None:
         metrics = McpToolCallMetrics()
 
-        metrics.record("get_project_library")
+        metrics.record("get_project_categories")
         metrics.record("search_github_ai_projects")
-        metrics.record("get_project_library")
+        metrics.record("get_project_categories")
 
         snapshot = metrics.snapshot()
         self.assertEqual(snapshot["total_calls"], 3)
         self.assertEqual(
             list(snapshot["tools"]),
-            ["get_project_library", "search_github_ai_projects"],
+            ["get_project_categories", "search_github_ai_projects"],
         )
-        self.assertEqual(snapshot["tools"]["get_project_library"]["calls"], 2)
+        self.assertEqual(snapshot["tools"]["get_project_categories"]["calls"], 2)
         self.assertEqual(snapshot["tools"]["search_github_ai_projects"]["calls"], 1)
         for entry in snapshot["tools"].values():
             datetime.fromisoformat(entry["last_called_at"])
@@ -71,24 +71,24 @@ class McpToolCallPersistenceTests(unittest.TestCase):
 
     def test_new_instance_recovers_counts_and_since_across_restart(self) -> None:
         first = McpToolCallMetrics(store=self.store)
-        first.record("get_project_library")
+        first.record("get_project_categories")
         first.record("search_github_ai_projects")
-        first.record("get_project_library")
+        first.record("get_project_categories")
         original_since = first.snapshot()["since"]
 
         restarted = McpToolCallMetrics(store=self.store)
         snapshot = restarted.snapshot()
 
         self.assertEqual(snapshot["total_calls"], 3)
-        self.assertEqual(snapshot["tools"]["get_project_library"]["calls"], 2)
+        self.assertEqual(snapshot["tools"]["get_project_categories"]["calls"], 2)
         self.assertEqual(
             snapshot["tools"]["search_github_ai_projects"]["calls"], 1
         )
         self.assertEqual(snapshot["since"], original_since)
 
-        restarted.record("get_project_library")
+        restarted.record("get_project_categories")
         self.assertEqual(
-            restarted.snapshot()["tools"]["get_project_library"]["calls"], 3
+            restarted.snapshot()["tools"]["get_project_categories"]["calls"], 3
         )
 
     def test_persisted_file_matches_snapshot_shape_without_tmp_leftover(self) -> None:
@@ -159,11 +159,11 @@ class McpToolCallPersistenceTests(unittest.TestCase):
         metrics = McpToolCallMetrics(store=failing_store)
 
         with self.assertLogs("backend.app.monitoring.mcp_tools", level="ERROR"):
-            metrics.record("get_project_library")
+            metrics.record("get_project_categories")
 
         snapshot = metrics.snapshot()
         self.assertEqual(snapshot["total_calls"], 1)
-        self.assertEqual(snapshot["tools"]["get_project_library"]["calls"], 1)
+        self.assertEqual(snapshot["tools"]["get_project_categories"]["calls"], 1)
 
     def test_snapshot_does_not_write_to_store(self) -> None:
         metrics = McpToolCallMetrics(store=self.store)
@@ -301,14 +301,14 @@ class McpToolCallRouteWiringTests(unittest.TestCase):
                     "jsonrpc": "2.0",
                     "id": 7,
                     "method": "tools/call",
-                    "params": {"name": "get_project_library", "arguments": {}},
+                    "params": {"name": "search_github_ai_projects", "arguments": {}},
                 },
             )
 
         self.assertEqual(response.status_code, 200)
         snapshot = isolated.snapshot()
         self.assertEqual(snapshot["total_calls"], 1)
-        self.assertEqual(snapshot["tools"]["get_project_library"]["calls"], 1)
+        self.assertEqual(snapshot["tools"]["search_github_ai_projects"]["calls"], 1)
 
 
 class CollectMetricsMcpToolCallsTests(unittest.TestCase):
@@ -330,7 +330,7 @@ class CollectMetricsMcpToolCallsTests(unittest.TestCase):
 
     def test_collect_metrics_includes_injected_mcp_tool_calls(self) -> None:
         tool_calls = McpToolCallMetrics()
-        tool_calls.record("get_project_library")
+        tool_calls.record("get_project_categories")
 
         result = monitor_metrics.collect_metrics(
             **self._readers(), mcp_tool_calls=tool_calls
@@ -338,7 +338,7 @@ class CollectMetricsMcpToolCallsTests(unittest.TestCase):
 
         section = result["mcp_tool_calls"]
         self.assertEqual(section["total_calls"], 1)
-        self.assertEqual(section["tools"]["get_project_library"]["calls"], 1)
+        self.assertEqual(section["tools"]["get_project_categories"]["calls"], 1)
         datetime.fromisoformat(section["since"])
 
     def test_collect_metrics_defaults_to_shared_singleton(self) -> None:

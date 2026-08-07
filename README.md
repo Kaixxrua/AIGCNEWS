@@ -32,7 +32,6 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 | `get_top_items` | 日 / 周 / 月榜单快照 |
 | `get_paper_detail` | 单条索引文档详情 |
 | `get_project_categories` | 项目分类与子类计数 |
-| `get_project_library` | 兼容入口（新客户端请改用上面两个搜索工具） |
 
 携带 `Authorization: Bearer <MCP access token>` 时额外解锁 `search_my_project_favorites`（个人收藏检索）。
 

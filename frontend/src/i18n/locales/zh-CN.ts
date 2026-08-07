@@ -185,7 +185,6 @@ const explicitBusinessTranslations: Record<string, string> = {
   'mcp.tools.get_top_items': '读取日榜、周榜和月榜公开排行。',
   'mcp.tools.search_github_projects': '优先搜索非 AI 项目、组件、SDK、框架、模板与开源软件。',
   'mcp.tools.search_github_ai_projects': '优先搜索本地 AI / 智能体 / MCP / RAG / LLM 项目库。',
-  'mcp.tools.get_project_library': '兼容读取 GitHub AI 项目库。',
   'mcp.tools.get_project_categories': '读取 AI 项目分类与数量。',
   'mcp.tools.unknown': '该端点提供的公开 MCP 工具。',
   'monitor.clearKey': '清空当前 API Key',

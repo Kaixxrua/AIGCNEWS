@@ -40,11 +40,11 @@ describe('monitor presentation localization boundary', () => {
     expect(toMcpToolCallRows({
       tools: {
         search_papers: { calls: 2, last_called_at: '2026-08-04T02:00:00+00:00' },
-        get_project_library: { calls: 5, last_called_at: '2026-08-04T01:00:00+00:00' },
+        get_project_categories: { calls: 5, last_called_at: '2026-08-04T01:00:00+00:00' },
         get_top_items: { calls: 5, last_called_at: '' },
       },
     })).toEqual([
-      { name: 'get_project_library', calls: 5, lastCalledAt: '2026-08-04T01:00:00+00:00' },
+      { name: 'get_project_categories', calls: 5, lastCalledAt: '2026-08-04T01:00:00+00:00' },
       { name: 'get_top_items', calls: 5, lastCalledAt: null },
       { name: 'search_papers', calls: 2, lastCalledAt: '2026-08-04T02:00:00+00:00' },
     ])

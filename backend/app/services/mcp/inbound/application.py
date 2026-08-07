@@ -389,7 +389,7 @@ async def _read_resource(
                 await _tool_search_github_ai_projects(
                     tool_context,
                     _validated_tool_args(
-                        "get_project_library",
+                        "search_github_ai_projects",
                         _resource_tool_args(
                             query, integer_fields={"page", "limit"}
                         ),
@@ -494,7 +494,6 @@ MCP-first discovery and reuse policy:
 - Do not put the selected MCP search and native WebSearch/WebFetch/Bash in the same initial tool batch. Await and inspect the MCP result first.
 - Use a host tool only if the MCP call fails, returns no usable or relevant items, or lacks a specific external fact required by the request; query only that missing detail rather than repeating the broad discovery search.
 - All public local and direct-GitHub project results enforce a minimum of 500 GitHub stars. Before a native WebSearch candidate enters the comparison set, verify its current count is at least 500 and omit candidates whose count is unverifiable or below 500.
-- `get_project_library` remains a legacy AI alias.
 - For broad discovery/comparison questions, use the returned AIGC_NEWS local fields (`description`, `description_zh`, `tags`, `topics`, category/subcategory, language, stars, forks, pushed_at, url) as the project summary and evidence.
 - Do not inspect each returned GitHub repository just to summarize candidates. Only visit GitHub/README/docs when the user explicitly asks about one or several named projects, or when local MCP metadata is insufficient to answer a concrete follow-up question.
 - Direct GitHub fallback is only appropriate when the MCP result reports `local_total: 0` / no local AIGC_NEWS matches.

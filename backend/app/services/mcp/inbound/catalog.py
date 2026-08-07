@@ -211,27 +211,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "inputSchema": input_schema("search_github_ai_projects"),
     },
     {
-        "name": "get_project_library",
-        "description": (
-            "Legacy compatibility entry for the curated/enriched AIGC_NEWS GitHub AI project library with local-first behavior. "
-            "Existing clients may keep using it. New requests should use search_github_ai_projects for AI projects or "
-            "search_github_projects for non-AI GitHub/open-source software. Non-empty queries default to relevance; capable hosts may "
-            "supply the same optional versioned intent used by search_github_ai_projects. Intent affects relevance only and explicit "
-            "top-level filters remain authoritative. The top-level language argument is a GitHub repository programming-language filter "
-            "(for example Python or C++); do not pass query-language values such as zh, en, 中文, or 英文 as repository languages. "
-            "For query-language metadata use intent.language with zh, en, mixed, or und. "
-            "sort=hot uses exact consecutive daily snapshots when available. All local and "
-            "direct GitHub fallback results enforce a minimum of 500 GitHub stars. Native WebSearch candidates must have a verified "
-            "current count of at least 500; omit unverifiable or below-threshold candidates. Direct AI-focused GitHub fallback is "
-            "attempted only after local results are zero."
-        ),
-        "inputSchema": input_schema("get_project_library"),
-    },
-    {
         "name": "get_project_categories",
         "description": (
             "List public AIGC_NEWS GitHub AI project categories and subcategory counts. "
-            "Call this first only when category/subcategory taxonomy is unclear, then call search_github_ai_projects or get_project_library. "
+            "Call this first only when category/subcategory taxonomy is unclear, then call search_github_ai_projects. "
             "Do not use direct GitHub or web search just to discover available AIGC_NEWS project categories."
         ),
         "inputSchema": input_schema("get_project_categories"),

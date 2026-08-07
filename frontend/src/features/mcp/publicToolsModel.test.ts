@@ -11,10 +11,10 @@ import {
 const endpoint = 'https://example.test/api/mcp'
 
 describe('public MCP tool display model', () => {
-  it('provides the eight public tools with localizable description keys by default', () => {
+  it('provides the seven public tools with localizable description keys by default', () => {
     const tools = displayedPublicTools(endpoint, { status: 'idle', endpoint })
 
-    expect(tools).toHaveLength(8)
+    expect(tools).toHaveLength(7)
     expect(tools.map((tool) => tool.name)).toEqual(PUBLIC_TOOLS.map((tool) => tool.name))
     expect(tools.every((tool) => tool.descriptionKey.startsWith('mcp.tools.'))).toBe(true)
     expect(tools.find((tool) => tool.name === 'get_top_items')?.descriptionKey).toBe('mcp.tools.get_top_items')

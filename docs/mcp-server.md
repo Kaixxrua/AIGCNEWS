@@ -37,7 +37,6 @@ AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.nam
 | `get_top_items` | 日 / 周 / 月榜单快照 |
 | `get_paper_detail` | 单条索引文档详情 |
 | `get_project_categories` | 项目分类与子类计数 |
-| `get_project_library` | 兼容入口；新客户端请用 `search_github_ai_projects` / `search_github_projects` |
 
 私有工具：
 
@@ -74,7 +73,7 @@ MCP 服务端控制，因此 host 必须核验其候选的当前 GitHub Stars，
 
 ## 本地优先与 GitHub fallback
 
-`search_github_ai_projects` / `search_github_projects` / `get_project_library` 均为 local-first：
+`search_github_ai_projects` / `search_github_projects` 均为 local-first：
 只有本地第一页结果总数为 0，且过滤与排序可由 GitHub Search 等价表达时，才进行限量、只读 fallback。
 fallback 不写库、不暴露 GitHub Token。
 

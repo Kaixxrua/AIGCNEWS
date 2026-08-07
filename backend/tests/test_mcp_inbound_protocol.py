@@ -24,7 +24,6 @@ PUBLIC_TOOL_NAMES = [
     "get_top_items",
     "search_github_projects",
     "search_github_ai_projects",
-    "get_project_library",
     "get_project_categories",
 ]
 PRIVATE_TOOL_NAME = "search_my_project_favorites"
