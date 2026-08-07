@@ -147,10 +147,12 @@ const keyFor = (article: WeChatArticle): string =>
   border-bottom: 1px solid var(--rule);
 }
 
+/* 公众号头像多为"内切圆构图 + 透明四角"的 PNG，圆角方形容器会露出
+   透明角、浅色图案浮在框里像裂图；圆形裁剪与构图贴合，视觉即头像 */
 .account-card-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
   border: 1px solid var(--projects-accent);
   object-fit: cover;
   flex-shrink: 0;
