@@ -328,9 +328,9 @@ onBeforeUnmount(() => {
                     loading="lazy"
                     decoding="async"
                     referrerpolicy="no-referrer"
-                    class="tweet-quote-avatar h-4 w-4 shrink-0 rounded-full object-cover"
+                    class="tweet-quote-avatar h-4 w-4 shrink-0 object-cover"
                   />
-                  <span class="truncate text-xs font-semibold text-stone-700">{{ tweetQuote(tweet)!.author_name || `@${tweetQuote(tweet)!.author}` }}</span>
+                  <span class="tweet-quote-name truncate text-xs font-semibold">{{ tweetQuote(tweet)!.author_name || `@${tweetQuote(tweet)!.author}` }}</span>
                   <span v-if="tweetQuote(tweet)!.author" class="tweet-quote-handle truncate text-2xs">@{{ tweetQuote(tweet)!.author }}</span>
                 </span>
                 <span v-if="tweetQuote(tweet)!.text" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
@@ -614,28 +614,39 @@ a.tweet-link:hover {
   color: var(--ink-muted);
 }
 
-/* 引用推文卡片：墨边小圆角内嵌块，hover 硬边位移（对齐视频播放键配方） */
+/* 引用推文卡片：主卡内的次级内嵌区——细线 --rule 边框、无常驻阴影、
+   透明底让主卡 hover 的 acid-soft 透出来（真「内嵌」而非贴片）；
+   自身 hover 走 chip 配方（墨边 + 纸面 + 2px 硬影），不做位移——
+   主卡 hover 同样无位移，避免嵌套双层动效 */
 .tweet-quote {
   overflow: hidden;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--rule);
   border-radius: 5px;
-  background: var(--paper);
   transition:
-    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
     box-shadow 150ms ease;
 }
 
 a.tweet-quote:hover {
+  border-color: var(--ink);
+  background: var(--projects-paper-light);
   box-shadow: 2px 2px 0 var(--shadow-hard);
-  transform: translate(-1px, -1px);
 }
 
+/* 主题去胶囊化：引用头像与外推头像同方（4px 圆角 + --rule 细边） */
 .tweet-quote-avatar {
-  border: 1px solid var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
 }
 
 .tweet-quote-handle {
   color: var(--ink-muted);
+}
+
+/* 被引作者名与外推 handle 同墨色（stone-700 无主题映射，不走原灰色） */
+.tweet-quote-name {
+  color: var(--ink);
 }
 
 /* 引用正文里的链接不可独点（整卡已是锚点），下划线仅作视觉标识 */
@@ -645,9 +656,10 @@ a.tweet-quote:hover {
   word-break: break-all;
 }
 
+/* 引用媒体：--rule 细边保持内嵌区的视觉层级低于主卡媒体（--ink） */
 .tweet-quote-photo {
   max-height: 220px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--rule);
   border-radius: 5px;
 }
 
