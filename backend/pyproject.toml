@@ -4,11 +4,6 @@
 # docker volumes 等容器创建的 root 属主目录并报权限错误。
 [tool.pytest.ini_options]
 addopts = "-ra"
-markers = [
-    "integration: 需要真实外部服务（如 PostgreSQL）的门控集成测试",
-    "slow: 耗时较长的测试",
-]
-
 [tool.coverage.run]
 # 相对仓库根目录（与 CI 及上文注释约定的运行方式一致）。
 source = ["backend/app"]

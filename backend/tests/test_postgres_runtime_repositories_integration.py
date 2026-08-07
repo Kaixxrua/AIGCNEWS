@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -74,6 +75,15 @@ def repositories() -> Iterator[tuple[Any, Any, Any]]:
             admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
 
+# get_today_document_count uses the UTC+8 calendar day of created_at; pin the
+# fixture to UTC+8 noon so the assertion stays true regardless of the run date.
+_CREATED_AT_TODAY = (
+    datetime.now(timezone(timedelta(hours=8)))
+    .replace(hour=12, minute=0, second=0, microsecond=0)
+    .isoformat()
+)
+
+
 def _document(doc_id: str, **overrides: Any) -> dict[str, Any]:
     document = {
         "id": doc_id,
@@ -89,7 +99,7 @@ def _document(doc_id: str, **overrides: Any) -> dict[str, Any]:
         "rank_in_period": 5,
         "indexed": 1,
         "in_daily": 1,
-        "created_at": "2026-07-28T01:00:00+00:00",
+        "created_at": _CREATED_AT_TODAY,
     }
     document.update(overrides)
     return document

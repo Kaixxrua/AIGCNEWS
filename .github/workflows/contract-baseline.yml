@@ -151,6 +151,12 @@ jobs:
           backend/tests/test_postgres_conversation_repository_integration.py
           backend/tests/test_postgres_attachment_repository_integration.py
           backend/tests/test_postgres_mcp_repositories_integration.py
+          backend/tests/test_postgres_config_repositories_integration.py
+          backend/tests/test_postgres_runtime_repositories_integration.py
+          backend/tests/test_postgres_project_ingestion_adapter_integration.py
+          backend/tests/test_postgres_project_write_adapter_integration.py
+          backend/tests/test_postgres_project_enrichment_adapters_pg16_integration.py
+          backend/tests/test_postgres16_github_project_semantic_source_integration.py
           backend/tests/test_application_transfer_service_integration.py
           backend/tests/test_table_transfer_reconciliation_postgresql16_integration.py
           EOF

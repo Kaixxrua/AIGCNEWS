@@ -357,29 +357,31 @@ def test_watcher_corruption_repair_quarantines_history_and_is_idempotent(
         )
 
     with database.transaction() as connection:
-        target_schema = connection.execute(
-            "SELECT current_schema() AS schema"
-        ).fetchone()["schema"]
+        identity = connection.execute(
+            "SELECT current_database() AS database, current_schema() AS schema"
+        ).fetchone()
+        target_database = identity["database"]
+        target_schema = identity["schema"]
     service = GitHubWatcherCorruptionRepairService(
         postgres=database,
         config=type("Config", (), {"env": "development"})(),
     )
     dry_run = service.repair(
-        target_database="aigcnews_test",
+        target_database=target_database,
         target_schema=target_schema,
         batch_size=1,
     )
     assert dry_run["applied"] is False
     assert dry_run["matched"] == 1
     applied = service.repair(
-        target_database="aigcnews_test",
+        target_database=target_database,
         target_schema=target_schema,
         batch_size=1,
         apply=True,
     )
     assert applied["snapshots_quarantined"] == 1
     second = service.repair(
-        target_database="aigcnews_test",
+        target_database=target_database,
         target_schema=target_schema,
         batch_size=1,
         after_snapshot_date=applied["next_cursor"]["snapshot_date"],
@@ -412,14 +414,14 @@ def test_watcher_corruption_repair_quarantines_history_and_is_idempotent(
     assert metrics[0]["score_version"] == "daily_hot_v4"
 
     final = service.repair(
-        target_database="aigcnews_test",
+        target_database=target_database,
         target_schema=target_schema,
         batch_size=10,
         apply=True,
     )
     assert final["snapshots_quarantined"] == 1
     idempotent = service.repair(
-        target_database="aigcnews_test",
+        target_database=target_database,
         target_schema=target_schema,
         batch_size=10,
         apply=True,
