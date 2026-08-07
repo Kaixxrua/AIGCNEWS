@@ -14,7 +14,6 @@ defineProps<{
   statValues: number[]
   visitorValues: number[]
   userParts: { registered: number; today: number }
-  rollTick: number
 }>()
 
 const { t } = useI18n()
@@ -46,7 +45,7 @@ const emit = defineEmits<{
           <span class="stat-cell-icon" :class="card.iconColor"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
           <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
         </span>
-        <RollingNumber :tick="rollTick" :value="statValues[index] ?? 0" class="stat-cell-num" :class="card.numColor" />
+        <RollingNumber :value="statValues[index] ?? 0" class="stat-cell-num" :class="card.numColor" />
       </button>
       <div
         v-else
@@ -57,7 +56,7 @@ const emit = defineEmits<{
           <span class="stat-cell-icon"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
           <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
         </span>
-        <RollingNumber :tick="rollTick" :value="statValues[index] ?? 0" class="stat-cell-num" />
+        <RollingNumber :value="statValues[index] ?? 0" class="stat-cell-num" />
       </div>
     </template>
     <div
@@ -70,8 +69,8 @@ const emit = defineEmits<{
         <span class="stat-cell-icon" :class="card.iconColor"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
         <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
       </span>
-      <span v-if="card.key === 'user_count'" class="stat-cell-num" :class="card.numColor"><RollingNumber :tick="rollTick" :value="userParts.registered" /><span>+</span><RollingNumber :tick="rollTick" :value="userParts.today" /></span>
-      <RollingNumber v-else :tick="rollTick" :value="visitorValues[index] ?? 0" grouping class="stat-cell-num" :class="card.numColor" />
+      <span v-if="card.key === 'user_count'" class="stat-cell-num" :class="card.numColor"><RollingNumber :value="userParts.registered" /><span>+</span><RollingNumber :value="userParts.today" /></span>
+      <RollingNumber v-else :value="visitorValues[index] ?? 0" grouping class="stat-cell-num" :class="card.numColor" />
     </div>
   </div>
 </template>

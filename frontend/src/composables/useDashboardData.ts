@@ -8,6 +8,7 @@ import {
   watch,
 } from 'vue'
 import { dashboardApi as defaultDashboardApi } from '@/services/dashboard/dashboardApi'
+import { fetchLiveStats } from '@/services/dashboard/dashboardLiveApi'
 import type {
   DashboardApi,
 } from '@/services/dashboard/dashboardContracts'
@@ -160,6 +161,19 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     }
   }
 
+  /* 10s 实时计数轮询：合并最新计数，变化的数字走滚筒差位滚动，无变化静止。
+     历史日期/静默期/加载中跳过，避免覆盖对应口径的统计数字。 */
+  const refreshLiveStats = async () => {
+    if (loading.value || tabLoading.value || isViewingHistory.value || isEmbargoed.value) return
+    try {
+      const live = await fetchLiveStats()
+      stats.value = { ...stats.value, ...live }
+      options.updateStatSources(stats.value)
+    } catch {
+      /* 实时计数失败静默，保留当前展示值 */
+    }
+  }
+
   onMounted(async () => {
     const { controller, generation } = beginDashboardRequest()
     try {
@@ -251,5 +265,6 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     selectSourceTab,
     onDateChange,
     hasData,
+    refreshLiveStats,
   }
 }

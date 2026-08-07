@@ -387,6 +387,37 @@ async def get_dashboard_summary(
     }
 
 
+@router.get("/dashboard/live-stats")
+@cache(expire=10, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
+async def get_dashboard_live_stats(
+    user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
+    document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
+):
+    """首页统计带实时计数（10s 短缓存聚合并发访客的轮询）。
+
+    与 summary 统计卡片同一口径但不含排行数据；前端每 10s 轮询一次，
+    仅数字变化时滚筒动画滚动差位，无变化则静止。
+    """
+    source_counts = await _get_source_counts(document_statistics)
+    total_documents = sum(source_counts.values())
+    registered_users = await asyncio.to_thread(user_statistics.get_user_count)
+    today_registered_users = await asyncio.to_thread(
+        user_statistics.get_today_registered_user_count
+    )
+    user_count = registered_users + today_registered_users
+    today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
+    mcp_total_calls = await _get_mcp_total_calls()
+    return {
+        "total_documents": total_documents,
+        "source_counts": source_counts,
+        "registered_users": registered_users,
+        "today_registered_users": today_registered_users,
+        "user_count": user_count,
+        "today_new_documents": today_new_documents,
+        "mcp_total_calls": mcp_total_calls,
+    }
+
+
 @router.get("/dashboard/snapshot-dates")
 @cache(expire=60, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_snapshot_dates(

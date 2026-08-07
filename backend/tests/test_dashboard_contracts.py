@@ -589,3 +589,26 @@ def test_summary_github_stat_falls_back_to_documents_when_catalog_unavailable(mo
     assert stats["source_counts"] == {"arxiv": 5, "github": 461, "news": 7}
     assert stats["total_documents"] == 5 + 461 + 7
     assert isinstance(stats["mcp_total_calls"], int)
+
+
+def test_live_stats_returns_flat_counters(monkeypatch) -> None:
+    class FakeCatalog:
+        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
+            return {"items": [], "total": 6983, "page": 1, "page_size": 1}
+
+    client = _summary_client(monkeypatch, lambda: FakeCatalog())
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
+    try:
+        response = client.get("/api/dashboard/live-stats")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_counts"] == {"arxiv": 5, "github": 6983, "news": 7}
+    assert body["total_documents"] == 5 + 6983 + 7
+    assert body["registered_users"] == 13
+    assert body["today_registered_users"] == 0
+    assert body["user_count"] == 13
+    assert body["today_new_documents"] == 3
+    assert isinstance(body["mcp_total_calls"], int)

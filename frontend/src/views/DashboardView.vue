@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { onActivated, onBeforeUnmount, onDeactivated, onMounted } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
@@ -27,15 +27,6 @@ const {
   updateVisitorSources,
 } = useDashboardStats(() => currentStats())
 
-/* 每 10s 变更 rollTick 触发 RollingNumber 重挂载，数字从 0 重新上滚（恰好 2s 完成）。
-   KeepAlive 停用或卸载时暂停定时器，避免隐藏视图空转。 */
-const rollTick = ref(0)
-const { pause: pauseRoll, resume: resumeRoll } = useIntervalFn(() => { rollTick.value += 1 }, 10_000, { immediate: false })
-onMounted(resumeRoll)
-onActivated(resumeRoll)
-onDeactivated(pauseRoll)
-onBeforeUnmount(pauseRoll)
-
 const {
   activeTab,
   activePeriod,
@@ -53,11 +44,20 @@ const {
   selectSourceTab,
   onDateChange,
   hasData,
+  refreshLiveStats,
 } = useDashboardData({
   updateStatSources,
   updateVisitorSources,
 })
 currentStats = () => stats.value
+
+/* 每 10s 轮询实时计数：仅变化的数字滚筒滚动差位（如 1306→2309 只滚千位与个位），
+   无变化则完全静止。KeepAlive 停用或卸载时暂停定时器。 */
+const { pause: pauseLivePoll, resume: resumeLivePoll } = useIntervalFn(() => { void refreshLiveStats() }, 10_000, { immediate: false })
+onMounted(resumeLivePoll)
+onActivated(resumeLivePoll)
+onDeactivated(pauseLivePoll)
+onBeforeUnmount(pauseLivePoll)
 
 </script>
 
@@ -91,7 +91,6 @@ currentStats = () => stats.value
       :stat-values="statValues"
       :visitor-values="visitorValues"
       :user-parts="userParts"
-      :roll-tick="rollTick"
       @select-source="selectSourceTab"
     />
 
@@ -186,7 +185,7 @@ currentStats = () => stats.value
             </span>
             <span class="flex min-w-0 flex-col">
               <span class="text-2xs font-semibold text-stone-400">{{ t('dashboard.mcpCalls.title') }}</span>
-              <RollingNumber :tick="rollTick" :value="mcpTotalCalls" grouping class="text-base font-extrabold tabular-nums" />
+              <RollingNumber :value="mcpTotalCalls" grouping class="text-base font-extrabold tabular-nums" />
             </span>
           </div>
         </template>

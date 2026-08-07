@@ -10,6 +10,11 @@ const defaultDashboardApi = vi.hoisted(() => ({
 }))
 vi.mock('../services/dashboard/dashboardApi', () => ({ dashboardApi: defaultDashboardApi }))
 
+const liveStatsApi = vi.hoisted(() => ({
+  fetchLiveStats: vi.fn(),
+}))
+vi.mock('../services/dashboard/dashboardLiveApi', () => liveStatsApi)
+
 import type { DashboardApi } from '@/services/dashboard/dashboardApi'
 import { useDashboardData } from './useDashboardData'
 
@@ -52,6 +57,7 @@ describe('Dashboard request lifecycle contract', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 27, 12))
     Object.values(defaultDashboardApi).forEach(mock => mock.mockReset())
+    liveStatsApi.fetchLiveStats.mockReset()
     defaultDashboardApi.fetchSummary.mockResolvedValue({ stats: { total_documents: 3 }, isFinalized: true, isEmbargoed: false })
     defaultDashboardApi.fetchTop.mockResolvedValue({ items: [{ id: 1, title: 'Top' }] })
     defaultDashboardApi.fetchSnapshotDates.mockResolvedValue(['2026-07-27'])
@@ -114,6 +120,26 @@ describe('Dashboard request lifecycle contract', () => {
     expect(defaultDashboardApi.fetchSummary).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-20', signal: expect.any(AbortSignal) })
     expect(mounted.updateStatSources).toHaveBeenCalledOnce()
     expect(mounted.dashboard.isViewingHistory.value).toBe(true)
+    mounted.app.unmount()
+  })
+
+  it('merges live counters on refreshLiveStats and skips while viewing history', async () => {
+    liveStatsApi.fetchLiveStats.mockResolvedValue({ total_documents: 99, mcp_total_calls: 5, source_counts: { arxiv: 4 } })
+    const mounted = mountDashboard()
+    await flush()
+    mounted.updateStatSources.mockClear()
+
+    await mounted.dashboard.refreshLiveStats()
+    expect(mounted.dashboard.stats.value).toMatchObject({ total_documents: 99, mcp_total_calls: 5 })
+    expect(mounted.updateStatSources).toHaveBeenCalledOnce()
+
+    liveStatsApi.fetchLiveStats.mockClear()
+    await mounted.dashboard.onDateChange('2026-07-20')
+    liveStatsApi.fetchLiveStats.mockClear()
+    mounted.updateStatSources.mockClear()
+    await mounted.dashboard.refreshLiveStats()
+    expect(liveStatsApi.fetchLiveStats).not.toHaveBeenCalled()
+    expect(mounted.updateStatSources).not.toHaveBeenCalled()
     mounted.app.unmount()
   })
 
