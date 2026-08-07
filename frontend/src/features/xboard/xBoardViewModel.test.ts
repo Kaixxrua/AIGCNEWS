@@ -17,6 +17,7 @@ import {
   paginateItems,
   posterMediaUrl,
   proxiedMediaUrl,
+  quoteAsDoc,
   quoteAvatarUrl,
   quoteMediaItems,
   quoteTextSegments,
@@ -334,6 +335,25 @@ describe('xBoardViewModel', () => {
     expect(quoteAvatarUrl(quotedTweet().quote!)).toBe('https://pbs.twimg.com/profile_images/q.jpg')
     expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: '' }).quote!)).toBe('https://unavatar.io/x/comfyui')
     expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: '', author: '' }).quote!)).toBeUndefined()
+  })
+
+  it('quoteAsDoc projects a quote into a detail-renderable doc without score or nested quote', () => {
+    const doc = quoteAsDoc(quotedTweet().quote!)
+    expect(doc).toEqual({
+      url: 'https://x.com/comfyui/status/2000',
+      author_name: 'ComfyUI',
+      author_avatar_url: 'https://pbs.twimg.com/profile_images/q.jpg',
+      summary: 'Livestream update https://example.com/live see you',
+      media: [{ type: 'photo', url: 'https://pbs.twimg.com/media/q.jpg', width: 800, height: 450 }],
+      published_at: '2026-08-07T01:00:00+00:00',
+    })
+    // 投影只存一层：下钻后的 doc 无嵌套引用，不再渲染引用卡
+    expect(hasQuote(doc)).toBe(false)
+    // 下钻结果直接过详情渲染管线：昵称缺失回退 @handle，URL 段与媒体照常出
+    expect(authorDisplayName(quoteAsDoc(quotedTweet({ author_name: '' }).quote!))).toBe('@comfyui')
+    expect(tweetTextSegments(doc, 'en-US')).toContainEqual({ text: 'https://example.com/live', isUrl: true })
+    expect(mediaItems(doc)).toHaveLength(1)
+    expect(formatLocalTime(doc.published_at ?? '')).not.toBe('')
   })
 
   it('distributeColumns deals items round-robin so cross-column reads stay row-major', () => {

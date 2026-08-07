@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ExternalLink, Maximize2 } from 'lucide-vue-next'
+import { ArrowLeft, ExternalLink, Maximize2 } from 'lucide-vue-next'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, authorDisplayName, distributeColumns, extractXHandle, formatLocalTime, hasMedia, hasQuote, mediaItems, paginateItems, quoteAvatarUrl, quoteMediaItems, quoteTextSegments, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, distributeColumns, extractXHandle, formatLocalTime, hasMedia, hasQuote, mediaItems, paginateItems, quoteAsDoc, quoteAvatarUrl, quoteMediaItems, quoteTextSegments, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
@@ -60,8 +60,31 @@ const closeLightbox = () => { lightboxUrl.value = null }
 // 显式按钮承担）。层级低于图片 lightbox（浮层内照片可再放大）；数据
 // 重载时关闭，避免悬在已失效的条目上。
 const detailTweet = ref<TopDoc | null>(null)
-const openDetail = (tweet: TopDoc) => { detailTweet.value = tweet }
-const closeDetail = () => { detailTweet.value = null }
+// 浮层内引用卡下钻：点击 = 就地切换为被引推文详情（quote 投影字段齐全，
+// 零请求），detailParent 记回跳目标；仅一层（投影不嵌套，与 X 一致）。
+// 下钻/返回时清空播放态：媒体块随内容切换整体卸载，不残留他条播放键。
+const detailParent = ref<TopDoc | null>(null)
+const openDetail = (tweet: TopDoc) => {
+  detailTweet.value = tweet
+  detailParent.value = null
+}
+const closeDetail = () => {
+  detailTweet.value = null
+  detailParent.value = null
+}
+const drillIntoQuote = () => {
+  const quote = detailTweet.value ? tweetQuote(detailTweet.value) : null
+  if (!quote || detailParent.value) return
+  detailParent.value = detailTweet.value
+  detailTweet.value = quoteAsDoc(quote)
+  playingMedia.value = new Set()
+}
+const backToParent = () => {
+  if (!detailParent.value) return
+  detailTweet.value = detailParent.value
+  detailParent.value = null
+  playingMedia.value = new Set()
+}
 
 const onLightboxKeydown = (event: KeyboardEvent) => {
   if (event.key !== 'Escape') return
@@ -93,7 +116,7 @@ const playVideo = (key: string) => {
   playingMedia.value = next
 }
 const isPlaying = (key: string) => playingMedia.value.has(key)
-watch(docs, () => { playingMedia.value = new Set(); detailTweet.value = null })
+watch(docs, () => { playingMedia.value = new Set(); detailTweet.value = null; detailParent.value = null })
 
 const isSelected = (doc: TopDoc) => doc.id ? selectedIds.value.has(String(doc.id)) : false
 
@@ -347,7 +370,7 @@ onBeforeUnmount(() => {
               </div>
 
               <!-- 引用推文卡片：看板上点击同样放大主推详情（不跳走）；
-                   详情浮层内才是跳被引推文的锚点 -->
+                   ↗ 钮显式直跳被引推文，详情浮层内点击则下钻看被引详情 -->
               <div
                 v-if="hasQuote(tweet)"
                 role="button"
@@ -369,6 +392,15 @@ onBeforeUnmount(() => {
                   />
                   <span class="tweet-quote-name truncate text-xs font-semibold">{{ tweetQuote(tweet)!.author_name || `@${tweetQuote(tweet)!.author}` }}</span>
                   <span v-if="tweetQuote(tweet)!.author" class="tweet-quote-handle truncate text-2xs">@{{ tweetQuote(tweet)!.author }}</span>
+                  <a
+                    class="tweet-icon-btn tweet-quote-jump ml-auto"
+                    :href="tweetQuote(tweet)!.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    :aria-label="t('xboard.viewOnX')"
+                    @click.stop
+                    @keydown.enter.stop
+                  ><ExternalLink class="h-3 w-3" /></a>
                 </span>
                 <span v-if="tweetQuote(tweet)!.text" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
                   <template v-for="(seg, segIndex) in quoteTextSegments(tweetQuote(tweet)!)" :key="segIndex">
@@ -426,10 +458,19 @@ onBeforeUnmount(() => {
         class="detail-backdrop"
         role="dialog"
         aria-modal="true"
-        :aria-label="t('xboard.detailTitle')"
+        :aria-label="t(detailParent ? 'xboard.quoteDetailTitle' : 'xboard.detailTitle')"
         @click="closeDetail"
       >
         <article class="detail-panel" @click.stop>
+          <button
+            v-if="detailParent"
+            type="button"
+            class="detail-back"
+            :aria-label="t('xboard.backToTweet')"
+            @click="backToParent"
+          >
+            <ArrowLeft class="h-4 w-4" />
+          </button>
           <button
             type="button"
             class="detail-close"
@@ -439,7 +480,7 @@ onBeforeUnmount(() => {
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
 
-          <div class="tweet-head flex items-center gap-2 px-5 py-4 pr-14">
+          <div class="tweet-head flex items-center gap-2 px-5 py-4 pr-14" :class="{ 'pl-14': detailParent }">
             <img
               v-if="authorAvatarUrl(detailTweet)"
               :src="authorAvatarUrl(detailTweet)"
@@ -453,7 +494,8 @@ onBeforeUnmount(() => {
               <p class="tweet-handle truncate text-sm">{{ authorDisplayName(detailTweet) }}</p>
               <p v-if="extractXHandle(detailTweet.url)" class="tweet-quote-handle truncate text-2xs">@{{ extractXHandle(detailTweet.url) }}</p>
             </div>
-            <span class="tweet-score ml-auto shrink-0">
+            <!-- 下钻态无本站互动分（quote 投影不携带），隐藏分数徽章 -->
+            <span v-if="!detailParent" class="tweet-score ml-auto shrink-0">
               <component :is="scoreDisplay(detailTweet).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(detailTweet).text }}
             </span>
           </div>
@@ -525,13 +567,16 @@ onBeforeUnmount(() => {
             </template>
           </div>
 
-          <!-- 引用卡：浮层内是跳被引推文的真锚点（与 X 点击引用行为一致） -->
-          <a
+          <!-- 引用卡：浮层内点击下钻为被引推文详情（就地切换不跳走，与 X
+               点击引用在 App 内导航一致）；↗ 钮显式直跳被引推文 -->
+          <div
             v-if="hasQuote(detailTweet)"
-            :href="tweetQuote(detailTweet)!.url"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="tweet-quote mx-4 my-2 block"
+            role="button"
+            tabindex="0"
+            class="tweet-quote mx-4 my-2 block cursor-pointer"
+            :aria-label="t('xboard.openQuoteDetail')"
+            @click="drillIntoQuote"
+            @keydown.enter="drillIntoQuote"
           >
             <span class="tweet-quote-head flex items-center gap-1.5 px-3 pt-2">
               <img
@@ -545,6 +590,15 @@ onBeforeUnmount(() => {
               />
               <span class="tweet-quote-name truncate text-xs font-semibold">{{ tweetQuote(detailTweet)!.author_name || `@${tweetQuote(detailTweet)!.author}` }}</span>
               <span v-if="tweetQuote(detailTweet)!.author" class="tweet-quote-handle truncate text-2xs">@{{ tweetQuote(detailTweet)!.author }}</span>
+              <a
+                class="tweet-icon-btn tweet-quote-jump ml-auto"
+                :href="tweetQuote(detailTweet)!.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                :aria-label="t('xboard.viewOnX')"
+                @click.stop
+                @keydown.enter.stop
+              ><ExternalLink class="h-3 w-3" /></a>
             </span>
             <span v-if="tweetQuote(detailTweet)!.text" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
               <template v-for="(seg, segIndex) in quoteTextSegments(tweetQuote(detailTweet)!)" :key="segIndex">
@@ -567,7 +621,7 @@ onBeforeUnmount(() => {
                 />
               </template>
             </span>
-          </a>
+          </div>
 
           <div class="detail-foot flex flex-wrap items-center gap-3 px-5 py-3">
             <span v-if="formatTime(detailTweet)" class="tweet-time text-2xs">{{ formatTime(detailTweet) }}</span>
@@ -868,6 +922,13 @@ a.tweet-link:hover {
   color: var(--ink);
 }
 
+/* 引用卡显式跳转钮：复用卡头动作钮配方但小一号，对齐引用区轻量层级 */
+.tweet-quote-jump {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
 /* 引用正文里的链接不可独点（整卡已是锚点），下划线仅作视觉标识 */
 .tweet-quote-link {
   text-decoration: underline;
@@ -906,10 +967,10 @@ a.tweet-link:hover {
   box-shadow: 4px 4px 0 var(--shadow-hard);
 }
 
-.detail-close {
+.detail-close,
+.detail-back {
   position: absolute;
   top: 0.75rem;
-  right: 0.75rem;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -927,7 +988,13 @@ a.tweet-link:hover {
     box-shadow 150ms ease;
 }
 
-.detail-close:hover {
+.detail-close { right: 0.75rem; }
+
+/* 下钻返回钮：与关闭钮同一墨底酸绿配方，居面板左上 */
+.detail-back { left: 0.75rem; }
+
+.detail-close:hover,
+.detail-back:hover {
   background: var(--acid);
   color: var(--projects-on-acid);
   box-shadow: 2px 2px 0 var(--shadow-hard);

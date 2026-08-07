@@ -111,6 +111,21 @@ export const hasQuote = (doc: TopDoc): boolean => {
 /** 引用卡片的展示对象：仅经 hasQuote 判定后调用，坏数据回退 null。 */
 export const tweetQuote = (doc: TopDoc): TopDoc['quote'] => (hasQuote(doc) ? (doc.quote ?? null) : null)
 
+/**
+ * 引用投影 → 详情浮层展示用 TopDoc：quote 落库字段与详情渲染所需字段
+ * 一一对应（URL/昵称/头像/正文/媒体/时间），下钻纯本地切换零请求。
+ * 不带 score（被引推文无本站互动分，渲染层隐藏徽章）与 quote（投影只
+ * 存一层，不递归下钻——与 X 只渲染一层引用一致）。
+ */
+export const quoteAsDoc = (quote: NonNullable<TopDoc['quote']>): TopDoc => ({
+  url: quote.url,
+  author_name: quote.author_name,
+  author_avatar_url: quote.author_avatar_url,
+  summary: quote.text,
+  media: quote.media,
+  published_at: quote.published_at,
+})
+
 /** 引用作者头像：落库地址优先，缺失时回退 unavatar（与外推头像同一策略）。 */
 export const quoteAvatarUrl = (quote: NonNullable<TopDoc['quote']>): string | undefined => {
   if (quote.author_avatar_url) return quote.author_avatar_url
