@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -12,6 +13,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from scripts import notify_ops_alert
+
+
+@pytest.fixture(autouse=True)
+def _clean_ambient_alert_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """清除进程级 SMTP_*/AIGCNEWS_OPS_ALERT_* 环境变量。
+
+    pymilvus 在 import 时会 load_dotenv() 把项目 .env 注入 os.environ；
+    本地全量跑过 pymilvus 相关用例后，本模块的 main() 测试会读到真实
+    SMTP 配置而偏离预期，因此统一隔离。
+    """
+    for key in list(os.environ):
+        if key.startswith(("SMTP_", "AIGCNEWS_OPS_ALERT_")):
+            monkeypatch.delenv(key, raising=False)
 
 
 def _write_env(tmp_path: Path, body: str) -> Path:
