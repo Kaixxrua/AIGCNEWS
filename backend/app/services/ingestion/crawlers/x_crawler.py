@@ -152,6 +152,10 @@ class XCrawler(BaseCrawler):
             )
 
         tweets = [tweet for batch in tweets_by_handle.values() for tweet in batch]
+        # 日榜只收当天（CST）发布的推文：watchlist 抓的是账号近期 N 条，
+        # 不过滤会把数周前的旧推文混进当天快照
+        fetched_count = len(tweets)
+        tweets = x_policy.filter_tweets_to_snapshot_date(tweets, snapshot_date)
         items = x_policy.project_tweets(tweets, limit=limit, source_channel=channel)
         await self._attach_zh_translations(tweets, items)
         for item in items:
@@ -160,9 +164,10 @@ class XCrawler(BaseCrawler):
             item.setdefault("channel", channel)
 
         logger.info(
-            "[X] 爬虫完成: %d/%d 账号产出 %d 条（互动分降序 + rank_in_period），snapshot=%s",
+            "[X] 爬虫完成: %d/%d 账号抓取 %d 条，当日(CST)过滤后 %d 条入库候选，snapshot=%s",
             len(tweets_by_handle),
             len(handles),
+            fetched_count,
             len(items),
             snapshot_date,
         )

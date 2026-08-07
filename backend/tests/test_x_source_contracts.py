@@ -18,6 +18,7 @@ from twitter_cli.exceptions import (
 )
 from twitter_cli.models import Author, Metrics, Tweet, TweetMedia, UserProfile
 
+from backend.app.services.ingestion.crawlers import x_crawler
 from backend.app.services.ingestion.sources import x_policy, x_transport
 
 
@@ -217,6 +218,36 @@ class XPolicyContracts(unittest.TestCase):
             [_tweet("1007", created_at="garbage")], limit=5
         )
         self.assertEqual(items[0]["published_date"], "")
+
+    def test_filter_tweets_to_snapshot_date_keeps_only_cst_same_day(self) -> None:
+        tweets = [
+            # UTC 08-03 16:30 = CST 08-04 00:30（当天，保留）
+            _tweet("2001", created_at="Mon Aug 03 16:30:00 +0000 2026"),
+            # UTC 08-04 15:59:59 = CST 08-04 23:59:59（当天边界，保留）
+            _tweet("2002", created_at="Tue Aug 04 15:59:59 +0000 2026"),
+            # UTC 08-04 16:00 = CST 08-05 00:00（次日，剔除）
+            _tweet("2003", created_at="Tue Aug 04 16:00:00 +0000 2026"),
+            # UTC 08-03 15:59 = CST 08-03 23:59（前一日，剔除）
+            _tweet("2004", created_at="Mon Aug 03 15:59:00 +0000 2026"),
+            # 更早的旧推文（剔除）
+            _tweet("2005", created_at="Sat Aug 01 12:00:00 +0000 2026"),
+        ]
+        kept = x_policy.filter_tweets_to_snapshot_date(tweets, "2026-08-04")
+        self.assertEqual([str(t.id) for t in kept], ["2001", "2002"])
+
+    def test_filter_tweets_to_snapshot_date_drops_unparseable_dates(self) -> None:
+        tweets = [
+            _tweet("2006", created_at="garbage"),
+            _tweet("2007", created_at=""),
+            _tweet("2008", created_at="Tue Aug 04 02:00:00 +0000 2026"),
+        ]
+        kept = x_policy.filter_tweets_to_snapshot_date(tweets, "2026-08-04")
+        self.assertEqual([str(t.id) for t in kept], ["2008"])
+
+    def test_filter_tweets_to_snapshot_date_empty_date_passes_through(self) -> None:
+        tweets = [_tweet("2009"), _tweet("2010")]
+        kept = x_policy.filter_tweets_to_snapshot_date(tweets, "")
+        self.assertEqual(len(kept), 2)
 
 
 class _FakeClient:
@@ -460,7 +491,7 @@ class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
         from backend.app.services.ingestion.crawlers import x_crawler
 
         transport = _FakeTransport(
-            result={"openai": [_tweet("1002", likes=10, retweets=2, replies=1, bookmarks=3, views=100)]}
+            result={"openai": [_tweet("1002", created_at="Tue Aug 04 02:10:51 +0000 2026", likes=10, retweets=2, replies=1, bookmarks=3, views=100)]}
         )
         crawler = self._crawler(transport)
 
@@ -478,6 +509,29 @@ class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.items[0]["source"], "x")
         self.assertEqual(result.items[0]["source_channel"], "x_daily_watchlist")
         self.assertEqual(result.items[0]["channel"], "x_daily_watchlist")
+
+    async def test_fetch_filters_tweets_to_snapshot_date(self) -> None:
+        from backend.app.services.ingestion.crawlers import x_crawler
+
+        transport = _FakeTransport(
+            result={
+                "openai": [
+                    # 当天（CST 08-04）
+                    _tweet("3001", created_at="Tue Aug 04 02:10:51 +0000 2026", likes=1),
+                    # 高分但发布于数周前——不得混入当天快照
+                    _tweet("3002", created_at="Sat Jul 18 12:00:00 +0000 2026", likes=99999),
+                    # CST 边界：UTC 08-04 16:00 已是 CST 08-05
+                    _tweet("3003", created_at="Tue Aug 04 16:00:00 +0000 2026", likes=99999),
+                ]
+            }
+        )
+        crawler = self._crawler(transport)
+
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-04"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertIsNone(result.error)
+        self.assertEqual([item["tweet_id"] for item in result.items], ["3001"])
 
     async def test_empty_watchlist_returns_ok_zero_items(self) -> None:
         transport = _FakeTransport()
@@ -1008,7 +1062,9 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
             return {"2001": "中文译文"}
 
         crawler = self._crawler(transport, fetcher=fetcher)
-        result = await crawler._do_fetch(period="daily", limit=25)
+        # 默认推文日期 = CST 2026-08-03：快照日过滤按此对齐
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
 
         self.assertEqual(seen, [["2001"]])  # zh/zxx 不发起翻译请求
         by_id = {item["tweet_id"]: item for item in result.items}
@@ -1025,7 +1081,8 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
             return {}
 
         crawler = self._crawler(transport, fetcher=fetcher)
-        result = await crawler._do_fetch(period="daily", limit=25)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
 
         self.assertEqual(seen, [["2006"]])
         self.assertNotIn("translation_zh", result.items[0])
@@ -1037,7 +1094,8 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("boom")
 
         crawler = self._crawler(transport, fetcher=fetcher)
-        result = await crawler._do_fetch(period="daily", limit=25)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
 
         self.assertIsNone(result.error)
         self.assertEqual(len(result.items), 1)
@@ -1052,12 +1110,14 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
                 return {tid: f"译:{tid}" for tid in ids}
 
         crawler = self._crawler(TransportWithTranslation(result={"openai": [en_tweet]}))
-        result = await crawler._do_fetch(period="daily", limit=25)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
         self.assertEqual(result.items[0].get("translation_zh"), "译:2005")
 
         # 旧版 duck-typed fake 无此方法：静默跳过，不报错
         crawler = self._crawler(_FakeTransport(result={"openai": [en_tweet]}))
-        result = await crawler._do_fetch(period="daily", limit=25)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
         self.assertIsNone(result.error)
         self.assertNotIn("translation_zh", result.items[0])
 

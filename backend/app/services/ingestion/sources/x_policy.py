@@ -14,7 +14,7 @@ dict/对象进、dict 出的纯变换，transport 负责一切 IO。
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,29 @@ def parse_tweet_date(created_at: str) -> str:
     """
     parsed = parse_tweet_datetime(created_at)
     return parsed.strftime("%Y-%m-%d") if parsed else ""
+
+
+_TZ_CST = timezone(timedelta(hours=8))
+
+
+def filter_tweets_to_snapshot_date(tweets: Iterable[Any], snapshot_date: str) -> list[Any]:
+    """只保留发布时间落在 snapshot_date（CST 物理日）内的推文。
+
+    snapshot_date 是 CST 日历日（与 base_crawler.today_cst 同一约定）；推文
+    created_at 解析为 UTC 后换算 UTC+8 再比日期。watchlist 抓取返回账号近期
+    N 条、不做时间过滤会把数周前的旧推文混进当天日榜快照。
+    created_at 解析失败的条目无法证明属于当天，一并排除。
+    """
+    if not snapshot_date:
+        return list(tweets)
+    fresh: list[Any] = []
+    for tweet in tweets:
+        parsed = parse_tweet_datetime(str(getattr(tweet, "created_at", "") or ""))
+        if parsed is None:
+            continue
+        if parsed.astimezone(_TZ_CST).date().isoformat() == snapshot_date:
+            fresh.append(tweet)
+    return fresh
 
 
 def compose_tweet_url(screen_name: str, tweet_id: str) -> str:
