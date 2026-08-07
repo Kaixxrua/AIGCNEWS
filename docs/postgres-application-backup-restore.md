@@ -29,7 +29,7 @@ export PGPASSFILE=/run/secrets/postgres-pgpass
 
 ## 定时备份（systemd timer）
 
-`scripts/backup_postgres_application_scheduled.sh` 为上面的备份脚本加上定时运行所需的三件事：时间戳命名（`aigcnews-YYYYMMDD-HHMMSS.dump`）、保留策略（默认保留最新 14 份，`AIGCNEWS_BACKUP_RETENTION` 可调）、凭据环境文件注入（`BACKUP_ENV_FILE`）。配套单元：`deploy/systemd/aigcnews-postgres-backup@.service` + `.timer`（每日 03:17，随机延迟 15 分钟，错过补跑）。
+`scripts/backup_postgres_application_scheduled.sh` 为上面的备份脚本加上定时运行所需的四件事：时间戳命名（`aigcnews-YYYYMMDD-HHMMSS.dump`）、保留策略（默认保留最新 14 份，`AIGCNEWS_BACKUP_RETENTION` 可调）、凭据环境文件注入（`BACKUP_ENV_FILE`）、失败邮件告警（见下文"语义与限制"）。配套单元：`deploy/systemd/aigcnews-postgres-backup@.service` + `.timer`（每日 03:17，随机延迟 15 分钟，错过补跑）。
 
 1. 准备凭据环境文件（`chmod 600`，不要提交到任何仓库）：
 
@@ -59,7 +59,7 @@ export PGPASSFILE=/run/secrets/postgres-pgpass
 
 - 每日一次 = **RPO 不超过 24 小时**；需要更小 RPO 时必须上 WAL 归档/PITR，本流程不覆盖。
 - 单机磁盘上的 dump 不抗主机/磁盘故障，应再有一层异地副本（rsync/rclone 到另一台机器或对象存储），异地层同样按敏感制品处理。
-- timer 失败会体现在 `systemctl status aigcnews-postgres-backup@*.service`；建议把失败告警纳入既有监控通道（当前无自动告警，需人工巡检或自行接入通知）。
+- timer 失败会体现在 `systemctl status aigcnews-postgres-backup@*.service`。失败告警已由包装脚本内置：备份任一步骤失败时尽力调用 `scripts/notify_ops_alert.py` 发送邮件（SMTP 配置读项目 `.env` 的 `SMTP_*`，收件人默认 `SMTP_FROM_EMAIL`，可用 `AIGCNEWS_OPS_ALERT_TO` 改投；`AIGCNEWS_OPS_ALERT_DISABLED=1` 关闭；告警自身失败不遮蔽备份退出码）。
 
 ## 恢复到明确确认的空目标
 
