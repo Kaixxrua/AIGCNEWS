@@ -10,21 +10,23 @@ import DOMPurify from 'dompurify'
 const WECHAT_MEDIA_PROXY_PATH = '/api/media/wechat/proxy'
 const WECHAT_MEDIA_HOSTS = new Set(['mmbiz.qpic.cn', 'mmbiz.qlogo.cn'])
 
-const isWechatMediaUrl = (url: string): boolean => {
-  try {
-    return WECHAT_MEDIA_HOSTS.has(new URL(url, window.location.origin).hostname)
-  } catch {
-    return false
-  }
-}
-
 /**
  * mmbiz 图片 URL 改写为服务端代理地址；非 mmbiz 或非法 URL 原样透传
  * （后端代理另有主机白名单校验，此处只做渲染层改写）。
+ *
+ * 后端代理只接受 https 目标；mmbiz 同一资源 https 可用，故统一升级
+ * scheme，顺带覆盖 http:// 头像（避免 https 页面混合内容）与 // 协议
+ * 相对封面两种来源形态。
  */
 export const proxiedWechatImageUrl = (url: string): string => {
-  if (!isWechatMediaUrl(url)) return url
-  return `${WECHAT_MEDIA_PROXY_PATH}?url=${encodeURIComponent(url)}`
+  try {
+    const parsed = new URL(url, window.location.origin)
+    if (!WECHAT_MEDIA_HOSTS.has(parsed.hostname)) return url
+    const secure = `https://${parsed.host}${parsed.pathname}${parsed.search}`
+    return `${WECHAT_MEDIA_PROXY_PATH}?url=${encodeURIComponent(secure)}`
+  } catch {
+    return url
+  }
 }
 
 // 与服务端入库清洗的标签白名单保持一致（公众号排版结构）。

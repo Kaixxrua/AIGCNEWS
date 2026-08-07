@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { proxiedWechatImageUrl } from '@/features/wechat/wechatArticleHtml'
 import type {
   WeChatArticle,
   WeChatArticleDetail,
@@ -39,7 +40,7 @@ const keyFor = (article: WeChatArticle): string =>
     <header class="account-card-header">
       <img
         v-if="entry.account.avatar_url"
-        :src="entry.account.avatar_url"
+        :src="proxiedWechatImageUrl(entry.account.avatar_url)"
         :alt="entry.account.nickname"
         class="account-card-avatar"
         loading="lazy"
@@ -78,13 +79,14 @@ const keyFor = (article: WeChatArticle): string =>
         <div v-if="expandedArticleKeys.has(keyFor(article))" class="article-detail">
           <img
             v-if="article.cover_url"
-            :src="article.cover_url"
+            :src="proxiedWechatImageUrl(article.cover_url)"
             :alt="article.title"
             class="article-cover"
             loading="lazy"
             referrerpolicy="no-referrer"
           />
-          <p v-if="article.digest" class="article-digest">{{ article.digest }}</p>
+          <!-- 有全文时不再显示摘要：搜狗摘要本身就是正文开头截断，并列会重复 -->
+          <p v-if="article.digest && !article.has_content" class="article-digest">{{ article.digest }}</p>
 
           <!-- 全文正文（has_content 时懒加载，正文已在服务端+前端两道清洗） -->
           <template v-if="article.has_content">

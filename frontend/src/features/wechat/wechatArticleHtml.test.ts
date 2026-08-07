@@ -19,6 +19,23 @@ describe('proxiedWechatImageUrl', () => {
     )
   })
 
+  it('upgrades http mmbiz urls to https before proxying', () => {
+    const url = 'http://mmbiz.qpic.cn/mmbiz_png/avatar/0?wx_fmt=png'
+    expect(proxiedWechatImageUrl(url)).toBe(
+      `/api/media/wechat/proxy?url=${encodeURIComponent(
+        'https://mmbiz.qpic.cn/mmbiz_png/avatar/0?wx_fmt=png',
+      )}`,
+    )
+  })
+
+  it('normalizes protocol-relative mmbiz urls to https before proxying', () => {
+    expect(proxiedWechatImageUrl('//mmbiz.qpic.cn/sz_mmbiz_jpg/c/0?wx_fmt=jpeg')).toBe(
+      `/api/media/wechat/proxy?url=${encodeURIComponent(
+        'https://mmbiz.qpic.cn/sz_mmbiz_jpg/c/0?wx_fmt=jpeg',
+      )}`,
+    )
+  })
+
   it('passes through non-wechat hosts untouched', () => {
     const url = 'https://example.com/a.png'
     expect(proxiedWechatImageUrl(url)).toBe(url)
