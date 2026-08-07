@@ -247,15 +247,15 @@ describe('Monitor API contract', () => {
     })
   })
 
-  it('reads enrichment status and retries failures without touching succeeded rows', async () => {
+  it('reads enrichment status and triggers enrichment with concurrency without touching succeeded rows', async () => {
     transport.get.mockResolvedValue({ data: { eligible: 100, succeeded: 95, failed: 3, pending: 2 } })
     await expect(monitorApi.fetchGithubEnrichmentStatus()).resolves.toEqual({ eligible: 100, succeeded: 95, failed: 3, pending: 2 })
     expect(transport.get).toHaveBeenLastCalledWith('/ops/github-projects/enrichment-status')
 
     transport.post.mockResolvedValue({ data: { status: 'queued', message: 'ok' } })
-    await expect(monitorApi.retryFailedGithubEnrichment(3)).resolves.toEqual({ status: 'queued', message: 'ok' })
+    await expect(monitorApi.triggerGithubEnrichment(3, 5)).resolves.toEqual({ status: 'queued', message: 'ok' })
     expect(transport.post).toHaveBeenLastCalledWith('/ops/github-projects/enrich', {
-      limit: 3, force: false, dry_run: false, retry_failed: true, refresh_changed: false,
+      limit: 3, force: false, dry_run: false, retry_failed: true, refresh_changed: false, concurrency: 5,
     })
   })
 })

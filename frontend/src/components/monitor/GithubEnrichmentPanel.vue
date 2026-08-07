@@ -9,12 +9,16 @@ const props = defineProps<{
   status: GithubEnrichmentStatus | null
   loading: boolean
   retrying: boolean
+  backfilling: boolean
   polling: boolean
+  concurrency: number
 }>()
 
 const emit = defineEmits<{
   refresh: []
   retry: []
+  backfill: []
+  updateConcurrency: [value: number]
 }>()
 
 const eligible = computed(() => props.status?.eligible ?? 0)
@@ -71,7 +75,7 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
 
       <button
         class="monitor-btn-secondary relative"
-        :disabled="retrying || polling || !status || status.failed <= 0"
+        :disabled="retrying || backfilling || polling || !status || status.failed <= 0"
         :title="t('monitor.enrichment.retryTitle')"
         @click="emit('retry')"
       >
@@ -79,6 +83,30 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
         {{ t(retrying ? 'monitor.enrichment.retrying' : 'monitor.enrichment.retry') }}
         <span v-if="status && status.failed > 0" class="enrichment-alert-dot enrichment-alert-dot--button" />
       </button>
+
+      <button
+        class="monitor-btn-primary"
+        :disabled="backfilling || retrying || polling || !status || status.pending <= 0"
+        :title="t('monitor.enrichment.backfillTitle')"
+        @click="emit('backfill')"
+      >
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        {{ t(backfilling ? 'monitor.enrichment.retrying' : 'monitor.enrichment.backfill') }}
+      </button>
+
+      <label class="inline-flex items-center gap-1.5 text-xs monitor-caption" :title="t('monitor.enrichment.concurrencyHint')">
+        {{ t('monitor.enrichment.concurrency') }}
+        <input
+          :value="concurrency"
+          type="number"
+          min="1"
+          max="10"
+          step="1"
+          class="input w-16 py-1.5 text-xs"
+          :disabled="retrying || backfilling || polling"
+          @input="emit('updateConcurrency', Number(($event.target as HTMLInputElement).value))"
+        />
+      </label>
     </div>
 
     <p class="mt-3 text-2xs monitor-caption">{{ t('monitor.enrichment.hint') }}</p>

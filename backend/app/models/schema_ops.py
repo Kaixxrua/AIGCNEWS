@@ -55,6 +55,8 @@ class GitHubProjectsEnrichRequest(BaseModel):
     dry_run: bool = False
     retry_failed: bool = True
     refresh_changed: bool = False
+    # 富化并发度：1-10，超出范围直接 422；默认 1 保持原有节流行为
+    concurrency: int = Field(default=1, ge=1, le=10)
 
 
 class GitHubProjectsMetricsRequest(BaseModel):

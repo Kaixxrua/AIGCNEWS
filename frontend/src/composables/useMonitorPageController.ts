@@ -3,7 +3,7 @@ import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
   createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
-  createEmptySchedulerJobConfigForm,
+  createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency,
   type GithubCrawlStatus, type GithubEnrichmentStatus, type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
 
@@ -74,6 +74,8 @@ export const useMonitorPageController = ({
   const enrichmentStatus = ref<GithubEnrichmentStatus | null>(null)
   const loadingEnrichmentStatus = ref(false)
   const retryingEnrichment = ref(false)
+  const backfillingEnrichment = ref(false)
+  const enrichmentConcurrency = ref(3)
   const enrichmentPolling = ref(false)
   const isTaskRunning = computed(() => tasks.value.length > 0 && tasks.value[0]?.status === 'running')
   const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
@@ -279,10 +281,13 @@ export const useMonitorPageController = ({
   }
   const ENRICHMENT_POLL_INTERVAL = 4000
   const ENRICHMENT_POLL_STALE_LIMIT = 3
+  // 补跑单条富化耗时 15-25s（低并发时指纹变化慢），停滞阈值放宽到 15 次（约 60s）避免误判批次结束
+  const ENRICHMENT_BACKFILL_STALE_LIMIT = 15
   const ENRICHMENT_POLL_MAX = 75 // 75 × 4s ≈ 5 分钟上限，防止后台任务挂起时无限轮询
   let enrichmentPollCount = 0
   let enrichmentStalePolls = 0
   let lastEnrichmentFingerprint = ''
+  let enrichmentPollMode: 'retry' | 'backfill' = 'retry'
   const enrichmentFingerprint = (status: GithubEnrichmentStatus | null) =>
     status ? `${status.succeeded}:${status.failed}:${status.pending}` : ''
   const stopEnrichmentPolling = (message: string) => {
@@ -300,40 +305,75 @@ export const useMonitorPageController = ({
       console.error('Failed to poll GitHub enrichment status', error)
     }
     const failed = enrichmentStatus.value?.failed ?? 0
-    if (failed <= 0) {
+    const pending = enrichmentStatus.value?.pending ?? 0
+    if (enrichmentPollMode === 'retry' && failed <= 0) {
       stopEnrichmentPolling(i18n.global.t('monitor.enrichment.retryDone'))
+      return
+    }
+    if (enrichmentPollMode === 'backfill' && pending <= 0 && failed <= 0) {
+      stopEnrichmentPolling(i18n.global.t('monitor.enrichment.backfillDone'))
       return
     }
     const fingerprint = enrichmentFingerprint(enrichmentStatus.value)
     if (fingerprint === lastEnrichmentFingerprint) enrichmentStalePolls += 1
     else { enrichmentStalePolls = 0; lastEnrichmentFingerprint = fingerprint }
-    if (enrichmentStalePolls >= ENRICHMENT_POLL_STALE_LIMIT || enrichmentPollCount >= ENRICHMENT_POLL_MAX) {
-      stopEnrichmentPolling(i18n.global.t('monitor.enrichment.retryPartial', { count: failed }))
+    const staleLimit = enrichmentPollMode === 'backfill' ? ENRICHMENT_BACKFILL_STALE_LIMIT : ENRICHMENT_POLL_STALE_LIMIT
+    if (enrichmentStalePolls >= staleLimit) {
+      stopEnrichmentPolling(enrichmentPollMode === 'backfill'
+        ? i18n.global.t('monitor.enrichment.backfillSettled', { count: pending + failed })
+        : i18n.global.t('monitor.enrichment.retryPartial', { count: failed }))
+      return
+    }
+    if (enrichmentPollCount >= ENRICHMENT_POLL_MAX) {
+      stopEnrichmentPolling(enrichmentPollMode === 'backfill'
+        ? i18n.global.t('monitor.enrichment.backfillStillRunning')
+        : i18n.global.t('monitor.enrichment.retryPartial', { count: failed }))
       return
     }
     schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
   }
-  const beginEnrichmentPolling = () => {
+  const beginEnrichmentPolling = (mode: 'retry' | 'backfill' = 'retry') => {
     if (enrichmentPolling.value) return
     enrichmentPollCount = 0
     enrichmentStalePolls = 0
     lastEnrichmentFingerprint = enrichmentFingerprint(enrichmentStatus.value)
+    enrichmentPollMode = mode
     enrichmentPolling.value = true
     schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
   }
   const retryFailedEnrichments = async () => {
-    if (retryingEnrichment.value || enrichmentPolling.value) return
+    if (retryingEnrichment.value || backfillingEnrichment.value || enrichmentPolling.value) return
     clearMessages()
     const failed = enrichmentStatus.value?.failed || 0
     if (failed <= 0) { errorMsg.value = i18n.global.t('monitor.enrichment.noFailures'); return }
     retryingEnrichment.value = true
     try {
-      // 后端 enrich 上限 500；失败数即本次重试范围
-      const result = await api.retryFailedGithubEnrichment(Math.min(failed, 500))
+      // 后端 enrich 上限 500；失败数即本次重试范围，并发度取自面板输入
+      const result = await api.triggerGithubEnrichment(
+        Math.min(failed, 500),
+        normalizeEnrichmentConcurrency(enrichmentConcurrency.value),
+      )
       successMsg.value = result.message || i18n.global.t('monitor.enrichment.retrySubmitted')
-      beginEnrichmentPolling()
+      beginEnrichmentPolling('retry')
     } catch (error) { errorMsg.value = detail(error) }
     finally { retryingEnrichment.value = false }
+  }
+  const backfillPendingEnrichments = async () => {
+    if (backfillingEnrichment.value || retryingEnrichment.value || enrichmentPolling.value) return
+    clearMessages()
+    const outstanding = (enrichmentStatus.value?.pending || 0) + (enrichmentStatus.value?.failed || 0)
+    if (outstanding <= 0) { errorMsg.value = i18n.global.t('monitor.enrichment.noPending'); return }
+    backfillingEnrichment.value = true
+    try {
+      // 后端 enrich 上限 500；待处理+失败即本次补跑范围，并发度取自面板输入
+      const result = await api.triggerGithubEnrichment(
+        Math.min(outstanding, 500),
+        normalizeEnrichmentConcurrency(enrichmentConcurrency.value),
+      )
+      successMsg.value = result.message || i18n.global.t('monitor.enrichment.backfillSubmitted')
+      beginEnrichmentPolling('backfill')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { backfillingEnrichment.value = false }
   }
   const ingestSingleSource = async (source: SourceKey) => {
     if (ingestingSource.value) return
@@ -395,6 +435,7 @@ export const useMonitorPageController = ({
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
     crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
-    enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, enrichmentPolling, fetchGithubEnrichmentStatus, retryFailedEnrichments,
+    enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, enrichmentConcurrency, enrichmentPolling,
+    fetchGithubEnrichmentStatus, retryFailedEnrichments, backfillPendingEnrichments,
   }
 }

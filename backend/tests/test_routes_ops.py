@@ -12,6 +12,7 @@ from backend.app.api import routes_ops
 from backend.app.api.dependencies import (
     get_briefing_admin_service,
     get_document_repository,
+    get_github_project_admin_service,
     get_github_project_crawl_admin_service,
     get_github_project_recommendation_admin_service,
     get_ingestion_task_repository,
@@ -526,6 +527,58 @@ class OperationsRouteTests(unittest.TestCase):
         self.assertEqual(response.json(), {"total": 12, "enriched": 7})
         repository.get_github_project_enrichment_status.assert_called_once_with()
 
+    def test_github_enrich_queues_with_limit_cap_and_concurrency(self) -> None:
+        service = MagicMock()
+        operations = MagicMock()
+        client = self._enrich_client(service, operations)
+
+        response = client.post(
+            "/api/ops/github-projects/enrich",
+            json={"limit": 700, "concurrency": 5},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "queued")
+        self.assertIn("limit=500", body["message"])
+        self.assertIn("并发=5", body["message"])
+        operations.submit.assert_called_once_with(
+            service.enrich, 500, False, False, True, False, 5
+        )
+
+    def test_github_enrich_dry_run_forwards_concurrency_inline(self) -> None:
+        service = MagicMock()
+        service.enrich.return_value = {"status": "dry_run", "candidates": 3}
+        operations = MagicMock()
+        client = self._enrich_client(service, operations)
+
+        response = client.post(
+            "/api/ops/github-projects/enrich",
+            json={"limit": 10, "dry_run": True, "concurrency": 3},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "dry_run")
+        service.enrich.assert_called_once_with(
+            limit=10,
+            force=False,
+            dry_run=True,
+            retry_failed=True,
+            refresh_changed=False,
+            concurrency=3,
+        )
+        operations.submit.assert_not_called()
+
+    def test_github_enrich_rejects_out_of_range_concurrency(self) -> None:
+        client = self._enrich_client(MagicMock(), MagicMock())
+
+        for invalid in (0, 11):
+            response = client.post(
+                "/api/ops/github-projects/enrich",
+                json={"concurrency": invalid},
+            )
+            self.assertEqual(response.status_code, 422)
+
     def test_github_crawl_queues_plan_and_returns_channel(self) -> None:
         service = MagicMock()
         operations = MagicMock()
@@ -727,6 +780,17 @@ class OperationsRouteTests(unittest.TestCase):
         app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
         app.dependency_overrides[
             get_github_project_crawl_admin_service
+        ] = lambda: service
+        app.dependency_overrides[get_operations_runtime] = lambda: operations
+        return TestClient(app)
+
+    @staticmethod
+    def _enrich_client(service: MagicMock, operations: MagicMock) -> TestClient:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[
+            get_github_project_admin_service
         ] = lambda: service
         app.dependency_overrides[get_operations_runtime] = lambda: operations
         return TestClient(app)

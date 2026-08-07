@@ -47,7 +47,7 @@ const createApi = (): MonitorApi => ({
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
   fetchGithubEnrichmentStatus: vi.fn(async () => ({ eligible: 10, succeeded: 9, failed: 1, pending: 0 })),
-  retryFailedGithubEnrichment: vi.fn(async () => ({ status: 'queued', message: '' })),
+  triggerGithubEnrichment: vi.fn(async () => ({ status: 'queued', message: '' })),
   fetchXWatchAccounts: vi.fn(async () => []), saveXWatchAccount: vi.fn(), deleteXWatchAccount: vi.fn(), testXWatchAccount: vi.fn(),
   fetchXCredentials: vi.fn(async () => []), saveXCredential: vi.fn(), deleteXCredential: vi.fn(), testXCredential: vi.fn(),
 })
@@ -375,10 +375,10 @@ describe('Monitor GitHub enrichment controls', () => {
     vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 1000, succeeded: 200, failed: 800, pending: 0 })
     await controller.refreshData()
 
-    vi.mocked(api.retryFailedGithubEnrichment).mockResolvedValue({ status: 'queued', message: '富化任务已提交' })
+    vi.mocked(api.triggerGithubEnrichment).mockResolvedValue({ status: 'queued', message: '富化任务已提交' })
     await controller.retryFailedEnrichments()
 
-    expect(api.retryFailedGithubEnrichment).toHaveBeenCalledWith(500)
+    expect(api.triggerGithubEnrichment).toHaveBeenCalledWith(500, 3)
     expect(controller.successMsg.value).toBe('富化任务已提交')
     expect(controller.retryingEnrichment.value).toBe(false)
     // 提交后进入 4s 间隔的实时进度轮询
@@ -387,7 +387,7 @@ describe('Monitor GitHub enrichment controls', () => {
 
     // 轮询期间禁止重复提交
     await controller.retryFailedEnrichments()
-    expect(api.retryFailedGithubEnrichment).toHaveBeenCalledTimes(1)
+    expect(api.triggerGithubEnrichment).toHaveBeenCalledTimes(1)
 
     // 第一轮轮询：失败 800 → 5，进度推进，轮询继续且不触发面板 loading
     vi.mocked(api.fetchGithubEnrichmentStatus).mockClear()
@@ -425,7 +425,7 @@ describe('Monitor GitHub enrichment controls', () => {
     await controller.refreshData()
 
     await controller.retryFailedEnrichments()
-    expect(api.retryFailedGithubEnrichment).not.toHaveBeenCalled()
+    expect(api.triggerGithubEnrichment).not.toHaveBeenCalled()
     expect(controller.errorMsg.value).toBeTruthy()
   })
 
@@ -434,9 +434,71 @@ describe('Monitor GitHub enrichment controls', () => {
     vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 9, failed: 1, pending: 0 })
     await controller.refreshData()
 
-    vi.mocked(api.retryFailedGithubEnrichment).mockRejectedValue({ response: { status: 500, data: { detail: 'queue broken' } } })
+    vi.mocked(api.triggerGithubEnrichment).mockRejectedValue({ response: { status: 500, data: { detail: 'queue broken' } } })
     await controller.retryFailedEnrichments()
     expect(controller.errorMsg.value).toBe('queue broken')
     expect(controller.retryingEnrichment.value).toBe(false)
+  })
+
+  it('backfills pending plus failed capped at 500 with panel concurrency and polls until drained', async () => {
+    const { api, controller, schedule } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 1000, succeeded: 200, failed: 50, pending: 750 })
+    await controller.refreshData()
+
+    controller.enrichmentConcurrency.value = 8
+    vi.mocked(api.triggerGithubEnrichment).mockResolvedValue({ status: 'queued', message: '补跑任务已提交' })
+    await controller.backfillPendingEnrichments()
+
+    // 补跑范围 = 待处理 750 + 失败 50，封顶 500；并发取面板输入
+    expect(api.triggerGithubEnrichment).toHaveBeenCalledWith(500, 8)
+    expect(controller.successMsg.value).toBe('补跑任务已提交')
+    expect(controller.backfillingEnrichment.value).toBe(false)
+    expect(controller.enrichmentPolling.value).toBe(true)
+    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 4000)
+
+    // 补跑模式：失败清零但仍有待处理 → 不停止轮询（区别于重试模式）
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 1000, succeeded: 800, failed: 0, pending: 200 })
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(controller.enrichmentPolling.value).toBe(true)
+
+    // 待处理与失败全部清零 → 停止并提示补齐
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 1000, succeeded: 1000, failed: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(controller.enrichmentPolling.value).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.enrichment.backfillDone'))
+  })
+
+  it('keeps backfill polling past the retry stale limit before settling', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 0, pending: 5 })
+    await controller.refreshData()
+
+    await controller.backfillPendingEnrichments()
+    expect(controller.enrichmentPolling.value).toBe(true)
+
+    // 重试模式 3 轮停滞即停止；补跑低并发时富化慢，3 轮无变化仍在轮询
+    await vi.advanceTimersByTimeAsync(4000 * 3)
+    expect(controller.enrichmentPolling.value).toBe(true)
+
+    // 累计 15 轮（约 60s）指纹无变化 → 判定批次停滞，提示剩余待补齐
+    await vi.advanceTimersByTimeAsync(4000 * 12)
+    expect(controller.enrichmentPolling.value).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.enrichment.backfillSettled', { count: 5 }))
+  })
+
+  it('blocks backfill when nothing is outstanding and clamps invalid concurrency', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 10, failed: 0, pending: 0 })
+    await controller.refreshData()
+
+    await controller.backfillPendingEnrichments()
+    expect(api.triggerGithubEnrichment).not.toHaveBeenCalled()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.enrichment.noPending'))
+
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 0, pending: 5 })
+    await controller.fetchGithubEnrichmentStatus()
+    controller.enrichmentConcurrency.value = 99
+    await controller.backfillPendingEnrichments()
+    expect(api.triggerGithubEnrichment).toHaveBeenCalledWith(5, 10)
   })
 })

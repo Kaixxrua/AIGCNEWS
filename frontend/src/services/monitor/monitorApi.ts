@@ -36,7 +36,7 @@ export interface MonitorApi {
   crawlGithubProjects(form: GithubCrawlForm): Promise<GithubCrawlTriggerResult>
   fetchGithubCrawlStatus(query?: GithubCrawlStatusQuery): Promise<GithubCrawlStatus>
   fetchGithubEnrichmentStatus(): Promise<GithubEnrichmentStatus>
-  retryFailedGithubEnrichment(limit: number): Promise<GithubEnrichmentTriggerResult>
+  triggerGithubEnrichment(limit: number, concurrency: number): Promise<GithubEnrichmentTriggerResult>
 }
 
 export const monitorApi: MonitorApi = {
@@ -125,10 +125,10 @@ export const monitorApi: MonitorApi = {
     )).data
   },
   async fetchGithubEnrichmentStatus() { return (await api.get('/ops/github-projects/enrichment-status')).data },
-  async retryFailedGithubEnrichment(limit) {
-    // 只重试失败项：force/refresh_changed 保持 false，成功的富化结果稳定不重跑
+  async triggerGithubEnrichment(limit, concurrency) {
+    // 重试/补跑共用：force/refresh_changed 保持 false，成功的富化结果稳定不重跑
     return (await api.post('/ops/github-projects/enrich', {
-      limit, force: false, dry_run: false, retry_failed: true, refresh_changed: false,
+      limit, force: false, dry_run: false, retry_failed: true, refresh_changed: false, concurrency,
     })).data
   },
 }

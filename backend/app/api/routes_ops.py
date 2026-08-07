@@ -657,6 +657,7 @@ async def enrich_github_project_library(
             dry_run=True,
             retry_failed=request.retry_failed,
             refresh_changed=request.refresh_changed,
+            concurrency=request.concurrency,
         )
         return GitHubProjectsEnrichResponse(
             status="dry_run",
@@ -671,17 +672,19 @@ async def enrich_github_project_library(
         False,
         request.retry_failed,
         request.refresh_changed,
+        request.concurrency,
     )
     logger.info(
-        "[Ops] GitHub 项目库富化任务已加入后台队列，limit=%d force=%s retry_failed=%s refresh_changed=%s",
+        "[Ops] GitHub 项目库富化任务已加入后台队列，limit=%d force=%s retry_failed=%s refresh_changed=%s concurrency=%d",
         limit,
         request.force,
         request.retry_failed,
         request.refresh_changed,
+        request.concurrency,
     )
     return GitHubProjectsEnrichResponse(
         status="queued",
-        message=f"GitHub 项目库富化任务已提交（limit={limit}），后台执行中。",
+        message=f"GitHub 项目库富化任务已提交（limit={limit}，并发={request.concurrency}），后台执行中。",
     )
 
 

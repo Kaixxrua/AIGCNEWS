@@ -30,7 +30,8 @@ const {
   ingestByDate, clearAllData,
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
   crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
-  enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, enrichmentPolling, fetchGithubEnrichmentStatus, retryFailedEnrichments,
+  enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, enrichmentConcurrency, enrichmentPolling,
+  fetchGithubEnrichmentStatus, retryFailedEnrichments, backfillPendingEnrichments,
 } = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
 
 // 富化重试轮询结束时同步导航 Dock 的失败红点（失败清零或本轮结束时各刷一次）
@@ -157,15 +158,19 @@ onMounted(refreshData)
       @start="startGithubCrawl"
     />
 
-    <!-- Admin 专属：GitHub 项目库富化（失败重试入口） -->
+    <!-- Admin 专属：GitHub 项目库富化（失败重试与积压补跑入口） -->
     <GithubEnrichmentPanel
       v-if="authStore.isAdmin"
       :status="enrichmentStatus"
       :loading="loadingEnrichmentStatus"
       :retrying="retryingEnrichment"
+      :backfilling="backfillingEnrichment"
       :polling="enrichmentPolling"
+      :concurrency="enrichmentConcurrency"
       @refresh="fetchGithubEnrichmentStatus"
       @retry="retryFailedEnrichments"
+      @backfill="backfillPendingEnrichments"
+      @update-concurrency="(value) => (enrichmentConcurrency = value)"
     />
 
     <McpToolCallsPanel

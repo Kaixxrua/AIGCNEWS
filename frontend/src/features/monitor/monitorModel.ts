@@ -211,6 +211,16 @@ export const REASONING_EFFORT_MAX_LENGTH = 32
 export const normalizeReasoningEffort = (value: string | null | undefined): ReasoningEffort =>
   (value || '').trim().toLowerCase().slice(0, REASONING_EFFORT_MAX_LENGTH)
 
+// 富化并发度：与后端 GitHubProjectsEnrichRequest 的 ge=1/le=10 对齐，前端先做无害截断
+export const ENRICHMENT_CONCURRENCY_MIN = 1
+export const ENRICHMENT_CONCURRENCY_MAX = 10
+
+export const normalizeEnrichmentConcurrency = (value: number | string | null | undefined): number => {
+  const parsed = typeof value === 'string' ? Number(value) : value
+  if (typeof parsed !== 'number' || !Number.isFinite(parsed)) return ENRICHMENT_CONCURRENCY_MIN
+  return Math.min(ENRICHMENT_CONCURRENCY_MAX, Math.max(ENRICHMENT_CONCURRENCY_MIN, Math.trunc(parsed)))
+}
+
 export const createProviderForm = (config?: ProviderConfig | null): ProviderForm => ({
   provider: config?.provider || 'openai',
   base_url: config?.base_url || '',

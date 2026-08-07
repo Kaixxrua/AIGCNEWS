@@ -41,6 +41,7 @@ class GitHubProjectAdminService:
         dry_run: bool,
         retry_failed: bool = True,
         refresh_changed: bool = False,
+        concurrency: int = 1,
     ) -> dict[str, Any]:
         from backend.app.services.ingestion.github_project_enricher import (
             enrich_github_projects,
@@ -52,6 +53,7 @@ class GitHubProjectAdminService:
             dry_run=dry_run,
             retry_failed=retry_failed,
             refresh_changed=refresh_changed,
+            concurrency=concurrency,
             db=self._repositories.github_enrichment,
         )
         logger.info("[Ops] GitHub 项目库富化任务完成：%s", result)
