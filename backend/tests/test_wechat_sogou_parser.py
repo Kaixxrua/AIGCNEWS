@@ -10,6 +10,7 @@ from backend.app.services.wechat_sogou.parser import (
     extract_signed_url_from_redirect,
     is_antispider_content,
     normalize_account_name,
+    normalize_cover_url,
     parse_article_search_page,
 )
 
@@ -106,6 +107,47 @@ def test_parse_article_search_page_unescapes_cover_url() -> None:
 
     assert len(items) == 1
     assert items[0]["cover_url"] == "//img01.sogoucdn.com/v2/thumb?appid=201147&url=abc.jpg"
+
+
+def test_normalize_cover_url_unwraps_sogoucdn_thumb() -> None:
+    wrapped = (
+        "//img01.sogoucdn.com/v2/thumb?appid=201147&url="
+        "https%3A%2F%2Fmmbiz.qpic.cn%2Fsz_mmbiz_jpg%2FBiaSaqmrv4yu%2F0%3Fwx_fmt%3Djpeg"
+        "&sign=f5cb21e84370284118cbede5600d19fc"
+    )
+    assert (
+        normalize_cover_url(wrapped)
+        == "https://mmbiz.qpic.cn/sz_mmbiz_jpg/BiaSaqmrv4yu/0?wx_fmt=jpeg"
+    )
+
+
+def test_normalize_cover_url_tolerates_double_escaped_entities() -> None:
+    # Rows written before the unescape fix carry &amp; (i.e. &amp;amp; upstream).
+    wrapped = (
+        "//img01.sogoucdn.com/v2/thumb?appid=201147&amp;url="
+        "https%3A%2F%2Fmmbiz.qpic.cn%2Fsz_mmbiz_png%2Fx%2F0%3Fwx_fmt%3Dpng&amp;sign=abc"
+    )
+    assert (
+        normalize_cover_url(wrapped)
+        == "https://mmbiz.qpic.cn/sz_mmbiz_png/x/0?wx_fmt=png"
+    )
+
+
+def test_normalize_cover_url_upgrades_mmbiz_http() -> None:
+    assert (
+        normalize_cover_url("http://mmbiz.qpic.cn/sz_mmbiz_png/x/0?wx_fmt=png")
+        == "https://mmbiz.qpic.cn/sz_mmbiz_png/x/0?wx_fmt=png"
+    )
+
+
+def test_normalize_cover_url_passthrough_and_empty() -> None:
+    assert normalize_cover_url("") == ""
+    assert normalize_cover_url("https://example.com/a.jpg") == "https://example.com/a.jpg"
+    # Wrapper without a decodable inner URL keeps the (unescaped) wrapper.
+    assert (
+        normalize_cover_url("//img01.sogoucdn.com/v2/thumb?appid=201147&url=abc.jpg")
+        == "//img01.sogoucdn.com/v2/thumb?appid=201147&url=abc.jpg"
+    )
 
 
 def test_extract_article_content_returns_sanitized_body() -> None:

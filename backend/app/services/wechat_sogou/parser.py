@@ -11,6 +11,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,56 @@ _SIGNED_URL_PART_RE = re.compile(r"url \+= '(?P<part>[^']*)';")
 # Real mp article pages emit fallback chains: var mid = "224..." || "" || "";
 # The value capture stops at the first closing quote, so no semicolon anchor.
 _VAR_RE_TEMPLATE = r'var {name} = ["\'](?P<value>[^"\']*)["\']'
+
+# Sogou wraps result covers in its low-res thumbnail proxy:
+#   //img01.sogoucdn.com/v2/thumb?appid=...&url=<pct-encoded-mmbiz-url>&sign=...
+# The inner mmbiz URL is content-addressed and permanent, while the wrapper is
+# blurry and sign-bound — prefer the inner original whenever it decodes.
+_SOGOUCN_THUMB_HOST_RE = re.compile(r"^img\d+\.sogoucdn\.com$", re.I)
+_MMBIZ_HOSTS = frozenset({"mmbiz.qpic.cn", "mmbiz.qlogo.cn"})
+
+
+def _unescape_stable(url: str) -> str:
+    """Unescape HTML entities until stable (real data has shown &amp; twice-escaped)."""
+    for _ in range(3):
+        unescaped = html_lib.unescape(url)
+        if unescaped == url:
+            break
+        url = unescaped
+    return url
+
+
+def _upgrade_mmbiz_scheme(url: str) -> str:
+    """mmbiz serves identical content over https; force the scheme so the
+    https-only media proxy accepts it and https pages avoid mixed content."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").lower() in _MMBIZ_HOSTS and parts.scheme == "http":
+        return urlunsplit(("https", parts.netloc, parts.path, parts.query, parts.fragment))
+    return url
+
+
+def normalize_cover_url(raw_url: str) -> str:
+    """Normalize a Sogou result cover to its best permanent form.
+
+    Unescapes HTML entities, unwraps the sogoucdn thumbnail proxy to the inner
+    mmbiz original when present, and forces https for mmbiz hosts. Anything
+    unrecognized passes through unescaped but otherwise untouched.
+    """
+    url = _unescape_stable(str(raw_url or "")).strip()
+    if not url:
+        return ""
+    parts = urlsplit(url if not url.startswith("//") else f"https:{url}")
+    if _SOGOUCN_THUMB_HOST_RE.match(parts.hostname or "") and parts.path.rstrip("/").endswith(
+        "/v2/thumb"
+    ):
+        inner = _unescape_stable(parse_qs(parts.query).get("url", [""])[0]).strip()
+        if inner.startswith(("http://", "https://")):
+            return _upgrade_mmbiz_scheme(inner)
+        if inner.startswith("//"):
+            return _upgrade_mmbiz_scheme(f"https:{inner}")
+    if url.startswith("//"):
+        return url
+    return _upgrade_mmbiz_scheme(url)
 
 
 def _strip_markup(fragment: str) -> str:
@@ -60,7 +111,7 @@ def parse_article_search_page(body: str) -> list[dict[str, Any]]:
                 "summary": _strip_markup(summary_match.group("summary")) if summary_match else "",
                 "account_name": _strip_markup(account_match.group("account")) if account_match else "",
                 "link_path": html_lib.unescape(title_match.group("href")),
-                "cover_url": html_lib.unescape(cover_match.group("src")) if cover_match else "",
+                "cover_url": normalize_cover_url(cover_match.group("src")) if cover_match else "",
                 "published_ts": int(time_match.group("ts")) if time_match else None,
             }
         )
