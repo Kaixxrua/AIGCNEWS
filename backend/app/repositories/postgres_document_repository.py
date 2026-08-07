@@ -408,6 +408,25 @@ class PostgresDocumentRepository:
     def get_latest_documents(self, limit: int = 10) -> list[dict[str, Any]]:
         return self._fetch_rows(f"{_document_projection()} ORDER BY d.created_at DESC LIMIT %s", (limit,))
 
+    def list_recent_by_source(
+        self,
+        source: str,
+        *,
+        since_iso: str,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """滚动窗口读取：published_at（UTC ISO 串）>= since_iso 的源文档，新到旧。
+
+        published_at 统一为 'YYYY-MM-DDTHH:MM:SS+00:00' 词法可比的 ISO 串，
+        SQL 词法过滤后由路由层按解析结果二次过滤（剔除脏时间串）。
+        """
+        rows = self._fetch_rows(
+            f"{_document_projection()} WHERE d.source = %s AND d.published_at >= %s"
+            " ORDER BY d.published_at DESC, COALESCE(d.raw_score, d.score, 0) DESC LIMIT %s",
+            (source, since_iso, limit),
+        )
+        return [_deserialize_row_media(row) for row in rows]
+
     def get_document_count(self) -> int:
         return self._fetch_count("SELECT COUNT(*) AS cnt FROM documents")
 

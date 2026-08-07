@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -17,7 +18,10 @@ from backend.app.api.dependencies import (
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
-from backend.app.repositories.document_repository import DocumentStatisticsReader
+from backend.app.repositories.document_repository import (
+    DocumentRecentReader,
+    DocumentStatisticsReader,
+)
 from backend.app.repositories.project_catalog_factory import (
     get_project_catalog_repository,
 )
@@ -169,6 +173,48 @@ async def get_top_list(
         "period": period,
         "snapshot_date": snapshot_date,
         "is_finalized": board["is_finalized"],
+        "is_embargoed": False,
+    }
+
+
+def _published_at_since(value: Any, cutoff: datetime) -> bool:
+    """published_at ISO 串解析后 >= cutoff；空值/无法解析一律剔除。"""
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed >= cutoff
+
+
+@router.get("/dashboard/x/recent")
+async def get_x_recent(
+    hours: int = Query(default=24, ge=1, le=72),
+    limit: int = Query(default=500, ge=1, le=500),
+    documents: DocumentRecentReader = Depends(get_document_repository),
+):
+    """滚动最近 N 小时（默认 24）发布的 X 推文，按发布时间新到旧。
+
+    不走快照/定稿/静默期语义：X 看板默认视图随访问时间滑动，用户时区
+    由前端展示层换算。不挂 3600s dashboard 缓存——滚动窗口结果随时变，
+    且前端请求自带 _t 破缓存参数。
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cutoff_iso = cutoff.isoformat()
+    docs = await asyncio.to_thread(
+        lambda: documents.list_recent_by_source("x", since_iso=cutoff_iso, limit=limit)
+    )
+    items = [doc for doc in docs if _published_at_since(doc.get("published_at"), cutoff)]
+    return {
+        "items": items,
+        "total": len(items),
+        "period": "daily",
+        "window_hours": hours,
+        "snapshot_date": None,
+        "is_finalized": False,
         "is_embargoed": False,
     }
 

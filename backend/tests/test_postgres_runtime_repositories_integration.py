@@ -184,3 +184,41 @@ def test_real_postgres_snapshot_read_projects_translation_zh(repositories) -> No
 
     assert len(rows) == 1
     assert rows[0]["translation_zh"] == "中文译文"
+
+
+def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositories) -> None:
+    documents, _, _ = repositories
+    documents.upsert_document(
+        _document(
+            "doc-x-new",
+            source="x",
+            source_channel="x_daily_watchlist",
+            published_at="2026-08-07T01:30:00+00:00",
+            media='[{"type": "photo", "url": "https://pbs.twimg.com/a.jpg"}]',
+        )
+    )
+    documents.upsert_document(
+        _document(
+            "doc-x-old",
+            source="x",
+            source_channel="x_daily_watchlist",
+            published_at="2026-08-06T20:00:00+00:00",
+        )
+    )
+    documents.upsert_document(
+        _document(
+            "doc-x-stale",
+            source="x",
+            source_channel="x_daily_watchlist",
+            published_at="2026-08-05T12:00:00+00:00",
+        )
+    )
+    # 其他源不受影响
+    documents.upsert_document(_document("doc-arxiv", published_at="2026-08-07T01:00:00+00:00"))
+
+    rows = documents.list_recent_by_source("x", since_iso="2026-08-06T18:00:00+00:00", limit=10)
+
+    # 词法过滤掉窗口外旧推文；按 published_at 新到旧
+    assert [row["id"] for row in rows] == ["doc-x-new", "doc-x-old"]
+    # media JSON 串反序列化为列表
+    assert rows[0]["media"] == [{"type": "photo", "url": "https://pbs.twimg.com/a.jpg"}]

@@ -100,6 +100,16 @@ class DocumentFeedReader(Protocol):
     def get_latest_documents(self, limit: int = 10) -> list[dict[str, Any]]: ...
 
 
+class DocumentRecentReader(Protocol):
+    """Read documents published within a trailing time window (rolling N hours)."""
+
+    def list_recent_by_source(
+        self,
+        source: str,
+        *,
+        since_iso: str,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]: ...
 class DocumentStatisticsReader(Protocol):
     """Read aggregate document statistics."""
 

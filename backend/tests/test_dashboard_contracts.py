@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import FastAPI
@@ -12,7 +12,10 @@ from fastapi_cache.backends.inmemory import InMemoryBackend
 from starlette.requests import Request
 
 from backend.app.api import routes_dashboard
-from backend.app.api.dependencies import get_rank_snapshot_repository
+from backend.app.api.dependencies import (
+    get_document_repository,
+    get_rank_snapshot_repository,
+)
 from backend.app.services.dashboard import policy
 from backend.app.services.dashboard.query_service import DashboardQueryService
 
@@ -322,6 +325,58 @@ def test_top_route_serves_limit_past_legacy_50_cap() -> None:
     assert ok.status_code == 200
     assert len(ok.json()["items"]) == 60
     assert too_big.status_code == 422
+
+
+def test_x_recent_route_serves_rolling_window_and_filters_stale_rows() -> None:
+    now = datetime.now(timezone.utc)
+    docs = [
+        {"id": "x:new", "source": "x", "published_at": (now - timedelta(hours=1)).isoformat()},
+        {"id": "x:edge", "source": "x", "published_at": (now - timedelta(hours=23, minutes=59)).isoformat()},
+        # 超出 24h 窗口 / 无法解析 / 空值：路由层二次过滤剔除
+        {"id": "x:stale", "source": "x", "published_at": (now - timedelta(hours=25)).isoformat()},
+        {"id": "x:bad", "source": "x", "published_at": "not-a-date"},
+        {"id": "x:empty", "source": "x", "published_at": ""},
+    ]
+
+    class FakeRecentReader:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, int]] = []
+
+        def list_recent_by_source(self, source, *, since_iso, limit=500):
+            self.calls.append((source, since_iso, limit))
+            return docs
+
+    reader = FakeRecentReader()
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_document_repository] = lambda: reader
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
+    try:
+        client = TestClient(app)
+        ok = client.get("/api/dashboard/x/recent?hours=24&limit=500")
+        default = client.get("/api/dashboard/x/recent")
+        bad_hours = client.get("/api/dashboard/x/recent?hours=0")
+        bad_limit = client.get("/api/dashboard/x/recent?limit=501")
+    finally:
+        FastAPICache.reset()
+
+    assert ok.status_code == 200
+    payload = ok.json()
+    assert [item["id"] for item in payload["items"]] == ["x:new", "x:edge"]
+    assert payload["total"] == 2
+    assert payload["window_hours"] == 24
+    assert payload["is_embargoed"] is False
+    assert payload["snapshot_date"] is None
+    source, since_iso, limit = reader.calls[0]
+    assert source == "x"
+    assert limit == 500
+    # since_iso ≈ 请求时刻 - 24h
+    parsed_since = datetime.fromisoformat(since_iso)
+    assert now - timedelta(hours=24, minutes=1) <= parsed_since <= now - timedelta(hours=23, minutes=59)
+    assert default.status_code == 200
+    assert bad_hours.status_code == 422
+    assert bad_limit.status_code == 422
 
 
 def test_top_route_preserves_x_media_metadata() -> None:
