@@ -61,6 +61,7 @@ export interface Stats {
   user_count?: number
   today_new_documents?: number
   today_unique_visitors?: number
+  mcp_total_calls?: number
 }
 
 const MODULE_KEYWORDS: Record<string, string[]> = {

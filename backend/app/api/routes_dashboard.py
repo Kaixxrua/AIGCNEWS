@@ -61,6 +61,20 @@ async def _get_source_counts(document_statistics: DocumentStatisticsReader) -> d
     return source_counts
 
 
+async def _get_mcp_total_calls() -> int:
+    """MCP 工具调用累计次数（公开营销位口径；计数器不可用时静默为 0）。"""
+
+    def _query() -> int:
+        from backend.app.monitoring.mcp_tools import MCP_TOOL_CALL_METRICS
+
+        return int(MCP_TOOL_CALL_METRICS.snapshot().get("total_calls", 0))
+
+    try:
+        return await asyncio.to_thread(_query)
+    except Exception:
+        return 0
+
+
 def _dashboard_cache_key_builder(
     func,
     namespace: str = "",
@@ -315,6 +329,7 @@ async def get_dashboard_summary(
             user_statistics.get_today_registered_user_count
         )
         user_count = registered_users + today_registered_users
+        mcp_total_calls = await _get_mcp_total_calls()
         return {
             "top_list": [],
             "radar": [],
@@ -325,6 +340,7 @@ async def get_dashboard_summary(
                 "today_registered_users": today_registered_users,
                 "user_count": user_count,
                 "today_unique_visitors": user_count,
+                "mcp_total_calls": mcp_total_calls,
             },
             "period": period,
             "snapshot_date": snapshot_date,
@@ -349,6 +365,7 @@ async def get_dashboard_summary(
     today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
     user_count = registered_users + today_registered_users
     today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
+    mcp_total_calls = await _get_mcp_total_calls()
 
     return {
         "top_list": top10,
@@ -361,6 +378,7 @@ async def get_dashboard_summary(
             "user_count": user_count,
             "today_new_documents": today_new_documents,
             "today_unique_visitors": user_count,
+            "mcp_total_calls": mcp_total_calls,
         },
         "period": period,
         "snapshot_date": snapshot_date,

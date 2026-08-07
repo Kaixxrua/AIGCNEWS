@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import RollingNumber from '@/components/dashboard/RollingNumber.vue'
 import {
   isSourceStatCard,
   statCards,
@@ -10,8 +11,10 @@ import {
 defineProps<{
   loading: boolean
   activeTab: TabKey
-  getAnimatedValue: (index: number) => string
-  getVisitorDisplayValue: (cardKey: string, index: number) => string
+  statValues: number[]
+  visitorValues: number[]
+  userParts: { registered: number; today: number }
+  rollTick: number
 }>()
 
 const { t } = useI18n()
@@ -43,7 +46,7 @@ const emit = defineEmits<{
           <span class="stat-cell-icon" :class="card.iconColor"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
           <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
         </span>
-        <span class="stat-cell-num" :class="card.numColor">{{ getAnimatedValue(index) }}</span>
+        <RollingNumber :tick="rollTick" :value="statValues[index] ?? 0" class="stat-cell-num" :class="card.numColor" />
       </button>
       <div
         v-else
@@ -54,7 +57,7 @@ const emit = defineEmits<{
           <span class="stat-cell-icon"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
           <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
         </span>
-        <span class="stat-cell-num">{{ getAnimatedValue(index) }}</span>
+        <RollingNumber :tick="rollTick" :value="statValues[index] ?? 0" class="stat-cell-num" />
       </div>
     </template>
     <div
@@ -67,7 +70,8 @@ const emit = defineEmits<{
         <span class="stat-cell-icon" :class="card.iconColor"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
         <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
       </span>
-      <span class="stat-cell-num" :class="card.numColor">{{ getVisitorDisplayValue(card.key, index) }}</span>
+      <span v-if="card.key === 'user_count'" class="stat-cell-num" :class="card.numColor"><RollingNumber :tick="rollTick" :value="userParts.registered" /><span>+</span><RollingNumber :tick="rollTick" :value="userParts.today" /></span>
+      <RollingNumber v-else :tick="rollTick" :value="visitorValues[index] ?? 0" grouping class="stat-cell-num" :class="card.numColor" />
     </div>
   </div>
 </template>

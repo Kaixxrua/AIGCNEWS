@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
@@ -6,7 +8,8 @@ import GlassCalendar from '@/components/GlassCalendar.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
-import { CalendarDays, ArrowRight, MailPlus } from 'lucide-vue-next'
+import RollingNumber from '@/components/dashboard/RollingNumber.vue'
+import { CalendarDays, ArrowRight, MailPlus, Plug } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 
@@ -16,12 +19,22 @@ const authStore = useAuthStore()
 
 let currentStats: () => Stats = () => ({})
 const {
+  statValues,
+  visitorValues,
+  userParts,
+  mcpTotalCalls,
   updateStatSources,
   updateVisitorSources,
-  disableCountUp,
-  getAnimatedValue,
-  getVisitorDisplayValue,
 } = useDashboardStats(() => currentStats())
+
+/* 每 10s 变更 rollTick 触发 RollingNumber 重挂载，数字从 0 重新上滚（恰好 2s 完成）。
+   KeepAlive 停用或卸载时暂停定时器，避免隐藏视图空转。 */
+const rollTick = ref(0)
+const { pause: pauseRoll, resume: resumeRoll } = useIntervalFn(() => { rollTick.value += 1 }, 10_000, { immediate: false })
+onMounted(resumeRoll)
+onActivated(resumeRoll)
+onDeactivated(pauseRoll)
+onBeforeUnmount(pauseRoll)
 
 const {
   activeTab,
@@ -43,7 +56,6 @@ const {
 } = useDashboardData({
   updateStatSources,
   updateVisitorSources,
-  disableCountUp,
 })
 currentStats = () => stats.value
 
@@ -76,8 +88,10 @@ currentStats = () => stats.value
     <DashboardOverviewPanel
       :loading="loading"
       :active-tab="activeTab"
-      :get-animated-value="getAnimatedValue"
-      :get-visitor-display-value="getVisitorDisplayValue"
+      :stat-values="statValues"
+      :visitor-values="visitorValues"
+      :user-parts="userParts"
+      :roll-tick="rollTick"
       @select-source="selectSourceTab"
     />
 
@@ -161,6 +175,20 @@ currentStats = () => stats.value
               <ArrowRight class="h-3.5 w-3.5" />
             </span>
           </RouterLink>
+
+          <!-- MCP 总调用次数 -->
+          <div
+            class="stagger-enter glass-card flex items-center gap-2.5 px-3 py-2.5"
+            style="animation-delay: 0.4s"
+          >
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
+              <Plug class="h-4 w-4" />
+            </span>
+            <span class="flex min-w-0 flex-col">
+              <span class="text-2xs font-semibold text-stone-400">{{ t('dashboard.mcpCalls.title') }}</span>
+              <RollingNumber :tick="rollTick" :value="mcpTotalCalls" grouping class="text-base font-extrabold tabular-nums" />
+            </span>
+          </div>
         </template>
       </aside>
     </div>

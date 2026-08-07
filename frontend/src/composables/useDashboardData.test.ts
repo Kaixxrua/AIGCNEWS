@@ -28,12 +28,11 @@ const mountDashboard = (overrides: DashboardOverrides = {}) => {
   let dashboard!: DashboardData
   const updateStatSources = vi.fn()
   const updateVisitorSources = vi.fn()
-  const disableCountUp = vi.fn()
   const visible = ref(true)
   const DashboardHarness = defineComponent({
     name: 'DashboardHarness',
     setup() {
-      dashboard = useDashboardData({ updateStatSources, updateVisitorSources, disableCountUp, ...overrides })
+      dashboard = useDashboardData({ updateStatSources, updateVisitorSources, ...overrides })
       return () => h('div')
     },
   })
@@ -45,7 +44,7 @@ const mountDashboard = (overrides: DashboardOverrides = {}) => {
   const element = document.createElement('div')
   const app = createApp(Root)
   app.mount(element)
-  return { app, dashboard, visible, updateStatSources, updateVisitorSources, disableCountUp }
+  return { app, dashboard, visible, updateStatSources, updateVisitorSources }
 }
 
 describe('Dashboard request lifecycle contract', () => {
@@ -104,18 +103,16 @@ describe('Dashboard request lifecycle contract', () => {
     mounted.app.unmount()
   })
 
-  it('uses the selected date, clears the list, disables count-up, and preserves callback order', async () => {
+  it('uses the selected date, clears the list, and refreshes the stats', async () => {
     const mounted = mountDashboard()
     await flush()
     mounted.updateStatSources.mockClear()
-    mounted.disableCountUp.mockClear()
     const pending = mounted.dashboard.onDateChange('2026-07-20')
     expect(mounted.dashboard.tabList.value).toEqual([])
-    expect(mounted.disableCountUp).toHaveBeenCalledOnce()
     await pending
 
     expect(defaultDashboardApi.fetchSummary).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-20', signal: expect.any(AbortSignal) })
-    expect(mounted.updateStatSources).toHaveBeenCalledAfter(mounted.disableCountUp)
+    expect(mounted.updateStatSources).toHaveBeenCalledOnce()
     expect(mounted.dashboard.isViewingHistory.value).toBe(true)
     mounted.app.unmount()
   })
@@ -154,6 +151,7 @@ describe('Dashboard request lifecycle contract', () => {
       fetchSnapshotDates: vi.fn(async () => []),
       fetchVisitorCount: vi.fn(async () => ({ registeredUsers: 0, todayRegisteredUsers: 0, userCount: 0 })),
       fetchGitHubHotRepos: vi.fn(async () => ({ period: 'daily', items: [] })),
+      fetchRecentX: vi.fn(async () => ({ items: [], total: 0, windowHours: 24 })),
       deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),
       bulkDeleteDocuments: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_ids: ['x:1'], deleted_count: 1, not_found_count: 0 })),
     }

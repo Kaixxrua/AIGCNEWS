@@ -567,6 +567,7 @@ def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
     stats = response.json()["stats"]
     assert stats["source_counts"] == {"arxiv": 5, "github": 6983, "news": 7}
     assert stats["total_documents"] == 5 + 6983 + 7
+    assert isinstance(stats["mcp_total_calls"], int)
     assert calls == [
         {"source": "github", "scope": "all", "page": 1, "page_size": 1, "sort": "stars"}
     ]
@@ -587,3 +588,4 @@ def test_summary_github_stat_falls_back_to_documents_when_catalog_unavailable(mo
     stats = response.json()["stats"]
     assert stats["source_counts"] == {"arxiv": 5, "github": 461, "news": 7}
     assert stats["total_documents"] == 5 + 461 + 7
+    assert isinstance(stats["mcp_total_calls"], int)

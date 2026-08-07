@@ -23,7 +23,6 @@ import {
 interface DashboardDataOptions {
   updateStatSources: (stats: Stats) => void
   updateVisitorSources: (stats: Stats) => void
-  disableCountUp: () => void
   dashboardApi?: DashboardApi
   now?: () => number
   createAbortController?: () => AbortController
@@ -214,7 +213,6 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     currentDate.value = selectedDate
     tabLoading.value = true
     tabList.value = []
-    options.disableCountUp()
     const { controller, generation } = beginDashboardRequest()
     try {
       const applied = await fetchDashboardData(activeTab.value, activePeriod.value, selectedDate, controller, generation)

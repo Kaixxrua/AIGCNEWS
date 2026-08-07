@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@number-flow/vue": "^0.5.2",
     "@vueuse/core": "^14.2.1",
     "axios": "^1.13.6",
     "dompurify": "^3.4.12",
