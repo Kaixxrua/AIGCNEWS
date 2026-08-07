@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MonitorApi } from '@/services/monitor/monitorApi'
 import type { GithubCrawlStatus } from '@/features/monitor/monitorModel'
+import { i18n } from '@/i18n'
 import { useMonitorPageController } from './useMonitorPageController'
 
 const idleCrawlStatus = (): GithubCrawlStatus => ({
@@ -322,7 +323,7 @@ describe('Monitor GitHub enrichment controls', () => {
     expect(controller.enrichmentStatus.value).toEqual({ eligible: 100, succeeded: 95, failed: 3, pending: 2 })
   })
 
-  it('retries failed enrichments capped at 500 and schedules status re-reads', async () => {
+  it('retries failed enrichments capped at 500 and polls progress until failures clear', async () => {
     const { api, controller, schedule } = createController()
     vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 1000, succeeded: 200, failed: 800, pending: 0 })
     await controller.refreshData()
@@ -333,14 +334,42 @@ describe('Monitor GitHub enrichment controls', () => {
     expect(api.retryFailedGithubEnrichment).toHaveBeenCalledWith(500)
     expect(controller.successMsg.value).toBe('富化任务已提交')
     expect(controller.retryingEnrichment.value).toBe(false)
-    // 后台任务运行期间排两次状态回读（5s / 30s）
-    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 5000)
-    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 30000)
+    // 提交后进入 4s 间隔的实时进度轮询
+    expect(controller.enrichmentPolling.value).toBe(true)
+    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 4000)
 
+    // 轮询期间禁止重复提交
+    await controller.retryFailedEnrichments()
+    expect(api.retryFailedGithubEnrichment).toHaveBeenCalledTimes(1)
+
+    // 第一轮轮询：失败 800 → 5，进度推进，轮询继续且不触发面板 loading
     vi.mocked(api.fetchGithubEnrichmentStatus).mockClear()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 1000, succeeded: 995, failed: 5, pending: 0 })
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(controller.enrichmentStatus.value?.failed).toBe(5)
+    expect(controller.enrichmentPolling.value).toBe(true)
+    expect(controller.loadingEnrichmentStatus.value).toBe(false)
+
+    // 第二轮轮询：失败清零 → 停止轮询并提示全部补齐
     vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 1000, succeeded: 1000, failed: 0, pending: 0 })
-    await vi.advanceTimersByTimeAsync(5000)
+    await vi.advanceTimersByTimeAsync(4000)
     expect(controller.enrichmentStatus.value?.failed).toBe(0)
+    expect(controller.enrichmentPolling.value).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.enrichment.retryDone'))
+  })
+
+  it('stops enrichment polling when the status fingerprint stays unchanged', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 5, pending: 0 })
+    await controller.refreshData()
+
+    await controller.retryFailedEnrichments()
+    expect(controller.enrichmentPolling.value).toBe(true)
+
+    // 连续 3 轮（12s）计数指纹无变化 → 判定后台任务停滞，结束轮询并提示部分完成
+    await vi.advanceTimersByTimeAsync(4000 * 3)
+    expect(controller.enrichmentPolling.value).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.enrichment.retryPartial', { count: 5 }))
   })
 
   it('blocks retry when there are no failures and never calls the API', async () => {

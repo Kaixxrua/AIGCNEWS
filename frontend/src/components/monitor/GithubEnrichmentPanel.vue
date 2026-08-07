@@ -1,19 +1,27 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { GithubEnrichmentStatus } from '@/features/monitor/monitorModel'
 
 const { t } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   status: GithubEnrichmentStatus | null
   loading: boolean
   retrying: boolean
+  polling: boolean
 }>()
 
 const emit = defineEmits<{
   refresh: []
   retry: []
 }>()
+
+const eligible = computed(() => props.status?.eligible ?? 0)
+// 三段进度：已成功（绿）/ 失败（红）/ 待处理（轨道底色），宽度按 eligible 占比
+const succeededPct = computed(() => (eligible.value > 0 ? ((props.status?.succeeded ?? 0) / eligible.value) * 100 : 0))
+const failedPct = computed(() => (eligible.value > 0 ? ((props.status?.failed ?? 0) / eligible.value) * 100 : 0))
+const succeededPercent = computed(() => Math.round(succeededPct.value))
 </script>
 
 <template>
@@ -31,6 +39,28 @@ const emit = defineEmits<{
       </button>
     </div>
 
+    <div v-if="status && status.eligible > 0" class="mb-3">
+      <div class="flex items-center justify-between text-2xs monitor-caption mb-1">
+        <span>{{ t('monitor.enrichment.progress') }}</span>
+        <span class="tabular-nums font-bold">{{ succeededPercent }}%</span>
+      </div>
+      <div
+        class="enrichment-progress"
+        role="progressbar"
+        :aria-valuenow="succeededPercent"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        :aria-label="t('monitor.enrichment.progress')"
+      >
+        <div class="enrichment-progress-succeeded" :style="{ width: `${succeededPct}%` }" />
+        <div class="enrichment-progress-failed" :style="{ width: `${failedPct}%` }" />
+      </div>
+      <p v-if="polling" class="mt-1.5 flex items-center gap-1.5 text-2xs monitor-caption">
+        <span class="enrichment-polling-spinner" />
+        {{ t('monitor.enrichment.running') }}
+      </p>
+    </div>
+
     <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
       <template v-if="status">
         <span class="text-xs monitor-caption tabular-nums">{{ t('monitor.enrichment.enriched', { done: status.succeeded, total: status.eligible }) }}</span>
@@ -41,7 +71,7 @@ const emit = defineEmits<{
 
       <button
         class="monitor-btn-secondary relative"
-        :disabled="retrying || !status || status.failed <= 0"
+        :disabled="retrying || polling || !status || status.failed <= 0"
         :title="t('monitor.enrichment.retryTitle')"
         @click="emit('retry')"
       >
@@ -80,9 +110,48 @@ const emit = defineEmits<{
   50% { transform: scale(1.35); opacity: 0.65; }
 }
 
+.enrichment-progress {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--projects-accent);
+  border-radius: 4px;
+  background: var(--paper-muted);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.enrichment-progress-succeeded {
+  background: var(--success-ink);
+  transition: width 0.4s ease;
+}
+
+.enrichment-progress-failed {
+  background: var(--error-accent);
+  transition: width 0.4s ease;
+}
+
+.enrichment-polling-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 9999px;
+  animation: enrichment-spin 0.8s linear infinite;
+}
+
+@keyframes enrichment-spin {
+  to { transform: rotate(360deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .enrichment-alert-dot--button {
+  .enrichment-alert-dot--button,
+  .enrichment-polling-spinner {
     animation: none;
+  }
+  .enrichment-progress-succeeded,
+  .enrichment-progress-failed {
+    transition: none;
   }
 }
 </style>

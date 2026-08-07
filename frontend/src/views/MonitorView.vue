@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
@@ -30,14 +30,13 @@ const {
   ingestByDate, clearAllData,
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
   crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
-  enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, fetchGithubEnrichmentStatus, retryFailedEnrichments,
+  enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, enrichmentPolling, fetchGithubEnrichmentStatus, retryFailedEnrichments,
 } = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
 
-// 手动重试后延迟同步导航 Dock 的富化失败红点（后台任务完成后计数才会下降）
-const handleRetryEnrichments = async () => {
-  await retryFailedEnrichments()
-  setTimeout(() => { void enrichmentAlert.refresh() }, 15_000)
-}
+// 富化重试轮询结束时同步导航 Dock 的失败红点（失败清零或本轮结束时各刷一次）
+watch(enrichmentPolling, (polling, wasPolling) => {
+  if (wasPolling && !polling) void enrichmentAlert.refresh()
+})
 
 onMounted(refreshData)
 </script>
@@ -164,8 +163,9 @@ onMounted(refreshData)
       :status="enrichmentStatus"
       :loading="loadingEnrichmentStatus"
       :retrying="retryingEnrichment"
+      :polling="enrichmentPolling"
       @refresh="fetchGithubEnrichmentStatus"
-      @retry="handleRetryEnrichments"
+      @retry="retryFailedEnrichments"
     />
 
     <McpToolCallsPanel

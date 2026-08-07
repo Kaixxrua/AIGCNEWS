@@ -74,6 +74,7 @@ export const useMonitorPageController = ({
   const enrichmentStatus = ref<GithubEnrichmentStatus | null>(null)
   const loadingEnrichmentStatus = ref(false)
   const retryingEnrichment = ref(false)
+  const enrichmentPolling = ref(false)
   const isTaskRunning = computed(() => tasks.value.length > 0 && tasks.value[0]?.status === 'running')
   const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
   const clearMessages = () => { errorMsg.value = ''; successMsg.value = '' }
@@ -276,8 +277,52 @@ export const useMonitorPageController = ({
       errorMsg.value = statusOf(error) === 409 ? i18n.global.t('monitor.crawl.conflict') : detail(error)
     } finally { crawling.value = false }
   }
+  const ENRICHMENT_POLL_INTERVAL = 4000
+  const ENRICHMENT_POLL_STALE_LIMIT = 3
+  const ENRICHMENT_POLL_MAX = 75 // 75 × 4s ≈ 5 分钟上限，防止后台任务挂起时无限轮询
+  let enrichmentPollCount = 0
+  let enrichmentStalePolls = 0
+  let lastEnrichmentFingerprint = ''
+  const enrichmentFingerprint = (status: GithubEnrichmentStatus | null) =>
+    status ? `${status.succeeded}:${status.failed}:${status.pending}` : ''
+  const stopEnrichmentPolling = (message: string) => {
+    enrichmentPolling.value = false
+    successMsg.value = message
+  }
+  const pollGithubEnrichmentStatus = async () => {
+    if (!enrichmentPolling.value) return
+    enrichmentPollCount += 1
+    try {
+      // 直接调 api 而非 fetchGithubEnrichmentStatus，避免轮询反复触发面板 loading 闪烁
+      enrichmentStatus.value = await api.fetchGithubEnrichmentStatus()
+    } catch (error) {
+      // 轮询错误容忍：容器重启等瞬态故障不断链
+      console.error('Failed to poll GitHub enrichment status', error)
+    }
+    const failed = enrichmentStatus.value?.failed ?? 0
+    if (failed <= 0) {
+      stopEnrichmentPolling(i18n.global.t('monitor.enrichment.retryDone'))
+      return
+    }
+    const fingerprint = enrichmentFingerprint(enrichmentStatus.value)
+    if (fingerprint === lastEnrichmentFingerprint) enrichmentStalePolls += 1
+    else { enrichmentStalePolls = 0; lastEnrichmentFingerprint = fingerprint }
+    if (enrichmentStalePolls >= ENRICHMENT_POLL_STALE_LIMIT || enrichmentPollCount >= ENRICHMENT_POLL_MAX) {
+      stopEnrichmentPolling(i18n.global.t('monitor.enrichment.retryPartial', { count: failed }))
+      return
+    }
+    schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
+  }
+  const beginEnrichmentPolling = () => {
+    if (enrichmentPolling.value) return
+    enrichmentPollCount = 0
+    enrichmentStalePolls = 0
+    lastEnrichmentFingerprint = enrichmentFingerprint(enrichmentStatus.value)
+    enrichmentPolling.value = true
+    schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
+  }
   const retryFailedEnrichments = async () => {
-    if (retryingEnrichment.value) return
+    if (retryingEnrichment.value || enrichmentPolling.value) return
     clearMessages()
     const failed = enrichmentStatus.value?.failed || 0
     if (failed <= 0) { errorMsg.value = i18n.global.t('monitor.enrichment.noFailures'); return }
@@ -286,9 +331,7 @@ export const useMonitorPageController = ({
       // 后端 enrich 上限 500；失败数即本次重试范围
       const result = await api.retryFailedGithubEnrichment(Math.min(failed, 500))
       successMsg.value = result.message || i18n.global.t('monitor.enrichment.retrySubmitted')
-      // 富化在后台执行，延迟回读状态（首次回读可能仍在运行，故排两次）
-      schedule(() => { void fetchGithubEnrichmentStatus() }, 5000)
-      schedule(() => { void fetchGithubEnrichmentStatus() }, 30000)
+      beginEnrichmentPolling()
     } catch (error) { errorMsg.value = detail(error) }
     finally { retryingEnrichment.value = false }
   }
@@ -345,6 +388,6 @@ export const useMonitorPageController = ({
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
     crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
-    enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, fetchGithubEnrichmentStatus, retryFailedEnrichments,
+    enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, enrichmentPolling, fetchGithubEnrichmentStatus, retryFailedEnrichments,
   }
 }
