@@ -12,9 +12,9 @@ const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.isAdmin)
 
 const {
-  docs, selectedDate, today, loading, deleting, errorMsg,
+  docs, selectedDate, today, loading, deleting, errorMsg, viewMode,
   selectedIds, currentPage, totalPages, hasPrev, hasNext, pageSize,
-  load, onDateChange, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
+  load, onDateChange, showRecent, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
 } = useXBoardController({ translate: t })
 
 // 时间序（新→旧）+ 行主序分列：左上 = 最新推文，从左到右、从上到下。
@@ -113,11 +113,20 @@ onBeforeUnmount(() => {
           <p class="mt-0.5 text-sm text-stone-400">{{ t('xboard.subtitle') }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <button
+            class="btn-secondary text-xs"
+            :class="{ 'xboard-mode-active': viewMode === 'recent' }"
+            :aria-pressed="viewMode === 'recent'"
+            @click="showRecent"
+          >
+            {{ t('xboard.recent24h') }}
+          </button>
           <label class="flex items-center gap-2 text-xs text-stone-400">
             {{ t('xboard.dateLabel') }}
             <input
               type="date"
               class="input py-1.5 text-xs"
+              :class="{ 'xboard-mode-active': viewMode === 'date' }"
               :value="selectedDate"
               :max="today"
               @change="onDateChange(($event.target as HTMLInputElement).value)"
@@ -176,8 +185,8 @@ onBeforeUnmount(() => {
         <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-stone-200 border-t-stone-500" />{{ t('xboard.loading') }}
       </div>
       <div v-else-if="!timelineDocs.length" class="glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
-        <p class="font-medium text-stone-500">{{ t('xboard.empty') }}</p>
-        <p class="mt-1 text-xs">{{ t('xboard.emptyHint') }}</p>
+        <p class="font-medium text-stone-500">{{ t(viewMode === 'recent' ? 'xboard.emptyRecent' : 'xboard.empty') }}</p>
+        <p class="mt-1 text-xs">{{ t(viewMode === 'recent' ? 'xboard.emptyRecentHint' : 'xboard.emptyHint') }}</p>
       </div>
 
       <!-- 瀑布流推文墙（行主序：每列顶部横读即最新 N 条） -->
@@ -395,6 +404,14 @@ onBeforeUnmount(() => {
   border-radius: 5px;
   background: var(--projects-paper-light);
   box-shadow: 3px 3px 0 var(--shadow-hard);
+}
+
+/* 视图模式开关（最近 24h / 快照日）：激活态走 acid 硬边 chip 配方 */
+.xboard-mode-active {
+  border-color: var(--ink);
+  background: var(--acid);
+  color: var(--projects-on-acid);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
 }
 
 /* 推文卡片：与 dashboard 卡片同方——1px 墨边 + 5px 圆角 + 纸面 + 常驻硬阴影 */

@@ -6,10 +6,13 @@ import { clampPage, groupTweetsByHandle, pageCount } from '@/features/xboard/xBo
 
 export interface XBoardApi {
   fetchTop: DashboardApi['fetchTop']
+  fetchRecentX: DashboardApi['fetchRecentX']
   fetchSnapshotDates: DashboardApi['fetchSnapshotDates']
   deleteDocument: DashboardApi['deleteDocument']
   bulkDeleteDocuments: DashboardApi['bulkDeleteDocuments']
 }
+
+export type XBoardViewMode = 'recent' | 'date'
 
 export type XBoardTranslate = (key: string) => string
 
@@ -20,8 +23,10 @@ export interface XBoardControllerOptions {
 }
 
 const SNAPSHOT_DATE_LIMIT = 60
-// 看板展示当天全部推文：一次拉全天（后端 limit 上限/DB 读取上限均为 500），客户端分页
+// 看板一次拉全量（后端 limit 上限/DB 读取上限均为 500），客户端分页
 const TOP_LIMIT = 500
+// 默认视图：滚动最近 24 小时发布的推文（绝对时间窗，与用户时区无关，展示层已做时区换算）
+export const XBOARD_RECENT_WINDOW_HOURS = 24
 export const XBOARD_PAGE_SIZE = 20
 
 // XBoardView 自包含控制器：拉取快照日期与 source=x 推文，分组逻辑在 xBoardViewModel。
@@ -32,6 +37,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
 
   const today = now().toISOString().slice(0, 10)
   const selectedDate = ref(today)
+  const viewMode = ref<XBoardViewMode>('recent')
   const availableDates = ref<string[]>([])
   const docs = ref<TopDoc[]>([])
   const loading = ref(false)
@@ -55,15 +61,19 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   let generation = 0
   let abortController: AbortController | null = null
 
-  const loadTweets = async (date: string) => {
+  const loadTweets = async () => {
     const request = ++generation
     abortController?.abort()
     const controller = new AbortController()
     abortController = controller
     loading.value = true
     errorMsg.value = ''
+    const mode = viewMode.value
+    const date = selectedDate.value
     try {
-      const result = await api.fetchTop({ source: 'x', period: 'daily', date, limit: TOP_LIMIT, signal: controller.signal, cacheBuster: Date.now() })
+      const result = mode === 'recent'
+        ? await api.fetchRecentX({ hours: XBOARD_RECENT_WINDOW_HOURS, limit: TOP_LIMIT, signal: controller.signal, cacheBuster: Date.now() })
+        : await api.fetchTop({ source: 'x', period: 'daily', date, limit: TOP_LIMIT, signal: controller.signal, cacheBuster: Date.now() })
       if (isActive.value && request === generation) docs.value = result.items
     } catch (error) {
       if (isActive.value && request === generation && !controller.signal.aborted) {
@@ -86,20 +96,30 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     } catch {
       // 日期清单失败不阻塞推文加载
     }
-    await loadTweets(selectedDate.value)
+    await loadTweets()
   }
 
   const onDateChange = (date: string) => {
-    if (!date || date === selectedDate.value) return
+    if (!date) return
+    if (date === selectedDate.value && viewMode.value === 'date') return
     selectedDate.value = date
+    viewMode.value = 'date'
     selectedIds.value.clear()
     page.value = 1
-    void loadTweets(date)
+    void loadTweets()
+  }
+
+  const showRecent = () => {
+    // 已在 recent 模式时视为刷新：窗口随当前时刻重新滑动
+    viewMode.value = 'recent'
+    selectedIds.value.clear()
+    page.value = 1
+    return loadTweets()
   }
 
   const refresh = () => {
     page.value = 1
-    return loadTweets(selectedDate.value)
+    return loadTweets()
   }
 
   const dispose = () => {
@@ -148,7 +168,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
       }
       selectedIds.value = new Set(ids.filter((id) => !response.doc_ids?.includes(id)))
       // 删除后重拉不走 refresh()：保留当前页码，由 currentPage 夹取自动回落
-      await loadTweets(selectedDate.value)
+      await loadTweets()
     } catch (error) {
       errorMsg.value = error instanceof Error && error.message ? error.message : translate('xboard.deleteFailed')
     } finally {
@@ -173,15 +193,18 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     loading,
     onDateChange,
     pageSize: XBOARD_PAGE_SIZE,
+    recentWindowHours: XBOARD_RECENT_WINDOW_HOURS,
     refresh,
     sections,
     selectedDate,
     selectedIds,
     selectAll,
+    showRecent,
     today,
     toggleSelectAll,
     toggleSelection,
     totalPages,
+    viewMode,
   }
 }
 

@@ -14,6 +14,12 @@ export interface DashboardSnapshotDatesWireResponse {
   dates?: string[] | null
 }
 
+export interface DashboardRecentXWireResponse {
+  items?: TopDoc[] | null
+  total?: number | null
+  window_hours?: number | null
+}
+
 export interface DashboardVisitorCountWireResponse {
   registered_users?: number | null
   today_registered_users?: number | null
@@ -28,6 +34,12 @@ export interface DashboardSummary {
 
 export interface DashboardTop {
   items: TopDoc[]
+}
+
+export interface DashboardRecentX {
+  items: TopDoc[]
+  total: number
+  windowHours: number
 }
 
 export interface DashboardVisitorCount {
@@ -52,6 +64,13 @@ export interface DashboardSnapshotDatesParams {
   limit?: number
   source?: TabKey
   period?: PeriodKey
+  signal?: AbortSignal
+  cacheBuster?: number
+}
+
+export interface DashboardRecentXParams {
+  hours?: number
+  limit?: number
   signal?: AbortSignal
   cacheBuster?: number
 }
@@ -89,6 +108,7 @@ export interface GitHubHotResponse {
 export interface DashboardApi {
   fetchSummary(params: DashboardSummaryParams): Promise<DashboardSummary>
   fetchTop(params: DashboardTopParams): Promise<DashboardTop>
+  fetchRecentX(params: DashboardRecentXParams): Promise<DashboardRecentX>
   fetchSnapshotDates(params: DashboardSnapshotDatesParams): Promise<string[]>
   fetchVisitorCount(signal?: AbortSignal): Promise<DashboardVisitorCount>
   fetchGitHubHotRepos(period?: GitHubHotPeriod, limit?: number): Promise<GitHubHotResponse>

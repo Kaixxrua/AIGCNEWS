@@ -1,16 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useXBoardController, type XBoardApi } from './useXBoardController'
-import type { DashboardTop } from '@/services/dashboard/dashboardContracts'
+import type { DashboardRecentX, DashboardTop } from '@/services/dashboard/dashboardContracts'
 
 const doc = (id: string, url: string, rawScore: number, overrides: Record<string, unknown> = {}) => ({ id, title: url, url, raw_score: rawScore, ...overrides })
 
+const recentDocs = () => [
+  doc('x:1', 'https://x.com/openai/status/1', 5),
+  doc('x:2', 'https://x.com/karpathy/status/2', 50),
+]
+
 const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
-  fetchTop: vi.fn(async (): Promise<DashboardTop> => ({
-    items: [
-      doc('x:1', 'https://x.com/openai/status/1', 5),
-      doc('x:2', 'https://x.com/karpathy/status/2', 50),
-    ],
-  })),
+  fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: recentDocs() })),
+  fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: recentDocs(), total: 2, windowHours: 24 })),
   fetchSnapshotDates: vi.fn(async () => ['2026-08-04', '2026-08-03']),
   deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),
   bulkDeleteDocuments: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_ids: ['x:1'], deleted_count: 1, not_found_count: 0 })),
@@ -18,15 +19,15 @@ const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
 })
 
 describe('useXBoardController', () => {
-  it('defaults to today when present in snapshot dates and loads tweets grouped by handle', async () => {
+  it('defaults to the rolling 24h view and loads tweets grouped by handle', async () => {
     const api = createApi()
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
 
+    expect(controller.viewMode.value).toBe('recent')
     expect(api.fetchSnapshotDates).toHaveBeenCalledWith(expect.objectContaining({ source: 'x', period: 'daily' }))
-    expect(api.fetchTop).toHaveBeenCalledWith(expect.objectContaining({
-      source: 'x', period: 'daily', date: '2026-08-04', limit: 500,
-    }))
+    expect(api.fetchRecentX).toHaveBeenCalledWith(expect.objectContaining({ hours: 24, limit: 500 }))
+    expect(api.fetchTop).not.toHaveBeenCalled()
     expect(controller.selectedDate.value).toBe('2026-08-04')
     expect(controller.sections.value.map((section) => section.handle)).toEqual(['karpathy', 'openai'])
     expect(controller.loading.value).toBe(false)
@@ -35,11 +36,13 @@ describe('useXBoardController', () => {
   it('preserves media metadata from API response', async () => {
     const media = [{ type: 'photo', url: 'https://pbs.twimg.com/a.jpg', width: 1200, height: 800 }]
     const api = createApi({
-      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({
+      fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({
         items: [
           doc('x:1', 'https://x.com/openai/status/1', 5, { media }),
           doc('x:2', 'https://x.com/karpathy/status/2', 50),
         ],
+        total: 2,
+        windowHours: 24,
       })),
     })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
@@ -50,13 +53,22 @@ describe('useXBoardController', () => {
     expect(flattened.find((tweet) => tweet.url === 'https://x.com/openai/status/1')?.media).toEqual(media)
   })
 
-  it('falls back to the latest snapshot date when today has no data yet', async () => {
+  it('falls back to the latest snapshot date for the picker while staying in recent mode', async () => {
     const api = createApi({ fetchSnapshotDates: vi.fn(async () => ['2026-08-02', '2026-08-01']) })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
 
+    // 日期选择器回退到最近有快照的日期，但默认视图仍是滚动窗口（不走 fetchTop）
     expect(controller.selectedDate.value).toBe('2026-08-02')
-    expect(api.fetchTop).toHaveBeenCalledWith(expect.objectContaining({ date: '2026-08-02' }))
+    expect(controller.viewMode.value).toBe('recent')
+    expect(api.fetchTop).not.toHaveBeenCalled()
+
+    // 在 recent 模式下选中同一日期字符串：切换到快照日视图
+    controller.onDateChange('2026-08-02')
+    await vi.waitFor(() => {
+      expect(api.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-08-02' }))
+    })
+    expect(controller.viewMode.value).toBe('date')
   })
 
   it('still loads tweets when the snapshot date listing fails', async () => {
@@ -73,11 +85,21 @@ describe('useXBoardController', () => {
     const api = createApi()
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
-    const callsAfterLoad = (api.fetchTop as ReturnType<typeof vi.fn>).mock.calls.length
 
     controller.onDateChange('')
+    expect(api.fetchTop).not.toHaveBeenCalled()
+
+    // recent 模式下选择日期（即使是同一字符串）→ 切换到快照日视图
     controller.onDateChange('2026-08-04')
-    expect((api.fetchTop as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterLoad)
+    await vi.waitFor(() => {
+      expect(api.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-08-04' }))
+    })
+    expect(controller.viewMode.value).toBe('date')
+    const callsAfterSwitch = (api.fetchTop as ReturnType<typeof vi.fn>).mock.calls.length
+
+    // date 模式下重复同一日期 → 不再重拉
+    controller.onDateChange('2026-08-04')
+    expect((api.fetchTop as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterSwitch)
 
     controller.onDateChange('2026-08-03')
     await vi.waitFor(() => {
@@ -85,8 +107,43 @@ describe('useXBoardController', () => {
     })
   })
 
+  it('showRecent switches back from date mode and re-slides the window on repeat calls', async () => {
+    const api = createApi()
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    controller.onDateChange('2026-08-03')
+    await vi.waitFor(() => expect(controller.viewMode.value).toBe('date'))
+    controller.toggleSelection('x:1')
+    controller.goPage(1)
+
+    await controller.showRecent()
+    expect(controller.viewMode.value).toBe('recent')
+    expect(controller.selectedIds.value.size).toBe(0)
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
+
+    // 已在 recent 模式时再次触发 = 刷新滚动窗口
+    await controller.showRecent()
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(3)
+  })
+
+  it('refresh reloads the current mode', async () => {
+    const api = createApi()
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    await controller.refresh()
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
+    expect(api.fetchTop).not.toHaveBeenCalled()
+
+    controller.onDateChange('2026-08-03')
+    await vi.waitFor(() => expect(controller.viewMode.value).toBe('date'))
+    const recentCalls = (api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length
+    await controller.refresh()
+    expect(api.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-08-03' }))
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(recentCalls)
+  })
+
   it('surfaces an error message when tweet loading fails', async () => {
-    const api = createApi({ fetchTop: vi.fn(async (): Promise<DashboardTop> => { throw new Error('boom') }) })
+    const api = createApi({ fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => { throw new Error('boom') }) })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
     expect(controller.errorMsg.value).toBe('boom')
@@ -94,16 +151,16 @@ describe('useXBoardController', () => {
   })
 
   it('aborts stale loads and ignores their completions after dispose', async () => {
-    let resolveTop: ((value: DashboardTop) => void) | undefined
+    let resolveRecent: ((value: DashboardRecentX) => void) | undefined
     const api = createApi({
-      fetchTop: vi.fn(() => new Promise<DashboardTop>((resolve) => { resolveTop = resolve })),
+      fetchRecentX: vi.fn(() => new Promise<DashboardRecentX>((resolve) => { resolveRecent = resolve })),
     })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     const pending = controller.load()
-    // fetchTop 在快照日期 resolve 之后才会被调用；先等它真正发出再 dispose
-    await vi.waitFor(() => expect(resolveTop).toBeDefined())
+    // fetchRecentX 在快照日期 resolve 之后才会被调用；先等它真正发出再 dispose
+    await vi.waitFor(() => expect(resolveRecent).toBeDefined())
     controller.dispose()
-    resolveTop?.({ items: [doc('x:9', 'https://x.com/openai/status/9', 1)] })
+    resolveRecent?.({ items: [doc('x:9', 'https://x.com/openai/status/9', 1)], total: 1, windowHours: 24 })
     await pending
     expect(controller.docs.value).toHaveLength(0)
     expect(controller.loading.value).toBe(false)
@@ -128,6 +185,8 @@ describe('useXBoardController', () => {
     expect(result).toEqual({ deleted: 1, notFound: 0 })
     expect(api.bulkDeleteDocuments).toHaveBeenCalledWith(['x:1'])
     expect(controller.selectedIds.value.size).toBe(0)
+    // 删除后按当前模式（recent）重拉
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
   })
 
   it('keeps unselected ids after partial delete failure', async () => {
@@ -154,16 +213,16 @@ describe('useXBoardController', () => {
     Array.from({ length: count }, (_, index) => doc(`x:${index + 1}`, `https://x.com/openai/status/${index + 1}`, index))
 
   const createPagedApi = (count: number, overrides: Partial<XBoardApi> = {}) => createApi({
-    fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: docPage(count) })),
+    fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: docPage(count), total: count, windowHours: 24 })),
     ...overrides,
   })
 
-  it('fetches the whole day with limit 500 and paginates client-side at 20 per page', async () => {
+  it('fetches the rolling window with limit 500 and paginates client-side at 20 per page', async () => {
     const api = createPagedApi(45)
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
 
-    expect(api.fetchTop).toHaveBeenCalledWith(expect.objectContaining({ limit: 500 }))
+    expect(api.fetchRecentX).toHaveBeenCalledWith(expect.objectContaining({ limit: 500 }))
     expect(controller.pageSize).toBe(20)
     expect(controller.totalPages.value).toBe(3)
     expect(controller.currentPage.value).toBe(1)
@@ -186,7 +245,9 @@ describe('useXBoardController', () => {
   })
 
   it('resets to page 1 on date change and refresh', async () => {
-    const api = createPagedApi(45)
+    const api = createPagedApi(45, {
+      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: docPage(45) })),
+    })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
     controller.goPage(2)
@@ -206,7 +267,7 @@ describe('useXBoardController', () => {
     // 21 条 = 2 页，末页仅 1 条；删除末页唯一条目后应自动回夹到第 1 页
     let items = docPage(21)
     const api = createApi({
-      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items })),
+      fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items, total: items.length, windowHours: 24 })),
       bulkDeleteDocuments: vi.fn(async () => {
         items = items.slice(0, 20)
         return { status: 'ok', message: 'deleted', doc_ids: ['x:21'], deleted_count: 1, not_found_count: 0 }

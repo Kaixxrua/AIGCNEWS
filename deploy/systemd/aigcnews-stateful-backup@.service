@@ -1,0 +1,15 @@
+[Unit]
+Description=AIGCNEWS non-PostgreSQL stateful data snapshot for %i
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=%i
+WorkingDirectory=/home/%i/AIGCNEWS
+Environment=AIGCNEWS_STATEFUL_BACKUP_DIR=/home/%i/backups/aigcnews-stateful
+ExecStartPre=/usr/bin/mkdir -p /home/%i/backups/aigcnews-stateful
+ExecStart=/home/%i/AIGCNEWS/scripts/backup_stateful_data_scheduled.sh
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

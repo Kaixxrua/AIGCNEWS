@@ -1,6 +1,7 @@
 import { api } from '@/services/http/apiClient'
 import type {
   DashboardApi,
+  DashboardRecentXWireResponse,
   DashboardSnapshotDatesWireResponse,
   DashboardSummaryWireResponse,
   DashboardTopWireResponse,
@@ -12,6 +13,8 @@ import type {
 
 export type {
   DashboardApi,
+  DashboardRecentX,
+  DashboardRecentXParams,
   DashboardSnapshotDatesParams,
   DashboardSummary,
   DashboardSummaryParams,
@@ -41,6 +44,18 @@ export const dashboardApi: DashboardApi = {
     if (cacheBuster) params._t = cacheBuster
     const response = await api.get<DashboardTopWireResponse>('/dashboard/top', { params, signal })
     return { items: Array.isArray(response.data?.items) ? response.data.items : [] }
+  },
+
+  async fetchRecentX({ hours = 24, limit = 500, signal, cacheBuster }) {
+    const params: Record<string, unknown> = { hours, limit }
+    if (cacheBuster) params._t = cacheBuster
+    const response = await api.get<DashboardRecentXWireResponse>('/dashboard/x/recent', { params, signal })
+    const items = Array.isArray(response.data?.items) ? response.data.items : []
+    return {
+      items,
+      total: response.data?.total ?? items.length,
+      windowHours: response.data?.window_hours ?? hours,
+    }
   },
 
   async fetchSnapshotDates({ limit = 60, source, period, signal, cacheBuster }) {
