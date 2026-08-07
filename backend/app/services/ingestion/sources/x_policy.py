@@ -207,6 +207,47 @@ def _project_tweet_media(tweet: Any) -> list[dict]:
     return items
 
 
+def _project_quoted_tweet(tweet: Any) -> dict | None:
+    """把 twitter-cli 已解析的 tweet.quoted_tweet 投影为引用卡片元数据。
+
+    X 上引用推文以嵌入卡片呈现（被引作者 + 正文 + 媒体）；parser 递归
+    解析 quoted_status_result 为完整 Tweet，缺失（删除/保护/无引用）
+    时为 None。被引正文同样剥媒体 t.co 尾巴并展开 t.co 链接；被引无
+    id 或既无正文又无媒体时不投影（渲染层无可展示内容）。
+    """
+    quoted = getattr(tweet, "quoted_tweet", None)
+    if quoted is None:
+        return None
+    quote_id = str(getattr(quoted, "id", "") or "")
+    if not quote_id:
+        return None
+    author = getattr(quoted, "author", None)
+    screen_name = str(getattr(author, "screen_name", "") or "")
+    # media 先于 text 计算：剥媒体 t.co 尾巴依赖媒体列（与外推一致）
+    media = _project_tweet_media(quoted)
+    text = clean_tweet_display_text(
+        str(getattr(quoted, "text", "") or ""),
+        media,
+        getattr(quoted, "urls", None),
+    )
+    if not text and not media:
+        return None
+    parsed_dt = parse_tweet_datetime(str(getattr(quoted, "created_at", "") or ""))
+    return {
+        "url": compose_tweet_url(screen_name, quote_id),
+        "author": screen_name,
+        "author_name": str(getattr(author, "name", "") or ""),
+        "author_avatar_url": str(
+            getattr(author, "profile_image_url", "")
+            or getattr(author, "profile_image_url_https", "")
+            or ""
+        ),
+        "text": text,
+        "media": media,
+        "published_at": parsed_dt.isoformat() if parsed_dt else "",
+    }
+
+
 def project_tweets(
     tweets: Iterable[Any],
     *,
@@ -280,6 +321,7 @@ def project_tweets(
                 "rank_in_period": rank,
                 "tags": [X_SOURCE, "daily", screen_name],
                 "media": media,
+                "quote": _project_quoted_tweet(tweet),
             }
         )
     return results

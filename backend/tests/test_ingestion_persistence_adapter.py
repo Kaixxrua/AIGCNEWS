@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import MagicMock
 
@@ -78,6 +79,34 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         write = project_document_write(paper, document, "x")
 
         self.assertIsNone(write["translation_zh"])
+
+    def test_document_write_projection_serializes_quote_and_defaults_none(self) -> None:
+        document = MagicMock(metadata={"id": "doc-q"})
+        quote = {
+            "url": "https://x.com/comfyui/status/2000",
+            "author": "comfyui",
+            "author_name": "ComfyUI",
+            "text": "引用正文",
+            "media": [{"type": "photo", "url": "https://pbs.twimg.com/q.jpg"}],
+            "published_at": "2026-08-07T01:00:00+00:00",
+        }
+        paper = {
+            "source": "x",
+            "channel": "x_daily_watchlist",
+            "title": "Tweet",
+            "quote": quote,
+        }
+
+        write = project_document_write(paper, document, "x")
+
+        self.assertEqual(json.loads(write["quote"]), quote)
+        paper_no_quote = {"source": "x", "channel": "x_daily_watchlist", "title": "Tweet"}
+        self.assertIsNone(
+            project_document_write(paper_no_quote, document, "x")["quote"]
+        )
+        # 非 dict 的 quote（异常上游数据）不落库，避免写入不可解析形状
+        paper_bad = dict(paper_no_quote, quote=["not", "a", "dict"])
+        self.assertIsNone(project_document_write(paper_bad, document, "x")["quote"])
 
     def test_document_write_projection_passes_author_name_through(self) -> None:
         document = MagicMock(metadata={"id": "doc-x-name"})

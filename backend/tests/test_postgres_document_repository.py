@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
@@ -110,6 +111,59 @@ def test_deserialize_row_media_bad_json_returns_none() -> None:
     row = {"id": "x:bad", "media": "not-json"}
     result = _deserialize_row_media(row)
     assert result["media"] is None
+
+
+def test_deserialize_row_quote_json_and_bad_json() -> None:
+    row = {"id": "x:q", "quote": '{"url": "https://x.com/a/status/1", "text": "hi"}'}
+    result = _deserialize_row_media(row)
+    assert result["quote"] == {"url": "https://x.com/a/status/1", "text": "hi"}
+    bad = _deserialize_row_media({"id": "x:q2", "quote": "not-json"})
+    assert bad["quote"] is None
+
+
+def test_upsert_document_persists_quote() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    repository.upsert_document(
+        {
+            "id": "x:2004",
+            "source": "x",
+            "source_channel": "x_daily_watchlist",
+            "title": "tweet",
+            "url": "https://x.com/openai/status/2004",
+            "quote": {
+                "url": "https://x.com/comfyui/status/2000",
+                "author": "comfyui",
+                "author_name": "ComfyUI",
+                "text": "quoted text",
+                "media": [],
+                "published_at": "2026-08-07T01:00:00+00:00",
+            },
+        }
+    )
+
+    sql = cursor.execute.call_args.args[0]
+    params = cursor.execute.call_args.args[1]
+    assert "quote" in sql
+    # 冲突更新走 COALESCE(NULLIF(...))：新值缺失时保留已有引用卡片
+    assert "quote=COALESCE(NULLIF(EXCLUDED.quote, ''), documents.quote)" in sql
+    assert json.loads(params["quote"])["author"] == "comfyui"
+
+
+def test_upsert_document_quote_defaults_to_none() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    repository.upsert_document(
+        {
+            "id": "x:2005",
+            "source": "x",
+            "title": "tweet",
+            "url": "https://x.com/openai/status/2005",
+        }
+    )
+
+    params = cursor.execute.call_args.args[1]
+    assert params["quote"] is None
 
 
 def test_deserialize_row_media_missing_key_untouched() -> None:

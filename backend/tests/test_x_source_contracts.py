@@ -126,6 +126,7 @@ class XPolicyContracts(unittest.TestCase):
                 "rank_in_period": 1,
                 "tags": ["x", "daily", "openai"],
                 "media": [],
+                "quote": None,
             },
         )
 
@@ -163,6 +164,75 @@ class XPolicyContracts(unittest.TestCase):
         tweet.media = [TweetMedia(type="photo", url="", width=0, height=0)]
         items = x_policy.project_tweets([tweet], limit=5)
         self.assertEqual(items[0]["media"], [])
+
+    def test_project_tweets_projects_quoted_tweet_card(self) -> None:
+        tweet = _tweet("2001", text="going live")
+        quoted = _tweet(
+            "2000",
+            screen_name="comfyui",
+            author_name="ComfyUI",
+            # 媒体推：正文链接在中部，尾部 t.co 是媒体尾巴（X 真实形状）
+            text="Livestream update https://t.co/abc123 see you https://t.co/med9",
+            created_at="Fri Aug 07 01:00:00 +0000 2026",
+        )
+        quoted.media = [
+            TweetMedia(type="photo", url="https://pbs.twimg.com/media/q.jpg", width=800, height=450)
+        ]
+        quoted.urls = ["https://example.com/live"]
+        quoted.author.profile_image_url = "https://pbs.twimg.com/profile_images/q.jpg"
+        tweet.quoted_tweet = quoted
+        items = x_policy.project_tweets([tweet], limit=5)
+        self.assertEqual(
+            items[0]["quote"],
+            {
+                "url": "https://x.com/comfyui/status/2000",
+                "author": "comfyui",
+                "author_name": "ComfyUI",
+                "author_avatar_url": "https://pbs.twimg.com/profile_images/q.jpg",
+                "text": "Livestream update https://example.com/live see you",
+                "media": [
+                    {
+                        "type": "photo",
+                        "url": "https://pbs.twimg.com/media/q.jpg",
+                        "width": 800,
+                        "height": 450,
+                    }
+                ],
+                "published_at": "2026-08-07T01:00:00+00:00",
+            },
+        )
+
+    def test_project_tweets_quoted_media_tail_is_stripped(self) -> None:
+        tweet = _tweet("2002", text="quote with media")
+        quoted = _tweet("2003", text="look at this https://t.co/xyz789")
+        quoted.media = [
+            TweetMedia(type="photo", url="https://pbs.twimg.com/media/m.jpg", width=1, height=1)
+        ]
+        tweet.quoted_tweet = quoted
+        items = x_policy.project_tweets([tweet], limit=5)
+        self.assertEqual(items[0]["quote"]["text"], "look at this")
+
+    def test_project_tweets_quote_none_or_unusable(self) -> None:
+        # 无引用 → None
+        self.assertIsNone(x_policy.project_tweets([_tweet("2010")], limit=5)[0]["quote"])
+        # 引用缺 id → None（无法构成卡片链接）
+        tweet = _tweet("2011", text="q")
+        tweet.quoted_tweet = _tweet("", text="no id")
+        self.assertIsNone(x_policy.project_tweets([tweet], limit=5)[0]["quote"])
+        # 引用既无正文又无媒体 → None（渲染层无可展示内容）
+        tweet2 = _tweet("2012", text="q")
+        tweet2.quoted_tweet = _tweet("2013", text="")
+        self.assertIsNone(x_policy.project_tweets([tweet2], limit=5)[0]["quote"])
+        # 引用仅媒体无正文仍可成卡
+        tweet3 = _tweet("2014", text="q")
+        media_only = _tweet("2015", text="")
+        media_only.media = [
+            TweetMedia(type="photo", url="https://pbs.twimg.com/media/only.jpg", width=1, height=1)
+        ]
+        tweet3.quoted_tweet = media_only
+        quote = x_policy.project_tweets([tweet3], limit=5)[0]["quote"]
+        self.assertEqual(quote["text"], "")
+        self.assertEqual(len(quote["media"]), 1)
 
     def test_project_tweets_media_includes_poster_url_when_present(self) -> None:
         tweet = _tweet("1010", text="video with poster")

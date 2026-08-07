@@ -75,7 +75,7 @@ def _document_projection() -> str:
                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
-               d.in_monthly, d.local_pdf_path, d.media, d.author_avatar_url, d.author_name, d.translation_zh, d.created_at
+               d.in_monthly, d.local_pdf_path, d.media, d.quote, d.author_avatar_url, d.author_name, d.translation_zh, d.created_at
         FROM documents d
         LEFT JOIN github_repo_candidates c
           ON d.source = 'github' AND (c.full_name = d.title OR c.url = d.url)
@@ -87,13 +87,19 @@ def _document_projection() -> str:
 
 
 def _deserialize_row_media(row: dict[str, Any]) -> dict[str, Any]:
-    """把 documents.media 的 JSON 字符串反序列化为列表；失败则保留原值。"""
+    """把 JSON 文本列反序列化：media → 列表，quote → 对象；失败置 None。"""
     media = row.get("media")
     if isinstance(media, str) and media:
         try:
             row["media"] = json.loads(media)
         except json.JSONDecodeError:
             row["media"] = None
+    quote = row.get("quote")
+    if isinstance(quote, str) and quote:
+        try:
+            row["quote"] = json.loads(quote)
+        except json.JSONDecodeError:
+            row["quote"] = None
     return row
 
 
@@ -118,6 +124,7 @@ class PostgresDocumentRepository:
         doc.setdefault("rank_in_period", 9999)
         doc.setdefault("local_pdf_path", None)
         doc.setdefault("media", None)
+        doc.setdefault("quote", None)
         doc.setdefault("published_at", None)
         doc.setdefault("author_avatar_url", None)
         doc.setdefault("author_name", None)
@@ -126,6 +133,8 @@ class PostgresDocumentRepository:
             doc["tags"] = json.dumps(doc["tags"], ensure_ascii=False)
         if isinstance(doc.get("media"), list):
             doc["media"] = json.dumps(doc["media"], ensure_ascii=False)
+        if isinstance(doc.get("quote"), dict):
+            doc["quote"] = json.dumps(doc["quote"], ensure_ascii=False)
         params = dict(doc)
         for key in ("indexed", "in_daily", "in_weekly", "in_monthly"):
             params[key] = bool(params[key])
@@ -136,13 +145,13 @@ class PostgresDocumentRepository:
                     INSERT INTO documents
                         (id, source, source_channel, title, url, summary, published_date,
                          published_at, tags, score, raw_score, stars, forks, language, rank_in_period,
-                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, author_avatar_url, author_name, translation_zh, created_at)
+                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, quote, author_avatar_url, author_name, translation_zh, created_at)
                     VALUES
                         (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s,
                          %(summary)s, %(published_date)s, %(published_at)s, %(tags)s, %(score)s,
                          %(raw_score)s, %(stars)s, %(forks)s, %(language)s,
                          %(rank_in_period)s, %(indexed)s, %(in_daily)s, %(in_weekly)s,
-                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(author_avatar_url)s, %(author_name)s, %(translation_zh)s, %(created_at)s)
+                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(quote)s, %(author_avatar_url)s, %(author_name)s, %(translation_zh)s, %(created_at)s)
                     ON CONFLICT (id) DO UPDATE SET
                         source_channel=EXCLUDED.source_channel, title=EXCLUDED.title,
                         url=EXCLUDED.url, summary=EXCLUDED.summary,
@@ -160,6 +169,7 @@ class PostgresDocumentRepository:
                         in_monthly=(documents.in_monthly OR EXCLUDED.in_monthly),
                         local_pdf_path=COALESCE(EXCLUDED.local_pdf_path, documents.local_pdf_path),
                         media=COALESCE(NULLIF(EXCLUDED.media, ''), documents.media),
+                        quote=COALESCE(NULLIF(EXCLUDED.quote, ''), documents.quote),
                         author_avatar_url=COALESCE(NULLIF(EXCLUDED.author_avatar_url, ''), documents.author_avatar_url),
                         author_name=COALESCE(NULLIF(EXCLUDED.author_name, ''), documents.author_name),
                         translation_zh=COALESCE(NULLIF(EXCLUDED.translation_zh, ''), documents.translation_zh)
