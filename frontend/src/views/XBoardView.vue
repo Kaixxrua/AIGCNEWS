@@ -614,14 +614,15 @@ a.tweet-link:hover {
   color: var(--ink-muted);
 }
 
-/* 引用推文卡片：主卡内的次级内嵌区——细线 --rule 边框、无常驻阴影、
-   透明底让主卡 hover 的 acid-soft 透出来（真「内嵌」而非贴片）；
-   自身 hover 走 chip 配方（墨边 + 纸面 + 2px 硬影），不做位移——
-   主卡 hover 同样无位移，避免嵌套双层动效 */
+/* 引用推文卡片：静态即浮起态（墨边 + 纸面 + 2px 硬影，chip 配方），
+   让可点的内嵌卡始终有「卡片感」；hover 按主题惯例换 acid-soft 底色
+   （与主卡/text 段 hover 同一词汇），不做位移 */
 .tweet-quote {
   overflow: hidden;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--ink);
   border-radius: 5px;
+  background: var(--projects-paper-light);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
   transition:
     border-color 150ms ease,
     background 150ms ease,
@@ -629,9 +630,7 @@ a.tweet-link:hover {
 }
 
 a.tweet-quote:hover {
-  border-color: var(--ink);
-  background: var(--projects-paper-light);
-  box-shadow: 2px 2px 0 var(--shadow-hard);
+  background: var(--acid-soft);
 }
 
 /* 主题去胶囊化：引用头像与外推头像同方（4px 圆角 + --rule 细边） */
