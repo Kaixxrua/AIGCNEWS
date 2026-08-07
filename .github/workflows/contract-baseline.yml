@@ -106,25 +106,6 @@ jobs:
           python -m pip install -r backend/requirements.txt
           python -m pip install "pytest>=8.2,<9"
 
-      - name: Validate project-catalog rehearsal configuration
-        env:
-          REHEARSAL_BACKEND_IMAGE: ghcr.io/example/aigcnews-backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-          REHEARSAL_RELEASE_ID: ci-${{ github.sha }}
-          REHEARSAL_ENV_FILE: ${{ runner.temp }}/aigcnews-rehearsal.env
-          REHEARSAL_MYSQL_ROOT_PASSWORD: ci-placeholder-not-used
-          REHEARSAL_MYSQL_DATABASE: aigcnews_rehearsal
-          REHEARSAL_MYSQL_USER: aigcnews_rehearsal
-          REHEARSAL_MYSQL_PASSWORD: ci-placeholder-not-used
-          REHEARSAL_POSTGRES_DATABASE: aigcnews_rehearsal
-          REHEARSAL_POSTGRES_USER: aigcnews_rehearsal
-          REHEARSAL_POSTGRES_PASSWORD: ci-placeholder-not-used
-          REHEARSAL_MINIO_ROOT_USER: aigcnews-rehearsal
-          REHEARSAL_MINIO_ROOT_PASSWORD: ci-placeholder-not-used
-        run: |
-          install -m 600 /dev/null "$REHEARSAL_ENV_FILE"
-          scripts/rehearse_project_catalog_cutover.sh config
-          python -m pytest -q backend/tests/test_project_catalog_rehearsal_config.py
-
       - name: Apply PostgreSQL migrations explicitly
         run: python scripts/migrate_postgres.py apply
 

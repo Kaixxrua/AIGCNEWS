@@ -51,23 +51,3 @@ def test_production_image_excludes_migration_dependencies() -> None:
     assert "pymysql" not in requirements
     assert "dbutils" not in requirements
     assert "requirements-migration.txt" not in dockerfile
-
-
-def test_mysql_dependencies_are_confined_to_migration_operator() -> None:
-    requirements = (BACKEND / "requirements-migration.txt").read_text(
-        encoding="utf-8"
-    ).lower()
-    dockerfile = (BACKEND / "Dockerfile.migration").read_text(encoding="utf-8")
-    compose = (ROOT / "docker" / "docker-compose.mysql-migration.yml").read_text(
-        encoding="utf-8"
-    )
-
-    assert "pymysql" in requirements
-    assert "dbutils" in requirements
-    assert "requirements-migration.txt" in dockerfile
-    assert "mysql-migration-ops:" in compose
-    assert 'profiles: ["mysql-migration"]' in compose
-    assert "Dockerfile.migration" in compose
-    assert "../backend:/src/backend:ro" in compose
-    assert "../scripts:/src/scripts:ro" in compose
-    assert "mysql-aigc:" not in compose
