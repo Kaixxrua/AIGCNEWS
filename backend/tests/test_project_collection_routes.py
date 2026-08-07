@@ -4,6 +4,7 @@ import ast
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -30,7 +31,14 @@ def _client(service: PersonalProjectsService) -> TestClient:
     return TestClient(app)
 
 
-def test_legacy_github_projects_route_uses_catalog_repository(monkeypatch) -> None:
+def _catalog_client(repository: MagicMock, *, user: dict | None = None) -> TestClient:
+    app = FastAPI()
+    app.include_router(routes_github_projects.router, prefix="/api")
+    app.dependency_overrides[OptionalUser] = lambda: user
+    return TestClient(app)
+
+
+def test_github_projects_route_uses_catalog_repository(monkeypatch) -> None:
     repository = MagicMock()
     repository.list_projects.return_value = {
         "items": [],
@@ -43,11 +51,9 @@ def test_legacy_github_projects_route_uses_catalog_repository(monkeypatch) -> No
         "get_project_catalog_repository",
         MagicMock(return_value=repository),
     )
-    app = FastAPI()
-    app.include_router(routes_github_projects.router, prefix="/api")
-    app.dependency_overrides[OptionalUser] = lambda: None
-
-    response = TestClient(app).get("/api/github/projects?q=agent")
+    response = _catalog_client(repository).get(
+        "/api/projects?source=github&q=agent&sort=stars"
+    )
 
     assert response.status_code == 200
     repository.list_projects.assert_called_once_with(
@@ -64,6 +70,60 @@ def test_legacy_github_projects_route_uses_catalog_repository(monkeypatch) -> No
         enriched_only=True,
         user_id=None,
     )
+
+
+def test_canonical_query_defaults_to_relevance_and_honors_explicit_sort(
+    monkeypatch,
+) -> None:
+    repository = MagicMock()
+    repository.list_projects.return_value = {
+        "items": [], "total": 0, "page": 1, "page_size": 24
+    }
+    monkeypatch.setattr(
+        routes_github_projects,
+        "get_project_catalog_repository",
+        MagicMock(return_value=repository),
+    )
+    client = _catalog_client(repository, user={"user_id": 42})
+
+    default_response = client.get("/api/projects?q=langchain")
+    assert default_response.status_code == 200
+    assert repository.list_projects.call_args.kwargs["sort"] == "relevance"
+    assert repository.list_projects.call_args.kwargs["q"] == "langchain"
+    assert repository.list_projects.call_args.kwargs["user_id"] == 42
+
+    repository.list_projects.reset_mock()
+    explicit_response = client.get("/api/projects?q=langchain&sort=stars")
+    assert explicit_response.status_code == 200
+    assert repository.list_projects.call_args.kwargs["sort"] == "stars"
+
+    repository.list_projects.reset_mock()
+    empty_response = client.get("/api/projects?sort=relevance")
+    assert empty_response.status_code == 200
+    assert repository.list_projects.call_args.kwargs["sort"] == "stars"
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_status"),
+    [
+        ("/api/projects?source=website", 404),
+        ("/api/projects/categories?source=website", 404),
+    ],
+)
+def test_canonical_project_source_errors_remain_explicit(
+    monkeypatch, path: str, expected_status: int
+) -> None:
+    repository = MagicMock()
+    monkeypatch.setattr(
+        routes_github_projects,
+        "get_project_catalog_repository",
+        MagicMock(return_value=repository),
+    )
+    response = _catalog_client(repository).get(path)
+
+    assert response.status_code == expected_status
+    repository.list_projects.assert_not_called()
+    repository.get_project_categories.assert_not_called()
 
 
 def test_collection_routes_use_injected_service_and_normalize_queries() -> None:

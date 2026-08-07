@@ -465,38 +465,3 @@ async def remove_my_tool_website(
 async def get_project_taxonomy() -> ProjectTaxonomyResponse:
     """返回普通用户手动添加工具网站时可选的分类体系。"""
     return ProjectTaxonomyResponse(items=_taxonomy_items())
-
-
-@router.get("/github/projects", response_model=GitHubProjectsResponse, tags=["GitHub Projects"])
-async def list_github_projects(
-    category: str = Query(default="", max_length=64),
-    subcategory: str = Query(default="", max_length=64),
-    q: str = Query(default="", max_length=120),
-    language: str = Query(default="", max_length=64),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=24, ge=1, le=60),
-    sort: GitHubProjectSort = Query(default="stars"),
-) -> GitHubProjectsResponse:
-    """收藏夹式 GitHub 项目库：历史项目、stars > 500、AI 分类与中文描述。"""
-    return await list_projects(
-        source="github",
-        scope="all",
-        category=category,
-        subcategory=subcategory,
-        q=q,
-        language=language,
-        page=page,
-        page_size=page_size,
-        sort=sort,
-        user=None,
-    )
-
-
-@router.get(
-    "/github/projects/categories",
-    response_model=GitHubProjectCategoriesResponse,
-    tags=["GitHub Projects"],
-)
-async def list_github_project_categories() -> GitHubProjectCategoriesResponse:
-    """返回 GitHub 项目库 AI 分类及数量。"""
-    return await list_project_categories(source="github", user=None)

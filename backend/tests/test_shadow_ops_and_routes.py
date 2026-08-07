@@ -18,13 +18,13 @@ def test_mcp_categories_use_catalog_factory() -> None:
     assert result["source"] == "github"
 
 
-def test_legacy_categories_use_catalog_factory() -> None:
+def test_canonical_categories_use_catalog_factory() -> None:
     repository = MagicMock()
     repository.get_project_categories.return_value = {
         "items": [], "total": 0, "today_count": 0, "recommended_count": 0
     }
     with patch.object(routes_github_projects, "get_project_catalog_repository", return_value=repository) as factory:
-        result = asyncio.run(routes_github_projects.list_github_project_categories())
+        result = asyncio.run(routes_github_projects.list_project_categories(source="all", user=None))
     factory.assert_called_once_with()
     assert result.total == 0
 
