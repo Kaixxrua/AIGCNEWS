@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, authorDisplayName, displayTweetText, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, paginateItems, timelineTweets, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, distributeColumns, extractXHandle, formatLocalTime, hasMedia, mediaItems, paginateItems, timelineTweets, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
@@ -285,11 +285,27 @@ onBeforeUnmount(() => {
               </template>
             </div>
 
-            <!-- 文字区 -->
+            <!-- 文字区：URL 段独立锚点跳真实地址，文本段保持跳推文（sibling，无嵌套 a） -->
             <div class="px-4 py-3">
-              <a :href="tweet.url" target="_blank" rel="noopener noreferrer" class="tweet-text block whitespace-pre-line px-1 text-sm leading-5">
-                {{ displayTweetText(tweet, locale) }}
-              </a>
+              <div class="tweet-text block whitespace-pre-line px-1 text-sm leading-5">
+                <template v-for="(seg, segIndex) in tweetTextSegments(tweet, locale)" :key="segIndex">
+                  <a
+                    v-if="seg.isUrl"
+                    :href="seg.text"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="tweet-link"
+                    @click.stop
+                  >{{ seg.text }}</a>
+                  <a
+                    v-else
+                    :href="tweet.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="tweet-text-seg"
+                  >{{ seg.text }}</a>
+                </template>
+              </div>
               <p v-if="formatTime(tweet)" class="tweet-time mt-2 px-1 text-2xs">{{ formatTime(tweet) }}</p>
             </div>
           </article>
@@ -522,8 +538,27 @@ a.tweet-handle:hover {
   color: var(--ink);
 }
 
-a.tweet-text:hover {
+/* 文本段保持跳推文的原交互；URL 段下划线标识可点、hover 走 acid 反转 */
+.tweet-text-seg {
+  border-radius: 4px;
+  color: var(--ink);
+}
+
+a.tweet-text-seg:hover {
   background: var(--acid-soft);
+}
+
+.tweet-link {
+  border-radius: 4px;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+a.tweet-link:hover {
+  background: var(--acid);
+  color: var(--projects-on-acid);
 }
 
 .tweet-time {

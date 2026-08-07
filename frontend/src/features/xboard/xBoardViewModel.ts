@@ -56,6 +56,46 @@ export const displayTweetText = (doc: TopDoc, locale: string): string => {
   return tweetText(doc)
 }
 
+export interface TweetTextSegment {
+  text: string
+  isUrl: boolean
+}
+
+const URL_IN_TEXT_RE = /https?:\/\/[^\s]+/g
+// URL 匹配贪心吃掉句读时的回退字符集（不含括号/引号，避免误裁合法路径）
+const URL_TRAILING_PUNCT_RE = /[.,;:!?，。！？、；：]+$/
+
+/**
+ * 正文分段渲染：URL 段独立锚点跳真实地址，文本段保持跳推文。
+ * 整个文本块不再是单一锚点（嵌套 a 非法）， sibling 分段各自成链。
+ */
+export const tweetTextSegments = (doc: TopDoc, locale: string): TweetTextSegment[] => {
+  const text = displayTweetText(doc, locale)
+  const segments: TweetTextSegment[] = []
+  let last = 0
+  for (const match of text.matchAll(URL_IN_TEXT_RE)) {
+    const raw = match[0]
+    const index = match.index ?? 0
+    // 句读回退：URL 后紧跟的中英文句读归还给文本段
+    const trimmed = raw.replace(URL_TRAILING_PUNCT_RE, '')
+    const urlEnd = index + trimmed.length
+    if (index > last) segments.push({ text: text.slice(last, index), isUrl: false })
+    if (trimmed) segments.push({ text: trimmed, isUrl: true })
+    if (urlEnd < index + raw.length) segments.push({ text: text.slice(urlEnd, index + raw.length), isUrl: false })
+    last = index + raw.length
+  }
+  if (last < text.length) segments.push({ text: text.slice(last), isUrl: false })
+  // 合并相邻文本段（句读回退会制造碎片），得到最小分段列表
+  const merged: TweetTextSegment[] = []
+  for (const seg of segments) {
+    if (!seg.text) continue
+    const prev = merged[merged.length - 1]
+    if (prev && !prev.isUrl && !seg.isUrl) prev.text += seg.text
+    else merged.push({ ...seg })
+  }
+  return merged
+}
+
 export const hasMedia = (doc: TopDoc): boolean =>
   Array.isArray(doc.media) && doc.media.length > 0
 

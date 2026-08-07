@@ -19,6 +19,7 @@ import {
   timelineTweets,
   tweetScore,
   tweetText,
+  tweetTextSegments,
   tweetTimestamp,
 } from './xBoardViewModel'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
@@ -242,6 +243,41 @@ describe('xBoardViewModel', () => {
     expect(displayTweetText(tweet('openai', '1', { summary: 'orig' }), 'zh-CN')).toBe('orig')
     expect(displayTweetText(tweet('openai', '1', { summary: 'orig', translation_zh: '   ' }), 'zh-CN')).toBe('orig')
     expect(displayTweetText(tweet('openai', '1', { title: 't', translation_zh: '译' }), 'zh-CN')).toBe('译')
+  })
+
+  it('tweetTextSegments splits urls into clickable segments', () => {
+    const doc = tweet('openai', '1', {
+      summary: 'read https://openai.com/a and https://example.org/b now',
+    })
+    expect(tweetTextSegments(doc, 'en-US')).toEqual([
+      { text: 'read ', isUrl: false },
+      { text: 'https://openai.com/a', isUrl: true },
+      { text: ' and ', isUrl: false },
+      { text: 'https://example.org/b', isUrl: true },
+      { text: ' now', isUrl: false },
+    ])
+  })
+
+  it('tweetTextSegments returns trailing punctuation to the text segment', () => {
+    const doc = tweet('openai', '1', { summary: 'see https://openai.com/a, then reply.' })
+    expect(tweetTextSegments(doc, 'en-US')).toEqual([
+      { text: 'see ', isUrl: false },
+      { text: 'https://openai.com/a', isUrl: true },
+      { text: ', then reply.', isUrl: false },
+    ])
+  })
+
+  it('tweetTextSegments works on translation text and url-only bodies', () => {
+    const zhDoc = tweet('openai', '1', {
+      summary: 'orig',
+      translation_zh: '更多资格信息：\nhttps://gemini.google/eligibility',
+    })
+    expect(tweetTextSegments(zhDoc, 'zh-CN')).toEqual([
+      { text: '更多资格信息：\n', isUrl: false },
+      { text: 'https://gemini.google/eligibility', isUrl: true },
+    ])
+    expect(tweetTextSegments(tweet('openai', '1', { summary: 'no links here' }), 'en-US'))
+      .toEqual([{ text: 'no links here', isUrl: false }])
   })
 
   it('distributeColumns deals items round-robin so cross-column reads stay row-major', () => {
