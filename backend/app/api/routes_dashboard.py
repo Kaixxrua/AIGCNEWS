@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -32,6 +33,8 @@ from backend.app.services.dashboard.query_service import DashboardQueryService
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
+
 
 async def _github_library_count() -> Optional[int]:
     """项目库 GitHub 收录总量（与 /projects 列表同一查询口径）。
@@ -50,6 +53,11 @@ async def _github_library_count() -> Optional[int]:
     try:
         return await asyncio.to_thread(_query)
     except Exception:
+        # 静默降级会掩盖项目库故障：保留回退行为，但留下可检索的告警日志
+        logger.warning(
+            "[Dashboard] 项目库 GitHub 收录量查询失败，回退到 documents 表计数",
+            exc_info=True,
+        )
         return None
 
 
@@ -449,11 +457,15 @@ async def get_snapshot_dates(
 
 
 @router.get("/dashboard/visitor-count")
+@cache(expire=10, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_visitor_count(
     request: Request,
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
 ):
-    """返回用户数指标（不缓存，实时读取数据库）。"""
+    """返回用户数指标（10s 短缓存聚合匿名轮询，与 live-stats 口径一致）。
+
+    行为变化：数据最多旧 10 秒；此前每次请求直查两次 COUNT。
+    """
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
     today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
     user_count = registered_users + today_registered_users

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from datetime import date, datetime, timedelta, timezone
@@ -626,6 +627,21 @@ def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
     assert calls == [
         {"source": "github", "scope": "all", "page": 1, "page_size": 1, "sort": "stars"}
     ]
+
+
+def test_github_library_count_failure_logs_warning_and_returns_none(monkeypatch, caplog) -> None:
+    def broken_factory():
+        raise RuntimeError("catalog down")
+
+    monkeypatch.setattr(
+        routes_dashboard, "get_project_catalog_repository", broken_factory
+    )
+
+    with caplog.at_level("WARNING", logger="backend.app.api.routes_dashboard"):
+        result = asyncio.run(routes_dashboard._github_library_count())
+
+    assert result is None
+    assert "项目库 GitHub 收录量查询失败" in caplog.text
 
 
 def test_summary_github_stat_falls_back_to_documents_when_catalog_unavailable(monkeypatch) -> None:
