@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
@@ -329,11 +331,43 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 logger.warning("[Shutdown] PostgreSQL close failed (non-fatal): %s", exc)
 
 
+# 交互式 API 文档与 OpenAPI schema 暴露内部路由/模型细节，仅开发环境开放；
+# 生产环境（settings.env 非 development/dev，与启动缓存清理同一判定口径）关闭。
+_API_DOCS_ENABLED = settings.env.lower() in ("development", "dev")
+
 app = FastAPI(
     title="RAG AIGC Agent API",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if _API_DOCS_ENABLED else None,
+    redoc_url="/redoc" if _API_DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _API_DOCS_ENABLED else None,
 )
+
+
+def _resolve_app_version() -> str:
+    """版本真实来源：仓库根 server.json（MCP registry 清单，由契约测试与
+    MCP_SERVER_VERSION 保持一致）。容器内无该文件时回退到代码内常量。"""
+    try:
+        manifest = Path(__file__).resolve().parents[2] / "server.json"
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+        version = document.get("version")
+        if isinstance(version, str) and version.strip():
+            return version.strip()
+    except (OSError, ValueError):
+        pass
+    from backend.app.services.mcp.inbound.catalog import MCP_SERVER_VERSION
+
+    return MCP_SERVER_VERSION
+
+
+_APP_VERSION = _resolve_app_version()
+
+
+@app.get("/api/version", tags=["Monitor"])
+async def api_version() -> dict[str, str]:
+    """返回应用真实版本（与 server.json / MCP serverInfo 同源）。"""
+    return {"name": "aigc-radar", "version": _APP_VERSION}
 
 # ── 静态文件：挂载 PDF 存储目录，前端可通过 /api/media/papers/{arxiv_id}.pdf 访问 ──
 _papers_dir = settings.papers_storage_dir

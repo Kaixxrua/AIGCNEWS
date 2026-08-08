@@ -57,5 +57,30 @@ class CorsConfigurationContracts(unittest.TestCase):
         self.assertIn("https://aigcnews.cn", settings.cors_allowed_origins)
 
 
+class ApiDocsExposureContracts(unittest.TestCase):
+    """交互式 API 文档/OpenAPI schema 暴露面：仅开发环境开放。"""
+
+    def setUp(self) -> None:
+        self.client = TestClient(app)
+
+    def test_docs_gate_matches_env_predicate(self) -> None:
+        from backend.app.core.config import settings
+
+        docs_expected = settings.env.lower() in ("development", "dev")
+        self.assertEqual(app.docs_url is not None, docs_expected)
+        self.assertEqual(app.redoc_url is not None, docs_expected)
+        self.assertEqual(app.openapi_url is not None, docs_expected)
+
+    def test_production_never_serves_docs_or_openapi(self) -> None:
+        from backend.app.core.config import settings
+
+        if settings.env.lower() in ("development", "dev"):
+            self.skipTest("开发环境文档开放，暴露面用例不适用")
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 404)
+
+
 if __name__ == "__main__":
     unittest.main()
