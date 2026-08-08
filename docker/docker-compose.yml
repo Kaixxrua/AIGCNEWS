@@ -216,8 +216,8 @@ services:
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z@sha256:6d770d7f255cda1f18d841ffc4365cb7e0d237f6af6a15fcdb587480cd7c3b93
     restart: unless-stopped
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY}
     command: minio server /minio_data --console-address ":9001"
     # 仅限编排网络内部访问；调试时改用 docker compose exec/port-forward
     expose:
@@ -278,7 +278,7 @@ services:
       - "7474"
       - "7687"
     environment:
-      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-12345678}
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD}
     volumes:
       - ../data/neo4j:/data
 
