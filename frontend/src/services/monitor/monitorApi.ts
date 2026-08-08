@@ -93,8 +93,8 @@ export const monitorApi: MonitorApi = {
       : (await api.post('/ops/x-watch-accounts', payload)).data
   },
   async deleteXWatchAccount(id) { return (await api.delete(`/ops/x-watch-accounts/${id}`)).data },
-  // 测试会真实请求 X 拉取推文（先例：testMcpServer 的 30s 超时）
-  async testXWatchAccount(id) { return (await api.post(`/ops/x-watch-accounts/${id}/test`, null, { timeout: 30_000 })).data },
+  // X 测活要真实请求 X 拉取推文（经代理 GraphQL 多跳，实测 ~20s），30s 容易前端先超时但后端已写好结果
+  async testXWatchAccount(id) { return (await api.post(`/ops/x-watch-accounts/${id}/test`, null, { timeout: 60_000 })).data },
   async fetchXCredentials() {
     const { data } = await api.get('/ops/x-credentials')
     return Array.isArray(data?.items) ? data.items : []
@@ -106,7 +106,7 @@ export const monitorApi: MonitorApi = {
       : (await api.post('/ops/x-credentials', payload)).data
   },
   async deleteXCredential(id) { return (await api.delete(`/ops/x-credentials/${id}`)).data },
-  async testXCredential(id) { return (await api.post(`/ops/x-credentials/${id}/test`, null, { timeout: 30_000 })).data },
+  async testXCredential(id) { return (await api.post(`/ops/x-credentials/${id}/test`, null, { timeout: 60_000 })).data },
   async ingestSource(source) { return (await api.post('/ops/ingest-source', null, { params: { source, limit: 20 } })).data },
   async generateAllBriefings(forceRegenerate) {
     return (await api.post('/ops/briefing/generate-all', null, { params: { force_regenerate: forceRegenerate } })).data

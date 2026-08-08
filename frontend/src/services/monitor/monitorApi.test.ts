@@ -138,7 +138,7 @@ describe('Monitor API contract', () => {
     expect(transport.post).toHaveBeenLastCalledWith('/ops/ingest-by-date', { target_date: '2026-07-20', limit: 30 })
   })
 
-  it('preserves X watch account endpoints, payload mapping, and 30 second test timeout', async () => {
+  it('preserves X watch account endpoints, payload mapping, and 60 second test timeout', async () => {
     const xAccount = {
       id: 3, screen_name: 'openai', display_name: 'OpenAI', note: '', enabled: true,
       sort_order: 1, last_test_status: 'success', last_test_message: '', last_test_at: null,
@@ -166,14 +166,14 @@ describe('Monitor API contract', () => {
       expect.objectContaining({ screen_name: 'openai', sort_order: 1 }))
 
     await monitorApi.testXWatchAccount(3)
-    expect(transport.post).toHaveBeenLastCalledWith('/ops/x-watch-accounts/3/test', null, { timeout: 30_000 })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/x-watch-accounts/3/test', null, { timeout: 60_000 })
 
     transport.delete.mockResolvedValue({ data: { deleted: true, id: 3 } })
     await monitorApi.deleteXWatchAccount(3)
     expect(transport.delete).toHaveBeenLastCalledWith('/ops/x-watch-accounts/3')
   })
 
-  it('preserves X credential endpoints, safe secret payloads, and 30 second test timeout', async () => {
+  it('preserves X credential endpoints, safe secret payloads, and 60 second test timeout', async () => {
     const credential = {
       id: 7,
       display_name: 'Primary X',
@@ -223,7 +223,7 @@ describe('Monitor API contract', () => {
 
     transport.post.mockResolvedValue({ data: { status: 'succeeded', message: 'OK', credential } })
     await monitorApi.testXCredential(7)
-    expect(transport.post).toHaveBeenLastCalledWith('/ops/x-credentials/7/test', null, { timeout: 30_000 })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/x-credentials/7/test', null, { timeout: 60_000 })
 
     transport.delete.mockResolvedValue({ data: { deleted: true, id: 7 } })
     await monitorApi.deleteXCredential(7)
