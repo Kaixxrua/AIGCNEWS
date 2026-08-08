@@ -26,6 +26,13 @@ class GitHubProjectIngestionRepository(Protocol):
 
     def insert_github_repo_snapshot(self, snapshot: dict[str, Any]) -> None: ...
 
+    def upsert_github_repo_metric_observations(
+        self,
+        observations: list[dict[str, Any]],
+        *,
+        checked_at: str,
+    ) -> int: ...
+
     def upsert_github_trending_hit(self, hit: dict[str, Any]) -> str: ...
 
     def get_github_hot_repos(
