@@ -19,18 +19,9 @@ export function formatLocaleDate(
   return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat(localeFor(locale), options).format(date)
 }
 
-export function formatLocaleNumber(value: number | null | undefined, locale?: AppLocale): string {
-  const numeric = Number(value ?? 0)
-  return Number.isFinite(numeric) ? new Intl.NumberFormat(localeFor(locale)).format(numeric) : '0'
-}
-
 export function formatLocaleCompactNumber(value: number | null | undefined, locale?: AppLocale): string {
   const numeric = Number(value ?? 0)
   return Number.isFinite(numeric)
     ? new Intl.NumberFormat(localeFor(locale), { notation: 'compact', maximumFractionDigits: 1 }).format(numeric)
     : '0'
-}
-
-export function compareLocaleStrings(left: string, right: string, locale?: AppLocale): number {
-  return new Intl.Collator(localeFor(locale)).compare(left, right)
 }

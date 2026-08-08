@@ -260,10 +260,6 @@ export async function fetchMyProjectCollection(params?: ProjectListParams): Prom
   return normalizeProjectsResponse(res.data, params)
 }
 
-export async function fetchGitHubProjects(params?: Omit<ProjectListParams, 'source' | 'scope'>): Promise<GitHubProjectsResponse> {
-  return fetchProjects({ ...params, source: 'github', scope: 'all' })
-}
-
 function normalizeProjectCategoriesResponse(data: any, source: ProjectSource): GitHubProjectCategoriesResponse {
   return {
     items: Array.isArray(data?.items) ? data.items : [],
@@ -280,17 +276,6 @@ export async function fetchProjectCategories(
 ): Promise<GitHubProjectCategoriesResponse> {
   const res = await api.get('/projects/categories', { params: { source } })
   return normalizeProjectCategoriesResponse(res.data, source)
-}
-
-export async function fetchMyProjectCategories(
-  source: ProjectSource = 'all',
-): Promise<GitHubProjectCategoriesResponse> {
-  const res = await api.get('/projects/me/categories', { params: { source } })
-  return normalizeProjectCategoriesResponse(res.data, source)
-}
-
-export async function fetchGitHubProjectCategories(): Promise<GitHubProjectCategoriesResponse> {
-  return fetchProjectCategories('github')
 }
 
 export async function fetchMyProjectTags(

@@ -110,24 +110,3 @@ export const dashboardApi: DashboardApi = {
     return response.data
   },
 }
-
-export function fetchSnapshotDates(
-  limit = 60,
-  source?: string,
-  period?: string,
-  signal?: AbortSignal,
-): Promise<string[]> {
-  return dashboardApi.fetchSnapshotDates({
-    limit,
-    source: source as Parameters<DashboardApi['fetchSnapshotDates']>[0]['source'],
-    period: period as Parameters<DashboardApi['fetchSnapshotDates']>[0]['period'],
-    signal,
-  })
-}
-
-export function fetchGitHubHotRepos(
-  period: GitHubHotPeriod = 'daily',
-  limit = 30,
-): Promise<GitHubHotResponse> {
-  return dashboardApi.fetchGitHubHotRepos(period, limit)
-}
