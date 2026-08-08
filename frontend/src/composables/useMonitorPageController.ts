@@ -4,8 +4,10 @@ import { i18n } from '@/i18n'
 import {
   createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
-  type GithubCrawlStatus, type GithubEnrichmentStatus, type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
+  type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
+import { useGithubCrawlPolling } from './useGithubCrawlPolling'
+import { ENRICHMENT_POLL_INTERVAL, useEnrichmentPolling } from './useEnrichmentPolling'
 
 interface MonitorPageControllerOptions {
   isAdmin: ComputedRef<boolean>
@@ -69,16 +71,11 @@ export const useMonitorPageController = ({
   const showClearConfirm = ref(false)
   const crawlForm = ref(createGithubCrawlForm(today))
   const crawling = ref(false)
-  const crawlPolling = ref(false)
-  const crawlStatus = ref<GithubCrawlStatus | null>(null)
-  const activeCrawlRun = ref<{ channel: string; first_seen_after: string } | null>(null)
-  const enrichmentStatus = ref<GithubEnrichmentStatus | null>(null)
   const loadingEnrichmentStatus = ref(false)
   const retryingEnrichment = ref(false)
   const backfillingEnrichment = ref(false)
   const cancellingEnrichment = ref(false)
   const enrichmentConcurrency = ref(3)
-  const enrichmentPolling = ref(false)
   // 富化专用推理强度：空串=跟随模型服务配置；effective 为后端解析的当前生效档位
   const enrichmentReasoningEffort = ref('')
   const enrichmentEffectiveReasoningEffort = ref('')
@@ -94,6 +91,17 @@ export const useMonitorPageController = ({
       total.value = data.total
     } catch (error) { console.error('Failed to fetch tasks', error) }
   }
+  const setSuccessMessage = (message: string) => { successMsg.value = message }
+  const setErrorMessage = (message: string) => { errorMsg.value = message }
+  const { crawlPolling, crawlStatus, beginCrawlPolling, resumeGithubCrawlPolling } = useGithubCrawlPolling({
+    api, isAdmin, schedule,
+    setSuccess: setSuccessMessage,
+    setError: setErrorMessage,
+    refreshTasks: fetchTasks,
+  })
+  const { enrichmentStatus, enrichmentPolling, beginEnrichmentPolling, stopEnrichmentPolling } = useEnrichmentPolling({
+    api, schedule, setSuccess: setSuccessMessage,
+  })
   const fetchSchedulerStatus = async () => {
     try { schedulerStatus.value = await api.fetchSchedulerStatus() }
     catch (error) { console.error('Failed to fetch scheduler status', error) }
@@ -259,43 +267,6 @@ export const useMonitorPageController = ({
     finally { deletingMcpServerId.value = null }
   }
   const delayedRefresh = (secondDelay: number) => { schedule(fetchTasks, 1000); schedule(fetchTasks, secondDelay) }
-  const CRAWL_POLL_INTERVAL = 3000
-  const isCrawlTerminal = (status: string) => status === 'success' || status === 'failed'
-  const pollGithubCrawlStatus = async () => {
-    if (!crawlPolling.value) return
-    try {
-      const status = await api.fetchGithubCrawlStatus(activeCrawlRun.value || undefined)
-      crawlStatus.value = status
-      if (isCrawlTerminal(status.task_status)) {
-        crawlPolling.value = false
-        activeCrawlRun.value = null
-        if (status.task_status === 'success') successMsg.value = i18n.global.t('monitor.crawl.runFinished')
-        else errorMsg.value = i18n.global.t('monitor.crawl.runFailed', { error: status.error_msg || '' })
-        await fetchTasks()
-        return
-      }
-    } catch (error) {
-      // 轮询错误容忍：容器重启等瞬态故障不断链
-      console.error('Failed to poll GitHub crawl status', error)
-    }
-    if (crawlPolling.value) schedule(() => { void pollGithubCrawlStatus() }, CRAWL_POLL_INTERVAL)
-  }
-  const beginCrawlPolling = (run: { channel: string; first_seen_after: string }) => {
-    activeCrawlRun.value = run
-    crawlPolling.value = true
-    schedule(() => { void pollGithubCrawlStatus() }, CRAWL_POLL_INTERVAL)
-  }
-  const resumeGithubCrawlPolling = async () => {
-    if (!isAdmin.value || crawlPolling.value) return
-    try {
-      const status = await api.fetchGithubCrawlStatus()
-      if (!status.task_id) return
-      crawlStatus.value = status
-      if (status.task_status === 'running') {
-        beginCrawlPolling({ channel: status.channel, first_seen_after: status.first_seen_after })
-      }
-    } catch (error) { console.error('Failed to fetch GitHub crawl status', error) }
-  }
   const startGithubCrawl = async () => {
     if (crawling.value || crawlPolling.value) return
     clearMessages()
@@ -318,68 +289,6 @@ export const useMonitorPageController = ({
     } catch (error) {
       errorMsg.value = statusOf(error) === 409 ? i18n.global.t('monitor.crawl.conflict') : detail(error)
     } finally { crawling.value = false }
-  }
-  const ENRICHMENT_POLL_INTERVAL = 4000
-  const ENRICHMENT_POLL_STALE_LIMIT = 3
-  // 补跑单条富化耗时 15-25s（低并发时指纹变化慢），停滞阈值放宽到 15 次（约 60s）避免误判批次结束
-  const ENRICHMENT_BACKFILL_STALE_LIMIT = 15
-  const ENRICHMENT_POLL_MAX = 75 // 75 × 4s ≈ 5 分钟上限，防止后台任务挂起时无限轮询
-  let enrichmentPollCount = 0
-  let enrichmentStalePolls = 0
-  let lastEnrichmentFingerprint = ''
-  let enrichmentPollMode: 'retry' | 'backfill' = 'retry'
-  const enrichmentFingerprint = (status: GithubEnrichmentStatus | null) =>
-    status ? `${status.succeeded}:${status.failed}:${status.pending}` : ''
-  const stopEnrichmentPolling = (message: string) => {
-    enrichmentPolling.value = false
-    successMsg.value = message
-  }
-  const pollGithubEnrichmentStatus = async () => {
-    if (!enrichmentPolling.value) return
-    enrichmentPollCount += 1
-    try {
-      // 直接调 api 而非 fetchGithubEnrichmentStatus，避免轮询反复触发面板 loading 闪烁
-      enrichmentStatus.value = await api.fetchGithubEnrichmentStatus()
-    } catch (error) {
-      // 轮询错误容忍：容器重启等瞬态故障不断链
-      console.error('Failed to poll GitHub enrichment status', error)
-    }
-    const failed = enrichmentStatus.value?.failed ?? 0
-    const pending = enrichmentStatus.value?.pending ?? 0
-    if (enrichmentPollMode === 'retry' && failed <= 0) {
-      stopEnrichmentPolling(i18n.global.t('monitor.enrichment.retryDone'))
-      return
-    }
-    if (enrichmentPollMode === 'backfill' && pending <= 0 && failed <= 0) {
-      stopEnrichmentPolling(i18n.global.t('monitor.enrichment.backfillDone'))
-      return
-    }
-    const fingerprint = enrichmentFingerprint(enrichmentStatus.value)
-    if (fingerprint === lastEnrichmentFingerprint) enrichmentStalePolls += 1
-    else { enrichmentStalePolls = 0; lastEnrichmentFingerprint = fingerprint }
-    const staleLimit = enrichmentPollMode === 'backfill' ? ENRICHMENT_BACKFILL_STALE_LIMIT : ENRICHMENT_POLL_STALE_LIMIT
-    if (enrichmentStalePolls >= staleLimit) {
-      stopEnrichmentPolling(enrichmentPollMode === 'backfill'
-        ? i18n.global.t('monitor.enrichment.backfillSettled', { count: pending + failed })
-        : i18n.global.t('monitor.enrichment.retryPartial', { count: failed }))
-      return
-    }
-    if (enrichmentPollCount >= ENRICHMENT_POLL_MAX) {
-      stopEnrichmentPolling(enrichmentPollMode === 'backfill'
-        ? i18n.global.t('monitor.enrichment.backfillStillRunning')
-        : i18n.global.t('monitor.enrichment.retryPartial', { count: failed }))
-      return
-    }
-    schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
-  }
-  const beginEnrichmentPolling = (mode: 'retry' | 'backfill' = 'retry') => {
-    if (enrichmentPolling.value) return
-    enrichmentPollCount = 0
-    enrichmentStalePolls = 0
-    lastEnrichmentFingerprint = enrichmentFingerprint(enrichmentStatus.value)
-    enrichmentPollMode = mode
-    enrichmentPolling.value = true
-    schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
   }
   const retryFailedEnrichments = async () => {
     if (retryingEnrichment.value || backfillingEnrichment.value || enrichmentPolling.value) return
