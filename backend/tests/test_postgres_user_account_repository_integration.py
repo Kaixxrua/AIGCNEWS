@@ -72,3 +72,19 @@ def test_postgres_user_repository_preserves_phone_path_and_unique_email(database
         repository.create_user_with_email("unique@example.com", "other-hash")
     assert getattr(context.value, "sqlstate", None) == "23505"
     assert repository.get_user_count() == 2
+
+
+def test_postgres_get_user_by_id_projects_disabled_flag(database) -> None:
+    """auth.get_current_user 依赖 record['disabled'] 判定停用账号（迁移 0029 补列）。"""
+    repository = PostgresUserAccountRepository(database)
+    user_id = repository.create_user_with_email("flag@example.com", "hash")
+
+    row = repository.get_user_by_id(user_id)
+    assert row is not None
+    assert row["disabled"] is False
+
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE users SET disabled = TRUE WHERE id = %s", (user_id,))
+
+    assert repository.get_user_by_id(user_id)["disabled"] is True

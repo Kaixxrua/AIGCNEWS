@@ -242,12 +242,14 @@ def test_foreign_delete_is_non_mutating_and_cleanup_is_bounded() -> None:
     assert params == (7, 5)
 
 
-def test_daily_count_uses_cst_calendar_inside_transaction() -> None:
+def test_daily_count_uses_scheduler_timezone_calendar_inside_transaction() -> None:
     database = Database([{"cnt": 6}])
 
     assert PostgresConversationRepository(database).count_user_messages_today(3) == 6
 
     sql, params = database.cursor.calls[0]
-    assert sql.count("AT TIME ZONE 'Asia/Shanghai'") == 2
-    assert params == (3,)
+    # 时区经参数绑定下发（settings.scheduler_timezone，默认 Asia/Shanghai），
+    # 不再硬编码字面量，部署方改配置即生效
+    assert sql.count("AT TIME ZONE %s") == 2
+    assert params == (3, "Asia/Shanghai", "Asia/Shanghai")
     assert database.entered == database.exited == 1

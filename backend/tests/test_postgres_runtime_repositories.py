@@ -141,7 +141,7 @@ def test_document_title_token_ranking_uses_integer_score_cte_and_mysql_order() -
 
     sql, params = cursor.execute.call_args.args
     normalized = " ".join(sql.split())
-    assert normalized.count("CASE WHEN LOWER(title) LIKE %s THEN 1 ELSE 0 END") == 3
+    assert normalized.count("CASE WHEN LOWER(title) LIKE %s ESCAPE '=' THEN 1 ELSE 0 END") == 3
     assert "WITH ranked AS" in normalized
     assert "WHERE keyword_score >= %s" in normalized
     assert "HAVING" not in normalized
@@ -149,7 +149,8 @@ def test_document_title_token_ranking_uses_integer_score_cte_and_mysql_order() -
         "ORDER BY keyword_score DESC, CASE WHEN source = 'arxiv' THEN 0 ELSE 1 END ASC, "
         "COALESCE(raw_score, score, 0) DESC, published_date DESC LIMIT %s"
     ) in normalized
-    assert params == ("%alpha%", "%beta%", "%50%%", 3, 6)
+    # LIKE 通配符经 escape_like_literal 转义：token 里的字面 % 不再被当作通配符
+    assert params == ("%alpha%", "%beta%", "%50=%%", 3, 6)
     assert result == [{"id": "doc-1", "keyword_score": 3}]
 
 
