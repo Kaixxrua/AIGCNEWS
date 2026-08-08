@@ -18,6 +18,27 @@ import tempfile
 
 import pytest
 
+# 外部 shell 若已把 MCP_TOOL_CALL_METRICS_PATH 指到仓库 storage/ 生产路径，
+# setdefault 会尊重该外部值导致隔离失效，且下方断言同样读到该值而静默通过。
+# 因此先拦截：解析路径落在仓库 storage/ 内直接失败并提示取消导出；
+# 指向其他位置（如外部临时目录）仍维持尊重外部值。
+_REPO_STORAGE_DIR = os.path.realpath(
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "storage",
+    )
+)
+_EXTERNAL_METRICS_PATH = os.environ.get("MCP_TOOL_CALL_METRICS_PATH")
+if _EXTERNAL_METRICS_PATH and os.path.realpath(_EXTERNAL_METRICS_PATH).startswith(
+    _REPO_STORAGE_DIR + os.sep
+):
+    pytest.exit(
+        "MCP_TOOL_CALL_METRICS_PATH 已指向仓库 storage/ 生产路径"
+        f"（{_EXTERNAL_METRICS_PATH}），测试会写生产计数文件；"
+        "请取消导出（unset MCP_TOOL_CALL_METRICS_PATH）后重跑。",
+        returncode=1,
+    )
+
 os.environ.setdefault(
     "MCP_TOOL_CALL_METRICS_PATH",
     os.path.join(
