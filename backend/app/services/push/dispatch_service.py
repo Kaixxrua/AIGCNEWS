@@ -19,6 +19,7 @@ from backend.app.repositories.user_subscription_repository import (
 )
 from backend.app.services.briefing.daily_briefing import select_briefing_content
 from backend.app.services.email.message_renderer import SOURCE_LABELS
+from backend.app.services.ingestion.base_crawler import today_cst
 from backend.app.services.push.channel_service import (
     CHANNEL_TYPE_EMAIL,
     CHANNEL_TYPE_WEBHOOK,
@@ -65,7 +66,9 @@ class SubscriptionDispatchService:
 
     async def dispatch_all(self, *, today: date | None = None) -> dict[str, int]:
         """枚举全部频率与来源执行一轮派发，返回计数摘要。"""
-        today = today or date.today()
+        # 简报缓存键按 CST（UTC+8）日期生成，缺省日期必须同口径，
+        # 否则服务器位于非 +8 时区时在 0 点后会读错一期。
+        today = today or date.fromisoformat(today_cst())
         summary = {"sent": 0, "skipped": 0, "failed": 0}
         for frequency in _FREQUENCIES:
             result = await self._dispatch_frequency(frequency, today)

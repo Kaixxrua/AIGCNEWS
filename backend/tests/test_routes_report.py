@@ -105,6 +105,29 @@ class ReportBriefingRepositoryTests(unittest.TestCase):
             '{"detail":"对应简报尚未生成","cache_key":"2026-07-22"}',
         )
 
+    def test_latest_without_date_uses_cst_today(self) -> None:
+        repository = MagicMock(spec=BriefingReader)
+        repository.get_briefing_by_date.return_value = {
+            "id": 1,
+            "date": "2026-07-22",
+            "content": "cached",
+        }
+
+        with patch.object(
+            routes_report, "today_cst", return_value="2026-07-22"
+        ):
+            asyncio.run(
+                routes_report.get_latest_briefing(
+                    source="github",
+                    date=None,
+                    repository=repository,
+                )
+            )
+
+        repository.get_briefing_by_date.assert_called_once_with(
+            "2026-07-22_github"
+        )
+
     def test_history_uses_repository(self) -> None:
         repository = MagicMock(spec=BriefingReader)
         repository.list_briefings.return_value = [{"id": 42}]
@@ -174,6 +197,36 @@ class ReportBriefingRepositoryTests(unittest.TestCase):
             period="daily",
             date_str="2026-07-22",
         )
+
+    def test_email_helper_without_date_uses_cst_today(self) -> None:
+        repository = MagicMock(spec=BriefingReader)
+        repository.get_briefing_by_date.return_value = {"content": "cached"}
+        request = MagicMock(spec=Request)
+        email_service = MagicMock(spec=EmailService)
+        email_service.send_briefing = AsyncMock()
+
+        with (
+            patch.object(
+                routes_report,
+                "_get_email_service",
+                return_value=email_service,
+            ),
+            patch.object(
+                routes_report, "today_cst", return_value="2026-07-22"
+            ),
+        ):
+            result = asyncio.run(
+                routes_report._send_cached_briefing_to_email(
+                    request=request,
+                    repository=repository,
+                    email="reader@example.com",
+                    source="all",
+                    date_str=None,
+                )
+            )
+
+        self.assertEqual(result, "2026-07-22")
+        repository.get_briefing_by_date.assert_called_once_with("2026-07-22")
 
 
 class ReportEvaluationRepositoryTests(unittest.TestCase):

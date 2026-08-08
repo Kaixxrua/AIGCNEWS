@@ -69,6 +69,25 @@ export const isSourceSubscribed = (subscriptions: Subscription[], source: Report
 export const getReportTypeInfo = (reportKey: ReportKey) =>
   REPORT_TYPES.find(report => report.key === reportKey)
 
+// 简报缓存键按后端 CST（UTC+8）日期生成，前端默认选中日期必须同口径：
+// 用 UTC（toISOString）或浏览器本地时区都会在跨日时错位一天。
+export const REPORT_TIME_ZONE = 'Asia/Shanghai'
+
+export const todayInReportTimeZone = (now: Date = new Date()): string => {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: REPORT_TIME_ZONE,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(now)
+    const get = (type: string) => parts.find(part => part.type === type)?.value ?? ''
+    return `${get('year')}-${get('month')}-${get('day')}`
+  } catch {
+    // Intl 时区数据缺失等极端环境：退回 UTC+8 偏移换算。
+    const shifted = new Date(now.getTime() + (8 * 60 + now.getTimezoneOffset()) * 60000)
+    return shifted.toISOString().slice(0, 10)
+  }
+}
+
 export const coerceReportStreamText = (data: unknown): string => {
   if (typeof data === 'string') return data
   if (Array.isArray(data)) {

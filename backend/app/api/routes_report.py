@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import date as _date
 from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -33,6 +32,7 @@ from backend.app.services.email_service import (
     EmailService,
     build_email_service,
 )
+from backend.app.services.ingestion.base_crawler import today_cst
 
 logger = logging.getLogger(__name__)
 
@@ -171,8 +171,9 @@ async def get_latest_briefing(
     """
     source = source if source in _VALID_SOURCES else "all"
 
-    target = date or _date.today().isoformat()
+    target = date or today_cst()
     # 与 daily_briefing.py 的 cache_date = f"{today}{cache_suffix}" 保持一致
+    # （CST 口径；服务器本地时区在 0 点后可能与缓存日期错开一天）
     suffix = "" if source == "all" else f"_{source}"
     cache_key = f"{target}{suffix}"
 
@@ -290,7 +291,7 @@ async def _send_cached_briefing_to_email(
     locale: str = "zh-CN",
 ) -> str:
     """发送已生成的简报缓存到指定邮箱，返回实际使用的报告日期。"""
-    target = date_str or _date.today().isoformat()
+    target = date_str or today_cst()
     suffix = "" if source == "all" else f"_{source}"
     cache_key = f"{target}{suffix}"
 

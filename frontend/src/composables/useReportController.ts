@@ -1,6 +1,7 @@
 import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import {
   coerceReportStreamText,
+  todayInReportTimeZone,
   type ReportKey,
   type ReportResponse,
   type ReportStreamEvent,
@@ -40,7 +41,7 @@ export const useReportController = ({
   const isCached = ref(false)
   const errorMsg = ref('')
   const selectedSource = ref<ReportKey>('all')
-  const selectedDate = ref(new Date().toISOString().slice(0, 10))
+  const selectedDate = ref(todayInReportTimeZone())
 
   // generation + AbortController 竞态守卫（对齐 useXBoardController）：
   // 源/日期/locale 连发切换时只应用最新一次缓存读取，过期请求直接中止

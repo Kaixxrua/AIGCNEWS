@@ -6,6 +6,7 @@ import asyncio
 import unittest
 from datetime import date
 from typing import Any
+from unittest.mock import patch
 
 from backend.app.services.push.dispatch_service import (
     MAX_DELIVERY_ATTEMPTS,
@@ -170,6 +171,23 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         self.assertEqual(summary, {"sent": 0, "skipped": 0, "failed": 0})
         self.assertEqual(email.calls, [])
         self.assertEqual(briefing_repo.requested_keys, [])
+
+    def test_dispatch_all_defaults_to_cst_today(self) -> None:
+        # 缺省日期必须与简报生成/缓存键同口径（CST），服务器本地时区不算数。
+        service, _, briefing_repo, email = self._make_service(
+            subscriptions=[_subscription(1)],
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
+        )
+
+        with patch(
+            "backend.app.services.push.dispatch_service.today_cst",
+            return_value="2026-08-05",
+        ):
+            summary = asyncio.run(service.dispatch_all())
+
+        self.assertEqual(summary, {"sent": 1, "skipped": 0, "failed": 0})
+        self.assertEqual(briefing_repo.requested_keys, ["2026-08-05"])
+        self.assertEqual(email.calls[0]["date_str"], "2026-08-05")
 
     def test_missing_briefing_cache_creates_no_delivery(self) -> None:
         service, deliveries, briefing_repo, email = self._make_service(
