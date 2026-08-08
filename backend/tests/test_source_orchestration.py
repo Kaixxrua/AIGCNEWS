@@ -286,6 +286,67 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
         assert result == {"news": 1, "ingested_total": 1}
         assert host.finished[0]["status"] == "success"
 
+    async def test_all_periods_failed_finishes_failed_not_success(self) -> None:
+        """单源所有支持周期均采集失败：任务必须记 failed，不得记 success+0。"""
+        crawler = FakeCrawler(
+            "news",
+            ["daily", "weekly", "monthly"],
+            {
+                "daily": _result("news", "daily", error="boom-daily"),
+                "weekly": _result("news", "weekly", error="boom-weekly"),
+                "monthly": _result("news", "monthly", error="boom-monthly"),
+            },
+        )
+        host = FakeHost({"news": crawler})
+        runtime = MultiSourceIngestionRuntime(host)
+
+        result = await runtime.run_single_source("news")
+
+        assert result == {"news": 0, "ingested_total": 0}
+        assert len(host.finished) == 1
+        finished = host.finished[0]
+        assert finished["status"] == "failed"
+        assert finished["item_count"] == 0
+        assert "boom-daily" in finished["error_msg"]
+        assert "boom-monthly" in finished["error_msg"]
+        assert host.cache_cleared == 0  # 零入库不触发缓存清理
+        assert host.enriched == []
+
+    async def test_error_plus_empty_periods_without_ingest_finishes_failed(self) -> None:
+        """部分周期失败、其余周期空数据且零入库：同样记 failed。"""
+        crawler = FakeCrawler(
+            "news",
+            ["daily", "weekly"],
+            {
+                "daily": _result("news", "daily", error="boom-daily"),
+                "weekly": _result("news", "weekly", []),
+            },
+        )
+        host = FakeHost({"news": crawler})
+        runtime = MultiSourceIngestionRuntime(host)
+
+        result = await runtime.run_single_source("news")
+
+        assert result == {"news": 0, "ingested_total": 0}
+        assert host.finished[0]["status"] == "failed"
+        assert "boom-daily" in host.finished[0]["error_msg"]
+
+    async def test_empty_periods_without_errors_stay_success(self) -> None:
+        """全部周期正常但无数据（无任何错误）：保持 success 口径不变。"""
+        crawler = FakeCrawler("news", ["daily", "weekly"])
+        host = FakeHost({"news": crawler})
+        runtime = MultiSourceIngestionRuntime(host)
+
+        result = await runtime.run_single_source("news")
+
+        assert result == {"news": 0, "ingested_total": 0}
+        assert host.finished[0] == {
+            "task_id": 1,
+            "status": "success",
+            "error_msg": None,
+            "item_count": 0,
+        }
+
 
 class TestRunAll(unittest.IsolatedAsyncioTestCase):
     def _build_host(self, *, target_date: str | None = None, fail_enrich: bool = False) -> FakeHost:
@@ -337,3 +398,37 @@ class TestRunAll(unittest.IsolatedAsyncioTestCase):
             {"task_id": 1, "status": "failed", "error_msg": "enrich down", "item_count": 0}
         ]
         assert host.pdf_started == []
+
+    async def test_all_sources_failed_finishes_failed_not_success(self) -> None:
+        """全源整轮零入库且存在采集错误：任务记 failed 而非 success+0。"""
+        crawlers = {
+            "broken_a": FakeCrawler(
+                "broken_a",
+                ["daily"],
+                {"daily": _result("broken_a", "daily", error="down-a")},
+            ),
+            "broken_b": FakeCrawler("broken_b", ["daily"], raise_exc=RuntimeError("crawl down")),
+        }
+        host = FakeHost(crawlers)
+        runtime = MultiSourceIngestionRuntime(host)
+
+        stats = await runtime.run_all()
+
+        assert stats["ingested_total"] == 0
+        assert len(host.finished) == 1
+        finished = host.finished[0]
+        assert finished["status"] == "failed"
+        assert finished["item_count"] == 0
+        assert "down-a" in finished["error_msg"]
+        assert host.cache_cleared == 0
+        assert host.pdf_started == []
+
+    async def test_partial_source_failure_with_ingest_stays_success(self) -> None:
+        """个别源失败但有入库：保持 success 口径（行为兼容）。"""
+        host = self._build_host()  # broken 源抛异常，但 arxiv/news 正常入库
+        runtime = MultiSourceIngestionRuntime(host)
+
+        stats = await runtime.run_all()
+
+        assert stats["ingested_total"] == 3
+        assert host.finished[0]["status"] == "success"

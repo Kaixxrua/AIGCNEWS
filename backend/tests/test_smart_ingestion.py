@@ -57,6 +57,40 @@ class SmartIngestionDecisionTests(unittest.TestCase):
                     )
                 )
 
+    def test_runs_after_zero_item_success_today(self) -> None:
+        """零入库的 success（历史全源失败口径）不算真正成功，允许当天重试。"""
+        self.assertTrue(
+            should_run_smart_ingestion(
+                {
+                    "status": "success",
+                    "started_at": "2026-07-22 08:00:00",
+                    "item_count": 0,
+                },
+                date(2026, 7, 22),
+            )
+        )
+
+    def test_skips_after_nonzero_item_success_today(self) -> None:
+        self.assertFalse(
+            should_run_smart_ingestion(
+                {
+                    "status": "success",
+                    "started_at": "2026-07-22 08:00:00",
+                    "item_count": 17,
+                },
+                date(2026, 7, 22),
+            )
+        )
+
+    def test_missing_item_count_keeps_legacy_decision(self) -> None:
+        """旧行无 item_count：维持只看日期跳过的原行为。"""
+        self.assertFalse(
+            should_run_smart_ingestion(
+                {"status": "success", "started_at": "2026-07-22 08:00:00"},
+                date(2026, 7, 22),
+            )
+        )
+
 
 class SmartIngestionInjectionTests(unittest.TestCase):
     def test_injected_reader_can_skip_runner(self) -> None:

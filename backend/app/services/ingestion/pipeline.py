@@ -53,6 +53,32 @@ from backend.app.services.ingestion.source_orchestration import (
 
 logger = logging.getLogger(__name__)
 
+# 后台 Arxiv PDF 线程注册表：服务进程内线程随进程常驻（daemon 语义无影响）；
+# CLI（run_ingestion.py）路径在退出前经 join_background_pdf_threads 等待，
+# 避免 main() 返回后 daemon 线程被进程杀掉导致 PDF 落盘/向量化中断。
+_BACKGROUND_PDF_THREADS: List[threading.Thread] = []
+
+
+def join_background_pdf_threads(timeout: float | None = None) -> None:
+    """等待所有已启动的后台 PDF 线程结束（CLI 退出前调用）。"""
+    pending = [t for t in _BACKGROUND_PDF_THREADS if _thread_alive(t)]
+    if not pending:
+        return
+    logger.info("[Pipeline] 等待 %d 个后台 PDF 线程结束...", len(pending))
+    for thread in pending:
+        thread.join(timeout)
+    still_alive = [getattr(t, "name", "?") for t in pending if _thread_alive(t)]
+    if still_alive:
+        logger.warning("[Pipeline] 后台 PDF 线程未在时限内结束: %s", still_alive)
+    else:
+        logger.info("[Pipeline] 后台 PDF 线程已全部结束。")
+
+
+def _thread_alive(thread: object) -> bool:
+    """鸭子类型判定：测试以 FakeThread 替身替换 threading.Thread。"""
+    is_alive = getattr(thread, "is_alive", None)
+    return bool(is_alive()) if callable(is_alive) else True
+
 
 # ── 采集配置 ──────────────────────────────────────────────────────────────────
 # 广撒网：每源多抓，后续通过 AI 评分筛选
@@ -335,6 +361,9 @@ class IngestionOrchestrator:
             daemon=True,
         )
         bg_thread.start()
+        # 清理已结束的句柄后登记，供 CLI 路径退出前 join
+        _BACKGROUND_PDF_THREADS[:] = [t for t in _BACKGROUND_PDF_THREADS if _thread_alive(t)]
+        _BACKGROUND_PDF_THREADS.append(bg_thread)
         logger.info("[Orchestrator] 后台 PDF 下载线程已启动（daemon=True）。")
 
     async def _clear_dashboard_cache(self) -> None:
@@ -500,6 +529,16 @@ def should_run_smart_ingestion(
     """Return whether the latest task permits today's ingestion run."""
     if not latest_task or latest_task.get("status") != "success":
         return True
+
+    # 零入库的 "success"（历史口径下全源失败也可能记 success + item_count=0）
+    # 不算真正的成功，允许今天重试；item_count 缺失（旧行）保持原有判断。
+    item_count = latest_task.get("item_count")
+    if item_count is not None:
+        try:
+            if int(item_count) <= 0:
+                return True
+        except (TypeError, ValueError):
+            pass
 
     started_at = latest_task.get("started_at")
     if not isinstance(started_at, str):

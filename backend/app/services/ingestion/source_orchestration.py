@@ -112,6 +112,7 @@ class MultiSourceIngestionRuntime:
         )
         task_id = self.host._create_task(task_name)
         total = 0
+        failed_periods: list[tuple[str, str]] = []
         arxiv_papers_for_pdf: list[dict] = []
 
         try:
@@ -136,6 +137,7 @@ class MultiSourceIngestionRuntime:
                         period,
                         crawl_result.error,
                     )
+                    failed_periods.append((period, crawl_result.error or "unknown"))
                     continue
                 if not crawl_result.items:
                     logger.info(
@@ -170,6 +172,15 @@ class MultiSourceIngestionRuntime:
             if source_name == "arxiv":
                 self.host._start_arxiv_pdf_background(arxiv_papers_for_pdf)
 
+            if total == 0 and failed_periods:
+                # 单源整轮零入库且存在采集错误：不能记 success，否则
+                # should_run_smart_ingestion 会把它当作今日已成功而跳过重试。
+                detail = "; ".join(f"{period}: {error}" for period, error in failed_periods)
+                error_msg = f"{source_name} 整轮零入库（{detail}）"
+                self.host._finish_task(task_id, status="failed", error_msg=error_msg)
+                logger.error("[Orchestrator] 单源采集零入库: %s", error_msg)
+                return {source_name: 0, "ingested_total": 0}
+
             self.host._finish_task(task_id, status="success", item_count=total)
             try:
                 await self.host._clear_dashboard_cache()
@@ -202,6 +213,7 @@ class MultiSourceIngestionRuntime:
         stats = {name: 0 for name in self.host._crawlers}
         stats["huggingface"] = 0
         total = 0
+        crawl_errors: list[str] = []
         arxiv_papers_for_pdf: list[dict] = []
 
         try:
@@ -239,6 +251,7 @@ class MultiSourceIngestionRuntime:
                             period,
                             result,
                         )
+                        crawl_errors.append(f"{source_key}/{period}: {result}")
                         continue
 
                     crawl_result: CrawlResult = result
@@ -248,6 +261,9 @@ class MultiSourceIngestionRuntime:
                             source_key,
                             period,
                             crawl_result.error,
+                        )
+                        crawl_errors.append(
+                            f"{source_key}/{period}: {crawl_result.error or 'unknown'}"
                         )
                         continue
                     if not crawl_result.items:
@@ -282,6 +298,15 @@ class MultiSourceIngestionRuntime:
                         )
 
                 logger.info("[Orchestrator] ── %s 周期处理完成 ──", period)
+
+            if total == 0 and crawl_errors:
+                # 全源整轮零入库且存在采集错误：记 failed 而非 success，
+                # 让智能采集重试并让运维能看到整轮失败。
+                error_msg = f"整轮零入库（{'；'.join(crawl_errors[:5])}）"
+                self.host._finish_task(task_id, status="failed", error_msg=error_msg)
+                logger.error("[Orchestrator] 全源采集零入库: %s", error_msg)
+                stats["ingested_total"] = 0
+                return stats
 
             self.host._finish_task(task_id, status="success", item_count=total)
             try:
