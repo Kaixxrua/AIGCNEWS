@@ -23,6 +23,7 @@ from backend.app.api.dependencies import (
 from backend.app.core.auth import RequireUser
 from backend.app.domain.wechat_secret_box import WeChatSecretBox
 from backend.app.models.schema_push import CreatePushChannelRequest
+from backend.app.services import email_service
 from backend.app.services.email_service import EmailService
 from backend.app.services.push.channel_service import (
     PushChannelService,
@@ -732,6 +733,9 @@ class WebhookRouteTests(unittest.TestCase):
         )
         self.sender = FakeWebhookSender()
         self._patchers = [
+            # 本类验证渠道创建/投递流程而非 OTP 环境门禁（门禁有独立契约测试）；
+            # 固定 development 环境，SMTP 未配置时走开发日志路径返回 201
+            patch.object(email_service.settings, "env", "development"),
             patch.object(
                 routes_push, "WebhookSender", return_value=self.sender
             ),
