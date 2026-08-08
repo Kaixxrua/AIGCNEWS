@@ -6,7 +6,7 @@ from __future__ import annotations
   1. 通过 arXiv 官方 XML API 批量拉取论文元数据（标题/摘要/作者/日期/PDF URL）
   2. 以"低频慢速"策略将 PDF 落盘到本地 storage/papers/{arxiv_id}.pdf
   3. 用 PyMuPDF (fitz) 解析本地 PDF，提取纯文本
-  4. 更新 MySQL documents.local_pdf_path 字段
+  4. 更新 PostgreSQL documents.local_pdf_path 字段
   5. 将 PDF 全文切片（RecursiveCharacterTextSplitter）后写入 Milvus
 
 防封杀策略：
