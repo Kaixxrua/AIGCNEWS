@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, ExternalLink, Maximize2 } from 'lucide-vue-next'
 import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
 import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
+import { showToast } from '@/composables/useToast'
 import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasMedia, hasQuote, paginateItems, quoteAsDoc, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
@@ -65,18 +66,28 @@ const closeLightbox = () => { lightboxUrl.value = null }
 // 推文详情浮层：点击卡片正文/引用区就地放大阅读，不直接跳走（跳转由
 // 显式按钮承担）。层级低于图片 lightbox（浮层内照片可再放大）；数据
 // 重载时关闭，避免悬在已失效的条目上。
+// 焦点管理：打开时聚焦关闭钮（键盘/读屏用户有明确落点），关闭后焦点
+// 还原到触发元素；下钻/返回后同样把焦点收回关闭钮。
 const detailTweet = ref<TopDoc | null>(null)
+const detailCloseEl = ref<HTMLButtonElement | null>(null)
+let detailReturnFocus: HTMLElement | null = null
+const focusDetailClose = () => { void nextTick(() => detailCloseEl.value?.focus()) }
 // 浮层内引用卡下钻：点击 = 就地切换为被引推文详情（quote 投影字段齐全，
 // 零请求），detailParent 记回跳目标；仅一层（投影不嵌套，与 X 一致）。
 // 下钻/返回时清空播放态：媒体块随内容切换整体卸载，不残留他条播放键。
 const detailParent = ref<TopDoc | null>(null)
 const openDetail = (tweet: TopDoc) => {
+  detailReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   detailTweet.value = tweet
   detailParent.value = null
+  focusDetailClose()
 }
 const closeDetail = () => {
   detailTweet.value = null
   detailParent.value = null
+  // 焦点还原到打开浮层的触发元素；元素已随数据重载卸载时跳过
+  if (detailReturnFocus?.isConnected) detailReturnFocus.focus()
+  detailReturnFocus = null
 }
 const drillIntoQuote = () => {
   const quote = detailTweet.value ? tweetQuote(detailTweet.value) : null
@@ -84,12 +95,14 @@ const drillIntoQuote = () => {
   detailParent.value = detailTweet.value
   detailTweet.value = quoteAsDoc(quote)
   playingMedia.value = new Set()
+  focusDetailClose()
 }
 const backToParent = () => {
   if (!detailParent.value) return
   detailTweet.value = detailParent.value
   detailParent.value = null
   playingMedia.value = new Set()
+  focusDetailClose()
 }
 
 const onLightboxKeydown = (event: KeyboardEvent) => {
@@ -138,13 +151,13 @@ const rebuildResultMessage = (result: XSnapshotRebuildResponse): string => {
 const handleRebuildSelected = async () => {
   if (!window.confirm(t('xboard.rebuildSelectedConfirm', { date: selectedDate.value }))) return
   const result = await rebuildSelectedDate()
-  if (result) window.alert(rebuildResultMessage(result))
+  if (result) showToast(rebuildResultMessage(result))
 }
 
 const handleRebuildAll = async () => {
   if (!window.confirm(t('xboard.rebuildAllConfirm'))) return
   const result = await rebuildAllDates()
-  if (result) window.alert(rebuildResultMessage(result))
+  if (result) showToast(rebuildResultMessage(result))
 }
 
 const handleDeleteSelected = async () => {
@@ -156,7 +169,8 @@ const handleDeleteSelected = async () => {
     const parts = []
     if (deleted > 0) parts.push(t('xboard.deleteSuccess', { count: deleted }))
     if (notFound > 0) parts.push(t('xboard.deleteNotFound', { count: notFound }))
-    window.alert(parts.join('\n'))
+    // 非阻塞全局 Toast（App.vue 渲染 AppToast），不再用 window.alert 打断操作
+    showToast(parts.join('；'))
   }
 }
 
@@ -345,11 +359,15 @@ onBeforeUnmount(() => {
               @play="playVideo"
             />
 
-            <!-- 文字区：点击放大详情（不跳走）；URL 段仍是真链接可直跳 -->
+            <!-- 文字区：点击/回车放大详情（不跳走）；URL 段仍是真链接可直跳 -->
             <div class="px-4 py-3">
               <div
+                role="button"
+                tabindex="0"
                 class="tweet-text block cursor-pointer whitespace-pre-line px-1 text-sm leading-5"
+                :aria-label="t('xboard.openDetail')"
                 @click="openDetail(tweet)"
+                @keydown.enter="openDetail(tweet)"
               >
                 <template v-for="(seg, segIndex) in tweetTextSegments(tweet, locale)" :key="segIndex">
                   <a
@@ -423,6 +441,7 @@ onBeforeUnmount(() => {
             <ArrowLeft class="h-4 w-4" />
           </button>
           <button
+            ref="detailCloseEl"
             type="button"
             class="detail-close"
             :aria-label="t('xboard.closePreview')"
