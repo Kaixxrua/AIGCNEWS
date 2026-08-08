@@ -2,11 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, ExternalLink, Maximize2 } from 'lucide-vue-next'
+import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
+import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, authorDisplayName, displayQuoteText, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasMedia, hasQuote, mediaItems, paginateItems, quoteAsDoc, quoteAvatarUrl, quoteMediaItems, quoteTextSegments, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasMedia, hasQuote, paginateItems, quoteAsDoc, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
-import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
+import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 import type { XSnapshotRebuildResponse } from '@/services/dashboard/dashboardContracts'
 
 const { t, locale } = useI18n()
@@ -104,22 +106,14 @@ const onLightboxKeydown = (event: KeyboardEvent) => {
   }
 }
 
-const isVideo = (item: TweetMediaItem) => item.type === 'video' || item.type === 'animated_gif'
-
-// 引用卡片内只渲染缩略图（整卡点击跳被引推文，不内嵌播放）：视频用封面，
-// 照片用 small 变体降载；无封面（非 twimg 直链等）不渲染该媒体位
-const quoteMediaThumb = (item: TweetMediaItem) => (isVideo(item) ? (item.poster_url ?? '') : (item.thumb_url || item.url))
-
 // X 式点击播放：视频占位零流量（不经代理拉取元数据），点击后才挂载 <video>。
-// 键与模板 :key 同源（`${tweet.url}-${index}`），重载推文时清空避免自动重播。
+// 键与 TweetMediaList 模板 :key 同源（`${tweet.url}-${index}`），重载推文时清空避免自动重播。
 const playingMedia = ref<Set<string>>(new Set())
-const mediaKey = (tweet: TopDoc, index: number) => `${tweet.url}-${index}`
 const playVideo = (key: string) => {
   const next = new Set(playingMedia.value)
   next.add(key)
   playingMedia.value = next
 }
-const isPlaying = (key: string) => playingMedia.value.has(key)
 watch(docs, () => { playingMedia.value = new Set(); detailTweet.value = null; detailParent.value = null })
 
 const isSelected = (doc: TopDoc) => doc.id ? selectedIds.value.has(String(doc.id)) : false
@@ -342,59 +336,14 @@ onBeforeUnmount(() => {
               </span>
             </div>
 
-            <!-- 媒体区 -->
-            <div v-if="hasMedia(tweet)" class="tweet-media-list">
-              <template v-for="(item, index) in mediaItems(tweet)" :key="mediaKey(tweet, index)">
-                <img
-                  v-if="!isVideo(item)"
-                  :src="item.thumb_url || item.url"
-                  :alt="tweet.title"
-                  loading="lazy"
-                  decoding="async"
-                  referrerpolicy="no-referrer"
-                  class="tweet-photo w-full cursor-zoom-in object-cover"
-                  :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
-                  :aria-label="t('xboard.previewImage')"
-                  @click="openLightbox(item.url)"
-                />
-                <!-- 视频：未点击时渲染零流量占位，点击后挂载 <video> 经代理加载播放 -->
-                <video
-                  v-else-if="isPlaying(mediaKey(tweet, index))"
-                  :src="item.url"
-                  controls
-                  autoplay
-                  playsinline
-                  preload="auto"
-                  class="w-full bg-stone-900"
-                  :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
-                />
-                <button
-                  v-else
-                  type="button"
-                  class="tweet-video-btn group relative flex w-full items-center justify-center"
-                  :style="{ aspectRatio: item.width && item.height ? `${item.width} / ${item.height}` : '16 / 9' }"
-                  :aria-label="t('xboard.playVideo')"
-                  @click="playVideo(mediaKey(tweet, index))"
-                >
-                  <!-- 服务端抽帧封面；加载失败（404/网络）隐藏 img，回退深色占位 -->
-                  <img
-                    v-if="item.poster_url"
-                    :src="item.poster_url"
-                    :alt="tweet.title"
-                    loading="lazy"
-                    decoding="async"
-                    referrerpolicy="no-referrer"
-                    class="absolute inset-0 h-full w-full object-cover"
-                    @error="($event.target as HTMLImageElement).style.display = 'none'"
-                  />
-                  <span class="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_60%)]" />
-                  <span class="tweet-play relative flex h-14 w-14 items-center justify-center">
-                    <svg class="ml-1 h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                  </span>
-                  <span v-if="item.type === 'animated_gif'" class="tweet-gif-badge absolute left-2 top-2 px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide">GIF</span>
-                </button>
-              </template>
-            </div>
+            <!-- 媒体区：照片点开 lightbox、视频点击播放（与详情浮层同一子组件渲染） -->
+            <TweetMediaList
+              v-if="hasMedia(tweet)"
+              :tweet="tweet"
+              :playing-media="playingMedia"
+              @preview="openLightbox"
+              @play="playVideo"
+            />
 
             <!-- 文字区：点击放大详情（不跳走）；URL 段仍是真链接可直跳 -->
             <div class="px-4 py-3">
@@ -418,61 +367,14 @@ onBeforeUnmount(() => {
                 </template>
               </div>
 
-              <!-- 引用推文卡片：看板上点击同样放大主推详情（不跳走）；
+              <!-- 引用推文卡片：看板上点击放大主推详情（不跳走）；
                    ↗ 钮显式直跳被引推文，详情浮层内点击则下钻看被引详情 -->
-              <div
+              <TweetQuoteCard
                 v-if="hasQuote(tweet)"
-                role="button"
-                tabindex="0"
-                class="tweet-quote mx-1 mt-2 block cursor-pointer"
-                :aria-label="t('xboard.openDetail')"
-                @click="openDetail(tweet)"
-                @keydown.enter="openDetail(tweet)"
-              >
-                <span class="tweet-quote-head flex items-center gap-1.5 px-3 pt-2">
-                  <img
-                    v-if="quoteAvatarUrl(tweetQuote(tweet)!)"
-                    :src="quoteAvatarUrl(tweetQuote(tweet)!)"
-                    :alt="tweetQuote(tweet)!.author_name || tweetQuote(tweet)!.author"
-                    loading="lazy"
-                    decoding="async"
-                    referrerpolicy="no-referrer"
-                    class="tweet-quote-avatar h-4 w-4 shrink-0 object-cover"
-                  />
-                  <span class="tweet-quote-name truncate text-xs font-semibold">{{ tweetQuote(tweet)!.author_name || `@${tweetQuote(tweet)!.author}` }}</span>
-                  <span v-if="tweetQuote(tweet)!.author" class="tweet-quote-handle truncate text-2xs">@{{ tweetQuote(tweet)!.author }}</span>
-                  <a
-                    class="tweet-icon-btn tweet-quote-jump ml-auto"
-                    :href="tweetQuote(tweet)!.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    :aria-label="t('xboard.viewOnX')"
-                    @click.stop
-                    @keydown.enter.stop
-                  ><ExternalLink class="h-3 w-3" /></a>
-                </span>
-                <span v-if="displayQuoteText(tweetQuote(tweet)!, locale)" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
-                  <template v-for="(seg, segIndex) in quoteTextSegments(tweetQuote(tweet)!, locale)" :key="segIndex">
-                    <span v-if="seg.isUrl" class="tweet-quote-link">{{ seg.text }}</span>
-                    <span v-else>{{ seg.text }}</span>
-                  </template>
-                </span>
-                <span v-if="quoteMediaItems(tweetQuote(tweet)!).length" class="tweet-quote-media block px-3 pb-2 pt-1.5">
-                  <template v-for="(item, mediaIndex) in quoteMediaItems(tweetQuote(tweet)!)" :key="mediaIndex">
-                    <img
-                      v-if="quoteMediaThumb(item)"
-                      :src="quoteMediaThumb(item)"
-                      :alt="tweetQuote(tweet)!.text || tweetQuote(tweet)!.author"
-                      loading="lazy"
-                      decoding="async"
-                      referrerpolicy="no-referrer"
-                      class="tweet-quote-photo w-full object-cover"
-                      :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
-                      @error="($event.target as HTMLImageElement).style.display = 'none'"
-                    />
-                  </template>
-                </span>
-              </div>
+                :quote="tweetQuote(tweet)!"
+                context="wall"
+                @activate="openDetail(tweet)"
+              />
               <p v-if="formatTime(tweet)" class="tweet-time mt-2 px-1 text-2xs">{{ formatTime(tweet) }}</p>
             </div>
           </article>
@@ -564,113 +466,24 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <!-- 媒体区：与看板同一渲染（照片可再放大、视频点击播放，键同源不冲突） -->
-          <div v-if="hasMedia(detailTweet)" class="tweet-media-list px-2">
-            <template v-for="(item, index) in mediaItems(detailTweet)" :key="mediaKey(detailTweet, index)">
-              <img
-                v-if="!isVideo(item)"
-                :src="item.thumb_url || item.url"
-                :alt="detailTweet.title"
-                loading="lazy"
-                decoding="async"
-                referrerpolicy="no-referrer"
-                class="tweet-photo w-full cursor-zoom-in object-cover"
-                :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
-                :aria-label="t('xboard.previewImage')"
-                @click="openLightbox(item.url)"
-              />
-              <video
-                v-else-if="isPlaying(mediaKey(detailTweet, index))"
-                :src="item.url"
-                controls
-                autoplay
-                playsinline
-                preload="auto"
-                class="w-full bg-stone-900"
-                :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
-              />
-              <button
-                v-else
-                type="button"
-                class="tweet-video-btn group relative flex w-full items-center justify-center"
-                :style="{ aspectRatio: item.width && item.height ? `${item.width} / ${item.height}` : '16 / 9' }"
-                :aria-label="t('xboard.playVideo')"
-                @click="playVideo(mediaKey(detailTweet, index))"
-              >
-                <img
-                  v-if="item.poster_url"
-                  :src="item.poster_url"
-                  :alt="detailTweet.title"
-                  loading="lazy"
-                  decoding="async"
-                  referrerpolicy="no-referrer"
-                  class="absolute inset-0 h-full w-full object-cover"
-                  @error="($event.target as HTMLImageElement).style.display = 'none'"
-                />
-                <span class="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_60%)]" />
-                <span class="tweet-play relative flex h-14 w-14 items-center justify-center">
-                  <svg class="ml-1 h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                </span>
-                <span v-if="item.type === 'animated_gif'" class="tweet-gif-badge absolute left-2 top-2 px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide">GIF</span>
-              </button>
-            </template>
-          </div>
+          <!-- 媒体区：与看板同一子组件渲染（照片可再放大、视频点击播放，键同源不冲突） -->
+          <TweetMediaList
+            v-if="hasMedia(detailTweet)"
+            :tweet="detailTweet"
+            :playing-media="playingMedia"
+            context="detail"
+            @preview="openLightbox"
+            @play="playVideo"
+          />
 
           <!-- 引用卡：浮层内点击下钻为被引推文详情（就地切换不跳走，与 X
                点击引用在 App 内导航一致）；↗ 钮显式直跳被引推文 -->
-          <div
+          <TweetQuoteCard
             v-if="hasQuote(detailTweet)"
-            role="button"
-            tabindex="0"
-            class="tweet-quote mx-4 my-2 block cursor-pointer"
-            :aria-label="t('xboard.openQuoteDetail')"
-            @click="drillIntoQuote"
-            @keydown.enter="drillIntoQuote"
-          >
-            <span class="tweet-quote-head flex items-center gap-1.5 px-3 pt-2">
-              <img
-                v-if="quoteAvatarUrl(tweetQuote(detailTweet)!)"
-                :src="quoteAvatarUrl(tweetQuote(detailTweet)!)"
-                :alt="tweetQuote(detailTweet)!.author_name || tweetQuote(detailTweet)!.author"
-                loading="lazy"
-                decoding="async"
-                referrerpolicy="no-referrer"
-                class="tweet-quote-avatar h-4 w-4 shrink-0 object-cover"
-              />
-              <span class="tweet-quote-name truncate text-xs font-semibold">{{ tweetQuote(detailTweet)!.author_name || `@${tweetQuote(detailTweet)!.author}` }}</span>
-              <span v-if="tweetQuote(detailTweet)!.author" class="tweet-quote-handle truncate text-2xs">@{{ tweetQuote(detailTweet)!.author }}</span>
-              <a
-                class="tweet-icon-btn tweet-quote-jump ml-auto"
-                :href="tweetQuote(detailTweet)!.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                :aria-label="t('xboard.viewOnX')"
-                @click.stop
-                @keydown.enter.stop
-              ><ExternalLink class="h-3 w-3" /></a>
-            </span>
-            <span v-if="displayQuoteText(tweetQuote(detailTweet)!, locale)" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
-              <template v-for="(seg, segIndex) in quoteTextSegments(tweetQuote(detailTweet)!, locale)" :key="segIndex">
-                <span v-if="seg.isUrl" class="tweet-quote-link">{{ seg.text }}</span>
-                <span v-else>{{ seg.text }}</span>
-              </template>
-            </span>
-            <span v-if="quoteMediaItems(tweetQuote(detailTweet)!).length" class="tweet-quote-media block px-3 pb-2 pt-1.5">
-              <template v-for="(item, mediaIndex) in quoteMediaItems(tweetQuote(detailTweet)!)" :key="mediaIndex">
-                <img
-                  v-if="quoteMediaThumb(item)"
-                  :src="quoteMediaThumb(item)"
-                  :alt="tweetQuote(detailTweet)!.text || tweetQuote(detailTweet)!.author"
-                  loading="lazy"
-                  decoding="async"
-                  referrerpolicy="no-referrer"
-                  class="tweet-quote-photo w-full object-cover"
-                  :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
-                  @error="($event.target as HTMLImageElement).style.display = 'none'"
-                />
-              </template>
-            </span>
-          </div>
+            :quote="tweetQuote(detailTweet)!"
+            context="detail"
+            @activate="drillIntoQuote"
+          />
 
           <div class="detail-foot flex flex-wrap items-center gap-3 px-5 py-3">
             <span v-if="formatTime(detailTweet)" class="tweet-time text-2xs">{{ formatTime(detailTweet) }}</span>
@@ -838,53 +651,7 @@ a.tweet-handle:hover {
   color: var(--projects-on-acid);
 }
 
-/* 媒体块：内嵌 + 墨边 + 小圆角 */
-.tweet-media-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 12px 0;
-}
-
-.tweet-media-list > * {
-  display: block;
-  overflow: hidden;
-  border: 1px solid var(--ink);
-  border-radius: 5px;
-}
-
-/* 视频占位保持深色语义底；播放键走 btn-primary 的墨底酸绿反转，
-   方形圆角（主题去胶囊化），hover 硬边位移反馈 */
-.tweet-video-btn {
-  cursor: pointer;
-  background: linear-gradient(150deg, #2a2723, #100e0c);
-}
-
-.tweet-play {
-  border: 1px solid var(--ink);
-  border-radius: var(--control-radius);
-  background: var(--ink);
-  color: var(--acid);
-  transition:
-    transform 150ms ease,
-    background 150ms ease,
-    color 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.tweet-video-btn:hover .tweet-play {
-  background: var(--acid);
-  color: var(--projects-on-acid);
-  box-shadow: 2px 2px 0 var(--shadow-hard);
-  transform: translate(-1px, -1px);
-}
-
-.tweet-gif-badge {
-  border: 1px solid var(--ink);
-  border-radius: 4px;
-  background: var(--acid);
-  color: var(--projects-on-acid);
-}
+/* 媒体块与引用卡样式已随模板内聚到 components/xboard/ 子组件 */
 
 .tweet-text {
   border-radius: 4px;
@@ -935,61 +702,6 @@ a.tweet-link:hover {
 
 .tweet-time {
   color: var(--ink-muted);
-}
-
-/* 引用推文卡片：静态即浮起态（墨边 + 纸面 + 2px 硬影，chip 配方），
-   让可点的内嵌卡始终有「卡片感」；hover 按主题惯例换 acid-soft 底色
-   （与主卡/text 段 hover 同一词汇），不做位移 */
-.tweet-quote {
-  overflow: hidden;
-  border: 1px solid var(--ink);
-  border-radius: 5px;
-  background: var(--projects-paper-light);
-  box-shadow: 2px 2px 0 var(--shadow-hard);
-  transition:
-    border-color 150ms ease,
-    background 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.tweet-quote:hover {
-  background: var(--acid-soft);
-}
-
-/* 主题去胶囊化：引用头像与外推头像同方（4px 圆角 + --rule 细边） */
-.tweet-quote-avatar {
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-}
-
-.tweet-quote-handle {
-  color: var(--ink-muted);
-}
-
-/* 被引作者名与外推 handle 同墨色（stone-700 无主题映射，不走原灰色） */
-.tweet-quote-name {
-  color: var(--ink);
-}
-
-/* 引用卡显式跳转钮：复用卡头动作钮配方但小一号，对齐引用区轻量层级 */
-.tweet-quote-jump {
-  width: 1.25rem;
-  height: 1.25rem;
-  flex-shrink: 0;
-}
-
-/* 引用正文里的链接不可独点（整卡已是锚点），下划线仅作视觉标识 */
-.tweet-quote-link {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  word-break: break-all;
-}
-
-/* 引用媒体：--rule 细边保持内嵌区的视觉层级低于主卡媒体（--ink） */
-.tweet-quote-photo {
-  max-height: 220px;
-  border: 1px solid var(--rule);
-  border-radius: 5px;
 }
 
 /* ═══ 推文详情浮层：墨色遮罩 + 卡片面板；z 低于图片 lightbox(90)，
