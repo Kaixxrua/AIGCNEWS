@@ -13,7 +13,7 @@ export type EnrichmentPollMode = 'retry' | 'backfill'
 
 interface UseEnrichmentPollingOptions {
   api: MonitorApi
-  schedule: (callback: () => void, delay: number) => unknown
+  schedule: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
   setSuccess: (message: string) => void
 }
 
@@ -24,13 +24,28 @@ export const useEnrichmentPolling = ({ api, schedule, setSuccess }: UseEnrichmen
   let stalePolls = 0
   let lastFingerprint = ''
   let pollMode: EnrichmentPollMode = 'retry'
+  let pollTimer: ReturnType<typeof setTimeout> | null = null
 
   const enrichmentFingerprint = (status: GithubEnrichmentStatus | null) =>
     status ? `${status.succeeded}:${status.failed}:${status.pending}` : ''
 
+  const clearPollTimer = () => {
+    if (pollTimer) {
+      clearTimeout(pollTimer)
+      pollTimer = null
+    }
+  }
+
   const stopEnrichmentPolling = (message: string) => {
+    clearPollTimer()
     enrichmentPolling.value = false
     setSuccess(message)
+  }
+
+  // 卸载/离页兜底：停表断链并丢弃在途回调，不发提示
+  const disposeEnrichmentPolling = () => {
+    clearPollTimer()
+    enrichmentPolling.value = false
   }
 
   const pollGithubEnrichmentStatus = async () => {
@@ -43,6 +58,8 @@ export const useEnrichmentPolling = ({ api, schedule, setSuccess }: UseEnrichmen
       // 轮询错误容忍：容器重启等瞬态故障不断链
       console.error('Failed to poll GitHub enrichment status', error)
     }
+    // 在途期间被 dispose/取消停链：直接丢弃本次结果
+    if (!enrichmentPolling.value) return
     const failed = enrichmentStatus.value?.failed ?? 0
     const pending = enrichmentStatus.value?.pending ?? 0
     if (pollMode === 'retry' && failed <= 0) {
@@ -69,18 +86,19 @@ export const useEnrichmentPolling = ({ api, schedule, setSuccess }: UseEnrichmen
         : i18n.global.t('monitor.enrichment.retryPartial', { count: failed }))
       return
     }
-    schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
+    pollTimer = schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
   }
 
   const beginEnrichmentPolling = (mode: EnrichmentPollMode = 'retry') => {
     if (enrichmentPolling.value) return
+    clearPollTimer()
     pollCount = 0
     stalePolls = 0
     lastFingerprint = enrichmentFingerprint(enrichmentStatus.value)
     pollMode = mode
     enrichmentPolling.value = true
-    schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
+    pollTimer = schedule(() => { void pollGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
   }
 
-  return { enrichmentStatus, enrichmentPolling, beginEnrichmentPolling, stopEnrichmentPolling }
+  return { enrichmentStatus, enrichmentPolling, beginEnrichmentPolling, stopEnrichmentPolling, disposeEnrichmentPolling }
 }

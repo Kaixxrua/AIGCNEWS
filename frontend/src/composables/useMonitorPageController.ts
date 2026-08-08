@@ -12,7 +12,7 @@ import { ENRICHMENT_POLL_INTERVAL, useEnrichmentPolling } from './useEnrichmentP
 interface MonitorPageControllerOptions {
   isAdmin: ComputedRef<boolean>
   api?: MonitorApi
-  schedule?: (callback: () => void, delay: number) => unknown
+  schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
   confirm?: (message: string) => boolean
   now?: () => Date
 }
@@ -96,15 +96,33 @@ export const useMonitorPageController = ({
   }
   const setSuccessMessage = (message: string) => { successMsg.value = message }
   const setErrorMessage = (message: string) => { errorMsg.value = message }
-  const { crawlPolling, crawlStatus, beginCrawlPolling, resumeGithubCrawlPolling } = useGithubCrawlPolling({
+  const { crawlPolling, crawlStatus, beginCrawlPolling, resumeGithubCrawlPolling, disposeCrawlPolling } = useGithubCrawlPolling({
     api, isAdmin, schedule,
     setSuccess: setSuccessMessage,
     setError: setErrorMessage,
     refreshTasks: fetchTasks,
   })
-  const { enrichmentStatus, enrichmentPolling, beginEnrichmentPolling, stopEnrichmentPolling } = useEnrichmentPolling({
+  const { enrichmentStatus, enrichmentPolling, beginEnrichmentPolling, stopEnrichmentPolling, disposeEnrichmentPolling } = useEnrichmentPolling({
     api, schedule, setSuccess: setSuccessMessage,
   })
+  // 所有一次性延时回调统一登记句柄，卸载时集中清理（对齐 useWechatController dispose 范式）
+  const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
+  const scheduleTracked = (callback: () => void, delay: number) => {
+    const timer = schedule(() => {
+      pendingTimers.delete(timer)
+      callback()
+    }, delay)
+    pendingTimers.add(timer)
+    return timer
+  }
+  const dispose = () => {
+    for (const timer of pendingTimers) clearTimeout(timer)
+    pendingTimers.clear()
+    // 终止观望标志复位：watch 链被清定时器截断后，组件重挂不应残留锁定态
+    enrichmentCancelWatching.value = false
+    disposeCrawlPolling()
+    disposeEnrichmentPolling()
+  }
   const fetchSchedulerStatus = async () => {
     try { schedulerStatus.value = await api.fetchSchedulerStatus() }
     catch (error) { console.error('Failed to fetch scheduler status', error) }
@@ -269,7 +287,7 @@ export const useMonitorPageController = ({
     } catch (error) { errorMsg.value = detail(error) }
     finally { deletingMcpServerId.value = null }
   }
-  const delayedRefresh = (secondDelay: number) => { schedule(fetchTasks, 1000); schedule(fetchTasks, secondDelay) }
+  const delayedRefresh = (secondDelay: number) => { scheduleTracked(fetchTasks, 1000); scheduleTracked(fetchTasks, secondDelay) }
   const startGithubCrawl = async () => {
     if (crawling.value || crawlPolling.value) return
     clearMessages()
@@ -345,7 +363,7 @@ export const useMonitorPageController = ({
       successMsg.value = i18n.global.t('monitor.enrichment.cancelWatchTimeout')
       return
     }
-    schedule(() => { void watchEnrichmentCancel(attempt + 1) }, ENRICHMENT_POLL_INTERVAL)
+    scheduleTracked(() => { void watchEnrichmentCancel(attempt + 1) }, ENRICHMENT_POLL_INTERVAL)
   }
   const cancelEnrichment = async () => {
     if (cancellingEnrichment.value || enrichmentCancelWatching.value) return
@@ -359,7 +377,7 @@ export const useMonitorPageController = ({
       // 服务端 running 清零前按钮保持锁定，批次真正结束才解锁刷新
       stopEnrichmentPolling(result.message || i18n.global.t('monitor.enrichment.cancelRequested'))
       enrichmentCancelWatching.value = true
-      schedule(() => { void watchEnrichmentCancel(1) }, ENRICHMENT_POLL_INTERVAL)
+      scheduleTracked(() => { void watchEnrichmentCancel(1) }, ENRICHMENT_POLL_INTERVAL)
     } catch (error) { errorMsg.value = detail(error) }
     finally { cancellingEnrichment.value = false }
   }
@@ -427,5 +445,6 @@ export const useMonitorPageController = ({
     enrichmentCancelWatching,
     enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
     fetchGithubEnrichmentStatus, fetchGithubEnrichmentConfig, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
+    dispose,
   }
 }

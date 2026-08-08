@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
@@ -25,7 +25,7 @@ const {
   loadingProviderConfig, savingProviderConfig, testingProvider, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
-  fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, resetMcpForm, editMcpServer, saveMcpServer,
+  dispose, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, resetMcpForm, editMcpServer, saveMcpServer,
   testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings, clearDashboardCache, syncDataNow,
   ingestByDate, clearAllData,
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
@@ -42,6 +42,8 @@ watch(enrichmentPolling, (polling, wasPolling) => {
 })
 
 onMounted(refreshData)
+// 卸载统一停链：爬取/富化轮询与 delayedRefresh 等一次性延时回调
+onUnmounted(dispose)
 </script>
 
 <template>
