@@ -192,7 +192,9 @@ class SearchGitHubAIProjectsInput(McpInputModel):
         default=None,
         description=(
             "Omit to rank non-empty queries by relevance; queryless defaults are all=stars, "
-            "today=hot, recommended=recent. Today always uses hot."
+            "today=hot, recommended=recent. Scope 'today' is exploratory discovery of newly hot "
+            "projects, not an official ranking; for rankings, leaderboards, or top-N lists, "
+            "call get_top_items instead."
         ),
     )
     page: StrictInt = Field(default=1, ge=1)

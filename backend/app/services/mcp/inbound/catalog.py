@@ -146,8 +146,11 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_top_items",
         "description": (
-            "Return public top-ranked AIGC_NEWS items for a source, period, and optional snapshot date. "
-            "Call this for daily, weekly, or monthly rankings and trend questions."
+            "Return the authoritative AIGC_NEWS ranking board (official 日榜/周榜/月榜 top-N) for a source, period, "
+            "and optional snapshot date. ALWAYS call this tool — never a search tool — whenever the user asks for "
+            "a ranking, leaderboard, top-N list, daily/weekly/monthly chart, today's hot list, or any 榜单/日榜/"
+            "周榜/月榜 question. Search tools with scope='today' are for exploratory discovery of newly hot "
+            "projects, not for official rankings."
         ),
         "inputSchema": input_schema("get_top_items"),
     },
@@ -198,7 +201,9 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "comparing a project found through native WebSearch, verify its current star count is at least 500 and omit unverifiable "
             "or below-threshold candidates. This floor does not establish suitability. Finding a candidate does not authorize architecture-changing adoption; present reuse, design-reference, and build-from-scratch "
             "options and await the user's choice. Non-empty queries default to relevance ranking; explicit stars, hot, updated, recent, "
-            "or name sorts remain authoritative, and today scope always uses hot. A capable MCP host may include the optional versioned intent "
+            "or name sorts remain authoritative. Scope 'today' is for exploratory discovery of newly hot projects and always sorts "
+            "by hot; it is NOT a ranking board — for daily/weekly/monthly rankings, leaderboards, top-N lists, or any 日榜/周榜/月榜 "
+            "question, call get_top_items instead. A capable MCP host may include the optional versioned intent "
             "object using full conversation context; preserve exact technical names. Intent affects relevance only, while explicit top-level "
             "filters and sort remain authoritative. It supports repository programming language filters (for example Python or C++), "
             "categories, and station recommendations. The top-level language argument is a GitHub repository programming-language filter; "
