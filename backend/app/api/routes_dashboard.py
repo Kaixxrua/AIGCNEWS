@@ -92,6 +92,10 @@ def _dashboard_cache_key_builder(
 
     query_params = dict(request.query_params) if request is not None else {}
 
+    # 前端 cache-buster（_t=Date.now()）只用于穿透浏览器/中间层缓存，
+    # 不进服务端 key——否则每请求一个新 key，服务端缓存永远零命中。
+    query_params.pop("_t", None)
+
     # 若未传 date 参数，注入今日 CST 日期，确保每天 key 不同
     if "date" not in query_params:
         tz_cst = timezone(timedelta(hours=8))
@@ -205,6 +209,7 @@ def _published_at_since(value: Any, cutoff: datetime) -> bool:
 
 
 @router.get("/dashboard/x/recent")
+@cache(expire=120, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_x_recent(
     hours: int = Query(default=24, ge=1, le=72),
     limit: int = Query(default=500, ge=1, le=500),
@@ -213,8 +218,9 @@ async def get_x_recent(
     """滚动最近 N 小时（默认 24）发布的 X 推文，按发布时间新到旧。
 
     不走快照/定稿/静默期语义：X 看板默认视图随访问时间滑动，用户时区
-    由前端展示层换算。不挂 3600s dashboard 缓存——滚动窗口结果随时变，
-    且前端请求自带 _t 破缓存参数。
+    由前端展示层换算。挂 120s 短缓存聚合重复访问（公网隧道单次往返
+    ~2s）；key 不含前端 _t 破缓存参数。行为变化：数据最多旧 2 分钟
+    （采集 5 分钟一轮，滞后有界）。
     """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     cutoff_iso = cutoff.isoformat()

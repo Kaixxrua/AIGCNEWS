@@ -124,6 +124,21 @@ def test_cache_key_preserves_namespace_function_path_and_sorted_query() -> None:
     assert key == f"dashboard:get_top_list:{digest}"
 
 
+def test_cache_key_ignores_frontend_cache_buster_param() -> None:
+    first = routes_dashboard._dashboard_cache_key_builder(
+        routes_dashboard.get_x_recent,
+        namespace="dashboard",
+        request=_request("/api/dashboard/x/recent", "hours=24&limit=500&_t=111"),
+    )
+    second = routes_dashboard._dashboard_cache_key_builder(
+        routes_dashboard.get_x_recent,
+        namespace="dashboard",
+        request=_request("/api/dashboard/x/recent", "hours=24&limit=500&_t=222"),
+    )
+    # _t 只穿透浏览器/中间层缓存，不进服务端 key：不同 _t 同 key 才能命中缓存
+    assert first == second
+
+
 def test_single_source_query_uses_exact_then_same_period_fallback_and_stops() -> None:
     date = "2025-01-02"
     fallback_doc = {"id": "fallback", "source": "github"}
@@ -377,6 +392,46 @@ def test_x_recent_route_serves_rolling_window_and_filters_stale_rows() -> None:
     assert default.status_code == 200
     assert bad_hours.status_code == 422
     assert bad_limit.status_code == 422
+
+
+def test_x_recent_short_cache_ignores_frontend_cache_buster() -> None:
+    now = datetime.now(timezone.utc)
+    docs = [
+        {"id": "x:new", "source": "x", "published_at": (now - timedelta(hours=1)).isoformat()},
+    ]
+
+    class FakeRecentReader:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def list_recent_by_source(self, source, *, since_iso, limit=500):
+            self.calls += 1
+            return docs
+
+    reader = FakeRecentReader()
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_document_repository] = lambda: reader
+
+    # InMemoryBackend._store 是类级共享存储：用独立 prefix 隔离本测试的
+    # 缓存条目，避免与文件中其他 x/recent 用例的同 key 条目互相污染
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-xrecent-cache")
+    try:
+        client = TestClient(app)
+        first = client.get("/api/dashboard/x/recent?hours=24&limit=500&_t=111")
+        second = client.get("/api/dashboard/x/recent?hours=24&limit=500&_t=222")
+        # _t 不进缓存 key：相同业务参数的重复访问命中 120s 短缓存，只读一次库
+        assert reader.calls == 1
+        other_params = client.get("/api/dashboard/x/recent?hours=48&limit=500&_t=333")
+    finally:
+        FastAPICache.reset()
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["items"] == first.json()["items"]
+    # 业务参数变化仍是新 key，照常读库
+    assert other_params.status_code == 200
+    assert reader.calls == 2
 
 
 def test_top_route_preserves_x_media_metadata() -> None:
