@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_x_media
+from backend.tests.test_email_service_contracts import FakeRedis
 
 VIDEO_URL = "https://video.twimg.com/amplify_video/123/vid/avc1/1920x1080/a.mp4?tag=29"
 FAKE_JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
@@ -30,7 +31,7 @@ def poster_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     state = {"upstream_calls": 0, "extract_calls": 0, "extract_ok": True}
 
-    def build(handler) -> TestClient:
+    def build(handler, *, with_redis: bool = True) -> TestClient:
         def fake_client_factory() -> httpx.AsyncClient:
             return httpx.AsyncClient(
                 transport=httpx.MockTransport(handler),
@@ -48,6 +49,9 @@ def poster_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(routes_x_media, "_extract_first_frame", fake_extract)
         app = FastAPI()
         app.include_router(routes_x_media.router, prefix="/api")
+        if with_redis:
+            state["redis"] = FakeRedis()
+            app.state.redis = state["redis"]
         return TestClient(app)
 
     def counting_handler(response: httpx.Response):
@@ -139,3 +143,118 @@ class TestXMediaPoster:
             "/api/media/x/poster", params={"url": "https://evil.com/a.mp4"}
         )
         assert response.status_code == 403
+
+
+class TestXMediaPosterRateLimit:
+    """生成路径的匿名 IP 级限速：防无认证端点被用于 CPU/带宽放大。"""
+
+    @staticmethod
+    def _video_url(seed: int) -> str:
+        return f"https://video.twimg.com/amplify_video/{seed}/vid/avc1/1920x1080/a.mp4"
+
+    def test_generation_over_limit_returns_429_without_upstream(
+        self, poster_env, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(routes_x_media, "_POSTER_GENERATE_RATE_LIMIT", 2)
+        state, build, counting_handler = poster_env
+        client = build(counting_handler(httpx.Response(206, content=b"\x00" * 1024)))
+
+        for seed in (1, 2):
+            response = client.get(
+                "/api/media/x/poster", params={"url": self._video_url(seed)}
+            )
+            assert response.status_code == 200
+        throttled = client.get(
+            "/api/media/x/poster", params={"url": self._video_url(3)}
+        )
+        assert throttled.status_code == 429
+        assert throttled.headers["Retry-After"] == "600"
+        # 被限流的请求未触发回源/抽帧，锁无泄漏
+        assert state["upstream_calls"] == 2
+        assert state["extract_calls"] == 2
+        assert routes_x_media._poster_locks == {}
+
+    def test_spoofed_xff_does_not_split_quota(
+        self, poster_env, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """不可信对端忽略 XFF：换头伪造来源 IP 不能拆分配额。"""
+        monkeypatch.setattr(routes_x_media, "_POSTER_GENERATE_RATE_LIMIT", 1)
+        state, build, counting_handler = poster_env
+        client = build(counting_handler(httpx.Response(206, content=b"\x00" * 1024)))
+
+        first = client.get(
+            "/api/media/x/poster",
+            params={"url": self._video_url(1)},
+            headers={"X-Forwarded-For": "1.2.3.4"},
+        )
+        assert first.status_code == 200
+        throttled = client.get(
+            "/api/media/x/poster",
+            params={"url": self._video_url(2)},
+            headers={"X-Forwarded-For": "5.6.7.8"},
+        )
+        assert throttled.status_code == 429
+        assert state["upstream_calls"] == 1
+
+    def test_cache_hits_are_not_charged(
+        self, poster_env, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """磁盘缓存命中不计费：正常浏览重复渲染不消耗生成配额。"""
+        monkeypatch.setattr(routes_x_media, "_POSTER_GENERATE_RATE_LIMIT", 1)
+        state, build, counting_handler = poster_env
+        client = build(counting_handler(httpx.Response(206, content=b"\x00" * 1024)))
+
+        first = client.get("/api/media/x/poster", params={"url": VIDEO_URL})
+        assert first.status_code == 200
+        for _ in range(5):
+            cached = client.get("/api/media/x/poster", params={"url": VIDEO_URL})
+            assert cached.status_code == 200
+        assert state["upstream_calls"] == 1
+
+    def test_negative_cache_hits_are_not_charged(
+        self, poster_env, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(routes_x_media, "_POSTER_GENERATE_RATE_LIMIT", 1)
+        state, build, counting_handler = poster_env
+        client = build(counting_handler(httpx.Response(404, content=b"gone")))
+
+        for _ in range(4):
+            response = client.get("/api/media/x/poster", params={"url": VIDEO_URL})
+            assert response.status_code == 404
+        # 仅首次真实回源计费，负缓存期间的 404 不消耗配额、不被 429
+        assert state["upstream_calls"] == 1
+
+    def test_fail_open_when_redis_missing(
+        self, poster_env, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(routes_x_media, "_POSTER_GENERATE_RATE_LIMIT", 1)
+        state, build, counting_handler = poster_env
+        client = build(
+            counting_handler(httpx.Response(206, content=b"\x00" * 1024)),
+            with_redis=False,
+        )
+        for seed in (1, 2):
+            response = client.get(
+                "/api/media/x/poster", params={"url": self._video_url(seed)}
+            )
+            assert response.status_code == 200
+        assert state["upstream_calls"] == 2
+
+    def test_fail_open_when_redis_broken(
+        self, poster_env, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class BrokenRedis:
+            async def incr(self, key: str) -> int:
+                raise ConnectionError("redis down")
+
+        monkeypatch.setattr(routes_x_media, "_POSTER_GENERATE_RATE_LIMIT", 1)
+        state, build, counting_handler = poster_env
+        client = build(counting_handler(httpx.Response(206, content=b"\x00" * 1024)))
+        client.app.state.redis = BrokenRedis()
+
+        for seed in (1, 2):
+            response = client.get(
+                "/api/media/x/poster", params={"url": self._video_url(seed)}
+            )
+            assert response.status_code == 200
+        assert state["upstream_calls"] == 2

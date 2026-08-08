@@ -13,7 +13,9 @@ GET /api/media/x/poster?url=<https-video-url>
   点击播放占位需要真封面。X 的 mp4 是 faststart（moov 在文件头），
   拉取前 4MB 即可由 ffmpeg 抽出首帧；结果按 URL 哈希落盘缓存，新老
   数据通吃、无需回填。抽帧失败/上游 404 记入短时负缓存（5 分钟），
-  避免每次渲染重复回源。
+  避免每次渲染重复回源。匿名 IP 级限速约束生成路径（每次缓存 miss
+  代价 = 4MB 回源 + ffmpeg 抽帧）：边缘 nginx 缓存命中不到应用层，
+  应用层只防 miss 放大，磁盘/负缓存命中不计费。
 
 共用约束：
   - 仅放行 twimg 主机白名单，防 SSRF 开放代理
@@ -39,7 +41,12 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from starlette.responses import FileResponse, StreamingResponse
 
+from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
+from backend.app.services.auth.rate_limit import (
+    RateLimitExceededError,
+    hit_rate_limit,
+)
 from backend.app.services.media_cache import enforce_cache_budget, prune_expired_entries
 
 router = APIRouter()
@@ -182,6 +189,12 @@ _POSTER_CACHE_CONTROL = "public, max-age=604800"  # 封面按 URL 永久不变�
 _POSTER_NEGATIVE_TTL_SECONDS = 300.0
 _FFMPEG_TIMEOUT_SECONDS = 30.0
 
+# 匿名 IP 级生成限速：每次缓存 miss 代价是 4MB 回源 + ffmpeg 抽帧。
+# 30 次/10 分钟对齐既有匿名端点量级（MCP 匿名 tool_call 30/min 的高代价
+# 口径）；磁盘缓存/负缓存命中不计费，正常浏览重复渲染不消耗配额。
+_POSTER_GENERATE_RATE_LIMIT = 30
+_POSTER_RATE_LIMIT_WINDOW_SECONDS = 600
+
 _poster_locks: dict[str, asyncio.Lock] = {}
 _poster_negative: dict[str, float] = {}  # url -> 负缓存过期时刻（time.monotonic）
 
@@ -297,8 +310,34 @@ def _mark_poster_negative(url: str) -> None:
     prune_expired_entries(_poster_negative)
 
 
+async def _enforce_poster_generate_rate_limit(request: Request) -> None:
+    """生成路径的匿名 IP 级限速；Redis 不可用时放行（与既有端点同口径）。"""
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        return
+    try:
+        await hit_rate_limit(
+            redis_client,
+            action="x_media_poster_generate",
+            identity=client_ip_from_request(request),
+            limit=_POSTER_GENERATE_RATE_LIMIT,
+            window_seconds=_POSTER_RATE_LIMIT_WINDOW_SECONDS,
+        )
+    except RateLimitExceededError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="poster generation rate limited, retry later",
+            headers={"Retry-After": str(_POSTER_RATE_LIMIT_WINDOW_SECONDS)},
+        ) from exc
+    except Exception:
+        logger.warning(
+            "[XMediaPoster] rate limit check failed, allowing request",
+            exc_info=True,
+        )
+
+
 @router.get("/media/x/poster")
-async def x_media_poster(url: str = Query(..., min_length=1)):
+async def x_media_poster(request: Request, url: str = Query(..., min_length=1)):
     target = validate_media_url(url)
 
     cache_path = _poster_cache_path(target)
@@ -314,6 +353,8 @@ async def x_media_poster(url: str = Query(..., min_length=1)):
             # 双检：等待锁期间并发请求可能已生成
             if cache_path.exists():
                 return _poster_file_response(cache_path)
+            # 仅真实生成（回源+抽帧）才计费；缓存/负缓存命中不消耗配额
+            await _enforce_poster_generate_rate_limit(request)
             try:
                 partial = await _fetch_partial(target)
             except HTTPException as exc:
