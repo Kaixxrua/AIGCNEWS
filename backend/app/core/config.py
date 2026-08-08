@@ -25,7 +25,6 @@ class Settings(BaseSettings):
     dailyhot_per_endpoint_limit: int = 5
     dailyhot_request_timeout_seconds: float = 8.0
     wechat_login_attempt_ttl_seconds: int = 300
-    wechat_session_estimated_ttl_seconds: int = 604800
     wechat_sync_max_pages: int = 20
     wechat_sync_max_articles: int = 500
     wechat_sync_inter_page_delay_seconds: float = 1.0
@@ -103,10 +102,8 @@ class Settings(BaseSettings):
     project_semantic_chunk_limit: int = 800
     project_semantic_query_timeout_seconds: float = 6.0
     project_semantic_readme_max_chars: int = 40_000
-    project_semantic_readme_refresh_days: int = 14
     project_semantic_sync_batch_size: int = 100
     project_semantic_sync_concurrency: int = 20
-    project_semantic_github_rate_limit_reserve: int = 200
     project_reranker_enabled: bool = False
     project_reranker_url: str = "https://api.siliconflow.cn/v1/rerank"
     project_reranker_model_name: str = "Pro/BAAI/bge-reranker-v2-m3"
@@ -173,9 +170,6 @@ class Settings(BaseSettings):
     kimi_base_url: str = "https://api.moonshot.cn/v1"
     kimi_model: str = "kimi-k2-turbo-preview"
 
-    arxiv_mcp_url: str = ""
-    github_mcp_url: str = ""
-    news_source_url: str = ""
     github_token: str = ""
     mcp_github_fallback_enabled: bool = True
     mcp_github_fallback_use_token: bool = False
@@ -184,26 +178,12 @@ class Settings(BaseSettings):
     producthunt_api_token: str = ""
     huggingface_token: str = ""
 
-    # ── X/Twitter 采集（twitter-cli，主账号 cookie 凭据，有风控风险）─────
-    # cookie 提取 / 失效重配 / 风险说明见 docs/x-source-runbook.md。
-    # 采集层直接读同名 env（规避 Settings 缓存导致测试不可注入），
-    # 此处字段用于运维可见性与文档化。
-    twitter_auth_token: str = ""
-    twitter_ct0: str = ""
-    # 关注账号 watchlist（逗号分隔），如：openai,anthropic,karpathy
-    twitter_watch_handles: str = ""
-    twitter_tweets_per_account: int = 20
-    twitter_inter_account_delay_seconds: float = 5.0
-
     # JWT 鉴权配置
     # 无默认值：缺失或仍为公开示例值时应用拒绝启动（见 core/auth.validate_jwt_secret）。
     # 生成方式：openssl rand -hex 32
     JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7天
-
-    # Redis OTP 配置
-    REDIS_URL: str = "redis://localhost:6379/0"
 
     # SMTP 邮件配置（Phase 4 邮箱验证码）
     # SMTP_HOST 为空时进入 dev 模式，验证码打印到日志
@@ -220,7 +200,6 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    api_prefix: str = "/api"
 
     # CORS 允许的来源（逗号分隔）。浏览器直连 API 的场景只有前端，
     # 不再允许任意来源。
@@ -239,14 +218,9 @@ class Settings(BaseSettings):
     # 生产环境危险操作的第二授权通道（独立于 CLI 参数的环境授权，
     # 双通道同时满足才放行；settings 启动时从环境读取一次）。
     github_watcher_repair_production_authorized: bool = False
-    project_catalog_migration_production_authorized: bool = False
 
     scheduler_enabled: bool = True
     scheduler_timezone: str = "Asia/Shanghai"
-    scheduler_cron_ingest: str = "0 */3 * * *"
-    scheduler_cron_daily_brief: str = "0 9 * * *"
-
-    log_level: str = "INFO"
 
     # 运行环境：development / production（开发环境热重载时自动清除 Redis 缓存）
     env: str = "production"
