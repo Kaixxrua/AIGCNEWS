@@ -9,7 +9,7 @@ class McpAdminBoundaryTests(unittest.TestCase):
     def test_ops_routes_and_tester_delegate_to_extracted_boundaries(self) -> None:
         app_directory = Path(__file__).parents[1] / "app"
         expectations = {
-            app_directory / "api" / "routes_ops.py": {
+            app_directory / "api" / "routes_ops_mcp.py": {
                 "required": {"McpAdminService", "get_mcp_admin_service"},
                 "forbidden_imports": {
                     "McpServerConfigRepository",
