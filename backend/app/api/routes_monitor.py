@@ -12,7 +12,7 @@ from backend.app.api.dependencies import (
     get_ingestion_task_repository,
     get_readiness_check,
 )
-from backend.app.core.auth import RequireAdmin, RequireUser
+from backend.app.core.auth import RequireAdmin
 from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
@@ -44,22 +44,28 @@ async def readiness(
 
 @router.get("/monitor/health")
 async def health_check(
-    _: dict = Depends(RequireUser),
+    _: dict = Depends(RequireAdmin),
     service: HealthCheckService = Depends(get_health_check_service),
 ):
-    """Full health check across PostgreSQL and supporting services."""
+    """Full health check across PostgreSQL and supporting services.
+
+    管理员口径与 /monitor/tasks 一致：内部服务明细不对普通注册用户暴露。
+    """
     return await asyncio.to_thread(service.run)
 
 
 @router.get("/monitor/metrics")
 async def system_metrics(
-    _: dict = Depends(RequireUser),
+    _: dict = Depends(RequireAdmin),
     evaluation_reader: EvaluationSummaryReader = Depends(get_evaluation_repository),
     task_reader: RecentTaskReader = Depends(get_ingestion_task_repository),
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
     briefing_reader: BriefingReader = Depends(get_briefing_repository),
 ):
-    """Collect runtime metrics: uptime, document count, task stats, eval summary."""
+    """Collect runtime metrics: uptime, document count, task stats, eval summary.
+
+    管理员口径与 /monitor/tasks 一致：运行指标不对普通注册用户暴露。
+    """
     from backend.app.monitoring.metrics import collect_metrics
 
     result = await asyncio.to_thread(

@@ -69,7 +69,7 @@ class MonitorRouteTests(unittest.TestCase):
             "elapsed_seconds": 0.123,
             "services": {"postgres": {"status": "error"}},
         }
-        app.dependency_overrides[RequireUser] = lambda: {"role": "user"}
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
         app.dependency_overrides[get_health_check_service] = lambda: service
 
         response = TestClient(app).get("/api/monitor/health")
@@ -78,7 +78,7 @@ class MonitorRouteTests(unittest.TestCase):
         self.assertEqual(response.json(), service.run.return_value)
         service.run.assert_called_once_with()
 
-    def test_health_check_requires_user_before_service_calls(self) -> None:
+    def test_health_check_requires_admin_before_service_calls(self) -> None:
         app = FastAPI()
         app.include_router(routes_monitor.router, prefix="/api")
         service = MagicMock()
@@ -87,6 +87,19 @@ class MonitorRouteTests(unittest.TestCase):
         response = TestClient(app).get("/api/monitor/health")
 
         self.assertIn(response.status_code, (401, 403))
+        service.run.assert_not_called()
+
+    def test_health_check_rejects_authenticated_non_admin(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        service = MagicMock()
+        # 已登录但非管理员：真实 RequireAdmin 在被覆盖的 RequireUser 之上判 403
+        app.dependency_overrides[RequireUser] = lambda: {"role": "user"}
+        app.dependency_overrides[get_health_check_service] = lambda: service
+
+        response = TestClient(app).get("/api/monitor/health")
+
+        self.assertEqual(response.status_code, 403)
         service.run.assert_not_called()
 
     def test_system_metrics_passes_evaluation_repository_to_collector(self) -> None:
@@ -98,10 +111,10 @@ class MonitorRouteTests(unittest.TestCase):
         document_statistics = MagicMock(spec=DocumentStatisticsReader)
         briefing_reader = MagicMock(spec=BriefingReader)
 
-        def override_require_user() -> dict[str, str]:
-            return {"role": "user"}
+        def override_require_admin() -> dict[str, str]:
+            return {"role": "admin"}
 
-        app.dependency_overrides[RequireUser] = override_require_user
+        app.dependency_overrides[RequireAdmin] = override_require_admin
         app.dependency_overrides[
             get_evaluation_repository
         ] = lambda: evaluation_reader
@@ -123,6 +136,21 @@ class MonitorRouteTests(unittest.TestCase):
             document_statistics=document_statistics,
             briefing_reader=briefing_reader,
         )
+
+    def test_system_metrics_rejects_authenticated_non_admin(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        collector = MagicMock(return_value={"uptime_seconds": 1.0})
+        app.dependency_overrides[RequireUser] = lambda: {"role": "user"}
+
+        with unittest.mock.patch(
+            "backend.app.monitoring.metrics.collect_metrics",
+            collector,
+        ):
+            response = TestClient(app).get("/api/monitor/metrics")
+
+        self.assertEqual(response.status_code, 403)
+        collector.assert_not_called()
 
     def test_recent_tasks_uses_repository_dependency(self) -> None:
         app = FastAPI()
