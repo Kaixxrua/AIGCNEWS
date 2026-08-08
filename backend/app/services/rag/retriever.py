@@ -90,7 +90,7 @@ class HybridRetriever:
                 if key in seen:
                     continue
                 seen.add(key)
-                # 保留已有的 retriever 标记（vector/source_fallback/sqlite_fallback）
+                # 保留已有的 retriever 标记（vector/source_fallback/documents_fallback）
                 # 只有未设置时才标记为 hybrid
                 if not meta.get("retriever"):
                     doc.metadata["retriever"] = "hybrid"
@@ -99,7 +99,7 @@ class HybridRetriever:
 
     @staticmethod
     def _extract_explicit_document_ids(query: str) -> List[str]:
-        """从用户问题/论文页上下文中提取 MySQL documents.id。"""
+        """从用户问题/论文页上下文中提取 documents.id。"""
         doc_ids: List[str] = []
         for item in re.findall(r"\b[a-fA-F0-9]{32}\b", query or ""):
             normalized = item.lower()
@@ -107,14 +107,14 @@ class HybridRetriever:
                 doc_ids.append(normalized)
         return doc_ids
 
-    def _mysql_id_match_documents(
+    def _documents_id_match(
         self, query: str = "", top_k: int = 5
     ) -> List[Document]:
         """按 documents.id 精确召回当前论文。
 
         论文阅读页会把当前 paper_id 传给后端；用户如果只问“详细讲一下这篇论文”，
         query 中没有标题关键词，纯向量/标题检索都容易漏掉目标论文。因此只要问题里出现
-        32 位文档 ID，就必须优先从 MySQL 精确取回该论文元数据，并尽可能补充本地 PDF 正文。
+        32 位文档 ID，就必须优先从 PostgreSQL 文档仓储精确取回该论文元数据，并尽可能补充本地 PDF 正文。
         """
         doc_ids = self._extract_explicit_document_ids(query)
         if not doc_ids:
@@ -146,7 +146,7 @@ class HybridRetriever:
 
             metadata = {
                 "id": str(row.get("id") or ""),
-                "source": str(row.get("source") or "mysql"),
+                "source": str(row.get("source") or "documents"),
                 "title": title,
                 "url": str(row.get("url") or ""),
                 "published_date": str(row.get("published_date") or ""),
@@ -154,7 +154,7 @@ class HybridRetriever:
                 "raw_score": float(row.get("raw_score") or 0.0),
                 "rank_in_period": int(row.get("rank_in_period") or 9999),
                 "retriever": "hybrid",
-                "match_type": "mysql_id",
+                "match_type": "documents_id",
                 "keyword_score": 100.0,
                 "rerank_score": 10.0,
                 "force_include": True,
@@ -167,14 +167,14 @@ class HybridRetriever:
             docs.append(Document(page_content=content, metadata=metadata))
         return docs
 
-    def _mysql_title_match_documents(
+    def _documents_title_match(
         self, query: str = "", top_k: int = 5
     ) -> List[Document]:
-        """按标题关键词从 MySQL 精确/近似召回文档。
+        """按标题关键词从 PostgreSQL 文档仓储精确/近似召回文档。
 
         这条路径用于补足纯向量检索的短板：当用户直接输入论文标题时，
         即使对应 PDF 分块尚未写入 Milvus、或向量相似度排序不靠前，也应优先把
-        MySQL 中已收录的文档元数据和摘要注入 RAG 上下文。
+        文档仓储中已收录的文档元数据和摘要注入 RAG 上下文。
         """
         raw_tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", query.lower())
         stopwords = {
@@ -236,7 +236,7 @@ class HybridRetriever:
             keyword_score = float(row.get("keyword_score") or 0.0)
             local_pdf_path = str(row.get("local_pdf_path") or "")
             pdf_excerpt = ""
-            # MySQL documents.summary 只保存元数据摘要，历史数据可能只有 500 字符。
+            # documents.summary 只保存元数据摘要，历史数据可能只有 500 字符。
             # 当标题高度命中且本地 PDF 已落盘时，补充 PDF 正文前段，避免 LLM
             # 只能看到被截断的 Summary 后误判“摘要被截断”。
             if (
@@ -261,7 +261,7 @@ class HybridRetriever:
 
             metadata = {
                 "id": str(row.get("id") or ""),
-                "source": str(row.get("source") or "mysql"),
+                "source": str(row.get("source") or "documents"),
                 "title": title,
                 "url": str(row.get("url") or ""),
                 "published_date": str(row.get("published_date") or ""),
@@ -269,7 +269,7 @@ class HybridRetriever:
                 "raw_score": float(row.get("raw_score") or 0.0),
                 "rank_in_period": int(row.get("rank_in_period") or 9999),
                 "retriever": "hybrid",
-                "match_type": "mysql_title",
+                "match_type": "documents_title",
                 "keyword_score": keyword_score,
                 # 若后续因向量分数过高跳过 reranker，也让标题命中文档排在来源前列。
                 "rerank_score": min(10.0, round(keyword_score * 1.5, 1)),
@@ -282,7 +282,7 @@ class HybridRetriever:
             docs.append(Document(page_content=content, metadata=metadata))
         return docs
 
-    def _sqlite_fallback_documents(
+    def _documents_fallback(
         self, query: str = "", top_k: int = 10
     ) -> List[Document]:
         rows = self._document_feed.get_top_documents(limit=max(top_k * 5, 30))
@@ -311,12 +311,12 @@ class HybridRetriever:
             summary = str(row.get("summary") or title)
             metadata = {
                 "id": str(row.get("id") or ""),
-                "source": str(row.get("source") or "sqlite"),
+                "source": str(row.get("source") or "documents"),
                 "title": title,
                 "url": str(row.get("url") or ""),
                 "published_date": str(row.get("published_date") or ""),
                 "score": float(row.get("score") or 0.0),
-                "retriever": "sqlite_fallback",
+                "retriever": "documents_fallback",
                 "keyword_score": float(match_score),
             }
             docs.append(Document(page_content=summary, metadata=metadata))
@@ -324,7 +324,7 @@ class HybridRetriever:
 
     async def search(self, query: str, top_k: int = 5) -> List[Document]:
         id_docs = await asyncio.to_thread(
-            self._mysql_id_match_documents, query, max(top_k, 5)
+            self._documents_id_match, query, max(top_k, 5)
         )
         if id_docs:
             matched_titles = " ".join(
@@ -337,19 +337,19 @@ class HybridRetriever:
 
         if not self._milvus_repo.is_available():
             title_docs = await asyncio.to_thread(
-                self._mysql_title_match_documents, retrieval_query, max(top_k, 5)
+                self._documents_title_match, retrieval_query, max(top_k, 5)
             )
             graph_docs = await asyncio.to_thread(
                 self._graph_repo.search, keywords, top_k
             )
-            sqlite_docs = await asyncio.to_thread(
-                self._sqlite_fallback_documents, retrieval_query, top_k
+            fallback_docs = await asyncio.to_thread(
+                self._documents_fallback, retrieval_query, top_k
             )
-            return self._merge_documents(id_docs, title_docs, sqlite_docs, graph_docs)
+            return self._merge_documents(id_docs, title_docs, fallback_docs, graph_docs)
 
         milvus_k = max(top_k * 3, 15)
         title_task = asyncio.to_thread(
-            self._mysql_title_match_documents, retrieval_query, max(top_k, 5)
+            self._documents_title_match, retrieval_query, max(top_k, 5)
         )
         vector_task = asyncio.to_thread(
             self._milvus_repo.search, retrieval_query, milvus_k
@@ -407,10 +407,10 @@ class HybridRetriever:
             github_fallback,
             graph_docs,
         )
-        sqlite_docs = await asyncio.to_thread(
-            self._sqlite_fallback_documents, retrieval_query, top_k
+        fallback_docs = await asyncio.to_thread(
+            self._documents_fallback, retrieval_query, top_k
         )
-        # sqlite fallback 保持自己的 keyword_score，不覆盖 retriever 标记
+        # documents fallback 保持自己的 keyword_score，不覆盖 retriever 标记
         return self._merge_documents(
-            id_docs, title_docs, sqlite_docs, merged, graph_docs
+            id_docs, title_docs, fallback_docs, merged, graph_docs
         )

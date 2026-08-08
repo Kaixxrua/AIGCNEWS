@@ -257,7 +257,7 @@ class GenerationOrchestrator:
         从精排后的文档列表构建参考来源。
 
         只展示 retriever='vector' 的向量检索文档（已通过 embedding 相似度阈值）。
-        sqlite_fallback / source_fallback 文档只用于 LLM 上下文，不展示为来源。
+        documents_fallback / source_fallback 文档只用于 LLM 上下文，不展示为来源。
         """
         candidates: List[Dict[str, Any]] = []
         seen_urls: set[str] = set()

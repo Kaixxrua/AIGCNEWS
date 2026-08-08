@@ -95,11 +95,11 @@ def test_id_match_delegates_ordered_ids_and_preserves_langchain_projection() -> 
     retriever = HybridRetriever.__new__(HybridRetriever)
     retriever._document_retrieval = reader
 
-    docs = retriever._mysql_id_match_documents(f"{first} {second} {first}", top_k=4)
+    docs = retriever._documents_id_match(f"{first} {second} {first}", top_k=4)
 
     reader.get_documents_by_ids.assert_called_once_with([first, second], limit=4)
     assert docs[0].page_content == f"Document ID: {first}\nTitle: Paper\nSummary (metadata excerpt): Summary"
-    assert docs[0].metadata["match_type"] == "mysql_id"
+    assert docs[0].metadata["match_type"] == "documents_id"
     assert docs[0].metadata["force_include"] is True
 
 
@@ -108,7 +108,7 @@ def test_id_match_with_no_id_does_not_call_reader() -> None:
     retriever = HybridRetriever.__new__(HybridRetriever)
     retriever._document_retrieval = reader
 
-    assert retriever._mysql_id_match_documents("explain this paper") == []
+    assert retriever._documents_id_match("explain this paper") == []
     reader.get_documents_by_ids.assert_not_called()
 
 
@@ -130,14 +130,14 @@ def test_title_match_filters_deduplicates_caps_and_delegates_tokens() -> None:
         "iota kappa"
     )
 
-    docs = retriever._mysql_title_match_documents(query, top_k=6)
+    docs = retriever._documents_title_match(query, top_k=6)
 
     expected_tokens = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"]
     reader.get_documents_by_title_tokens.assert_called_once_with(
         expected_tokens, min_matches=3, limit=6
     )
     assert docs[0].page_content == "Title: Alpha Beta Gamma\nSummary (metadata excerpt): Summary"
-    assert docs[0].metadata["match_type"] == "mysql_title"
+    assert docs[0].metadata["match_type"] == "documents_title"
     assert docs[0].metadata["keyword_score"] == 4.0
 
 
@@ -146,7 +146,7 @@ def test_title_match_requires_three_filtered_tokens() -> None:
     retriever = HybridRetriever.__new__(HybridRetriever)
     retriever._document_retrieval = reader
 
-    assert retriever._mysql_title_match_documents("the alpha and beta b") == []
+    assert retriever._documents_title_match("the alpha and beta b") == []
     reader.get_documents_by_title_tokens.assert_not_called()
 
 
