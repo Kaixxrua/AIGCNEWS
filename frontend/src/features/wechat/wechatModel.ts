@@ -117,16 +117,6 @@ export interface WeChatFeedResult {
   per_account: number
 }
 
-export const createEmptyWeChatAccountForm = (): WeChatAccountForm => ({
-  fakeid: '',
-  nickname: '',
-  alias: '',
-  avatar_url: '',
-  signature: '',
-  enabled: true,
-  sort_order: 0,
-})
-
 export const buildWeChatAccountPayload = (form: WeChatAccountForm) => ({
   fakeid: form.fakeid.trim(),
   nickname: form.nickname.trim(),
@@ -136,20 +126,6 @@ export const buildWeChatAccountPayload = (form: WeChatAccountForm) => ({
   enabled: form.enabled,
   sort_order: form.sort_order,
 })
-
-export const upsertWeChatAccount = (
-  accounts: WeChatOfficialAccount[],
-  saved: WeChatOfficialAccount,
-): WeChatOfficialAccount[] => {
-  const index = accounts.findIndex((item) => item.id === saved.id)
-  if (index < 0) return [saved, ...accounts]
-  return accounts.map((item, itemIndex) => (itemIndex === index ? saved : item))
-}
-
-export const removeWeChatAccount = (
-  accounts: WeChatOfficialAccount[],
-  id: number,
-): WeChatOfficialAccount[] => accounts.filter((item) => item.id !== id)
 
 export const isWeChatLoginTerminal = (status: WeChatLoginStatus): boolean =>
   status === 'completed' || status === 'failed' || status === 'cancelled'

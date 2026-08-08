@@ -25,11 +25,6 @@ class WeChatQrExpired(WeChatError):
         super().__init__("WECHAT_QR_EXPIRED", message)
 
 
-class WeChatLoginPending(WeChatError):
-    def __init__(self, message: str = "微信登录仍在等待") -> None:
-        super().__init__("WECHAT_LOGIN_PENDING", message)
-
-
 class WeChatLoginFailed(WeChatError):
     def __init__(self, message: str = "微信登录失败") -> None:
         super().__init__("WECHAT_LOGIN_FAILED", message)

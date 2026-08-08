@@ -254,12 +254,5 @@ class WeChatLoginService:
         session = self._sessions.get_wechat_session(owner_id)
         return _session_to_summary(session)
 
-    async def invalidate_session(self, owner_id: int, reason_code: str) -> dict[str, Any]:
-        session = self._sessions.mark_wechat_session_invalid(owner_id, reason_code)
-        return _session_to_summary(session)
-
     async def cancel_login_attempt(self, owner_id: int, attempt_id: UUID) -> bool:
         return self._attempts.delete_login_attempt(owner_id, attempt_id)
-
-    async def cleanup_expired_attempts(self, owner_id: int) -> int:
-        return self._attempts.expire_login_attempts(owner_id)
