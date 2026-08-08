@@ -1,8 +1,6 @@
 import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import {
-  coercePeriodForReport,
   coerceReportStreamText,
-  type PeriodKey,
   type ReportKey,
   type ReportResponse,
   type ReportStreamEvent,
@@ -11,13 +9,11 @@ import {
 interface ReportControllerOperations {
   loadCachedReport: (params: {
     source: ReportKey
-    period: PeriodKey
     date: string
     locale: string
   }, signal?: AbortSignal) => Promise<ReportResponse | undefined>
   connectReportStream: (options: {
     source: ReportKey
-    period: PeriodKey
     date: string
     locale: string
     onMessage: (payload: unknown) => void | Promise<void>
@@ -44,11 +40,10 @@ export const useReportController = ({
   const isCached = ref(false)
   const errorMsg = ref('')
   const selectedSource = ref<ReportKey>('all')
-  const selectedPeriod = ref<PeriodKey>('daily')
   const selectedDate = ref(new Date().toISOString().slice(0, 10))
 
   // generation + AbortController 竞态守卫（对齐 useXBoardController）：
-  // 源/周期/日期/locale 连发切换时只应用最新一次缓存读取，过期请求直接中止
+  // 源/日期/locale 连发切换时只应用最新一次缓存读取，过期请求直接中止
   const isActive = ref(true)
   let loadGeneration = 0
   let loadAbortController: AbortController | null = null
@@ -61,7 +56,6 @@ export const useReportController = ({
     try {
       const data = await operations.loadCachedReport({
         source: selectedSource.value,
-        period: selectedPeriod.value,
         date: selectedDate.value,
         locale: locale.value,
       }, controller.signal)
@@ -91,7 +85,6 @@ export const useReportController = ({
     await operations.connectReportStream({
       source: selectedSource.value,
       date: selectedDate.value,
-      period: selectedPeriod.value,
       locale: locale.value,
       onMessage: async (payload: unknown) => {
         const event = payload as ReportStreamEvent
@@ -121,11 +114,7 @@ export const useReportController = ({
     loadAbortController = null
   })
 
-  watch(selectedSource, source => {
-    selectedPeriod.value = coercePeriodForReport(source, selectedPeriod.value)
-  })
-
-  watch([selectedSource, selectedPeriod, selectedDate, locale], () => {
+  watch([selectedSource, selectedDate, locale], () => {
     if (isGenerating.value) return
     void loadCachedReport()
   })
@@ -136,7 +125,6 @@ export const useReportController = ({
     isCached,
     errorMsg,
     selectedSource,
-    selectedPeriod,
     selectedDate,
     generate,
   }

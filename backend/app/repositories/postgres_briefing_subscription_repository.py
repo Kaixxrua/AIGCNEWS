@@ -4,6 +4,9 @@ from typing import Any
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 
+# 简报仅按日生成；period 列保留在表结构中，统一写 'daily'。
+_DAILY_PERIOD = "daily"
+
 
 class PostgresBriefingSubscriptionRepository:
     """PostgreSQL persistence for briefing subscriptions and recipients."""
@@ -16,7 +19,6 @@ class PostgresBriefingSubscriptionRepository:
         user_id: int,
         email: str,
         source: str = "all",
-        period: str = "daily",
     ) -> dict[str, Any]:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
@@ -31,7 +33,7 @@ class PostgresBriefingSubscriptionRepository:
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING *
                     """,
-                    (user_id, email, source, period),
+                    (user_id, email, source, _DAILY_PERIOD),
                 )
                 row = cursor.fetchone()
                 return dict(row) if row else {}
@@ -40,7 +42,6 @@ class PostgresBriefingSubscriptionRepository:
         self,
         user_id: int,
         source: str = "all",
-        period: str = "daily",
     ) -> bool:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
@@ -50,7 +51,7 @@ class PostgresBriefingSubscriptionRepository:
                     SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = %s AND source = %s AND period = %s
                     """,
-                    (user_id, source, period),
+                    (user_id, source, _DAILY_PERIOD),
                 )
                 return cursor.rowcount > 0
 
@@ -62,16 +63,15 @@ class PostgresBriefingSubscriptionRepository:
             """
             SELECT id, source, period, is_active, created_at, updated_at
             FROM briefing_subscriptions
-            WHERE user_id = %s AND is_active = TRUE
+            WHERE user_id = %s AND is_active = TRUE AND period = %s
             ORDER BY created_at ASC
             """,
-            (user_id,),
+            (user_id, _DAILY_PERIOD),
         )
 
     def get_active_subscribers(
         self,
         source: str = "all",
-        period: str = "daily",
     ) -> list[dict[str, Any]]:
         return self._fetchall(
             """
@@ -79,7 +79,7 @@ class PostgresBriefingSubscriptionRepository:
             FROM briefing_subscriptions bs
             WHERE bs.is_active = TRUE AND bs.source = %s AND bs.period = %s
             """,
-            (source, period),
+            (source, _DAILY_PERIOD),
         )
 
     def _fetchall(

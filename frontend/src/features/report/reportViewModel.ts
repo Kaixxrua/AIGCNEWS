@@ -11,20 +11,10 @@ export const REPORT_TYPES = [
   { key: 'x',           labelKey: 'xLabel', icon: XLogoIcon, descKey: 'xDesc' },
 ] as const
 
-export const PERIOD_TYPES = [
-  { key: 'daily' },
-  { key: 'weekly' },
-  { key: 'monthly' },
-] as const
-
 export type ReportKey = (typeof REPORT_TYPES)[number]['key']
-export type PeriodKey = (typeof PERIOD_TYPES)[number]['key']
-
-export const DAILY_ONLY_TYPES = new Set<ReportKey>(['all', 'news', 'producthunt', 'hackernews', 'x'])
 
 export interface Subscription {
   source: string
-  period: string
   is_active?: number | boolean | string
 }
 
@@ -54,12 +44,6 @@ export interface ReportStreamEvent {
   data?: unknown
 }
 
-export const isPeriodDisabled = (reportKey: ReportKey, periodKey: PeriodKey): boolean =>
-  periodKey !== 'daily' && DAILY_ONLY_TYPES.has(reportKey)
-
-export const coercePeriodForReport = (reportKey: ReportKey, periodKey: PeriodKey): PeriodKey =>
-  DAILY_ONLY_TYPES.has(reportKey) && periodKey !== 'daily' ? 'daily' : periodKey
-
 export const isActiveSubscription = (subscription: Subscription): boolean =>
   subscription.is_active === undefined ||
   subscription.is_active === true ||
@@ -67,8 +51,9 @@ export const isActiveSubscription = (subscription: Subscription): boolean =>
   subscription.is_active === '1' ||
   subscription.is_active === 'true'
 
+// 简报仅按日生成，活跃订阅即日报订阅。
 export const selectActiveDailySubscriptions = (subscriptions: Subscription[]): Subscription[] =>
-  subscriptions.filter(subscription => subscription.period === 'daily' && isActiveSubscription(subscription))
+  subscriptions.filter(isActiveSubscription)
 
 export const isReportKey = (source: string): source is ReportKey =>
   REPORT_TYPES.some(report => report.key === source)
@@ -83,9 +68,6 @@ export const isSourceSubscribed = (subscriptions: Subscription[], source: Report
 
 export const getReportTypeInfo = (reportKey: ReportKey) =>
   REPORT_TYPES.find(report => report.key === reportKey)
-
-export const getPeriodTypeInfo = (periodKey: PeriodKey) =>
-  PERIOD_TYPES.find(period => period.key === periodKey)
 
 export const coerceReportStreamText = (data: unknown): string => {
   if (typeof data === 'string') return data

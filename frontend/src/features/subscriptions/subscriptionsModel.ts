@@ -11,7 +11,7 @@ export type SubscriptionSource =
   | 'x'
   | 'dailyhot'
 
-export type SubscriptionFrequency = 'daily' | 'weekly' | 'monthly'
+export type SubscriptionFrequency = 'daily'
 
 export type PushChannelType = 'email' | 'webhook'
 export type PushChannelStatus = 'active' | 'disabled'
@@ -50,8 +50,6 @@ export const SUBSCRIPTION_SOURCES: readonly SubscriptionSource[] = [
 
 export const SUBSCRIPTION_FREQUENCIES: readonly SubscriptionFrequency[] = [
   'daily',
-  'weekly',
-  'monthly',
 ]
 
 export type WebhookPlatform = 'wecom' | 'dingtalk' | 'lark' | 'generic'

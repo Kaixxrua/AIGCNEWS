@@ -686,7 +686,7 @@ class McpProtocolTests(unittest.TestCase):
                 "params": {
                     "uri": (
                         "aigc-news://report/latest"
-                        "?source=github&period=weekly&date=2026-07-22"
+                        "?source=github&date=2026-07-22"
                     )
                 },
             },
@@ -694,7 +694,7 @@ class McpProtocolTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.briefing_repository.get_briefing_by_date.assert_called_once_with(
-            "2026-07-20_github_weekly"
+            "2026-07-22_github"
         )
         content = response.json()["result"]["contents"][0]
         self.assertEqual(content["mimeType"], "text/markdown")
@@ -715,7 +715,7 @@ class McpProtocolTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["error"]["code"], -32602)
-        self.assertIn("2026-07-22_daily", response.json()["error"]["message"])
+        self.assertIn("2026-07-22", response.json()["error"]["message"])
 
     def test_initialize_and_tools_list(self) -> None:
         initialized = self.client.post(

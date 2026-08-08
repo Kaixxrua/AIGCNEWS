@@ -5,7 +5,7 @@ from typing import Any, Callable, Mapping, Protocol, Sequence
 
 Document = dict[str, Any]
 PromptConfig = Mapping[str, tuple[str, str]]
-PeriodChannels = Mapping[str, Mapping[str, str]]
+SourceChannels = Mapping[str, str]
 
 
 class SnapshotDocumentReader(Protocol):
@@ -31,9 +31,7 @@ class DocumentFallbackReader(Protocol):
 class BriefingContext:
     target_date: str
     source: str
-    period: str
     cache_date: str
-    period_label: str
     source_type: str | None
     expected_channels: tuple[str, ...]
 
@@ -51,31 +49,22 @@ def normalize_briefing_context(
     *,
     target_date: str,
     source: str,
-    period: str,
     source_config: PromptConfig,
-    period_labels: Mapping[str, str],
-    period_channels: PeriodChannels,
+    source_channels: SourceChannels,
 ) -> BriefingContext:
     normalized_source = source if source in source_config else "all"
-    normalized_period = period if period in ("daily", "weekly", "monthly") else "daily"
     _, cache_suffix = source_config[normalized_source]
 
     if normalized_source == "all":
-        expected_channels = tuple(
-            channel
-            for channels in period_channels.values()
-            if (channel := channels.get(normalized_period))
-        )
+        expected_channels = tuple(source_channels.values())
     else:
-        channel = period_channels.get(normalized_source, {}).get(normalized_period)
+        channel = source_channels.get(normalized_source)
         expected_channels = (channel,) if channel else ()
 
     return BriefingContext(
         target_date=target_date,
         source=normalized_source,
-        period=normalized_period,
-        cache_date=f"{target_date}{cache_suffix}_{normalized_period}",
-        period_label=period_labels.get(normalized_period, "今日"),
+        cache_date=f"{target_date}{cache_suffix}",
         source_type=None if normalized_source == "all" else normalized_source,
         expected_channels=expected_channels,
     )
@@ -134,7 +123,6 @@ def render_briefing_prompt(
         count=len(docs),
         articles=format_articles(docs, context.source),
         date=context.target_date,
-        period_label=context.period_label,
     )
 
 
@@ -145,7 +133,7 @@ def prepare_briefing(
     snapshot_reader: SnapshotDocumentReader,
     document_feed: DocumentFallbackReader,
     source_config: PromptConfig,
-    filter_by_period: Callable[[list[Document], str, str], list[Document]],
+    filter_by_channel: Callable[[list[Document], str], list[Document]],
     format_articles: Callable[[list[Document], str], str],
     is_blocked: Callable[[str], bool],
 ) -> PreparedBriefing:
@@ -173,10 +161,9 @@ def prepare_briefing(
             limit=top_k * 3,
             source_type=context.source_type,
         )
-        documents = filter_by_period(
+        documents = filter_by_channel(
             top_documents,
             context.source,
-            context.period,
         )[:top_k]
 
     if not documents:

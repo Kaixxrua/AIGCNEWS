@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from backend.app.services.briefing_admin import (
-    BRIEFING_DIMENSIONS,
+    BRIEFING_SOURCES,
     BriefingAdminService,
 )
 
@@ -26,9 +26,7 @@ def test_generate_all_forwards_force_flag_in_canonical_order() -> None:
 
     asyncio.run(service.generate_all(False))
 
-    assert [(call["source"], call["period"]) for call in generator.calls] == list(
-        BRIEFING_DIMENSIONS
-    )
+    assert [call["source"] for call in generator.calls] == list(BRIEFING_SOURCES)
     assert all(call["target_date"] is None for call in generator.calls)
     assert all(call["force_regenerate"] is False for call in generator.calls)
 
@@ -47,5 +45,6 @@ def test_generate_all_reuses_generator_and_isolates_dimension_failures() -> None
         "producthunt",
         "hackernews",
         "x",
+        "dailyhot",
     ]
     assert all(call["force_regenerate"] is True for call in generator.calls)

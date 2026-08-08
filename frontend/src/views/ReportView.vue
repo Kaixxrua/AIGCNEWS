@@ -13,11 +13,8 @@ import { useReportSubscriptions } from '@/composables/useReportSubscriptions'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import { useAuthStore } from '@/stores/authStore'
 import {
-  getPeriodTypeInfo,
   getReportTypeInfo,
-  isPeriodDisabled as isReportPeriodDisabled,
   type BatchSubscriptionResponse,
-  type PeriodKey,
   type ReportMessageResponse,
   type ReportResponse,
   type SubscriptionListResponse,
@@ -39,7 +36,6 @@ const {
   isCached,
   errorMsg,
   selectedSource: selectedType,
-  selectedPeriod,
   selectedDate,
   generate,
 } = useReportController({
@@ -48,11 +44,11 @@ const {
       const res = await api.get<ReportResponse>('/report/latest', { params, signal })
       return res.data
     },
-    connectReportStream: ({ source, date, period, locale: reportLocale, onMessage, onDone, onError }) => {
+    connectReportStream: ({ source, date, locale: reportLocale, onMessage, onDone, onError }) => {
       const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
       return connect({
         url: `${baseURL}/report/daily/stream`,
-        body: { source, date, period, locale: reportLocale, force_regenerate: true },
+        body: { source, date, locale: reportLocale, force_regenerate: true },
         onMessage,
         onDone,
         onError,
@@ -64,11 +60,7 @@ const {
   locale,
 })
 
-const isPeriodDisabled = (periodKey: PeriodKey): boolean =>
-  isReportPeriodDisabled(selectedType.value, periodKey)
-
 const currentTypeInfo = computed(() => getReportTypeInfo(selectedType.value))
-const currentPeriodInfo = computed(() => getPeriodTypeInfo(selectedPeriod.value))
 
 // ── 订阅状态 ──────────────────────────────────────────────────────────
 
@@ -93,7 +85,6 @@ const {
 } = useReportSubscriptions({
   isLoggedIn: computed(() => authStore.isLoggedIn),
   selectedSource: selectedType,
-  selectedPeriod,
   selectedDate,
   locale,
   operations: {
@@ -127,10 +118,8 @@ const {
     <div class="stagger-enter glass-card shrink-0 px-4 py-3 space-y-2">
       <ReportControlsPanel
         v-model:selected-type="selectedType"
-        v-model:selected-period="selectedPeriod"
         v-model:selected-date="selectedDate"
         :current-type-info="currentTypeInfo"
-        :current-period-info="currentPeriodInfo"
         :is-cached="isCached"
         :is-generating="isGenerating"
         :is-logged-in="authStore.isLoggedIn"
@@ -141,7 +130,6 @@ const {
         :email-sent-msg="emailSentMsg"
         :report-content="reportContent"
         :auto-scroll="autoScroll"
-        :is-period-disabled="isPeriodDisabled"
         @toggle-subscribe="toggleSubscribe"
         @prompt-login-for-subscribe="promptLoginForSubscribe"
         @send-to-email="sendToEmail"

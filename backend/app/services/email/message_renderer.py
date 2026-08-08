@@ -16,8 +16,6 @@ SOURCE_LABELS = {
 }
 PERIOD_LABELS = {
     "daily": "日报",
-    "weekly": "周报",
-    "monthly": "月报",
 }
 
 

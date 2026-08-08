@@ -10,7 +10,7 @@ from backend.app.services.briefing import dispatch
 class _FakeBriefingService:
     """按维度回放预设流载荷并记录调用参数的简报服务替身。"""
 
-    def __init__(self, streams: dict[tuple[str, str], list[dict[str, Any]]]) -> None:
+    def __init__(self, streams: dict[str, list[dict[str, Any]]]) -> None:
         self._streams = streams
         self.calls: list[dict[str, Any]] = []
 
@@ -18,7 +18,6 @@ class _FakeBriefingService:
         self,
         target_date: str | None = None,
         source: str = "all",
-        period: str = "daily",
         force_regenerate: bool = True,
         locale: str = "zh-CN",
         generate_bilingual: bool = False,
@@ -27,12 +26,11 @@ class _FakeBriefingService:
             {
                 "target_date": target_date,
                 "source": source,
-                "period": period,
                 "force_regenerate": force_regenerate,
                 "generate_bilingual": generate_bilingual,
             }
         )
-        for payload in self._streams[(source, period)]:
+        for payload in self._streams[source]:
             yield payload
 
 
@@ -61,7 +59,6 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
         ) as factory:
             sent = await dispatch.send_briefing_to_subscribers(
                 source="github",
-                period="daily",
                 date_str="2026-07-22",
                 content="briefing content",
                 subscriptions=repository,
@@ -70,7 +67,6 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent, 1)
         repository.get_active_subscribers.assert_called_once_with(
             source="github",
-            period="daily",
         )
         factory.assert_called_once_with(None)
         email_service.send_briefing.assert_awaited_once_with(
@@ -90,7 +86,6 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
         ) as factory:
             sent = await dispatch.send_briefing_to_subscribers(
                 source="arxiv",
-                period="daily",
                 date_str="2026-08-08",
                 content="content",
                 subscriptions=repository,
@@ -117,7 +112,6 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
         ):
             sent = await dispatch.send_briefing_to_subscribers(
                 source="news",
-                period="daily",
                 date_str="2026-08-08",
                 content="content",
                 subscriptions=repository,
@@ -130,7 +124,7 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
 class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
     async def test_parses_stream_and_sends_joined_content(self) -> None:
         streams = {
-            ("github", "daily"): [
+            "github": [
                 {"type": "start", "data": {"date": "2026-08-08"}},
                 {"type": "content", "data": "Hello "},
                 {"type": "content", "data": "World"},
@@ -145,7 +139,7 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
         email_service.send_briefing = AsyncMock()
 
         with (
-            patch.object(dispatch, "BRIEFING_TASKS", [{"source": "github", "period": "daily"}]),
+            patch.object(dispatch, "BRIEFING_SOURCES", ["github"]),
             patch.object(
                 dispatch, "provide_daily_briefing_service", return_value=service
             ) as provide,
@@ -163,7 +157,6 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "target_date": None,
                     "source": "github",
-                    "period": "daily",
                     "force_regenerate": False,
                     "generate_bilingual": True,
                 }
@@ -179,17 +172,17 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_skips_email_when_not_persisted_empty_or_undated(self) -> None:
         streams = {
-            ("arxiv", "daily"): [
+            "arxiv": [
                 {"type": "start", "data": {"date": "2026-08-08"}},
                 {"type": "content", "data": "正文"},
                 {"type": "done", "data": {"briefing_id": -1}},
             ],
-            ("github", "daily"): [
+            "github": [
                 {"type": "start", "data": {"date": "2026-08-08"}},
                 {"type": "content", "data": "   "},
                 {"type": "done", "data": {"briefing_id": 7}},
             ],
-            ("news", "daily"): [
+            "news": [
                 {"type": "content", "data": "正文"},
                 {"type": "done", "data": {"briefing_id": 9}},
             ],
@@ -202,12 +195,8 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(
                 dispatch,
-                "BRIEFING_TASKS",
-                [
-                    {"source": "arxiv", "period": "daily"},
-                    {"source": "github", "period": "daily"},
-                    {"source": "news", "period": "daily"},
-                ],
+                "BRIEFING_SOURCES",
+                ["arxiv", "github", "news"],
             ),
             patch.object(
                 dispatch, "provide_daily_briefing_service", return_value=service
@@ -232,7 +221,7 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
                     yield payload
 
         streams = {
-            ("github", "daily"): [
+            "github": [
                 {"type": "start", "data": {"date": "2026-08-08"}},
                 {"type": "content", "data": "正文"},
                 {"type": "done", "data": {"briefing_id": 42}},
@@ -248,11 +237,8 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(
                 dispatch,
-                "BRIEFING_TASKS",
-                [
-                    {"source": "arxiv", "period": "daily"},
-                    {"source": "github", "period": "daily"},
-                ],
+                "BRIEFING_SOURCES",
+                ["arxiv", "github"],
             ),
             patch.object(
                 dispatch, "provide_daily_briefing_service", return_value=service

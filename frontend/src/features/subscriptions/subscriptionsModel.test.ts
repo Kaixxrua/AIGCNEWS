@@ -93,6 +93,6 @@ describe('subscription vocabulary', () => {
       'x',
       'dailyhot',
     ])
-    expect(SUBSCRIPTION_FREQUENCIES).toEqual(['daily', 'weekly', 'monthly'])
+    expect(SUBSCRIPTION_FREQUENCIES).toEqual(['daily'])
   })
 })

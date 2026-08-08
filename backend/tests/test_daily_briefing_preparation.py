@@ -9,9 +9,8 @@ from backend.app.services.briefing.daily_briefing import (
     _BLOCK_RESPONSE_ERROR,
     _CONTINUATION_PROMPT,
     _MAX_CONTINUATION_ROUNDS,
-    _PERIOD_CHANNEL_MAP,
-    _PERIOD_LABEL,
     _PROMPT_GITHUB,
+    _SOURCE_CHANNELS,
     _SOURCE_CONFIG,
     DailyBriefingService,
     _format_articles,
@@ -31,15 +30,12 @@ class BriefingPurePreparationTests(unittest.TestCase):
         context = normalize_briefing_context(
             target_date="2026-07-22",
             source="invalid",
-            period="invalid",
             source_config=_SOURCE_CONFIG,
-            period_labels=_PERIOD_LABEL,
-            period_channels=_PERIOD_CHANNEL_MAP,
+            source_channels=_SOURCE_CHANNELS,
         )
 
         self.assertEqual(context.source, "all")
-        self.assertEqual(context.period, "daily")
-        self.assertEqual(context.cache_date, "2026-07-22_daily")
+        self.assertEqual(context.cache_date, "2026-07-22")
         self.assertIsNone(context.source_type)
         self.assertEqual(
             context.expected_channels,
@@ -81,10 +77,8 @@ class BriefingPurePreparationTests(unittest.TestCase):
         context = normalize_briefing_context(
             target_date="2026-07-22",
             source="github",
-            period="daily",
             source_config=_SOURCE_CONFIG,
-            period_labels=_PERIOD_LABEL,
-            period_channels=_PERIOD_CHANNEL_MAP,
+            source_channels=_SOURCE_CHANNELS,
         )
 
         prompt = render_briefing_prompt(
@@ -100,7 +94,6 @@ class BriefingPurePreparationTests(unittest.TestCase):
                 count=1,
                 articles=_format_articles([_github_doc("usable")], "github"),
                 date="2026-07-22",
-                period_label="今日",
             ),
         )
 
@@ -116,10 +109,8 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
         context = normalize_briefing_context(
             target_date="2026-07-22",
             source="github",
-            period="daily",
             source_config=_SOURCE_CONFIG,
-            period_labels=_PERIOD_LABEL,
-            period_channels=_PERIOD_CHANNEL_MAP,
+            source_channels=_SOURCE_CHANNELS,
         )
 
         prepared = prepare_briefing(
@@ -128,7 +119,7 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
             snapshot_reader=snapshot_reader,
             document_feed=document_feed,
             source_config=_SOURCE_CONFIG,
-            filter_by_period=lambda docs, _source, _period: docs,
+            filter_by_channel=lambda docs, _source: docs,
             format_articles=_format_articles,
             is_blocked=_looks_like_block_response,
         )
@@ -142,7 +133,6 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
                 count=1,
                 articles=_format_articles([_github_doc("first", rank=1, score=100)], "github"),
                 date="2026-07-22",
-                period_label="今日",
             ),
         )
         document_feed.get_top_documents.assert_not_called()
@@ -162,10 +152,8 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
         context = normalize_briefing_context(
             target_date="2026-07-22",
             source="github",
-            period="daily",
             source_config=_SOURCE_CONFIG,
-            period_labels=_PERIOD_LABEL,
-            period_channels=_PERIOD_CHANNEL_MAP,
+            source_channels=_SOURCE_CHANNELS,
         )
 
         prepared = prepare_briefing(
@@ -174,7 +162,7 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
             snapshot_reader=snapshot_reader,
             document_feed=document_feed,
             source_config=_SOURCE_CONFIG,
-            filter_by_period=lambda docs, _source, _period: [
+            filter_by_channel=lambda docs, _source: [
                 doc
                 for doc in docs
                 if doc["source_channel"] == "github_trending_daily"
@@ -192,18 +180,17 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
         self.assertEqual([document["title"] for document in prepared.documents], ["latest"])
         self.assertIsNotNone(prepared.prompt)
 
-    def test_adapter_keeps_missing_channel_source_fallback_behavior(self) -> None:
+    def test_adapter_returns_empty_when_every_source_is_empty(self) -> None:
         snapshot_reader = MagicMock()
+        snapshot_reader.get_snapshot_documents.return_value = []
         document_feed = MagicMock()
         document_feed.get_top_documents.return_value = []
         document_feed.get_latest_documents.return_value = []
         context = normalize_briefing_context(
             target_date="2026-07-22",
             source="news",
-            period="weekly",
             source_config=_SOURCE_CONFIG,
-            period_labels=_PERIOD_LABEL,
-            period_channels=_PERIOD_CHANNEL_MAP,
+            source_channels=_SOURCE_CHANNELS,
         )
 
         prepared = prepare_briefing(
@@ -212,12 +199,17 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
             snapshot_reader=snapshot_reader,
             document_feed=document_feed,
             source_config=_SOURCE_CONFIG,
-            filter_by_period=lambda _docs, _source, _period: [],
+            filter_by_channel=lambda _docs, _source: [],
             format_articles=_format_articles,
             is_blocked=_looks_like_block_response,
         )
 
-        snapshot_reader.get_snapshot_documents.assert_not_called()
+        snapshot_reader.get_snapshot_documents.assert_called_once_with(
+            snapshot_date="2026-07-22",
+            source_channel="techmeme_daily_rss",
+            source_type="news",
+            limit=10,
+        )
         self.assertEqual(prepared.documents, ())
         self.assertIsNone(prepared.prompt)
         self.assertTrue(prepared.fallback_used)
@@ -234,7 +226,7 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
         service._llm.astream.side_effect = self._astream_side_effect(["x" * 201 + "。"])
 
         events = self._collect(
-            service.stream_generate("2026-07-22", source="github", period="daily")
+            service.stream_generate("2026-07-22", source="github")
         )
 
         self.assertEqual([event["type"] for event in events], ["start", "content", "done"])
@@ -245,7 +237,6 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
             "fallback": False,
             "milvus": False,
             "source": "github",
-            "period": "daily",
         })
         service._rank_snapshots.get_snapshot_documents.assert_called_once_with(
             snapshot_date="2026-07-22",
@@ -261,11 +252,10 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
                 count=1,
                 articles=_format_articles(expected_docs, "github"),
                 date="2026-07-22",
-                period_label="今日",
             )
         )
         service._briefings.save_briefing.assert_called_once_with(
-            "2026-07-22_github_daily", "x" * 201 + "。"
+            "2026-07-22_github", "x" * 201 + "。"
         )
 
     def test_documents_then_latest_fallback_preserves_channel_and_event_contract(self) -> None:
@@ -280,7 +270,7 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
         service._llm.astream.side_effect = self._astream_side_effect(["y" * 201 + "。"])
 
         events = self._collect(
-            service.stream_generate("2026-07-22", source="github", period="daily")
+            service.stream_generate("2026-07-22", source="github")
         )
 
         self.assertEqual([event["type"] for event in events], ["start", "content", "done"])
@@ -291,7 +281,7 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
         )
         service._document_feed.get_latest_documents.assert_called_once_with(limit=2)
 
-    def test_invalid_source_and_period_fall_back_before_cache_lookup(self) -> None:
+    def test_invalid_source_falls_back_before_cache_lookup(self) -> None:
         service = self._service()
         service._briefings.get_briefing_by_date.return_value = {
             "id": 42,
@@ -302,7 +292,6 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
             service.stream_generate(
                 "2026-07-22",
                 source="invalid",
-                period="invalid",
                 force_regenerate=False,
             )
         )
@@ -313,10 +302,9 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
             "doc_count": 0,
             "cached": True,
             "source": "all",
-            "period": "daily",
         })
         service._briefings.get_briefing_by_date.assert_called_once_with(
-            "2026-07-22_daily"
+            "2026-07-22"
         )
         service._rank_snapshots.get_snapshot_documents.assert_not_called()
         service._briefings.save_briefing.assert_not_called()
@@ -328,14 +316,13 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
         service._document_feed.get_latest_documents.return_value = []
 
         events = self._collect(
-            service.stream_generate("2026-07-22", source="news", period="weekly")
+            service.stream_generate("2026-07-22", source="news")
         )
 
         self.assertEqual([event["type"] for event in events], ["start", "content", "done"])
         self.assertEqual(events[0]["data"]["source"], "news")
-        self.assertEqual(events[0]["data"]["period"], "weekly")
         self.assertEqual(events[0]["data"]["doc_count"], 0)
-        self.assertIn("# 2026-07-22 本周简报", events[1]["data"])
+        self.assertIn("# 2026-07-22 今日简报", events[1]["data"])
         self.assertEqual(events[2]["data"], {"briefing_id": -1})
         service._briefings.save_briefing.assert_not_called()
         service._llm.astream.assert_not_called()
@@ -383,7 +370,7 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
         )
         complete = "".join(fragments)
         service._briefings.save_briefing.assert_called_once_with(
-            "2026-07-22_github_daily", complete
+            "2026-07-22_github", complete
         )
         self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
 
@@ -412,7 +399,7 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
             [english],
         )
         service._briefings.save_briefing.assert_called_once_with(
-            "2026-07-22_github_daily",
+            "2026-07-22_github",
             chinese,
             content_zh=chinese,
             content_en=english,
@@ -446,7 +433,6 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
                         "fallback": False,
                         "milvus": False,
                         "source": "github",
-                        "period": "daily",
                     },
                 },
                 {"type": "content", "data": "Access Denied: Cloudflare Ray ID"},

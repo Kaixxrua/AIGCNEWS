@@ -90,7 +90,6 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
             service.stream_generate(
                 target_date="2026-07-22",
                 source="all",
-                period="daily",
                 force_regenerate=False,
             )
         )
@@ -98,7 +97,7 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
         self.assertEqual([event["type"] for event in events], ["start", "content", "done"])
         self.assertEqual(events[1]["data"], "cached")
         self.assertEqual(events[2]["data"], {"briefing_id": 42})
-        repository.get_briefing_by_date.assert_called_once_with("2026-07-22_daily")
+        repository.get_briefing_by_date.assert_called_once_with("2026-07-22")
         repository.save_briefing.assert_not_called()
 
     def test_force_regenerate_does_not_read_briefing_cache(self) -> None:

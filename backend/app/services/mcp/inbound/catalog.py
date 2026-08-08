@@ -48,7 +48,7 @@ MCP_RESOURCES: list[dict[str, Any]] = [
         "uri": "aigc-news://report/latest",
         "name": "latest_briefing",
         "title": "Latest AIGC_NEWS Briefing",
-        "description": "Latest generated public briefing. Query parameters: source, period, date.",
+        "description": "Latest generated public daily briefing. Query parameters: source, date.",
         "mimeType": "text/markdown",
     },
 ]
@@ -76,10 +76,10 @@ MCP_RESOURCE_TEMPLATES: list[dict[str, Any]] = [
         "mimeType": "application/json",
     },
     {
-        "uriTemplate": "aigc-news://report/latest{?source,period,date}",
+        "uriTemplate": "aigc-news://report/latest{?source,date}",
         "name": "latest_briefing_by_filter",
         "title": "Filtered Latest Briefing",
-        "description": "Read the latest generated briefing for a source, period, and optional date.",
+        "description": "Read the latest generated daily briefing for a source and optional date.",
         "mimeType": "text/markdown",
     },
 ]

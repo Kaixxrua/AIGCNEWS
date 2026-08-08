@@ -10,7 +10,6 @@ from typing import Any
 from backend.app.services.push.dispatch_service import (
     MAX_DELIVERY_ATTEMPTS,
     SubscriptionDispatchService,
-    _resolve_issue_date,
 )
 
 
@@ -139,18 +138,6 @@ def _subscription(
     }
 
 
-class ResolveIssueDateTests(unittest.TestCase):
-    def test_daily_uses_today(self) -> None:
-        self.assertEqual(_resolve_issue_date("daily", date(2026, 8, 5)), "2026-08-05")
-
-    def test_weekly_anchors_to_monday(self) -> None:
-        # 2026-08-05 是周三，周报锚定当周周一。
-        self.assertEqual(_resolve_issue_date("weekly", date(2026, 8, 5)), "2026-08-03")
-
-    def test_monthly_anchors_to_first_day(self) -> None:
-        self.assertEqual(_resolve_issue_date("monthly", date(2026, 8, 5)), "2026-08-01")
-
-
 class SubscriptionDispatchServiceTests(unittest.TestCase):
     def _make_service(
         self,
@@ -194,13 +181,13 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         self.assertEqual(summary, {"sent": 0, "skipped": 0, "failed": 0})
         self.assertEqual(email.calls, [])
         self.assertEqual(deliveries._rows, {})
-        # 缓存 key 与报告路由一致：all 无后缀，直接拼频率。
-        self.assertIn("2026-08-05_daily", briefing_repo.requested_keys)
+        # 缓存 key 与报告路由一致：all 无后缀。
+        self.assertIn("2026-08-05", briefing_repo.requested_keys)
 
     def test_happy_path_sends_and_marks_sent(self) -> None:
         service, deliveries, _, email = self._make_service(
             subscriptions=[_subscription(1)],
-            briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
         )
 
         summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
@@ -214,7 +201,7 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         self.assertEqual(call["period"], "daily")
         self.assertEqual(call["date_str"], "2026-08-05")
         delivery = deliveries.get_delivery(
-            subscription_id=1, item_key="2026-08-05_daily"
+            subscription_id=1, item_key="2026-08-05"
         )
         self.assertIsNotNone(delivery)
         self.assertEqual(delivery["status"], "sent")
@@ -223,7 +210,7 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
     def test_second_run_skips_already_sent_delivery(self) -> None:
         service, _, _, email = self._make_service(
             subscriptions=[_subscription(1)],
-            briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
         )
 
         asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
@@ -236,14 +223,14 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         email = FakeEmailService(failures_before_success=1)
         service, deliveries, _, _ = self._make_service(
             subscriptions=[_subscription(1)],
-            briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
             email_service=email,
         )
 
         first = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
         self.assertEqual(first, {"sent": 0, "skipped": 0, "failed": 1})
         delivery = deliveries.get_delivery(
-            subscription_id=1, item_key="2026-08-05_daily"
+            subscription_id=1, item_key="2026-08-05"
         )
         self.assertEqual(delivery["status"], "pending")
         self.assertEqual(delivery["attempts"], 1)
@@ -252,7 +239,7 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         second = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
         self.assertEqual(second, {"sent": 1, "skipped": 0, "failed": 0})
         delivery = deliveries.get_delivery(
-            subscription_id=1, item_key="2026-08-05_daily"
+            subscription_id=1, item_key="2026-08-05"
         )
         self.assertEqual(delivery["status"], "sent")
         self.assertEqual(delivery["attempts"], 2)
@@ -262,7 +249,7 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         email = FakeEmailService(always_fail=True)
         service, deliveries, _, _ = self._make_service(
             subscriptions=[_subscription(1)],
-            briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
             email_service=email,
         )
 
@@ -270,7 +257,7 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
             asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
 
         delivery = deliveries.get_delivery(
-            subscription_id=1, item_key="2026-08-05_daily"
+            subscription_id=1, item_key="2026-08-05"
         )
         self.assertEqual(delivery["status"], "failed")
         self.assertEqual(delivery["attempts"], MAX_DELIVERY_ATTEMPTS)
@@ -279,36 +266,10 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         self.assertEqual(summary, {"sent": 0, "skipped": 1, "failed": 0})
         self.assertEqual(len(email.calls), MAX_DELIVERY_ATTEMPTS)
 
-    def test_weekly_frequency_anchors_cache_key_to_monday(self) -> None:
-        service, _, briefing_repo, email = self._make_service(
-            subscriptions=[_subscription(1, frequency="weekly")],
-            briefings={"2026-08-03_weekly": {"content_zh": "本周 AI 要闻"}},
-        )
-
-        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
-
-        self.assertEqual(summary["sent"], 1)
-        self.assertEqual(email.calls[0]["period"], "weekly")
-        self.assertEqual(email.calls[0]["date_str"], "2026-08-03")
-        self.assertIn("2026-08-03_weekly", briefing_repo.requested_keys)
-
-    def test_monthly_frequency_anchors_cache_key_to_first_day(self) -> None:
-        service, _, briefing_repo, email = self._make_service(
-            subscriptions=[_subscription(1, frequency="monthly")],
-            briefings={"2026-08-01_monthly": {"content_zh": "本月 AI 要闻"}},
-        )
-
-        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
-
-        self.assertEqual(summary["sent"], 1)
-        self.assertEqual(email.calls[0]["period"], "monthly")
-        self.assertEqual(email.calls[0]["date_str"], "2026-08-01")
-        self.assertIn("2026-08-01_monthly", briefing_repo.requested_keys)
-
     def test_source_cache_key_uses_suffix(self) -> None:
         service, _, briefing_repo, email = self._make_service(
             subscriptions=[_subscription(1, source="github", target="dev@example.com")],
-            briefings={"2026-08-05_github_daily": {"content_zh": "GitHub 热榜"}},
+            briefings={"2026-08-05_github": {"content_zh": "GitHub 热榜"}},
         )
 
         summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
@@ -316,12 +277,12 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         self.assertEqual(summary["sent"], 1)
         self.assertEqual(email.calls[0]["source"], "github")
         self.assertEqual(email.calls[0]["to_email"], "dev@example.com")
-        self.assertIn("2026-08-05_github_daily", briefing_repo.requested_keys)
+        self.assertIn("2026-08-05_github", briefing_repo.requested_keys)
 
     def test_unsupported_channel_type_skips_without_delivery(self) -> None:
         service, deliveries, _, email = self._make_service(
             subscriptions=[_subscription(1, channel_type="sms")],
-            briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
         )
 
         summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
@@ -339,7 +300,7 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
                 _subscription(1, target="first@example.com"),
                 _subscription(2, target="second@example.com"),
             ],
-            briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
             email_service=email,
         )
 
@@ -356,7 +317,7 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         # 仓储契约的过滤语义由 SQL 承担，此处验证服务不过滤入参之外的状态。
         service, _, _, email = self._make_service(
             subscriptions=[],
-            briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
         )
         summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
         self.assertEqual(summary["sent"], 0)

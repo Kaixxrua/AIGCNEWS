@@ -83,7 +83,6 @@ const i18n = createI18n({
           title: '订阅',
           count: '{count} 条订阅',
           source: '来源',
-          frequency: '频率',
           channel: '渠道',
           selectChannel: '选择渠道',
           noBindableChannel: '暂无可用渠道',
@@ -96,7 +95,6 @@ const i18n = createI18n({
           empty: '还没有订阅',
         },
         sources: { all: '全部', arxiv: 'arXiv 论文', dailyhot: '全网热榜' },
-        frequencies: { daily: '日报', weekly: '周报', monthly: '月报' },
         notice: {
           'otp-sent': '验证码已发送，请查收邮件',
           'channel-verified': '渠道验证成功',
@@ -204,11 +202,11 @@ describe('SubscriptionsView rendering', () => {
     expect(text).toContain('3 个渠道')
   })
 
-  it('renders subscriptions with localized source and frequency', async () => {
+  it('renders subscriptions with localized source', async () => {
     ctl().subscriptions.value = [subscription]
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('全网热榜 · 日报')
+    expect(wrapper.text()).toContain('全网热榜')
     expect(wrapper.text()).toContain('me@example.com')
   })
 

@@ -7,8 +7,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
 
 from backend.app.api import routes_report
+from backend.app.api.dependencies import get_evaluation_repository
+from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.repositories.briefing_repository import (
     BriefingReader,
     BriefingSubscriptionRepository,
@@ -57,31 +60,29 @@ class ReportBriefingRepositoryTests(unittest.TestCase):
         repository = MagicMock(spec=BriefingReader)
         repository.get_briefing_by_date.return_value = {
             "id": 42,
-            "date": "2026-07-20_github_weekly",
+            "date": "2026-07-22_github",
             "content": "cached",
         }
 
         result = asyncio.run(
             routes_report.get_latest_briefing(
                 source="github",
-                period="weekly",
                 date="2026-07-22",
                 repository=repository,
             )
         )
 
         repository.get_briefing_by_date.assert_called_once_with(
-            "2026-07-20_github_weekly"
+            "2026-07-22_github"
         )
         self.assertEqual(
             result,
             {
                 "id": 42,
-                "date": "2026-07-20_github_weekly",
+                "date": "2026-07-22_github",
                 "content": "cached",
                 "source": "github",
-                "period": "weekly",
-                "cache_key": "2026-07-20_github_weekly",
+                "cache_key": "2026-07-22_github",
             },
         )
 
@@ -92,17 +93,16 @@ class ReportBriefingRepositoryTests(unittest.TestCase):
         response = asyncio.run(
             routes_report.get_latest_briefing(
                 source="invalid",
-                period="invalid",
                 date="2026-07-22",
                 repository=repository,
             )
         )
 
-        repository.get_briefing_by_date.assert_called_once_with("2026-07-22_daily")
+        repository.get_briefing_by_date.assert_called_once_with("2026-07-22")
         self.assertEqual(response.status_code, 404)
         self.assertEqual(
             response.body.decode(),
-            '{"detail":"对应简报尚未生成","cache_key":"2026-07-22_daily"}',
+            '{"detail":"对应简报尚未生成","cache_key":"2026-07-22"}',
         )
 
     def test_history_uses_repository(self) -> None:
@@ -159,21 +159,20 @@ class ReportBriefingRepositoryTests(unittest.TestCase):
                     repository=repository,
                     email="reader@example.com",
                     source="all",
-                    period="monthly",
                     date_str="2026-07-22",
                 )
             )
 
-        self.assertEqual(result, "2026-07-01")
+        self.assertEqual(result, "2026-07-22")
         repository.get_briefing_by_date.assert_called_once_with(
-            "2026-07-01_monthly"
+            "2026-07-22"
         )
         email_service.send_briefing.assert_awaited_once_with(
             to_email="reader@example.com",
             briefing_content="cached",
             source="all",
-            period="monthly",
-            date_str="2026-07-01",
+            period="daily",
+            date_str="2026-07-22",
         )
 
 
@@ -199,6 +198,54 @@ class ReportEvaluationRepositoryTests(unittest.TestCase):
         repository.list_evaluations.assert_called_once_with(limit=7)
 
 
+class ReportEvaluationAdminGateTests(unittest.TestCase):
+    """内部评估明细仅管理员可见（口径与 /monitor 一致）。"""
+
+    def _build_client(self, repository) -> TestClient:
+        app = FastAPI()
+        app.include_router(routes_report.router, prefix="/api")
+        app.dependency_overrides[get_evaluation_repository] = lambda: repository
+        return TestClient(app)
+
+    def test_eval_endpoints_reject_anonymous(self) -> None:
+        repository = MagicMock(spec=EvaluationRepository)
+        client = self._build_client(repository)
+
+        for path in ("/api/report/eval/summary", "/api/report/eval/list"):
+            with self.subTest(path=path):
+                response = client.get(path)
+                self.assertIn(response.status_code, (401, 403))
+        repository.get_eval_summary.assert_not_called()
+        repository.list_evaluations.assert_not_called()
+
+    def test_eval_endpoints_reject_authenticated_non_admin(self) -> None:
+        repository = MagicMock(spec=EvaluationRepository)
+        client = self._build_client(repository)
+        client.app.dependency_overrides[RequireUser] = lambda: {"role": "user"}
+
+        for path in ("/api/report/eval/summary", "/api/report/eval/list"):
+            with self.subTest(path=path):
+                response = client.get(path)
+                self.assertEqual(response.status_code, 403)
+        repository.get_eval_summary.assert_not_called()
+        repository.list_evaluations.assert_not_called()
+
+    def test_eval_endpoints_serve_admin(self) -> None:
+        repository = MagicMock(spec=EvaluationRepository)
+        repository.get_eval_summary.return_value = {"total": 2}
+        repository.list_evaluations.return_value = [{"id": 2}]
+        client = self._build_client(repository)
+        client.app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+
+        summary = client.get("/api/report/eval/summary")
+        listing = client.get("/api/report/eval/list")
+
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.json(), {"total": 2})
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(listing.json(), {"items": [{"id": 2}], "total": 1})
+
+
 class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
     def test_subscribe_uses_authenticated_user_and_repository(self) -> None:
         repository = MagicMock(spec=BriefingSubscriptionRepository)
@@ -206,7 +253,7 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
 
         result = asyncio.run(
             routes_report.subscribe_briefing(
-                routes_report.SubscribeRequest(source="github", period="weekly"),
+                routes_report.SubscribeRequest(source="github"),
                 user={"user_id": 7, "email": "reader@example.com"},
                 repository=repository,
             )
@@ -216,7 +263,6 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
             user_id=7,
             email="reader@example.com",
             source="github",
-            period="weekly",
         )
         self.assertEqual(result["subscription"], {"id": 42})
 
@@ -240,7 +286,7 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
 
         response = asyncio.run(
             routes_report.unsubscribe_briefing(
-                routes_report.SubscribeRequest(source="news", period="monthly"),
+                routes_report.SubscribeRequest(source="news"),
                 user={"user_id": 7},
                 repository=repository,
             )
@@ -249,7 +295,6 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
         repository.cancel_briefing_subscription.assert_called_once_with(
             user_id=7,
             source="news",
-            period="monthly",
         )
         self.assertEqual(response.status_code, 404)
 
@@ -267,7 +312,7 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
         self.assertEqual(result, {"items": [{"id": 42}]})
         repository.get_user_briefing_subscriptions.assert_called_once_with(user_id=7)
 
-    def test_batch_deduplicates_sources_and_forces_daily_period(self) -> None:
+    def test_batch_deduplicates_sources(self) -> None:
         repository = MagicMock(spec=BriefingSubscriptionRepository)
         repository.upsert_briefing_subscription.side_effect = [
             {"id": 1},
@@ -278,7 +323,6 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
             routes_report.batch_subscribe_briefings(
                 routes_report.BatchSubscribeRequest(
                     sources=["github", "invalid", "github", "news"],
-                    period="monthly",
                 ),
                 user={"user_id": 7, "email": "reader@example.com"},
                 repository=repository,
@@ -286,7 +330,6 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
         )
 
         self.assertEqual(result["sources"], ["github", "news"])
-        self.assertEqual(result["period"], "daily")
         self.assertEqual(result["total"], 2)
         self.assertEqual(
             [call.kwargs for call in repository.upsert_briefing_subscription.call_args_list],
@@ -295,13 +338,11 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
                     "user_id": 7,
                     "email": "reader@example.com",
                     "source": "github",
-                    "period": "daily",
                 },
                 {
                     "user_id": 7,
                     "email": "reader@example.com",
                     "source": "news",
-                    "period": "daily",
                 },
             ],
         )

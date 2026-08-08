@@ -7,14 +7,16 @@ from typing import Any, AsyncIterator, Protocol
 
 logger = logging.getLogger(__name__)
 
-BRIEFING_DIMENSIONS = (
-    ("all", "daily"),
-    ("arxiv", "daily"),
-    ("github", "daily"),
-    ("news", "daily"),
-    ("producthunt", "daily"),
-    ("hackernews", "daily"),
-    ("x", "daily"),
+# 简报仅按日生成；与 dispatch.BRIEFING_SOURCES 保持同一维度清单。
+BRIEFING_SOURCES = (
+    "all",
+    "arxiv",
+    "github",
+    "news",
+    "producthunt",
+    "hackernews",
+    "x",
+    "dailyhot",
 )
 
 
@@ -23,7 +25,6 @@ class BriefingGenerator(Protocol):
         self,
         target_date: str | None = None,
         source: str = "all",
-        period: str = "daily",
         force_regenerate: bool = True,
         locale: str = "zh-CN",
         generate_bilingual: bool = False,
@@ -38,29 +39,27 @@ class BriefingAdminService:
 
     async def generate_all(self, force_regenerate: bool) -> None:
         success = 0
-        for source, period in BRIEFING_DIMENSIONS:
+        for source in BRIEFING_SOURCES:
             try:
                 async for _ in self._briefing.stream_generate(
                     target_date=None,
                     source=source,
-                    period=period,
                     force_regenerate=force_regenerate,
                 ):
                     pass
                 success += 1
                 logger.info(
-                    "[Ops] 简报生成完成: source=%s period=%s", source, period
+                    "[Ops] 简报生成完成: source=%s", source
                 )
             except Exception as exc:
                 logger.error(
-                    "[Ops] 简报生成失败: source=%s period=%s error=%s",
+                    "[Ops] 简报生成失败: source=%s error=%s",
                     source,
-                    period,
                     exc,
                     exc_info=True,
                 )
         logger.info(
             "[Ops] 全维度简报生成完毕，%d/%d 成功。",
             success,
-            len(BRIEFING_DIMENSIONS),
+            len(BRIEFING_SOURCES),
         )

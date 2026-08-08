@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { MailPlus, RefreshCw, Send, Trash2, Webhook } from 'lucide-vue-next'
 import { useSubscriptionsController } from '@/composables/useSubscriptionsController'
 import {
-  SUBSCRIPTION_FREQUENCIES,
   SUBSCRIPTION_SOURCES,
   detectWebhookPlatform,
 } from '@/features/subscriptions/subscriptionsModel'
@@ -226,7 +225,7 @@ onMounted(() => {
           </div>
 
           <form class="flex flex-col gap-2" @submit.prevent="ctl.submitSubscription">
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-2 gap-2">
               <label class="flex flex-col gap-1">
                 <span class="text-2xs font-bold text-stone-500">{{ t('subscriptions.subs.source') }}</span>
                 <select
@@ -235,17 +234,6 @@ onMounted(() => {
                 >
                   <option v-for="source in SUBSCRIPTION_SOURCES" :key="source" :value="source">
                     {{ t(`subscriptions.sources.${source}`) }}
-                  </option>
-                </select>
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="text-2xs font-bold text-stone-500">{{ t('subscriptions.subs.frequency') }}</span>
-                <select
-                  v-model="ctl.newFrequency.value"
-                  class="rounded-[4px] border border-stone-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-ink"
-                >
-                  <option v-for="frequency in SUBSCRIPTION_FREQUENCIES" :key="frequency" :value="frequency">
-                    {{ t(`subscriptions.frequencies.${frequency}`) }}
                   </option>
                 </select>
               </label>
@@ -279,7 +267,7 @@ onMounted(() => {
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5">
                   <span class="text-sm font-bold text-stone-800">
-                    {{ t(`subscriptions.sources.${subscription.source}`) }} · {{ t(`subscriptions.frequencies.${subscription.frequency}`) }}
+                    {{ t(`subscriptions.sources.${subscription.source}`) }}
                   </span>
                   <span
                     v-if="subscription.status !== 'active'"

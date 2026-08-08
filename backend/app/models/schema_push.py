@@ -10,7 +10,8 @@ from pydantic import BaseModel, EmailStr, TypeAdapter, field_validator, model_va
 SubscriptionSource = Literal[
     "all", "arxiv", "github", "news", "producthunt", "hackernews", "x", "dailyhot"
 ]
-SubscriptionFrequency = Literal["daily", "weekly", "monthly"]
+# 简报仅按日生成，订阅频率只保留 daily（weekly/monthly 已随简报周期一并移除）。
+SubscriptionFrequency = Literal["daily"]
 
 _EMAIL_ADAPTER = TypeAdapter(EmailStr)
 _MAX_TARGET_LENGTH = 2048

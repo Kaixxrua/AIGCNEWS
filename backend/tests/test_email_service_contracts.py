@@ -332,18 +332,18 @@ class EmailDeliveryContractTests(unittest.IsolatedAsyncioTestCase):
                 "Reader@Example.COM",
                 "content",
                 source="github",
-                period="weekly",
+                period="daily",
                 date_str="2026-07-27",
             )
 
         parsed = message_from_bytes(send.await_args.args[0].as_bytes())
         self.assertEqual(
-            str(make_header(decode_header(parsed["Subject"]))), "【AIGC_NEWS】工程报告 · 周报 (2026-07-27)"
+            str(make_header(decode_header(parsed["Subject"]))), "【AIGC_NEWS】工程报告 · 日报 (2026-07-27)"
         )
         self.assertEqual(parsed["To"], "Reader@Example.COM")
         self.assertEqual(parsed.get_content_type(), "text/html")
         self.assertIn(
-            "AIGC_NEWS · 工程报告 · 周报",
+            "AIGC_NEWS · 工程报告 · 日报",
             parsed.get_payload(decode=True).decode("utf-8"),
         )
 

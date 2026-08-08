@@ -7,7 +7,7 @@ from __future__ import annotations
 """
 
 import logging
-from typing import Dict, List
+from typing import List
 
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
@@ -18,27 +18,26 @@ from backend.app.services.briefing.composition import provide_daily_briefing_ser
 
 logger = logging.getLogger(__name__)
 
-BRIEFING_TASKS: List[Dict[str, str]] = [
-    {"source": "all", "period": "daily"},
-    {"source": "arxiv", "period": "daily"},
-    {"source": "github", "period": "daily"},
-    {"source": "news", "period": "daily"},
-    {"source": "producthunt", "period": "daily"},
-    {"source": "hackernews", "period": "daily"},
-    {"source": "x", "period": "daily"},
-    {"source": "dailyhot", "period": "daily"},
+BRIEFING_SOURCES: List[str] = [
+    "all",
+    "arxiv",
+    "github",
+    "news",
+    "producthunt",
+    "hackernews",
+    "x",
+    "dailyhot",
 ]
 
 
 async def send_briefing_to_subscribers(
     *,
     source: str,
-    period: str,
     date_str: str,
     content: str,
     subscriptions: ActiveBriefingSubscriberReader,
 ) -> int:
-    subscribers = subscriptions.get_active_subscribers(source=source, period=period)
+    subscribers = subscriptions.get_active_subscribers(source=source)
     if not subscribers:
         return 0
 
@@ -54,15 +53,14 @@ async def send_briefing_to_subscribers(
                 to_email=email,
                 briefing_content=content,
                 source=source,
-                period=period,
+                period="daily",
                 date_str=date_str,
             )
             sent += 1
         except Exception as exc:
             logger.error(
-                "[Briefing] 订阅简报发送失败: source=%s period=%s email=%s error=%s",
+                "[Briefing] 订阅简报发送失败: source=%s email=%s error=%s",
                 source,
-                period,
                 email,
                 exc,
                 exc_info=True,
@@ -74,13 +72,11 @@ async def run_daily_briefing_dispatch(
     repositories: ApplicationRepositories,
 ) -> None:
     logger.info(
-        "[Briefing] 触发每日自动简报生成（%d 个维度）...", len(BRIEFING_TASKS)
+        "[Briefing] 触发每日自动简报生成（%d 个维度）...", len(BRIEFING_SOURCES)
     )
     service = provide_daily_briefing_service(repositories=repositories)
     success = 0
-    for task in BRIEFING_TASKS:
-        source = task["source"]
-        period = task["period"]
+    for source in BRIEFING_SOURCES:
         try:
             content_parts: list[str] = []
             report_date = ""
@@ -88,7 +84,6 @@ async def run_daily_briefing_dispatch(
             async for payload in service.stream_generate(
                 target_date=None,
                 source=source,
-                period=period,
                 force_regenerate=False,
                 generate_bilingual=True,
             ):
@@ -103,34 +98,30 @@ async def run_daily_briefing_dispatch(
                     briefing_id = int(data.get("briefing_id") or -1)
             success += 1
             logger.info(
-                "[Briefing] 日报生成完成，准备推送订阅用户: source=%s period=%s",
+                "[Briefing] 日报生成完成，准备推送订阅用户: source=%s",
                 source,
-                period,
             )
             content = "".join(content_parts)
             if briefing_id > 0 and content.strip() and report_date:
                 sent = await send_briefing_to_subscribers(
                     source=source,
-                    period=period,
                     date_str=report_date,
                     content=content,
                     subscriptions=repositories.briefing_subscriptions,
                 )
                 logger.info(
-                    "[Briefing] 订阅简报发送完成: source=%s period=%s sent=%d",
+                    "[Briefing] 订阅简报发送完成: source=%s sent=%d",
                     source,
-                    period,
                     sent,
                 )
         except Exception as exc:
             logger.error(
-                "[Briefing] 简报生成失败: source=%s period=%s error=%s",
+                "[Briefing] 简报生成失败: source=%s error=%s",
                 source,
-                period,
                 exc,
                 exc_info=True,
             )
 
     logger.info(
-        "[Briefing] 每日简报生成完毕，%d/%d 成功。", success, len(BRIEFING_TASKS)
+        "[Briefing] 每日简报生成完毕，%d/%d 成功。", success, len(BRIEFING_SOURCES)
     )

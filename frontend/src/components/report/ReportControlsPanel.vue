@@ -1,23 +1,17 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import { BellOff, BellRing, Mail, Pin, Send } from 'lucide-vue-next'
+import { BellOff, BellRing, Mail, Send } from 'lucide-vue-next'
 import {
-  DAILY_ONLY_TYPES,
-  PERIOD_TYPES,
   REPORT_TYPES,
-  type PeriodKey,
   type ReportKey,
 } from '@/features/report/reportViewModel'
 
 type ReportTypeInfo = (typeof REPORT_TYPES)[number]
-type PeriodTypeInfo = (typeof PERIOD_TYPES)[number]
 
 defineProps<{
   currentTypeInfo?: ReportTypeInfo
-  currentPeriodInfo?: PeriodTypeInfo
   selectedType: ReportKey
-  selectedPeriod: PeriodKey
   selectedDate: string
   isCached: boolean
   isGenerating: boolean
@@ -29,12 +23,10 @@ defineProps<{
   emailSentMsg: string
   reportContent: string
   autoScroll: boolean
-  isPeriodDisabled: (periodKey: PeriodKey) => boolean
 }>()
 
 const emit = defineEmits<{
   'update:selectedType': [value: ReportKey]
-  'update:selectedPeriod': [value: PeriodKey]
   'update:selectedDate': [value: string]
   toggleSubscribe: []
   promptLoginForSubscribe: []
@@ -50,7 +42,7 @@ const emit = defineEmits<{
     <div class="flex items-center gap-2 min-w-0">
       <component v-if="currentTypeInfo?.icon" :is="currentTypeInfo.icon" class="h-5 w-5 text-stone-500 shrink-0" />
       <h1 class="text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : t('report.titleFallback') }}</h1>
-      <span class="text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ currentPeriodInfo ? t(`report.period.${currentPeriodInfo.key}`) : '' }} · {{ currentTypeInfo ? t(`report.type.${currentTypeInfo.descKey}`) : '' }}</span>
+      <span class="text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ t('report.period.daily') }} · {{ currentTypeInfo ? t(`report.type.${currentTypeInfo.descKey}`) : '' }}</span>
     </div>
     <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
       <div v-if="isCached && !isGenerating" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
@@ -120,7 +112,7 @@ const emit = defineEmits<{
     </div>
   </div>
 
-  <!-- 第二行：源选择 + 周期选择 -->
+  <!-- 第二行：源选择 + 日期选择 -->
   <div class="flex flex-wrap items-center gap-2" style="border-top: 1px solid rgb(var(--stone-400-rgb) / 0.1); padding-top: 8px">
     <div class="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
       <button
@@ -137,27 +129,6 @@ const emit = defineEmits<{
         <component :is="type.icon" class="h-3 w-3 shrink-0" />
         <span>{{ t(`report.type.${type.labelKey}`) }}</span>
       </button>
-    </div>
-
-    <span class="text-stone-200">|</span>
-
-    <div class="flex items-center gap-1">
-      <button
-        v-for="p in PERIOD_TYPES"
-        :key="p.key"
-        class="rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
-        :class="[
-          isPeriodDisabled(p.key) ? 'cursor-not-allowed opacity-30 text-stone-400'
-            : selectedPeriod === p.key ? 'bg-cyan-50 text-cyan-700 font-semibold border border-cyan-200'
-            : 'text-stone-400 hover:bg-accent-soft hover:text-stone-600'
-        ]"
-        :disabled="isGenerating || isPeriodDisabled(p.key)"
-        @click="!isPeriodDisabled(p.key) && emit('update:selectedPeriod', p.key)"
-      >{{ t(`report.period.${p.key}`) }}</button>
-      <span v-if="DAILY_ONLY_TYPES.has(selectedType)" class="flex items-center gap-0.5 text-2xs text-stone-400 ml-0.5">
-        <Pin class="h-2.5 w-2.5 shrink-0" />
-        {{ t('report.dailyOnly') }}
-      </span>
     </div>
 
     <!-- Admin: 日期选择 -->

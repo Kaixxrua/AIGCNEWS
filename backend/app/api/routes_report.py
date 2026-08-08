@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import date as _date, datetime as _dt, timedelta as _td
+from datetime import date as _date
 from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -46,15 +46,13 @@ _SSE_HEARTBEAT_INTERVAL_SECONDS = float(settings.sse_heartbeat_interval)
 
 
 _VALID_SOURCES = {"all", "arxiv", "github", "news", "producthunt", "hackernews", "x", "dailyhot"}
-_VALID_PERIODS = {"daily", "weekly", "monthly"}
 
 
 class GenerateReportRequest(BaseModel):
     date: Optional[str] = None  # ISO date string, e.g. "2025-03-01"; defaults to today
     source: str = (
-        "all"  # "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews" | "x"
+        "all"  # "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews" | "x" | "dailyhot"
     )
-    period: str = "daily"  # "daily" | "weekly" | "monthly"
     force_regenerate: bool = True  # 始终重新生成（不走缓存）
     locale: str = "zh-CN"
 
@@ -68,7 +66,6 @@ async def _briefing_stream(
     service: DailyBriefingService,
     target_date: Optional[str],
     source: str = "all",
-    period: str = "daily",
     force_regenerate: bool = True,
     locale: str = "zh-CN",
 ) -> AsyncGenerator[str, None]:
@@ -78,7 +75,6 @@ async def _briefing_stream(
         stream = service.stream_generate(
             target_date,
             source=source,
-            period=period,
             force_regenerate=force_regenerate,
             locale=locale,
             generate_bilingual=True,
@@ -123,7 +119,7 @@ async def stream_daily_report(
     _: dict = Depends(RequireAdmin),
     service: DailyBriefingService = Depends(get_daily_briefing_service),
 ) -> StreamingResponse:
-    """Generate today's (or a specific date's) briefing and stream via SSE.
+    """Generate today's (or a specific date's) daily briefing and stream via SSE.
 
     source 参数：
       - all         → 综合报告（全源汇总）
@@ -132,21 +128,17 @@ async def stream_daily_report(
       - news        → 行业报告（RSS）
       - producthunt → 产品报告（Product Hunt 热榜）
       - hackernews  → 社区报告（Hacker News AI 热帖）
-      - x           → X 动态报告（关注账号推文，仅日报）
+      - x           → X 动态报告（关注账号推文）
+      - dailyhot    → 全网热榜报告（中文站点聚合）
 
-    period 参数：
-      - daily   → 日报
-      - weekly  → 周报
-      - monthly → 月报
+    简报仅按日生成（weekly/monthly 已移除）。
     """
     source = request.source if request.source in _VALID_SOURCES else "all"
-    period = request.period if request.period in _VALID_PERIODS else "daily"
     return StreamingResponse(
         _briefing_stream(
             service,
             request.date,
             source=source,
-            period=period,
             force_regenerate=request.force_regenerate,
             locale=normalize_briefing_locale(request.locale),
         ),
@@ -163,49 +155,26 @@ async def stream_daily_report(
 # -----------------------------------------------------------------------
 
 
-def _resolve_report_date(period: str, date_str: Optional[str]) -> str:
-    today = _date.today()
-    if date_str:
-        try:
-            anchor = _dt.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
-            anchor = today
-    else:
-        anchor = today
-
-    if period == "weekly":
-        # 统一使用周一作为周报 key
-        anchor = anchor - _td(days=anchor.weekday())
-    elif period == "monthly":
-        # 统一使用当月1号作为月报 key
-        anchor = anchor.replace(day=1)
-
-    return anchor.isoformat()
-
-
 @router.get("/report/latest")
 async def get_latest_briefing(
     source: str = Query(
-        default="all", description="all/arxiv/github/news/producthunt/hackernews/x"
+        default="all", description="all/arxiv/github/news/producthunt/hackernews/x/dailyhot"
     ),
-    period: str = Query(default="daily", description="daily/weekly/monthly"),
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD，可选"),
     locale: str = Query(default="zh-CN", description="zh-CN/en"),
     repository: BriefingReader = Depends(get_briefing_repository),
 ):
-    """返回指定类型与周期的简报缓存。
+    """返回指定来源的日报缓存。
 
-    - source: all/arxiv/github/news
-    - period: daily/weekly/monthly
-    - date: 可选，未传则取今天；weekly 会归一到周一，monthly 会归一到当月1号
+    - source: all/arxiv/github/news/producthunt/hackernews/x/dailyhot
+    - date: 可选，未传则取今天
     """
     source = source if source in _VALID_SOURCES else "all"
-    period = period if period in _VALID_PERIODS else "daily"
 
-    target = _resolve_report_date(period, date)
-    # 与 daily_briefing.py 的 cache_date = f"{today}{cache_suffix}_{period}" 保持一致
+    target = date or _date.today().isoformat()
+    # 与 daily_briefing.py 的 cache_date = f"{today}{cache_suffix}" 保持一致
     suffix = "" if source == "all" else f"_{source}"
-    cache_key = f"{target}{suffix}_{period}"
+    cache_key = f"{target}{suffix}"
 
     item = repository.get_briefing_by_date(cache_key)
     if item is None:
@@ -218,7 +187,6 @@ async def get_latest_briefing(
         "date": item.get("date"),
         "content": select_briefing_content(item, locale),
         "source": source,
-        "period": period,
         "cache_key": cache_key,
     }
 
@@ -260,9 +228,13 @@ async def get_briefing(
 
 @router.get("/report/eval/summary")
 async def eval_summary(
+    _: dict = Depends(RequireAdmin),
     repository: EvaluationRepository = Depends(get_evaluation_repository),
 ):
-    """Return aggregated RAG evaluation statistics."""
+    """Return aggregated RAG evaluation statistics.
+
+    管理员口径与 /monitor 一致：内部评估明细不对普通注册用户暴露。
+    """
     from backend.app.services.evaluation.rag_metrics import RAGMetricsService
 
     svc = RAGMetricsService(repository)
@@ -272,9 +244,13 @@ async def eval_summary(
 @router.get("/report/eval/list")
 async def eval_list(
     limit: int = Query(default=50, ge=1, le=500),
+    _: dict = Depends(RequireAdmin),
     repository: EvaluationRepository = Depends(get_evaluation_repository),
 ):
-    """Return the most recent RAG evaluation records."""
+    """Return the most recent RAG evaluation records.
+
+    管理员口径与 /monitor 一致：内部评估明细不对普通注册用户暴露。
+    """
     from backend.app.services.evaluation.rag_metrics import RAGMetricsService
 
     svc = RAGMetricsService(repository)
@@ -295,14 +271,12 @@ def _get_email_service(request: Request) -> EmailService:
 
 class SubscribeRequest(BaseModel):
     source: str = "all"
-    period: str = "daily"
     date: Optional[str] = None
     locale: str = "zh-CN"
 
 
 class BatchSubscribeRequest(BaseModel):
     sources: list[str]
-    period: str = "daily"
     date: Optional[str] = None
 
 
@@ -312,14 +286,13 @@ async def _send_cached_briefing_to_email(
     repository: BriefingReader,
     email: str,
     source: str,
-    period: str,
     date_str: Optional[str],
     locale: str = "zh-CN",
 ) -> str:
     """发送已生成的简报缓存到指定邮箱，返回实际使用的报告日期。"""
-    target = _resolve_report_date(period, date_str)
+    target = date_str or _date.today().isoformat()
     suffix = "" if source == "all" else f"_{source}"
-    cache_key = f"{target}{suffix}_{period}"
+    cache_key = f"{target}{suffix}"
 
     item = repository.get_briefing_by_date(cache_key)
     if item is None:
@@ -334,7 +307,7 @@ async def _send_cached_briefing_to_email(
             to_email=email,
             briefing_content=select_briefing_content(item, locale),
             source=source,
-            period=period,
+            period="daily",
             date_str=target,
         )
     except BriefingDeliveryError as exc:
@@ -352,7 +325,6 @@ async def subscribe_briefing(
 ):
     """订阅简报邮件推送；日报生成后会自动推送到注册邮箱。"""
     source = body.source if body.source in _VALID_SOURCES else "all"
-    period = body.period if body.period in _VALID_PERIODS else "daily"
     email = user.get("email", "")
     user_id = user.get("user_id")
     if not email:
@@ -362,10 +334,10 @@ async def subscribe_briefing(
         )
 
     sub = repository.upsert_briefing_subscription(
-        user_id=user_id, email=email, source=source, period=period
+        user_id=user_id, email=email, source=source
     )
     return {
-        "message": f"订阅成功，{period} 简报生成后将推送至 {email}",
+        "message": f"订阅成功，日报生成后将推送至 {email}",
         "subscription": sub,
     }
 
@@ -380,12 +352,10 @@ async def unsubscribe_briefing(
 ):
     """取消简报邮件订阅。"""
     source = body.source if body.source in _VALID_SOURCES else "all"
-    period = body.period if body.period in _VALID_PERIODS else "daily"
     user_id = user.get("user_id")
     ok = repository.cancel_briefing_subscription(
         user_id=user_id,
         source=source,
-        period=period,
     )
     if ok:
         return {"message": "已取消订阅"}
@@ -436,20 +406,17 @@ async def batch_subscribe_briefings(
             content={"detail": "请选择至少一个有效订阅领域"},
         )
 
-    period = "daily"
     subscriptions = [
         repository.upsert_briefing_subscription(
             user_id=user_id,
             email=email,
             source=source,
-            period=period,
         )
         for source in sources
     ]
     return {
         "message": f"已订阅 {len(subscriptions)} 个日报领域，日报生成后将推送至 {email}",
         "sources": sources,
-        "period": period,
         "items": subscriptions,
         "total": len(subscriptions),
     }
@@ -464,7 +431,6 @@ async def send_briefing_to_email(
 ):
     """将当前简报立即发送到用户邮箱（一次性发送，不需要订阅）。"""
     source = body.source if body.source in _VALID_SOURCES else "all"
-    period = body.period if body.period in _VALID_PERIODS else "daily"
     email = user.get("email", "")
     if not email:
         return JSONResponse(
@@ -477,7 +443,6 @@ async def send_briefing_to_email(
         repository=repository,
         email=email,
         source=source,
-        period=period,
         date_str=body.date,
         locale=body.locale,
     )

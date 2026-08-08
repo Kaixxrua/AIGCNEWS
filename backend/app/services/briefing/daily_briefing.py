@@ -50,11 +50,34 @@ _BLOCK_RESPONSE_ERROR = (
 )
 
 
-_PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以下{period_label}热点内容（综合学术论文、开源项目、行业新闻），撰写一份**内容详尽、深度全面**的综合{period_label}报。
+def _classified_briefing_error(exc: Exception) -> str:
+    """SSE error payload：分类文案 + 异常类型名，不透出原始 str(exc)。
+
+    原始异常文本可能携带上游 URL、网关回显或密钥片段；该路由仅管理员可见，
+    保留异常类型名足够排查，完整堆栈由服务端日志承接。
+    """
+    err_text = str(exc).lower()
+    if "timeout" in err_text or "timed out" in err_text:
+        category = "模型服务响应超时"
+    elif "429" in err_text or "rate_limit" in err_text or "rate limit" in err_text:
+        category = "模型服务限流"
+    elif "401" in err_text or "403" in err_text or "unauthorized" in err_text or "forbidden" in err_text:
+        category = "模型服务鉴权失败"
+    elif "connection" in err_text or "network" in err_text or "503" in err_text or "unavailable" in err_text:
+        category = "模型服务不可用"
+    else:
+        category = "生成过程出现异常"
+    return (
+        f"简报生成失败：{category}（{type(exc).__name__}）。"
+        "请稍后重试或查看服务端日志。"
+    )
+
+
+_PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以下今日热点内容（综合学术论文、开源项目、行业新闻），撰写一份**内容详尽、深度全面**的综合今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
-2. 包含"{period_label}热点摘要"、"技术亮点"、"工程动态"、"行业资讯"、"值得关注"五个章节
+2. 包含"今日热点摘要"、"技术亮点"、"工程动态"、"行业资讯"、"值得关注"五个章节
 3. **每篇内容都必须详细分析**，包括：核心要点、技术细节、影响分析、相关背景（每篇至少 3-5 句话）
 4. 对每个章节进行深入的趋势总结和洞察点评
 5. 语言专业且详尽，面向技术从业者
@@ -62,82 +85,82 @@ _PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以�
 7. **务必覆盖所有提供的内容，不要遗漏任何一条**
 8. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#arxiv` `#github` `#news` `#producthunt` `#hackernews` `#x`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#RAG` `#代码生成` `#图像生成` `#视频生成` `#语音合成` `#强化学习` `#数据集` `#评测基准` `#推理优化` `#模型压缩` `#开源模型` `#商业化` `#安全对齐` `#具身智能` `#知识图谱` `#MLOps` `#AI基础设施`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**{period_label}热点内容（共 {count} 条）：**
+**今日热点内容（共 {count} 条）：**
 {articles}
 
 **生成日期：** {date}
 """
 
-_PROMPT_ARXIV = r"""你是一位专业的 AI 学术研究分析师。请根据以下{period_label} Arxiv 学术论文，撰写一份**内容详尽、深度全面**的学术{period_label}报。
+_PROMPT_ARXIV = r"""你是一位专业的 AI 学术研究分析师。请根据以下今日 Arxiv 学术论文，撰写一份**内容详尽、深度全面**的学术今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
-2. 包含"{period_label}研究热点"、"核心技术突破"、"值得精读的论文"三个章节
+2. 包含"今日研究热点"、"核心技术突破"、"值得精读的论文"三个章节
 3. **每篇论文都必须详细分析**，包括：研究动机、方法论创新、关键实验结论、与现有工作的对比（每篇至少 4-6 句话）
 4. 对研究趋势进行深入总结，分析技术方向的演进
 5. 语言专业严谨，面向研究人员
 6. **务必覆盖所有提供的论文，不要遗漏任何一篇**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#arxiv`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#RAG` `#代码生成` `#图像生成` `#视频生成` `#语音合成` `#强化学习` `#数据集` `#评测基准` `#推理优化` `#模型压缩` `#开源模型` `#安全对齐` `#具身智能` `#知识图谱`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**{period_label} Arxiv 论文（共 {count} 篇）：**
+**今日 Arxiv 论文（共 {count} 篇）：**
 {articles}
 
 **生成日期：** {date}
 """
 
-_PROMPT_GITHUB = r"""你是一位专业的 AI 工程技术分析师。请根据以下{period_label} GitHub 热门开源项目，撰写一份**内容详尽、深度全面**的工程{period_label}报。
+_PROMPT_GITHUB = r"""你是一位专业的 AI 工程技术分析师。请根据以下今日 GitHub 热门开源项目，撰写一份**内容详尽、深度全面**的工程今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
-2. 包含"{period_label}明星项目"、"技术栈分析"、"实践价值"三个章节
+2. 包含"今日明星项目"、"技术栈分析"、"实践价值"三个章节
 3. **每个项目都必须详细分析**，包括：项目定位、核心功能、技术架构、使用场景、Stars 增长趋势、与同类项目对比（每个至少 4-6 句话）
 4. 对开源生态的技术趋势进行深入洞察
 5. 语言务实，面向工程师和架构师
 6. **务必覆盖所有提供的项目，不要遗漏任何一个**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#github`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#RAG` `#代码生成` `#推理优化` `#模型压缩` `#开源模型` `#MLOps` `#AI基础设施` `#数据工程` `#Web框架` `#CLI工具` `#DevOps` `#前端` `#Rust` `#Python`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**{period_label} GitHub 热门项目（共 {count} 个）：**
+**今日 GitHub 热门项目（共 {count} 个）：**
 {articles}
 
 **生成日期：** {date}
 """
 
-_PROMPT_NEWS = r"""你是一位专业的 AI 行业分析师。请根据以下{period_label} AI 行业新闻，撰写一份**内容详尽、深度全面**的商业{period_label}报。
+_PROMPT_NEWS = r"""你是一位专业的 AI 行业分析师。请根据以下今日 AI 行业新闻，撰写一份**内容详尽、深度全面**的商业今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
-2. 包含"{period_label}行业动态"、"商业化进展"、"政策与监管"、"值得关注的趋势"四个章节
+2. 包含"今日行业动态"、"商业化进展"、"政策与监管"、"值得关注的趋势"四个章节
 3. **每条新闻都必须详细分析**，包括：事件概述、商业影响、行业意义、潜在的连锁反应（每条至少 3-5 句话）
 4. 对行业趋势进行深入总结和前瞻性判断
 5. 语言通俗易懂，面向决策者和产品经理
 6. **务必覆盖所有提供的新闻，不要遗漏任何一条**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#news`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#商业化` `#融资收购` `#监管政策` `#芯片算力` `#云服务` `#自动驾驶` `#医疗AI` `#教育AI` `#企业AI` `#开源生态`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**{period_label} AI 行业新闻（共 {count} 条）：**
+**今日 AI 行业新闻（共 {count} 条）：**
 {articles}
 
 **生成日期：** {date}
 """
 
 
-_PROMPT_PRODUCTHUNT = r"""你是一位专业的 AI 产品分析师。请根据以下{period_label} Product Hunt 热门 AI 产品，撰写一份**内容详尽、深度全面**的产品{period_label}报。
+_PROMPT_PRODUCTHUNT = r"""你是一位专业的 AI 产品分析师。请根据以下今日 Product Hunt 热门 AI 产品，撰写一份**内容详尽、深度全面**的产品今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
-2. 包含"{period_label}明星产品"、"功能亮点"、"市场价值"、"值得关注的产品"四个章节
+2. 包含"今日明星产品"、"功能亮点"、"市场价值"、"值得关注的产品"四个章节
 3. **每个产品都必须详细分析**，包括：产品定位、核心功能、目标用户、差异化优势、社区热度分析（每个至少 4-6 句话）
 4. 对 AI 产品赛道的趋势进行深入洞察
 5. 语言通俗易懂，面向产品经理和技术创业者
 6. **务必覆盖所有提供的产品，不要遗漏任何一个**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#producthunt`。领域标签（必选1-2个，选择最贴切的）：`#AI写作` `#AI设计` `#AI编程` `#AI营销` `#效率工具` `#开发者工具` `#SaaS` `#个人助理` `#协作工具` `#数据分析` `#自动化` `#API服务`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**{period_label} Product Hunt 热门产品（共 {count} 个）：**
+**今日 Product Hunt 热门产品（共 {count} 个）：**
 {articles}
 
 **生成日期：** {date}
 """
 
-_PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据以下{period_label} Hacker News AI 相关热门讨论，撰写一份**内容详尽、深度全面**的社区洞察{period_label}报。
+_PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据以下今日 Hacker News AI 相关热门讨论，撰写一份**内容详尽、深度全面**的社区洞察今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
@@ -148,13 +171,13 @@ _PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据�
 6. **务必覆盖所有提供的讨论，不要遗漏任何一条**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#hackernews`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#开源争议` `#隐私安全` `#编程语言` `#系统架构` `#创业` `#职业发展` `#硬件` `#Web技术` `#分布式系统` `#技术文化`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**{period_label} Hacker News AI 讨论（共 {count} 条）：**
+**今日 Hacker News AI 讨论（共 {count} 条）：**
 {articles}
 
 **生成日期：** {date}
 """
 
-_PROMPT_DAILYHOT = r"""你是一位专业的中文科技资讯编辑。请根据以下{period_label}中文互联网各大站点热榜条目（36氪、IT之家、少数派、掘金、知乎、虎嗅、极客公园、爱范儿等），撰写一份**内容详尽、深度全面**的全网热榜{period_label}报。
+_PROMPT_DAILYHOT = r"""你是一位专业的中文科技资讯编辑。请根据以下今日中文互联网各大站点热榜条目（36氪、IT之家、少数派、掘金、知乎、虎嗅、极客公园、爱范儿等），撰写一份**内容详尽、深度全面**的全网热榜今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
@@ -165,13 +188,13 @@ _PROMPT_DAILYHOT = r"""你是一位专业的中文科技资讯编辑。请根据
 6. **务必覆盖所有提供的条目，不要遗漏任何一条**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#dailyhot`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#产品发布` `#商业化` `#开源模型` `#AI基础设施` `#开发者工具` `#监管政策` `#行业动态` `#硬件` `#其他`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**{period_label}全网热榜条目（共 {count} 条）：**
+**今日全网热榜条目（共 {count} 条）：**
 {articles}
 
 **生成日期：** {date}
 """
 
-_PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下{period_label} X（Twitter）上 AI 公司与知名开发者官方账号的热门推文，撰写一份**内容详尽、深度全面**的 X 动态{period_label}报。
+_PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下今日 X（Twitter）上 AI 公司与知名开发者官方账号的热门推文，撰写一份**内容详尽、深度全面**的 X 动态今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
@@ -182,17 +205,11 @@ _PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下{perio
 6. **务必覆盖所有提供的推文，不要遗漏任何一条**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#x`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#开源模型` `#产品发布` `#研究论文` `#商业化` `#安全对齐` `#AI基础设施` `#开发者工具` `#观点争议` `#监管政策`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**{period_label} X 关注账号热门推文（共 {count} 条）：**
+**今日 X 关注账号热门推文（共 {count} 条）：**
 {articles}
 
 **生成日期：** {date}
 """
-
-_PERIOD_LABEL: dict[str, str] = {
-    "daily": "今日",
-    "weekly": "本周",
-    "monthly": "本月",
-}
 
 _BRIEFING_LANGUAGES = ("zh-CN", "en")
 _LANGUAGE_INSTRUCTIONS = {
@@ -226,67 +243,40 @@ _SOURCE_CONFIG: Dict[str, tuple[str, str]] = {
 }
 
 
-_PERIOD_CHANNEL_MAP: dict[str, dict[str, str]] = {
-    "arxiv": {
-        "daily": "huggingface_daily_html",
-        "weekly": "huggingface_weekly_html",
-        "monthly": "huggingface_monthly_html",
-    },
-    "github": {
-        "daily": "github_trending_daily",
-        "weekly": "github_trending_weekly",
-        "monthly": "github_trending_monthly",
-    },
-    "news": {
-        "daily": "techmeme_daily_rss",
-        # news 目前仅有日榜数据，周/月榜暂不支持
-    },
-    "producthunt": {
-        "daily": "producthunt_daily_html",
-        # producthunt 目前仅有日榜数据
-    },
-    "hackernews": {
-        "daily": "hn_daily_html",
-        # hackernews 目前仅有日榜数据
-    },
-    "x": {
-        "daily": "x_daily_watchlist",
-        # x 仅支持日榜（推文无周/月榜语义）
-    },
-    "dailyhot": {
-        "daily": "dailyhot_daily",
-        # dailyhot 聚合热榜仅支持日榜
-    },
+# source → 日榜快照 channel（简报仅按日生成，weekly/monthly 已移除）
+_SOURCE_CHANNELS: Dict[str, str] = {
+    "arxiv": "huggingface_daily_html",
+    "github": "github_trending_daily",
+    "news": "techmeme_daily_rss",
+    "producthunt": "producthunt_daily_html",
+    "hackernews": "hn_daily_html",
+    "x": "x_daily_watchlist",
+    "dailyhot": "dailyhot_daily",
 }
 
 
-def _filter_docs_by_period(
+def _filter_docs_by_channel(
     docs: List[Dict[str, Any]],
     source: str,
-    period: str,
 ) -> List[Dict[str, Any]]:
-    """按 source_channel 精确过滤文档，确保返回指定 period 的数据。
+    """按 source_channel 精确过滤文档，确保只保留对应日榜 channel 的数据。
 
     注意：过滤后为空时返回空列表（不回退到未过滤数据），
-    以避免日报混入月报数据。由调用方决定兜底策略。
+    以避免日报混入其他周期榜单数据。由调用方决定兜底策略。
     """
     if source == "all":
         result = []
         for doc in docs:
             src = (doc.get("source") or "").lower()
-            ch_map = _PERIOD_CHANNEL_MAP.get(src, {})
-            expected_channel = ch_map.get(period)
+            expected_channel = _SOURCE_CHANNELS.get(src)
             channel = doc.get("source_channel") or doc.get("channel") or ""
-            # 如果该 source 在 _PERIOD_CHANNEL_MAP 中没有对应 period 的配置，
-            # 则保留该文档（不过滤掉没有 channel 映射的来源）
+            # 没有 channel 映射的来源不过滤（保留该文档）
             if not expected_channel or channel == expected_channel:
                 result.append(doc)
         return result
 
-    ch_map = _PERIOD_CHANNEL_MAP.get(source, {})
-    expected_channel = ch_map.get(period)
+    expected_channel = _SOURCE_CHANNELS.get(source)
     if not expected_channel:
-        # 该 source 对此 period 无 channel 配置，返回空（如 news 的周报/月报）
         return []
     filtered = [
         d
@@ -385,15 +375,12 @@ class DailyBriefingService:
         *,
         target_date: str,
         source: str,
-        period: str,
     ) -> PreparedBriefing:
         context = normalize_briefing_context(
             target_date=target_date,
             source=source,
-            period=period,
             source_config=_SOURCE_CONFIG,
-            period_labels=_PERIOD_LABEL,
-            period_channels=_PERIOD_CHANNEL_MAP,
+            source_channels=_SOURCE_CHANNELS,
         )
         return prepare_briefing(
             context=context,
@@ -401,7 +388,7 @@ class DailyBriefingService:
             snapshot_reader=self._rank_snapshots,
             document_feed=self._document_feed,
             source_config=_SOURCE_CONFIG,
-            filter_by_period=_filter_docs_by_period,
+            filter_by_channel=_filter_docs_by_channel,
             format_articles=_format_articles,
             is_blocked=_looks_like_block_response,
         )
@@ -410,7 +397,6 @@ class DailyBriefingService:
         self,
         target_date: str | None = None,
         source: str = "all",
-        period: str = "daily",
         force_regenerate: bool = True,
         locale: str = "zh-CN",
         generate_bilingual: bool = False,
@@ -420,8 +406,7 @@ class DailyBriefingService:
 
         Args:
             target_date: ISO date string，默认今天
-            source: "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews" | "x"
-            period: "daily" | "weekly" | "monthly"
+            source: "all" | "arxiv" | "github" | "news" | "producthunt" | "hackernews" | "x" | "dailyhot"
             force_regenerate: 若为 True（默认），始终重新生成，不使用缓存
 
         Payload types:
@@ -435,14 +420,10 @@ class DailyBriefingService:
         context = normalize_briefing_context(
             target_date=today,
             source=source,
-            period=period,
             source_config=_SOURCE_CONFIG,
-            period_labels=_PERIOD_LABEL,
-            period_channels=_PERIOD_CHANNEL_MAP,
+            source_channels=_SOURCE_CHANNELS,
         )
         source = context.source
-        period = context.period
-        period_label = context.period_label
         cache_date = context.cache_date
 
         try:
@@ -457,7 +438,6 @@ class DailyBriefingService:
                             "doc_count": 0,
                             "cached": True,
                             "source": source,
-                            "period": period,
                         },
                     }
                     yield {"type": "content", "data": select_briefing_content(existing, requested_locale)}
@@ -465,12 +445,11 @@ class DailyBriefingService:
                     return
 
             logger.info(
-                "开始获取文档，source=%s, period=%s, date=%s...", source, period, today
+                "开始获取文档，source=%s, date=%s...", source, today
             )
             prepared = self._prepare_briefing(
                 target_date=today,
                 source=source,
-                period=period,
             )
             docs = list(prepared.documents)
 
@@ -483,14 +462,13 @@ class DailyBriefingService:
                     "fallback": prepared.fallback_used,
                     "milvus": prepared.milvus_used,
                     "source": source,
-                    "period": period,
                 },
             }
 
             if not docs:
                 logger.warning("依然没有文档，发送'暂无数据'提示")
                 msg = (
-                    f"# {today} {period_label}简报\n\n"
+                    f"# {today} 今日简报\n\n"
                     "> 数据库中暂无对应周期的文档，请先运行数据采集任务。\n"
                 )
                 yield {"type": "content", "data": msg}
@@ -601,7 +579,7 @@ class DailyBriefingService:
                 source,
                 exc_info=True,
             )
-            yield {"type": "error", "data": err_text}
+            yield {"type": "error", "data": _classified_briefing_error(exc)}
 
     async def _stream_llm_round(self, prompt: str) -> AsyncGenerator[str, None]:
         """执行一轮 LLM 流式生成，逐 token 返回。"""

@@ -646,7 +646,7 @@ class DispatchWebhookTests(unittest.TestCase):
         sender = FakeWebhookSender()
         service, deliveries = self._make_service(
             subscriptions=[_webhook_subscription(1)],
-            briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
             sender=sender,
         )
         summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
@@ -657,7 +657,7 @@ class DispatchWebhookTests(unittest.TestCase):
         self.assertIn("日报", sender.calls[0]["title"])
         self.assertIn("2026-08-05", sender.calls[0]["title"])
         self.assertEqual(sender.calls[0]["content"], "今日 AI 要闻")
-        row = deliveries.rows[(1, "2026-08-05_daily")]
+        row = deliveries.rows[(1, "2026-08-05")]
         self.assertEqual(row["status"], "sent")
         self.assertEqual(row["attempts"], 1)
 
@@ -668,7 +668,7 @@ class DispatchWebhookTests(unittest.TestCase):
             subscriptions=_FakeSubscriptionRepository([_webhook_subscription(1)]),
             deliveries=deliveries,
             briefings=_FakeBriefingRepository(
-                {"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}}
+                {"2026-08-05": {"content_zh": "今日 AI 要闻"}}
             ),
             secret_box=None,
             webhook_sender=sender,
@@ -677,7 +677,7 @@ class DispatchWebhookTests(unittest.TestCase):
 
         self.assertEqual(summary["failed"], 1)
         self.assertEqual(sender.calls, [])
-        row = deliveries.rows[(1, "2026-08-05_daily")]
+        row = deliveries.rows[(1, "2026-08-05")]
         self.assertEqual(row["status"], "pending")
         self.assertEqual(row["attempts"], 1)
         self.assertIn("密钥", row["last_error"])
@@ -686,13 +686,13 @@ class DispatchWebhookTests(unittest.TestCase):
         sender = FakeWebhookSender(fail=True)
         service, deliveries = self._make_service(
             subscriptions=[_webhook_subscription(1)],
-            briefings={"2026-08-05_daily": {"content_zh": "今日 AI 要闻"}},
+            briefings={"2026-08-05": {"content_zh": "今日 AI 要闻"}},
             sender=sender,
         )
         summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
 
         self.assertEqual(summary["failed"], 1)
-        row = deliveries.rows[(1, "2026-08-05_daily")]
+        row = deliveries.rows[(1, "2026-08-05")]
         self.assertEqual(row["attempts"], 1)
         self.assertIn("HTTP 500", row["last_error"])
 

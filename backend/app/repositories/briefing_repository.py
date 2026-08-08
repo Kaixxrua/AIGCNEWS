@@ -40,14 +40,12 @@ class BriefingSubscriptionWriter(Protocol):
         user_id: int,
         email: str,
         source: str = "all",
-        period: str = "daily",
     ) -> dict[str, Any]: ...
 
     def cancel_briefing_subscription(
         self,
         user_id: int,
         source: str = "all",
-        period: str = "daily",
     ) -> bool: ...
 
 
@@ -74,5 +72,4 @@ class ActiveBriefingSubscriberReader(Protocol):
     def get_active_subscribers(
         self,
         source: str = "all",
-        period: str = "daily",
     ) -> list[dict[str, Any]]: ...

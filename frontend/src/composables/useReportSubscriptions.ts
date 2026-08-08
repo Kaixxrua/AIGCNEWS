@@ -3,7 +3,6 @@ import {
   isSourceSubscribed as hasSourceSubscription,
   selectActiveDailySources,
   type BatchSubscriptionResponse,
-  type PeriodKey,
   type ReportKey,
   type ReportMessageResponse,
   type Subscription,
@@ -13,15 +12,14 @@ import { i18n } from '@/i18n'
 
 interface ReportSubscriptionOperations {
   loadSubscriptions: () => Promise<SubscriptionListResponse | undefined>
-  subscribeSources: (payload: { sources: ReportKey[]; period: 'daily' }) => Promise<BatchSubscriptionResponse | undefined>
-  unsubscribe: (payload: { source: ReportKey; period: 'daily' }) => Promise<void>
-  sendToEmail: (payload: { source: ReportKey; period: PeriodKey; date: string; locale: string }) => Promise<ReportMessageResponse | undefined>
+  subscribeSources: (payload: { sources: ReportKey[] }) => Promise<BatchSubscriptionResponse | undefined>
+  unsubscribe: (payload: { source: ReportKey }) => Promise<void>
+  sendToEmail: (payload: { source: ReportKey; date: string; locale: string }) => Promise<ReportMessageResponse | undefined>
 }
 
 interface UseReportSubscriptionsOptions {
   isLoggedIn: Readonly<Ref<boolean>>
   selectedSource: Ref<ReportKey>
-  selectedPeriod: Ref<PeriodKey>
   selectedDate: Ref<string>
   locale: Ref<string>
   operations: ReportSubscriptionOperations
@@ -35,7 +33,6 @@ const getApiErrorMessage = (error: unknown): string | undefined =>
 export const useReportSubscriptions = ({
   isLoggedIn,
   selectedSource,
-  selectedPeriod,
   selectedDate,
   locale,
   operations,
@@ -131,15 +128,13 @@ export const useReportSubscriptions = ({
     try {
       const data = await operations.subscribeSources({
         sources: selectedSubscribeSources.value,
-        period: 'daily',
       })
       const subscribedSources = new Set(data?.sources ?? selectedSubscribeSources.value)
       await loadSubscriptions()
       subscriptions.value = [
-        ...subscriptions.value.filter(s => s.period !== 'daily' || !subscribedSources.has(s.source)),
+        ...subscriptions.value.filter(s => !subscribedSources.has(s.source)),
         ...Array.from(subscribedSources).map(source => ({
           source,
-          period: 'daily',
           is_active: true,
         })),
       ]
@@ -166,10 +161,10 @@ export const useReportSubscriptions = ({
     isSubscribing.value = true
     setError('')
     try {
-      await operations.unsubscribe({ source: selectedSource.value, period: 'daily' })
+      await operations.unsubscribe({ source: selectedSource.value })
       await loadSubscriptions()
       subscriptions.value = subscriptions.value.filter(
-        s => !(s.source === selectedSource.value && s.period === 'daily'),
+        s => s.source !== selectedSource.value,
       )
       emailSentMsg.value = i18n.global.t('report.unsubscribeSuccess')
       scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
@@ -187,7 +182,6 @@ export const useReportSubscriptions = ({
     try {
       const data = await operations.sendToEmail({
         source: selectedSource.value,
-        period: selectedPeriod.value,
         date: selectedDate.value,
         locale: locale.value,
       })

@@ -36,7 +36,7 @@ RESOURCE_TEMPLATES = [
     "aigc-news://dashboard/top{?source,period,date,limit}",
     "aigc-news://papers/{paper_id}",
     "aigc-news://projects/library{?q,category,subcategory,language,scope,sort,page,limit}",
-    "aigc-news://report/latest{?source,period,date}",
+    "aigc-news://report/latest{?source,date}",
 ]
 PROMPT_NAMES = ["daily_research_brief", "project_discovery"]
 
@@ -136,7 +136,6 @@ class McpInboundProtocolTests(unittest.TestCase):
             ({"jsonrpc": "1.0", "id": 7, "method": "tools/list"}, -32600, "Invalid JSON-RPC version", 7),
             ({"jsonrpc": "2.0", "id": 7}, -32600, "Missing method", 7),
             ({"jsonrpc": "2.0", "id": 7, "method": False}, -32600, "Missing method", 7),
-            ({"jsonrpc": "2.0", "method": "tools/list"}, -32600, "Request id is required", None),
             ({"jsonrpc": "2.0", "id": {}, "method": "tools/list"}, -32600, "Invalid request id", None),
         ]
         for payload, code, message, request_id in cases:
@@ -172,29 +171,27 @@ class McpInboundProtocolTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json()["id"], request_id)
 
-    def test_notification_is_204_but_other_idless_calls_are_errors(self) -> None:
-        notification = self.client.post(
-            "/api/mcp",
-            json={
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized",
-                "params": {},
-            },
-        )
-        self.assertEqual(notification.status_code, 204)
-        self.assertEqual(notification.content, b"")
-        self.assertEqual(
-            notification.headers["mcp-protocol-version"],
-            catalog.MCP_PROTOCOL_VERSION,
-        )
-        self.assert_rpc_error(
-            self.client.post(
-                "/api/mcp",
-                json={"jsonrpc": "2.0", "method": "notifications/other"},
-            ),
-            code=-32600,
-            message="Request id is required",
-        )
+    def test_all_idless_payloads_are_notifications_and_get_204(self) -> None:
+        """Wire format 契约：任何不带 id 的消息都是 JSON-RPC notification，
+        一律吞没（204 空响应体），不再回 -32600 错误响应。"""
+        idless_payloads = [
+            {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 1}},
+            {"jsonrpc": "2.0", "method": "notifications/other"},
+            {"jsonrpc": "2.0", "method": "tools/list"},
+            {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "search_papers", "arguments": {}}},
+            {"jsonrpc": "2.0", "method": "unknown/method"},
+        ]
+        for payload in idless_payloads:
+            with self.subTest(payload=payload):
+                response = self.client.post("/api/mcp", json=payload)
+                self.assertEqual(response.status_code, 204)
+                self.assertEqual(response.content, b"")
+                self.assertEqual(
+                    response.headers["mcp-protocol-version"],
+                    catalog.MCP_PROTOCOL_VERSION,
+                )
 
     def test_initialize_exact_shape_headers_and_stateless_followup(self) -> None:
         response = self.rpc("initialize", request_id="init", params={})

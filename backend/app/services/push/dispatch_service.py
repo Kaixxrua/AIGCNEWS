@@ -1,14 +1,14 @@
 """订阅简报派发：枚举频率 × 来源读取简报缓存，经 push_deliveries 幂等投递。
 
-与每日简报生成解耦：只读取 briefings 缓存（daily 由 8:00 生成任务填充，
-weekly/monthly 依赖按需生成的缓存），内容缺失时跳过该期，不触发生成。
+与每日简报生成解耦：只读取 briefings 缓存（daily 由 8:00 生成任务填充），
+内容缺失时跳过该期，不触发生成。简报仅按日生成，订阅频率只保留 daily。
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, timedelta
+from datetime import date
 from typing import Any, get_args
 
 from backend.app.models.schema_push import SubscriptionFrequency
@@ -33,7 +33,7 @@ DEFAULT_LOCALE = "zh-CN"
 
 _FREQUENCIES: tuple[str, ...] = tuple(get_args(SubscriptionFrequency))
 _SUPPORTED_CHANNEL_TYPES = frozenset({CHANNEL_TYPE_EMAIL, CHANNEL_TYPE_WEBHOOK})
-_PERIOD_LABELS = {"daily": "日报", "weekly": "周报", "monthly": "月报"}
+_PERIOD_LABELS = {"daily": "日报"}
 _SECRET_BOX_UNSET = object()
 
 
@@ -41,15 +41,6 @@ def _webhook_title(source: str, frequency: str, issue_date: str) -> str:
     source_label = SOURCE_LABELS.get(source, source)
     period_label = _PERIOD_LABELS.get(frequency, frequency)
     return f"AIGC Radar · {source_label}{period_label} · {issue_date}"
-
-
-def _resolve_issue_date(period: str, today: date) -> str:
-    """与报告路由一致的期次归一：周报锚定周一，月报锚定当月 1 号。"""
-    if period == "weekly":
-        today = today - timedelta(days=today.weekday())
-    elif period == "monthly":
-        today = today.replace(day=1)
-    return today.isoformat()
 
 
 class SubscriptionDispatchService:
@@ -98,10 +89,10 @@ class SubscriptionDispatchService:
         for subscription in subscriptions:
             by_source.setdefault(subscription["source"], []).append(subscription)
 
-        issue_date = _resolve_issue_date(frequency, today)
+        issue_date = today.isoformat()
         for source, source_subscriptions in by_source.items():
             suffix = "" if source == "all" else f"_{source}"
-            cache_key = f"{issue_date}{suffix}_{frequency}"
+            cache_key = f"{issue_date}{suffix}"
             briefing = await asyncio.to_thread(
                 self._briefings.get_briefing_by_date, cache_key
             )
