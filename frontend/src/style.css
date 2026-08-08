@@ -890,3 +890,445 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ═══ 监控面板类契约（自 MonitorView scoped :deep 上移，规则逐字保留；
+       原编译产物 .monitor-page[data-v] .x (0,3,0) → 全局 .monitor-page .x (0,2,0)，
+       全部竞争规则（.glass-card/.input/@layer 组件类、子面板 scoped 样式）均不在
+       (0,2,0)-(0,3,0) 区间，渲染结果等价） ═══ */
+/* 外层卡片统一为项目库风格 */
+.monitor-page .glass-card {
+  border: 1px solid var(--projects-accent);
+  border-radius: 6px;
+  background: var(--projects-paper-light);
+  box-shadow: 4px 4px 0 var(--shadow-hard);
+  backdrop-filter: none;
+  color: var(--projects-accent);
+}
+
+/* 标题层级 */
+.monitor-page .monitor-title {
+  color: var(--projects-accent);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.monitor-page .monitor-section-title {
+  color: var(--projects-accent);
+  font-weight: 800;
+}
+
+.monitor-page .monitor-caption {
+  color: var(--ink-muted);
+}
+
+/* 内层 surface（表单面板、列表面板） */
+.monitor-page .monitor-surface {
+  border: 1px solid var(--projects-accent);
+  border-radius: 6px;
+  background: var(--projects-paper-light);
+  box-shadow: 4px 4px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-surface-dim {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-muted);
+}
+
+/* 按钮家族 */
+.monitor-page .monitor-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid var(--projects-accent);
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.monitor-page .monitor-btn:hover:not(:disabled) {
+  background: var(--acid-soft);
+  color: var(--ink);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.monitor-page .monitor-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid var(--projects-accent);
+  color: var(--projects-on-acid);
+  background: var(--projects-acid);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.monitor-page .monitor-btn-primary:hover:not(:disabled) {
+  background: var(--acid-strong);
+  transform: translate(-1px, -1px);
+}
+
+.monitor-page .monitor-btn-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.monitor-page .monitor-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid var(--projects-accent);
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.monitor-page .monitor-btn-secondary:hover:not(:disabled) {
+  background: var(--acid-soft);
+  color: var(--ink);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-btn-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.monitor-page .monitor-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid var(--danger-strong);
+  color: var(--danger-ink);
+  background: var(--danger);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.monitor-page .monitor-btn-danger:hover:not(:disabled) {
+  background: var(--danger-strong);
+  transform: translate(-1px, -1px);
+}
+
+.monitor-page .monitor-btn-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.monitor-page .monitor-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  color: var(--ink-muted);
+  background: transparent;
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.monitor-page .monitor-btn-ghost:hover:not(:disabled) {
+  background: var(--acid-soft);
+  color: var(--ink);
+  border-color: var(--projects-accent);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-btn-ghost:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* 徽章 */
+.monitor-page .monitor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  border-radius: 4px;
+  border: 1px solid var(--projects-accent);
+  color: var(--ink-muted);
+  background: var(--projects-paper-light);
+}
+
+/* 状态徽章 */
+.monitor-page .monitor-status-success {
+  color: var(--success-ink);
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+
+.monitor-page .monitor-status-error {
+  color: var(--error-ink);
+  background: var(--error-bg);
+  border-color: var(--error-accent);
+}
+
+.monitor-page .monitor-status-running {
+  color: var(--tech-primary);
+  background: rgb(var(--tech-primary-rgb) / 0.12);
+  border-color: rgb(var(--tech-primary-rgb) / 0.3);
+}
+
+.monitor-page .monitor-status-unknown {
+  color: var(--ink-muted);
+  background: var(--paper-muted);
+  border-color: var(--rule);
+}
+
+.monitor-page .monitor-status-dot-success { background: var(--success-ink); }
+.monitor-page .monitor-status-dot-error { background: var(--error-accent); }
+.monitor-page .monitor-status-dot-running { background: var(--tech-primary); }
+.monitor-page .monitor-status-dot-unknown { background: var(--ink-muted); }
+
+/* 顶部提示条 */
+.monitor-page .monitor-alert-success {
+  color: var(--success-ink);
+  background: var(--success-bg-strong);
+  border-left-width: 3px;
+  border-left-color: var(--success-ink);
+}
+
+.monitor-page .monitor-alert-error {
+  color: var(--error-ink);
+  background: var(--error-bg-strong);
+  border-left-width: 3px;
+  border-left-color: var(--error-accent);
+}
+
+/* 来源按钮 */
+.monitor-page .monitor-source-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid var(--projects-accent);
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.monitor-page .monitor-source-btn:hover:not(:disabled) {
+  background: var(--acid-soft);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-source-btn.active {
+  color: var(--projects-on-acid);
+  background: var(--projects-acid);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-source-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* 表格 */
+.monitor-page .monitor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.monitor-page .monitor-table thead {
+  background: var(--paper-muted);
+}
+
+.monitor-page .monitor-table th {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--rule);
+}
+
+.monitor-page .monitor-table td {
+  padding: 12px 16px;
+  color: var(--ink-secondary);
+  border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.15);
+}
+
+.monitor-page .monitor-table tbody tr:hover {
+  background: var(--acid-soft);
+}
+
+.monitor-page .monitor-table tbody tr:nth-child(even) {
+  background: rgb(var(--card-rgb) / 0.35);
+}
+
+.monitor-page .monitor-table tbody tr:nth-child(even):hover {
+  background: var(--acid-soft);
+}
+
+/* 分页 */
+.monitor-page .monitor-pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid var(--projects-accent);
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.monitor-page .monitor-pagination-btn:hover:not(:disabled) {
+  background: var(--acid-soft);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-pagination-btn.active {
+  color: var(--projects-on-acid);
+  background: var(--projects-acid);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-pagination-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+/* Modal */
+.monitor-page .monitor-modal-backdrop {
+  background: rgba(var(--chat-shadow-rgb) / 0.18);
+  backdrop-filter: blur(2px);
+}
+
+.monitor-page .monitor-modal {
+  background: var(--projects-paper-light);
+  border: 1px solid var(--projects-accent);
+  border-radius: 6px;
+  box-shadow: 6px 6px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-warning-box {
+  color: var(--error-ink);
+  background: var(--error-bg);
+  border: 1px solid var(--error-accent);
+  border-radius: 4px;
+}
+
+/* 表单内部 checkbox/radio 标签区 */
+.monitor-page .monitor-check-row {
+  border: 1px solid var(--rule);
+  background: var(--paper-muted);
+  border-radius: 6px;
+}
+
+/* loading spinner */
+.monitor-page .monitor-spinner {
+  border-color: var(--rule);
+  border-top-color: var(--ink-secondary);
+}
+
+/* 大背景水印字 */
+.monitor-page .monitor-watermark {
+  color: rgb(var(--stone-400-rgb) / 0.18);
+}
+
+/* 头像/initials */
+.monitor-page .monitor-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--projects-accent);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--projects-accent);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-avatar-accent {
+  background: var(--projects-acid);
+  color: var(--projects-on-acid);
+}
+
+/* 输入框在项目纸面上的 focus */
+.monitor-page .input {
+  color: var(--ink);
+  background: var(--projects-paper-light);
+  border-color: var(--projects-accent);
+}
+
+.monitor-page .input:focus {
+  background: var(--projects-paper-light);
+  border-color: var(--projects-accent);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
+}
+
+/* 空状态虚线框 */
+.monitor-page .monitor-empty {
+  border: 1px dashed var(--rule);
+  background: rgb(var(--card-rgb) / 0.3);
+  color: var(--ink-muted);
+}
+
+/* 分隔线 */
+.monitor-page .monitor-divider {
+  border-color: var(--rule);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .monitor-page *,
+  .monitor-page *::before,
+  .monitor-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
