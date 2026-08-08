@@ -139,7 +139,7 @@ def test_apply_batch_quarantines_snapshots_and_rebuilds_only_community_contribut
         }
     ]
 
-    result = GitHubWatcherCorruptionRepairService._apply_batch(connection, rows)
+    result = _service(connection)._apply_batch(connection, rows)
 
     calls = cursor.execute.call_args_list
     assert "community_metrics_complete=FALSE" in calls[0].args[0]

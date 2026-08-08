@@ -8,6 +8,9 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
+from backend.app.repositories.postgres_github_watcher_repair_repository import (
+    PostgresGitHubWatcherRepairRepository,
+)
 
 _MINIMUM_SCHEMA_VERSION = 10
 _MAX_BATCH_SIZE = 1000
@@ -28,9 +31,11 @@ class GitHubWatcherCorruptionRepairService:
         *,
         postgres: PostgresDatabaseLifecycle = postgres_database,
         config: Any = settings,
+        repository: PostgresGitHubWatcherRepairRepository | None = None,
     ) -> None:
         self._postgres = postgres
         self._config = config
+        self._repository = repository or PostgresGitHubWatcherRepairRepository()
 
     def repair(
         self,
@@ -55,13 +60,9 @@ class GitHubWatcherCorruptionRepairService:
                 target_schema=target_schema,
             )
             if apply:
-                with connection.cursor() as db_cursor:
-                    db_cursor.execute(
-                        "SELECT pg_try_advisory_xact_lock(%s) AS acquired",
-                        (_ADVISORY_LOCK_ID,),
-                    )
-                    lock_row = db_cursor.fetchone() or {}
-                if not bool(self._row_value(lock_row, "acquired")):
+                if not self._repository.try_acquire_repair_lock(
+                    connection, _ADVISORY_LOCK_ID
+                ):
                     raise GitHubWatcherRepairSafetyError(
                         "another GitHub watcher repair is already running"
                     )
@@ -140,19 +141,10 @@ class GitHubWatcherCorruptionRepairService:
             raise GitHubWatcherRepairSafetyError(
                 "target database and schema confirmations are required"
             )
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT current_database() AS database, current_schema() AS schema"
-            )
-            identity = cursor.fetchone() or {}
-            cursor.execute(
-                "SELECT COALESCE(MAX(version), 0) AS version "
-                "FROM app_schema_migrations"
-            )
-            migration = cursor.fetchone() or {}
-        database = str(self._row_value(identity, "database") or "")
-        schema = str(self._row_value(identity, "schema", 1) or "")
-        version = int(self._row_value(migration, "version") or 0)
+        identity = self._repository.fetch_target_identity(connection)
+        version = int(self._repository.fetch_schema_version(connection) or 0)
+        database = str(identity["database"] or "")
+        schema = str(identity["schema"] or "")
         if database != target_database or schema != target_schema:
             raise GitHubWatcherRepairSafetyError(
                 "target database/schema confirmation does not match the active connection"
@@ -163,61 +155,36 @@ class GitHubWatcherCorruptionRepairService:
             )
         return {"database": database, "schema": schema, "schema_version": version}
 
-    @staticmethod
     def _find_corrupted_snapshots(
+        self,
         connection: Any,
         *,
         batch_size: int,
         cursor: tuple[str, str] | None,
         for_update: bool,
     ) -> list[dict[str, Any]]:
-        cursor_sql = ""
-        params: list[Any] = [_LEGACY_CORRUPTION_END_DATE]
-        if cursor is not None:
-            cursor_sql = " AND (snapshot_date, repo_id) > (%s, %s)"
-            params.extend(cursor)
-        params.append(batch_size)
-        lock_sql = " FOR UPDATE" if for_update else ""
-        with connection.cursor() as db_cursor:
-            db_cursor.execute(
-                "SELECT id,repo_id,snapshot_date,stars,watchers "
-                "FROM github_repo_snapshots "
-                "WHERE community_metrics_complete IS TRUE "
-                "AND watchers=stars AND stars>=500 "
-                "AND snapshot_date<=%s"
-                + cursor_sql
-                + " ORDER BY snapshot_date,repo_id LIMIT %s"
-                + lock_sql,
-                tuple(params),
-            )
-            return list(db_cursor.fetchall())
+        return self._repository.find_corrupted_snapshots(
+            connection,
+            corruption_end_date=_LEGACY_CORRUPTION_END_DATE,
+            batch_size=batch_size,
+            cursor=cursor,
+            for_update=for_update,
+        )
 
-    @staticmethod
     def _has_corrupted_snapshots_after(
+        self,
         connection: Any,
         *,
         cursor: tuple[str, str] | None,
     ) -> bool:
-        cursor_sql = ""
-        params: tuple[Any, ...] = (_LEGACY_CORRUPTION_END_DATE,)
-        if cursor is not None:
-            cursor_sql = " AND (snapshot_date, repo_id) > (%s, %s)"
-            params = (_LEGACY_CORRUPTION_END_DATE, *cursor)
-        with connection.cursor() as db_cursor:
-            db_cursor.execute(
-                "SELECT EXISTS(SELECT 1 FROM github_repo_snapshots "
-                "WHERE community_metrics_complete IS TRUE "
-                "AND watchers=stars AND stars>=500 "
-                "AND snapshot_date<=%s"
-                + cursor_sql
-                + ") AS has_more",
-                params,
-            )
-            row = db_cursor.fetchone() or {}
-        return bool(GitHubWatcherCorruptionRepairService._row_value(row, "has_more"))
+        return self._repository.has_corrupted_snapshots_after(
+            connection,
+            corruption_end_date=_LEGACY_CORRUPTION_END_DATE,
+            cursor=cursor,
+        )
 
-    @staticmethod
     def _apply_batch(
+        self,
         connection: Any,
         rows: list[dict[str, Any]],
     ) -> dict[str, int]:
@@ -236,60 +203,18 @@ class GitHubWatcherCorruptionRepairService:
         affected_repo_ids = [key[0] for key in sorted(affected_keys)]
         affected_dates = [key[1] for key in sorted(affected_keys)]
 
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE github_repo_snapshots "
-                "SET watchers=0,community_metrics_complete=FALSE "
-                "WHERE id=ANY(%s) AND community_metrics_complete IS TRUE "
-                "AND watchers=stars AND stars>=500",
-                (snapshot_ids,),
-            )
-            snapshots_quarantined = cursor.rowcount
-
-            cursor.execute(
-                "WITH latest_complete AS ("
-                "SELECT DISTINCT ON (repo_id) repo_id,watchers "
-                "FROM github_repo_snapshots "
-                "WHERE repo_id=ANY(%s) AND community_metrics_complete IS TRUE "
-                "ORDER BY repo_id,snapshot_date DESC,captured_at DESC) "
-                "UPDATE github_repo_candidates AS candidate SET "
-                "watchers=COALESCE(latest_complete.watchers,0) "
-                "FROM (SELECT UNNEST(%s::text[]) repo_id) affected "
-                "LEFT JOIN latest_complete USING (repo_id) "
-                "WHERE candidate.repo_id=affected.repo_id "
-                "AND candidate.watchers<>COALESCE(latest_complete.watchers,0)",
-                (repo_ids, repo_ids),
-            )
-            candidates_cleared = cursor.rowcount
-
-            cursor.execute(
-                "WITH affected(repo_id,metric_date) AS ("
-                "SELECT * FROM UNNEST(%s::text[],%s::text[])) "
-                "UPDATE github_repo_daily_metrics AS metrics SET watchers=0 "
-                "FROM affected WHERE metrics.repo_id=affected.repo_id "
-                "AND metrics.metric_date=affected.metric_date",
-                (current_repo_ids, current_dates),
-            )
-            daily_watchers_cleared = cursor.rowcount
-
-            cursor.execute(
-                "WITH affected(repo_id,metric_date) AS ("
-                "SELECT * FROM UNNEST(%s::text[],%s::text[])) "
-                "UPDATE github_repo_daily_metrics AS metrics SET "
-                "daily_fork_growth=0,daily_watcher_growth=0,"
-                "community_engagement_score=0.0,"
-                "hot_score=ROUND(("
-                "0.55*scale_corrected_growth_score+"
-                "0.20*growth_acceleration_score+"
-                "0.10*absolute_growth_score+"
-                "0.10*maintenance_activity_score"
-                ")::numeric,4)::double precision,"
-                "updated_at=CURRENT_TIMESTAMP::text "
-                "FROM affected WHERE metrics.repo_id=affected.repo_id "
-                "AND metrics.metric_date=affected.metric_date",
-                (affected_repo_ids, affected_dates),
-            )
-            daily_metrics_rebuilt = cursor.rowcount
+        snapshots_quarantined = self._repository.quarantine_corrupted_snapshots(
+            connection, snapshot_ids
+        )
+        candidates_cleared = self._repository.reset_candidate_watchers(
+            connection, repo_ids
+        )
+        daily_watchers_cleared = self._repository.clear_daily_watcher_metrics(
+            connection, current_repo_ids, current_dates
+        )
+        daily_metrics_rebuilt = self._repository.rebuild_daily_community_metrics(
+            connection, affected_repo_ids, affected_dates
+        )
 
         if snapshots_quarantined != len(rows):
             raise GitHubWatcherRepairSafetyError(
@@ -347,9 +272,3 @@ class GitHubWatcherCorruptionRepairService:
                 "cursor repository ID must be at most 255 characters"
             )
         return clean_date, clean_repo
-
-    @staticmethod
-    def _row_value(row: Any, key: str, index: int = 0) -> Any:
-        if isinstance(row, dict):
-            return row.get(key)
-        return row[index] if row is not None else None
