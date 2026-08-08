@@ -75,12 +75,33 @@ class PostgresBriefingSubscriptionRepository:
     ) -> list[dict[str, Any]]:
         return self._fetchall(
             """
-            SELECT bs.id, bs.user_id, bs.email, bs.source, bs.period
+            SELECT bs.id, bs.user_id, bs.email, bs.source, bs.period,
+                   bs.last_delivered_briefing_id
             FROM briefing_subscriptions bs
             WHERE bs.is_active = TRUE AND bs.source = %s AND bs.period = %s
             """,
             (source, _DAILY_PERIOD),
         )
+
+    def mark_briefing_delivered(
+        self,
+        subscription_ids: list[int],
+        briefing_id: int,
+    ) -> None:
+        if not subscription_ids:
+            return
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE briefing_subscriptions
+                    SET last_delivered_briefing_id = GREATEST(
+                            COALESCE(last_delivered_briefing_id, -1), %s),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ANY(%s)
+                    """,
+                    (briefing_id, subscription_ids),
+                )
 
     def _fetchall(
         self,

@@ -48,7 +48,7 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_briefing_uses_factory_without_redis(self) -> None:
         repository = MagicMock()
         repository.get_active_subscribers.return_value = [
-            {"email": "subscriber@example.com"}
+            {"id": 11, "email": "subscriber@example.com"}
         ]
         email_service = MagicMock()
         email_service.send_briefing = AsyncMock()
@@ -61,6 +61,7 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
                 source="github",
                 date_str="2026-07-22",
                 content="briefing content",
+                briefing_id=42,
                 subscriptions=repository,
             )
 
@@ -76,6 +77,7 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
             period="daily",
             date_str="2026-07-22",
         )
+        repository.mark_briefing_delivered.assert_called_once_with([11], 42)
 
     async def test_no_subscribers_skips_email_factory(self) -> None:
         repository = MagicMock()
@@ -88,18 +90,20 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
                 source="arxiv",
                 date_str="2026-08-08",
                 content="content",
+                briefing_id=1,
                 subscriptions=repository,
             )
 
         self.assertEqual(sent, 0)
         factory.assert_not_called()
+        repository.mark_briefing_delivered.assert_not_called()
 
     async def test_skips_blank_email_and_continues_after_send_failure(self) -> None:
         repository = MagicMock()
         repository.get_active_subscribers.return_value = [
-            {"email": ""},
-            {"email": "broken@example.com"},
-            {"email": "ok@example.com"},
+            {"id": 1, "email": ""},
+            {"id": 2, "email": "broken@example.com"},
+            {"id": 3, "email": "ok@example.com"},
         ]
         email_service = MagicMock()
         email_service.send_briefing = AsyncMock(
@@ -114,11 +118,82 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
                 source="news",
                 date_str="2026-08-08",
                 content="content",
+                briefing_id=9,
                 subscriptions=repository,
             )
 
         self.assertEqual(sent, 1)
         self.assertEqual(email_service.send_briefing.await_count, 2)
+        # 仅成功投递的订阅回写投递标记，失败的订阅留待下一轮重试。
+        repository.mark_briefing_delivered.assert_called_once_with([3], 9)
+
+    async def test_skips_subscribers_already_delivered_for_briefing(self) -> None:
+        repository = MagicMock()
+        repository.get_active_subscribers.return_value = [
+            {
+                "id": 1,
+                "email": "fresh@example.com",
+                "last_delivered_briefing_id": 7,
+            },
+            {
+                "id": 2,
+                "email": "repeat@example.com",
+                "last_delivered_briefing_id": 42,
+            },
+            {
+                "id": 3,
+                "email": "ahead@example.com",
+                "last_delivered_briefing_id": 100,
+            },
+            {"id": 4, "email": "new@example.com"},
+        ]
+        email_service = MagicMock()
+        email_service.send_briefing = AsyncMock()
+
+        with patch(
+            "backend.app.services.email_service.build_email_service",
+            return_value=email_service,
+        ):
+            sent = await dispatch.send_briefing_to_subscribers(
+                source="github",
+                date_str="2026-08-08",
+                content="content",
+                briefing_id=42,
+                subscriptions=repository,
+            )
+
+        self.assertEqual(sent, 2)
+        sent_emails = [
+            call.kwargs["to_email"]
+            for call in email_service.send_briefing.await_args_list
+        ]
+        self.assertEqual(sent_emails, ["fresh@example.com", "new@example.com"])
+        repository.mark_briefing_delivered.assert_called_once_with([1, 4], 42)
+
+    async def test_all_subscribers_up_to_date_skips_email_factory(self) -> None:
+        repository = MagicMock()
+        repository.get_active_subscribers.return_value = [
+            {
+                "id": 1,
+                "email": "repeat@example.com",
+                "last_delivered_briefing_id": 42,
+            }
+        ]
+
+        with patch(
+            "backend.app.services.email_service.build_email_service"
+        ) as factory:
+            sent = await dispatch.send_briefing_to_subscribers(
+                source="github",
+                date_str="2026-08-08",
+                content="content",
+                briefing_id=42,
+                subscriptions=repository,
+            )
+
+        self.assertEqual(sent, 0)
+        factory.assert_not_called()
+        repository.mark_briefing_delivered.assert_not_called()
 
 
 class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
@@ -133,7 +208,7 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
         }
         service = _FakeBriefingService(streams)
         repositories = _repositories_with_subscribers(
-            [{"email": "subscriber@example.com"}]
+            [{"id": 5, "email": "subscriber@example.com"}]
         )
         email_service = MagicMock()
         email_service.send_briefing = AsyncMock()
@@ -169,6 +244,66 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
             period="daily",
             date_str="2026-08-08",
         )
+        repositories.briefing_subscriptions.mark_briefing_delivered.assert_called_once_with(
+            [5], 42
+        )
+
+    async def test_error_payload_skips_dimension_without_counting_success(
+        self,
+    ) -> None:
+        streams = {
+            "arxiv": [
+                {"type": "start", "data": {"date": "2026-08-08"}},
+                {"type": "error", "data": "llm exploded"},
+            ],
+            "github": [
+                {"type": "start", "data": {"date": "2026-08-08"}},
+                {"type": "content", "data": "正文"},
+                {"type": "done", "data": {"briefing_id": 42}},
+            ],
+        }
+        service = _FakeBriefingService(streams)
+        repositories = _repositories_with_subscribers(
+            [{"id": 5, "email": "subscriber@example.com"}]
+        )
+        email_service = MagicMock()
+        email_service.send_briefing = AsyncMock()
+
+        with (
+            patch.object(
+                dispatch,
+                "BRIEFING_SOURCES",
+                ["arxiv", "github"],
+            ),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=service
+            ),
+            patch(
+                "backend.app.services.email_service.build_email_service",
+                return_value=email_service,
+            ),
+            patch.object(dispatch.logger, "info") as log_info,
+        ):
+            await dispatch.run_daily_briefing_dispatch(repositories)
+
+        # arxiv 维度 error 载荷：不派发、不计成功；github 维度照常投递。
+        email_service.send_briefing.assert_awaited_once_with(
+            to_email="subscriber@example.com",
+            briefing_content="正文",
+            source="github",
+            period="daily",
+            date_str="2026-08-08",
+        )
+        repositories.briefing_subscriptions.get_active_subscribers.assert_called_once_with(
+            source="github"
+        )
+        summary_calls = [
+            call
+            for call in log_info.call_args_list
+            if "每日简报生成完毕" in str(call)
+        ]
+        self.assertEqual(len(summary_calls), 1)
+        self.assertEqual(summary_calls[0].args[1:], (1, 2))
 
     async def test_skips_email_when_not_persisted_empty_or_undated(self) -> None:
         streams = {
@@ -189,7 +324,7 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
         }
         service = _FakeBriefingService(streams)
         repositories = _repositories_with_subscribers(
-            [{"email": "subscriber@example.com"}]
+            [{"id": 5, "email": "subscriber@example.com"}]
         )
 
         with (
@@ -229,7 +364,7 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
         }
         service = _FailingService(streams)
         repositories = _repositories_with_subscribers(
-            [{"email": "subscriber@example.com"}]
+            [{"id": 5, "email": "subscriber@example.com"}]
         )
         email_service = MagicMock()
         email_service.send_briefing = AsyncMock()

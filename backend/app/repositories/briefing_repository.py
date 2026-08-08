@@ -73,3 +73,21 @@ class ActiveBriefingSubscriberReader(Protocol):
         self,
         source: str = "all",
     ) -> list[dict[str, Any]]: ...
+
+
+class BriefingDeliveryMarker(Protocol):
+    """Idempotency write boundary for subscription briefing deliveries."""
+
+    def mark_briefing_delivered(
+        self,
+        subscription_ids: list[int],
+        briefing_id: int,
+    ) -> None: ...
+
+
+class BriefingDispatchSubscriptionRepository(
+    ActiveBriefingSubscriberReader,
+    BriefingDeliveryMarker,
+    Protocol,
+):
+    """Combined boundary used by the daily dispatch job."""
