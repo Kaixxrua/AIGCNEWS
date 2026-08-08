@@ -42,7 +42,8 @@ const tryKatex = (expr: string, displayMode: boolean): string | null => {
     const html = katex.renderToString(expr.trim(), { displayMode, throwOnError: false })
     const escaped = escapeAttr(expr.trim())
     if (displayMode) {
-      return `<div class="formula-wrap"><button class="formula-copy-btn" data-latex="${escaped}" title="复制公式"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;display:inline-block;vertical-align:middle"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>${html}</div>`
+      const copyTitle = escapeAttr(i18n.global.t('chat.copyFormulaTitle'))
+      return `<div class="formula-wrap"><button class="formula-copy-btn" data-latex="${escaped}" title="${copyTitle}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;display:inline-block;vertical-align:middle"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>${html}</div>`
     }
     return html
   } catch {

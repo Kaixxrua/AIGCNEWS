@@ -8,8 +8,10 @@ import {
   type VisionPopup,
   type VisionRegionCapture,
 } from '@/features/papers/paperReaderModel'
+import { CHAT_SERVICE_ENABLED } from '@/features/chat/chatFeatureFlags'
 import type { ChatMessage, ConversationSummary } from '@/stores/chatStore'
 import type { PdfProgress } from '@/features/papers/pdfViewerModel'
+import { i18n } from '@/i18n'
 
 export interface PaperReaderPaper {
   id: string
@@ -60,14 +62,14 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   })
   const activeConversationTitle = computed(() => {
     const id = currentConversationId.value
-    if (!id) return 'AI 对话'
-    return options.conversationMap.value[id]?.title || 'AI 对话'
+    if (!id) return i18n.global.t('chat.paperConversationTitle')
+    return options.conversationMap.value[id]?.title || i18n.global.t('chat.paperConversationTitle')
   })
   const isSending = computed(() => options.isStreaming.value)
 
   const loadPaper = async (id: string) => {
     if (!id) {
-      paperError.value = '无效的论文 ID'
+      paperError.value = i18n.global.t('paper.invalidId')
       paperLoading.value = false
       return
     }
@@ -75,7 +77,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
     paperError.value = ''
     try {
       paper.value = await options.fetchPaper(id)
-      if (!paper.value) paperError.value = '论文不存在'
+      if (!paper.value) paperError.value = i18n.global.t('paper.notFound')
     } catch (error) {
       paperError.value = String(error)
     } finally {
@@ -102,7 +104,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
 
   const newConversation = async () => {
     showConvPanel.value = false
-    await options.ensureGlobalConversation('新对话')
+    await options.ensureGlobalConversation(i18n.global.t('chat.defaultConversationTitle'))
     await options.loadConversations()
   }
 
@@ -131,12 +133,12 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   }
   const isThinkingExpanded = (messageId: string) => !!thinkingExpanded.value[messageId]
 
-  const chatServiceDisabled = true
   const onRightclickRegion = async (payload: VisionRegionCapture) => {
-    if (chatServiceDisabled) {
+    if (!CHAT_SERVICE_ENABLED) {
       visionPopup.value = null
       return
     }
+    // TODO: CHAT_SERVICE_ENABLED=false 期间以下为不可达代码；服务恢复后删除此注释并验证截图追问链路
     visionPopup.value = { visible: true, base64: payload.base64, question: '', pageIndex: payload.pageIndex }
     await nextTick()
     popupInputRef.value?.focus()
@@ -180,7 +182,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
     const assistantId = `vision_assistant_${requestId}`
     options.appendLocalMessage(
       conversationId,
-      createTemporaryMessage(conversationId, userId, 'user', `[截图追问] ${question}`, false),
+      createTemporaryMessage(conversationId, userId, 'user', i18n.global.t('paper.screenshotQuestion', { question }), false),
     )
     options.appendLocalMessage(
       conversationId,
@@ -194,7 +196,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
     } catch (error) {
       options.patchMessage(conversationId, assistantId, {
         isStreaming: false,
-        content: `[上传失败] 截图上传失败：${error}`,
+        content: i18n.global.t('paper.uploadFailed', { detail: String(error) }),
       })
       return
     }
@@ -232,7 +234,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
         if (event.type === 'error') {
           options.patchMessage(conversationId, assistantId, {
             isStreaming: false,
-            content: `[错误] ${String(event.data ?? '未知错误')}`,
+            content: i18n.global.t('paper.streamError', { detail: String(event.data ?? i18n.global.t('paper.unknownError')) }),
           })
         }
       },
@@ -241,13 +243,13 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
         const current = (options.messageMap.value[conversationId] || []).find((item) => item.id === assistantId)
         options.patchMessage(conversationId, assistantId, {
           isStreaming: false,
-          content: current?.content || '（模型未返回内容）',
+          content: current?.content || i18n.global.t('paper.modelEmpty'),
         })
       },
       onError: (error: unknown) => {
         options.patchMessage(conversationId, assistantId, {
           isStreaming: false,
-          content: `[请求失败] ${error}`,
+          content: i18n.global.t('paper.requestFailed', { detail: String(error) }),
         })
       },
     })

@@ -68,7 +68,7 @@ const canRegenerate = (message: ChatMessage) => !visualAttachment(message)?.rege
           class="inline-block rounded-[20px] rounded-br-md bg-ink-solid px-4 py-3 text-sm leading-6 text-ink-on-solid shadow-sm"
         >
           <p v-if="hasUnretainedScreenshot(msg)" class="mb-2 rounded-md border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs font-medium text-stone-100">
-            截图内容未保存
+            {{ t('chat.screenshotNotRetained') }}
           </p>
           {{ msg.content }}
         </div>

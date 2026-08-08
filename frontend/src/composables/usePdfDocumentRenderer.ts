@@ -6,6 +6,7 @@ import {
   type PdfPageEntry,
   type PdfProgress,
 } from '@/features/papers/pdfViewerModel'
+import { i18n } from '@/i18n'
 
 export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
   const containerRef = ref<HTMLDivElement | null>(null)
@@ -60,8 +61,6 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
     clearContainer()
 
     try {
-      console.log('[PdfCanvasViewer] Loading PDF:', safeUrl)
-
       const loadingTask = pdfjsLib.getDocument({
         url: safeUrl,
         cMapUrl: new URL('pdfjs-dist/cmaps/', import.meta.url).toString(),
@@ -69,7 +68,7 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
       })
 
       pdfDoc = await loadingTask.promise.catch((err) => {
-        throw new Error(`PDF 解析失败: ${err?.message || err}`)
+        throw new Error(i18n.global.t('paper.pdfParseFailed', { detail: err?.message || String(err) }))
       })
 
       if (!isMounted.value) return
@@ -77,13 +76,12 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
       totalPages.value = pdfDoc.numPages
       progressPhase.value = 'rendering'
       emitProgress()
-      console.log('[PdfCanvasViewer] numPages:', pdfDoc.numPages)
 
       for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
         if (!isMounted.value || !containerRef.value) break
 
         const page = await pdfDoc.getPage(pageNum).catch((err) => {
-          throw new Error(`第 ${pageNum} 页获取失败: ${err?.message || err}`)
+          throw new Error(i18n.global.t('paper.pdfPageFailed', { page: pageNum, detail: err?.message || String(err) }))
         })
 
         const viewport = page.getViewport({ scale: scale.value })

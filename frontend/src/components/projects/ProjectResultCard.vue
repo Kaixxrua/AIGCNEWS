@@ -166,7 +166,7 @@ const description = computed(() => projectDescription(
             </svg>
             {{ t('projects.stars', { count: formatProjectCount(repo.stars, locale as AppLocale) }) }}
           </span>
-          <span :title="projectDailyGrowthTitle(repo)">
+          <span :title="projectDailyGrowthTitle(repo, t, locale as AppLocale)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 17l6-6 4 4 8-8" />
               <path d="M15 7h6v6" />

@@ -28,7 +28,7 @@ const emit = defineEmits<{ toggleThinking: [messageId: string] }>()
     <div class="max-w-[85%]" :class="msg.role === 'user' ? '' : 'flex-1'">
       <div v-if="msg.role === 'user'" class="rounded-[18px] rounded-br-sm bg-ink-solid px-3.5 py-2.5 text-xs leading-6 text-ink-on-solid">
         <p v-if="msg.isVisual && msg.screenshotRetained === false" class="mb-2 rounded-md border border-white/20 bg-white/10 px-2.5 py-1.5 text-2xs font-medium text-stone-100">
-          截图内容未保存
+          {{ t('paper.screenshotNotRetained') }}
         </p>
         {{ msg.content }}
       </div>

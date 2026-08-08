@@ -216,16 +216,23 @@ export const projectDailyGrowthSource = (project: GitHubProjectItem) => {
 
 const formatGrowthObservedAt = (value: string | null | undefined, locale?: AppLocale) => value ? formatLocaleDate(value, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }, locale) : ''
 
-export const projectDailyGrowthTitle = (project: GitHubProjectItem) => {
+export type ProjectTranslate = (key: string, params?: Record<string, unknown>) => string
+
+export const projectDailyGrowthTitle = (project: GitHubProjectItem, t: ProjectTranslate, locale?: AppLocale) => {
   const source = projectDailyGrowthSource(project)
   if (source === 'snapshot_delta') {
-    return `基于 ${project.previous_snapshot_date || '昨天'} → ${project.daily_growth_date || project.snapshot_date || '今天'} 的连续快照精确计算`
+    return t('projects.growthSnapshot', {
+      from: project.previous_snapshot_date || t('projects.yesterday'),
+      to: project.daily_growth_date || project.snapshot_date || t('projects.todayLabel'),
+    })
   }
   if (source === 'github_trending_daily') {
-    const observedAt = formatGrowthObservedAt(project.daily_growth_observed_at)
-    return `来自 GitHub Trending 日榜报告的 stars today${observedAt ? ` · ${observedAt} 采集` : ''}`
+    const observedAt = formatGrowthObservedAt(project.daily_growth_observed_at, locale)
+    return t('projects.growthTrending', {
+      observed: observedAt ? t('projects.observedAt', { date: observedAt }) : '',
+    })
   }
-  return '缺少连续快照和同日 GitHub Trending 日榜数据，今日增长暂按 0 计算'
+  return t('projects.growthUnavailable')
 }
 
 export const shouldShowProjectHotScore = (

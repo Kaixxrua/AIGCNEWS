@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 defineProps<{
   brandName: string
 }>()
+
+const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${encodeURIComponent(t('footer.infringement'))}`)
 </script>
 
 <template>
@@ -20,7 +23,7 @@ defineProps<{
     <span class="footer-sep">·</span>
     <span>{{ t('footer.ecosystem') }}<a href="mailto:kaixxrua@gmail.com" class="footer-link">kaixxrua@gmail.com</a></span>
     <span class="footer-sep">·</span>
-    <a href="mailto:kaixxrua@gmail.com?subject=侵权投诉" class="footer-link">{{ t('footer.infringement') }}</a>
+    <a :href="infringementMailto" class="footer-link">{{ t('footer.infringement') }}</a>
   </div>
 </template>
 

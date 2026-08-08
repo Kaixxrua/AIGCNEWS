@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, type Ref } from 'vue'
 import {
   isSourceSubscribed as hasSourceSubscription,
   selectActiveDailySources,
@@ -9,6 +9,7 @@ import {
   type Subscription,
   type SubscriptionListResponse,
 } from '@/features/report/reportViewModel'
+import { i18n } from '@/i18n'
 
 interface ReportSubscriptionOperations {
   loadSubscriptions: () => Promise<SubscriptionListResponse | undefined>
@@ -49,6 +50,21 @@ export const useReportSubscriptions = ({
   const showLoginPrompt = ref(false)
   const selectedSubscribeSources = ref<ReportKey[]>([])
 
+  // 延时回调统一登记，卸载时集中清理（对齐 useWechatController dispose 范式）
+  const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
+  const scheduleTracked = (callback: () => void, delay: number) => {
+    const timer = setTimeout(() => {
+      pendingTimers.delete(timer)
+      callback()
+    }, delay)
+    pendingTimers.add(timer)
+    return timer
+  }
+  const clearPendingTimers = () => {
+    for (const timer of pendingTimers) clearTimeout(timer)
+    pendingTimers.clear()
+  }
+
   const isSourceSubscribed = (source: ReportKey): boolean =>
     hasSourceSubscription(subscriptions.value, source)
 
@@ -64,7 +80,7 @@ export const useReportSubscriptions = ({
   const promptLoginForSubscribe = () => {
     showLoginPrompt.value = true
     setError('请先登录后再订阅简报')
-    setTimeout(() => {
+    scheduleTracked(() => {
       if (showLoginPrompt.value && !isLoggedIn.value) redirectToLogin()
     }, 900)
   }
@@ -128,7 +144,7 @@ export const useReportSubscriptions = ({
         })),
       ]
       emailSentMsg.value = data?.message || '订阅成功，日报生成后会自动推送到邮箱'
-      setTimeout(() => { emailSentMsg.value = '' }, 4000)
+      scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
       showSubscribePanel.value = false
     } catch (error: unknown) {
       setError(getApiErrorMessage(error) || '订阅操作失败')
@@ -155,8 +171,8 @@ export const useReportSubscriptions = ({
       subscriptions.value = subscriptions.value.filter(
         s => !(s.source === selectedSource.value && s.period === 'daily'),
       )
-      emailSentMsg.value = '已取消当前简报订阅'
-      setTimeout(() => { emailSentMsg.value = '' }, 4000)
+      emailSentMsg.value = i18n.global.t('report.unsubscribeSuccess')
+      scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
     } catch (error: unknown) {
       setError(getApiErrorMessage(error) || '订阅操作失败')
     } finally {
@@ -176,7 +192,7 @@ export const useReportSubscriptions = ({
         locale: locale.value,
       })
       emailSentMsg.value = data?.message || '已发送'
-      setTimeout(() => { emailSentMsg.value = '' }, 4000)
+      scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
     } catch (error: unknown) {
       setError(getApiErrorMessage(error) || '发送失败')
     } finally {
@@ -187,6 +203,8 @@ export const useReportSubscriptions = ({
   onMounted(() => {
     void loadSubscriptions()
   })
+
+  onUnmounted(clearPendingTimers)
 
   return {
     subscriptions,
