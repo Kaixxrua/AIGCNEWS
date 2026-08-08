@@ -127,3 +127,12 @@ Prompts：
 
 管理员页面中的 `/api/ops/mcp-servers` 是配置**外部** MCP Server 的出站管理能力（含连接测试），
 与本文描述的入站 `/api/mcp` 服务不是同一条链路。
+
+## 测评套件
+
+`evals/mcp/` 提供本服务的端到端契约与场景测评（基于 mcp-eval，详见 `evals/mcp/README.md`）：
+
+- 运行入口：`evals/mcp/run.sh`（全部用例；追加文件名可只跑契约层 `test_contract.py` 或场景层 `test_scenarios.py`）。
+- 测评配置：`evals/mcp/mcpeval.yaml`（默认打本机 `http://127.0.0.1:8000/api/mcp`，改 `url` 可指向其他环境）。
+- 凭据约定：Bearer 头存放于 `evals/mcp/mcpeval.secrets.yaml`（0600），由 `run.sh` 首次运行自动生成；
+  该文件与 `test-reports/` 报告、缓存目录均被 `evals/mcp/.gitignore` 排除，一律不入库。
