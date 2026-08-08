@@ -29,6 +29,7 @@ import {
   type ConversationSummary,
   type StreamPhase,
 } from '@/features/chat/chatModel'
+import { i18n } from '@/i18n'
 
 export type {
   ChatMessage,
@@ -376,13 +377,13 @@ export const useChatStore = defineStore('chat', {
         conversation = this.conversationMap[paperConversationId] ?? null
         if (!conversation) {
           // fallback: 重新 fetch（不影响 active）
-          conversation = await this.fetchPaperConversation(paperId ?? '', trimmed || '论文对话')
+          conversation = await this.fetchPaperConversation(paperId ?? '', trimmed || i18n.global.t('chat.paperConversationTitle'))
         }
       } else if (paperId) {
         // 兼容旧调用：有 paperId 但无 paperConversationId 时，仍走 fetch 不覆盖 active
-        conversation = await this.fetchPaperConversation(paperId, trimmed || '论文对话')
+        conversation = await this.fetchPaperConversation(paperId, trimmed || i18n.global.t('chat.paperConversationTitle'))
       } else if (!conversation || conversation.scope !== 'global') {
-        conversation = await this.ensureGlobalConversation(trimmed || '新对话')
+        conversation = await this.ensureGlobalConversation(trimmed || i18n.global.t('chat.defaultConversationTitle'))
       }
       if (!conversation) return
 
@@ -395,7 +396,7 @@ export const useChatStore = defineStore('chat', {
         id: nextLocalMsgId(),
         conversationId,
         role: 'user',
-        content: trimmed || '请结合附件内容进行分析。',
+        content: trimmed || i18n.global.t('chat.analyzeAttachments'),
         thinking: '',
         thinkingPreview: '',
         hasThinking: false,
@@ -543,7 +544,7 @@ export const useChatStore = defineStore('chat', {
                 isThinking: false,
                 isStreaming: false,
                 thinkingDurationSec: durationSec,
-                content: finalMsg.content || '本次请求未返回正文内容，请检查后端日志。',
+                content: finalMsg.content || i18n.global.t('chat.emptyResponseContent'),
                 sources: eventState.pendingSources.length > 0 ? eventState.pendingSources : finalMsg.sources,
               })
             }
@@ -608,7 +609,7 @@ export const useChatStore = defineStore('chat', {
               typingTimer = null
             }
             this.patchMessage(params.conversationId, params.assistantTempId, {
-              content: `请求失败：${transition.effect.message}`,
+              content: i18n.global.t('chat.requestFailed', { detail: transition.effect.message }),
               isThinking: false,
               isStreaming: false,
             })
@@ -641,7 +642,7 @@ export const useChatStore = defineStore('chat', {
           this.patchMessage(params.conversationId, params.assistantTempId, {
             content: isLimitError
               ? `⚠️ ${errMsg}`
-              : `流式请求失败：${errMsg}`,
+              : i18n.global.t('chat.streamFailed', { detail: errMsg }),
             isThinking: false,
             isStreaming: false,
           })

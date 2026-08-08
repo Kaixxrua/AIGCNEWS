@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { i18n } from '@/i18n'
 import { useChatStore, type ChatMessage } from './chatStore'
 
 const mocks = vi.hoisted(() => ({
@@ -284,5 +285,25 @@ describe('chat store domain contracts', () => {
     handlers[1]?.onError?.(Object.assign(new Error('今日额度已用完'), { status: 429 }))
     expect(store.messageMap['7']?.[0]?.content).toBe('⚠️ 今日额度已用完')
     expect(store.streamPhase).toBe('error')
+  })
+
+  it('renders stream failure content through the active locale', async () => {
+    const handlers: Array<Record<string, (...args: unknown[]) => void>> = []
+    mocks.connect.mockImplementationOnce((params: Record<string, (...args: unknown[]) => void>) => {
+      handlers.push(params)
+      return { controller: new AbortController(), promise: Promise.resolve() }
+    })
+    const store = prepareStreamingStore()
+
+    i18n.global.locale.value = 'en-US'
+    try {
+      await store._streamToAssistant({ text: 'one', conversationId: '7', assistantTempId: 'temp', history: [] })
+      handlers[0]?.onError?.(new Error('owned'))
+      expect(store.messageMap['7']?.[0]?.content).toBe('Streaming request failed: owned')
+    } finally {
+      i18n.global.locale.value = 'zh-CN'
+    }
+
+    expect(store.messageMap['7']?.[0]?.content).toBe('Streaming request failed: owned')
   })
 })
