@@ -1,3 +1,9 @@
+-- 推荐人/收藏用户：0030 迁移为 recommended_by_user_id 与 project_favorites.user_id
+-- 补了 users 外键，夹具需预置对应用户行（在未应用 0030 的历史库上无害）。
+INSERT INTO users (id, hashed_password, role) VALUES
+    (7, 'fixture-hash', 'admin'),
+    (42, 'fixture-hash', 'user');
+
 INSERT INTO github_repo_candidates (
     repo_id, full_name, title, url, description, language, topics_json,
     created_at, pushed_at, stars, forks, watchers, source_channels,

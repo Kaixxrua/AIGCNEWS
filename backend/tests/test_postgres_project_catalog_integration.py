@@ -232,3 +232,60 @@ def test_real_rows_preserve_serialization_and_mcp_contract(catalog: Any) -> None
     assert json.loads(response["content"][0]["text"]) == response["structuredContent"]
     assert response["structuredContent"]["items"][0]["id"] == "github:acme/alpha"
     assert "repo_id" not in response["structuredContent"]["items"][0]
+
+
+def test_real_catalog_empty_term_relevance_search_returns_empty_page(catalog: Any) -> None:
+    # 传输词/单字符/纯符号查询提取不出搜索词：此前强命中空条件折叠成
+    # (())::boolean 非法 SQL，公开接口 500；现在与 filters=FALSE 早退对齐
+    for query in ("github", "a", "!!!", "项目"):
+        result = catalog.list_projects(q=query, sort="relevance", min_stars=0)
+        assert result["total"] == 0
+        assert result["items"] == []
+        assert result["page"] == 1
+        assert result["page_size"] == 24
+
+
+def test_real_favorites_visibility_matches_category_counts(catalog: Any) -> None:
+    # 收藏未富化的自建网站：列表可见（utw/uo 口径），分类计数必须同口径
+    with catalog._database.transaction() as connection:
+        row = connection.execute(
+            """
+            INSERT INTO tool_websites (
+                canonical_url, normalized_url_hash, domain, title, description,
+                source_fingerprint, visibility, added_by_user_id,
+                first_seen_at, last_seen_at, updated_at
+            ) VALUES (
+                'https://selfhost.example/', repeat('d', 64), 'selfhost.example',
+                'Selfhost Tool', 'user added unenriched site',
+                repeat('e', 64), 'private', 42,
+                '2026-07-23T09:00:00Z', '2026-07-23T09:00:00Z', '2026-07-23T09:00:00Z'
+            ) RETURNING id
+            """
+        ).fetchone()
+        website_id = int(row["id"])
+        connection.execute(
+            "INSERT INTO user_tool_websites (user_id, website_id, added_via)"
+            " VALUES (42, %s, 'manual')",
+            (website_id,),
+        )
+        connection.execute(
+            "INSERT INTO project_favorites (user_id, project_source, project_id)"
+            " VALUES (42, 'website', %s)",
+            (str(website_id),),
+        )
+
+    listed = catalog.list_projects(
+        source="website", user_id=42, favorites_only=True, min_stars=0
+    )
+    assert listed["total"] == 1
+    assert [item["domain"] for item in listed["items"]] == ["selfhost.example"]
+    assert listed["items"][0]["is_favorited"] is True
+    assert listed["items"][0]["category_slug"] == "other"
+
+    categories = catalog.get_project_categories(
+        source="website", user_id=42, favorites_only=True
+    )
+    # 修复前此处为 0（INNER JOIN 富化表把未富化自建网站排除在计数外）
+    assert categories["total"] == listed["total"]
+    counts = {item["slug"]: item["count"] for item in categories["items"]}
+    assert counts.get("other") == 1

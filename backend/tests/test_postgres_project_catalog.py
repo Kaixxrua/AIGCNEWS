@@ -11,6 +11,8 @@ import pytest
 from backend.app.repositories.postgres_project_catalog import (
     RELEVANCE_STRONG_MATCH_THRESHOLD,
     PostgresProjectCatalogRepository,
+    _strong_match_clause,
+    _strong_match_threshold,
 )
 from backend.app.repositories.project_catalog import (
     ProjectCatalogRepository,
@@ -479,3 +481,81 @@ def test_empty_query_does_not_add_strong_match_column() -> None:
     PostgresProjectCatalogRepository(database).list_projects(sort="relevance", source="github")
     rows_sql, _rows_params = database.cursor.calls[2]
     assert "has_strong_match" not in rows_sql
+
+
+def test_strong_match_threshold_zero_when_query_yields_no_terms() -> None:
+    # 传输词/单字符/纯符号查询提取不出搜索词：阈值必须归零，
+    # 否则空强命中条件会折叠成 (())::boolean 非法 SQL（公开接口 500）
+    for query in ("github", "项目", "a", "!!!"):
+        assert _strong_match_threshold("relevance", query, None) == 0
+    assert _strong_match_threshold("relevance", "word", None) == RELEVANCE_STRONG_MATCH_THRESHOLD
+    assert _strong_match_threshold("stars", "word", None) == 0
+    assert _strong_match_threshold("relevance", "word", ["acme/alpha"]) == 0
+
+
+def test_strong_match_clause_folds_empty_conditions_to_false_defensively() -> None:
+    assert _strong_match_clause([]) == "FALSE::boolean has_strong_match"
+    assert _strong_match_clause(["c.full_name ILIKE %s ESCAPE '='"]) == (
+        "((c.full_name ILIKE %s ESCAPE '='))::boolean has_strong_match"
+    )
+
+
+def test_empty_term_relevance_search_returns_empty_page_without_strong_match_sql() -> None:
+    for query in ("github", "a", "!!!", "项目"):
+        database = Database([{"cnt": 0}, []])
+        result = PostgresProjectCatalogRepository(database).list_projects(
+            q=query, sort="relevance"
+        )
+        assert result == {"items": [], "total": 0, "page": 1, "page_size": 24}
+        count_sql = database.cursor.calls[1][0]
+        rows_sql = database.cursor.calls[2][0]
+        # 空搜索词：强命中过滤整体关闭，绝不出现 (())::boolean 非法片段
+        assert "(())" not in count_sql
+        assert "(())" not in rows_sql
+        assert "has_strong_match" not in count_sql
+        assert "has_strong_match" not in rows_sql
+        # 与 filters=FALSE 早退路径对齐：两个分支恒假，结果必为空
+        assert "FALSE" in count_sql
+
+
+def test_categories_favorites_reuse_list_visibility_predicate() -> None:
+    database = Database([[], {"count": 0}, {"count": 0}])
+    PostgresProjectCatalogRepository(database).get_project_categories(
+        source="website", user_id=7, favorites_only=True, enriched_only=True
+    )
+    aggregate_sql, aggregate_params = database.cursor.calls[1]
+    today_sql, today_params = database.cursor.calls[2]
+    recommended_sql = database.cursor.calls[3][0]
+    for sql in (aggregate_sql, today_sql):
+        # 与 list_projects 收藏夹分支同一可见性口径：
+        # LEFT JOIN 富化表 + 自建/覆盖可见的 OR 谓词
+        assert "LEFT JOIN tool_website_enrichments we ON we.website_id=w.id" in sql
+        assert "user_tool_website_overrides uo" in sql
+        assert "(we.status='succeeded' OR uo.id IS NOT NULL OR utw.id IS NOT NULL)" in sql
+        assert "(pf.id IS NOT NULL OR utw.id IS NOT NULL)" in sql
+        assert "w.visibility='public'" not in sql
+    assert aggregate_params.count(7) == 3
+    assert today_params.count(7) == 3
+    # 分组键沿用列表 effective 分类表达式（用户覆盖优先）
+    assert "COALESCE(NULLIF(uo.category_slug, ''), we.category_slug)" in aggregate_sql
+    assert recommended_sql == "SELECT 0 count"
+
+
+def test_categories_public_branch_keeps_inner_join_enrichment() -> None:
+    database = Database([[], {"count": 0}, {"count": 0}])
+    PostgresProjectCatalogRepository(database).get_project_categories(source="website")
+    aggregate_sql = database.cursor.calls[1][0]
+    assert "JOIN tool_website_enrichments we ON we.website_id=w.id" in aggregate_sql
+    assert "LEFT JOIN tool_website_enrichments" not in aggregate_sql
+    assert "we.status='succeeded'" in aggregate_sql
+    assert "w.visibility='public'" in aggregate_sql
+
+
+def test_union_branches_align_daily_growth_observed_at_column_type() -> None:
+    database = Database([{"cnt": 0}, []])
+    PostgresProjectCatalogRepository(database).list_projects(source="all")
+    rows_sql = database.cursor.calls[2][0]
+    # gm.daily_growth_observed_at 在 schema 中是 TEXT：website 分支占位必须同为
+    # text，否则 UNION ALL 报类型不匹配，source=all（公开列表默认）整表 500
+    assert "NULL::text daily_growth_observed_at" in rows_sql
+    assert "NULL::timestamptz daily_growth_observed_at" not in rows_sql

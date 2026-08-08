@@ -140,7 +140,11 @@ _LIST_PROJECT_COLUMN_PAIRS = (
         "COALESCE(gm.daily_growth_source,'unavailable') daily_growth_source",
         "'unavailable' daily_growth_source",
     ),
-    ("gm.daily_growth_observed_at", "NULL::timestamptz daily_growth_observed_at"),
+    # github 侧 gm.daily_growth_observed_at 在 schema 中是 TEXT，website 侧
+    # 必须同为 text——若写 NULL::timestamptz，UNION ALL 报
+    # "UNION types text and timestamp with time zone cannot be matched"，
+    # source=all（公开列表默认）整表 500。
+    ("gm.daily_growth_observed_at", "NULL::text daily_growth_observed_at"),
     ("COALESCE(gm.hot_score,0) hot_score", "0::double precision hot_score"),
     (
         "COALESCE(gm.scale_corrected_growth_score,0) scale_corrected_growth_score",
@@ -231,14 +235,25 @@ def _web_select_columns(effective: dict[str, str]) -> tuple[str, ...]:
 
 
 def _strong_match_threshold(sort: str, q: str, candidates: list[str] | None) -> int:
-    """relevance 关键词搜索启用强字段命中过滤的阈值；其余场景返回 0（关闭）。"""
-    if sort == "relevance" and q and candidates is None:
+    """relevance 关键词搜索启用强字段命中过滤的阈值；其余场景返回 0（关闭）。
+
+    q 非空但提取不出有效搜索词（如 github/项目 等传输词、单字符、纯符号）
+    时必须关闭：该场景走 filters=FALSE 早退路径，强命中条件为空，若仍启用
+    阈值会把空条件折叠成 (())::boolean 非法 SQL，公开接口直接 500。
+    """
+    if sort == "relevance" and q and candidates is None and project_search_terms(q):
         return RELEVANCE_STRONG_MATCH_THRESHOLD
     return 0
 
 
 def _strong_match_clause(conditions: list[str]) -> str:
-    """把强字段命中条件折叠为 SELECT 列表中的 has_strong_match 布尔列。"""
+    """把强字段命中条件折叠为 SELECT 列表中的 has_strong_match 布尔列。
+
+    空条件（防御性兜底：正常路径由 _strong_match_threshold 保证阈值>0 时
+    必有条件）折叠为 FALSE，避免生成 (())::boolean 非法 SQL。
+    """
+    if not conditions:
+        return "FALSE::boolean has_strong_match"
     return f"(({' AND '.join(conditions)}))::boolean has_strong_match"
 
 
@@ -871,10 +886,50 @@ class PostgresProjectCatalogRepository:
             )
             web_user = [user_id, user_id]
             if favorites_only:
+                # 与 list_projects 收藏夹分支同一可见性口径：用户自建（utw）或
+                # 有覆盖（uo）的网站即使未富化也可见，故必须关联 uo。
+                web_join += (
+                    " LEFT JOIN user_tool_website_overrides uo"
+                    " ON uo.user_id=%s AND uo.website_id=w.id"
+                )
+                web_user.append(user_id)
                 gh_filter = "AND pf.id IS NOT NULL"
                 web_filter = "AND (pf.id IS NOT NULL OR utw.id IS NOT NULL)"
         status_gh = "AND ge.status='succeeded'" if enriched_only else ""
-        status_web = "AND we.status='succeeded'" if enriched_only else ""
+        if favorites_only:
+            # 复用列表收藏夹分支的可见性谓词（LEFT JOIN + OR 条件），
+            # 否则未富化的自建网站在列表可见却不计入分类计数，两者对不上。
+            web_enrich_join = (
+                "LEFT JOIN tool_website_enrichments we ON we.website_id=w.id"
+            )
+            status_web = (
+                "AND (we.status='succeeded' OR uo.id IS NOT NULL OR utw.id IS NOT NULL)"
+                if enriched_only
+                else ""
+            )
+            # 分组键沿用列表的 effective 分类表达式（用户覆盖优先），
+            # 保证覆盖过分类的网站与列表行落入同一分类桶。
+            web_category_slug = (
+                "COALESCE(NULLIF(uo.category_slug, ''), we.category_slug)"
+            )
+            web_category_name = (
+                "COALESCE(NULLIF(uo.category_name_zh, ''), we.category_name_zh,"
+                " NULLIF(uo.category_name, ''), we.category_name)"
+            )
+            web_subcategory_slug = (
+                "COALESCE(NULLIF(uo.subcategory_slug, ''), we.subcategory_slug)"
+            )
+            web_subcategory_name = (
+                "COALESCE(NULLIF(uo.subcategory_name_zh, ''), we.subcategory_name_zh,"
+                " NULLIF(uo.subcategory_name, ''), we.subcategory_name)"
+            )
+        else:
+            web_enrich_join = "JOIN tool_website_enrichments we ON we.website_id=w.id"
+            status_web = "AND we.status='succeeded'" if enriched_only else ""
+            web_category_slug = "we.category_slug"
+            web_category_name = "we.category_name"
+            web_subcategory_slug = "we.subcategory_slug"
+            web_subcategory_name = "we.subcategory_name"
         visibility = "" if favorites_only else "AND w.visibility='public'"
         parts: list[str] = []
         params: list[Any] = []
@@ -893,15 +948,16 @@ class PostgresProjectCatalogRepository:
             params.extend(gh_user + [min_stars])
         if source in {"all", "website"}:
             parts.append(
-                "SELECT we.category_slug,we.category_name,"
-                "COALESCE(NULLIF(we.subcategory_slug,''),'') subcategory_slug,"
-                "COALESCE(NULLIF(we.subcategory_name,''),'') subcategory_name,COUNT(*) count"
+                f"SELECT {web_category_slug} category_slug,{web_category_name} category_name,"
+                f"COALESCE(NULLIF({web_subcategory_slug},''),'') subcategory_slug,"
+                f"COALESCE(NULLIF({web_subcategory_name},''),'') subcategory_name,COUNT(*) count"
                 " FROM tool_websites w"
-                " JOIN tool_website_enrichments we ON we.website_id=w.id"
+                f" {web_enrich_join}"
                 f" {web_join}"
                 " WHERE TRUE"
                 f" {status_web} {visibility} {web_filter}"
-                " GROUP BY we.category_slug,we.category_name,we.subcategory_slug,we.subcategory_name"
+                f" GROUP BY {web_category_slug},{web_category_name},"
+                f"{web_subcategory_slug},{web_subcategory_name}"
             )
             params.extend(web_user)
         aggregate = (
@@ -936,7 +992,7 @@ class PostgresProjectCatalogRepository:
         else:
             today_sql = (
                 "SELECT COUNT(*) count FROM tool_websites w"
-                " JOIN tool_website_enrichments we ON we.website_id=w.id"
+                f" {web_enrich_join}"
                 f" {web_join}"
                 " WHERE w.first_seen_at>=%s AND w.first_seen_at<%s"
                 f" {status_web} {visibility} {web_filter}"

@@ -1,11 +1,21 @@
 name: docker
 
+# 统一日志轮转：防止 json-file 无界增长撑爆宿主机磁盘
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
 
   backend-api:
     build: ../backend
     container_name: aigc-backend
     restart: always
+    logging: *default-logging
+    # 防失控内存拖垮整机的上限（embedding 模型常驻，按宿主余量调）
+    mem_limit: 4g
     ports:
       # 仅绑定回环地址：公网/LAN 访问必须经 nginx（TLS+安全控制），
       # 本机调试仍可用 http://127.0.0.1:8000。
@@ -23,6 +33,10 @@ services:
       - path: ../.env
         required: false
     environment:
+      # 显式钉死 Redis 目标容器名：本服务同时接入 sub2api 外部网，该网络内
+      # sub2api-redis 同样持有别名 "redis"，.env 的 REDIS_HOST=redis 会歧义解析到
+      # 带 requirepass 的 sub2api-redis，导致 FastAPICache 初始化失败、缓存路由 500。
+      - REDIS_HOST=redis-aigc
       - HF_ENDPOINT=https://hf-mirror.com
       - HF_HUB_OFFLINE=0
       - TRANSFORMERS_OFFLINE=0
@@ -38,7 +52,7 @@ services:
       - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
       - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
     extra_hosts:
-      - "host.docker.internal:172.19.0.1"
+      - "host.docker.internal:host-gateway"
     volumes:
       - ../backend:/src/backend
       - ../storage/papers:/src/storage/papers
@@ -71,6 +85,10 @@ services:
   project-catalog-postgres:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 2g
+    # 数据库是状态核心：OOM 时优先杀别的容器
+    oom_score_adj: -500
     environment:
       POSTGRES_DB: ${POSTGRES_DATABASE:?set POSTGRES_DATABASE}
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
@@ -92,6 +110,7 @@ services:
   project-catalog-ops:
     build: ../backend
     profiles: ["project-catalog-ops"]
+    logging: *default-logging
     env_file:
       - path: ../.env
         required: false
@@ -106,6 +125,7 @@ services:
     build: ../frontend
     container_name: aigc-frontend
     restart: always
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -147,6 +167,7 @@ services:
     image: dailyhot-api:local
     container_name: aigc-dailyhot
     restart: unless-stopped
+    logging: *default-logging
     expose:
       - "6688"
     environment:
@@ -175,6 +196,7 @@ services:
     image: priceai-node-standalone:local
     container_name: priceai
     restart: unless-stopped
+    logging: *default-logging
     init: true
     env_file:
       - path: ../../.priceai-node.env
@@ -198,6 +220,9 @@ services:
     container_name: milvus-etcd
     image: quay.io/coreos/etcd:v3.5.5@sha256:89b6debd43502d1088f3e02f39442fd3e951aa52bee846ed601cf4477114b89e
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
       - ETCD_AUTO_COMPACTION_RETENTION=1000
@@ -221,6 +246,9 @@ services:
     container_name: milvus-minio
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z@sha256:6d770d7f255cda1f18d841ffc4365cb7e0d237f6af6a15fcdb587480cd7c3b93
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
     environment:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY}
@@ -242,6 +270,10 @@ services:
     container_name: milvus-standalone
     image: milvusdb/milvus:v2.4.6@sha256:1658525cd8858683f6ba98458f4ad46e409ee75b25d609c983194ec509175267
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 4g
+    security_opt:
+      - no-new-privileges:true
     command: ["milvus", "run", "standalone"]
     environment:
       ETCD_ENDPOINTS: etcd:2379
@@ -267,6 +299,9 @@ services:
     container_name: milvus-attu
     image: zilliz/attu:v2.4@sha256:36a242d51dbd48e75d8378cd735807502403e4040928d77e92aefc644679855f
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
     expose:
       - "3000"
     environment:
@@ -279,6 +314,10 @@ services:
     container_name: neo4j
     image: neo4j:5.18.0@sha256:b018c04b0d01e7b6b3ff001d297fe2b80d0612a49516a7d20b0beb7f784994bb
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 2g
+    security_opt:
+      - no-new-privileges:true
     # backend 通过编排网络按服务名连接，宿主机 7688/7475 保持外部兼容
     expose:
       - "7474"
@@ -292,6 +331,9 @@ services:
     image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     container_name: redis-aigc
     restart: always
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
     expose:
       - "6379"
     volumes:
