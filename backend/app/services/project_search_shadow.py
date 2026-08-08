@@ -328,14 +328,6 @@ def finalize_project_search_shadow(timeout_seconds: float) -> dict[str, Any]:
     return manager.snapshot()
 
 
-def stop_project_search_shadow(timeout_seconds: float) -> None:
-    global _manager
-    with _manager_lock:
-        manager, _manager = _manager, None
-    if manager is not None:
-        manager.close(timeout_seconds)
-
-
 def project_search_shadow_snapshot() -> dict[str, Any]:
     manager = _manager
     if manager is None:

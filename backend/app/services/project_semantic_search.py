@@ -129,13 +129,3 @@ def warmup_project_semantic_search() -> dict[str, Any]:
         return {"status": "failed", "error": str(exc)}
     finally:
         _warmup_lock.release()
-
-
-def close_project_semantic_search() -> None:
-    global _shared_project_semantic_search
-    with _warmup_lock:
-        with _shared_search_lock:
-            search = _shared_project_semantic_search
-            _shared_project_semantic_search = None
-        if search is not None:
-            search.close()

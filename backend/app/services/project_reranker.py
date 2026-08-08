@@ -123,12 +123,3 @@ def get_project_reranker() -> ProjectReranker:
             if _shared_project_reranker is None:
                 _shared_project_reranker = ProjectReranker()
     return _shared_project_reranker
-
-
-async def close_project_reranker() -> None:
-    global _shared_project_reranker
-    with _shared_project_reranker_lock:
-        reranker = _shared_project_reranker
-        _shared_project_reranker = None
-    if reranker is not None:
-        await reranker.close()
