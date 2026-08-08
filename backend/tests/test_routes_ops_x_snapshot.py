@@ -38,7 +38,7 @@ class XSnapshotRebuildRouteTests(unittest.TestCase):
         }
 
         with patch(
-            "backend.app.api.routes_ops.clear_dashboard_cache_safely"
+            "backend.app.api.routes_ops_x.clear_dashboard_cache_safely"
         ) as clear_cache:
             response = _client(service).post("/api/ops/x/snapshots/rebuild", json={})
 
@@ -65,7 +65,7 @@ class XSnapshotRebuildRouteTests(unittest.TestCase):
         }
 
         with patch(
-            "backend.app.api.routes_ops.clear_dashboard_cache_safely"
+            "backend.app.api.routes_ops_x.clear_dashboard_cache_safely"
         ):
             response = _client(service).post(
                 "/api/ops/x/snapshots/rebuild", json={"target_date": "2026-07-30"}
@@ -99,7 +99,7 @@ class XSnapshotRebuildRouteTests(unittest.TestCase):
         service.rebuild.return_value = {"results": [], "skipped_no_date": 0}
 
         with patch(
-            "backend.app.api.routes_ops.clear_dashboard_cache_safely"
+            "backend.app.api.routes_ops_x.clear_dashboard_cache_safely"
         ) as clear_cache:
             response = _client(service).post("/api/ops/x/snapshots/rebuild", json={})
 

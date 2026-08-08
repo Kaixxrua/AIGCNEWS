@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes_ops
+from backend.app.api import routes_ops, routes_ops_github, routes_ops_mcp, routes_ops_x
 from backend.app.api.dependencies import (
     get_briefing_admin_service,
     get_document_repository,
@@ -44,23 +44,26 @@ from backend.app.services.scheduler_admin import SchedulerAdminService
 
 class OperationsRouteTests(unittest.TestCase):
     def test_routes_do_not_use_request_scoped_background_tasks(self) -> None:
-        source = routes_ops.__file__
-        assert source is not None
-        with open(source, encoding="utf-8") as route_file:
-            tree = ast.parse(route_file.read())
+        modules = (routes_ops, routes_ops_mcp, routes_ops_x, routes_ops_github)
+        for module in modules:
+            source = module.__file__
+            assert source is not None
+            with open(source, encoding="utf-8") as route_file:
+                tree = ast.parse(route_file.read())
 
-        imported_names = {
-            alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.Import, ast.ImportFrom))
-            for alias in node.names
-        }
-        referenced_names = {
-            node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
-        }
+            imported_names = {
+                alias.name
+                for node in ast.walk(tree)
+                if isinstance(node, (ast.Import, ast.ImportFrom))
+                for alias in node.names
+            }
+            referenced_names = {
+                node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+            }
 
-        self.assertNotIn("BackgroundTasks", imported_names)
-        self.assertNotIn("BackgroundTasks", referenced_names)
+            with self.subTest(module=module.__name__):
+                self.assertNotIn("BackgroundTasks", imported_names)
+                self.assertNotIn("BackgroundTasks", referenced_names)
 
     def test_generate_all_briefings_queues_injected_service(self) -> None:
         app = FastAPI()

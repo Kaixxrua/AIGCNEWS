@@ -3,30 +3,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import date
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from backend.app.api import routes_ops_github, routes_ops_mcp, routes_ops_x
 from backend.app.api.dependencies import (
     get_briefing_admin_service,
     get_dashboard_cache_admin_service,
     get_data_cleanup_admin_service,
     get_document_repository,
-    get_github_project_admin_service,
-    get_github_project_crawl_admin_service,
-    get_github_project_recommendation_admin_service,
     get_ingestion_admin_service,
-    get_mcp_admin_service,
     get_operations_runtime,
     get_ops_diagnostics_service,
     get_runtime_provider_admin_service,
     get_scheduler_admin_service,
     get_scheduler_config_admin_service,
-    get_x_credential_admin_service,
-    get_x_snapshot_admin_service,
-    get_x_watch_account_repository,
-    get_x_watch_admin_service,
 )
 from backend.app.core.auth import RequireAdmin
 from backend.app.core.operations import ApplicationOperationsRuntime
@@ -35,26 +26,9 @@ from backend.app.models.schema_ops import (
     BulkDocumentDeleteResponse,
     ClearDataResponse,
     DocumentDeleteResponse,
-    EnrichmentConfigRequest,
-    EnrichmentConfigResponse,
-    GitHubProjectRecommendRequest,
-    GitHubProjectRecommendResponse,
-    GitHubProjectsCrawlRequest,
-    GitHubProjectsCrawlResponse,
-    GitHubProjectsCrawlStatusResponse,
-    GitHubProjectsEnrichCancelResponse,
-    GitHubProjectsEnrichRequest,
-    GitHubProjectsEnrichResponse,
-    GitHubProjectsMetricsRecomputeRequest,
-    GitHubProjectsMetricsRequest,
     IngestByDateRequest,
     IngestRequest,
     IngestResponse,
-    McpServerConfigListResponse,
-    McpServerConfigRequest,
-    McpServerConfigResponse,
-    McpServerDeleteResponse,
-    McpServerTestResponse,
     ProjectTaxonomyResponse,
     ProviderConfigRequest,
     ProviderConfigResponse,
@@ -63,19 +37,6 @@ from backend.app.models.schema_ops import (
     SchedulerConfigUpdateRequest,
     SchedulerConfigUpdateResponse,
     SchedulerJobConfigItem,
-    XCredentialDeleteResponse,
-    XCredentialListResponse,
-    XCredentialRequest,
-    XCredentialResponse,
-    XCredentialTestResponse,
-    XSnapshotRebuildRequest,
-    XSnapshotRebuildResponse,
-    XSnapshotRebuildResultItem,
-    XWatchAccountDeleteResponse,
-    XWatchAccountListResponse,
-    XWatchAccountRequest,
-    XWatchAccountResponse,
-    XWatchAccountTestResponse,
 )
 from backend.app.models.schema_projects import (
     ToolWebsiteAddRequest,
@@ -84,59 +45,20 @@ from backend.app.models.schema_projects import (
     ToolWebsiteManualAddRequest,
 )
 from backend.app.repositories.document_repository import DocumentRepository
-from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.briefing_admin import BriefingAdminService
-from backend.app.services.dashboard.policy import today_local
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
-from backend.app.services.github_project_admin import GitHubProjectAdminService
-from backend.app.services.github_project_crawl_admin import (
-    GitHubProjectCrawlAdminService,
-    plan_crawl,
-)
-from backend.app.services.github_project_recommendation_admin import (
-    GitHubProjectAdminNotFoundError,
-    GitHubProjectAdminValidationError,
-    GitHubProjectRecommendationAdminService,
-)
 from backend.app.services.ingestion.cache_invalidation import clear_dashboard_cache_safely
 from backend.app.services.ingestion_admin import VALID_SOURCES, IngestionAdminService
-from backend.app.services.mcp.admin_service import (
-    McpAdminConflictError,
-    McpAdminNotFoundError,
-    McpAdminService,
-    McpAdminValidationError,
-    SafeMcpServerProjection,
-)
 from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.runtime_provider.admin_service import (
     RuntimeProviderAdminService,
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
 from backend.app.services.scheduler_config_admin import SchedulerConfigAdminService
-from backend.app.services.x_credentials.admin_service import (
-    SafeXCredentialProjection,
-    XCredentialAdminNotFoundError,
-    XCredentialAdminService,
-    XCredentialAdminValidationError,
-)
-from backend.app.services.x_snapshot_admin import XSnapshotAdminService
-from backend.app.services.x_watch.admin_service import (
-    SafeXWatchAccountProjection,
-    XWatchAdminConflictError,
-    XWatchAdminNotFoundError,
-    XWatchAdminService,
-    XWatchAdminValidationError,
-)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def _mcp_server_config_response(
-    projection: SafeMcpServerProjection,
-) -> McpServerConfigResponse:
-    return McpServerConfigResponse.model_validate(projection, from_attributes=True)
 
 
 # ── 后台任务包装 ─────────────────────────────────────────────────────────────
@@ -186,324 +108,10 @@ async def test_provider_config(
     return ProviderConfigTestResponse(**result)
 
 
-# ── MCP Server 配置 ──────────────────────────────────────────────────────────
+# ── 按资源域拆分的子路由（mcp-servers / x-* / github-*）────────────────────────
 
-
-@router.get("/ops/mcp-servers", response_model=McpServerConfigListResponse, tags=["Ops"])
-async def list_mcp_servers(
-    _: dict = Depends(RequireAdmin),
-    service: McpAdminService = Depends(get_mcp_admin_service),
-) -> McpServerConfigListResponse:
-    """列出 MCP Server 配置。响应不会返回明文 Token。"""
-    projections = await service.list_servers()
-    items = [_mcp_server_config_response(item) for item in projections]
-    return McpServerConfigListResponse(items=items, total=len(items))
-
-
-@router.post("/ops/mcp-servers", response_model=McpServerConfigResponse, tags=["Ops"])
-async def create_mcp_server(
-    request: McpServerConfigRequest,
-    _: dict = Depends(RequireAdmin),
-    service: McpAdminService = Depends(get_mcp_admin_service),
-) -> McpServerConfigResponse:
-    """创建 MCP Server 配置。auth_token 只写入，不明文返回。"""
-    try:
-        projection = await service.create_server(request.model_dump())
-    except McpAdminValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except McpAdminConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return _mcp_server_config_response(projection)
-
-
-@router.put("/ops/mcp-servers/{server_id}", response_model=McpServerConfigResponse, tags=["Ops"])
-async def update_mcp_server(
-    server_id: int,
-    request: McpServerConfigRequest,
-    _: dict = Depends(RequireAdmin),
-    service: McpAdminService = Depends(get_mcp_admin_service),
-) -> McpServerConfigResponse:
-    """更新 MCP Server 配置。auth_token 留空时保留，clear_auth_token=true 时清空。"""
-    try:
-        projection = await service.update_server(server_id, request.model_dump())
-    except McpAdminValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except McpAdminConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except McpAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _mcp_server_config_response(projection)
-
-
-@router.delete("/ops/mcp-servers/{server_id}", response_model=McpServerDeleteResponse, tags=["Ops"])
-async def delete_mcp_server(
-    server_id: int,
-    _: dict = Depends(RequireAdmin),
-    service: McpAdminService = Depends(get_mcp_admin_service),
-) -> McpServerDeleteResponse:
-    """删除 MCP Server 配置。"""
-    try:
-        await service.delete_server(server_id)
-    except McpAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return McpServerDeleteResponse(status="succeeded", message="MCP Server 配置已删除。", deleted=True, id=server_id)
-
-
-@router.post("/ops/mcp-servers/{server_id}/test", response_model=McpServerTestResponse, tags=["Ops"])
-async def test_mcp_server(
-    server_id: int,
-    _: dict = Depends(RequireAdmin),
-    service: McpAdminService = Depends(get_mcp_admin_service),
-) -> McpServerTestResponse:
-    """测试 MCP Server 连通性，只执行 initialize / tools/list，不调用任意工具。"""
-    try:
-        outcome = await service.test_server(server_id)
-    except McpAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    assert isinstance(outcome.server, SafeMcpServerProjection)
-    server = _mcp_server_config_response(outcome.server)
-    return McpServerTestResponse(
-        status=outcome.result.get("status", "failed"),
-        message=outcome.result.get("message", ""),
-        server=server,
-        tools=server.tools,
-    )
-
-
-# ── X 关注账号 ───────────────────────────────────────────────────────────────
-
-
-def _x_watch_account_response(
-    projection: SafeXWatchAccountProjection,
-) -> XWatchAccountResponse:
-    return XWatchAccountResponse.model_validate(projection, from_attributes=True)
-
-
-@router.get("/ops/x-watch-accounts", response_model=XWatchAccountListResponse, tags=["Ops"])
-async def list_x_watch_accounts(
-    _: dict = Depends(RequireAdmin),
-    service: XWatchAdminService = Depends(get_x_watch_admin_service),
-) -> XWatchAccountListResponse:
-    """列出 X 采集关注账号（数据库 watchlist，空表时按 env 句柄自举）。"""
-    projections = await service.list_accounts()
-    items = [_x_watch_account_response(item) for item in projections]
-    return XWatchAccountListResponse(items=items, total=len(items))
-
-
-@router.post("/ops/x-watch-accounts", response_model=XWatchAccountResponse, tags=["Ops"])
-async def create_x_watch_account(
-    request: XWatchAccountRequest,
-    _: dict = Depends(RequireAdmin),
-    service: XWatchAdminService = Depends(get_x_watch_admin_service),
-) -> XWatchAccountResponse:
-    """新增 X 关注账号。screen_name 归一化为小写无 @ 形式。"""
-    try:
-        projection = await service.create_account(request.model_dump())
-    except XWatchAdminValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except XWatchAdminConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return _x_watch_account_response(projection)
-
-
-@router.put("/ops/x-watch-accounts/{account_id}", response_model=XWatchAccountResponse, tags=["Ops"])
-async def update_x_watch_account(
-    account_id: int,
-    request: XWatchAccountRequest,
-    _: dict = Depends(RequireAdmin),
-    service: XWatchAdminService = Depends(get_x_watch_admin_service),
-) -> XWatchAccountResponse:
-    """整体更新 X 关注账号（handle/开关/排序）。"""
-    try:
-        projection = await service.update_account(account_id, request.model_dump())
-    except XWatchAdminValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except XWatchAdminConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except XWatchAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _x_watch_account_response(projection)
-
-
-@router.delete("/ops/x-watch-accounts/{account_id}", response_model=XWatchAccountDeleteResponse, tags=["Ops"])
-async def delete_x_watch_account(
-    account_id: int,
-    _: dict = Depends(RequireAdmin),
-    service: XWatchAdminService = Depends(get_x_watch_admin_service),
-) -> XWatchAccountDeleteResponse:
-    """删除 X 关注账号。"""
-    try:
-        await service.delete_account(account_id)
-    except XWatchAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return XWatchAccountDeleteResponse(status="succeeded", message="X 关注账号已删除。", deleted=True, id=account_id)
-
-
-@router.post("/ops/x-watch-accounts/{account_id}/test", response_model=XWatchAccountTestResponse, tags=["Ops"])
-async def test_x_watch_account_route(
-    account_id: int,
-    _: dict = Depends(RequireAdmin),
-    service: XWatchAdminService = Depends(get_x_watch_admin_service),
-) -> XWatchAccountTestResponse:
-    """探测单个 X 账号：拉取近期推文，同时验证 handle 有效性与 cookie 凭据。"""
-    try:
-        outcome = await service.test_account(account_id)
-    except XWatchAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    assert isinstance(outcome.account, SafeXWatchAccountProjection)
-    return XWatchAccountTestResponse(
-        status=outcome.result.get("status", "failed"),
-        message=outcome.result.get("message", ""),
-        account=_x_watch_account_response(outcome.account),
-    )
-
-
-# ── X 账号凭证 ───────────────────────────────────────────────────────────────
-
-
-def _x_credential_response(
-    projection: SafeXCredentialProjection,
-) -> XCredentialResponse:
-    return XCredentialResponse.model_validate(projection, from_attributes=True)
-
-
-@router.get("/ops/x-credentials", response_model=XCredentialListResponse, tags=["Ops"])
-async def list_x_credentials(
-    _: dict = Depends(RequireAdmin),
-    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
-) -> XCredentialListResponse:
-    """列出 X 采集凭证（仅返回配置状态与脱敏值，不返回明文 cookie）。"""
-    projections = await service.list_credentials()
-    items = [_x_credential_response(item) for item in projections]
-    return XCredentialListResponse(items=items, total=len(items))
-
-
-@router.post("/ops/x-credentials", response_model=XCredentialResponse, tags=["Ops"])
-async def create_x_credential(
-    request: XCredentialRequest,
-    _: dict = Depends(RequireAdmin),
-    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
-) -> XCredentialResponse:
-    """新增 X 采集凭证。auth_token 与 ct0 只写入，不明文返回。"""
-    try:
-        projection = await service.create_credential(request.model_dump())
-    except XCredentialAdminValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _x_credential_response(projection)
-
-
-@router.put("/ops/x-credentials/{credential_id}", response_model=XCredentialResponse, tags=["Ops"])
-async def update_x_credential(
-    credential_id: int,
-    request: XCredentialRequest,
-    _: dict = Depends(RequireAdmin),
-    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
-) -> XCredentialResponse:
-    """更新 X 采集凭证。两个 secret 留空表示保留当前值，不能更新为半残 pair。"""
-    try:
-        projection = await service.update_credential(credential_id, request.model_dump())
-    except XCredentialAdminValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except XCredentialAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _x_credential_response(projection)
-
-
-@router.delete("/ops/x-credentials/{credential_id}", response_model=XCredentialDeleteResponse, tags=["Ops"])
-async def delete_x_credential(
-    credential_id: int,
-    _: dict = Depends(RequireAdmin),
-    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
-) -> XCredentialDeleteResponse:
-    """删除 X 采集凭证。"""
-    try:
-        await service.delete_credential(credential_id)
-    except XCredentialAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return XCredentialDeleteResponse(
-        status="succeeded",
-        message="X 凭证已删除。",
-        deleted=True,
-        id=credential_id,
-    )
-
-
-@router.post("/ops/x-credentials/{credential_id}/test", response_model=XCredentialTestResponse, tags=["Ops"])
-async def test_x_credential_route(
-    credential_id: int,
-    _: dict = Depends(RequireAdmin),
-    service: XCredentialAdminService = Depends(get_x_credential_admin_service),
-    watch_repository: XWatchAccountRepository = Depends(get_x_watch_account_repository),
-) -> XCredentialTestResponse:
-    """测试单个 X 凭证：使用第一个启用 watch handle 做真实请求，不允许 fallback。"""
-    handle = _first_enabled_x_handle(watch_repository)
-    try:
-        outcome = await service.test_credential(credential_id, handle)
-    except XCredentialAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    assert isinstance(outcome.credential, SafeXCredentialProjection)
-    return XCredentialTestResponse(
-        status=outcome.result.get("status", "failed"),
-        message=outcome.result.get("message", ""),
-        credential=_x_credential_response(outcome.credential),
-    )
-
-
-def _first_enabled_x_handle(watch_repository: XWatchAccountRepository) -> str:
-    """返回第一个启用的 X watch handle；没有时让 probe 返回稳定失败标记。"""
-    handles = watch_repository.list_enabled_x_handles()
-    if handles:
-        return str(handles[0] or "")
-    return ""
-
-
-# ── X 快照补拉 ───────────────────────────────────────────────────────────────
-
-
-@router.post(
-    "/ops/x/snapshots/rebuild",
-    response_model=XSnapshotRebuildResponse,
-    tags=["Ops"],
-)
-async def rebuild_x_snapshots(
-    request: XSnapshotRebuildRequest,
-    _: dict = Depends(RequireAdmin),
-    service: XSnapshotAdminService = Depends(get_x_snapshot_admin_service),
-) -> XSnapshotRebuildResponse:
-    """从已入库 X 推文重建日榜快照（补拉历史日期）。
-
-    按推文发布时间的 CST 物理日归属补写 document_rank_snapshots，修复
-    X 采集上线前/漏跑导致的日期模式空白；不重新请求 X API。target_date
-    为空时重建全部有推文的历史日期；upsert 幂等，不覆盖更优数据。
-    """
-    target_date = (request.target_date or "").strip()
-    if target_date:
-        if not re.match(r"^\d{4}-\d{2}-\d{2}$", target_date):
-            raise HTTPException(
-                status_code=400, detail="target_date 格式错误，应为 YYYY-MM-DD"
-            )
-        if target_date > today_local().isoformat():
-            raise HTTPException(status_code=400, detail="不能补拉未来日期的快照")
-
-    outcome = await asyncio.to_thread(service.rebuild, target_date or None)
-    if outcome["results"]:
-        await clear_dashboard_cache_safely()
-
-    total = sum(item["upserted"] for item in outcome["results"])
-    if total:
-        message = (
-            f"X 快照补拉完成：{len(outcome['results'])} 个日期共 {total} 条入榜。"
-        )
-    else:
-        message = "没有可补拉的已入库 X 推文。"
-    return XSnapshotRebuildResponse(
-        status="succeeded",
-        message=message,
-        results=[
-            XSnapshotRebuildResultItem(**item) for item in outcome["results"]
-        ],
-        skipped_no_date=int(outcome["skipped_no_date"]),
-    )
+router.include_router(routes_ops_mcp.router)
+router.include_router(routes_ops_x.router)
 
 
 # ── 路由 ─────────────────────────────────────────────────────────────────────
@@ -635,20 +243,9 @@ async def bulk_delete_documents(
     )
 
 
-@router.post("/ops/github-hot/refresh", response_model=IngestResponse, tags=["Ops"])
-async def refresh_github_hot(
-    limit: int = Query(default=80, ge=20, le=200),
-    _: dict = Depends(RequireAdmin),
-    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
-    service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
-) -> IngestResponse:
-    """手动刷新 GitHub 热榜候选池与快照。"""
-    operations.submit(service.refresh_hot, limit)
-    logger.info("[Ops] GitHub 热榜刷新任务已加入后台队列，limit=%d", limit)
-    return IngestResponse(
-        status="queued",
-        message=f"GitHub 热榜刷新任务已提交（limit={limit}），后台执行中。",
-    )
+# ── GitHub 热榜与项目库 ──────────────────────────────────────────────────────
+
+router.include_router(routes_ops_github.router)
 
 
 @router.post(
@@ -701,330 +298,6 @@ async def get_project_taxonomy(
 ) -> ProjectTaxonomyResponse:
     """返回管理员手动添加工具网页时可选的分类体系。"""
     return ProjectTaxonomyResponse(items=service.project_taxonomy())
-
-
-@router.post(
-    "/ops/github-projects/enrich",
-    response_model=GitHubProjectsEnrichResponse,
-    tags=["Ops"],
-)
-async def enrich_github_project_library(
-    request: GitHubProjectsEnrichRequest,
-    _: dict = Depends(RequireAdmin),
-    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
-    service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
-) -> GitHubProjectsEnrichResponse:
-    """手动触发 GitHub 项目库 AI 分类与中文描述富化。"""
-    limit = max(1, min(int(request.limit or 50), 500))
-    if request.dry_run:
-        result = await asyncio.to_thread(
-            service.enrich,
-            limit=limit,
-            force=request.force,
-            dry_run=True,
-            retry_failed=request.retry_failed,
-            refresh_changed=request.refresh_changed,
-            concurrency=request.concurrency,
-        )
-        return GitHubProjectsEnrichResponse(
-            status="dry_run",
-            message=f"GitHub 项目库富化 dry-run 完成，候选 {result.get('candidates', 0)} 个。",
-            result=result,
-        )
-
-    operations.submit(
-        service.enrich,
-        limit,
-        request.force,
-        False,
-        request.retry_failed,
-        request.refresh_changed,
-        request.concurrency,
-    )
-    logger.info(
-        "[Ops] GitHub 项目库富化任务已加入后台队列，limit=%d force=%s retry_failed=%s refresh_changed=%s concurrency=%d",
-        limit,
-        request.force,
-        request.retry_failed,
-        request.refresh_changed,
-        request.concurrency,
-    )
-    return GitHubProjectsEnrichResponse(
-        status="queued",
-        message=f"GitHub 项目库富化任务已提交（limit={limit}，并发={request.concurrency}），后台执行中。",
-    )
-
-
-@router.post(
-    "/ops/github-projects/enrich-cancel",
-    response_model=GitHubProjectsEnrichCancelResponse,
-    tags=["Ops"],
-)
-async def cancel_github_project_enrichment(
-    _: dict = Depends(RequireAdmin),
-) -> GitHubProjectsEnrichCancelResponse:
-    """协作式终止富化批处理：进行中的项目跑完即停，未启动的保持待处理、不记失败。"""
-    from backend.app.services.ingestion.github_project_enricher import (
-        request_github_enrichment_cancel,
-    )
-
-    if request_github_enrichment_cancel():
-        logger.info("[Ops] 已请求终止 GitHub 项目库富化批处理")
-        return GitHubProjectsEnrichCancelResponse(
-            status="cancelling",
-            message="已请求终止富化：进行中的项目会跑完，剩余项目保持待处理。",
-        )
-    return GitHubProjectsEnrichCancelResponse(
-        status="not_running",
-        message="当前没有正在运行的富化任务。",
-    )
-
-
-@router.post(
-    "/ops/github-projects/crawl",
-    response_model=GitHubProjectsCrawlResponse,
-    tags=["Ops"],
-)
-async def crawl_github_project_library(
-    request: GitHubProjectsCrawlRequest,
-    _: dict = Depends(RequireAdmin),
-    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
-    service: GitHubProjectCrawlAdminService = Depends(get_github_project_crawl_admin_service),
-) -> GitHubProjectsCrawlResponse:
-    """手动触发 GitHub 搜索爬取（可选爬完后自动富化本次新抓项目）。"""
-    try:
-        plan = plan_crawl(
-            min_stars=request.min_stars,
-            max_stars=request.max_stars,
-            limit=request.limit,
-            created_start=date.fromisoformat(request.created_start),
-            created_end=(
-                date.fromisoformat(request.created_end)
-                if request.created_end
-                else date.today()
-            ),
-            pushed_after=request.pushed_after or "",
-            enrich=request.enrich,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if request.dry_run:
-        result = await asyncio.to_thread(service.crawl_dry_run, plan)
-        return GitHubProjectsCrawlResponse(
-            status="dry_run",
-            message=(
-                f"GitHub 搜索爬取 dry-run 完成：分片 {len(result.get('shards') or {})} 个，"
-                f"可抓取约 {result.get('total_available', 0)} 个仓库。"
-            ),
-            channel=plan["channel"],
-            first_seen_after=plan["first_seen_after"],
-            result=result,
-        )
-
-    if not service.try_acquire_crawl():
-        raise HTTPException(
-            status_code=409,
-            detail="已有 GitHub 搜索爬取任务在执行中，请等待其完成后再触发。",
-        )
-    if not operations.submit(service.crawl_and_enrich, plan):
-        service.release_crawl()
-        raise HTTPException(
-            status_code=503, detail="后台执行器正在停止，暂时无法接受新任务。"
-        )
-    logger.info(
-        "[Ops] GitHub 搜索爬取任务已提交 channel=%s enrich=%s limit=%d",
-        plan["channel"],
-        plan["enrich"],
-        plan["limit"],
-    )
-    return GitHubProjectsCrawlResponse(
-        status="queued",
-        message=f"GitHub 搜索爬取任务已提交（channel={plan['channel']}），后台执行中。",
-        channel=plan["channel"],
-        first_seen_after=plan["first_seen_after"],
-    )
-
-
-@router.get(
-    "/ops/github-projects/crawl/status",
-    response_model=GitHubProjectsCrawlStatusResponse,
-    tags=["Ops"],
-)
-async def github_projects_crawl_status(
-    _: dict = Depends(RequireAdmin),
-    channel: str = Query(default="", max_length=255),
-    first_seen_after: str = Query(default="", max_length=64),
-    min_stars: Optional[int] = Query(default=None, ge=0),
-    service: GitHubProjectCrawlAdminService = Depends(get_github_project_crawl_admin_service),
-) -> GitHubProjectsCrawlStatusResponse:
-    """查询某次（默认最近一次）GitHub 搜索爬取运行的任务状态与实时计数。"""
-    try:
-        status = await asyncio.to_thread(
-            service.crawl_status,
-            channel=channel,
-            first_seen_after=first_seen_after,
-            min_stars=min_stars,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return GitHubProjectsCrawlStatusResponse(**status)
-
-
-@router.post(
-    "/ops/github-projects/recommendations",
-    response_model=GitHubProjectRecommendResponse,
-    tags=["Ops"],
-)
-async def recommend_github_project(
-    request: GitHubProjectRecommendRequest,
-    user: dict = Depends(RequireAdmin),
-    service: GitHubProjectRecommendationAdminService = Depends(
-        get_github_project_recommendation_admin_service
-    ),
-) -> GitHubProjectRecommendResponse:
-    """将 GitHub 项目加入站长推荐。"""
-    try:
-        outcome = await service.recommend(
-            repo_id=request.repo_id,
-            full_name=request.full_name,
-            admin_identity=user,
-        )
-    except GitHubProjectAdminValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except GitHubProjectAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return GitHubProjectRecommendResponse(
-        status="succeeded",
-        message=outcome.message,
-        **outcome.result,
-    )
-
-
-@router.delete(
-    "/ops/github-projects/recommendations",
-    response_model=GitHubProjectRecommendResponse,
-    tags=["Ops"],
-)
-async def unrecommend_github_project(
-    request: GitHubProjectRecommendRequest,
-    _: dict = Depends(RequireAdmin),
-    service: GitHubProjectRecommendationAdminService = Depends(
-        get_github_project_recommendation_admin_service
-    ),
-) -> GitHubProjectRecommendResponse:
-    """取消 GitHub 项目的站长推荐。"""
-    try:
-        outcome = await service.unrecommend(
-            repo_id=request.repo_id,
-            full_name=request.full_name,
-        )
-    except GitHubProjectAdminValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except GitHubProjectAdminNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return GitHubProjectRecommendResponse(
-        status="succeeded",
-        message=outcome.message,
-        **outcome.result,
-    )
-
-
-@router.get("/ops/github-projects/enrichment-status", tags=["Ops"])
-async def github_project_enrichment_status(
-    _: dict = Depends(RequireAdmin),
-    service: GitHubProjectRecommendationAdminService = Depends(
-        get_github_project_recommendation_admin_service
-    ),
-):
-    """查看 GitHub 项目库富化进度。"""
-    return await service.get_enrichment_status()
-
-
-@router.get(
-    "/ops/github-projects/enrichment-config",
-    response_model=EnrichmentConfigResponse,
-    tags=["Ops"],
-)
-async def get_github_enrichment_config(
-    _: dict = Depends(RequireAdmin),
-    service: RuntimeProviderAdminService = Depends(
-        get_runtime_provider_admin_service
-    ),
-) -> EnrichmentConfigResponse:
-    """读取富化任务专用推理强度；空串表示跟随模型服务配置。"""
-    projection = await service.get_enrichment_config()
-    return EnrichmentConfigResponse.model_validate(projection)
-
-
-@router.put(
-    "/ops/github-projects/enrichment-config",
-    response_model=EnrichmentConfigResponse,
-    tags=["Ops"],
-)
-async def update_github_enrichment_config(
-    request: EnrichmentConfigRequest,
-    _: dict = Depends(RequireAdmin),
-    service: RuntimeProviderAdminService = Depends(
-        get_runtime_provider_admin_service
-    ),
-) -> EnrichmentConfigResponse:
-    """更新富化任务专用推理强度；不影响模型服务配置，下一批富化生效。"""
-    projection = await service.update_enrichment_config(request.model_dump())
-    return EnrichmentConfigResponse.model_validate(projection)
-
-
-@router.post(
-    "/ops/github-projects/metrics/refresh",
-    response_model=GitHubProjectsEnrichResponse,
-    tags=["Ops"],
-)
-async def refresh_github_project_metrics(
-    request: GitHubProjectsMetricsRequest,
-    _: dict = Depends(RequireAdmin),
-    operations: ApplicationOperationsRuntime = Depends(get_operations_runtime),
-    service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
-) -> GitHubProjectsEnrichResponse:
-    """手动刷新 GitHub 项目每日快照，并在非 dry-run 时重算热度分。"""
-    min_stars = max(0, int(request.min_stars or 0))
-    limit = max(0, min(int(request.limit or 0), 20000))
-    if request.dry_run:
-        result = await asyncio.to_thread(
-            service.refresh_metrics,
-            min_stars=min_stars,
-            limit=limit,
-            metric_date=request.metric_date,
-            dry_run=True,
-        )
-        return GitHubProjectsEnrichResponse(status="dry_run", message="GitHub 项目每日指标 dry-run 完成。", result=result)
-
-    operations.submit(
-        service.refresh_metrics,
-        min_stars=min_stars,
-        limit=limit,
-        metric_date=request.metric_date,
-        dry_run=False,
-    )
-    return GitHubProjectsEnrichResponse(status="queued", message="GitHub 项目每日指标刷新任务已提交，后台执行中。")
-
-
-@router.post(
-    "/ops/github-projects/metrics/recompute",
-    response_model=GitHubProjectsEnrichResponse,
-    tags=["Ops"],
-)
-async def recompute_github_project_metrics(
-    request: GitHubProjectsMetricsRecomputeRequest,
-    _: dict = Depends(RequireAdmin),
-    service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
-) -> GitHubProjectsEnrichResponse:
-    """基于连续快照或同日 Trending 日榜值，重算某天增长和热度分。"""
-    result = await asyncio.to_thread(
-        service.recompute_metrics,
-        metric_date=request.metric_date,
-        min_stars=max(0, int(request.min_stars or 0)),
-    )
-    return GitHubProjectsEnrichResponse(status="succeeded", message="GitHub 项目每日热度指标已重算。", result=result)
 
 
 @router.post("/ops/ingest-source", response_model=IngestResponse, tags=["Ops"])
