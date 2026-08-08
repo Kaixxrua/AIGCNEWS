@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from backend.app.services.ingestion import content_enricher
+from backend.app.services.ingestion import content_enricher, content_fetch_port
+from backend.app.services.ingestion.content_fetch_port import DEFAULT_PAGE_HEADERS
 
 
 class _AsyncClient:
@@ -46,7 +47,7 @@ class ContentEnricherHtmlAndFetchContractTests(unittest.IsolatedAsyncioTestCase)
         )
 
     async def test_fetch_url_text_rejects_missing_and_non_http_urls_without_client(self) -> None:
-        with patch.object(content_enricher.httpx, "AsyncClient") as client:
+        with patch.object(content_fetch_port.httpx, "AsyncClient") as client:
             self.assertEqual(await content_enricher._fetch_url_text(""), "")
             self.assertEqual(await content_enricher._fetch_url_text("ftp://example.test/a"), "")
         client.assert_not_called()
@@ -58,7 +59,7 @@ class ContentEnricherHtmlAndFetchContractTests(unittest.IsolatedAsyncioTestCase)
                 response.headers = {"content-type": content_type}
                 response.text = "<main><p>Body</p></main>"
                 client = _AsyncClient(response=response)
-                with patch.object(content_enricher.httpx, "AsyncClient", return_value=client) as factory:
+                with patch.object(content_fetch_port.httpx, "AsyncClient", return_value=client) as factory:
                     result = await content_enricher._fetch_url_text(
                         "https://public.example.test/current", timeout=7
                     )
@@ -68,7 +69,7 @@ class ContentEnricherHtmlAndFetchContractTests(unittest.IsolatedAsyncioTestCase)
                 factory.assert_called_once_with(
                     timeout=7,
                     follow_redirects=True,
-                    headers=content_enricher._HEADERS,
+                    headers=DEFAULT_PAGE_HEADERS,
                     trust_env=True,
                 )
                 response.raise_for_status.assert_called_once_with()
@@ -78,7 +79,7 @@ class ContentEnricherHtmlAndFetchContractTests(unittest.IsolatedAsyncioTestCase)
         response.headers = {"content-type": "application/json"}
         response.text = '<p>Not page text</p>'
         with patch.object(
-            content_enricher.httpx,
+            content_fetch_port.httpx,
             "AsyncClient",
             return_value=_AsyncClient(response=response),
         ):
@@ -90,7 +91,7 @@ class ContentEnricherHtmlAndFetchContractTests(unittest.IsolatedAsyncioTestCase)
         for error in (httpx.HTTPError("network failed"), RuntimeError("client failed")):
             with self.subTest(error=type(error).__name__):
                 with patch.object(
-                    content_enricher.httpx,
+                    content_fetch_port.httpx,
                     "AsyncClient",
                     return_value=_AsyncClient(error=error),
                 ):

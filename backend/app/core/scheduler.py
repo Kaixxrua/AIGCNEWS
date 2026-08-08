@@ -315,25 +315,6 @@ async def _run_github_project_enrichment_job(repository: Any) -> None:
         logger.error("[Scheduler] GitHub 项目库 AI 分类富化失败: %s", exc, exc_info=True)
 
 
-async def _run_smart_ingestion_job(
-    reader: Any,
-    runner: Callable[[int], Any],
-) -> None:
-    logger.info("[Scheduler] 触发智能全量采集任务...")
-    try:
-        from backend.app.services.ingestion.pipeline import run_smart_ingestion
-
-        await asyncio.to_thread(
-            run_smart_ingestion,
-            20,
-            reader=reader,
-            runner=runner,
-        )
-        logger.info("[Scheduler] 智能全量采集任务完成。")
-    except Exception as exc:
-        logger.error("[Scheduler] 智能全量采集失败: %s", exc, exc_info=True)
-
-
 async def _run_daily_briefing_job(
     repositories: ApplicationRepositories,
 ) -> None:

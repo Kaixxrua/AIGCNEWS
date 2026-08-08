@@ -72,10 +72,6 @@ def _safe_resolved_ips(hostname: str) -> list[str]:
         return []
 
 
-def _host_is_safe(hostname: str) -> bool:
-    return bool(_safe_resolved_ips(hostname))
-
-
 def _validate_url(raw_url: str) -> str:
     try:
         url = normalize_http_url(

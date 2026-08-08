@@ -5,7 +5,7 @@ import logging
 import re
 from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -163,10 +163,3 @@ def project_homepage_matches(
             }
         )
     return results
-
-
-def merge_articles(
-    rss_articles: Iterable[Mapping[str, Any]],
-    html_articles: Iterable[Mapping[str, Any]],
-) -> list[dict]:
-    return [dict(item) for item in rss_articles] + [dict(item) for item in html_articles]

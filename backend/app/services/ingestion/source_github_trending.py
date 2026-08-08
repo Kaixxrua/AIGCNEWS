@@ -14,7 +14,6 @@ from __future__ import annotations
 性能优化（v2）：
   - 使用 httpx.AsyncClient 替代同步 httpx.Client
   - 注入 GITHUB_TOKEN（有 Token 每小时 5000 次 vs 无 Token 60 次）
-  - fetch_github_trending_all_periods 使用 asyncio.gather 并发三周期
 
 返回字段（兼容 pipeline._to_documents）：
   - title:              full_name（如 "owner/repo"）
@@ -30,7 +29,6 @@ from __future__ import annotations
   - published_date:     今日日期（采集日）
 """
 
-import asyncio
 import logging
 import re
 from datetime import date
@@ -171,11 +169,6 @@ def parse_github_trending_html(
     return repos
 
 
-def _parse_trending_html(html: str) -> List[Dict[str, Any]]:
-    """兼容旧调用：按日榜语义解析 Trending 页面。"""
-    return parse_github_trending_html(html, period="daily")
-
-
 async def fetch_github_trending_async(
     period: str = "daily",
     limit: int = 25,
@@ -246,72 +239,3 @@ async def fetch_github_trending_async(
         len(result),
     )
     return result
-
-
-async def fetch_github_trending_all_periods_async(
-    limit: int = 25,
-) -> Dict[str, List[Dict[str, Any]]]:
-    """并发抓取三个周期（daily/weekly/monthly）的 GitHub Trending。
-
-    使用 asyncio.gather 并发三个请求，总耗时 ≈ 单次请求耗时（而非 3× 串行）。
-    """
-    daily, weekly, monthly = await asyncio.gather(
-        fetch_github_trending_async(period="daily", limit=limit),
-        fetch_github_trending_async(period="weekly", limit=limit),
-        fetch_github_trending_async(period="monthly", limit=limit),
-    )
-    return {"daily": daily, "weekly": weekly, "monthly": monthly}
-
-
-# ── 同步兼容包装器（供 crawlers 调用） ────────────────────────────────────────
-
-
-def fetch_github_trending(
-    period: str = "daily",
-    limit: int = 25,
-    language: str = "",
-) -> List[Dict[str, Any]]:
-    """同步包装器：自动检测事件循环，选择合适的调用方式。"""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(
-                asyncio.run,
-                fetch_github_trending_async(
-                    period=period, limit=limit, language=language
-                ),
-            )
-            return future.result(timeout=60)
-    else:
-        return asyncio.run(
-            fetch_github_trending_async(period=period, limit=limit, language=language)
-        )
-
-
-def fetch_github_trending_all_periods(
-    limit: int = 25,
-    delay: float = 1.5,
-) -> Dict[str, List[Dict[str, Any]]]:
-    """同步包装器：并发抓取三周期（delay 参数保留兼容但不再使用）。"""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(
-                asyncio.run,
-                fetch_github_trending_all_periods_async(limit=limit),
-            )
-            return future.result(timeout=90)
-    else:
-        return asyncio.run(fetch_github_trending_all_periods_async(limit=limit))

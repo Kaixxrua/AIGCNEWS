@@ -11,7 +11,6 @@ BaseCrawler 提供统一的接口约定和异常隔离保证。
   - pipeline.py 是轻量编排器（调度爬虫 → 内容丰富 → 三库写入）
 """
 
-import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -152,37 +151,3 @@ class BaseCrawler(ABC):
                 items=[],
                 error=str(exc),
             )
-
-    async def fetch_all_periods(
-        self,
-        limit: int = 25,
-        top_n: int = 10,
-        target_date: Optional[str] = None,
-    ) -> List[CrawlResult]:
-        """采集所有支持的周期，返回结果列表。
-
-        每个周期独立执行，一个周期失败不影响其他周期。
-        使用 [`asyncio.gather()`](backend/app/services/ingestion/base_crawler.py:15)
-        并发调度所有周期。
-        """
-        tasks = [
-            self.fetch(period=period, limit=limit, target_date=target_date)
-            for period in self.supported_periods
-        ]
-        results = await asyncio.gather(*tasks)
-        for result in results:
-            if result.ok and result.count > top_n:
-                original_count = result.count
-                result.items.sort(
-                    key=lambda p: float(p.get("raw_score") or p.get("score") or 0),
-                    reverse=True,
-                )
-                result.items = result.items[:top_n]
-                logger.info(
-                    "[%s] %s 榜 Top-%d 筛选完成（原 %d 条）",
-                    self.source_name,
-                    result.period,
-                    len(result.items),
-                    original_count,
-                )
-        return results

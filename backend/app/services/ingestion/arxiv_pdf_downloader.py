@@ -15,7 +15,6 @@ from __future__ import annotations
   - 30 篇 PDF 哪怕 sleep 5s 也只需约 2.5 分钟
 """
 
-import asyncio
 import logging
 import os
 import re
@@ -539,21 +538,3 @@ def download_and_index_arxiv_pdfs(
         len(pending),
     )
     return download_ok, index_ok
-
-
-async def download_and_index_arxiv_pdfs_async(
-    papers: List[Dict[str, Any]],
-    milvus_repo: Optional[Any] = None,
-    document_writer: Optional[DocumentWriter] = None,
-    sleep_between: float = 3.0,
-    max_workers: int = 1,
-) -> Tuple[int, int]:
-    """异步包装器：在线程池中运行阻塞的下载 Pipeline，不阻塞事件循环。"""
-    return await asyncio.to_thread(
-        download_and_index_arxiv_pdfs,
-        papers,
-        milvus_repo,
-        document_writer,
-        sleep_between,
-        max_workers,
-    )

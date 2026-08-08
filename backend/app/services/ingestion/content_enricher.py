@@ -5,7 +5,7 @@ from __future__ import annotations
 在 Top-N 筛选完成后、入库前，为各数据源补充完整正文：
 
   - arxiv    : 【快速路径】先用摘要入 RAG（paper["full_text"] = abstract），
-               标记 pdf_pending=True，后续由 enrich_arxiv_pdf_full() 补充 PDF 全文。
+               标记 pdf_pending=True；失效的 PDF 补全入口已退役（0ba44ad）。
                PDF URL 格式: https://arxiv.org/pdf/{arxiv_id}
   - huggingface: 直接用描述摘要入 RAG，无需 PDF
   - github   : source_github.py 的 _fetch_readme 已在采集时抓好，
@@ -17,19 +17,11 @@ from __future__ import annotations
 
 所有方法均以 paper dict 为输入/输出，在 paper["full_text"] 写入丰富后的正文，
 pipeline._to_documents 会优先使用该字段构建 page_content。
-
-PDF 二阶段策略：
-  1. enrich_arxiv()        → 摘要入库，pdf_pending=True
-  2. enrich_arxiv_pdf_full() → 后台线程池下载 PDF，更新 full_text
 """
 
 import asyncio
-import io
 import logging
-import re
 from typing import Any, Dict, List, Optional
-
-import httpx
 
 from backend.app.services.ingestion import content_enrichment_coordinator
 from backend.app.services.ingestion.content_fetch_port import (
@@ -51,8 +43,6 @@ _HEADERS = {
 
 # 单次网络请求超时（秒）
 _HTTP_TIMEOUT = 20
-# PDF 最多解析页数（避免超大 PDF 拖慢进程）
-_PDF_MAX_PAGES = 50
 # 正文最大字符数（防止 Milvus chunk 过多）
 _MAX_CONTENT_CHARS = 40_000
 
@@ -69,47 +59,6 @@ async def _fetch_url_text(url: str, timeout: int = _HTTP_TIMEOUT) -> str:
     """抓取 URL 页面并返回纯文本，失败返回空字符串。"""
     fetcher = DefaultPageContentFetcher(headers=_HEADERS, clean_html=_clean_html_text)
     return await fetcher.fetch(url, timeout)
-
-
-def _fetch_pdf_text(pdf_url: str, timeout: int = 30) -> str:
-    """下载 PDF 并用 pypdf 解析前 N 页文本，失败返回空字符串。"""
-    if not pdf_url or not pdf_url.startswith("http"):
-        return ""
-    try:
-        import pypdf  # type: ignore
-    except ImportError:
-        logger.warning("[Enricher] pypdf 未安装，跳过 PDF 解析。pip install pypdf")
-        return ""
-
-    try:
-        with httpx.Client(
-            timeout=timeout,
-            follow_redirects=True,
-            headers=_HEADERS,
-            trust_env=True,
-        ) as client:
-            resp = client.get(pdf_url)
-            resp.raise_for_status()
-            ct = resp.headers.get("content-type", "")
-            if "pdf" not in ct and not pdf_url.lower().endswith(".pdf"):
-                return ""
-            pdf_bytes = resp.content
-
-        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-        pages = reader.pages[:_PDF_MAX_PAGES]
-        parts = []
-        for page in pages:
-            try:
-                parts.append(page.extract_text() or "")
-            except Exception as exc:
-                logger.debug("[ContentEnricher] skip unreadable PDF page: %s", exc)
-        text = "\n".join(parts)
-        # 折叠多余空白
-        text = re.sub(r"\n{3,}", "\n\n", text).strip()
-        return text
-    except Exception as exc:
-        logger.debug("[Enricher] PDF 解析失败 %s: %s", pdf_url, exc)
-        return ""
 
 
 async def _fetch_github_readme(full_name: str) -> str:
@@ -180,47 +129,6 @@ def enrich_arxiv(paper: Dict[str, Any]) -> Dict[str, Any]:
         "[Enricher][Arxiv] 摘要入库（pdf_pending=True），后台将落盘 PDF: %s",
         arxiv_id or pdf_url,
     )
-    return paper
-
-
-def enrich_arxiv_pdf_full(paper: Dict[str, Any]) -> Dict[str, Any]:
-    """Arxiv 论文：【PDF 补全阶段】下载 PDF 解析全文，更新 full_text。
-
-    在摘要已入库后，后台调用此函数补充 PDF 全文。
-    调用方需自行将更新后的 full_text 重新写入 Milvus / PostgreSQL。
-    """
-    arxiv_id = paper.get("arxiv_id", "")
-    pdf_url = paper.get("pdf_url", "")
-    abstract = paper.get("abstract", "") or paper.get("summary", "")
-
-    # 确保 pdf_url 格式正确
-    if arxiv_id and (not pdf_url or "/pdf/" not in pdf_url):
-        pdf_url = f"https://arxiv.org/pdf/{arxiv_id}"
-        paper["pdf_url"] = pdf_url
-
-    if not pdf_url:
-        logger.warning("[Enricher][Arxiv] 无 PDF URL，跳过: %s", arxiv_id)
-        paper["pdf_pending"] = False
-        return paper
-
-    logger.info("[Enricher][Arxiv] 下载 PDF（补全阶段）: %s", pdf_url)
-    pdf_text = _fetch_pdf_text(pdf_url)
-
-    if pdf_text:
-        full_text = f"Abstract:\n{abstract}\n\nFull Paper:\n{pdf_text}"
-        paper["full_text"] = full_text[:_MAX_CONTENT_CHARS]
-        paper["pdf_pending"] = False
-        logger.info(
-            "[Enricher][Arxiv] PDF 补全成功 %s，full_text %d chars",
-            arxiv_id,
-            len(paper["full_text"]),
-        )
-    else:
-        logger.warning(
-            "[Enricher][Arxiv] PDF 解析失败，保留摘要: %s", arxiv_id or pdf_url
-        )
-        paper["pdf_pending"] = False  # 即使失败也清除标记，避免反复重试
-
     return paper
 
 
