@@ -15,6 +15,7 @@ import {
   mediaItems,
   pageCount,
   paginateItems,
+  photoVariantUrl,
   posterMediaUrl,
   proxiedMediaUrl,
   quoteAsDoc,
@@ -144,11 +145,49 @@ describe('xBoardViewModel', () => {
       ],
     })
     const items = mediaItems(doc)
-    // 采集期落库的官方封面：经代理同源化，不再走抽帧端点
-    expect(items[0]?.poster_url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(poster)}`)
-    expect(items[1]?.poster_url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(poster)}`)
+    // 采集期落库的官方封面：经代理同源化，不再走抽帧端点；封面仅播放前展示，
+    // 支持变体的路径降载为 small（原图无消费场景）
+    expect(items[0]?.poster_url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(`${poster}?name=small`)}`)
+    expect(items[1]?.poster_url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(`${poster}?name=small`)}`)
     // url 改写不受影响
     expect(items[0]?.url).toBe(`/api/media/x/proxy?url=${encodeURIComponent('https://video.twimg.com/a.mp4')}`)
+  })
+
+  it('photoVariantUrl rewrites the name param only on supported twimg image paths', () => {
+    expect(photoVariantUrl('https://pbs.twimg.com/media/a.jpg', 'small'))
+      .toBe('https://pbs.twimg.com/media/a.jpg?name=small')
+    // 已有 name 参数时覆盖，其余查询参数保留
+    expect(photoVariantUrl('https://pbs.twimg.com/media/a.jpg?format=jpg&name=large', 'small'))
+      .toBe('https://pbs.twimg.com/media/a.jpg?format=jpg&name=small')
+    expect(photoVariantUrl('https://pbs.twimg.com/ext_tw_video_thumb/1/pu/img/x.jpg', 'small'))
+      .toBe('https://pbs.twimg.com/ext_tw_video_thumb/1/pu/img/x.jpg?name=small')
+    // 头像/视频文件/外站路径不支持变体（下发只会 404），回退空串
+    expect(photoVariantUrl('https://pbs.twimg.com/profile_images/a.jpg', 'small')).toBe('')
+    expect(photoVariantUrl('https://video.twimg.com/a.mp4', 'small')).toBe('')
+    expect(photoVariantUrl('https://example.com/media/a.jpg', 'small')).toBe('')
+    expect(photoVariantUrl('not-a-url', 'small')).toBe('')
+    expect(photoVariantUrl('', 'small')).toBe('')
+  })
+
+  it('mediaItems derives small thumbnails for photos while keeping originals for the lightbox', () => {
+    const photo = 'https://pbs.twimg.com/media/abc.jpg'
+    const doc = tweet('openai', '1', {
+      media: [
+        { type: 'photo', url: photo, width: 2048, height: 1152 },
+        // 变体不可派生的照片路径：不注入 thumb_url，内联渲染回退原图
+        { type: 'photo', url: 'https://pbs.twimg.com/a.jpg' },
+      ],
+    })
+    const items = mediaItems(doc)
+    expect(items[0]?.url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(photo)}`)
+    expect(items[0]?.thumb_url).toBe(
+      `/api/media/x/proxy?url=${encodeURIComponent('https://pbs.twimg.com/media/abc.jpg?name=small')}`,
+    )
+    expect(items[0]?.width).toBe(2048)
+    expect(items[1]?.thumb_url).toBeUndefined()
+    // 视频不出 thumb_url（封面已降载在 poster_url 上）
+    const videoDoc = tweet('openai', '2', { media: [{ type: 'video', url: 'https://video.twimg.com/a.mp4' }] })
+    expect(mediaItems(videoDoc)[0]?.thumb_url).toBeUndefined()
   })
 
   it('flattens grouped sections into a single ordered list', () => {

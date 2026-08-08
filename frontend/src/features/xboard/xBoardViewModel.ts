@@ -173,6 +173,26 @@ export const posterMediaUrl = (url: string): string => {
   return `${X_MEDIA_POSTER_PATH}?url=${encodeURIComponent(url)}`
 }
 
+/** twimg 支持 ?name= 派生尺寸的图片路径前缀（推文照片与三类视频封面图）。 */
+const TWIMG_VARIANT_PATH_RE = /^\/(?:media|ext_tw_video_thumb|amplify_video_thumb|tweet_video_thumb)\//
+
+/**
+ * twimg 图片尺寸变体：pbs.twimg.com 的 /media/ 照片与 *_video_thumb 封面
+ * 支持 ?name= 派生尺寸（small = 680px 宽，约原图 1/5 体积）；看板内联缩略图
+ * 用 small 降载，lightbox 仍取原图。已有 name 参数时覆盖；主机/路径不支持
+ * 或 URL 非法时返回空串（调用方回退原图，不变体即 404 的路径绝不下发）。
+ */
+export const photoVariantUrl = (url: string, name: string): string => {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname !== 'pbs.twimg.com' || !TWIMG_VARIANT_PATH_RE.test(parsed.pathname)) return ''
+    parsed.searchParams.set('name', name)
+    return parsed.toString()
+  } catch {
+    return ''
+  }
+}
+
 /**
  * 视频/GIF 封面优先级：采集期落库的 X 官方封面（poster_url，经代理同源化）
  * > 服务端抽帧端点（存量数据无 poster_url 时兜底，见 routes_x_media.py）。
@@ -183,13 +203,24 @@ const resolvePosterUrl = (item: { url: string; poster_url?: string }): string =>
 }
 
 const proxyMediaList = (items: NonNullable<TopDoc['media']>): NonNullable<TopDoc['media']> =>
-  items.map((item) => ({
-    ...item,
-    url: proxiedMediaUrl(item.url),
-    ...(item.type === 'video' || item.type === 'animated_gif'
-      ? { poster_url: resolvePosterUrl(item) }
-      : {}),
-  }))
+  items.map((item) => {
+    // 看板降载：照片内联渲染用 small 变体（680px，约原图 1/5 体积），
+    // item.url 保持原图供 lightbox 全尺寸预览；变体不可派生时不注入 thumb_url。
+    const thumb = item.type === 'photo' ? photoVariantUrl(item.url, 'small') : ''
+    // 视频官方封面只在播放前展示，同样降载为 small（原图无消费场景）；
+    // 变体不可派生时回退原封面/抽帧端点。
+    const posterThumb = item.type !== 'photo' && item.poster_url
+      ? photoVariantUrl(item.poster_url, 'small')
+      : ''
+    return {
+      ...item,
+      url: proxiedMediaUrl(item.url),
+      ...(thumb ? { thumb_url: proxiedMediaUrl(thumb) } : {}),
+      ...(item.type === 'video' || item.type === 'animated_gif'
+        ? { poster_url: posterThumb ? proxiedMediaUrl(posterThumb) : resolvePosterUrl(item) }
+        : {}),
+    }
+  })
 
 export const mediaItems = (doc: TopDoc): NonNullable<TopDoc['media']> =>
   proxyMediaList(doc.media ?? [])

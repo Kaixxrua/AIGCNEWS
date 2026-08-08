@@ -51,6 +51,7 @@ const onGoPage = (next: number) => {
 const formatTime = (doc: TopDoc) => formatLocalTime(tweetTimestamp(doc))
 
 // 图片放大预览（lightbox）：仅照片可点开；视频封面点击仍是播放。
+// 内联渲染统一用 small 变体（thumb_url）降载，点开 lightbox 才拉原图（item.url）。
 // ESC 或点击遮罩关闭；预览不阻断视频点击播放逻辑。
 const lightboxUrl = ref<string | null>(null)
 const openLightbox = (url: string) => { lightboxUrl.value = url }
@@ -103,8 +104,8 @@ const onLightboxKeydown = (event: KeyboardEvent) => {
 const isVideo = (item: TweetMediaItem) => item.type === 'video' || item.type === 'animated_gif'
 
 // 引用卡片内只渲染缩略图（整卡点击跳被引推文，不内嵌播放）：视频用封面，
-// 无封面（非 twimg 直链等）不渲染该媒体位
-const quoteMediaThumb = (item: TweetMediaItem) => (isVideo(item) ? (item.poster_url ?? '') : item.url)
+// 照片用 small 变体降载；无封面（非 twimg 直链等）不渲染该媒体位
+const quoteMediaThumb = (item: TweetMediaItem) => (isVideo(item) ? (item.poster_url ?? '') : (item.thumb_url || item.url))
 
 // X 式点击播放：视频占位零流量（不经代理拉取元数据），点击后才挂载 <video>。
 // 键与模板 :key 同源（`${tweet.url}-${index}`），重载推文时清空避免自动重播。
@@ -298,7 +299,7 @@ onBeforeUnmount(() => {
               <template v-for="(item, index) in mediaItems(tweet)" :key="mediaKey(tweet, index)">
                 <img
                   v-if="!isVideo(item)"
-                  :src="item.url"
+                  :src="item.thumb_url || item.url"
                   :alt="tweet.title"
                   loading="lazy"
                   decoding="async"
@@ -520,7 +521,7 @@ onBeforeUnmount(() => {
             <template v-for="(item, index) in mediaItems(detailTweet)" :key="mediaKey(detailTweet, index)">
               <img
                 v-if="!isVideo(item)"
-                :src="item.url"
+                :src="item.thumb_url || item.url"
                 :alt="detailTweet.title"
                 loading="lazy"
                 decoding="async"
