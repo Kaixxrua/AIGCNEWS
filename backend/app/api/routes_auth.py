@@ -21,6 +21,7 @@ from backend.app.core.auth import (
     hash_password,
     verify_password,
 )
+from backend.app.core.client_ip import client_ip_from_request
 from backend.app.repositories.mcp_access_token_repository import McpAccessTokenManager
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.auth import account_lifecycle
@@ -43,13 +44,6 @@ _OTP_SEND_RATE_LIMIT = 5
 _AUTH_ATTEMPT_RATE_LIMIT = 10
 
 
-def _client_ip(request: Request) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
 async def _enforce_rate_limit(request: Request, *, action: str, limit: int) -> None:
     """执行 IP 级限速；Redis 不可用时放行并告警（可用性优先于限速严格性）。"""
     redis_client = getattr(request.app.state, "redis", None)
@@ -59,7 +53,7 @@ async def _enforce_rate_limit(request: Request, *, action: str, limit: int) -> N
         await hit_rate_limit(
             redis_client,
             action=action,
-            identity=_client_ip(request),
+            identity=client_ip_from_request(request),
             limit=limit,
             window_seconds=_AUTH_RATE_LIMIT_WINDOW_SECONDS,
         )

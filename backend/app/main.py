@@ -33,6 +33,7 @@ from backend.app.api import (
     routes_x_media,
 )
 from backend.app.core.auth import validate_jwt_secret
+from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
 from backend.app.core.model_factory import (
     configure_model_provider_runtime,
@@ -78,12 +79,8 @@ class VisitorTrackingMiddleware(BaseHTTPMiddleware):
         if not any(path.startswith(p) for p in _VISITOR_EXCLUDE_PREFIXES):
             redis_client: Redis | None = getattr(request.app.state, "redis", None)
             if redis_client is not None:
-                # 获取真实 IP（支持反向代理 X-Forwarded-For）
-                forwarded_for = request.headers.get("x-forwarded-for")
-                if forwarded_for:
-                    ip = forwarded_for.split(",")[0].strip()
-                else:
-                    ip = request.client.host if request.client else "unknown"
+                # 解析真实客户端 IP（XFF 仅对可信代理采信，防伪造污染统计）
+                ip = client_ip_from_request(request)
 
                 tz_cst = timezone(timedelta(hours=8))
                 today_str = datetime.now(tz_cst).strftime("%Y-%m-%d")

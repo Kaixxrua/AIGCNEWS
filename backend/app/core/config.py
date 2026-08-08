@@ -226,6 +226,14 @@ class Settings(BaseSettings):
     # 不再允许任意来源。
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173,https://aigcnews.cn,https://www.aigcnews.cn"
 
+    # 可信反向代理（逗号分隔 IP/CIDR）：仅当直连对端命中该列表时才采信
+    # X-Forwarded-For 首跳，否则以直连对端为准（防 XFF 伪造绕过 IP 级
+    # 限速与污染访客统计）。默认仅回环（本机调试/单机直跑）；生产经编排
+    # 内 nginx 回源时必须把编排网段加入（见 docker/docker-compose.yml：
+    # 前端容器经内网 proxy_pass 到 aigc-backend），例如
+    # TRUSTED_PROXY_IPS=127.0.0.1,::1,172.16.0.0/12
+    trusted_proxy_ips: str = "127.0.0.1,::1"
+
     sse_heartbeat_interval: int = 15
 
     # 生产环境危险操作的第二授权通道（独立于 CLI 参数的环境授权，

@@ -13,6 +13,7 @@ from typing import Any
 
 from starlette.requests import Request
 
+from backend.app.core.client_ip import client_ip_from_request
 from backend.app.services.auth.rate_limit import (
     RateLimitExceededError,
     hit_rate_limit,
@@ -33,12 +34,10 @@ MCP_JSONRPC_RATE_LIMITED = -32000
 
 
 def mcp_client_ip(request: Request) -> str:
-    """Resolve the caller IP behind a reverse proxy (first X-Forwarded-For hop)."""
+    """Resolve the caller IP; X-Forwarded-For is honored only when the direct
+    peer is a configured trusted reverse proxy (see core.client_ip)."""
 
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    return client_ip_from_request(request)
 
 
 async def enforce_mcp_rate_limit(
