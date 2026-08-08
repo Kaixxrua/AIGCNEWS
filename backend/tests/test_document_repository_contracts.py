@@ -14,6 +14,7 @@ from backend.app.repositories.document_repository import (
     DocumentSearchReader,
     DocumentStatisticsReader,
     DocumentWriter,
+    DocumentXSnapshotBackfillReader,
 )
 from backend.app.repositories.postgres_document_repository import (
     _document_search_candidates,
@@ -76,6 +77,7 @@ class DocumentRepositoryContractTests(unittest.TestCase):
             DocumentStatisticsReader.get_source_counts: "(self)",
             DocumentStatisticsReader.get_today_document_count: "(self)",
             DocumentAdminWriter.clear_all_documents: "(self)",
+            DocumentXSnapshotBackfillReader.list_x_snapshot_backfill_rows: "(self)",
         }
         for method, signature in expected.items():
             with self.subTest(method=method.__name__):

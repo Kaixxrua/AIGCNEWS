@@ -437,6 +437,22 @@ class PostgresDocumentRepository:
         )
         return [_deserialize_row_media(row) for row in rows]
 
+    def list_x_snapshot_backfill_rows(self) -> list[dict[str, Any]]:
+        """补拉重建用：全部 X 文档的 id/published_at/分数（发布时间升序）。
+
+        不做 published_at 有效性过滤——脏时间串由服务层解析时剔除并计数，
+        便于管理端回报「无法归属日期」的存量规模。
+        """
+        return self._fetch_rows(
+            """
+            SELECT d.id, d.published_at, d.raw_score, d.score
+            FROM documents d
+            WHERE d.source = 'x'
+            ORDER BY d.published_at ASC
+            """,
+            (),
+        )
+
     def get_document_count(self) -> int:
         return self._fetch_count("SELECT COUNT(*) AS cnt FROM documents")
 

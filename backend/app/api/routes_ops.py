@@ -24,6 +24,7 @@ from backend.app.api.dependencies import (
     get_scheduler_admin_service,
     get_scheduler_config_admin_service,
     get_x_credential_admin_service,
+    get_x_snapshot_admin_service,
     get_x_watch_account_repository,
     get_x_watch_admin_service,
 )
@@ -63,6 +64,9 @@ from backend.app.models.schema_ops import (
     XCredentialRequest,
     XCredentialResponse,
     XCredentialTestResponse,
+    XSnapshotRebuildRequest,
+    XSnapshotRebuildResponse,
+    XSnapshotRebuildResultItem,
     XWatchAccountDeleteResponse,
     XWatchAccountListResponse,
     XWatchAccountRequest,
@@ -78,6 +82,7 @@ from backend.app.models.schema_projects import (
 from backend.app.repositories.document_repository import DocumentRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.briefing_admin import BriefingAdminService
+from backend.app.services.dashboard.policy import today_local
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
@@ -111,6 +116,7 @@ from backend.app.services.x_credentials.admin_service import (
     XCredentialAdminService,
     XCredentialAdminValidationError,
 )
+from backend.app.services.x_snapshot_admin import XSnapshotAdminService
 from backend.app.services.x_watch.admin_service import (
     SafeXWatchAccountProjection,
     XWatchAdminConflictError,
@@ -429,6 +435,55 @@ def _first_enabled_x_handle(watch_repository: XWatchAccountRepository) -> str:
     if handles:
         return str(handles[0] or "")
     return ""
+
+
+# ── X 快照补拉 ───────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/ops/x/snapshots/rebuild",
+    response_model=XSnapshotRebuildResponse,
+    tags=["Ops"],
+)
+async def rebuild_x_snapshots(
+    request: XSnapshotRebuildRequest,
+    _: dict = Depends(RequireAdmin),
+    service: XSnapshotAdminService = Depends(get_x_snapshot_admin_service),
+) -> XSnapshotRebuildResponse:
+    """从已入库 X 推文重建日榜快照（补拉历史日期）。
+
+    按推文发布时间的 CST 物理日归属补写 document_rank_snapshots，修复
+    X 采集上线前/漏跑导致的日期模式空白；不重新请求 X API。target_date
+    为空时重建全部有推文的历史日期；upsert 幂等，不覆盖更优数据。
+    """
+    target_date = (request.target_date or "").strip()
+    if target_date:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", target_date):
+            raise HTTPException(
+                status_code=400, detail="target_date 格式错误，应为 YYYY-MM-DD"
+            )
+        if target_date > today_local().isoformat():
+            raise HTTPException(status_code=400, detail="不能补拉未来日期的快照")
+
+    outcome = await asyncio.to_thread(service.rebuild, target_date or None)
+    if outcome["results"]:
+        await clear_dashboard_cache_safely()
+
+    total = sum(item["upserted"] for item in outcome["results"])
+    if total:
+        message = (
+            f"X 快照补拉完成：{len(outcome['results'])} 个日期共 {total} 条入榜。"
+        )
+    else:
+        message = "没有可补拉的已入库 X 推文。"
+    return XSnapshotRebuildResponse(
+        status="succeeded",
+        message=message,
+        results=[
+            XSnapshotRebuildResultItem(**item) for item in outcome["results"]
+        ],
+        skipped_no_date=int(outcome["skipped_no_date"]),
+    )
 
 
 # ── 路由 ─────────────────────────────────────────────────────────────────────

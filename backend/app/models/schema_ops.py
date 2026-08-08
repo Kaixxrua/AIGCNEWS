@@ -258,6 +258,22 @@ class XWatchAccountTestResponse(BaseModel):
     account: XWatchAccountResponse
 
 
+class XSnapshotRebuildRequest(BaseModel):
+    target_date: Optional[str] = None  # YYYY-MM-DD；空 = 重建全部历史日期
+
+
+class XSnapshotRebuildResultItem(BaseModel):
+    date: str
+    upserted: int
+
+
+class XSnapshotRebuildResponse(BaseModel):
+    status: str
+    message: str
+    results: list[XSnapshotRebuildResultItem]
+    skipped_no_date: int
+
+
 class XCredentialRequest(BaseModel):
     display_name: str = Field(default="", max_length=128)
     note: str = Field(default="", max_length=2000)

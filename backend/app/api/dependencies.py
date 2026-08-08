@@ -20,6 +20,7 @@ from backend.app.repositories.conversation_repository import ConversationReposit
 from backend.app.repositories.document_repository import (
     DocumentAdminWriter,
     DocumentRepository,
+    DocumentXSnapshotBackfillReader,
     PapersReader,
 )
 from backend.app.repositories.evaluation_repository import EvaluationRepository
@@ -97,6 +98,7 @@ from backend.app.services.wechat.login_service import WeChatLoginService
 from backend.app.services.wechat.sync_service import WeChatSyncService
 from backend.app.services.wechat.transport import WeChatMpTransport
 from backend.app.services.x_credentials.admin_service import XCredentialAdminService
+from backend.app.services.x_snapshot_admin import XSnapshotAdminService
 from backend.app.services.x_watch.admin_service import XWatchAdminService
 
 
@@ -477,6 +479,13 @@ def get_rank_snapshot_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> RankSnapshotRepository:
     return repositories.rank_snapshots
+
+
+def get_x_snapshot_admin_service(
+    documents: DocumentXSnapshotBackfillReader = Depends(get_document_repository),
+    rank_snapshots: RankSnapshotRepository = Depends(get_rank_snapshot_repository),
+) -> XSnapshotAdminService:
+    return XSnapshotAdminService(documents=documents, rank_snapshots=rank_snapshots)
 
 
 def get_wechat_login_attempt_repository(

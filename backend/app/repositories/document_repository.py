@@ -110,6 +110,14 @@ class DocumentRecentReader(Protocol):
         since_iso: str,
         limit: int = 500,
     ) -> list[dict[str, Any]]: ...
+
+
+class DocumentXSnapshotBackfillReader(Protocol):
+    """Read x documents (id/published_at/scores) for historical snapshot rebuild."""
+
+    def list_x_snapshot_backfill_rows(self) -> list[dict[str, Any]]: ...
+
+
 class DocumentStatisticsReader(Protocol):
     """Read aggregate document statistics."""
 

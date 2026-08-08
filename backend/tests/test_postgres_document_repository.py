@@ -269,3 +269,20 @@ def test_upsert_document_author_name_defaults_to_none() -> None:
 
     params = cursor.execute.call_args.args[1]
     assert params["author_name"] is None
+
+
+def test_list_x_snapshot_backfill_rows_queries_x_documents() -> None:
+    repository, _, cursor = repository_with_cursor()
+    cursor.fetchall.return_value = [
+        {"id": "x:1", "published_at": "2026-08-07T01:00:00+00:00", "raw_score": 9.0, "score": 0.0},
+    ]
+
+    rows = repository.list_x_snapshot_backfill_rows()
+
+    sql = cursor.execute.call_args.args[0]
+    assert "d.source = 'x'" in sql
+    # 不做有效性过滤：脏时间串留给服务层剔除并计数（管理端回报口径）
+    assert "~" not in sql
+    assert rows == [
+        {"id": "x:1", "published_at": "2026-08-07T01:00:00+00:00", "raw_score": 9.0, "score": 0.0},
+    ]
