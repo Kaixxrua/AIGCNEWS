@@ -1,0 +1,143 @@
+name: Evals Contract
+
+# AIGC Radar MCP 契约层测评（evals/mcp/test_contract.py）：直接调用全部
+# 8 个工具断言字段契约，全程零 LLM 调用，成本仅为网络往返。
+# 被测目标是真实部署的 MCP endpoint（与生产同库），因此以 secrets 注入
+# 地址与凭据；未配置 secrets 时整个测评 job 跳过而非失败。
+
+on:
+  schedule:
+    # 每日 03:47 UTC，刻意避开整点/半点，错峰 GitHub-hosted runner 高峰
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # secrets 上下文不能出现在 job 级 if 的期望写法里（job if 在 runner 分配前
+  # 求值，secrets 不可用），因此用前置 job 探测并把结果作为 output 传递。
+  check-secrets:
+    name: Gate on eval secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.gate.outputs.enabled }}
+    steps:
+      - name: Check required secrets
+        id: gate
+        env:
+          EVAL_MCP_URL: ${{ secrets.AIGC_RADAR_MCP_URL }}
+          EVAL_MCP_BEARER_TOKEN: ${{ secrets.AIGC_RADAR_MCP_BEARER_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -n "$EVAL_MCP_URL" && -n "$EVAL_MCP_BEARER_TOKEN" ]]; then
+            echo "enabled=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=0" >> "$GITHUB_OUTPUT"
+            echo "::notice::未配置 secrets AIGC_RADAR_MCP_URL / AIGC_RADAR_MCP_BEARER_TOKEN，契约测评跳过（非失败）。配置示例：gh secret set AIGC_RADAR_MCP_URL --body https://<host>/api/mcp"
+          fi
+
+  contract:
+    name: MCP contract eval (8 tools, no LLM)
+    needs: check-secrets
+    if: needs.check-secrets.outputs.enabled == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EVAL_MCP_URL: ${{ secrets.AIGC_RADAR_MCP_URL }}
+      # 原始 token，不含 "Bearer " 前缀（前缀由 secrets 文件生成步骤补齐，
+      # 与 run.sh 从 ~/.claude.json 提取的完整 Authorization 头格式对齐）
+      EVAL_MCP_BEARER_TOKEN: ${{ secrets.AIGC_RADAR_MCP_BEARER_TOKEN }}
+      # 契约层不调用 LLM；mcp-agent 配置加载仅要求该变量存在。
+      # 若另配了 OPENAI_API_KEY secret 则用真值，否则填占位值。
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-contract-layer-no-llm' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 依赖约束来源见 evals/mcp/README.md：
+      # - PyPI 的 mcp-eval 是占位包，真身在 GitHub（安装后发行名 mcpevals）；
+      # - mcp-agent 0.2.x 依赖 mcp<2 的 mcp.server.fastmcp；
+      # - pytest-asyncio 对应 evals/mcp/pytest.ini 的 asyncio_mode=auto；
+      # - openai 仅被 conftest.py 的 UA 补丁 import，契约层不发 LLM 请求。
+      - name: Install mcp-eval harness
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            'git+https://github.com/lastmile-ai/mcp-eval.git' \
+            'mcp<2' \
+            'pytest>=8.2,<9' \
+            pytest-asyncio \
+            openai
+
+      # endpoint 不可达属于"已配置但服务挂了"，直接失败并给出清晰信息，
+      # 比 pytest fixture 的堆栈更可读；任何 HTTP 响应（含 4xx）都算可达。
+      - name: Preflight MCP endpoint reachability
+        shell: bash
+        run: |
+          if ! curl -sS -o /dev/null --max-time 15 "$EVAL_MCP_URL"; then
+            echo "::error::MCP endpoint $EVAL_MCP_URL 不可达，请检查服务与 secrets 配置"
+            exit 1
+          fi
+
+      # mcpeval.yaml 默认指向本机 127.0.0.1:8000，运行时改写为 secret 注入的
+      # 目标地址（README 说明改 url 即可指向其他环境）；不改动仓库内文件。
+      - name: Point mcpeval.yaml at target endpoint
+        working-directory: evals/mcp
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          path = pathlib.Path("mcpeval.yaml")
+          text = path.read_text()
+          text, count = re.subn(
+              r'url: ".*?"',
+              f'url: "{os.environ["EVAL_MCP_URL"]}"',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("mcpeval.yaml 中未找到唯一的 url 配置行")
+          path.write_text(text)
+          PY
+
+      # 与 run.sh 生成的 mcpeval.secrets.yaml 同构（Bearer 头，0600）
+      - name: Generate mcpeval.secrets.yaml
+        working-directory: evals/mcp
+        shell: bash
+        run: |
+          {
+            echo "mcp:"
+            echo "  servers:"
+            echo "    aigc-radar:"
+            echo "      headers:"
+            echo "        Authorization: \"Bearer ${EVAL_MCP_BEARER_TOKEN}\""
+          } > mcpeval.secrets.yaml
+          chmod 600 mcpeval.secrets.yaml
+
+      # 必须在 evals/mcp 目录下运行：mcp_eval 在 import 时按 CWD 读取 .env，
+      # 仓库根 .env 与其配置模型冲突会导致导入即崩溃（README 踩坑记录）。
+      - name: Run contract layer
+        working-directory: evals/mcp
+        run: python -m pytest test_contract.py
+
+      - name: Upload eval reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evals-contract-reports
+          path: evals/mcp/test-reports/
+          if-no-files-found: ignore
+          retention-days: 14
