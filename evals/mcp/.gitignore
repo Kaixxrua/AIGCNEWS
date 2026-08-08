@@ -1,0 +1,5 @@
+# mcp-eval 生成的密钥与报告，一律不入库
+mcpeval.secrets.yaml
+test-reports/
+__pycache__/
+.pytest_cache/

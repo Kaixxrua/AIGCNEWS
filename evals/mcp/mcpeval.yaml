@@ -1,0 +1,32 @@
+# mcp-eval configuration for the AIGC Radar MCP server.
+# 运行方式见 README.md —— 必须从本目录执行（mcp-eval 会读取 CWD 的 .env，
+# 仓库根目录的 .env 与其配置模型冲突，会导致导入即崩溃）。
+name: "AIGC Radar MCP Evaluation"
+description: "Scenario + contract evaluation for the aigc-radar MCP server"
+
+# Agent（被测方客户端）与 Judge 共用的 LLM 默认值；
+# OPENAI_API_KEY / OPENAI_BASE_URL 由 run.sh 从仓库根 .env 注入进程环境。
+provider: openai
+model: gpt-5.6-sol
+
+default_servers: ["aigc-radar"]
+
+mcp:
+  servers:
+    aigc-radar:
+      transport: streamable_http
+      url: "http://127.0.0.1:8000/api/mcp"
+      # Authorization 头在 mcpeval.secrets.yaml（git 忽略，由 run.sh 自动生成）
+
+judge:
+  provider: openai
+  model: gpt-5.6-sol
+  min_score: 0.7
+
+execution:
+  max_concurrency: 1   # 被测 endpoint 有按 token 的入站限流，串行最稳
+  timeout_seconds: 300
+
+reporting:
+  formats: ["json", "markdown"]
+  output_dir: "./test-reports"
