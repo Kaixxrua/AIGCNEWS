@@ -11,14 +11,10 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi_cache.decorator import cache
 
 from backend.app.api.dependencies import (
-    get_application_repositories,
     get_document_repository,
     get_project_catalog_query_service,
     get_rank_snapshot_repository,
     get_user_account_repository,
-)
-from backend.app.repositories.application_repository_factory import (
-    ApplicationRepositories,
 )
 from backend.app.repositories.document_repository import (
     DocumentRecentReader,
@@ -78,6 +74,16 @@ async def _get_mcp_total_calls() -> int:
         return 0
 
 
+# 使用该 builder 的端点实际消费的 query 参数并集（见各路由 Query 声明）：
+#   top/radar/summary/snapshot-dates: limit/source/date（看板已仅日榜，无 period）
+#   x/recent: hours/limit；live-stats/visitor-count: 无参数
+# 白名单外的参数一律不进 key——前端 _t 破缓存参数如此，匿名用户构造的
+# 随机参数更是如此：否则每个新参数值都生成新 key，可写爆 Redis 缓存。
+_DASHBOARD_CACHE_KEY_QUERY_PARAMS = frozenset(
+    {"limit", "source", "date", "hours"}
+)
+
+
 def _dashboard_cache_key_builder(
     func,
     namespace: str = "",
@@ -86,18 +92,17 @@ def _dashboard_cache_key_builder(
     *args,
     **kwargs,
 ) -> str:
-    """为 dashboard 接口构建稳定 cache key，确保 date/period/source/limit 等参数隔离。
+    """为 dashboard 接口构建稳定 cache key，确保 date/source/limit 等参数隔离。
 
     关键修复：当 date 参数未传入时，显式注入 CST 当天日期到 key 中，
     防止跨日后命中前一天缓存（原先无 date 参数时 key 完全相同）。
     """
-    from datetime import datetime, timedelta, timezone
-
-    query_params = dict(request.query_params) if request is not None else {}
-
-    # 前端 cache-buster（_t=Date.now()）只用于穿透浏览器/中间层缓存，
-    # 不进服务端 key——否则每请求一个新 key，服务端缓存永远零命中。
-    query_params.pop("_t", None)
+    query_params: dict[str, str] = {}
+    if request is not None:
+        for name in _DASHBOARD_CACHE_KEY_QUERY_PARAMS:
+            value = request.query_params.get(name)
+            if value is not None:
+                query_params[name] = value
 
     # 若未传 date 参数，注入今日 CST 日期，确保每天 key 不同
     if "date" not in query_params:
@@ -155,13 +160,12 @@ async def get_top_list(
     source: Optional[str] = Query(
         default=None, description="过滤来源：all/arxiv/github/news"
     ),
-    period: str = Query(default="daily", pattern="^(daily|weekly|monthly)$"),
     date: Optional[str] = Query(
         default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
     ),
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
 ):
-    """Return top-N documents ranked by vote count, optionally filtered by source, period and date."""
+    """Return top-N daily documents ranked by vote count, optionally filtered by source and date."""
     source_type = None if (not source or source == "all") else source
     snapshot_date = policy.resolve_snapshot_date(date)
 
@@ -172,7 +176,7 @@ async def get_top_list(
         return {
             "items": [],
             "total": 0,
-            "period": period,
+            "period": "daily",
             "snapshot_date": snapshot_date,
             "is_finalized": board["is_finalized"],
             "is_embargoed": True,
@@ -180,7 +184,7 @@ async def get_top_list(
 
     query_service = DashboardQueryService(rank_snapshots)
     docs = await asyncio.to_thread(
-        query_service.get_docs_for_date, snapshot_date, period, source_type, 500
+        query_service.get_docs_for_date, snapshot_date, "daily", source_type, 500
     )
     deduped = policy.dedupe_docs(docs)
     top_items = deduped[:limit]
@@ -191,7 +195,7 @@ async def get_top_list(
     return {
         "items": top_items,
         "total": len(top_items),
-        "period": period,
+        "period": "daily",
         "snapshot_date": snapshot_date,
         "is_finalized": board["is_finalized"],
         "is_embargoed": False,
@@ -249,7 +253,6 @@ async def get_trend_radar(
     source: Optional[str] = Query(
         default=None, description="过滤来源：all/arxiv/github/news"
     ),
-    period: str = Query(default="daily", pattern="^(daily|weekly|monthly)$"),
     date: Optional[str] = Query(
         default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
     ),
@@ -266,7 +269,7 @@ async def get_trend_radar(
         return {
             "radar": [],
             "doc_count": 0,
-            "period": period,
+            "period": "daily",
             "snapshot_date": snapshot_date,
             "is_finalized": board["is_finalized"],
             "is_embargoed": True,
@@ -276,7 +279,7 @@ async def get_trend_radar(
     docs = await asyncio.to_thread(
         query_service.get_docs_for_date,
         snapshot_date,
-        period,
+        "daily",
         source_type,
         max(limit, 100),
     )
@@ -284,7 +287,7 @@ async def get_trend_radar(
     return {
         "radar": radar,
         "doc_count": len(docs[:limit]),
-        "period": period,
+        "period": "daily",
         "snapshot_date": snapshot_date,
         "is_finalized": board["is_finalized"],
         "is_embargoed": False,
@@ -295,7 +298,6 @@ async def get_trend_radar(
 @cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_dashboard_summary(
     request: Request,
-    period: str = Query(default="daily", pattern="^(daily|weekly|monthly)$"),
     date: Optional[str] = Query(
         default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
     ),
@@ -304,7 +306,7 @@ async def get_dashboard_summary(
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
-    """Return a combined dashboard payload: period top-10 + radar + basic stats + source breakdown.
+    """Return a combined dashboard payload: daily top-10 + radar + basic stats + source breakdown.
 
     当传入 date 参数时，从 document_rank_snapshots 表查询该日期的历史排行数据；
     未传入时默认查当天，若无快照则回退到原有 documents 表逻辑。
@@ -352,7 +354,7 @@ async def get_dashboard_summary(
                 "today_unique_visitors": user_count,
                 "mcp_total_calls": mcp_total_calls,
             },
-            "period": period,
+            "period": "daily",
             "snapshot_date": snapshot_date,
             "is_finalized": board["is_finalized"],
             "is_embargoed": True,
@@ -360,7 +362,7 @@ async def get_dashboard_summary(
 
     query_service = DashboardQueryService(rank_snapshots)
     docs = await asyncio.to_thread(
-        query_service.get_docs_for_date, snapshot_date, period, None, 500
+        query_service.get_docs_for_date, snapshot_date, "daily", None, 500
     )
     deduped = policy.dedupe_docs(docs)
     top10 = deduped[:10]
@@ -390,7 +392,7 @@ async def get_dashboard_summary(
             "today_unique_visitors": user_count,
             "mcp_total_calls": mcp_total_calls,
         },
-        "period": period,
+        "period": "daily",
         "snapshot_date": snapshot_date,
         "is_finalized": board["is_finalized"],
         "is_embargoed": False,
@@ -434,22 +436,21 @@ async def get_dashboard_live_stats(
 async def get_snapshot_dates(
     limit: int = Query(default=60, ge=1, le=365),
     source: Optional[str] = Query(default=None),
-    period: Optional[str] = Query(default=None, pattern="^(daily|weekly|monthly)$"),
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
 ):
-    """返回指定来源和周期有快照记录的日期列表（降序）。"""
+    """返回指定来源有日榜快照记录的日期列表（降序）。"""
     source_type = None if (not source or source == "all") else source
     dates = await asyncio.to_thread(
         rank_snapshots.get_snapshot_dates,
         limit,
         source_type,
-        period,
+        "daily",
     )
     return {
         "dates": dates,
         "total": len(dates),
         "source": source_type or "all",
-        "period": period,
+        "period": "daily",
     }
 
 
@@ -472,22 +473,3 @@ async def get_visitor_count(
         "today_registered_users": today_registered_users,
         "today_unique_visitors": user_count,
     }
-
-
-@router.get("/dashboard/github-hot")
-@cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
-async def get_github_hot_list(
-    period: str = Query(default="daily", pattern="^(daily|weekly|monthly)$"),
-    limit: int = Query(default=10, ge=1, le=50),
-    repositories: ApplicationRepositories = Depends(get_application_repositories),
-):
-    """Return GitHub hot repositories ranked by growth + baseline + age correction."""
-    from backend.app.services.ingestion.github_hot_service import get_github_hot_rank
-
-    result = await asyncio.to_thread(
-        get_github_hot_rank,
-        period,
-        limit,
-        db=repositories.github_ingestion,
-    )
-    return result

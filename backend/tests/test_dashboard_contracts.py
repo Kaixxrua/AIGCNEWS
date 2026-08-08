@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import FastAPI
@@ -100,7 +100,7 @@ def test_dashboard_compatibility_helpers_remain_importable() -> None:
 def test_cache_key_preserves_namespace_function_path_and_sorted_query() -> None:
     request = _request(
         "/api/dashboard/top",
-        "source=github&period=weekly&limit=7&date=2025-01-02",
+        "source=github&limit=7&date=2025-01-02",
     )
 
     key = routes_dashboard._dashboard_cache_key_builder(
@@ -114,7 +114,6 @@ def test_cache_key_preserves_namespace_function_path_and_sorted_query() -> None:
         "namespace": "dashboard",
         "query": {
             "source": "github",
-            "period": "weekly",
             "limit": "7",
             "date": "2025-01-02",
         },
@@ -138,6 +137,44 @@ def test_cache_key_ignores_frontend_cache_buster_param() -> None:
     )
     # _t 只穿透浏览器/中间层缓存，不进服务端 key：不同 _t 同 key 才能命中缓存
     assert first == second
+
+
+def test_cache_key_ignores_unknown_params_but_separates_whitelisted_ones() -> None:
+    baseline = routes_dashboard._dashboard_cache_key_builder(
+        routes_dashboard.get_top_list,
+        namespace="dashboard",
+        request=_request("/api/dashboard/top", "limit=10"),
+    )
+    # 白名单外的随机参数不进 key：匿名用户无法用随机参数写爆 Redis。
+    # period 已随看板周/月榜下线，同样被忽略（不再切分缓存）。
+    with_junk = routes_dashboard._dashboard_cache_key_builder(
+        routes_dashboard.get_top_list,
+        namespace="dashboard",
+        request=_request(
+            "/api/dashboard/top",
+            "limit=10&period=weekly&bogus=1&_t=999&aaa=zzz",
+        ),
+    )
+    assert baseline == with_junk
+
+    # 白名单参数仍隔离缓存：业务参数变化必须是新 key
+    other_limit = routes_dashboard._dashboard_cache_key_builder(
+        routes_dashboard.get_top_list,
+        namespace="dashboard",
+        request=_request("/api/dashboard/top", "limit=20"),
+    )
+    other_hours = routes_dashboard._dashboard_cache_key_builder(
+        routes_dashboard.get_x_recent,
+        namespace="dashboard",
+        request=_request("/api/dashboard/x/recent", "hours=48"),
+    )
+    default_hours = routes_dashboard._dashboard_cache_key_builder(
+        routes_dashboard.get_x_recent,
+        namespace="dashboard",
+        request=_request("/api/dashboard/x/recent", "hours=24"),
+    )
+    assert baseline != other_limit
+    assert other_hours != default_hours
 
 
 def test_single_source_query_uses_exact_then_same_period_fallback_and_stops() -> None:
@@ -259,7 +296,7 @@ def test_daily_hackernews_excludes_yesterday_then_sorts_by_points() -> None:
     assert service_reader.doc_id_calls == reader.doc_id_calls
 
 
-def test_top_route_preserves_dedupe_limit_and_forwarded_pdf_url() -> None:
+def test_top_route_preserves_dedupe_limit_and_relative_pdf_url() -> None:
     date = "2020-01-02"
     reader = FakeRankSnapshotReader(
         {
@@ -291,7 +328,7 @@ def test_top_route_preserves_dedupe_limit_and_forwarded_pdf_url() -> None:
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
     try:
         response = TestClient(app).get(
-            f"/api/dashboard/top?source=github&period=daily&limit=2&date={date}",
+            f"/api/dashboard/top?source=github&limit=2&date={date}",
             headers={"X-Forwarded-Proto": "https"},
         )
     finally:
@@ -300,8 +337,9 @@ def test_top_route_preserves_dedupe_limit_and_forwarded_pdf_url() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert [item["id"] for item in payload["items"]] == ["first", "second"]
+    # pdf_media_url 不采信可伪造的 Host/X-Forwarded-Proto：默认相对路径
     assert payload["items"][0]["pdf_media_url"] == (
-        "https://testserver/api/media/papers/report.pdf"
+        "/api/media/papers/report.pdf"
     )
     assert payload["items"][1]["pdf_media_url"] is None
     assert payload == {
@@ -331,9 +369,9 @@ def test_top_route_serves_limit_past_legacy_50_cap() -> None:
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
     try:
         client = TestClient(app)
-        ok = client.get(f"/api/dashboard/top?source=x&period=daily&limit=60&date={date}")
+        ok = client.get(f"/api/dashboard/top?source=x&limit=60&date={date}")
         too_big = client.get(
-            f"/api/dashboard/top?source=x&period=daily&limit=501&date={date}"
+            f"/api/dashboard/top?source=x&limit=501&date={date}"
         )
     finally:
         FastAPICache.reset()
@@ -469,7 +507,7 @@ def test_top_route_preserves_x_media_metadata() -> None:
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
     try:
         response = TestClient(app).get(
-            f"/api/dashboard/top?source=x&period=daily&limit=10&date={snapshot_date}",
+            f"/api/dashboard/top?source=x&limit=10&date={snapshot_date}",
         )
     finally:
         FastAPICache.reset()
@@ -481,59 +519,6 @@ def test_top_route_preserves_x_media_metadata() -> None:
         {"type": "photo", "url": "https://pbs.twimg.com/a.jpg", "width": 1200, "height": 800}
     ]
     assert payload["items"][1].get("media") is None
-
-    docs = [
-        {
-            "id": "github-weekly",
-            "source": "github",
-            "source_channel": "github_trending_weekly",
-            "rank_in_period": 2,
-            "raw_score": 200,
-            "url": "https://example.test/repo",
-            "title": "LLM image benchmark",
-            "published_date": "2025-01-02",
-        },
-        {
-            "id": "duplicate",
-            "source": "github",
-            "source_channel": "github_trending_weekly",
-            "rank_in_period": 3,
-            "raw_score": 500,
-            "url": "https://example.test/repo",
-        },
-        {
-            "id": "fallback-ignored",
-            "source": "github",
-            "source_channel": "github_hot_weekly",
-            "rank_in_period": 1,
-            "raw_score": 900,
-            "url": "https://example.test/fallback",
-        },
-        {
-            "id": "arxiv",
-            "source": "arxiv",
-            "source_channel": "huggingface_weekly_html",
-            "raw_score": 12,
-            "title": "agent inference",
-            "created_at": "2025-01-01",
-        },
-    ]
-    reference_date = date(2025, 1, 2)
-
-    extracted_filtered = policy.filter_docs_by_period(
-        docs, "weekly", reference_date=reference_date
-    )
-
-    assert [doc["id"] for doc in extracted_filtered] == [
-        "github-weekly",
-        "duplicate",
-        "arxiv",
-    ]
-    assert [doc["id"] for doc in policy.dedupe_docs(extracted_filtered)] == [
-        "github-weekly",
-        "arxiv",
-    ]
-    assert policy.score_categories(docs) == routes_dashboard._score_categories(docs)
 
 
 def test_extracted_policy_matches_legacy_date_and_pdf_projection() -> None:
@@ -621,7 +606,7 @@ def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
     client = _summary_client(monkeypatch, lambda: FakeCatalog())
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
     try:
-        response = client.get("/api/dashboard/summary?period=daily&date=2020-01-02")
+        response = client.get("/api/dashboard/summary?date=2020-01-02")
     finally:
         FastAPICache.reset()
 
@@ -657,9 +642,11 @@ def test_summary_github_stat_falls_back_to_documents_when_catalog_unavailable(mo
         raise RuntimeError("catalog down")
 
     client = _summary_client(monkeypatch, broken_factory)
-    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
+    # 与上一个 summary 用例同 URL 同 key：必须用独立 prefix 隔离类级共享的
+    # InMemoryBackend._store，否则命中上一用例写入的缓存响应
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-summary-fallback")
     try:
-        response = client.get("/api/dashboard/summary?period=weekly&date=2020-01-02")
+        response = client.get("/api/dashboard/summary?date=2020-01-02")
     finally:
         FastAPICache.reset()
 

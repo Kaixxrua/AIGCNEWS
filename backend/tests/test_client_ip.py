@@ -152,8 +152,15 @@ class AuthRateLimitXffSpoofContracts(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.json()["detail"], "请求过于频繁，请稍后再试")
-        # 所有尝试都归并到同一直连对端桶（TestClient 对端为 "testclient"）
-        self.assertEqual(len(self.redis.values), 1)
+        # 所有尝试都归并到同一直连对端桶（TestClient 对端为 "testclient"）；
+        # 另一桶为 per-账号（email）节流桶。伪造的 XFF 不产生任何桶。
+        self.assertEqual(
+            set(self.redis.values),
+            {
+                "ratelimit:auth.login:testclient",
+                "ratelimit:auth.login.account:user@example.com",
+            },
+        )
 
 
 class _SetRecordingRedis:
