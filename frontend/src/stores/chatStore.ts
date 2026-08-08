@@ -18,6 +18,7 @@ import {
   ChatLifecycleCoordinator,
   type ChatLifecycleState,
 } from '@/features/chat/chatLifecycleCoordinator'
+import { TypewriterPlayer } from '@/features/chat/typewriterPlayer'
 import {
   buildChatHistory,
   normalizeChatAttachment,
@@ -445,26 +446,14 @@ export const useChatStore = defineStore('chat', {
     }) {
       const { temperature } = this.settings
       let eventState = initialChatStreamEventState(params.conversationId)
-      let sseFinished = false
       const coordinator = coordinatorFor(this as ChatStoreContext)
-      let runValid = true
 
-      const contentQueue: string[] = []
-      const thinkingQueue: string[] = []
-      const CONTENT_CHARS_PER_FRAME = 3
-      const THINKING_CHARS_PER_FRAME = 12
-      let typingTimer: ReturnType<typeof setInterval> | null = null
-
-      // 思维链计时：记录首次收到 thinking/content 事件的时间
-      const thinkingStartMs = Date.now()
-      let thinkingEndMs = 0
-      let contentStarted = false
+      const findAssistantMessage = () =>
+        (this.messageMap[params.conversationId] || []).find((item) => item.id === params.assistantTempId)
 
       const finishStreaming = async () => {
         // 保存流式阶段计算好的时长
-        const durationSec = thinkingEndMs
-          ? Math.round((thinkingEndMs - thinkingStartMs) / 1000)
-          : Math.round((Date.now() - thinkingStartMs) / 1000)
+        const durationSec = player.thinkingDurationSec()
 
         this.isStreaming = false
         this.streamPhase = 'idle'
@@ -485,73 +474,30 @@ export const useChatStore = defineStore('chat', {
         }
       }
 
-      const startTyping = () => {
-        if (typingTimer !== null) return
-        typingTimer = setInterval(() => {
-          if (!runValid) {
-            if (typingTimer !== null) clearInterval(typingTimer)
-            typingTimer = null
-            return
-          }
-          const current = (this.messageMap[params.conversationId] || []).find((item) => item.id === params.assistantTempId)
-          if (!current) return
-
-          let updated = false
-          if (thinkingQueue.length > 0) {
-            const chars = thinkingQueue.splice(0, THINKING_CHARS_PER_FRAME).join('')
-            const thinking = current.thinking + chars
+      const player = new TypewriterPlayer({
+        readSnapshot: () => {
+          const current = findAssistantMessage()
+          return current ? { thinking: current.thinking, content: current.content } : undefined
+        },
+        emitFrame: (patch) => {
+          this.patchMessage(params.conversationId, params.assistantTempId, patch)
+        },
+        onDrained: () => {
+          const finalMsg = findAssistantMessage()
+          if (finalMsg) {
+            // 如果一直没有 content（纯思维链无正文），此时也要结束 isThinking
+            const durationSec = finalMsg.thinkingDurationSec || player.thinkingDurationSec()
             this.patchMessage(params.conversationId, params.assistantTempId, {
-              thinking,
-              thinkingPreview: `${thinking.slice(0, 80)}${thinking.length > 80 ? '…' : ''}`,
-              hasThinking: true,
-              isThinking: true,
-              isStreaming: true,
+              isThinking: false,
+              isStreaming: false,
+              thinkingDurationSec: durationSec,
+              content: finalMsg.content || i18n.global.t('chat.emptyResponseContent'),
+              sources: eventState.pendingSources.length > 0 ? eventState.pendingSources : finalMsg.sources,
             })
-            updated = true
-          } else if (contentQueue.length > 0) {
-            const chars = contentQueue.splice(0, CONTENT_CHARS_PER_FRAME).join('')
-            // 首次渲染 content 时，结束思维链计时
-            if (!contentStarted) {
-              contentStarted = true
-              thinkingEndMs = thinkingEndMs || Date.now()
-              const durationSec = Math.round((thinkingEndMs - thinkingStartMs) / 1000)
-              this.patchMessage(params.conversationId, params.assistantTempId, {
-                content: current.content + chars,
-                isThinking: false,
-                isStreaming: true,
-                thinkingDurationSec: durationSec,
-              })
-            } else {
-              this.patchMessage(params.conversationId, params.assistantTempId, {
-                content: current.content + chars,
-                isThinking: false,
-                isStreaming: true,
-              })
-            }
-            updated = true
           }
-
-          if (!updated && sseFinished && thinkingQueue.length === 0 && contentQueue.length === 0) {
-            if (typingTimer !== null) {
-              clearInterval(typingTimer)
-              typingTimer = null
-            }
-            const finalMsg = (this.messageMap[params.conversationId] || []).find((item) => item.id === params.assistantTempId)
-            if (finalMsg) {
-              // 如果一直没有 content（纯思维链无正文），此时也要结束 isThinking
-              const durationSec = finalMsg.thinkingDurationSec || Math.round((Date.now() - thinkingStartMs) / 1000)
-              this.patchMessage(params.conversationId, params.assistantTempId, {
-                isThinking: false,
-                isStreaming: false,
-                thinkingDurationSec: durationSec,
-                content: finalMsg.content || i18n.global.t('chat.emptyResponseContent'),
-                sources: eventState.pendingSources.length > 0 ? eventState.pendingSources : finalMsg.sources,
-              })
-            }
-            void finishStreaming()
-          }
-        }, 16)
-      }
+          void finishStreaming()
+        },
+      })
 
       const run = coordinator.startStreamRun({
         command: {
@@ -588,26 +534,15 @@ export const useChatStore = defineStore('chat', {
           this.streamPhase = eventState.phase
 
           if (transition.effect.type === 'thinking') {
-            for (const ch of transition.effect.chunk) thinkingQueue.push(ch)
-            startTyping()
+            player.enqueueThinking(transition.effect.chunk)
             return
           }
           if (transition.effect.type === 'content') {
-            for (const ch of transition.effect.thinkingChunk) thinkingQueue.push(ch)
-            // 记录首次收到 content 的时间，用于计算思维链时长
-            if (!thinkingEndMs) {
-              thinkingEndMs = Date.now()
-            }
-            for (const ch of transition.effect.chunk) contentQueue.push(ch)
-            startTyping()
+            player.enqueueContent(transition.effect.chunk, transition.effect.thinkingChunk)
             return
           }
           if (transition.effect.type === 'error') {
-            sseFinished = true
-            if (typingTimer !== null) {
-              clearInterval(typingTimer)
-              typingTimer = null
-            }
+            player.stop()
             this.patchMessage(params.conversationId, params.assistantTempId, {
               content: i18n.global.t('chat.requestFailed', { detail: transition.effect.message }),
               isThinking: false,
@@ -618,23 +553,14 @@ export const useChatStore = defineStore('chat', {
           }
           },
           onDone: () => {
-            sseFinished = true
-            if (thinkingQueue.length === 0 && contentQueue.length === 0) {
-              if (typingTimer !== null) {
-                clearInterval(typingTimer)
-                typingTimer = null
-              }
+            if (player.finishInput()) {
               void finishStreaming()
               return
             }
             return false
           },
         onError: (error: unknown) => {
-          sseFinished = true
-          if (typingTimer !== null) {
-            clearInterval(typingTimer)
-            typingTimer = null
-          }
+          player.stop()
           // 提取友好错误消息（支持 429 消息限额等结构化错误）
           const errMsg = error instanceof Error ? error.message : String(error)
           const isLimitError = (error as { status?: number })?.status === 429
@@ -650,11 +576,7 @@ export const useChatStore = defineStore('chat', {
           this.isStreaming = false
         },
         onAbort: (_reason, context) => {
-          runValid = false
-          if (typingTimer !== null) {
-            clearInterval(typingTimer)
-            typingTimer = null
-          }
+          player.stop()
           this.patchMessage(context.conversationId, context.messageId, {
             isThinking: false,
             isStreaming: false,
