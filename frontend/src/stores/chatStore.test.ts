@@ -159,6 +159,26 @@ describe('chat store domain contracts', () => {
     expect(store.buildHistory('7')).toEqual([])
   })
 
+  it('patches a message in place without rebuilding the conversation array', () => {
+    const store = useChatStore()
+    store.messageMap = {
+      '7': [message('1', 'user', 'a'), message('2', 'assistant', 'b')],
+    }
+    const listBefore = store.messageMap['7']
+    const firstBefore = listBefore?.[0]
+
+    store.patchMessage('7', '2', { content: 'c' })
+
+    expect(store.messageMap['7']).toBe(listBefore)
+    expect(store.messageMap['7']?.[0]).toBe(firstBefore)
+    expect(store.messageMap['7']?.[1]).toMatchObject({ role: 'assistant', content: 'c' })
+
+    store.patchMessage('7', 'missing', { content: 'x' })
+    store.patchMessage('ghost', '1', { content: 'x' })
+    expect(store.messageMap['7']).toHaveLength(2)
+    expect(store.messageMap['7']?.[1]?.content).toBe('c')
+  })
+
   it('loads a paper conversation without changing active global state', async () => {
     mocks.ensureConversation.mockResolvedValue({ id: 8, title: 'Paper', scope: 'paper', scope_key: 'paper-1', message_count: 1 })
     mocks.fetchConversationDetail.mockResolvedValue({

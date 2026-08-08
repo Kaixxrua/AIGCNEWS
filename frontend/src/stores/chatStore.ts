@@ -288,11 +288,13 @@ export const useChatStore = defineStore('chat', {
     },
 
     patchMessage(conversationId: string, messageId: string, patch: Partial<ChatMessage>) {
-      const current = this.messageMap[conversationId] || []
-      this.messageMap = {
-        ...this.messageMap,
-        [conversationId]: current.map((item) => item.id === messageId ? { ...item, ...patch } : item),
-      }
+      const list = this.messageMap[conversationId]
+      if (!list) return
+      const index = list.findIndex((item) => item.id === messageId)
+      if (index < 0) return
+      // 打字机每 16ms 一帧都会经过这里：按索引原地替换目标项，
+      // 避免逐帧重建整段数组导致整条消息列表逐帧 diff。
+      list[index] = { ...list[index], ...patch }
     },
 
     replaceTempAssistantMessage(conversationId: string, tempId: string, dto: ChatMessageDTO) {
