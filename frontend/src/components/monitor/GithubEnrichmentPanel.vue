@@ -11,6 +11,7 @@ const props = defineProps<{
   retrying: boolean
   backfilling: boolean
   cancelling: boolean
+  cancelWatching: boolean
   polling: boolean
   concurrency: number
   reasoningEffort: string
@@ -136,16 +137,17 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
         </span>
       </label>
 
-      <!-- 仅在有批次运行时出现：本地轮询中，或服务端 running 标记（刷新页面后仍可终止） -->
+      <!-- 有批次运行时出现：本地轮询中，或服务端 running 标记（刷新页面后仍可终止）；
+           终止观望期（等待服务端 running 清零）保持锁定，批次结束才消失 -->
       <button
-        v-if="polling || status?.running"
+        v-if="polling || status?.running || cancelWatching"
         class="monitor-btn-secondary enrichment-cancel-btn"
-        :disabled="cancelling"
+        :disabled="cancelling || cancelWatching"
         :title="t('monitor.enrichment.cancelTitle')"
         @click="emit('cancel')"
       >
         <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
-        {{ t(cancelling ? 'monitor.enrichment.cancelling' : 'monitor.enrichment.cancel') }}
+        {{ t(cancelling || cancelWatching ? 'monitor.enrichment.cancelling' : 'monitor.enrichment.cancel') }}
       </button>
     </div>
 

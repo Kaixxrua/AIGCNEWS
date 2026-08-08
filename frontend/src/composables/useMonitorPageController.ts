@@ -75,6 +75,9 @@ export const useMonitorPageController = ({
   const retryingEnrichment = ref(false)
   const backfillingEnrichment = ref(false)
   const cancellingEnrichment = ref(false)
+  // 终止观望期：取消信号发出后轮询到服务端 running 清零才解锁按钮，
+  // 否则服务端稍后的 running→false 翻转永远到不了面板，按钮一直可点
+  const enrichmentCancelWatching = ref(false)
   const enrichmentConcurrency = ref(3)
   // 富化专用推理强度：空串=跟随模型服务配置；effective 为后端解析的当前生效档位
   const enrichmentReasoningEffort = ref('')
@@ -324,18 +327,39 @@ export const useMonitorPageController = ({
     } catch (error) { errorMsg.value = detail(error) }
     finally { backfillingEnrichment.value = false }
   }
+  // 终止观望轮询上限：4s × 15 ≈ 60s，覆盖在途条目收尾的超时窗口
+  const ENRICHMENT_CANCEL_WATCH_MAX_POLLS = 15
+  const watchEnrichmentCancel = async (attempt: number) => {
+    if (!enrichmentCancelWatching.value) return
+    try { enrichmentStatus.value = await api.fetchGithubEnrichmentStatus() }
+    catch (error) { console.error('Failed to watch GitHub enrichment cancel', error) }
+    // 在途期间观望已被重置（卸载/离页兜底）：丢弃本次结果
+    if (!enrichmentCancelWatching.value) return
+    if (!enrichmentStatus.value?.running) {
+      enrichmentCancelWatching.value = false
+      successMsg.value = i18n.global.t('monitor.enrichment.cancelConfirmed')
+      return
+    }
+    if (attempt >= ENRICHMENT_CANCEL_WATCH_MAX_POLLS) {
+      enrichmentCancelWatching.value = false
+      successMsg.value = i18n.global.t('monitor.enrichment.cancelWatchTimeout')
+      return
+    }
+    schedule(() => { void watchEnrichmentCancel(attempt + 1) }, ENRICHMENT_POLL_INTERVAL)
+  }
   const cancelEnrichment = async () => {
-    if (cancellingEnrichment.value) return
+    if (cancellingEnrichment.value || enrichmentCancelWatching.value) return
     // 本地轮询中或服务端标记 running 时才有可终止的批次；其余情况视为无操作
     if (!enrichmentPolling.value && !enrichmentStatus.value?.running) return
     clearMessages()
     cancellingEnrichment.value = true
     try {
       const result = await api.cancelGithubEnrichment()
-      // 终止信号已发出：停掉本地轮询；进行中的条目仍会跑完，
-      // 稍候补拉一次状态让面板反映本批部分进度
+      // 终止信号已发出：停掉本地进度轮询，转入终止观望轮询；
+      // 服务端 running 清零前按钮保持锁定，批次真正结束才解锁刷新
       stopEnrichmentPolling(result.message || i18n.global.t('monitor.enrichment.cancelRequested'))
-      schedule(() => { void fetchGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
+      enrichmentCancelWatching.value = true
+      schedule(() => { void watchEnrichmentCancel(1) }, ENRICHMENT_POLL_INTERVAL)
     } catch (error) { errorMsg.value = detail(error) }
     finally { cancellingEnrichment.value = false }
   }
@@ -400,6 +424,7 @@ export const useMonitorPageController = ({
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
     crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
     enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, cancellingEnrichment, enrichmentConcurrency, enrichmentPolling,
+    enrichmentCancelWatching,
     enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
     fetchGithubEnrichmentStatus, fetchGithubEnrichmentConfig, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
   }

@@ -581,30 +581,86 @@ describe('Monitor GitHub enrichment controls', () => {
     expect(api.triggerGithubEnrichment).toHaveBeenCalledWith(5, 10)
   })
 
-  it('cancels a running batch, stops polling, and refetches status exactly once', async () => {
-    const { api, controller, schedule } = createController()
+  it('cancels a running batch, then locks the button until the server confirms the batch ended', async () => {
+    const { api, controller } = createController()
     vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 0, pending: 5 })
     await controller.refreshData()
     await controller.backfillPendingEnrichments()
     expect(controller.enrichmentPolling.value).toBe(true)
 
     vi.mocked(api.cancelGithubEnrichment).mockResolvedValue({ status: 'cancelling', message: '已请求终止富化' })
-    schedule.mockClear()
     await controller.cancelEnrichment()
 
     expect(api.cancelGithubEnrichment).toHaveBeenCalledOnce()
     expect(controller.enrichmentPolling.value).toBe(false)
     expect(controller.cancellingEnrichment.value).toBe(false)
+    // 观望期开始：按钮保持锁定，等服务端 running 清零
+    expect(controller.enrichmentCancelWatching.value).toBe(true)
     expect(controller.successMsg.value).toBe('已请求终止富化')
-    // 终止后只安排一次补拉，反映本批部分进度
-    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 4000)
 
     const callsBefore = vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length
     await vi.advanceTimersByTimeAsync(4000)
+    // 观望轮询第一拍：running 已清零 → 解锁并提示批次已终止
     expect(vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length).toBe(callsBefore + 1)
-    // 轮询已停：继续推进时间不再拉取状态
+    expect(controller.enrichmentCancelWatching.value).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.enrichment.cancelConfirmed'))
+    // 观望结束：继续推进时间不再拉取状态
     await vi.advanceTimersByTimeAsync(12000)
     expect(vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length).toBe(callsBefore + 1)
+  })
+
+  it('keeps the cancel button locked while the server still reports running, unlocks when it clears', async () => {
+    const { api, controller } = createController()
+    let running = true
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockImplementation(async () => ({ eligible: 10, succeeded: 5, failed: 0, pending: 5, running }))
+    await controller.refreshData()
+    vi.mocked(api.cancelGithubEnrichment).mockResolvedValue({ status: 'cancelling', message: '' })
+    await controller.cancelEnrichment()
+    expect(controller.enrichmentCancelWatching.value).toBe(true)
+
+    const callsBefore = vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length
+    // running 仍为 true：观望轮询继续，按钮不解锁
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(controller.enrichmentCancelWatching.value).toBe(true)
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(controller.enrichmentCancelWatching.value).toBe(true)
+    expect(vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length).toBe(callsBefore + 2)
+
+    // 服务端 running 翻转后下一拍解锁
+    running = false
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(controller.enrichmentCancelWatching.value).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.enrichment.cancelConfirmed'))
+  })
+
+  it('unlocks with a timeout hint when the server keeps running past the watch cap', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 0, pending: 5, running: true })
+    await controller.refreshData()
+    vi.mocked(api.cancelGithubEnrichment).mockResolvedValue({ status: 'cancelling', message: '' })
+    await controller.cancelEnrichment()
+
+    const callsBefore = vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length
+    // 4s × 15 拍后兜底解锁
+    await vi.advanceTimersByTimeAsync(4000 * 15)
+    expect(vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length).toBe(callsBefore + 15)
+    expect(controller.enrichmentCancelWatching.value).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.enrichment.cancelWatchTimeout'))
+    await vi.advanceTimersByTimeAsync(12000)
+    expect(vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length).toBe(callsBefore + 15)
+  })
+
+  it('ignores a second cancel while the cancel watch is still active', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 0, pending: 5, running: true })
+    await controller.refreshData()
+    vi.mocked(api.cancelGithubEnrichment).mockResolvedValue({ status: 'cancelling', message: '' })
+    await controller.cancelEnrichment()
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(controller.enrichmentCancelWatching.value).toBe(true)
+
+    await controller.cancelEnrichment()
+    expect(api.cancelGithubEnrichment).toHaveBeenCalledOnce()
   })
 
   it('skips cancel when no batch is running locally or server-side', async () => {

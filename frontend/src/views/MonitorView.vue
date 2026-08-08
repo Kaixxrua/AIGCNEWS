@@ -31,6 +31,7 @@ const {
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
   crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
   enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, cancellingEnrichment, enrichmentConcurrency, enrichmentPolling,
+  enrichmentCancelWatching,
   enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
   fetchGithubEnrichmentStatus, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
 } = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
@@ -169,6 +170,7 @@ onMounted(refreshData)
       :retrying="retryingEnrichment"
       :backfilling="backfillingEnrichment"
       :cancelling="cancellingEnrichment"
+      :cancel-watching="enrichmentCancelWatching"
       :polling="enrichmentPolling"
       :concurrency="enrichmentConcurrency"
       :reasoning-effort="enrichmentReasoningEffort"
