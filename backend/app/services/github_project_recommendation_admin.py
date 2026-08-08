@@ -102,6 +102,13 @@ class GitHubProjectRecommendationAdminService:
         return RecommendationOutcome(message=message, result=result)
 
     async def get_enrichment_status(self) -> dict[str, Any]:
-        return await asyncio.to_thread(
+        status = await asyncio.to_thread(
             self._enrichment_status.get_github_project_enrichment_status
         )
+        # 附带本进程富化批处理运行标记，供运维面板在刷新页面后仍能展示「终止」入口
+        from backend.app.services.ingestion.github_project_enricher import (
+            github_enrichment_batch_running,
+        )
+
+        status["running"] = github_enrichment_batch_running()
+        return status

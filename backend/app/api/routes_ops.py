@@ -40,6 +40,7 @@ from backend.app.models.schema_ops import (
     GitHubProjectsCrawlRequest,
     GitHubProjectsCrawlResponse,
     GitHubProjectsCrawlStatusResponse,
+    GitHubProjectsEnrichCancelResponse,
     GitHubProjectsEnrichRequest,
     GitHubProjectsEnrichResponse,
     GitHubProjectsMetricsRecomputeRequest,
@@ -740,6 +741,31 @@ async def enrich_github_project_library(
     return GitHubProjectsEnrichResponse(
         status="queued",
         message=f"GitHub 项目库富化任务已提交（limit={limit}，并发={request.concurrency}），后台执行中。",
+    )
+
+
+@router.post(
+    "/ops/github-projects/enrich-cancel",
+    response_model=GitHubProjectsEnrichCancelResponse,
+    tags=["Ops"],
+)
+async def cancel_github_project_enrichment(
+    _: dict = Depends(RequireAdmin),
+) -> GitHubProjectsEnrichCancelResponse:
+    """协作式终止富化批处理：进行中的项目跑完即停，未启动的保持待处理、不记失败。"""
+    from backend.app.services.ingestion.github_project_enricher import (
+        request_github_enrichment_cancel,
+    )
+
+    if request_github_enrichment_cancel():
+        logger.info("[Ops] 已请求终止 GitHub 项目库富化批处理")
+        return GitHubProjectsEnrichCancelResponse(
+            status="cancelling",
+            message="已请求终止富化：进行中的项目会跑完，剩余项目保持待处理。",
+        )
+    return GitHubProjectsEnrichCancelResponse(
+        status="not_running",
+        message="当前没有正在运行的富化任务。",
     )
 
 

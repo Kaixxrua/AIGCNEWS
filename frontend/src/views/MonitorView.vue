@@ -30,8 +30,8 @@ const {
   ingestByDate, clearAllData,
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
   crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
-  enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, enrichmentConcurrency, enrichmentPolling,
-  fetchGithubEnrichmentStatus, retryFailedEnrichments, backfillPendingEnrichments,
+  enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, cancellingEnrichment, enrichmentConcurrency, enrichmentPolling,
+  fetchGithubEnrichmentStatus, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
 } = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
 
 // 富化重试轮询结束时同步导航 Dock 的失败红点（失败清零或本轮结束时各刷一次）
@@ -165,11 +165,13 @@ onMounted(refreshData)
       :loading="loadingEnrichmentStatus"
       :retrying="retryingEnrichment"
       :backfilling="backfillingEnrichment"
+      :cancelling="cancellingEnrichment"
       :polling="enrichmentPolling"
       :concurrency="enrichmentConcurrency"
       @refresh="fetchGithubEnrichmentStatus"
       @retry="retryFailedEnrichments"
       @backfill="backfillPendingEnrichments"
+      @cancel="cancelEnrichment"
       @update-concurrency="(value) => (enrichmentConcurrency = value)"
     />
 

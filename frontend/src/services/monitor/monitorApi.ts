@@ -1,7 +1,7 @@
 import { api } from '@/services/http/apiClient'
 import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
-  GithubEnrichmentStatus, GithubEnrichmentTriggerResult,
+  GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm,
   SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
@@ -37,6 +37,7 @@ export interface MonitorApi {
   fetchGithubCrawlStatus(query?: GithubCrawlStatusQuery): Promise<GithubCrawlStatus>
   fetchGithubEnrichmentStatus(): Promise<GithubEnrichmentStatus>
   triggerGithubEnrichment(limit: number, concurrency: number): Promise<GithubEnrichmentTriggerResult>
+  cancelGithubEnrichment(): Promise<GithubEnrichmentCancelResult>
 }
 
 export const monitorApi: MonitorApi = {
@@ -131,4 +132,5 @@ export const monitorApi: MonitorApi = {
       limit, force: false, dry_run: false, retry_failed: true, refresh_changed: false, concurrency,
     })).data
   },
+  async cancelGithubEnrichment() { return (await api.post('/ops/github-projects/enrich-cancel')).data },
 }

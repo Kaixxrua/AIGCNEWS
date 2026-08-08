@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -70,5 +70,20 @@ def test_unrecommend_projects_removed_message_and_reads_status() -> None:
 
     assert removed.message == "已取消站长推荐。"
     assert unchanged.message == "该项目当前不是站长推荐。"
-    assert enrichment == {"total": 12, "enriched": 7}
+    # running 标记由服务层补充：无批处理运行时恒为 False
+    assert enrichment == {"total": 12, "enriched": 7, "running": False}
     status.get_github_project_enrichment_status.assert_called_once_with()
+
+
+def test_enrichment_status_marks_running_batch() -> None:
+    status = MagicMock()
+    status.get_github_project_enrichment_status.return_value = {"total": 3, "enriched": 1}
+    service = GitHubProjectRecommendationAdminService(MagicMock(), status)
+
+    with patch(
+        "backend.app.services.ingestion.github_project_enricher.github_enrichment_batch_running",
+        return_value=True,
+    ):
+        enrichment = asyncio.run(service.get_enrichment_status())
+
+    assert enrichment["running"] is True

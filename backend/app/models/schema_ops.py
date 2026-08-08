@@ -92,6 +92,13 @@ class GitHubProjectsEnrichResponse(BaseModel):
     result: Optional[Dict[str, Any]] = None
 
 
+class GitHubProjectsEnrichCancelResponse(BaseModel):
+    """终止富化结果：cancelling=已发出终止信号；not_running=当前无运行中的批次。"""
+
+    status: str
+    message: str
+
+
 class GitHubProjectsCrawlRequest(BaseModel):
     """GitHub 搜索爬取触发参数；max_stars=0 表示不封顶。"""
 

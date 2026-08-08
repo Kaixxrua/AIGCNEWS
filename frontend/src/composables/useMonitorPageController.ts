@@ -75,6 +75,7 @@ export const useMonitorPageController = ({
   const loadingEnrichmentStatus = ref(false)
   const retryingEnrichment = ref(false)
   const backfillingEnrichment = ref(false)
+  const cancellingEnrichment = ref(false)
   const enrichmentConcurrency = ref(3)
   const enrichmentPolling = ref(false)
   const isTaskRunning = computed(() => tasks.value.length > 0 && tasks.value[0]?.status === 'running')
@@ -375,6 +376,21 @@ export const useMonitorPageController = ({
     } catch (error) { errorMsg.value = detail(error) }
     finally { backfillingEnrichment.value = false }
   }
+  const cancelEnrichment = async () => {
+    if (cancellingEnrichment.value) return
+    // 本地轮询中或服务端标记 running 时才有可终止的批次；其余情况视为无操作
+    if (!enrichmentPolling.value && !enrichmentStatus.value?.running) return
+    clearMessages()
+    cancellingEnrichment.value = true
+    try {
+      const result = await api.cancelGithubEnrichment()
+      // 终止信号已发出：停掉本地轮询；进行中的条目仍会跑完，
+      // 稍候补拉一次状态让面板反映本批部分进度
+      stopEnrichmentPolling(result.message || i18n.global.t('monitor.enrichment.cancelRequested'))
+      schedule(() => { void fetchGithubEnrichmentStatus() }, ENRICHMENT_POLL_INTERVAL)
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { cancellingEnrichment.value = false }
+  }
   const ingestSingleSource = async (source: SourceKey) => {
     if (ingestingSource.value) return
     clearMessages(); ingestingSource.value = source
@@ -435,7 +451,7 @@ export const useMonitorPageController = ({
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
     crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
-    enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, enrichmentConcurrency, enrichmentPolling,
-    fetchGithubEnrichmentStatus, retryFailedEnrichments, backfillPendingEnrichments,
+    enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, cancellingEnrichment, enrichmentConcurrency, enrichmentPolling,
+    fetchGithubEnrichmentStatus, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
   }
 }

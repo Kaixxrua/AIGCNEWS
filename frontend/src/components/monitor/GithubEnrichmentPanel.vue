@@ -10,6 +10,7 @@ const props = defineProps<{
   loading: boolean
   retrying: boolean
   backfilling: boolean
+  cancelling: boolean
   polling: boolean
   concurrency: number
 }>()
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   refresh: []
   retry: []
   backfill: []
+  cancel: []
   updateConcurrency: [value: number]
 }>()
 
@@ -75,7 +77,7 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
 
       <button
         class="monitor-btn-secondary relative"
-        :disabled="retrying || backfilling || polling || !status || status.failed <= 0"
+        :disabled="retrying || backfilling || cancelling || polling || !status || status.failed <= 0"
         :title="t('monitor.enrichment.retryTitle')"
         @click="emit('retry')"
       >
@@ -86,7 +88,7 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
 
       <button
         class="monitor-btn-primary"
-        :disabled="backfilling || retrying || polling || !status || status.pending <= 0"
+        :disabled="backfilling || retrying || cancelling || polling || !status || status.pending <= 0"
         :title="t('monitor.enrichment.backfillTitle')"
         @click="emit('backfill')"
       >
@@ -103,10 +105,22 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
           max="10"
           step="1"
           class="input w-16 py-1.5 text-xs"
-          :disabled="retrying || backfilling || polling"
+          :disabled="retrying || backfilling || cancelling || polling"
           @input="emit('updateConcurrency', Number(($event.target as HTMLInputElement).value))"
         />
       </label>
+
+      <!-- 仅在有批次运行时出现：本地轮询中，或服务端 running 标记（刷新页面后仍可终止） -->
+      <button
+        v-if="polling || status?.running"
+        class="monitor-btn-secondary enrichment-cancel-btn"
+        :disabled="cancelling"
+        :title="t('monitor.enrichment.cancelTitle')"
+        @click="emit('cancel')"
+      >
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+        {{ t(cancelling ? 'monitor.enrichment.cancelling' : 'monitor.enrichment.cancel') }}
+      </button>
     </div>
 
     <p class="mt-3 text-2xs monitor-caption">{{ t('monitor.enrichment.hint') }}</p>
@@ -114,6 +128,10 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
 </template>
 
 <style scoped>
+.enrichment-cancel-btn {
+  color: var(--error-accent);
+}
+
 .enrichment-alert-dot {
   display: inline-block;
   width: 7px;

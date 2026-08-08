@@ -257,5 +257,9 @@ describe('Monitor API contract', () => {
     expect(transport.post).toHaveBeenLastCalledWith('/ops/github-projects/enrich', {
       limit: 3, force: false, dry_run: false, retry_failed: true, refresh_changed: false, concurrency: 5,
     })
+
+    transport.post.mockResolvedValue({ data: { status: 'cancelling', message: 'stopping' } })
+    await expect(monitorApi.cancelGithubEnrichment()).resolves.toEqual({ status: 'cancelling', message: 'stopping' })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/github-projects/enrich-cancel')
   })
 })

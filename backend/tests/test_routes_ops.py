@@ -524,7 +524,8 @@ class OperationsRouteTests(unittest.TestCase):
         response = client.get("/api/ops/github-projects/enrichment-status")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"total": 12, "enriched": 7})
+        # running 由服务层按进程内批处理状态补充，空闲时恒为 False
+        self.assertEqual(response.json(), {"total": 12, "enriched": 7, "running": False})
         repository.get_github_project_enrichment_status.assert_called_once_with()
 
     def test_github_enrich_queues_with_limit_cap_and_concurrency(self) -> None:
@@ -578,6 +579,35 @@ class OperationsRouteTests(unittest.TestCase):
                 json={"concurrency": invalid},
             )
             self.assertEqual(response.status_code, 422)
+
+    def test_github_enrich_cancel_signals_running_batch(self) -> None:
+        client = self._enrich_client(MagicMock(), MagicMock())
+
+        with patch(
+            "backend.app.services.ingestion.github_project_enricher.request_github_enrichment_cancel",
+            return_value=True,
+        ) as cancel:
+            response = client.post("/api/ops/github-projects/enrich-cancel")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "cancelling")
+        self.assertIn("终止", body["message"])
+        cancel.assert_called_once_with()
+
+    def test_github_enrich_cancel_reports_when_nothing_running(self) -> None:
+        client = self._enrich_client(MagicMock(), MagicMock())
+
+        with patch(
+            "backend.app.services.ingestion.github_project_enricher.request_github_enrichment_cancel",
+            return_value=False,
+        ):
+            response = client.post("/api/ops/github-projects/enrich-cancel")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "not_running")
+        self.assertIn("没有正在运行", body["message"])
 
     def test_github_crawl_queues_plan_and_returns_channel(self) -> None:
         service = MagicMock()

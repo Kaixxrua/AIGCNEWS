@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -51,6 +52,51 @@ ENRICHMENT_REASONING_EFFORT = "medium"
 _MAX_RETRIES = 4
 _RETRY_BASE_DELAY = 15.0
 _REQUEST_INTERVAL = 3.0
+
+
+class _EnrichmentCancelled(Exception):
+    """协作式终止信号：未发起模型调用的条目快速退出，且不得记入失败状态。"""
+
+
+# 进程级终止信号与运行计数：运维面板的「终止富化」对本进程内 enrich_batch
+# 生效（手动补跑/重试与每日流水线共用同一入口）；enrich_rows（爬取运行内
+# 自动富化）不受影响，保持爬取行为不变。
+_cancel_event = threading.Event()
+_running_lock = threading.Lock()
+_running_batches = 0
+
+
+def request_github_enrichment_cancel() -> bool:
+    """请求终止当前运行的富化批处理；返回是否有批处理在运行。
+
+    没有运行中的批处理时不置位，避免残留的终止信号误伤下一次提交。
+    任务已入队但线程尚未进入 enrich_batch 的极短窗口内会返回 False，
+    调用方稍后再次请求即可。
+    """
+    with _running_lock:
+        running = _running_batches > 0
+    if running:
+        _cancel_event.set()
+    return running
+
+
+def github_enrichment_batch_running() -> bool:
+    with _running_lock:
+        return _running_batches > 0
+
+
+def _enter_batch() -> None:
+    global _running_batches
+    with _running_lock:
+        _cancel_event.clear()  # 新批次总是以干净的终止信号起步
+        _running_batches += 1
+
+
+def _exit_batch() -> None:
+    global _running_batches
+    with _running_lock:
+        _running_batches = max(0, _running_batches - 1)
+
 
 _SYSTEM_PROMPT = f"""\
 你是一个 AI 开源项目收藏夹的技术策展人。请根据 GitHub 仓库元数据，完成四件事：
@@ -163,41 +209,51 @@ class GitHubProjectEnricher:
             }
 
         concurrency = max(1, min(int(concurrency or 1), 10))
-        if concurrency <= 1:
+        _enter_batch()
+        try:
             succeeded = 0
             failed = 0
-            for repo in candidates:
-                ok = self._enrich_and_store(repo)
-                if ok:
-                    succeeded += 1
-                    time.sleep(_REQUEST_INTERVAL)
-                else:
-                    failed += 1
+            cancelled = 0
+            if concurrency <= 1:
+                for repo in candidates:
+                    if _cancel_event.is_set():
+                        break
+                    outcome = self._enrich_and_store(repo, cancel_event=_cancel_event)
+                    if outcome is None:
+                        cancelled += 1
+                    elif outcome:
+                        succeeded += 1
+                        # 成功后的节流间隔同时充当终止监听窗口：收到信号立即停下
+                        if _cancel_event.wait(_REQUEST_INTERVAL):
+                            break
+                    else:
+                        failed += 1
+            else:
+                with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                    futures = [
+                        executor.submit(self._enrich_and_store, repo, cancel_event=_cancel_event)
+                        for repo in candidates
+                    ]
+                    for future in as_completed(futures):
+                        outcome = future.result()
+                        if outcome is None:
+                            cancelled += 1
+                        elif outcome:
+                            succeeded += 1
+                        else:
+                            failed += 1
+            # 循环提前退出时，未处理的条目一律记为已终止：保持待处理，不计失败
+            cancelled += len(candidates) - succeeded - failed - cancelled
             return {
-                "status": "success",
+                "status": "cancelled" if cancelled > 0 else "success",
                 "candidates": len(candidates),
                 "succeeded": succeeded,
                 "failed": failed,
+                "cancelled": cancelled,
                 "concurrency": concurrency,
             }
-
-        succeeded = 0
-        failed = 0
-        with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            futures = [executor.submit(self._enrich_and_store, repo) for repo in candidates]
-            for future in as_completed(futures):
-                if future.result():
-                    succeeded += 1
-                else:
-                    failed += 1
-
-        return {
-            "status": "success",
-            "candidates": len(candidates),
-            "succeeded": succeeded,
-            "failed": failed,
-            "concurrency": concurrency,
-        }
+        finally:
+            _exit_batch()
 
     def enrich_rows(
         self, rows: list[Dict[str, Any]], *, concurrency: int = 3
@@ -232,14 +288,20 @@ class GitHubProjectEnricher:
             "concurrency": concurrency,
         }
 
-    def _enrich_and_store(self, repo: Dict[str, Any]) -> bool:
+    def _enrich_and_store(
+        self,
+        repo: Dict[str, Any],
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> bool | None:
+        """富化并落库单条；返回 True/False，被终止时返回 None（不记失败）。"""
         repo_id = str(repo.get("repo_id") or "").strip()
         source_fingerprint = str(repo.get("source_fingerprint") or "").strip()
         if not repo_id or not source_fingerprint:
             return False
 
         try:
-            result = self._enrich_one(repo)
+            result = self._enrich_one(repo, cancel_event=cancel_event)
             self.db.upsert_github_repo_enrichment(
                 {
                     "repo_id": repo_id,
@@ -262,6 +324,12 @@ class GitHubProjectEnricher:
                 }
             )
             return True
+        except _EnrichmentCancelled:
+            logger.info(
+                "[GitHubProjectEnricher] 富化批处理已终止，repo=%s 保持待处理",
+                repo.get("full_name") or repo_id,
+            )
+            return None
         except Exception as exc:  # noqa: BLE001 - record per-row failures and continue
             logger.warning(
                 "[GitHubProjectEnricher] 富化失败 repo=%s error=%s",
@@ -317,7 +385,12 @@ class GitHubProjectEnricher:
             "failures": failures,
         }
 
-    def _enrich_one(self, repo: Dict[str, Any]) -> EnrichmentResult:
+    def _enrich_one(
+        self,
+        repo: Dict[str, Any],
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> EnrichmentResult:
         messages = [
             SystemMessage(content=_SYSTEM_PROMPT),
             HumanMessage(content=_repo_prompt(repo)),
@@ -325,6 +398,8 @@ class GitHubProjectEnricher:
 
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES):
+            if cancel_event is not None and cancel_event.is_set():
+                raise _EnrichmentCancelled("富化批处理已被管理员终止")
             try:
                 response = self.llm.invoke(messages)
                 data = parse_json_object(extract_message_text(response))
@@ -354,7 +429,12 @@ class GitHubProjectEnricher:
                         _MAX_RETRIES,
                         wait,
                     )
-                    time.sleep(wait)
+                    # 退避等待监听终止信号：收到即醒，不让取消卡在长 sleep 上
+                    if cancel_event is not None:
+                        if cancel_event.wait(wait):
+                            raise _EnrichmentCancelled("富化批处理已被管理员终止")
+                    else:
+                        time.sleep(wait)
                     continue
                 break
 

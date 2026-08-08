@@ -153,6 +153,8 @@ export interface GithubEnrichmentStatus {
   succeeded: number
   failed: number
   pending: number
+  // 后端进程内是否有富化批处理在跑；刷新页面后据此恢复「终止」入口
+  running?: boolean
   by_category?: Array<{ slug: string; name: string; count: number }>
 }
 
@@ -160,6 +162,11 @@ export interface GithubEnrichmentTriggerResult {
   status: string
   message: string
   result?: Record<string, unknown> | null
+}
+
+export interface GithubEnrichmentCancelResult {
+  status: string
+  message: string
 }
 
 export interface GithubCrawlStatusQuery {
