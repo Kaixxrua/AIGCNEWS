@@ -38,9 +38,12 @@ from backend.app.core.scheduler_registry import (
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
-from backend.app.repositories.briefing_repository import ActiveBriefingSubscriberReader
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
+from backend.app.services.briefing.dispatch import (
+    BRIEFING_TASKS,
+    run_daily_briefing_dispatch,
+)
 from backend.app.services.x_credentials.probe import probe_all_x_credentials
 
 logger = logging.getLogger(__name__)
@@ -329,126 +332,11 @@ async def _run_smart_ingestion_job(
         logger.error("[Scheduler] 智能全量采集失败: %s", exc, exc_info=True)
 
 
-_BRIEFING_TASKS: List[Dict[str, str]] = [
-    {"source": "all", "period": "daily"},
-    {"source": "arxiv", "period": "daily"},
-    {"source": "github", "period": "daily"},
-    {"source": "news", "period": "daily"},
-    {"source": "producthunt", "period": "daily"},
-    {"source": "hackernews", "period": "daily"},
-    {"source": "x", "period": "daily"},
-    {"source": "dailyhot", "period": "daily"},
-]
-
-
-async def _send_briefing_to_subscribers(
-    *,
-    source: str,
-    period: str,
-    date_str: str,
-    content: str,
-    subscriptions: ActiveBriefingSubscriberReader,
-) -> int:
-    from backend.app.services.email_service import build_email_service
-
-    subscribers = subscriptions.get_active_subscribers(source=source, period=period)
-    if not subscribers:
-        return 0
-
-    email_svc = build_email_service(None)
-
-    sent = 0
-    for subscriber in subscribers:
-        email = subscriber.get("email")
-        if not email:
-            continue
-        try:
-            await email_svc.send_briefing(
-                to_email=email,
-                briefing_content=content,
-                source=source,
-                period=period,
-                date_str=date_str,
-            )
-            sent += 1
-        except Exception as exc:
-            logger.error(
-                "[Scheduler] 订阅简报发送失败: source=%s period=%s email=%s error=%s",
-                source,
-                period,
-                email,
-                exc,
-                exc_info=True,
-            )
-    return sent
-
-
 async def _run_daily_briefing_job(
     repositories: ApplicationRepositories,
 ) -> None:
-    logger.info(
-        "[Scheduler] 触发每日自动简报生成（%d 个维度）...", len(_BRIEFING_TASKS)
-    )
-    from backend.app.services.briefing.composition import provide_daily_briefing_service
-
-    service = provide_daily_briefing_service(repositories=repositories)
-    success = 0
-    for task in _BRIEFING_TASKS:
-        source = task["source"]
-        period = task["period"]
-        try:
-            content_parts: list[str] = []
-            report_date = ""
-            briefing_id = -1
-            async for payload in service.stream_generate(
-                target_date=None,
-                source=source,
-                period=period,
-                force_regenerate=False,
-                generate_bilingual=True,
-            ):
-                payload_type = payload.get("type")
-                if payload_type == "start":
-                    data = payload.get("data") or {}
-                    report_date = str(data.get("date") or "")
-                elif payload_type == "content":
-                    content_parts.append(str(payload.get("data") or ""))
-                elif payload_type == "done":
-                    data = payload.get("data") or {}
-                    briefing_id = int(data.get("briefing_id") or -1)
-            success += 1
-            logger.info(
-                "[Scheduler] 日报生成完成，准备推送订阅用户: source=%s period=%s",
-                source,
-                period,
-            )
-            content = "".join(content_parts)
-            if briefing_id > 0 and content.strip() and report_date:
-                sent = await _send_briefing_to_subscribers(
-                    source=source,
-                    period=period,
-                    date_str=report_date,
-                    content=content,
-                    subscriptions=repositories.briefing_subscriptions,
-                )
-                logger.info(
-                    "[Scheduler] 订阅简报发送完成: source=%s period=%s sent=%d",
-                    source,
-                    period,
-                    sent,
-                )
-        except Exception as exc:
-            logger.error(
-                "[Scheduler] 简报生成失败: source=%s period=%s error=%s",
-                source,
-                period,
-                exc,
-                exc_info=True,
-            )
-
-    logger.info(
-        "[Scheduler] 每日简报生成完毕，%d/%d 成功。", success, len(_BRIEFING_TASKS)
-    )
+    """一行委托：每日简报生成与订阅派发编排归属于 services/briefing。"""
+    await run_daily_briefing_dispatch(repositories)
 
 
 async def _run_subscription_dispatch_job(
@@ -799,7 +687,7 @@ class ApplicationSchedulerRuntime:
             )
             logger.info(
                 "[Scheduler] 注册简报任务: daily_briefing (共 %d 个维度)",
-                len(_BRIEFING_TASKS),
+                len(BRIEFING_TASKS),
             )
         else:
             logger.info("[Scheduler] 跳过已停用的简报任务: daily_briefing")

@@ -7,7 +7,6 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from backend.app.core.scheduler import _BRIEFING_TASKS
 from backend.app.core.scheduler_registry import (
     SOURCE_JOB_DESCRIPTORS,
 )
@@ -16,6 +15,7 @@ from backend.app.services.briefing.daily_briefing import (
     _SOURCE_CONFIG,
     _filter_docs_by_period,
 )
+from backend.app.services.briefing.dispatch import BRIEFING_TASKS
 from backend.app.services.ingestion.content_enricher import _ENRICH_MAP
 from backend.app.services.ingestion.crawlers.dailyhot_crawler import DailyHotCrawler
 from backend.app.services.ingestion.source_dailyhot import (
@@ -279,7 +279,7 @@ class PipelineRegistrationTests(unittest.TestCase):
         self.assertEqual([doc["title"] for doc in filtered], ["A"])
 
     def test_briefing_tasks_include_dailyhot(self) -> None:
-        self.assertIn({"source": "dailyhot", "period": "daily"}, _BRIEFING_TASKS)
+        self.assertIn({"source": "dailyhot", "period": "daily"}, BRIEFING_TASKS)
 
     def test_subscription_and_report_vocabularies_include_dailyhot(self) -> None:
         from typing import get_args
