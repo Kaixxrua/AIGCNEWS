@@ -1281,6 +1281,93 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(_needs_zh_translation("zh-TW"))
         self.assertFalse(_needs_zh_translation("zxx"))  # 无语言内容（纯媒体）
 
+    async def test_attaches_translation_for_non_zh_quoted_tweet(self) -> None:
+        # 中文外推引用英文推文：仅被引需要翻译（引文切中文仍显示原文的报障场景）
+        outer = self._lang_tweet("2010", "zh")
+        outer.quoted_tweet = self._lang_tweet("2011", "en")
+        transport = _FakeTransport(result={"openai": [outer]})
+        seen: list[list[str]] = []
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            seen.append(list(ids))
+            return {"2011": "被引中文译文"}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(seen, [["2011"]])  # 中文外推不请求翻译
+        item = result.items[0]
+        self.assertNotIn("translation_zh", item)
+        self.assertEqual(item["quote"].get("translation_zh"), "被引中文译文")
+
+    async def test_quoted_translation_merges_targets_and_restores_links(self) -> None:
+        # 英文外推 + 英文被引：两个 id 合并为一次抓取；被引译文补回丢失链接
+        outer = self._lang_tweet("2020", "en")
+        quoted = self._lang_tweet("2021", "en")
+        quoted.text = "read this https://t.co/abc123"
+        quoted.urls = ["https://example.com/report"]
+        outer.quoted_tweet = quoted
+        transport = _FakeTransport(result={"openai": [outer]})
+        seen: list[list[str]] = []
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            seen.append(list(ids))
+            return {"2020": "外推译文", "2021": "被引译文："}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(seen, [["2020", "2021"]])
+        item = result.items[0]
+        self.assertEqual(item.get("translation_zh"), "外推译文")
+        # X 译文剥掉链接：按被引实体补回（被引正文同口径已展开 t.co）
+        self.assertEqual(
+            item["quote"].get("translation_zh"),
+            "被引译文：\nhttps://example.com/report",
+        )
+        self.assertEqual(item["quote"]["text"], "read this https://example.com/report")
+
+    async def test_zh_quoted_tweet_skips_translation(self) -> None:
+        # 中文被引不发起翻译请求；外推英文仍正常补译
+        outer = self._lang_tweet("2030", "en")
+        outer.quoted_tweet = self._lang_tweet("2031", "zh")
+        transport = _FakeTransport(result={"openai": [outer]})
+        seen: list[list[str]] = []
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            seen.append(list(ids))
+            return {"2030": "外推译文"}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(seen, [["2030"]])
+        self.assertNotIn("translation_zh", result.items[0]["quote"])
+
+    async def test_quoted_tweet_shared_with_outer_is_fetched_once(self) -> None:
+        # 被引推文同时是另一条入选外推：同一 id 去重后只请求一次
+        quoted = self._lang_tweet("2041", "en")
+        outer = self._lang_tweet("2040", "zh")
+        outer.quoted_tweet = quoted
+        transport = _FakeTransport(result={"openai": [outer, quoted]})
+        seen: list[list[str]] = []
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            seen.append(list(ids))
+            return {"2041": "共享推文译文"}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(seen, [["2041"]])
+        by_id = {item["tweet_id"]: item for item in result.items}
+        self.assertEqual(by_id["2041"].get("translation_zh"), "共享推文译文")
+        self.assertEqual(by_id["2040"]["quote"].get("translation_zh"), "共享推文译文")
+
 
 if __name__ == "__main__":
     unittest.main()

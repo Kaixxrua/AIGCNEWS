@@ -120,7 +120,8 @@ export const tweetQuote = (doc: TopDoc): TopDoc['quote'] => (hasQuote(doc) ? (do
  * 引用投影 → 详情浮层展示用 TopDoc：quote 落库字段与详情渲染所需字段
  * 一一对应（URL/昵称/头像/正文/媒体/时间），下钻纯本地切换零请求。
  * 不带 score（被引推文无本站互动分，渲染层隐藏徽章）与 quote（投影只
- * 存一层，不递归下钻——与 X 只渲染一层引用一致）。
+ * 存一层，不递归下钻——与 X 只渲染一层引用一致）。translation_zh 一并
+ * 投影：下钻详情复用 tweetTextSegments(doc, locale) 的中文切换。
  */
 export const quoteAsDoc = (quote: NonNullable<TopDoc['quote']>): TopDoc => ({
   url: quote.url,
@@ -129,6 +130,7 @@ export const quoteAsDoc = (quote: NonNullable<TopDoc['quote']>): TopDoc => ({
   summary: quote.text,
   media: quote.media,
   published_at: quote.published_at,
+  translation_zh: quote.translation_zh,
 })
 
 /** 引用作者头像：与外推同一策略——仅 twimg 落库地址经同源代理，其余回退占位。 */
@@ -138,12 +140,23 @@ export const quoteAvatarUrl = (quote: NonNullable<TopDoc['quote']>): string | un
 }
 
 /**
+ * 引用正文按界面语言切换：zh 系界面语言优先展示采集期落库的被引译文
+ * （quote.translation_zh，与外推 translation_zh 同一 X translateTweet 来源），
+ * 其余语言或无译文（含旧数据）回退被引原文。
+ */
+export const displayQuoteText = (quote: NonNullable<TopDoc['quote']>, locale: string): string => {
+  const translation = typeof quote.translation_zh === 'string' ? quote.translation_zh.trim() : ''
+  if (translation && locale.toLowerCase().startsWith('zh')) return translation
+  return quote.text ?? ''
+}
+
+/**
  * 引用正文分段：复用正文同一 URL 正则做链接识别，但引用卡片整体已是
  * 锚点（跳被引推文），嵌套锚点非法——故引用正文只做纯文本分段输出，
  * 链接样式由渲染层以 span 呈现，点击仍跳被引推文（与 X 行为一致）。
  */
-export const quoteTextSegments = (quote: NonNullable<TopDoc['quote']>): TweetTextSegment[] =>
-  splitTextSegments(quote.text ?? '')
+export const quoteTextSegments = (quote: NonNullable<TopDoc['quote']>, locale: string): TweetTextSegment[] =>
+  splitTextSegments(displayQuoteText(quote, locale))
 
 const X_MEDIA_PROXY_PATH = '/api/media/x/proxy'
 const X_MEDIA_POSTER_PATH = '/api/media/x/poster'

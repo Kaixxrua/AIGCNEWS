@@ -361,12 +361,28 @@ describe('xBoardViewModel', () => {
   })
 
   it('quoteTextSegments splits quote text with the same url rules', () => {
-    expect(quoteTextSegments(quotedTweet().quote!)).toEqual([
+    expect(quoteTextSegments(quotedTweet().quote!, 'en-US')).toEqual([
       { text: 'Livestream update ', isUrl: false },
       { text: 'https://example.com/live', isUrl: true },
       { text: ' see you', isUrl: false },
     ])
-    expect(quoteTextSegments(quotedTweet({ text: '' }).quote!)).toEqual([])
+    expect(quoteTextSegments(quotedTweet({ text: '' }).quote!, 'en-US')).toEqual([])
+  })
+
+  it('quoteTextSegments prefers the stored zh translation under zh locale only', () => {
+    const translated = quotedTweet({ translation_zh: '直播更新 https://example.com/live 不见不散' })
+    // zh 系界面语言：展示被引译文（链接分段规则不变）
+    expect(quoteTextSegments(translated.quote!, 'zh-CN')).toEqual([
+      { text: '直播更新 ', isUrl: false },
+      { text: 'https://example.com/live', isUrl: true },
+      { text: ' 不见不散', isUrl: false },
+    ])
+    // 非 zh 界面语言：仍展示被引原文
+    expect(quoteTextSegments(translated.quote!, 'en-US')[0]).toEqual({ text: 'Livestream update ', isUrl: false })
+    // zh 界面语言但无译文落库（旧数据）：回退被引原文
+    expect(quoteTextSegments(quotedTweet().quote!, 'zh-CN')[0]).toEqual({ text: 'Livestream update ', isUrl: false })
+    // 译文为空白串视为无译文
+    expect(quoteTextSegments(quotedTweet({ translation_zh: '  ' }).quote!, 'zh-CN')[0]).toEqual({ text: 'Livestream update ', isUrl: false })
   })
 
   it('quoteMediaItems rewrites twimg urls through the proxy like outer media', () => {
@@ -404,6 +420,11 @@ describe('xBoardViewModel', () => {
     expect(tweetTextSegments(doc, 'en-US')).toContainEqual({ text: 'https://example.com/live', isUrl: true })
     expect(mediaItems(doc)).toHaveLength(1)
     expect(formatLocalTime(doc.published_at ?? '')).not.toBe('')
+    // 被引译文一并投影：下钻详情经 tweetTextSegments 获得与外推一致的中文切换
+    const translatedDoc = quoteAsDoc(quotedTweet({ translation_zh: '直播更新，不见不散' }).quote!)
+    expect(translatedDoc.translation_zh).toBe('直播更新，不见不散')
+    expect(tweetTextSegments(translatedDoc, 'zh-CN')).toEqual([{ text: '直播更新，不见不散', isUrl: false }])
+    expect(tweetTextSegments(translatedDoc, 'en-US')).not.toEqual([{ text: '直播更新，不见不散', isUrl: false }])
   })
 
   it('distributeColumns deals items round-robin so cross-column reads stay row-major', () => {

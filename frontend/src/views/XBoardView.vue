@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, ExternalLink, Maximize2 } from 'lucide-vue-next'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasMedia, hasQuote, mediaItems, paginateItems, quoteAsDoc, quoteAvatarUrl, quoteMediaItems, quoteTextSegments, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, displayQuoteText, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasMedia, hasQuote, mediaItems, paginateItems, quoteAsDoc, quoteAvatarUrl, quoteMediaItems, quoteTextSegments, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
@@ -451,8 +451,8 @@ onBeforeUnmount(() => {
                     @keydown.enter.stop
                   ><ExternalLink class="h-3 w-3" /></a>
                 </span>
-                <span v-if="tweetQuote(tweet)!.text" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
-                  <template v-for="(seg, segIndex) in quoteTextSegments(tweetQuote(tweet)!)" :key="segIndex">
+                <span v-if="displayQuoteText(tweetQuote(tweet)!, locale)" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
+                  <template v-for="(seg, segIndex) in quoteTextSegments(tweetQuote(tweet)!, locale)" :key="segIndex">
                     <span v-if="seg.isUrl" class="tweet-quote-link">{{ seg.text }}</span>
                     <span v-else>{{ seg.text }}</span>
                   </template>
@@ -649,8 +649,8 @@ onBeforeUnmount(() => {
                 @keydown.enter.stop
               ><ExternalLink class="h-3 w-3" /></a>
             </span>
-            <span v-if="tweetQuote(detailTweet)!.text" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
-              <template v-for="(seg, segIndex) in quoteTextSegments(tweetQuote(detailTweet)!)" :key="segIndex">
+            <span v-if="displayQuoteText(tweetQuote(detailTweet)!, locale)" class="block whitespace-pre-line px-3 pt-1 text-2xs leading-4 text-stone-600">
+              <template v-for="(seg, segIndex) in quoteTextSegments(tweetQuote(detailTweet)!, locale)" :key="segIndex">
                 <span v-if="seg.isUrl" class="tweet-quote-link">{{ seg.text }}</span>
                 <span v-else>{{ seg.text }}</span>
               </template>

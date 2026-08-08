@@ -183,8 +183,9 @@ class XCrawler(BaseCrawler):
     async def _attach_zh_translations(self, tweets: list[Any], items: list[dict]) -> None:
         """尽力而为：为最终入选的非中文推文附着 X 中文翻译（translation_zh）。
 
-        仅对 project_tweets 截断后的条目抓取（请求量有界）；翻译链路任何
-        失败只记日志，绝不影响主采集结果入库。
+        仅对 project_tweets 截断后的条目抓取（请求量有界）；被引推文
+        同口径补译，附着于 quote.translation_zh。翻译链路任何失败只记
+        日志，绝不影响主采集结果入库。
         """
         fetcher = self._translation_fetcher or getattr(
             self._transport, "fetch_tweet_translations", None
@@ -196,12 +197,28 @@ class XCrawler(BaseCrawler):
             for tweet in tweets
         }
         tweets_by_id = {str(getattr(tweet, "id", "")): tweet for tweet in tweets}
-        targets = [
-            str(item["tweet_id"])
-            for item in items
-            if item.get("tweet_id")
-            and _needs_zh_translation(lang_by_id.get(str(item["tweet_id"]), ""))
-        ]
+        # 被引推文映射：quote 投影不含被引 id，只能经原始 Tweet 对象找回翻译主键
+        quoted_by_outer: dict[str, Any] = {}
+        for tweet in tweets:
+            outer_id = str(getattr(tweet, "id", "") or "")
+            quoted = getattr(tweet, "quoted_tweet", None)
+            quote_id = str(getattr(quoted, "id", "") or "") if quoted is not None else ""
+            if outer_id and quote_id:
+                quoted_by_outer[outer_id] = quoted
+        targets: list[str] = []
+        for item in items:
+            outer_id = str(item.get("tweet_id") or "")
+            if outer_id and _needs_zh_translation(lang_by_id.get(outer_id, "")):
+                targets.append(outer_id)
+            quoted = quoted_by_outer.get(outer_id)
+            if (
+                quoted is not None
+                and isinstance(item.get("quote"), dict)
+                and _needs_zh_translation(str(getattr(quoted, "lang", "") or ""))
+            ):
+                targets.append(str(getattr(quoted, "id", "")))
+        # 去重保序：被引推文可能同时是另一条入选外推（或自引），只请求一次
+        targets = list(dict.fromkeys(targets))
         if not targets:
             return
         try:
@@ -210,6 +227,7 @@ class XCrawler(BaseCrawler):
             logger.warning("[X] 中文翻译抓取失败，跳过（不影响入库）", exc_info=True)
             return
         attached = 0
+        attached_quotes = 0
         for item in items:
             text = translations.get(str(item.get("tweet_id") or ""), "")
             if text:
@@ -224,4 +242,24 @@ class XCrawler(BaseCrawler):
                     )
                 item["translation_zh"] = text
                 attached += 1
-        logger.info("[X] 中文翻译附着: %d/%d 条", attached, len(targets))
+            # 被引推文同口径补译：附着于 quote.translation_zh（随 quote JSON 落库）
+            quote = item.get("quote")
+            quoted = quoted_by_outer.get(str(item.get("tweet_id") or ""))
+            if not isinstance(quote, dict) or quoted is None:
+                continue
+            quote_text = translations.get(str(getattr(quoted, "id", "") or ""), "")
+            if not quote_text:
+                continue
+            quote["translation_zh"] = x_policy.restore_translation_urls(
+                quote_text,
+                str(getattr(quoted, "text", "") or ""),
+                quote.get("media") or [],
+                getattr(quoted, "urls", None),
+            )
+            attached_quotes += 1
+        logger.info(
+            "[X] 中文翻译附着: 外推 %d 条、引文 %d 条（请求 %d 条）",
+            attached,
+            attached_quotes,
+            len(targets),
+        )

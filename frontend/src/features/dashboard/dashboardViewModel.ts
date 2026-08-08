@@ -57,6 +57,8 @@ export interface TweetQuote {
   text: string
   media?: TweetMediaItem[]
   published_at?: string
+  /** 采集期落库的被引推文 X 中文翻译（zh 系界面语言优先展示；旧数据为空回退原文） */
+  translation_zh?: string
 }
 
 export interface TweetMediaItem {
