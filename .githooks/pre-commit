@@ -48,13 +48,27 @@ if [[ "$backend_changed" == "1" ]]; then
       backend/app/*.py)
         base=$(basename "$path" .py)
         candidate="backend/tests/test_${base}.py"
-        [[ -f "$candidate" ]] && tests+=("$candidate")
+        if [[ -f "$candidate" ]]; then
+          tests+=("$candidate")
+        else
+          # 热点模块的测试常拆成 test_<base>_*.py 多个文件（如 scheduler），
+          # 精确候选不存在时回退 glob；glob 无匹配时保持字面量，
+          # [[ -f ]] 判假即仍无候选，跳过。
+          for split in backend/tests/test_"${base}"_*.py; do
+            [[ -f "$split" ]] && tests+=("$split")
+          done
+        fi
         ;;
     esac
   done <<< "$staged"
   if [[ "${#tests[@]}" -gt 0 ]]; then
-    echo "[pre-commit] 受影响测试快筛: ${tests[*]}"
-    backend/.venv/bin/python -m pytest -q -p langchain_core.documents "${tests[@]}"
+    pytest_bin="backend/.venv/bin/python"
+    if [[ ! -x "$pytest_bin" ]]; then
+      echo "[pre-commit] 未找到 $pytest_bin，跳过测试快筛（可执行 uv pip install -r backend/requirements-dev.txt）" >&2
+    else
+      echo "[pre-commit] 受影响测试快筛: ${tests[*]}"
+      "$pytest_bin" -m pytest -q -p langchain_core.documents "${tests[@]}"
+    fi
   fi
 fi
 
