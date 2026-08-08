@@ -206,6 +206,8 @@ def refresh_github_project_metric_snapshots(
     newly_not_found = 0
     recovered = 0
     unknown = 0
+    pending: List[Dict[str, Any]] = []
+    pending_recovered = 0
 
     for outcome in outcomes:
         full_name = str(outcome.full_name or "").strip()
@@ -230,17 +232,25 @@ def refresh_github_project_metric_snapshots(
             skipped += 1
             continue
         existing = existing_by_name.get(outcome.full_name.lower())
-        was_not_found = (existing or {}).get("availability_status") == "not_found"
+        pending_recovered += int((existing or {}).get("availability_status") == "not_found")
+        pending.append(
+            {
+                "candidate": _candidate_payload(repo, existing=existing, captured_at=captured_at),
+                "available_full_name": outcome.full_name,
+                "snapshot": _snapshot_payload(repo, metric_date=snapshot_date, captured_at=captured_at),
+            }
+        )
+
+    if pending:
         try:
-            db.upsert_github_repo_candidate(_candidate_payload(repo, existing=existing, captured_at=captured_at))
-            db.mark_github_repo_available(outcome.full_name, checked_at=captured_at)
-            recovered += int(was_not_found)
-            updated_candidates += 1
-            db.insert_github_repo_snapshot(_snapshot_payload(repo, metric_date=snapshot_date, captured_at=captured_at))
-            snapshots += 1
+            written = db.upsert_github_repo_metric_observations(pending, checked_at=captured_at)
         except Exception as exc:  # noqa: BLE001 - keep daily refresh moving
-            skipped += 1
-            logger.warning("[GitHubProjectMetrics] 快照写入失败 repo=%s error=%s", full_name, exc, exc_info=True)
+            skipped += len(pending)
+            logger.warning("[GitHubProjectMetrics] 批量快照写入失败（整批回滚） count=%d error=%s", len(pending), exc, exc_info=True)
+        else:
+            updated_candidates += written
+            snapshots += written
+            recovered += pending_recovered
 
     skipped += max(0, len(full_names) - len(outcomes))
     result = {

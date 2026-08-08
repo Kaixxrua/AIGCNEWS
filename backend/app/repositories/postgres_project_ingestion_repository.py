@@ -14,6 +14,79 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_CANDIDATE_UPSERT_SQL = """
+    INSERT INTO github_repo_candidates (
+        repo_id, full_name, title, url, description, language, topics_json,
+        created_at, pushed_at, stars, forks, watchers, source_channels,
+        first_seen_at, last_seen_at, last_snapshot_at
+    ) VALUES (
+        %(repo_id)s, %(full_name)s, %(title)s, %(url)s, %(description)s,
+        %(language)s, %(topics_json)s, %(created_at)s, %(pushed_at)s,
+        %(stars)s, %(forks)s, %(watchers)s, %(source_channels)s,
+        %(first_seen_at)s, %(last_seen_at)s, %(last_snapshot_at)s
+    )
+    ON CONFLICT (repo_id) DO UPDATE SET
+        title=COALESCE(NULLIF(EXCLUDED.title, ''), github_repo_candidates.title),
+        url=COALESCE(NULLIF(EXCLUDED.url, ''), github_repo_candidates.url),
+        description=COALESCE(NULLIF(EXCLUDED.description, ''), github_repo_candidates.description),
+        language=COALESCE(NULLIF(EXCLUDED.language, ''), github_repo_candidates.language),
+        topics_json=COALESCE(NULLIF(EXCLUDED.topics_json, '[]'), github_repo_candidates.topics_json),
+        created_at=COALESCE(NULLIF(github_repo_candidates.created_at, ''), EXCLUDED.created_at),
+        pushed_at=GREATEST(COALESCE(github_repo_candidates.pushed_at, ''), COALESCE(EXCLUDED.pushed_at, '')),
+        stars=GREATEST(COALESCE(github_repo_candidates.stars, 0), COALESCE(EXCLUDED.stars, 0)),
+        forks=GREATEST(COALESCE(github_repo_candidates.forks, 0), COALESCE(EXCLUDED.forks, 0)),
+        watchers=CASE
+            WHEN %(community_metrics_complete)s IS TRUE
+             AND COALESCE(EXCLUDED.last_snapshot_at, '') >= COALESCE(github_repo_candidates.last_snapshot_at, '')
+            THEN EXCLUDED.watchers
+            ELSE github_repo_candidates.watchers
+        END,
+        source_channels=EXCLUDED.source_channels,
+        first_seen_at=LEAST(COALESCE(NULLIF(github_repo_candidates.first_seen_at, ''), EXCLUDED.first_seen_at), EXCLUDED.first_seen_at),
+        last_seen_at=GREATEST(COALESCE(github_repo_candidates.last_seen_at, ''), COALESCE(EXCLUDED.last_seen_at, '')),
+        last_snapshot_at=GREATEST(COALESCE(github_repo_candidates.last_snapshot_at, ''), COALESCE(EXCLUDED.last_snapshot_at, ''))
+"""
+
+_MARK_AVAILABLE_SQL = """
+    UPDATE github_repo_candidates SET availability_status='active',
+        not_found_count=0, availability_checked_at=%s
+    WHERE LOWER(full_name)=LOWER(%s)
+"""
+
+_SNAPSHOT_UPSERT_SQL = """
+    INSERT INTO github_repo_snapshots (
+        repo_id, snapshot_date, captured_at, stars, forks, watchers,
+        community_metrics_complete, open_issues, repo_created_at, repo_pushed_at
+    ) VALUES (
+        %(repo_id)s, %(snapshot_date)s, %(captured_at)s, %(stars)s,
+        %(forks)s, %(watchers)s, %(community_metrics_complete)s,
+        %(open_issues)s, %(repo_created_at)s, %(repo_pushed_at)s
+    ) ON CONFLICT (repo_id, snapshot_date) DO UPDATE SET
+        captured_at=GREATEST(COALESCE(github_repo_snapshots.captured_at,''), COALESCE(EXCLUDED.captured_at,'')),
+        stars=GREATEST(COALESCE(github_repo_snapshots.stars,0), COALESCE(EXCLUDED.stars,0)),
+        forks=CASE
+            WHEN EXCLUDED.community_metrics_complete IS TRUE AND github_repo_snapshots.community_metrics_complete IS NOT TRUE THEN EXCLUDED.forks
+            WHEN EXCLUDED.community_metrics_complete IS TRUE AND github_repo_snapshots.community_metrics_complete IS TRUE THEN GREATEST(COALESCE(github_repo_snapshots.forks,0),COALESCE(EXCLUDED.forks,0))
+            WHEN github_repo_snapshots.community_metrics_complete IS TRUE THEN github_repo_snapshots.forks
+            ELSE GREATEST(COALESCE(github_repo_snapshots.forks,0),COALESCE(EXCLUDED.forks,0)) END,
+        watchers=CASE
+            WHEN EXCLUDED.community_metrics_complete IS TRUE
+             AND (github_repo_snapshots.community_metrics_complete IS NOT TRUE
+               OR COALESCE(EXCLUDED.captured_at,'') >= COALESCE(github_repo_snapshots.captured_at,''))
+            THEN EXCLUDED.watchers
+            ELSE github_repo_snapshots.watchers END,
+        community_metrics_complete=CASE
+            WHEN github_repo_snapshots.community_metrics_complete IS TRUE THEN TRUE
+            WHEN EXCLUDED.community_metrics_complete IS TRUE THEN TRUE
+            WHEN github_repo_snapshots.community_metrics_complete IS FALSE
+              OR EXCLUDED.community_metrics_complete IS FALSE THEN FALSE
+            ELSE NULL END,
+        open_issues=GREATEST(COALESCE(github_repo_snapshots.open_issues,0),COALESCE(EXCLUDED.open_issues,0)),
+        repo_created_at=COALESCE(NULLIF(github_repo_snapshots.repo_created_at,''),EXCLUDED.repo_created_at),
+        repo_pushed_at=GREATEST(COALESCE(github_repo_snapshots.repo_pushed_at,''),COALESCE(EXCLUDED.repo_pushed_at,''))
+"""
+
+
 class PostgresGitHubProjectIngestionRepository:
     """PostgreSQL writes and metric reads used by GitHub project ingestion."""
 
@@ -113,40 +186,22 @@ class PostgresGitHubProjectIngestionRepository:
         payload.setdefault("last_snapshot_at", now)
         return payload
 
+    @staticmethod
+    def _normalize_snapshot_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(snapshot)
+        payload.setdefault("captured_at", _utcnow())
+        for key in ("stars", "forks", "watchers", "open_issues"):
+            payload.setdefault(key, 0)
+        completeness = payload.get("community_metrics_complete")
+        payload["community_metrics_complete"] = (
+            None if completeness is None else bool(completeness)
+        )
+        payload.setdefault("repo_created_at", "")
+        payload.setdefault("repo_pushed_at", "")
+        return payload
+
     def upsert_github_repo_candidate(self, repo: dict[str, Any]) -> None:
         payload = self._candidate_payload(repo)
-        sql = """
-            INSERT INTO github_repo_candidates (
-                repo_id, full_name, title, url, description, language, topics_json,
-                created_at, pushed_at, stars, forks, watchers, source_channels,
-                first_seen_at, last_seen_at, last_snapshot_at
-            ) VALUES (
-                %(repo_id)s, %(full_name)s, %(title)s, %(url)s, %(description)s,
-                %(language)s, %(topics_json)s, %(created_at)s, %(pushed_at)s,
-                %(stars)s, %(forks)s, %(watchers)s, %(source_channels)s,
-                %(first_seen_at)s, %(last_seen_at)s, %(last_snapshot_at)s
-            )
-            ON CONFLICT (repo_id) DO UPDATE SET
-                title=COALESCE(NULLIF(EXCLUDED.title, ''), github_repo_candidates.title),
-                url=COALESCE(NULLIF(EXCLUDED.url, ''), github_repo_candidates.url),
-                description=COALESCE(NULLIF(EXCLUDED.description, ''), github_repo_candidates.description),
-                language=COALESCE(NULLIF(EXCLUDED.language, ''), github_repo_candidates.language),
-                topics_json=COALESCE(NULLIF(EXCLUDED.topics_json, '[]'), github_repo_candidates.topics_json),
-                created_at=COALESCE(NULLIF(github_repo_candidates.created_at, ''), EXCLUDED.created_at),
-                pushed_at=GREATEST(COALESCE(github_repo_candidates.pushed_at, ''), COALESCE(EXCLUDED.pushed_at, '')),
-                stars=GREATEST(COALESCE(github_repo_candidates.stars, 0), COALESCE(EXCLUDED.stars, 0)),
-                forks=GREATEST(COALESCE(github_repo_candidates.forks, 0), COALESCE(EXCLUDED.forks, 0)),
-                watchers=CASE
-                    WHEN %(community_metrics_complete)s IS TRUE
-                     AND COALESCE(EXCLUDED.last_snapshot_at, '') >= COALESCE(github_repo_candidates.last_snapshot_at, '')
-                    THEN EXCLUDED.watchers
-                    ELSE github_repo_candidates.watchers
-                END,
-                source_channels=EXCLUDED.source_channels,
-                first_seen_at=LEAST(COALESCE(NULLIF(github_repo_candidates.first_seen_at, ''), EXCLUDED.first_seen_at), EXCLUDED.first_seen_at),
-                last_seen_at=GREATEST(COALESCE(github_repo_candidates.last_seen_at, ''), COALESCE(EXCLUDED.last_seen_at, '')),
-                last_snapshot_at=GREATEST(COALESCE(github_repo_candidates.last_snapshot_at, ''), COALESCE(EXCLUDED.last_snapshot_at, ''))
-        """
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 requested = payload["repo_id"]
@@ -154,7 +209,7 @@ class PostgresGitHubProjectIngestionRepository:
                     cursor, requested, payload["full_name"]
                 )
                 payload["repo_id"] = canonical
-                cursor.execute(sql, payload)
+                cursor.execute(_CANDIDATE_UPSERT_SQL, payload)
                 self._upsert_alias(
                     cursor,
                     alias_repo_id=requested,
@@ -209,14 +264,7 @@ class PostgresGitHubProjectIngestionRepository:
     def mark_github_repo_available(self, full_name: str, *, checked_at: str) -> bool:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    UPDATE github_repo_candidates SET availability_status='active',
-                        not_found_count=0, availability_checked_at=%s
-                    WHERE LOWER(full_name)=LOWER(%s)
-                    """,
-                    (checked_at, full_name),
-                )
+                cursor.execute(_MARK_AVAILABLE_SQL, (checked_at, full_name))
                 return cursor.rowcount > 0
 
     def record_github_repo_not_found(self, full_name: str, *, checked_at: str) -> bool:
@@ -249,16 +297,7 @@ class PostgresGitHubProjectIngestionRepository:
                 )
 
     def insert_github_repo_snapshot(self, snapshot: dict[str, Any]) -> None:
-        payload = dict(snapshot)
-        payload.setdefault("captured_at", _utcnow())
-        for key in ("stars", "forks", "watchers", "open_issues"):
-            payload.setdefault(key, 0)
-        completeness = payload.get("community_metrics_complete")
-        payload["community_metrics_complete"] = (
-            None if completeness is None else bool(completeness)
-        )
-        payload.setdefault("repo_created_at", "")
-        payload.setdefault("repo_pushed_at", "")
+        payload = self._normalize_snapshot_payload(snapshot)
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 payload["repo_id"] = self._resolve_repo_id(
@@ -266,41 +305,68 @@ class PostgresGitHubProjectIngestionRepository:
                     str(payload.get("repo_id") or ""),
                     str(payload.get("full_name") or ""),
                 )
-                cursor.execute(
-                    """
-                    INSERT INTO github_repo_snapshots (
-                        repo_id, snapshot_date, captured_at, stars, forks, watchers,
-                        community_metrics_complete, open_issues, repo_created_at, repo_pushed_at
-                    ) VALUES (
-                        %(repo_id)s, %(snapshot_date)s, %(captured_at)s, %(stars)s,
-                        %(forks)s, %(watchers)s, %(community_metrics_complete)s,
-                        %(open_issues)s, %(repo_created_at)s, %(repo_pushed_at)s
-                    ) ON CONFLICT (repo_id, snapshot_date) DO UPDATE SET
-                        captured_at=GREATEST(COALESCE(github_repo_snapshots.captured_at,''), COALESCE(EXCLUDED.captured_at,'')),
-                        stars=GREATEST(COALESCE(github_repo_snapshots.stars,0), COALESCE(EXCLUDED.stars,0)),
-                        forks=CASE
-                            WHEN EXCLUDED.community_metrics_complete IS TRUE AND github_repo_snapshots.community_metrics_complete IS NOT TRUE THEN EXCLUDED.forks
-                            WHEN EXCLUDED.community_metrics_complete IS TRUE AND github_repo_snapshots.community_metrics_complete IS TRUE THEN GREATEST(COALESCE(github_repo_snapshots.forks,0),COALESCE(EXCLUDED.forks,0))
-                            WHEN github_repo_snapshots.community_metrics_complete IS TRUE THEN github_repo_snapshots.forks
-                            ELSE GREATEST(COALESCE(github_repo_snapshots.forks,0),COALESCE(EXCLUDED.forks,0)) END,
-                        watchers=CASE
-                            WHEN EXCLUDED.community_metrics_complete IS TRUE
-                             AND (github_repo_snapshots.community_metrics_complete IS NOT TRUE
-                               OR COALESCE(EXCLUDED.captured_at,'') >= COALESCE(github_repo_snapshots.captured_at,''))
-                            THEN EXCLUDED.watchers
-                            ELSE github_repo_snapshots.watchers END,
-                        community_metrics_complete=CASE
-                            WHEN github_repo_snapshots.community_metrics_complete IS TRUE THEN TRUE
-                            WHEN EXCLUDED.community_metrics_complete IS TRUE THEN TRUE
-                            WHEN github_repo_snapshots.community_metrics_complete IS FALSE
-                              OR EXCLUDED.community_metrics_complete IS FALSE THEN FALSE
-                            ELSE NULL END,
-                        open_issues=GREATEST(COALESCE(github_repo_snapshots.open_issues,0),COALESCE(EXCLUDED.open_issues,0)),
-                        repo_created_at=COALESCE(NULLIF(github_repo_snapshots.repo_created_at,''),EXCLUDED.repo_created_at),
-                        repo_pushed_at=GREATEST(COALESCE(github_repo_snapshots.repo_pushed_at,''),COALESCE(EXCLUDED.repo_pushed_at,''))
-                    """,
-                    payload,
-                )
+                cursor.execute(_SNAPSHOT_UPSERT_SQL, payload)
+
+    def upsert_github_repo_metric_observations(
+        self,
+        observations: list[dict[str, Any]],
+        *,
+        checked_at: str,
+    ) -> int:
+        """单事务批量写入一次日刷观测：候选 upsert + 可用性恢复 + 快照插入。
+
+        每条 observation 形如 {"candidate": {...}, "available_full_name": str,
+        "snapshot": {...}}，与三个单行方法共用同一套 SQL 与归一化逻辑。
+        任一观测失败整批回滚、不留中间态，调用方按整批成功/失败计数；
+        返回写入的观测条数。
+        """
+        if not observations:
+            return 0
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                candidates: list[dict[str, Any]] = []
+                aliases: list[tuple[str, str, str]] = []
+                availability_marks: list[tuple[str, str]] = []
+                for observation in observations:
+                    payload = self._candidate_payload(
+                        observation.get("candidate") or {}
+                    )
+                    requested = payload["repo_id"]
+                    canonical = self._resolve_repo_id(
+                        cursor, requested, payload["full_name"]
+                    )
+                    payload["repo_id"] = canonical
+                    candidates.append(payload)
+                    aliases.append((requested, canonical, payload["full_name"]))
+                    available_full_name = str(
+                        observation.get("available_full_name")
+                        or payload["full_name"]
+                    ).strip()
+                    if available_full_name:
+                        availability_marks.append((checked_at, available_full_name))
+                cursor.executemany(_CANDIDATE_UPSERT_SQL, candidates)
+                for requested, canonical, full_name in aliases:
+                    self._upsert_alias(
+                        cursor,
+                        alias_repo_id=requested,
+                        canonical_repo_id=canonical,
+                        full_name=full_name,
+                    )
+                if availability_marks:
+                    cursor.executemany(_MARK_AVAILABLE_SQL, availability_marks)
+                snapshots: list[dict[str, Any]] = []
+                for observation in observations:
+                    payload = self._normalize_snapshot_payload(
+                        observation.get("snapshot") or {}
+                    )
+                    payload["repo_id"] = self._resolve_repo_id(
+                        cursor,
+                        str(payload.get("repo_id") or ""),
+                        str(payload.get("full_name") or ""),
+                    )
+                    snapshots.append(payload)
+                cursor.executemany(_SNAPSHOT_UPSERT_SQL, snapshots)
+        return len(observations)
 
     def upsert_github_trending_hit(self, hit: dict[str, Any]) -> str:
         payload = dict(hit)

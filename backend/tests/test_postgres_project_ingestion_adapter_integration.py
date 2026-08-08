@@ -430,6 +430,207 @@ def test_watcher_corruption_repair_quarantines_history_and_is_idempotent(
     assert idempotent["snapshots_quarantined"] == 0
 
 
+def _delete_candidates(database: Any, *repo_ids: str) -> None:
+    """清走本文件批量观测测试创建的候选行（级联删快照/别名），避免污染共享 schema。"""
+    with database.transaction() as connection:
+        connection.execute(
+            "DELETE FROM github_repo_candidates WHERE repo_id = ANY(%s)",
+            (list(repo_ids),),
+        )
+
+
+def test_metric_observations_batch_matches_single_row_write_semantics(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    try:
+        repository.upsert_github_repo_candidate(
+            {
+                "repo_id": "acme/batch-down",
+                "full_name": "acme/batch-down",
+                "stars": 700,
+                "last_snapshot_at": "2026-07-01T00:00:00+00:00",
+            }
+        )
+        assert (
+            repository.record_github_repo_not_found("acme/batch-down", checked_at="2026-07-29")
+            is False
+        )
+        assert (
+            repository.record_github_repo_not_found("acme/batch-down", checked_at="2026-07-29")
+            is True
+        )
+        repository.insert_github_repo_snapshot(
+            {
+                "repo_id": "acme/batch-down",
+                "snapshot_date": "2026-07-30",
+                "captured_at": "2026-07-30T00:30:00+00:00",
+                "stars": 700,
+                "watchers": 40,
+                "community_metrics_complete": True,
+            }
+        )
+
+        written = repository.upsert_github_repo_metric_observations(
+            [
+                {
+                    "candidate": {
+                        "repo_id": "acme/batch-down",
+                        "full_name": "acme/batch-down",
+                        "stars": 750,
+                        "forks": 5,
+                        "watchers": 9,
+                        "community_metrics_complete": True,
+                        "source_channels": "daily_metrics",
+                        "last_snapshot_at": "2026-07-30T01:00:00+00:00",
+                    },
+                    # 可用性恢复与单行方法一致按 LOWER(full_name) 匹配
+                    "available_full_name": "ACME/BATCH-DOWN",
+                    "snapshot": {
+                        "repo_id": "acme/batch-down",
+                        "full_name": "acme/batch-down",
+                        "snapshot_date": "2026-07-30",
+                        "captured_at": "2026-07-30T01:00:00+00:00",
+                        "stars": 750,
+                        "forks": 5,
+                        "watchers": 9,
+                        "community_metrics_complete": True,
+                    },
+                },
+                {
+                    "candidate": {
+                        "repo_id": "acme/batch-fresh",
+                        "full_name": "acme/batch-fresh",
+                        "stars": 600,
+                        "source_channels": "daily_metrics",
+                        "last_snapshot_at": "2026-07-30T01:00:00+00:00",
+                    },
+                    "available_full_name": "acme/batch-fresh",
+                    "snapshot": {
+                        "repo_id": "acme/batch-fresh",
+                        "full_name": "acme/batch-fresh",
+                        "snapshot_date": "2026-07-30",
+                        "captured_at": "2026-07-30T01:00:00+00:00",
+                        "stars": 600,
+                        "community_metrics_complete": False,
+                    },
+                },
+            ],
+            checked_at="2026-07-30T01:00:00+00:00",
+        )
+
+        assert written == 2
+        with database.transaction() as connection:
+            down = connection.execute(
+                "SELECT availability_status,not_found_count,availability_checked_at,stars,watchers "
+                "FROM github_repo_candidates WHERE repo_id='acme/batch-down'"
+            ).fetchone()
+            fresh = connection.execute(
+                "SELECT availability_status,stars,source_channels "
+                "FROM github_repo_candidates WHERE repo_id='acme/batch-fresh'"
+            ).fetchone()
+            snapshots = connection.execute(
+                "SELECT repo_id,stars,forks,watchers,community_metrics_complete,captured_at "
+                "FROM github_repo_snapshots "
+                "WHERE repo_id IN ('acme/batch-down','acme/batch-fresh') ORDER BY repo_id"
+            ).fetchall()
+        assert down["availability_status"] == "active"
+        assert down["not_found_count"] == 0
+        assert down["availability_checked_at"] == "2026-07-30T01:00:00+00:00"
+        assert down["stars"] == 750
+        assert down["watchers"] == 9
+        assert fresh["availability_status"] == "active"
+        assert fresh["stars"] == 600
+        assert fresh["source_channels"] == "daily_metrics"
+        assert len(snapshots) == 2
+        down_snapshot = next(row for row in snapshots if row["repo_id"] == "acme/batch-down")
+        # 同日快照冲突合并语义与单行方法一致：GREATEST + completeness 升级
+        assert down_snapshot["stars"] == 750
+        assert down_snapshot["forks"] == 5
+        assert down_snapshot["watchers"] == 9
+        assert down_snapshot["community_metrics_complete"] is True
+        assert down_snapshot["captured_at"] == "2026-07-30T01:00:00+00:00"
+    finally:
+        _delete_candidates(database, "acme/batch-down", "acme/batch-fresh")
+
+
+def test_metric_observations_batch_failure_leaves_no_partial_state(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    try:
+        repository.upsert_github_repo_candidate(
+            {"repo_id": "acme/batch-keep", "full_name": "acme/batch-keep", "stars": 900}
+        )
+        assert (
+            repository.record_github_repo_not_found("acme/batch-keep", checked_at="2026-07-29")
+            is False
+        )
+        assert (
+            repository.record_github_repo_not_found("acme/batch-keep", checked_at="2026-07-29")
+            is True
+        )
+
+        with pytest.raises(Exception):
+            repository.upsert_github_repo_metric_observations(
+                [
+                    {
+                        "candidate": {
+                            "repo_id": "acme/batch-keep",
+                            "full_name": "acme/batch-keep",
+                            "stars": 950,
+                            "last_snapshot_at": "2026-07-30T01:00:00+00:00",
+                        },
+                        "available_full_name": "acme/batch-keep",
+                        "snapshot": {
+                            "repo_id": "acme/batch-keep",
+                            "full_name": "acme/batch-keep",
+                            "snapshot_date": "2026-07-30",
+                            "captured_at": "2026-07-30T01:00:00+00:00",
+                            "stars": 950,
+                        },
+                    },
+                    {
+                        "candidate": {
+                            "repo_id": "acme/batch-bad",
+                            "full_name": "acme/batch-bad",
+                            "stars": 800,
+                        },
+                        "available_full_name": "acme/batch-bad",
+                        "snapshot": {
+                            "repo_id": "acme/batch-bad",
+                            "full_name": "acme/batch-bad",
+                            # NOT NULL 违例：触发整批回滚
+                            "snapshot_date": None,
+                            "captured_at": "2026-07-30T01:00:00+00:00",
+                            "stars": 800,
+                        },
+                    },
+                ],
+                checked_at="2026-07-30T01:00:00+00:00",
+            )
+
+        with database.transaction() as connection:
+            bad_candidate = connection.execute(
+                "SELECT repo_id FROM github_repo_candidates WHERE repo_id='acme/batch-bad'"
+            ).fetchone()
+            keep = connection.execute(
+                "SELECT availability_status,stars FROM github_repo_candidates "
+                "WHERE repo_id='acme/batch-keep'"
+            ).fetchone()
+            snapshots = connection.execute(
+                "SELECT COUNT(*) AS cnt FROM github_repo_snapshots "
+                "WHERE repo_id IN ('acme/batch-keep','acme/batch-bad')"
+            ).fetchone()
+        # 候选 upsert、可用性恢复、快照插入全部随事务回滚
+        assert bad_candidate is None
+        assert keep["availability_status"] == "not_found"
+        assert keep["stars"] == 900
+        assert snapshots["cnt"] == 0
+    finally:
+        _delete_candidates(database, "acme/batch-keep", "acme/batch-bad")
+
+
 def test_trending_metric_inputs_upsert_status_and_hot_reads(
     postgres_ingestion: tuple[Any, Any],
 ) -> None:
