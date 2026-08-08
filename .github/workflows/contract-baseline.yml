@@ -151,6 +151,9 @@ jobs:
       POSTGRES_DATABASE: ci_placeholder
       POSTGRES_USER: ci_placeholder
       POSTGRES_PASSWORD: ci_placeholder
+      NEO4J_PASSWORD: ci_placeholder
+      MINIO_ACCESS_KEY: ci_placeholder
+      MINIO_SECRET_KEY: ci_placeholder
       NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.example.com
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
     steps:
