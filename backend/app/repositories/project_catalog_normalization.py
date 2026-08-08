@@ -57,7 +57,7 @@ def _iso(value: Any) -> str | None:
 
 
 def normalize_project_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Reproduce the public MySQL catalog row shape without coupling adapters."""
+    """Reproduce the public project catalog row shape without coupling adapters."""
     item = dict(row)
     item["topics"] = _json_list(item.pop("topics_json", None))
     tags = _json_list(item.pop("tags_json", None))

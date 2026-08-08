@@ -187,7 +187,7 @@ def enrich_arxiv_pdf_full(paper: Dict[str, Any]) -> Dict[str, Any]:
     """Arxiv 论文：【PDF 补全阶段】下载 PDF 解析全文，更新 full_text。
 
     在摘要已入库后，后台调用此函数补充 PDF 全文。
-    调用方需自行将更新后的 full_text 重新写入 Milvus / SQLite。
+    调用方需自行将更新后的 full_text 重新写入 Milvus / PostgreSQL。
     """
     arxiv_id = paper.get("arxiv_id", "")
     pdf_url = paper.get("pdf_url", "")

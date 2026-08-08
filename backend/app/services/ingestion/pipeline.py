@@ -2,12 +2,12 @@ from __future__ import annotations
 
 """数据采集 Pipeline（M15 — Orchestrator 架构）
 
-六数据源各自独立采集 → 各取 Top-N → 摘要快速入库 → 后台 PDF 补全
+七数据源各自独立采集 → 各取 Top-N → 摘要快速入库 → 后台 PDF 补全
 
 架构（M15 重构）：
-  采集层：5 个独立爬虫（BaseCrawler 子类）+ HuggingFace（已禁用）
+  采集层：7 个独立爬虫（BaseCrawler 子类，装配见 composition.py 的 crawler_factories）
   编排层：IngestionOrchestrator 统一调度爬虫 → 内容丰富 → 三库写入
-  入库层：SQLite + Milvus + Neo4j
+  入库层：PostgreSQL + Milvus + Neo4j
 
   关键改进：
   - 爬虫与编排解耦：crawlers/*.py 各自封装采集逻辑，pipeline.py 只做编排

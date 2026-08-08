@@ -1,6 +1,6 @@
 # AIGC_NEWS 项目功能架构
 
-> 最后更新：2026-07-29（数据库退役当前态：PostgreSQL 16 为唯一关系型运行时，MySQL 仅用于迁移与恢复）
+> 最后更新：2026-08-08（数据库退役当前态：PostgreSQL 16 为唯一关系型运行时，MySQL 运行时与迁移/演练资产均已从仓库移除）
 >
 > **数据库当前态**：应用通过 repository Protocol 依赖数据能力，由 FastAPI lifespan 作为 composition root 组装 PostgreSQL repository；主 Compose 仅包含 PostgreSQL 16，不包含 MySQL。最终退役操作见 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md)。
 
@@ -21,7 +21,7 @@
 | **LLM 引擎** | OpenAI / Anthropic / Ollama（通过 LangChain 抽象） |
 | **向量数据库** | Milvus 2.4（HNSW 索引 + COSINE 度量） |
 | **图数据库** | Neo4j 5.18（知识图谱） |
-| **关系数据库** | PostgreSQL 16（唯一应用运行时）；MySQL 仅限迁移/恢复，SQLite 为非运行时遗留代码 |
+| **关系数据库** | PostgreSQL 16（唯一应用运行时）；MySQL 已退役（迁移/演练资产已删除），SQLite 为非运行时遗留代码 |
 | **缓存** | Redis 7（API 缓存 + Email OTP 验证码 + 防刷） |
 | **对象存储** | MinIO（Milvus 依赖） |
 | **定时调度** | APScheduler（AsyncIOScheduler） |
@@ -251,7 +251,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 #### `retriever.py`
 - **核心类**: `HybridRetriever`
 - **混合检索策略**:
-  1. **关系型 repository 文档 ID 精确召回**: 从 query 中提取 32 位 `documents.id`（论文阅读页会通过 `paper_id` 注入当前论文 ID），通过 document repository 按主键查询 PostgreSQL；命中后使用历史兼容元数据值 `match_type=mysql_id`、`force_include=true`、`rerank_score=10.0` 并优先注入上下文。ArXiv 且 `local_pdf_path` 存在时补充本地 PDF 前 20000 字符正文，保证“详细讲一下这篇论文”等泛化问题也能读到目标论文内容
+  1. **关系型 repository 文档 ID 精确召回**: 从 query 中提取 32 位 `documents.id`（论文阅读页会通过 `paper_id` 注入当前论文 ID），通过 document repository 按主键查询 PostgreSQL；命中后写入元数据 `match_type=documents_id`、`force_include=true`、`rerank_score=10.0` 并优先注入上下文。ArXiv 且 `local_pdf_path` 存在时补充本地 PDF 前 20000 字符正文，保证“详细讲一下这篇论文”等泛化问题也能读到目标论文内容
   2. **关系型 repository 标题召回**: 对用户输入中的英文关键词执行 title 近似匹配，优先召回标题高度命中的已收录论文/项目；当命中 ArXiv 且 `local_pdf_path` 存在时，会从本地 PDF 补充前 6000 字符正文片段，避免只使用关系表中的 500 字符元数据摘要导致回答误判“摘要被截断”
   3. **Milvus 向量检索**: 按 query embedding 相似度搜索，HNSW 索引；若 ID 召回命中，会把目标论文标题拼入向量检索 query，提升同论文 PDF 分块召回概率
   4. **Neo4j 图检索**: 按关键词匹配知识图谱实体和关系
@@ -430,7 +430,7 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 
 服务层不再存在进程级仓储回退：采集、简报、RAG 评估、GitHub 富化/指标/热度、语义索引等入口一律要求显式注入依赖，仅应用组合根（`main.py` lifespan）与有边界的 CLI/脚本组合点（如 `run_ingestion.py`、`scripts/backfill_*.py`）可以装配仓储。模型运行时的提供商设置读取器同样由 lifespan 显式绑定（`configure_runtime_provider_settings`），关闭时解绑；未绑定时读取直接报错而非隐式回退。架构测试以 AST 扫描固化：生产代码中仅 `main.py` 允许引用仓储装配上下文。
 
-主 `docker/docker-compose.yml` 只声明 `project-catalog-postgres`，不声明 MySQL。MySQL 相关 Compose、repository 与迁移工具只用于有边界的迁移、核对和恢复，不属于应用启动或请求路径；其最终退役按 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md) 执行。
+主 `docker/docker-compose.yml` 只声明 `project-catalog-postgres`，不声明 MySQL。MySQL 相关 Compose、迁移与演练资产已随迁移验收结束从仓库删除，仓库内不存在 MySQL 启动或请求路径；生产 MySQL 容器停用与数据卷最终处置属独立运维授权边界，按 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md) 执行。
 
 **数据库表结构**:
 
@@ -489,7 +489,7 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 
 ### 4.4 遗留关系数据库边界
 
-- MySQL：仅限迁移核对、备份恢复和经授权回滚，不是应用运行时。
+- MySQL：已退役，仓库不再包含其运行时、Compose 与迁移/演练资产；生产容器停用、凭据撤销与数据卷最终处置属独立运维授权边界（见 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md)）。
 - SQLite：遗留代码，不是备用运行时，也不在主 Compose 中启动。
 - 任何新增业务持久化都应先定义 repository Protocol，再由 composition root 组装 PostgreSQL 实现。
 
