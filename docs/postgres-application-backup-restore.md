@@ -19,11 +19,14 @@ export PGPASSFILE=/run/secrets/postgres-pgpass
 ./scripts/backup_postgres_application.sh /secure/backups/aigcnews-20260728.dump
 ```
 
-脚本先验证：
+脚本先验证（默认模式，与仓库 migration 版本解耦）：
 
-- `app_schema_migrations` 从版本 1 连续到仓库中的最新 migration；
-- ledger 最新文件名与仓库 migration 一致；
+- `app_schema_migrations` 账本从版本 1 开始且连续无缺口（**不与仓库最新 migration 比对**——仓库有尚未应用的新迁移时夜间备份照常进行，即"迁移前必能备份"）；
 - 基本应用表 `github_repo_candidates`、`github_repo_enrichments`、`users`、`documents`、`conversations`、`chat_messages` 存在且可查询。
+
+恢复后校验同样使用默认模式：以 dump 内的 `app_schema_migrations` 账本为准，恢复旧备份（账本落后于仓库最新迁移）不会被误判失败。
+
+如需恢复旧的严格口径（账本必须恰好覆盖到仓库最新 migration 且文件名一致），显式传 `--strict` 或 `POSTGRES_VERIFY_STRICT=1` 调用 `scripts/verify_postgres_application_restore.sh`。
 
 成功后生成 PostgreSQL custom-format dump 和同名 `.sha256` 证据。脚本拒绝覆盖已有 dump。
 
@@ -105,7 +108,7 @@ export CONFIRM_EMPTY_DATABASE=aigcnews_restore_20260728
 3. SHA-256 evidence 必须存在并校验通过；
 4. 非系统 schema 中不能已有 table、view、sequence、foreign table 或 function；
 5. `pg_restore` 使用单事务、`--exit-on-error`、`--no-owner`、`--no-acl`；
-6. restore 后重新执行 migration ledger、必需表和基本查询 smoke。
+6. restore 后重新执行 migration ledger 连续性、必需表和基本查询 smoke（以 dump 内账本为准，不与仓库最新 migration 比对）。
 
 验收日志应保存脚本成功输出、dump 文件名、`.sha256` 文件内容、执行时间、源/目标数据库名和操作人。不要保存密码或完整 DSN。
 

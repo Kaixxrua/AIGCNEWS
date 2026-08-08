@@ -43,9 +43,22 @@ compose() {
     "$@"
 }
 
+# boot 路径必须启用 dailyhot profile：scheduler_registry.py 注册了
+# dailyhot_hotlists 采集任务，需要编排内的 DailyHotApi 上游；不显式启用时
+# `up --remove-orphans` 会把手动启动的 aigc-dailyhot 当 orphan 拆除。
+# 调用方已设置 COMPOSE_PROFILES 时保留其值，仅补齐 dailyhot。
+ensure_dailyhot_profile() {
+  case ",${COMPOSE_PROFILES:-}," in
+    *,dailyhot,*) ;;
+    *) COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}dailyhot" ;;
+  esac
+  export COMPOSE_PROFILES
+}
+
 main() {
   require_command docker
   [[ -f "${COMPOSE_FILE}" ]] || fail "compose file not found: ${COMPOSE_FILE}"
+  ensure_dailyhot_profile
 
   local action="${1:-}"
   [[ $# -eq 1 ]] || { usage >&2; exit 2; }

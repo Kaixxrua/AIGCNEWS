@@ -1,7 +1,7 @@
 import asyncio
 import logging
-import sys
 import os
+import sys
 
 # 确保能找到 backend 模块
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
@@ -11,7 +11,10 @@ from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
 from backend.app.services.ingestion.composition import provide_ingestion_dependencies
-from backend.app.services.ingestion.pipeline import run_ingestion_pipeline_async
+from backend.app.services.ingestion.pipeline import (
+    join_background_pdf_threads,
+    run_ingestion_pipeline_async,
+)
 
 # 配置日志
 logging.basicConfig(
@@ -35,6 +38,10 @@ async def main():
                     repositories=repositories,
                 ),
             )
+            # CLI 是一次性进程：退出前必须等后台 Arxiv PDF 线程（落盘 + 向量化）
+            # 跑完，否则 daemon 线程随进程退出被杀。该线程要写 documents 表，
+            # 因此 join 必须在 postgres_database.close() 之前。
+            await asyncio.to_thread(join_background_pdf_threads)
         finally:
             postgres_database.close()
 
@@ -45,6 +52,8 @@ async def main():
 
     except Exception as e:
         logger.error(f"❌ Ingestion Failed: {e}", exc_info=True)
+        # CLI 供 cron/systemd 调用：失败必须非零退出，调用方才能感知失败。
+        sys.exit(1)
 
 
 if __name__ == "__main__":
