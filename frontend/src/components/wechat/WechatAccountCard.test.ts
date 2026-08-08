@@ -35,6 +35,8 @@ const makeArticle = (overrides: Partial<WeChatArticle> = {}): WeChatArticle => (
   source_url: '',
   has_content: false,
   published_at: null,
+  created_at: null,
+  updated_at: null,
   ...overrides,
 })
 
@@ -60,7 +62,7 @@ const mountCard = (entry: WeChatFeedEntry, expandedKeys: Set<string>) =>
       articleKey: (accountId: number, articleId: number | null, stableKey: string) =>
         `${accountId}:${articleId ?? stableKey}`,
       articleDetails: new Map(),
-      articleDetailLoading: new Set(),
+      articleDetailLoading: new Set<string>(),
       articleDetailErrors: new Map(),
     },
   })

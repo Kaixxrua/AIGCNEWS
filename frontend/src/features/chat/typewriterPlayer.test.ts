@@ -69,11 +69,11 @@ describe('typewriter player', () => {
 
     await vi.advanceTimersByTimeAsync(16)
     expect(msg.content).toBe('abc')
-    expect(frames.at(-1)).toMatchObject({ isThinking: false, isStreaming: true, thinkingDurationSec: 0 })
+    expect(frames[frames.length - 1]).toMatchObject({ isThinking: false, isStreaming: true, thinkingDurationSec: 0 })
 
     await vi.advanceTimersByTimeAsync(16)
     expect(msg.content).toBe('abcdef')
-    expect(frames.at(-1)).not.toHaveProperty('thinkingDurationSec')
+    expect(frames[frames.length - 1]).not.toHaveProperty('thinkingDurationSec')
   })
 
   it('locks the thinking duration at the first content event', async () => {
