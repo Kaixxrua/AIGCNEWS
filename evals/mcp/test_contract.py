@@ -13,6 +13,12 @@ mcp-eval 自己的 runner 使用，在 pytest 里会与 fixture 解析冲突）�
 
 import json
 
+import pytest
+
+# 本套件依赖独立 .venv 中的 mcp-eval（见 README）；backend 开发环境
+# 全量收集时优雅跳过，而不是 collection error。
+pytest.importorskip("mcp_eval", reason="mcp-eval 未安装（见 evals/mcp/README.md）")
+
 
 def _raw(mcp_session):
     """TestAgent 不转发 call_tool，取其内部 mcp_agent.Agent。"""

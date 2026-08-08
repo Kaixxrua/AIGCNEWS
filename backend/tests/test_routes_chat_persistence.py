@@ -4,9 +4,17 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from backend.app.api import routes_chat
+from backend.app.api.dependencies import (
+    get_conversation_repository,
+    get_conversation_service,
+    get_rag_chat_service,
+)
+from backend.app.core.auth import RequireUser
 from backend.app.models.schema_chat import ChatStreamRequest
 
 
@@ -278,6 +286,63 @@ class ChatPersistenceRouteTests(unittest.TestCase):
 
         self.assertIn('"type": "error"', events[-2])
         self.assertEqual(events[-1], "data: [DONE]\n\n")
+
+
+class ChatStreamRequestBoundaryTests(unittest.TestCase):
+    def test_schema_accepts_boundary_lengths(self) -> None:
+        request = ChatStreamRequest(
+            message="x" * 16000,
+            history=[{"role": "user", "content": "c"}] * 50,
+            attachment_ids=[str(i) for i in range(10)],
+        )
+
+        self.assertEqual(len(request.message), 16000)
+        self.assertEqual(len(request.history), 50)
+        self.assertEqual(len(request.attachment_ids), 10)
+
+    def test_schema_rejects_lengths_past_limits(self) -> None:
+        with self.assertRaises(ValidationError):
+            ChatStreamRequest(message="x" * 16001)
+        with self.assertRaises(ValidationError):
+            ChatStreamRequest(
+                message="q", history=[{"role": "user", "content": "c"}] * 51
+            )
+        with self.assertRaises(ValidationError):
+            ChatStreamRequest(
+                message="q", attachment_ids=[str(i) for i in range(11)]
+            )
+
+    def test_stream_route_rejects_oversized_payload_with_422_before_model_work(
+        self,
+    ) -> None:
+        app = FastAPI()
+        app.include_router(routes_chat.router, prefix="/api")
+        app.dependency_overrides[RequireUser] = lambda: {"user_id": 3, "role": "user"}
+        quota_reader = MagicMock()
+        app.dependency_overrides[get_conversation_repository] = lambda: quota_reader
+        app.dependency_overrides[get_conversation_service] = MagicMock
+        app.dependency_overrides[get_rag_chat_service] = MagicMock
+
+        client = TestClient(app)
+        responses = [
+            client.post("/api/chat/stream", json={"message": "x" * 16001}),
+            client.post(
+                "/api/chat/stream",
+                json={
+                    "message": "q",
+                    "history": [{"role": "user", "content": "c"}] * 51,
+                },
+            ),
+            client.post(
+                "/api/chat/stream",
+                json={"message": "q", "attachment_ids": [str(i) for i in range(11)]},
+            ),
+        ]
+
+        for response in responses:
+            self.assertEqual(response.status_code, 422)
+        # 校验失败在端点入口前拦截：不触发配额读取与后续模型编排
+        quota_reader.count_user_messages_today.assert_not_called()
 
 
 if __name__ == "__main__":

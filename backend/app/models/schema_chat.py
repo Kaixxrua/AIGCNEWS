@@ -90,10 +90,12 @@ class DeleteMessageResponse(BaseModel):
 
 
 class ChatStreamRequest(BaseModel):
-    message: str
-    history: List[ChatMessagePayload] = Field(default_factory=list)
+    # 单条消息上限 16000 字符：nginx 60MB body 上限内不设防时，
+    # 任意长文本会整段进入 LLM prompt，放大 token 成本与注入面
+    message: str = Field(max_length=16000)
+    history: List[ChatMessagePayload] = Field(default_factory=list, max_length=50)
     temperature: Optional[float] = Field(default=0.7, ge=0.0, le=2.0)
-    attachment_ids: List[str] = Field(default_factory=list)
+    attachment_ids: List[str] = Field(default_factory=list, max_length=10)
     conversation_id: Optional[int] = None
     paper_id: Optional[str] = None
     scope: ConversationScope = "global"

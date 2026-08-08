@@ -11,6 +11,10 @@ pytest 下使用 mcp-eval 的 `mcp_session` fixture；evaluator 失败会在
 fixture 退出时汇总并以 pytest.fail 抛出。
 """
 
+import pytest
+
+pytest.importorskip("mcp_eval", reason="mcp-eval 未安装（见 evals/mcp/README.md）")
+
 from mcp_eval.evaluators import LLMJudge, ResponseTimeCheck, ToolWasCalled
 
 
