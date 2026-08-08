@@ -8,7 +8,7 @@ defineProps<{
 </script>
 
 <template>
-  <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 生态合作） ═══ -->
+  <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 商业和合作 / 侵权投诉） ═══ -->
   <div class="dock-footer">
     <span>{{ t('footer.poweredBy', { brandName }) }}</span>
     <span class="footer-sep">·</span>
@@ -19,6 +19,8 @@ defineProps<{
     <RouterLink to="/mcp" class="footer-link">{{ t('footer.mcp') }}</RouterLink>
     <span class="footer-sep">·</span>
     <span>{{ t('footer.ecosystem') }}<a href="mailto:kaixxrua@gmail.com" class="footer-link">kaixxrua@gmail.com</a></span>
+    <span class="footer-sep">·</span>
+    <a href="mailto:kaixxrua@gmail.com?subject=侵权投诉" class="footer-link">{{ t('footer.infringement') }}</a>
   </div>
 </template>
 

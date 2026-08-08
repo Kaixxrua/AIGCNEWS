@@ -4,7 +4,7 @@ const enUS = {
   theme: { toggle: 'Theme', light: 'Light mode', dark: 'Dark mode' },
   navigation: { home: 'Home', dashboard: 'Dashboard', papers: 'Papers', projects: 'Projects', chat: 'Chat', report: 'Report', xboard: 'X Board', wechat: 'WeChat', subscriptions: 'My Subscriptions', mcp: 'MCP', monitor: 'Monitor', loginAccount: 'Log in', logout: 'Log out', monitorAlert: 'GitHub project enrichment failures need attention on the Monitor page' },
   search: { placeholder: 'Search papers and projects…', noResults: 'No matching results', resultCount: '{count} search results', trending: "Today's top picks", paper: 'Paper', github: 'GitHub', news: 'News', producthunt: 'PH', hackernews: 'HN', x: 'X' },
-  footer: { poweredBy: 'Powered by {brandName}', disclaimer: 'Disclaimer', privacy: 'Privacy Policy', mcp: 'MCP Access', ecosystem: 'Partnerships: ' },
+  footer: { poweredBy: 'Powered by {brandName}', disclaimer: 'Disclaimer', privacy: 'Privacy Policy', mcp: 'MCP Access', ecosystem: 'Business & Partnerships: ', infringement: 'Report Infringement' },
   auth: {
     login: 'Log in', logout: 'Log out', username: 'Username', password: 'Password', email: 'Email', otp: 'Verification code', newPassword: 'New password', confirmPassword: 'Confirm password',
     loginTitle: 'AIGC News · Log in', loginDescription: 'Welcome back. Log in to your account.', registerTitle: 'AIGC News · Register', registerDescription: 'Create your account and start exploring AI news.', forgotTitle: 'AIGC News · Reset password', forgotDescription: 'Set a new password using an email verification code.',
