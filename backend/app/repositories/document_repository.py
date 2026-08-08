@@ -12,6 +12,8 @@ class DocumentWriter(Protocol):
 
     def delete_document(self, doc_id: str) -> bool: ...
 
+    def delete_documents(self, doc_ids: list[str]) -> list[str]: ...
+
 
 class DocumentSearchReader(Protocol):
     """Search document content with stable pagination and ordering."""

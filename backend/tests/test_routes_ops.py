@@ -256,6 +256,91 @@ class OperationsRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 500)
 
+    def test_bulk_delete_uses_one_batch_call_and_preserves_response_contract(self) -> None:
+        repository = MagicMock()
+        repository.delete_documents.return_value = ["x:1", "x:3"]
+        client = self._documents_client(repository)
+
+        with patch.object(
+            routes_ops, "clear_dashboard_cache_safely", new=AsyncMock()
+        ) as clear_cache:
+            response = client.post(
+                "/api/ops/documents/bulk-delete",
+                json={"doc_ids": ["x:1", "x:2", "x:3"]},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "status": "success",
+                "message": "已删除 2 条文档，1 条未找到",
+                "doc_ids": ["x:1", "x:3"],
+                "deleted_count": 2,
+                "not_found_count": 1,
+            },
+        )
+        # 批量删除走单事务批量方法，不再逐条调 delete_document
+        repository.delete_documents.assert_called_once_with(["x:1", "x:2", "x:3"])
+        repository.delete_document.assert_not_called()
+        clear_cache.assert_awaited_once_with()
+
+    def test_bulk_delete_dedupes_ids_before_batch_delete(self) -> None:
+        repository = MagicMock()
+        repository.delete_documents.return_value = ["x:1", "x:2"]
+        client = self._documents_client(repository)
+
+        with patch.object(routes_ops, "clear_dashboard_cache_safely", new=AsyncMock()):
+            response = client.post(
+                "/api/ops/documents/bulk-delete",
+                json={"doc_ids": ["x:1", "x:1", "x:2"]},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        repository.delete_documents.assert_called_once_with(["x:1", "x:2"])
+        body = response.json()
+        self.assertEqual(body["deleted_count"], 2)
+        self.assertEqual(body["not_found_count"], 0)
+
+    def test_bulk_delete_reports_batch_failure_as_error(self) -> None:
+        repository = MagicMock()
+        repository.delete_documents.side_effect = RuntimeError("db down")
+        client = self._documents_client(repository, raise_server_exceptions=False)
+
+        with patch.object(routes_ops, "clear_dashboard_cache_safely", new=AsyncMock()):
+            response = client.post(
+                "/api/ops/documents/bulk-delete",
+                json={"doc_ids": ["x:1", "x:2"]},
+            )
+
+        self.assertEqual(response.status_code, 500)
+
+    def test_bulk_delete_requires_admin_before_deleting(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        repository = MagicMock()
+        app.dependency_overrides[get_document_repository] = lambda: repository
+
+        response = TestClient(app).post(
+            "/api/ops/documents/bulk-delete",
+            json={"doc_ids": ["x:1"]},
+        )
+
+        self.assertIn(response.status_code, (401, 403))
+        repository.delete_documents.assert_not_called()
+
+    @staticmethod
+    def _documents_client(
+        repository: MagicMock,
+        *,
+        raise_server_exceptions: bool = True,
+    ) -> TestClient:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[get_document_repository] = lambda: repository
+        return TestClient(app, raise_server_exceptions=raise_server_exceptions)
+
     def test_provider_config_uses_injected_repository_and_redacts_key(self) -> None:
         repository = MagicMock(spec=RuntimeProviderSettingManager)
         repository.get_runtime_provider_setting.return_value = {

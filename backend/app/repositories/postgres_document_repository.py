@@ -190,6 +190,28 @@ class PostgresDocumentRepository:
                 )
                 return bool(cursor.rowcount)
 
+    def delete_documents(self, doc_ids: list[str]) -> list[str]:
+        """单事务批量删除文档及其排行快照；返回实际删除的 id（按入参顺序去重）。
+
+        两张表的删除在同一事务内完成，任一失败整体回滚、不留半完成状态；
+        以 documents 删除的 RETURNING 为准区分已删除与未找到。
+        """
+        unique_ids = list(dict.fromkeys(doc_ids))
+        if not unique_ids:
+            return []
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM document_rank_snapshots WHERE doc_id = ANY(%s)",
+                    (unique_ids,),
+                )
+                cursor.execute(
+                    "DELETE FROM documents WHERE id = ANY(%s) RETURNING id",
+                    (unique_ids,),
+                )
+                deleted = {row["id"] for row in cursor.fetchall()}
+        return [doc_id for doc_id in unique_ids if doc_id in deleted]
+
     def update_document_pdf_path(self, doc_id: str, local_pdf_path: str) -> None:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:

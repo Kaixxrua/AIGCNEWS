@@ -50,6 +50,7 @@ class DocumentRepositoryContractTests(unittest.TestCase):
             DocumentWriter.upsert_document: "(self, doc)",
             DocumentWriter.update_document_pdf_path: "(self, doc_id, local_pdf_path)",
             DocumentWriter.delete_document: "(self, doc_id)",
+            DocumentWriter.delete_documents: "(self, doc_ids)",
             DocumentSearchReader.search_document_page: (
                 "(self, query, *, source=None, page=1, page_size=20)"
             ),

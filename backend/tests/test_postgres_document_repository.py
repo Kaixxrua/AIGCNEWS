@@ -4,6 +4,8 @@ import json
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
+import pytest
+
 from backend.app.repositories.postgres_document_repository import (
     PostgresDocumentRepository,
     _deserialize_row_media,
@@ -191,6 +193,57 @@ def test_delete_document_returns_false_when_missing() -> None:
     deleted = repository.delete_document("x:missing")
 
     assert deleted is False
+
+
+def test_delete_documents_removes_documents_and_snapshots_in_one_transaction() -> None:
+    repository, database, cursor = repository_with_cursor()
+    cursor.fetchall.return_value = [{"id": "x:1001"}, {"id": "x:1002"}]
+
+    deleted = repository.delete_documents(["x:1001", "x:1002", "x:missing"])
+
+    assert deleted == ["x:1001", "x:1002"]
+    assert database.transaction_count == 1
+    calls = cursor.execute.call_args_list
+    assert len(calls) == 2
+    snapshots_sql, snapshots_params = calls[0].args
+    assert "DELETE FROM document_rank_snapshots" in snapshots_sql
+    assert "ANY(%s)" in snapshots_sql
+    assert snapshots_params == (["x:1001", "x:1002", "x:missing"],)
+    documents_sql, documents_params = calls[1].args
+    assert "DELETE FROM documents" in documents_sql
+    assert "RETURNING id" in documents_sql
+    assert documents_params == (["x:1001", "x:1002", "x:missing"],)
+
+
+def test_delete_documents_dedupes_ids_preserving_request_order() -> None:
+    repository, database, cursor = repository_with_cursor()
+    cursor.fetchall.return_value = [{"id": "x:2"}, {"id": "x:1"}]
+
+    deleted = repository.delete_documents(["x:2", "x:1", "x:2"])
+
+    assert deleted == ["x:2", "x:1"]
+    assert database.transaction_count == 1
+    _, documents_params = cursor.execute.call_args_list[1].args
+    assert documents_params == (["x:2", "x:1"],)
+
+
+def test_delete_documents_empty_list_opens_no_transaction() -> None:
+    repository, database, cursor = repository_with_cursor()
+
+    assert repository.delete_documents([]) == []
+    assert database.transaction_count == 0
+    cursor.execute.assert_not_called()
+
+
+def test_delete_documents_failure_propagates_out_of_one_transaction() -> None:
+    repository, database, cursor = repository_with_cursor()
+    cursor.execute.side_effect = [None, RuntimeError("delete failed")]
+
+    with pytest.raises(RuntimeError, match="delete failed"):
+        repository.delete_documents(["x:1001", "x:1002"])
+
+    # 只开启了一个事务：排行快照删除随 documents 删除失败一起回滚
+    assert database.transaction_count == 1
 
 
 def test_upsert_document_persists_translation_zh() -> None:

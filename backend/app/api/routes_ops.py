@@ -619,25 +619,17 @@ async def bulk_delete_documents(
     _: dict = Depends(RequireAdmin),
     documents: DocumentRepository = Depends(get_document_repository),
 ) -> BulkDocumentDeleteResponse:
-    """批量删除文档及其排行快照；返回实际删除与未找到的计数。"""
-    deleted_ids: list[str] = []
-    not_found_ids: list[str] = []
-
-    def _delete_all() -> None:
-        for doc_id in request.doc_ids:
-            if documents.delete_document(doc_id):
-                deleted_ids.append(doc_id)
-            else:
-                not_found_ids.append(doc_id)
-
-    await asyncio.to_thread(_delete_all)
+    """批量删除文档及其排行快照（单事务原子）；返回实际删除与未找到的计数。"""
+    requested_ids = list(dict.fromkeys(request.doc_ids))
+    deleted_ids = await asyncio.to_thread(documents.delete_documents, requested_ids)
+    not_found_count = len(requested_ids) - len(deleted_ids)
     await clear_dashboard_cache_safely()
     return BulkDocumentDeleteResponse(
         status="success",
-        message=f"已删除 {len(deleted_ids)} 条文档，{len(not_found_ids)} 条未找到",
+        message=f"已删除 {len(deleted_ids)} 条文档，{not_found_count} 条未找到",
         doc_ids=deleted_ids,
         deleted_count=len(deleted_ids),
-        not_found_count=len(not_found_ids),
+        not_found_count=not_found_count,
     )
 
 
