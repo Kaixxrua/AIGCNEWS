@@ -16,8 +16,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import subprocess
+import sys
+import threading
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -41,7 +46,7 @@ from backend.app.repositories.application_repository_factory import (
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.services.briefing.dispatch import (
-    BRIEFING_TASKS,
+    BRIEFING_SOURCES,
     run_daily_briefing_dispatch,
 )
 from backend.app.services.x_credentials.probe import probe_all_x_credentials
@@ -54,6 +59,109 @@ _GITHUB_METRICS_REFRESH_LIMIT = 0  # 0 表示刷新全部符合条件的项目
 # 保证「快照越过 500 自动进入每日富化」的跨线检测不遗漏
 _GITHUB_METRICS_MIN_STARS = 300
 _GITHUB_METRICS_MAX_AGE = timedelta(hours=2, minutes=15)
+
+# 调度任务连续失败告警：阈值内只记日志，达到阈值才经 notify_ops_alert.py 发信
+_DEFAULT_ALERT_FAILURE_THRESHOLD = 3
+_ALERT_FAILURE_THRESHOLD_ENV = "SCHEDULER_JOB_ALERT_FAILURE_THRESHOLD"
+_OPS_ALERT_SCRIPT = (
+    Path(__file__).resolve().parents[3] / "scripts" / "notify_ops_alert.py"
+)
+
+
+def _notify_ops_alert(job_id: str, failures: int, detail: str) -> None:
+    """经 scripts/notify_ops_alert.py 发送调度器失败告警（fire-and-forget）。
+
+    SMTP 发送放到 daemon 线程，避免阻塞事件循环；脚本缺失或发送失败只记日志，
+    告警链路绝不能反过来影响调度任务本身。
+    """
+    if not _OPS_ALERT_SCRIPT.is_file():
+        logger.warning("[Scheduler] 告警脚本不存在，跳过告警: %s", _OPS_ALERT_SCRIPT)
+        return
+
+    def _send() -> None:
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(_OPS_ALERT_SCRIPT),
+                    "--failed-unit",
+                    f"scheduler-job:{job_id}",
+                    "--detail",
+                    f"连续失败 {failures} 次。{detail}"[:400],
+                    "--no-journal",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=90,
+                check=False,
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "[Scheduler] 告警脚本退出码 %d: %s",
+                    result.returncode,
+                    (result.stderr or "").strip()[:200],
+                )
+        except Exception as exc:
+            logger.warning("[Scheduler] 发送调度器告警失败（非致命）: %s", exc)
+
+    threading.Thread(target=_send, name=f"ops-alert-{job_id}", daemon=True).start()
+
+
+class _ConsecutiveFailureAlerter:
+    """按 job 统计连续失败次数的去抖告警器。
+
+    仅当连续失败计数「到达」阈值时告警一次（不为每次失败都发邮件）；
+    一次成功后计数重置，再次连续失败到阈值会重新告警。
+    """
+
+    def __init__(
+        self,
+        *,
+        threshold: int = _DEFAULT_ALERT_FAILURE_THRESHOLD,
+        notifier: Callable[[str, int, str], None] | None = None,
+    ) -> None:
+        self._threshold = max(1, int(threshold))
+        self._notifier = notifier or _notify_ops_alert
+        self._consecutive_failures: Dict[str, int] = {}
+
+    def record_success(self, job_id: str) -> None:
+        self._consecutive_failures.pop(job_id, None)
+
+    def record_failure(self, job_id: str, detail: str = "") -> None:
+        count = self._consecutive_failures.get(job_id, 0) + 1
+        self._consecutive_failures[job_id] = count
+        if count == self._threshold:
+            logger.error(
+                "[Scheduler] 任务 %s 已连续失败 %d 次，触发运维告警。",
+                job_id,
+                count,
+            )
+            try:
+                self._notifier(job_id, count, detail)
+            except Exception as exc:
+                logger.warning("[Scheduler] 触发运维告警失败（非致命）: %s", exc)
+        elif count > self._threshold:
+            logger.warning(
+                "[Scheduler] 任务 %s 已连续失败 %d 次（告警已发，不再重复）。",
+                job_id,
+                count,
+            )
+
+
+def _alert_failure_threshold_from_env() -> int:
+    raw = os.environ.get(_ALERT_FAILURE_THRESHOLD_ENV, "").strip()
+    if not raw:
+        return _DEFAULT_ALERT_FAILURE_THRESHOLD
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logger.warning(
+            "[Scheduler] %s=%r 不是整数，使用默认告警阈值 %d。",
+            _ALERT_FAILURE_THRESHOLD_ENV,
+            raw,
+            _DEFAULT_ALERT_FAILURE_THRESHOLD,
+        )
+        return _DEFAULT_ALERT_FAILURE_THRESHOLD
 
 
 def _missing_recent_arxiv_daily_dates(
@@ -125,7 +233,7 @@ async def _run_single_source_job(
     repositories: ApplicationRepositories,
     github_lock: asyncio.Lock | None = None,
     x_lock: asyncio.Lock | None = None,
-) -> None:
+) -> bool:
     logger.info("[Scheduler] 触发 %s 采集任务...", source_name)
     active_repositories = repositories
     lock = github_lock if source_name == "github" else x_lock if source_name == "x" else None
@@ -153,15 +261,17 @@ async def _run_single_source_job(
                 )
         ingested = result.get("ingested_total", 0)
         logger.info("[Scheduler] %s 采集完成，入库 %d 条。", source_name, ingested)
+        return True
     except Exception as exc:
         logger.error("[Scheduler] %s 采集失败: %s", source_name, exc, exc_info=True)
+        return False
 
 
 async def _run_github_project_daily_pipeline_job(
     *,
     repositories: ApplicationRepositories,
     github_lock: asyncio.Lock | None = None,
-) -> None:
+) -> bool:
     logger.info("[Scheduler] 触发 GitHub 项目库每日流水线...")
     active_repositories = repositories
     lock = github_lock or asyncio.Lock()
@@ -180,8 +290,10 @@ async def _run_github_project_daily_pipeline_job(
                 semantic_sources=active_repositories.github_semantic_sources,
             )
         logger.info("[Scheduler] GitHub 项目库每日流水线完成：%s", result)
+        return True
     except Exception as exc:
         logger.error("[Scheduler] GitHub 项目库每日流水线失败: %s", exc, exc_info=True)
+        return False
 
 
 def _github_refresh_needed(status: Dict[str, Any]) -> bool:
@@ -230,7 +342,7 @@ async def _run_github_project_metrics_refresh_job(
     *,
     repository: Any,
     github_lock: asyncio.Lock | None = None,
-) -> None:
+) -> bool:
     from backend.app.services.ingestion.github_project_metrics_service import (
         current_github_metric_date,
     )
@@ -245,8 +357,10 @@ async def _run_github_project_metrics_refresh_job(
                 repository,
             )
         logger.info("[Scheduler] GitHub 当天指标刷新完成：%s", result)
+        return True
     except Exception as exc:
         logger.error("[Scheduler] GitHub 当天指标刷新失败: %s", exc, exc_info=True)
+        return False
 
 
 async def _reconcile_current_github_project_metrics(
@@ -324,7 +438,7 @@ async def _run_daily_briefing_job(
 
 async def _run_subscription_dispatch_job(
     repositories: ApplicationRepositories,
-) -> None:
+) -> bool:
     """订阅简报派发：枚举频率 × 来源读缓存，经 push_deliveries 幂等投递。"""
     logger.info("[Scheduler] 触发订阅简报派发（全频率幂等投递）...")
     from backend.app.services.push.dispatch_service import SubscriptionDispatchService
@@ -341,13 +455,15 @@ async def _run_subscription_dispatch_job(
     try:
         summary = await service.dispatch_all()
         logger.info("[Scheduler] 订阅简报派发完成：%s", summary)
+        return True
     except Exception as exc:
         logger.error("[Scheduler] 订阅简报派发失败: %s", exc, exc_info=True)
+        return False
 
 
 async def _run_project_semantic_warmup_job(
     warmup: Any | None = None,
-) -> None:
+) -> bool:
     try:
         if warmup is None:
             from backend.app.services.project_semantic_search import (
@@ -358,15 +474,17 @@ async def _run_project_semantic_warmup_job(
         result = await asyncio.to_thread(warmup)
         if result.get("status") == "failed":
             logger.warning("[Scheduler] 项目语义搜索预热失败：%s", result)
-        else:
-            logger.info("[Scheduler] 项目语义搜索预热完成：%s", result)
+            return False
+        logger.info("[Scheduler] 项目语义搜索预热完成：%s", result)
+        return True
     except Exception as exc:
         logger.warning("[Scheduler] 项目语义搜索预热失败: %s", exc)
+        return False
 
 
 async def _run_conversation_cleanup_job(
     conversation_repository: ConversationCleanupWriter,
-) -> None:
+) -> bool:
     logger.info("[Scheduler] 触发会话历史清理任务...")
     try:
         from backend.app.services.chat.conversation_service import ConversationService
@@ -375,15 +493,17 @@ async def _run_conversation_cleanup_job(
             ConversationService(conversation_repository).cleanup_stale_conversations,
         )
         logger.info("[Scheduler] 会话历史清理完成，删除 %d 条旧会话。", deleted)
+        return True
     except Exception as exc:
         logger.error("[Scheduler] 会话历史清理失败: %s", exc, exc_info=True)
+        return False
 
 
 async def _run_x_credentials_probe_job(
     *,
     repositories: ApplicationRepositories,
     x_lock: asyncio.Lock | None = None,
-) -> None:
+) -> bool:
     """Probe all enabled X credentials serially and persist results.
 
     Shares the X operation lock with the X ingestion job so the two never
@@ -413,8 +533,10 @@ async def _run_x_credentials_probe_job(
             succeeded,
             len(results),
         )
+        return True
     except Exception as exc:
         logger.error("[Scheduler] X 凭证池测活失败: %s", exc, exc_info=True)
+        return False
 
 
 def _register_job(
@@ -435,6 +557,16 @@ def _register_job(
     scheduler.add_job(callback, **job_kwargs)
 
 
+# 当前已 start 的调度运行时：手动运维入口（不经 app.state 的服务层）
+# 通过它复用 github/x 串行锁；stop() 时清除。
+_ACTIVE_RUNTIME: ApplicationSchedulerRuntime | None = None
+
+
+def get_active_scheduler_runtime() -> ApplicationSchedulerRuntime | None:
+    """Return the currently started scheduler runtime, if any."""
+    return _ACTIVE_RUNTIME
+
+
 class ApplicationSchedulerRuntime:
     """Application-owned scheduler, callbacks, locks, and startup tasks."""
 
@@ -448,6 +580,8 @@ class ApplicationSchedulerRuntime:
         shutdown_grace_seconds: float = 30.0,
         timezone_name: str = "Asia/Shanghai",
         job_config_overrides: Mapping[str, Any] | None = None,
+        alert_failure_threshold: int = _DEFAULT_ALERT_FAILURE_THRESHOLD,
+        alert_notifier: Callable[[str, int, str], None] | None = None,
     ) -> None:
         self.repositories = repositories
         self.scheduler = scheduler or AsyncIOScheduler(timezone=timezone_name)
@@ -458,6 +592,10 @@ class ApplicationSchedulerRuntime:
         self._job_config_overrides: Dict[str, Any] = dict(job_config_overrides or {})
         self._github_job_lock = asyncio.Lock()
         self._x_operation_lock = asyncio.Lock()
+        self._failure_alerter = _ConsecutiveFailureAlerter(
+            threshold=alert_failure_threshold,
+            notifier=alert_notifier,
+        )
         self._active_tasks: set[asyncio.Task[Any]] = set()
         self._stopping = False
         self._stop_lock = asyncio.Lock()
@@ -471,6 +609,15 @@ class ApplicationSchedulerRuntime:
         concurrently against X.
         """
         return self._x_operation_lock
+
+    @property
+    def github_job_lock(self) -> asyncio.Lock:
+        """Shared lock used to serialize all GitHub ingestion/metrics jobs.
+
+        Manual admin-triggered GitHub ingestion must acquire the same lock so
+        it never runs concurrently with the scheduled GitHub jobs.
+        """
+        return self._github_job_lock
 
     async def _run_tracked(
         self,
@@ -491,59 +638,103 @@ class ApplicationSchedulerRuntime:
             if task.done():
                 self._active_tasks.discard(task)
 
+    async def _guarded(
+        self,
+        job_id: str,
+        operation: Callable[[], Awaitable[Any]],
+    ) -> None:
+        """Run one scheduled operation and feed the failure alerter.
+
+        模块级 job 函数内部捕获异常并返回 False（成功返回 True）；未预期的
+        异常在此计入连续失败后再原样抛出，保持 APScheduler 既有错误处理。
+        """
+        try:
+            outcome = await operation()
+        except Exception as exc:
+            self._failure_alerter.record_failure(job_id, str(exc))
+            raise
+        if outcome is False:
+            self._failure_alerter.record_failure(job_id, "job reported failure")
+        else:
+            self._failure_alerter.record_success(job_id)
+
     async def _run_single_source_job(self, source_name: str) -> None:
         await self._run_tracked(
-            lambda: _run_single_source_job(
-                source_name,
-                repositories=self.repositories,
-                github_lock=self._github_job_lock,
-                x_lock=self._x_operation_lock,
+            lambda: self._guarded(
+                f"source:{source_name}",
+                lambda: _run_single_source_job(
+                    source_name,
+                    repositories=self.repositories,
+                    github_lock=self._github_job_lock,
+                    x_lock=self._x_operation_lock,
+                ),
             )
         )
 
     async def _run_github_project_daily_pipeline_job(self) -> None:
         await self._run_tracked(
-            lambda: _run_github_project_daily_pipeline_job(
-                repositories=self.repositories,
-                github_lock=self._github_job_lock,
+            lambda: self._guarded(
+                "github_project_daily_pipeline",
+                lambda: _run_github_project_daily_pipeline_job(
+                    repositories=self.repositories,
+                    github_lock=self._github_job_lock,
+                ),
             )
         )
 
     async def _run_github_project_metrics_refresh_job(self) -> None:
         await self._run_tracked(
-            lambda: _run_github_project_metrics_refresh_job(
-                repository=self.repositories.github_ingestion,
-                github_lock=self._github_job_lock,
+            lambda: self._guarded(
+                "github_project_metrics_refresh",
+                lambda: _run_github_project_metrics_refresh_job(
+                    repository=self.repositories.github_ingestion,
+                    github_lock=self._github_job_lock,
+                ),
             )
         )
 
     async def _run_x_credentials_probe_job(self) -> None:
         await self._run_tracked(
-            lambda: _run_x_credentials_probe_job(
-                repositories=self.repositories,
-                x_lock=self._x_operation_lock,
+            lambda: self._guarded(
+                "x_credentials_probe",
+                lambda: _run_x_credentials_probe_job(
+                    repositories=self.repositories,
+                    x_lock=self._x_operation_lock,
+                ),
             )
         )
 
     async def _run_daily_briefing_job(self) -> None:
         await self._run_tracked(
-            lambda: _run_daily_briefing_job(self.repositories)
+            lambda: self._guarded(
+                "daily_briefing",
+                lambda: _run_daily_briefing_job(self.repositories),
+            )
         )
 
     async def _run_subscription_dispatch_job(self) -> None:
         await self._run_tracked(
-            lambda: _run_subscription_dispatch_job(self.repositories)
+            lambda: self._guarded(
+                "subscription_dispatch",
+                lambda: _run_subscription_dispatch_job(self.repositories),
+            )
         )
 
     async def _run_conversation_cleanup_job(self) -> None:
         await self._run_tracked(
-            lambda: _run_conversation_cleanup_job(self.repositories.conversations)
+            lambda: self._guarded(
+                "conversation_cleanup",
+                lambda: _run_conversation_cleanup_job(self.repositories.conversations),
+            )
         )
 
     async def _run_project_semantic_warmup_job(self) -> None:
         await self._run_tracked(
-            lambda: _run_project_semantic_warmup_job(
-                self._semantic_search_warmup,
+            lambda: self._guarded(
+                "project_semantic_warmup",
+                lambda: _run_project_semantic_warmup_job(
+                    self._semantic_search_warmup,
+                ),
             )
         )
 
@@ -670,7 +861,7 @@ class ApplicationSchedulerRuntime:
             )
             logger.info(
                 "[Scheduler] 注册简报任务: daily_briefing (共 %d 个维度)",
-                len(BRIEFING_TASKS),
+                len(BRIEFING_SOURCES),
             )
         else:
             logger.info("[Scheduler] 跳过已停用的简报任务: daily_briefing")
@@ -712,6 +903,10 @@ class ApplicationSchedulerRuntime:
             logger.info("[Scheduler] 跳过已停用的会话清理任务: conversation_cleanup")
 
         self.scheduler.start()
+        # 登记为活动运行时：手动运维入口（IngestionAdminService）借此复用
+        # github/x 串行锁，与调度任务保持同一互斥口径。
+        global _ACTIVE_RUNTIME
+        _ACTIVE_RUNTIME = self
         loop = asyncio.get_running_loop()
         for coroutine in (
             _reconcile_recent_arxiv_daily_snapshots(
@@ -736,6 +931,9 @@ class ApplicationSchedulerRuntime:
             if self._stopping:
                 return
             self._stopping = True
+            global _ACTIVE_RUNTIME
+            if _ACTIVE_RUNTIME is self:
+                _ACTIVE_RUNTIME = None
             if self.scheduler.running:
                 self.scheduler.pause()
                 self.scheduler.shutdown(wait=False)
@@ -804,4 +1002,5 @@ def create_scheduler_runtime(
         ),
         timezone_name=timezone_name,
         job_config_overrides=job_config_overrides,
+        alert_failure_threshold=_alert_failure_threshold_from_env(),
     )
