@@ -62,6 +62,14 @@ class RuntimeProviderRepositoryContractTests(unittest.TestCase):
             ),
             "(self, provider, base_url='', api_key=None, clear_api_key=False, model_name='', reasoning_effort='')",
         )
+        self.assertEqual(
+            str(
+                _without_annotations(
+                    RuntimeProviderSettingManager.update_enrichment_reasoning_effort
+                )
+            ),
+            "(self, reasoning_effort='')",
+        )
 
 
 if __name__ == "__main__":

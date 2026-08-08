@@ -15,6 +15,7 @@ from backend.app.services.runtime_provider.control_plane import (
     normalize_provider,
     normalize_reasoning_effort,
     resolve_chat_config,
+    resolve_enrichment_reasoning_effort,
 )
 
 OPENAI_PROVIDER = "openai"
@@ -224,6 +225,12 @@ def get_configured_reasoning_effort(fallback: str | None = None) -> str | None:
     """读取运维页保存的推理强度；未配置时返回 fallback。读取失败静默回落。"""
     row = _get_runtime_provider_setting()
     return normalize_reasoning_effort(row.get("reasoning_effort")) or fallback
+
+
+def get_enrichment_reasoning_effort(fallback: str | None = None) -> str | None:
+    """富化任务推理强度：富化专用配置 > 模型服务配置 > fallback。读取失败静默回落。"""
+    row = _get_runtime_provider_setting()
+    return resolve_enrichment_reasoning_effort(row) or fallback
 
 
 def get_embedding_model():

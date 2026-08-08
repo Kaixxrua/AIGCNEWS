@@ -97,6 +97,65 @@ def test_update_config_normalizes_fields_and_preserves_raw_key_intent() -> None:
     assert projection.api_key_configured is False
 
 
+def test_get_enrichment_config_projects_configured_and_effective_effort() -> None:
+    repository = MagicMock()
+    repository.get_runtime_provider_setting.return_value = {
+        "provider": "openai",
+        "reasoning_effort": "low",
+        "enrichment_reasoning_effort": " High ",
+    }
+    service = RuntimeProviderAdminService(repository)
+
+    projection = asyncio.run(service.get_enrichment_config())
+
+    assert projection == {
+        "reasoning_effort": "high",
+        "effective_reasoning_effort": "high",
+    }
+    repository.get_runtime_provider_setting.assert_called_once_with()
+
+
+def test_get_enrichment_config_effective_falls_back_to_provider_then_medium() -> None:
+    repository = MagicMock()
+    repository.get_runtime_provider_setting.return_value = {
+        "provider": "openai",
+        "reasoning_effort": "low",
+        "enrichment_reasoning_effort": "",
+    }
+    service = RuntimeProviderAdminService(repository)
+
+    assert asyncio.run(service.get_enrichment_config())["effective_reasoning_effort"] == "low"
+
+    repository.get_runtime_provider_setting.return_value = None
+    assert (
+        asyncio.run(service.get_enrichment_config())["effective_reasoning_effort"]
+        == "medium"
+    )
+
+
+def test_update_enrichment_config_normalizes_and_does_not_invalidate_models() -> None:
+    repository = MagicMock()
+    repository.update_enrichment_reasoning_effort.return_value = {
+        "provider": "openai",
+        "reasoning_effort": "low",
+        "enrichment_reasoning_effort": "minimal",
+    }
+    invalidate = MagicMock()
+    service = RuntimeProviderAdminService(repository, invalidate_models=invalidate)
+
+    projection = asyncio.run(
+        service.update_enrichment_config({"reasoning_effort": " Minimal "})
+    )
+
+    repository.update_enrichment_reasoning_effort.assert_called_once_with("minimal")
+    # 富化推理强度以显式参数下发（缓存键随取值变化），无需重建模型缓存
+    invalidate.assert_not_called()
+    assert projection == {
+        "reasoning_effort": "minimal",
+        "effective_reasoning_effort": "minimal",
+    }
+
+
 def _configured_repository() -> MagicMock:
     repository = MagicMock()
     repository.get_runtime_provider_setting.return_value = {

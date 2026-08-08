@@ -35,6 +35,8 @@ from backend.app.models.schema_ops import (
     BulkDocumentDeleteResponse,
     ClearDataResponse,
     DocumentDeleteResponse,
+    EnrichmentConfigRequest,
+    EnrichmentConfigResponse,
     GitHubProjectRecommendRequest,
     GitHubProjectRecommendResponse,
     GitHubProjectsCrawlRequest,
@@ -937,6 +939,39 @@ async def github_project_enrichment_status(
 ):
     """查看 GitHub 项目库富化进度。"""
     return await service.get_enrichment_status()
+
+
+@router.get(
+    "/ops/github-projects/enrichment-config",
+    response_model=EnrichmentConfigResponse,
+    tags=["Ops"],
+)
+async def get_github_enrichment_config(
+    _: dict = Depends(RequireAdmin),
+    service: RuntimeProviderAdminService = Depends(
+        get_runtime_provider_admin_service
+    ),
+) -> EnrichmentConfigResponse:
+    """读取富化任务专用推理强度；空串表示跟随模型服务配置。"""
+    projection = await service.get_enrichment_config()
+    return EnrichmentConfigResponse.model_validate(projection)
+
+
+@router.put(
+    "/ops/github-projects/enrichment-config",
+    response_model=EnrichmentConfigResponse,
+    tags=["Ops"],
+)
+async def update_github_enrichment_config(
+    request: EnrichmentConfigRequest,
+    _: dict = Depends(RequireAdmin),
+    service: RuntimeProviderAdminService = Depends(
+        get_runtime_provider_admin_service
+    ),
+) -> EnrichmentConfigResponse:
+    """更新富化任务专用推理强度；不影响模型服务配置，下一批富化生效。"""
+    projection = await service.update_enrichment_config(request.model_dump())
+    return EnrichmentConfigResponse.model_validate(projection)
 
 
 @router.post(

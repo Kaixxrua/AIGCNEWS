@@ -254,6 +254,33 @@ describe('Monitor API contract', () => {
     })
   })
 
+  it('round-trips enrichment reasoning effort config with normalization', async () => {
+    transport.get.mockResolvedValue({
+      data: { reasoning_effort: ' High ', effective_reasoning_effort: 'high' },
+    })
+    await expect(monitorApi.fetchGithubEnrichmentConfig()).resolves.toEqual({
+      reasoning_effort: 'high', effective_reasoning_effort: 'high',
+    })
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/github-projects/enrichment-config')
+
+    transport.put.mockResolvedValue({
+      data: { reasoning_effort: 'minimal', effective_reasoning_effort: 'minimal' },
+    })
+    await expect(monitorApi.saveGithubEnrichmentConfig(' Minimal ')).resolves.toEqual({
+      reasoning_effort: 'minimal', effective_reasoning_effort: 'minimal',
+    })
+    expect(transport.put).toHaveBeenLastCalledWith('/ops/github-projects/enrichment-config', {
+      reasoning_effort: 'minimal',
+    })
+  })
+
+  it('tolerates missing enrichment config fields and falls back to empty tiers', async () => {
+    transport.get.mockResolvedValue({ data: {} })
+    await expect(monitorApi.fetchGithubEnrichmentConfig()).resolves.toEqual({
+      reasoning_effort: '', effective_reasoning_effort: '',
+    })
+  })
+
   it('reads enrichment status and triggers enrichment with concurrency without touching succeeded rows', async () => {
     transport.get.mockResolvedValue({ data: { eligible: 100, succeeded: 95, failed: 3, pending: 2 } })
     await expect(monitorApi.fetchGithubEnrichmentStatus()).resolves.toEqual({ eligible: 100, succeeded: 95, failed: 3, pending: 2 })

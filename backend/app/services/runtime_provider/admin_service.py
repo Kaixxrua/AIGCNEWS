@@ -12,9 +12,12 @@ from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingManager,
 )
 from backend.app.services.runtime_provider.control_plane import (
+    ENRICHMENT_REASONING_EFFORT_DEFAULT,
     RuntimeProviderUpdate,
     SafeProviderProjection,
+    normalize_reasoning_effort,
     project_provider_config,
+    resolve_enrichment_reasoning_effort,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +64,34 @@ class RuntimeProviderAdminService:
         if self._invalidate_models is not None:
             await self._invalidate_models()
         return project_provider_config(row, fallback_provider=update.provider)
+
+    @staticmethod
+    def _enrichment_projection(row: Mapping[str, Any] | None) -> dict[str, str]:
+        # reasoning_effort 为富化专用配置（空串=跟随模型服务配置）；
+        # effective 与富化器读取链路同序：专用 > 模型服务 > medium 缺省
+        return {
+            "reasoning_effort": normalize_reasoning_effort(
+                row.get("enrichment_reasoning_effort") if row else None
+            ),
+            "effective_reasoning_effort": resolve_enrichment_reasoning_effort(row)
+            or ENRICHMENT_REASONING_EFFORT_DEFAULT,
+        }
+
+    async def get_enrichment_config(self) -> dict[str, str]:
+        row = await asyncio.to_thread(self._settings.get_runtime_provider_setting)
+        return self._enrichment_projection(row)
+
+    async def update_enrichment_config(
+        self,
+        values: Mapping[str, Any],
+    ) -> dict[str, str]:
+        # 无需重建模型缓存：富化器以显式参数下发该值，缓存键随取值变化
+        effort = normalize_reasoning_effort(str(values.get("reasoning_effort") or ""))
+        row = await asyncio.to_thread(
+            self._settings.update_enrichment_reasoning_effort,
+            effort,
+        )
+        return self._enrichment_projection(row)
 
     async def test_connection(self) -> dict[str, Any]:
         """用当前保存的配置发起一次最小模型调用，验证连通性（真实请求一次）。

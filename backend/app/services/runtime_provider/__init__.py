@@ -1,5 +1,6 @@
 from backend.app.services.runtime_provider.control_plane import (
     ANTHROPIC_PROVIDER,
+    ENRICHMENT_REASONING_EFFORT_DEFAULT,
     OLLAMA_PROVIDER,
     OPENAI_PROVIDER,
     REASONING_EFFORT_VALUES,
@@ -14,10 +15,12 @@ from backend.app.services.runtime_provider.control_plane import (
     normalize_reasoning_effort,
     project_provider_config,
     resolve_chat_config,
+    resolve_enrichment_reasoning_effort,
 )
 
 __all__ = [
     "ANTHROPIC_PROVIDER",
+    "ENRICHMENT_REASONING_EFFORT_DEFAULT",
     "OLLAMA_PROVIDER",
     "OPENAI_PROVIDER",
     "REASONING_EFFORT_VALUES",
@@ -32,4 +35,5 @@ __all__ = [
     "normalize_reasoning_effort",
     "project_provider_config",
     "resolve_chat_config",
+    "resolve_enrichment_reasoning_effort",
 ]

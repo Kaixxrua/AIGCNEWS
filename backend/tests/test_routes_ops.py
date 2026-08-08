@@ -424,6 +424,45 @@ class OperationsRouteTests(unittest.TestCase):
             "xhigh",
         )
 
+    def test_enrichment_config_get_projects_configured_and_effective_effort(self) -> None:
+        repository = MagicMock(spec=RuntimeProviderSettingManager)
+        repository.get_runtime_provider_setting.return_value = {
+            "provider": "openai",
+            "reasoning_effort": "low",
+            "enrichment_reasoning_effort": " High ",
+        }
+        client = self._provider_client(repository)
+
+        response = client.get("/api/ops/github-projects/enrichment-config")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"reasoning_effort": "high", "effective_reasoning_effort": "high"},
+        )
+        repository.get_runtime_provider_setting.assert_called_once_with()
+
+    def test_enrichment_config_update_normalizes_and_round_trips(self) -> None:
+        repository = MagicMock(spec=RuntimeProviderSettingManager)
+        repository.update_enrichment_reasoning_effort.return_value = {
+            "provider": "openai",
+            "reasoning_effort": "low",
+            "enrichment_reasoning_effort": "minimal",
+        }
+        client = self._provider_client(repository)
+
+        response = client.put(
+            "/api/ops/github-projects/enrichment-config",
+            json={"reasoning_effort": " Minimal "},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"reasoning_effort": "minimal", "effective_reasoning_effort": "minimal"},
+        )
+        repository.update_enrichment_reasoning_effort.assert_called_once_with("minimal")
+
     def test_provider_config_requires_admin_before_repository_calls(self) -> None:
         app = FastAPI()
         app.include_router(routes_ops.router, prefix="/api")

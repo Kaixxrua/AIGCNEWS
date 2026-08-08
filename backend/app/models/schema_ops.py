@@ -181,6 +181,16 @@ class ProviderConfigTestResponse(BaseModel):
     latency_ms: Optional[int] = None
 
 
+class EnrichmentConfigRequest(BaseModel):
+    # 富化任务专用推理强度；空串表示跟随模型服务配置。自填自由文本，归一规则同 provider 侧
+    reasoning_effort: str = ""
+
+
+class EnrichmentConfigResponse(BaseModel):
+    reasoning_effort: str = ""
+    effective_reasoning_effort: str = ""
+
+
 class McpServerConfigRequest(BaseModel):
     server_key: str = Field(default="", max_length=64)
     display_name: str = Field(default="", max_length=128)

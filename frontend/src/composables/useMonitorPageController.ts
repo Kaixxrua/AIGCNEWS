@@ -3,7 +3,7 @@ import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
   createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
-  createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency,
+  createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
   type GithubCrawlStatus, type GithubEnrichmentStatus, type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
 
@@ -79,6 +79,10 @@ export const useMonitorPageController = ({
   const cancellingEnrichment = ref(false)
   const enrichmentConcurrency = ref(3)
   const enrichmentPolling = ref(false)
+  // 富化专用推理强度：空串=跟随模型服务配置；effective 为后端解析的当前生效档位
+  const enrichmentReasoningEffort = ref('')
+  const enrichmentEffectiveReasoningEffort = ref('')
+  const savingEnrichmentReasoningEffort = ref(false)
   const isTaskRunning = computed(() => tasks.value.length > 0 && tasks.value[0]?.status === 'running')
   const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
   const clearMessages = () => { errorMsg.value = ''; successMsg.value = '' }
@@ -128,9 +132,32 @@ export const useMonitorPageController = ({
     catch (error) { console.error('Failed to fetch GitHub enrichment status', error) }
     finally { loadingEnrichmentStatus.value = false }
   }
+  const fetchGithubEnrichmentConfig = async () => {
+    if (!isAdmin.value) return
+    try {
+      const config = await api.fetchGithubEnrichmentConfig()
+      enrichmentReasoningEffort.value = config.reasoning_effort
+      enrichmentEffectiveReasoningEffort.value = config.effective_reasoning_effort
+    } catch (error) { console.error('Failed to fetch GitHub enrichment config', error) }
+  }
+  const saveEnrichmentReasoningEffort = async (value: string) => {
+    if (savingEnrichmentReasoningEffort.value) return
+    const normalized = normalizeReasoningEffort(value)
+    // 失焦未改动时不重复写库
+    if (normalized === enrichmentReasoningEffort.value) return
+    clearMessages()
+    savingEnrichmentReasoningEffort.value = true
+    try {
+      const config = await api.saveGithubEnrichmentConfig(normalized)
+      enrichmentReasoningEffort.value = config.reasoning_effort
+      enrichmentEffectiveReasoningEffort.value = config.effective_reasoning_effort
+      successMsg.value = i18n.global.t('monitor.enrichment.reasoningEffortSaved')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { savingEnrichmentReasoningEffort.value = false }
+  }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -450,7 +477,7 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
   })
 
   return {
@@ -464,6 +491,7 @@ export const useMonitorPageController = ({
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
     crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
     enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, cancellingEnrichment, enrichmentConcurrency, enrichmentPolling,
-    fetchGithubEnrichmentStatus, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
+    enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
+    fetchGithubEnrichmentStatus, fetchGithubEnrichmentConfig, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
   }
 }

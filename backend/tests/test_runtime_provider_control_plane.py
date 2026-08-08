@@ -13,6 +13,7 @@ from backend.app.services.runtime_provider.control_plane import (
     normalize_reasoning_effort,
     project_provider_config,
     resolve_chat_config,
+    resolve_enrichment_reasoning_effort,
 )
 
 
@@ -78,6 +79,23 @@ class RuntimeProviderControlPlaneTests(unittest.TestCase):
 
         unset = resolve_chat_config({"provider": "openai"}, **fallbacks)
         self.assertIsNone(unset.reasoning_effort)
+
+    def test_enrichment_resolution_prefers_dedicated_then_provider_effort(self) -> None:
+        self.assertEqual(
+            resolve_enrichment_reasoning_effort(
+                {"reasoning_effort": "low", "enrichment_reasoning_effort": " High "}
+            ),
+            "high",
+        )
+        self.assertEqual(
+            resolve_enrichment_reasoning_effort(
+                {"reasoning_effort": "low", "enrichment_reasoning_effort": ""}
+            ),
+            "low",
+        )
+        self.assertEqual(resolve_enrichment_reasoning_effort({"reasoning_effort": "low"}), "low")
+        self.assertEqual(resolve_enrichment_reasoning_effort({}), "")
+        self.assertEqual(resolve_enrichment_reasoning_effort(None), "")
 
     def test_projection_exposes_normalized_reasoning_effort(self) -> None:
         projection = project_provider_config(

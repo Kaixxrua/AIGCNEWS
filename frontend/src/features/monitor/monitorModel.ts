@@ -168,6 +168,13 @@ export interface GithubEnrichmentStatus {
   by_category?: Array<{ slug: string; name: string; count: number }>
 }
 
+// 富化任务专用推理强度配置：reasoning_effort 为空串表示跟随模型服务配置，
+// effective_reasoning_effort 为后端按 专用 > 模型服务 > medium 解析出的当前生效值
+export interface GithubEnrichmentConfig {
+  reasoning_effort: ReasoningEffort
+  effective_reasoning_effort: string
+}
+
 export interface GithubEnrichmentTriggerResult {
   status: string
   message: string

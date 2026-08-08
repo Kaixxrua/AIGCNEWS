@@ -47,6 +47,8 @@ const createApi = (): MonitorApi => ({
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
   fetchGithubEnrichmentStatus: vi.fn(async () => ({ eligible: 10, succeeded: 9, failed: 1, pending: 0 })),
+  fetchGithubEnrichmentConfig: vi.fn(async () => ({ reasoning_effort: '', effective_reasoning_effort: 'medium' })),
+  saveGithubEnrichmentConfig: vi.fn(async (value: string) => ({ reasoning_effort: value, effective_reasoning_effort: value || 'medium' })),
   triggerGithubEnrichment: vi.fn(async () => ({ status: 'queued', message: '' })),
   cancelGithubEnrichment: vi.fn(async () => ({ status: 'cancelling', message: '' })),
   fetchXWatchAccounts: vi.fn(async () => []), saveXWatchAccount: vi.fn(), deleteXWatchAccount: vi.fn(), testXWatchAccount: vi.fn(),
@@ -119,6 +121,30 @@ describe('Monitor page controller contract', () => {
     await controller.saveProviderConfig()
     expect(api.saveProviderConfig).toHaveBeenCalledWith(expect.objectContaining({ reasoning_effort: 'high' }))
     expect(controller.providerForm.value.reasoning_effort).toBe('high')
+  })
+
+  it('fetches enrichment reasoning effort config and saves normalized edits once', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentConfig).mockResolvedValue({
+      reasoning_effort: 'low', effective_reasoning_effort: 'low',
+    })
+
+    await controller.fetchGithubEnrichmentConfig()
+    expect(controller.enrichmentReasoningEffort.value).toBe('low')
+    expect(controller.enrichmentEffectiveReasoningEffort.value).toBe('low')
+
+    // 未改动（归一后相同）时不重复写库
+    await controller.saveEnrichmentReasoningEffort(' Low ')
+    expect(api.saveGithubEnrichmentConfig).not.toHaveBeenCalled()
+
+    vi.mocked(api.saveGithubEnrichmentConfig).mockResolvedValue({
+      reasoning_effort: 'high', effective_reasoning_effort: 'high',
+    })
+    await controller.saveEnrichmentReasoningEffort(' High ')
+    expect(api.saveGithubEnrichmentConfig).toHaveBeenCalledWith('high')
+    expect(controller.enrichmentReasoningEffort.value).toBe('high')
+    expect(controller.enrichmentEffectiveReasoningEffort.value).toBe('high')
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.enrichment.reasoningEffortSaved'))
   })
 
   it('reports provider connection test success and failure through messages', async () => {

@@ -70,12 +70,13 @@ def test_postgres_adapters_expose_existing_protocols() -> None:
 def test_provider_upsert_normalizes_values_preserves_secret_and_returns_row() -> None:
     database, cursor = _cursor_database()
     cursor.fetchone.side_effect = [
-        {"api_key": "existing-secret"},
+        {"api_key": "existing-secret", "enrichment_reasoning_effort": "low"},
         {
             "provider": "openai",
             "base_url": "https://example.test",
             "api_key": "existing-secret",
             "model_name": "gpt-test",
+            "enrichment_reasoning_effort": "low",
             "updated_at": "database-time",
         },
     ]
@@ -90,14 +91,54 @@ def test_provider_upsert_normalizes_values_preserves_secret_and_returns_row() ->
     insert_call = cursor.execute.call_args_list[2]
     assert "RETURNING provider" in insert_call.args[0]
     assert "updated_at" in insert_call.args[0]
+    # 富化专用推理强度不在表单内，单行重建时沿用旧值
     assert insert_call.args[1] == (
         "openai",
         "https://example.test",
         "existing-secret",
         "gpt-test",
         "",
+        "low",
     )
     assert database.transaction_count == 1
+
+
+def test_enrichment_reasoning_effort_update_rewrites_singleton_row() -> None:
+    database, cursor = _cursor_database()
+    cursor.rowcount = 1
+    cursor.fetchone.return_value = {
+        "provider": "openai",
+        "enrichment_reasoning_effort": "high",
+        "updated_at": "database-time",
+    }
+    repository = PostgresRuntimeProviderSettingRepository(database)
+
+    result = repository.update_enrichment_reasoning_effort(" High ")
+
+    update_call = cursor.execute.call_args_list[0]
+    assert "UPDATE runtime_provider_settings" in update_call.args[0]
+    assert "enrichment_reasoning_effort" in update_call.args[0]
+    assert update_call.args[1] == ("high",)
+    assert result["enrichment_reasoning_effort"] == "high"
+    assert database.transaction_count == 1
+
+
+def test_enrichment_reasoning_effort_update_inserts_row_when_table_empty() -> None:
+    database, cursor = _cursor_database()
+    cursor.rowcount = 0
+    cursor.fetchone.return_value = {
+        "provider": "",
+        "enrichment_reasoning_effort": "low",
+        "updated_at": "database-time",
+    }
+    repository = PostgresRuntimeProviderSettingRepository(database)
+
+    result = repository.update_enrichment_reasoning_effort("low")
+
+    insert_call = cursor.execute.call_args_list[1]
+    assert "INSERT INTO runtime_provider_settings" in insert_call.args[0]
+    assert insert_call.args[1] == ("low",)
+    assert result["enrichment_reasoning_effort"] == "low"
 
 
 def test_briefing_insert_uses_explicit_iso_text_time_and_returning_id() -> None:

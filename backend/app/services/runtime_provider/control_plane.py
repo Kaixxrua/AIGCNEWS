@@ -12,6 +12,8 @@ ANTHROPIC_PROVIDER = "anthropic"
 REASONING_EFFORT_VALUES = ("minimal", "low", "medium", "high")
 # reasoning_effort 列宽 VARCHAR(32)：归一时超出部分截断
 REASONING_EFFORT_MAX_LENGTH = 32
+# 富化任务两级配置都为空时的缺省档位（保持富化历史行为一致）
+ENRICHMENT_REASONING_EFFORT_DEFAULT = "medium"
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +162,13 @@ def resolve_chat_config(
         temperature=temperature if temperature is not None else fallback_temperature,
         reasoning_effort=explicit_effort or configured_effort or None,
     )
+
+
+def resolve_enrichment_reasoning_effort(row: Mapping[str, Any] | None) -> str:
+    """富化任务推理强度：富化专用配置 > 模型服务配置；都为空返回 ''（由调用方决定缺省）。"""
+    return normalize_reasoning_effort(
+        row.get("enrichment_reasoning_effort") if row else None
+    ) or normalize_reasoning_effort(row.get("reasoning_effort") if row else None)
 
 
 def mask_api_key(api_key: str | None) -> str | None:

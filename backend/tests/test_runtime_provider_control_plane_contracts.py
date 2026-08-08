@@ -164,13 +164,13 @@ class RuntimeProviderModelFactoryContracts(unittest.TestCase):
                 "medium",
             )
 
-    def test_enricher_llm_uses_configured_reasoning_effort_with_medium_fallback(self) -> None:
+    def test_enricher_llm_uses_enrichment_reasoning_effort_with_medium_fallback(self) -> None:
         from backend.app.services.ingestion import (
             github_project_enricher as enricher_module,
         )
 
         reader = SimpleNamespace(
-            get_runtime_provider_setting=lambda: {"reasoning_effort": "high"}
+            get_runtime_provider_setting=lambda: {"enrichment_reasoning_effort": "high"}
         )
         db = SimpleNamespace(runtime_provider_settings=reader)
         enricher = enricher_module.GitHubProjectEnricher(db)
@@ -178,7 +178,7 @@ class RuntimeProviderModelFactoryContracts(unittest.TestCase):
         with (
             patch.object(
                 enricher_module,
-                "get_configured_reasoning_effort",
+                "get_enrichment_reasoning_effort",
                 return_value="high",
             ) as configured,
             patch.object(enricher_module, "get_chat_model") as get_model,
@@ -188,6 +188,34 @@ class RuntimeProviderModelFactoryContracts(unittest.TestCase):
 
         configured.assert_called_once_with(fallback="medium")
         get_model.assert_called_once_with(temperature=0, reasoning_effort="high")
+
+    def test_enrichment_reasoning_effort_prefers_dedicated_then_provider_column(self) -> None:
+        with patch.object(
+            model_factory,
+            "_get_runtime_provider_setting",
+            return_value={
+                "reasoning_effort": "low",
+                "enrichment_reasoning_effort": " High ",
+            },
+        ):
+            assert model_factory.get_enrichment_reasoning_effort() == "high"
+
+        with patch.object(
+            model_factory,
+            "_get_runtime_provider_setting",
+            return_value={"reasoning_effort": "low"},
+        ):
+            assert model_factory.get_enrichment_reasoning_effort() == "low"
+
+        with patch.object(
+            model_factory,
+            "_get_runtime_provider_setting",
+            return_value={},
+        ):
+            assert (
+                model_factory.get_enrichment_reasoning_effort(fallback="medium")
+                == "medium"
+            )
 
     def test_blank_runtime_values_fall_back_to_static_openai_settings(self) -> None:
         runtime = {

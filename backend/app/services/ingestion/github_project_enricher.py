@@ -15,7 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from backend.app.core.config import settings
 from backend.app.core.model_factory import (
     get_chat_model,
-    get_configured_reasoning_effort,
+    get_enrichment_reasoning_effort,
 )
 from backend.app.domain.project_taxonomy import (
     CATEGORY_PROMPT,
@@ -49,8 +49,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_STARS = 500
 DEFAULT_BATCH_LIMIT = 50
-# 项目分类/短描述富化的推理强度缺省档：运维页未配置时回落到 medium，
-# 不依赖中转网关的默认档；配置后以运维页为准
+# 项目分类/短描述富化的推理强度缺省档：富化专用配置与模型服务配置都为空时
+# 回落到 medium，不依赖中转网关的默认档；配置后按 专用 > 模型服务 顺序取值
 ENRICHMENT_REASONING_EFFORT = "medium"
 _MAX_RETRIES = 4
 _RETRY_BASE_DELAY = 15.0
@@ -186,7 +186,7 @@ class GitHubProjectEnricher:
         if self._llm is None:
             self._llm = get_chat_model(
                 temperature=0,
-                reasoning_effort=get_configured_reasoning_effort(
+                reasoning_effort=get_enrichment_reasoning_effort(
                     fallback=ENRICHMENT_REASONING_EFFORT
                 ),
             )

@@ -22,7 +22,8 @@ class PostgresRuntimeProviderSettingRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
-                    SELECT provider, base_url, api_key, model_name, reasoning_effort, updated_at
+                    SELECT provider, base_url, api_key, model_name, reasoning_effort,
+                           enrichment_reasoning_effort, updated_at
                     FROM runtime_provider_settings
                     {where_clause}
                     ORDER BY updated_at DESC
@@ -52,7 +53,7 @@ class PostgresRuntimeProviderSettingRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT api_key
+                    SELECT api_key, enrichment_reasoning_effort
                     FROM runtime_provider_settings
                     ORDER BY updated_at DESC
                     LIMIT 1
@@ -67,13 +68,22 @@ class PostgresRuntimeProviderSettingRepository:
                 else:
                     effective_api_key = existing.get("api_key") if existing else None
 
+                # 富化专用推理强度不在本表单内：单行重建时沿用旧值，避免被整体覆盖清空
+                carried_enrichment_effort = (
+                    (existing.get("enrichment_reasoning_effort") or "")
+                    if existing
+                    else ""
+                )
+
                 cursor.execute("DELETE FROM runtime_provider_settings")
                 cursor.execute(
                     """
                     INSERT INTO runtime_provider_settings
-                        (provider, base_url, api_key, model_name, reasoning_effort, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    RETURNING provider, base_url, api_key, model_name, reasoning_effort, updated_at
+                        (provider, base_url, api_key, model_name, reasoning_effort,
+                         enrichment_reasoning_effort, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    RETURNING provider, base_url, api_key, model_name, reasoning_effort,
+                              enrichment_reasoning_effort, updated_at
                     """,
                     (
                         provider_key,
@@ -81,6 +91,7 @@ class PostgresRuntimeProviderSettingRepository:
                         effective_api_key,
                         clean_model_name,
                         clean_reasoning_effort,
+                        carried_enrichment_effort,
                     ),
                 )
                 row = cursor.fetchone()
@@ -91,4 +102,51 @@ class PostgresRuntimeProviderSettingRepository:
             "api_key": effective_api_key,
             "model_name": clean_model_name,
             "reasoning_effort": clean_reasoning_effort,
+            "enrichment_reasoning_effort": carried_enrichment_effort,
+        }
+
+    def update_enrichment_reasoning_effort(
+        self,
+        reasoning_effort: str = "",
+    ) -> dict[str, Any]:
+        """只更新富化专用推理强度，不触碰模型服务配置字段；表为空时补建行。"""
+        clean_effort = (reasoning_effort or "").strip().lower()
+
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE runtime_provider_settings
+                    SET enrichment_reasoning_effort = %s, updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (clean_effort,),
+                )
+                if cursor.rowcount == 0:
+                    cursor.execute(
+                        """
+                        INSERT INTO runtime_provider_settings
+                            (provider, base_url, api_key, model_name, reasoning_effort,
+                             enrichment_reasoning_effort, updated_at)
+                        VALUES ('', '', NULL, '', '', %s, CURRENT_TIMESTAMP)
+                        """,
+                        (clean_effort,),
+                    )
+                cursor.execute(
+                    """
+                    SELECT provider, base_url, api_key, model_name, reasoning_effort,
+                           enrichment_reasoning_effort, updated_at
+                    FROM runtime_provider_settings
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                    """
+                )
+                row = cursor.fetchone()
+
+        return dict(row) if row else {
+            "provider": "",
+            "base_url": "",
+            "api_key": None,
+            "model_name": "",
+            "reasoning_effort": "",
+            "enrichment_reasoning_effort": clean_effort,
         }

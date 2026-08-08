@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { GithubEnrichmentStatus } from '@/features/monitor/monitorModel'
 
@@ -13,6 +13,9 @@ const props = defineProps<{
   cancelling: boolean
   polling: boolean
   concurrency: number
+  reasoningEffort: string
+  effectiveReasoningEffort: string
+  savingReasoningEffort: boolean
 }>()
 
 const emit = defineEmits<{
@@ -21,7 +24,13 @@ const emit = defineEmits<{
   backfill: []
   cancel: []
   updateConcurrency: [value: number]
+  updateReasoningEffort: [value: string]
 }>()
+
+// 推理强度草稿：失焦/回车才提交保存；保存成功后由父级回写归一值，本地随之同步
+const effortDraft = ref(props.reasoningEffort)
+watch(() => props.reasoningEffort, (value) => { effortDraft.value = value })
+const commitReasoningEffort = () => emit('updateReasoningEffort', effortDraft.value)
 
 const eligible = computed(() => props.status?.eligible ?? 0)
 // 三段进度：已成功（绿）/ 失败（红）/ 待处理（轨道底色），宽度按 eligible 占比
@@ -108,6 +117,23 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
           :disabled="retrying || backfilling || cancelling || polling"
           @input="emit('updateConcurrency', Number(($event.target as HTMLInputElement).value))"
         />
+      </label>
+
+      <label class="inline-flex items-center gap-1.5 text-xs monitor-caption" :title="t('monitor.enrichment.reasoningEffortHint')">
+        {{ t('monitor.enrichment.reasoningEffort') }}
+        <input
+          v-model="effortDraft"
+          type="text"
+          :placeholder="t('monitor.enrichment.reasoningEffortPlaceholder')"
+          autocomplete="off"
+          class="input w-32 py-1.5 text-xs"
+          :disabled="savingReasoningEffort"
+          @change="commitReasoningEffort"
+          @keyup.enter="commitReasoningEffort"
+        />
+        <span v-if="effectiveReasoningEffort" class="text-2xs monitor-caption tabular-nums">
+          {{ t('monitor.enrichment.reasoningEffortEffective', { effort: effectiveReasoningEffort }) }}
+        </span>
       </label>
 
       <!-- 仅在有批次运行时出现：本地轮询中，或服务端 running 标记（刷新页面后仍可终止） -->

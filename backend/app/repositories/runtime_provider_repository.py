@@ -25,6 +25,11 @@ class RuntimeProviderSettingManager(RuntimeProviderSettingReader, Protocol):
         reasoning_effort: str = "",
     ) -> dict[str, Any]: ...
 
+    def update_enrichment_reasoning_effort(
+        self,
+        reasoning_effort: str = "",
+    ) -> dict[str, Any]: ...
+
 
 class RuntimeProviderSettingRepository(RuntimeProviderSettingManager, Protocol):
     """Combined runtime model setting persistence boundary."""

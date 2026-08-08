@@ -1,11 +1,11 @@
 import { api } from '@/services/http/apiClient'
 import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
-  GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
+  GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
   SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics } from '@/features/monitor/monitorModel'
+import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
@@ -37,6 +37,8 @@ export interface MonitorApi {
   crawlGithubProjects(form: GithubCrawlForm): Promise<GithubCrawlTriggerResult>
   fetchGithubCrawlStatus(query?: GithubCrawlStatusQuery): Promise<GithubCrawlStatus>
   fetchGithubEnrichmentStatus(): Promise<GithubEnrichmentStatus>
+  fetchGithubEnrichmentConfig(): Promise<GithubEnrichmentConfig>
+  saveGithubEnrichmentConfig(reasoningEffort: string): Promise<GithubEnrichmentConfig>
   triggerGithubEnrichment(limit: number, concurrency: number): Promise<GithubEnrichmentTriggerResult>
   cancelGithubEnrichment(): Promise<GithubEnrichmentCancelResult>
 }
@@ -129,6 +131,22 @@ export const monitorApi: MonitorApi = {
     )).data
   },
   async fetchGithubEnrichmentStatus() { return (await api.get('/ops/github-projects/enrichment-status')).data },
+  async fetchGithubEnrichmentConfig() {
+    const data = (await api.get('/ops/github-projects/enrichment-config')).data
+    return {
+      reasoning_effort: normalizeReasoningEffort(data?.reasoning_effort),
+      effective_reasoning_effort: typeof data?.effective_reasoning_effort === 'string' ? data.effective_reasoning_effort : '',
+    }
+  },
+  async saveGithubEnrichmentConfig(reasoningEffort) {
+    const data = (await api.put('/ops/github-projects/enrichment-config', {
+      reasoning_effort: normalizeReasoningEffort(reasoningEffort),
+    })).data
+    return {
+      reasoning_effort: normalizeReasoningEffort(data?.reasoning_effort),
+      effective_reasoning_effort: typeof data?.effective_reasoning_effort === 'string' ? data.effective_reasoning_effort : '',
+    }
+  },
   async triggerGithubEnrichment(limit, concurrency) {
     // 重试/补跑共用：force/refresh_changed 保持 false，成功的富化结果稳定不重跑
     return (await api.post('/ops/github-projects/enrich', {
