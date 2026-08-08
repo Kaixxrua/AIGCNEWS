@@ -42,7 +42,7 @@ const createApi = (): MonitorApi => ({
   fetchSchedulerConfigs: vi.fn(async () => []),
   saveSchedulerConfig: vi.fn(),
   fetchMcpToolCalls: vi.fn(async () => ({ since: '', total_calls: 0, tools: {} })),
-  fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), fetchMcpServers: vi.fn(async () => []),
+  fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), testProviderConnection: vi.fn(async () => ({ status: 'success', message: '' })), fetchMcpServers: vi.fn(async () => []),
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
@@ -119,6 +119,58 @@ describe('Monitor page controller contract', () => {
     await controller.saveProviderConfig()
     expect(api.saveProviderConfig).toHaveBeenCalledWith(expect.objectContaining({ reasoning_effort: 'high' }))
     expect(controller.providerForm.value.reasoning_effort).toBe('high')
+  })
+
+  it('reports provider connection test success and failure through messages', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.testProviderConnection).mockResolvedValue({ status: 'success', message: '连接正常：openai / model 响应耗时 120ms。' })
+
+    await controller.testProviderConnection()
+
+    expect(controller.successMsg.value).toBe('连接正常：openai / model 响应耗时 120ms。')
+    expect(controller.errorMsg.value).toBe('')
+    expect(controller.testingProvider.value).toBe(false)
+
+    vi.mocked(api.testProviderConnection).mockResolvedValue({ status: 'failed', message: '连接测试失败：RuntimeError: boom' })
+    await controller.testProviderConnection()
+
+    expect(controller.errorMsg.value).toBe('连接测试失败：RuntimeError: boom')
+    expect(controller.successMsg.value).toBe('')
+    expect(controller.testingProvider.value).toBe(false)
+  })
+
+  it('falls back to a default failure message and surfaces test request errors', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.testProviderConnection).mockResolvedValue({ status: 'failed', message: '' })
+
+    await controller.testProviderConnection()
+
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.testFailed'))
+
+    vi.mocked(api.testProviderConnection).mockRejectedValue({ response: { data: { detail: 'test endpoint broken' } } })
+    await controller.testProviderConnection()
+
+    expect(controller.errorMsg.value).toBe('test endpoint broken')
+    expect(controller.testingProvider.value).toBe(false)
+  })
+
+  it('does not start a second provider connection test while one is running', async () => {
+    const { api, controller } = createController()
+    let release: (value: { status: string; message: string }) => void = () => undefined
+    vi.mocked(api.testProviderConnection).mockImplementation(
+      () => new Promise((resolve) => { release = resolve }),
+    )
+
+    const first = controller.testProviderConnection()
+    await nextTick()
+    expect(controller.testingProvider.value).toBe(true)
+
+    await controller.testProviderConnection()
+    expect(api.testProviderConnection).toHaveBeenCalledTimes(1)
+
+    release({ status: 'success', message: 'ok' })
+    await first
+    expect(controller.testingProvider.value).toBe(false)
   })
 
   it('loads scheduler configs for admins and validates save constraints', async () => {

@@ -170,6 +170,17 @@ class ProviderConfigResponse(BaseModel):
     reasoning_effort: str = ""
 
 
+class ProviderConfigTestResponse(BaseModel):
+    """连接测试结果：HTTP 恒 200，status=success/failed 表达业务结果。"""
+
+    status: str
+    message: str
+    provider: str = ""
+    base_url: str = ""
+    model_name: str = ""
+    latency_ms: Optional[int] = None
+
+
 class McpServerConfigRequest(BaseModel):
     server_key: str = Field(default="", max_length=64)
     display_name: str = Field(default="", max_length=128)

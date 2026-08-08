@@ -12,10 +12,12 @@ const props = defineProps<{
   form: ProviderForm
   loading: boolean
   saving: boolean
+  testing: boolean
 }>()
 
 const emit = defineEmits<{
   save: []
+  test: []
 }>()
 
 const updateForm = <K extends keyof ProviderForm>(field: K, value: ProviderForm[K]) => {
@@ -59,9 +61,20 @@ const updateForm = <K extends keyof ProviderForm>(field: K, value: ProviderForm[
         <span class="mb-1 block text-xs monitor-caption">API Key</span>
         <input :value="form.api_key" type="password" class="input w-full py-2 text-xs" :placeholder="t('monitor.retainKey')" autocomplete="new-password" @input="updateForm('api_key', ($event.target as HTMLInputElement).value)" />
       </label>
-      <button class="monitor-btn-primary" :disabled="saving || loading" @click="emit('save')">
-        {{ t(saving ? 'monitor.saving' : 'monitor.saveConfig') }}
-      </button>
+      <div class="flex gap-2">
+        <!-- 测试针对已保存配置；表单未保存的修改不参与 -->
+        <button
+          class="monitor-btn-secondary"
+          :disabled="testing || saving || loading || !config?.api_key_configured"
+          :title="t('monitor.testConnectionTitle')"
+          @click="emit('test')"
+        >
+          {{ t(testing ? 'monitor.testing' : 'monitor.testConnection') }}
+        </button>
+        <button class="monitor-btn-primary" :disabled="saving || loading || testing" @click="emit('save')">
+          {{ t(saving ? 'monitor.saving' : 'monitor.saveConfig') }}
+        </button>
+      </div>
     </div>
 
     <div class="mt-3 flex flex-wrap items-center gap-3 text-xs monitor-caption monitor-check-row px-3 py-2">

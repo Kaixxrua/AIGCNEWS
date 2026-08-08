@@ -78,6 +78,16 @@ export interface ProviderForm {
   reasoning_effort: ReasoningEffort
 }
 
+// 连接测试结果：HTTP 恒 200，status=success/failed 表达业务结果
+export interface ProviderTestResult {
+  status: string
+  message: string
+  provider?: string
+  base_url?: string
+  model_name?: string
+  latency_ms?: number | null
+}
+
 export interface McpToolSummary { name: string; description: string }
 
 export interface McpServerConfig {

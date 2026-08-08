@@ -19,6 +19,7 @@ from backend.app.api.dependencies import (
     get_mcp_server_config_repository,
     get_operations_runtime,
     get_ops_diagnostics_service,
+    get_runtime_provider_admin_service,
     get_runtime_provider_setting_repository,
     get_scheduler_admin_service,
 )
@@ -350,6 +351,67 @@ class OperationsRouteTests(unittest.TestCase):
 
         self.assertIn(response.status_code, (401, 403))
         repository.get_runtime_provider_setting.assert_not_called()
+
+    def test_provider_config_test_returns_business_result_with_http_200(self) -> None:
+        service = MagicMock()
+        service.test_connection = AsyncMock(
+            return_value={
+                "status": "success",
+                "message": "连接正常：openai / example-model 响应耗时 120ms。",
+                "provider": "openai",
+                "base_url": "https://example.test",
+                "model_name": "example-model",
+                "latency_ms": 120,
+            }
+        )
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[get_runtime_provider_admin_service] = lambda: service
+
+        response = TestClient(app).post("/api/ops/provider-config/test")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "success")
+        self.assertEqual(body["latency_ms"], 120)
+        service.test_connection.assert_awaited_once_with()
+
+    def test_provider_config_test_failed_result_is_still_http_200(self) -> None:
+        service = MagicMock()
+        service.test_connection = AsyncMock(
+            return_value={
+                "status": "failed",
+                "message": "连接测试失败：RuntimeError: boom",
+                "provider": "openai",
+                "base_url": "https://example.test",
+                "model_name": "example-model",
+                "latency_ms": None,
+            }
+        )
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[get_runtime_provider_admin_service] = lambda: service
+
+        response = TestClient(app).post("/api/ops/provider-config/test")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "failed")
+        self.assertIsNone(body["latency_ms"])
+
+    def test_provider_config_test_requires_admin(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_ops.router, prefix="/api")
+        service = MagicMock()
+        service.test_connection = AsyncMock()
+        app.dependency_overrides[get_runtime_provider_admin_service] = lambda: service
+
+        response = TestClient(app).post("/api/ops/provider-config/test")
+
+        self.assertIn(response.status_code, (401, 403))
+        service.test_connection.assert_not_called()
 
     def test_mcp_server_list_uses_injected_repository_and_redacts_token(self) -> None:
         repository = MagicMock(spec=McpServerConfigRepository)

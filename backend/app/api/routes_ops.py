@@ -56,6 +56,7 @@ from backend.app.models.schema_ops import (
     ProjectTaxonomyResponse,
     ProviderConfigRequest,
     ProviderConfigResponse,
+    ProviderConfigTestResponse,
     SchedulerConfigListResponse,
     SchedulerConfigUpdateRequest,
     SchedulerConfigUpdateResponse,
@@ -165,6 +166,22 @@ async def update_provider_config(
     """更新唯一的运行时模型配置。api_key 留空时保留原值，clear_api_key=true 时清空。"""
     projection = await service.update_config(request.model_dump())
     return ProviderConfigResponse.model_validate(projection, from_attributes=True)
+
+
+@router.post(
+    "/ops/provider-config/test",
+    response_model=ProviderConfigTestResponse,
+    tags=["Ops"],
+)
+async def test_provider_config(
+    _: dict = Depends(RequireAdmin),
+    service: RuntimeProviderAdminService = Depends(
+        get_runtime_provider_admin_service
+    ),
+) -> ProviderConfigTestResponse:
+    """用当前保存的模型配置发起一次最小调用，验证 Base URL/Key/模型连通性。"""
+    result = await service.test_connection()
+    return ProviderConfigTestResponse(**result)
 
 
 # ── MCP Server 配置 ──────────────────────────────────────────────────────────

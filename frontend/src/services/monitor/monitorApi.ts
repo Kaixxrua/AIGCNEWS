@@ -2,7 +2,7 @@ import { api } from '@/services/http/apiClient'
 import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
-  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm,
+  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
   SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
 import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics } from '@/features/monitor/monitorModel'
@@ -15,6 +15,7 @@ export interface MonitorApi {
   fetchMcpToolCalls(): Promise<McpToolCallMetricsSnapshot>
   fetchProviderConfig(): Promise<ProviderConfig>
   saveProviderConfig(form: ProviderForm): Promise<ProviderConfig>
+  testProviderConnection(): Promise<ProviderTestResult>
   fetchMcpServers(): Promise<McpServerConfig[]>
   saveMcpServer(form: McpServerForm): Promise<McpServerConfig>
   testMcpServer(id: number): Promise<{ server?: McpServerConfig; status?: string; message?: string }>
@@ -67,6 +68,8 @@ export const monitorApi: MonitorApi = {
   },
   async fetchProviderConfig() { return (await api.get('/ops/provider-config')).data },
   async saveProviderConfig(form) { return (await api.put('/ops/provider-config', buildProviderPayload(form))).data },
+  // 测试会真实请求一次模型服务（先例：testMcpServer / testXWatchAccount 的 30s 超时）
+  async testProviderConnection() { return (await api.post('/ops/provider-config/test', null, { timeout: 45_000 })).data },
   async fetchMcpServers() {
     const { data } = await api.get('/ops/mcp-servers')
     return Array.isArray(data?.items) ? data.items : []

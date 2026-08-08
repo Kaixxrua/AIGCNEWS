@@ -82,6 +82,13 @@ describe('Monitor API contract', () => {
     expect(transport.put).toHaveBeenLastCalledWith('/ops/provider-config', expect.objectContaining({ api_key: null, clear_api_key: true }))
   })
 
+  it('posts provider connection test with a 45 second client timeout', async () => {
+    // 服务端真实请求一次模型（上限 30s），客户端超时留足余量
+    transport.post.mockResolvedValue({ data: { status: 'success', message: 'ok', latency_ms: 120 } })
+    await expect(monitorApi.testProviderConnection()).resolves.toEqual({ status: 'success', message: 'ok', latency_ms: 120 })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/provider-config/test', null, { timeout: 45_000 })
+  })
+
   it('preserves custom reasoning effort tiers and only normalizes case, whitespace and length', () => {
     expect(createProviderForm(null).reasoning_effort).toBe('')
     expect(createProviderForm({

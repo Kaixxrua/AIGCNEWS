@@ -50,6 +50,7 @@ export const useMonitorPageController = ({
   const providerForm = ref(createProviderForm())
   const loadingProviderConfig = ref(false)
   const savingProviderConfig = ref(false)
+  const testingProvider = ref(false)
   const mcpServers = ref<McpServerConfig[]>([])
   const mcpForm = ref(createEmptyMcpForm())
   const loadingMcpServers = ref(false)
@@ -146,6 +147,17 @@ export const useMonitorPageController = ({
       successMsg.value = '模型服务配置已保存。新建模型实例时会自动使用最新配置。'
     } catch (error) { errorMsg.value = detail(error) }
     finally { savingProviderConfig.value = false }
+  }
+  const testProviderConnection = async () => {
+    if (testingProvider.value) return
+    clearMessages(); testingProvider.value = true
+    try {
+      // 测试的是已保存的配置；表单里未保存的修改不生效，先保存再测试
+      const result = await api.testProviderConnection()
+      if (String(result.status || '').toLowerCase() === 'success') successMsg.value = result.message || i18n.global.t('monitor.testPassed')
+      else errorMsg.value = result.message || i18n.global.t('monitor.testFailed')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { testingProvider.value = false }
   }
   const editSchedulerConfig = (job: SchedulerJobConfig) => {
     clearMessages()
@@ -443,10 +455,10 @@ export const useMonitorPageController = ({
 
   return {
     tasks, total, page, pageSize, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
-    loadingProviderConfig, savingProviderConfig, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+    loadingProviderConfig, savingProviderConfig, testingProvider, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
-    fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig,
+    fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection,
     editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,

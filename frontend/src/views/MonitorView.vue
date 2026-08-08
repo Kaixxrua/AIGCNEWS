@@ -22,10 +22,10 @@ const authStore = useAuthStore()
 const enrichmentAlert = useEnrichmentAlertStore()
 const {
   tasks, total, page, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
-  loadingProviderConfig, savingProviderConfig, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+  loadingProviderConfig, savingProviderConfig, testingProvider, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
-  fetchMcpServers, refreshData, goPage, saveProviderConfig, resetMcpForm, editMcpServer, saveMcpServer,
+  fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, resetMcpForm, editMcpServer, saveMcpServer,
   testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings, clearDashboardCache, syncDataNow,
   ingestByDate, clearAllData,
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
@@ -95,7 +95,9 @@ onMounted(refreshData)
       :form="providerForm"
       :loading="loadingProviderConfig"
       :saving="savingProviderConfig"
+      :testing="testingProvider"
       @save="saveProviderConfig"
+      @test="testProviderConnection"
     />
 
     <!-- Admin 专属：定时任务配置 -->
