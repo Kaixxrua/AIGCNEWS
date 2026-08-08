@@ -49,6 +49,11 @@ def _gen_otp(length: int = 6) -> str:
     return "".join(secrets.choice(string.digits) for _ in range(length))
 
 
+def _is_development_env() -> bool:
+    """开发环境判定与 main.py 热重载口径一致：ENV=development/dev。"""
+    return settings.env.lower() in ("development", "dev")
+
+
 class EmailService:
     """Coordinate OTP state, message rendering, and SMTP delivery."""
 
@@ -109,13 +114,22 @@ class EmailService:
             subject, body = self._renderer.registration_otp(otp)
 
         if not self._transport.configured:
-            logger.info(
-                "[EMAIL DEV] purpose=%s to=%s otp=%s (SMTP 未配置，跳过真实发送)",
+            if _is_development_env():
+                logger.info(
+                    "[EMAIL DEV] purpose=%s to=%s otp=%s (SMTP 未配置，跳过真实发送)",
+                    purpose,
+                    email_lower,
+                    otp,
+                )
+                return
+            # 非开发环境 SMTP 未配置：明文验证码进日志即泄露，拒绝发码；
+            # 路由层统一映射 503，行为与 SMTP 发送失败路径一致
+            logger.error(
+                "[EMAIL] SMTP 未配置且非开发环境，拒绝发放验证码 purpose=%s to=%s",
                 purpose,
                 email_lower,
-                otp,
             )
-            return
+            raise OtpDeliveryUnavailableError("邮件服务暂不可用，请稍后重试")
 
         use_tls, start_tls = self._transport.tls_options()
         logger.info(

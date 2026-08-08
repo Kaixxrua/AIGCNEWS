@@ -6,6 +6,7 @@ from email.header import decode_header, make_header
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from backend.app.services import email_service
 from backend.app.services.email.message_renderer import EmailMessageRenderer
 from backend.app.services.email.otp_store import RedisOtpStore
 from backend.app.services.email.smtp_transport import SmtpDeliveryError, SmtpTransport
@@ -241,6 +242,7 @@ class EmailDeliveryContractTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("backend.app.services.email_service._gen_otp", return_value="123456"),
+            patch.object(email_service.settings, "env", "development"),
             self.assertLogs("backend.app.services.email_service", level="INFO") as logs,
         ):
             await service.send_otp("USER@example.com")
@@ -249,6 +251,40 @@ class EmailDeliveryContractTests(unittest.IsolatedAsyncioTestCase):
             "[EMAIL DEV] purpose=registration to=user@example.com otp=123456 (SMTP 未配置，跳过真实发送)",
             "\n".join(logs.output),
         )
+
+    async def test_otp_unconfigured_smtp_outside_development_is_refused(self) -> None:
+        redis = FakeRedis()
+        service = EmailService(redis)
+
+        with (
+            patch("backend.app.services.email_service._gen_otp", return_value="123456"),
+            patch.object(email_service.settings, "env", "production"),
+            self.assertLogs("backend.app.services.email_service", level="ERROR") as logs,
+        ):
+            with self.assertRaises(OtpDeliveryUnavailableError) as context:
+                await service.send_otp("USER@example.com")
+
+        self.assertEqual(context.exception.detail, "邮件服务暂不可用，请稍后重试")
+        output = "\n".join(logs.output)
+        self.assertIn("SMTP 未配置", output)
+        # 任何分支都不得把明文验证码写进日志
+        self.assertNotIn("123456", output)
+        self.assertNotIn("[EMAIL DEV]", output)
+        # 验证码已落库但拒绝投递：占用冷却与尝试策略，行为同 SMTP 发送失败路径
+        self.assertEqual(redis.values["email:code:user@example.com"], "123456")
+
+    def test_development_env_detection_matches_main_reload_policy(self) -> None:
+        for env, expected in (
+            ("development", True),
+            ("dev", True),
+            ("DEVELOPMENT", True),
+            ("production", False),
+            ("staging", False),
+            ("", False),
+        ):
+            with self.subTest(env=env):
+                with patch.object(email_service.settings, "env", env):
+                    self.assertIs(email_service._is_development_env(), expected)
 
     async def test_briefing_dev_mode_raises_delivery_error_with_exact_detail(self) -> None:
         service = EmailService(None)

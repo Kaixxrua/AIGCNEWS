@@ -190,7 +190,8 @@ async def send_email_otp(body: SendEmailOtpRequest, request: Request) -> dict[st
     发送邮箱验证码。
 
     - 60 秒防刷（Redis email:lock）+ IP 级限速
-    - dev 模式（SMTP_HOST 为空）将 OTP 打印到日志
+    - 仅开发环境（ENV=development/dev 且 SMTP_HOST 为空）将 OTP 打印到日志；
+      其他环境 SMTP 未配置时拒绝发码并返回 503
     """
     await _enforce_rate_limit(request, action="auth.send_email_otp", limit=_OTP_SEND_RATE_LIMIT)
     email_svc = _get_email_service(request)

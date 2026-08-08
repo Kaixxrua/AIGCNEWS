@@ -21,6 +21,7 @@ from backend.app.domain.wechat_secret_box import WeChatSecretBox
 from backend.app.repositories.postgres_user_subscription_repository import (
     SubscriptionChannelMissingError,
 )
+from backend.app.services import email_service
 from backend.app.services.email.otp_store import otp_keys
 from backend.app.services.email_service import (
     EmailService,
@@ -251,8 +252,12 @@ class PushChannelOtpFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_and_verify_otp(self) -> None:
         redis = FakeRedis()
         service = EmailService(redis, smtp_host="")
-        with patch(
-            "backend.app.services.email_service._gen_otp", return_value="123456"
+        # SMTP 未配置的投递成功路径仅在开发环境成立（OTP 明文日志限定 dev）
+        with (
+            patch(
+                "backend.app.services.email_service._gen_otp", return_value="123456"
+            ),
+            patch.object(email_service.settings, "env", "development"),
         ):
             await service.send_otp("user@example.com", purpose=CHANNEL_OTP_PURPOSE)
         self.assertEqual(
@@ -267,7 +272,9 @@ class PushChannelOtpFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_otp_hits_cooldown(self) -> None:
         redis = FakeRedis()
         service = EmailService(redis, smtp_host="")
-        await service.send_otp("user@example.com", purpose=CHANNEL_OTP_PURPOSE)
+        with patch.object(email_service.settings, "env", "development"):
+            await service.send_otp("user@example.com", purpose=CHANNEL_OTP_PURPOSE)
+        # 冷却命中先于投递判定，第二针在任意环境下都抛 429 领域错误
         with self.assertRaises(OtpSendRateLimitedError):
             await service.send_otp("user@example.com", purpose=CHANNEL_OTP_PURPOSE)
 
@@ -291,13 +298,17 @@ class _PushRouteTestBase(unittest.TestCase):
         app.dependency_overrides[get_user_subscription_service] = lambda: (
             UserSubscriptionService(self.subscriptions, self.channels)
         )
-        # 邮件服务固定走 dev 模式（SMTP 未配置），避免测试触网。
+        # 邮件服务固定走 dev 模式（开发环境 + SMTP 未配置），避免测试触网；
+        # 非开发环境 SMTP 未配置会拒绝发码（OTP 明文日志限定 dev）
         self.email_service = EmailService(self.redis, smtp_host="")
         self._email_patcher = patch.object(
             routes_push, "build_email_service", return_value=self.email_service
         )
         self._email_patcher.start()
         self.addCleanup(self._email_patcher.stop)
+        self._env_patcher = patch.object(email_service.settings, "env", "development")
+        self._env_patcher.start()
+        self.addCleanup(self._env_patcher.stop)
         self.app = app
         self.client = TestClient(app)
 
