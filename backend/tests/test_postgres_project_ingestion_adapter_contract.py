@@ -24,6 +24,7 @@ def test_postgres_ingestion_adapter_covers_protocol_operations() -> None:
         "record_github_repo_not_found",
         "ensure_github_repo_candidate",
         "insert_github_repo_snapshot",
+        "upsert_github_repo_metric_observations",
         "upsert_github_trending_hit",
         "get_github_hot_repos",
         "get_github_snapshot_count",
