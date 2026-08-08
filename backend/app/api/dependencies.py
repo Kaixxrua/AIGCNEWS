@@ -28,6 +28,9 @@ from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenRepository,
 )
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
+from backend.app.repositories.project_catalog_factory import (
+    get_project_catalog_repository,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectEnrichmentRepository,
     GitHubProjectIngestionRepository,
@@ -80,6 +83,7 @@ from backend.app.services.mcp.admin_service import McpAdminService
 from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
+from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 from backend.app.services.push.channel_service import PushChannelService
 from backend.app.services.push.subscription_service import UserSubscriptionService
 from backend.app.services.rag.chat_service import ChatService
@@ -445,6 +449,11 @@ def get_personal_projects_service(
     ),
 ) -> PersonalProjectsService:
     return PersonalProjectsService(collection=collection, enrichment=enrichment)
+
+
+def get_project_catalog_query_service() -> ProjectCatalogQueryService:
+    """公共项目目录查询编排服务；仓储仍经工厂按次解析，保持既有连接语义。"""
+    return ProjectCatalogQueryService(repository_factory=get_project_catalog_repository)
 
 
 def get_github_project_recommendation_repository(

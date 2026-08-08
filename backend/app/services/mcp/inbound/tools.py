@@ -4,7 +4,7 @@ import asyncio
 import base64
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 from pydantic import ValidationError
@@ -13,9 +13,6 @@ from starlette.requests import Request
 from backend.app.repositories.document_repository import (
     DocumentSearchReader,
     PapersReader,
-)
-from backend.app.repositories.project_catalog_factory import (
-    get_project_catalog_repository,
 )
 from backend.app.repositories.project_write_repository import (
     UserProjectCollectionRepository,
@@ -43,6 +40,10 @@ from backend.app.services.papers.presentation import (
     project_pdf_media_url,
     safe_document,
 )
+from backend.app.services.project_catalog.query_service import (
+    PUBLIC_PROJECT_MIN_STARS,
+    ProjectCatalogQueryService,
+)
 from backend.app.services.project_discovery import public_project_item, search_projects
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,9 @@ class McpToolContext:
     project_collection: UserProjectCollectionRepository
     request: Request
     project_searcher: Callable[..., Awaitable[dict[str, Any]]] = search_projects
+    catalog_queries: ProjectCatalogQueryService = field(
+        default_factory=ProjectCatalogQueryService
+    )
 
     @property
     def authorization(self) -> McpAuthorizationContext:
@@ -336,7 +340,7 @@ async def _tool_search_my_project_favorites(
         page=page,
         page_size=limit,
         sort=sort,
-        min_stars=500,
+        min_stars=PUBLIC_PROJECT_MIN_STARS,
         enriched_only=True,
     )
     items = [public_project_item(item) for item in result.get("items") or []]
@@ -361,23 +365,18 @@ async def _tool_search_my_project_favorites(
 
 
 async def _tool_get_project_categories(
-    _context_value: McpToolContext, args: dict[str, Any]
+    context: McpToolContext, args: dict[str, Any]
 ) -> dict[str, Any]:
     if args:
         raise McpToolInputError("get_project_categories 不接受参数。")
-    db = get_project_catalog_repository()
-    result = await asyncio.to_thread(
-        db.get_project_categories,
-        source="github",
-        min_stars=500,
-        enriched_only=True,
-    )
+    catalog_queries = context.catalog_queries
+    result = await catalog_queries.get_public_categories()
     return {
         "items": result.get("items") or [],
         "total": int(result.get("total") or 0),
         "today_count": int(result.get("today_count") or 0),
         "recommended_count": int(result.get("recommended_count") or 0),
-        "min_stars": 500,
+        "min_stars": catalog_queries.min_stars,
         "source": "github",
     }
 

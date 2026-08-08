@@ -9,7 +9,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_github_projects
-from backend.app.api.dependencies import get_personal_projects_service
+from backend.app.api.dependencies import (
+    get_personal_projects_service,
+    get_project_catalog_query_service,
+)
 from backend.app.core.auth import OptionalUser, RequireUser
 from backend.app.services.personal_projects import (
     InvalidPersonalProjectRequest,
@@ -17,6 +20,7 @@ from backend.app.services.personal_projects import (
     PersonalProjectsService,
     PersonalWebsiteOperationFailed,
 )
+from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
 
 def _service() -> AsyncMock:
@@ -35,10 +39,13 @@ def _catalog_client(repository: MagicMock, *, user: dict | None = None) -> TestC
     app = FastAPI()
     app.include_router(routes_github_projects.router, prefix="/api")
     app.dependency_overrides[OptionalUser] = lambda: user
+    app.dependency_overrides[get_project_catalog_query_service] = (
+        lambda: ProjectCatalogQueryService(repository_factory=lambda: repository)
+    )
     return TestClient(app)
 
 
-def test_github_projects_route_uses_catalog_repository(monkeypatch) -> None:
+def test_github_projects_route_uses_catalog_repository() -> None:
     repository = MagicMock()
     repository.list_projects.return_value = {
         "items": [],
@@ -46,11 +53,6 @@ def test_github_projects_route_uses_catalog_repository(monkeypatch) -> None:
         "page": 1,
         "page_size": 24,
     }
-    monkeypatch.setattr(
-        routes_github_projects,
-        "get_project_catalog_repository",
-        MagicMock(return_value=repository),
-    )
     response = _catalog_client(repository).get(
         "/api/projects?source=github&q=agent&sort=stars"
     )
@@ -72,18 +74,11 @@ def test_github_projects_route_uses_catalog_repository(monkeypatch) -> None:
     )
 
 
-def test_canonical_query_defaults_to_relevance_and_honors_explicit_sort(
-    monkeypatch,
-) -> None:
+def test_canonical_query_defaults_to_relevance_and_honors_explicit_sort() -> None:
     repository = MagicMock()
     repository.list_projects.return_value = {
         "items": [], "total": 0, "page": 1, "page_size": 24
     }
-    monkeypatch.setattr(
-        routes_github_projects,
-        "get_project_catalog_repository",
-        MagicMock(return_value=repository),
-    )
     client = _catalog_client(repository, user={"user_id": 42})
 
     default_response = client.get("/api/projects?q=langchain")
@@ -111,14 +106,9 @@ def test_canonical_query_defaults_to_relevance_and_honors_explicit_sort(
     ],
 )
 def test_canonical_project_source_errors_remain_explicit(
-    monkeypatch, path: str, expected_status: int
+    path: str, expected_status: int
 ) -> None:
     repository = MagicMock()
-    monkeypatch.setattr(
-        routes_github_projects,
-        "get_project_catalog_repository",
-        MagicMock(return_value=repository),
-    )
     response = _catalog_client(repository).get(path)
 
     assert response.status_code == expected_status

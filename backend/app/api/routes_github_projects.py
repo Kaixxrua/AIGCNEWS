@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
-from backend.app.api.dependencies import get_personal_projects_service
+from backend.app.api.dependencies import (
+    get_personal_projects_service,
+    get_project_catalog_query_service,
+)
 from backend.app.core.auth import OptionalUser, RequireUser, extract_user_id
 from backend.app.models.schema_projects import (
     GitHubProjectCategoriesResponse,
@@ -25,16 +27,16 @@ from backend.app.models.schema_projects import (
     ToolWebsiteUpdateRequest,
     ToolWebsiteUpdateResponse,
 )
-from backend.app.repositories.project_catalog_factory import (
-    get_project_catalog_repository,
-)
 from backend.app.services.personal_projects import (
     InvalidPersonalProjectRequest,
     PersonalProjectNotFound,
     PersonalProjectsService,
     PersonalWebsiteOperationFailed,
 )
-from backend.app.services.project_discovery import resolve_project_sort
+from backend.app.services.project_catalog.query_service import (
+    PUBLIC_PROJECT_MIN_STARS,
+    ProjectCatalogQueryService,
+)
 
 router = APIRouter()
 
@@ -136,23 +138,16 @@ async def list_projects(
     page_size: int = Query(default=24, ge=1, le=60),
     sort: PublicProjectSort | None = Query(default=None),
     user: dict[str, Any] | None = Depends(OptionalUser),
+    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ) -> GitHubProjectsResponse:
     """公共 AI 项目库：只展示 GitHub 项目；网页收藏只存在于个人收藏夹。"""
     user_id = extract_user_id(user)
     if source == "website":
         raise HTTPException(status_code=404, detail="网页收藏仅在个人收藏夹中可见")
-    effective_source: ProjectSource = "github"
-    min_stars = 500
-    db = get_project_catalog_repository()
     clean_category = category.strip()
     clean_subcategory = subcategory.strip()
     clean_q = q.strip()
-    effective_sort = resolve_project_sort(
-        scope, sort, has_query=bool(clean_q), prefer_relevance=True
-    )
-    result = await asyncio.to_thread(
-        db.list_projects,
-        source=effective_source,
+    page_result = await catalog.list_public_projects(
         scope=scope,
         category=clean_category,
         subcategory=clean_subcategory,
@@ -160,20 +155,18 @@ async def list_projects(
         language=language.strip(),
         page=page,
         page_size=page_size,
-        sort=effective_sort,
-        min_stars=min_stars,
-        enriched_only=True,
+        sort=sort,
         user_id=user_id,
     )
     return _projects_response(
-        result,
-        min_stars=min_stars,
+        page_result.result,
+        min_stars=catalog.min_stars,
         source=source,
         scope=scope,
         category=clean_category,
         subcategory=clean_subcategory,
         q=clean_q,
-        sort=effective_sort,
+        sort=page_result.effective_sort,
     )
 
 
@@ -185,20 +178,13 @@ async def list_projects(
 async def list_project_categories(
     source: ProjectSource = Query(default="all"),
     user: dict[str, Any] | None = Depends(OptionalUser),
+    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ) -> GitHubProjectCategoriesResponse:
     """返回公共 GitHub 项目库分类及数量；个人网页分类使用 /projects/me/categories。"""
     if source == "website":
         raise HTTPException(status_code=404, detail="网页收藏分类仅在个人收藏夹中可见")
-    effective_source: ProjectSource = "github"
-    min_stars = 500
-    db = get_project_catalog_repository()
-    result = await asyncio.to_thread(
-        db.get_project_categories,
-        source=effective_source,
-        min_stars=min_stars,
-        enriched_only=True,
-    )
-    return _categories_response(result, min_stars=min_stars, source=source)
+    result = await catalog.get_public_categories()
+    return _categories_response(result, min_stars=catalog.min_stars, source=source)
 
 
 @router.get("/projects/me/collection", response_model=GitHubProjectsResponse, tags=["Projects"])
@@ -220,7 +206,7 @@ async def list_my_project_collection(
     user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
-    min_stars = 500
+    min_stars = PUBLIC_PROJECT_MIN_STARS
     clean_category = category.strip()
     clean_subcategory = subcategory.strip()
     clean_q = q.strip()
@@ -262,7 +248,7 @@ async def list_my_project_categories(
     user_id = extract_user_id(user)
     if not user_id:
         raise HTTPException(status_code=401, detail="用户身份无效")
-    min_stars = 500
+    min_stars = PUBLIC_PROJECT_MIN_STARS
     result = await service.get_categories(
         user_id=user_id,
         source="github" if source == "all" else source,
@@ -286,7 +272,7 @@ async def list_my_project_tags(
     result = await service.get_tags(
         user_id=user_id,
         source=effective_source,
-        min_stars=500,
+        min_stars=PUBLIC_PROJECT_MIN_STARS,
         enriched_only=True,
     )
     return GitHubProjectTagsResponse(

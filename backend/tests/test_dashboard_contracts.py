@@ -592,15 +592,21 @@ class FakeUserStatistics:
 def _summary_client(monkeypatch, catalog_factory) -> TestClient:
     from backend.app.api.dependencies import (
         get_document_repository,
+        get_project_catalog_query_service,
         get_user_account_repository,
     )
+    from backend.app.services.project_catalog.query_service import (
+        ProjectCatalogQueryService,
+    )
 
-    monkeypatch.setattr(routes_dashboard, "get_project_catalog_repository", catalog_factory)
     app = FastAPI()
     app.include_router(routes_dashboard.router, prefix="/api")
     app.dependency_overrides[get_rank_snapshot_repository] = lambda: FakeRankSnapshotReader()
     app.dependency_overrides[get_document_repository] = lambda: FakeDocumentStatistics()
     app.dependency_overrides[get_user_account_repository] = lambda: FakeUserStatistics()
+    app.dependency_overrides[get_project_catalog_query_service] = (
+        lambda: ProjectCatalogQueryService(repository_factory=catalog_factory)
+    )
     return TestClient(app)
 
 
@@ -630,15 +636,17 @@ def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
 
 
 def test_github_library_count_failure_logs_warning_and_returns_none(monkeypatch, caplog) -> None:
+    from backend.app.services.project_catalog.query_service import (
+        ProjectCatalogQueryService,
+    )
+
     def broken_factory():
         raise RuntimeError("catalog down")
 
-    monkeypatch.setattr(
-        routes_dashboard, "get_project_catalog_repository", broken_factory
-    )
+    catalog = ProjectCatalogQueryService(repository_factory=broken_factory)
 
     with caplog.at_level("WARNING", logger="backend.app.api.routes_dashboard"):
-        result = asyncio.run(routes_dashboard._github_library_count())
+        result = asyncio.run(routes_dashboard._github_library_count(catalog))
 
     assert result is None
     assert "项目库 GitHub 收录量查询失败" in caplog.text

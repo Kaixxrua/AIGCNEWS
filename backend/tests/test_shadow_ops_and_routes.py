@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from backend.app.api import routes_github_projects, routes_ops
 from backend.app.services.mcp.inbound import tools as inbound_tools
+from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
 
 def test_mcp_categories_use_catalog_factory() -> None:
@@ -12,8 +13,10 @@ def test_mcp_categories_use_catalog_factory() -> None:
     repository.get_project_categories.return_value = {
         "items": [], "total": 0, "today_count": 0, "recommended_count": 0
     }
-    with patch.object(inbound_tools, "get_project_catalog_repository", return_value=repository) as factory:
-        result = asyncio.run(inbound_tools._tool_get_project_categories(MagicMock(), {}))
+    factory = MagicMock(return_value=repository)
+    context = MagicMock()
+    context.catalog_queries = ProjectCatalogQueryService(repository_factory=factory)
+    result = asyncio.run(inbound_tools._tool_get_project_categories(context, {}))
     factory.assert_called_once_with()
     assert result["source"] == "github"
 
@@ -23,8 +26,13 @@ def test_canonical_categories_use_catalog_factory() -> None:
     repository.get_project_categories.return_value = {
         "items": [], "total": 0, "today_count": 0, "recommended_count": 0
     }
-    with patch.object(routes_github_projects, "get_project_catalog_repository", return_value=repository) as factory:
-        result = asyncio.run(routes_github_projects.list_project_categories(source="all", user=None))
+    factory = MagicMock(return_value=repository)
+    catalog = ProjectCatalogQueryService(repository_factory=factory)
+    result = asyncio.run(
+        routes_github_projects.list_project_categories(
+            source="all", user=None, catalog=catalog
+        )
+    )
     factory.assert_called_once_with()
     assert result.total == 0
 

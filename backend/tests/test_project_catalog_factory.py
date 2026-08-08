@@ -7,6 +7,7 @@ from backend.app.api import routes_github_projects
 from backend.app.repositories import project_catalog_factory
 from backend.app.services import project_discovery
 from backend.app.services.mcp.inbound import tools as inbound_tools
+from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
 
 def test_factory_builds_postgres_adapter() -> None:
@@ -76,28 +77,28 @@ def test_public_rest_project_handlers_use_catalog_factory() -> None:
         "recommended_count": 0,
     }
 
-    with patch.object(
-        routes_github_projects,
-        "get_project_catalog_repository",
-        return_value=repository,
-    ) as factory:
-        projects = asyncio.run(
-            routes_github_projects.list_projects(
-                source="all",
-                scope="all",
-                category="",
-                subcategory="",
-                q="",
-                language="",
-                page=1,
-                page_size=24,
-                sort=None,
-                user=None,
-            )
+    factory = MagicMock(return_value=repository)
+    catalog = ProjectCatalogQueryService(repository_factory=factory)
+    projects = asyncio.run(
+        routes_github_projects.list_projects(
+            source="all",
+            scope="all",
+            category="",
+            subcategory="",
+            q="",
+            language="",
+            page=1,
+            page_size=24,
+            sort=None,
+            user=None,
+            catalog=catalog,
         )
-        categories = asyncio.run(
-            routes_github_projects.list_project_categories(source="all", user=None)
+    )
+    categories = asyncio.run(
+        routes_github_projects.list_project_categories(
+            source="all", user=None, catalog=catalog
         )
+    )
 
     assert factory.call_count == 2
     assert projects.total == 0

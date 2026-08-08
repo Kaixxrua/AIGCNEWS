@@ -13,6 +13,7 @@ from fastapi_cache.decorator import cache
 from backend.app.api.dependencies import (
     get_application_repositories,
     get_document_repository,
+    get_project_catalog_query_service,
     get_rank_snapshot_repository,
     get_user_account_repository,
 )
@@ -23,35 +24,26 @@ from backend.app.repositories.document_repository import (
     DocumentRecentReader,
     DocumentStatisticsReader,
 )
-from backend.app.repositories.project_catalog_factory import (
-    get_project_catalog_repository,
-)
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.repositories.user_account_repository import UserStatisticsReader
 from backend.app.services.dashboard import policy
 from backend.app.services.dashboard.query_service import DashboardQueryService
+from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
 
-async def _github_library_count() -> Optional[int]:
+async def _github_library_count(catalog: ProjectCatalogQueryService) -> Optional[int]:
     """项目库 GitHub 收录总量（与 /projects 列表同一查询口径）。
 
     documents 表里的 github 行只是 trending 快照流水，数量远小于
     用户实际可浏览的项目库；统计卡片应展示项目库收录量。
     查询失败时返回 None，由调用方回退到 documents 表计数。
     """
-
-    def _query() -> int:
-        result = get_project_catalog_repository().list_projects(
-            source="github", scope="all", page=1, page_size=1, sort="stars"
-        )
-        return int(result.get("total") or 0)
-
     try:
-        return await asyncio.to_thread(_query)
+        return await catalog.github_library_total()
     except Exception:
         # 静默降级会掩盖项目库故障：保留回退行为，但留下可检索的告警日志
         logger.warning(
@@ -61,9 +53,12 @@ async def _github_library_count() -> Optional[int]:
         return None
 
 
-async def _get_source_counts(document_statistics: DocumentStatisticsReader) -> dict[str, int]:
+async def _get_source_counts(
+    document_statistics: DocumentStatisticsReader,
+    catalog: ProjectCatalogQueryService,
+) -> dict[str, int]:
     source_counts = await asyncio.to_thread(document_statistics.get_source_counts)
-    github_library_count = await _github_library_count()
+    github_library_count = await _github_library_count(catalog)
     if github_library_count is not None:
         source_counts = {**source_counts, "github": github_library_count}
     return source_counts
@@ -307,6 +302,7 @@ async def get_dashboard_summary(
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
+    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
     """Return a combined dashboard payload: period top-10 + radar + basic stats + source breakdown.
 
@@ -336,7 +332,7 @@ async def get_dashboard_summary(
 
     # 静默期拦截：返回空排行数据，但统计卡片仍显示全库累计数量
     if board["is_embargoed"]:
-        source_counts_embargo = await _get_source_counts(document_statistics)
+        source_counts_embargo = await _get_source_counts(document_statistics, catalog)
         total_embargo = sum(source_counts_embargo.values())
         registered_users = await asyncio.to_thread(user_statistics.get_user_count)
         today_registered_users = await asyncio.to_thread(
@@ -373,7 +369,7 @@ async def get_dashboard_summary(
     # ── 统计卡片数据 ──────────────────────────────────────────────
     # 始终使用全库累计统计，数字不随日期切换而变化，
     # 展示的是每个来源在数据库中的实际入库总量。
-    source_counts = await _get_source_counts(document_statistics)
+    source_counts = await _get_source_counts(document_statistics, catalog)
     total_documents = sum(source_counts.values())
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
     today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
@@ -406,13 +402,14 @@ async def get_dashboard_summary(
 async def get_dashboard_live_stats(
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
+    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
     """首页统计带实时计数（10s 短缓存聚合并发访客的轮询）。
 
     与 summary 统计卡片同一口径但不含排行数据；前端每 10s 轮询一次，
     仅数字变化时滚筒动画滚动差位，无变化则静止。
     """
-    source_counts = await _get_source_counts(document_statistics)
+    source_counts = await _get_source_counts(document_statistics, catalog)
     total_documents = sum(source_counts.values())
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
     today_registered_users = await asyncio.to_thread(

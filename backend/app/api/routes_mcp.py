@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from backend.app.api.dependencies import (
     get_application_repositories,
     get_briefing_repository,
+    get_project_catalog_query_service,
     get_project_search_runtime,
 )
 from backend.app.core.auth import OptionalMcpUser
@@ -33,6 +34,7 @@ from backend.app.services.mcp.inbound.rate_limit import (
     mcp_rate_limited_projection,
 )
 from backend.app.services.mcp.inbound.tools import McpToolContext
+from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
 router = APIRouter()
 _MCP_SESSION_TRANSPORT = McpSessionTransport()
@@ -58,6 +60,9 @@ async def mcp_endpoint(
     briefing_repository: BriefingReader = Depends(get_briefing_repository),
     repositories: ApplicationRepositories = Depends(get_application_repositories),
     project_search_runtime: Any = Depends(get_project_search_runtime),
+    catalog_queries: ProjectCatalogQueryService = Depends(
+        get_project_catalog_query_service
+    ),
 ) -> Response:
     authorization = McpAuthorizationContext(mcp_user)
     tool_context = McpToolContext(
@@ -68,6 +73,7 @@ async def mcp_endpoint(
         project_collection=repositories.project_collections,
         request=request,
         project_searcher=project_search_runtime.search_projects,
+        catalog_queries=catalog_queries,
     )
     application = McpProtocolApplication(
         McpProtocolDependencies(
