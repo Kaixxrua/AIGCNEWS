@@ -212,13 +212,13 @@ describe('Monitor page controller contract', () => {
     controller.schedulerConfigForm.value.start_time = '21:00'
     controller.schedulerConfigForm.value.end_time = '08:00'
     await controller.saveSchedulerConfig()
-    expect(controller.errorMsg.value).toBe('结束时间必须晚于开始时间。')
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.schedulerConfig.invalidWindow'))
 
     controller.schedulerConfigForm.value.start_time = '08:00'
     controller.schedulerConfigForm.value.end_time = '20:00'
     controller.schedulerConfigForm.value.interval_minutes = 0
     await controller.saveSchedulerConfig()
-    expect(controller.errorMsg.value).toBe('轮询时间必须大于 0。')
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.schedulerConfig.invalidInterval'))
 
     vi.mocked(api.saveSchedulerConfig).mockResolvedValue({ item: job, message: '定时任务 arXiv 配置已保存并即时生效。' })
     controller.schedulerConfigForm.value.interval_minutes = 120
@@ -264,12 +264,12 @@ describe('Monitor page controller contract', () => {
     vi.mocked(api.syncData).mockResolvedValue({})
     await controller.syncDataNow(false)
     expect(api.syncData).toHaveBeenCalledWith(false)
-    expect(controller.successMsg.value).toBe('智能同步任务已提交，后台执行中…')
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.smartSubmitted'))
     await vi.advanceTimersByTimeAsync(3000)
     expect(api.fetchTasks).toHaveBeenCalledTimes(2)
     await controller.syncDataNow(true)
     expect(api.syncData).toHaveBeenLastCalledWith(true)
-    expect(controller.successMsg.value).toBe('强制采集任务已提交，后台执行中…')
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.forceSubmitted'))
     controller.tasks.value = [{ id: 1, task_name: 'running', status: 'running', item_count: 0, error_msg: null, started_at: null, finished_at: null }]
     await controller.syncDataNow()
     expect(api.syncData).toHaveBeenCalledTimes(2)
@@ -279,11 +279,11 @@ describe('Monitor page controller contract', () => {
     const { api, controller } = createController()
     vi.mocked(api.ingestSource).mockRejectedValue({ response: { status: 409 } })
     await controller.ingestSingleSource('arxiv')
-    expect(controller.errorMsg.value).toBe('当前已有任务正在运行，请等待完成后再试。')
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.taskConflict'))
     expect(controller.ingestingSource.value).toBeNull()
     controller.targetDate.value = ''
     await controller.ingestByDate()
-    expect(controller.errorMsg.value).toBe('请选择目标日期')
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.chooseDate'))
 
     let resolve!: (value: { message: string }) => void
     vi.mocked(api.clearAllData).mockReturnValue(new Promise((done) => { resolve = done }))

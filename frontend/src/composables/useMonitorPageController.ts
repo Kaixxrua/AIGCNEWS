@@ -171,7 +171,7 @@ export const useMonitorPageController = ({
     try {
       providerConfig.value = await api.saveProviderConfig(providerForm.value)
       providerForm.value.api_key = ''; providerForm.value.clear_api_key = false
-      successMsg.value = '模型服务配置已保存。新建模型实例时会自动使用最新配置。'
+      successMsg.value = i18n.global.t('monitor.savedProvider')
     } catch (error) { errorMsg.value = detail(error) }
     finally { savingProviderConfig.value = false }
   }
@@ -199,9 +199,9 @@ export const useMonitorPageController = ({
     if (savingSchedulerConfig.value) return
     clearMessages()
     const form = schedulerConfigForm.value
-    if (!form.job_id) { errorMsg.value = '请选择要更新的定时任务。'; return }
-    if (form.start_time >= form.end_time) { errorMsg.value = '结束时间必须晚于开始时间。'; return }
-    if (form.interval_minutes <= 0) { errorMsg.value = '轮询时间必须大于 0。'; return }
+    if (!form.job_id) { errorMsg.value = i18n.global.t('monitor.schedulerConfig.chooseJob'); return }
+    if (form.start_time >= form.end_time) { errorMsg.value = i18n.global.t('monitor.schedulerConfig.invalidWindow'); return }
+    if (form.interval_minutes <= 0) { errorMsg.value = i18n.global.t('monitor.schedulerConfig.invalidInterval'); return }
     savingSchedulerConfig.value = true
     try {
       const result = await api.saveSchedulerConfig(form)
@@ -213,7 +213,7 @@ export const useMonitorPageController = ({
       }
       editingSchedulerJobId.value = null
       schedulerConfigForm.value = createEmptySchedulerJobConfigForm()
-      successMsg.value = result?.message || `定时任务 ${form.name || form.job_id} 配置已保存并即时生效。`
+      successMsg.value = result?.message || i18n.global.t('monitor.schedulerConfig.saved', { name: form.name || form.job_id })
     } catch (error) { errorMsg.value = detail(error) }
     finally { savingSchedulerConfig.value = false }
   }
@@ -223,38 +223,38 @@ export const useMonitorPageController = ({
     if (savingMcpServer.value) return
     clearMessages()
     const form = mcpForm.value
-    if (!form.server_key.trim()) { errorMsg.value = '请填写 MCP Server 标识。'; return }
-    if (!form.display_name.trim()) { errorMsg.value = '请填写 MCP Server 名称。'; return }
-    if (!form.url.trim()) { errorMsg.value = '请填写 MCP Server URL。'; return }
+    if (!form.server_key.trim()) { errorMsg.value = i18n.global.t('monitor.serverKeyRequired'); return }
+    if (!form.display_name.trim()) { errorMsg.value = i18n.global.t('monitor.serverNameRequired'); return }
+    if (!form.url.trim()) { errorMsg.value = i18n.global.t('monitor.serverUrlRequired'); return }
     savingMcpServer.value = true
     try {
       mcpServers.value = upsertMcpServer(mcpServers.value, await api.saveMcpServer(form))
-      resetMcpForm(); successMsg.value = 'MCP Server 配置已保存。'
+      resetMcpForm(); successMsg.value = i18n.global.t('monitor.serverSaved')
     } catch (error) { errorMsg.value = detail(error) }
     finally { savingMcpServer.value = false }
   }
   const testMcpServer = async (server: McpServerConfig) => {
     if (testingMcpServerId.value) return
     clearMessages()
-    if (!server.enabled) { errorMsg.value = '该 MCP Server 已停用，请先启用后再测试。'; return }
+    if (!server.enabled) { errorMsg.value = i18n.global.t('monitor.serverDisabled'); return }
     testingMcpServerId.value = server.id
     try {
       const result = await api.testMcpServer(server.id)
       mcpServers.value = replaceMcpServer(mcpServers.value, result.server)
-      const message = result.message || 'MCP Server 测试完成。'
+      const message = result.message || i18n.global.t('monitor.serverTestDone')
       if (String(result.status || '').toLowerCase() === 'success') successMsg.value = message
-      else errorMsg.value = message || 'MCP Server 测试失败。'
+      else errorMsg.value = message || i18n.global.t('monitor.serverTestFailed')
     } catch (error) { errorMsg.value = detail(error) }
     finally { testingMcpServerId.value = null }
   }
   const deleteMcpServer = async (server: McpServerConfig) => {
-    if (deletingMcpServerId.value || !confirm(`确定删除 MCP Server「${server.display_name || server.server_key}」吗？`)) return
+    if (deletingMcpServerId.value || !confirm(i18n.global.t('monitor.deleteServerConfirm', { name: server.display_name || server.server_key }))) return
     clearMessages(); deletingMcpServerId.value = server.id
     try {
       const result = await api.deleteMcpServer(server.id)
       mcpServers.value = removeMcpServer(mcpServers.value, server.id)
       if (mcpForm.value.id === server.id) resetMcpForm()
-      successMsg.value = result.message || 'MCP Server 配置已删除。'
+      successMsg.value = result.message || i18n.global.t('monitor.serverDeleted')
     } catch (error) { errorMsg.value = detail(error) }
     finally { deletingMcpServerId.value = null }
   }
@@ -433,42 +433,42 @@ export const useMonitorPageController = ({
   const ingestSingleSource = async (source: SourceKey) => {
     if (ingestingSource.value) return
     clearMessages(); ingestingSource.value = source
-    try { const result = await api.ingestSource(source); successMsg.value = result.message || `「${source}」采集任务已提交，后台执行中…`; delayedRefresh(4000) }
-    catch (error) { const status = statusOf(error); errorMsg.value = status === 409 ? '当前已有任务正在运行，请等待完成后再试。' : status === 400 ? detail(error) || '未知数据源' : detail(error) }
+    try { const result = await api.ingestSource(source); successMsg.value = result.message || i18n.global.t('monitor.sourceSubmitted', { source }); delayedRefresh(4000) }
+    catch (error) { const status = statusOf(error); errorMsg.value = status === 409 ? i18n.global.t('monitor.taskConflict') : status === 400 ? detail(error) || i18n.global.t('monitor.unknownSource') : detail(error) }
     finally { ingestingSource.value = null }
   }
   const generateAllBriefings = async (forceRegenerate = true) => {
     if (generatingBriefing.value) return
     clearMessages(); generatingBriefing.value = true
-    try { const result = await api.generateAllBriefings(forceRegenerate); successMsg.value = result.message || '全维度每日简报生成任务已提交，后台执行中…' }
+    try { const result = await api.generateAllBriefings(forceRegenerate); successMsg.value = result.message || i18n.global.t('monitor.briefingSubmitted') }
     catch (error) { errorMsg.value = detail(error) }
     finally { generatingBriefing.value = false }
   }
   const clearDashboardCache = async () => {
     if (clearingCache.value) return
     clearMessages(); clearingCache.value = true
-    try { const result = await api.clearDashboardCache(); successMsg.value = result.message || 'Dashboard 缓存已清除，刷新仪表盘即可看到最新数据。' }
+    try { const result = await api.clearDashboardCache(); successMsg.value = result.message || i18n.global.t('monitor.cacheCleared') }
     catch (error) { errorMsg.value = detail(error) }
     finally { clearingCache.value = false }
   }
   const syncDataNow = async (force = false) => {
     if (syncing.value || isTaskRunning.value) return
     clearMessages(); syncing.value = true
-    try { await api.syncData(force); successMsg.value = force ? '强制采集任务已提交，后台执行中…' : '智能同步任务已提交，后台执行中…'; delayedRefresh(3000) }
-    catch (error) { errorMsg.value = statusOf(error) === 409 ? '当前已有任务正在运行，请等待完成后再试。' : detail(error) }
+    try { await api.syncData(force); successMsg.value = force ? i18n.global.t('monitor.forceSubmitted') : i18n.global.t('monitor.smartSubmitted'); delayedRefresh(3000) }
+    catch (error) { errorMsg.value = statusOf(error) === 409 ? i18n.global.t('monitor.taskConflict') : detail(error) }
     finally { syncing.value = false }
   }
   const ingestByDate = async () => {
     if (ingestingByDate.value) return
-    if (!targetDate.value) { errorMsg.value = '请选择目标日期'; return }
+    if (!targetDate.value) { errorMsg.value = i18n.global.t('monitor.chooseDate'); return }
     clearMessages(); ingestingByDate.value = true
-    try { const result = await api.ingestByDate(targetDate.value); successMsg.value = result.message || `已提交 ${targetDate.value} 的采集任务，后台执行中…`; delayedRefresh(4000) }
-    catch (error) { const status = statusOf(error); errorMsg.value = status === 409 ? '当前已有任务正在运行，请等待完成后再试。' : status === 400 ? detail(error) || '日期格式错误' : detail(error) }
+    try { const result = await api.ingestByDate(targetDate.value); successMsg.value = result.message || i18n.global.t('monitor.dateSubmitted', { date: targetDate.value }); delayedRefresh(4000) }
+    catch (error) { const status = statusOf(error); errorMsg.value = status === 409 ? i18n.global.t('monitor.taskConflict') : status === 400 ? detail(error) || i18n.global.t('monitor.invalidDate') : detail(error) }
     finally { ingestingByDate.value = false }
   }
   const clearAllData = async () => {
     showClearConfirm.value = false; clearMessages(); clearing.value = true
-    try { const result = await api.clearAllData(); successMsg.value = result.message || '数据已清空'; await refreshData() }
+    try { const result = await api.clearAllData(); successMsg.value = result.message || i18n.global.t('monitor.dataCleared'); await refreshData() }
     catch (error) { errorMsg.value = detail(error) }
     finally { clearing.value = false }
   }

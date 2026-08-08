@@ -377,7 +377,11 @@ const explicitBusinessTranslations: Record<string, string> = {
   'monitor.schedulerConfig.active': '启用',
   'monitor.schedulerConfig.paused': '停用',
   'monitor.schedulerConfig.enabled': '启用该任务',
-  'monitor.schedulerConfig.restartHint': '保存后立即生效，运行中的调度任务将按新配置重新调度。'
+  'monitor.schedulerConfig.restartHint': '保存后立即生效，运行中的调度任务将按新配置重新调度。',
+  'monitor.schedulerConfig.chooseJob': '请选择要更新的定时任务。',
+  'monitor.schedulerConfig.invalidWindow': '结束时间必须晚于开始时间。',
+  'monitor.schedulerConfig.invalidInterval': '轮询时间必须大于 0。',
+  'monitor.schedulerConfig.saved': '定时任务 {name} 配置已保存并即时生效。'
 }
 
 type MessageTree = Record<string, unknown>
