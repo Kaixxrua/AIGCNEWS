@@ -6,6 +6,7 @@ import type {
   WeChatFeedEntry,
 } from '@/features/wechat/wechatModel'
 import { sanitizeWechatArticleHtml } from '@/features/wechat/wechatArticleHtml'
+import { i18n } from '@/i18n'
 import { wechatFollowApi } from '@/services/wechat/wechatFollowApi'
 import type { WeChatFollowApi } from '@/services/wechat/wechatFollowApi'
 
@@ -100,7 +101,7 @@ export function useWechatFollowController(options: UseWechatFollowControllerOpti
     try {
       catalog.value = await api.fetchCatalog()
     } catch (err) {
-      setError(getErrorMessage(err, '加载公众号目录失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.loadAccountsFailed')))
     } finally {
       isCatalogLoading.value = false
     }
@@ -113,7 +114,7 @@ export function useWechatFollowController(options: UseWechatFollowControllerOpti
       const result = await api.fetchFeed()
       feed.value = result.items
     } catch (err) {
-      setError(getErrorMessage(err, '加载公众号消息失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.loadFollowFeedFailed')))
     } finally {
       isFeedLoading.value = false
     }
@@ -142,7 +143,7 @@ export function useWechatFollowController(options: UseWechatFollowControllerOpti
       }
     } catch (err) {
       account.followed = previous
-      setError(getErrorMessage(err, previous ? '取消关注失败' : '关注失败'))
+      setError(getErrorMessage(err, previous ? i18n.global.t('wechat.unfollowFailed') : i18n.global.t('wechat.followFailed')))
     } finally {
       const settled = new Set(pendingFollowIds.value)
       settled.delete(account.id)
@@ -180,7 +181,7 @@ export function useWechatFollowController(options: UseWechatFollowControllerOpti
       articleDetailErrors.value = cleared
     } catch (err) {
       const next = new Map(articleDetailErrors.value)
-      next.set(key, getErrorMessage(err, '加载全文失败'))
+      next.set(key, getErrorMessage(err, i18n.global.t('wechat.fullTextFailed')))
       articleDetailErrors.value = next
     } finally {
       const settled = new Set(articleDetailLoading.value)
