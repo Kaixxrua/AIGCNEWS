@@ -12,6 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from backend.app.core.config import settings
+from backend.app.repositories.user_account_repository import UserAccountReader
 
 logger = logging.getLogger(__name__)
 
@@ -101,17 +102,58 @@ def decode_access_token(token: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def get_user_identity_repository(request: Request) -> UserAccountReader | None:
+    """Return the user account repository only when Bearer authentication is attempted."""
+    authorization = request.headers.get("authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        return None
+
+    repositories = getattr(request.app.state, "application_repositories", None)
+    if repositories is None:
+        raise RuntimeError("Application repositories are not configured")
+    return repositories.users
+
+
 async def RequireUser(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    repository: UserAccountReader | None = Depends(get_user_identity_repository),
 ) -> dict[str, Any]:
-    """FastAPI 依赖：要求请求携带有效 Bearer JWT，返回 payload dict。"""
+    """FastAPI 依赖：要求请求携带有效 Bearer JWT，并以库内状态为准核验身份。
+
+    JWT 解码成功后按主键查询用户表（每请求一次，不加缓存，避免角色陈旧窗口）：
+
+    - 账号不存在或已禁用 → 401，删除/禁用立即生效，解决 token 无法服务端撤销的问题；
+    - 返回身份的 role 一律以数据库为准，token 内 role 仅为签发时快照，
+      管理员降级在下一个请求即生效（RequireAdmin 随之拒绝）。
+    """
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="缺少 Authorization 头",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return decode_access_token(credentials.credentials)
+    payload = decode_access_token(credentials.credentials)
+    user_id = extract_user_id(payload)
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户身份无效",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if repository is None:
+        # 携带 Bearer 头时 get_user_identity_repository 必然返回仓储或抛错，
+        # 此分支仅防御仓储依赖被异常覆盖的场景。
+        raise RuntimeError("User account repository is not configured")
+    record = await asyncio.to_thread(repository.get_user_by_id, user_id)
+    if record is None or record.get("disabled"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="账号不存在或已被禁用",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    identity = dict(payload)
+    identity["role"] = record.get("role") or "user"
+    return identity
 
 
 async def OptionalUser(

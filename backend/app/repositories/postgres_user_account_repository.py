@@ -29,6 +29,17 @@ class PostgresUserAccountRepository:
         )
         return int(row["cnt"] if row else 0)
 
+    def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
+        # 身份核验专用：按主键查询且不取 hashed_password
+        return self._fetchone(
+            """
+            SELECT id, phone, email, username, role, created_at
+            FROM users
+            WHERE id = %s
+            """,
+            (int(user_id),),
+        )
+
     def get_user_by_phone(self, phone: str) -> dict[str, Any] | None:
         return self._fetchone(
             """
