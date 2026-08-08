@@ -12,6 +12,7 @@ import ChatSettingsPopover from '@/components/chat/ChatSettingsPopover.vue'
 import { useChatAttachments } from '@/composables/useChatAttachments'
 import { useChatViewport } from '@/composables/useChatViewport'
 import { getStreamPhaseLabel } from '@/features/chat/chatPresentation'
+import { CHAT_SERVICE_ENABLED } from '@/features/chat/chatFeatureFlags'
 
 const { t } = useI18n()
 const store = useChatStore()
@@ -65,7 +66,8 @@ onMounted(async () => {
   }
 
   // 已登录时：加载历史会话列表 + 确保全局会话存在（解决首次无会话、消息被吞问题）
-  if (authStore.isLoggedIn) {
+  // kill-switch 关闭期间遮罩盖住整个页面，跳过一切会话初始化请求
+  if (CHAT_SERVICE_ENABLED && authStore.isLoggedIn) {
     isLoadingInit.value = true
     try {
       await store.loadConversations('global')
@@ -255,7 +257,8 @@ const cancelSettings = () => { showSettings.value = false }
         @send="handleSend"
       />
     </section>
-    <div class="absolute inset-0 z-50 flex items-center justify-center bg-card/70 px-6 backdrop-blur-sm">
+    <!-- 服务维护遮罩：与 usePaperReaderController 共用 CHAT_SERVICE_ENABLED 唯一开关 -->
+    <div v-if="!CHAT_SERVICE_ENABLED" class="absolute inset-0 z-50 flex items-center justify-center bg-card/70 px-6 backdrop-blur-sm">
       <div class="glass-card max-w-md px-8 py-10 text-center shadow-2xl">
         <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-stone-100">
           <svg class="h-8 w-8 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
