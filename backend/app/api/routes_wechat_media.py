@@ -29,10 +29,15 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from starlette.responses import FileResponse
 
+from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
+from backend.app.services.auth.rate_limit import (
+    RateLimitExceededError,
+    hit_rate_limit,
+)
 from backend.app.services.media_cache import enforce_cache_budget, prune_expired_entries
 
 router = APIRouter()
@@ -75,6 +80,38 @@ _CONTENT_TYPE_EXTENSIONS = {
 
 _image_locks: dict[str, asyncio.Lock] = {}
 _negative_cache: dict[str, float] = {}  # url -> 负缓存过期时刻（time.monotonic）
+
+# 匿名 IP 级回源限速：每次缓存 miss 代价是一次上游回源 + 磁盘写入。
+# 30 次/10 分钟对齐 routes_x_media 封面的匿名端点口径；磁盘缓存/负缓存
+# 命中不计费，正常浏览重复渲染不消耗配额。
+_MEDIA_FETCH_RATE_LIMIT = 30
+_MEDIA_RATE_LIMIT_WINDOW_SECONDS = 600
+
+
+async def _enforce_media_fetch_rate_limit(request: Request) -> None:
+    """回源路径的匿名 IP 级限速；Redis 不可用时放行（与既有端点同口径）。"""
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        return
+    try:
+        await hit_rate_limit(
+            redis_client,
+            action="wechat_media_fetch",
+            identity=client_ip_from_request(request),
+            limit=_MEDIA_FETCH_RATE_LIMIT,
+            window_seconds=_MEDIA_RATE_LIMIT_WINDOW_SECONDS,
+        )
+    except RateLimitExceededError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="media fetch rate limited, retry later",
+            headers={"Retry-After": str(_MEDIA_RATE_LIMIT_WINDOW_SECONDS)},
+        ) from exc
+    except Exception:
+        logger.warning(
+            "[WeChatMediaProxy] rate limit check failed, allowing request",
+            exc_info=True,
+        )
 
 
 def validate_wechat_media_url(raw_url: str) -> str:
@@ -195,7 +232,7 @@ async def _fetch_image(url: str) -> tuple[bytes, str]:
 
 
 @router.get("/media/wechat/proxy")
-async def proxy_wechat_media(url: str = Query(..., min_length=1)):
+async def proxy_wechat_media(request: Request, url: str = Query(..., min_length=1)):
     target = validate_wechat_media_url(url)
 
     cached = _existing_cache_path(target)
@@ -212,6 +249,8 @@ async def proxy_wechat_media(url: str = Query(..., min_length=1)):
             cached = _existing_cache_path(target)
             if cached is not None:
                 return _cached_file_response(cached)
+            # 仅真实回源才计费；缓存/负缓存命中不消耗配额
+            await _enforce_media_fetch_rate_limit(request)
             try:
                 body, content_type = await _fetch_image(target)
             except HTTPException as exc:

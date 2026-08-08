@@ -42,10 +42,22 @@ router = APIRouter()
 _AUTH_RATE_LIMIT_WINDOW_SECONDS = 600
 _OTP_SEND_RATE_LIMIT = 5
 _AUTH_ATTEMPT_RATE_LIMIT = 10
+# 登录追加 per-账号（email）固定窗口节流：防分布式 IP 对单一账号爆破，
+# 窗口与上限对齐 per-IP 口径，实现复用同一 hit_rate_limit。
+_LOGIN_ACCOUNT_RATE_LIMIT = 10
 
 
-async def _enforce_rate_limit(request: Request, *, action: str, limit: int) -> None:
-    """执行 IP 级限速；Redis 不可用时放行并告警（可用性优先于限速严格性）。"""
+async def _enforce_rate_limit(
+    request: Request,
+    *,
+    action: str,
+    limit: int,
+    identity: str | None = None,
+) -> None:
+    """执行固定窗口限速；Redis 不可用时放行并告警（可用性优先于限速严格性）。
+
+    identity 缺省为可信代理感知的客户端 IP；per-账号节流显式传 email。
+    """
     redis_client = getattr(request.app.state, "redis", None)
     if redis_client is None:
         return
@@ -53,7 +65,7 @@ async def _enforce_rate_limit(request: Request, *, action: str, limit: int) -> N
         await hit_rate_limit(
             redis_client,
             action=action,
-            identity=client_ip_from_request(request),
+            identity=identity if identity is not None else client_ip_from_request(request),
             limit=limit,
             window_seconds=_AUTH_RATE_LIMIT_WINDOW_SECONDS,
         )
@@ -288,9 +300,10 @@ async def register(
             detail="验证码错误或已过期",
         ) from exc
     except account_lifecycle.AccountAlreadyExists as exc:
+        # 中性文案（对齐密码重置的防枚举口径）：不直接确认邮箱已注册
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="该邮箱已注册",
+            detail="注册失败，请检查邮箱验证码或稍后重试",
         ) from exc
     return {"detail": "注册成功", "user_id": result.user_id}
 
@@ -308,6 +321,14 @@ async def login(
     - 签发 JWT（payload 含 user_id、role、email）
     """
     await _enforce_rate_limit(request, action="auth.login", limit=_AUTH_ATTEMPT_RATE_LIMIT)
+    # per-账号节流：分布式 IP 对同一邮箱的爆破归并到单一账号桶；
+    # 域名归一与登录生命周期同口径，防大小写变体拆桶
+    await _enforce_rate_limit(
+        request,
+        action="auth.login.account",
+        limit=_LOGIN_ACCOUNT_RATE_LIMIT,
+        identity=account_lifecycle._normalize_email_domain(str(body.email).strip()),
+    )
     lifecycle = build_account_lifecycle(
         repository=repository,
         password_verifier=verify_password,

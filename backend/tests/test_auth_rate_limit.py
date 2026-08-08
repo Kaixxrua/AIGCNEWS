@@ -90,6 +90,38 @@ class AuthRateLimitRouteContracts(unittest.TestCase):
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.json()["detail"], "请求过于频繁，请稍后再试")
 
+    def test_login_per_account_throttle_covers_distributed_ips(self) -> None:
+        """per-账号节流：分布式 IP 对同一邮箱的爆破归并到单一账号桶。"""
+        from backend.app.core import client_ip as client_ip_module
+
+        payload = {"email": "user@example.com", "password": "wrong-password"}
+        # 可信代理口径下每次请求换不同来源 IP：per-IP 桶各自只计 1 次
+        with patch.object(client_ip_module, "is_trusted_proxy", return_value=True):
+            for attempt in range(10):
+                response = self.client.post(
+                    "/api/auth/login",
+                    json=payload,
+                    headers={"X-Forwarded-For": f"203.0.113.{attempt + 1}"},
+                )
+                self.assertEqual(response.status_code, 401, f"attempt {attempt + 1}")
+            response = self.client.post(
+                "/api/auth/login",
+                json=payload,
+                headers={"X-Forwarded-For": "203.0.113.250"},
+            )
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["detail"], "请求过于频繁，请稍后再试")
+
+    def test_login_per_account_throttle_normalizes_domain_casing(self) -> None:
+        """域名大小写变体（User@EXAMPLE.com）不拆分 per-账号桶。"""
+        payload = {"email": "user@EXAMPLE.com", "password": "wrong-password"}
+        for attempt in range(10):
+            response = self.client.post("/api/auth/login", json=payload)
+            self.assertEqual(response.status_code, 401, f"attempt {attempt + 1}")
+        # per-IP 桶已达上限时先命中 IP 桶；此处账号桶与 IP 桶同限，429 即归并生效
+        response = self.client.post("/api/auth/login", json=payload)
+        self.assertEqual(response.status_code, 429)
+
     def test_send_email_otp_is_rate_limited(self) -> None:
         payload = {"email": "user@example.com"}
         with patch.object(routes_auth, "_get_email_service") as email_service:

@@ -23,7 +23,7 @@ LOGO_URL = "https://mmbiz.qlogo.cn/mmbiz/xyz/0"
 def build_client(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """返回一个工厂：以 MockTransport handler 替换上游客户端，挂真实 FastAPI 路由。"""
 
-    def build(handler) -> TestClient:
+    def build(handler, redis=None) -> TestClient:
         def fake_client_factory() -> httpx.AsyncClient:
             return httpx.AsyncClient(
                 transport=httpx.MockTransport(handler),
@@ -35,6 +35,7 @@ def build_client(monkeypatch: pytest.MonkeyPatch, tmp_path):
         monkeypatch.setattr(routes_wechat_media, "_negative_cache", {})
         app = FastAPI()
         app.include_router(routes_wechat_media.router, prefix="/api")
+        app.state.redis = redis  # None = 未配置 → 限速 fail-open（既有用例口径）
         return TestClient(app)
 
     return build
@@ -145,3 +146,53 @@ class TestProxyWeChatMedia:
             "/api/media/wechat/proxy", params={"url": "https://evil.com/x.png"}
         )
         assert response.status_code == 403
+
+
+class TestProxyWeChatMediaRateLimit:
+    """回源 miss 路径的匿名 IP 级限速（30 次/10 分钟，对齐 routes_x_media）。"""
+
+    def _image_handler(self, calls: list[httpx.Request]):
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request)
+            return httpx.Response(
+                200,
+                headers={"content-type": "image/png"},
+                content=b"\x89PNG-fake-bytes",
+            )
+
+        return handler
+
+    def test_miss_path_rate_limited_after_30_fetches(self, build_client) -> None:
+        from backend.tests.test_email_service_contracts import FakeRedis
+
+        calls: list[httpx.Request] = []
+        client = build_client(self._image_handler(calls), redis=FakeRedis())
+
+        # 每次换 URL 强制走 miss 回源路径（缓存命中不计费）
+        for index in range(30):
+            response = client.get(
+                "/api/media/wechat/proxy",
+                params={"url": f"{IMAGE_URL}&miss={index}"},
+            )
+            assert response.status_code == 200, f"fetch {index + 1}"
+        assert len(calls) == 30
+
+        response = client.get(
+            "/api/media/wechat/proxy",
+            params={"url": f"{IMAGE_URL}&miss=31"},
+        )
+        assert response.status_code == 429
+        assert response.headers["Retry-After"] == "600"
+        assert len(calls) == 30  # 限流后不再回源
+
+    def test_cache_hits_are_not_billed(self, build_client) -> None:
+        from backend.tests.test_email_service_contracts import FakeRedis
+
+        calls: list[httpx.Request] = []
+        client = build_client(self._image_handler(calls), redis=FakeRedis())
+
+        # 同一 URL 重复渲染：首次 miss 计 1 次，其余全部命中磁盘缓存
+        for _ in range(35):
+            response = client.get("/api/media/wechat/proxy", params={"url": IMAGE_URL})
+            assert response.status_code == 200
+        assert len(calls) == 1

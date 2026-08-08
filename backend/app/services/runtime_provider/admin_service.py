@@ -26,6 +26,20 @@ logger = logging.getLogger(__name__)
 _TEST_TIMEOUT_SECONDS = 30.0
 
 
+def _classify_test_failure(exc: Exception) -> str:
+    """按异常类型给出分类排查文案（不回显异常原文，防泄露内部细节）。"""
+    name = type(exc).__name__.lower()
+    if any(marker in name for marker in ("auth", "permission", "forbidden")):
+        return "鉴权失败，请检查 API Key 是否正确"
+    if any(marker in name for marker in ("connect", "resolve", "proxy", "ssl", "tls")):
+        return "网络连接失败，请检查 Base URL 与网络代理"
+    if any(marker in name for marker in ("notfound", "not_found", "missing")):
+        return "模型或接口不存在，请检查模型名称与 Base URL"
+    if "rate" in name and "limit" in name:
+        return "触发上游限流，请稍后重试"
+    return "请求失败，请检查模型服务配置与网络环境"
+
+
 class RuntimeProviderAdminService:
     def __init__(
         self,
@@ -97,7 +111,8 @@ class RuntimeProviderAdminService:
         """用当前保存的配置发起一次最小模型调用，验证连通性（真实请求一次）。
 
         走与富化/聊天一致的 get_chat_model 路径，HTTP 恒 200：
-        status=success/failed 表达业务结果，失败原因原文回显给管理员。
+        status=success/failed 表达业务结果，失败只回显异常类型 + 分类排查
+        文案，原始异常（可能含 Base URL、鉴权细节）只进服务端日志。
         """
         from backend.app.core.model_factory import get_chat_model
 
@@ -127,12 +142,12 @@ class RuntimeProviderAdminService:
                 "status": "failed",
                 "message": f"连接测试超时（{_TEST_TIMEOUT_SECONDS:.0f}s 无响应），请检查 Base URL 与网络代理。",
             }
-        except Exception as exc:  # noqa: BLE001 - 测试入口需把底层错误回显给管理员定位
+        except Exception as exc:  # noqa: BLE001 - 测试入口需按异常类型给管理员分类提示
             logger.warning("[Ops] 模型服务连接测试失败：%s", exc, exc_info=True)
             return {
                 **base,
                 "status": "failed",
-                "message": f"连接测试失败：{type(exc).__name__}: {str(exc)[:300]}",
+                "message": f"连接测试失败（{type(exc).__name__}）：{_classify_test_failure(exc)}。",
             }
         latency_ms = int((time.monotonic() - started) * 1000)
         return {

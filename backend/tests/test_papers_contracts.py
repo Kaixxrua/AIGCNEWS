@@ -17,6 +17,7 @@ from backend.app.api.dependencies import (
     get_pdf_relay,
 )
 from backend.app.api.routes_papers import proxy_arxiv_pdf, router
+from backend.app.core.config import settings
 from backend.app.services.papers.arxiv_identity import extract_arxiv_id
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay, PdfRelayUpstreamError
 from backend.app.services.papers.presentation import (
@@ -83,11 +84,12 @@ class PapersContractsTests(unittest.TestCase):
         self.app.dependency_overrides[get_papers_repository] = lambda: self.papers
         self.app.dependency_overrides[get_pdf_relay] = lambda: self.relay
 
-    def test_search_preserves_normalization_shape_and_forwarded_proto(self) -> None:
+    def test_search_preserves_normalization_shape_and_ignores_forged_headers(self) -> None:
         response = TestClient(self.app).get(
             "/api/papers/search",
             params={"q": "  agents  ", "limit": 7},
-            headers={"x-forwarded-proto": "https"},
+            # Host 与 X-Forwarded-Proto 均可伪造：一律不采信，返回相对路径
+            headers={"host": "evil.example", "x-forwarded-proto": "https"},
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.search.calls, [("agents", 7)])
@@ -98,7 +100,7 @@ class PapersContractsTests(unittest.TestCase):
                     "id": "paper-1",
                     "source": "arxiv",
                     "published_date": "2026-07-27",
-                    "pdf_media_url": "https://testserver/api/papers/paper-1/pdf",
+                    "pdf_media_url": "/api/papers/paper-1/pdf",
                 }],
                 "total": 1,
                 "q": "agents",
@@ -121,8 +123,21 @@ class PapersContractsTests(unittest.TestCase):
         self.assertEqual(safe_document({"id": 1, "value": date(2026, 7, 27)}), {"id": 1, "value": "2026-07-27"})
         local = project_pdf_media_url({"local_pdf_path": "/tmp/a/b.pdf"}, request)
         other = project_pdf_media_url({"id": "two", "source": "news"}, request)
-        self.assertEqual(local["pdf_media_url"], "https://example.test/api/media/papers/b.pdf")
+        self.assertEqual(local["pdf_media_url"], "/api/media/papers/b.pdf")
         self.assertIsNone(other["pdf_media_url"])
+
+    def test_configured_public_base_url_produces_absolute_media_urls(self) -> None:
+        request = Request({
+            "type": "http", "method": "GET", "scheme": "http",
+            "server": ("example.test", 80), "path": "/", "root_path": "",
+            "query_string": b"", "headers": [(b"host", b"evil.example")],
+        })
+        with patch.object(settings, "public_base_url", "https://aigcnews.cn/"):
+            local = project_pdf_media_url({"local_pdf_path": "/tmp/a/b.pdf"}, request)
+            proxied = project_pdf_media_url({"id": "paper-1", "source": "arxiv"}, request)
+        # 绝对 URL 只来自配置化 origin；伪造的 Host 头不生效
+        self.assertEqual(local["pdf_media_url"], "https://aigcnews.cn/api/media/papers/b.pdf")
+        self.assertEqual(proxied["pdf_media_url"], "https://aigcnews.cn/api/papers/paper-1/pdf")
 
     def test_top_and_detail_preserve_shapes_calls_and_not_found(self) -> None:
         self.papers.today = [{"id": "top", "source": "arxiv"}]
@@ -132,11 +147,11 @@ class PapersContractsTests(unittest.TestCase):
         detail = client.get("/api/papers/paper-1")
         missing = client.get("/api/papers/missing")
         self.assertEqual(top.json()["total"], 1)
-        self.assertEqual(detail.json()["pdf_media_url"], "http://testserver/api/papers/paper-1/pdf")
+        self.assertEqual(detail.json()["pdf_media_url"], "/api/papers/paper-1/pdf")
         self.assertEqual((missing.status_code, missing.json()["detail"]), (404, "Paper 'missing' not found"))
         self.assertEqual(self.papers.calls, [("today", None), ("detail", "paper-1"), ("detail", "missing")])
 
-    def test_local_pdf_redirect_preserves_basename_and_forwarded_proto(self) -> None:
+    def test_local_pdf_redirect_preserves_basename_and_ignores_forged_headers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "cached.pdf")
             with open(path, "wb") as handle:
@@ -148,7 +163,7 @@ class PapersContractsTests(unittest.TestCase):
                 follow_redirects=False,
             )
         self.assertEqual(response.status_code, 307)
-        self.assertEqual(response.headers["location"], "https://testserver/api/media/papers/cached.pdf")
+        self.assertEqual(response.headers["location"], "/api/media/papers/cached.pdf")
 
     def test_pdf_lookup_errors_and_arxiv_version_extraction(self) -> None:
         self.assertEqual(extract_arxiv_id("https://arxiv.org/abs/2603.12255v2"), "2603.12255v2")
@@ -172,7 +187,9 @@ class PapersContractsTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "application/pdf")
         self.assertEqual(response.headers["content-disposition"], 'inline; filename="2603.12255v3.pdf"')
         self.assertEqual(response.headers["cache-control"], "public, max-age=86400")
-        self.assertEqual(response.headers["access-control-allow-origin"], "*")
+        # Access-Control-Allow-Origin 由 main.py CORS 中间件统一收口，
+        # pdf_response_headers 不再放开 *
+        self.assertNotIn("access-control-allow-origin", response.headers)
         self.assertEqual(self.relay.calls[0][0], "https://arxiv.org/pdf/2603.12255v3.pdf")
         self.assertEqual(self.relay.calls[0][1]["Accept"], "application/pdf,*/*")
         self.assertTrue(self.relay.closed)

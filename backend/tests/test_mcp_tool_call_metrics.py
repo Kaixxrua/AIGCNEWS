@@ -19,12 +19,57 @@ from backend.app.api.dependencies import (
 )
 from backend.app.core.auth import get_mcp_access_token_authenticator
 from backend.app.monitoring import metrics as monitor_metrics
-from backend.app.monitoring.mcp_tools import JsonMcpToolCallStore, McpToolCallMetrics
+from backend.app.monitoring.mcp_tools import (
+    MAX_TOOL_NAME_LENGTH,
+    UNKNOWN_TOOL_NAME,
+    JsonMcpToolCallStore,
+    McpToolCallMetrics,
+    bucket_tool_name,
+)
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.task_repository import RecentTaskReader
 from backend.app.services.mcp.inbound import application, context, tools
+
+
+class BucketToolNameUnitTests(unittest.TestCase):
+    """工具名基数封顶：仅注册表已知名单独统计，其余归固定桶。"""
+
+    def test_known_names_pass_through(self) -> None:
+        for name in tools.MCP_TOOL_REGISTRY:
+            with self.subTest(name=name):
+                self.assertEqual(
+                    bucket_tool_name(name, tools.MCP_TOOL_REGISTRY), name
+                )
+
+    def test_unknown_names_land_in_fixed_bucket(self) -> None:
+        self.assertEqual(
+            bucket_tool_name("definitely_unknown_tool", tools.MCP_TOOL_REGISTRY),
+            UNKNOWN_TOOL_NAME,
+        )
+
+    def test_blank_and_oversized_names_land_in_fixed_bucket(self) -> None:
+        self.assertEqual(bucket_tool_name("", tools.MCP_TOOL_REGISTRY), UNKNOWN_TOOL_NAME)
+        self.assertEqual(bucket_tool_name("   ", tools.MCP_TOOL_REGISTRY), UNKNOWN_TOOL_NAME)
+        oversized = "x" * (MAX_TOOL_NAME_LENGTH + 100)
+        self.assertEqual(
+            bucket_tool_name(oversized, tools.MCP_TOOL_REGISTRY),
+            UNKNOWN_TOOL_NAME,
+        )
+
+    def test_truncation_precedes_registry_lookup(self) -> None:
+        # 注册表判定在截断之后：拼接到超长再截断无法伪造出已知名
+        padded = "search_papers" + " " * MAX_TOOL_NAME_LENGTH
+        self.assertEqual(
+            bucket_tool_name(padded, tools.MCP_TOOL_REGISTRY),
+            "search_papers",
+        )
+        long_suffix = "search_papers" + "x" * MAX_TOOL_NAME_LENGTH
+        self.assertEqual(
+            bucket_tool_name(long_suffix, tools.MCP_TOOL_REGISTRY),
+            UNKNOWN_TOOL_NAME,
+        )
 
 
 class McpToolCallMetricsUnitTests(unittest.TestCase):
@@ -237,9 +282,23 @@ class McpToolCallDispatchTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(metrics.snapshot()["total_calls"], 1)
+        # 未知名归固定桶，不单独计数（防基数膨胀）
         self.assertEqual(
-            metrics.snapshot()["tools"]["definitely_unknown_tool"]["calls"], 1
+            metrics.snapshot()["tools"][UNKNOWN_TOOL_NAME]["calls"], 1
         )
+        self.assertNotIn("definitely_unknown_tool", metrics.snapshot()["tools"])
+
+    async def test_distinct_unknown_names_share_the_fixed_bucket(self) -> None:
+        metrics = McpToolCallMetrics()
+        app = self._build_application(metrics)
+
+        for name in ("random_tool_a", "random_tool_b", "random_tool_c"):
+            await self._dispatch(app, "tools/call", {"name": name, "arguments": {}})
+
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["total_calls"], 3)
+        self.assertEqual(list(snapshot["tools"]), [UNKNOWN_TOOL_NAME])
+        self.assertEqual(snapshot["tools"][UNKNOWN_TOOL_NAME]["calls"], 3)
 
     async def test_tools_call_without_name_does_not_record(self) -> None:
         metrics = McpToolCallMetrics()

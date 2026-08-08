@@ -234,7 +234,8 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json(), {"detail": "该邮箱已注册"})
+        # 反枚举：409 文案与 send_password_reset_otp 同口径，不透露邮箱是否已注册
+        self.assertEqual(response.json(), {"detail": "注册失败，请检查邮箱验证码或稍后重试"})
         self.assertEqual(
             self.events,
             [

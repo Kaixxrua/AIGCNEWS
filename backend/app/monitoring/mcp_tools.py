@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Container
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
@@ -11,6 +12,24 @@ from typing import Any, Dict, Optional, Protocol
 from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# 工具名基数封顶：未知名一律归入固定桶，防止攻击者用随机 tools/call name
+# 无限膨胀计数器（每个新 name 都会永久落盘）。
+UNKNOWN_TOOL_NAME = "__unknown__"
+MAX_TOOL_NAME_LENGTH = 64
+
+
+def bucket_tool_name(tool_name: str, known_names: Container[str]) -> str:
+    """把 tools/call 名归并到有限基数桶。
+
+    仅 ``known_names``（MCP_TOOL_REGISTRY）内的名字保留原名单独统计；
+    其余（含超长、空串）截断判定后统一归入 ``__unknown__`` 桶。已知工具
+    名本身远短于上限，截断只影响未知名的判定路径。
+    """
+    name = tool_name.strip()[:MAX_TOOL_NAME_LENGTH]
+    if name and name in known_names:
+        return name
+    return UNKNOWN_TOOL_NAME
 
 
 class McpToolCallStore(Protocol):
@@ -77,7 +96,10 @@ class McpToolCallMetrics:
 
     Counts every validated tool-call attempt by name, including unknown tools
     and calls that later fail authorization or validation, so deprecated-tool
-    usage stays observable from the monitor metrics endpoint.
+    usage stays observable from the monitor metrics endpoint. Callers should
+    pass names through :func:`bucket_tool_name` first so only registry-known
+    tools are counted individually and everything else lands in the fixed
+    ``__unknown__`` bucket (bounded cardinality on disk).
 
     With a ``store`` attached, state hydrates lazily on first use and persists
     on every ``record``, so counts and the first-use ``since`` timestamp

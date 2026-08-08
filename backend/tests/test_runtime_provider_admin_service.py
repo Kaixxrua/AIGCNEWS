@@ -8,6 +8,7 @@ import pytest
 
 from backend.app.services.runtime_provider.admin_service import (
     RuntimeProviderAdminService,
+    _classify_test_failure,
 )
 
 
@@ -206,7 +207,7 @@ def test_test_connection_short_circuits_when_api_key_missing() -> None:
     factory.assert_not_called()
 
 
-def test_test_connection_reports_underlying_error_trimmed() -> None:
+def test_test_connection_never_echoes_raw_exception_text() -> None:
     repository = _configured_repository()
     llm = MagicMock()
     llm.invoke.side_effect = RuntimeError("x" * 500)
@@ -216,10 +217,32 @@ def test_test_connection_reports_underlying_error_trimmed() -> None:
         result = asyncio.run(service.test_connection())
 
     assert result["status"] == "failed"
-    assert result["message"].startswith("连接测试失败：RuntimeError: ")
-    # 原文 500 字符被截到 300，避免超长错误灌进响应
-    assert len(result["message"]) == len("连接测试失败：RuntimeError: ") + 300
+    # 异常原文（可能含内部地址/鉴权细节）不回显，只给类型名 + 分类排查文案
+    assert result["message"] == (
+        "连接测试失败（RuntimeError）：请求失败，请检查模型服务配置与网络环境。"
+    )
+    assert "x" * 500 not in result["message"]
     assert result["latency_ms"] is None
+
+
+def test_classify_test_failure_categories() -> None:
+    class AuthenticationError(Exception):
+        pass
+
+    class APIConnectionError(Exception):
+        pass
+
+    class NotFoundError(Exception):
+        pass
+
+    class RateLimitError(Exception):
+        pass
+
+    assert "鉴权失败" in _classify_test_failure(AuthenticationError("bad key"))
+    assert "网络连接失败" in _classify_test_failure(APIConnectionError("boom"))
+    assert "模型或接口不存在" in _classify_test_failure(NotFoundError("no model"))
+    assert "触发上游限流" in _classify_test_failure(RateLimitError("slow down"))
+    assert "请求失败" in _classify_test_failure(RuntimeError("misc"))
 
 
 def test_test_connection_times_out_promptly() -> None:

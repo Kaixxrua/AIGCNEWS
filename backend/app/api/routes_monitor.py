@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from backend.app.api.dependencies import (
     get_briefing_repository,
@@ -22,6 +23,8 @@ from backend.app.repositories.task_repository import (
     RecentTaskReader,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -39,7 +42,13 @@ async def readiness(
         return result
     from fastapi import HTTPException
 
-    raise HTTPException(status_code=503, detail=result)
+    # 该端点对匿名可达（编排探活）：内部异常类名等细节只进服务端日志，
+    # 对外只回 not_ready；管理员的明细口径走 /monitor/health 与 ops 诊断。
+    logger.warning("[Monitor] readiness check failed: %s", result)
+    raise HTTPException(
+        status_code=503,
+        detail={"status": "not_ready", "runtime_ready": False},
+    )
 
 
 @router.get("/monitor/health")
@@ -81,7 +90,7 @@ async def system_metrics(
 @router.get("/monitor/tasks")
 async def recent_tasks(
     page: int = 1,
-    page_size: int = 10,
+    page_size: int = Query(default=10, ge=1, le=100),
     _: dict = Depends(RequireAdmin),
     db: MonitorTaskRepository = Depends(get_ingestion_task_repository),
 ):

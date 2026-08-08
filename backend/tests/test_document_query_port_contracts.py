@@ -268,7 +268,9 @@ def test_mcp_paper_detail_uses_reader_and_public_projection() -> None:
             "source": "arxiv",
             "title": "Paper",
             "published_date": "2026-07-27",
-            "pdf_media_url": "https://testserver/api/media/papers/paper-1.pdf",
+            # 不采信可伪造的 Host/X-Forwarded-Proto：默认相对路径，
+            # 绝对 URL 只能来自 PUBLIC_BASE_URL 配置
+            "pdf_media_url": "/api/media/papers/paper-1.pdf",
         }
     }
 

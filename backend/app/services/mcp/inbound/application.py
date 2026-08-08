@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import date as _date, timedelta as _td
+from datetime import date as _date
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from backend.app.monitoring.mcp_tools import (
     MCP_TOOL_CALL_METRICS,
     McpToolCallMetrics,
+    bucket_tool_name,
 )
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
@@ -45,6 +46,7 @@ from backend.app.services.mcp.inbound.context import (
 )
 from backend.app.services.mcp.inbound.responses import _resource_content, _tool_error
 from backend.app.services.mcp.inbound.tools import (
+    MCP_TOOL_REGISTRY,
     McpToolContext,
     McpToolInputError,
     _call_tool,
@@ -126,7 +128,10 @@ class McpProtocolApplication:
         method = inbound.method
         params = inbound.params
 
-        if inbound.is_initialized_notification:
+        # JSON-RPC 约定：无 id 的消息是通知（notification），一律不产生响应
+        # （含 notifications/initialized、notifications/cancelled 及任何
+        # 缺 id 的方法调用），HTTP 层统一 204 空body。
+        if not inbound.has_id:
             return McpProtocolResponse(
                 status_code=204,
                 body=None,
@@ -169,7 +174,11 @@ class McpProtocolApplication:
                     _JSONRPC_INVALID_PARAMS,
                     "tools/call params.name is required",
                 )
-            self._dependencies.tool_call_metrics.record(name)
+            # 鉴权前置计数（既有顺序不变），但仅注册表内工具单独统计，
+            # 未知名归入固定桶，防止随机 name 无限膨胀指标基数。
+            self._dependencies.tool_call_metrics.record(
+                bucket_tool_name(name, MCP_TOOL_REGISTRY)
+            )
             arguments = params.get("arguments", {})
             if (
                 name == "search_my_project_favorites"
@@ -234,7 +243,7 @@ def _parse_resource_uri(uri: Any) -> tuple[str, dict[str, str]]:
     return path, query
 
 
-def _resolve_report_date(period: str, date_str: str = "") -> str:
+def _resolve_report_date(date_str: str = "") -> str:
     anchor = _date.today()
     if date_str:
         try:
@@ -242,11 +251,6 @@ def _resolve_report_date(period: str, date_str: str = "") -> str:
             anchor = _date.fromisoformat(date_str)
         except ValueError as exc:
             raise McpResourceInputError(str(exc)) from exc
-
-    if period == "weekly":
-        anchor = anchor - _td(days=anchor.weekday())
-    elif period == "monthly":
-        anchor = anchor.replace(day=1)
     return anchor.isoformat()
 
 
@@ -327,11 +331,10 @@ async def _resource_report_latest(
     repository: BriefingReader,
 ) -> dict[str, Any]:
     source = _clean_choice(query, "source", _SOURCE_CHOICES, default="all")
-    period = _clean_choice(query, "period", _PERIOD_CHOICES, default="daily")
     date_value = _clean_string(query, "date", max_len=10, default="")
-    target = _resolve_report_date(period, date_value)
+    target = _resolve_report_date(date_value)
     suffix = "" if source == "all" else f"_{source}"
-    cache_key = f"{target}{suffix}_{period}"
+    cache_key = f"{target}{suffix}"
     item = await asyncio.to_thread(repository.get_briefing_by_date, cache_key)
     if item is None:
         raise McpResourceInputError(f"Briefing {cache_key!r} not found.")

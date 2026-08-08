@@ -132,14 +132,11 @@ async def parse_mcp_request(request: Request) -> McpInboundRequest:
             )
         params = raw_params
 
-    inbound = McpInboundRequest(
+    # 无 id 的消息按 JSON-RPC 约定属于通知（notification）：不在此拒绝，
+    # 由 dispatch 统一吞掉返回 204 空响应（通知不应产生 JSON-RPC 响应体）。
+    return McpInboundRequest(
         request_id=request_id,
         method=method,
         params=params,
         has_id="id" in payload,
     )
-    if not inbound.has_id and not inbound.is_initialized_notification:
-        raise McpRequestError(
-            None, _JSONRPC_INVALID_REQUEST, "Request id is required"
-        )
-    return inbound

@@ -11,6 +11,7 @@ from backend.app.api.dependencies import (
     get_user_subscription_service,
 )
 from backend.app.core.auth import RequireUser
+from backend.app.core.client_ip import client_ip_from_request
 from backend.app.models.schema_push import (
     CreatePushChannelRequest,
     CreateSubscriptionRequest,
@@ -60,15 +61,12 @@ _CHANNEL_TEST_RATE_LIMIT = 5
 _CHANNEL_WEBHOOK_CREATE_RATE_LIMIT = 5
 
 
-def _client_ip(request: Request) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
 async def _enforce_rate_limit(request: Request, *, action: str, limit: int) -> None:
-    """执行 IP 级限速；Redis 不可用时放行并告警（可用性优先于限速严格性）。"""
+    """执行 IP 级限速；Redis 不可用时放行并告警（可用性优先于限速严格性）。
+
+    客户端 IP 统一走 core.client_ip 的可信代理解析：不可信对端不采信
+    X-Forwarded-For，防止伪造 XFF 拆分限速桶。
+    """
     redis_client = getattr(request.app.state, "redis", None)
     if redis_client is None:
         return
@@ -76,7 +74,7 @@ async def _enforce_rate_limit(request: Request, *, action: str, limit: int) -> N
         await hit_rate_limit(
             redis_client,
             action=action,
-            identity=_client_ip(request),
+            identity=client_ip_from_request(request),
             limit=limit,
             window_seconds=_PUSH_RATE_LIMIT_WINDOW_SECONDS,
         )

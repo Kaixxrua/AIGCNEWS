@@ -23,8 +23,9 @@ def arxiv_pdf_url(arxiv_id: str) -> str:
 
 
 def pdf_response_headers(arxiv_id: str) -> dict[str, str]:
+    # 前端 pdf.js 经 public_base_url 同源加载该响应，无需也不应放开
+    # Access-Control-Allow-Origin: *（CORS 白名单统一由 main.py 中间件收口）
     return {
         "Content-Disposition": f'inline; filename="{arxiv_id}.pdf"',
         "Cache-Control": "public, max-age=86400",
-        "Access-Control-Allow-Origin": "*",
     }

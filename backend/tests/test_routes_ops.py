@@ -509,7 +509,7 @@ class OperationsRouteTests(unittest.TestCase):
         service.test_connection = AsyncMock(
             return_value={
                 "status": "failed",
-                "message": "连接测试失败：RuntimeError: boom",
+                "message": "连接测试失败（RuntimeError）：请求失败，请检查模型服务配置与网络环境。",
                 "provider": "openai",
                 "base_url": "https://example.test",
                 "model_name": "example-model",

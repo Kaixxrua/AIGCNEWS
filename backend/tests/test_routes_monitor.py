@@ -57,8 +57,35 @@ class MonitorRouteTests(unittest.TestCase):
         response = TestClient(app).get("/api/ready")
 
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json(), {"detail": check.return_value})
+        # 匿名就绪探针只回中性状态，不回显内部细节
+        self.assertEqual(
+            response.json(),
+            {"detail": {"status": "not_ready", "runtime_ready": False}},
+        )
         check.assert_called_once_with()
+
+    def test_readiness_never_leaks_internal_error_class(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        check = MagicMock(
+            return_value={
+                "backend": "postgres",
+                "runtime_ready": False,
+                "error_class": "OperationalError",
+                "dependency": "postgres",
+            }
+        )
+        app.dependency_overrides[get_readiness_check] = lambda: check
+
+        response = TestClient(app).get("/api/ready")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(),
+            {"detail": {"status": "not_ready", "runtime_ready": False}},
+        )
+        self.assertNotIn("OperationalError", response.text)
+        self.assertNotIn("error_class", response.text)
 
     def test_health_check_uses_injected_service(self) -> None:
         app = FastAPI()
@@ -187,6 +214,34 @@ class MonitorRouteTests(unittest.TestCase):
         require_admin.assert_called_once_with()
         provide_repository.assert_called_once_with()
         repository.list_tasks.assert_called_once_with(3, 7)
+
+    def test_recent_tasks_caps_page_size_at_100(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        repository = MagicMock(spec=MonitorTaskRepository)
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[get_ingestion_task_repository] = lambda: repository
+
+        for page_size in (0, 101, 100000):
+            with self.subTest(page_size=page_size):
+                response = TestClient(app).get(
+                    "/api/monitor/tasks",
+                    params={"page": 1, "page_size": page_size},
+                )
+                self.assertEqual(response.status_code, 422)
+        repository.list_tasks.assert_not_called()
+
+        repository.list_tasks.return_value = {
+            "items": [],
+            "total": 0,
+            "page": 1,
+            "page_size": 100,
+        }
+        response = TestClient(app).get(
+            "/api/monitor/tasks",
+            params={"page": 1, "page_size": 100},
+        )
+        self.assertEqual(response.status_code, 200)
 
 
 if __name__ == "__main__":
