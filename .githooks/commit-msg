@@ -25,6 +25,22 @@ EOF
   exit 1
 fi
 
+if [[ "$subject" == *\)!:* ]]; then
+  if ! grep -q '^BREAKING CHANGE:' "$message_file"; then
+    cat >&2 <<'EOF'
+标题含 ! 的不兼容变更必须在 footer 配 BREAKING CHANGE: 说明迁移方式。
+
+示例：
+feat(api)!: 调整项目分页响应
+
+BREAKING CHANGE: `items` 移入 `data.items`；调用方必须同步更新。
+
+详见 docs/git-workflow.md 第 2 节。
+EOF
+    exit 1
+  fi
+fi
+
 if (( ${#subject} > 100 )); then
   printf '提交标题超过 100 个字符（当前 %d 个）。\n' "${#subject}" >&2
   exit 1
