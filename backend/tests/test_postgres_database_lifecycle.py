@@ -71,6 +71,35 @@ def test_transaction_uses_psycopg_transaction_context() -> None:
 
     assert events == ["begin", "body", "finish", "putconn"]
     transaction.__exit__.assert_called_once_with(None, None, None)
+    connection.close.assert_not_called()
+
+
+def test_transaction_discards_connection_after_body_error() -> None:
+    error = RuntimeError("body failed")
+    pool, connection = _pool_with_connection()
+    database = PostgresDatabaseLifecycle(MagicMock(return_value=pool))
+
+    with pytest.raises(RuntimeError) as caught:
+        with database.transaction():
+            raise error
+
+    assert caught.value is error
+    connection.close.assert_called_once_with()
+    pool.putconn.assert_called_once_with(connection)
+
+
+def test_transaction_preserves_body_error_when_discard_close_fails() -> None:
+    error = RuntimeError("body failed")
+    pool, connection = _pool_with_connection()
+    connection.close.side_effect = RuntimeError("close failed")
+    database = PostgresDatabaseLifecycle(MagicMock(return_value=pool))
+
+    with pytest.raises(RuntimeError) as caught:
+        with database.transaction():
+            raise error
+
+    assert caught.value is error
+    pool.putconn.assert_called_once_with(connection)
 
 
 def test_transaction_preserves_body_error_when_return_fails() -> None:
@@ -84,6 +113,7 @@ def test_transaction_preserves_body_error_when_return_fails() -> None:
             raise error
 
     assert caught.value is error
+    connection.close.assert_called_once_with()
     pool.putconn.assert_called_once_with(connection)
 
 

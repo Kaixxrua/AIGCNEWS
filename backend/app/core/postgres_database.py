@@ -12,6 +12,8 @@ from psycopg_pool import ConnectionPool
 class PostgresConnection(Protocol):
     def transaction(self, *args: Any, **kwargs: Any) -> Any: ...
 
+    def close(self) -> None: ...
+
 
 class PostgresPool(Protocol):
     def open(self, *, wait: bool = True, timeout: float | None = None) -> None: ...
@@ -47,10 +49,11 @@ class PostgresDatabaseLifecycle:
                 pool = self._pool_factory()
                 try:
                     pool.open(wait=True, timeout=self._acquisition_timeout)
-                except BaseException:
+                except Exception:
+                    # 只兜底常规异常：KeyboardInterrupt/SystemExit 直接向上传播。
                     try:
                         pool.close()
-                    except BaseException:
+                    except Exception:
                         pass
                     raise
                 self._pool = pool
@@ -92,9 +95,17 @@ class PostgresDatabaseLifecycle:
             if primary_error is None:
                 pool.putconn(connection)
             else:
+                # 事务失败：连接可能受污染，先显式 close 弃用再 putconn 交还。
+                # psycopg_pool 对已关闭连接的 putconn 会识别并补建替代连接
+                # （_return_connection 的 UNKNOWN 分支），直接放回可能复用坏
+                # 连接，只 close 不 putconn 则会永久损耗池配额。
+                try:
+                    connection.close()
+                except Exception:
+                    pass
                 try:
                     pool.putconn(connection)
-                except BaseException:
+                except Exception:
                     pass
 
     def close(self) -> None:
