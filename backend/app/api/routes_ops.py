@@ -185,8 +185,8 @@ async def clear_all_data(
     """
     清空所有已存储数据：
 
-    - SQLite documents 表
-    - SQLite ingestion_tasks 表
+    - PostgreSQL documents 表
+    - PostgreSQL ingestion_tasks 表
     - Milvus Collection（向量索引）
 
     ⚠️ 此操作不可逆，请谨慎使用。
