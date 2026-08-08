@@ -141,7 +141,7 @@ def test_enrichment_reasoning_effort_update_inserts_row_when_table_empty() -> No
     assert result["enrichment_reasoning_effort"] == "low"
 
 
-def test_briefing_insert_uses_explicit_iso_text_time_and_returning_id() -> None:
+def test_briefing_upsert_uses_date_conflict_iso_text_time_and_returning_id() -> None:
     database, cursor = _cursor_database()
     cursor.fetchone.return_value = {"id": 7}
 
@@ -151,6 +151,10 @@ def test_briefing_insert_uses_explicit_iso_text_time_and_returning_id() -> None:
 
     assert result == 7
     sql, params = cursor.execute.call_args.args
+    # 同一期重复生成按 date 幂等覆盖（uq_briefings_date，迁移 0033），
+    # 不允许再退回裸 INSERT 产生重复行。
+    assert "ON CONFLICT (date) DO UPDATE SET" in sql
+    assert "content_zh = EXCLUDED.content_zh" in sql
     assert "RETURNING id" in sql
     assert params[:2] == ("2026-07-28", "briefing")
     assert isinstance(params[2], str) and "+00:00" in params[2]

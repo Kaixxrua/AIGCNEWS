@@ -27,17 +27,25 @@ class PostgresBriefingRepository:
         content_zh = content_zh or content
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
+                # 按 date 幂等（uq_briefings_date，迁移 0033）：同一期重复生成
+                # 原地覆盖而不是插入重复行，id 保持稳定，订阅投递标记
+                # （last_delivered_briefing_id）的单调语义不受影响。
                 cursor.execute(
                     """
                     INSERT INTO briefings (date, content, created_at, content_zh, content_en)
                     VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (date) DO UPDATE SET
+                        content = EXCLUDED.content,
+                        content_zh = EXCLUDED.content_zh,
+                        content_en = EXCLUDED.content_en,
+                        created_at = EXCLUDED.created_at
                     RETURNING id
                     """,
                     (date_str, content_zh, _utcnow(), content_zh, content_en),
                 )
                 row = cursor.fetchone()
                 if row is None:
-                    raise RuntimeError("PostgreSQL briefing insert did not return an id")
+                    raise RuntimeError("PostgreSQL briefing upsert did not return an id")
                 return int(row["id"])
 
     def get_latest_briefing(self) -> dict[str, Any] | None:
@@ -51,7 +59,7 @@ class PostgresBriefingRepository:
 
     def get_briefing_by_date(self, date_str: str) -> dict[str, Any] | None:
         return self._fetchone(
-            "SELECT * FROM briefings WHERE date = %s ORDER BY id DESC LIMIT 1",
+            "SELECT * FROM briefings WHERE date = %s",
             (date_str,),
         )
 

@@ -29,8 +29,21 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 32
-    assert migrations[-1].filename == "0032_briefing_delivery_tracking.sql"
+    assert migrations[-1].version == 33
+    assert migrations[-1].filename == "0033_briefings_date_unique.sql"
+
+
+def test_briefings_date_unique_migration_dedupes_before_creating_index() -> None:
+    sql = (MIGRATIONS_DIR / "0033_briefings_date_unique.sql").read_text(
+        encoding="utf-8"
+    )
+
+    # 存量重复行必须先于唯一索引清理，否则迁移在脏数据上直接失败；
+    # 每个 date 仅保留 id 最大的最新行。
+    assert "newer.id > b.id" in sql
+    assert sql.index("DELETE FROM briefings") < sql.index(
+        "CREATE UNIQUE INDEX uq_briefings_date"
+    )
 
 
 def test_wechat_official_accounts_migration_defines_secret_safe_tables() -> None:
