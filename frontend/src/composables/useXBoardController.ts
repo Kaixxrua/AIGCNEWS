@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import type { DashboardApi } from '@/services/dashboard/dashboardContracts'
 import { dashboardApi } from '@/services/dashboard/dashboardApi'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
+import type { XSnapshotRebuildResponse } from '@/services/dashboard/dashboardContracts'
 import { clampPage, groupTweetsByHandle, pageCount } from '@/features/xboard/xBoardViewModel'
 
 export interface XBoardApi {
@@ -10,6 +11,7 @@ export interface XBoardApi {
   fetchSnapshotDates: DashboardApi['fetchSnapshotDates']
   deleteDocument: DashboardApi['deleteDocument']
   bulkDeleteDocuments: DashboardApi['bulkDeleteDocuments']
+  rebuildXSnapshot: DashboardApi['rebuildXSnapshot']
 }
 
 export type XBoardViewMode = 'recent' | 'date'
@@ -42,10 +44,13 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const docs = ref<TopDoc[]>([])
   const loading = ref(false)
   const deleting = ref(false)
+  const rebuilding = ref(false)
   const errorMsg = ref('')
   const isActive = ref(true)
   const selectedIds = ref<Set<string>>(new Set())
   const page = ref(1)
+  // 日期模式专用：昨日榜单 CST 15:00 定稿前被后端静默，空态需区分「无数据」
+  const isEmbargoed = ref(false)
 
   const sections = computed(() => groupTweetsByHandle(docs.value))
   const totalPages = computed(() => pageCount(docs.value.length, XBOARD_PAGE_SIZE))
@@ -74,7 +79,11 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
       const result = mode === 'recent'
         ? await api.fetchRecentX({ hours: XBOARD_RECENT_WINDOW_HOURS, limit: TOP_LIMIT, signal: controller.signal, cacheBuster: Date.now() })
         : await api.fetchTop({ source: 'x', period: 'daily', date, limit: TOP_LIMIT, signal: controller.signal, cacheBuster: Date.now() })
-      if (isActive.value && request === generation) docs.value = result.items
+      if (isActive.value && request === generation) {
+        docs.value = result.items
+        // recent 模式无静默期语义；fetchRecentX 不返回该字段，统一复位
+        isEmbargoed.value = mode === 'date' && 'isEmbargoed' in result ? result.isEmbargoed : false
+      }
     } catch (error) {
       if (isActive.value && request === generation && !controller.signal.aborted) {
         errorMsg.value = error instanceof Error && error.message ? error.message : translate('xboard.loadFailed')
@@ -84,8 +93,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     }
   }
 
-  const load = async () => {
-    if (!isActive.value) return
+  const loadDates = async () => {
     try {
       // 快照日期用于把默认日期回退到最近一个有数据的日期（今天可能还没跑采集）
       const dates = await api.fetchSnapshotDates({ source: 'x', period: 'daily', limit: SNAPSHOT_DATE_LIMIT, cacheBuster: Date.now() })
@@ -96,6 +104,11 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     } catch {
       // 日期清单失败不阻塞推文加载
     }
+  }
+
+  const load = async () => {
+    if (!isActive.value) return
+    await loadDates()
     await loadTweets()
   }
 
@@ -154,6 +167,31 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     selectedIds.value = new Set()
   }
 
+  /**
+   * 管理员补拉：从已入库推文按发布日（CST）重建 X 日榜快照。
+   * 补拉可能新增历史快照日期、改变当前榜单，日期清单与推文都需重拉。
+   */
+  const rebuild = async (targetDate?: string): Promise<XSnapshotRebuildResponse | null> => {
+    if (rebuilding.value) return null
+    rebuilding.value = true
+    errorMsg.value = ''
+    try {
+      const result = await api.rebuildXSnapshot(targetDate)
+      await loadDates()
+      await loadTweets()
+      return result
+    } catch (error) {
+      errorMsg.value = error instanceof Error && error.message ? error.message : translate('xboard.rebuildFailed')
+      return null
+    } finally {
+      rebuilding.value = false
+    }
+  }
+
+  const rebuildSelectedDate = () => rebuild(selectedDate.value)
+
+  const rebuildAllDates = () => rebuild(undefined)
+
   const deleteSelected = async (): Promise<{ deleted: number; notFound: number }> => {
     const ids = Array.from(selectedIds.value)
     if (!ids.length) return { deleted: 0, notFound: 0 }
@@ -189,10 +227,14 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     goPage,
     hasNext,
     hasPrev,
+    isEmbargoed,
     load,
     loading,
     onDateChange,
     pageSize: XBOARD_PAGE_SIZE,
+    rebuildAllDates,
+    rebuildSelectedDate,
+    rebuilding,
     recentWindowHours: XBOARD_RECENT_WINDOW_HOURS,
     refresh,
     sections,

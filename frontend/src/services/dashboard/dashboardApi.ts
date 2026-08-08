@@ -9,6 +9,7 @@ import type {
   GitHubHotPeriod,
   GitHubHotResponse,
   GitHubHotWireResponse,
+  XSnapshotRebuildResponse,
 } from './dashboardContracts'
 
 export type {
@@ -43,7 +44,11 @@ export const dashboardApi: DashboardApi = {
     const params: Record<string, unknown> = { limit, source, period, date }
     if (cacheBuster) params._t = cacheBuster
     const response = await api.get<DashboardTopWireResponse>('/dashboard/top', { params, signal })
-    return { items: Array.isArray(response.data?.items) ? response.data.items : [] }
+    return {
+      items: Array.isArray(response.data?.items) ? response.data.items : [],
+      // 静默期标记必须透出：X 看板日期模式靠它区分「无数据」与「定稿前静默」
+      isEmbargoed: response.data?.is_embargoed ?? false,
+    }
   },
 
   async fetchRecentX({ hours = 24, limit = 500, signal, cacheBuster }) {
@@ -95,6 +100,13 @@ export const dashboardApi: DashboardApi = {
 
   async bulkDeleteDocuments(docIds: string[]) {
     const response = await api.post<{ status: string; message: string; doc_ids: string[]; deleted_count: number; not_found_count: number }>('/ops/documents/bulk-delete', { doc_ids: docIds })
+    return response.data
+  },
+
+  async rebuildXSnapshot(targetDate?: string) {
+    const response = await api.post<XSnapshotRebuildResponse>('/ops/x/snapshots/rebuild', {
+      target_date: targetDate ?? null,
+    })
     return response.data
   },
 }

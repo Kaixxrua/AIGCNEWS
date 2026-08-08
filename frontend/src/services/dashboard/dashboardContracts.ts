@@ -8,6 +8,7 @@ export interface DashboardSummaryWireResponse {
 
 export interface DashboardTopWireResponse {
   items?: TopDoc[] | null
+  is_embargoed?: boolean | null
 }
 
 export interface DashboardSnapshotDatesWireResponse {
@@ -34,6 +35,20 @@ export interface DashboardSummary {
 
 export interface DashboardTop {
   items: TopDoc[]
+  /** 昨日榜单在 CST 15:00 定稿前处于静默期（后端直接放空 items） */
+  isEmbargoed: boolean
+}
+
+export interface XSnapshotRebuildResultItem {
+  date: string
+  upserted: number
+}
+
+export interface XSnapshotRebuildResponse {
+  status: string
+  message: string
+  results?: XSnapshotRebuildResultItem[] | null
+  skipped_no_date?: number | null
 }
 
 export interface DashboardRecentX {
@@ -114,4 +129,6 @@ export interface DashboardApi {
   fetchGitHubHotRepos(period?: GitHubHotPeriod, limit?: number): Promise<GitHubHotResponse>
   deleteDocument(docId: string): Promise<{ status: string; message: string; doc_id: string; deleted: boolean }>
   bulkDeleteDocuments(docIds: string[]): Promise<{ status: string; message: string; doc_ids: string[]; deleted_count: number; not_found_count: number }>
+  /** 管理员补拉：从已入库推文按发布日（CST）重建 X 日榜快照；targetDate 缺省 = 全部历史日期 */
+  rebuildXSnapshot(targetDate?: string): Promise<XSnapshotRebuildResponse>
 }

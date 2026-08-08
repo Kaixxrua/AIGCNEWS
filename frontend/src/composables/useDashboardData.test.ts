@@ -211,13 +211,14 @@ describe('Dashboard request lifecycle contract', () => {
     const deferred: Array<{ resolve: (value: Summary) => void }> = []
     const injectedApi: DashboardApi = {
       fetchSummary: vi.fn(() => new Promise<Summary>((resolve) => deferred.push({ resolve }))),
-      fetchTop: vi.fn(async () => ({ items: [] })),
+      fetchTop: vi.fn(async () => ({ items: [], isEmbargoed: false })),
       fetchSnapshotDates: vi.fn(async () => []),
       fetchVisitorCount: vi.fn(async () => ({ registeredUsers: 0, todayRegisteredUsers: 0, userCount: 0 })),
       fetchGitHubHotRepos: vi.fn(async () => ({ period: 'daily', items: [] })),
       fetchRecentX: vi.fn(async () => ({ items: [], total: 0, windowHours: 24 })),
       deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),
       bulkDeleteDocuments: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_ids: ['x:1'], deleted_count: 1, not_found_count: 0 })),
+      rebuildXSnapshot: vi.fn(async () => ({ status: 'succeeded', message: 'ok', results: [], skipped_no_date: 0 })),
     }
     const mounted = mountDashboard({ dashboardApi: injectedApi, now: () => new Date(2026, 6, 27, 12).getTime() })
     await flush()

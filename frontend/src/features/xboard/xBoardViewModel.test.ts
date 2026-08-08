@@ -6,6 +6,7 @@ import {
   countTweets,
   displayTweetText,
   distributeColumns,
+  emptyStateCopyKeys,
   extractXHandle,
   flattenTweets,
   formatLocalTime,
@@ -446,5 +447,36 @@ describe('xBoardViewModel', () => {
     expect(paginateItems(items, 99, 20)).toEqual(items.slice(40, 45))
     expect(paginateItems(items, 0, 20)).toEqual(items.slice(0, 20))
     expect(paginateItems([], 1, 20)).toEqual([])
+  })
+
+  it('emptyStateCopyKeys picks the recent-mode copy for the rolling window', () => {
+    // 静默期/无快照标记在 recent 模式下不参与判定
+    expect(emptyStateCopyKeys({
+      isRecentMode: true, isEmbargoed: true, hasSnapshotDates: true, selectedDateHasSnapshot: false,
+    })).toEqual({ titleKey: 'xboard.emptyRecent', hintKey: 'xboard.emptyRecentHint' })
+  })
+
+  it('emptyStateCopyKeys prefers the embargo copy over other date-mode states', () => {
+    // 静默期的昨日同时「不在快照清单」时也先按静默期提示（数据其实存在，只是未解禁）
+    expect(emptyStateCopyKeys({
+      isRecentMode: false, isEmbargoed: true, hasSnapshotDates: true, selectedDateHasSnapshot: false,
+    })).toEqual({ titleKey: 'xboard.emptyEmbargoed', hintKey: 'xboard.emptyEmbargoedHint' })
+  })
+
+  it('emptyStateCopyKeys flags dates outside the snapshot listing', () => {
+    expect(emptyStateCopyKeys({
+      isRecentMode: false, isEmbargoed: false, hasSnapshotDates: true, selectedDateHasSnapshot: false,
+    })).toEqual({ titleKey: 'xboard.emptyNoSnapshot', hintKey: 'xboard.emptyNoSnapshotHint' })
+  })
+
+  it('emptyStateCopyKeys falls back to the generic copy when the listing is unavailable or the date has a snapshot', () => {
+    // 清单加载失败（空）时无法判定无快照，回退通用空态，避免误报
+    expect(emptyStateCopyKeys({
+      isRecentMode: false, isEmbargoed: false, hasSnapshotDates: false, selectedDateHasSnapshot: false,
+    })).toEqual({ titleKey: 'xboard.empty', hintKey: 'xboard.emptyHint' })
+    // 选中日期在清单内但仍为空（当天采集尚未产出推文）→ 通用空态
+    expect(emptyStateCopyKeys({
+      isRecentMode: false, isEmbargoed: false, hasSnapshotDates: true, selectedDateHasSnapshot: true,
+    })).toEqual({ titleKey: 'xboard.empty', hintKey: 'xboard.emptyHint' })
   })
 })

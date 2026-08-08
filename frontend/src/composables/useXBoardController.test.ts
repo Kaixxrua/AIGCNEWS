@@ -10,11 +10,12 @@ const recentDocs = () => [
 ]
 
 const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
-  fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: recentDocs() })),
+  fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: recentDocs(), isEmbargoed: false })),
   fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: recentDocs(), total: 2, windowHours: 24 })),
   fetchSnapshotDates: vi.fn(async () => ['2026-08-04', '2026-08-03']),
   deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),
   bulkDeleteDocuments: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_ids: ['x:1'], deleted_count: 1, not_found_count: 0 })),
+  rebuildXSnapshot: vi.fn(async () => ({ status: 'succeeded', message: 'ok', results: [{ date: '2026-08-03', upserted: 3 }], skipped_no_date: 0 })),
   ...overrides,
 })
 
@@ -246,7 +247,7 @@ describe('useXBoardController', () => {
 
   it('resets to page 1 on date change and refresh', async () => {
     const api = createPagedApi(45, {
-      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: docPage(45) })),
+      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: docPage(45), isEmbargoed: false })),
     })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
@@ -311,5 +312,61 @@ describe('useXBoardController', () => {
     // 空集 no-op
     controller.toggleSelectAll([])
     expect(controller.selectedIds.value.size).toBe(20)
+  })
+
+  it('tracks the embargo flag in date mode and resets it in recent mode', async () => {
+    const api = createApi({
+      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: [], isEmbargoed: true })),
+    })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    expect(controller.isEmbargoed.value).toBe(false)
+
+    controller.onDateChange('2026-08-03')
+    await vi.waitFor(() => expect(controller.viewMode.value).toBe('date'))
+    expect(controller.isEmbargoed.value).toBe(true)
+
+    await controller.showRecent()
+    expect(controller.isEmbargoed.value).toBe(false)
+  })
+
+  it('rebuilds the selected date snapshot and reloads dates and tweets', async () => {
+    const api = createApi()
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    const recentCalls = (api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length
+    const datesCalls = (api.fetchSnapshotDates as ReturnType<typeof vi.fn>).mock.calls.length
+
+    const result = await controller.rebuildSelectedDate()
+
+    expect(api.rebuildXSnapshot).toHaveBeenCalledWith('2026-08-04')
+    expect(result?.results?.[0]?.upserted).toBe(3)
+    expect((api.fetchSnapshotDates as ReturnType<typeof vi.fn>).mock.calls.length).toBe(datesCalls + 1)
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(recentCalls + 1)
+    expect(controller.rebuilding.value).toBe(false)
+  })
+
+  it('rebuilds all historical dates when no target is given', async () => {
+    const api = createApi()
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+
+    await controller.rebuildAllDates()
+
+    expect(api.rebuildXSnapshot).toHaveBeenCalledWith(undefined)
+  })
+
+  it('surfaces an error message when rebuild fails', async () => {
+    const api = createApi({
+      rebuildXSnapshot: vi.fn(async () => { throw new Error('rebuild boom') }),
+    })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+
+    const result = await controller.rebuildSelectedDate()
+
+    expect(result).toBeNull()
+    expect(controller.errorMsg.value).toBe('rebuild boom')
+    expect(controller.rebuilding.value).toBe(false)
   })
 })

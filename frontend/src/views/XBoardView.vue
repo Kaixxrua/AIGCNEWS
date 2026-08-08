@@ -3,10 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, ExternalLink, Maximize2 } from 'lucide-vue-next'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { authorAvatarUrl, authorDisplayName, distributeColumns, extractXHandle, formatLocalTime, hasMedia, hasQuote, mediaItems, paginateItems, quoteAsDoc, quoteAvatarUrl, quoteMediaItems, quoteTextSegments, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasMedia, hasQuote, mediaItems, paginateItems, quoteAsDoc, quoteAvatarUrl, quoteMediaItems, quoteTextSegments, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
+import type { XSnapshotRebuildResponse } from '@/services/dashboard/dashboardContracts'
 
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
@@ -15,7 +16,9 @@ const isAdmin = computed(() => authStore.isAdmin)
 const {
   docs, selectedDate, today, loading, deleting, errorMsg, viewMode,
   selectedIds, currentPage, totalPages, hasPrev, hasNext, pageSize,
+  availableDates, isEmbargoed, rebuilding,
   load, onDateChange, showRecent, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
+  rebuildSelectedDate, rebuildAllDates,
 } = useXBoardController({ translate: t })
 
 // 时间序（新→旧）+ 行主序分列：左上 = 最新推文，从左到右、从上到下。
@@ -121,6 +124,35 @@ watch(docs, () => { playingMedia.value = new Set(); detailTweet.value = null; de
 
 const isSelected = (doc: TopDoc) => doc.id ? selectedIds.value.has(String(doc.id)) : false
 
+// 空态文案三态：静默期（昨日榜单 15:00 定稿前）/ 该日无快照 / 真无数据
+const emptyCopy = computed(() => emptyStateCopyKeys({
+  isRecentMode: viewMode.value === 'recent',
+  isEmbargoed: isEmbargoed.value,
+  hasSnapshotDates: availableDates.value.length > 0,
+  selectedDateHasSnapshot: availableDates.value.includes(selectedDate.value),
+}))
+// 最早快照日期（清单降序，末尾即最早），供「无快照」空态提示可翻到的起点
+const earliestSnapshotDate = computed(() => availableDates.value[availableDates.value.length - 1] ?? '')
+
+const rebuildResultMessage = (result: XSnapshotRebuildResponse): string => {
+  const results = result.results ?? []
+  const total = results.reduce((sum, item) => sum + (item.upserted || 0), 0)
+  if (!total) return t('xboard.rebuildEmpty')
+  return t('xboard.rebuildSuccess', { dates: results.length, count: total })
+}
+
+const handleRebuildSelected = async () => {
+  if (!window.confirm(t('xboard.rebuildSelectedConfirm', { date: selectedDate.value }))) return
+  const result = await rebuildSelectedDate()
+  if (result) window.alert(rebuildResultMessage(result))
+}
+
+const handleRebuildAll = async () => {
+  if (!window.confirm(t('xboard.rebuildAllConfirm'))) return
+  const result = await rebuildAllDates()
+  if (result) window.alert(rebuildResultMessage(result))
+}
+
 const handleDeleteSelected = async () => {
   if (!hasSelection.value) return
   const confirmed = window.confirm(t('xboard.deleteConfirm', { count: selectedCount.value }))
@@ -200,6 +232,22 @@ onBeforeUnmount(() => {
         </div>
         <div class="flex items-center gap-2">
           <button
+            class="btn-secondary text-xs"
+            :disabled="rebuilding"
+            :title="t('xboard.rebuildSelectedTitle')"
+            @click="handleRebuildSelected"
+          >
+            {{ rebuilding ? t('xboard.rebuilding') : t('xboard.rebuildSelected', { date: selectedDate }) }}
+          </button>
+          <button
+            class="btn-secondary text-xs"
+            :disabled="rebuilding"
+            :title="t('xboard.rebuildAllTitle')"
+            @click="handleRebuildAll"
+          >
+            {{ t('xboard.rebuildAll') }}
+          </button>
+          <button
             v-if="hasSelection"
             class="btn-secondary text-xs"
             @click="clearSelection"
@@ -229,8 +277,8 @@ onBeforeUnmount(() => {
         <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-stone-200 border-t-stone-500" />{{ t('xboard.loading') }}
       </div>
       <div v-else-if="!timelineDocs.length" class="glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
-        <p class="font-medium text-stone-500">{{ t(viewMode === 'recent' ? 'xboard.emptyRecent' : 'xboard.empty') }}</p>
-        <p class="mt-1 text-xs">{{ t(viewMode === 'recent' ? 'xboard.emptyRecentHint' : 'xboard.emptyHint') }}</p>
+        <p class="font-medium text-stone-500">{{ t(emptyCopy.titleKey) }}</p>
+        <p class="mt-1 text-xs">{{ t(emptyCopy.hintKey, { earliest: earliestSnapshotDate }) }}</p>
       </div>
 
       <!-- 瀑布流推文墙（行主序：每列顶部横读即最新 N 条） -->

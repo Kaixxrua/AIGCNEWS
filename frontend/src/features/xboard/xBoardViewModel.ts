@@ -336,3 +336,26 @@ export const paginateItems = <T>(items: T[], page: number, pageSize: number): T[
   const current = clampPage(page, pageCount(items.length, size))
   return items.slice((current - 1) * size, current * size)
 }
+
+export interface XBoardEmptyCopyOptions {
+  isRecentMode: boolean
+  /** 日期模式专用：昨日榜单 CST 15:00 定稿前被后端静默（items 直接为空） */
+  isEmbargoed: boolean
+  /** 快照日期清单已成功加载（清单为空时无法判定「该日无快照」，回退通用空态） */
+  hasSnapshotDates: boolean
+  /** 选中日期在快照日期清单内 */
+  selectedDateHasSnapshot: boolean
+}
+
+/**
+ * 空态文案选择：区分「静默期未解禁」「该日期无快照」「真的没数据」三种
+ * 日期模式空列表，避免静默期/无快照日一律显示「暂无推文」误导用户。
+ */
+export const emptyStateCopyKeys = (options: XBoardEmptyCopyOptions): { titleKey: string; hintKey: string } => {
+  if (options.isRecentMode) return { titleKey: 'xboard.emptyRecent', hintKey: 'xboard.emptyRecentHint' }
+  if (options.isEmbargoed) return { titleKey: 'xboard.emptyEmbargoed', hintKey: 'xboard.emptyEmbargoedHint' }
+  if (options.hasSnapshotDates && !options.selectedDateHasSnapshot) {
+    return { titleKey: 'xboard.emptyNoSnapshot', hintKey: 'xboard.emptyNoSnapshotHint' }
+  }
+  return { titleKey: 'xboard.empty', hintKey: 'xboard.emptyHint' }
+}
