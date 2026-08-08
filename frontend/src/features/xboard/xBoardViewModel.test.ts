@@ -57,9 +57,15 @@ describe('xBoardViewModel', () => {
     expect(tweetTimestamp({})).toBe('')
   })
 
-  it('extracts avatar url and full tweet text', () => {
-    expect(authorAvatarUrl({ author_avatar_url: 'https://x.com/a.jpg' })).toBe('https://x.com/a.jpg')
-    expect(authorAvatarUrl({ url: 'https://x.com/openai/status/1' })).toBe('https://unavatar.io/x/openai')
+  it('proxies only twimg avatars same-origin and drops third-party fallbacks', () => {
+    const avatar = 'https://pbs.twimg.com/profile_images/a.jpg'
+    expect(authorAvatarUrl({ author_avatar_url: avatar })).toBe(
+      `/api/media/x/proxy?url=${encodeURIComponent(avatar)}`,
+    )
+    // 非 twimg 地址不直连（中国大陆不可达/白名单外主机），回退本地 𝕏 占位
+    expect(authorAvatarUrl({ author_avatar_url: 'https://x.com/a.jpg' })).toBeUndefined()
+    // 无落库头像同样回退占位（历史 unavatar.io 回退已移除）
+    expect(authorAvatarUrl({ url: 'https://x.com/openai/status/1' })).toBeUndefined()
     expect(authorAvatarUrl({})).toBeUndefined()
     expect(tweetText({ summary: 'full', title: 'short' })).toBe('full')
     expect(tweetText({ title: 'only' })).toBe('only')
@@ -331,9 +337,13 @@ describe('xBoardViewModel', () => {
     expect(quoteMediaItems(quotedTweet({ media: [] }).quote!)).toEqual([])
   })
 
-  it('quoteAvatarUrl prefers the stored avatar and falls back to unavatar', () => {
-    expect(quoteAvatarUrl(quotedTweet().quote!)).toBe('https://pbs.twimg.com/profile_images/q.jpg')
-    expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: '' }).quote!)).toBe('https://unavatar.io/x/comfyui')
+  it('quoteAvatarUrl proxies the stored twimg avatar and drops unavatar fallback', () => {
+    const avatar = 'https://pbs.twimg.com/profile_images/q.jpg'
+    expect(quoteAvatarUrl(quotedTweet().quote!)).toBe(
+      `/api/media/x/proxy?url=${encodeURIComponent(avatar)}`,
+    )
+    expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: '' }).quote!)).toBeUndefined()
+    expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: 'https://elsewhere.cdn/q.jpg' }).quote!)).toBeUndefined()
     expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: '', author: '' }).quote!)).toBeUndefined()
   })
 

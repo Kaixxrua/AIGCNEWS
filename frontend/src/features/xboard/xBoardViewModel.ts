@@ -24,11 +24,16 @@ export const tweetTimestamp = (doc: TopDoc): string => (
   doc.published_at || doc.published_date || ''
 )
 
+/**
+ * 作者头像：仅落库的 twimg 地址经同源代理返回——pbs.twimg.com 在中国大陆
+ * 不可直连，浏览器直连会让看板头像整块挂掉；缺失或非白名单主机的地址一律
+ * 返回 undefined，由渲染层回退本地 𝕏 占位。
+ * 历史 unavatar.io 回退已移除：它是第三方 302 重定向服务，与媒体代理的
+ * 禁止重定向策略不兼容（经代理只会 502），且自身在国内稳定性差。
+ */
 export const authorAvatarUrl = (doc: TopDoc): string | undefined => {
-  if (doc.author_avatar_url) return doc.author_avatar_url
-  const handle = extractXHandle(doc.url)
-  if (handle) return `https://unavatar.io/x/${handle}`
-  return undefined
+  const url = typeof doc.author_avatar_url === 'string' ? doc.author_avatar_url : ''
+  return isTwimgUrl(url) ? proxiedMediaUrl(url) : undefined
 }
 
 /**
@@ -126,11 +131,10 @@ export const quoteAsDoc = (quote: NonNullable<TopDoc['quote']>): TopDoc => ({
   published_at: quote.published_at,
 })
 
-/** 引用作者头像：落库地址优先，缺失时回退 unavatar（与外推头像同一策略）。 */
+/** 引用作者头像：与外推同一策略——仅 twimg 落库地址经同源代理，其余回退占位。 */
 export const quoteAvatarUrl = (quote: NonNullable<TopDoc['quote']>): string | undefined => {
-  if (quote.author_avatar_url) return quote.author_avatar_url
-  if (quote.author) return `https://unavatar.io/x/${quote.author}`
-  return undefined
+  const url = typeof quote.author_avatar_url === 'string' ? quote.author_avatar_url : ''
+  return isTwimgUrl(url) ? proxiedMediaUrl(url) : undefined
 }
 
 /**
