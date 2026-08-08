@@ -3,11 +3,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from backend.app.core.config import settings
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value or [], ensure_ascii=False)
+
+
+def _scheduler_timezone() -> str:
+    return getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai"
 
 
 def _json_loads_list(value: Any) -> list[Any]:
@@ -324,12 +329,13 @@ class PostgresConversationRepository:
             JOIN conversations c ON c.id = m.conversation_id
             WHERE c.user_id = %s
               AND m.role = 'user'
-              AND (m.created_at AT TIME ZONE 'Asia/Shanghai')::date =
-                  (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date
+              AND (m.created_at AT TIME ZONE %s)::date =
+                  (CURRENT_TIMESTAMP AT TIME ZONE %s)::date
         """
+        timezone_name = _scheduler_timezone()
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(today_sql, (user_id,))
+                cursor.execute(today_sql, (user_id, timezone_name, timezone_name))
                 row = cursor.fetchone()
         return int(row["cnt"] if row else 0)
 
@@ -449,27 +455,15 @@ class PostgresConversationRepository:
         scope_key: str | None,
         title: str | None,
     ) -> dict[str, Any]:
-        if scope_key:
-            cursor.execute(
-                """
-                SELECT * FROM conversations
-                WHERE user_id = %s AND scope = %s AND scope_key = %s
-                ORDER BY id DESC LIMIT 1 FOR UPDATE
-                """,
-                (user_id, scope, scope_key),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT * FROM conversations
-                WHERE user_id = %s AND scope = %s AND scope_key IS NULL
-                ORDER BY id DESC LIMIT 1 FOR UPDATE
-                """,
-                (user_id, scope),
-            )
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
+        conversation = self._select_scoped_conversation(
+            cursor,
+            user_id=user_id,
+            scope=scope,
+            scope_key=scope_key,
+            for_update=True,
+        )
+        if conversation is not None:
+            return conversation
         return self._create_conversation(
             cursor,
             user_id=user_id,
@@ -479,7 +473,38 @@ class PostgresConversationRepository:
         )
 
     @staticmethod
+    def _select_scoped_conversation(
+        cursor: Any,
+        *,
+        user_id: int,
+        scope: str,
+        scope_key: str | None,
+        for_update: bool = False,
+    ) -> dict[str, Any] | None:
+        suffix = " FOR UPDATE" if for_update else ""
+        if scope_key:
+            cursor.execute(
+                f"""
+                SELECT * FROM conversations
+                WHERE user_id = %s AND scope = %s AND scope_key = %s
+                ORDER BY id DESC LIMIT 1{suffix}
+                """,
+                (user_id, scope, scope_key),
+            )
+        else:
+            cursor.execute(
+                f"""
+                SELECT * FROM conversations
+                WHERE user_id = %s AND scope = %s AND scope_key IS NULL
+                ORDER BY id DESC LIMIT 1{suffix}
+                """,
+                (user_id, scope),
+            )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
     def _create_conversation(
+        self,
         cursor: Any,
         *,
         user_id: int,
@@ -487,20 +512,38 @@ class PostgresConversationRepository:
         scope_key: str | None,
         title: str | None,
     ) -> dict[str, Any]:
+        """insert-or-get：uq_conv_user_scope_key 保证同一 (user, scope, scope_key)
+        全局只有一行。并发 ensure 或重复「新建会话」命中冲突时返回既有会话，
+        不再产生重复行（原 SELECT-then-INSERT 竞态由 ON CONFLICT 兜底）。
+        注意：ON CONFLICT 不能写 NULLS NOT DISTINCT 关键字（语法不支持），
+        但只要 uq_conv_user_scope_key（NULLS NOT DISTINCT 唯一索引）已随
+        迁移 0028 建立，普通列列表即可自动推断该索引为 arbiter。
+        """
         cursor.execute(
             """
             INSERT INTO conversations (
                 user_id, scope, scope_key, title, last_message_preview,
                 message_count, last_accessed_at, updated_at, created_at
             ) VALUES (%s, %s, %s, %s, '', 0, NOW(), NOW(), NOW())
+            ON CONFLICT (user_id, scope, scope_key) DO NOTHING
             RETURNING *
             """,
             (user_id, scope, scope_key, title or "新对话"),
         )
         row = cursor.fetchone()
-        if row is None:
+        if row is not None:
+            return dict(row)
+        # 冲突：并发事务已创建同 scope 会话；ON CONFLICT 会等待其提交，
+        # 此处重查在 READ COMMITTED 下必然可见。
+        existing = self._select_scoped_conversation(
+            cursor,
+            user_id=user_id,
+            scope=scope,
+            scope_key=scope_key,
+        )
+        if existing is None:
             raise RuntimeError("PostgreSQL conversation insert did not return a row")
-        return dict(row)
+        return existing
 
     @staticmethod
     def _touch_conversation(cursor: Any, conversation_id: int) -> None:

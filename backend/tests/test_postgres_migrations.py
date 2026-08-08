@@ -381,6 +381,59 @@ def test_project_catalog_trigram_search_is_versioned_and_transactional() -> None
     assert "CONCURRENTLY" not in migration.sql.upper()
 
 
+def test_conversation_scope_uniqueness_dedupes_before_creating_unique_index() -> None:
+    migration = discover_migrations()[27]
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert migration.filename == "0028_conversation_scope_uniqueness.sql"
+    # 先去重（消息与附件并入保留行、删除重复会话），再建唯一索引
+    assert "UPDATE chat_messages" in migration.sql
+    assert "UPDATE chat_attachments" in migration.sql
+    assert "DELETE FROM conversations" in migration.sql
+    assert "IS NOT DISTINCT FROM" in migration.sql
+    assert "CREATE UNIQUE INDEX uq_conv_user_scope_key" in migration.sql
+    assert "NULLS NOT DISTINCT" in migration.sql
+    assert normalized.index("DELETE FROM CONVERSATIONS") < normalized.index(
+        "CREATE UNIQUE INDEX"
+    )
+    # 去重保留 id 最大行，与仓储层 ORDER BY id DESC LIMIT 1 口径一致
+    assert "MAX(id)" in migration.sql
+
+
+def test_user_account_disabled_schema_is_additive() -> None:
+    migration = discover_migrations()[28]
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert migration.filename == "0029_user_account_disabled.sql"
+    assert "ALTER TABLE users ADD COLUMN disabled BOOLEAN NOT NULL DEFAULT FALSE" in migration.sql
+    assert "DROP" not in normalized
+    assert "UPDATE " not in normalized
+
+
+def test_user_foreign_keys_validate_before_retype_and_add_cascade() -> None:
+    migration = discover_migrations()[29]
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert migration.filename == "0030_user_foreign_keys.sql"
+    # Red 变更：先校验（孤儿行/超范围即中止），后改类型，最后补外键
+    assert "RAISE EXCEPTION" in migration.sql
+    assert migration.sql.count("NOT EXISTS (SELECT 1 FROM users u WHERE u.id =") == 4
+    assert "2147483647" in migration.sql
+    for table, column in (
+        ("github_repo_recommendations", "recommended_by_user_id"),
+        ("project_favorites", "user_id"),
+        ("user_tool_websites", "user_id"),
+        ("user_tool_website_overrides", "user_id"),
+    ):
+        assert f"ALTER TABLE {table}" in migration.sql
+        assert f"ALTER COLUMN {column} TYPE INTEGER" in migration.sql
+        assert "REFERENCES users(id) ON DELETE CASCADE" in migration.sql
+    assert normalized.index("RAISE EXCEPTION") < normalized.index("ALTER COLUMN")
+    assert normalized.index("ALTER COLUMN") < normalized.index("ADD CONSTRAINT")
+    # recommended_by_user_id 可空：校验必须放过 NULL
+    assert "recommended_by_user_id IS NOT NULL" in migration.sql
+
+
 def test_live_postgres_apply_twice_and_introspect_schema() -> None:
     dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
     if not dsn:

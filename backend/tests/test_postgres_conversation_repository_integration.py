@@ -182,3 +182,39 @@ def test_postgres_append_rolls_back_pair_when_parent_is_foreign(database, owners
     assert context is not None
     assert context["messages"] == []
     assert context["conversation"]["message_count"] == 0
+
+
+def test_postgres_scope_conversation_is_singleton_across_ensure_and_create(
+    database, owners
+) -> None:
+    owner_id, _ = owners
+    repository = PostgresConversationRepository(database)
+
+    first = repository.ensure_conversation(
+        user_id=owner_id, scope="global", scope_key=None
+    )
+    again = repository.ensure_conversation(
+        user_id=owner_id, scope="global", scope_key=None
+    )
+    assert int(again["id"]) == int(first["id"])
+
+    # 「强制新建」与既有 scope 冲突时返回既有会话：uq_conv_user_scope_key
+    # 唯一索引下不再产生 (user_id, scope, scope_key) 重复行
+    created = repository.create_conversation(
+        user_id=owner_id, scope="global", scope_key=None
+    )
+    assert int(created["id"]) == int(first["id"])
+
+    paper = repository.ensure_conversation(
+        user_id=owner_id, scope="paper", scope_key="paper-1"
+    )
+    assert int(paper["id"]) != int(first["id"])
+    assert (
+        int(
+            repository.ensure_conversation(
+                user_id=owner_id, scope="paper", scope_key="paper-1"
+            )["id"]
+        )
+        == int(paper["id"])
+    )
+    assert repository.list_conversations(user_id=owner_id)["total"] == 2

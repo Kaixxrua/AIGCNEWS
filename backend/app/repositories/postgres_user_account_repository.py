@@ -30,10 +30,11 @@ class PostgresUserAccountRepository:
         return int(row["cnt"] if row else 0)
 
     def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
-        # 身份核验专用：按主键查询且不取 hashed_password
+        # 身份核验专用：按主键查询且不取 hashed_password；disabled 供
+        # auth.RequireUser 判定禁用账号（0029 起 users 表才有此列）。
         return self._fetchone(
             """
-            SELECT id, phone, email, username, role, created_at
+            SELECT id, phone, email, username, role, disabled, created_at
             FROM users
             WHERE id = %s
             """,
