@@ -73,6 +73,57 @@ class Settings(BaseSettings):
             )
         return value
 
+    # X 采集凭证池 cookie 静态加密（auth_token/ct0）。密钥必须是 32 字节随机
+    # 值的 URL-safe Base64，只由部署环境提供；缺失或非法时写入侧拒绝处理
+    # secret，不降级为明文；历史明文行读取兼容，下次写入时密封迁移。
+    x_credential_encryption_key: str = ""
+    x_credential_encryption_key_version: str = "v1"
+
+    @field_validator("x_credential_encryption_key_version")
+    @classmethod
+    def _validate_x_credential_key_version(cls, value: str) -> str:
+        if not value or len(value) > 64:
+            raise ValueError(
+                "x_credential_encryption_key_version must be 1..64 characters"
+            )
+        return value
+
+    @field_validator("x_credential_encryption_key")
+    @classmethod
+    def _validate_x_credential_key(cls, value: str) -> str:
+        if not value:
+            return value
+        if value.startswith("CHANGEME"):
+            raise ValueError(
+                "x_credential_encryption_key must not use the example placeholder"
+            )
+        return value
+
+    # 内部 MCP Server auth_token 静态加密（与 X 凭证同一口径）：缺失或非法时
+    # 写入侧拒绝处理 secret，不降级为明文；历史明文行读取兼容、写时密封。
+    mcp_server_encryption_key: str = ""
+    mcp_server_encryption_key_version: str = "v1"
+
+    @field_validator("mcp_server_encryption_key_version")
+    @classmethod
+    def _validate_mcp_server_key_version(cls, value: str) -> str:
+        if not value or len(value) > 64:
+            raise ValueError(
+                "mcp_server_encryption_key_version must be 1..64 characters"
+            )
+        return value
+
+    @field_validator("mcp_server_encryption_key")
+    @classmethod
+    def _validate_mcp_server_key(cls, value: str) -> str:
+        if not value:
+            return value
+        if value.startswith("CHANGEME"):
+            raise ValueError(
+                "mcp_server_encryption_key must not use the example placeholder"
+            )
+        return value
+
     milvus_host: str = "localhost"
     milvus_port: int = 19530
     milvus_user: str = ""
@@ -200,6 +251,10 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+
+    # 对外站点 origin（如 https://aigcnews.cn），用于生成绝对 pdf_media_url。
+    # 留空则返回相对路径；绝不从 Host / X-Forwarded-Proto 头派生（可伪造）。
+    public_base_url: str | None = None
 
     # CORS 允许的来源（逗号分隔）。浏览器直连 API 的场景只有前端，
     # 不再允许任意来源。

@@ -20,10 +20,20 @@ def _to_iso_string(value: Any) -> str | None:
 
 
 class PostgresMcpAccessTokenRepository:
-    """PostgreSQL persistence for inbound MCP access tokens."""
+    """PostgreSQL persistence for inbound MCP access tokens.
 
-    def __init__(self, database: PostgresDatabaseLifecycle) -> None:
+    每用户活跃 token 封顶 ``max_active_tokens``（默认 20）：创建新 token 时
+    在同一事务内软淘汰最旧的超额 token（revoked_at + deleted_at），
+    ``replaced_count`` 返回真实淘汰数，防止单用户 token 无限累积。
+    """
+
+    def __init__(
+        self,
+        database: PostgresDatabaseLifecycle,
+        max_active_tokens: int = 20,
+    ) -> None:
         self._database = database
+        self._max_active_tokens = max(1, int(max_active_tokens))
 
     @staticmethod
     def _mcp_token_metadata(row: dict[str, Any]) -> dict[str, Any]:
@@ -89,6 +99,27 @@ class PostgresMcpAccessTokenRepository:
                 if inserted is None:
                     raise RuntimeError("PostgreSQL MCP token insert did not return an id")
                 token_id = int(inserted["id"])
+                # 封顶淘汰：保留最新 max_active_tokens 个活跃 token，超额的
+                # 最旧者同事务软删除；用户行已 FOR UPDATE，计数无并发漂移
+                cursor.execute(
+                    """
+                    UPDATE user_mcp_tokens
+                    SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP),
+                        deleted_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                      AND deleted_at IS NULL
+                      AND id IN (
+                          SELECT id FROM user_mcp_tokens
+                          WHERE user_id = %s
+                            AND revoked_at IS NULL
+                            AND deleted_at IS NULL
+                          ORDER BY created_at DESC, id DESC
+                          OFFSET %s
+                      )
+                    """,
+                    (int(user_id), int(user_id), self._max_active_tokens),
+                )
+                replaced_count = cursor.rowcount
                 cursor.execute(
                     """
                     SELECT id, user_id, token_hint, scopes_json, client_type, client_label,
@@ -100,7 +131,7 @@ class PostgresMcpAccessTokenRepository:
                 row = cursor.fetchone() or {}
                 return {
                     "token_metadata": self._mcp_token_metadata(dict(row)),
-                    "replaced_count": 0,
+                    "replaced_count": max(0, int(replaced_count)),
                 }
 
     def list_user_mcp_tokens(self, *, user_id: int) -> list[dict[str, Any]]:
