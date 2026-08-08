@@ -35,8 +35,8 @@ services:
       - http_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - https_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
       - all_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal
-      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
     extra_hosts:
       - "host.docker.internal:172.19.0.1"
     volumes:
@@ -55,6 +55,12 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    networks:
+      # 附加 sub2api 编排网：模型服务直连 http://sub2api-new:8080
+      # （Anthropic SDK 自动追加 /v1/messages，base_url 不带 /v1），
+      # 避免走公网回环（gptsakura.com）三穿隧道；NO_PROXY 已同步放行该主机名
+      - default
+      - sub2api
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5)"]
       interval: 10s
@@ -301,4 +307,9 @@ services:
 volumes:
   redis_data:
   project_catalog_postgres_data:
+
+networks:
+  sub2api:
+    external: true
+    name: deploy_sub2api-network
 
