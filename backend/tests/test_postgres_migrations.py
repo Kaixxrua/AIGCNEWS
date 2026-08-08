@@ -315,6 +315,27 @@ def test_x_watch_accounts_schema_is_additive_and_keys_screen_name() -> None:
     assert "UPDATE " not in normalized
 
 
+def test_chat_attachment_meta_schema_is_token_keyed_and_additive() -> None:
+    migration = discover_migrations()[25]
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert migration.filename == "0026_chat_attachment_meta.sql"
+    assert "CREATE TABLE chat_attachment_meta" in migration.sql
+    assert "attachment_id VARCHAR(64) PRIMARY KEY" in migration.sql
+    assert "user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE" in migration.sql
+    assert "CHECK (attachment_type IN ('image', 'pdf'))" in migration.sql
+    assert "CHECK (status IN ('uploading', 'processing', 'ready', 'error', 'expired'))" in migration.sql
+    assert "created_at DOUBLE PRECISION NOT NULL" in migration.sql
+    assert "expires_at DOUBLE PRECISION NOT NULL DEFAULT 0" in migration.sql
+    assert "storage_path VARCHAR(512)" in migration.sql
+    assert "idx_chat_attachment_meta_user_created" in migration.sql
+    assert "idx_chat_attachment_meta_expiry" in migration.sql
+    assert "WHERE expires_at > 0" in migration.sql
+    assert "ALTER TABLE" not in normalized
+    assert "DROP" not in normalized
+    assert "chat_attachments (" not in migration.sql
+
+
 def test_transfer_control_schema_is_versioned_and_avoids_sensitive_payloads() -> None:
     migration = discover_migrations()[1]
 
@@ -384,7 +405,9 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             )
 
         runner = PostgresMigrationRunner(DirectDatabase())  # type: ignore[arg-type]
-        assert [migration.version for migration in runner.apply()] == list(range(1, 13))
+        assert [migration.version for migration in runner.apply()] == list(
+            range(1, len(discover_migrations()) + 1)
+        )
         assert runner.apply() == []
 
         with connection.cursor() as cursor:

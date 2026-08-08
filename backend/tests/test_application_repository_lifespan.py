@@ -31,6 +31,10 @@ def test_lifespan_builds_postgres_application_composition(monkeypatch) -> None:
     close_pool = MagicMock()
     monkeypatch.setattr(main.postgres_database, "open", open_pool)
     monkeypatch.setattr(main.postgres_database, "close", close_pool)
+    reconcile_orphans = MagicMock()
+    monkeypatch.setattr(
+        main.attachment_service, "reconcile_orphan_attachments", reconcile_orphans
+    )
     monkeypatch.setattr(main, "Redis", MagicMock(side_effect=RuntimeError("offline")))
     project_search_runtime = MagicMock()
     project_search_runtime.close = AsyncMock()
@@ -54,3 +58,4 @@ def test_lifespan_builds_postgres_application_composition(monkeypatch) -> None:
     factory.assert_called_once_with(postgres=main.postgres_database)
     open_pool.assert_called_once_with()
     close_pool.assert_called_once_with()
+    reconcile_orphans.assert_called_once_with()

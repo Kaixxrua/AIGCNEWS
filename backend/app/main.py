@@ -52,6 +52,7 @@ from backend.app.repositories.application_repository_context import (
 from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
+from backend.app.services.chat import attachment_service
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.rag.composition import RagChatServiceProvider
 from backend.app.services.runtime_provider.runtime import (
@@ -160,6 +161,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             app.state.application_repositories.runtime_provider_settings
         )
         repositories_configured = True
+        # 附件元数据已落 PostgreSQL：启动时对账无元数据的孤儿 PDF 文件与
+        # TTL 到期元数据行，失败不阻塞启动。
+        try:
+            attachment_reconcile = await asyncio.to_thread(
+                attachment_service.reconcile_orphan_attachments
+            )
+            logger.info(
+                "[Startup] Attachment orphan reconciliation: %s.", attachment_reconcile
+            )
+        except Exception as exc:
+            logger.warning(
+                "[Startup] Attachment orphan reconciliation failed (non-fatal): %s",
+                exc,
+            )
         operations_runtime = ApplicationOperationsRuntime(
             shutdown_grace_seconds=float(
                 getattr(settings, "operations_shutdown_grace_seconds", 30.0)

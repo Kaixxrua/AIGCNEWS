@@ -42,6 +42,7 @@ def test_postgres_lifespan_opens_and_closes_selected_pool() -> None:
             patch.object(main.postgres_database, "open") as postgres_open,
             patch.object(main.postgres_database, "close") as postgres_close,
             patch.object(main, "create_application_repositories", return_value=MagicMock()),
+            patch.object(main.attachment_service, "reconcile_orphan_attachments") as reconcile,
         ):
             def close_coroutine(coroutine) -> MagicMock:
                 coroutine.close()
@@ -55,6 +56,7 @@ def test_postgres_lifespan_opens_and_closes_selected_pool() -> None:
                 assert app.state.postgres_database is main.postgres_database
             postgres_open.assert_called_once_with()
             postgres_close.assert_called_once_with()
+            reconcile.assert_called_once_with()
 
     asyncio.run(run())
 
