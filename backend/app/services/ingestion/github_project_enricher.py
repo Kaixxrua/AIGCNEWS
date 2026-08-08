@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -41,6 +41,9 @@ from backend.app.services.ingestion.github_project_metrics_service import (
     current_github_metric_date,
     refresh_and_compute_github_project_metrics,
 )
+from backend.app.services.ingestion.github_search_crawl import (
+    crawl_github_search,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,20 @@ ENRICHMENT_REASONING_EFFORT = "medium"
 _MAX_RETRIES = 4
 _RETRY_BASE_DELAY = 15.0
 _REQUEST_INTERVAL = 3.0
+# 连续失败熔断阈值：模型端限流/宕机时避免把整批待处理一次性烧成 failed。
+# 触发后剩余条目记 cancelled（保持待处理），次日流水线或手动补跑可继续。
+_CONSECUTIVE_FAILURE_BREAKER = 20
+
+# 增长观察仓（每日全量爬取）口径：stars>=300 不封顶 + 2024H2 以来创建 +
+# 近 30 天有 push。低于 500 的项目只入库跟踪快照，越过 500 后由富化器接管。
+# pushed 用滚动窗口让结果集自我有界（实测约 1 万），不活跃的掉出查询后
+# 仍由每两小时指标刷新（min_stars=300）继续跟踪，不丢跨线检测。
+GROWTH_OBSERVE_MIN_STARS = 300
+GROWTH_OBSERVE_CREATED_START = date(2024, 6, 30)
+GROWTH_OBSERVE_PUSHED_WINDOW_DAYS = 30
+GROWTH_OBSERVE_CHANNEL = "daily_growth_observe_s300"
+# 全量爬取上限只是防失控保险，正常规模约 1 万条
+GROWTH_OBSERVE_CRAWL_LIMIT = 100_000
 
 
 class _EnrichmentCancelled(Exception):
@@ -214,6 +231,8 @@ class GitHubProjectEnricher:
             succeeded = 0
             failed = 0
             cancelled = 0
+            breaker_tripped = False
+            consecutive_failed = 0
             if concurrency <= 1:
                 for repo in candidates:
                     if _cancel_event.is_set():
@@ -223,11 +242,16 @@ class GitHubProjectEnricher:
                         cancelled += 1
                     elif outcome:
                         succeeded += 1
+                        consecutive_failed = 0
                         # 成功后的节流间隔同时充当终止监听窗口：收到信号立即停下
                         if _cancel_event.wait(_REQUEST_INTERVAL):
                             break
                     else:
                         failed += 1
+                        consecutive_failed += 1
+                        if consecutive_failed >= _CONSECUTIVE_FAILURE_BREAKER:
+                            breaker_tripped = True
+                            break
             else:
                 with ThreadPoolExecutor(max_workers=concurrency) as executor:
                     futures = [
@@ -240,8 +264,24 @@ class GitHubProjectEnricher:
                             cancelled += 1
                         elif outcome:
                             succeeded += 1
+                            consecutive_failed = 0
                         else:
                             failed += 1
+                            consecutive_failed += 1
+                            if (
+                                consecutive_failed >= _CONSECUTIVE_FAILURE_BREAKER
+                                and not _cancel_event.is_set()
+                            ):
+                                breaker_tripped = True
+                                # 置位终止信号：未发起模型调用的条目记 cancelled 而非 failed
+                                _cancel_event.set()
+            if breaker_tripped:
+                logger.warning(
+                    "[GitHubProjectEnricher] 连续失败 %d 次触发熔断，剩余 %d 条保持待处理。"
+                    "疑似模型端限流或故障，请排查后再补跑。",
+                    consecutive_failed,
+                    len(candidates) - succeeded - failed - cancelled,
+                )
             # 循环提前退出时，未处理的条目一律记为已终止：保持待处理，不计失败
             cancelled += len(candidates) - succeeded - failed - cancelled
             return {
@@ -250,6 +290,7 @@ class GitHubProjectEnricher:
                 "succeeded": succeeded,
                 "failed": failed,
                 "cancelled": cancelled,
+                "breaker_tripped": breaker_tripped,
                 "concurrency": concurrency,
             }
         finally:
@@ -463,32 +504,94 @@ def enrich_github_projects(
     )
 
 
+def enrich_all_pending_github_projects(
+    *,
+    batch_limit: int = 500,
+    concurrency: int = 5,
+    min_stars: int = DEFAULT_MIN_STARS,
+    db: GitHubProjectEnrichmentRepository,
+) -> Dict[str, Any]:
+    """循环清空富化待处理队列：每批 batch_limit，直到无候选或一轮无进展。
+
+    已成功富化的项目下一批自动出队，因此循环天然向前推进；「无进展即停」
+    保证持续性失败（数据问题或模型端故障）不会空转——它们保持 failed 留待
+    下轮 retry_failed；熔断或管理员终止时本轮 cancelled>0，立即收尾，
+    剩余条目保持待处理。
+    """
+    enricher = GitHubProjectEnricher(db=db)
+    totals: Dict[str, Any] = {
+        "status": "success",
+        "batches": 0,
+        "candidates": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "cancelled": 0,
+        "concurrency": concurrency,
+    }
+    while True:
+        batch = enricher.enrich_batch(
+            limit=batch_limit,
+            min_stars=min_stars,
+            retry_failed=True,
+            concurrency=concurrency,
+        )
+        totals["batches"] += 1
+        for key in ("candidates", "succeeded", "failed", "cancelled"):
+            totals[key] += int(batch.get(key) or 0)
+        if int(batch.get("candidates") or 0) == 0:
+            break
+        if int(batch.get("cancelled") or 0) > 0:
+            totals["status"] = "cancelled"
+            break
+        if int(batch.get("succeeded") or 0) == 0:
+            totals["status"] = "stalled"
+            break
+    return totals
+
+
 def run_github_project_daily_pipeline(
     *,
     refresh_limit: int = 80,
-    enrich_limit: int = DEFAULT_BATCH_LIMIT,
+    enrich_concurrency: int = 5,
     min_stars: int = DEFAULT_MIN_STARS,
     dry_run: bool = False,
     ingestion: GitHubProjectIngestionRepository,
     enrichment: GitHubProjectEnrichmentRepository,
     semantic_sources: GitHubProjectSemanticSourceRepository,
 ) -> Dict[str, Any]:
-    """Daily GitHub library pipeline: ingest/update metrics, score, then enrich new projects only.
+    """Daily GitHub library pipeline: ingest/discover, snapshot, score, then enrich.
 
-    Existing successful enrichments are kept stable. The ingestion layer updates
-    candidates/snapshots using canonical repo IDs, so cards get fresh stars/forks
-    without spending LLM calls unless a newly eligible project has no enrichment.
-    Daily metric snapshots and hot scores are pure data processing and do not call
-    the LLM.
+    Ingestion has two lanes: Trending boards (any star level, first-seen tracking)
+    and a full growth-observe crawl (stars>=300 + created since 2024H2 + pushed in
+    the last 30 days) which pages through the entire result set every day. The
+    300-499 band is tracked via snapshots only (the two-hourly metrics refresh at
+    min_stars=300 keeps them fresh); once a repo's latest snapshot reaches
+    min_stars it enters the enricher, which drains the whole pending queue at
+    enrich_concurrency with a consecutive-failure circuit breaker. Existing
+    successful enrichments are kept stable. Daily metric snapshots and hot scores
+    are pure data processing and do not call the LLM.
     """
     metric_date = current_github_metric_date()
     refresh_result: Dict[str, Any] | None = None
     metric_result: Dict[str, Any] | None = None
+    growth_result: Dict[str, Any] | None = None
     if not dry_run:
         refresh_result = refresh_github_hot_candidates(
             limit=refresh_limit,
             observed_date=metric_date,
+            include_search=False,
             db=ingestion,
+        )
+        today = date.today()
+        growth_result = crawl_github_search(
+            min_stars=GROWTH_OBSERVE_MIN_STARS,
+            max_stars=0,
+            limit=GROWTH_OBSERVE_CRAWL_LIMIT,
+            created_start=GROWTH_OBSERVE_CREATED_START,
+            created_end=today,
+            pushed_after=(today - timedelta(days=GROWTH_OBSERVE_PUSHED_WINDOW_DAYS)).isoformat(),
+            channel=GROWTH_OBSERVE_CHANNEL,
+            ingestion=ingestion,
         )
         metric_result = refresh_and_compute_github_project_metrics(
             min_stars=min_stars,
@@ -496,15 +599,22 @@ def run_github_project_daily_pipeline(
             db=ingestion,
         )
 
-    enrich_result = enrich_github_projects(
-        limit=enrich_limit,
-        force=False,
-        dry_run=dry_run,
-        min_stars=min_stars,
-        retry_failed=True,
-        refresh_changed=False,
-        concurrency=1,
-        db=enrichment,
+    enrich_result = (
+        enrich_github_projects(
+            limit=DEFAULT_BATCH_LIMIT,
+            force=False,
+            dry_run=True,
+            min_stars=min_stars,
+            retry_failed=True,
+            refresh_changed=False,
+            db=enrichment,
+        )
+        if dry_run
+        else enrich_all_pending_github_projects(
+            concurrency=enrich_concurrency,
+            min_stars=min_stars,
+            db=enrichment,
+        )
     )
     semantic_result: Dict[str, Any] = {"status": "disabled"}
     if settings.project_semantic_indexing_enabled:
@@ -524,10 +634,12 @@ def run_github_project_daily_pipeline(
     return {
         "status": "success" if not dry_run else "dry_run",
         "refresh": refresh_result,
+        "growth_observe": growth_result,
         "metric_refresh": (metric_result or {}).get("refresh"),
         "daily_metrics": (metric_result or {}).get("metrics"),
         "enrichment": enrich_result,
         "semantic_index": semantic_result,
         "policy": "new_or_failed_only",
         "min_stars": min_stars,
+        "growth_observe_min_stars": GROWTH_OBSERVE_MIN_STARS,
     }

@@ -74,6 +74,41 @@ def test_refresh_candidates_uses_explicit_repository(monkeypatch) -> None:
     repository.upsert_github_trending_hit.assert_called_once()
 
 
+def test_refresh_candidates_skips_search_when_disabled(monkeypatch) -> None:
+    repository = MagicMock(spec=GitHubProjectIngestionRepository)
+    repository.upsert_github_repo_candidate.return_value = "repo-1"
+    repository.upsert_github_trending_hit.return_value = "repo-1"
+    monkeypatch.setattr(
+        github_hot_service,
+        "fetch_github_trending_repos",
+        lambda *, period, limit: (
+            [{"full_name": "acme/project", "stars": 700}]
+            if period == "daily"
+            else []
+        ),
+    )
+
+    def _forbidden(*, limit):
+        raise AssertionError("include_search=False 时不得调用 Search 候选抓取")
+
+    monkeypatch.setattr(github_hot_service, "fetch_github_candidate_repos", _forbidden)
+    monkeypatch.setattr(
+        github_hot_service,
+        "fetch_github_repo_metrics_batch",
+        lambda names: [],
+    )
+
+    result = github_hot_service.refresh_github_hot_candidates(
+        20,
+        observed_date="2026-07-28",
+        include_search=False,
+        db=repository,
+    )
+
+    assert result["repos"] == 1
+    repository.upsert_github_repo_candidate.assert_called_once()
+
+
 def test_search_only_candidate_keeps_community_metrics_incomplete(monkeypatch) -> None:
     repository = MagicMock(spec=GitHubProjectIngestionRepository)
     monkeypatch.setattr(

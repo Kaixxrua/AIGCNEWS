@@ -30,7 +30,8 @@ GITHUB_API_BASE = "https://api.github.com"
 SHARD_COUNT_CAP = 900
 REQUEST_TIMEOUT = 30
 DEFAULT_LIMIT = 5000
-MAX_LIMIT = 20000
+# 每日增长观察仓全量爬取会上万条，上限放宽到 10 万仅作防失控保险
+MAX_LIMIT = 100000
 
 
 def _token(explicit: str = "") -> str:

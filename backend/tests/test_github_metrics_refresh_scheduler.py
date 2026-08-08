@@ -131,7 +131,7 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
         refresh.assert_awaited_once_with("2026-07-14", repo)
         repo.get_github_metric_refresh_status.assert_called_once_with(
             metric_date="2026-07-14",
-            min_stars=500,
+            min_stars=300,
             limit=0,
         )
 
@@ -155,7 +155,7 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
             )
 
         refresh.assert_called_once_with(
-            min_stars=500,
+            min_stars=300,
             limit=0,
             metric_date="2026-07-14",
             db=repository,

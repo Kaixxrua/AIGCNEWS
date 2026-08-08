@@ -50,7 +50,9 @@ logger = logging.getLogger(__name__)
 
 _ARXIV_RECONCILE_DAYS = 2
 _GITHUB_METRICS_REFRESH_LIMIT = 0  # 0 表示刷新全部符合条件的项目
-_GITHUB_METRICS_MIN_STARS = 500
+# 300 与每日增长观察仓入库门槛对齐：300-499 的项目也持续刷新快照，
+# 保证「快照越过 500 自动进入每日富化」的跨线检测不遗漏
+_GITHUB_METRICS_MIN_STARS = 300
 _GITHUB_METRICS_MAX_AGE = timedelta(hours=2, minutes=15)
 
 
@@ -172,7 +174,7 @@ async def _run_github_project_daily_pipeline_job(
             result = await asyncio.to_thread(
                 run_github_project_daily_pipeline,
                 refresh_limit=80,
-                enrich_limit=50,
+                enrich_concurrency=5,
                 ingestion=active_repositories.github_ingestion,
                 enrichment=active_repositories.github_enrichment,
                 semantic_sources=active_repositories.github_semantic_sources,

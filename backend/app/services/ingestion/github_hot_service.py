@@ -123,9 +123,14 @@ def refresh_github_hot_candidates(
     limit: int = 80,
     *,
     observed_date: str | None = None,
+    include_search: bool = True,
     db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
-    """抓取 Trending + Search 候选，并写入 repo candidates / snapshots / trending hits。"""
+    """抓取 Trending + Search 候选，并写入 repo candidates / snapshots / trending hits。
+
+    include_search=False 时只抓 Trending 三榜：每日流水线改用增长口径全量爬取
+    （crawl_github_search）承担 Search 发现，避免与旧 7 查询重复抓取。
+    """
     resolved_date = observed_date or _today_str()
     captured_at = _utcnow()
 
@@ -175,11 +180,12 @@ def refresh_github_hot_candidates(
             ),
         }
 
-    try:
-        searched = fetch_github_candidate_repos(limit=limit)
-    except Exception as exc:
-        logger.warning("[GitHubHot] Search 候选抓取失败: %s", exc)
-        searched = []
+    searched: List[Dict[str, Any]] = []
+    if include_search:
+        try:
+            searched = fetch_github_candidate_repos(limit=limit)
+        except Exception as exc:
+            logger.warning("[GitHubHot] Search 候选抓取失败: %s", exc)
 
     for repo in searched:
         repo_id = str(repo.get("full_name") or repo.get("repo_id") or "").strip()
