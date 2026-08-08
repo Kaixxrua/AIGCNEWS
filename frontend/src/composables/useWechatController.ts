@@ -10,6 +10,7 @@ import type {
 import { isWeChatLoginExpired, isWeChatLoginTerminal } from '@/features/wechat/wechatModel'
 import { wechatApi } from '@/services/wechat/wechatApi'
 import type { WeChatApi } from '@/services/wechat/wechatApi'
+import { i18n } from '@/i18n'
 
 const POLL_INTERVAL_MS = 2000
 
@@ -122,7 +123,7 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
     try {
       accounts.value = await api.fetchAccounts()
     } catch (err) {
-      setError(getErrorMessage(err, '加载公众号失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.loadAccountsFailed')))
     } finally {
       isLoading.value = false
     }
@@ -156,7 +157,7 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
       await loadQrCode(loginAttempt.value.attempt_id)
       startPolling()
     } catch (err) {
-      setError(getErrorMessage(err, '启动登录失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.startLoginFailed')))
     }
   }
 
@@ -166,7 +167,7 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
       const blob = await api.fetchQrCodeBlob(attemptId)
       qrCodeUrl.value = URL.createObjectURL(blob)
     } catch (err) {
-      setError(getErrorMessage(err, '获取二维码失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.loadQrFailed')))
     }
   }
 
@@ -204,7 +205,7 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
       pollTimer = setTimeout(pollOnce, pollIntervalMs)
     } catch (err) {
       stopPolling()
-      setError(getErrorMessage(err, '轮询登录状态失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.pollLoginStatusFailed')))
     }
   }
 
@@ -220,7 +221,7 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
       isLoginDialogOpen.value = false
       await loadAccounts()
     } catch (err) {
-      setError(getErrorMessage(err, '确认登录失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.confirmLoginFailed')))
     }
   }
 
@@ -247,7 +248,7 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
       searchResults.value = result.items
       searchTotal.value = result.total
     } catch (err) {
-      setError(getErrorMessage(err, '搜索公众号失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.searchAccountsFailed')))
     } finally {
       isSearching.value = false
     }
@@ -271,7 +272,7 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
       articlesTotal.value = result.total
       articlesOffset.value = result.offset
     } catch (err) {
-      setError(getErrorMessage(err, '加载文章失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.loadArticlesFailed')))
     } finally {
       isLoading.value = false
     }
@@ -283,9 +284,9 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
     clearError()
     try {
       await api.submitSync(selectedAccount.value.id)
-      notice.value = '同步任务已提交'
+      notice.value = i18n.global.t('wechat.syncSubmitted')
     } catch (err) {
-      setError(getErrorMessage(err, '提交同步失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.submitSyncFailed')))
     } finally {
       isSyncing.value = false
     }
@@ -306,7 +307,7 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
       accounts.value = [saved, ...accounts.value]
       selectedAccount.value = saved
     } catch (err) {
-      setError(getErrorMessage(err, '保存公众号失败'))
+      setError(getErrorMessage(err, i18n.global.t('wechat.saveAccountFailed')))
     }
   }
 
