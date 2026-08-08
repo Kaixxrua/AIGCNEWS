@@ -65,64 +65,106 @@ def _term_match_filter(fields: tuple[str, ...]) -> str:
     return "(" + " OR ".join(f"{field} ILIKE %s ESCAPE '='" for field in fields) + ")"
 
 
-# ── list_projects 统一行结构的逐列清单 ──────────────────────────────────
-# github 与 website 两个 UNION ALL 分支的列按位置一一对应；任何一侧增删列
-# 都必须同步另一侧以及 project_catalog_normalization.normalize_project_row。
-_GH_SELECT_COLUMNS = (
-    "'github:'||c.repo_id id",
-    "'github' source",
-    "c.repo_id",
-    "NULL::bigint website_id",
-    "c.full_name",
-    "c.title",
-    "c.url",
-    "NULL::text domain",
-    "NULL::text image_url",
-    "c.description",
-    "ge.description_zh",
-    "NULL::text description_en",
-    "ge.category_slug",
-    "COALESCE(NULLIF(ge.category_name_zh,''),ge.category_name) category_name",
-    "ge.category_name_zh",
-    "ge.category_name_en",
-    "ge.subcategory_slug",
-    "COALESCE(NULLIF(ge.subcategory_name_zh,''),ge.subcategory_name) subcategory_name",
-    "ge.subcategory_name_zh",
-    "ge.subcategory_name_en",
-    "ge.tags_json::text tags_json",
-    "ge.tags_zh_json::text tags_zh_json",
-    "ge.tags_en_json::text tags_en_json",
-    "'system'::text tags_origin",
-    "c.language",
-    "c.topics_json",
-    "CASE WHEN gm.repo_id IS NOT NULL THEN gm.stars ELSE COALESCE(c.stars,0) END stars",
-    "CASE WHEN gm.repo_id IS NOT NULL THEN gm.forks ELSE COALESCE(c.forks,0) END forks",
-    "CASE WHEN gm.repo_id IS NOT NULL THEN gm.watchers ELSE COALESCE(c.watchers,0) END watchers",
-    "CASE WHEN gm.repo_id IS NOT NULL THEN gm.open_issues ELSE 0 END open_issues",
-    "c.created_at",
-    "c.pushed_at",
-    "c.first_seen_at",
-    "c.last_seen_at",
-    "c.last_snapshot_at",
-    "gm.metric_date snapshot_date",
-    "c.last_snapshot_at captured_at",
-    "NULL::integer rank_in_period",
-    "COALESCE(gm.daily_star_growth,0) raw_score",
-    "COALESCE(gm.hot_score,0) score",
-    "gm.metric_date daily_growth_date",
-    "gm.previous_snapshot_date",
-    "COALESCE(gm.daily_star_growth,0) daily_star_growth",
-    "COALESCE(gm.daily_growth_available,FALSE) daily_growth_available",
-    "COALESCE(gm.daily_growth_source,'unavailable') daily_growth_source",
-    "gm.daily_growth_observed_at",
-    "COALESCE(gm.hot_score,0) hot_score",
-    "COALESCE(gm.scale_corrected_growth_score,0) scale_corrected_growth_score",
-    "COALESCE(gm.growth_acceleration_score,0) growth_acceleration_score",
-    "COALESCE(gm.absolute_growth_score,0) absolute_growth_score",
-    "COALESCE(gm.maintenance_activity_score,0) maintenance_activity_score",
-    "COALESCE(gm.community_engagement_score,0) community_engagement_score",
-    "ge.confidence",
+# ── list_projects 统一行结构的逐列清单（表驱动单一来源）──────────────────
+# github 与 website 两个 UNION ALL 分支的列按位置一一对应：每行为
+# (github 表达式, website 表达式模板)，website 模板中的 {key} 占位由
+# _web_effective_expressions 的映射填充。增删列只需改这张表，并同步
+# project_catalog_normalization.normalize_project_row。
+_LIST_PROJECT_COLUMN_PAIRS = (
+    ("'github:'||c.repo_id id", "'website:'||w.id::text id"),
+    ("'github' source", "'website' source"),
+    ("c.repo_id", "NULL::text repo_id"),
+    ("NULL::bigint website_id", "w.id website_id"),
+    ("c.full_name", "{full_name} full_name"),
+    ("c.title", "{title} title"),
+    ("c.url", "w.canonical_url url"),
+    ("NULL::text domain", "w.domain"),
+    ("NULL::text image_url", "{image} image_url"),
+    ("c.description", "{description} description"),
+    ("ge.description_zh", "{description_zh} description_zh"),
+    ("NULL::text description_en", "{description_en} description_en"),
+    ("ge.category_slug", "{category_slug} category_slug"),
+    (
+        "COALESCE(NULLIF(ge.category_name_zh,''),ge.category_name) category_name",
+        "{category_name} category_name",
+    ),
+    ("ge.category_name_zh", "{category_name} category_name_zh"),
+    ("ge.category_name_en", "{category_name_en} category_name_en"),
+    ("ge.subcategory_slug", "{subcategory_slug} subcategory_slug"),
+    (
+        "COALESCE(NULLIF(ge.subcategory_name_zh,''),ge.subcategory_name) subcategory_name",
+        "{subcategory_name} subcategory_name",
+    ),
+    ("ge.subcategory_name_zh", "{subcategory_name} subcategory_name_zh"),
+    ("ge.subcategory_name_en", "{subcategory_name_en} subcategory_name_en"),
+    ("ge.tags_json::text tags_json", "{tags} tags_json"),
+    ("ge.tags_zh_json::text tags_zh_json", "{tags_zh} tags_zh_json"),
+    ("ge.tags_en_json::text tags_en_json", "{tags_en} tags_en_json"),
+    ("'system'::text tags_origin", "{tags_origin} tags_origin"),
+    ("c.language", "NULL::text language"),
+    ("c.topics_json", "'[]' topics_json"),
+    (
+        "CASE WHEN gm.repo_id IS NOT NULL THEN gm.stars ELSE COALESCE(c.stars,0) END stars",
+        "0::bigint stars",
+    ),
+    (
+        "CASE WHEN gm.repo_id IS NOT NULL THEN gm.forks ELSE COALESCE(c.forks,0) END forks",
+        "0::bigint forks",
+    ),
+    (
+        "CASE WHEN gm.repo_id IS NOT NULL THEN gm.watchers ELSE COALESCE(c.watchers,0) END watchers",
+        "0::bigint watchers",
+    ),
+    (
+        "CASE WHEN gm.repo_id IS NOT NULL THEN gm.open_issues ELSE 0 END open_issues",
+        "0::bigint open_issues",
+    ),
+    ("c.created_at", "NULL::text created_at"),
+    ("c.pushed_at", "NULL::text pushed_at"),
+    ("c.first_seen_at", "w.first_seen_at::text first_seen_at"),
+    ("c.last_seen_at", "w.last_seen_at::text last_seen_at"),
+    ("c.last_snapshot_at", "NULL::text last_snapshot_at"),
+    ("gm.metric_date snapshot_date", "NULL::text snapshot_date"),
+    ("c.last_snapshot_at captured_at", "NULL::text captured_at"),
+    ("NULL::integer rank_in_period", "NULL::integer rank_in_period"),
+    ("COALESCE(gm.daily_star_growth,0) raw_score", "0::bigint raw_score"),
+    ("COALESCE(gm.hot_score,0) score", "0::double precision score"),
+    ("gm.metric_date daily_growth_date", "NULL::text daily_growth_date"),
+    ("gm.previous_snapshot_date", "NULL::text previous_snapshot_date"),
+    ("COALESCE(gm.daily_star_growth,0) daily_star_growth", "0::bigint daily_star_growth"),
+    (
+        "COALESCE(gm.daily_growth_available,FALSE) daily_growth_available",
+        "FALSE daily_growth_available",
+    ),
+    (
+        "COALESCE(gm.daily_growth_source,'unavailable') daily_growth_source",
+        "'unavailable' daily_growth_source",
+    ),
+    ("gm.daily_growth_observed_at", "NULL::timestamptz daily_growth_observed_at"),
+    ("COALESCE(gm.hot_score,0) hot_score", "0::double precision hot_score"),
+    (
+        "COALESCE(gm.scale_corrected_growth_score,0) scale_corrected_growth_score",
+        "0::double precision scale_corrected_growth_score",
+    ),
+    (
+        "COALESCE(gm.growth_acceleration_score,0) growth_acceleration_score",
+        "0::double precision growth_acceleration_score",
+    ),
+    (
+        "COALESCE(gm.absolute_growth_score,0) absolute_growth_score",
+        "0::double precision absolute_growth_score",
+    ),
+    (
+        "COALESCE(gm.maintenance_activity_score,0) maintenance_activity_score",
+        "0::double precision maintenance_activity_score",
+    ),
+    (
+        "COALESCE(gm.community_engagement_score,0) community_engagement_score",
+        "0::double precision community_engagement_score",
+    ),
+    ("ge.confidence", "we.confidence"),
 )
+_GH_SELECT_COLUMNS = tuple(github for github, _website in _LIST_PROJECT_COLUMN_PAIRS)
 # 收藏列依赖 user_id（gh_favorites/web_favorites 片段），推荐列依赖 gr 关联，
 # 二者按此顺序拼接在静态列之后。
 _GH_SELECT_TAIL_COLUMNS = (
@@ -159,6 +201,209 @@ def _today_range() -> tuple[str, str]:
     zone = ZoneInfo(getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai")
     start = datetime.combine(datetime.now(zone).date(), datetime.min.time(), tzinfo=zone)
     return start.astimezone(timezone.utc).isoformat(), (start + timedelta(days=1)).astimezone(timezone.utc).isoformat()
+
+
+def _web_effective_expressions(user_web: bool) -> dict[str, str]:
+    """website 分支的 effective 列表达式；登录用户的内容以 uo 覆盖优先。"""
+    return {
+        "full_name": "COALESCE(NULLIF(uo.title, ''), NULLIF(w.title, ''), w.domain)" if user_web else "COALESCE(NULLIF(w.title, ''), w.domain)",
+        "title": "COALESCE(NULLIF(uo.title, ''), w.title)" if user_web else "w.title",
+        "description": "COALESCE(NULLIF(uo.description, ''), w.description)" if user_web else "w.description",
+        "image": "COALESCE(NULLIF(uo.image_url, ''), NULLIF(w.image_url, ''), regexp_replace(w.canonical_url, '^(([^/]+/){2}[^/]+).*$' , '\\1') || '/favicon.ico')" if user_web else "COALESCE(NULLIF(w.image_url, ''), regexp_replace(w.canonical_url, '^(([^/]+/){2}[^/]+).*$' , '\\1') || '/favicon.ico')",
+        "category_slug": "COALESCE(NULLIF(uo.category_slug, ''), we.category_slug)" if user_web else "we.category_slug",
+        "category_name": "COALESCE(NULLIF(uo.category_name_zh, ''), we.category_name_zh, NULLIF(uo.category_name, ''), we.category_name)" if user_web else "COALESCE(NULLIF(we.category_name_zh, ''), we.category_name)",
+        "category_name_en": "COALESCE(NULLIF(uo.category_name_en, ''), we.category_name_en)" if user_web else "we.category_name_en",
+        "subcategory_slug": "COALESCE(NULLIF(uo.subcategory_slug, ''), we.subcategory_slug)" if user_web else "we.subcategory_slug",
+        "subcategory_name": "COALESCE(NULLIF(uo.subcategory_name_zh, ''), we.subcategory_name_zh, NULLIF(uo.subcategory_name, ''), we.subcategory_name)" if user_web else "COALESCE(NULLIF(we.subcategory_name_zh, ''), we.subcategory_name)",
+        "subcategory_name_en": "COALESCE(NULLIF(uo.subcategory_name_en, ''), we.subcategory_name_en)" if user_web else "we.subcategory_name_en",
+        "description_zh": "COALESCE(NULLIF(uo.description_zh, ''), we.description_zh)" if user_web else "we.description_zh",
+        "description_en": "COALESCE(NULLIF(uo.description_en, ''), we.description_en)" if user_web else "we.description_en",
+        "tags": "COALESCE(NULLIF(uo.tags_json::text, ''), we.tags_json::text)" if user_web else "we.tags_json::text",
+        "tags_zh": "CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL ELSE we.tags_zh_json::text END" if user_web else "we.tags_zh_json::text",
+        "tags_en": "CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL ELSE we.tags_en_json::text END" if user_web else "we.tags_en_json::text",
+        "tags_origin": "CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN 'user' ELSE 'system' END" if user_web else "'system'",
+    }
+
+
+def _web_select_columns(effective: dict[str, str]) -> tuple[str, ...]:
+    """按 _LIST_PROJECT_COLUMN_PAIRS 展开 website 分支列清单。"""
+    return tuple(website.format_map(effective) for _github, website in _LIST_PROJECT_COLUMN_PAIRS)
+
+
+def _strong_match_threshold(sort: str, q: str, candidates: list[str] | None) -> int:
+    """relevance 关键词搜索启用强字段命中过滤的阈值；其余场景返回 0（关闭）。"""
+    if sort == "relevance" and q and candidates is None:
+        return RELEVANCE_STRONG_MATCH_THRESHOLD
+    return 0
+
+
+def _strong_match_clause(conditions: list[str]) -> str:
+    """把强字段命中条件折叠为 SELECT 列表中的 has_strong_match 布尔列。"""
+    return f"(({' AND '.join(conditions)}))::boolean has_strong_match"
+
+
+def _build_gh_branch(
+    *,
+    filters: list[str],
+    filter_params: list[Any],
+    strong_conditions: list[str],
+    strong_params: list[Any],
+    strong_threshold: int,
+    scope: str,
+    min_stars: int,
+    enriched_only: bool,
+    user_id: int | None,
+) -> tuple[str, list[Any]]:
+    """组装 github 分支 SELECT 与按 %s 占位顺序绑定的参数。"""
+    date = _today()
+    hot_join = (
+        "LEFT JOIN github_repo_daily_metrics gm"
+        " ON gm.repo_id = c.repo_id AND gm.metric_date = %s"
+    )
+    params: list[Any] = [date]
+    if scope == "today":
+        status = "AND ge_top.status = 'succeeded'" if enriched_only else ""
+        # 今日暴涨：先按热度取 Top-N 作为内层驱动表，再回连主表取全列。
+        hot_join += (
+            " JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top"
+            " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
+            " AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE"
+            " AND gm_top.daily_star_growth>0"
+            " LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
+            f" WHERE COALESCE(c_top.stars,0)>=%s {status}"
+            " ORDER BY gm_top.hot_score DESC NULLS LAST,"
+            " gm_top.daily_star_growth DESC NULLS LAST,"
+            " gm_top.stars DESC NULLS LAST, c_top.full_name ASC"
+            f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) today_top"
+            " ON today_top.repo_id=c.repo_id"
+        )
+        params.extend([date, min_stars])
+    user_join = ""
+    if user_id:
+        user_join = (
+            "LEFT JOIN project_favorites pf"
+            " ON pf.user_id=%s AND pf.project_source='github' AND pf.project_id=c.repo_id"
+        )
+        params.append(user_id)
+    params.extend(filter_params)
+    # 强字段命中表达式位于 SELECT 列表，在 SQL 文本中排在 FROM/JOIN/WHERE
+    # 之前，因此它的参数必须放在 params 最前面。
+    params = strong_params + params
+    if user_id:
+        favorites = (
+            "(pf.id IS NOT NULL) is_favorited, pf.created_at favorited_at,"
+            " FALSE user_added, NULL::timestamptz user_added_at,"
+            " pf.created_at collection_at"
+        )
+    else:
+        favorites = _ANONYMOUS_FAVORITE_COLUMNS
+    select_columns = [*_GH_SELECT_COLUMNS, favorites, *_GH_SELECT_TAIL_COLUMNS]
+    if strong_threshold:
+        select_columns.insert(len(_GH_SELECT_COLUMNS), _strong_match_clause(strong_conditions))
+    select = (
+        f"SELECT {','.join(select_columns)}"
+        f"{_GH_SELECT_FROM} {hot_join} {user_join} WHERE {' AND '.join(filters)}"
+    )
+    return select, params
+
+
+def _build_web_branch(
+    *,
+    filters: list[str],
+    filter_params: list[Any],
+    effective: dict[str, str],
+    strong_threshold: int,
+    user_id: int | None,
+) -> tuple[str, list[Any]]:
+    """组装 website 分支 SELECT 与按 %s 占位顺序绑定的参数。"""
+    user_join = ""
+    if user_id:
+        user_join = (
+            "LEFT JOIN project_favorites pf"
+            " ON pf.user_id=%s AND pf.project_source='website' AND pf.project_id=w.id::text"
+            " LEFT JOIN user_tool_websites utw ON utw.user_id=%s AND utw.website_id=w.id"
+            " LEFT JOIN user_tool_website_overrides uo ON uo.user_id=%s AND uo.website_id=w.id"
+        )
+    params: list[Any] = ([user_id, user_id, user_id] if user_id else []) + filter_params
+    if user_id:
+        favorites = (
+            "(pf.id IS NOT NULL) is_favorited, pf.created_at favorited_at,"
+            " (utw.id IS NOT NULL) user_added, utw.created_at user_added_at,"
+            " COALESCE(pf.created_at,utw.created_at) collection_at"
+        )
+    else:
+        favorites = _ANONYMOUS_FAVORITE_COLUMNS
+    web_columns = _web_select_columns(effective)
+    select_columns = [*web_columns, favorites, *_WEB_SELECT_TAIL_COLUMNS]
+    if strong_threshold:
+        select_columns.insert(len(web_columns), "TRUE::boolean has_strong_match")
+    select = (
+        f"SELECT {','.join(select_columns)}"
+        f"{_WEB_SELECT_FROM} {user_join} WHERE {' AND '.join(filters)}"
+    )
+    return select, params
+
+
+def _build_union_queries(
+    parts: list[str], strong_threshold: int
+) -> tuple[str, str, list[Any]]:
+    """把分支 SELECT 组装为 UNION ALL CTE，并生成 count/rows 两条查询。
+
+    rows 查询保留 {order} 占位，由调用方替换为 ORDER BY 片段。
+    """
+    base = f"WITH project_rows AS ({' UNION ALL '.join(parts)})"
+    if strong_threshold:
+        base += ", counts AS (SELECT COUNT(*) AS total_all, COUNT(*) FILTER (WHERE has_strong_match) AS total_strong FROM project_rows)"
+        count_sql = base + " SELECT COUNT(*) AS cnt FROM project_rows WHERE has_strong_match OR (SELECT total_strong FROM counts) < %s"
+        rows_sql_prefix = base + " SELECT * FROM project_rows WHERE has_strong_match OR (SELECT total_strong FROM counts) < %s ORDER BY {order} LIMIT %s OFFSET %s"
+        threshold_params: list[Any] = [strong_threshold]
+    else:
+        count_sql = base + " SELECT COUNT(*) AS cnt FROM project_rows"
+        rows_sql_prefix = base + " SELECT * FROM project_rows ORDER BY {order} LIMIT %s OFFSET %s"
+        threshold_params = []
+    return count_sql, rows_sql_prefix, threshold_params
+
+
+def _resolve_order(
+    *,
+    sort: str,
+    scope: str,
+    q: str,
+    candidates: list[str] | None,
+) -> tuple[str, list[Any]]:
+    """把排序参数解析为 ORDER BY 片段及其绑定参数。"""
+    if scope == "today": sort = "hot"
+    recent = "COALESCE(recommended_at,collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)" if scope == "recommended" else "COALESCE(collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)"
+    orders = {
+        "hot": "hot_score DESC NULLS LAST,daily_star_growth DESC NULLS LAST,stars DESC,full_name ASC",
+        "stars": "stars DESC,forks DESC,full_name ASC",
+        "updated": "COALESCE(NULLIF(pushed_at,''),last_seen_at::text,first_seen_at::text) DESC NULLS LAST,stars DESC,full_name ASC",
+        "recent": f"{recent} DESC NULLS LAST,stars DESC,full_name ASC",
+        "name": "full_name ASC",
+    }
+    order_params: list[Any] = []
+    if sort == "relevance":
+        if candidates is not None:
+            order = "array_position(%s::text[],repo_id),full_name ASC"
+            order_params.append(candidates)
+        elif q:
+            normalized_query = " ".join(str(q).split())
+            prefix = f"{escape_like_literal(normalized_query)}%"
+            order = (
+                "CASE"
+                " WHEN LOWER(full_name)=LOWER(%s) THEN 0"
+                " WHEN LOWER(COALESCE(title,''))=LOWER(%s) THEN 1"
+                " WHEN full_name ILIKE %s ESCAPE '=' THEN 2"
+                " WHEN COALESCE(title,'') ILIKE %s ESCAPE '=' THEN 3"
+                " ELSE 4 END,"
+                "stars DESC, forks DESC, full_name ASC"
+            )
+            order_params.extend([normalized_query, normalized_query, prefix, prefix])
+        else:
+            order = orders["stars"]
+    else:
+        order = orders.get(sort, orders["hot"] if scope == "today" else orders["stars"])
+    return order, order_params
 
 
 class PostgresProjectCatalogRepository:
@@ -503,24 +748,7 @@ class PostgresProjectCatalogRepository:
             web_filters.append("FALSE")
 
         user_web = user_id is not None
-        effective = {
-            "full_name": "COALESCE(NULLIF(uo.title, ''), NULLIF(w.title, ''), w.domain)" if user_web else "COALESCE(NULLIF(w.title, ''), w.domain)",
-            "title": "COALESCE(NULLIF(uo.title, ''), w.title)" if user_web else "w.title",
-            "description": "COALESCE(NULLIF(uo.description, ''), w.description)" if user_web else "w.description",
-            "image": "COALESCE(NULLIF(uo.image_url, ''), NULLIF(w.image_url, ''), regexp_replace(w.canonical_url, '^(([^/]+/){2}[^/]+).*$' , '\\1') || '/favicon.ico')" if user_web else "COALESCE(NULLIF(w.image_url, ''), regexp_replace(w.canonical_url, '^(([^/]+/){2}[^/]+).*$' , '\\1') || '/favicon.ico')",
-            "category_slug": "COALESCE(NULLIF(uo.category_slug, ''), we.category_slug)" if user_web else "we.category_slug",
-            "category_name": "COALESCE(NULLIF(uo.category_name_zh, ''), we.category_name_zh, NULLIF(uo.category_name, ''), we.category_name)" if user_web else "COALESCE(NULLIF(we.category_name_zh, ''), we.category_name)",
-            "category_name_en": "COALESCE(NULLIF(uo.category_name_en, ''), we.category_name_en)" if user_web else "we.category_name_en",
-            "subcategory_slug": "COALESCE(NULLIF(uo.subcategory_slug, ''), we.subcategory_slug)" if user_web else "we.subcategory_slug",
-            "subcategory_name": "COALESCE(NULLIF(uo.subcategory_name_zh, ''), we.subcategory_name_zh, NULLIF(uo.subcategory_name, ''), we.subcategory_name)" if user_web else "COALESCE(NULLIF(we.subcategory_name_zh, ''), we.subcategory_name)",
-            "subcategory_name_en": "COALESCE(NULLIF(uo.subcategory_name_en, ''), we.subcategory_name_en)" if user_web else "we.subcategory_name_en",
-            "description_zh": "COALESCE(NULLIF(uo.description_zh, ''), we.description_zh)" if user_web else "we.description_zh",
-            "description_en": "COALESCE(NULLIF(uo.description_en, ''), we.description_en)" if user_web else "we.description_en",
-            "tags": "COALESCE(NULLIF(uo.tags_json::text, ''), we.tags_json::text)" if user_web else "we.tags_json::text",
-            "tags_zh": "CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL ELSE we.tags_zh_json::text END" if user_web else "we.tags_zh_json::text",
-            "tags_en": "CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL ELSE we.tags_en_json::text END" if user_web else "we.tags_en_json::text",
-            "tags_origin": "CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN 'user' ELSE 'system' END" if user_web else "'system'",
-        }
+        effective = _web_effective_expressions(user_web)
         if category:
             gh_filters.append("ge.category_slug = %s"); gh_filter_params.append(category)
             web_filters.append(f"{effective['category_slug']} = %s"); web_filter_params.append(category)
@@ -534,11 +762,7 @@ class PostgresProjectCatalogRepository:
             gh_filters.append("LOWER(COALESCE(c.language, '')) = LOWER(%s)"); gh_filter_params.append(language)
             web_filters.append("FALSE")
         # relevance 排序的公共关键词搜索优先要求强字段命中；强命中不足时降级使用弱字段。
-        strong_match_threshold = (
-            RELEVANCE_STRONG_MATCH_THRESHOLD
-            if sort == "relevance" and q and candidates is None
-            else 0
-        )
+        strong_match_threshold = _strong_match_threshold(sort, q, candidates)
         gh_strong_conditions: list[str] = []
         gh_strong_params: list[Any] = []
         if q:
@@ -576,130 +800,23 @@ class PostgresProjectCatalogRepository:
             gh_filters.append("pf.id IS NOT NULL")
             web_filters.append("(pf.id IS NOT NULL OR utw.id IS NOT NULL)")
 
-        date = _today()
-        hot_join = (
-            "LEFT JOIN github_repo_daily_metrics gm"
-            " ON gm.repo_id = c.repo_id AND gm.metric_date = %s"
+        gh_select, gh_params = _build_gh_branch(
+            filters=gh_filters,
+            filter_params=gh_filter_params,
+            strong_conditions=gh_strong_conditions,
+            strong_params=gh_strong_params,
+            strong_threshold=strong_match_threshold,
+            scope=scope,
+            min_stars=min_stars,
+            enriched_only=enriched_only,
+            user_id=user_id,
         )
-        gh_params: list[Any] = [date]
-        if scope == "today":
-            status = "AND ge_top.status = 'succeeded'" if enriched_only else ""
-            # 今日暴涨：先按热度取 Top-N 作为内层驱动表，再回连主表取全列。
-            hot_join += (
-                " JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top"
-                " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
-                " AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE"
-                " AND gm_top.daily_star_growth>0"
-                " LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
-                f" WHERE COALESCE(c_top.stars,0)>=%s {status}"
-                " ORDER BY gm_top.hot_score DESC NULLS LAST,"
-                " gm_top.daily_star_growth DESC NULLS LAST,"
-                " gm_top.stars DESC NULLS LAST, c_top.full_name ASC"
-                f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) today_top"
-                " ON today_top.repo_id=c.repo_id"
-            )
-            gh_params.extend([date, min_stars])
-        gh_user_join = ""
-        web_user_join = ""
-        if user_id:
-            gh_user_join = (
-                "LEFT JOIN project_favorites pf"
-                " ON pf.user_id=%s AND pf.project_source='github' AND pf.project_id=c.repo_id"
-            )
-            web_user_join = (
-                "LEFT JOIN project_favorites pf"
-                " ON pf.user_id=%s AND pf.project_source='website' AND pf.project_id=w.id::text"
-                " LEFT JOIN user_tool_websites utw ON utw.user_id=%s AND utw.website_id=w.id"
-                " LEFT JOIN user_tool_website_overrides uo ON uo.user_id=%s AND uo.website_id=w.id"
-            )
-            gh_params.append(user_id)
-        gh_params.extend(gh_filter_params)
-        # 强字段命中表达式位于 SELECT 列表，在 SQL 文本中排在 FROM/JOIN/WHERE
-        # 之前，因此它的参数必须放在 gh_params 最前面。
-        gh_params = gh_strong_params + gh_params
-        web_params = ([user_id, user_id, user_id] if user_id else []) + web_filter_params
-        if user_id:
-            gh_favorites = (
-                "(pf.id IS NOT NULL) is_favorited, pf.created_at favorited_at,"
-                " FALSE user_added, NULL::timestamptz user_added_at,"
-                " pf.created_at collection_at"
-            )
-            web_favorites = (
-                "(pf.id IS NOT NULL) is_favorited, pf.created_at favorited_at,"
-                " (utw.id IS NOT NULL) user_added, utw.created_at user_added_at,"
-                " COALESCE(pf.created_at,utw.created_at) collection_at"
-            )
-        else:
-            gh_favorites = _ANONYMOUS_FAVORITE_COLUMNS
-            web_favorites = _ANONYMOUS_FAVORITE_COLUMNS
-        web_columns = (
-            "'website:'||w.id::text id",
-            "'website' source",
-            "NULL::text repo_id",
-            "w.id website_id",
-            f"{effective['full_name']} full_name",
-            f"{effective['title']} title",
-            "w.canonical_url url",
-            "w.domain",
-            f"{effective['image']} image_url",
-            f"{effective['description']} description",
-            f"{effective['description_zh']} description_zh",
-            f"{effective['description_en']} description_en",
-            f"{effective['category_slug']} category_slug",
-            f"{effective['category_name']} category_name",
-            f"{effective['category_name']} category_name_zh",
-            f"{effective['category_name_en']} category_name_en",
-            f"{effective['subcategory_slug']} subcategory_slug",
-            f"{effective['subcategory_name']} subcategory_name",
-            f"{effective['subcategory_name']} subcategory_name_zh",
-            f"{effective['subcategory_name_en']} subcategory_name_en",
-            f"{effective['tags']} tags_json",
-            f"{effective['tags_zh']} tags_zh_json",
-            f"{effective['tags_en']} tags_en_json",
-            f"{effective['tags_origin']} tags_origin",
-            "NULL::text language",
-            "'[]' topics_json",
-            "0::bigint stars",
-            "0::bigint forks",
-            "0::bigint watchers",
-            "0::bigint open_issues",
-            "NULL::text created_at",
-            "NULL::text pushed_at",
-            "w.first_seen_at::text first_seen_at",
-            "w.last_seen_at::text last_seen_at",
-            "NULL::text last_snapshot_at",
-            "NULL::text snapshot_date",
-            "NULL::text captured_at",
-            "NULL::integer rank_in_period",
-            "0::bigint raw_score",
-            "0::double precision score",
-            "NULL::text daily_growth_date",
-            "NULL::text previous_snapshot_date",
-            "0::bigint daily_star_growth",
-            "FALSE daily_growth_available",
-            "'unavailable' daily_growth_source",
-            "NULL::timestamptz daily_growth_observed_at",
-            "0::double precision hot_score",
-            "0::double precision scale_corrected_growth_score",
-            "0::double precision growth_acceleration_score",
-            "0::double precision absolute_growth_score",
-            "0::double precision maintenance_activity_score",
-            "0::double precision community_engagement_score",
-            "we.confidence",
-        )
-        gh_select_columns = [*_GH_SELECT_COLUMNS, gh_favorites, *_GH_SELECT_TAIL_COLUMNS]
-        web_select_columns = [*web_columns, web_favorites, *_WEB_SELECT_TAIL_COLUMNS]
-        if strong_match_threshold:
-            gh_strong_match_expr = f"({' AND '.join(gh_strong_conditions)})"
-            gh_select_columns.insert(len(_GH_SELECT_COLUMNS), f"({gh_strong_match_expr})::boolean has_strong_match")
-            web_select_columns.insert(len(web_columns), "TRUE::boolean has_strong_match")
-        gh_select = (
-            f"SELECT {','.join(gh_select_columns)}"
-            f"{_GH_SELECT_FROM} {hot_join} {gh_user_join} WHERE {' AND '.join(gh_filters)}"
-        )
-        web_select = (
-            f"SELECT {','.join(web_select_columns)}"
-            f"{_WEB_SELECT_FROM} {web_user_join} WHERE {' AND '.join(web_filters)}"
+        web_select, web_params = _build_web_branch(
+            filters=web_filters,
+            filter_params=web_filter_params,
+            effective=effective,
+            strong_threshold=strong_match_threshold,
+            user_id=user_id,
         )
         parts: list[str] = []
         params: list[Any] = []
@@ -709,53 +826,8 @@ class PostgresProjectCatalogRepository:
         if source in {"all", "website"}:
             parts.append(web_select)
             params.extend(web_params)
-        # relevance 排序的公共关键词搜索优先要求强字段命中；强命中不足时降级使用弱字段。
-        strong_match_threshold = (
-            RELEVANCE_STRONG_MATCH_THRESHOLD
-            if sort == "relevance" and q and candidates is None
-            else 0
-        )
-        base = f"WITH project_rows AS ({' UNION ALL '.join(parts)})"
-        if strong_match_threshold:
-            base += ", counts AS (SELECT COUNT(*) AS total_all, COUNT(*) FILTER (WHERE has_strong_match) AS total_strong FROM project_rows)"
-            count_sql = base + " SELECT COUNT(*) AS cnt FROM project_rows WHERE has_strong_match OR (SELECT total_strong FROM counts) < %s"
-            rows_sql_prefix = base + " SELECT * FROM project_rows WHERE has_strong_match OR (SELECT total_strong FROM counts) < %s ORDER BY {order} LIMIT %s OFFSET %s"
-            threshold_params: list[Any] = [strong_match_threshold]
-        else:
-            count_sql = base + " SELECT COUNT(*) AS cnt FROM project_rows"
-            rows_sql_prefix = base + " SELECT * FROM project_rows ORDER BY {order} LIMIT %s OFFSET %s"
-            threshold_params = []
-        if scope == "today": sort = "hot"
-        recent = "COALESCE(recommended_at,collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)" if scope == "recommended" else "COALESCE(collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)"
-        orders = {
-            "hot": "hot_score DESC NULLS LAST,daily_star_growth DESC NULLS LAST,stars DESC,full_name ASC",
-            "stars": "stars DESC,forks DESC,full_name ASC",
-            "updated": "COALESCE(NULLIF(pushed_at,''),last_seen_at::text,first_seen_at::text) DESC NULLS LAST,stars DESC,full_name ASC",
-            "recent": f"{recent} DESC NULLS LAST,stars DESC,full_name ASC",
-            "name": "full_name ASC",
-        }
-        order_params: list[Any] = []
-        if sort == "relevance":
-            if candidates is not None:
-                order = "array_position(%s::text[],repo_id),full_name ASC"
-                order_params.append(candidates)
-            elif q:
-                normalized_query = " ".join(str(q).split())
-                prefix = f"{escape_like_literal(normalized_query)}%"
-                order = (
-                    "CASE"
-                    " WHEN LOWER(full_name)=LOWER(%s) THEN 0"
-                    " WHEN LOWER(COALESCE(title,''))=LOWER(%s) THEN 1"
-                    " WHEN full_name ILIKE %s ESCAPE '=' THEN 2"
-                    " WHEN COALESCE(title,'') ILIKE %s ESCAPE '=' THEN 3"
-                    " ELSE 4 END,"
-                    "stars DESC, forks DESC, full_name ASC"
-                )
-                order_params.extend([normalized_query, normalized_query, prefix, prefix])
-            else:
-                order = orders["stars"]
-        else:
-            order = orders.get(sort, orders["hot"] if scope == "today" else orders["stars"])
+        count_sql, rows_sql_prefix, threshold_params = _build_union_queries(parts, strong_match_threshold)
+        order, order_params = _resolve_order(sort=sort, scope=scope, q=q, candidates=candidates)
         with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
