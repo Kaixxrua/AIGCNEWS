@@ -51,12 +51,15 @@ jobs:
 
       # 单进程全套件已在干净检出归档上连续验证通过（1150 passed）；
       # 逐文件隔离循环与遗留进程级替身均已退役。
-      # 覆盖率仅上报 term-missing，暂不设阈值门禁。
+      # 覆盖率门禁：fail-under=70，基线来源为 2026-08-08 本地
+      # backend/.venv/bin/python 以同一命令实测 TOTAL 79%，下调 9 个
+      # 百分点留出波动余量；覆盖率提升后可逐步上调。
       - name: Run backend test suite
         shell: bash
         run: >-
           python -m pytest -q -p langchain_core.documents
           --cov=backend/app --cov-report=term-missing --cov-config=backend/pyproject.toml
+          --cov-fail-under=70
           backend/tests
 
   postgres-integration:
@@ -103,7 +106,7 @@ jobs:
       - name: Install PostgreSQL test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements.txt
+          python -m pip install -r backend/requirements.lock
           python -m pip install "pytest>=8.2,<9"
 
       - name: Apply PostgreSQL migrations explicitly
