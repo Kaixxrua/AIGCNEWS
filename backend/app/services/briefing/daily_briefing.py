@@ -19,9 +19,6 @@ logger = logging.getLogger(__name__)
 # 最大续写轮数，防止无限循环
 _MAX_CONTINUATION_ROUNDS = 5
 
-# 用于判断输出是否被截断的信号：如果内容没有以完整结尾标志结束，则认为被截断
-_COMPLETION_MARKERS = ("---", "**", "。", "！", "\n")
-
 _CONTINUATION_PROMPT = """你之前的回答在生成过程中被截断了。请从截断处**无缝续写**，不要重复已有内容，也不要重新开头。直接从上次停止的地方继续输出，直到报告完整结束。
 
 以下是你之前已经生成的内容（请勿重复）：
@@ -48,6 +45,13 @@ _BLOCK_RESPONSE_ERROR = (
     "生成简报时上游服务返回了访问拦截页或网关错误，已停止生成且未保存缓存。"
     "请检查 LLM 代理/API 网关或采集源的访问状态。"
 )
+
+# 双语生成中另一语言失败时的对外文案（原文案保留，SSE wire 行为不变）。
+_ALTERNATE_LANGUAGE_ERROR = "双语简报的另一语言生成失败，未保存不完整缓存。"
+
+
+class _BlockResponseError(Exception):
+    """LLM 输出被判定为上游拦截页/网关错误页，必须中止生成且不持久化。"""
 
 
 def _classified_briefing_error(exc: Exception) -> str:
@@ -482,72 +486,43 @@ class DailyBriefingService:
             if generate_bilingual:
                 prompt += _LANGUAGE_INSTRUCTIONS[requested_locale]
 
-            # 4. Stream the requested language first（支持截断续写）
-            full_content: List[str] = []
-
-            # 首次生成：边接收 LLM token 边转发给前端，避免 SSE 长时间空闲断流
-            async for token in self._stream_llm_round(prompt):
-                full_content.append(token)
-                yield {"type": "content", "data": token}
-
-            accumulated = "".join(full_content)
-            if _looks_like_block_response(accumulated):
-                logger.error("LLM 上游返回疑似拦截页，停止简报生成: source=%s", source)
-                yield {"type": "error", "data": _BLOCK_RESPONSE_ERROR}
-                return
-
-            # 5. 截断续写：检测输出是否被截断，若是则多轮续写
-            for continuation_round in range(1, _MAX_CONTINUATION_ROUNDS + 1):
-                if not self._is_truncated(accumulated):
-                    logger.info("报告生成完整，无需续写 (round %d)", continuation_round)
-                    break
-
-                logger.warning(
-                    "检测到输出可能被截断 (round %d/%d)，启动续写...",
-                    continuation_round,
-                    _MAX_CONTINUATION_ROUNDS,
-                )
-                yield {
-                    "type": "content",
-                    "data": "",  # 空 token 作为续写信号（前端无感）
-                }
-
-                # 构建续写 prompt，将已有内容作为上下文
-                cont_prompt = _CONTINUATION_PROMPT.format(
-                    previous_content=accumulated[-4000:]  # 只传最后 4000 字符避免超长
-                )
-
-                async for token in self._stream_llm_round(cont_prompt):
-                    full_content.append(token)
+            # 4. Stream the requested language first（含截断续写，边生成边转发）
+            primary_parts: List[str] = []
+            try:
+                async for token in self._stream_with_continuation(
+                    prompt, source=source, parts=primary_parts
+                ):
                     yield {"type": "content", "data": token}
-
-                accumulated = "".join(full_content)
-                if _looks_like_block_response(accumulated):
-                    logger.error(
-                        "LLM 续写阶段返回疑似拦截页，停止简报生成: source=%s", source
-                    )
-                    yield {"type": "error", "data": _BLOCK_RESPONSE_ERROR}
-                    return
-            else:
-                logger.warning(
-                    "已达最大续写轮数 (%d)，停止续写", _MAX_CONTINUATION_ROUNDS
+            except _BlockResponseError:
+                logger.error(
+                    "LLM 上游返回疑似拦截页，停止简报生成: source=%s", source
                 )
-
-            # 6. Persist only if LLM actually produced content
-            complete_text = "".join(full_content)
-            if _looks_like_block_response(complete_text):
-                logger.error("生成结果为疑似拦截页，跳过持久化: source=%s", source)
                 yield {"type": "error", "data": _BLOCK_RESPONSE_ERROR}
                 return
 
+            # 5. Persist only if LLM actually produced content
+            complete_text = "".join(primary_parts)
             if complete_text.strip():
                 if generate_bilingual:
                     alternate_locale = next(item for item in _BRIEFING_LANGUAGES if item != requested_locale)
                     alternate_prompt = (prepared.prompt or "") + _LANGUAGE_INSTRUCTIONS[alternate_locale]
-                    alternate_parts = [token async for token in self._stream_llm_round(alternate_prompt)]
+                    # 另一语言与主语言走同一条含续写的生成路径（续写对等），
+                    # 仅不向客户端推流。
+                    alternate_parts: List[str] = []
+                    try:
+                        async for _token in self._stream_with_continuation(
+                            alternate_prompt, source=source, parts=alternate_parts
+                        ):
+                            pass
+                    except _BlockResponseError:
+                        logger.error(
+                            "双语简报另一语言返回疑似拦截页: source=%s", source
+                        )
+                        yield {"type": "error", "data": _ALTERNATE_LANGUAGE_ERROR}
+                        return
                     alternate_text = "".join(alternate_parts)
-                    if not alternate_text.strip() or _looks_like_block_response(alternate_text):
-                        yield {"type": "error", "data": "双语简报的另一语言生成失败，未保存不完整缓存。"}
+                    if not alternate_text.strip():
+                        yield {"type": "error", "data": _ALTERNATE_LANGUAGE_ERROR}
                         return
                     contents = {requested_locale: complete_text, alternate_locale: alternate_text}
                     briefing_id = self._briefings.save_briefing(
@@ -581,6 +556,57 @@ class DailyBriefingService:
             )
             yield {"type": "error", "data": _classified_briefing_error(exc)}
 
+    async def _stream_with_continuation(
+        self,
+        prompt: str,
+        *,
+        source: str,
+        parts: List[str],
+    ) -> AsyncGenerator[str, None]:
+        """流式生成简报正文，截断时自动多轮续写。
+
+        每个产出 token 同时 append 到 parts 并向调用方 yield；迭代结束后
+        调用方用 "".join(parts) 取得完整文本。主语言与双语场景的另一语言
+        共用本路径，保证续写行为对等。疑似拦截页时抛 _BlockResponseError。
+        """
+        async for token in self._stream_llm_round(prompt):
+            parts.append(token)
+            yield token
+
+        accumulated = "".join(parts)
+        if _looks_like_block_response(accumulated):
+            raise _BlockResponseError()
+
+        # 截断续写：检测输出是否被截断，若是则多轮续写
+        for continuation_round in range(1, _MAX_CONTINUATION_ROUNDS + 1):
+            if not self._is_truncated(accumulated):
+                logger.info("报告生成完整，无需续写 (round %d)", continuation_round)
+                break
+
+            logger.warning(
+                "检测到输出可能被截断 (round %d/%d)，启动续写...",
+                continuation_round,
+                _MAX_CONTINUATION_ROUNDS,
+            )
+            yield ""  # 空 token 作为续写信号（前端无感）
+
+            # 构建续写 prompt，将已有内容作为上下文
+            cont_prompt = _CONTINUATION_PROMPT.format(
+                previous_content=accumulated[-4000:]  # 只传最后 4000 字符避免超长
+            )
+
+            async for token in self._stream_llm_round(cont_prompt):
+                parts.append(token)
+                yield token
+
+            accumulated = "".join(parts)
+            if _looks_like_block_response(accumulated):
+                raise _BlockResponseError()
+        else:
+            logger.warning(
+                "已达最大续写轮数 (%d)，停止续写", _MAX_CONTINUATION_ROUNDS
+            )
+
     async def _stream_llm_round(self, prompt: str) -> AsyncGenerator[str, None]:
         """执行一轮 LLM 流式生成，逐 token 返回。"""
         async for chunk in self._llm.astream(prompt):
@@ -606,20 +632,17 @@ class DailyBriefingService:
     def _is_truncated(text: str) -> bool:
         """判断 LLM 输出是否被截断（未完整结束）。
 
-        检测逻辑：
-        1. 内容过短（少于 200 字符）且非空 → 可能截断
-        2. 最后一行在 Markdown 标题/列表/粗体中间断开 → 截断
-        3. 最后一个字符是中文字符且没有标点结尾 → 可能截断
-        4. 存在未闭合的 Markdown 代码块 → 截断
+        只保留结构性信号；不再按篇幅长短判断——短但完整的简报
+        被误判截断会触发无意义续写，甚至让模型重复已生成内容。
+        1. 存在未闭合的 Markdown 代码块（``` 出现奇数次）→ 截断
+        2. 最后一行是悬空的 Markdown 标题（如 "## "、"### 技术"）→ 截断
+        3. 最后一行粗体标记未闭合（奇数个 "**"）→ 截断
+        4. 最后一行是悬空的数字列表项（如 "3. "）→ 截断
         """
         if not text or not text.strip():
             return False
 
         stripped = text.strip()
-
-        # 内容过短且没有明显的报告结尾标志
-        if len(stripped) < 200:
-            return True
 
         # 检查未闭合的 Markdown 代码块（``` 出现奇数次）
         if stripped.count("```") % 2 != 0:

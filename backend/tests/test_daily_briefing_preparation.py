@@ -406,6 +406,88 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
         )
         self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
 
+    def test_short_but_complete_report_does_not_trigger_continuation(self) -> None:
+        # 篇幅不足 200 字符但结构完整的简报不得被误判截断而触发续写。
+        service = DailyBriefingPreparationContractTests._service()
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            DailyBriefingPreparationContractTests._github_doc("project")
+        ]
+        short_report = "# 今日简报\n\n仅一条快讯，内容完整。"
+        service._llm.astream.side_effect = (
+            DailyBriefingPreparationContractTests._astream_side_effect([short_report])
+        )
+
+        events = DailyBriefingPreparationContractTests._collect(
+            service.stream_generate("2026-07-22", source="github")
+        )
+
+        self.assertEqual(service._llm.astream.call_count, 1)
+        self.assertEqual(
+            [event["data"] for event in events if event["type"] == "content"],
+            [short_report],
+        )
+        service._briefings.save_briefing.assert_called_once_with(
+            "2026-07-22_github", short_report
+        )
+
+    def test_is_truncated_only_flags_structural_signals(self) -> None:
+        is_truncated = DailyBriefingService._is_truncated
+
+        # 短但完整：不截断（原 <200 字符规则已移除）。
+        self.assertFalse(is_truncated("简短短报，完整结束。"))
+        self.assertFalse(is_truncated(""))
+        self.assertFalse(is_truncated("   "))
+
+        # 结构性截断信号仍然生效。
+        self.assertTrue(is_truncated("x" * 300 + "\n```python"))
+        self.assertTrue(is_truncated("x" * 300 + "\n## "))
+        self.assertTrue(is_truncated("x" * 300 + "\n**未闭合粗体"))
+        self.assertTrue(is_truncated("x" * 300 + "\n3."))
+
+    def test_bilingual_alternate_locale_gets_continuation_rounds(self) -> None:
+        # 另一语言与主语言走同一条续写路径：截断时同样多轮续写后再持久化。
+        service = DailyBriefingPreparationContractTests._service()
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            DailyBriefingPreparationContractTests._github_doc("project")
+        ]
+        chinese = "简短但完整的中文简报。"
+        english_truncated = "English briefing " * 20 + "\n## "
+        english_continuation = "continued section. " * 20
+        service._llm.astream.side_effect = (
+            DailyBriefingPreparationContractTests._astream_side_effect(
+                [chinese, english_truncated, english_continuation]
+            )
+        )
+
+        events = DailyBriefingPreparationContractTests._collect(
+            service.stream_generate(
+                "2026-07-22",
+                source="github",
+                locale="zh-CN",
+                generate_bilingual=True,
+            )
+        )
+
+        self.assertEqual(service._llm.astream.call_count, 3)
+        # 另一语言的续写 prompt 携带其已生成内容（而非主语言内容）。
+        self.assertEqual(
+            service._llm.astream.call_args_list[-1].args[0],
+            _CONTINUATION_PROMPT.format(previous_content=english_truncated),
+        )
+        english_full = english_truncated + english_continuation
+        service._briefings.save_briefing.assert_called_once_with(
+            "2026-07-22_github",
+            chinese,
+            content_zh=chinese,
+            content_en=english_full,
+        )
+        # 另一语言的续写过程不向客户端推流。
+        self.assertEqual(
+            [event["data"] for event in events if event["type"] == "content"],
+            [chinese],
+        )
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
+
     def test_blocked_llm_response_emits_error_and_is_never_persisted(self) -> None:
         service = DailyBriefingPreparationContractTests._service()
         service._rank_snapshots.get_snapshot_documents.return_value = [
