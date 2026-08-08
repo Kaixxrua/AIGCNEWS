@@ -99,7 +99,7 @@ const sourceLabel = computed(() => sourceOptions.value.find((item) => item.value
 const personalLoginCopy = computed(() => isWebsiteOnlyView.value
   ? { kicker: t('projects.loginWebsiteKicker'), title: t('projects.loginWebsiteTitle'), description: t('projects.loginWebsiteDescription') }
   : { kicker: t('projects.loginFavoritesKicker'), title: t('projects.loginFavoritesTitle'), description: t('projects.loginFavoritesDescription') })
-const starsBadgeLabel = computed(() => source.value === 'all' ? 'GitHub Stars > 500' : '')
+const starsBadgeLabel = computed(() => source.value === 'all' ? t('projects.starsThresholdBadge') : '')
 const activeFilterLabel = computed(() => {
   if (selectedTag.value) return t('projects.filterTag', { tag: selectedTag.value })
   if (selectedLanguage.value) return t('projects.filterLanguage', { language: selectedLanguage.value })
@@ -272,7 +272,7 @@ watch(() => route.query, () => {
     sortIsExplicit.value = hadSort
     void refreshReads()
   }
-}, { deep: true })
+})
 watch(() => authStore.isLoggedIn, (loggedIn) => {
   if (!loggedIn) {
     controller.handleLogout()

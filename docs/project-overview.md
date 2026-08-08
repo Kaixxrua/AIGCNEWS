@@ -585,7 +585,7 @@ PostgreSQL 逻辑备份和恢复已验证，但仍缺少 WAL/PITR、自动异地
 
 ### 14.7 MySQL 遗留代码
 
-MySQL 已退出在线运行时，但遗留实现仍增加维护成本并可能误导开发者，应在观察期结束后继续清理和隔离。
+MySQL 在线实现已清理完毕：`mysql_repo.py`、迁移期 transfer/reconciliation 核心与 MySQL 基建已删除（62adb9f），config 中的 MySQL/SQLite 死字段已清理（6af16b8）。仅剩少量历史命名残留（如 `retriever.py` 中沿用 MySQL/SQLite 字样的方法名），不影响行为，清理进行中。
 
 ### 14.8 调度器单实例假设
 

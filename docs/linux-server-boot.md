@@ -83,7 +83,7 @@ docker compose --project-name docker --file docker/docker-compose.yml ps
 
 ## 端口与证书边界
 
-- Milvus、MinIO、Attu、Neo4j、Redis 只在编排网络内 `expose`，不向宿主机发布端口；`priceai` 同样仅 `expose`，由前端 nginx 反代。宿主机只发布 `127.0.0.1:8000`（后端，仅回环）、`80/443`（前端 nginx）。
+- Milvus、MinIO、Attu、Neo4j、Redis 只在编排网络内 `expose`，不向宿主机发布端口；`priceai` 同样仅 `expose`，由前端 nginx 反代。宿主机发布 `127.0.0.1:8000`（后端，仅回环）、`80/443`（前端 nginx），以及 `project-catalog-postgres` 的 `127.0.0.1:5432:5432` 回环映射——主 Compose 已内联该映射，仅供宿主机定时备份脚本（`pg_dump`/`psql` 校验，见 [`postgres-application-backup-restore.md`](postgres-application-backup-restore.md)）直连，不公网暴露。
 - 后端经编排网络按服务名访问依赖（`MILVUS_HOST=milvus`、`NEO4J_URI=bolt://neo4j:7687`、`REDIS_HOST=redis` 等，见 `.env`）。宿主机侧临时调试用 `docker exec <container> ...` 或 `docker compose ... port-forward` 式临时映射，不把管理端口长期发布到宿主机。
 - 前端镜像不包含 SSL 证书；`frontend-web` 以只读卷挂载 `frontend/ssl` 到 `/etc/nginx/ssl`。重建前端容器前确认该目录存在且包含 nginx.conf 引用的四个证书/私钥文件（该目录被 gitignore，不进仓库、不进镜像）。
 - **私钥属主约定**：`frontend/ssl/*.key` 必须为 `root:root`（权限 600）。加固后的 `frontend-web` `cap_drop: ALL`，容器内 nginx master 以 uid 0 运行但没有 `CAP_DAC_OVERRIDE`，读不动 `kaixxrua:kaixxrua 600` 的私钥（2026-08-03 曾因此 crash loop）。证书续期/替换后务必 `chown root:root *.key`。

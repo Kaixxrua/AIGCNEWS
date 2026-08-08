@@ -42,7 +42,7 @@ export PGPASSFILE=/run/secrets/postgres-pgpass
    PGPASSFILE=/home/kaixxrua/.pgpass
    ```
 
-   Compose 部署的数据库默认只在容器网络内可达：给 postgres 服务加 `127.0.0.1:5432:5432` 端口映射（override 文件）后按上例连接，或改用其他可达路径。不要为备份把数据库暴露到公网。
+   主 Compose（`docker/docker-compose.yml`）已为 `project-catalog-postgres` 内联 `127.0.0.1:5432:5432` 回环映射（带注释说明仅限备份用途），无需再加 override 文件；按上例 env 文件直接连接即可。不要为备份把数据库暴露到公网。
 
 2. 安装并启用（以部署用户 `kaixxrua` 为例）：
 

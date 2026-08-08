@@ -10,7 +10,7 @@
 
 ### 1.1 项目定位
 
-**AIGC_NEWS** 是一个 **AIGC（AI 生成内容）技术资讯聚合与智能问答平台**，集成了五大数据源的自动化采集、RAG（检索增强生成）智能问答、每日简报自动生成、论文阅读等功能。面向 AI 技术从业者、研究人员和产品经理，提供一站式的 AI 领域资讯追踪与深度分析服务。
+**AIGC_NEWS** 是一个 **AIGC（AI 生成内容）技术资讯聚合与智能问答平台**，集成了七大数据源（HuggingFace Papers、GitHub Trending、Techmeme、Product Hunt、Hacker News、DailyHot 聚合热榜、X/Twitter Watchlist）的自动化采集、RAG（检索增强生成）智能问答、每日简报自动生成、论文阅读等功能。面向 AI 技术从业者、研究人员和产品经理，提供一站式的 AI 领域资讯追踪与深度分析服务。
 
 ### 1.2 技术栈
 
@@ -27,7 +27,7 @@
 | **定时调度** | APScheduler（AsyncIOScheduler） |
 | **Embedding** | OpenAI / HuggingFace / Ollama（可切换） |
 | **Reranker** | Pro/BAAI/bge-reranker-v2-m3（硅基流动 /v1/rerank API，远程精排） |
-| **容器化** | Docker Compose（常规运行 10 个服务，另有 1 个 profile-gated 运维服务） |
+| **容器化** | Docker Compose（常规运行 10 个服务，另有 2 个 profile-gated 服务：`project-catalog-ops` 运维镜像、`dailyhot` 自托管热榜上游） |
 | **反向代理** | Nginx（前端 SPA） |
 
 ### 1.3 整体架构
@@ -56,9 +56,10 @@
 └──────────────────────────────────────────────────────────────────-┘
                                │
 ┌──────────────────────────────▼────────────────────────────────────┐
-│                       五大数据源                                   │
+│                       七大数据源                                   │
 │  HuggingFace Papers │ GitHub Trending │ Techmeme RSS              │
-│  Product Hunt       │ Hacker News                                 │
+│  Product Hunt       │ Hacker News     │ DailyHot 聚合热榜         │
+│  X/Twitter Watchlist（独立降频调度）                              │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -277,19 +278,19 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 #### `daily_briefing.py`
 - **核心类**: `DailyBriefingService`
 - **功能**: 生成并持久化日/周/月简报
-- **6 种简报模板**: all（综合）、arxiv（学术）、github（工程）、news（行业）、producthunt（产品）、hackernews（社区）
+- **8 种简报模板**: all（综合）、arxiv（学术）、github（工程）、news（行业）、producthunt（产品）、hackernews（社区）、x（X 动态）、dailyhot（全网热榜）
 - **3 种周期**: daily / weekly / monthly
 - **数据来源优先级**: 快照表 → documents 表 + channel 过滤 → 最新文档兜底
 - **截断续写**: 检测 LLM 输出是否被截断，最多自动续写 5 轮
 - **缓存策略**: 按 `{date}_{source}_{period}` 作为 key 持久化到 PostgreSQL `briefings` 表
 - **SSE 流式输出**: `start → content(多次) → done`
-- **Tag 标签（Bug3 修复 + 优化）**: 所有 6 个 Prompt 模板均已升级为细粒度领域标签系统——每个一级/二级标题后必须附加 `\`#来源\` \`#领域\``，来源标签（必选1个，如 `#arxiv` `#github`）+ 领域标签（必选1-2个，如 `#LLM` `#Agent` `#RAG` `#推理优化` `#模型压缩` 等），每个源类型有独立的领域标签候选列表，**禁止使用过于宽泛的 #ai #tool #trending**
+- **Tag 标签（Bug3 修复 + 优化）**: 全部 8 个 Prompt 模板均已升级为细粒度领域标签系统——每个一级/二级标题后必须附加 `\`#来源\` \`#领域\``，来源标签（必选1个，如 `#arxiv` `#github`）+ 领域标签（必选1-2个，如 `#LLM` `#Agent` `#RAG` `#推理优化` `#模型压缩` 等），每个源类型有独立的领域标签候选列表，**禁止使用过于宽泛的 #ai #tool #trending**
 
 ### 3.3 数据采集服务 — `backend/app/services/ingestion/`
 
 #### `pipeline.py`（核心编排器）
 - **核心类**: `IngestionOrchestrator`
-- **架构**: 5 个独立爬虫 → 内容丰富 → 三库写入（PostgreSQL + Milvus + Neo4j）
+- **架构**: 7 个独立爬虫 → 内容丰富 → 三库写入（PostgreSQL + Milvus + Neo4j）
 - **入口函数**:
   - `run_ingestion_pipeline()`: 全量采集
   - `run_single_source_pipeline()`: 单源采集
@@ -319,6 +320,10 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 | `news_crawler.py` | Techmeme RSS + HTML | daily only | `techmeme_daily_rss` |
 | `producthunt_crawler.py` | Product Hunt Apollo SSR | daily only | `producthunt_daily_html` |
 | `hackernews_crawler.py` | HN Firebase API Top-30 | daily only | `hn_daily_html` |
+| `dailyhot_crawler.py` | DailyHot 聚合热榜（编排内网自托管 DailyHotApi，部署与端点清单见 [`dailyhot-source.md`](dailyhot-source.md)） | daily only | `dailyhot_daily` |
+| `x_crawler.py` | X/Twitter Watchlist（twitter-cli 内部 GraphQL + cookie 凭据，运维见 [`x-source-runbook.md`](x-source-runbook.md)） | daily only | `x_daily_watchlist` |
+
+> 采集管线之外还有两套独立服务模块：`services/x_watch/`（X watchlist 管理与单账号采集探测，watchlist 与凭据落库后成为唯一事实源）与 `services/wechat/` + `services/wechat_sogou/`（微信公众号关注/文章同步与搜狗微信公开索引发现，走自有 `routes_wechat*.py` 路由，不经 ingestion 爬虫注册表）。
 
 #### 底层数据获取库（`source_*.py`）
 
@@ -553,12 +558,15 @@ PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE �
 | `news_techmeme` | 每小时 :03 | Techmeme 科技新闻采集 |
 | `producthunt` | 每小时 :04 | Product Hunt 新品采集 |
 | `hackernews` | 每小时 :05 | Hacker News AI 热帖采集 |
-| `github_hot_refresh` | 每天 02:00 | GitHub 热度快照刷新 |
-| `daily_briefing` | 每天 08:00 | 全维度简报自动生成（6 个维度 × daily） |
+| `x_watchlist` | 每 2 小时 :06 | X Watchlist 推文采集（降频，`coalesce` 错过合并） |
+| `x_credentials_probe` | 每 2 小时 :08 | X 凭据可用性探测 |
+| `dailyhot_hotlists` | 每小时 :07 | DailyHot 聚合热榜采集 |
+| `github_project_daily_pipeline` | 每天 02:00 | GitHub 项目库每日管线（候选池与快照） |
+| `daily_briefing` | 每天 08:00 | 全维度简报自动生成（8 个维度 × daily） |
 | `conversation_cleanup` | 每 7 天 03:30 | 清理 5 条 7 天未访问的旧会话 |
 
 **设计原则**:
-- 五源各错开 1 分钟避免同时触发
+- 各信息源分钟位错开（:01–:08）避免同时触发；X 相关任务按每 2 小时降频调度
 - `max_instances=1` 防止同源 Job 重叠
 - `misfire_grace_time=7200` 确保重启后追赶执行
 - 会话历史由调度器与服务层触发式 LRU 双层清理协同完成
