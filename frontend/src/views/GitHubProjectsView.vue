@@ -425,7 +425,7 @@ onBeforeUnmount(stopViewReads)
     <section v-else class="projects-grid" :aria-label="t('navigation.projects')">
       <ProjectResultCard
         v-for="(repo, index) in projects"
-        :key="repo.id ?? repo.repo_id ?? repo.website_id ?? repo.full_name ?? index"
+        :key="projectKey(repo)"
         :repo="repo"
         :index="index"
         :is-personal-view="isPersonalView"

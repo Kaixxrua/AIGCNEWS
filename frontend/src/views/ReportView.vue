@@ -44,8 +44,8 @@ const {
   generate,
 } = useReportController({
   operations: {
-    loadCachedReport: async params => {
-      const res = await api.get<ReportResponse>('/report/latest', { params })
+    loadCachedReport: async (params, signal) => {
+      const res = await api.get<ReportResponse>('/report/latest', { params, signal })
       return res.data
     },
     connectReportStream: ({ source, date, period, locale: reportLocale, onMessage, onDone, onError }) => {

@@ -1,4 +1,4 @@
-import { onMounted, ref, watch, type Ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import {
   coercePeriodForReport,
   coerceReportStreamText,
@@ -14,7 +14,7 @@ interface ReportControllerOperations {
     period: PeriodKey
     date: string
     locale: string
-  }) => Promise<ReportResponse | undefined>
+  }, signal?: AbortSignal) => Promise<ReportResponse | undefined>
   connectReportStream: (options: {
     source: ReportKey
     period: PeriodKey
@@ -47,14 +47,25 @@ export const useReportController = ({
   const selectedPeriod = ref<PeriodKey>('daily')
   const selectedDate = ref(new Date().toISOString().slice(0, 10))
 
+  // generation + AbortController 竞态守卫（对齐 useXBoardController）：
+  // 源/周期/日期/locale 连发切换时只应用最新一次缓存读取，过期请求直接中止
+  const isActive = ref(true)
+  let loadGeneration = 0
+  let loadAbortController: AbortController | null = null
+
   const loadCachedReport = async () => {
+    const request = ++loadGeneration
+    loadAbortController?.abort()
+    const controller = new AbortController()
+    loadAbortController = controller
     try {
       const data = await operations.loadCachedReport({
         source: selectedSource.value,
         period: selectedPeriod.value,
         date: selectedDate.value,
         locale: locale.value,
-      })
+      }, controller.signal)
+      if (!isActive.value || request !== loadGeneration) return
       if (data?.content) {
         reportContent.value = data.content
         isCached.value = true
@@ -64,6 +75,7 @@ export const useReportController = ({
       reportContent.value = ''
       isCached.value = false
     } catch {
+      if (controller.signal.aborted || !isActive.value || request !== loadGeneration) return
       reportContent.value = ''
       isCached.value = false
     }
@@ -100,6 +112,13 @@ export const useReportController = ({
 
   onMounted(() => {
     void loadCachedReport()
+  })
+
+  onUnmounted(() => {
+    isActive.value = false
+    loadGeneration += 1
+    loadAbortController?.abort()
+    loadAbortController = null
   })
 
   watch(selectedSource, source => {

@@ -17,13 +17,13 @@ export interface PaperItem {
   created_at?: string
 }
 
-export async function searchPapers(q: string, limit = 20): Promise<PaperItem[]> {
-  const res = await api.get('/papers/search', { params: { q, limit } })
+export async function searchPapers(q: string, limit = 20, signal?: AbortSignal): Promise<PaperItem[]> {
+  const res = await api.get('/papers/search', { params: { q, limit }, signal })
   return res.data?.items ?? []
 }
 
-export async function fetchTop10Today(): Promise<PaperItem[]> {
-  const res = await api.get('/papers/top10-today')
+export async function fetchTop10Today(signal?: AbortSignal): Promise<PaperItem[]> {
+  const res = await api.get('/papers/top10-today', { signal })
   return res.data?.items ?? []
 }
 

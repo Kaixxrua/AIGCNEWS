@@ -51,8 +51,13 @@ export const useChatViewport = (
     void scrollToBottom()
   }
 
+  // 只跟踪「条数 + 末条内容/思考长度」：早期消息变化不触发滚动，全量 map+join 的开销也省掉
   watch(
-    () => messages.value.map((message) => `${message.role}:${message.content.length}:${message.thinking.length}`).join('|'),
+    () => {
+      const list = messages.value
+      const last = list[list.length - 1]
+      return [list.length, last?.content.length ?? 0, last?.thinking.length ?? 0]
+    },
     scheduleScroll,
   )
 

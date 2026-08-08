@@ -70,11 +70,14 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
 
   let pollTimer: ReturnType<typeof setTimeout> | null = null
   let abortController: AbortController | null = null
+  // 搜索竞态守卫（generation 范式，对齐 useProjectCatalogController）：连发搜索只应用最新结果
+  let searchGeneration = 0
 
   const hasSession = computed(() => session.value?.connected === true)
 
   function dispose() {
     isActive.value = false
+    searchGeneration += 1
     stopPolling()
     revokeQrCodeUrl()
     if (abortController) {
@@ -233,10 +236,13 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
 
   async function doSearch() {
     if (!searchQuery.value.trim()) {
+      searchGeneration += 1
       searchResults.value = []
       searchTotal.value = 0
+      isSearching.value = false
       return
     }
+    const request = ++searchGeneration
     isSearching.value = true
     clearError()
     try {
@@ -245,12 +251,14 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
         searchBegin.value,
         searchSize.value,
       )
+      if (!isActive.value || request !== searchGeneration) return
       searchResults.value = result.items
       searchTotal.value = result.total
     } catch (err) {
+      if (!isActive.value || request !== searchGeneration) return
       setError(getErrorMessage(err, i18n.global.t('wechat.searchAccountsFailed')))
     } finally {
-      isSearching.value = false
+      if (isActive.value && request === searchGeneration) isSearching.value = false
     }
   }
 
@@ -313,6 +321,8 @@ export function useWechatController(options: UseWechatControllerOptions = {}) {
 
   function clearSearch() {
     searchQuery.value = ''
+    searchGeneration += 1
+    isSearching.value = false
     searchResults.value = []
     searchTotal.value = 0
     searchBegin.value = 0

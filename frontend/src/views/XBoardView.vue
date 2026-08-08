@@ -29,7 +29,7 @@ const {
 const timelineDocs = computed(() => timelineTweets(docs.value))
 // 全天推文客户端分页：时间线排序与瀑布流分列仅在当前页内进行
 const pagedTimelineDocs = computed(() => paginateItems(timelineDocs.value, currentPage.value, pageSize))
-const totalTweets = () => timelineDocs.value.length
+const totalTweets = computed(() => timelineDocs.value.length)
 const selectedCount = computed(() => selectedIds.value.size)
 const hasSelection = computed(() => selectedCount.value > 0)
 
@@ -416,7 +416,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <p v-if="timelineDocs.length" class="shrink-0 text-center text-2xs text-stone-300">{{ t('xboard.tweets', { count: totalTweets() }) }}</p>
+      <p v-if="timelineDocs.length" class="shrink-0 text-center text-2xs text-stone-300">{{ t('xboard.tweets', { count: totalTweets }) }}</p>
     </div>
 
     <!-- 推文详情浮层：就地放大阅读（全文/媒体/引用卡），跳转走显式按钮；

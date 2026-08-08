@@ -15,8 +15,8 @@ interface GlobalSearchInputHandle {
 
 interface GlobalSearchDependencies {
   inputRef: Ref<GlobalSearchInputHandle | null>
-  search: (query: string, limit: number) => Promise<PaperItem[]>
-  fetchTop10: () => Promise<PaperItem[]>
+  search: (query: string, limit: number, signal?: AbortSignal) => Promise<PaperItem[]>
+  fetchTop10: (signal?: AbortSignal) => Promise<PaperItem[]>
   push: (location: RouteLocationRaw) => void | Promise<unknown>
   openExternal: (url: string) => void
 }
@@ -34,29 +34,41 @@ export const useGlobalSearch = ({
   const loading = ref(false)
   const focused = ref(false)
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  // generation + AbortController 竞态守卫（对齐 useXBoardController）：
+  // 只应用最新一次请求的结果，loading 也只由最新请求复位，避免两个请求 finally 互相串扰
+  const isActive = ref(true)
+  let generation = 0
+  let abortController: AbortController | null = null
 
-  const loadTop10 = async () => {
+  const runRequest = async (execute: (signal: AbortSignal) => Promise<PaperItem[]>) => {
+    const request = ++generation
+    abortController?.abort()
+    const controller = new AbortController()
+    abortController = controller
     loading.value = true
     try {
-      results.value = await fetchTop10()
+      const data = await execute(controller.signal)
+      if (isActive.value && request === generation) results.value = data
+    } catch (error) {
+      if (!controller.signal.aborted && isActive.value && request === generation) {
+        console.error('Global search request failed:', error)
+        results.value = []
+      }
     } finally {
-      loading.value = false
+      if (isActive.value && request === generation) loading.value = false
     }
   }
 
+  const loadTop10 = () => runRequest((signal) => fetchTop10(signal))
+
   const triggerSearch = () => {
     if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(async () => {
+    debounceTimer = setTimeout(() => {
       const q = query.value.trim()
       if (!q) {
-        await loadTop10()
+        void loadTop10()
       } else {
-        loading.value = true
-        try {
-          results.value = await search(q, GLOBAL_SEARCH_RESULT_LIMIT)
-        } finally {
-          loading.value = false
-        }
+        void runRequest((signal) => search(q, GLOBAL_SEARCH_RESULT_LIMIT, signal))
       }
     }, GLOBAL_SEARCH_DEBOUNCE_MS)
   }
@@ -105,7 +117,18 @@ export const useGlobalSearch = ({
   }
 
   onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
-  onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
+  onUnmounted(() => {
+    window.removeEventListener('keydown', onGlobalKeydown)
+    isActive.value = false
+    generation += 1
+    abortController?.abort()
+    abortController = null
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+    loading.value = false
+  })
 
   return {
     query,
