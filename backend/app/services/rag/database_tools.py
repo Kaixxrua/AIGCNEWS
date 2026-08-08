@@ -14,6 +14,19 @@ from backend.app.services.rag.raw_openai_streamer import ToolCallResult
 
 logger = logging.getLogger(__name__)
 
+# LLM 工具入参 limit 钳制区间：提示注入可传入超大值制造大结果集，
+# 统一收敛到 1..100；非法类型回退默认值。
+_LIMIT_MIN = 1
+_LIMIT_MAX = 100
+
+
+def _clamp_limit(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(_LIMIT_MIN, min(parsed, _LIMIT_MAX))
+
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     {
         "type": "function",
@@ -49,7 +62,7 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "返回条数，默认 15",
+                        "description": "返回条数，默认 15，最大 100",
                         "default": 15,
                     },
                 },
@@ -85,7 +98,7 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "返回文档列表条数，默认 50",
+                        "description": "返回文档列表条数，默认 50，最大 100",
                         "default": 50,
                     },
                 },
@@ -108,6 +121,7 @@ def execute_query_ranking(
     if ranking_reader is None:
         raise ValueError("ranking_reader is required")
     ranking = ranking_reader
+    limit = _clamp_limit(limit, default=15)
     docs = list(
         ranking.get_today_ranked_documents(
             limit=limit,
@@ -151,6 +165,7 @@ def execute_query_knowledge_stats(
         raise ValueError("ranking_reader is required")
     if statistics_reader is None:
         raise ValueError("statistics_reader is required")
+    limit = _clamp_limit(limit, default=50)
     source_counts = statistics_reader.get_source_counts()
     docs = list(
         ranking_reader.get_knowledge_ranked_documents(

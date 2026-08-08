@@ -299,6 +299,53 @@ def test_database_queries_delegate_to_document_readers_and_preserve_formatting()
     assert stats["total"] == 5
 
 
+def test_database_tool_limits_are_clamped_against_prompt_injection():
+    ranking_reader = MagicMock()
+    ranking_reader.get_today_ranked_documents.return_value = []
+    ranking_reader.get_knowledge_ranked_documents.return_value = []
+    statistics_reader = MagicMock()
+    statistics_reader.get_source_counts.return_value = {}
+
+    # 超大值钳到 100、小于 1 钳到 1、非法类型回退默认
+    database_tools.execute_query_ranking(limit=100000, ranking_reader=ranking_reader)
+    ranking_reader.get_today_ranked_documents.assert_called_once_with(
+        limit=100, source=None
+    )
+
+    ranking_reader.get_today_ranked_documents.reset_mock()
+    database_tools.execute_query_ranking(limit=0, ranking_reader=ranking_reader)
+    ranking_reader.get_today_ranked_documents.assert_called_once_with(
+        limit=1, source=None
+    )
+
+    ranking_reader.get_today_ranked_documents.reset_mock()
+    database_tools.execute_query_ranking(
+        limit="not-a-number", ranking_reader=ranking_reader
+    )
+    ranking_reader.get_today_ranked_documents.assert_called_once_with(
+        limit=15, source=None
+    )
+
+    database_tools.execute_query_knowledge_stats(
+        limit=99999,
+        ranking_reader=ranking_reader,
+        statistics_reader=statistics_reader,
+    )
+    ranking_reader.get_knowledge_ranked_documents.assert_called_once_with(
+        limit=100, source=None
+    )
+
+    ranking_reader.get_knowledge_ranked_documents.reset_mock()
+    database_tools.execute_query_knowledge_stats(
+        limit=None,
+        ranking_reader=ranking_reader,
+        statistics_reader=statistics_reader,
+    )
+    ranking_reader.get_knowledge_ranked_documents.assert_called_once_with(
+        limit=50, source=None
+    )
+
+
 def test_generation_orchestrator_preserves_project_search_adapter_arguments():
     retriever = MagicMock()
     project_searcher = AsyncMock(
