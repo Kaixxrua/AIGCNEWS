@@ -141,6 +141,7 @@ jobs:
           backend/tests/test_postgres_project_write_adapter_integration.py
           backend/tests/test_postgres_project_enrichment_adapters_pg16_integration.py
           backend/tests/test_postgres16_github_project_semantic_source_integration.py
+          backend/tests/test_postgres_push_repositories_integration.py
           EOF
 
   compose-smoke:
