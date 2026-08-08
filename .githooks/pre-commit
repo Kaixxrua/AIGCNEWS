@@ -37,31 +37,123 @@ if [[ "$backend_changed" == "1" ]]; then
   fi
 fi
 
-# 2. 受影响测试快筛：backend/app 变更时映射同名测试文件存在则运行。
+# 2. 受影响测试快筛：backend/app 变更时映射测试文件存在则运行。
 # 仅 test_*.py 可直接作为 pytest 目标；conftest.py、fixtures 等辅助文件
 # 无测试用例，直接运行会因 "no tests ran"（exit 5）误杀提交。
+# 映射优先级：同名精确 test_<base>.py > 同名拆分 test_<base>_*.py >
+# 域级回退（api/core/repositories 的前缀/目录规则，见下）；全无候选时
+# echo 警告而非静默跳过，避免"改了代码但没跑任何测试"的盲区。
 if [[ "$backend_changed" == "1" ]]; then
   tests=()
+
+  # collect_tests <词干>：把 backend/tests/test_<词干>*.py 命中项追加进 tests。
+  # 用开放前缀 glob（词干后不带下划线边界），兼容单复数命名差异
+  # （push_channel → test_push_channels.py）。
+  collect_tests() {
+    local stem="$1" f hit=1
+    for f in backend/tests/test_"${stem}"*.py; do
+      if [[ -f "$f" ]]; then
+        tests+=("$f")
+        hit=0
+      fi
+    done
+    return "$hit"
+  }
+
+  # collect_progressive <词干>：按 _ 分词逐级截尾重试（a_b_c → a_b → a），
+  # 任一级命中即停。用于"完整词干无专属测试、回退到上级域套件"的场景
+  # （postgres_push_channel → test_postgres_push_repositories_integration.py）。
+  collect_progressive() {
+    local stem="$1"
+    while [[ -n "$stem" ]]; do
+      collect_tests "$stem" && return 0
+      [[ "$stem" == *_* ]] || return 1
+      stem="${stem%_*}"
+    done
+    return 1
+  }
+
+  # api/routes_<res>.py：先模块基名链（routes_ops_x → test_routes_ops_x_*），
+  # 再资源名链（github_projects → github_project 单数 → github 逐级截尾）。
+  map_api_tests() {
+    local base="$1" resource="${1#routes_}" stem="$base"
+    while [[ "$stem" == routes_*_* ]]; do
+      collect_tests "$stem" && return 0
+      stem="${stem%_*}"
+    done
+    collect_tests "$stem" && return 0
+    # 单词资源以 s 结尾时先试单数（github_projects → test_github_project_*）
+    if [[ "$resource" == *s && "$resource" != *_* ]]; then
+      collect_tests "${resource%s}" && return 0
+    fi
+    collect_progressive "$resource"
+  }
+
+  # repositories/<x>.py：去掉 postgres_ 前缀与 _repository/_repositories
+  # 后缀得到词干。postgres 仓储并集收集两族测试：test_postgres_<词干>* 族
+  # （真库集成）与 test_<词干>* 族（Fake 契约/服务测试常以资源名命名）。
+  map_repository_tests() {
+    local stem="$1" ok=1 pg=0
+    if [[ "$stem" == postgres_* ]]; then
+      pg=1
+      stem="${stem#postgres_}"
+    fi
+    stem="${stem%_repository}"
+    stem="${stem%_repositories}"
+    if [[ "$pg" == "1" ]]; then
+      collect_progressive "postgres_${stem}" && ok=0
+    fi
+    collect_progressive "$stem" && ok=0
+    return "$ok"
+  }
+
   while IFS= read -r path; do
     case "$path" in
       backend/tests/test_*.py|backend/tests/*/test_*.py) tests+=("$path") ;;
       backend/app/*.py)
         base=$(basename "$path" .py)
+        mapped=1
         candidate="backend/tests/test_${base}.py"
         if [[ -f "$candidate" ]]; then
           tests+=("$candidate")
+          mapped=0
         else
           # 热点模块的测试常拆成 test_<base>_*.py 多个文件（如 scheduler），
           # 精确候选不存在时回退 glob；glob 无匹配时保持字面量，
-          # [[ -f ]] 判假即仍无候选，跳过。
+          # [[ -f ]] 判假即仍无候选，继续进入域级回退。
           for split in backend/tests/test_"${base}"_*.py; do
-            [[ -f "$split" ]] && tests+=("$split")
+            if [[ -f "$split" ]]; then
+              tests+=("$split")
+              mapped=0
+            fi
           done
+        fi
+        if [[ "$mapped" == "1" ]]; then
+          rel="${path#backend/app/}"
+          case "$rel" in
+            api/routes_*.py) map_api_tests "$base" && mapped=0 ;;
+            api/*.py)
+              # 非 routes 模块（dependencies 等）：先试 test_api_<base>
+              collect_tests "api_${base}" && mapped=0
+              if [[ "$mapped" == "1" ]]; then
+                collect_progressive "$base" && mapped=0
+              fi
+              ;;
+            repositories/*.py) map_repository_tests "$base" && mapped=0 ;;
+            core/*.py) collect_progressive "$base" && mapped=0 ;;
+          esac
+        fi
+        if [[ "$mapped" == "1" ]]; then
+          echo "[pre-commit] 警告：$path 未映射到任何测试文件，跳过其测试快筛" >&2
         fi
         ;;
     esac
   done <<< "$staged"
+
+  # 多个暂存文件可能映射到同一测试（如两个 push 仓储 → 同一集成套件），
+  # 去重并保持首次出现顺序，避免 pytest 重复收集。
   if [[ "${#tests[@]}" -gt 0 ]]; then
+    mapfile -t tests < <(printf '%s\n' "${tests[@]}" | awk '!seen[$0]++')
     pytest_bin="backend/.venv/bin/python"
     if [[ ! -x "$pytest_bin" ]]; then
       echo "[pre-commit] 未找到 $pytest_bin，跳过测试快筛（可执行 uv pip install -r backend/requirements-dev.txt）" >&2
