@@ -67,11 +67,11 @@ def _test_box() -> WeChatSecretBox:
     return WeChatSecretBox.from_urlsafe_base64(_TEST_KEY_MATERIAL, "v1")
 
 
-def _public_getaddrinfo(host: str, port: Any) -> list[tuple]:
+def _public_getaddrinfo(host: str, port: Any, **_kwargs: Any) -> list[tuple]:
     return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port or 0))]
 
 
-def _private_getaddrinfo(host: str, port: Any) -> list[tuple]:
+def _private_getaddrinfo(host: str, port: Any, **_kwargs: Any) -> list[tuple]:
     return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.10", port or 0))]
 
 
@@ -132,13 +132,13 @@ class WebhookUrlValidationTests(unittest.TestCase):
 
     def test_dns_resolution_must_be_public(self) -> None:
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_private_getaddrinfo,
         ):
             with self.assertRaises(WebhookUrlError):
                 validate_webhook_url(_WECOM_URL)
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=socket.gaierror("name or service not known"),
         ):
             with self.assertRaises(WebhookUrlError):
@@ -146,7 +146,7 @@ class WebhookUrlValidationTests(unittest.TestCase):
 
     def test_accepts_public_dns_and_strips_whitespace(self) -> None:
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             self.assertEqual(validate_webhook_url(f"  {_WECOM_URL}  "), _WECOM_URL)
@@ -225,7 +225,7 @@ class WebhookSenderTests(unittest.IsolatedAsyncioTestCase):
             lambda request: httpx.Response(200, json={"errcode": 0, "errmsg": "ok"})
         )
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             await sender.send(url=_WECOM_URL, title="测试标题", content="测试内容")
@@ -241,7 +241,7 @@ class WebhookSenderTests(unittest.IsolatedAsyncioTestCase):
         )
         paragraphs = [f"段落{i}-" + "字" * 260 for i in range(10)]
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             await sender.send(url=_WECOM_URL, title="标题", content="\n\n".join(paragraphs))
@@ -257,7 +257,7 @@ class WebhookSenderTests(unittest.IsolatedAsyncioTestCase):
             lambda request: httpx.Response(500, text="boom")
         )
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             with self.assertRaises(WebhookDeliveryError):
@@ -270,7 +270,7 @@ class WebhookSenderTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             with self.assertRaises(WebhookDeliveryError):
@@ -279,7 +279,7 @@ class WebhookSenderTests(unittest.IsolatedAsyncioTestCase):
     async def test_generic_two_xx_without_json_counts_success(self) -> None:
         sender, requests = self._sender(lambda request: httpx.Response(204))
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             await sender.send(url=_GENERIC_URL, title="标题", content="内容")
@@ -293,8 +293,72 @@ class WebhookSenderTests(unittest.IsolatedAsyncioTestCase):
             lambda request: httpx.Response(200, json={"errcode": 0})
         )
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_private_getaddrinfo,
+        ):
+            with self.assertRaises(WebhookUrlError):
+                await sender.send(url=_WECOM_URL, title="t", content="c")
+        self.assertEqual(requests, [])
+
+    async def test_connection_is_pinned_to_validated_ip(self) -> None:
+        """投递请求必须发往校验出的 IP 字面量，Host/SNI 保持原主机。"""
+        sender, requests = self._sender(
+            lambda request: httpx.Response(200, json={"errcode": 0})
+        )
+        with patch(
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
+            side_effect=_public_getaddrinfo,
+        ):
+            await sender.send(url=_WECOM_URL, title="t", content="c")
+        self.assertEqual(len(requests), 1)
+        pinned = requests[0]
+        # 连接目标是 IP 字面量（不再二次解析域名），Host 头与 SNI 仍是原主机
+        self.assertEqual(pinned.url.host, "93.184.216.34")
+        self.assertEqual(pinned.url.path, "/cgi-bin/webhook/send")
+        self.assertEqual(pinned.url.query, b"key=test-key-123")
+        self.assertEqual(pinned.headers["host"], "qyapi.weixin.qq.com")
+        self.assertEqual(pinned.extensions["sni_hostname"], "qyapi.weixin.qq.com")
+
+    async def test_dns_rebind_between_validate_and_connect_is_rejected(self) -> None:
+        """模拟重绑定：校验时解析为公网、连接前漂移为私网。
+
+        无固定机制时 httpx 连接会采信第二次解析结果直连私网；固定后
+        校验与连接共用同一次解析，漂移结果在投递前被拒绝。
+        """
+        answers = [
+            _public_getaddrinfo("h", None),
+            _private_getaddrinfo("h", None),
+        ]
+
+        def _rebinding_getaddrinfo(host: str, port: Any, **_kwargs: Any) -> list[tuple]:
+            return answers.pop(0) if answers else _private_getaddrinfo(host, port)
+
+        sender, requests = self._sender(
+            lambda request: httpx.Response(200, json={"errcode": 0})
+        )
+        with patch(
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
+            side_effect=_rebinding_getaddrinfo,
+        ):
+            with self.assertRaises(WebhookUrlError):
+                await sender.send(url=_WECOM_URL, title="t", content="c")
+        self.assertEqual(requests, [])
+
+    async def test_mixed_public_and_private_answers_rejected(self) -> None:
+        """一次解析同时返回公网与私网地址时整体拒绝（不给连接挑选私网的机会）。"""
+
+        def _mixed_getaddrinfo(host: str, port: Any, **_kwargs: Any) -> list[tuple]:
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port or 0)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.10", port or 0)),
+            ]
+
+        sender, requests = self._sender(
+            lambda request: httpx.Response(200, json={"errcode": 0})
+        )
+        with patch(
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
+            side_effect=_mixed_getaddrinfo,
         ):
             with self.assertRaises(WebhookUrlError):
                 await sender.send(url=_WECOM_URL, title="t", content="c")
@@ -310,7 +374,7 @@ class CreateWebhookChannelServiceTests(unittest.IsolatedAsyncioTestCase):
         service, repo = self._service()
         sender = FakeWebhookSender()
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             channel, created = await service.create_webhook_channel(
@@ -336,7 +400,7 @@ class CreateWebhookChannelServiceTests(unittest.IsolatedAsyncioTestCase):
         service, _ = self._service()
         sender = FakeWebhookSender()
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             await service.create_webhook_channel(
@@ -353,7 +417,7 @@ class CreateWebhookChannelServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_probe_failure_leaves_no_row(self) -> None:
         service, repo = self._service()
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             with self.assertRaises(WebhookProbeFailedError):
@@ -368,7 +432,7 @@ class CreateWebhookChannelServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_encryption_key_refuses_storage(self) -> None:
         service, repo = self._service()
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             with self.assertRaises(PushChannelSecretError):
@@ -420,7 +484,7 @@ class SendTestMessageServiceTests(unittest.IsolatedAsyncioTestCase):
         channel = await self._webhook_channel(repo)
         sender = FakeWebhookSender()
         with patch(
-            "backend.app.services.push.webhook_service.socket.getaddrinfo",
+            "backend.app.services.outbound_target_policy.socket.getaddrinfo",
             side_effect=_public_getaddrinfo,
         ):
             result = await service.send_test_message(
@@ -677,7 +741,7 @@ class WebhookRouteTests(unittest.TestCase):
                 side_effect=lambda: _test_box(),
             ),
             patch(
-                "backend.app.services.push.webhook_service.socket.getaddrinfo",
+                "backend.app.services.outbound_target_policy.socket.getaddrinfo",
                 side_effect=_public_getaddrinfo,
             ),
             patch.object(

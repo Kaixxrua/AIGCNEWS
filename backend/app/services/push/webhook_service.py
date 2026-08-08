@@ -6,22 +6,28 @@
 
 安全边界（Red）：
 - 仅允许 https；拒绝携带 userinfo；
-- 主机名先做 IP 字面量检查，再做 DNS 解析，任一解析结果不是公网地址
-  （私网/回环/链路本地/保留段）即拒绝，创建与每次投递前都校验；
+- 主机名按出站目标策略解析，任一解析结果不是公网地址
+  （私网/回环/链路本地/保留/组播段）即拒绝，创建与每次投递前都校验；
+- 投递时把校验过的 IP 固定进连接（Host/SNI 保持原主机），校验与连接
+  共用同一次解析结果，消除 DNS 重绑定 TOCTOU 窗口；
 - 请求不跟随重定向，超时收紧，平台侧 errcode 非 0 视为失败。
 """
 
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import logging
-import socket
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
 
+from backend.app.services.outbound_target_policy import (
+    OutboundTargetPolicyError,
+    PinnedHttpTarget,
+    pin_http_target,
+    resolve_public_ips,
+)
 from backend.app.services.push.errors import WebhookDeliveryError, WebhookUrlError
 
 logger = logging.getLogger(__name__)
@@ -60,22 +66,12 @@ def detect_provider(url: str) -> str:
 
 
 def _host_is_public(host: str) -> bool:
-    """主机字面量或其全部 DNS 解析结果均为公网地址。"""
+    """主机字面量或其全部 DNS 解析结果均为公网地址（与出站目标策略同口径）。"""
     try:
-        return ipaddress.ip_address(host).is_global
-    except ValueError:
-        pass
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except OSError:
+        resolve_public_ips(host, reject_mixed=True)
+    except OutboundTargetPolicyError:
         return False
-    addresses = {info[4][0] for info in infos}
-    if not addresses:
-        return False
-    try:
-        return all(ipaddress.ip_address(address).is_global for address in addresses)
-    except ValueError:
-        return False
+    return True
 
 
 def validate_webhook_url(raw: str) -> str:
@@ -97,6 +93,26 @@ def validate_webhook_url(raw: str) -> str:
     if not _host_is_public(host):
         raise WebhookUrlError("Webhook URL 主机不在允许范围（需为可解析的公网地址）")
     return candidate
+
+
+def _pin_webhook_target(url: str) -> PinnedHttpTarget:
+    """把校验过的解析结果固定为连接目标，防 DNS 重绑定。
+
+    请求 URL 使用本次解析出的公网 IP 字面量，Host 头与 TLS SNI 保持
+    原主机名；连接阶段不再发生第二次独立 DNS 解析，校验时刻与连接
+    时刻之间不存在解析漂移窗口。
+    """
+    try:
+        return pin_http_target(url, reject_mixed=True)
+    except OutboundTargetPolicyError as exc:
+        raise WebhookUrlError(
+            "Webhook URL 主机不在允许范围（需为可解析的公网地址）"
+        ) from exc
+
+
+def _validate_and_pin(raw: str) -> tuple[str, PinnedHttpTarget]:
+    normalized = validate_webhook_url(raw)
+    return normalized, _pin_webhook_target(normalized)
 
 
 def build_webhook_payload(
@@ -172,8 +188,9 @@ class WebhookSender:
         self._transport = transport
 
     async def send(self, *, url: str, title: str, content: str) -> None:
-        # 创建时校验过的 URL 在每次投递前重查（防 DNS 重绑定漂移）。
-        normalized = await asyncio.to_thread(validate_webhook_url, url)
+        # 创建时校验过的 URL 在每次投递前重查并固定解析结果
+        # （防 DNS 重绑定漂移：连接复用校验时刻的解析，不再独立解析）。
+        normalized, target = await asyncio.to_thread(_validate_and_pin, url)
         provider = detect_provider(normalized)
         chunks = chunk_markdown_for_provider(provider, content)
         async with httpx.AsyncClient(
@@ -184,18 +201,23 @@ class WebhookSender:
         ) as client:
             for index, chunk in enumerate(chunks, start=1):
                 payload = build_webhook_payload(provider, title=title, content=chunk)
-                await self._post(client, normalized, provider, payload, index)
+                await self._post(client, target, provider, payload, index)
 
     async def _post(
         self,
         client: httpx.AsyncClient,
-        url: str,
+        target: PinnedHttpTarget,
         provider: str,
         payload: dict[str, Any],
         chunk_index: int,
     ) -> None:
         try:
-            response = await client.post(url, json=payload)
+            response = await client.post(
+                target.request_url,
+                json=payload,
+                headers=target.headers,
+                extensions=target.extensions,
+            )
         except httpx.HTTPError as exc:
             raise WebhookDeliveryError(f"Webhook 请求失败：{exc}") from exc
         if response.status_code >= 400:
