@@ -68,13 +68,19 @@ class PostgresRuntimeProviderSettingRepository:
                 else:
                     effective_api_key = existing.get("api_key") if existing else None
 
-                # 富化专用推理强度不在本表单内：单行重建时沿用旧值，避免被整体覆盖清空
+                # 富化专用推理强度不在本表单内：INSERT 沿用最近一行的旧值，
+                # 冲突更新则保留目标行自己的值，避免被整体覆盖清空
                 carried_enrichment_effort = (
                     (existing.get("enrichment_reasoning_effort") or "")
                     if existing
                     else ""
                 )
 
+                # 单行重建保持 singleton 语义；INSERT ... ON CONFLICT 兜底
+                # 空表并发 upsert：两个事务都 SELECT 为空、DELETE 无行时，
+                # 同 provider 的并发 INSERT 由唯一约束序列化转为更新，不再
+                # 抛出主键冲突（不同 provider 的并发则后到者 DELETE 先提交行，
+                # 行为与旧实现一致）。
                 cursor.execute("DELETE FROM runtime_provider_settings")
                 cursor.execute(
                     """
@@ -82,6 +88,14 @@ class PostgresRuntimeProviderSettingRepository:
                         (provider, base_url, api_key, model_name, reasoning_effort,
                          enrichment_reasoning_effort, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (provider) DO UPDATE SET
+                        base_url = EXCLUDED.base_url,
+                        api_key = EXCLUDED.api_key,
+                        model_name = EXCLUDED.model_name,
+                        reasoning_effort = EXCLUDED.reasoning_effort,
+                        enrichment_reasoning_effort =
+                            runtime_provider_settings.enrichment_reasoning_effort,
+                        updated_at = CURRENT_TIMESTAMP
                     RETURNING provider, base_url, api_key, model_name, reasoning_effort,
                               enrichment_reasoning_effort, updated_at
                     """,
@@ -122,12 +136,17 @@ class PostgresRuntimeProviderSettingRepository:
                     (clean_effort,),
                 )
                 if cursor.rowcount == 0:
+                    # 空表并发补建：ON CONFLICT 序列化，后到事务转为更新
                     cursor.execute(
                         """
                         INSERT INTO runtime_provider_settings
                             (provider, base_url, api_key, model_name, reasoning_effort,
                              enrichment_reasoning_effort, updated_at)
                         VALUES ('', '', NULL, '', '', %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (provider) DO UPDATE SET
+                            enrichment_reasoning_effort =
+                                EXCLUDED.enrichment_reasoning_effort,
+                            updated_at = CURRENT_TIMESTAMP
                         """,
                         (clean_effort,),
                     )

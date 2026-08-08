@@ -34,6 +34,47 @@ def _json_list(value: Any) -> list[str]:
     return [str(item).strip() for item in values if str(item).strip()]
 
 
+# 用户视角的工具网站聚合条目：基础元数据 + 系统富化 + 用户覆盖 + 收藏/添加状态。
+# upsert_user_tool_website_override 在写事务内复用同一查询回读，保持返回形状单一事实源。
+_TOOL_WEBSITE_ITEM_FOR_USER_SQL = """SELECT 'website:' || w.id::text AS id, 'website' AS source,
+           NULL::text AS repo_id, w.id AS website_id,
+           COALESCE(NULLIF(uo.title, ''), NULLIF(w.title, ''), w.domain) AS full_name,
+           COALESCE(NULLIF(uo.title, ''), w.title) AS title,
+           w.canonical_url AS url, w.domain,
+           COALESCE(NULLIF(uo.image_url, ''), NULLIF(w.image_url, ''),
+               regexp_replace(w.canonical_url, '^(([^/]+/){2}[^/]+).*$', '\\1') || '/favicon.ico') AS image_url,
+           COALESCE(NULLIF(uo.description, ''), w.description) AS description,
+           COALESCE(NULLIF(uo.description_zh, ''), e.description_zh) AS description_zh,
+           COALESCE(NULLIF(uo.description_en, ''), e.description_en) AS description_en,
+           COALESCE(NULLIF(uo.category_slug, ''), e.category_slug) AS category_slug,
+           COALESCE(NULLIF(uo.category_name_zh, ''), e.category_name_zh, NULLIF(uo.category_name, ''), e.category_name) AS category_name_zh,
+           COALESCE(NULLIF(uo.category_name_en, ''), e.category_name_en) AS category_name_en,
+           COALESCE(NULLIF(uo.subcategory_slug, ''), e.subcategory_slug) AS subcategory_slug,
+           COALESCE(NULLIF(uo.subcategory_name_zh, ''), e.subcategory_name_zh, NULLIF(uo.subcategory_name, ''), e.subcategory_name) AS subcategory_name_zh,
+           COALESCE(NULLIF(uo.subcategory_name_en, ''), e.subcategory_name_en) AS subcategory_name_en,
+           COALESCE(NULLIF(uo.tags_json::text, ''), e.tags_json::text) AS tags_json,
+           CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL
+                ELSE e.tags_zh_json::text END AS tags_zh_json,
+           CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL
+                ELSE e.tags_en_json::text END AS tags_en_json,
+           CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN 'user'
+                ELSE 'system' END AS tags_origin,
+           NULL::text AS language, '[]' AS topics_json, 0 AS stars, 0 AS forks,
+           0 AS watchers, 0 AS open_issues, NULL::text AS created_at,
+           NULL::text AS pushed_at, w.first_seen_at, w.last_seen_at,
+           NULL::text AS last_snapshot_at, NULL::text AS snapshot_date,
+           NULL::text AS captured_at, e.confidence,
+           (pf.id IS NOT NULL) AS is_favorited, pf.created_at AS favorited_at,
+           (utw.id IS NOT NULL) AS user_added, utw.created_at AS user_added_at
+       FROM tool_websites w
+       LEFT JOIN tool_website_enrichments e ON e.website_id = w.id
+       LEFT JOIN user_tool_websites utw ON utw.user_id = %s AND utw.website_id = w.id
+       LEFT JOIN project_favorites pf ON pf.user_id = %s
+            AND pf.project_source = 'website' AND pf.project_id = w.id::text
+       LEFT JOIN user_tool_website_overrides uo ON uo.user_id = %s AND uo.website_id = w.id
+       WHERE w.id = %s LIMIT 1"""
+
+
 class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
     """PostgreSQL aggregate adapter for personal collections and recommendations."""
 
@@ -112,6 +153,7 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                        ON CONFLICT (repo_id) DO UPDATE SET
                            active = TRUE,
                            recommended_by_user_id = EXCLUDED.recommended_by_user_id,
+                           recommended_at = CURRENT_TIMESTAMP,
                            updated_at = CURRENT_TIMESTAMP
                        RETURNING recommended_at""",
                     (canonical_id, user_id),
@@ -316,47 +358,21 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
     def get_tool_website_item_for_user(
         self, *, user_id: int, website_id: int
     ) -> dict[str, Any] | None:
-        sql = """SELECT 'website:' || w.id::text AS id, 'website' AS source,
-                   NULL::text AS repo_id, w.id AS website_id,
-                   COALESCE(NULLIF(uo.title, ''), NULLIF(w.title, ''), w.domain) AS full_name,
-                   COALESCE(NULLIF(uo.title, ''), w.title) AS title,
-                   w.canonical_url AS url, w.domain,
-                   COALESCE(NULLIF(uo.image_url, ''), NULLIF(w.image_url, ''),
-                       regexp_replace(w.canonical_url, '^(([^/]+/){2}[^/]+).*$', '\\1') || '/favicon.ico') AS image_url,
-                   COALESCE(NULLIF(uo.description, ''), w.description) AS description,
-                   COALESCE(NULLIF(uo.description_zh, ''), e.description_zh) AS description_zh,
-                   COALESCE(NULLIF(uo.description_en, ''), e.description_en) AS description_en,
-                   COALESCE(NULLIF(uo.category_slug, ''), e.category_slug) AS category_slug,
-                   COALESCE(NULLIF(uo.category_name_zh, ''), e.category_name_zh, NULLIF(uo.category_name, ''), e.category_name) AS category_name_zh,
-                   COALESCE(NULLIF(uo.category_name_en, ''), e.category_name_en) AS category_name_en,
-                   COALESCE(NULLIF(uo.subcategory_slug, ''), e.subcategory_slug) AS subcategory_slug,
-                   COALESCE(NULLIF(uo.subcategory_name_zh, ''), e.subcategory_name_zh, NULLIF(uo.subcategory_name, ''), e.subcategory_name) AS subcategory_name_zh,
-                   COALESCE(NULLIF(uo.subcategory_name_en, ''), e.subcategory_name_en) AS subcategory_name_en,
-                   COALESCE(NULLIF(uo.tags_json::text, ''), e.tags_json::text) AS tags_json,
-                   CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL
-                        ELSE e.tags_zh_json::text END AS tags_zh_json,
-                   CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN NULL
-                        ELSE e.tags_en_json::text END AS tags_en_json,
-                   CASE WHEN NULLIF(uo.tags_json::text, '') IS NOT NULL THEN 'user'
-                        ELSE 'system' END AS tags_origin,
-                   NULL::text AS language, '[]' AS topics_json, 0 AS stars, 0 AS forks,
-                   0 AS watchers, 0 AS open_issues, NULL::text AS created_at,
-                   NULL::text AS pushed_at, w.first_seen_at, w.last_seen_at,
-                   NULL::text AS last_snapshot_at, NULL::text AS snapshot_date,
-                   NULL::text AS captured_at, e.confidence,
-                   (pf.id IS NOT NULL) AS is_favorited, pf.created_at AS favorited_at,
-                   (utw.id IS NOT NULL) AS user_added, utw.created_at AS user_added_at
-               FROM tool_websites w
-               LEFT JOIN tool_website_enrichments e ON e.website_id = w.id
-               LEFT JOIN user_tool_websites utw ON utw.user_id = %s AND utw.website_id = w.id
-               LEFT JOIN project_favorites pf ON pf.user_id = %s
-                    AND pf.project_source = 'website' AND pf.project_id = w.id::text
-               LEFT JOIN user_tool_website_overrides uo ON uo.user_id = %s AND uo.website_id = w.id
-               WHERE w.id = %s LIMIT 1"""
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(sql, (int(user_id), int(user_id), int(user_id), int(website_id)))
-                row = cursor.fetchone()
+                return self._fetch_tool_website_item_for_user(
+                    cursor, user_id=user_id, website_id=website_id
+                )
+
+    @staticmethod
+    def _fetch_tool_website_item_for_user(
+        cursor: Any, *, user_id: int, website_id: int
+    ) -> dict[str, Any] | None:
+        cursor.execute(
+            _TOOL_WEBSITE_ITEM_FOR_USER_SQL,
+            (int(user_id), int(user_id), int(user_id), int(website_id)),
+        )
+        row = cursor.fetchone()
         return normalize_project_row(row) if row else None
 
     def upsert_user_tool_website_override(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -399,10 +415,16 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                            subcategory_name=EXCLUDED.subcategory_name,
                            subcategory_name_zh=EXCLUDED.subcategory_name_zh,
                            subcategory_name_en=EXCLUDED.subcategory_name_en, tags_json=EXCLUDED.tags_json,
-                           updated_at=CURRENT_TIMESTAMP""",
+                           updated_at=CURRENT_TIMESTAMP
+                       RETURNING id""",
                     (user_id, website_id, *fields, tags_json),
                 )
-        item = self.get_tool_website_item_for_user(user_id=user_id, website_id=website_id)
+                if cursor.fetchone() is None:
+                    raise RuntimeError("PostgreSQL override upsert did not return a row")
+                # 写事务内回读聚合条目：不再于提交后开第二事务，消除读旧快照窗口
+                item = self._fetch_tool_website_item_for_user(
+                    cursor, user_id=user_id, website_id=website_id
+                )
         if not item:
             raise LookupError("工具网站不存在")
         return item

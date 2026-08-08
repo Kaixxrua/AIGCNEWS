@@ -28,6 +28,69 @@ class FakeDatabase:
         yield self.connection
 
 
+def test_github_candidate_query_pushes_eligibility_and_limit_into_sql() -> None:
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    repository = PostgresGitHubProjectEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+
+    repository.get_github_projects_needing_enrichment(limit=25, min_stars=600)
+    sql, params = cursor.execute.call_args.args
+    assert "LIMIT %s" in sql
+    assert "e.repo_id IS NULL" in sql
+    assert "e.status IS DISTINCT FROM 'succeeded'" in sql
+    assert "DISTINCT ON (repo_id)" in sql
+    assert params == (600, 25)
+
+    repository.get_github_projects_needing_enrichment(
+        refresh_changed=True, prompt_version="v9", limit=10,
+    )
+    sql, params = cursor.execute.call_args.args
+    assert "e.prompt_version IS DISTINCT FROM %s" in sql
+    assert "sha256" in sql
+    assert "e.source_fingerprint IS DISTINCT FROM" in sql
+    assert params == (500, "v9", 10)
+
+    repository.get_github_projects_needing_enrichment(force=True, limit=5)
+    sql, params = cursor.execute.call_args.args
+    assert "AND TRUE" in sql
+    assert "IS DISTINCT FROM" not in sql
+    assert params == (500, 5)
+
+    repository.get_github_projects_needing_enrichment(retry_failed=False, limit=7)
+    sql, params = cursor.execute.call_args.args
+    assert "e.repo_id IS NULL" in sql
+    assert "e.status IS DISTINCT FROM 'succeeded'" not in sql
+    assert params == (500, 7)
+
+
+def test_github_fingerprint_sql_matches_python_fingerprint() -> None:
+    # _FINGERPRINT_SQL 与 _github_fingerprint 必须同构：拼接顺序、分隔符、编码一致
+    import hashlib
+
+    from backend.app.repositories.postgres_project_enrichment_repository import (
+        _FINGERPRINT_SQL,
+        _github_fingerprint,
+    )
+
+    row = {
+        "full_name": "acme/agent",
+        "description": "Agent 描述",
+        "language": "Python",
+        "topics_json": '["rag"]',
+    }
+    expected = hashlib.sha256(
+        "acme/agent\nAgent 描述\nPython\n[\"rag\"]".encode("utf-8")
+    ).hexdigest()
+    assert _github_fingerprint(row) == expected
+    assert "COALESCE(c.full_name, '')" in _FINGERPRINT_SQL
+    assert "COALESCE(c.description, '')" in _FINGERPRINT_SQL
+    assert "COALESCE(c.language, '')" in _FINGERPRINT_SQL
+    assert "COALESCE(c.topics_json, '')" in _FINGERPRINT_SQL
+    assert "E'\\n'" in _FINGERPRINT_SQL
+    assert "sha256" in _FINGERPRINT_SQL
+    assert "UTF8" in _FINGERPRINT_SQL
+
+
 def test_postgres_enrichment_adapters_expose_protocols_and_provider_reader() -> None:
     database = FakeDatabase(MagicMock())
     github: GitHubProjectEnrichmentRepository = PostgresGitHubProjectEnrichmentRepository(database)  # type: ignore[arg-type]

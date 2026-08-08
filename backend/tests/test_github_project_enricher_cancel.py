@@ -167,3 +167,51 @@ def test_running_flag_visible_during_batch(monkeypatch) -> None:
     assert result["status"] == "success"
     assert observed == [True]
     assert github_enrichment_batch_running() is False
+
+
+def test_new_batch_does_not_revoke_older_batch_cancel_signal(monkeypatch) -> None:
+    """每批次独立取消信号：新批次进入不得撤销旧批次已收到的取消请求。"""
+    enricher_a = GitHubProjectEnricher(_repository(_candidates(3)))
+    enricher_b = GitHubProjectEnricher(_repository(_candidates(2)))
+    started = threading.Event()
+    release = threading.Event()
+    observed: list[bool] = []
+
+    def slow_enrich_one(repo, *, cancel_event=None):
+        started.set()
+        if not release.wait(timeout=5):
+            raise RuntimeError("test timed out waiting for release")
+        # 旧批次恢复执行时必须仍持有已置位的取消信号
+        observed.append(bool(cancel_event and cancel_event.is_set()))
+        if cancel_event is not None and cancel_event.is_set():
+            raise _EnrichmentCancelled("stop")
+        return _result()
+
+    monkeypatch.setattr(enricher_a, "_enrich_one", slow_enrich_one)
+    monkeypatch.setattr(
+        enricher_b, "_enrich_one", lambda repo, *, cancel_event=None: _result()
+    )
+
+    result_a: dict = {}
+    thread = threading.Thread(
+        target=lambda: result_a.update(enricher_a.enrich_batch(limit=3, concurrency=1)),
+        daemon=True,
+    )
+    thread.start()
+    assert started.wait(timeout=5)
+    assert request_github_enrichment_cancel() is True
+
+    # 旧批次取消信号已置位时，新批次以干净信号起步并正常跑完
+    result_b = enricher_b.enrich_batch(limit=2, concurrency=1)
+    assert result_b["status"] == "success"
+    assert result_b["succeeded"] == 2
+
+    release.set()
+    thread.join(timeout=5)
+
+    assert observed == [True]
+    assert result_a["status"] == "cancelled"
+    assert result_a["cancelled"] == 3
+    repository_a_marks = enricher_a.db.mark_github_repo_enrichment_failed
+    repository_a_marks.assert_not_called()
+    assert github_enrichment_batch_running() is False

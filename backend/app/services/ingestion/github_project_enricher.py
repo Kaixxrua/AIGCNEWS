@@ -78,9 +78,11 @@ class _EnrichmentCancelled(Exception):
 # 进程级终止信号与运行计数：运维面板的「终止富化」对本进程内 enrich_batch
 # 生效（手动补跑/重试与每日流水线共用同一入口）；enrich_rows（爬取运行内
 # 自动富化）不受影响，保持爬取行为不变。
-_cancel_event = threading.Event()
+# 每批次独立 event（batch_id → event 注册表）：新批次不再 clear 共享信号，
+# 旧批次的取消请求不会被后到的批次撤销；取消请求置位当前全部运行中批次。
+_batch_events: dict[int, threading.Event] = {}
 _running_lock = threading.Lock()
-_running_batches = 0
+_next_batch_id = 0
 
 
 def request_github_enrichment_cancel() -> bool:
@@ -91,28 +93,32 @@ def request_github_enrichment_cancel() -> bool:
     调用方稍后再次请求即可。
     """
     with _running_lock:
-        running = _running_batches > 0
-    if running:
-        _cancel_event.set()
-    return running
+        events = list(_batch_events.values())
+    if not events:
+        return False
+    for event in events:
+        event.set()
+    return True
 
 
 def github_enrichment_batch_running() -> bool:
     with _running_lock:
-        return _running_batches > 0
+        return bool(_batch_events)
 
 
-def _enter_batch() -> None:
-    global _running_batches
+def _enter_batch() -> tuple[int, threading.Event]:
+    global _next_batch_id
     with _running_lock:
-        _cancel_event.clear()  # 新批次总是以干净的终止信号起步
-        _running_batches += 1
+        _next_batch_id += 1
+        batch_id = _next_batch_id
+        event = threading.Event()  # 新批次总是以干净的终止信号起步
+        _batch_events[batch_id] = event
+        return batch_id, event
 
 
-def _exit_batch() -> None:
-    global _running_batches
+def _exit_batch(batch_id: int) -> None:
     with _running_lock:
-        _running_batches = max(0, _running_batches - 1)
+        _batch_events.pop(batch_id, None)
 
 
 _SYSTEM_PROMPT = f"""\
@@ -226,7 +232,7 @@ class GitHubProjectEnricher:
             }
 
         concurrency = max(1, min(int(concurrency or 1), 10))
-        _enter_batch()
+        batch_id, cancel_event = _enter_batch()
         try:
             succeeded = 0
             failed = 0
@@ -235,16 +241,16 @@ class GitHubProjectEnricher:
             consecutive_failed = 0
             if concurrency <= 1:
                 for repo in candidates:
-                    if _cancel_event.is_set():
+                    if cancel_event.is_set():
                         break
-                    outcome = self._enrich_and_store(repo, cancel_event=_cancel_event)
+                    outcome = self._enrich_and_store(repo, cancel_event=cancel_event)
                     if outcome is None:
                         cancelled += 1
                     elif outcome:
                         succeeded += 1
                         consecutive_failed = 0
                         # 成功后的节流间隔同时充当终止监听窗口：收到信号立即停下
-                        if _cancel_event.wait(_REQUEST_INTERVAL):
+                        if cancel_event.wait(_REQUEST_INTERVAL):
                             break
                     else:
                         failed += 1
@@ -255,7 +261,7 @@ class GitHubProjectEnricher:
             else:
                 with ThreadPoolExecutor(max_workers=concurrency) as executor:
                     futures = [
-                        executor.submit(self._enrich_and_store, repo, cancel_event=_cancel_event)
+                        executor.submit(self._enrich_and_store, repo, cancel_event=cancel_event)
                         for repo in candidates
                     ]
                     for future in as_completed(futures):
@@ -270,11 +276,11 @@ class GitHubProjectEnricher:
                             consecutive_failed += 1
                             if (
                                 consecutive_failed >= _CONSECUTIVE_FAILURE_BREAKER
-                                and not _cancel_event.is_set()
+                                and not cancel_event.is_set()
                             ):
                                 breaker_tripped = True
                                 # 置位终止信号：未发起模型调用的条目记 cancelled 而非 failed
-                                _cancel_event.set()
+                                cancel_event.set()
             if breaker_tripped:
                 logger.warning(
                     "[GitHubProjectEnricher] 连续失败 %d 次触发熔断，剩余 %d 条保持待处理。"
@@ -294,7 +300,7 @@ class GitHubProjectEnricher:
                 "concurrency": concurrency,
             }
         finally:
-            _exit_batch()
+            _exit_batch(batch_id)
 
     def enrich_rows(
         self, rows: list[Dict[str, Any]], *, concurrency: int = 3
@@ -378,13 +384,20 @@ class GitHubProjectEnricher:
                 exc,
                 exc_info=True,
             )
-            self.db.mark_github_repo_enrichment_failed(
-                repo_id,
-                source_fingerprint=source_fingerprint,
-                prompt_version=PROMPT_VERSION,
-                error_msg=str(exc),
-                **self.model_meta,
-            )
+            try:
+                self.db.mark_github_repo_enrichment_failed(
+                    repo_id,
+                    source_fingerprint=source_fingerprint,
+                    prompt_version=PROMPT_VERSION,
+                    error_msg=str(exc),
+                    **self.model_meta,
+                )
+            except Exception:  # noqa: BLE001 - 失败状态落库本身故障不得穿透批处理
+                logger.error(
+                    "[GitHubProjectEnricher] 失败状态落库失败 repo=%s，本条保持待处理",
+                    repo.get("full_name") or repo_id,
+                    exc_info=True,
+                )
             return False
 
     def backfill_bilingual_tags(

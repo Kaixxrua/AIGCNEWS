@@ -133,3 +133,56 @@ def test_pg16_website_metadata_merge_item_and_enrichment_failure(repositories) -
     assert failed is not None
     assert failed["status"] == "failed"
     assert len(failed["error_msg"]) == 2000
+
+
+def test_pg16_refresh_changed_uses_sql_fingerprint_equivalent_to_python(repositories) -> None:
+    """refresh_changed 的 SQL 指纹下推与 Python 侧 _github_fingerprint 严格一致。"""
+    database, github, _ = repositories
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO github_repo_candidates
+                (repo_id,full_name,description,language,topics_json,stars,forks,watchers)
+                VALUES ('stable','acme/稳定','Agent 描述','Python','[\"rag\"]',900,2,3)""")
+
+    # 模块共享 schema 内可能有前序用例的其他 repo，断言只锁定 stable 一行
+    stable = next(
+        row
+        for row in github.get_github_projects_needing_enrichment(limit=50)
+        if row["repo_id"] == "stable"
+    )
+    fingerprint = stable["source_fingerprint"]
+    github.upsert_github_repo_enrichment({
+        "repo_id": "stable", "category_slug": "agent", "category_name": "Agent",
+        "description_zh": "智能体", "tags": ["RAG"], "source_fingerprint": fingerprint,
+        "prompt_version": "v1",
+    })
+
+    # 指纹与版本一致：SQL 下推必须排除该项目
+    assert "stable" not in {
+        row["repo_id"]
+        for row in github.get_github_projects_needing_enrichment(
+            refresh_changed=True, prompt_version="v1", limit=50,
+        )
+    }
+
+    # prompt_version 变化触发重富化
+    assert "stable" in {
+        row["repo_id"]
+        for row in github.get_github_projects_needing_enrichment(
+            refresh_changed=True, prompt_version="v2", limit=50,
+        )
+    }
+
+    # 内容变化（SQL 指纹随之变化）触发重富化
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE github_repo_candidates SET description='New 描述' "
+                "WHERE repo_id='stable'"
+            )
+    assert "stable" in {
+        row["repo_id"]
+        for row in github.get_github_projects_needing_enrichment(
+            refresh_changed=True, prompt_version="v1", limit=50,
+        )
+    }

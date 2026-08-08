@@ -51,6 +51,9 @@ class RankSnapshotRepositoryContractTests(unittest.TestCase):
             RankSnapshotAdminWriter.delete_snapshots_by_channel: (
                 "(self, snapshot_date, source_channel)"
             ),
+            RankSnapshotAdminWriter.replace_channel_snapshots: (
+                "(self, snapshot_date, source_channel, snapshots)"
+            ),
         }
         for method, signature in expected.items():
             with self.subTest(method=method.__name__):

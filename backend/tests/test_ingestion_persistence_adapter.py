@@ -151,14 +151,14 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
 
         self.assertEqual(write["title"], "Tweet")
 
-    def test_persist_deletes_channels_before_deterministic_upserts(self) -> None:
+    def test_persist_writes_documents_before_atomic_channel_replace(self) -> None:
         adapter, documents, snapshots, vectors, _, _ = self._adapter()
         events: list[tuple[str, str]] = []
-        snapshots.delete_snapshots_by_channel.side_effect = (
-            lambda _, channel: events.append(("delete", channel)) or 0
-        )
         documents.upsert_document.side_effect = lambda write: events.append(
             ("document", write["title"])
+        )
+        snapshots.replace_channel_snapshots.side_effect = (
+            lambda _, channel, rows: events.append(("replace", channel)) or len(rows)
         )
         snapshots.upsert_rank_snapshot.side_effect = lambda **kwargs: events.append(
             ("snapshot", kwargs["doc_id"])
@@ -173,14 +173,22 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         )
 
         self.assertEqual(count, 2)
-        first_document = next(i for i, event in enumerate(events) if event[0] == "document")
-        self.assertTrue(all(event[0] == "delete" for event in events[:first_document]))
+        # 文档按确定性顺序全部写完后，才逐 channel 原子替换快照
         self.assertEqual(
             [event[1] for event in events if event[0] == "document"], ["A", "B"]
         )
+        first_replace = next(
+            i for i, event in enumerate(events) if event[0] == "replace"
+        )
+        self.assertTrue(all(event[0] == "document" for event in events[:first_replace]))
+        self.assertEqual(
+            sorted(event[1] for event in events if event[0] == "replace"), ["a", "b"]
+        )
+        snapshots.delete_snapshots_by_channel.assert_not_called()
+        snapshots.upsert_rank_snapshot.assert_not_called()
         vectors.add_documents.assert_called_once()
 
-    def test_persist_skips_delete_for_accumulate_snapshot_channels(self) -> None:
+    def test_persist_skips_replace_for_accumulate_snapshot_channels(self) -> None:
         adapter, documents, snapshots, _, _, _ = self._adapter()
         papers = [
             {
@@ -195,9 +203,10 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
 
         self.assertEqual(count, 1)
         snapshots.delete_snapshots_by_channel.assert_not_called()
+        snapshots.replace_channel_snapshots.assert_not_called()
         snapshots.upsert_rank_snapshot.assert_called_once()
 
-    def test_persist_mixed_batch_deletes_only_replace_channels(self) -> None:
+    def test_persist_mixed_batch_replaces_only_replace_channels(self) -> None:
         adapter, documents, snapshots, _, _, _ = self._adapter()
         papers = [
             {
@@ -211,10 +220,16 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
 
         adapter.persist(papers, source_label="mixed", snapshot_date="2026-08-06")
 
-        snapshots.delete_snapshots_by_channel.assert_called_once_with(
-            "2026-08-06", "news_daily"
+        replace_call = snapshots.replace_channel_snapshots.call_args
+        self.assertEqual(replace_call.args[:2], ("2026-08-06", "news_daily"))
+        self.assertEqual(len(replace_call.args[2]), 1)
+        snapshots.delete_snapshots_by_channel.assert_not_called()
+        # 累积型 channel 保持逐行 upsert
+        snapshots.upsert_rank_snapshot.assert_called_once()
+        self.assertEqual(
+            snapshots.upsert_rank_snapshot.call_args.kwargs["source_channel"],
+            "x_daily_watchlist",
         )
-        self.assertEqual(snapshots.upsert_rank_snapshot.call_count, 2)
 
     def test_full_multi_store_event_ordering(self) -> None:
         events: list[str] = []
@@ -224,8 +239,8 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         extractor = MagicMock()
         graph = MagicMock()
         graph_documents = [MagicMock()]
-        snapshots.delete_snapshots_by_channel.side_effect = lambda *_: events.append(
-            "snapshot-delete"
+        snapshots.replace_channel_snapshots.side_effect = (
+            lambda *_: events.append("snapshot-replace") or 1
         )
         documents.upsert_document.side_effect = lambda *_: events.append("document")
         snapshots.upsert_rank_snapshot.side_effect = lambda **_: events.append(
@@ -262,9 +277,8 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         self.assertEqual(
             events,
             [
-                "snapshot-delete",
                 "document",
-                "snapshot-upsert",
+                "snapshot-replace",
                 "vector-factory",
                 "vector",
                 "graph-extractor-factory",
@@ -277,7 +291,7 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
 
     def test_secondary_store_failures_are_fail_open(self) -> None:
         adapter, documents, snapshots, vectors, extractor, graph = self._adapter()
-        snapshots.delete_snapshots_by_channel.side_effect = RuntimeError("delete")
+        snapshots.replace_channel_snapshots.side_effect = RuntimeError("replace")
         snapshots.upsert_rank_snapshot.side_effect = RuntimeError("snapshot")
         vectors.add_documents.side_effect = RuntimeError("vector")
         extractor.extract.side_effect = RuntimeError("graph")
@@ -397,6 +411,7 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         )
         documents.upsert_document.assert_not_called()
         snapshots.delete_snapshots_by_channel.assert_not_called()
+        snapshots.replace_channel_snapshots.assert_not_called()
         vectors.add_documents.assert_not_called()
         extractor.extract.assert_not_called()
         graph.add_graph_documents.assert_not_called()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Protocol, Sequence, TypedDict
 
 SNAPSHOT_PERIOD_CHANNELS: dict[str, dict[str, tuple[str, ...]]] = {
     "arxiv": {
@@ -26,6 +26,15 @@ SNAPSHOT_PERIOD_CHANNELS: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "x": {"daily": ("x_daily_watchlist",)},
 }
+
+
+class RankSnapshotWrite(TypedDict):
+    """One ranked document row inside a channel replacement batch."""
+
+    doc_id: str
+    rank_in_period: int
+    raw_score: float
+    score: float
 
 
 class RankSnapshotReader(Protocol):
@@ -70,12 +79,19 @@ class RankSnapshotWriter(Protocol):
 
 
 class RankSnapshotAdminWriter(Protocol):
-    """Delete a channel slice before replacement ingestion."""
+    """Replace or delete a channel slice around replacement ingestion."""
 
     def delete_snapshots_by_channel(
         self,
         snapshot_date: str,
         source_channel: str,
+    ) -> int: ...
+
+    def replace_channel_snapshots(
+        self,
+        snapshot_date: str,
+        source_channel: str,
+        snapshots: Sequence[RankSnapshotWrite],
     ) -> int: ...
 
 

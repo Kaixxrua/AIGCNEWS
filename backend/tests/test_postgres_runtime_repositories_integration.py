@@ -178,6 +178,50 @@ def test_real_postgres_snapshots_sync_filter_order_and_delete(repositories) -> N
     assert snapshots.delete_snapshots_by_channel("2026-07-28", "huggingface_weekly_html") == 1
 
 
+def test_real_postgres_replace_channel_snapshots_is_atomic_and_syncs_scores(repositories) -> None:
+    documents, _, snapshots = repositories
+    documents.upsert_document(_document("doc-r1"))
+    documents.upsert_document(_document("doc-r2"))
+    snapshots.upsert_rank_snapshot("doc-r1", "2026-08-08", "huggingface_daily_html", 5, 1.0, 1.0)
+    snapshots.upsert_rank_snapshot("doc-stale", "2026-08-08", "huggingface_daily_html", 9, 0.5, 0.5)
+    snapshots.upsert_rank_snapshot("doc-r2", "2026-08-08", "huggingface_weekly_html", 3, 6.0, 5.0)
+
+    written = snapshots.replace_channel_snapshots(
+        "2026-08-08",
+        "huggingface_daily_html",
+        [
+            {"doc_id": "doc-r1", "rank_in_period": 1, "raw_score": 9.0, "score": 8.0},
+            {"doc_id": "doc-r2", "rank_in_period": 2, "raw_score": 7.0, "score": 7.0},
+        ],
+    )
+
+    assert written == 2
+    daily_ids = snapshots.get_snapshot_doc_ids("2026-08-08", "huggingface_daily_html")
+    assert daily_ids == {"doc-r1", "doc-r2"}
+    rows = snapshots.get_snapshot_documents("2026-08-08")
+    weekly = [row for row in rows if row["source_channel"] == "huggingface_weekly_html"]
+    # 跨 channel 分数同步：doc-r2 的 weekly 行继承该 doc 当日最高分
+    # （max(daily 7.0, weekly 6.0)，与逐行 upsert 的同步口径一致）
+    assert {(row["raw_score"], row["score"]) for row in weekly} == {(7.0, 7.0)}
+
+    written_empty = snapshots.replace_channel_snapshots(
+        "2026-08-09", "huggingface_daily_html", []
+    )
+    assert written_empty == 0
+
+
+def test_real_postgres_clear_all_documents_removes_orphan_snapshots(repositories) -> None:
+    documents, _, snapshots = repositories
+    documents.upsert_document(_document("doc-clear"))
+    snapshots.upsert_rank_snapshot("doc-clear", "2026-08-08", "huggingface_daily_html", 1, 5.0, 5.0)
+
+    # 模块级共享 schema 内还有前序用例遗留的文档，只断言清空语义不断言精确条数
+    assert documents.clear_all_documents() >= 1
+
+    assert documents.get_document_count() == 0
+    assert snapshots.get_snapshot_doc_ids("2026-08-08") == set()
+
+
 def test_real_postgres_snapshot_read_projects_translation_zh(repositories) -> None:
     documents, _, snapshots = repositories
     documents.upsert_document(

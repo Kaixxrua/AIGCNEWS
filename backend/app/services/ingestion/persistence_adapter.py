@@ -102,47 +102,56 @@ class IngestionPersistenceAdapter:
 
         sorted_papers = sort_papers_for_write(papers)
         vector_documents = project_documents(sorted_papers)
-        channels = {
-            paper.get("source_channel", paper.get("channel", ""))
-            for paper in sorted_papers
-        }
-        channels.discard("")
 
-        for channel in channels:
-            if channel in ACCUMULATE_SNAPSHOT_CHANNELS:
-                continue
-            try:
-                self.rank_snapshots.delete_snapshots_by_channel(
-                    snapshot_date, channel
-                )
-            except Exception as exc:
-                logger.warning(
-                    "[Pipeline][%s] 清除旧快照失败 %s/%s: %s",
-                    source_label,
-                    snapshot_date,
-                    channel,
-                    exc,
-                )
-
+        # 先完成全部文档写入，再按 channel 落地快照：整 channel 替换型走
+        # replace_channel_snapshots（删旧切片 + 批量 upsert 单事务原子完成，
+        # 避免进程在 delete 后崩溃留下残缺榜单）；累积型 channel 与空 channel
+        # 保持逐行 upsert（不删旧切片）。
+        channel_writes: dict[str, list[dict]] = {}
         for paper, document in zip(sorted_papers, vector_documents):
             write = project_document_write(paper, document, source_label)
             self.documents.upsert_document(write)
-            try:
-                self.rank_snapshots.upsert_rank_snapshot(
-                    doc_id=write["id"],
-                    snapshot_date=snapshot_date,
-                    source_channel=write["source_channel"],
-                    rank_in_period=write["rank_in_period"],
-                    raw_score=float(write["raw_score"] or 0.0),
-                    score=float(write["score"] or 0.0),
-                )
-            except Exception as exc:
-                logger.warning(
-                    "[Pipeline][%s] 快照写入失败 doc_id=%s: %s",
-                    source_label,
-                    write["id"],
-                    exc,
-                )
+            channel_writes.setdefault(write["source_channel"], []).append(
+                {
+                    "doc_id": write["id"],
+                    "rank_in_period": write["rank_in_period"],
+                    "raw_score": float(write["raw_score"] or 0.0),
+                    "score": float(write["score"] or 0.0),
+                }
+            )
+
+        for channel, snapshots in channel_writes.items():
+            if channel and channel not in ACCUMULATE_SNAPSHOT_CHANNELS:
+                try:
+                    self.rank_snapshots.replace_channel_snapshots(
+                        snapshot_date, channel, snapshots
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[Pipeline][%s] 快照整 channel 替换失败 %s/%s: %s",
+                        source_label,
+                        snapshot_date,
+                        channel,
+                        exc,
+                    )
+                continue
+            for snapshot in snapshots:
+                try:
+                    self.rank_snapshots.upsert_rank_snapshot(
+                        doc_id=snapshot["doc_id"],
+                        snapshot_date=snapshot_date,
+                        source_channel=channel,
+                        rank_in_period=snapshot["rank_in_period"],
+                        raw_score=snapshot["raw_score"],
+                        score=snapshot["score"],
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[Pipeline][%s] 快照写入失败 doc_id=%s: %s",
+                        source_label,
+                        snapshot["doc_id"],
+                        exc,
+                    )
 
         try:
             self.vector_writer_factory().add_documents(

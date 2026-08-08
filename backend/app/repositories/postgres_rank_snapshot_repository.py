@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Sequence
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-from backend.app.repositories.rank_snapshot_repository import SNAPSHOT_PERIOD_CHANNELS
+from backend.app.repositories.rank_snapshot_repository import (
+    SNAPSHOT_PERIOD_CHANNELS,
+    RankSnapshotWrite,
+)
 
 
 def _utcnow() -> str:
@@ -114,7 +117,8 @@ class PostgresRankSnapshotRepository:
             FROM document_rank_snapshots s
             JOIN documents d ON s.doc_id = d.id
             LEFT JOIN github_repo_candidates c
-              ON d.source = 'github' AND (c.full_name = d.title OR c.url = d.url)
+              ON d.source = 'github' AND (c.full_name = d.title
+                  OR (NULLIF(c.url, '') IS NOT NULL AND c.url = d.url))
             LEFT JOIN (
                 SELECT DISTINCT ON (repo_id) repo_id, stars, forks
                 FROM github_repo_snapshots
@@ -212,6 +216,78 @@ class PostgresRankSnapshotRepository:
                     (snapshot_date, source_channel),
                 )
                 return int(cursor.rowcount)
+
+    def replace_channel_snapshots(
+        self,
+        snapshot_date: str,
+        source_channel: str,
+        snapshots: Sequence[RankSnapshotWrite],
+    ) -> int:
+        """单事务整 channel 替换：先删旧切片再批量 upsert，崩溃不留残缺榜单。
+
+        upsert 冲突语义与 upsert_rank_snapshot 一致（rank 取 LEAST、分数取
+        GREATEST），随后对涉及 doc_id 做一次跨 channel 分数同步；任一步失败
+        整体回滚，进程在 delete 后崩溃导致榜单残缺的窗口被彻底关闭。
+        """
+        rows = [dict(snapshot) for snapshot in snapshots]
+        now = _utcnow()
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM document_rank_snapshots
+                    WHERE snapshot_date = %s AND source_channel = %s
+                    """,
+                    (snapshot_date, source_channel),
+                )
+                if not rows:
+                    return 0
+                cursor.executemany(
+                    """
+                    INSERT INTO document_rank_snapshots
+                        (doc_id, snapshot_date, source_channel, rank_in_period,
+                         raw_score, score, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (doc_id, snapshot_date, source_channel) DO UPDATE SET
+                        rank_in_period=LEAST(document_rank_snapshots.rank_in_period,
+                                             EXCLUDED.rank_in_period),
+                        raw_score=GREATEST(document_rank_snapshots.raw_score,
+                                           EXCLUDED.raw_score),
+                        score=GREATEST(document_rank_snapshots.score, EXCLUDED.score)
+                    """,
+                    [
+                        (
+                            str(row["doc_id"]),
+                            snapshot_date,
+                            source_channel,
+                            int(row["rank_in_period"]),
+                            float(row["raw_score"]),
+                            float(row["score"]),
+                            now,
+                        )
+                        for row in rows
+                    ],
+                )
+                doc_ids = sorted({str(row["doc_id"]) for row in rows})
+                cursor.execute(
+                    """
+                    WITH aggregate AS (
+                        SELECT doc_id, MAX(raw_score) AS max_raw, MAX(score) AS max_score
+                        FROM document_rank_snapshots
+                        WHERE snapshot_date = %s AND doc_id = ANY(%s)
+                        GROUP BY doc_id
+                    )
+                    UPDATE document_rank_snapshots AS snapshot
+                    SET raw_score = aggregate.max_raw, score = aggregate.max_score
+                    FROM aggregate
+                    WHERE snapshot.doc_id = aggregate.doc_id
+                      AND snapshot.snapshot_date = %s
+                      AND (snapshot.raw_score < aggregate.max_raw
+                           OR snapshot.score < aggregate.max_score)
+                    """,
+                    (snapshot_date, doc_ids, snapshot_date),
+                )
+                return len(rows)
 
     def _fetch_rows(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         with self._database.transaction() as connection:

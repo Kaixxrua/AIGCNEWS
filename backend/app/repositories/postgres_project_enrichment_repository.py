@@ -58,6 +58,38 @@ _RUN_SCOPE_WHERE = """
       )
 """
 
+# 与 _github_fingerprint 等价的 SQL 表达式（refresh_changed 过滤下推用）：
+# sha256("\n".join(full_name, description, language, topics_json)) 的 UTF-8 hex。
+# 两侧必须保持同一拼接顺序与编码，Python 侧仍保留二次校验兜底。
+_FINGERPRINT_SQL = (
+    "encode(sha256(convert_to("
+    "COALESCE(c.full_name, '') || E'\\n' || "
+    "COALESCE(c.description, '') || E'\\n' || "
+    "COALESCE(c.language, '') || E'\\n' || "
+    "COALESCE(c.topics_json, '')"
+    ", 'UTF8')), 'hex')"
+)
+
+
+def _enrichment_eligibility_sql(
+    *,
+    force: bool,
+    retry_failed: bool,
+    refresh_changed: bool,
+) -> str:
+    """候选 eligibility 的 SQL 片段；与 Python 侧二次校验逻辑严格同构。"""
+    if force:
+        return "TRUE"
+    clauses = ["e.repo_id IS NULL"]
+    if retry_failed:
+        clauses.append("e.status IS DISTINCT FROM 'succeeded'")
+    if refresh_changed:
+        clauses.append(
+            "(e.prompt_version IS DISTINCT FROM %s"
+            f" OR e.source_fingerprint IS DISTINCT FROM {_FINGERPRINT_SQL})"
+        )
+    return "(" + " OR ".join(clauses) + ")"
+
 
 class _PostgresEnrichmentRepositoryBase:
     def __init__(self, database: PostgresDatabaseLifecycle = postgres_database) -> None:
@@ -85,10 +117,21 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         refresh_changed: bool = False,
     ) -> list[dict[str, Any]]:
         capped_limit = max(1, min(int(limit or 50), 500))
+        eligibility = _enrichment_eligibility_sql(
+            force=force,
+            retry_failed=retry_failed,
+            refresh_changed=refresh_changed,
+        )
+        # eligibility 与 LIMIT 下推到 SQL：不再对快照表全量 DISTINCT ON 之后
+        # 还在 Python 侧扫描全部候选截断；Python 只做二次校验与字段组装。
+        params: list[Any] = [min_stars]
+        if refresh_changed and not force:
+            params.append(prompt_version)
+        params.append(capped_limit)
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     WITH latest_snap AS (
                         SELECT DISTINCT ON (repo_id) *
                         FROM github_repo_snapshots
@@ -110,13 +153,16 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
                     LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
                     WHERE COALESCE(ls.stars, c.stars, 0) >= %s
+                      AND {eligibility}
                     ORDER BY COALESCE(ls.stars, c.stars, 0) DESC,
                              c.full_name COLLATE "C" ASC
+                    LIMIT %s
                     """,
-                    (min_stars,),
+                    tuple(params),
                 )
                 rows = cursor.fetchall()
 
+        # 二次校验：与 SQL 片段同构重算 eligibility，防御两侧口径漂移
         selected: list[dict[str, Any]] = []
         for source_row in rows:
             row = dict(source_row)

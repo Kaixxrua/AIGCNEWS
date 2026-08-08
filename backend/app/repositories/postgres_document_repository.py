@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from backend.app.core.config import settings
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.domain.search_semantics import (
     TECHNICAL_TOKEN_RE,
@@ -26,6 +28,11 @@ _DOCUMENT_SEARCH_STOP_TERMS = {
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _local_today() -> str:
+    zone = getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai"
+    return datetime.now(ZoneInfo(zone)).date().isoformat()
 
 
 def _normalize_doc_lookup_key(value: str | None) -> str:
@@ -78,7 +85,8 @@ def _document_projection() -> str:
                d.in_monthly, d.local_pdf_path, d.media, d.quote, d.author_avatar_url, d.author_name, d.translation_zh, d.created_at
         FROM documents d
         LEFT JOIN github_repo_candidates c
-          ON d.source = 'github' AND (c.full_name = d.title OR c.url = d.url)
+          ON d.source = 'github' AND (c.full_name = d.title
+              OR (NULLIF(c.url, '') IS NOT NULL AND c.url = d.url))
         LEFT JOIN (
             SELECT DISTINCT ON (repo_id) repo_id, stars, forks
             FROM github_repo_snapshots ORDER BY repo_id, snapshot_date DESC
@@ -307,9 +315,9 @@ class PostgresDocumentRepository:
     ) -> list[dict[str, Any]]:
         if len(tokens) < min_matches:
             return []
-        wildcards = [f"%{token}%" for token in tokens]
+        wildcards = [f"%{escape_like_literal(token, escape='=')}%" for token in tokens]
         score_sql = " + ".join(
-            ["CASE WHEN LOWER(title) LIKE %s THEN 1 ELSE 0 END"] * len(tokens)
+            ["CASE WHEN LOWER(title) LIKE %s ESCAPE '=' THEN 1 ELSE 0 END"] * len(tokens)
         )
         sql = f"""
             WITH ranked AS (
@@ -337,7 +345,7 @@ class PostgresDocumentRepository:
         *,
         source: str | None = None,
     ) -> list[dict[str, Any]]:
-        today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+        today = _local_today()
         fields = (
             "id, source, source_channel, title, url, summary, published_date, "
             "raw_score, score, rank_in_period, created_at"
@@ -412,7 +420,7 @@ class PostgresDocumentRepository:
         return result
 
     def get_today_top_arxiv_documents(self) -> list[dict[str, Any]]:
-        today = datetime.now(timezone(timedelta(hours=8))).date().isoformat()
+        today = _local_today()
         fields = "id, source, source_channel, title, url, summary, published_date, tags, score, raw_score, rank_in_period, local_pdf_path, created_at"
         rows = self._fetch_rows(
             f"SELECT {fields} FROM documents WHERE source = 'arxiv' AND LEFT(created_at, 10) = %s ORDER BY COALESCE(raw_score, score, 0) DESC LIMIT 10",
@@ -483,15 +491,17 @@ class PostgresDocumentRepository:
         return {row["source"]: int(row["cnt"]) for row in rows}
 
     def get_today_document_count(self) -> int:
-        today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+        today = _local_today()
         return self._fetch_count("SELECT COUNT(*) AS cnt FROM documents WHERE LEFT(created_at, 10) = %s", (today,))
 
     def clear_all_documents(self) -> int:
+        # 文档与排行快照同事务清空：不留指向已删文档的孤儿快照行
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT COUNT(*) AS cnt FROM documents")
                 row = cursor.fetchone()
                 count = int(row["cnt"] if row else 0)
+                cursor.execute("DELETE FROM document_rank_snapshots")
                 cursor.execute("DELETE FROM documents")
                 return count
 

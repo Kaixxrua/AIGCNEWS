@@ -250,7 +250,13 @@ async def get_pdf_text(attachment_id: str, user_id: int) -> Optional[str]:
     try:
         text, _ = await storage.extract_text(attachment_id)
         return text
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[Attachment] PDF 文本提取失败 attachment_id=%s: %s",
+            attachment_id,
+            exc,
+            exc_info=True,
+        )
         return None
 
 
