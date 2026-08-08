@@ -70,11 +70,9 @@ def normalize_briefing_context(
     )
 
 
-def order_snapshot_documents(
+def _sort_documents_for_source(
     documents: Sequence[Document],
-    *,
     source: str,
-    top_k: int,
 ) -> list[Document]:
     ordered = list(documents)
     if source == "github":
@@ -91,7 +89,53 @@ def order_snapshot_documents(
             ),
             reverse=True,
         )
-    return ordered[:top_k]
+    return ordered
+
+
+def order_snapshot_documents(
+    documents: Sequence[Document],
+    *,
+    source: str,
+    top_k: int,
+) -> list[Document]:
+    return _sort_documents_for_source(documents, source)[:top_k]
+
+
+def interleave_documents_by_source(
+    documents: Sequence[Document],
+    *,
+    top_k: int,
+) -> list[Document]:
+    """跨源轮询选取：按 doc["source"] 分桶、桶内按该源规则排序后逐桶轮取。
+
+    各来源的 raw_score 量纲差异巨大（dailyhot 热度数千、news 仅 1-2 分），
+    全局按分数排序截断会让低分来源整源缺席综合简报；轮询保证每个有数据
+    的来源都能进入结果，直到凑满 top_k。
+    """
+    buckets: dict[str, list[Document]] = {}
+    for document in documents:
+        source = str(document.get("source") or "").lower()
+        buckets.setdefault(source, []).append(document)
+    ordered_buckets = [
+        _sort_documents_for_source(bucket, source)
+        for source, bucket in buckets.items()
+    ]
+
+    selected: list[Document] = []
+    positions = [0] * len(ordered_buckets)
+    while len(selected) < top_k:
+        progressed = False
+        for bucket_index, bucket in enumerate(ordered_buckets):
+            if len(selected) >= top_k:
+                break
+            position = positions[bucket_index]
+            if position < len(bucket):
+                selected.append(bucket[position])
+                positions[bucket_index] = position + 1
+                progressed = True
+        if not progressed:
+            break
+    return selected
 
 
 def remove_blocked_documents(
@@ -151,20 +195,28 @@ def prepare_briefing(
         )
 
     if documents:
-        documents = order_snapshot_documents(
-            documents,
-            source=context.source,
-            top_k=top_k,
-        )
+        if context.source == "all":
+            # 综合简报：跨源轮询，避免高分量纲来源挤掉其他来源。
+            documents = interleave_documents_by_source(documents, top_k=top_k)
+        else:
+            documents = order_snapshot_documents(
+                documents,
+                source=context.source,
+                top_k=top_k,
+            )
     else:
         top_documents = document_feed.get_top_documents(
             limit=top_k * 3,
             source_type=context.source_type,
         )
-        documents = filter_by_channel(
+        filtered = filter_by_channel(
             top_documents,
             context.source,
-        )[:top_k]
+        )
+        if context.source == "all":
+            documents = interleave_documents_by_source(filtered, top_k=top_k)
+        else:
+            documents = filtered[:top_k]
 
     if not documents:
         documents = document_feed.get_latest_documents(limit=top_k)

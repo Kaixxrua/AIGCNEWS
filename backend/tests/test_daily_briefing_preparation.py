@@ -17,6 +17,7 @@ from backend.app.services.briefing.daily_briefing import (
     _looks_like_block_response,
 )
 from backend.app.services.briefing.preparation import (
+    interleave_documents_by_source,
     normalize_briefing_context,
     order_snapshot_documents,
     prepare_briefing,
@@ -64,6 +65,43 @@ class BriefingPurePreparationTests(unittest.TestCase):
             ["first-high", "first-low"],
         )
         self.assertEqual(documents[0]["title"], "third")
+
+    def test_interleave_round_robins_sources_regardless_of_score_scale(self) -> None:
+        # 量纲差异巨大时全局分数截断会让低分来源整源缺席；轮询按桶出现顺序逐源取。
+        documents = [
+            *[
+                {"source": "dailyhot", "title": f"hot-{index}", "raw_score": 9000 - index}
+                for index in range(5)
+            ],
+            # 桶内仍按该源规则排序：news-1 分高，应先于 news-0 出桶。
+            {"source": "news", "title": "news-0", "raw_score": 1.0},
+            {"source": "news", "title": "news-1", "raw_score": 2.0},
+            {"source": "github", "title": "gh-1", "rank_in_period": 2, "raw_score": 900},
+            {"source": "github", "title": "gh-0", "rank_in_period": 1, "raw_score": 100},
+        ]
+
+        selected = interleave_documents_by_source(documents, top_k=6)
+
+        self.assertEqual(
+            [document["title"] for document in selected],
+            ["hot-0", "news-1", "gh-0", "hot-1", "news-0", "gh-1"],
+        )
+
+    def test_interleave_fills_remaining_slots_from_other_sources(self) -> None:
+        documents = [
+            {"source": "news", "title": "news-only", "raw_score": 2.0},
+            *[
+                {"source": "dailyhot", "title": f"hot-{index}", "raw_score": 9000 - index}
+                for index in range(5)
+            ],
+        ]
+
+        selected = interleave_documents_by_source(documents, top_k=4)
+
+        self.assertEqual(
+            [document["title"] for document in selected],
+            ["news-only", "hot-0", "hot-1", "hot-2"],
+        )
 
     def test_block_filter_and_prompt_rendering_preserve_exact_text(self) -> None:
         documents = [
@@ -179,6 +217,62 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
         self.assertTrue(prepared.fallback_used)
         self.assertEqual([document["title"] for document in prepared.documents], ["latest"])
         self.assertIsNotNone(prepared.prompt)
+
+    def test_adapter_all_source_interleaves_channels_instead_of_global_score_cut(self) -> None:
+        # 综合简报快照路径：dailyhot 分数量级远高于 news/github，旧实现按全局
+        # raw_score 截断会只留下 dailyhot；轮询保证每个有数据的渠道都入选。
+        snapshot_reader = MagicMock()
+
+        def by_channel(*, snapshot_date, source_channel, source_type, limit):
+            del snapshot_date, source_type, limit
+            return {
+                "github_trending_daily": [
+                    {
+                        "source": "github",
+                        "title": "gh",
+                        "rank_in_period": 1,
+                        "raw_score": 800,
+                    }
+                ],
+                "techmeme_daily_rss": [
+                    {"source": "news", "title": "news", "raw_score": 1.5}
+                ],
+                "dailyhot_daily": [
+                    {
+                        "source": "dailyhot",
+                        "title": f"hot-{index}",
+                        "raw_score": 9000 - index,
+                    }
+                    for index in range(5)
+                ],
+            }.get(source_channel, [])
+
+        snapshot_reader.get_snapshot_documents.side_effect = by_channel
+        document_feed = MagicMock()
+        context = normalize_briefing_context(
+            target_date="2026-07-22",
+            source="all",
+            source_config=_SOURCE_CONFIG,
+            source_channels=_SOURCE_CHANNELS,
+        )
+
+        prepared = prepare_briefing(
+            context=context,
+            top_k=3,
+            snapshot_reader=snapshot_reader,
+            document_feed=document_feed,
+            source_config=_SOURCE_CONFIG,
+            filter_by_channel=lambda docs, _source: docs,
+            format_articles=_format_articles,
+            is_blocked=_looks_like_block_response,
+        )
+
+        self.assertEqual(
+            [document["title"] for document in prepared.documents],
+            ["gh", "news", "hot-0"],
+        )
+        document_feed.get_top_documents.assert_not_called()
+        document_feed.get_latest_documents.assert_not_called()
 
     def test_adapter_returns_empty_when_every_source_is_empty(self) -> None:
         snapshot_reader = MagicMock()
