@@ -11,7 +11,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 </script>
 
 <template>
-  <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 商业和合作 / 侵权投诉） ═══ -->
+  <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 商务合作 / 侵权投诉） ═══ -->
   <div class="dock-footer">
     <span>{{ t('footer.poweredBy', { brandName }) }}</span>
     <span class="footer-sep">·</span>
