@@ -124,6 +124,10 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         )
         # eligibility 与 LIMIT 下推到 SQL：不再对快照表全量 DISTINCT ON 之后
         # 还在 Python 侧扫描全部候选截断；Python 只做二次校验与字段组装。
+        # latest_snap 必须 MATERIALIZED：内联展开时，规划器对外层行数低估会把
+        # DISTINCT ON 全索引扫描塞进嵌套循环内层（每个外层行重扫整份快照索引），
+        # 生产上曾因此把候选拉取打出 statement_timeout 并中断每日流水线富化阶段；
+        # 物化保证快照单次扫表、代价有界（结果集语义不变）。
         params: list[Any] = [min_stars]
         if refresh_changed and not force:
             params.append(prompt_version)
@@ -132,7 +136,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
-                    WITH latest_snap AS (
+                    WITH latest_snap AS MATERIALIZED (
                         SELECT DISTINCT ON (repo_id) *
                         FROM github_repo_snapshots
                         ORDER BY repo_id, snapshot_date DESC
@@ -325,8 +329,10 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         })
 
     def get_github_project_enrichment_status(self, *, min_stars: int = 500) -> dict[str, Any]:
+        # latest_snap 物化原因见 get_github_projects_needing_enrichment：
+        # 防止内联后 DISTINCT ON 全索引扫描落入嵌套循环内层导致代价失控。
         base = """
-            WITH latest_snap AS (
+            WITH latest_snap AS MATERIALIZED (
                 SELECT DISTINCT ON (repo_id) * FROM github_repo_snapshots
                 ORDER BY repo_id, snapshot_date DESC
             ), eligible AS (
