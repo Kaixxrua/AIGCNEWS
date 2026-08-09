@@ -87,7 +87,7 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
 
       <button
         class="monitor-btn-secondary relative"
-        :disabled="retrying || backfilling || cancelling || polling || !status || status.failed <= 0"
+        :disabled="retrying || backfilling || cancelling || cancelWatching || polling || !status || status.failed <= 0"
         :title="t('monitor.enrichment.retryTitle')"
         @click="emit('retry')"
       >
@@ -98,7 +98,7 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
 
       <button
         class="monitor-btn-primary"
-        :disabled="backfilling || retrying || cancelling || polling || !status || status.pending <= 0"
+        :disabled="backfilling || retrying || cancelling || cancelWatching || polling || !status || status.pending <= 0"
         :title="t('monitor.enrichment.backfillTitle')"
         @click="emit('backfill')"
       >

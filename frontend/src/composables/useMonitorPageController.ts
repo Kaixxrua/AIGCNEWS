@@ -312,7 +312,8 @@ export const useMonitorPageController = ({
     } finally { crawling.value = false }
   }
   const retryFailedEnrichments = async () => {
-    if (retryingEnrichment.value || backfillingEnrichment.value || enrichmentPolling.value) return
+    // 终止观望期禁止开新批次：新批次的 running=true 会被观望链误读为旧批次未停
+    if (retryingEnrichment.value || backfillingEnrichment.value || enrichmentPolling.value || enrichmentCancelWatching.value) return
     clearMessages()
     const failed = enrichmentStatus.value?.failed || 0
     if (failed <= 0) { errorMsg.value = i18n.global.t('monitor.enrichment.noFailures'); return }
@@ -329,7 +330,8 @@ export const useMonitorPageController = ({
     finally { retryingEnrichment.value = false }
   }
   const backfillPendingEnrichments = async () => {
-    if (backfillingEnrichment.value || retryingEnrichment.value || enrichmentPolling.value) return
+    // 终止观望期禁止开新批次：新批次的 running=true 会被观望链误读为旧批次未停
+    if (backfillingEnrichment.value || retryingEnrichment.value || enrichmentPolling.value || enrichmentCancelWatching.value) return
     clearMessages()
     const outstanding = (enrichmentStatus.value?.pending || 0) + (enrichmentStatus.value?.failed || 0)
     if (outstanding <= 0) { errorMsg.value = i18n.global.t('monitor.enrichment.noPending'); return }
@@ -365,6 +367,13 @@ export const useMonitorPageController = ({
     }
     scheduleTracked(() => { void watchEnrichmentCancel(attempt + 1) }, ENRICHMENT_POLL_INTERVAL)
   }
+  // 状态自愈：running→false 可能经任意通道送达（观望链/手动刷新/整页刷新/常规轮询），
+  // 观望标志不能只靠观望链清除——链被浏览器后台节流或打断时，按钮不应残留「终止中」
+  watch(() => enrichmentStatus.value?.running, (running, wasRunning) => {
+    if (running || !wasRunning || !enrichmentCancelWatching.value) return
+    enrichmentCancelWatching.value = false
+    successMsg.value = i18n.global.t('monitor.enrichment.cancelConfirmed')
+  })
   const cancelEnrichment = async () => {
     if (cancellingEnrichment.value || enrichmentCancelWatching.value) return
     // 本地轮询中或服务端标记 running 时才有可终止的批次；其余情况视为无操作
@@ -373,9 +382,15 @@ export const useMonitorPageController = ({
     cancellingEnrichment.value = true
     try {
       const result = await api.cancelGithubEnrichment()
-      // 终止信号已发出：停掉本地进度轮询，转入终止观望轮询；
-      // 服务端 running 清零前按钮保持锁定，批次真正结束才解锁刷新
+      // 终止信号已发出：停掉本地进度轮询；批次已先于点击结束时无需观望，
+      // 直接补拉一次状态让面板立刻反映，避免空闪「终止中」与误报已终止
       stopEnrichmentPolling(result.message || i18n.global.t('monitor.enrichment.cancelRequested'))
+      if (result.status === 'not_running') {
+        try { enrichmentStatus.value = await api.fetchGithubEnrichmentStatus() }
+        catch (error) { console.error('Failed to refresh GitHub enrichment status after idle cancel', error) }
+        return
+      }
+      // 转入终止观望轮询：服务端 running 清零前按钮保持锁定，批次真正结束才解锁刷新
       enrichmentCancelWatching.value = true
       scheduleTracked(() => { void watchEnrichmentCancel(1) }, ENRICHMENT_POLL_INTERVAL)
     } catch (error) { errorMsg.value = detail(error) }

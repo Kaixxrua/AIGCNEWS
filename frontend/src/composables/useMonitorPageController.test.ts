@@ -696,4 +696,60 @@ describe('Monitor GitHub enrichment controls', () => {
     expect(controller.errorMsg.value).toBe('cancel broken')
     expect(controller.cancellingEnrichment.value).toBe(false)
   })
+
+  it('releases the cancel lock when a running=false status arrives from any source', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 0, pending: 5, running: true })
+    await controller.refreshData()
+    vi.mocked(api.cancelGithubEnrichment).mockResolvedValue({ status: 'cancelling', message: '' })
+    await controller.cancelEnrichment()
+    expect(controller.enrichmentCancelWatching.value).toBe(true)
+
+    // 观望链尚未触发（后台标签页节流/链被打断的场景），
+    // 但手动刷新等任意通道已送达 running=false：按钮必须立即解锁，不得残留「终止中」
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 6, failed: 0, pending: 4, running: false })
+    await controller.fetchGithubEnrichmentStatus()
+    await nextTick()
+    expect(controller.enrichmentCancelWatching.value).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.enrichment.cancelConfirmed'))
+
+    // 观望链随后触发时发现标志已清，直接丢弃，不再重复拉取或覆盖提示
+    const callsBefore = vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length).toBe(callsBefore)
+  })
+
+  it('skips the cancel watch and refreshes once when the server reports not_running', async () => {
+    const { api, controller } = createController()
+    // 批次已先于点击结束：面板残留 running=true，但取消接口如实返回 not_running
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 0, pending: 5, running: true })
+    await controller.refreshData()
+    vi.mocked(api.cancelGithubEnrichment).mockResolvedValue({ status: 'not_running', message: '当前没有正在运行的富化任务。' })
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 0, pending: 5, running: false })
+
+    await controller.cancelEnrichment()
+
+    expect(api.cancelGithubEnrichment).toHaveBeenCalledOnce()
+    expect(controller.enrichmentCancelWatching.value).toBe(false)
+    expect(controller.successMsg.value).toBe('当前没有正在运行的富化任务。')
+    expect(controller.enrichmentStatus.value?.running).toBe(false)
+    // 不进入观望：推进时间不再拉取状态
+    const callsBefore = vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length
+    await vi.advanceTimersByTimeAsync(12000)
+    expect(vi.mocked(api.fetchGithubEnrichmentStatus).mock.calls.length).toBe(callsBefore)
+  })
+
+  it('blocks retry and backfill while the cancel watch is active', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchGithubEnrichmentStatus).mockResolvedValue({ eligible: 10, succeeded: 5, failed: 1, pending: 4, running: true })
+    await controller.refreshData()
+    vi.mocked(api.cancelGithubEnrichment).mockResolvedValue({ status: 'cancelling', message: '' })
+    await controller.cancelEnrichment()
+    expect(controller.enrichmentCancelWatching.value).toBe(true)
+
+    // 观望期禁止开新批次：新批次的 running=true 会被观望链误读为旧批次未停
+    await controller.retryFailedEnrichments()
+    await controller.backfillPendingEnrichments()
+    expect(api.triggerGithubEnrichment).not.toHaveBeenCalled()
+  })
 })
