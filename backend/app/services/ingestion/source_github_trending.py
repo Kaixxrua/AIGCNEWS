@@ -24,6 +24,7 @@ from __future__ import annotations
   - period_star_growth: GitHub 页面报告的对应周期 Stars 增长
   - raw_score:          period_star_growth（仅用于当前周期榜单）
   - stars:              total stars
+  - forks:              total forks（/forks 链接，缺失时 0）
   - language:           主语言
   - rank_in_period:     在榜单中的排名（1=第一名）
   - published_date:     今日日期（采集日）
@@ -134,6 +135,12 @@ def parse_github_trending_html(
         stars_tag = article.find("a", href=re.compile(r"/stargazers$"))
         total_stars = _parse_int(stars_tag.get_text(strip=True)) if stars_tag else 0
 
+        # ── 总 Forks ────────────────────────────────────────────
+        # trending 页面与 stargazers 同构地给出 /forks 链接；写入 documents.forks
+        # 后读路径三级回退（documents → 快照 → 候选表）才不必为 forks 兜底。
+        forks_tag = article.find("a", href=re.compile(r"/forks$"))
+        total_forks = _parse_int(forks_tag.get_text(strip=True)) if forks_tag else 0
+
         # ── 对应周期新增 Stars ──────────────────────────────────
         period_star_growth: int | None = None
         for span in article.find_all("span"):
@@ -155,6 +162,7 @@ def parse_github_trending_html(
                 "pdf_url": "",
                 "language": language,
                 "stars": total_stars,
+                "forks": total_forks,
                 "period": normalized_period,
                 "period_star_growth": period_star_growth,
                 "rank": rank,
