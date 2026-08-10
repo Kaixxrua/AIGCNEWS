@@ -55,6 +55,71 @@ class GitHubMetricDateTests(unittest.TestCase):
         repository.list_github_project_metric_targets.assert_not_called()
         fetch.assert_not_called()
 
+    def test_closing_refresh_allows_yesterday_inside_closing_window(self) -> None:
+        """PR4b：关榜轮在次日 00:00–01:00 窗口内把观测写入昨日切片。"""
+        repository = MagicMock()
+        local_now = datetime(2026, 7, 15, 0, 33)
+        with (
+            patch.object(
+                metrics,
+                "refresh_github_project_metric_snapshots",
+                return_value={"status": "success"},
+            ) as refresh,
+            patch.object(
+                metrics,
+                "compute_github_daily_metrics",
+                return_value={"status": "success"},
+            ) as compute,
+        ):
+            result = metrics.refresh_and_compute_github_project_metrics(
+                metric_date="2026-07-14",
+                closing=True,
+                _local_now=local_now,
+                db=repository,
+            )
+
+        self.assertEqual(result["metric_date"], "2026-07-14")
+        self.assertEqual(refresh.call_args.kwargs["metric_date"], "2026-07-14")
+        self.assertTrue(refresh.call_args.kwargs["closing"])
+        self.assertIs(refresh.call_args.kwargs["_local_now"], local_now)
+        self.assertEqual(compute.call_args.kwargs["metric_date"], "2026-07-14")
+
+    def test_closing_refresh_still_allows_today(self) -> None:
+        local_now = datetime(2026, 7, 15, 0, 33)
+        resolved = metrics._closing_metric_date("2026-07-15", local_now=local_now)
+        self.assertEqual(resolved, "2026-07-15")
+
+    def test_closing_refresh_rejects_yesterday_outside_window(self) -> None:
+        """关榜窗口（00:00–01:00）结束后写昨日切片：响亮失败，不污染已定稿数据。"""
+        repository = MagicMock()
+        with patch.object(metrics, "fetch_github_repo_metrics_batch") as fetch:
+            with self.assertRaises(ValueError):
+                metrics.refresh_github_project_metric_snapshots(
+                    metric_date="2026-07-14",
+                    closing=True,
+                    _local_now=datetime(2026, 7, 15, 1, 0),
+                    db=repository,
+                )
+
+        repository.list_github_project_metric_targets.assert_not_called()
+        fetch.assert_not_called()
+
+    def test_closing_refresh_rejects_tomorrow_and_older_dates(self) -> None:
+        for bad in ("2026-07-16", "2026-07-13"):
+            with self.subTest(metric_date=bad), self.assertRaises(ValueError):
+                metrics.refresh_github_project_metric_snapshots(
+                    metric_date=bad,
+                    closing=True,
+                    _local_now=datetime(2026, 7, 15, 0, 33),
+                    db=MagicMock(),
+                )
+
+    def test_closing_github_metric_date_is_scheduler_local_yesterday(self) -> None:
+        with patch.object(
+            metrics, "_local_now", return_value=datetime(2026, 7, 15, 0, 33)
+        ):
+            self.assertEqual(metrics.closing_github_metric_date(), "2026-07-14")
+
 
 class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
     def test_refresh_status_decision_uses_coverage_and_freshness(self) -> None:

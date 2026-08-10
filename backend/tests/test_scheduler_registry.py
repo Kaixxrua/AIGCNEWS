@@ -85,7 +85,15 @@ class SchedulerDescriptorTests(unittest.TestCase):
                 True,
                 3600,
             ),
-            # 关榜采集（PR4a）：次日 00:3x 昨日归属，misfire 宽限 30 分钟
+            # 关榜采集（PR4a/PR4b）：次日 00:3x 昨日归属，misfire 宽限 30 分钟
+            (
+                "github_project_metrics_closing",
+                "github_project_metrics_closing",
+                "GitHub 项目库指标关榜刷新（昨日切片）",
+                {"hour": "0", "minute": "33", "second": "0"},
+                False,
+                1800,
+            ),
             (
                 "x_closing",
                 "x_closing",
@@ -241,6 +249,7 @@ class SchedulerCallbackResolutionTests(unittest.TestCase):
             return None
 
         for source, callback_name in (
+            ("github_project_metrics_closing", "_run_github_project_metrics_closing_job"),
             ("x_closing", "_run_x_closing_job"),
             ("hackernews_closing", "_run_hackernews_closing_job"),
             ("news_closing", "_run_news_closing_job"),

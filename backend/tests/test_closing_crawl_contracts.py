@@ -93,11 +93,70 @@ class ClosingJobWiringTests(unittest.IsolatedAsyncioTestCase):
         runtime = self._runtime()
         callbacks = runtime._job_callbacks()
         for name in (
+            "_run_github_project_metrics_closing_job",
             "_run_x_closing_job",
             "_run_hackernews_closing_job",
             "_run_news_closing_job",
         ):
             assert callable(callbacks[name])
+
+
+class GitHubMetricsClosingJobTests(unittest.IsolatedAsyncioTestCase):
+    async def test_module_job_passes_yesterday_and_closing_flag(self) -> None:
+        """关榜 job：目标日期=调度时区昨日，服务层走关榜守卫（closing=True）。"""
+        from backend.app.services.ingestion import (
+            github_project_metrics_service as metrics_module,
+        )
+
+        captured: dict[str, Any] = {}
+
+        def fake_refresh(**kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return {"status": "success"}
+
+        repository = MagicMock()
+        with (
+            unittest.mock.patch.object(
+                metrics_module,
+                "closing_github_metric_date",
+                return_value="2026-08-10",
+            ),
+            unittest.mock.patch.object(
+                metrics_module,
+                "refresh_and_compute_github_project_metrics",
+                side_effect=fake_refresh,
+            ),
+        ):
+            ok = await scheduler_module._run_github_project_metrics_closing_job(
+                repository=repository
+            )
+
+        assert ok is True
+        assert captured["metric_date"] == "2026-08-10"
+        assert captured["closing"] is True
+        assert captured["db"] is repository
+
+    async def test_runtime_method_wires_repository_and_github_lock(self) -> None:
+        runtime = scheduler_module.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=MagicMock(running=False),
+        )
+        calls: dict[str, Any] = {}
+
+        async def fake_job(**kwargs: Any) -> bool:
+            calls.update(kwargs)
+            return True
+
+        with unittest.mock.patch.object(
+            scheduler_module,
+            "_run_github_project_metrics_closing_job",
+            fake_job,
+        ):
+            await runtime._run_github_project_metrics_closing_job()
+
+        assert calls["repository"] is runtime.repositories.github_ingestion
+        # github 指标关榜持有 github job 锁：与常规刷新/每日流水线串行
+        assert calls["github_lock"] is runtime.github_job_lock
 
 
 def _tweet(tweet_id: str, created_at: str) -> Tweet:

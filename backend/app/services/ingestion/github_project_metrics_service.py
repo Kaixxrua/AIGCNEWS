@@ -36,9 +36,13 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _local_today(tz_name: str | None = None) -> date:
+def _local_now(tz_name: str | None = None) -> datetime:
     timezone_name = tz_name or getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai"
-    return datetime.now(ZoneInfo(timezone_name)).date()
+    return datetime.now(ZoneInfo(timezone_name))
+
+
+def _local_today(tz_name: str | None = None) -> date:
+    return _local_now(tz_name).date()
 
 
 def current_github_metric_date() -> str:
@@ -70,6 +74,43 @@ def _live_metric_date(
             f"Live GitHub snapshots can only be written for today ({today}), got {resolved}"
         )
     return today
+
+
+# 关榜窗口：次日 00:00–01:00（调度时区）。窗口内关榜轮允许写昨日切片，
+# 捕获 23:17 末轮常规刷新之后到日界结束的尾巴增长；该快照同时成为
+# 今日指标的基线（≤昨日最新），跨日总账不错乱，仅日界归属最多偏移
+# 一个关榜窗口。常规（非关榜）路径保持"仅今天"守卫不变。
+CLOSING_WINDOW_END_HOUR = 1
+
+
+def _closing_metric_date(
+    value: date | str | None,
+    *,
+    local_now: datetime,
+) -> str:
+    """关榜轮日期解析：今天照常放行；昨日仅在关榜窗口内放行。"""
+    today = local_now.date()
+    resolved = today.isoformat() if value is None else _date_str(value)
+    try:
+        parsed = date.fromisoformat(resolved)
+    except ValueError as exc:
+        raise ValueError(f"Invalid GitHub metric date: {resolved}") from exc
+    if parsed == today:
+        return today.isoformat()
+    if (
+        parsed == today - timedelta(days=1)
+        and local_now.hour < CLOSING_WINDOW_END_HOUR
+    ):
+        return parsed.isoformat()
+    raise ValueError(
+        "Closing GitHub snapshots can only be written for today "
+        f"({today}) or yesterday within the closing window, got {resolved}"
+    )
+
+
+def closing_github_metric_date() -> str:
+    """关榜轮目标日期：调度时区昨日（供次日 00:3x 关榜 job 使用）。"""
+    return (_local_now().date() - timedelta(days=1)).isoformat()
 
 
 def _parse_date(value: Any) -> date | None:
@@ -178,12 +219,22 @@ def refresh_github_project_metric_snapshots(
     limit: int = 0,
     metric_date: str | date | None = None,
     dry_run: bool = False,
+    closing: bool = False,
     _local_date: date | None = None,
+    _local_now: datetime | None = None,
     db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
-    """Refresh today's lightweight GitHub metrics and write raw snapshots."""
+    """Refresh today's lightweight GitHub metrics and write raw snapshots.
 
-    snapshot_date = _live_metric_date(metric_date, local_today=_local_date)
+    closing=True（关榜轮）时改用关榜日期解析：允许在次日 00:00–01:00
+    窗口内把本轮观测写入昨日切片，收齐日界尾巴增长。
+    """
+
+    if closing:
+        local_now = _local_now or _local_now()
+        snapshot_date = _closing_metric_date(metric_date, local_now=local_now)
+    else:
+        snapshot_date = _live_metric_date(metric_date, local_today=_local_date)
     captured_at = _utcnow()
     targets = db.list_github_project_metric_targets(min_stars=min_stars, limit=limit)
     full_names = [str(item.get("full_name") or "").strip() for item in targets if item.get("full_name")]
@@ -486,18 +537,33 @@ def refresh_and_compute_github_project_metrics(
     limit: int = 0,
     metric_date: str | date | None = None,
     dry_run: bool = False,
+    closing: bool = False,
+    _local_now: datetime | None = None,
     db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
-    local_today = _local_today()
-    resolved_date = _live_metric_date(metric_date, local_today=local_today)
-    refresh_result = refresh_github_project_metric_snapshots(
-        min_stars=min_stars,
-        limit=limit,
-        metric_date=resolved_date,
-        dry_run=dry_run,
-        _local_date=local_today,
-        db=db,
-    )
+    if closing:
+        local_now = _local_now or _local_now()
+        resolved_date = _closing_metric_date(metric_date, local_now=local_now)
+        refresh_result = refresh_github_project_metric_snapshots(
+            min_stars=min_stars,
+            limit=limit,
+            metric_date=resolved_date,
+            dry_run=dry_run,
+            closing=True,
+            _local_now=local_now,
+            db=db,
+        )
+    else:
+        local_today = _local_today()
+        resolved_date = _live_metric_date(metric_date, local_today=local_today)
+        refresh_result = refresh_github_project_metric_snapshots(
+            min_stars=min_stars,
+            limit=limit,
+            metric_date=resolved_date,
+            dry_run=dry_run,
+            _local_date=local_today,
+            db=db,
+        )
     metrics_result = None
     if not dry_run:
         metrics_result = compute_github_daily_metrics(

@@ -24,6 +24,7 @@ JobSource = Literal[
     "dailyhot",
     "github_project_daily_pipeline",
     "github_project_metrics_refresh",
+    "github_project_metrics_closing",
     "x_closing",
     "hackernews_closing",
     "news_closing",
@@ -195,6 +196,14 @@ SOURCE_JOB_DESCRIPTORS: tuple[CronJobDescriptor, ...] = (
     # 源日界尾巴（hourly 末轮 23:0x 之后的内容）。misfire 宽限 30 分钟：
     # 迟到超过关榜窗口宁可跳过，绝不写入已定稿切片。
     CronJobDescriptor(
+        id="github_project_metrics_closing",
+        source="github_project_metrics_closing",
+        name="GitHub 项目库指标关榜刷新（昨日切片）",
+        schedule=CronSchedule(hour=0, minute=33),
+        coalesce=False,
+        misfire_grace_time=1800,
+    ),
+    CronJobDescriptor(
         id="x_closing",
         source="x_closing",
         name="X 关注账号推文关榜采集（昨日归属）",
@@ -269,6 +278,7 @@ def resolve_source_job_callback(
     callback_name = {
         "github_project_daily_pipeline": "_run_github_project_daily_pipeline_job",
         "github_project_metrics_refresh": "_run_github_project_metrics_refresh_job",
+        "github_project_metrics_closing": "_run_github_project_metrics_closing_job",
         "x_credentials_probe": "_run_x_credentials_probe_job",
         "x_closing": "_run_x_closing_job",
         "hackernews_closing": "_run_hackernews_closing_job",

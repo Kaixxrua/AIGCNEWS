@@ -470,6 +470,42 @@ async def _run_github_project_metrics_refresh_job(
         return False
 
 
+async def _run_github_project_metrics_closing_job(
+    *,
+    repository: Any,
+    github_lock: asyncio.Lock | None = None,
+) -> bool:
+    """GitHub 指标关榜轮：次日 00:33 把最终观测写入昨日切片并重算。
+
+    收齐 23:17 末轮常规刷新之后到日界结束的尾巴增长；昨日切片随之
+    冻结（github 源 01:00 揭榜）。窗口守卫在服务层：迟到出窗直接
+    失败报警，绝不写入已定稿切片。
+    """
+    from backend.app.services.ingestion.github_project_metrics_service import (
+        closing_github_metric_date,
+        refresh_and_compute_github_project_metrics,
+    )
+
+    metric_date = closing_github_metric_date()
+    logger.info("[Scheduler] 触发 GitHub 指标关榜刷新: %s", metric_date)
+    lock = github_lock or asyncio.Lock()
+    try:
+        async with lock:
+            result = await asyncio.to_thread(
+                refresh_and_compute_github_project_metrics,
+                min_stars=_GITHUB_METRICS_MIN_STARS,
+                limit=_GITHUB_METRICS_REFRESH_LIMIT,
+                metric_date=metric_date,
+                closing=True,
+                db=repository,
+            )
+        logger.info("[Scheduler] GitHub 指标关榜刷新完成：%s", result)
+        return True
+    except Exception as exc:
+        logger.error("[Scheduler] GitHub 指标关榜刷新失败: %s", exc, exc_info=True)
+        return False
+
+
 async def _reconcile_current_github_project_metrics(
     repository: Any,
     *,
@@ -842,6 +878,17 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_github_project_metrics_closing_job(self) -> None:
+        await self._run_tracked(
+            lambda: self._guarded(
+                "github_project_metrics_closing",
+                lambda: _run_github_project_metrics_closing_job(
+                    repository=self.repositories.github_ingestion,
+                    github_lock=self._github_job_lock,
+                ),
+            )
+        )
+
     async def _run_x_credentials_probe_job(self) -> None:
         await self._run_tracked(
             lambda: self._guarded(
@@ -904,6 +951,9 @@ class ApplicationSchedulerRuntime:
             ),
             "_run_github_project_metrics_refresh_job": (
                 self._run_github_project_metrics_refresh_job
+            ),
+            "_run_github_project_metrics_closing_job": (
+                self._run_github_project_metrics_closing_job
             ),
             "_run_x_credentials_probe_job": self._run_x_credentials_probe_job,
             "_run_x_closing_job": self._run_x_closing_job,
