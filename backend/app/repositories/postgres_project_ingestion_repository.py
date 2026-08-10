@@ -565,6 +565,7 @@ class PostgresGitHubProjectIngestionRepository:
             baseline_start_date,
             metric_date,
             previous_date,
+            baseline_start_date,
             metric_date,
             metric_date,
             min_stars,
@@ -589,7 +590,16 @@ class PostgresGitHubProjectIngestionRepository:
                     AND m.metric_date>=%s AND m.metric_date<%s
                     AND m.daily_growth_source IN ('snapshot_delta','github_trending_daily')) baseline_sample_count
             FROM github_repo_snapshots s
-            LEFT JOIN github_repo_snapshots prev ON prev.repo_id=s.repo_id AND prev.snapshot_date=%s
+            LEFT JOIN LATERAL (
+                SELECT p.snapshot_date, p.stars, p.forks, p.watchers,
+                       p.community_metrics_complete
+                FROM github_repo_snapshots p
+                WHERE p.repo_id = s.repo_id
+                  AND p.snapshot_date <= %s
+                  AND p.snapshot_date >= %s
+                ORDER BY p.snapshot_date DESC
+                LIMIT 1
+            ) prev ON TRUE
             LEFT JOIN github_repo_candidates c ON c.repo_id=s.repo_id
             LEFT JOIN github_trending_hits daily_hit ON daily_hit.repo_id=s.repo_id
                 AND daily_hit.period='daily' AND daily_hit.observed_date=%s

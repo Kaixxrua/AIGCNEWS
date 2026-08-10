@@ -156,6 +156,58 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         self.assertEqual(payload["daily_star_growth"], 75)
         self.assertEqual(payload["community_engagement_score"], 0.0)
 
+    def test_gap_baseline_normalizes_growth_per_day(self) -> None:
+        # 断供两天：基线为 3 天前（07-11），跨度增量按天归一，防虚高
+        computed = self._compute(
+            previous_snapshot_date="2026-07-11",
+            previous_stars=1000,
+            stars=1300,
+            forks=130,
+            previous_forks=100,
+            watchers=40,
+            previous_watchers=10,
+        )
+        payload = computed["payload"]
+        self.assertEqual(payload["daily_growth_source"], "snapshot_delta_gap")
+        self.assertEqual(payload["daily_star_growth"], 100)  # 300 // 3
+        self.assertEqual(payload["daily_fork_growth"], 10)  # 30 // 3
+        self.assertEqual(payload["daily_watcher_growth"], 10)  # 30 // 3
+        # 记录真实基线日期而非假设的昨日
+        self.assertEqual(payload["previous_snapshot_date"], "2026-07-11")
+        self.assertEqual(payload["previous_stars"], 1000)
+        result = computed["result"]
+        self.assertEqual(result["gap_fallback"], 1)
+        self.assertEqual(result["exact"], 0)
+        self.assertEqual(result["available"], 1)
+        self.assertEqual(result["positive_growth"], 1)
+        self.assertGreater(payload["hot_score"], 0.0)
+
+    def test_exact_baseline_reports_zero_gap_fallback(self) -> None:
+        computed = self._compute()
+        self.assertEqual(computed["payload"]["daily_growth_source"], "snapshot_delta")
+        self.assertEqual(computed["payload"]["previous_snapshot_date"], self.previous_date)
+        self.assertEqual(computed["result"]["gap_fallback"], 0)
+        self.assertEqual(computed["result"]["exact"], 1)
+
+    def test_gap_baseline_below_one_day_growth_floors_to_zero(self) -> None:
+        # 跨度增量不足间隔天数时日增为 0（整除向下取整），但仍算有基线
+        computed = self._compute(
+            previous_snapshot_date="2026-07-11",
+            previous_stars=1000,
+            stars=1002,
+        )
+        payload = computed["payload"]
+        self.assertEqual(payload["daily_growth_source"], "snapshot_delta_gap")
+        self.assertEqual(payload["daily_star_growth"], 0)
+        self.assertEqual(computed["result"]["available"], 1)
+
+    def test_malformed_baseline_date_falls_back_to_unavailable(self) -> None:
+        computed = self._compute(previous_snapshot_date="not-a-date")
+        payload = computed["payload"]
+        self.assertEqual(payload["daily_growth_source"], "unavailable")
+        self.assertIsNone(payload["previous_snapshot_date"])
+        self.assertEqual(computed["result"]["available"], 0)
+
     def test_recomputed_rows_use_v5(self) -> None:
         computed = self._compute()
         self.assertEqual(computed["payload"]["score_version"], "daily_hot_v5")

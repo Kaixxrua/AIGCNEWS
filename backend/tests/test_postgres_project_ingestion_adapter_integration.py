@@ -710,6 +710,37 @@ def test_trending_metric_inputs_upsert_status_and_hot_reads(
     assert inputs[0]["trending_daily_star_growth"] == 50
     assert inputs[0]["baseline_sample_count"] == 1
 
+    # 基线回溯（断供日无精确昨日快照）：07-26 无快照时取窗口内最近的 07-25
+    repository.insert_github_repo_snapshot(
+        {
+            "repo_id": "acme/alpha",
+            "snapshot_date": "2026-07-25",
+            "captured_at": "2026-07-25T12:00:00+00:00",
+            "stars": 690,
+            "forks": 19,
+            "watchers": 29,
+            "community_metrics_complete": True,
+        }
+    )
+    gap_inputs = repository.get_github_daily_metric_inputs(
+        metric_date="2026-07-27",
+        previous_date="2026-07-26",
+        baseline_start_date="2026-07-20",
+        repo_ids=["acme/alpha"],
+    )
+    assert len(gap_inputs) == 1
+    assert gap_inputs[0]["previous_snapshot_date"] == "2026-07-25"
+    assert gap_inputs[0]["previous_stars"] == 690
+    # 窗口下界之外不回溯：baseline_start=07-26 时 07-25 出窗 → 无基线
+    out_of_window = repository.get_github_daily_metric_inputs(
+        metric_date="2026-07-27",
+        previous_date="2026-07-26",
+        baseline_start_date="2026-07-26",
+        repo_ids=["acme/alpha"],
+    )
+    assert len(out_of_window) == 1
+    assert out_of_window[0]["previous_snapshot_date"] is None
+
     metric = dict(inputs[0])
     metric.update(
         daily_star_growth=50,

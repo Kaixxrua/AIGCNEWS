@@ -295,7 +295,25 @@ def compute_github_daily_metrics(
     staged: List[Dict[str, Any]] = []
 
     for row in rows:
-        has_previous = str(row.get("previous_snapshot_date") or "") == previous_date
+        # 基线快照由 SQL 在窗口内向前回溯（latest ≤ previous_date 且 ≥ baseline_start）：
+        # 采集断供日没有精确昨日快照时，用最近一次快照兜底，避免整日 zero-growth。
+        previous_snapshot_date = str(row.get("previous_snapshot_date") or "")
+        has_previous = False
+        baseline_gap_days = 1
+        if previous_snapshot_date:
+            try:
+                baseline_gap_days = max(
+                    (current_date - date.fromisoformat(previous_snapshot_date)).days,
+                    1,
+                )
+                has_previous = True
+            except ValueError:
+                logger.warning(
+                    "[GitHubProjectMetrics] 仓库 %s 基线快照日期非法（%r），按无基线处理。",
+                    row.get("repo_id"),
+                    previous_snapshot_date,
+                )
+        exact_baseline = previous_snapshot_date == previous_date
         trending_growth_value = row.get("trending_daily_star_growth")
         has_trending_growth = trending_growth_value is not None
         stars = int(row.get("stars") or 0)
@@ -308,16 +326,19 @@ def compute_github_daily_metrics(
             and row.get("previous_community_metrics_complete") == 1
         )
         if has_previous:
-            growth_source = "snapshot_delta"
+            # 断供跨天的基线按间隔天数归一化为日增速率，防止 2 天增量被读成
+            # 单日暴涨；source 标记 snapshot_delta_gap 以便与精确日增区分
+            # （且不进入 baseline_7d 日均样本）。
+            growth_source = "snapshot_delta" if exact_baseline else "snapshot_delta_gap"
             growth_observed_at = None
-            daily_growth = max(stars - previous_stars, 0)
+            daily_growth = max(stars - previous_stars, 0) // baseline_gap_days
             daily_fork_growth = (
-                max(forks - int(row.get("previous_forks") or 0), 0)
+                max(forks - int(row.get("previous_forks") or 0), 0) // baseline_gap_days
                 if has_complete_community_pair
                 else 0
             )
             daily_watcher_growth = (
-                max(watchers - int(row.get("previous_watchers") or 0), 0)
+                max(watchers - int(row.get("previous_watchers") or 0), 0) // baseline_gap_days
                 if has_complete_community_pair
                 else 0
             )
@@ -364,7 +385,7 @@ def compute_github_daily_metrics(
                 "forks": forks,
                 "watchers": watchers,
                 "open_issues": int(row.get("open_issues") or 0),
-                "previous_snapshot_date": previous_date if has_previous else None,
+                "previous_snapshot_date": previous_snapshot_date if has_previous else None,
                 "previous_stars": previous_stars if has_previous else 0,
                 "daily_star_growth": daily_growth,
                 "daily_fork_growth": daily_fork_growth,
@@ -388,6 +409,7 @@ def compute_github_daily_metrics(
     metrics: List[Dict[str, Any]] = []
     available_count = 0
     exact_count = 0
+    gap_fallback_count = 0
     trending_fallback_count = 0
     positive_growth_count = 0
     for item in staged:
@@ -396,6 +418,8 @@ def compute_github_daily_metrics(
             available_count += 1
         if item.get("daily_growth_source") == "snapshot_delta":
             exact_count += 1
+        elif item.get("daily_growth_source") == "snapshot_delta_gap":
+            gap_fallback_count += 1
         elif item.get("daily_growth_source") == "github_trending_daily":
             trending_fallback_count += 1
         if int(item["daily_star_growth"] or 0) > 0:
@@ -445,6 +469,7 @@ def compute_github_daily_metrics(
         "rows": len(metrics),
         "available": available_count,
         "exact": exact_count,
+        "gap_fallback": gap_fallback_count,
         "trending_fallback": trending_fallback_count,
         "positive_growth": positive_growth_count,
         "targeted": bool(repo_ids),
