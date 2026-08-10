@@ -113,6 +113,27 @@ export const hasQuote = (doc: TopDoc): boolean => {
   return Boolean(quote.text) || (Array.isArray(quote.media) && quote.media.length > 0)
 }
 
+/** 链接卡片存在性：要求至少 url + title（与采集期投影同口径），坏数据不渲染。 */
+export const hasLinkCard = (doc: TopDoc): boolean => {
+  const card = doc.link_card
+  if (!card || typeof card.url !== 'string' || !card.url) return false
+  return typeof card.title === 'string' && Boolean(card.title)
+}
+
+/** 链接卡片的展示对象：仅经 hasLinkCard 判定后调用，坏数据回退 null。 */
+export const tweetLinkCard = (doc: TopDoc): TopDoc['link_card'] => (hasLinkCard(doc) ? (doc.link_card ?? null) : null)
+
+/**
+ * 链接卡片缩略图：仅落库的 twimg 镜像（pbs.twimg.com/card_img/）经同源
+ * 代理返回——与头像同一策略，非 twimg 或缺失返回 undefined，由渲染层
+ * 降级为纯文本卡。不走 photoVariantUrl：card_img 路径不支持 ?name=
+ * 派生尺寸（变体请求会 404）。
+ */
+export const linkCardImageUrl = (card: NonNullable<TopDoc['link_card']>): string | undefined => {
+  const url = typeof card.image_url === 'string' ? card.image_url : ''
+  return isTwimgUrl(url) ? proxiedMediaUrl(url) : undefined
+}
+
 /** 引用卡片的展示对象：仅经 hasQuote 判定后调用，坏数据回退 null。 */
 export const tweetQuote = (doc: TopDoc): TopDoc['quote'] => (hasQuote(doc) ? (doc.quote ?? null) : null)
 

@@ -42,8 +42,25 @@ export interface TopDoc {
   media?: TweetMediaItem[]
   /** 采集期落库的引用推文卡片（仅 X 引用推；被引删除/受保护时为空不渲染） */
   quote?: TweetQuote | null
+  /** 采集期落库的 X 外链预览卡（仅 X 含外链推文；无卡/坏数据为空不渲染） */
+  link_card?: TweetLinkCard | null
   /** 采集期落库的 X 自带中文翻译（仅 X 推文；zh 系界面语言优先展示） */
   translation_zh?: string
+}
+
+export interface TweetLinkCard {
+  /** 目标页地址（采集期已展开 t.co；展开失败时保留 t.co 原值，整卡跳转目标） */
+  url: string
+  title: string
+  description?: string
+  /** 展示域名（X vanity_url，如 youtube.com） */
+  domain?: string
+  /** 卡片缩略图（pbs.twimg.com/card_img/ 镜像；缺失时渲染纯文本卡） */
+  image_url?: string | null
+  image_width?: number | null
+  image_height?: number | null
+  /** X 卡片类型（player/summary 等，仅元数据保留，渲染不区分） */
+  card_type?: string
 }
 
 export interface TweetQuote {

@@ -12,7 +12,9 @@ import {
   formatLocalTime,
   groupTweetsByHandle,
   hasMedia,
+  hasLinkCard,
   hasQuote,
+  linkCardImageUrl,
   mediaItems,
   pageCount,
   paginateItems,
@@ -24,6 +26,7 @@ import {
   quoteMediaItems,
   quoteTextSegments,
   timelineTweets,
+  tweetLinkCard,
   tweetQuote,
   tweetScore,
   tweetText,
@@ -360,6 +363,45 @@ describe('xBoardViewModel', () => {
     expect(tweetQuote(quotedTweet())?.author).toBe('comfyui')
   })
 
+  const linkedTweet = (overrides: Partial<NonNullable<TopDoc['link_card']>> = {}): TopDoc =>
+    tweet('minimax_ai', '2086', {
+      link_card: {
+        url: 'https://www.youtube.com/watch?v=S9O3FPumX4Q',
+        title: 'MiniMax H3: A New Open-Weight Video Model',
+        description: 'MiniMax H3 is an open-weight video model',
+        domain: 'youtube.com',
+        image_url: 'https://pbs.twimg.com/card_img/2085/orig.jpg?format=jpg&name=orig',
+        image_width: 1280,
+        image_height: 720,
+        card_type: 'player',
+        ...overrides,
+      },
+    })
+
+  it('hasLinkCard requires url plus title, rejecting malformed data', () => {
+    expect(hasLinkCard(linkedTweet())).toBe(true)
+    expect(hasLinkCard(tweet('openai', '1'))).toBe(false)
+    expect(hasLinkCard(tweet('openai', '1', { link_card: null }))).toBe(false)
+    expect(hasLinkCard(linkedTweet({ url: '' }))).toBe(false)
+    expect(hasLinkCard(linkedTweet({ title: '' }))).toBe(false)
+    // 缩略图缺失仍可成卡（渲染层降级为纯文本卡）
+    expect(hasLinkCard(linkedTweet({ image_url: null }))).toBe(true)
+    expect(tweetLinkCard(tweet('openai', '1'))).toBeNull()
+    expect(tweetLinkCard(linkedTweet())?.domain).toBe('youtube.com')
+  })
+
+  it('linkCardImageUrl proxies only twimg card images and skips name variants', () => {
+    // card_img 是 pbs.twimg.com 路径：走同源路径式代理；不做 ?name= 变体
+    // （card_img 不支持派生尺寸，原样透传落库 URL 的既有 query）
+    expect(linkCardImageUrl(linkedTweet().link_card!)).toBe(
+      '/api/media/x/img/pbs.twimg.com/card_img/2085/orig.jpg?format=jpg&name=orig',
+    )
+    // 非 twimg 镜像（异常上游数据）不直连，回退纯文本卡
+    expect(linkCardImageUrl(linkedTweet({ image_url: 'https://evil.com/x.jpg' }).link_card!)).toBeUndefined()
+    expect(linkCardImageUrl(linkedTweet({ image_url: null }).link_card!)).toBeUndefined()
+    expect(linkCardImageUrl(linkedTweet({ image_url: undefined }).link_card!)).toBeUndefined()
+  })
+
   it('quoteTextSegments splits quote text with the same url rules', () => {
     expect(quoteTextSegments(quotedTweet().quote!, 'en-US')).toEqual([
       { text: 'Livestream update ', isUrl: false },
@@ -394,7 +436,6 @@ describe('xBoardViewModel', () => {
   })
 
   it('quoteAvatarUrl proxies the stored twimg avatar and drops unavatar fallback', () => {
-    const avatar = 'https://pbs.twimg.com/profile_images/q.jpg'
     expect(quoteAvatarUrl(quotedTweet().quote!)).toBe(
       `/api/media/x/img/pbs.twimg.com/profile_images/q.jpg`,
     )

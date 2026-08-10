@@ -5,9 +5,10 @@ import { ArrowLeft, ExternalLink, Maximize2 } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
 import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
+import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
 import { showToast } from '@/composables/useToast'
-import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasMedia, hasQuote, paginateItems, quoteAsDoc, timelineTweets, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, paginateItems, quoteAsDoc, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
@@ -392,6 +393,12 @@ onBeforeUnmount(() => {
                 context="wall"
                 @activate="openDetail(tweet)"
               />
+              <!-- 外链预览卡：整卡跳目标页（与 X 一致），不放大详情 -->
+              <TweetLinkCard
+                v-if="hasLinkCard(tweet)"
+                :card="tweetLinkCard(tweet)!"
+                context="wall"
+              />
               <p v-if="formatTime(tweet)" class="tweet-time mt-2 px-1 text-2xs">{{ formatTime(tweet) }}</p>
             </div>
           </article>
@@ -501,6 +508,13 @@ onBeforeUnmount(() => {
             :quote="tweetQuote(detailTweet)!"
             context="detail"
             @activate="drillIntoQuote"
+          />
+
+          <!-- 外链预览卡：整卡跳目标页（与 X 一致） -->
+          <TweetLinkCard
+            v-if="hasLinkCard(detailTweet)"
+            :card="tweetLinkCard(detailTweet)!"
+            context="detail"
           />
 
           <div class="detail-foot flex flex-wrap items-center gap-3 px-5 py-3">
