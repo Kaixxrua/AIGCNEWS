@@ -30,6 +30,7 @@ from backend.app.services.ingestion.sources.x_transport import (
     XAuthNotConfigured,
     XRateLimitAbort,
     XTransport,
+    XTransportUnavailable,
 )
 
 logger = logging.getLogger(__name__)
@@ -143,7 +144,7 @@ class XCrawler(BaseCrawler):
                 handles,
                 self._tweets_per_account,
             )
-        except (XAuthNotConfigured, XAuthAbort, XRateLimitAbort) as exc:
+        except (XAuthNotConfigured, XAuthAbort, XRateLimitAbort, XTransportUnavailable) as exc:
             # 中止级故障：整轮失败，走 ingestion_tasks 失败面（响亮、不连锤）
             return CrawlResult(
                 source="x",

@@ -30,6 +30,7 @@ from twitter_cli.exceptions import (
     AuthenticationError,
     NotFoundError,
     RateLimitError,
+    TwitterAPIError,
 )
 
 logger = logging.getLogger(__name__)
@@ -267,6 +268,15 @@ class XRateLimitAbort(Exception):
     """触发限流（twitter-cli 内部退避后仍 429），中止整轮采集。"""
 
 
+class XTransportUnavailable(Exception):
+    """传输面系统性故障（代理断连/解析漂移等），整轮零成功时上抛。
+
+    与单账号跳过区分：零星失败是账号个体问题，静默跳过；整轮零成功
+    意味着基础设施级故障（2026-08-09 代理断连导致 16.5h 静默停摆），
+    必须让采集轮以 error 收场进入调度失败面。
+    """
+
+
 def _default_client_factory() -> Any:
     """从环境变量构造真实 TwitterClient（延迟导入，测试注入 fake 时不触碰）。"""
     from twitter_cli.client import TwitterClient
@@ -437,9 +447,23 @@ class XTransport:
         handles: Iterable[str],
         count_per_user: int,
     ) -> dict[str, list[Any]]:
-        """使用单个 client 抓取，传播原始 AuthenticationError / RateLimitError。"""
+        """使用单个 client 抓取，传播原始 AuthenticationError / RateLimitError。
+
+        故障分级：
+          - NotFoundError（账号消失）：个体问题，跳过，不计故障
+          - TwitterAPIError(429)：twitter-cli 内部退避后仍限流（它把 429 包成
+            TwitterAPIError 而非 RateLimitError）——跳过该账号保住本轮其余
+            覆盖（观测：部分限流轮仍能收到 7/12），但记账；整轮零成功时
+            升级为 XRateLimitAbort
+          - 其他异常（网络断连、解析漂移等）：跳过并计系统性故障；整轮零
+            成功时升级为 XTransportUnavailable，让采集轮以 error 收场
+        全部账号 NotFound（集体消失）不算基础设施故障，原样返回空表。
+        """
+        watchlist = tuple(handles)
         result: dict[str, list[Any]] = {}
-        for index, handle in enumerate(handles):
+        infra_failures = 0
+        rate_limited = False
+        for index, handle in enumerate(watchlist):
             if index > 0:
                 await self._sleep(self._jittered_delay())
             try:
@@ -456,8 +480,26 @@ class XTransport:
                     "[XTransport] 账号不存在/已注销/已改名，跳过: %s",
                     handle,
                 )
+            except TwitterAPIError as exc:
+                if exc.status_code == 429:
+                    rate_limited = True
+                    logger.warning(
+                        "[XTransport] 账号 %s 触发限流(429)，跳过本轮", handle
+                    )
+                else:
+                    infra_failures += 1
+                    logger.exception("[XTransport] 账号 %s 抓取失败，跳过", handle)
             except Exception:
+                infra_failures += 1
                 logger.exception("[XTransport] 账号 %s 抓取失败，跳过", handle)
+
+        if result or not watchlist:
+            return result
+        # 零成功轮升级：绝不让基础设施级故障以「空结果成功」静默收场
+        if rate_limited:
+            raise XRateLimitAbort("x_rate_limited")
+        if infra_failures:
+            raise XTransportUnavailable("x_transport_unavailable")
         return result
 
     async def _fetch_with_credential_provider(

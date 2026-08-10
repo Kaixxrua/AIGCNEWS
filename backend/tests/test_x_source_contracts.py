@@ -15,6 +15,7 @@ from twitter_cli.exceptions import (
     AuthenticationError,
     NotFoundError,
     RateLimitError,
+    TwitterAPIError,
 )
 from twitter_cli.models import Author, Metrics, Tweet, TweetMedia, UserProfile
 
@@ -539,6 +540,115 @@ class XTransportContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([t.id for t in result["karpathy"]], ["b1"])
         self.assertNotIn("sama", result)  # 其他异常 → 跳过
 
+    async def test_twitter_api_429_skips_account_but_keeps_partial_coverage(self) -> None:
+        """twitter-cli 把 429 包成 TwitterAPIError（内部退避后仍限流）。
+
+        部分账号限流时跳过该账号、保住本轮其余覆盖（生产观测：部分
+        限流轮仍能收到 7/12）；不升级为中止。
+        """
+        client = _FakeClient()
+        client.fetch_user.side_effect = [
+            UserProfile(id="11", name="OpenAI", screen_name="openai"),
+            UserProfile(id="22", name="Kimi", screen_name="kimi_moonshot"),
+        ]
+        client.fetch_user_tweets.side_effect = [
+            TwitterAPIError(429, "Rate limited after 3 retries"),
+            [_tweet("k1", screen_name="kimi_moonshot")],
+        ]
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets(
+            ["openai", "kimi_moonshot"], count_per_user=5
+        )
+
+        self.assertNotIn("openai", result)
+        self.assertEqual([t.id for t in result["kimi_moonshot"]], ["k1"])
+        self.assertEqual(client.fetch_user_tweets.call_count, 2)
+
+    async def test_all_accounts_429_raises_rate_limit_abort(self) -> None:
+        """整轮零成功且发生限流 → XRateLimitAbort（不让限流静默成空结果）。"""
+        client = _FakeClient()
+        client.fetch_user.side_effect = [
+            UserProfile(id="11", name="OpenAI", screen_name="openai"),
+            UserProfile(id="22", name="Kimi", screen_name="kimi_moonshot"),
+        ]
+        client.fetch_user_tweets.side_effect = TwitterAPIError(
+            429, "Rate limited after 3 retries"
+        )
+        transport = self._transport(client)
+
+        with self.assertRaises(x_transport.XRateLimitAbort) as ctx:
+            await transport.fetch_watchlist_tweets(["openai", "kimi_moonshot"])
+
+        self.assertIn("x_rate_limited", str(ctx.exception))
+
+    async def test_all_accounts_network_failure_raises_transport_unavailable(self) -> None:
+        """整轮零成功且为系统性故障（HTTP 0 代理断连）→ XTransportUnavailable。
+
+        2026-08-09 教训：代理断连 16.5h、199 轮以「空结果成功」静默收场，
+        调度失败面完全无感知。
+        """
+        client = _FakeClient()
+        client.fetch_user.side_effect = [
+            UserProfile(id="11", name="OpenAI", screen_name="openai"),
+            UserProfile(id="22", name="Kimi", screen_name="kimi_moonshot"),
+        ]
+        client.fetch_user_tweets.side_effect = TwitterAPIError(
+            0, "Twitter API network error: curl: (7) Could not connect"
+        )
+        transport = self._transport(client)
+
+        with self.assertRaises(x_transport.XTransportUnavailable) as ctx:
+            await transport.fetch_watchlist_tweets(["openai", "kimi_moonshot"])
+
+        self.assertIn("x_transport_unavailable", str(ctx.exception))
+
+    async def test_all_accounts_not_found_returns_empty_without_alarm(self) -> None:
+        """全部账号 NotFound（集体消失）非基础设施故障：返回空表不上抛。
+
+        单账号探测路径依赖此契约输出「handle 不存在」友好提示。
+        """
+        client = _FakeClient()
+        client.fetch_user.side_effect = NotFoundError("suspended")
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets(["ghost"])
+
+        self.assertEqual(result, {})
+
+    async def test_mixed_not_found_and_network_zero_success_raises(self) -> None:
+        """零成功轮中存在系统性故障（即使混有 NotFound）→ XTransportUnavailable。"""
+        client = _FakeClient()
+        client.fetch_user.side_effect = [
+            NotFoundError("suspended"),
+            UserProfile(id="22", name="Kimi", screen_name="kimi_moonshot"),
+        ]
+        client.fetch_user_tweets.side_effect = TwitterAPIError(
+            0, "Twitter API network error"
+        )
+        transport = self._transport(client)
+
+        with self.assertRaises(x_transport.XTransportUnavailable):
+            await transport.fetch_watchlist_tweets(["ghost", "kimi_moonshot"])
+
+    async def test_partial_network_failure_keeps_partial_result(self) -> None:
+        """部分账号网络故障：跳过故障账号，返回成功账号，不上抛。"""
+        client = _FakeClient()
+        client.fetch_user.side_effect = [
+            UserProfile(id="11", name="OpenAI", screen_name="openai"),
+            UserProfile(id="22", name="Kimi", screen_name="kimi_moonshot"),
+        ]
+        client.fetch_user_tweets.side_effect = [
+            TwitterAPIError(0, "Twitter API network error"),
+            [_tweet("k1", screen_name="kimi_moonshot")],
+        ]
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets(["openai", "kimi_moonshot"])
+
+        self.assertNotIn("openai", result)
+        self.assertEqual([t.id for t in result["kimi_moonshot"]], ["k1"])
+
     async def test_auth_fallback_retries_complete_generator_watchlist(self) -> None:
         primary = _FakeClient()
         primary.fetch_user.side_effect = [
@@ -737,6 +847,7 @@ class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
             (x_transport.XAuthNotConfigured("x_auth_not_configured: set ..."), "x_auth_not_configured"),
             (x_transport.XAuthAbort("x_auth_expired: dead cookie"), "x_auth_expired"),
             (x_transport.XRateLimitAbort("x_rate_limited: 429"), "x_rate_limited"),
+            (x_transport.XTransportUnavailable("x_transport_unavailable"), "x_transport_unavailable"),
         ):
             with self.subTest(marker=marker):
                 crawler = self._crawler(_FakeTransport(error=error))

@@ -16,6 +16,7 @@ from backend.app.services.ingestion.sources.x_transport import (
     XAuthNotConfigured,
     XRateLimitAbort,
     XTransport,
+    XTransportUnavailable,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,8 @@ def probe_x_credential(
         return {"status": "failed", "message": "x_auth_expired"}
     except XRateLimitAbort:
         return {"status": "failed", "message": "x_rate_limited"}
+    except XTransportUnavailable:
+        return {"status": "failed", "message": "x_transport_unavailable"}
     except Exception:  # noqa: BLE001
         logger.exception("[XCredentialProbe] 凭证探测出现意外异常")
         return {"status": "failed", "message": "x_probe_error"}

@@ -6,6 +6,7 @@ from backend.app.services.ingestion.sources.x_transport import (
     XAuthAbort,
     XAuthNotConfigured,
     XRateLimitAbort,
+    XTransportUnavailable,
 )
 from backend.app.services.x_watch.probe import probe_x_watch_account
 
@@ -55,6 +56,7 @@ class XWatchProbeTests(unittest.TestCase):
         for error, marker in (
             (XAuthAbort("x_auth_expired"), "x_auth_expired"),
             (XRateLimitAbort("x_rate_limited"), "x_rate_limited"),
+            (XTransportUnavailable("x_transport_unavailable"), "x_transport_unavailable"),
         ):
             with self.subTest(marker=marker):
                 outcome = probe_x_watch_account("openai", FakeTransport(error=error))

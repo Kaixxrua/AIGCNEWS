@@ -6,6 +6,7 @@ from backend.app.services.ingestion.sources.x_transport import (
     XAuthAbort,
     XAuthNotConfigured,
     XRateLimitAbort,
+    XTransportUnavailable,
 )
 from backend.app.services.x_credentials.probe import (
     probe_all_x_credentials,
@@ -37,6 +38,7 @@ def test_single_probe_returns_only_stable_sanitized_markers() -> None:
         (XAuthNotConfigured("raw-auth-secret"), "x_auth_not_configured"),
         (XAuthAbort("raw-auth-secret"), "x_auth_expired"),
         (XRateLimitAbort("raw-ct0-secret"), "x_rate_limited"),
+        (XTransportUnavailable("proxy down"), "x_transport_unavailable"),
         (RuntimeError("raw-auth-secret raw-ct0-secret"), "x_probe_error"),
     ):
         outcome = probe_x_credential(
