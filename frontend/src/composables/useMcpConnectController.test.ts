@@ -198,4 +198,44 @@ describe('MCP connect controller', () => {
     expect(controller.tokenStatus({ ...token(1), expires_at: '2026-01-01T00:00:00Z', revoked_at: '2025-01-01T00:00:00Z' })).toBe('revoked')
     expect(controller.tokenStatus(token(1))).toBe('valid')
   })
+
+  it('builds a secret-free quick command that tracks client, shell and endpoint', () => {
+    const { controller } = createController()
+
+    expect(controller.quickCommand.value).toContain('https://example.test/api/mcp')
+    expect(controller.quickCommand.value).not.toContain('Authorization')
+    expect(controller.quickCommand.value).not.toContain('Bearer')
+
+    controller.selectedClient.value = 'codex'
+    expect(controller.quickCommand.value).toContain('codex mcp add aigc-news --url')
+    expect(controller.quickCommand.value).not.toContain('AIGC_NEWS_MCP_TOKEN')
+
+    controller.selectedShell.value = 'powershell'
+    expect(controller.quickCommand.value).toContain('2>$null')
+    expect(controller.quickCommand.value).not.toContain('$env:AIGC_NEWS_MCP_TOKEN')
+
+    controller.endpointUrl.value = 'https://mcp.other.test/api'
+    expect(controller.quickCommand.value).toContain('https://mcp.other.test/api')
+
+    controller.endpointUrl.value = 'not a url'
+    expect(controller.quickCommand.value).toBe('')
+  })
+
+  it('copies the quick command through the clipboard seam and skips empty commands', async () => {
+    const copy = vi.fn(async () => undefined)
+    const { controller } = createController({ copy })
+    await controller.copyQuickCommand()
+    expect(copy).toHaveBeenCalledWith(controller.quickCommand.value)
+    expect(controller.copiedKey.value).toBe('quick-command')
+
+    controller.endpointUrl.value = 'not a url'
+    await controller.copyQuickCommand()
+    expect(copy).toHaveBeenCalledTimes(1)
+
+    copy.mockRejectedValueOnce(new Error('clipboard denied'))
+    controller.endpointUrl.value = 'https://example.test/api/mcp'
+    await controller.copyQuickCommand()
+    expect(controller.setupError.value).toEqual({ kind: 'key', key: 'mcp.copyFailed', params: undefined })
+    expect(JSON.stringify(controller.setupError.value)).not.toContain('aigc-news')
+  })
 })

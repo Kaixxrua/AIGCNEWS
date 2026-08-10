@@ -158,3 +158,44 @@ describe('MCP client configuration security contract', () => {
     }
   })
 })
+
+describe('MCP public tokenless configuration contract', () => {
+  it.each(mcpClientOptions.flatMap((client) => shells.map((shell) => [client, shell] as const)))(
+    'generates a public, secret-free %s command for %s',
+    (client, shell) => {
+      const command = generateMcpClientCommand(client, endpoint, undefined, shell)
+      const inspectable = shell === 'cmd' && client.id !== 'codex'
+        ? decodePowerShellCommand(command)
+        : command
+
+      expect(inspectable).toContain('aigc-news')
+      expect(inspectable).toContain(endpoint)
+      expect(inspectable).not.toContain('Authorization')
+      expect(inspectable).not.toContain('Bearer')
+      expect(inspectable).not.toContain('AIGC_NEWS_MCP_TOKEN')
+      if (client.setupScope === 'import-file') {
+        expect(inspectable).toContain(client.configPath)
+        expect(inspectable).not.toContain('"headers"')
+      }
+    },
+  )
+
+  it('preserves the exact Claude Code public one-liner', () => {
+    const option = mcpClientOptions[0]!
+    expect(generateMcpClientCommand(option, 'https://mcp.test/api', undefined, 'bash')).toBe(
+      "claude mcp remove --scope user aigc-news 2>/dev/null; claude mcp add --scope user --transport http aigc-news 'https://mcp.test/api'",
+    )
+  })
+
+  it('omits Continue requestOptions and Codex token plumbing when public', () => {
+    const continueOption = mcpClientOptions.find((client) => client.id === 'continue')!
+    const yamlCommand = generateMcpClientCommand(continueOption, endpoint, undefined, 'bash')
+    expect(yamlCommand).toContain('type: streamable-http')
+    expect(yamlCommand).not.toContain('requestOptions')
+
+    const codexOption = mcpClientOptions.find((client) => client.id === 'codex')!
+    expect(generateMcpClientCommand(codexOption, endpoint, undefined, 'bash')).toBe(
+      `codex mcp remove aigc-news 2>/dev/null; codex mcp add aigc-news --url '${endpoint}'`,
+    )
+  })
+})

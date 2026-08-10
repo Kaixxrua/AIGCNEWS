@@ -58,11 +58,12 @@ function writeJsonCommand(path: string, data: unknown, shell: McpShellId): strin
   return [mkdir, write].filter(Boolean).join(join(shell))
 }
 
-function authenticatedServer(url: string, token: string) {
+function serverEntry(url: string, token?: string) {
+  if (!token) return { type: 'http', url }
   return { type: 'http', url, headers: { Authorization: `Bearer ${token}` } }
 }
 
-function configFor(option: McpClientOption, url: string, token: string): unknown {
+function configFor(option: McpClientOption, url: string, token?: string): unknown {
   if (option.format === 'opencode-remote') {
     return {
       $schema: 'https://opencode.ai/config.json',
@@ -72,17 +73,17 @@ function configFor(option: McpClientOption, url: string, token: string): unknown
           url,
           enabled: true,
           oauth: false,
-          headers: { Authorization: `Bearer ${token}` },
+          ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
         },
       },
     }
   }
-  return { mcpServers: { [MCP_SERVER_KEY]: authenticatedServer(url, token) } }
+  return { mcpServers: { [MCP_SERVER_KEY]: serverEntry(url, token) } }
 }
 
-function continueYaml(url: string, token: string): string {
+function continueYaml(url: string, token?: string): string {
   const yamlString = (value: string) => JSON.stringify(value)
-  return [
+  const lines = [
     'name: AIGC NEWS',
     'version: 0.0.1',
     'schema: v1',
@@ -90,14 +91,19 @@ function continueYaml(url: string, token: string): string {
     '  - name: aigc-news',
     '    type: streamable-http',
     `    url: ${yamlString(url)}`,
-    '    requestOptions:',
-    '      headers:',
-    `        Authorization: ${yamlString(`Bearer ${token}`)}`,
-    '',
-  ].join('\n')
+  ]
+  if (token) {
+    lines.push(
+      '    requestOptions:',
+      '      headers:',
+      `        Authorization: ${yamlString(`Bearer ${token}`)}`,
+    )
+  }
+  lines.push('')
+  return lines.join('\n')
 }
 
-function continueCommand(url: string, token: string, shell: McpShellId): string {
+function continueCommand(url: string, token: string | undefined, shell: McpShellId): string {
   const yaml = continueYaml(url, token)
   const relativePath = '.continue/mcpServers/aigc-news.yaml'
   if (shell === 'bash') {
@@ -123,12 +129,12 @@ function continueCommand(url: string, token: string, shell: McpShellId): string 
     : script
 }
 
-function vscodeCommand(url: string, token: string, shell: McpShellId): string {
+function vscodeCommand(url: string, token: string | undefined, shell: McpShellId): string {
   const payload = JSON.stringify({
     name: MCP_SERVER_KEY,
     type: 'http',
     url,
-    headers: { Authorization: `Bearer ${token}` },
+    ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
   })
   const unsupported = 'VS Code CLI does not support --add-mcp. Upgrade VS Code or use MCP: Add Server and select the user scope.'
 
@@ -153,33 +159,38 @@ function vscodeCommand(url: string, token: string, shell: McpShellId): string {
     : script
 }
 
-function codexCommand(url: string, token: string, shell: McpShellId): string {
+function codexCommand(url: string, token: string | undefined, shell: McpShellId): string {
+  const remove = `codex mcp remove ${MCP_SERVER_KEY} ${ignored(shell)}`
+  const add = token
+    ? `codex mcp add ${MCP_SERVER_KEY} --url ${quote(url, shell)} --bearer-token-env-var ${CODEX_TOKEN_ENV}`
+    : `codex mcp add ${MCP_SERVER_KEY} --url ${quote(url, shell)}`
+  if (!token) return [remove, add].join(join(shell))
   const setToken = shell === 'powershell'
     ? `$env:${CODEX_TOKEN_ENV}=${quote(token, shell)}; [Environment]::SetEnvironmentVariable(${quotePowerShellLiteral(CODEX_TOKEN_ENV)}, ${quotePowerShellLiteral(token)}, 'User')`
     : shell === 'cmd'
       ? `set "${CODEX_TOKEN_ENV}=${token}" & setx ${CODEX_TOKEN_ENV} ${quote(token, shell)} >nul`
       : `export ${CODEX_TOKEN_ENV}=${quote(token, shell)}`
-  const remove = `codex mcp remove ${MCP_SERVER_KEY} ${ignored(shell)}`
-  const add = `codex mcp add ${MCP_SERVER_KEY} --url ${quote(url, shell)} --bearer-token-env-var ${CODEX_TOKEN_ENV}`
   return [setToken, remove, add].join(join(shell))
 }
 
-export function generateMcpClientCommand(option: McpClientOption, url: string, token: string, shell: McpShellId): string {
+export function generateMcpClientCommand(option: McpClientOption, url: string, token: string | undefined, shell: McpShellId): string {
   if (option.format === 'claude-cli') {
     if (shell !== 'bash') {
       const resolveExecutable = "$claudeCommand = Get-Command claude.exe, claude.cmd -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $claudeCommand) { throw 'Claude Code executable not found. Install Claude Code and reopen the terminal.' }"
+      const headerFlag = token ? ` --header ${quotePowerShellLiteral(`Authorization: Bearer ${token}`)}` : ''
       const command = [
         resolveExecutable,
         `& $claudeCommand.Source mcp remove --scope user ${MCP_SERVER_KEY} 2>$null`,
-        `& $claudeCommand.Source mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quotePowerShellLiteral(url)} --header ${quotePowerShellLiteral(`Authorization: Bearer ${token}`)}`,
+        `& $claudeCommand.Source mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quotePowerShellLiteral(url)}${headerFlag}`,
       ].join('; ')
       return shell === 'cmd'
         ? `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodePowerShellCommand(command)}`
         : command
     }
+    const headerFlag = token ? ` --header ${quote(`Authorization: Bearer ${token}`, shell)}` : ''
     return [
       `claude mcp remove --scope user ${MCP_SERVER_KEY} ${ignored(shell)}`,
-      `claude mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quote(url, shell)} --header ${quote(`Authorization: Bearer ${token}`, shell)}`,
+      `claude mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quote(url, shell)}${headerFlag}`,
     ].join(join(shell))
   }
   if (option.format === 'codex-cli') return codexCommand(url, token, shell)

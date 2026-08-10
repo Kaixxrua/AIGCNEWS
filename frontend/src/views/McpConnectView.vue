@@ -22,6 +22,7 @@ const {
   copiedKey,
   copyGeneratedCommand,
   copyHostInstruction,
+  copyQuickCommand,
   creating,
   deletingId,
   displayedPublicTools,
@@ -31,6 +32,7 @@ const {
   loadTokens,
   loadingTokens,
   normalizedEndpoint,
+  quickCommand,
   removeToken,
   selectedClient,
   selectedShell,
@@ -131,6 +133,27 @@ onBeforeUnmount(dispose)
 
       <section class="glass-card p-5 md:p-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
+          <div><p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.quickConnect') }}</p><h2 class="mt-1 text-xl font-semibold text-stone-800">{{ t('mcp.quickConnectTitle') }}</h2><p class="mt-2 max-w-3xl text-sm text-stone-500">{{ t('mcp.quickConnectDescription') }}</p></div>
+        </div>
+        <div class="mt-6 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+          <div class="rounded-[24px] border border-stone-200/80 bg-card/65 p-5">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.chooseClient') }}</p>
+            <div class="mt-4 grid gap-2 sm:grid-cols-2"><button v-for="client in clientOptions" :key="client.id" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-card'" @click="selectedClient = client.id"><span class="flex flex-wrap items-center gap-2"><span class="text-sm font-semibold text-stone-800">{{ clientDisplayLabel(client) }}</span><span class="rounded-full bg-stone-100 px-2 py-0.5 text-2xs font-semibold text-stone-500">{{ t(`mcp.scope.${setupScopeKeys[client.setupScope]}`) }}</span></span><span class="mt-1 block text-2xs leading-4 text-stone-400">{{ t(client.descriptionKey) }}</span></button></div>
+            <p class="mt-5 text-sm font-semibold text-stone-700">{{ t('mcp.terminal') }}</p>
+            <div class="mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-card text-stone-600'" @click="selectedShell = shell.id">{{ shell.labelKey ? t(shell.labelKey) : shell.label }}</button></div>
+          </div>
+          <div class="rounded-[24px] border border-stone-200/80 bg-stone-50/70 p-5">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.quickCommandLabel') }}</p>
+            <pre v-if="quickCommand" class="mcp-quick-command mt-4 overflow-auto rounded-2xl border border-stone-700 bg-stone-900 p-4 font-mono text-2xs leading-5 text-stone-100">{{ quickCommand }}</pre>
+            <p v-else class="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs text-rose-700">{{ endpointWarning }}</p>
+            <div class="mt-4 rounded-2xl border border-stone-200 bg-card/75 p-4"><div class="flex flex-wrap items-center gap-2"><span class="rounded-full bg-stone-100 px-2.5 py-1 text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span><span class="text-xs font-semibold text-stone-700">{{ clientConfigTarget(clientOption) }}</span></div><p class="mt-2 text-xs leading-5 text-stone-500">{{ setupTargetDescription }}</p></div>
+            <button class="btn-primary mt-3 w-full justify-center" :disabled="!quickCommand" @click="copyQuickCommand">{{ t(copiedKey === 'quick-command' ? 'mcp.copied' : 'mcp.copyQuick') }}</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="glass-card p-5 md:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
           <div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.routing') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.routingTitle') }}</h2><p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('mcp.routingDescription') }}</p></div>
           <button class="btn-secondary text-xs" @click="copyHostInstruction">{{ t(copiedKey === 'host-instruction' ? 'mcp.copied' : 'mcp.copyHost') }}</button>
         </div>
@@ -149,20 +172,17 @@ onBeforeUnmount(dispose)
           <span v-else class="rounded-full bg-[var(--token-valid-bg)] px-3 py-1 text-xs font-semibold text-[var(--projects-success)]">{{ t('mcp.loggedIn') }}</span>
         </div>
 
-        <div v-if="authStore.isLoggedIn" class="mt-6 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <div v-if="authStore.isLoggedIn" class="mt-6 grid gap-5 xl:grid-cols-2">
           <div class="rounded-[24px] border border-stone-200/80 bg-card/65 p-5">
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.stepChoose') }}</p>
-            <div class="mt-4 grid gap-2 sm:grid-cols-2"><button v-for="client in clientOptions" :key="client.id" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-card'" @click="selectedClient = client.id"><span class="flex flex-wrap items-center gap-2"><span class="text-sm font-semibold text-stone-800">{{ clientDisplayLabel(client) }}</span><span class="rounded-full bg-stone-100 px-2 py-0.5 text-2xs font-semibold text-stone-500">{{ t(`mcp.scope.${setupScopeKeys[client.setupScope]}`) }}</span></span><span class="mt-1 block text-2xs leading-4 text-stone-400">{{ t(client.descriptionKey) }}</span></button></div>
-            <p class="mt-5 text-sm font-semibold text-stone-700">{{ t('mcp.terminal') }}</p>
-            <div class="mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-card text-stone-600'" @click="selectedShell = shell.id">{{ shell.labelKey ? t(shell.labelKey) : shell.label }}</button></div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.favoritesAuth') }}</p>
+            <div class="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4"><p class="text-sm font-semibold text-cyan-900">{{ t('mcp.permission') }}</p><p class="mt-1 font-mono text-2xs text-cyan-700">{{ SCOPE }}</p><p class="mt-2 text-xs leading-5 text-cyan-800/80">{{ t('mcp.bearerMemory') }}</p></div>
             <label class="mt-5 block text-xs font-semibold text-stone-600">{{ t('mcp.deviceLabel') }}</label><input v-model="clientLabel" maxlength="128" class="input mt-2" :placeholder="t('mcp.devicePlaceholder')" />
+            <p class="mt-3 text-xs leading-5 text-stone-500">{{ t('mcp.multipleTokens') }}</p>
           </div>
 
           <div class="rounded-[24px] border border-stone-200/80 bg-stone-50/70 p-5">
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.stepConfirm') }}</p>
-            <div class="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4"><p class="text-sm font-semibold text-cyan-900">{{ t('mcp.permission') }}</p><p class="mt-1 font-mono text-2xs text-cyan-700">{{ SCOPE }}</p><p class="mt-2 text-xs leading-5 text-cyan-800/80">{{ t('mcp.bearerMemory') }}</p></div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.generateStep') }}</p>
             <div class="mt-4 rounded-2xl border border-stone-200 bg-card/75 p-4"><div class="flex flex-wrap items-center gap-2"><span class="rounded-full bg-stone-100 px-2.5 py-1 text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span><span class="text-xs font-semibold text-stone-700">{{ clientConfigTarget(clientOption) }}</span></div><p class="mt-2 text-xs leading-5 text-stone-500">{{ setupTargetDescription }}</p></div>
-            <p class="mt-3 text-xs leading-5 text-stone-500">{{ t('mcp.multipleTokens') }}</p>
             <button class="btn-primary mt-3 w-full justify-center" :disabled="creating" @click="startSetup">{{ t(creating ? 'mcp.creating' : clientOption.setupScope === 'import-file' ? 'mcp.generateImport' : 'mcp.generateCommand') }}</button>
             <div v-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">{{ t('mcp.bearerWarning') }}</p><p class="mt-1 text-xs font-semibold leading-5 text-amber-800">{{ t('mcp.bearerWarningDetail') }}</p><p class="mt-2 text-xs leading-5 text-amber-700">{{ t('mcp.hiddenConfig', { result: setupResultDescription }) }}</p><button class="btn-primary mt-3 text-xs" @click="copyGeneratedCommand">{{ t(copiedKey === 'command' ? 'mcp.copiedClipboard' : 'mcp.copyOneTime') }}</button></div>
             <p v-if="setupNoticeDisplay" class="mt-3 rounded-2xl bg-[var(--token-valid-bg)] px-4 py-3 text-xs text-[var(--projects-success)]">{{ setupNoticeDisplay }}</p>
@@ -219,6 +239,12 @@ onBeforeUnmount(dispose)
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.mcp-quick-command {
+  max-height: 16rem;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .mcp-connect-page :deep(.glass-card) {

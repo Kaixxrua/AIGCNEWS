@@ -28,6 +28,7 @@ vi.mock('@/composables/useMcpConnectController', async () => {
     copiedKey: ref(''),
     copyGeneratedCommand: vi.fn(),
     copyHostInstruction: vi.fn(),
+    copyQuickCommand: vi.fn(),
     creating: ref(false),
     deletingId: ref(null),
     displayedPublicTools: ref([
@@ -40,6 +41,7 @@ vi.mock('@/composables/useMcpConnectController', async () => {
     loadTokens: vi.fn(),
     loadingTokens: ref(false),
     normalizedEndpoint: ref('https://aigcnews.cn/api/mcp'),
+    quickCommand: ref(''),
     removeToken: vi.fn(),
     selectedClient: ref('claude-code'),
     selectedShell: ref('bash'),
@@ -76,6 +78,8 @@ const i18n = createI18n({
         toolSearchAi: '搜索站内精选 AI 项目',
         toolSearchPapers: '检索 arXiv 论文',
         loginToConfigure: '登录后配置',
+        quickConnect: '免登录接入',
+        copyQuick: '复制配置命令',
         bearerWarning: '命令只显示一次',
         copyOneTime: '复制一次性命令',
         valid: '有效',
@@ -112,6 +116,7 @@ beforeEach(() => {
   controller().deletingId.value = null
   controller().endpointWarningKey.value = ''
   controller().loadingTokens.value = false
+  controller().quickCommand.value = ''
   controller().setupError.value = null
   controller().setupNotice.value = null
   controller().testing.value = false
@@ -125,6 +130,7 @@ beforeEach(() => {
     controller().clientDisplayLabel,
     controller().copyGeneratedCommand,
     controller().copyHostInstruction,
+    controller().copyQuickCommand,
     controller().dispose,
     controller().loadTokens,
     controller().removeToken,
@@ -205,16 +211,40 @@ describe('McpConnectView localized rendering', () => {
     const wrapper = await mountView()
     const sections = wrapper.findAll('section')
 
-    expect(sections.length).toBe(5)
+    expect(sections.length).toBe(6)
     expect(sections[0]!.text()).toContain('公开端点')
     expect(sections[1]!.text()).toContain('search_github_ai_projects')
-    expect(sections[2]!.text()).toContain('MCP 优先路由')
-    expect(sections[3]!.text()).toContain('鉴权配置')
-    expect(sections[4]!.text()).toContain('令牌管理')
+    expect(sections[2]!.text()).toContain('免登录接入')
+    expect(sections[3]!.text()).toContain('MCP 优先路由')
+    expect(sections[4]!.text()).toContain('鉴权配置')
+    expect(sections[5]!.text()).toContain('令牌管理')
   })
 })
 
 describe('McpConnectView privacy and auth behavior', () => {
+  it('renders the secret-free quick command visibly and forwards quick copy', async () => {
+    controller().quickCommand.value = 'claude mcp add --scope user --transport http aigc-news https://aigcnews.cn/api/mcp'
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('claude mcp add --scope user --transport http aigc-news')
+    const copyButton = wrapper.findAll('button').find((button) => button.text() === '复制配置命令')
+    expect(copyButton).toBeDefined()
+    expect(copyButton!.attributes('disabled')).toBeUndefined()
+
+    await copyButton!.trigger('click')
+    expect(controller().copyQuickCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers the quick connect path without login', async () => {
+    auth().isLoggedIn = false
+    controller().quickCommand.value = 'codex mcp add aigc-news --url https://aigcnews.cn/api/mcp'
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('免登录接入')
+    expect(wrapper.text()).toContain('codex mcp add aigc-news')
+    expect(wrapper.text()).not.toContain('令牌管理')
+  })
+
   it('never renders the transient command while offering one-time copy', async () => {
     controller().transientCommand.value = 'claude mcp add --header "Authorization: Bearer SECRET-TOKEN-VALUE"'
     const wrapper = await mountView()

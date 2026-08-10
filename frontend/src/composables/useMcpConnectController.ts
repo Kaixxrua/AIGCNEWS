@@ -126,6 +126,11 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
   })
   const clientOption = computed(() => mcpClientOptions.find((item) => item.id === selectedClient.value)!)
   const clientDisplayLabel = (option: McpClientOption) => (option.labelKey ? translate(option.labelKey) : option.label)
+  const quickCommand = computed(() => (
+    endpointWarningKey.value
+      ? ''
+      : generateMcpClientCommand(clientOption.value, normalizedEndpoint.value, undefined, selectedShell.value)
+  ))
   const discoveryState = ref<PublicToolDiscoveryState>({ status: 'idle', endpoint: normalizedEndpoint.value })
   const testing = computed(() => discoveryState.value.status === 'running')
   const displayedPublicTools = computed(() => resolveDisplayedPublicTools(normalizedEndpoint.value, discoveryState.value))
@@ -248,6 +253,10 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     if (transientCommand.value) await copyText(transientCommand.value, 'command')
   }
 
+  const copyQuickCommand = async () => {
+    if (quickCommand.value) await copyText(quickCommand.value, 'quick-command')
+  }
+
   const copyHostInstruction = async () => copyText(translate('mcp.hostInstruction'), 'host-instruction')
 
   const removeToken = async (item: McpTokenMetadata) => {
@@ -335,6 +344,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     copiedKey,
     copyGeneratedCommand,
     copyHostInstruction,
+    copyQuickCommand,
     creating,
     deletingId,
     discoveryState,
@@ -346,6 +356,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     loadTokens,
     loadingTokens,
     normalizedEndpoint,
+    quickCommand,
     removeToken,
     resetDiscovery,
     selectedClient,
