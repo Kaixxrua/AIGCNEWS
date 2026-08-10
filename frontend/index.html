@@ -18,9 +18,62 @@
       })();
     </script>
     <title>AIGCNEWS</title>
+    <style>
+      /* 首屏启动动画：内联以保证 JS/CSS bundle 未加载时即可渲染；Vue 挂载后自动替换。
+         颜色与 style.css 的 --paper/--rule/--acid 保持同步，明暗主题各一份。 */
+      .boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 24px;
+        background: #f7f5ee;
+      }
+      .boot-splash__logo {
+        width: 72px;
+        height: 72px;
+        animation: boot-splash-pulse 1.6s ease-in-out infinite;
+      }
+      .boot-splash__bar {
+        width: 120px;
+        height: 3px;
+        border-radius: 2px;
+        background: #d6d4ca;
+        overflow: hidden;
+      }
+      .boot-splash__bar span {
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: inherit;
+        background: #bfd830;
+        animation: boot-splash-slide 1.2s ease-in-out infinite;
+      }
+      @keyframes boot-splash-pulse {
+        0%, 100% { opacity: 0.75; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.05); }
+      }
+      @keyframes boot-splash-slide {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+      }
+      html[data-theme='dark'] .boot-splash { background: #0e1210; }
+      html[data-theme='dark'] .boot-splash__bar { background: #4b504b; }
+      html[data-theme='dark'] .boot-splash__bar span { background: #c9e842; }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-splash__logo, .boot-splash__bar span { animation: none; }
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="boot-splash" role="status" aria-label="页面加载中">
+        <img class="boot-splash__logo" src="/logo.png" alt="AIGCNEWS" />
+        <div class="boot-splash__bar"><span></span></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
