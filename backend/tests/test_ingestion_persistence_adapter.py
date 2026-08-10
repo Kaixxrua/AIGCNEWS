@@ -108,6 +108,36 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         paper_bad = dict(paper_no_quote, quote=["not", "a", "dict"])
         self.assertIsNone(project_document_write(paper_bad, document, "x")["quote"])
 
+    def test_document_write_projection_serializes_link_card_and_defaults_none(self) -> None:
+        document = MagicMock(metadata={"id": "doc-lc"})
+        link_card = {
+            "url": "https://www.youtube.com/watch?v=S9O3FPumX4Q",
+            "title": "MiniMax H3",
+            "description": "open-weight video model",
+            "domain": "youtube.com",
+            "image_url": "https://pbs.twimg.com/card_img/x.jpg",
+            "image_width": 1280,
+            "image_height": 720,
+            "card_type": "player",
+        }
+        paper = {
+            "source": "x",
+            "channel": "x_daily_watchlist",
+            "title": "Tweet",
+            "link_card": link_card,
+        }
+
+        write = project_document_write(paper, document, "x")
+
+        self.assertEqual(json.loads(write["link_card"]), link_card)
+        paper_no_card = {"source": "x", "channel": "x_daily_watchlist", "title": "Tweet"}
+        self.assertIsNone(
+            project_document_write(paper_no_card, document, "x")["link_card"]
+        )
+        # 非 dict 的 link_card（异常上游数据）不落库，避免写入不可解析形状
+        paper_bad = dict(paper_no_card, link_card="not-a-dict")
+        self.assertIsNone(project_document_write(paper_bad, document, "x")["link_card"])
+
     def test_document_write_projection_passes_author_name_through(self) -> None:
         document = MagicMock(metadata={"id": "doc-x-name"})
         paper = {

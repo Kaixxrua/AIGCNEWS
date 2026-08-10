@@ -127,6 +127,7 @@ class XPolicyContracts(unittest.TestCase):
                 "tags": ["x", "daily", "openai"],
                 "media": [],
                 "quote": None,
+                "link_card": None,
             },
         )
 
@@ -288,6 +289,69 @@ class XPolicyContracts(unittest.TestCase):
             [_tweet("1007", created_at="garbage")], limit=5
         )
         self.assertEqual(items[0]["published_date"], "")
+
+    def test_project_tweets_projects_link_card(self) -> None:
+        tweet = _tweet("3001", text="watch https://t.co/abc123")
+        # 与 x_transport 卡片补丁同一姿势：无 slots dataclass 后置赋值
+        tweet.link_card = {
+            "url": "https://www.youtube.com/watch?v=S9O3FPumX4Q",
+            "title": "MiniMax H3: A New Open-Weight Video Model",
+            "description": "MiniMax H3 is an open-weight video model",
+            "domain": "youtube.com",
+            "image_url": "https://pbs.twimg.com/card_img/2085/orig.jpg",
+            "image_width": 1280,
+            "image_height": 720,
+            "card_type": "player",
+        }
+        items = x_policy.project_tweets([tweet], limit=5)
+        self.assertEqual(
+            items[0]["link_card"],
+            {
+                "url": "https://www.youtube.com/watch?v=S9O3FPumX4Q",
+                "title": "MiniMax H3: A New Open-Weight Video Model",
+                "description": "MiniMax H3 is an open-weight video model",
+                "domain": "youtube.com",
+                "image_url": "https://pbs.twimg.com/card_img/2085/orig.jpg",
+                "image_width": 1280,
+                "image_height": 720,
+                "card_type": "player",
+            },
+        )
+
+    def test_project_tweets_link_card_none_or_unusable(self) -> None:
+        # 无卡 → None
+        self.assertIsNone(
+            x_policy.project_tweets([_tweet("3010")], limit=5)[0]["link_card"]
+        )
+        # 缺 title → None（无可看内容）
+        tweet = _tweet("3011")
+        tweet.link_card = {"url": "https://example.com/x", "title": ""}
+        self.assertIsNone(x_policy.project_tweets([tweet], limit=5)[0]["link_card"])
+        # 缺 url → None（卡片无法跳转）
+        tweet2 = _tweet("3012")
+        tweet2.link_card = {"url": " ", "title": "has title"}
+        self.assertIsNone(x_policy.project_tweets([tweet2], limit=5)[0]["link_card"])
+        # 非 dict（防御坏数据）→ None
+        tweet3 = _tweet("3013")
+        tweet3.link_card = "not-a-dict"
+        self.assertIsNone(x_policy.project_tweets([tweet3], limit=5)[0]["link_card"])
+
+    def test_project_tweets_link_card_without_image_degrades_to_text_card(self) -> None:
+        tweet = _tweet("3014")
+        tweet.link_card = {
+            "url": "https://example.com/blog",
+            "title": "Text only card",
+            "description": "",
+            "domain": "example.com",
+            "image_url": "",
+            "image_width": None,
+            "image_height": None,
+            "card_type": "summary",
+        }
+        card = x_policy.project_tweets([tweet], limit=5)[0]["link_card"]
+        # 缩略图缺失不阻断成卡：image_url 归一为 None，由渲染层降级为纯文本卡
+        self.assertIsNone(card["image_url"])
+        self.assertEqual(card["title"], "Text only card")
 
     def test_filter_tweets_to_snapshot_date_keeps_only_cst_same_day(self) -> None:
         tweets = [
@@ -1058,6 +1122,216 @@ class XMediaPosterPatchContracts(unittest.TestCase):
         client = x_transport._default_credential_factory("tok", "ct0")
         self.assertIsNotNone(client)
         self.assertIsNotNone(x_transport._ORIGINAL_EXTRACT_MEDIA)
+
+
+def _raw_tweet_result_with_card() -> dict:
+    """MiniMax YouTube 卡推文的真实负载形状（player 卡 + t.co card_url 实体展开）。"""
+    return {
+        "__typename": "Tweet",
+        "rest_id": "2086685611835245038",
+        "core": {
+            "user_results": {
+                "result": {
+                    "rest_id": "u1",
+                    "legacy": {"name": "MiniMax", "screen_name": "MiniMax_AI"},
+                }
+            }
+        },
+        "card": {
+            "rest_id": "card://2085994579514519552",
+            "legacy": {
+                "name": "player",
+                "binding_values": [
+                    {
+                        "key": "title",
+                        "value": {"string_value": "MiniMax H3: A New Open-Weight Video Model"},
+                    },
+                    {
+                        "key": "description",
+                        "value": {"string_value": "MiniMax H3 is an open-weight video model"},
+                    },
+                    {"key": "card_url", "value": {"string_value": "https://t.co/AqfZGExV1n"}},
+                    {"key": "domain", "value": {"string_value": "www.youtube.com"}},
+                    {"key": "vanity_url", "value": {"string_value": "youtube.com"}},
+                    {
+                        "key": "player_image",
+                        "value": {
+                            "image_value": {
+                                "url": "https://pbs.twimg.com/card_img/2085/small.jpg",
+                                "width": 280,
+                                "height": 158,
+                            }
+                        },
+                    },
+                    {
+                        "key": "player_image_large",
+                        "value": {
+                            "image_value": {
+                                "url": "https://pbs.twimg.com/card_img/2085/large.jpg",
+                                "width": 569,
+                                "height": 320,
+                            }
+                        },
+                    },
+                    {
+                        "key": "player_image_original",
+                        "value": {
+                            "image_value": {
+                                "url": "https://pbs.twimg.com/card_img/2085/orig.jpg",
+                                "width": 1280,
+                                "height": 720,
+                            }
+                        },
+                    },
+                ],
+            },
+        },
+        "legacy": {
+            "full_text": "Watch: https://t.co/AqfZGExV1n",
+            "created_at": "Sun Aug 09 03:00:00 +0000 2026",
+            "entities": {
+                "urls": [
+                    {
+                        "url": "https://t.co/AqfZGExV1n",
+                        "expanded_url": "https://www.youtube.com/watch?v=S9O3FPumX4Q",
+                        "display_url": "youtube.com/watch?v=S9O3FPumX4Q",
+                        "indices": [7, 30],
+                    }
+                ]
+            },
+            "favorite_count": 10,
+            "retweet_count": 0,
+            "reply_count": 0,
+            "quote_count": 0,
+            "bookmark_count": 0,
+            "lang": "en",
+        },
+    }
+
+
+class XLinkCardPatchContracts(unittest.TestCase):
+    """x_transport 链接卡片补丁：包装 twitter-cli 真实 parse_tweet_result 的契约。
+
+    每个用例装补丁前记录现场、结束后恢复，避免污染同进程其他用例
+    （与 XMediaPosterPatchContracts 同一纪律）。
+    """
+
+    def setUp(self) -> None:
+        from twitter_cli import parser as tw_parser
+
+        self._tw_parser = tw_parser
+        self._saved_parse = tw_parser.parse_tweet_result
+        self._saved_flag = x_transport._ORIGINAL_PARSE_TWEET_RESULT
+
+    def tearDown(self) -> None:
+        self._tw_parser.parse_tweet_result = self._saved_parse
+        x_transport._ORIGINAL_PARSE_TWEET_RESULT = self._saved_flag
+
+    def _install(self) -> None:
+        # 从干净状态安装：模拟生产首次构造真实 client 的路径
+        self._tw_parser.parse_tweet_result = self._saved_parse
+        x_transport._ORIGINAL_PARSE_TWEET_RESULT = None
+        x_transport._install_link_card_patch()
+
+    def test_patch_backfills_card_with_expanded_url_and_best_image(self) -> None:
+        self._install()
+        tweet = self._tw_parser.parse_tweet_result(_raw_tweet_result_with_card())
+        self.assertEqual(
+            tweet.link_card,
+            {
+                # t.co card_url 经 legacy.entities.urls 展开为目标页
+                "url": "https://www.youtube.com/watch?v=S9O3FPumX4Q",
+                "title": "MiniMax H3: A New Open-Weight Video Model",
+                "description": "MiniMax H3 is an open-weight video model",
+                # vanity_url（展示域名）优先于 domain
+                "domain": "youtube.com",
+                # *original 优先级最高：取 1280x720 原图而非 large/small
+                "image_url": "https://pbs.twimg.com/card_img/2085/orig.jpg",
+                "image_width": 1280,
+                "image_height": 720,
+                "card_type": "player",
+            },
+        )
+
+    def test_patch_falls_back_to_tco_and_smaller_image(self) -> None:
+        self._install()
+        raw = _raw_tweet_result_with_card()
+        raw["legacy"]["entities"]["urls"] = []  # 无实体可展开
+        raw["card"]["legacy"]["binding_values"] = [
+            entry
+            for entry in raw["card"]["legacy"]["binding_values"]
+            if entry["key"] not in ("player_image_original", "player_image_large")
+        ]
+        tweet = self._tw_parser.parse_tweet_result(raw)
+        # 展开失败保留 t.co 原值（仍可经 X 重定向跳转），缩略图逐档回退
+        self.assertEqual(tweet.link_card["url"], "https://t.co/AqfZGExV1n")
+        self.assertEqual(
+            tweet.link_card["image_url"], "https://pbs.twimg.com/card_img/2085/small.jpg"
+        )
+        self.assertEqual(tweet.link_card["image_width"], 280)
+
+    def test_patch_unwraps_visibility_results(self) -> None:
+        self._install()
+        wrapped = {
+            "__typename": "TweetWithVisibilityResults",
+            "tweet": _raw_tweet_result_with_card(),
+        }
+        tweet = self._tw_parser.parse_tweet_result(wrapped)
+        self.assertEqual(tweet.link_card["card_type"], "player")
+
+    def test_patch_takes_card_from_retweeted_original(self) -> None:
+        self._install()
+        original = _raw_tweet_result_with_card()
+        retweet = {
+            "__typename": "Tweet",
+            "rest_id": "9999",
+            "core": original["core"],
+            "legacy": {
+                "full_text": "RT @MiniMax_AI Watch: https://t.co/AqfZGExV1n",
+                "created_at": "Sun Aug 09 04:00:00 +0000 2026",
+                "retweeted_status_result": {"result": original},
+                "favorite_count": 0,
+                "retweet_count": 0,
+                "reply_count": 0,
+                "quote_count": 0,
+                "bookmark_count": 0,
+            },
+        }
+        tweet = self._tw_parser.parse_tweet_result(retweet)
+        # 卡片与媒体同一数据源语义：取自被转推文
+        self.assertEqual(tweet.link_card["card_type"], "player")
+
+    def test_patch_no_card_or_unusable_card(self) -> None:
+        self._install()
+        raw = _raw_tweet_result_with_card()
+        del raw["card"]
+        tweet = self._tw_parser.parse_tweet_result(raw)
+        self.assertFalse(hasattr(tweet, "link_card"))
+        # 缺 title → 不赋值（无可看内容）
+        raw2 = _raw_tweet_result_with_card()
+        raw2["card"]["legacy"]["binding_values"] = [
+            entry
+            for entry in raw2["card"]["legacy"]["binding_values"]
+            if entry["key"] != "title"
+        ]
+        tweet2 = self._tw_parser.parse_tweet_result(raw2)
+        self.assertFalse(hasattr(tweet2, "link_card"))
+
+    def test_patch_install_is_idempotent(self) -> None:
+        self._install()
+        wrapped = self._tw_parser.parse_tweet_result
+        original = x_transport._ORIGINAL_PARSE_TWEET_RESULT
+        self.assertIsNotNone(original)
+
+        x_transport._install_link_card_patch()  # 第二次安装：不重复包装
+        self.assertIs(self._tw_parser.parse_tweet_result, wrapped)
+        self.assertIs(x_transport._ORIGINAL_PARSE_TWEET_RESULT, original)
+
+    def test_credential_factory_installs_patch(self) -> None:
+        x_transport._ORIGINAL_PARSE_TWEET_RESULT = None
+        client = x_transport._default_credential_factory("tok", "ct0")
+        self.assertIsNotNone(client)
+        self.assertIsNotNone(x_transport._ORIGINAL_PARSE_TWEET_RESULT)
 
 
 class XTranslationTransportContracts(unittest.TestCase):

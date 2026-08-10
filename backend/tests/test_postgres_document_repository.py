@@ -123,6 +123,61 @@ def test_deserialize_row_quote_json_and_bad_json() -> None:
     assert bad["quote"] is None
 
 
+def test_deserialize_row_link_card_json_and_bad_json() -> None:
+    row = {"id": "x:lc", "link_card": '{"url": "https://youtu.be/x", "title": "t"}'}
+    result = _deserialize_row_media(row)
+    assert result["link_card"] == {"url": "https://youtu.be/x", "title": "t"}
+    bad = _deserialize_row_media({"id": "x:lc2", "link_card": "not-json"})
+    assert bad["link_card"] is None
+
+
+def test_upsert_document_persists_link_card() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    repository.upsert_document(
+        {
+            "id": "x:2006",
+            "source": "x",
+            "source_channel": "x_daily_watchlist",
+            "title": "tweet",
+            "url": "https://x.com/minimax_ai/status/2086",
+            "link_card": {
+                "url": "https://www.youtube.com/watch?v=S9O3FPumX4Q",
+                "title": "MiniMax H3",
+                "description": "open-weight video model",
+                "domain": "youtube.com",
+                "image_url": "https://pbs.twimg.com/card_img/x.jpg",
+                "image_width": 1280,
+                "image_height": 720,
+                "card_type": "player",
+            },
+        }
+    )
+
+    sql = cursor.execute.call_args.args[0]
+    params = cursor.execute.call_args.args[1]
+    assert "link_card" in sql
+    # 冲突更新走 COALESCE(NULLIF(...))：新值缺失时保留已有链接卡片
+    assert "link_card=COALESCE(NULLIF(EXCLUDED.link_card, ''), documents.link_card)" in sql
+    assert json.loads(params["link_card"])["card_type"] == "player"
+
+
+def test_upsert_document_link_card_defaults_to_none() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    repository.upsert_document(
+        {
+            "id": "x:2007",
+            "source": "x",
+            "title": "tweet",
+            "url": "https://x.com/openai/status/2007",
+        }
+    )
+
+    params = cursor.execute.call_args.args[1]
+    assert params["link_card"] is None
+
+
 def test_upsert_document_persists_quote() -> None:
     repository, _, cursor = repository_with_cursor()
 

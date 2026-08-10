@@ -46,6 +46,24 @@ _MEDIA_KNOWN_TYPES = _MEDIA_VIDEO_TYPES | {"photo"}
 # 非 None 表示封面补丁已安装，值为被包装的原始函数（测试恢复用）
 _ORIGINAL_EXTRACT_MEDIA: Any = None
 
+# 非 None 表示链接卡片补丁已安装，值为被包装的原始函数（测试恢复用）
+_ORIGINAL_PARSE_TWEET_RESULT: Any = None
+
+# 卡片缩略图 key 优先级：*original 是全尺寸原图，逐档回退到小图。
+# binding_values 的 image_value 形如 {"url": "...", "width": w, "height": h}。
+_CARD_IMAGE_KEYS = (
+    "player_image_original",
+    "photo_image_full_size_original",
+    "thumbnail_image_original",
+    "player_image_x_large",
+    "player_image_large",
+    "photo_image_full_size_large",
+    "thumbnail_image_large",
+    "player_image",
+    "photo_image_full_size",
+    "thumbnail_image",
+)
+
 
 def _install_media_poster_patch() -> None:
     """给 twitter-cli 的 _extract_media 打补丁：视频/GIF 回填官方封面 URL。
@@ -91,6 +109,147 @@ def _install_media_poster_patch() -> None:
         logger.warning("[XTransport] media poster patch 安装失败", exc_info=True)
 
 
+def _resolve_card_tweet_data(result: Any) -> Any:
+    """复刻 parser 的 retweet/visibility 解包：卡片与媒体/urls 同一数据源。
+
+    转推的卡片挂在被转推文上（parse_tweet_result 的 actual_data 语义）；
+    TweetWithVisibilityResults 的 card 在内层 tweet 上。
+    """
+    if not isinstance(result, dict):
+        return None
+    tweet_data = result
+    if result.get("__typename") == "TweetWithVisibilityResults" and isinstance(
+        result.get("tweet"), dict
+    ):
+        tweet_data = result["tweet"]
+    legacy = tweet_data.get("legacy")
+    if not isinstance(legacy, dict):
+        return tweet_data
+    retweet_result = (legacy.get("retweeted_status_result") or {}).get("result")
+    if isinstance(retweet_result, dict):
+        if retweet_result.get(
+            "__typename"
+        ) == "TweetWithVisibilityResults" and isinstance(retweet_result.get("tweet"), dict):
+            retweet_result = retweet_result["tweet"]
+        if isinstance(retweet_result.get("legacy"), dict):
+            return retweet_result
+    return tweet_data
+
+
+def _card_binding_values(card_legacy: Any) -> dict[str, Any]:
+    """binding_values 列表 → {key: string|image dict} 映射（后者保留宽高）。"""
+    values: dict[str, Any] = {}
+    for entry in (card_legacy or {}).get("binding_values") or []:
+        if not isinstance(entry, dict):
+            continue
+        key = entry.get("key")
+        value = entry.get("value")
+        if not key or not isinstance(value, dict):
+            continue
+        if "string_value" in value:
+            values[key] = value.get("string_value")
+        elif isinstance(value.get("image_value"), dict):
+            values[key] = value["image_value"]
+    return values
+
+
+def _resolve_card_url(card_url: str, tweet_data: Any) -> str:
+    """card_url 是 t.co 短链：经 legacy.entities.urls 展开为目标页地址。
+
+    展开失败保留 t.co 原值（仍可跳转，经 X 重定向到目标页），绝不置空链接。
+    """
+    entities = (tweet_data.get("legacy") or {}).get("entities") or {}
+    for entity in entities.get("urls") or []:
+        if isinstance(entity, dict) and entity.get("url") == card_url:
+            expanded = str(entity.get("expanded_url") or "").strip()
+            if expanded:
+                return expanded
+    return card_url
+
+
+def _extract_link_card(tweet_data: Any) -> dict[str, Any] | None:
+    """card.legacy.binding_values → 链接预览卡 dict；无可渲染内容返回 None。
+
+    title 与 card_url 是卡片的可渲染下限（无标题无可看内容、无 URL 无法
+    跳转）；description/domain/缩略图任一缺失不阻断。缩略图按
+    _CARD_IMAGE_KEYS 逐档回退，全部缺失时 image_url 置空由渲染层降级为
+    纯文本卡。
+    """
+    if not isinstance(tweet_data, dict):
+        return None
+    card = tweet_data.get("card")
+    if not isinstance(card, dict):
+        return None
+    card_legacy = card.get("legacy")
+    values = _card_binding_values(card_legacy)
+    title = str(values.get("title") or "").strip()
+    card_url = str(values.get("card_url") or "").strip()
+    if not title or not card_url:
+        return None
+    image_url = ""
+    image_width = None
+    image_height = None
+    for key in _CARD_IMAGE_KEYS:
+        image = values.get(key)
+        if isinstance(image, dict) and str(image.get("url") or "").strip():
+            image_url = str(image["url"]).strip()
+            image_width = image.get("width")
+            image_height = image.get("height")
+            break
+    return {
+        "url": _resolve_card_url(card_url, tweet_data),
+        "title": title,
+        "description": str(values.get("description") or "").strip(),
+        "domain": str(values.get("vanity_url") or values.get("domain") or "").strip(),
+        "image_url": image_url,
+        "image_width": image_width,
+        "image_height": image_height,
+        "card_type": str((card_legacy or {}).get("name") or "").strip(),
+    }
+
+
+def _install_link_card_patch() -> None:
+    """给 twitter-cli 的 parse_tweet_result 打补丁：回填 X 外链预览卡。
+
+    twitter-cli 0.8.5 的 Tweet dataclass 丢弃 result.card 实体 —— 即 X
+    页面对含外链推文渲染的预览卡（YouTube 等的标题/描述/域名/缩略图）。
+    本补丁让新采集数据直接落库（documents.link_card），存量无卡推文
+    维持现状不渲染，无破坏性。
+
+    补丁策略与 _install_media_poster_patch 同一先例：模块级包装（parser
+    内部经模块全局查找调用，引用推文的递归解析同样生效），Tweet 无
+    slots 可后置赋值 link_card。卡片抽取缺失仅不赋值，绝不阻断采集；
+    安装失败仅记 warning。
+    """
+    global _ORIGINAL_PARSE_TWEET_RESULT
+    if _ORIGINAL_PARSE_TWEET_RESULT is not None:
+        return
+    try:
+        from twitter_cli import parser as tw_parser
+
+        original_parse = tw_parser.parse_tweet_result
+
+        def parse_tweet_result_with_card(result: Any, depth: int = 0) -> Any:
+            tweet = original_parse(result, depth=depth)
+            if tweet is None:
+                return None
+            card = _extract_link_card(_resolve_card_tweet_data(result))
+            if card:
+                tweet.link_card = card
+            return tweet
+
+        tw_parser.parse_tweet_result = parse_tweet_result_with_card
+        _ORIGINAL_PARSE_TWEET_RESULT = original_parse
+    except Exception:
+        logger.warning("[XTransport] link card patch 安装失败", exc_info=True)
+
+
+def _install_parser_patches() -> None:
+    """安装全部 twitter-cli parser 补丁（封面回填 + 链接卡片回填）。"""
+    _install_media_poster_patch()
+    _install_link_card_patch()
+
+
 def clear_user_id_cache() -> None:
     """清空 user_id 缓存（测试缝 + 运维排障用）。"""
     _USER_ID_CACHE.clear()
@@ -112,7 +271,7 @@ def _default_client_factory() -> Any:
     """从环境变量构造真实 TwitterClient（延迟导入，测试注入 fake 时不触碰）。"""
     from twitter_cli.client import TwitterClient
 
-    _install_media_poster_patch()
+    _install_parser_patches()
     auth_token = os.environ.get("TWITTER_AUTH_TOKEN", "").strip()
     ct0 = os.environ.get("TWITTER_CT0", "").strip()
     if not auth_token or not ct0:
@@ -126,7 +285,7 @@ def _default_credential_factory(auth_token: str, ct0: str) -> Any:
     """按给定 cookie pair 构造真实 TwitterClient（延迟导入）。"""
     from twitter_cli.client import TwitterClient
 
-    _install_media_poster_patch()
+    _install_parser_patches()
     return TwitterClient(auth_token, ct0)
 
 

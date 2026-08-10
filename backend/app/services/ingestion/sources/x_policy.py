@@ -207,6 +207,34 @@ def _project_tweet_media(tweet: Any) -> list[dict]:
     return items
 
 
+def _project_link_card(tweet: Any) -> dict | None:
+    """tweet.link_card（x_transport 卡片补丁回填的 X 外链预览卡）→ 可序列化 dict。
+
+    X 对含外链的推文渲染预览卡（标题/描述/域名/缩略图，整卡跳目标页）；
+    twitter-cli 丢弃 card 实体，由 transport 补丁从 card.legacy.binding_values
+    抽取后置赋值。无补丁对象/无卡片推文/缺 title 或 url 的坏数据返回 None，
+    渲染层不渲染该卡位。缩略图缺失不阻断（渲染层降级为纯文本卡）。
+    """
+    card = getattr(tweet, "link_card", None)
+    if not isinstance(card, dict):
+        return None
+    url = str(card.get("url") or "").strip()
+    title = str(card.get("title") or "").strip()
+    if not url or not title:
+        return None
+    image_url = str(card.get("image_url") or "").strip()
+    return {
+        "url": url,
+        "title": title,
+        "description": str(card.get("description") or "").strip(),
+        "domain": str(card.get("domain") or "").strip(),
+        "image_url": image_url or None,
+        "image_width": card.get("image_width"),
+        "image_height": card.get("image_height"),
+        "card_type": str(card.get("card_type") or "").strip(),
+    }
+
+
 def _project_quoted_tweet(tweet: Any) -> dict | None:
     """把 twitter-cli 已解析的 tweet.quoted_tweet 投影为引用卡片元数据。
 
@@ -322,6 +350,7 @@ def project_tweets(
                 "tags": [X_SOURCE, "daily", screen_name],
                 "media": media,
                 "quote": _project_quoted_tweet(tweet),
+                "link_card": _project_link_card(tweet),
             }
         )
     return results

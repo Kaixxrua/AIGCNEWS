@@ -16,7 +16,7 @@ def _utcnow() -> str:
 
 
 def _deserialize_row_media(row: dict[str, Any]) -> dict[str, Any]:
-    """把 JSON 文本列反序列化：media → 列表，quote → 对象；失败置 None。"""
+    """把 JSON 文本列反序列化：media → 列表，quote/link_card → 对象；失败置 None。"""
     media = row.get("media")
     if isinstance(media, str) and media:
         try:
@@ -29,6 +29,12 @@ def _deserialize_row_media(row: dict[str, Any]) -> dict[str, Any]:
             row["quote"] = json.loads(quote)
         except json.JSONDecodeError:
             row["quote"] = None
+    link_card = row.get("link_card")
+    if isinstance(link_card, str) and link_card:
+        try:
+            row["link_card"] = json.loads(link_card)
+        except json.JSONDecodeError:
+            row["link_card"] = None
     return row
 
 
@@ -108,7 +114,7 @@ class PostgresRankSnapshotRepository:
         sql = f"""
             SELECT d.id, d.source, d.title, d.url, d.summary, d.published_date,
                    d.published_at, d.tags, d.indexed, d.created_at,
-                   d.media, d.quote, d.author_avatar_url, d.author_name, d.translation_zh,
+                   d.media, d.quote, d.link_card, d.author_avatar_url, d.author_name, d.translation_zh,
                    COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
                    COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
                    COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
