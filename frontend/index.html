@@ -18,43 +18,9 @@
       })();
     </script>
     <title>AIGCNEWS</title>
-    <style>
-      /* 首屏加载指示：仅一个旋转圈，bundle 未就绪时即可渲染；Vue 挂载后自动替换。
-         颜色与 style.css 的 --paper/--acid-strong 保持同步，明暗主题各一份。 */
-      .boot-spinner {
-        position: fixed;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #f7f5ee;
-      }
-      .boot-spinner svg {
-        width: 32px;
-        height: 32px;
-        animation: boot-spin 0.9s linear infinite;
-      }
-      .boot-spinner .track { stroke: rgba(168, 162, 158, 0.25); }
-      .boot-spinner .arc { stroke: #bfd830; }
-      html[data-theme='dark'] .boot-spinner { background: #0e1210; }
-      html[data-theme='dark'] .boot-spinner .arc { stroke: #b7d434; }
-      @keyframes boot-spin {
-        to { transform: rotate(360deg); }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .boot-spinner svg { animation: none; }
-      }
-    </style>
   </head>
   <body>
-    <div id="app">
-      <div class="boot-spinner" role="status" aria-label="页面加载中">
-        <svg viewBox="0 0 24 24" fill="none">
-          <circle class="track" cx="12" cy="12" r="9" stroke-width="2.5" />
-          <path class="arc" d="M21 12a9 9 0 0 0-9-9" stroke-width="2.5" stroke-linecap="round" />
-        </svg>
-      </div>
-    </div>
+    <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

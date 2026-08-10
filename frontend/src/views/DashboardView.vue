@@ -85,8 +85,9 @@ onBeforeUnmount(pauseLivePoll)
       {{ errorMsg }}
     </div>
 
-    <!-- 顶部统计带：所有指标合并为一行分段条 -->
+    <!-- 顶部统计带：所有指标合并为一行分段条；加载期间整条隐藏，避免出现空段 -->
     <DashboardOverviewPanel
+      v-if="!loading"
       :loading="loading"
       :active-tab="activeTab"
       :stat-values="statValues"
@@ -125,12 +126,7 @@ onBeforeUnmount(pauseLivePoll)
         @select-period="activePeriod = $event"
       />
 
-      <aside class="order-1 flex w-full max-w-[320px] shrink-0 flex-col gap-2 self-center lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch">
-        <template v-if="loading">
-          <div class="glass-card h-[164px] animate-pulse" />
-          <div class="glass-card h-[44px] animate-pulse" />
-        </template>
-        <template v-else>
+      <aside v-if="!loading" class="order-1 flex w-full max-w-[320px] shrink-0 flex-col gap-2 self-center lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch">
           <GlassCalendar
             :model-value="currentDate"
             :available-dates="availableDates"
@@ -189,7 +185,6 @@ onBeforeUnmount(pauseLivePoll)
               <RollingNumber :value="mcpTotalCalls" grouping class="text-base font-extrabold tabular-nums" />
             </span>
           </div>
-        </template>
       </aside>
     </div>
   </div>
