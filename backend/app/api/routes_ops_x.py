@@ -6,6 +6,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.app.api.dependencies import (
+    get_ingestion_admin_service,
     get_x_credential_admin_service,
     get_x_snapshot_admin_service,
     get_x_watch_account_repository,
@@ -30,6 +31,7 @@ from backend.app.models.schema_ops import (
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.dashboard.policy import today_local
 from backend.app.services.ingestion.cache_invalidation import clear_dashboard_cache_safely
+from backend.app.services.ingestion_admin import IngestionAdminService
 from backend.app.services.x_credentials.admin_service import (
     SafeXCredentialProjection,
     XCredentialAdminNotFoundError,
@@ -247,12 +249,16 @@ async def rebuild_x_snapshots(
     request: XSnapshotRebuildRequest,
     _: dict = Depends(RequireAdmin),
     service: XSnapshotAdminService = Depends(get_x_snapshot_admin_service),
+    ingestion_admin: IngestionAdminService = Depends(get_ingestion_admin_service),
 ) -> XSnapshotRebuildResponse:
     """从已入库 X 推文重建日榜快照（补拉历史日期）。
 
     按推文发布时间的 CST 物理日归属补写 document_rank_snapshots，修复
-    X 采集上线前/漏跑导致的日期模式空白；不重新请求 X API。target_date
-    为空时重建全部有推文的历史日期；upsert 幂等，不覆盖更优数据。
+    X 采集上线前/漏跑导致的日期模式空白；upsert 幂等，不覆盖更优数据。
+
+    refetch=true（须搭配显式 target_date）时先重抓 watchlist 时间线并按
+    目标日期入库（真补拉：恢复断采黑洞期从未落库的推文），再执行上述
+    重建；重抓与调度器共用 X 串行锁，不请求 X API 的纯重建路径不变。
     """
     target_date = (request.target_date or "").strip()
     if target_date:
@@ -262,18 +268,26 @@ async def rebuild_x_snapshots(
             )
         if target_date > today_local().isoformat():
             raise HTTPException(status_code=400, detail="不能补拉未来日期的快照")
+    if request.refetch and not target_date:
+        raise HTTPException(status_code=400, detail="refetch 模式必须指定 target_date")
+
+    refetched_ingested: int | None = None
+    if request.refetch:
+        refetched_ingested = await ingestion_admin.ingest_source_for_date(
+            "x", target_date, limit=25
+        )
 
     outcome = await asyncio.to_thread(service.rebuild, target_date or None)
-    if outcome["results"]:
+    if outcome["results"] or refetched_ingested:
         await clear_dashboard_cache_safely()
 
     total = sum(item["upserted"] for item in outcome["results"])
+    parts: list[str] = []
+    if refetched_ingested is not None:
+        parts.append(f"重抓入库 {refetched_ingested} 条")
     if total:
-        message = (
-            f"X 快照补拉完成：{len(outcome['results'])} 个日期共 {total} 条入榜。"
-        )
-    else:
-        message = "没有可补拉的已入库 X 推文。"
+        parts.append(f"{len(outcome['results'])} 个日期共 {total} 条入榜")
+    message = f"X 快照补拉完成：{'，'.join(parts)}。" if parts else "没有可补拉的已入库 X 推文。"
     return XSnapshotRebuildResponse(
         status="succeeded",
         message=message,
@@ -281,4 +295,5 @@ async def rebuild_x_snapshots(
             XSnapshotRebuildResultItem(**item) for item in outcome["results"]
         ],
         skipped_no_date=int(outcome["skipped_no_date"]),
+        refetched_ingested=refetched_ingested,
     )

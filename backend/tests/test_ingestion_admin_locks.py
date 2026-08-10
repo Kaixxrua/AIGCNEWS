@@ -181,5 +181,55 @@ class IngestionAdminLockTests(unittest.IsolatedAsyncioTestCase):
         assert recorder["locked_at_call"] == [(False, False)]
 
 
+class IngestionAdminDatedIngestTests(unittest.IsolatedAsyncioTestCase):
+    """ingest_source_for_date：断采黑洞真补拉的按日期单源采集。"""
+
+    async def test_dated_ingest_passes_target_date_and_holds_x_lock(self) -> None:
+        github_lock = asyncio.Lock()
+        x_lock = asyncio.Lock()
+        service = _make_service(github_lock=github_lock, x_lock=x_lock)
+        seen: dict[str, Any] = {}
+
+        def fake_pipeline(
+            source_name: str,
+            limit: int = 25,
+            top_n: int = 10,
+            target_date: str | None = None,
+            periods: list[str] | None = None,
+            *,
+            dependencies: Any = None,
+        ) -> dict[str, int]:
+            seen["source_name"] = source_name
+            seen["target_date"] = target_date
+            seen["limit"] = limit
+            seen["x_locked"] = x_lock.locked()
+            seen["github_locked"] = github_lock.locked()
+            return {source_name: 6, "ingested_total": 6}
+
+        with patch(
+            "backend.app.services.ingestion.pipeline.run_single_source_pipeline",
+            fake_pipeline,
+        ):
+            ingested = await service.ingest_source_for_date("x", "2026-08-09", limit=25)
+
+        assert ingested == 6
+        assert seen["source_name"] == "x"
+        assert seen["target_date"] == "2026-08-09"
+        assert seen["limit"] == 25
+        assert seen["x_locked"] is True
+        assert seen["github_locked"] is False
+
+    async def test_dated_ingest_non_dict_result_returns_zero(self) -> None:
+        service = _make_service()
+
+        with patch(
+            "backend.app.services.ingestion.pipeline.run_single_source_pipeline",
+            return_value=None,
+        ):
+            ingested = await service.ingest_source_for_date("x", "2026-08-09", limit=25)
+
+        assert ingested == 0
+
+
 if __name__ == "__main__":
     unittest.main()

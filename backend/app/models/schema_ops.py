@@ -288,6 +288,9 @@ class XWatchAccountTestResponse(BaseModel):
 
 class XSnapshotRebuildRequest(BaseModel):
     target_date: Optional[str] = None  # YYYY-MM-DD；空 = 重建全部历史日期
+    # True 时先重抓 watchlist 时间线按 target_date 入库（真补拉，修复断采
+    # 黑洞），再从已入库文档重建快照；refetch 必须搭配显式 target_date
+    refetch: bool = False
 
 
 class XSnapshotRebuildResultItem(BaseModel):
@@ -300,6 +303,8 @@ class XSnapshotRebuildResponse(BaseModel):
     message: str
     results: list[XSnapshotRebuildResultItem]
     skipped_no_date: int
+    # refetch=True 时本轮重抓的入库条数；未启用 refetch 为 None
+    refetched_ingested: Optional[int] = None
 
 
 class XCredentialRequest(BaseModel):

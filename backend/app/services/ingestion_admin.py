@@ -88,6 +88,34 @@ class IngestionAdminService:
         async with lock:
             await _run()
 
+    async def ingest_source_for_date(
+        self, source_name: str, target_date: str, limit: int
+    ) -> int:
+        """按目标日期单源采集（断采黑洞真补拉），返回入库条数。
+
+        与 ingest_source 同一锁口径：github/x 持调度器串行锁，避免与定时
+        轮并发抢同一 cookie 预算。upsert/accumulate 语义幂等，重复补拉或
+        覆盖采集器已写入的更优数据均安全。
+        """
+        from backend.app.services.ingestion.pipeline import run_single_source_pipeline
+
+        lock = self._resolve_source_lock(source_name)
+
+        async def _run() -> int:
+            result = await asyncio.to_thread(
+                run_single_source_pipeline,
+                source_name=source_name,
+                limit=limit,
+                dependencies=self._dependencies,
+                target_date=target_date,
+            )
+            return int(result.get("ingested_total", 0)) if isinstance(result, dict) else 0
+
+        if lock is None:
+            return await _run()
+        async with lock:
+            return await _run()
+
     def _resolve_source_lock(self, source_name: str) -> asyncio.Lock | None:
         if source_name == "github":
             injected = self._github_lock
