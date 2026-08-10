@@ -282,9 +282,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 加载 / 空态 -->
-      <div v-if="loading && !docs.length" class="glass-card">
-        <SpinnerLoader class="min-h-[240px]" :label="t('xboard.loading')" />
-      </div>
+      <SpinnerLoader v-if="loading && !docs.length" class="min-h-[240px]" :label="t('xboard.loading')" />
       <div v-else-if="!timelineDocs.length" class="glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
         <p class="font-medium text-stone-500">{{ t(emptyCopy.titleKey) }}</p>
         <p class="mt-1 text-xs">{{ t(emptyCopy.hintKey, { earliest: earliestSnapshotDate }) }}</p>

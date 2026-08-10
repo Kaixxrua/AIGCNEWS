@@ -92,9 +92,7 @@ onBeforeUnmount(dispose)
           </nav>
 
           <!-- 账号卡片信息流 -->
-          <div v-if="isFeedLoading && visibleFeed.length === 0" class="glass-card">
-            <SpinnerLoader class="min-h-[200px]" />
-          </div>
+          <SpinnerLoader v-if="isFeedLoading && visibleFeed.length === 0" class="min-h-[200px]" />
           <div v-else-if="visibleFeed.length === 0" class="wechat-empty">
             <p>{{ t('wechat.feedEmpty') }}</p>
             <p class="mt-1 text-xs">{{ t('wechat.feedEmptyHint') }}</p>

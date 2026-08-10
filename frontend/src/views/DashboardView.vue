@@ -97,10 +97,8 @@ onBeforeUnmount(pauseLivePoll)
 
     <!-- 主区域：榜单/空态占满剩余高度，日历与公众号入口收入右侧栏 -->
     <div class="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
-      <!-- 加载中：左侧主区域骨架 -->
-      <div v-if="loading" class="glass-card order-2 min-w-0 flex-1 p-5 lg:order-1">
-        <SpinnerLoader class="min-h-[360px]" />
-      </div>
+      <!-- 加载中：仅转圈，数据就绪后内容卡片直接出现 -->
+      <SpinnerLoader v-if="loading" class="order-2 min-h-[360px] min-w-0 flex-1 lg:order-1" />
 
       <!-- 静默期专用空状态 (Embargo Empty State) -->
       <DashboardEmptyState v-if="!loading && isEmbargoed" variant="embargoed" class="order-2 min-w-0 lg:order-1" />

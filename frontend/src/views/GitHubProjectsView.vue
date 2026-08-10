@@ -401,9 +401,7 @@ onBeforeUnmount(stopViewReads)
       {{ errorMsg }}
     </section>
 
-    <section v-if="loading" class="glass-card" :aria-label="t('common.loading')">
-      <SpinnerLoader class="min-h-[320px]" />
-    </section>
+    <SpinnerLoader v-if="loading" class="min-h-[320px]" :aria-label="t('common.loading')" />
 
     <section v-else-if="projects.length === 0 && !errorMsg" class="empty-state glass-card">
       <p class="projects-kicker">EMPTY COLLECTION</p>
