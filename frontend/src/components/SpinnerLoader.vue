@@ -24,7 +24,6 @@ const { t } = useI18n()
       <circle cx="12" cy="12" r="9" class="spinner-loader__track" stroke-width="2.5" />
       <path d="M21 12a9 9 0 0 0-9-9" class="spinner-loader__arc" stroke-width="2.5" stroke-linecap="round" />
     </svg>
-    <span class="spinner-loader__text">{{ label || t('common.loading') }}</span>
   </div>
 </template>
 
@@ -48,11 +47,6 @@ const { t } = useI18n()
 
 .spinner-loader__arc {
   stroke: var(--acid-strong);
-}
-
-.spinner-loader__text {
-  font-size: 13px;
-  color: var(--ink-muted);
 }
 
 @keyframes spinner-loader-rotate {

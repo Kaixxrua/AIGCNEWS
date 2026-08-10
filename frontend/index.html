@@ -19,59 +19,40 @@
     </script>
     <title>AIGCNEWS</title>
     <style>
-      /* 首屏启动动画：内联以保证 JS/CSS bundle 未加载时即可渲染；Vue 挂载后自动替换。
-         颜色与 style.css 的 --paper/--rule/--acid 保持同步，明暗主题各一份。 */
-      .boot-splash {
+      /* 首屏加载指示：仅一个旋转圈，bundle 未就绪时即可渲染；Vue 挂载后自动替换。
+         颜色与 style.css 的 --paper/--acid-strong 保持同步，明暗主题各一份。 */
+      .boot-spinner {
         position: fixed;
         inset: 0;
         display: flex;
-        flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 24px;
         background: #f7f5ee;
       }
-      .boot-splash__logo {
-        width: 72px;
-        height: 72px;
-        animation: boot-splash-pulse 1.6s ease-in-out infinite;
+      .boot-spinner svg {
+        width: 32px;
+        height: 32px;
+        animation: boot-spin 0.9s linear infinite;
       }
-      .boot-splash__bar {
-        width: 120px;
-        height: 3px;
-        border-radius: 2px;
-        background: #d6d4ca;
-        overflow: hidden;
+      .boot-spinner .track { stroke: rgba(168, 162, 158, 0.25); }
+      .boot-spinner .arc { stroke: #bfd830; }
+      html[data-theme='dark'] .boot-spinner { background: #0e1210; }
+      html[data-theme='dark'] .boot-spinner .arc { stroke: #b7d434; }
+      @keyframes boot-spin {
+        to { transform: rotate(360deg); }
       }
-      .boot-splash__bar span {
-        display: block;
-        width: 40%;
-        height: 100%;
-        border-radius: inherit;
-        background: #bfd830;
-        animation: boot-splash-slide 1.2s ease-in-out infinite;
-      }
-      @keyframes boot-splash-pulse {
-        0%, 100% { opacity: 0.75; transform: scale(1); }
-        50% { opacity: 1; transform: scale(1.05); }
-      }
-      @keyframes boot-splash-slide {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(350%); }
-      }
-      html[data-theme='dark'] .boot-splash { background: #0e1210; }
-      html[data-theme='dark'] .boot-splash__bar { background: #4b504b; }
-      html[data-theme='dark'] .boot-splash__bar span { background: #c9e842; }
       @media (prefers-reduced-motion: reduce) {
-        .boot-splash__logo, .boot-splash__bar span { animation: none; }
+        .boot-spinner svg { animation: none; }
       }
     </style>
   </head>
   <body>
     <div id="app">
-      <div class="boot-splash" role="status" aria-label="页面加载中">
-        <img class="boot-splash__logo" src="/logo.png" alt="AIGCNEWS" />
-        <div class="boot-splash__bar"><span></span></div>
+      <div class="boot-spinner" role="status" aria-label="页面加载中">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle class="track" cx="12" cy="12" r="9" stroke-width="2.5" />
+          <path class="arc" d="M21 12a9 9 0 0 0-9-9" stroke-width="2.5" stroke-linecap="round" />
+        </svg>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
