@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, ExternalLink, Maximize2 } from 'lucide-vue-next'
+import SkeletonBlock from '@/components/SkeletonBlock.vue'
 import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
 import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
@@ -281,8 +282,14 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 加载 / 空态 -->
-      <div v-if="loading && !docs.length" class="glass-card flex min-h-[240px] items-center justify-center gap-2 text-sm text-stone-400">
-        <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-stone-200 border-t-stone-500" />{{ t('xboard.loading') }}
+      <div v-if="loading && !docs.length" class="masonry-grid" role="status" :aria-label="t('xboard.loading')">
+        <div v-for="col in 3" :key="col" class="masonry-col">
+          <article v-for="card in 2" :key="card" class="glass-card flex flex-col gap-3 p-4">
+            <SkeletonBlock height="120px" radius="10px" />
+            <SkeletonBlock width="72%" height="13px" />
+            <SkeletonBlock width="46%" height="11px" />
+          </article>
+        </div>
       </div>
       <div v-else-if="!timelineDocs.length" class="glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
         <p class="font-medium text-stone-500">{{ t(emptyCopy.titleKey) }}</p>

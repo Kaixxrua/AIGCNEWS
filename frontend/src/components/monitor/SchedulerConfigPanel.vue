@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import SkeletonBlock from '@/components/SkeletonBlock.vue'
 import type { SchedulerJobConfig, SchedulerJobConfigForm } from '@/features/monitor/monitorModel'
 
 const { t } = useI18n()
@@ -43,9 +44,8 @@ const formatInterval = (minutes: number) => {
       <span class="monitor-badge">{{ t('monitor.schedulerConfig.count', { count: configs.length }) }}</span>
     </div>
 
-    <div v-if="loading" class="flex items-center gap-2 text-sm monitor-caption">
-      <span class="inline-block h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
-      {{ t('common.loading') }}
+    <div v-if="loading" class="flex flex-col gap-3" role="status" :aria-label="t('common.loading')">
+      <SkeletonBlock v-for="i in 4" :key="i" :width="i % 2 ? '92%' : '70%'" height="12px" />
     </div>
 
     <div v-else class="space-y-3">

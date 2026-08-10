@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import SkeletonBlock from '@/components/SkeletonBlock.vue'
 import {
   formatDate,
   toMcpToolCallRows,
@@ -39,8 +40,10 @@ const rows = computed(() => toMcpToolCallRows(props.snapshot))
         </thead>
         <tbody>
           <tr v-if="loading && !rows.length">
-            <td colspan="3" class="px-4 py-8 text-center text-sm monitor-caption">
-              <span class="inline-block h-5 w-5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+            <td colspan="3" class="px-4 py-6">
+              <div class="flex flex-col gap-2.5" role="status" :aria-label="t('common.loading')">
+                <SkeletonBlock v-for="i in 3" :key="i" :width="i === 3 ? '52%' : '100%'" height="12px" />
+              </div>
             </td>
           </tr>
           <tr v-else-if="!rows.length">

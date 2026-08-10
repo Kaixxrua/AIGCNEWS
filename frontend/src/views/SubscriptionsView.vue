@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MailPlus, RefreshCw, Send, Trash2, Webhook } from 'lucide-vue-next'
+import SkeletonBlock from '@/components/SkeletonBlock.vue'
 import { useSubscriptionsController } from '@/composables/useSubscriptionsController'
 import {
   SUBSCRIPTION_SOURCES,
@@ -155,7 +156,13 @@ onMounted(() => {
           </form>
 
           <!-- 渠道列表 -->
-          <ul v-if="ctl.channels.value.length" class="flex flex-col divide-y divide-stone-100">
+          <ul v-if="ctl.loading.value && !ctl.channels.value.length" class="flex flex-col divide-y divide-stone-100" role="status" :aria-label="t('common.loading')">
+            <li v-for="i in 3" :key="i" class="flex items-center gap-2 py-2.5">
+              <SkeletonBlock width="28px" height="28px" radius="4px" />
+              <SkeletonBlock :width="i === 1 ? '58%' : '44%'" height="13px" />
+            </li>
+          </ul>
+          <ul v-else-if="ctl.channels.value.length" class="flex flex-col divide-y divide-stone-100">
             <li v-for="channel in ctl.channels.value" :key="channel.id" class="flex items-center gap-2 py-2.5">
               <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
                 <Webhook v-if="channel.channel_type === 'webhook'" class="h-4 w-4" />
@@ -262,7 +269,12 @@ onMounted(() => {
             </button>
           </form>
 
-          <ul v-if="ctl.subscriptions.value.length" class="flex flex-col divide-y divide-stone-100">
+          <ul v-if="ctl.loading.value && !ctl.subscriptions.value.length" class="flex flex-col divide-y divide-stone-100" role="status" :aria-label="t('common.loading')">
+            <li v-for="i in 3" :key="i" class="flex items-center gap-2 py-2.5">
+              <SkeletonBlock :width="i === 1 ? '62%' : '48%'" height="13px" />
+            </li>
+          </ul>
+          <ul v-else-if="ctl.subscriptions.value.length" class="flex flex-col divide-y divide-stone-100">
             <li v-for="subscription in ctl.subscriptions.value" :key="subscription.id" class="flex items-center gap-2 py-2.5">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5">

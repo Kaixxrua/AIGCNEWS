@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import SkeletonBlock from '@/components/SkeletonBlock.vue'
 import { useWechatFollowController } from '@/composables/useWechatFollowController'
 import WechatFollowBox from '@/components/wechat/WechatFollowBox.vue'
 import WechatAccountCard from '@/components/wechat/WechatAccountCard.vue'
@@ -91,9 +92,12 @@ onBeforeUnmount(dispose)
           </nav>
 
           <!-- 账号卡片信息流 -->
-          <p v-if="isFeedLoading && visibleFeed.length === 0" class="wechat-empty">
-            {{ t('common.loading') }}
-          </p>
+          <div v-if="isFeedLoading && visibleFeed.length === 0" class="flex flex-col gap-3" role="status" :aria-label="t('common.loading')">
+            <div v-for="i in 2" :key="i" class="glass-card flex flex-col gap-3 p-5">
+              <SkeletonBlock width="42%" height="18px" radius="8px" />
+              <SkeletonBlock v-for="j in 3" :key="j" :width="j === 3 ? '64%' : '96%'" height="12px" />
+            </div>
+          </div>
           <div v-else-if="visibleFeed.length === 0" class="wechat-empty">
             <p>{{ t('wechat.feedEmpty') }}</p>
             <p class="mt-1 text-xs">{{ t('wechat.feedEmptyHint') }}</p>

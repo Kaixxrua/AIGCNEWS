@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useXWatchController } from '@/composables/useXWatchController'
+import SkeletonBlock from '@/components/SkeletonBlock.vue'
 import { formatDate, getStatusConfig } from '@/features/monitor/monitorViewModel'
 
 const { t } = useI18n()
@@ -113,8 +114,8 @@ onBeforeUnmount(dispose)
             <span class="inline-block h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" />{{ t('monitor.synchronizing') }}
           </span>
         </div>
-        <div v-if="loading && !accounts.length" class="flex flex-1 min-h-[180px] items-center justify-center gap-2 text-sm monitor-caption">
-          <span class="inline-block h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />{{ t('monitor.xWatch.loading') }}
+        <div v-if="loading && !accounts.length" class="flex flex-1 min-h-[180px] flex-col justify-center gap-3 pr-1" role="status" :aria-label="t('common.loading')">
+          <SkeletonBlock v-for="i in 4" :key="i" :width="i % 2 ? '88%' : '64%'" height="12px" />
         </div>
         <div v-else-if="!accounts.length" class="monitor-empty flex flex-1 min-h-[180px] flex-col items-center justify-center rounded-md text-center text-sm">
           <p class="font-medium">{{ t('monitor.xWatch.empty') }}</p>
