@@ -62,7 +62,7 @@ describe('xBoardViewModel', () => {
   it('proxies only twimg avatars same-origin and drops third-party fallbacks', () => {
     const avatar = 'https://pbs.twimg.com/profile_images/a.jpg'
     expect(authorAvatarUrl({ author_avatar_url: avatar })).toBe(
-      `/api/media/x/proxy?url=${encodeURIComponent(avatar)}`,
+      `/api/media/x/img/pbs.twimg.com/profile_images/a.jpg`,
     )
     // 非 twimg 地址不直连（中国大陆不可达/白名单外主机），回退本地 𝕏 占位
     expect(authorAvatarUrl({ author_avatar_url: 'https://x.com/a.jpg' })).toBeUndefined()
@@ -92,7 +92,7 @@ describe('xBoardViewModel', () => {
     expect(mediaItems(doc)).toEqual([
       {
         type: 'photo',
-        url: `/api/media/x/proxy?url=${encodeURIComponent('https://pbs.twimg.com/a.jpg')}`,
+        url: `/api/media/x/img/pbs.twimg.com/a.jpg`,
         width: 100,
         height: 100,
       },
@@ -100,11 +100,11 @@ describe('xBoardViewModel', () => {
     expect(mediaItems({})).toEqual([])
   })
 
-  it('rewrites twimg media urls to the same-origin proxy and passes others through', () => {
+  it('rewrites twimg media urls to the path-style same-origin proxy and passes others through', () => {
     const video = 'https://video.twimg.com/amplify_video/1/vid/avc1/1920x1080/a.mp4?tag=29'
-    expect(proxiedMediaUrl(video)).toBe(`/api/media/x/proxy?url=${encodeURIComponent(video)}`)
-    expect(proxiedMediaUrl('https://pbs.twimg.com/a.jpg')).toContain('/api/media/x/proxy?url=')
-    expect(proxiedMediaUrl('https://abs.twimg.com/hash.png')).toContain('/api/media/x/proxy?url=')
+    expect(proxiedMediaUrl(video)).toBe('/api/media/x/img/video.twimg.com/amplify_video/1/vid/avc1/1920x1080/a.mp4?tag=29')
+    expect(proxiedMediaUrl('https://pbs.twimg.com/a.jpg')).toBe('/api/media/x/img/pbs.twimg.com/a.jpg')
+    expect(proxiedMediaUrl('https://abs.twimg.com/hash.png')).toBe('/api/media/x/img/abs.twimg.com/hash.png')
     // 白名单外主机 / 非 URL 原样透传（后端代理仍会做二次校验）
     expect(proxiedMediaUrl('https://example.com/a.jpg')).toBe('https://example.com/a.jpg')
     expect(proxiedMediaUrl('not-a-url')).toBe('not-a-url')
@@ -129,7 +129,7 @@ describe('xBoardViewModel', () => {
     })
     const items = mediaItems(doc)
     expect(items[0]).toMatchObject({ type: 'video', width: 1920, height: 1080 })
-    expect(items[0]?.url).toContain('/api/media/x/proxy?url=')
+    expect(items[0]?.url).toContain('/api/media/x/img/')
     expect(items[0]?.poster_url).toBe(
       `/api/media/x/poster?url=${encodeURIComponent('https://video.twimg.com/a.mp4')}`,
     )
@@ -148,10 +148,10 @@ describe('xBoardViewModel', () => {
     const items = mediaItems(doc)
     // 采集期落库的官方封面：经代理同源化，不再走抽帧端点；封面仅播放前展示，
     // 支持变体的路径降载为 small（原图无消费场景）
-    expect(items[0]?.poster_url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(`${poster}?name=small`)}`)
-    expect(items[1]?.poster_url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(`${poster}?name=small`)}`)
+    expect(items[0]?.poster_url).toBe(`/api/media/x/img/pbs.twimg.com/amplify_video_thumb/1/img/x.jpg?name=small`)
+    expect(items[1]?.poster_url).toBe(`/api/media/x/img/pbs.twimg.com/amplify_video_thumb/1/img/x.jpg?name=small`)
     // url 改写不受影响
-    expect(items[0]?.url).toBe(`/api/media/x/proxy?url=${encodeURIComponent('https://video.twimg.com/a.mp4')}`)
+    expect(items[0]?.url).toBe(`/api/media/x/img/video.twimg.com/a.mp4`)
   })
 
   it('photoVariantUrl rewrites the name param only on supported twimg image paths', () => {
@@ -180,9 +180,9 @@ describe('xBoardViewModel', () => {
       ],
     })
     const items = mediaItems(doc)
-    expect(items[0]?.url).toBe(`/api/media/x/proxy?url=${encodeURIComponent(photo)}`)
+    expect(items[0]?.url).toBe(`/api/media/x/img/pbs.twimg.com/media/abc.jpg`)
     expect(items[0]?.thumb_url).toBe(
-      `/api/media/x/proxy?url=${encodeURIComponent('https://pbs.twimg.com/media/abc.jpg?name=small')}`,
+      `/api/media/x/img/pbs.twimg.com/media/abc.jpg?name=small`,
     )
     expect(items[0]?.width).toBe(2048)
     expect(items[1]?.thumb_url).toBeUndefined()
@@ -388,7 +388,7 @@ describe('xBoardViewModel', () => {
   it('quoteMediaItems rewrites twimg urls through the proxy like outer media', () => {
     const items = quoteMediaItems(quotedTweet().quote!)
     expect(items).toHaveLength(1)
-    expect(items[0]?.url).toBe(`/api/media/x/proxy?url=${encodeURIComponent('https://pbs.twimg.com/media/q.jpg')}`)
+    expect(items[0]?.url).toBe(`/api/media/x/img/pbs.twimg.com/media/q.jpg`)
     expect(items[0]?.width).toBe(800)
     expect(quoteMediaItems(quotedTweet({ media: [] }).quote!)).toEqual([])
   })
@@ -396,7 +396,7 @@ describe('xBoardViewModel', () => {
   it('quoteAvatarUrl proxies the stored twimg avatar and drops unavatar fallback', () => {
     const avatar = 'https://pbs.twimg.com/profile_images/q.jpg'
     expect(quoteAvatarUrl(quotedTweet().quote!)).toBe(
-      `/api/media/x/proxy?url=${encodeURIComponent(avatar)}`,
+      `/api/media/x/img/pbs.twimg.com/profile_images/q.jpg`,
     )
     expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: '' }).quote!)).toBeUndefined()
     expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: 'https://elsewhere.cdn/q.jpg' }).quote!)).toBeUndefined()

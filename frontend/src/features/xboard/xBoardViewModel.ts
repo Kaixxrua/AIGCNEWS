@@ -158,7 +158,7 @@ export const displayQuoteText = (quote: NonNullable<TopDoc['quote']>, locale: st
 export const quoteTextSegments = (quote: NonNullable<TopDoc['quote']>, locale: string): TweetTextSegment[] =>
   splitTextSegments(displayQuoteText(quote, locale))
 
-const X_MEDIA_PROXY_PATH = '/api/media/x/proxy'
+const X_MEDIA_IMG_PATH = '/api/media/x/img'
 const X_MEDIA_POSTER_PATH = '/api/media/x/poster'
 const X_MEDIA_HOSTS = new Set(['pbs.twimg.com', 'video.twimg.com', 'abs.twimg.com'])
 
@@ -172,12 +172,21 @@ const isTwimgUrl = (url: string): boolean => {
 
 /**
  * twimg CDN 在部分网络不可达（video.twimg.com 常被单独封锁，图片能加载
- * 但视频无法播放）；经服务端同源流式代理转发兜底。非 twimg 或非法 URL
- * 原样透传（后端代理另有主机白名单校验，此处只做渲染层改写）。
+ * 但视频无法播放）；经同源代理兜底。非 twimg 或非法 URL 原样透传（后端
+ * 代理另有主机白名单校验，此处只做渲染层改写）。
+ *
+ * 路径式形态 /api/media/x/img/<host>/<path>?<query>（2026-08-10 起）：
+ * 查询形态 ?url= 的目标地址是 percent-encoded，边缘 nginx 无法解码
+ * （$arg_* 不解码、rewrite 不解变量、无 lua/njs），只能绕家里全链路
+ * 回源（实测 MISS 6.6s/56KB）；路径段经 nginx 请求解析原生解码，白名单
+ * 正则直接匹配主机字面量，边缘节点可直连 twimg（东京→twimg ~47ms），
+ * 且路径以 .jpg/.mp4 结尾可被 Cloudflare 默认规则边缘缓存（查询形态
+ * 恒 DYNAMIC）。后端 /media/x/img 端点与查询形态同一校验与转发。
  */
 export const proxiedMediaUrl = (url: string): string => {
   if (!isTwimgUrl(url)) return url
-  return `${X_MEDIA_PROXY_PATH}?url=${encodeURIComponent(url)}`
+  const parsed = new URL(url) // isTwimgUrl 已校验可解析
+  return `${X_MEDIA_IMG_PATH}/${parsed.hostname}${parsed.pathname}${parsed.search}`
 }
 
 /** 视频封面：服务端抽帧端点（仅 twimg 视频 URL 有意义，其余返回空串由模板兜底）。 */
