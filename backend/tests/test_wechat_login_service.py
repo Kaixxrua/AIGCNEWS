@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -244,3 +246,113 @@ def test_complete_login_fails_when_home_page_returns_non_200() -> None:
         asyncio.run(service.complete_login(1, uuid4()))
 
     sessions.mark_wechat_session_invalid.assert_called_once()
+
+
+def _active_session(last_validated_at: datetime | None) -> dict[str, Any]:
+    return {
+        "status": "active",
+        "token": "token123",
+        "cookie": "slave_sid=abc; slave_user=xyz",
+        "account_name": "Ai迷思录",
+        "account_avatar_url": "",
+        "last_validated_at": last_validated_at,
+        "last_used_at": None,
+        "expires_at": None,
+        "invalid_reason_code": None,
+    }
+
+
+def _search_biz_response(ret: int, err_msg: str = "") -> WeChatUpstreamResponse:
+    body = {"base_resp": {"ret": ret, "err_msg": err_msg}, "list": [], "total": 0}
+    headers = MagicMock()
+    headers.get_list.return_value = []
+    return WeChatUpstreamResponse(
+        status_code=200,
+        headers=headers,
+        content=json.dumps(body).encode(),
+        cookies={},
+    )
+
+
+def test_session_summary_fresh_active_skips_upstream_revalidation() -> None:
+    service, _, sessions, transport = _make_service()
+    sessions.get_wechat_session.return_value = _active_session(
+        datetime.now(timezone.utc),
+    )
+    transport.search_biz = AsyncMock()
+
+    summary = asyncio.run(service.get_session_summary(1))
+
+    assert summary["connected"] is True
+    transport.search_biz.assert_not_called()
+
+
+def test_session_summary_stale_active_revalidates_and_touches_validated_at() -> None:
+    service, _, sessions, transport = _make_service()
+    session = _active_session(
+        datetime.now(timezone.utc) - timedelta(hours=2),
+    )
+    sessions.get_wechat_session.return_value = session
+    transport.search_biz = AsyncMock(return_value=_search_biz_response(0))
+    sessions.save_wechat_session.side_effect = lambda _owner, payload: payload
+
+    summary = asyncio.run(service.get_session_summary(1))
+
+    assert summary["connected"] is True
+    transport.search_biz.assert_called_once()
+    _, kwargs = transport.search_biz.call_args
+    assert kwargs["size"] == 1
+    saved = sessions.save_wechat_session.call_args[0][1]
+    assert saved["token"] == session["token"]
+    assert saved["last_validated_at"] != session["last_validated_at"].isoformat()
+
+
+def test_session_summary_stale_active_marks_invalid_when_upstream_rejects() -> None:
+    service, _, sessions, transport = _make_service()
+    sessions.get_wechat_session.return_value = _active_session(
+        datetime.now(timezone.utc) - timedelta(hours=2),
+    )
+    transport.search_biz = AsyncMock(
+        return_value=_search_biz_response(200003, "invalid session")
+    )
+    sessions.mark_wechat_session_invalid.return_value = {
+        "status": "invalid",
+        "account_name": "Ai迷思录",
+        "invalid_reason_code": "WECHAT_SESSION_EXPIRED",
+    }
+
+    summary = asyncio.run(service.get_session_summary(1))
+
+    sessions.mark_wechat_session_invalid.assert_called_once_with(
+        1, "WECHAT_SESSION_EXPIRED"
+    )
+    assert summary["connected"] is False
+    assert summary["status"] == "invalid"
+    sessions.save_wechat_session.assert_not_called()
+
+
+def test_session_summary_freq_control_is_fail_open() -> None:
+    service, _, sessions, transport = _make_service()
+    sessions.get_wechat_session.return_value = _active_session(
+        datetime.now(timezone.utc) - timedelta(hours=2),
+    )
+    transport.search_biz = AsyncMock(
+        return_value=_search_biz_response(200013, "freq control")
+    )
+
+    summary = asyncio.run(service.get_session_summary(1))
+
+    assert summary["connected"] is True
+    sessions.mark_wechat_session_invalid.assert_not_called()
+    sessions.save_wechat_session.assert_not_called()
+
+
+def test_session_summary_inactive_session_skips_upstream_revalidation() -> None:
+    service, _, sessions, transport = _make_service()
+    sessions.get_wechat_session.return_value = {"status": "invalid"}
+    transport.search_biz = AsyncMock()
+
+    summary = asyncio.run(service.get_session_summary(1))
+
+    assert summary["connected"] is False
+    transport.search_biz.assert_not_called()

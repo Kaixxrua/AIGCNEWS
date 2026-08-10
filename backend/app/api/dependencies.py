@@ -547,6 +547,9 @@ def get_wechat_login_service(
         login_attempt_ttl_seconds=int(
             getattr(settings, "wechat_login_attempt_ttl_seconds", 300)
         ),
+        session_revalidate_seconds=int(
+            getattr(settings, "wechat_session_revalidate_seconds", 1800)
+        ),
     )
 
 

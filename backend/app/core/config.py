@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     dailyhot_per_endpoint_limit: int = 5
     dailyhot_request_timeout_seconds: float = 8.0
     wechat_login_attempt_ttl_seconds: int = 300
+    # 会话状态惰性上游复核间隔：DB 里的 active 只代表上次验证结果，超过该间隔
+    # 读会话摘要时才重新向上游确认一次；取值对齐微信限流提示的约 30 分钟。
+    wechat_session_revalidate_seconds: int = 1800
     wechat_sync_max_pages: int = 20
     wechat_sync_max_articles: int = 500
     wechat_sync_inter_page_delay_seconds: float = 1.0

@@ -13,12 +13,17 @@ from backend.app.repositories.wechat_session_repository import (
 )
 from backend.app.services.wechat.errors import (
     WeChatAccountContextError,
+    WeChatError,
     WeChatLoginFailed,
     WeChatQrExpired,
     WeChatSessionExpired,
     WeChatUpstreamError,
 )
-from backend.app.services.wechat.parser import extract_account_info_from_home, map_scan_status
+from backend.app.services.wechat.parser import (
+    extract_account_info_from_home,
+    map_scan_status,
+    parse_search_biz_response,
+)
 from backend.app.services.wechat.transport import (
     WeChatMpTransport,
     _build_cookie_header,
@@ -62,11 +67,13 @@ class WeChatLoginService:
         transport: WeChatMpTransport,
         *,
         login_attempt_ttl_seconds: int = 300,
+        session_revalidate_seconds: int = 1800,
     ) -> None:
         self._attempts = attempt_repository
         self._sessions = session_repository
         self._transport = transport
         self._attempt_ttl = login_attempt_ttl_seconds
+        self._session_revalidate_ttl = timedelta(seconds=session_revalidate_seconds)
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
@@ -252,7 +259,71 @@ class WeChatLoginService:
 
     async def get_session_summary(self, owner_id: int) -> dict[str, Any]:
         session = self._sessions.get_wechat_session(owner_id)
-        return _session_to_summary(session)
+        if session is None or session.get("status") != "active":
+            return _session_to_summary(session)
+        if not self._session_needs_revalidation(session):
+            return _session_to_summary(session)
+        return await self._revalidate_session(owner_id, session)
+
+    def _session_needs_revalidation(self, session: dict[str, Any]) -> bool:
+        validated_at = session.get("last_validated_at")
+        if isinstance(validated_at, str):
+            try:
+                validated_at = datetime.fromisoformat(validated_at)
+            except ValueError:
+                return True
+        if not isinstance(validated_at, datetime):
+            return True
+        if validated_at.tzinfo is None:
+            validated_at = validated_at.replace(tzinfo=timezone.utc)
+        return self._now() - validated_at >= self._session_revalidate_ttl
+
+    async def _revalidate_session(self, owner_id: int, session: dict[str, Any]) -> dict[str, Any]:
+        """Confirm a stale-but-active session against mp.weixin.qq.com.
+
+        The DB status only reflects the last time something used the session,
+        so a passively-expired session would show 已连接 forever. Only a
+        definitive ret=200003 flips it to invalid; freq control and network
+        errors are fail-open (the TTL bounds the retry cadence, matching the
+        upstream "wait ~30 minutes" guidance).
+        """
+        cookies = {
+            item.strip().split("=", 1)[0]: item.strip().split("=", 1)[1]
+            for item in session["cookie"].split(";")
+            if "=" in item
+        }
+        try:
+            response = await self._transport.search_biz(
+                keyword=session.get("account_name") or "微信",
+                token=session["token"],
+                cookies=cookies,
+                begin=0,
+                size=1,
+            )
+            parse_search_biz_response(response.json())
+        except WeChatSessionExpired:
+            logger.info(
+                "WeChat session rejected upstream (invalid session), marking invalid: owner=%s",
+                owner_id,
+            )
+            invalidated = self._sessions.mark_wechat_session_invalid(
+                owner_id, "WECHAT_SESSION_EXPIRED"
+            )
+            return _session_to_summary(invalidated)
+        except (WeChatError, WeChatSecretBoxError) as exc:
+            code = getattr(exc, "code", type(exc).__name__)
+            logger.info(
+                "WeChat session revalidation inconclusive, keeping last-known status: owner=%s reason=%s",
+                owner_id,
+                code,
+            )
+            return _session_to_summary(session)
+
+        refreshed = self._sessions.save_wechat_session(
+            owner_id,
+            {**session, "last_validated_at": self._now().isoformat()},
+        )
+        return _session_to_summary(refreshed)
 
     async def cancel_login_attempt(self, owner_id: int, attempt_id: UUID) -> bool:
         return self._attempts.delete_login_attempt(owner_id, attempt_id)
