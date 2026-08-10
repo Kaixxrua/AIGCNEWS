@@ -51,7 +51,7 @@ const {
   translate: t,
 })
 
-const heroPillKeys = ['streamableHttp', 'publicTools', 'privateFavorites'] as const
+const heroPillKeys = ['noAuth', 'publicTools', 'streamableHttp'] as const
 const shellOptions = [
   { id: 'powershell' as const, label: 'PowerShell', labelKey: '' },
   { id: 'cmd' as const, label: '', labelKey: 'mcp.commandPrompt' },
@@ -123,6 +123,27 @@ onBeforeUnmount(dispose)
 
       <section class="glass-card p-5 md:p-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
+          <div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.publicTools') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.publicToolsTitle') }}</h2><p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('mcp.publicToolsDescription') }}</p></div>
+          <span class="rounded-full bg-stone-100 px-3 py-1 text-2xs text-stone-500">{{ t('mcp.toolCount', { count: displayedPublicTools.length }) }}</span>
+        </div>
+        <div class="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3"><div v-for="tool in displayedPublicTools" :key="tool.name" class="rounded-2xl border border-stone-200 bg-card/70 px-3 py-2"><p class="font-mono text-2xs font-semibold text-stone-700">{{ tool.name }}</p><p class="mt-1 text-2xs leading-4 text-stone-400">{{ t(tool.descriptionKey) }}</p></div></div>
+      </section>
+
+      <section class="glass-card p-5 md:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.routing') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.routingTitle') }}</h2><p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('mcp.routingDescription') }}</p></div>
+          <button class="btn-secondary text-xs" @click="copyHostInstruction">{{ t(copiedKey === 'host-instruction' ? 'mcp.copied' : 'mcp.copyHost') }}</button>
+        </div>
+        <div class="mt-4 grid gap-3 md:grid-cols-3">
+          <div class="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4"><p class="font-mono text-2xs font-semibold text-cyan-800">{{ t('mcp.aiArtifacts') }}</p><p class="mt-2 text-xs leading-5 text-cyan-900">search_github_ai_projects</p></div>
+          <div class="rounded-2xl border border-stone-200 bg-card/70 p-4"><p class="font-mono text-2xs font-semibold text-stone-600">{{ t('mcp.nonAi') }}</p><p class="mt-2 text-xs leading-5 text-stone-800">search_github_projects</p></div>
+          <div class="rounded-2xl border border-violet-100 bg-violet-50/60 p-4"><p class="font-mono text-2xs font-semibold text-violet-700">{{ t('mcp.papers') }}</p><p class="mt-2 text-xs leading-5 text-violet-900">search_papers</p></div>
+        </div>
+        <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4"><p class="text-xs font-semibold text-amber-900">{{ t('mcp.hostPriorityTitle') }}</p><p class="mt-1 text-xs leading-5 text-amber-800">{{ t('mcp.hostPriorityDescription') }}</p></div>
+      </section>
+
+      <section class="glass-card p-5 md:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
           <div><p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.authenticatedSetup') }}</p><h2 class="mt-1 text-xl font-semibold text-stone-800">{{ t('mcp.setupTitle') }}</h2><p class="mt-2 text-sm text-stone-500">{{ t('mcp.setupDescription') }}</p></div>
           <button v-if="!authStore.isLoggedIn" class="btn-primary" @click="router.push('/login')">{{ t('mcp.loginToConfigure') }}</button>
           <span v-else class="rounded-full bg-[var(--token-valid-bg)] px-3 py-1 text-xs font-semibold text-[var(--projects-success)]">{{ t('mcp.loggedIn') }}</span>
@@ -155,24 +176,6 @@ onBeforeUnmount(dispose)
         <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.tokenManagement') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.tokenTitle') }}</h2></div><button class="btn-secondary text-xs" :disabled="loadingTokens" @click="loadTokens">{{ t(loadingTokens ? 'common.refreshing' : 'common.refresh') }}</button></div>
         <div v-if="tokens.length" class="mcp-token-list mt-4 grid content-start gap-3 pr-1"><div v-for="item in tokens" :key="item.id" class="grid gap-3 rounded-[20px] border border-stone-200 bg-card/70 p-4 md:h-24 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:overflow-hidden"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><span class="min-w-0 max-w-full truncate font-semibold text-stone-800" :title="item.client_label || item.client_type">{{ item.client_label || item.client_type }}</span><span class="shrink-0 rounded-full px-2 py-0.5 text-2xs" :class="tokenStatus(item) === 'valid' ? 'bg-[var(--token-valid-bg)] text-[var(--projects-success)]' : 'bg-stone-100 text-stone-500'">{{ tokenStatusLabel(tokenStatus(item)) }}</span></div><p class="mt-2 truncate font-mono text-xs text-stone-500" :title="item.token_hint">{{ item.token_hint }}</p><p class="mt-1 truncate text-2xs text-stone-400">{{ t('mcp.tokenCreatedUsed', { created: formatDate(item.created_at), used: formatDate(item.last_used_at) }) }}</p></div><button class="btn-secondary shrink-0 text-xs text-rose-700" :disabled="deletingId === item.id" @click="removeToken(item)">{{ t(deletingId === item.id ? 'mcp.deleting' : 'common.delete') }}</button></div></div>
         <p v-else-if="!loadingTokens" class="mt-4 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">{{ t('mcp.noTokens') }}</p>
-      </section>
-
-      <section class="glass-card p-5 md:p-6">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.routing') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.routingTitle') }}</h2><p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('mcp.routingDescription') }}</p></div>
-          <button class="btn-secondary text-xs" @click="copyHostInstruction">{{ t(copiedKey === 'host-instruction' ? 'mcp.copied' : 'mcp.copyHost') }}</button>
-        </div>
-        <div class="mt-4 grid gap-3 md:grid-cols-3">
-          <div class="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4"><p class="font-mono text-2xs font-semibold text-cyan-800">{{ t('mcp.aiArtifacts') }}</p><p class="mt-2 text-xs leading-5 text-cyan-900">search_github_ai_projects</p></div>
-          <div class="rounded-2xl border border-stone-200 bg-card/70 p-4"><p class="font-mono text-2xs font-semibold text-stone-600">{{ t('mcp.nonAi') }}</p><p class="mt-2 text-xs leading-5 text-stone-800">search_github_projects</p></div>
-          <div class="rounded-2xl border border-violet-100 bg-violet-50/60 p-4"><p class="font-mono text-2xs font-semibold text-violet-700">{{ t('mcp.papers') }}</p><p class="mt-2 text-xs leading-5 text-violet-900">search_papers</p></div>
-        </div>
-        <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4"><p class="text-xs font-semibold text-amber-900">{{ t('mcp.hostPriorityTitle') }}</p><p class="mt-1 text-xs leading-5 text-amber-800">{{ t('mcp.hostPriorityDescription') }}</p></div>
-      </section>
-
-      <section class="glass-card p-5">
-        <div class="flex flex-wrap items-center justify-between gap-2"><div><p class="text-sm font-semibold text-stone-800">{{ t('mcp.publicTools') }}</p><p class="mt-1 text-xs text-stone-500">{{ t('mcp.publicToolsDescription') }}</p></div><span class="rounded-full bg-stone-100 px-3 py-1 text-2xs text-stone-500">{{ t('mcp.toolCount', { count: displayedPublicTools.length }) }}</span></div>
-        <div class="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3"><div v-for="tool in displayedPublicTools" :key="tool.name" class="rounded-2xl border border-stone-200 bg-card/70 px-3 py-2"><p class="font-mono text-2xs font-semibold text-stone-700">{{ tool.name }}</p><p class="mt-1 text-2xs leading-4 text-stone-400">{{ t(tool.descriptionKey) }}</p></div></div>
       </section>
       </div>
     </div>

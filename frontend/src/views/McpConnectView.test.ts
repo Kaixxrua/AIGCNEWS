@@ -200,6 +200,18 @@ describe('McpConnectView localized rendering', () => {
     expect(text).toContain('search_papers')
     expect(text).toContain('检索 arXiv 论文')
   })
+
+  it('orders public tools and routing ahead of the authenticated favorites setup', async () => {
+    const wrapper = await mountView()
+    const sections = wrapper.findAll('section')
+
+    expect(sections.length).toBe(5)
+    expect(sections[0]!.text()).toContain('公开端点')
+    expect(sections[1]!.text()).toContain('search_github_ai_projects')
+    expect(sections[2]!.text()).toContain('MCP 优先路由')
+    expect(sections[3]!.text()).toContain('鉴权配置')
+    expect(sections[4]!.text()).toContain('令牌管理')
+  })
 })
 
 describe('McpConnectView privacy and auth behavior', () => {
