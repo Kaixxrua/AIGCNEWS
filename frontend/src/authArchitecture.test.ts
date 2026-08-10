@@ -80,6 +80,9 @@ describe('authentication architecture behavior', () => {
     document.body.innerHTML = '<div id="app"></div>'
 
     await import('./main')
+    // 挂载等待初始导航（守卫 + 懒加载 chunk）完成，与 auth-restore 的短动态导入存在时序竞争，
+    // 因此两个事件都要等，再断言顺序：先挂载可用，再异步恢复登录态。
+    await vi.waitFor(() => expect(probe.order).toContain('app-mounted'))
     await vi.waitFor(() => expect(probe.order).toContain('auth-restored'))
 
     expect(probe.order).toEqual(['app-mounted', 'auth-restored'])

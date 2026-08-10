@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getRoutePolicyRedirect } from '@/features/navigation/routePolicy'
 import LayoutView from '@/views/LayoutView.vue'
+import { startRouteProgress, stopRouteProgress } from '@/composables/useRouteProgress'
 
 const DashboardView = () => import('@/views/DashboardView.vue')
 const GitHubProjectsView = () => import('@/views/GitHubProjectsView.vue')
@@ -117,6 +118,7 @@ const router = createRouter({
 
 // ── 全局路由守卫 ──────────────────────────────────────────────────────────────
 router.beforeEach(async (to, _from, next) => {
+  startRouteProgress()
   const { useAuthStore } = await import('@/stores/authStore')
   const { getActivePinia } = await import('pinia')
   const pinia = getActivePinia()
@@ -128,5 +130,9 @@ router.beforeEach(async (to, _from, next) => {
   if (redirect) return next(redirect)
   next()
 })
+
+// afterEach 对确认与取消（含重定向）的导航都会触发；onError 兜底 chunk 加载失败等异常。
+router.afterEach(() => stopRouteProgress())
+router.onError(() => stopRouteProgress())
 
 export default router

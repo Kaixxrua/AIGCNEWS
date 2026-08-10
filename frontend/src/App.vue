@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
 import AppToast from '@/components/AppToast.vue'
+import RouteProgress from '@/components/RouteProgress.vue'
 import { useLocaleTransition } from './composables/useLocaleTransition'
 
 const { isLocaleTransitioning } = useLocaleTransition()
@@ -15,6 +16,7 @@ const { isLocaleTransitioning } = useLocaleTransition()
 
   <!-- ═══ 顶层路由出口（Layout 或 Login/Register） ═══ -->
   <RouterView />
+  <RouteProgress />
   <AppToast />
 
   <Transition name="locale-refresh">
