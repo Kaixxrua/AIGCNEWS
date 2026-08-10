@@ -5,7 +5,14 @@ from datetime import date, timedelta
 from typing import Any
 
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
-from backend.app.services.dashboard.policy import today_local
+from backend.app.services.dashboard.policy import (
+    DEFAULT_SNAPSHOT_LOOKBACK_DAYS,
+    SnapshotDateResolution,
+    build_date_resolution,
+    resolve_default_snapshot_date,
+    resolve_snapshot_date,
+    today_local,
+)
 
 SOURCE_PERIOD_CHANNELS: dict[str, dict[str, str]] = {
     "arxiv": {
@@ -51,6 +58,28 @@ SAME_PERIOD_FALLBACKS: dict[str, dict[str, tuple[str, ...]]] = {
 class DashboardQueryService:
     def __init__(self, rank_snapshots: RankSnapshotReader) -> None:
         self._rank_snapshots = rank_snapshots
+
+    def resolve_display_snapshot_date(
+        self,
+        date_param: str | None,
+        period: str = "daily",
+        source_type: str | None = None,
+    ) -> SnapshotDateResolution:
+        """解析看板展示日期：显式 date 原样生效（诚实服务，不回溯）。
+
+        默认视图（无 date）在 today 无快照时，按 source+period 口径向前
+        回溯窗口内最近一个有快照的日期；结果始终带 requested/resolved/
+        stale 标记，回溯绝不静默。
+        """
+        requested = resolve_snapshot_date(date_param)
+        if date_param:
+            return build_date_resolution(requested, requested)
+        source = None if source_type in (None, "", "all") else source_type
+        available = self._rank_snapshots.get_snapshot_dates(
+            DEFAULT_SNAPSHOT_LOOKBACK_DAYS, source, period
+        )
+        resolved = resolve_default_snapshot_date(available) or requested
+        return build_date_resolution(requested, resolved)
 
     def get_docs_for_date(
         self,

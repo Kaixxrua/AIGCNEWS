@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import FastAPI
@@ -35,10 +35,13 @@ class FakeRankSnapshotReader:
         self,
         documents: dict[tuple[str, str, str], list[dict[str, Any]]] | None = None,
         yesterday_ids: set[str] | None = None,
+        dates: list[str] | None = None,
     ) -> None:
         self.documents = documents or {}
         self.yesterday_ids = yesterday_ids or set()
+        self.dates = list(dates or [])
         self.document_calls: list[tuple[str, str | None, str | None, int]] = []
+        self.date_calls: list[tuple[int, str | None, str | None]] = []
         self.doc_id_calls: list[tuple[str, str | None]] = []
 
     def get_snapshot_documents(
@@ -63,7 +66,8 @@ class FakeRankSnapshotReader:
         source: str | None = None,
         period: str | None = None,
     ) -> list[str]:
-        return []
+        self.date_calls.append((limit, source, period))
+        return list(self.dates[:limit])
 
     def get_snapshot_source_counts(self, snapshot_date: str) -> dict[str, int]:
         return {}
@@ -347,9 +351,14 @@ def test_top_route_preserves_dedupe_limit_and_relative_pdf_url() -> None:
         "total": 2,
         "period": "daily",
         "snapshot_date": date,
+        "requested_date": date,
+        "resolved_date": date,
+        "stale": False,
         "is_finalized": True,
         "is_embargoed": False,
     }
+    # 显式 date 不回溯：不触发可用日期查询
+    assert reader.date_calls == []
     assert reader.document_calls == [
         (date, "github_trending_daily", "github", 500)
     ]
@@ -574,7 +583,7 @@ class FakeUserStatistics:
         return 0
 
 
-def _summary_client(monkeypatch, catalog_factory) -> TestClient:
+def _summary_client(monkeypatch, catalog_factory, reader=None) -> TestClient:
     from backend.app.api.dependencies import (
         get_document_repository,
         get_project_catalog_query_service,
@@ -586,7 +595,9 @@ def _summary_client(monkeypatch, catalog_factory) -> TestClient:
 
     app = FastAPI()
     app.include_router(routes_dashboard.router, prefix="/api")
-    app.dependency_overrides[get_rank_snapshot_repository] = lambda: FakeRankSnapshotReader()
+    app.dependency_overrides[get_rank_snapshot_repository] = (
+        lambda: reader if reader is not None else FakeRankSnapshotReader()
+    )
     app.dependency_overrides[get_document_repository] = lambda: FakeDocumentStatistics()
     app.dependency_overrides[get_user_account_repository] = lambda: FakeUserStatistics()
     app.dependency_overrides[get_project_catalog_query_service] = (
@@ -678,3 +689,216 @@ def test_live_stats_returns_flat_counters(monkeypatch) -> None:
     assert body["user_count"] == 13
     assert body["today_new_documents"] == 3
     assert isinstance(body["mcp_total_calls"], int)
+
+
+# ── 默认视图快照日期回溯（Unit C）────────────────────────────────────
+# 背景：代理断供两天期间今日无任何快照，看板整日空白。默认视图（不传
+# date）现在向前回溯窗口内最近有快照的日期，并以 requested_date /
+# resolved_date / stale 标记显式暴露；显式 date 永不回溯。
+
+
+def test_resolve_default_snapshot_date_picks_latest_within_window() -> None:
+    anchor = date(2026, 8, 10)
+    assert (
+        policy.resolve_default_snapshot_date(
+            ["2026-08-07", "2026-08-09", "2026-08-04"], today=anchor
+        )
+        == "2026-08-09"
+    )
+
+
+def test_resolve_default_snapshot_date_skips_future_and_garbage() -> None:
+    anchor = date(2026, 8, 10)
+    assert (
+        policy.resolve_default_snapshot_date(
+            ["2026-08-12", "not-a-date", "2026-08-08"], today=anchor
+        )
+        == "2026-08-08"
+    )
+
+
+def test_resolve_default_snapshot_date_window_boundary() -> None:
+    anchor = date(2026, 8, 10)
+    # 默认窗口含今天共 7 天：08-04 在内、08-03 出窗
+    assert (
+        policy.resolve_default_snapshot_date(
+            ["2026-08-03", "2026-08-04"], today=anchor
+        )
+        == "2026-08-04"
+    )
+    assert (
+        policy.resolve_default_snapshot_date(["2026-08-03"], today=anchor) is None
+    )
+    assert policy.resolve_default_snapshot_date([], today=anchor) is None
+
+
+def test_display_date_explicit_param_never_falls_back() -> None:
+    reader = FakeRankSnapshotReader(dates=["2026-08-09"])
+    service = DashboardQueryService(reader)
+
+    resolution = service.resolve_display_snapshot_date("2026-08-01", "daily", "github")
+
+    assert resolution == {
+        "requested_date": "2026-08-01",
+        "resolved_date": "2026-08-01",
+        "stale": False,
+    }
+    assert reader.date_calls == []
+
+
+def test_display_date_default_uses_today_when_snapshots_exist() -> None:
+    today = policy.today_local().isoformat()
+    reader = FakeRankSnapshotReader(dates=[today, "2026-08-01"])
+    service = DashboardQueryService(reader)
+
+    resolution = service.resolve_display_snapshot_date(None, "daily", None)
+
+    assert resolution == {
+        "requested_date": today,
+        "resolved_date": today,
+        "stale": False,
+    }
+
+
+def test_display_date_default_falls_back_and_marks_stale() -> None:
+    today = policy.today_local()
+    yesterday = (today - timedelta(days=1)).isoformat()
+    reader = FakeRankSnapshotReader(dates=[yesterday])
+    service = DashboardQueryService(reader)
+
+    resolution = service.resolve_display_snapshot_date(None, "daily", "github")
+
+    assert resolution == {
+        "requested_date": today.isoformat(),
+        "resolved_date": yesterday,
+        "stale": True,
+    }
+    # 回溯查询按 source+period 口径且有界
+    assert reader.date_calls == [
+        (policy.DEFAULT_SNAPSHOT_LOOKBACK_DAYS, "github", "daily")
+    ]
+
+
+def test_display_date_default_without_any_snapshot_stays_on_today() -> None:
+    today = policy.today_local().isoformat()
+    reader = FakeRankSnapshotReader(dates=[])
+    service = DashboardQueryService(reader)
+
+    resolution = service.resolve_display_snapshot_date(None, "daily", None)
+
+    assert resolution == {
+        "requested_date": today,
+        "resolved_date": today,
+        "stale": False,
+    }
+
+
+def _top_client(reader: FakeRankSnapshotReader) -> TestClient:
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_rank_snapshot_repository] = lambda: reader
+    return TestClient(app)
+
+
+def test_top_route_default_view_falls_back_to_latest_snapshot_date() -> None:
+    today = policy.today_local()
+    fallback = (today - timedelta(days=2)).isoformat()
+    reader = FakeRankSnapshotReader(
+        {
+            (fallback, "github_trending_daily", "github"): [
+                {"id": "repo", "source": "github", "url": "https://example.test/r"}
+            ]
+        },
+        dates=[fallback],
+    )
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-fallback")
+    try:
+        response = _top_client(reader).get("/api/dashboard/top?source=github&limit=5")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["id"] for item in payload["items"]] == ["repo"]
+    assert payload["snapshot_date"] == fallback
+    assert payload["requested_date"] == today.isoformat()
+    assert payload["resolved_date"] == fallback
+    assert payload["stale"] is True
+    assert payload["is_finalized"] is True
+    assert payload["is_embargoed"] is False
+    assert reader.document_calls == [(fallback, "github_trending_daily", "github", 500)]
+
+
+def test_top_route_default_view_fallback_still_respects_embargo(monkeypatch) -> None:
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[no-untyped-def]
+            value = cls(2026, 8, 10, 10, 0, 0)  # 10:00 < FINALIZE_HOUR(15)
+            return value.replace(tzinfo=tz) if tz else value
+
+    monkeypatch.setattr(policy, "datetime", _FrozenDateTime)
+    # today=2026-08-10 无快照 → 回溯到昨天 08-09 → 昨天仍在静默期 → 拦截
+    reader = FakeRankSnapshotReader(dates=["2026-08-09", "2026-08-08"])
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-embargo")
+    try:
+        response = _top_client(reader).get("/api/dashboard/top")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"] == []
+    assert payload["requested_date"] == "2026-08-10"
+    assert payload["resolved_date"] == "2026-08-09"
+    assert payload["stale"] is True
+    assert payload["is_embargoed"] is True
+    # 静默期拦截先于文档查询，未解禁数据不外泄
+    assert reader.document_calls == []
+
+
+def test_radar_route_default_view_carries_resolution_markers() -> None:
+    today = policy.today_local()
+    fallback = (today - timedelta(days=2)).isoformat()
+    reader = FakeRankSnapshotReader(dates=[fallback])
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-radar-fallback")
+    try:
+        response = _top_client(reader).get("/api/dashboard/radar")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requested_date"] == today.isoformat()
+    assert payload["resolved_date"] == fallback
+    assert payload["stale"] is True
+    assert payload["doc_count"] == 0
+    assert reader.date_calls == [
+        (policy.DEFAULT_SNAPSHOT_LOOKBACK_DAYS, None, "daily")
+    ]
+
+
+def test_summary_route_default_view_carries_resolution_markers(monkeypatch) -> None:
+    today = policy.today_local()
+    fallback = (today - timedelta(days=2)).isoformat()
+    reader = FakeRankSnapshotReader(dates=[fallback])
+
+    class FakeCatalog:
+        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
+            return {"items": [], "total": 0, "page": 1, "page_size": 1}
+
+    client = _summary_client(monkeypatch, lambda: FakeCatalog(), reader=reader)
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-summary-fb-mark")
+    try:
+        response = client.get("/api/dashboard/summary")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requested_date"] == today.isoformat()
+    assert payload["resolved_date"] == fallback
+    assert payload["snapshot_date"] == fallback
+    assert payload["stale"] is True

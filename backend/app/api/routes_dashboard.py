@@ -161,13 +161,19 @@ async def get_top_list(
         default=None, description="过滤来源：all/arxiv/github/news"
     ),
     date: Optional[str] = Query(
-        default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
+        default=None,
+        description="快照日期 YYYY-MM-DD，不传默认今天；今日无快照时回溯最近"
+        "有快照的日期（有界窗口），响应带 requested_date/resolved_date/stale 标记",
     ),
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
 ):
     """Return top-N daily documents ranked by vote count, optionally filtered by source and date."""
     source_type = None if (not source or source == "all") else source
-    snapshot_date = policy.resolve_snapshot_date(date)
+    query_service = DashboardQueryService(rank_snapshots)
+    resolution = await asyncio.to_thread(
+        query_service.resolve_display_snapshot_date, date, "daily", source_type
+    )
+    snapshot_date = resolution["resolved_date"]
 
     board = policy.compute_board_status(snapshot_date)
 
@@ -178,11 +184,13 @@ async def get_top_list(
             "total": 0,
             "period": "daily",
             "snapshot_date": snapshot_date,
+            "requested_date": resolution["requested_date"],
+            "resolved_date": resolution["resolved_date"],
+            "stale": resolution["stale"],
             "is_finalized": board["is_finalized"],
             "is_embargoed": True,
         }
 
-    query_service = DashboardQueryService(rank_snapshots)
     docs = await asyncio.to_thread(
         query_service.get_docs_for_date, snapshot_date, "daily", source_type, 500
     )
@@ -197,6 +205,9 @@ async def get_top_list(
         "total": len(top_items),
         "period": "daily",
         "snapshot_date": snapshot_date,
+        "requested_date": resolution["requested_date"],
+        "resolved_date": resolution["resolved_date"],
+        "stale": resolution["stale"],
         "is_finalized": board["is_finalized"],
         "is_embargoed": False,
     }
@@ -254,13 +265,19 @@ async def get_trend_radar(
         default=None, description="过滤来源：all/arxiv/github/news"
     ),
     date: Optional[str] = Query(
-        default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
+        default=None,
+        description="快照日期 YYYY-MM-DD，不传默认今天；今日无快照时回溯最近"
+        "有快照的日期（有界窗口），响应带 requested_date/resolved_date/stale 标记",
     ),
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
 ):
     """Return trend radar chart data computed from filtered top documents."""
     source_type = None if (not source or source == "all") else source
-    snapshot_date = policy.resolve_snapshot_date(date)
+    query_service = DashboardQueryService(rank_snapshots)
+    resolution = await asyncio.to_thread(
+        query_service.resolve_display_snapshot_date, date, "daily", source_type
+    )
+    snapshot_date = resolution["resolved_date"]
 
     board = policy.compute_board_status(snapshot_date)
 
@@ -271,11 +288,13 @@ async def get_trend_radar(
             "doc_count": 0,
             "period": "daily",
             "snapshot_date": snapshot_date,
+            "requested_date": resolution["requested_date"],
+            "resolved_date": resolution["resolved_date"],
+            "stale": resolution["stale"],
             "is_finalized": board["is_finalized"],
             "is_embargoed": True,
         }
 
-    query_service = DashboardQueryService(rank_snapshots)
     docs = await asyncio.to_thread(
         query_service.get_docs_for_date,
         snapshot_date,
@@ -289,6 +308,9 @@ async def get_trend_radar(
         "doc_count": len(docs[:limit]),
         "period": "daily",
         "snapshot_date": snapshot_date,
+        "requested_date": resolution["requested_date"],
+        "resolved_date": resolution["resolved_date"],
+        "stale": resolution["stale"],
         "is_finalized": board["is_finalized"],
         "is_embargoed": False,
     }
@@ -299,7 +321,9 @@ async def get_trend_radar(
 async def get_dashboard_summary(
     request: Request,
     date: Optional[str] = Query(
-        default=None, description="快照日期 YYYY-MM-DD，不传默认今天"
+        default=None,
+        description="快照日期 YYYY-MM-DD，不传默认今天；今日无快照时回溯最近"
+        "有快照的日期（有界窗口），响应带 requested_date/resolved_date/stale 标记",
     ),
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
@@ -309,11 +333,15 @@ async def get_dashboard_summary(
     """Return a combined dashboard payload: daily top-10 + radar + basic stats + source breakdown.
 
     当传入 date 参数时，从 document_rank_snapshots 表查询该日期的历史排行数据；
-    未传入时默认查当天，若无快照则回退到原有 documents 表逻辑。
+    未传入时默认查当天，当天无快照则回溯窗口内最近有快照的日期（stale 标记）。
     """
     from datetime import timedelta, timezone as _tz
 
-    snapshot_date = policy.resolve_snapshot_date(date)
+    query_service = DashboardQueryService(rank_snapshots)
+    resolution = await asyncio.to_thread(
+        query_service.resolve_display_snapshot_date, date, "daily", None
+    )
+    snapshot_date = resolution["resolved_date"]
 
     board = policy.compute_board_status(snapshot_date)
 
@@ -356,11 +384,13 @@ async def get_dashboard_summary(
             },
             "period": "daily",
             "snapshot_date": snapshot_date,
+            "requested_date": resolution["requested_date"],
+            "resolved_date": resolution["resolved_date"],
+            "stale": resolution["stale"],
             "is_finalized": board["is_finalized"],
             "is_embargoed": True,
         }
 
-    query_service = DashboardQueryService(rank_snapshots)
     docs = await asyncio.to_thread(
         query_service.get_docs_for_date, snapshot_date, "daily", None, 500
     )
@@ -394,6 +424,9 @@ async def get_dashboard_summary(
         },
         "period": "daily",
         "snapshot_date": snapshot_date,
+        "requested_date": resolution["requested_date"],
+        "resolved_date": resolution["resolved_date"],
+        "stale": resolution["stale"],
         "is_finalized": board["is_finalized"],
         "is_embargoed": False,
     }

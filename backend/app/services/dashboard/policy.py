@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Sequence, TypedDict
 
 from starlette.requests import Request
 
@@ -181,3 +181,53 @@ def resolve_snapshot_date(date_param: str | None) -> str:
     if date_param:
         return date_param
     return today_local().isoformat()
+
+
+DEFAULT_SNAPSHOT_LOOKBACK_DAYS = 7
+
+
+class SnapshotDateResolution(TypedDict):
+    """看板展示日期解析结果：请求意图 vs 实际服务日期。
+
+    stale=True 仅出现在默认视图（未传 date）回溯到更早有快照日期时；
+    显式 date 参数永不回溯，requested 恒等于 resolved，stale 恒为 False。
+    """
+
+    requested_date: str
+    resolved_date: str
+    stale: bool
+
+
+def build_date_resolution(requested: str, resolved: str) -> SnapshotDateResolution:
+    return {
+        "requested_date": requested,
+        "resolved_date": resolved,
+        # ISO YYYY-MM-DD 定长零填充，字符串序即日期序
+        "stale": resolved < requested,
+    }
+
+
+def resolve_default_snapshot_date(
+    available_dates_desc: Sequence[str],
+    *,
+    today: date | None = None,
+    lookback_days: int = DEFAULT_SNAPSHOT_LOOKBACK_DAYS,
+) -> str | None:
+    """默认视图（未传 date）的回溯目标：窗口内最近一个 ≤ today 的快照日期。
+
+    窗口含今天共 lookback_days 天；未来日期与不可解析项跳过。找不到
+    返回 None——由调用方退回 today，照常服务当日的空榜/静默期语义。
+    """
+    current = today or today_local()
+    window_start = current - timedelta(days=max(1, int(lookback_days)) - 1)
+    best: date | None = None
+    for raw in available_dates_desc:
+        try:
+            candidate = date.fromisoformat(str(raw))
+        except ValueError:
+            continue
+        if not window_start <= candidate <= current:
+            continue
+        if best is None or candidate > best:
+            best = candidate
+    return best.isoformat() if best is not None else None
