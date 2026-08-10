@@ -323,12 +323,14 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             repositories=repositories,
             github_lock=runtime._github_job_lock,
             x_lock=runtime._x_operation_lock,
+            zero_ingest_reporter=runtime._zero_ingest_alerter.record,
         )
         single_source.assert_any_await(
             "x",
             repositories=repositories,
             github_lock=runtime._github_job_lock,
             x_lock=runtime._x_operation_lock,
+            zero_ingest_reporter=runtime._zero_ingest_alerter.record,
         )
         daily_pipeline.assert_awaited_once_with(
             repositories=repositories,

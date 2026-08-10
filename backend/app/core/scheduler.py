@@ -67,6 +67,21 @@ _OPS_ALERT_SCRIPT = (
     Path(__file__).resolve().parents[3] / "scripts" / "notify_ops_alert.py"
 )
 
+# 单源连续零入库告警：job 正常返回但入库为 0（典型成因是网络/代理断供，
+# 不抛异常、不触发失败告警）。按源独立计数，达到阈值告警一次。
+# 默认盯热榜型源；x 当日过滤后常为零属常态，dailyhot 为 profile 隔离的
+# 可选上游，均不默认纳入，可用环境变量覆盖。
+_DEFAULT_ZERO_INGEST_ALERT_THRESHOLD = 3
+_ZERO_INGEST_THRESHOLD_ENV = "SCHEDULER_ZERO_INGEST_ALERT_THRESHOLD"
+_ZERO_INGEST_SOURCES_ENV = "SCHEDULER_ZERO_INGEST_WATCH_SOURCES"
+_DEFAULT_ZERO_INGEST_WATCH_SOURCES = (
+    "arxiv",
+    "github",
+    "news",
+    "producthunt",
+    "hackernews",
+)
+
 
 def _notify_ops_alert(job_id: str, failures: int, detail: str) -> None:
     """经 scripts/notify_ops_alert.py 发送调度器失败告警（fire-and-forget）。
@@ -164,6 +179,88 @@ def _alert_failure_threshold_from_env() -> int:
         return _DEFAULT_ALERT_FAILURE_THRESHOLD
 
 
+class _ZeroIngestAlerter:
+    """按源统计连续零入库轮次的去抖告警器。
+
+    与 _ConsecutiveFailureAlerter 同一去抖口径：仅当连续零入库「到达」
+    阈值时告警一次；某轮入库 > 0 即重置，之后再次连续零入库到阈值会重新
+    告警。不在盯防集合内的源直接忽略。
+    """
+
+    def __init__(
+        self,
+        *,
+        threshold: int = _DEFAULT_ZERO_INGEST_ALERT_THRESHOLD,
+        watch_sources: tuple[str, ...] = _DEFAULT_ZERO_INGEST_WATCH_SOURCES,
+        notifier: Callable[[str, int, str], None] | None = None,
+    ) -> None:
+        self._threshold = max(1, int(threshold))
+        self._watch_sources = frozenset(watch_sources)
+        self._notifier = notifier or _notify_ops_alert
+        self._consecutive_zeros: Dict[str, int] = {}
+
+    def record(self, source: str, ingested: int) -> None:
+        if source not in self._watch_sources:
+            return
+        if ingested > 0:
+            self._consecutive_zeros.pop(source, None)
+            return
+        count = self._consecutive_zeros.get(source, 0) + 1
+        self._consecutive_zeros[source] = count
+        if count == self._threshold:
+            logger.error(
+                "[Scheduler] 数据源 %s 已连续 %d 轮零入库，触发运维告警。",
+                source,
+                count,
+            )
+            try:
+                self._notifier(
+                    f"zero-ingest:{source}",
+                    count,
+                    f"数据源 {source} 连续 {count} 轮采集成功但零入库，"
+                    "疑似网络/代理或上游断供。",
+                )
+            except Exception as exc:
+                logger.warning("[Scheduler] 触发零入库告警失败（非致命）: %s", exc)
+        elif count > self._threshold:
+            logger.warning(
+                "[Scheduler] 数据源 %s 已连续 %d 轮零入库（告警已发，不再重复）。",
+                source,
+                count,
+            )
+
+
+def _zero_ingest_threshold_from_env() -> int:
+    raw = os.environ.get(_ZERO_INGEST_THRESHOLD_ENV, "").strip()
+    if not raw:
+        return _DEFAULT_ZERO_INGEST_ALERT_THRESHOLD
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logger.warning(
+            "[Scheduler] %s=%r 不是整数，使用默认零入库告警阈值 %d。",
+            _ZERO_INGEST_THRESHOLD_ENV,
+            raw,
+            _DEFAULT_ZERO_INGEST_ALERT_THRESHOLD,
+        )
+        return _DEFAULT_ZERO_INGEST_ALERT_THRESHOLD
+
+
+def _zero_ingest_watch_sources_from_env() -> tuple[str, ...]:
+    raw = os.environ.get(_ZERO_INGEST_SOURCES_ENV, "").strip()
+    if not raw:
+        return _DEFAULT_ZERO_INGEST_WATCH_SOURCES
+    sources = tuple(item.strip() for item in raw.split(",") if item.strip())
+    if not sources:
+        logger.warning(
+            "[Scheduler] %s=%r 解析为空，使用默认零入库盯防源。",
+            _ZERO_INGEST_SOURCES_ENV,
+            raw,
+        )
+        return _DEFAULT_ZERO_INGEST_WATCH_SOURCES
+    return sources
+
+
 def _missing_recent_arxiv_daily_dates(
     rank_snapshots: RankSnapshotRepository,
 ) -> List[str]:
@@ -233,6 +330,7 @@ async def _run_single_source_job(
     repositories: ApplicationRepositories,
     github_lock: asyncio.Lock | None = None,
     x_lock: asyncio.Lock | None = None,
+    zero_ingest_reporter: Callable[[str, int], None] | None = None,
 ) -> bool:
     logger.info("[Scheduler] 触发 %s 采集任务...", source_name)
     active_repositories = repositories
@@ -261,6 +359,11 @@ async def _run_single_source_job(
                 )
         ingested = result.get("ingested_total", 0)
         logger.info("[Scheduler] %s 采集完成，入库 %d 条。", source_name, ingested)
+        if zero_ingest_reporter is not None:
+            try:
+                zero_ingest_reporter(source_name, int(ingested))
+            except Exception as exc:
+                logger.warning("[Scheduler] 零入库上报失败（非致命）: %s", exc)
         return True
     except Exception as exc:
         logger.error("[Scheduler] %s 采集失败: %s", source_name, exc, exc_info=True)
@@ -582,6 +685,9 @@ class ApplicationSchedulerRuntime:
         job_config_overrides: Mapping[str, Any] | None = None,
         alert_failure_threshold: int = _DEFAULT_ALERT_FAILURE_THRESHOLD,
         alert_notifier: Callable[[str, int, str], None] | None = None,
+        zero_ingest_threshold: int = _DEFAULT_ZERO_INGEST_ALERT_THRESHOLD,
+        zero_ingest_watch_sources: tuple[str, ...] = _DEFAULT_ZERO_INGEST_WATCH_SOURCES,
+        zero_ingest_notifier: Callable[[str, int, str], None] | None = None,
     ) -> None:
         self.repositories = repositories
         self.scheduler = scheduler or AsyncIOScheduler(timezone=timezone_name)
@@ -595,6 +701,11 @@ class ApplicationSchedulerRuntime:
         self._failure_alerter = _ConsecutiveFailureAlerter(
             threshold=alert_failure_threshold,
             notifier=alert_notifier,
+        )
+        self._zero_ingest_alerter = _ZeroIngestAlerter(
+            threshold=zero_ingest_threshold,
+            watch_sources=zero_ingest_watch_sources,
+            notifier=zero_ingest_notifier,
         )
         self._active_tasks: set[asyncio.Task[Any]] = set()
         self._stopping = False
@@ -667,6 +778,7 @@ class ApplicationSchedulerRuntime:
                     repositories=self.repositories,
                     github_lock=self._github_job_lock,
                     x_lock=self._x_operation_lock,
+                    zero_ingest_reporter=self._zero_ingest_alerter.record,
                 ),
             )
         )
@@ -1003,4 +1115,6 @@ def create_scheduler_runtime(
         timezone_name=timezone_name,
         job_config_overrides=job_config_overrides,
         alert_failure_threshold=_alert_failure_threshold_from_env(),
+        zero_ingest_threshold=_zero_ingest_threshold_from_env(),
+        zero_ingest_watch_sources=_zero_ingest_watch_sources_from_env(),
     )
