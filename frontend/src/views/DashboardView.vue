@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
 import GlassCalendar from '@/components/GlassCalendar.vue'
-import SkeletonBlock from '@/components/SkeletonBlock.vue'
+import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
@@ -98,14 +98,8 @@ onBeforeUnmount(pauseLivePoll)
     <!-- 主区域：榜单/空态占满剩余高度，日历与公众号入口收入右侧栏 -->
     <div class="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
       <!-- 加载中：左侧主区域骨架 -->
-      <div v-if="loading" class="glass-card order-2 min-w-0 flex-1 p-5 lg:order-1" role="status" :aria-label="t('common.loading')">
-        <SkeletonBlock width="38%" height="22px" radius="8px" />
-        <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <SkeletonBlock v-for="i in 4" :key="i" height="64px" radius="10px" />
-        </div>
-        <div class="mt-6 flex flex-col gap-3">
-          <SkeletonBlock v-for="i in 5" :key="i" :width="i % 2 ? '92%' : '76%'" height="14px" />
-        </div>
+      <div v-if="loading" class="glass-card order-2 min-w-0 flex-1 p-5 lg:order-1">
+        <SpinnerLoader class="min-h-[360px]" />
       </div>
 
       <!-- 静默期专用空状态 (Embargo Empty State) -->

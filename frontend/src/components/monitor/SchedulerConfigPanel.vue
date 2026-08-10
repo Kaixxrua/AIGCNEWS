@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import SkeletonBlock from '@/components/SkeletonBlock.vue'
+import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import type { SchedulerJobConfig, SchedulerJobConfigForm } from '@/features/monitor/monitorModel'
 
 const { t } = useI18n()
@@ -44,9 +44,7 @@ const formatInterval = (minutes: number) => {
       <span class="monitor-badge">{{ t('monitor.schedulerConfig.count', { count: configs.length }) }}</span>
     </div>
 
-    <div v-if="loading" class="flex flex-col gap-3" role="status" :aria-label="t('common.loading')">
-      <SkeletonBlock v-for="i in 4" :key="i" :width="i % 2 ? '92%' : '70%'" height="12px" />
-    </div>
+    <SpinnerLoader v-if="loading" class="min-h-[120px] py-2" />
 
     <div v-else class="space-y-3">
       <div v-if="isEditing" class="monitor-surface p-4">

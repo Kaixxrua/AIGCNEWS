@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import SkeletonBlock from '@/components/SkeletonBlock.vue'
+import SpinnerLoader from '@/components/SpinnerLoader.vue'
 const { t } = useI18n()
 import {
   formatDate,
@@ -67,11 +67,7 @@ const emit = defineEmits<{
           </thead>
           <tbody>
             <tr v-if="loading && !tasks.length">
-              <td colspan="6" class="px-4 py-6">
-                <div class="flex flex-col gap-2.5" role="status" :aria-label="t('common.loading')">
-                  <SkeletonBlock v-for="i in 3" :key="i" :width="i === 3 ? '52%' : '100%'" height="12px" />
-                </div>
-              </td>
+              <td colspan="6" class="px-4 py-6"><SpinnerLoader class="min-h-[72px]" :size="22" /></td>
             </tr>
             <tr v-else-if="!tasks.length">
               <td colspan="6" class="px-4 py-8 text-center text-sm monitor-caption">{{ t('monitor.noTasks') }}</td>

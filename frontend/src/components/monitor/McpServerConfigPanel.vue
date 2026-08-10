@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import SkeletonBlock from '@/components/SkeletonBlock.vue'
+import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import {
   MCP_TEST_SCOPE,
   formatDate,
@@ -143,9 +143,7 @@ const updateForm = <K extends keyof McpServerForm>(field: K, value: McpServerFor
             <span class="inline-block h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" />{{ t('monitor.synchronizing') }}
           </span>
         </div>
-        <div v-if="loading && !servers.length" class="flex flex-1 min-h-[180px] flex-col justify-center gap-3 pr-1" role="status" :aria-label="t('common.loading')">
-          <SkeletonBlock v-for="i in 4" :key="i" :width="i % 2 ? '88%' : '64%'" height="12px" />
-        </div>
+        <SpinnerLoader v-if="loading && !servers.length" class="flex-1 min-h-[180px]" />
         <div v-else-if="!servers.length" class="monitor-empty flex flex-1 min-h-[180px] flex-col items-center justify-center rounded-md text-center text-sm">
           <p class="font-medium">{{ t('monitor.emptyServers') }}</p>
           <p class="mt-1 text-xs">{{ t('monitor.emptyServersHint') }}</p>

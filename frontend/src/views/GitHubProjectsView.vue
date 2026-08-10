@@ -13,6 +13,7 @@ import type {
 } from '@/services/projects/projectApi'
 import router from '@/router'
 import { useAuthStore } from '@/stores/authStore'
+import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
@@ -400,20 +401,8 @@ onBeforeUnmount(stopViewReads)
       {{ errorMsg }}
     </section>
 
-    <section v-if="loading" class="projects-grid" :aria-label="t('common.loading')">
-      <article v-for="index in 9" :key="index" class="project-card project-card--skeleton glass-card">
-        <div class="h-4 w-2/3 rounded-full bg-stone-200/80" />
-        <div class="space-y-2">
-          <div class="h-3 w-full rounded-full bg-stone-100" />
-          <div class="h-3 w-4/5 rounded-full bg-stone-100" />
-          <div class="h-3 w-3/5 rounded-full bg-stone-100" />
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <div class="h-6 w-20 rounded-full bg-stone-100" />
-          <div class="h-6 w-16 rounded-full bg-stone-100" />
-        </div>
-        <div class="mt-auto h-9 rounded-full bg-stone-100" />
-      </article>
+    <section v-if="loading" class="glass-card" :aria-label="t('common.loading')">
+      <SpinnerLoader class="min-h-[320px]" />
     </section>
 
     <section v-else-if="projects.length === 0 && !errorMsg" class="empty-state glass-card">
@@ -754,27 +743,6 @@ onBeforeUnmount(stopViewReads)
   gap: 12px;
 }
 
-.project-card--skeleton {
-  position: relative;
-  display: flex;
-  min-height: 248px;
-  flex-direction: column;
-  gap: 18px;
-  overflow: hidden;
-  padding: 22px;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-.project-card--skeleton::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(135deg, rgb(var(--card-rgb) / 0.88), transparent 42%),
-    radial-gradient(circle at 14% 0%, rgb(var(--stone-400-rgb) / 0.10), transparent 34%);
-  opacity: 0.92;
-}
 
 .empty-state {
   padding: 42px;

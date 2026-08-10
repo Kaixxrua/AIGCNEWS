@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import SpinnerLoader from '@/components/SpinnerLoader.vue'
 const { t } = useI18n()
 defineProps<{
   reportContent: string
@@ -30,15 +31,7 @@ const emit = defineEmits<{
       <span class="status-dot bg-cyan-500 animate-[pulseDot_2s_ease-in-out_infinite]" />
       {{ t('report.generatingType', { type: currentTypeLabel }) }}
     </div>
-    <div class="space-y-2.5 animate-pulse">
-      <div class="h-5 w-48 rounded-lg bg-stone-100" />
-      <div class="h-3.5 w-full rounded bg-stone-50" />
-      <div class="h-3.5 w-5/6 rounded bg-stone-50" />
-      <div class="h-3.5 w-4/6 rounded bg-stone-50" />
-      <div class="h-5 w-36 rounded-lg bg-stone-100 mt-3" />
-      <div class="h-3.5 w-full rounded bg-stone-50" />
-      <div class="h-3.5 w-3/4 rounded bg-stone-50" />
-    </div>
+    <SpinnerLoader class="min-h-[200px]" />
   </div>
 
   <!-- 报告正文 -->

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import SkeletonBlock from '@/components/SkeletonBlock.vue'
+import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useRouter } from 'vue-router'
 import { useClipboard } from '@/composables/useClipboard'
 import { useMcpConnectController } from '@/composables/useMcpConnectController'
@@ -195,7 +195,7 @@ onBeforeUnmount(dispose)
 
       <section v-if="authStore.isLoggedIn" class="glass-card p-5 md:p-6">
         <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.tokenManagement') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.tokenTitle') }}</h2></div><button class="btn-secondary text-xs" :disabled="loadingTokens" @click="loadTokens">{{ t(loadingTokens ? 'common.refreshing' : 'common.refresh') }}</button></div>
-        <div v-if="loadingTokens && !tokens.length" class="mt-4 grid content-start gap-3 pr-1" role="status" :aria-label="t('common.loading')"><div v-for="i in 2" :key="i" class="grid gap-3 rounded-[20px] border border-stone-200 bg-card/70 p-4 md:h-24"><SkeletonBlock width="36%" height="16px" radius="8px" /><SkeletonBlock width="58%" height="11px" /><SkeletonBlock width="44%" height="10px" /></div></div>
+        <SpinnerLoader v-if="loadingTokens && !tokens.length" class="mt-4 min-h-[180px]" />
         <div v-else-if="tokens.length" class="mcp-token-list mt-4 grid content-start gap-3 pr-1"><div v-for="item in tokens" :key="item.id" class="grid gap-3 rounded-[20px] border border-stone-200 bg-card/70 p-4 md:h-24 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:overflow-hidden"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><span class="min-w-0 max-w-full truncate font-semibold text-stone-800" :title="item.client_label || item.client_type">{{ item.client_label || item.client_type }}</span><span class="shrink-0 rounded-full px-2 py-0.5 text-2xs" :class="tokenStatus(item) === 'valid' ? 'bg-[var(--token-valid-bg)] text-[var(--projects-success)]' : 'bg-stone-100 text-stone-500'">{{ tokenStatusLabel(tokenStatus(item)) }}</span></div><p class="mt-2 truncate font-mono text-xs text-stone-500" :title="item.token_hint">{{ item.token_hint }}</p><p class="mt-1 truncate text-2xs text-stone-400">{{ t('mcp.tokenCreatedUsed', { created: formatDate(item.created_at), used: formatDate(item.last_used_at) }) }}</p></div><button class="btn-secondary shrink-0 text-xs text-rose-700" :disabled="deletingId === item.id" @click="removeToken(item)">{{ t(deletingId === item.id ? 'mcp.deleting' : 'common.delete') }}</button></div></div>
         <p v-else-if="!loadingTokens" class="mt-4 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">{{ t('mcp.noTokens') }}</p>
       </section>
