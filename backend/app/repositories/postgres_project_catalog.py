@@ -709,6 +709,78 @@ class PostgresProjectCatalogRepository:
             if row.get("repo_id")
         }
 
+    def list_github_hot_for_date(
+        self,
+        *,
+        metric_date: str,
+        limit: int,
+        min_stars: int = 500,
+        enriched_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        """看板 GitHub 今日暴涨榜：指定指标日按 hot_score(v5) 排序的正增长仓库。
+
+        与 list_projects(scope="today") 同一收录口径（min_stars、enriched、
+        availability_status='active'、daily_growth_available、正增长），但
+        指标日期由调用方传入——看板默认视图可能回溯到窗口内最近有指标的
+        日期，历史视图则显式指定；scope="today" 内部硬编码当天，无法复用。
+        """
+        limit = max(1, min(int(limit or 1), 500))
+        conditions = [
+            "gm.metric_date = %s",
+            "gm.daily_growth_available = TRUE",
+            "gm.daily_star_growth > 0",
+            "COALESCE(c.stars, 0) >= %s",
+            "c.availability_status = 'active'",
+        ]
+        params: list[Any] = [metric_date, min_stars]
+        enrichment_join = ""
+        if enriched_only:
+            enrichment_join = (
+                " LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id"
+            )
+            conditions.append("ge.status = 'succeeded'")
+        params.append(limit)
+        sql = f"""
+            SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
+                   c.language, c.topics_json::text AS topics_json,
+                   gm.stars, gm.forks, gm.watchers,
+                   gm.daily_star_growth, gm.daily_growth_source,
+                   gm.previous_snapshot_date, gm.hot_score, gm.metric_date
+            FROM github_repo_daily_metrics gm
+            JOIN github_repo_candidates c ON c.repo_id = gm.repo_id{enrichment_join}
+            WHERE {' AND '.join(conditions)}
+            ORDER BY gm.hot_score DESC NULLS LAST,
+                     gm.daily_star_growth DESC NULLS LAST,
+                     gm.stars DESC NULLS LAST,
+                     c.full_name ASC
+            LIMIT %s
+        """
+        with self._transaction() as connection:
+            with connection.cursor() as cursor:
+                self._begin_read(cursor)
+                cursor.execute(sql, tuple(params))
+                return list(cursor.fetchall())
+
+    def list_github_hot_dates(self, *, limit: int = 60) -> list[str]:
+        """有日度热度指标（v5）的日期降序列表，供看板 github 分支做日期回溯。"""
+        limit = max(1, min(int(limit or 1), 365))
+        with self._transaction() as connection:
+            with connection.cursor() as cursor:
+                self._begin_read(cursor)
+                cursor.execute(
+                    """
+                    SELECT DISTINCT metric_date
+                    FROM github_repo_daily_metrics
+                    ORDER BY metric_date DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                rows = cursor.fetchall()
+        return [
+            str(row.get("metric_date") or "") for row in rows if row.get("metric_date")
+        ]
+
     def list_projects(
         self,
         *,

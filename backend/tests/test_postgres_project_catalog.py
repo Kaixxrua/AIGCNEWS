@@ -77,6 +77,65 @@ def test_signatures_match_frozen_contract_exactly() -> None:
     assert stripped(PostgresProjectCatalogRepository.find_lexical_candidate_lanes) == stripped(ProjectCatalogRepository.find_lexical_candidate_lanes)
     assert stripped(PostgresProjectCatalogRepository.list_projects) == stripped(ProjectCatalogRepository.list_projects)
     assert stripped(PostgresProjectCatalogRepository.get_project_categories) == stripped(ProjectCatalogRepository.get_project_categories)
+    assert stripped(PostgresProjectCatalogRepository.list_github_hot_for_date) == stripped(ProjectCatalogRepository.list_github_hot_for_date)
+    assert stripped(PostgresProjectCatalogRepository.list_github_hot_dates) == stripped(ProjectCatalogRepository.list_github_hot_dates)
+
+
+def test_list_github_hot_for_date_is_parameterized_ordered_and_bounded() -> None:
+    rows = [
+        {
+            "repo_id": "owner/repo",
+            "full_name": "owner/repo",
+            "metric_date": "2026-08-10",
+            "hot_score": 96.5,
+        }
+    ]
+    database = Database([rows])
+    result = PostgresProjectCatalogRepository(database).list_github_hot_for_date(
+        metric_date="2026-08-10' OR TRUE --",
+        limit=1000,
+    )
+    assert result == rows
+    assert database.entered == database.exited == 1
+    sql, params = database.cursor.calls[1]
+    # 指标日过滤 + 与 list_projects(scope="today") 同一收录口径
+    assert "gm.metric_date = %s" in sql
+    assert "gm.daily_growth_available = TRUE" in sql
+    assert "gm.daily_star_growth > 0" in sql
+    assert "COALESCE(c.stars, 0) >= %s" in sql
+    assert "c.availability_status = 'active'" in sql
+    assert "github_repo_enrichments ge" in sql
+    assert "ge.status = 'succeeded'" in sql
+    # hot_score(v5) 排序与 /projects 今日暴涨一致
+    assert "ORDER BY gm.hot_score DESC NULLS LAST" in sql
+    assert "gm.daily_star_growth DESC NULLS LAST" in sql
+    # 注入串只进参数不进 SQL；limit 收敛到 500 上限
+    assert "OR TRUE" not in sql
+    assert params == ("2026-08-10' OR TRUE --", 500, 500)
+
+
+def test_list_github_hot_for_date_without_enrichment_filter_omits_join() -> None:
+    database = Database([[]])
+    result = PostgresProjectCatalogRepository(database).list_github_hot_for_date(
+        metric_date="2026-08-10",
+        limit=10,
+        min_stars=100,
+        enriched_only=False,
+    )
+    assert result == []
+    sql, params = database.cursor.calls[1]
+    assert "github_repo_enrichments" not in sql
+    assert params == ("2026-08-10", 100, 10)
+
+
+def test_list_github_hot_dates_returns_descending_strings_bounded() -> None:
+    database = Database([[{"metric_date": "2026-08-10"}, {"metric_date": "2026-08-09"}, {"metric_date": None}]])
+    result = PostgresProjectCatalogRepository(database).list_github_hot_dates(limit=1000)
+    assert result == ["2026-08-10", "2026-08-09"]
+    sql, params = database.cursor.calls[1]
+    assert "SELECT DISTINCT metric_date" in sql
+    assert "ORDER BY metric_date DESC" in sql
+    assert params == (365,)
 
 
 def test_empty_candidate_list_short_circuits_without_transaction() -> None:

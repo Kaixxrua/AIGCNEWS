@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Sequence, TypedDict
@@ -80,6 +81,56 @@ SOURCE_WEIGHTS: dict[str, float] = {
 }
 
 FINALIZE_HOUR = 15
+
+# 看板 github 榜自 v5 热度指标表读取后，条目的来源渠道标记。
+# 与 rank_snapshots 的 github_trending_daily/github_hot_daily 区分开，
+# 便于排查口径（response items[].source_channel 可见）。
+GITHUB_METRICS_DAILY_CHANNEL = "github_metrics_daily"
+
+
+def github_metric_to_doc(row: dict[str, Any], rank: int) -> dict[str, Any]:
+    """把项目库日度热度指标行映射为看板 doc 形状（与 rank_snapshots 文档同构）。
+
+    前端看板按 doc 形状渲染（title/url/stars/language/summary + raw_score
+    兜底），此处保持 wire 兼容；日增、基线日期、热度分作为附加字段透出，
+    旧前端忽略、新前端可用。rank 为按 hot_score 排序后的 1 起始名次。
+    """
+    topics_raw = row.get("topics_json") or ""
+    topics: list[str] = []
+    if topics_raw:
+        try:
+            parsed = json.loads(topics_raw)
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, list):
+            topics = [str(item) for item in parsed if item]
+    metric_date = str(row.get("metric_date") or "")
+    daily_growth = int(row.get("daily_star_growth") or 0)
+    hot_score = float(row.get("hot_score") or 0.0)
+    return {
+        "id": row.get("repo_id"),
+        "source": "github",
+        "title": row.get("full_name"),
+        "url": row.get("url"),
+        "summary": row.get("description") or "",
+        "stars": int(row.get("stars") or 0),
+        "forks": int(row.get("forks") or 0),
+        "language": row.get("language") or "",
+        "tags": topics,
+        # raw_score/score 沿用看板既有语义：github 的展示主字段是 stars，
+        # raw_score 兜底取日增（doc_weight 也读它），score 承载 hot_score。
+        "raw_score": float(daily_growth),
+        "score": hot_score,
+        "rank_in_period": rank,
+        "source_channel": GITHUB_METRICS_DAILY_CHANNEL,
+        "snapshot_date": metric_date,
+        "published_date": metric_date,
+        "published_at": None,
+        "daily_star_growth": daily_growth,
+        "daily_growth_source": row.get("daily_growth_source"),
+        "previous_snapshot_date": row.get("previous_snapshot_date"),
+        "hot_score": hot_score,
+    }
 
 
 def enrich_doc_pdf_url(doc: dict[str, Any], request: Request) -> dict[str, Any]:

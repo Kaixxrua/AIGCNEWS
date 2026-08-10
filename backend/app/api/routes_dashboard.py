@@ -12,6 +12,7 @@ from fastapi_cache.decorator import cache
 
 from backend.app.api.dependencies import (
     get_document_repository,
+    get_github_hot_board_reader,
     get_project_catalog_query_service,
     get_rank_snapshot_repository,
     get_user_account_repository,
@@ -23,7 +24,10 @@ from backend.app.repositories.document_repository import (
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.repositories.user_account_repository import UserStatisticsReader
 from backend.app.services.dashboard import policy
-from backend.app.services.dashboard.query_service import DashboardQueryService
+from backend.app.services.dashboard.query_service import (
+    DashboardQueryService,
+    GitHubHotBoardReader,
+)
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
 router = APIRouter()
@@ -166,10 +170,11 @@ async def get_top_list(
         "有快照的日期（有界窗口），响应带 requested_date/resolved_date/stale 标记",
     ),
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
+    github_hot: GitHubHotBoardReader = Depends(get_github_hot_board_reader),
 ):
     """Return top-N daily documents ranked by vote count, optionally filtered by source and date."""
     source_type = None if (not source or source == "all") else source
-    query_service = DashboardQueryService(rank_snapshots)
+    query_service = DashboardQueryService(rank_snapshots, github_hot)
     resolution = await asyncio.to_thread(
         query_service.resolve_display_snapshot_date, date, "daily", source_type
     )
@@ -270,10 +275,11 @@ async def get_trend_radar(
         "有快照的日期（有界窗口），响应带 requested_date/resolved_date/stale 标记",
     ),
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
+    github_hot: GitHubHotBoardReader = Depends(get_github_hot_board_reader),
 ):
     """Return trend radar chart data computed from filtered top documents."""
     source_type = None if (not source or source == "all") else source
-    query_service = DashboardQueryService(rank_snapshots)
+    query_service = DashboardQueryService(rank_snapshots, github_hot)
     resolution = await asyncio.to_thread(
         query_service.resolve_display_snapshot_date, date, "daily", source_type
     )
@@ -329,15 +335,17 @@ async def get_dashboard_summary(
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
+    github_hot: GitHubHotBoardReader = Depends(get_github_hot_board_reader),
 ):
     """Return a combined dashboard payload: daily top-10 + radar + basic stats + source breakdown.
 
     当传入 date 参数时，从 document_rank_snapshots 表查询该日期的历史排行数据；
     未传入时默认查当天，当天无快照则回溯窗口内最近有快照的日期（stale 标记）。
+    github 日榜改读项目库 v5 热度指标（今日暴涨口径），不再镜像 trending。
     """
     from datetime import timedelta, timezone as _tz
 
-    query_service = DashboardQueryService(rank_snapshots)
+    query_service = DashboardQueryService(rank_snapshots, github_hot)
     resolution = await asyncio.to_thread(
         query_service.resolve_display_snapshot_date, date, "daily", None
     )
@@ -470,15 +478,26 @@ async def get_snapshot_dates(
     limit: int = Query(default=60, ge=1, le=365),
     source: Optional[str] = Query(default=None),
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
+    github_hot: GitHubHotBoardReader = Depends(get_github_hot_board_reader),
 ):
-    """返回指定来源有日榜快照记录的日期列表（降序）。"""
+    """返回指定来源有日榜快照记录的日期列表（降序）。
+
+    github 日榜已切换 v5 热度指标口径，可用日期以指标表为准，
+    保证历史日期选择器与榜单实际可读数据一致。
+    """
     source_type = None if (not source or source == "all") else source
-    dates = await asyncio.to_thread(
-        rank_snapshots.get_snapshot_dates,
-        limit,
-        source_type,
-        "daily",
-    )
+    if source_type == "github":
+        dates = await asyncio.to_thread(
+            github_hot.list_github_hot_dates,
+            limit=limit,
+        )
+    else:
+        dates = await asyncio.to_thread(
+            rank_snapshots.get_snapshot_dates,
+            limit,
+            source_type,
+            "daily",
+        )
     return {
         "dates": dates,
         "total": len(dates),

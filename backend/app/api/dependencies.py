@@ -69,6 +69,7 @@ from backend.app.services.briefing.composition import provide_daily_briefing_ser
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.chat.conversation_service import ConversationService
+from backend.app.services.dashboard.query_service import GitHubHotBoardReader
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
@@ -454,6 +455,15 @@ def get_personal_projects_service(
 def get_project_catalog_query_service() -> ProjectCatalogQueryService:
     """公共项目目录查询编排服务；仓储仍经工厂按次解析，保持既有连接语义。"""
     return ProjectCatalogQueryService(repository_factory=get_project_catalog_repository)
+
+
+def get_github_hot_board_reader() -> GitHubHotBoardReader:
+    """看板 github 榜的 v5 热度读取（项目库目录仓储结构式满足该协议）。
+
+    经工厂按次解析，与 get_project_catalog_query_service 同一连接语义；
+    协议窄化到看板所需的两个方法，便于路由测试用假实现替换。
+    """
+    return get_project_catalog_repository()
 
 
 def get_github_project_recommendation_repository(

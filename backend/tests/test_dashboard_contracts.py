@@ -15,6 +15,7 @@ from starlette.requests import Request
 from backend.app.api import routes_dashboard
 from backend.app.api.dependencies import (
     get_document_repository,
+    get_github_hot_board_reader,
     get_rank_snapshot_repository,
 )
 from backend.app.services.dashboard import policy
@@ -79,6 +80,55 @@ class FakeRankSnapshotReader:
     ) -> set[str]:
         self.doc_id_calls.append((snapshot_date, source_channel))
         return set(self.yesterday_ids)
+
+
+class FakeGitHubHotReader:
+    """看板 github 榜 v5 热度读取假实现，按 metric_date 供给指标行。"""
+
+    def __init__(
+        self,
+        rows: dict[str, list[dict[str, Any]]] | None = None,
+        dates: list[str] | None = None,
+    ) -> None:
+        self.rows = rows or {}
+        self.dates = list(dates or [])
+        self.hot_calls: list[tuple[str, int]] = []
+        self.date_calls: list[int] = []
+
+    def list_github_hot_for_date(
+        self,
+        *,
+        metric_date: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        self.hot_calls.append((metric_date, limit))
+        return list(self.rows.get(metric_date, []))[:limit]
+
+    def list_github_hot_dates(self, *, limit: int = 60) -> list[str]:
+        self.date_calls.append(limit)
+        return list(self.dates[:limit])
+
+
+def _github_metric_row(**overrides: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "repo_id": "owner/repo",
+        "full_name": "owner/repo",
+        "title": "repo",
+        "url": "https://github.com/owner/repo",
+        "description": "LLM agent framework",
+        "language": "Python",
+        "topics_json": '["llm", "agents"]',
+        "stars": 12000,
+        "forks": 800,
+        "watchers": 150,
+        "daily_star_growth": 514,
+        "daily_growth_source": "snapshot_delta",
+        "previous_snapshot_date": "2026-08-09",
+        "hot_score": 96.5,
+        "metric_date": "2026-08-10",
+    }
+    row.update(overrides)
+    return row
 
 
 def _request(path: str, query: str = "", proto: str | None = None) -> Request:
@@ -304,21 +354,21 @@ def test_top_route_preserves_dedupe_limit_and_relative_pdf_url() -> None:
     date = "2020-01-02"
     reader = FakeRankSnapshotReader(
         {
-            (date, "github_trending_daily", "github"): [
+            (date, "huggingface_daily_html", "arxiv"): [
                 {
                     "id": "first",
-                    "source": "github",
-                    "url": "https://example.test/repo",
+                    "source": "arxiv",
+                    "url": "https://example.test/paper",
                     "local_pdf_path": "storage/papers/report.pdf",
                 },
                 {
                     "id": "duplicate",
-                    "source": "github",
-                    "url": "https://example.test/repo",
+                    "source": "arxiv",
+                    "url": "https://example.test/paper",
                 },
                 {
                     "id": "second",
-                    "source": "github",
+                    "source": "arxiv",
                     "url": "https://example.test/other",
                     "local_pdf_path": None,
                 },
@@ -328,11 +378,12 @@ def test_top_route_preserves_dedupe_limit_and_relative_pdf_url() -> None:
     app = FastAPI()
     app.include_router(routes_dashboard.router, prefix="/api")
     app.dependency_overrides[get_rank_snapshot_repository] = lambda: reader
+    app.dependency_overrides[get_github_hot_board_reader] = lambda: FakeGitHubHotReader()
 
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
     try:
         response = TestClient(app).get(
-            f"/api/dashboard/top?source=github&limit=2&date={date}",
+            f"/api/dashboard/top?source=arxiv&limit=2&date={date}",
             headers={"X-Forwarded-Proto": "https"},
         )
     finally:
@@ -360,7 +411,7 @@ def test_top_route_preserves_dedupe_limit_and_relative_pdf_url() -> None:
     # 显式 date 不回溯：不触发可用日期查询
     assert reader.date_calls == []
     assert reader.document_calls == [
-        (date, "github_trending_daily", "github", 500)
+        (date, "huggingface_daily_html", "arxiv", 500)
     ]
 
 
@@ -583,7 +634,7 @@ class FakeUserStatistics:
         return 0
 
 
-def _summary_client(monkeypatch, catalog_factory, reader=None) -> TestClient:
+def _summary_client(monkeypatch, catalog_factory, reader=None, github_hot=None) -> TestClient:
     from backend.app.api.dependencies import (
         get_document_repository,
         get_project_catalog_query_service,
@@ -602,6 +653,9 @@ def _summary_client(monkeypatch, catalog_factory, reader=None) -> TestClient:
     app.dependency_overrides[get_user_account_repository] = lambda: FakeUserStatistics()
     app.dependency_overrides[get_project_catalog_query_service] = (
         lambda: ProjectCatalogQueryService(repository_factory=catalog_factory)
+    )
+    app.dependency_overrides[get_github_hot_board_reader] = (
+        lambda: github_hot if github_hot is not None else FakeGitHubHotReader()
     )
     return TestClient(app)
 
@@ -793,41 +847,341 @@ def test_display_date_default_without_any_snapshot_stays_on_today() -> None:
     }
 
 
-def _top_client(reader: FakeRankSnapshotReader) -> TestClient:
+def _top_client(
+    reader: FakeRankSnapshotReader,
+    github_hot: FakeGitHubHotReader | None = None,
+) -> TestClient:
     app = FastAPI()
     app.include_router(routes_dashboard.router, prefix="/api")
     app.dependency_overrides[get_rank_snapshot_repository] = lambda: reader
+    app.dependency_overrides[get_github_hot_board_reader] = (
+        lambda: github_hot if github_hot is not None else FakeGitHubHotReader()
+    )
     return TestClient(app)
+
+
+# ── github 日榜切换 v5 热度指标（今日暴涨口径）──────────────────────────
+# 首页 github 榜原镜像 GitHub trending 快照（rank_snapshots 的
+# github_trending_daily 渠道）；现改读项目库日度热度指标（hot_score v5
+# 排序的正增长仓库）。日期回溯与历史可用日期同样以指标表为准；
+# 未注入热度读取的调用方（MCP inbound）保持 trending 快照口径。
 
 
 def test_top_route_default_view_falls_back_to_latest_snapshot_date() -> None:
     today = policy.today_local()
     fallback = (today - timedelta(days=2)).isoformat()
-    reader = FakeRankSnapshotReader(
-        {
-            (fallback, "github_trending_daily", "github"): [
-                {"id": "repo", "source": "github", "url": "https://example.test/r"}
-            ]
-        },
+    reader = FakeRankSnapshotReader()
+    github_hot = FakeGitHubHotReader(
+        {fallback: [_github_metric_row(metric_date=fallback)]},
         dates=[fallback],
     )
 
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-fallback")
     try:
-        response = _top_client(reader).get("/api/dashboard/top?source=github&limit=5")
+        response = _top_client(reader, github_hot).get(
+            "/api/dashboard/top?source=github&limit=5"
+        )
     finally:
         FastAPICache.reset()
 
     assert response.status_code == 200
     payload = response.json()
-    assert [item["id"] for item in payload["items"]] == ["repo"]
+    assert [item["id"] for item in payload["items"]] == ["owner/repo"]
     assert payload["snapshot_date"] == fallback
     assert payload["requested_date"] == today.isoformat()
     assert payload["resolved_date"] == fallback
     assert payload["stale"] is True
     assert payload["is_finalized"] is True
     assert payload["is_embargoed"] is False
-    assert reader.document_calls == [(fallback, "github_trending_daily", "github", 500)]
+    # 日期回溯与榜单读取都走 v5 指标，不再触碰 trending 快照
+    assert github_hot.date_calls == [policy.DEFAULT_SNAPSHOT_LOOKBACK_DAYS]
+    assert github_hot.hot_calls == [(fallback, 500)]
+    assert reader.date_calls == []
+    assert reader.document_calls == []
+
+
+def test_top_route_github_metrics_doc_shape_is_wire_compatible() -> None:
+    today = policy.today_local().isoformat()
+    reader = FakeRankSnapshotReader()
+    github_hot = FakeGitHubHotReader(
+        {
+            today: [
+                _github_metric_row(),
+                _github_metric_row(
+                    repo_id="owner/other",
+                    full_name="owner/other",
+                    url="https://github.com/owner/other",
+                    daily_star_growth=88,
+                    hot_score=91.3,
+                    topics_json="not-json",
+                ),
+            ]
+        },
+        dates=[today],
+    )
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-v5shape")
+    try:
+        response = _top_client(reader, github_hot).get(
+            "/api/dashboard/top?source=github&limit=5"
+        )
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 2
+    first = items[0]
+    # 看板渲染所需的核心字段：标题/链接/来源/星数/语言/摘要
+    assert first["source"] == "github"
+    assert first["title"] == "owner/repo"
+    assert first["url"] == "https://github.com/owner/repo"
+    assert first["stars"] == 12000
+    assert first["language"] == "Python"
+    assert first["summary"] == "LLM agent framework"
+    assert first["tags"] == ["llm", "agents"]
+    # 既有语义字段：raw_score 兜底取日增，score 承载 hot_score，名次连续
+    assert first["raw_score"] == 514.0
+    assert first["score"] == 96.5
+    assert [item["rank_in_period"] for item in items] == [1, 2]
+    assert first["source_channel"] == policy.GITHUB_METRICS_DAILY_CHANNEL
+    # 附加透出的 v5 字段（旧前端忽略）
+    assert first["daily_star_growth"] == 514
+    assert first["daily_growth_source"] == "snapshot_delta"
+    assert first["previous_snapshot_date"] == "2026-08-09"
+    assert first["hot_score"] == 96.5
+    # topics_json 解析失败时降级为空列表而非 500
+    assert items[1]["tags"] == []
+
+
+def test_top_route_github_explicit_date_is_honest() -> None:
+    reader = FakeRankSnapshotReader()
+    github_hot = FakeGitHubHotReader(
+        {"2026-08-01": [_github_metric_row(metric_date="2026-08-01")]},
+        dates=["2026-08-09"],
+    )
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-v5explicit")
+    try:
+        response = _top_client(reader, github_hot).get(
+            "/api/dashboard/top?source=github&date=2026-08-01"
+        )
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    payload = response.json()
+    # 显式 date 永不回溯：不查可用日期，直接按该日读指标
+    assert github_hot.date_calls == []
+    assert github_hot.hot_calls == [("2026-08-01", 500)]
+    assert payload["requested_date"] == "2026-08-01"
+    assert payload["resolved_date"] == "2026-08-01"
+    assert payload["stale"] is False
+    assert [item["id"] for item in payload["items"]] == ["owner/repo"]
+
+
+def test_top_route_github_metricless_date_returns_honest_empty_board() -> None:
+    # 指标缺失的日期返回空榜，不回退 trending 快照混排口径
+    reader = FakeRankSnapshotReader(
+        {
+            ("2026-08-01", "github_trending_daily", "github"): [
+                {"id": "legacy", "source": "github"}
+            ]
+        }
+    )
+    github_hot = FakeGitHubHotReader()
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-v5empty")
+    try:
+        response = _top_client(reader, github_hot).get(
+            "/api/dashboard/top?source=github&date=2026-08-01"
+        )
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"] == []
+    assert reader.document_calls == []
+
+
+def test_top_route_github_default_view_fallback_still_respects_embargo(monkeypatch) -> None:
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[no-untyped-def]
+            value = cls(2026, 8, 10, 10, 0, 0)  # 10:00 < FINALIZE_HOUR(15)
+            return value.replace(tzinfo=tz) if tz else value
+
+    monkeypatch.setattr(policy, "datetime", _FrozenDateTime)
+    # today=2026-08-10 无指标 → 回溯到昨天 08-09 → 昨天仍在静默期 → 拦截
+    reader = FakeRankSnapshotReader()
+    github_hot = FakeGitHubHotReader(dates=["2026-08-09", "2026-08-08"])
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-v5embargo")
+    try:
+        response = _top_client(reader, github_hot).get(
+            "/api/dashboard/top?source=github"
+        )
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"] == []
+    assert payload["requested_date"] == "2026-08-10"
+    assert payload["resolved_date"] == "2026-08-09"
+    assert payload["stale"] is True
+    assert payload["is_embargoed"] is True
+    # 静默期拦截先于榜单查询，未解禁数据不外泄
+    assert github_hot.hot_calls == []
+
+
+def test_github_service_without_reader_keeps_trending_snapshot_reads() -> None:
+    # MCP inbound 等未注入热度读取的调用方：github 日榜保持 trending 快照口径
+    docs = [{"id": "repo", "source": "github"}]
+    reader = FakeRankSnapshotReader(
+        {("2026-08-01", "github_trending_daily", "github"): docs}
+    )
+    service = DashboardQueryService(reader)
+
+    result = service.get_docs_for_date("2026-08-01", "daily", "github", 500)
+
+    assert result == docs
+    assert reader.document_calls == [
+        ("2026-08-01", "github_trending_daily", "github", 500)
+    ]
+
+
+def test_github_service_metric_dates_drive_default_resolution_with_reader() -> None:
+    github_hot = FakeGitHubHotReader(dates=["2026-08-09"])
+    reader = FakeRankSnapshotReader(dates=["2026-08-08"])
+    service = DashboardQueryService(reader, github_hot)
+
+    resolution = service.resolve_display_snapshot_date(None, "daily", "github")
+
+    assert resolution["resolved_date"] == "2026-08-09"
+    assert github_hot.date_calls == [policy.DEFAULT_SNAPSHOT_LOOKBACK_DAYS]
+    assert reader.date_calls == []
+
+
+def test_snapshot_dates_route_github_uses_metric_dates() -> None:
+    reader = FakeRankSnapshotReader(dates=["2026-08-05"])
+    github_hot = FakeGitHubHotReader(dates=["2026-08-10", "2026-08-08"])
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-dates-github")
+    try:
+        response = _top_client(reader, github_hot).get(
+            "/api/dashboard/snapshot-dates?source=github&limit=5"
+        )
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dates"] == ["2026-08-10", "2026-08-08"]
+    assert payload["source"] == "github"
+    assert github_hot.date_calls == [5]
+    assert reader.date_calls == []
+
+
+def test_snapshot_dates_route_other_sources_keep_snapshot_reads() -> None:
+    reader = FakeRankSnapshotReader(dates=["2026-08-07"])
+    github_hot = FakeGitHubHotReader(dates=["2026-08-10"])
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-dates-arxiv")
+    try:
+        response = _top_client(reader, github_hot).get(
+            "/api/dashboard/snapshot-dates?source=arxiv&limit=3"
+        )
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    assert response.json()["dates"] == ["2026-08-07"]
+    assert reader.date_calls == [(3, "arxiv", "daily")]
+    assert github_hot.date_calls == []
+
+
+def test_github_metric_to_doc_defaults_and_rank() -> None:
+    doc = policy.github_metric_to_doc(
+        {"repo_id": "a/b", "full_name": "a/b", "metric_date": "2026-08-10"},
+        rank=7,
+    )
+
+    assert doc["id"] == "a/b"
+    assert doc["source"] == "github"
+    assert doc["title"] == "a/b"
+    assert doc["summary"] == ""
+    assert doc["stars"] == 0
+    assert doc["language"] == ""
+    assert doc["tags"] == []
+    assert doc["raw_score"] == 0.0
+    assert doc["score"] == 0.0
+    assert doc["rank_in_period"] == 7
+    assert doc["source_channel"] == policy.GITHUB_METRICS_DAILY_CHANNEL
+    assert doc["snapshot_date"] == "2026-08-10"
+    assert doc["published_at"] is None
+
+
+def test_github_service_weekly_keeps_snapshot_channel_even_with_reader() -> None:
+    # v5 热度只有日榜口径：周/月榜即使有注入也仍走 trending 快照
+    docs = [{"id": "repo", "source": "github"}]
+    reader = FakeRankSnapshotReader(
+        {("2026-08-01", "github_trending_weekly", "github"): docs}
+    )
+    github_hot = FakeGitHubHotReader()
+    service = DashboardQueryService(reader, github_hot)
+
+    result = service.get_docs_for_date("2026-08-01", "weekly", "github", 500)
+
+    assert result == docs
+    assert reader.document_calls == [
+        ("2026-08-01", "github_trending_weekly", "github", 500)
+    ]
+    assert github_hot.hot_calls == []
+
+
+def test_summary_mix_view_github_items_come_from_metrics(monkeypatch) -> None:
+    date = "2020-01-02"
+    reader = FakeRankSnapshotReader(
+        {
+            (date, "huggingface_daily_html", "arxiv"): [
+                {
+                    "id": "paper-1",
+                    "source": "arxiv",
+                    "title": "A paper",
+                    "url": "https://example.test/paper",
+                }
+            ]
+        }
+    )
+    github_hot = FakeGitHubHotReader({date: [_github_metric_row(metric_date=date)]})
+
+    class FakeCatalog:
+        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
+            return {"items": [], "total": 0, "page": 1, "page_size": 1}
+
+    client = _summary_client(
+        monkeypatch, lambda: FakeCatalog(), reader=reader, github_hot=github_hot
+    )
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-summary-mix")
+    try:
+        response = client.get(f"/api/dashboard/summary?date={date}")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    top_list = response.json()["top_list"]
+    sources = {(item["id"], item["source"]) for item in top_list}
+    assert ("owner/repo", "github") in sources
+    assert ("paper-1", "arxiv") in sources
+    github_item = next(item for item in top_list if item["source"] == "github")
+    assert github_item["daily_star_growth"] == 514
+    assert github_item["source_channel"] == policy.GITHUB_METRICS_DAILY_CHANNEL
+    # 混合视图下 github 读指标表，其他来源仍读快照
+    assert github_hot.hot_calls == [(date, 500)]
+    assert (date, "huggingface_daily_html", "arxiv", 500) in reader.document_calls
+    assert all(call[1] != "github_trending_daily" for call in reader.document_calls)
 
 
 def test_top_route_default_view_fallback_still_respects_embargo(monkeypatch) -> None:

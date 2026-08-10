@@ -289,3 +289,39 @@ def test_real_favorites_visibility_matches_category_counts(catalog: Any) -> None
     assert categories["total"] == listed["total"]
     counts = {item["slug"]: item["count"] for item in categories["items"]}
     assert counts.get("other") == 1
+
+
+def test_real_github_hot_board_reads_v5_metrics(catalog: Any) -> None:
+    # 看板 github 今日暴涨榜：同一收录口径（enriched/min_stars/active/正增长），
+    # hot_score(v5) 降序；夹具中 acme/draft 无增强无指标，永不出现。
+    from datetime import date as _date
+
+    today = _date.today().isoformat()  # 夹具指标日落 CURRENT_DATE
+    rows = catalog.list_github_hot_for_date(metric_date=today, limit=10)
+
+    assert [row["repo_id"] for row in rows] == ["acme/alpha", "acme/beta"]
+    first = rows[0]
+    assert first["full_name"] == "acme/alpha"
+    assert first["url"] == "https://github.com/acme/alpha"
+    assert first["description"] == "Local RAG workspace"
+    assert first["language"] == "Python"
+    assert first["topics_json"] == '["rag", "knowledge-base"]'
+    assert first["stars"] == 1200
+    assert first["daily_star_growth"] == 42
+    assert first["daily_growth_source"] == "snapshot_delta"
+    assert first["hot_score"] == 91.5
+    assert first["metric_date"] == today
+
+    # min_stars 门槛与 /projects 口径一致：1000 以上只剩 alpha
+    assert [
+        row["repo_id"]
+        for row in catalog.list_github_hot_for_date(
+            metric_date=today, limit=10, min_stars=1000
+        )
+    ] == ["acme/alpha"]
+    # 无指标日期返回空（诚实空榜，不回退）
+    assert catalog.list_github_hot_for_date(metric_date="1999-01-01", limit=10) == []
+
+    dates = catalog.list_github_hot_dates(limit=5)
+    assert today in dates
+    assert dates == sorted(dates, reverse=True)

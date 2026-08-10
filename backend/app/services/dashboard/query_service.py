@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.services.dashboard.policy import (
     DEFAULT_SNAPSHOT_LOOKBACK_DAYS,
     SnapshotDateResolution,
     build_date_resolution,
+    github_metric_to_doc,
     resolve_default_snapshot_date,
     resolve_snapshot_date,
     today_local,
@@ -55,9 +56,30 @@ SAME_PERIOD_FALLBACKS: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 
+class GitHubHotBoardReader(Protocol):
+    """看板 github 榜的 v5 热度指标读取边界（由项目库目录仓储结构式满足）。"""
+
+    def list_github_hot_for_date(
+        self,
+        *,
+        metric_date: str,
+        limit: int,
+    ) -> list[dict[str, Any]]: ...
+
+    def list_github_hot_dates(self, *, limit: int = 60) -> list[str]: ...
+
+
 class DashboardQueryService:
-    def __init__(self, rank_snapshots: RankSnapshotReader) -> None:
+    def __init__(
+        self,
+        rank_snapshots: RankSnapshotReader,
+        github_hot: GitHubHotBoardReader | None = None,
+    ) -> None:
         self._rank_snapshots = rank_snapshots
+        # 看板 REST 路由注入项目库热度读取后，github 日榜改走 v5 指标
+        # （今日暴涨口径）；未注入的调用方（MCP inbound 等）保持
+        # rank_snapshots 的 trending 快照口径不变。
+        self._github_hot = github_hot
 
     def resolve_display_snapshot_date(
         self,
@@ -69,15 +91,20 @@ class DashboardQueryService:
 
         默认视图（无 date）在 today 无快照时，按 source+period 口径向前
         回溯窗口内最近一个有快照的日期；结果始终带 requested/resolved/
-        stale 标记，回溯绝不静默。
+        stale 标记，回溯绝不静默。github 日榜注入 v5 读取后按指标日期回溯。
         """
         requested = resolve_snapshot_date(date_param)
         if date_param:
             return build_date_resolution(requested, requested)
         source = None if source_type in (None, "", "all") else source_type
-        available = self._rank_snapshots.get_snapshot_dates(
-            DEFAULT_SNAPSHOT_LOOKBACK_DAYS, source, period
-        )
+        if source == "github" and period == "daily" and self._github_hot is not None:
+            available = self._github_hot.list_github_hot_dates(
+                limit=DEFAULT_SNAPSHOT_LOOKBACK_DAYS
+            )
+        else:
+            available = self._rank_snapshots.get_snapshot_dates(
+                DEFAULT_SNAPSHOT_LOOKBACK_DAYS, source, period
+            )
         resolved = resolve_default_snapshot_date(available) or requested
         return build_date_resolution(requested, resolved)
 
@@ -91,6 +118,8 @@ class DashboardQueryService:
         all_snapshot_docs: list[dict[str, Any]] = []
 
         if source_type and source_type != "all":
+            if source_type == "github" and self._use_github_hot(period):
+                return self._github_hot_docs(date_str, limit)
             channel = SOURCE_PERIOD_CHANNELS.get(source_type, {}).get(period)
             if channel:
                 all_snapshot_docs.extend(
@@ -102,6 +131,9 @@ class DashboardQueryService:
                 )
         else:
             for source, period_channels in SOURCE_PERIOD_CHANNELS.items():
+                if source == "github" and self._use_github_hot(period):
+                    all_snapshot_docs.extend(self._github_hot_docs(date_str, limit))
+                    continue
                 channel = period_channels.get(period)
                 if not channel:
                     continue
@@ -116,6 +148,25 @@ class DashboardQueryService:
         if all_snapshot_docs and period == "daily":
             return self._apply_hackernews_daily_dedup(date_str, all_snapshot_docs)
         return all_snapshot_docs
+
+    def _use_github_hot(self, period: str) -> bool:
+        """github 日榜是否走 v5 热度指标（周/月榜无指标口径，仍走快照）。"""
+        return period == "daily" and self._github_hot is not None
+
+    def _github_hot_docs(self, date_str: str, limit: int) -> list[dict[str, Any]]:
+        """项目库今日暴涨：按 hot_score(v5) 排序的正增长仓库，映射为看板 doc。
+
+        指标缺失的日期返回空（诚实空榜），不回退 trending——两套口径
+        混排会让名次含义漂移。
+        """
+        assert self._github_hot is not None  # 仅经 _use_github_hot 守门后调用
+        rows = self._github_hot.list_github_hot_for_date(
+            metric_date=date_str, limit=limit
+        )
+        return [
+            github_metric_to_doc(row, rank=index + 1)
+            for index, row in enumerate(rows)
+        ]
 
     def _read(
         self,

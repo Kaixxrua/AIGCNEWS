@@ -64,6 +64,17 @@ class ProjectCatalogRepository(Protocol):
 
     def get_project_stars_map(self, repo_ids: list[str]) -> dict[str, int]: ...
 
+    def list_github_hot_for_date(
+        self,
+        *,
+        metric_date: str,
+        limit: int,
+        min_stars: int = 500,
+        enriched_only: bool = True,
+    ) -> list[dict[str, Any]]: ...
+
+    def list_github_hot_dates(self, *, limit: int = 60) -> list[str]: ...
+
     def list_projects(
         self,
         *,
