@@ -407,6 +407,8 @@ def test_top_route_preserves_dedupe_limit_and_relative_pdf_url() -> None:
         "stale": False,
         "is_finalized": True,
         "is_embargoed": False,
+        # 分源定稿契约（PR1）：wire 只增不破，新字段纳入精确形状断言
+        "source_status": policy.compute_source_status_map(date),
     }
     # 显式 date 不回溯：不触发可用日期查询
     assert reader.date_calls == []

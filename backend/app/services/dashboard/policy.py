@@ -82,6 +82,48 @@ SOURCE_WEIGHTS: dict[str, float] = {
 
 FINALIZE_HOUR = 15
 
+# ── 分源定稿契约 ────────────────────────────────────────────────────────
+#
+# 每个源的自然日界：决定"这个源的一天何时真正结束"。定稿必须等到源日界
+# 结束后的末次采集完成，而不是统一的整榜时钟标签（compute_board_status
+# 的 FINALIZE_HOUR 一刀切语义保持不动，作为整榜可见性闸门继续服役）。
+SOURCE_DAY_BOUNDARY: dict[str, str] = {
+    "arxiv": "PT",  # HF Daily Papers 页面日期（美国日界）
+    "github": "CST",  # v5 热度指标（自有数据，CST 日界）
+    "news": "CST",  # Techmeme RSS 滚动窗，CST 归属
+    "producthunt": "PT",  # featuredAt 的太平洋日期
+    "hackernews": "CST",  # 滚动 24h 窗，CST 归属
+    "x": "CST",  # 推文发布时间（CST 日界）
+}
+
+# 分源关榜时刻（次日 CST 整点）：源日界结束 + 末次采集窗口后的揭榜时刻。
+# PT 源取 17：PST 冬令时 PT 0:00 = CST 16:00，留 1h 末次采集窗口；PDT
+# 夏令时 = CST 15:00，窗口 2h。CST 源取 1：00:3x 关榜采集收完当天尾巴。
+SOURCE_FINALIZE_HOUR: dict[str, int] = {
+    "arxiv": 17,
+    "github": 1,
+    "news": 1,
+    "producthunt": 17,
+    "hackernews": 1,
+    "x": 1,
+}
+
+# 未知/未注册源的保守口径：PT 日界 + 旧版整榜时刻，行为与历史一致。
+DEFAULT_SOURCE_DAY_BOUNDARY = "PT"
+
+
+class SourceBoardStatus(TypedDict):
+    """单源榜单状态：整榜 is_finalized/is_embargoed 之外的分源契约。
+
+    finalize_hour 为该源揭榜时刻（次日 CST 整点），供前端提示
+    "预计 HH:00 定稿"；day_boundary 标明该源的自然日界口径。
+    """
+
+    is_finalized: bool
+    is_embargoed: bool
+    day_boundary: str
+    finalize_hour: int
+
 # 看板 github 榜自 v5 热度指标表读取后，条目的来源渠道标记。
 # 与 rank_snapshots 的 github_trending_daily/github_hot_daily 区分开，
 # 便于排查口径（response items[].source_channel 可见）。
@@ -213,6 +255,56 @@ def is_finalized(snapshot_date_str: str) -> bool:
 
 def is_embargoed(snapshot_date_str: str) -> bool:
     return compute_board_status(snapshot_date_str)["is_embargoed"]
+
+
+def compute_source_board_status(
+    snapshot_date_str: str, source: str
+) -> SourceBoardStatus:
+    """按源自然日界计算单源榜单状态（draft/embargoed/finalized）。
+
+    与 compute_board_status 的整榜口径并存：整榜继续充当既有可见性
+    闸门（行为不变），本函数产出分源契约，供后续分源可见性切换与前端
+    状态提示消费。未知源回退旧版整榜时刻（FINALIZE_HOUR），保持保守。
+    """
+    boundary = SOURCE_DAY_BOUNDARY.get(source, DEFAULT_SOURCE_DAY_BOUNDARY)
+    hour = SOURCE_FINALIZE_HOUR.get(source, FINALIZE_HOUR)
+    tz_cst = timezone(timedelta(hours=8))
+    now_cst = datetime.now(tz_cst)
+    today = now_cst.date()
+    yesterday = today - timedelta(days=1)
+
+    try:
+        query_date = date.fromisoformat(snapshot_date_str)
+    except ValueError:
+        query_date = today
+
+    status: SourceBoardStatus = {
+        "is_finalized": False,
+        "is_embargoed": False,
+        "day_boundary": boundary,
+        "finalize_hour": hour,
+    }
+    if query_date == today:
+        return status
+    if query_date == yesterday:
+        if now_cst.hour < hour:
+            status["is_embargoed"] = True
+        else:
+            status["is_finalized"] = True
+        return status
+    if query_date < yesterday:
+        status["is_finalized"] = True
+    return status
+
+
+def compute_source_status_map(
+    snapshot_date_str: str,
+) -> dict[str, SourceBoardStatus]:
+    """全部已注册源的分源状态 map（key 顺序固定，便于契约测试与前端遍历）。"""
+    return {
+        source: compute_source_board_status(snapshot_date_str, source)
+        for source in SOURCE_FINALIZE_HOUR
+    }
 
 
 def dedupe_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:

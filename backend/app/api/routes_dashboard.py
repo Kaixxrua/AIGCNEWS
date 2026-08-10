@@ -194,6 +194,8 @@ async def get_top_list(
             "stale": resolution["stale"],
             "is_finalized": board["is_finalized"],
             "is_embargoed": True,
+            # 分源状态仅作信息透出：整榜闸门不变，CST 源可能已先定稿
+            "source_status": policy.compute_source_status_map(snapshot_date),
         }
 
     docs = await asyncio.to_thread(
@@ -215,6 +217,7 @@ async def get_top_list(
         "stale": resolution["stale"],
         "is_finalized": board["is_finalized"],
         "is_embargoed": False,
+        "source_status": policy.compute_source_status_map(snapshot_date),
     }
 
 
