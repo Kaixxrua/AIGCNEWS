@@ -82,7 +82,10 @@ _UPSTREAM_USER_AGENT = (
     "Chrome/126.0.0.0 Safari/537.36"
 )
 
-_CACHE_CONTROL = "public, max-age=86400"
+# twimg URL 内容寻址不可变（媒体 ID 在路径里），缓存一周与封面端点同口径；
+# 拉长 TTL 显著降低边缘/浏览器回源频率（X 看板每日换新，URL 全是新的，
+# 86400 口径下边缘缓存天然低命中，每张新图都要全链路回源）。
+_CACHE_CONTROL = "public, max-age=604800"
 
 
 def validate_media_url(raw_url: str) -> str:

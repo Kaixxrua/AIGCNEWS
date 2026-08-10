@@ -81,7 +81,7 @@ class TestProxyXMedia:
         assert response.content == b"\xff\xd8\xffjpeg-bytes"
         assert response.headers["Content-Type"] == "image/jpeg"
         assert response.headers["ETag"] == '"abc"'
-        assert response.headers["Cache-Control"] == "public, max-age=86400"
+        assert response.headers["Cache-Control"] == "public, max-age=604800"
 
     def test_forwards_range_and_returns_206(self, build_client) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -164,7 +164,7 @@ class TestProxyXMediaPathStyle:
 
         assert response.status_code == 200
         assert response.content == b"\xff\xd8\xffjpeg-bytes"
-        assert response.headers["Cache-Control"] == "public, max-age=86400"
+        assert response.headers["Cache-Control"] == "public, max-age=604800"
 
     def test_forwards_range_for_video(self, build_client) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
