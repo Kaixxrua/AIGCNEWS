@@ -5,7 +5,8 @@ from __future__ import annotations
 采集逻辑（v2 重构）：
   - 通过 HN 官方 Firebase API 获取首页 Top-30
   - 24小时时间过滤 → 按 score 降序 → 赋予 rank_in_period
-  - snapshot_date 固定为当天物理日期（CST），确保日历查询正确
+  - snapshot_date 默认当天物理日期（CST）；显式 target_date（回填/关榜轮）
+    按指定日期归属
 
 仅支持 daily 周期。
 """
@@ -33,7 +34,7 @@ class HackerNewsCrawler(BaseCrawler):
       2. 排除发布时间超过 24 小时的帖子
       3. 按 score (Points) 降序排列
       4. rank_in_period 从 1 开始递增
-      5. snapshot_date = 当天 CST 日期
+      5. snapshot_date 默认当天 CST 日期；显式 target_date 按指定日期归属
     """
 
     @property
@@ -50,9 +51,10 @@ class HackerNewsCrawler(BaseCrawler):
         limit: int,
         target_date: Optional[str] = None,
     ) -> CrawlResult:
-        # snapshot_date 固定为当天 CST 物理日期，不使用 target_date
-        # 确保日历查询时快照日期与实际采集日期一致
-        snapshot_date = today_cst()
+        # snapshot_date 默认当天 CST；显式 target_date（回填/关榜轮）按指定
+        # 日期归属——关榜轮在次日 00:3x 把滚动 24h 窗口的终态写入昨日切片，
+        # 收齐 hourly 末轮（23:0x）之后的排名/分数变化。
+        snapshot_date = target_date or today_cst()
         channel = "hn_daily_html"
 
         items = await fetch_hackernews_items_async(

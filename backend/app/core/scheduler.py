@@ -24,6 +24,7 @@ from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -331,6 +332,7 @@ async def _run_single_source_job(
     github_lock: asyncio.Lock | None = None,
     x_lock: asyncio.Lock | None = None,
     zero_ingest_reporter: Callable[[str, int], None] | None = None,
+    target_date: str | None = None,
 ) -> bool:
     logger.info("[Scheduler] 触发 %s 采集任务...", source_name)
     active_repositories = repositories
@@ -349,6 +351,7 @@ async def _run_single_source_job(
                 run_single_source_pipeline,
                 source_name,
                 dependencies=dependencies,
+                target_date=target_date,
             )
         else:
             async with lock:
@@ -356,6 +359,7 @@ async def _run_single_source_job(
                     run_single_source_pipeline,
                     source_name,
                     dependencies=dependencies,
+                    target_date=target_date,
                 )
         ingested = result.get("ingested_total", 0)
         logger.info("[Scheduler] %s 采集完成，入库 %d 条。", source_name, ingested)
@@ -783,6 +787,39 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_single_source_closing_job(self, source_name: str) -> None:
+        """关榜轮：次日 00:3x 以昨日（调度时区）为目标日期补采一轮。
+
+        收齐 hourly 末轮（23:0x）之后到源日界结束的尾巴内容，写入昨日
+        切片（CST 源 01:00 揭榜前的最后一笔）。零入库是关榜轮常态，
+        不接零入库告警；misfire 宽限由 descriptor 限制在关榜窗口内。
+        """
+        yesterday = (
+            datetime.now(ZoneInfo(self._timezone_name)) - timedelta(days=1)
+        ).date().isoformat()
+        await self._run_tracked(
+            lambda: self._guarded(
+                f"source:{source_name}_closing",
+                lambda: _run_single_source_job(
+                    source_name,
+                    repositories=self.repositories,
+                    github_lock=self._github_job_lock,
+                    x_lock=self._x_operation_lock,
+                    zero_ingest_reporter=None,
+                    target_date=yesterday,
+                ),
+            )
+        )
+
+    async def _run_x_closing_job(self) -> None:
+        await self._run_single_source_closing_job("x")
+
+    async def _run_hackernews_closing_job(self) -> None:
+        await self._run_single_source_closing_job("hackernews")
+
+    async def _run_news_closing_job(self) -> None:
+        await self._run_single_source_closing_job("news")
+
     async def _run_github_project_daily_pipeline_job(self) -> None:
         await self._run_tracked(
             lambda: self._guarded(
@@ -869,6 +906,9 @@ class ApplicationSchedulerRuntime:
                 self._run_github_project_metrics_refresh_job
             ),
             "_run_x_credentials_probe_job": self._run_x_credentials_probe_job,
+            "_run_x_closing_job": self._run_x_closing_job,
+            "_run_hackernews_closing_job": self._run_hackernews_closing_job,
+            "_run_news_closing_job": self._run_news_closing_job,
         }
 
     def _base_descriptor(self, job_id: str) -> JobDescriptor | None:

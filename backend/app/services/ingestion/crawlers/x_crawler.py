@@ -7,7 +7,8 @@ from __future__ import annotations
     DB 实现经 composition 注入，crawler 不感知来源）
   - XTransport 顺序抓取各账号近期推文（同步库经 asyncio.to_thread）
   - x_policy 过滤/打分/投影为标准条目
-  - snapshot_date 固定为当天物理日期（CST），确保日历查询正确
+  - snapshot_date 默认当天物理日期（CST）；显式 target_date（回填/关榜轮）
+    按指定日期归属并过滤
 
 仅支持 daily 周期。
 """
@@ -118,8 +119,10 @@ class XCrawler(BaseCrawler):
         limit: int,
         target_date: Optional[str] = None,
     ) -> CrawlResult:
-        # snapshot_date 固定为当天 CST 物理日期，不使用 target_date
-        snapshot_date = today_cst()
+        # snapshot_date 默认当天 CST；显式 target_date（回填/关榜轮）按指定
+        # 日期归属并过滤——关榜轮在次日 00:3x 采集昨日（D）推文，accumulate
+        # 语义幂等补入 D 切片，收齐 hourly 末轮之后发布的尾巴推文。
+        snapshot_date = target_date or today_cst()
         channel = x_policy.X_CHANNEL
 
         handles = self._watchlist_provider()

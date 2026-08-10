@@ -24,6 +24,9 @@ JobSource = Literal[
     "dailyhot",
     "github_project_daily_pipeline",
     "github_project_metrics_refresh",
+    "x_closing",
+    "hackernews_closing",
+    "news_closing",
     "daily_briefing",
     "subscription_dispatch",
     "project_semantic_warmup",
@@ -187,6 +190,34 @@ SOURCE_JOB_DESCRIPTORS: tuple[CronJobDescriptor, ...] = (
         coalesce=True,
         misfire_grace_time=3600,
     ),
+    # ── CST 源关榜采集（次日 00:3x，昨日归属）─────────────────────────
+    # 与分源定稿契约对齐：CST 源 01:00 揭榜前，用一轮昨日归属的采集收齐
+    # 源日界尾巴（hourly 末轮 23:0x 之后的内容）。misfire 宽限 30 分钟：
+    # 迟到超过关榜窗口宁可跳过，绝不写入已定稿切片。
+    CronJobDescriptor(
+        id="x_closing",
+        source="x_closing",
+        name="X 关注账号推文关榜采集（昨日归属）",
+        schedule=CronSchedule(hour=0, minute=31),
+        coalesce=False,
+        misfire_grace_time=1800,
+    ),
+    CronJobDescriptor(
+        id="hackernews_closing",
+        source="hackernews_closing",
+        name="Hacker News 关榜采集（昨日归属）",
+        schedule=CronSchedule(hour=0, minute=35),
+        coalesce=False,
+        misfire_grace_time=1800,
+    ),
+    CronJobDescriptor(
+        id="news_closing",
+        source="news_closing",
+        name="Techmeme 科技新闻关榜采集（昨日归属）",
+        schedule=CronSchedule(hour=0, minute=36),
+        coalesce=False,
+        misfire_grace_time=1800,
+    ),
 )
 
 DAILY_BRIEFING_JOB = CronJobDescriptor(
@@ -239,6 +270,9 @@ def resolve_source_job_callback(
         "github_project_daily_pipeline": "_run_github_project_daily_pipeline_job",
         "github_project_metrics_refresh": "_run_github_project_metrics_refresh_job",
         "x_credentials_probe": "_run_x_credentials_probe_job",
+        "x_closing": "_run_x_closing_job",
+        "hackernews_closing": "_run_hackernews_closing_job",
+        "news_closing": "_run_news_closing_job",
     }.get(source)
     if callback_name is not None:
         return namespace[callback_name]

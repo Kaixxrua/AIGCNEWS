@@ -85,6 +85,31 @@ class SchedulerDescriptorTests(unittest.TestCase):
                 True,
                 3600,
             ),
+            # 关榜采集（PR4a）：次日 00:3x 昨日归属，misfire 宽限 30 分钟
+            (
+                "x_closing",
+                "x_closing",
+                "X 关注账号推文关榜采集（昨日归属）",
+                {"hour": "0", "minute": "31", "second": "0"},
+                False,
+                1800,
+            ),
+            (
+                "hackernews_closing",
+                "hackernews_closing",
+                "Hacker News 关榜采集（昨日归属）",
+                {"hour": "0", "minute": "35", "second": "0"},
+                False,
+                1800,
+            ),
+            (
+                "news_closing",
+                "news_closing",
+                "Techmeme 科技新闻关榜采集（昨日归属）",
+                {"hour": "0", "minute": "36", "second": "0"},
+                False,
+                1800,
+            ),
         ]
 
         self.assertIsInstance(SOURCE_JOB_DESCRIPTORS, tuple)
@@ -210,6 +235,21 @@ class SchedulerCallbackResolutionTests(unittest.TestCase):
             resolve_source_job_callback("x_credentials_probe", namespace),
             probe,
         )
+
+    def test_resolves_closing_callbacks_from_namespace(self) -> None:
+        async def closing() -> None:
+            return None
+
+        for source, callback_name in (
+            ("x_closing", "_run_x_closing_job"),
+            ("hackernews_closing", "_run_hackernews_closing_job"),
+            ("news_closing", "_run_news_closing_job"),
+        ):
+            namespace = {callback_name: closing}
+            self.assertIs(
+                resolve_source_job_callback(source, namespace),  # type: ignore[arg-type]
+                closing,
+            )
 
     def test_source_callback_preserves_source_default_and_registration_binding(self) -> None:
         calls: list[tuple[str, str]] = []

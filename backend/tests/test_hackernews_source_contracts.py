@@ -235,7 +235,6 @@ class HackerNewsCrawlerContracts(unittest.IsolatedAsyncioTestCase):
             result = await hackernews_crawler.HackerNewsCrawler()._do_fetch(
                 period="weekly",
                 limit=9,
-                target_date="2020-01-01",
             )
 
         fetch.assert_awaited_once_with(limit=9, period="daily")
@@ -244,6 +243,26 @@ class HackerNewsCrawlerContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.source_channel, "hn_daily_html")
         self.assertEqual(items[0]["source"], "hackernews")
         self.assertEqual(items[0]["channel"], "hn_daily_html")
+
+    async def test_crawler_honors_explicit_target_date_for_closing(self) -> None:
+        """PR4a 行为变化：显式 target_date（关榜/回填）按指定日期归属，
+        不再固定为采集当天 CST。"""
+        items = [{"title": "Example"}]
+        with (
+            patch.object(hackernews_crawler, "today_cst", return_value="2026-07-28"),
+            patch.object(
+                hackernews_crawler,
+                "fetch_hackernews_items_async",
+                new=AsyncMock(return_value=items),
+            ),
+        ):
+            result = await hackernews_crawler.HackerNewsCrawler()._do_fetch(
+                period="daily",
+                limit=9,
+                target_date="2026-07-27",
+            )
+
+        self.assertEqual(result.snapshot_date, "2026-07-27")
 
 
 if __name__ == "__main__":
