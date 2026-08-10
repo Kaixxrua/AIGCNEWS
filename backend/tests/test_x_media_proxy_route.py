@@ -142,3 +142,64 @@ class TestProxyXMedia:
             "/api/media/x/proxy", params={"url": "https://evil.com/x.mp4"}
         )
         assert response.status_code == 403
+
+
+class TestProxyXMediaPathStyle:
+    """路径式端点 /media/x/img/<host>/<path>：与查询形态同一校验与转发。"""
+
+    def test_streams_photo_with_query(self, build_client) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.host == "pbs.twimg.com"
+            assert request.url.path == "/media/HO0uUesbYAAaHzK.jpg"
+            assert request.url.query == b"name=small"
+            return httpx.Response(
+                200,
+                content=b"\xff\xd8\xffjpeg-bytes",
+                headers={"Content-Type": "image/jpeg"},
+            )
+
+        response = build_client(handler).get(
+            "/api/media/x/img/pbs.twimg.com/media/HO0uUesbYAAaHzK.jpg?name=small"
+        )
+
+        assert response.status_code == 200
+        assert response.content == b"\xff\xd8\xffjpeg-bytes"
+        assert response.headers["Cache-Control"] == "public, max-age=86400"
+
+    def test_forwards_range_for_video(self, build_client) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.host == "video.twimg.com"
+            assert request.url.path == "/amplify_video/123/vid/avc1/1920x1080/a.mp4"
+            assert request.url.query == b"tag=29"
+            assert request.headers["range"] == "bytes=0-1023"
+            return httpx.Response(
+                206,
+                content=b"\x00" * 1024,
+                headers={
+                    "Content-Type": "video/mp4",
+                    "Content-Range": "bytes 0-1023/8355107",
+                    "Accept-Ranges": "bytes",
+                },
+            )
+
+        response = build_client(handler).get(
+            "/api/media/x/img/video.twimg.com/amplify_video/123/vid/avc1/1920x1080/a.mp4?tag=29",
+            headers={"Range": "bytes=0-1023"},
+        )
+        assert response.status_code == 206
+
+    def test_rejects_disallowed_host(self, build_client) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+            raise AssertionError("upstream must not be called for disallowed hosts")
+
+        response = build_client(handler).get("/api/media/x/img/evil.com/x.jpg")
+        assert response.status_code == 403
+
+    def test_rejects_suffix_spoof_host(self, build_client) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+            raise AssertionError("upstream must not be called for spoofed hosts")
+
+        response = build_client(handler).get(
+            "/api/media/x/img/pbs.twimg.com.evil.com/x.jpg"
+        )
+        assert response.status_code == 403

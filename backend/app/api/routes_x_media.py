@@ -8,6 +8,11 @@ GET /api/media/x/proxy?url=<https-url>
   流式转发原图/原视频：透传 Range（视频 seek 依赖 206），上游状态码
   原样回传；3xx 不跟随（跟随会放开白名单约束，统一按 502）。
 
+GET /api/media/x/img/<host>/<path>?<query>
+  查询形态的路径式变体（同一校验与转发），供边缘节点直连回源：
+  nginx 无法解码查询参数里 percent-encoded 的目标 URL，路径段则经
+  请求解析原生解码，白名单正则可直接匹配主机字面量。
+
 GET /api/media/x/poster?url=<https-video-url>
   视频封面：twitter-cli 不落 media_url_https，库里只有 mp4 直链，前端
   点击播放占位需要真封面。X 的 mp4 是 faststart（moov 在文件头），
@@ -130,10 +135,9 @@ def _get_upstream_client() -> httpx.AsyncClient:
     return _shared_client
 
 
-@router.get("/media/x/proxy")
-async def proxy_x_media(request: Request, url: str = Query(..., min_length=1)):
-    target = validate_media_url(url)
-
+async def _stream_media(request: Request, target: str) -> StreamingResponse:
+    """流式转发 twimg 媒体：透传 Range（视频 seek 依赖 206），上游状态码
+    原样回传；3xx 不跟随（跟随会放开白名单约束，统一按 502）。"""
     upstream_headers = {"User-Agent": _UPSTREAM_USER_AGENT}
     for name in _PASSTHROUGH_REQUEST_HEADERS:
         value = request.headers.get(name)
@@ -179,6 +183,29 @@ async def proxy_x_media(request: Request, url: str = Query(..., min_length=1)):
         status_code=upstream.status_code,
         headers=response_headers,
     )
+
+
+@router.get("/media/x/proxy")
+async def proxy_x_media(request: Request, url: str = Query(..., min_length=1)):
+    target = validate_media_url(url)
+    return await _stream_media(request, target)
+
+
+@router.get("/media/x/img/{host}/{path:path}")
+async def proxy_x_media_path(request: Request, host: str, path: str):
+    """路径式媒体代理：/api/media/x/img/pbs.twimg.com/media/x.jpg?name=small。
+
+    与查询形态 /media/x/proxy?url= 同源的第二种 wire format，供边缘节点
+    直连回源：nginx 无法解码查询参数里 percent-encoded 的目标 URL（$arg_*
+    不解码、rewrite 不解变量、无 lua/njs），而路径段经 nginx 请求解析原生
+    解码，白名单正则可直接匹配主机字面量。目标 URL 重建后走与查询形态
+    完全相同的白名单校验与流式转发，行为不变更。
+    """
+    raw = f"https://{host}/{path}"
+    if request.url.query:
+        raw = f"{raw}?{request.url.query}"
+    target = validate_media_url(raw)
+    return await _stream_media(request, target)
 
 
 # ── 视频封面抽帧 ─────────────────────────────────────────────────────────
