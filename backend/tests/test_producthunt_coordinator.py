@@ -118,7 +118,7 @@ def test_coordinator_returns_exact_api_projection_without_html() -> None:
 
     assert result == [
         {
-            **_exact_item(summary="Freeze the boundary [Developer Tools, Testing]", published_date="2026-07-27"),
+            **_exact_item(summary="Freeze the boundary [Developer Tools, Testing]", published_date="2026-07-26"),
             "votes": 9,
             "raw_score": 9.0,
             "score": 9.0,
@@ -158,7 +158,7 @@ def test_coordinator_preserves_html_and_relaxed_fallback_outputs() -> None:
     assert result == [
         _exact_item(
             summary="Freeze the boundary [Developer Tools, Testing]",
-            published_date="2026-07-27",
+            published_date="2026-07-26",
         )
     ]
     assert calls == [

@@ -59,6 +59,10 @@ def test_date_policy_preserves_cst_parsing_window_and_publication(
     assert policy.resolve_anchor("not-a-date") == anchor
     assert policy.parse_featured_at("2026-07-26T23:30:00-07:00") == date(2026, 7, 26)
     assert policy.parse_featured_at("2026-07-26") == date(2026, 7, 26)
+    # PR2：带偏移时间串先换算 PT 再取日期——UTC 深夜是 PT 当天傍晚
+    assert policy.parse_featured_at("2026-07-27T05:00:00+00:00") == date(2026, 7, 26)
+    assert policy.parse_featured_at("2026-07-27T06:59:59Z") == date(2026, 7, 26)
+    assert policy.parse_featured_at("2026-07-27T07:00:00Z") == date(2026, 7, 27)
     assert policy.parse_featured_at("") is None
     assert policy.parse_featured_at("not-a-date") is None
     assert policy.within_period(None, "daily", anchor) is True
@@ -68,9 +72,27 @@ def test_date_policy_preserves_cst_parsing_window_and_publication(
     assert policy.within_period(date(2026, 7, 29), "daily", anchor) is False
     assert policy.within_period(date(2026, 7, 20), "weekly", anchor) is True
     assert policy.within_period(date(2026, 6, 27), "monthly", anchor) is True
-    assert policy.published_date(date(2026, 7, 26), "daily", anchor, "2026-07-27") == "2026-07-27"
+    # PR2 行为变化：clamp 已删除——featured 日期恒取自身（PT 口径），
+    # 不再把早于爬取锚点的日期改写为锚点日
+    assert policy.published_date(date(2026, 7, 26), "daily", anchor, "2026-07-27") == "2026-07-26"
     assert policy.published_date(date(2026, 7, 20), "weekly", anchor, "2026-07-27") == "2026-07-20"
     assert policy.published_date(None, "daily", anchor, "2026-07-27") == "2026-07-27"
+
+
+def test_resolve_board_date_picks_mode_with_newer_tiebreak() -> None:
+    """整页归属日 = featured 日期众数；平票取较新；全空返回 None。"""
+    assert (
+        policy.resolve_board_date(
+            [date(2026, 7, 26), date(2026, 7, 26), date(2026, 7, 25), None]
+        )
+        == date(2026, 7, 26)
+    )
+    assert (
+        policy.resolve_board_date([date(2026, 7, 25), date(2026, 7, 26)])
+        == date(2026, 7, 26)
+    )
+    assert policy.resolve_board_date([None, None]) is None
+    assert policy.resolve_board_date([]) is None
 
 
 def test_exact_api_and_html_item_projections() -> None:
@@ -98,7 +120,7 @@ def test_exact_api_and_html_item_projections() -> None:
             "source": "producthunt",
             "source_channel": channel,
             "channel": channel,
-            "published_date": "2026-07-27",
+            "published_date": "2026-07-26",
             "tags": ["ProductHunt", "daily", "Developer Tools", "Testing"],
             "pdf_url": "",
             "featured_at": "2026-07-26T08:00:00-07:00",
