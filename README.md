@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="docs/assets/logo-4k.png" alt="AIGCNEWS" width="880">
+</div>
+
 # AIGCNEWS
 
 AI 发现数据平台：持续索引 arXiv 论文、GitHub AI 项目、科技新闻、Product Hunt 与 Hacker News，产出每日榜单与研究简报。同一份数据通过两个入口对外提供：
