@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -125,3 +125,17 @@ def resolve_board_date(feat_dates: Iterable[Optional[date]]) -> Optional[date]:
     if not counts:
         return None
     return max(counts, key=lambda d: (counts[d], d.toordinal()))
+
+
+def all_zero_votes(items: Iterable[Dict[str, Any]]) -> bool:
+    """整批条目 votes 全为 0 → 新榜日开榜窗口的退化样本。
+
+    PH 新榜日于 PT 00:00 翻页，开榜头几十分钟内 API/HTML 两个通道
+    返回的票数全为 0：榜单尚未沉淀任何投票，排名无信息量。此时写库
+    会把当日快照污染成全 0 票，协调层应诚实回空（PR7 语义），保留
+    上一片好数据，待票数成熟后由后续轮次落地。
+    空批不判退化（交由既有空结果语义处理）；混合批次（部分条目 0 票
+    属开榜常态）不判退化，如实放行。
+    """
+    batch = list(items)
+    return bool(batch) and all(int(item.get("votes") or 0) == 0 for item in batch)

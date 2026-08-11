@@ -105,6 +105,105 @@ def test_coordinator_strict_empty_returns_empty_without_relaxed_fill() -> None:
     assert result == []
 
 
+# ── 开榜窗口全 0 票退化样本守卫 ──────────────────────────────────────────────
+
+
+def test_all_zero_votes_policy() -> None:
+    """全 0 判退化；空批与混合批次（部分 0 票属开榜常态）不判退化。"""
+    assert policy.all_zero_votes([]) is False
+    assert policy.all_zero_votes([{"votes": 0}, {"votes": 0}]) is True
+    assert policy.all_zero_votes([{"votes": 0}, {"votes": None}, {"votes": 0}]) is True
+    assert policy.all_zero_votes([{"votes": 0}, {"votes": 5}]) is False
+    assert policy.all_zero_votes([{"votes": 177}, {"votes": 0}]) is False
+
+
+def test_coordinator_returns_empty_for_all_zero_api_batch() -> None:
+    """API 整批 0 票（新榜日开榜窗口）：诚实回空，不再回落 HTML 拿同样的 0 票。"""
+    calls: list[str] = []
+
+    async def zero_vote_api(_: int, __: Any = None) -> list[dict[str, Any]]:
+        node = {
+            **_post("1", "2026-08-09T08:00:00-07:00"),
+            "votesCount": 0,
+            "commentsCount": 0,
+        }
+        node.pop("launchDayScore", None)
+        node.pop("latestScore", None)
+        return [{"node": node}]
+
+    async def forbidden_html(url: str) -> str:
+        raise AssertionError(f"全 0 退化批次不得回落 HTML: {url}")
+
+    result = asyncio.run(
+        coordinator.fetch_producthunt_products(
+            limit=20,
+            period="daily",
+            target_date="2026-08-09",
+            crawl_date=lambda: calls.append("crawl-date") or "2026-08-10",
+            api_transport=zero_vote_api,
+            html_transport=forbidden_html,
+        )
+    )
+
+    assert result == []
+
+
+def test_coordinator_returns_empty_for_all_zero_html_batch() -> None:
+    """HTML 整批 0 票：同样诚实回空，保留上一片好数据。"""
+
+    async def no_api(_: int, __: Any = None) -> None:
+        return None
+
+    zero_post = {
+        **_post("1", "2026-08-09T08:00:00-07:00"),
+        "launchDayScore": 0,
+        "latestScore": 0,
+    }
+
+    result = asyncio.run(
+        coordinator.fetch_producthunt_products(
+            limit=20,
+            period="daily",
+            target_date="2026-08-09",
+            crawl_date=lambda: "2026-08-10",
+            api_transport=no_api,
+            html_transport=lambda url: asyncio.sleep(0, result="synthetic-html"),
+            apollo_parser=lambda html: [zero_post],
+        )
+    )
+
+    assert result == []
+
+
+def test_coordinator_passes_through_mixed_zero_votes() -> None:
+    """混合批次（0 票与有票共存）：不判退化，0 票条目也如实放行。"""
+
+    async def no_api(_: int, __: Any = None) -> None:
+        return None
+
+    posts = [
+        {**_post("1", "2026-08-09T08:00:00-07:00"), "launchDayScore": 0, "latestScore": 0},
+        _post("2", "2026-08-09T09:00:00-07:00"),  # launchDayScore=10
+    ]
+
+    result = asyncio.run(
+        coordinator.fetch_producthunt_products(
+            limit=20,
+            period="daily",
+            target_date="2026-08-09",
+            crawl_date=lambda: "2026-08-10",
+            api_transport=no_api,
+            html_transport=lambda url: asyncio.sleep(0, result="synthetic-html"),
+            apollo_parser=lambda html: posts,
+        )
+    )
+
+    assert [(item["title"], item["votes"]) for item in result] == [
+        ("Product 1", 0),
+        ("Product 2", 10),
+    ]
+
+
 # ── API 分页取样 ────────────────────────────────────────────────────────────
 
 

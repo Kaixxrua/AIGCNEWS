@@ -87,6 +87,17 @@ async def fetch_producthunt_products(
             else None
         )
     if api_results:
+        # 开榜窗口退化样本守卫：整批 0 票时不再回落 HTML——HTML 读同一
+        # 块新榜只会拿到同样的 0 票，直接诚实回空。
+        if producthunt_policy.all_zero_votes(api_results):
+            logger.warning(
+                "[ProductHunt] API v2 返回 %d 条但票数全 0（period=%s anchor=%s，"
+                "新榜日开榜窗口退化样本），本轮回空保留上一片好数据",
+                len(api_results),
+                normalized_period,
+                anchor,
+            )
+            return []
         logger.info("[ProductHunt] API v2 通道成功，返回 %d 条", len(api_results))
         return api_results
 
@@ -134,5 +145,18 @@ async def fetch_producthunt_products(
             normalized_period,
             anchor,
         )
+        return results
+
+    # 开榜窗口退化样本守卫（同 PR7 诚实回空语义）：整批票数全 0 说明
+    # 新榜日刚开榜、排名无信息量，写库会把当日快照污染成全 0 票。
+    if producthunt_policy.all_zero_votes(results):
+        logger.warning(
+            "[ProductHunt] period=%s anchor=%s %d 条票数全 0"
+            "（新榜日开榜窗口退化样本），本轮回空保留上一片好数据",
+            normalized_period,
+            anchor,
+            len(results),
+        )
+        return []
 
     return results
