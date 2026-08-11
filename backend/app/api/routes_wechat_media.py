@@ -29,9 +29,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.responses import FileResponse
 
+from backend.app.api.feature_gates import require_wechat_source_enabled
 from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
 from backend.app.services.auth.rate_limit import (
@@ -40,7 +41,7 @@ from backend.app.services.auth.rate_limit import (
 )
 from backend.app.services.media_cache import enforce_cache_budget, prune_expired_entries
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_wechat_source_enabled)])
 logger = logging.getLogger(__name__)
 
 ALLOWED_MEDIA_HOSTS = frozenset(

@@ -30,6 +30,9 @@ def build_client(monkeypatch: pytest.MonkeyPatch, tmp_path):
                 follow_redirects=False,
             )
 
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "wechat_source_enabled", True)
         monkeypatch.setattr(routes_wechat_media, "_get_upstream_client", fake_client_factory)
         monkeypatch.setattr(routes_wechat_media, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr(routes_wechat_media, "_negative_cache", {})
@@ -146,6 +149,18 @@ class TestProxyWeChatMedia:
             "/api/media/wechat/proxy", params={"url": "https://evil.com/x.png"}
         )
         assert response.status_code == 403
+
+    def test_proxy_404_when_wechat_source_disabled(self, build_client, monkeypatch) -> None:
+        from backend.app.core.config import settings
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise AssertionError("disabled source must not touch upstream")
+
+        client = build_client(handler)
+        monkeypatch.setattr(settings, "wechat_source_enabled", False)
+        response = client.get("/api/media/wechat/proxy", params={"url": IMAGE_URL})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "wechat_source_disabled"
 
 
 class TestProxyWeChatMediaRateLimit:

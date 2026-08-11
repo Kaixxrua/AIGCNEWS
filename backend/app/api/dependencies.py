@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Mapping
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.core.redis_client import close_redis_client, create_redis_client
@@ -97,11 +97,14 @@ from backend.app.services.runtime_provider.runtime import (
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
 from backend.app.services.scheduler_config_admin import SchedulerConfigAdminService
-from backend.app.services.wechat.account_service import WeChatAccountService
-from backend.app.services.wechat.follow_service import WeChatFollowService
-from backend.app.services.wechat.login_service import WeChatLoginService
-from backend.app.services.wechat.sync_service import WeChatSyncService
-from backend.app.services.wechat.transport import WeChatMpTransport
+from backend.app.services.source_plugins import load_wechat_bundle
+from backend.app.services.source_plugins.wechat_source import (
+    WeChatAccountServiceProtocol,
+    WeChatFollowServiceProtocol,
+    WeChatLoginServiceProtocol,
+    WeChatServiceBundle,
+    WeChatSyncServiceProtocol,
+)
 from backend.app.services.x_credentials.admin_service import XCredentialAdminService
 from backend.app.services.x_snapshot_admin import XSnapshotAdminService
 from backend.app.services.x_watch.admin_service import XWatchAdminService
@@ -537,20 +540,33 @@ def get_wechat_follow_repository(
     return repositories.wechat_follows
 
 
-def get_wechat_mp_transport() -> WeChatMpTransport:
+def _require_wechat_bundle() -> WeChatServiceBundle:
+    """开关关闭或私有插件缺失时以 404 快速失败（与路由级门控同语义）。"""
+    bundle = load_wechat_bundle()
+    if bundle is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="wechat_source_disabled",
+        )
+    return bundle
+
+
+def get_wechat_mp_transport() -> Any:
     from backend.app.core.config import settings
 
-    return WeChatMpTransport(proxy=settings.outbound_proxy or None)
+    return _require_wechat_bundle().mp_transport(
+        proxy=settings.outbound_proxy or None
+    )
 
 
 def get_wechat_login_service(
     attempts: WeChatLoginAttemptRepository = Depends(get_wechat_login_attempt_repository),
     sessions: WeChatSessionRepository = Depends(get_wechat_session_repository),
-    transport: WeChatMpTransport = Depends(get_wechat_mp_transport),
-) -> WeChatLoginService:
+    transport: Any = Depends(get_wechat_mp_transport),
+) -> WeChatLoginServiceProtocol:
     from backend.app.core.config import settings
 
-    return WeChatLoginService(
+    return _require_wechat_bundle().login_service(
         attempts,
         sessions,
         transport,
@@ -566,22 +582,22 @@ def get_wechat_login_service(
 def get_wechat_account_service(
     accounts: WeChatOfficialAccountRepository = Depends(get_wechat_account_repository),
     sessions: WeChatSessionRepository = Depends(get_wechat_session_repository),
-    transport: WeChatMpTransport = Depends(get_wechat_mp_transport),
-) -> WeChatAccountService:
-    return WeChatAccountService(accounts, sessions, transport)
+    transport: Any = Depends(get_wechat_mp_transport),
+) -> WeChatAccountServiceProtocol:
+    return _require_wechat_bundle().account_service(accounts, sessions, transport)
 
 
 def get_wechat_sync_service(
     accounts: WeChatOfficialAccountRepository = Depends(get_wechat_account_repository),
     articles: WeChatArticleRepository = Depends(get_wechat_article_repository),
     sessions: WeChatSessionRepository = Depends(get_wechat_session_repository),
-    transport: WeChatMpTransport = Depends(get_wechat_mp_transport),
+    transport: Any = Depends(get_wechat_mp_transport),
     operations_runtime: ApplicationOperationsRuntime = Depends(get_operations_runtime),
-) -> WeChatSyncService:
+) -> WeChatSyncServiceProtocol:
     from backend.app.core.config import settings
-    from backend.app.services.wechat_sogou.transport import SogouWechatTransport
 
-    return WeChatSyncService(
+    bundle = _require_wechat_bundle()
+    return bundle.sync_service(
         accounts,
         articles,
         sessions,
@@ -594,7 +610,7 @@ def get_wechat_sync_service(
         ),
         # Direct connection: Sogou/mp are domestic targets; routing them
         # through the overseas outbound proxy worsens anti-bot risk control.
-        sogou_transport=SogouWechatTransport(),
+        sogou_transport=bundle.sogou_transport(),
         sogou_max_pages=int(getattr(settings, "wechat_sogou_sync_max_pages", 2)),
         sogou_max_articles=int(getattr(settings, "wechat_sogou_sync_max_articles", 20)),
         sogou_request_delay_seconds=float(
@@ -606,8 +622,8 @@ def get_wechat_sync_service(
 def get_wechat_follow_service(
     follows: WeChatFollowRepository = Depends(get_wechat_follow_repository),
     articles: WeChatArticleRepository = Depends(get_wechat_article_repository),
-) -> WeChatFollowService:
-    return WeChatFollowService(follows, articles)
+) -> WeChatFollowServiceProtocol:
+    return _require_wechat_bundle().follow_service(follows, articles)
 
 
 def get_push_channel_repository(

@@ -14,6 +14,7 @@ from backend.app.api.dependencies import (
     get_wechat_login_service,
     get_wechat_sync_service,
 )
+from backend.app.api.feature_gates import require_wechat_source_enabled
 from backend.app.core.auth import RequireAdmin, RequireUser, extract_user_id
 from backend.app.models.schema_wechat import (
     WeChatAccountSaveRequest,
@@ -33,13 +34,19 @@ from backend.app.repositories.wechat_account_repository import (
     WeChatOfficialAccountRepository,
 )
 from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
-from backend.app.services.wechat.account_service import WeChatAccountService
-from backend.app.services.wechat.errors import WeChatError
-from backend.app.services.wechat.follow_service import WeChatFollowService
-from backend.app.services.wechat.login_service import WeChatLoginService
-from backend.app.services.wechat.sync_service import WeChatSyncService
+from backend.app.services.source_plugins.wechat_source import (
+    WeChatAccountServiceProtocol,
+    WeChatError,
+    WeChatFollowServiceProtocol,
+    WeChatLoginServiceProtocol,
+    WeChatSyncServiceProtocol,
+)
 
-router = APIRouter(prefix="/ops/wechat", tags=["WeChat"])
+router = APIRouter(
+    prefix="/ops/wechat",
+    tags=["WeChat"],
+    dependencies=[Depends(require_wechat_source_enabled)],
+)
 
 
 def _owner_id(identity: dict[str, Any] = Depends(RequireAdmin)) -> int:
@@ -85,7 +92,7 @@ def _handle_wechat_error(exc: WeChatError) -> None:
 @router.post("/login-sessions", response_model=WeChatLoginAttemptResponse)
 async def create_wechat_login_session(
     owner_id: int = Depends(_owner_id),
-    service: WeChatLoginService = Depends(get_wechat_login_service),
+    service: WeChatLoginServiceProtocol = Depends(get_wechat_login_service),
 ) -> dict[str, Any]:
     try:
         return await service.start_login_attempt(owner_id)
@@ -97,7 +104,7 @@ async def create_wechat_login_session(
 async def get_wechat_qr_code(
     attempt_id: UUID,
     owner_id: int = Depends(_owner_id),
-    service: WeChatLoginService = Depends(get_wechat_login_service),
+    service: WeChatLoginServiceProtocol = Depends(get_wechat_login_service),
 ) -> StreamingResponse:
     try:
         content, media_type = await service.get_qr_code_image(owner_id, attempt_id)
@@ -114,7 +121,7 @@ async def get_wechat_qr_code(
 async def get_wechat_login_status(
     attempt_id: UUID,
     owner_id: int = Depends(_owner_id),
-    service: WeChatLoginService = Depends(get_wechat_login_service),
+    service: WeChatLoginServiceProtocol = Depends(get_wechat_login_service),
 ) -> dict[str, Any]:
     try:
         result = await service.get_login_status(owner_id, attempt_id)
@@ -132,7 +139,7 @@ async def get_wechat_login_status(
 async def complete_wechat_login(
     attempt_id: UUID,
     owner_id: int = Depends(_owner_id),
-    service: WeChatLoginService = Depends(get_wechat_login_service),
+    service: WeChatLoginServiceProtocol = Depends(get_wechat_login_service),
 ) -> dict[str, Any]:
     try:
         return await service.complete_login(owner_id, attempt_id)
@@ -144,7 +151,7 @@ async def complete_wechat_login(
 async def cancel_wechat_login(
     attempt_id: UUID,
     owner_id: int = Depends(_owner_id),
-    service: WeChatLoginService = Depends(get_wechat_login_service),
+    service: WeChatLoginServiceProtocol = Depends(get_wechat_login_service),
 ) -> dict[str, Any]:
     deleted = await service.cancel_login_attempt(owner_id, attempt_id)
     if not deleted:
@@ -160,7 +167,7 @@ async def cancel_wechat_login(
 @router.get("/session", response_model=WeChatSessionResponse)
 async def get_wechat_session(
     owner_id: int = Depends(_owner_id),
-    service: WeChatLoginService = Depends(get_wechat_login_service),
+    service: WeChatLoginServiceProtocol = Depends(get_wechat_login_service),
 ) -> dict[str, Any]:
     return await service.get_session_summary(owner_id)
 
@@ -171,7 +178,7 @@ async def search_wechat_accounts(
     begin: int = Query(0, ge=0),
     size: int = Query(5, ge=1, le=20),
     owner_id: int = Depends(_owner_id),
-    service: WeChatAccountService = Depends(get_wechat_account_service),
+    service: WeChatAccountServiceProtocol = Depends(get_wechat_account_service),
 ) -> dict[str, Any]:
     try:
         items, total = await service.search_accounts(owner_id, q, begin=begin, size=size)
@@ -188,7 +195,7 @@ async def search_wechat_accounts(
 @router.get("/accounts", response_model=WeChatOfficialAccountListResponse)
 async def list_wechat_accounts(
     owner_id: int = Depends(_owner_id),
-    service: WeChatAccountService = Depends(get_wechat_account_service),
+    service: WeChatAccountServiceProtocol = Depends(get_wechat_account_service),
 ) -> dict[str, Any]:
     items = await service.list_accounts(owner_id)
     return {"items": items, "total": len(items), "begin": 0, "size": len(items)}
@@ -198,7 +205,7 @@ async def list_wechat_accounts(
 async def save_wechat_account(
     request: WeChatAccountSaveRequest,
     owner_id: int = Depends(_owner_id),
-    service: WeChatAccountService = Depends(get_wechat_account_service),
+    service: WeChatAccountServiceProtocol = Depends(get_wechat_account_service),
 ) -> dict[str, Any]:
     try:
         return await service.save_account(owner_id, request.model_dump())
@@ -231,7 +238,7 @@ async def list_wechat_account_articles(
 async def sync_wechat_account(
     account_id: int,
     owner_id: int = Depends(_owner_id),
-    service: WeChatSyncService = Depends(get_wechat_sync_service),
+    service: WeChatSyncServiceProtocol = Depends(get_wechat_sync_service),
 ) -> dict[str, Any]:
     try:
         return await service.submit_sync(owner_id, account_id)
@@ -242,7 +249,7 @@ async def sync_wechat_account(
 @router.get("/catalog", response_model=WeChatCatalogListResponse)
 async def list_wechat_catalog(
     user_id: int = Depends(_user_id),
-    service: WeChatFollowService = Depends(get_wechat_follow_service),
+    service: WeChatFollowServiceProtocol = Depends(get_wechat_follow_service),
 ) -> dict[str, Any]:
     items = service.list_catalog(user_id)
     return {"items": items, "total": len(items)}
@@ -254,7 +261,7 @@ async def list_wechat_catalog(
 async def follow_wechat_account(
     account_id: int,
     user_id: int = Depends(_user_id),
-    service: WeChatFollowService = Depends(get_wechat_follow_service),
+    service: WeChatFollowServiceProtocol = Depends(get_wechat_follow_service),
 ) -> dict[str, Any]:
     try:
         return service.follow(user_id, account_id)
@@ -268,7 +275,7 @@ async def follow_wechat_account(
 async def unfollow_wechat_account(
     account_id: int,
     user_id: int = Depends(_user_id),
-    service: WeChatFollowService = Depends(get_wechat_follow_service),
+    service: WeChatFollowServiceProtocol = Depends(get_wechat_follow_service),
 ) -> dict[str, Any]:
     return service.unfollow(user_id, account_id)
 
@@ -277,7 +284,7 @@ async def unfollow_wechat_account(
 async def get_wechat_feed(
     per_account: int = Query(5, ge=1, le=10),
     user_id: int = Depends(_user_id),
-    service: WeChatFollowService = Depends(get_wechat_follow_service),
+    service: WeChatFollowServiceProtocol = Depends(get_wechat_follow_service),
 ) -> dict[str, Any]:
     items = service.get_feed(user_id, per_account=per_account)
     return {"items": items, "per_account": per_account}
@@ -291,7 +298,7 @@ async def get_wechat_article_detail(
     account_id: int,
     article_id: int,
     user_id: int = Depends(_user_id),
-    service: WeChatFollowService = Depends(get_wechat_follow_service),
+    service: WeChatFollowServiceProtocol = Depends(get_wechat_follow_service),
 ) -> dict[str, Any]:
     """Full-text body of one article; follower-facing like the feed."""
     try:

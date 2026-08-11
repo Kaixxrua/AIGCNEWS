@@ -43,6 +43,24 @@ def _cleanup_overrides():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _wechat_source_enabled(monkeypatch):
+    """既有用例默认开关开启；关态降级由专门用例覆盖。"""
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "wechat_source_enabled", True)
+
+
+def test_wechat_routes_404_when_source_disabled(monkeypatch) -> None:
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "wechat_source_enabled", False)
+    client = _client()
+    response = client.get("/api/ops/wechat/session")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "wechat_source_disabled"
+
+
 def test_create_login_session_returns_attempt() -> None:
     service = MagicMock()
     service.start_login_attempt = AsyncMock(
