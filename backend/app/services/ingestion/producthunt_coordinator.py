@@ -9,7 +9,6 @@ from backend.app.services.ingestion.producthunt_parser import extract_posts_from
 from backend.app.services.ingestion.producthunt_projection import (
     project_api_items,
     project_html_items,
-    project_relaxed_html_items,
 )
 from backend.app.services.ingestion.producthunt_transport import (
     PH_HOME_URL,
@@ -20,7 +19,7 @@ from backend.app.services.ingestion.producthunt_transport import (
 logger = logging.getLogger(__name__)
 
 ApiEdgesTransport = Callable[
-    [int], Awaitable[Optional[List[Dict[str, Any]]]]
+    [int, Optional[date]], Awaitable[Optional[List[Dict[str, Any]]]]
 ]
 HtmlTransport = Callable[[str], Awaitable[str]]
 ApolloParser = Callable[[str], List[Dict[str, Any]]]
@@ -39,10 +38,6 @@ HtmlProjection = Callable[
     [List[Dict[str, Any]], int, str, date, str, str],
     List[Dict[str, Any]],
 ]
-RelaxedHtmlProjection = Callable[
-    [List[Dict[str, Any]], int, str, str, str],
-    List[Dict[str, Any]],
-]
 
 
 async def fetch_producthunt_products(
@@ -59,7 +54,6 @@ async def fetch_producthunt_products(
     apollo_parser: ApolloParser = extract_posts_from_html,
     api_projection: ApiProjection = project_api_items,
     html_projection: HtmlProjection = project_html_items,
-    relaxed_html_projection: RelaxedHtmlProjection = project_relaxed_html_items,
 ) -> List[Dict[str, Any]]:
     """Coordinate Product Hunt transports, parsing, policy, and projections."""
     normalized_period = normalize_period(period)
@@ -80,7 +74,7 @@ async def fetch_producthunt_products(
             crawl_date_str,
         )
     else:
-        edges = await api_transport(limit)
+        edges = await api_transport(limit, anchor)
         api_results = (
             api_projection(
                 edges,
@@ -131,19 +125,14 @@ async def fetch_producthunt_products(
         len(posts),
     )
 
+    # PR7：删除 relaxed 宽松兜底——严格过滤为空的轮次诚实回空，不再把
+    # 窗口外/无 featuredAt 的条目伪装成当期榜单静默填版。空结果由
+    # 管道按零入库处理（保留上一片好数据，快照日期如实反映陈旧度）。
     if not results:
         logger.warning(
-            "[ProductHunt] period=%s 无符合条件的产品，使用所有抓取数据（最多%d条）",
+            "[ProductHunt] period=%s anchor=%s 严格过滤后 0 条，本轮回空",
             normalized_period,
-            limit,
+            anchor,
         )
-        results = relaxed_html_projection(
-            posts,
-            limit,
-            normalized_period,
-            source_channel,
-            crawl_date_str,
-        )
-        logger.info("[ProductHunt] 放宽后返回 %d 条", len(results))
 
     return results

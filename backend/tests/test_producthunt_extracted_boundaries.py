@@ -56,7 +56,10 @@ def test_date_policy_preserves_cst_parsing_window_and_publication(
     assert policy.normalize_period(" DAILY ") == "daily"
     assert policy.normalize_period("") == "daily"
     assert policy.resolve_anchor("2026-07-20") == date(2026, 7, 20)
+    # PR5：缺省/不可解析锚点回落 PT 当日（冻结时钟下 PT 日期同为 07-27）
     assert policy.resolve_anchor("not-a-date") == anchor
+    assert policy.resolve_anchor(None) == anchor
+    assert policy.today_pt() == anchor
     assert policy.parse_featured_at("2026-07-26T23:30:00-07:00") == date(2026, 7, 26)
     assert policy.parse_featured_at("2026-07-26") == date(2026, 7, 26)
     # PR2：带偏移时间串先换算 PT 再取日期——UTC 深夜是 PT 当天傍晚
@@ -65,11 +68,14 @@ def test_date_policy_preserves_cst_parsing_window_and_publication(
     assert policy.parse_featured_at("2026-07-27T07:00:00Z") == date(2026, 7, 27)
     assert policy.parse_featured_at("") is None
     assert policy.parse_featured_at("not-a-date") is None
-    assert policy.within_period(None, "daily", anchor) is True
+    # PR5 严格榜日过滤：featuredAt 缺失一律拒绝；daily 锚定单个 PT 榜日
+    assert policy.within_period(None, "daily", anchor) is False
+    assert policy.within_period(None, "weekly", anchor) is False
     assert policy.within_period(date(2026, 7, 25), "unknown", anchor) is True
+    assert policy.within_period(date(2026, 7, 27), "daily", anchor) is True
+    assert policy.within_period(date(2026, 7, 26), "daily", anchor) is False
+    assert policy.within_period(date(2026, 7, 28), "daily", anchor) is False
     assert policy.within_period(date(2026, 7, 24), "daily", anchor) is False
-    assert policy.within_period(date(2026, 7, 28), "daily", anchor) is True
-    assert policy.within_period(date(2026, 7, 29), "daily", anchor) is False
     assert policy.within_period(date(2026, 7, 20), "weekly", anchor) is True
     assert policy.within_period(date(2026, 6, 27), "monthly", anchor) is True
     # PR2 行为变化：clamp 已删除——featured 日期恒取自身（PT 口径），
@@ -96,7 +102,8 @@ def test_resolve_board_date_picks_mode_with_newer_tiebreak() -> None:
 
 
 def test_exact_api_and_html_item_projections() -> None:
-    anchor = date(2026, 7, 27)
+    # PR5：daily 锚定单个 PT 榜日——featured 日期 07-26 须以 anchor=07-26 投影
+    anchor = date(2026, 7, 26)
     channel = "producthunt_daily_html"
     api_node = {
         **_post(),
@@ -145,17 +152,23 @@ def test_exact_api_and_html_item_projections() -> None:
         }
     ]
 
-    relaxed = projection.project_relaxed_html_items(
-        [_post(featuredAt=None)], 1, "daily", channel, "2026-07-27"
+    # PR5 严格过滤：featuredAt 缺失的条目不再进入投影
+    assert (
+        projection.project_html_items(
+            [_post(featuredAt=None)], 1, "daily", anchor, channel, "2026-07-27"
+        )
+        == []
     )
-    assert relaxed == [
-        {
-            **html_items[0],
-            "summary": "Freeze the boundary",
-            "published_date": "2026-07-27",
-            "featured_at": None,
-        }
-    ]
+    assert (
+        projection.project_api_items(
+            [{"node": {**api_node, "featuredAt": None}}],
+            "daily",
+            anchor,
+            channel,
+            "2026-07-27",
+        )
+        is None
+    )
 
 
 def test_projection_preserves_none_and_conversion_behaviors() -> None:
@@ -211,9 +224,10 @@ def test_api_transport_preserves_token_request_and_none_semantics(
         "client": {"timeout": 20, "follow_redirects": True, "trust_env": True}
     }
     assert calls[1]["url"] == "https://api.producthunt.com/v2/api/graphql"
+    # PR5 分页取样：首页 after=None，页大小固定 20
     assert calls[1]["json"] == {
         "query": transport._PH_POSTS_QUERY,
-        "variables": {"first": 20, "order": "FEATURED_AT"},
+        "variables": {"first": 20, "after": None, "order": "FEATURED_AT"},
     }
     assert calls[1]["headers"] == {
         "Authorization": "Bearer synthetic-token",

@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+from backend.app.services.ingestion import producthunt_policy
 
 logger = logging.getLogger(__name__)
 
 PH_HOME_URL = "https://www.producthunt.com/"
 _PH_API_URL = "https://api.producthunt.com/v2/api/graphql"
 _PH_POSTS_QUERY = """
-query GetPosts($first: Int!, $order: PostsOrder!) {
-    posts(first: $first, order: $order) {
+query GetPosts($first: Int!, $after: String, $order: PostsOrder!) {
+    posts(first: $first, after: $after, order: $order) {
         edges {
             node {
                 id
@@ -32,12 +35,20 @@ query GetPosts($first: Int!, $order: PostsOrder!) {
                 }
             }
         }
+        pageInfo {
+            hasNextPage
+            endCursor
+        }
     }
 }
 """
 
 _MAX_RETRIES = 3
 _RETRY_DELAY = 2.0
+# 单次取样最多翻页数（每页 20 条）：足够覆盖任意一个 PH 榜日，
+# 同时给回填/异常响应一个硬上限，绝不无限翻页。
+_MAX_PAGES = 5
+_PAGE_SIZE = 20
 _IMPERSONATE_OPTIONS = ["chrome124", "chrome120", "chrome116", "chrome110", "chrome107"]
 _BROWSER_HEADERS = {
     "User-Agent": (
@@ -193,8 +204,72 @@ async def fetch_html(url: str) -> str:
     return ""
 
 
-async def fetch_api_edges(limit: int) -> Optional[List[Dict[str, Any]]]:
-    """Fetch raw PH API v2 edges, preserving token and failure semantics."""
+async def _fetch_posts_page(
+    client: httpx.AsyncClient,
+    headers: Dict[str, str],
+    cursor: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """请求一页 posts 连接；认证/HTTP/GraphQL 失败返回 None。"""
+    variables: Dict[str, Any] = {
+        "first": _PAGE_SIZE,
+        "after": cursor,
+        "order": "FEATURED_AT",
+    }
+    try:
+        resp = await client.post(
+            _PH_API_URL,
+            json={"query": _PH_POSTS_QUERY, "variables": variables},
+            headers=headers,
+        )
+        if resp.status_code == 401:
+            logger.error(
+                "[ProductHunt] API v2 认证失败 (401)。"
+                "请检查 PRODUCTHUNT_API_TOKEN 是否正确。"
+                "申请地址：https://www.producthunt.com/v2/oauth/applications"
+            )
+            return None
+        if resp.status_code >= 400:
+            logger.error(
+                "[ProductHunt] API v2 请求失败 HTTP %d: %s",
+                resp.status_code,
+                resp.text[:200],
+            )
+            return None
+        data = resp.json()
+    except Exception as exc:
+        logger.error("[ProductHunt] API v2 请求异常: %s", exc)
+        return None
+
+    errors = data.get("errors")
+    if errors:
+        logger.error("[ProductHunt] API v2 GraphQL 错误: %s", errors)
+        return None
+    return (data.get("data") or {}).get("posts") or {}
+
+
+def _oldest_page_board_date(edges: List[Dict[str, Any]]) -> Optional[date]:
+    """页内最老（末位）edge 的 featured PT 日期；无法判定返回 None。"""
+    for edge in reversed(edges):
+        node = edge.get("node") or {}
+        feat_date = producthunt_policy.parse_featured_at(str(node.get("featuredAt") or ""))
+        if feat_date is not None:
+            return feat_date
+    return None
+
+
+async def fetch_api_edges(
+    limit: int,
+    board_date: Optional[date] = None,
+) -> Optional[List[Dict[str, Any]]]:
+    """Fetch raw PH API v2 edges, preserving token and failure semantics.
+
+    取样（PR5）：FEATURED_AT 降序游标分页，取代旧的单页 newest-20 采样——
+    榜日靠前的产品也可能票数更高，只看最新 20 条会漏掉榜日头部。
+    传入 board_date（锚定榜日）时，翻到页内最老条目已越出榜日即停，
+    收齐整个榜日；未传时按 limit 收够即停。两种模式都封顶 _MAX_PAGES 页。
+    首页失败返回 None（通道视为不可用，走 HTML 回退）；后续页失败返回
+    已收集的部分结果。
+    """
     try:
         from backend.app.core.config import settings
 
@@ -212,46 +287,58 @@ async def fetch_api_edges(limit: int) -> Optional[List[Dict[str, Any]]]:
         "Content-Type": "application/json",
         "User-Agent": "RAG-AIGC-Agent/1.0",
     }
-    variables = {"first": min(limit, 20), "order": "FEATURED_AT"}
 
+    collected: List[Dict[str, Any]] = []
+    cursor: Optional[str] = None
     try:
         async with httpx.AsyncClient(
             timeout=20,
             follow_redirects=True,
             trust_env=True,
         ) as client:
-            resp = await client.post(
-                _PH_API_URL,
-                json={"query": _PH_POSTS_QUERY, "variables": variables},
-                headers=headers,
-            )
+            for page in range(1, _MAX_PAGES + 1):
+                posts = await _fetch_posts_page(client, headers, cursor)
+                if posts is None:
+                    if page == 1:
+                        return None
+                    logger.warning(
+                        "[ProductHunt] API v2 第 %d 页失败，返回已收集的 %d 条",
+                        page,
+                        len(collected),
+                    )
+                    break
 
-            if resp.status_code == 401:
-                logger.error(
-                    "[ProductHunt] API v2 认证失败 (401)。"
-                    "请检查 PRODUCTHUNT_API_TOKEN 是否正确。"
-                    "申请地址：https://www.producthunt.com/v2/oauth/applications"
+                edges = posts.get("edges") or []
+                if not edges:
+                    if page == 1:
+                        logger.warning("[ProductHunt] API v2 返回 0 条产品")
+                        return None
+                    break
+                collected.extend(edges)
+
+                # 榜日边界：页内最老条目已早于锚定榜日 → 更老的页只含
+                # 历史榜日，无须再翻。
+                if board_date is not None:
+                    oldest = _oldest_page_board_date(edges)
+                    if oldest is not None and oldest < board_date:
+                        break
+                elif len(collected) >= limit:
+                    break
+
+                page_info = posts.get("pageInfo") or {}
+                if not page_info.get("hasNextPage"):
+                    break
+                cursor = page_info.get("endCursor")
+                if not cursor:
+                    break
+            else:
+                logger.warning(
+                    "[ProductHunt] API v2 取样达到 %d 页上限，按已收集的 %d 条截断",
+                    _MAX_PAGES,
+                    len(collected),
                 )
-                return None
-            if resp.status_code >= 400:
-                logger.error(
-                    "[ProductHunt] API v2 请求失败 HTTP %d: %s",
-                    resp.status_code,
-                    resp.text[:200],
-                )
-                return None
-            data = resp.json()
     except Exception as exc:
-        logger.error("[ProductHunt] API v2 请求异常: %s", exc)
-        return None
+        logger.error("[ProductHunt] API v2 分页取样异常: %s", exc)
+        return collected or None
 
-    errors = data.get("errors")
-    if errors:
-        logger.error("[ProductHunt] API v2 GraphQL 错误: %s", errors)
-        return None
-
-    edges = (data.get("data") or {}).get("posts", {}).get("edges", [])
-    if not edges:
-        logger.warning("[ProductHunt] API v2 返回 0 条产品")
-        return None
-    return edges
+    return collected or None

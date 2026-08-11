@@ -58,8 +58,9 @@ def test_legacy_api_wrapper_forwards_transport_output_to_projection(
     expected = [{"title": "forwarded"}]
     calls: list[tuple[Any, ...]] = []
 
-    async def api_edges(limit: int) -> list[dict[str, Any]]:
+    async def api_edges(limit: int, board_date: Any = None) -> list[dict[str, Any]]:
         assert limit == 3
+        assert board_date == date(2026, 7, 27)
         return edges
 
     def project(*args: Any) -> list[dict[str, Any]]:
@@ -90,7 +91,7 @@ def test_legacy_api_wrapper_forwards_transport_output_to_projection(
         )
     ]
 
-    async def no_edges(_: int) -> None:
+    async def no_edges(_: int, __: Any = None) -> None:
         return None
 
     monkeypatch.setattr(ph.producthunt_transport, "fetch_api_edges", no_edges)

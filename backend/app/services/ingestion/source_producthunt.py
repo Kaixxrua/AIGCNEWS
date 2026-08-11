@@ -58,7 +58,7 @@ async def _fetch_via_api(
     crawl_date_str: str,
 ) -> Optional[List[Dict[str, Any]]]:
     """Preserve the legacy projected API-channel entry point."""
-    edges = await producthunt_transport.fetch_api_edges(limit)
+    edges = await producthunt_transport.fetch_api_edges(limit, anchor)
     if not edges:
         return None
     return producthunt_projection.project_api_items(

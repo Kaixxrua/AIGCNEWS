@@ -10,12 +10,18 @@ logger = logging.getLogger(__name__)
 _CST = timezone(timedelta(hours=8))
 # PH 日榜的自然日界：featuredAt 落在哪个太平洋日期，就属于哪天的榜。
 _PT_ZONE = ZoneInfo("America/Los_Angeles")
-_PERIOD_DAYS: Dict[str, int] = {"daily": 2, "weekly": 7, "monthly": 30}
+# weekly/monthly 窗口天数（daily 已切换为单榜日等值过滤，不再查表）。
+_PERIOD_DAYS: Dict[str, int] = {"weekly": 7, "monthly": 30}
 
 
 def today_cst() -> date:
     """返回 UTC+8 当前日期。"""
     return datetime.now(_CST).date()
+
+
+def today_pt() -> date:
+    """返回太平洋当前日期——PH 首页正在展示的榜日。"""
+    return datetime.now(_PT_ZONE).date()
 
 
 def crawl_date_cst() -> str:
@@ -30,14 +36,18 @@ def normalize_period(period: str) -> str:
 
 
 def resolve_anchor(target_date: Optional[str]) -> date:
-    """按既有 fallback 和日志语义解析抓取锚点日期。"""
-    anchor = today_cst()
+    """解析抓取锚点：显式 target_date（回填）优先；缺省锚定 PT 当日。
+
+    行为变化（PR5）：缺省锚点由 CST 当日改为 PT 当日——PH 日榜按
+    太平洋日界翻页，CST 上午抓到的仍是 PT 昨日榜，锚点必须与榜日
+    同口径，严格过滤才不会把整榜误杀。
+    """
     if target_date:
         try:
-            anchor = date.fromisoformat(target_date)
+            return date.fromisoformat(target_date)
         except ValueError:
             logger.warning("[ProductHunt] target_date 解析失败: %s", target_date)
-    return anchor
+    return today_pt()
 
 
 def parse_featured_at(feat_str: str) -> Optional[date]:
@@ -63,9 +73,20 @@ def parse_featured_at(feat_str: str) -> Optional[date]:
 
 
 def within_period(feat_date: Optional[date], period: str, anchor: date) -> bool:
-    """判断产品的 featuredAt 日期是否在指定周期窗口内。"""
+    """严格榜日过滤（PR5）。
+
+    行为变化：
+      - featuredAt 缺失/不可解析（None）一律拒绝——无日界证据的条目
+        不再被当作当期产品放行；
+      - daily 锚定单个 PT 榜日（feat_date == anchor），取代旧的
+        [anchor-2, anchor+1] 四天窗口——PH 首页同一时刻只展示一个
+        PT 日榜，窗口过滤会把相邻榜日的条目混进当期；
+      - weekly/monthly 保留既有窗口语义。
+    """
     if feat_date is None:
-        return True
+        return False
+    if period == "daily":
+        return feat_date == anchor
     days = _PERIOD_DAYS.get(period, 2)
     start = anchor - timedelta(days=days)
     end = anchor + timedelta(days=1)

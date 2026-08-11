@@ -86,8 +86,8 @@ def test_apollo_parser_preserves_deduplication_and_facade_forwarding(
 def test_coordinator_returns_exact_api_projection_without_html() -> None:
     calls: list[str] = []
 
-    async def api_transport(limit: int) -> list[dict[str, Any]]:
-        calls.append(f"api:{limit}")
+    async def api_transport(limit: int, board_date: date | None = None) -> list[dict[str, Any]]:
+        calls.append(f"api:{limit}@{board_date}")
         return [
             {
                 "node": {
@@ -108,7 +108,7 @@ def test_coordinator_returns_exact_api_projection_without_html() -> None:
             period=" DAILY ",
             target_date="synthetic-target",
             resolve_anchor=lambda value: (
-                calls.append(f"anchor:{value}") or date(2026, 7, 27)
+                calls.append(f"anchor:{value}") or date(2026, 7, 26)
             ),
             crawl_date=lambda: calls.append("crawl-date") or "2026-07-27",
             api_transport=api_transport,
@@ -126,14 +126,15 @@ def test_coordinator_returns_exact_api_projection_without_html() -> None:
             "monthly_rank": "",
         }
     ]
-    assert calls == ["anchor:synthetic-target", "crawl-date", "api:99"]
+    # PR5：锚定榜日透传给 API 取样（分页按榜日边界停翻）
+    assert calls == ["anchor:synthetic-target", "crawl-date", "api:99@2026-07-26"]
 
 
-def test_coordinator_preserves_html_and_relaxed_fallback_outputs() -> None:
+def test_coordinator_preserves_html_projection_and_strict_empty_semantics() -> None:
     calls: list[str] = []
 
-    async def no_api(limit: int) -> None:
-        calls.append(f"api:{limit}")
+    async def no_api(limit: int, board_date: date | None = None) -> None:
+        calls.append(f"api:{limit}@{board_date}")
         return None
 
     async def html_transport(url: str) -> str:
@@ -147,7 +148,8 @@ def test_coordinator_preserves_html_and_relaxed_fallback_outputs() -> None:
     common = {
         "limit": 1,
         "period": "daily",
-        "target_date": "2026-07-27",
+        # PR5：daily 严格锚定单个 PT 榜日——featured 07-26 须锚定 07-26
+        "target_date": "2026-07-26",
         "resolve_anchor": lambda value: date.fromisoformat(value or ""),
         "crawl_date": lambda: "2026-07-27",
         "api_transport": no_api,
@@ -162,7 +164,7 @@ def test_coordinator_preserves_html_and_relaxed_fallback_outputs() -> None:
         )
     ]
     assert calls == [
-        "api:1",
+        "api:1@2026-07-26",
         f"html:{coordinator.PH_HOME_URL}",
         "parser:synthetic-html",
     ]
@@ -173,22 +175,18 @@ def test_coordinator_preserves_html_and_relaxed_fallback_outputs() -> None:
         calls.append(f"parser:{html}")
         return [_post(featuredAt="2020-01-01T00:00:00-08:00")]
 
-    relaxed = asyncio.run(
+    # PR7：窗口外条目不再触发 relaxed 宽松兜底——严格过滤为空即诚实回空
+    strict_empty = asyncio.run(
         coordinator.fetch_producthunt_products(**{**common, "apollo_parser": old_post_parser})
     )
-    assert relaxed == [
-        {
-            **_exact_item(summary="Freeze the boundary", published_date="2026-07-27"),
-            "featured_at": "2020-01-01T00:00:00-08:00",
-        }
-    ]
+    assert strict_empty == []
 
 
 @pytest.mark.parametrize("html, posts", [("", [_post()]), ("synthetic-html", [])])
 def test_coordinator_preserves_empty_fallback_semantics(
     html: str, posts: list[dict[str, Any]]
 ) -> None:
-    async def no_api(_: int) -> None:
+    async def no_api(_: int, __: date | None = None) -> None:
         return None
 
     async def html_transport(_: str) -> str:
@@ -217,8 +215,9 @@ def test_facade_transport_and_api_wrappers_forward_at_call_time(
     async def httpx(url: str) -> str:
         return f"httpx:{url}"
 
-    async def edges(limit: int) -> list[dict[str, Any]]:
+    async def edges(limit: int, board_date: date | None = None) -> list[dict[str, Any]]:
         assert limit == 3
+        assert board_date == date(2026, 7, 26)
         return [{"node": {**_post(), "votesCount": 7, "commentsCount": 0}}]
 
     monkeypatch.setattr(ph.producthunt_transport, "fetch_html_curl_cffi", curl)
@@ -231,7 +230,7 @@ def test_facade_transport_and_api_wrappers_forward_at_call_time(
         ph._fetch_via_api(
             3,
             "daily",
-            date(2026, 7, 27),
+            date(2026, 7, 26),
             "producthunt_daily_html",
             "2026-07-27",
         )
