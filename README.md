@@ -6,6 +6,12 @@
   <a href="README.zh-CN.md">简体中文</a> | <strong>English</strong>
 </p>
 
+<p align="center">
+  <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="Live site" src="https://img.shields.io/badge/Live-aigcnews.cn-blue"></a>
+  <a href="https://cursor.com/en-US/install-mcp?name=aigc-radar&config=eyJ1cmwiOiJodHRwczovL2FpZ2NuZXdzLmNuL2FwaS9tY3AifQ=="><img alt="Install in Cursor" src="https://cursor.com/deeplink/mcp-install-dark.svg"></a>
+  <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="Install in VS Code" src="https://img.shields.io/badge/Install%20in-VS%20Code-007acc"></a>
+</p>
+
 # AIGCNEWS
 
 An AI discovery data platform: continuously indexes arXiv papers, GitHub AI projects, tech news, Product Hunt, and Hacker News, producing daily rankings and research briefs. The same dataset is served through two interfaces:
