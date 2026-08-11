@@ -159,6 +159,32 @@ class TestEnrichAllPending:
         assert result["status"] == "success"
         assert result["batches"] == 1
 
+    def test_retry_disabled_passes_through_to_every_batch(self, monkeypatch) -> None:
+        """两小时补跑链路：retry_failed=False 透传到每一批，failed 留待每日流水线。"""
+        rounds = iter(
+            [
+                {"candidates": 500, "succeeded": 500, "failed": 0, "cancelled": 0},
+                {"candidates": 0, "succeeded": 0, "failed": 0, "cancelled": 0},
+            ]
+        )
+        calls: list[dict[str, object]] = []
+
+        def _fake_batch(self, **kwargs):
+            calls.append(kwargs)
+            return next(rounds)
+
+        monkeypatch.setattr(GitHubProjectEnricher, "enrich_batch", _fake_batch)
+        repository = MagicMock(spec=GitHubProjectEnrichmentRepository)
+
+        result = enrich_all_pending_github_projects(
+            retry_failed=False,
+            db=repository,
+        )
+
+        assert result["status"] == "success"
+        assert result["batches"] == 2
+        assert calls and all(call["retry_failed"] is False for call in calls)
+
     def test_stops_when_breaker_or_cancel_marks_cancelled(self, monkeypatch) -> None:
         monkeypatch.setattr(
             GitHubProjectEnricher,

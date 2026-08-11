@@ -285,20 +285,111 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
                 "_refresh_current_github_project_metrics",
                 side_effect=body,
             ),
+            patch.object(
+                scheduler,
+                "_enrich_newly_eligible_github_projects",
+                new=AsyncMock(return_value={"succeeded": 0}),
+            ),
         ):
             repository = MagicMock()
+            enrichment = MagicMock()
             await asyncio.gather(
                 scheduler._run_github_project_metrics_refresh_job(
                     repository=repository,
+                    enrichment=enrichment,
                     github_lock=lock,
                 ),
                 scheduler._run_github_project_metrics_refresh_job(
                     repository=repository,
+                    enrichment=enrichment,
                     github_lock=lock,
                 ),
             )
 
         self.assertEqual(maximum, 1)
+
+    async def test_refresh_job_runs_enrichment_top_up_after_refresh(self) -> None:
+        calls: list[str] = []
+
+        async def _refresh(_: str, __: object) -> dict[str, object]:
+            calls.append("refresh")
+            return {"refresh": {}}
+
+        async def _top_up(_: object) -> dict[str, object]:
+            calls.append("top_up")
+            return {"succeeded": 3}
+
+        enrichment = MagicMock()
+        with (
+            patch(
+                "backend.app.services.ingestion.github_project_metrics_service.current_github_metric_date",
+                return_value="2026-07-14",
+            ),
+            patch.object(
+                scheduler,
+                "_refresh_current_github_project_metrics",
+                side_effect=_refresh,
+            ),
+            patch.object(
+                scheduler,
+                "_enrich_newly_eligible_github_projects",
+                side_effect=_top_up,
+            ) as top_up,
+        ):
+            ok = await scheduler._run_github_project_metrics_refresh_job(
+                repository=MagicMock(),
+                enrichment=enrichment,
+            )
+
+        self.assertTrue(ok)
+        self.assertEqual(calls, ["refresh", "top_up"])
+        top_up.assert_awaited_once_with(enrichment)
+
+    async def test_refresh_job_top_up_failure_does_not_fail_refresh(self) -> None:
+        with (
+            patch(
+                "backend.app.services.ingestion.github_project_metrics_service.current_github_metric_date",
+                return_value="2026-07-14",
+            ),
+            patch.object(
+                scheduler,
+                "_refresh_current_github_project_metrics",
+                new=AsyncMock(return_value={"refresh": {}}),
+            ),
+            patch.object(
+                scheduler,
+                "_enrich_newly_eligible_github_projects",
+                new=AsyncMock(side_effect=RuntimeError("模型端宕机")),
+            ),
+        ):
+            ok = await scheduler._run_github_project_metrics_refresh_job(
+                repository=MagicMock(),
+                enrichment=MagicMock(),
+            )
+
+        self.assertTrue(ok)
+
+    async def test_enrichment_top_up_drains_new_candidates_without_failed_retry(self) -> None:
+        repository = MagicMock()
+        service_module = types.ModuleType(
+            "backend.app.services.ingestion.github_project_enricher"
+        )
+        drain = MagicMock(return_value={"status": "success"})
+        service_module.enrich_all_pending_github_projects = drain
+
+        with patch.dict(
+            sys.modules,
+            {
+                "backend.app.services.ingestion.github_project_enricher": service_module,
+            },
+        ):
+            await scheduler._enrich_newly_eligible_github_projects(repository)
+
+        drain.assert_called_once_with(
+            concurrency=5,
+            retry_failed=False,
+            db=repository,
+        )
 
 
 if __name__ == "__main__":

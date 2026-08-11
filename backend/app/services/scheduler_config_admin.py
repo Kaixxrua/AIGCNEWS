@@ -106,7 +106,7 @@ _JOB_NAMES: dict[str, str] = {
     "x_credentials_probe": "X 凭证池定时测活",
     "dailyhot_hotlists": "DailyHot 聚合热榜采集",
     "github_project_daily_pipeline": "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",
-    "github_project_metrics_refresh": "GitHub 项目库当天指标每两小时刷新",
+    "github_project_metrics_refresh": "GitHub 项目库当天指标每两小时刷新（含新越线项目富化补跑）",
     "daily_briefing": "每日自动简报生成（全维度）",
     "subscription_dispatch": "订阅简报派发（全频率幂等投递）",
     "project_semantic_warmup": "项目语义搜索链路预热",

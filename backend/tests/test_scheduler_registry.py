@@ -80,7 +80,7 @@ class SchedulerDescriptorTests(unittest.TestCase):
             (
                 "github_project_metrics_refresh",
                 "github_project_metrics_refresh",
-                "GitHub 项目库当天指标每两小时刷新",
+                "GitHub 项目库当天指标每两小时刷新（含新越线项目富化补跑）",
                 {"hour": "1-23/2", "minute": "17", "second": "0"},
                 True,
                 3600,

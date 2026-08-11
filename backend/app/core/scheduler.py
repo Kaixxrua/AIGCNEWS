@@ -445,9 +445,31 @@ async def _refresh_current_github_project_metrics(
     )
 
 
+async def _enrich_newly_eligible_github_projects(repository: Any) -> Dict[str, Any]:
+    """指标刷新后的富化补跑：让刚越过 500 线的项目两小时内上榜。
+
+    每两小时指标刷新是新越线项目诞生的精确时刻（快照刷新后才满足
+    COALESCE(snapshot.stars) >= 500 的富化口径），挂在其后直接全量清空
+    待处理队列，不再等次日 02:00 主流水线。retry_failed=False：只补从未
+    富化的新候选，failed 条目留待每日流水线重试，避免持续性失败每两小时
+    白烧模型调用；空队列时首轮候选查询即返回零，不产生任何模型调用。
+    """
+    from backend.app.services.ingestion.github_project_enricher import (
+        enrich_all_pending_github_projects,
+    )
+
+    return await asyncio.to_thread(
+        enrich_all_pending_github_projects,
+        concurrency=5,
+        retry_failed=False,
+        db=repository,
+    )
+
+
 async def _run_github_project_metrics_refresh_job(
     *,
     repository: Any,
+    enrichment: Any,
     github_lock: asyncio.Lock | None = None,
 ) -> bool:
     from backend.app.services.ingestion.github_project_metrics_service import (
@@ -463,7 +485,18 @@ async def _run_github_project_metrics_refresh_job(
                 metric_date,
                 repository,
             )
-        logger.info("[Scheduler] GitHub 当天指标刷新完成：%s", result)
+            # 补跑与每日流水线的富化阶段共用同一把 github 锁，杜绝并发批次
+            # 重复烧模型调用；补跑失败不拖累已完成的指标刷新
+            top_up: Dict[str, Any] | None = None
+            try:
+                top_up = await _enrich_newly_eligible_github_projects(enrichment)
+            except Exception as exc:  # noqa: BLE001 - 非致命，记入日志即可
+                logger.error("[Scheduler] GitHub 富化补跑失败（非致命）: %s", exc, exc_info=True)
+        logger.info(
+            "[Scheduler] GitHub 当天指标刷新完成：%s，富化补跑：%s",
+            result,
+            top_up,
+        )
         return True
     except Exception as exc:
         logger.error("[Scheduler] GitHub 当天指标刷新失败: %s", exc, exc_info=True)
@@ -873,6 +906,7 @@ class ApplicationSchedulerRuntime:
                 "github_project_metrics_refresh",
                 lambda: _run_github_project_metrics_refresh_job(
                     repository=self.repositories.github_ingestion,
+                    enrichment=self.repositories.github_enrichment,
                     github_lock=self._github_job_lock,
                 ),
             )

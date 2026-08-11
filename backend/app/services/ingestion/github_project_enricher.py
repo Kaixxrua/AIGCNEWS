@@ -522,6 +522,7 @@ def enrich_all_pending_github_projects(
     batch_limit: int = 500,
     concurrency: int = 5,
     min_stars: int = DEFAULT_MIN_STARS,
+    retry_failed: bool = True,
     db: GitHubProjectEnrichmentRepository,
 ) -> Dict[str, Any]:
     """循环清空富化待处理队列：每批 batch_limit，直到无候选或一轮无进展。
@@ -529,7 +530,9 @@ def enrich_all_pending_github_projects(
     已成功富化的项目下一批自动出队，因此循环天然向前推进；「无进展即停」
     保证持续性失败（数据问题或模型端故障）不会空转——它们保持 failed 留待
     下轮 retry_failed；熔断或管理员终止时本轮 cancelled>0，立即收尾，
-    剩余条目保持待处理。
+    剩余条目保持待处理。retry_failed=False 时只清从未富化的新候选，
+    failed 条目原地留待每日主流水线重试（两小时补跑链路用，避免持续性
+    失败每两小时白烧模型调用）。
     """
     enricher = GitHubProjectEnricher(db=db)
     totals: Dict[str, Any] = {
@@ -545,7 +548,7 @@ def enrich_all_pending_github_projects(
         batch = enricher.enrich_batch(
             limit=batch_limit,
             min_stars=min_stars,
-            retry_failed=True,
+            retry_failed=retry_failed,
             concurrency=concurrency,
         )
         totals["batches"] += 1

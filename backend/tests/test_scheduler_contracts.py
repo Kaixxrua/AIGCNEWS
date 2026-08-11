@@ -145,7 +145,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             ),
             (
                 "github_project_metrics_refresh",
-                "GitHub 项目库当天指标每两小时刷新",
+                "GitHub 项目库当天指标每两小时刷新（含新越线项目富化补跑）",
                 {"hour": "1-23/2", "minute": "17", "second": "0"},
                 True,
                 3600,
@@ -371,6 +371,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         )
         metrics_refresh.assert_awaited_once_with(
             repository=repositories.github_ingestion,
+            enrichment=repositories.github_enrichment,
             github_lock=runtime._github_job_lock,
         )
         x_credentials_probe.assert_awaited_once_with(

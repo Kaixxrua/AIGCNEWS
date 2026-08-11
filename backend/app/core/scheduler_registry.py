@@ -186,7 +186,7 @@ SOURCE_JOB_DESCRIPTORS: tuple[CronJobDescriptor, ...] = (
     CronJobDescriptor(
         id="github_project_metrics_refresh",
         source="github_project_metrics_refresh",
-        name="GitHub 项目库当天指标每两小时刷新",
+        name="GitHub 项目库当天指标每两小时刷新（含新越线项目富化补跑）",
         schedule=CronSchedule(hour="1-23/2", minute=17),
         coalesce=True,
         misfire_grace_time=3600,
