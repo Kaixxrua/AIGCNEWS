@@ -33,10 +33,17 @@ from twitter_cli.exceptions import (
     TwitterAPIError,
 )
 
+from backend.app.services.source_plugins.x_source import (
+    DEFAULT_INTER_ACCOUNT_DELAY,
+    XAuthAbort,
+    XAuthNotConfigured,
+    XRateLimitAbort,
+    XTransportUnavailable,
+)
+
 logger = logging.getLogger(__name__)
 
 USER_ID_CACHE_TTL_SECONDS = 24 * 3600
-DEFAULT_INTER_ACCOUNT_DELAY = 5.0
 
 # screen_name(lower) -> (user_id, 过期时间戳)
 _USER_ID_CACHE: dict[str, tuple[str, float]] = {}
@@ -254,27 +261,6 @@ def _install_parser_patches() -> None:
 def clear_user_id_cache() -> None:
     """清空 user_id 缓存（测试缝 + 运维排障用）。"""
     _USER_ID_CACHE.clear()
-
-
-class XAuthNotConfigured(Exception):
-    """缺少可用 X 凭据。"""
-
-
-class XAuthAbort(Exception):
-    """认证失效，中止整轮采集（避免死凭据连续锤击触发风控）。"""
-
-
-class XRateLimitAbort(Exception):
-    """触发限流（twitter-cli 内部退避后仍 429），中止整轮采集。"""
-
-
-class XTransportUnavailable(Exception):
-    """传输面系统性故障（代理断连/解析漂移等），整轮零成功时上抛。
-
-    与单账号跳过区分：零星失败是账号个体问题，静默跳过；整轮零成功
-    意味着基础设施级故障（2026-08-09 代理断连导致 16.5h 静默停摆），
-    必须让采集轮以 error 收场进入调度失败面。
-    """
 
 
 def _default_client_factory() -> Any:

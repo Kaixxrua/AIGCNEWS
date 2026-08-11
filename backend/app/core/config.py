@@ -280,6 +280,13 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_timezone: str = "Asia/Shanghai"
 
+    # 可插拔采集源开关（默认关闭）。X 与微信公众号链路的敏感实现以
+    # 插件形式提供（见 services/source_plugins 契约与加载器）：关闭时
+    # 相关路由与调度任务优雅降级，核心产品面不受影响；开启后优先加载
+    # 仓库外私有包实现，回退仓库内过渡期实现。
+    x_source_enabled: bool = False
+    wechat_source_enabled: bool = False
+
     # 运行环境：development / production（开发环境热重载时自动清除 Redis 缓存）
     env: str = "production"
 

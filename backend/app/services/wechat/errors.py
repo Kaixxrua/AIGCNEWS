@@ -1,13 +1,6 @@
 from __future__ import annotations
 
-
-class WeChatError(Exception):
-    """Base class for all WeChat backend domain errors."""
-
-    def __init__(self, code: str, message: str) -> None:
-        self.code = code
-        self.message = message
-        super().__init__(message)
+from backend.app.services.source_plugins.wechat_source import WeChatError
 
 
 class WeChatAuthRequired(WeChatError):
