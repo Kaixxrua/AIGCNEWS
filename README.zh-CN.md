@@ -65,21 +65,36 @@ Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://rep
 
 ### 性能实测
 
-以下数据测于 2026-08-11，可用 [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) 复现（Streamable HTTP JSON-RPC，6 个代表性工具 × 3 轮，共 18 次 `tools/call` 计时）：
+服务端延迟，测于 2026-08-11，可用 [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) 复现（Streamable HTTP JSON-RPC，6 个代表性工具 × 3 轮，共 18 次 `tools/call` 计时）：
 
 | Endpoint | p50 | p95 | 说明 |
 | --- | --- | --- | --- |
-| 托管 `https://aigcnews.cn/api/mcp` | 2.6 s | 3.8 s | 含边缘/隧道网络链路 |
 | 自托管 `http://localhost:8000/api/mcp` | 0.36 s | 0.71 s | 后端查询处理本身为亚秒级 |
 
-Agent 端到端对比（同一 Claude Code 会话、3 组等价查询、wall-clock，含会话调度与结果流式开销；n=3 取范围值）：
+Agent 端到端对比 WebSearch，测于 2026-08-11，可用 [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py) 复现：headless `claude -p`（claude-opus-4-8，effort low），MCP 指向 `http://127.0.0.1:8000/api/mcp`，wall-clock 从进程启动计到产出完整回答，两侧均要求用不超过两句话作答，10 组不同查询 × 每条路径各 1 次：
 
-| 检索路径 | 端到端耗时 | 返回形态 |
+| 查询 | AIGC Radar MCP | WebSearch |
 | --- | --- | --- |
-| AIGC Radar MCP | 18–32 s | 结构化 JSON 记录，可直接消费 |
-| WebSearch | 49–61 s | 链接列表；结构化字段需再 WebFetch + 解析 |
+| self-hosted LLM observability platform open source | 9.6 s | 13.4 s |
+| open source screenshot tool for Windows with rounded corners | 7.7 s | 38.8 s |
+| mixture of experts load balancing paper | 6.7 s | 19.8 s |
+| Sora video generation model | 6.2 s | 42.4 s |
+| trending GitHub repositories this week | 9.4 s | 10.7 s |
+| MCP server for database access | 8.7 s | 10.0 s |
+| self-hosted photo management like Google Photos | 32.9 s | 31.8 s |
+| RLHF reward model overoptimization paper | 7.0 s | 17.4 s |
+| top Hacker News stories this month | 6.8 s | 52.2 s |
+| Claude Code agent skills | 6.7 s | 54.8 s |
+| **中位数** | **7.4 s** | **25.8 s** |
 
-复现：`python3 scripts/benchmark_mcp_latency.py --url https://aigcnews.cn/api/mcp --trials 3`。
+MCP 在 10 组中有 9 组低于 10 秒，WebSearch 从未低于 9.9 秒——**中位口径快 3.5 倍**。纯 MCP 工具执行（`tool_use` → `tool_result`）中位数 0.16 s（0.03–0.80 s）；WebSearch 的搜索在 API 回合内部执行（server-side 工具），客户端无法观测到等价窗口。32.9 s 的 MCP 离群值是模型 API 停顿而非工具耗时（该次工具调用仅 0.041 s）——中位数口径天然排除此类波动。
+
+复现：
+
+```bash
+python3 scripts/benchmark_mcp_latency.py --url http://localhost:8000/api/mcp --trials 3
+python3 scripts/benchmark_agent_tool_latency.py  # 需要 claude CLI
+```
 
 ### 结构化 JSON 响应
 

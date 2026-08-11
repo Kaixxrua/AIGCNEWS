@@ -65,21 +65,36 @@ On the context side, it provides resources (`aigc-news://dashboard/summary`, `ai
 
 ### Benchmarks
 
-Measured on 2026-08-11 with [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) (JSON-RPC over Streamable HTTP, 6 representative tools × 3 trials, 18 timed `tools/call` requests):
+Server-side latency, measured 2026-08-11 with [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) (JSON-RPC over Streamable HTTP, 6 representative tools × 3 trials, 18 timed `tools/call` requests):
 
 | Endpoint | p50 | p95 | Notes |
 | --- | --- | --- | --- |
-| Hosted `https://aigcnews.cn/api/mcp` | 2.6 s | 3.8 s | includes the edge/tunnel network path |
-| Self-hosted `http://localhost:8000/api/mcp` | 0.36 s | 0.71 s | backend query processing itself is sub-second |
+| Self-hosted `http://localhost:8000/api/mcp` | 0.36 s | 0.71 s | backend query processing is sub-second |
 
-Agent end-to-end comparison (same Claude Code session, 3 matched query pairs, wall clock including session scheduling and streaming overhead; ranges over n=3):
+Agent end-to-end vs WebSearch, measured 2026-08-11 with [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py): headless `claude -p` (claude-opus-4-8, effort low), MCP pointed at `http://127.0.0.1:8000/api/mcp`, wall clock from process spawn to the complete answer, both sides instructed to answer in at most two sentences, 10 distinct queries × 1 run per path:
 
-| Retrieval path | End-to-end | Returns |
+| Query | AIGC Radar MCP | WebSearch |
 | --- | --- | --- |
-| AIGC Radar MCP | 18–32 s | structured JSON records, ready to consume |
-| WebSearch | 49–61 s | a link list; structured fields need a follow-up fetch plus parsing |
+| self-hosted LLM observability platform open source | 9.6 s | 13.4 s |
+| open source screenshot tool for Windows with rounded corners | 7.7 s | 38.8 s |
+| mixture of experts load balancing paper | 6.7 s | 19.8 s |
+| Sora video generation model | 6.2 s | 42.4 s |
+| trending GitHub repositories this week | 9.4 s | 10.7 s |
+| MCP server for database access | 8.7 s | 10.0 s |
+| self-hosted photo management like Google Photos | 32.9 s | 31.8 s |
+| RLHF reward model overoptimization paper | 7.0 s | 17.4 s |
+| top Hacker News stories this month | 6.8 s | 52.2 s |
+| Claude Code agent skills | 6.7 s | 54.8 s |
+| **Median** | **7.4 s** | **25.8 s** |
 
-Reproduce: `python3 scripts/benchmark_mcp_latency.py --url https://aigcnews.cn/api/mcp --trials 3`.
+MCP finished under 10 s in 9 of 10 pairs while WebSearch never went below 9.9 s — **3.5× faster at the median**. Pure MCP tool execution (`tool_use` → `tool_result`) was 0.16 s at the median (0.03–0.80 s); WebSearch executes its search inside the API turn (server-side tool), so no equivalent client-observable window exists. The 32.9 s MCP outlier is a model-API stall, not tool cost (its tool call took 0.041 s) — the median filters such spikes.
+
+Reproduce:
+
+```bash
+python3 scripts/benchmark_mcp_latency.py --url http://localhost:8000/api/mcp --trials 3
+python3 scripts/benchmark_agent_tool_latency.py  # requires the claude CLI
+```
 
 ### Structured JSON responses
 
