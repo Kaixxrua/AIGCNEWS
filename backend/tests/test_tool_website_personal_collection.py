@@ -15,11 +15,11 @@ from backend.app.services.ingestion.tool_website_fetcher import ToolWebsiteMetad
 class ToolWebsiteEnricherTests(unittest.TestCase):
     def setUp(self) -> None:
         self.metadata = ToolWebsiteMetadata(
-            canonical_url="https://gptsakura.com/",
-            normalized_url="https://gptsakura.com/",
+            canonical_url="https://example.com/",
+            normalized_url="https://example.com/",
             normalized_url_hash="url-hash",
-            domain="gptsakura.com",
-            title="GPT Sakura",
+            domain="example.com",
+            title="Example AI Tools",
             description="AI 工具网站",
             image_url="",
             raw_metadata={},
@@ -53,7 +53,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
             return_value=self.metadata,
         ):
             return self.enricher.add_and_enrich(
-                "gptsakura.com",
+                "example.com",
                 added_by_user_id=7,
                 visibility="private",
             )

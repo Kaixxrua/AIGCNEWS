@@ -45,7 +45,7 @@ def test_rss_network_failure_does_not_retry(monkeypatch: pytest.MonkeyPatch) -> 
 def test_website_fetcher_ignores_ambient_proxy_when_fallback_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ALL_PROXY", "socks5h://10.20.0.1:1080")
+    monkeypatch.setenv("ALL_PROXY", "socks5h://198.51.100.1:1080")
     monkeypatch.setattr(tool_website_fetcher.settings, "outbound_proxy", "")
     fetch = Mock(side_effect=httpx.ConnectError("offline"))
     monkeypatch.setattr(tool_website_fetcher, "_fetch_tool_website_metadata", fetch)
@@ -63,7 +63,7 @@ def test_website_fetcher_falls_back_to_configured_proxy_after_transport_failure(
     monkeypatch.setattr(
         tool_website_fetcher.settings,
         "outbound_proxy",
-        "socks5h://10.20.0.1:1080",
+        "socks5h://198.51.100.1:1080",
     )
     fetch = Mock(side_effect=[httpx.ConnectTimeout("offline"), metadata])
     monkeypatch.setattr(tool_website_fetcher, "_fetch_tool_website_metadata", fetch)
@@ -71,7 +71,7 @@ def test_website_fetcher_falls_back_to_configured_proxy_after_transport_failure(
     assert tool_website_fetcher.fetch_tool_website_metadata("https://www.youtube.com") is metadata
     assert fetch.call_args_list == [
         (("https://www.youtube.com",), {}),
-        (("https://www.youtube.com",), {"proxy_url": "socks5h://10.20.0.1:1080"}),
+        (("https://www.youtube.com",), {"proxy_url": "socks5h://198.51.100.1:1080"}),
     ]
 
 
@@ -99,7 +99,7 @@ def test_website_fetcher_does_not_proxy_policy_failures(monkeypatch: pytest.Monk
 
 
 def test_website_fetcher_sanitizes_proxy_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    proxy_url = "socks5h://user:secret@10.20.0.1:1080"
+    proxy_url = "socks5h://user:secret@198.51.100.1:1080"
     monkeypatch.setattr(tool_website_fetcher.settings, "outbound_proxy", proxy_url)
     fetch = Mock(side_effect=[httpx.ConnectError("direct"), httpx.ConnectError(proxy_url)])
     monkeypatch.setattr(tool_website_fetcher, "_fetch_tool_website_metadata", fetch)
@@ -113,14 +113,14 @@ def test_website_fetcher_sanitizes_proxy_failure(monkeypatch: pytest.MonkeyPatch
 
 def test_youtube_uses_remote_dns_only_with_socks5h() -> None:
     assert tool_website_fetcher._proxy_uses_remote_dns(
-        "socks5h://10.20.0.1:1080", "www.youtube.com"
+        "socks5h://198.51.100.1:1080", "www.youtube.com"
     )
-    assert tool_website_fetcher._proxy_uses_remote_dns("socks5h://10.20.0.1:1080", "youtu.be")
+    assert tool_website_fetcher._proxy_uses_remote_dns("socks5h://198.51.100.1:1080", "youtu.be")
     assert not tool_website_fetcher._proxy_uses_remote_dns(
-        "socks5h://10.20.0.1:1080", "youtube.com.attacker.example"
+        "socks5h://198.51.100.1:1080", "youtube.com.attacker.example"
     )
     assert not tool_website_fetcher._proxy_uses_remote_dns(
-        "http://10.20.0.1:7897", "www.youtube.com"
+        "http://198.51.100.1:7897", "www.youtube.com"
     )
 
 
@@ -159,7 +159,7 @@ def test_invalid_proxy_configuration_is_sanitized(monkeypatch: pytest.MonkeyPatc
 
 def test_httpx_accepts_socks5h_proxy_when_socks_extra_is_installed() -> None:
     try:
-        transport = httpx.HTTPTransport(proxy="socks5h://10.20.0.1:1080")
+        transport = httpx.HTTPTransport(proxy="socks5h://198.51.100.1:1080")
     except ImportError as exc:  # pragma: no cover - documents the required extra
         pytest.fail(f"httpx SOCKS support is not installed: {exc}")
     transport.close()
