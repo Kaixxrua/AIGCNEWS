@@ -1,6 +1,6 @@
 # Linux 服务器开机启动
 
-主项目由 Docker Compose project `docker` 管理。Docker restart policy 负责容器进程恢复，systemd unit 在服务器启动时执行一次全栈协调并等待健康检查通过。
+主项目由 Docker Compose project `docker` 管理：核心栈定义在仓库内 `docker/docker-compose.yml`，本机的私有部署扩展（PriceAI 姊妹服务、sub2api 外部编排网、私有 nginx server 挂载）以 overlay 形式位于仓库外 `../aigcnews_private/deploy/docker-compose.private.yml`，`scripts/manage_main_stack.sh` 探测到后自动并入。Docker restart policy 负责容器进程恢复，systemd unit 在服务器启动时执行一次全栈协调并等待健康检查通过。
 
 ## 手工恢复 Milvus
 

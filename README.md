@@ -86,15 +86,31 @@ cd frontend && npm ci && cd ..
 
 `requirements-dev.txt` 在锁定的 `requirements.lock` 之上追加 pytest / pytest-cov / ruff，与 CI 使用同一份依赖基线。
 
-### 3) 启动完整栈
+### 3) 准备前端 TLS 证书（自签名即可）
+
+`frontend-web` 的 nginx 以只读卷挂载 `frontend/ssl/`（已 gitignore，干净检出不存在），缺少证书会启动失败。本地部署生成自签名证书即可：
+
+```bash
+mkdir -p frontend/ssl
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout frontend/ssl/aigcnews.cn.key \
+  -out frontend/ssl/aigcnews.cn_bundle.crt \
+  -days 3650 -subj "/CN=aigcnews.cn"
+# 加固后的 frontend-web 容器（cap_drop: ALL）要求私钥属主为 root
+sudo chown root:root frontend/ssl/*.key && sudo chmod 600 frontend/ssl/*.key
+```
+
+### 4) 启动核心栈
 
 ```bash
 scripts/manage_main_stack.sh up
 ```
 
-该命令 reconcile 整个 Compose 栈（后端 API、前端、PostgreSQL、Redis、Milvus、MinIO 等）并等待健康检查通过。常用子命令：`config`（校验编排，不打印秘密）、`status`、`logs`。
+该命令 reconcile 核心 Compose 栈（后端 API、前端、PostgreSQL、Redis、Milvus、MinIO 等）并等待健康检查通过，**干净检出即可运行**。常用子命令：`config`（校验编排，不打印秘密）、`status`、`logs`。
 
-### 4) 本地开发（容器外热重载）
+> 私有部署扩展（姊妹服务、外部编排网、私有 nginx server 等）不随仓库发布，以 overlay 形式注入：脚本探测到 `../aigcnews_private/deploy/docker-compose.private.yml`（可用 `AIGCNEWS_PRIVATE_COMPOSE` 覆盖）时自动并入；不存在时核心栈独立可用。机制详见 `docker/docker-compose.yml` 头部注释。
+
+### 5) 本地开发（容器外热重载）
 
 ```bash
 # 后端（读取 settings 中的 API_HOST / API_PORT，默认 8000）
@@ -142,7 +158,7 @@ docker compose -f docker/docker-compose.yml config --quiet
 ```text
 backend/            FastAPI 应用（app/）、测试（tests/）、迁移（migrations/）、依赖锁定
 frontend/           Vue 3 + Vite 站点（src/）、nginx 配置、前端镜像
-docker/             Compose 编排与备份演练编排
+docker/             Compose 编排（核心栈）与备份演练编排（私有扩展经 overlay 注入）
 docs/               项目文档（索引见 docs/README.md，决策记录见 docs/adr/）
 scripts/            栈管理、迁移、备份与数据回填脚本
 .github/workflows/  CI：后端测试、PostgreSQL 集成、前端构建与 lint、编排冒烟

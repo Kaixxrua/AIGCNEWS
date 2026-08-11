@@ -503,7 +503,7 @@ CI 会执行后端测试、PostgreSQL 16 集成测试、数据库迁移、前端
 
 Nginx 负责 TLS、HTTP 跳转 HTTPS、SPA 路由回退、静态资源缓存、API 反向代理和 SSE 代理兼容。
 
-完整部署还涉及远程 Caddy VPS、WireGuard、Cloudflare Tunnel、本机私网代理和外部部署控制器。部分边缘配置位于仓库之外，因此单凭当前仓库无法完整复现公网拓扑。
+核心栈（后端 API、前端、PostgreSQL、Redis、Milvus、MinIO、Neo4j）单凭当前仓库即可完整复现（见 README 快速开始）。参考生产部署还涉及远程 Caddy VPS、WireGuard、Cloudflare Tunnel、私网代理、外部部署控制器，以及姊妹服务与私有 nginx server 等边缘配置——这些以私有 overlay 形式位于仓库之外（`docker/docker-compose.yml` 头部注释描述了注入机制），属可选的私有部署扩展，不影响核心栈独立运行。
 
 ### 12.3 开机恢复
 
