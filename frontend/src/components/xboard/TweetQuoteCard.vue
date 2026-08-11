@@ -63,7 +63,7 @@ const quoteMediaThumb = (item: TweetMediaItem) => (isVideo(item) ? (item.poster_
     </span>
     <span v-if="displayQuoteText(quote, locale)" class="tweet-quote-text block whitespace-pre-line px-3 pt-1 text-2xs leading-4">
       <template v-for="(seg, segIndex) in quoteTextSegments(quote, locale)" :key="segIndex">
-        <span v-if="seg.isUrl" class="tweet-quote-link">{{ seg.text }}</span>
+        <span v-if="seg.isUrl || seg.isMention" class="tweet-quote-link">{{ seg.text }}</span>
         <span v-else>{{ seg.text }}</span>
       </template>
     </span>

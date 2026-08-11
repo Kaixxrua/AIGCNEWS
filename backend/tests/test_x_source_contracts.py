@@ -439,6 +439,30 @@ class XPolicyContracts(unittest.TestCase):
         out = x_policy.restore_translation_urls("好看", source, media, [])
         self.assertEqual(out, "好看")
 
+    def test_restore_translation_mentions_prepends_dropped_reply_prefix(self) -> None:
+        out = x_policy.restore_translation_mentions(
+            "请在此处回复：", "@VictorSuOrtiz @alexinexxx RSVP here:"
+        )
+        self.assertEqual(out, "@VictorSuOrtiz @alexinexxx 请在此处回复：")
+
+    def test_restore_translation_mentions_skips_when_translation_keeps_prefix(self) -> None:
+        # 译文已带同一前缀（X 偶发保留）不重复补
+        out = x_policy.restore_translation_mentions(
+            "@GoogleDeepMind 团队分享幕后", "@GoogleDeepMind behind the scenes"
+        )
+        self.assertEqual(out, "@GoogleDeepMind 团队分享幕后")
+
+    def test_restore_translation_mentions_ignores_inline_mentions(self) -> None:
+        # 行内提及不是回复前缀，X 译文保留；即使丢失也不追加（会破坏语序）
+        out = x_policy.restore_translation_mentions(
+            "机器人应该能打鸡蛋吗？", "Should robots crack eggs @GoogleDeepMind?"
+        )
+        self.assertEqual(out, "机器人应该能打鸡蛋吗？")
+
+    def test_restore_translation_mentions_empty_inputs(self) -> None:
+        self.assertEqual(x_policy.restore_translation_mentions("", "@a hi"), "")
+        self.assertEqual(x_policy.restore_translation_mentions("你好", ""), "你好")
+
 
 class _FakeClient:
     """同步 fake：transport 经 asyncio.to_thread 调用，Mock 即可。"""
@@ -1606,6 +1630,25 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
             "More info on eligibility: https://gemini.google/eligibility",
         )
 
+    async def test_translation_dropped_reply_mentions_are_restored_on_attach(self) -> None:
+        tweet = self._lang_tweet("2008", "en")
+        tweet.text = "@VictorSuOrtiz @alexinexxx RSVP here: https://t.co/LuMa"
+        tweet.urls = ["https://luma.com/cboi9km9"]
+        transport = _FakeTransport(result={"openai": [tweet]})
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            # X translateTweet 剥掉回复 @ 前缀与全部链接
+            return {"2008": "请在此处回复："}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(
+            result.items[0].get("translation_zh"),
+            "@VictorSuOrtiz @alexinexxx 请在此处回复：\nhttps://luma.com/cboi9km9",
+        )
+
     async def test_empty_lang_still_attempts_translation(self) -> None:
         transport = _FakeTransport(result={"openai": [self._lang_tweet("2006", "")]})
         seen: list[list[str]] = []
@@ -1713,6 +1756,25 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
             "被引译文：\nhttps://example.com/report",
         )
         self.assertEqual(item["quote"]["text"], "read this https://example.com/report")
+
+    async def test_quoted_translation_dropped_reply_mentions_are_restored(self) -> None:
+        outer = self._lang_tweet("2050", "en")
+        quoted = self._lang_tweet("2051", "en")
+        quoted.text = "@AnthropicAI congrats on the launch!"
+        outer.quoted_tweet = quoted
+        transport = _FakeTransport(result={"openai": [outer]})
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            return {"2050": "外推译文", "2051": "祝贺发布！"}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(
+            result.items[0]["quote"].get("translation_zh"),
+            "@AnthropicAI 祝贺发布！",
+        )
 
     async def test_zh_quoted_tweet_skips_translation(self) -> None:
         # 中文被引不发起翻译请求；外推英文仍正常补译

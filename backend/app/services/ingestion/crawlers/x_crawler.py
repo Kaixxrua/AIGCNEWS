@@ -238,12 +238,15 @@ class XCrawler(BaseCrawler):
                 # X 译文会剥掉全部链接：按实体补回缺失链接（媒体尾巴除外）
                 tweet = tweets_by_id.get(str(item.get("tweet_id") or ""))
                 if tweet is not None:
+                    raw_text = str(getattr(tweet, "text", "") or "")
                     text = x_policy.restore_translation_urls(
                         text,
-                        str(getattr(tweet, "text", "") or ""),
+                        raw_text,
                         item.get("media") or [],
                         getattr(tweet, "urls", None),
                     )
+                    # 译文剥回复 @ 前缀（回复链元数据）：同口径前置补回
+                    text = x_policy.restore_translation_mentions(text, raw_text)
                 item["translation_zh"] = text
                 attached += 1
             # 被引推文同口径补译：附着于 quote.translation_zh（随 quote JSON 落库）
@@ -254,11 +257,15 @@ class XCrawler(BaseCrawler):
             quote_text = translations.get(str(getattr(quoted, "id", "") or ""), "")
             if not quote_text:
                 continue
-            quote["translation_zh"] = x_policy.restore_translation_urls(
-                quote_text,
-                str(getattr(quoted, "text", "") or ""),
-                quote.get("media") or [],
-                getattr(quoted, "urls", None),
+            quote_raw_text = str(getattr(quoted, "text", "") or "")
+            quote["translation_zh"] = x_policy.restore_translation_mentions(
+                x_policy.restore_translation_urls(
+                    quote_text,
+                    quote_raw_text,
+                    quote.get("media") or [],
+                    getattr(quoted, "urls", None),
+                ),
+                quote_raw_text,
             )
             attached_quotes += 1
         logger.info(

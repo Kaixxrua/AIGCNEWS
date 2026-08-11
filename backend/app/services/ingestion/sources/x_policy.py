@@ -182,6 +182,29 @@ def restore_translation_urls(translation: str, source_text: str, media: list[dic
     return translation.rstrip() + "\n" + "\n".join(missing)
 
 
+# 回复推开头的连续提及链（@A @B 正文）：translateTweet 剥的正是这段前缀
+_LEADING_MENTIONS_RE = re.compile(r"^((?:@[A-Za-z0-9_]+)(?:\s+@[A-Za-z0-9_]+)*)(?:\s+|$)")
+
+
+def restore_translation_mentions(translation: str, source_text: str) -> str:
+    """补回 X 译文剥掉的回复 @ 前缀（回复链开头的连续提及）。
+
+    translateTweet 把回复推开头的 @A @B 当回复元数据剥掉（x.com 译文视图
+    同样不内联，仅单独一行回复上下文），正文中间的提及保留。本站无回复
+    上下文行，译文缺失同一前缀时把原文前缀原样前置，与原文开头对齐；
+    译文已带该前缀不重复补。行内提及丢失罕见且回追加会破坏语序，不处理。
+    """
+    if not translation:
+        return translation
+    match = _LEADING_MENTIONS_RE.match(source_text or "")
+    if not match:
+        return translation
+    prefix = match.group(1)
+    if translation.startswith(prefix):
+        return translation
+    return f"{prefix} {translation}"
+
+
 def _project_tweet_media(tweet: Any) -> list[dict]:
     """把 twitter-cli 的 Tweet.media 投影为可序列化的元数据列表。
 

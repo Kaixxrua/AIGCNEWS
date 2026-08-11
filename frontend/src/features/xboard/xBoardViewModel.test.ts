@@ -335,6 +335,25 @@ describe('xBoardViewModel', () => {
       .toEqual([{ text: 'no links here', isUrl: false }])
   })
 
+  it('tweetTextSegments marks @mentions as linkable segments', () => {
+    const doc = tweet('openai', '1', { summary: '@VictorSuOrtiz @alexinexxx RSVP here' })
+    expect(tweetTextSegments(doc, 'en-US')).toEqual([
+      { text: '@VictorSuOrtiz', isUrl: false, isMention: true, mentionHandle: 'VictorSuOrtiz' },
+      { text: ' ', isUrl: false },
+      { text: '@alexinexxx', isUrl: false, isMention: true, mentionHandle: 'alexinexxx' },
+      { text: ' RSVP here', isUrl: false },
+    ])
+  })
+
+  it('tweetTextSegments keeps mentions inside urls and emails as plain text', () => {
+    const doc = tweet('openai', '1', { summary: 'see https://x.com/@openai or mail a@b.com' })
+    expect(tweetTextSegments(doc, 'en-US')).toEqual([
+      { text: 'see ', isUrl: false },
+      { text: 'https://x.com/@openai', isUrl: true },
+      { text: ' or mail a@b.com', isUrl: false },
+    ])
+  })
+
   const quotedTweet = (overrides: Partial<NonNullable<TopDoc['quote']>> = {}) =>
     tweet('minimax_ai', '2001', {
       quote: {
@@ -409,6 +428,13 @@ describe('xBoardViewModel', () => {
       { text: ' see you', isUrl: false },
     ])
     expect(quoteTextSegments(quotedTweet({ text: '' }).quote!, 'en-US')).toEqual([])
+  })
+
+  it('quoteTextSegments marks @mentions for highlighted spans', () => {
+    expect(quoteTextSegments(quotedTweet({ text: '@AnthropicAI congrats!' }).quote!, 'en-US')).toEqual([
+      { text: '@AnthropicAI', isUrl: false, isMention: true, mentionHandle: 'AnthropicAI' },
+      { text: ' congrats!', isUrl: false },
+    ])
   })
 
   it('quoteTextSegments prefers the stored zh translation under zh locale only', () => {

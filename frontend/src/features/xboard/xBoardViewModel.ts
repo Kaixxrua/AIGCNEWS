@@ -64,11 +64,17 @@ export const displayTweetText = (doc: TopDoc, locale: string): string => {
 export interface TweetTextSegment {
   text: string
   isUrl: boolean
+  /** 提及段：@handle → 渲染为 x.com/<handle> 锚点（wall）或高亮 span（quote 内） */
+  isMention?: boolean
+  /** isMention 时的 handle（不含 @），供锚点拼目标地址 */
+  mentionHandle?: string
 }
 
 const URL_IN_TEXT_RE = /https?:\/\/[^\s]+/g
 // URL 匹配贪心吃掉句读时的回退字符集（不含括号/引号，避免误裁合法路径）
 const URL_TRAILING_PUNCT_RE = /[.,;:!?，。！？、；：]+$/
+// @提及：handle 为 X 合法字符集；左边界排除字母数字/下划线防误吃邮箱前缀
+const MENTION_IN_TEXT_RE = /(?<![A-Za-z0-9_])@([A-Za-z0-9_]+)/g
 
 /**
  * 正文分段渲染：URL 段独立锚点跳真实地址，文本段保持跳推文。
@@ -100,7 +106,24 @@ const splitTextSegments = (text: string): TweetTextSegment[] => {
     if (prev && !prev.isUrl && !seg.isUrl) prev.text += seg.text
     else merged.push({ ...seg })
   }
-  return merged
+  // 二次分段：纯文本段内识别 @提及（X 上可点跳主页）；URL 段已含 @ 的不动
+  const out: TweetTextSegment[] = []
+  for (const seg of merged) {
+    if (seg.isUrl) {
+      out.push(seg)
+      continue
+    }
+    let cursor = 0
+    for (const match of seg.text.matchAll(MENTION_IN_TEXT_RE)) {
+      const index = match.index ?? 0
+      if (index > cursor) out.push({ text: seg.text.slice(cursor, index), isUrl: false })
+      out.push({ text: match[0], isUrl: false, isMention: true, mentionHandle: match[1] })
+      cursor = index + match[0].length
+    }
+    if (cursor === 0) out.push(seg)
+    else if (cursor < seg.text.length) out.push({ text: seg.text.slice(cursor), isUrl: false })
+  }
+  return out
 }
 
 export const hasMedia = (doc: TopDoc): boolean =>

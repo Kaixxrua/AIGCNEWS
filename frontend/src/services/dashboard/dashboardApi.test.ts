@@ -14,24 +14,24 @@ describe('Dashboard API contract', () => {
   it('normalizes summary and top responses at the transport edge', async () => {
     const signal = new AbortController().signal
     transport.get.mockResolvedValueOnce({ data: { stats: null, is_finalized: null, is_embargoed: true } })
-    await expect(dashboardApi.fetchSummary({ period: 'daily', date: '2026-07-27', signal })).resolves.toEqual({
+    await expect(dashboardApi.fetchSummary({ date: '2026-07-27', signal })).resolves.toEqual({
       stats: {}, isFinalized: false, isEmbargoed: true,
     })
     expect(transport.get).toHaveBeenLastCalledWith('/dashboard/summary', {
-      params: { period: 'daily', date: '2026-07-27' }, signal,
+      params: { date: '2026-07-27' }, signal,
     })
 
     transport.get.mockResolvedValueOnce({ data: { items: null } })
-    await expect(dashboardApi.fetchTop({ source: 'arxiv', period: 'daily', date: '2026-07-27', signal })).resolves.toEqual({ items: [], isEmbargoed: false })
+    await expect(dashboardApi.fetchTop({ source: 'arxiv', date: '2026-07-27', signal })).resolves.toEqual({ items: [], isEmbargoed: false, sourceStatus: {} })
     expect(transport.get).toHaveBeenLastCalledWith('/dashboard/top', {
-      params: { limit: 10, source: 'arxiv', period: 'daily', date: '2026-07-27' }, signal,
+      params: { limit: 10, source: 'arxiv', date: '2026-07-27' }, signal,
     })
   })
 
   it('surfaces the embargo flag from top responses for embargo-aware empty states', async () => {
     transport.get.mockResolvedValueOnce({ data: { items: [], is_embargoed: true } })
-    await expect(dashboardApi.fetchTop({ source: 'x', period: 'daily', date: '2026-08-07' })).resolves.toEqual({
-      items: [], isEmbargoed: true,
+    await expect(dashboardApi.fetchTop({ source: 'x', date: '2026-08-07' })).resolves.toEqual({
+      items: [], isEmbargoed: true, sourceStatus: {},
     })
   })
 
@@ -52,9 +52,9 @@ describe('Dashboard API contract', () => {
   it('preserves snapshot and visitor request shapes and defaults', async () => {
     const signal = new AbortController().signal
     transport.get.mockResolvedValueOnce({ data: { dates: null } })
-    await expect(dashboardApi.fetchSnapshotDates({ limit: 90, source: 'github', period: 'weekly', signal })).resolves.toEqual([])
+    await expect(dashboardApi.fetchSnapshotDates({ limit: 90, source: 'github', signal })).resolves.toEqual([])
     expect(transport.get).toHaveBeenLastCalledWith('/dashboard/snapshot-dates', {
-      params: { limit: 90, source: 'github', period: 'weekly' }, signal,
+      params: { limit: 90, source: 'github' }, signal,
     })
 
     transport.get.mockResolvedValueOnce({ data: { registered_users: 4 } })
@@ -62,13 +62,5 @@ describe('Dashboard API contract', () => {
       registeredUsers: 4, todayRegisteredUsers: 0, userCount: 0,
     })
     expect(transport.get).toHaveBeenLastCalledWith('/dashboard/visitor-count', { signal })
-  })
-
-  it('normalizes GitHub hot data and preserves its compatibility defaults', async () => {
-    transport.get.mockResolvedValueOnce({ data: { period: '', items: null, total: 0 } })
-    await expect(dashboardApi.fetchGitHubHotRepos('weekly', 8)).resolves.toEqual({
-      period: '', window_days: undefined, items: [], total: 0, snapshot_count: undefined,
-    })
-    expect(transport.get).toHaveBeenLastCalledWith('/dashboard/github-hot', { params: { period: 'weekly', limit: 8 } })
   })
 })

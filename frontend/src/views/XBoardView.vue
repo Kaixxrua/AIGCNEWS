@@ -378,6 +378,14 @@ onBeforeUnmount(() => {
                     class="tweet-link"
                     @click.stop
                   >{{ seg.text }}</a>
+                  <a
+                    v-else-if="seg.isMention"
+                    :href="`https://x.com/${seg.mentionHandle}`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="tweet-link"
+                    @click.stop
+                  >{{ seg.text }}</a>
                   <span
                     v-else
                     class="tweet-text-seg"
