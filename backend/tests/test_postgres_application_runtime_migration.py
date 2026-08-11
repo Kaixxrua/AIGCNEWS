@@ -29,8 +29,16 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 33
-    assert migrations[-1].filename == "0033_briefings_date_unique.sql"
+    assert migrations[-1].version == 34
+    assert migrations[-1].filename == "0034_document_link_card.sql"
+
+
+def test_document_link_card_migration_is_idempotent_add_column() -> None:
+    sql = (MIGRATIONS_DIR / "0034_document_link_card.sql").read_text(encoding="utf-8")
+
+    # 幂等补列：允许运维在统一 apply 前先手工补列配合热重启，
+    # runner 重放为空操作后登记台账（与 quote TEXT + JSON 先例一致）。
+    assert "ALTER TABLE documents ADD COLUMN IF NOT EXISTS link_card TEXT;" in sql
 
 
 def test_briefings_date_unique_migration_dedupes_before_creating_index() -> None:

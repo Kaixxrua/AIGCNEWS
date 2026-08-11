@@ -131,12 +131,15 @@ class DocumentProjectionContractTests(unittest.TestCase):
 
 
 class PersistenceProjectionContractTests(unittest.TestCase):
-    def test_snapshot_replacement_precedes_document_and_snapshot_upserts(self) -> None:
+    def test_document_writes_precede_atomic_channel_snapshot_replacement(self) -> None:
         events: list[tuple] = []
         writer = MagicMock()
         snapshots = MagicMock()
-        snapshots.delete_snapshots_by_channel.side_effect = (
-            lambda snapshot_date, channel: events.append(("delete", snapshot_date, channel)) or 0
+        snapshots.replace_channel_snapshots.side_effect = (
+            lambda snapshot_date, channel, rows: events.append(
+                ("replace", snapshot_date, channel, [row["doc_id"] for row in rows])
+            )
+            or len(rows)
         )
         writer.upsert_document.side_effect = lambda document: events.append(
             ("document", document["title"])
@@ -176,16 +179,25 @@ class PersistenceProjectionContractTests(unittest.TestCase):
         )
 
         self.assertEqual(count, 2)
+        # 文档按确定性顺序全部写完后，才逐 channel 原子替换快照；
+        # 替换型 channel 不再逐行 upsert（删除在仓储事务内完成）。
         first_write = next(index for index, event in enumerate(events) if event[0] == "document")
-        self.assertTrue(all(event[0] == "delete" for event in events[:first_write]))
+        self.assertEqual(events[:first_write], [])
         self.assertEqual(
             [event[1] for event in events if event[0] == "document"],
             ["A", "B"],
         )
         self.assertEqual(
-            [event[2] for event in events if event[0] == "snapshot"],
+            sorted(event[2] for event in events if event[0] == "replace"),
+            ["channel_a", "channel_b"],
+        )
+        self.assertEqual(
+            [event[1] for event in events if event[0] == "replace"],
             ["2026-07-24", "2026-07-24"],
         )
+        self.assertTrue(all(len(event[3]) == 1 for event in events if event[0] == "replace"))
+        self.assertEqual([event for event in events if event[0] == "snapshot"], [])
+        snapshots.delete_snapshots_by_channel.assert_not_called()
 
     def test_secondary_store_failures_are_fail_open_and_arxiv_graph_skips_reused(self) -> None:
         writer = MagicMock()
