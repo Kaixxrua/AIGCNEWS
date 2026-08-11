@@ -119,14 +119,6 @@ export const TABS = [
   { key: 'x',           labelKey: 'x',        icon: XLogoIcon,  color: 'brand-blue' },
 ] as const
 
-export const PERIODS = [
-  { key: 'daily' },
-  { key: 'weekly' },
-  { key: 'monthly' },
-] as const
-
-export const DAILY_ONLY_TABS = new Set(['news', 'producthunt', 'hackernews', 'x'])
-
 export type TabKey = (typeof TABS)[number]['key']
 
 /* ── 分源榜单状态（/dashboard/top source_status）──────────────────────
@@ -174,7 +166,10 @@ export const tabBoardStatusHint = (
   }
   return translate('dashboard.tabCollecting')
 }
-export type PeriodKey = (typeof PERIODS)[number]['key']
+
+/** 榜单周期 wire 契约：前端已下线周/月榜切换（固定请求日榜），
+    类型保留全量取值以描述后端仍接受的查询参数 */
+export type PeriodKey = 'daily' | 'weekly' | 'monthly'
 
 export const getModuleTags = (doc: TopDoc): string[] => {
   const text = ((doc.title || '') + ' ' + (doc.summary || '')).toLowerCase()
