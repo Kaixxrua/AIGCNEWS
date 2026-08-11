@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   favoriteButtonLabelKey,
+  formatProjectLastPush,
   localizedCategoryName,
   localizedPersonalTagLabel,
   projectCategoryName,
   projectDescription,
   projectDisplayTags,
+  projectLastPushTitle,
   recommendButtonLabelKey,
 } from './projectPresentation'
 
@@ -100,5 +102,42 @@ describe('projectPresentation localization', () => {
     expect(projectDisplayTags({ repo_id: 2, full_name: 'legacy', tags: ['旧标签'] }, false, 'en-US')).toEqual([
       { type: 'tag', label: '旧标签', value: '旧标签' },
     ])
+  })
+})
+
+describe('projectPresentation last push label', () => {
+  const now = new Date('2026-08-11T08:00:00Z')
+
+  it('returns an empty label when pushed_at is missing', () => {
+    expect(formatProjectLastPush('', 'zh-CN', now)).toBe('')
+    expect(formatProjectLastPush(undefined, 'en-US', now)).toBe('')
+  })
+
+  it('treats date-only and full timestamps of the same UTC day identically', () => {
+    expect(formatProjectLastPush('2026-08-08', 'zh-CN', now)).toBe('3天前')
+    expect(formatProjectLastPush('2026-08-08T03:00:00Z', 'zh-CN', now)).toBe('3天前')
+    expect(formatProjectLastPush('2026-08-08', 'en-US', now)).toBe('3 days ago')
+    expect(formatProjectLastPush('2026-08-08T23:59:59Z', 'en-US', now)).toBe('3 days ago')
+  })
+
+  it('buckets day, month, and year ranges in both locales', () => {
+    expect(formatProjectLastPush('2026-08-11', 'zh-CN', now)).toBe('今天')
+    expect(formatProjectLastPush('2026-08-10', 'en-US', now)).toBe('yesterday')
+    expect(formatProjectLastPush('2026-06-27', 'zh-CN', now)).toBe('上个月')
+    expect(formatProjectLastPush('2026-06-12', 'en-US', now)).toBe('2 months ago')
+    expect(formatProjectLastPush('2025-07-13', 'zh-CN', now)).toBe('去年')
+    expect(formatProjectLastPush('2024-05-18', 'en-US', now)).toBe('2 years ago')
+  })
+
+  it('clamps future dates to today and passes invalid values through', () => {
+    expect(formatProjectLastPush('2026-08-12', 'zh-CN', now)).toBe('今天')
+    expect(formatProjectLastPush('not-a-date', 'en-US', now)).toBe('not-a-date')
+  })
+
+  it('renders the full push date in the hover title', () => {
+    const t = (key: string, params?: Record<string, unknown>) => `${key}|${String(params?.date ?? '')}`
+    expect(projectLastPushTitle({ full_name: 'o/p', pushed_at: '2026-08-08' }, t, 'zh-CN'))
+      .toBe('projects.lastPushTitle|2026/08/08')
+    expect(projectLastPushTitle({ full_name: 'o/p', pushed_at: '' }, t, 'zh-CN')).toBe('')
   })
 })

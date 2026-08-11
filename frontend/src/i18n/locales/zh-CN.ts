@@ -278,6 +278,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'projects.githubMetrics': 'GitHub 指标',
   'projects.collectedOn': '收藏于 {date}',
   'projects.collectedFallback': '已收藏',
+  'projects.lastPushTitle': '上次提交 {date}',
   'projects.hotScore': '热度 {score}',
   'projects.hotScoreTitle': '热度综合考虑规模校正后的增长、增长加速度、绝对增量、维护活跃度和社区参与度。',
   'projects.growthSnapshot': '根据连续快照精确计算：{from} → {to}。',

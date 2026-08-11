@@ -238,6 +238,20 @@ describe('GitHubProjectsView controller wiring', () => {
     expect(controller().deactivate).toHaveBeenCalled()
   })
 
+  it('renders the last-push relative time only when pushed_at is present', async () => {
+    controller().projects.value = [
+      { full_name: 'owner/pushed', pushed_at: '2026-08-08' },
+      { full_name: 'owner/unpushed' },
+    ]
+    const wrapper = await mountView()
+
+    const cards = wrapper.findAllComponents({ name: 'ProjectResultCard' })
+    expect(cards).toHaveLength(2)
+    const lastPushPattern = /今天|昨天|\d+天前|上个月|\d+个月前|去年|\d+年前/
+    expect(cards[0]!.text()).toMatch(lastPushPattern)
+    expect(cards[1]!.text()).not.toMatch(lastPushPattern)
+  })
+
   it('reactivates inside keep-alive and refreshes stale reads without clearing content', async () => {
     const Harness = defineComponent({
       components: { GitHubProjectsView },

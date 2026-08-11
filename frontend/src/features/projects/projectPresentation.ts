@@ -1,4 +1,4 @@
-import { formatLocaleCompactNumber, formatLocaleDate } from '@/i18n/formatters'
+import { formatLocaleCompactNumber, formatLocaleDate, formatLocaleRelativeDay } from '@/i18n/formatters'
 import type { AppLocale } from '@/i18n'
 import type {
   GitHubProjectItem,
@@ -192,6 +192,15 @@ export const formatProjectCount = (value: GitHubProjectItem['stars'], locale?: A
 
 export const formatProjectShortDate = (value: string | null | undefined, fallback: string, locale?: AppLocale) =>
   value ? formatLocaleDate(value, { month: '2-digit', day: '2-digit' }, locale) : fallback
+
+export const formatProjectLastPush = (value: string | null | undefined, locale?: AppLocale, now?: Date) =>
+  formatLocaleRelativeDay(value, locale, now)
+
+export const projectLastPushTitle = (project: GitHubProjectItem, t: ProjectTranslate, locale?: AppLocale) => (
+  project.pushed_at
+    ? t('projects.lastPushTitle', { date: formatLocaleDate(project.pushed_at, { year: 'numeric', month: '2-digit', day: '2-digit' }, locale) })
+    : ''
+)
 
 export const projectDailyGrowth = (project: GitHubProjectItem) => {
   const numeric = Number(project.daily_star_growth ?? 0)

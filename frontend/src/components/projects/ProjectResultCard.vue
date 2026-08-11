@@ -9,11 +9,13 @@ import {
   favoriteButtonLabelKey,
   formattedProjectHotScore,
   formatProjectCount,
+  formatProjectLastPush,
   formatProjectShortDate,
   projectDisplayTags,
   isWebsite,
   projectDailyGrowth,
   projectDailyGrowthTitle,
+  projectLastPushTitle,
   projectLinkLabelKey,
   projectLogoKey,
   projectName,
@@ -186,6 +188,13 @@ const description = computed(() => projectDescription(
               <path d="M12 15v2" />
             </svg>
             {{ t('projects.forks', { count: formatProjectCount(repo.forks, locale as AppLocale) }) }}
+          </span>
+          <span v-if="repo.pushed_at" :title="projectLastPushTitle(repo, t, locale as AppLocale)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </svg>
+            {{ formatProjectLastPush(repo.pushed_at, locale as AppLocale) }}
           </span>
         </template>
       </footer>
