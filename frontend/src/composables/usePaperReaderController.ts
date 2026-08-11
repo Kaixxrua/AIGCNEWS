@@ -39,9 +39,12 @@ interface PaperReaderControllerOptions<TPaper extends PaperReaderPaper> {
   uploadScreenshot: (payload: { image_base64: string; mime_type: string }) => Promise<{ image_id: string }>
   connectEventSource: (params: SseConnectParams) => SseConnection
   visionRelayUrl: string
+  /** 游客只读模式：false 时不引导会话、不出截图追问弹窗、不发送消息（默认 true）。 */
+  conversationEnabled?: Ref<boolean>
 }
 
 export function usePaperReaderController<TPaper extends PaperReaderPaper>(options: PaperReaderControllerOptions<TPaper>) {
+  const conversationEnabled = options.conversationEnabled ?? ref(true)
   const paper = ref<TPaper | null>(null) as Ref<TPaper | null>
   const paperLoading = ref(true)
   const paperError = ref('')
@@ -87,6 +90,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
 
   const initializePaperContext = async (id: string) => {
     await loadPaper(id)
+    if (!conversationEnabled.value) return
     if (!options.activeConversationId.value) await options.ensureGlobalConversation()
     await options.loadConversations()
   }
@@ -134,7 +138,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   const isThinkingExpanded = (messageId: string) => !!thinkingExpanded.value[messageId]
 
   const onRightclickRegion = async (payload: VisionRegionCapture) => {
-    if (!CHAT_SERVICE_ENABLED) {
+    if (!CHAT_SERVICE_ENABLED || !conversationEnabled.value) {
       visionPopup.value = null
       return
     }
@@ -167,6 +171,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   })
 
   const sendVision = async () => {
+    if (!conversationEnabled.value) return
     if (!visionPopup.value?.question.trim() || isSending.value || !currentConversationId.value) return
     const question = visionPopup.value.question.trim()
     const base64 = visionPopup.value.base64
@@ -258,6 +263,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   }
 
   const sendText = async () => {
+    if (!conversationEnabled.value) return
     const text = inputText.value.trim()
     if (!text || isSending.value) return
     inputText.value = ''

@@ -8,15 +8,20 @@ import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import { usePaperReaderController } from '@/composables/usePaperReaderController'
 import { api } from '@/services/http/apiClient'
 import { fetchPaperDetail, type PaperItem } from '@/services/papers/paperApi'
+import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const chatStore = useChatStore()
 const { connect } = useEventSource()
 const { renderMarkdown, copyFormulas, handleFormulaCopy } = useLatexRenderer()
 const paperId = computed(() => String(route.params.id ?? ''))
 const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
+// 游客只读：论文内容公开，对话/截图追问引导登录（会话 API 需鉴权，
+// 匿名调用会触发全局 401 跳登录，故在控制器层整体关闭）。
+const conversationEnabled = computed(() => authStore.status === 'authenticated')
 
 const controller = usePaperReaderController<PaperItem>({
   paperId,
@@ -38,6 +43,7 @@ const controller = usePaperReaderController<PaperItem>({
   },
   connectEventSource: connect,
   visionRelayUrl: `${baseURL}/chat/vision-relay`,
+  conversationEnabled,
 })
 
 const {
@@ -54,11 +60,17 @@ onMounted(() => { void initializePaperContext(paperId.value) })
 watch(paperId, handlePaperIdChange)
 onMounted(() => document.addEventListener('click', handleFormulaCopy))
 onUnmounted(() => document.removeEventListener('click', handleFormulaCopy))
+
+const loginRedirect = computed(() => ({
+  path: '/login',
+  query: { redirect: route.fullPath },
+}))
 </script>
 
 <template>
-  <div class="paper-read-shell w-full flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+  <div class="paper-read-shell w-full flex-1 min-h-0 flex flex-col overflow-hidden" :class="{ 'guest-mode': !conversationEnabled, 'md:flex-row': conversationEnabled }">
     <PaperConversationPanel
+      v-if="conversationEnabled"
       v-model:show-conv-panel="showConvPanel"
       v-model:input-text="inputText"
       :active-conversation-title="activeConversationTitle"
@@ -78,6 +90,10 @@ onUnmounted(() => document.removeEventListener('click', handleFormulaCopy))
       @send-text="sendText"
       @chat-list-ref="setChatListRef"
     />
+    <div v-if="!conversationEnabled" class="guest-cta flex items-center justify-center gap-3 px-4 py-2 text-sm">
+      <span>{{ $t('paper.guestCta') }}</span>
+      <router-link :to="loginRedirect" class="guest-cta-link">{{ $t('paper.guestLogin') }}</router-link>
+    </div>
     <PaperDocumentPanel
       :paper="paper"
       :paper-loading="paperLoading"
@@ -104,6 +120,17 @@ onUnmounted(() => document.removeEventListener('click', handleFormulaCopy))
   --rule: rgb(var(--chat-ink-rgb) / 0.72);
   background: var(--paper);
   color: var(--ink);
+}
+
+.paper-read-shell.guest-mode .guest-cta {
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-raised);
+}
+
+.guest-cta-link {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .paper-read-shell > div {

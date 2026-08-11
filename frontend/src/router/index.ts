@@ -100,7 +100,8 @@ const router = createRouter({
           path: 'papers/:id/read',
           name: 'paper-read',
           component: PaperReadView,
-          meta: { requiresAuth: true },
+          // 游客只读开放：论文详情 API 本就公开；对话功能由
+          // PaperReadView 按登录态降级为引导条。
         },
         {
           path: 'disclaimer',

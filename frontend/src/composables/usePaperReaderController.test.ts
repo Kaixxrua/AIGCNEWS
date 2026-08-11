@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import type { SseConnectParams } from './useEventSource'
 import type { ChatMessage, ConversationSummary } from '@/stores/chatStore'
@@ -39,7 +39,7 @@ const deferred = () => {
   return { promise, resolve }
 }
 
-const createController = () => {
+const createController = (overrides: { conversationEnabled?: Ref<boolean> } = {}) => {
   const activeConversationId = ref<string | null>('1')
   const conversationMap = ref<Record<string, ConversationSummary>>({ '1': conversation('1'), '2': conversation('2') })
   const messageMap = ref<Record<string, ChatMessage[]>>({
@@ -50,6 +50,9 @@ const createController = () => {
   let streamParams: SseConnectParams | null = null
 
   const loadConversations = vi.fn(async () => undefined)
+  const ensureGlobalConversation = vi.fn(async () => undefined)
+  const fetchPaper = vi.fn(async (id: string) => ({ id, title: 'Paper' }))
+  const sendMessage = vi.fn(async () => undefined)
   const openConversation = vi.fn(async (id: string) => {
     activeConversationId.value = id
   })
@@ -70,10 +73,10 @@ const createController = () => {
     conversationMap,
     messageMap,
     isStreaming: ref(false),
-    fetchPaper: vi.fn(async (id: string) => ({ id, title: 'Paper' })),
+    fetchPaper,
     loadConversations,
     openConversation,
-    ensureGlobalConversation: vi.fn(async () => undefined),
+    ensureGlobalConversation,
     deleteActiveConversation,
     appendLocalMessage: (conversationId, localMessage) => {
       messageMap.value = {
@@ -89,22 +92,26 @@ const createController = () => {
         )),
       }
     },
-    sendMessage: vi.fn(async () => undefined),
+    sendMessage,
     uploadScreenshot: vi.fn(async () => ({ image_id: 'uploaded-image' })),
     connectEventSource: (params) => {
       streamParams = params
       return { controller: new AbortController(), promise: stream.promise }
     },
     visionRelayUrl: '/chat/vision-relay',
+    ...(overrides.conversationEnabled ? { conversationEnabled: overrides.conversationEnabled } : {}),
   })
 
   return {
     activeConversationId,
     controller,
     deleteActiveConversation,
+    ensureGlobalConversation,
+    fetchPaper,
     loadConversations,
     messageMap,
     openConversation,
+    sendMessage,
     stream,
     streamParams: computed(() => streamParams),
   }
@@ -178,5 +185,39 @@ describe('usePaperReaderController persisted visual messages', () => {
     expect(fixture.loadConversations).toHaveBeenCalledOnce()
     expect(fixture.messageMap.value['2']).toBeUndefined()
     expect(fixture.controller.messages.value).toEqual([])
+  })
+})
+
+describe('usePaperReaderController guest read-only mode', () => {
+  it('loads the paper but skips conversation bootstrap when conversation is disabled', async () => {
+    const fixture = createController({ conversationEnabled: ref(false) })
+
+    await fixture.controller.initializePaperContext('paper-1')
+
+    expect(fixture.fetchPaper).toHaveBeenCalledWith('paper-1')
+    expect(fixture.controller.paper.value?.id).toBe('paper-1')
+    expect(fixture.ensureGlobalConversation).not.toHaveBeenCalled()
+    expect(fixture.loadConversations).not.toHaveBeenCalled()
+  })
+
+  it('suppresses the vision popup and all send paths for guests', async () => {
+    const fixture = createController({ conversationEnabled: ref(false) })
+
+    await fixture.controller.onRightclickRegion({ base64: 'x', pageIndex: 0 } as never)
+    expect(fixture.controller.visionPopup.value).toBeNull()
+
+    fixture.controller.visionPopup.value = {
+      visible: true,
+      base64: 'x',
+      question: 'q',
+      pageIndex: 0,
+    }
+    await fixture.controller.sendVision()
+    expect(fixture.loadConversations).not.toHaveBeenCalled()
+
+    fixture.controller.inputText.value = 'hello'
+    await fixture.controller.sendText()
+    expect(fixture.sendMessage).not.toHaveBeenCalled()
+    expect(fixture.controller.inputText.value).toBe('hello')
   })
 })
