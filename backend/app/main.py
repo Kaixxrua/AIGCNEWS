@@ -46,6 +46,7 @@ from backend.app.core.model_factory import (
 )
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.core.postgres_database import postgres_database
+from backend.app.core.postgres_migrations import pending_migration_labels
 from backend.app.core.redis_client import close_redis_client, create_redis_client
 from backend.app.core.scheduler import create_scheduler_runtime
 from backend.app.monitoring.health import create_application_monitoring_runtime
@@ -153,6 +154,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         await asyncio.to_thread(postgres_database.open)
         postgres_opened = True
+        # 迁移台账滞后自检：代码先行、迁移未跑时（如 uq_briefings_date 缺失导致
+        # 简报 ON CONFLICT 保存全线失败两天才被发现），启动日志必须显眼。
+        # 只告警不阻断——让整站不可用换单点 schema 滞后会扩大故障面。
+        try:
+            pending_migrations = await asyncio.to_thread(pending_migration_labels)
+            if pending_migrations:
+                logger.critical(
+                    "[Startup] PostgreSQL 迁移台账滞后，%d 个迁移未应用: %s。"
+                    "请执行 python scripts/migrate_postgres.py apply 后重启服务。",
+                    len(pending_migrations),
+                    ", ".join(pending_migrations),
+                )
+        except Exception as exc:
+            logger.warning(
+                "[Startup] PostgreSQL 迁移台账校验失败（非阻断）: %s", exc
+            )
         app.state.monitoring_runtime = create_application_monitoring_runtime(
             postgres=postgres_database,
         )

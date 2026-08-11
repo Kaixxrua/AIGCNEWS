@@ -226,3 +226,16 @@ class PostgresMigrationRunner:
                 raise MigrationError(
                     f"PostgreSQL migration {version:04d} checksum drift detected"
                 )
+
+
+def pending_migration_labels(
+    runner: PostgresMigrationRunner | None = None,
+) -> list[str]:
+    """未应用迁移的文件名列表（如 ["0030_user_foreign_keys.sql"]）。
+
+    供启动自检告警使用：代码先行、迁移未跑时（如 uq_briefings_date 缺失
+    导致简报 ON CONFLICT 保存全线失败），让滞后状态在启动日志里可见。
+    台账校验失败（版本空洞/校验和漂移）按 MigrationError 上抛。
+    """
+    runner = runner or PostgresMigrationRunner()
+    return [status.filename for status in runner.status() if not status.applied]

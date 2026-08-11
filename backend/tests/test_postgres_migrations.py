@@ -14,8 +14,10 @@ from psycopg.conninfo import conninfo_to_dict
 
 from backend.app.core.postgres_migrations import (
     MigrationError,
+    MigrationStatus,
     PostgresMigrationRunner,
     discover_migrations,
+    pending_migration_labels,
 )
 
 
@@ -87,6 +89,18 @@ def write_migration(directory: Path, name: str, sql: str = "SELECT 1;") -> Path:
     path = directory / name
     path.write_text(sql, encoding="utf-8")
     return path
+
+
+def test_pending_migration_labels_lists_only_unapplied() -> None:
+    class StubRunner:
+        def status(self) -> list[MigrationStatus]:
+            return [
+                MigrationStatus(version=1, filename="0001_a.sql", checksum="", applied=True),
+                MigrationStatus(version=2, filename="0002_b.sql", checksum="", applied=False),
+                MigrationStatus(version=3, filename="0003_c.sql", checksum="", applied=False),
+            ]
+
+    assert pending_migration_labels(StubRunner()) == ["0002_b.sql", "0003_c.sql"]  # type: ignore[arg-type]
 
 
 def test_discover_orders_and_hashes_migrations(tmp_path: Path) -> None:
