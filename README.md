@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/logo-4k.png" alt="AIGCNEWS" width="880">
+  <img src="docs/assets/logo-4k.png" alt="AIGCNEWS" width="440">
 </div>
 
 # AIGCNEWS
