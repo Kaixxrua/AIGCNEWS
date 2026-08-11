@@ -1,0 +1,53 @@
+AIGCNEWS (AIGC Radar MCP)
+Copyright 2026 Kaixxrua
+
+Licensed under the Business Source License 1.1 (see LICENSE). Each version
+converts to the Apache License, Version 2.0, four years after its first
+public distribution.
+
+========================================================================
+Third-party content
+========================================================================
+
+AIGCNEWS is a personal aggregation and ranking tool. Content surfaced by
+its pipelines — arXiv/Hugging Face papers, GitHub repository metadata,
+news articles, Product Hunt and Hacker News items, X (Twitter) posts, and
+WeChat official-account articles — remains the property of its original
+authors, publishers, and platforms. The software stores metadata,
+excerpts, and thumbnails solely to operate the reader interface and
+claims no ownership over aggregated content. No platform content,
+database dump, collected snapshot, or cached media from any deployment
+of this project is licensed for redistribution or included in this
+repository.
+
+X (Twitter) and WeChat scraping implementations are not part of this
+repository; they are loaded optionally from a private plugin package
+behind feature flags, and the repository ships interfaces only. Operators
+who enable such plugins are responsible for complying with the source
+platforms' Terms of Service, robots policies, and applicable law, and for
+safeguarding the credentials they configure.
+
+Product names and marks referenced by this project — including X,
+Twitter, WeChat, Product Hunt, Hacker News, arXiv, GitHub, and Hugging
+Face — are the property of their respective owners. References are
+nominative only; no affiliation with or endorsement by their owners is
+implied.
+
+Removal or correction requests concerning aggregated content may be
+directed to the maintainer via the repository issue tracker.
+
+========================================================================
+Third-party software
+========================================================================
+
+This project is built with open-source components, including FastAPI,
+Starlette, Pydantic, SQLAlchemy, APScheduler, LangChain, PyMilvus,
+Neo4j drivers, Vue.js, Vite, Pinia, Vue Router, and Tailwind CSS, each
+licensed by its respective authors (predominantly MIT/Apache-2.0/BSD).
+The complete dependency lists with exact versions are maintained in
+backend/requirements.txt, backend/requirements.lock, and
+frontend/package.json.
+
+The optional, privately distributed X-ingestion plugin (not included in
+this repository) builds upon twitter-cli, licensed under the Apache
+License, Version 2.0 (https://github.com/jackwener/twitter-cli).

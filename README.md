@@ -316,6 +316,14 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 - [docs/mcp-server.md](docs/mcp-server.md) — AIGC Radar MCP protocol parameters and policies
 - [docs/README.md](docs/README.md) — Full documentation index (including historical archive annotations)
 
+## Data Ownership & Compliance
+
+- **Aggregated content is not ours.** Papers, repository metadata, news, Product Hunt / Hacker News items, X posts, and WeChat articles surfaced by the pipelines remain the property of their original authors and platforms. AIGCNEWS stores metadata, excerpts, and thumbnails solely to operate the reader and claims no ownership. No database dump, collected snapshot, or cached media from the reference deployment is part of this repository or licensed for redistribution.
+- **Scraping chains ship as interfaces only.** The X (Twitter) and WeChat ingestion implementations are **not included in this repository** — they load optionally from a private plugin package behind the `x_source_enabled` / `wechat_source_enabled` feature flags (see `backend/app/services/source_plugins/`). Without a plugin, the corresponding routes return 404 and ingestion skips those sources; everything else works unchanged.
+- **Operating your own instance** with such plugins is your responsibility: comply with the source platforms' Terms of Service, robots policies, and applicable law, and safeguard any credentials (cookies/tokens) you configure.
+- **Marks.** X, Twitter, WeChat, Product Hunt, Hacker News, arXiv, GitHub, and Hugging Face are property of their respective owners; references are nominative, with no affiliation or endorsement implied.
+- **Removal requests** for aggregated content: open an issue or contact the maintainer. See [NOTICE](NOTICE) for the full attribution text.
+
 ## License
 
 [Business Source License 1.1](LICENSE) © 2026 Kaixxrua — non-production and internal non-commercial use allowed; commercial use and public deployment require the licensor's prior written authorization; each version converts to Apache-2.0 four years after its first public distribution.

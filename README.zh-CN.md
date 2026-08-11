@@ -316,6 +316,14 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 - [docs/mcp-server.md](docs/mcp-server.md) —— AIGC Radar MCP 协议参数与策略
 - [docs/README.md](docs/README.md) —— 全部文档索引（含历史归档标注）
 
+## 数据归属与合规
+
+- **聚合内容不归本项目所有。** 管线呈现的论文、仓库元数据、新闻、Product Hunt / Hacker News 条目、X 推文与微信公众号文章，其权利归原作者与平台所有。AIGCNEWS 仅为运行阅读界面存储元数据、摘要与缩略图，不主张任何所有权。参考部署的数据库转储、采集快照与媒体缓存不属于本仓库，亦不许可再分发。
+- **抓取链路只发布接口。** X（Twitter）与微信采集实现**不包含在本仓库内**——它们经 `x_source_enabled` / `wechat_source_enabled` 特性开关从私有插件包可选加载（见 `backend/app/services/source_plugins/`）。插件缺席时对应路由返回 404、采集轮自动跳过，其余功能不受影响。
+- **自建实例的运营者责任**：启用此类插件须自行遵守源平台服务条款、robots 协议与适用法律，并妥善保管配置的凭据（cookie/token）。
+- **商标。** X、Twitter、WeChat、Product Hunt、Hacker News、arXiv、GitHub、Hugging Face 等名称与标志归各自所有者；本项目仅为指称性使用，不存在隶属或背书关系。
+- **内容移除请求**：请提 issue 或联系维护者。完整归属声明见 [NOTICE](NOTICE)。
+
 ## License
 
 [Business Source License 1.1](LICENSE) © 2026 Kaixxrua —— 非生产使用与内部非商业使用免费；商业使用与公网部署需获得作者事先书面授权；每个版本首次公开发行满四年后自动转为 Apache-2.0。
