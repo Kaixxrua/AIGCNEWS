@@ -23,7 +23,7 @@ OLLAMA_PROVIDER = "ollama"
 ANTHROPIC_PROVIDER = "anthropic"
 HUGGINGFACE_PROVIDER = "huggingface"
 
-# OpenAI 兼容中转（如 gptsakura.com）的 WAF 会拦截 openai SDK 默认
+# 部分 OpenAI 兼容中转网关的 WAF 会拦截 openai SDK 默认
 # User-Agent（OpenAI/Python x.y.z），统一替换为中性 UA。
 COMPATIBLE_RELAY_USER_AGENT = "RAG-AIGC-Agent/1.0"
 
