@@ -63,6 +63,50 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 
 Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://report/latest` 等）、resource templates 与 prompts（`daily_research_brief`、`project_discovery`）。完整的协议参数、MCP-first 策略与 fallback 语义见 [docs/mcp-server.md](docs/mcp-server.md)。
 
+### 性能实测
+
+以下数据测于 2026-08-11，可用 [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) 复现（Streamable HTTP JSON-RPC，6 个代表性工具 × 3 轮，共 18 次 `tools/call` 计时）：
+
+| Endpoint | p50 | p95 | 说明 |
+| --- | --- | --- | --- |
+| 托管 `https://aigcnews.cn/api/mcp` | 2.6 s | 3.8 s | 含边缘/隧道网络链路 |
+| 自托管 `http://localhost:8000/api/mcp` | 0.36 s | 0.71 s | 后端查询处理本身为亚秒级 |
+
+Agent 端到端对比（同一 Claude Code 会话、3 组等价查询、wall-clock，含会话调度与结果流式开销；n=3 取范围值）：
+
+| 检索路径 | 端到端耗时 | 返回形态 |
+| --- | --- | --- |
+| AIGC Radar MCP | 18–32 s | 结构化 JSON 记录，可直接消费 |
+| WebSearch | 49–61 s | 链接列表；结构化字段需再 WebFetch + 解析 |
+
+复现：`python3 scripts/benchmark_mcp_latency.py --url https://aigcnews.cn/api/mcp --trials 3`。
+
+### 结构化 JSON 响应
+
+WebSearch 给你链接，AIGC Radar 给你可直接消费的数据。`search_github_ai_projects` 单条记录节选：
+
+```json
+{
+  "full_name": "rag-web-ui/rag-web-ui",
+  "url": "https://github.com/rag-web-ui/rag-web-ui",
+  "description_zh": "基于 RAG 的智能对话 Web UI，适合搭建私有知识库问答与文档检索助手。",
+  "category_name_zh": "RAG / 知识库",
+  "subcategory_name_zh": "文档问答",
+  "tags_zh": ["文档问答", "检索增强生成", "知识库", "Web 界面"],
+  "tags_en": ["Document Q&A", "RAG", "Knowledge base", "Web UI"],
+  "language": "TypeScript",
+  "stars": 3257,
+  "daily_star_growth": 1,
+  "hot_score": 2.5899,
+  "pushed_at": "2026-04-06T14:22:58Z",
+  "detail_url": "https://aigcnews.cn/projects?q=rag-web-ui%2Frag-web-ui&utm_source=mcp&utm_medium=tool"
+}
+```
+
+- 中英双语字段：`description_zh` / `tags_zh` / `tags_en` 与双语分类体系，同一索引同时服务中英文检索。
+- 质量信号随响应直达：`stars` / `forks` / `daily_star_growth` / `hot_score` / `pushed_at`，无需再调 GitHub API。
+- 准入与溯源透明：500 Stars 准入（`min_stars`）、`result_origin` / `fallback_used` 标明结果来源、`attribution` 与 `detail_url` 可回链详情页。
+
 ## Web 站点
 
 同一份数据的人类可读界面，线上地址 **[aigcnews.cn](https://aigcnews.cn)**：Dashboard 榜单与趋势雷达、GitHub AI 项目库（分类 / 筛选 / 收藏）、论文与跨来源索引、每日研究简报。前端 Vue 3 + Vite，后端 FastAPI，关系型数据存 PostgreSQL 16。

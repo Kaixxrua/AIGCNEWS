@@ -63,6 +63,50 @@ Sending `Authorization: Bearer <MCP access token>` additionally unlocks `search_
 
 On the context side, it provides resources (`aigc-news://dashboard/summary`, `aigc-news://report/latest`, etc.), resource templates, and prompts (`daily_research_brief`, `project_discovery`). For full protocol parameters, the MCP-first policy, and fallback semantics, see [docs/mcp-server.md](docs/mcp-server.md).
 
+### Benchmarks
+
+Measured on 2026-08-11 with [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) (JSON-RPC over Streamable HTTP, 6 representative tools × 3 trials, 18 timed `tools/call` requests):
+
+| Endpoint | p50 | p95 | Notes |
+| --- | --- | --- | --- |
+| Hosted `https://aigcnews.cn/api/mcp` | 2.6 s | 3.8 s | includes the edge/tunnel network path |
+| Self-hosted `http://localhost:8000/api/mcp` | 0.36 s | 0.71 s | backend query processing itself is sub-second |
+
+Agent end-to-end comparison (same Claude Code session, 3 matched query pairs, wall clock including session scheduling and streaming overhead; ranges over n=3):
+
+| Retrieval path | End-to-end | Returns |
+| --- | --- | --- |
+| AIGC Radar MCP | 18–32 s | structured JSON records, ready to consume |
+| WebSearch | 49–61 s | a link list; structured fields need a follow-up fetch plus parsing |
+
+Reproduce: `python3 scripts/benchmark_mcp_latency.py --url https://aigcnews.cn/api/mcp --trials 3`.
+
+### Structured JSON responses
+
+WebSearch hands you links; AIGC Radar hands you data. One trimmed record from `search_github_ai_projects`:
+
+```json
+{
+  "full_name": "rag-web-ui/rag-web-ui",
+  "url": "https://github.com/rag-web-ui/rag-web-ui",
+  "description_zh": "基于 RAG 的智能对话 Web UI，适合搭建私有知识库问答与文档检索助手。",
+  "category_name_zh": "RAG / 知识库",
+  "subcategory_name_zh": "文档问答",
+  "tags_zh": ["文档问答", "检索增强生成", "知识库", "Web 界面"],
+  "tags_en": ["Document Q&A", "RAG", "Knowledge base", "Web UI"],
+  "language": "TypeScript",
+  "stars": 3257,
+  "daily_star_growth": 1,
+  "hot_score": 2.5899,
+  "pushed_at": "2026-04-06T14:22:58Z",
+  "detail_url": "https://aigcnews.cn/projects?q=rag-web-ui%2Frag-web-ui&utm_source=mcp&utm_medium=tool"
+}
+```
+
+- Bilingual fields: `description_zh` / `tags_zh` / `tags_en` plus a zh/en category taxonomy — one index serves both Chinese and English queries.
+- Quality signals inline: `stars` / `forks` / `daily_star_growth` / `hot_score` / `pushed_at` — no extra GitHub API call needed.
+- Transparent admission and provenance: 500-star admission (`min_stars`), `result_origin` / `fallback_used` state where results came from, and `attribution` / `detail_url` link back to the detail pages.
+
 ## Web Site
 
 A human-readable interface over the same dataset, live at **[aigcnews.cn](https://aigcnews.cn)**: dashboard rankings with a trend radar, the GitHub AI project library (categories / filters / favorites), paper and cross-source indexes, and daily research briefs. Vue 3 + Vite frontend, FastAPI backend, PostgreSQL 16 for relational data.
