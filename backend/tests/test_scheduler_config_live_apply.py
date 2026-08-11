@@ -164,3 +164,44 @@ class ApplyConfigUpdateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ApplyConfigUpdateXSourceGateTests(unittest.TestCase):
+    """x_source_enabled=False 时在线配置被抑制：不注册新任务、移除已在任务。"""
+
+    def _runtime(self, *, live_job: object | None = None):
+        fake_scheduler = MagicMock()
+        fake_scheduler.running = True
+        fake_scheduler.get_job.return_value = live_job
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=fake_scheduler,
+            x_source_enabled=False,
+        )
+        return runtime, fake_scheduler
+
+    def test_enabling_x_job_is_suppressed(self) -> None:
+        runtime, fake_scheduler = self._runtime(live_job=None)
+
+        applied = runtime.apply_config_update(_config("x_watchlist"))
+
+        self.assertTrue(applied)
+        fake_scheduler.add_job.assert_not_called()
+        fake_scheduler.remove_job.assert_not_called()
+
+    def test_suppression_removes_live_x_job(self) -> None:
+        runtime, fake_scheduler = self._runtime(live_job=MagicMock())
+
+        applied = runtime.apply_config_update(_config("x_watchlist"))
+
+        self.assertTrue(applied)
+        fake_scheduler.remove_job.assert_called_once_with("x_watchlist")
+        fake_scheduler.add_job.assert_not_called()
+
+    def test_non_x_job_unaffected_by_x_gate(self) -> None:
+        runtime, fake_scheduler = self._runtime(live_job=None)
+
+        applied = runtime.apply_config_update(_config("arxiv_papers"))
+
+        self.assertTrue(applied)
+        fake_scheduler.add_job.assert_called_once()

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { RouteLocationNormalized } from 'vue-router'
-import { getRoutePolicyRedirect, type RouteAuthState } from './routePolicy'
+import {
+  getFeatureGateRedirect,
+  getRoutePolicyRedirect,
+  type FeatureGateState,
+  type RouteAuthState,
+} from './routePolicy'
 
 const route = (meta: RouteLocationNormalized['meta'], fullPath = '/private') => ({
   meta,
@@ -41,5 +46,26 @@ describe('getRoutePolicyRedirect', () => {
     expect(getRoutePolicyRedirect(route({ guestOnly: true }), auth('initializing'))).toBeNull()
     expect(getRoutePolicyRedirect(route({ guestOnly: true }), auth('degraded'))).toBeNull()
     expect(getRoutePolicyRedirect(route({ guestOnly: true }), auth('anonymous'))).toBeNull()
+  })
+})
+
+describe('getFeatureGateRedirect', () => {
+  const features = (overrides: Partial<FeatureGateState> = {}): FeatureGateState => ({
+    xSource: true,
+    wechatSource: true,
+    ...overrides,
+  })
+
+  it('redirects feature-gated routes home when the source is disabled', () => {
+    expect(getFeatureGateRedirect(route({ feature: 'xSource' }), features({ xSource: false })))
+      .toEqual({ path: '/' })
+    expect(getFeatureGateRedirect(route({ feature: 'wechatSource' }), features({ wechatSource: false })))
+      .toEqual({ path: '/' })
+  })
+
+  it('permits enabled feature routes and routes without feature meta', () => {
+    expect(getFeatureGateRedirect(route({ feature: 'xSource' }), features())).toBeNull()
+    expect(getFeatureGateRedirect(route({}), features({ xSource: false, wechatSource: false })))
+      .toBeNull()
   })
 })

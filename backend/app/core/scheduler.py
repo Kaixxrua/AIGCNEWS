@@ -83,6 +83,9 @@ _DEFAULT_ZERO_INGEST_WATCH_SOURCES = (
     "hackernews",
 )
 
+# X 链路源任务集合：x_source_enabled=False 时不注册、也不允许经在线配置启用
+_X_SOURCE_JOB_SOURCES = frozenset({"x", "x_credentials_probe", "x_closing"})
+
 
 def _notify_ops_alert(job_id: str, failures: int, detail: str) -> None:
     """经 scripts/notify_ops_alert.py 发送调度器失败告警（fire-and-forget）。
@@ -753,6 +756,9 @@ class ApplicationSchedulerRuntime:
         scheduler: AsyncIOScheduler | None = None,
         semantic_search_enabled: bool = False,
         semantic_search_warmup: Any | None = None,
+        # 默认 True：直接构造运行时的既有调用方（多为测试）保持旧行为；
+        # 策略收口在 create_scheduler_runtime（读 settings，默认关闭）。
+        x_source_enabled: bool = True,
         shutdown_grace_seconds: float = 30.0,
         timezone_name: str = "Asia/Shanghai",
         job_config_overrides: Mapping[str, Any] | None = None,
@@ -766,6 +772,7 @@ class ApplicationSchedulerRuntime:
         self.scheduler = scheduler or AsyncIOScheduler(timezone=timezone_name)
         self._semantic_search_enabled = semantic_search_enabled
         self._semantic_search_warmup = semantic_search_warmup
+        self._x_source_enabled = x_source_enabled
         self._shutdown_grace_seconds = max(0.0, float(shutdown_grace_seconds))
         self._timezone_name = timezone_name
         self._job_config_overrides: Dict[str, Any] = dict(job_config_overrides or {})
@@ -968,6 +975,13 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    def _is_source_job_suppressed(self, descriptor: JobDescriptor) -> bool:
+        """特性开关关闭的源任务不注册、不允许在线启用（X 链路透出前不占调度面）。"""
+        return (
+            descriptor.source in _X_SOURCE_JOB_SOURCES
+            and not self._x_source_enabled
+        )
+
     def _effective_descriptor(
         self,
         descriptor: JobDescriptor,
@@ -1037,6 +1051,11 @@ class ApplicationSchedulerRuntime:
 
         effective = self._effective_descriptor(descriptor)
         existing = self.scheduler.get_job(config.job_id)
+        if self._is_source_job_suppressed(descriptor):
+            if existing is not None:
+                self.scheduler.remove_job(config.job_id)
+                logger.info("[Scheduler] 特性开关关闭，移除任务: %s", config.job_id)
+            return True
         if effective is None:
             if existing is not None:
                 self.scheduler.remove_job(config.job_id)
@@ -1072,6 +1091,9 @@ class ApplicationSchedulerRuntime:
 
         callbacks = self._job_callbacks()
         for descriptor in SOURCE_JOB_DESCRIPTORS:
+            if self._is_source_job_suppressed(descriptor):
+                logger.info("[Scheduler] 跳过特性开关关闭的采集任务: %s", descriptor.id)
+                continue
             effective = self._effective_descriptor(descriptor)
             if effective is None:
                 logger.info("[Scheduler] 跳过已停用的采集任务: %s", descriptor.id)
@@ -1233,6 +1255,7 @@ def create_scheduler_runtime(
             getattr(settings, "project_semantic_search_enabled", False)
         ),
         semantic_search_warmup=semantic_search_warmup,
+        x_source_enabled=bool(getattr(settings, "x_source_enabled", False)),
         shutdown_grace_seconds=float(
             getattr(settings, "scheduler_shutdown_grace_seconds", 30.0)
         ),

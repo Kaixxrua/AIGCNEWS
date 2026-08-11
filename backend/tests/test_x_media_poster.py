@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_x_media
+from backend.app.core.config import settings
 from backend.tests.test_email_service_contracts import FakeRedis
 
 VIDEO_URL = "https://video.twimg.com/amplify_video/123/vid/avc1/1920x1080/a.mp4?tag=29"
@@ -25,6 +26,8 @@ FAKE_JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
 def poster_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """隔离模块态并返回装配器：handler=上游响应，extract=抽帧结果。"""
 
+    # 特性开关默认关闭；海报路由用例一律在开启态下验证
+    monkeypatch.setattr(settings, "x_source_enabled", True)
     routes_x_media._poster_locks.clear()
     routes_x_media._poster_negative.clear()
     monkeypatch.setattr(routes_x_media, "_poster_cache_dir", lambda: tmp_path)

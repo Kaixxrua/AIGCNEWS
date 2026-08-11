@@ -12,7 +12,9 @@ import {
   KEEP_ALIVE_MAX,
   KEEP_ALIVE_VIEW_NAMES,
   NAV_ITEMS,
+  isNavigationItemFeatureEnabled,
 } from '@/features/navigation/navigationModel'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,6 +22,13 @@ const authStore = useAuthStore()
 // 实例化即开始对 admin 轮询富化失败状态；失败 > 0 时「监控」导航按钮显示红点
 const enrichmentAlert = useEnrichmentAlertStore()
 const dockAlertItems = computed(() => (enrichmentAlert.hasFailures ? ['/monitor'] : []))
+
+// 特性开关 fail-open：首屏全量显示，拉取完成后隐藏被关闭源的导航入口
+const { featureFlags, ensureFeatureFlags } = useFeatureFlags()
+void ensureFeatureFlags()
+const visibleNavItems = computed(() =>
+  NAV_ITEMS.filter((item) => isNavigationItemFeatureEnabled(item, featureFlags.value)),
+)
 
 /** 品牌名称 — 从 Vite 环境变量读取，回退默认值 */
 const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
@@ -57,7 +66,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     </div>
 
     <AppDock
-      :items="NAV_ITEMS"
+      :items="visibleNavItems"
       :current-path="route.path"
       :is-admin="authStore.isAdmin"
       :is-logged-in="authStore.isLoggedIn"

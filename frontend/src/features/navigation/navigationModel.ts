@@ -1,11 +1,21 @@
+export type NavigationFeatureKey = 'xSource' | 'wechatSource'
+
 export interface NavigationItem {
   to: string
   labelKey: `navigation.${string}`
   exact: boolean
   requiresAdmin?: boolean
   requiresAuth?: boolean
+  /** 可插拔源导航项：对应特性开关被明确关闭时从导航隐藏 */
+  featureKey?: NavigationFeatureKey
   icon: string
 }
+
+/** 特性门控：未声明 featureKey 的项不受开关影响；仅显式 false 才隐藏。 */
+export const isNavigationItemFeatureEnabled = (
+  item: Pick<NavigationItem, 'featureKey'>,
+  features: Record<NavigationFeatureKey, boolean>,
+): boolean => !item.featureKey || features[item.featureKey] !== false
 
 export const NAV_ITEMS: readonly NavigationItem[] = [
   {
@@ -37,6 +47,7 @@ export const NAV_ITEMS: readonly NavigationItem[] = [
     to: '/x',
     labelKey: 'navigation.xboard',
     exact: false,
+    featureKey: 'xSource',
     icon: `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>`,
   },
   {

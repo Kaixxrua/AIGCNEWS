@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getRoutePolicyRedirect } from '@/features/navigation/routePolicy'
+import { getFeatureGateRedirect, getRoutePolicyRedirect } from '@/features/navigation/routePolicy'
 import LayoutView from '@/views/LayoutView.vue'
 import { startRouteProgress, stopRouteProgress } from '@/composables/useRouteProgress'
 
@@ -71,6 +71,7 @@ const router = createRouter({
           path: 'x',
           name: 'x-board',
           component: XBoardView,
+          meta: { feature: 'xSource' },
         },
         {
           path: 'wechat',
@@ -128,6 +129,11 @@ router.beforeEach(async (to, _from, next) => {
   const redirect = getRoutePolicyRedirect(to, authStore)
 
   if (redirect) return next(redirect)
+
+  // 可插拔源特性门控：开关关闭时源路由回首页（开关进程内缓存，仅首次拉取）
+  const { ensureFeatureFlags } = await import('@/composables/useFeatureFlags')
+  const featureRedirect = getFeatureGateRedirect(to, await ensureFeatureFlags())
+  if (featureRedirect) return next(featureRedirect)
   next()
 })
 

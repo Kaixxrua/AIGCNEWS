@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_x_media
 from backend.app.api.routes_x_media import validate_media_url
+from backend.app.core.config import settings
 
 PHOTO_URL = "https://pbs.twimg.com/media/HO0uUesbYAAaHzK.jpg"
 VIDEO_URL = "https://video.twimg.com/amplify_video/123/vid/avc1/1920x1080/a.mp4?tag=29"
@@ -21,6 +22,9 @@ VIDEO_URL = "https://video.twimg.com/amplify_video/123/vid/avc1/1920x1080/a.mp4?
 @pytest.fixture()
 def build_client(monkeypatch: pytest.MonkeyPatch):
     """返回一个工厂：以 MockTransport handler 替换上游客户端，挂真实 FastAPI 路由。"""
+
+    # 特性开关默认关闭；代理行为用例一律在开启态下验证
+    monkeypatch.setattr(settings, "x_source_enabled", True)
 
     def build(handler) -> TestClient:
         def fake_client_factory() -> httpx.AsyncClient:
@@ -203,3 +207,39 @@ class TestProxyXMediaPathStyle:
             "/api/media/x/img/pbs.twimg.com.evil.com/x.jpg"
         )
         assert response.status_code == 403
+
+
+class TestFeatureGate:
+    """特性开关关闭时整组 X 媒体路由 404（对外与未部署该源一致）。"""
+
+    def test_routes_404_when_source_disabled(
+        self, build_client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "x_source_enabled", False)
+
+        def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+            raise AssertionError("upstream must not be called when source disabled")
+
+        client = build_client(handler)
+        assert (
+            client.get("/api/media/x/proxy", params={"url": PHOTO_URL}).status_code
+            == 404
+        )
+        assert (
+            client.get("/api/media/x/img/pbs.twimg.com/media/a.jpg").status_code == 404
+        )
+        assert (
+            client.get("/api/media/x/poster", params={"url": VIDEO_URL}).status_code
+            == 404
+        )
+
+    def test_routes_reachable_when_source_enabled(self, build_client) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, content=b"jpeg", headers={"content-type": "image/jpeg"}
+            )
+
+        response = build_client(handler).get(
+            "/api/media/x/proxy", params={"url": PHOTO_URL}
+        )
+        assert response.status_code == 200

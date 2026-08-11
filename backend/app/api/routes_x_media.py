@@ -43,9 +43,10 @@ from typing import AsyncGenerator
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.responses import FileResponse, StreamingResponse
 
+from backend.app.api.feature_gates import require_x_source_enabled
 from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
 from backend.app.services.auth.rate_limit import (
@@ -54,7 +55,8 @@ from backend.app.services.auth.rate_limit import (
 )
 from backend.app.services.media_cache import enforce_cache_budget, prune_expired_entries
 
-router = APIRouter()
+# X 源特性开关关闭时整组媒体代理 404（请求时判定，见 feature_gates）
+router = APIRouter(dependencies=[Depends(require_x_source_enabled)])
 logger = logging.getLogger(__name__)
 
 ALLOWED_MEDIA_HOSTS = frozenset(

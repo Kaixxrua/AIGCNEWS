@@ -677,3 +677,44 @@ class SchedulerLifecycleAndStatusContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SchedulerXSourceGateTests(unittest.TestCase):
+    """x_source_enabled=False 时 X 链路任务（采集/测活/收尾）整体不注册。"""
+
+    def _start(self, *, x_source_enabled: bool) -> _RecordingScheduler:
+        events: list[str] = []
+        fake_scheduler = _RecordingScheduler(events)
+        loop = _RecordingLoop(events)
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            MagicMock(),
+            scheduler=fake_scheduler,  # type: ignore[arg-type]
+            x_source_enabled=x_source_enabled,
+            timezone_name="Asia/Shanghai",
+        )
+        with patch.object(
+            scheduler.asyncio,
+            "get_running_loop",
+            return_value=loop,
+        ):
+            runtime.start()
+        return fake_scheduler
+
+    def test_x_jobs_skipped_when_source_disabled(self) -> None:
+        fake_scheduler = self._start(x_source_enabled=False)
+
+        registered = [kwargs["id"] for _, kwargs in fake_scheduler.add_job_calls]
+        self.assertNotIn("x_watchlist", registered)
+        self.assertNotIn("x_credentials_probe", registered)
+        self.assertNotIn("x_closing", registered)
+        self.assertIn("arxiv_papers", registered)
+        self.assertIn("daily_briefing", registered)
+        self.assertIn("news_closing", registered)
+
+    def test_x_jobs_registered_when_source_enabled(self) -> None:
+        fake_scheduler = self._start(x_source_enabled=True)
+
+        registered = [kwargs["id"] for _, kwargs in fake_scheduler.add_job_calls]
+        self.assertIn("x_watchlist", registered)
+        self.assertIn("x_credentials_probe", registered)
+        self.assertIn("x_closing", registered)
