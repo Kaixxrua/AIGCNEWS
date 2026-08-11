@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import WechatAccountCard from './WechatAccountCard.vue'
 import type { WeChatArticle, WeChatFeedEntry } from '@/features/wechat/wechatModel'
 
@@ -16,6 +16,8 @@ const i18n = createI18n({
         readOriginal: '阅读原文',
         fullTextLoading: '全文加载中…',
         retry: '重试',
+        backToArticleTop: '回到文章顶部',
+        skipToArticleEnd: '跳到文章末尾',
       },
     },
   },
@@ -98,5 +100,45 @@ describe('WechatAccountCard', () => {
 
     const withoutContent = mountCard(makeEntry(makeArticle({ has_content: false })), new Set(['1:11']))
     expect(withoutContent.find('.article-digest').exists()).toBe(true)
+  })
+
+  it('shows in-article jump buttons only when the article is expanded', () => {
+    const collapsed = mountCard(makeEntry(makeArticle()), new Set())
+    expect(collapsed.find('.article-nav').exists()).toBe(false)
+
+    const expanded = mountCard(makeEntry(makeArticle()), new Set(['1:11']))
+    expect(expanded.find('.article-detail-shell').exists()).toBe(true)
+    const buttons = expanded.findAll('.article-nav-btn')
+    expect(buttons).toHaveLength(2)
+    const [topButton, bottomButton] = buttons
+    expect(topButton?.attributes('aria-label')).toBe('回到文章顶部')
+    expect(bottomButton?.attributes('aria-label')).toBe('跳到文章末尾')
+  })
+
+  it('scrolls to the article summary on top jump and to the end sentinel on bottom jump', async () => {
+    // jsdom 未实现 scrollIntoView，测试环境手动装/卸桩
+    const spy = vi.fn()
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = spy
+    try {
+      const card = mountCard(makeEntry(makeArticle()), new Set(['1:11']))
+      const [topButton, bottomButton] = card.findAll('.article-nav-btn')
+
+      await topButton?.trigger('click')
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy).toHaveBeenLastCalledWith({ behavior: 'smooth', block: 'start' })
+      expect(spy.mock.instances[0]).toBe(card.find('.article-summary').element)
+
+      await bottomButton?.trigger('click')
+      expect(spy).toHaveBeenCalledTimes(2)
+      expect(spy).toHaveBeenLastCalledWith({ behavior: 'smooth', block: 'end' })
+      expect(spy.mock.instances[1]).toBe(card.find('.article-detail-end').element)
+    } finally {
+      if (original) {
+        Element.prototype.scrollIntoView = original
+      } else {
+        delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+      }
+    }
   })
 })

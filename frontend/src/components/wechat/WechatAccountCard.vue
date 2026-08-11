@@ -32,6 +32,22 @@ const formatPublishedAt = (value: string | null): string => {
 
 const keyFor = (article: WeChatArticle): string =>
   props.articleKey(props.entry.account.id, article.id, article.stable_article_key)
+
+// prefers-reduced-motion 下退回瞬时滚动，与 WechatView 的全局动效豁免保持一致
+const scrollBehavior = (): ScrollBehavior =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    ? 'auto'
+    : 'smooth'
+
+// 文首/文末跳转：从点击按钮回溯所在文章行，文首对齐标题行，文末对齐内容收尾锚点
+const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
+  const row = (event.currentTarget as HTMLElement | null)?.closest('.article-row')
+  const target =
+    edge === 'start'
+      ? row?.querySelector('.article-summary')
+      : row?.querySelector('.article-detail-end')
+  target?.scrollIntoView({ behavior: scrollBehavior(), block: edge })
+}
 </script>
 
 <template>
@@ -76,55 +92,84 @@ const keyFor = (article: WeChatArticle): string =>
           <time class="article-time">{{ formatPublishedAt(article.published_at) }}</time>
         </button>
 
-        <div v-if="expandedArticleKeys.has(keyFor(article))" class="article-detail">
-          <img
-            v-if="article.cover_url"
-            :src="proxiedWechatImageUrl(article.cover_url)"
-            :alt="article.title"
-            class="article-cover"
-            loading="lazy"
-            referrerpolicy="no-referrer"
-          />
-          <!-- 有全文时不再显示摘要：搜狗摘要本身就是正文开头截断，并列会重复 -->
-          <p v-if="article.digest && !article.has_content" class="article-digest">{{ article.digest }}</p>
+        <Transition name="article-expand">
+          <div v-if="expandedArticleKeys.has(keyFor(article))" class="article-detail-shell">
+            <div class="article-detail">
+              <!-- 文内跳转：sticky 吸附在滚动视口顶部，只在该文展开期间可见；
+                   容器不拦截指针，避免悬浮条遮挡正文链接点击 -->
+              <div class="article-nav">
+                <button
+                  type="button"
+                  class="article-nav-btn"
+                  :aria-label="t('wechat.backToArticleTop')"
+                  :title="t('wechat.backToArticleTop')"
+                  @click="scrollToArticleEdge($event, 'start')"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  class="article-nav-btn"
+                  :aria-label="t('wechat.skipToArticleEnd')"
+                  :title="t('wechat.skipToArticleEnd')"
+                  @click="scrollToArticleEdge($event, 'end')"
+                >
+                  ↓
+                </button>
+              </div>
 
-          <!-- 全文正文（has_content 时懒加载，正文已在服务端+前端两道清洗） -->
-          <template v-if="article.has_content">
-            <p
-              v-if="articleDetailLoading.has(keyFor(article)) && !articleDetails.has(keyFor(article))"
-              class="article-content-loading"
-            >
-              {{ t('wechat.fullTextLoading') }}
-            </p>
-            <p v-else-if="articleDetailErrors.has(keyFor(article))" class="article-content-error">
-              {{ articleDetailErrors.get(keyFor(article)) }}
-              <button
-                type="button"
-                class="article-content-retry"
-                @click="emit('retryDetail', keyFor(article), entry.account.id, article)"
+              <img
+                v-if="article.cover_url"
+                :src="proxiedWechatImageUrl(article.cover_url)"
+                :alt="article.title"
+                class="article-cover"
+                loading="lazy"
+                referrerpolicy="no-referrer"
+              />
+              <!-- 有全文时不再显示摘要：搜狗摘要本身就是正文开头截断，并列会重复 -->
+              <p v-if="article.digest && !article.has_content" class="article-digest">{{ article.digest }}</p>
+
+              <!-- 全文正文（has_content 时懒加载，正文已在服务端+前端两道清洗） -->
+              <template v-if="article.has_content">
+                <p
+                  v-if="articleDetailLoading.has(keyFor(article)) && !articleDetails.has(keyFor(article))"
+                  class="article-content-loading"
+                >
+                  {{ t('wechat.fullTextLoading') }}
+                </p>
+                <p v-else-if="articleDetailErrors.has(keyFor(article))" class="article-content-error">
+                  {{ articleDetailErrors.get(keyFor(article)) }}
+                  <button
+                    type="button"
+                    class="article-content-retry"
+                    @click="emit('retryDetail', keyFor(article), entry.account.id, article)"
+                  >
+                    {{ t('wechat.retry') }}
+                  </button>
+                </p>
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <div
+                  v-else-if="articleDetails.has(keyFor(article))"
+                  class="prose-content wechat-article-content"
+                  v-html="articleDetails.get(keyFor(article))?.content_html"
+                ></div>
+              </template>
+
+              <p v-if="article.author" class="article-author">{{ article.author }}</p>
+              <a
+                v-if="article.article_url"
+                :href="article.article_url"
+                target="_blank"
+                rel="noopener"
+                class="article-link"
               >
-                {{ t('wechat.retry') }}
-              </button>
-            </p>
-            <!-- eslint-disable-next-line vue/no-v-html -->
-            <div
-              v-else-if="articleDetails.has(keyFor(article))"
-              class="prose-content wechat-article-content"
-              v-html="articleDetails.get(keyFor(article))?.content_html"
-            ></div>
-          </template>
-
-          <p v-if="article.author" class="article-author">{{ article.author }}</p>
-          <a
-            v-if="article.article_url"
-            :href="article.article_url"
-            target="_blank"
-            rel="noopener"
-            class="article-link"
-          >
-            {{ t('wechat.readOriginal') }} ↗
-          </a>
-        </div>
+                {{ t('wechat.readOriginal') }} ↗
+              </a>
+              <!-- 文末锚点：「跳到底部」的滚动对齐目标 -->
+              <div class="article-detail-end" aria-hidden="true"></div>
+            </div>
+          </div>
+        </Transition>
       </li>
     </ul>
   </section>
@@ -136,7 +181,9 @@ const keyFor = (article: WeChatArticle): string =>
   border-radius: 8px;
   background: var(--projects-paper-light);
   box-shadow: 4px 4px 0 var(--shadow-hard);
-  overflow: hidden;
+  /* 用 clip 而非 hidden 裁圆角：hidden 会创建滚动容器，
+     把卡片内 sticky 元素的吸附目标截获在卡片上，导致文内跳转按钮失效 */
+  overflow: clip;
 }
 
 .account-card-header {
@@ -250,7 +297,28 @@ const keyFor = (article: WeChatArticle): string =>
   color: var(--ink-muted);
 }
 
+/* 展开/收起过渡外壳：grid 行轨 0fr↔1fr 平滑动画高度，长文无封顶（max-height
+   方案超出封顶值会跳变）；内层 overflow: clip 裁剪过渡中溢出的内容，clip 不
+   创建滚动容器，卡片内 sticky 按钮仍相对页面滚动条吸附 */
+.article-detail-shell {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.article-expand-enter-active,
+.article-expand-leave-active {
+  transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease;
+}
+
+.article-expand-enter-from,
+.article-expand-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
 .article-detail {
+  min-height: 0;
+  overflow: clip;
   padding: 4px 14px 16px 36px;
   display: flex;
   flex-direction: column;
@@ -263,6 +331,40 @@ const keyFor = (article: WeChatArticle): string =>
   width: 100%;
   max-width: 42rem;
   margin-inline: auto;
+}
+
+.article-nav {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.article-nav-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  border: 1px solid var(--projects-accent);
+  border-radius: 4px;
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.article-nav-btn:hover {
+  background: var(--acid-soft);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
 }
 
 .article-cover {
