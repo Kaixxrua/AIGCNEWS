@@ -1,5 +1,11 @@
 name: docker
 
+# 本文件只承载核心栈（干净检出即可 config/up）。
+# 私有部署扩展（姊妹服务、外部编排网、私有 nginx server）经 overlay 注入，
+# 由 scripts/manage_main_stack.sh 自动探测：
+#   ../aigcnews_private/deploy/docker-compose.private.yml（可用 AIGCNEWS_PRIVATE_COMPOSE 覆盖）
+# overlay 不存在时核心栈独立可用。
+
 # 统一日志轮转：防止 json-file 无界增长撑爆宿主机磁盘
 x-default-logging: &default-logging
   driver: json-file
@@ -33,24 +39,25 @@ services:
       - path: ../.env
         required: false
     environment:
-      # 显式钉死 Redis 目标容器名：本服务同时接入 sub2api 外部网，该网络内
-      # sub2api-redis 同样持有别名 "redis"，.env 的 REDIS_HOST=redis 会歧义解析到
-      # 带 requirepass 的 sub2api-redis，导致 FastAPICache 初始化失败、缓存路由 500。
+      # 显式钉死 Redis 目标容器名：经 overlay 附加其他编排网时，若那些网络内
+      # 存在同样持有别名 "redis" 的容器，.env 的 REDIS_HOST=redis 会歧义解析到
+      # 外部 redis（曾因此导致 FastAPICache 初始化失败、缓存路由 500）。
       - REDIS_HOST=redis-aigc
       - HF_ENDPOINT=https://hf-mirror.com
       - HF_HUB_OFFLINE=0
       - TRANSFORMERS_OFFLINE=0
       # 与镜像内 HF_HOME 一致；下方挂载点必须保持同一路径
       - HF_HOME=/hf-cache
-      - OUTBOUND_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - HTTP_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - HTTPS_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - ALL_PROXY=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - http_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - https_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - all_proxy=${OUTBOUND_PROXY:-socks5h://10.20.0.1:1080}
-      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
-      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
+      # 出站代理由部署方在 .env 的 OUTBOUND_PROXY 注入；默认空 = 直连
+      - OUTBOUND_PROXY=${OUTBOUND_PROXY:-}
+      - HTTP_PROXY=${OUTBOUND_PROXY:-}
+      - HTTPS_PROXY=${OUTBOUND_PROXY:-}
+      - ALL_PROXY=${OUTBOUND_PROXY:-}
+      - http_proxy=${OUTBOUND_PROXY:-}
+      - https_proxy=${OUTBOUND_PROXY:-}
+      - all_proxy=${OUTBOUND_PROXY:-}
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -70,11 +77,8 @@ services:
     cap_drop:
       - ALL
     networks:
-      # 附加 sub2api 编排网：模型服务直连 http://sub2api-new:8080
-      # （Anthropic SDK 自动追加 /v1/messages，base_url 不带 /v1），
-      # 避免走公网回环（gptsakura.com）三穿隧道；NO_PROXY 已同步放行该主机名
+      # 外部编排网（如私有 LLM 中转网）经 compose overlay 追加挂接
       - default
-      - sub2api
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5)"]
       interval: 10s
@@ -132,8 +136,7 @@ services:
     depends_on:
       backend-api:
         condition: service_healthy
-      priceai:
-        condition: service_healthy
+      # 姊妹服务（如 priceai）的 depends_on 由 overlay 追加
     volumes:
       # SSL 证书与私钥留在宿主机，只读挂载，不进镜像、不进仓库
       - ../frontend/ssl:/etc/nginx/ssl:ro
@@ -186,35 +189,8 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  priceai:
-    build:
-      context: ../../PriceAI
-      args:
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set NEXT_PUBLIC_SUPABASE_URL}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set NEXT_PUBLIC_SUPABASE_ANON_KEY}
-        NEXT_PUBLIC_UMAMI_ALLOWED_DOMAINS: price.gptsakura.com
-    image: priceai-node-standalone:local
-    container_name: priceai
-    restart: unless-stopped
-    logging: *default-logging
-    init: true
-    env_file:
-      - path: ../../.priceai-node.env
-        required: false
-    environment:
-      NODE_ENV: production
-      HOSTNAME: 0.0.0.0
-      PORT: 3000
-    expose:
-      - "3000"
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "--header=User-Agent: PriceAI-Docker-Healthcheck", "http://127.0.0.1:3000/api/deployment"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    security_opt:
-      - no-new-privileges:true
+  # PriceAI 姊妹服务（独立产品）已移至私有 overlay：
+  # ../aigcnews_private/deploy/docker-compose.private.yml
 
   etcd:
     container_name: milvus-etcd
@@ -350,8 +326,5 @@ volumes:
   redis_data:
   project_catalog_postgres_data:
 
-networks:
-  sub2api:
-    external: true
-    name: deploy_sub2api-network
+# 外部编排网（如私有 LLM 中转网）由 overlay 以 external 形式声明并挂接。
 

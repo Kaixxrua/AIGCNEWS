@@ -13,6 +13,11 @@ RUN npm run build
 FROM nginx:alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752
 # 覆盖默认 Nginx 配置（HTTP 重定向 + HTTPS + Vue Router History 模式）
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+# 私有 server 块/主 server 私有指令的空占位文件：default.conf 会 include
+# 这两个路径，缺失会导致 nginx 启动失败；私有部署经 compose overlay
+# bind-mount 真实文件覆盖（见 docker/docker-compose.yml 头部注释）。
+COPY nginx-private-servers.inc /etc/nginx/conf.d/private-servers.inc
+COPY nginx-private-server-directives.inc /etc/nginx/conf.d/private-server-directives.inc
 # 把编译好的 dist 文件夹放进 Nginx
 COPY --from=builder /app/dist /usr/share/nginx/html
 # SSL 证书目录；证书与私钥不入镜像（ssl/ 已被 gitignore，干净检出中不存在）。
