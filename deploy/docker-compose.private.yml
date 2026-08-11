@@ -22,11 +22,19 @@ services:
       # （Anthropic SDK 自动追加 /v1/messages，base_url 不带 /v1），
       # 避免走公网回环（gptsakura.com）三穿隧道；NO_PROXY 已同步放行该主机名
       - sub2api
+    volumes:
+      # 私有源插件包（X 传输层 / 微信链路实现）+ pylibs 依赖供给
+      # （twitter-cli 及其独占依赖，供给方式见本仓 README.md）；
+      # 只读挂载，容器内路径 /opt/aigcnews_private
+      - /home/kaixxrua/aigcnews_private:/opt/aigcnews_private:ro
     environment:
       # 在核心 NO_PROXY 基础上追加 sub2api-new（compose 对 environment 按键覆盖，
       # 此处给出完整值覆盖核心文件中的同名变量）
       - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
       - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
+      # 源插件解析路径：pylibs（twitter-cli 依赖树）> 插件包 > 镜像代码。
+      # 镜像 Dockerfile 的 ENV PYTHONPATH=/src 被此处整体覆盖，/src 必须保留
+      - PYTHONPATH=/opt/aigcnews_private/pylibs:/opt/aigcnews_private:/src
 
   frontend-web:
     depends_on:

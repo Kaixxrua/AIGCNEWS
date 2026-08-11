@@ -1,0 +1,13 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+# 与公共仓同口径的存量基线（E501 长行、E402 条件导入）
+ignore = ["E501", "E402", "E701", "E702"]
+
+# 插件包与公共仓（backend.app.*）均为绝对导入，同按 first-party 处理。
+[tool.ruff.lint.isort]
+known-first-party = ["aigcnews_private", "backend", "scripts"]
+combine-as-imports = true
