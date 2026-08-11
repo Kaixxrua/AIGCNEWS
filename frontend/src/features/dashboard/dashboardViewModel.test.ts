@@ -14,10 +14,10 @@ describe('tab board status projection (PR6)', () => {
 
   it('maps wire fields per tab and tolerates missing entries', () => {
     expect(getTabBoardStatus(sourceStatus, 'arxiv')).toEqual({
-      isFinalized: false, isEmbargoed: true, dayBoundary: 'PT', finalizeHour: 17,
+      isFinalized: false, isEmbargoed: true, dayBoundary: 'PT', finalizeHour: 17, isDisabled: false,
     })
     expect(getTabBoardStatus(sourceStatus, 'github')).toEqual({
-      isFinalized: true, isEmbargoed: false, dayBoundary: 'CST', finalizeHour: 1,
+      isFinalized: true, isEmbargoed: false, dayBoundary: 'CST', finalizeHour: 1, isDisabled: false,
     })
     expect(getTabBoardStatus(sourceStatus, 'news')).toBeNull()
     expect(getTabBoardStatus(undefined, 'arxiv')).toBeNull()
@@ -26,7 +26,13 @@ describe('tab board status projection (PR6)', () => {
 
   it('defaults partial wire entries to collecting without a finalize hour', () => {
     expect(getTabBoardStatus({ x: {} }, 'x')).toEqual({
-      isFinalized: false, isEmbargoed: false, dayBoundary: '', finalizeHour: null,
+      isFinalized: false, isEmbargoed: false, dayBoundary: '', finalizeHour: null, isDisabled: false,
+    })
+  })
+
+  it('passes through the additive is_disabled wire marker', () => {
+    expect(getTabBoardStatus({ x: { is_disabled: true } }, 'x')).toEqual({
+      isFinalized: false, isEmbargoed: false, dayBoundary: '', finalizeHour: null, isDisabled: true,
     })
   })
 

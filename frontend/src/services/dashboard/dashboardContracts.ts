@@ -14,6 +14,8 @@ export interface SourceBoardStatus {
   day_boundary?: string | null
   /** 次日 CST 定稿整点 */
   finalize_hour?: number | null
+  /** 可插拔源被特性开关关闭（wire 只增字段；缺省视为启用） */
+  is_disabled?: boolean | null
 }
 
 export type SourceStatusMap = Partial<Record<TabKey, SourceBoardStatus>>

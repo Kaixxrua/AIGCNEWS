@@ -881,48 +881,51 @@ class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(marker, result.error)
 
     async def test_env_driven_defaults_for_count_delay_and_watchlist(self) -> None:
+        from backend.app.core.config import settings
         from backend.app.services.ingestion.crawlers import x_crawler
 
-        env = {
-            "TWITTER_WATCH_HANDLES": " @OpenAI, karpathy ",
-            "TWITTER_TWEETS_PER_ACCOUNT": "33",
-            "TWITTER_INTER_ACCOUNT_DELAY_SECONDS": "9.5",
-        }
-        with patch.dict("os.environ", env, clear=True):
-            crawler = x_crawler.XCrawler()
-            # watchlist 惰性读取：每次 fetch 时取最新 env
-            watchlist = crawler._watchlist_provider()
+        # 无注入 transport 时 XCrawler 经 loader 构造真实 XTransport：需开关开启
+        with patch.object(settings, "x_source_enabled", True):
+            env = {
+                "TWITTER_WATCH_HANDLES": " @OpenAI, karpathy ",
+                "TWITTER_TWEETS_PER_ACCOUNT": "33",
+                "TWITTER_INTER_ACCOUNT_DELAY_SECONDS": "9.5",
+            }
+            with patch.dict("os.environ", env, clear=True):
+                crawler = x_crawler.XCrawler()
+                # watchlist 惰性读取：每次 fetch 时取最新 env
+                watchlist = crawler._watchlist_provider()
 
-        self.assertEqual(crawler._tweets_per_account, 33)
-        self.assertEqual(crawler._transport._inter_account_delay, 9.5)
-        self.assertEqual(watchlist, ["openai", "karpathy"])
+            self.assertEqual(crawler._tweets_per_account, 33)
+            self.assertEqual(crawler._transport._inter_account_delay, 9.5)
+            self.assertEqual(watchlist, ["openai", "karpathy"])
 
-        # 缺省/非法值回落常量默认
-        with patch.dict("os.environ", {}, clear=True):
-            crawler = x_crawler.XCrawler()
-            empty_watchlist = crawler._watchlist_provider()
-        self.assertEqual(
-            crawler._tweets_per_account, x_crawler.DEFAULT_TWEETS_PER_ACCOUNT
-        )
-        self.assertEqual(
-            crawler._transport._inter_account_delay,
-            x_transport.DEFAULT_INTER_ACCOUNT_DELAY,
-        )
-        self.assertEqual(empty_watchlist, [])
+            # 缺省/非法值回落常量默认
+            with patch.dict("os.environ", {}, clear=True):
+                crawler = x_crawler.XCrawler()
+                empty_watchlist = crawler._watchlist_provider()
+            self.assertEqual(
+                crawler._tweets_per_account, x_crawler.DEFAULT_TWEETS_PER_ACCOUNT
+            )
+            self.assertEqual(
+                crawler._transport._inter_account_delay,
+                x_transport.DEFAULT_INTER_ACCOUNT_DELAY,
+            )
+            self.assertEqual(empty_watchlist, [])
 
-        bad_env = {
-            "TWITTER_TWEETS_PER_ACCOUNT": "abc",
-            "TWITTER_INTER_ACCOUNT_DELAY_SECONDS": "-1",
-        }
-        with patch.dict("os.environ", bad_env, clear=True):
-            crawler = x_crawler.XCrawler()
-        self.assertEqual(
-            crawler._tweets_per_account, x_crawler.DEFAULT_TWEETS_PER_ACCOUNT
-        )
-        self.assertEqual(
-            crawler._transport._inter_account_delay,
-            x_transport.DEFAULT_INTER_ACCOUNT_DELAY,
-        )
+            bad_env = {
+                "TWITTER_TWEETS_PER_ACCOUNT": "abc",
+                "TWITTER_INTER_ACCOUNT_DELAY_SECONDS": "-1",
+            }
+            with patch.dict("os.environ", bad_env, clear=True):
+                crawler = x_crawler.XCrawler()
+            self.assertEqual(
+                crawler._tweets_per_account, x_crawler.DEFAULT_TWEETS_PER_ACCOUNT
+            )
+            self.assertEqual(
+                crawler._transport._inter_account_delay,
+                x_transport.DEFAULT_INTER_ACCOUNT_DELAY,
+            )
 
     async def test_fetch_isolates_unexpected_exceptions(self) -> None:
         def _boom():

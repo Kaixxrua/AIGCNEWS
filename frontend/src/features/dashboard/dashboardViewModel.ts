@@ -139,6 +139,7 @@ export interface TabBoardStatus {
   isEmbargoed: boolean
   dayBoundary: string
   finalizeHour: number | null
+  isDisabled: boolean
 }
 
 export const getTabBoardStatus = (
@@ -147,6 +148,7 @@ export const getTabBoardStatus = (
     is_embargoed?: boolean | null
     day_boundary?: string | null
     finalize_hour?: number | null
+    is_disabled?: boolean | null
   }>> | undefined,
   tab: TabKey,
 ): TabBoardStatus | null => {
@@ -157,6 +159,7 @@ export const getTabBoardStatus = (
     isEmbargoed: status.is_embargoed ?? false,
     dayBoundary: status.day_boundary ?? '',
     finalizeHour: typeof status.finalize_hour === 'number' ? status.finalize_hour : null,
+    isDisabled: status.is_disabled ?? false,
   }
 }
 

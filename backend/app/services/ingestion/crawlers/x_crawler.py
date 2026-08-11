@@ -24,12 +24,13 @@ from backend.app.services.ingestion.base_crawler import (
     today_cst,
 )
 from backend.app.services.ingestion.sources import x_policy
-from backend.app.services.ingestion.sources.x_transport import (
+from backend.app.services.source_plugins import load_x_transport_class
+from backend.app.services.source_plugins.x_source import (
     DEFAULT_INTER_ACCOUNT_DELAY,
     XAuthAbort,
     XAuthNotConfigured,
     XRateLimitAbort,
-    XTransport,
+    XTransportProtocol,
     XTransportUnavailable,
 )
 
@@ -74,8 +75,9 @@ class XCrawler(BaseCrawler):
     """X/Twitter 爬虫（数据源：twitter-cli 内部 GraphQL，cookie 凭据）。
 
     watchlist_provider: () -> list[str]，可注入（P3 切换为 DB 实现）。
-    transport: 可注入 fake；缺省构造 XTransport 并读
-        TWITTER_INTER_ACCOUNT_DELAY_SECONDS 作为账号间隔基线。
+    transport: 可注入 fake；缺省经 source_plugins loader 解析 XTransport
+        实现类构造（特性开关关闭或插件缺失时抛 XTransportUnavailable），
+        并读 TWITTER_INTER_ACCOUNT_DELAY_SECONDS 作为账号间隔基线。
     tweets_per_account: 缺省读 TWITTER_TWEETS_PER_ACCOUNT env（回落 20）。
     translation_fetcher: 可注入的翻译抓取器 (tweet_ids) -> {id: 译文}；
         缺省回落 transport.fetch_tweet_translations（duck-typed，旧 fake
@@ -84,20 +86,24 @@ class XCrawler(BaseCrawler):
 
     def __init__(
         self,
-        transport: Optional[XTransport] = None,
+        transport: Optional[XTransportProtocol] = None,
         watchlist_provider: Optional[Callable[[], list[str]]] = None,
         credential_provider: Optional[Callable[[], list[dict[str, Any]]]] = None,
         tweets_per_account: Optional[int] = None,
         translation_fetcher: Optional[Callable[[list[str]], dict[str, str]]] = None,
     ) -> None:
-        self._transport = (
-            transport
-            if transport is not None
-            else XTransport(
+        if transport is not None:
+            self._transport = transport
+        else:
+            transport_class = load_x_transport_class()
+            if transport_class is None:
+                raise XTransportUnavailable(
+                    "X 源插件不可用（x_source_enabled 关闭或实现缺失）"
+                )
+            self._transport = transport_class(
                 credential_provider=credential_provider,
                 inter_account_delay=_env_inter_account_delay(),
             )
-        )
         self._watchlist_provider = watchlist_provider or _env_watchlist_provider
         self._tweets_per_account = (
             tweets_per_account

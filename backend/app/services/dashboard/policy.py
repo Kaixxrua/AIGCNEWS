@@ -117,12 +117,14 @@ class SourceBoardStatus(TypedDict):
 
     finalize_hour 为该源揭榜时刻（次日 CST 整点），供前端提示
     "预计 HH:00 定稿"；day_boundary 标明该源的自然日界口径。
+    is_disabled 标明可插拔源被特性开关关闭（wire 只增字段，旧消费端忽略）。
     """
 
     is_finalized: bool
     is_embargoed: bool
     day_boundary: str
     finalize_hour: int
+    is_disabled: bool
 
 # 看板 github 榜自 v5 热度指标表读取后，条目的来源渠道标记。
 # 与 rank_snapshots 的 github_trending_daily/github_hot_daily 区分开，
@@ -283,6 +285,7 @@ def compute_source_board_status(
         "is_embargoed": False,
         "day_boundary": boundary,
         "finalize_hour": hour,
+        "is_disabled": False,
     }
     if query_date == today:
         return status
@@ -300,11 +303,22 @@ def compute_source_board_status(
 def compute_source_status_map(
     snapshot_date_str: str,
 ) -> dict[str, SourceBoardStatus]:
-    """全部已注册源的分源状态 map（key 顺序固定，便于契约测试与前端遍历）。"""
-    return {
-        source: compute_source_board_status(snapshot_date_str, source)
-        for source in SOURCE_FINALIZE_HOUR
-    }
+    """全部已注册源的分源状态 map（key 顺序固定，便于契约测试与前端遍历）。
+
+    可插拔源被特性开关关闭时标记 is_disabled=True（其余字段照常计算），
+    消费端据此隐藏或降级该源入口。
+    """
+    from backend.app.core.config import settings
+
+    disabled_sources: set[str] = set()
+    if not getattr(settings, "x_source_enabled", False):
+        disabled_sources.add("x")
+    status_map: dict[str, SourceBoardStatus] = {}
+    for source in SOURCE_FINALIZE_HOUR:
+        status = compute_source_board_status(snapshot_date_str, source)
+        status["is_disabled"] = source in disabled_sources
+        status_map[source] = status
+    return status_map
 
 
 def dedupe_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -193,6 +193,9 @@ def test_aggregate_board_status_semantics_unchanged(monkeypatch: Any) -> None:
 def test_top_route_response_adds_source_status_and_keeps_legacy_fields(
     monkeypatch: Any,
 ) -> None:
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "x_source_enabled", True)
     _freeze_now(monkeypatch, 2026, 8, 11, 10)
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-src-status-normal")
     try:
@@ -226,9 +229,11 @@ def test_top_route_response_adds_source_status_and_keeps_legacy_fields(
             "is_embargoed",
             "day_boundary",
             "finalize_hour",
+            "is_disabled",
         }
         assert status["is_finalized"] is True
         assert status["is_embargoed"] is False
+        assert status["is_disabled"] is False
     assert status_map["github"]["finalize_hour"] == 1
     assert status_map["github"]["day_boundary"] == "CST"
     assert status_map["arxiv"]["finalize_hour"] == 17
@@ -240,6 +245,9 @@ def test_top_route_embargoed_response_carries_divergent_source_status(
     monkeypatch: Any,
 ) -> None:
     """整榜静默期拦截不变，但 source_status 如实透出分源发散状态。"""
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "x_source_enabled", True)
     _freeze_now(monkeypatch, 2026, 8, 11, 10)
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-src-status-embargo")
     try:
@@ -260,3 +268,43 @@ def test_top_route_embargoed_response_carries_divergent_source_status(
     # PT 源未到 17:00：仍在静默期
     assert status_map["arxiv"]["is_embargoed"] is True
     assert status_map["producthunt"]["is_embargoed"] is True
+
+
+def test_source_status_marks_disabled_pluggable_sources(monkeypatch: Any) -> None:
+    """可插拔源开关关闭时 is_disabled=True（其余字段照常计算），开启全部 False。"""
+    from backend.app.core.config import settings
+
+    _freeze_now(monkeypatch, 2026, 8, 10, 10)
+    monkeypatch.setattr(settings, "x_source_enabled", False)
+    status_map = policy.compute_source_status_map("2026-08-10")
+    assert list(status_map.keys()) == EXPECTED_SOURCE_ORDER
+    assert status_map["x"]["is_disabled"] is True
+    # 关态不改既有定稿/静默语义
+    assert status_map["x"]["is_finalized"] is False
+    assert status_map["x"]["is_embargoed"] is False
+    for source in EXPECTED_SOURCE_ORDER:
+        if source != "x":
+            assert status_map[source]["is_disabled"] is False, source
+
+    monkeypatch.setattr(settings, "x_source_enabled", True)
+    status_map = policy.compute_source_status_map("2026-08-10")
+    assert all(status["is_disabled"] is False for status in status_map.values())
+
+
+def test_top_route_marks_disabled_source_in_wire(monkeypatch: Any) -> None:
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "x_source_enabled", False)
+    _freeze_now(monkeypatch, 2026, 8, 11, 10)
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-src-status-disabled")
+    try:
+        response = _top_client().get("/api/dashboard/top?date=2026-08-01")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    status_map = response.json()["source_status"]
+    assert status_map["x"]["is_disabled"] is True
+    for source, status in status_map.items():
+        if source != "x":
+            assert status["is_disabled"] is False, source

@@ -21,13 +21,17 @@ from backend.app.services.ingestion.pipeline import (
 
 class IngestionDependencyCompositionTests(unittest.TestCase):
     def test_provider_borrows_repositories_and_exposes_owned_factories(self) -> None:
+        from backend.app.core.config import settings
+
         repositories = MagicMock()
         writer = MagicMock()
 
-        dependencies = provide_ingestion_dependencies(
-            repositories=repositories,
-            task_writer=writer,
-        )
+        # 7 工厂的历史形状对应可插拔源开启；关态跳过 X 由门控契约测试覆盖
+        with patch.object(settings, "x_source_enabled", True):
+            dependencies = provide_ingestion_dependencies(
+                repositories=repositories,
+                task_writer=writer,
+            )
 
         self.assertIs(dependencies.repositories, repositories)
         self.assertIs(dependencies.task_writer, writer)
@@ -40,13 +44,16 @@ class IngestionDependencyCompositionTests(unittest.TestCase):
         self.assertEqual(len(dependencies.crawler_factories), 7)
 
     def test_x_crawler_factory_reads_watchlist_from_repositories(self) -> None:
+        from backend.app.core.config import settings
+
         repositories = MagicMock()
 
-        dependencies = provide_ingestion_dependencies(
-            repositories=repositories,
-            task_writer=MagicMock(),
-        )
-        x_crawler = dependencies.crawler_factories[-1]()
+        with patch.object(settings, "x_source_enabled", True):
+            dependencies = provide_ingestion_dependencies(
+                repositories=repositories,
+                task_writer=MagicMock(),
+            )
+            x_crawler = dependencies.crawler_factories[-1]()
 
         self.assertIs(
             x_crawler._watchlist_provider,
