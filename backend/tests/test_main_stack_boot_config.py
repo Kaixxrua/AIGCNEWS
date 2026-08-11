@@ -30,7 +30,9 @@ def test_main_compose_has_health_gated_boot_contract() -> None:
     ):
         assert mysql_runtime_marker not in text
     assert '["CMD", "redis-cli", "ping"]' in text
-    assert text.count("condition: service_healthy") == 8
+    # 核心栈 7 处健康门控；第 8 处（frontend-web → priceai）随 priceai
+    # 服务迁至私有 overlay（../aigcnews_private/deploy/docker-compose.private.yml）
+    assert text.count("condition: service_healthy") == 7
     backend_dependencies = text.split("  backend-api:", 1)[1].split(
         "\n  project-catalog-postgres:\n", 1
     )[0]
@@ -39,8 +41,10 @@ def test_main_compose_has_health_gated_boot_contract() -> None:
     assert "./volumes/etcd:/etcd" in text
     assert "./volumes/minio:/minio_data" in text
     assert "./volumes/milvus:/var/lib/milvus" in text
-    assert "${NEXT_PUBLIC_SUPABASE_URL:?set NEXT_PUBLIC_SUPABASE_URL}" in text
-    assert "${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set NEXT_PUBLIC_SUPABASE_ANON_KEY}" in text
+    # 姊妹服务（priceai）及其 Supabase 环境要求已迁至私有 overlay；
+    # 核心栈不得再耦合其环境变量，overlay 注入点由头部注释锚定
+    assert "../aigcnews_private/deploy/docker-compose.private.yml" in text
+    assert "NEXT_PUBLIC_SUPABASE" not in text
 
 
 def test_main_stack_orchestrator_has_static_safety_guards() -> None:
