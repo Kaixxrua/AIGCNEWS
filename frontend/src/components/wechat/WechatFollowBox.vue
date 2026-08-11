@@ -20,70 +20,91 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <!-- 收缩态：左侧细条，点击展开 -->
-  <button
-    v-if="props.collapsed"
-    type="button"
-    class="follow-rail"
-    :aria-label="t('wechat.expandFollowBox')"
-    @click="emit('toggleCollapsed')"
-  >
-    <span class="follow-rail-icon">›</span>
-    <span class="follow-rail-text">{{ t('wechat.catalogTitle') }}</span>
-  </button>
+  <!-- 展开态/细条态切换动画：两态结构与尺寸差异大，用 out-in 交叉淡入淡出，
+       旧状态退场后再进新状态，避免两个 absolutely 尺寸不同的块同屏挤压布局 -->
+  <Transition name="follow-swap" mode="out-in">
+    <!-- 收缩态：左侧细条，点击展开 -->
+    <button
+      v-if="props.collapsed"
+      key="rail"
+      type="button"
+      class="follow-rail"
+      :aria-label="t('wechat.expandFollowBox')"
+      @click="emit('toggleCollapsed')"
+    >
+      <span class="follow-rail-icon">›</span>
+      <span class="follow-rail-text">{{ t('wechat.catalogTitle') }}</span>
+    </button>
 
-  <!-- 展开态：悬浮关注框（绝对定位浮层，覆盖卡片而非挤占布局） -->
-  <div v-else class="follow-slot">
-    <aside class="follow-box">
-      <div class="follow-box-header">
-        <h2 class="follow-box-title">{{ t('wechat.catalogTitle') }}</h2>
-        <button
-          type="button"
-          class="follow-box-collapse"
-          :aria-label="t('wechat.collapseFollowBox')"
-          @click="emit('toggleCollapsed')"
-        >
-          ‹
-        </button>
-      </div>
-
-      <p v-if="props.loading" class="follow-box-empty">{{ t('common.loading') }}</p>
-      <p v-else-if="props.catalog.length === 0" class="follow-box-empty">
-        {{ t('wechat.catalogEmpty') }}
-      </p>
-
-      <ul v-else class="follow-box-list">
-        <li v-for="account in props.catalog" :key="account.id" class="follow-box-item">
-          <img
-            v-if="account.avatar_url"
-            :src="account.avatar_url"
-            :alt="account.nickname"
-            class="follow-box-avatar"
-            loading="lazy"
-            referrerpolicy="no-referrer"
-          />
-          <span v-else class="follow-box-avatar follow-box-avatar--placeholder">
-            {{ (account.nickname || '?').slice(0, 1) }}
-          </span>
-          <span class="follow-box-name" :title="account.nickname">
-            {{ account.nickname || t('wechat.unnamedAccount') }}
-          </span>
+    <!-- 展开态：悬浮关注框（绝对定位浮层，覆盖卡片而非挤占布局） -->
+    <div v-else key="panel" class="follow-slot">
+      <aside class="follow-box">
+        <div class="follow-box-header">
+          <h2 class="follow-box-title">{{ t('wechat.catalogTitle') }}</h2>
           <button
             type="button"
-            class="follow-box-btn"
-            :class="{ 'follow-box-btn--followed': account.followed }"
-            :disabled="props.pendingFollowIds.has(account.id)"
-            @click="emit('toggleFollow', account)"
+            class="follow-box-collapse"
+            :aria-label="t('wechat.collapseFollowBox')"
+            @click="emit('toggleCollapsed')"
           >
-            {{ account.followed ? t('wechat.followed') : t('wechat.follow') }}
+            ‹
           </button>
-        </li>
-      </ul>
-    </aside>
-  </div>
+        </div>
+
+        <p v-if="props.loading" class="follow-box-empty">{{ t('common.loading') }}</p>
+        <p v-else-if="props.catalog.length === 0" class="follow-box-empty">
+          {{ t('wechat.catalogEmpty') }}
+        </p>
+
+        <ul v-else class="follow-box-list">
+          <li v-for="account in props.catalog" :key="account.id" class="follow-box-item">
+            <img
+              v-if="account.avatar_url"
+              :src="account.avatar_url"
+              :alt="account.nickname"
+              class="follow-box-avatar"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+            />
+            <span v-else class="follow-box-avatar follow-box-avatar--placeholder">
+              {{ (account.nickname || '?').slice(0, 1) }}
+            </span>
+            <span class="follow-box-name" :title="account.nickname">
+              {{ account.nickname || t('wechat.unnamedAccount') }}
+            </span>
+            <button
+              type="button"
+              class="follow-box-btn"
+              :class="{ 'follow-box-btn--followed': account.followed }"
+              :disabled="props.pendingFollowIds.has(account.id)"
+              @click="emit('toggleFollow', account)"
+            >
+              {{ account.followed ? t('wechat.followed') : t('wechat.follow') }}
+            </button>
+          </li>
+        </ul>
+      </aside>
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
+/* 展开态 ↔ 细条态切换过渡：out-in 模式先淡出旧态再淡入新态 */
+.follow-swap-enter-active,
+.follow-swap-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.follow-swap-enter-from {
+  opacity: 0;
+  transform: translateX(-6px);
+}
+
+.follow-swap-leave-to {
+  opacity: 0;
+  transform: translateX(-6px);
+}
+
 /* 展开时布局流中只保留与细条同宽的占位，面板向右覆盖卡片，不挤压布局 */
 .follow-slot {
   position: sticky;
