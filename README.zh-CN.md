@@ -188,4 +188,4 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 
 ## License
 
-[MIT](LICENSE) © 2026 Kaixxrua
+[AIGCNEWS 源码可见授权协议](LICENSE) © 2026 Kaixxrua —— 个人非商业使用免费；商业使用与公网部署需获得作者事先书面授权。

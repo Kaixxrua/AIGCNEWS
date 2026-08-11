@@ -188,4 +188,4 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 
 ## License
 
-[MIT](LICENSE) © 2026 Kaixxrua
+[AIGCNEWS Source Available License](LICENSE) © 2026 Kaixxrua — free for personal, non-commercial use; commercial use and public deployment require the author's prior written authorization.

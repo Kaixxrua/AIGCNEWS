@@ -1,21 +1,126 @@
-MIT License
+AIGCNEWS Source Available License
 
 Copyright (c) 2026 Kaixxrua
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Definitions
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+   "Software" refers to the AIGCNEWS / AIGC Radar MCP source code and all
+   associated files in this repository, including documentation.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+   "Commercial Use" means any use of the Software, in whole or in part,
+   that is directly or indirectly intended for commercial advantage or
+   monetary compensation, including but not limited to use inside a
+   for-profit organization, use to provide paid products or services, and
+   use in any revenue-generating activity.
+
+   "Public Deployment" means making the Software, or any service derived
+   from it, accessible over a public network to anyone other than the
+   licensee, with or without Commercial Use.
+
+2. Personal Non-Commercial Grant
+
+   Permission is hereby granted, free of charge, to any person obtaining a
+   copy of the Software to use, copy, and modify the Software for personal,
+   educational, research, or other non-commercial purposes, subject to the
+   terms of this license. Deployment for such purposes is permitted only on
+   infrastructure under the licensee's exclusive control and must not be
+   accessible to any other person.
+
+3. Activities Requiring Prior Written Authorization
+
+   The following activities require the prior explicit written
+   authorization of the copyright holder:
+
+   a. any Commercial Use of the Software;
+   b. any Public Deployment of the Software or of services derived from
+      it;
+   c. selling, sublicensing, or otherwise commercially redistributing the
+      Software or derivative works.
+
+   To request authorization, contact the copyright holder: Kaixxrua.
+
+4. Redistribution
+
+   Redistribution of the Software, with or without modification, is
+   permitted only for non-commercial purposes, and only if this license
+   text and the copyright notice above are included in all copies or
+   substantial portions of the Software.
+
+5. Reservation of Rights
+
+   All rights not expressly granted in this license are reserved by the
+   copyright holder. Nothing in this license grants any patent, trademark,
+   or other intellectual property rights.
+
+6. Commercial Licensing
+
+   Commercial licenses and Public Deployment authorizations are available
+   from the copyright holder under a separate agreement.
+
+7. No Warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+
+AIGCNEWS 源码可见授权协议
+
+（中文参考译文，与英文文本不一致时以英文文本为准）
+
+版权所有 (c) 2026 Kaixxrua
+
+一、定义
+
+"本软件"指本仓库中的 AIGCNEWS / AIGC Radar MCP 源代码及全部相关文件
+（含文档）。
+
+"商业使用"指任何直接或间接以获取商业利益或金钱报酬为目的、对本软件
+全部或部分的使用，包括但不限于：在营利性组织内部使用、用于提供付费
+产品或服务、用于任何创收活动。
+
+"公网部署"指将本软件或其衍生服务通过公共网络向被授权人以外的任何人
+提供访问，无论是否构成商业使用。
+
+二、个人非商业使用授权
+
+任何获得本软件副本的人，可免费将本软件用于个人、教育、研究或其他非
+商业目的，包括使用、复制与修改，但须遵守本协议全部条款。为此等目的
+进行的部署仅限在被授权人独占控制的基础设施上进行，且不得向任何其他
+人开放访问。
+
+三、须事先书面授权的行为
+
+下列行为须事先获得版权持有人的明确书面授权：
+
+a. 对本软件的任何商业使用；
+b. 对本软件或其衍生服务的任何公网部署；
+c. 出售、再许可或以其他商业方式再分发本软件或其衍生作品。
+
+授权申请请联系版权持有人：Kaixxrua。
+
+四、再分发
+
+仅允许出于非商业目的再分发本软件（无论是否修改），且须在本软件的
+所有副本或主要部分中包含本协议全文及上述版权声明。
+
+五、权利保留
+
+本协议未明确授予的一切权利均由版权持有人保留。本协议不授予任何专利、
+商标或其他知识产权。
+
+六、商业授权
+
+商业许可与公网部署授权可通过与版权持有人另行签署协议获得。
+
+七、免责声明
+
+本软件按"现状"提供，不提供任何明示或暗示的担保，包括但不限于对适销性、
+特定用途适用性及不侵权的担保。在任何情况下，作者或版权持有人均不对
+任何索赔、损害或其他责任负责，无论因合同、侵权或其他原因引起，无论
+是否因本软件或对本软件的使用或其他处置而产生或与其相关。
