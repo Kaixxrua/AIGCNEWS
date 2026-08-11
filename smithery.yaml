@@ -1,0 +1,5 @@
+# Smithery.ai 配置：AIGC Radar 为托管远程 MCP（streamable-http），无需构建。
+# 格式说明见 https://smithery.ai/docs/build/deployments
+startCommand:
+  type: http
+  url: https://aigcnews.cn/api/mcp
