@@ -42,21 +42,21 @@ export PGPASSFILE=/run/secrets/postgres-pgpass
    PGPORT=5432
    PGUSER=backup_operator
    PGDATABASE=aigcnews
-   PGPASSFILE=/home/kaixxrua/.pgpass
+   PGPASSFILE=$HOME/.pgpass
    ```
 
    主 Compose（`docker/docker-compose.yml`）已为 `project-catalog-postgres` 内联 `127.0.0.1:5432:5432` 回环映射（带注释说明仅限备份用途），无需再加 override 文件；按上例 env 文件直接连接即可。不要为备份把数据库暴露到公网。
 
-2. 安装并启用（以部署用户 `kaixxrua` 为例）：
+2. 安装并启用（以部署用户为例（记为 `<deploy-user>`））：
 
    ```bash
    sudo cp deploy/systemd/aigcnews-postgres-backup@.{service,timer} /etc/systemd/system/
    sudo systemctl daemon-reload
-   sudo systemctl enable --now aigcnews-postgres-backup@kaixxrua.timer
-   systemctl list-timers aigcnews-postgres-backup@kaixxrua.timer
+   sudo systemctl enable --now aigcnews-postgres-backup@<deploy-user>.timer
+   systemctl list-timers aigcnews-postgres-backup@<deploy-user>.timer
    ```
 
-3. 首次启用后手动触发一次并核对制品：`sudo systemctl start aigcnews-postgres-backup@kaixxrua.service`，dump 与 `.sha256` 默认落在 `~/backups/aigcnews/`（service 的 `AIGCNEWS_BACKUP_DIR` 可改）。
+3. 首次启用后手动触发一次并核对制品：`sudo systemctl start aigcnews-postgres-backup@<deploy-user>.service`，dump 与 `.sha256` 默认落在 `~/backups/aigcnews/`（service 的 `AIGCNEWS_BACKUP_DIR` 可改）。
 
 语义与限制：
 
@@ -84,8 +84,8 @@ PG dump 之外，其余有状态数据按"是否可从 PG + 公开来源重建"�
 ```bash
 sudo cp deploy/systemd/aigcnews-stateful-backup@.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now aigcnews-stateful-backup@kaixxrua.timer
-sudo systemctl start aigcnews-stateful-backup@kaixxrua.service   # 首次手动触发并核对制品
+sudo systemctl enable --now aigcnews-stateful-backup@<deploy-user>.timer
+sudo systemctl start aigcnews-stateful-backup@<deploy-user>.service   # 首次手动触发并核对制品
 ```
 
 恢复快照：停止相关容器后，在仓库根执行 `tar -xzf aigcnews-stateful-<stamp>.tar.gz -C <仓库根>` 解回原路径，再启动容器。
