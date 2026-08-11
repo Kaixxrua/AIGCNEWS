@@ -1,127 +1,116 @@
-AIGCNEWS Source Available License
+AIGCNEWS BUSINESS SOURCE LICENSE AGREEMENT
 
-Copyright (c) 2026 Kaixxrua
+Business Source License 1.1
 
-1. Definitions
+Parameters
 
-   "Software" refers to the AIGCNEWS / AIGC Radar MCP source code and all
-   associated files in this repository, including documentation.
+Licensor:             Kaixxrua
+Licensed Work:        AIGCNEWS (AIGC Radar MCP)
+                      The Licensed Work is the source code and associated
+                      documentation in this repository.
+                      The Licensed Work is (c) 2026 Kaixxrua.
 
-   "Commercial Use" means any use of the Software, in whole or in part,
-   that is directly or indirectly intended for commercial advantage or
-   monetary compensation, including but not limited to use inside a
-   for-profit organization, use to provide paid products or services, and
-   use in any revenue-generating activity.
+Additional Use Grant: You may make production use of the Licensed Work
+                      provided that (i) such use is for your own internal,
+                      non-commercial purposes, and (ii) the Licensed Work,
+                      and any service derived from it, is not made
+                      accessible to any third party over a public network.
 
-   "Public Deployment" means making the Software, or any service derived
-   from it, accessible over a public network to anyone other than the
-   licensee, with or without Commercial Use.
+                      Any other production use — including any commercial
+                      use, and any deployment accessible to the public —
+                      is not granted under this License and requires the
+                      Licensor's prior written authorization.
 
-2. Personal Non-Commercial Grant
+Change Date:          Four years from the date the Licensed Work is first
+                      publicly distributed.
 
-   Permission is hereby granted, free of charge, to any person obtaining a
-   copy of the Software to use, copy, and modify the Software for personal,
-   educational, research, or other non-commercial purposes, subject to the
-   terms of this license. Deployment for such purposes is permitted only on
-   infrastructure under the licensee's exclusive control and must not be
-   accessible to any other person.
+Change License:       Apache License, Version 2.0
 
-3. Activities Requiring Prior Written Authorization
+For information about alternative licensing arrangements for the Software,
+please contact: Kaixxrua <kaixxrua@gmail.com>
 
-   The following activities require the prior explicit written
-   authorization of the copyright holder:
+Notice
 
-   a. any Commercial Use of the Software;
-   b. any Public Deployment of the Software or of services derived from
-      it;
-   c. selling, sublicensing, or otherwise commercially redistributing the
-      Software or derivative works.
+The Business Source License (this document, or the “License”) is not an Open
+Source license. However, the Licensed Work will eventually be made available
+under an Open Source License, as stated in this License.
 
-   To request authorization, contact the copyright holder:
-   Kaixxrua <kaixxrua@gmail.com>.
+License text copyright (c) 2024 MariaDB plc, All Rights Reserved.
+“Business Source License” is a trademark of MariaDB plc.
 
-4. Redistribution
+-----------------------------------------------------------------------------
 
-   Redistribution of the Software, with or without modification, is
-   permitted only for non-commercial purposes, and only if this license
-   text and the copyright notice above are included in all copies or
-   substantial portions of the Software.
+Business Source License 1.1
 
-5. Reservation of Rights
+Terms
 
-   All rights not expressly granted in this license are reserved by the
-   copyright holder. Nothing in this license grants any patent, trademark,
-   or other intellectual property rights.
+The Licensor hereby grants you the right to copy, modify, create derivative
+works, redistribute, and make non-production use of the Licensed Work. The
+Licensor may make an Additional Use Grant, above, permitting limited
+production use.
 
-6. Commercial Licensing
+Effective on the Change Date, or the fourth anniversary of the first publicly
+available distribution of a specific version of the Licensed Work under this
+License, whichever comes first, the Licensor hereby grants you rights under
+the terms of the Change License, and the rights granted in the paragraph
+above terminate.
 
-   Commercial licenses and Public Deployment authorizations are available
-   from the copyright holder under a separate agreement.
+If your use of the Licensed Work does not comply with the requirements
+currently in effect as described in this License, you must purchase a
+commercial license from the Licensor, its affiliated entities, or authorized
+resellers, or you must refrain from using the Licensed Work.
 
-7. No Warranty
+All copies of the original and modified Licensed Work, and derivative works
+of the Licensed Work, are subject to this License. This License applies
+separately for each version of the Licensed Work and the Change Date may vary
+for each version of the Licensed Work released by Licensor.
 
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+You must conspicuously display this License on each original or modified copy
+of the Licensed Work. If you receive the Licensed Work in original or
+modified form from a third party, the terms and conditions set forth in this
+License apply to your use of that work.
 
-================================================================================
+Any use of the Licensed Work in violation of this License will automatically
+terminate your rights under this License for the current and all other
+versions of the Licensed Work.
 
-AIGCNEWS 源码可见授权协议
+This License does not grant you any right in any trademark or logo of
+Licensor or its affiliates (provided that you may use a trademark or logo of
+Licensor as expressly required by this License).
 
-（中文参考译文，与英文文本不一致时以英文文本为准）
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED ON
+AN “AS IS” BASIS. LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS,
+EXPRESS OR IMPLIED, INCLUDING (WITHOUT LIMITATION) WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND
+TITLE.
 
-版权所有 (c) 2026 Kaixxrua
+MariaDB hereby grants you permission to use this License’s text to license
+your works, and to refer to it using the trademark “Business Source License”,
+as long as you comply with the Covenants of Licensor below.
 
-一、定义
+Covenants of Licensor
 
-"本软件"指本仓库中的 AIGCNEWS / AIGC Radar MCP 源代码及全部相关文件
-（含文档）。
+In consideration of the right to use this License’s text and the “Business
+Source License” name and trademark, Licensor covenants to MariaDB, and to all
+other recipients of the licensed work to be provided by Licensor:
 
-"商业使用"指任何直接或间接以获取商业利益或金钱报酬为目的、对本软件
-全部或部分的使用，包括但不限于：在营利性组织内部使用、用于提供付费
-产品或服务、用于任何创收活动。
+1. To specify as the Change License the GPL Version 2.0 or any later version,
+   or a license that is compatible with GPL Version 2.0 or a later version,
+   where “compatible” means that software provided under the Change License can
+   be included in a program with software provided under GPL Version 2.0 or a
+   later version. Licensor may specify additional Change Licenses without
+   limitation.
 
-"公网部署"指将本软件或其衍生服务通过公共网络向被授权人以外的任何人
-提供访问，无论是否构成商业使用。
+2. To either: (a) specify an additional grant of rights to use that does not
+   impose any additional restriction on the right granted in this License, as
+   the Additional Use Grant; or (b) insert the text “None”.
 
-二、个人非商业使用授权
+3. To specify a Change Date.
 
-任何获得本软件副本的人，可免费将本软件用于个人、教育、研究或其他非
-商业目的，包括使用、复制与修改，但须遵守本协议全部条款。为此等目的
-进行的部署仅限在被授权人独占控制的基础设施上进行，且不得向任何其他
-人开放访问。
+4. Not to modify this License in any other way.
 
-三、须事先书面授权的行为
+Notice
 
-下列行为须事先获得版权持有人的明确书面授权：
-
-a. 对本软件的任何商业使用；
-b. 对本软件或其衍生服务的任何公网部署；
-c. 出售、再许可或以其他商业方式再分发本软件或其衍生作品。
-
-授权申请请联系版权持有人：Kaixxrua <kaixxrua@gmail.com>。
-
-四、再分发
-
-仅允许出于非商业目的再分发本软件（无论是否修改），且须在本软件的
-所有副本或主要部分中包含本协议全文及上述版权声明。
-
-五、权利保留
-
-本协议未明确授予的一切权利均由版权持有人保留。本协议不授予任何专利、
-商标或其他知识产权。
-
-六、商业授权
-
-商业许可与公网部署授权可通过与版权持有人另行签署协议获得。
-
-七、免责声明
-
-本软件按"现状"提供，不提供任何明示或暗示的担保，包括但不限于对适销性、
-特定用途适用性及不侵权的担保。在任何情况下，作者或版权持有人均不对
-任何索赔、损害或其他责任负责，无论因合同、侵权或其他原因引起，无论
-是否因本软件或对本软件的使用或其他处置而产生或与其相关。
+The Business Source License (this document, or the “License”) is not an Open
+Source license. However, the Licensed Work will eventually be made available
+under an Open Source License, as stated in this License.

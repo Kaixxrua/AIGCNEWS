@@ -232,4 +232,4 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 
 ## License
 
-[AIGCNEWS Source Available License](LICENSE) © 2026 Kaixxrua — free for personal, non-commercial use; commercial use and public deployment require the author's prior written authorization.
+[Business Source License 1.1](LICENSE) © 2026 Kaixxrua — non-production and internal non-commercial use allowed; commercial use and public deployment require the licensor's prior written authorization; each version converts to Apache-2.0 four years after its first public distribution.
