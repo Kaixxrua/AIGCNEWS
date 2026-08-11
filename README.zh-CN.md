@@ -14,7 +14,7 @@
 
 # AIGCNEWS
 
-AI 发现数据平台：持续索引 arXiv 论文、GitHub AI 项目、科技新闻、Product Hunt 与 Hacker News，产出每日榜单与研究简报。同一份数据通过两个入口对外提供：
+面向工程师、研究者与 AI Agent 的 AI 发现与情报平台：持续索引 arXiv / HuggingFace 论文、GitHub AI 项目、科技新闻、Product Hunt、Hacker News、X（Twitter）热点与微信公众号文章，加工为可浏览的榜单、可检索的项目库与可订阅的简报。同一份数据通过两个入口对外提供：
 
 - **AIGC Radar MCP** —— 面向 Agent 的 MCP 数据接口（旗舰）
 - **Web 站点** —— 面向人类读者的榜单、项目库与简报界面（[aigcnews.cn](https://aigcnews.cn)）
@@ -30,6 +30,60 @@ AI 发现数据平台：持续索引 arXiv 论文、GitHub AI 项目、科技新
 | 项目库语义检索（"mcp server"） |
 | --- |
 | ![项目检索：语义匹配 MCP 相关项目](docs/assets/screenshot-project-search.png) |
+
+## 功能一览
+
+### 多源榜单 Dashboard
+
+- 一块看板聚合六大来源榜单 —— **论文、GitHub、新闻、Product Hunt、Hacker News、X** —— 支持日 / 周 / 月周期切换
+- 基于快照的榜单：日历回看任意历史日期；已定稿榜单永久归档，实时初榜展示仍在采集的数据，昨日榜单定稿前处于静默期（北京时间揭榜）
+- GitHub 热度分综合星标增速、项目体量、维护活跃度、社区参与度、项目年龄与近期更新 —— 而非只看总 Stars
+- 趋势雷达、今日新增 / 用户 / 访客统计，以及 MCP 实时调用计数
+
+### GitHub AI 项目库
+
+- **18,000+ 精选 AI 项目与工具网站**，两级分类体系、编程语言筛选、中英双语描述与标签
+- 混合检索：PostgreSQL 关键词候选 × Milvus 语义召回融合，回库水合完整数据，准入过滤（公网 GitHub fallback ≥ 500 Stars），再按相关性 / 热度 / Stars / 更新时间 / 收录时间 / 名称排序
+- 每张卡片展示增长指标（今日 +N Stars）与可用状态，另有今日热门与站长推荐合集
+- 筛选状态同步到 URL —— 刷新不丢、可复制分享、支持浏览器前进后退
+
+### 论文发现与阅读
+
+- arXiv 与 HuggingFace 每日热门论文，支持标题 / 摘要检索
+- 站内 PDF 阅读器：分页渲染与进度显示、原始文件下载、桌面双栏 / 移动单栏布局、区域框选截图
+- 两阶段采集：摘要先入库保证立即可搜；后台再下载 PDF、解析全文、切片并建立向量索引
+
+### X 动态（Twitter）
+
+- 精选 AI 账号时间线，图片 / 视频瀑布流，按互动分排序
+- 最近 24 小时流 + 按日期快照，静默期机制（北京时间 15:00 定稿后公开）
+- 推文中文翻译，@ 提及与链接完整补回
+- 管理员工具：监控账号管理、按需拉取、快照重建 / 补拉
+
+### 微信公众号
+
+- 关注公众号，在统一 Feed 中阅读最新文章，站内全文阅读（展开 / 收起过渡、回到顶部 / 跳到底部导航）
+- 平台侧微信连接器：扫码登录，会话加密持久化在服务端；支持搜索公众号、保存账号与后台文章同步
+
+### 智能简报与订阅
+
+- 综合 / 论文 / GitHub / 新闻 / Product Hunt / Hacker News 等方向的日报、周报、月报，中英双语
+- SSE 流式生成，带缓存、可重新生成、可按日期阅读历史简报
+- 按来源与频率订阅邮件推送，支持立即送达，在订阅页统一管理
+
+### 收藏与私人书架
+
+- 收藏项目乐观更新（失败自动回滚），支持个人标签与跨设备同步
+- 私人工具书架：提交 URL 自动抓取 metadata 并由 AI 富化卡片，失败可切换手动模式；标题 / 描述 / 分类 / 标签 / 图标随时可改
+- 个人网站绝不混入公共项目库 —— 公共与私人数据严格隔离
+
+### 账号与管理后台
+
+- 邮箱注册、登录、验证码找回密码；JWT 会话
+- 运维监控：一键 / 按源 / 按日期触发或强制采集、生成每日简报、刷新 Dashboard 缓存
+- 模型 Provider 管理（Base URL / Key / 模型 / 推理强度，真实连接测试）与外部 MCP Server 注册（握手 + 工具清单探测）
+- X 采集运维：凭证池、监控账号、按需拉取、快照重建
+- GitHub 爬取任务（Stars / 日期窗口、dry-run、自动富化）与富化队列管理（重试 / 补跑 / 终止、并发控制与熔断）
 
 ## AIGC Radar MCP（旗舰接口）
 
@@ -59,7 +113,7 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 | `get_paper_detail` | 单条索引文档详情 |
 | `get_project_categories` | 项目分类与子类计数 |
 
-携带 `Authorization: Bearer <MCP access token>` 时额外解锁 `search_my_project_favorites`（个人收藏检索）。
+携带 `Authorization: Bearer <MCP access token>` 时额外解锁 `search_my_project_favorites`（个人收藏检索）。登录用户可签发最小权限、可撤销的只读 Token，支持设备标签与有效期 —— 明文仅在创建时展示一次，服务端只保存摘要。
 
 Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://report/latest` 等）、resource templates 与 prompts（`daily_research_brief`、`project_discovery`）。完整的协议参数、MCP-first 策略与 fallback 语义见 [docs/mcp-server.md](docs/mcp-server.md)。
 
@@ -122,9 +176,26 @@ WebSearch 给你链接，AIGC Radar 给你可直接消费的数据。`search_git
 - 质量信号随响应直达：`stars` / `forks` / `daily_star_growth` / `hot_score` / `pushed_at`，无需再调 GitHub API。
 - 准入与溯源透明：500 Stars 准入（`min_stars`）、`result_origin` / `fallback_used` 标明结果来源、`attribution` 与 `detail_url` 可回链详情页。
 
-## Web 站点
+## 架构
 
-同一份数据的人类可读界面，线上地址 **[aigcnews.cn](https://aigcnews.cn)**：Dashboard 榜单与趋势雷达、GitHub AI 项目库（分类 / 筛选 / 收藏）、论文与跨来源索引、每日研究简报。前端 Vue 3 + Vite，后端 FastAPI，关系型数据存 PostgreSQL 16。
+```text
+数据源（arXiv/HF · GitHub · Techmeme · Product Hunt · HN · X · 微信公众号）
+  → 抓取与标准化 → 富化（README / PDF 补全、AI 评分、打标、中文描述）
+  → PostgreSQL 主写 → 排行快照
+  → Milvus 向量索引 · Neo4j 论文图谱 → 缓存失效
+  → Dashboard · 项目检索 · 简报 · MCP
+```
+
+| 层 | 技术 |
+| --- | --- |
+| 前端 | Vue 3 + TypeScript + Vite + Pinia + Tailwind CSS + Vue I18n（zh-CN / en-US），新粗野主义设计 |
+| 后端 | FastAPI 单体，分层：传输层（REST / SSE / MCP）→ 应用服务 → Repository Protocol → 基础设施适配器 |
+| 关系型 | PostgreSQL 16（唯一关系型运行时） |
+| 向量 / 图 | Milvus（+ MinIO / etcd）、Neo4j 论文实体图谱 |
+| 缓存 | Redis（API 缓存、邮箱验证码、防刷、访客去重） |
+| 运维 | 进程内调度器（Asia/Shanghai）、单机 Docker Compose、restart policy + systemd 恢复 |
+
+后端另内置完整混合 RAG 对话链路（PostgreSQL + Milvus + Neo4j 召回、精排、流式输出、多会话、图片 / PDF 附件）；其 Web 入口目前暂停开放维护中。
 
 ## 快速开始（Linux / WSL2）
 
@@ -238,7 +309,7 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 .githooks/          commit-msg 提交信息校验（git config core.hooksPath .githooks）
 ```
 
-## 架构与文档
+## 文档索引
 
 - [docs/project-overview.md](docs/project-overview.md) —— 项目全景：产品、架构、数据、部署与工程状态
 - [docs/architecture.md](docs/architecture.md) —— 功能架构当前态（PostgreSQL 16 为唯一关系型运行时）

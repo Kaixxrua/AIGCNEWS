@@ -14,7 +14,7 @@
 
 # AIGCNEWS
 
-An AI discovery data platform: continuously indexes arXiv papers, GitHub AI projects, tech news, Product Hunt, and Hacker News, producing daily rankings and research briefs. The same dataset is served through two interfaces:
+An AI discovery & intelligence platform for engineers, researchers, and AI agents: continuously indexes arXiv / HuggingFace papers, GitHub AI projects, tech news, Product Hunt, Hacker News, X (Twitter) hotspots, and WeChat official-account articles — then enriches them into browsable rankings, searchable libraries, and subscribable briefs. The same dataset is served through two interfaces:
 
 - **AIGC Radar MCP** — an MCP data interface for agents (flagship)
 - **Web Site** — rankings, project library, and briefings for human readers ([aigcnews.cn](https://aigcnews.cn))
@@ -30,6 +30,60 @@ An AI discovery data platform: continuously indexes arXiv papers, GitHub AI proj
 | Semantic project search ("mcp server") |
 | --- |
 | ![Project search: semantic matching for MCP-related projects](docs/assets/screenshot-project-search.png) |
+
+## Features
+
+### Multi-Source Dashboard
+
+- Six ranking sources on one board — **Papers, GitHub, News, Product Hunt, Hacker News, X** — with daily / weekly / monthly periods
+- Snapshot-based rankings: replay any historical date from a calendar; finalized boards are permanently archived, live drafts show data still being collected, and yesterday's board stays under embargo until it finalizes (Beijing time)
+- GitHub hot score blends star-growth velocity, project size, maintenance activity, community engagement, age, and recency — not just raw stars
+- Trend radar, today-new / user / visitor stats, and a live MCP call counter
+
+### GitHub AI Project Library
+
+- **18,000+ curated AI projects and tool websites** with a two-level category taxonomy, programming-language filters, and bilingual (zh/en) descriptions & tags
+- Hybrid search: PostgreSQL keyword candidates fused with Milvus semantic recall, hydrated back to full records, admission-filtered (≥ 500 stars for the public GitHub fallback), then ranked by relevance / hot / stars / updated / added / name
+- Growth metrics on every card (today +N stars), availability status, today-hot and editor-recommended collections
+- Filter state synced to the URL — refresh-safe, shareable, and browser back/forward friendly
+
+### Paper Discovery & Reading
+
+- Daily hot papers from arXiv and HuggingFace with title / abstract search
+- In-browser PDF reader: paginated rendering with progress display, original-file download, dual-column desktop and single-column mobile layouts, plus region capture
+- Two-stage ingestion: abstracts land first so papers are searchable immediately; PDFs are then downloaded, parsed, chunked, and vector-indexed in the background
+
+### X Board (Twitter)
+
+- Curated AI-account timeline with an image / video waterfall, ranked by interaction score
+- Recent-24h stream plus per-date snapshots with an embargo window (public after the 15:00 Beijing-time finalization)
+- Chinese translations of tweet bodies with restored @ mentions and links
+- Admin tooling: watched-account management, on-demand pulls, and snapshot rebuild / backfill
+
+### WeChat Official Accounts
+
+- Follow official accounts and read a unified feed of their latest articles, with full-article reading in-site (expand / collapse transitions, jump-to-top / bottom navigation)
+- Platform-side WeChat connector: QR-code login with encrypted server-side session persistence, account search, saved accounts, and background article sync
+
+### Smart Briefs & Subscriptions
+
+- Daily / weekly / monthly briefs per direction (general, papers, GitHub, news, Product Hunt, Hacker News), in Chinese and English
+- SSE streaming generation with caching, regeneration, and historical reading by date
+- Email subscriptions per source and frequency, send-now delivery, manageable from the subscriptions page
+
+### Favorites & Personal Bookshelf
+
+- Favorite projects with optimistic updates (automatic rollback on failure), personal tags, and cross-device sync
+- Private tool bookshelf: submit a URL and metadata fetch + AI enrichment fill the card automatically, with a manual mode as fallback; edit title / descriptions / category / tags / icon anytime
+- Personal websites never leak into the public catalog — public and private data stay strictly separated
+
+### Accounts & Admin Console
+
+- Email registration, login, and password reset with verification codes; JWT sessions
+- Admin monitor: trigger / force full-source, per-source, or per-date ingestion, generate daily briefs, refresh dashboard cache
+- Model provider management (Base URL / Key / model / reasoning effort, with a real connection test) and an external MCP server registry (handshake + tool-list probing)
+- X ingestion ops: credential pool, watched accounts, on-demand pulls, snapshot rebuilds
+- GitHub crawl jobs with star / date windows, dry-run, and auto-enrichment; enrichment queue with retry / backfill / cancel, concurrency control, and circuit breaking
 
 ## AIGC Radar MCP (Flagship Interface)
 
@@ -59,7 +113,7 @@ Public tools (no auth required, all read-only):
 | `get_paper_detail` | Details for a single indexed document |
 | `get_project_categories` | Project categories with subcategory counts |
 
-Sending `Authorization: Bearer <MCP access token>` additionally unlocks `search_my_project_favorites` (personal favorites search).
+Sending `Authorization: Bearer <MCP access token>` additionally unlocks `search_my_project_favorites` (personal favorites search). Logged-in users can mint minimal-scope, revocable read-only tokens with device labels and expiry — the plaintext token is shown only once, and the server stores only its digest.
 
 On the context side, it provides resources (`aigc-news://dashboard/summary`, `aigc-news://report/latest`, etc.), resource templates, and prompts (`daily_research_brief`, `project_discovery`). For full protocol parameters, the MCP-first policy, and fallback semantics, see [docs/mcp-server.md](docs/mcp-server.md).
 
@@ -122,9 +176,26 @@ WebSearch hands you links; AIGC Radar hands you data. One trimmed record from `s
 - Quality signals inline: `stars` / `forks` / `daily_star_growth` / `hot_score` / `pushed_at` — no extra GitHub API call needed.
 - Transparent admission and provenance: 500-star admission (`min_stars`), `result_origin` / `fallback_used` state where results came from, and `attribution` / `detail_url` link back to the detail pages.
 
-## Web Site
+## Architecture
 
-A human-readable interface over the same dataset, live at **[aigcnews.cn](https://aigcnews.cn)**: dashboard rankings with a trend radar, the GitHub AI project library (categories / filters / favorites), paper and cross-source indexes, and daily research briefs. Vue 3 + Vite frontend, FastAPI backend, PostgreSQL 16 for relational data.
+```text
+Sources (arXiv/HF · GitHub · Techmeme · Product Hunt · HN · X · WeChat)
+  → fetch & normalize → enrich (README / PDF completion, AI scoring, tagging, zh descriptions)
+  → PostgreSQL master write → ranking snapshots
+  → Milvus vector index · Neo4j paper graph → cache invalidation
+  → Dashboard · project search · briefs · MCP
+```
+
+| Layer | Tech |
+| --- | --- |
+| Frontend | Vue 3 + TypeScript + Vite + Pinia + Tailwind CSS + Vue I18n (zh-CN / en-US), neo-brutalist design |
+| Backend | FastAPI monolith, layered: transport (REST / SSE / MCP) → application services → repository protocols → infrastructure adapters |
+| Relational | PostgreSQL 16 (sole relational runtime) |
+| Vector / Graph | Milvus (+ MinIO / etcd), Neo4j paper entity graph |
+| Cache | Redis (API cache, email codes, rate limiting, visitor dedup) |
+| Ops | In-process scheduler (Asia/Shanghai), single-node Docker Compose, restart policy + systemd recovery |
+
+The backend also ships a full hybrid-RAG chat pipeline (PostgreSQL + Milvus + Neo4j recall, rerank, streaming, multi-session, image / PDF attachments); its web entrance is temporarily paused for maintenance.
 
 ## Quick Start (Linux / WSL2)
 
@@ -238,7 +309,7 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 .githooks/          commit-msg validation (git config core.hooksPath .githooks)
 ```
 
-## Architecture & Documentation
+## Documentation
 
 - [docs/project-overview.md](docs/project-overview.md) — Project panorama: product, architecture, data, deployment, and engineering status
 - [docs/architecture.md](docs/architecture.md) — Current functional architecture (PostgreSQL 16 as the sole relational runtime)
