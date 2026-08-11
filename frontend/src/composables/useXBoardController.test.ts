@@ -247,7 +247,7 @@ describe('useXBoardController', () => {
 
   it('resets to page 1 on date change and refresh', async () => {
     const api = createPagedApi(45, {
-      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: docPage(45), isEmbargoed: false })),
+      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: docPage(45), isEmbargoed: false, sourceStatus: {} })),
     })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
@@ -316,7 +316,7 @@ describe('useXBoardController', () => {
 
   it('tracks the embargo flag in date mode and resets it in recent mode', async () => {
     const api = createApi({
-      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: [], isEmbargoed: true })),
+      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: [], isEmbargoed: true, sourceStatus: {} })),
     })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()

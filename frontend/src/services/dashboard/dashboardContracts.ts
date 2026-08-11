@@ -79,7 +79,8 @@ export interface DashboardVisitorCount {
 }
 
 export interface DashboardSummaryParams {
-  period: PeriodKey
+  /** 榜单周期；缺省后端按默认周期解析（undefined 不入查询串） */
+  period?: PeriodKey
   date: string
   signal?: AbortSignal
 }
