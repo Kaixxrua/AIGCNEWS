@@ -18,9 +18,13 @@ docker/volumes/
 data/
 *.log
 
-# AI 助手本地缓存
+# AI 助手本地缓存与个人工具链（hooks/skills 属个人配置，不随仓库发布）
 .roo/
-.claude/worktrees/
+.claude/
+.agents/
+skills-lock.json
+# .claude/hooks/mcp-first-guard.py 的配套测试（随个人工具链保留在本地）
+backend/tests/test_claude_mcp_first_guard.py
 
 # 系统级隐藏文件 (可选)
 .DS_Store
