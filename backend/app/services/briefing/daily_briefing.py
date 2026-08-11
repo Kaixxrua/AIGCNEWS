@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Protocol
 
@@ -46,12 +47,41 @@ _BLOCK_RESPONSE_ERROR = (
     "请检查 LLM 代理/API 网关或采集源的访问状态。"
 )
 
+# ── 中转站 JSON 信封检测 ─────────────────────────────────────────────────────
+# 上游代理协议漂移时，响应可能不是纯文本而是 {"answer": "..."}<CPA_DONE>
+# 包装。该包装一旦入库，前端会把原始 JSON 当 Markdown 渲染（2026-08-09_x
+# 缓存污染事故）；剥离失败时必须中止生成且不持久化。
+_RELAY_ENVELOPE_PREFIX = '{"answer":'
+_RELAY_DONE_MARKER = "<CPA_DONE>"
+
 # 双语生成中另一语言失败时的对外文案（原文案保留，SSE wire 行为不变）。
 _ALTERNATE_LANGUAGE_ERROR = "双语简报的另一语言生成失败，未保存不完整缓存。"
 
 
 class _BlockResponseError(Exception):
     """LLM 输出被判定为上游拦截页/网关错误页，必须中止生成且不持久化。"""
+
+
+def _strip_relay_envelope(text: str) -> str:
+    """剥离中转站 JSON 信封，返回纯 Markdown 正文。
+
+    非信封文本原样返回；形似信封但无法解析/不含 answer 字段时抛
+    _BlockResponseError —— 宁可放弃本轮生成也不把包装层写进缓存。
+    """
+    stripped = text.strip()
+    if (
+        not stripped.startswith(_RELAY_ENVELOPE_PREFIX)
+        and _RELAY_DONE_MARKER not in stripped
+    ):
+        return text
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise _BlockResponseError() from exc
+    answer = payload.get("answer") if isinstance(payload, dict) else None
+    if not isinstance(answer, str) or not answer.strip():
+        raise _BlockResponseError()
+    return answer.replace(_RELAY_DONE_MARKER, "").strip()
 
 
 def _classified_briefing_error(exc: Exception) -> str:
@@ -77,6 +107,18 @@ def _classified_briefing_error(exc: Exception) -> str:
     )
 
 
+# ── 写作纪律（拼接在每组 prompt 末尾）────────────────────────────────────────
+# 针对真实生成数据暴露的三类专业度问题：
+# 1) 元叙述口吻（"本报基于题目提供的……" / "The supplied feed …"）；
+# 2) 条目编号沿用输入列表全局编号导致章节内跳号；
+# 3) 条目缺来源链接，各期引用不一致。
+_WRITING_DISCIPLINE = r"""
+**写作纪律（所有章节必须遵守）：**
+- 以编辑部第一人称口吻直接撰写（如"本报梳理""本报判断"）；全文禁止出现"题目""提供的材料""输入材料""给定资料""supplied""provided materials"等元叙述措辞
+- 每个条目结尾必须用 Markdown 链接附上来源（使用输入中给出的 URL）
+- 每个章节内的条目编号从 1 开始连续编号，不得沿用输入列表的全局编号
+"""
+
 _PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以下今日热点内容（综合学术论文、开源项目、行业新闻），撰写一份**内容详尽、深度全面**的综合今日报。
 
 **要求：**
@@ -93,7 +135,7 @@ _PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以�
 {articles}
 
 **生成日期：** {date}
-"""
+""" + _WRITING_DISCIPLINE
 
 _PROMPT_ARXIV = r"""你是一位专业的 AI 学术研究分析师。请根据以下今日 Arxiv 学术论文，撰写一份**内容详尽、深度全面**的学术今日报。
 
@@ -110,7 +152,7 @@ _PROMPT_ARXIV = r"""你是一位专业的 AI 学术研究分析师。请根据�
 {articles}
 
 **生成日期：** {date}
-"""
+""" + _WRITING_DISCIPLINE
 
 _PROMPT_GITHUB = r"""你是一位专业的 AI 工程技术分析师。请根据以下今日 GitHub 热门开源项目，撰写一份**内容详尽、深度全面**的工程今日报。
 
@@ -127,7 +169,7 @@ _PROMPT_GITHUB = r"""你是一位专业的 AI 工程技术分析师。请根据�
 {articles}
 
 **生成日期：** {date}
-"""
+""" + _WRITING_DISCIPLINE
 
 _PROMPT_NEWS = r"""你是一位专业的 AI 行业分析师。请根据以下今日 AI 行业新闻，撰写一份**内容详尽、深度全面**的商业今日报。
 
@@ -144,7 +186,7 @@ _PROMPT_NEWS = r"""你是一位专业的 AI 行业分析师。请根据以下今
 {articles}
 
 **生成日期：** {date}
-"""
+""" + _WRITING_DISCIPLINE
 
 
 _PROMPT_PRODUCTHUNT = r"""你是一位专业的 AI 产品分析师。请根据以下今日 Product Hunt 热门 AI 产品，撰写一份**内容详尽、深度全面**的产品今日报。
@@ -162,7 +204,7 @@ _PROMPT_PRODUCTHUNT = r"""你是一位专业的 AI 产品分析师。请根据�
 {articles}
 
 **生成日期：** {date}
-"""
+""" + _WRITING_DISCIPLINE
 
 _PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据以下今日 Hacker News AI 相关热门讨论，撰写一份**内容详尽、深度全面**的社区洞察今日报。
 
@@ -179,7 +221,7 @@ _PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据�
 {articles}
 
 **生成日期：** {date}
-"""
+""" + _WRITING_DISCIPLINE
 
 _PROMPT_DAILYHOT = r"""你是一位专业的中文科技资讯编辑。请根据以下今日中文互联网各大站点热榜条目（36氪、IT之家、少数派、掘金、知乎、虎嗅、极客公园、爱范儿等），撰写一份**内容详尽、深度全面**的全网热榜今日报。
 
@@ -196,24 +238,25 @@ _PROMPT_DAILYHOT = r"""你是一位专业的中文科技资讯编辑。请根据
 {articles}
 
 **生成日期：** {date}
-"""
+""" + _WRITING_DISCIPLINE
 
 _PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下今日 X（Twitter）上 AI 公司与知名开发者官方账号的热门推文，撰写一份**内容详尽、深度全面**的 X 动态今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"官方发布与公告"、"研究与技术分享"、"行业观点与洞察"、"值得关注"四个章节
-3. **每条推文都必须详细分析**，包括：发布者与身份、核心内容、背景与影响、社区热度（点赞/转发/书签互动数据解读）（每条至少 4-6 句话）
-4. 对官方账号动态反映出的行业趋势进行深入洞察
+3. **每条推文都必须详细分析**，包括：发布者的官方身份与职位背景、核心内容、背景与影响、对产品路线或研究方向释放的信号（每条至少 4-6 句话）
+4. 对官方账号动态反映出的行业趋势进行深入洞察；这些账号均为 AI 公司与知名开发者的官方账号，影响力判断应基于发布者身份与内容本身
 5. 语言通俗易懂，面向 AI 从业者与技术爱好者
 6. **务必覆盖所有提供的推文，不要遗漏任何一条**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#x`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#开源模型` `#产品发布` `#研究论文` `#商业化` `#安全对齐` `#AI基础设施` `#开发者工具` `#观点争议` `#监管政策`。禁止使用过于宽泛的标签如 #ai #tool #trending
+8. 输入不包含点赞、转发等互动指标；全文禁止编造、引用或提及任何互动数据
 
 **今日 X 关注账号热门推文（共 {count} 条）：**
 {articles}
 
 **生成日期：** {date}
-"""
+""" + _WRITING_DISCIPLINE
 
 _BRIEFING_LANGUAGES = ("zh-CN", "en")
 _LANGUAGE_INSTRUCTIONS = {
@@ -290,6 +333,27 @@ def _filter_docs_by_channel(
     return filtered
 
 
+_SUMMARY_LIMIT = 200
+
+
+def _truncate_summary(summary: str, limit: int = _SUMMARY_LIMIT) -> str:
+    """按词/句边界截断摘要并补省略号。
+
+    旧实现 summary[:200] 会在词中间硬切断，模型会把"简介在 'a' 处截断"
+    写进简报正文；截断点优先落在后半段的空白或标点边界上。
+    """
+    text = " ".join(str(summary).split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    boundary = max(
+        cut.rfind(mark) for mark in (" ", ",", ".", ";", "，", "。", "；", "、", "：")
+    )
+    if boundary >= limit // 2:
+        cut = cut[:boundary]
+    return cut.rstrip(" ,.;，。；、：") + "…"
+
+
 def _format_articles(docs: List[Dict[str, Any]], source: str = "all") -> str:
     lines: List[str] = []
     for i, doc in enumerate(docs, start=1):
@@ -311,12 +375,17 @@ def _format_articles(docs: List[Dict[str, Any]], source: str = "all") -> str:
                 score_label = f"📈 本周期新增 Stars: {growth}"
         elif src == "news":
             score_label = f"📰 {doc.get('feed_name') or '新闻'}"
+        elif src == "x":
+            # X 关注清单均为官方账号：标注发布者身份比分数更有信息量，
+            # 且 x 文档 score 恒为 0（真实互动分在 raw_score），展示评分只有噪音。
+            author = str(doc.get("author_name") or "").strip().lstrip("@")
+            score_label = f"📣 @{author}" if author else "📣 官方账号动态"
         else:
             score_label = f"评分: {score:.1f}"
 
         lines.append(f"{i}. **{title}**（{score_label}）")
         if summary:
-            lines.append(f"   {summary[:200]}")
+            lines.append(f"   {_truncate_summary(summary)}")
         if url:
             lines.append(f"   🔗 {url}")
         lines.append("")
@@ -573,9 +642,7 @@ class DailyBriefingService:
             parts.append(token)
             yield token
 
-        accumulated = "".join(parts)
-        if _looks_like_block_response(accumulated):
-            raise _BlockResponseError()
+        accumulated = self._sanitize_parts(parts)
 
         # 截断续写：检测输出是否被截断，若是则多轮续写
         for continuation_round in range(1, _MAX_CONTINUATION_ROUNDS + 1):
@@ -599,13 +666,28 @@ class DailyBriefingService:
                 parts.append(token)
                 yield token
 
-            accumulated = "".join(parts)
-            if _looks_like_block_response(accumulated):
-                raise _BlockResponseError()
+            accumulated = self._sanitize_parts(parts)
         else:
             logger.warning(
                 "已达最大续写轮数 (%d)，停止续写", _MAX_CONTINUATION_ROUNDS
             )
+
+    @staticmethod
+    def _sanitize_parts(parts: List[str]) -> str:
+        """每轮生成后的整文净化：拦截页拒绝、中转站信封剥离。
+
+        剥离信封时同步重写 parts（调用方最终 "".join(parts) 入库），
+        保证缓存里永远是纯 Markdown 而非包装层原文。
+        """
+        accumulated = "".join(parts)
+        if _looks_like_block_response(accumulated):
+            raise _BlockResponseError()
+        stripped = _strip_relay_envelope(accumulated)
+        if stripped != accumulated:
+            logger.warning("检测到中转站 JSON 信封，已剥离包装层")
+            parts[:] = [stripped]
+            accumulated = stripped
+        return accumulated
 
     async def _stream_llm_round(self, prompt: str) -> AsyncGenerator[str, None]:
         """执行一轮 LLM 流式生成，逐 token 返回。"""

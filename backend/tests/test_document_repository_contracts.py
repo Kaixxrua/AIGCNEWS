@@ -73,6 +73,9 @@ class DocumentRepositoryContractTests(unittest.TestCase):
                 "(self, limit=50, *, source=None)"
             ),
             DocumentFeedReader.get_top_documents: "(self, limit=10, source_type=None)",
+            DocumentFeedReader.get_recent_top_documents: (
+                "(self, *, source_type, since_date, limit=10)"
+            ),
             DocumentFeedReader.get_latest_documents: "(self, limit=10)",
             DocumentStatisticsReader.get_document_count: "(self)",
             DocumentStatisticsReader.get_source_counts: "(self)",

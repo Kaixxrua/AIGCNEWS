@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 Document = dict[str, Any]
 PromptConfig = Mapping[str, tuple[str, str]]
 SourceChannels = Mapping[str, str]
+
+# 快照缺失时的文档表兜底窗口：目标日及前 1 天（按入库时间）。
+# 日榜快照在次日 00:3x 关榜后才定稿，早间生成"今日"简报时今日快照尚未就绪，
+# 兜底窗口必须约束在近期入库文档，否则全表按分数排序会把旧热点混进"今日"报。
+_FALLBACK_RECENT_DAYS = 1
 
 
 class SnapshotDocumentReader(Protocol):
@@ -20,8 +26,12 @@ class SnapshotDocumentReader(Protocol):
 
 
 class DocumentFallbackReader(Protocol):
-    def get_top_documents(
-        self, *, limit: int, source_type: str | None
+    def get_recent_top_documents(
+        self,
+        *,
+        source_type: str,
+        since_date: str,
+        limit: int,
     ) -> list[Document]: ...
 
     def get_latest_documents(self, *, limit: int) -> list[Document]: ...
@@ -34,6 +44,7 @@ class BriefingContext:
     cache_date: str
     source_type: str | None
     expected_channels: tuple[str, ...]
+    fallback_sources: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -57,9 +68,11 @@ def normalize_briefing_context(
 
     if normalized_source == "all":
         expected_channels = tuple(source_channels.values())
+        fallback_sources = tuple(source_channels.keys())
     else:
         channel = source_channels.get(normalized_source)
         expected_channels = (channel,) if channel else ()
+        fallback_sources = (normalized_source,) if channel else ()
 
     return BriefingContext(
         target_date=target_date,
@@ -67,7 +80,20 @@ def normalize_briefing_context(
         cache_date=f"{target_date}{cache_suffix}",
         source_type=None if normalized_source == "all" else normalized_source,
         expected_channels=expected_channels,
+        fallback_sources=fallback_sources,
     )
+
+
+def _recent_window_start(target_date: str) -> str:
+    """兜底日期域起点（含）：目标日往前 _FALLBACK_RECENT_DAYS 天。
+
+    target_date 非法时原样返回（词法比较退化为当日单天），不阻断生成。
+    """
+    try:
+        end = date.fromisoformat(target_date)
+    except ValueError:
+        return target_date
+    return (end - timedelta(days=_FALLBACK_RECENT_DAYS)).isoformat()
 
 
 def _sort_documents_for_source(
@@ -205,14 +231,22 @@ def prepare_briefing(
                 top_k=top_k,
             )
     else:
-        top_documents = document_feed.get_top_documents(
-            limit=top_k * 3,
-            source_type=context.source_type,
-        )
-        filtered = filter_by_channel(
-            top_documents,
-            context.source,
-        )
+        # 快照未就绪（早间生成时今日快照尚未关榜）→ 文档表日期域兜底：
+        # 逐源在近期窗口内按分数取候选，再过滤 channel + 跨源轮询。
+        # 旧实现全表按 raw_score 取 top_k*3，低分量纲源（news/arxiv 等）
+        # 在截断处整源缺席，且无日期约束会混入陈旧条目。
+        since_date = _recent_window_start(context.target_date)
+        per_source_limit = top_k if context.source == "all" else top_k * 3
+        recent: list[Document] = []
+        for fallback_source in context.fallback_sources:
+            recent.extend(
+                document_feed.get_recent_top_documents(
+                    source_type=fallback_source,
+                    since_date=since_date,
+                    limit=per_source_limit,
+                )
+            )
+        filtered = filter_by_channel(recent, context.source)
         if context.source == "all":
             documents = interleave_documents_by_source(filtered, top_k=top_k)
         else:

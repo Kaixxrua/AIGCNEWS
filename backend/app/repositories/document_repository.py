@@ -99,6 +99,14 @@ class DocumentFeedReader(Protocol):
         source_type: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
+    def get_recent_top_documents(
+        self,
+        *,
+        source_type: str,
+        since_date: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]: ...
+
     def get_latest_documents(self, limit: int = 10) -> list[dict[str, Any]]: ...
 
 

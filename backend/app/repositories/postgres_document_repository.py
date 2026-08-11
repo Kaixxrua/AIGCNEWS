@@ -455,6 +455,25 @@ class PostgresDocumentRepository:
             return self._fetch_rows(f"{projection} WHERE d.source = %s {order} LIMIT %s", (source_type, limit))
         return self._fetch_rows(f"{projection} {order} LIMIT %s", (limit,))
 
+    def get_recent_top_documents(
+        self,
+        *,
+        source_type: str,
+        since_date: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """简报兜底：单源、日期域内（入库日期 >= since_date）按分数排序的文档。
+
+        用 created_at 词法前缀做日期过滤而非 published_at —— published_at
+        存在空串/脏串（github 源无发布时间），会系统性漏行；created_at 是
+        采集入库时间，所有源都有值，语义等价于"近期进入文档池的条目"。
+        """
+        return self._fetch_rows(
+            f"{_document_projection()} WHERE d.source = %s AND LEFT(d.created_at, 10) >= %s "
+            "ORDER BY COALESCE(d.raw_score, d.score, 0) DESC, d.created_at DESC LIMIT %s",
+            (source_type, since_date, limit),
+        )
+
     def get_latest_documents(self, limit: int = 10) -> list[dict[str, Any]]:
         return self._fetch_rows(f"{_document_projection()} ORDER BY d.created_at DESC LIMIT %s", (limit,))
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -15,6 +16,7 @@ from backend.app.services.briefing.daily_briefing import (
     DailyBriefingService,
     _format_articles,
     _looks_like_block_response,
+    _truncate_summary,
 )
 from backend.app.services.briefing.preparation import (
     interleave_documents_by_source,
@@ -173,14 +175,14 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
                 date="2026-07-22",
             ),
         )
-        document_feed.get_top_documents.assert_not_called()
+        document_feed.get_recent_top_documents.assert_not_called()
         document_feed.get_latest_documents.assert_not_called()
 
     def test_adapter_filters_documents_then_uses_latest_fallback(self) -> None:
         snapshot_reader = MagicMock()
         snapshot_reader.get_snapshot_documents.return_value = []
         document_feed = MagicMock()
-        document_feed.get_top_documents.return_value = [
+        document_feed.get_recent_top_documents.return_value = [
             _github_doc("weekly", channel="github_trending_weekly")
         ]
         document_feed.get_latest_documents.return_value = [
@@ -209,14 +211,62 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
             is_blocked=_looks_like_block_response,
         )
 
-        document_feed.get_top_documents.assert_called_once_with(
-            limit=6,
+        document_feed.get_recent_top_documents.assert_called_once_with(
             source_type="github",
+            since_date="2026-07-21",
+            limit=6,
         )
         document_feed.get_latest_documents.assert_called_once_with(limit=2)
         self.assertTrue(prepared.fallback_used)
         self.assertEqual([document["title"] for document in prepared.documents], ["latest"])
         self.assertIsNotNone(prepared.prompt)
+
+    def test_fallback_all_source_queries_recent_window_per_source(self) -> None:
+        # 快照缺失的综合兜底：逐源按日期域取候选再轮询——旧实现全表按
+        # raw_score 截断，低分量纲源（news 1-2 分）在 top_k*3 处整源缺席。
+        snapshot_reader = MagicMock()
+        snapshot_reader.get_snapshot_documents.return_value = []
+        document_feed = MagicMock()
+
+        def by_source(*, source_type, since_date, limit):
+            assert since_date == "2026-07-21"
+            assert limit == 3
+            return {
+                "github": [
+                    {"source": "github", "title": "gh", "rank_in_period": 1, "raw_score": 800}
+                ],
+                "news": [{"source": "news", "title": "news", "raw_score": 1.5}],
+            }.get(source_type, [])
+
+        document_feed.get_recent_top_documents.side_effect = by_source
+        context = normalize_briefing_context(
+            target_date="2026-07-22",
+            source="all",
+            source_config=_SOURCE_CONFIG,
+            source_channels=_SOURCE_CHANNELS,
+        )
+
+        prepared = prepare_briefing(
+            context=context,
+            top_k=3,
+            snapshot_reader=snapshot_reader,
+            document_feed=document_feed,
+            source_config=_SOURCE_CONFIG,
+            filter_by_channel=lambda docs, _source: docs,
+            format_articles=_format_articles,
+            is_blocked=_looks_like_block_response,
+        )
+
+        self.assertEqual(
+            [document["title"] for document in prepared.documents],
+            ["gh", "news"],
+        )
+        called_sources = {
+            call.kwargs["source_type"]
+            for call in document_feed.get_recent_top_documents.call_args_list
+        }
+        self.assertEqual(called_sources, set(_SOURCE_CHANNELS.keys()))
+        document_feed.get_latest_documents.assert_not_called()
 
     def test_adapter_all_source_interleaves_channels_instead_of_global_score_cut(self) -> None:
         # 综合简报快照路径：dailyhot 分数量级远高于 news/github，旧实现按全局
@@ -278,7 +328,7 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
         snapshot_reader = MagicMock()
         snapshot_reader.get_snapshot_documents.return_value = []
         document_feed = MagicMock()
-        document_feed.get_top_documents.return_value = []
+        document_feed.get_recent_top_documents.return_value = []
         document_feed.get_latest_documents.return_value = []
         context = normalize_briefing_context(
             target_date="2026-07-22",
@@ -338,7 +388,7 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
             source_type="github",
             limit=2,
         )
-        service._document_feed.get_top_documents.assert_not_called()
+        service._document_feed.get_recent_top_documents.assert_not_called()
         service._document_feed.get_latest_documents.assert_not_called()
         expected_docs = [self._github_doc("second", rank=2, score=200)]
         service._llm.astream.assert_called_once_with(
@@ -355,7 +405,7 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
     def test_documents_then_latest_fallback_preserves_channel_and_event_contract(self) -> None:
         service = self._service(top_k=2)
         service._rank_snapshots.get_snapshot_documents.return_value = []
-        service._document_feed.get_top_documents.return_value = [
+        service._document_feed.get_recent_top_documents.return_value = [
             self._github_doc("weekly", channel="github_trending_weekly"),
         ]
         service._document_feed.get_latest_documents.return_value = [
@@ -370,8 +420,8 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
         self.assertEqual([event["type"] for event in events], ["start", "content", "done"])
         self.assertTrue(events[0]["data"]["fallback"])
         self.assertEqual(events[0]["data"]["doc_count"], 1)
-        service._document_feed.get_top_documents.assert_called_once_with(
-            limit=6, source_type="github"
+        service._document_feed.get_recent_top_documents.assert_called_once_with(
+            source_type="github", since_date="2026-07-21", limit=6
         )
         service._document_feed.get_latest_documents.assert_called_once_with(limit=2)
 
@@ -406,7 +456,7 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
     def test_no_documents_streams_start_content_done_without_persistence(self) -> None:
         service = self._service()
         service._rank_snapshots.get_snapshot_documents.return_value = []
-        service._document_feed.get_top_documents.return_value = []
+        service._document_feed.get_recent_top_documents.return_value = []
         service._document_feed.get_latest_documents.return_value = []
 
         events = self._collect(
@@ -616,6 +666,86 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
             ],
         )
         service._briefings.save_briefing.assert_not_called()
+
+    def test_relay_json_envelope_is_stripped_before_persistence(self) -> None:
+        # 上游协议漂移返回 {"answer": "..."}<CPA_DONE> 包装（2026-08-09_x
+        # 缓存污染事故）：已推流 token 不可回收，但入库必须是剥离后的纯 Markdown。
+        service = DailyBriefingPreparationContractTests._service()
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            DailyBriefingPreparationContractTests._github_doc("project")
+        ]
+        envelope = json.dumps({"answer": "# X 动态今日报\n\n完整正文。<CPA_DONE>"})
+        service._llm.astream.side_effect = (
+            DailyBriefingPreparationContractTests._astream_side_effect([envelope])
+        )
+
+        events = DailyBriefingPreparationContractTests._collect(
+            service.stream_generate("2026-07-22", source="x")
+        )
+
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
+        saved = service._briefings.save_briefing.call_args
+        self.assertEqual(saved.args[0], "2026-07-22_x")
+        self.assertEqual(saved.args[1], "# X 动态今日报\n\n完整正文。")
+        self.assertNotIn("<CPA_DONE>", saved.args[1])
+        self.assertFalse(saved.args[1].startswith('{"answer":'))
+
+    def test_unparseable_relay_envelope_emits_error_and_skips_persistence(self) -> None:
+        # 形似信封但 JSON 无法解析（如传输截断）：按拦截页同等级处理，
+        # 报错且不落库，避免半个包装层进入缓存。
+        service = DailyBriefingPreparationContractTests._service()
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            DailyBriefingPreparationContractTests._github_doc("project")
+        ]
+        service._llm.astream.side_effect = (
+            DailyBriefingPreparationContractTests._astream_side_effect(
+                ['{"answer":"# 未闭合的报告正文……']
+            )
+        )
+
+        events = DailyBriefingPreparationContractTests._collect(
+            service.stream_generate("2026-07-22", source="x")
+        )
+
+        self.assertEqual(events[-1], {"type": "error", "data": _BLOCK_RESPONSE_ERROR})
+        service._briefings.save_briefing.assert_not_called()
+
+    def test_x_source_shows_official_author_label_instead_of_zero_score(self) -> None:
+        # X 关注清单均为官方账号，score 恒为 0：展示发布者身份而非"评分: 0.0"。
+        with_author = _format_articles(
+            [{"source": "x", "title": "t", "score": 0.0, "author_name": "@OpenAI"}],
+            "x",
+        )
+        without_author = _format_articles(
+            [{"source": "x", "title": "t", "score": 0.0}],
+            "x",
+        )
+
+        self.assertIn("📣 @OpenAI", with_author)
+        self.assertIn("📣 官方账号动态", without_author)
+        self.assertNotIn("评分", with_author)
+        self.assertNotIn("评分", without_author)
+
+    def test_truncate_summary_breaks_on_boundary_and_marks_ellipsis(self) -> None:
+        short = "简短摘要。"
+        self.assertEqual(_truncate_summary(short), short)
+
+        # 空格边界在后半段：截到边界处并补省略号，不产生半个单词。
+        long_en = ("word " * 60).strip()
+        truncated = _truncate_summary(long_en, limit=200)
+        self.assertTrue(truncated.endswith("…"))
+        self.assertLessEqual(len(truncated), 201)
+        self.assertFalse(truncated[:-1].endswith("wor"))
+
+        # 无可用边界的连续文本：硬截断但必须带省略号标记。
+        long_cjk = "汉" * 300
+        truncated_cjk = _truncate_summary(long_cjk, limit=200)
+        self.assertTrue(truncated_cjk.endswith("…"))
+        self.assertEqual(len(truncated_cjk), 201)
+
+        # 折叠换行与多余空白，避免摘要里的换行打断 prompt 条目行。
+        multiline = "第一行\n\n第二行   带有  多余空白"
+        self.assertEqual(_truncate_summary(multiline), "第一行 第二行 带有 多余空白")
 
     def test_persistence_occurs_after_all_content_events_and_before_done(self) -> None:
         service = DailyBriefingPreparationContractTests._service()
