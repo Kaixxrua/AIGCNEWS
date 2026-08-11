@@ -30,8 +30,6 @@ const {
 
 const {
   activeTab,
-  activePeriod,
-  isPeriodDisabled,
   tabList,
   stats,
   loading,
@@ -117,15 +115,12 @@ onBeforeUnmount(pauseLivePoll)
         v-if="!loading && hasData && !isEmbargoed"
         class="order-2 min-w-0 lg:order-1"
         :active-tab="activeTab"
-        :active-period="activePeriod"
         :tab-list="tabList"
         :tab-loading="tabLoading"
         :is-viewing-history="isViewingHistory"
         :is-finalized="isFinalized"
-        :is-period-disabled="isPeriodDisabled"
         :source-status="sourceStatus"
         @select-source="selectSourceTab"
-        @select-period="activePeriod = $event"
       />
 
       <aside v-if="!loading" class="order-1 flex w-full max-w-[320px] shrink-0 flex-col gap-2 self-center lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch">

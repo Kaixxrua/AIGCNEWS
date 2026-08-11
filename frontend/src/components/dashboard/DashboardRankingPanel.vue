@@ -3,8 +3,6 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircle2, Zap } from 'lucide-vue-next'
 import {
-  DAILY_ONLY_TABS,
-  PERIODS,
   TABS,
   aiScoreDisplay,
   getModuleTags,
@@ -12,7 +10,6 @@ import {
   getTabBoardStatus,
   scoreDisplay,
   tabBoardStatusHint,
-  type PeriodKey,
   type TabKey,
   type TopDoc,
 } from '@/features/dashboard/dashboardViewModel'
@@ -20,12 +17,10 @@ import type { SourceStatusMap } from '@/services/dashboard/dashboardContracts'
 
 const props = defineProps<{
   activeTab: TabKey
-  activePeriod: PeriodKey
   tabList: TopDoc[]
   tabLoading: boolean
   isViewingHistory: boolean
   isFinalized: boolean
-  isPeriodDisabled: (period: PeriodKey) => boolean
   sourceStatus: SourceStatusMap
 }>()
 
@@ -33,7 +28,6 @@ const { t } = useI18n()
 
 const emit = defineEmits<{
   selectSource: [key: TabKey]
-  selectPeriod: [period: PeriodKey]
 }>()
 
 // 分源定稿状态（PR6）：当前 tab 按自己的源日界/定稿时刻揭榜，
@@ -59,10 +53,6 @@ const boardDateHint = computed(() => {
         <button v-for="tab in TABS" :key="tab.key" class="flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200" :class="activeTab === tab.key ? 'tab-active' : 'tab-inactive'" role="tab" :aria-selected="activeTab === tab.key" @click="emit('selectSource', tab.key)">
           <component :is="tab.icon" class="h-3.5 w-3.5" />{{ t(`dashboard.stats.${tab.labelKey}`) }}
         </button>
-      </div>
-      <div class="flex items-center gap-1">
-        <button v-for="period in PERIODS" :key="period.key" class="rounded-full px-3 py-1 text-xs font-medium transition-all duration-200" :class="[isPeriodDisabled(period.key) ? 'cursor-not-allowed opacity-30 text-stone-400' : activePeriod === period.key ? 'tab-active font-semibold' : 'tab-inactive']" :disabled="isPeriodDisabled(period.key)" @click="!isPeriodDisabled(period.key) && emit('selectPeriod', period.key)">{{ t(`dashboard.${period.key}`) }}</button>
-        <span v-if="DAILY_ONLY_TABS.has(activeTab)" class="ml-1 text-2xs text-stone-400">{{ t('dashboard.dailyOnly') }}</span>
       </div>
       <div v-if="boardDateHint || (tabStatus && tabStatusHint)" class="flex items-center gap-2">
         <span v-if="boardDateHint" class="badge bg-card text-stone-500 border border-stone-200">{{ boardDateHint }}</span>

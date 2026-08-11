@@ -81,7 +81,6 @@ describe('Dashboard request lifecycle contract', () => {
     await flush()
 
     expect(mounted.dashboard.activeTab.value).toBe('github')
-    expect(mounted.dashboard.activePeriod.value).toBe('daily')
     expect(defaultDashboardApi.fetchSummary).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal) })
     expect(defaultDashboardApi.fetchTop).toHaveBeenCalledWith({
       limit: 10, source: 'github', period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal),
@@ -101,18 +100,17 @@ describe('Dashboard request lifecycle contract', () => {
     mounted.app.unmount()
   })
 
-  it('forces daily-only tabs back to daily while keeping loading domains independent', async () => {
+  it('keeps loading domains independent when switching tabs', async () => {
     const mounted = mountDashboard()
-    await flush()
-    mounted.dashboard.activePeriod.value = 'weekly'
     await flush()
     mounted.dashboard.activeTab.value = 'news'
     await flush()
 
-    expect(mounted.dashboard.activePeriod.value).toBe('daily')
+    expect(defaultDashboardApi.fetchTop).toHaveBeenLastCalledWith({
+      limit: 10, source: 'news', period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal),
+    })
     expect(mounted.dashboard.loading.value).toBe(false)
     await vi.waitFor(() => expect(mounted.dashboard.tabLoading.value).toBe(false))
-    expect(mounted.dashboard.isPeriodDisabled('weekly')).toBe(true)
     mounted.app.unmount()
   })
 

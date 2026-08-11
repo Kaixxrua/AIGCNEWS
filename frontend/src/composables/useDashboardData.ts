@@ -14,7 +14,6 @@ import type {
   SourceStatusMap,
 } from '@/services/dashboard/dashboardContracts'
 import {
-  DAILY_ONLY_TABS,
   isSourceStatCard,
   type PeriodKey,
   type Stats,
@@ -59,7 +58,8 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const now = options.now ?? Date.now
   const createAbortController = options.createAbortController ?? (() => new AbortController())
   const activeTab = ref<TabKey>('github')
-  const activePeriod = ref<PeriodKey>('daily')
+  /* 周期切换已下线，榜单只剩日榜；wire 仍显式传 daily，查询行为不变 */
+  const PERIOD: PeriodKey = 'daily'
   const tabList = ref<TopDoc[]>([])
   const stats = ref<Stats>({})
   const loading = ref(true)
@@ -100,19 +100,15 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     return { controller: availabilityController, generation: availabilityGeneration }
   }
 
-  const isPeriodDisabled = (periodKey: PeriodKey): boolean =>
-    periodKey !== 'daily' && DAILY_ONLY_TABS.has(activeTab.value)
-
   const fetchDashboardData = async (
     tab: TabKey,
-    period: PeriodKey,
     selectedDate: string,
     controller: AbortController,
     generation: number,
   ) => {
     const [summary, top] = await Promise.all([
-      dashboardApi.fetchSummary({ period, date: selectedDate, signal: controller.signal }),
-      dashboardApi.fetchTop({ limit: 10, source: tab, period, date: selectedDate, signal: controller.signal }),
+      dashboardApi.fetchSummary({ period: PERIOD, date: selectedDate, signal: controller.signal }),
+      dashboardApi.fetchTop({ limit: 10, source: tab, period: PERIOD, date: selectedDate, signal: controller.signal }),
     ])
     if (!isCurrentDashboardRequest(controller, generation)) return false
     // live 轮询已跑过后，实时计数字段以较新的 live 值为准，屏蔽 summary 的陈旧缓存
@@ -126,16 +122,15 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     return true
   }
 
-  const fetchAvailableDates = async (tab = activeTab.value, period = activePeriod.value) => {
+  const fetchAvailableDates = async (tab = activeTab.value) => {
     const { controller, generation } = beginAvailabilityRequest()
     try {
-      const dates = await dashboardApi.fetchSnapshotDates({ limit: 90, source: tab, period, signal: controller.signal })
+      const dates = await dashboardApi.fetchSnapshotDates({ limit: 90, source: tab, period: PERIOD, signal: controller.signal })
       if (
         availabilityController === controller
         && availabilityGeneration === generation
         && !controller.signal.aborted
         && tab === activeTab.value
-        && period === activePeriod.value
       ) availableDates.value = dates
     } catch (error: unknown) {
       if (isCanceledError(error)) return
@@ -174,7 +169,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     const { controller, generation } = beginDashboardRequest()
     try {
       await Promise.all([
-        fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, controller, generation),
+        fetchDashboardData(activeTab.value, currentDate.value, controller, generation),
         fetchAvailableDates(),
         fetchUserCountMetric(controller, generation),
       ])
@@ -203,7 +198,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     const { controller, generation } = beginDashboardRequest()
     try {
       await Promise.all([
-        fetchDashboardData(activeTab.value, activePeriod.value, currentDate.value, controller, generation),
+        fetchDashboardData(activeTab.value, currentDate.value, controller, generation),
         fetchAvailableDates(),
         fetchUserCountMetric(controller, generation),
       ])
@@ -228,17 +223,13 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   onDeactivated(stopDashboardRequests)
   onBeforeUnmount(stopDashboardRequests)
 
-  watch(activeTab, (tab) => {
-    if (DAILY_ONLY_TABS.has(tab) && activePeriod.value !== 'daily') activePeriod.value = 'daily'
-  })
-
-  watch([activeTab, activePeriod], async ([tab, period]) => {
+  watch(activeTab, async (tab) => {
     tabLoading.value = true
     tabList.value = []
     const { controller, generation } = beginDashboardRequest()
     try {
-      await fetchAvailableDates(tab, period)
-      const applied = await fetchDashboardData(tab, period, currentDate.value, controller, generation)
+      await fetchAvailableDates(tab)
+      const applied = await fetchDashboardData(tab, currentDate.value, controller, generation)
       if (applied) options.updateStatSources(stats.value)
     } catch (error: unknown) {
       if (isCanceledError(error)) return
@@ -254,7 +245,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     tabList.value = []
     const { controller, generation } = beginDashboardRequest()
     try {
-      const applied = await fetchDashboardData(activeTab.value, activePeriod.value, selectedDate, controller, generation)
+      const applied = await fetchDashboardData(activeTab.value, selectedDate, controller, generation)
       if (applied) options.updateStatSources(stats.value)
     } catch (error: unknown) {
       if (isCanceledError(error)) return
@@ -275,8 +266,6 @@ export const useDashboardData = (options: DashboardDataOptions) => {
 
   return {
     activeTab,
-    activePeriod,
-    isPeriodDisabled,
     tabList,
     stats,
     loading,
