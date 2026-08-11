@@ -698,7 +698,8 @@ class McpProtocolTests(unittest.TestCase):
         )
         content = response.json()["result"]["contents"][0]
         self.assertEqual(content["mimeType"], "text/markdown")
-        self.assertEqual(content["text"], "# Cached briefing")
+        self.assertTrue(content["text"].startswith("# Cached briefing"))
+        self.assertIn("aigcnews.cn/report?utm_source=mcp", content["text"])
 
     def test_missing_latest_report_preserves_jsonrpc_error(self) -> None:
         self.briefing_repository.get_briefing_by_date.return_value = None

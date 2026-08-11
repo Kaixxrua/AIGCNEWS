@@ -7,6 +7,8 @@ from datetime import date as _date
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from starlette.requests import Request
+
 from backend.app.monitoring.mcp_tools import (
     MCP_TOOL_CALL_METRICS,
     McpToolCallMetrics,
@@ -23,6 +25,9 @@ from backend.app.services.dashboard.policy import (
 )
 from backend.app.services.dashboard.query_service import DashboardQueryService
 from backend.app.services.mcp.contracts import validate_iso_date
+from backend.app.services.mcp.inbound.attribution import (
+    briefing_attribution_footer,
+)
 from backend.app.services.mcp.inbound.catalog import (
     _JSONRPC_INTERNAL_ERROR,
     _JSONRPC_INVALID_PARAMS,
@@ -329,6 +334,7 @@ async def _resource_report_latest(
     uri: str,
     query: dict[str, str],
     repository: BriefingReader,
+    request: Request,
 ) -> dict[str, Any]:
     source = _clean_choice(query, "source", _SOURCE_CHOICES, default="all")
     date_value = _clean_string(query, "date", max_len=10, default="")
@@ -341,7 +347,9 @@ async def _resource_report_latest(
     locale = _clean_string(query, "locale", max_len=16, default="zh-CN")
     from backend.app.services.briefing.daily_briefing import select_briefing_content
 
-    return _resource_content(uri, select_briefing_content(item, locale), mime_type="text/markdown")
+    content = select_briefing_content(item, locale)
+    footer = briefing_attribution_footer(request, locale)
+    return _resource_content(uri, f"{content}{footer}", mime_type="text/markdown")
 
 
 def _resource_tool_args(
@@ -400,7 +408,9 @@ async def _read_resource(
                 ),
             )
         if path == "report/latest":
-            return await _resource_report_latest(uri, query, briefing_repository)
+            return await _resource_report_latest(
+                uri, query, briefing_repository, tool_context.request
+            )
         if path.startswith("papers/"):
             paper_id = path.removeprefix("papers/").strip()
             return _resource_content(

@@ -29,6 +29,11 @@ from backend.app.services.ingestion.source_github_mcp import (
     search_github_projects_fallback,
 )
 from backend.app.services.mcp.contracts import TOOL_INPUT_MODELS
+from backend.app.services.mcp.inbound.attribution import (
+    enrich_doc_detail_url,
+    enrich_project_detail_url,
+    mcp_attribution,
+)
 from backend.app.services.mcp.inbound.catalog import (
     _PROJECT_SORT_CHOICES,
     MCP_TOOL_DEFINITIONS,
@@ -124,7 +129,7 @@ def _public_doc(
         else project_pdf_media_url(dict(doc), request)
     )
     enriched.pop("local_pdf_path", None)
-    return enriched
+    return enrich_doc_detail_url(enriched, request)
 
 
 async def _search_indexed_documents(
@@ -156,6 +161,7 @@ async def _search_indexed_documents(
         "page_size": limit,
         "has_next": page * limit < total,
         "items": items,
+        "attribution": mcp_attribution(tool_context.request),
     }
 
 
@@ -188,7 +194,10 @@ async def _tool_get_paper_detail(
     if row is None:
         raise McpToolInputError(f"Document {paper_id!r} not found.")
     doc = safe_document(dict(row))
-    return {"item": _public_doc(doc, request)}
+    return {
+        "item": _public_doc(doc, request),
+        "attribution": mcp_attribution(request),
+    }
 
 
 async def _tool_get_top_items(
@@ -211,6 +220,7 @@ async def _tool_get_top_items(
             "snapshot_date": snapshot_date,
             "is_finalized": board["is_finalized"],
             "is_embargoed": True,
+            "attribution": mcp_attribution(tool_context.request),
         }
 
     source_type = None if source == "all" else source
@@ -233,6 +243,7 @@ async def _tool_get_top_items(
         "snapshot_date": snapshot_date,
         "is_finalized": board["is_finalized"],
         "is_embargoed": False,
+        "attribution": mcp_attribution(tool_context.request),
     }
 
 
@@ -240,6 +251,7 @@ async def _search_project_library(
     args: dict[str, Any],
     *,
     mode: str,
+    request: Request | None = None,
     project_searcher: Callable[..., Awaitable[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     generic = mode == "generic"
@@ -252,7 +264,7 @@ async def _search_project_library(
     page = args.get("page", 1)
     limit = args.get("limit", 10)
     search = project_searcher or search_projects
-    return await search(
+    result = await search(
         query=q,
         mode="generic" if generic else "ai",
         language=language,
@@ -265,6 +277,15 @@ async def _search_project_library(
         limit=limit,
         fallback_search=search_github_projects_fallback,
     )
+    if not isinstance(result, dict):
+        return result
+    result["items"] = [
+        enrich_project_detail_url(dict(item), request)
+        for item in result.get("items") or []
+        if isinstance(item, dict)
+    ]
+    result["attribution"] = mcp_attribution(request)
+    return result
 
 
 async def _tool_search_github_projects(
@@ -273,6 +294,7 @@ async def _tool_search_github_projects(
     return await _search_project_library(
         args,
         mode="generic",
+        request=context.request if context is not None else None,
         project_searcher=(
             context.project_searcher if context is not None else search_projects
         ),
@@ -285,6 +307,7 @@ async def _tool_search_github_ai_projects(
     return await _search_project_library(
         args,
         mode="ai",
+        request=context.request if context is not None else None,
         project_searcher=(
             context.project_searcher if context is not None else search_projects
         ),
@@ -378,6 +401,7 @@ async def _tool_get_project_categories(
         "recommended_count": int(result.get("recommended_count") or 0),
         "min_stars": catalog_queries.min_stars,
         "source": "github",
+        "attribution": mcp_attribution(context.request),
     }
 
 
