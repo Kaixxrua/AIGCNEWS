@@ -17,7 +17,7 @@
 AI 发现数据平台：持续索引 arXiv 论文、GitHub AI 项目、科技新闻、Product Hunt 与 Hacker News，产出每日榜单与研究简报。同一份数据通过两个入口对外提供：
 
 - **AIGC Radar MCP** —— 面向 Agent 的 MCP 数据接口（旗舰）
-- **Web 站点** —— 面向人类读者的榜单、项目库与简报界面
+- **Web 站点** —— 面向人类读者的榜单、项目库与简报界面（[aigcnews.cn](https://aigcnews.cn)）
 
 ## 演示
 
@@ -65,7 +65,7 @@ Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://rep
 
 ## Web 站点
 
-同一份数据的人类可读界面：Dashboard 榜单与趋势雷达、GitHub AI 项目库（分类 / 筛选 / 收藏）、论文与跨来源索引、每日研究简报。前端 Vue 3 + Vite，后端 FastAPI，关系型数据存 PostgreSQL 16。
+同一份数据的人类可读界面，线上地址 **[aigcnews.cn](https://aigcnews.cn)**：Dashboard 榜单与趋势雷达、GitHub AI 项目库（分类 / 筛选 / 收藏）、论文与跨来源索引、每日研究简报。前端 Vue 3 + Vite，后端 FastAPI，关系型数据存 PostgreSQL 16。
 
 ## 快速开始（Linux / WSL2）
 

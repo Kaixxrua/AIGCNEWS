@@ -17,7 +17,7 @@
 An AI discovery data platform: continuously indexes arXiv papers, GitHub AI projects, tech news, Product Hunt, and Hacker News, producing daily rankings and research briefs. The same dataset is served through two interfaces:
 
 - **AIGC Radar MCP** — an MCP data interface for agents (flagship)
-- **Web Site** — rankings, project library, and briefings for human readers
+- **Web Site** — rankings, project library, and briefings for human readers ([aigcnews.cn](https://aigcnews.cn))
 
 ## Demo
 
@@ -65,7 +65,7 @@ On the context side, it provides resources (`aigc-news://dashboard/summary`, `ai
 
 ## Web Site
 
-A human-readable interface over the same dataset: dashboard rankings with a trend radar, the GitHub AI project library (categories / filters / favorites), paper and cross-source indexes, and daily research briefs. Vue 3 + Vite frontend, FastAPI backend, PostgreSQL 16 for relational data.
+A human-readable interface over the same dataset, live at **[aigcnews.cn](https://aigcnews.cn)**: dashboard rankings with a trend radar, the GitHub AI project library (categories / filters / favorites), paper and cross-source indexes, and daily research briefs. Vue 3 + Vite frontend, FastAPI backend, PostgreSQL 16 for relational data.
 
 ## Quick Start (Linux / WSL2)
 
