@@ -5,6 +5,18 @@ AI 发现数据平台：持续索引 arXiv 论文、GitHub AI 项目、科技新
 - **AIGC Radar MCP** —— 面向 Agent 的 MCP 数据接口（旗舰）
 - **Web 站点** —— 面向人类读者的榜单、项目库与简报界面
 
+## 演示
+
+![AIGCNEWS 演示：Dashboard 榜单切换、项目库检索](docs/assets/demo.gif)
+
+| Dashboard 每日榜单 | GitHub AI 项目库 |
+| --- | --- |
+| ![Dashboard：多源榜单与趋势雷达](docs/assets/screenshot-dashboard.png) | ![项目库：18,000+ 精选 AI 项目](docs/assets/screenshot-projects.png) |
+
+| 项目库语义检索（"mcp server"） |
+| --- |
+| ![项目检索：语义匹配 MCP 相关项目](docs/assets/screenshot-project-search.png) |
+
 ## AIGC Radar MCP（旗舰接口）
 
 AIGC Radar 是本项目的旗舰入口：一个 Streamable HTTP MCP Server，让 Claude Code 等 MCP 客户端直接检索平台数据，并内置 MCP-first 的开源项目发现与复用策略（本地优先、500 Stars 准入、限量只读 GitHub fallback）。与通用舆情/热点聚合类 MCP 不同，它是一个 AI 垂直结构化索引：arXiv 论文、精选富化的 GitHub AI 项目库（分类体系、中英标签、星标增长快照）与多源日/周/月榜单，托管即连、公开只读。
