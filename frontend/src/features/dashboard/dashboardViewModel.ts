@@ -128,6 +128,49 @@ export const PERIODS = [
 export const DAILY_ONLY_TABS = new Set(['news', 'producthunt', 'hackernews', 'x'])
 
 export type TabKey = (typeof TABS)[number]['key']
+
+/* ── 分源榜单状态（/dashboard/top source_status）──────────────────────
+   各源按自己的自然日界与定稿时刻揭榜：PT 源（arxiv/producthunt）次日
+   CST 17:00，CST 源 01:00。tab 级徽章据此提示「收集中 / 已定稿」，
+   与整榜静默期闸门（行为不变）并存。 */
+
+export interface TabBoardStatus {
+  isFinalized: boolean
+  isEmbargoed: boolean
+  dayBoundary: string
+  finalizeHour: number | null
+}
+
+export const getTabBoardStatus = (
+  sourceStatus: Partial<Record<TabKey, {
+    is_finalized?: boolean | null
+    is_embargoed?: boolean | null
+    day_boundary?: string | null
+    finalize_hour?: number | null
+  }>> | undefined,
+  tab: TabKey,
+): TabBoardStatus | null => {
+  const status = sourceStatus?.[tab]
+  if (!status) return null
+  return {
+    isFinalized: status.is_finalized ?? false,
+    isEmbargoed: status.is_embargoed ?? false,
+    dayBoundary: status.day_boundary ?? '',
+    finalizeHour: typeof status.finalize_hour === 'number' ? status.finalize_hour : null,
+  }
+}
+
+/** 定稿提示语（CST 次日整点揭榜）；无时刻信息返回 null 退化为纯文案 */
+export const tabBoardStatusHint = (
+  status: TabBoardStatus,
+  translate: (key: string, params?: Record<string, unknown>) => string,
+): string | null => {
+  if (status.isFinalized) return translate('dashboard.tabFinalized')
+  if (status.isEmbargoed && status.finalizeHour !== null) {
+    return translate('dashboard.tabFinalizing', { time: `${status.finalizeHour}:00` })
+  }
+  return translate('dashboard.tabCollecting')
+}
 export type PeriodKey = (typeof PERIODS)[number]['key']
 
 export const getModuleTags = (doc: TopDoc): string[] => {

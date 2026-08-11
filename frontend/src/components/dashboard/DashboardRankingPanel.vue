@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircle2, Zap } from 'lucide-vue-next'
 import {
@@ -8,13 +9,16 @@ import {
   aiScoreDisplay,
   getModuleTags,
   getSourceConfig,
+  getTabBoardStatus,
   scoreDisplay,
+  tabBoardStatusHint,
   type PeriodKey,
   type TabKey,
   type TopDoc,
 } from '@/features/dashboard/dashboardViewModel'
+import type { SourceStatusMap } from '@/services/dashboard/dashboardContracts'
 
-defineProps<{
+const props = defineProps<{
   activeTab: TabKey
   activePeriod: PeriodKey
   tabList: TopDoc[]
@@ -22,6 +26,7 @@ defineProps<{
   isViewingHistory: boolean
   isFinalized: boolean
   isPeriodDisabled: (period: PeriodKey) => boolean
+  sourceStatus: SourceStatusMap
 }>()
 
 const { t } = useI18n()
@@ -30,6 +35,21 @@ const emit = defineEmits<{
   selectSource: [key: TabKey]
   selectPeriod: [period: PeriodKey]
 }>()
+
+// 分源定稿状态（PR6）：当前 tab 按自己的源日界/定稿时刻揭榜，
+// 取代整榜一刀切标签；wire 缺省（旧后端）时不渲染徽章。
+const tabStatus = computed(() => getTabBoardStatus(props.sourceStatus, props.activeTab))
+const tabStatusHint = computed(() =>
+  tabStatus.value ? tabBoardStatusHint(tabStatus.value, t) : null,
+)
+
+// Product Hunt 榜日透出：条目 published_date 即 featuredAt 的太平洋日期，
+// 与快照日可能不同（CST 上午展示的仍是 PT 昨日榜）。
+const boardDateHint = computed(() => {
+  if (props.activeTab !== 'producthunt') return null
+  const boardDate = props.tabList.find(doc => doc.published_date)?.published_date
+  return boardDate ? t('dashboard.boardDate', { date: boardDate }) : null
+})
 </script>
 
 <template>
@@ -43,6 +63,12 @@ const emit = defineEmits<{
       <div class="flex items-center gap-1">
         <button v-for="period in PERIODS" :key="period.key" class="rounded-full px-3 py-1 text-xs font-medium transition-all duration-200" :class="[isPeriodDisabled(period.key) ? 'cursor-not-allowed opacity-30 text-stone-400' : activePeriod === period.key ? 'tab-active font-semibold' : 'tab-inactive']" :disabled="isPeriodDisabled(period.key)" @click="!isPeriodDisabled(period.key) && emit('selectPeriod', period.key)">{{ t(`dashboard.${period.key}`) }}</button>
         <span v-if="DAILY_ONLY_TABS.has(activeTab)" class="ml-1 text-2xs text-stone-400">{{ t('dashboard.dailyOnly') }}</span>
+      </div>
+      <div v-if="boardDateHint || (tabStatus && tabStatusHint)" class="flex items-center gap-2">
+        <span v-if="boardDateHint" class="badge bg-card text-stone-500 border border-stone-200">{{ boardDateHint }}</span>
+        <span v-if="tabStatus && tabStatusHint" class="flex items-center gap-1 text-2xs" :class="tabStatus.isFinalized ? 'text-emerald-600' : 'text-amber-600'" role="status">
+          <CheckCircle2 v-if="tabStatus.isFinalized" class="h-3 w-3 shrink-0" /><Zap v-else class="h-3 w-3 shrink-0" :class="tabStatus.isEmbargoed ? '' : 'animate-pulse'" />{{ tabStatusHint }}
+        </span>
       </div>
     </div>
 

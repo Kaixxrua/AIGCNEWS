@@ -11,6 +11,7 @@ import { dashboardApi as defaultDashboardApi } from '@/services/dashboard/dashbo
 import { fetchLiveStats } from '@/services/dashboard/dashboardLiveApi'
 import type {
   DashboardApi,
+  SourceStatusMap,
 } from '@/services/dashboard/dashboardContracts'
 import {
   DAILY_ONLY_TABS,
@@ -90,6 +91,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const isViewingHistory = computed(() => currentDate.value !== todayStr)
   const isFinalized = ref(false)
   const isEmbargoed = ref(false)
+  const sourceStatus = ref<SourceStatusMap>({})
 
   const beginAvailabilityRequest = () => {
     availabilityController?.abort()
@@ -119,6 +121,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     tabList.value = top.items
     isFinalized.value = summary.isFinalized
     isEmbargoed.value = summary.isEmbargoed
+    sourceStatus.value = top.sourceStatus
     lastSuccessfulFetchAt = now()
     return true
   }
@@ -284,6 +287,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     isViewingHistory,
     isFinalized,
     isEmbargoed,
+    sourceStatus,
     selectSourceTab,
     onDateChange,
     hasData,

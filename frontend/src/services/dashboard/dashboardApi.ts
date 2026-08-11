@@ -25,6 +25,8 @@ export type {
   GitHubHotPeriod,
   GitHubHotRepo,
   GitHubHotResponse,
+  SourceBoardStatus,
+  SourceStatusMap,
 } from './dashboardContracts'
 
 export const dashboardApi: DashboardApi = {
@@ -48,6 +50,8 @@ export const dashboardApi: DashboardApi = {
       items: Array.isArray(response.data?.items) ? response.data.items : [],
       // 静默期标记必须透出：X 看板日期模式靠它区分「无数据」与「定稿前静默」
       isEmbargoed: response.data?.is_embargoed ?? false,
+      // 分源定稿状态（tab 级徽章）；缺省视为全部未定稿
+      sourceStatus: response.data?.source_status ?? {},
     }
   },
 

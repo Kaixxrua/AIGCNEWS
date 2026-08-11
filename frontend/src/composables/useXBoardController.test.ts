@@ -10,7 +10,7 @@ const recentDocs = () => [
 ]
 
 const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
-  fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: recentDocs(), isEmbargoed: false })),
+  fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: recentDocs(), isEmbargoed: false, sourceStatus: {} })),
   fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: recentDocs(), total: 2, windowHours: 24 })),
   fetchSnapshotDates: vi.fn(async () => ['2026-08-04', '2026-08-03']),
   deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),

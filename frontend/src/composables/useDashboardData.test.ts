@@ -59,7 +59,10 @@ describe('Dashboard request lifecycle contract', () => {
     Object.values(defaultDashboardApi).forEach(mock => mock.mockReset())
     liveStatsApi.fetchLiveStats.mockReset()
     defaultDashboardApi.fetchSummary.mockResolvedValue({ stats: { total_documents: 3 }, isFinalized: true, isEmbargoed: false })
-    defaultDashboardApi.fetchTop.mockResolvedValue({ items: [{ id: 1, title: 'Top' }] })
+    defaultDashboardApi.fetchTop.mockResolvedValue({
+      items: [{ id: 1, title: 'Top' }],
+      sourceStatus: { arxiv: { is_finalized: false, is_embargoed: false, day_boundary: 'PT', finalize_hour: 17 } },
+    })
     defaultDashboardApi.fetchSnapshotDates.mockResolvedValue(['2026-07-27'])
     defaultDashboardApi.fetchVisitorCount.mockResolvedValue({ registeredUsers: 7, todayRegisteredUsers: 2, userCount: 9 })
   })
@@ -89,6 +92,10 @@ describe('Dashboard request lifecycle contract', () => {
     expect(mounted.dashboard.tabList.value).toEqual([{ id: 1, title: 'Top' }])
     expect(mounted.dashboard.isFinalized.value).toBe(true)
     expect(mounted.dashboard.isEmbargoed.value).toBe(false)
+    // 分源定稿状态透出（PR6）：tab 级徽章的数据源
+    expect(mounted.dashboard.sourceStatus.value).toEqual({
+      arxiv: { is_finalized: false, is_embargoed: false, day_boundary: 'PT', finalize_hour: 17 },
+    })
     expect(mounted.dashboard.hasData.value).toBe(true)
     expect(mounted.updateVisitorSources).toHaveBeenCalledBefore(mounted.updateStatSources)
     mounted.app.unmount()
@@ -211,7 +218,7 @@ describe('Dashboard request lifecycle contract', () => {
     const deferred: Array<{ resolve: (value: Summary) => void }> = []
     const injectedApi: DashboardApi = {
       fetchSummary: vi.fn(() => new Promise<Summary>((resolve) => deferred.push({ resolve }))),
-      fetchTop: vi.fn(async () => ({ items: [], isEmbargoed: false })),
+      fetchTop: vi.fn(async () => ({ items: [], isEmbargoed: false, sourceStatus: {} })),
       fetchSnapshotDates: vi.fn(async () => []),
       fetchVisitorCount: vi.fn(async () => ({ registeredUsers: 0, todayRegisteredUsers: 0, userCount: 0 })),
       fetchGitHubHotRepos: vi.fn(async () => ({ period: 'daily', items: [] })),

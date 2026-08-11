@@ -42,6 +42,7 @@ const {
   isViewingHistory,
   isFinalized,
   isEmbargoed,
+  sourceStatus,
   selectSourceTab,
   onDateChange,
   hasData,
@@ -122,6 +123,7 @@ onBeforeUnmount(pauseLivePoll)
         :is-viewing-history="isViewingHistory"
         :is-finalized="isFinalized"
         :is-period-disabled="isPeriodDisabled"
+        :source-status="sourceStatus"
         @select-source="selectSourceTab"
         @select-period="activePeriod = $event"
       />

@@ -6,9 +6,22 @@ export interface DashboardSummaryWireResponse {
   is_embargoed?: boolean | null
 }
 
+/** 单源榜单状态（/dashboard/top 的 source_status wire 契约） */
+export interface SourceBoardStatus {
+  is_finalized?: boolean | null
+  is_embargoed?: boolean | null
+  /** 源自然日界：PT（美国日界）或 CST */
+  day_boundary?: string | null
+  /** 次日 CST 定稿整点 */
+  finalize_hour?: number | null
+}
+
+export type SourceStatusMap = Partial<Record<TabKey, SourceBoardStatus>>
+
 export interface DashboardTopWireResponse {
   items?: TopDoc[] | null
   is_embargoed?: boolean | null
+  source_status?: SourceStatusMap | null
 }
 
 export interface DashboardSnapshotDatesWireResponse {
@@ -37,6 +50,8 @@ export interface DashboardTop {
   items: TopDoc[]
   /** 昨日榜单在 CST 15:00 定稿前处于静默期（后端直接放空 items） */
   isEmbargoed: boolean
+  /** 分源定稿状态（tab 级徽章数据源）；后端旧版本缺省时为空对象 */
+  sourceStatus: SourceStatusMap
 }
 
 export interface XSnapshotRebuildResultItem {

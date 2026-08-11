@@ -35,6 +35,27 @@ describe('Dashboard API contract', () => {
     })
   })
 
+  it('maps per-source board status from top responses for tab badges', async () => {
+    transport.get.mockResolvedValueOnce({
+      data: {
+        items: [{ id: 1, title: 'Synthetic' }],
+        is_embargoed: false,
+        source_status: {
+          arxiv: { is_finalized: false, is_embargoed: true, day_boundary: 'PT', finalize_hour: 17 },
+          github: { is_finalized: true, is_embargoed: false, day_boundary: 'CST', finalize_hour: 1 },
+        },
+      },
+    })
+    await expect(dashboardApi.fetchTop({ source: 'arxiv', date: '2026-08-10' })).resolves.toEqual({
+      items: [{ id: 1, title: 'Synthetic' }],
+      isEmbargoed: false,
+      sourceStatus: {
+        arxiv: { is_finalized: false, is_embargoed: true, day_boundary: 'PT', finalize_hour: 17 },
+        github: { is_finalized: true, is_embargoed: false, day_boundary: 'CST', finalize_hour: 1 },
+      },
+    })
+  })
+
   it('posts x snapshot rebuild with an optional target date', async () => {
     transport.post.mockResolvedValueOnce({
       data: { status: 'succeeded', message: 'done', results: [{ date: '2026-07-30', upserted: 6 }], skipped_no_date: 0 },
