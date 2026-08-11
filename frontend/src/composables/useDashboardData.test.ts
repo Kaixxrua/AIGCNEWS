@@ -80,13 +80,13 @@ describe('Dashboard request lifecycle contract', () => {
     resolveVisitors({ registeredUsers: 7, todayRegisteredUsers: 2, userCount: 9 })
     await flush()
 
-    expect(mounted.dashboard.activeTab.value).toBe('arxiv')
+    expect(mounted.dashboard.activeTab.value).toBe('github')
     expect(mounted.dashboard.activePeriod.value).toBe('daily')
     expect(defaultDashboardApi.fetchSummary).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal) })
     expect(defaultDashboardApi.fetchTop).toHaveBeenCalledWith({
-      limit: 10, source: 'arxiv', period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal),
+      limit: 10, source: 'github', period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal),
     })
-    expect(defaultDashboardApi.fetchSnapshotDates).toHaveBeenCalledWith({ limit: 90, source: 'arxiv', period: 'daily', signal: expect.any(AbortSignal) })
+    expect(defaultDashboardApi.fetchSnapshotDates).toHaveBeenCalledWith({ limit: 90, source: 'github', period: 'daily', signal: expect.any(AbortSignal) })
     expect(defaultDashboardApi.fetchVisitorCount).toHaveBeenCalledWith(expect.any(AbortSignal))
     expect(mounted.dashboard.stats.value).toMatchObject({ total_documents: 3, registered_users: 7, user_count: 9 })
     expect(mounted.dashboard.tabList.value).toEqual([{ id: 1, title: 'Top' }])
@@ -201,7 +201,7 @@ describe('Dashboard request lifecycle contract', () => {
     })
     const mounted = mountDashboard()
     await flush()
-    mounted.dashboard.activeTab.value = 'github'
+    mounted.dashboard.activeTab.value = 'arxiv'
     await flush()
 
     expect(dashboardSignals[0]?.aborted).toBe(true)
@@ -229,7 +229,7 @@ describe('Dashboard request lifecycle contract', () => {
     }
     const mounted = mountDashboard({ dashboardApi: injectedApi, now: () => new Date(2026, 6, 27, 12).getTime() })
     await flush()
-    mounted.dashboard.activeTab.value = 'github'
+    mounted.dashboard.activeTab.value = 'arxiv'
     await flush()
     deferred[1]!.resolve({ stats: { total_documents: 2 }, isFinalized: false, isEmbargoed: false })
     await flush()

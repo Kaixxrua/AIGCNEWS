@@ -58,7 +58,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const dashboardApi = options.dashboardApi ?? defaultDashboardApi
   const now = options.now ?? Date.now
   const createAbortController = options.createAbortController ?? (() => new AbortController())
-  const activeTab = ref<TabKey>('arxiv')
+  const activeTab = ref<TabKey>('github')
   const activePeriod = ref<PeriodKey>('daily')
   const tabList = ref<TopDoc[]>([])
   const stats = ref<Stats>({})
