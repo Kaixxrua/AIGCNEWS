@@ -1,5 +1,8 @@
 User-agent: *
 Allow: /
+# 动态 sitemap 由后端 /api 提供，需显式放行（最长匹配优先于下方 /api/ 整段 Disallow）
+Allow: /api/sitemap.xml
 Disallow: /api/
 
 Sitemap: https://aigcnews.cn/sitemap.xml
+Sitemap: https://aigcnews.cn/api/sitemap.xml

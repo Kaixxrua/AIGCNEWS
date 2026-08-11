@@ -30,6 +30,7 @@ from backend.app.api import (
     routes_papers,
     routes_push,
     routes_report,
+    routes_sitemap,
     routes_vision,
     routes_wechat,
     routes_wechat_media,
@@ -426,6 +427,7 @@ app.include_router(routes_github_projects.router, prefix="/api", tags=["GitHub P
 app.include_router(routes_mcp.router, prefix="/api", tags=["MCP"])
 app.include_router(routes_monitor.router, prefix="/api", tags=["Monitor"])
 app.include_router(routes_report.router, prefix="/api", tags=["Report"])
+app.include_router(routes_sitemap.router, prefix="/api", tags=["Sitemap"])
 app.include_router(routes_ops.router, prefix="/api", tags=["Ops"])
 app.include_router(routes_wechat.router, prefix="/api", tags=["WeChat"])
 app.include_router(routes_x_media.router, prefix="/api", tags=["Media"])
