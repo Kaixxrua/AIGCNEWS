@@ -1,10 +1,10 @@
-"""源插件加载器：特性开关门控 + 候选模块回退。
+"""源插件加载器：特性开关门控 + 私有包候选解析。
 
-每个可插拔源定义一组候选模块：优先仓库外私有包 ``aigcnews_private``
-（经部署 overlay 注入 PYTHONPATH），回退仓库内过渡期实现。开关关闭
-返回 None；开关打开但全部候选不可导入（或门面属性不全）时记 warning
-并返回 None——fail closed，公共代码据此优雅降级。导入结果进程内缓存，
-测试经 ``_reset_plugin_cache`` 重置。
+每个可插拔源的实现只存在于仓库外私有包 ``aigcnews_private``（经部署
+overlay 注入 PYTHONPATH，开源检出中不可得）。开关关闭返回 None；开关
+打开但候选不可导入（或门面属性不全）时记 warning 并返回 None——
+fail closed，公共代码据此优雅降级。导入结果进程内缓存，测试经
+``_reset_plugin_cache`` 重置。
 """
 
 from __future__ import annotations
@@ -18,16 +18,10 @@ from backend.app.services.source_plugins.wechat_source import WeChatServiceBundl
 
 logger = logging.getLogger(__name__)
 
-# 候选模块按优先级排列：私有包优先，仓库内过渡期实现兜底。
-_X_TRANSPORT_MODULES = (
-    "aigcnews_private.sources.x_transport",
-    "backend.app.services.ingestion.sources.x_transport",
-)
+# 候选模块：实现仅存于私有包，单一候选；保留元组形状以便将来扩展。
+_X_TRANSPORT_MODULES = ("aigcnews_private.sources.x_transport",)
 
-_WECHAT_FACADE_MODULES = (
-    "aigcnews_private.sources.wechat_facade",
-    "backend.app.services.source_plugins._wechat_inrepo_facade",
-)
+_WECHAT_FACADE_MODULES = ("aigcnews_private.sources.wechat_facade",)
 
 # WeChat 服务束属性 -> 门面模块属性名；缺一即判定门面损坏（fail closed）。
 _WECHAT_BUNDLE_ATTRS = {

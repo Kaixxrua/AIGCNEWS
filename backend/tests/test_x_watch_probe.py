@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import unittest
+import unittest.mock
 
-from backend.app.services.ingestion.sources.x_transport import (
+from backend.app.services.source_plugins.x_source import (
     XAuthAbort,
     XAuthNotConfigured,
     XRateLimitAbort,
     XTransportUnavailable,
 )
-from backend.app.services.x_watch.probe import probe_x_watch_account
+from backend.app.services.x_watch import probe as probe_module
+from backend.app.services.x_watch.probe import (
+    probe_x_watch_account,
+    test_x_watch_account as watch_account_entrypoint,
+)
 
 
 class FakeTransport:
@@ -71,6 +76,17 @@ class XWatchProbeTests(unittest.TestCase):
 
         self.assertEqual(outcome["status"], "failed")
         self.assertEqual(outcome["message"], "x_probe_error")
+
+
+class XWatchProbeEntrypointTests(unittest.TestCase):
+    def test_entrypoint_degrades_when_transport_plugin_missing(self) -> None:
+        """插件缺失（开源检出/开关关闭）：与传输面故障同一降级标记。"""
+        with unittest.mock.patch.object(
+            probe_module, "load_x_transport_class", lambda: None
+        ):
+            outcome = watch_account_entrypoint("openai", {"auth_token": "a", "ct0": "c"})
+
+        self.assertEqual(outcome, {"status": "failed", "message": "x_transport_unavailable"})
 
 
 if __name__ == "__main__":

@@ -1,10 +1,9 @@
 """微信公众号采集源插件契约。
 
 本模块只包含公开契约：错误基类、路由消费的服务方法面 Protocol 与
-服务束。扫码登录、mp.weixin.qq.com / 搜狗微信交互等敏感实现在过渡期
-位于仓库内 ``services/wechat`` 与 ``services/wechat_sogou``，随后迁移至
-仓库外私有包 ``aigcnews_private``。公众号文章的存储、展示与媒体代理层
-始终保留在仓库内。
+服务束。扫码登录、mp.weixin.qq.com / 搜狗微信交互等敏感实现位于仓库外
+私有包 ``aigcnews_private``（经部署 overlay 注入 PYTHONPATH，开源检出
+中不可得）。公众号文章的存储、展示与媒体代理层始终保留在仓库内。
 
 实现类构造约定（公共代码 dependencies.py 负责注入仓储与设置派生值）：
 

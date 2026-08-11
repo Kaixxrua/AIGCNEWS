@@ -45,10 +45,19 @@ class IngestionDependencyCompositionTests(unittest.TestCase):
 
     def test_x_crawler_factory_reads_watchlist_from_repositories(self) -> None:
         from backend.app.core.config import settings
+        from backend.app.services.ingestion.crawlers import x_crawler as x_crawler_module
+
+        class _FakeTransport:
+            def __init__(self, **_kwargs: object) -> None:
+                pass
 
         repositories = MagicMock()
 
-        with patch.object(settings, "x_source_enabled", True):
+        # 传输层实现仅存于私有包；此处只验证工厂装配，注入假传输类即可
+        with (
+            patch.object(settings, "x_source_enabled", True),
+            patch.object(x_crawler_module, "load_x_transport_class", lambda: _FakeTransport),
+        ):
             dependencies = provide_ingestion_dependencies(
                 repositories=repositories,
                 task_writer=MagicMock(),

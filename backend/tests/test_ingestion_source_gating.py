@@ -41,7 +41,13 @@ def test_composition_omits_x_crawler_when_source_disabled(monkeypatch) -> None:
 
 
 def test_composition_registers_x_crawler_when_source_enabled(monkeypatch) -> None:
+    # 传输层实现仅存于私有包；此处只验证工厂注册，注入假传输类即可
+    class _FakeTransport:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
     monkeypatch.setattr(settings, "x_source_enabled", True)
+    monkeypatch.setattr(x_crawler, "load_x_transport_class", lambda: _FakeTransport)
     dependencies = composition.provide_ingestion_dependencies(
         repositories=MagicMock()
     )

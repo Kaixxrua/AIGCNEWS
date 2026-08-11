@@ -11,11 +11,12 @@ import asyncio
 import logging
 from typing import Any, Callable, Mapping
 
-from backend.app.services.ingestion.sources.x_transport import (
+from backend.app.services.source_plugins import load_x_transport_class
+from backend.app.services.source_plugins.x_source import (
     XAuthAbort,
     XAuthNotConfigured,
     XRateLimitAbort,
-    XTransport,
+    XTransportProtocol,
     XTransportUnavailable,
 )
 
@@ -24,11 +25,22 @@ logger = logging.getLogger(__name__)
 PROBE_TWEET_COUNT = 2
 
 
+def _build_transport(credential: Mapping[str, Any]) -> XTransportProtocol | None:
+    """经插件加载器构造单凭证探测传输层；插件缺失时返回 None（fail closed）。"""
+    transport_class = load_x_transport_class()
+    if transport_class is None:
+        return None
+    return transport_class(
+        credential_provider=lambda: [dict(credential)],
+        inter_account_delay=0.0,
+    )
+
+
 def probe_x_credential(
     credential: Mapping[str, Any],
     handle: str,
     *,
-    transport: XTransport | None = None,
+    transport: XTransportProtocol | None = None,
 ) -> Mapping[str, Any]:
     """Probe a single credential against one watch handle.
 
@@ -44,10 +56,9 @@ def probe_x_credential(
     if not handle:
         return {"status": "failed", "message": "x_probe_no_watch_handle"}
 
-    probe_transport = transport or XTransport(
-        credential_provider=lambda: [dict(credential)],
-        inter_account_delay=0.0,
-    )
+    probe_transport = transport or _build_transport(credential)
+    if probe_transport is None:
+        return {"status": "failed", "message": "x_transport_unavailable"}
     try:
         result = asyncio.run(
             probe_transport.fetch_watchlist_tweets([handle], PROBE_TWEET_COUNT)
@@ -81,7 +92,7 @@ def probe_all_x_credentials(
     handle: str,
     *,
     update_result: Callable[[int, Mapping[str, Any]], Any] | None = None,
-    transport: XTransport | None = None,
+    transport: XTransportProtocol | None = None,
 ) -> list[dict[str, Any]]:
     """Serially probe every enabled credential and optionally persist results.
 

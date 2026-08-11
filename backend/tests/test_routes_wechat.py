@@ -10,7 +10,12 @@ from fastapi.testclient import TestClient
 from backend.app.api.routes_wechat import router
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.main import app
-from backend.app.services.wechat.errors import WeChatAccountNotFound
+from backend.app.services.source_plugins.wechat_source import WeChatError
+
+
+def _wechat_account_not_found() -> WeChatError:
+    """与私有实现 WeChatAccountNotFound 等价的契约层错误（路由只读 code/message）。"""
+    return WeChatError("WECHAT_ACCOUNT_NOT_FOUND", "公众号不存在")
 
 app.include_router(router, prefix="/api", tags=["WeChat"])
 
@@ -172,7 +177,7 @@ def test_follow_account_is_idempotent() -> None:
 
 def test_follow_missing_or_disabled_account_returns_404() -> None:
     service = MagicMock()
-    service.follow.side_effect = WeChatAccountNotFound()
+    service.follow.side_effect = _wechat_account_not_found()
     client = _client(follow_service=service)
     response = client.post("/api/ops/wechat/accounts/999/follow")
     assert response.status_code == 404
@@ -257,7 +262,7 @@ def test_article_detail_returns_full_body() -> None:
 
 def test_article_detail_not_followed_returns_404() -> None:
     service = MagicMock()
-    service.get_article_detail.side_effect = WeChatAccountNotFound()
+    service.get_article_detail.side_effect = _wechat_account_not_found()
     client = _client(follow_service=service)
     response = client.get("/api/ops/wechat/accounts/999/articles/11")
     assert response.status_code == 404

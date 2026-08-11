@@ -12,11 +12,11 @@ from __future__ import annotations
 import asyncio
 import unittest
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from twitter_cli.models import Author, Metrics, Tweet
 
 from backend.app.core import scheduler as scheduler_module
 from backend.app.services.ingestion.crawlers import (
@@ -159,12 +159,13 @@ class GitHubMetricsClosingJobTests(unittest.IsolatedAsyncioTestCase):
         assert calls["github_lock"] is runtime.github_job_lock
 
 
-def _tweet(tweet_id: str, created_at: str) -> Tweet:
-    tweet = Tweet(
+def _tweet(tweet_id: str, created_at: str) -> Any:
+    """鸭子类型推文：采集链只经 getattr 读属性，无需私有传输层真实模型。"""
+    return SimpleNamespace(
         id=tweet_id,
         text="synthetic",
-        author=Author(id="u1", name="OpenAI", screen_name="openai"),
-        metrics=Metrics(
+        author=SimpleNamespace(id="u1", name="OpenAI", screen_name="openai"),
+        metrics=SimpleNamespace(
             likes=1,
             retweets=0,
             replies=0,
@@ -174,23 +175,22 @@ def _tweet(tweet_id: str, created_at: str) -> Tweet:
         ),
         created_at=created_at,
         is_retweet=False,
+        is_promoted=False,
+        is_subscriber_only=False,
     )
-    tweet.is_promoted = False
-    tweet.is_subscriber_only = False
-    return tweet
 
 
 class _FakeXTransport:
-    def __init__(self, tweets: list[Tweet]) -> None:
+    def __init__(self, tweets: list[Any]) -> None:
         self._tweets = tweets
 
     async def fetch_watchlist_tweets(
         self, handles: list[str], per_account: int
-    ) -> dict[str, list[Tweet]]:
+    ) -> dict[str, list[Any]]:
         return {handles[0]: self._tweets}
 
 
-def _x_crawler(tweets: list[Tweet]) -> x_crawler_module.XCrawler:
+def _x_crawler(tweets: list[Any]) -> x_crawler_module.XCrawler:
     return x_crawler_module.XCrawler(
         transport=_FakeXTransport(tweets),  # type: ignore[arg-type]
         watchlist_provider=lambda: ["openai"],

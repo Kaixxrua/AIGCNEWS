@@ -11,11 +11,11 @@ import asyncio
 import logging
 from typing import Any, Mapping
 
-from backend.app.services.ingestion.sources.x_transport import (
+from backend.app.services.source_plugins import load_x_transport_class
+from backend.app.services.source_plugins.x_source import (
     XAuthAbort,
     XAuthNotConfigured,
     XRateLimitAbort,
-    XTransport,
     XTransportUnavailable,
 )
 
@@ -34,13 +34,17 @@ def test_x_watch_account(
         handle: 要探测的 X 账号 handle。
         credential: 可选指定凭证；未指定时保留旧的 env 凭据行为作为兼容路径。
     """
+    transport_class = load_x_transport_class()
+    if transport_class is None:
+        # 插件缺失（开关关闭或私有包不在场）：与传输面故障同一降级标记。
+        return {"status": "failed", "message": "x_transport_unavailable"}
     if credential is not None:
-        transport = XTransport(
+        transport = transport_class(
             credential_provider=lambda: [dict(credential)],
             inter_account_delay=0.0,
         )
     else:
-        transport = XTransport(inter_account_delay=0.0)
+        transport = transport_class(inter_account_delay=0.0)
     return probe_x_watch_account(handle, transport)
 
 

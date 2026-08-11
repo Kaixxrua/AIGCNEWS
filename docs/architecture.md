@@ -321,9 +321,9 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 | `producthunt_crawler.py` | Product Hunt Apollo SSR | daily only | `producthunt_daily_html` |
 | `hackernews_crawler.py` | HN Firebase API Top-30 | daily only | `hn_daily_html` |
 | `dailyhot_crawler.py` | DailyHot 聚合热榜（编排内网自托管 DailyHotApi，部署与端点清单见 [`dailyhot-source.md`](dailyhot-source.md)） | daily only | `dailyhot_daily` |
-| `x_crawler.py` | X/Twitter Watchlist（twitter-cli 内部 GraphQL + cookie 凭据，运维见 [`x-source-runbook.md`](x-source-runbook.md)） | daily only | `x_daily_watchlist` |
+| `x_crawler.py` | X/Twitter Watchlist（可插拔源：传输层实现位于私有插件包 `aigcnews_private`，运维见 [`x-source-runbook.md`](x-source-runbook.md)） | daily only | `x_daily_watchlist` |
 
-> 采集管线之外还有两套独立服务模块：`services/x_watch/`（X watchlist 管理与单账号采集探测，watchlist 与凭据落库后成为唯一事实源）与 `services/wechat/` + `services/wechat_sogou/`（微信公众号关注/文章同步与搜狗微信公开索引发现，走自有 `routes_wechat*.py` 路由，不经 ingestion 爬虫注册表）。
+> 采集管线之外还有两类独立服务模块：`services/x_watch/`（X watchlist 管理与单账号采集探测，watchlist 与凭据落库后成为唯一事实源）与微信公众号链路（关注/文章同步与搜狗微信公开索引发现，走自有 `routes_wechat*.py` 路由，不经 ingestion 爬虫注册表）。X 与微信均为**可插拔源**：公共仓只保留契约（`services/source_plugins/`）与存储/展示层，敏感抓取实现位于仓库外私有包 `aigcnews_private`，经 `x_source_enabled` / `wechat_source_enabled` 开关门控，插件缺失时对应路由 404、采集轮跳过。
 
 #### 底层数据获取库（`source_*.py`）
 

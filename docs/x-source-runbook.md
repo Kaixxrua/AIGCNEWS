@@ -1,5 +1,10 @@
 # X/Twitter 信息源运维 Runbook
 
+> **可插拔源**：X 采集实现（传输层、spike 脚本）位于仓库外私有插件包
+> `aigcnews_private`（`scripts/x_ingestion_spike.py` 亦在该仓 `scripts/` 下），
+> 经 `x_source_enabled` 开关与部署 overlay 注入。开源检出中本链路不可用，
+> 对应路由 404、采集轮自动跳过。本文档面向已部署私有插件的运维方。
+
 X 源通过 `twitter-cli`（X 内部 GraphQL + TLS 指纹）以**主账号 cookie** 抓取关注
 账号推文。本文档覆盖：cookie 提取、配置、验收、失效重配与节奏调整。
 
@@ -51,7 +56,7 @@ docker compose restart backend   # 或本地开发：重启 uvicorn
 ### 4. spike 验收（必做）
 
 ```bash
-python scripts/x_ingestion_spike.py                      # watchlist 首个账号拉 5 条
+python scripts/x_ingestion_spike.py                      # 在私有插件仓 scripts/ 下运行
 python scripts/x_ingestion_spike.py --handle openai --count 5
 ```
 

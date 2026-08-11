@@ -1,10 +1,9 @@
 """X 采集源插件契约。
 
 本模块只包含公开契约：异常类型、常量与传输层 Protocol。敏感实现
-（twitter-cli 响应解析补丁、凭据池轮询、私有 GraphQL/REST 端点）在
-过渡期位于仓库内 ``services/ingestion/sources/x_transport.py``，随后
-迁移至仓库外私有包 ``aigcnews_private``（经部署 overlay 注入
-PYTHONPATH）。两侧实现共用本契约，公共代码不得反向依赖实现细节。
+（twitter-cli 响应解析补丁、凭据池轮询、私有 GraphQL/REST 端点）位于
+仓库外私有包 ``aigcnews_private``（经部署 overlay 注入 PYTHONPATH，
+开源检出中不可得）。两侧实现共用本契约，公共代码不得反向依赖实现细节。
 
 实现类构造约定（公共代码负责注入，签名以 ``XTransport.__init__`` 为准）：
 ``client_factory`` / ``credential_provider`` / ``credential_factory`` /

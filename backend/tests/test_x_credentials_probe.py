@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from backend.app.services.ingestion.sources.x_transport import (
+from backend.app.services.source_plugins.x_source import (
     XAuthAbort,
     XAuthNotConfigured,
     XRateLimitAbort,
     XTransportUnavailable,
 )
+from backend.app.services.x_credentials import probe as probe_module
 from backend.app.services.x_credentials.probe import (
     probe_all_x_credentials,
     probe_x_credential,
@@ -49,6 +50,18 @@ def test_single_probe_returns_only_stable_sanitized_markers() -> None:
         assert outcome == {"status": "failed", "message": marker}
         assert "raw-auth-secret" not in str(outcome)
         assert "raw-ct0-secret" not in str(outcome)
+
+
+def test_single_probe_degrades_when_transport_plugin_missing(monkeypatch) -> None:
+    """插件缺失（开源检出/开关关闭）：默认构造路径降级为传输面故障标记。"""
+    monkeypatch.setattr(probe_module, "load_x_transport_class", lambda: None)
+    credential = {"id": 1, "auth_token": "raw-auth-secret", "ct0": "raw-ct0-secret"}
+
+    outcome = probe_x_credential(credential, "openai")
+
+    assert outcome == {"status": "failed", "message": "x_transport_unavailable"}
+    assert "raw-auth-secret" not in str(outcome)
+    assert "raw-ct0-secret" not in str(outcome)
 
 
 def test_single_probe_reports_success_and_missing_handle() -> None:
