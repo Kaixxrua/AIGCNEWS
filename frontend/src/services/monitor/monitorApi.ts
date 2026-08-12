@@ -3,9 +3,9 @@ import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
-  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
+  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
+import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
@@ -16,6 +16,9 @@ export interface MonitorApi {
   fetchProviderConfig(): Promise<ProviderConfig>
   saveProviderConfig(form: ProviderForm): Promise<ProviderConfig>
   testProviderConnection(): Promise<ProviderTestResult>
+  fetchSmtpConfig(): Promise<SmtpConfig>
+  saveSmtpConfig(form: SmtpForm): Promise<SmtpConfig>
+  testSmtpConfig(): Promise<SmtpTestResult>
   fetchMcpServers(): Promise<McpServerConfig[]>
   saveMcpServer(form: McpServerForm): Promise<McpServerConfig>
   testMcpServer(id: number): Promise<{ server?: McpServerConfig; status?: string; message?: string }>
@@ -72,6 +75,11 @@ export const monitorApi: MonitorApi = {
   async saveProviderConfig(form) { return (await api.put('/ops/provider-config', buildProviderPayload(form))).data },
   // 测试会真实请求一次模型服务（先例：testMcpServer / testXWatchAccount 的 30s 超时）
   async testProviderConnection() { return (await api.post('/ops/provider-config/test', null, { timeout: 45_000 })).data },
+  async fetchSmtpConfig() { return (await api.get('/ops/smtp/config')).data },
+  async saveSmtpConfig(form) { return (await api.put('/ops/smtp/config', buildSmtpPayload(form))).data },
+  // 测试按最新生效配置真实投递一封邮件（SMTP 握手+投递可能数秒），收件人
+  // 缺省为当前管理员登录邮箱；空 body 对象满足后端请求模型
+  async testSmtpConfig() { return (await api.post('/ops/smtp/test', {}, { timeout: 45_000 })).data },
   async fetchMcpServers() {
     const { data } = await api.get('/ops/mcp-servers')
     return Array.isArray(data?.items) ? data.items : []

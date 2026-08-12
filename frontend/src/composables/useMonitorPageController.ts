@@ -2,7 +2,7 @@ import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
-  createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
   type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
@@ -53,6 +53,11 @@ export const useMonitorPageController = ({
   const loadingProviderConfig = ref(false)
   const savingProviderConfig = ref(false)
   const testingProvider = ref(false)
+  const smtpConfig = ref<Awaited<ReturnType<MonitorApi['fetchSmtpConfig']>> | null>(null)
+  const smtpForm = ref(createSmtpForm())
+  const loadingSmtpConfig = ref(false)
+  const savingSmtpConfig = ref(false)
+  const testingSmtp = ref(false)
   const mcpServers = ref<McpServerConfig[]>([])
   const mcpForm = ref(createEmptyMcpForm())
   const loadingMcpServers = ref(false)
@@ -154,6 +159,15 @@ export const useMonitorPageController = ({
     catch (error) { console.error('Failed to fetch MCP servers', error) }
     finally { loadingMcpServers.value = false }
   }
+  const fetchSmtpConfig = async () => {
+    if (!isAdmin.value) return
+    loadingSmtpConfig.value = true
+    try {
+      smtpConfig.value = await api.fetchSmtpConfig()
+      smtpForm.value = createSmtpForm(smtpConfig.value)
+    } catch (error) { console.error('Failed to fetch SMTP config', error) }
+    finally { loadingSmtpConfig.value = false }
+  }
   const fetchGithubEnrichmentStatus = async () => {
     if (!isAdmin.value) return
     loadingEnrichmentStatus.value = true
@@ -186,7 +200,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -214,6 +228,44 @@ export const useMonitorPageController = ({
       else errorMsg.value = result.message || i18n.global.t('monitor.testFailed')
     } catch (error) { errorMsg.value = detail(error) }
     finally { testingProvider.value = false }
+  }
+  const SMTP_PORT_MIN = 1
+  const SMTP_PORT_MAX = 65535
+  const SMTP_FROM_EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+  const saveSmtpConfig = async () => {
+    if (savingSmtpConfig.value) return
+    clearMessages()
+    const form = smtpForm.value
+    const host = form.host.trim()
+    // 端口与发件邮箱先做无害前端校验；host 留空为文档化语义（删除 DB
+    // 覆盖行回退 env），不视为校验失败
+    if (host && (!Number.isInteger(form.port) || form.port < SMTP_PORT_MIN || form.port > SMTP_PORT_MAX)) {
+      errorMsg.value = i18n.global.t('monitor.smtpConfig.invalidPort')
+      return
+    }
+    if (host && !SMTP_FROM_EMAIL_PATTERN.test(form.from_email.trim())) {
+      errorMsg.value = i18n.global.t('monitor.smtpConfig.invalidFromEmail')
+      return
+    }
+    savingSmtpConfig.value = true
+    try {
+      smtpConfig.value = await api.saveSmtpConfig({ ...form, host, from_email: form.from_email.trim() })
+      smtpForm.value.password = ''; smtpForm.value.clear_password = false
+      successMsg.value = i18n.global.t('monitor.smtpConfig.saved')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { savingSmtpConfig.value = false }
+  }
+  const testSmtpConfig = async () => {
+    if (testingSmtp.value) return
+    clearMessages(); testingSmtp.value = true
+    try {
+      // 测试按最新生效配置投递（收件人缺省为当前管理员登录邮箱）；
+      // 表单里未保存的修改不生效，先保存再测试
+      const result = await api.testSmtpConfig()
+      if (String(result.status || '').toLowerCase() === 'success') successMsg.value = result.message || i18n.global.t('monitor.smtpConfig.testSent')
+      else errorMsg.value = result.message || i18n.global.t('monitor.smtpConfig.testFailed')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { testingSmtp.value = false }
   }
   const editSchedulerConfig = (job: SchedulerJobConfig) => {
     clearMessages()
@@ -443,15 +495,15 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
   })
 
   return {
     tasks, total, page, pageSize, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
-    loadingProviderConfig, savingProviderConfig, testingProvider, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+    loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
-    fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection,
+    fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchSmtpConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig,
     editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,

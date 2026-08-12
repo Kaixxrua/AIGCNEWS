@@ -4,7 +4,7 @@ const transport = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(),
 vi.mock('../http/apiClient', () => ({ api: transport }))
 
 import { monitorApi } from './monitorApi'
-import { createEmptyMcpForm, createEmptySchedulerJobConfigForm, createEmptyXCredentialForm, createGithubCrawlForm, createProviderForm } from '@/features/monitor/monitorModel'
+import { createEmptyMcpForm, createEmptySchedulerJobConfigForm, createEmptyXCredentialForm, createGithubCrawlForm, createProviderForm, createSmtpForm } from '@/features/monitor/monitorModel'
 
 const schedulerConfig = {
   job_id: 'ingest:arxiv',
@@ -87,6 +87,60 @@ describe('Monitor API contract', () => {
     transport.post.mockResolvedValue({ data: { status: 'success', message: 'ok', latency_ms: 120 } })
     await expect(monitorApi.testProviderConnection()).resolves.toEqual({ status: 'success', message: 'ok', latency_ms: 120 })
     expect(transport.post).toHaveBeenLastCalledWith('/ops/provider-config/test', null, { timeout: 45_000 })
+  })
+
+  it('preserves SMTP config endpoints and never sends masked password values', async () => {
+    const config = {
+      host: 'smtp.test', port: 465, username: 'user', password_configured: true,
+      password_masked: 'smt****ord', from_email: 'no-reply@test.dev', from_name: 'AIGC',
+      use_tls: true, source: 'database' as const, updated_at: '2026-08-12T10:00:00+00:00',
+    }
+    transport.get.mockResolvedValueOnce({ data: config })
+    await expect(monitorApi.fetchSmtpConfig()).resolves.toEqual(config)
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/smtp/config')
+
+    // 表单密码恒为空串草稿；保存时空串发 null（后端保留语义），绝不回传掩码值
+    const form = createSmtpForm(config)
+    expect(form.password).toBe('')
+    transport.put.mockResolvedValue({ data: config })
+    await monitorApi.saveSmtpConfig(form)
+    expect(transport.put).toHaveBeenCalledWith('/ops/smtp/config', {
+      host: 'smtp.test', port: 465, username: 'user', password: null, clear_password: false,
+      from_email: 'no-reply@test.dev', from_name: 'AIGC', use_tls: true,
+    })
+    expect(JSON.stringify(transport.put.mock.calls)).not.toContain('smt****ord')
+
+    form.clear_password = true
+    await monitorApi.saveSmtpConfig(form)
+    expect(transport.put).toHaveBeenLastCalledWith('/ops/smtp/config', expect.objectContaining({ password: null, clear_password: true }))
+
+    // 新密码真值时原样透传
+    form.clear_password = false
+    form.password = 'new-secret'
+    await monitorApi.saveSmtpConfig(form)
+    expect(transport.put).toHaveBeenLastCalledWith('/ops/smtp/config', expect.objectContaining({ password: 'new-secret' }))
+  })
+
+  it('posts SMTP test with empty body object and a 45 second client timeout', async () => {
+    // 服务端真实投递一封邮件（SMTP 握手+投递可能数秒），收件人缺省为管理员登录邮箱
+    transport.post.mockResolvedValue({ data: { status: 'success', message: 'ok', to_email: 'admin@test.dev', latency_ms: 320 } })
+    await expect(monitorApi.testSmtpConfig()).resolves.toEqual({ status: 'success', message: 'ok', to_email: 'admin@test.dev', latency_ms: 320 })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/smtp/test', {}, { timeout: 45_000 })
+  })
+
+  it('creates SMTP form drafts from config with safe defaults', () => {
+    expect(createSmtpForm(null)).toEqual({
+      host: '', port: 587, username: '', password: '', clear_password: false,
+      from_email: '', from_name: '', use_tls: true,
+    })
+    expect(createSmtpForm({
+      host: 'smtp.test', port: 2525, username: 'u', password_configured: false,
+      password_masked: null, from_email: 'a@test.dev', from_name: 'A',
+      use_tls: false, source: 'environment', updated_at: null,
+    })).toEqual({
+      host: 'smtp.test', port: 2525, username: 'u', password: '', clear_password: false,
+      from_email: 'a@test.dev', from_name: 'A', use_tls: false,
+    })
   })
 
   it('preserves custom reasoning effort tiers and only normalizes case, whitespace and length', () => {

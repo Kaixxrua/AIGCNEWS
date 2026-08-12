@@ -88,6 +88,42 @@ export interface ProviderTestResult {
   latency_ms?: number | null
 }
 
+// SMTP 投递配置生效来源：database=页面保存的 DB 覆盖行；environment=env；
+// unconfigured=两者皆无（此状态下测试投递按钮禁用）
+export type SmtpConfigSource = 'database' | 'environment' | 'unconfigured'
+
+export interface SmtpConfig {
+  host: string
+  port: number
+  username: string
+  password_configured: boolean
+  password_masked: string | null
+  from_email: string
+  from_name: string
+  use_tls: boolean
+  source: SmtpConfigSource
+  updated_at: string | null
+}
+
+export interface SmtpForm {
+  host: string
+  port: number
+  username: string
+  password: string
+  clear_password: boolean
+  from_email: string
+  from_name: string
+  use_tls: boolean
+}
+
+// 测试投递结果：HTTP 层 200/400/502 表达配置与投递状态，status 表达业务结果
+export interface SmtpTestResult {
+  status: string
+  message: string
+  to_email?: string
+  latency_ms?: number | null
+}
+
 export interface McpToolSummary { name: string; description: string }
 
 export interface McpServerConfig {
@@ -278,6 +314,29 @@ export const buildProviderPayload = (form: ProviderForm) => ({
   api_key: form.api_key || null,
   clear_api_key: form.clear_api_key,
   reasoning_effort: normalizeReasoningEffort(form.reasoning_effort),
+})
+
+export const createSmtpForm = (config?: SmtpConfig | null): SmtpForm => ({
+  host: config?.host || '',
+  port: config?.port || 587,
+  username: config?.username || '',
+  password: '',
+  clear_password: false,
+  from_email: config?.from_email || '',
+  from_name: config?.from_name || '',
+  use_tls: config?.use_tls ?? true,
+})
+
+export const buildSmtpPayload = (form: SmtpForm) => ({
+  host: form.host,
+  port: form.port,
+  username: form.username,
+  // null has backend-defined retain semantics; never send a masked response value
+  password: form.password || null,
+  clear_password: form.clear_password,
+  from_email: form.from_email,
+  from_name: form.from_name,
+  use_tls: form.use_tls,
 })
 
 export const buildMcpPayload = (form: McpServerForm) => ({

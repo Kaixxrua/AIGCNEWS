@@ -11,6 +11,8 @@ export type {
   ProviderConfig,
   ProviderForm,
   SchedulerStatus,
+  SmtpConfig,
+  SmtpForm,
   SourceKey,
   Task,
 } from './monitorModel'

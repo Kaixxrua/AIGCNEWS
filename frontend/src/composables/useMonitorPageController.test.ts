@@ -43,6 +43,7 @@ const createApi = (): MonitorApi => ({
   saveSchedulerConfig: vi.fn(),
   fetchMcpToolCalls: vi.fn(async () => ({ since: '', total_calls: 0, tools: {} })),
   fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), testProviderConnection: vi.fn(async () => ({ status: 'success', message: '' })), fetchMcpServers: vi.fn(async () => []),
+  fetchSmtpConfig: vi.fn(), saveSmtpConfig: vi.fn(), testSmtpConfig: vi.fn(async () => ({ status: 'success', message: '' })),
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
@@ -71,6 +72,7 @@ describe('Monitor page controller contract', () => {
     expect(api.fetchSchedulerStatus).toHaveBeenCalledOnce()
     expect(api.fetchMcpToolCalls).toHaveBeenCalledOnce()
     expect(api.fetchProviderConfig).not.toHaveBeenCalled()
+    expect(api.fetchSmtpConfig).not.toHaveBeenCalled()
     expect(api.fetchMcpServers).not.toHaveBeenCalled()
     expect(api.fetchGithubEnrichmentStatus).not.toHaveBeenCalled()
     expect(controller.enrichmentStatus.value).toBeNull()
@@ -91,6 +93,7 @@ describe('Monitor page controller contract', () => {
     await nextTick()
     expect(api.fetchSchedulerConfigs).toHaveBeenCalledOnce()
     expect(api.fetchProviderConfig).toHaveBeenCalledOnce()
+    expect(api.fetchSmtpConfig).toHaveBeenCalledOnce()
     expect(api.fetchMcpServers).toHaveBeenCalledOnce()
     expect(api.fetchGithubEnrichmentStatus).toHaveBeenCalledOnce()
     expect(api.fetchGithubCrawlStatus).toHaveBeenCalledOnce()
@@ -312,6 +315,137 @@ describe('Monitor page controller contract', () => {
     controller.mcpForm.value = { id: null, server_key: 'new', display_name: 'New', description: '', url: 'https://new', auth_type: 'none', auth_token: '', clear_auth_token: false, enabled: true }
     await controller.saveMcpServer()
     expect(controller.mcpServers.value.map(({ id }) => id)).toEqual([8, 7])
+  })
+})
+
+describe('Monitor SMTP config controls', () => {
+  beforeEach(() => vi.useFakeTimers())
+
+  const smtpConfig = {
+    host: 'smtp.test', port: 465, username: 'user', password_configured: true,
+    password_masked: 'smt****ord', from_email: 'no-reply@test.dev', from_name: 'AIGC',
+    use_tls: true, source: 'database' as const, updated_at: '2026-08-12T10:00:00+00:00',
+  }
+
+  it('populates the SMTP form from the fetched config with a blank password draft', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchSmtpConfig).mockResolvedValue(smtpConfig)
+
+    await controller.fetchSmtpConfig()
+
+    expect(controller.smtpConfig.value).toEqual(smtpConfig)
+    expect(controller.smtpForm.value).toEqual({
+      host: 'smtp.test', port: 465, username: 'user', password: '', clear_password: false,
+      from_email: 'no-reply@test.dev', from_name: 'AIGC', use_tls: true,
+    })
+    expect(controller.loadingSmtpConfig.value).toBe(false)
+  })
+
+  it('saves trimmed values, then clears the password draft and clear flag with a saved message', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchSmtpConfig).mockResolvedValue(smtpConfig)
+    await controller.fetchSmtpConfig()
+    controller.smtpForm.value = { ...controller.smtpForm.value, host: ' smtp.test ', password: 'new-secret', clear_password: true }
+
+    vi.mocked(api.saveSmtpConfig).mockResolvedValue(smtpConfig)
+    await controller.saveSmtpConfig()
+
+    expect(api.saveSmtpConfig).toHaveBeenCalledWith(expect.objectContaining({
+      host: 'smtp.test', from_email: 'no-reply@test.dev', password: 'new-secret', clear_password: true,
+    }))
+    expect(controller.smtpConfig.value).toEqual(smtpConfig)
+    // 保存成功后清掉敏感草稿与清空标志，防止下一次保存误擦密码
+    expect(controller.smtpForm.value.password).toBe('')
+    expect(controller.smtpForm.value.clear_password).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.smtpConfig.saved'))
+    expect(controller.savingSmtpConfig.value).toBe(false)
+  })
+
+  it('surfaces save failure details and resets the pending flag', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchSmtpConfig).mockResolvedValue(smtpConfig)
+    await controller.fetchSmtpConfig()
+    controller.smtpForm.value.password = 'new-secret'
+
+    vi.mocked(api.saveSmtpConfig).mockRejectedValue({ response: { data: { detail: 'port out of range' } } })
+    await controller.saveSmtpConfig()
+
+    expect(controller.errorMsg.value).toBe('port out of range')
+    expect(controller.successMsg.value).toBe('')
+    // 失败时保留密码草稿，便于修正后重试（不静默丢弃用户输入）
+    expect(controller.smtpForm.value.password).toBe('new-secret')
+    expect(controller.savingSmtpConfig.value).toBe(false)
+  })
+
+  it('rejects invalid port and from_email client-side without calling the API', async () => {
+    const { api, controller } = createController()
+    controller.smtpForm.value = { ...controller.smtpForm.value, host: 'smtp.test', port: 0, from_email: 'no-reply@test.dev' }
+    await controller.saveSmtpConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.smtpConfig.invalidPort'))
+
+    controller.clearMessages()
+    controller.smtpForm.value = { ...controller.smtpForm.value, port: 465, from_email: 'not-an-email' }
+    await controller.saveSmtpConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.smtpConfig.invalidFromEmail'))
+    expect(api.saveSmtpConfig).not.toHaveBeenCalled()
+  })
+
+  it('treats an empty host as the documented delete-row fallback and saves without validation', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.saveSmtpConfig).mockResolvedValue({ ...smtpConfig, host: '', source: 'environment' as const })
+
+    await controller.saveSmtpConfig()
+
+    expect(api.saveSmtpConfig).toHaveBeenCalledWith(expect.objectContaining({ host: '' }))
+    expect(controller.errorMsg.value).toBe('')
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.smtpConfig.saved'))
+  })
+
+  it('routes SMTP test results to success or failure messages by status', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.testSmtpConfig).mockResolvedValue({ status: 'success', message: '测试邮件已发送至 admin@test.dev。', to_email: 'admin@test.dev', latency_ms: 320 })
+
+    await controller.testSmtpConfig()
+    expect(controller.successMsg.value).toBe('测试邮件已发送至 admin@test.dev。')
+    expect(controller.errorMsg.value).toBe('')
+    expect(controller.testingSmtp.value).toBe(false)
+
+    vi.mocked(api.testSmtpConfig).mockResolvedValue({ status: 'failed', message: 'SMTP 测试失败：SMTPAuthenticationError', to_email: 'admin@test.dev', latency_ms: 50 })
+    await controller.testSmtpConfig()
+    expect(controller.errorMsg.value).toBe('SMTP 测试失败：SMTPAuthenticationError')
+    expect(controller.successMsg.value).toBe('')
+  })
+
+  it('falls back to a default failure message and surfaces test request errors', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.testSmtpConfig).mockResolvedValue({ status: 'failed', message: '' })
+
+    await controller.testSmtpConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.smtpConfig.testFailed'))
+
+    vi.mocked(api.testSmtpConfig).mockRejectedValue({ response: { data: { detail: 'SMTP 未配置' } } })
+    await controller.testSmtpConfig()
+    expect(controller.errorMsg.value).toBe('SMTP 未配置')
+    expect(controller.testingSmtp.value).toBe(false)
+  })
+
+  it('does not start a second SMTP test while one is running', async () => {
+    const { api, controller } = createController()
+    let release: (value: { status: string; message: string }) => void = () => undefined
+    vi.mocked(api.testSmtpConfig).mockImplementation(
+      () => new Promise((resolve) => { release = resolve }),
+    )
+
+    const first = controller.testSmtpConfig()
+    await nextTick()
+    expect(controller.testingSmtp.value).toBe(true)
+
+    await controller.testSmtpConfig()
+    expect(api.testSmtpConfig).toHaveBeenCalledTimes(1)
+
+    release({ status: 'success', message: 'ok' })
+    await first
+    expect(controller.testingSmtp.value).toBe(false)
   })
 })
 

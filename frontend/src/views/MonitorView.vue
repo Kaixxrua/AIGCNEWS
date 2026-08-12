@@ -12,6 +12,7 @@ import MonitorIngestionControls from '@/components/monitor/MonitorIngestionContr
 import MonitorTaskPanel from '@/components/monitor/MonitorTaskPanel.vue'
 import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
 import SchedulerConfigPanel from '@/components/monitor/SchedulerConfigPanel.vue'
+import SmtpConfigPanel from '@/components/monitor/SmtpConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
 import XWatchCard from '@/components/monitor/XWatchCard.vue'
 import WechatAccountPanel from '@/components/wechat/WechatAccountPanel.vue'
@@ -22,10 +23,10 @@ const authStore = useAuthStore()
 const enrichmentAlert = useEnrichmentAlertStore()
 const {
   tasks, total, page, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
-  loadingProviderConfig, savingProviderConfig, testingProvider, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+  loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
-  dispose, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, resetMcpForm, editMcpServer, saveMcpServer,
+  dispose, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig, resetMcpForm, editMcpServer, saveMcpServer,
   testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings, clearDashboardCache, syncDataNow,
   ingestByDate, clearAllData,
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
@@ -102,6 +103,18 @@ onUnmounted(dispose)
       :testing="testingProvider"
       @save="saveProviderConfig"
       @test="testProviderConnection"
+    />
+
+    <!-- Admin 专属：SMTP 邮件投递配置 -->
+    <SmtpConfigPanel
+      v-if="authStore.isAdmin"
+      :config="smtpConfig"
+      :form="smtpForm"
+      :loading="loadingSmtpConfig"
+      :saving="savingSmtpConfig"
+      :testing="testingSmtp"
+      @save="saveSmtpConfig"
+      @test="testSmtpConfig"
     />
 
     <!-- Admin 专属：定时任务配置 -->

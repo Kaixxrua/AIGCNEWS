@@ -395,7 +395,30 @@ const explicitBusinessTranslations: Record<string, string> = {
   'monitor.schedulerConfig.chooseJob': '请选择要更新的定时任务。',
   'monitor.schedulerConfig.invalidWindow': '结束时间必须晚于开始时间。',
   'monitor.schedulerConfig.invalidInterval': '轮询时间必须大于 0。',
-  'monitor.schedulerConfig.saved': '定时任务 {name} 配置已保存并即时生效。'
+  'monitor.schedulerConfig.saved': '定时任务 {name} 配置已保存并即时生效。',
+  'monitor.smtpConfig.title': 'SMTP 邮件投递配置',
+  'monitor.smtpConfig.sourceDatabase': '来源：数据库',
+  'monitor.smtpConfig.sourceEnvironment': '来源：环境变量',
+  'monitor.smtpConfig.sourceUnconfigured': '未配置',
+  'monitor.smtpConfig.host': 'SMTP 主机',
+  'monitor.smtpConfig.port': '端口',
+  'monitor.smtpConfig.username': '用户名',
+  'monitor.smtpConfig.password': '密码',
+  'monitor.smtpConfig.passwordMissing': '未配置密码',
+  'monitor.smtpConfig.retainPassword': '留空则保留当前密码',
+  'monitor.smtpConfig.fromEmail': '发件邮箱',
+  'monitor.smtpConfig.fromName': '发件人名称',
+  'monitor.smtpConfig.useTls': '启用 TLS',
+  'monitor.smtpConfig.clearPassword': '清空已存密码',
+  'monitor.smtpConfig.hint': '配置保存到数据库并优先于环境变量；主机留空保存即恢复使用环境变量。密码不会回显完整值。',
+  'monitor.smtpConfig.testSend': '发送测试邮件',
+  'monitor.smtpConfig.testTitle': '按最新已保存配置真实投递一封测试邮件到当前管理员的登录邮箱；未保存的修改不参与测试',
+  'monitor.smtpConfig.testing': '发送中…',
+  'monitor.smtpConfig.testSent': '测试邮件已发送。',
+  'monitor.smtpConfig.testFailed': 'SMTP 测试失败。',
+  'monitor.smtpConfig.saved': 'SMTP 配置已保存并即时生效（后台任务最迟 60 秒内沿用新配置）。',
+  'monitor.smtpConfig.invalidPort': '端口必须是 1-65535 之间的整数。',
+  'monitor.smtpConfig.invalidFromEmail': '请输入正确的发件邮箱地址。'
 }
 
 type MessageTree = Record<string, unknown>
