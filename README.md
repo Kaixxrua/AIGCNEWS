@@ -143,11 +143,37 @@ Agent end-to-end vs WebSearch, measured 2026-08-11 with [scripts/benchmark_agent
 
 MCP finished under 10 s in 9 of 10 pairs while WebSearch never went below 9.9 s — **3.5× faster at the median**. Pure MCP tool execution (`tool_use` → `tool_result`) was 0.16 s at the median (0.03–0.80 s); WebSearch executes its search inside the API turn (server-side tool), so no equivalent client-observable window exists. The 32.9 s MCP outlier is a model-API stall, not tool cost (its tool call took 0.041 s) — the median filters such spikes.
 
+Tool-selection accuracy, measured 2026-08-12 with [scripts/eval_mcp_tool_selection.py](scripts/eval_mcp_tool_selection.py): headless `claude -p` (claude-opus-4-8, effort high) with both host tools and all 7 MCP tools available; a trial passes only if the **first** tool call is the expected AIGC Radar tool with no host-tool detour:
+
+| Probe set | Accuracy |
+| --- | --- |
+| 9 unambiguous probes (10 + 5 trials each) | **100%** (50/50) |
+| 2 mixed-intent probes (5 trials each) | 50% (5/10) |
+| **Overall (11 probes, 60 trials)** | **91.7%** (55/60) |
+
+Mixed-intent prompts explicitly invite both deliverable types ("projects primarily, papers as a supplement") — there the model hedges by calling both candidate tools in parallel, which the strict first-tool criterion counts as a miss.
+
+LLM-as-judge quality scores, measured 2026-08-12 with [Salesforce MCPEval](https://github.com/SalesforceAIResearch/MCPEval): 9 auto-generated tasks executed against the self-hosted endpoint (agent model gpt-5.4-mini), trajectories and final answers graded by gpt-5.4 against ground-truth references, 0–1 scale:
+
+| Dimension | Mean score |
+| --- | --- |
+| **Tool-use trajectory** (7 sub-dimensions) | **0.74** |
+| — adaptability | 0.85 |
+| — tool_selection | 0.74 |
+| — planning | 0.73 |
+| **Task completion** (4 sub-dimensions) | **0.56** |
+| — accuracy | 0.64 |
+| — requirement_coverage | 0.56 |
+| Task success rate | 8/9 |
+
+Trajectory scores how well the agent drives the tools; completion scores the agent's final answer against the task requirements — judge comments attribute the completion gap mostly to agent-side summarization omissions and index coverage, not tool misuse.
+
 Reproduce:
 
 ```bash
 python3 scripts/benchmark_mcp_latency.py --url http://localhost:8000/api/mcp --trials 3
 python3 scripts/benchmark_agent_tool_latency.py  # requires the claude CLI
+python3 scripts/eval_mcp_tool_selection.py       # requires the claude CLI
 ```
 
 ### Structured JSON responses

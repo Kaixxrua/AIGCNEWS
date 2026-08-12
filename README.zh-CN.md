@@ -143,11 +143,37 @@ Agent 端到端对比 WebSearch，测于 2026-08-11，可用 [scripts/benchmark_
 
 MCP 在 10 组中有 9 组低于 10 秒，WebSearch 从未低于 9.9 秒——**中位口径快 3.5 倍**。纯 MCP 工具执行（`tool_use` → `tool_result`）中位数 0.16 s（0.03–0.80 s）；WebSearch 的搜索在 API 回合内部执行（server-side 工具），客户端无法观测到等价窗口。32.9 s 的 MCP 离群值是模型 API 停顿而非工具耗时（该次工具调用仅 0.041 s）——中位数口径天然排除此类波动。
 
+工具选用准确率，测于 2026-08-12，可用 [scripts/eval_mcp_tool_selection.py](scripts/eval_mcp_tool_selection.py) 复现：headless `claude -p`（claude-opus-4-8，effort high），宿主工具与全部 7 个 MCP 工具同时可用；仅当**首个**工具调用命中预期的 AIGC Radar 工具且全程无宿主工具绕行时记为通过：
+
+| 探针组 | 准确率 |
+| --- | --- |
+| 9 个意图明确探针（各 10 + 5 次试验） | **100%**（50/50） |
+| 2 个混合意图探针（各 5 次试验） | 50%（5/10） |
+| **总计（11 个探针，60 次试验）** | **91.7%**（55/60） |
+
+混合意图提示词明确邀请两类交付物（"以项目为主、论文为辅"），模型倾向把两个候选工具并行都调，严格的首调用判据记为未命中。
+
+LLM-as-judge 质量评分，测于 2026-08-12，使用 [Salesforce MCPEval](https://github.com/SalesforceAIResearch/MCPEval)：9 个自动生成的任务在自托管 endpoint 上执行（agent 模型 gpt-5.4-mini），由 gpt-5.4 对照 ground-truth 轨迹与参考答案打分，0–1 量表：
+
+| 维度 | 平均分 |
+| --- | --- |
+| **工具使用轨迹**（7 个子维度） | **0.74** |
+| — adaptability（应变） | 0.85 |
+| — tool_selection（工具选择） | 0.74 |
+| — planning（规划） | 0.73 |
+| **任务完成度**（4 个子维度） | **0.56** |
+| — accuracy（准确性） | 0.64 |
+| — requirement_coverage（需求覆盖） | 0.56 |
+| 任务成功率 | 8/9 |
+
+轨迹分衡量 agent 驱动工具的过程质量，完成分衡量 agent 最终回答对照任务要求的达成度——judge 评语显示完成分差距主要来自 agent 侧的总结遗漏与索引覆盖范围，而非工具误用。
+
 复现：
 
 ```bash
 python3 scripts/benchmark_mcp_latency.py --url http://localhost:8000/api/mcp --trials 3
 python3 scripts/benchmark_agent_tool_latency.py  # 需要 claude CLI
+python3 scripts/eval_mcp_tool_selection.py       # 需要 claude CLI
 ```
 
 ### 结构化 JSON 响应
