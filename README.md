@@ -147,26 +147,26 @@ Tool-selection accuracy, measured 2026-08-12 with [scripts/eval_mcp_tool_selecti
 
 | Probe set | Accuracy |
 | --- | --- |
-| 9 unambiguous probes (10 + 5 trials each) | **100%** (50/50) |
-| 2 mixed-intent probes (5 trials each) | 50% (5/10) |
-| **Overall (11 probes, 60 trials)** | **91.7%** (55/60) |
+| 9 unambiguous probes (10 + 5 trials each) | **98%** (49/50) |
+| 2 mixed-intent probes (5 trials each) | **90%** (9/10) |
+| **Overall (11 probes, 60 trials)** | **96.7%** (58/60) |
 
-Mixed-intent prompts explicitly invite both deliverable types ("projects primarily, papers as a supplement") — there the model hedges by calling both candidate tools in parallel, which the strict first-tool criterion counts as a miss.
+Mixed-intent prompts explicitly invite both deliverable types ("projects primarily, papers as a supplement"). Earlier runs hedged by calling both candidate tools in parallel; the routing rules in the tool descriptions eliminated that pattern entirely — the two remaining misses are a no-search memory answer and a one-off host-Bash detour on fragment-style prompts, not competing-tool batching.
 
 LLM-as-judge quality scores, measured 2026-08-12 with [Salesforce MCPEval](https://github.com/SalesforceAIResearch/MCPEval): 9 auto-generated tasks executed against the self-hosted endpoint (agent model gpt-5.4-mini), trajectories and final answers graded by gpt-5.4 against ground-truth references, 0–1 scale:
 
 | Dimension | Mean score |
 | --- | --- |
-| **Tool-use trajectory** (7 sub-dimensions) | **0.74** |
-| — adaptability | 0.85 |
-| — tool_selection | 0.74 |
-| — planning | 0.73 |
-| **Task completion** (4 sub-dimensions) | **0.56** |
-| — accuracy | 0.64 |
-| — requirement_coverage | 0.56 |
-| Task success rate | 8/9 |
+| **Tool-use trajectory** (7 sub-dimensions) | **0.71** |
+| — adaptability | 0.83 |
+| — tool_selection | 0.72 |
+| — planning | 0.69 |
+| **Task completion** (4 sub-dimensions) | **0.54** |
+| — accuracy | 0.61 |
+| — requirement_coverage | 0.52 |
+| Task success rate | 9/9 |
 
-Trajectory scores how well the agent drives the tools; completion scores the agent's final answer against the task requirements — judge comments attribute the completion gap mostly to agent-side summarization omissions and index coverage, not tool misuse.
+Trajectory scores how well the agent drives the tools; completion scores the agent's final answer against the task requirements. Repeated gradings of identical trajectories drift by ±0.02–0.08 (one grading hit a judge parse failure that scored a healthy task 0.0), so treat ±0.05 as harness noise. Paper payloads carry authors and arXiv IDs end-to-end (persisted, backfilled across the whole index, exposed by every paper tool), and judge comments no longer cite missing attribution data — the remaining completion gap is the agent model's answer composition, which surfaces the available attribution inconsistently, not tool capability.
 
 Reproduce:
 
