@@ -65,6 +65,8 @@ async def test_contract_search_papers(mcp_session):
     assert isinstance(data.get("items"), list) and data["items"]
     first = data["items"][0]
     assert first.get("id") and first.get("title")
+    assert isinstance(first.get("authors"), list) and first["authors"], "arXiv 条目应暴露非空作者数组"
+    assert first.get("arxiv_id"), "arXiv 条目应暴露 arxiv_id"
 
 
 async def test_contract_search_documents(mcp_session):
@@ -85,6 +87,9 @@ async def test_contract_get_paper_detail(mcp_session):
         await _raw(mcp_session).call_tool("get_paper_detail", {"paper_id": paper_id})
     )
     assert detail, "详情载荷不应为空"
+    item = detail["item"]
+    assert isinstance(item.get("authors"), list) and item["authors"], "详情应暴露非空作者数组"
+    assert item.get("arxiv_id"), "详情应暴露 arxiv_id"
 
 
 async def test_contract_get_top_items(mcp_session):
