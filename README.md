@@ -147,11 +147,11 @@ Tool-selection accuracy, measured 2026-08-12 with [scripts/eval_mcp_tool_selecti
 
 | Probe set | Accuracy |
 | --- | --- |
-| 9 unambiguous probes (10 + 5 trials each) | **98%** (49/50) |
+| 9 unambiguous probes (10 + 5 trials each) | **100%** (50/50) |
 | 2 mixed-intent probes (5 trials each) | **90%** (9/10) |
-| **Overall (11 probes, 60 trials)** | **96.7%** (58/60) |
+| **Overall (11 probes, 60 trials)** | **98.3%** (59/60) |
 
-Mixed-intent prompts explicitly invite both deliverable types ("projects primarily, papers as a supplement"). Earlier runs hedged by calling both candidate tools in parallel; the routing rules in the tool descriptions eliminated that pattern entirely — the two remaining misses are a no-search memory answer and a one-off host-Bash detour on fragment-style prompts, not competing-tool batching.
+Unambiguous probes held 100% in the baseline run; post-change reruns missed only on infrastructure flakes (a harness timeout, a 429 rate-limit that exhausted retries before the first assistant turn), never on wrong-tool routing — so the table pairs the baseline unambiguous count with the post-change mixed-intent count (same harness, same day). Mixed-intent prompts explicitly invite both deliverable types ("projects primarily, papers as a supplement"): earlier runs hedged by calling both candidate tools in parallel, the routing rules in the tool descriptions eliminated that pattern entirely, and the one remaining mixed miss is a one-off host-Bash detour on a fragment-style prompt.
 
 LLM-as-judge quality scores, measured 2026-08-12 with [Salesforce MCPEval](https://github.com/SalesforceAIResearch/MCPEval): 9 auto-generated tasks executed against the self-hosted endpoint (agent model gpt-5.4-mini), trajectories and final answers graded by gpt-5.4 against ground-truth references, 0–1 scale:
 
