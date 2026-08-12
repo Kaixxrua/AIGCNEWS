@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from backend.app.services import email_service
+from backend.app.services.email.smtp_config_provider import EffectiveSmtpConfig
 from backend.app.services.email_service import EmailService, build_email_service
 
 
@@ -61,6 +62,43 @@ class EmailServiceFactoryTests(unittest.TestCase):
         self.assertIsInstance(service, EmailService)
         send.assert_not_called()
         redis_client.assert_not_called()
+
+    def test_build_email_service_without_config_uses_runtime_provider(self) -> None:
+        """生产默认路径：config=None 时经 smtp_config_provider 取热生效配置。"""
+        redis_client = object()
+        resolved = EffectiveSmtpConfig(
+            host="db-smtp.example.test",
+            port=587,
+            username="db-user",
+            password="db-password",
+            from_email="db@example.test",
+            from_name="DB Sender",
+            use_tls=True,
+            source="database",
+        )
+        service = object()
+
+        with (
+            patch.object(
+                email_service, "resolve_smtp_config", return_value=resolved
+            ) as resolver,
+            patch.object(
+                email_service, "EmailService", return_value=service
+            ) as service_type,
+        ):
+            result = build_email_service(redis_client)
+
+        self.assertIs(result, service)
+        resolver.assert_called_once()
+        kwargs = service_type.call_args.kwargs
+        self.assertEqual(kwargs["smtp_host"], "db-smtp.example.test")
+        self.assertEqual(kwargs["smtp_port"], 587)
+        self.assertEqual(kwargs["smtp_username"], "db-user")
+        self.assertEqual(kwargs["smtp_password"], "db-password")
+        self.assertEqual(kwargs["smtp_from_email"], "db@example.test")
+        self.assertEqual(kwargs["smtp_from_name"], "DB Sender")
+        self.assertTrue(kwargs["smtp_use_tls"])
+        self.assertEqual(kwargs["transport"]._host, "db-smtp.example.test")
 
 
 if __name__ == "__main__":

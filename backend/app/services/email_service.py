@@ -15,6 +15,7 @@ from backend.app.services.email.otp_store import (
     OtpStoreUnavailableError,
     RedisOtpStore,
 )
+from backend.app.services.email.smtp_config_provider import resolve_smtp_config
 from backend.app.services.email.smtp_transport import SmtpDeliveryError, SmtpTransport
 
 logger = logging.getLogger(__name__)
@@ -218,28 +219,50 @@ class EmailService:
             ) from cause
 
 
-def build_email_service(redis_client, *, config=settings) -> EmailService:
-    """Build an email service from application SMTP settings."""
+def build_email_service(redis_client, *, config=None) -> EmailService:
+    """Build an email service from application SMTP settings.
+
+    config 为 None（生产默认）时经 smtp_config_provider 解析生效配置
+    （DB 行覆盖 env，60s TTL 热生效）；显式传入 Settings 兼容对象则
+    保持旧的属性读取路径（测试与独立脚本专用）。
+    """
+    if config is None:
+        resolved = resolve_smtp_config(env=settings)
+        host = resolved.host
+        port = resolved.port
+        username = resolved.username
+        password = resolved.password
+        from_email = resolved.from_email
+        from_name = resolved.from_name
+        use_tls = resolved.use_tls
+    else:
+        host = config.SMTP_HOST
+        port = config.SMTP_PORT
+        username = config.SMTP_USERNAME
+        password = config.SMTP_PASSWORD
+        from_email = config.SMTP_FROM_EMAIL
+        from_name = config.SMTP_FROM_NAME
+        use_tls = config.SMTP_USE_TLS
     otp_store = RedisOtpStore(redis_client, compare_digest=hmac.compare_digest)
     renderer = EmailMessageRenderer()
     transport = SmtpTransport(
-        host=config.SMTP_HOST,
-        port=config.SMTP_PORT,
-        username=config.SMTP_USERNAME,
-        password=config.SMTP_PASSWORD,
-        from_email=config.SMTP_FROM_EMAIL,
-        from_name=config.SMTP_FROM_NAME,
-        use_tls=config.SMTP_USE_TLS,
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        from_email=from_email,
+        from_name=from_name,
+        use_tls=use_tls,
     )
     return EmailService(
         redis_client=redis_client,
-        smtp_host=config.SMTP_HOST,
-        smtp_port=config.SMTP_PORT,
-        smtp_username=config.SMTP_USERNAME,
-        smtp_password=config.SMTP_PASSWORD,
-        smtp_from_email=config.SMTP_FROM_EMAIL,
-        smtp_from_name=config.SMTP_FROM_NAME,
-        smtp_use_tls=config.SMTP_USE_TLS,
+        smtp_host=host,
+        smtp_port=port,
+        smtp_username=username,
+        smtp_password=password,
+        smtp_from_email=from_email,
+        smtp_from_name=from_name,
+        smtp_use_tls=use_tls,
         otp_store=otp_store,
         renderer=renderer,
         transport=transport,

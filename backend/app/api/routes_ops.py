@@ -6,7 +6,12 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from backend.app.api import routes_ops_github, routes_ops_mcp, routes_ops_x
+from backend.app.api import (
+    routes_ops_github,
+    routes_ops_mcp,
+    routes_ops_smtp,
+    routes_ops_x,
+)
 from backend.app.api.dependencies import (
     get_briefing_admin_service,
     get_dashboard_cache_admin_service,
@@ -108,10 +113,11 @@ async def test_provider_config(
     return ProviderConfigTestResponse(**result)
 
 
-# ── 按资源域拆分的子路由（mcp-servers / x-* / github-*）────────────────────────
+# ── 按资源域拆分的子路由（mcp-servers / x-* / github-* / smtp）────────────────
 
 router.include_router(routes_ops_mcp.router)
 router.include_router(routes_ops_x.router)
+router.include_router(routes_ops_smtp.router)
 
 
 # ── 路由 ─────────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import time
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class IngestRequest(BaseModel):
@@ -376,3 +376,47 @@ class SchedulerConfigUpdateResponse(BaseModel):
     status: str
     message: str
     item: SchedulerJobConfigItem
+
+
+class SmtpConfigRequest(BaseModel):
+    """SMTP 配置保存请求。
+
+    password 为 None/空串表示保留现状（DB 行优先，env 兜底）；
+    clear_password=True 显式擦除已存密码。host 传空 = 删除 DB
+    覆盖行并整体回退 env（文档化语义）。
+    """
+
+    host: str = Field(default="", max_length=255)
+    port: int = Field(default=587, ge=1, le=65535)
+    username: str = Field(default="", max_length=255)
+    password: Optional[str] = Field(default=None, max_length=1024)
+    clear_password: bool = False
+    from_email: str = Field(default="", max_length=255)
+    from_name: str = Field(default="", max_length=255)
+    use_tls: bool = True
+
+
+class SmtpConfigResponse(BaseModel):
+    """SMTP 配置投影：绝不包含明文密码。"""
+
+    host: str
+    port: int
+    username: str
+    password_configured: bool
+    password_masked: Optional[str] = None
+    from_email: str
+    from_name: str
+    use_tls: bool
+    source: Literal["database", "environment", "unconfigured"]
+    updated_at: Optional[str] = None
+
+
+class SmtpTestRequest(BaseModel):
+    to_email: Optional[EmailStr] = None
+
+
+class SmtpTestResponse(BaseModel):
+    status: str
+    message: str
+    to_email: str = ""
+    latency_ms: Optional[int] = None

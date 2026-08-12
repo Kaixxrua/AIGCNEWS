@@ -172,6 +172,29 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         self.assertEqual(email.calls, [])
         self.assertEqual(briefing_repo.requested_keys, [])
 
+    def test_uninjected_email_service_is_rebuilt_per_send(self) -> None:
+        """未注入 email_service 时每次发送即时构建，SMTP 配置热生效免重启。"""
+        service = SubscriptionDispatchService(
+            subscriptions=FakeSubscriptionRepository(
+                [_subscription(1), _subscription(2)]
+            ),
+            deliveries=FakeDeliveryRepository(),
+            briefings=FakeBriefingRepository(
+                {"2026-08-05": {"content_zh": "今日 AI 要闻"}}
+            ),
+        )
+        built = [FakeEmailService(), FakeEmailService()]
+
+        with patch(
+            "backend.app.services.email_service.build_email_service",
+            side_effect=lambda *args, **kwargs: built.pop(0),
+        ) as factory:
+            summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["sent"], 2)
+        # 两次发送 = 两次构建：实例不再永久缓存
+        self.assertEqual(factory.call_count, 2)
+
     def test_dispatch_all_defaults_to_cst_today(self) -> None:
         # 缺省日期必须与简报生成/缓存键同口径（CST），服务器本地时区不算数。
         service, _, briefing_repo, email = self._make_service(

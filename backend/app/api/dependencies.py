@@ -47,6 +47,7 @@ from backend.app.repositories.runtime_provider_repository import (
 from backend.app.repositories.scheduler_job_config_repository import (
     SchedulerJobConfigRepository,
 )
+from backend.app.repositories.smtp_settings_repository import SmtpSettingsRepository
 from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
 )
@@ -97,6 +98,7 @@ from backend.app.services.runtime_provider.runtime import (
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
 from backend.app.services.scheduler_config_admin import SchedulerConfigAdminService
+from backend.app.services.smtp_config_admin import SmtpConfigAdminService
 from backend.app.services.source_plugins import load_wechat_bundle
 from backend.app.services.source_plugins.wechat_source import (
     WeChatAccountServiceProtocol,
@@ -366,6 +368,18 @@ def get_scheduler_config_admin_service(
     repository: SchedulerJobConfigRepository = Depends(get_scheduler_config_repository),
 ) -> SchedulerConfigAdminService:
     return SchedulerConfigAdminService(repository)
+
+
+def get_smtp_settings_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> SmtpSettingsRepository:
+    return repositories.smtp_settings
+
+
+def get_smtp_config_admin_service(
+    repository: SmtpSettingsRepository = Depends(get_smtp_settings_repository),
+) -> SmtpConfigAdminService:
+    return SmtpConfigAdminService(repository)
 
 
 def get_ops_diagnostics_service(request: Request) -> OpsDiagnosticsService:

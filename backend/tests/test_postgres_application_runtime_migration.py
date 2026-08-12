@@ -29,8 +29,18 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 35
-    assert migrations[-1].filename == "0035_document_authors.sql"
+    assert migrations[-1].version == 36
+    assert migrations[-1].filename == "0036_smtp_settings.sql"
+
+
+def test_smtp_settings_migration_is_idempotent_singleton_table() -> None:
+    sql = (MIGRATIONS_DIR / "0036_smtp_settings.sql").read_text(encoding="utf-8")
+
+    # 单行配置表（x_credentials_bootstrap_state 先例）：id CHECK (id = 1)
+    # 约束保证 singleton；IF NOT EXISTS 幂等，runner 重放为空操作再登记台账；
+    # 全列 NOT NULL 默认空串，retain/clear 逻辑无 NULL 分支。
+    assert "CREATE TABLE IF NOT EXISTS smtp_settings" in sql
+    assert "CHECK (id = 1)" in sql
 
 
 def test_document_authors_migration_is_idempotent_add_column() -> None:

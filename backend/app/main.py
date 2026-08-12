@@ -58,6 +58,9 @@ from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
 from backend.app.services.chat import attachment_service
+from backend.app.services.email.smtp_config_provider import (
+    configure_smtp_settings_reader,
+)
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.rag.composition import RagChatServiceProvider
 from backend.app.services.runtime_provider.runtime import (
@@ -180,6 +183,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         configure_application_repositories(app.state.application_repositories)
         configure_runtime_provider_settings(
             app.state.application_repositories.runtime_provider_settings
+        )
+        # SMTP 配置热生效：绑定 DB reader 后，所有邮件发送路径（注册 OTP、
+        # 报告推送、调度器简报）经 resolve_smtp_config 读 DB 行覆盖 env。
+        configure_smtp_settings_reader(
+            app.state.application_repositories.smtp_settings
         )
         repositories_configured = True
         # 附件元数据已落 PostgreSQL：启动时对账无元数据的孤儿 PDF 文件与
@@ -338,6 +346,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if repositories_configured:
             try:
                 configure_runtime_provider_settings(None)
+                configure_smtp_settings_reader(None)
                 configure_application_repositories(None)
             except Exception as exc:
                 logger.warning("[Shutdown] Repository context close failed (non-fatal): %s", exc)

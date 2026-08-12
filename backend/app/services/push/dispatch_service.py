@@ -36,6 +36,7 @@ _FREQUENCIES: tuple[str, ...] = tuple(get_args(SubscriptionFrequency))
 _SUPPORTED_CHANNEL_TYPES = frozenset({CHANNEL_TYPE_EMAIL, CHANNEL_TYPE_WEBHOOK})
 _PERIOD_LABELS = {"daily": "日报"}
 _SECRET_BOX_UNSET = object()
+_EMAIL_SERVICE_UNSET = object()
 
 
 def _webhook_title(source: str, frequency: str, issue_date: str) -> str:
@@ -53,7 +54,7 @@ class SubscriptionDispatchService:
         subscriptions: UserSubscriptionRepository,
         deliveries: PushDeliveryRepository,
         briefings: BriefingContentRepository,
-        email_service: Any | None = None,
+        email_service: Any = _EMAIL_SERVICE_UNSET,
         secret_box: Any = _SECRET_BOX_UNSET,
         webhook_sender: Any | None = None,
     ) -> None:
@@ -247,9 +248,11 @@ class SubscriptionDispatchService:
         return self._webhook_sender
 
     def _resolve_email_service(self) -> Any:
-        if self._email_service is None:
-            # 与调度器既有惯例一致：未注入时按当前配置即时构建。
+        if self._email_service is _EMAIL_SERVICE_UNSET:
+            # 未注入时每次发送按当前生效配置即时构建：SMTP 配置入 DB 后
+            # 免重启热生效（provider 60s TTL 限制 DB 读取频率），不再
+            # 永久缓存实例。显式注入（测试 fake）仍优先。
             from backend.app.services.email_service import build_email_service
 
-            self._email_service = build_email_service(None)
+            return build_email_service(None)
         return self._email_service
