@@ -120,6 +120,8 @@ Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://rep
 
 ### 性能实测
 
+![AIGC Radar MCP 质量指标：端到端延迟中位数 7.4 s（比 WebSearch 快 3.5×）、工具首选准确率 98.3%（59/60）、混合意图探针 90%、LLM-as-judge 轨迹 0.71 / 完成 0.54、任务成功率 9/9 —— 实测于 2026-08-12](docs/assets/mcp-quality-metrics.png)
+
 服务端延迟，测于 2026-08-11，可用 [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) 复现（Streamable HTTP JSON-RPC，6 个代表性工具 × 3 轮，共 18 次 `tools/call` 计时）：
 
 | Endpoint | p50 | p95 | 说明 |

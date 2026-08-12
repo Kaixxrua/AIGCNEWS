@@ -120,6 +120,8 @@ On the context side, it provides resources (`aigc-news://dashboard/summary`, `ai
 
 ### Benchmarks
 
+![AIGC Radar MCP quality metrics: 7.4 s median end-to-end latency (3.5× faster than WebSearch), 98.3% first-tool accuracy (59/60), 90% mixed-intent probes, LLM-as-judge 0.71 trajectory / 0.54 completion with 9/9 task success — measured 2026-08-12](docs/assets/mcp-quality-metrics.png)
+
 Server-side latency, measured 2026-08-11 with [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) (JSON-RPC over Streamable HTTP, 6 representative tools × 3 trials, 18 timed `tools/call` requests):
 
 | Endpoint | p50 | p95 | Notes |
