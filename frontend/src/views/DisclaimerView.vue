@@ -7,7 +7,7 @@ const { t } = useI18n()
 const sections = [
   { title: 'aiTitle', paragraphs: ['aiWarning', 'aiReference', 'aiLiability', 'aiAcceptance'] },
   { title: 'conductTitle', paragraphs: ['conductIntro'], items: ['conduct1', 'conduct2', 'conduct3', 'conduct4', 'conduct5'], footer: 'conductWarning' },
-  { title: 'ipTitle', paragraphs: ['upstream', 'generated', 'scraping'] },
+  { title: 'ipTitle', paragraphs: ['upstream', 'generated', 'removalHow', 'removalSla', 'removalScope', 'scraping'] },
   { title: 'serviceTitle', paragraphs: ['serviceIntro'], items: ['service1', 'service2', 'service3', 'service4'] },
   { title: 'accountTitle', paragraphs: ['account1', 'account2', 'account3'] },
 ] as const
