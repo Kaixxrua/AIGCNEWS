@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.api.dependencies import get_wechat_follow_service
 from backend.app.api.routes_wechat import router
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.main import app
@@ -267,6 +268,50 @@ def test_article_detail_not_followed_returns_404() -> None:
     response = client.get("/api/ops/wechat/accounts/999/articles/11")
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "WECHAT_ACCOUNT_NOT_FOUND"
+
+
+def test_article_detail_rejects_non_admin_user() -> None:
+    """全文详情收敛为管理员自用：普通注册用户 403（展示层仅摘要+原文链接）。"""
+    service = MagicMock()
+    # 只覆盖 RequireUser、保留真实 RequireAdmin，让角色检查真实生效
+    app.dependency_overrides.update(
+        {
+            RequireUser: lambda: {"role": "user", "user_id": 2},
+            get_wechat_follow_service: lambda: service,
+        }
+    )
+    client = TestClient(app)
+    response = client.get("/api/ops/wechat/accounts/7/articles/11")
+    assert response.status_code == 403
+    service.get_article_detail.assert_not_called()
+
+
+def test_feed_response_strips_full_text_fields() -> None:
+    """契约：feed/list 面向全部注册用户，响应不得携带全文与抓取时间字段。"""
+    service = MagicMock()
+    service.get_feed.return_value = [
+        {
+            "account": _catalog_item(7, followed=True),
+            "articles": [
+                {
+                    "id": 11,
+                    "account_id": 7,
+                    "stable_article_key": "k1",
+                    "title": "文章A",
+                    "has_content": True,
+                    "content_html": "<p>正文不应外泄</p>",
+                    "content_fetched_at": "2026-08-06T07:44:00+00:00",
+                    "published_at": None,
+                },
+            ],
+        },
+    ]
+    client = _client(follow_service=service)
+    response = client.get("/api/ops/wechat/feed")
+    assert response.status_code == 200
+    article = response.json()["items"][0]["articles"][0]
+    assert "content_html" not in article
+    assert "content_fetched_at" not in article
 
 
 def test_article_detail_rejects_unauthenticated() -> None:

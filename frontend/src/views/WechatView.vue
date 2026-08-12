@@ -5,10 +5,12 @@ import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useWechatFollowController } from '@/composables/useWechatFollowController'
 import WechatFollowBox from '@/components/wechat/WechatFollowBox.vue'
 import WechatAccountCard from '@/components/wechat/WechatAccountCard.vue'
+import { useAuthStore } from '@/stores/authStore'
 
 defineOptions({ name: 'WechatView' })
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const {
   error,
@@ -102,6 +104,7 @@ onBeforeUnmount(dispose)
               v-for="entry in visibleFeed"
               :key="entry.account.id"
               :entry="entry"
+              :is-admin="authStore.isAdmin"
               :expanded-article-keys="expandedArticleKeys"
               :article-key="articleKey"
               :article-details="articleDetails"

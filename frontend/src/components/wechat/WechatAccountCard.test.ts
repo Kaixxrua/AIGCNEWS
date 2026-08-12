@@ -14,6 +14,7 @@ const i18n = createI18n({
         untitledArticle: '（无标题）',
         noRecentArticles: '暂无最近消息',
         readOriginal: '阅读原文',
+        fullTextRedirect: '本站仅提供摘要，全文请前往公众号原文阅读。',
         fullTextLoading: '全文加载中…',
         retry: '重试',
         backToArticleTop: '回到文章顶部',
@@ -55,11 +56,12 @@ const makeEntry = (article: WeChatArticle, avatarUrl = ''): WeChatFeedEntry => (
   articles: [article],
 })
 
-const mountCard = (entry: WeChatFeedEntry, expandedKeys: Set<string>) =>
+const mountCard = (entry: WeChatFeedEntry, expandedKeys: Set<string>, isAdmin = false) =>
   mount(WechatAccountCard, {
     global: { plugins: [i18n] },
     props: {
       entry,
+      isAdmin,
       expandedArticleKeys: expandedKeys,
       articleKey: (accountId: number, articleId: number | null, stableKey: string) =>
         `${accountId}:${articleId ?? stableKey}`,
@@ -94,19 +96,50 @@ describe('WechatAccountCard', () => {
     )
   })
 
-  it('hides the digest when full text is available, shows it otherwise', () => {
-    const withContent = mountCard(makeEntry(makeArticle({ has_content: true })), new Set(['1:11']))
+  it('admin hides the digest when full text is available, shows it otherwise', () => {
+    const withContent = mountCard(makeEntry(makeArticle({ has_content: true })), new Set(['1:11']), true)
     expect(withContent.find('.article-digest').exists()).toBe(false)
 
-    const withoutContent = mountCard(makeEntry(makeArticle({ has_content: false })), new Set(['1:11']))
+    const withoutContent = mountCard(makeEntry(makeArticle({ has_content: false })), new Set(['1:11']), true)
     expect(withoutContent.find('.article-digest').exists()).toBe(true)
   })
 
-  it('shows in-article jump buttons only when the article is expanded', () => {
-    const collapsed = mountCard(makeEntry(makeArticle()), new Set())
+  it('non-admin always sees the digest plus the full-text redirect hint, never the body', () => {
+    const card = mountCard(
+      makeEntry(makeArticle({ has_content: true })),
+      new Set(['1:11']),
+      false,
+    )
+    expect(card.find('.article-digest').exists()).toBe(true)
+    expect(card.find('.article-fulltext-hint').exists()).toBe(true)
+    expect(card.find('.wechat-article-content').exists()).toBe(false)
+    expect(card.find('.article-nav').exists()).toBe(false)
+  })
+
+  it('non-admin summary click toggles the panel without requesting the article body', async () => {
+    const card = mountCard(
+      makeEntry(makeArticle({ has_content: true })),
+      new Set(),
+      false,
+    )
+    await card.find('.article-summary').trigger('click')
+    const events = card.emitted('toggleArticle')
+    expect(events).toEqual([['1:11']])
+  })
+
+  it('admin summary click carries the article so the controller fetches the body', async () => {
+    const article = makeArticle({ has_content: true })
+    const card = mountCard(makeEntry(article), new Set(), true)
+    await card.find('.article-summary').trigger('click')
+    const events = card.emitted('toggleArticle')
+    expect(events).toEqual([['1:11', 1, article]])
+  })
+
+  it('admin sees in-article jump buttons only when the article is expanded', () => {
+    const collapsed = mountCard(makeEntry(makeArticle({ has_content: true })), new Set(), true)
     expect(collapsed.find('.article-nav').exists()).toBe(false)
 
-    const expanded = mountCard(makeEntry(makeArticle()), new Set(['1:11']))
+    const expanded = mountCard(makeEntry(makeArticle({ has_content: true })), new Set(['1:11']), true)
     expect(expanded.find('.article-detail-shell').exists()).toBe(true)
     const buttons = expanded.findAll('.article-nav-btn')
     expect(buttons).toHaveLength(2)
@@ -121,7 +154,7 @@ describe('WechatAccountCard', () => {
     const original = Element.prototype.scrollIntoView
     Element.prototype.scrollIntoView = spy
     try {
-      const card = mountCard(makeEntry(makeArticle()), new Set(['1:11']))
+      const card = mountCard(makeEntry(makeArticle({ has_content: true })), new Set(['1:11']), true)
       const [topButton, bottomButton] = card.findAll('.article-nav-btn')
 
       await topButton?.trigger('click')

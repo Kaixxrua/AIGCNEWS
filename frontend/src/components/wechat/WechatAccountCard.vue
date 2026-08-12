@@ -11,6 +11,8 @@ defineOptions({ name: 'WechatAccountCard' })
 
 const props = defineProps<{
   entry: WeChatFeedEntry
+  /** 全文详情仅管理员（运营者自用）可见；普通用户展示层为摘要 + 原文链接 */
+  isAdmin?: boolean
   expandedArticleKeys: Set<string>
   articleKey: (accountId: number, articleId: number | null, stableKey: string) => string
   articleDetails: Map<string, WeChatArticleDetail>
@@ -19,7 +21,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  toggleArticle: [key: string, accountId: number, article: WeChatArticle]
+  toggleArticle: [key: string, accountId?: number, article?: WeChatArticle]
   retryDetail: [key: string, accountId: number, article: WeChatArticle]
 }>()
 
@@ -32,6 +34,15 @@ const formatPublishedAt = (value: string | null): string => {
 
 const keyFor = (article: WeChatArticle): string =>
   props.articleKey(props.entry.account.id, article.id, article.stable_article_key)
+
+// 普通用户展开只切换面板（不携带 article，控制器因此不会请求全文详情）
+const onSummaryClick = (article: WeChatArticle) => {
+  if (props.isAdmin) {
+    emit('toggleArticle', keyFor(article), props.entry.account.id, article)
+  } else {
+    emit('toggleArticle', keyFor(article))
+  }
+}
 
 // prefers-reduced-motion 下退回瞬时滚动，与 WechatView 的全局动效豁免保持一致
 const scrollBehavior = (): ScrollBehavior =>
@@ -85,7 +96,7 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
           type="button"
           class="article-summary"
           :aria-expanded="expandedArticleKeys.has(keyFor(article))"
-          @click="emit('toggleArticle', keyFor(article), entry.account.id, article)"
+          @click="onSummaryClick(article)"
         >
           <span class="article-chevron" :class="{ 'article-chevron--open': expandedArticleKeys.has(keyFor(article)) }">›</span>
           <span class="article-title">{{ article.title || t('wechat.untitledArticle') }}</span>
@@ -95,9 +106,9 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
         <Transition name="article-expand">
           <div v-if="expandedArticleKeys.has(keyFor(article))" class="article-detail-shell">
             <div class="article-detail">
-              <!-- 文内跳转：sticky 吸附在滚动视口顶部，只在该文展开期间可见；
+              <!-- 文内跳转：sticky 吸附在滚动视口顶部，只在管理员全文展开期间可见；
                    容器不拦截指针，避免悬浮条遮挡正文链接点击 -->
-              <div class="article-nav">
+              <div v-if="isAdmin && article.has_content" class="article-nav">
                 <button
                   type="button"
                   class="article-nav-btn"
@@ -126,11 +137,12 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
                 loading="lazy"
                 referrerpolicy="no-referrer"
               />
-              <!-- 有全文时不再显示摘要：搜狗摘要本身就是正文开头截断，并列会重复 -->
-              <p v-if="article.digest && !article.has_content" class="article-digest">{{ article.digest }}</p>
+              <!-- 管理员看全文时不并列摘要（搜狗摘要即正文开头截断，会重复）；
+                   普通用户始终显示摘要，全文引导至原文 -->
+              <p v-if="article.digest && (!article.has_content || !isAdmin)" class="article-digest">{{ article.digest }}</p>
 
-              <!-- 全文正文（has_content 时懒加载，正文已在服务端+前端两道清洗） -->
-              <template v-if="article.has_content">
+              <!-- 全文正文（仅管理员；has_content 时懒加载，正文已在服务端+前端两道清洗） -->
+              <template v-if="article.has_content && isAdmin">
                 <p
                   v-if="articleDetailLoading.has(keyFor(article)) && !articleDetails.has(keyFor(article))"
                   class="article-content-loading"
@@ -155,6 +167,9 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
                 ></div>
               </template>
 
+              <p v-if="article.has_content && !isAdmin" class="article-fulltext-hint">
+                {{ t('wechat.fullTextRedirect') }}
+              </p>
               <p v-if="article.author" class="article-author">{{ article.author }}</p>
               <a
                 v-if="article.article_url"
@@ -379,6 +394,12 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
   font-size: 12px;
   line-height: 1.6;
   color: var(--ink);
+}
+
+.article-fulltext-hint {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-muted);
 }
 
 .article-author {

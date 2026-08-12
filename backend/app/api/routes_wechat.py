@@ -297,11 +297,16 @@ async def get_wechat_feed(
 async def get_wechat_article_detail(
     account_id: int,
     article_id: int,
-    user_id: int = Depends(_user_id),
+    owner_id: int = Depends(_owner_id),
     service: WeChatFollowServiceProtocol = Depends(get_wechat_follow_service),
 ) -> dict[str, Any]:
-    """Full-text body of one article; follower-facing like the feed."""
+    """Admin-only full text for the operator's own reading.
+
+    普通用户展示层只提供摘要 + 原文链接（feed/catalog），全文不对外公开：
+    公众号文章著作权归原作者，全文面向全部注册用户传播构成信息网络传播
+    风险，故详情收敛为管理员自用（参照 we-mp-rss 自部署自用形态）。
+    """
     try:
-        return service.get_article_detail(user_id, account_id, article_id)
+        return service.get_article_detail(owner_id, account_id, article_id)
     except WeChatError as exc:
         _handle_wechat_error(exc)
