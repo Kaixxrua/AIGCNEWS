@@ -126,7 +126,9 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "the dominant deliverable, call ONLY search_papers in that first message; a search_github_ai_projects or "
             "search_github_projects call for supplementary projects belongs in a LATER turn after you inspect these paper "
             "results, never in the same message or parallel tool block. Inspect the MCP result first. Use a host web tool only if this "
-            "call fails, returns no usable or relevant items, or lacks a specific external fact, then search only for that missing detail."
+            "call fails, returns no usable or relevant items, or lacks a specific external fact, then search only for that missing detail. "
+            "Every result item carries authors (array) and arxiv_id: when you present, summarize, or compare papers in your final "
+            "answer, cite each paper's authors and arXiv ID alongside its title so the user can verify and cite the source."
         ),
         "inputSchema": input_schema("search_papers"),
     },
@@ -143,7 +145,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "name": "get_paper_detail",
         "description": (
             "Fetch public metadata for one indexed AIGC_NEWS document by id. "
-            "Call this after search_papers or get_top_items when the user needs details for a specific item."
+            "Call this after search_papers or get_top_items when the user needs details for a specific item. "
+            "The payload includes authors (array) and arxiv_id: cite them alongside the title when you present the paper."
         ),
         "inputSchema": input_schema("get_paper_detail"),
     },
