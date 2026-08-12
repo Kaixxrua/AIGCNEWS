@@ -2,7 +2,7 @@ import { enUS } from './en-US'
 
 const overrides = {
   infrastructure: { appName: 'AIGC 新闻', loading: '加载中…', unavailable: '暂不可用' },
-  common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
+  common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', githubRepo: 'GitHub 仓库', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
   navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
   search: { placeholder: '搜索论文、项目…', noResults: '无匹配结果', resultCount: '搜索结果 · {count} 条', trending: '今日热门推荐', paper: '论文', github: 'GitHub', news: '新闻', producthunt: 'PH', hackernews: 'HN', x: 'X' },

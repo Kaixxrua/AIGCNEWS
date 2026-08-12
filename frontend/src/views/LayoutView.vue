@@ -4,6 +4,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
 import GlobalSearch from '@/components/GlobalSearch.vue'
+import GitHubLink from '@/components/GitHubLink.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import AppDock from '@/components/layout/AppDock.vue'
@@ -49,6 +50,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       >
         <div class="flex w-full max-w-lg items-center justify-center gap-2">
           <GlobalSearch />
+          <GitHubLink />
           <ThemeToggle />
           <LocaleToggle />
         </div>
