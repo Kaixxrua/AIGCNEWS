@@ -32,9 +32,10 @@ from backend.app.services.ingestion.arxiv_pdf_downloader import (  # noqa: E402
     _fetch_arxiv_metadata_by_ids,
 )
 
-# url 两种宿主：arxiv.org/abs|pdf/<id> 与 huggingface.co/papers/<id>，兼容 v 后缀
+# url 三类宿主：arxiv.org/abs|pdf/<id>、huggingface.co/papers/<id> 与
+# hf-mirror.com/papers/<id>（HF 镜像域名，存量约两成），兼容 v 后缀
 _ARXIV_ID_RE = re.compile(
-    r"(?:arxiv\.org/(?:abs|pdf)/|huggingface\.co/papers/)([0-9]{4}\.[0-9]{4,5})(?:v\d+)?"
+    r"(?:arxiv\.org/(?:abs|pdf)/|(?:huggingface\.co|hf-mirror\.com)/papers/)([0-9]{4}\.[0-9]{4,5})(?:v\d+)?"
 )
 _MAX_AUTHORS = 5
 

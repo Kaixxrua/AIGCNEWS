@@ -25,6 +25,7 @@ def test_derive_arxiv_id_covers_both_hosts_and_version_suffix() -> None:
     assert _derive_arxiv_id("https://arxiv.org/abs/2403.12345") == "2403.12345"
     assert _derive_arxiv_id("https://arxiv.org/pdf/2403.12345v2") == "2403.12345"
     assert _derive_arxiv_id("https://huggingface.co/papers/2403.12345") == "2403.12345"
+    assert _derive_arxiv_id("https://hf-mirror.com/papers/2403.12345") == "2403.12345"
     assert _derive_arxiv_id("https://example.com/other") == ""
 
 
