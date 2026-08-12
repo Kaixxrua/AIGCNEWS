@@ -2,7 +2,8 @@
 
 monkeypatch _get_upstream_client 注入 MockTransport、_cache_dir 指向
 tmp_path，走真实 httpx 管线验证：URL 白名单（SSRF 边界）、Referer
-防盗链头、图片磁盘缓存、负缓存与状态码语义。
+防盗链头、按主机分流（qlogo 头像磁盘缓存 / qpic 文章图流式直转不落盘）、
+负缓存与状态码语义。
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ class TestValidateWeChatMediaUrl:
 
 
 class TestProxyWeChatMedia:
-    def test_serves_image_with_referer_and_caches_to_disk(self, build_client, tmp_path) -> None:
+    def test_streams_article_image_without_disk_cache(self, build_client, tmp_path) -> None:
         calls: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -85,21 +86,42 @@ class TestProxyWeChatMedia:
 
         assert response.status_code == 200
         assert response.content == b"\x89PNG-fake-bytes"
-        assert response.headers["Cache-Control"] == "public, max-age=86400"
+        # 文章图：浏览器私有短缓存，禁止边缘共享缓存留存
+        assert response.headers["Cache-Control"] == "private, max-age=3600"
         # 防盗链：上游请求必须携带 mp 域 Referer
         assert calls[0].headers["Referer"] == "https://mp.weixin.qq.com/"
-        # 落盘缓存：wx_fmt=png 推断后缀
-        assert (tmp_path / "f2de8a94234497a0e96079d6106f21e9.png").exists() or any(
-            p.suffix == ".png" for p in tmp_path.iterdir()
-        )
+        # 不落盘：文章图不做永久复制
+        assert list(tmp_path.iterdir()) == []
 
-        # 第二次请求命中缓存，零上游调用
+        # 无磁盘缓存：第二次请求重新回源
         response2 = client.get("/api/media/wechat/proxy", params={"url": IMAGE_URL})
         assert response2.status_code == 200
-        assert response2.content == b"\x89PNG-fake-bytes"
+        assert len(calls) == 2
+
+    def test_caches_avatar_image_to_disk(self, build_client, tmp_path) -> None:
+        calls: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request)
+            return httpx.Response(
+                200,
+                headers={"content-type": "image/png"},
+                content=b"\x89PNG-fake-bytes",
+            )
+
+        client = build_client(handler)
+        response = client.get("/api/media/wechat/proxy", params={"url": LOGO_URL})
+
+        assert response.status_code == 200
+        assert response.headers["Cache-Control"] == "public, max-age=86400"
+        assert any(p.suffix == ".png" for p in tmp_path.iterdir())
+
+        # 第二次请求命中磁盘缓存，零上游调用
+        response2 = client.get("/api/media/wechat/proxy", params={"url": LOGO_URL})
+        assert response2.status_code == 200
         assert len(calls) == 1
 
-    def test_upstream_404_negative_cached(self, build_client) -> None:
+    def test_article_image_404_fetches_every_time(self, build_client) -> None:
         calls = 0
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -110,7 +132,35 @@ class TestProxyWeChatMedia:
         client = build_client(handler)
         assert client.get("/api/media/wechat/proxy", params={"url": IMAGE_URL}).status_code == 404
         assert client.get("/api/media/wechat/proxy", params={"url": IMAGE_URL}).status_code == 404
-        assert calls == 1  # 负缓存生效
+        assert calls == 2  # 文章图不记负缓存
+
+    def test_article_image_declared_oversize_rejected(self, build_client) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={
+                    "content-type": "image/png",
+                    "content-length": str(15 * 1024 * 1024 + 1),
+                },
+                content=b"\x89PNG",
+            )
+
+        client = build_client(handler)
+        response = client.get("/api/media/wechat/proxy", params={"url": IMAGE_URL})
+        assert response.status_code == 502
+
+    def test_upstream_404_negative_cached(self, build_client) -> None:
+        calls = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            return httpx.Response(404)
+
+        client = build_client(handler)
+        assert client.get("/api/media/wechat/proxy", params={"url": LOGO_URL}).status_code == 404
+        assert client.get("/api/media/wechat/proxy", params={"url": LOGO_URL}).status_code == 404
+        assert calls == 1  # 头像路径负缓存生效
 
     def test_upstream_redirect_rejected_as_502(self, build_client) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -164,7 +214,7 @@ class TestProxyWeChatMedia:
 
 
 class TestProxyWeChatMediaRateLimit:
-    """回源 miss 路径的匿名 IP 级限速（30 次/10 分钟，对齐 routes_x_media）。"""
+    """头像回源 miss 路径限速 30 次/10 分钟；文章图流式路径放宽到 120 次/10 分钟。"""
 
     def _image_handler(self, calls: list[httpx.Request]):
         def handler(request: httpx.Request) -> httpx.Response:
@@ -187,14 +237,14 @@ class TestProxyWeChatMediaRateLimit:
         for index in range(30):
             response = client.get(
                 "/api/media/wechat/proxy",
-                params={"url": f"{IMAGE_URL}&miss={index}"},
+                params={"url": f"{LOGO_URL}&miss={index}"},
             )
             assert response.status_code == 200, f"fetch {index + 1}"
         assert len(calls) == 30
 
         response = client.get(
             "/api/media/wechat/proxy",
-            params={"url": f"{IMAGE_URL}&miss=31"},
+            params={"url": f"{LOGO_URL}&miss=31"},
         )
         assert response.status_code == 429
         assert response.headers["Retry-After"] == "600"
@@ -208,6 +258,24 @@ class TestProxyWeChatMediaRateLimit:
 
         # 同一 URL 重复渲染：首次 miss 计 1 次，其余全部命中磁盘缓存
         for _ in range(35):
-            response = client.get("/api/media/wechat/proxy", params={"url": IMAGE_URL})
+            response = client.get("/api/media/wechat/proxy", params={"url": LOGO_URL})
             assert response.status_code == 200
         assert len(calls) == 1
+
+    def test_stream_path_rate_limited(self, build_client, monkeypatch) -> None:
+        from backend.tests.test_email_service_contracts import FakeRedis
+
+        # 收窄配额避免 120 次循环；模块常量在调用时读取，monkeypatch 生效
+        monkeypatch.setattr(routes_wechat_media, "_MEDIA_STREAM_RATE_LIMIT", 3)
+        calls: list[httpx.Request] = []
+        client = build_client(self._image_handler(calls), redis=FakeRedis())
+
+        # 文章图每次请求都流式回源，逐次计费（同 URL 也不免）
+        for _ in range(3):
+            response = client.get("/api/media/wechat/proxy", params={"url": IMAGE_URL})
+            assert response.status_code == 200
+        assert len(calls) == 3
+
+        response = client.get("/api/media/wechat/proxy", params={"url": IMAGE_URL})
+        assert response.status_code == 429
+        assert len(calls) == 3

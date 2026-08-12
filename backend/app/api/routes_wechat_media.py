@@ -6,9 +6,15 @@ referrerpolicy 行为不稳定，故以同源代理统一出口，模式与
 routes_x_media.py 一致。
 
 GET /api/media/wechat/proxy?url=<https-url>
-  校验白名单后回源，图片按 URL 哈希落盘缓存（mmbiz 图 URL 内容寻址、
-  永久不变），命中直读本地文件；上游 404/非图片记 5 分钟负缓存，
-  避免每次渲染重复回源。
+  校验白名单后回源，按主机分流：
+
+  - mmbiz.qlogo.cn（公众号头像）：按 URL 哈希落盘缓存（头像 URL 内容
+    寻址、永久不变），命中直读本地文件；上游 404/非图片记 5 分钟负
+    缓存，避免重复回源。
+  - mmbiz.qpic.cn（文章内联图/封面）：按需流式直转，不落盘、不记负
+    缓存。公众号文章配图著作权归原作者，站点不做永久复制可将著作权
+    暴露收敛到"临时传输"；响应头 `Cache-Control: private, max-age=3600`
+    允许浏览器私有缓存、禁止边缘共享缓存留存。
 
 约束：
   - 仅放行 mmbiz 主机白名单，防 SSRF 开放代理
@@ -30,7 +36,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, StreamingResponse
 
 from backend.app.api.feature_gates import require_wechat_source_enabled
 from backend.app.core.client_ip import client_ip_from_request
@@ -59,8 +65,10 @@ _UPSTREAM_USER_AGENT = (
 _UPSTREAM_REFERER = "https://mp.weixin.qq.com/"
 
 _CACHE_CONTROL = "public, max-age=86400"
+_STREAM_CACHE_CONTROL = "private, max-age=3600"
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024
 _NEGATIVE_TTL_SECONDS = 300.0
+_AVATAR_MEDIA_HOST = "mmbiz.qlogo.cn"
 
 # wx_fmt 值仅用于推断文件后缀，严格白名单，绝不反射进路径
 _FORMAT_EXTENSIONS = {
@@ -82,14 +90,23 @@ _CONTENT_TYPE_EXTENSIONS = {
 _image_locks: dict[str, asyncio.Lock] = {}
 _negative_cache: dict[str, float] = {}  # url -> 负缓存过期时刻（time.monotonic）
 
-# 匿名 IP 级回源限速：每次缓存 miss 代价是一次上游回源 + 磁盘写入。
-# 30 次/10 分钟对齐 routes_x_media 封面的匿名端点口径；磁盘缓存/负缓存
-# 命中不计费，正常浏览重复渲染不消耗配额。
+# 匿名 IP 级回源限速：
+# - 头像路径每次缓存 miss 代价是一次上游回源 + 磁盘写入，30 次/10 分钟
+#   对齐 routes_x_media 封面的匿名端点口径；磁盘/负缓存命中不计费。
+# - 文章图路径每次请求都流式回源（无磁盘成本，代价为带宽），且信息流
+#   一页封面可达 25 张，配额放宽到 120 次/10 分钟，防代理被当免费图床。
 _MEDIA_FETCH_RATE_LIMIT = 30
 _MEDIA_RATE_LIMIT_WINDOW_SECONDS = 600
+_MEDIA_STREAM_RATE_LIMIT = 120
 
 
-async def _enforce_media_fetch_rate_limit(request: Request) -> None:
+async def _enforce_media_rate_limit(
+    request: Request,
+    *,
+    action: str,
+    limit: int,
+    window_seconds: int = _MEDIA_RATE_LIMIT_WINDOW_SECONDS,
+) -> None:
     """回源路径的匿名 IP 级限速；Redis 不可用时放行（与既有端点同口径）。"""
     redis_client = getattr(request.app.state, "redis", None)
     if redis_client is None:
@@ -97,16 +114,16 @@ async def _enforce_media_fetch_rate_limit(request: Request) -> None:
     try:
         await hit_rate_limit(
             redis_client,
-            action="wechat_media_fetch",
+            action=action,
             identity=client_ip_from_request(request),
-            limit=_MEDIA_FETCH_RATE_LIMIT,
-            window_seconds=_MEDIA_RATE_LIMIT_WINDOW_SECONDS,
+            limit=limit,
+            window_seconds=window_seconds,
         )
     except RateLimitExceededError as exc:
         raise HTTPException(
             status_code=429,
             detail="media fetch rate limited, retry later",
-            headers={"Retry-After": str(_MEDIA_RATE_LIMIT_WINDOW_SECONDS)},
+            headers={"Retry-After": str(window_seconds)},
         ) from exc
     except Exception:
         logger.warning(
@@ -183,16 +200,19 @@ def _mark_negative(url: str) -> None:
     prune_expired_entries(_negative_cache)
 
 
-async def _fetch_image(url: str) -> tuple[bytes, str]:
-    """回源取图；成功返回 (内容, Content-Type)，失败抛 HTTPException。"""
-    client = _get_upstream_client()
-    headers = {
+def _upstream_request_headers() -> dict[str, str]:
+    return {
         "User-Agent": _UPSTREAM_USER_AGENT,
         "Referer": _UPSTREAM_REFERER,
         "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
     }
+
+
+async def _fetch_image(url: str) -> tuple[bytes, str]:
+    """回源取图；成功返回 (内容, Content-Type)，失败抛 HTTPException。"""
+    client = _get_upstream_client()
     try:
-        request = client.build_request("GET", url, headers=headers)
+        request = client.build_request("GET", url, headers=_upstream_request_headers())
         response = await client.send(request)
     except httpx.TimeoutException as exc:
         raise HTTPException(status_code=504, detail="media upstream timeout") from exc
@@ -200,30 +220,8 @@ async def _fetch_image(url: str) -> tuple[bytes, str]:
         logger.warning("[WeChatMediaProxy] upstream connect failed: %s", exc)
         raise HTTPException(status_code=502, detail="media upstream unreachable") from exc
     try:
-        if response.status_code == 404:
-            raise HTTPException(status_code=404, detail="media upstream not found")
-        if 300 <= response.status_code < 400:
-            logger.warning(
-                "[WeChatMediaProxy] unexpected redirect %s for %s",
-                response.status_code,
-                url,
-            )
-            raise HTTPException(status_code=502, detail="media upstream redirect rejected")
-        if response.status_code != 200:
-            logger.warning(
-                "[WeChatMediaProxy] unexpected upstream status %s for %s",
-                response.status_code,
-                url,
-            )
-            raise HTTPException(status_code=502, detail="media upstream error")
+        _check_upstream_response(response)
         content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
-        if not content_type.startswith("image/"):
-            logger.warning(
-                "[WeChatMediaProxy] non-image content-type %r for %s",
-                content_type,
-                url,
-            )
-            raise HTTPException(status_code=502, detail="media upstream not an image")
         body = response.content
         if len(body) > _MAX_IMAGE_BYTES:
             raise HTTPException(status_code=502, detail="media upstream image too large")
@@ -232,10 +230,93 @@ async def _fetch_image(url: str) -> tuple[bytes, str]:
         await response.aclose()
 
 
+def _check_upstream_response(response: httpx.Response) -> None:
+    """状态码与 Content-Type 校验（缓冲/流式两条回源路径共用）。"""
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail="media upstream not found")
+    if 300 <= response.status_code < 400:
+        logger.warning(
+            "[WeChatMediaProxy] unexpected redirect %s", response.status_code
+        )
+        raise HTTPException(status_code=502, detail="media upstream redirect rejected")
+    if response.status_code != 200:
+        logger.warning(
+            "[WeChatMediaProxy] unexpected upstream status %s", response.status_code
+        )
+        raise HTTPException(status_code=502, detail="media upstream error")
+    content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+    if not content_type.startswith("image/"):
+        logger.warning(
+            "[WeChatMediaProxy] non-image content-type %r", content_type
+        )
+        raise HTTPException(status_code=502, detail="media upstream not an image")
+
+
+async def _open_image_stream(url: str) -> tuple[httpx.Response, str]:
+    """流式回源；成功返回 (未消费的响应, Content-Type)，失败先关闭再抛 HTTPException。"""
+    client = _get_upstream_client()
+    try:
+        request = client.build_request("GET", url, headers=_upstream_request_headers())
+        response = await client.send(request, stream=True)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="media upstream timeout") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("[WeChatMediaProxy] upstream connect failed: %s", exc)
+        raise HTTPException(status_code=502, detail="media upstream unreachable") from exc
+    try:
+        _check_upstream_response(response)
+    except HTTPException:
+        await response.aclose()
+        raise
+    content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+    declared = response.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > _MAX_IMAGE_BYTES:
+        await response.aclose()
+        raise HTTPException(status_code=502, detail="media upstream image too large")
+    return response, content_type
+
+
 @router.get("/media/wechat/proxy")
 async def proxy_wechat_media(request: Request, url: str = Query(..., min_length=1)):
     target = validate_wechat_media_url(url)
+    if (urlsplit(target).hostname or "") == _AVATAR_MEDIA_HOST:
+        return await _cached_avatar_response(request, target)
+    return await _stream_article_image(request, target)
 
+
+async def _stream_article_image(request: Request, target: str):
+    """文章内联图/封面：按需流式直转，不落盘、不进边缘共享缓存（见模块头注释）。"""
+    await _enforce_media_rate_limit(
+        request,
+        action="wechat_media_stream",
+        limit=_MEDIA_STREAM_RATE_LIMIT,
+    )
+    upstream, content_type = await _open_image_stream(target)
+
+    async def body_iter():
+        sent = 0
+        try:
+            async for chunk in upstream.aiter_bytes(64 * 1024):
+                sent += len(chunk)
+                if sent > _MAX_IMAGE_BYTES:
+                    logger.warning(
+                        "[WeChatMediaProxy] stream exceeded %d bytes, aborting",
+                        _MAX_IMAGE_BYTES,
+                    )
+                    break
+                yield chunk
+        finally:
+            await upstream.aclose()
+
+    return StreamingResponse(
+        body_iter(),
+        media_type=content_type,
+        headers={"Cache-Control": _STREAM_CACHE_CONTROL},
+    )
+
+
+async def _cached_avatar_response(request: Request, target: str):
+    """公众号头像：磁盘缓存 + 负缓存（头像 URL 内容寻址、永久不变）。"""
     cached = _existing_cache_path(target)
     if cached is not None:
         return _cached_file_response(cached)
@@ -251,7 +332,11 @@ async def proxy_wechat_media(request: Request, url: str = Query(..., min_length=
             if cached is not None:
                 return _cached_file_response(cached)
             # 仅真实回源才计费；缓存/负缓存命中不消耗配额
-            await _enforce_media_fetch_rate_limit(request)
+            await _enforce_media_rate_limit(
+                request,
+                action="wechat_media_fetch",
+                limit=_MEDIA_FETCH_RATE_LIMIT,
+            )
             try:
                 body, content_type = await _fetch_image(target)
             except HTTPException as exc:
