@@ -176,6 +176,13 @@ WebSearch hands you links; AIGC Radar hands you data. One trimmed record from `s
 - Quality signals inline: `stars` / `forks` / `daily_star_growth` / `hot_score` / `pushed_at` — no extra GitHub API call needed.
 - Transparent admission and provenance: 500-star admission (`min_stars`), `result_origin` / `fallback_used` state where results came from, and `attribution` / `detail_url` link back to the detail pages.
 
+### Quality-filtered index
+
+Every GitHub project in the library passed a **500-star admission bar** (`min_stars`) before curation — toy repos, abandoned forks, and low-signal projects never enter the index, so results are high quality by construction, with no post-filtering left to the agent. WebSearch has no such gate: it ranks whatever the open web returns, including unmaintained or trivial repositories, and leaves the quality judgment to you.
+
+- Enforced everywhere: the 500-star floor applies both at ingestion and on the limited read-only GitHub fallback — below-bar results are excluded before they reach the agent.
+- Curated, not just crawled: admitted projects get a category taxonomy, bilingual tags, and star-growth snapshots, so ranking signals stay current.
+
 ## Architecture
 
 ```text

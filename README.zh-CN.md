@@ -176,6 +176,13 @@ WebSearch 给你链接，AIGC Radar 给你可直接消费的数据。`search_git
 - 质量信号随响应直达：`stars` / `forks` / `daily_star_growth` / `hot_score` / `pushed_at`，无需再调 GitHub API。
 - 准入与溯源透明：500 Stars 准入（`min_stars`）、`result_origin` / `fallback_used` 标明结果来源、`attribution` 与 `detail_url` 可回链详情页。
 
+### 高质量精选索引
+
+项目库中的每个 GitHub 项目都通过了 **500 Stars 准入门槛**（`min_stars`）才会进入精选环节——玩具项目、停更 fork、低信号仓库从未入库，搜索结果天然高质量，Agent 无需再做二次过滤。WebSearch 没有这道闸门：它按公开网页排名返回，可能混入无人维护或琐碎的仓库，质量判断全部留给使用者。
+
+- 全链路强制：500 Stars 下限同时作用于入库采集与限量只读 GitHub fallback，低于门槛的结果在到达 Agent 之前就被排除。
+- 精选而非简单爬取：入库项目附带分类体系、中英双语标签与星标增长快照，排序信号保持新鲜。
+
 ## 架构
 
 ```text
