@@ -29,8 +29,18 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 34
-    assert migrations[-1].filename == "0034_document_link_card.sql"
+    assert migrations[-1].version == 35
+    assert migrations[-1].filename == "0035_document_authors.sql"
+
+
+def test_document_authors_migration_is_idempotent_add_column() -> None:
+    sql = (MIGRATIONS_DIR / "0035_document_authors.sql").read_text(encoding="utf-8")
+
+    # 与 0034 同一幂等补列先例：authors 存 JSON-TEXT 字符串数组（tags 先例），
+    # arxiv_id 为标量；运维可先手工补列配合热重启，runner 重放为空操作再登记台账。
+    assert sql.count("ADD COLUMN IF NOT EXISTS") == 2
+    assert "ALTER TABLE documents ADD COLUMN IF NOT EXISTS authors TEXT;" in sql
+    assert "ALTER TABLE documents ADD COLUMN IF NOT EXISTS arxiv_id TEXT;" in sql
 
 
 def test_document_link_card_migration_is_idempotent_add_column() -> None:
