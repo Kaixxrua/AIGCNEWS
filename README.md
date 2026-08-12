@@ -120,13 +120,13 @@ On the context side, it provides resources (`aigc-news://dashboard/summary`, `ai
 
 ### Benchmarks
 
-![AIGC Radar MCP quality metrics: 7.4 s median end-to-end latency (3.5× faster than WebSearch), 98.3% first-tool accuracy (59/60), 90% mixed-intent probes, LLM-as-judge 0.71 trajectory / 0.54 completion with 9/9 task success — measured 2026-08-12](docs/assets/mcp-quality-metrics.png)
+![AIGC Radar MCP quality metrics: 3.5× faster than WebSearch (7.4 s vs 25.8 s median end-to-end), 160 ms median tool execution (p50 server-side 360 ms), 98.3% first-tool accuracy (59/60 trials, mixed-intent 90%), 500+ GitHub stars floor with low-quality repos filtered out — measured 2026-08-12, self-hosted](docs/assets/mcp-quality-metrics.png)
 
 Server-side latency, measured 2026-08-11 with [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) (JSON-RPC over Streamable HTTP, 6 representative tools × 3 trials, 18 timed `tools/call` requests):
 
 | Endpoint | p50 | p95 | Notes |
 | --- | --- | --- | --- |
-| Self-hosted `http://localhost:8000/api/mcp` | 0.36 s | 0.71 s | backend query processing is sub-second |
+| Self-hosted `http://localhost:8000/api/mcp` | 360 ms | 710 ms | backend query processing is sub-second |
 
 Agent end-to-end vs WebSearch, measured 2026-08-11 with [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py): headless `claude -p` (claude-opus-4-8, effort low), MCP pointed at `http://127.0.0.1:8000/api/mcp`, wall clock from process spawn to the complete answer, both sides instructed to answer in at most two sentences, 10 distinct queries × 1 run per path:
 
@@ -144,7 +144,7 @@ Agent end-to-end vs WebSearch, measured 2026-08-11 with [scripts/benchmark_agent
 | Claude Code agent skills | 6.7 s | 54.8 s |
 | **Median** | **7.4 s** | **25.8 s** |
 
-MCP finished under 10 s in 9 of 10 pairs while WebSearch never went below 9.9 s — **3.5× faster at the median**. Pure MCP tool execution (`tool_use` → `tool_result`) was 0.16 s at the median (0.03–0.80 s); WebSearch executes its search inside the API turn (server-side tool), so no equivalent client-observable window exists. The 32.9 s MCP outlier is a model-API stall, not tool cost (its tool call took 0.041 s) — the median filters such spikes.
+MCP finished under 10 s in 9 of 10 pairs while WebSearch never went below 9.9 s — **3.5× faster at the median**. Pure MCP tool execution (`tool_use` → `tool_result`) was 160 ms at the median (30–800 ms); WebSearch executes its search inside the API turn (server-side tool), so no equivalent client-observable window exists. The 32.9 s MCP outlier is a model-API stall, not tool cost (its tool call took 41 ms) — the median filters such spikes.
 
 Tool-selection accuracy, measured 2026-08-12 with [scripts/eval_mcp_tool_selection.py](scripts/eval_mcp_tool_selection.py): headless `claude -p` (claude-opus-4-8, effort high) with both host tools and all 7 MCP tools available; a trial passes only if the **first** tool call is the expected AIGC Radar tool with no host-tool detour:
 
@@ -156,20 +156,7 @@ Tool-selection accuracy, measured 2026-08-12 with [scripts/eval_mcp_tool_selecti
 
 Unambiguous probes held 100% in the baseline run; post-change reruns missed only on infrastructure flakes (a harness timeout, a 429 rate-limit that exhausted retries before the first assistant turn), never on wrong-tool routing — so the table pairs the baseline unambiguous count with the post-change mixed-intent count (same harness, same day). Mixed-intent prompts explicitly invite both deliverable types ("projects primarily, papers as a supplement"): earlier runs hedged by calling both candidate tools in parallel, the routing rules in the tool descriptions eliminated that pattern entirely, and the one remaining mixed miss is a model reading a fragment-style prompt as a preference-setting instruction and saving it to memory via Bash — a prompt-interpretation quirk, not wrong-tool routing.
 
-LLM-as-judge quality scores, measured 2026-08-12 with [Salesforce MCPEval](https://github.com/SalesforceAIResearch/MCPEval): 9 auto-generated tasks executed against the self-hosted endpoint (agent model gpt-5.4-mini), trajectories and final answers graded by gpt-5.4 against ground-truth references, 0–1 scale:
-
-| Dimension | Mean score |
-| --- | --- |
-| **Tool-use trajectory** (7 sub-dimensions) | **0.71** |
-| — adaptability | 0.83 |
-| — tool_selection | 0.72 |
-| — planning | 0.69 |
-| **Task completion** (4 sub-dimensions) | **0.54** |
-| — accuracy | 0.61 |
-| — requirement_coverage | 0.52 |
-| Task success rate | 9/9 |
-
-Trajectory scores how well the agent drives the tools; completion scores the agent's final answer against the task requirements. Repeated gradings of identical trajectories drift by ±0.02–0.08 (one grading hit a judge parse failure that scored a healthy task 0.0), so treat ±0.05 as harness noise. Paper payloads carry authors and arXiv IDs end-to-end (persisted, backfilled across the whole index, exposed by every paper tool), and judge comments no longer cite missing attribution data — the remaining completion gap is the agent model's answer composition, which surfaces the available attribution inconsistently, not tool capability.
+We also run [Salesforce MCPEval](https://github.com/SalesforceAIResearch/MCPEval) LLM-as-judge scoring (trajectory + completion) as an internal regression gate after every MCP-facing change. Its scores conflate tool quality with agent-model behavior and drift ±0.02–0.08 between gradings, so we do not publish them; the methodology and raw results live in `evals/mcp/`.
 
 Reproduce:
 

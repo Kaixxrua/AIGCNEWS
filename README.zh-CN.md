@@ -120,13 +120,13 @@ Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://rep
 
 ### 性能实测
 
-![AIGC Radar MCP 质量指标：端到端延迟中位数 7.4 s（比 WebSearch 快 3.5×）、工具首选准确率 98.3%（59/60）、混合意图探针 90%、LLM-as-judge 轨迹 0.71 / 完成 0.54、任务成功率 9/9 —— 实测于 2026-08-12](docs/assets/mcp-quality-metrics.png)
+![AIGC Radar MCP 质量指标：比 WebSearch 快 3.5×（端到端中位数 7.4 s 对 25.8 s）、工具执行中位 160 ms（服务端 p50 360 ms）、工具首选准确率 98.3%（59/60 次试验，混合意图 90%）、500+ GitHub stars 门槛过滤低质量仓库 —— 实测于 2026-08-12，自托管](docs/assets/mcp-quality-metrics.png)
 
 服务端延迟，测于 2026-08-11，可用 [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) 复现（Streamable HTTP JSON-RPC，6 个代表性工具 × 3 轮，共 18 次 `tools/call` 计时）：
 
 | Endpoint | p50 | p95 | 说明 |
 | --- | --- | --- | --- |
-| 自托管 `http://localhost:8000/api/mcp` | 0.36 s | 0.71 s | 后端查询处理本身为亚秒级 |
+| 自托管 `http://localhost:8000/api/mcp` | 360 ms | 710 ms | 后端查询处理本身为亚秒级 |
 
 Agent 端到端对比 WebSearch，测于 2026-08-11，可用 [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py) 复现：headless `claude -p`（claude-opus-4-8，effort low），MCP 指向 `http://127.0.0.1:8000/api/mcp`，wall-clock 从进程启动计到产出完整回答，两侧均要求用不超过两句话作答，10 组不同查询 × 每条路径各 1 次：
 
@@ -144,7 +144,7 @@ Agent 端到端对比 WebSearch，测于 2026-08-11，可用 [scripts/benchmark_
 | Claude Code agent skills | 6.7 s | 54.8 s |
 | **中位数** | **7.4 s** | **25.8 s** |
 
-MCP 在 10 组中有 9 组低于 10 秒，WebSearch 从未低于 9.9 秒——**中位口径快 3.5 倍**。纯 MCP 工具执行（`tool_use` → `tool_result`）中位数 0.16 s（0.03–0.80 s）；WebSearch 的搜索在 API 回合内部执行（server-side 工具），客户端无法观测到等价窗口。32.9 s 的 MCP 离群值是模型 API 停顿而非工具耗时（该次工具调用仅 0.041 s）——中位数口径天然排除此类波动。
+MCP 在 10 组中有 9 组低于 10 秒，WebSearch 从未低于 9.9 秒——**中位口径快 3.5 倍**。纯 MCP 工具执行（`tool_use` → `tool_result`）中位数 160 ms（30–800 ms）；WebSearch 的搜索在 API 回合内部执行（server-side 工具），客户端无法观测到等价窗口。32.9 s 的 MCP 离群值是模型 API 停顿而非工具耗时（该次工具调用仅 41 ms）——中位数口径天然排除此类波动。
 
 工具选用准确率，测于 2026-08-12，可用 [scripts/eval_mcp_tool_selection.py](scripts/eval_mcp_tool_selection.py) 复现：headless `claude -p`（claude-opus-4-8，effort high），宿主工具与全部 7 个 MCP 工具同时可用；仅当**首个**工具调用命中预期的 AIGC Radar 工具且全程无宿主工具绕行时记为通过：
 
@@ -156,20 +156,7 @@ MCP 在 10 组中有 9 组低于 10 秒，WebSearch 从未低于 9.9 秒——**
 
 明确意图探针在基线跑次保持 100%；改动后复测的未命中全部是基础设施抖动（一次 harness 超时、一次 429 限流重试耗尽、首个助手回合尚未产出），无一例路由错误——表中因此取基线明确意图数据与改动后混合意图数据的组合（同天同 harness）。混合意图提示词明确邀请两类交付物（"以项目为主、论文为辅"）：早期试验中模型会把两个候选工具并行都调，工具描述中的路由规则已彻底消除这一模式——剩余一次未命中是模型把碎片式提示词解读成偏好设置指令、转而用 Bash 写入记忆，属提示词解读分歧而非路由错误。
 
-LLM-as-judge 质量评分，测于 2026-08-12，使用 [Salesforce MCPEval](https://github.com/SalesforceAIResearch/MCPEval)：9 个自动生成的任务在自托管 endpoint 上执行（agent 模型 gpt-5.4-mini），由 gpt-5.4 对照 ground-truth 轨迹与参考答案打分，0–1 量表：
-
-| 维度 | 平均分 |
-| --- | --- |
-| **工具使用轨迹**（7 个子维度） | **0.71** |
-| — adaptability（应变） | 0.83 |
-| — tool_selection（工具选择） | 0.72 |
-| — planning（规划） | 0.69 |
-| **任务完成度**（4 个子维度） | **0.54** |
-| — accuracy（准确性） | 0.61 |
-| — requirement_coverage（需求覆盖） | 0.52 |
-| 任务成功率 | 9/9 |
-
-轨迹分衡量 agent 驱动工具的过程质量，完成分衡量 agent 最终回答对照任务要求的达成度。对同一轨迹重复打分会漂移 ±0.02–0.08（其中一次评分遭遇 judge 解析失败，把健康轨迹记为 0.0），±0.05 以内应视为评测噪音。论文载荷现已全链路携带作者与 arXiv ID（持久化 + 全量回填 + 所有论文工具透出），judge 评语不再报告归因数据缺失——剩余完成分差距来自 agent 模型的答案组织（对可用归因信息引用不一致），而非工具能力。
+我们还会在每次 MCP 面改动后用 [Salesforce MCPEval](https://github.com/SalesforceAIResearch/MCPEval) 跑 LLM-as-judge 评分（轨迹 + 完成度）作为内部回归门。该分数混淆了工具质量与 agent 模型行为，且重复打分漂移 ±0.02–0.08，故不对外发布；评测方法与原始结果见 `evals/mcp/`。
 
 复现：
 
