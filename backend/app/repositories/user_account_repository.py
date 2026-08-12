@@ -38,6 +38,8 @@ class UserAccountWriter(Protocol):
         hashed_password: str,
         role: str = "user",
         username: str = "",
+        *,
+        promote_if_first: bool = False,
     ) -> int: ...
 
 

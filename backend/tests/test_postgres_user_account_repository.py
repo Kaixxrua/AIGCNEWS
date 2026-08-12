@@ -70,6 +70,53 @@ def test_create_users_use_returning_and_preserve_defaults() -> None:
     assert database.transaction_count == 2
 
 
+def test_default_create_user_with_email_path_skips_promotion_lock() -> None:
+    repository, database, cursor = repository_with_cursor()
+    cursor.fetchone.return_value = {"id": 42}
+
+    repository.create_user_with_email("reader@example.com", "hash")
+
+    executed_sql = [call.args[0] for call in cursor.execute.call_args_list]
+    assert len(executed_sql) == 1
+    assert "pg_advisory_xact_lock" not in executed_sql[0]
+    assert database.transaction_count == 1
+
+
+def test_promote_if_first_inserts_admin_when_users_table_empty() -> None:
+    repository, database, cursor = repository_with_cursor()
+    cursor.fetchone.side_effect = [{"n": 0}, {"id": 1}]
+
+    user_id = repository.create_user_with_email(
+        "First@Example.COM",
+        "hash",
+        promote_if_first=True,
+    )
+
+    assert user_id == 1
+    lock_call, count_call, insert_call = cursor.execute.call_args_list
+    assert "pg_advisory_xact_lock" in lock_call.args[0]
+    assert "users_first_admin_bootstrap" in lock_call.args[0]
+    assert "COUNT(*)" in count_call.args[0]
+    assert insert_call.args[1] == ("first@example.com", "", "hash", "admin")
+    # 锁、计数、插入必须在同一事务内完成
+    assert database.transaction_count == 1
+
+
+def test_promote_if_first_keeps_fallback_role_when_users_exist() -> None:
+    repository, _, cursor = repository_with_cursor()
+    cursor.fetchone.side_effect = [{"n": 3}, {"id": 4}]
+
+    user_id = repository.create_user_with_email(
+        "second@example.com",
+        "hash",
+        promote_if_first=True,
+    )
+
+    assert user_id == 4
+    insert_call = cursor.execute.call_args_list[-1]
+    assert insert_call.args[1] == ("second@example.com", "", "hash", "user")
+
+
 def test_password_update_is_owner_and_email_scoped() -> None:
     repository, _, cursor = repository_with_cursor()
     cursor.rowcount = 1

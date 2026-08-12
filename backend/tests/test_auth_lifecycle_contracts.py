@@ -29,6 +29,8 @@ class FakeUserAccountRepository:
         hashed_password: str,
         role: str = "user",
         username: str = "",
+        *,
+        promote_if_first: bool = False,
     ) -> int:
         self.events.append(
             (
@@ -37,6 +39,7 @@ class FakeUserAccountRepository:
                 hashed_password,
                 role,
                 username,
+                promote_if_first,
             )
         )
         return self.created_user_id
@@ -212,6 +215,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                     "stored-password-hash",
                     "user",
                     "",
+                    True,
                 ),
                 ("consume_otp", "Reader@example.com", "registration"),
             ],

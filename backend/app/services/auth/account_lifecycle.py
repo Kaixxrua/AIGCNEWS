@@ -20,6 +20,8 @@ class AccountRepository(Protocol):
         hashed_password: str,
         role: str = "user",
         username: str = "",
+        *,
+        promote_if_first: bool = False,
     ) -> int: ...
 
     def update_user_password(
@@ -155,12 +157,15 @@ class AccountLifecycle:
             raise AccountAlreadyExists
 
         hashed_password = self._hash_password(password)
+        # 自托管引导：用户表为空时首位注册者由仓储层提权为 admin
+        #（非空库为 no-op），role 仍按 "user" 传入作为回退值。
         user_id = await asyncio.to_thread(
             self._repository.create_user_with_email,
             normalized_email,
             hashed_password,
             "user",
             "",
+            promote_if_first=True,
         )
         await self._otp.consume_otp(
             normalized_email, purpose=REGISTRATION_PURPOSE

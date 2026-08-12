@@ -31,7 +31,7 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
         )
         self.repository.get_user_by_email.return_value = None
         self.repository.create_user_with_email.side_effect = (
-            lambda *args: events.append("insert") or 42
+            lambda *args, **kwargs: events.append("insert") or 42
         )
 
         with patch.object(
@@ -54,6 +54,13 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
         self.assertEqual(args[0], "reader@example.com")
         self.assertNotEqual(args[1], "abcdef")
         self.assertEqual(args[2:], ("user", ""))
+        # 自托管引导：注册路径始终请求首位用户提权（非空库为 no-op）
+        self.assertIs(
+            self.repository.create_user_with_email.call_args.kwargs[
+                "promote_if_first"
+            ],
+            True,
+        )
         self.assertEqual(events, ["insert", "consume"])
 
     def test_register_duplicate_preserves_conflict_without_consuming_otp(self) -> None:

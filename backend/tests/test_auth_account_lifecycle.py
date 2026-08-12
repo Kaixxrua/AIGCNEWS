@@ -34,6 +34,8 @@ class FakeRepository:
         hashed_password: str,
         role: str = "user",
         username: str = "",
+        *,
+        promote_if_first: bool = False,
     ) -> int:
         self.events.append(
             (
@@ -42,6 +44,7 @@ class FakeRepository:
                 hashed_password,
                 role,
                 username,
+                promote_if_first,
             )
         )
         return 42
@@ -139,11 +142,28 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     "stored-password-hash",
                     "user",
                     "",
+                    True,
                 ),
                 ("consume_otp", "Reader@example.com", "registration"),
             ],
         )
         self.assert_no_plaintext_secrets(result, "123456", "plain-secret", "stored-password-hash")
+
+    async def test_register_requests_first_user_promotion_with_user_fallback(self) -> None:
+        await self.lifecycle.register(
+            email="reader@example.com",
+            email_code="123456",
+            password="plain-secret",
+        )
+
+        create_events = [
+            event for event in self.events if event[0] == "create_user_with_email"
+        ]
+        self.assertEqual(len(create_events), 1)
+        _, _, _, fallback_role, _, promote_if_first = create_events[0]
+        # 回退角色恒为 user；是否提权 admin 由仓储按用户表是否为空决定
+        self.assertEqual(fallback_role, "user")
+        self.assertIs(promote_if_first, True)
 
     async def test_registration_failures_stop_before_hash_and_consumption(self) -> None:
         self.otp.verified = False
