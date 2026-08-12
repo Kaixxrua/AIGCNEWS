@@ -400,6 +400,7 @@ MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server T
 - 生产模式：通过 `aiosmtplib` 异步发送 SMTP 邮件（支持 STARTTLS / SSL）
 - `_send_email()` 发送纯文本邮件（OTP），`_send_html_email()` 发送 HTML 邮件（简报推送）
 - Key 前缀：`email:code:{email}` / `email:lock:{email}`
+- **SMTP 配置热生效**: `smtp_config_provider.resolve_smtp_config()` 统一供给全部邮件发送路径（注册 OTP、简报推送、调度器简报）。管理员在监控页保存的配置经 `smtp_settings` 表（单行）入库并优先于 `SMTP_*` 环境变量，60s TTL 缓存使后台任务免重启沿用新配置；DB 行的空密码回落 `SMTP_PASSWORD` env，主机留空保存即删行回退 env。读取失败仅记 warning 并回退 env，不影响发送链路可用性
 - 保留 `sms_service.py`：当前全仓库无调用方，作为延期能力保留；云厂商短信通道（阿里云/腾讯云）属于未授权的外部网络集成，接入前需独立授权并补契约测试（即使配置 api_key 也只记录日志、不出网）
 
 ### 3.7 会话服务 — `backend/app/services/chat/`

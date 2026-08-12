@@ -79,9 +79,10 @@ An AI discovery & intelligence platform for engineers, researchers, and AI agent
 
 ### Accounts & Admin Console
 
-- Email registration, login, and password reset with verification codes; JWT sessions
+- Email registration, login, and password reset with verification codes; JWT sessions; on an empty database the first registered user auto-becomes admin
 - Admin monitor: trigger / force full-source, per-source, or per-date ingestion, generate daily briefs, refresh dashboard cache
 - Model provider management (Base URL / Key / model / reasoning effort, with a real connection test) and an external MCP server registry (handshake + tool-list probing)
+- SMTP email delivery configuration: database-backed, effective immediately and takes precedence over environment variables, with an in-panel test send
 - X ingestion ops: credential pool, watched accounts, on-demand pulls, snapshot rebuilds
 - GitHub crawl jobs with star / date windows, dry-run, and auto-enrichment; enrichment queue with retry / backfill / cancel, concurrency control, and circuit breaking
 
@@ -296,6 +297,17 @@ backend/.venv/bin/python run_server.py
 # Frontend (Vite dev server, default 5173)
 cd frontend && npm run dev
 ```
+
+### 6) First admin & SMTP configuration
+
+The repository ships no default admin account: **on an empty users table, the first email-registered user automatically becomes the admin**; later registrations are regular users, and existing deployments (non-empty users table) are unaffected.
+
+Registration requires an email OTP, which depends on mail delivery — so a fresh self-host needs a working mail channel *before* the first admin exists. Pick one:
+
+- Configure `SMTP_*` in `.env` (see the SMTP block in `.env.example`); or
+- Leave `SMTP_HOST` empty for dev mode, which prints verification codes to the backend console logs.
+
+Once the first admin logs in, the **Monitor → SMTP email delivery** panel manages the configuration online: it is stored in the database, takes effect immediately (background jobs pick it up within 60 seconds), and **takes precedence over environment variables**; "Send test email" delivers a real message to the current admin's login email using the latest saved configuration. Saving with an empty host deletes the database configuration and reverts to the environment variables.
 
 ## Ports & Health Checks
 
