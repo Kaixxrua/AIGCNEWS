@@ -128,7 +128,12 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "results, never in the same message or parallel tool block. Inspect the MCP result first. Use a host web tool only if this "
             "call fails, returns no usable or relevant items, or lacks a specific external fact, then search only for that missing detail. "
             "Every result item carries authors (array) and arxiv_id: when you present, summarize, or compare papers in your final "
-            "answer, cite each paper's authors and arXiv ID alongside its title so the user can verify and cite the source."
+            "answer, cite each paper's authors and arXiv ID alongside its title so the user can verify and cite the source. "
+            "Budget your searches: if a query returns sparse or empty results, broaden it with fewer or more general terms at most "
+            "twice, then synthesize from the best available results instead of re-phrasing similar queries endlessly—keep the total "
+            "to about five search calls per request. Always finish with a complete prose answer that explicitly addresses every "
+            "requirement of the request (requested paper count, comparison dimensions, time range), with title, authors, and arXiv "
+            "ID for each paper; never end your turn with a tool call or a plan to search further."
         ),
         "inputSchema": input_schema("search_papers"),
     },
