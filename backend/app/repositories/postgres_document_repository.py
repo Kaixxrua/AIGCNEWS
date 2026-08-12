@@ -247,6 +247,25 @@ class PostgresDocumentRepository:
                     (local_pdf_path, doc_id),
                 )
 
+    def list_arxiv_documents_missing_authors(
+        self, *, after_id: str = "", limit: int = 500
+    ) -> list[dict[str, Any]]:
+        """按 id  keyset 分页列出尚缺作者信息的 arXiv 文档（回填脚本专用）。"""
+        return self._fetch_rows(
+            "SELECT id, url FROM documents WHERE source = 'arxiv'"
+            " AND (authors IS NULL OR authors = '') AND id > %s"
+            " ORDER BY id LIMIT %s",
+            (after_id, max(1, min(int(limit), 10000))),
+        )
+
+    def update_document_authors(self, doc_id: str, authors: str, arxiv_id: str) -> None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE documents SET authors = %s, arxiv_id = %s WHERE id = %s",
+                    (authors, arxiv_id, doc_id),
+                )
+
     def search_document_page(
         self,
         query: str,
