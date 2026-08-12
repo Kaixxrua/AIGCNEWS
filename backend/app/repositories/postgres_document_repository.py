@@ -82,7 +82,7 @@ def _document_projection() -> str:
                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
-               d.in_monthly, d.local_pdf_path, d.media, d.quote, d.link_card, d.author_avatar_url, d.author_name, d.translation_zh, d.created_at
+               d.in_monthly, d.local_pdf_path, d.media, d.quote, d.link_card, d.author_avatar_url, d.author_name, d.translation_zh, d.authors, d.arxiv_id, d.created_at
         FROM documents d
         LEFT JOIN github_repo_candidates c
           ON d.source = 'github' AND (c.full_name = d.title
@@ -96,6 +96,9 @@ def _document_projection() -> str:
 
 def _deserialize_row_media(row: dict[str, Any]) -> dict[str, Any]:
     """把 JSON 文本列反序列化：media → 列表，quote/link_card → 对象；失败置 None。"""
+    # 注意：authors 刻意保持 JSON 字符串（与 tags 一致）。REST 读路径经
+    # safe_document 透传标量，若在此反序列化成列表会被 str(value) 打成
+    # Python repr；MCP 侧由 _public_doc 单独解析为真数组。
     media = row.get("media")
     if isinstance(media, str) and media:
         try:
@@ -144,8 +147,12 @@ class PostgresDocumentRepository:
         doc.setdefault("author_avatar_url", None)
         doc.setdefault("author_name", None)
         doc.setdefault("translation_zh", None)
+        doc.setdefault("authors", None)
+        doc.setdefault("arxiv_id", None)
         if isinstance(doc.get("tags"), list):
             doc["tags"] = json.dumps(doc["tags"], ensure_ascii=False)
+        if isinstance(doc.get("authors"), list):
+            doc["authors"] = json.dumps(doc["authors"], ensure_ascii=False)
         if isinstance(doc.get("media"), list):
             doc["media"] = json.dumps(doc["media"], ensure_ascii=False)
         if isinstance(doc.get("quote"), dict):
@@ -162,13 +169,13 @@ class PostgresDocumentRepository:
                     INSERT INTO documents
                         (id, source, source_channel, title, url, summary, published_date,
                          published_at, tags, score, raw_score, stars, forks, language, rank_in_period,
-                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, quote, link_card, author_avatar_url, author_name, translation_zh, created_at)
+                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, quote, link_card, author_avatar_url, author_name, translation_zh, authors, arxiv_id, created_at)
                     VALUES
                         (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s,
                          %(summary)s, %(published_date)s, %(published_at)s, %(tags)s, %(score)s,
                          %(raw_score)s, %(stars)s, %(forks)s, %(language)s,
                          %(rank_in_period)s, %(indexed)s, %(in_daily)s, %(in_weekly)s,
-                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(quote)s, %(link_card)s, %(author_avatar_url)s, %(author_name)s, %(translation_zh)s, %(created_at)s)
+                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(quote)s, %(link_card)s, %(author_avatar_url)s, %(author_name)s, %(translation_zh)s, %(authors)s, %(arxiv_id)s, %(created_at)s)
                     ON CONFLICT (id) DO UPDATE SET
                         source_channel=EXCLUDED.source_channel, title=EXCLUDED.title,
                         url=EXCLUDED.url, summary=EXCLUDED.summary,
@@ -190,7 +197,9 @@ class PostgresDocumentRepository:
                         link_card=COALESCE(NULLIF(EXCLUDED.link_card, ''), documents.link_card),
                         author_avatar_url=COALESCE(NULLIF(EXCLUDED.author_avatar_url, ''), documents.author_avatar_url),
                         author_name=COALESCE(NULLIF(EXCLUDED.author_name, ''), documents.author_name),
-                        translation_zh=COALESCE(NULLIF(EXCLUDED.translation_zh, ''), documents.translation_zh)
+                        translation_zh=COALESCE(NULLIF(EXCLUDED.translation_zh, ''), documents.translation_zh),
+                        authors=COALESCE(NULLIF(EXCLUDED.authors, ''), documents.authors),
+                        arxiv_id=COALESCE(NULLIF(EXCLUDED.arxiv_id, ''), documents.arxiv_id)
                     """,
                     params,
                 )
@@ -278,7 +287,7 @@ class PostgresDocumentRepository:
                 cursor.execute(
                     f"""SELECT id, source, source_channel, title, url, summary,
                                published_date, tags, score, raw_score, rank_in_period,
-                               local_pdf_path, created_at
+                               local_pdf_path, authors, arxiv_id, created_at
                         FROM documents WHERE {where_sql}
                         ORDER BY CASE {' '.join(tier_clauses)} ELSE {len(patterns) * 2} END ASC,
                                  ({' + '.join(count_clauses)}) DESC,
@@ -442,7 +451,7 @@ class PostgresDocumentRepository:
         )
 
     def get_paper_detail(self, paper_id: str) -> dict[str, Any] | None:
-        fields = "id, source, source_channel, title, url, summary, published_date, tags, score, raw_score, rank_in_period, local_pdf_path, created_at"
+        fields = "id, source, source_channel, title, url, summary, published_date, tags, score, raw_score, rank_in_period, local_pdf_path, authors, arxiv_id, created_at"
         return self._fetch_one(f"SELECT {fields} FROM documents WHERE id = %s LIMIT 1", (paper_id,))
 
     def get_paper_pdf_source(self, paper_id: str) -> dict[str, Any] | None:

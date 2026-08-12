@@ -160,6 +160,45 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
 
         self.assertIsNone(write["author_name"])
 
+    def test_document_write_projection_passes_authors_and_arxiv_id_through(self) -> None:
+        document = MagicMock(metadata={"id": "doc-arxiv-authors"})
+        paper = {
+            "source": "arxiv",
+            "channel": "huggingface_daily_html",
+            "title": "Paper",
+            "authors": ["Alice Zhang", "Bob Li"],
+            "arxiv_id": "2403.12345",
+        }
+
+        write = project_document_write(paper, document, "arxiv")
+
+        self.assertEqual(write["authors"], ["Alice Zhang", "Bob Li"])
+        self.assertEqual(write["arxiv_id"], "2403.12345")
+
+    def test_document_write_projection_empty_authors_defaults_to_none(self) -> None:
+        document = MagicMock(metadata={"id": "doc-arxiv-noauthors"})
+        paper = {
+            "source": "arxiv",
+            "channel": "huggingface_daily_html",
+            "title": "Paper",
+            "authors": [],
+        }
+
+        write = project_document_write(paper, document, "arxiv")
+
+        # 空列表写 NULL：upsert 冲突合并据此保留已有作者
+        self.assertIsNone(write["authors"])
+        self.assertIsNone(write["arxiv_id"])
+
+    def test_document_write_projection_non_arxiv_has_no_authors(self) -> None:
+        document = MagicMock(metadata={"id": "doc-gh-authors"})
+        paper = {"source": "github", "channel": "github_daily", "title": "Repo"}
+
+        write = project_document_write(paper, document, "github_daily")
+
+        self.assertIsNone(write["authors"])
+        self.assertIsNone(write["arxiv_id"])
+
     def test_document_write_projection_truncates_long_title(self) -> None:
         document = MagicMock(metadata={"id": "doc-x-long"})
         paper = {

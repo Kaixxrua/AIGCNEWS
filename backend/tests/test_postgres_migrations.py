@@ -448,6 +448,18 @@ def test_user_foreign_keys_validate_before_retype_and_add_cascade() -> None:
     assert "recommended_by_user_id IS NOT NULL" in migration.sql
 
 
+def test_document_authors_schema_is_additive_and_idempotent() -> None:
+    migration = discover_migrations()[34]
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert migration.filename == "0035_document_authors.sql"
+    assert migration.sql.count("ADD COLUMN IF NOT EXISTS") == 2
+    assert "authors TEXT" in migration.sql
+    assert "arxiv_id TEXT" in migration.sql
+    assert "DROP" not in normalized
+    assert "CONCURRENTLY" not in normalized
+
+
 def test_live_postgres_apply_twice_and_introspect_schema() -> None:
     dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
     if not dsn:

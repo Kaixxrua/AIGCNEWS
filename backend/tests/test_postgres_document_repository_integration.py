@@ -89,6 +89,43 @@ def _insert_rank_snapshot(database: Any, doc_id: str) -> None:
         )
 
 
+def test_upsert_round_trips_authors_and_arxiv_id_with_conflict_merge(
+    postgres_documents: tuple[Any, Any],
+) -> None:
+    repository, _ = postgres_documents
+    base_doc = {
+        "id": "it:arxiv-authors",
+        "source": "arxiv",
+        "title": "paper",
+        "url": "https://arxiv.org/abs/2403.12345",
+        "summary": "summary",
+        "published_date": "2026-08-07",
+        "tags": [],
+        "authors": ["Alice Zhang", "Bob Li"],
+        "arxiv_id": "2403.12345",
+    }
+    repository.upsert_document(dict(base_doc))
+
+    detail = repository.get_paper_detail("it:arxiv-authors")
+    assert detail is not None
+    assert detail["authors"] == '["Alice Zhang", "Bob Li"]'
+    assert detail["arxiv_id"] == "2403.12345"
+    found = repository.search_document_page("paper", source="arxiv")["items"]
+    assert [row["arxiv_id"] for row in found] == ["2403.12345"]
+    assert found[0]["authors"] == '["Alice Zhang", "Bob Li"]'
+
+    # 冲突合并：不带作者的重爬保留旧值
+    repository.upsert_document({k: v for k, v in base_doc.items() if k not in ("authors", "arxiv_id")})
+    detail = repository.get_paper_detail("it:arxiv-authors")
+    assert detail["authors"] == '["Alice Zhang", "Bob Li"]'
+    assert detail["arxiv_id"] == "2403.12345"
+
+    # 冲突合并：带新作者的回填/重爬覆盖旧值
+    repository.upsert_document({**base_doc, "authors": ["Carol Wang"]})
+    detail = repository.get_paper_detail("it:arxiv-authors")
+    assert detail["authors"] == '["Carol Wang"]'
+
+
 def test_delete_documents_removes_rows_and_snapshots_in_one_pass(
     postgres_documents: tuple[Any, Any],
 ) -> None:

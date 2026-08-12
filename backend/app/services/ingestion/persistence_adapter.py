@@ -70,6 +70,10 @@ def project_document_write(
         "author_avatar_url": paper.get("author_avatar_url"),
         "author_name": paper.get("author_name"),
         "translation_zh": paper.get("translation_zh"),
+        # arXiv 采集器产出 authors（≤5 字符串列表）与 arxiv_id；None/空值写 NULL，
+        # upsert 冲突合并（COALESCE(NULLIF(...,''))）据此保留已有值。
+        "authors": paper.get("authors") or None,
+        "arxiv_id": paper.get("arxiv_id"),
     }
 
 
