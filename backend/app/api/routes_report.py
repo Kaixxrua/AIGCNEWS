@@ -128,7 +128,7 @@ async def stream_daily_report(
       - news        → 行业报告（RSS）
       - producthunt → 产品报告（Product Hunt 热榜）
       - hackernews  → 社区报告（Hacker News AI 热帖）
-      - x           → X 动态报告（关注账号推文）
+      - x           → X 动态报告（关注账号当日动态，按账号组织）
       - dailyhot    → 全网热榜报告（中文站点聚合）
 
     简报仅按日生成（weekly/monthly 已移除）。

@@ -11,9 +11,11 @@ from backend.app.services.briefing.daily_briefing import (
     _CONTINUATION_PROMPT,
     _MAX_CONTINUATION_ROUNDS,
     _PROMPT_GITHUB,
+    _PROMPT_X,
     _SOURCE_CHANNELS,
     _SOURCE_CONFIG,
     DailyBriefingService,
+    _count_briefing_items,
     _format_articles,
     _looks_like_block_response,
     _truncate_summary,
@@ -726,6 +728,105 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
         self.assertNotIn("评分", with_author)
         self.assertNotIn("评分", without_author)
 
+    def test_x_source_groups_articles_by_account(self) -> None:
+        # X 简报输入以账号为单位：同账号推文聚合为一个编号条目，
+        # 组内推文再编号；分组顺序 = 账号首次出现顺序（输入已按热度降序）。
+        docs = [
+            _x_doc("t1", handle="OpenAI", author="OpenAI", score=100),
+            _x_doc("t2", handle="OpenAI", author="OpenAI", score=90),
+            _x_doc("t3", handle="sama", author="Sam Altman", score=80),
+        ]
+
+        articles = _format_articles(docs, "x")
+
+        self.assertIn("1. 📣 @OpenAI（2 条推文）", articles)
+        self.assertIn("2. 📣 Sam Altman (@sama)（1 条推文）", articles)
+        self.assertIn("1) **t1**", articles)
+        self.assertIn("2) **t2**", articles)
+        self.assertIn("1) **t3**", articles)
+        self.assertIn("🔗 https://x.com/OpenAI/status/t1", articles)
+        self.assertNotIn("3. 📣", articles)
+
+    def test_x_grouping_is_case_insensitive_and_falls_back_to_nickname(self) -> None:
+        # handle 大小写差异归并同账号；无 URL 可解析时按昵称归并，
+        # 两者皆无归入"官方账号动态"兜底组（不静默丢弃）。
+        docs = [
+            _x_doc("t1", handle="OpenAI", author="OpenAI"),
+            _x_doc("t2", handle="openai", author="OpenAI"),
+            {"source": "x", "title": "t3", "summary": "s", "url": "", "author_name": "alibaba_Qwen"},
+            {"source": "x", "title": "t4", "summary": "s", "url": "", "author_name": ""},
+            {"source": "x", "title": "t5", "summary": "s", "url": "", "author_name": None},
+        ]
+
+        articles = _format_articles(docs, "x")
+
+        self.assertIn("1. 📣 @OpenAI（2 条推文）", articles)
+        self.assertIn("2. 📣 @alibaba_Qwen（1 条推文）", articles)
+        self.assertIn("3. 📣 官方账号动态（2 条推文）", articles)
+
+    def test_x_prompt_counts_accounts_not_tweets(self) -> None:
+        docs = [
+            _x_doc("t1", handle="OpenAI", author="OpenAI", score=100),
+            _x_doc("t2", handle="openai", author="OpenAI", score=90),
+            _x_doc("t3", handle="sama", author="Sam Altman", score=80),
+        ]
+        context = normalize_briefing_context(
+            target_date="2026-07-22",
+            source="x",
+            source_config=_SOURCE_CONFIG,
+            source_channels=_SOURCE_CHANNELS,
+        )
+
+        prompt = render_briefing_prompt(
+            context=context,
+            documents=docs,
+            source_config=_SOURCE_CONFIG,
+            format_articles=_format_articles,
+            count_items=_count_briefing_items,
+        )
+
+        self.assertEqual(
+            prompt,
+            _PROMPT_X.format(
+                count=2,
+                articles=_format_articles(docs, "x"),
+                date="2026-07-22",
+            ),
+        )
+        # 非 x 来源计数口径不变：仍以条目为单位。
+        self.assertEqual(_count_briefing_items(docs, "all"), 3)
+        self.assertEqual(_count_briefing_items(docs, "github"), 3)
+
+    def test_x_streaming_prompt_is_grouped_by_account(self) -> None:
+        # 端到端契约：x 源送给 LLM 的 prompt 以账号为单位（count=账号数，
+        # articles 为分组渲染），而非逐条推文。
+        service = DailyBriefingPreparationContractTests._service()
+        docs = [
+            _x_doc("t1", handle="OpenAI", author="OpenAI", score=100),
+            _x_doc("t2", handle="OpenAI", author="OpenAI", score=90),
+            _x_doc("t3", handle="sama", author="Sam Altman", score=80),
+        ]
+        service._rank_snapshots.get_snapshot_documents.return_value = docs
+        service._llm.astream.side_effect = (
+            DailyBriefingPreparationContractTests._astream_side_effect(["完整简报。"])
+        )
+
+        events = DailyBriefingPreparationContractTests._collect(
+            service.stream_generate("2026-07-22", source="x")
+        )
+
+        self.assertEqual(events[0]["data"]["doc_count"], 3)
+        service._llm.astream.assert_called_once_with(
+            _PROMPT_X.format(
+                count=2,
+                articles=_format_articles(docs, "x"),
+                date="2026-07-22",
+            )
+        )
+        service._briefings.save_briefing.assert_called_once_with(
+            "2026-07-22_x", "完整简报。"
+        )
+
     def test_truncate_summary_breaks_on_boundary_and_marks_ellipsis(self) -> None:
         short = "简短摘要。"
         self.assertEqual(_truncate_summary(short), short)
@@ -830,6 +931,27 @@ def _github_doc(
         "raw_score": score,
         "score": score,
         "stars": 1000,
+    }
+
+
+def _x_doc(
+    title: str,
+    *,
+    handle: str = "OpenAI",
+    author: str = "OpenAI",
+    score: int = 100,
+    summary: str = "summary",
+) -> dict:
+    return {
+        "id": title,
+        "source": "x",
+        "source_channel": "x_daily_watchlist",
+        "title": title,
+        "summary": summary,
+        "url": f"https://x.com/{handle}/status/{title}",
+        "author_name": author,
+        "raw_score": score,
+        "score": 0.0,
     }
 
 

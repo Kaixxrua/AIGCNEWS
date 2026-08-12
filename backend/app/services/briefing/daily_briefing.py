@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Protocol
 
 from backend.app.repositories.briefing_repository import BriefingContentRepository
@@ -240,19 +241,20 @@ _PROMPT_DAILYHOT = r"""你是一位专业的中文科技资讯编辑。请根据
 **生成日期：** {date}
 """ + _WRITING_DISCIPLINE
 
-_PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下今日 X（Twitter）上 AI 公司与知名开发者官方账号的热门推文，撰写一份**内容详尽、深度全面**的 X 动态今日报。
+_PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下今日 X（Twitter）上 AI 公司与知名开发者官方账号的热门推文（已按账号分组），撰写一份**内容详尽、深度全面**的 X 动态今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"官方发布与公告"、"研究与技术分享"、"行业观点与洞察"、"值得关注"四个章节
-3. **每条推文都必须详细分析**，包括：发布者的官方身份与职位背景、核心内容、背景与影响、对产品路线或研究方向释放的信号（每条至少 4-6 句话）
+3. **以账号为单位组织分析**：每个账号的当日动态写成一段完整评述，包括发布者的官方身份与职位背景、核心内容、背景与影响、对产品路线或研究方向释放的信号（每个账号至少 4-6 句话）；同一账号有多条推文时须逐条点明要点，但合并在同一账号条目下，不得拆成互不相干的孤立条目
 4. 对官方账号动态反映出的行业趋势进行深入洞察；这些账号均为 AI 公司与知名开发者的官方账号，影响力判断应基于发布者身份与内容本身
 5. 语言通俗易懂，面向 AI 从业者与技术爱好者
-6. **务必覆盖所有提供的推文，不要遗漏任何一条**
+6. **务必覆盖所有提供的账号，不要遗漏任何一个账号；账号下的每条推文都要提及**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式为：`## 标题 \`#来源\` \`#领域\``。来源标签（必选1个）：`#x`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#开源模型` `#产品发布` `#研究论文` `#商业化` `#安全对齐` `#AI基础设施` `#开发者工具` `#观点争议` `#监管政策`。禁止使用过于宽泛的标签如 #ai #tool #trending
 8. 输入不包含点赞、转发等互动指标；全文禁止编造、引用或提及任何互动数据
+9. 每个账号条目结尾必须用 Markdown 链接附上该账号当日推文的来源（使用输入中给出的 URL）
 
-**今日 X 关注账号热门推文（共 {count} 条）：**
+**今日 X 关注账号动态（共 {count} 个账号）：**
 {articles}
 
 **生成日期：** {date}
@@ -335,6 +337,13 @@ def _filter_docs_by_channel(
 
 _SUMMARY_LIMIT = 200
 
+# 推文 URL 形如 https://x.com/{handle}/status/{id}；兼容 twitter.com 历史链接。
+# 与前端 xBoardViewModel 的 X_HANDLE_URL_RE 同一口径。
+_X_HANDLE_URL_RE = re.compile(
+    r"(?:https?://)?(?:www\.)?(?:x|twitter)\.com/([^/?\s]+)/status/",
+    re.IGNORECASE,
+)
+
 
 def _truncate_summary(summary: str, limit: int = _SUMMARY_LIMIT) -> str:
     """按词/句边界截断摘要并补省略号。
@@ -354,7 +363,77 @@ def _truncate_summary(summary: str, limit: int = _SUMMARY_LIMIT) -> str:
     return cut.rstrip(" ,.;，。；、：") + "…"
 
 
+def _group_x_docs_by_account(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """X 简报输入以账号为单位：按推文 URL 的 handle 分组（无 handle 回退昵称）。
+
+    分组顺序 = 账号首次出现顺序（输入已按互动分降序，即账号按其最高热推文
+    排序）；组内保持输入相对顺序。handle 与昵称都缺失的文档并入同一个
+    "官方账号动态"兜底分组，不静默丢弃。
+    """
+    groups: List[Dict[str, Any]] = []
+    by_key: Dict[str, Dict[str, Any]] = {}
+    for doc in docs:
+        url = str(doc.get("url") or "")
+        match = _X_HANDLE_URL_RE.search(url)
+        handle = match.group(1).lower() if match else ""
+        nickname = str(doc.get("author_name") or "").strip()
+        key = handle or nickname.lstrip("@").lower()
+        group = by_key.get(key)
+        if group is None:
+            group = {"handle": handle, "nickname": nickname, "docs": []}
+            by_key[key] = group
+            groups.append(group)
+        elif not group["nickname"] and nickname:
+            group["nickname"] = nickname
+        group["docs"].append(doc)
+    return groups
+
+
+def _x_account_label(group: Dict[str, Any]) -> str:
+    """账号条目标题：昵称与 handle 同时存在且不同名时并列展示。"""
+    nickname = group["nickname"]
+    handle = group["handle"]
+    nick_plain = nickname.lstrip("@")
+    if nickname and handle and nick_plain.lower() != handle:
+        return f"📣 {nickname} (@{handle})"
+    if nick_plain:
+        return f"📣 @{nick_plain}"
+    if handle:
+        return f"📣 @{handle}"
+    return "📣 官方账号动态"
+
+
+def _format_x_articles_by_account(docs: List[Dict[str, Any]]) -> str:
+    groups = _group_x_docs_by_account(docs)
+    lines: List[str] = []
+    for i, group in enumerate(groups, start=1):
+        tweets = group["docs"]
+        lines.append(f"{i}. {_x_account_label(group)}（{len(tweets)} 条推文）")
+        for j, doc in enumerate(tweets, start=1):
+            title = doc.get("title") or "无标题"
+            summary = doc.get("summary") or ""
+            url = doc.get("url") or ""
+            lines.append(f"   {j}) **{title}**")
+            if summary:
+                lines.append(f"      {_truncate_summary(summary)}")
+            if url:
+                lines.append(f"      🔗 {url}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _count_briefing_items(docs: List[Dict[str, Any]], source: str = "all") -> int:
+    """简报覆盖口径计数：X 以账号为单位，其余来源以条目为单位。"""
+    if source == "x":
+        return len(_group_x_docs_by_account(docs))
+    return len(docs)
+
+
 def _format_articles(docs: List[Dict[str, Any]], source: str = "all") -> str:
+    # X 简报以账号为单位：同一账号当日推文聚合为一个编号条目。
+    # 综合简报（source="all"）是跨源混排，X 条目仍按单条推文渲染。
+    if source == "x":
+        return _format_x_articles_by_account(docs)
     lines: List[str] = []
     for i, doc in enumerate(docs, start=1):
         title = doc.get("title") or "无标题"
@@ -464,6 +543,7 @@ class DailyBriefingService:
             filter_by_channel=_filter_docs_by_channel,
             format_articles=_format_articles,
             is_blocked=_looks_like_block_response,
+            count_items=_count_briefing_items,
         )
 
     async def stream_generate(

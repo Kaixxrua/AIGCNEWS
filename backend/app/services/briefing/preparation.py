@@ -7,6 +7,11 @@ from typing import Any, Callable, Mapping, Protocol, Sequence
 Document = dict[str, Any]
 PromptConfig = Mapping[str, tuple[str, str]]
 SourceChannels = Mapping[str, str]
+CountItems = Callable[[list[Document], str], int]
+
+
+def _default_count_items(documents: list[Document], _source: str) -> int:
+    return len(documents)
 
 # 快照缺失时的文档表兜底窗口：目标日及前 1 天（按入库时间）。
 # 日榜快照在次日 00:3x 关榜后才定稿，早间生成"今日"简报时今日快照尚未就绪，
@@ -186,11 +191,12 @@ def render_briefing_prompt(
     documents: Sequence[Document],
     source_config: PromptConfig,
     format_articles: Callable[[list[Document], str], str],
+    count_items: CountItems = _default_count_items,
 ) -> str:
     prompt_template, _ = source_config[context.source]
     docs = list(documents)
     return prompt_template.format(
-        count=len(docs),
+        count=count_items(docs, context.source),
         articles=format_articles(docs, context.source),
         date=context.target_date,
     )
@@ -206,6 +212,7 @@ def prepare_briefing(
     filter_by_channel: Callable[[list[Document], str], list[Document]],
     format_articles: Callable[[list[Document], str], str],
     is_blocked: Callable[[str], bool],
+    count_items: CountItems = _default_count_items,
 ) -> PreparedBriefing:
     documents: list[Document] = []
     fallback_used = False
@@ -263,6 +270,7 @@ def prepare_briefing(
             documents=documents,
             source_config=source_config,
             format_articles=format_articles,
+            count_items=count_items,
         )
         if documents
         else None
