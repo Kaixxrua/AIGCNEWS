@@ -7,6 +7,10 @@ defineProps<{
   brandName: string
 }>()
 
+// 工信部 ICP 备案号：按公示惯例链接至备案管理系统（备案号为固定登记文本，不做 i18n）
+const icpNumber = '蜀ICP备2026011291号'
+const icpLookupUrl = 'https://beian.miit.gov.cn/'
+
 const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${encodeURIComponent(t('footer.infringement'))}`)
 </script>
 
@@ -24,6 +28,8 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
     <span>{{ t('footer.ecosystem') }}<a href="mailto:kaixxrua@gmail.com" class="footer-link">kaixxrua@gmail.com</a></span>
     <span class="footer-sep">·</span>
     <a :href="infringementMailto" class="footer-link">{{ t('footer.infringement') }}</a>
+    <span class="footer-sep">·</span>
+    <a :href="icpLookupUrl" target="_blank" rel="noopener noreferrer nofollow" class="footer-link">{{ icpNumber }}</a>
   </div>
 </template>
 
