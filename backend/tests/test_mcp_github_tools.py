@@ -859,6 +859,57 @@ class McpProtocolTests(unittest.TestCase):
         self.assertNotIn("local_pdf_path", payload["items"][0])
         self.assertTrue(payload["items"][0]["pdf_media_url"].endswith("/api/media/papers/agent.pdf"))
 
+    def test_paper_payloads_expose_authors_list_and_arxiv_id(self) -> None:
+        repository = self.papers_repository
+        row = {
+            "id": "paper-2",
+            "source": "arxiv",
+            "title": "Authored Paper",
+            "authors": '["Alice Zhang", "Bob Li"]',
+            "arxiv_id": "2403.12345",
+        }
+        repository.search_document_page.return_value = {"items": [dict(row)], "total": 1}
+        repository.get_paper_detail.return_value = dict(row)
+
+        search_payload = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {"name": "search_papers", "arguments": {"q": "Authored"}},
+            },
+        ).json()["result"]["structuredContent"]
+        item = search_payload["items"][0]
+        self.assertEqual(item["authors"], ["Alice Zhang", "Bob Li"])
+        self.assertEqual(item["arxiv_id"], "2403.12345")
+
+        detail_payload = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "tools/call",
+                "params": {"name": "get_paper_detail", "arguments": {"paper_id": "paper-2"}},
+            },
+        ).json()["result"]["structuredContent"]
+        self.assertEqual(detail_payload["item"]["authors"], ["Alice Zhang", "Bob Li"])
+        self.assertEqual(detail_payload["item"]["arxiv_id"], "2403.12345")
+
+        # authors 为 NULL 的行原样透传 None，不伪造空数组
+        repository.get_paper_detail.return_value = {**row, "authors": None, "arxiv_id": None}
+        detail_payload = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "tools/call",
+                "params": {"name": "get_paper_detail", "arguments": {"paper_id": "paper-2"}},
+            },
+        ).json()["result"]["structuredContent"]
+        self.assertIsNone(detail_payload["item"]["authors"])
+        self.assertIsNone(detail_payload["item"]["arxiv_id"])
+
     def test_authenticated_token_adds_private_favorites_tool(self) -> None:
         async def authenticated_user():
             return {"user_id": 42, "role": "user", "scopes": frozenset({"projects:favorites:read"})}

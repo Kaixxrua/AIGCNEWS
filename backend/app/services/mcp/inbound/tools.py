@@ -129,6 +129,15 @@ def _public_doc(
         else project_pdf_media_url(dict(doc), request)
     )
     enriched.pop("local_pdf_path", None)
+    # DB 中 authors 为 JSON-TEXT（tags 先例）；MCP 载荷暴露为真数组便于 agent
+    # 直接引用。REST 侧不经过本函数，仍吐原始字符串。arxiv_id 为标量自然透传。
+    raw_authors = enriched.get("authors")
+    if isinstance(raw_authors, str):
+        try:
+            parsed_authors = json.loads(raw_authors) if raw_authors else []
+        except json.JSONDecodeError:
+            parsed_authors = []
+        enriched["authors"] = parsed_authors if isinstance(parsed_authors, list) else []
     return enrich_doc_detail_url(enriched, request)
 
 
