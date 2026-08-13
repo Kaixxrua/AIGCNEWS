@@ -106,11 +106,42 @@ def _validate_email_code(value: str) -> str:
     return value
 
 
+# 常见弱口令黑名单（大小写不敏感）：命中即拒绝。
+# admin123456 是本仓库自托管引导的历史默认口令（DEFAULT_ADMIN_PASSWORD
+# 的出厂值），必须阻止用户在改密时回退到它；短于最小长度的条目保留作
+# 纵深防御（最小长度下调时仍拦截）。
+_WEAK_PASSWORD_BLOCKLIST = frozenset(
+    {
+        "123456",
+        "12345678",
+        "123456789",
+        "1234567890",
+        "111111",
+        "000000",
+        "abc123",
+        "qwerty",
+        "qwertyuiop",
+        "password",
+        "password123",
+        "letmein",
+        "iloveyou",
+        "admin123",
+        "admin123456",
+        "aigcnews",
+        "aigcnews123",
+    }
+)
+
+
 def _validate_new_password(value: str) -> str:
-    if len(value) < 6:
-        raise ValueError("password must be at least 6 characters")
+    # bcrypt 成本与在线爆破模型：10 位起 + 弱口令黑名单；
+    # 72 字节上限是 bcrypt 输入截断边界（超限静默截断会造成可用性歧义）
+    if len(value) < 10:
+        raise ValueError("password must be at least 10 characters")
     if len(value.encode("utf-8")) > 72:
         raise ValueError("password must not exceed 72 UTF-8 bytes")
+    if value.lower() in _WEAK_PASSWORD_BLOCKLIST:
+        raise ValueError("password is too common, choose a stronger one")
     return value
 
 

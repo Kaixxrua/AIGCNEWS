@@ -44,7 +44,7 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
                 json={
                     "email": "reader@example.com",
                     "email_code": "123456",
-                    "password": "abcdef",
+                    "password": "Str0ng!Pass",
                 },
             )
 
@@ -52,7 +52,7 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
         self.assertEqual(response.json(), {"detail": "注册成功", "user_id": 42})
         args = self.repository.create_user_with_email.call_args.args
         self.assertEqual(args[0], "reader@example.com")
-        self.assertNotEqual(args[1], "abcdef")
+        self.assertNotEqual(args[1], "Str0ng!Pass")
         self.assertEqual(args[2:], ("user", ""))
         self.assertEqual(events, ["insert", "consume"])
 
@@ -72,7 +72,7 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
                 json={
                     "email": "reader@example.com",
                     "email_code": "123456",
-                    "password": "abcdef",
+                    "password": "Str0ng!Pass",
                 },
             )
 

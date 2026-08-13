@@ -169,7 +169,7 @@ class PasswordResetRouteTests(unittest.TestCase):
                 json={
                     "email": "USER@example.com",
                     "email_code": "123456",
-                    "new_password": "abcdef",
+                    "new_password": "Str0ng!Pass",
                 },
             )
 
@@ -177,8 +177,8 @@ class PasswordResetRouteTests(unittest.TestCase):
         kwargs = repository.update_user_password.call_args.kwargs
         self.assertEqual(kwargs["user_id"], 7)
         self.assertEqual(kwargs["email"], "user@example.com")
-        self.assertNotEqual(kwargs["hashed_password"], "abcdef")
-        self.assertTrue(verify_password("abcdef", kwargs["hashed_password"]))
+        self.assertNotEqual(kwargs["hashed_password"], "Str0ng!Pass")
+        self.assertTrue(verify_password("Str0ng!Pass", kwargs["hashed_password"]))
         email_service.consume_otp.assert_awaited_once_with(
             "user@example.com", purpose="password_reset"
         )
@@ -198,7 +198,7 @@ class PasswordResetRouteTests(unittest.TestCase):
                     json={
                         "email": "user@example.com",
                         "email_code": "123456",
-                        "new_password": "abcdef",
+                        "new_password": "Str0ng!Pass",
                     },
                 )
             results.append((response.status_code, response.json()))
@@ -225,7 +225,7 @@ class PasswordResetRouteTests(unittest.TestCase):
                 json={
                     "email": "user@example.com",
                     "email_code": "123456",
-                    "new_password": "abcdef",
+                    "new_password": "Str0ng!Pass",
                 },
             )
 
