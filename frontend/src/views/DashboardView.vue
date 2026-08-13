@@ -22,7 +22,6 @@ let currentStats: () => Stats = () => ({})
 const {
   statValues,
   visitorValues,
-  userParts,
   mcpTotalCalls,
   updateStatSources,
   updateVisitorSources,
@@ -91,7 +90,6 @@ onBeforeUnmount(pauseLivePoll)
       :active-tab="activeTab"
       :stat-values="statValues"
       :visitor-values="visitorValues"
-      :user-parts="userParts"
       @select-source="selectSourceTab"
     />
 
