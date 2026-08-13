@@ -52,6 +52,19 @@ def provide_ingestion_dependencies(
     from backend.app.services.ingestion.cache_invalidation import (
         clear_dashboard_cache_safely,
     )
+
+    async def clear_and_warm_dashboard_cache() -> None:
+        """先清旧 dashboard key，再按前端首屏参数重建热缓存。
+
+        纯删除式失效会让每个采集窗口后的首批用户撞上 ~3s 级冷查询；
+        预热在后台把首屏组合重新算好，用户请求始终命中热缓存。
+        清缓存与预热均为非致命路径，异常由各自内部兜底。
+        """
+        await clear_dashboard_cache_safely()
+        # composition root 允许跨层装配：预热逻辑在 api 层（与路由同源生成 cache key）
+        from backend.app.api.dashboard_cache_warmup import warm_dashboard_cache
+
+        await warm_dashboard_cache(repositories)
     from backend.app.services.ingestion.crawlers import (
         ArxivCrawler,
         DailyHotCrawler,
@@ -93,6 +106,6 @@ def provide_ingestion_dependencies(
         graph_writer_factory=GraphRepository,
         pdf_vector_writer_factory=MilvusRepository,
         pdf_indexer=download_and_index_arxiv_pdfs,
-        cache_invalidator=clear_dashboard_cache_safely,
+        cache_invalidator=clear_and_warm_dashboard_cache,
         crawler_factories=tuple(crawler_factories),
     )
