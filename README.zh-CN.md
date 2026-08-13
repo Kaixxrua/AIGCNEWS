@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="在线使用" src="https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E4%BD%BF%E7%94%A8-aigcnews.cn-blue"></a>
+  <a href="https://github.com/Kaixxrua/AIGC_NEWS/actions/workflows/contract-baseline.yml"><img alt="CI: Contract Baseline" src="https://github.com/Kaixxrua/AIGC_NEWS/actions/workflows/contract-baseline.yml/badge.svg?branch=main"></a>
   <a href="LICENSE"><img alt="License: BSL 1.1" src="https://img.shields.io/badge/License-BSL%201.1-lightgrey"></a>
   <a href="https://cursor.com/en-US/install-mcp?name=aigc-radar&config=eyJ1cmwiOiJodHRwczovL2FpZ2NuZXdzLmNuL2FwaS9tY3AifQ=="><img alt="Install in Cursor" src="https://cursor.com/deeplink/mcp-install-dark.svg"></a>
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="Install in VS Code" src="https://img.shields.io/badge/Install%20in-VS%20Code-007acc"></a>
