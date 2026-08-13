@@ -1,4 +1,4 @@
-import { Activity, CloudDownload, FileText, GitBranch, Newspaper, Rocket, Settings, Triangle } from 'lucide-vue-next'
+import { Activity, CloudDownload, FileText, GitBranch, Newspaper, Rocket, Settings, Triangle, Users } from 'lucide-vue-next'
 import { formatLocaleDate } from '@/i18n/formatters'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import type { Component } from 'vue'
@@ -42,30 +42,60 @@ export const SOURCE_LIST: SourceItem[] = [
   { key: 'x', labelKey: 'x', icon: XLogoIcon, color: '', textColor: '' },
 ]
 
-export type MonitorSectionKey = 'status' | 'ingestion' | 'github' | 'settings'
+export type MonitorSectionKey =
+  | 'tasks' | 'mcp-calls'
+  | 'collect' | 'crawl' | 'enrichment'
+  | 'x-watch' | 'x-credentials' | 'wechat'
+  | 'provider' | 'scheduler' | 'smtp' | 'mcp-server'
 
-export interface MonitorSectionItem {
+export interface MonitorNavLeaf {
   key: MonitorSectionKey
   labelKey: string
-  icon: Component
   adminOnly: boolean
 }
 
-// 监控页左侧二级导航分组：顺序即导航展示与 URL ?section= 的契约，测试锁定
-export const MONITOR_SECTIONS: MonitorSectionItem[] = [
-  { key: 'status', labelKey: 'monitor.nav.status', icon: Activity, adminOnly: false },
-  { key: 'ingestion', labelKey: 'monitor.nav.ingestion', icon: CloudDownload, adminOnly: true },
-  { key: 'github', labelKey: 'monitor.nav.github', icon: GitBranch, adminOnly: true },
-  { key: 'settings', labelKey: 'monitor.nav.settings', icon: Settings, adminOnly: true },
+export interface MonitorNavCategory {
+  key: string
+  labelKey: string
+  icon: Component
+  children: MonitorNavLeaf[]
+}
+
+// 监控页左侧两级导航：大类 → 叶子（一叶一面板）。叶子 key 即 URL ?section= 契约，测试锁定
+export const MONITOR_NAV: MonitorNavCategory[] = [
+  { key: 'monitor', labelKey: 'monitor.nav.group.monitor', icon: Activity, children: [
+    { key: 'tasks', labelKey: 'monitor.nav.tasks', adminOnly: false },
+    { key: 'mcp-calls', labelKey: 'monitor.nav.mcpCalls', adminOnly: false },
+  ] },
+  { key: 'ingestion', labelKey: 'monitor.nav.group.ingestion', icon: CloudDownload, children: [
+    { key: 'collect', labelKey: 'monitor.nav.collect', adminOnly: true },
+    { key: 'crawl', labelKey: 'monitor.nav.crawl', adminOnly: true },
+    { key: 'enrichment', labelKey: 'monitor.nav.enrichment', adminOnly: true },
+  ] },
+  { key: 'accounts', labelKey: 'monitor.nav.group.accounts', icon: Users, children: [
+    { key: 'x-watch', labelKey: 'monitor.nav.xWatch', adminOnly: true },
+    { key: 'x-credentials', labelKey: 'monitor.nav.xCredentials', adminOnly: true },
+    { key: 'wechat', labelKey: 'monitor.nav.wechat', adminOnly: true },
+  ] },
+  { key: 'config', labelKey: 'monitor.nav.group.config', icon: Settings, children: [
+    { key: 'provider', labelKey: 'monitor.nav.provider', adminOnly: true },
+    { key: 'scheduler', labelKey: 'monitor.nav.scheduler', adminOnly: true },
+    { key: 'smtp', labelKey: 'monitor.nav.smtp', adminOnly: true },
+    { key: 'mcp-server', labelKey: 'monitor.nav.mcpServer', adminOnly: true },
+  ] },
 ]
 
-export const DEFAULT_MONITOR_SECTION: MonitorSectionKey = 'status'
+export const DEFAULT_MONITOR_SECTION: MonitorSectionKey = 'tasks'
+
+const MONITOR_SECTION_KEY_SET = new Set<string>(
+  MONITOR_NAV.flatMap(category => category.children.map(leaf => leaf.key)),
+)
 
 // ?section= 白名单校验：LocationQueryValue 可能为 null，重复参数（string[]）取第一个
 export const normalizeMonitorSection = (value: unknown): MonitorSectionKey => {
   const raw = Array.isArray(value) ? value[0] : value
   const key = String(raw ?? '').trim()
-  return MONITOR_SECTIONS.some(section => section.key === key)
+  return MONITOR_SECTION_KEY_SET.has(key)
     ? key as MonitorSectionKey
     : DEFAULT_MONITOR_SECTION
 }

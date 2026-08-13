@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_MONITOR_SECTION,
+  MONITOR_NAV,
   MCP_TEST_SCOPE,
-  MONITOR_SECTIONS,
   SOURCE_LIST,
   getMcpAuthPresentation,
   getMcpTransportPresentation,
@@ -53,28 +53,44 @@ describe('monitor presentation localization boundary', () => {
     ])
   })
 
-  it('exposes stable section metadata for the monitor secondary nav', () => {
-    expect(MONITOR_SECTIONS.map(section => [section.key, section.labelKey, section.adminOnly])).toEqual([
-      ['status', 'monitor.nav.status', false],
-      ['ingestion', 'monitor.nav.ingestion', true],
-      ['github', 'monitor.nav.github', true],
-      ['settings', 'monitor.nav.settings', true],
+  it('exposes stable two-level nav metadata for the monitor secondary nav', () => {
+    expect(MONITOR_NAV.map(category => [category.key, category.labelKey])).toEqual([
+      ['monitor', 'monitor.nav.group.monitor'],
+      ['ingestion', 'monitor.nav.group.ingestion'],
+      ['accounts', 'monitor.nav.group.accounts'],
+      ['config', 'monitor.nav.group.config'],
     ])
-    expect(DEFAULT_MONITOR_SECTION).toBe('status')
-    expect(MONITOR_SECTIONS.every(section => Boolean(section.icon))).toBe(true)
+    expect(MONITOR_NAV.flatMap(category => category.children.map(leaf => [leaf.key, leaf.labelKey, leaf.adminOnly]))).toEqual([
+      ['tasks', 'monitor.nav.tasks', false],
+      ['mcp-calls', 'monitor.nav.mcpCalls', false],
+      ['collect', 'monitor.nav.collect', true],
+      ['crawl', 'monitor.nav.crawl', true],
+      ['enrichment', 'monitor.nav.enrichment', true],
+      ['x-watch', 'monitor.nav.xWatch', true],
+      ['x-credentials', 'monitor.nav.xCredentials', true],
+      ['wechat', 'monitor.nav.wechat', true],
+      ['provider', 'monitor.nav.provider', true],
+      ['scheduler', 'monitor.nav.scheduler', true],
+      ['smtp', 'monitor.nav.smtp', true],
+      ['mcp-server', 'monitor.nav.mcpServer', true],
+    ])
+    expect(DEFAULT_MONITOR_SECTION).toBe('tasks')
+    expect(MONITOR_NAV.every(category => Boolean(category.icon))).toBe(true)
   })
 
   it('normalizes unknown or malformed section query values to the default', () => {
-    expect(normalizeMonitorSection('github')).toBe('github')
-    expect(normalizeMonitorSection('ingestion')).toBe('ingestion')
-    expect(normalizeMonitorSection('')).toBe('status')
-    expect(normalizeMonitorSection(undefined)).toBe('status')
-    expect(normalizeMonitorSection(null)).toBe('status')
-    expect(normalizeMonitorSection('bogus')).toBe('status')
+    expect(normalizeMonitorSection('enrichment')).toBe('enrichment')
+    expect(normalizeMonitorSection('mcp-server')).toBe('mcp-server')
+    expect(normalizeMonitorSection('')).toBe('tasks')
+    expect(normalizeMonitorSection(undefined)).toBe('tasks')
+    expect(normalizeMonitorSection(null)).toBe('tasks')
+    expect(normalizeMonitorSection('bogus')).toBe('tasks')
+    // 扁平分组时代的旧 key 已失效，回落默认
+    expect(normalizeMonitorSection('status')).toBe('tasks')
     // 大小写敏感，白名单精确匹配
-    expect(normalizeMonitorSection(' GitHub ')).toBe('status')
+    expect(normalizeMonitorSection(' Enrichment ')).toBe('tasks')
     // vue-router 重复参数（string[]）取第一个
-    expect(normalizeMonitorSection(['settings'])).toBe('settings')
-    expect(normalizeMonitorSection(['bogus'])).toBe('status')
+    expect(normalizeMonitorSection(['scheduler'])).toBe('scheduler')
+    expect(normalizeMonitorSection(['bogus'])).toBe('tasks')
   })
 })

@@ -1169,7 +1169,7 @@
   opacity: 0.4;
 }
 
-/* ═══ 二级导航（桌面竖排 aside / 移动端横向 chips） ═══ */
+/* ═══ 二级导航（桌面：大类可折叠两级树 / 移动端：叶子摊平横向 chips） ═══ */
 .monitor-page .monitor-body {
   display: flex;
   align-items: flex-start;
@@ -1187,11 +1187,60 @@
 .monitor-page .monitor-nav {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  width: 176px;
+  gap: 10px;
+  width: 184px;
   flex-shrink: 0;
   position: sticky;
   top: 24px;
+}
+
+.monitor-page .monitor-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 大类头：标签行而非动作按钮，不用边框盒 */
+.monitor-page .monitor-nav-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--projects-accent);
+  opacity: 0.62;
+  transition: opacity 150ms ease;
+}
+
+.monitor-page .monitor-nav-group-header:hover {
+  opacity: 1;
+}
+
+.monitor-page .monitor-nav-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.monitor-page .monitor-nav-chevron {
+  width: 12px;
+  height: 12px;
+  margin-left: auto;
+  transition: transform 150ms ease;
+}
+
+.monitor-page .monitor-nav-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.monitor-page .monitor-nav-leaves {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .monitor-page .monitor-nav-item {
@@ -1200,15 +1249,21 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 12px;
+  padding: 8px 12px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
   border-radius: 4px;
   border: 1px solid var(--projects-accent);
   color: var(--projects-accent);
   background: var(--projects-paper-light);
   transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+/* 叶子相对大类头缩进，形成两级视觉层级 */
+.monitor-page .monitor-nav-leaf {
+  margin-left: 14px;
+  width: calc(100% - 14px);
 }
 
 .monitor-page .monitor-nav-item:hover {
@@ -1224,12 +1279,6 @@
   box-shadow: 3px 3px 0 var(--shadow-hard);
 }
 
-.monitor-page .monitor-nav-icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
 .monitor-page .monitor-nav-alert {
   position: absolute;
   top: 6px;
@@ -1243,6 +1292,13 @@
   animation: monitor-nav-alert-pulse 1.6s ease-in-out infinite;
 }
 
+/* 大类头内的红点：静态行内变体（折叠时接管叶子告警） */
+.monitor-page .monitor-nav-alert-inline {
+  position: static;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
 /* active 项上描边换 acid 底，避免白边撞色 */
 .monitor-page .monitor-nav-item.active .monitor-nav-alert {
   border-color: var(--projects-acid);
@@ -1253,7 +1309,7 @@
   50% { transform: scale(1.35); opacity: 0.65; }
 }
 
-/* 移动端：降级为顶部横向 chips（断点对齐 .monitor-page 自身 padding 的 720px） */
+/* 移动端：大类头隐藏，叶子摊平为横向 chips（折叠态被强制忽略） */
 @media (max-width: 720px) {
   .monitor-page .monitor-body {
     flex-direction: column;
@@ -1276,7 +1332,20 @@
 
   .monitor-page .monitor-nav::-webkit-scrollbar { display: none; }
 
-  .monitor-page .monitor-nav-item {
+  .monitor-page .monitor-nav-group {
+    display: contents;
+  }
+
+  .monitor-page .monitor-nav-group-header {
+    display: none;
+  }
+
+  .monitor-page .monitor-nav-leaves {
+    display: contents !important;
+  }
+
+  .monitor-page .monitor-nav-leaf {
+    margin-left: 0;
     width: auto;
     flex-shrink: 0;
     padding: 8px 12px;

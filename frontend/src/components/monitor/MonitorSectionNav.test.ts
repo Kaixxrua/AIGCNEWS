@@ -2,12 +2,12 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
 import MonitorSectionNav from './MonitorSectionNav.vue'
 import i18n, { setAppLocale } from '@/i18n'
-import { MONITOR_SECTIONS, type MonitorSectionKey } from '@/features/monitor/monitorViewModel'
+import { MONITOR_NAV, type MonitorSectionKey } from '@/features/monitor/monitorViewModel'
 
-const mountNav = (props: { active?: MonitorSectionKey; alertKeys?: MonitorSectionKey[]; sections?: typeof MONITOR_SECTIONS } = {}) =>
+const mountNav = (props: { active?: MonitorSectionKey; alertKeys?: MonitorSectionKey[]; sections?: typeof MONITOR_NAV } = {}) =>
   mount(MonitorSectionNav, {
     global: { plugins: [i18n] },
-    props: { sections: MONITOR_SECTIONS, active: 'status', alertKeys: [], ...props },
+    props: { sections: MONITOR_NAV, active: 'tasks', alertKeys: [], ...props },
   })
 
 describe('MonitorSectionNav', () => {
@@ -15,53 +15,79 @@ describe('MonitorSectionNav', () => {
     setAppLocale('zh-CN')
   })
 
-  it('renders sections in MONITOR_SECTIONS order with localized labels', () => {
+  it('renders 4 categories and 12 leaves in MONITOR_NAV order with localized labels', () => {
     const wrapper = mountNav()
-    const buttons = wrapper.findAll('button.monitor-nav-item')
-    expect(buttons).toHaveLength(4)
-    expect(buttons.map(button => button.find('.monitor-nav-label').text())).toEqual([
-      '运行状态', '采集与源', 'GitHub 项目库', '系统配置',
-    ])
     expect(wrapper.find('nav.monitor-nav').attributes('aria-label')).toBe('监控分区')
-    expect(buttons.every(button => button.find('.monitor-nav-icon').exists())).toBe(true)
-  })
-
-  it('marks only the active section with the active class and aria-current', () => {
-    const wrapper = mountNav({ active: 'ingestion' })
-    const buttons = wrapper.findAll('button.monitor-nav-item')
-    expect(buttons.map(button => button.classes())).toEqual([
-      expect.not.arrayContaining(['active']),
-      expect.arrayContaining(['active']),
-      expect.not.arrayContaining(['active']),
-      expect.not.arrayContaining(['active']),
+    const headers = wrapper.findAll('.monitor-nav-group-header')
+    expect(headers.map(header => header.find('.monitor-nav-group-label').text())).toEqual([
+      '监控', '采集', '账号源', '配置',
     ])
-    expect(buttons[1]!.attributes('aria-current')).toBe('true')
-    expect(buttons[0]!.attributes('aria-current')).toBeUndefined()
+    expect(headers.every(header => header.find('.monitor-nav-icon').exists())).toBe(true)
+    const leaves = wrapper.findAll('button.monitor-nav-leaf')
+    expect(leaves.map(leaf => leaf.find('.monitor-nav-label').text())).toEqual([
+      '任务历史', 'MCP 调用',
+      '采集控制', 'GitHub 爬取', 'GitHub 富化',
+      'X 关注账号', 'X 凭证', '微信公众号',
+      '模型服务', '定时任务', 'SMTP 邮件', 'MCP 服务',
+    ])
   })
 
-  it('renders a single alert dot inside the flagged section button', () => {
-    const wrapper = mountNav({ alertKeys: ['github'] })
+  it('marks only the active leaf with the active class and aria-current', () => {
+    const wrapper = mountNav({ active: 'crawl' })
+    const leaves = wrapper.findAll('button.monitor-nav-leaf')
+    expect(leaves.filter(leaf => leaf.classes().includes('active'))).toHaveLength(1)
+    expect(leaves[3]!.classes()).toContain('active')
+    expect(leaves[3]!.attributes('aria-current')).toBe('true')
+    expect(leaves[2]!.attributes('aria-current')).toBeUndefined()
+  })
+
+  it('renders the alert dot on the flagged leaf while its category is expanded', () => {
+    const wrapper = mountNav({ alertKeys: ['enrichment'] })
     const dots = wrapper.findAll('.monitor-nav-alert')
     expect(dots).toHaveLength(1)
-    const buttons = wrapper.findAll('button.monitor-nav-item')
-    expect(buttons[2]!.find('.monitor-nav-alert').exists()).toBe(true)
+    const leaves = wrapper.findAll('button.monitor-nav-leaf')
+    expect(leaves[4]!.find('.monitor-nav-alert').exists()).toBe(true)
     expect(dots[0]!.attributes('title')).toBe('GitHub 项目库存在富化失败，请到监控页处理')
   })
 
-  it('emits select on click without moving the active state itself', async () => {
-    const wrapper = mountNav({ active: 'status' })
-    const buttons = wrapper.findAll('button.monitor-nav-item')
-    await buttons[3]!.trigger('click')
-    expect(wrapper.emitted('select')).toEqual([['settings']])
+  it('emits select on leaf click without moving the active state itself', async () => {
+    const wrapper = mountNav({ active: 'tasks' })
+    const leaves = wrapper.findAll('button.monitor-nav-leaf')
+    await leaves[11]!.trigger('click')
+    expect(wrapper.emitted('select')).toEqual([['mcp-server']])
     // 哑组件契约：激活态由父级持有，点击后不自动迁移
-    expect(buttons[0]!.classes()).toContain('active')
-    expect(buttons[3]!.classes()).not.toContain('active')
+    expect(leaves[0]!.classes()).toContain('active')
+    expect(leaves[11]!.classes()).not.toContain('active')
   })
 
-  it('renders only the sections passed in by the parent filter', () => {
-    const wrapper = mountNav({ sections: MONITOR_SECTIONS.filter(section => !section.adminOnly) })
-    const buttons = wrapper.findAll('button.monitor-nav-item')
-    expect(buttons).toHaveLength(1)
-    expect(buttons[0]!.find('.monitor-nav-label').text()).toBe('运行状态')
+  it('collapses a category on header click and hands the alert dot to the header', async () => {
+    const wrapper = mountNav({ alertKeys: ['enrichment'] })
+    const ingestionHeader = wrapper.findAll('.monitor-nav-group-header')[1]!
+    const leavesContainer = wrapper.findAll('.monitor-nav-leaves')[1]!
+    expect(ingestionHeader.attributes('aria-expanded')).toBe('true')
+    expect(leavesContainer.attributes('style') ?? '').not.toContain('display: none')
+
+    await ingestionHeader.trigger('click')
+    expect(ingestionHeader.attributes('aria-expanded')).toBe('false')
+    expect(ingestionHeader.find('.monitor-nav-chevron').classes()).toContain('collapsed')
+    expect(leavesContainer.attributes('style')).toContain('display: none')
+    // 折叠后红点移到大类头，避免告警被藏进折叠区
+    expect(ingestionHeader.find('.monitor-nav-alert-inline').exists()).toBe(true)
+
+    await ingestionHeader.trigger('click')
+    expect(ingestionHeader.attributes('aria-expanded')).toBe('true')
+    expect(leavesContainer.attributes('style') ?? '').not.toContain('display: none')
+    expect(ingestionHeader.find('.monitor-nav-alert-inline').exists()).toBe(false)
+  })
+
+  it('renders only the leaves passed in by the parent admin filter', () => {
+    const wrapper = mountNav({
+      sections: MONITOR_NAV
+        .map(category => ({ ...category, children: category.children.filter(leaf => !leaf.adminOnly) }))
+        .filter(category => category.children.length > 0),
+    })
+    expect(wrapper.findAll('.monitor-nav-group-header')).toHaveLength(1)
+    const leaves = wrapper.findAll('button.monitor-nav-leaf')
+    expect(leaves.map(leaf => leaf.find('.monitor-nav-label').text())).toEqual(['任务历史', 'MCP 调用'])
   })
 })

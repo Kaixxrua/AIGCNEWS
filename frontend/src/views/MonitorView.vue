@@ -21,7 +21,7 @@ import WechatAccountPanel from '@/components/wechat/WechatAccountPanel.vue'
 import { useMonitorPageController } from '@/composables/useMonitorPageController'
 import {
   DEFAULT_MONITOR_SECTION,
-  MONITOR_SECTIONS,
+  MONITOR_NAV,
   normalizeMonitorSection,
   type MonitorSectionKey,
 } from '@/features/monitor/monitorViewModel'
@@ -52,18 +52,23 @@ const router = useRouter()
 const activeSection = ref<MonitorSectionKey>(normalizeMonitorSection(route.query.section))
 const isReplacingRoute = ref(false)
 
-// 登录态恢复窗口兜底：非 admin 只暴露 status 组（其两个面板本就非 admin 可见）
+// 登录态恢复窗口兜底：非 admin 过滤掉 adminOnly 叶子，空大类整体移除
 const visibleSections = computed(() =>
-  MONITOR_SECTIONS.filter(section => !section.adminOnly || authStore.isAdmin)
+  MONITOR_NAV
+    .map(category => ({
+      ...category,
+      children: category.children.filter(leaf => !leaf.adminOnly || authStore.isAdmin),
+    }))
+    .filter(category => category.children.length > 0)
 )
 const currentSection = computed<MonitorSectionKey>(() =>
-  visibleSections.value.some(section => section.key === activeSection.value)
+  visibleSections.value.some(category => category.children.some(leaf => leaf.key === activeSection.value))
     ? activeSection.value
     : DEFAULT_MONITOR_SECTION
 )
-// 富化失败红点挂 github 组，与导航 Dock 红点同源
+// 富化失败红点挂「GitHub 富化」叶子，与导航 Dock 红点同源
 const navAlertKeys = computed<MonitorSectionKey[]>(() =>
-  enrichmentAlert.hasFailures ? ['github'] : []
+  enrichmentAlert.hasFailures ? ['enrichment'] : []
 )
 
 const selectSection = (key: MonitorSectionKey) => { activeSection.value = key }
@@ -160,8 +165,8 @@ onUnmounted(dispose)
       />
 
       <div class="monitor-section-panels">
-        <!-- 运行状态（非 admin 唯一可见组） -->
-        <template v-if="currentSection === 'status'">
+        <!-- ═══ 监控（非 admin 唯一可见大类） ═══ -->
+        <template v-if="currentSection === 'tasks'">
           <MonitorTaskPanel
             :is-admin="authStore.isAdmin"
             :scheduler-status="schedulerStatus"
@@ -172,14 +177,16 @@ onUnmounted(dispose)
             :loading="loading"
             @go-page="goPage"
           />
+        </template>
+        <template v-else-if="currentSection === 'mcp-calls'">
           <McpToolCallsPanel
             :snapshot="mcpToolCalls"
             :loading="loading"
           />
         </template>
 
-        <!-- Admin 专属：采集与源 -->
-        <template v-else-if="currentSection === 'ingestion'">
+        <!-- ═══ 采集（Admin 专属） ═══ -->
+        <template v-else-if="currentSection === 'collect'">
           <MonitorIngestionControls
             v-if="authStore.isAdmin"
             v-model:target-date="targetDate"
@@ -189,13 +196,8 @@ onUnmounted(dispose)
             @ingest-by-date="ingestByDate"
             @ingest-source="ingestSingleSource"
           />
-          <XWatchCard v-if="authStore.isAdmin" />
-          <XCredentialCard v-if="authStore.isAdmin" />
-          <WechatAccountPanel v-if="authStore.isAdmin" />
         </template>
-
-        <!-- Admin 专属：GitHub 项目库 -->
-        <template v-else-if="currentSection === 'github'">
+        <template v-else-if="currentSection === 'crawl'">
           <GithubCrawlControls
             v-if="authStore.isAdmin"
             v-model:form="crawlForm"
@@ -204,6 +206,8 @@ onUnmounted(dispose)
             :crawl-status="crawlStatus"
             @start="startGithubCrawl"
           />
+        </template>
+        <template v-else-if="currentSection === 'enrichment'">
           <GithubEnrichmentPanel
             v-if="authStore.isAdmin"
             :status="enrichmentStatus"
@@ -226,8 +230,19 @@ onUnmounted(dispose)
           />
         </template>
 
-        <!-- Admin 专属：系统配置 -->
-        <template v-else-if="currentSection === 'settings'">
+        <!-- ═══ 账号源（Admin 专属） ═══ -->
+        <template v-else-if="currentSection === 'x-watch'">
+          <XWatchCard v-if="authStore.isAdmin" />
+        </template>
+        <template v-else-if="currentSection === 'x-credentials'">
+          <XCredentialCard v-if="authStore.isAdmin" />
+        </template>
+        <template v-else-if="currentSection === 'wechat'">
+          <WechatAccountPanel v-if="authStore.isAdmin" />
+        </template>
+
+        <!-- ═══ 配置（Admin 专属） ═══ -->
+        <template v-else-if="currentSection === 'provider'">
           <ProviderConfigPanel
             v-if="authStore.isAdmin"
             :config="providerConfig"
@@ -238,16 +253,8 @@ onUnmounted(dispose)
             @save="saveProviderConfig"
             @test="testProviderConnection"
           />
-          <SmtpConfigPanel
-            v-if="authStore.isAdmin"
-            :config="smtpConfig"
-            :form="smtpForm"
-            :loading="loadingSmtpConfig"
-            :saving="savingSmtpConfig"
-            :testing="testingSmtp"
-            @save="saveSmtpConfig"
-            @test="testSmtpConfig"
-          />
+        </template>
+        <template v-else-if="currentSection === 'scheduler'">
           <SchedulerConfigPanel
             v-if="authStore.isAdmin"
             :configs="schedulerConfigs"
@@ -259,6 +266,20 @@ onUnmounted(dispose)
             @cancel="cancelSchedulerConfigEdit"
             @save="saveSchedulerConfig"
           />
+        </template>
+        <template v-else-if="currentSection === 'smtp'">
+          <SmtpConfigPanel
+            v-if="authStore.isAdmin"
+            :config="smtpConfig"
+            :form="smtpForm"
+            :loading="loadingSmtpConfig"
+            :saving="savingSmtpConfig"
+            :testing="testingSmtp"
+            @save="saveSmtpConfig"
+            @test="testSmtpConfig"
+          />
+        </template>
+        <template v-else-if="currentSection === 'mcp-server'">
           <McpServerConfigPanel
             v-if="authStore.isAdmin"
             v-model:form="mcpForm"
