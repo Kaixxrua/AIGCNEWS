@@ -27,6 +27,13 @@
 
 ![AIGC Radar MCP 质量指标：比 WebSearch 快 3.5×（端到端中位数 7.4 s 对 25.8 s）、工具执行中位 160 ms（服务端 p50 360 ms）、工具首选准确率 98.3%（59/60 次试验，混合意图 90%）、500+ GitHub stars 门槛过滤低质量仓库 —— 实测于 2026-08-11/12，自托管](docs/assets/mcp-quality-metrics.png)
 
+- **端到端中位比 WebSearch 快 3.5×**（10 组代表性查询，7.4 s 对 25.8 s），测于 2026-08-11
+- **MCP 工具执行中位 160 ms**（区间 30–800 ms）；服务端延迟 p50 360 ms / p95 710 ms，测于 2026-08-11
+- **工具首选准确率 98.3%**（59/60 次试验：意图明确 100%、混合意图 90%），测于 2026-08-12
+
+<details>
+<summary>完整数据表、方法学与复现命令</summary>
+
 服务端延迟，测于 2026-08-11，可用 [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) 复现（Streamable HTTP JSON-RPC，6 个代表性工具 × 3 轮，共 18 次 `tools/call` 计时）：
 
 | Endpoint | p50 | p95 | 说明 |
@@ -69,6 +76,8 @@ python3 scripts/benchmark_agent_tool_latency.py  # 需要 claude CLI
 python3 scripts/eval_mcp_tool_selection.py       # 需要 claude CLI
 ```
 
+</details>
+
 ## 演示
 
 ![AIGCNEWS 演示：Dashboard 榜单切换、项目库检索](docs/assets/demo.gif)
@@ -83,58 +92,15 @@ python3 scripts/eval_mcp_tool_selection.py       # 需要 claude CLI
 
 ## 功能一览
 
-### 多源榜单 Dashboard
+- **多源榜单 Dashboard** —— 论文 / GitHub / 新闻 / Product Hunt / Hacker News / X 六源同板（日 / 周 / 月），快照可按日期回看，GitHub 热度分不只看总 Stars
+- **GitHub AI 项目库** —— 18,000+ 精选项目与工具站，≥500 Stars 准入门槛，中英双语分类与标签，PostgreSQL 关键词 × Milvus 语义混合检索，卡片展示今日 +N Stars，筛选状态同步 URL 可分享
+- **论文发现与阅读** —— arXiv / HuggingFace 每日热门论文，站内分页 PDF 阅读器支持区域框选，后台全文切片与向量索引
+- **X 动态与微信公众号** —— 精选时间线 + 按日期快照与静默期，推文中文翻译完整补回 @ 提及，统一站内阅读 Feed
+- **智能简报与订阅** —— 各方向日 / 周 / 月报（中英双语）SSE 流式生成，按来源与频率邮件订阅、支持立即送达
+- **收藏与私人书架** —— 乐观更新收藏 + 个人标签 + 跨设备同步，提交 URL 自动富化的私人工具书架，公共与私人数据严格隔离
+- **账号与管理后台** —— 邮箱验证码 + JWT（空库首个注册用户自动成为管理员），采集监控、模型 Provider 真实连接测试、数据库化 SMTP 面板、爬取与富化队列（重试 / 熔断）
 
-- 一块看板聚合六大来源榜单 —— **论文、GitHub、新闻、Product Hunt、Hacker News、X** —— 支持日 / 周 / 月周期切换
-- 基于快照的榜单：日历回看任意历史日期；已定稿榜单永久归档，实时初榜展示仍在采集的数据，昨日榜单定稿前处于静默期（北京时间揭榜）
-- GitHub 热度分综合星标增速、项目体量、维护活跃度、社区参与度、项目年龄与近期更新 —— 而非只看总 Stars
-- 趋势雷达、今日新增 / 用户 / 访客统计，以及 MCP 实时调用计数
-
-### GitHub AI 项目库
-
-- **18,000+ 精选 AI 项目与工具网站**，两级分类体系、编程语言筛选、中英双语描述与标签
-- 混合检索：PostgreSQL 关键词候选 × Milvus 语义召回融合，回库水合完整数据，准入过滤（公网 GitHub fallback ≥ 500 Stars），再按相关性 / 热度 / Stars / 更新时间 / 收录时间 / 名称排序
-- 每张卡片展示增长指标（今日 +N Stars）与可用状态，另有今日热门与站长推荐合集
-- 筛选状态同步到 URL —— 刷新不丢、可复制分享、支持浏览器前进后退
-
-### 论文发现与阅读
-
-- arXiv 与 HuggingFace 每日热门论文，支持标题 / 摘要检索
-- 站内 PDF 阅读器：分页渲染与进度显示、原始文件下载、桌面双栏 / 移动单栏布局、区域框选截图
-- 两阶段采集：摘要先入库保证立即可搜；后台再下载 PDF、解析全文、切片并建立向量索引
-
-### X 动态（Twitter）
-
-- 精选 AI 账号时间线，图片 / 视频瀑布流，按互动分排序
-- 最近 24 小时流 + 按日期快照，静默期机制（北京时间 15:00 定稿后公开）
-- 推文中文翻译，@ 提及与链接完整补回
-- 管理员工具：监控账号管理、按需拉取、快照重建 / 补拉
-
-### 微信公众号
-
-- 关注公众号，在统一 Feed 中阅读最新文章，站内全文阅读（展开 / 收起过渡、回到顶部 / 跳到底部导航）
-- 平台侧微信连接器：扫码登录，会话加密持久化在服务端；支持搜索公众号、保存账号与后台文章同步
-
-### 智能简报与订阅
-
-- 综合 / 论文 / GitHub / 新闻 / Product Hunt / Hacker News 等方向的日报、周报、月报，中英双语
-- SSE 流式生成，带缓存、可重新生成、可按日期阅读历史简报
-- 按来源与频率订阅邮件推送，支持立即送达，在订阅页统一管理
-
-### 收藏与私人书架
-
-- 收藏项目乐观更新（失败自动回滚），支持个人标签与跨设备同步
-- 私人工具书架：提交 URL 自动抓取 metadata 并由 AI 富化卡片，失败可切换手动模式；标题 / 描述 / 分类 / 标签 / 图标随时可改
-- 个人网站绝不混入公共项目库 —— 公共与私人数据严格隔离
-
-### 账号与管理后台
-
-- 邮箱注册、登录、验证码找回密码；JWT 会话；空库首个注册用户自动成为管理员
-- 运维监控：一键 / 按源 / 按日期触发或强制采集、生成每日简报、刷新 Dashboard 缓存
-- 模型 Provider 管理（Base URL / Key / 模型 / 推理强度，真实连接测试）与外部 MCP Server 注册（握手 + 工具清单探测）
-- SMTP 邮件投递配置：数据库存储、即时生效并优先于环境变量，面板内一键测试发送
-- X 采集运维：凭证池、监控账号、按需拉取、快照重建
-- GitHub 爬取任务（Stars / 日期窗口、dry-run、自动富化）与富化队列管理（重试 / 补跑 / 终止、并发控制与熔断）
+完整功能走查：[docs/project-overview.md](docs/project-overview.md)
 
 ## AIGC Radar MCP（旗舰接口）
 
@@ -168,9 +134,10 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 
 Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://report/latest` 等）、resource templates 与 prompts（`daily_research_brief`、`project_discovery`）。完整的协议参数、MCP-first 策略与 fallback 语义见 [docs/mcp-server.md](docs/mcp-server.md)。
 
-### 结构化 JSON 响应
+<details>
+<summary>结构化响应样例与 500 Stars 质量门槛</summary>
 
-WebSearch 给你链接，AIGC Radar 给你可直接消费的数据。`search_github_ai_projects` 单条记录节选：
+**结构化 JSON 响应** —— WebSearch 给你链接，AIGC Radar 给你可直接消费的数据。`search_github_ai_projects` 单条记录节选：
 
 ```json
 {
@@ -194,12 +161,12 @@ WebSearch 给你链接，AIGC Radar 给你可直接消费的数据。`search_git
 - 质量信号随响应直达：`stars` / `forks` / `daily_star_growth` / `hot_score` / `pushed_at`，无需再调 GitHub API。
 - 准入与溯源透明：500 Stars 准入（`min_stars`）、`result_origin` / `fallback_used` 标明结果来源、`attribution` 与 `detail_url` 可回链详情页。
 
-### 高质量精选索引
-
-项目库中的每个 GitHub 项目都通过了 **500 Stars 准入门槛**（`min_stars`）才会进入精选环节——玩具项目、停更 fork、低信号仓库从未入库，搜索结果天然高质量，Agent 无需再做二次过滤。WebSearch 没有这道闸门：它按公开网页排名返回，可能混入无人维护或琐碎的仓库，质量判断全部留给使用者。
+**高质量精选索引** —— 项目库中的每个 GitHub 项目都通过了 **500 Stars 准入门槛**（`min_stars`）才会进入精选环节——玩具项目、停更 fork、低信号仓库从未入库，搜索结果天然高质量，Agent 无需再做二次过滤。WebSearch 没有这道闸门：它按公开网页排名返回，可能混入无人维护或琐碎的仓库，质量判断全部留给使用者。
 
 - 全链路强制：500 Stars 下限同时作用于入库采集与限量只读 GitHub fallback，低于门槛的结果在到达 Agent 之前就被排除。
 - 精选而非简单爬取：入库项目附带分类体系、中英双语标签与星标增长快照，排序信号保持新鲜。
+
+</details>
 
 ## 架构
 
@@ -211,127 +178,24 @@ WebSearch 给你链接，AIGC Radar 给你可直接消费的数据。`search_git
   → Dashboard · 项目检索 · 简报 · MCP
 ```
 
-| 层 | 技术 |
-| --- | --- |
-| 前端 | Vue 3 + TypeScript + Vite + Pinia + Tailwind CSS + Vue I18n（zh-CN / en-US），新粗野主义设计 |
-| 后端 | FastAPI 单体，分层：传输层（REST / SSE / MCP）→ 应用服务 → Repository Protocol → 基础设施适配器 |
-| 关系型 | PostgreSQL 16（唯一关系型运行时） |
-| 向量 / 图 | Milvus（+ MinIO / etcd）、Neo4j 论文实体图谱 |
-| 缓存 | Redis（API 缓存、邮箱验证码、防刷、访客去重） |
-| 运维 | 进程内调度器（Asia/Shanghai）、单机 Docker Compose、restart policy + systemd 恢复 |
-
-后端另内置完整混合 RAG 对话链路（PostgreSQL + Milvus + Neo4j 召回、精排、流式输出、多会话、图片 / PDF 附件）；其 Web 入口目前暂停开放维护中。
+Vue 3 + TypeScript 前端 · FastAPI 分层单体 · PostgreSQL 16 唯一关系型运行时 · Milvus 向量 + Neo4j 论文图谱 · Redis 缓存 —— 单机 Docker Compose + 进程内调度器（Asia/Shanghai）。完整技术栈表与模块拆解见 [docs/architecture.md](docs/architecture.md)。后端另内置混合 RAG 对话链路（召回、精排、流式、多会话、图片 / PDF 附件），其 Web 入口目前暂停开放维护中。
 
 ## 快速开始（Linux / WSL2）
 
-### 前置要求
-
-| 工具 | 版本 | 说明 |
-| --- | --- | --- |
-| Python | 3.12 | 后端运行时（镜像按 digest 锁定 `python:3.12-slim`） |
-| Node.js | 22 | 前端构建与测试（与 CI 一致） |
-| Docker + Compose | v2 | 基础设施与生产栈编排 |
-
-### 1) 准备环境变量
+需要 Python 3.12 · Node.js 22 · Docker Compose v2。**干净检出即可运行：**
 
 ```bash
 cp .env.example .env
-```
-
-编辑 `.env` 填写本机参数。**`JWT_SECRET_KEY` 必须设置为强随机值**，缺失、等于示例值或长度不足 32 字符时应用拒绝启动（见 [docs/adr/0001](docs/adr/0001-jwt-secret-rotation-and-startup-guard.md)）：
-
-```bash
-openssl rand -hex 32
-```
-
-### 2) 安装依赖
-
-```bash
-python3.12 -m venv backend/.venv
-backend/.venv/bin/python -m pip install --upgrade pip
-backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
-cd frontend && npm ci && cd ..
-```
-
-`requirements-dev.txt` 在锁定的 `requirements.lock` 之上追加 pytest / pytest-cov / ruff，与 CI 使用同一份依赖基线。
-
-### 3) 准备前端 TLS 证书（自签名即可）
-
-`frontend-web` 的 nginx 以只读卷挂载 `frontend/ssl/`（已 gitignore，干净检出不存在），缺少证书会启动失败。本地部署生成自签名证书即可：
-
-```bash
-mkdir -p frontend/ssl
-openssl req -x509 -newkey rsa:2048 -nodes \
-  -keyout frontend/ssl/aigcnews.cn.key \
-  -out frontend/ssl/aigcnews.cn_bundle.crt \
-  -days 3650 -subj "/CN=aigcnews.cn"
-# 加固后的 frontend-web 容器（cap_drop: ALL）要求私钥属主为 root
+# 然后编辑 .env：必须设置 JWT_SECRET_KEY（openssl rand -hex 32）——缺失或过弱时应用拒绝启动
+python3.12 -m venv backend/.venv && backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
+(cd frontend && npm ci)
+# frontend-web 的 nginx 需要证书（自签名即可）；加固容器要求私钥 root:root 600
+mkdir -p frontend/ssl && openssl req -x509 -newkey rsa:2048 -nodes -keyout frontend/ssl/aigcnews.cn.key -out frontend/ssl/aigcnews.cn_bundle.crt -days 3650 -subj "/CN=aigcnews.cn"
 sudo chown root:root frontend/ssl/*.key && sudo chmod 600 frontend/ssl/*.key
-```
-
-### 4) 启动核心栈
-
-```bash
 scripts/manage_main_stack.sh up
 ```
 
-该命令 reconcile 核心 Compose 栈（后端 API、前端、PostgreSQL、Redis、Milvus、MinIO 等）并等待健康检查通过，**干净检出即可运行**。常用子命令：`config`（校验编排，不打印秘密）、`status`、`logs`。
-
-> 私有部署扩展（姊妹服务、外部编排网、私有 nginx server 等）不随仓库发布，以 overlay 形式注入：脚本探测到 `../aigcnews_private/deploy/docker-compose.private.yml`（可用 `AIGCNEWS_PRIVATE_COMPOSE` 覆盖）时自动并入；不存在时核心栈独立可用。机制详见 `docker/docker-compose.yml` 头部注释。
-
-### 5) 本地开发（容器外热重载）
-
-```bash
-# 后端（读取 settings 中的 API_HOST / API_PORT，默认 8000）
-backend/.venv/bin/python run_server.py
-
-# 前端（Vite 开发服务器，默认 5173）
-cd frontend && npm run dev
-```
-
-### 6) 首位管理员与 SMTP 配置
-
-仓库不内置默认管理员账号：**用户表为空时，首个邮箱注册的用户自动成为管理员**，之后的注册均为普通用户；既有部署（用户表非空）不受影响。
-
-注册需要邮箱验证码，而验证码依赖邮件投递——因此全新自托管需要在首位管理员诞生**之前**就有可用的邮件通道，二选一：
-
-- 在 `.env` 配好 `SMTP_*`（见 `.env.example` 的 SMTP 小节）；或
-- 保持 `SMTP_HOST` 为空进入 dev 模式，验证码直接打印在后端控制台日志里。
-
-首位管理员登录后，即可在 **监控页 → SMTP 邮件投递配置** 面板在线管理：配置存入数据库、保存即生效（后台任务最迟 60 秒内沿用新配置），并**优先于环境变量**；「发送测试邮件」按最新已保存配置真实投递一封邮件到当前管理员的登录邮箱。主机留空保存即删除数据库配置、回退到环境变量。
-
-## 端口与健康检查
-
-| 地址 | 用途 |
-| --- | --- |
-| `http://localhost`（80/443） | 前端站点（生产域名证书见 `frontend/ssl/`，key 必须 `root:root` 600） |
-| `http://localhost:5173` | Vite 开发服务器 |
-| `http://127.0.0.1:8000` | 后端 API（仅回环绑定；`/api/live`、`/api/ready` 健康检查） |
-| `http://localhost:8000/api/mcp` | 本地 MCP endpoint |
-
-基础设施（PostgreSQL / Redis / Milvus / MinIO / Attu）只在编排网络内部暴露，不向宿主机发布端口；后端通过服务名访问。宿主机侧临时调试用 `docker exec <容器> ...`，运维细节见 [docs/linux-server-boot.md](docs/linux-server-boot.md)。
-
-## 测试与质量检查
-
-```bash
-# 后端全套件（必须从仓库根目录运行，与 CI 一致）
-backend/.venv/bin/python -m pytest backend/tests -q
-
-# 后端 lint
-backend/.venv/bin/python -m ruff check backend/app backend/tests --config backend/pyproject.toml
-
-# 前端：单元测试、类型检查、lint、构建
-cd frontend
-npm run test:unit
-npm run typecheck
-npm run lint
-npm run build
-
-# 编排校验
-docker compose -f docker/docker-compose.yml config --quiet
-```
-
-提交信息遵循 Conventional Commits（`<type>(<scope>): <subject>`，scope 必填），细节见 [docs/git-workflow.md](docs/git-workflow.md)。
+首次运行注意：空库时首个邮箱注册用户自动成为管理员，而注册需要可用的邮件通道 —— 在 `.env` 配好 `SMTP_*`，或留空 `SMTP_HOST` 用 dev 模式在后端日志打印验证码。TLS 细节、端口与健康检查、热重载开发模式、测试命令与私有 overlay 机制见 [docs/self-hosting.zh-CN.md](docs/self-hosting.zh-CN.md)
 
 ## 目录结构
 
@@ -347,6 +211,7 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 
 ## 文档索引
 
+- [docs/self-hosting.zh-CN.md](docs/self-hosting.zh-CN.md) —— 自托管完整指南：TLS 证书、首位管理员与 SMTP、端口、测试
 - [docs/project-overview.md](docs/project-overview.md) —— 项目全景：产品、架构、数据、部署与工程状态
 - [docs/architecture.md](docs/architecture.md) —— 功能架构当前态（PostgreSQL 16 为唯一关系型运行时）
 - [docs/mcp-server.md](docs/mcp-server.md) —— AIGC Radar MCP 协议参数与策略
@@ -365,6 +230,7 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 - [CONTRIBUTING.md](CONTRIBUTING.md) —— 开发环境、提交规范（Conventional Commits，scope 必填）与 PR 要求
 - [SECURITY.md](SECURITY.md) —— 支持版本说明与漏洞私下报告渠道
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) —— Contributor Covenant 2.1 行为准则
+- 测试与质量检查命令（pytest、ruff、Vitest、typecheck、构建、编排校验）：[docs/self-hosting.zh-CN.md#测试](docs/self-hosting.zh-CN.md#测试)
 
 ## License
 

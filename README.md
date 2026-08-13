@@ -27,6 +27,13 @@ Numbers first — everything below measures the flagship [AIGC Radar MCP](#aigc-
 
 ![AIGC Radar MCP quality metrics: 3.5× faster than WebSearch (7.4 s vs 25.8 s median end-to-end), 160 ms median tool execution (p50 server-side 360 ms), 98.3% first-tool accuracy (59/60 trials, mixed-intent 90%), 500+ GitHub stars floor with low-quality repos filtered out — measured 2026-08-11/12, self-hosted](docs/assets/mcp-quality-metrics.png)
 
+- **3.5× faster than WebSearch** at median end-to-end (7.4 s vs 25.8 s across 10 representative queries), measured 2026-08-11
+- **160 ms median MCP tool execution** (30–800 ms range); server-side latency p50 360 ms / p95 710 ms, measured 2026-08-11
+- **98.3% first-tool routing accuracy** (59/60 trials: 100% on unambiguous intents, 90% on mixed intents), measured 2026-08-12
+
+<details>
+<summary>Full tables, methodology & reproduce commands</summary>
+
 Server-side latency, measured 2026-08-11 with [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) (JSON-RPC over Streamable HTTP, 6 representative tools × 3 trials, 18 timed `tools/call` requests):
 
 | Endpoint | p50 | p95 | Notes |
@@ -69,6 +76,8 @@ python3 scripts/benchmark_agent_tool_latency.py  # requires the claude CLI
 python3 scripts/eval_mcp_tool_selection.py       # requires the claude CLI
 ```
 
+</details>
+
 ## Demo
 
 ![AIGCNEWS demo: dashboard ranking tabs and project library search](docs/assets/demo.gif)
@@ -83,58 +92,15 @@ python3 scripts/eval_mcp_tool_selection.py       # requires the claude CLI
 
 ## Features
 
-### Multi-Source Dashboard
+- **Multi-source dashboard** — papers / GitHub / news / Product Hunt / Hacker News / X rankings on one board (daily / weekly / monthly), snapshot archives replayable by date, and a GitHub hot score that goes beyond raw stars
+- **GitHub AI project library** — 18,000+ curated projects and tool sites with a ≥ 500-star admission bar, bilingual taxonomy & tags, PostgreSQL keyword × Milvus semantic hybrid search, today +N star growth on every card, and URL-synced shareable filters
+- **Paper discovery & reading** — arXiv / HuggingFace daily hot papers, in-browser paginated PDF reader with region capture, background full-text chunking and vector indexing
+- **X board & WeChat official accounts** — curated timelines with per-date snapshots and embargo windows, Chinese translations with restored @ mentions, unified in-site reading feed
+- **Smart briefs & subscriptions** — SSE-streamed daily / weekly / monthly briefs per direction (zh/en), email subscriptions per source & frequency with send-now delivery
+- **Favorites & private bookshelf** — optimistic favorites with personal tags and cross-device sync, URL-submit tool shelf with AI enrichment, strict public/private data separation
+- **Accounts & admin console** — email OTP + JWT (first registrant on an empty DB becomes admin), ingestion monitor, model providers with real connection tests, DB-backed SMTP panel, crawl & enrichment queues with retry / circuit breaking
 
-- Six ranking sources on one board — **Papers, GitHub, News, Product Hunt, Hacker News, X** — with daily / weekly / monthly periods
-- Snapshot-based rankings: replay any historical date from a calendar; finalized boards are permanently archived, live drafts show data still being collected, and yesterday's board stays under embargo until it finalizes (Beijing time)
-- GitHub hot score blends star-growth velocity, project size, maintenance activity, community engagement, age, and recency — not just raw stars
-- Trend radar, today-new / user / visitor stats, and a live MCP call counter
-
-### GitHub AI Project Library
-
-- **18,000+ curated AI projects and tool websites** with a two-level category taxonomy, programming-language filters, and bilingual (zh/en) descriptions & tags
-- Hybrid search: PostgreSQL keyword candidates fused with Milvus semantic recall, hydrated back to full records, admission-filtered (≥ 500 stars for the public GitHub fallback), then ranked by relevance / hot / stars / updated / added / name
-- Growth metrics on every card (today +N stars), availability status, today-hot and editor-recommended collections
-- Filter state synced to the URL — refresh-safe, shareable, and browser back/forward friendly
-
-### Paper Discovery & Reading
-
-- Daily hot papers from arXiv and HuggingFace with title / abstract search
-- In-browser PDF reader: paginated rendering with progress display, original-file download, dual-column desktop and single-column mobile layouts, plus region capture
-- Two-stage ingestion: abstracts land first so papers are searchable immediately; PDFs are then downloaded, parsed, chunked, and vector-indexed in the background
-
-### X Board (Twitter)
-
-- Curated AI-account timeline with an image / video waterfall, ranked by interaction score
-- Recent-24h stream plus per-date snapshots with an embargo window (public after the 15:00 Beijing-time finalization)
-- Chinese translations of tweet bodies with restored @ mentions and links
-- Admin tooling: watched-account management, on-demand pulls, and snapshot rebuild / backfill
-
-### WeChat Official Accounts
-
-- Follow official accounts and read a unified feed of their latest articles, with full-article reading in-site (expand / collapse transitions, jump-to-top / bottom navigation)
-- Platform-side WeChat connector: QR-code login with encrypted server-side session persistence, account search, saved accounts, and background article sync
-
-### Smart Briefs & Subscriptions
-
-- Daily / weekly / monthly briefs per direction (general, papers, GitHub, news, Product Hunt, Hacker News), in Chinese and English
-- SSE streaming generation with caching, regeneration, and historical reading by date
-- Email subscriptions per source and frequency, send-now delivery, manageable from the subscriptions page
-
-### Favorites & Personal Bookshelf
-
-- Favorite projects with optimistic updates (automatic rollback on failure), personal tags, and cross-device sync
-- Private tool bookshelf: submit a URL and metadata fetch + AI enrichment fill the card automatically, with a manual mode as fallback; edit title / descriptions / category / tags / icon anytime
-- Personal websites never leak into the public catalog — public and private data stay strictly separated
-
-### Accounts & Admin Console
-
-- Email registration, login, and password reset with verification codes; JWT sessions; on an empty database the first registered user auto-becomes admin
-- Admin monitor: trigger / force full-source, per-source, or per-date ingestion, generate daily briefs, refresh dashboard cache
-- Model provider management (Base URL / Key / model / reasoning effort, with a real connection test) and an external MCP server registry (handshake + tool-list probing)
-- SMTP email delivery configuration: database-backed, effective immediately and takes precedence over environment variables, with an in-panel test send
-- X ingestion ops: credential pool, watched accounts, on-demand pulls, snapshot rebuilds
-- GitHub crawl jobs with star / date windows, dry-run, and auto-enrichment; enrichment queue with retry / backfill / cancel, concurrency control, and circuit breaking
+Full feature walkthrough: [docs/project-overview.md](docs/project-overview.md) (in Chinese)
 
 ## AIGC Radar MCP (Flagship Interface)
 
@@ -168,9 +134,10 @@ Sending `Authorization: Bearer <MCP access token>` additionally unlocks `search_
 
 On the context side, it provides resources (`aigc-news://dashboard/summary`, `aigc-news://report/latest`, etc.), resource templates, and prompts (`daily_research_brief`, `project_discovery`). For full protocol parameters, the MCP-first policy, and fallback semantics, see [docs/mcp-server.md](docs/mcp-server.md).
 
-### Structured JSON responses
+<details>
+<summary>Sample structured response & the 500-star quality bar</summary>
 
-WebSearch hands you links; AIGC Radar hands you data. One trimmed record from `search_github_ai_projects`:
+**Structured JSON responses** — WebSearch hands you links; AIGC Radar hands you data. One trimmed record from `search_github_ai_projects`:
 
 ```json
 {
@@ -194,12 +161,12 @@ WebSearch hands you links; AIGC Radar hands you data. One trimmed record from `s
 - Quality signals inline: `stars` / `forks` / `daily_star_growth` / `hot_score` / `pushed_at` — no extra GitHub API call needed.
 - Transparent admission and provenance: 500-star admission (`min_stars`), `result_origin` / `fallback_used` state where results came from, and `attribution` / `detail_url` link back to the detail pages.
 
-### Quality-filtered index
-
-Every GitHub project in the library passed a **500-star admission bar** (`min_stars`) before curation — toy repos, abandoned forks, and low-signal projects never enter the index, so results are high quality by construction, with no post-filtering left to the agent. WebSearch has no such gate: it ranks whatever the open web returns, including unmaintained or trivial repositories, and leaves the quality judgment to you.
+**Quality-filtered index** — Every GitHub project in the library passed a **500-star admission bar** (`min_stars`) before curation — toy repos, abandoned forks, and low-signal projects never enter the index, so results are high quality by construction, with no post-filtering left to the agent. WebSearch has no such gate: it ranks whatever the open web returns, including unmaintained or trivial repositories, and leaves the quality judgment to you.
 
 - Enforced everywhere: the 500-star floor applies both at ingestion and on the limited read-only GitHub fallback — below-bar results are excluded before they reach the agent.
 - Curated, not just crawled: admitted projects get a category taxonomy, bilingual tags, and star-growth snapshots, so ranking signals stay current.
+
+</details>
 
 ## Architecture
 
@@ -211,127 +178,24 @@ Sources (arXiv/HF · GitHub · Techmeme · Product Hunt · HN · X · WeChat)
   → Dashboard · project search · briefs · MCP
 ```
 
-| Layer | Tech |
-| --- | --- |
-| Frontend | Vue 3 + TypeScript + Vite + Pinia + Tailwind CSS + Vue I18n (zh-CN / en-US), neo-brutalist design |
-| Backend | FastAPI monolith, layered: transport (REST / SSE / MCP) → application services → repository protocols → infrastructure adapters |
-| Relational | PostgreSQL 16 (sole relational runtime) |
-| Vector / Graph | Milvus (+ MinIO / etcd), Neo4j paper entity graph |
-| Cache | Redis (API cache, email codes, rate limiting, visitor dedup) |
-| Ops | In-process scheduler (Asia/Shanghai), single-node Docker Compose, restart policy + systemd recovery |
-
-The backend also ships a full hybrid-RAG chat pipeline (PostgreSQL + Milvus + Neo4j recall, rerank, streaming, multi-session, image / PDF attachments); its web entrance is temporarily paused for maintenance.
+Vue 3 + TypeScript frontend · FastAPI layered monolith · PostgreSQL 16 as the sole relational runtime · Milvus vectors + Neo4j paper graph · Redis cache — single-node Docker Compose with an in-process scheduler (Asia/Shanghai). Full stack table and module breakdown: [docs/architecture.md](docs/architecture.md) (in Chinese). The backend also ships a hybrid-RAG chat pipeline (recall, rerank, streaming, multi-session, image / PDF attachments); its web entrance is temporarily paused for maintenance.
 
 ## Quick Start (Linux / WSL2)
 
-### Prerequisites
-
-| Tool | Version | Notes |
-| --- | --- | --- |
-| Python | 3.12 | Backend runtime (image pinned by digest to `python:3.12-slim`) |
-| Node.js | 22 | Frontend build and tests (matches CI) |
-| Docker + Compose | v2 | Infrastructure and production stack orchestration |
-
-### 1) Prepare environment variables
+Requires Python 3.12 · Node.js 22 · Docker Compose v2. **A clean checkout runs as-is:**
 
 ```bash
 cp .env.example .env
-```
-
-Edit `.env` with your local parameters. **`JWT_SECRET_KEY` must be set to a strong random value** — the application refuses to start if it is missing, equal to the example value, or shorter than 32 characters (see [docs/adr/0001](docs/adr/0001-jwt-secret-rotation-and-startup-guard.md)):
-
-```bash
-openssl rand -hex 32
-```
-
-### 2) Install dependencies
-
-```bash
-python3.12 -m venv backend/.venv
-backend/.venv/bin/python -m pip install --upgrade pip
-backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
-cd frontend && npm ci && cd ..
-```
-
-`requirements-dev.txt` adds pytest / pytest-cov / ruff on top of the locked `requirements.lock`, sharing the same dependency baseline as CI.
-
-### 3) Prepare frontend TLS certificates (self-signed is fine)
-
-The `frontend-web` nginx mounts `frontend/ssl/` as a read-only volume (gitignored; absent on a clean checkout) and fails to start without certificates. For local deployment, generate a self-signed certificate:
-
-```bash
-mkdir -p frontend/ssl
-openssl req -x509 -newkey rsa:2048 -nodes \
-  -keyout frontend/ssl/aigcnews.cn.key \
-  -out frontend/ssl/aigcnews.cn_bundle.crt \
-  -days 3650 -subj "/CN=aigcnews.cn"
-# The hardened frontend-web container (cap_drop: ALL) requires the private key to be owned by root
+# then edit .env: JWT_SECRET_KEY is required (openssl rand -hex 32) — the app refuses weak or missing values
+python3.12 -m venv backend/.venv && backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
+(cd frontend && npm ci)
+# frontend-web nginx requires certs (self-signed is fine); the hardened container wants the key root:root 600
+mkdir -p frontend/ssl && openssl req -x509 -newkey rsa:2048 -nodes -keyout frontend/ssl/aigcnews.cn.key -out frontend/ssl/aigcnews.cn_bundle.crt -days 3650 -subj "/CN=aigcnews.cn"
 sudo chown root:root frontend/ssl/*.key && sudo chmod 600 frontend/ssl/*.key
-```
-
-### 4) Start the core stack
-
-```bash
 scripts/manage_main_stack.sh up
 ```
 
-This reconciles the core Compose stack (backend API, frontend, PostgreSQL, Redis, Milvus, MinIO, etc.) and waits for all health checks to pass — **a clean checkout runs as-is**. Common subcommands: `config` (validates the orchestration without printing secrets), `status`, `logs`.
-
-> Private deployment extensions (sister services, external orchestration networks, private nginx servers, etc.) are not shipped with the repository; they are injected as an overlay: when the script detects `../aigcnews_private/deploy/docker-compose.private.yml` (overridable via `AIGCNEWS_PRIVATE_COMPOSE`), it is merged in automatically; when absent, the core stack works standalone. See the header comments in `docker/docker-compose.yml` for the mechanism.
-
-### 5) Local development (hot reload outside containers)
-
-```bash
-# Backend (reads API_HOST / API_PORT from settings, default 8000)
-backend/.venv/bin/python run_server.py
-
-# Frontend (Vite dev server, default 5173)
-cd frontend && npm run dev
-```
-
-### 6) First admin & SMTP configuration
-
-The repository ships no default admin account: **on an empty users table, the first email-registered user automatically becomes the admin**; later registrations are regular users, and existing deployments (non-empty users table) are unaffected.
-
-Registration requires an email OTP, which depends on mail delivery — so a fresh self-host needs a working mail channel *before* the first admin exists. Pick one:
-
-- Configure `SMTP_*` in `.env` (see the SMTP block in `.env.example`); or
-- Leave `SMTP_HOST` empty for dev mode, which prints verification codes to the backend console logs.
-
-Once the first admin logs in, the **Monitor → SMTP email delivery** panel manages the configuration online: it is stored in the database, takes effect immediately (background jobs pick it up within 60 seconds), and **takes precedence over environment variables**; "Send test email" delivers a real message to the current admin's login email using the latest saved configuration. Saving with an empty host deletes the database configuration and reverts to the environment variables.
-
-## Ports & Health Checks
-
-| Address | Purpose |
-| --- | --- |
-| `http://localhost` (80/443) | Frontend site (production domain certificates live in `frontend/ssl/`; keys must be `root:root` mode 600) |
-| `http://localhost:5173` | Vite dev server |
-| `http://127.0.0.1:8000` | Backend API (loopback-only binding; `/api/live`, `/api/ready` health checks) |
-| `http://localhost:8000/api/mcp` | Local MCP endpoint |
-
-Infrastructure (PostgreSQL / Redis / Milvus / MinIO / Attu) is only exposed inside the orchestration network and publishes no ports to the host; the backend reaches it by service name. For ad-hoc host-side debugging use `docker exec <container> ...`; operational details are in [docs/linux-server-boot.md](docs/linux-server-boot.md).
-
-## Testing & Quality Checks
-
-```bash
-# Full backend suite (must run from the repository root, same as CI)
-backend/.venv/bin/python -m pytest backend/tests -q
-
-# Backend lint
-backend/.venv/bin/python -m ruff check backend/app backend/tests --config backend/pyproject.toml
-
-# Frontend: unit tests, type check, lint, build
-cd frontend
-npm run test:unit
-npm run typecheck
-npm run lint
-npm run build
-
-# Orchestration validation
-docker compose -f docker/docker-compose.yml config --quiet
-```
-
-Commit messages follow Conventional Commits (`<type>(<scope>): <subject>`, scope required); details in [docs/git-workflow.md](docs/git-workflow.md).
+First-run notes: on an empty database the first email-registered user becomes admin, and registration needs a working mail channel *before* that — configure `SMTP_*` in `.env`, or leave `SMTP_HOST` empty for dev mode which prints codes to the backend logs. TLS details, ports & health checks, hot-reload dev mode, testing commands, and the private-overlay mechanism: [docs/self-hosting.md](docs/self-hosting.md)
 
 ## Directory Structure
 
@@ -347,10 +211,11 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 
 ## Documentation
 
-- [docs/project-overview.md](docs/project-overview.md) — Project panorama: product, architecture, data, deployment, and engineering status
-- [docs/architecture.md](docs/architecture.md) — Current functional architecture (PostgreSQL 16 as the sole relational runtime)
-- [docs/mcp-server.md](docs/mcp-server.md) — AIGC Radar MCP protocol parameters and policies
-- [docs/README.md](docs/README.md) — Full documentation index (including historical archive annotations)
+- [docs/self-hosting.md](docs/self-hosting.md) — Full self-hosting guide: TLS certificates, first admin & SMTP, ports, testing
+- [docs/project-overview.md](docs/project-overview.md) — Project panorama: product, architecture, data, deployment, and engineering status (in Chinese)
+- [docs/architecture.md](docs/architecture.md) — Current functional architecture, PostgreSQL 16 as the sole relational runtime (in Chinese)
+- [docs/mcp-server.md](docs/mcp-server.md) — AIGC Radar MCP protocol parameters and policies (in Chinese)
+- [docs/README.md](docs/README.md) — Full documentation index, including historical archive annotations (in Chinese)
 
 ## Data Ownership & Compliance
 
@@ -365,6 +230,7 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev environment, commit conventions (Conventional Commits, scope required), and PR expectations (in Chinese)
 - [SECURITY.md](SECURITY.md) — supported versions and private vulnerability reporting (in Chinese)
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — Contributor Covenant 2.1 (in Chinese)
+- Testing & quality checks (pytest, ruff, Vitest, typecheck, build, compose config): [docs/self-hosting.md#testing](docs/self-hosting.md#testing)
 
 ## License
 

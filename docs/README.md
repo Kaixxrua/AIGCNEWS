@@ -29,6 +29,8 @@
 
 | 文档 | 内容 |
 |---|---|
+| [self-hosting.zh-CN.md](self-hosting.zh-CN.md) | 自托管完整指南（中文）：TLS 证书、SMTP 引导、端口与测试命令 |
+| [self-hosting.md](self-hosting.md) | Self-hosting guide (English twin of the above) |
 | [linux-server-boot.md](linux-server-boot.md) | Linux 服务器开机启动（Docker Compose + systemd） |
 | [postgres-application-backup-restore.md](postgres-application-backup-restore.md) | PostgreSQL 应用库备份与恢复验收 |
 | [mysql-retirement-runbook.md](mysql-retirement-runbook.md) | MySQL 最终退役运行手册（最终操作基线） |
