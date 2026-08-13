@@ -4,7 +4,7 @@ from __future__ import annotations
 
 职责：
   - watchlist 解析（env 字符串 → handle 列表）
-  - 推文过滤（推广/转推/订阅专属不入库）
+  - 推文过滤（推广/订阅专属不入库；纯转贴按原贴归属收录）
   - 互动分计算（与 HN points 同量级的 raw_score）
   - Tweet 对象 → 标准条目 dict 投影
 
@@ -40,14 +40,18 @@ def parse_watch_handles(raw: str) -> list[str]:
 
 
 def is_ingestible_tweet(tweet: Any) -> bool:
-    """过滤不入库的推文：推广内容、转推、订阅专属。
+    """过滤不入库的推文：推广内容、订阅专属。
 
     推广必须过滤：twitter-cli 的 fetch_user_tweets 请求带
     includePromotedContent=True，广告会混入用户时间线。
+
+    纯转贴（is_retweet）自 2026-08-13 起保留：twitter-cli parser 已把
+    id/正文/作者/指标/created_at 全部换成被转原贴，条目按原贴归属入库
+    （与原作者自发条目同 URL，走既有幂等路径；同轮重复由 project_tweets
+    按 id 去重），转贴者 retweeted_by 不投影。当日快照过滤按原贴
+    created_at 算——只有"当天发布的原贴被当天转贴"能入库，隔天转贴不进。
     """
     if getattr(tweet, "is_promoted", False):
-        return False
-    if getattr(tweet, "is_retweet", False):
         return False
     if getattr(tweet, "is_subscriber_only", False):
         return False
@@ -336,7 +340,18 @@ def project_tweets(
             views=int(getattr(metrics, "views", 0) or 0),
         )
 
-    ranked = sorted(ingestible, key=_score, reverse=True)[:limit]
+    ranked = sorted(ingestible, key=_score, reverse=True)
+    # 纯转贴以原贴 id/指标入库：多账号转同一贴（或转自己旧贴）会产生重复
+    # id，降序后保留首次出现（同分同内容，取先者），避免重复条目占满截断名额
+    seen_ids: set[str] = set()
+    deduped: list[Any] = []
+    for tweet in ranked:
+        dedup_id = str(getattr(tweet, "id", ""))
+        if dedup_id in seen_ids:
+            continue
+        seen_ids.add(dedup_id)
+        deduped.append(tweet)
+    ranked = deduped[:limit]
 
     results: list[dict] = []
     for rank, tweet in enumerate(ranked, start=1):
