@@ -1647,14 +1647,55 @@ class XExistenceProbeClassificationContracts(unittest.TestCase):
         self.assertEqual(x_transport._classify_probe_payload(suspended), "unavailable")
 
     def test_missing_or_malformed_result_is_unknown(self) -> None:
+        # data 缺失/非 dict、result 非 dict：结构异常，保守 unknown
         for payload in (
             {},
-            {"data": {"tweetResult": {}}},
-            self._payload(None),
+            {"data": {}},
             self._payload("not-a-dict"),
         ):
             with self.subTest(payload=payload):
                 self.assertEqual(x_transport._classify_probe_payload(payload), "unknown")
+
+    def test_empty_tweet_result_is_empty_pending_author_check(self) -> None:
+        """实测作者删帖形态：HTTP 200 + tweetResult 空对象（无 result 键/null）。
+
+        单条无法区分作者删帖与账号连坐，标记 "empty" 待作者交叉验证。
+        """
+        for payload in (
+            {"data": {"tweetResult": {}}},
+            self._payload(None),
+        ):
+            with self.subTest(payload=payload):
+                self.assertEqual(x_transport._classify_probe_payload(payload), "empty")
+
+
+class XUserProbeClassificationContracts(unittest.TestCase):
+    """_classify_user_payload：作者账号交叉验证三态（纯函数）。"""
+
+    @staticmethod
+    def _payload(result: object) -> dict:
+        return {"data": {"user": {"result": result}}}
+
+    def test_alive_public_user(self) -> None:
+        payload = self._payload({"__typename": "User", "legacy": {"protected": False}})
+        self.assertEqual(x_transport._classify_user_payload(payload), "alive_public")
+
+    def test_user_without_legacy_defaults_public(self) -> None:
+        payload = self._payload({"__typename": "User"})
+        self.assertEqual(x_transport._classify_user_payload(payload), "alive_public")
+
+    def test_protected_user_is_unavailable(self) -> None:
+        payload = self._payload({"__typename": "User", "legacy": {"protected": True}})
+        self.assertEqual(x_transport._classify_user_payload(payload), "unavailable")
+
+    def test_user_unavailable_is_unavailable(self) -> None:
+        payload = self._payload({"__typename": "UserUnavailable"})
+        self.assertEqual(x_transport._classify_user_payload(payload), "unavailable")
+
+    def test_malformed_payload_is_unknown(self) -> None:
+        for payload in ({}, {"data": {"user": {}}}, self._payload(None), self._payload("x")):
+            with self.subTest(payload=payload):
+                self.assertEqual(x_transport._classify_user_payload(payload), "unknown")
 
 
 class XExistenceProbeTransportContracts(unittest.TestCase):
@@ -1794,6 +1835,92 @@ class XExistenceProbeTransportContracts(unittest.TestCase):
         )
         with self.assertRaises(x_transport.XAuthNotConfigured):
             transport.probe_tweet_existence(["n1"])
+
+    @staticmethod
+    def _empty() -> dict:
+        return {"data": {"tweetResult": {}}}
+
+    @staticmethod
+    def _user(typename: str = "User", protected: bool = False) -> dict:
+        legacy = {"protected": protected} if protected else {}
+        return {"data": {"user": {"result": {"__typename": typename, "legacy": legacy}}}}
+
+    def test_empty_tweet_with_alive_public_author_is_deleted(self) -> None:
+        transport = self._transport()
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", return_value=self._empty()
+        ), patch.object(
+            x_transport, "_fetch_user_raw", return_value=self._user()
+        ), patch.object(x_transport.time, "sleep"):
+            out = transport.probe_tweet_existence(["e1"], authors={"e1": "someone"})
+        self.assertEqual(out, {"e1": "deleted"})
+
+    def test_empty_tweet_with_unavailable_or_protected_author_is_unavailable(self) -> None:
+        for user_payload in (
+            self._user(typename="UserUnavailable"),
+            self._user(protected=True),
+        ):
+            with self.subTest(user_payload=user_payload):
+                transport = self._transport()
+                with patch.object(
+                    x_transport, "_fetch_tweet_result_raw", return_value=self._empty()
+                ), patch.object(
+                    x_transport, "_fetch_user_raw", return_value=user_payload
+                ), patch.object(x_transport.time, "sleep"):
+                    out = transport.probe_tweet_existence(["e1"], authors={"e1": "someone"})
+                self.assertEqual(out, {"e1": "unavailable"})
+
+    def test_empty_tweet_with_author_not_found_is_unavailable(self) -> None:
+        transport = self._transport()
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", return_value=self._empty()
+        ), patch.object(
+            x_transport, "_fetch_user_raw", side_effect=NotFoundError("gone")
+        ), patch.object(x_transport.time, "sleep"):
+            out = transport.probe_tweet_existence(["e1"], authors={"e1": "someone"})
+        self.assertEqual(out, {"e1": "unavailable"})
+
+    def test_empty_tweet_without_author_or_author_error_is_unknown(self) -> None:
+        transport = self._transport()
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", return_value=self._empty()
+        ), patch.object(x_transport.time, "sleep"):
+            # 未提供作者：fail-closed
+            self.assertEqual(transport.probe_tweet_existence(["e1"]), {"e1": "unknown"})
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", return_value=self._empty()
+        ), patch.object(
+            x_transport, "_fetch_user_raw", side_effect=TwitterAPIError(500, "boom")
+        ), patch.object(x_transport.time, "sleep"):
+            out = transport.probe_tweet_existence(["e1"], authors={"e1": "someone"})
+        self.assertEqual(out, {"e1": "unknown"})
+
+    def test_empty_tweet_author_rate_limit_aborts(self) -> None:
+        transport = self._transport()
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", return_value=self._empty()
+        ), patch.object(
+            x_transport,
+            "_fetch_user_raw",
+            side_effect=TwitterAPIError(429, "Rate limited"),
+        ), patch.object(x_transport.time, "sleep"):
+            with self.assertRaises(x_transport.XRateLimitAbort):
+                transport.probe_tweet_existence(["e1"], authors={"e1": "someone"})
+
+    def test_author_probe_cached_per_screen_name(self) -> None:
+        transport = self._transport()
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", return_value=self._empty()
+        ) as tweet_fetch, patch.object(
+            x_transport, "_fetch_user_raw", return_value=self._user()
+        ) as user_fetch, patch.object(x_transport.time, "sleep"):
+            out = transport.probe_tweet_existence(
+                ["e1", "e2", "e3"], authors={"e1": "sameguy", "e2": "sameguy", "e3": "sameguy"}
+            )
+        self.assertEqual(out, {"e1": "deleted", "e2": "deleted", "e3": "deleted"})
+        self.assertEqual(tweet_fetch.call_count, 3)
+        user_fetch.assert_called_once()
+        self.assertEqual(user_fetch.call_args.args[1], "sameguy")
 
     def test_empty_ids_short_circuits(self) -> None:
         def forbidden_factory() -> object:
