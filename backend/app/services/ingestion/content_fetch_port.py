@@ -4,9 +4,12 @@ import asyncio
 import logging
 from collections.abc import Callable
 from typing import Protocol
+from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup
+
+from backend.app.services.outbound_target_policy import pin_http_target
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,11 @@ DEFAULT_PAGE_HEADERS = {
     )
 }
 DEFAULT_PAGE_TIMEOUT = 20
+# SSRF 防护：采集源 URL 可被投递为内网/云元数据地址（渗透实测）。
+# 只允许标准端口并对每一跳重定向重新钉死公网 IP。
+_ALLOWED_PORTS = {80, 443}
+_MAX_REDIRECT_HOPS = 5
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 
 
 class PageContentFetcher(Protocol):
@@ -67,16 +75,33 @@ class DefaultPageContentFetcher:
         try:
             async with httpx.AsyncClient(
                 timeout=timeout,
-                follow_redirects=True,
+                follow_redirects=False,
                 headers=self._headers,
                 trust_env=True,
             ) as client:
-                response = await client.get(url)
-                response.raise_for_status()
-                content_type = response.headers.get("content-type", "")
-                if "html" not in content_type and "text" not in content_type:
-                    return ""
-                return self._clean_html(response.text)
+                current_url = url
+                for _ in range(_MAX_REDIRECT_HOPS + 1):
+                    # 每一跳都重新解析并钉死公网 IP，请求发往 request_url，
+                    # Host/SNI 保持原域名；私网/保留地址或非法端口在此被拒绝。
+                    target = pin_http_target(current_url, allowed_ports=_ALLOWED_PORTS)
+                    response = await client.get(
+                        target.request_url,
+                        headers=target.headers,
+                        extensions=target.extensions,
+                    )
+                    if response.status_code in _REDIRECT_STATUSES:
+                        location = response.headers.get("location")
+                        if not location:
+                            return ""
+                        current_url = urljoin(target.logical_url, location)
+                        continue
+                    response.raise_for_status()
+                    content_type = response.headers.get("content-type", "")
+                    if "html" not in content_type and "text" not in content_type:
+                        return ""
+                    return self._clean_html(response.text)
+            logger.debug("[Enricher] 抓取页面重定向过多 %s", url)
+            return ""
         except Exception as exc:
             logger.debug("[Enricher] 抓取页面失败 %s: %s", url, exc)
             return ""

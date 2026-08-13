@@ -7,6 +7,17 @@ import httpx
 
 from backend.app.services.ingestion import content_enricher, content_fetch_port
 from backend.app.services.ingestion.content_fetch_port import DEFAULT_PAGE_HEADERS
+from backend.app.services.outbound_target_policy import PinnedHttpTarget
+
+
+def _pinned_target(url: str) -> PinnedHttpTarget:
+    return PinnedHttpTarget(
+        logical_url=url,
+        request_url=url,
+        host_header="public.example.test",
+        sni_hostname="public.example.test",
+        selected_ip="93.184.216.34",
+    )
 
 
 class _AsyncClient:
@@ -22,7 +33,7 @@ class _AsyncClient:
     async def __aexit__(self, *args: object) -> None:
         return None
 
-    async def get(self, url: str) -> object:
+    async def get(self, url: str, **kwargs: object) -> object:
         self.requested_urls.append(url)
         if self.error is not None:
             raise self.error
@@ -56,10 +67,18 @@ class ContentEnricherHtmlAndFetchContractTests(unittest.IsolatedAsyncioTestCase)
         for content_type in ("text/html; charset=utf-8", "text/plain"):
             with self.subTest(content_type=content_type):
                 response = MagicMock()
+                response.status_code = 200
                 response.headers = {"content-type": content_type}
                 response.text = "<main><p>Body</p></main>"
                 client = _AsyncClient(response=response)
-                with patch.object(content_fetch_port.httpx, "AsyncClient", return_value=client) as factory:
+                with (
+                    patch.object(content_fetch_port.httpx, "AsyncClient", return_value=client) as factory,
+                    patch.object(
+                        content_fetch_port,
+                        "pin_http_target",
+                        side_effect=lambda url, **kwargs: _pinned_target(url),
+                    ),
+                ):
                     result = await content_enricher._fetch_url_text(
                         "https://public.example.test/current", timeout=7
                     )
@@ -68,7 +87,7 @@ class ContentEnricherHtmlAndFetchContractTests(unittest.IsolatedAsyncioTestCase)
                 self.assertEqual(client.requested_urls, ["https://public.example.test/current"])
                 factory.assert_called_once_with(
                     timeout=7,
-                    follow_redirects=True,
+                    follow_redirects=False,
                     headers=DEFAULT_PAGE_HEADERS,
                     trust_env=True,
                 )
@@ -76,12 +95,20 @@ class ContentEnricherHtmlAndFetchContractTests(unittest.IsolatedAsyncioTestCase)
 
     async def test_fetch_url_text_rejects_other_content_types_and_swallows_fetch_errors(self) -> None:
         response = MagicMock()
+        response.status_code = 200
         response.headers = {"content-type": "application/json"}
         response.text = '<p>Not page text</p>'
-        with patch.object(
-            content_fetch_port.httpx,
-            "AsyncClient",
-            return_value=_AsyncClient(response=response),
+        with (
+            patch.object(
+                content_fetch_port.httpx,
+                "AsyncClient",
+                return_value=_AsyncClient(response=response),
+            ),
+            patch.object(
+                content_fetch_port,
+                "pin_http_target",
+                side_effect=lambda url, **kwargs: _pinned_target(url),
+            ),
         ):
             self.assertEqual(
                 await content_enricher._fetch_url_text("https://public.example.test/data"),
@@ -90,10 +117,17 @@ class ContentEnricherHtmlAndFetchContractTests(unittest.IsolatedAsyncioTestCase)
 
         for error in (httpx.HTTPError("network failed"), RuntimeError("client failed")):
             with self.subTest(error=type(error).__name__):
-                with patch.object(
-                    content_fetch_port.httpx,
-                    "AsyncClient",
-                    return_value=_AsyncClient(error=error),
+                with (
+                    patch.object(
+                        content_fetch_port.httpx,
+                        "AsyncClient",
+                        return_value=_AsyncClient(error=error),
+                    ),
+                    patch.object(
+                        content_fetch_port,
+                        "pin_http_target",
+                        side_effect=lambda url, **kwargs: _pinned_target(url),
+                    ),
                 ):
                     self.assertEqual(
                         await content_enricher._fetch_url_text("https://public.example.test/error"),
