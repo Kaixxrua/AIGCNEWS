@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Administrative control plane for the application scheduler."""
 
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 
@@ -53,6 +54,9 @@ class SchedulerAdminService:
         if job is None:
             return {"status": "error", "message": f"Job '{job_id}' 不存在。"}
 
-        job.modify(next_run_time=None)
+        # APScheduler 3.x 的 next_run_time=None 是 pause 语义（job.pause()
+        # 同款）；「立即触发」应把下次点火时间设为现在，点火后 cron 触发器
+        # 自动回到常规节奏。
+        job.modify(next_run_time=datetime.now(timezone.utc))
         self._scheduler.wakeup()
         return {"status": "triggered", "message": f"Job '{job_id}' 已触发执行。"}

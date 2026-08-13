@@ -1089,7 +1089,14 @@ class OperationsRouteTests(unittest.TestCase):
             response.json(),
             {"status": "triggered", "message": "Job 'daily' 已触发执行。"},
         )
-        job.modify.assert_called_once_with(next_run_time=None)
+        # APScheduler 3.x：next_run_time=None 是 pause；立即触发 = 下次点火设为现在
+        job.modify.assert_called_once()
+        next_run = job.modify.call_args.kwargs["next_run_time"]
+        self.assertIsInstance(next_run, datetime)
+        self.assertIsNotNone(next_run.tzinfo)
+        self.assertLessEqual(
+            abs((datetime.now(timezone.utc) - next_run).total_seconds()), 5
+        )
         scheduler.wakeup.assert_called_once_with()
 
     def test_dashboard_cache_clear_uses_all_patterns_and_closes_client(self) -> None:
