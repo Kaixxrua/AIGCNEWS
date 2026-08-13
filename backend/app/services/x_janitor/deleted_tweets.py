@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_PROBES_PER_RUN = 150
 
 _TWEET_STATUS_RE = re.compile(r"/status/(\d+)")
+_TWEET_AUTHOR_RE = re.compile(r"(?:x|twitter)\.com/([A-Za-z0-9_]+)/status/\d+")
 
 
 def extract_tweet_id(url: Any) -> str:
@@ -45,11 +46,25 @@ def extract_tweet_id(url: Any) -> str:
     return match.group(1) if match else ""
 
 
+def extract_author_handle(url: Any) -> str:
+    """从推文 URL 解析作者 handle；非推文 URL 返回空串。"""
+    match = _TWEET_AUTHOR_RE.search(str(url or ""))
+    return match.group(1) if match else ""
+
+
 def extract_quoted_tweet_id(quote: Any) -> str:
     """从 quote 卡片元数据解析被引 tweet id；无卡/坏数据返回空串。"""
     if not isinstance(quote, dict):
         return ""
     return extract_tweet_id(quote.get("url"))
+
+
+def extract_quoted_author_handle(quote: Any) -> str:
+    """从 quote 卡片元数据解析被引作者 handle；无卡/坏数据返回空串。"""
+    if not isinstance(quote, dict):
+        return ""
+    handle = str(quote.get("author") or "").strip().lstrip("@")
+    return handle or extract_author_handle(quote.get("url"))
 
 
 class XJanitorCredentialProvider(Protocol):
@@ -113,7 +128,7 @@ class XDeletedTweetJanitor:
         rows = await asyncio.to_thread(
             self._documents.list_x_documents_for_probe, self._max_probes
         )
-        probe_ids, quoted_outers, own_by_doc = self._collect_probe_ids(rows)
+        probe_ids, authors, quoted_outers, own_by_doc = self._collect_probe_ids(rows)
         if not probe_ids:
             logger.info("[XJanitor] 无 X 文档可探测，本轮跳过。")
             return XJanitorReport()
@@ -131,7 +146,7 @@ class XDeletedTweetJanitor:
         lock = self._x_lock or asyncio.Lock()
         try:
             async with lock:
-                statuses = await asyncio.to_thread(probe, probe_ids)
+                statuses = await asyncio.to_thread(probe, probe_ids, authors)
         except XAuthNotConfigured:
             logger.warning("[XJanitor] 无启用 X 凭据，本轮中止、零写入。")
             return XJanitorReport(aborted="x_auth_not_configured")
@@ -192,15 +207,18 @@ class XDeletedTweetJanitor:
 
     def _collect_probe_ids(
         self, rows: Iterable[dict[str, Any]]
-    ) -> tuple[list[str], dict[str, list[str]], dict[str, str]]:
-        """逐行取 own id + 被引 id，扁平去重截断到 cap。
+    ) -> tuple[list[str], dict[str, str], dict[str, list[str]], dict[str, str]]:
+        """逐行取 own id + 被引 id + 作者 handle，扁平去重截断到 cap。
 
-        返回 (probe_ids, quoted_id -> [外层 doc_ids], doc_id -> own_id)。
-        own id 缺失（畸形 URL）的文档整行跳过；被引 id 按首次出现去重，
-        多个外层共用同一被引只探一次、清卡时全清。
+        返回 (probe_ids, tweet_id -> 作者 handle, quoted_id -> [外层 doc_ids],
+        doc_id -> own_id)。作者 handle 供传输层对「本体不可见」推文做作者
+        账号交叉验证（区分作者删帖与账号封禁/转私密连坐）。own id 缺失
+        （畸形 URL）的文档整行跳过；被引 id 按首次出现去重，多个外层共用
+        同一被引只探一次、清卡时全清。
         """
         probe_ids: list[str] = []
         seen: set[str] = set()
+        authors: dict[str, str] = {}
         quoted_outers: dict[str, list[str]] = {}
         own_by_doc: dict[str, str] = {}
 
@@ -221,10 +239,13 @@ class XDeletedTweetJanitor:
             if not _push(own_id):
                 break
             own_by_doc[doc_id] = own_id
-            quoted_id = extract_quoted_tweet_id(row.get("quote"))
+            authors.setdefault(own_id, extract_author_handle(row.get("url")))
+            quote = row.get("quote")
+            quoted_id = extract_quoted_tweet_id(quote)
             if quoted_id and _push(quoted_id):
+                authors.setdefault(quoted_id, extract_quoted_author_handle(quote))
                 quoted_outers.setdefault(quoted_id, []).append(doc_id)
-        return probe_ids, quoted_outers, own_by_doc
+        return probe_ids, authors, quoted_outers, own_by_doc
 
     def _resolve_transport(self) -> tuple[Any | None, str | None]:
         if self._transport is not None:

@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any, Protocol, runtime_checkable
 
 # 凭据池模式下相邻账号请求间隔秒数（与实现侧默认值保持一致）。
@@ -65,13 +65,19 @@ class XTransportProtocol(Protocol):
         """
         ...
 
-    def probe_tweet_existence(self, tweet_ids: Iterable[str]) -> dict[str, str]:
+    def probe_tweet_existence(
+        self,
+        tweet_ids: Iterable[str],
+        authors: Mapping[str, str] | None = None,
+    ) -> dict[str, str]:
         """逐条探测推文存活状态，返回 {tweet_id: alive/deleted/unavailable/unknown}。
 
-        deleted 仅指原作者删除（墓碑文案/Unavailable Deleted/code 144）；
+        deleted 仅指原作者删除（墓碑文案/Unavailable Deleted/code 144，或
+        推文本体不可见且作者账号存活公开——2026-08-13 实测作者删帖形态
+        为 HTTP 200 空 tweetResult，须经 authors 交叉验证区分账号连坐）；
         Suspended/404/网络/解析漂移一律落在 unavailable/unknown（调用方
-        据此 fail-closed 不删）。同步方法（内部走阻塞 HTTP），调用方应经
-        asyncio.to_thread 转入线程池。
+        据此 fail-closed 不删）。authors 为 {tweet_id: screen_name}；同步
+        方法（内部走阻塞 HTTP），调用方应经 asyncio.to_thread 转入线程池。
 
         Raises:
             XAuthNotConfigured: 无启用凭据（整轮中止）。

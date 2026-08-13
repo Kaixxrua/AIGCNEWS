@@ -16,6 +16,8 @@ from backend.app.services.source_plugins.x_source import (
 )
 from backend.app.services.x_janitor.deleted_tweets import (
     XDeletedTweetJanitor,
+    extract_author_handle,
+    extract_quoted_author_handle,
     extract_quoted_tweet_id,
     extract_tweet_id,
 )
@@ -84,6 +86,31 @@ class ExtractTweetIdContracts(unittest.TestCase):
         for quote in (None, "not-a-dict", {}, {"url": None}):
             with self.subTest(quote=quote):
                 self.assertEqual(extract_quoted_tweet_id(quote), "")
+
+    def test_extract_author_handle(self) -> None:
+        self.assertEqual(
+            extract_author_handle("https://x.com/OpenAI/status/123"), "OpenAI"
+        )
+        self.assertEqual(
+            extract_author_handle("https://twitter.com/someone/status/9?s=20"), "someone"
+        )
+        for url in ("", None, "https://example.com/a/status/1", "https://x.com/openai"):
+            with self.subTest(url=url):
+                self.assertEqual(extract_author_handle(url), "")
+
+    def test_extract_quoted_author_handle_prefers_author_field(self) -> None:
+        self.assertEqual(
+            extract_quoted_author_handle(
+                {"url": "https://x.com/b/status/77", "author": "@Quoted"}
+            ),
+            "Quoted",
+        )
+        self.assertEqual(
+            extract_quoted_author_handle({"url": "https://x.com/b/status/77"}), "b"
+        )
+        for quote in (None, "not-a-dict", {}):
+            with self.subTest(quote=quote):
+                self.assertEqual(extract_quoted_author_handle(quote), "")
 
 
 class XDeletedTweetJanitorContracts(unittest.IsolatedAsyncioTestCase):
@@ -266,6 +293,25 @@ class XDeletedTweetJanitorContracts(unittest.IsolatedAsyncioTestCase):
         clear_cache.assert_not_awaited()
         self.assertEqual(report.probed, 0)
         self.assertIsNone(report.aborted)
+
+    async def test_probe_receives_author_handles_for_cross_check(self) -> None:
+        """authors 映射：own 取自文档 URL，被引取自 quote.author（供空形态交叉验证）。"""
+        janitor, _, transport = _janitor(
+            [
+                _doc("d1", "1001", quoted_id="2001"),
+                {"id": "d2", "url": "https://x.com/Second/status/1002", "quote": None},
+            ],
+            {"1001": "alive", "2001": "alive", "1002": "alive"},
+        )
+        with patch(_CACHE_PATCH, new=AsyncMock()):
+            await janitor.run()
+
+        call = transport.probe_tweet_existence.call_args
+        self.assertEqual(call.args[0], ["1001", "2001", "1002"])
+        self.assertEqual(
+            call.args[1],
+            {"1001": "author", "2001": "other", "1002": "Second"},
+        )
 
 
 if __name__ == "__main__":
