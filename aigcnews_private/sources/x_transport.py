@@ -295,6 +295,86 @@ _TRANSLATION_URL_TEMPLATE = (
 )
 _TRANSLATION_INTER_DELAY = 0.4
 
+# ── 推文存活探测（janitor 用）────────────────────────────────────
+# 探针 = TweetResultByRestId 原始 GraphQL（单结果、无分页，fetch_article
+# 同款端点）。删除在 GraphQL 层返回 HTTP 200，只能靠原始载荷里的
+# __typename/reason 判定；code 144 会被 twitter-cli 扁平化成
+# TwitterAPIError(status_code=0, message="Twitter API returned errors:
+# No status found with that ID.")，只能按 message 子串匹配（漂移落
+# unknown，安全方向）。探测间隔与 client requestDelay 默认同口径。
+_EXISTENCE_PROBE_INTER_DELAY = 2.5
+
+# fetch_article（twitter_cli/client.py）同款 features；探测不关文章开关
+_EXISTENCE_PROBE_FEATURES = {
+    "longform_notetweets_consumption_enabled": True,
+    "responsive_web_twitter_article_tweet_consumption_enabled": True,
+    "longform_notetweets_rich_text_read_enabled": True,
+    "longform_notetweets_inline_media_enabled": True,
+    "articles_preview_enabled": True,
+    "responsive_web_graphql_exclude_directive_enabled": True,
+    "verified_phone_label_enabled": False,
+}
+
+# 墓碑文案跟随凭据账号显示语言：en + zh 本地化一并匹配
+_AUTHOR_DELETED_TOMBSTONE_MARKERS = (
+    "deleted by the Post author",
+    "已被帖子作者删除",
+    "已被作者删除",
+)
+# GraphQL code 144 扁平化后的存活 message（API 侧英文，与账号语言无关）
+_NO_STATUS_FOUND_MESSAGE = "No status found with that ID"
+
+
+def _fetch_tweet_result_raw(client: Any, tweet_id: str) -> dict[str, Any]:
+    """TweetResultByRestId 原始 GraphQL 响应（不过 parser，保留 tombstone/typename）。
+
+    经 client._graphql_get：自带共享会话、鉴权头、429 退避与 queryId
+    失效后的 live 重取（404/422 重试一次）。
+    """
+    return client._graphql_get(
+        "TweetResultByRestId",
+        variables={
+            "tweetId": tweet_id,
+            "withCommunity": False,
+            "includePromotedContent": False,
+            "withVoice": False,
+        },
+        features=_EXISTENCE_PROBE_FEATURES,
+        field_toggles={
+            "withArticleRichContentState": False,
+            "withArticlePlainText": False,
+        },
+    )
+
+
+def _classify_probe_payload(payload: Any) -> str:
+    """HTTP 200 载荷 → alive/deleted/unavailable/unknown（纯函数，契约测试接缝）。
+
+    口径（2026-08-13 用户拍板）：只认作者删除——TweetUnavailable
+    reason=="Deleted"、墓碑文案含作者删除标记 → deleted；其他不可用
+    原因（Suspended/账号注销/protected 等）→ unavailable（不动）；
+    result 缺失且无显式错误 → unknown（保守，不动）。
+    """
+    from twitter_cli.parser import _deep_get
+
+    result = _deep_get(payload, "data", "tweetResult", "result")
+    if not isinstance(result, dict):
+        return "unknown"
+    typename = str(result.get("__typename") or "")
+    if typename == "TweetTombstone":
+        reason = str(result.get("reason") or "")
+        text = str(_deep_get(result, "tombstone", "text", "text") or "")
+        if reason == "Deleted" or any(
+            marker in text for marker in _AUTHOR_DELETED_TOMBSTONE_MARKERS
+        ):
+            return "deleted"
+        return "unavailable"
+    if typename == "TweetUnavailable":
+        return "deleted" if str(result.get("reason") or "") == "Deleted" else "unavailable"
+    # Tweet / TweetWithVisibilityResults / 其他可解析形态：存活
+    return "alive"
+
+
 
 def _fetch_translation_payload(client: Any, tweet_id: str) -> dict[str, Any]:
     """调用 translateTweet 返回原始 JSON；非 200 抛异常由调用方吞掉。
@@ -398,6 +478,59 @@ class XTransport:
             destination = str(payload.get("destinationLanguage") or "")
             if text and state == "Success" and destination.startswith("zh"):
                 result[tweet_id] = text
+        return result
+
+    def probe_tweet_existence(self, tweet_ids: Iterable[str]) -> dict[str, str]:
+        """逐条探测推文是否被原作者删除，返回 {tweet_id: alive/deleted/unavailable/unknown}。
+
+        同步方法（内部走 curl_cffi），调用方应经 asyncio.to_thread 转入
+        线程池。串行探测、固定间隔，对限流友好。口径与调用方约定：
+        deleted 才可删；unavailable（账号封禁/保护等）与 unknown（404/
+        网络/解析漂移）一律视为存活（fail-closed）。
+
+        Raises:
+            XAuthNotConfigured: 无启用凭据（整轮中止）。
+            XAuthAbort: 鉴权失效/401/403（整轮中止，已探测部分结果丢弃）。
+            XRateLimitAbort: 429 限流（整轮中止，已探测部分结果丢弃）。
+        """
+        ids = [str(tid).strip() for tid in tweet_ids if str(tid).strip()]
+        if not ids:
+            return {}
+        client = self._translation_client()
+        result: dict[str, str] = {}
+        for index, tweet_id in enumerate(ids):
+            if index > 0:
+                time.sleep(_EXISTENCE_PROBE_INTER_DELAY * random.uniform(0.8, 1.2))
+            try:
+                payload = _fetch_tweet_result_raw(client, tweet_id)
+                result[tweet_id] = _classify_probe_payload(payload)
+            except AuthenticationError as exc:
+                raise XAuthAbort("x_auth_expired") from exc
+            except TwitterAPIError as exc:
+                status = getattr(exc, "status_code", 0)
+                message = str(getattr(exc, "message", "") or exc)
+                if status == 429:
+                    raise XRateLimitAbort("x_rate_limited") from exc
+                if status in (401, 403):
+                    raise XAuthAbort("x_auth_expired") from exc
+                if _NO_STATUS_FOUND_MESSAGE in message:
+                    # GraphQL code 144 扁平化形态：明确"该 ID 不存在"=已删除
+                    result[tweet_id] = "deleted"
+                    continue
+                logger.debug(
+                    "[XTransport] 推文 %s 存活探测失败（HTTP %s），按 unknown 处理",
+                    tweet_id,
+                    status,
+                    exc_info=True,
+                )
+                result[tweet_id] = "unknown"
+            except Exception:
+                logger.debug(
+                    "[XTransport] 推文 %s 存活探测异常，按 unknown 处理",
+                    tweet_id,
+                    exc_info=True,
+                )
+                result[tweet_id] = "unknown"
         return result
 
     def _translation_client(self) -> Any:
