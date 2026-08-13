@@ -98,7 +98,7 @@ python3 scripts/eval_mcp_tool_selection.py       # requires the claude CLI
 - **X board & WeChat official accounts** — curated timelines with per-date snapshots and embargo windows, Chinese translations with restored @ mentions, unified in-site reading feed
 - **Smart briefs & subscriptions** — SSE-streamed daily / weekly / monthly briefs per direction (zh/en), email subscriptions per source & frequency with send-now delivery
 - **Favorites & private bookshelf** — optimistic favorites with personal tags and cross-device sync, URL-submit tool shelf with AI enrichment, strict public/private data separation
-- **Accounts & admin console** — email OTP + JWT (first registrant on an empty DB becomes admin), ingestion monitor, model providers with real connection tests, DB-backed SMTP panel, crawl & enrichment queues with retry / circuit breaking
+- **Accounts & admin console** — email OTP + JWT (empty-DB first boot seeds a default admin; in-app password change needs only the current password, no mail), ingestion monitor, model providers with real connection tests, DB-backed SMTP panel, crawl & enrichment queues with retry / circuit breaking
 
 Full feature walkthrough: [docs/project-overview.md](docs/project-overview.md) (in Chinese)
 
@@ -211,7 +211,7 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 
 ## Documentation
 
-- [docs/self-hosting.md](docs/self-hosting.md) — Full self-hosting guide: TLS certificates, first admin & SMTP, ports, testing
+- [docs/self-hosting.md](docs/self-hosting.md) — Full self-hosting guide: TLS certificates, default admin & SMTP, ports, testing
 - [docs/project-overview.md](docs/project-overview.md) — Project panorama: positioning, data sources, and per-module feature walkthrough (in Chinese)
 - [docs/architecture.md](docs/architecture.md) — Current architecture for developers: layering, API surface, storage, scheduling, deployment (in Chinese)
 - [docs/mcp-server.md](docs/mcp-server.md) — AIGC Radar MCP protocol parameters and policies (in Chinese)

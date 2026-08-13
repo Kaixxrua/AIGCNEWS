@@ -211,7 +211,7 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 
 ## 文档索引
 
-- [docs/self-hosting.zh-CN.md](docs/self-hosting.zh-CN.md) —— 自托管完整指南：TLS 证书、首位管理员与 SMTP、端口、测试
+- [docs/self-hosting.zh-CN.md](docs/self-hosting.zh-CN.md) —— 自托管完整指南：TLS 证书、默认管理员与 SMTP、端口、测试
 - [docs/project-overview.md](docs/project-overview.md) —— 项目全景：产品定位、数据源全景与逐模块功能走查
 - [docs/architecture.md](docs/architecture.md) —— 架构当前态（开发者向）：分层、API、存储、调度与部署
 - [docs/mcp-server.md](docs/mcp-server.md) —— AIGC Radar MCP 协议参数与策略
