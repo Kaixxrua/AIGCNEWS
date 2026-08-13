@@ -1,6 +1,6 @@
 # 文档索引
 
-> 规则：文档首次落地时在此登记；退役文档加历史归档横幅并移入「历史归档」组。
+> 规则：文档首次落地时在此登记；退役文档直接删除并移除登记（历史版本由 git 保留）。
 
 ## 新人入口
 
@@ -41,14 +41,6 @@
 |---|---|
 | [openwork-hot-score-breakdown.md](openwork-hot-score-breakdown.md) | 热度评分 99.18 分解说明（指标算法实例） |
 | [interview-project-summary.md](interview-project-summary.md) | 面试答辩项目概括 |
-
-## 历史归档（不得据此实施）
-
-| 文档 | 归档原因 |
-|---|---|
-| [code-analysis.md](code-analysis.md) | 已由 architecture.md 取代 |
-| [database-backend-migration-plan.md](database-backend-migration-plan.md) | 迁移已完成，MySQL 已退役 |
-| [system-update-design.md](system-update-design.md) | 2026-03 设计稿，部分内容已实现或失效 |
 
 ## 子目录
 
