@@ -7,6 +7,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import psycopg
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi_cache.decorator import cache
 
@@ -102,10 +103,15 @@ def _cst_today() -> date:
 
 
 async def _get_site_visit_stats(visits: SiteVisitStatsReader) -> SiteVisitStats:
-    """读取今日/累计访问次数；计数不可用（如迁移滞后）时静默为 0，不拖垮看板。"""
+    """读取今日/累计访问次数；数据库层故障（如迁移滞后、连接异常）静默为 0。
+
+    只吞 psycopg 故障族：预热等直调方传错对象（Depends 默认值、None）属于
+    编程错误，吞掉会把 0 写进 3600s 缓存长期污染看板，必须显式抛出让调用方
+    感知。
+    """
     try:
         return await asyncio.to_thread(visits.get_visit_stats, _cst_today())
-    except Exception:
+    except psycopg.Error:
         logger.warning("[Dashboard] 站点访问计数查询失败，回退为 0", exc_info=True)
         return SiteVisitStats(today_visits=0, total_visits=0)
 

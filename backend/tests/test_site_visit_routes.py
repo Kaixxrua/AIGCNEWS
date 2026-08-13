@@ -4,6 +4,7 @@ import unittest
 from datetime import date
 from unittest.mock import MagicMock
 
+import psycopg
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi_cache import FastAPICache
@@ -47,7 +48,9 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         repository.get_user_count.return_value = 10
         repository.get_today_registered_user_count.return_value = 2
         visits = MagicMock()
-        visits.get_visit_stats.side_effect = RuntimeError("relation does not exist")
+        visits.get_visit_stats.side_effect = psycopg.OperationalError(
+            "relation does not exist"
+        )
         app.dependency_overrides[get_user_account_repository] = lambda: repository
         app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
 
@@ -60,6 +63,26 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         self.assertEqual(body["today_unique_visitors"], 0)
         # 注册用户字段不受访问计数故障影响
         self.assertEqual(body["user_count"], 12)
+
+
+class SiteVisitStatsReadFallbackTests(unittest.IsolatedAsyncioTestCase):
+    """_get_site_visit_stats 的异常契约：只吞数据库层故障。
+
+    编程错误（直调方误传 Depends 默认值/None）必须抛出——吞掉会把 0
+    静默写进 3600s 缓存（2026-08-13 预热污染生产看板事故的根因）。
+    """
+
+    async def test_db_error_falls_back_to_zero(self) -> None:
+        visits = MagicMock()
+        visits.get_visit_stats.side_effect = psycopg.OperationalError("db down")
+
+        stats = await routes_dashboard._get_site_visit_stats(visits)
+
+        self.assertEqual(stats, SiteVisitStats(today_visits=0, total_visits=0))
+
+    async def test_programming_error_propagates(self) -> None:
+        with self.assertRaises(AttributeError):
+            await routes_dashboard._get_site_visit_stats(object())
 
 
 if __name__ == "__main__":

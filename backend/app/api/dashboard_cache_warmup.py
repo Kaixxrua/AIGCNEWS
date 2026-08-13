@@ -13,6 +13,7 @@ from backend.app.api.dependencies import (
 )
 from backend.app.api.routes_dashboard import (
     get_dashboard_summary,
+    get_site_visit_repository,
     get_top_list,
     get_x_recent,
 )
@@ -42,8 +43,8 @@ def _stub_request(path: str, query_string: str) -> Request:
     只暴露 method=GET / query_params / url.path / app.state.redis：
     - method 必须是 GET：fastapi-cache decorator 对非 GET 判为不可缓存，
       会直接跳过写缓存（_uncacheable）；
-    - summary 端点读 request.app.state.redis 计算访客数（缺省 None → 0，
-      该字段最终响应未使用，不影响预热内容）；
+    - 访客计数仓储由 warmups kwargs 显式传入（直调无 DI），stub 的
+      redis=None 不参与访客统计；
     - pdf_media_url 的 origin 由 public_base_url() 仅取 PUBLIC_BASE_URL 配置，
       不读取请求头，stub 不会把内网地址写进缓存。
     """
@@ -78,6 +79,7 @@ async def warm_dashboard_cache(repositories: ApplicationRepositories) -> None:
     today = datetime.now(_CST).strftime("%Y-%m-%d")
     github_hot = get_github_hot_board_reader()
     catalog = get_project_catalog_query_service()
+    site_visits = get_site_visit_repository()
 
     warmups: list[tuple[str, Any, dict[str, Any]]] = [
         (
@@ -93,6 +95,9 @@ async def warm_dashboard_cache(repositories: ApplicationRepositories) -> None:
                 "rank_snapshots": repositories.rank_snapshots,
                 "catalog": catalog,
                 "github_hot": github_hot,
+                # 直调不走 FastAPI DI，Depends 默认值不会解析；
+                # 漏传会把 Depends 对象当仓储用，0 计数污染 3600s 缓存
+                "visits": site_visits,
             },
         ),
     ]
