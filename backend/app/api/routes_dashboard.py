@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -17,11 +17,20 @@ from backend.app.api.dependencies import (
     get_rank_snapshot_repository,
     get_user_account_repository,
 )
+from backend.app.core.postgres_database import postgres_database
 from backend.app.repositories.document_repository import (
     DocumentRecentReader,
     DocumentStatisticsReader,
 )
+from backend.app.repositories.postgres_site_visit_repository import (
+    PostgresSiteVisitRepository,
+)
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
+from backend.app.repositories.site_visit_repository import (
+    SiteVisitRecorder,
+    SiteVisitStats,
+    SiteVisitStatsReader,
+)
 from backend.app.repositories.user_account_repository import UserStatisticsReader
 from backend.app.services.dashboard import policy
 from backend.app.services.dashboard.query_service import (
@@ -76,6 +85,29 @@ async def _get_mcp_total_calls() -> int:
         return await asyncio.to_thread(_query)
     except Exception:
         return 0
+
+
+def get_site_visit_repository() -> PostgresSiteVisitRepository:
+    """站点访问计数仓储：按次构造（无状态，仅包裹全局连接池生命周期）。
+
+    与 get_project_catalog_query_service 同一连接语义；定义为路由本地依赖，
+    便于契约测试用 dependency_overrides 替换为假实现。
+    """
+    return PostgresSiteVisitRepository(postgres_database)
+
+
+def _cst_today() -> date:
+    tz_cst = timezone(timedelta(hours=8))
+    return datetime.now(tz_cst).date()
+
+
+async def _get_site_visit_stats(visits: SiteVisitStatsReader) -> SiteVisitStats:
+    """读取今日/累计访问次数；计数不可用（如迁移滞后）时静默为 0，不拖垮看板。"""
+    try:
+        return await asyncio.to_thread(visits.get_visit_stats, _cst_today())
+    except Exception:
+        logger.warning("[Dashboard] 站点访问计数查询失败，回退为 0", exc_info=True)
+        return SiteVisitStats(today_visits=0, total_visits=0)
 
 
 # 使用该 builder 的端点实际消费的 query 参数并集（见各路由 Query 声明）：
@@ -352,6 +384,7 @@ async def get_dashboard_summary(
     rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
     github_hot: GitHubHotBoardReader = Depends(get_github_hot_board_reader),
+    visits: SiteVisitStatsReader = Depends(get_site_visit_repository),
 ):
     """Return a combined dashboard payload: daily top-10 + radar + basic stats + source breakdown.
 
@@ -359,8 +392,6 @@ async def get_dashboard_summary(
     未传入时默认查当天，当天无快照则回溯窗口内最近有快照的日期（stale 标记）。
     github 日榜改读项目库 v5 热度指标（今日暴涨口径），不再镜像 trending。
     """
-    from datetime import timedelta, timezone as _tz
-
     query_service = DashboardQueryService(rank_snapshots, github_hot)
     resolution = await asyncio.to_thread(
         query_service.resolve_display_snapshot_date, date, "daily", None
@@ -368,21 +399,6 @@ async def get_dashboard_summary(
     snapshot_date = resolution["resolved_date"]
 
     board = policy.compute_board_status(snapshot_date)
-
-    # ── 今日独立访客数（Redis SET：visitor:{YYYY-MM-DD}）──────────
-    async def _get_today_unique_visitors() -> int:
-        redis_client = getattr(request.app.state, "redis", None)
-        if redis_client is None:
-            return 0
-        tz_cst = _tz(timedelta(hours=8))
-        from datetime import datetime as _dt
-
-        today_key = f"visitor:{_dt.now(tz_cst).strftime('%Y-%m-%d')}"
-        try:
-            count = await redis_client.scard(today_key)
-            return int(count or 0)
-        except Exception:
-            return 0
 
     # 静默期拦截：返回空排行数据，但统计卡片仍显示全库累计数量
     if board["is_embargoed"]:
@@ -393,6 +409,7 @@ async def get_dashboard_summary(
             user_statistics.get_today_registered_user_count
         )
         user_count = registered_users + today_registered_users
+        visit_stats = await _get_site_visit_stats(visits)
         mcp_total_calls = await _get_mcp_total_calls()
         return {
             "top_list": [],
@@ -403,7 +420,9 @@ async def get_dashboard_summary(
                 "registered_users": registered_users,
                 "today_registered_users": today_registered_users,
                 "user_count": user_count,
-                "today_unique_visitors": user_count,
+                "today_unique_visitors": visit_stats.today_visits,
+                "today_visits": visit_stats.today_visits,
+                "total_visits": visit_stats.total_visits,
                 "mcp_total_calls": mcp_total_calls,
             },
             "period": "daily",
@@ -431,6 +450,7 @@ async def get_dashboard_summary(
     today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
     user_count = registered_users + today_registered_users
     today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
+    visit_stats = await _get_site_visit_stats(visits)
     mcp_total_calls = await _get_mcp_total_calls()
 
     return {
@@ -443,7 +463,9 @@ async def get_dashboard_summary(
             "today_registered_users": today_registered_users,
             "user_count": user_count,
             "today_new_documents": today_new_documents,
-            "today_unique_visitors": user_count,
+            "today_unique_visitors": visit_stats.today_visits,
+            "today_visits": visit_stats.today_visits,
+            "total_visits": visit_stats.total_visits,
             "mcp_total_calls": mcp_total_calls,
         },
         "period": "daily",
@@ -462,6 +484,7 @@ async def get_dashboard_live_stats(
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
+    visits: SiteVisitStatsReader = Depends(get_site_visit_repository),
 ):
     """首页统计带实时计数（10s 短缓存聚合并发访客的轮询）。
 
@@ -476,6 +499,7 @@ async def get_dashboard_live_stats(
     )
     user_count = registered_users + today_registered_users
     today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
+    visit_stats = await _get_site_visit_stats(visits)
     mcp_total_calls = await _get_mcp_total_calls()
     return {
         "total_documents": total_documents,
@@ -484,6 +508,9 @@ async def get_dashboard_live_stats(
         "today_registered_users": today_registered_users,
         "user_count": user_count,
         "today_new_documents": today_new_documents,
+        "today_unique_visitors": visit_stats.today_visits,
+        "today_visits": visit_stats.today_visits,
+        "total_visits": visit_stats.total_visits,
         "mcp_total_calls": mcp_total_calls,
     }
 
@@ -527,17 +554,36 @@ async def get_snapshot_dates(
 async def get_visitor_count(
     request: Request,
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
+    visits: SiteVisitStatsReader = Depends(get_site_visit_repository),
 ):
-    """返回用户数指标（10s 短缓存聚合匿名轮询，与 live-stats 口径一致）。
+    """返回用户数与访问计数指标（10s 短缓存聚合匿名轮询，与 live-stats 口径一致）。
 
     行为变化：数据最多旧 10 秒；此前每次请求直查两次 COUNT。
+    行为变化：today_unique_visitors 此前是 user_count 的占位别名，现为真实
+    今日访问次数（纯次数口径，与 today_visits 相同）；新增 total_visits 累计字段。
     """
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
     today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
     user_count = registered_users + today_registered_users
+    visit_stats = await _get_site_visit_stats(visits)
     return {
         "user_count": user_count,
         "registered_users": registered_users,
         "today_registered_users": today_registered_users,
-        "today_unique_visitors": user_count,
+        "today_unique_visitors": visit_stats.today_visits,
+        "today_visits": visit_stats.today_visits,
+        "total_visits": visit_stats.total_visits,
     }
+
+
+@router.post("/dashboard/visit")
+async def record_site_visit(
+    visits: SiteVisitRecorder = Depends(get_site_visit_repository),
+):
+    """站点访问 beacon：前端每 tab 会话首次进入发一次（sessionStorage 守卫）。
+
+    纯次数口径——每次调用当天（CST）计数 +1，不按访客去重；返回计数后的
+    最新值，前端统计卡片可即时刷新，无需等待 live-stats 轮询。
+    """
+    stats = await asyncio.to_thread(visits.record_visit, _cst_today())
+    return {"today_visits": stats.today_visits, "total_visits": stats.total_visits}

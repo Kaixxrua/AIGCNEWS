@@ -78,9 +78,9 @@ describe('Dashboard API contract', () => {
       params: { limit: 90, source: 'github' }, signal,
     })
 
-    transport.get.mockResolvedValueOnce({ data: { registered_users: 4 } })
+    transport.get.mockResolvedValueOnce({ data: { registered_users: 4, today_visits: 9, total_visits: 101 } })
     await expect(dashboardApi.fetchVisitorCount(signal)).resolves.toEqual({
-      registeredUsers: 4, todayRegisteredUsers: 0, userCount: 0,
+      registeredUsers: 4, todayRegisteredUsers: 0, userCount: 0, todayVisits: 9, totalVisits: 101,
     })
     expect(transport.get).toHaveBeenLastCalledWith('/dashboard/visitor-count', { signal })
   })

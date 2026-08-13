@@ -98,6 +98,8 @@ export interface Stats {
   user_count?: number
   today_new_documents?: number
   today_unique_visitors?: number
+  today_visits?: number
+  total_visits?: number
   mcp_total_calls?: number
 }
 
@@ -250,9 +252,14 @@ export const statCards = [
 
 export const visitorCards = [
   {
-    labelKey: 'users', key: 'user_count', dark: false,
+    labelKey: 'todayVisitors', key: 'today_visits', dark: false,
     iconBg: 'bg-purple-50', iconColor: 'text-purple-500', numColor: 'text-purple-600',
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`,
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
+  },
+  {
+    labelKey: 'totalVisitors', key: 'total_visits', dark: false,
+    iconBg: 'bg-indigo-50', iconColor: 'text-indigo-500', numColor: 'text-indigo-600',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>`,
   },
   {
     labelKey: 'newDocuments', key: 'today_new_documents', dark: false,

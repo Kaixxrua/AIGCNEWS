@@ -688,6 +688,18 @@ class FakeUserStatistics:
         return 0
 
 
+class FakeSiteVisits:
+    def get_visit_stats(self, day) -> Any:
+        from backend.app.repositories.site_visit_repository import SiteVisitStats
+
+        return SiteVisitStats(today_visits=7, total_visits=700)
+
+    def record_visit(self, day) -> Any:
+        from backend.app.repositories.site_visit_repository import SiteVisitStats
+
+        return SiteVisitStats(today_visits=8, total_visits=701)
+
+
 def _summary_client(monkeypatch, catalog_factory, reader=None, github_hot=None) -> TestClient:
     from backend.app.api.dependencies import (
         get_document_repository,
@@ -711,6 +723,9 @@ def _summary_client(monkeypatch, catalog_factory, reader=None, github_hot=None) 
     app.dependency_overrides[get_github_hot_board_reader] = (
         lambda: github_hot if github_hot is not None else FakeGitHubHotReader()
     )
+    app.dependency_overrides[routes_dashboard.get_site_visit_repository] = (
+        lambda: FakeSiteVisits()
+    )
     return TestClient(app)
 
 
@@ -733,6 +748,9 @@ def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
     stats = response.json()["stats"]
     assert stats["source_counts"] == {"arxiv": 5, "github": 6983, "news": 7}
     assert stats["total_documents"] == 5 + 6983 + 7
+    assert stats["today_visits"] == 7
+    assert stats["total_visits"] == 700
+    assert stats["today_unique_visitors"] == 7
     assert isinstance(stats["mcp_total_calls"], int)
     assert calls == [
         {"source": "github", "scope": "all", "page": 1, "page_size": 1, "sort": "stars"}
@@ -796,6 +814,10 @@ def test_live_stats_returns_flat_counters(monkeypatch) -> None:
     assert body["today_registered_users"] == 0
     assert body["user_count"] == 13
     assert body["today_new_documents"] == 3
+    # 访问计数接真值（纯次数口径）；today_unique_visitors 复用同一口径
+    assert body["today_visits"] == 7
+    assert body["total_visits"] == 700
+    assert body["today_unique_visitors"] == 7
     assert isinstance(body["mcp_total_calls"], int)
 
 

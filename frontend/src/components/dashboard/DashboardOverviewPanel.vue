@@ -13,7 +13,6 @@ defineProps<{
   activeTab: TabKey
   statValues: number[]
   visitorValues: number[]
-  userParts: { registered: number; today: number }
 }>()
 
 const { t } = useI18n()
@@ -69,8 +68,7 @@ const emit = defineEmits<{
         <span class="stat-cell-icon" :class="card.iconColor"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
         <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
       </span>
-      <span v-if="card.key === 'user_count'" class="stat-cell-num" :class="card.numColor"><RollingNumber :value="userParts.registered" /><span>+</span><RollingNumber :value="userParts.today" /></span>
-      <RollingNumber v-else :value="visitorValues[index] ?? 0" grouping class="stat-cell-num" :class="card.numColor" />
+      <RollingNumber :value="visitorValues[index] ?? 0" grouping class="stat-cell-num" :class="card.numColor" />
     </div>
   </div>
 </template>

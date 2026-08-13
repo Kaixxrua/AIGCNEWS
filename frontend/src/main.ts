@@ -18,6 +18,11 @@ app.use(router)
 
 app.mount('#app')
 
+// 站点访问 beacon：进来一次计一次（sessionStorage 守卫，异步不打断首屏）。
+void import('./services/visit/visitBeacon').then(({ sendVisitBeacon }) => {
+  sendVisitBeacon()
+})
+
 // 页面先可用，再异步确认已保存的登录状态。
 void import('./stores/authStore').then(({ useAuthStore }) => {
   return useAuthStore(pinia).initFromStorage()

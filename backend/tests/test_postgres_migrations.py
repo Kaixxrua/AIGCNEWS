@@ -460,6 +460,19 @@ def test_document_authors_schema_is_additive_and_idempotent() -> None:
     assert "CONCURRENTLY" not in normalized
 
 
+def test_site_visit_days_schema_is_additive_and_day_keyed() -> None:
+    migration = discover_migrations()[37]
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert migration.filename == "0038_site_visit_days.sql"
+    assert "CREATE TABLE IF NOT EXISTS site_visit_days" in migration.sql
+    assert "day DATE PRIMARY KEY" in migration.sql
+    assert "visits BIGINT NOT NULL DEFAULT 0" in migration.sql
+    assert "ALTER TABLE" not in normalized
+    assert "DROP" not in normalized
+    assert "UPDATE " not in normalized
+
+
 def test_live_postgres_apply_twice_and_introspect_schema() -> None:
     dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
     if not dsn:

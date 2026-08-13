@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS site_visit_days (
+    day DATE PRIMARY KEY,
+    visits BIGINT NOT NULL DEFAULT 0
+);

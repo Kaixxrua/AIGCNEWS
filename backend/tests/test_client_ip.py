@@ -1,7 +1,7 @@
 """可信代理感知的客户端 IP 解析契约测试。
 
 覆盖：helper 单元行为（可信/不可信对端、CIDR、非法配置）、
-认证限速路由的 XFF 伪造隔离、访客统计中间件的对端采信口径。
+认证限速路由的 XFF 伪造隔离。
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ from backend.app.core.client_ip import (
     client_ip_from_request,
     is_trusted_proxy,
 )
-from backend.app.main import VisitorTrackingMiddleware
 from backend.tests.test_email_service_contracts import FakeRedis
 
 
@@ -161,55 +160,6 @@ class AuthRateLimitXffSpoofContracts(unittest.TestCase):
                 "ratelimit:auth.login.account:user@example.com",
             },
         )
-
-
-class _SetRecordingRedis:
-    """访客中间件需要的最小 Redis：SADD/EXPIRE 记录。"""
-
-    def __init__(self) -> None:
-        self.sets: dict[str, set[str]] = {}
-        self.expirations: dict[str, int] = {}
-
-    async def sadd(self, key: str, member: str) -> int:
-        bucket = self.sets.setdefault(key, set())
-        before = len(bucket)
-        bucket.add(member)
-        return len(bucket) - before
-
-    async def expire(self, key: str, seconds: int) -> None:
-        self.expirations[key] = seconds
-
-
-class VisitorTrackingMiddlewareContracts(unittest.TestCase):
-    def _build_client(self) -> tuple[TestClient, _SetRecordingRedis]:
-        redis = _SetRecordingRedis()
-        app = FastAPI()
-
-        @app.get("/ping")
-        def _ping() -> dict[str, bool]:
-            return {"ok": True}
-
-        app.add_middleware(VisitorTrackingMiddleware)
-        app.state.redis = redis
-        return TestClient(app), redis
-
-    def test_untrusted_peer_xff_does_not_pollute_visitor_set(self) -> None:
-        client, redis = self._build_client()
-        response = client.get("/ping", headers={"X-Forwarded-For": "1.2.3.4"})
-        self.assertEqual(response.status_code, 200)
-        recorded = next(iter(redis.sets.values()))
-        # 直连对端（"testclient"）不可信：访客集合记录对端而非伪造的 XFF
-        self.assertEqual(recorded, {"testclient"})
-
-    def test_trusted_peer_xff_is_recorded(self) -> None:
-        client, redis = self._build_client()
-        with patch.object(client_ip_module, "is_trusted_proxy", return_value=True):
-            response = client.get(
-                "/ping", headers={"X-Forwarded-For": "1.2.3.4, 10.0.0.1"}
-            )
-        self.assertEqual(response.status_code, 200)
-        recorded = next(iter(redis.sets.values()))
-        self.assertEqual(recorded, {"1.2.3.4"})
 
 
 if __name__ == "__main__":

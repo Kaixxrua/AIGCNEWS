@@ -41,7 +41,7 @@ const isCanceledError = (error: unknown): boolean => {
 const LIVE_COUNTER_FIELDS = [
   'total_documents', 'source_counts',
   'registered_users', 'today_registered_users', 'user_count',
-  'today_new_documents', 'mcp_total_calls',
+  'today_new_documents', 'today_visits', 'total_visits', 'mcp_total_calls',
 ] as const
 
 const pickLiveCounters = (source: Stats): Stats => {
@@ -147,6 +147,8 @@ export const useDashboardData = (options: DashboardDataOptions) => {
         registered_users: visitor.registeredUsers ?? stats.value.registered_users ?? 0,
         today_registered_users: visitor.todayRegisteredUsers ?? 0,
         user_count: visitor.userCount ?? 0,
+        today_visits: visitor.todayVisits ?? 0,
+        total_visits: visitor.totalVisits ?? 0,
       }
       options.updateVisitorSources(stats.value)
     } catch (error: unknown) {

@@ -5,17 +5,15 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from redis.asyncio import Redis
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.app.api import (
     routes_attachments,
@@ -38,7 +36,6 @@ from backend.app.api import (
 )
 from backend.app.api.exception_handlers import register_exception_handlers
 from backend.app.core.auth import hash_password, validate_jwt_secret
-from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
 from backend.app.core.model_factory import (
     configure_model_provider_runtime,
@@ -85,35 +82,6 @@ logger = logging.getLogger(__name__)
 # listener 线程随连接池启停。
 error_event_capture = ErrorEventCapture()
 error_event_capture.install_handler()
-
-# ── 访客统计中间件 ─────────────────────────────────────────────────────────────
-# 使用 Redis SET 记录每天不同 IP 地址的访问者
-# Key 格式：visitor:{YYYY-MM-DD}（CST 时区），TTL 48 小时，自动过期清理
-_VISITOR_EXCLUDE_PREFIXES = ("/api/media/",)  # 静态文件
-
-
-class VisitorTrackingMiddleware(BaseHTTPMiddleware):
-    """统计今日独立访客 IP：每次 HTTP 请求将来源 IP 写入 Redis SET。"""
-
-    async def dispatch(self, request: Request, call_next):
-        # 排除静态资源路径
-        path = request.url.path
-        if not any(path.startswith(p) for p in _VISITOR_EXCLUDE_PREFIXES):
-            redis_client: Redis | None = getattr(request.app.state, "redis", None)
-            if redis_client is not None:
-                # 解析真实客户端 IP（XFF 仅对可信代理采信，防伪造污染统计）
-                ip = client_ip_from_request(request)
-
-                tz_cst = timezone(timedelta(hours=8))
-                today_str = datetime.now(tz_cst).strftime("%Y-%m-%d")
-                redis_key = f"visitor:{today_str}"
-                try:
-                    await redis_client.sadd(redis_key, ip)
-                    await redis_client.expire(redis_key, 48 * 3600)  # 48 小时 TTL
-                except Exception:
-                    pass  # Redis 不可用时静默忽略，不影响正常请求
-
-        return await call_next(request)
 
 
 async def _warmup_project_semantic_search(
@@ -477,9 +445,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Mcp-Session-Id", "MCP-Protocol-Version"],
 )
-
-# 访客统计中间件（在 CORS 之后注册，确保跨域预检请求不计入访客）
-app.add_middleware(VisitorTrackingMiddleware)
 
 app.include_router(routes_auth.router, prefix="/api", tags=["Auth"])
 app.include_router(routes_chat.router, prefix="/api", tags=["Chat"])

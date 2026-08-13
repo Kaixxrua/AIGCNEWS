@@ -41,6 +41,8 @@ export interface DashboardVisitorCountWireResponse {
   registered_users?: number | null
   today_registered_users?: number | null
   user_count?: number | null
+  today_visits?: number | null
+  total_visits?: number | null
 }
 
 export interface DashboardSummary {
@@ -79,6 +81,8 @@ export interface DashboardVisitorCount {
   registeredUsers: number
   todayRegisteredUsers: number
   userCount: number
+  todayVisits: number
+  totalVisits: number
 }
 
 export interface DashboardSummaryParams {

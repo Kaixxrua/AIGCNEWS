@@ -24,20 +24,11 @@ export const useDashboardStats = (getStats: () => Stats) => {
     updateVisitorSources(nextStats)
   }
 
-  const userParts = computed(() => {
-    const stats = getStats()
-    return {
-      registered: Number(stats.registered_users ?? 0),
-      today: Number(stats.today_registered_users ?? 0),
-    }
-  })
-
   const mcpTotalCalls = computed(() => Number(getStats().mcp_total_calls ?? 0))
 
   return {
     statValues,
     visitorValues,
-    userParts,
     mcpTotalCalls,
     updateStatSources,
     updateVisitorSources,

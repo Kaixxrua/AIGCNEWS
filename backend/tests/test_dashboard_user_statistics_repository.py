@@ -10,6 +10,7 @@ from fastapi_cache.backends.inmemory import InMemoryBackend
 
 from backend.app.api import routes_dashboard
 from backend.app.api.dependencies import get_user_account_repository
+from backend.app.repositories.site_visit_repository import SiteVisitStats
 
 
 class DashboardUserStatisticsRepositoryTests(unittest.TestCase):
@@ -29,7 +30,10 @@ class DashboardUserStatisticsRepositoryTests(unittest.TestCase):
         repository = MagicMock()
         repository.get_user_count.return_value = 10
         repository.get_today_registered_user_count.return_value = 2
+        visits = MagicMock()
+        visits.get_visit_stats.return_value = SiteVisitStats(today_visits=5, total_visits=99)
         app.dependency_overrides[get_user_account_repository] = lambda: repository
+        app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
 
         response = TestClient(app).get("/api/dashboard/visitor-count")
 
@@ -40,11 +44,14 @@ class DashboardUserStatisticsRepositoryTests(unittest.TestCase):
                 "user_count": 12,
                 "registered_users": 10,
                 "today_registered_users": 2,
-                "today_unique_visitors": 12,
+                "today_unique_visitors": 5,
+                "today_visits": 5,
+                "total_visits": 99,
             },
         )
         repository.get_user_count.assert_called_once_with()
         repository.get_today_registered_user_count.assert_called_once_with()
+        visits.get_visit_stats.assert_called_once()
 
     def test_visitor_count_short_cache_aggregates_anonymous_polls(self) -> None:
         app = FastAPI()
@@ -52,7 +59,10 @@ class DashboardUserStatisticsRepositoryTests(unittest.TestCase):
         repository = MagicMock()
         repository.get_user_count.return_value = 10
         repository.get_today_registered_user_count.return_value = 2
+        visits = MagicMock()
+        visits.get_visit_stats.return_value = SiteVisitStats(today_visits=5, total_visits=99)
         app.dependency_overrides[get_user_account_repository] = lambda: repository
+        app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
 
         client = TestClient(app)
         first = client.get("/api/dashboard/visitor-count")
@@ -64,6 +74,7 @@ class DashboardUserStatisticsRepositoryTests(unittest.TestCase):
         # 10s 短缓存窗口内重复匿名轮询只读一次库
         repository.get_user_count.assert_called_once_with()
         repository.get_today_registered_user_count.assert_called_once_with()
+        visits.get_visit_stats.assert_called_once()
 
 
 if __name__ == "__main__":

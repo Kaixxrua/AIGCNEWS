@@ -64,7 +64,7 @@ describe('Dashboard request lifecycle contract', () => {
       sourceStatus: { arxiv: { is_finalized: false, is_embargoed: false, day_boundary: 'PT', finalize_hour: 17 } },
     })
     defaultDashboardApi.fetchSnapshotDates.mockResolvedValue(['2026-07-27'])
-    defaultDashboardApi.fetchVisitorCount.mockResolvedValue({ registeredUsers: 7, todayRegisteredUsers: 2, userCount: 9 })
+    defaultDashboardApi.fetchVisitorCount.mockResolvedValue({ registeredUsers: 7, todayRegisteredUsers: 2, userCount: 9, todayVisits: 21, totalVisits: 365 })
   })
 
   afterEach(() => {
@@ -73,11 +73,11 @@ describe('Dashboard request lifecycle contract', () => {
   })
 
   it('loads summary, top ten, snapshot availability, and visitors with shared date defaults', async () => {
-    let resolveVisitors!: (value: { registeredUsers: number; todayRegisteredUsers: number; userCount: number }) => void
+    let resolveVisitors!: (value: { registeredUsers: number; todayRegisteredUsers: number; userCount: number; todayVisits: number; totalVisits: number }) => void
     defaultDashboardApi.fetchVisitorCount.mockImplementation(() => new Promise((resolve) => { resolveVisitors = resolve }))
     const mounted = mountDashboard()
     await flush()
-    resolveVisitors({ registeredUsers: 7, todayRegisteredUsers: 2, userCount: 9 })
+    resolveVisitors({ registeredUsers: 7, todayRegisteredUsers: 2, userCount: 9, todayVisits: 21, totalVisits: 365 })
     await flush()
 
     expect(mounted.dashboard.activeTab.value).toBe('github')
@@ -87,7 +87,7 @@ describe('Dashboard request lifecycle contract', () => {
     })
     expect(defaultDashboardApi.fetchSnapshotDates).toHaveBeenCalledWith({ limit: 90, source: 'github', period: 'daily', signal: expect.any(AbortSignal) })
     expect(defaultDashboardApi.fetchVisitorCount).toHaveBeenCalledWith(expect.any(AbortSignal))
-    expect(mounted.dashboard.stats.value).toMatchObject({ total_documents: 3, registered_users: 7, user_count: 9 })
+    expect(mounted.dashboard.stats.value).toMatchObject({ total_documents: 3, registered_users: 7, user_count: 9, today_visits: 21, total_visits: 365 })
     expect(mounted.dashboard.tabList.value).toEqual([{ id: 1, title: 'Top' }])
     expect(mounted.dashboard.isFinalized.value).toBe(true)
     expect(mounted.dashboard.isEmbargoed.value).toBe(false)
@@ -218,7 +218,7 @@ describe('Dashboard request lifecycle contract', () => {
       fetchSummary: vi.fn(() => new Promise<Summary>((resolve) => deferred.push({ resolve }))),
       fetchTop: vi.fn(async () => ({ items: [], isEmbargoed: false, sourceStatus: {} })),
       fetchSnapshotDates: vi.fn(async () => []),
-      fetchVisitorCount: vi.fn(async () => ({ registeredUsers: 0, todayRegisteredUsers: 0, userCount: 0 })),
+      fetchVisitorCount: vi.fn(async () => ({ registeredUsers: 0, todayRegisteredUsers: 0, userCount: 0, todayVisits: 0, totalVisits: 0 })),
       fetchGitHubHotRepos: vi.fn(async () => ({ period: 'daily', items: [] })),
       fetchRecentX: vi.fn(async () => ({ items: [], total: 0, windowHours: 24 })),
       deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),

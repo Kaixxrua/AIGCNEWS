@@ -83,6 +83,8 @@ export const dashboardApi: DashboardApi = {
       registeredUsers: response.data?.registered_users ?? 0,
       todayRegisteredUsers: response.data?.today_registered_users ?? 0,
       userCount: response.data?.user_count ?? 0,
+      todayVisits: response.data?.today_visits ?? 0,
+      totalVisits: response.data?.total_visits ?? 0,
     }
   },
 
