@@ -130,19 +130,19 @@ Server-side latency, measured 2026-08-11 with [scripts/benchmark_mcp_latency.py]
 
 Agent end-to-end vs WebSearch, measured 2026-08-11 with [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py): headless `claude -p` (claude-opus-4-8, effort low), MCP pointed at `http://127.0.0.1:8000/api/mcp`, wall clock from process spawn to the complete answer, both sides instructed to answer in at most two sentences, 10 distinct queries × 1 run per path:
 
-| Query | AIGC Radar MCP | WebSearch |
-| --- | --- | --- |
-| self-hosted LLM observability platform open source | 9.6 s | 13.4 s |
-| open source screenshot tool for Windows with rounded corners | 7.7 s | 38.8 s |
-| mixture of experts load balancing paper | 6.7 s | 19.8 s |
-| Sora video generation model | 6.2 s | 42.4 s |
-| trending GitHub repositories this week | 9.4 s | 10.7 s |
-| MCP server for database access | 8.7 s | 10.0 s |
-| self-hosted photo management like Google Photos | 32.9 s | 31.8 s |
-| RLHF reward model overoptimization paper | 7.0 s | 17.4 s |
-| top Hacker News stories this month | 6.8 s | 52.2 s |
-| Claude Code agent skills | 6.7 s | 54.8 s |
-| **Median** | **7.4 s** | **25.8 s** |
+| Query | AIGC Radar MCP | — of which tool exec | WebSearch |
+| --- | --- | --- | --- |
+| self-hosted LLM observability platform open source | 9.6 s | 802 ms | 13.4 s |
+| open source screenshot tool for Windows with rounded corners | 7.7 s | 66 ms | 38.8 s |
+| mixture of experts load balancing paper | 6.7 s | 96 ms | 19.8 s |
+| Sora video generation model | 6.2 s | 204 ms | 42.4 s |
+| trending GitHub repositories this week | 9.4 s | 748 ms | 10.7 s |
+| MCP server for database access | 8.7 s | 510 ms | 10.0 s |
+| self-hosted photo management like Google Photos | 32.9 s | 41 ms | 31.8 s |
+| RLHF reward model overoptimization paper | 7.0 s | 139 ms | 17.4 s |
+| top Hacker News stories this month | 6.8 s | 31 ms | 52.2 s |
+| Claude Code agent skills | 6.7 s | 178 ms | 54.8 s |
+| **Median** | **7.4 s** | **160 ms** | **25.8 s** |
 
 MCP finished under 10 s in 9 of 10 pairs while WebSearch never went below 9.9 s — **3.5× faster at the median**. Pure MCP tool execution (`tool_use` → `tool_result`) was 160 ms at the median (30–800 ms); WebSearch executes its search inside the API turn (server-side tool), so no equivalent client-observable window exists. The 32.9 s MCP outlier is a model-API stall, not tool cost (its tool call took 41 ms) — the median filters such spikes.
 

@@ -130,19 +130,19 @@ Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://rep
 
 Agent 端到端对比 WebSearch，测于 2026-08-11，可用 [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py) 复现：headless `claude -p`（claude-opus-4-8，effort low），MCP 指向 `http://127.0.0.1:8000/api/mcp`，wall-clock 从进程启动计到产出完整回答，两侧均要求用不超过两句话作答，10 组不同查询 × 每条路径各 1 次：
 
-| 查询 | AIGC Radar MCP | WebSearch |
-| --- | --- | --- |
-| self-hosted LLM observability platform open source | 9.6 s | 13.4 s |
-| open source screenshot tool for Windows with rounded corners | 7.7 s | 38.8 s |
-| mixture of experts load balancing paper | 6.7 s | 19.8 s |
-| Sora video generation model | 6.2 s | 42.4 s |
-| trending GitHub repositories this week | 9.4 s | 10.7 s |
-| MCP server for database access | 8.7 s | 10.0 s |
-| self-hosted photo management like Google Photos | 32.9 s | 31.8 s |
-| RLHF reward model overoptimization paper | 7.0 s | 17.4 s |
-| top Hacker News stories this month | 6.8 s | 52.2 s |
-| Claude Code agent skills | 6.7 s | 54.8 s |
-| **中位数** | **7.4 s** | **25.8 s** |
+| 查询 | AIGC Radar MCP | — 其中工具执行 | WebSearch |
+| --- | --- | --- | --- |
+| self-hosted LLM observability platform open source | 9.6 s | 802 ms | 13.4 s |
+| open source screenshot tool for Windows with rounded corners | 7.7 s | 66 ms | 38.8 s |
+| mixture of experts load balancing paper | 6.7 s | 96 ms | 19.8 s |
+| Sora video generation model | 6.2 s | 204 ms | 42.4 s |
+| trending GitHub repositories this week | 9.4 s | 748 ms | 10.7 s |
+| MCP server for database access | 8.7 s | 510 ms | 10.0 s |
+| self-hosted photo management like Google Photos | 32.9 s | 41 ms | 31.8 s |
+| RLHF reward model overoptimization paper | 7.0 s | 139 ms | 17.4 s |
+| top Hacker News stories this month | 6.8 s | 31 ms | 52.2 s |
+| Claude Code agent skills | 6.7 s | 178 ms | 54.8 s |
+| **中位数** | **7.4 s** | **160 ms** | **25.8 s** |
 
 MCP 在 10 组中有 9 组低于 10 秒，WebSearch 从未低于 9.9 秒——**中位口径快 3.5 倍**。纯 MCP 工具执行（`tool_use` → `tool_result`）中位数 160 ms（30–800 ms）；WebSearch 的搜索在 API 回合内部执行（server-side 工具），客户端无法观测到等价窗口。32.9 s 的 MCP 离群值是模型 API 停顿而非工具耗时（该次工具调用仅 41 ms）——中位数口径天然排除此类波动。
 
