@@ -349,8 +349,9 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
 }
 
 /* 文内跳转：竖排悬浮在卡片右缘，sticky 吸附在滚动视口纵向中线（读长文时
-   始终可及，且不占正文上方的视觉焦点）；默认半透明弱化存在感，hover/键盘
-   聚焦时才恢复实色。负下边距抵消自身在文档流中的占位，正文上端不留空档 */
+   始终可及，且不占正文上方的视觉焦点）；默认实色可读但视觉安静——品牌色
+   箭头 + 细边框 + 柔和投影，hover/键盘聚焦时微微浮起。负下边距抵消自身
+   在文档流中的占位，正文上端不留空档 */
 .article-nav {
   position: sticky;
   top: 50%;
@@ -365,14 +366,7 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
   flex-direction: column;
   gap: 8px;
   transform: translateY(-50%);
-  opacity: 0.45;
   pointer-events: none;
-  transition: opacity 150ms ease;
-}
-
-.article-nav:hover,
-.article-nav:focus-within {
-  opacity: 1;
 }
 
 .article-nav-btn {
@@ -387,18 +381,18 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
   line-height: 1;
   border: 1px solid var(--rule);
   border-radius: 50%;
-  color: var(--ink-muted);
-  background: rgb(var(--card-rgb) / 0.72);
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 0.14);
   backdrop-filter: blur(4px);
-  transition: transform 150ms ease, color 150ms ease, border-color 150ms ease, background 150ms ease;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
 
 .article-nav-btn:hover,
 .article-nav-btn:focus-visible {
-  color: var(--projects-accent);
   border-color: var(--projects-accent);
-  background: var(--projects-paper-light);
   transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.18);
 }
 
 .article-cover {
