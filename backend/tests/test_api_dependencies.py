@@ -22,6 +22,7 @@ class DatabaseDependencyTests(unittest.TestCase):
             dependencies.get_user_account_repository: "users",
             dependencies.get_conversation_repository: "conversations",
             dependencies.get_document_repository: "documents",
+            dependencies.get_error_event_repository: "error_events",
             dependencies.get_papers_repository: "documents",
             dependencies.get_rank_snapshot_repository: "rank_snapshots",
             dependencies.get_runtime_provider_setting_repository: (

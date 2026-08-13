@@ -18,6 +18,9 @@ from backend.app.repositories.postgres_conversation_repository import (
 from backend.app.repositories.postgres_document_repository import (
     PostgresDocumentRepository,
 )
+from backend.app.repositories.postgres_error_event_repository import (
+    PostgresErrorEventRepository,
+)
 from backend.app.repositories.postgres_evaluation_repository import (
     PostgresEvaluationRepository,
 )
@@ -76,6 +79,7 @@ def test_factory_builds_postgres_protocol_adapters() -> None:
         "conversations": PostgresConversationRepository,
         "attachments": PostgresAttachmentRepository,
         "documents": PostgresDocumentRepository,
+        "error_events": PostgresErrorEventRepository,
         "ingestion_tasks": PostgresIngestionTaskRepository,
         "rank_snapshots": PostgresRankSnapshotRepository,
         "briefings": PostgresBriefingRepository,

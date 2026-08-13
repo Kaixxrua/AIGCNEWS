@@ -16,6 +16,7 @@ from backend.app.repositories.briefing_repository import (
 )
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.repositories.document_repository import DocumentRepository
+from backend.app.repositories.error_event_repository import ErrorEventRepository
 from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenRepository,
@@ -35,6 +36,9 @@ from backend.app.repositories.postgres_conversation_repository import (
 )
 from backend.app.repositories.postgres_document_repository import (
     PostgresDocumentRepository,
+)
+from backend.app.repositories.postgres_error_event_repository import (
+    PostgresErrorEventRepository,
 )
 from backend.app.repositories.postgres_evaluation_repository import (
     PostgresEvaluationRepository,
@@ -169,6 +173,7 @@ class ApplicationRepositories:
     runtime_provider_settings: RuntimeProviderSettingRepository
     scheduler_job_configs: SchedulerJobConfigRepository
     smtp_settings: SmtpSettingsRepository
+    error_events: ErrorEventRepository
     mcp_server_configs: McpServerConfigRepository
     mcp_access_tokens: McpAccessTokenRepository
     github_ingestion: GitHubProjectIngestionRepository
@@ -243,6 +248,7 @@ def create_application_repositories(
         runtime_provider_settings=PostgresRuntimeProviderSettingRepository(postgres),
         scheduler_job_configs=PostgresSchedulerJobConfigRepository(postgres),
         smtp_settings=PostgresSmtpSettingsRepository(postgres),
+        error_events=PostgresErrorEventRepository(postgres),
         mcp_server_configs=PostgresMcpServerConfigRepository(postgres),
         mcp_access_tokens=PostgresMcpAccessTokenRepository(postgres),
         github_ingestion=PostgresGitHubProjectIngestionRepository(postgres),

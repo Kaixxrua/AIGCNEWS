@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from backend.app.api.dependencies import (
     get_briefing_repository,
     get_document_repository,
+    get_error_event_repository,
     get_evaluation_repository,
     get_health_check_service,
     get_ingestion_task_repository,
@@ -17,6 +18,7 @@ from backend.app.core.auth import RequireAdmin
 from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
+from backend.app.repositories.error_event_repository import ErrorEventReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.task_repository import (
     MonitorTaskRepository,
@@ -96,4 +98,20 @@ async def recent_tasks(
 ):
     """Return paginated ingestion task records."""
     result = await asyncio.to_thread(db.list_tasks, page, page_size)
+    return result
+
+
+@router.get("/monitor/errors")
+async def recent_error_events(
+    page: int = 1,
+    page_size: int = Query(default=10, ge=1, le=100),
+    _: dict = Depends(RequireAdmin),
+    db: ErrorEventReader = Depends(get_error_event_repository),
+):
+    """Return paginated backend error events (newest first).
+
+    管理员口径与 /monitor/tasks 一致：错误事件含 logger 名与异常堆栈，
+    不对普通注册用户暴露。
+    """
+    result = await asyncio.to_thread(db.list_events, page, page_size)
     return result

@@ -29,8 +29,20 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 36
-    assert migrations[-1].filename == "0036_smtp_settings.sql"
+    assert migrations[-1].version == 37
+    assert migrations[-1].filename == "0037_error_events.sql"
+
+
+def test_error_events_migration_is_idempotent_append_only_table() -> None:
+    sql = (MIGRATIONS_DIR / "0037_error_events.sql").read_text(encoding="utf-8")
+
+    # 追加写日志表：identity PK 即分页游标（ORDER BY id DESC），无需二级索引；
+    # IF NOT EXISTS 幂等，与 smtp_settings 同一先例。
+    assert "CREATE TABLE IF NOT EXISTS error_events" in sql
+    assert "id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY" in sql
+    assert "occurred_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP" in sql
+    assert "message TEXT NOT NULL" in sql
+    assert "stack_trace TEXT" in sql
 
 
 def test_smtp_settings_migration_is_idempotent_singleton_table() -> None:

@@ -23,6 +23,7 @@ from backend.app.repositories.document_repository import (
     DocumentXSnapshotBackfillReader,
     PapersReader,
 )
+from backend.app.repositories.error_event_repository import ErrorEventRepository
 from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenRepository,
@@ -380,6 +381,12 @@ def get_smtp_config_admin_service(
     repository: SmtpSettingsRepository = Depends(get_smtp_settings_repository),
 ) -> SmtpConfigAdminService:
     return SmtpConfigAdminService(repository)
+
+
+def get_error_event_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> ErrorEventRepository:
+    return repositories.error_events
 
 
 def get_ops_diagnostics_service(request: Request) -> OpsDiagnosticsService:

@@ -10,6 +10,7 @@ from backend.app.api import routes_monitor
 from backend.app.api.dependencies import (
     get_briefing_repository,
     get_document_repository,
+    get_error_event_repository,
     get_evaluation_repository,
     get_health_check_service,
     get_ingestion_task_repository,
@@ -18,6 +19,7 @@ from backend.app.api.dependencies import (
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
+from backend.app.repositories.error_event_repository import ErrorEventReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.task_repository import (
     MonitorTaskRepository,
@@ -242,6 +244,73 @@ class MonitorRouteTests(unittest.TestCase):
             params={"page": 1, "page_size": 100},
         )
         self.assertEqual(response.status_code, 200)
+
+    def test_recent_error_events_uses_repository_dependency(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        repository = MagicMock(spec=ErrorEventReader)
+        expected = {
+            "items": [
+                {
+                    "id": 7,
+                    "occurred_at": "2026-08-12T10:00:00+00:00",
+                    "level": "ERROR",
+                    "logger_name": "backend.app.core.scheduler",
+                    "message": "ingestion failed",
+                    "exception_type": "OperationalError",
+                    "stack_trace": None,
+                }
+            ],
+            "total": 1,
+            "page": 2,
+            "page_size": 5,
+        }
+        repository.list_events.return_value = expected
+        require_admin = MagicMock()
+
+        def override_require_admin() -> dict[str, str]:
+            require_admin()
+            return {"role": "admin"}
+
+        app.dependency_overrides[RequireAdmin] = override_require_admin
+        app.dependency_overrides[get_error_event_repository] = lambda: repository
+
+        response = TestClient(app).get(
+            "/api/monitor/errors",
+            params={"page": 2, "page_size": 5},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), expected)
+        require_admin.assert_called_once_with()
+        repository.list_events.assert_called_once_with(2, 5)
+
+    def test_recent_error_events_requires_admin_before_repository_calls(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        repository = MagicMock(spec=ErrorEventReader)
+        app.dependency_overrides[get_error_event_repository] = lambda: repository
+
+        response = TestClient(app).get("/api/monitor/errors")
+
+        self.assertIn(response.status_code, (401, 403))
+        repository.list_events.assert_not_called()
+
+    def test_recent_error_events_caps_page_size_at_100(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        repository = MagicMock(spec=ErrorEventReader)
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[get_error_event_repository] = lambda: repository
+
+        for page_size in (0, 101, 100000):
+            with self.subTest(page_size=page_size):
+                response = TestClient(app).get(
+                    "/api/monitor/errors",
+                    params={"page": 1, "page_size": page_size},
+                )
+                self.assertEqual(response.status_code, 422)
+        repository.list_events.assert_not_called()
 
 
 if __name__ == "__main__":

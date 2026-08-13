@@ -36,6 +36,7 @@ from backend.app.api import (
     routes_wechat_media,
     routes_x_media,
 )
+from backend.app.api.exception_handlers import register_exception_handlers
 from backend.app.core.auth import hash_password, validate_jwt_secret
 from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
@@ -50,12 +51,16 @@ from backend.app.core.postgres_database import postgres_database
 from backend.app.core.postgres_migrations import pending_migration_labels
 from backend.app.core.redis_client import close_redis_client, create_redis_client
 from backend.app.core.scheduler import create_scheduler_runtime
+from backend.app.monitoring.error_event_capture import ErrorEventCapture
 from backend.app.monitoring.health import create_application_monitoring_runtime
 from backend.app.repositories.application_repository_context import (
     configure_application_repositories,
 )
 from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
+)
+from backend.app.repositories.postgres_error_event_repository import (
+    PostgresErrorEventRepository,
 )
 from backend.app.services.auth.default_admin_bootstrap import ensure_default_admin
 from backend.app.services.chat import attachment_service
@@ -73,6 +78,13 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# 错误事件采集：root ERROR 级队列 Handler，现有 logger.error/exception 零改动
+# 汇入 error_events 表。模块级只挂 Handler 收集 record；仓储在 lifespan 内
+# 绑定（按当时的 postgres_database 全局构造，单测替换全局时落到 mock），
+# listener 线程随连接池启停。
+error_event_capture = ErrorEventCapture()
+error_event_capture.install_handler()
 
 # ── 访客统计中间件 ─────────────────────────────────────────────────────────────
 # 使用 Redis SET 记录每天不同 IP 地址的访问者
@@ -159,6 +171,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         await asyncio.to_thread(postgres_database.open)
         postgres_opened = True
+        # 采集线程随连接池启动：此后的 logger.error/exception（含下方迁移
+        # 滞后 critical）都会落 error_events 表。
+        error_event_capture.bind_repository(
+            PostgresErrorEventRepository(postgres_database)
+        )
+        error_event_capture.start()
+        # 启动即时清理 30 天前错误事件（周期清理由 capture 线程按小时执行）；
+        # 迁移滞后（0037 未应用）等失败仅 WARNING 告警——WARNING 不入采集，
+        # 避免"清理失败 → 写入错误事件"的自指。
+        try:
+            await asyncio.to_thread(error_event_capture.prune_once)
+        except Exception as exc:
+            logger.warning("[Startup] Error event prune failed (non-fatal): %s", exc)
         # 迁移台账滞后自检：代码先行、迁移未跑时（如 uq_briefings_date 缺失导致
         # 简报 ON CONFLICT 保存全线失败两天才被发现），启动日志必须显眼。
         # 只告警不阻断——让整站不可用换单点 schema 滞后会扩大故障面。
@@ -374,6 +399,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 logger.warning("[Shutdown] Repository context close failed (non-fatal): %s", exc)
         app.state.monitoring_runtime = None
         if postgres_opened:
+            # 先停采集线程（flush 残余批次），再关连接池——顺序反了末批
+            # 会打到已关闭的 pool 上被丢弃。
+            try:
+                await asyncio.to_thread(error_event_capture.stop)
+            except Exception as exc:
+                logger.warning("[Shutdown] Error event capture stop failed (non-fatal): %s", exc)
             try:
                 postgres_database.close()
                 logger.info("[Shutdown] PostgreSQL connection pool closed.")
@@ -393,6 +424,10 @@ app = FastAPI(
     redoc_url="/redoc" if _API_DOCS_ENABLED else None,
     openapi_url="/openapi.json" if _API_DOCS_ENABLED else None,
 )
+
+# 未捕获异常 → logger.exception → error_events；响应体与 Starlette 默认
+# 纯文本 500 逐字节一致（行为兼容）。HTTPException 不受影响。
+register_exception_handlers(app)
 
 
 def _resolve_app_version() -> str:

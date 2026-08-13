@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS error_events (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    level VARCHAR(16) NOT NULL,
+    logger_name VARCHAR(255) NOT NULL DEFAULT '',
+    message TEXT NOT NULL,
+    exception_type VARCHAR(255),
+    stack_trace TEXT
+);
