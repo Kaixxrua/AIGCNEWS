@@ -22,10 +22,15 @@ from backend.app.core.auth import (
     verify_password,
 )
 from backend.app.core.client_ip import client_ip_from_request
+from backend.app.core.config import settings
 from backend.app.repositories.mcp_access_token_repository import McpAccessTokenManager
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.auth import account_lifecycle
 from backend.app.services.auth.adapters import build_account_lifecycle
+from backend.app.services.auth.default_admin_bootstrap import (
+    password_change_required_for_email,
+    uses_configured_default_credentials,
+)
 from backend.app.services.auth.rate_limit import RateLimitExceededError, hit_rate_limit
 from backend.app.services.email_service import (
     EmailService,
@@ -143,6 +148,16 @@ class ResetPasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def validate_password(cls, value: str) -> str:
+        return _validate_new_password(value)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
         return _validate_new_password(value)
 
 
@@ -268,6 +283,51 @@ async def reset_password(
     return {"detail": "密码重置成功"}
 
 
+@router.post("/auth/me/password", summary="已登录改密（当前密码校验，免邮箱验证码）")
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> dict[str, Any]:
+    """凭当前密码修改密码，不依赖邮箱验证码。
+
+    自托管没有可用 SMTP 时这是唯一的密码轮换路径；默认管理员种子账号
+    借此脱离公开默认密码。JWT 无 email 声明视为身份无效（401）。
+    """
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    await _enforce_rate_limit(
+        request, action="auth.change_password", limit=_AUTH_ATTEMPT_RATE_LIMIT
+    )
+    email = str(current_user.get("email") or "")
+    if not email:
+        raise HTTPException(status_code=401, detail="用户身份无效")
+    lifecycle = build_account_lifecycle(
+        repository=repository,
+        password_hasher=hash_password,
+        password_verifier=verify_password,
+    )
+    try:
+        await lifecycle.change_password(
+            email=email,
+            current_password=body.current_password,
+            new_password=body.new_password,
+        )
+    except account_lifecycle.InvalidCredentials as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前密码错误",
+        ) from exc
+    except account_lifecycle.PasswordChangeFailed as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="密码修改失败，请稍后重试",
+        ) from exc
+    return {"detail": "密码已修改"}
+
+
 @router.post("/auth/register", summary="用户注册（邮箱 + 验证码 + 密码）")
 async def register(
     body: RegisterRequest,
@@ -348,6 +408,13 @@ async def login(
         "access_token": result.access_token,
         "token_type": result.token_type,
         "role": result.role,
+        # 种子默认凭据登录提示：前端据此常驻提醒改密（免 SMTP 改密端点）
+        "password_change_required": uses_configured_default_credentials(
+            email=str(body.email),
+            password=body.password,
+            configured_email=settings.DEFAULT_ADMIN_EMAIL,
+            configured_password=settings.DEFAULT_ADMIN_PASSWORD,
+        ),
     }
 
 
@@ -425,13 +492,26 @@ async def delete_mcp_token(
 
 
 @router.get("/auth/me", summary="获取当前登录用户信息")
-async def me(current_user: dict[str, Any] = Depends(RequireUser)) -> dict[str, Any]:
+async def me(
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> dict[str, Any]:
     """
     返回当前登录用户信息（从 JWT payload 提取）。
     需要携带有效 Bearer Token。
+    password_change_required 以库内哈希为准（仅种子默认邮箱账号触发查询）。
     """
+    change_required = await asyncio.to_thread(
+        password_change_required_for_email,
+        repository=repository,
+        email=str(current_user.get("email") or ""),
+        configured_email=settings.DEFAULT_ADMIN_EMAIL,
+        configured_password=settings.DEFAULT_ADMIN_PASSWORD,
+        verify_password=verify_password,
+    )
     return {
         "user_id": current_user.get("user_id"),
         "email": current_user.get("email"),
         "role": current_user.get("role"),
+        "password_change_required": change_required,
     }

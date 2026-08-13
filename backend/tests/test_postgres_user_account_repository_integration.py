@@ -88,19 +88,3 @@ def test_postgres_get_user_by_id_projects_disabled_flag(database) -> None:
             cursor.execute("UPDATE users SET disabled = TRUE WHERE id = %s", (user_id,))
 
     assert repository.get_user_by_id(user_id)["disabled"] is True
-
-
-def test_first_registered_user_becomes_admin_second_stays_user(database) -> None:
-    """自托管引导：空库首位注册者提权 admin，后续注册保持 user。"""
-    repository = PostgresUserAccountRepository(database)
-
-    first_id = repository.create_user_with_email(
-        "first@example.com", "hash", promote_if_first=True
-    )
-    second_id = repository.create_user_with_email(
-        "second@example.com", "hash", promote_if_first=True
-    )
-
-    assert repository.get_user_by_email("first@example.com")["role"] == "admin"
-    assert repository.get_user_by_email("second@example.com")["role"] == "user"
-    assert (first_id, second_id) == (1, 2)

@@ -54,13 +54,6 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
         self.assertEqual(args[0], "reader@example.com")
         self.assertNotEqual(args[1], "abcdef")
         self.assertEqual(args[2:], ("user", ""))
-        # 自托管引导：注册路径始终请求首位用户提权（非空库为 no-op）
-        self.assertIs(
-            self.repository.create_user_with_email.call_args.kwargs[
-                "promote_if_first"
-            ],
-            True,
-        )
         self.assertEqual(events, ["insert", "consume"])
 
     def test_register_duplicate_preserves_conflict_without_consuming_otp(self) -> None:
@@ -110,7 +103,12 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.json(),
-            {"access_token": "signed-token", "token_type": "bearer", "role": "user"},
+            {
+                "access_token": "signed-token",
+                "token_type": "bearer",
+                "role": "user",
+                "password_change_required": False,
+            },
         )
         create_token.assert_called_once_with(
             {"user_id": 42, "role": "user", "email": "reader@example.com"}

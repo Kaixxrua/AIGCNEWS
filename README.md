@@ -195,7 +195,7 @@ sudo chown root:root frontend/ssl/*.key && sudo chmod 600 frontend/ssl/*.key
 scripts/manage_main_stack.sh up
 ```
 
-First-run notes: on an empty database the first email-registered user becomes admin, and registration needs a working mail channel *before* that — configure `SMTP_*` in `.env`, or leave `SMTP_HOST` empty for dev mode which prints codes to the backend logs. TLS details, ports & health checks, hot-reload dev mode, testing commands, and the private-overlay mechanism: [docs/self-hosting.md](docs/self-hosting.md)
+First-run notes: on an empty database the backend seeds a default admin (`admin@aigcnews.internal` / `admin123456`, overridable via `DEFAULT_ADMIN_*`) so deployments without SMTP can log in immediately — change the password right away via the in-app dialog (current password only, no mail needed). Registration and password recovery still need a working mail channel — configure `SMTP_*` in `.env`, or leave `SMTP_HOST` empty for dev mode which prints codes to the backend logs. TLS details, ports & health checks, hot-reload dev mode, testing commands, and the private-overlay mechanism: [docs/self-hosting.md](docs/self-hosting.md)
 
 ## Directory Structure
 

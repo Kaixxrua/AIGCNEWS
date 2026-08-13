@@ -98,7 +98,7 @@ python3 scripts/eval_mcp_tool_selection.py       # 需要 claude CLI
 - **X 动态与微信公众号** —— 精选时间线 + 按日期快照与静默期，推文中文翻译完整补回 @ 提及，统一站内阅读 Feed
 - **智能简报与订阅** —— 各方向日 / 周 / 月报（中英双语）SSE 流式生成，按来源与频率邮件订阅、支持立即送达
 - **收藏与私人书架** —— 乐观更新收藏 + 个人标签 + 跨设备同步，提交 URL 自动富化的私人工具书架，公共与私人数据严格隔离
-- **账号与管理后台** —— 邮箱验证码 + JWT（空库首个注册用户自动成为管理员），采集监控、模型 Provider 真实连接测试、数据库化 SMTP 面板、爬取与富化队列（重试 / 熔断）
+- **账号与管理后台** —— 邮箱验证码 + JWT（空库首启动种子默认管理员，登录后站内免 SMTP 改密），采集监控、模型 Provider 真实连接测试、数据库化 SMTP 面板、爬取与富化队列（重试 / 熔断）
 
 完整功能走查：[docs/project-overview.md](docs/project-overview.md)
 
@@ -195,7 +195,7 @@ sudo chown root:root frontend/ssl/*.key && sudo chmod 600 frontend/ssl/*.key
 scripts/manage_main_stack.sh up
 ```
 
-首次运行注意：空库时首个邮箱注册用户自动成为管理员，而注册需要可用的邮件通道 —— 在 `.env` 配好 `SMTP_*`，或留空 `SMTP_HOST` 用 dev 模式在后端日志打印验证码。TLS 细节、端口与健康检查、热重载开发模式、测试命令与私有 overlay 机制见 [docs/self-hosting.zh-CN.md](docs/self-hosting.zh-CN.md)
+首次运行注意：空库时后端首启动自动种子默认管理员（`admin@aigcnews.internal` / `admin123456`，可用 `DEFAULT_ADMIN_*` 覆盖），没有 SMTP 也能立即登录——登录后请立刻通过站内「修改密码」对话框改密（只需当前密码，免邮件）。注册新用户与找回密码仍需要可用的邮件通道 —— 在 `.env` 配好 `SMTP_*`，或留空 `SMTP_HOST` 用 dev 模式在后端日志打印验证码。TLS 细节、端口与健康检查、热重载开发模式、测试命令与私有 overlay 机制见 [docs/self-hosting.zh-CN.md](docs/self-hosting.zh-CN.md)
 
 ## 目录结构
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
@@ -9,6 +9,7 @@ import LocaleToggle from '@/components/LocaleToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import AppDock from '@/components/layout/AppDock.vue'
 import LayoutFooter from '@/components/layout/LayoutFooter.vue'
+import ChangePasswordDialog from '@/components/auth/ChangePasswordDialog.vue'
 import {
   KEEP_ALIVE_MAX,
   KEEP_ALIVE_VIEW_NAMES,
@@ -23,6 +24,13 @@ const authStore = useAuthStore()
 // 实例化即开始对 admin 轮询富化失败状态；失败 > 0 时「监控」导航按钮显示红点
 const enrichmentAlert = useEnrichmentAlertStore()
 const dockAlertItems = computed(() => (enrichmentAlert.hasFailures ? ['/monitor'] : []))
+
+// 改密对话框：dock 钥匙按钮或默认密码警示条打开
+const changePasswordOpen = ref(false)
+// 种子默认管理员仍用公开默认密码时全站常驻提醒，改密后随 /auth/me 刷新消失
+const showDefaultPasswordBanner = computed(
+  () => authStore.isLoggedIn && authStore.user?.password_change_required === true,
+)
 
 // 特性开关 fail-open：首屏全量显示，拉取完成后隐藏被关闭源的导航入口
 const { featureFlags, ensureFeatureFlags } = useFeatureFlags()
@@ -75,7 +83,25 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       :alert-items="dockAlertItems"
       @login="router.push('/login')"
       @logout="authStore.logout()"
+      @change-password="changePasswordOpen = true"
     />
+
+    <!-- 默认密码常驻警示：点击打开改密对话框，改密成功后自动消失 -->
+    <button
+      v-if="showDefaultPasswordBanner"
+      class="default-pwd-banner"
+      @click="changePasswordOpen = true"
+    >
+      <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 9v4"/>
+        <path d="M12 17h.01"/>
+        <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
+      </svg>
+      <span>{{ $t('auth.defaultPasswordBanner') }}</span>
+      <span class="default-pwd-banner__action">{{ $t('auth.defaultPasswordBannerAction') }}</span>
+    </button>
+
+    <ChangePasswordDialog v-model="changePasswordOpen" />
 
     <LayoutFooter :brand-name="brandName" />
 
@@ -126,6 +152,40 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
   .main-canvas > .absolute.inset-0 {
     padding-top: 48px;
     padding-bottom: 86px;
+  }
+}
+
+/* ═══ 默认密码警示条：悬浮于 dock 上方，点击即打开改密对话框 ═══ */
+.default-pwd-banner {
+  position: fixed;
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warning-ink, #7c4a03);
+  background: var(--warning-surface, #fdf0d5);
+  border: 1px solid var(--warning-rule, #e8c47a);
+  box-shadow: 3px 3px 0 var(--dock-shadow);
+  cursor: pointer;
+}
+
+.default-pwd-banner__action {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+@media (max-width: 639px) {
+  .default-pwd-banner {
+    bottom: max(72px, calc(env(safe-area-inset-bottom) + 64px));
   }
 }
 </style>

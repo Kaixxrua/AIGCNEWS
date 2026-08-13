@@ -69,16 +69,21 @@ backend/.venv/bin/python run_server.py
 cd frontend && npm run dev
 ```
 
-## 6) First admin & SMTP configuration
+## 6) Default admin & SMTP configuration
 
-The repository ships no default admin account: **on an empty users table, the first email-registered user automatically becomes the admin**; later registrations are regular users, and existing deployments (non-empty users table) are unaffected.
+**On an empty users table, the first backend startup seeds a default admin** so a brand-new deployment without a mail channel can still reach the admin console:
 
-Registration requires an email OTP, which depends on mail delivery — so a fresh self-host needs a working mail channel *before* the first admin exists. Pick one:
+- Email `admin@aigcnews.internal`, password `admin123456` (see the `DEFAULT_ADMIN_*` block in `.env.example` to override; blanking either value disables the seed);
+- The seed runs once and only on an empty database: existing deployments (non-empty users table) are never touched, and a seed failure does not block startup (logged as critical).
+
+**The default password is a public credential — change it immediately after logging in.** While it is still in use, a persistent warning banner appears at the bottom of every page; click the banner or the key button in the dock to open "Change password", which only requires the current password and **does not depend on SMTP**. The banner disappears once the password is changed.
+
+Registering additional users and password recovery still require email OTPs, so configuring SMTP early is still recommended. Pick one:
 
 - Configure `SMTP_*` in `.env` (see the SMTP block in `.env.example`); or
 - Leave `SMTP_HOST` empty for dev mode, which prints verification codes to the backend console logs.
 
-Once the first admin logs in, the **Monitor → SMTP email delivery** panel manages the configuration online: it is stored in the database, takes effect immediately (background jobs pick it up within 60 seconds), and **takes precedence over environment variables**; "Send test email" delivers a real message to the current admin's login email using the latest saved configuration. Saving with an empty host deletes the database configuration and reverts to the environment variables.
+Once an admin logs in, the **Monitor → SMTP email delivery** panel manages the configuration online: it is stored in the database, takes effect immediately (background jobs pick it up within 60 seconds), and **takes precedence over environment variables**; "Send test email" delivers a real message to the current admin's login email using the latest saved configuration. Saving with an empty host deletes the database configuration and reverts to the environment variables.
 
 ## Ports & health checks
 

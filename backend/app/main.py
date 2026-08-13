@@ -36,7 +36,7 @@ from backend.app.api import (
     routes_wechat_media,
     routes_x_media,
 )
-from backend.app.core.auth import validate_jwt_secret
+from backend.app.core.auth import hash_password, validate_jwt_secret
 from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
 from backend.app.core.model_factory import (
@@ -57,6 +57,7 @@ from backend.app.repositories.application_repository_context import (
 from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
+from backend.app.services.auth.default_admin_bootstrap import ensure_default_admin
 from backend.app.services.chat import attachment_service
 from backend.app.services.email.smtp_config_provider import (
     configure_smtp_settings_reader,
@@ -190,6 +191,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             app.state.application_repositories.smtp_settings
         )
         repositories_configured = True
+        # 开源自托管引导：空库首启动种子默认管理员（无 SMTP 也能获得管理入口）。
+        # 非空库为 no-op；失败仅记 critical 不阻断启动（对齐迁移台账自检口径）。
+        try:
+            seeded = await asyncio.to_thread(
+                ensure_default_admin,
+                repository=app.state.application_repositories.users,
+                email=settings.DEFAULT_ADMIN_EMAIL,
+                password=settings.DEFAULT_ADMIN_PASSWORD,
+                hash_password=hash_password,
+            )
+            if seeded:
+                logger.warning(
+                    "[Startup] 空库已种子默认管理员 %s。"
+                    "若仍使用公开默认密码，请登录后立即在站点内改密（免 SMTP）。",
+                    settings.DEFAULT_ADMIN_EMAIL.strip().lower(),
+                )
+        except Exception as exc:
+            logger.critical(
+                "[Startup] 默认管理员种子失败（非阻断），全新部署将无法登录管理端: %s",
+                exc,
+            )
         # 附件元数据已落 PostgreSQL：启动时对账无元数据的孤儿 PDF 文件与
         # TTL 到期元数据行，失败不阻塞启动。
         try:

@@ -11,6 +11,8 @@ from backend.app.services.auth.account_lifecycle import (
     InvalidCredentials,
     InvalidOtp,
     LoginResult,
+    PasswordChangeFailed,
+    PasswordChangeResult,
     PasswordResetFailed,
     PasswordResetResult,
     RegistrationResult,
@@ -34,8 +36,6 @@ class FakeRepository:
         hashed_password: str,
         role: str = "user",
         username: str = "",
-        *,
-        promote_if_first: bool = False,
     ) -> int:
         self.events.append(
             (
@@ -44,7 +44,6 @@ class FakeRepository:
                 hashed_password,
                 role,
                 username,
-                promote_if_first,
             )
         )
         return 42
@@ -106,9 +105,11 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.events.append(("hash_password", password))
             return "stored-password-hash"
 
+        self.verify_password_result = True
+
         def verify_password(password: str, password_hash: str) -> bool:
             self.events.append(("verify_password", password, password_hash))
-            return True
+            return self.verify_password_result
 
         def issue_token(claims: dict[str, Any]) -> str:
             self.events.append(("issue_token", claims))
@@ -142,28 +143,11 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     "stored-password-hash",
                     "user",
                     "",
-                    True,
                 ),
                 ("consume_otp", "Reader@example.com", "registration"),
             ],
         )
         self.assert_no_plaintext_secrets(result, "123456", "plain-secret", "stored-password-hash")
-
-    async def test_register_requests_first_user_promotion_with_user_fallback(self) -> None:
-        await self.lifecycle.register(
-            email="reader@example.com",
-            email_code="123456",
-            password="plain-secret",
-        )
-
-        create_events = [
-            event for event in self.events if event[0] == "create_user_with_email"
-        ]
-        self.assertEqual(len(create_events), 1)
-        _, _, _, fallback_role, _, promote_if_first = create_events[0]
-        # 回退角色恒为 user；是否提权 admin 由仓储按用户表是否为空决定
-        self.assertEqual(fallback_role, "user")
-        self.assertIs(promote_if_first, True)
 
     async def test_registration_failures_stop_before_hash_and_consumption(self) -> None:
         self.otp.verified = False
@@ -328,6 +312,83 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     ("consume_otp", "reader@example.com", "password_reset"),
                     self.events,
                 )
+
+    async def test_change_password_verifies_current_then_updates_one_row(self) -> None:
+        self.repository.users["Reader@example.com"] = {
+            "id": 7,
+            "email": "reader@example.com",
+            "hashed_password": "old-password-hash",
+        }
+
+        result = await self.lifecycle.change_password(
+            email="Reader@EXAMPLE.COM",
+            current_password="current-secret",
+            new_password="replacement-secret",
+        )
+
+        self.assertEqual(result, PasswordChangeResult())
+        self.assertEqual(
+            self.events,
+            [
+                ("get_user_by_email", "Reader@example.com"),
+                ("verify_password", "current-secret", "old-password-hash"),
+                ("hash_password", "replacement-secret"),
+                ("update_user_password", 7, "Reader@example.com", "stored-password-hash"),
+            ],
+        )
+        self.assert_no_plaintext_secrets(
+            result, "current-secret", "replacement-secret", "stored-password-hash"
+        )
+
+    async def test_change_password_rejects_wrong_current_password_without_update(self) -> None:
+        self.repository.users["reader@example.com"] = {
+            "id": 7,
+            "email": "reader@example.com",
+            "hashed_password": "old-password-hash",
+        }
+        self.verify_password_result = False
+
+        with self.assertRaises(InvalidCredentials):
+            await self.lifecycle.change_password(
+                email="reader@example.com",
+                current_password="wrong-secret",
+                new_password="replacement-secret",
+            )
+        self.assertEqual(
+            self.events,
+            [
+                ("get_user_by_email", "reader@example.com"),
+                ("verify_password", "wrong-secret", "old-password-hash"),
+            ],
+        )
+
+    async def test_change_password_missing_account_shares_invalid_credentials(self) -> None:
+        with self.assertRaises(InvalidCredentials):
+            await self.lifecycle.change_password(
+                email="missing@example.com",
+                current_password="current-secret",
+                new_password="replacement-secret",
+            )
+        self.assertEqual(
+            self.events,
+            [("get_user_by_email", "missing@example.com")],
+        )
+
+    async def test_change_password_requires_exactly_one_updated_row(self) -> None:
+        self.repository.users["reader@example.com"] = {
+            "id": 7,
+            "email": "reader@example.com",
+            "hashed_password": "old-password-hash",
+        }
+        self.repository.affected_rows = 0
+
+        with self.assertRaises(PasswordChangeFailed):
+            await self.lifecycle.change_password(
+                email="reader@example.com",
+                current_password="current-secret",
+                new_password="replacement-secret",
+            )
+        self.assertEqual(self.events[-1][0], "update_user_password")
 
     def assert_no_plaintext_secrets(self, result: object, *secrets: str) -> None:
         self.assertTrue(dataclasses.is_dataclass(result))

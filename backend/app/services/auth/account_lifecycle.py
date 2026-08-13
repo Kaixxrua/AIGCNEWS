@@ -20,8 +20,6 @@ class AccountRepository(Protocol):
         hashed_password: str,
         role: str = "user",
         username: str = "",
-        *,
-        promote_if_first: bool = False,
     ) -> int: ...
 
     def update_user_password(
@@ -86,6 +84,10 @@ class PasswordResetFailed(AccountLifecycleError):
     """Password persistence did not update exactly one account."""
 
 
+class PasswordChangeFailed(AccountLifecycleError):
+    """Authenticated password change did not update exactly one account."""
+
+
 @dataclass(frozen=True, slots=True)
 class RegistrationResult:
     user_id: int
@@ -99,6 +101,11 @@ class ResetOtpRequestResult:
 @dataclass(frozen=True, slots=True)
 class PasswordResetResult:
     reset: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class PasswordChangeResult:
+    changed: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,15 +164,12 @@ class AccountLifecycle:
             raise AccountAlreadyExists
 
         hashed_password = self._hash_password(password)
-        # 自托管引导：用户表为空时首位注册者由仓储层提权为 admin
-        #（非空库为 no-op），role 仍按 "user" 传入作为回退值。
         user_id = await asyncio.to_thread(
             self._repository.create_user_with_email,
             normalized_email,
             hashed_password,
             "user",
             "",
-            promote_if_first=True,
         )
         await self._otp.consume_otp(
             normalized_email, purpose=REGISTRATION_PURPOSE
@@ -251,3 +255,35 @@ class AccountLifecycle:
             normalized_email, purpose=PASSWORD_RESET_PURPOSE
         )
         return PasswordResetResult()
+
+    async def change_password(
+        self,
+        *,
+        email: str,
+        current_password: str,
+        new_password: str,
+    ) -> PasswordChangeResult:
+        """已登录用户凭当前密码改密，不依赖邮箱验证码（免 SMTP）。
+
+        自托管没有可用邮件通道时，这是唯一可行的密码轮换路径；默认管理员
+        种子账号也依赖它脱离公开默认密码。
+        """
+        normalized_email = _normalize_email_domain(email)
+        user = await asyncio.to_thread(
+            self._repository.get_user_by_email, normalized_email
+        )
+        if user is None or not self._verify_password(
+            current_password, str(user["hashed_password"])
+        ):
+            raise InvalidCredentials
+
+        hashed_password = self._hash_password(new_password)
+        affected_rows = await asyncio.to_thread(
+            self._repository.update_user_password,
+            user_id=int(user["id"]),
+            email=normalized_email,
+            hashed_password=hashed_password,
+        )
+        if affected_rows != 1:
+            raise PasswordChangeFailed
+        return PasswordChangeResult()

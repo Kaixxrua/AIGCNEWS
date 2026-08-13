@@ -29,8 +29,6 @@ class FakeUserAccountRepository:
         hashed_password: str,
         role: str = "user",
         username: str = "",
-        *,
-        promote_if_first: bool = False,
     ) -> int:
         self.events.append(
             (
@@ -39,7 +37,6 @@ class FakeUserAccountRepository:
                 hashed_password,
                 role,
                 username,
-                promote_if_first,
             )
         )
         return self.created_user_id
@@ -151,6 +148,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
             "/api/auth/reset-password": "ResetPasswordRequest",
             "/api/auth/register": "RegisterRequest",
             "/api/auth/login": "LoginRequest",
+            "/api/auth/me/password": "ChangePasswordRequest",
         }
 
         for path, schema in expected.items():
@@ -177,6 +175,10 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
         )
         self.assertEqual(
             schemas["LoginRequest"]["required"], ["email", "password"]
+        )
+        self.assertEqual(
+            schemas["ChangePasswordRequest"]["required"],
+            ["current_password", "new_password"],
         )
         for schema, field in (
             ("SendEmailOtpRequest", "email"),
@@ -215,7 +217,6 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                     "stored-password-hash",
                     "user",
                     "",
-                    True,
                 ),
                 ("consume_otp", "Reader@example.com", "registration"),
             ],
@@ -465,6 +466,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                 "access_token": "signed.jwt.token",
                 "token_type": "bearer",
                 "role": "user",
+                "password_change_required": False,
             },
         )
         self.assertEqual(self.events, [("get_user_by_email", "Reader@example.com")])

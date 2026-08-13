@@ -102,16 +102,7 @@ class PostgresUserAccountRepository:
         hashed_password: str,
         role: str = "user",
         username: str = "",
-        *,
-        promote_if_first: bool = False,
     ) -> int:
-        if promote_if_first:
-            return self._insert_first_user_promoting(
-                email=email,
-                hashed_password=hashed_password,
-                role=role,
-                username=username,
-            )
         return self._insert_returning_id(
             """
             INSERT INTO users (
@@ -126,51 +117,6 @@ class PostgresUserAccountRepository:
             """,
             (email.lower(), username, hashed_password, role),
         )
-
-    def _insert_first_user_promoting(
-        self,
-        *,
-        email: str,
-        hashed_password: str,
-        role: str,
-        username: str,
-    ) -> int:
-        """首位注册用户提权为 admin，其余按传入 role 落库。
-
-        自托管全新部署没有可用的提权入口，约定用户表为空时第一个完成
-        邮箱验证注册的用户成为管理员。check-then-insert 用 advisory
-        事务锁串行化（先例：x_credentials 种子引导），避免 READ
-        COMMITTED 下并发首注册双双看到空表而产生两个 admin。
-        """
-        with self._database.transaction() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT pg_advisory_xact_lock(hashtext('users_first_admin_bootstrap'))"
-                )
-                cursor.execute("SELECT COUNT(*) AS n FROM users")
-                row = cursor.fetchone()
-                count = int(
-                    (row["n"] if isinstance(row, dict) else row[0]) if row else 0
-                )
-                effective_role = "admin" if count == 0 else role
-                cursor.execute(
-                    """
-                    INSERT INTO users (
-                        email,
-                        username,
-                        hashed_password,
-                        role,
-                        email_verified
-                    )
-                    VALUES (%s, %s, %s, %s, TRUE)
-                    RETURNING id
-                    """,
-                    (email.lower(), username, hashed_password, effective_role),
-                )
-                inserted = cursor.fetchone()
-                if inserted is None:
-                    raise RuntimeError("PostgreSQL user insert did not return an id")
-                return int(inserted["id"])
 
     def _fetchone(
         self,

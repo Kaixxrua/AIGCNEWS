@@ -15,11 +15,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   login: []
   logout: []
+  changePassword: []
 }>()
 
 const { t } = useI18n()
 const hoveredNav = ref<string | null>(null)
 const hoveredAuth = ref(false)
+const hoveredChangePwd = ref(false)
 </script>
 
 <template>
@@ -72,26 +74,46 @@ const hoveredAuth = ref(false)
         <span v-if="hoveredAuth" class="dock-label">{{ t('navigation.loginAccount') }}</span>
       </Transition>
     </button>
-    <!-- 已登录：红色登出按钮 -->
-    <button
-      v-else
-      class="dock-item dock-item--logout"
-      :aria-label="t('navigation.logout')"
-      @click="emit('logout')"
-      @mouseenter="hoveredAuth = true"
-      @mouseleave="hoveredAuth = false"
-    >
-      <span class="dock-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-          <polyline points="16,17 21,12 16,7"/>
-          <line x1="21" y1="12" x2="9" y2="12"/>
-        </svg>
-      </span>
-      <Transition name="dock-label">
-        <span v-if="hoveredAuth" class="dock-label">{{ t('navigation.logout') }}</span>
-      </Transition>
-    </button>
+    <!-- 已登录：改密（钥匙）+ 登出（红色）按钮 -->
+    <template v-else>
+      <button
+        class="dock-item dock-item--change-pwd"
+        :aria-label="t('navigation.changePassword')"
+        @click="emit('changePassword')"
+        @mouseenter="hoveredChangePwd = true"
+        @mouseleave="hoveredChangePwd = false"
+      >
+        <span class="dock-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="8" cy="15" r="4"/>
+            <path d="M10.85 12.15 21 2"/>
+            <path d="m15 8 3 3"/>
+            <path d="m18 5 3 3"/>
+          </svg>
+        </span>
+        <Transition name="dock-label">
+          <span v-if="hoveredChangePwd" class="dock-label">{{ t('navigation.changePassword') }}</span>
+        </Transition>
+      </button>
+      <button
+        class="dock-item dock-item--logout"
+        :aria-label="t('navigation.logout')"
+        @click="emit('logout')"
+        @mouseenter="hoveredAuth = true"
+        @mouseleave="hoveredAuth = false"
+      >
+        <span class="dock-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+            <polyline points="16,17 21,12 16,7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </span>
+        <Transition name="dock-label">
+          <span v-if="hoveredAuth" class="dock-label">{{ t('navigation.logout') }}</span>
+        </Transition>
+      </button>
+    </template>
   </nav>
 </template>
 
@@ -228,6 +250,13 @@ const hoveredAuth = ref(false)
 .dock-item--logout:hover {
   color: var(--danger);
   background: var(--dock-danger-hover);
+  transform: translateY(-2px);
+}
+
+.dock-item--change-pwd { color: var(--ink-muted); }
+.dock-item--change-pwd:hover {
+  color: var(--ink);
+  background: var(--acid-soft);
   transform: translateY(-2px);
 }
 
