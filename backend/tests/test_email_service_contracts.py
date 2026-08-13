@@ -66,11 +66,12 @@ class EmailOtpContractTests(unittest.IsolatedAsyncioTestCase):
                 ("get", "email:lock:user@example.com"),
                 ("set", "email:code:user@example.com", "123456", 300),
                 ("set", "email:lock:user@example.com", "1", 60),
-                ("delete", "email:attempts:user@example.com"),
             ],
         )
 
-    async def test_password_reset_uses_isolated_keys_and_resets_attempts(self) -> None:
+    async def test_password_reset_uses_isolated_keys_and_preserves_attempts(self) -> None:
+        # 重发绝不清零猜测预算（AUTH-D）：attempts 按邮箱窗口累计，
+        # 否则每 60 秒重发一次即可无限续杯穷举 6 位验证码
         redis = FakeRedis()
         redis.values["email:reset:attempts:user@example.com"] = 3
         service = EmailService(redis)
@@ -86,9 +87,9 @@ class EmailOtpContractTests(unittest.IsolatedAsyncioTestCase):
                 ("get", "email:reset:lock:user@example.com"),
                 ("set", "email:reset:code:user@example.com", "654321", 300),
                 ("set", "email:reset:lock:user@example.com", "1", 60),
-                ("delete", "email:reset:attempts:user@example.com"),
             ],
         )
+        self.assertEqual(redis.values["email:reset:attempts:user@example.com"], 3)
 
     async def test_cooldown_rejects_before_code_write(self) -> None:
         redis = FakeRedis()
@@ -422,12 +423,11 @@ class ExtractedEmailBoundaryTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(
-            redis.calls[:4],
+            redis.calls[:3],
             [
                 ("get", "email:reset:lock:user@example.com"),
                 ("set", "email:reset:code:user@example.com", "123456", 300),
                 ("set", "email:reset:lock:user@example.com", "1", 60),
-                ("delete", "email:reset:attempts:user@example.com"),
             ],
         )
         self.assertEqual(
@@ -437,6 +437,42 @@ class ExtractedEmailBoundaryTests(unittest.IsolatedAsyncioTestCase):
                 "email:reset:code:user@example.com",
                 "email:reset:attempts:user@example.com",
             ),
+        )
+
+    async def test_resend_does_not_replenish_guess_budget(self) -> None:
+        # AUTH-D 渗透链：猜 4 次 → 等 60 秒冷却 → 重发新码 → 继续猜。
+        # 修复后预算跨重发累计，第 5 次错误尝试连新码一并销毁
+        redis = FakeRedis()
+        store = RedisOtpStore(redis)
+
+        await store.store("user@example.com", "111111", purpose="registration")
+        for _ in range(4):
+            self.assertFalse(
+                await store.verify(
+                    "user@example.com", "000000",
+                    purpose="registration", consume=True,
+                )
+            )
+
+        # 冷却结束（测试直接清锁模拟）后重发新码，attempts 必须保留
+        redis.values.pop("email:lock:user@example.com", None)
+        await store.store("user@example.com", "222222", purpose="registration")
+        self.assertEqual(redis.values["email:attempts:user@example.com"], 4)
+
+        self.assertFalse(
+            await store.verify(
+                "user@example.com", "333333",
+                purpose="registration", consume=True,
+            )
+        )
+        self.assertNotIn("email:code:user@example.com", redis.values)
+        self.assertNotIn("email:attempts:user@example.com", redis.values)
+        # 新码已销毁，即使输入正确的新码也不再通过
+        self.assertFalse(
+            await store.verify(
+                "user@example.com", "222222",
+                purpose="registration", consume=True,
+            )
         )
 
     async def test_registration_otp_enforces_max_attempts_like_password_reset(self) -> None:

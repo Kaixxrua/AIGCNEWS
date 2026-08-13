@@ -83,7 +83,10 @@ class RedisOtpStore:
 
         await self._redis.set(code_key, code, ex=OTP_TTL)
         await self._redis.set(lock_key, "1", ex=LOCK_TTL)
-        await self._redis.delete(attempts_key)
+        # 不在重发时清零 attempts：6 位验证码的猜测预算必须按邮箱窗口累计，
+        # 否则攻击者每 60 秒重发一次即可无限续杯穷举（AUTH-D）。
+        # attempts 键随首次错误尝试建立并按 OTP_TTL 过期；验真成功 consume
+        # 或错误满 MAX_ATTEMPTS 销毁时才随 code 一并删除。
 
     async def verify(
         self,
