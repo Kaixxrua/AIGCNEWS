@@ -94,13 +94,14 @@ class XPolicyContracts(unittest.TestCase):
             _tweet("1001", text="low score", likes=1, retweets=0, replies=0, bookmarks=0, views=1),
             _tweet("1002", text="high score", likes=10, retweets=2, replies=1, bookmarks=3, views=100),
             _tweet("1003", is_promoted=True, text="ad", likes=99999),
-            _tweet("1004", is_retweet=True, text="rt", likes=99999),
+            # 纯转贴自 2026-08-13 起保留（按原贴归属收录），仅推广/订阅专属/空正文被过滤
+            _tweet("1004", is_retweet=True, text="rt", likes=0, retweets=0, replies=0, bookmarks=0, views=0),
             _tweet("1005", is_subscriber_only=True, text="sub", likes=99999),
             _tweet("1006", text="", likes=99999),
         ]
         items = x_policy.project_tweets(tweets, limit=10)
-        self.assertEqual([item["tweet_id"] for item in items], ["1002", "1001"])
-        self.assertEqual([item["rank_in_period"] for item in items], [1, 2])
+        self.assertEqual([item["tweet_id"] for item in items], ["1002", "1001", "1004"])
+        self.assertEqual([item["rank_in_period"] for item in items], [1, 2, 3])
         self.assertEqual(
             items[0],
             {
@@ -132,6 +133,26 @@ class XPolicyContracts(unittest.TestCase):
                 "link_card": None,
             },
         )
+
+    def test_project_tweets_keeps_retweet_attributed_to_original(self) -> None:
+        # 纯转贴保留：parser 已把 id/作者/正文/指标换为被转原贴，条目按原贴归属入库
+        rt = _tweet(
+            "2001", screen_name="originalauthor", author_name="Original Author",
+            text="original content", likes=50, is_retweet=True,
+        )
+        items = x_policy.project_tweets([rt], limit=5)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["url"], "https://x.com/originalauthor/status/2001")
+        self.assertEqual(items[0]["author"], "originalauthor")
+        self.assertEqual(items[0]["tags"], ["x", "daily", "originalauthor"])
+
+    def test_project_tweets_dedupes_same_original_across_accounts(self) -> None:
+        # 多账号转同一贴（或账号转自己旧贴）：原贴 id 相同，仅保留一条，不占截断名额
+        rt_a = _tweet("3001", text="same original", likes=10, is_retweet=True)
+        rt_b = _tweet("3001", text="same original", likes=10, is_retweet=True)
+        unique = _tweet("3002", text="unique", likes=5)
+        items = x_policy.project_tweets([rt_a, rt_b, unique], limit=10)
+        self.assertEqual([item["tweet_id"] for item in items], ["3001", "3002"])
 
     def test_project_tweets_extracts_avatar_url(self) -> None:
         tweet = _tweet("1010", text="avatar")
