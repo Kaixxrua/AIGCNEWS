@@ -212,8 +212,8 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 ## Documentation
 
 - [docs/self-hosting.md](docs/self-hosting.md) — Full self-hosting guide: TLS certificates, first admin & SMTP, ports, testing
-- [docs/project-overview.md](docs/project-overview.md) — Project panorama: product, architecture, data, deployment, and engineering status (in Chinese)
-- [docs/architecture.md](docs/architecture.md) — Current functional architecture, PostgreSQL 16 as the sole relational runtime (in Chinese)
+- [docs/project-overview.md](docs/project-overview.md) — Project panorama: positioning, data sources, and per-module feature walkthrough (in Chinese)
+- [docs/architecture.md](docs/architecture.md) — Current architecture for developers: layering, API surface, storage, scheduling, deployment (in Chinese)
 - [docs/mcp-server.md](docs/mcp-server.md) — AIGC Radar MCP protocol parameters and policies (in Chinese)
 - [docs/README.md](docs/README.md) — Full documentation index, including historical archive annotations (in Chinese)
 

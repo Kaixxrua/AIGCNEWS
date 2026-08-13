@@ -6,8 +6,8 @@
 
 | 文档 | 内容 |
 |---|---|
-| [project-overview.md](project-overview.md) | 项目全景概述：产品、架构、数据、部署与工程状态 |
-| [architecture.md](architecture.md) | 功能架构当前态（数据库：PostgreSQL 16 唯一关系型运行时） |
+| [project-overview.md](project-overview.md) | 项目全景：产品定位、数据源全景与逐模块功能走查 |
+| [architecture.md](architecture.md) | 架构当前态（开发者向）：分层、API 路由、存储、调度与部署 |
 
 ## 对外接口
 

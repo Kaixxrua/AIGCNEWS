@@ -1,773 +1,254 @@
-# AIGC_NEWS 项目功能架构
+# AIGCNEWS 架构（当前态）
 
-> 最后更新：2026-08-08（数据库退役当前态：PostgreSQL 16 为唯一关系型运行时，MySQL 运行时与迁移/演练资产均已从仓库移除）
->
-> **数据库当前态**：应用通过 repository Protocol 依赖数据能力，由 FastAPI lifespan 作为 composition root 组装 PostgreSQL repository；主 Compose 仅包含 PostgreSQL 16，不包含 MySQL。最终退役操作见 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md)。
+> 最后更新：2026-08-13
+> 文档定位：开发者向的具体架构 —— 分层、路由、服务域、存储、调度、部署。功能与产品视角见 [project-overview.md](project-overview.md)。本文只描述当前事实，不记录历史方案；退役事项见各专项 runbook。
 
----
+## 一、技术栈
 
-## 一、项目总览
+| 层次 | 选型 |
+|---|---|
+| 后端 | FastAPI + Uvicorn（Python 3.12），pydantic Settings 单例配置 |
+| 前端 | Vue 3 + TypeScript + Vite 7 + Pinia 3 + Vue Router 5 + TailwindCSS 3 + vue-i18n 11（无组件库、无 ECharts，可视化全部自绘） |
+| 关系数据库 | **PostgreSQL 16 —— 唯一关系型运行时**（psycopg_pool 连接池） |
+| 向量 | Milvus 2.4（HNSW + COSINE，1024 维；依赖 etcd + MinIO） |
+| 图 | Neo4j 5.18（论文实体图谱） |
+| 缓存 / 限流 | Redis 7（FastAPICache、OTP、访客去重、固定窗口限流） |
+| 调度 | APScheduler AsyncIOScheduler（进程内，Asia/Shanghai） |
+| LLM | OpenAI 兼容端点（chat / embedding 可切换 provider）；硅基流动 bge-reranker-v2-m3 精排；Kimi `$web_search` 联网；SiliconFlow Kimi-K2.5 视觉 |
+| 部署 | 单机 Docker Compose + nginx（前端 TLS 边缘）；systemd + restart policy 开机恢复 |
 
-### 1.1 项目定位
+## 二、系统全景
 
-**AIGC_NEWS** 是一个 **AIGC（AI 生成内容）技术资讯聚合与智能问答平台**，集成了七大数据源（HuggingFace Papers、GitHub Trending、Techmeme、Product Hunt、Hacker News、DailyHot 聚合热榜、X/Twitter Watchlist）的自动化采集、RAG（检索增强生成）智能问答、每日简报自动生成、论文阅读等功能。面向 AI 技术从业者、研究人员和产品经理，提供一站式的 AI 领域资讯追踪与深度分析服务。
+```text
+数据源（HF/arXiv · GitHub Trending · Techmeme · Product Hunt · HN · DailyHot · X* · 微信*）
+  → 采集与标准化（crawlers，单源失败隔离）
+  → 富化（README / PDF 补全、LLM 分类打标、中英描述、指标快照与热度分）
+  → PostgreSQL 主写（幂等 upsert）→ 榜单快照（document_rank_snapshots）
+  → 派生索引：Milvus 向量 × 2（文档 / 项目）· Neo4j 论文图谱
+  → Redis 缓存失效 + 首屏预热
+  → 消费面：Dashboard · 项目库 · 论文阅读 · 简报/订阅推送 · AIGC Radar MCP · RAG 对话（维护中）
 
-### 1.2 技术栈
-
-| 层次 | 技术选型 |
-|------|---------|
-| **后端框架** | FastAPI (Python) + Uvicorn |
-| **前端框架** | Vue 3 + TypeScript + Vite + Pinia + TailwindCSS |
-| **LLM 引擎** | OpenAI / Anthropic / Ollama（通过 LangChain 抽象） |
-| **向量数据库** | Milvus 2.4（HNSW 索引 + COSINE 度量） |
-| **图数据库** | Neo4j 5.18（知识图谱） |
-| **关系数据库** | PostgreSQL 16（唯一应用运行时）；MySQL 已退役（迁移/演练资产已删除），SQLite 为非运行时遗留代码 |
-| **缓存** | Redis 7（API 缓存 + Email OTP 验证码 + 防刷） |
-| **对象存储** | MinIO（Milvus 依赖） |
-| **定时调度** | APScheduler（AsyncIOScheduler） |
-| **Embedding** | OpenAI / HuggingFace / Ollama（可切换） |
-| **Reranker** | Pro/BAAI/bge-reranker-v2-m3（硅基流动 /v1/rerank API，远程精排） |
-| **容器化** | Docker Compose（常规运行 10 个服务，另有 2 个 profile-gated 服务：`project-catalog-ops` 运维镜像、`dailyhot` 自托管热榜上游） |
-| **反向代理** | Nginx（前端 SPA） |
-
-### 1.3 整体架构
-
-```
-┌─────────────────────── 前端 (Vue3 + Vite) ───────────────────────┐
-│  Dashboard 仪表盘 │ RAG 智能问答 │ 简报中心 │ 运维监控 │ 论文阅读器 │
-└──────────────────────────────┬────────────────────────────────────┘
-                               │ HTTP / SSE
-┌──────────────────────────────▼────────────────────────────────────┐
-│                      后端 (FastAPI)                                │
-│  ┌─────────┐ ┌──────────┐ ┌───────────┐ ┌────────┐ ┌──────────┐ │
-│  │ API 路由 │ │ RAG 服务 │ │ 简报生成   │ │ 评分   │ │ 认证鉴权 │ │
-│  └─────────┘ └──────────┘ └───────────┘ └────────┘ └──────────┘ │
-│  ┌───────────────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│  │ 数据采集 Pipeline  │  │ 定时调度器    │  │ 监控与评估       │   │
-│  └───────────────────┘  └──────────────┘  └──────────────────┘   │
-└──────────────────────────────┬────────────────────────────────────┘
-                               │
-┌──────────────────────────────▼────────────────────────────────────┐
-│                        数据存储层                                  │
-│  ┌────────────┐ ┌──────────┐  ┌───────┐  ┌───────┐  ┌─────────┐ │
-│  │ PostgreSQL │ │ Milvus   │  │ Neo4j │  │ Redis │  │ PDF存储 │ │
-│  │ 16         │ │ 2.4      │  │ 5.18  │  │ 7     │  │ (本地)  │ │
-│  └────────────┘ └──────────┘  └───────┘  └───────┘  └─────────┘ │
-└──────────────────────────────────────────────────────────────────-┘
-                               │
-┌──────────────────────────────▼────────────────────────────────────┐
-│                       七大数据源                                   │
-│  HuggingFace Papers │ GitHub Trending │ Techmeme RSS              │
-│  Product Hunt       │ Hacker News     │ DailyHot 聚合热榜         │
-│  X/Twitter Watchlist（独立降频调度）                              │
-└───────────────────────────────────────────────────────────────────┘
+* X / 微信为可插拔私有源（source_plugins + 特性开关门控）
 ```
 
----
+一致性模型：PostgreSQL 是结构化事实主库；Milvus / Neo4j / Redis 是可重建派生能力，跨存储采用最终一致（重试 + backfill + 关榜补采），无分布式事务。
 
-## 二、后端 API 层
+## 三、后端架构
 
-所有路由在 `backend/app/main.py` 中挂载，统一前缀 `/api`。
+### 3.1 分层与组合根
 
-### 2.1 认证路由 — `routes_auth.py`
-
-| 方法 | 端点 | 鉴权 | 功能 |
-|------|------|------|------|
-| POST | `/api/auth/send-email-otp` | 无 | 发送邮箱验证码（60s 防刷） |
-| POST | `/api/auth/register` | 无 | 用户注册（邮箱 + 验证码 + 邀请码 + 密码） |
-| POST | `/api/auth/login` | 无 | 用户登录（邮箱 + 密码），返回 JWT |
-| GET | `/api/auth/me` | RequireUser | 获取当前用户信息 |
-
-### 2.2 聊天路由 — `routes_chat.py`
-
-| 方法 | 端点 | 鉴权 | 功能 |
-|------|------|------|------|
-| POST | `/api/chat/stream` | RequireUser | RAG 流式问答（SSE）+ 会话持久化落盘 |
-| POST | `/api/chat/conversations/ensure` | RequireUser | 按 `scope/scope_key` 获取或创建会话 |
-| POST | `/api/chat/conversations/create` | RequireUser | 强制创建新会话（不复用已有会话） |
-| GET | `/api/chat/conversations` | RequireUser | 分页获取当前用户会话列表 |
-| GET | `/api/chat/conversations/{conversation_id}` | RequireUser | 获取指定会话详情与历史消息 |
-| DELETE | `/api/chat/conversations/{conversation_id}` | RequireUser | 删除指定会话及其所有消息 |
-| DELETE | `/api/chat/messages/{message_id}` | RequireUser | 删除指定消息及其后续分支 |
-| POST | `/api/chat/messages/{message_id}/regenerate` | RequireUser | 裁剪消息树后重新生成回复 |
-
-请求体：`{message, history[], temperature?, conversation_id?, attachment_ids?, paper_id?, scope?, web_search?}`
-SSE 事件流：`status → sources → thinking → content → conversation → [DONE]`
-
-- **普通用户每日消息限额**：`/chat/stream` 和 `/chat/messages/{id}/regenerate` 在流式开始前检查当日已发送消息数（`count_user_messages_today()`），超过 `USER_DAILY_MESSAGE_LIMIT`（默认 20 条）时返回 HTTP 429，`detail` 包含 `error: "message_limit_exceeded"` + 友好提示。admin 用户不受限。
-
-- **真流式架构**：`_stream_persisted_chat` 直接遍历 `stream_chat()` 的 AsyncGenerator，每收到一个 payload 立即 `yield` 给前端（边收边发），消除原有"先收完再发"的 60s 阻塞。持久化（关系数据库落盘）改为 SSE 流结束后才执行。
-- `web_search=true` 时，后端并发执行 RAG 检索 + 联网搜索，搜索结果作为额外上下文注入 Prompt，搜索结果来源以 `source="web"` 包含在 sources 事件中
-
-### 2.3 视觉问答路由 — `routes_vision.py`
-
-| 方法 | 端点 | 鉴权 | 功能 |
-|------|------|------|------|
-| POST | `/api/chat/upload-screenshot` | RequireUser | 上传截图 base64 到内存缓存（TTL 5min） |
-| POST | `/api/chat/vision-relay` | RequireUser | 流式视觉问答（SiliconFlow Kimi-K2.5） |
-
-Zero-Disk 设计：图片 base64 只存内存，绝不写盘。
-
-### 2.4 论文路由 — `routes_papers.py`
-
-| 方法 | 端点 | 鉴权 | 功能 |
-|------|------|------|------|
-| GET | `/api/papers/search?q=&limit=` | 无 | 全文搜索（title + summary 模糊匹配） |
-| GET | `/api/papers/top10-today` | 无 | 今日高分 ArXiv 论文 Top10（冷启动推荐） |
-| GET | `/api/papers/{paper_id}` | 无 | 论文详情（含 pdf_media_url） |
-| GET | `/api/papers/{paper_id}/pdf` | 无 | ArXiv PDF 代理（解决 CORS） |
-
-### 2.5 仪表盘路由 — `routes_dashboard.py`
-
-| 方法 | 端点 | 鉴权 | 功能 |
-|------|------|------|------|
-| GET | `/api/dashboard/top` | 无 | 热门文档排行（支持 source/period/date 过滤） |
-| GET | `/api/dashboard/radar` | 无 | 趋势雷达图数据（5 大类目：大模型/智能体/多模态/数据评测/系统部署） |
-| GET | `/api/dashboard/summary` | 无 | 综合仪表盘（Top10 + 雷达 + 统计卡片 + 来源分布） |
-| GET | `/api/dashboard/visitor-count` | 无 | 今日独立访客数（**不缓存**，实时读取 Redis SCARD） |
-| GET | `/api/dashboard/snapshot-dates` | 无 | 有快照数据的日期列表（日历组件用） |
-| GET | `/api/dashboard/github-hot` | 无 | GitHub 热度排行（增长 + 基线 + 年龄修正） |
-
-所有 Dashboard 端点均使用 Redis 缓存（TTL 1h），支持定榜/静默期机制（15:00 CST 定榜）。
-
-**`/api/dashboard/summary` 统计卡片**：`stats` 字段包含以下真实数据：
-- `registered_users`：调用 `db.get_user_count()` 返回注册用户总数（查 users 表）
-- `today_new_documents`：调用 `db.get_today_document_count()` 返回 CST 今日新增文档数
-- `today_unique_visitors`：调用 Redis `SCARD visitor:{YYYY-MM-DD}` 返回今日独立访客 IP 数
-
-**今日独立访客统计机制**（`VisitorTrackingMiddleware`）：
-- 在 `backend/app/main.py` 注册 `VisitorTrackingMiddleware`（Starlette BaseHTTPMiddleware）
-- 每次 HTTP 请求（排除 `/api/media/` 静态文件）提取来源 IP（优先读 `X-Forwarded-For`）
-- 将 IP 写入 Redis SET，Key 格式：`visitor:{YYYY-MM-DD}`（CST 时区），TTL 48 小时
-- Redis SET 天然去重，`SCARD` 即为今日独立访客数，O(1) 性能无副作用
-
-### 2.6 简报路由 — `routes_report.py`
-
-| 方法 | 端点 | 鉴权 | 功能 |
-|------|------|------|------|
-| POST | `/api/report/daily/stream` | RequireAdmin | 流式生成简报（SSE） |
-| GET | `/api/report/latest` | 无 | 获取指定类型/周期的简报缓存 |
-| GET | `/api/report/history` | 无 | 简报历史列表 |
-| GET | `/api/report/{briefing_id}` | 无 | 简报详情 |
-| POST | `/api/report/subscribe` | RequireUser | 订阅简报邮件推送 |
-| POST | `/api/report/unsubscribe` | RequireUser | 取消简报邮件订阅 |
-| GET | `/api/report/subscriptions` | RequireUser | 获取当前用户的活跃订阅列表 |
-| POST | `/api/report/send-to-email` | RequireUser | 将当前简报一次性发送到用户邮箱 |
-| GET | `/api/report/eval/summary` | 无 | RAG 评估统计汇总 |
-| GET | `/api/report/eval/list` | 无 | RAG 评估记录列表 |
-
-### 2.7 运维路由 — `routes_ops.py`
-
-| 方法 | 端点 | 鉴权 | 功能 |
-|------|------|------|------|
-| POST | `/api/ops/ingest` | RequireAdmin | 触发数据采集（智能/强制模式） |
-| POST | `/api/ops/ingest-by-date` | RequireAdmin | 按指定日期采集 |
-| POST | `/api/ops/ingest-source` | RequireAdmin | 按数据源独立采集 |
-| GET | `/api/ops/ingest-source/list` | RequireAdmin | 可用数据源列表 |
-| POST | `/api/ops/clear-data` | RequireAdmin | 清空所有数据（不可逆） |
-| POST | `/api/ops/github-hot/refresh` | RequireAdmin | 刷新 GitHub 热榜 |
-| POST | `/api/ops/github-projects/metrics/refresh` | RequireAdmin | 刷新项目库 GitHub 每日轻量指标快照并重算热度 |
-| POST | `/api/ops/github-projects/metrics/recompute` | RequireAdmin | 基于已有快照重算某天精确增长与热度分 |
-| GET | `/api/ops/scheduler/status` | RequireAdmin | 调度器状态查询 |
-| POST | `/api/ops/scheduler/trigger` | RequireAdmin | 手动触发定时任务 |
-| POST | `/api/ops/briefing/generate-all` | RequireAdmin | 全维度简报批量生成 |
-| POST | `/api/ops/cache/clear-dashboard` | RequireAdmin | 清除 Dashboard 缓存 |
-| GET | `/api/ops/mcp-servers` | RequireAdmin | 列出 MCP Server 配置（Token 仅返回脱敏状态） |
-| POST | `/api/ops/mcp-servers` | RequireAdmin | 新增 Streamable HTTP MCP Server 配置 |
-| PUT | `/api/ops/mcp-servers/{server_id}` | RequireAdmin | 更新 MCP Server 配置（空 Token 保留，clear 标记清空） |
-| DELETE | `/api/ops/mcp-servers/{server_id}` | RequireAdmin | 删除 MCP Server 配置 |
-| POST | `/api/ops/mcp-servers/{server_id}/test` | RequireAdmin | 安全测试外部 MCP 连接，仅执行 initialize / initialized / tools/list |
-
-> `/api/ops/mcp-servers*` 是出站 MCP 配置管理：管理员在这里保存和测试第三方 MCP Server。
-
-### 2.8 入站 MCP 路由 — `routes_mcp.py`
-
-| 方法 | 端点 | 鉴权 | 功能 |
-|------|------|------|------|
-| POST | `/api/mcp` | 无（仅公开只读工具/上下文） | AIGC_NEWS 对外暴露的 Streamable HTTP MCP Server，支持 `initialize`、`notifications/initialized`、`tools/list`、`tools/call`、`resources/list`、`resources/templates/list`、`resources/read`、`prompts/list`、`prompts/get` |
-
-当前 `/api/mcp` 暴露的工具与上下文均为公开只读数据：工具包括仅返回 arXiv 论文的 `search_papers`、跨来源索引搜索 `search_documents`、`get_paper_detail`、`get_top_items`、`search_github_projects`、`search_github_ai_projects`、`get_project_categories`；资源包括 Dashboard 摘要/榜单、论文详情、项目分类/项目库、最新公开简报；Prompt 包括 `daily_research_brief`、`project_discovery`。MCP initialize result 还通过标准 `instructions` 字段发布全局工具路由建议。
-
-面向 Claude Code 等外部 MCP 客户端，项目发现与重大能力复用采用 MCP-first：当用户要求寻找、搜索、推荐、比较或复用 project、repository、开源实现、SDK、framework、component、template、example 或 tutorial 时，即使没有明确说 GitHub/开源，也先调用一个匹配工具；在实现具有自身架构、集成或维护边界的重大模块、完整能力或独立子系统之前，即使没有显式发现意图，也先进行一次项目复用检查。用户要求提升 AI 开发效率、加速 AI 应用交付或减少 AI 工程重复工作时，使用 local-first 的 `search_github_ai_projects`；AI/RAG/LLM/Agent/MCP 工程产物同样走该工具，任意领域非 AI 软件和组件使用 `search_github_projects`，主要交付物明确是论文、文献、survey、引用、作者/venue、学术 benchmark/evaluation、方法/理论、实验或研究结果时使用 `search_papers`。文案/样式、重命名、明确局部 bug、测试/日志/类型、validation/字段调整、简单 CRUD 和孤立函数/组件/endpoint 修改不主动搜索；`search_documents` 仅用于明确的站内新闻或多来源索引搜索。
-
-每个未变化需求最多执行一次初始 MCP 搜索，且不得在首个工具消息中并行提交 MCP 与宿主 `WebSearch` / `WebFetch` / `Bash`；客户端应先检查结果与来源字段，仅当 MCP 调用失败、没有可用或相关结果，或缺少回答所需的具体外部事实时，才针对缺口顺序回退宿主工具。搜到候选不授权自动采用：若复用会改变架构、部署、数据归属、许可证或长期维护，应提供直接复用、仅借鉴设计后自研和完全自研选项并等待用户确认。对于明确的论文/学术文献检索请求，客户端先将自然语言改写为 1-3 个简短技术关键词；`search_papers` 与 REST Papers 搜索共用 repository 的 `title + summary + tags` 检索，但固定增加 `source=arxiv`。MCP 输入仍由 Pydantic 严格校验，项目搜索和 fallback 语义不变。该策略通过 initialize instructions、工具描述、MCP Prompt、连接页可复制 host 指令和回归测试提高稳定性；MCP Server 无法覆盖客户端 system prompt 或强制宿主工具调度，也不改变站内 ChatService 的检索流程。
-
-MCP Server 不暴露 `/api/ops/*`、模型/Provider 密钥、外部 MCP Server Token、用户会话、个人收藏、订阅、任意 SQL/文件访问或采集/调度/缓存写操作；fallback 不写库、不暴露 GitHub Token。
-
-### 2.9 监控路由 — `routes_monitor.py`
-
-| 方法 | 端点 | 鉴权 | 功能 |
-|------|------|------|------|
-| GET | `/api/monitor/health` | RequireUser | 全服务健康检查 |
-| GET | `/api/monitor/metrics` | RequireUser | 运行时指标收集 |
-| GET | `/api/monitor/tasks` | RequireAdmin | 分页采集任务记录 |
-
-### 2.10 静态文件
-
-| 路径 | 功能 |
-|------|------|
-| `/api/media/papers/{filename}.pdf` | PDF 文件静态服务（挂载 `storage/papers` 目录） |
-
----
-
-## 三、核心服务层
-
-### 3.1 RAG 服务 — `backend/app/services/rag/`
-
-#### `chat_service.py`
-- **核心类**: `ChatService`
-- **功能**: RAG 流式问答服务（支持 Tool Use / Function Calling + 联网搜索 + 思维链）
-- **架构**: 两轮 LLM 调用——第一轮非流式（带 tools 让 LLM 判断是否需要查数据库）+ 第二轮流式（根据工具结果 + RAG 上下文生成最终回答）
-- **Tool Use 工具**:
-  - `query_ranking`: 查询排行榜数据（支持 source/period/limit 参数），从 `documents` 表按 CST 日期过滤
-  - `query_knowledge_stats`: 查询知识库统计和文档列表（支持 source/limit 参数），调用 `get_source_counts()` 获取各来源总量
-- **流程**: 并发执行 RAG 检索 + LLM 工具判断 + 可选联网搜索 → 如有 tool_calls 则执行工具 → 智能精排 → 构建上下文（工具结果 + RAG + 联网搜索） → LLM 流式生成
-- **LLM 调用**: 绕过 LangChain，使用 `raw_openai_streamer.py` 中的 `chat_completions()`（非流式，带 tools）和 `stream_chat_completions()`（流式）
-- **推理模型配置**: 通过 `THINKING_MODEL_NAME` 环境变量指定支持思维链的模型，留空则复用 `CHAT_MODEL_NAME`
-- **思维链格式**: Cherry Studio 风格流式增量推送，前端累积显示
-- **多轮对话**: 保留最近 5 轮历史（可配置）
-- **上下文模板**: 包含 `[arxiv]`、`[github]`、`[news]`、`[producthunt]`、`[hackernews]`、`[neo4j]`、`[web-N]`、`[db-query]` 八类来源标注
-- **联网搜索集成**: `web_search_enabled=True` 时与 RAG 检索并发执行，结果追加到上下文末尾
-- **GitHub 结构化字段（Bug1 修复）**: `_build_context()` 对 `source=github` 的文档额外追加 `[GitHub 数据] Stars: {n} | Forks: {n} | Language: {lang} | URL: {url}` 行
-
-#### `raw_openai_streamer.py`
-- **功能**: 直接调用 OpenAI 兼容 API 的流式 / 非流式客户端
-- **两个入口函数**:
-  - `stream_chat_completions()`: 流式 SSE 调用，逐事件 yield `StreamDelta(reasoning, content)`
-  - `chat_completions()`: **非流式调用，支持 `tools` 参数**，返回 `ChatCompletionResult(content, reasoning, tool_calls, finish_reason)`，用于 Tool Use 第一轮判断
-- **数据类**: `StreamDelta`（流式增量）、`ToolCallResult`（单个工具调用：id/name/arguments）、`ChatCompletionResult`（非流式返回）
-- **背景**: LangChain `ChatOpenAI` 丢弃 `reasoning_content` 扩展字段
-- **配置**: 复用 `settings.openai_api_key`、`settings.openai_base_url`
-- **超时**: 流式 180s + 非流式 60s
-
-#### `web_search_service.py`
-- **功能**: 联网搜索统一入口，使用 Kimi 内置 `$web_search` builtin_function 实现联网搜索
-- **实现**: 两轮 tool_calls 循环——Round 1 发送带 `$web_search` 工具声明的请求，收到 `finish_reason=tool_calls` 后，将 `arguments` 原封不动提交给 Kimi（role=tool 消息）；Round 2 Kimi 执行搜索并返回结果文本
-- **配置项**: 复用 `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `CHAT_MODEL_NAME`，无需额外配置
-- **结果解析**: `_parse_kimi_search_response()` 从 Kimi 返回的 Markdown 文本中提取结构化链接和摘要
-- **返回格式**: `List[WebSearchResult]`（title/url/snippet/content），统一转换为 `source="web"` 的来源格式
-- **异常策略**: 任何后端失败自动切换，全部失败时返回空列表，不中断主流程
-
-#### `retriever.py`
-- **核心类**: `HybridRetriever`
-- **混合检索策略**:
-  1. **关系型 repository 文档 ID 精确召回**: 从 query 中提取 32 位 `documents.id`（论文阅读页会通过 `paper_id` 注入当前论文 ID），通过 document repository 按主键查询 PostgreSQL；命中后写入元数据 `match_type=documents_id`、`force_include=true`、`rerank_score=10.0` 并优先注入上下文。ArXiv 且 `local_pdf_path` 存在时补充本地 PDF 前 20000 字符正文，保证“详细讲一下这篇论文”等泛化问题也能读到目标论文内容
-  2. **关系型 repository 标题召回**: 对用户输入中的英文关键词执行 title 近似匹配，优先召回标题高度命中的已收录论文/项目；当命中 ArXiv 且 `local_pdf_path` 存在时，会从本地 PDF 补充前 6000 字符正文片段，避免只使用关系表中的 500 字符元数据摘要导致回答误判“摘要被截断”
-  3. **Milvus 向量检索**: 按 query embedding 相似度搜索，HNSW 索引；若 ID 召回命中，会把目标论文标题拼入向量检索 query，提升同论文 PDF 分块召回概率
-  4. **Neo4j 图检索**: 按关键词匹配知识图谱实体和关系
-  5. **关系型 repository Fallback**: 当 Milvus 不可用时，通过 document repository 在 PostgreSQL 中执行关键词匹配
-  6. **Source Fallback**: 每个来源（arxiv/news/github）额外取 3-5 条保证覆盖
-- **去重合并**: repository ID 精确命中文档优先，其次标题命中文档，然后 Round-Robin 均衡各来源文档，ID/URL/标题去重
-- **关键词提取**: 简单 token 化 + 停用词过滤
-
-#### `reranker.py`
-- **模型**: Pro/BAAI/bge-reranker-v2-m3（调用硅基流动 `POST https://api.siliconflow.cn/v1/rerank`）
-- **策略**: 仅对 vector/hybrid 来源文档调用 API 精排，fallback 文档直接透传
-- **智能跳过**: `stream_chat` 中检查 vector 文档的 Milvus COSINE 距离分数，若最佳分数 > 0.6（全部不太相关），直接跳过 reranker API 调用，节省 2-5 秒网络延迟
-- **阈值**: `RELEVANCE_THRESHOLD = 0.7`（relevance_score，0-1 范围；从 0.5 提高到 0.7 以减少不相关参考来源数量）
-- **最大文档数**: 一次精排最多 5 篇
-- **分数转换**: relevance_score × 10 → 0-10 显示分
-- **配置项**: `SILICONFLOW_API_KEY`、`RERANKER_MODEL_NAME`（均在 `.env` 中配置）
-- **无本地模型**：不再依赖 sentence-transformers / 本地 GPU，冷启动即用
-
-#### `generator.py`
-- 提供聊天完成、流式生成和 Web 搜索适配；`citation_mapper.py` 占位壳已在确认无调用者后删除
-
-### 3.2 简报生成服务 — `backend/app/services/briefing/`
-
-#### `daily_briefing.py`
-- **核心类**: `DailyBriefingService`
-- **功能**: 生成并持久化日/周/月简报
-- **8 种简报模板**: all（综合）、arxiv（学术）、github（工程）、news（行业）、producthunt（产品）、hackernews（社区）、x（X 动态）、dailyhot（全网热榜）
-- **3 种周期**: daily / weekly / monthly
-- **数据来源优先级**: 快照表 → documents 表 + channel 过滤 → 最新文档兜底
-- **截断续写**: 检测 LLM 输出是否被截断，最多自动续写 5 轮
-- **缓存策略**: 按 `{date}_{source}_{period}` 作为 key 持久化到 PostgreSQL `briefings` 表
-- **SSE 流式输出**: `start → content(多次) → done`
-- **Tag 标签（Bug3 修复 + 优化）**: 全部 8 个 Prompt 模板均已升级为细粒度领域标签系统——每个一级/二级标题后必须附加 `\`#来源\` \`#领域\``，来源标签（必选1个，如 `#arxiv` `#github`）+ 领域标签（必选1-2个，如 `#LLM` `#Agent` `#RAG` `#推理优化` `#模型压缩` 等），每个源类型有独立的领域标签候选列表，**禁止使用过于宽泛的 #ai #tool #trending**
-
-### 3.3 数据采集服务 — `backend/app/services/ingestion/`
-
-#### `pipeline.py`（核心编排器）
-- **核心类**: `IngestionOrchestrator`
-- **架构**: 7 个独立爬虫 → 内容丰富 → 三库写入（PostgreSQL + Milvus + Neo4j）
-- **入口函数**:
-  - `run_ingestion_pipeline()`: 全量采集
-  - `run_single_source_pipeline()`: 单源采集
-  - `run_smart_ingestion()`: 智能补录
-- **关键流程**:
-  1. 爬虫采集（fetch_all_periods）
-  2. 已有 summary 短路复用（避免重复 LLM 调用）
-  3. 内容丰富（enrich_papers）
-  4. Top-N 筛选（按 raw_score 排序）
-  5. 三库写入（repository upsert + Milvus 向量索引 + Neo4j 图谱抽取）
-  6. 排行快照写入（document_rank_snapshots 表）
-  7. 后台 PDF 补全（ArXiv 论文异步下载 + 解析）
-  8. Dashboard 缓存清理
-
-#### `base_crawler.py`（爬虫基类）
-- **抽象基类**: `BaseCrawler`
-- **标准化结果**: `CrawlResult`（source、channel、snapshot_date、period、items、error）
-- **异常安全**: 任何异常都被捕获，返回 error CrawlResult，不影响其他源
-- **并发调度**: `fetch_all_periods()` 使用 `asyncio.gather()` 并发采集所有周期
-
-#### 爬虫实现（`crawlers/`）
-
-| 爬虫文件 | 数据源 | 周期 | Channel |
-|---------|--------|------|---------|
-| `arxiv_crawler.py` | HuggingFace Papers | daily/weekly/monthly | `huggingface_{period}_html` |
-| `github_crawler.py` | GitHub Trending | daily/weekly/monthly | `github_trending_{period}` |
-| `news_crawler.py` | Techmeme RSS + HTML | daily only | `techmeme_daily_rss` |
-| `producthunt_crawler.py` | Product Hunt Apollo SSR | daily only | `producthunt_daily_html` |
-| `hackernews_crawler.py` | HN Firebase API Top-30 | daily only | `hn_daily_html` |
-| `dailyhot_crawler.py` | DailyHot 聚合热榜（编排内网自托管 DailyHotApi，部署与端点清单见 [`dailyhot-source.md`](dailyhot-source.md)） | daily only | `dailyhot_daily` |
-| `x_crawler.py` | X/Twitter Watchlist（可插拔源：传输层实现位于私有插件包 `aigcnews_private`，运维见 [`x-source-runbook.md`](x-source-runbook.md)） | daily only | `x_daily_watchlist` |
-
-> 采集管线之外还有两类独立服务模块：`services/x_watch/`（X watchlist 管理与单账号采集探测，watchlist 与凭据落库后成为唯一事实源）与微信公众号链路（关注/文章同步与搜狗微信公开索引发现，走自有 `routes_wechat*.py` 路由，不经 ingestion 爬虫注册表）。X 与微信均为**可插拔源**：公共仓只保留契约（`services/source_plugins/`）与存储/展示层，敏感抓取实现位于仓库外私有包 `aigcnews_private`，经 `x_source_enabled` / `wechat_source_enabled` 开关门控，插件缺失时对应路由 404、采集轮跳过。
-
-#### 底层数据获取库（`source_*.py`）
-
-| 文件 | 功能 |
-|------|------|
-| `source_arxiv_mcp.py` | 爬取 HuggingFace Papers 页面获取 ArXiv 论文列表 |
-| `source_github_trending.py` | 爬取 github.com/trending 页面 |
-| `source_github.py` | GitHub API 获取仓库信息 |
-| `source_github_mcp.py` | GitHub MCP 协议接口 |
-| `source_news.py` | Techmeme RSS + HTML 双通道采集 |
-| `source_producthunt.py` | Product Hunt 主页 Apollo SSR Transport 解析 |
-| `source_hackernews.py` | Hacker News Firebase API |
-| `source_huggingface.py` | HuggingFace API（已禁用） |
-
-#### `content_enricher.py`（内容丰富器）
-- **ArXiv**: 两阶段策略 — 先用摘要快速入库，后台异步下载 PDF 补全全文
-- **GitHub**: 抓取仓库 README（GitHub API base64 解码）
-- **News**: httpx 抓详情页 → BeautifulSoup 提取正文
-- **HackerNews**: httpx 抓外链详情页 → BS4 提取正文
-- **ProductHunt**: 保持 tagline + description（已足够）
-
-#### `arxiv_pdf_downloader.py`（PDF 下载器）
-- ArXiv XML API 批量拉取元数据
-- 低频慢速 PDF 落盘（每次 sleep 3-5s 防封杀）
-- PyMuPDF (fitz) 解析 PDF 全文
-- RecursiveCharacterTextSplitter 切片写入 Milvus
-- 通过 document repository 更新 `documents.local_pdf_path` 字段
-
-#### `graph_extractor.py`（图谱抽取器）
-- 使用 LangChain `LLMGraphTransformer` 从论文中提取实体和关系
-- 允许的节点类型：`Paper`、`Author`、`Concept`
-- 仅对 ArXiv 源执行图谱抽取
-
-#### `github_hot_service.py`（GitHub 热度服务）
-- 维护 GitHub 候选池（`github_repo_candidates` 表）
-- 周期性快照（`github_repo_snapshots` 表）
-- 基于增长 + 基线 + 年龄修正的 Dashboard 热度排名算法
-
-#### `github_project_metrics_service.py`（GitHub 项目库每日指标）
-- 每天对项目库 GitHub 仓库抓取轻量指标快照，不抓 README、不调用大模型
-- 优先基于连续自然日快照计算精确 `daily_star_growth`；缺少昨天快照时，仅对同日 GitHub Trending 日榜项目采用页面报告的 `stars today`
-- 通过 `daily_growth_source` 区分 `snapshot_delta`、`github_trending_daily` 与 `unavailable`；周榜/月榜增长不会作为今日增长
-- 写入 `github_repo_daily_metrics`，按规模校正增长、增长加速度、绝对增长、维护活跃、社区参与计算 `hot_score`
-- 内部 `watchers` 专指 GitHub 通知订阅者：REST 使用 `subscribers_count`，GraphQL 使用 `watchers.totalCount`；REST `watchers_count` 是 stars 的兼容别名，禁止作为社区指标。Search/Trending 缺少订阅者明细时标记 `community_metrics_complete=false`，不会计算社区增长
-- `daily_hot_v5` 的增长加速度使用平滑比例 `(daily_growth + 1) / (7d baseline + 1)`，在 `0.25/0`、`0.5/20`、`1/40`、`2/75`、`4/100` 锚点间按对数比例连续插值并在区间外钳制；非正增长为 0，最终仍乘 `min(有效基线样本数 / 3, 1)` 置信度
-- 新计算或重算的指标写入 `daily_hot_v5`；历史评分保留原版本，除非显式重算对应日期
-- 项目库 `sort=hot` 使用 `hot_score DESC, daily_star_growth DESC`，今日暴涨展示两种有效当日来源中的全局热度前 50
-
-### 3.4 评分服务 — `backend/app/services/scoring/`
-
-#### `value_scorer.py`
-- LLM 价值评分器（创新性 1-10 + 实用性 1-10）
-- 带 429 指数退避重试
-- 用于 pipeline 入库前过滤低质量论文
-
-#### `llm_scorer.py`
-- LLM 异步批量评分器
-- Semaphore 并发控制（默认 1 并发）
-- 对 Document 列表打分（技术创新性 + 社区影响力，0-10 分）
-
-### 3.5 评估服务 — `backend/app/services/evaluation/`
-
-#### `rag_metrics.py`
-- **recall_score**: 基于 Jaccard 的 token 级别召回率
-- **citation_score**: 答案中引用来源的覆盖率
-- **subjective_score**: 主观评分（占位，默认 0）
-- 评估结果通过 evaluation repository 持久化到 PostgreSQL `rag_evaluations` 表
-
-### 3.6 邮件服务 — `email_service.py`
-
-- **OTP 验证码**: Redis 存储邮箱 OTP 验证码（TTL 5min）+ 防刷锁（TTL 60s）
-- **简报邮件推送**: `send_briefing()` 方法将 Markdown 简报内容转换为精美 HTML 邮件，支持标题/粗体/链接/列表/引用的 Markdown→HTML 转换
-- Dev 模式（`SMTP_HOST` 为空）：OTP 和简报邮件均打印到控制台日志，不发送真实邮件
-- 生产模式：通过 `aiosmtplib` 异步发送 SMTP 邮件（支持 STARTTLS / SSL）
-- `_send_email()` 发送纯文本邮件（OTP），`_send_html_email()` 发送 HTML 邮件（简报推送）
-- Key 前缀：`email:code:{email}` / `email:lock:{email}`
-- **SMTP 配置热生效**: `smtp_config_provider.resolve_smtp_config()` 统一供给全部邮件发送路径（注册 OTP、简报推送、调度器简报）。管理员在监控页保存的配置经 `smtp_settings` 表（单行）入库并优先于 `SMTP_*` 环境变量，60s TTL 缓存使后台任务免重启沿用新配置；DB 行的空密码回落 `SMTP_PASSWORD` env，主机留空保存即删行回退 env。读取失败仅记 warning 并回退 env，不影响发送链路可用性
-- 保留 `sms_service.py`：当前全仓库无调用方，作为延期能力保留；云厂商短信通道（阿里云/腾讯云）属于未授权的外部网络集成，接入前需独立授权并补契约测试（即使配置 api_key 也只记录日志、不出网）
-
-### 3.7 会话服务 — `backend/app/services/chat/`
-
-#### `conversation_service.py`
-- **核心类**: `ConversationService`
-- **功能**: 服务端会话创建、消息落盘、消息树裁剪、LRU 清理
-- **作用域模型**: `scope=global|paper`，历史上支持论文专属会话；当前论文阅读页默认共用 `global` 会话，`paper_id` 只作为 RAG 当前论文上下文传递，不再强制把会话落库为 `paper` 作用域
-- **持久化策略**: 在 `/api/chat/stream` 完成后同时写入 `user` 与 `assistant` 两条消息，并刷新会话统计
-- **裁剪策略**:
-  - 每用户最多保留 10 个会话
-  - 每会话最多保留 10 条消息
-  - `regenerate` 时删除目标消息之后的派生消息，再用同一会话重新生成
-- **清理策略**: 暴露 `cleanup_stale_conversations()` 供调度器每 7 天批量清理 5 条过期会话
-
-### 3.8 索引服务 — `backend/app/services/indexing/`
-
-- GitHub 项目语义索引由 `github_project_semantic_indexer.py` 实现
-- 通用文档切片、嵌入与向量存储由 `milvus_repo.py` 和采集服务实现；无调用者的 `chunker.py`、`embedder.py`、`vector_store.py` 占位壳已删除
-
----
-
-## 四、数据存储层
-
-### 4.1 PostgreSQL 16 — repository Protocol 与 composition root
-
-PostgreSQL 16 是唯一应用关系型运行时。业务、REST、MCP 与 SSE 调用方依赖 `backend/app/repositories/*_repository.py` 中按能力拆分的 Protocol，不依赖具体数据库类；`backend/app/repositories/application_repository_factory.py` 负责构造 PostgreSQL 实现，`backend/app/main.py` 的 FastAPI lifespan 是 composition root，统一打开/关闭连接并将 repository 集合注入应用。
-
-服务层不再存在进程级仓储回退：采集、简报、RAG 评估、GitHub 富化/指标/热度、语义索引等入口一律要求显式注入依赖，仅应用组合根（`main.py` lifespan）与有边界的 CLI/脚本组合点（如 `run_ingestion.py`、`scripts/backfill_*.py`）可以装配仓储。模型运行时的提供商设置读取器同样由 lifespan 显式绑定（`configure_runtime_provider_settings`），关闭时解绑；未绑定时读取直接报错而非隐式回退。架构测试以 AST 扫描固化：生产代码中仅 `main.py` 允许引用仓储装配上下文。
-
-主 `docker/docker-compose.yml` 只声明 `project-catalog-postgres`，不声明 MySQL。MySQL 相关 Compose、迁移与演练资产已随迁移验收结束从仓库删除，仓库内不存在 MySQL 启动或请求路径；生产 MySQL 容器停用与数据卷最终处置属独立运维授权边界，按 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md) 执行。
-
-**数据库表结构**:
-
-| 表名 | 功能 | 关键字段 |
-|------|------|---------|
-| `documents` | 文档元数据主表 | id(md5), source, source_channel, title, url, summary, score, raw_score, rank_in_period, in_daily/weekly/monthly, local_pdf_path |
-| `document_rank_snapshots` | 每日排行快照（历史记录） | doc_id, snapshot_date, source_channel, rank_in_period, raw_score |
-| `ingestion_tasks` | 采集任务记录 | task_name, status, started_at, finished_at, item_count |
-| `briefings` | 简报缓存 | date(含 source+period 后缀), content |
-| `briefing_subscriptions` | 简报邮件订阅 | user_id, email, source, period, is_active, UNIQUE(user_id,source,period) |
-| `rag_evaluations` | RAG 评估记录 | query, answer, sources_json, recall_score, citation_score |
-| `users` | 用户表 | id, phone(可空/兼容旧数据), email(UNIQUE), email_verified, invite_code_used, username, hashed_password, role(user/admin) |
-| `conversations` | 会话主表 | user_id, scope, scope_key, title, last_message_preview, message_count, last_accessed_at, updated_at |
-| `chat_messages` | 聊天消息表 | conversation_id, role, content, thinking, sources_json, attachments_json, parent_message_id |
-| `chat_attachments` | 聊天附件表 | user_id, conversation_id, file_name, mime_type, modality, parse_status, meta_json |
-| `github_repo_candidates` | GitHub 候选池 | repo_id, full_name, stars, forks, watchers |
-| `github_repo_snapshots` | GitHub 原始快照 | repo_id, snapshot_date, stars, forks, watchers, open_issues |
-| `github_repo_daily_metrics` | GitHub 项目库每日派生指标 | repo_id, metric_date, daily_star_growth, daily_growth_available, daily_growth_source, hot_score |
-| `github_trending_hits` | GitHub Trending 命中记录 | repo_id, period, rank, observed_date, period_star_growth, period_growth_observed_at |
-
-**关键操作**:
-- `upsert_document()`: PostgreSQL `ON CONFLICT DO UPDATE`，以 `GREATEST()` 语义确保多周期 upsert 不丢失
-- `upsert_rank_snapshot()`: 排行快照 UPSERT，跨 channel 分数同步
-- `get_snapshot_documents()`: JOIN 快照表查询指定日期的文档排行
-- `get_or_create_conversation()`: 按 `scope/scope_key` 获取或创建会话
-- `create_chat_message()`: 写入聊天消息并自动序列化 `sources/attachments`
-- `trim_conversation_messages()`: 每会话 LRU 保留最近 10 条消息
-- `trim_user_conversations()`: 每用户 LRU 保留最近 10 个会话
-- `cleanup_stale_conversations()`: 删除最近 7 天未访问队列中最旧的 5 条会话
-- `get_user_count()`: 返回 users 表已注册用户总数（Bug2 新增）
-- `get_today_document_count()`: 返回 CST 今日新增文档数（Bug2 新增，按 created_at 前 10 字符过滤）
-- `count_user_messages_today()`: 统计指定用户今日（CST）发送的消息数（JOIN conversations + chat_messages，`role='user'`，按 PostgreSQL 时区表达式换算 CST），用于每日消息限额检查
-
-### 4.2 Milvus 2.4 — `milvus_repo.py`
-
-**核心类**: `MilvusRepository`
-
-| 功能 | 说明 |
-|------|------|
-| `add_documents()` | GitHub 结构化字段增强 → 文档切片（800 字符/100 重叠）→ Embedding → 写入 Milvus，返回 `bool` 标识写入是否成功 |
-| `_enrich_github_content()` | 对 `source=github` 文档在切片前追加 `Stars: n \| Forks: n \| Language: lang`（Bug1 修复） |
-| `search()` | 向量相似度搜索（HNSW，ef ≥ k 且 ≥ 64） |
-| `search_by_source()` | 按 source 字段过滤查询（保证每源有代表） |
-| `drop_collection()` | 删除整个 Collection |
-
-**配置**: Collection `aigc_docs`，维度 1024，HNSW 索引，COSINE 度量。
-
-### 4.3 Neo4j 5.18 — `graph_repo.py`
-
-**核心类**: `GraphRepository`
-
-| 功能 | 说明 |
-|------|------|
-| `search()` | 按关键词匹配图谱节点及其邻居，返回 `Entity(name) -[REL]-> Entity(name)` 格式文档 |
-| `add_graph_documents()` | 写入节点（Paper/Author/Concept）和关系（MERGE 幂等） |
-
-### 4.4 遗留关系数据库边界
-
-- MySQL：已退役，仓库不再包含其运行时、Compose 与迁移/演练资产；生产容器停用、凭据撤销与数据卷最终处置属独立运维授权边界（见 [`mysql-retirement-runbook.md`](mysql-retirement-runbook.md)）。
-- SQLite：遗留代码，不是备用运行时，也不在主 Compose 中启动。
-- 任何新增业务持久化都应先定义 repository Protocol，再由 composition root 组装 PostgreSQL 实现。
-
-### 4.5 Redis 7
-
-| 用途 | Key 前缀 | TTL |
-|------|---------|-----|
-| API 缓存 | `aigc-cache:` | 1 小时 |
-| Email OTP 验证码 | `email:code:{email}` | 5 分钟 |
-| Email OTP 防刷锁 | `email:lock:{email}` | 60 秒 |
-
----
-
-## 五、认证鉴权
-
-### `auth.py`
-
-| 组件 | 说明 |
-|------|------|
-| **密码哈希** | bcrypt（直接使用 bcrypt 库，不依赖 passlib） |
-| **JWT** | python-jose，HS256 算法，默认 7 天过期，payload 含 `user_id`、`role`、`email` |
-| **依赖注入** | `RequireUser` — 需要有效 Bearer JWT |
-| | `RequireAdmin` — 需要 role='admin' |
-
-### 注册 / 登录流程（Phase 4 邮箱机制）
-
-| 步骤 | 说明 |
-|------|------|
-| 发送验证码 | `POST /api/auth/send-email-otp { email }` → Redis OTP TTL 5min + 防刷锁 60s |
-| 注册 | `POST /api/auth/register { email, email_code, password }` → 校验 OTP（5 次尝试上限）→ 写库（开放注册，IP 限速 10 次/10 分钟） |
-| 登录 | `POST /api/auth/login { email, password }` → 返回 JWT |
-| 获取信息 | `GET /api/auth/me` → `{ user_id, email, role }` |
-
-### 权限模型
-
-```
-游客 ──POST /auth/register──▶ 普通用户（需邀请码）
-游客 ──POST /auth/login────▶ 普通用户
-
-普通用户 (RequireUser):
-  ├── RAG 问答 (/chat/stream)        ← 每日限 20 条消息（USER_DAILY_MESSAGE_LIMIT）
-  ├── 视觉问答 (/chat/vision-relay)
-  ├── 健康检查 (/monitor/health)
-  ├── 论文阅读 (/papers/:id/read)
-  ├── 简报订阅 (/report/subscribe, /report/unsubscribe)
-  ├── 查看订阅 (/report/subscriptions)
-  └── 发送简报到邮箱 (/report/send-to-email)
-
-管理员 (RequireAdmin):
-  ├── 运维操作 (/ops/*)
-  ├── 监控面板 (/monitor/tasks)
-  ├── 简报生成 (/report/daily/stream)
-  └── RAG 问答不受每日消息限额限制
+```text
+Transport   api/routes_*.py        REST + SSE + MCP 入口，DTO 与鉴权
+Service     services/*             领域逻辑（采集、RAG、简报、项目搜索、推送、MCP…）
+Repository  repositories/*_repository.py   按能力拆分的 Protocol（端口）
+Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适配器
 ```
 
----
+- **组合根** = `main.py` lifespan：`create_application_repositories(postgres)` 构造 30 字段的冻结 dataclass `ApplicationRepositories`，将每个 Protocol 绑到 PostgreSQL 实现，注入 `app.state`；`application_repository_context.py` 持进程级单例供少量边界场景读取。
+- 架构测试以 AST 扫描固化：生产代码仅 `main.py` 允许装配仓储；服务层一律显式注入，无隐式回退。
+- 项目库读路径例外：`project_catalog_factory.get_project_catalog_repository()` 每次调用解析（大表查询汇聚在 `postgres_project_catalog.py`）。
 
-## 六、定时任务
+**lifespan 启动顺序**：JWT 密钥校验（弱/缺即拒启）→ PG 连接池 + 迁移账本检查（pending 仅告警）→ 监控运行时 → 仓储组装（含 runtime provider / SMTP 读取器绑定）→ 附件孤儿对账 → operations 运行时 → 模型 Provider 运行时 → 项目搜索运行时 + RAG provider → 语义预热任务（开关门控）→ Redis + FastAPICache（失败降级不致命）→ 调度器（读 DB 任务配置后注册）。关闭按相反顺序，调度器与运行时各有优雅退出宽限。
 
-### `scheduler.py`
+### 3.2 API 路由总表
 
-| Job ID | 调度频率 | 功能 |
-|--------|---------|------|
-| `arxiv_papers` | 每小时 :01 | HuggingFace Papers 论文采集 |
-| `github_trending` | 每小时 :02 | GitHub Trending 热榜采集 |
-| `news_techmeme` | 每小时 :03 | Techmeme 科技新闻采集 |
-| `producthunt` | 每小时 :04 | Product Hunt 新品采集 |
-| `hackernews` | 每小时 :05 | Hacker News AI 热帖采集 |
-| `x_watchlist` | 每 2 小时 :06 | X Watchlist 推文采集（降频，`coalesce` 错过合并） |
-| `x_credentials_probe` | 每 2 小时 :08 | X 凭据可用性探测 |
-| `dailyhot_hotlists` | 每小时 :07 | DailyHot 聚合热榜采集 |
-| `github_project_daily_pipeline` | 每天 02:00 | GitHub 项目库每日管线（候选池与快照） |
-| `daily_briefing` | 每天 08:00 | 全维度简报自动生成（8 个维度 × daily） |
-| `conversation_cleanup` | 每 7 天 03:30 | 清理 5 条 7 天未访问的旧会话 |
+全部挂在 `/api` 前缀下。鉴权：`RequireUser` / `RequireAdmin`（JWT）、`OptionalUser`、`OptionalMcpUser`（MCP token）。
 
-**设计原则**:
-- 各信息源分钟位错开（:01–:08）避免同时触发；X 相关任务按每 2 小时降频调度
-- `max_instances=1` 防止同源 Job 重叠
-- `misfire_grace_time=7200` 确保重启后追赶执行
-- 会话历史由调度器与服务层触发式 LRU 双层清理协同完成
+| 文件 | 鉴权 | 内容 |
+|---|---|---|
+| `routes_auth.py` | 公开 + RequireUser | 邮箱 OTP 注册 / 登录 / 忘记密码重置；`/auth/me`；`/auth/me/mcp-tokens` CRUD（IP 与账号双维限流） |
+| `routes_dashboard.py` | 公开，Redis 缓存 | top / radar / summary / live-stats / snapshot-dates / visitor-count / x/recent；静默期读侧拦截 |
+| `routes_github_projects.py` | OptionalUser / RequireUser | 公共项目库检索、分类、taxonomy；我的收藏、工具书架 CRUD |
+| `routes_papers.py` | 公开 | 论文搜索、top10-today、详情、PDF 代理（本地重定向或 arxiv 回源） |
+| `routes_report.py` | 公开 + RequireUser + RequireAdmin | 简报读取（公开）；订阅 / 立即发送（用户）；SSE 生成、评估记录（管理员） |
+| `routes_push.py` | RequireUser | 推送渠道（邮箱 OTP / webhook 验证、测试）与订阅 CRUD |
+| `routes_chat.py` / `routes_attachments.py` / `routes_vision.py` | RequireUser | 对话 SSE、会话与消息管理、附件（图片入 Redis 零落盘 / PDF 落盘解析）、视觉问答 |
+| `routes_mcp.py` | OptionalMcpUser | **POST `/api/mcp` 单端点**，JSON-RPC 全协议（见第七节） |
+| `routes_monitor.py` | 公开 + RequireAdmin | `/live` `/ready` 健康探针（公开）；health / metrics / tasks（管理员） |
+| `routes_ops.py` + 4 个子路由 | RequireAdmin | 采集触发 / 数据清理 / 调度器状态与配置 / Provider 配置与测试 / 简报批量 / 缓存清理 / 项目运维；`routes_ops_github.py`（爬取、富化、推荐、指标）、`routes_ops_mcp.py`（出站 MCP 配置）、`routes_ops_smtp.py`（SMTP 面板）、`routes_ops_x.py`（见下行） |
+| `routes_ops_x.py` | RequireAdmin | X watchlist / 凭据池 CRUD 与测活、日榜快照回填 |
+| `routes_wechat.py` / `routes_wechat_media.py` | 插件门控 + 角色 | 公众号扫码登录、账号与文章同步（管理员）；关注目录与 Feed（用户）；mmbiz 媒体代理（公开但 IP 限流） |
+| `routes_x_media.py` | 插件门控，公开 | twimg 图片代理、mp4 首帧封面（IP 限流；`<img>` 无法带 Authorization 故公开） |
+| `routes_features.py` / `routes_sitemap.py` | 公开 | 特性开关播报；近 90 天论文页 sitemap |
 
----
+特性开关：`x_source_enabled` / `wechat_source_enabled` 以 router 级依赖实现"关闭即 404，等同未部署"；`chat` 另有 `CHAT_SERVICE_ENABLED` 总开关。
 
-## 七、前端架构
+### 3.3 核心服务域（`backend/app/services/`）
 
-### 7.1 技术栈
+| 域 | 职责要点 |
+|---|---|
+| `ingestion/` | 7 源爬虫编排（`pipeline.py`）；内容富化；**项目库管线**：候选池、每日指标快照与 `daily_hot_v5` 热度、LLM 分类打标（中英）、README 语义索引源；arXiv PDF 异步下载切片；采集后缓存失效 + 首屏预热 |
+| `project_catalog/` + `project_discovery.py` / `project_search_runtime.py` / `project_semantic_search.py` / `project_reranker.py` | 项目检索分层：PG 关键词候选 × Milvus 语义候选 → 融合 → 回库水合 → 门槛/分类过滤 → 排序；本地零结果时限量只读 GitHub fallback；legacy/v2 影子对比用于验证切换 |
+| `rag/` | ChatService：混合召回（文档 ID 精确 → 标题 → Milvus → Neo4j → 来源均衡）→ reranker 精排（COSINE>0.6 智能跳过）→ 可选 Kimi 联网 → 两轮 LLM（工具判断 + 流式生成）；直连 OpenAI 兼容 API 保留 reasoning 字段 |
+| `briefing/` | 8 维度 × 3 周期简报生成（快照优先、截断续写 ≤5 轮、按日期持久化）；订阅派发编排 |
+| `chat/` | 会话 CRUD 与 LRU 裁剪（每用户 10 会话 × 每会话 10 消息）、附件生命周期、每日消息配额 |
+| `dashboard/` | 快照日期解析、榜单装配、雷达类目与静默期 policy（读侧 embargo） |
+| `push/` | 渠道服务（邮箱 OTP / webhook 探测验证、SSRF 防护、密钥封缄）；订阅 CRUD；`dispatch_service` 幂等投递（`push_deliveries` 按 issue 去重） |
+| `mcp/` | 见第七节（入站 Server）；另有出站方向：外部 MCP Server 配置 CRUD + 安全连接测试（token 脱敏投影、协议 2025-06-18、5s/10s 超时、钉住目标防 SSRF） |
+| `email/` + `email_service.py` | OTP 存储（注册 / 重置 / 推送验证三套键）、SMTP 发送、`smtp_config_provider` DB 覆盖 env 的热配置（60s TTL） |
+| `runtime_provider/` | 应用级模型 Provider 池（管理面板可改、300s 延迟关闭旧客户端）；chat/embedding 工厂 |
+| `vision/` | SiliconFlow Kimi-K2.5 视觉问答；截图进程内缓存 TTL 300s，零落盘 |
+| `x_watch/` `x_credentials/` `x_janitor/` | X watchlist 管理；凭据池 CRUD + 测活；已删推文清理（fail-closed） |
+| `source_plugins/` | 私有插件加载器：X 传输层与微信门面的公共契约 + fail-closed 加载；开关关或包缺失即 404 / 跳过 |
+| `media_cache.py` | 微信 / X 媒体共享磁盘缓存（LRU + TTL，默认 512MiB / 7 天） |
+| `*_admin.py` | 运维面服务（采集、爬取、富化、调度配置、SMTP、快照回填、数据清理…），全部仅管理员 |
+| `evaluation/` | RAG 评估（token 级召回 / 引用覆盖），结果入 `rag_evaluations` |
 
-- **框架**: Vue 3 (Composition API) + TypeScript
-- **路由**: Vue Router 5（History 模式）
-- **状态管理**: Pinia 3
-- **样式**: TailwindCSS 3 + Glassmorphism 2.0 科技主题（Cyan/Violet 双色调）
-- **HTTP**: Axios（REST）+ Fetch API（SSE 流）
-- **图表**: ECharts 6
-- **PDF**: pdfjs-dist 5.5（含实时渲染进度追踪）
-- **Markdown**: markdown-it + KaTeX（公式渲染）+ highlight.js（代码高亮）
-- **3D 效果**: Three.js + Vanta.js
-- **设计系统**: 科技感 Token（`tech.primary` Cyan / `tech.secondary` Violet / `tech.glow`），来源徽章分色（`source.arxiv` / `source.github` / `source.news` / `source.neo4j` / `source.milvus`）
+### 3.4 关键横切机制
 
-### 7.2 路由结构 — `router/index.ts`
+- **出站安全**：`outbound_target_policy.py` 对 webhook / 媒体代理等用户可控 URL 做公网 IP 策略（SSRF 防护）；GitHub fallback 不写库、不暴露 token。
+- **密钥封缄**：微信会话、X 凭据、推送渠道、外部 MCP token 均以 base64-32B 主密钥加密入库（`CHANGEME` 拒启；缺失即拒绝存取，绝不落明文）。
+- **限流**：Redis 固定窗口 `ratelimit:{action}:{identity}`，覆盖注册/登录/OTP/推送/媒体代理/MCP。
+- **访客统计**：中间件按 CST 日写 `visitor:{date}` SET（48h TTL），`SCARD` 即独立访客数。
 
-| 路径 | 组件 | 权限 | 功能 |
-|------|------|------|------|
-| `/login` | `LoginView` | guestOnly | 登录页 |
-| `/register` | `RegisterView` | guestOnly | 注册页（含用户协议勾选，不默认勾选） |
-| `/` | `DashboardView` | 无 | 仪表盘（统计卡片缩小至 h-44px，日历宽度210px） |
-| `/chat` | `ChatView` | 无 | RAG 智能问答 |
-| `/report` | `ReportView` | 无 | 简报中心 |
-| `/monitor` | `MonitorView` | requiresAdmin | 运维监控 |
-| `/papers/:id/read` | `PaperReadView` | requiresAuth | 论文阅读器 |
-| `/disclaimer` | `DisclaimerView` | 无 | 用户协议与免责声明（五侧重：AI免责/用户行为/版权/服务变更/账号安全） |
-| `/privacy` | `PrivacyView` | 无 | 隐私政策 |
+## 四、数据存储
 
-**LayoutView 布局变更**：
-- 右上角 Auth Island 浮岛已移除
-- Dock 导航栏末尾新增登录/登出按钮（竖线分隔），样式区分：登录按钮绿色 (`dock-item--login`)，登出按钮红色 (`dock-item--logout`)
-- Dock 下方背景层新增 `dock-footer` 小字（版权/免责/隐私/生态合作联系邮箱）
+### 4.1 PostgreSQL 16（43 张表 + 迁移账本）
 
-**路由守卫**: 全局 `beforeEach` 检查 `requiresAuth`、`requiresAdmin`、`guestOnly`。
+连接：`psycopg_pool`（min 2 / max 20，statement_timeout 15s，sslmode 默认 require）；事务借出失败时显式废弃连接，防止脏连接回池。
 
-### 7.3 状态管理
+迁移：`backend/migrations/postgres/NNNN_*.sql`（当前 0001–0036，编号必须连续）；账本表 `app_schema_migrations` 记录 version/filename/sha256/时间；全程持 advisory lock；逐迁移单事务；**启动不自动 apply**，由 `scripts/migrate_postgres.py` 执行，启动仅打印 pending 告警。
 
-#### `authStore.ts`
-- **状态**: token、user（AuthUser）、pendingChatMessage
-- **AuthUser 接口**: `{ user_id: number, email: string, role: 'user'|'admin', email_verified?: boolean }`
-- **操作**: `login(email, password)`、logout、fetchMe、initFromStorage
-- **Getters**: isLoggedIn、isAdmin
-- **持久化**: localStorage 存储 token
+表分组（括号内为引入迁移号）：
 
-#### `chatStore.ts`
-- **状态树**:
-  - `activeConversationId` / `activeScope`
-  - `conversationMap: Record<string, ConversationSummary>`
-  - `messageMap: Record<string, ChatMessage[]>`
-  - `pendingAttachments: ChatAttachmentRef[]`
-  - `loadingHistory` / `isStreaming` / `streamPhase`
-  - `settings(maxHistoryTurns, temperature)`
-- **消息模型**: `ChatMessage` 统一包含 `conversationId`、`thinking`、`thinkingPreview`、`hasThinking`、`isStreaming`、`attachments`
-- **会话能力**: `loadConversations()`、`openConversation()`、`ensureGlobalConversation()`、`createNewConversation()`（强制新建会话）、`deleteActiveConversation()`（删除当前会话并切换）、`ensurePaperConversation()`、`fetchPaperConversation()`（不影响 activeConversationId）、`loadPaperConversations(paperId)`（加载某论文的所有历史会话列表）
-- **交互控制**: `abortGeneration()`、`regenerateMessage()`、`deleteMessage()`
-- **打字机效果**: 逐字符队列 + 16ms 定时器（content 3字符/帧 ≈ 180字/秒，thinking 12字符/帧 ≈ 720字/秒）
-- **服务端同步**: SSE 完成后根据 `conversation` 事件与会话详情接口回填最终持久化结果
+| 分组 | 表 |
+|---|---|
+| 用户与会话 | `users`、`conversations`、`chat_messages`、`chat_attachments`、`chat_attachment_meta`(0026) |
+| 内容与榜单 | `documents`、`document_rank_snapshots`、`ingestion_tasks`、`briefings`、`briefing_subscriptions`、`rag_evaluations` |
+| 项目库 | `github_repo_candidates`、`github_repo_snapshots`、`github_repo_daily_metrics`、`github_trending_hits`、`github_repo_enrichments`、`github_repo_aliases`、`github_repo_recommendations`、`github_project_semantic_sources`、`project_favorites`、`tool_websites`、`tool_website_enrichments`、`user_tool_websites`、`user_tool_website_overrides`、catalog 迁移工具表 ×3、`project_catalog_applied_events`(outbox 去重) |
+| 订阅推送 | `push_channels`、`user_subscriptions`、`push_deliveries` |
+| MCP | `user_mcp_tokens`（SHA-256 摘要 + hint + scopes + 有效期 + 撤销，明文不落库）、`mcp_server_configs`（出站配置） |
+| 运行配置 | `runtime_provider_settings`（单行）、`smtp_settings`(0036，单行)、`scheduler_job_config`(0016) |
+| X（插件） | `x_watch_accounts`、`x_credentials`、`x_credentials_bootstrap_state` |
+| 微信（插件） | `wechat_official_accounts`、`wechat_articles`、`wechat_sessions`、`wechat_login_attempts`、`wechat_account_follows` |
 
-### 7.4 关键 Composable
+### 4.2 Milvus（两个 collection）
 
-#### `useEventSource.ts`
-- 基于 Fetch API 的 SSE 客户端
-- 自动附加 Bearer Token
-- 支持 `\n\n` 和 `\r\n\r\n` 两种 SSE 分隔符
-- 将 `[DONE]` 规范化为 `{ type: 'done' }` 事件，并在连接完成时触发 `onDone`
-- 兼容 JSON 事件与纯文本 content 片段，供 [`chatStore.ts`](frontend/src/stores/chatStore.ts) 与 [`PaperReadView.vue`](frontend/src/views/PaperReadView.vue) 复用
+| Collection | 内容 | 切片 | 检索参数 |
+|---|---|---|---|
+| `aigc_docs` | 采集文档 + arXiv PDF 全文 | 文档 800/100；PDF 3000/200 | HNSW，COSINE，ef=max(k,64)；支持按 source 过滤保底各源覆盖 |
+| `aigc_github_projects_v1` | 项目语义索引：1 个 profile 块 + 至多 12 个 README 块（README 上限 40k 字符） | 1200 步进 1080（重叠 120） | min_score 0.45，chunk_limit 800，repo_limit 200；索引按 source_fingerprint 增量 |
 
-### 7.5 页面与组件协作
+开关：`project_semantic_search_enabled` / `_indexing_enabled`（默认关）；维度变更即 schema 校验报错。
 
-#### `ChatView.vue`
-- 通用 RAG 对话页，消费 [`chatStore.ts`](frontend/src/stores/chatStore.ts) 的 `messages` getter 与消息控制能力
-- **多会话初始化（Bug4 修复）**：`onMounted` 现在在登录状态下自动调用 `store.loadConversations('global')` + `store.ensureGlobalConversation()`，解决首次进入页面时无会话导致消息被吞的问题
-- **历史会话侧边栏（Bug4 修复）**：新增左侧会话列表面板（宽 220px），展示所有 `scope=global` 的会话，支持点击切换、新建对话、折叠/展开，活跃会话高亮显示
-- **新建会话（Bug8 修复）**：`+` 按钮调用 `createNewConversation()` 强制创建新会话（而非 `ensureGlobalConversation` 复用已有会话）
-- **删除会话（Bug8 修复 + 文案统一）**：标题栏“删除”按钮调用 `deleteActiveConversation()` 真正删除当前会话及消息（不再仅清空前端内存）
-- **附件按钮**：改为回形针（Paperclip）SVG 矢量图标，上传中显示旋转动画
-- **发送/停止按钮**：AI 生成时发送按钮变为圆角正方形停止图标（可中止生成），空闲时恢复为发送箭头图标
-- **标题栏**：实时显示当前活跃会话标题（fallback 为 "RAG 智能助手"），移除了顶部终止按钮（停止功能已整合到发送按钮位置）
+### 4.3 Neo4j
 
-#### `PaperReadView.vue`
-- **共用全局会话（Bug5 最终方案）**：`currentConversationId` 直接映射为 `chatStore.activeConversationId`，与 ChatView 完全共享同一会话状态
-- 进入论文页时不再创建 `scope=paper` 专属会话；若无活跃会话则调用 `ensureGlobalConversation()`
-- 发送消息透传 `paper_id` 供后端 RAG 检索论文内容；后端会将该 ID 注入 query 并触发关系型 repository 文档 ID 精确召回，`scope` 字段由会话自身决定（非 paperId 硬编码）
-- **历史会话面板**：左上角按钮展开全局会话列表（与 ChatView 一致），显示当前会话标题，支持切换和新建
-- 切换会话调用 `chatStore.openConversation()`，完全同步 `activeConversationId`
-- 页面消息区由 `chatStore.messageMap[currentConversationId]` 驱动；视觉问答先写入同一消息树的乐观状态，收到终态 `conversation` 事件后重新加载服务端会话；标题栏“删除”按钮调用 `chatStore.deleteActiveConversation()` 删除当前全局会话并切换/创建后续会话
-- **深度思考框**：从 `chatStore` 消息同步 `hasThinking/isThinking/thinkingDurationSec/thinking` 字段，复用与 ChatView 一致的“正在深度思考 / 已完成深度思考（用时 N 秒）”折叠式思考框体验；由于组件样式为 scoped，论文页单独声明 `.thinking-*` 样式
-- 视觉问答请求透传 `conversation_id` 与 `paper_id`；成功后持久化文本问题、完整回答和 `modality=vision` 元数据，截图内容与临时 `image_id` 不落盘，重新生成需要新截图
+仅对 arXiv 新文档抽取：`LLMGraphTransformer`，节点 `Paper / Author / Concept`，关系自由文本归一化为大写（fallback `RELATED_TO`），MERGE 幂等写入；读侧按关键词匹配节点 + 一跳邻居，渲染为 `Paper(x) -[REL]-> Concept(y)` 注入 RAG 上下文。
 
----
+### 4.4 Redis 键位
 
-## 八、关键业务流
+| 用途 | 键模式 | TTL / 窗口 |
+|---|---|---|
+| API 缓存（FastAPICache） | `aigc-cache:*` | 10s–1h |
+| 独立访客 | `visitor:{YYYY-MM-DD}`（SET） | 48h |
+| OTP（注册 / 重置 / 推送验证） | `email:{code,lock,attempts}:…` 三套前缀 | 300s / 60s / 300s |
+| 固定窗口限流 | `ratelimit:{action}:{identity}` | 按动作；MCP 60s |
+| MCP 限流分桶 | `mcp.protocol` / `mcp.tool_call` | 匿名 60/30、认证 240/120 req-min，故障放行 |
 
-### 8.1 通用聊天流
+## 五、定时调度
 
-1. 前端 [`chatStore.ts`](frontend/src/stores/chatStore.ts) 先通过 `/api/chat/conversations/ensure` 确保会话存在
-2. 前端向 `/api/chat/stream` 发送 `message/history/conversation_id/scope/paper_id/attachment_ids`
-3. 后端 [`routes_chat.py`](backend/app/api/routes_chat.py) 调用 RAG 流式生成，累计 `sources/thinking/content`
-4. SSE 完成后由 [`conversation_service.py`](backend/app/services/chat/conversation_service.py) 一次性落盘用户消息与助手消息
-5. 前端收到 `conversation` 事件后刷新会话详情，确保本地状态与数据库一致
+进程内 APScheduler（Asia/Shanghai，`max_instances=1`）。19 个任务分四组：
 
-### 8.2 Paper 阅读会话共享流（Bug5 重构后）
+| 组 | 任务（时间） |
+|---|---|
+| 逐源采集 | arxiv :01 · github :02 · techmeme :03 · producthunt :04 · hackernews :05 · dailyhot :07（每小时）；x_watchlist 每 2h :06 |
+| 关榜补采（昨日切片定稿） | x_closing 00:31 · metrics_closing 00:33 · hackernews_closing 00:35 · news_closing 00:36 |
+| 项目库 | daily_pipeline 02:00（入库/快照/打分/富化）· metrics_refresh 每 2h :17 · semantic_warmup 每 30min（开关门控） |
+| 运维 | daily_briefing 08:00 · subscription_dispatch 每 30min（只读缓存幂等投递）· x_credentials_probe 每 2h :08 · x_deleted_janitor 每 6h :11 · conversation_cleanup 每 7 天 03:30 |
 
-1. 用户进入 [`PaperReadView.vue`](frontend/src/views/PaperReadView.vue)
-2. 页面**共用** ChatView 的全局会话（`scope=global`），不再创建独立的 `scope=paper` 专属会话
-3. 若当前无活跃会话，则调用 `ensureGlobalConversation()` 确保存在一个全局会话
-4. 发送消息时携带 `paper_id` 作为 RAG 上下文，`scope` 字段跟随当前会话本身的 scope
-5. 左侧历史会话面板展示与 ChatView 相同的全局会话列表，支持切换和新建
-6. 切换会话调用 `openConversation(convId)`，与 ChatView 的切换逻辑完全一致
-7. 流式生成期间，论文页从 `chatStore.messageMap` 同步思考状态：`isThinking=true` 时展示“正在深度思考”框，结束后保留“已完成深度思考（用时 N 秒）”折叠框
+- **DB 覆盖**：`scheduler_job_config` 可将任意任务改为"每日窗口 × 间隔分钟"或停用，经 `/ops/scheduler/config` 热生效。
+- **互斥**：`github_job_lock` / `x_operation_lock` 串行化手动运维与调度运行。
+- **告警**：连续失败（默认 3 次）与零入库（默认 3 轮，watch 5 源）经 `scripts/notify_ops_alert.py` 外发。
+- **启动对账**：补采近 2 天缺失的 arxiv 快照、刷新当日 GitHub 指标。
+- X 链任务在 `x_source_enabled=False` 时不注册。单实例假设：横向扩容需保证调度器单活。
 
-### 8.3 会话清理流
+## 六、前端架构
 
-1. 每次消息写入后，服务层调用会话级与用户级 LRU 裁剪
-2. [`scheduler.py`](backend/app/core/scheduler.py) 每 7 天执行一次 `conversation_cleanup`
-3. conversation repository 删除 7 天未访问的最旧 5 条会话及其级联消息
-4. 前端按需重新拉取列表，不依赖本地永久缓存
+### 6.1 分层约定
 
----
+```text
+views/        页面：布局与装配，不写业务逻辑
+features/     领域纯逻辑：model / viewModel / presentation（大量 colocated *.test.ts）
+composables/  页面状态与异步编排（数据控制器）
+services/     HTTP 层（axios 实例 + 每域 API 模块）
+stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
+```
 
-## 九、文件索引（核心实现）
+### 6.2 路由与守卫（`router/index.ts`，视图全部懒加载）
 
-| 路径 | 作用 |
-|------|------|
-| `backend/app/main.py` | FastAPI 应用入口，挂载全部路由并接入 lifespan / scheduler |
-| `backend/app/api/routes_auth.py` | 认证路由：发送邮箱OTP、邮箱注册（含邀请码校验）、邮箱登录、获取用户信息 |
-| `backend/app/api/routes_chat.py` | 聊天 SSE、会话列表/详情、删除、重生成功能 |
-| `backend/app/api/routes_vision.py` | 视觉问答中转与截图上传 |
-| `backend/app/api/routes_attachments.py` | 图片/PDF 附件上传与状态查询 |
-| `backend/app/services/email_service.py` | 邮件OTP服务（aiosmtplib + Redis防刷 + dev模式日志降级） |
-| `backend/app/services/chat/conversation_service.py` | 会话持久化、裁剪、重生成、清理 |
-| `backend/app/services/chat/attachment_service.py` | 聊天附件元数据与 PDF 文本提取 |
-| `backend/app/repositories/application_repository_factory.py` | 组装应用 repository Protocol 的 PostgreSQL 实现 |
-| `backend/app/core/postgres_database.py` | PostgreSQL 连接生命周期与事务基础设施 |
-| `backend/app/core/config.py` | 应用配置（含 SMTP_HOST/PORT/USERNAME/PASSWORD/FROM_EMAIL 等邮件配置项） |
-| `backend/app/core/scheduler.py` | 定时采集、简报生成、会话清理调度 |
-| `frontend/src/stores/authStore.ts` | 认证状态（AuthUser.email 为主标识）、login/logout/fetchMe |
-| `frontend/src/views/LoginView.vue` | 登录页（邮箱 + 密码） |
-| `frontend/src/views/RegisterView.vue` | 注册页（邮箱 + OTP验证码 + 邀请码 + 密码） |
-| `frontend/src/stores/chatStore.ts` | 多会话状态树、流式消费、消息控制 |
-| `frontend/src/views/ChatView.vue` | 通用聊天页 |
-| `frontend/src/views/PaperReadView.vue` | 论文阅读器 + 全局会话共享 + 深度思考框 |
-| `frontend/src/composables/useEventSource.ts` | 基于 Fetch 的 SSE 客户端 |
-| `frontend/src/services/api.ts` | 前端 REST API 类型与请求封装 |
-| `frontend/src/views/DisclaimerView.vue` | 免责声明页面（平台性质、版权、AI内容不构成专业建议声明） |
-| `frontend/src/views/PrivacyView.vue` | 隐私政策页面（数据收集最小化、对话匿名化处理说明） |
+| 路径 | 页面 | 守卫 |
+|---|---|---|
+| `/` | DashboardView | 公开 |
+| `/projects` | GitHubProjectsView（826 行，逻辑委派 controller + presentation） | 公开 |
+| `/report` · `/papers/:id/read` · `/mcp` · `/disclaimer` · `/privacy` | 简报 · 论文阅读 · MCP 接入 · 法务 | 公开（论文对话游客降级为登录引导） |
+| `/x` | XBoardView（828 行瀑布流） | 特性开关 `xSource` |
+| `/subscriptions` | SubscriptionsView | requiresAuth |
+| `/chat` | ChatView | requiresAdmin + `CHAT_SERVICE_ENABLED` |
+| `/wechat` | WechatView | requiresAdmin + `wechatSource` |
+| `/monitor` | MonitorView（12+ 面板编排） | requiresAdmin |
+| `/login` · `/register` · `/forgot-password` | 认证三页 | guestOnly |
 
----
+守卫为纯函数（`features/navigation/routePolicy.ts`）：匿名访问受保护页 → `/login?redirect=…`；非管理员 → `/`；特性关闭 → `/`。
 
-## 十、当前已知限制与明确延期
+### 6.3 关键机制
 
-1. 视觉问答仅持久化文本消息对与安全的 modality 元数据；出于 Zero-Disk 约束不保存截图，因此历史视觉消息不能在没有新截图时重新生成。
-2. 生产 MySQL 容器停用、凭据撤销、观察期及最终数据卷删除属于独立运维授权边界；仓库侧完成不代表这些操作已执行。
-3. 云厂商短信通道（阿里云/腾讯云）未接入；`sms_service.py` 保留为无调用方的延期能力，接入前需独立授权。
-4. 生产 `PROJECT_CATALOG_BACKEND=postgres` 切换、生产 schema apply、真实凭据轮换、生产容器重建与外网验证均属于独立部署授权，不在代码重构范围内。
+- **SSE**：`useEventSource` 基于 fetch ReadableStream（非原生 EventSource），自动带 Bearer，解析 `data:` 帧与 `[DONE]`，429 映射为配额提示。
+- **聊天**：`chatStore` + `ChatLifecycleCoordinator`（会话生命周期状态机）+ SSE 事件 reducer + 16ms 帧打字机引擎（与 Pinia 解耦）。
+- **HTTP**：axios 实例（baseURL `/api`，60s）；401 单 flight 处理 —— 清 token、强制 anonymous、toast、跳登录；MCP token 接口响应体脱敏。
+- **i18n**：vue-i18n，`en-US.ts` 为完整基线树，`zh-CN.ts` 深合并补丁（每 key 必有英文）；默认中文，浏览器语言探测。
+- **设计系统**：编辑部纸张风 —— 暖白纸面 `#f7f5ee` / 近黑墨色 / 荧光黄绿 `#d8f14b` 强调 / 硬边框硬阴影 / Playfair Display + DM Sans + JetBrains Mono；明暗双主题 CSS 变量；旧 glassmorphism `tech-*` token 仅个别组件残留。
+- **构建/质量**：`dev / build / typecheck(vue-tsc) / lint(eslint) / test:unit(vitest, jsdom)`；契约测试含 CSP hash 与认证架构。
 
-### 10.1 2026-08 重构收尾
+## 七、AIGC Radar MCP 服务（入站）
 
-- **完成**：服务层显式依赖注入收口（移除进程级仓储回退，AST 门禁固化）、CI 演练配置修复与 PostgreSQL 16 门禁集成套件启用、Compose/镜像冒烟 CI 作业、容器边界加固（内部服务不再向宿主机发布端口、第三方镜像 sha256 摘要固定、前端 SSL 证书改为运行时只读挂载、干净检出可构建）、占位模块与失效包标记清理。
-- **运维边界文档化**：端口与证书边界见 [`linux-server-boot.md`](linux-server-boot.md)。
+`POST /api/mcp` 单端点，Streamable HTTP（纯 POST 请求/响应，无 GET 流）。模块位于 `services/mcp/inbound/`：
 
-### 10.2 2026-07 渐进式重构收口
+| 文件 | 职责 |
+|---|---|
+| `catalog.py` | 静态注册表：serverInfo `aigc-radar`，7 公开工具 + 私有工具，3 resources + 4 templates + 2 prompts，`MCP_HOST_INSTRUCTIONS` 路由策略 |
+| `application.py` | JSON-RPC 分发：initialize / tools/list / tools/call / resources/* / prompts/*；通知（无 id）→ 204 |
+| `tools.py` | 8 个工具 handler + 注册表；输入经 `contracts.py` 严格 Pydantic（extra=forbid） |
+| `context.py` | 请求解析（64KiB 上限、禁 batch）、鉴权上下文、会话头（`MCP-Protocol-Version` / `Mcp-Session-Id`） |
+| `rate_limit.py` | Redis 固定窗口（见 4.4），超限 429 + `Retry-After` + JSON-RPC `-32000` |
+| `responses.py` / `attribution.py` | 结果序列化（100k 字符截断为 preview）；品牌归因行与 `detail_url` UTM 回链 |
 
-- **完成**：repository Protocol 与 FastAPI lifespan composition root、PostgreSQL-only 应用运行时、主 Compose 移除 MySQL、REST/MCP/SSE 调用方切换、聊天及视觉消息持久化、前端统一会话状态、无调用者占位壳清理。
-- **被后续设计取代**：MySQL 主从/影子读长期共存方案、运行时数据库选择开关、独立的视觉消息状态树；历史设计保留在已标记为历史快照的文档中。
-- **明确延期**：视觉截图长期存储与无图重生成、生产 MySQL 最终退役操作。
+语义要点：
 
-> **历史事件记录（当时术语按原样保留；其中 MySQL 指当时关系数据库实现）**
->
-> **已解决（2026-03-17）**：
-> - [`ChatView.vue`](frontend/src/views/ChatView.vue) 已新增历史会话侧边栏（Bug4），并在 `onMounted` 时自动初始化会话，消息被吞问题已修复。
-> - GitHub stars/forks/language 字段现已写入 Milvus 向量内容并在 LLM 上下文中显示（Bug1）。
-> - Dashboard summary 端点现返回真实注册用户数和今日新增文档数（Bug2）。
-> - 所有简报 Prompt 已强制要求每个标题后追加来源 Tag 标签（Bug3）。
->
-> **已解决（2026-03-18）**：
-> - **Bug5（最终方案）**：彻底重构论文阅读会话架构。论文页不再使用 `scope=paper` 专属会话，改为与 ChatView **共用全局会话**（`scope=global`）。`currentConversationId` 直接映射 `chatStore.activeConversationId`，切换论文不再修改 active 状态。`_streamToAssistant` 的 `scope` 字段改为从 `conversationMap[conversationId].scope` 读取，而非依赖 paperId 硬编码。论文页历史会话面板展示全局会话列表，与 ChatView 完全一致，支持切换和新建。
-> - **Bug6（RAG 不感知今日榜单）**：用户问"今天 github top10"等排行类问题时，RAG 仅通过向量检索无法获取排行信息。修复方案：在 [`chat_service.py`](backend/app/services/rag/chat_service.py) 中新增 `_detect_ranking_query()` 关键词检测（匹配"今天/今日"+"top/排行/榜单"等），命中时与 RAG 检索并发直接查询 `documents` 表（使用 CST 日期与 Dashboard 对齐，按 `LEFT(created_at, 10)` 过滤 + `source` 过滤 + `raw_score DESC` 排序），以 `[today-ranking]` 标签注入 LLM 上下文开头，并将排行文档作为参考来源推送给前端。新增 `_detect_ranking_period()` 支持日/周/月榜识别，`_detect_ranking_limit()` 支持动态 topN 提取（如 "top10"→10、"前20"→20）。
-> - **Bug7（参考来源过多）**：[`reranker.py`](backend/app/services/rag/reranker.py) 的 `RELEVANCE_THRESHOLD` 从 0.5 提高到 0.7，过滤掉相关性不足的文档，减少不相关参考来源数量。
-> - **简报订阅功能**：新增 `briefing_subscriptions` 表和 4 个 API（subscribe/unsubscribe/subscriptions/send-to-email），用户可一键订阅简报邮件推送或立即发送到注册邮箱。[`email_service.py`](backend/app/services/email_service.py) 新增 `send_briefing()` / `_send_html_email()` 方法，支持 Markdown→HTML 邮件模板。
-> - **简报 Tag 优化**：6 个 Prompt 模板的标签系统从宽泛的 `#ai #tool #trending` 升级为细粒度领域标签（如 `#LLM` `#Agent` `#RAG` `#推理优化` `#模型压缩` `#商业化` 等），每个源类型有独立的领域标签候选列表。
-> - **普通用户 Report 页面增强**：[`ReportView.vue`](frontend/src/views/ReportView.vue) 现在对所有登录用户展示源类型选择按钮（6 种）和周期选择按钮（日报/周报/月报），新增「订阅到邮箱」和「发送到邮箱」按钮。生成按钮仅 Admin 可见。
->
-> **已解决（2026-05-28）**：
-> - **论文阅读页泛化问题漏召回修复**：针对 “SkillOpt: Executive Strategy for Self-Evolving Agent Skills”（paper ID `b0f920cb5e67ba8012c28098da0cf123`）在论文阅读页询问“详细讲一下这篇论文”时，问题文本只有 `paper_id` 和泛化描述、没有标题关键词，导致标题召回/向量召回可能错过目标论文。修复措施：[`HybridRetriever`](backend/app/services/rag/retriever.py:15) 新增 32 位 MySQL 文档 ID 提取与 `documents.id` 精确召回，ID 命中文档优先注入 RAG 上下文，并在存在 `local_pdf_path` 时读取本地 PDF 前 20000 字符；同时 [`routes_chat.py`](backend/app/api/routes_chat.py) 将 `paper_id` 固定为 RAG 上下文信号，不再因存在 `paper_id` 就强制把当前全局会话持久化为 `scope=paper`。
-> - **论文页删除当前会话修复**：[`PaperReadView.vue`](frontend/src/views/PaperReadView.vue) 原“清空”按钮只清空本地 `messageMap` 和临时视觉消息，刷新后历史仍恢复；现改为“删除”按钮并调用 [`chatStore.deleteActiveConversation()`](frontend/src/stores/chatStore.ts)，真正删除服务端当前会话及消息，同时 [`ChatView.vue`](frontend/src/views/ChatView.vue) 按钮文案也从“清空”统一为“删除”。
->
-> **已解决（2026-05-25）**：
-> - **Milvus 未命中已收录论文排查与修复**：发现论文 “Generation Models Know Space: Unleashing Implicit 3D Priors for Scene Understanding” 已存在于 MySQL `documents` 表并已落盘 PDF，但 Milvus Collection 中无对应分块。根因是历史向量库分块不完整，且后续采集日志显示 Embedding API 返回 `403 insufficient balance`，导致 MySQL 元数据写入成功但 Milvus 向量写入失败；同时纯向量检索对精确标题查询召回不稳定。修复措施：补写该论文 19 个 PDF 分块到 Milvus；[`MilvusRepository.add_documents()`](backend/app/repositories/milvus_repo.py:69) 改为返回写入成功/失败布尔值；[`HybridRetriever`](backend/app/services/rag/retriever.py:15) 新增 MySQL 标题召回并在合并时优先注入标题高度命中文档，确保用户直接输入已收录论文标题时可命中并展示为参考来源。对于标题高度命中的 ArXiv 文档，若 `local_pdf_path` 存在，会额外读取本地 PDF 前 6000 字符作为上下文，避免仅注入 MySQL 500 字符摘要导致模型提示“摘要被截断”。
->
-> **已解决（2026-03-19）**：
-> - **Bug8（Chat 页面新建会话）**：`+` 按钮原调用 `ensureGlobalConversation()` 只返回已有会话，现改为调用新增的 `POST /api/chat/conversations/create` API（`createNewConversation()`），强制创建新会话。
-> - **Bug8（清空按钮无法真正清除）**：清空按钮原调用 `clearMessages()` 仅清空前端内存，刷新后记录恢复。现改为调用新增的 `DELETE /api/chat/conversations/{id}` API（`deleteActiveConversation()`），真正删除当前会话及其所有消息，然后自动切换到下一个全局会话或创建新会话。
-> - **Bug8（附件按钮矢量化）**：附件按钮从文字"附件"改为回形针（Paperclip）SVG 矢量图标，上传中显示旋转加载动画。
-> - **Bug8（发送/停止按钮合一）**：AI 消息生成时，发送按钮位置自动切换为圆角正方形停止图标（`■`），点击可中止生成；空闲时恢复为发送箭头图标。顶部标题栏的"终止"按钮已删除。
-> - **普通用户每日消息限额**：新增 `USER_DAILY_MESSAGE_LIMIT` 配置项（默认 20，0=不限制），普通用户（role='user'）每天最多发送 20 条消息，admin 不受限。后端 [`routes_chat.py`](backend/app/api/routes_chat.py) 在 `/chat/stream` 和 `/chat/messages/{id}/regenerate` 前调用 `_check_user_message_limit()` 检查限额，超限返回 HTTP 429（`message_limit_exceeded`）。[`mysql_repo.py`](backend/app/repositories/mysql_repo.py) 新增 `count_user_messages_today()` 统计 CST 当日用户消息数。前端 [`useEventSource.ts`](frontend/src/composables/useEventSource.ts) 增强 HTTP 错误解析，[`chatStore.ts`](frontend/src/stores/chatStore.ts) 对 429 错误显示友好的 `⚠️ 今日消息已达上限` 提示。
+- 工具错误一律以 `isError: true` 的工具结果返回（非协议错误）；未知方法 `-32601`、参数 `-32602`、内部 `-32603`，协议错误 HTTP 200。
+- `search_my_project_favorites` 需 scope `projects:favorites:read`，匿名调用短路为"需要认证"工具错误；base64 游标分页。
+- 工具经由冻结的 `McpToolContext` 调用 repository / service，与 REST 共用同一套数据端口。
+- token 模型：SHA-256 摘要 + 展示 hint、scopes、client_type/label、有效期、撤销、每用户活跃上限 20（事务内软淘汰最旧）。
+
+## 八、部署形态
+
+### 8.1 Compose 服务（`docker/docker-compose.yml`）
+
+| 服务 | 镜像 | 端口 | 加固 |
+|---|---|---|---|
+| `frontend-web` | 本地构建（nginx） | `80/443` 唯一公网口 | `read_only` + tmpfs、`cap_drop: ALL` + 最小 cap_add、SSL 证书只读挂载（key 须 root:root 600） |
+| `backend-api` | 本地构建 | `127.0.0.1:8000` 仅回环 | `cap_drop: ALL`、no-new-privileges、mem 4g |
+| `project-catalog-postgres` | `postgres:16-alpine`（sha256 钉） | `127.0.0.1:5432`（供宿主机备份） | oom_score_adj -500 |
+| `redis` / `milvus` / `etcd` / `minio` / `attu` / `neo4j` | 官方镜像（全部 sha256 钉） | **不发布**，仅编排网内 expose | — |
+| `project-catalog-ops` | 本地构建 | 无 | profile `project-catalog-ops`，一次性运维容器 |
+| `dailyhot` | 本地构建 DailyHotApi | 无（expose 6688） | profile `dailyhot`，内网热榜上游 |
+
+私有扩展（姊妹服务、外部编排网、私有 nginx server）以 overlay 注入：`scripts/manage_main_stack.sh` 探测 `AIGCNEWS_PRIVATE_COMPOSE`（默认 `../aigcnews_private/deploy/docker-compose.private.yml`），存在即并入并自动启用 dailyhot profile；不存在则核心栈独立可用。
+
+### 8.2 nginx 边缘（`frontend/nginx.conf`）
+
+80→443 跳转、TLS1.2/1.3、HSTS；`resolver 127.0.0.11` + 变量化 upstream 免疫后端容器 IP 漂移；SPA fallback；`/api/` 反代（edge XFF 不可信，以 `$remote_addr` 重写）；双限流区（auth 10r/m、general 20r/s，429）；SSE 关缓冲 + 300s 超时；静态资产 1 年 immutable 缓存；安全头 +  enforcing CSP（inline 主题脚本走 sha256 白名单，前端有契约测试守护）；`client_max_body_size 60m`；私有 vhost 经 `.inc` 占位文件 + overlay bind-mount 注入。
+
+### 8.3 CI（`.github/workflows/`）
+
+- `contract-baseline.yml`（push/PR）：backend-tests（锁一致性 + ruff + pytest）、postgres-integration（PG16 服务跑迁移 + 集成套件）、compose-smoke（compose config + 干净检出前端构建）、frontend-build
+- `evals-contract.yml`（定时/手动）：MCP 契约评测（8 工具，无 LLM），产物上传 artifact
+
+## 九、外部契约边界
+
+REST、MCP、SSE 为稳定契约，内部重构不得改变外部行为：
+
+- **REST**：路由、字段、分页排序、错误状态、权限、Stars 门槛与 fallback 来源标注。
+- **MCP**：JSON-RPC envelope、initialize 行为、工具/资源/prompt 定义、结构化结果、工具级错误、token scope 与私人数据隔离。
+- **SSE**：事件名、`data:` 分隔、sources/thinking/content/conversation/error/heartbeat 序列、`[DONE]`、断开后持久化语义；代理层不得缓冲。
+
+数据库历史：MySQL 已退役并从仓库移除（最终操作见 [mysql-retirement-runbook.md](mysql-retirement-runbook.md)）；任何新增持久化先定义 repository Protocol，再由组合根组装 PostgreSQL 实现。
