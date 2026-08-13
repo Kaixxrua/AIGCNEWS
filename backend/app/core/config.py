@@ -298,7 +298,12 @@ class Settings(BaseSettings):
     env: str = "production"
 
     # PDF 持久化存储目录（容器内路径，对应 docker-compose volume 映射）
+    # 注意：该目录经 /api/media/papers 匿名静态挂载对外服务，禁止存放私有文件
     papers_storage_dir: str = "storage/papers"
+
+    # 聊天私有附件（PDF）存储目录（容器内路径，对应 docker-compose volume 映射）
+    # 必须位于 papers_storage_dir 的静态挂载树之外，附件仅允许经带鉴权的元数据 API 访问
+    chat_uploads_storage_dir: str = "storage/chat_uploads"
 
     # X 视频封面抽帧缓存目录（容器内路径，对应 docker-compose volume 映射）
     x_media_cache_dir: str = "storage/x_media"

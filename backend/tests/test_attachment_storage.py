@@ -94,5 +94,49 @@ class PdfStorageTests(unittest.TestCase):
         document.close.assert_called_once_with()
 
 
+class PrivateUploadDirContractTests(unittest.TestCase):
+    """私有聊天附件目录必须位于 /api/media/papers 匿名静态挂载树之外。"""
+
+    def test_default_upload_dir_is_outside_papers_storage_tree(self) -> None:
+        papers_dir = os.path.abspath(
+            getattr(attachment_storage.settings, "papers_storage_dir", "storage/papers")
+        )
+        upload_dir = os.path.abspath(attachment_storage.DEFAULT_PDF_UPLOAD_DIR)
+
+        self.assertNotEqual(
+            os.path.commonpath([papers_dir, upload_dir]),
+            papers_dir,
+            "聊天附件目录落在公开静态挂载树内，匿名用户可绕过属主校验下载私有 PDF",
+        )
+
+    def test_service_module_uses_same_private_dir(self) -> None:
+        from backend.app.services.chat import attachment_service
+
+        self.assertEqual(
+            os.path.abspath(attachment_service._PDF_UPLOAD_DIR),
+            os.path.abspath(attachment_storage.DEFAULT_PDF_UPLOAD_DIR),
+        )
+
+    def test_migrate_legacy_uploads_moves_pdfs_and_removes_legacy_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as legacy_dir, tempfile.TemporaryDirectory() as target_dir:
+            for name in ("a.pdf", "b.pdf", "keep.txt"):
+                with open(os.path.join(legacy_dir, name), "wb") as file:
+                    file.write(b"%PDF-1.7\n")
+
+            moved = attachment_storage.migrate_legacy_pdf_uploads(legacy_dir, target_dir)
+
+            self.assertEqual(moved, 2)
+            self.assertTrue(os.path.exists(os.path.join(target_dir, "a.pdf")))
+            self.assertTrue(os.path.exists(os.path.join(target_dir, "b.pdf")))
+            # 非 PDF 残留导致目录保留，但 PDF 已全部迁出
+            self.assertFalse(os.path.exists(os.path.join(legacy_dir, "a.pdf")))
+
+    def test_migrate_legacy_uploads_noop_when_dirs_match(self) -> None:
+        with tempfile.TemporaryDirectory() as same_dir:
+            self.assertEqual(
+                attachment_storage.migrate_legacy_pdf_uploads(same_dir, same_dir), 0
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

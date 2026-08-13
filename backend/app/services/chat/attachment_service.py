@@ -22,7 +22,6 @@ import time
 import uuid
 from typing import Dict, List, Optional, Tuple
 
-from backend.app.core.config import settings
 from backend.app.core.postgres_database import postgres_database
 from backend.app.repositories.postgres_attachment_meta_repository import (
     PostgresAttachmentMetaRepository,
@@ -38,6 +37,7 @@ from backend.app.services.chat.attachment_lifecycle import (
 )
 from backend.app.services.chat.attachment_policy import ValidatedImage, ValidatedPdf
 from backend.app.services.chat.attachment_storage import (
+    DEFAULT_PDF_UPLOAD_DIR,
     ImageCache,
     PdfStorage,
     extract_pdf_text,
@@ -52,12 +52,19 @@ _image_cache: Dict[str, Tuple[str, str, float]] = {}
 # ---------------------------------------------------------------------------
 # PDF 临时存储目录
 # ---------------------------------------------------------------------------
+# 统一以 attachment_storage 的私有目录为准（历史上本模块各自推导同一路径，
+# 曾指向 papers_storage_dir/_chat_uploads 的匿名静态挂载树内，属越权隐患）。
 
-_PDF_UPLOAD_DIR = os.path.join(
-    getattr(settings, "papers_storage_dir", "storage/papers"),
-    "_chat_uploads",
-)
-os.makedirs(_PDF_UPLOAD_DIR, exist_ok=True)
+_PDF_UPLOAD_DIR = DEFAULT_PDF_UPLOAD_DIR
+try:
+    os.makedirs(_PDF_UPLOAD_DIR, exist_ok=True)
+except OSError:
+    # 与 attachment_storage 同口径：尽力预建，写入侧 PdfStorage.write 仍会按需创建
+    logger.warning(
+        "[Attachment] 附件目录预建失败（写入时重试）: %s",
+        _PDF_UPLOAD_DIR,
+        exc_info=True,
+    )
 
 
 # ---------------------------------------------------------------------------
