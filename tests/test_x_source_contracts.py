@@ -40,6 +40,7 @@ def _tweet(
     is_retweet: bool = False,
     is_promoted: bool = False,
     is_subscriber_only: bool = False,
+    retweeted_by: str | None = None,
 ) -> Tweet:
     tweet = Tweet(
         id=tweet_id,
@@ -55,6 +56,7 @@ def _tweet(
         ),
         created_at=created_at,
         is_retweet=is_retweet,
+        retweeted_by=retweeted_by,
     )
     # 0.8.5 的 Tweet 尚无这两个字段（0.8.6-dev 新增），后置赋值模拟；
     # policy 用 getattr 访问，对无字段的旧版对象自然放行
@@ -126,6 +128,7 @@ class XPolicyContracts(unittest.TestCase):
                 "author": "openai",
                 "author_name": "OpenAI",
                 "author_avatar_url": "",
+                "retweeted_by": None,
                 "rank_in_period": 1,
                 "tags": ["x", "daily", "openai"],
                 "media": [],
@@ -146,13 +149,26 @@ class XPolicyContracts(unittest.TestCase):
         self.assertEqual(items[0]["author"], "originalauthor")
         self.assertEqual(items[0]["tags"], ["x", "daily", "originalauthor"])
 
+    def test_project_tweets_projects_retweeted_by_handle(self) -> None:
+        # 转贴者 handle 随条目投影落库：看板卡片顶部据此标注「@转贴者 转发了」，
+        # 原作者仍为 author；非转贴恒 None
+        rt = _tweet(
+            "2002", screen_name="originalauthor", text="original content",
+            likes=50, is_retweet=True, retweeted_by="watchlist_account",
+        )
+        items = x_policy.project_tweets([rt, _tweet("2003", text="plain", likes=1)], limit=5)
+        self.assertEqual(items[0]["retweeted_by"], "watchlist_account")
+        self.assertIsNone(items[1]["retweeted_by"])
+
     def test_project_tweets_dedupes_same_original_across_accounts(self) -> None:
-        # 多账号转同一贴（或账号转自己旧贴）：原贴 id 相同，仅保留一条，不占截断名额
-        rt_a = _tweet("3001", text="same original", likes=10, is_retweet=True)
-        rt_b = _tweet("3001", text="same original", likes=10, is_retweet=True)
+        # 多账号转同一贴（或账号转自己旧贴）：原贴 id 相同，仅保留一条，不占截断名额；
+        # 同分保序留首条，转贴者取首位转贴账号
+        rt_a = _tweet("3001", text="same original", likes=10, is_retweet=True, retweeted_by="account_a")
+        rt_b = _tweet("3001", text="same original", likes=10, is_retweet=True, retweeted_by="account_b")
         unique = _tweet("3002", text="unique", likes=5)
         items = x_policy.project_tweets([rt_a, rt_b, unique], limit=10)
         self.assertEqual([item["tweet_id"] for item in items], ["3001", "3002"])
+        self.assertEqual(items[0]["retweeted_by"], "account_a")
 
     def test_project_tweets_extracts_avatar_url(self) -> None:
         tweet = _tweet("1010", text="avatar")
