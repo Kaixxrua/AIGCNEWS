@@ -156,8 +156,6 @@ Tool-selection accuracy, measured 2026-08-12 with [scripts/eval_mcp_tool_selecti
 
 Unambiguous probes held 100% in the baseline run; post-change reruns missed only on infrastructure flakes (a harness timeout, a 429 rate-limit that exhausted retries before the first assistant turn), never on wrong-tool routing — so the table pairs the baseline unambiguous count with the post-change mixed-intent count (same harness, same day). Mixed-intent prompts explicitly invite both deliverable types ("projects primarily, papers as a supplement"): earlier runs hedged by calling both candidate tools in parallel, the routing rules in the tool descriptions eliminated that pattern entirely, and the one remaining mixed miss is a model reading a fragment-style prompt as a preference-setting instruction and saving it to memory via Bash — a prompt-interpretation quirk, not wrong-tool routing.
 
-We also run [Salesforce MCPEval](https://github.com/SalesforceAIResearch/MCPEval) LLM-as-judge scoring (trajectory + completion) as an internal regression gate after every MCP-facing change. Its scores conflate tool quality with agent-model behavior and drift ±0.02–0.08 between gradings, so we do not publish them; the methodology and raw results live in `evals/mcp/`.
-
 Reproduce:
 
 ```bash
