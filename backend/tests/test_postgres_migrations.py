@@ -424,6 +424,17 @@ def test_user_account_disabled_schema_is_additive() -> None:
     assert "UPDATE " not in normalized
 
 
+def test_user_pwd_ver_schema_is_additive() -> None:
+    # 口令版本号（AUTH-B）：JWT 声明与库内值逐请求比对，改密即撤销旧 token
+    migration = discover_migrations()[-1]
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert migration.filename == "0041_user_pwd_ver.sql"
+    assert "ALTER TABLE users ADD COLUMN IF NOT EXISTS pwd_ver INTEGER NOT NULL DEFAULT 1" in migration.sql
+    assert "DROP" not in normalized
+    assert "UPDATE " not in normalized
+
+
 def test_user_foreign_keys_validate_before_retype_and_add_cascade() -> None:
     migration = discover_migrations()[29]
     normalized = " ".join(migration.sql.split()).upper()

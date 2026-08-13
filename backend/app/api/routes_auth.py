@@ -417,6 +417,7 @@ async def change_password(
 async def register(
     body: RegisterRequest,
     request: Request,
+    response: Response,
     repository: UserAccountRepository = Depends(get_user_account_repository),
 ) -> dict[str, Any]:
     """
@@ -427,6 +428,8 @@ async def register(
     3. bcrypt 哈希密码后写库
     4. 消耗验证码
     """
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     await _enforce_rate_limit(request, action="auth.register", limit=_AUTH_ATTEMPT_RATE_LIMIT)
     lifecycle = build_account_lifecycle(
         repository=repository,
@@ -457,6 +460,7 @@ async def register(
 async def login(
     body: LoginRequest,
     request: Request,
+    response: Response,
     repository: UserAccountRepository = Depends(get_user_account_repository),
 ) -> dict[str, Any]:
     """
@@ -465,6 +469,8 @@ async def login(
     - 查库验证邮箱 + 密码
     - 签发 JWT（payload 含 user_id、role、email）
     """
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     await _enforce_rate_limit(request, action="auth.login", limit=_AUTH_ATTEMPT_RATE_LIMIT)
     # per-账号节流：分布式 IP 对同一邮箱的爆破归并到单一账号桶；
     # 域名归一与登录生命周期同口径，防大小写变体拆桶

@@ -186,6 +186,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
             "email": "canonical@example.com",
             "role": "user",
             "hashed_password": "stored-password-hash",
+            "pwd_ver": 3,
         }
 
         result = await self.lifecycle.login(
@@ -211,11 +212,27 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                         "user_id": 42,
                         "role": "user",
                         "email": "canonical@example.com",
+                        "pwd_ver": 3,
                     },
                 ),
             ],
         )
         self.assert_no_plaintext_secrets(result, "plain-secret", "stored-password-hash")
+
+    async def test_login_defaults_pwd_ver_claim_for_legacy_records(self) -> None:
+        # 仓储记录缺 pwd_ver 键（未升级替身/历史仓储）时声明按 1 签发，
+        # 与迁移 0041 的 DEFAULT 1 同口径
+        self.repository.users["reader@example.com"] = {
+            "id": 7,
+            "email": "reader@example.com",
+            "role": "user",
+            "hashed_password": "stored-password-hash",
+        }
+
+        await self.lifecycle.login(email="reader@example.com", password="plain-secret")
+
+        claims = self.events[-1][1]
+        self.assertEqual(claims["pwd_ver"], 1)
 
     async def test_login_missing_account_does_not_verify_or_issue(self) -> None:
         with self.assertRaises(InvalidCredentials):

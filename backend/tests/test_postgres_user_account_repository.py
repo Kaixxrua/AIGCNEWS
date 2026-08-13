@@ -51,8 +51,10 @@ def test_account_reads_normalize_email_and_copy_rows() -> None:
     assert result == row
     assert result is not row
     assert cursor.execute.call_args.args[1] == ("reader@example.com",)
-    # 登录凭证核验路径必须投影 disabled，供生命周期签发令牌前拦截禁用账号
+    # 登录凭证核验路径必须投影 disabled，供生命周期签发令牌前拦截禁用账号；
+    # pwd_ver 供登录签发时写入 JWT 声明（改密即失效旧令牌）
     assert "disabled" in cursor.execute.call_args.args[0]
+    assert "pwd_ver" in cursor.execute.call_args.args[0]
     assert database.transaction_count == 1
 
 
@@ -85,6 +87,8 @@ def test_password_update_is_owner_and_email_scoped() -> None:
     assert affected == 1
     sql, params = cursor.execute.call_args.args
     assert "WHERE id = %s AND email = %s" in sql
+    # 改密同事务递增口令版本号：旧 JWT 的 pwd_ver 声明随之失效（AUTH-B）
+    assert "pwd_ver = pwd_ver + 1" in sql
     assert params == ("new-hash", 42, "reader@example.com")
 
 

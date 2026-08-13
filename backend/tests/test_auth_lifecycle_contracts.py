@@ -478,6 +478,8 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                     "user_id": 42,
                     "role": "user",
                     "email": "canonical@example.com",
+                    # 口令版本声明（AUTH-B）：记录缺 pwd_ver 键时按迁移 DEFAULT 1 签发
+                    "pwd_ver": 1,
                 }
             ],
         )

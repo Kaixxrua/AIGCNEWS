@@ -204,6 +204,9 @@ class AccountLifecycle:
                 "user_id": user["id"],
                 "role": user["role"],
                 "email": user["email"],
+                # 口令版本声明：改密递增库内 pwd_ver 后，本 token 在下一个
+                # 请求即被 RequireUser 判定失效（改密即撤销旧会话）
+                "pwd_ver": int(user.get("pwd_ver") or 1),
             }
         )
         return LoginResult(

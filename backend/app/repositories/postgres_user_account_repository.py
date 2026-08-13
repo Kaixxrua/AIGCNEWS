@@ -32,9 +32,10 @@ class PostgresUserAccountRepository:
     def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
         # 身份核验专用：按主键查询且不取 hashed_password；disabled 供
         # auth.RequireUser 判定禁用账号（0029 起 users 表才有此列）。
+        # pwd_ver 供 RequireUser 比对 JWT 声明，改密后旧 token 立即失效（0041）。
         return self._fetchone(
             """
-            SELECT id, phone, email, username, role, disabled, created_at
+            SELECT id, phone, email, username, role, disabled, pwd_ver, created_at
             FROM users
             WHERE id = %s
             """,
@@ -52,10 +53,11 @@ class PostgresUserAccountRepository:
         )
 
     def get_user_by_email(self, email: str) -> dict[str, Any] | None:
-        # 登录/改密凭证核验路径：disabled 供生命周期在签发令牌前拦截禁用账号
+        # 登录/改密凭证核验路径：disabled 供生命周期在签发令牌前拦截禁用账号，
+        # pwd_ver 供登录签发时写入 JWT 声明（改密即失效旧令牌）
         return self._fetchone(
             """
-            SELECT id, phone, email, username, hashed_password, role, disabled, created_at
+            SELECT id, phone, email, username, hashed_password, role, disabled, pwd_ver, created_at
             FROM users
             WHERE email = %s
             """,
@@ -90,7 +92,7 @@ class PostgresUserAccountRepository:
                 cursor.execute(
                     """
                     UPDATE users
-                    SET hashed_password = %s
+                    SET hashed_password = %s, pwd_ver = pwd_ver + 1
                     WHERE id = %s AND email = %s
                     """,
                     (hashed_password, int(user_id), email.lower()),

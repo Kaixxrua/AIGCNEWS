@@ -88,6 +88,7 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
             "email": "reader@example.com",
             "role": "user",
             "hashed_password": hash_password("abcdef"),
+            "pwd_ver": 2,
         }
 
         with patch.object(
@@ -110,8 +111,15 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
                 "password_change_required": False,
             },
         )
+        # 登录响应携带令牌：必须禁止任何中间缓存存储
+        self.assertEqual(response.headers["cache-control"], "no-store")
         create_token.assert_called_once_with(
-            {"user_id": 42, "role": "user", "email": "reader@example.com"}
+            {
+                "user_id": 42,
+                "role": "user",
+                "email": "reader@example.com",
+                "pwd_ver": 2,
+            }
         )
 
         self.repository.get_user_by_email.return_value = None

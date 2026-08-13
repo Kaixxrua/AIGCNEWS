@@ -103,6 +103,54 @@ class TokenRevocationTests(unittest.TestCase):
         self.assertEqual(response.json(), {"detail": "用户身份无效"})
         self.assertEqual(self.repository.queries, [])
 
+    def test_stale_pwd_ver_token_is_rejected_after_password_change(self) -> None:
+        # 改密使库内 pwd_ver 递增：签发时的旧声明失配，token 立即失效（AUTH-B）
+        self.repository.records[12] = {"id": 12, "role": "user", "pwd_ver": 2}
+
+        response = self.client.get(
+            "/api/profile",
+            headers=_bearer({"user_id": 12, "role": "user", "pwd_ver": 1}),
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"detail": "登录状态已失效，请重新登录"})
+        self.assertEqual(response.headers["www-authenticate"], "Bearer")
+
+    def test_legacy_token_without_pwd_ver_is_rejected_once_column_exists(self) -> None:
+        # 升级前签发的历史 JWT 没有 pwd_ver 声明：库内已有版本号时一律失效，
+        # 强制用户重新登录一次换取带声明的新 token
+        self.repository.records[13] = {"id": 13, "role": "user", "pwd_ver": 1}
+
+        response = self.client.get(
+            "/api/profile",
+            headers=_bearer({"user_id": 13, "role": "user"}),
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"detail": "登录状态已失效，请重新登录"})
+
+    def test_matching_pwd_ver_token_passes(self) -> None:
+        self.repository.records[14] = {"id": 14, "role": "user", "pwd_ver": 5}
+
+        response = self.client.get(
+            "/api/profile",
+            headers=_bearer({"user_id": 14, "role": "user", "pwd_ver": 5}),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"user_id": 14, "role": "user"})
+
+    def test_record_without_pwd_ver_skips_comparison_for_unmigrated_schema(self) -> None:
+        # 库内缺列（迁移未应用）时跳过比对：不阻断升级窗口期的存量会话
+        self.repository.records[15] = {"id": 15, "role": "user"}
+
+        response = self.client.get(
+            "/api/profile",
+            headers=_bearer({"user_id": 15, "role": "user"}),
+        )
+
+        self.assertEqual(response.status_code, 200)
+
     def test_downgraded_admin_loses_admin_access_immediately(self) -> None:
         # token 签发时是 admin，库中已降级为 user：管理端点 403，普通端点放行且角色为 user
         self.repository.records[9] = {"id": 9, "role": "user"}
@@ -238,6 +286,9 @@ class PostgresGetUserByIdTests(unittest.TestCase):
         self.assertIn("FROM users", sql)
         self.assertIn("WHERE id = %s", sql)
         self.assertNotIn("hashed_password", sql)
+        # 身份核验路径必须投影 disabled 与 pwd_ver（禁用/改密即撤销的判定输入）
+        self.assertIn("disabled", sql)
+        self.assertIn("pwd_ver", sql)
         self.assertEqual(params, (7,))
 
     def test_get_user_by_id_returns_none_for_unknown_id(self) -> None:

@@ -151,6 +151,16 @@ async def RequireUser(
             detail="账号不存在或已被禁用",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # 口令版本比对：改密会递增库内 pwd_ver，签发时写入 JWT 的声明随之失配，
+    # 旧 token 在下一个请求即失效（改密即撤销）。库内缺列（迁移未应用）时
+    # 跳过比对保持兼容；token 缺声明（升级前签发的历史 JWT）一律按失效处理。
+    record_pwd_ver = record.get("pwd_ver")
+    if record_pwd_ver is not None and payload.get("pwd_ver") != record_pwd_ver:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="登录状态已失效，请重新登录",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     identity = dict(payload)
     identity["role"] = record.get("role") or "user"
     return identity
