@@ -19,6 +19,54 @@ An AI discovery & intelligence platform for engineers, researchers, and AI agent
 - **AIGC Radar MCP** — an MCP data interface for agents (flagship)
 - **Web Site** — rankings, project library, and briefings for human readers ([aigcnews.cn](https://aigcnews.cn))
 
+## Benchmarks
+
+Numbers first — everything below measures the flagship [AIGC Radar MCP](#aigc-radar-mcp-flagship-interface) interface detailed later in this README:
+
+![AIGC Radar MCP quality metrics: 3.5× faster than WebSearch (7.4 s vs 25.8 s median end-to-end), 160 ms median tool execution (p50 server-side 360 ms), 98.3% first-tool accuracy (59/60 trials, mixed-intent 90%), 500+ GitHub stars floor with low-quality repos filtered out — measured 2026-08-12, self-hosted](docs/assets/mcp-quality-metrics.png)
+
+Server-side latency, measured 2026-08-11 with [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) (JSON-RPC over Streamable HTTP, 6 representative tools × 3 trials, 18 timed `tools/call` requests):
+
+| Endpoint | p50 | p95 | Notes |
+| --- | --- | --- | --- |
+| Self-hosted `http://localhost:8000/api/mcp` | 360 ms | 710 ms | backend query processing is sub-second |
+
+Agent end-to-end vs WebSearch, measured 2026-08-11 with [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py): headless `claude -p` (claude-opus-4-8, effort low), MCP pointed at `http://127.0.0.1:8000/api/mcp`, wall clock from process spawn to the complete answer, both sides instructed to answer in at most two sentences, 10 distinct queries × 1 run per path:
+
+| Query | AIGC Radar MCP | — of which tool exec | WebSearch |
+| --- | --- | --- | --- |
+| self-hosted LLM observability platform open source | 9.6 s | 802 ms | 13.4 s |
+| open source screenshot tool for Windows with rounded corners | 7.7 s | 66 ms | 38.8 s |
+| mixture of experts load balancing paper | 6.7 s | 96 ms | 19.8 s |
+| Sora video generation model | 6.2 s | 204 ms | 42.4 s |
+| trending GitHub repositories this week | 9.4 s | 748 ms | 10.7 s |
+| MCP server for database access | 8.7 s | 510 ms | 10.0 s |
+| self-hosted photo management like Google Photos | 32.9 s | 41 ms | 31.8 s |
+| RLHF reward model overoptimization paper | 7.0 s | 139 ms | 17.4 s |
+| top Hacker News stories this month | 6.8 s | 31 ms | 52.2 s |
+| Claude Code agent skills | 6.7 s | 178 ms | 54.8 s |
+| **Median** | **7.4 s** | **160 ms** | **25.8 s** |
+
+MCP finished under 10 s in 9 of 10 pairs while WebSearch never went below 9.9 s — **3.5× faster at the median**. Pure MCP tool execution (`tool_use` → `tool_result`) was 160 ms at the median (30–800 ms); WebSearch executes its search inside the API turn (server-side tool), so no equivalent client-observable window exists. The 32.9 s MCP outlier is a model-API stall, not tool cost (its tool call took 41 ms) — the median filters such spikes.
+
+Tool-selection accuracy, measured 2026-08-12 with [scripts/eval_mcp_tool_selection.py](scripts/eval_mcp_tool_selection.py): headless `claude -p` (claude-opus-4-8, effort high) with both host tools and all 7 MCP tools available; a trial passes only if the **first** tool call is the expected AIGC Radar tool with no host-tool detour:
+
+| Probe set | Accuracy |
+| --- | --- |
+| 9 unambiguous probes (10 + 5 trials each) | **100%** (50/50) |
+| 2 mixed-intent probes (5 trials each) | **90%** (9/10) |
+| **Overall (11 probes, 60 trials)** | **98.3%** (59/60) |
+
+Unambiguous probes held 100% in the baseline run; post-change reruns missed only on infrastructure flakes (a harness timeout, a 429 rate-limit that exhausted retries before the first assistant turn), never on wrong-tool routing — so the table pairs the baseline unambiguous count with the post-change mixed-intent count (same harness, same day). Mixed-intent prompts explicitly invite both deliverable types ("projects primarily, papers as a supplement"): earlier runs hedged by calling both candidate tools in parallel, the routing rules in the tool descriptions eliminated that pattern entirely, and the one remaining mixed miss is a model reading a fragment-style prompt as a preference-setting instruction and saving it to memory via Bash — a prompt-interpretation quirk, not wrong-tool routing.
+
+Reproduce:
+
+```bash
+python3 scripts/benchmark_mcp_latency.py --url http://localhost:8000/api/mcp --trials 3
+python3 scripts/benchmark_agent_tool_latency.py  # requires the claude CLI
+python3 scripts/eval_mcp_tool_selection.py       # requires the claude CLI
+```
+
 ## Demo
 
 ![AIGCNEWS demo: dashboard ranking tabs and project library search](docs/assets/demo.gif)
@@ -117,52 +165,6 @@ Public tools (no auth required, all read-only):
 Sending `Authorization: Bearer <MCP access token>` additionally unlocks `search_my_project_favorites` (personal favorites search). Logged-in users can mint minimal-scope, revocable read-only tokens with device labels and expiry — the plaintext token is shown only once, and the server stores only its digest.
 
 On the context side, it provides resources (`aigc-news://dashboard/summary`, `aigc-news://report/latest`, etc.), resource templates, and prompts (`daily_research_brief`, `project_discovery`). For full protocol parameters, the MCP-first policy, and fallback semantics, see [docs/mcp-server.md](docs/mcp-server.md).
-
-### Benchmarks
-
-![AIGC Radar MCP quality metrics: 3.5× faster than WebSearch (7.4 s vs 25.8 s median end-to-end), 160 ms median tool execution (p50 server-side 360 ms), 98.3% first-tool accuracy (59/60 trials, mixed-intent 90%), 500+ GitHub stars floor with low-quality repos filtered out — measured 2026-08-12, self-hosted](docs/assets/mcp-quality-metrics.png)
-
-Server-side latency, measured 2026-08-11 with [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) (JSON-RPC over Streamable HTTP, 6 representative tools × 3 trials, 18 timed `tools/call` requests):
-
-| Endpoint | p50 | p95 | Notes |
-| --- | --- | --- | --- |
-| Self-hosted `http://localhost:8000/api/mcp` | 360 ms | 710 ms | backend query processing is sub-second |
-
-Agent end-to-end vs WebSearch, measured 2026-08-11 with [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py): headless `claude -p` (claude-opus-4-8, effort low), MCP pointed at `http://127.0.0.1:8000/api/mcp`, wall clock from process spawn to the complete answer, both sides instructed to answer in at most two sentences, 10 distinct queries × 1 run per path:
-
-| Query | AIGC Radar MCP | — of which tool exec | WebSearch |
-| --- | --- | --- | --- |
-| self-hosted LLM observability platform open source | 9.6 s | 802 ms | 13.4 s |
-| open source screenshot tool for Windows with rounded corners | 7.7 s | 66 ms | 38.8 s |
-| mixture of experts load balancing paper | 6.7 s | 96 ms | 19.8 s |
-| Sora video generation model | 6.2 s | 204 ms | 42.4 s |
-| trending GitHub repositories this week | 9.4 s | 748 ms | 10.7 s |
-| MCP server for database access | 8.7 s | 510 ms | 10.0 s |
-| self-hosted photo management like Google Photos | 32.9 s | 41 ms | 31.8 s |
-| RLHF reward model overoptimization paper | 7.0 s | 139 ms | 17.4 s |
-| top Hacker News stories this month | 6.8 s | 31 ms | 52.2 s |
-| Claude Code agent skills | 6.7 s | 178 ms | 54.8 s |
-| **Median** | **7.4 s** | **160 ms** | **25.8 s** |
-
-MCP finished under 10 s in 9 of 10 pairs while WebSearch never went below 9.9 s — **3.5× faster at the median**. Pure MCP tool execution (`tool_use` → `tool_result`) was 160 ms at the median (30–800 ms); WebSearch executes its search inside the API turn (server-side tool), so no equivalent client-observable window exists. The 32.9 s MCP outlier is a model-API stall, not tool cost (its tool call took 41 ms) — the median filters such spikes.
-
-Tool-selection accuracy, measured 2026-08-12 with [scripts/eval_mcp_tool_selection.py](scripts/eval_mcp_tool_selection.py): headless `claude -p` (claude-opus-4-8, effort high) with both host tools and all 7 MCP tools available; a trial passes only if the **first** tool call is the expected AIGC Radar tool with no host-tool detour:
-
-| Probe set | Accuracy |
-| --- | --- |
-| 9 unambiguous probes (10 + 5 trials each) | **100%** (50/50) |
-| 2 mixed-intent probes (5 trials each) | **90%** (9/10) |
-| **Overall (11 probes, 60 trials)** | **98.3%** (59/60) |
-
-Unambiguous probes held 100% in the baseline run; post-change reruns missed only on infrastructure flakes (a harness timeout, a 429 rate-limit that exhausted retries before the first assistant turn), never on wrong-tool routing — so the table pairs the baseline unambiguous count with the post-change mixed-intent count (same harness, same day). Mixed-intent prompts explicitly invite both deliverable types ("projects primarily, papers as a supplement"): earlier runs hedged by calling both candidate tools in parallel, the routing rules in the tool descriptions eliminated that pattern entirely, and the one remaining mixed miss is a model reading a fragment-style prompt as a preference-setting instruction and saving it to memory via Bash — a prompt-interpretation quirk, not wrong-tool routing.
-
-Reproduce:
-
-```bash
-python3 scripts/benchmark_mcp_latency.py --url http://localhost:8000/api/mcp --trials 3
-python3 scripts/benchmark_agent_tool_latency.py  # requires the claude CLI
-python3 scripts/eval_mcp_tool_selection.py       # requires the claude CLI
-```
 
 ### Structured JSON responses
 

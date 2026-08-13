@@ -19,6 +19,54 @@
 - **AIGC Radar MCP** —— 面向 Agent 的 MCP 数据接口（旗舰）
 - **Web 站点** —— 面向人类读者的榜单、项目库与简报界面（[aigcnews.cn](https://aigcnews.cn)）
 
+## 性能实测
+
+数字先行 —— 以下实测针对后文详述的旗舰接口 [AIGC Radar MCP](#aigc-radar-mcp旗舰接口)：
+
+![AIGC Radar MCP 质量指标：比 WebSearch 快 3.5×（端到端中位数 7.4 s 对 25.8 s）、工具执行中位 160 ms（服务端 p50 360 ms）、工具首选准确率 98.3%（59/60 次试验，混合意图 90%）、500+ GitHub stars 门槛过滤低质量仓库 —— 实测于 2026-08-12，自托管](docs/assets/mcp-quality-metrics.png)
+
+服务端延迟，测于 2026-08-11，可用 [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) 复现（Streamable HTTP JSON-RPC，6 个代表性工具 × 3 轮，共 18 次 `tools/call` 计时）：
+
+| Endpoint | p50 | p95 | 说明 |
+| --- | --- | --- | --- |
+| 自托管 `http://localhost:8000/api/mcp` | 360 ms | 710 ms | 后端查询处理本身为亚秒级 |
+
+Agent 端到端对比 WebSearch，测于 2026-08-11，可用 [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py) 复现：headless `claude -p`（claude-opus-4-8，effort low），MCP 指向 `http://127.0.0.1:8000/api/mcp`，wall-clock 从进程启动计到产出完整回答，两侧均要求用不超过两句话作答，10 组不同查询 × 每条路径各 1 次：
+
+| 查询 | AIGC Radar MCP | — 其中工具执行 | WebSearch |
+| --- | --- | --- | --- |
+| self-hosted LLM observability platform open source | 9.6 s | 802 ms | 13.4 s |
+| open source screenshot tool for Windows with rounded corners | 7.7 s | 66 ms | 38.8 s |
+| mixture of experts load balancing paper | 6.7 s | 96 ms | 19.8 s |
+| Sora video generation model | 6.2 s | 204 ms | 42.4 s |
+| trending GitHub repositories this week | 9.4 s | 748 ms | 10.7 s |
+| MCP server for database access | 8.7 s | 510 ms | 10.0 s |
+| self-hosted photo management like Google Photos | 32.9 s | 41 ms | 31.8 s |
+| RLHF reward model overoptimization paper | 7.0 s | 139 ms | 17.4 s |
+| top Hacker News stories this month | 6.8 s | 31 ms | 52.2 s |
+| Claude Code agent skills | 6.7 s | 178 ms | 54.8 s |
+| **中位数** | **7.4 s** | **160 ms** | **25.8 s** |
+
+MCP 在 10 组中有 9 组低于 10 秒，WebSearch 从未低于 9.9 秒——**中位口径快 3.5 倍**。纯 MCP 工具执行（`tool_use` → `tool_result`）中位数 160 ms（30–800 ms）；WebSearch 的搜索在 API 回合内部执行（server-side 工具），客户端无法观测到等价窗口。32.9 s 的 MCP 离群值是模型 API 停顿而非工具耗时（该次工具调用仅 41 ms）——中位数口径天然排除此类波动。
+
+工具选用准确率，测于 2026-08-12，可用 [scripts/eval_mcp_tool_selection.py](scripts/eval_mcp_tool_selection.py) 复现：headless `claude -p`（claude-opus-4-8，effort high），宿主工具与全部 7 个 MCP 工具同时可用；仅当**首个**工具调用命中预期的 AIGC Radar 工具且全程无宿主工具绕行时记为通过：
+
+| 探针组 | 准确率 |
+| --- | --- |
+| 9 个意图明确探针（各 10 + 5 次试验） | **100%**（50/50） |
+| 2 个混合意图探针（各 5 次试验） | **90%**（9/10） |
+| **总计（11 个探针，60 次试验）** | **98.3%**（59/60） |
+
+明确意图探针在基线跑次保持 100%；改动后复测的未命中全部是基础设施抖动（一次 harness 超时、一次 429 限流重试耗尽、首个助手回合尚未产出），无一例路由错误——表中因此取基线明确意图数据与改动后混合意图数据的组合（同天同 harness）。混合意图提示词明确邀请两类交付物（"以项目为主、论文为辅"）：早期试验中模型会把两个候选工具并行都调，工具描述中的路由规则已彻底消除这一模式——剩余一次未命中是模型把碎片式提示词解读成偏好设置指令、转而用 Bash 写入记忆，属提示词解读分歧而非路由错误。
+
+复现：
+
+```bash
+python3 scripts/benchmark_mcp_latency.py --url http://localhost:8000/api/mcp --trials 3
+python3 scripts/benchmark_agent_tool_latency.py  # 需要 claude CLI
+python3 scripts/eval_mcp_tool_selection.py       # 需要 claude CLI
+```
+
 ## 演示
 
 ![AIGCNEWS 演示：Dashboard 榜单切换、项目库检索](docs/assets/demo.gif)
@@ -117,52 +165,6 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 携带 `Authorization: Bearer <MCP access token>` 时额外解锁 `search_my_project_favorites`（个人收藏检索）。登录用户可签发最小权限、可撤销的只读 Token，支持设备标签与有效期 —— 明文仅在创建时展示一次，服务端只保存摘要。
 
 Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://report/latest` 等）、resource templates 与 prompts（`daily_research_brief`、`project_discovery`）。完整的协议参数、MCP-first 策略与 fallback 语义见 [docs/mcp-server.md](docs/mcp-server.md)。
-
-### 性能实测
-
-![AIGC Radar MCP 质量指标：比 WebSearch 快 3.5×（端到端中位数 7.4 s 对 25.8 s）、工具执行中位 160 ms（服务端 p50 360 ms）、工具首选准确率 98.3%（59/60 次试验，混合意图 90%）、500+ GitHub stars 门槛过滤低质量仓库 —— 实测于 2026-08-12，自托管](docs/assets/mcp-quality-metrics.png)
-
-服务端延迟，测于 2026-08-11，可用 [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) 复现（Streamable HTTP JSON-RPC，6 个代表性工具 × 3 轮，共 18 次 `tools/call` 计时）：
-
-| Endpoint | p50 | p95 | 说明 |
-| --- | --- | --- | --- |
-| 自托管 `http://localhost:8000/api/mcp` | 360 ms | 710 ms | 后端查询处理本身为亚秒级 |
-
-Agent 端到端对比 WebSearch，测于 2026-08-11，可用 [scripts/benchmark_agent_tool_latency.py](scripts/benchmark_agent_tool_latency.py) 复现：headless `claude -p`（claude-opus-4-8，effort low），MCP 指向 `http://127.0.0.1:8000/api/mcp`，wall-clock 从进程启动计到产出完整回答，两侧均要求用不超过两句话作答，10 组不同查询 × 每条路径各 1 次：
-
-| 查询 | AIGC Radar MCP | — 其中工具执行 | WebSearch |
-| --- | --- | --- | --- |
-| self-hosted LLM observability platform open source | 9.6 s | 802 ms | 13.4 s |
-| open source screenshot tool for Windows with rounded corners | 7.7 s | 66 ms | 38.8 s |
-| mixture of experts load balancing paper | 6.7 s | 96 ms | 19.8 s |
-| Sora video generation model | 6.2 s | 204 ms | 42.4 s |
-| trending GitHub repositories this week | 9.4 s | 748 ms | 10.7 s |
-| MCP server for database access | 8.7 s | 510 ms | 10.0 s |
-| self-hosted photo management like Google Photos | 32.9 s | 41 ms | 31.8 s |
-| RLHF reward model overoptimization paper | 7.0 s | 139 ms | 17.4 s |
-| top Hacker News stories this month | 6.8 s | 31 ms | 52.2 s |
-| Claude Code agent skills | 6.7 s | 178 ms | 54.8 s |
-| **中位数** | **7.4 s** | **160 ms** | **25.8 s** |
-
-MCP 在 10 组中有 9 组低于 10 秒，WebSearch 从未低于 9.9 秒——**中位口径快 3.5 倍**。纯 MCP 工具执行（`tool_use` → `tool_result`）中位数 160 ms（30–800 ms）；WebSearch 的搜索在 API 回合内部执行（server-side 工具），客户端无法观测到等价窗口。32.9 s 的 MCP 离群值是模型 API 停顿而非工具耗时（该次工具调用仅 41 ms）——中位数口径天然排除此类波动。
-
-工具选用准确率，测于 2026-08-12，可用 [scripts/eval_mcp_tool_selection.py](scripts/eval_mcp_tool_selection.py) 复现：headless `claude -p`（claude-opus-4-8，effort high），宿主工具与全部 7 个 MCP 工具同时可用；仅当**首个**工具调用命中预期的 AIGC Radar 工具且全程无宿主工具绕行时记为通过：
-
-| 探针组 | 准确率 |
-| --- | --- |
-| 9 个意图明确探针（各 10 + 5 次试验） | **100%**（50/50） |
-| 2 个混合意图探针（各 5 次试验） | **90%**（9/10） |
-| **总计（11 个探针，60 次试验）** | **98.3%**（59/60） |
-
-明确意图探针在基线跑次保持 100%；改动后复测的未命中全部是基础设施抖动（一次 harness 超时、一次 429 限流重试耗尽、首个助手回合尚未产出），无一例路由错误——表中因此取基线明确意图数据与改动后混合意图数据的组合（同天同 harness）。混合意图提示词明确邀请两类交付物（"以项目为主、论文为辅"）：早期试验中模型会把两个候选工具并行都调，工具描述中的路由规则已彻底消除这一模式——剩余一次未命中是模型把碎片式提示词解读成偏好设置指令、转而用 Bash 写入记忆，属提示词解读分歧而非路由错误。
-
-复现：
-
-```bash
-python3 scripts/benchmark_mcp_latency.py --url http://localhost:8000/api/mcp --trials 3
-python3 scripts/benchmark_agent_tool_latency.py  # 需要 claude CLI
-python3 scripts/eval_mcp_tool_selection.py       # 需要 claude CLI
-```
 
 ### 结构化 JSON 响应
 
