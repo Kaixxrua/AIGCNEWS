@@ -405,6 +405,24 @@ class XPolicyContracts(unittest.TestCase):
         # 数量不齐：能配对的展开，未配对的原样保留 t.co，不静默丢链接
         self.assertEqual(out, "see https://openai.com/a or https://t.co/Two")
 
+    def test_decode_tweet_html_entities(self) -> None:
+        # X 对 & < > 的转义随端点/条目不一致，统一解码还原页面显示文本
+        self.assertEqual(
+            x_policy.decode_tweet_html_entities(
+                "Plus &amp; Pro &lt;beta&gt; &quot;q&quot; &#39;s"
+            ),
+            "Plus & Pro <beta> \"q\" 's",
+        )
+        self.assertEqual(x_policy.decode_tweet_html_entities(""), "")
+        # 非实体片段原样保留，不误判
+        self.assertEqual(x_policy.decode_tweet_html_entities("R&D <3"), "R&D <3")
+
+    def test_clean_display_text_decodes_html_entities(self) -> None:
+        # 实体解码在最前，t.co 位置配对展开不受影响
+        text = "Codex &amp; ChatGPT desktop https://t.co/LinkOne"
+        out = x_policy.clean_tweet_display_text(text, [], ["https://openai.com/codex"])
+        self.assertEqual(out, "Codex & ChatGPT desktop https://openai.com/codex")
+
     def test_project_tweets_stores_cleaned_display_text(self) -> None:
         tweet = _tweet("1015", text="new model https://t.co/Post https://t.co/MediaTail")
         tweet.media = [TweetMedia(type="photo", url="https://pbs.twimg.com/a.jpg", width=1, height=1)]
@@ -1633,6 +1651,43 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
             result.items[0]["summary"],
             "More info on eligibility: https://gemini.google/eligibility",
         )
+
+    async def test_translation_html_entities_decoded_on_attach(self) -> None:
+        # translateTweet 译文带 HTML 实体（2026-08 线上报障：&amp; 直接露出页面）
+        tweet = self._lang_tweet("2009", "en")
+        tweet.text = "Daybreak Blue & Red access tiers"
+        transport = _FakeTransport(result={"openai": [tweet]})
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            return {"2009": "Daybreak Blue &amp; Red 访问层级"}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(
+            result.items[0].get("translation_zh"),
+            "Daybreak Blue & Red 访问层级",
+        )
+
+    async def test_quoted_translation_html_entities_decoded(self) -> None:
+        # 被引译文同口径解码 HTML 实体
+        outer = self._lang_tweet("2060", "en")
+        quoted = self._lang_tweet("2061", "en")
+        quoted.text = "Free & Go users get unlimited chats"
+        outer.quoted_tweet = quoted
+        transport = _FakeTransport(result={"openai": [outer]})
+
+        def fetcher(ids: list[str]) -> dict[str, str]:
+            return {"2060": "外推译文", "2061": "Free &amp; Go 用户可无限聊天"}
+
+        crawler = self._crawler(transport, fetcher=fetcher)
+        with patch.object(x_crawler, "today_cst", return_value="2026-08-03"):
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        item = result.items[0]
+        self.assertEqual(item.get("translation_zh"), "外推译文")
+        self.assertEqual(item["quote"].get("translation_zh"), "Free & Go 用户可无限聊天")
 
     async def test_translation_dropped_reply_mentions_are_restored_on_attach(self) -> None:
         tweet = self._lang_tweet("2008", "en")
