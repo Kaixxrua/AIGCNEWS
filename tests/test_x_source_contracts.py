@@ -1603,6 +1603,212 @@ class XTranslationTransportContracts(unittest.TestCase):
         self.assertEqual(transport.fetch_tweet_translations(["", "   "]), {})
 
 
+class XExistenceProbeClassificationContracts(unittest.TestCase):
+    """_classify_probe_payload：HTTP 200 原始载荷 → 四态（纯函数）。"""
+
+    @staticmethod
+    def _payload(result: object) -> dict:
+        return {"data": {"tweetResult": {"result": result}}}
+
+    def test_tweet_and_visibility_results_are_alive(self) -> None:
+        for typename in ("Tweet", "TweetWithVisibilityResults"):
+            with self.subTest(typename=typename):
+                payload = self._payload({"__typename": typename, "legacy": {}})
+                self.assertEqual(x_transport._classify_probe_payload(payload), "alive")
+
+    def test_tombstone_author_deleted_en_and_zh_are_deleted(self) -> None:
+        for text in (
+            "This Post was deleted by the Post author. Learn more",
+            "此帖子已被帖子作者删除。了解详情",
+            "此帖已被作者删除",
+        ):
+            with self.subTest(text=text):
+                payload = self._payload(
+                    {
+                        "__typename": "TweetTombstone",
+                        "tombstone": {"text": {"text": text}},
+                    }
+                )
+                self.assertEqual(x_transport._classify_probe_payload(payload), "deleted")
+
+    def test_tombstone_other_reason_is_unavailable(self) -> None:
+        payload = self._payload(
+            {
+                "__typename": "TweetTombstone",
+                "tombstone": {"text": {"text": "This Post is unavailable. Learn more"}},
+            }
+        )
+        self.assertEqual(x_transport._classify_probe_payload(payload), "unavailable")
+
+    def test_tweet_unavailable_deleted_vs_suspended(self) -> None:
+        deleted = self._payload({"__typename": "TweetUnavailable", "reason": "Deleted"})
+        suspended = self._payload({"__typename": "TweetUnavailable", "reason": "Suspended"})
+        self.assertEqual(x_transport._classify_probe_payload(deleted), "deleted")
+        self.assertEqual(x_transport._classify_probe_payload(suspended), "unavailable")
+
+    def test_missing_or_malformed_result_is_unknown(self) -> None:
+        for payload in (
+            {},
+            {"data": {"tweetResult": {}}},
+            self._payload(None),
+            self._payload("not-a-dict"),
+        ):
+            with self.subTest(payload=payload):
+                self.assertEqual(x_transport._classify_probe_payload(payload), "unknown")
+
+
+class XExistenceProbeTransportContracts(unittest.TestCase):
+    """XTransport.probe_tweet_existence：间隔、错误分级、中止语义。"""
+
+    def _transport(self, client: object | None = None) -> x_transport.XTransport:
+        return x_transport.XTransport(client_factory=lambda: client or Mock())
+
+    @staticmethod
+    def _alive() -> dict:
+        return {"data": {"tweetResult": {"result": {"__typename": "Tweet", "legacy": {}}}}}
+
+    @staticmethod
+    def _tombstone() -> dict:
+        return {
+            "data": {
+                "tweetResult": {
+                    "result": {
+                        "__typename": "TweetTombstone",
+                        "tombstone": {"text": {"text": "已被帖子作者删除"}},
+                    }
+                }
+            }
+        }
+
+    def test_raw_fetch_calls_tweet_result_by_rest_id(self) -> None:
+        client = Mock()
+        client._graphql_get.return_value = self._alive()
+        payload = x_transport._fetch_tweet_result_raw(client, "42")
+        self.assertEqual(payload["data"]["tweetResult"]["result"]["__typename"], "Tweet")
+        operation = client._graphql_get.call_args.args[0]
+        self.assertEqual(operation, "TweetResultByRestId")
+        self.assertEqual(
+            client._graphql_get.call_args.kwargs["variables"]["tweetId"], "42"
+        )
+
+    def test_mixed_batch_classifies_each_state(self) -> None:
+        transport = self._transport()
+        payloads = {
+            "a": self._alive(),
+            "b": self._tombstone(),
+            "c": {"data": {"tweetResult": {"result": {"__typename": "TweetUnavailable", "reason": "Suspended"}}}},
+            "d": {"data": {"tweetResult": {}}},
+        }
+        with patch.object(
+            x_transport,
+            "_fetch_tweet_result_raw",
+            side_effect=lambda client, tid: payloads[tid],
+        ), patch.object(x_transport.time, "sleep"):
+            out = transport.probe_tweet_existence(["a", "b", "c", "d"])
+        self.assertEqual(
+            out,
+            {"a": "alive", "b": "deleted", "c": "unavailable", "d": "unknown"},
+        )
+
+    def test_code_144_flattened_message_is_deleted(self) -> None:
+        transport = self._transport()
+        with patch.object(
+            x_transport,
+            "_fetch_tweet_result_raw",
+            side_effect=TwitterAPIError(
+                0, "Twitter API returned errors: No status found with that ID."
+            ),
+        ), patch.object(x_transport.time, "sleep"):
+            out = transport.probe_tweet_existence(["gone1"])
+        self.assertEqual(out, {"gone1": "deleted"})
+
+    def test_other_api_errors_are_unknown(self) -> None:
+        transport = self._transport()
+        errors = iter([
+            TwitterAPIError(0, "Twitter API network error"),
+            TwitterAPIError(404, "Not Found"),
+            TwitterAPIError(500, "Internal Server Error"),
+        ])
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", side_effect=lambda c, t: (_ for _ in ()).throw(next(errors))
+        ), patch.object(x_transport.time, "sleep"):
+            out = transport.probe_tweet_existence(["e1", "e2", "e3"])
+        self.assertEqual(out, {"e1": "unknown", "e2": "unknown", "e3": "unknown"})
+
+    def test_generic_exception_is_unknown(self) -> None:
+        transport = self._transport()
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", side_effect=RuntimeError("boom")
+        ), patch.object(x_transport.time, "sleep"):
+            out = transport.probe_tweet_existence(["z1"])
+        self.assertEqual(out, {"z1": "unknown"})
+
+    def test_rate_limit_aborts_and_discards_partial_results(self) -> None:
+        transport = self._transport()
+        calls: list[str] = []
+
+        def fake_fetch(client: object, tid: str) -> dict:
+            calls.append(tid)
+            if tid == "r2":
+                raise TwitterAPIError(429, "Rate limited after 3 retries")
+            return self._alive()
+
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", side_effect=fake_fetch
+        ), patch.object(x_transport.time, "sleep"):
+            with self.assertRaises(x_transport.XRateLimitAbort):
+                transport.probe_tweet_existence(["r1", "r2", "r3"])
+        # 中止即抛：r3 未被探测，部分结果（r1 alive）随异常一并丢弃
+        self.assertEqual(calls, ["r1", "r2"])
+
+    def test_auth_errors_abort(self) -> None:
+        for exc in (
+            AuthenticationError("expired"),
+            TwitterAPIError(401, "Unauthorized"),
+            TwitterAPIError(403, "Forbidden"),
+        ):
+            with self.subTest(exc=exc):
+                transport = self._transport()
+                with patch.object(
+                    x_transport, "_fetch_tweet_result_raw", side_effect=exc
+                ), patch.object(x_transport.time, "sleep"):
+                    with self.assertRaises(x_transport.XAuthAbort):
+                        transport.probe_tweet_existence(["a1"])
+
+    def test_probe_spacing_between_requests(self) -> None:
+        transport = self._transport()
+        with patch.object(
+            x_transport, "_fetch_tweet_result_raw", return_value=self._alive()
+        ), patch.object(x_transport.time, "sleep") as sleep_mock:
+            transport.probe_tweet_existence(["s1", "s2", "s3"])
+        self.assertEqual(sleep_mock.call_count, 2)
+        for call in sleep_mock.call_args_list:
+            delay = call.args[0]
+            self.assertGreaterEqual(delay, x_transport._EXISTENCE_PROBE_INTER_DELAY * 0.8)
+            self.assertLessEqual(delay, x_transport._EXISTENCE_PROBE_INTER_DELAY * 1.2)
+
+    def test_no_enabled_credentials_raises_not_configured(self) -> None:
+        transport = x_transport.XTransport(
+            credential_provider=lambda: [{"auth_token": "", "ct0": "", "enabled": True}],
+            credential_factory=Mock(),
+        )
+        with self.assertRaises(x_transport.XAuthNotConfigured):
+            transport.probe_tweet_existence(["n1"])
+
+    def test_empty_ids_short_circuits(self) -> None:
+        def forbidden_factory() -> object:
+            raise AssertionError("空 id 列表不应构造客户端")
+
+        transport = x_transport.XTransport(client_factory=forbidden_factory)
+        self.assertEqual(transport.probe_tweet_existence(["", "  "]), {})
+
+    def test_transport_satisfies_public_protocol(self) -> None:
+        from backend.app.services.source_plugins.x_source import XTransportProtocol
+
+        transport = self._transport()
+        self.assertIsInstance(transport, XTransportProtocol)
+
+
 class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
     """翻译附着：非中文入选推文补 translation_zh，失败不影响入库。"""
 
