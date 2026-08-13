@@ -56,6 +56,9 @@ def test_lifespan_builds_postgres_application_composition(monkeypatch) -> None:
     with pytest.raises(RuntimeError, match="Application repositories are not configured"):
         get_configured_application_repositories()
     factory.assert_called_once_with(postgres=main.postgres_database)
-    open_pool.assert_called_once_with()
+    # 除 lifespan 直接开池外，迁移台账自检、错误事件启动清理等步骤也经
+    # connection()/transaction() 惰性调 open()——断言"至少开过一次"而非精确
+    # 次数，避免每加一个启动自检就打破组合冒烟测试。
+    assert open_pool.call_count >= 1
     close_pool.assert_called_once_with()
     reconcile_orphans.assert_called_once_with()

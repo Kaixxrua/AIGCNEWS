@@ -54,7 +54,9 @@ def test_postgres_lifespan_opens_and_closes_selected_pool() -> None:
             async with main.lifespan(app):
                 assert app.state.database is main.postgres_database
                 assert app.state.postgres_database is main.postgres_database
-            postgres_open.assert_called_once_with()
+            # 除 lifespan 直接开池外，迁移台账自检、错误事件启动清理等步骤也经
+            # connection()/transaction() 惰性调 open()——断言"至少开过一次"。
+            assert postgres_open.call_count >= 1
             postgres_close.assert_called_once_with()
             reconcile.assert_called_once_with()
 
