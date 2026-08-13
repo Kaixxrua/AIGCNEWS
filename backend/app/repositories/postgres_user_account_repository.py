@@ -52,9 +52,10 @@ class PostgresUserAccountRepository:
         )
 
     def get_user_by_email(self, email: str) -> dict[str, Any] | None:
+        # 登录/改密凭证核验路径：disabled 供生命周期在签发令牌前拦截禁用账号
         return self._fetchone(
             """
-            SELECT id, phone, email, username, hashed_password, role, created_at
+            SELECT id, phone, email, username, hashed_password, role, disabled, created_at
             FROM users
             WHERE email = %s
             """,

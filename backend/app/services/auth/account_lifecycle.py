@@ -80,6 +80,10 @@ class InvalidCredentials(AccountLifecycleError):
     """Login credentials do not identify an account."""
 
 
+class AccountDisabled(AccountLifecycleError):
+    """Credentials are valid but the account has been disabled."""
+
+
 class PasswordResetFailed(AccountLifecycleError):
     """Password persistence did not update exactly one account."""
 
@@ -190,6 +194,9 @@ class AccountLifecycle:
             password, str(user["hashed_password"])
         ):
             raise InvalidCredentials
+        # 密码核验通过后才判定禁用：避免向密码错误的调用方泄露账号禁用状态
+        if user.get("disabled"):
+            raise AccountDisabled
 
         role = str(user["role"])
         access_token = self._issue_token(

@@ -7,6 +7,7 @@ from typing import Any
 
 from backend.app.services.auth.account_lifecycle import (
     AccountAlreadyExists,
+    AccountDisabled,
     AccountLifecycle,
     InvalidCredentials,
     InvalidOtp,
@@ -225,6 +226,37 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.events,
             [("get_user_by_email", "missing@example.com")],
         )
+
+    async def test_login_disabled_account_verifies_password_but_never_issues(self) -> None:
+        # 禁用判定必须在密码核验之后：不向密码错误方泄露禁用状态，
+        # 但密码正确也绝不签发令牌（渗透实测：禁用账号原可登录拿 JWT）
+        self.repository.users["reader@example.com"] = {
+            "id": 42,
+            "email": "reader@example.com",
+            "role": "user",
+            "hashed_password": "stored-password-hash",
+            "disabled": True,
+        }
+
+        with self.assertRaises(AccountDisabled):
+            await self.lifecycle.login(
+                email="reader@example.com", password="plain-secret"
+            )
+
+        self.assertEqual(
+            self.events,
+            [
+                ("get_user_by_email", "reader@example.com"),
+                ("verify_password", "plain-secret", "stored-password-hash"),
+            ],
+        )
+
+        self.events.clear()
+        self.verify_password_result = False
+        with self.assertRaises(InvalidCredentials):
+            await self.lifecycle.login(
+                email="reader@example.com", password="wrong-secret"
+            )
 
     async def test_reset_otp_request_is_anti_enumerating_and_controls_delivery(self) -> None:
         results = []

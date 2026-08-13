@@ -399,6 +399,12 @@ async def login(
             email=str(body.email),
             password=body.password,
         )
+    except account_lifecycle.AccountDisabled as exc:
+        # 密码已核验通过才到达此处，明示禁用不构成账号枚举
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账号已被禁用，请联系管理员",
+        ) from exc
     except account_lifecycle.InvalidCredentials as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

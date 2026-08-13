@@ -469,6 +469,9 @@ def test_token_lookup_filters_inactive_and_throttles_last_use() -> None:
     assert "t.revoked_at IS NULL" in lookup.args[0]
     assert "t.deleted_at IS NULL" in lookup.args[0]
     assert "t.expires_at > CURRENT_TIMESTAMP" in lookup.args[0]
+    # 禁用账号的未吊销 token 必须一并失效（REST JWT 路径已有 per-request 拦截，
+    # MCP token 路径曾缺失该校验，渗透实测禁用后 tools/list 仍 200）
+    assert "u.disabled = FALSE" in lookup.args[0]
     assert "INTERVAL '5 minutes'" in update.args[0]
     assert result["scopes"] == []
     assert "token_hash" not in result

@@ -164,6 +164,7 @@ class PostgresMcpAccessTokenRepository:
                     FROM user_mcp_tokens t JOIN users u ON u.id = t.user_id
                     WHERE t.token_hash = %s AND t.revoked_at IS NULL AND t.deleted_at IS NULL
                       AND (t.expires_at IS NULL OR t.expires_at > CURRENT_TIMESTAMP)
+                      AND u.disabled = FALSE
                     LIMIT 1
                     """,
                     (token_hash,),
