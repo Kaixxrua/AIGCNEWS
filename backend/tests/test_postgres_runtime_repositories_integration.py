@@ -276,3 +276,12 @@ def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositor
     assert [row["id"] for row in rows] == ["doc-x-new", "doc-x-old"]
     # media JSON 串反序列化为列表
     assert rows[0]["media"] == [{"type": "photo", "url": "https://pbs.twimg.com/a.jpg"}]
+
+    # until_iso 下推 SQL：上限词法过滤掉窗口外新推文（days_back 回移窗口的语义）
+    bounded = documents.list_recent_by_source(
+        "x",
+        since_iso="2026-08-05T00:00:00+00:00",
+        until_iso="2026-08-06T23:59:59+00:00",
+        limit=10,
+    )
+    assert [row["id"] for row in bounded] == ["doc-x-old", "doc-x-stale"]

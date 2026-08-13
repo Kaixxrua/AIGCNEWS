@@ -34,6 +34,7 @@ export interface DashboardRecentXWireResponse {
   items?: TopDoc[] | null
   total?: number | null
   window_hours?: number | null
+  days_back?: number | null
 }
 
 export interface DashboardVisitorCountWireResponse {
@@ -103,6 +104,8 @@ export interface DashboardSnapshotDatesParams {
 
 export interface DashboardRecentXParams {
   hours?: number
+  /** 整数天位移：0 = 最近 hours 小时；1 = 昨天此刻往前 hours 小时（滑窗按天回移） */
+  daysBack?: number
   limit?: number
   signal?: AbortSignal
   cacheBuster?: number

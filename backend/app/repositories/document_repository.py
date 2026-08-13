@@ -118,6 +118,7 @@ class DocumentRecentReader(Protocol):
         source: str,
         *,
         since_iso: str,
+        until_iso: str | None = None,
         limit: int = 500,
     ) -> list[dict[str, Any]]: ...
 

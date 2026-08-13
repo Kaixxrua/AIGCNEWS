@@ -456,10 +456,10 @@ def test_x_recent_route_serves_rolling_window_and_filters_stale_rows() -> None:
 
     class FakeRecentReader:
         def __init__(self) -> None:
-            self.calls: list[tuple[str, str, int]] = []
+            self.calls: list[tuple[str, str, str | None, int]] = []
 
-        def list_recent_by_source(self, source, *, since_iso, limit=500):
-            self.calls.append((source, since_iso, limit))
+        def list_recent_by_source(self, source, *, since_iso, until_iso=None, limit=500):
+            self.calls.append((source, since_iso, until_iso, limit))
             return docs
 
     reader = FakeRecentReader()
@@ -474,6 +474,8 @@ def test_x_recent_route_serves_rolling_window_and_filters_stale_rows() -> None:
         default = client.get("/api/dashboard/x/recent")
         bad_hours = client.get("/api/dashboard/x/recent?hours=0")
         bad_limit = client.get("/api/dashboard/x/recent?limit=501")
+        bad_days_back = client.get("/api/dashboard/x/recent?days_back=-1")
+        too_far_back = client.get("/api/dashboard/x/recent?days_back=61")
     finally:
         FastAPICache.reset()
 
@@ -482,17 +484,65 @@ def test_x_recent_route_serves_rolling_window_and_filters_stale_rows() -> None:
     assert [item["id"] for item in payload["items"]] == ["x:new", "x:edge"]
     assert payload["total"] == 2
     assert payload["window_hours"] == 24
+    assert payload["days_back"] == 0
     assert payload["is_embargoed"] is False
     assert payload["snapshot_date"] is None
-    source, since_iso, limit = reader.calls[0]
+    source, since_iso, until_iso, limit = reader.calls[0]
     assert source == "x"
     assert limit == 500
-    # since_iso ≈ 请求时刻 - 24h
+    # [since_iso, until_iso] ≈ [请求时刻 - 24h, 请求时刻]（days_back=0 窗口上界即当下）
     parsed_since = datetime.fromisoformat(since_iso)
+    parsed_until = datetime.fromisoformat(str(until_iso))
     assert now - timedelta(hours=24, minutes=1) <= parsed_since <= now - timedelta(hours=23, minutes=59)
+    assert now - timedelta(minutes=1) <= parsed_until <= now + timedelta(minutes=1)
     assert default.status_code == 200
     assert bad_hours.status_code == 422
     assert bad_limit.status_code == 422
+    assert bad_days_back.status_code == 422
+    assert too_far_back.status_code == 422
+
+
+def test_x_recent_days_back_shifts_the_window_by_whole_days() -> None:
+    now = datetime.now(timezone.utc)
+    docs = [
+        {"id": "x:today", "source": "x", "published_at": (now - timedelta(hours=2)).isoformat()},
+        {"id": "x:yesterday", "source": "x", "published_at": (now - timedelta(hours=25)).isoformat()},
+        {"id": "x:yesterday-edge", "source": "x", "published_at": (now - timedelta(hours=47, minutes=59)).isoformat()},
+        # 落在回移窗口之外：太新（今天）/太旧（前天）
+        {"id": "x:two-days", "source": "x", "published_at": (now - timedelta(hours=49)).isoformat()},
+    ]
+
+    class FakeRecentReader:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, str | None, int]] = []
+
+        def list_recent_by_source(self, source, *, since_iso, until_iso=None, limit=500):
+            self.calls.append((source, since_iso, until_iso, limit))
+            return docs
+
+    reader = FakeRecentReader()
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_document_repository] = lambda: reader
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-xrecent-daysback")
+    try:
+        client = TestClient(app)
+        shifted = client.get("/api/dashboard/x/recent?hours=24&days_back=1&limit=500")
+    finally:
+        FastAPICache.reset()
+
+    assert shifted.status_code == 200
+    payload = shifted.json()
+    # days_back=1：只留 [now-48h, now-24h] 区间内的推文
+    assert [item["id"] for item in payload["items"]] == ["x:yesterday", "x:yesterday-edge"]
+    assert payload["days_back"] == 1
+    _, since_iso, until_iso, _ = reader.calls[0]
+    parsed_since = datetime.fromisoformat(since_iso)
+    parsed_until = datetime.fromisoformat(str(until_iso))
+    # 窗口上界 ≈ 请求时刻 - 24h，下界再往前 24h
+    assert now - timedelta(hours=24, minutes=1) <= parsed_until <= now - timedelta(hours=23, minutes=59)
+    assert now - timedelta(hours=48, minutes=1) <= parsed_since <= now - timedelta(hours=47, minutes=59)
 
 
 def test_x_recent_short_cache_ignores_frontend_cache_buster() -> None:
@@ -505,7 +555,7 @@ def test_x_recent_short_cache_ignores_frontend_cache_buster() -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def list_recent_by_source(self, source, *, since_iso, limit=500):
+        def list_recent_by_source(self, source, *, since_iso, until_iso=None, limit=500):
             self.calls += 1
             return docs
 
@@ -524,15 +574,17 @@ def test_x_recent_short_cache_ignores_frontend_cache_buster() -> None:
         # _t 不进缓存 key：相同业务参数的重复访问命中 120s 短缓存，只读一次库
         assert reader.calls == 1
         other_params = client.get("/api/dashboard/x/recent?hours=48&limit=500&_t=333")
+        shifted = client.get("/api/dashboard/x/recent?hours=24&days_back=1&limit=500&_t=444")
     finally:
         FastAPICache.reset()
 
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.json()["items"] == first.json()["items"]
-    # 业务参数变化仍是新 key，照常读库
+    # 业务参数变化（含 days_back）仍是新 key，照常读库
     assert other_params.status_code == 200
-    assert reader.calls == 2
+    assert shifted.status_code == 200
+    assert reader.calls == 3
 
 
 def test_top_route_preserves_x_media_metadata() -> None:

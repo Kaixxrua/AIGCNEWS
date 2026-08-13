@@ -404,23 +404,21 @@ export const paginateItems = <T>(items: T[], page: number, pageSize: number): T[
 }
 
 export interface XBoardEmptyCopyOptions {
-  isRecentMode: boolean
-  /** 日期模式专用：昨日榜单 CST 15:00 定稿前被后端静默（items 直接为空） */
-  isEmbargoed: boolean
-  /** 快照日期清单已成功加载（清单为空时无法判定「该日无快照」，回退通用空态） */
+  /** 选中的就是今天（最近 24h 滚动窗口） */
+  isToday: boolean
+  /** 快照日期清单已成功加载（清单为空时无法判定「早于最早数据日」，回退通用空态） */
   hasSnapshotDates: boolean
-  /** 选中日期在快照日期清单内 */
-  selectedDateHasSnapshot: boolean
+  /** 选中日期早于清单里有数据的最早日期（再往前翻也不会有数据） */
+  isBeforeEarliest: boolean
 }
 
 /**
- * 空态文案选择：区分「静默期未解禁」「该日期无快照」「真的没数据」三种
- * 日期模式空列表，避免静默期/无快照日一律显示「暂无推文」误导用户。
+ * 空态文案选择：区分「今天窗口暂无」「早于最早数据日」「该日窗口真空」三种
+ * 空列表。滑动窗口语义下不再有静默期/无快照日：任何过去日期的窗口都有定义。
  */
 export const emptyStateCopyKeys = (options: XBoardEmptyCopyOptions): { titleKey: string; hintKey: string } => {
-  if (options.isRecentMode) return { titleKey: 'xboard.emptyRecent', hintKey: 'xboard.emptyRecentHint' }
-  if (options.isEmbargoed) return { titleKey: 'xboard.emptyEmbargoed', hintKey: 'xboard.emptyEmbargoedHint' }
-  if (options.hasSnapshotDates && !options.selectedDateHasSnapshot) {
+  if (options.isToday) return { titleKey: 'xboard.emptyRecent', hintKey: 'xboard.emptyRecentHint' }
+  if (options.hasSnapshotDates && options.isBeforeEarliest) {
     return { titleKey: 'xboard.emptyNoSnapshot', hintKey: 'xboard.emptyNoSnapshotHint' }
   }
   return { titleKey: 'xboard.empty', hintKey: 'xboard.emptyHint' }

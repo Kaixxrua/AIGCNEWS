@@ -24,6 +24,7 @@ vi.mock('@/composables/useXBoardController', async () => {
     availableDates: ref<string[]>([]),
     clearSelection: vi.fn(() => { box.selectedIds.value = new Set() }),
     currentPage: computed(() => clampPage(page.value, box.totalPages.value)),
+    daysBack: ref(0),
     deleteSelected: vi.fn(async () => ({ deleted: 0, notFound: 0 })),
     deleting: ref(false),
     dispose: vi.fn(),
@@ -32,14 +33,10 @@ vi.mock('@/composables/useXBoardController', async () => {
     goPage: vi.fn((next: number) => { page.value = clampPage(next, box.totalPages.value) }),
     hasNext: computed(() => box.currentPage.value < box.totalPages.value),
     hasPrev: computed(() => box.currentPage.value > 1),
-    isEmbargoed: ref(false),
     load: vi.fn(),
     loading: ref(false),
     onDateChange: vi.fn(),
     pageSize,
-    rebuildAllDates: vi.fn(async () => null),
-    rebuildSelectedDate: vi.fn(async () => null),
-    rebuilding: ref(false),
     refresh: vi.fn(),
     selectedDate: ref('2026-08-04'),
     selectedIds: ref<Set<string>>(new Set()),
@@ -59,7 +56,6 @@ vi.mock('@/composables/useXBoardController', async () => {
       box.selectedIds.value = next
     }),
     totalPages: computed(() => pageCount(box.docs.value.length, pageSize)),
-    viewMode: ref('recent'),
     // 测试专用：视图不消费，供 beforeEach 复位页码
     __page: page,
   }
@@ -122,10 +118,8 @@ beforeEach(() => {
   ctl.errorMsg.value = ''
   ctl.loading.value = false
   ctl.deleting.value = false
-  ctl.rebuilding.value = false
-  ctl.viewMode.value = 'recent'
   ctl.availableDates.value = []
-  ctl.isEmbargoed.value = false
+  ctl.selectedDate.value = '2026-08-04'
   ctl.__page.value = 1
   authBox.current!.isAdmin = true
   controllerSpy.mockClear()

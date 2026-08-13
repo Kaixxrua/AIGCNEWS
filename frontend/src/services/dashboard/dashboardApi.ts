@@ -55,8 +55,8 @@ export const dashboardApi: DashboardApi = {
     }
   },
 
-  async fetchRecentX({ hours = 24, limit = 500, signal, cacheBuster }) {
-    const params: Record<string, unknown> = { hours, limit }
+  async fetchRecentX({ hours = 24, daysBack = 0, limit = 500, signal, cacheBuster }) {
+    const params: Record<string, unknown> = { hours, days_back: daysBack, limit }
     if (cacheBuster) params._t = cacheBuster
     const response = await api.get<DashboardRecentXWireResponse>('/dashboard/x/recent', { params, signal })
     const items = Array.isArray(response.data?.items) ? response.data.items : []

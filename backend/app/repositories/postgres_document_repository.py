@@ -510,17 +510,25 @@ class PostgresDocumentRepository:
         source: str,
         *,
         since_iso: str,
+        until_iso: str | None = None,
         limit: int = 500,
     ) -> list[dict[str, Any]]:
-        """滚动窗口读取：published_at（UTC ISO 串）>= since_iso 的源文档，新到旧。
+        """滚动窗口读取：published_at（UTC ISO 串）落在 [since_iso, until_iso] 的源文档，新到旧。
 
         published_at 统一为 'YYYY-MM-DDTHH:MM:SS+00:00' 词法可比的 ISO 串，
         SQL 词法过滤后由路由层按解析结果二次过滤（剔除脏时间串）。
+        until_iso 缺省 = 无上限（兼容既有调用方）；提供时必须下推到 SQL，
+        否则历史窗口（days_back 位移后）的 LIMIT 截断会落在窗口外的新数据上。
         """
+        clause = f"{_document_projection()} WHERE d.source = %s AND d.published_at >= %s"
+        params: list[Any] = [source, since_iso]
+        if until_iso:
+            clause += " AND d.published_at <= %s"
+            params.append(until_iso)
         rows = self._fetch_rows(
-            f"{_document_projection()} WHERE d.source = %s AND d.published_at >= %s"
-            " ORDER BY d.published_at DESC, COALESCE(d.raw_score, d.score, 0) DESC LIMIT %s",
-            (source, since_iso, limit),
+            clause
+            + " ORDER BY d.published_at DESC, COALESCE(d.raw_score, d.score, 0) DESC LIMIT %s",
+            (*params, limit),
         )
         return [_deserialize_row_media(row) for row in rows]
 

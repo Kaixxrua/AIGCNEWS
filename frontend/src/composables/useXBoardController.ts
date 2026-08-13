@@ -2,19 +2,14 @@ import { computed, ref } from 'vue'
 import type { DashboardApi } from '@/services/dashboard/dashboardContracts'
 import { dashboardApi } from '@/services/dashboard/dashboardApi'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
-import type { XSnapshotRebuildResponse } from '@/services/dashboard/dashboardContracts'
 import { clampPage, groupTweetsByHandle, pageCount } from '@/features/xboard/xBoardViewModel'
 
 export interface XBoardApi {
-  fetchTop: DashboardApi['fetchTop']
   fetchRecentX: DashboardApi['fetchRecentX']
   fetchSnapshotDates: DashboardApi['fetchSnapshotDates']
   deleteDocument: DashboardApi['deleteDocument']
   bulkDeleteDocuments: DashboardApi['bulkDeleteDocuments']
-  rebuildXSnapshot: DashboardApi['rebuildXSnapshot']
 }
-
-export type XBoardViewMode = 'recent' | 'date'
 
 export type XBoardTranslate = (key: string) => string
 
@@ -27,30 +22,43 @@ export interface XBoardControllerOptions {
 const SNAPSHOT_DATE_LIMIT = 60
 // 看板一次拉全量（后端 limit 上限/DB 读取上限均为 500），客户端分页
 const TOP_LIMIT = 500
-// 默认视图：滚动最近 24 小时发布的推文（绝对时间窗，与用户时区无关，展示层已做时区换算）
+// 窗口长度固定 24 小时：日期选择器只做整数天位移（days_back），
+// 窗口 = [所选日期的当前钟点 - 24h, 所选日期的当前钟点]，随访问时刻滑动
 export const XBOARD_RECENT_WINDOW_HOURS = 24
 export const XBOARD_PAGE_SIZE = 20
 
-// XBoardView 自包含控制器：拉取快照日期与 source=x 推文，分组逻辑在 xBoardViewModel。
+/** 本地日历日 YYYY-MM-DD（滑动窗口按用户本地「天」位移，与日期选择器一致） */
+const localDateString = (value: Date): string => {
+  const y = value.getFullYear()
+  const m = String(value.getMonth() + 1).padStart(2, '0')
+  const d = String(value.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+/** 两个日期串的整天差（date 串按 UTC 午夜解析，差值与时区无关）；date 晚于 base 返回负数 */
+const dayDiff = (base: string, date: string): number =>
+  Math.round((Date.parse(base) - Date.parse(date)) / 86_400_000)
+
+// XBoardView 自包含控制器：单一滑动窗口语义——所有查询都走 /dashboard/x/recent，
+// 日期选择器换算为 days_back 整数天位移；首次进入与点选同一天是同一条查询。
 export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const api = options.api ?? dashboardApi
   const translate = options.translate ?? ((key: string) => key)
   const now = options.now ?? (() => new Date())
 
-  const today = now().toISOString().slice(0, 10)
+  const today = localDateString(now())
   const selectedDate = ref(today)
-  const viewMode = ref<XBoardViewMode>('recent')
   const availableDates = ref<string[]>([])
   const docs = ref<TopDoc[]>([])
   const loading = ref(false)
   const deleting = ref(false)
-  const rebuilding = ref(false)
   const errorMsg = ref('')
   const isActive = ref(true)
   const selectedIds = ref<Set<string>>(new Set())
   const page = ref(1)
-  // 日期模式专用：昨日榜单 CST 15:00 定稿前被后端静默，空态需区分「无数据」
-  const isEmbargoed = ref(false)
+
+  // 选中日期 → 整数天位移（未来日期已被 onDateChange 拦截，这里夹取兜底）
+  const daysBack = computed(() => Math.max(0, dayDiff(today, selectedDate.value)))
 
   const sections = computed(() => groupTweetsByHandle(docs.value))
   const totalPages = computed(() => pageCount(docs.value.length, XBOARD_PAGE_SIZE))
@@ -73,16 +81,16 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     abortController = controller
     loading.value = true
     errorMsg.value = ''
-    const mode = viewMode.value
-    const date = selectedDate.value
     try {
-      const result = mode === 'recent'
-        ? await api.fetchRecentX({ hours: XBOARD_RECENT_WINDOW_HOURS, limit: TOP_LIMIT, signal: controller.signal, cacheBuster: Date.now() })
-        : await api.fetchTop({ source: 'x', period: 'daily', date, limit: TOP_LIMIT, signal: controller.signal, cacheBuster: Date.now() })
+      const result = await api.fetchRecentX({
+        hours: XBOARD_RECENT_WINDOW_HOURS,
+        daysBack: daysBack.value,
+        limit: TOP_LIMIT,
+        signal: controller.signal,
+        cacheBuster: Date.now(),
+      })
       if (isActive.value && request === generation) {
         docs.value = result.items
-        // recent 模式无静默期语义；fetchRecentX 不返回该字段，统一复位
-        isEmbargoed.value = mode === 'date' && 'isEmbargoed' in result ? result.isEmbargoed : false
       }
     } catch (error) {
       if (isActive.value && request === generation && !controller.signal.aborted) {
@@ -95,12 +103,9 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
 
   const loadDates = async () => {
     try {
-      // 快照日期用于把默认日期回退到最近一个有数据的日期（今天可能还没跑采集）
-      const dates = await api.fetchSnapshotDates({ source: 'x', period: 'daily', limit: SNAPSHOT_DATE_LIMIT, cacheBuster: Date.now() })
-      if (isActive.value) {
-        availableDates.value = dates
-        if (!dates.includes(selectedDate.value) && dates[0]) selectedDate.value = dates[0]
-      }
+      // 快照日期清单仅用于空态提示「最早可翻到哪天」，不再回退选中日期：
+      // 滑动窗口下今天永远有定义（窗口覆盖过去 24h），无需对齐到快照日
+      availableDates.value = await api.fetchSnapshotDates({ source: 'x', period: 'daily', limit: SNAPSHOT_DATE_LIMIT, cacheBuster: Date.now() })
     } catch {
       // 日期清单失败不阻塞推文加载
     }
@@ -113,18 +118,17 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   }
 
   const onDateChange = (date: string) => {
-    if (!date) return
-    if (date === selectedDate.value && viewMode.value === 'date') return
+    // 空值/同日/未来日都不触发重拉：同日同窗口（查询字面相同），未来日无定义
+    if (!date || date === selectedDate.value || dayDiff(today, date) < 0) return
     selectedDate.value = date
-    viewMode.value = 'date'
     selectedIds.value.clear()
     page.value = 1
     void loadTweets()
   }
 
   const showRecent = () => {
-    // 已在 recent 模式时视为刷新：窗口随当前时刻重新滑动
-    viewMode.value = 'recent'
+    // 回到今天 = days_back 归零；已是今天时视为刷新：窗口随当前时刻重新滑动
+    selectedDate.value = today
     selectedIds.value.clear()
     page.value = 1
     return loadTweets()
@@ -167,31 +171,6 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     selectedIds.value = new Set()
   }
 
-  /**
-   * 管理员补拉：从已入库推文按发布日（CST）重建 X 日榜快照。
-   * 补拉可能新增历史快照日期、改变当前榜单，日期清单与推文都需重拉。
-   */
-  const rebuild = async (targetDate?: string): Promise<XSnapshotRebuildResponse | null> => {
-    if (rebuilding.value) return null
-    rebuilding.value = true
-    errorMsg.value = ''
-    try {
-      const result = await api.rebuildXSnapshot(targetDate)
-      await loadDates()
-      await loadTweets()
-      return result
-    } catch (error) {
-      errorMsg.value = error instanceof Error && error.message ? error.message : translate('xboard.rebuildFailed')
-      return null
-    } finally {
-      rebuilding.value = false
-    }
-  }
-
-  const rebuildSelectedDate = () => rebuild(selectedDate.value)
-
-  const rebuildAllDates = () => rebuild(undefined)
-
   const deleteSelected = async (): Promise<{ deleted: number; notFound: number }> => {
     const ids = Array.from(selectedIds.value)
     if (!ids.length) return { deleted: 0, notFound: 0 }
@@ -219,6 +198,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     availableDates,
     clearSelection,
     currentPage,
+    daysBack,
     deleteSelected,
     deleting,
     dispose,
@@ -227,14 +207,10 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     goPage,
     hasNext,
     hasPrev,
-    isEmbargoed,
     load,
     loading,
     onDateChange,
     pageSize: XBOARD_PAGE_SIZE,
-    rebuildAllDates,
-    rebuildSelectedDate,
-    rebuilding,
     recentWindowHours: XBOARD_RECENT_WINDOW_HOURS,
     refresh,
     sections,
@@ -246,7 +222,6 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     toggleSelectAll,
     toggleSelection,
     totalPages,
-    viewMode,
   }
 }
 

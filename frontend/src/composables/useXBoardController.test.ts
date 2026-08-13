@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useXBoardController, type XBoardApi } from './useXBoardController'
-import type { DashboardRecentX, DashboardTop } from '@/services/dashboard/dashboardContracts'
+import type { DashboardRecentX } from '@/services/dashboard/dashboardContracts'
 
 const doc = (id: string, url: string, rawScore: number, overrides: Record<string, unknown> = {}) => ({ id, title: url, url, raw_score: rawScore, ...overrides })
 
@@ -10,26 +10,23 @@ const recentDocs = () => [
 ]
 
 const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
-  fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: recentDocs(), isEmbargoed: false, sourceStatus: {} })),
   fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: recentDocs(), total: 2, windowHours: 24 })),
   fetchSnapshotDates: vi.fn(async () => ['2026-08-04', '2026-08-03']),
   deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),
   bulkDeleteDocuments: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_ids: ['x:1'], deleted_count: 1, not_found_count: 0 })),
-  rebuildXSnapshot: vi.fn(async () => ({ status: 'succeeded', message: 'ok', results: [{ date: '2026-08-03', upserted: 3 }], skipped_no_date: 0 })),
   ...overrides,
 })
 
 describe('useXBoardController', () => {
-  it('defaults to the rolling 24h view and loads tweets grouped by handle', async () => {
+  it('defaults to today (rolling 24h window) and loads tweets grouped by handle', async () => {
     const api = createApi()
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
 
-    expect(controller.viewMode.value).toBe('recent')
     expect(api.fetchSnapshotDates).toHaveBeenCalledWith(expect.objectContaining({ source: 'x', period: 'daily' }))
-    expect(api.fetchRecentX).toHaveBeenCalledWith(expect.objectContaining({ hours: 24, limit: 500 }))
-    expect(api.fetchTop).not.toHaveBeenCalled()
+    expect(api.fetchRecentX).toHaveBeenCalledWith(expect.objectContaining({ hours: 24, daysBack: 0, limit: 500 }))
     expect(controller.selectedDate.value).toBe('2026-08-04')
+    expect(controller.daysBack.value).toBe(0)
     expect(controller.sections.value.map((section) => section.handle)).toEqual(['karpathy', 'openai'])
     expect(controller.loading.value).toBe(false)
   })
@@ -54,22 +51,15 @@ describe('useXBoardController', () => {
     expect(flattened.find((tweet) => tweet.url === 'https://x.com/openai/status/1')?.media).toEqual(media)
   })
 
-  it('falls back to the latest snapshot date for the picker while staying in recent mode', async () => {
+  it('keeps today selected even when the snapshot listing lacks today', async () => {
+    // 滑动窗口语义：今天永远有定义（覆盖过去 24h），不再回退到最近快照日
     const api = createApi({ fetchSnapshotDates: vi.fn(async () => ['2026-08-02', '2026-08-01']) })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
 
-    // 日期选择器回退到最近有快照的日期，但默认视图仍是滚动窗口（不走 fetchTop）
-    expect(controller.selectedDate.value).toBe('2026-08-02')
-    expect(controller.viewMode.value).toBe('recent')
-    expect(api.fetchTop).not.toHaveBeenCalled()
-
-    // 在 recent 模式下选中同一日期字符串：切换到快照日视图
-    controller.onDateChange('2026-08-02')
-    await vi.waitFor(() => {
-      expect(api.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-08-02' }))
-    })
-    expect(controller.viewMode.value).toBe('date')
+    expect(controller.selectedDate.value).toBe('2026-08-04')
+    expect(controller.daysBack.value).toBe(0)
+    expect(api.fetchRecentX).toHaveBeenCalledWith(expect.objectContaining({ daysBack: 0 }))
   })
 
   it('still loads tweets when the snapshot date listing fails', async () => {
@@ -82,65 +72,82 @@ describe('useXBoardController', () => {
     expect(controller.errorMsg.value).toBe('')
   })
 
-  it('changes date via onDateChange and ignores empty or repeated values', async () => {
+  it('shifts the window by whole days via onDateChange', async () => {
     const api = createApi()
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
 
+    controller.onDateChange('2026-08-03')
+    await vi.waitFor(() => {
+      expect(api.fetchRecentX).toHaveBeenLastCalledWith(expect.objectContaining({ daysBack: 1 }))
+    })
+    expect(controller.daysBack.value).toBe(1)
+
+    controller.onDateChange('2026-08-01')
+    await vi.waitFor(() => {
+      expect(api.fetchRecentX).toHaveBeenLastCalledWith(expect.objectContaining({ daysBack: 3 }))
+    })
+  })
+
+  it('ignores empty, repeated, or future dates so first entry and picking today are the same query', async () => {
+    const api = createApi()
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    const callsAfterLoad = (api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length
+
+    // 空值 no-op
     controller.onDateChange('')
-    expect(api.fetchTop).not.toHaveBeenCalled()
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterLoad)
 
-    // recent 模式下选择日期（即使是同一字符串）→ 切换到快照日视图
+    // 点选日期框里已显示的今天 = 同一窗口同一查询，不重拉（数量必然一致）
     controller.onDateChange('2026-08-04')
-    await vi.waitFor(() => {
-      expect(api.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-08-04' }))
-    })
-    expect(controller.viewMode.value).toBe('date')
-    const callsAfterSwitch = (api.fetchTop as ReturnType<typeof vi.fn>).mock.calls.length
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterLoad)
 
-    // date 模式下重复同一日期 → 不再重拉
-    controller.onDateChange('2026-08-04')
-    expect((api.fetchTop as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterSwitch)
+    // 未来日期无定义，忽略
+    controller.onDateChange('2026-08-05')
+    expect(controller.selectedDate.value).toBe('2026-08-04')
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterLoad)
 
+    // 切到昨天再切回同一昨天：重复值不重拉
     controller.onDateChange('2026-08-03')
-    await vi.waitFor(() => {
-      expect(api.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-08-03' }))
-    })
+    await vi.waitFor(() => expect(controller.daysBack.value).toBe(1))
+    const callsAfterSwitch = (api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length
+    controller.onDateChange('2026-08-03')
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterSwitch)
   })
 
-  it('showRecent switches back from date mode and re-slides the window on repeat calls', async () => {
+  it('showRecent returns to today and re-slides the window on repeat calls', async () => {
     const api = createApi()
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
     controller.onDateChange('2026-08-03')
-    await vi.waitFor(() => expect(controller.viewMode.value).toBe('date'))
+    await vi.waitFor(() => expect(controller.daysBack.value).toBe(1))
     controller.toggleSelection('x:1')
-    controller.goPage(1)
 
     await controller.showRecent()
-    expect(controller.viewMode.value).toBe('recent')
+    expect(controller.selectedDate.value).toBe('2026-08-04')
+    expect(controller.daysBack.value).toBe(0)
     expect(controller.selectedIds.value.size).toBe(0)
-    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
+    expect(api.fetchRecentX).toHaveBeenLastCalledWith(expect.objectContaining({ daysBack: 0 }))
 
-    // 已在 recent 模式时再次触发 = 刷新滚动窗口
+    // 已是今天时再次触发 = 刷新滚动窗口
+    const calls = (api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length
     await controller.showRecent()
-    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(3)
+    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(calls + 1)
   })
 
-  it('refresh reloads the current mode', async () => {
+  it('refresh reloads the current window', async () => {
     const api = createApi()
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
     await controller.refresh()
     expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
-    expect(api.fetchTop).not.toHaveBeenCalled()
 
     controller.onDateChange('2026-08-03')
-    await vi.waitFor(() => expect(controller.viewMode.value).toBe('date'))
-    const recentCalls = (api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length
+    await vi.waitFor(() => expect(controller.daysBack.value).toBe(1))
     await controller.refresh()
-    expect(api.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-08-03' }))
-    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(recentCalls)
+    // 刷新保持当前位移：仍以 daysBack=1 重拉
+    expect(api.fetchRecentX).toHaveBeenLastCalledWith(expect.objectContaining({ daysBack: 1 }))
   })
 
   it('surfaces an error message when tweet loading fails', async () => {
@@ -186,7 +193,7 @@ describe('useXBoardController', () => {
     expect(result).toEqual({ deleted: 1, notFound: 0 })
     expect(api.bulkDeleteDocuments).toHaveBeenCalledWith(['x:1'])
     expect(controller.selectedIds.value.size).toBe(0)
-    // 删除后按当前模式（recent）重拉
+    // 删除后按当前窗口重拉
     expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
   })
 
@@ -246,16 +253,14 @@ describe('useXBoardController', () => {
   })
 
   it('resets to page 1 on date change and refresh', async () => {
-    const api = createPagedApi(45, {
-      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: docPage(45), isEmbargoed: false, sourceStatus: {} })),
-    })
+    const api = createPagedApi(45)
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
     controller.goPage(2)
 
     controller.onDateChange('2026-08-03')
     await vi.waitFor(() => {
-      expect(api.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-08-03' }))
+      expect(api.fetchRecentX).toHaveBeenLastCalledWith(expect.objectContaining({ daysBack: 1 }))
     })
     expect(controller.currentPage.value).toBe(1)
 
@@ -312,61 +317,5 @@ describe('useXBoardController', () => {
     // 空集 no-op
     controller.toggleSelectAll([])
     expect(controller.selectedIds.value.size).toBe(20)
-  })
-
-  it('tracks the embargo flag in date mode and resets it in recent mode', async () => {
-    const api = createApi({
-      fetchTop: vi.fn(async (): Promise<DashboardTop> => ({ items: [], isEmbargoed: true, sourceStatus: {} })),
-    })
-    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
-    await controller.load()
-    expect(controller.isEmbargoed.value).toBe(false)
-
-    controller.onDateChange('2026-08-03')
-    await vi.waitFor(() => expect(controller.viewMode.value).toBe('date'))
-    expect(controller.isEmbargoed.value).toBe(true)
-
-    await controller.showRecent()
-    expect(controller.isEmbargoed.value).toBe(false)
-  })
-
-  it('rebuilds the selected date snapshot and reloads dates and tweets', async () => {
-    const api = createApi()
-    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
-    await controller.load()
-    const recentCalls = (api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length
-    const datesCalls = (api.fetchSnapshotDates as ReturnType<typeof vi.fn>).mock.calls.length
-
-    const result = await controller.rebuildSelectedDate()
-
-    expect(api.rebuildXSnapshot).toHaveBeenCalledWith('2026-08-04')
-    expect(result?.results?.[0]?.upserted).toBe(3)
-    expect((api.fetchSnapshotDates as ReturnType<typeof vi.fn>).mock.calls.length).toBe(datesCalls + 1)
-    expect((api.fetchRecentX as ReturnType<typeof vi.fn>).mock.calls.length).toBe(recentCalls + 1)
-    expect(controller.rebuilding.value).toBe(false)
-  })
-
-  it('rebuilds all historical dates when no target is given', async () => {
-    const api = createApi()
-    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
-    await controller.load()
-
-    await controller.rebuildAllDates()
-
-    expect(api.rebuildXSnapshot).toHaveBeenCalledWith(undefined)
-  })
-
-  it('surfaces an error message when rebuild fails', async () => {
-    const api = createApi({
-      rebuildXSnapshot: vi.fn(async () => { throw new Error('rebuild boom') }),
-    })
-    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
-    await controller.load()
-
-    const result = await controller.rebuildSelectedDate()
-
-    expect(result).toBeNull()
-    expect(controller.errorMsg.value).toBe('rebuild boom')
-    expect(controller.rebuilding.value).toBe(false)
   })
 })

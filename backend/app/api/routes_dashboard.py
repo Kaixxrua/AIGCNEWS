@@ -84,7 +84,7 @@ async def _get_mcp_total_calls() -> int:
 # 白名单外的参数一律不进 key——前端 _t 破缓存参数如此，匿名用户构造的
 # 随机参数更是如此：否则每个新参数值都生成新 key，可写爆 Redis 缓存。
 _DASHBOARD_CACHE_KEY_QUERY_PARAMS = frozenset(
-    {"limit", "source", "date", "hours"}
+    {"limit", "source", "date", "hours", "days_back"}
 )
 
 
@@ -221,8 +221,8 @@ async def get_top_list(
     }
 
 
-def _published_at_since(value: Any, cutoff: datetime) -> bool:
-    """published_at ISO 串解析后 >= cutoff；空值/无法解析一律剔除。"""
+def _published_at_within(value: Any, start: datetime, end: datetime) -> bool:
+    """published_at ISO 串解析后落在 [start, end] 闭区间；空值/无法解析一律剔除。"""
     if not isinstance(value, str) or not value:
         return False
     try:
@@ -231,34 +231,47 @@ def _published_at_since(value: Any, cutoff: datetime) -> bool:
         return False
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed >= cutoff
+    return start <= parsed <= end
+
+
+# X 看板日期位移上限：与前端快照日期清单长度一致，防止深翻扫全表
+_X_RECENT_MAX_DAYS_BACK = 60
 
 
 @router.get("/dashboard/x/recent")
 @cache(expire=120, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_x_recent(
     hours: int = Query(default=24, ge=1, le=72),
+    days_back: int = Query(default=0, ge=0, le=_X_RECENT_MAX_DAYS_BACK),
     limit: int = Query(default=500, ge=1, le=500),
     documents: DocumentRecentReader = Depends(get_document_repository),
 ):
-    """滚动最近 N 小时（默认 24）发布的 X 推文，按发布时间新到旧。
+    """滚动 N 小时（默认 24）发布的 X 推文，按发布时间新到旧；days_back 整体回移窗口。
 
-    不走快照/定稿/静默期语义：X 看板默认视图随访问时间滑动，用户时区
-    由前端展示层换算。挂 120s 短缓存聚合重复访问（公网隧道单次往返
-    ~2s）；key 不含前端 _t 破缓存参数。行为变化：数据最多旧 2 分钟
-    （采集 5 分钟一轮，滞后有界）。
+    窗口 = [now - days_back·24h - hours, now - days_back·24h]：days_back=0 即
+    「最近 N 小时」（默认视图），days_back=1 即「昨天此时此刻往前 N 小时」，
+    供 X 看板日期选择器按整数天滑动。不走快照/定稿/静默期语义：数据直查
+    documents 表，用户时区由前端展示层换算。挂 120s 短缓存聚合重复访问
+    （公网隧道单次往返 ~2s）；key 含 days_back 不含前端 _t 破缓存参数。
+    行为变化：数据最多旧 2 分钟（采集 5 分钟一轮，滞后有界）。
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    cutoff_iso = cutoff.isoformat()
+    end = datetime.now(timezone.utc) - timedelta(days=days_back)
+    cutoff = end - timedelta(hours=hours)
     docs = await asyncio.to_thread(
-        lambda: documents.list_recent_by_source("x", since_iso=cutoff_iso, limit=limit)
+        lambda: documents.list_recent_by_source(
+            "x",
+            since_iso=cutoff.isoformat(),
+            until_iso=end.isoformat(),
+            limit=limit,
+        )
     )
-    items = [doc for doc in docs if _published_at_since(doc.get("published_at"), cutoff)]
+    items = [doc for doc in docs if _published_at_within(doc.get("published_at"), cutoff, end)]
     return {
         "items": items,
         "total": len(items),
         "period": "daily",
         "window_hours": hours,
+        "days_back": days_back,
         "snapshot_date": None,
         "is_finalized": False,
         "is_embargoed": False,

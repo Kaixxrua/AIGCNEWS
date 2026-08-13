@@ -12,19 +12,20 @@ import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKe
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
-import type { XSnapshotRebuildResponse } from '@/services/dashboard/dashboardContracts'
 
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.isAdmin)
 
 const {
-  docs, selectedDate, today, loading, deleting, errorMsg, viewMode,
+  docs, selectedDate, today, loading, deleting, errorMsg,
   selectedIds, currentPage, totalPages, hasPrev, hasNext, pageSize,
-  availableDates, isEmbargoed, rebuilding,
+  availableDates,
   load, onDateChange, showRecent, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
-  rebuildSelectedDate, rebuildAllDates,
 } = useXBoardController({ translate: t })
+
+// 窗口日期是否就是今天：今天 = 最近 24h 滚动窗口（days_back=0）
+const isToday = computed(() => selectedDate.value === today)
 
 // 时间序（新→旧）+ 行主序分列：左上 = 最新推文，从左到右、从上到下。
 // CSS columns 是列主序（先填满一列），无法满足该排序，故 JS 分列。
@@ -133,34 +134,14 @@ watch(docs, () => { playingMedia.value = new Set(); detailTweet.value = null; de
 
 const isSelected = (doc: TopDoc) => doc.id ? selectedIds.value.has(String(doc.id)) : false
 
-// 空态文案三态：静默期（昨日榜单 15:00 定稿前）/ 该日无快照 / 真无数据
+// 空态文案三态：今天窗口暂无 / 早于最早数据日 / 该日窗口真空
 const emptyCopy = computed(() => emptyStateCopyKeys({
-  isRecentMode: viewMode.value === 'recent',
-  isEmbargoed: isEmbargoed.value,
+  isToday: isToday.value,
   hasSnapshotDates: availableDates.value.length > 0,
-  selectedDateHasSnapshot: availableDates.value.includes(selectedDate.value),
+  isBeforeEarliest: earliestSnapshotDate.value !== '' && selectedDate.value < earliestSnapshotDate.value,
 }))
-// 最早快照日期（清单降序，末尾即最早），供「无快照」空态提示可翻到的起点
+// 最早有数据的日期（清单降序，末尾即最早），供「早于最早数据日」空态提示可翻到的起点
 const earliestSnapshotDate = computed(() => availableDates.value[availableDates.value.length - 1] ?? '')
-
-const rebuildResultMessage = (result: XSnapshotRebuildResponse): string => {
-  const results = result.results ?? []
-  const total = results.reduce((sum, item) => sum + (item.upserted || 0), 0)
-  if (!total) return t('xboard.rebuildEmpty')
-  return t('xboard.rebuildSuccess', { dates: results.length, count: total })
-}
-
-const handleRebuildSelected = async () => {
-  if (!window.confirm(t('xboard.rebuildSelectedConfirm', { date: selectedDate.value }))) return
-  const result = await rebuildSelectedDate()
-  if (result) showToast(rebuildResultMessage(result))
-}
-
-const handleRebuildAll = async () => {
-  if (!window.confirm(t('xboard.rebuildAllConfirm'))) return
-  const result = await rebuildAllDates()
-  if (result) showToast(rebuildResultMessage(result))
-}
 
 const handleDeleteSelected = async () => {
   if (!hasSelection.value) return
@@ -201,8 +182,8 @@ onBeforeUnmount(() => {
         <div class="flex flex-wrap items-center gap-2">
           <button
             class="btn-secondary text-xs"
-            :class="{ 'xboard-mode-active': viewMode === 'recent' }"
-            :aria-pressed="viewMode === 'recent'"
+            :class="{ 'xboard-mode-active': isToday }"
+            :aria-pressed="isToday"
             @click="showRecent"
           >
             {{ t('xboard.recent24h') }}
@@ -212,7 +193,7 @@ onBeforeUnmount(() => {
             <input
               type="date"
               class="input py-1.5 text-xs"
-              :class="{ 'xboard-mode-active': viewMode === 'date' }"
+              :class="{ 'xboard-mode-active': !isToday }"
               :value="selectedDate"
               :max="today"
               @change="onDateChange(($event.target as HTMLInputElement).value)"
@@ -241,22 +222,6 @@ onBeforeUnmount(() => {
           <span v-if="hasSelection" class="text-xs text-stone-400">{{ selectedCount }} / {{ timelineDocs.length }}</span>
         </div>
         <div class="flex items-center gap-2">
-          <button
-            class="btn-secondary text-xs"
-            :disabled="rebuilding"
-            :title="t('xboard.rebuildSelectedTitle')"
-            @click="handleRebuildSelected"
-          >
-            {{ rebuilding ? t('xboard.rebuilding') : t('xboard.rebuildSelected', { date: selectedDate }) }}
-          </button>
-          <button
-            class="btn-secondary text-xs"
-            :disabled="rebuilding"
-            :title="t('xboard.rebuildAllTitle')"
-            @click="handleRebuildAll"
-          >
-            {{ t('xboard.rebuildAll') }}
-          </button>
           <button
             v-if="hasSelection"
             class="btn-secondary text-xs"
