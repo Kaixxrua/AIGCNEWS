@@ -106,8 +106,8 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
         <Transition name="article-expand">
           <div v-if="expandedArticleKeys.has(keyFor(article))" class="article-detail-shell">
             <div class="article-detail">
-              <!-- 文内跳转：sticky 吸附在滚动视口顶部，只在管理员全文展开期间可见；
-                   容器不拦截指针，避免悬浮条遮挡正文链接点击 -->
+              <!-- 文内跳转：竖排悬浮在卡片右缘，sticky 吸附在滚动视口纵向中线，
+                   只在管理员全文展开期间可见；容器不拦截指针，避免遮挡正文链接点击 -->
               <div v-if="isAdmin && article.has_content" class="article-nav">
                 <button
                   type="button"
@@ -348,14 +348,31 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
   margin-inline: auto;
 }
 
+/* 文内跳转：竖排悬浮在卡片右缘，sticky 吸附在滚动视口纵向中线（读长文时
+   始终可及，且不占正文上方的视觉焦点）；默认半透明弱化存在感，hover/键盘
+   聚焦时才恢复实色。负下边距抵消自身在文档流中的占位，正文上端不留空档 */
 .article-nav {
   position: sticky;
-  top: 8px;
+  top: 50%;
   z-index: 5;
+  align-self: flex-end;
+  width: auto;
+  max-width: none;
+  margin-inline: 0;
+  margin-right: -6px;
+  margin-bottom: -64px; /* = 两颗 28px 按钮 + 8px 间距，与下方尺寸保持一致 */
   display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
+  transform: translateY(-50%);
+  opacity: 0.45;
   pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.article-nav:hover,
+.article-nav:focus-within {
+  opacity: 1;
 }
 
 .article-nav-btn {
@@ -363,23 +380,25 @@ const scrollToArticleEdge = (event: MouseEvent, edge: 'start' | 'end') => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   font-size: 14px;
   font-weight: 800;
   line-height: 1;
-  border: 1px solid var(--projects-accent);
-  border-radius: 4px;
-  color: var(--projects-accent);
-  background: var(--projects-paper-light);
-  box-shadow: 2px 2px 0 var(--shadow-hard);
-  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  color: var(--ink-muted);
+  background: rgb(var(--card-rgb) / 0.72);
+  backdrop-filter: blur(4px);
+  transition: transform 150ms ease, color 150ms ease, border-color 150ms ease, background 150ms ease;
 }
 
-.article-nav-btn:hover {
-  background: var(--acid-soft);
-  transform: translate(-1px, -1px);
-  box-shadow: 3px 3px 0 var(--shadow-hard);
+.article-nav-btn:hover,
+.article-nav-btn:focus-visible {
+  color: var(--projects-accent);
+  border-color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  transform: translateY(-1px);
 }
 
 .article-cover {
