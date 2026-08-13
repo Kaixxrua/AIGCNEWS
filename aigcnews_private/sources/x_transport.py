@@ -24,7 +24,7 @@ import logging
 import os
 import random
 import time
-from typing import Any, Awaitable, Callable, Iterable, MutableMapping
+from typing import Any, Awaitable, Callable, Iterable, Mapping, MutableMapping
 
 from twitter_cli.exceptions import (
     AuthenticationError,
@@ -315,6 +315,22 @@ _EXISTENCE_PROBE_FEATURES = {
     "verified_phone_label_enabled": False,
 }
 
+# fetch_user（twitter_cli/client.py）同款 features，用于作者账号交叉验证
+_USER_PROBE_FEATURES = {
+    "hidden_profile_subscriptions_enabled": True,
+    "rweb_tipjar_consumption_enabled": True,
+    "responsive_web_graphql_exclude_directive_enabled": True,
+    "verified_phone_label_enabled": False,
+    "subscriptions_verification_info_is_identity_verified_enabled": True,
+    "subscriptions_verification_info_verified_since_enabled": True,
+    "highlights_tweets_tab_ui_enabled": True,
+    "responsive_web_twitter_article_notes_tab_enabled": True,
+    "subscriptions_feature_can_gift_premium": True,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+}
+
 # 墓碑文案跟随凭据账号显示语言：en + zh 本地化一并匹配
 _AUTHOR_DELETED_TOMBSTONE_MARKERS = (
     "deleted by the Post author",
@@ -348,16 +364,28 @@ def _fetch_tweet_result_raw(client: Any, tweet_id: str) -> dict[str, Any]:
 
 
 def _classify_probe_payload(payload: Any) -> str:
-    """HTTP 200 载荷 → alive/deleted/unavailable/unknown（纯函数，契约测试接缝）。
+    """HTTP 200 载荷 → alive/deleted/unavailable/empty/unknown（纯函数，契约测试接缝）。
 
-    口径（2026-08-13 用户拍板）：只认作者删除——TweetUnavailable
-    reason=="Deleted"、墓碑文案含作者删除标记 → deleted；其他不可用
-    原因（Suspended/账号注销/protected 等）→ unavailable（不动）；
-    result 缺失且无显式错误 → unknown（保守，不动）。
+    口径（2026-08-13 用户拍板 + 当日实测修正）：只认作者删除——
+    TweetUnavailable reason=="Deleted"、墓碑文案含作者删除标记 → deleted；
+    其他不可用原因（Suspended/账号注销/protected 等）→ unavailable。
+
+    实测（2026-08-13 对照 fxtwitter 404 与作者账号存活交叉验证）：作者删
+    除/不存在的推文本端点返回 HTTP 200 且 ``{"data": {"tweetResult": {}}}``
+    ——result 键整体缺失、无 errors 数组（非 code 144、非墓碑）。该形态
+    单条无法区分「作者删帖」与「账号封禁/转私密连坐」，故单独标记
+    "empty"，由 probe_tweet_existence 经作者账号探测定终态。其他结构性
+    异常（data 缺失、result 非 dict 等）→ unknown（保守，不动）。
     """
     from twitter_cli.parser import _deep_get
 
-    result = _deep_get(payload, "data", "tweetResult", "result")
+    tweet_result = _deep_get(payload, "data", "tweetResult")
+    if not isinstance(tweet_result, dict):
+        return "unknown"
+    result = tweet_result.get("result")
+    if result is None:
+        # tweetResult 空对象（无 result 键或显式 null）：推文本体已不可见
+        return "empty"
     if not isinstance(result, dict):
         return "unknown"
     typename = str(result.get("__typename") or "")
@@ -373,6 +401,38 @@ def _classify_probe_payload(payload: Any) -> str:
         return "deleted" if str(result.get("reason") or "") == "Deleted" else "unavailable"
     # Tweet / TweetWithVisibilityResults / 其他可解析形态：存活
     return "alive"
+
+
+def _fetch_user_raw(client: Any, screen_name: str) -> dict[str, Any]:
+    """UserByScreenName 原始 GraphQL 响应（作者账号交叉验证用）。"""
+    return client._graphql_get(
+        "UserByScreenName",
+        variables={"screen_name": screen_name, "withSafetyModeUserFields": True},
+        features=_USER_PROBE_FEATURES,
+    )
+
+
+def _classify_user_payload(payload: Any) -> str:
+    """作者账号载荷 → alive_public/unavailable/unknown（纯函数）。
+
+    typename User 且未开启保护 → alive_public；UserUnavailable（封禁/注
+    销）或 protected 账号 → unavailable（其推文不可见非「作者删帖」）；
+    结构异常 → unknown（fail-closed）。
+    """
+    from twitter_cli.parser import _deep_get
+
+    result = _deep_get(payload, "data", "user", "result")
+    if not isinstance(result, dict):
+        return "unknown"
+    typename = str(result.get("__typename") or "")
+    if typename == "UserUnavailable":
+        return "unavailable"
+    if typename == "User":
+        legacy = result.get("legacy")
+        protected = bool(isinstance(legacy, dict) and legacy.get("protected"))
+        return "unavailable" if protected else "alive_public"
+    return "unknown"
+
 
 
 
@@ -480,13 +540,22 @@ class XTransport:
                 result[tweet_id] = text
         return result
 
-    def probe_tweet_existence(self, tweet_ids: Iterable[str]) -> dict[str, str]:
+    def probe_tweet_existence(
+        self,
+        tweet_ids: Iterable[str],
+        authors: Mapping[str, str] | None = None,
+    ) -> dict[str, str]:
         """逐条探测推文是否被原作者删除，返回 {tweet_id: alive/deleted/unavailable/unknown}。
 
         同步方法（内部走 curl_cffi），调用方应经 asyncio.to_thread 转入
         线程池。串行探测、固定间隔，对限流友好。口径与调用方约定：
         deleted 才可删；unavailable（账号封禁/保护等）与 unknown（404/
         网络/解析漂移）一律视为存活（fail-closed）。
+
+        authors: {tweet_id: 作者 screen_name}。推文探得 "empty"（本体不可
+        见，实测作者删帖形态）时用作者账号交叉验证：账号存活且公开 →
+        deleted（作者删帖）；账号封禁/注销/转私密 → unavailable；无作者信
+        息或账号探测异常 → unknown。作者探测按 screen_name 去重缓存。
 
         Raises:
             XAuthNotConfigured: 无启用凭据（整轮中止）。
@@ -497,13 +566,14 @@ class XTransport:
         if not ids:
             return {}
         client = self._translation_client()
+        author_status_cache: dict[str, str] = {}
         result: dict[str, str] = {}
         for index, tweet_id in enumerate(ids):
             if index > 0:
                 time.sleep(_EXISTENCE_PROBE_INTER_DELAY * random.uniform(0.8, 1.2))
             try:
                 payload = _fetch_tweet_result_raw(client, tweet_id)
-                result[tweet_id] = _classify_probe_payload(payload)
+                status = _classify_probe_payload(payload)
             except AuthenticationError as exc:
                 raise XAuthAbort("x_auth_expired") from exc
             except TwitterAPIError as exc:
@@ -524,6 +594,7 @@ class XTransport:
                     exc_info=True,
                 )
                 result[tweet_id] = "unknown"
+                continue
             except Exception:
                 logger.debug(
                     "[XTransport] 推文 %s 存活探测异常，按 unknown 处理",
@@ -531,7 +602,63 @@ class XTransport:
                     exc_info=True,
                 )
                 result[tweet_id] = "unknown"
+                continue
+            if status == "empty":
+                status = self._resolve_empty_via_author(
+                    client, tweet_id, authors or {}, author_status_cache
+                )
+            result[tweet_id] = status
         return result
+
+    def _resolve_empty_via_author(
+        self,
+        client: Any,
+        tweet_id: str,
+        authors: Mapping[str, str],
+        cache: dict[str, str],
+    ) -> str:
+        """"empty" 推文经作者账号状态定终态（见 probe_tweet_existence 口径）。"""
+        screen_name = str(authors.get(tweet_id) or "").strip().lstrip("@")
+        if not screen_name:
+            return "unknown"
+        if screen_name not in cache:
+            try:
+                time.sleep(_EXISTENCE_PROBE_INTER_DELAY * random.uniform(0.8, 1.2))
+                cache[screen_name] = _classify_user_payload(
+                    _fetch_user_raw(client, screen_name)
+                )
+            except AuthenticationError as exc:
+                raise XAuthAbort("x_auth_expired") from exc
+            except NotFoundError:
+                # 账号本体查无（注销/封禁）：推文消失非作者删帖
+                cache[screen_name] = "unavailable"
+            except TwitterAPIError as exc:
+                status = getattr(exc, "status_code", 0)
+                if status == 429:
+                    raise XRateLimitAbort("x_rate_limited") from exc
+                if status in (401, 403):
+                    raise XAuthAbort("x_auth_expired") from exc
+                logger.debug(
+                    "[XTransport] 作者 @%s 探测失败（HTTP %s），按 unknown 处理",
+                    screen_name,
+                    status,
+                    exc_info=True,
+                )
+                cache[screen_name] = "unknown"
+            except Exception:
+                logger.debug(
+                    "[XTransport] 作者 @%s 探测异常，按 unknown 处理",
+                    screen_name,
+                    exc_info=True,
+                )
+                cache[screen_name] = "unknown"
+        author_state = cache[screen_name]
+        if author_state == "alive_public":
+            # 账号存活且公开而推文本体不可见：作者删除（fxtwitter 404 实测交叉验证）
+            return "deleted"
+        if author_state == "unavailable":
+            return "unavailable"
+        return "unknown"
 
     def _translation_client(self) -> Any:
         """翻译请求复用与抓取相同的凭据链：provider 首个启用凭据 > client_factory。"""
