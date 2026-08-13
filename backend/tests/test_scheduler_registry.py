@@ -62,6 +62,14 @@ class SchedulerDescriptorTests(unittest.TestCase):
                 3600,
             ),
             (
+                "x_deleted_janitor",
+                "x_deleted_janitor",
+                "X 已删除推文定期清理",
+                {"hour": "*/6", "minute": "11", "second": "0"},
+                True,
+                3600,
+            ),
+            (
                 "dailyhot_hotlists",
                 "dailyhot",
                 "DailyHot 聚合热榜采集",
@@ -242,6 +250,18 @@ class SchedulerCallbackResolutionTests(unittest.TestCase):
         self.assertIs(
             resolve_source_job_callback("x_credentials_probe", namespace),
             probe,
+        )
+
+    def test_resolves_x_deleted_janitor_callback_from_namespace(self) -> None:
+        """janitor 必须命中专用回调，不得落入 _run_single_source_job 误当采集源。"""
+
+        async def janitor() -> None:
+            return None
+
+        namespace = {"_run_x_deleted_janitor_job": janitor}
+        self.assertIs(
+            resolve_source_job_callback("x_deleted_janitor", namespace),
+            janitor,
         )
 
     def test_resolves_closing_callbacks_from_namespace(self) -> None:

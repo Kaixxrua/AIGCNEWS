@@ -548,6 +548,41 @@ class PostgresDocumentRepository:
             (),
         )
 
+    def list_x_documents_for_probe(self, limit: int) -> list[dict[str, Any]]:
+        """janitor 探测用：X 文档的 id/url/quote（发布新的在前，截断到 limit）。
+
+        quote 为 JSON 文本列，由 _fetch_rows 按既有口径反序列化为对象；
+        坏 JSON 置 None（服务层按「无被引」处理）。
+        """
+        return self._fetch_rows(
+            """
+            SELECT d.id, d.url, d.quote
+            FROM documents d
+            WHERE d.source = 'x'
+            ORDER BY d.published_at DESC
+            LIMIT %s
+            """,
+            (max(1, min(int(limit), 5000)),),
+        )
+
+    def clear_quotes_for_docs(self, doc_ids: list[str]) -> list[str]:
+        """单事务清引用卡：quote 置 NULL；返回实际更新的 id（按入参顺序去重）。
+
+        以 UPDATE ... RETURNING 为准区分已清理与无卡/未找到。
+        """
+        unique_ids = list(dict.fromkeys(doc_ids))
+        if not unique_ids:
+            return []
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE documents SET quote = NULL"
+                    " WHERE id = ANY(%s) AND quote IS NOT NULL RETURNING id",
+                    (unique_ids,),
+                )
+                cleared = {row["id"] for row in cursor.fetchall()}
+        return [doc_id for doc_id in unique_ids if doc_id in cleared]
+
     def get_document_count(self) -> int:
         return self._fetch_count("SELECT COUNT(*) AS cnt FROM documents")
 

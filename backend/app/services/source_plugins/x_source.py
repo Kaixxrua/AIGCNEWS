@@ -42,7 +42,7 @@ class XTransportUnavailable(Exception):
 
 @runtime_checkable
 class XTransportProtocol(Protocol):
-    """X 传输层公开方法面（采集爬虫与凭据/关注探针仅依赖这两个方法）。"""
+    """X 传输层公开方法面（采集爬虫与凭据/关注探针/janitor 仅依赖这些方法）。"""
 
     async def fetch_watchlist_tweets(
         self,
@@ -62,5 +62,19 @@ class XTransportProtocol(Protocol):
 
         同步方法（内部走阻塞 HTTP），调用方应经 asyncio.to_thread 转入
         线程池。任何异常都不上抛：翻译是增强不是阻断项。
+        """
+        ...
+
+    def probe_tweet_existence(self, tweet_ids: Iterable[str]) -> dict[str, str]:
+        """逐条探测推文存活状态，返回 {tweet_id: alive/deleted/unavailable/unknown}。
+
+        deleted 仅指原作者删除（墓碑文案/Unavailable Deleted/code 144）；
+        Suspended/404/网络/解析漂移一律落在 unavailable/unknown（调用方
+        据此 fail-closed 不删）。同步方法（内部走阻塞 HTTP），调用方应经
+        asyncio.to_thread 转入线程池。
+
+        Raises:
+            XAuthNotConfigured: 无启用凭据（整轮中止）。
+            XAuthAbort / XRateLimitAbort: 中止级故障，已探测部分结果丢弃。
         """
         ...

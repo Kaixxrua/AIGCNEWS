@@ -21,6 +21,7 @@ JobSource = Literal[
     "hackernews",
     "x",
     "x_credentials_probe",
+    "x_deleted_janitor",
     "dailyhot",
     "github_project_daily_pipeline",
     "github_project_metrics_refresh",
@@ -166,6 +167,15 @@ SOURCE_JOB_DESCRIPTORS: tuple[CronJobDescriptor, ...] = (
         coalesce=True,
         misfire_grace_time=3600,
     ),
+    # X 已删推文 janitor：6 小时一轮探测存量文档，错开采集（:06）与测活（:08）
+    CronJobDescriptor(
+        id="x_deleted_janitor",
+        source="x_deleted_janitor",
+        name="X 已删除推文定期清理",
+        schedule=CronSchedule(hour="*/6", minute=11),
+        coalesce=True,
+        misfire_grace_time=3600,
+    ),
     # DailyHot 聚合热榜（编排内网自托管 DailyHotApi）：与其他采集源错开分钟
     CronJobDescriptor(
         id="dailyhot_hotlists",
@@ -280,6 +290,7 @@ def resolve_source_job_callback(
         "github_project_metrics_refresh": "_run_github_project_metrics_refresh_job",
         "github_project_metrics_closing": "_run_github_project_metrics_closing_job",
         "x_credentials_probe": "_run_x_credentials_probe_job",
+        "x_deleted_janitor": "_run_x_deleted_janitor_job",
         "x_closing": "_run_x_closing_job",
         "hackernews_closing": "_run_hackernews_closing_job",
         "news_closing": "_run_news_closing_job",

@@ -394,3 +394,84 @@ def test_list_x_snapshot_backfill_rows_queries_x_documents() -> None:
     assert rows == [
         {"id": "x:1", "published_at": "2026-08-07T01:00:00+00:00", "raw_score": 9.0, "score": 0.0},
     ]
+
+
+def test_list_x_documents_for_probe_queries_x_documents_newest_first() -> None:
+    repository, _, cursor = repository_with_cursor()
+    cursor.fetchall.return_value = [
+        {"id": "x:2", "url": "https://x.com/a/status/2", "quote": None},
+    ]
+
+    rows = repository.list_x_documents_for_probe(150)
+
+    sql = cursor.execute.call_args.args[0]
+    params = cursor.execute.call_args.args[1]
+    assert "d.source = 'x'" in sql
+    assert "ORDER BY d.published_at DESC" in sql
+    assert "d.quote" in sql
+    assert params == (150,)
+    assert rows == [
+        {"id": "x:2", "url": "https://x.com/a/status/2", "quote": None},
+    ]
+
+
+def test_list_x_documents_for_probe_clamps_limit() -> None:
+    repository, _, cursor = repository_with_cursor()
+    cursor.fetchall.return_value = []
+
+    repository.list_x_documents_for_probe(99999)
+    assert cursor.execute.call_args.args[1] == (5000,)
+
+    repository.list_x_documents_for_probe(0)
+    assert cursor.execute.call_args.args[1] == (1,)
+
+
+def test_list_x_documents_for_probe_deserializes_quote_json() -> None:
+    repository, _, cursor = repository_with_cursor()
+    cursor.fetchall.return_value = [
+        {
+            "id": "x:3",
+            "url": "https://x.com/a/status/3",
+            "quote": '{"url": "https://x.com/b/status/9", "text": "quoted"}',
+        },
+        {"id": "x:4", "url": "https://x.com/a/status/4", "quote": "{bad json"},
+    ]
+
+    rows = repository.list_x_documents_for_probe(10)
+
+    assert rows[0]["quote"] == {"url": "https://x.com/b/status/9", "text": "quoted"}
+    assert rows[1]["quote"] is None
+
+
+def test_clear_quotes_for_docs_updates_in_one_transaction() -> None:
+    repository, database, cursor = repository_with_cursor()
+    cursor.fetchall.return_value = [{"id": "x:1"}, {"id": "x:2"}]
+
+    cleared = repository.clear_quotes_for_docs(["x:1", "x:2", "x:9"])
+
+    assert database.transaction_count == 1
+    sql = cursor.execute.call_args.args[0]
+    params = cursor.execute.call_args.args[1]
+    assert "UPDATE documents SET quote = NULL" in sql
+    assert "id = ANY(%s)" in sql
+    assert "quote IS NOT NULL" in sql
+    assert "RETURNING id" in sql
+    assert params == (["x:1", "x:2", "x:9"],)
+    # 以 RETURNING 为准区分已清理与无卡/未找到
+    assert cleared == ["x:1", "x:2"]
+
+
+def test_clear_quotes_for_docs_dedupes_ids_and_skips_empty() -> None:
+    repository, database, cursor = repository_with_cursor()
+    cursor.fetchall.return_value = [{"id": "x:1"}]
+
+    cleared = repository.clear_quotes_for_docs(["x:1", "x:1"])
+
+    assert cursor.execute.call_args.args[1] == (["x:1"],)
+    assert cleared == ["x:1"]
+
+    cursor.reset_mock()
+    before = database.transaction_count
+    assert repository.clear_quotes_for_docs([]) == []
+    cursor.execute.assert_not_called()
+    assert database.transaction_count == before

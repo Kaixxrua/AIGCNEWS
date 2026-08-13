@@ -64,6 +64,9 @@ _GITHUB_METRICS_MAX_AGE = timedelta(hours=2, minutes=15)
 # 调度任务连续失败告警：阈值内只记日志，达到阈值才经 notify_ops_alert.py 发信
 _DEFAULT_ALERT_FAILURE_THRESHOLD = 3
 _ALERT_FAILURE_THRESHOLD_ENV = "SCHEDULER_JOB_ALERT_FAILURE_THRESHOLD"
+# X 已删推文 janitor：单轮探测数上限（own + 被引合并计数），对 X 配额温和
+_DEFAULT_X_JANITOR_MAX_PROBES = 150
+_X_JANITOR_MAX_PROBES_ENV = "X_JANITOR_MAX_PROBES_PER_RUN"
 _OPS_ALERT_SCRIPT = (
     Path(__file__).resolve().parents[3] / "scripts" / "notify_ops_alert.py"
 )
@@ -84,7 +87,9 @@ _DEFAULT_ZERO_INGEST_WATCH_SOURCES = (
 )
 
 # X 链路源任务集合：x_source_enabled=False 时不注册、也不允许经在线配置启用
-_X_SOURCE_JOB_SOURCES = frozenset({"x", "x_credentials_probe", "x_closing"})
+_X_SOURCE_JOB_SOURCES = frozenset(
+    {"x", "x_credentials_probe", "x_closing", "x_deleted_janitor"}
+)
 
 
 def _notify_ops_alert(job_id: str, failures: int, detail: str) -> None:
@@ -181,6 +186,23 @@ def _alert_failure_threshold_from_env() -> int:
             _DEFAULT_ALERT_FAILURE_THRESHOLD,
         )
         return _DEFAULT_ALERT_FAILURE_THRESHOLD
+
+
+def _x_janitor_max_probes_from_env() -> int:
+    """X janitor 单轮探测上限：默认 150，clamp [1, 500]，坏值回退默认。"""
+    raw = os.environ.get(_X_JANITOR_MAX_PROBES_ENV, "").strip()
+    if not raw:
+        return _DEFAULT_X_JANITOR_MAX_PROBES
+    try:
+        return max(1, min(int(raw), 500))
+    except ValueError:
+        logger.warning(
+            "[Scheduler] %s=%r 不是整数，使用默认探测上限 %d。",
+            _X_JANITOR_MAX_PROBES_ENV,
+            raw,
+            _DEFAULT_X_JANITOR_MAX_PROBES,
+        )
+        return _DEFAULT_X_JANITOR_MAX_PROBES
 
 
 class _ZeroIngestAlerter:
@@ -718,6 +740,36 @@ async def _run_x_credentials_probe_job(
         return False
 
 
+async def _run_x_deleted_janitor_job(
+    *,
+    repositories: ApplicationRepositories,
+    x_lock: asyncio.Lock | None = None,
+) -> bool:
+    """探测存量 X 文档，删除原作者已删推文、清作者已删引用卡。
+
+    与 X 采集/测活共享操作锁（仅探测调用期间持有）。janitor 中止
+    （凭据/限流/传输面不可用）视为整轮失败，进入连续失败告警。
+    """
+    from backend.app.services.x_janitor.deleted_tweets import XDeletedTweetJanitor
+
+    logger.info("[Scheduler] 触发 X 已删除推文清理...")
+    try:
+        janitor = XDeletedTweetJanitor(
+            repositories.documents,
+            repositories.x_credentials,
+            max_probes_per_run=_x_janitor_max_probes_from_env(),
+            x_lock=x_lock,
+        )
+        report = await janitor.run()
+        if report.aborted is not None:
+            logger.error("[Scheduler] X 已删除推文清理中止：%s", report.aborted)
+            return False
+        return True
+    except Exception as exc:
+        logger.error("[Scheduler] X 已删除推文清理失败: %s", exc, exc_info=True)
+        return False
+
+
 def _register_job(
     scheduler: AsyncIOScheduler,
     descriptor: JobDescriptor,
@@ -941,6 +993,17 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_x_deleted_janitor_job(self) -> None:
+        await self._run_tracked(
+            lambda: self._guarded(
+                "x_deleted_janitor",
+                lambda: _run_x_deleted_janitor_job(
+                    repositories=self.repositories,
+                    x_lock=self._x_operation_lock,
+                ),
+            )
+        )
+
     async def _run_daily_briefing_job(self) -> None:
         await self._run_tracked(
             lambda: self._guarded(
@@ -1004,6 +1067,7 @@ class ApplicationSchedulerRuntime:
                 self._run_github_project_metrics_closing_job
             ),
             "_run_x_credentials_probe_job": self._run_x_credentials_probe_job,
+            "_run_x_deleted_janitor_job": self._run_x_deleted_janitor_job,
             "_run_x_closing_job": self._run_x_closing_job,
             "_run_hackernews_closing_job": self._run_hackernews_closing_job,
             "_run_news_closing_job": self._run_news_closing_job,

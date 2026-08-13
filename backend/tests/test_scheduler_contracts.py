@@ -96,6 +96,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "hackernews",
                 "x_watchlist",
                 "x_credentials_probe",
+                "x_deleted_janitor",
                 "dailyhot_hotlists",
                 "github_project_daily_pipeline",
                 "github_project_metrics_refresh",
@@ -126,6 +127,13 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "x_credentials_probe",
                 "X 凭证池定时测活",
                 {"hour": "*/2", "minute": "8", "second": "0"},
+                True,
+                3600,
+            ),
+            (
+                "x_deleted_janitor",
+                "X 已删除推文定期清理",
+                {"hour": "*/6", "minute": "11", "second": "0"},
                 True,
                 3600,
             ),
@@ -181,7 +189,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             ),
         ]
         for (_, kwargs), (job_id, name, fields, coalesce, grace) in zip(
-            fake_scheduler.add_job_calls[:14], expected_source_jobs, strict=True
+            fake_scheduler.add_job_calls[:15], expected_source_jobs, strict=True
         ):
             self.assertEqual(kwargs["id"], job_id)
             self.assertEqual(kwargs["name"], name)
@@ -199,7 +207,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             self.assertEqual(actual_fields, fields)
             self.assertEqual(str(trigger.timezone), "Asia/Shanghai")
 
-        briefing = fake_scheduler.add_job_calls[14][1]
+        briefing = fake_scheduler.add_job_calls[15][1]
         self.assertEqual(
             {key: briefing[key] for key in ("id", "name", "replace_existing", "max_instances", "misfire_grace_time")},
             {
@@ -215,7 +223,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             {"hour": "8", "minute": "0", "second": "0"},
         )
 
-        dispatch = fake_scheduler.add_job_calls[15][1]
+        dispatch = fake_scheduler.add_job_calls[16][1]
         self.assertEqual(
             {key: dispatch[key] for key in ("id", "name", "replace_existing", "max_instances", "coalesce", "misfire_grace_time")},
             {
@@ -232,7 +240,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             {"minute": "*/30", "second": "0"},
         )
 
-        cleanup = fake_scheduler.add_job_calls[16][1]
+        cleanup = fake_scheduler.add_job_calls[17][1]
         self.assertEqual(
             {key: cleanup[key] for key in ("id", "name", "replace_existing", "max_instances", "misfire_grace_time")},
             {
@@ -253,6 +261,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         daily_pipeline = AsyncMock()
         metrics_refresh = AsyncMock()
         x_credentials_probe = AsyncMock()
+        x_deleted_janitor = AsyncMock()
 
         with (
             patch.object(scheduler, "_run_single_source_job", new=single_source),
@@ -271,6 +280,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "_run_x_credentials_probe_job",
                 new=x_credentials_probe,
             ),
+            patch.object(
+                scheduler,
+                "_run_x_deleted_janitor_job",
+                new=x_deleted_janitor,
+            ),
         ):
             fake_scheduler, _ = self._start_scheduler()
             callbacks = {
@@ -281,10 +295,12 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             asyncio.run(callbacks["github_project_metrics_refresh"]())  # type: ignore[operator]
             asyncio.run(callbacks["arxiv_papers"]())  # type: ignore[operator]
             asyncio.run(callbacks["x_credentials_probe"]())  # type: ignore[operator]
+            asyncio.run(callbacks["x_deleted_janitor"]())  # type: ignore[operator]
         daily_pipeline.assert_awaited_once()
         metrics_refresh.assert_awaited_once()
         single_source.assert_awaited_once()
         x_credentials_probe.assert_awaited_once()
+        x_deleted_janitor.assert_awaited_once()
 
     def test_runtime_callbacks_forward_owned_repositories_and_lock(self) -> None:
         repositories = MagicMock()
@@ -297,6 +313,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         daily_pipeline = AsyncMock()
         metrics_refresh = AsyncMock()
         x_credentials_probe = AsyncMock()
+        x_deleted_janitor = AsyncMock()
         daily_briefing = AsyncMock()
         subscription_dispatch = AsyncMock()
         conversation_cleanup = AsyncMock()
@@ -318,6 +335,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 scheduler,
                 "_run_x_credentials_probe_job",
                 new=x_credentials_probe,
+            ),
+            patch.object(
+                scheduler,
+                "_run_x_deleted_janitor_job",
+                new=x_deleted_janitor,
             ),
             patch.object(
                 scheduler,
@@ -345,6 +367,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             asyncio.run(runtime._run_github_project_daily_pipeline_job())
             asyncio.run(runtime._run_github_project_metrics_refresh_job())
             asyncio.run(runtime._run_x_credentials_probe_job())
+            asyncio.run(runtime._run_x_deleted_janitor_job())
             asyncio.run(runtime._run_daily_briefing_job())
             asyncio.run(runtime._run_subscription_dispatch_job())
             asyncio.run(runtime._run_conversation_cleanup_job())
@@ -375,6 +398,10 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             github_lock=runtime._github_job_lock,
         )
         x_credentials_probe.assert_awaited_once_with(
+            repositories=repositories,
+            x_lock=runtime._x_operation_lock,
+        )
+        x_deleted_janitor.assert_awaited_once_with(
             repositories=repositories,
             x_lock=runtime._x_operation_lock,
         )
@@ -706,6 +733,7 @@ class SchedulerXSourceGateTests(unittest.TestCase):
         registered = [kwargs["id"] for _, kwargs in fake_scheduler.add_job_calls]
         self.assertNotIn("x_watchlist", registered)
         self.assertNotIn("x_credentials_probe", registered)
+        self.assertNotIn("x_deleted_janitor", registered)
         self.assertNotIn("x_closing", registered)
         self.assertIn("arxiv_papers", registered)
         self.assertIn("daily_briefing", registered)
@@ -717,4 +745,5 @@ class SchedulerXSourceGateTests(unittest.TestCase):
         registered = [kwargs["id"] for _, kwargs in fake_scheduler.add_job_calls]
         self.assertIn("x_watchlist", registered)
         self.assertIn("x_credentials_probe", registered)
+        self.assertIn("x_deleted_janitor", registered)
         self.assertIn("x_closing", registered)

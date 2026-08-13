@@ -129,6 +129,18 @@ class DocumentXSnapshotBackfillReader(Protocol):
     def list_x_snapshot_backfill_rows(self) -> list[dict[str, Any]]: ...
 
 
+class DocumentXJanitorReader(Protocol):
+    """Read x documents (id/url/quote) for deleted-tweet probing."""
+
+    def list_x_documents_for_probe(self, limit: int) -> list[dict[str, Any]]: ...
+
+
+class DocumentXJanitorWriter(Protocol):
+    """Clear quote cards on x documents whose quoted tweet was author-deleted."""
+
+    def clear_quotes_for_docs(self, doc_ids: list[str]) -> list[str]: ...
+
+
 class DocumentStatisticsReader(Protocol):
     """Read aggregate document statistics."""
 
