@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
 import GithubCrawlControls from '@/components/monitor/GithubCrawlControls.vue'
@@ -9,6 +10,7 @@ import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
 import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
 import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
+import MonitorSectionNav from '@/components/monitor/MonitorSectionNav.vue'
 import MonitorTaskPanel from '@/components/monitor/MonitorTaskPanel.vue'
 import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
 import SchedulerConfigPanel from '@/components/monitor/SchedulerConfigPanel.vue'
@@ -17,6 +19,12 @@ import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
 import XWatchCard from '@/components/monitor/XWatchCard.vue'
 import WechatAccountPanel from '@/components/wechat/WechatAccountPanel.vue'
 import { useMonitorPageController } from '@/composables/useMonitorPageController'
+import {
+  DEFAULT_MONITOR_SECTION,
+  MONITOR_SECTIONS,
+  normalizeMonitorSection,
+  type MonitorSectionKey,
+} from '@/features/monitor/monitorViewModel'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -36,6 +44,54 @@ const {
   enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
   fetchGithubEnrichmentStatus, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
 } = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
+
+const route = useRoute()
+const router = useRouter()
+
+// 激活分组：URL ?section= 为单一事实源，非法值白名单回落
+const activeSection = ref<MonitorSectionKey>(normalizeMonitorSection(route.query.section))
+const isReplacingRoute = ref(false)
+
+// 登录态恢复窗口兜底：非 admin 只暴露 status 组（其两个面板本就非 admin 可见）
+const visibleSections = computed(() =>
+  MONITOR_SECTIONS.filter(section => !section.adminOnly || authStore.isAdmin)
+)
+const currentSection = computed<MonitorSectionKey>(() =>
+  visibleSections.value.some(section => section.key === activeSection.value)
+    ? activeSection.value
+    : DEFAULT_MONITOR_SECTION
+)
+// 富化失败红点挂 github 组，与导航 Dock 红点同源
+const navAlertKeys = computed<MonitorSectionKey[]>(() =>
+  enrichmentAlert.hasFailures ? ['github'] : []
+)
+
+const selectSection = (key: MonitorSectionKey) => { activeSection.value = key }
+
+// 状态 → URL：replace 不刷历史；默认组省略参数保持 URL 干净
+watch(activeSection, (section) => {
+  if (route.name !== 'monitor') return
+  const current = normalizeMonitorSection(route.query.section)
+  if (current === section && (section !== DEFAULT_MONITOR_SECTION || !route.query.section)) return
+  const query = { ...route.query }
+  if (section === DEFAULT_MONITOR_SECTION) delete query.section
+  else query.section = section
+  isReplacingRoute.value = true
+  void router.replace({ query }).finally(() => {
+    window.setTimeout(() => { isReplacingRoute.value = false }, 0)
+  })
+})
+
+// URL → 状态（浏览器前进/后退）：防回环靠标志位 + ref 同值不触发
+watch(() => route.query.section, (value) => {
+  if (isReplacingRoute.value) return
+  activeSection.value = normalizeMonitorSection(value)
+})
+
+// 登录态恢复窗口中若判定为非 admin，强制回落默认组
+watch(() => authStore.isAdmin, (isAdmin) => {
+  if (!isAdmin) activeSection.value = DEFAULT_MONITOR_SECTION
+})
 
 // 富化重试轮询结束时同步导航 Dock 的失败红点（失败清零或本轮结束时各刷一次）
 watch(enrichmentPolling, (polling, wasPolling) => {
@@ -93,127 +149,134 @@ onUnmounted(dispose)
       </button>
     </div>
 
-    <!-- Admin 专属：模型服务配置 -->
-    <ProviderConfigPanel
-      v-if="authStore.isAdmin"
-      :config="providerConfig"
-      :form="providerForm"
-      :loading="loadingProviderConfig"
-      :saving="savingProviderConfig"
-      :testing="testingProvider"
-      @save="saveProviderConfig"
-      @test="testProviderConnection"
-    />
+    <!-- 二级导航 + 分组面板 -->
+    <div class="monitor-body">
+      <MonitorSectionNav
+        v-if="authStore.isAdmin"
+        :sections="visibleSections"
+        :active="currentSection"
+        :alert-keys="navAlertKeys"
+        @select="selectSection"
+      />
 
-    <!-- Admin 专属：SMTP 邮件投递配置 -->
-    <SmtpConfigPanel
-      v-if="authStore.isAdmin"
-      :config="smtpConfig"
-      :form="smtpForm"
-      :loading="loadingSmtpConfig"
-      :saving="savingSmtpConfig"
-      :testing="testingSmtp"
-      @save="saveSmtpConfig"
-      @test="testSmtpConfig"
-    />
+      <div class="monitor-section-panels">
+        <!-- 运行状态（非 admin 唯一可见组） -->
+        <template v-if="currentSection === 'status'">
+          <MonitorTaskPanel
+            :is-admin="authStore.isAdmin"
+            :scheduler-status="schedulerStatus"
+            :tasks="tasks"
+            :total="total"
+            :page="page"
+            :total-pages="totalPages"
+            :loading="loading"
+            @go-page="goPage"
+          />
+          <McpToolCallsPanel
+            :snapshot="mcpToolCalls"
+            :loading="loading"
+          />
+        </template>
 
-    <!-- Admin 专属：定时任务配置 -->
-    <SchedulerConfigPanel
-      v-if="authStore.isAdmin"
-      :configs="schedulerConfigs"
-      :form="schedulerConfigForm"
-      :loading="loadingSchedulerConfigs"
-      :saving="savingSchedulerConfig"
-      :editing-job-id="editingSchedulerJobId"
-      @edit="editSchedulerConfig"
-      @cancel="cancelSchedulerConfigEdit"
-      @save="saveSchedulerConfig"
-    />
+        <!-- Admin 专属：采集与源 -->
+        <template v-else-if="currentSection === 'ingestion'">
+          <MonitorIngestionControls
+            v-if="authStore.isAdmin"
+            v-model:target-date="targetDate"
+            :max-target-date="maxTargetDate"
+            :ingesting-by-date="ingestingByDate"
+            :ingesting-source="ingestingSource"
+            @ingest-by-date="ingestByDate"
+            @ingest-source="ingestSingleSource"
+          />
+          <XWatchCard v-if="authStore.isAdmin" />
+          <XCredentialCard v-if="authStore.isAdmin" />
+          <WechatAccountPanel v-if="authStore.isAdmin" />
+        </template>
 
-    <!-- Admin 专属：MCP Server 配置 -->
-    <McpServerConfigPanel
-      v-if="authStore.isAdmin"
-      v-model:form="mcpForm"
-      :servers="mcpServers"
-      :loading="loadingMcpServers"
-      :saving="savingMcpServer"
-      :testing-server-id="testingMcpServerId"
-      :deleting-server-id="deletingMcpServerId"
-      @refresh="fetchMcpServers"
-      @reset="resetMcpForm"
-      @edit="editMcpServer"
-      @save="saveMcpServer"
-      @test="testMcpServer"
-      @delete="deleteMcpServer"
-    />
+        <!-- Admin 专属：GitHub 项目库 -->
+        <template v-else-if="currentSection === 'github'">
+          <GithubCrawlControls
+            v-if="authStore.isAdmin"
+            v-model:form="crawlForm"
+            :crawling="crawling"
+            :crawl-polling="crawlPolling"
+            :crawl-status="crawlStatus"
+            @start="startGithubCrawl"
+          />
+          <GithubEnrichmentPanel
+            v-if="authStore.isAdmin"
+            :status="enrichmentStatus"
+            :loading="loadingEnrichmentStatus"
+            :retrying="retryingEnrichment"
+            :backfilling="backfillingEnrichment"
+            :cancelling="cancellingEnrichment"
+            :cancel-watching="enrichmentCancelWatching"
+            :polling="enrichmentPolling"
+            :concurrency="enrichmentConcurrency"
+            :reasoning-effort="enrichmentReasoningEffort"
+            :effective-reasoning-effort="enrichmentEffectiveReasoningEffort"
+            :saving-reasoning-effort="savingEnrichmentReasoningEffort"
+            @refresh="fetchGithubEnrichmentStatus"
+            @retry="retryFailedEnrichments"
+            @backfill="backfillPendingEnrichments"
+            @cancel="cancelEnrichment"
+            @update-concurrency="(value) => (enrichmentConcurrency = value)"
+            @update-reasoning-effort="saveEnrichmentReasoningEffort"
+          />
+        </template>
 
-    <!-- Admin 专属：X 关注账号 -->
-    <XWatchCard v-if="authStore.isAdmin" />
-
-    <!-- Admin 专属：X 账号凭证 -->
-    <XCredentialCard v-if="authStore.isAdmin" />
-
-    <!-- Admin 专属：微信公众号 -->
-    <WechatAccountPanel v-if="authStore.isAdmin" />
-
-    <!-- Admin 专属：采集控制 -->
-    <MonitorIngestionControls
-      v-if="authStore.isAdmin"
-      v-model:target-date="targetDate"
-      :max-target-date="maxTargetDate"
-      :ingesting-by-date="ingestingByDate"
-      :ingesting-source="ingestingSource"
-      @ingest-by-date="ingestByDate"
-      @ingest-source="ingestSingleSource"
-    />
-
-    <!-- Admin 专属：GitHub 搜索爬取 -->
-    <GithubCrawlControls
-      v-if="authStore.isAdmin"
-      v-model:form="crawlForm"
-      :crawling="crawling"
-      :crawl-polling="crawlPolling"
-      :crawl-status="crawlStatus"
-      @start="startGithubCrawl"
-    />
-
-    <!-- Admin 专属：GitHub 项目库富化（失败重试与积压补跑入口） -->
-    <GithubEnrichmentPanel
-      v-if="authStore.isAdmin"
-      :status="enrichmentStatus"
-      :loading="loadingEnrichmentStatus"
-      :retrying="retryingEnrichment"
-      :backfilling="backfillingEnrichment"
-      :cancelling="cancellingEnrichment"
-      :cancel-watching="enrichmentCancelWatching"
-      :polling="enrichmentPolling"
-      :concurrency="enrichmentConcurrency"
-      :reasoning-effort="enrichmentReasoningEffort"
-      :effective-reasoning-effort="enrichmentEffectiveReasoningEffort"
-      :saving-reasoning-effort="savingEnrichmentReasoningEffort"
-      @refresh="fetchGithubEnrichmentStatus"
-      @retry="retryFailedEnrichments"
-      @backfill="backfillPendingEnrichments"
-      @cancel="cancelEnrichment"
-      @update-concurrency="(value) => (enrichmentConcurrency = value)"
-      @update-reasoning-effort="saveEnrichmentReasoningEffort"
-    />
-
-    <McpToolCallsPanel
-      :snapshot="mcpToolCalls"
-      :loading="loading"
-    />
-
-    <MonitorTaskPanel
-      :is-admin="authStore.isAdmin"
-      :scheduler-status="schedulerStatus"
-      :tasks="tasks"
-      :total="total"
-      :page="page"
-      :total-pages="totalPages"
-      :loading="loading"
-      @go-page="goPage"
-    />
+        <!-- Admin 专属：系统配置 -->
+        <template v-else-if="currentSection === 'settings'">
+          <ProviderConfigPanel
+            v-if="authStore.isAdmin"
+            :config="providerConfig"
+            :form="providerForm"
+            :loading="loadingProviderConfig"
+            :saving="savingProviderConfig"
+            :testing="testingProvider"
+            @save="saveProviderConfig"
+            @test="testProviderConnection"
+          />
+          <SmtpConfigPanel
+            v-if="authStore.isAdmin"
+            :config="smtpConfig"
+            :form="smtpForm"
+            :loading="loadingSmtpConfig"
+            :saving="savingSmtpConfig"
+            :testing="testingSmtp"
+            @save="saveSmtpConfig"
+            @test="testSmtpConfig"
+          />
+          <SchedulerConfigPanel
+            v-if="authStore.isAdmin"
+            :configs="schedulerConfigs"
+            :form="schedulerConfigForm"
+            :loading="loadingSchedulerConfigs"
+            :saving="savingSchedulerConfig"
+            :editing-job-id="editingSchedulerJobId"
+            @edit="editSchedulerConfig"
+            @cancel="cancelSchedulerConfigEdit"
+            @save="saveSchedulerConfig"
+          />
+          <McpServerConfigPanel
+            v-if="authStore.isAdmin"
+            v-model:form="mcpForm"
+            :servers="mcpServers"
+            :loading="loadingMcpServers"
+            :saving="savingMcpServer"
+            :testing-server-id="testingMcpServerId"
+            :deleting-server-id="deletingMcpServerId"
+            @refresh="fetchMcpServers"
+            @reset="resetMcpForm"
+            @edit="editMcpServer"
+            @save="saveMcpServer"
+            @test="testMcpServer"
+            @delete="deleteMcpServer"
+          />
+        </template>
+      </div>
+    </div>
     </div>
   </div>
 </template>

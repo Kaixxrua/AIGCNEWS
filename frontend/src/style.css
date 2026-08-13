@@ -1169,6 +1169,120 @@
   opacity: 0.4;
 }
 
+/* ═══ 二级导航（桌面竖排 aside / 移动端横向 chips） ═══ */
+.monitor-page .monitor-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.monitor-page .monitor-section-panels {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.monitor-page .monitor-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 176px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 24px;
+}
+
+.monitor-page .monitor-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid var(--projects-accent);
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.monitor-page .monitor-nav-item:hover {
+  background: var(--acid-soft);
+  color: var(--ink);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-nav-item.active {
+  color: var(--projects-on-acid);
+  background: var(--projects-acid);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
+}
+
+.monitor-page .monitor-nav-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.monitor-page .monitor-nav-alert {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--error-accent);
+  border: 1.5px solid var(--projects-paper-light);
+  pointer-events: none;
+  animation: monitor-nav-alert-pulse 1.6s ease-in-out infinite;
+}
+
+/* active 项上描边换 acid 底，避免白边撞色 */
+.monitor-page .monitor-nav-item.active .monitor-nav-alert {
+  border-color: var(--projects-acid);
+}
+
+@keyframes monitor-nav-alert-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.65; }
+}
+
+/* 移动端：降级为顶部横向 chips（断点对齐 .monitor-page 自身 padding 的 720px） */
+@media (max-width: 720px) {
+  .monitor-page .monitor-body {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .monitor-page .monitor-section-panels {
+    width: 100%;
+  }
+
+  .monitor-page .monitor-nav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    position: static;
+    scrollbar-width: none;
+  }
+
+  .monitor-page .monitor-nav::-webkit-scrollbar { display: none; }
+
+  .monitor-page .monitor-nav-item {
+    width: auto;
+    flex-shrink: 0;
+    padding: 8px 12px;
+  }
+}
+
 /* 表格 */
 .monitor-page .monitor-table {
   width: 100%;

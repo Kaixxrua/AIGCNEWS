@@ -1,4 +1,4 @@
-import { FileText, GitBranch, Newspaper, Rocket, Triangle } from 'lucide-vue-next'
+import { Activity, CloudDownload, FileText, GitBranch, Newspaper, Rocket, Settings, Triangle } from 'lucide-vue-next'
 import { formatLocaleDate } from '@/i18n/formatters'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import type { Component } from 'vue'
@@ -41,6 +41,34 @@ export const SOURCE_LIST: SourceItem[] = [
   { key: 'news', labelKey: 'news', icon: Newspaper, color: '', textColor: '' },
   { key: 'x', labelKey: 'x', icon: XLogoIcon, color: '', textColor: '' },
 ]
+
+export type MonitorSectionKey = 'status' | 'ingestion' | 'github' | 'settings'
+
+export interface MonitorSectionItem {
+  key: MonitorSectionKey
+  labelKey: string
+  icon: Component
+  adminOnly: boolean
+}
+
+// 监控页左侧二级导航分组：顺序即导航展示与 URL ?section= 的契约，测试锁定
+export const MONITOR_SECTIONS: MonitorSectionItem[] = [
+  { key: 'status', labelKey: 'monitor.nav.status', icon: Activity, adminOnly: false },
+  { key: 'ingestion', labelKey: 'monitor.nav.ingestion', icon: CloudDownload, adminOnly: true },
+  { key: 'github', labelKey: 'monitor.nav.github', icon: GitBranch, adminOnly: true },
+  { key: 'settings', labelKey: 'monitor.nav.settings', icon: Settings, adminOnly: true },
+]
+
+export const DEFAULT_MONITOR_SECTION: MonitorSectionKey = 'status'
+
+// ?section= 白名单校验：LocationQueryValue 可能为 null，重复参数（string[]）取第一个
+export const normalizeMonitorSection = (value: unknown): MonitorSectionKey => {
+  const raw = Array.isArray(value) ? value[0] : value
+  const key = String(raw ?? '').trim()
+  return MONITOR_SECTIONS.some(section => section.key === key)
+    ? key as MonitorSectionKey
+    : DEFAULT_MONITOR_SECTION
+}
 
 export const formatDate = (value: string | null | undefined): string => (
   value

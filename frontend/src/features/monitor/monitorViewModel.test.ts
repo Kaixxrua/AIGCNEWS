@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_MONITOR_SECTION,
   MCP_TEST_SCOPE,
+  MONITOR_SECTIONS,
   SOURCE_LIST,
   getMcpAuthPresentation,
   getMcpTransportPresentation,
   getStatusConfig,
+  normalizeMonitorSection,
   toMcpToolCallRows,
 } from './monitorViewModel'
 
@@ -48,5 +51,30 @@ describe('monitor presentation localization boundary', () => {
       { name: 'get_top_items', calls: 5, lastCalledAt: null },
       { name: 'search_papers', calls: 2, lastCalledAt: '2026-08-04T02:00:00+00:00' },
     ])
+  })
+
+  it('exposes stable section metadata for the monitor secondary nav', () => {
+    expect(MONITOR_SECTIONS.map(section => [section.key, section.labelKey, section.adminOnly])).toEqual([
+      ['status', 'monitor.nav.status', false],
+      ['ingestion', 'monitor.nav.ingestion', true],
+      ['github', 'monitor.nav.github', true],
+      ['settings', 'monitor.nav.settings', true],
+    ])
+    expect(DEFAULT_MONITOR_SECTION).toBe('status')
+    expect(MONITOR_SECTIONS.every(section => Boolean(section.icon))).toBe(true)
+  })
+
+  it('normalizes unknown or malformed section query values to the default', () => {
+    expect(normalizeMonitorSection('github')).toBe('github')
+    expect(normalizeMonitorSection('ingestion')).toBe('ingestion')
+    expect(normalizeMonitorSection('')).toBe('status')
+    expect(normalizeMonitorSection(undefined)).toBe('status')
+    expect(normalizeMonitorSection(null)).toBe('status')
+    expect(normalizeMonitorSection('bogus')).toBe('status')
+    // 大小写敏感，白名单精确匹配
+    expect(normalizeMonitorSection(' GitHub ')).toBe('status')
+    // vue-router 重复参数（string[]）取第一个
+    expect(normalizeMonitorSection(['settings'])).toBe('settings')
+    expect(normalizeMonitorSection(['bogus'])).toBe('status')
   })
 })
