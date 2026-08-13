@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/logo-4k.png" alt="AIGCNEWS" width="440">
+  <img src="docs/assets/logo-880.png" alt="AIGCNEWS" width="440">
 </div>
 
 <p align="center">
@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="在线使用" src="https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E4%BD%BF%E7%94%A8-aigcnews.cn-blue"></a>
+  <a href="LICENSE"><img alt="License: BSL 1.1" src="https://img.shields.io/badge/License-BSL%201.1-lightgrey"></a>
   <a href="https://cursor.com/en-US/install-mcp?name=aigc-radar&config=eyJ1cmwiOiJodHRwczovL2FpZ2NuZXdzLmNuL2FwaS9tY3AifQ=="><img alt="Install in Cursor" src="https://cursor.com/deeplink/mcp-install-dark.svg"></a>
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="Install in VS Code" src="https://img.shields.io/badge/Install%20in-VS%20Code-007acc"></a>
 </p>
@@ -23,7 +24,7 @@
 
 数字先行 —— 以下实测针对后文详述的旗舰接口 [AIGC Radar MCP](#aigc-radar-mcp旗舰接口)：
 
-![AIGC Radar MCP 质量指标：比 WebSearch 快 3.5×（端到端中位数 7.4 s 对 25.8 s）、工具执行中位 160 ms（服务端 p50 360 ms）、工具首选准确率 98.3%（59/60 次试验，混合意图 90%）、500+ GitHub stars 门槛过滤低质量仓库 —— 实测于 2026-08-12，自托管](docs/assets/mcp-quality-metrics.png)
+![AIGC Radar MCP 质量指标：比 WebSearch 快 3.5×（端到端中位数 7.4 s 对 25.8 s）、工具执行中位 160 ms（服务端 p50 360 ms）、工具首选准确率 98.3%（59/60 次试验，混合意图 90%）、500+ GitHub stars 门槛过滤低质量仓库 —— 实测于 2026-08-11/12，自托管](docs/assets/mcp-quality-metrics.png)
 
 服务端延迟，测于 2026-08-11，可用 [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) 复现（Streamable HTTP JSON-RPC，6 个代表性工具 × 3 轮，共 18 次 `tools/call` 计时）：
 
@@ -53,7 +54,7 @@ MCP 在 10 组中有 9 组低于 10 秒，WebSearch 从未低于 9.9 秒——**
 
 | 探针组 | 准确率 |
 | --- | --- |
-| 9 个意图明确探针（各 10 + 5 次试验） | **100%**（50/50） |
+| 9 个意图明确探针（1 个 10 次、其余 8 个各 5 次） | **100%**（50/50） |
 | 2 个混合意图探针（各 5 次试验） | **90%**（9/10） |
 | **总计（11 个探针，60 次试验）** | **98.3%**（59/60） |
 
@@ -357,6 +358,12 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 - **自建实例的运营者责任**：启用此类插件须自行遵守源平台服务条款、robots 协议与适用法律，并妥善保管配置的凭据（cookie/token）。
 - **商标。** X、Twitter、WeChat、Product Hunt、Hacker News、arXiv、GitHub、Hugging Face 等名称与标志归各自所有者；本项目仅为指称性使用，不存在隶属或背书关系。
 - **内容移除请求**：请提 issue 或联系维护者。完整归属声明见 [NOTICE](NOTICE)。
+
+## 贡献与安全
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) —— 开发环境、提交规范（Conventional Commits，scope 必填）与 PR 要求
+- [SECURITY.md](SECURITY.md) —— 支持版本说明与漏洞私下报告渠道
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) —— Contributor Covenant 2.1 行为准则
 
 ## License
 

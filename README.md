@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/logo-4k.png" alt="AIGCNEWS" width="440">
+  <img src="docs/assets/logo-880.png" alt="AIGCNEWS" width="440">
 </div>
 
 <p align="center">
@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="Live site" src="https://img.shields.io/badge/Live-aigcnews.cn-blue"></a>
+  <a href="LICENSE"><img alt="License: BSL 1.1" src="https://img.shields.io/badge/License-BSL%201.1-lightgrey"></a>
   <a href="https://cursor.com/en-US/install-mcp?name=aigc-radar&config=eyJ1cmwiOiJodHRwczovL2FpZ2NuZXdzLmNuL2FwaS9tY3AifQ=="><img alt="Install in Cursor" src="https://cursor.com/deeplink/mcp-install-dark.svg"></a>
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="Install in VS Code" src="https://img.shields.io/badge/Install%20in-VS%20Code-007acc"></a>
 </p>
@@ -23,7 +24,7 @@ An AI discovery & intelligence platform for engineers, researchers, and AI agent
 
 Numbers first — everything below measures the flagship [AIGC Radar MCP](#aigc-radar-mcp-flagship-interface) interface detailed later in this README:
 
-![AIGC Radar MCP quality metrics: 3.5× faster than WebSearch (7.4 s vs 25.8 s median end-to-end), 160 ms median tool execution (p50 server-side 360 ms), 98.3% first-tool accuracy (59/60 trials, mixed-intent 90%), 500+ GitHub stars floor with low-quality repos filtered out — measured 2026-08-12, self-hosted](docs/assets/mcp-quality-metrics.png)
+![AIGC Radar MCP quality metrics: 3.5× faster than WebSearch (7.4 s vs 25.8 s median end-to-end), 160 ms median tool execution (p50 server-side 360 ms), 98.3% first-tool accuracy (59/60 trials, mixed-intent 90%), 500+ GitHub stars floor with low-quality repos filtered out — measured 2026-08-11/12, self-hosted](docs/assets/mcp-quality-metrics.png)
 
 Server-side latency, measured 2026-08-11 with [scripts/benchmark_mcp_latency.py](scripts/benchmark_mcp_latency.py) (JSON-RPC over Streamable HTTP, 6 representative tools × 3 trials, 18 timed `tools/call` requests):
 
@@ -53,7 +54,7 @@ Tool-selection accuracy, measured 2026-08-12 with [scripts/eval_mcp_tool_selecti
 
 | Probe set | Accuracy |
 | --- | --- |
-| 9 unambiguous probes (10 + 5 trials each) | **100%** (50/50) |
+| 9 unambiguous probes (one at 10 trials, eight at 5) | **100%** (50/50) |
 | 2 mixed-intent probes (5 trials each) | **90%** (9/10) |
 | **Overall (11 probes, 60 trials)** | **98.3%** (59/60) |
 
@@ -357,6 +358,12 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 - **Operating your own instance** with such plugins is your responsibility: comply with the source platforms' Terms of Service, robots policies, and applicable law, and safeguard any credentials (cookies/tokens) you configure.
 - **Marks.** X, Twitter, WeChat, Product Hunt, Hacker News, arXiv, GitHub, and Hugging Face are property of their respective owners; references are nominative, with no affiliation or endorsement implied.
 - **Removal requests** for aggregated content: open an issue or contact the maintainer. See [NOTICE](NOTICE) for the full attribution text.
+
+## Contributing & Security
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — dev environment, commit conventions (Conventional Commits, scope required), and PR expectations (in Chinese)
+- [SECURITY.md](SECURITY.md) — supported versions and private vulnerability reporting (in Chinese)
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — Contributor Covenant 2.1 (in Chinese)
 
 ## License
 
