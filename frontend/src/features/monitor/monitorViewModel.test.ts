@@ -63,6 +63,7 @@ describe('monitor presentation localization boundary', () => {
     expect(MONITOR_NAV.flatMap(category => category.children.map(leaf => [leaf.key, leaf.labelKey, leaf.adminOnly]))).toEqual([
       ['tasks', 'monitor.nav.tasks', false],
       ['mcp-calls', 'monitor.nav.mcpCalls', false],
+      ['errors', 'monitor.nav.errors', true],
       ['collect', 'monitor.nav.collect', true],
       ['crawl', 'monitor.nav.crawl', true],
       ['enrichment', 'monitor.nav.enrichment', true],

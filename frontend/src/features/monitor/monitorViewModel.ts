@@ -4,6 +4,7 @@ import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import type { Component } from 'vue'
 
 export type {
+  ErrorLogEntry,
   McpServerConfig,
   McpServerForm,
   McpToolCallEntry,
@@ -43,7 +44,7 @@ export const SOURCE_LIST: SourceItem[] = [
 ]
 
 export type MonitorSectionKey =
-  | 'tasks' | 'mcp-calls'
+  | 'tasks' | 'mcp-calls' | 'errors'
   | 'collect' | 'crawl' | 'enrichment'
   | 'x-watch' | 'x-credentials' | 'wechat'
   | 'provider' | 'scheduler' | 'smtp' | 'mcp-server'
@@ -66,6 +67,7 @@ export const MONITOR_NAV: MonitorNavCategory[] = [
   { key: 'monitor', labelKey: 'monitor.nav.group.monitor', icon: Activity, children: [
     { key: 'tasks', labelKey: 'monitor.nav.tasks', adminOnly: false },
     { key: 'mcp-calls', labelKey: 'monitor.nav.mcpCalls', adminOnly: false },
+    { key: 'errors', labelKey: 'monitor.nav.errors', adminOnly: true },
   ] },
   { key: 'ingestion', labelKey: 'monitor.nav.group.ingestion', icon: CloudDownload, children: [
     { key: 'collect', labelKey: 'monitor.nav.collect', adminOnly: true },

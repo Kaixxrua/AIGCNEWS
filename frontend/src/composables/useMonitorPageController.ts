@@ -38,6 +38,11 @@ export const useMonitorPageController = ({
   const total = ref(0)
   const page = ref(1)
   const pageSize = ref(10)
+  // 错误日志面板：独立分页状态，与任务历史互不干扰
+  const errorLogs = ref<Awaited<ReturnType<MonitorApi['fetchErrorLogs']>>['items']>([])
+  const errorLogsTotal = ref(0)
+  const errorLogsPage = ref(1)
+  const errorLogsPageSize = ref(10)
   const schedulerStatus = ref<Awaited<ReturnType<MonitorApi['fetchSchedulerStatus']>> | null>(null)
   const schedulerConfigs = ref<SchedulerJobConfig[]>([])
   const schedulerConfigForm = ref<SchedulerJobConfigForm>(createEmptySchedulerJobConfigForm())
@@ -90,6 +95,7 @@ export const useMonitorPageController = ({
   const savingEnrichmentReasoningEffort = ref(false)
   const isTaskRunning = computed(() => tasks.value.length > 0 && tasks.value[0]?.status === 'running')
   const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+  const errorLogsTotalPages = computed(() => Math.max(1, Math.ceil(errorLogsTotal.value / errorLogsPageSize.value)))
   const clearMessages = () => { errorMsg.value = ''; successMsg.value = '' }
 
   const fetchTasks = async () => {
@@ -98,6 +104,15 @@ export const useMonitorPageController = ({
       tasks.value = data.items
       total.value = data.total
     } catch (error) { console.error('Failed to fetch tasks', error) }
+  }
+  const fetchErrorLogs = async () => {
+    // 错误事件含堆栈与 logger 名，仅管理员口径（与后端 RequireAdmin 对齐）
+    if (!isAdmin.value) return
+    try {
+      const data = await api.fetchErrorLogs(errorLogsPage.value, errorLogsPageSize.value)
+      errorLogs.value = data.items
+      errorLogsTotal.value = data.total
+    } catch (error) { console.error('Failed to fetch error logs', error) }
   }
   const setSuccessMessage = (message: string) => { successMsg.value = message }
   const setErrorMessage = (message: string) => { errorMsg.value = message }
@@ -200,13 +215,18 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
     if (nextPage < 1 || nextPage > totalPages.value) return
     page.value = nextPage
     await fetchTasks()
+  }
+  const goErrorLogsPage = async (nextPage: number) => {
+    if (nextPage < 1 || nextPage > errorLogsTotalPages.value) return
+    errorLogsPage.value = nextPage
+    await fetchErrorLogs()
   }
   const saveProviderConfig = async () => {
     if (savingProviderConfig.value) return
@@ -495,14 +515,15 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchErrorLogs(), resumeGithubCrawlPolling()])
   })
 
   return {
-    tasks, total, page, pageSize, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
+    tasks, total, page, pageSize, errorLogs, errorLogsTotal, errorLogsPage, errorLogsPageSize, errorLogsTotalPages, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
     loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
+    fetchErrorLogs, goErrorLogsPage,
     fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchSmtpConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig,
     editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,

@@ -55,6 +55,24 @@ export interface PagedResult {
   page_size: number
 }
 
+// 后端错误事件（error_events 表）：/monitor/errors 分页包络与 /monitor/tasks 同形
+export interface ErrorLogEntry {
+  id: number
+  occurred_at: string | null
+  level: string
+  logger_name: string
+  message: string
+  exception_type: string | null
+  stack_trace: string | null
+}
+
+export interface ErrorLogPage {
+  items: ErrorLogEntry[]
+  total: number
+  page: number
+  page_size: number
+}
+
 // 推理强度为自填自由文本（原样透传给服务商）；常用档位 minimal/low/medium/high
 // 仅作建议值展示，不做枚举校验。空串表示不下发该参数。
 export type ReasoningEffort = string

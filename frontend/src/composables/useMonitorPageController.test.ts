@@ -38,6 +38,7 @@ const runningCrawlStatus = (overrides: Partial<GithubCrawlStatus> = {}): GithubC
 
 const createApi = (): MonitorApi => ({
   fetchTasks: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 10 })),
+  fetchErrorLogs: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 10 })),
   fetchSchedulerStatus: vi.fn(async () => ({ running: false, job_count: 0, jobs: [] })),
   fetchSchedulerConfigs: vi.fn(async () => []),
   saveSchedulerConfig: vi.fn(),
@@ -75,7 +76,57 @@ describe('Monitor page controller contract', () => {
     expect(api.fetchSmtpConfig).not.toHaveBeenCalled()
     expect(api.fetchMcpServers).not.toHaveBeenCalled()
     expect(api.fetchGithubEnrichmentStatus).not.toHaveBeenCalled()
+    expect(api.fetchErrorLogs).not.toHaveBeenCalled()
     expect(controller.enrichmentStatus.value).toBeNull()
+  })
+
+  it('fetches error logs for admins and fills paging refs', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchErrorLogs).mockResolvedValueOnce({
+      items: [{
+        id: 5,
+        occurred_at: '2026-08-13T02:00:00+00:00',
+        level: 'ERROR',
+        logger_name: 'backend.app.core.scheduler',
+        message: 'ingestion failed',
+        exception_type: 'RuntimeError',
+        stack_trace: 'Traceback ...',
+      }],
+      total: 21,
+      page: 1,
+      page_size: 10,
+    })
+    const { controller } = createController(api, true)
+    await controller.refreshData()
+    expect(api.fetchErrorLogs).toHaveBeenCalledWith(1, 10)
+    expect(controller.errorLogs.value).toHaveLength(1)
+    expect(controller.errorLogs.value[0]).toMatchObject({ id: 5, exception_type: 'RuntimeError' })
+    expect(controller.errorLogsTotal.value).toBe(21)
+    expect(controller.errorLogsTotalPages.value).toBe(3)
+  })
+
+  it('keeps error log refs untouched when the fetch fails', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchErrorLogs).mockRejectedValueOnce(new Error('boom'))
+    const { controller } = createController(api, true)
+    await controller.refreshData()
+    expect(controller.errorLogs.value).toEqual([])
+    expect(controller.errorLogsTotal.value).toBe(0)
+  })
+
+  it('pages error logs within bounds only', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchErrorLogs).mockResolvedValue({ items: [], total: 21, page: 1, page_size: 10 })
+    const { controller } = createController(api, true)
+    await controller.refreshData()
+    expect(api.fetchErrorLogs).toHaveBeenCalledTimes(1)
+
+    await controller.goErrorLogsPage(2)
+    expect(api.fetchErrorLogs).toHaveBeenLastCalledWith(2, 10)
+    await controller.goErrorLogsPage(99)
+    await controller.goErrorLogsPage(0)
+    expect(api.fetchErrorLogs).toHaveBeenCalledTimes(2)
+    expect(controller.errorLogsPage.value).toBe(2)
   })
 
   // 回归：main.ts 异步恢复登录态，刷新后 onMounted 时 isAdmin 仍为 false，
@@ -96,6 +147,7 @@ describe('Monitor page controller contract', () => {
     expect(api.fetchSmtpConfig).toHaveBeenCalledOnce()
     expect(api.fetchMcpServers).toHaveBeenCalledOnce()
     expect(api.fetchGithubEnrichmentStatus).toHaveBeenCalledOnce()
+    expect(api.fetchErrorLogs).toHaveBeenCalledOnce()
     expect(api.fetchGithubCrawlStatus).toHaveBeenCalledOnce()
   })
 

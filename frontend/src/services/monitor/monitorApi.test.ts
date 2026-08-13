@@ -23,6 +23,29 @@ describe('Monitor API contract', () => {
     await expect(monitorApi.fetchTasks(2, 25)).resolves.toEqual({ items: [], total: 0, page: 2, page_size: 25 })
     expect(transport.get).toHaveBeenCalledWith('/monitor/tasks', { params: { page: 2, page_size: 25 } })
 
+    transport.get.mockResolvedValueOnce({ data: {} })
+    await expect(monitorApi.fetchErrorLogs(3, 20)).resolves.toEqual({ items: [], total: 0, page: 3, page_size: 20 })
+    expect(transport.get).toHaveBeenLastCalledWith('/monitor/errors', { params: { page: 3, page_size: 20 } })
+    transport.get.mockResolvedValueOnce({
+      data: {
+        items: [{
+          id: 9,
+          occurred_at: '2026-08-13T02:00:00+00:00',
+          level: 'ERROR',
+          logger_name: 'backend.app.core.scheduler',
+          message: 'ingestion failed',
+          exception_type: 'RuntimeError',
+          stack_trace: 'Traceback ...',
+        }],
+        total: 1,
+        page: 1,
+        page_size: 20,
+      },
+    })
+    const errorLogPage = await monitorApi.fetchErrorLogs(1, 20)
+    expect(errorLogPage.total).toBe(1)
+    expect(errorLogPage.items[0]).toMatchObject({ id: 9, level: 'ERROR', exception_type: 'RuntimeError' })
+
     transport.get.mockResolvedValueOnce({ data: { running: false } })
     await monitorApi.fetchSchedulerStatus()
     expect(transport.get).toHaveBeenLastCalledWith('/ops/scheduler/status')

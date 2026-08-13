@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
 import GithubCrawlControls from '@/components/monitor/GithubCrawlControls.vue'
 import GithubEnrichmentPanel from '@/components/monitor/GithubEnrichmentPanel.vue'
+import ErrorLogPanel from '@/components/monitor/ErrorLogPanel.vue'
 import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
 import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
@@ -30,11 +31,11 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 const enrichmentAlert = useEnrichmentAlertStore()
 const {
-  tasks, total, page, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
+  tasks, total, page, errorLogs, errorLogsTotal, errorLogsPage, errorLogsTotalPages, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
   loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
-  dispose, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig, resetMcpForm, editMcpServer, saveMcpServer,
+  dispose, fetchMcpServers, refreshData, goPage, goErrorLogsPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig, resetMcpForm, editMcpServer, saveMcpServer,
   testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings, clearDashboardCache, syncDataNow,
   ingestByDate, clearAllData,
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
@@ -182,6 +183,17 @@ onUnmounted(dispose)
           <McpToolCallsPanel
             :snapshot="mcpToolCalls"
             :loading="loading"
+          />
+        </template>
+        <template v-else-if="currentSection === 'errors'">
+          <ErrorLogPanel
+            v-if="authStore.isAdmin"
+            :error-logs="errorLogs"
+            :total="errorLogsTotal"
+            :page="errorLogsPage"
+            :total-pages="errorLogsTotalPages"
+            :loading="loading"
+            @go-page="goErrorLogsPage"
           />
         </template>
 

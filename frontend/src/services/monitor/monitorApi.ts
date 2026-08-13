@@ -1,5 +1,6 @@
 import { api } from '@/services/http/apiClient'
 import type {
+  ErrorLogPage,
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
@@ -9,6 +10,7 @@ import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSc
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
+  fetchErrorLogs(page: number, pageSize: number): Promise<ErrorLogPage>
   fetchSchedulerStatus(): Promise<SchedulerStatus>
   fetchSchedulerConfigs(): Promise<SchedulerJobConfig[]>
   saveSchedulerConfig(form: SchedulerJobConfigForm): Promise<{ item?: SchedulerJobConfig; message?: string }>
@@ -49,6 +51,10 @@ export interface MonitorApi {
 export const monitorApi: MonitorApi = {
   async fetchTasks(page, pageSize) {
     const { data } = await api.get('/monitor/tasks', { params: { page, page_size: pageSize } })
+    return { items: data?.items || [], total: data?.total || 0, page: data?.page || page, page_size: data?.page_size || pageSize }
+  },
+  async fetchErrorLogs(page, pageSize) {
+    const { data } = await api.get('/monitor/errors', { params: { page, page_size: pageSize } })
     return { items: data?.items || [], total: data?.total || 0, page: data?.page || page, page_size: data?.page_size || pageSize }
   },
   async fetchSchedulerStatus() { return (await api.get('/ops/scheduler/status')).data },

@@ -217,7 +217,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'monitor.errorLog.hint': '自动采集后端 logger.error / logger.exception 与未捕获请求异常，仅保留最近 30 天。',
   'monitor.errorLog.time': '时间',
   'monitor.errorLog.level': '级别',
-  'monitor.errorLog.logger': 'Logger',
+  'monitor.errorLog.logger': '日志来源',
   'monitor.errorLog.message': '消息',
   'monitor.errorLog.empty': '暂无错误事件',
   'monitor.mcpToolCalls': 'MCP 工具调用',
