@@ -3,3 +3,7 @@ mcpeval.secrets.yaml
 test-reports/
 __pycache__/
 .pytest_cache/
+
+# 一次性评测运行产物（流日志/逐条结果/汇总），保留在本地
+tool-selection-fix-1214/
+*.stream.jsonl

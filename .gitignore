@@ -62,3 +62,9 @@ migration-artifacts/
 .coverage
 .coverage.*
 htmlcov/
+
+# pytest 缓存（无斜杠模式，匹配任意层级）
+.pytest_cache/
+
+# uv 本地解析产物（仓库以 backend/requirements.lock 为权威锁文件）
+uv.lock
