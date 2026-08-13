@@ -241,6 +241,8 @@ class XCrawler(BaseCrawler):
         for item in items:
             text = translations.get(str(item.get("tweet_id") or ""), "")
             if text:
+                # translateTweet 译文带 HTML 实体（&amp; 等）：先解码还原显示文本
+                text = x_policy.decode_tweet_html_entities(text)
                 # X 译文会剥掉全部链接：按实体补回缺失链接（媒体尾巴除外）
                 tweet = tweets_by_id.get(str(item.get("tweet_id") or ""))
                 if tweet is not None:
@@ -266,7 +268,8 @@ class XCrawler(BaseCrawler):
             quote_raw_text = str(getattr(quoted, "text", "") or "")
             quote["translation_zh"] = x_policy.restore_translation_mentions(
                 x_policy.restore_translation_urls(
-                    quote_text,
+                    # 与外推同口径：先解码 HTML 实体再补链接/@前缀
+                    x_policy.decode_tweet_html_entities(quote_text),
                     quote_raw_text,
                     quote.get("media") or [],
                     getattr(quoted, "urls", None),

@@ -12,6 +12,7 @@ from __future__ import annotations
 dict/对象进、dict 出的纯变换，transport 负责一切 IO。
 """
 
+import html
 import logging
 import math
 import re
@@ -128,6 +129,17 @@ _TCO_RE = re.compile(r"https://t\.co/[A-Za-z0-9]+")
 _TRAILING_TCO_RE = re.compile(r"\s*https://t\.co/[A-Za-z0-9]+\s*$")
 
 
+def decode_tweet_html_entities(text: str) -> str:
+    """解码 X 文本字段里的 HTML 实体（&amp; &lt; &gt; &quot; &#39; 等）。
+
+    X 对 full_text 与 translateTweet 译文中的 & < > 做 HTML 转义（转义与否
+    随端点/条目不一致，实测同一 watchlist 两种形态并存），客户端须自行解码
+    才能还原 X 页面显示文本。html.unescape 按 HTML5 规则单遍解码，非实体
+    片段原样保留；空串直通。
+    """
+    return html.unescape(text) if text else text
+
+
 def _strip_media_tco(text: str, media: list[dict]) -> str:
     """剥离 full_text 尾部由 X 自动追加的媒体 t.co 链接。
 
@@ -145,13 +157,15 @@ def _expanded_urls(urls: Any) -> list[str]:
 
 
 def clean_tweet_display_text(text: str, media: list[dict], urls: Any) -> str:
-    """把 full_text 转成 X 页面式显示文本：剥媒体尾巴 + t.co 展开为真实 URL。
+    """把 full_text 转成 X 页面式显示文本：解码 HTML 实体 + 剥媒体尾巴 + t.co 展开为真实 URL。
 
     twitter-cli 的 Tweet.urls 来自 entities.urls[].expanded_url，实体序与
     文中 t.co 出现序一致（X 按文本顺序生成实体），故按位置配对展开；
-    数量不齐时未配对的 t.co 原样保留，绝不静默丢链接。
+    数量不齐时未配对的 t.co 原样保留，绝不静默丢链接。实体解码在最前：
+    X 转义与否随端点不一致（& → &amp;），t.co/展开 URL 均不含实体字符，
+    先解码不影响后续配对。
     """
-    cleaned = _strip_media_tco(text, media)
+    cleaned = _strip_media_tco(decode_tweet_html_entities(text), media)
     expanded = _expanded_urls(urls)
     if not expanded:
         return cleaned
