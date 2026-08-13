@@ -178,6 +178,34 @@ def test_upsert_document_link_card_defaults_to_none() -> None:
     assert params["link_card"] is None
 
 
+def test_upsert_document_persists_retweeted_by() -> None:
+    repository, _, cursor = repository_with_cursor()
+
+    repository.upsert_document(
+        {
+            "id": "x:2008",
+            "source": "x",
+            "source_channel": "x_daily_watchlist",
+            "title": "tweet",
+            "url": "https://x.com/originalauthor/status/2008",
+            "retweeted_by": "watchlist_account",
+        }
+    )
+
+    sql = cursor.execute.call_args.args[0]
+    params = cursor.execute.call_args.args[1]
+    assert "retweeted_by" in sql
+    # 冲突更新走 COALESCE(NULLIF(...))：新一轮无转贴者信息时保留已有标注
+    assert "retweeted_by=COALESCE(NULLIF(EXCLUDED.retweeted_by, ''), documents.retweeted_by)" in sql
+    assert params["retweeted_by"] == "watchlist_account"
+
+    repository.upsert_document(
+        {"id": "x:2009", "source": "x", "title": "tweet", "url": "https://x.com/a/status/2009"}
+    )
+    assert cursor.execute.call_args.args[1]["retweeted_by"] is None
+
+
+
 def test_upsert_document_persists_quote() -> None:
     repository, _, cursor = repository_with_cursor()
 

@@ -28,6 +28,8 @@ export interface TopDoc {
   author_avatar_url?: string
   /** 采集期落库的 X 账号昵称（display name；仅 X 推文，旧数据为空时回退展示 @handle） */
   author_name?: string
+  /** 纯转贴的转贴者 handle（仅 X 转贴；卡片顶部据此标注「@xxx 转发了」，原作者仍为 author） */
+  retweeted_by?: string | null
   stars?: number
   language?: string
   feed_name?: string

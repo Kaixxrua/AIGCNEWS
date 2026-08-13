@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, ExternalLink, Maximize2 } from 'lucide-vue-next'
+import { ArrowLeft, ExternalLink, Maximize2, Repeat2 } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
 import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
 import { showToast } from '@/composables/useToast'
-import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, paginateItems, quoteAsDoc, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
@@ -266,6 +266,17 @@ onBeforeUnmount(() => {
             :key="tweet.url || tweet.title"
             class="tweet-card"
           >
+            <!-- 纯转贴标注行：转贴者在上、原作者在下（与 X 原生转发卡同形态） -->
+            <div v-if="retweetedByHandle(tweet)" class="tweet-retweet-line flex items-center gap-1.5 px-4 pt-2.5 text-2xs">
+              <Repeat2 class="h-3 w-3 shrink-0" />
+              <a
+                :href="`https://x.com/${retweetedByHandle(tweet)}`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="tweet-retweet-link truncate font-semibold"
+              >@{{ retweetedByHandle(tweet) }}</a>
+              <span class="shrink-0">{{ t('xboard.repostedSuffix') }}</span>
+            </div>
             <div class="tweet-head flex flex-wrap items-center gap-2 px-4 py-3">
               <input
                 v-if="isAdmin && tweet.id"
@@ -429,6 +440,16 @@ onBeforeUnmount(() => {
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
 
+          <div v-if="retweetedByHandle(detailTweet)" class="tweet-retweet-line flex items-center gap-1.5 px-5 pt-3 text-xs" :class="{ 'pl-14': detailParent }">
+            <Repeat2 class="h-3.5 w-3.5 shrink-0" />
+            <a
+              :href="`https://x.com/${retweetedByHandle(detailTweet)}`"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="tweet-retweet-link truncate font-semibold"
+            >@{{ retweetedByHandle(detailTweet) }}</a>
+            <span class="shrink-0">{{ t('xboard.repostedSuffix') }}</span>
+          </div>
           <div class="tweet-head flex items-center gap-2 px-5 py-4 pr-14" :class="{ 'pl-14': detailParent }">
             <img
               v-if="authorAvatarUrl(detailTweet)"
@@ -619,6 +640,21 @@ onBeforeUnmount(() => {
 
 .tweet-head {
   border-bottom: 1px solid var(--rule);
+}
+
+/* 转贴标注行：弱化灰字但可发现（与 quote handle 同墨色），链接 hover 走 acid 高亮 */
+.tweet-retweet-line {
+  color: var(--ink-muted);
+}
+
+.tweet-retweet-line .tweet-retweet-link {
+  color: var(--ink-muted);
+  border-radius: 4px;
+}
+
+.tweet-retweet-line a.tweet-retweet-link:hover {
+  background: var(--acid);
+  color: var(--ink);
 }
 
 .tweet-avatar {

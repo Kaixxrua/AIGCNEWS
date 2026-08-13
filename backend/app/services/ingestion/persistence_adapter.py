@@ -69,6 +69,7 @@ def project_document_write(
         "link_card": json.dumps(link_card, ensure_ascii=False) if isinstance(link_card, dict) else None,
         "author_avatar_url": paper.get("author_avatar_url"),
         "author_name": paper.get("author_name"),
+        "retweeted_by": paper.get("retweeted_by"),
         "translation_zh": paper.get("translation_zh"),
         # arXiv 采集器产出 authors（≤5 字符串列表）与 arxiv_id；None/空值写 NULL，
         # upsert 冲突合并（COALESCE(NULLIF(...,''))）据此保留已有值。

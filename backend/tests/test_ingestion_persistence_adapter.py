@@ -80,6 +80,23 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
 
         self.assertIsNone(write["translation_zh"])
 
+    def test_document_write_projection_passes_retweeted_by_through(self) -> None:
+        document = MagicMock(metadata={"id": "doc-rt"})
+        paper = {
+            "source": "x",
+            "channel": "x_daily_watchlist",
+            "title": "Tweet",
+            "retweeted_by": "watchlist_account",
+        }
+
+        write = project_document_write(paper, document, "x")
+
+        self.assertEqual(write["retweeted_by"], "watchlist_account")
+        paper_plain = {"source": "x", "channel": "x_daily_watchlist", "title": "Tweet"}
+        self.assertIsNone(
+            project_document_write(paper_plain, document, "x")["retweeted_by"]
+        )
+
     def test_document_write_projection_serializes_quote_and_defaults_none(self) -> None:
         document = MagicMock(metadata={"id": "doc-q"})
         quote = {

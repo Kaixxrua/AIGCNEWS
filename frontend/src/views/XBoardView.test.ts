@@ -229,6 +229,26 @@ describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
     expect(wrapper.find('.xboard-toolbar').exists()).toBe(false)
     expect(wrapper.findAll('.tweet-head input[type="checkbox"]')).toHaveLength(0)
   })
+
+  it('纯转贴卡片在作者行之上标注转贴者，普通推文不渲染该行', async () => {
+    const [rt, plain] = makeTweets(2)
+    rt!.retweeted_by = 'watcher'
+    controller().docs.value = [rt!, plain!]
+    const wrapper = await mountView()
+
+    const cards = wrapper.findAll('article.tweet-card')
+    const rtCard = cards.find((card) => card.text().includes('Tweet 0 body'))!
+    const plainCard = cards.find((card) => card.text().includes('Tweet 1 body'))!
+
+    const line = rtCard.find('.tweet-retweet-line')
+    expect(line.exists()).toBe(true)
+    const link = line.find('a.tweet-retweet-link')
+    expect(link.attributes('href')).toBe('https://x.com/watcher')
+    expect(link.text()).toBe('@watcher')
+    // 转贴行在作者头行之前（先标转贴者，再显原作者）
+    expect(rtCard.html().indexOf('tweet-retweet-line')).toBeLessThan(rtCard.html().indexOf('tweet-head'))
+    expect(plainCard.find('.tweet-retweet-line').exists()).toBe(false)
+  })
 })
 
 describe('XBoardView 详情浮层焦点管理', () => {

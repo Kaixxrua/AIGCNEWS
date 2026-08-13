@@ -82,7 +82,7 @@ def _document_projection() -> str:
                COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
                COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
-               d.in_monthly, d.local_pdf_path, d.media, d.quote, d.link_card, d.author_avatar_url, d.author_name, d.translation_zh, d.authors, d.arxiv_id, d.created_at
+               d.in_monthly, d.local_pdf_path, d.media, d.quote, d.link_card, d.author_avatar_url, d.author_name, d.retweeted_by, d.translation_zh, d.authors, d.arxiv_id, d.created_at
         FROM documents d
         LEFT JOIN github_repo_candidates c
           ON d.source = 'github' AND (c.full_name = d.title
@@ -146,6 +146,7 @@ class PostgresDocumentRepository:
         doc.setdefault("published_at", None)
         doc.setdefault("author_avatar_url", None)
         doc.setdefault("author_name", None)
+        doc.setdefault("retweeted_by", None)
         doc.setdefault("translation_zh", None)
         doc.setdefault("authors", None)
         doc.setdefault("arxiv_id", None)
@@ -169,13 +170,13 @@ class PostgresDocumentRepository:
                     INSERT INTO documents
                         (id, source, source_channel, title, url, summary, published_date,
                          published_at, tags, score, raw_score, stars, forks, language, rank_in_period,
-                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, quote, link_card, author_avatar_url, author_name, translation_zh, authors, arxiv_id, created_at)
+                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, quote, link_card, author_avatar_url, author_name, retweeted_by, translation_zh, authors, arxiv_id, created_at)
                     VALUES
                         (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s,
                          %(summary)s, %(published_date)s, %(published_at)s, %(tags)s, %(score)s,
                          %(raw_score)s, %(stars)s, %(forks)s, %(language)s,
                          %(rank_in_period)s, %(indexed)s, %(in_daily)s, %(in_weekly)s,
-                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(quote)s, %(link_card)s, %(author_avatar_url)s, %(author_name)s, %(translation_zh)s, %(authors)s, %(arxiv_id)s, %(created_at)s)
+                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(quote)s, %(link_card)s, %(author_avatar_url)s, %(author_name)s, %(retweeted_by)s, %(translation_zh)s, %(authors)s, %(arxiv_id)s, %(created_at)s)
                     ON CONFLICT (id) DO UPDATE SET
                         source_channel=EXCLUDED.source_channel, title=EXCLUDED.title,
                         url=EXCLUDED.url, summary=EXCLUDED.summary,
@@ -197,6 +198,7 @@ class PostgresDocumentRepository:
                         link_card=COALESCE(NULLIF(EXCLUDED.link_card, ''), documents.link_card),
                         author_avatar_url=COALESCE(NULLIF(EXCLUDED.author_avatar_url, ''), documents.author_avatar_url),
                         author_name=COALESCE(NULLIF(EXCLUDED.author_name, ''), documents.author_name),
+                        retweeted_by=COALESCE(NULLIF(EXCLUDED.retweeted_by, ''), documents.retweeted_by),
                         translation_zh=COALESCE(NULLIF(EXCLUDED.translation_zh, ''), documents.translation_zh),
                         authors=COALESCE(NULLIF(EXCLUDED.authors, ''), documents.authors),
                         arxiv_id=COALESCE(NULLIF(EXCLUDED.arxiv_id, ''), documents.arxiv_id)

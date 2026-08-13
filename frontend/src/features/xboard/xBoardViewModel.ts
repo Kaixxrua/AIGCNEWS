@@ -52,6 +52,17 @@ export const tweetText = (doc: TopDoc): string => (
 )
 
 /**
+ * 纯转贴的转贴者 handle：采集期落库 retweeted_by（parser 产出的 screen_name）。
+ * 卡片顶部据此渲染「@xxx 转发了」行，原作者仍由 authorDisplayName 呈现——
+ * 与 X 原生 UI（转发者一行在上、原作者在下）对齐。trim + 去前导 @ 归一；
+ * 缺失/空白/非字符串返回空串，渲染层不渲染该行。
+ */
+export const retweetedByHandle = (doc: TopDoc): string => {
+  const raw = typeof doc.retweeted_by === 'string' ? doc.retweeted_by.trim() : ''
+  return raw.replace(/^@+/, '')
+}
+
+/**
  * 正文按界面语言切换：zh 系界面语言优先展示采集期落库的 X 中文翻译
  * （translation_zh，来自 X 自带 translateTweet），其余语言或无译文回退原文。
  */

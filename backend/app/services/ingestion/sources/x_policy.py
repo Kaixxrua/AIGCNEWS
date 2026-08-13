@@ -48,7 +48,8 @@ def is_ingestible_tweet(tweet: Any) -> bool:
     纯转贴（is_retweet）自 2026-08-13 起保留：twitter-cli parser 已把
     id/正文/作者/指标/created_at 全部换成被转原贴，条目按原贴归属入库
     （与原作者自发条目同 URL，走既有幂等路径；同轮重复由 project_tweets
-    按 id 去重），转贴者 retweeted_by 不投影。当日快照过滤按原贴
+    按 id 去重），转贴者 retweeted_by 一并投影落库（看板卡片顶部据此
+    标注「@转贴者 转发了」，原作者行保持原位）。当日快照过滤按原贴
     created_at 算——只有"当天发布的原贴被当天转贴"能入库，隔天转贴不进。
     """
     if getattr(tweet, "is_promoted", False):
@@ -398,6 +399,10 @@ def project_tweets(
                 "author": screen_name,
                 "author_name": author_name,
                 "author_avatar_url": author_avatar_url,
+                # 纯转贴的转贴者 handle（parser 字段；非转贴恒 None，与
+                # quote/link_card 同形状先例）。多账号转同一贴按 id 去重后
+                # 保留首条（最高分）的转贴者。
+                "retweeted_by": str(getattr(tweet, "retweeted_by", "") or "") or None,
                 "rank_in_period": rank,
                 "tags": [X_SOURCE, "daily", screen_name],
                 "media": media,

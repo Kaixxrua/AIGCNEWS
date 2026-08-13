@@ -25,6 +25,7 @@ import {
   quoteAvatarUrl,
   quoteMediaItems,
   quoteTextSegments,
+  retweetedByHandle,
   timelineTweets,
   tweetLinkCard,
   tweetQuote,
@@ -83,6 +84,16 @@ describe('xBoardViewModel', () => {
     expect(authorDisplayName({ author_name: '  ', url: 'https://x.com/openai/status/1' })).toBe('@openai')
     expect(authorDisplayName({ author_name: 'Karpathy' })).toBe('Karpathy')
     expect(authorDisplayName({})).toBe('')
+  })
+
+  it('normalizes retweeted_by handle and blanks absent/bad values', () => {
+    expect(retweetedByHandle({ retweeted_by: 'watcher' })).toBe('watcher')
+    expect(retweetedByHandle({ retweeted_by: '  @Watcher ' })).toBe('Watcher')
+    expect(retweetedByHandle({ retweeted_by: '' })).toBe('')
+    expect(retweetedByHandle({ retweeted_by: '   ' })).toBe('')
+    expect(retweetedByHandle({ retweeted_by: null })).toBe('')
+    expect(retweetedByHandle({ retweeted_by: 42 as unknown as string })).toBe('')
+    expect(retweetedByHandle({})).toBe('')
   })
 
   it('detects and lists media items safely', () => {
