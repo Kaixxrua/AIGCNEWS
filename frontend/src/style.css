@@ -196,166 +196,182 @@
   --btn-primary-label: var(--acid);
 }
 
+/* 深色 = modelflare.dev 暗色系映射（真源码 static/css/index.c3f087e5bb.css 的 .dark token 块）：
+   近黑绿底 #0b0d0b、冷白 #f3f5ef、发丝边 #ecf5e41f、品牌酸性绿 #d7ff00、
+   低饱和灰绿辅助色；阴影中性化为纯黑（modelflare 无彩色投影），圆角收窄。 */
 :root[data-theme='dark'] {
-  --paper: #0e1210;
-  --paper-raised: #171c19;
-  --paper-muted: #090d0b;
-  --ink: #eeede4;
-  --ink-secondary: #c6c7bc;
-  --ink-muted: #a6a89d;
-  --rule: #4b504b;
-  --rule-strong: #d9d9cf;
-  --acid: #c9e842;
-  --acid-soft: #2e3319;
-  --acid-strong: #b7d434;
-  --acid-ink: #171a09;
+  --paper: #0b0d0b;
+  --paper-raised: #111410;
+  --paper-muted: #080a08;
+  --ink: #f3f5ef;
+  --ink-secondary: #c2c8bf;
+  --ink-muted: #99a197;
+  --rule: #ecf5e41f;
+  --rule-strong: #dfe4db;
+  --acid: #d7ff00;
+  --acid-soft: #232a0b;
+  --acid-strong: #c8f000;
+  --acid-ink: #0b0d0b;
+  /* modelflare 锐角（--radius:.25rem）：深色域内收窄，浅色保持 12/8 */
+  --module-radius: 6px;
+  --control-radius: 4px;
 
-  --hard-ink: #e7e6dc;
-  --shadow-hard: #a8b83a;
-  --shadow-ink-soft: rgba(168, 184, 58, 0.48);
+  --hard-ink: #f3f5ef;
+  --shadow-hard: #000000;
+  --shadow-ink-soft: rgba(0, 0, 0, 0.55);
 
-  --ink-faint: #5f6056;
-  --ink-solid: #303730;
-  --ink-solid-hover: #465046;
-  --ink-on-solid: #f4f3ea;
+  --ink-faint: #5c6359;
+  --ink-solid: #262b24;
+  --ink-solid-hover: #363c33;
+  --ink-on-solid: #f3f5ef;
 
-  --card-rgb: 23 28 25;
-  --stone-50-rgb: 32 32 28;
-  --stone-100-rgb: 40 40 35;
-  --stone-200-rgb: 60 60 53;
-  --stone-300-rgb: 80 80 71;
-  --stone-400-rgb: 113 113 101;
-  --stone-500-rgb: 142 142 130;
-  --stone-600-rgb: 190 191 181;
-  --stone-700-rgb: 205 206 196;
-  --stone-800-rgb: 220 220 211;
-  --stone-900-rgb: 232 232 223;
-  --stone-950-rgb: 240 239 231;
+  /* stone 三元组改挂 modelflare 灰绿阶梯（50=最深 … 950=最浅） */
+  --card-rgb: 17 20 16;
+  --stone-50-rgb: 26 30 25;
+  --stone-100-rgb: 34 39 32;
+  --stone-200-rgb: 48 54 46;
+  --stone-300-rgb: 64 70 61;
+  --stone-400-rgb: 105 112 101;
+  --stone-500-rgb: 134 141 130;
+  --stone-600-rgb: 176 182 171;
+  --stone-700-rgb: 197 202 192;
+  --stone-800-rgb: 215 220 210;
+  --stone-900-rgb: 230 234 225;
+  --stone-950-rgb: 243 245 239;
 
-  --glow-warm-rgb: 164 181 88;
-  --cream-rgb: 30 35 31;
-  --cream-deep-rgb: 26 31 28;
-  --warm-ink: #b8c878;
-  --shimmer: #a9bb55;
-  --paper-warm: #1b211d;
+  /* 聊天光晕与奶油面转酸性绿/灰绿 */
+  --glow-warm-rgb: 215 255 0;
+  --cream-rgb: 23 26 22;
+  --cream-deep-rgb: 20 23 19;
+  --warm-ink: #b7c43f;
+  --shimmer: #b8d414;
+  --paper-warm: #1c211b;
 
-  --acid-bright: #c9e842;
-  --on-acid: #171a09;
+  --acid-bright: #d7ff00;
+  --on-acid: #0b0d0b;
 
-  --scrollbar: rgba(200, 200, 188, 0.22);
-  --scrollbar-hover: rgba(200, 200, 188, 0.36);
+  --scrollbar: rgba(153, 161, 151, 0.22);
+  --scrollbar-hover: rgba(153, 161, 151, 0.38);
 
-  --danger: #dc2626;
-  --danger-strong: #991b1b;
-  --danger-ink: #ffffff;
-  --error-ink: #fca5a5;
-  --error-bg: rgba(239, 68, 68, 0.10);
-  --error-bg-strong: rgba(239, 68, 68, 0.16);
-  --error-accent: #ef4444;
+  /* 危险/错误 = modelflare destructive #d36a61 家族 */
+  --danger: #d36a61;
+  --danger-strong: #b4473d;
+  --danger-ink: #0b0d0b;
+  --error-ink: #e8a29b;
+  --error-bg: rgba(211, 106, 97, 0.10);
+  --error-bg-strong: rgba(211, 106, 97, 0.16);
+  --error-accent: #d36a61;
 
-  --tech-primary: #22d3ee;
+  /* 科技青转 modelflare trust #79b9bd */
+  --tech-primary: #79b9bd;
 
-  --badge-arxiv-ink: #60a5fa;
-  --badge-arxiv-bg: rgba(96, 165, 250, 0.15);
-  --badge-arxiv-border: rgba(96, 165, 250, 0.35);
-  --badge-github-ink: #94a3b8;
-  --badge-github-bg: rgba(148, 163, 184, 0.15);
-  --badge-github-border: rgba(148, 163, 184, 0.32);
-  --badge-news-ink: #fbbf24;
-  --badge-news-bg: rgba(251, 191, 36, 0.14);
-  --badge-news-border: rgba(251, 191, 36, 0.32);
-  --badge-neo4j-ink: #a78bfa;
-  --badge-neo4j-bg: rgba(167, 139, 250, 0.15);
-  --badge-neo4j-border: rgba(167, 139, 250, 0.35);
-  --badge-milvus-ink: #22d3ee;
-  --badge-milvus-bg: rgba(34, 211, 238, 0.14);
-  --badge-milvus-border: rgba(34, 211, 238, 0.32);
-  --badge-default-ink: #adada0;
-  --badge-default-bg: rgba(40, 40, 35, 0.8);
-  --badge-default-border: rgba(113, 113, 101, 0.35);
+  /* 来源徽章转 modelflare chart/neutral/reward 低饱和阶 */
+  --badge-arxiv-ink: #7895a0;
+  --badge-arxiv-bg: rgba(120, 149, 160, 0.14);
+  --badge-arxiv-border: rgba(120, 149, 160, 0.32);
+  --badge-github-ink: #a7aea4;
+  --badge-github-bg: rgba(167, 174, 164, 0.13);
+  --badge-github-border: rgba(167, 174, 164, 0.30);
+  --badge-news-ink: #d5ad5e;
+  --badge-news-bg: rgba(213, 173, 94, 0.13);
+  --badge-news-border: rgba(213, 173, 94, 0.30);
+  --badge-neo4j-ink: #b57b72;
+  --badge-neo4j-bg: rgba(181, 123, 114, 0.14);
+  --badge-neo4j-border: rgba(181, 123, 114, 0.32);
+  --badge-milvus-ink: #79b9bd;
+  --badge-milvus-bg: rgba(121, 185, 189, 0.13);
+  --badge-milvus-border: rgba(121, 185, 189, 0.30);
+  --badge-default-ink: #99a197;
+  --badge-default-bg: rgba(28, 33, 27, 0.8);
+  --badge-default-border: rgba(105, 112, 101, 0.35);
 
-  --veil-from: rgba(27, 27, 24, 0.72);
-  --veil-to: rgba(18, 18, 15, 0.50);
-  --veil-line: rgba(210, 209, 197, 0.24);
-  --veil-grain: rgba(236, 235, 228, 0.02);
+  --veil-from: rgba(11, 13, 11, 0.72);
+  --veil-to: rgba(8, 10, 8, 0.50);
+  --veil-line: rgba(236, 245, 228, 0.24);
+  --veil-grain: rgba(243, 245, 239, 0.02);
 
   --logo-tile: #e7e9d3;
 
-  --projects-accent: #eeede4;
-  --projects-accent-soft: rgba(201, 232, 66, 0.16);
-  --projects-accent-border: #eeede4;
-  --projects-warm: #eeede4;
-  --projects-warm-soft: rgba(201, 232, 66, 0.12);
-  --projects-paper: #0b100d;
-  --projects-paper-light: #171c19;
-  --projects-acid: #c9e842;
-  --projects-acid-soft: #2b3016;
-  --projects-success: #34d399;
-  --projects-error: #fb7185;
+  --projects-accent: #f3f5ef;
+  --projects-accent-soft: rgba(215, 255, 0, 0.14);
+  --projects-accent-border: #f3f5ef;
+  --projects-warm: #f3f5ef;
+  --projects-warm-soft: rgba(215, 255, 0, 0.10);
+  --projects-paper: #0b0d0b;
+  --projects-paper-light: #111410;
+  --projects-acid: #d7ff00;
+  --projects-acid-soft: #232a0b;
+  --projects-success: #72a889;
+  --projects-error: #d36a61;
   /* 亮 acid 面上的文字——酸绿底两态相同，故其上的墨色两态相同 */
-  --projects-on-acid: #11110f;
-  --projects-favorite-ink: #fbbf24;
-  --projects-favorite-bg: rgba(251, 191, 36, 0.16);
-  --projects-favorite-tint: rgba(251, 191, 36, 0.14);
-  --projects-favorite-border: rgba(251, 191, 36, 0.35);
-  --projects-recommend-ink: #67e8f9;
-  --projects-recommend-tint: rgba(103, 232, 249, 0.12);
-  --projects-ghost-ink: #d4d4ce;
-  --projects-ghost-ink-soft: #bebeb8;
-  --projects-ghost-text: #adada6;
-  --projects-ghost-border: #98988f;
-  --projects-ghost-border-strong: #94948c;
-  --projects-ghost-line: #7b7b73;
-  --projects-ghost-line-strong: #76766e;
-  --projects-ghost-shadow: rgba(168, 184, 58, 0.38);
-  --projects-ghost-surface-active: #4b4b45;
-  --projects-ghost-surface-chip: #3b3b36;
-  --projects-ghost-surface-hover: #343431;
-  --projects-ghost-surface: #2f2f2b;
-  --projects-ghost-surface-card: #2b2b27;
-  --chat-paper: #121815;
-  --chat-paper-rgb: 18 24 21;
-  --chat-ink: #e7e6dc;
-  --chat-ink-rgb: 231 230 220;
-  --chat-shadow-rgb: 168 184 58;
-  --chat-on-acid: #191a16;
-  --chat-input-bg: #171e1a;
-  --cream-bright-rgb: 34 40 35;
-  --cream-warm-rgb: 29 35 31;
-  --shimmer-rgb: 169 187 85;
-  --shimmer-bright: #d1e66a;
-  --warm-ink-faint: #89966b;
-  --badge-web-ink: #4ade80;
-  --badge-web-bg: rgba(74, 222, 128, 0.14);
-  --success-ink: #4ade80;
-  --success-strong: #4ade80;
-  --success-border: rgba(74, 222, 128, 0.4);
-  --success-border-strong: rgba(74, 222, 128, 0.6);
-  --success-bg: rgba(74, 222, 128, 0.12);
-  --success-bg-strong: rgba(74, 222, 128, 0.18);
-  --tech-primary-rgb: 34 211 238;
-  --pdf-chrome-bg: #20201d;
-  --acid-mist: #2e3319;
-  --notice-warn-bg: rgba(251, 191, 36, 0.1);
-  --notice-warn-bg-strong: rgba(251, 191, 36, 0.14);
-  --notice-warn-border: rgba(251, 191, 36, 0.22);
-  --notice-warn-edge: rgba(251, 191, 36, 0.3);
-  --notice-warn-ink: #fbbf24;
-  --notice-warn-ink-soft: #fcd34d;
-  --notice-ok-bg: rgba(52, 211, 153, 0.08);
-  --notice-ok-border: rgba(52, 211, 153, 0.18);
-  --panel-edge-info: rgba(165, 180, 252, 0.25);
-  --dash-muted: #b8b8ad;
-  --ink-grid-rgb: 220 220 211;
-  --projects-paper-light-rgb: 35 35 31;
-  --mcp-btn-label: #171a09;
-  --mcp-icon-ink: #22d3ee;
-  --mcp-icon-edge: rgba(34, 211, 238, 0.3);
-  --token-valid-bg: rgba(52, 211, 153, 0.12);
-  --toast-shadow: rgba(168, 184, 58, 0.6);
-  --dock-danger-hover: rgba(239, 68, 68, 0.18);
-  --dock-on-ink-label: #171a09;
-  --dock-shadow: #a8b83a;
+  --projects-on-acid: #0b0d0b;
+  /* projects 卡片语义色（收藏=reward 金，推荐=trust 青） */
+  --projects-favorite-ink: #d5ad5e;
+  --projects-favorite-bg: rgba(213, 173, 94, 0.15);
+  --projects-favorite-tint: rgba(213, 173, 94, 0.13);
+  --projects-favorite-border: rgba(213, 173, 94, 0.34);
+  --projects-recommend-ink: #79b9bd;
+  --projects-recommend-tint: rgba(121, 185, 189, 0.12);
+  /* ghost 中性阶转灰绿 */
+  --projects-ghost-ink: #d2d6cf;
+  --projects-ghost-ink-soft: #bcc1b8;
+  --projects-ghost-text: #a8afa4;
+  --projects-ghost-border: #939a90;
+  --projects-ghost-border-strong: #8f978d;
+  --projects-ghost-line: #767d72;
+  --projects-ghost-line-strong: #71786d;
+  --projects-ghost-shadow: rgba(0, 0, 0, 0.5);
+  --projects-ghost-surface-active: #454b43;
+  --projects-ghost-surface-chip: #363c34;
+  --projects-ghost-surface-hover: #30362e;
+  --projects-ghost-surface: #2a3028;
+  --projects-ghost-surface-card: #262b24;
+  --chat-paper: #0e110e;
+  --chat-paper-rgb: 14 17 14;
+  --chat-ink: #f3f5ef;
+  --chat-ink-rgb: 243 245 239;
+  --chat-shadow-rgb: 0 0 0;
+  --chat-on-acid: #0b0d0b;
+  --chat-input-bg: #111410;
+  --cream-bright-rgb: 28 33 27;
+  --cream-warm-rgb: 25 29 24;
+  --shimmer-rgb: 215 255 0;
+  --shimmer-bright: #e5ff66;
+  --warm-ink-faint: #6f7a63;
+  --badge-web-ink: #72a889;
+  --badge-web-bg: rgba(114, 168, 137, 0.13);
+  /* 成功绿 = modelflare success #72a889 家族 */
+  --success-ink: #72a889;
+  --success-strong: #8fc2a9;
+  --success-border: rgba(114, 168, 137, 0.40);
+  --success-border-strong: rgba(114, 168, 137, 0.60);
+  --success-bg: rgba(114, 168, 137, 0.11);
+  --success-bg-strong: rgba(114, 168, 137, 0.17);
+  --tech-primary-rgb: 121 185 189;
+  --pdf-chrome-bg: #111410;
+  --acid-mist: #232a0b;
+  /* 提示条家族转 warning #c49a58 / reward #d5ad5e */
+  --notice-warn-bg: rgba(196, 154, 88, 0.10);
+  --notice-warn-bg-strong: rgba(196, 154, 88, 0.14);
+  --notice-warn-border: rgba(196, 154, 88, 0.22);
+  --notice-warn-edge: rgba(196, 154, 88, 0.30);
+  --notice-warn-ink: #d5ad5e;
+  --notice-warn-ink-soft: #dfc084;
+  --notice-ok-bg: rgba(114, 168, 137, 0.08);
+  --notice-ok-border: rgba(114, 168, 137, 0.18);
+  --panel-edge-info: rgba(121, 163, 177, 0.28);
+  --dash-muted: #99a197;
+  --ink-grid-rgb: 236 245 228;
+  --projects-paper-light-rgb: 17 20 16;
+  --mcp-btn-label: #0b0d0b;
+  --mcp-icon-ink: #79b9bd;
+  --mcp-icon-edge: rgba(121, 185, 189, 0.3);
+  --token-valid-bg: rgba(114, 168, 137, 0.12);
+  --toast-shadow: rgba(0, 0, 0, 0.55);
+  --dock-danger-hover: rgba(211, 106, 97, 0.18);
+  --dock-on-ink-label: #0b0d0b;
+  --dock-shadow: #000000;
+  /* ink 底控件文字色（浅色 = 荧光绿原样；深色随 ink 变浅反转为暗字） */
   --btn-primary-label: var(--paper-raised);
 }
 
