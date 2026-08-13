@@ -119,6 +119,15 @@ export function renderMarkdown(text: string): string {
 }
 
 /**
+ * renderPlainMarkdown: 纯 Markdown → 消毒 HTML（无 KaTeX 环节）。
+ * 供站点自定义页面等管理员撰写内容使用；与 renderMarkdown 共享同一
+ * markdown-it 实例与 DOMPurify 消毒管线，禁止绕开消毒直接绑定渲染结果。
+ */
+export function renderPlainMarkdown(text: string): string {
+  return sanitizeRenderedMarkdown(markdown.render(text || ''))
+}
+
+/**
  * extractLatexSources: 提取文本中所有 LaTeX 公式源码（用于复制）
  */
 export function extractLatexSources(content: string): string[] {

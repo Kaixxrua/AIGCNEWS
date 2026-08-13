@@ -1,13 +1,18 @@
 export type NavigationFeatureKey = 'xSource' | 'wechatSource'
+export type NavigationSitePageKey = 'contactPage'
 
 export interface NavigationItem {
   to: string
   labelKey: `navigation.${string}`
+  /** 管理员自定义的导航文案（站点页面），优先于 labelKey */
+  labelText?: string
   exact: boolean
   requiresAdmin?: boolean
   requiresAuth?: boolean
   /** 可插拔源导航项：对应特性开关被明确关闭时从导航隐藏 */
   featureKey?: NavigationFeatureKey
+  /** 站点自定义页面导航项：对应页面未启用时从导航隐藏 */
+  sitePageKey?: NavigationSitePageKey
   icon: string
 }
 
@@ -16,6 +21,15 @@ export const isNavigationItemFeatureEnabled = (
   item: Pick<NavigationItem, 'featureKey'>,
   features: Record<NavigationFeatureKey, boolean>,
 ): boolean => !item.featureKey || features[item.featureKey] !== false
+
+/**
+ * 站点页面门控：与特性门控的默认值相反——未声明 sitePageKey 的项不受影响；
+ * 声明了的项须配置显式启用才显示（fail-closed，开源默认无此页）。
+ */
+export const isNavigationItemSitePageEnabled = (
+  item: Pick<NavigationItem, 'sitePageKey'>,
+  sitePages: Record<NavigationSitePageKey, boolean>,
+): boolean => !item.sitePageKey || sitePages[item.sitePageKey] === true
 
 export const NAV_ITEMS: readonly NavigationItem[] = [
   {
@@ -70,6 +84,13 @@ export const NAV_ITEMS: readonly NavigationItem[] = [
     labelKey: 'navigation.mcp',
     exact: false,
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8a3 3 0 100 6h3"/><path d="M17 8a3 3 0 110 6h-3"/><path d="M8 12h8"/><path d="M12 4v3"/><path d="M12 17v3"/></svg>`,
+  },
+  {
+    to: '/contact',
+    labelKey: 'navigation.contact',
+    exact: false,
+    sitePageKey: 'contactPage',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
   },
   {
     to: '/monitor',

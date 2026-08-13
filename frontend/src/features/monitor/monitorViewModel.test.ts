@@ -59,6 +59,7 @@ describe('monitor presentation localization boundary', () => {
       ['ingestion', 'monitor.nav.group.ingestion'],
       ['accounts', 'monitor.nav.group.accounts'],
       ['config', 'monitor.nav.group.config'],
+      ['site', 'monitor.nav.group.site'],
     ])
     expect(MONITOR_NAV.flatMap(category => category.children.map(leaf => [leaf.key, leaf.labelKey, leaf.adminOnly]))).toEqual([
       ['tasks', 'monitor.nav.tasks', false],
@@ -74,6 +75,7 @@ describe('monitor presentation localization boundary', () => {
       ['scheduler', 'monitor.nav.scheduler', true],
       ['smtp', 'monitor.nav.smtp', true],
       ['mcp-server', 'monitor.nav.mcpServer', true],
+      ['contact-page', 'monitor.nav.contactPage', true],
     ])
     expect(DEFAULT_MONITOR_SECTION).toBe('tasks')
     expect(MONITOR_NAV.every(category => Boolean(category.icon))).toBe(true)

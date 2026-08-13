@@ -34,3 +34,14 @@ describe('paper read guest access contract', () => {
     expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false })).toBeNull()
   })
 })
+
+// 契约：联系合作页是公开免鉴权页面，但挂 sitePage 门控 —— 管理员未启用时守卫重定向首页。
+describe('contact site page contract', () => {
+  it('contact route is public and carries the sitePage gate meta', () => {
+    const record = router.getRoutes().find((r) => r.path === '/contact')
+    expect(record, 'missing route /contact').toBeDefined()
+    expect(record?.meta.sitePage).toBe('contactPage')
+    expect(record?.meta.requiresAuth).toBeUndefined()
+    expect(record?.meta.requiresAdmin).toBeUndefined()
+  })
+})

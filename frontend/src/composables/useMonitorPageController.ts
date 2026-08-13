@@ -2,12 +2,13 @@ import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
-  createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
   type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
 import { useGithubCrawlPolling } from './useGithubCrawlPolling'
 import { ENRICHMENT_POLL_INTERVAL, useEnrichmentPolling } from './useEnrichmentPolling'
+import { refreshContactPageConfig } from './useContactPageConfig'
 
 interface MonitorPageControllerOptions {
   isAdmin: ComputedRef<boolean>
@@ -63,6 +64,10 @@ export const useMonitorPageController = ({
   const loadingSmtpConfig = ref(false)
   const savingSmtpConfig = ref(false)
   const testingSmtp = ref(false)
+  const siteContactPageConfig = ref<Awaited<ReturnType<MonitorApi['fetchSiteContactPageConfig']>> | null>(null)
+  const siteContactPageForm = ref(createSiteContactPageForm())
+  const loadingSiteContactPage = ref(false)
+  const savingSiteContactPage = ref(false)
   const mcpServers = ref<McpServerConfig[]>([])
   const mcpForm = ref(createEmptyMcpForm())
   const loadingMcpServers = ref(false)
@@ -183,6 +188,15 @@ export const useMonitorPageController = ({
     } catch (error) { console.error('Failed to fetch SMTP config', error) }
     finally { loadingSmtpConfig.value = false }
   }
+  const fetchSiteContactPageConfig = async () => {
+    if (!isAdmin.value) return
+    loadingSiteContactPage.value = true
+    try {
+      siteContactPageConfig.value = await api.fetchSiteContactPageConfig()
+      siteContactPageForm.value = createSiteContactPageForm(siteContactPageConfig.value)
+    } catch (error) { console.error('Failed to fetch site contact page config', error) }
+    finally { loadingSiteContactPage.value = false }
+  }
   const fetchGithubEnrichmentStatus = async () => {
     if (!isAdmin.value) return
     loadingEnrichmentStatus.value = true
@@ -215,7 +229,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -286,6 +300,43 @@ export const useMonitorPageController = ({
       else errorMsg.value = result.message || i18n.global.t('monitor.smtpConfig.testFailed')
     } catch (error) { errorMsg.value = detail(error) }
     finally { testingSmtp.value = false }
+  }
+  // 与后端 schema_site.py 同规则的前端校验：提前拦截可避免 422/400 往返
+  const SITE_CONTACT_HREF_PATTERN = /^(https?:\/\/|mailto:|tel:)/i
+  const SITE_CONTACT_QR_PATTERN = /^(https?:\/\/|\/)/i
+  const saveSiteContactPageConfig = async () => {
+    if (savingSiteContactPage.value) return
+    clearMessages()
+    const form = siteContactPageForm.value
+    if (form.enabled && !form.title.trim()) {
+      errorMsg.value = i18n.global.t('monitor.contactPageConfig.titleRequiredWhenEnabled')
+      return
+    }
+    if (form.service_cards.some((card) => !card.title.trim())) {
+      errorMsg.value = i18n.global.t('monitor.contactPageConfig.cardTitleRequired')
+      return
+    }
+    if (form.contact_entries.some((entry) => !entry.label.trim())) {
+      errorMsg.value = i18n.global.t('monitor.contactPageConfig.entryLabelRequired')
+      return
+    }
+    if (form.contact_entries.some((entry) => entry.href.trim() && !SITE_CONTACT_HREF_PATTERN.test(entry.href.trim()))) {
+      errorMsg.value = i18n.global.t('monitor.contactPageConfig.invalidHref')
+      return
+    }
+    if (form.contact_entries.some((entry) => entry.qr_image_url.trim() && !SITE_CONTACT_QR_PATTERN.test(entry.qr_image_url.trim()))) {
+      errorMsg.value = i18n.global.t('monitor.contactPageConfig.invalidQrUrl')
+      return
+    }
+    savingSiteContactPage.value = true
+    try {
+      siteContactPageConfig.value = await api.saveSiteContactPageConfig(form)
+      siteContactPageForm.value = createSiteContactPageForm(siteContactPageConfig.value)
+      successMsg.value = i18n.global.t('monitor.contactPageConfig.saved')
+      // 导航入口显隐/文案读取的是公开端点的进程内缓存，保存后立即重取让 Dock 当会话更新
+      void refreshContactPageConfig()
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { savingSiteContactPage.value = false }
   }
   const editSchedulerConfig = (job: SchedulerJobConfig) => {
     clearMessages()
@@ -515,16 +566,18 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchErrorLogs(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchErrorLogs(), resumeGithubCrawlPolling()])
   })
 
   return {
     tasks, total, page, pageSize, errorLogs, errorLogsTotal, errorLogsPage, errorLogsPageSize, errorLogsTotalPages, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
     loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+    siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
     fetchErrorLogs, goErrorLogsPage,
     fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchSmtpConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig,
+    fetchSiteContactPageConfig, saveSiteContactPageConfig,
     editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,

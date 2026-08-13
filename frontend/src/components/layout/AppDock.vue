@@ -32,7 +32,7 @@ const hoveredChangePwd = ref(false)
       :key="item.to"
       :to="item.to"
       v-show="(!item.requiresAdmin || props.isAdmin) && (!item.requiresAuth || props.isLoggedIn)"
-      :aria-label="t(item.labelKey)"
+      :aria-label="item.labelText || t(item.labelKey)"
       :aria-current="isNavigationItemActive(item, props.currentPath) ? 'page' : undefined"
       class="dock-item"
       :class="{ 'dock-item--active': isNavigationItemActive(item, props.currentPath) }"
@@ -48,7 +48,7 @@ const hoveredChangePwd = ref(false)
       />
       <Transition name="dock-label">
         <span v-if="hoveredNav === item.to" class="dock-label">
-          {{ t(item.labelKey) }}
+          {{ item.labelText || t(item.labelKey) }}
         </span>
       </Transition>
     </RouterLink>

@@ -4,7 +4,7 @@ const transport = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(),
 vi.mock('../http/apiClient', () => ({ api: transport }))
 
 import { monitorApi } from './monitorApi'
-import { createEmptyMcpForm, createEmptySchedulerJobConfigForm, createEmptyXCredentialForm, createGithubCrawlForm, createProviderForm, createSmtpForm } from '@/features/monitor/monitorModel'
+import { createEmptyMcpForm, createEmptySchedulerJobConfigForm, createEmptyXCredentialForm, createGithubCrawlForm, createProviderForm, createSiteContactPageForm, createSmtpForm } from '@/features/monitor/monitorModel'
 
 const schedulerConfig = {
   job_id: 'ingest:arxiv',
@@ -164,6 +164,51 @@ describe('Monitor API contract', () => {
       host: 'smtp.test', port: 2525, username: 'u', password: '', clear_password: false,
       from_email: 'a@test.dev', from_name: 'A', use_tls: false,
     })
+  })
+
+  it('preserves site contact page endpoints and trims payloads', async () => {
+    const config = {
+      enabled: true,
+      nav_label: '合作',
+      title: '联系合作',
+      subtitle: '外包 · 商务合作',
+      service_cards: [{ title: '外包开发', description: 'AI 应用定制', icon: 'code' }],
+      contact_entries: [{ label: 'QQ 群', value: '123456', href: '', qr_image_url: '/qr.png' }],
+      body_markdown: '# 欢迎',
+      updated_at: '2026-08-13T10:00:00+00:00',
+    }
+    transport.get.mockResolvedValueOnce({ data: config })
+    await expect(monitorApi.fetchSiteContactPageConfig()).resolves.toEqual(config)
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/site/contact-page')
+
+    const form = createSiteContactPageForm(config)
+    // 表单与 config 同构但剥离 updated_at；保存时 trim 字符串字段
+    expect(form).toEqual({
+      enabled: true,
+      nav_label: '合作',
+      title: '联系合作',
+      subtitle: '外包 · 商务合作',
+      service_cards: [{ title: '外包开发', description: 'AI 应用定制', icon: 'code' }],
+      contact_entries: [{ label: 'QQ 群', value: '123456', href: '', qr_image_url: '/qr.png' }],
+      body_markdown: '# 欢迎',
+    })
+    form.nav_label = ' 合作 '
+    form.contact_entries[0]!.label = ' QQ 群 '
+    transport.put.mockResolvedValueOnce({ data: config })
+    await monitorApi.saveSiteContactPageConfig(form)
+    expect(transport.put).toHaveBeenLastCalledWith('/ops/site/contact-page', expect.objectContaining({
+      nav_label: '合作',
+      contact_entries: [expect.objectContaining({ label: 'QQ 群' })],
+    }))
+  })
+
+  it('creates site contact page form drafts from config with safe defaults', () => {
+    expect(createSiteContactPageForm(null)).toEqual({
+      enabled: false,
+      nav_label: '', title: '', subtitle: '',
+      service_cards: [], contact_entries: [], body_markdown: '',
+    })
+    expect(createSiteContactPageForm(undefined)).toEqual(createSiteContactPageForm(null))
   })
 
   it('preserves custom reasoning effort tiers and only normalizes case, whitespace and length', () => {

@@ -4,9 +4,9 @@ import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
-  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
+  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
+import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
@@ -21,6 +21,8 @@ export interface MonitorApi {
   fetchSmtpConfig(): Promise<SmtpConfig>
   saveSmtpConfig(form: SmtpForm): Promise<SmtpConfig>
   testSmtpConfig(): Promise<SmtpTestResult>
+  fetchSiteContactPageConfig(): Promise<SiteContactPageConfig>
+  saveSiteContactPageConfig(form: SiteContactPageForm): Promise<SiteContactPageConfig>
   fetchMcpServers(): Promise<McpServerConfig[]>
   saveMcpServer(form: McpServerForm): Promise<McpServerConfig>
   testMcpServer(id: number): Promise<{ server?: McpServerConfig; status?: string; message?: string }>
@@ -86,6 +88,8 @@ export const monitorApi: MonitorApi = {
   // 测试按最新生效配置真实投递一封邮件（SMTP 握手+投递可能数秒），收件人
   // 缺省为当前管理员登录邮箱；空 body 对象满足后端请求模型
   async testSmtpConfig() { return (await api.post('/ops/smtp/test', {}, { timeout: 45_000 })).data },
+  async fetchSiteContactPageConfig() { return (await api.get('/ops/site/contact-page')).data },
+  async saveSiteContactPageConfig(form) { return (await api.put('/ops/site/contact-page', buildSiteContactPagePayload(form))).data },
   async fetchMcpServers() {
     const { data } = await api.get('/ops/mcp-servers')
     return Array.isArray(data?.items) ? data.items : []

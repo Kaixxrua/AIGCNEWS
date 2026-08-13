@@ -15,6 +15,7 @@ import MonitorSectionNav from '@/components/monitor/MonitorSectionNav.vue'
 import MonitorTaskPanel from '@/components/monitor/MonitorTaskPanel.vue'
 import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
 import SchedulerConfigPanel from '@/components/monitor/SchedulerConfigPanel.vue'
+import SiteContactPageConfigPanel from '@/components/monitor/SiteContactPageConfigPanel.vue'
 import SmtpConfigPanel from '@/components/monitor/SmtpConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
 import XWatchCard from '@/components/monitor/XWatchCard.vue'
@@ -33,9 +34,11 @@ const enrichmentAlert = useEnrichmentAlertStore()
 const {
   tasks, total, page, errorLogs, errorLogsTotal, errorLogsPage, errorLogsTotalPages, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
   loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+  siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
   dispose, fetchMcpServers, refreshData, goPage, goErrorLogsPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig, resetMcpForm, editMcpServer, saveMcpServer,
+  saveSiteContactPageConfig,
   testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings, clearDashboardCache, syncDataNow,
   ingestByDate, clearAllData,
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
@@ -306,6 +309,16 @@ onUnmounted(dispose)
             @save="saveMcpServer"
             @test="testMcpServer"
             @delete="deleteMcpServer"
+          />
+        </template>
+        <template v-else-if="currentSection === 'contact-page'">
+          <SiteContactPageConfigPanel
+            v-if="authStore.isAdmin"
+            :config="siteContactPageConfig"
+            :form="siteContactPageForm"
+            :loading="loadingSiteContactPage"
+            :saving="savingSiteContactPage"
+            @save="saveSiteContactPageConfig"
           />
         </template>
       </div>

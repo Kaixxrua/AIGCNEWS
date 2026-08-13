@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from backend.app.api import (
     routes_ops_github,
     routes_ops_mcp,
+    routes_ops_site,
     routes_ops_smtp,
     routes_ops_x,
 )
@@ -118,6 +119,7 @@ async def test_provider_config(
 router.include_router(routes_ops_mcp.router)
 router.include_router(routes_ops_x.router)
 router.include_router(routes_ops_smtp.router)
+router.include_router(routes_ops_site.router)
 
 
 # ── 路由 ─────────────────────────────────────────────────────────────────────

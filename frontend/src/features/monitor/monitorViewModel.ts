@@ -1,4 +1,4 @@
-import { Activity, CloudDownload, FileText, GitBranch, Newspaper, Rocket, Settings, Triangle, Users } from 'lucide-vue-next'
+import { Activity, CloudDownload, FileText, GitBranch, Globe, Newspaper, Rocket, Settings, Triangle, Users } from 'lucide-vue-next'
 import { formatLocaleDate } from '@/i18n/formatters'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import type { Component } from 'vue'
@@ -48,6 +48,7 @@ export type MonitorSectionKey =
   | 'collect' | 'crawl' | 'enrichment'
   | 'x-watch' | 'x-credentials' | 'wechat'
   | 'provider' | 'scheduler' | 'smtp' | 'mcp-server'
+  | 'contact-page'
 
 export interface MonitorNavLeaf {
   key: MonitorSectionKey
@@ -84,6 +85,9 @@ export const MONITOR_NAV: MonitorNavCategory[] = [
     { key: 'scheduler', labelKey: 'monitor.nav.scheduler', adminOnly: true },
     { key: 'smtp', labelKey: 'monitor.nav.smtp', adminOnly: true },
     { key: 'mcp-server', labelKey: 'monitor.nav.mcpServer', adminOnly: true },
+  ] },
+  { key: 'site', labelKey: 'monitor.nav.group.site', icon: Globe, children: [
+    { key: 'contact-page', labelKey: 'monitor.nav.contactPage', adminOnly: true },
   ] },
 ]
 

@@ -48,6 +48,7 @@ from backend.app.repositories.runtime_provider_repository import (
 from backend.app.repositories.scheduler_job_config_repository import (
     SchedulerJobConfigRepository,
 )
+from backend.app.repositories.site_contact_page_repository import SiteContactPageRepository
 from backend.app.repositories.smtp_settings_repository import SmtpSettingsRepository
 from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
@@ -381,6 +382,12 @@ def get_smtp_config_admin_service(
     repository: SmtpSettingsRepository = Depends(get_smtp_settings_repository),
 ) -> SmtpConfigAdminService:
     return SmtpConfigAdminService(repository)
+
+
+def get_site_contact_page_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> SiteContactPageRepository:
+    return repositories.site_contact_page
 
 
 def get_error_event_repository(

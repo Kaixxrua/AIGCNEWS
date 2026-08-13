@@ -134,6 +134,43 @@ export interface SmtpForm {
   use_tls: boolean
 }
 
+// ── 站点联系合作页 ────────────────────────────────────────────────────────
+
+export interface SiteContactServiceCardForm {
+  title: string
+  description: string
+  icon: string
+}
+
+export interface SiteContactEntryForm {
+  label: string
+  value: string
+  href: string
+  qr_image_url: string
+}
+
+/** 管理端读取的联系合作页配置（wire 与响应同构，snake_case） */
+export interface SiteContactPageConfig {
+  enabled: boolean
+  nav_label: string
+  title: string
+  subtitle: string
+  service_cards: SiteContactServiceCardForm[]
+  contact_entries: SiteContactEntryForm[]
+  body_markdown: string
+  updated_at: string | null
+}
+
+export interface SiteContactPageForm {
+  enabled: boolean
+  nav_label: string
+  title: string
+  subtitle: string
+  service_cards: SiteContactServiceCardForm[]
+  contact_entries: SiteContactEntryForm[]
+  body_markdown: string
+}
+
 // 测试投递结果：HTTP 层 200/400/502 表达配置与投递状态，status 表达业务结果
 export interface SmtpTestResult {
   status: string
@@ -355,6 +392,46 @@ export const buildSmtpPayload = (form: SmtpForm) => ({
   from_email: form.from_email,
   from_name: form.from_name,
   use_tls: form.use_tls,
+})
+
+export const createSiteContactPageForm = (
+  config?: SiteContactPageConfig | null,
+): SiteContactPageForm => ({
+  enabled: config?.enabled ?? false,
+  nav_label: config?.nav_label || '',
+  title: config?.title || '',
+  subtitle: config?.subtitle || '',
+  service_cards: (config?.service_cards ?? []).map((card) => ({
+    title: card.title || '',
+    description: card.description || '',
+    icon: card.icon || '',
+  })),
+  contact_entries: (config?.contact_entries ?? []).map((entry) => ({
+    label: entry.label || '',
+    value: entry.value || '',
+    href: entry.href || '',
+    qr_image_url: entry.qr_image_url || '',
+  })),
+  body_markdown: config?.body_markdown || '',
+})
+
+export const buildSiteContactPagePayload = (form: SiteContactPageForm) => ({
+  enabled: form.enabled,
+  nav_label: form.nav_label.trim(),
+  title: form.title.trim(),
+  subtitle: form.subtitle.trim(),
+  service_cards: form.service_cards.map((card) => ({
+    title: card.title.trim(),
+    description: card.description.trim(),
+    icon: card.icon.trim(),
+  })),
+  contact_entries: form.contact_entries.map((entry) => ({
+    label: entry.label.trim(),
+    value: entry.value.trim(),
+    href: entry.href.trim(),
+    qr_image_url: entry.qr_image_url.trim(),
+  })),
+  body_markdown: form.body_markdown,
 })
 
 export const buildMcpPayload = (form: McpServerForm) => ({

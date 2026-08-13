@@ -15,8 +15,10 @@ import {
   KEEP_ALIVE_VIEW_NAMES,
   NAV_ITEMS,
   isNavigationItemFeatureEnabled,
+  isNavigationItemSitePageEnabled,
 } from '@/features/navigation/navigationModel'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
+import { useContactPageConfig } from '@/composables/useContactPageConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,8 +37,19 @@ const showDefaultPasswordBanner = computed(
 // 特性开关 fail-open：首屏全量显示，拉取完成后隐藏被关闭源的导航入口
 const { featureFlags, ensureFeatureFlags } = useFeatureFlags()
 void ensureFeatureFlags()
+// 站点页面 fail-closed：联系合作页未启用时不出现导航入口；启用后可携带自定义文案
+const { contactPageConfig, ensureContactPageConfig } = useContactPageConfig()
+void ensureContactPageConfig()
 const visibleNavItems = computed(() =>
-  NAV_ITEMS.filter((item) => isNavigationItemFeatureEnabled(item, featureFlags.value)),
+  NAV_ITEMS.filter(
+    (item) =>
+      isNavigationItemFeatureEnabled(item, featureFlags.value) &&
+      isNavigationItemSitePageEnabled(item, { contactPage: contactPageConfig.value.enabled }),
+  ).map((item) =>
+    item.sitePageKey === 'contactPage' && contactPageConfig.value.navLabel.trim()
+      ? { ...item, labelText: contactPageConfig.value.navLabel.trim() }
+      : item,
+  ),
 )
 
 /** 品牌名称 — 从 Vite 环境变量读取，回退默认值 */

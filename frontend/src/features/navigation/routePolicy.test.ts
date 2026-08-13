@@ -3,8 +3,10 @@ import type { RouteLocationNormalized } from 'vue-router'
 import {
   getFeatureGateRedirect,
   getRoutePolicyRedirect,
+  getSitePageGateRedirect,
   type FeatureGateState,
   type RouteAuthState,
+  type SitePageGateState,
 } from './routePolicy'
 
 const route = (meta: RouteLocationNormalized['meta'], fullPath = '/private') => ({
@@ -67,5 +69,19 @@ describe('getFeatureGateRedirect', () => {
     expect(getFeatureGateRedirect(route({ feature: 'xSource' }), features())).toBeNull()
     expect(getFeatureGateRedirect(route({}), features({ xSource: false, wechatSource: false })))
       .toBeNull()
+  })
+})
+
+describe('getSitePageGateRedirect', () => {
+  const sitePages = (contactPage: boolean): SitePageGateState => ({ contactPage })
+
+  it('redirects site-page routes home when the page is not enabled', () => {
+    expect(getSitePageGateRedirect(route({ sitePage: 'contactPage' }), sitePages(false)))
+      .toEqual({ path: '/' })
+  })
+
+  it('permits enabled site-page routes and routes without sitePage meta', () => {
+    expect(getSitePageGateRedirect(route({ sitePage: 'contactPage' }), sitePages(true))).toBeNull()
+    expect(getSitePageGateRedirect(route({}), sitePages(false))).toBeNull()
   })
 })

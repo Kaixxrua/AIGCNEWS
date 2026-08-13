@@ -29,8 +29,8 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 37
-    assert migrations[-1].filename == "0037_error_events.sql"
+    assert migrations[-1].version == 39
+    assert migrations[-1].filename == "0039_site_contact_page.sql"
 
 
 def test_error_events_migration_is_idempotent_append_only_table() -> None:
@@ -143,6 +143,19 @@ def test_x_credentials_migration_defines_runtime_credential_table() -> None:
     assert "ON x_credentials (last_test_status, last_test_at)" in sql
     assert "CREATE TABLE x_credentials_bootstrap_state (" in sql
     assert "singleton_key INTEGER PRIMARY KEY" in sql
+
+
+def test_site_contact_page_migration_is_singleton_with_safe_defaults() -> None:
+    sql = (MIGRATIONS_DIR / "0039_site_contact_page.sql").read_text(encoding="utf-8")
+
+    # 单例行配置表：CHECK (id = 1) 与 smtp_settings 同一先例；IF NOT EXISTS 幂等。
+    # 默认 enabled=FALSE + 全空字段，开源部署开箱不暴露该页。
+    assert "CREATE TABLE IF NOT EXISTS site_contact_page" in sql
+    assert "id INTEGER PRIMARY KEY CHECK (id = 1)" in sql
+    assert "enabled BOOLEAN NOT NULL DEFAULT FALSE" in sql
+    assert "service_cards JSONB NOT NULL DEFAULT '[]'::jsonb" in sql
+    assert "contact_entries JSONB NOT NULL DEFAULT '[]'::jsonb" in sql
+    assert "body_markdown TEXT NOT NULL DEFAULT ''" in sql
 
 
 def test_application_runtime_migration_preserves_identity_and_domain_constraints() -> None:

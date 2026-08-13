@@ -10,6 +10,10 @@ export interface FeatureGateState {
   wechatSource: boolean
 }
 
+export interface SitePageGateState {
+  contactPage: boolean
+}
+
 declare module 'vue-router' {
   interface RouteMeta {
     guestOnly?: boolean
@@ -17,6 +21,8 @@ declare module 'vue-router' {
     requiresAdmin?: boolean
     /** 可插拔源路由：对应特性开关关闭时重定向回首页 */
     feature?: 'xSource' | 'wechatSource'
+    /** 站点自定义页面路由：对应页面未启用时重定向回首页 */
+    sitePage?: 'contactPage'
   }
 }
 
@@ -46,5 +52,15 @@ export const getFeatureGateRedirect = (
 ): RouteLocationRaw | null => {
   const key = to.meta.feature
   if (key && !features[key]) return { path: '/' }
+  return null
+}
+
+/** 站点页面门控：未启用的站点页面一律回首页（同特性门控的存在性语义）。 */
+export const getSitePageGateRedirect = (
+  to: RouteLocationNormalized,
+  sitePages: SitePageGateState,
+): RouteLocationRaw | null => {
+  const key = to.meta.sitePage
+  if (key && !sitePages[key]) return { path: '/' }
   return null
 }

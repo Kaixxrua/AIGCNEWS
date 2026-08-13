@@ -5,6 +5,11 @@ import type { GithubCrawlStatus } from '@/features/monitor/monitorModel'
 import { i18n } from '@/i18n'
 import { useMonitorPageController } from './useMonitorPageController'
 
+const refreshContactPageConfigSpy = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('@/composables/useContactPageConfig', () => ({
+  refreshContactPageConfig: refreshContactPageConfigSpy,
+}))
+
 const idleCrawlStatus = (): GithubCrawlStatus => ({
   status: 'idle',
   channel: '',
@@ -45,6 +50,7 @@ const createApi = (): MonitorApi => ({
   fetchMcpToolCalls: vi.fn(async () => ({ since: '', total_calls: 0, tools: {} })),
   fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), testProviderConnection: vi.fn(async () => ({ status: 'success', message: '' })), fetchMcpServers: vi.fn(async () => []),
   fetchSmtpConfig: vi.fn(), saveSmtpConfig: vi.fn(), testSmtpConfig: vi.fn(async () => ({ status: 'success', message: '' })),
+  fetchSiteContactPageConfig: vi.fn(), saveSiteContactPageConfig: vi.fn(),
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
@@ -74,6 +80,7 @@ describe('Monitor page controller contract', () => {
     expect(api.fetchMcpToolCalls).toHaveBeenCalledOnce()
     expect(api.fetchProviderConfig).not.toHaveBeenCalled()
     expect(api.fetchSmtpConfig).not.toHaveBeenCalled()
+    expect(api.fetchSiteContactPageConfig).not.toHaveBeenCalled()
     expect(api.fetchMcpServers).not.toHaveBeenCalled()
     expect(api.fetchGithubEnrichmentStatus).not.toHaveBeenCalled()
     expect(api.fetchErrorLogs).not.toHaveBeenCalled()
@@ -498,6 +505,116 @@ describe('Monitor SMTP config controls', () => {
     release({ status: 'success', message: 'ok' })
     await first
     expect(controller.testingSmtp.value).toBe(false)
+  })
+})
+
+describe('Monitor site contact page controls', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    refreshContactPageConfigSpy.mockClear()
+  })
+
+  const contactConfig = {
+    enabled: true,
+    nav_label: '合作',
+    title: '联系合作',
+    subtitle: '外包 · 商务合作',
+    service_cards: [{ title: '外包开发', description: 'AI 应用定制', icon: 'code' }],
+    contact_entries: [{ label: 'QQ 群', value: '123456', href: '', qr_image_url: '/qr.png' }],
+    body_markdown: '# 欢迎',
+    updated_at: '2026-08-13T10:00:00+00:00',
+  }
+
+  it('populates the contact page form from the fetched config', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchSiteContactPageConfig).mockResolvedValue(contactConfig)
+
+    await controller.fetchSiteContactPageConfig()
+
+    expect(controller.siteContactPageConfig.value).toEqual(contactConfig)
+    expect(controller.siteContactPageForm.value).toEqual({
+      enabled: true,
+      nav_label: '合作',
+      title: '联系合作',
+      subtitle: '外包 · 商务合作',
+      service_cards: [{ title: '外包开发', description: 'AI 应用定制', icon: 'code' }],
+      contact_entries: [{ label: 'QQ 群', value: '123456', href: '', qr_image_url: '/qr.png' }],
+      body_markdown: '# 欢迎',
+    })
+    expect(controller.loadingSiteContactPage.value).toBe(false)
+  })
+
+  it('saves the form, then refreshes the public config cache for the live dock update', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchSiteContactPageConfig).mockResolvedValue(contactConfig)
+    await controller.fetchSiteContactPageConfig()
+
+    vi.mocked(api.saveSiteContactPageConfig).mockResolvedValue(contactConfig)
+    await controller.saveSiteContactPageConfig()
+
+    expect(api.saveSiteContactPageConfig).toHaveBeenCalledWith(controller.siteContactPageForm.value)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.contactPageConfig.saved'))
+    expect(refreshContactPageConfigSpy).toHaveBeenCalledOnce()
+    expect(controller.savingSiteContactPage.value).toBe(false)
+  })
+
+  it('rejects invalid content client-side without calling the API', async () => {
+    const { api, controller } = createController()
+
+    controller.siteContactPageForm.value = {
+      ...controller.siteContactPageForm.value, enabled: true, title: '  ',
+    }
+    await controller.saveSiteContactPageConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.contactPageConfig.titleRequiredWhenEnabled'))
+
+    controller.clearMessages()
+    controller.siteContactPageForm.value = {
+      ...controller.siteContactPageForm.value,
+      enabled: false, title: '',
+      service_cards: [{ title: ' ', description: '', icon: '' }],
+    }
+    await controller.saveSiteContactPageConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.contactPageConfig.cardTitleRequired'))
+
+    controller.clearMessages()
+    controller.siteContactPageForm.value = {
+      ...controller.siteContactPageForm.value,
+      service_cards: [],
+      contact_entries: [{ label: ' ', value: '', href: '', qr_image_url: '' }],
+    }
+    await controller.saveSiteContactPageConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.contactPageConfig.entryLabelRequired'))
+
+    controller.clearMessages()
+    controller.siteContactPageForm.value = {
+      ...controller.siteContactPageForm.value,
+      contact_entries: [{ label: 'QQ 群', value: '', href: 'javascript:alert(1)', qr_image_url: '' }],
+    }
+    await controller.saveSiteContactPageConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.contactPageConfig.invalidHref'))
+
+    controller.clearMessages()
+    controller.siteContactPageForm.value = {
+      ...controller.siteContactPageForm.value,
+      contact_entries: [{ label: 'QQ 群', value: '', href: '', qr_image_url: 'data:text/html,x' }],
+    }
+    await controller.saveSiteContactPageConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.contactPageConfig.invalidQrUrl'))
+
+    expect(api.saveSiteContactPageConfig).not.toHaveBeenCalled()
+    expect(refreshContactPageConfigSpy).not.toHaveBeenCalled()
+  })
+
+  it('surfaces save failure details and does not refresh the public cache', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.saveSiteContactPageConfig).mockRejectedValue({ response: { data: { detail: 'title too long' } } })
+
+    await controller.saveSiteContactPageConfig()
+
+    expect(controller.errorMsg.value).toBe('title too long')
+    expect(controller.successMsg.value).toBe('')
+    expect(refreshContactPageConfigSpy).not.toHaveBeenCalled()
+    expect(controller.savingSiteContactPage.value).toBe(false)
   })
 })
 

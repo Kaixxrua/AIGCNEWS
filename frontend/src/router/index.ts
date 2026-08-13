@@ -1,5 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getFeatureGateRedirect, getRoutePolicyRedirect } from '@/features/navigation/routePolicy'
+import {
+  getFeatureGateRedirect,
+  getRoutePolicyRedirect,
+  getSitePageGateRedirect,
+} from '@/features/navigation/routePolicy'
 import LayoutView from '@/views/LayoutView.vue'
 import { startRouteProgress, stopRouteProgress } from '@/composables/useRouteProgress'
 
@@ -18,6 +22,7 @@ const PaperReadView = () => import('@/views/PaperReadView.vue')
 const DisclaimerView = () => import('@/views/DisclaimerView.vue')
 const PrivacyView = () => import('@/views/PrivacyView.vue')
 const McpConnectView = () => import('@/views/McpConnectView.vue')
+const ContactPageView = () => import('@/views/ContactPageView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -113,6 +118,12 @@ const router = createRouter({
           name: 'privacy',
           component: PrivacyView,
         },
+        {
+          path: 'contact',
+          name: 'contact',
+          component: ContactPageView,
+          meta: { sitePage: 'contactPage' },
+        },
       ],
     },
   ],
@@ -135,6 +146,13 @@ router.beforeEach(async (to, _from, next) => {
   const { ensureFeatureFlags } = await import('@/composables/useFeatureFlags')
   const featureRedirect = getFeatureGateRedirect(to, await ensureFeatureFlags())
   if (featureRedirect) return next(featureRedirect)
+
+  // 站点页面门控：联系合作页未启用时回首页（配置进程内缓存，仅首次拉取）
+  const { ensureContactPageConfig } = await import('@/composables/useContactPageConfig')
+  const sitePageRedirect = getSitePageGateRedirect(to, {
+    contactPage: (await ensureContactPageConfig()).enabled,
+  })
+  if (sitePageRedirect) return next(sitePageRedirect)
   next()
 })
 
