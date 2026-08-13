@@ -255,8 +255,61 @@ class SmtpConfigAdminServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SmtpTestDeliveryError) as ctx:
             await self.service.send_test_email("admin@example.test")
 
-        self.assertIn("SMTPAuthenticationError", ctx.exception.detail)
+        # 回显归类排查文案，不回显异常类名（防指纹化内部栈）与任何敏感信息
+        self.assertIn("SMTP 鉴权失败", ctx.exception.detail)
+        self.assertNotIn("SMTPAuthenticationError", ctx.exception.detail)
         self.assertNotIn("super-secret-password", ctx.exception.detail)
+
+    async def test_update_config_rejects_dangerous_smtp_hosts(self) -> None:
+        # 渗透审计 SSRF-3：本机/链路本地/保留目标与协议、端口、凭证注入
+        for host in (
+            "127.0.0.1",
+            "127.0.0.53",
+            "::1",
+            "169.254.169.254",
+            "0.0.0.0",
+            "localhost",
+            "mail.localhost",
+            "metadata.google.internal",
+            "smtp://smtp.example.test",
+            "smtp.example.test:587",
+            "user:pass@smtp.example.test",
+            "smtp .example.test",
+        ):
+            with self.subTest(host=host):
+                with self.assertRaises(ValueError) as ctx:
+                    await self.service.update_config(_valid_payload(host=host))
+                self.assertIn("SMTP 主机", str(ctx.exception))
+                self.assertEqual(self.repo.upsert_calls, [])
+
+    async def test_update_config_allows_private_relay_and_normalizes_host(self) -> None:
+        # 内网邮件中继（RFC1918）为合法部署：放行；主机名归一为小写去尾点
+        projection = await self.service.update_config(
+            _valid_payload(host="  Mail-Relay.192-168.Local.  ")
+        )
+
+        self.assertEqual(
+            self.repo.upsert_calls[0]["host"], "mail-relay.192-168.local"
+        )
+        self.assertEqual(projection.host, "mail-relay.192-168.local")
+
+        await self.service.update_config(_valid_payload(host="192.168.1.25"))
+        self.assertEqual(self.repo.upsert_calls[1]["host"], "192.168.1.25")
+
+    def test_classify_delivery_failure_categories(self) -> None:
+        from backend.app.services.smtp_config_admin import _classify_delivery_failure
+
+        self.assertIn("鉴权", _classify_delivery_failure("SMTPAuthenticationError"))
+        self.assertIn("无法连接", _classify_delivery_failure("SMTPConnectError"))
+        self.assertIn("无法连接", _classify_delivery_failure("TimeoutError"))
+        self.assertIn("无法连接", _classify_delivery_failure("SMTPServerDisconnected"))
+        self.assertIn("无法连接", _classify_delivery_failure("gaierror"))
+        self.assertIn("拒绝", _classify_delivery_failure("SMTPRecipientRefused"))
+        self.assertIn("拒绝", _classify_delivery_failure("SMTPSenderRefused"))
+        self.assertEqual(
+            _classify_delivery_failure("SMTPHeloError"),
+            "邮件发送失败，请检查 SMTP 配置",
+        )
 
 
 if __name__ == "__main__":

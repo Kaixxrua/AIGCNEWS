@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import re
 import time
@@ -29,6 +30,50 @@ from backend.app.services.secret_masking import mask_token
 logger = logging.getLogger(__name__)
 
 _FROM_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# 主机字段只允许纯主机名或 IPv4 字面量：":///@" 可注入协议、端口或凭证
+_HOST_FORBIDDEN_CHARS = re.compile(r"[\s/@:]")
+_DENIED_HOSTNAMES = {"localhost", "metadata.google.internal"}
+
+
+def _validate_smtp_host(host: str) -> str:
+    """归一化并拦截危险 SMTP 目标（渗透审计 SSRF-3），返回规范化主机名。
+
+    允许私网段（RFC1918）：内网邮件中继是合法部署形态；拦截回环、链路
+    本地、组播、未指定与保留地址及 localhost 系主机名，防本机服务探测
+    与凭证外送。不做保存期 DNS：docker 内部主机名仅在发送时网络视图可
+    解析，保存期解析会误杀合法配置。IPv6 字面量因与端口分隔符冲突不在
+    面板路径支持（env 路径不受影响）。
+    """
+    normalized = host.strip().lower().rstrip(".")
+    if not normalized or len(normalized) > 253 or _HOST_FORBIDDEN_CHARS.search(normalized):
+        raise ValueError("SMTP 主机名不合法：仅允许主机名或 IPv4 地址，不含协议/端口/凭证")
+    if normalized in _DENIED_HOSTNAMES or normalized.endswith(".localhost"):
+        raise ValueError("SMTP 主机不允许指向本机或保留地址")
+    try:
+        ip = ipaddress.ip_address(normalized)
+    except ValueError:
+        return normalized
+    if (
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_unspecified
+        or ip.is_reserved
+    ):
+        raise ValueError("SMTP 主机不允许指向本机或保留地址")
+    return normalized
+
+
+def _classify_delivery_failure(error_type: str) -> str:
+    """按异常类名归类为排查文案（类名本身不回显，防指纹化内部栈）。"""
+    name = error_type.lower()
+    if any(marker in name for marker in ("auth", "login", "credential")):
+        return "SMTP 鉴权失败，请检查用户名与密码"
+    if any(marker in name for marker in ("connect", "timeout", "tls", "ssl", "gaierror")):
+        return "无法连接 SMTP 服务器，请检查主机、端口与 TLS 设置"
+    if any(marker in name for marker in ("recipient", "sender", "address", "data")):
+        return "邮件被服务器拒绝，请检查发件与收件地址"
+    return "邮件发送失败，请检查 SMTP 配置"
 
 
 class SmtpConfigError(Exception):
@@ -104,6 +149,7 @@ class SmtpConfigAdminService:
         port = int(values.get("port") or 587)
         if not 1 <= port <= 65535:
             raise ValueError("端口必须在 1-65535 之间")
+        host = _validate_smtp_host(host)
         from_email = str(values.get("from_email") or "").strip()
         if not _FROM_EMAIL_PATTERN.match(from_email):
             raise ValueError("发件邮箱格式不正确")
@@ -160,9 +206,11 @@ class SmtpConfigAdminService:
                 to_email, "AIGCNEWS SMTP 配置测试邮件", body
             )
         except SmtpDeliveryError as exc:
-            # error_type 仅为异常类名，不含密码等敏感信息，可安全回显
+            # 原始异常链只进服务端日志；回显按类名归类的排查文案，
+            # 不回显类名本身（可指纹化内部栈，渗透审计 SSRF-3）
+            logger.warning("[SMTP] 测试邮件投递失败：%s", exc.error_type, exc_info=True)
             raise SmtpTestDeliveryError(
-                f"邮件发送失败（{exc.error_type}），请检查 SMTP 配置后重试"
+                _classify_delivery_failure(exc.error_type)
             ) from exc
         latency_ms = int((time.monotonic() - started) * 1000)
         logger.info(

@@ -174,7 +174,7 @@ def test_test_smtp_maps_unconfigured_to_400() -> None:
 def test_test_smtp_maps_delivery_failure_to_502() -> None:
     service = MagicMock(spec=SmtpConfigAdminService)
     service.send_test_email.side_effect = SmtpTestDeliveryError(
-        "邮件发送失败（SMTPAuthenticationError），请检查 SMTP 配置后重试"
+        "SMTP 鉴权失败，请检查用户名与密码"
     )
 
     response = _smtp_client(service).post(
@@ -182,7 +182,7 @@ def test_test_smtp_maps_delivery_failure_to_502() -> None:
     )
 
     assert response.status_code == 502
-    assert "SMTPAuthenticationError" in response.json()["detail"]
+    assert "SMTP 鉴权失败" in response.json()["detail"]
 
 
 def test_smtp_routes_require_admin() -> None:
