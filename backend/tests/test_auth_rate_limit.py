@@ -14,7 +14,10 @@ from backend.app.api import routes_auth
 from backend.app.api.dependencies import get_user_account_repository
 from backend.app.services.auth.rate_limit import (
     RateLimitExceededError,
+    clear_login_failures,
+    get_login_failure_count,
     hit_rate_limit,
+    record_login_failure,
 )
 from backend.tests.test_email_service_contracts import FakeRedis
 
@@ -57,6 +60,39 @@ class HitRateLimitTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(count, 1)
 
 
+class LoginFailureCounterTests(unittest.IsolatedAsyncioTestCase):
+    """登录失败计数（锁定语义）：读数、累计、成功清零的原子契约。"""
+
+    async def test_missing_key_reads_zero(self) -> None:
+        redis = FakeRedis()
+        self.assertEqual(
+            await get_login_failure_count(redis, email="user@example.com"), 0
+        )
+
+    async def test_record_accumulates_and_sets_ttl_once(self) -> None:
+        redis = FakeRedis()
+        for expected in (1, 2, 3):
+            count = await record_login_failure(
+                redis, email="user@example.com", window_seconds=3600
+            )
+            self.assertEqual(count, expected)
+        self.assertEqual(redis.expirations["loginfail:user@example.com"], 3600)
+        self.assertEqual(
+            redis.calls.count(("expire", "loginfail:user@example.com", 3600)), 1
+        )
+        self.assertEqual(
+            await get_login_failure_count(redis, email="user@example.com"), 3
+        )
+
+    async def test_clear_resets_counter(self) -> None:
+        redis = FakeRedis()
+        await record_login_failure(redis, email="user@example.com", window_seconds=3600)
+        await clear_login_failures(redis, email="user@example.com")
+        self.assertEqual(
+            await get_login_failure_count(redis, email="user@example.com"), 0
+        )
+
+
 class _StubUserAccountRepository:
     """登录必然失败（用户不存在）的最小仓储替身。"""
 
@@ -73,12 +109,11 @@ class _StubUserAccountRepository:
 class AuthRateLimitRouteContracts(unittest.TestCase):
     def setUp(self) -> None:
         self.redis = FakeRedis()
+        self.repository = _StubUserAccountRepository()
         app = FastAPI()
         app.include_router(routes_auth.router, prefix="/api")
         app.state.redis = self.redis
-        app.dependency_overrides[get_user_account_repository] = (
-            _StubUserAccountRepository
-        )
+        app.dependency_overrides[get_user_account_repository] = lambda: self.repository
         self.client = TestClient(app)
 
     def test_login_allows_up_to_limit_then_returns_429(self) -> None:
@@ -121,6 +156,44 @@ class AuthRateLimitRouteContracts(unittest.TestCase):
         # per-IP 桶已达上限时先命中 IP 桶；此处账号桶与 IP 桶同限，429 即归并生效
         response = self.client.post("/api/auth/login", json=payload)
         self.assertEqual(response.status_code, 429)
+
+    def test_login_lockout_rejects_after_failure_threshold(self) -> None:
+        """失败计数达阈值的账号直接 429（含密码正确者），且不触碰密码核验。"""
+        self.redis.values["loginfail:user@example.com"] = 20
+        payload = {"email": "user@example.com", "password": "any-password"}
+        response = self.client.post("/api/auth/login", json=payload)
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(
+            response.json()["detail"], "失败次数过多，账号已临时锁定，请稍后再试"
+        )
+        # 阈值之下不受影响
+        self.redis.values["loginfail:user@example.com"] = 19
+        response = self.client.post("/api/auth/login", json=payload)
+        self.assertEqual(response.status_code, 401)
+
+    def test_login_failure_increments_counter_and_success_clears_it(self) -> None:
+        payload = {"email": "user@example.com", "password": "wrong-password"}
+        response = self.client.post("/api/auth/login", json=payload)
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(self.redis.values["loginfail:user@example.com"], 1)
+        self.assertEqual(self.redis.expirations["loginfail:user@example.com"], 3600)
+
+        # 登录成功（用户存在且密码核验通过）后失败计数清零
+        self.repository.get_user_by_email = lambda email: {
+            "id": 7,
+            "email": "user@example.com",
+            "role": "user",
+            "hashed_password": "stored-hash",
+        }
+        with (
+            patch.object(routes_auth, "verify_password", return_value=True),
+            patch.object(
+                routes_auth, "create_access_token", return_value="signed-token"
+            ),
+        ):
+            response = self.client.post("/api/auth/login", json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("loginfail:user@example.com", self.redis.values)
 
     def test_send_email_otp_is_rate_limited(self) -> None:
         payload = {"email": "user@example.com"}

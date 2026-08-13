@@ -31,7 +31,13 @@ from backend.app.services.auth.default_admin_bootstrap import (
     password_change_required_for_email,
     uses_configured_default_credentials,
 )
-from backend.app.services.auth.rate_limit import RateLimitExceededError, hit_rate_limit
+from backend.app.services.auth.rate_limit import (
+    RateLimitExceededError,
+    clear_login_failures,
+    get_login_failure_count,
+    hit_rate_limit,
+    record_login_failure,
+)
 from backend.app.services.email_service import (
     EmailService,
     OtpDeliveryUnavailableError,
@@ -50,6 +56,11 @@ _AUTH_ATTEMPT_RATE_LIMIT = 10
 # 登录追加 per-账号（email）固定窗口节流：防分布式 IP 对单一账号爆破，
 # 窗口与上限对齐 per-IP 口径，实现复用同一 hit_rate_limit。
 _LOGIN_ACCOUNT_RATE_LIMIT = 10
+# 登录失败锁定：同一账号窗口内"密码核验失败"达上限即拒绝后续登录
+# （含密码正确者，直到窗口过期），与上面的请求级限速叠加，进一步压低
+# 在线爆破的有效猜测预算（20 次/小时/账号）
+_LOGIN_FAILURE_LOCKOUT_THRESHOLD = 20
+_LOGIN_FAILURE_WINDOW_SECONDS = 3600
 
 
 async def _enforce_rate_limit(
@@ -89,6 +100,49 @@ def _get_email_service(request: Request) -> EmailService:
     """从 app.state 获取 Redis 并构造 EmailService 实例。"""
     redis_client = getattr(request.app.state, "redis", None)
     return build_email_service(redis_client)
+
+
+async def _enforce_login_lockout(request: Request, *, email: str) -> None:
+    """失败计数达上限的账号直接 429；Redis 异常时放行并告警（与限速同口径）。"""
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        return
+    try:
+        failures = await get_login_failure_count(redis_client, email=email)
+    except Exception:
+        logger.warning(
+            "[Auth] login lockout check failed, allowing request", exc_info=True
+        )
+        return
+    if failures >= _LOGIN_FAILURE_LOCKOUT_THRESHOLD:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="失败次数过多，账号已临时锁定，请稍后再试",
+        )
+
+
+async def _record_login_failure(request: Request, *, email: str) -> None:
+    """记录一次密码核验失败；Redis 异常仅告警（计数缺失不阻断登录流程）。"""
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        return
+    try:
+        await record_login_failure(
+            redis_client, email=email, window_seconds=_LOGIN_FAILURE_WINDOW_SECONDS
+        )
+    except Exception:
+        logger.warning("[Auth] login failure recording failed", exc_info=True)
+
+
+async def _clear_login_failures(request: Request, *, email: str) -> None:
+    """登录成功后清零失败计数；Redis 异常仅告警（残留计数随窗口 TTL 过期）。"""
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        return
+    try:
+        await clear_login_failures(redis_client, email=email)
+    except Exception:
+        logger.warning("[Auth] login failure cleanup failed", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -414,12 +468,15 @@ async def login(
     await _enforce_rate_limit(request, action="auth.login", limit=_AUTH_ATTEMPT_RATE_LIMIT)
     # per-账号节流：分布式 IP 对同一邮箱的爆破归并到单一账号桶；
     # 域名归一与登录生命周期同口径，防大小写变体拆桶
+    account_identity = account_lifecycle._normalize_email_domain(str(body.email).strip())
     await _enforce_rate_limit(
         request,
         action="auth.login.account",
         limit=_LOGIN_ACCOUNT_RATE_LIMIT,
-        identity=account_lifecycle._normalize_email_domain(str(body.email).strip()),
+        identity=account_identity,
     )
+    # 失败锁定：窗口内密码核验失败达上限的账号直接拒绝（含密码正确者）
+    await _enforce_login_lockout(request, email=account_identity)
     lifecycle = build_account_lifecycle(
         repository=repository,
         password_verifier=verify_password,
@@ -437,10 +494,12 @@ async def login(
             detail="账号已被禁用，请联系管理员",
         ) from exc
     except account_lifecycle.InvalidCredentials as exc:
+        await _record_login_failure(request, email=account_identity)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="邮箱或密码错误",
         ) from exc
+    await _clear_login_failures(request, email=account_identity)
     return {
         "access_token": result.access_token,
         "token_type": result.token_type,
