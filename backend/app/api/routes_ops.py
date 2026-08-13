@@ -58,6 +58,7 @@ from backend.app.services.ingestion.cache_invalidation import clear_dashboard_ca
 from backend.app.services.ingestion_admin import VALID_SOURCES, IngestionAdminService
 from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.runtime_provider.admin_service import (
+    InvalidProviderBaseUrl,
     RuntimeProviderAdminService,
 )
 from backend.app.services.scheduler_admin import SchedulerAdminService
@@ -94,7 +95,11 @@ async def update_provider_config(
     ),
 ) -> ProviderConfigResponse:
     """更新唯一的运行时模型配置。api_key 留空时保留原值，clear_api_key=true 时清空。"""
-    projection = await service.update_config(request.model_dump())
+    try:
+        projection = await service.update_config(request.model_dump())
+    except InvalidProviderBaseUrl as exc:
+        # SSRF 防护（渗透审计 SSRF-2）：Base URL 必须指向公网 http/https 地址
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ProviderConfigResponse.model_validate(projection, from_attributes=True)
 
 

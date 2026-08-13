@@ -39,7 +39,12 @@ from backend.app.repositories.task_repository import IngestionTaskAdminRepositor
 from backend.app.services.github_project_recommendation_admin import (
     GitHubProjectRecommendationAdminService,
 )
+from backend.app.services.runtime_provider import admin_service as provider_admin_service
 from backend.app.services.scheduler_admin import SchedulerAdminService
+
+
+def _public_resolver(_hostname: str) -> tuple[str, ...]:
+    return ("93.184.216.34",)
 
 
 class OperationsRouteTests(unittest.TestCase):
@@ -368,24 +373,27 @@ class OperationsRouteTests(unittest.TestCase):
         repository = MagicMock(spec=RuntimeProviderSettingManager)
         repository.upsert_runtime_provider_setting.return_value = {
             "provider": "anthropic",
-            "base_url": "https://example.test",
+            "base_url": "https://example.test/",
             "api_key": "replacement-secret",
             "model_name": "example-model",
             "reasoning_effort": "high",
         }
         client = self._provider_client(repository)
 
-        response = client.put(
-            "/api/ops/provider-config",
-            json={
-                "provider": "anthropic",
-                "base_url": "https://example.test",
-                "api_key": "replacement-secret",
-                "clear_api_key": False,
-                "model_name": "example-model",
-                "reasoning_effort": "high",
-            },
-        )
+        with patch.object(
+            provider_admin_service, "resolve_public_ips", side_effect=_public_resolver
+        ):
+            response = client.put(
+                "/api/ops/provider-config",
+                json={
+                    "provider": "anthropic",
+                    "base_url": "https://example.test",
+                    "api_key": "replacement-secret",
+                    "clear_api_key": False,
+                    "model_name": "example-model",
+                    "reasoning_effort": "high",
+                },
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("api_key", response.json())
@@ -393,12 +401,29 @@ class OperationsRouteTests(unittest.TestCase):
         self.assertNotIn("replacement-secret", response.text)
         repository.upsert_runtime_provider_setting.assert_called_once_with(
             "anthropic",
-            "https://example.test",
+            "https://example.test/",
             "replacement-secret",
             False,
             "example-model",
             "high",
         )
+
+    def test_provider_config_update_rejects_unsafe_base_url_with_400(self) -> None:
+        # SSRF 防护（渗透审计 SSRF-2）：云元数据地址不得落库（真实策略，字面量短路 DNS）
+        repository = MagicMock(spec=RuntimeProviderSettingManager)
+        client = self._provider_client(repository)
+
+        response = client.put(
+            "/api/ops/provider-config",
+            json={
+                "provider": "openai",
+                "base_url": "http://169.254.169.254/latest/meta-data",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Base URL 不合法", response.json()["detail"])
+        repository.upsert_runtime_provider_setting.assert_not_called()
 
     def test_provider_config_update_accepts_custom_reasoning_effort(self) -> None:
         repository = MagicMock(spec=RuntimeProviderSettingManager)
@@ -509,7 +534,7 @@ class OperationsRouteTests(unittest.TestCase):
         service.test_connection = AsyncMock(
             return_value={
                 "status": "failed",
-                "message": "连接测试失败（RuntimeError）：请求失败，请检查模型服务配置与网络环境。",
+                "message": "连接测试失败：请求失败，请检查模型服务配置与网络环境。",
                 "provider": "openai",
                 "base_url": "https://example.test",
                 "model_name": "example-model",

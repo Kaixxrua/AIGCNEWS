@@ -6,10 +6,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from backend.app.services.outbound_target_policy import OutboundTargetPolicyError
+from backend.app.services.runtime_provider import admin_service
 from backend.app.services.runtime_provider.admin_service import (
+    InvalidProviderBaseUrl,
     RuntimeProviderAdminService,
     _classify_test_failure,
+    validate_admin_base_url,
 )
+
+
+def _public_resolver(_hostname: str) -> tuple[str, ...]:
+    return ("93.184.216.34",)
 
 
 def test_get_config_projects_safe_default_and_redacts_secret() -> None:
@@ -67,28 +75,31 @@ def test_update_config_normalizes_fields_and_preserves_raw_key_intent() -> None:
     repository = MagicMock()
     repository.upsert_runtime_provider_setting.return_value = {
         "provider": "anthropic",
-        "base_url": "https://example.test",
+        "base_url": "https://example.test/",
         "model_name": "example-model",
         "api_key": None,
     }
     service = RuntimeProviderAdminService(repository)
 
-    projection = asyncio.run(
-        service.update_config(
-            {
-                "provider": " Anthropic ",
-                "base_url": " https://example.test ",
-                "model_name": " example-model ",
-                "api_key": "",
-                "clear_api_key": True,
-                "reasoning_effort": " High ",
-            }
+    with patch.object(
+        admin_service, "resolve_public_ips", side_effect=_public_resolver
+    ):
+        projection = asyncio.run(
+            service.update_config(
+                {
+                    "provider": " Anthropic ",
+                    "base_url": " https://example.test ",
+                    "model_name": " example-model ",
+                    "api_key": "",
+                    "clear_api_key": True,
+                    "reasoning_effort": " High ",
+                }
+            )
         )
-    )
 
     repository.upsert_runtime_provider_setting.assert_called_once_with(
         "anthropic",
-        "https://example.test",
+        "https://example.test/",
         "",
         True,
         "example-model",
@@ -96,6 +107,57 @@ def test_update_config_normalizes_fields_and_preserves_raw_key_intent() -> None:
     )
     assert projection.provider == "anthropic"
     assert projection.api_key_configured is False
+
+
+def test_update_config_rejects_unsafe_base_url_targets_before_persistence() -> None:
+    # 走真实出站策略（不 patch resolver）：字面量地址短路 DNS，无网络依赖
+    repository = MagicMock()
+    service = RuntimeProviderAdminService(repository)
+
+    for base_url in (
+        "http://169.254.169.254/latest/meta-data",
+        "http://127.0.0.1:11434/v1",
+        "http://192.168.1.10:8000/v1",
+        "http://[::1]/v1",
+        "ftp://example.test/v1",
+        "https://user:secret@example.test/v1",
+    ):
+        with pytest.raises(InvalidProviderBaseUrl, match="Base URL 不合法"):
+            asyncio.run(
+                service.update_config({"provider": "openai", "base_url": base_url})
+            )
+    repository.upsert_runtime_provider_setting.assert_not_called()
+
+
+def test_update_config_rejects_unresolvable_base_url_host() -> None:
+    repository = MagicMock()
+    service = RuntimeProviderAdminService(repository)
+
+    with (
+        patch.object(
+            admin_service,
+            "resolve_public_ips",
+            side_effect=OutboundTargetPolicyError("无法解析域名：gone.invalid"),
+        ),
+        pytest.raises(InvalidProviderBaseUrl, match="无法解析域名"),
+    ):
+        asyncio.run(
+            service.update_config(
+                {"provider": "openai", "base_url": "https://gone.invalid/v1"}
+            )
+        )
+    repository.upsert_runtime_provider_setting.assert_not_called()
+
+
+def test_validate_admin_base_url_normalizes_and_allows_public_hosts() -> None:
+    assert validate_admin_base_url("") == ""
+    with patch.object(
+        admin_service, "resolve_public_ips", side_effect=_public_resolver
+    ) as resolver:
+        assert validate_admin_base_url("HTTPS://Example.TEST/v1#frag") == (
+            "https://example.test/v1"
+        )
+    resolver.assert_called_once_with("example.test")
 
 
 def test_get_enrichment_config_projects_configured_and_effective_effort() -> None:
@@ -174,9 +236,12 @@ def test_test_connection_succeeds_with_real_model_path() -> None:
     llm.invoke.return_value = "pong"
     service = RuntimeProviderAdminService(repository)
 
-    with patch(
-        "backend.app.core.model_factory.get_chat_model", return_value=llm
-    ) as factory:
+    with (
+        patch(
+            "backend.app.core.model_factory.get_chat_model", return_value=llm
+        ) as factory,
+        patch.object(admin_service, "resolve_public_ips", side_effect=_public_resolver),
+    ):
         result = asyncio.run(service.test_connection())
 
     assert result["status"] == "success"
@@ -207,21 +272,45 @@ def test_test_connection_short_circuits_when_api_key_missing() -> None:
     factory.assert_not_called()
 
 
+def test_test_connection_rejects_legacy_unsafe_base_url_before_model_call() -> None:
+    # 本校验上线前落库的 Base URL：连接测试同样不得触达内网（真实策略，字面量短路）
+    repository = MagicMock()
+    repository.get_runtime_provider_setting.return_value = {
+        "provider": "openai",
+        "base_url": "http://169.254.169.254/latest/meta-data",
+        "model_name": "example-model",
+        "api_key": "internal-secret-key",
+    }
+    service = RuntimeProviderAdminService(repository)
+
+    with patch("backend.app.core.model_factory.get_chat_model") as factory:
+        result = asyncio.run(service.test_connection())
+
+    assert result["status"] == "failed"
+    assert "Base URL 不合法" in result["message"]
+    assert result["latency_ms"] is None
+    factory.assert_not_called()
+
+
 def test_test_connection_never_echoes_raw_exception_text() -> None:
     repository = _configured_repository()
     llm = MagicMock()
     llm.invoke.side_effect = RuntimeError("x" * 500)
     service = RuntimeProviderAdminService(repository)
 
-    with patch("backend.app.core.model_factory.get_chat_model", return_value=llm):
+    with (
+        patch("backend.app.core.model_factory.get_chat_model", return_value=llm),
+        patch.object(admin_service, "resolve_public_ips", side_effect=_public_resolver),
+    ):
         result = asyncio.run(service.test_connection())
 
     assert result["status"] == "failed"
-    # 异常原文（可能含内部地址/鉴权细节）不回显，只给类型名 + 分类排查文案
+    # 异常原文与异常类名都不回显（类名可指纹化内部栈），只给分类排查文案
     assert result["message"] == (
-        "连接测试失败（RuntimeError）：请求失败，请检查模型服务配置与网络环境。"
+        "连接测试失败：请求失败，请检查模型服务配置与网络环境。"
     )
     assert "x" * 500 not in result["message"]
+    assert "RuntimeError" not in result["message"]
     assert result["latency_ms"] is None
 
 
@@ -257,6 +346,7 @@ def test_test_connection_times_out_promptly() -> None:
             "backend.app.services.runtime_provider.admin_service._TEST_TIMEOUT_SECONDS",
             0.05,
         ),
+        patch.object(admin_service, "resolve_public_ips", side_effect=_public_resolver),
     ):
         # 注意：asyncio.run 收尾时会 join 默认 executor 线程，elapsed 不反映业务耗时，
         # 超时路径只能由 status/message 证明（wait_for 在 0.05s 触发 TimeoutError）。

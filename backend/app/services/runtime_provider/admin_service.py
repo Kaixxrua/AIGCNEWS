@@ -7,9 +7,15 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingManager,
+)
+from backend.app.services.outbound_target_policy import (
+    OutboundTargetPolicyError,
+    normalize_http_url,
+    resolve_public_ips,
 )
 from backend.app.services.runtime_provider.control_plane import (
     ENRICHMENT_REASONING_EFFORT_DEFAULT,
@@ -24,6 +30,27 @@ logger = logging.getLogger(__name__)
 
 # 连接测试的整体等待上限：真实请求一次模型，超时即判失败，不让面板空等
 _TEST_TIMEOUT_SECONDS = 30.0
+
+
+class InvalidProviderBaseUrl(ValueError):
+    """运维页下发的 Base URL 未通过出站目标策略（SSRF 防护）。"""
+
+
+def validate_admin_base_url(base_url: str) -> str:
+    """空串 = 跟随 provider 官方默认；非空必须解析为指向公网的 http/https URL。
+
+    渗透实测：运维面板可写入任意 Base URL，之后的模型调用（聊天/富化/
+    连接测试）即成为服务端内网请求原语，可探测云元数据与内网服务。
+    保存前与连接测试前统一校验；返回规范化后的 URL。
+    """
+    if not base_url:
+        return ""
+    try:
+        url = normalize_http_url(base_url)
+        resolve_public_ips(urlparse(url).hostname or "")
+    except OutboundTargetPolicyError as exc:
+        raise InvalidProviderBaseUrl(f"Base URL 不合法：{exc}") from exc
+    return url
 
 
 def _classify_test_failure(exc: Exception) -> str:
@@ -60,7 +87,7 @@ class RuntimeProviderAdminService:
     ) -> SafeProviderProjection:
         update = RuntimeProviderUpdate.from_values(
             provider=str(values.get("provider") or ""),
-            base_url=str(values.get("base_url") or ""),
+            base_url=validate_admin_base_url(str(values.get("base_url") or "")),
             api_key=values.get("api_key"),
             clear_api_key=bool(values.get("clear_api_key", False)),
             model_name=str(values.get("model_name") or ""),
@@ -129,6 +156,15 @@ class RuntimeProviderAdminService:
                 "status": "failed",
                 "message": "未配置 API Key，请先保存模型服务配置。",
             }
+        try:
+            # 历史落库（本校验上线前写入）的 Base URL 同样不得触达内网
+            validate_admin_base_url(projection.base_url)
+        except InvalidProviderBaseUrl as exc:
+            return {
+                **base,
+                "status": "failed",
+                "message": str(exc),
+            }
         started = time.monotonic()
         try:
             llm = get_chat_model(temperature=0)
@@ -144,10 +180,11 @@ class RuntimeProviderAdminService:
             }
         except Exception as exc:  # noqa: BLE001 - 测试入口需按异常类型给管理员分类提示
             logger.warning("[Ops] 模型服务连接测试失败：%s", exc, exc_info=True)
+            # 不回显异常类型名：SDK 异常类名可指纹化内部栈与代理结构（渗透审计 SSRF-2）
             return {
                 **base,
                 "status": "failed",
-                "message": f"连接测试失败（{type(exc).__name__}）：{_classify_test_failure(exc)}。",
+                "message": f"连接测试失败：{_classify_test_failure(exc)}。",
             }
         latency_ms = int((time.monotonic() - started) * 1000)
         return {
