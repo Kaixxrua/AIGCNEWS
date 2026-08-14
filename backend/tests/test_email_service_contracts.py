@@ -51,6 +51,13 @@ class FakeRedis:
         self.calls.append(("expire", key, seconds))
         self.expirations[key] = seconds
 
+    async def ttl(self, key: str) -> int:
+        self.calls.append(("ttl", key))
+        if key not in self.values:
+            return -2
+        # 未记剩余时间语义，存在到期时间即返回配置值（恒 > 0）
+        return self.expirations.get(key, -1)
+
 
 class EmailOtpContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_registration_uses_lowercase_keys_ttls_and_non_atomic_sequence(self) -> None:

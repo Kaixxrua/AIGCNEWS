@@ -59,6 +59,31 @@ class HitRateLimitTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(count, 1)
 
+    async def test_rearms_ttl_on_stuck_key(self) -> None:
+        """历史键丢失 TTL（INCR/EXPIRE 间隙进程被杀）时重新武装窗口。
+
+        生产事故回归：无 TTL 键 count 恒 > 1，旧逻辑永不补窗 → 永久 429。
+        """
+        redis = FakeRedis()
+        redis.values["ratelimit:login:172.19.0.1"] = 28  # 无 expirations → TTL -1
+        with self.assertRaises(RateLimitExceededError):
+            await hit_rate_limit(
+                redis, action="login", identity="172.19.0.1", limit=10, window_seconds=600
+            )
+        # 超限语义不变，但窗口已被重新武装（键将随 TTL 过期自愈）
+        self.assertEqual(redis.expirations["ratelimit:login:172.19.0.1"], 600)
+
+    async def test_healthy_key_does_not_rearm_ttl(self) -> None:
+        """TTL 正常的键不重复 EXPIRE，固定窗口语义不变（不退化为滑动窗口）。"""
+        redis = FakeRedis()
+        await hit_rate_limit(
+            redis, action="login", identity="1.2.3.4", limit=10, window_seconds=600
+        )
+        await hit_rate_limit(
+            redis, action="login", identity="1.2.3.4", limit=10, window_seconds=600
+        )
+        self.assertEqual(redis.calls.count(("expire", "ratelimit:login:1.2.3.4", 600)), 1)
+
 
 class LoginFailureCounterTests(unittest.IsolatedAsyncioTestCase):
     """登录失败计数（锁定语义）：读数、累计、成功清零的原子契约。"""
@@ -91,6 +116,16 @@ class LoginFailureCounterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             await get_login_failure_count(redis, email="user@example.com"), 0
         )
+
+    async def test_record_rearms_ttl_on_stuck_key(self) -> None:
+        """失败计数键丢 TTL 会永久锁定账号；命中时须重新武装窗口。"""
+        redis = FakeRedis()
+        redis.values["loginfail:user@example.com"] = 20  # 无 expirations → TTL -1
+        count = await record_login_failure(
+            redis, email="user@example.com", window_seconds=3600
+        )
+        self.assertEqual(count, 21)
+        self.assertEqual(redis.expirations["loginfail:user@example.com"], 3600)
 
 
 class _StubUserAccountRepository:

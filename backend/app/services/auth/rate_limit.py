@@ -22,10 +22,15 @@ async def hit_rate_limit(
 
     采用固定窗口：首次命中时设置 TTL，窗口内次数超过 limit 时抛出
     RateLimitExceededError。键随 TTL 自然过期，无需清理任务。
+
+    自愈：INCR 与 EXPIRE 非原子，若进程在两者间隙被杀或 EXPIRE 失败，
+    键会丢失 TTL 永久卡死（2026-08-14 生产事故：auth.login 键卡 28
+    无 TTL，全站登录永久 429）。历史键 count 恒 > 1 走不到补窗分支，
+    故每次命中检查 TTL == -1 时重新武装窗口。
     """
     key = f"{RATE_LIMIT_PREFIX}{action}:{identity}"
     count = await redis_client.incr(key)
-    if count == 1:
+    if count == 1 or await redis_client.ttl(key) == -1:
         await redis_client.expire(key, window_seconds)
     if count > limit:
         raise RateLimitExceededError(action)
@@ -48,10 +53,14 @@ async def record_login_failure(
     email: str,
     window_seconds: int,
 ) -> int:
-    """为账号记录一次登录失败并返回窗口内累计失败数（固定窗口 TTL）。"""
+    """为账号记录一次登录失败并返回窗口内累计失败数（固定窗口 TTL）。
+
+    与 hit_rate_limit 同款自愈：键丢 TTL 会永久锁定账号，TTL == -1
+    时重新武装窗口。
+    """
     key = f"{LOGIN_FAILURE_PREFIX}{email}"
     count = await redis_client.incr(key)
-    if count == 1:
+    if count == 1 or await redis_client.ttl(key) == -1:
         await redis_client.expire(key, window_seconds)
     return count
 
