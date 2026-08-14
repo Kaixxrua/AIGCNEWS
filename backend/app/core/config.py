@@ -332,6 +332,9 @@ class Settings(BaseSettings):
     # 部署不报错。窗口默认 48h，覆盖 24h 滚动看板与 days_back 回翻。
     x_media_warmup_enabled: bool = False
     x_media_warmup_base_url: str = ""
+    # 预热请求的 Host 头覆盖：边缘缓存键含 $host（如 aigcnews.cn），
+    # 经 IP/隧道入口预热时必须带上生产 Host，否则暖的是另一组缓存键。
+    x_media_warmup_host_header: str = ""
     x_media_warmup_window_hours: int = 48
     x_media_warmup_max_urls: int = 300
     x_media_warmup_concurrency: int = 8

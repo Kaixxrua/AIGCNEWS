@@ -89,6 +89,27 @@ class WarmRecentXMediaTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.ok, len(_EXPECTED_PATHS))
         self.assertEqual(result.failed, 0)
 
+    async def test_host_header_override_sent_when_configured(self) -> None:
+        """边缘缓存键含 $host：经隧道入口预热必须带生产 Host 头。"""
+        seen_hosts: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen_hosts.append(request.headers.get("host", ""))
+            return httpx.Response(200, content=b"x")
+
+        documents = _fake_documents([_PHOTO_DOC])
+        with (
+            patch.object(
+                x_media_warmup, "_get_warmup_client", lambda: _mock_client(handler)
+            ),
+            patch.object(
+                x_media_warmup.settings, "x_media_warmup_host_header", "aigcnews.cn"
+            ),
+        ):
+            await warm_recent_x_media(documents, base_url="http://172.19.0.1:8488")
+        self.assertTrue(seen_hosts)
+        self.assertEqual(set(seen_hosts), {"aigcnews.cn"})
+
     async def test_mixed_outcomes_counted_without_raising(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             if "profile_images" in request.url.path:

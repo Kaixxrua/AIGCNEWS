@@ -63,12 +63,15 @@ _EMPTY_RESULT = XMediaWarmupResult(0, 0, 0, 0, 0)
 
 
 async def _warm_one(
-    client: httpx.AsyncClient, semaphore: asyncio.Semaphore, url: str
+    client: httpx.AsyncClient,
+    semaphore: asyncio.Semaphore,
+    url: str,
+    headers: dict[str, str],
 ) -> bool:
     """GET 并读满响应体：HEAD 不进 proxy_cache，半截 body 会落截断缓存文件。"""
     async with semaphore:
         try:
-            response = await client.get(url)
+            response = await client.get(url, headers=headers)
             await response.aread()
         except Exception as exc:  # noqa: BLE001 - 单 URL 故障不影响整轮
             logger.debug("[XMediaWarmup] %s 预热传输失败: %s", url, exc)
@@ -126,8 +129,15 @@ async def warm_recent_x_media(
     client = _get_warmup_client()
     semaphore = asyncio.Semaphore(concurrency)
     base = base_url.rstrip("/")
+    # 边缘缓存键含 $host：经隧道/IP 入口预热时必须带生产 Host 头，
+    # 否则暖的是与线上流量无关的另一组缓存键
+    headers = (
+        {"Host": settings.x_media_warmup_host_header}
+        if settings.x_media_warmup_host_header
+        else {}
+    )
     outcomes = await asyncio.gather(
-        *(_warm_one(client, semaphore, f"{base}{path}") for path in paths),
+        *(_warm_one(client, semaphore, f"{base}{path}", headers) for path in paths),
         return_exceptions=True,
     )
     ok = sum(1 for outcome in outcomes if outcome is True)
