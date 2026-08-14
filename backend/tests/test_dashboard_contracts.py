@@ -193,6 +193,22 @@ def test_cache_key_ignores_frontend_cache_buster_param() -> None:
     assert first == second
 
 
+def test_x_recent_cache_ttl_covers_ingest_cadence() -> None:
+    """x/recent 冷算 ~2.3s：TTL 必须覆盖采集 cadence（5 分钟一轮）。
+
+    采集成功后 clear_and_warm_dashboard_cache 先清后暖本 key，新鲜度由
+    「距上次采集」界定；TTL 回退到 cadence 以下（如历史 120s）会让两轮
+    采集间隙的访问必然 MISS 付冷算。
+    """
+    import inspect
+    import re
+
+    source = inspect.getsource(routes_dashboard.get_x_recent)
+    match = re.search(r"@cache\(expire=(\d+)", source)
+    assert match is not None, "get_x_recent 缺少 @cache(expire=...) 装饰器"
+    assert int(match.group(1)) >= 300
+
+
 def test_cache_key_ignores_unknown_params_but_separates_whitelisted_ones() -> None:
     baseline = routes_dashboard._dashboard_cache_key_builder(
         routes_dashboard.get_top_list,

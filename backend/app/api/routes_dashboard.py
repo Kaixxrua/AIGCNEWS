@@ -277,7 +277,7 @@ _X_RECENT_MAX_DAYS_BACK = 60
 
 
 @router.get("/dashboard/x/recent")
-@cache(expire=120, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
+@cache(expire=600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_x_recent(
     hours: int = Query(default=24, ge=1, le=72),
     days_back: int = Query(default=0, ge=0, le=_X_RECENT_MAX_DAYS_BACK),
@@ -289,9 +289,11 @@ async def get_x_recent(
     窗口 = [now - days_back·24h - hours, now - days_back·24h]：days_back=0 即
     「最近 N 小时」（默认视图），days_back=1 即「昨天此时此刻往前 N 小时」，
     供 X 看板日期选择器按整数天滑动。不走快照/定稿/静默期语义：数据直查
-    documents 表，用户时区由前端展示层换算。挂 120s 短缓存聚合重复访问
-    （公网隧道单次往返 ~2s）；key 含 days_back 不含前端 _t 破缓存参数。
-    行为变化：数据最多旧 2 分钟（采集 5 分钟一轮，滞后有界）。
+    documents 表，用户时区由前端展示层换算。key 含 days_back 不含前端 _t
+    破缓存参数。冷算 ~2.3s（500 条），TTL 600s 覆盖采集 cadence（5 分钟）：
+    每次采集成功后 clear_and_warm_dashboard_cache 先清后暖本 key，数据
+    新鲜度由「距上次采集」界定而非 TTL；TTL 只在采集停摆时兜底过期。
+    行为变化：缓存过期口径 120s→600s，采集正常时实际新鲜度不变。
     """
     end = datetime.now(timezone.utc) - timedelta(days=days_back)
     cutoff = end - timedelta(hours=hours)
