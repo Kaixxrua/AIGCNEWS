@@ -64,16 +64,19 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
     <!-- ═══ 居中悬浮画板（暖白纸质毛玻璃主面板） ═══ -->
     <div class="main-canvas">
-      <!-- 顶部品牌条：居中故障特效字标 + 右侧工具图标 -->
+      <!-- 顶部品牌条：故障特效字标与工具图标居中成组 -->
       <div
-        class="absolute top-0 left-0 right-0 flex items-center justify-end px-6 py-2.5 shrink-0"
+        class="absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
         style="z-index: 100; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised);"
       >
-        <BrandWordmark :text="brandName" class="topbar-brand" />
-        <div class="flex items-center gap-2">
-          <GitHubLink />
-          <ThemeToggle />
-          <LocaleToggle />
+        <div class="flex items-center gap-3">
+          <BrandWordmark :text="brandName" />
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <div class="flex items-center gap-2">
+            <GitHubLink />
+            <ThemeToggle />
+            <LocaleToggle />
+          </div>
         </div>
       </div>
 
@@ -131,11 +134,11 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
   overflow: hidden;
 }
 
-/* ═══ 顶栏品牌字标：绝对居中，不挤占右侧工具图标 ═══ */
-.topbar-brand {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+/* ═══ 顶栏：品牌字标与工具图标之间的细分隔线 ═══ */
+.topbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--rule);
 }
 
 /* ═══ 主工作画板：纸面、硬规则、轻微错版阴影 ═══ */
