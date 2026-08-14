@@ -134,7 +134,7 @@ onUnmounted(() => {
   /* 亮纸面：残影用压低明度的饱和青/品红，保证纸面上可读 */
   --glitch-cyan: #0e7f9c;
   --glitch-magenta: #d81b60;
-  --glitch-glow: color-mix(in srgb, var(--acid) 65%, transparent);
+  --glitch-glow: color-mix(in srgb, var(--glitch-cyan) 55%, transparent);
   --glitch-idle-glow: transparent;
   --glitch-scan: rgb(0 0 0 / 0.05);
   --bw-tracking: 0.22em;
@@ -321,7 +321,6 @@ onUnmounted(() => {
 :root[data-theme='dark'] .brand-wordmark {
   --glitch-cyan: #22d3ee;
   --glitch-magenta: #ff2d78;
-  --glitch-glow: rgba(34, 211, 238, 0.55);
   --glitch-idle-glow: rgba(34, 211, 238, 0.18);
   --glitch-scan: rgb(255 255 255 / 0.06);
 }
