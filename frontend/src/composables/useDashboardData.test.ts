@@ -148,6 +148,31 @@ describe('Dashboard request lifecycle contract', () => {
     mounted.app.unmount()
   })
 
+  it('keeps fresh visitor counts when a slower stale summary resolves last on first load', async () => {
+    // 首屏竞态回归：visitor-count（10s 缓存）先落地 today_visits=9，
+    // summary（3600s 缓存）后到 today_visits=6 —— 卡片不得 9→6 回退
+    type Summary = Awaited<ReturnType<DashboardApi['fetchSummary']>>
+    let resolveSummary!: (value: Summary) => void
+    defaultDashboardApi.fetchSummary.mockImplementation(() => new Promise<Summary>((resolve) => { resolveSummary = resolve }))
+    defaultDashboardApi.fetchVisitorCount.mockResolvedValue({ registeredUsers: 7, todayRegisteredUsers: 2, userCount: 9, todayVisits: 9, totalVisits: 100 })
+    const mounted = mountDashboard()
+    await flush()
+    expect(mounted.dashboard.stats.value.today_visits).toBe(9)
+
+    resolveSummary({
+      stats: { total_documents: 3, today_visits: 6, total_visits: 97, mcp_total_calls: 1232 },
+      isFinalized: true, isEmbargoed: false,
+    })
+    await flush()
+
+    expect(mounted.dashboard.stats.value.today_visits).toBe(9)
+    expect(mounted.dashboard.stats.value.total_visits).toBe(100)
+    // 非实时字段仍以 summary 为准
+    expect(mounted.dashboard.stats.value.total_documents).toBe(3)
+    expect(mounted.dashboard.stats.value.mcp_total_calls).toBe(1232)
+    mounted.app.unmount()
+  })
+
   it('keeps fresher live counters when a stale cached summary is re-applied', async () => {
     // summary 走 3600s 缓存：首次加载含 mcp_total_calls=1232，live 轮询前进到 1233 后，
     // 切 tab 重新应用同一份陈旧 summary 不得让计数回退（回归：首页 MCP 调用数 1233→1232）

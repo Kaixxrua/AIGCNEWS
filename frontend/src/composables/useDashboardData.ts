@@ -35,9 +35,10 @@ const isCanceledError = (error: unknown): boolean => {
   return candidate.name === 'CanceledError' || candidate.code === 'ERR_CANCELED'
 }
 
-/* live-stats 轮询（10s 短缓存）拥有的实时计数字段。summary 走 3600s Redis 缓存，
-   切 tab / KeepAlive 回页重新应用时不得用陈旧缓存覆盖这些较新的值，
-   否则 MCP 调用数等累计计数会出现"前进后回退"的跳变。 */
+/* 实时计数字段由 10s 轮询与 visitor-count（10s 短缓存）持有，任何时刻都比
+   summary 的 3600s 缓存新。summary 重放（切 tab / KeepAlive 回页 / 首屏竞态）
+   一律保留状态里已有的实时值，否则今日访客数等计数会出现"前进后回退"跳变
+   （回归：首屏 visitor-count 先到 9、summary 后到盖回 6）。 */
 const LIVE_COUNTER_FIELDS = [
   'total_documents', 'source_counts',
   'registered_users', 'today_registered_users', 'user_count',
@@ -68,7 +69,6 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const viewRefreshInterval = 60_000
   let lastSuccessfulFetchAt = 0
   let hasActivatedOnce = false
-  let liveCountersLoaded = false
   let dashboardController: AbortController | null = null
   let dashboardGeneration = 0
 
@@ -111,9 +111,9 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       dashboardApi.fetchTop({ limit: 10, source: tab, period: PERIOD, date: selectedDate, signal: controller.signal }),
     ])
     if (!isCurrentDashboardRequest(controller, generation)) return false
-    // live 轮询已跑过后，实时计数字段以较新的 live 值为准，屏蔽 summary 的陈旧缓存
-    const liveCounters = liveCountersLoaded ? pickLiveCounters(stats.value) : null
-    stats.value = liveCounters ? { ...summary.stats, ...liveCounters } : summary.stats
+    // 实时计数字段以状态里已持有的较新值为准（首屏 visitor-count 可能已先落地），
+    // 屏蔽 summary 3600s 缓存的陈旧计数；其余字段仍以 summary 为准
+    stats.value = { ...summary.stats, ...pickLiveCounters(stats.value) }
     tabList.value = top.items
     isFinalized.value = summary.isFinalized
     isEmbargoed.value = summary.isEmbargoed
@@ -189,7 +189,6 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     try {
       const live = await fetchLiveStats()
       stats.value = { ...stats.value, ...live }
-      liveCountersLoaded = true
       options.updateStatSources(stats.value)
     } catch {
       /* 实时计数失败静默，保留当前展示值 */
