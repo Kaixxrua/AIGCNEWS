@@ -215,7 +215,9 @@ describe('Monitor API contract', () => {
     expect(url).toBe('/ops/site/images')
     expect(body).toBeInstanceOf(FormData)
     expect((body as FormData).get('file')).toBe(file)
-    expect(config).toEqual({ timeout: 60_000 })
+    // api 实例默认 Content-Type=application/json，axios 1.x 会把 FormData 序列化成 JSON
+    // （File 变 {}）触发后端 422；显式 multipart 头是功能正确性的必要条件，钉死防回归。
+    expect(config).toEqual({ headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60_000 })
   })
 
   it('creates site contact page form drafts from config with safe defaults', () => {

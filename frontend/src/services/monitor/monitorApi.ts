@@ -92,10 +92,15 @@ export const monitorApi: MonitorApi = {
   async fetchSiteContactPageConfig() { return (await api.get('/ops/site/contact-page')).data },
   async saveSiteContactPageConfig(form) { return (await api.put('/ops/site/contact-page', buildSiteContactPagePayload(form))).data },
   // 站点公开素材上传（二维码/正文插图）：multipart 直传，返回站内 /api/media/site/... URL
+  // 注意：api 实例默认 Content-Type=application/json，axios 1.x 遇 JSON 头会把 FormData
+  // 序列化成 JSON（File 变 {}）导致 422——必须显式声明 multipart（uploadPdfAttachment 同款）。
   async uploadSiteImage(file) {
     const formData = new FormData()
     formData.append('file', file)
-    return (await api.post('/ops/site/images', formData, { timeout: 60_000 })).data
+    return (await api.post('/ops/site/images', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60_000,
+    })).data
   },
   async fetchMcpServers() {
     const { data } = await api.get('/ops/mcp-servers')
