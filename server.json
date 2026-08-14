@@ -18,7 +18,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://aigcnews.cn/api/mcp"
+      "url": "https://aigcradar.online/api/mcp"
     }
   ]
 }
