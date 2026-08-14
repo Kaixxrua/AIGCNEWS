@@ -17,6 +17,7 @@ import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
+import BrowserHomeGuideDialog from '@/components/projects/BrowserHomeGuideDialog.vue'
 import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '@/components/projects/ProjectPagination.vue'
 import { useProjectCatalogController } from '@/composables/useProjectCatalogController'
@@ -51,6 +52,7 @@ const page = ref(1)
 const pageJump = ref('')
 const addDialogOpen = ref(false)
 const editDialogOpen = ref(false)
+const homeGuideOpen = ref(false)
 const editTarget = ref<GitHubProjectItem | null>(null)
 const VIEW_REFRESH_INTERVAL = 60_000
 let hasActivatedOnce = false
@@ -325,6 +327,15 @@ onBeforeUnmount(stopViewReads)
           <span>{{ activeFilterLabel }}</span>
         </div>
         <button
+          v-if="isWebsiteOnlyView"
+          type="button"
+          class="projects-home-btn"
+          @click="homeGuideOpen = true"
+        >
+          <span>⌂</span>
+          {{ t('projects.setHome') }}
+        </button>
+        <button
           v-if="isWebsiteOnlyView && !requiresPersonalLogin"
           type="button"
           class="projects-add-btn"
@@ -458,6 +469,11 @@ onBeforeUnmount(stopViewReads)
     />
     </template>
 
+    <BrowserHomeGuideDialog
+      :open="homeGuideOpen"
+      :active="isViewActive"
+      @close="homeGuideOpen = false"
+    />
     <ToolWebsiteAddDialog
       :open="addDialogOpen"
       :active="isViewActive"
@@ -601,6 +617,32 @@ onBeforeUnmount(stopViewReads)
   background: var(--projects-paper-light);
   font-size: 11px;
   font-weight: 700;
+}
+
+.projects-home-btn {
+  display: inline-flex;
+  min-height: var(--projects-control-height);
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--projects-accent);
+  border-radius: 4px;
+  padding: 0 16px;
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease, background 160ms ease;
+}
+
+.projects-home-btn:hover {
+  background: var(--projects-acid-soft);
+}
+
+.projects-home-btn span {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .projects-add-btn {

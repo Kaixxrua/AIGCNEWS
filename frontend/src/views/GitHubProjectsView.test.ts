@@ -8,6 +8,7 @@ import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '@/components/projects/ProjectPagination.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
+import BrowserHomeGuideDialog from '@/components/projects/BrowserHomeGuideDialog.vue'
 import type { GitHubProjectItem } from '@/services/projects/projectApi'
 
 const controllerSpy = vi.hoisted(() => vi.fn())
@@ -301,6 +302,23 @@ describe('GitHubProjectsView dialog orchestration', () => {
     await wrapper.find('.tool-modal__close').trigger('click')
     await nextTick()
     expect(wrapper.findComponent(ToolWebsiteAddDialog).props('open')).toBe(false)
+  })
+
+  it('opens the browser-home guide from the website view and closes it via the close event', async () => {
+    const wrapper = await mountView()
+    await switchToWebsiteSource(wrapper)
+
+    const guideButton = wrapper.find('.projects-home-btn')
+    expect(guideButton.exists()).toBe(true)
+    await guideButton.trigger('click')
+    await nextTick()
+
+    const dialog = wrapper.findComponent(BrowserHomeGuideDialog)
+    expect(dialog.props('open')).toBe(true)
+
+    dialog.vm.$emit('close')
+    await nextTick()
+    expect(wrapper.findComponent(BrowserHomeGuideDialog).props('open')).toBe(false)
   })
 
   it('redirects anonymous add attempts to login instead of opening the dialog', async () => {
