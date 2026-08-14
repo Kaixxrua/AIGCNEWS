@@ -370,7 +370,12 @@ def fetch_github_repo_metrics(
                 return _fetch(active_client, False)
             if resp.status_code in (301, 302, 307, 308):
                 location = resp.headers.get("location", "").strip()
-                if not was_redirected and location.startswith(f"{GITHUB_API_BASE}/repos/"):
+                # 可跟随形态：/repos/{owner}/{new}（常规改名）与
+                # /repositories/{id}（部分改名返回 ID 形态），均同 host 且一跳
+                followable = location.startswith(f"{GITHUB_API_BASE}/repos/") or location.startswith(
+                    f"{GITHUB_API_BASE}/repositories/"
+                )
+                if not was_redirected and followable:
                     url = location
                     was_redirected = True
                     continue

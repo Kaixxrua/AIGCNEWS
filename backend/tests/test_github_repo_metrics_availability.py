@@ -110,6 +110,46 @@ class GitHubRepoMetricsFetchTests(unittest.TestCase):
 
         self.assertEqual(result.status, "not_found")
 
+    def test_numeric_id_redirect_is_followed(self) -> None:
+        # 部分改名返回 ID 形态 Location：/repositories/{id}，负载仍带权威 full_name
+        payload = {
+            "node_id": "repo-9",
+            "full_name": "new-owner/new-name",
+            "html_url": "https://github.com/new-owner/new-name",
+            "stargazers_count": 7,
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if str(request.url).endswith("/repos/old-owner/old-name"):
+                return httpx.Response(
+                    301,
+                    headers={"location": "https://api.github.com/repositories/1281772914"},
+                )
+            return httpx.Response(200, json=payload)
+
+        with self._client(handler) as client:
+            result = fetch_github_repo_metrics("old-owner/old-name", client=client, use_token=False)
+
+        self.assertEqual(result.status, "succeeded")
+        self.assertTrue(result.was_redirected)
+        self.assertEqual(result.full_name, "old-owner/old-name")
+        self.assertEqual(result.metrics["full_name"], "new-owner/new-name")
+        self.assertEqual(result.metrics["repo_id"], "repo-9")
+
+    def test_numeric_id_redirect_then_404_is_not_found(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if str(request.url).endswith("/repos/owner/old-name"):
+                return httpx.Response(
+                    301,
+                    headers={"location": "https://api.github.com/repositories/999"},
+                )
+            return httpx.Response(404)
+
+        with self._client(handler) as client:
+            result = fetch_github_repo_metrics("owner/old-name", client=client, use_token=False)
+
+        self.assertEqual(result.status, "not_found")
+
     def test_redirect_without_api_location_is_unknown(self) -> None:
         # 旧名被重用/跨域跳转等不可跟随重定向：fail-closed 记 unknown，绝不误判
         with self._client(
