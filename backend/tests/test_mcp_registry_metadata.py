@@ -17,7 +17,7 @@ _DESCRIPTION_MAX = 100
 _TITLE_MAX = 100
 _ICON_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"}
 _REGISTRY_NAME = "io.github.kaixxrua/aigc-radar"
-_PRODUCTION_MCP_URL = "https://aigcradar.online/api/mcp"
+_PRODUCTION_MCP_URL = "https://aigcnews.cn/api/mcp"
 
 
 class RegistryMetadataTests(unittest.TestCase):

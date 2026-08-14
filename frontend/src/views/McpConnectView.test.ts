@@ -36,11 +36,11 @@ vi.mock('@/composables/useMcpConnectController', async () => {
       { name: 'search_papers', descriptionKey: 'mcp.toolSearchPapers' },
     ]),
     dispose: vi.fn(),
-    endpointUrl: ref('https://aigcradar.online/api/mcp'),
+    endpointUrl: ref('https://aigcnews.cn/api/mcp'),
     endpointWarningKey: ref(''),
     loadTokens: vi.fn(),
     loadingTokens: ref(false),
-    normalizedEndpoint: ref('https://aigcradar.online/api/mcp'),
+    normalizedEndpoint: ref('https://aigcnews.cn/api/mcp'),
     quickCommand: ref(''),
     removeToken: vi.fn(),
     selectedClient: ref('claude-code'),
@@ -188,7 +188,7 @@ describe('McpConnectView localized rendering', () => {
   it('renders the normalized endpoint and triggers the public handshake', async () => {
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('https://aigcradar.online/api/mcp')
+    expect(wrapper.text()).toContain('https://aigcnews.cn/api/mcp')
     const handshake = wrapper.findAll('button').find((button) => button.text() === 'mcp.publicHandshake')
     expect(handshake).toBeDefined()
     expect(handshake!.attributes('disabled')).toBeUndefined()
@@ -223,7 +223,7 @@ describe('McpConnectView localized rendering', () => {
 
 describe('McpConnectView privacy and auth behavior', () => {
   it('renders the secret-free quick command visibly and forwards quick copy', async () => {
-    controller().quickCommand.value = 'claude mcp add --scope user --transport http aigc-news https://aigcradar.online/api/mcp'
+    controller().quickCommand.value = 'claude mcp add --scope user --transport http aigc-news https://aigcnews.cn/api/mcp'
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain('claude mcp add --scope user --transport http aigc-news')
@@ -237,7 +237,7 @@ describe('McpConnectView privacy and auth behavior', () => {
 
   it('offers the quick connect path without login', async () => {
     auth().isLoggedIn = false
-    controller().quickCommand.value = 'codex mcp add aigc-news --url https://aigcradar.online/api/mcp'
+    controller().quickCommand.value = 'codex mcp add aigc-news --url https://aigcnews.cn/api/mcp'
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain('免登录接入')
