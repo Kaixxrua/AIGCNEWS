@@ -3,18 +3,22 @@
 # 在 http 上下文被 conf.d/default.conf 末尾 include。
 
 # AIGC Radar MCP 独立域名（aigcradar.online）：MCP 网关专用 vhost。
-# 公网链路：Cloudflare（橙云，边缘终止 TLS）→ 本机 cloudflared 隧道 →
-# 本 server（:80）→ 独立 MCP 容器 aigc-mcp:8000（与主站后端进程解耦，
-# 主站迭代不中断 MCP 会话）。只暴露 /api/mcp 与探活/版本，其余一律 404。
+# 公网链路：境外 VPS（43.165.172.182）Caddy 终止 TLS → SSH 反向隧道
+# （VPS 127.0.0.1:18080 → 家 :80）→ 本 server → 独立 MCP 容器
+# aigc-mcp:8000（与主站后端进程解耦，主站迭代不中断 MCP 会话）。
+# 只暴露 /api/mcp 与探活/版本，其余一律 404。
 # 旧域名 aigcnews.cn/api/mcp 不受影响（仍由主后端服务，双跑灰度）。
 server {
     listen 80;
     server_name aigcradar.online;
 
-    # 与主 server 同口径：cloudflared 回源对端是宿主机 WireGuard 地址，
-    # 边缘注入的 XFF 只含 CF 节点 IP，真实客户端 IP 仅在 CF-Connecting-IP
-    set_real_ip_from 10.20.0.1;
-    real_ip_header CF-Connecting-IP;
+    # 回源对端是 SSH 隧道（docker-proxy 后为编排网关）：真实客户端 IP 由
+    # 边缘 Caddy 注入 X-Forwarded-For 首跳。隧道/网关都是基础设施地址，
+    # 只信它们携带的 XFF，公网伪造的 XFF 不会被采信。
+    set_real_ip_from 127.0.0.1;
+    set_real_ip_from 172.19.0.1;
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive off;
 
     # JSON-RPC 请求体很小，收紧上传上限
     client_max_body_size 1m;
