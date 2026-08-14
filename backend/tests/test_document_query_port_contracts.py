@@ -271,7 +271,11 @@ def test_mcp_paper_detail_uses_reader_and_public_projection() -> None:
             # 不采信可伪造的 Host/X-Forwarded-Proto：默认相对路径，
             # 绝对 URL 只能来自 PUBLIC_BASE_URL 配置
             "pdf_media_url": "/api/media/papers/paper-1.pdf",
-        }
+            # arXiv 文档附站内阅读页回链（UTM 标记 mcp/tool 渠道）
+            "detail_url": "https://aigcnews.cn/papers/paper-1/read?utm_source=mcp&utm_medium=tool",
+        },
+        # AIGC Radar 品牌署名行：未配 PUBLIC_BASE_URL 时回链指向品牌站点
+        "attribution": "Data provided by AIGC Radar · https://aigcnews.cn",
     }
 
 
