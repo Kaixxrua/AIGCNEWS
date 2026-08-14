@@ -23,6 +23,15 @@ from backend.app.core.model_factory import (
 
 logger = logging.getLogger(__name__)
 
+# 元数据统一收进单个 JSON 列（langchain Milvus 的 metadata_field 参数）。
+# 否则 langchain 按每批首文档的元数据键集推断显式列：主管线与 arxiv PDF
+# 切片两条写入路径键集不同，轮流触发 DataNotMatch → drop_old 重建，
+# 整日反复清空 aigc_docs（实测单日 20 次重建，RAG 向量只残存最后一批）。
+# JSON 列让 schema 恒定（metadata + text + pk + vector），两路径共存；
+# 首个写入轮次对旧显式列 collection 仍会 mismatch，由既有重建逻辑一次性
+# 迁移到 JSON schema。
+_METADATA_FIELD = "metadata"
+
 
 class MilvusRepository:
     def __init__(self, embeddings: Any | None = None) -> None:
@@ -119,6 +128,7 @@ class MilvusRepository:
                     consistency_level="Strong",
                     auto_id=True,
                     drop_old=False,
+                    metadata_field=_METADATA_FIELD,
                 )
                 vector_store.add_documents(docs)
             except Exception as exc:
@@ -136,6 +146,7 @@ class MilvusRepository:
                         consistency_level="Strong",
                         auto_id=True,
                         drop_old=True,
+                        metadata_field=_METADATA_FIELD,
                     )
                     vector_store.add_documents(docs)
                 else:
@@ -182,6 +193,7 @@ class MilvusRepository:
                 consistency_level="Strong",
                 auto_id=True,
                 drop_old=False,
+                metadata_field=_METADATA_FIELD,
             )
             # HNSW 要求 ef >= k，否则会报 out of range 错误
             # ef 越大结果越准确，建议 ef = max(k, 64)
@@ -218,31 +230,21 @@ class MilvusRepository:
 
             coll = Collection(self._collection_name)
             coll.load()
-            expr = f'source == "{source}"'
+            # 元数据在 JSON 列里，按键路径过滤；旧显式列 collection 在未迁移前
+            # 查询会报错，由下方 except 兜底返回空，首个写入轮自动重建后恢复。
+            expr = f'{_METADATA_FIELD}["source"] == "{source}"'
             results = coll.query(
                 expr=expr,
-                output_fields=[
-                    "pk",
-                    "text",
-                    "source",
-                    "title",
-                    "url",
-                    "published_date",
-                    "stars",
-                    "language",
-                    "pdf_url",
-                    "source_channel",
-                    "raw_score",
-                ],
+                output_fields=["pk", "text", _METADATA_FIELD],
                 limit=top_k,
             )
             docs: List[Document] = []
             for r in results:
                 page_content = r.get("text", "")
-                metadata = {k: v for k, v in r.items() if k != "text"}
+                metadata = dict(r.get(_METADATA_FIELD) or {})
                 metadata.setdefault("source", source)
-                if "pk" in metadata:
-                    metadata["id"] = str(metadata["pk"])
+                if "pk" in r:
+                    metadata["id"] = str(r["pk"])
                 doc = Document(page_content=page_content, metadata=metadata)
                 docs.append(doc)
             return docs
