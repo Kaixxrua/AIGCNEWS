@@ -11,6 +11,10 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
+from curl_cffi.requests.exceptions import (
+    ConnectionError as CurlConnectionError,
+    Timeout as CurlTimeout,
+)
 from twitter_cli.exceptions import (
     AuthenticationError,
     NotFoundError,
@@ -2263,6 +2267,110 @@ class XCrawlerTranslationContracts(unittest.IsolatedAsyncioTestCase):
         by_id = {item["tweet_id"]: item for item in result.items}
         self.assertEqual(by_id["2041"].get("translation_zh"), "共享推文译文")
         self.assertEqual(by_id["2040"]["quote"].get("translation_zh"), "共享推文译文")
+
+
+class XTransportNetworkRetryContracts(unittest.IsolatedAsyncioTestCase):
+    """单账号网络抖动重试契约：curl 层链路故障退避重试,业务错误不重试。
+
+    锚定 2026-08-14 事故:出口代理 ~1 分钟抖动,zai_org(curl 28 超时)与
+    minimax_ai(curl 7 代理拒连)各丢一轮;重试窗口须覆盖分钟级 flap,
+    同时按轮封顶预算,代理硬故障时整轮仍能及时 fail-fast 升级。
+    """
+
+    def _transport(self, client: _FakeClient, **kwargs) -> x_transport.XTransport:
+        kwargs.setdefault("inter_account_delay", 1.0)
+        kwargs.setdefault("id_cache", {})
+        kwargs.setdefault("sleep", AsyncMock())
+        return x_transport.XTransport(lambda: client, **kwargs)
+
+    def test_transient_classification(self) -> None:
+        classify = x_transport._is_transient_network_error
+
+        self.assertTrue(classify(CurlTimeout("curl: (28) timed out", 28)))
+        self.assertTrue(classify(CurlConnectionError("curl: (7) connect", 7)))
+        self.assertTrue(classify(TimeoutError("socket timeout")))
+        self.assertTrue(classify(ConnectionError("reset")))
+        # curl 22 = HTTP 错误响应(业务层),不属链路故障
+        self.assertFalse(classify(CurlTimeout("curl: (22) http", 22)))
+        self.assertFalse(classify(ValueError("parse drift")))
+        self.assertFalse(classify(TwitterAPIError(500, "boom")))
+
+    async def test_transient_network_error_retried_then_succeeds(self) -> None:
+        client = _FakeClient()
+        client.fetch_user.return_value = UserProfile(
+            id="11", name="Zai", screen_name="zai_org"
+        )
+        client.fetch_user_tweets.side_effect = [
+            CurlTimeout("curl: (28) timed out", 28),
+            [_tweet("z1", screen_name="zai_org")],
+        ]
+        sleep = AsyncMock()
+        transport = self._transport(client, sleep=sleep)
+
+        result = await transport.fetch_watchlist_tweets(["zai_org"], count_per_user=5)
+
+        self.assertEqual([t.id for t in result["zai_org"]], ["z1"])
+        self.assertEqual(client.fetch_user_tweets.call_count, 2)
+        # 首个重试退避 15s
+        retry_sleeps = [c.args[0] for c in sleep.await_args_list]
+        self.assertIn(15.0, retry_sleeps)
+
+    async def test_persistent_network_error_exhausts_retries_then_skips(self) -> None:
+        client = _FakeClient()
+        client.fetch_user.return_value = UserProfile(
+            id="11", name="Zai", screen_name="zai_org"
+        )
+        client.fetch_user_tweets.side_effect = CurlConnectionError(
+            "curl: (7) proxy refused", 7
+        )
+        sleep = AsyncMock()
+        transport = self._transport(client, sleep=sleep)
+
+        # 单账号整轮零成功 + 网络故障 → 升级为 XTransportUnavailable
+        with self.assertRaises(x_transport.XTransportUnavailable):
+            await transport.fetch_watchlist_tweets(["zai_org"], count_per_user=5)
+
+        # 1 次原始尝试 + 2 次重试(15s/30s)
+        self.assertEqual(client.fetch_user_tweets.call_count, 3)
+        retry_sleeps = [c.args[0] for c in sleep.await_args_list]
+        self.assertEqual(retry_sleeps, [15.0, 30.0])
+
+    async def test_retry_budget_bounds_hard_outage_round(self) -> None:
+        """代理硬故障:预算烧完后其余账号 fail-fast,整轮时长不失控。"""
+        client = _FakeClient()
+        profiles = {
+            h: UserProfile(id=str(i), name=h, screen_name=h)
+            for i, h in enumerate(("a", "b", "c", "d", "e"), start=1)
+        }
+        client.fetch_user.side_effect = lambda handle: profiles[handle]
+        client.fetch_user_tweets.side_effect = CurlConnectionError(
+            "curl: (7) proxy refused", 7
+        )
+        sleep = AsyncMock()
+        transport = self._transport(client, sleep=sleep)
+
+        with self.assertRaises(x_transport.XTransportUnavailable):
+            await transport.fetch_watchlist_tweets(
+                ["a", "b", "c", "d", "e"], count_per_user=5
+            )
+
+        # 预算 6 次重试:a/b/c 各烧 2 次(各 3 调用),d/e fail-fast(各 1 调用)
+        self.assertEqual(client.fetch_user_tweets.call_count, 3 + 3 + 3 + 1 + 1)
+
+    async def test_non_network_errors_not_retried(self) -> None:
+        client = _FakeClient()
+        client.fetch_user.return_value = UserProfile(
+            id="11", name="Zai", screen_name="zai_org"
+        )
+        client.fetch_user_tweets.side_effect = TwitterAPIError(500, "server error")
+        sleep = AsyncMock()
+        transport = self._transport(client, sleep=sleep)
+
+        with self.assertRaises(x_transport.XTransportUnavailable):
+            await transport.fetch_watchlist_tweets(["zai_org"], count_per_user=5)
+
+        self.assertEqual(client.fetch_user_tweets.call_count, 1)
+        sleep.assert_not_awaited()
 
 
 if __name__ == "__main__":

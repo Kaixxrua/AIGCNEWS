@@ -45,6 +45,30 @@ logger = logging.getLogger(__name__)
 
 USER_ID_CACHE_TTL_SECONDS = 24 * 3600
 
+# 单账号网络抖动重试：curl 层链路故障（代理拒连 7、DNS 5/6、超时 28、
+# TLS 35、空应答 52、收发截断 55/56）按 15s/30s 退避各重试一次，
+# 覆盖出口代理 ~1 分钟量级的抖动窗口（2026-08-14 实测 zai_org 超时、
+# minimax_ai 代理拒连各丢一轮）。重试预算按轮封顶：代理硬故障时
+# 前几个账号烧完预算，其余 fail-fast，整轮仍能及时升级为
+# XTransportUnavailable，不会把故障轮拖长数倍。
+_NETWORK_RETRY_DELAYS = (15.0, 30.0)
+_NETWORK_RETRY_BUDGET_PER_ROUND = 6
+_TRANSIENT_CURL_ERRNOS = frozenset({5, 6, 7, 28, 35, 52, 55, 56})
+
+
+def _is_transient_network_error(exc: BaseException) -> bool:
+    """curl 层链路故障判定，区别于 X API 业务响应错误（不重试）。
+
+    不 import curl_cffi 具体异常类：pylibs 供给路径在容器与测试环境间
+    有差异；curl_cffi 的 RequestException 同时是 OSError 且带 curl
+    errno（IntEnum，可与 int 直接比较），用公共特征判定即可。无 errno
+    的内建 TimeoutError/ConnectionError 同属链路故障。
+    """
+    code = getattr(exc, "code", None)
+    if code is not None:
+        return code in _TRANSIENT_CURL_ERRNOS
+    return isinstance(exc, (TimeoutError, ConnectionError))
+
 # screen_name(lower) -> (user_id, 过期时间戳)
 _USER_ID_CACHE: dict[str, tuple[str, float]] = {}
 
@@ -701,7 +725,9 @@ class XTransport:
             TwitterAPIError 而非 RateLimitError）——跳过该账号保住本轮其余
             覆盖（观测：部分限流轮仍能收到 7/12），但记账；整轮零成功时
             升级为 XRateLimitAbort
-          - 其他异常（网络断连、解析漂移等）：跳过并计系统性故障；整轮零
+          - curl 层网络故障（代理拒连/超时/截断）：按 _NETWORK_RETRY_DELAYS
+            退避重试，骑过出口代理分钟级抖动；预算烧完或仍失败才计故障
+          - 其他异常（解析漂移等）：跳过并计系统性故障；整轮零
             成功时升级为 XTransportUnavailable，让采集轮以 error 收场
         全部账号 NotFound（集体消失）不算基础设施故障，原样返回空表。
         """
@@ -709,35 +735,60 @@ class XTransport:
         result: dict[str, list[Any]] = {}
         infra_failures = 0
         rate_limited = False
+        retry_budget = _NETWORK_RETRY_BUDGET_PER_ROUND
         for index, handle in enumerate(watchlist):
             if index > 0:
                 await self._sleep(self._jittered_delay())
-            try:
-                user_id = await self._resolve_user_id(client, handle)
-                result[handle] = await asyncio.to_thread(
-                    client.fetch_user_tweets, user_id, count_per_user
-                )
-            except AuthenticationError:
-                raise
-            except RateLimitError:
-                raise
-            except NotFoundError:
-                logger.warning(
-                    "[XTransport] 账号不存在/已注销/已改名，跳过: %s",
-                    handle,
-                )
-            except TwitterAPIError as exc:
-                if exc.status_code == 429:
-                    rate_limited = True
-                    logger.warning(
-                        "[XTransport] 账号 %s 触发限流(429)，跳过本轮", handle
+            attempt = 0
+            while True:
+                try:
+                    user_id = await self._resolve_user_id(client, handle)
+                    result[handle] = await asyncio.to_thread(
+                        client.fetch_user_tweets, user_id, count_per_user
                     )
-                else:
+                    break
+                except AuthenticationError:
+                    raise
+                except RateLimitError:
+                    raise
+                except NotFoundError:
+                    logger.warning(
+                        "[XTransport] 账号不存在/已注销/已改名，跳过: %s",
+                        handle,
+                    )
+                    break
+                except TwitterAPIError as exc:
+                    if exc.status_code == 429:
+                        rate_limited = True
+                        logger.warning(
+                            "[XTransport] 账号 %s 触发限流(429)，跳过本轮", handle
+                        )
+                    else:
+                        infra_failures += 1
+                        logger.exception("[XTransport] 账号 %s 抓取失败，跳过", handle)
+                    break
+                except Exception as exc:
+                    if (
+                        _is_transient_network_error(exc)
+                        and attempt < len(_NETWORK_RETRY_DELAYS)
+                        and retry_budget > 0
+                    ):
+                        delay = _NETWORK_RETRY_DELAYS[attempt]
+                        attempt += 1
+                        retry_budget -= 1
+                        logger.warning(
+                            "[XTransport] 账号 %s 网络故障(%s)，%.0fs 后重试(%d/%d)",
+                            handle,
+                            exc,
+                            delay,
+                            attempt,
+                            len(_NETWORK_RETRY_DELAYS),
+                        )
+                        await self._sleep(delay)
+                        continue
                     infra_failures += 1
                     logger.exception("[XTransport] 账号 %s 抓取失败，跳过", handle)
-            except Exception:
-                infra_failures += 1
-                logger.exception("[XTransport] 账号 %s 抓取失败，跳过", handle)
+                    break
 
         if result or not watchlist:
             return result
