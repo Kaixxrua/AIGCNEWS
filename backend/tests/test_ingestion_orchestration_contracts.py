@@ -266,7 +266,7 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
             all(
                 call_item.kwargs.get("db") is orchestrator.github_ingestion
                 for call_item in to_thread_mock.await_args_list
-                if getattr(call_item.args[0], "__name__", "")
+                if call_item.args[0].__name__
                 in {"record_github_trending_hits", "compute_github_daily_metrics"}
             )
         )

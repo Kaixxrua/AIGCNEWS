@@ -44,7 +44,6 @@ PUBLIC_PROJECT_FIELDS = {
     "daily_star_growth",
     "daily_growth_available",
     "hot_score",
-    "growth_suspicion_score",
     "is_recommended",
     "result_origin",
 }

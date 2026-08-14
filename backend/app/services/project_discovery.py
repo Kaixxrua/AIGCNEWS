@@ -106,7 +106,6 @@ def public_project_item(item: dict[str, Any]) -> dict[str, Any]:
         "daily_star_growth": int(item.get("daily_star_growth") or 0),
         "daily_growth_available": bool(item.get("daily_growth_available")),
         "hot_score": float(item.get("hot_score") or 0),
-        "growth_suspicion_score": float(item.get("growth_suspicion_score") or 0),
         "is_recommended": bool(item.get("is_recommended")),
         "result_origin": _clipped(item.get("result_origin") or "aigc_news_local", 40),
     }

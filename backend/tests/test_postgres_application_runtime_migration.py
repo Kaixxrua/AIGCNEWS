@@ -29,8 +29,8 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 42
-    assert migrations[-1].filename == "0042_github_growth_suspicion.sql"
+    assert migrations[-1].version == 41
+    assert migrations[-1].filename == "0041_user_pwd_ver.sql"
 
 
 def test_error_events_migration_is_idempotent_append_only_table() -> None:

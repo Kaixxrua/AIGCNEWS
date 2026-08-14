@@ -395,7 +395,6 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         metrics_refresh.assert_awaited_once_with(
             repository=repositories.github_ingestion,
             enrichment=repositories.github_enrichment,
-            documents=repositories.documents,
             github_lock=runtime._github_job_lock,
         )
         x_credentials_probe.assert_awaited_once_with(

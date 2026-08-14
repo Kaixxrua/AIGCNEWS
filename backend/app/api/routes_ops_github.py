@@ -393,23 +393,3 @@ async def recompute_github_project_metrics(
         min_stars=max(0, int(request.min_stars or 0)),
     )
     return GitHubProjectsEnrichResponse(status="succeeded", message="GitHub 项目每日热度指标已重算。", result=result)
-
-
-@router.post(
-    "/ops/github-projects/metrics/backfill-suspicion",
-    response_model=GitHubProjectsEnrichResponse,
-    tags=["Ops"],
-)
-async def backfill_github_growth_suspicion(
-    days: int = 30,
-    min_stars: int = 500,
-    _: dict = Depends(RequireAdmin),
-    service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
-) -> GitHubProjectsEnrichResponse:
-    """回放近 N 天反作弊打标（一二层信号 + 跨渠道佐证）；hot_score 不变。"""
-    result = await asyncio.to_thread(
-        service.backfill_suspicion,
-        days=max(1, min(int(days or 30), 90)),
-        min_stars=max(0, int(min_stars or 0)),
-    )
-    return GitHubProjectsEnrichResponse(status="succeeded", message="GitHub 反作弊打标回放完成。", result=result)

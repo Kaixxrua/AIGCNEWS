@@ -64,9 +64,6 @@ class GitHubProjectItem(BaseModel):
     absolute_growth_score: float = 0.0
     maintenance_activity_score: float = 0.0
     community_engagement_score: float = 0.0
-    growth_suspicion_score: float = 0.0
-    growth_suspicion_signals: str = "[]"
-    growth_corroborated: bool = False
     confidence: float = 0.0
     is_favorited: bool = False
     favorited_at: str | None = None

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "frozen_instant": "2026-08-10T12:00:00+08:00",
+  "frozen_instant_note": "全部用例在此时刻冻结时间（CST）。昨日 2026-08-09 处于 embargo 窗口（FINALIZE_HOUR=15，冻结在 12 点），2026-08-08 已定稿，当日 2026-08-10 为草稿——三种榜单状态同批钉住。",
+  "recorded_apps": ["main", "mcp"],
+  "recorded_apps_note": "app=both 的用例在 main.app 与 mcp_main.app 上各跑一次并要求逐字节一致后才入库；app=mcp 的用例（探活/挂载面/CORS）只钉独立进程。",
+  "header_semantics": "响应头按 小写名字→值 的字典比较，名字排序落盘；不捕捉同名多值头与头顺序。content-length 由 body 字节派生，Go 回放时由 HTTP 栈自动一致。",
+  "body_semantics": "body 为精确 UTF-8 文本；请求体非法 UTF-8 时退化为 body_b64。比较要求归一化后的逐字节相等。",
+  "request_semantics": "request.headers 只收录显式发送的头；回放方须自行带上 content-type 等列出头，content-length 由客户端库计算。",
+  "normalizations": [
+    {
+      "target": "response.header.mcp-session-id",
+      "pattern": "^aigc-radar-[0-9a-f]{32}$",
+      "replacement": "<mcp-session-id>",
+      "note": "initialize 铸造的会话 id（uuid4 hex）。会话无状态：仅 initialize 下发，后续请求永不回验、响应头永不重发。"
+    }
+  ],
+  "replay_classes": {
+    "static": "无需 fixture 注入，任意符合契约的部署可直接回放比对（协议面/静态清单/错误面/探活）。",
+    "stubbed": "响应由 corpus/fixtures.json 中的固定输入导出；Go 侧须在仓储边界注入同一 fixture 数据后回放。Python 侧本包 stub 即权威注入实现。"
+  },
+  "environment_contract": "corpus/recording_context.json 钉住会渗入字节的配置（public_base_url、cors_allowed_origins、app version）。回放环境配置不一致时须重录，不得放宽比对。public_base_url 只读 PUBLIC_BASE_URL 配置、绝不读请求头，因此 Host 差异不影响语料。",
+  "known_gaps": [
+    "同名多值响应头未覆盖（当前 MCP 面不产生）。",
+    "score_categories 的 round() 银行家舍入未构造恰落 .5 的用例。",
+    "content-length 头由 body 派生，未单独构造 chunked/流式响应。"
+  ]
+}

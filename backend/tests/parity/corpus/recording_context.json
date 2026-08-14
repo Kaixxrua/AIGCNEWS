@@ -1,0 +1,6 @@
+{
+  "public_base_url": null,
+  "cors_allowed_origins": "http://localhost:5173,http://127.0.0.1:5173,https://aigcnews.cn,https://www.aigcnews.cn",
+  "app_version": "1.2.0",
+  "frozen_instant": "2026-08-10T12:00:00+08:00"
+}

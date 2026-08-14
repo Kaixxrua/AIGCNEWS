@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import unittest
 from unittest.mock import MagicMock
 
@@ -11,9 +10,7 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
     metric_date = "2026-07-14"
     previous_date = "2026-07-13"
 
-    def _compute(
-        self, corroborated: set[str] | None = None, **overrides: object
-    ) -> dict[str, object]:
+    def _compute(self, **overrides: object) -> dict[str, object]:
         row = {
             "repo_id": "repo-1",
             "metric_date": self.metric_date,
@@ -38,7 +35,6 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         repository.upsert_github_daily_metrics.return_value = 1
         result = metrics.compute_github_daily_metrics(
             metric_date=self.metric_date,
-            corroborated_repo_ids=corroborated,
             db=repository,
         )
         payload = repository.upsert_github_daily_metrics.call_args.args[0][0]
@@ -234,131 +230,6 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         )
         self.assertEqual(complete["community_metrics_complete"], 1)
         self.assertEqual(incomplete["community_metrics_complete"], 0)
-
-
-class GitHubGrowthSuspicionTests(unittest.TestCase):
-    """反作弊一二层打标：行为信号加和、佐证清零、留痕。"""
-
-    metric_date = "2026-07-14"
-    previous_date = "2026-07-13"
-
-    def _compute(
-        self, corroborated: set[str] | None = None, **overrides: object
-    ) -> dict[str, object]:
-        row = {
-            "repo_id": "repo-1",
-            "metric_date": self.metric_date,
-            "stars": 1200,
-            "forks": 120,
-            "watchers": 20,
-            "open_issues": 4,
-            "repo_pushed_at": self.metric_date,
-            "previous_snapshot_date": self.previous_date,
-            "previous_stars": 1000,
-            "previous_forks": 100,
-            "previous_watchers": 10,
-            "community_metrics_complete": 1,
-            "previous_community_metrics_complete": 1,
-            "trending_daily_star_growth": None,
-            "baseline_7d": 10.0,
-            "baseline_sample_count": 3,
-        }
-        row.update(overrides)
-        repository = MagicMock()
-        repository.get_github_daily_metric_inputs.return_value = [row]
-        repository.upsert_github_daily_metrics.return_value = 1
-        result = metrics.compute_github_daily_metrics(
-            metric_date=self.metric_date,
-            corroborated_repo_ids=corroborated,
-            db=repository,
-        )
-        payload = repository.upsert_github_daily_metrics.call_args.args[0][0]
-        return {"result": result, "payload": payload}
-
-    def test_organic_growth_has_zero_suspicion(self) -> None:
-        # 日增 200、fork 跟随率 10%、基线 10：无任何信号
-        payload = self._compute()["payload"]
-        self.assertEqual(payload["growth_suspicion_score"], 0.0)
-        self.assertEqual(json.loads(payload["growth_suspicion_signals"]), [])
-        self.assertFalse(payload["growth_corroborated"])
-
-    def test_low_fork_follow_flags_when_pair_complete(self) -> None:
-        # fork 零增长 + 日增 200 → 0% < 1% 阈值
-        computed = self._compute(previous_forks=120)
-        payload = computed["payload"]
-        self.assertEqual(payload["growth_suspicion_score"], 0.4)
-        self.assertEqual(
-            json.loads(payload["growth_suspicion_signals"]), ["low_fork_follow"]
-        )
-        self.assertEqual(computed["result"]["suspicious"], 1)
-
-    def test_low_fork_follow_skipped_when_pair_incomplete(self) -> None:
-        # community pair 不完整时 fork 跟随率不可知，不得按 0 误伤
-        payload = self._compute(
-            previous_forks=120,
-            community_metrics_complete=0,
-        )["payload"]
-        self.assertEqual(payload["growth_suspicion_score"], 0.0)
-        self.assertEqual(json.loads(payload["growth_suspicion_signals"]), [])
-
-    def test_spike_from_zero_baseline(self) -> None:
-        payload = self._compute(baseline_7d=0.0)["payload"]
-        self.assertEqual(payload["growth_suspicion_score"], 0.3)
-        self.assertEqual(
-            json.loads(payload["growth_suspicion_signals"]),
-            ["spike_from_zero_baseline"],
-        )
-
-    def test_new_repo_surge(self) -> None:
-        payload = self._compute(repo_created_at="2026-06-20")["payload"]
-        self.assertEqual(payload["growth_suspicion_score"], 0.2)
-        self.assertEqual(
-            json.loads(payload["growth_suspicion_signals"]), ["new_repo_surge"]
-        )
-
-    def test_signals_compound(self) -> None:
-        payload = self._compute(
-            previous_forks=120,
-            baseline_7d=0.0,
-            repo_created_at="2026-06-20",
-        )["payload"]
-        self.assertAlmostEqual(payload["growth_suspicion_score"], 0.9, places=4)
-        self.assertEqual(
-            json.loads(payload["growth_suspicion_signals"]),
-            ["low_fork_follow", "spike_from_zero_baseline", "new_repo_surge"],
-        )
-
-    def test_small_growth_never_flagged(self) -> None:
-        # 日增 50 < 100 判定门槛，即使基线为 0
-        payload = self._compute(stars=1050, baseline_7d=0.0)["payload"]
-        self.assertEqual(payload["growth_suspicion_score"], 0.0)
-
-    def test_corroboration_clears_score_but_keeps_signals(self) -> None:
-        computed = self._compute(
-            corroborated={"repo-1"},
-            previous_forks=120,
-            baseline_7d=0.0,
-        )
-        payload = computed["payload"]
-        self.assertEqual(payload["growth_suspicion_score"], 0.0)
-        self.assertTrue(payload["growth_corroborated"])
-        self.assertEqual(
-            json.loads(payload["growth_suspicion_signals"]),
-            ["low_fork_follow", "spike_from_zero_baseline"],
-        )
-        self.assertEqual(computed["result"]["corroborated"], 1)
-
-    def test_unavailable_growth_has_no_suspicion(self) -> None:
-        payload = self._compute(
-            previous_snapshot_date=None,
-            trending_daily_star_growth=None,
-        )["payload"]
-        self.assertEqual(payload["growth_suspicion_score"], 0.0)
-        self.assertEqual(json.loads(payload["growth_suspicion_signals"]), [])
-
-    def test_corroboration_window_pads_one_day_each_side(self) -> None:
-        since, until = metrics.corroboration_window("2026-08-14")
-        self.assertEqual((since, until), ("2026-08-13", "2026-08-15"))
 
 
 class GitHubTrendingSnapshotTests(unittest.TestCase):

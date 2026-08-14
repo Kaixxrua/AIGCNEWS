@@ -311,10 +311,6 @@ def test_real_github_hot_board_reads_v5_metrics(catalog: Any) -> None:
     assert first["daily_growth_source"] == "snapshot_delta"
     assert first["hot_score"] == 91.5
     assert first["metric_date"] == today
-    # 反作弊打标列默认值透出（夹具未写入即 0/[]/FALSE）
-    assert first["growth_suspicion_score"] == 0.0
-    assert first["growth_suspicion_signals"] == "[]"
-    assert first["growth_corroborated"] is False
 
     # min_stars 门槛与 /projects 口径一致：1000 以上只剩 alpha
     assert [

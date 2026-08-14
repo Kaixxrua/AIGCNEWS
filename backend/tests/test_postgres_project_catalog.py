@@ -109,10 +109,6 @@ def test_list_github_hot_for_date_is_parameterized_ordered_and_bounded() -> None
     # hot_score(v5) 排序与 /projects 今日暴涨一致
     assert "ORDER BY gm.hot_score DESC NULLS LAST" in sql
     assert "gm.daily_star_growth DESC NULLS LAST" in sql
-    # 反作弊打标字段随榜透出（不参与排序与过滤）
-    assert "gm.growth_suspicion_score" in sql
-    assert "gm.growth_suspicion_signals" in sql
-    assert "gm.growth_corroborated" in sql
     # 注入串只进参数不进 SQL；limit 收敛到 500 上限
     assert "OR TRUE" not in sql
     assert params == ("2026-08-10' OR TRUE --", 500, 500)

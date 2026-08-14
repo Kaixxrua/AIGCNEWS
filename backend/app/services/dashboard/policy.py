@@ -174,10 +174,6 @@ def github_metric_to_doc(row: dict[str, Any], rank: int) -> dict[str, Any]:
         "daily_growth_source": row.get("daily_growth_source"),
         "previous_snapshot_date": row.get("previous_snapshot_date"),
         "hot_score": hot_score,
-        # 反作弊一二层打标（仅透出，不参与排序）
-        "growth_suspicion_score": float(row.get("growth_suspicion_score") or 0.0),
-        "growth_suspicion_signals": row.get("growth_suspicion_signals") or "[]",
-        "growth_corroborated": bool(row.get("growth_corroborated")),
     }
 
 
