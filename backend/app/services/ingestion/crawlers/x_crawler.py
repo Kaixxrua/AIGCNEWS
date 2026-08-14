@@ -243,7 +243,7 @@ class XCrawler(BaseCrawler):
             if text:
                 # translateTweet 译文带 HTML 实体（&amp; 等）：先解码还原显示文本
                 text = x_policy.decode_tweet_html_entities(text)
-                # X 译文会剥掉全部链接：按实体补回缺失链接（媒体尾巴除外）
+                # X 译文剥链接或内联保留 t.co（形态不一致）：统一还原展开式
                 tweet = tweets_by_id.get(str(item.get("tweet_id") or ""))
                 if tweet is not None:
                     raw_text = str(getattr(tweet, "text", "") or "")

@@ -179,26 +179,36 @@ def clean_tweet_display_text(text: str, media: list[dict], urls: Any) -> str:
 
 
 def restore_translation_urls(translation: str, source_text: str, media: list[dict], urls: Any) -> str:
-    """补回 X 译文丢失的链接：translateTweet 响应会剥掉全部 URL。
+    """把 X 译文里的链接还原为展开 URL。
 
-    媒体尾巴不补（媒体区已单独渲染）；t.co 或其展开式任一已在译文中
-    出现视为未丢失，不重复追加。缺失链接按实体序追加到译文末尾，
-    与 X 页面「翻译帖子」视图（译文 + 实体链接）对齐。
+    translateTweet 对 URL 的处理随端点/条目不一致：多数剥掉全部 URL，
+    偶发把 t.co 短链原样内联在译文中（实测 Zai_org 推文形态，与页面
+    「翻译帖子」视图不同）。两种形态都须还原——内联保留的 t.co 原位
+    替换为展开 URL；被剥掉的按实体序追加到译文末尾。媒体尾巴不补
+    （媒体区已单独渲染）；t.co 或其展开式任一已在译文中出现视为未
+    丢失，不重复追加。
     """
     cleaned = _strip_media_tco(source_text, media)
     links = _TCO_RE.findall(cleaned)
     if not links:
         return translation
     expanded = _expanded_urls(urls)
+    # t.co → 展开式映射按 token 而非译文内位置配对：译文语序可变，
+    # t.co token 不变；未配对项映射到自身（保持原样，不静默丢链接）
+    mapping = {
+        tco: expanded[index] if index < len(expanded) else tco
+        for index, tco in enumerate(links)
+    }
+    restored = _TCO_RE.sub(lambda m: mapping.get(m.group(0), m.group(0)), translation)
     missing: list[str] = []
-    for index, tco in enumerate(links):
-        target = expanded[index] if index < len(expanded) else tco
-        if tco in translation or target in translation:
+    for tco in links:
+        target = mapping[tco]
+        if tco in restored or target in restored:
             continue
         missing.append(target)
     if not missing:
-        return translation
-    return translation.rstrip() + "\n" + "\n".join(missing)
+        return restored
+    return restored.rstrip() + "\n" + "\n".join(missing)
 
 
 # 回复推开头的连续提及链（@A @B 正文）：translateTweet 剥的正是这段前缀
