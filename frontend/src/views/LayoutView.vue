@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
-import GlobalSearch from '@/components/GlobalSearch.vue'
+import BrandWordmark from '@/components/layout/BrandWordmark.vue'
 import GitHubLink from '@/components/GitHubLink.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -64,20 +64,20 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
     <!-- ═══ 居中悬浮画板（暖白纸质毛玻璃主面板） ═══ -->
     <div class="main-canvas">
-      <!-- 顶部全局搜索条 -->
+      <!-- 顶部品牌条：居中故障特效字标 + 右侧工具图标 -->
       <div
-        class="absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
+        class="absolute top-0 left-0 right-0 flex items-center justify-end px-6 py-2.5 shrink-0"
         style="z-index: 100; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised);"
       >
-        <div class="flex w-full max-w-lg items-center justify-center gap-2">
-          <GlobalSearch />
+        <BrandWordmark :text="brandName" class="topbar-brand" />
+        <div class="flex items-center gap-2">
           <GitHubLink />
           <ThemeToggle />
           <LocaleToggle />
         </div>
       </div>
 
-      <!-- 内容区（搜索条占位 44px；pb-7 保证末端内容不被悬浮 dock 遮挡，
+      <!-- 内容区（顶栏占位 44px；pb-7 保证末端内容不被悬浮 dock 遮挡，
            部分浏览器不会把滚动容器的 end padding 计入可滚动区域） -->
       <div class="absolute inset-0 pt-[44px] pb-7 flex flex-col">
         <router-view v-slot="{ Component }">
@@ -129,6 +129,13 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
   flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* ═══ 顶栏品牌字标：绝对居中，不挤占右侧工具图标 ═══ */
+.topbar-brand {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 /* ═══ 主工作画板：纸面、硬规则、轻微错版阴影 ═══ */
