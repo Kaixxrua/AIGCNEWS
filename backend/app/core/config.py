@@ -165,6 +165,11 @@ class Settings(BaseSettings):
     project_reranker_candidate_limit: int = 20
     project_reranker_min_candidates: int = 5
 
+    # 工具网站收藏的内容安全审核：命中成人/不适宜内容时拒绝收藏。
+    # fail_closed 开启时审核服务不可用也拒绝添加（稍后重试），关闭则放行并记审计日志。
+    tool_website_moderation_enabled: bool = True
+    tool_website_moderation_fail_closed: bool = True
+
     neo4j_uri: str = "bolt://localhost:7688"
     neo4j_username: str = "neo4j"
     neo4j_password: str = "12345678"

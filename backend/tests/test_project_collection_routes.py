@@ -19,6 +19,7 @@ from backend.app.services.personal_projects import (
     PersonalProjectNotFound,
     PersonalProjectsService,
     PersonalWebsiteOperationFailed,
+    WebsiteContentBlockedError,
 )
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
@@ -257,6 +258,44 @@ def test_personal_website_route_maps_operation_failure() -> None:
     assert response.json() == {
         "detail": "工具网站添加或富化失败：upstream unavailable"
     }
+
+
+def test_add_tool_website_route_maps_blocked_to_422() -> None:
+    service = _service()
+    service.add_tool_website.side_effect = WebsiteContentBlockedError(
+        "检测到成人或不适宜内容，无法收藏该网址"
+    )
+    client = _client(service)
+
+    response = client.post(
+        "/api/projects/me/tool-websites", json={"url": "https://adult.example"}
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "检测到成人或不适宜内容，无法收藏该网址"}
+
+
+def test_add_tool_website_manual_route_maps_blocked_to_422() -> None:
+    service = _service()
+    service.add_tool_website_manual.side_effect = WebsiteContentBlockedError(
+        "检测到成人或不适宜内容，无法收藏该网址"
+    )
+    client = _client(service)
+
+    response = client.post(
+        "/api/projects/me/tool-websites/manual",
+        json={
+            "url": "https://adult.example",
+            "title": "Adult",
+            "description_zh": "成人内容说明",
+            "category_slug": "other",
+            "subcategory_slug": "",
+            "tags": [],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "检测到成人或不适宜内容，无法收藏该网址"}
 
 
 def test_personal_routes_do_not_orchestrate_collection_or_enricher_directly() -> None:

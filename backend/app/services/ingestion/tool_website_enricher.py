@@ -37,6 +37,9 @@ from backend.app.services.ingestion.tool_website_fetcher import (
     build_manual_tool_website_metadata,
     fetch_tool_website_metadata,
 )
+from backend.app.services.ingestion.website_content_moderation import (
+    WebsiteContentModerator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +94,11 @@ class ToolWebsiteEnricher:
         db: ToolWebsiteEnrichmentRepository,
         *,
         runtime_settings: RuntimeProviderSettingReader | None = None,
+        moderator: WebsiteContentModerator | None = None,
     ) -> None:
         self.db = db
         self._llm = None
+        self._moderator = moderator
         self.model_meta = _model_metadata(
             runtime_settings or self.db.runtime_provider_settings
         )
@@ -103,6 +108,12 @@ class ToolWebsiteEnricher:
         if self._llm is None:
             self._llm = get_chat_model(temperature=0)
         return self._llm
+
+    @property
+    def moderator(self) -> WebsiteContentModerator:
+        if self._moderator is None:
+            self._moderator = WebsiteContentModerator()
+        return self._moderator
 
     def _upsert_metadata(
         self,
@@ -175,6 +186,30 @@ class ToolWebsiteEnricher:
             item = self.db.get_tool_website_item(int(website["id"]))
             return {"duplicate": True, "item": item}
 
+        if existing and existing.get("status") == "blocked":
+            logger.info("[ToolWebsiteEnricher] 重复收藏被拦截网址，直接拒绝 url=%s", url)
+            return {
+                "duplicate": False,
+                "blocked": True,
+                "reason": str(existing.get("error_msg") or ""),
+            }
+
+        if settings.tool_website_moderation_enabled:
+            verdict = self.moderator.moderate(
+                domain=metadata.domain,
+                title=metadata.title,
+                description=metadata.description,
+            )
+            if verdict.is_adult:
+                self.db.mark_tool_website_enrichment_blocked(
+                    int(website["id"]),
+                    source_fingerprint=metadata.source_fingerprint,
+                    prompt_version=f"{PROMPT_VERSION}-blocked",
+                    reason=verdict.reason or "检测到成人或不适宜内容",
+                    **self.model_meta,
+                )
+                return {"duplicate": False, "blocked": True, "reason": verdict.reason}
+
         enrichment_failed = False
         try:
             result = self._enrich_one(metadata)
@@ -212,7 +247,33 @@ class ToolWebsiteEnricher:
             description=description_zh,
         )
         existing = self.db.get_tool_website_by_hash(metadata.normalized_url_hash)
+        existing_enrichment = (
+            self.db.get_tool_website_enrichment(int(existing["id"])) if existing else None
+        )
+        blocked_before = bool(
+            existing_enrichment and existing_enrichment.get("status") == "blocked"
+        )
+
+        if settings.tool_website_moderation_enabled:
+            verdict = self.moderator.moderate(
+                domain=metadata.domain,
+                title=title,
+                description=description_zh,
+                description_en=description_en,
+                tags=tags,
+            )
+            if verdict.is_adult:
+                logger.info(
+                    "[ToolWebsiteEnricher] 手动收藏命中成人内容，拒绝 domain=%s",
+                    metadata.domain,
+                )
+                return {"duplicate": False, "blocked": True, "reason": verdict.reason}
+
         update_existing = not (existing and visibility == "private")
+        if blocked_before:
+            # 之前按抓取内容被拦截；本次用户自填内容已过审，
+            # 覆写 blocked 标记与用户文案，避免卡片残留当初抓到的标题。
+            update_existing = True
         website = self.db.upsert_tool_website(
             {
                 "canonical_url": metadata.canonical_url,

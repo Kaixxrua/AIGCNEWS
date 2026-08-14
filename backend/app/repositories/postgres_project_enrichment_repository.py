@@ -502,6 +502,7 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
                     FROM tool_websites w
                     LEFT JOIN tool_website_enrichments e ON e.website_id = w.id
                     WHERE w.id > %s
+                      AND (e.status IS NULL OR e.status != 'blocked')
                       AND (e.website_id IS NULL OR e.prompt_version NOT LIKE %s
                            OR COALESCE(e.description_en, '') = '')
                       {retry_filter}
@@ -642,4 +643,17 @@ class PostgresToolWebsiteEnrichmentRepository(_PostgresEnrichmentRepositoryBase)
             "source_fingerprint": source_fingerprint, "prompt_version": prompt_version,
             "model_provider": model_provider, "model_name": model_name,
             "status": "failed", "error_msg": error_msg[:2000],
+        })
+
+    def mark_tool_website_enrichment_blocked(
+        self, website_id: int, *, source_fingerprint: str, prompt_version: str,
+        reason: str, model_provider: str = "", model_name: str = "",
+    ) -> None:
+        self.upsert_tool_website_enrichment({
+            "website_id": website_id, "category_slug": "other", "category_name": "其他",
+            "subcategory_slug": "other_uncategorized", "subcategory_name": "未分类",
+            "description_zh": "", "tags_json": "[]", "confidence": 0.0,
+            "source_fingerprint": source_fingerprint, "prompt_version": prompt_version,
+            "model_provider": model_provider, "model_name": model_name,
+            "status": "blocked", "error_msg": reason[:2000],
         })

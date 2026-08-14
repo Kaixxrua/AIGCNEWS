@@ -3,11 +3,15 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
+from backend.app.services.ingestion.website_content_moderation import (
+    ModerationUnavailableError,
+)
 from backend.app.services.personal_projects import (
     InvalidPersonalProjectRequest,
     PersonalProjectNotFound,
     PersonalProjectsService,
     PersonalWebsiteOperationFailed,
+    WebsiteContentBlockedError,
 )
 
 
@@ -140,6 +144,81 @@ class PersonalProjectsServiceTests(unittest.IsolatedAsyncioTestCase):
             result["message"],
             "工具网站已添加到我的收藏，AI 分类服务暂时不可用，可稍后编辑分类。",
         )
+
+    async def test_auto_website_blocked_raises_and_skips_link(self) -> None:
+        collection = self.collection
+        self.enricher.add_and_enrich.return_value = {
+            "duplicate": False,
+            "blocked": True,
+            "reason": "成人视频平台",
+        }
+
+        with self.assertRaises(WebsiteContentBlockedError) as blocked:
+            await self.service.add_tool_website(user_id=7, url="https://adult.example")
+        self.assertIn("无法收藏该网址", str(blocked.exception))
+
+        collection.link_user_tool_website.assert_not_called()
+        collection.get_tool_website_item_for_user.assert_not_called()
+
+    async def test_auto_website_moderation_unavailable_maps_to_operation_failure(
+        self,
+    ) -> None:
+        collection = self.collection
+        self.enricher.add_and_enrich.side_effect = ModerationUnavailableError(
+            "内容审核服务暂时不可用，请稍后重试"
+        )
+
+        with self.assertRaises(PersonalWebsiteOperationFailed) as failed:
+            await self.service.add_tool_website(user_id=7, url="https://example.com")
+        self.assertIn("审核服务暂时不可用", str(failed.exception))
+
+        collection.link_user_tool_website.assert_not_called()
+
+    async def test_manual_website_blocked_raises_and_writes_nothing(self) -> None:
+        collection = self.collection
+        self.enricher.add_manual.return_value = {
+            "duplicate": False,
+            "blocked": True,
+            "reason": "成人交友平台",
+        }
+
+        with self.assertRaises(WebsiteContentBlockedError) as blocked:
+            await self.service.add_tool_website_manual(
+                user_id=7,
+                url="https://adult.example",
+                title="Adult",
+                description_zh="成人内容说明",
+                category_slug="other",
+                subcategory_slug="",
+                tags=[],
+            )
+        self.assertIn("无法收藏该网址", str(blocked.exception))
+
+        collection.link_user_tool_website.assert_not_called()
+        collection.upsert_user_tool_website_override.assert_not_called()
+
+    async def test_manual_website_moderation_unavailable_maps_to_operation_failure(
+        self,
+    ) -> None:
+        collection = self.collection
+        self.enricher.add_manual.side_effect = ModerationUnavailableError(
+            "内容审核服务暂时不可用，请稍后重试"
+        )
+
+        with self.assertRaises(PersonalWebsiteOperationFailed) as failed:
+            await self.service.add_tool_website_manual(
+                user_id=7,
+                url="https://example.com",
+                title="Example",
+                description_zh="示例说明",
+                category_slug="other",
+                subcategory_slug="",
+                tags=[],
+            )
+        self.assertIn("审核服务暂时不可用", str(failed.exception))
+
+        collection.link_user_tool_website.assert_not_called()
+        collection.upsert_user_tool_website_override.assert_not_called()
 
     async def test_manual_website_sequences_link_before_owner_override(self) -> None:
         collection = self.collection

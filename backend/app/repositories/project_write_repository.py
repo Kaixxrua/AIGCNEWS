@@ -167,6 +167,17 @@ class ToolWebsiteEnrichmentRepository(Protocol):
         model_name: str = "",
     ) -> None: ...
 
+    def mark_tool_website_enrichment_blocked(
+        self,
+        website_id: int,
+        *,
+        source_fingerprint: str,
+        prompt_version: str,
+        reason: str,
+        model_provider: str = "",
+        model_name: str = "",
+    ) -> None: ...
+
 
 class UserProjectCollectionRepository(Protocol):
     def add_project_favorite(

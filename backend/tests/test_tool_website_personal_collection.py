@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
+from backend.app.core.config import settings
 from backend.app.domain.project_taxonomy import (
     PROMPT_VERSION,
     EnrichmentResult,
@@ -10,6 +11,10 @@ from backend.app.domain.project_taxonomy import (
 )
 from backend.app.services.ingestion.tool_website_enricher import ToolWebsiteEnricher
 from backend.app.services.ingestion.tool_website_fetcher import ToolWebsiteMetadata
+from backend.app.services.ingestion.website_content_moderation import (
+    ModerationUnavailableError,
+    ModerationVerdict,
+)
 
 
 class ToolWebsiteEnricherTests(unittest.TestCase):
@@ -45,7 +50,12 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
             "backend.app.services.ingestion.tool_website_enricher._model_metadata",
             return_value={},
         ):
-            self.enricher = ToolWebsiteEnricher(self.db)
+            self.moderator = MagicMock()
+            self.moderator.moderate.return_value = ModerationVerdict(is_adult=False)
+            self.enricher = ToolWebsiteEnricher(self.db, moderator=self.moderator)
+        moderation_enabled = patch.object(settings, "tool_website_moderation_enabled", True)
+        moderation_enabled.start()
+        self.addCleanup(moderation_enabled.stop)
 
     def _add(self):
         with patch(
@@ -111,6 +121,114 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
         self.db.upsert_tool_website_enrichment.assert_not_called()
         self.assertTrue(result["enrichment_failed"])
         self.assertEqual(result["item"]["website_id"], 9)
+
+    def test_add_and_enrich_blocks_adult_website_before_enrichment(self) -> None:
+        self.db.get_tool_website_enrichment.return_value = None
+        self.moderator.moderate.return_value = ModerationVerdict(
+            is_adult=True, reason="成人视频平台"
+        )
+        self.enricher._enrich_one = MagicMock()
+
+        result = self._add()
+
+        self.assertTrue(result["blocked"])
+        self.assertEqual(result["reason"], "成人视频平台")
+        self.enricher._enrich_one.assert_not_called()
+        self.db.mark_tool_website_enrichment_blocked.assert_called_once()
+        blocked_kwargs = self.db.mark_tool_website_enrichment_blocked.call_args.kwargs
+        self.assertEqual(blocked_kwargs["prompt_version"], f"{PROMPT_VERSION}-blocked")
+        self.assertEqual(blocked_kwargs["reason"], "成人视频平台")
+        self.assertEqual(
+            blocked_kwargs["source_fingerprint"], self.metadata.source_fingerprint
+        )
+        self.db.get_tool_website_item.assert_not_called()
+        self.db.upsert_tool_website_enrichment.assert_not_called()
+
+    def test_add_and_enrich_short_circuits_previously_blocked_website(self) -> None:
+        self.db.get_tool_website_enrichment.return_value = {
+            "status": "blocked",
+            "error_msg": "检测到成人或不适宜内容",
+            "source_fingerprint": self.metadata.source_fingerprint,
+            "prompt_version": f"{PROMPT_VERSION}-blocked",
+        }
+        self.enricher._enrich_one = MagicMock()
+
+        result = self._add()
+
+        self.assertTrue(result["blocked"])
+        self.assertEqual(result["reason"], "检测到成人或不适宜内容")
+        self.moderator.moderate.assert_not_called()
+        self.enricher._enrich_one.assert_not_called()
+        self.db.mark_tool_website_enrichment_blocked.assert_not_called()
+
+    def test_add_and_enrich_propagates_moderation_unavailable_without_blocked_row(
+        self,
+    ) -> None:
+        self.db.get_tool_website_enrichment.return_value = None
+        self.moderator.moderate.side_effect = ModerationUnavailableError(
+            "内容审核服务暂时不可用，请稍后重试"
+        )
+        self.enricher._enrich_one = MagicMock()
+
+        with self.assertRaises(ModerationUnavailableError):
+            self._add()
+
+        self.enricher._enrich_one.assert_not_called()
+        self.db.mark_tool_website_enrichment_blocked.assert_not_called()
+        self.db.upsert_tool_website_enrichment.assert_not_called()
+
+    def _add_manual(self, **overrides):
+        kwargs = {
+            "url": "https://example.com/",
+            "title": "Example",
+            "description_zh": "示例说明",
+            "category_slug": "productivity_tools",
+            "subcategory_slug": "",
+            "tags": ["效率"],
+            "added_by_user_id": 7,
+            "visibility": "private",
+        }
+        kwargs.update(overrides)
+        return self.enricher.add_manual(**kwargs)
+
+    def test_add_manual_blocks_adult_content_without_writes(self) -> None:
+        self.moderator.moderate.return_value = ModerationVerdict(
+            is_adult=True, reason="成人交友平台"
+        )
+
+        result = self._add_manual()
+
+        self.assertTrue(result["blocked"])
+        self.assertEqual(result["reason"], "成人交友平台")
+        self.db.upsert_tool_website.assert_not_called()
+        self.db.upsert_tool_website_enrichment.assert_not_called()
+
+    def test_add_manual_propagates_moderation_unavailable_without_writes(self) -> None:
+        self.moderator.moderate.side_effect = ModerationUnavailableError(
+            "内容审核服务暂时不可用，请稍后重试"
+        )
+
+        with self.assertRaises(ModerationUnavailableError):
+            self._add_manual()
+
+        self.db.upsert_tool_website.assert_not_called()
+        self.db.upsert_tool_website_enrichment.assert_not_called()
+
+    def test_add_manual_clean_content_overwrites_previous_block(self) -> None:
+        self.db.get_tool_website_enrichment.return_value = {
+            "status": "blocked",
+            "error_msg": "检测到成人或不适宜内容",
+        }
+
+        result = self._add_manual()
+
+        self.assertFalse(result.get("blocked", False))
+        self.assertTrue(
+            self.db.upsert_tool_website.call_args.kwargs["update_existing"]
+        )
+        payload = self.db.upsert_tool_website_enrichment.call_args.args[0]
+        self.assertTrue(str(payload["prompt_version"]).endswith("-manual"))
+        self.assertEqual(payload["status"], "succeeded")
 
     def test_enrich_one_accepts_plain_string_content(self) -> None:
         self.enricher._llm = MagicMock()

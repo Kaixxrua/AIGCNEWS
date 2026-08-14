@@ -17,6 +17,9 @@ from backend.app.repositories.project_write_repository import (
     UserProjectCollectionRepository,
 )
 from backend.app.services.ingestion.tool_website_fetcher import ToolWebsiteFetchError
+from backend.app.services.ingestion.website_content_moderation import (
+    ModerationUnavailableError,
+)
 
 
 class PersonalProjectsError(Exception):
@@ -33,6 +36,10 @@ class PersonalProjectNotFound(PersonalProjectsError):
 
 class PersonalWebsiteOperationFailed(PersonalProjectsError):
     """Website ingestion failed after entering the orchestration boundary."""
+
+
+class WebsiteContentBlockedError(PersonalProjectsError):
+    """The website was rejected by adult-content moderation."""
 
 
 class WebsiteEnricher(Protocol):
@@ -248,6 +255,10 @@ class PersonalProjectsService:
                 added_by_user_id=owner_id,
                 visibility="private",
             )
+            if result.get("blocked"):
+                raise WebsiteContentBlockedError(
+                    "检测到成人或不适宜内容，无法收藏该网址"
+                )
             item = await self._link_enriched_website(
                 owner_id=owner_id,
                 result=result,
@@ -255,6 +266,10 @@ class PersonalProjectsService:
             )
         except ToolWebsiteFetchError as exc:
             raise InvalidPersonalProjectRequest(str(exc)) from exc
+        except ModerationUnavailableError as exc:
+            raise PersonalWebsiteOperationFailed(str(exc)) from exc
+        except PersonalProjectsError:
+            raise
         except (ValueError, LookupError) as exc:
             raise InvalidPersonalProjectRequest(str(exc)) from exc
         except Exception as exc:
@@ -312,6 +327,10 @@ class PersonalProjectsService:
                 added_by_user_id=owner_id,
                 visibility="private",
             )
+            if result.get("blocked"):
+                raise WebsiteContentBlockedError(
+                    "检测到成人或不适宜内容，无法收藏该网址"
+                )
             item = result.get("item") or {}
             website_id = item.get("website_id")
             if website_id:
@@ -340,6 +359,8 @@ class PersonalProjectsService:
                     item.update(link_state)
         except ToolWebsiteFetchError as exc:
             raise InvalidPersonalProjectRequest(str(exc)) from exc
+        except ModerationUnavailableError as exc:
+            raise PersonalWebsiteOperationFailed(str(exc)) from exc
         except PersonalProjectsError:
             raise
         except (ValueError, LookupError) as exc:

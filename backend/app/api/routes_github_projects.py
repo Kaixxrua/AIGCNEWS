@@ -32,6 +32,7 @@ from backend.app.services.personal_projects import (
     PersonalProjectNotFound,
     PersonalProjectsService,
     PersonalWebsiteOperationFailed,
+    WebsiteContentBlockedError,
 )
 from backend.app.services.project_catalog.query_service import (
     PUBLIC_PROJECT_MIN_STARS,
@@ -362,6 +363,8 @@ async def add_my_tool_website(
             user_id=user_id,
             url=request.url,
         )
+    except WebsiteContentBlockedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except InvalidPersonalProjectRequest as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PersonalWebsiteOperationFailed as exc:
@@ -390,6 +393,8 @@ async def add_my_tool_website_manual(
             subcategory_slug=request.subcategory_slug,
             tags=request.tags,
         )
+    except WebsiteContentBlockedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except InvalidPersonalProjectRequest as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PersonalWebsiteOperationFailed as exc:

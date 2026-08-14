@@ -232,3 +232,36 @@ def test_website_failure_uses_same_enrichment_upsert_defaults() -> None:
     assert params["tags_json"] == "[]"
     assert params["tags_zh_json"] == "[]"
     assert params["tags_en_json"] is None
+
+
+def test_website_blocked_uses_same_enrichment_upsert_defaults() -> None:
+    cursor = MagicMock()
+    repository = PostgresToolWebsiteEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+
+    repository.mark_tool_website_enrichment_blocked(
+        9,
+        source_fingerprint="f" * 64,
+        prompt_version="v5-blocked",
+        reason="x" * 2100,
+    )
+
+    params = cursor.execute.call_args.args[1]
+    assert params["website_id"] == 9
+    assert params["status"] == "blocked"
+    assert params["category_slug"] == "other"
+    assert params["tags_json"] == "[]"
+    assert len(params["error_msg"]) == 2000
+
+
+def test_bilingual_enrichment_backfill_query_excludes_blocked_rows() -> None:
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    repository = PostgresToolWebsiteEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+
+    repository.list_tool_websites_needing_bilingual_enrichment(
+        after_website_id=4, limit=20, prompt_version="v5"
+    )
+
+    sql, params = cursor.execute.call_args.args
+    assert "e.status != 'blocked'" in sql
+    assert params == (4, "v5%", 20)
