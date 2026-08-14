@@ -1,9 +1,32 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { renderMarkdown, renderPlainMarkdown } from './useLatexRenderer'
+import { normalizeEmphasisFlanking, renderMarkdown, renderPlainMarkdown } from './useLatexRenderer'
 
 beforeAll(() => {
   document.write('<!doctype html><html><body></body></html>')
   document.close()
+})
+
+describe('normalizeEmphasisFlanking', () => {
+  it('inserts a space after a closing ** followed by a letter/CJK run', () => {
+    expect(normalizeEmphasisFlanking('**要点：**正文')).toBe('**要点：** 正文')
+    expect(normalizeEmphasisFlanking('**要点：**OpenART')).toBe('**要点：** OpenART')
+  })
+
+  it('is idempotent', () => {
+    const once = normalizeEmphasisFlanking('**要点：**正文')
+
+    expect(normalizeEmphasisFlanking(once)).toBe(once)
+  })
+
+  it('leaves already-valid pairs and punctuation-followed closings untouched', () => {
+    expect(normalizeEmphasisFlanking('**标题**（注）')).toBe('**标题**（注）')
+    expect(normalizeEmphasisFlanking('宣布 **Gemini 3.7 Flash**，并称')).toBe('宣布 **Gemini 3.7 Flash**，并称')
+    expect(normalizeEmphasisFlanking('**a**b')).toBe('**a**b')
+  })
+
+  it('keeps ** inside code segments untouched', () => {
+    expect(normalizeEmphasisFlanking('`a**b**c` 和 **要点：**正文')).toBe('`a**b**c` 和 **要点：** 正文')
+  })
 })
 
 describe('renderMarkdown', () => {
@@ -64,6 +87,37 @@ describe('renderMarkdown', () => {
     expect(html).toContain('data-latex="\\frac{1}{2}"')
     expect(html).not.toContain('onerror')
   })
+
+  it.each([
+    '**Agent 安全与研究自动化成为学术热点。**OpenART 试图扩大红队测试规模。',
+    '**核心要点：**这类系统需要同时建模环境状态与智能体动作。',
+    '**AI 产品竞争集中到速度。**Google 推出新模型。',
+  ])('renders bold lead-ins closed before a letter/CJK run: %s', src => {
+    const html = renderMarkdown(src)
+
+    expect(html).toContain('<strong>')
+    expect(html).not.toContain('**')
+  })
+
+  it('does not insert a space when the closing ** is followed by punctuation', () => {
+    const html = renderMarkdown('宣布 **Gemini 3.7 Flash**，称其速度翻倍。')
+
+    expect(html).toContain('<strong>Gemini 3.7 Flash</strong>，')
+  })
+
+  it('keeps ** inside inline code and fenced code blocks literal', () => {
+    const html = renderMarkdown('`a**b**c`\n\n```\nx**y**z\n```')
+
+    expect(html).toContain('<code>a**b**c</code>')
+    expect(html).toContain('x**y**z')
+  })
+
+  it('does not pair ** across paragraph boundaries', () => {
+    const html = renderMarkdown('**未闭合的 opener\n\n**要点：**紧接正文')
+
+    expect(html).toContain('**未闭合的 opener')
+    expect(html).toContain('<strong>要点：</strong> 紧接正文')
+  })
 })
 
 describe('renderPlainMarkdown', () => {
@@ -98,5 +152,12 @@ describe('renderPlainMarkdown', () => {
 
   it('renders empty input to an empty string', () => {
     expect(renderPlainMarkdown('')).toBe('')
+  })
+
+  it('applies the same CJK bold-closing fix as renderMarkdown', () => {
+    const html = renderPlainMarkdown('**注意：**请先看文档')
+
+    expect(html).toContain('<strong>注意：</strong> 请先看文档')
+    expect(html).not.toContain('**')
   })
 })

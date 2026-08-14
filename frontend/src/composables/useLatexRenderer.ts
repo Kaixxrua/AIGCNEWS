@@ -28,6 +28,59 @@ const sanitizeRenderedMarkdown = (html: string): string =>
 
 // ── 内部辅助 ──────────────────────────────────────────────────────────────
 
+// ── CJK 粗体闭合修正 ────────────────────────────────────────────────────────
+// 模型爱写 `**要点：**紧接正文`：闭合 ** 前是标点（。：）、后紧跟字母/汉字时，
+// 按 CommonMark 分隔符侧翼规则不构成 right-flanking（前为标点则后须为空白或
+// 标点），markdown-it 找不到闭合配对，粗体失效并残留字面 **
+// （2026-08-14 综合简报实测 82 处）。此处按同一套侧翼规则做分隔符配对扫描，
+// 唯一配对障碍是"闭合符后紧跟非空白非标点字符"时，在闭合 ** 后补一个空格
+// 使其合法。围栏代码块与行内代码内的 ** 原样保留；单星号 * 与 __ 在简报
+// 语料中未出现，暂不处理。
+const _CODE_SEGMENT_RE = /(```[\s\S]*?(?:```|$)|`[^`\n]*`)/g
+const _WS_RE = /\p{White_Space}/u
+const _PUNCT_RE = /\p{P}/u
+
+export function normalizeEmphasisFlanking(text: string): string {
+  if (!text.includes('**')) return text
+  const segments = text.split(_CODE_SEGMENT_RE)
+  for (let i = 0; i < segments.length; i += 2) {
+    segments[i] = fixEmphasisSegment(segments[i] ?? '')
+  }
+  return segments.join('')
+}
+
+function fixEmphasisSegment(seg: string): string {
+  let result = ''
+  let cursor = 0
+  let opener = -1 // 最近一个未配对 opener 的位置（seg 坐标；模型输出不嵌套粗体，单槽即可）
+  let i = 0
+  while (i < seg.length) {
+    const idx = seg.indexOf('**', i)
+    if (idx === -1) break
+    if (opener >= 0 && seg.slice(i, idx).includes('\n\n')) opener = -1 // 跨段落不配对
+    const prev = idx > 0 ? seg[idx - 1] : ''
+    const next = seg[idx + 2] ?? ''
+    const prevPunct = !!prev && _PUNCT_RE.test(prev)
+    const nextWs = !next || _WS_RE.test(next)
+    const nextPunct = !!next && _PUNCT_RE.test(next)
+    const leftFlanking = !nextWs && (!nextPunct || !prev || _WS_RE.test(prev) || prevPunct)
+    const rightFlanking = !!prev && !_WS_RE.test(prev) && (!prevPunct || nextWs || nextPunct)
+
+    if (opener >= 0 && rightFlanking) {
+      opener = -1 // 正常闭合，无需处理
+    } else if (opener >= 0 && prevPunct && next && !nextWs && !nextPunct) {
+      // 断裂闭合：前是标点、后紧跟字母/数字/汉字 → 闭合 ** 后补空格
+      result += seg.slice(cursor, idx + 2) + ' '
+      cursor = idx + 2
+      opener = -1
+    } else if (leftFlanking) {
+      opener = idx
+    }
+    i = idx + 2
+  }
+  return result + seg.slice(cursor)
+}
+
 /** HTML 属性转义 */
 const escapeAttr = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -92,10 +145,11 @@ export function renderLatex(text: string): string {
 }
 
 /**
- * renderMarkdown: 先走 LaTeX 渲染，再走 markdown-it，最后后处理 <code> 中残留 LaTeX。
+ * renderMarkdown: 先修正 CJK 粗体闭合，再走 LaTeX 渲染，再走 markdown-it，
+ * 最后后处理 <code> 中残留 LaTeX。
  */
 export function renderMarkdown(text: string): string {
-  const withKatex = renderLatex(text || '')
+  const withKatex = renderLatex(normalizeEmphasisFlanking(text || ''))
   let html = sanitizeRenderedMarkdown(markdown.render(withKatex))
 
   // 后处理：先处理 <pre><code>（块级），再处理行内 <code>
@@ -124,7 +178,7 @@ export function renderMarkdown(text: string): string {
  * markdown-it 实例与 DOMPurify 消毒管线，禁止绕开消毒直接绑定渲染结果。
  */
 export function renderPlainMarkdown(text: string): string {
-  return sanitizeRenderedMarkdown(markdown.render(text || ''))
+  return sanitizeRenderedMarkdown(markdown.render(normalizeEmphasisFlanking(text || '')))
 }
 
 /**
