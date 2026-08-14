@@ -30,6 +30,7 @@ PeriodChoice = Literal["daily", "weekly", "monthly"]
 ProjectScope = Literal["all", "today", "recommended"]
 ProjectSort = Literal["hot", "stars", "updated", "recent", "name"]
 ProjectDiscoverySort = Literal["relevance", "hot", "stars", "updated", "recent", "name"]
+ProjectResponseLang = Literal["zh", "en"]
 IntentText30 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=30)]
 IntentText40 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=40)]
 IntentText120 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=120)]
@@ -143,6 +144,15 @@ class SearchGitHubProjectsInput(McpInputModel):
             "explicit stars, hot, updated, recent, or name sorts remain authoritative."
         ),
     )
+    lang: ProjectResponseLang = Field(
+        default="zh",
+        description=(
+            "Response language for curated text fields (description, category names, tags). "
+            "'zh' (default) returns the bilingual payload with Chinese-preferred generic fields; "
+            "'en' folds English text into the generic fields and omits the *_zh fields. "
+            "Set to 'en' when the user speaks English."
+        ),
+    )
     page: StrictInt = Field(default=1, ge=1)
     limit: StrictInt = Field(default=10, ge=1, le=20)
 
@@ -186,6 +196,15 @@ class SearchGitHubAIProjectsInput(McpInputModel):
     intent: ClientProjectSearchIntentInput | None = Field(
         default=None,
         description="Optional host-generated relevance intent; explicit top-level filters remain authoritative.",
+    )
+    lang: ProjectResponseLang = Field(
+        default="zh",
+        description=(
+            "Response language for curated text fields (description, category names, tags). "
+            "'zh' (default) returns the bilingual payload with Chinese-preferred generic fields; "
+            "'en' folds English text into the generic fields and omits the *_zh fields. "
+            "Set to 'en' when the user speaks English."
+        ),
     )
     scope: ProjectScope = "all"
     sort: ProjectDiscoverySort | None = Field(
@@ -242,6 +261,15 @@ class SearchMyProjectFavoritesInput(McpInputModel):
         ),
     )
     tag: StrictStr = Field(default="", max_length=64)
+    lang: ProjectResponseLang = Field(
+        default="zh",
+        description=(
+            "Response language for curated text fields (description, category names, tags). "
+            "'zh' (default) returns the bilingual payload with Chinese-preferred generic fields; "
+            "'en' folds English text into the generic fields and omits the *_zh fields. "
+            "Set to 'en' when the user speaks English."
+        ),
+    )
     sort: ProjectSort = "recent"
     limit: StrictInt = Field(default=10, ge=1, le=20)
     marker: StrictStr = Field(default="", max_length=128)

@@ -286,6 +286,94 @@ class RepositoryLanguageContractTests(unittest.TestCase):
             )
 
 
+class ResponseLanguageContractTests(unittest.TestCase):
+    """Contract tests for the ``lang`` response-language argument.
+
+    ``language`` filters the repository programming language while ``lang``
+    selects the language of curated text fields in the response. The default
+    must stay ``zh`` so Chinese users keep the bilingual Chinese-preferred
+    payload; English hosts opt into ``en`` explicitly.
+    """
+
+    _PROJECT_LANG_MODELS: list[tuple[str, type]] = [
+        ("search_github_projects", SearchGitHubProjectsInput),
+        ("search_github_ai_projects", SearchGitHubAIProjectsInput),
+        ("search_my_project_favorites", SearchMyProjectFavoritesInput),
+    ]
+
+    def _base_payload(self, tool_name: str) -> dict:
+        return {"q": "agent"} if tool_name != "search_my_project_favorites" else {}
+
+    def test_schema_exposes_lang_with_zh_default(self) -> None:
+        for tool_name, _ in self._PROJECT_LANG_MODELS:
+            with self.subTest(tool=tool_name):
+                schema = input_schema(tool_name)
+                lang_schema = schema["properties"]["lang"]
+                self.assertEqual(set(lang_schema["enum"]), {"zh", "en"})
+                self.assertEqual(lang_schema["default"], "zh")
+                self.assertIn("english", lang_schema["description"].lower())
+
+    def test_lang_defaults_to_zh_and_accepts_en(self) -> None:
+        for tool_name, model in self._PROJECT_LANG_MODELS:
+            base = self._base_payload(tool_name)
+            with self.subTest(tool=tool_name):
+                self.assertEqual(model.model_validate(base).lang, "zh")
+                self.assertEqual(model.model_validate({**base, "lang": "en"}).lang, "en")
+
+    def test_lang_rejects_other_values(self) -> None:
+        for tool_name, model in self._PROJECT_LANG_MODELS:
+            base = self._base_payload(tool_name)
+            for value in ("fr", "zh-CN", "中文", ""):
+                with self.subTest(tool=tool_name, lang=value):
+                    with self.assertRaises(Exception):
+                        model.model_validate({**base, "lang": value})
+
+
+class LocalizeProjectItemTests(unittest.TestCase):
+    def _item(self) -> dict:
+        return project_discovery.public_project_item(
+            {
+                "id": "x",
+                "full_name": "owner/repo",
+                "description": "raw repo summary",
+                "description_zh": "面向智能体的 RAG 框架。",
+                "description_en": "A RAG framework for agents.",
+                "category_name": "RAG & Knowledge",
+                "category_name_zh": "RAG 与知识库",
+                "category_name_en": "RAG & Knowledge",
+                "subcategory_name": "RAG Framework",
+                "subcategory_name_zh": "RAG 框架",
+                "subcategory_name_en": "RAG Framework",
+                "tags": ["rag"],
+                "tags_zh": ["检索增强"],
+                "tags_en": ["RAG"],
+                "stars": 42,
+            }
+        )
+
+    def test_en_folds_english_fields_and_drops_zh_fields(self) -> None:
+        item = self._item()
+        localized = project_discovery.localize_project_item(dict(item), "en")
+        self.assertEqual(localized["description"], "A RAG framework for agents.")
+        self.assertEqual(localized["category_name"], "RAG & Knowledge")
+        self.assertEqual(localized["subcategory_name"], "RAG Framework")
+        self.assertEqual(localized["tags"], ["RAG"])
+        for key in ("description_zh", "category_name_zh", "subcategory_name_zh", "tags_zh"):
+            self.assertNotIn(key, localized)
+
+    def test_en_keeps_raw_description_when_en_missing(self) -> None:
+        item = self._item()
+        item["description_en"] = ""
+        item["category_name_en"] = ""
+        localized = project_discovery.localize_project_item(dict(item), "en")
+        self.assertEqual(localized["description"], "raw repo summary")
+        self.assertEqual(localized["category_name"], "RAG 与知识库")
+
+    def test_zh_returns_item_unchanged(self) -> None:
+        item = self._item()
+        self.assertIs(project_discovery.localize_project_item(item, "zh"), item)
+
+
 class QueryModeTests(unittest.TestCase):
     def test_search_normalization_never_treats_watchers_count_as_subscribers(self) -> None:
         normalized = source_github_mcp._normalize_repo(
@@ -546,6 +634,69 @@ class ProjectHandlerTests(unittest.TestCase):
             result = asyncio.run(inbound_tools._search_project_library({"scope": "today"}, mode="ai"))
         fallback.assert_not_called()
         self.assertFalse(result["fallback_used"])
+
+    def _bilingual_hit(self) -> dict:
+        return {
+            "items": [
+                {
+                    "id": "x",
+                    "full_name": "owner/local",
+                    "description": "raw summary",
+                    "description_zh": "中文策展描述。",
+                    "description_en": "Curated English summary.",
+                    "category_name_zh": "RAG 与知识库",
+                    "category_name_en": "RAG & Knowledge",
+                    "tags_zh": ["检索增强"],
+                    "tags_en": ["RAG"],
+                    "stars": 900,
+                }
+            ],
+            "total": 1,
+        }
+
+    def test_en_lang_localizes_hits(self) -> None:
+        with (
+            patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository(self._bilingual_hit())),
+            patch.object(inbound_tools, "search_github_projects_fallback") as fallback,
+        ):
+            result = asyncio.run(
+                inbound_tools._search_project_library({"q": "local", "lang": "en"}, mode="generic")
+            )
+        fallback.assert_not_called()
+        item = result["items"][0]
+        self.assertEqual(result["lang"], "en")
+        self.assertEqual(item["description"], "Curated English summary.")
+        self.assertEqual(item["category_name"], "RAG & Knowledge")
+        self.assertEqual(item["tags"], ["RAG"])
+        self.assertNotIn("description_zh", item)
+        self.assertNotIn("category_name_zh", item)
+        self.assertNotIn("tags_zh", item)
+
+    def test_default_lang_keeps_bilingual_zh_payload(self) -> None:
+        with (
+            patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository(self._bilingual_hit())),
+            patch.object(inbound_tools, "search_github_projects_fallback") as fallback,
+        ):
+            result = asyncio.run(
+                inbound_tools._search_project_library({"q": "local"}, mode="generic")
+            )
+        fallback.assert_not_called()
+        item = result["items"][0]
+        self.assertEqual(result["lang"], "zh")
+        self.assertEqual(item["category_name"], "RAG 与知识库")
+        self.assertEqual(item["description_zh"], "中文策展描述。")
+        self.assertEqual(item["tags_zh"], ["检索增强"])
+
+    def test_invalid_lang_falls_back_to_zh(self) -> None:
+        with (
+            patch.object(project_discovery, "get_project_catalog_repository", return_value=self._repository(self._bilingual_hit())),
+            patch.object(inbound_tools, "search_github_projects_fallback"),
+        ):
+            result = asyncio.run(
+                inbound_tools._search_project_library({"q": "local", "lang": "fr"}, mode="generic")
+            )
+        self.assertEqual(result["lang"], "zh")
+        self.assertIn("description_zh", result["items"][0])
 
     def test_project_projection_is_compact(self) -> None:
         projected = project_discovery.public_project_item(
@@ -990,6 +1141,51 @@ class McpProtocolTests(unittest.TestCase):
         self.assertEqual(repository.list_user_project_collection.call_args.kwargs["tag"], "agent")
         self.assertEqual(repository.list_user_project_collection.call_args.kwargs["page"], 2)
         self.assertIsNotNone(payload["marker"])
+
+    def test_private_favorites_en_lang_localizes_items(self) -> None:
+        async def authenticated_user():
+            return {"user_id": 42, "scopes": frozenset({"projects:favorites:read"})}
+
+        repository = MagicMock()
+        repository.list_user_project_collection.return_value = {
+            "items": [
+                {
+                    "id": "github:1",
+                    "full_name": "owner/private",
+                    "description_zh": "中文策展描述。",
+                    "description_en": "Curated English summary.",
+                    "category_name_zh": "RAG 与知识库",
+                    "category_name_en": "RAG & Knowledge",
+                    "stars": 900,
+                }
+            ],
+            "total": 1,
+        }
+        self.client.app.dependency_overrides[routes_mcp.OptionalMcpUser] = authenticated_user
+        try:
+            with patch.object(
+                self.application_repositories,
+                "project_collections",
+                repository,
+            ):
+                response = self.client.post(
+                    "/api/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 5,
+                        "method": "tools/call",
+                        "params": {"name": "search_my_project_favorites", "arguments": {"lang": "en"}},
+                    },
+                )
+        finally:
+            self.client.app.dependency_overrides.clear()
+        payload = response.json()["result"]["structuredContent"]
+        item = payload["items"][0]
+        self.assertEqual(payload["lang"], "en")
+        self.assertEqual(item["description"], "Curated English summary.")
+        self.assertEqual(item["category_name"], "RAG & Knowledge")
+        self.assertNotIn("description_zh", item)
+        self.assertNotIn("category_name_zh", item)
 
     def test_private_favorites_marker_rejects_changed_limit(self) -> None:
         async def authenticated_user():

@@ -49,7 +49,11 @@ from backend.app.services.project_catalog.query_service import (
     PUBLIC_PROJECT_MIN_STARS,
     ProjectCatalogQueryService,
 )
-from backend.app.services.project_discovery import public_project_item, search_projects
+from backend.app.services.project_discovery import (
+    localize_project_item,
+    public_project_item,
+    search_projects,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +272,7 @@ async def _search_project_library(
     category = "" if generic else args.get("category", "")
     subcategory = "" if generic else args.get("subcategory", "")
     language = args.get("language", "")
+    lang = args.get("lang") if args.get("lang") in {"zh", "en"} else "zh"
     scope = "all" if generic else args.get("scope", "all")
     sort = args.get("sort")
     page = args.get("page", 1)
@@ -289,10 +294,11 @@ async def _search_project_library(
     if not isinstance(result, dict):
         return result
     result["items"] = [
-        enrich_project_detail_url(dict(item), request)
+        enrich_project_detail_url(localize_project_item(dict(item), lang), request)
         for item in result.get("items") or []
         if isinstance(item, dict)
     ]
+    result["lang"] = lang
     result["attribution"] = mcp_attribution(request)
     return result
 
@@ -338,6 +344,7 @@ async def _tool_search_my_project_favorites(
     subcategory = _clean_string(args, "subcategory", max_len=64)
     language = _clean_string(args, "language", max_len=64)
     tag = _clean_string(args, "tag", max_len=64)
+    lang = _clean_choice(args, "lang", {"zh", "en"}, default="zh")
     sort = _clean_choice(args, "sort", _PROJECT_SORT_CHOICES, default="recent")
     limit = _clean_limit(args)
     marker = _clean_string(args, "marker", max_len=128)
@@ -375,7 +382,10 @@ async def _tool_search_my_project_favorites(
         min_stars=PUBLIC_PROJECT_MIN_STARS,
         enriched_only=True,
     )
-    items = [public_project_item(item) for item in result.get("items") or []]
+    items = [
+        localize_project_item(public_project_item(item), lang)
+        for item in result.get("items") or []
+    ]
     total = int(result.get("total") or 0)
     next_offset = offset + len(items)
     next_marker = None
@@ -391,6 +401,7 @@ async def _tool_search_my_project_favorites(
         "total": total,
         "q": q,
         "tag": tag,
+        "lang": lang,
         "sort": sort,
         "marker": next_marker,
     }

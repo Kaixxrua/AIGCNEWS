@@ -111,6 +111,38 @@ def public_project_item(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def localize_project_item(item: dict[str, Any], lang: str) -> dict[str, Any]:
+    """Fold curated English text into the generic slots for English responses.
+
+    The default (zh) payload stays bilingual and Chinese-preferred. With
+    ``lang="en"`` the *_en texts are promoted into the generic fields and the
+    *_zh fields are omitted, so English-speaking hosts neither quote Chinese
+    copy nor pay its token cost.
+    """
+    if lang != "en":
+        return item
+    projected = dict(item)
+    for generic_key, english_key in (
+        ("description", "description_en"),
+        ("category_name", "category_name_en"),
+        ("subcategory_name", "subcategory_name_en"),
+    ):
+        english = projected.get(english_key)
+        if isinstance(english, str) and english.strip():
+            projected[generic_key] = english
+    tags_en = projected.get("tags_en")
+    if isinstance(tags_en, list) and tags_en:
+        projected["tags"] = list(tags_en)
+    for zh_key in (
+        "description_zh",
+        "category_name_zh",
+        "subcategory_name_zh",
+        "tags_zh",
+    ):
+        projected.pop(zh_key, None)
+    return projected
+
+
 def _declared_callable(value: Any, name: str) -> Any | None:
     try:
         inspect.getattr_static(value, name)
