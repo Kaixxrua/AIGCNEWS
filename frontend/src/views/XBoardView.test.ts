@@ -274,3 +274,37 @@ describe('XBoardView 详情浮层焦点管理', () => {
     expect(document.activeElement).toBe(textEl.element)
   })
 })
+
+describe('XBoardView 浮层期间 dock 抑制', () => {
+  it('详情浮层打开期间 dockSuppressed 为 true，关闭后恢复', async () => {
+    const { dockSuppressed } = await import('@/composables/useDockSuppression')
+    controller().docs.value = makeTweets(1)
+    const wrapper = await mountView()
+    expect(dockSuppressed.value).toBe(false)
+
+    await wrapper.find('.tweet-text').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.detail-backdrop').exists()).toBe(true)
+    expect(dockSuppressed.value).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.find('.detail-backdrop').exists()).toBe(false)
+    expect(dockSuppressed.value).toBe(false)
+  })
+
+  it('视图带浮层卸载时自动归还抑制计数', async () => {
+    const { dockSuppressed } = await import('@/composables/useDockSuppression')
+    controller().docs.value = makeTweets(1)
+    const wrapper = await mountView()
+
+    await wrapper.find('.tweet-text').trigger('click')
+    await flushPromises()
+    expect(dockSuppressed.value).toBe(true)
+
+    wrapper.unmount()
+    expect(dockSuppressed.value).toBe(false)
+    // afterEach 的重复 unmount 不会把计数压成负数
+    expect(dockSuppressed.value).toBe(false)
+  })
+})

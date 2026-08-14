@@ -19,6 +19,7 @@ import {
 } from '@/features/navigation/navigationModel'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
+import { dockSuppressed } from '@/composables/useDockSuppression'
 
 const route = useRoute()
 const router = useRouter()
@@ -91,7 +92,9 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       </div>
     </div>
 
+    <!-- 全屏浮层（推文详情/图片放大）打开时隐藏 dock，避免遮挡卡片 -->
     <AppDock
+      v-show="!dockSuppressed"
       :items="visibleNavItems"
       :current-path="route.path"
       :is-admin="authStore.isAdmin"

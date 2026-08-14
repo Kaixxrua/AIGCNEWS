@@ -7,6 +7,7 @@ import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
 import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
+import { useDockSuppression } from '@/composables/useDockSuppression'
 import { showToast } from '@/composables/useToast'
 import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
@@ -121,6 +122,9 @@ const onLightboxKeydown = (event: KeyboardEvent) => {
     closeDetail()
   }
 }
+
+// 详情浮层/图片放大打开期间隐藏底部 dock 浮岛：全屏遮罩下 dock 会遮挡卡片
+useDockSuppression(() => detailTweet.value !== null || lightboxUrl.value !== null)
 
 // X 式点击播放：视频占位零流量（不经代理拉取元数据），点击后才挂载 <video>。
 // 键与 TweetMediaList 模板 :key 同源（`${tweet.url}-${index}`），重载推文时清空避免自动重播。
