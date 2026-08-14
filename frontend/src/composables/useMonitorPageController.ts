@@ -2,7 +2,7 @@ import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
-  createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
   type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
@@ -64,6 +64,11 @@ export const useMonitorPageController = ({
   const loadingSmtpConfig = ref(false)
   const savingSmtpConfig = ref(false)
   const testingSmtp = ref(false)
+  const emailPoolConfig = ref<Awaited<ReturnType<MonitorApi['fetchEmailPoolConfig']>> | null>(null)
+  const emailPoolForm = ref(createEmailPoolForm())
+  const loadingEmailPoolConfig = ref(false)
+  const savingEmailPoolConfig = ref(false)
+  const testingEmailPool = ref(false)
   const siteContactPageConfig = ref<Awaited<ReturnType<MonitorApi['fetchSiteContactPageConfig']>> | null>(null)
   const siteContactPageForm = ref(createSiteContactPageForm())
   const loadingSiteContactPage = ref(false)
@@ -188,6 +193,15 @@ export const useMonitorPageController = ({
     } catch (error) { console.error('Failed to fetch SMTP config', error) }
     finally { loadingSmtpConfig.value = false }
   }
+  const fetchEmailPoolConfig = async () => {
+    if (!isAdmin.value) return
+    loadingEmailPoolConfig.value = true
+    try {
+      emailPoolConfig.value = await api.fetchEmailPoolConfig()
+      emailPoolForm.value = createEmailPoolForm(emailPoolConfig.value)
+    } catch (error) { console.error('Failed to fetch email pool config', error) }
+    finally { loadingEmailPoolConfig.value = false }
+  }
   const fetchSiteContactPageConfig = async () => {
     if (!isAdmin.value) return
     loadingSiteContactPage.value = true
@@ -229,7 +243,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -300,6 +314,56 @@ export const useMonitorPageController = ({
       else errorMsg.value = result.message || i18n.global.t('monitor.smtpConfig.testFailed')
     } catch (error) { errorMsg.value = detail(error) }
     finally { testingSmtp.value = false }
+  }
+  const saveEmailPoolConfig = async () => {
+    if (savingEmailPoolConfig.value) return
+    clearMessages()
+    const entries = emailPoolForm.value.entries
+    const seenNames = new Set<string>()
+    for (const entry of entries) {
+      const name = entry.name.trim()
+      const host = entry.host.trim()
+      // 逐 entry 无害前端校验，与后端 _normalize_entry 同口径，提前拦截 400 往返
+      if (!name || !host) {
+        errorMsg.value = i18n.global.t('monitor.emailPoolConfig.invalidEntry')
+        return
+      }
+      if (seenNames.has(name)) {
+        errorMsg.value = i18n.global.t('monitor.emailPoolConfig.duplicateName', { name })
+        return
+      }
+      seenNames.add(name)
+      if (!Number.isInteger(entry.port) || entry.port < SMTP_PORT_MIN || entry.port > SMTP_PORT_MAX) {
+        errorMsg.value = i18n.global.t('monitor.emailPoolConfig.invalidPort', { name })
+        return
+      }
+      const fromEmail = entry.from_email.trim()
+      if (fromEmail && !SMTP_FROM_EMAIL_PATTERN.test(fromEmail)) {
+        errorMsg.value = i18n.global.t('monitor.emailPoolConfig.invalidFromEmail', { name })
+        return
+      }
+    }
+    // 空数组为文档化语义：删除 DB 覆盖行回退 env，不视为校验失败
+    savingEmailPoolConfig.value = true
+    try {
+      emailPoolConfig.value = await api.saveEmailPoolConfig(emailPoolForm.value)
+      // 用保存响应重建表单：行序与生效 priority 排序一致，且密码输入态归零
+      // （下一次保存按 name 保留已存密码）
+      emailPoolForm.value = createEmailPoolForm(emailPoolConfig.value)
+      successMsg.value = i18n.global.t('monitor.emailPoolConfig.saved')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { savingEmailPoolConfig.value = false }
+  }
+  const testEmailPoolConfig = async () => {
+    if (testingEmailPool.value) return
+    clearMessages(); testingEmailPool.value = true
+    try {
+      // 测试走最新生效池（含 failover 与配额计数）；表单未保存修改不生效
+      const result = await api.testEmailPoolConfig()
+      if (String(result.status || '').toLowerCase() === 'success') successMsg.value = result.message || i18n.global.t('monitor.emailPoolConfig.testSent')
+      else errorMsg.value = result.message || i18n.global.t('monitor.emailPoolConfig.testFailed')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { testingEmailPool.value = false }
   }
   // 与后端 schema_site.py 同规则的前端校验：提前拦截可避免 422/400 往返
   const SITE_CONTACT_HREF_PATTERN = /^(https?:\/\/|mailto:|tel:)/i
@@ -566,17 +630,19 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchErrorLogs(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchErrorLogs(), resumeGithubCrawlPolling()])
   })
 
   return {
     tasks, total, page, pageSize, errorLogs, errorLogsTotal, errorLogsPage, errorLogsPageSize, errorLogsTotalPages, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
-    loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+    loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp,
+    emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
     fetchErrorLogs, goErrorLogsPage,
-    fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchSmtpConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig,
+    fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchSmtpConfig, fetchEmailPoolConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig,
+    saveEmailPoolConfig, testEmailPoolConfig,
     fetchSiteContactPageConfig, saveSiteContactPageConfig,
     editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,

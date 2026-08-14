@@ -1,12 +1,13 @@
 import { api } from '@/services/http/apiClient'
 import type {
   ErrorLogPage,
+  EmailPoolConfig, EmailPoolForm, EmailPoolTestResult,
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
   SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
+import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
@@ -21,6 +22,9 @@ export interface MonitorApi {
   fetchSmtpConfig(): Promise<SmtpConfig>
   saveSmtpConfig(form: SmtpForm): Promise<SmtpConfig>
   testSmtpConfig(): Promise<SmtpTestResult>
+  fetchEmailPoolConfig(): Promise<EmailPoolConfig>
+  saveEmailPoolConfig(form: EmailPoolForm): Promise<EmailPoolConfig>
+  testEmailPoolConfig(): Promise<EmailPoolTestResult>
   fetchSiteContactPageConfig(): Promise<SiteContactPageConfig>
   saveSiteContactPageConfig(form: SiteContactPageForm): Promise<SiteContactPageConfig>
   uploadSiteImage(file: File): Promise<SiteImageUploadResult>
@@ -89,6 +93,11 @@ export const monitorApi: MonitorApi = {
   // 测试按最新生效配置真实投递一封邮件（SMTP 握手+投递可能数秒），收件人
   // 缺省为当前管理员登录邮箱；空 body 对象满足后端请求模型
   async testSmtpConfig() { return (await api.post('/ops/smtp/test', {}, { timeout: 45_000 })).data },
+  async fetchEmailPoolConfig() { return (await api.get('/ops/email-pool/config')).data },
+  async saveEmailPoolConfig(form) { return (await api.put('/ops/email-pool/config', buildEmailPoolPayload(form))).data },
+  // 池测试经真实 failover 链路投递：aiosmtplib 默认单步 60s 超时会按 entry 数
+  // 累加（死 host 场景），故放宽到 120s；收件人缺省为当前管理员登录邮箱
+  async testEmailPoolConfig() { return (await api.post('/ops/email-pool/test', {}, { timeout: 120_000 })).data },
   async fetchSiteContactPageConfig() { return (await api.get('/ops/site/contact-page')).data },
   async saveSiteContactPageConfig(form) { return (await api.put('/ops/site/contact-page', buildSiteContactPagePayload(form))).data },
   // 站点公开素材上传（二维码/正文插图）：multipart 直传，返回站内 /api/media/site/... URL

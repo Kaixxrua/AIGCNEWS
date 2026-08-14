@@ -187,6 +187,59 @@ export interface SmtpTestResult {
   latency_ms?: number | null
 }
 
+// ── 邮件池（多服务商 priority failover + 配额护栏）─────────────────────────────
+// 生效来源与单 SMTP 同语义；保存空 entries = 删除 DB 覆盖行、整体回退
+// EMAIL_POOL_JSON env。entry 以 name 为键：password 留空保留同名已存密码，
+// 改名视为新 entry（不继承密码）。
+export interface EmailPoolEntryConfig {
+  name: string
+  host: string
+  port: number
+  username: string
+  password_configured: boolean
+  password_masked: string | null
+  from_email: string
+  from_name: string
+  use_tls: boolean
+  daily_limit: number
+  monthly_limit: number
+  priority: number
+}
+
+export interface EmailPoolConfig {
+  entries: EmailPoolEntryConfig[]
+  source: SmtpConfigSource
+  updated_at: string | null
+}
+
+export interface EmailPoolEntryForm {
+  name: string
+  host: string
+  port: number
+  username: string
+  password: string
+  clear_password: boolean
+  from_email: string
+  from_name: string
+  use_tls: boolean
+  daily_limit: number
+  monthly_limit: number
+  priority: number
+}
+
+export interface EmailPoolForm {
+  entries: EmailPoolEntryForm[]
+}
+
+// 池测试投递结果：provider 为实际投递成功的服务商名（验证 failover 链路）
+export interface EmailPoolTestResult {
+  status: string
+  message: string
+  to_email?: string
+  provider?: string | null
+  latency_ms?: number | null
+}
+
 export interface McpToolSummary { name: string; description: string }
 
 export interface McpServerConfig {
@@ -400,6 +453,45 @@ export const buildSmtpPayload = (form: SmtpForm) => ({
   from_email: form.from_email,
   from_name: form.from_name,
   use_tls: form.use_tls,
+})
+
+export const createEmailPoolEntryForm = (
+  entry?: EmailPoolEntryConfig | null,
+): EmailPoolEntryForm => ({
+  name: entry?.name || '',
+  host: entry?.host || '',
+  port: entry?.port || 587,
+  username: entry?.username || '',
+  password: '',
+  clear_password: false,
+  from_email: entry?.from_email || '',
+  from_name: entry?.from_name || '',
+  use_tls: entry?.use_tls ?? true,
+  daily_limit: entry?.daily_limit || 0,
+  monthly_limit: entry?.monthly_limit || 0,
+  priority: entry?.priority ?? 100,
+})
+
+export const createEmailPoolForm = (config?: EmailPoolConfig | null): EmailPoolForm => ({
+  entries: (config?.entries ?? []).map((entry) => createEmailPoolEntryForm(entry)),
+})
+
+export const buildEmailPoolPayload = (form: EmailPoolForm) => ({
+  entries: form.entries.map((entry) => ({
+    name: entry.name.trim(),
+    host: entry.host.trim(),
+    port: entry.port,
+    username: entry.username.trim(),
+    // null has backend-defined retain-by-name semantics
+    password: entry.password || null,
+    clear_password: entry.clear_password,
+    from_email: entry.from_email.trim(),
+    from_name: entry.from_name.trim(),
+    use_tls: entry.use_tls,
+    daily_limit: entry.daily_limit,
+    monthly_limit: entry.monthly_limit,
+    priority: entry.priority,
+  })),
 })
 
 export const createSiteContactPageForm = (

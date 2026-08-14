@@ -17,6 +17,7 @@ import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
 import SchedulerConfigPanel from '@/components/monitor/SchedulerConfigPanel.vue'
 import SiteContactPageConfigPanel from '@/components/monitor/SiteContactPageConfigPanel.vue'
 import SmtpConfigPanel from '@/components/monitor/SmtpConfigPanel.vue'
+import EmailPoolConfigPanel from '@/components/monitor/EmailPoolConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
 import XWatchCard from '@/components/monitor/XWatchCard.vue'
 import WechatAccountPanel from '@/components/wechat/WechatAccountPanel.vue'
@@ -33,11 +34,12 @@ const authStore = useAuthStore()
 const enrichmentAlert = useEnrichmentAlertStore()
 const {
   tasks, total, page, errorLogs, errorLogsTotal, errorLogsPage, errorLogsTotalPages, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
-  loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+  loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp,
+  emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
-  dispose, fetchMcpServers, refreshData, goPage, goErrorLogsPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig, resetMcpForm, editMcpServer, saveMcpServer,
+  dispose, fetchMcpServers, refreshData, goPage, goErrorLogsPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig, saveEmailPoolConfig, testEmailPoolConfig, resetMcpForm, editMcpServer, saveMcpServer,
   saveSiteContactPageConfig,
   testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings, clearDashboardCache, syncDataNow,
   ingestByDate, clearAllData,
@@ -292,6 +294,16 @@ onUnmounted(dispose)
             :testing="testingSmtp"
             @save="saveSmtpConfig"
             @test="testSmtpConfig"
+          />
+          <EmailPoolConfigPanel
+            v-if="authStore.isAdmin"
+            :config="emailPoolConfig"
+            :form="emailPoolForm"
+            :loading="loadingEmailPoolConfig"
+            :saving="savingEmailPoolConfig"
+            :testing="testingEmailPool"
+            @save="saveEmailPoolConfig"
+            @test="testEmailPoolConfig"
           />
         </template>
         <template v-else-if="currentSection === 'mcp-server'">
