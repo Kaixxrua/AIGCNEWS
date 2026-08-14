@@ -194,14 +194,24 @@ const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdow
   word-break: break-all;
 }
 
+/* 外链联系方式渲染为 CTA 胶囊按钮（拉起 QQ/打开合作链接的动作入口），
+   配色对齐 Dock 激活态：acid 实色底 + acid-ink 文字 */
 .entry-value--link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: var(--acid);
   color: var(--acid-ink);
+  border: 1px solid var(--acid-strong);
   text-decoration: none;
-  border-bottom: 1px solid var(--acid-strong);
+  transition: background-color 150ms ease;
 }
 
 .entry-value--link:hover {
-  color: var(--ink);
+  background: var(--acid-bright);
+  color: var(--acid-ink);
 }
 
 .entry-qr {
