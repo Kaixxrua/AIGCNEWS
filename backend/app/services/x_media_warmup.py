@@ -148,9 +148,13 @@ async def warm_recent_x_media(
 _WARMUP_TASKS: set[asyncio.Task[None]] = set()
 
 
-async def _warm_and_backfill(documents: DocumentRecentReader) -> None:
-    # 各段独立兜底：detached task 的异常若无人 retrieve 会打
-    # 「Task exception was never retrieved」，预热是旁路不能让采集背锅
+async def run_x_media_warmup_cycle(documents: DocumentRecentReader) -> None:
+    """单轮预热周期：边缘缓存预热（封面回填后续并入同一入口，采集钩子与
+    周期兜底 job 共用）。
+
+    各段独立兜底：detached task 的异常若无人 retrieve 会打
+    「Task exception was never retrieved」，预热是旁路不能让采集背锅。
+    """
     try:
         await warm_recent_x_media(documents)
     except Exception as exc:  # noqa: BLE001
@@ -167,7 +171,7 @@ def spawn_x_media_warmup_task(
     """
     if not (settings.x_media_warmup_enabled and settings.x_source_enabled):
         return None
-    task = asyncio.create_task(_warm_and_backfill(documents))
+    task = asyncio.create_task(run_x_media_warmup_cycle(documents))
     _WARMUP_TASKS.add(task)
     task.add_done_callback(_WARMUP_TASKS.discard)
     return task

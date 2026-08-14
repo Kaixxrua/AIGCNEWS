@@ -40,6 +40,7 @@ from backend.app.core.scheduler_registry import (
     project_scheduler_status,
     project_semantic_warmup_job_descriptor,
     resolve_source_job_callback,
+    x_media_warmup_job_descriptor,
 )
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
@@ -88,7 +89,7 @@ _DEFAULT_ZERO_INGEST_WATCH_SOURCES = (
 
 # X 链路源任务集合：x_source_enabled=False 时不注册、也不允许经在线配置启用
 _X_SOURCE_JOB_SOURCES = frozenset(
-    {"x", "x_credentials_probe", "x_closing", "x_deleted_janitor"}
+    {"x", "x_credentials_probe", "x_closing", "x_deleted_janitor", "x_media_warmup"}
 )
 
 
@@ -683,6 +684,19 @@ async def _run_project_semantic_warmup_job(
         return False
 
 
+async def _run_x_media_warmup_job(repositories: ApplicationRepositories) -> bool:
+    """X 媒体边缘缓存周期兜底预热。服务本身是 async，直接 await（不经
+    to_thread）；不占用 x_operation_lock——只打本地边缘入口，不碰 X API。"""
+    try:
+        from backend.app.services.x_media_warmup import run_x_media_warmup_cycle
+
+        await run_x_media_warmup_cycle(repositories.documents)
+        return True
+    except Exception as exc:
+        logger.warning("[Scheduler] X 媒体边缘缓存预热失败: %s", exc)
+        return False
+
+
 async def _run_conversation_cleanup_job(
     conversation_repository: ConversationCleanupWriter,
 ) -> bool:
@@ -808,6 +822,7 @@ class ApplicationSchedulerRuntime:
         scheduler: AsyncIOScheduler | None = None,
         semantic_search_enabled: bool = False,
         semantic_search_warmup: Any | None = None,
+        x_media_warmup_enabled: bool = False,
         # 默认 True：直接构造运行时的既有调用方（多为测试）保持旧行为；
         # 策略收口在 create_scheduler_runtime（读 settings，默认关闭）。
         x_source_enabled: bool = True,
@@ -824,6 +839,7 @@ class ApplicationSchedulerRuntime:
         self.scheduler = scheduler or AsyncIOScheduler(timezone=timezone_name)
         self._semantic_search_enabled = semantic_search_enabled
         self._semantic_search_warmup = semantic_search_warmup
+        self._x_media_warmup_enabled = x_media_warmup_enabled
         self._x_source_enabled = x_source_enabled
         self._shutdown_grace_seconds = max(0.0, float(shutdown_grace_seconds))
         self._timezone_name = timezone_name
@@ -1038,6 +1054,14 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_x_media_warmup_job(self) -> None:
+        await self._run_tracked(
+            lambda: self._guarded(
+                "x_media_warmup",
+                lambda: _run_x_media_warmup_job(self.repositories),
+            )
+        )
+
     def _is_source_job_suppressed(self, descriptor: JobDescriptor) -> bool:
         """特性开关关闭的源任务不注册、不允许在线启用（X 链路透出前不占调度面）。"""
         return (
@@ -1087,6 +1111,8 @@ class ApplicationSchedulerRuntime:
             return project_semantic_warmup_job_descriptor(
                 timezone=self._timezone_name
             )
+        if job_id == "x_media_warmup" and self._x_media_warmup_enabled:
+            return x_media_warmup_job_descriptor(timezone=self._timezone_name)
         return None
 
     def _resolve_callback(self, descriptor: JobDescriptor) -> SchedulerCallback | None:
@@ -1100,6 +1126,10 @@ class ApplicationSchedulerRuntime:
             if not self._semantic_search_enabled:
                 return None
             return self._run_project_semantic_warmup_job
+        if descriptor.source == "x_media_warmup":
+            if not self._x_media_warmup_enabled:
+                return None
+            return self._run_x_media_warmup_job
         return resolve_source_job_callback(descriptor.source, self._job_callbacks())
 
     def apply_config_update(self, config: Any) -> bool:
@@ -1213,6 +1243,22 @@ class ApplicationSchedulerRuntime:
             else:
                 logger.info("[Scheduler] 跳过已停用的语义搜索预热任务")
 
+        if self._x_media_warmup_enabled:
+            x_media_base = x_media_warmup_job_descriptor(timezone=self._timezone_name)
+            if self._is_source_job_suppressed(x_media_base):
+                logger.info("[Scheduler] 跳过特性开关关闭的 X 媒体预热任务")
+            else:
+                x_media_descriptor = self._effective_descriptor(x_media_base)
+                if x_media_descriptor is not None:
+                    _register_job(
+                        self.scheduler,
+                        x_media_descriptor,
+                        self._run_x_media_warmup_job,
+                    )
+                    logger.info("[Scheduler] 注册 X 媒体边缘缓存预热任务（每 30 分钟）")
+                else:
+                    logger.info("[Scheduler] 跳过已停用的 X 媒体预热任务")
+
         conversation_cleanup = self._effective_descriptor(CONVERSATION_CLEANUP_JOB)
         if conversation_cleanup is not None:
             _register_job(
@@ -1319,6 +1365,9 @@ def create_scheduler_runtime(
             getattr(settings, "project_semantic_search_enabled", False)
         ),
         semantic_search_warmup=semantic_search_warmup,
+        x_media_warmup_enabled=bool(
+            getattr(settings, "x_media_warmup_enabled", False)
+        ),
         x_source_enabled=bool(getattr(settings, "x_source_enabled", False)),
         shutdown_grace_seconds=float(
             getattr(settings, "scheduler_shutdown_grace_seconds", 30.0)

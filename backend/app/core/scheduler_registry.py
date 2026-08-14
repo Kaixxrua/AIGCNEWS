@@ -33,6 +33,7 @@ JobSource = Literal[
     "subscription_dispatch",
     "project_semantic_warmup",
     "conversation_cleanup",
+    "x_media_warmup",
 ]
 
 
@@ -267,6 +268,19 @@ def project_semantic_warmup_job_descriptor(
         id="project_semantic_warmup",
         source="project_semantic_warmup",
         name="项目语义搜索链路预热",
+        schedule=IntervalSchedule(minutes=30),
+        timezone=timezone,
+    )
+
+
+def x_media_warmup_job_descriptor(*, timezone: str) -> IntervalJobDescriptor:
+    """X 媒体边缘缓存预热兜底：采集钩子只管「新数据入库」时刻，nginx 重启 /
+    缓存容量驱逐 / 后端重启后的冷缓存靠周期重扫兜底。幂等——边缘 HIT 仅
+    毫秒级 localhost 往返，重复预热成本可忽略。"""
+    return IntervalJobDescriptor(
+        id="x_media_warmup",
+        source="x_media_warmup",
+        name="X 媒体边缘缓存预热与封面回填",
         schedule=IntervalSchedule(minutes=30),
         timezone=timezone,
     )
