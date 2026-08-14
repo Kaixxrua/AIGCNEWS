@@ -39,11 +39,18 @@ class SchedulerRuntimeBoundaryTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        for attribute in (
-            "scheduler_runtime",
-            "project_search_runtime",
-            "monitoring_runtime",
-        ):
+        # 应用状态只允许由 lifespan 组合根赋值。组合根有两个：主进程 main.py
+        # 与独立 MCP 进程 mcp_main.py（同代码瘦入口，见 mcp_main.py 模块 docstring）。
+        # scheduler_runtime 仍钉死在 main.py——MCP 进程不得携带调度器。
+        composition_roots = app_directory / "main.py"
+        mcp_root = app_directory / "mcp_main.py"
+        allowed_assigners = {
+            "scheduler_runtime": {composition_roots},
+            "project_search_runtime": {composition_roots, mcp_root},
+            "monitoring_runtime": {composition_roots, mcp_root},
+        }
+
+        for attribute, allowed in allowed_assigners.items():
             assignments: list[Path] = []
             reads: list[Path] = []
             for path in app_directory.rglob("*.py"):
@@ -58,7 +65,7 @@ class SchedulerRuntimeBoundaryTests(unittest.TestCase):
 
             with self.subTest(attribute=attribute):
                 self.assertTrue(assignments)
-                self.assertEqual(set(assignments), {app_directory / "main.py"})
+                self.assertEqual(set(assignments), allowed)
                 self.assertEqual(reads, [])
                 self.assertIn(
                     f'getattr(request.app.state, "{attribute}", None)',

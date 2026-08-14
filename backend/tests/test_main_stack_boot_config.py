@@ -30,14 +30,25 @@ def test_main_compose_has_health_gated_boot_contract() -> None:
     ):
         assert mysql_runtime_marker not in text
     assert '["CMD", "redis-cli", "ping"]' in text
-    # 核心栈 7 处健康门控；第 8 处（frontend-web → priceai）随 priceai
+    # 核心栈 10 处健康门控（backend-api×3 + mcp-api×3 + frontend-web×1 +
+    # milvus×2 + attu×1）；原第 8 处（frontend-web → priceai）随 priceai
     # 服务迁至私有 overlay（../aigcnews_private/deploy/docker-compose.private.yml）
-    assert text.count("condition: service_healthy") == 7
+    assert text.count("condition: service_healthy") == 10
     backend_dependencies = text.split("  backend-api:", 1)[1].split(
         "\n  project-catalog-postgres:\n", 1
     )[0]
     for dependency in ("redis", "milvus", "project-catalog-postgres"):
         assert f"      {dependency}:\n        condition: service_healthy" in backend_dependencies
+    # 独立 MCP 进程（AIGC Radar MCP）：同镜像瘦入口、与主进程同套健康门控、
+    # 仅回环端口；工具调用计数单写者存贮必须与主进程分目录（原子替换会互覆）
+    mcp_dependencies = text.split("  mcp-api:", 1)[1].split(
+        "\n  project-catalog-postgres:\n", 1
+    )[0]
+    for dependency in ("redis", "milvus", "project-catalog-postgres"):
+        assert f"      {dependency}:\n        condition: service_healthy" in mcp_dependencies
+    assert "uvicorn backend.app.mcp_main:app" in mcp_dependencies
+    assert '"127.0.0.1:8001:8000"' in mcp_dependencies
+    assert "MCP_TOOL_CALL_METRICS_PATH=storage/metrics_mcp/" in mcp_dependencies
     assert "./volumes/etcd:/etcd" in text
     assert "./volumes/minio:/minio_data" in text
     assert "./volumes/milvus:/var/lib/milvus" in text

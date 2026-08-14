@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -36,6 +34,7 @@ from backend.app.api import (
     routes_x_media,
 )
 from backend.app.api.exception_handlers import register_exception_handlers
+from backend.app.core.app_version import resolve_app_version
 from backend.app.core.auth import hash_password, validate_jwt_secret
 from backend.app.core.config import settings
 from backend.app.core.model_factory import (
@@ -400,19 +399,8 @@ register_exception_handlers(app)
 
 
 def _resolve_app_version() -> str:
-    """版本真实来源：仓库根 server.json（MCP registry 清单，由契约测试与
-    MCP_SERVER_VERSION 保持一致）。容器内无该文件时回退到代码内常量。"""
-    try:
-        manifest = Path(__file__).resolve().parents[2] / "server.json"
-        document = json.loads(manifest.read_text(encoding="utf-8"))
-        version = document.get("version")
-        if isinstance(version, str) and version.strip():
-            return version.strip()
-    except (OSError, ValueError):
-        pass
-    from backend.app.services.mcp.inbound.catalog import MCP_SERVER_VERSION
-
-    return MCP_SERVER_VERSION
+    """委托共享解析（core.app_version）：独立 MCP 进程（mcp_main.py）同源。"""
+    return resolve_app_version()
 
 
 _APP_VERSION = _resolve_app_version()
