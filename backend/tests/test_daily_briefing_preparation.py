@@ -19,6 +19,7 @@ from backend.app.services.briefing.daily_briefing import (
     _format_articles,
     _looks_like_block_response,
     _truncate_summary,
+    _unescape_backticks,
 )
 from backend.app.services.briefing.preparation import (
     interleave_documents_by_source,
@@ -895,6 +896,72 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
             return [token async for token in service._stream_llm_round("prompt")]
 
         self.assertEqual(asyncio.run(collect()), ["visible-1visible-2"])
+
+
+class BriefingBacktickSanitizeTests(unittest.TestCase):
+    """2026-08-14_news/_producthunt/_x 事故回归：提示词示例中的 \\` 转义写法
+    被模型照搬进正文，Markdown 将其渲染为字面反引号，标签失去行内代码样式。
+    提示词不得再含该写法；入库前的整文净化必须兜底还原。"""
+
+    def test_prompt_templates_do_not_contain_escaped_backtick_examples(self) -> None:
+        for key, (template, _suffix) in _SOURCE_CONFIG.items():
+            with self.subTest(source=key):
+                self.assertNotIn("\\`", template)
+
+    def test_unescape_backticks_restores_tag_spans_in_headings(self) -> None:
+        text = "# 标题 \\`#news\\` \\`#企业AI\\`\n\n正文 \\`#LLM\\`。\n"
+        self.assertEqual(
+            _unescape_backticks(text),
+            "# 标题 `#news` `#企业AI`\n\n正文 `#LLM`。\n",
+        )
+
+    def test_unescape_backticks_preserves_fenced_code_blocks(self) -> None:
+        text = "标题 \\`#news\\`\n\n```sh\necho \\`date\\`\n```\n\n尾部 \\`#x\\`\n"
+        self.assertEqual(
+            _unescape_backticks(text),
+            "标题 `#news`\n\n```sh\necho \\`date\\`\n```\n\n尾部 `#x`\n",
+        )
+
+    def test_unescape_backticks_treats_unclosed_fence_as_code_to_eof(self) -> None:
+        text = "前文 \\`#news\\`\n\n```python\nprint(\\`x\\`)\n"
+        self.assertEqual(
+            _unescape_backticks(text),
+            "前文 `#news`\n\n```python\nprint(\\`x\\`)\n",
+        )
+
+    def test_unescape_backticks_noop_without_escaped_backticks(self) -> None:
+        text = "# 标题 `#news`\n\n普通正文。\n"
+        self.assertEqual(_unescape_backticks(text), text)
+
+    def test_sanitize_parts_rewrites_parts_with_unescaped_text(self) -> None:
+        parts = ["## 章节 \\`#news\\` \\`#Agent\\`\n"]
+        result = DailyBriefingService._sanitize_parts(parts)
+        self.assertEqual(result, "## 章节 `#news` `#Agent`\n")
+        self.assertEqual(parts, ["## 章节 `#news` `#Agent`\n"])
+
+    def test_streamed_generation_persists_unescaped_content(self) -> None:
+        # 流式 token 原样下发（与信封剥离同一契约），入库缓存必须是还原后的文本。
+        service = DailyBriefingPreparationContractTests._service()
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            DailyBriefingPreparationContractTests._github_doc("project")
+        ]
+        report = "## 今日明星项目 \\`#github\\` \\`#AI基础设施\\`\n\n完整正文。"
+        service._llm.astream.side_effect = (
+            DailyBriefingPreparationContractTests._astream_side_effect([report])
+        )
+
+        events = DailyBriefingPreparationContractTests._collect(
+            service.stream_generate("2026-07-22", source="github")
+        )
+
+        self.assertEqual(
+            [event["data"] for event in events if event["type"] == "content"],
+            [report],
+        )
+        service._briefings.save_briefing.assert_called_once_with(
+            "2026-07-22_github",
+            "## 今日明星项目 `#github` `#AI基础设施`\n\n完整正文。",
+        )
 
 
 # Helpers live on the preparation contract class so both suites exercise identical wiring.
