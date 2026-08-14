@@ -290,3 +290,61 @@ class CompositionWiringTest(unittest.IsolatedAsyncioTestCase):
             await dependencies.cache_invalidator()
 
         self.assertEqual(spawn_calls, [documents])
+
+    async def test_cache_invalidator_bridges_to_captured_main_loop(self) -> None:
+        """生产形态回归：provide 在主 loop 捕获，cache_invalidator 在采集线程的
+        asyncio.run 临时 loop 上被触发时，清缓存/预热/spawn 必须桥回被捕获的
+        主 loop 执行。
+
+        不桥回的后果（2026-08-14 实测）：fastapi-cache 全局 RedisBackend 连接池
+        被采集临时 loop 污染，HTTP 读报 different-loop 吞成 MISS（浏览器 MISS /
+        curl HIT 双分裂）；detached 媒体预热 task 被 asyncio.run 收尾的
+        loop.close() 掐掉，预热永不执行。
+        """
+        from backend.app.services.ingestion.composition import (
+            provide_ingestion_dependencies,
+        )
+
+        main_loop = asyncio.get_running_loop()
+        warm_loops: list[object] = []
+        spawn_loops: list[object] = []
+
+        async def fake_warm(repos: object) -> None:
+            warm_loops.append(asyncio.get_running_loop())
+
+        def fake_spawn(docs: object) -> None:
+            spawn_loops.append(asyncio.get_running_loop())
+            return None
+
+        documents = _fake_documents([])
+        repositories = SimpleNamespace(documents=documents)
+        with (
+            patch.object(settings, "x_source_enabled", True),
+            patch(
+                "backend.app.services.ingestion.cache_invalidation"
+                ".clear_dashboard_cache_safely",
+                new=AsyncMock(),
+            ),
+            patch(
+                "backend.app.api.dashboard_cache_warmup.warm_dashboard_cache",
+                side_effect=fake_warm,
+            ),
+            patch(
+                "backend.app.services.x_media_warmup.spawn_x_media_warmup_task",
+                side_effect=fake_spawn,
+            ),
+        ):
+            dependencies = provide_ingestion_dependencies(
+                repositories=repositories, task_writer=object()
+            )
+
+            def trigger_on_fresh_loop() -> None:
+                # 模拟采集 worker 线程：新建一次性 loop 触发失效钩子
+                asyncio.run(dependencies.cache_invalidator())
+
+            # to_thread 期间主（测试）loop 保持空闲，可运行桥接回的协程
+            await asyncio.to_thread(trigger_on_fresh_loop)
+
+        # 关键断言：预热与 spawn 都跑在被捕获的主 loop，而非采集临时 loop
+        self.assertEqual(warm_loops, [main_loop])
+        self.assertEqual(spawn_loops, [main_loop])

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Framework-light dependency composition for ingestion application services."""
 
+import asyncio
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Sequence
 
@@ -53,13 +54,18 @@ def provide_ingestion_dependencies(
         clear_dashboard_cache_safely,
     )
 
-    async def clear_and_warm_dashboard_cache() -> None:
-        """先清旧 dashboard key，再按前端首屏参数重建热缓存。
+    # 生产形态下本函数由调度器在主 event loop 上同步调用
+    # （scheduler._run_single_source_job / _reconcile_* 均 async 于主 loop），
+    # 此处捕获的即主 loop；而 cache_invalidator 实际在采集 worker 线程的
+    # asyncio.run 一次性 loop 里被 await（pipeline.run_single_source_pipeline）。
+    try:
+        main_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # 无运行 loop 的同步/CLI 调用方：无并发 HTTP 读者，就地执行即可。
+        main_loop = None
 
-        纯删除式失效会让每个采集窗口后的首批用户撞上 ~3s 级冷查询；
-        预热在后台把首屏组合重新算好，用户请求始终命中热缓存。
-        清缓存与预热均为非致命路径，异常由各自内部兜底。
-        """
+    async def _clear_and_warm_on_loop() -> None:
+        """清缓存 + 首屏预热 + 媒体预热 spawn 的实际执行体（须在主 loop 跑）。"""
         await clear_dashboard_cache_safely()
         # composition root 允许跨层装配：预热逻辑在 api 层（与路由同源生成 cache key）
         from backend.app.api.dashboard_cache_warmup import warm_dashboard_cache
@@ -71,6 +77,41 @@ def provide_ingestion_dependencies(
         from backend.app.services.x_media_warmup import spawn_x_media_warmup_task
 
         spawn_x_media_warmup_task(repositories.documents)
+
+    async def clear_and_warm_dashboard_cache() -> None:
+        """先清旧 dashboard key，再按前端首屏参数重建热缓存。
+
+        纯删除式失效会让每个采集窗口后的首批用户撞上 ~3s 级冷查询；
+        预热在后台把首屏组合重新算好，用户请求始终命中热缓存。
+        清缓存与预热均为非致命路径，异常由各自内部兜底。
+
+        关键：当采集把本钩子调度到 worker 线程的 asyncio.run 一次性 loop 上时，
+        必须把工作桥回被捕获的主 loop 执行，原因有二：
+        - fastapi-cache 的全局 RedisBackend 连接池绑定首次使用它的 loop；在采集
+          临时 loop 写缓存会污染连接池，回主 loop 后 HTTP 读报
+          "attached to a different loop"，被宽捕获吞成 MISS（2026-08-14 实测
+          浏览器 MISS / curl 同 key HIT 的双分裂根因）。
+        - 媒体预热 spawn 的 detached task 若挂在采集临时 loop 上，会被
+          asyncio.run 收尾的 loop.close() 掐掉，预热日志永不出现。
+        桥回主 loop 后两件事都消失：缓存 SET 对 HTTP 读者可见、detached task
+        挂在不关闭的主 loop 上得以跑完。
+        """
+        current_loop = asyncio.get_running_loop()
+        if (
+            main_loop is not None
+            and main_loop is not current_loop
+            and main_loop.is_running()
+        ):
+            # 采集线程临时 loop：整体桥到主 loop 执行并等待其完成。
+            # asyncio.to_thread 让主 loop 在等待采集期间保持空闲，故不会死锁。
+            await asyncio.wrap_future(
+                asyncio.run_coroutine_threadsafe(
+                    _clear_and_warm_on_loop(), main_loop
+                )
+            )
+            return
+        # 同 loop（单测）或无主 loop（CLI）：就地执行，行为与原先一致。
+        await _clear_and_warm_on_loop()
     from backend.app.services.ingestion.crawlers import (
         ArxivCrawler,
         DailyHotCrawler,
