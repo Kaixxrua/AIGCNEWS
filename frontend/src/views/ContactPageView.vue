@@ -51,16 +51,7 @@ const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdow
       <section v-if="config.contactEntries.length" class="contact-section">
         <div class="entry-list">
           <div v-for="entry in config.contactEntries" :key="entry.label" class="entry-item glass-card">
-            <div class="entry-text">
-              <span class="entry-label">{{ entry.label }}</span>
-              <a
-                v-if="entry.href"
-                class="entry-value entry-value--link"
-                :href="entry.href"
-                v-bind="linkAttrs(entry)"
-              >{{ entry.value || entry.href }}</a>
-              <span v-else-if="entry.value" class="entry-value">{{ entry.value }}</span>
-            </div>
+            <span class="entry-label">{{ entry.label }}</span>
             <img
               v-if="entry.qrImageUrl"
               class="entry-qr"
@@ -68,6 +59,13 @@ const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdow
               :alt="entry.label"
               loading="lazy"
             />
+            <a
+              v-if="entry.href"
+              class="entry-value entry-value--link"
+              :href="entry.href"
+              v-bind="linkAttrs(entry)"
+            >{{ entry.value || entry.href }}</a>
+            <span v-else-if="entry.value" class="entry-value">{{ entry.value }}</span>
           </div>
         </div>
       </section>
@@ -162,22 +160,19 @@ const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdow
 
 .entry-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 340px));
+  justify-content: center;
   gap: 14px;
 }
 
+/* 联系卡片以二维码为视觉主体：标签在上、QR 大图居中、CTA 按钮收尾 */
 .entry-item {
-  padding: 16px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.entry-text {
+  padding: 20px 18px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 0;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
 }
 
 .entry-label {
@@ -199,8 +194,7 @@ const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdow
 .entry-value--link {
   display: inline-flex;
   align-items: center;
-  align-self: flex-start;
-  padding: 7px 16px;
+  padding: 9px 22px;
   border-radius: 999px;
   background: var(--acid);
   color: var(--acid-ink);
@@ -214,15 +208,14 @@ const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdow
   color: var(--acid-ink);
 }
 
+/* 二维码是加群动作的另一入口，必须大到随手可扫 */
 .entry-qr {
-  width: 120px;
-  height: 120px;
+  width: 220px;
+  height: 220px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--rule);
   background: var(--paper-raised);
-  flex-shrink: 0;
-  margin-left: auto;
 }
 
 .contact-markdown {
@@ -314,13 +307,9 @@ const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdow
     font-size: 23px;
   }
 
-  .entry-item {
-    align-items: flex-start;
-  }
-
   .entry-qr {
-    width: 96px;
-    height: 96px;
+    width: 200px;
+    height: 200px;
   }
 }
 </style>
