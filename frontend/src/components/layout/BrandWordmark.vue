@@ -135,7 +135,7 @@ onUnmounted(() => {
   --glitch-cyan: #0e7f9c;
   --glitch-magenta: #d81b60;
   /* 辉光：亮纸面黑霓虹、暗色白霓虹（见下方暗色覆盖） */
-  --glitch-glow: rgb(0 0 0 / 0.6);
+  --glitch-glow: rgb(0 0 0 / 0.35);
   --glitch-idle-glow: transparent;
   --glitch-scan: rgb(0 0 0 / 0.05);
   --bw-tracking: 0.22em;
