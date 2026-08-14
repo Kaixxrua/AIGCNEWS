@@ -315,6 +315,19 @@ def test_daily_hot_v5_default_is_versioned_without_rewriting_history() -> None:
     assert "DROP COLUMN" not in migration.sql.upper()
 
 
+def test_growth_suspicion_schema_is_additive_and_idempotent() -> None:
+    migration = discover_migrations()[41]
+    normalized = " ".join(migration.sql.split())
+
+    assert migration.filename == "0042_github_growth_suspicion.sql"
+    assert "ALTER TABLE github_repo_daily_metrics" in normalized
+    assert "ADD COLUMN IF NOT EXISTS growth_suspicion_score" in normalized
+    assert "ADD COLUMN IF NOT EXISTS growth_suspicion_signals" in normalized
+    assert "ADD COLUMN IF NOT EXISTS growth_corroborated" in normalized
+    assert "UPDATE" not in migration.sql.upper()
+    assert "DROP COLUMN" not in migration.sql.upper()
+
+
 def test_x_watch_accounts_schema_is_additive_and_keys_screen_name() -> None:
     migration = discover_migrations()[10]
     normalized = " ".join(migration.sql.split()).upper()
@@ -426,7 +439,7 @@ def test_user_account_disabled_schema_is_additive() -> None:
 
 def test_user_pwd_ver_schema_is_additive() -> None:
     # 口令版本号（AUTH-B）：JWT 声明与库内值逐请求比对，改密即撤销旧 token
-    migration = discover_migrations()[-1]
+    migration = discover_migrations()[40]
     normalized = " ".join(migration.sql.split()).upper()
 
     assert migration.filename == "0041_user_pwd_ver.sql"

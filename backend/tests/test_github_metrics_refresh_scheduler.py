@@ -223,6 +223,7 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
             min_stars=300,
             limit=0,
             metric_date="2026-07-14",
+            corroborated_repo_ids=None,
             db=repository,
         )
 
@@ -266,7 +267,7 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
         entered = 0
         maximum = 0
 
-        async def body(_: str, __: object) -> dict[str, object]:
+        async def body(_: str, __: object, ___: object = None) -> dict[str, object]:
             nonlocal entered, maximum
             entered += 1
             maximum = max(maximum, entered)
@@ -311,7 +312,7 @@ class GitHubSchedulerTests(unittest.IsolatedAsyncioTestCase):
     async def test_refresh_job_runs_enrichment_top_up_after_refresh(self) -> None:
         calls: list[str] = []
 
-        async def _refresh(_: str, __: object) -> dict[str, object]:
+        async def _refresh(_: str, __: object, ___: object = None) -> dict[str, object]:
             calls.append("refresh")
             return {"refresh": {}}
 

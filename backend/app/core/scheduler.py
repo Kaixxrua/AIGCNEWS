@@ -453,20 +453,48 @@ def _github_refresh_needed(status: Dict[str, Any]) -> bool:
     return datetime.now(timezone.utc) - latest.astimezone(timezone.utc) > _GITHUB_METRICS_MAX_AGE
 
 
+async def _fetch_growth_corroboration(
+    metric_date: str,
+    documents: Any,
+) -> set[str] | None:
+    """拉取反作弊跨渠道佐证集合；documents 缺失或查询失败时返回 None（跳过佐证）。"""
+    if documents is None:
+        return None
+    from backend.app.services.ingestion.github_project_metrics_service import (
+        corroboration_window,
+    )
+
+    since, until = corroboration_window(metric_date)
+    try:
+        return await asyncio.to_thread(
+            documents.list_github_repo_mentions,
+            since_date=since,
+            until_date=until,
+        )
+    except Exception as exc:  # noqa: BLE001 - 佐证失败不阻塞指标计算
+        logger.warning(
+            "[Scheduler] GitHub 反作弊佐证查询失败（本轮按无佐证打标）: %s", exc
+        )
+        return None
+
+
 async def _refresh_current_github_project_metrics(
     metric_date: str,
     repository: Any,
+    documents: Any = None,
 ) -> Dict[str, Any]:
     from backend.app.services.ingestion.github_project_metrics_service import (
         refresh_and_compute_github_project_metrics,
     )
 
+    corroborated = await _fetch_growth_corroboration(metric_date, documents)
     active_repository = repository
     return await asyncio.to_thread(
         refresh_and_compute_github_project_metrics,
         min_stars=_GITHUB_METRICS_MIN_STARS,
         limit=_GITHUB_METRICS_REFRESH_LIMIT,
         metric_date=metric_date,
+        corroborated_repo_ids=corroborated,
         db=active_repository,
     )
 
@@ -496,6 +524,7 @@ async def _run_github_project_metrics_refresh_job(
     *,
     repository: Any,
     enrichment: Any,
+    documents: Any = None,
     github_lock: asyncio.Lock | None = None,
 ) -> bool:
     from backend.app.services.ingestion.github_project_metrics_service import (
@@ -510,6 +539,7 @@ async def _run_github_project_metrics_refresh_job(
             result = await _refresh_current_github_project_metrics(
                 metric_date,
                 repository,
+                documents,
             )
             # 补跑与每日流水线的富化阶段共用同一把 github 锁，杜绝并发批次
             # 重复烧模型调用；补跑失败不拖累已完成的指标刷新
@@ -532,6 +562,7 @@ async def _run_github_project_metrics_refresh_job(
 async def _run_github_project_metrics_closing_job(
     *,
     repository: Any,
+    documents: Any = None,
     github_lock: asyncio.Lock | None = None,
 ) -> bool:
     """GitHub 指标关榜轮：次日 00:33 把最终观测写入昨日切片并重算。
@@ -550,12 +581,14 @@ async def _run_github_project_metrics_closing_job(
     lock = github_lock or asyncio.Lock()
     try:
         async with lock:
+            corroborated = await _fetch_growth_corroboration(metric_date, documents)
             result = await asyncio.to_thread(
                 refresh_and_compute_github_project_metrics,
                 min_stars=_GITHUB_METRICS_MIN_STARS,
                 limit=_GITHUB_METRICS_REFRESH_LIMIT,
                 metric_date=metric_date,
                 closing=True,
+                corroborated_repo_ids=corroborated,
                 db=repository,
             )
         logger.info("[Scheduler] GitHub 指标关榜刷新完成：%s", result)
@@ -982,6 +1015,7 @@ class ApplicationSchedulerRuntime:
                 lambda: _run_github_project_metrics_refresh_job(
                     repository=self.repositories.github_ingestion,
                     enrichment=self.repositories.github_enrichment,
+                    documents=self.repositories.documents,
                     github_lock=self._github_job_lock,
                 ),
             )
@@ -993,6 +1027,7 @@ class ApplicationSchedulerRuntime:
                 "github_project_metrics_closing",
                 lambda: _run_github_project_metrics_closing_job(
                     repository=self.repositories.github_ingestion,
+                    documents=self.repositories.documents,
                     github_lock=self._github_job_lock,
                 ),
             )

@@ -219,8 +219,21 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
             record_calls.append({"period": period, "observed_date": observed_date, "db": db})
             return {"repo_ids": [42], "hits": 1}
 
-        def fake_metrics(*, metric_date: str, repo_ids: list, db: Any) -> dict[str, Any]:
-            metrics_calls.append({"metric_date": metric_date, "repo_ids": repo_ids, "db": db})
+        def fake_metrics(
+            *,
+            metric_date: str,
+            repo_ids: list,
+            corroborated_repo_ids: set | None = None,
+            db: Any,
+        ) -> dict[str, Any]:
+            metrics_calls.append(
+                {
+                    "metric_date": metric_date,
+                    "repo_ids": repo_ids,
+                    "corroborated_repo_ids": corroborated_repo_ids,
+                    "db": db,
+                }
+            )
             return {"rows": 1, "trending_fallback": 0}
 
         with (
@@ -240,7 +253,12 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
         assert all(c["db"] is host.github_ingestion for c in record_calls)
         # metrics 仅在 daily 且 repo_ids 非空时触发
         assert metrics_calls == [
-            {"metric_date": "2024-03-02", "repo_ids": [42], "db": host.github_ingestion}
+            {
+                "metric_date": "2024-03-02",
+                "repo_ids": [42],
+                "corroborated_repo_ids": None,
+                "db": host.github_ingestion,
+            }
         ]
 
     async def test_arxiv_collects_only_papers_with_arxiv_id_for_pdf(self) -> None:

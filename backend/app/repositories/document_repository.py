@@ -123,6 +123,17 @@ class DocumentRecentReader(Protocol):
     ) -> list[dict[str, Any]]: ...
 
 
+class DocumentGithubMentionReader(Protocol):
+    """Read GitHub repo slugs mentioned by non-github channel documents."""
+
+    def list_github_repo_mentions(
+        self,
+        *,
+        since_date: str,
+        until_date: str,
+    ) -> set[str]: ...
+
+
 class DocumentXSnapshotBackfillReader(Protocol):
     """Read x documents (id/published_at/scores) for historical snapshot rebuild."""
 

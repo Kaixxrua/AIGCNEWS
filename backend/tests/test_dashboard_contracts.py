@@ -125,6 +125,9 @@ def _github_metric_row(**overrides: Any) -> dict[str, Any]:
         "daily_growth_source": "snapshot_delta",
         "previous_snapshot_date": "2026-08-09",
         "hot_score": 96.5,
+        "growth_suspicion_score": 0.4,
+        "growth_suspicion_signals": '["low_fork_follow"]',
+        "growth_corroborated": False,
         "metric_date": "2026-08-10",
     }
     row.update(overrides)
@@ -1042,6 +1045,10 @@ def test_top_route_github_metrics_doc_shape_is_wire_compatible() -> None:
     assert first["daily_growth_source"] == "snapshot_delta"
     assert first["previous_snapshot_date"] == "2026-08-09"
     assert first["hot_score"] == 96.5
+    # 反作弊打标字段（仅透出，不影响排序）
+    assert first["growth_suspicion_score"] == 0.4
+    assert first["growth_suspicion_signals"] == '["low_fork_follow"]'
+    assert first["growth_corroborated"] is False
     # topics_json 解析失败时降级为空列表而非 500
     assert items[1]["tags"] == []
 
@@ -1213,6 +1220,9 @@ def test_github_metric_to_doc_defaults_and_rank() -> None:
     assert doc["source_channel"] == policy.GITHUB_METRICS_DAILY_CHANNEL
     assert doc["snapshot_date"] == "2026-08-10"
     assert doc["published_at"] is None
+    assert doc["growth_suspicion_score"] == 0.0
+    assert doc["growth_suspicion_signals"] == "[]"
+    assert doc["growth_corroborated"] is False
 
 
 def test_github_service_weekly_keeps_snapshot_channel_even_with_reader() -> None:

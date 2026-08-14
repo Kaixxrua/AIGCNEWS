@@ -39,6 +39,38 @@ def _normalize_doc_lookup_key(value: str | None) -> str:
     return (value or "").strip()
 
 
+# 反作弊跨渠道佐证：从文档 url/标题/正文提取 github.com/<owner>/<repo>。
+# 只取前两段路径；owner 段排除 GitHub 保留路径前缀。
+_GITHUB_REPO_URL_RE = re.compile(
+    r"github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", re.IGNORECASE
+)
+_GITHUB_NON_REPO_OWNERS = {
+    "apps", "about", "collections", "codespaces", "copilot", "customer-stories",
+    "enterprise", "events", "explore", "features", "git-guides", "issues",
+    "login", "marketplace", "new", "notifications", "organizations", "pricing",
+    "pulls", "readme", "search", "security", "settings", "signup", "sponsors",
+    "stars", "team", "topics", "trending",
+}
+
+
+def extract_github_repo_slugs(*texts: str | None) -> set[str]:
+    """从任意文本提取 github.com 仓库 slug（owner/repo，小写归一）。"""
+
+    slugs: set[str] = set()
+    for text in texts:
+        if not text:
+            continue
+        for match in _GITHUB_REPO_URL_RE.finditer(str(text)):
+            slug = match.group(1)
+            owner, _, repo = slug.partition("/")
+            owner = owner.strip(".").lower()
+            repo = repo.rstrip(".-_").lower()
+            if not owner or not repo or owner in _GITHUB_NON_REPO_OWNERS:
+                continue
+            slugs.add(f"{owner}/{repo}")
+    return slugs
+
+
 def _document_search_candidates(query: str, *, max_terms: int = 5) -> list[str]:
     normalized = normalize_search_query(query)
     if not normalized:
@@ -503,6 +535,40 @@ class PostgresDocumentRepository:
             "ORDER BY COALESCE(d.raw_score, d.score, 0) DESC, d.created_at DESC LIMIT %s",
             (source_type, since_date, limit),
         )
+
+    def list_github_repo_mentions(
+        self,
+        *,
+        since_date: str,
+        until_date: str,
+    ) -> set[str]:
+        """反作弊佐证：窗口内非 github 渠道文档提及的 owner/repo 集合（小写）。
+
+        用 created_at（UTC 入库时间）词法前缀过滤而非 published_date ——
+        各源 published_date 时区不统一且存在脏串（与 get_recent_top_documents
+        同款口径）；佐证是存在性判断，宁宽勿漏，窗口由调用方前后各扩一天。
+        url 全字段匹配；X 的仓库链接只在推文正文里，故 title/summary 一并提取。
+        PH 只存 permalink 不含 repo 链接，本期不纳入佐证源。
+        """
+        rows = self._fetch_rows(
+            """
+            SELECT d.url, d.title, d.summary
+            FROM documents d
+            WHERE d.source IN ('hackernews','news','dailyhot','x')
+              AND LEFT(d.created_at, 10) BETWEEN %s AND %s
+              AND (d.url ILIKE '%%github.com%%' OR d.title ILIKE '%%github.com%%'
+                   OR d.summary ILIKE '%%github.com%%')
+            """,
+            (since_date, until_date),
+        )
+        mentions: set[str] = set()
+        for row in rows:
+            mentions.update(
+                extract_github_repo_slugs(
+                    row.get("url"), row.get("title"), row.get("summary")
+                )
+            )
+        return mentions
 
     def get_latest_documents(self, limit: int = 10) -> list[dict[str, Any]]:
         return self._fetch_rows(f"{_document_projection()} ORDER BY d.created_at DESC LIMIT %s", (limit,))
