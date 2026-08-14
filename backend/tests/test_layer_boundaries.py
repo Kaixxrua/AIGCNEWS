@@ -6,6 +6,12 @@ from pathlib import Path
 _SERVICES_ROOT = Path("backend/app/services")
 _REPOSITORIES_ROOT = Path("backend/app/repositories")
 
+# 组合根（composition root）是 services→api 禁令的唯一豁免点：dashboard 预热
+# 必须直调 api 层带 @cache 装饰器的端点函数以同源生成 cache key（见
+# services/ingestion/composition.py 与 api/dashboard_cache_warmup.py 的注释），
+# 该耦合只能归属装配处，不得下沉扩散到领域服务。
+_COMPOSITION_ROOTS = {"backend/app/services/ingestion/composition.py"}
+
 
 def _imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -22,6 +28,8 @@ def test_services_layer_does_not_import_api_layer() -> None:
     """服务层禁止依赖传输层（api/*）：契约/schema 归属 services/mcp/contracts.py。"""
     offenders: list[str] = []
     for path in sorted(_SERVICES_ROOT.rglob("*.py")):
+        if str(path) in _COMPOSITION_ROOTS:
+            continue
         imported = _imported_modules(path)
         if any(
             module == "backend.app.api" or module.startswith("backend.app.api.")
