@@ -135,7 +135,7 @@ onUnmounted(() => {
   --glitch-cyan: #0e7f9c;
   --glitch-magenta: #d81b60;
   /* 辉光：亮纸面黑霓虹、暗色白霓虹（见下方暗色覆盖） */
-  --glitch-glow: rgb(0 0 0 / 0.5);
+  --glitch-glow: rgb(0 0 0 / 0.6);
   --glitch-idle-glow: transparent;
   --glitch-scan: rgb(0 0 0 / 0.05);
   --bw-tracking: 0.22em;
@@ -240,9 +240,9 @@ onUnmounted(() => {
 @keyframes bw-jitter {
   0%, 70%, 81%, 100% { transform: none; text-shadow: 0 0 12px var(--glitch-idle-glow); }
   72% { transform: translate(-1.5px, 0.5px) skewX(-5deg); }
-  74% { transform: translate(2px, -1px) skewX(3deg); text-shadow: 0 0 16px var(--glitch-glow); }
+  74% { transform: translate(2px, -1px) skewX(3deg); text-shadow: 0 0 6px var(--glitch-glow), 0 0 16px var(--glitch-glow); }
   76% { transform: translate(-2.5px, 0) skewX(-7deg); }
-  78% { transform: translate(1px, 1px) skewX(2deg); text-shadow: 0 0 22px var(--glitch-glow); }
+  78% { transform: translate(1px, 1px) skewX(2deg); text-shadow: 0 0 8px var(--glitch-glow), 0 0 24px var(--glitch-glow); }
   80% { transform: translate(-0.5px, 0); }
 }
 
@@ -295,11 +295,12 @@ onUnmounted(() => {
   opacity: 0.5;
 }
 
+/* hover：每帧都亮灯，强度脉动 + 三层光晕（亮芯/中晕/外辉） */
 @keyframes bw-jitter-hover {
-  0%, 100% { transform: none; }
-  25% { transform: translate(-2px, 0.5px) skewX(-4deg); text-shadow: 0 0 18px var(--glitch-glow); }
-  50% { transform: translate(1.5px, -1px) skewX(3deg); }
-  75% { transform: translate(-1px, 0) skewX(-2deg); text-shadow: 0 0 14px var(--glitch-glow); }
+  0%, 100% { transform: none; text-shadow: 0 0 7px var(--glitch-glow), 0 0 18px var(--glitch-glow); }
+  25% { transform: translate(-2px, 0.5px) skewX(-4deg); text-shadow: 0 0 8px var(--glitch-glow), 0 0 22px var(--glitch-glow), 0 0 44px var(--glitch-glow); }
+  50% { transform: translate(1.5px, -1px) skewX(3deg); text-shadow: 0 0 5px var(--glitch-glow), 0 0 14px var(--glitch-glow); }
+  75% { transform: translate(-1px, 0) skewX(-2deg); text-shadow: 0 0 9px var(--glitch-glow), 0 0 26px var(--glitch-glow), 0 0 52px var(--glitch-glow); }
 }
 
 @keyframes bw-hover-a {
@@ -322,7 +323,7 @@ onUnmounted(() => {
 :root[data-theme='dark'] .brand-wordmark {
   --glitch-cyan: #22d3ee;
   --glitch-magenta: #ff2d78;
-  --glitch-glow: rgb(255 255 255 / 0.55);
+  --glitch-glow: rgb(255 255 255 / 0.7);
   --glitch-idle-glow: rgba(34, 211, 238, 0.18);
   --glitch-scan: rgb(255 255 255 / 0.06);
 }
