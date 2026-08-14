@@ -306,6 +306,10 @@ class Settings(BaseSettings):
     # 注意：该目录经 /api/media/papers 匿名静态挂载对外服务，禁止存放私有文件
     papers_storage_dir: str = "storage/papers"
 
+    # 站点公开素材（联系合作页二维码、正文插图）存储目录（容器内路径，对应 volume 映射）
+    # 注意：该目录经 /api/media/site 匿名静态挂载对外服务，仅存放站点公开图片
+    site_assets_storage_dir: str = "storage/site"
+
     # 聊天私有附件（PDF）存储目录（容器内路径，对应 docker-compose volume 映射）
     # 必须位于 papers_storage_dir 的静态挂载树之外，附件仅允许经带鉴权的元数据 API 访问
     chat_uploads_storage_dir: str = "storage/chat_uploads"

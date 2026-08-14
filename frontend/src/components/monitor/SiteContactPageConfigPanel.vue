@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
+import { nextTick, ref } from 'vue'
+import { useSiteImageUpload } from '@/composables/useSiteImageUpload'
 import {
   formatDate,
 } from '@/features/monitor/monitorViewModel'
@@ -47,10 +49,69 @@ const removeContactEntry = (index: number) => {
   // eslint-disable-next-line vue/no-mutating-props -- 同上：受控草稿的动态列表删行
   props.form.contact_entries.splice(index, 1)
 }
+
+// ─── 图片上传（二维码 / Markdown 插图共用一个隐藏 file input） ───
+const { uploading, uploadImage } = useSiteImageUpload()
+
+type UploadTarget = { kind: 'qr'; index: number } | { kind: 'markdown' }
+const fileInput = ref<HTMLInputElement | null>(null)
+const bodyTextarea = ref<HTMLTextAreaElement | null>(null)
+const uploadTarget = ref<UploadTarget | null>(null)
+
+const openImagePicker = (target: UploadTarget) => {
+  uploadTarget.value = target
+  fileInput.value?.click()
+}
+
+const isUploadingFor = (target: UploadTarget) => {
+  const current = uploadTarget.value
+  if (!uploading.value || !current) return false
+  if (current.kind !== target.kind) return false
+  return current.kind === 'markdown' || current.index === (target as { index: number }).index
+}
+
+const insertMarkdownImage = (url: string, filename: string) => {
+  const snippet = `![${filename}](${url})`
+  const textarea = bodyTextarea.value
+  const current = props.form.body_markdown
+  if (!textarea) {
+    updateForm('body_markdown', current ? `${current}\n${snippet}\n` : `${snippet}\n`)
+    return
+  }
+  const start = textarea.selectionStart ?? current.length
+  const end = textarea.selectionEnd ?? current.length
+  updateForm('body_markdown', `${current.slice(0, start)}${snippet}${current.slice(end)}`)
+  nextTick(() => {
+    textarea.focus()
+    const pos = start + snippet.length
+    textarea.setSelectionRange(pos, pos)
+  })
+}
+
+const handleImageFileChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  const target = uploadTarget.value
+  if (!file || !target) return
+  try {
+    const url = await uploadImage(file)
+    if (!url) return
+    if (target.kind === 'qr') {
+      const entry = props.form.contact_entries[target.index]
+      // 与行内 v-model 同语义：直接回写嵌套草稿字段
+      if (entry) entry.qr_image_url = url
+    } else {
+      insertMarkdownImage(url, file.name)
+    }
+  } finally {
+    input.value = ''
+  }
+}
 </script>
 
 <template>
   <div class="stagger-enter glass-card shrink-0 p-5" style="animation-delay: 0.1s">
+    <input ref="fileInput" type="file" class="hidden" accept="image/jpeg,image/png,image/gif,image/webp" @change="handleImageFileChange" />
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <svg class="h-4 w-4 monitor-caption" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
       <h3 class="monitor-section-title text-sm font-semibold">{{ t('monitor.contactPageConfig.title') }}</h3>
@@ -133,10 +194,16 @@ const removeContactEntry = (index: number) => {
             <span class="mb-1 block text-2xs monitor-caption">{{ t('monitor.contactPageConfig.entryHref') }}</span>
             <input v-model="entry.href" type="text" maxlength="2048" class="input w-full py-1.5 text-xs" placeholder="https:// / mailto:" autocomplete="off" :disabled="loading || saving" />
           </label>
-          <label class="block min-w-[180px] flex-1">
+          <div class="block min-w-[180px] flex-1">
             <span class="mb-1 block text-2xs monitor-caption">{{ t('monitor.contactPageConfig.entryQr') }}</span>
-            <input v-model="entry.qr_image_url" type="text" maxlength="2048" class="input w-full py-1.5 text-xs" placeholder="https://... 或 /qr.png" autocomplete="off" :disabled="loading || saving" />
-          </label>
+            <div class="flex items-center gap-1.5">
+              <input v-model="entry.qr_image_url" type="text" maxlength="2048" class="input w-full py-1.5 text-xs" placeholder="https://... 或 /qr.png" autocomplete="off" :disabled="loading || saving" />
+              <button class="monitor-btn-secondary shrink-0 whitespace-nowrap" :disabled="loading || saving || uploading" :title="t('monitor.contactPageConfig.uploadImage')" @click="openImagePicker({ kind: 'qr', index })">
+                {{ isUploadingFor({ kind: 'qr', index }) ? t('monitor.contactPageConfig.uploading') : t('monitor.contactPageConfig.uploadImage') }}
+              </button>
+              <img v-if="entry.qr_image_url" :src="entry.qr_image_url" :alt="entry.label" class="h-8 w-8 shrink-0 rounded object-contain" style="border: 1px solid var(--rule); background: var(--paper-raised)" loading="lazy" />
+            </div>
+          </div>
           <button class="monitor-btn-secondary" :disabled="loading || saving" :title="t('monitor.contactPageConfig.removeEntry')" @click="removeContactEntry(index)">×</button>
         </div>
       </div>
@@ -144,8 +211,14 @@ const removeContactEntry = (index: number) => {
 
     <!-- ═══ Markdown 自由内容 ═══ -->
     <div class="mt-4">
-      <span class="mb-1 block text-xs font-semibold monitor-section-title">{{ t('monitor.contactPageConfig.bodyMarkdown') }}</span>
+      <div class="mb-1 flex items-center gap-2">
+        <span class="text-xs font-semibold monitor-section-title">{{ t('monitor.contactPageConfig.bodyMarkdown') }}</span>
+        <button class="monitor-btn-secondary" :disabled="loading || saving || uploading" @click="openImagePicker({ kind: 'markdown' })">
+          + {{ isUploadingFor({ kind: 'markdown' }) ? t('monitor.contactPageConfig.uploading') : t('monitor.contactPageConfig.insertImage') }}
+        </button>
+      </div>
       <textarea
+        ref="bodyTextarea"
         :value="form.body_markdown"
         rows="10"
         maxlength="20000"

@@ -420,6 +420,15 @@ app.mount(
     name="papers",
 )
 
+# ── 站点公开素材（联系合作页二维码、正文插图）：匿名可读是有意选择，仅放公开图片 ──
+_site_assets_dir = settings.site_assets_storage_dir
+os.makedirs(_site_assets_dir, exist_ok=True)
+app.mount(
+    "/api/media/site",
+    StaticFiles(directory=_site_assets_dir),
+    name="site_assets",
+)
+
 # 配置 CORS：仅允许白名单来源（本地开发 + 生产域名），不再通配。
 _cors_allowed_origins = [
     origin.strip()

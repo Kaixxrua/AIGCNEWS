@@ -4,7 +4,7 @@ import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
-  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
+  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
 import { buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
@@ -23,6 +23,7 @@ export interface MonitorApi {
   testSmtpConfig(): Promise<SmtpTestResult>
   fetchSiteContactPageConfig(): Promise<SiteContactPageConfig>
   saveSiteContactPageConfig(form: SiteContactPageForm): Promise<SiteContactPageConfig>
+  uploadSiteImage(file: File): Promise<SiteImageUploadResult>
   fetchMcpServers(): Promise<McpServerConfig[]>
   saveMcpServer(form: McpServerForm): Promise<McpServerConfig>
   testMcpServer(id: number): Promise<{ server?: McpServerConfig; status?: string; message?: string }>
@@ -90,6 +91,12 @@ export const monitorApi: MonitorApi = {
   async testSmtpConfig() { return (await api.post('/ops/smtp/test', {}, { timeout: 45_000 })).data },
   async fetchSiteContactPageConfig() { return (await api.get('/ops/site/contact-page')).data },
   async saveSiteContactPageConfig(form) { return (await api.put('/ops/site/contact-page', buildSiteContactPagePayload(form))).data },
+  // 站点公开素材上传（二维码/正文插图）：multipart 直传，返回站内 /api/media/site/... URL
+  async uploadSiteImage(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return (await api.post('/ops/site/images', formData, { timeout: 60_000 })).data
+  },
   async fetchMcpServers() {
     const { data } = await api.get('/ops/mcp-servers')
     return Array.isArray(data?.items) ? data.items : []

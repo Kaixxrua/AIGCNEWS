@@ -202,6 +202,22 @@ describe('Monitor API contract', () => {
     }))
   })
 
+  it('uploads site images as multipart form data', async () => {
+    const file = new File([new Uint8Array([0x89, 0x50])], 'qr.png', { type: 'image/png' })
+    transport.post.mockResolvedValueOnce({
+      data: { url: '/api/media/site/abc123.png', filename: 'qr.png', size_bytes: 2, mime_type: 'image/png' },
+    })
+
+    const result = await monitorApi.uploadSiteImage(file)
+
+    expect(result.url).toBe('/api/media/site/abc123.png')
+    const [url, body, config] = transport.post.mock.calls[0]!
+    expect(url).toBe('/ops/site/images')
+    expect(body).toBeInstanceOf(FormData)
+    expect((body as FormData).get('file')).toBe(file)
+    expect(config).toEqual({ timeout: 60_000 })
+  })
+
   it('creates site contact page form drafts from config with safe defaults', () => {
     expect(createSiteContactPageForm(null)).toEqual({
       enabled: false,

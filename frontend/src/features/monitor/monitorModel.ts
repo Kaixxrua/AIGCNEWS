@@ -171,6 +171,14 @@ export interface SiteContactPageForm {
   body_markdown: string
 }
 
+/** 站点公开素材上传结果（wire 与响应同构，snake_case）；url 为站内 /api/media/site/... 相对路径 */
+export interface SiteImageUploadResult {
+  url: string
+  filename: string
+  size_bytes: number
+  mime_type: string
+}
+
 // 测试投递结果：HTTP 层 200/400/502 表达配置与投递状态，status 表达业务结果
 export interface SmtpTestResult {
   status: string

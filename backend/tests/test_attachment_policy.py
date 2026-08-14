@@ -7,8 +7,10 @@ from backend.app.services.chat.attachment_policy import (
     MAX_IMAGE_BYTES,
     MAX_PDF_BYTES,
     AttachmentValidationError,
+    image_extension,
     safe_display_filename,
     validate_image_attachment,
+    validate_image_bytes,
     validate_pdf_attachment,
 )
 
@@ -72,6 +74,28 @@ class AttachmentPolicyTests(unittest.TestCase):
     def test_display_filename_removes_paths_and_controls(self) -> None:
         self.assertEqual(safe_display_filename("..\\dir/evil\x00.pdf", "x.pdf"), "evil.pdf")
         self.assertEqual(safe_display_filename("../..", "upload.pdf"), "upload.pdf")
+
+    def test_validate_image_bytes_multipart_entry(self) -> None:
+        """bytes 入口（multipart 上传）与 base64 入口共享同一套规则表。"""
+        png = b"\x89PNG\r\n\x1a\ncontent"
+        validated = validate_image_bytes(png, "image/png", "../qr.png")
+        self.assertEqual(validated.data, png)
+        self.assertEqual(validated.mime_type, "image/png")
+        self.assertEqual(validated.filename, "qr.png")
+
+        with self.assertRaisesRegex(AttachmentValidationError, "仅支持"):
+            validate_image_bytes(b"<svg></svg>", "image/svg+xml")
+        with self.assertRaisesRegex(AttachmentValidationError, "不匹配"):
+            validate_image_bytes(b"\xff\xd8\xffjpeg", "image/png")
+        with self.assertRaisesRegex(AttachmentValidationError, "10 MiB"):
+            validate_image_bytes(b"\xff\xd8\xff" + b"x" * MAX_IMAGE_BYTES, "image/jpeg")
+        with self.assertRaisesRegex(AttachmentValidationError, "图片数据格式无效"):
+            validate_image_bytes(b"", "image/png")
+
+    def test_image_extension_maps_allowed_mimes(self) -> None:
+        self.assertEqual(image_extension("image/png"), ".png")
+        self.assertEqual(image_extension("image/jpeg"), ".jpg")
+        self.assertEqual(image_extension("image/webp"), ".webp")
 
 
 if __name__ == "__main__":

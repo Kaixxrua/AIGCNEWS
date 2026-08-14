@@ -175,6 +175,14 @@ describe('renderPlainMarkdown', () => {
     expect(renderPlainMarkdown('')).toBe('')
   })
 
+  it('preserves site-relative image sources from the upload endpoint', () => {
+    const html = renderPlainMarkdown('![群二维码](/api/media/site/abc123.png)')
+
+    // 上传产物是站内相对路径：消毒必须放行（否则联系合作页正文插图全部裂图）
+    expect(html).toContain('<img src="/api/media/site/abc123.png"')
+    expect(html).toContain('alt="群二维码"')
+  })
+
   it('applies the same CJK bold-closing fix as renderMarkdown', () => {
     const html = renderPlainMarkdown('**注意：**请先看文档')
 

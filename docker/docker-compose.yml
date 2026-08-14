@@ -63,6 +63,9 @@ services:
     volumes:
       - ../backend:/src/backend
       - ../storage/papers:/src/storage/papers
+      # 站点公开素材（联系合作页二维码/插图）：经 /api/media/site 匿名服务，仅放公开图片
+      # （uid 1000 写入；首次部署前宿主机预建并属主 1000）
+      - ../storage/site:/src/storage/site
       # 聊天私有附件（PDF）：必须独立于 papers 挂载（后者经 /api/media/papers 匿名服务）
       # （uid 1000 写入；首次部署前宿主机预建并属主 1000）
       - ../storage/chat_uploads:/src/storage/chat_uploads
