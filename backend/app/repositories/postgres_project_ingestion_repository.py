@@ -635,6 +635,9 @@ class PostgresGitHubProjectIngestionRepository:
             "absolute_growth_score": 0.0,
             "maintenance_activity_score": 0.0,
             "community_engagement_score": 0.0,
+            "growth_suspicion_score": 0.0,
+            "growth_suspicion_signals": "[]",
+            "growth_corroborated": False,
             "hot_score": 0.0,
             "score_version": "daily_hot_v5",
         }
@@ -645,6 +648,9 @@ class PostgresGitHubProjectIngestionRepository:
             payload["daily_growth_available"] = bool(
                 payload.get("daily_growth_available")
             )
+            payload["growth_corroborated"] = bool(
+                payload.get("growth_corroborated")
+            )
             payload.setdefault("updated_at", _utcnow())
             normalized.append(payload)
         sql = """
@@ -653,14 +659,18 @@ class PostgresGitHubProjectIngestionRepository:
                 previous_stars,daily_star_growth,daily_fork_growth,daily_watcher_growth,
                 daily_growth_available,daily_growth_source,daily_growth_observed_at,
                 scale_corrected_growth_score,growth_acceleration_score,absolute_growth_score,
-                maintenance_activity_score,community_engagement_score,hot_score,score_version,updated_at
+                maintenance_activity_score,community_engagement_score,
+                growth_suspicion_score,growth_suspicion_signals,growth_corroborated,
+                hot_score,score_version,updated_at
             ) VALUES (
                 %(repo_id)s,%(metric_date)s,%(stars)s,%(forks)s,%(watchers)s,%(open_issues)s,
                 %(previous_snapshot_date)s,%(previous_stars)s,%(daily_star_growth)s,
                 %(daily_fork_growth)s,%(daily_watcher_growth)s,%(daily_growth_available)s,
                 %(daily_growth_source)s,%(daily_growth_observed_at)s,%(scale_corrected_growth_score)s,
                 %(growth_acceleration_score)s,%(absolute_growth_score)s,%(maintenance_activity_score)s,
-                %(community_engagement_score)s,%(hot_score)s,%(score_version)s,%(updated_at)s
+                %(community_engagement_score)s,%(growth_suspicion_score)s,
+                %(growth_suspicion_signals)s,%(growth_corroborated)s,
+                %(hot_score)s,%(score_version)s,%(updated_at)s
             ) ON CONFLICT (repo_id,metric_date) DO UPDATE SET
                 stars=EXCLUDED.stars,forks=EXCLUDED.forks,watchers=EXCLUDED.watchers,
                 open_issues=EXCLUDED.open_issues,previous_snapshot_date=EXCLUDED.previous_snapshot_date,
@@ -673,6 +683,9 @@ class PostgresGitHubProjectIngestionRepository:
                 absolute_growth_score=EXCLUDED.absolute_growth_score,
                 maintenance_activity_score=EXCLUDED.maintenance_activity_score,
                 community_engagement_score=EXCLUDED.community_engagement_score,
+                growth_suspicion_score=EXCLUDED.growth_suspicion_score,
+                growth_suspicion_signals=EXCLUDED.growth_suspicion_signals,
+                growth_corroborated=EXCLUDED.growth_corroborated,
                 hot_score=EXCLUDED.hot_score,score_version=EXCLUDED.score_version,updated_at=EXCLUDED.updated_at
         """
         with self._database.transaction() as connection:

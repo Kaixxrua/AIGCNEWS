@@ -15,6 +15,7 @@ class IngestionOrchestrationHost(Protocol):
     limit: int
     target_date: str | None
     github_ingestion: object
+    documents: object
     _crawlers: dict[str, BaseCrawler]
 
     @property
@@ -79,12 +80,28 @@ class MultiSourceIngestionRuntime:
 
         from backend.app.services.ingestion.github_project_metrics_service import (
             compute_github_daily_metrics,
+            corroboration_window,
         )
+
+        # trending 落库后触发重算，正是佐证数据最新的时候；佐证失败按无佐证打标
+        corroborated: set[str] | None = None
+        documents = getattr(self.host, "documents", None)
+        if documents is not None:
+            since, until = corroboration_window(crawl_result.snapshot_date)
+            try:
+                corroborated = await asyncio.to_thread(
+                    documents.list_github_repo_mentions,
+                    since_date=since,
+                    until_date=until,
+                )
+            except Exception as exc:  # noqa: BLE001 - 佐证失败不阻塞指标重算
+                logger.warning("[Orchestrator][github_daily] 反作弊佐证查询失败（按无佐证打标）: %s", exc)
 
         metric_result = await asyncio.to_thread(
             compute_github_daily_metrics,
             metric_date=crawl_result.snapshot_date,
             repo_ids=hit_result["repo_ids"],
+            corroborated_repo_ids=corroborated,
             db=self.host.github_ingestion,
         )
         logger.info(

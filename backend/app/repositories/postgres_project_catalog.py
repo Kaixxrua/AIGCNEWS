@@ -166,6 +166,18 @@ _LIST_PROJECT_COLUMN_PAIRS = (
         "COALESCE(gm.community_engagement_score,0) community_engagement_score",
         "0::double precision community_engagement_score",
     ),
+    (
+        "COALESCE(gm.growth_suspicion_score,0) growth_suspicion_score",
+        "0::double precision growth_suspicion_score",
+    ),
+    (
+        "COALESCE(gm.growth_suspicion_signals,'[]') growth_suspicion_signals",
+        "'[]'::text growth_suspicion_signals",
+    ),
+    (
+        "COALESCE(gm.growth_corroborated,FALSE) growth_corroborated",
+        "FALSE growth_corroborated",
+    ),
     ("ge.confidence", "we.confidence"),
 )
 _GH_SELECT_COLUMNS = tuple(github for github, _website in _LIST_PROJECT_COLUMN_PAIRS)
@@ -745,7 +757,9 @@ class PostgresProjectCatalogRepository:
                    c.language, c.topics_json::text AS topics_json,
                    gm.stars, gm.forks, gm.watchers,
                    gm.daily_star_growth, gm.daily_growth_source,
-                   gm.previous_snapshot_date, gm.hot_score, gm.metric_date
+                   gm.previous_snapshot_date, gm.hot_score, gm.metric_date,
+                   gm.growth_suspicion_score, gm.growth_suspicion_signals,
+                   gm.growth_corroborated
             FROM github_repo_daily_metrics gm
             JOIN github_repo_candidates c ON c.repo_id = gm.repo_id{enrichment_join}
             WHERE {' AND '.join(conditions)}

@@ -31,6 +31,19 @@ _ACCELERATION_RATIO_ANCHORS = (
     (4.0, 100.0),
 )
 
+# 反作弊信号阈值（一二层：仅打标不降权）。信号加和封顶 1.0；
+# 跨渠道佐证命中时分数清零、signals 仍留痕。
+_SUSPICION_MIN_GROWTH = 100  # 日增低于此不参与判定（小波动噪声太大）
+_FORK_FOLLOW_RATIO = 0.01  # fork 跟随率阈值：刷量仓只涨星不涨 fork
+_PULSE_BASELINE_EPS = 1.0  # 7 日基线 ≈ 0 → 从零脉冲
+_NEW_REPO_DAYS = 30
+_NEW_REPO_MIN_GROWTH = 200
+_SIGNAL_WEIGHTS = {
+    "low_fork_follow": 0.4,
+    "spike_from_zero_baseline": 0.3,
+    "new_repo_surge": 0.2,
+}
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -113,6 +126,17 @@ def closing_github_metric_date() -> str:
     return (_local_now().date() - timedelta(days=1)).isoformat()
 
 
+def corroboration_window(metric_date: str | date) -> tuple[str, str]:
+    """反作弊佐证查询窗口：metric_date 前后各扩一天。
+
+    metric_date 是调度时区（Asia/Shanghai）自然日，而 documents.created_at
+    是 UTC、部分源 published_date 用 PT——存在性佐证宁宽勿漏，前后各扩
+    一天吸收日界错位。
+    """
+    current = date.fromisoformat(_date_str(metric_date))
+    return (current - timedelta(days=1)).isoformat(), (current + timedelta(days=1)).isoformat()
+
+
 def _parse_date(value: Any) -> date | None:
     if not value:
         return None
@@ -174,6 +198,50 @@ def _maintenance_score(metric_date: str, pushed_at: Any) -> float:
     return round(100.0 / (1.0 + days_since_push / 14.0), 4)
 
 
+def _growth_suspicion(
+    *,
+    metric_date: str,
+    daily_star_growth: float,
+    daily_fork_growth: float,
+    has_complete_community_pair: bool,
+    baseline_7d: float,
+    repo_created_at: Any,
+    corroborated: bool,
+) -> tuple[float, list[str], bool]:
+    """反作弊一二层打标：行为比率信号加和（封顶 1.0），佐证命中清零。
+
+    信号语义：
+      low_fork_follow         刷量账号只点星，fork 跟随率趋近 0；
+                              community pair 不完整时跳过（unknown ≠ 0）。
+      spike_from_zero_baseline 7 日基线 ≈ 0 的单日脉冲（买量典型形态）。
+      new_repo_surge          新仓单日巨量增长且（通常）无外部出处。
+    佐证（corroborated=True）不清除 signals——留痕供误报复核，只清零分数。
+    """
+
+    signals: list[str] = []
+    if daily_star_growth >= _SUSPICION_MIN_GROWTH:
+        if (
+            has_complete_community_pair
+            and daily_fork_growth / daily_star_growth < _FORK_FOLLOW_RATIO
+        ):
+            signals.append("low_fork_follow")
+        if baseline_7d < _PULSE_BASELINE_EPS:
+            signals.append("spike_from_zero_baseline")
+        created_date = _parse_date(repo_created_at)
+        current_date = _parse_date(metric_date)
+        if (
+            created_date
+            and current_date
+            and 0 <= (current_date - created_date).days < _NEW_REPO_DAYS
+            and daily_star_growth >= _NEW_REPO_MIN_GROWTH
+        ):
+            signals.append("new_repo_surge")
+    score = min(sum(_SIGNAL_WEIGHTS[name] for name in signals), 1.0)
+    if corroborated:
+        return 0.0, signals, True
+    return round(score, 4), signals, False
+
+
 def _candidate_payload(repo: Dict[str, Any], *, existing: Dict[str, Any] | None, captured_at: str) -> Dict[str, Any]:
     topics = repo.get("topics") or repo.get("tags") or []
     return {
@@ -213,6 +281,96 @@ def _snapshot_payload(repo: Dict[str, Any], *, metric_date: str, captured_at: st
     }
 
 
+def record_github_metric_outcomes(
+    *,
+    targets: List[Dict[str, Any]],
+    outcomes: List[Any],
+    snapshot_date: str,
+    captured_at: str,
+    db: GitHubProjectIngestionRepository,
+) -> Dict[str, Any]:
+    """把一批指标抓取结果事务化落库并返回分类计数。
+
+    日刷与存量身份巡检脚本共用本写入路径：调用方负责目标选取与抓取，
+    本函数负责 404 累计、改名识别（renamed_from）、候选 upsert 与快照插入。
+    改名识别：跟随 301 后 API 返回的权威 full_name 与请求名不一致（区分
+    大小写）时，observation 携带 renamed_from=旧请求名，由仓储层把旧名
+    候选行归一/合并到新名。
+    """
+    existing_by_name = {str(item.get("full_name") or "").lower(): item for item in targets}
+    updated_candidates = 0
+    snapshots = 0
+    fetched = 0
+    skipped = 0
+    not_found_observations = 0
+    newly_not_found = 0
+    recovered = 0
+    unknown = 0
+    renamed = 0
+    pending: List[Dict[str, Any]] = []
+    pending_recovered = 0
+
+    for outcome in outcomes:
+        full_name = str(outcome.full_name or "").strip()
+        if outcome.status == "not_found":
+            skipped += 1
+            not_found_observations += 1
+            try:
+                if db.record_github_repo_not_found(full_name, checked_at=captured_at):
+                    newly_not_found += 1
+            except Exception as exc:  # noqa: BLE001 - keep daily refresh moving
+                logger.warning("[GitHubProjectMetrics] 仓库不可用状态写入失败 repo=%s error=%s", full_name, exc, exc_info=True)
+            continue
+        if outcome.status != "succeeded" or not outcome.metrics:
+            skipped += 1
+            unknown += 1
+            continue
+
+        repo = outcome.metrics
+        fetched += 1
+        api_full_name = str(repo.get("full_name") or "").strip()
+        full_name = api_full_name or full_name
+        if not full_name:
+            skipped += 1
+            continue
+        renamed_from = ""
+        if api_full_name and api_full_name != str(outcome.full_name or "").strip():
+            renamed_from = str(outcome.full_name or "").strip()
+            renamed += 1
+        existing = existing_by_name.get(str(outcome.full_name or "").lower())
+        pending_recovered += int((existing or {}).get("availability_status") == "not_found")
+        pending.append(
+            {
+                "candidate": _candidate_payload(repo, existing=existing, captured_at=captured_at),
+                "available_full_name": outcome.full_name,
+                "renamed_from": renamed_from,
+                "snapshot": _snapshot_payload(repo, metric_date=snapshot_date, captured_at=captured_at),
+            }
+        )
+
+    if pending:
+        try:
+            written = db.upsert_github_repo_metric_observations(pending, checked_at=captured_at)
+        except Exception as exc:  # noqa: BLE001 - keep daily refresh moving
+            skipped += len(pending)
+            logger.warning("[GitHubProjectMetrics] 批量快照写入失败（整批回滚） count=%d error=%s", len(pending), exc, exc_info=True)
+        else:
+            updated_candidates += written
+            snapshots += written
+            recovered += pending_recovered
+    return {
+        "fetched": fetched,
+        "updated_candidates": updated_candidates,
+        "snapshots": snapshots,
+        "skipped": skipped,
+        "not_found_observations": not_found_observations,
+        "newly_not_found": newly_not_found,
+        "recovered": recovered,
+        "unknown": unknown,
+        "renamed": renamed,
+    }
+
+
 def refresh_github_project_metric_snapshots(
     *,
     min_stars: int = DEFAULT_MIN_STARS,
@@ -248,74 +406,19 @@ def refresh_github_project_metric_snapshots(
         }
 
     outcomes = fetch_github_repo_metrics_batch(full_names)
-    existing_by_name = {str(item.get("full_name") or "").lower(): item for item in targets}
-    updated_candidates = 0
-    snapshots = 0
-    fetched = 0
-    skipped = 0
-    not_found_observations = 0
-    newly_not_found = 0
-    recovered = 0
-    unknown = 0
-    pending: List[Dict[str, Any]] = []
-    pending_recovered = 0
-
-    for outcome in outcomes:
-        full_name = str(outcome.full_name or "").strip()
-        if outcome.status == "not_found":
-            skipped += 1
-            not_found_observations += 1
-            try:
-                if db.record_github_repo_not_found(full_name, checked_at=captured_at):
-                    newly_not_found += 1
-            except Exception as exc:  # noqa: BLE001 - keep daily refresh moving
-                logger.warning("[GitHubProjectMetrics] 仓库不可用状态写入失败 repo=%s error=%s", full_name, exc, exc_info=True)
-            continue
-        if outcome.status != "succeeded" or not outcome.metrics:
-            skipped += 1
-            unknown += 1
-            continue
-
-        repo = outcome.metrics
-        fetched += 1
-        full_name = str(repo.get("full_name") or full_name).strip()
-        if not full_name:
-            skipped += 1
-            continue
-        existing = existing_by_name.get(outcome.full_name.lower())
-        pending_recovered += int((existing or {}).get("availability_status") == "not_found")
-        pending.append(
-            {
-                "candidate": _candidate_payload(repo, existing=existing, captured_at=captured_at),
-                "available_full_name": outcome.full_name,
-                "snapshot": _snapshot_payload(repo, metric_date=snapshot_date, captured_at=captured_at),
-            }
-        )
-
-    if pending:
-        try:
-            written = db.upsert_github_repo_metric_observations(pending, checked_at=captured_at)
-        except Exception as exc:  # noqa: BLE001 - keep daily refresh moving
-            skipped += len(pending)
-            logger.warning("[GitHubProjectMetrics] 批量快照写入失败（整批回滚） count=%d error=%s", len(pending), exc, exc_info=True)
-        else:
-            updated_candidates += written
-            snapshots += written
-            recovered += pending_recovered
-
-    skipped += max(0, len(full_names) - len(outcomes))
+    counts = record_github_metric_outcomes(
+        targets=targets,
+        outcomes=outcomes,
+        snapshot_date=snapshot_date,
+        captured_at=captured_at,
+        db=db,
+    )
+    counts["skipped"] += max(0, len(full_names) - len(outcomes))
     result = {
         "status": "success",
         "metric_date": snapshot_date,
         "targets": len(full_names),
-        "fetched": fetched,
-        "updated_candidates": updated_candidates,
-        "snapshots": snapshots,
-        "skipped": skipped,
-        "not_found_observations": not_found_observations,
-        "newly_not_found": newly_not_found,
-        "recovered": recovered,
-        "unknown": unknown,
+        **counts,
     }
     logger.info("[GitHubProjectMetrics] 每日指标快照刷新完成：%s", result)
     return result
@@ -326,9 +429,14 @@ def compute_github_daily_metrics(
     metric_date: str | date | None = None,
     min_stars: int = DEFAULT_MIN_STARS,
     repo_ids: List[str] | None = None,
+    corroborated_repo_ids: set[str] | None = None,
     db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
-    """Compute exact day-over-day growth and scale-adjusted hot scores."""
+    """Compute exact day-over-day growth and scale-adjusted hot scores.
+
+    corroborated_repo_ids: 当日在其他渠道（HN/news/dailyhot/X）有曝光的
+    repo_id 集合，用于反作弊佐证清零；None 表示跳过佐证（向后兼容）。
+    """
 
     metric_date_str = _date_str(metric_date)
     current_date = date.fromisoformat(metric_date_str)
@@ -454,6 +562,9 @@ def compute_github_daily_metrics(
                 ),
                 "_absolute_raw": absolute_raw,
                 "_community_raw": community_raw,
+                "_has_complete_community_pair": has_complete_community_pair,
+                "_baseline_7d": baseline_7d,
+                "_repo_created_at": row.get("repo_created_at"),
             }
         )
 
@@ -488,6 +599,22 @@ def compute_github_daily_metrics(
         absolute_score = _normalize_against_reference(float(item.pop("_absolute_raw")), _ABSOLUTE_GROWTH_REFERENCE) if available else 0.0
         community_score = _normalize_against_reference(float(item.pop("_community_raw")), _COMMUNITY_REFERENCE) if available else 0.0
         maintenance_score = float(item.get("maintenance_activity_score") or 0.0) if available else 0.0
+        has_complete_community_pair = bool(item.pop("_has_complete_community_pair"))
+        baseline_7d_value = float(item.pop("_baseline_7d") or 0.0)
+        repo_created_at = item.pop("_repo_created_at")
+        suspicion_score, suspicion_signals, corroborated = _growth_suspicion(
+            metric_date=metric_date_str,
+            daily_star_growth=float(item.get("daily_star_growth") or 0),
+            daily_fork_growth=float(item.get("daily_fork_growth") or 0),
+            has_complete_community_pair=has_complete_community_pair,
+            baseline_7d=baseline_7d_value,
+            repo_created_at=repo_created_at,
+            corroborated=(
+                corroborated_repo_ids is not None
+                and str(item.get("repo_id") or "").lower()
+                in corroborated_repo_ids
+            ),
+        ) if available else (0.0, [], False)
         hot_score = 0.0
         if available:
             hot_score = round(
@@ -506,6 +633,11 @@ def compute_github_daily_metrics(
                 "maintenance_activity_score": maintenance_score,
                 "community_engagement_score": community_score,
                 "hot_score": hot_score,
+                "growth_suspicion_score": suspicion_score,
+                "growth_suspicion_signals": json.dumps(
+                    suspicion_signals, ensure_ascii=False
+                ),
+                "growth_corroborated": corroborated,
                 "score_version": DEFAULT_SCORE_VERSION,
                 "updated_at": _utcnow(),
             }
@@ -513,6 +645,9 @@ def compute_github_daily_metrics(
         metrics.append(item)
 
     affected = db.upsert_github_daily_metrics(metrics)
+    suspicious_count = sum(
+        1 for item in metrics if float(item.get("growth_suspicion_score") or 0) > 0
+    )
     result = {
         "status": "success",
         "metric_date": metric_date_str,
@@ -523,6 +658,8 @@ def compute_github_daily_metrics(
         "gap_fallback": gap_fallback_count,
         "trending_fallback": trending_fallback_count,
         "positive_growth": positive_growth_count,
+        "suspicious": suspicious_count,
+        "corroborated": sum(1 for item in metrics if item.get("growth_corroborated")),
         "targeted": bool(repo_ids),
         "affected": affected,
         "score_version": DEFAULT_SCORE_VERSION,
@@ -538,6 +675,7 @@ def refresh_and_compute_github_project_metrics(
     metric_date: str | date | None = None,
     dry_run: bool = False,
     closing: bool = False,
+    corroborated_repo_ids: set[str] | None = None,
     _local_now: datetime | None = None,
     db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
@@ -569,6 +707,7 @@ def refresh_and_compute_github_project_metrics(
         metrics_result = compute_github_daily_metrics(
             metric_date=resolved_date,
             min_stars=min_stars,
+            corroborated_repo_ids=corroborated_repo_ids,
             db=db,
         )
     return {
