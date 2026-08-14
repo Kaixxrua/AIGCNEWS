@@ -118,6 +118,27 @@ describe('renderMarkdown', () => {
     expect(html).toContain('**未闭合的 opener')
     expect(html).toContain('<strong>要点：</strong> 紧接正文')
   })
+
+  it.each([
+    ['# 今日热点摘要 `#news` `#LLM`', 'news'],
+    ['## 今日热点摘要 `#news` `#LLM`', 'news'],
+    ['### 1. 条目 `#arxiv` `#Agent` `#安全对齐`', 'arxiv'],
+  ])(
+    'hides the leading # of tag code chips inside headings: %s',
+    (src, chip) => {
+      const html = renderMarkdown(src)
+
+      expect(html).toContain(`<code>${chip}</code>`)
+      expect(html).not.toContain('<code>#')
+    },
+  )
+
+  it('keeps the # of inline code outside headings', () => {
+    const html = renderMarkdown('正文里的 `#define` 宏与 `#include` 保留')
+
+    expect(html).toContain('<code>#define</code>')
+    expect(html).toContain('<code>#include</code>')
+  })
 })
 
 describe('renderPlainMarkdown', () => {

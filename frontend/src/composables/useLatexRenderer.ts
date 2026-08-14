@@ -81,6 +81,17 @@ function fixEmphasisSegment(seg: string): string {
   return result + seg.slice(cursor)
 }
 
+// ── 标题标签前导 # 隐藏 ─────────────────────────────────────────────────────
+// 简报标题按约定携带 `#来源` `#领域` 标签（反引号行内代码）。展示层只保留
+// 标签文字、不显示前导 #；仅作用于标题（h1-h6）内的行内代码，正文代码片段
+// 如 `#define` 不受影响。
+const _HEADING_BLOCK_RE = /(<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>)/g
+
+const stripHeadingTagHashes = (html: string): string =>
+  html.replace(_HEADING_BLOCK_RE, (heading) =>
+    heading.replace(/<code>#([^<]*)<\/code>/g, '<code>$1</code>'),
+  )
+
 /** HTML 属性转义 */
 const escapeAttr = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -150,7 +161,7 @@ export function renderLatex(text: string): string {
  */
 export function renderMarkdown(text: string): string {
   const withKatex = renderLatex(normalizeEmphasisFlanking(text || ''))
-  let html = sanitizeRenderedMarkdown(markdown.render(withKatex))
+  let html = stripHeadingTagHashes(sanitizeRenderedMarkdown(markdown.render(withKatex)))
 
   // 后处理：先处理 <pre><code>（块级），再处理行内 <code>
   html = html.replace(/<pre><code(?:\s[^>]*)?>([\s\S]*?)<\/code><\/pre>/g, (_m, inner: string) => {
@@ -178,7 +189,8 @@ export function renderMarkdown(text: string): string {
  * markdown-it 实例与 DOMPurify 消毒管线，禁止绕开消毒直接绑定渲染结果。
  */
 export function renderPlainMarkdown(text: string): string {
-  return sanitizeRenderedMarkdown(markdown.render(normalizeEmphasisFlanking(text || '')))
+  const html = sanitizeRenderedMarkdown(markdown.render(normalizeEmphasisFlanking(text || '')))
+  return stripHeadingTagHashes(html)
 }
 
 /**

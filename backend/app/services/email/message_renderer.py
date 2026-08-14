@@ -125,6 +125,14 @@ class EmailMessageRenderer:
             r'<a href="\2" style="color:#e94560;">\1</a>',
             body_html,
         )
+        # 标题内的标签行内代码不显示前导 #（与前端渲染约定一致）：
+        # ## 标题 `#news` → <code>news</code>；正文代码如 `#define` 不受影响。
+        body_html = "\n".join(
+            re.sub(r'(<code[^>]*>)#', r"\1", line)
+            if line.startswith(("<h1", "<h2", "<h3"))
+            else line
+            for line in body_html.split("\n")
+        )
 
         return f"""<!DOCTYPE html>
 <html>

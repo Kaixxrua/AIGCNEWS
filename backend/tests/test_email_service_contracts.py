@@ -201,6 +201,23 @@ class EmailRenderingContractTests(unittest.TestCase):
             "如非本人操作，请忽略此邮件，您的密码不会被更改。\n\n— AIGC_NEWS",
         )
 
+    def test_briefing_heading_tags_hide_leading_hash(self) -> None:
+        content = (
+            "# 综合今日报 `#news` `#LLM`\n"
+            "## 今日热点摘要 `#news` `#商业化`\n"
+            "### 1. 条目 `#arxiv` `#Agent`\n"
+            "正文里的 `#define` 保留前导 #\n"
+        )
+        html = self.renderer.briefing_html(content, "综合简报", "日报", "2026-08-14")
+
+        code_open = '<code style="background:#f0f0f0;padding:2px 4px;border-radius:3px;font-size:0.9em;">'
+        self.assertIn(f"<h1 style='color:#0f3460;margin:24px 0 12px;'>综合今日报 {code_open}news</code> {code_open}LLM</code></h1>", html)
+        self.assertIn(f"今日热点摘要 {code_open}news</code> {code_open}商业化</code></h2>", html)
+        self.assertIn(f"1. 条目 {code_open}arxiv</code> {code_open}Agent</code></h3>", html)
+        self.assertNotIn(f"{code_open}#news</code>", html)
+        # 正文中的行内代码不受影响
+        self.assertIn(f"{code_open}#define</code>", html)
+
     def test_briefing_html_and_unescaped_content_are_exact(self) -> None:
         content = "# <Title>\n## Section\n### Detail\n- **bold**\n1. `code`\n> quote\n[link](https://example.test/?a=1&b=2)\n"
         html = self.renderer.briefing_html(
