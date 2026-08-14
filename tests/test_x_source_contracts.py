@@ -475,19 +475,39 @@ class XPolicyContracts(unittest.TestCase):
         )
         self.assertEqual(out, "更多资格信息：\nhttps://gemini.google/eligibility")
 
-    def test_restore_translation_urls_skips_links_present_in_translation(self) -> None:
+    def test_restore_translation_urls_expands_inline_tco_in_translation(self) -> None:
         source = "read https://t.co/One and https://t.co/Two"
         urls = ["https://openai.com/a", "https://example.org/b"]
-        # 译文保留 t.co 形态 → 不补；另一个被剥 → 补展开式
+        # 译文内联保留 t.co（X 偶发形态）→ 原位替换展开；另一个被剥 → 末尾补展开式
         out = x_policy.restore_translation_urls(
             "阅读 https://t.co/One 与另一篇", source, [], urls
         )
-        self.assertEqual(out, "阅读 https://t.co/One 与另一篇\nhttps://example.org/b")
-        # 译文含展开式 → 也不重复补
+        self.assertEqual(out, "阅读 https://openai.com/a 与另一篇\nhttps://example.org/b")
+        # 译文含展开式 → 不重复补
         out2 = x_policy.restore_translation_urls(
             "阅读 https://openai.com/a 与 https://example.org/b", source, [], urls
         )
         self.assertEqual(out2, "阅读 https://openai.com/a 与 https://example.org/b")
+
+    def test_restore_translation_urls_expands_inline_tco_by_token_not_position(self) -> None:
+        # 译文语序可颠倒（实测 Zai_org 推文形态）：按 t.co token 配对展开，
+        # 不按译文内出现位置配对；全部内联保留时不追加任何尾巴
+        source = "Tech Blog: https://t.co/Blog see https://t.co/Demo"
+        urls = ["https://z.ai/blog/glm-5.3", "https://example.org/demo"]
+        out = x_policy.restore_translation_urls(
+            "看 https://t.co/Demo 演示，科技博客： https://t.co/Blog", source, [], urls
+        )
+        self.assertEqual(
+            out, "看 https://example.org/demo 演示，科技博客： https://z.ai/blog/glm-5.3"
+        )
+
+    def test_restore_translation_urls_keeps_unpaired_inline_tco(self) -> None:
+        # 实体数不齐：内联 t.co 无展开式可换，原样保留不静默丢链接
+        source = "see https://t.co/One or https://t.co/Two"
+        out = x_policy.restore_translation_urls(
+            "看 https://t.co/Two", source, [], ["https://openai.com/a"]
+        )
+        self.assertEqual(out, "看 https://t.co/Two\nhttps://openai.com/a")
 
     def test_restore_translation_urls_never_appends_media_tail(self) -> None:
         source = "好看 https://t.co/MediaTail"
