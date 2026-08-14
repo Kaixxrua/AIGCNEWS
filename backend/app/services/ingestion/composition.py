@@ -65,6 +65,12 @@ def provide_ingestion_dependencies(
         from backend.app.api.dashboard_cache_warmup import warm_dashboard_cache
 
         await warm_dashboard_cache(repositories)
+
+        # 媒体边缘预热走 detached task：冷图回源最坏 ~80s，不能拖慢采集主流程；
+        # 开关关闭时 spawn 返回 None，零行为变更。
+        from backend.app.services.x_media_warmup import spawn_x_media_warmup_task
+
+        spawn_x_media_warmup_task(repositories.documents)
     from backend.app.services.ingestion.crawlers import (
         ArxivCrawler,
         DailyHotCrawler,

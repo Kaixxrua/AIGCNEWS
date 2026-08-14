@@ -321,6 +321,17 @@ class Settings(BaseSettings):
     media_cache_max_bytes: int = 536870912  # 512 MiB
     media_cache_max_age_seconds: int = 604800  # 7 天
 
+    # X 看板媒体缓存预热（默认全部关闭，公共仓零行为变更）：
+    # 采集完成后对看板首屏的路径式代理 URL 主动 GET 边缘入口，proxy_cache
+    # 转热，用户首访不再撞 ~460ms 冷回源。base_url 指向边缘缓存入口
+    # （如 http://127.0.0.1:8488）；为空时预热记日志跳过，本地/无边缘
+    # 部署不报错。窗口默认 48h，覆盖 24h 滚动看板与 days_back 回翻。
+    x_media_warmup_enabled: bool = False
+    x_media_warmup_base_url: str = ""
+    x_media_warmup_window_hours: int = 48
+    x_media_warmup_max_urls: int = 300
+    x_media_warmup_concurrency: int = 8
+
     # MCP 工具调用计数持久化文件（容器内路径，对应 docker-compose volume 映射）
     mcp_tool_call_metrics_path: str = "storage/metrics/mcp_tool_calls.json"
 
