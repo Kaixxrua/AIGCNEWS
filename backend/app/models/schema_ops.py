@@ -420,3 +420,63 @@ class SmtpTestResponse(BaseModel):
     message: str
     to_email: str = ""
     latency_ms: Optional[int] = None
+
+
+class EmailPoolEntryRequest(BaseModel):
+    """邮件池单个服务商。password 为 None/空串表示按 name 保留已存密码；
+    clear_password=True 显式擦除；改名视为新 entry（不继承密码）。"""
+
+    name: str = Field(min_length=1, max_length=64)
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=587, ge=1, le=65535)
+    username: str = Field(default="", max_length=255)
+    password: Optional[str] = Field(default=None, max_length=1024)
+    clear_password: bool = False
+    from_email: str = Field(default="", max_length=255)
+    from_name: str = Field(default="", max_length=255)
+    use_tls: bool = True
+    daily_limit: int = Field(default=0, ge=0)
+    monthly_limit: int = Field(default=0, ge=0)
+    priority: int = 100
+
+
+class EmailPoolConfigRequest(BaseModel):
+    """邮件池配置保存请求。entries 传空数组 = 删除 DB 覆盖行，
+    整体回退 EMAIL_POOL_JSON env（文档化语义）。"""
+
+    entries: list[EmailPoolEntryRequest] = Field(default_factory=list, max_length=20)
+
+
+class EmailPoolEntryResponse(BaseModel):
+    """邮件池 entry 投影：绝不包含明文密码。"""
+
+    name: str
+    host: str
+    port: int
+    username: str
+    password_configured: bool
+    password_masked: Optional[str] = None
+    from_email: str
+    from_name: str
+    use_tls: bool
+    daily_limit: int
+    monthly_limit: int
+    priority: int
+
+
+class EmailPoolConfigResponse(BaseModel):
+    entries: list[EmailPoolEntryResponse]
+    source: Literal["database", "environment", "unconfigured"]
+    updated_at: Optional[str] = None
+
+
+class EmailPoolTestRequest(BaseModel):
+    to_email: Optional[EmailStr] = None
+
+
+class EmailPoolTestResponse(BaseModel):
+    status: str
+    message: str
+    to_email: str = ""
+    provider: Optional[str] = None
+    latency_ms: Optional[int] = None

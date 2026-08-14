@@ -286,6 +286,28 @@ class EmailPoolTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pool.host, "smtp.alpha.test")
         self.assertEqual(pool.port, 587)
         self.assertEqual(pool.from_email, "noreply@alpha.test")
+
+    async def test_send_returns_delivering_entry_name(self) -> None:
+        pool = make_pool([make_entry("alpha"), make_entry("beta")], FakeRedis())
+
+        provider = await pool.send_plain("user@example.test", "s", "b")
+
+        self.assertEqual(provider, "alpha")
+
+    async def test_send_html_returns_delivering_entry_name(self) -> None:
+        pool = make_pool([make_entry("alpha")], FakeRedis())
+
+        provider = await pool.send_html("user@example.test", "s", "<p>b</p>")
+
+        self.assertEqual(provider, "alpha")
+
+    async def test_failover_returns_second_entry_name(self) -> None:
+        FakeEntryTransport.fail_with["smtp.alpha.test"] = smtp_error(450, "busy")
+        pool = make_pool([make_entry("alpha"), make_entry("beta")], FakeRedis())
+
+        provider = await pool.send_plain("user@example.test", "s", "b")
+
+        self.assertEqual(provider, "beta")
         self.assertTrue(pool.configured)
 
 

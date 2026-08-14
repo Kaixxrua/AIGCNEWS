@@ -16,6 +16,9 @@ from backend.app.repositories.briefing_repository import (
 )
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.repositories.document_repository import DocumentRepository
+from backend.app.repositories.email_pool_settings_repository import (
+    EmailPoolSettingsRepository,
+)
 from backend.app.repositories.error_event_repository import ErrorEventRepository
 from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.repositories.mcp_access_token_repository import (
@@ -36,6 +39,9 @@ from backend.app.repositories.postgres_conversation_repository import (
 )
 from backend.app.repositories.postgres_document_repository import (
     PostgresDocumentRepository,
+)
+from backend.app.repositories.postgres_email_pool_settings_repository import (
+    PostgresEmailPoolSettingsRepository,
 )
 from backend.app.repositories.postgres_error_event_repository import (
     PostgresErrorEventRepository,
@@ -177,6 +183,7 @@ class ApplicationRepositories:
     runtime_provider_settings: RuntimeProviderSettingRepository
     scheduler_job_configs: SchedulerJobConfigRepository
     smtp_settings: SmtpSettingsRepository
+    email_pool_settings: EmailPoolSettingsRepository
     site_contact_page: SiteContactPageRepository
     error_events: ErrorEventRepository
     mcp_server_configs: McpServerConfigRepository
@@ -253,6 +260,7 @@ def create_application_repositories(
         runtime_provider_settings=PostgresRuntimeProviderSettingRepository(postgres),
         scheduler_job_configs=PostgresSchedulerJobConfigRepository(postgres),
         smtp_settings=PostgresSmtpSettingsRepository(postgres),
+        email_pool_settings=PostgresEmailPoolSettingsRepository(postgres),
         site_contact_page=PostgresSiteContactPageRepository(postgres),
         error_events=PostgresErrorEventRepository(postgres),
         mcp_server_configs=PostgresMcpServerConfigRepository(postgres),

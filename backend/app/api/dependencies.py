@@ -23,6 +23,9 @@ from backend.app.repositories.document_repository import (
     DocumentXSnapshotBackfillReader,
     PapersReader,
 )
+from backend.app.repositories.email_pool_settings_repository import (
+    EmailPoolSettingsRepository,
+)
 from backend.app.repositories.error_event_repository import ErrorEventRepository
 from backend.app.repositories.evaluation_repository import EvaluationRepository
 from backend.app.repositories.mcp_access_token_repository import (
@@ -75,6 +78,7 @@ from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.dashboard.query_service import GitHubHotBoardReader
 from backend.app.services.dashboard_cache_admin import DashboardCacheAdminService
 from backend.app.services.data_cleanup_admin import DataCleanupAdminService
+from backend.app.services.email_pool_config_admin import EmailPoolConfigAdminService
 from backend.app.services.github_project_admin import GitHubProjectAdminService
 from backend.app.services.github_project_crawl_admin import (
     GitHubProjectCrawlAdminService,
@@ -382,6 +386,25 @@ def get_smtp_config_admin_service(
     repository: SmtpSettingsRepository = Depends(get_smtp_settings_repository),
 ) -> SmtpConfigAdminService:
     return SmtpConfigAdminService(repository)
+
+
+def get_email_pool_settings_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> EmailPoolSettingsRepository:
+    return repositories.email_pool_settings
+
+
+def get_email_pool_config_admin_service(
+    request: Request,
+    repository: EmailPoolSettingsRepository = Depends(
+        get_email_pool_settings_repository
+    ),
+) -> EmailPoolConfigAdminService:
+    # 测试投递走真实池链路，需要 redis 支撑配额计数；未就绪时 None 即
+    # fail-open（护栏失效但发送可用），与 pool_transport 契约一致
+    return EmailPoolConfigAdminService(
+        repository, redis_client=getattr(request.app.state, "redis", None)
+    )
 
 
 def get_site_contact_page_repository(

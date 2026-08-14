@@ -261,15 +261,17 @@ class EmailPoolTransport:
             return False, False
         return _entry_transport(self._entries[0]).tls_options()
 
-    async def send_plain(self, to_email: str, subject: str, body: str) -> None:
-        await self._send(to_email, subject, body, subtype="plain")
+    async def send_plain(self, to_email: str, subject: str, body: str) -> str:
+        """投递纯文本邮件，返回实际命中的服务商 entry 名。"""
+        return await self._send(to_email, subject, body, subtype="plain")
 
-    async def send_html(self, to_email: str, subject: str, body: str) -> None:
-        await self._send(to_email, subject, body, subtype="html")
+    async def send_html(self, to_email: str, subject: str, body: str) -> str:
+        """投递 HTML 邮件，返回实际命中的服务商 entry 名。"""
+        return await self._send(to_email, subject, body, subtype="html")
 
     async def _send(
         self, to_email: str, subject: str, body: str, *, subtype: str
-    ) -> None:
+    ) -> str:
         failures: list[str] = []
         for entry in self._entries:
             if not await self._quota.is_available(entry):
@@ -310,7 +312,7 @@ class EmailPoolTransport:
                 to_email,
                 subtype,
             )
-            return
+            return entry.name
         logger.error(
             "[EMAIL_POOL] ❌ 全部服务商不可用/投递失败 to=%s failures=%s",
             to_email,
@@ -329,3 +331,40 @@ def _entry_transport(entry: EmailPoolEntry) -> SmtpTransport:
         from_name=entry.from_name,
         use_tls=entry.use_tls,
     )
+
+
+def merge_legacy_entry(
+    entries: list[EmailPoolEntry],
+    *,
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    from_email: str,
+    from_name: str,
+    use_tls: bool,
+) -> list[EmailPoolEntry]:
+    """把既有单 SMTP 配置并入池为最低优先级兜底 entry（按 host 去重）。
+
+    工厂（build_email_service）与管理员测试投递链路共用，保证面板上的
+    测试邮件走与生产完全一致的 failover 顺序。host 为空或已被池内
+    entry 占用时原样返回。
+    """
+    merged = list(entries)
+    if not merged or not host or host in {entry.host for entry in merged}:
+        return merged
+    merged.append(
+        EmailPoolEntry(
+            name="legacy-smtp",
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            from_email=from_email,
+            from_name=from_name,
+            use_tls=use_tls,
+            priority=max(entry.priority for entry in merged) + 10,
+        )
+    )
+    merged.sort(key=lambda entry: entry.priority)
+    return merged

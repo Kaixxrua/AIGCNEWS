@@ -9,9 +9,7 @@
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import logging
-import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -19,6 +17,7 @@ from typing import Any
 
 from backend.app.core.config import settings
 from backend.app.repositories.smtp_settings_repository import SmtpSettingsManager
+from backend.app.services.email.host_guard import FROM_EMAIL_PATTERN, validate_email_host
 from backend.app.services.email.smtp_config_provider import (
     EffectiveSmtpConfig,
     invalidate_smtp_config_cache,
@@ -29,39 +28,8 @@ from backend.app.services.secret_masking import mask_token
 
 logger = logging.getLogger(__name__)
 
-_FROM_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-# 主机字段只允许纯主机名或 IPv4 字面量：":///@" 可注入协议、端口或凭证
-_HOST_FORBIDDEN_CHARS = re.compile(r"[\s/@:]")
-_DENIED_HOSTNAMES = {"localhost", "metadata.google.internal"}
-
-
-def _validate_smtp_host(host: str) -> str:
-    """归一化并拦截危险 SMTP 目标（渗透审计 SSRF-3），返回规范化主机名。
-
-    允许私网段（RFC1918）：内网邮件中继是合法部署形态；拦截回环、链路
-    本地、组播、未指定与保留地址及 localhost 系主机名，防本机服务探测
-    与凭证外送。不做保存期 DNS：docker 内部主机名仅在发送时网络视图可
-    解析，保存期解析会误杀合法配置。IPv6 字面量因与端口分隔符冲突不在
-    面板路径支持（env 路径不受影响）。
-    """
-    normalized = host.strip().lower().rstrip(".")
-    if not normalized or len(normalized) > 253 or _HOST_FORBIDDEN_CHARS.search(normalized):
-        raise ValueError("SMTP 主机名不合法：仅允许主机名或 IPv4 地址，不含协议/端口/凭证")
-    if normalized in _DENIED_HOSTNAMES or normalized.endswith(".localhost"):
-        raise ValueError("SMTP 主机不允许指向本机或保留地址")
-    try:
-        ip = ipaddress.ip_address(normalized)
-    except ValueError:
-        return normalized
-    if (
-        ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_unspecified
-        or ip.is_reserved
-    ):
-        raise ValueError("SMTP 主机不允许指向本机或保留地址")
-    return normalized
+# 兼容旧引用：发件邮箱校验正则改由 host_guard 共享维护
+_FROM_EMAIL_PATTERN = FROM_EMAIL_PATTERN
 
 
 def _classify_delivery_failure(error_type: str) -> str:
@@ -149,7 +117,7 @@ class SmtpConfigAdminService:
         port = int(values.get("port") or 587)
         if not 1 <= port <= 65535:
             raise ValueError("端口必须在 1-65535 之间")
-        host = _validate_smtp_host(host)
+        host = validate_email_host(host)
         from_email = str(values.get("from_email") or "").strip()
         if not _FROM_EMAIL_PATTERN.match(from_email):
             raise ValueError("发件邮箱格式不正确")

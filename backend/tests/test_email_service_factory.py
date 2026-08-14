@@ -4,7 +4,10 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from backend.app.services import email_service
+from backend.app.services.email.pool_config_provider import EffectiveEmailPoolConfig
+from backend.app.services.email.pool_transport import EmailPoolTransport
 from backend.app.services.email.smtp_config_provider import EffectiveSmtpConfig
+from backend.app.services.email.smtp_transport import SmtpTransport
 from backend.app.services.email_service import EmailService, build_email_service
 
 
@@ -99,6 +102,77 @@ class EmailServiceFactoryTests(unittest.TestCase):
         self.assertEqual(kwargs["smtp_from_name"], "DB Sender")
         self.assertTrue(kwargs["smtp_use_tls"])
         self.assertEqual(kwargs["transport"]._host, "db-smtp.example.test")
+
+    def test_build_email_service_config_none_reads_pool_from_provider(self) -> None:
+        """config=None 路径：池配置经 pool_config_provider 解析（DB 覆盖 env），
+        legacy 单 SMTP 并入兜底 entry。"""
+        redis_client = object()
+        resolved_smtp = EffectiveSmtpConfig(
+            host="db-smtp.example.test",
+            port=465,
+            username="db-user",
+            password="db-password",
+            from_email="db@example.test",
+            from_name="DB Sender",
+            use_tls=True,
+            source="database",
+        )
+        resolved_pool = EffectiveEmailPoolConfig(
+            entries_json='[{"name":"brevo","host":"smtp-relay.brevo.test","priority":20}]',
+            source="database",
+        )
+
+        with (
+            patch.object(
+                email_service, "resolve_smtp_config", return_value=resolved_smtp
+            ),
+            patch.object(
+                email_service, "resolve_email_pool_config", return_value=resolved_pool
+            ) as pool_resolver,
+        ):
+            service = build_email_service(redis_client)
+
+        pool_resolver.assert_called_once()
+        transport = service._transport
+        self.assertIsInstance(transport, EmailPoolTransport)
+        names = [entry.name for entry in transport._entries]
+        self.assertEqual(names, ["brevo", "legacy-smtp"])
+        # legacy 兜底 priority 恒大于池内最大 priority
+        self.assertGreater(
+            transport._entries[-1].priority, transport._entries[0].priority
+        )
+        # 池 entry 缺省 from_* 继承 legacy 发件身份
+        self.assertEqual(transport._entries[0].from_email, "db@example.test")
+
+    def test_build_email_service_config_none_pool_unconfigured_keeps_single_smtp(
+        self,
+    ) -> None:
+        """池未配置（DB 与 env 均无）时保持改造前单 SMTP 行为。"""
+        redis_client = object()
+        resolved_smtp = EffectiveSmtpConfig(
+            host="db-smtp.example.test",
+            port=465,
+            username="db-user",
+            password="db-password",
+            from_email="db@example.test",
+            from_name="DB Sender",
+            use_tls=True,
+            source="database",
+        )
+        resolved_pool = EffectiveEmailPoolConfig(entries_json="", source="unconfigured")
+
+        with (
+            patch.object(
+                email_service, "resolve_smtp_config", return_value=resolved_smtp
+            ),
+            patch.object(
+                email_service, "resolve_email_pool_config", return_value=resolved_pool
+            ),
+        ):
+            service = build_email_service(redis_client)
+
+        self.assertIsInstance(service._transport, SmtpTransport)
+        self.assertEqual(service._transport._host, "db-smtp.example.test")
 
 
 if __name__ == "__main__":

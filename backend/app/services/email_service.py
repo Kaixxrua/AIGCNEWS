@@ -15,10 +15,11 @@ from backend.app.services.email.otp_store import (
     OtpStoreUnavailableError,
     RedisOtpStore,
 )
+from backend.app.services.email.pool_config_provider import resolve_email_pool_config
 from backend.app.services.email.pool_transport import (
-    EmailPoolEntry,
     EmailPoolQuotaStore,
     EmailPoolTransport,
+    merge_legacy_entry,
     parse_email_pool_entries,
 )
 from backend.app.services.email.smtp_config_provider import resolve_smtp_config
@@ -234,7 +235,8 @@ def build_email_service(redis_client, *, config=None) -> EmailService:
 
     EMAIL_POOL_JSON 非空时以 EmailPoolTransport 接管外发：池内 entry
     按 priority 升序 failover，既有单 SMTP 配置并入为兜底 entry（按
-    host 去重）；池为空时行为与改造前完全一致。
+    host 去重）；池为空时行为与改造前完全一致。config=None（生产）路径
+    经 pool_config_provider 解析（DB 行覆盖 env，60s TTL 热生效）。
     """
     if config is None:
         resolved = resolve_smtp_config(env=settings)
@@ -245,7 +247,7 @@ def build_email_service(redis_client, *, config=None) -> EmailService:
         from_email = resolved.from_email
         from_name = resolved.from_name
         use_tls = resolved.use_tls
-        pool_json = settings.EMAIL_POOL_JSON
+        pool_json = resolve_email_pool_config(env=settings).entries_json
     else:
         host = config.SMTP_HOST
         port = config.SMTP_PORT
@@ -258,26 +260,20 @@ def build_email_service(redis_client, *, config=None) -> EmailService:
     otp_store = RedisOtpStore(redis_client, compare_digest=hmac.compare_digest)
     renderer = EmailMessageRenderer()
 
-    pool_entries = parse_email_pool_entries(
-        pool_json,
-        default_from_email=from_email,
-        default_from_name=from_name,
+    pool_entries = merge_legacy_entry(
+        parse_email_pool_entries(
+            pool_json,
+            default_from_email=from_email,
+            default_from_name=from_name,
+        ),
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        from_email=from_email,
+        from_name=from_name,
+        use_tls=use_tls,
     )
-    if pool_entries and host and host not in {entry.host for entry in pool_entries}:
-        pool_entries.append(
-            EmailPoolEntry(
-                name="legacy-smtp",
-                host=host,
-                port=port,
-                username=username,
-                password=password,
-                from_email=from_email,
-                from_name=from_name,
-                use_tls=use_tls,
-                priority=max(entry.priority for entry in pool_entries) + 10,
-            )
-        )
-        pool_entries.sort(key=lambda entry: entry.priority)
 
     if pool_entries:
         logger.info(
