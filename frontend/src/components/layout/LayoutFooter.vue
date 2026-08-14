@@ -36,7 +36,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 <style scoped>
 .dock-footer {
   position: fixed;
-  bottom: 6px;
+  bottom: 4px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 99;
@@ -45,7 +45,14 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
   flex-wrap: wrap;
   justify-content: center;
   gap: 0 2px;
+  /* fixed + left:50% 时 shrink-to-fit 可用宽度会被 left 偏移吃掉一半，
+     长文案（英文）被压成两行后顶行会钻进 dock 底部；
+     显式 max-content 让单行用满视口宽度，max-width 兜底窄屏折行 */
+  width: max-content;
+  max-width: calc(100vw - 24px);
   font-size: 10px;
+  /* 两行时总高 24px + bottom 4px，恰好收进 dock 下方 28px 安全区 */
+  line-height: 1.2;
   font-weight: 400;
   color: rgb(var(--stone-400-rgb) / 0.7);
   letter-spacing: 0.02em;
@@ -76,6 +83,8 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
     right: 12px;
     bottom: calc(66px + env(safe-area-inset-bottom));
     transform: none;
+    /* 移动端 left/right 双约束撑满，撤掉桌面的 max-content 定宽 */
+    width: auto;
     max-width: calc(100vw - 24px);
     line-height: 1.5;
     white-space: normal;
