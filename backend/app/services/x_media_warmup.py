@@ -149,8 +149,8 @@ _WARMUP_TASKS: set[asyncio.Task[None]] = set()
 
 
 async def run_x_media_warmup_cycle(documents: DocumentRecentReader) -> None:
-    """单轮预热周期：边缘缓存预热（封面回填后续并入同一入口，采集钩子与
-    周期兜底 job 共用）。
+    """单轮预热周期：边缘缓存预热 + 存量视频封面回填（采集钩子与周期
+    兜底 job 共用同一入口）。
 
     各段独立兜底：detached task 的异常若无人 retrieve 会打
     「Task exception was never retrieved」，预热是旁路不能让采集背锅。
@@ -159,6 +159,12 @@ async def run_x_media_warmup_cycle(documents: DocumentRecentReader) -> None:
         await warm_recent_x_media(documents)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[XMediaWarmup] 边缘预热异常（非致命）: %s", exc, exc_info=True)
+    try:
+        from backend.app.services.x_poster_backfill import backfill_missing_posters
+
+        await backfill_missing_posters(documents)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[XMediaWarmup] 封面回填异常（非致命）: %s", exc, exc_info=True)
 
 
 def spawn_x_media_warmup_task(

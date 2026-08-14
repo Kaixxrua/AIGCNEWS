@@ -336,6 +336,10 @@ class Settings(BaseSettings):
     x_media_warmup_max_urls: int = 300
     x_media_warmup_concurrency: int = 8
 
+    # 存量视频封面回填：单轮上限（每条代价 = 4MB 回源 + ffmpeg 抽帧），
+    # 随预热周期渐进消化存量，避免单轮风暴
+    x_poster_backfill_max_per_run: int = 8
+
     # MCP 工具调用计数持久化文件（容器内路径，对应 docker-compose volume 映射）
     mcp_tool_call_metrics_path: str = "storage/metrics/mcp_tool_calls.json"
 

@@ -1,7 +1,8 @@
 """X 视频封面端点契约测试。
 
-接缝：_get_upstream_client 注入 MockTransport；_poster_cache_dir 指向
-tmp_path；_extract_first_frame 用假实现替代真实 ffmpeg 子进程。
+接缝：x_poster_frames.get_upstream_client 注入 MockTransport；
+x_poster_frames.poster_cache_dir 指向 tmp_path；routes_x_media 的
+_extract_first_frame 别名用假实现替代真实 ffmpeg 子进程。
 模块级负缓存/锁在 fixture 中清理，保证用例间隔离。
 """
 
@@ -16,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_x_media
 from backend.app.core.config import settings
+from backend.app.services import x_poster_frames
 from backend.tests.test_email_service_contracts import FakeRedis
 
 VIDEO_URL = "https://video.twimg.com/amplify_video/123/vid/avc1/1920x1080/a.mp4?tag=29"
@@ -30,7 +32,7 @@ def poster_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "x_source_enabled", True)
     routes_x_media._poster_locks.clear()
     routes_x_media._poster_negative.clear()
-    monkeypatch.setattr(routes_x_media, "_poster_cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(x_poster_frames, "poster_cache_dir", lambda: tmp_path)
 
     state = {"upstream_calls": 0, "extract_calls": 0, "extract_ok": True}
 
@@ -48,7 +50,7 @@ def poster_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 return True
             return False
 
-        monkeypatch.setattr(routes_x_media, "_get_upstream_client", fake_client_factory)
+        monkeypatch.setattr(x_poster_frames, "get_upstream_client", fake_client_factory)
         monkeypatch.setattr(routes_x_media, "_extract_first_frame", fake_extract)
         app = FastAPI()
         app.include_router(routes_x_media.router, prefix="/api")
