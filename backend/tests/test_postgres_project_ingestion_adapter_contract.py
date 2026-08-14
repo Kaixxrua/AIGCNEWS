@@ -29,6 +29,7 @@ def test_postgres_ingestion_adapter_covers_protocol_operations() -> None:
         "get_github_hot_repos",
         "get_github_snapshot_count",
         "list_github_project_metric_targets",
+        "list_github_identity_sweep_targets",
         "get_github_metric_refresh_status",
         "get_github_daily_metric_inputs",
         "upsert_github_daily_metrics",

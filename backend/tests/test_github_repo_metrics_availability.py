@@ -70,6 +70,72 @@ class GitHubRepoMetricsFetchTests(unittest.TestCase):
 
         self.assertEqual(result.status, "unknown")
 
+    def test_rename_redirect_is_followed_once(self) -> None:
+        payload = {
+            "node_id": "repo-1",
+            "full_name": "owner/new-name",
+            "html_url": "https://github.com/owner/new-name",
+            "stargazers_count": 42,
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if str(request.url).endswith("/repos/owner/old-name"):
+                return httpx.Response(
+                    301,
+                    headers={"location": "https://api.github.com/repos/owner/new-name"},
+                )
+            return httpx.Response(200, json=payload)
+
+        with self._client(handler) as client:
+            result = fetch_github_repo_metrics("owner/old-name", client=client, use_token=False)
+
+        self.assertEqual(result.status, "succeeded")
+        self.assertTrue(result.was_redirected)
+        # full_name 保持请求名（旧名），权威新名在 metrics["full_name"]
+        self.assertEqual(result.full_name, "owner/old-name")
+        self.assertEqual(result.metrics["full_name"], "owner/new-name")
+        self.assertEqual(result.metrics["repo_id"], "repo-1")
+
+    def test_rename_redirect_then_404_is_not_found(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if str(request.url).endswith("/repos/owner/old-name"):
+                return httpx.Response(
+                    301,
+                    headers={"location": "https://api.github.com/repos/owner/gone"},
+                )
+            return httpx.Response(404)
+
+        with self._client(handler) as client:
+            result = fetch_github_repo_metrics("owner/old-name", client=client, use_token=False)
+
+        self.assertEqual(result.status, "not_found")
+
+    def test_redirect_without_api_location_is_unknown(self) -> None:
+        # 旧名被重用/跨域跳转等不可跟随重定向：fail-closed 记 unknown，绝不误判
+        with self._client(
+            lambda _request: httpx.Response(
+                301, headers={"location": "https://github.com/owner/repo"}
+            )
+        ) as client:
+            result = fetch_github_repo_metrics("owner/repo", client=client, use_token=False)
+
+        self.assertEqual(result.status, "unknown")
+        self.assertFalse(result.was_redirected)
+
+    def test_second_redirect_hop_is_not_followed(self) -> None:
+        # 最多跟随一跳：连续重定向视为异常形态，记 unknown 而非无限跟随
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                301,
+                headers={"location": "https://api.github.com/repos/owner/elsewhere"},
+            )
+
+        with self._client(handler) as client:
+            result = fetch_github_repo_metrics("owner/repo", client=client, use_token=False)
+
+        self.assertEqual(result.status, "unknown")
+
+
 
 class GitHubRepoAvailabilityRefreshTests(unittest.TestCase):
     def test_refresh_records_not_found_unknown_and_success(self) -> None:
@@ -169,6 +235,78 @@ class GitHubRepoAvailabilityRefreshTests(unittest.TestCase):
         self.assertEqual(result["snapshots"], 0)
         self.assertEqual(result["skipped"], 2)
         self.assertEqual(result["recovered"], 0)
+
+
+    def test_refresh_flags_rename_via_renamed_from(self) -> None:
+        # GraphQL 对改名仓库在旧名查询下返回新名数据：API 权威名与请求名不一致
+        # → observation 携带 renamed_from，由仓储层归一/合并旧名行
+        repository = MagicMock()
+        repository.list_github_project_metric_targets.return_value = [
+            {"repo_id": "node-1", "full_name": "owner/old-name", "availability_status": "active"},
+        ]
+        repository.upsert_github_repo_metric_observations.return_value = 1
+        outcomes = [
+            GitHubRepoMetricsResult(
+                "owner/old-name",
+                "succeeded",
+                metrics={
+                    "repo_id": "node-1",
+                    "full_name": "owner/new-name",
+                    "title": "owner/new-name",
+                    "url": "https://github.com/owner/new-name",
+                    "stars": 100,
+                    "forks": 5,
+                    "watchers": 6,
+                    "open_issues": 0,
+                },
+                http_status=200,
+            ),
+        ]
+
+        with (
+            patch.object(metrics, "fetch_github_repo_metrics_batch", return_value=outcomes),
+            patch.object(metrics, "_local_today", return_value=metrics.date(2026, 7, 23)),
+        ):
+            result = metrics.refresh_github_project_metric_snapshots(
+                metric_date="2026-07-23",
+                db=repository,
+            )
+
+        observations = repository.upsert_github_repo_metric_observations.call_args.args[0]
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(observations[0]["renamed_from"], "owner/old-name")
+        self.assertEqual(observations[0]["candidate"]["full_name"], "owner/new-name")
+        self.assertEqual(observations[0]["snapshot"]["full_name"], "owner/new-name")
+        self.assertEqual(result["renamed"], 1)
+        self.assertEqual(result["fetched"], 1)
+
+    def test_refresh_same_name_is_not_flagged_as_rename(self) -> None:
+        repository = MagicMock()
+        repository.list_github_project_metric_targets.return_value = [
+            {"repo_id": "node-1", "full_name": "owner/repo", "availability_status": "active"},
+        ]
+        repository.upsert_github_repo_metric_observations.return_value = 1
+        outcomes = [
+            GitHubRepoMetricsResult(
+                "owner/repo",
+                "succeeded",
+                metrics={"repo_id": "node-1", "full_name": "owner/repo", "stars": 10},
+                http_status=200,
+            ),
+        ]
+
+        with (
+            patch.object(metrics, "fetch_github_repo_metrics_batch", return_value=outcomes),
+            patch.object(metrics, "_local_today", return_value=metrics.date(2026, 7, 23)),
+        ):
+            result = metrics.refresh_github_project_metric_snapshots(
+                metric_date="2026-07-23",
+                db=repository,
+            )
+
+        observations = repository.upsert_github_repo_metric_observations.call_args.args[0]
+        self.assertEqual(observations[0]["renamed_from"], "")
+        self.assertEqual(result["renamed"], 0)
 
 
 if __name__ == "__main__":

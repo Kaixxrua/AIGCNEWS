@@ -45,6 +45,10 @@ class GitHubProjectIngestionRepository(Protocol):
         self, *, min_stars: int = 500, limit: int = 0
     ) -> list[dict[str, Any]]: ...
 
+    def list_github_identity_sweep_targets(
+        self, *, after_full_name: str = "", limit: int = 500
+    ) -> list[dict[str, Any]]: ...
+
     def get_github_metric_refresh_status(
         self, *, metric_date: str, min_stars: int = 500, limit: int = 0
     ) -> dict[str, Any]: ...

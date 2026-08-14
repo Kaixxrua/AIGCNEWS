@@ -1,0 +1,544 @@
+"""改名归一化与僵尸项目防御的 PostgreSQL 集成测试。
+
+覆盖：
+- renamed_from 观测触发的改名归一（node 型 PK 就地改名 / name 型 PK 克隆并入）
+- 新旧两名重复行合并（子表随迁、收藏软引用改指、别名长期可解析）
+- 名称重用防御（陌生 node id 观测被拒 + 累计不可用观测）
+- 热榜读取侧过滤（not_found / 别名隐藏行不再出现）
+"""
+from __future__ import annotations
+
+import os
+import uuid
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+_TESTS_DIR = Path(__file__).resolve().parent
+_IMPORT_CWD = Path.cwd()
+os.chdir(_TESTS_DIR)
+try:
+    psycopg = pytest.importorskip("psycopg")
+    pytest.importorskip("psycopg_pool")
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+    from psycopg_pool import ConnectionPool
+
+    from backend.app.core.postgres_database import PostgresDatabaseLifecycle
+    from backend.app.core.postgres_migrations import PostgresMigrationRunner
+    from backend.app.repositories.postgres_project_ingestion_repository import (
+        PostgresGitHubProjectIngestionRepository,
+    )
+finally:
+    os.chdir(_IMPORT_CWD)
+
+_CHECKED_AT = "2026-08-14T01:00:00+00:00"
+_SNAPSHOT_DATE = "2026-08-14"
+
+
+def _test_dsn() -> str:
+    dsn = os.environ.get("TEST_POSTGRES_DSN", "").strip()
+    if not dsn:
+        pytest.skip("TEST_POSTGRES_DSN is required for PostgreSQL integration tests")
+    database = str(conninfo_to_dict(dsn).get("dbname") or "")
+    if "test" not in database.lower():
+        pytest.skip("TEST_POSTGRES_DSN dbname must contain 'test'")
+    return dsn
+
+
+@pytest.fixture(scope="module")
+def postgres_ingestion() -> Iterator[tuple[Any, Any]]:
+    dsn = _test_dsn()
+    schema = f"rename_reconcile_it_{uuid.uuid4().hex}"
+    with psycopg.connect(dsn, autocommit=True) as admin:
+        admin.execute(f'CREATE SCHEMA "{schema}"')
+    scoped_dsn = make_conninfo(dsn, options=f"-c search_path={schema}")
+    database = PostgresDatabaseLifecycle(
+        lambda: ConnectionPool(
+            conninfo=scoped_dsn,
+            min_size=1,
+            max_size=4,
+            timeout=10,
+            kwargs={"autocommit": False, "row_factory": psycopg.rows.dict_row},
+            open=False,
+        )
+    )
+    try:
+        PostgresMigrationRunner(database).apply()
+        yield PostgresGitHubProjectIngestionRepository(database), database
+    finally:
+        database.close()
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
+def _seed_candidate(
+    repository: Any,
+    *,
+    repo_id: str,
+    full_name: str,
+    stars: int = 500,
+    source_channels: str = "trending_daily",
+    first_seen_at: str = "2026-01-01T00:00:00+00:00",
+    title: str | None = None,
+) -> None:
+    repository.upsert_github_repo_candidate(
+        {
+            "repo_id": repo_id,
+            "full_name": full_name,
+            "title": title or full_name,
+            "url": f"https://github.com/{full_name}",
+            "stars": stars,
+            "forks": 10,
+            "watchers": 20,
+            "source_channels": source_channels,
+            "first_seen_at": first_seen_at,
+            "last_seen_at": first_seen_at,
+            "last_snapshot_at": first_seen_at,
+        }
+    )
+
+
+def _seed_node_candidate(
+    database: Any,
+    *,
+    repo_id: str,
+    full_name: str,
+    stars: int = 500,
+) -> None:
+    """直插 node 型 PK 行（生产存量形态；upsert 路径对新行一律归一为 name 型 PK）。"""
+    _execute(
+        database,
+        "INSERT INTO github_repo_candidates (repo_id, full_name, title, url, stars, forks, watchers, "
+        "source_channels, first_seen_at, last_seen_at, last_snapshot_at) VALUES "
+        "(%s, %s, %s, %s, %s, 10, 20, 'trending_daily', '2026-01-01T00:00:00+00:00', "
+        "'2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')",
+        (repo_id, full_name, full_name, f"https://github.com/{full_name}", stars),
+    )
+
+
+def _observation(
+    *,
+    node_id: str,
+    requested_name: str,
+    api_name: str,
+    stars: int,
+) -> dict[str, Any]:
+    renamed_from = requested_name if api_name != requested_name else ""
+    return {
+        "candidate": {
+            "repo_id": node_id,
+            "full_name": api_name,
+            "title": api_name,
+            "url": f"https://github.com/{api_name}",
+            "stars": stars,
+            "forks": 11,
+            "watchers": 22,
+            "community_metrics_complete": True,
+            "source_channels": "daily_metrics",
+            "last_snapshot_at": _CHECKED_AT,
+        },
+        "available_full_name": requested_name,
+        "renamed_from": renamed_from,
+        "snapshot": {
+            "repo_id": node_id,
+            "full_name": api_name,
+            "snapshot_date": _SNAPSHOT_DATE,
+            "captured_at": _CHECKED_AT,
+            "stars": stars,
+            "forks": 11,
+            "watchers": 22,
+            "community_metrics_complete": True,
+        },
+    }
+
+
+def _fetchone(database: Any, sql: str, params: tuple = ()) -> dict[str, Any] | None:
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params)
+            return cursor.fetchone()
+
+
+def _fetchall(database: Any, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params)
+            return list(cursor.fetchall())
+
+
+def _execute(database: Any, sql: str, params: tuple = ()) -> None:
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params)
+
+
+def test_node_based_row_renamed_in_place(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    _seed_node_candidate(database, repo_id="R_node_a", full_name="acme/it-old", stars=700)
+
+    written = repository.upsert_github_repo_metric_observations(
+        [
+            _observation(
+                node_id="R_node_a",
+                requested_name="acme/it-old",
+                api_name="acme/it-new",
+                stars=800,
+            )
+        ],
+        checked_at=_CHECKED_AT,
+    )
+
+    assert written == 1
+    row = _fetchone(
+        database,
+        "SELECT repo_id, full_name, title, url, stars, availability_status, not_found_count "
+        "FROM github_repo_candidates WHERE repo_id='R_node_a'",
+    )
+    assert row is not None
+    assert row["full_name"] == "acme/it-new"
+    assert row["title"] == "acme/it-new"
+    assert row["url"] == "https://github.com/acme/it-new"
+    assert row["stars"] == 800
+    assert row["availability_status"] == "active"
+    assert row["not_found_count"] == 0
+    # 旧名不再占据候选行，只作为别名长期可解析
+    assert (
+        _fetchone(
+            database,
+            "SELECT repo_id FROM github_repo_candidates WHERE LOWER(full_name)='acme/it-old'",
+        )
+        is None
+    )
+    alias = _fetchone(
+        database,
+        "SELECT canonical_repo_id FROM github_repo_aliases WHERE alias_repo_id='acme/it-old'",
+    )
+    assert alias is not None and alias["canonical_repo_id"] == "R_node_a"
+    snapshot = _fetchone(
+        database,
+        "SELECT stars FROM github_repo_snapshots "
+        "WHERE repo_id='R_node_a' AND snapshot_date=%s",
+        (_SNAPSHOT_DATE,),
+    )
+    assert snapshot is not None and snapshot["stars"] == 800
+
+
+def test_name_based_row_renamed_via_clone_and_merge(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    _seed_candidate(repository, repo_id="acme/legacy", full_name="acme/legacy", stars=600)
+    # 旧行已绑定 node 别名（此前日刷链接过）
+    _seed_candidate(repository, repo_id="R_node_b", full_name="acme/legacy", stars=610)
+    _execute(
+        database,
+        "INSERT INTO github_repo_snapshots (repo_id, snapshot_date, captured_at, stars) "
+        "VALUES ('acme/legacy', '2026-08-13', '2026-08-13T01:00:00+00:00', 590)",
+    )
+
+    written = repository.upsert_github_repo_metric_observations(
+        [
+            _observation(
+                node_id="R_node_b",
+                requested_name="acme/legacy",
+                api_name="acme/renamed",
+                stars=650,
+            )
+        ],
+        checked_at=_CHECKED_AT,
+    )
+
+    assert written == 1
+    # PK 迁移：旧 name 型 PK 行被删除，新身份行承载全部历史
+    assert (
+        _fetchone(
+            database,
+            "SELECT repo_id FROM github_repo_candidates WHERE repo_id='acme/legacy'",
+        )
+        is None
+    )
+    row = _fetchone(
+        database,
+        "SELECT repo_id, full_name, stars FROM github_repo_candidates "
+        "WHERE repo_id='acme/renamed'",
+    )
+    assert row is not None
+    assert row["full_name"] == "acme/renamed"
+    assert row["stars"] == 650
+    old_snapshot = _fetchone(
+        database,
+        "SELECT stars FROM github_repo_snapshots "
+        "WHERE repo_id='acme/renamed' AND snapshot_date='2026-08-13'",
+    )
+    assert old_snapshot is not None and old_snapshot["stars"] == 590
+    aliases = {
+        item["alias_repo_id"]: item["canonical_repo_id"]
+        for item in _fetchall(
+            database,
+            "SELECT alias_repo_id, canonical_repo_id FROM github_repo_aliases "
+            "WHERE canonical_repo_id='acme/renamed'",
+        )
+    }
+    assert aliases.get("R_node_b") == "acme/renamed"
+    assert aliases.get("acme/legacy") == "acme/renamed"
+
+
+def test_duplicate_rows_merged_keeping_new_name(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    _seed_candidate(
+        repository,
+        repo_id="acme/dup-old",
+        full_name="acme/dup-old",
+        stars=500,
+        source_channels="trending_daily",
+        first_seen_at="2026-01-01T00:00:00+00:00",
+    )
+    _seed_candidate(repository, repo_id="R_node_c", full_name="acme/dup-old", stars=510)
+    _seed_candidate(
+        repository,
+        repo_id="acme/dup-new",
+        full_name="acme/dup-new",
+        stars=900,
+        source_channels="search_candidates",
+        first_seen_at="2026-06-01T00:00:00+00:00",
+    )
+    # 旧行历史：同日快照比新行旧（冲突时让位），另有一天独有历史（随迁）
+    _execute(
+        database,
+        "INSERT INTO github_repo_snapshots (repo_id, snapshot_date, captured_at, stars) VALUES "
+        "('acme/dup-old', '2026-08-12', '2026-08-12T01:00:00+00:00', 480),"
+        "('acme/dup-old', '2026-08-13', '2026-08-13T00:30:00+00:00', 495),"
+        "('acme/dup-new', '2026-08-13', '2026-08-13T01:30:00+00:00', 900)",
+    )
+    _execute(
+        database,
+        "INSERT INTO github_trending_hits (repo_id, full_name, period, rank, observed_date, captured_at) "
+        "VALUES ('acme/dup-old', 'acme/dup-old', 'daily', 3, '2026-08-13', '2026-08-13T01:00:00+00:00')",
+    )
+    _execute(
+        database,
+        "INSERT INTO github_repo_enrichments (repo_id, category_slug, category_name, "
+        "subcategory_slug, description_zh, source_fingerprint, prompt_version, status) "
+        "VALUES ('acme/dup-old', 'agent', 'Agent', 'general', '旧行画像', 'fp_old', 'v1', 'succeeded')",
+    )
+    _execute(
+        database,
+        "INSERT INTO users (id, hashed_password) VALUES (91, 'test-hash')",
+    )
+    _execute(
+        database,
+        "INSERT INTO project_favorites (user_id, project_source, project_id) "
+        "VALUES (91, 'github', 'acme/dup-old')",
+    )
+
+    written = repository.upsert_github_repo_metric_observations(
+        [
+            _observation(
+                node_id="R_node_c",
+                requested_name="acme/dup-old",
+                api_name="acme/dup-new",
+                stars=950,
+            )
+        ],
+        checked_at=_CHECKED_AT,
+    )
+
+    assert written == 1
+    assert (
+        _fetchone(
+            database,
+            "SELECT repo_id FROM github_repo_candidates WHERE repo_id='acme/dup-old'",
+        )
+        is None
+    )
+    row = _fetchone(
+        database,
+        "SELECT stars, first_seen_at, source_channels FROM github_repo_candidates "
+        "WHERE repo_id='acme/dup-new'",
+    )
+    assert row is not None
+    assert row["stars"] == 950
+    assert row["first_seen_at"] == "2026-01-01T00:00:00+00:00"
+    channels = set(str(row["source_channels"]).split(","))
+    assert {"trending_daily", "search_candidates", "daily_metrics"} <= channels
+    # 同日冲突保留较新一侧；独有历史随迁
+    snapshots = {
+        item["snapshot_date"]: item["stars"]
+        for item in _fetchall(
+            database,
+            "SELECT snapshot_date, stars FROM github_repo_snapshots "
+            "WHERE repo_id='acme/dup-new'",
+        )
+    }
+    assert snapshots.get("2026-08-12") == 480
+    assert snapshots.get("2026-08-13") == 900
+    assert snapshots.get(_SNAPSHOT_DATE) == 950
+    hit = _fetchone(
+        database,
+        "SELECT rank FROM github_trending_hits "
+        "WHERE repo_id='acme/dup-new' AND period='daily' AND observed_date='2026-08-13'",
+    )
+    assert hit is not None and hit["rank"] == 3
+    enrichment = _fetchone(
+        database,
+        "SELECT status FROM github_repo_enrichments WHERE repo_id='acme/dup-new'",
+    )
+    assert enrichment is not None and enrichment["status"] == "succeeded"
+    favorite = _fetchone(
+        database,
+        "SELECT project_id FROM project_favorites WHERE user_id=91 AND project_source='github'",
+    )
+    assert favorite is not None and favorite["project_id"] == "acme/dup-new"
+    aliases = {
+        item["alias_repo_id"]: item["canonical_repo_id"]
+        for item in _fetchall(
+            database,
+            "SELECT alias_repo_id, canonical_repo_id FROM github_repo_aliases "
+            "WHERE canonical_repo_id='acme/dup-new'",
+        )
+    }
+    assert aliases.get("R_node_c") == "acme/dup-new"
+    assert aliases.get("acme/dup-old") == "acme/dup-new"
+
+
+def test_casing_only_difference_normalized(postgres_ingestion: tuple[Any, Any]) -> None:
+    repository, database = postgres_ingestion
+    _seed_node_candidate(database, repo_id="R_node_d", full_name="ACME/Cased", stars=500)
+
+    written = repository.upsert_github_repo_metric_observations(
+        [
+            _observation(
+                node_id="R_node_d",
+                requested_name="ACME/Cased",
+                api_name="acme/cased",
+                stars=520,
+            )
+        ],
+        checked_at=_CHECKED_AT,
+    )
+
+    assert written == 1
+    row = _fetchone(
+        database,
+        "SELECT full_name, stars FROM github_repo_candidates WHERE repo_id='R_node_d'",
+    )
+    assert row is not None
+    assert row["full_name"] == "acme/cased"
+    assert row["stars"] == 520
+
+
+def test_name_reuse_guard_rejects_foreign_node_observation(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    # name 型行 + 已链接 node R_keep：同名观测带回陌生 node R_stranger 时拒绝覆盖
+    _seed_candidate(repository, repo_id="acme/stay", full_name="acme/stay", stars=700)
+    _seed_candidate(repository, repo_id="R_keep", full_name="acme/stay", stars=710)
+
+    written = repository.upsert_github_repo_metric_observations(
+        [
+            _observation(
+                node_id="R_stranger",
+                requested_name="acme/stay",
+                api_name="acme/stay",
+                stars=9999,
+            )
+        ],
+        checked_at=_CHECKED_AT,
+    )
+
+    assert written == 0
+    row = _fetchone(
+        database,
+        "SELECT stars, not_found_count, availability_status "
+        "FROM github_repo_candidates WHERE repo_id='acme/stay'",
+    )
+    assert row is not None
+    assert row["stars"] == 710  # 未被陌生 node 的数据覆盖
+    assert row["not_found_count"] == 1
+    assert row["availability_status"] == "active"  # 第一次观测仅累计，未下架
+    assert (
+        _fetchone(
+            database,
+            "SELECT repo_id FROM github_repo_snapshots "
+            "WHERE repo_id='acme/stay' AND snapshot_date=%s",
+            (_SNAPSHOT_DATE,),
+        )
+        is None
+    )
+
+
+def test_rename_rejected_when_node_belongs_to_other_repo(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    _seed_candidate(repository, repo_id="acme/victim", full_name="acme/victim", stars=600)
+    _seed_candidate(repository, repo_id="acme/other", full_name="acme/other", stars=600)
+    _seed_candidate(repository, repo_id="R_other", full_name="acme/other", stars=610)
+
+    written = repository.upsert_github_repo_metric_observations(
+        [
+            _observation(
+                node_id="R_other",
+                requested_name="acme/victim",
+                api_name="acme/brand-new",
+                stars=5000,
+            )
+        ],
+        checked_at=_CHECKED_AT,
+    )
+
+    assert written == 0
+    victim = _fetchone(
+        database,
+        "SELECT stars, not_found_count FROM github_repo_candidates WHERE repo_id='acme/victim'",
+    )
+    assert victim is not None
+    assert victim["stars"] == 600  # 观测被拒，既有数据未被吞并
+    assert victim["not_found_count"] == 1
+    assert (
+        _fetchone(
+            database,
+            "SELECT repo_id FROM github_repo_candidates WHERE LOWER(full_name)='acme/brand-new'",
+        )
+        is None
+    )
+
+
+def test_hot_repos_exclude_not_found_and_alias_hidden(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    _seed_candidate(repository, repo_id="acme/hot-active", full_name="acme/hot-active", stars=900)
+    _seed_candidate(repository, repo_id="acme/hot-dead", full_name="acme/hot-dead", stars=900)
+    _seed_candidate(repository, repo_id="acme/hot-hidden", full_name="acme/hot-hidden", stars=900)
+    _seed_candidate(repository, repo_id="acme/hot-keep", full_name="acme/hot-keep", stars=900)
+    assert repository.record_github_repo_not_found("acme/hot-dead", checked_at=_CHECKED_AT) is False
+    assert repository.record_github_repo_not_found("acme/hot-dead", checked_at=_CHECKED_AT) is True
+    _execute(
+        database,
+        "INSERT INTO github_repo_aliases (alias_repo_id, canonical_repo_id, full_name) "
+        "VALUES ('acme/hot-hidden', 'acme/hot-keep', 'acme/hot-hidden')",
+    )
+    _execute(
+        database,
+        "INSERT INTO github_repo_snapshots (repo_id, snapshot_date, captured_at, stars) VALUES "
+        "('acme/hot-active', '2026-08-14', '2026-08-14T00:30:00+00:00', 900),"
+        "('acme/hot-dead', '2026-08-14', '2026-08-14T00:30:00+00:00', 900),"
+        "('acme/hot-hidden', '2026-08-14', '2026-08-14T00:30:00+00:00', 900),"
+        "('acme/hot-keep', '2026-08-14', '2026-08-14T00:30:00+00:00', 900)",
+    )
+
+    items = repository.get_github_hot_repos("weekly", limit=20)
+    names = {str(item.get("full_name")) for item in items}
+
+    assert "acme/hot-active" in names
+    assert "acme/hot-keep" in names
+    assert "acme/hot-dead" not in names
+    assert "acme/hot-hidden" not in names

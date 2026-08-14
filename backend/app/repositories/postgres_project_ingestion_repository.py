@@ -1,6 +1,7 @@
 # ruff: noqa: SIM117
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -8,6 +9,8 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> str:
@@ -41,7 +44,14 @@ _CANDIDATE_UPSERT_SQL = """
             THEN EXCLUDED.watchers
             ELSE github_repo_candidates.watchers
         END,
-        source_channels=EXCLUDED.source_channels,
+        source_channels=(
+            SELECT COALESCE(string_agg(DISTINCT part, ',' ORDER BY part), '')
+            FROM unnest(string_to_array(
+                concat_ws(',', github_repo_candidates.source_channels, EXCLUDED.source_channels),
+                ','
+            )) AS part
+            WHERE part <> ''
+        ),
         first_seen_at=LEAST(COALESCE(NULLIF(github_repo_candidates.first_seen_at, ''), EXCLUDED.first_seen_at), EXCLUDED.first_seen_at),
         last_seen_at=GREATEST(COALESCE(github_repo_candidates.last_seen_at, ''), COALESCE(EXCLUDED.last_seen_at, '')),
         last_snapshot_at=GREATEST(COALESCE(github_repo_candidates.last_snapshot_at, ''), COALESCE(EXCLUDED.last_snapshot_at, ''))
@@ -200,13 +210,530 @@ class PostgresGitHubProjectIngestionRepository:
         payload.setdefault("repo_pushed_at", "")
         return payload
 
+    # ---------- 改名归一化（zombie 项目自愈） ----------
+
+    # 改名合并时随迁的时序子表：同键冲突保留 captured_at/updated_at 较新的一方
+    _SERIES_CHILD_TABLES = (
+        ("github_repo_snapshots", ("snapshot_date",), "captured_at"),
+        ("github_repo_daily_metrics", ("metric_date",), "updated_at"),
+        ("github_trending_hits", ("period", "observed_date"), "captured_at"),
+    )
+    # 单行子表：canonical 已有行则弃用旧行副本，否则整体迁移
+    _SINGLETON_CHILD_TABLES = (
+        "github_repo_recommendations",
+        "github_project_semantic_sources",
+    )
+
+    @staticmethod
+    def _find_candidate_row_by_name(
+        cursor: Any, full_name: str
+    ) -> dict[str, Any] | None:
+        cursor.execute(
+            """
+            SELECT repo_id, full_name, title, url, description, language, topics_json,
+                   created_at, source_channels, first_seen_at, availability_status
+            FROM github_repo_candidates
+            WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(%s))
+            ORDER BY (repo_id = full_name) DESC, COALESCE(stars, 0) DESC
+            LIMIT 1
+            """,
+            (full_name,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    @staticmethod
+    def _node_alias_ids(cursor: Any, canonical_repo_id: str) -> set[str]:
+        """canonical 名下所有 node 形态别名（不含名称型 alias）。"""
+        cursor.execute(
+            "SELECT alias_repo_id FROM github_repo_aliases "
+            "WHERE canonical_repo_id=%s AND POSITION('/' IN alias_repo_id)=0",
+            (canonical_repo_id,),
+        )
+        return {str(row["alias_repo_id"]) for row in cursor.fetchall()}
+
+    @staticmethod
+    def _apply_not_found_observation(
+        cursor: Any, full_name: str, checked_at: str
+    ) -> tuple[bool, bool]:
+        """在既有事务内累计一次 404 观测；返回 (已处理, 本次新转 not_found)。
+
+        与公开方法 record_github_repo_not_found 共用同一 UPDATE 语义，
+        供批量观测事务复用而不嵌套开事务。
+        """
+        cursor.execute(
+            "SELECT availability_status FROM github_repo_candidates "
+            "WHERE LOWER(full_name)=LOWER(%s) FOR UPDATE",
+            (full_name,),
+        )
+        previous = cursor.fetchone()
+        if not previous:
+            return False, False
+        cursor.execute(
+            """
+            UPDATE github_repo_candidates
+            SET not_found_count=not_found_count+1,
+                availability_status=CASE WHEN not_found_count+1>=2
+                    THEN 'not_found' ELSE availability_status END,
+                availability_checked_at=%s
+            WHERE LOWER(full_name)=LOWER(%s)
+            RETURNING availability_status
+            """,
+            (checked_at, full_name),
+        )
+        current = cursor.fetchone() or {}
+        newly = (
+            previous.get("availability_status") != "not_found"
+            and current.get("availability_status") == "not_found"
+        )
+        return True, newly
+
+    @classmethod
+    def _move_series_child_rows(
+        cls, cursor: Any, *, old_repo_id: str, new_repo_id: str
+    ) -> None:
+        for table, key_columns, fresh_column in cls._SERIES_CHILD_TABLES:
+            key_join = " AND ".join(f"b.{column} = a.{column}" for column in key_columns)
+            # 旧侧不新于新侧的同键行直接弃用
+            cursor.execute(
+                f"DELETE FROM {table} a USING {table} b "
+                f"WHERE a.repo_id=%s AND b.repo_id=%s AND {key_join} "
+                f"AND COALESCE(a.{fresh_column}::text,'') <= COALESCE(b.{fresh_column}::text,'')",
+                (old_repo_id, new_repo_id),
+            )
+            # 新侧更旧的同键行让位给即将迁入的旧侧副本
+            cursor.execute(
+                f"DELETE FROM {table} a USING {table} b "
+                f"WHERE a.repo_id=%s AND b.repo_id=%s AND {key_join} "
+                f"AND COALESCE(a.{fresh_column}::text,'') < COALESCE(b.{fresh_column}::text,'')",
+                (new_repo_id, old_repo_id),
+            )
+            cursor.execute(
+                f"UPDATE {table} SET repo_id=%s WHERE repo_id=%s",
+                (new_repo_id, old_repo_id),
+            )
+
+    @classmethod
+    def _move_singleton_child_rows(
+        cls, cursor: Any, *, old_repo_id: str, new_repo_id: str
+    ) -> None:
+        for table in cls._SINGLETON_CHILD_TABLES:
+            cursor.execute(
+                f"DELETE FROM {table} a USING {table} b "
+                f"WHERE a.repo_id=%s AND b.repo_id=%s",
+                (old_repo_id, new_repo_id),
+            )
+            cursor.execute(
+                f"UPDATE {table} SET repo_id=%s WHERE repo_id=%s",
+                (new_repo_id, old_repo_id),
+            )
+
+    @staticmethod
+    def _move_enrichment_row(
+        cursor: Any, *, old_repo_id: str, new_repo_id: str
+    ) -> None:
+        """画像行迁移：任一侧 status='succeeded' 优先保留，避免已成品画像被覆盖。"""
+        cursor.execute(
+            "SELECT status FROM github_repo_enrichments WHERE repo_id=%s",
+            (new_repo_id,),
+        )
+        new_row = cursor.fetchone()
+        cursor.execute(
+            "SELECT status FROM github_repo_enrichments WHERE repo_id=%s",
+            (old_repo_id,),
+        )
+        old_row = cursor.fetchone()
+        if not old_row:
+            return
+        keep_old = old_row.get("status") == "succeeded" and (
+            not new_row or new_row.get("status") != "succeeded"
+        )
+        if keep_old:
+            cursor.execute(
+                "DELETE FROM github_repo_enrichments WHERE repo_id=%s", (new_repo_id,)
+            )
+            cursor.execute(
+                "UPDATE github_repo_enrichments SET repo_id=%s WHERE repo_id=%s",
+                (new_repo_id, old_repo_id),
+            )
+        else:
+            cursor.execute(
+                "DELETE FROM github_repo_enrichments WHERE repo_id=%s", (old_repo_id,)
+            )
+
+    @staticmethod
+    def _move_favorite_rows(
+        cursor: Any, *, old_repo_id: str, new_repo_id: str
+    ) -> None:
+        """用户收藏软引用随迁（project_favorites 无 FK，靠合并时显式改指）。
+
+        同一用户同时收藏过新旧两行时，旧侧让位删除以满足唯一约束。
+        """
+        cursor.execute(
+            "DELETE FROM project_favorites a USING project_favorites b "
+            "WHERE a.project_source='github' AND b.project_source='github' "
+            "AND a.project_id=%s AND b.project_id=%s AND a.user_id=b.user_id",
+            (old_repo_id, new_repo_id),
+        )
+        cursor.execute(
+            "UPDATE project_favorites SET project_id=%s "
+            "WHERE project_source='github' AND project_id=%s",
+            (new_repo_id, old_repo_id),
+        )
+
+    @staticmethod
+    def _merge_channel_strings(*values: str) -> str:
+        parts: list[str] = []
+        for value in values:
+            for part in str(value or "").split(","):
+                part = part.strip()
+                if part and part not in parts:
+                    parts.append(part)
+        return ",".join(parts)
+
+    @classmethod
+    def _merge_candidate_scalars(
+        cls,
+        cursor: Any,
+        *,
+        keep_repo_id: str,
+        drop_row: dict[str, Any],
+        checked_at: str,
+    ) -> None:
+        cursor.execute(
+            "SELECT source_channels, first_seen_at FROM github_repo_candidates "
+            "WHERE repo_id=%s",
+            (keep_repo_id,),
+        )
+        keep_row = cursor.fetchone() or {}
+        merged_channels = cls._merge_channel_strings(
+            str(keep_row.get("source_channels") or ""),
+            str(drop_row.get("source_channels") or ""),
+        )
+        seen_candidates = [
+            value
+            for value in (
+                str(keep_row.get("first_seen_at") or ""),
+                str(drop_row.get("first_seen_at") or ""),
+            )
+            if value
+        ]
+        first_seen = min(seen_candidates) if seen_candidates else ""
+        cursor.execute(
+            """
+            UPDATE github_repo_candidates c SET
+                title=COALESCE(NULLIF(c.title,''), o.title),
+                url=COALESCE(NULLIF(c.url,''), o.url),
+                description=COALESCE(NULLIF(c.description,''), o.description),
+                language=COALESCE(NULLIF(c.language,''), o.language),
+                topics_json=COALESCE(NULLIF(c.topics_json,'[]'), o.topics_json),
+                created_at=COALESCE(NULLIF(c.created_at,''), o.created_at),
+                pushed_at=GREATEST(COALESCE(c.pushed_at,''), COALESCE(o.pushed_at,'')),
+                stars=GREATEST(COALESCE(c.stars,0), COALESCE(o.stars,0)),
+                forks=GREATEST(COALESCE(c.forks,0), COALESCE(o.forks,0)),
+                watchers=GREATEST(COALESCE(c.watchers,0), COALESCE(o.watchers,0)),
+                source_channels=%s,
+                first_seen_at=%s,
+                last_seen_at=GREATEST(COALESCE(c.last_seen_at,''), COALESCE(o.last_seen_at,'')),
+                last_snapshot_at=GREATEST(COALESCE(c.last_snapshot_at,''), COALESCE(o.last_snapshot_at,'')),
+                availability_status='active', not_found_count=0, availability_checked_at=%s
+            FROM github_repo_candidates o
+            WHERE c.repo_id=%s AND o.repo_id=%s
+            """,
+            (
+                merged_channels,
+                first_seen,
+                checked_at or _utcnow(),
+                keep_repo_id,
+                drop_row["repo_id"],
+            ),
+        )
+
+    @staticmethod
+    def _clone_candidate_row(
+        cursor: Any,
+        *,
+        old_row: dict[str, Any],
+        new_full_name: str,
+        checked_at: str,
+    ) -> None:
+        """把旧行克隆为新 full_name 身份（name 型 PK 改名的前半步）。"""
+        cursor.execute(
+            """
+            INSERT INTO github_repo_candidates (
+                repo_id, full_name, title, url, description, language, topics_json,
+                created_at, pushed_at, stars, forks, watchers, source_channels,
+                first_seen_at, last_seen_at, last_snapshot_at,
+                availability_status, not_found_count, availability_checked_at
+            )
+            SELECT %s, %s,
+                   CASE WHEN LOWER(COALESCE(title,''))=LOWER(%s) OR COALESCE(title,'')=''
+                        THEN %s ELSE title END,
+                   url, description, language, topics_json, created_at, pushed_at,
+                   stars, forks, watchers, source_channels,
+                   first_seen_at, last_seen_at, last_snapshot_at,
+                   'active', 0, %s
+            FROM github_repo_candidates WHERE repo_id=%s
+            """,
+            (
+                new_full_name,
+                new_full_name,
+                str(old_row.get("full_name") or ""),
+                new_full_name,
+                checked_at or _utcnow(),
+                str(old_row["repo_id"]),
+            ),
+        )
+
+    @staticmethod
+    def _rename_candidate_row(
+        cursor: Any,
+        *,
+        repo_id: str,
+        old_full_name: str,
+        new_full_name: str,
+        checked_at: str,
+    ) -> None:
+        """就地改名：repo_id 不动，full_name/title 归一到新名并复位可用性。"""
+        cursor.execute(
+            """
+            UPDATE github_repo_candidates SET
+                full_name=%s,
+                title=CASE
+                    WHEN LOWER(COALESCE(title,''))=LOWER(%s) OR COALESCE(title,'')=''
+                    THEN %s ELSE title END,
+                availability_status='active', not_found_count=0, availability_checked_at=%s
+            WHERE repo_id=%s
+            """,
+            (
+                new_full_name,
+                old_full_name,
+                new_full_name,
+                checked_at or _utcnow(),
+                repo_id,
+            ),
+        )
+
+    def _merge_candidate_rows(
+        self,
+        cursor: Any,
+        *,
+        keep_repo_id: str,
+        drop_row: dict[str, Any],
+        checked_at: str,
+    ) -> None:
+        """把 drop_row 整仓并入 keep：子表随迁、别名改指、删除旧行并留名型别名。"""
+        drop_repo_id = str(drop_row["repo_id"])
+        self._move_series_child_rows(
+            cursor, old_repo_id=drop_repo_id, new_repo_id=keep_repo_id
+        )
+        self._move_enrichment_row(
+            cursor, old_repo_id=drop_repo_id, new_repo_id=keep_repo_id
+        )
+        self._move_singleton_child_rows(
+            cursor, old_repo_id=drop_repo_id, new_repo_id=keep_repo_id
+        )
+        self._move_favorite_rows(
+            cursor, old_repo_id=drop_repo_id, new_repo_id=keep_repo_id
+        )
+        self._merge_candidate_scalars(
+            cursor, keep_repo_id=keep_repo_id, drop_row=drop_row, checked_at=checked_at
+        )
+        now = _utcnow()
+        cursor.execute(
+            "UPDATE github_repo_aliases SET canonical_repo_id=%s, updated_at=%s "
+            "WHERE canonical_repo_id=%s AND alias_repo_id<>%s",
+            (keep_repo_id, now, drop_repo_id, keep_repo_id),
+        )
+        self._upsert_alias(
+            cursor,
+            alias_repo_id=drop_repo_id,
+            canonical_repo_id=keep_repo_id,
+            full_name=str(drop_row.get("full_name") or ""),
+        )
+        cursor.execute(
+            "DELETE FROM github_repo_candidates WHERE repo_id=%s", (drop_repo_id,)
+        )
+
+    def _reconcile_repo_rename(
+        self,
+        cursor: Any,
+        *,
+        old_full_name: str,
+        new_full_name: str,
+        seen_repo_id: str = "",
+        checked_at: str = "",
+    ) -> str:
+        """把候选行归一到 GitHub 权威新名；返回动作标识供日志/测试断言。
+
+        动作取值：
+          missing              库里没有旧名行，无需处理
+          noop                 已是新名（或输入无效）
+          casing               仅大小写差异，就地归一
+          renamed              旧名行改名为新名（node 型 PK 就地更新；
+                               name 型 PK 走克隆新身份行 + 并入旧行）
+          merged               新旧两名各占一行 → 并入保留新名行
+          conflict_name_reuse  node id 防线触发：疑似名称被他人重用，拒绝合并
+        """
+        old_full_name = (old_full_name or "").strip()
+        new_full_name = (new_full_name or "").strip()
+        if not old_full_name or not new_full_name or "/" not in new_full_name:
+            return "noop"
+        if old_full_name == new_full_name:
+            return "noop"
+        old_row = self._find_candidate_row_by_name(cursor, old_full_name)
+        if not old_row:
+            return "missing"
+        if old_row["full_name"].lower() == new_full_name.lower():
+            if old_row["full_name"] != new_full_name:
+                self._rename_candidate_row(
+                    cursor,
+                    repo_id=old_row["repo_id"],
+                    old_full_name=old_row["full_name"],
+                    new_full_name=new_full_name,
+                    checked_at=checked_at,
+                )
+                return "casing"
+            return "noop"
+        # node id 防线：拿到 API 返回的 node id 时，确认它与旧名行同源，
+        # 防止“旧仓删除 + 同名新仓”被误当成改名而吞掉别人的历史。
+        if seen_repo_id and "/" not in seen_repo_id:
+            cursor.execute(
+                "SELECT canonical_repo_id FROM github_repo_aliases "
+                "WHERE alias_repo_id=%s LIMIT 1",
+                (seen_repo_id,),
+            )
+            via_node = cursor.fetchone()
+            if via_node:
+                via_canonical = str(via_node["canonical_repo_id"] or "")
+                new_peek = self._find_candidate_row_by_name(cursor, new_full_name)
+                allowed = {old_row["repo_id"], str((new_peek or {}).get("repo_id") or "")}
+                if via_canonical not in allowed:
+                    logger.warning(
+                        "[GitHubProjectIngestion] 改名归一被拒绝：%s -> %s，node %s "
+                        "归属 %s，疑似名称重用",
+                        old_full_name,
+                        new_full_name,
+                        seen_repo_id,
+                        via_canonical,
+                    )
+                    return "conflict_name_reuse"
+            else:
+                known_nodes = self._node_alias_ids(cursor, old_row["repo_id"])
+                if known_nodes and seen_repo_id not in known_nodes:
+                    logger.warning(
+                        "[GitHubProjectIngestion] 改名归一被拒绝：%s -> %s，node %s "
+                        "不在旧行已知 node 集合内",
+                        old_full_name,
+                        new_full_name,
+                        seen_repo_id,
+                    )
+                    return "conflict_name_reuse"
+        new_row = self._find_candidate_row_by_name(cursor, new_full_name)
+        if not new_row:
+            if old_row["repo_id"].lower() == old_row["full_name"].lower():
+                # name 型 PK 内嵌旧名：克隆新身份行再并入旧行，
+                # 避免旧名后续写入撞上过期 PK（PK 与 full_name 永久脱节）
+                self._clone_candidate_row(
+                    cursor,
+                    old_row=old_row,
+                    new_full_name=new_full_name,
+                    checked_at=checked_at,
+                )
+                self._merge_candidate_rows(
+                    cursor,
+                    keep_repo_id=new_full_name,
+                    drop_row=old_row,
+                    checked_at=checked_at,
+                )
+                surviving = new_full_name
+            else:
+                self._rename_candidate_row(
+                    cursor,
+                    repo_id=old_row["repo_id"],
+                    old_full_name=old_row["full_name"],
+                    new_full_name=new_full_name,
+                    checked_at=checked_at,
+                )
+                surviving = str(old_row["repo_id"])
+            logger.info(
+                "[GitHubProjectIngestion] 仓库改名就地同步：%s -> %s",
+                old_row["full_name"],
+                new_full_name,
+            )
+            action = "renamed"
+        elif new_row["repo_id"] == old_row["repo_id"]:
+            return "noop"  # 大小写唯一约束下理论不可达，防御
+        else:
+            # 新旧两名各占一行：一律保留新名行（承载最新采集与画像），旧行并入删除
+            self._merge_candidate_rows(
+                cursor,
+                keep_repo_id=new_row["repo_id"],
+                drop_row=old_row,
+                checked_at=checked_at,
+            )
+            surviving = str(new_row["repo_id"])
+            logger.info(
+                "[GitHubProjectIngestion] 仓库改名合并：%s -> %s（保留 %s）",
+                old_full_name,
+                new_full_name,
+                surviving,
+            )
+            action = "merged"
+        # 旧名长期可解析：后续以旧名写入的观测/快照仍归并到存续行
+        self._upsert_alias(
+            cursor,
+            alias_repo_id=old_full_name,
+            canonical_repo_id=surviving,
+            full_name=old_full_name,
+        )
+        return action
+
+    def _resolve_for_write(
+        self,
+        cursor: Any,
+        *,
+        requested: str,
+        full_name: str,
+        checked_at: str = "",
+    ) -> str:
+        """写入前的 canonical 解析；别名落点名称过期时先触发改名归一。
+
+        仅 node 形态 repo_id 参与自愈：名称型 repo_id（trending 等）无法证明
+        与既有行同源，不做改名动作。
+        """
+        canonical = self._resolve_repo_id(cursor, requested, full_name)
+        requested = (requested or "").strip()
+        full_name = (full_name or "").strip()
+        if "/" in requested or not full_name or canonical == requested:
+            return canonical
+        cursor.execute(
+            "SELECT full_name FROM github_repo_candidates WHERE repo_id=%s LIMIT 1",
+            (canonical,),
+        )
+        row = cursor.fetchone()
+        stored = str((row or {}).get("full_name") or "")
+        if stored and stored != full_name:
+            action = self._reconcile_repo_rename(
+                cursor,
+                old_full_name=stored,
+                new_full_name=full_name,
+                seen_repo_id=requested,
+                checked_at=checked_at,
+            )
+            if action != "conflict_name_reuse":
+                canonical = self._resolve_repo_id(cursor, requested, full_name)
+        return canonical
+
+    # ---------- 候选与快照写入 ----------
+
     def upsert_github_repo_candidate(self, repo: dict[str, Any]) -> None:
         payload = self._candidate_payload(repo)
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 requested = payload["repo_id"]
-                canonical = self._resolve_repo_id(
-                    cursor, requested, payload["full_name"]
+                canonical = self._resolve_for_write(
+                    cursor, requested=requested, full_name=payload["full_name"]
                 )
                 payload["repo_id"] = canonical
                 cursor.execute(_CANDIDATE_UPSERT_SQL, payload)
@@ -248,8 +775,8 @@ class PostgresGitHubProjectIngestionRepository:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 requested = payload["repo_id"]
-                canonical = self._resolve_repo_id(
-                    cursor, requested, payload["full_name"]
+                canonical = self._resolve_for_write(
+                    cursor, requested=requested, full_name=payload["full_name"]
                 )
                 self._upsert_alias(
                     cursor,
@@ -270,40 +797,19 @@ class PostgresGitHubProjectIngestionRepository:
     def record_github_repo_not_found(self, full_name: str, *, checked_at: str) -> bool:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT availability_status FROM github_repo_candidates "
-                    "WHERE LOWER(full_name)=LOWER(%s) FOR UPDATE",
-                    (full_name,),
+                _, newly = self._apply_not_found_observation(
+                    cursor, full_name, checked_at
                 )
-                previous = cursor.fetchone()
-                if not previous:
-                    return False
-                cursor.execute(
-                    """
-                    UPDATE github_repo_candidates
-                    SET not_found_count=not_found_count+1,
-                        availability_status=CASE WHEN not_found_count+1>=2
-                            THEN 'not_found' ELSE availability_status END,
-                        availability_checked_at=%s
-                    WHERE LOWER(full_name)=LOWER(%s)
-                    RETURNING availability_status
-                    """,
-                    (checked_at, full_name),
-                )
-                current = cursor.fetchone() or {}
-                return (
-                    previous.get("availability_status") != "not_found"
-                    and current.get("availability_status") == "not_found"
-                )
+                return newly
 
     def insert_github_repo_snapshot(self, snapshot: dict[str, Any]) -> None:
         payload = self._normalize_snapshot_payload(snapshot)
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                payload["repo_id"] = self._resolve_repo_id(
+                payload["repo_id"] = self._resolve_for_write(
                     cursor,
-                    str(payload.get("repo_id") or ""),
-                    str(payload.get("full_name") or ""),
+                    requested=str(payload.get("repo_id") or ""),
+                    full_name=str(payload.get("full_name") or ""),
                 )
                 cursor.execute(_SNAPSHOT_UPSERT_SQL, payload)
 
@@ -313,28 +819,71 @@ class PostgresGitHubProjectIngestionRepository:
         *,
         checked_at: str,
     ) -> int:
-        """单事务批量写入一次日刷观测：候选 upsert + 可用性恢复 + 快照插入。
+        """单事务批量写入一次日刷观测：候选 upsert + 改名归一 + 可用性恢复 + 快照插入。
 
         每条 observation 形如 {"candidate": {...}, "available_full_name": str,
-        "snapshot": {...}}，与三个单行方法共用同一套 SQL 与归一化逻辑。
+        "renamed_from": str, "snapshot": {...}}，与三个单行方法共用同一套 SQL
+        与归一化逻辑。renamed_from 非空表示 GitHub 已把该请求名重定向到
+        candidate.full_name，入库前先把旧名候选行归一/合并到新名。
         任一观测失败整批回滚、不留中间态，调用方按整批成功/失败计数；
-        返回写入的观测条数。
+        返回实际写入的观测条数（名称重用等防御性跳过不计）。
         """
         if not observations:
             return 0
+        skipped: set[int] = set()
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 candidates: list[dict[str, Any]] = []
                 aliases: list[tuple[str, str, str]] = []
                 availability_marks: list[tuple[str, str]] = []
-                for observation in observations:
+                for index, observation in enumerate(observations):
                     payload = self._candidate_payload(
                         observation.get("candidate") or {}
                     )
                     requested = payload["repo_id"]
-                    canonical = self._resolve_repo_id(
-                        cursor, requested, payload["full_name"]
+                    node_hint = requested if "/" not in requested else ""
+                    renamed_from = str(observation.get("renamed_from") or "").strip()
+                    if renamed_from:
+                        action = self._reconcile_repo_rename(
+                            cursor,
+                            old_full_name=renamed_from,
+                            new_full_name=payload["full_name"],
+                            seen_repo_id=node_hint,
+                            checked_at=checked_at,
+                        )
+                        if action == "conflict_name_reuse":
+                            # 旧仓消失、名字被他人重用：累计不可用观测而非吞并新仓
+                            self._apply_not_found_observation(
+                                cursor, renamed_from, checked_at
+                            )
+                            logger.warning(
+                                "[GitHubProjectIngestion] 观测跳过：%s 名称疑似被重用",
+                                renamed_from,
+                            )
+                            skipped.add(index)
+                            continue
+                    canonical = self._resolve_for_write(
+                        cursor,
+                        requested=requested,
+                        full_name=payload["full_name"],
+                        checked_at=checked_at,
                     )
+                    if node_hint and not renamed_from:
+                        # 名称未变但返回陌生 node id → 旧仓已删、名字被重用：
+                        # 累计不可用观测并跳过，绝不用别人的数据覆盖旧行
+                        known_nodes = self._node_alias_ids(cursor, canonical)
+                        if known_nodes and node_hint not in known_nodes:
+                            self._apply_not_found_observation(
+                                cursor, payload["full_name"], checked_at
+                            )
+                            logger.warning(
+                                "[GitHubProjectIngestion] 观测跳过：%s 名称疑似被重用"
+                                "（node %s 不匹配）",
+                                payload["full_name"],
+                                node_hint,
+                            )
+                            skipped.add(index)
+                            continue
                     payload["repo_id"] = canonical
                     candidates.append(payload)
                     aliases.append((requested, canonical, payload["full_name"]))
@@ -355,18 +904,20 @@ class PostgresGitHubProjectIngestionRepository:
                 if availability_marks:
                     cursor.executemany(_MARK_AVAILABLE_SQL, availability_marks)
                 snapshots: list[dict[str, Any]] = []
-                for observation in observations:
+                for index, observation in enumerate(observations):
+                    if index in skipped:
+                        continue
                     payload = self._normalize_snapshot_payload(
                         observation.get("snapshot") or {}
                     )
-                    payload["repo_id"] = self._resolve_repo_id(
+                    payload["repo_id"] = self._resolve_for_write(
                         cursor,
-                        str(payload.get("repo_id") or ""),
-                        str(payload.get("full_name") or ""),
+                        requested=str(payload.get("repo_id") or ""),
+                        full_name=str(payload.get("full_name") or ""),
                     )
                     snapshots.append(payload)
                 cursor.executemany(_SNAPSHOT_UPSERT_SQL, snapshots)
-        return len(observations)
+        return len(observations) - len(skipped)
 
     def upsert_github_trending_hit(self, hit: dict[str, Any]) -> str:
         payload = dict(hit)
@@ -383,10 +934,10 @@ class PostgresGitHubProjectIngestionRepository:
         )
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                payload["repo_id"] = self._resolve_repo_id(
+                payload["repo_id"] = self._resolve_for_write(
                     cursor,
-                    str(payload.get("repo_id") or ""),
-                    str(payload.get("full_name") or ""),
+                    requested=str(payload.get("repo_id") or ""),
+                    full_name=str(payload.get("full_name") or ""),
                 )
                 cursor.execute(
                     """
@@ -450,6 +1001,11 @@ class PostgresGitHubProjectIngestionRepository:
                      * (1.0+CASE WHEN l.best_trending_rank IS NULL THEN 0 ELSE 1.2/(l.best_trending_rank+2) END)
                      * (1.0/POWER(1.0+GREATEST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-NULLIF(l.captured_at,'')::timestamptz))/3600,0),%s))) rank_score
                 FROM values_with_prev l JOIN github_repo_candidates c ON c.repo_id=l.repo_id
+                WHERE c.availability_status='active'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM github_repo_aliases ga
+                      WHERE ga.alias_repo_id=c.repo_id AND ga.canonical_repo_id<>c.repo_id
+                  )
             ) SELECT * FROM scored WHERE (%s!='daily' OR repo_age_days<=90 OR growth>=300 OR trending_rank<=10)
               ORDER BY rank_score DESC,growth DESC,stars DESC LIMIT %s
         """
@@ -502,6 +1058,30 @@ class PostgresGitHubProjectIngestionRepository:
                        ORDER BY COALESCE(stars,0) DESC,full_name ASC"""
                     + limit_sql,
                     tuple(params),
+                )
+                return list(cursor.fetchall())
+
+    def list_github_identity_sweep_targets(
+        self, *, after_full_name: str = "", limit: int = 500
+    ) -> list[dict[str, Any]]:
+        """身份巡检全量游标：按 full_name 键集分页，覆盖所有候选行。
+
+        与日刷的 list_github_project_metric_targets 不同：不限星级、含
+        not_found 行（确认其依旧 404 或已恢复/改名复活）。返回列与日刷一致，
+        保证 record_github_metric_outcomes 的字段回填（source_channels 等）
+        语义不变。
+        """
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT repo_id,full_name,title,url,description,language,topics_json,
+                              created_at,pushed_at,COALESCE(stars,0) stars,COALESCE(forks,0) forks,
+                              COALESCE(watchers,0) watchers,source_channels,first_seen_at,last_seen_at,
+                              last_snapshot_at,availability_status,not_found_count,availability_checked_at
+                       FROM github_repo_candidates
+                       WHERE COALESCE(full_name,'')!='' AND full_name>%s
+                       ORDER BY full_name ASC LIMIT %s""",
+                    (after_full_name or "", max(1, min(int(limit), 2000))),
                 )
                 return list(cursor.fetchall())
 
@@ -635,10 +1215,10 @@ class PostgresGitHubProjectIngestionRepository:
             "absolute_growth_score": 0.0,
             "maintenance_activity_score": 0.0,
             "community_engagement_score": 0.0,
+            "hot_score": 0.0,
             "growth_suspicion_score": 0.0,
             "growth_suspicion_signals": "[]",
             "growth_corroborated": False,
-            "hot_score": 0.0,
             "score_version": "daily_hot_v5",
         }
         for metric in metrics:
@@ -648,9 +1228,7 @@ class PostgresGitHubProjectIngestionRepository:
             payload["daily_growth_available"] = bool(
                 payload.get("daily_growth_available")
             )
-            payload["growth_corroborated"] = bool(
-                payload.get("growth_corroborated")
-            )
+            payload["growth_corroborated"] = bool(payload.get("growth_corroborated"))
             payload.setdefault("updated_at", _utcnow())
             normalized.append(payload)
         sql = """
@@ -659,18 +1237,18 @@ class PostgresGitHubProjectIngestionRepository:
                 previous_stars,daily_star_growth,daily_fork_growth,daily_watcher_growth,
                 daily_growth_available,daily_growth_source,daily_growth_observed_at,
                 scale_corrected_growth_score,growth_acceleration_score,absolute_growth_score,
-                maintenance_activity_score,community_engagement_score,
+                maintenance_activity_score,community_engagement_score,hot_score,
                 growth_suspicion_score,growth_suspicion_signals,growth_corroborated,
-                hot_score,score_version,updated_at
+                score_version,updated_at
             ) VALUES (
                 %(repo_id)s,%(metric_date)s,%(stars)s,%(forks)s,%(watchers)s,%(open_issues)s,
                 %(previous_snapshot_date)s,%(previous_stars)s,%(daily_star_growth)s,
                 %(daily_fork_growth)s,%(daily_watcher_growth)s,%(daily_growth_available)s,
                 %(daily_growth_source)s,%(daily_growth_observed_at)s,%(scale_corrected_growth_score)s,
                 %(growth_acceleration_score)s,%(absolute_growth_score)s,%(maintenance_activity_score)s,
-                %(community_engagement_score)s,%(growth_suspicion_score)s,
-                %(growth_suspicion_signals)s,%(growth_corroborated)s,
-                %(hot_score)s,%(score_version)s,%(updated_at)s
+                %(community_engagement_score)s,%(hot_score)s,
+                %(growth_suspicion_score)s,%(growth_suspicion_signals)s,%(growth_corroborated)s,
+                %(score_version)s,%(updated_at)s
             ) ON CONFLICT (repo_id,metric_date) DO UPDATE SET
                 stars=EXCLUDED.stars,forks=EXCLUDED.forks,watchers=EXCLUDED.watchers,
                 open_issues=EXCLUDED.open_issues,previous_snapshot_date=EXCLUDED.previous_snapshot_date,
@@ -683,10 +1261,11 @@ class PostgresGitHubProjectIngestionRepository:
                 absolute_growth_score=EXCLUDED.absolute_growth_score,
                 maintenance_activity_score=EXCLUDED.maintenance_activity_score,
                 community_engagement_score=EXCLUDED.community_engagement_score,
+                hot_score=EXCLUDED.hot_score,
                 growth_suspicion_score=EXCLUDED.growth_suspicion_score,
                 growth_suspicion_signals=EXCLUDED.growth_suspicion_signals,
                 growth_corroborated=EXCLUDED.growth_corroborated,
-                hot_score=EXCLUDED.hot_score,score_version=EXCLUDED.score_version,updated_at=EXCLUDED.updated_at
+                score_version=EXCLUDED.score_version,updated_at=EXCLUDED.updated_at
         """
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:

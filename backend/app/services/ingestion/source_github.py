@@ -119,6 +119,9 @@ class GitHubRepoMetricsResult:
     metrics: dict[str, Any] | None = None
     http_status: int | None = None
     error: str = ""
+    # True 表示本次成功响应经过了 GitHub 改名重定向（301/302）；
+    # 此时 metrics["full_name"] 是改名后的权威名称，full_name 仍是请求名。
+    was_redirected: bool = False
 
 
 def fetch_github_readme_snapshot(
@@ -356,34 +359,60 @@ def fetch_github_repo_metrics(
         return GitHubRepoMetricsResult(full_name="", status="unknown", error="invalid repository name")
 
     def _fetch(active_client: httpx.Client, active_use_token: bool) -> GitHubRepoMetricsResult:
-        resp = active_client.get(
-            f"{GITHUB_API_BASE}/repos/{clean_name}",
-            headers=_build_headers(use_token=active_use_token),
-        )
-        if resp.status_code == 401 and active_use_token:
-            return _fetch(active_client, False)
-        if resp.status_code == 404:
-            logger.warning("[GitHub] 仓库指标抓取未找到 %s: HTTP 404", clean_name)
+        url = f"{GITHUB_API_BASE}/repos/{clean_name}"
+        was_redirected = False
+        # 最多跟随一次改名重定向。GitHub 仅在旧名未被占用时保留 301，
+        # 因此跟随成功的响应必然属于同一仓库；旧名被他人重新注册时
+        # 重定向消失（直接 200 新仓库或 404），绝不误判。
+        for _ in range(2):
+            resp = active_client.get(url, headers=_build_headers(use_token=active_use_token))
+            if resp.status_code == 401 and active_use_token:
+                return _fetch(active_client, False)
+            if resp.status_code in (301, 302, 307, 308):
+                location = resp.headers.get("location", "").strip()
+                if not was_redirected and location.startswith(f"{GITHUB_API_BASE}/repos/"):
+                    url = location
+                    was_redirected = True
+                    continue
+                logger.warning(
+                    "[GitHub] 仓库指标抓取跳过 %s: HTTP %s 重定向不可跟随（location=%s）",
+                    clean_name, resp.status_code, location[:120],
+                )
+                return GitHubRepoMetricsResult(
+                    full_name=clean_name,
+                    status="unknown",
+                    http_status=resp.status_code,
+                )
+            if resp.status_code == 404:
+                logger.warning("[GitHub] 仓库指标抓取未找到 %s: HTTP 404", clean_name)
+                return GitHubRepoMetricsResult(
+                    full_name=clean_name,
+                    status="not_found",
+                    http_status=404,
+                )
+            if resp.status_code in (403, 429):
+                logger.warning("[GitHub] 仓库指标抓取跳过 %s: HTTP %s", clean_name, resp.status_code)
+                return GitHubRepoMetricsResult(
+                    full_name=clean_name,
+                    status="unknown",
+                    http_status=resp.status_code,
+                )
+            resp.raise_for_status()
+            metrics = _parse_metrics_item(resp.json())
+            if was_redirected:
+                logger.info(
+                    "[GitHub] 仓库 %s 已改名为 %s（HTTP 301 跟随成功）",
+                    clean_name, metrics.get("full_name") or "?",
+                )
             return GitHubRepoMetricsResult(
                 full_name=clean_name,
-                status="not_found",
-                http_status=404,
-            )
-        if resp.status_code in (403, 429):
-            logger.warning("[GitHub] 仓库指标抓取跳过 %s: HTTP %s", clean_name, resp.status_code)
-            return GitHubRepoMetricsResult(
-                full_name=clean_name,
-                status="unknown",
+                status="succeeded",
+                metrics=metrics,
                 http_status=resp.status_code,
+                was_redirected=was_redirected,
             )
-        resp.raise_for_status()
-        metrics = _parse_metrics_item(resp.json())
-        return GitHubRepoMetricsResult(
-            full_name=clean_name,
-            status="succeeded",
-            metrics=metrics,
-            http_status=resp.status_code,
-        )
+        # 循环必然在两次迭代内返回；此处仅为满足类型检查
+        return GitHubRepoMetricsResult(full_name=clean_name, status="unknown", error="unreachable")
 
     if client is not None:
         try:
