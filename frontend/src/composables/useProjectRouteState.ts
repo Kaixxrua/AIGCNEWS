@@ -39,6 +39,13 @@ export const defaultProjectSortForSource = (value: ProjectViewSource): GitHubPro
   value === 'favorites' || value === 'website' ? 'recent' : 'stars'
 )
 
+export const defaultProjectScopeForQuery = (
+  source: ProjectViewSource,
+  query: string,
+): ProjectScope => (
+  source === 'all' && !query.trim() ? 'today' : 'all'
+)
+
 export const defaultProjectSortForScope = (
   scope: ProjectScope,
   source: ProjectViewSource,
@@ -87,11 +94,11 @@ export const useProjectRouteState = (
 
   const buildRouteQuery = (): ProjectRouteQuery => {
     const query: ProjectRouteQuery = {}
+    const cleanQuery = state.debouncedQuery.value.trim()
     if (state.source.value !== 'all') query.source = state.source.value
-    if (state.selectedScope.value !== 'all') query.scope = state.selectedScope.value
+    if (state.selectedScope.value !== defaultProjectScopeForQuery(state.source.value, cleanQuery)) query.scope = state.selectedScope.value
     if (state.selectedCategory.value !== 'all') query.category = state.selectedCategory.value
     if (state.selectedSubcategory.value !== 'all') query.subcategory = state.selectedSubcategory.value
-    const cleanQuery = state.debouncedQuery.value.trim()
     if (cleanQuery) query.q = cleanQuery
     if (state.selectedLanguage.value) query.language = state.selectedLanguage.value
     const isPersonalView = state.source.value === 'favorites' || state.source.value === 'website'
@@ -128,10 +135,10 @@ export const useProjectRouteState = (
       ? routeSource as ProjectViewSource
       : 'all'
     const routeScope = queryValue(route.query.scope)
+    const nextQuery = queryValue(route.query.q)
     const nextScope = validScopes.includes(routeScope as ProjectScope)
       ? routeScope as ProjectScope
-      : 'all'
-    const nextQuery = queryValue(route.query.q)
+      : defaultProjectScopeForQuery(nextSource, nextQuery)
     const routeSort = queryValue(route.query.sort)
     const isPublic = nextSource === 'all'
     const defaultSort = defaultProjectSortForQuery(nextScope, nextSource, nextQuery)

@@ -1,7 +1,7 @@
 import { nextTick, reactive, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
-import { defaultProjectSortForQuery, useProjectRouteState } from './useProjectRouteState'
+import { defaultProjectScopeForQuery, defaultProjectSortForQuery, useProjectRouteState } from './useProjectRouteState'
 import type {
   GitHubProjectSort,
   ProjectScope,
@@ -80,7 +80,7 @@ describe('project route state contract', () => {
     })
     invalid.routeState.applyRouteState()
     expect(invalid.state.source.value).toBe('all')
-    expect(invalid.state.selectedScope.value).toBe('all')
+    expect(invalid.state.selectedScope.value).toBe('today')
     expect(invalid.state.sort.value).toBe('hot')
     expect(invalid.state.selectedTag.value).toBe('')
     expect(invalid.state.page.value).toBe(1)
@@ -93,6 +93,36 @@ describe('project route state contract', () => {
     const today = createHarness({ scope: 'today', sort: 'name' })
     today.routeState.applyRouteState()
     expect(today.state.sort.value).toBe('hot')
+  })
+
+  it('lands on the today scope with hot sort when no route state is present', async () => {
+    const landing = createHarness()
+    landing.routeState.applyRouteState()
+    expect(landing.state.selectedScope.value).toBe('today')
+    expect(landing.state.sort.value).toBe('hot')
+    vi.runAllTimers()
+
+    await landing.routeState.replaceRouteFromState()
+    expect(landing.replace).not.toHaveBeenCalled()
+
+    landing.state.selectedScope.value = 'all'
+    landing.state.sort.value = 'stars'
+    await landing.routeState.replaceRouteFromState()
+    expect(landing.replace).toHaveBeenCalledWith({
+      path: '/projects',
+      query: { scope: 'all' },
+    })
+  })
+
+  it('falls back to the all scope for public searches and personal sources', () => {
+    const search = createHarness({ q: 'mcp' })
+    search.routeState.applyRouteState()
+    expect(search.state.selectedScope.value).toBe('all')
+    expect(search.state.sort.value).toBe('relevance')
+
+    const personal = createHarness({ source: 'favorites' })
+    personal.routeState.applyRouteState()
+    expect(personal.state.selectedScope.value).toBe('all')
   })
 
   it('serializes only canonical non-default values', async () => {
@@ -168,7 +198,8 @@ describe('project route state contract', () => {
 
     const emptyPublic = createHarness({ sort: 'relevance' })
     emptyPublic.routeState.applyRouteState()
-    expect(emptyPublic.state.sort.value).toBe('stars')
+    expect(emptyPublic.state.selectedScope.value).toBe('today')
+    expect(emptyPublic.state.sort.value).toBe('hot')
   })
 
   it('suppresses relevance sort from URL when it matches the query default', async () => {
@@ -188,5 +219,13 @@ describe('project route state contract', () => {
     expect(defaultProjectSortForQuery('all', 'all', '')).toBe('stars')
     expect(defaultProjectSortForQuery('today', 'all', 'langchain')).toBe('hot')
     expect(defaultProjectSortForQuery('all', 'favorites', 'mcp')).toBe('recent')
+  })
+
+  it('exposes the query-aware default scope helper', () => {
+    expect(defaultProjectScopeForQuery('all', '')).toBe('today')
+    expect(defaultProjectScopeForQuery('all', '  ')).toBe('today')
+    expect(defaultProjectScopeForQuery('all', 'mcp')).toBe('all')
+    expect(defaultProjectScopeForQuery('favorites', '')).toBe('all')
+    expect(defaultProjectScopeForQuery('website', '')).toBe('all')
   })
 })

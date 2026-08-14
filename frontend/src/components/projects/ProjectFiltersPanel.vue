@@ -94,9 +94,9 @@ const emit = defineEmits<{
 
   <section v-if="!requiresPersonalLogin && !isPersonalView" class="projects-category-panel glass-card" :aria-label="t('projects.categoryFilter')">
     <div class="projects-categories" :aria-label="t('projects.primaryCategoryFilter')">
+      <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><span>{{ label(todayScope) || t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
       <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><span>{{ label(allScope) || t('projects.all') }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
       <button type="button" class="projects-category projects-category--recommend" :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'recommended')"><span>{{ label(recommendedScope) || t('projects.recommended') }}</span><small>{{ recommendedScope?.count ?? 0 }}</small></button>
-      <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><span>{{ label(todayScope) || t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
       <button v-for="category in semanticCategories" :key="category.slug" type="button" class="projects-category" :class="selectedScope === 'all' && selectedCategory === category.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectCategory', category.slug)"><span>{{ label(category) }}</span><small>{{ category.count }}</small></button>
     </div>
     <div v-if="visibleSubcategories.length" class="projects-subcategories" :aria-label="t('projects.subcategoryFilter')">

@@ -20,7 +20,7 @@ import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.v
 import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '@/components/projects/ProjectPagination.vue'
 import { useProjectCatalogController } from '@/composables/useProjectCatalogController'
-import { defaultProjectSortForQuery, useProjectRouteState } from '@/composables/useProjectRouteState'
+import { defaultProjectScopeForQuery, defaultProjectSortForQuery, useProjectRouteState } from '@/composables/useProjectRouteState'
 import {
   canEditWebsiteProject,
   canFavoriteProject,
@@ -38,7 +38,7 @@ const categoryLabel = (item: Parameters<typeof localizedCategoryName>[0]) => loc
 const authStore = useAuthStore()
 const route = useRoute()
 const source = ref<ProjectViewSource>('all')
-const selectedScope = ref<ProjectScope>('all')
+const selectedScope = ref<ProjectScope>(defaultProjectScopeForQuery('all', ''))
 const selectedCategory = ref('all')
 const selectedSubcategory = ref('all')
 const searchQuery = ref('')
@@ -148,7 +148,7 @@ const changeSource = (nextSource: ProjectViewSource) => {
   if (source.value === nextSource) return
   isApplyingRouteState.value = true
   source.value = nextSource
-  resetScopeToAll()
+  selectedScope.value = defaultProjectScopeForQuery(nextSource, debouncedQuery.value)
   selectedCategory.value = 'all'
   selectedSubcategory.value = 'all'
   selectedLanguage.value = ''
@@ -227,7 +227,11 @@ const jumpToPage = () => {
 }
 watch(searchQuery, (value) => {
   if (searchTimer) window.clearTimeout(searchTimer)
-  searchTimer = window.setTimeout(() => { debouncedQuery.value = value }, 280)
+  searchTimer = window.setTimeout(() => {
+    // 搜索意图面向全库：从今日暴涨落地页发起搜索时退出 today 限定
+    if (value.trim() && selectedScope.value === 'today') selectedScope.value = 'all'
+    debouncedQuery.value = value
+  }, 280)
 })
 watch(debouncedQuery, (value) => {
   if (!sortIsExplicit.value) {
