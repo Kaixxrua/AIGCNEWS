@@ -80,10 +80,21 @@ const createTestPhases = (): McpTestPhase[] => [
   { label: 'tools/list', descriptionKey: 'tools', status: 'idle', detail: null },
 ]
 
+// 官方站点的 MCP 接入点收敛到独立网关域名（独立 aigc-mcp 进程，与主站
+// 迭代解耦；server.json registry remote 同口径）；自托管部署仍默认同源。
+export const OFFICIAL_MCP_GATEWAY_ENDPOINT = 'https://aigcradar.online/api/mcp'
+const OFFICIAL_SITE_HOSTS = new Set(['aigcnews.cn', 'www.aigcnews.cn'])
+
+export const resolveDefaultMcpEndpoint = (
+  locationLike: Pick<Location, 'hostname' | 'origin'> | null,
+): string => {
+  if (!locationLike) return 'https://your-domain.com/api/mcp'
+  if (OFFICIAL_SITE_HOSTS.has(locationLike.hostname)) return OFFICIAL_MCP_GATEWAY_ENDPOINT
+  return new URL('/api/mcp', locationLike.origin).href
+}
+
 const defaultMcpEndpoint = () => (
-  typeof window === 'undefined'
-    ? 'https://your-domain.com/api/mcp'
-    : new URL('/api/mcp', window.location.origin).href
+  resolveDefaultMcpEndpoint(typeof window === 'undefined' ? null : window.location)
 )
 
 export const useMcpConnectController = (options: McpConnectControllerOptions = {}) => {

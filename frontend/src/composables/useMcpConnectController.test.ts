@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { McpHandshakeOptions } from '@/features/mcp/mcpHandshake'
 import type { McpTokenMetadata } from '@/services/mcp/mcpTokenApi'
 import {
+  OFFICIAL_MCP_GATEWAY_ENDPOINT,
+  resolveDefaultMcpEndpoint,
   useMcpConnectController,
   type McpConnectApi,
   type McpConnectHandshake,
@@ -46,6 +48,23 @@ const createController = (overrides: Parameters<typeof useMcpConnectController>[
 
 describe('MCP connect controller', () => {
   beforeEach(() => vi.useFakeTimers())
+
+  it('官方站点默认接入点收敛到独立网关域名，自托管保持同源', () => {
+    expect(OFFICIAL_MCP_GATEWAY_ENDPOINT).toBe('https://aigcradar.online/api/mcp')
+    expect(
+      resolveDefaultMcpEndpoint({ hostname: 'aigcnews.cn', origin: 'https://aigcnews.cn' }),
+    ).toBe(OFFICIAL_MCP_GATEWAY_ENDPOINT)
+    expect(
+      resolveDefaultMcpEndpoint({ hostname: 'www.aigcnews.cn', origin: 'https://www.aigcnews.cn' }),
+    ).toBe(OFFICIAL_MCP_GATEWAY_ENDPOINT)
+    expect(
+      resolveDefaultMcpEndpoint({ hostname: 'ai.example.com', origin: 'https://ai.example.com' }),
+    ).toBe('https://ai.example.com/api/mcp')
+    expect(
+      resolveDefaultMcpEndpoint({ hostname: 'localhost', origin: 'http://localhost:5173' }),
+    ).toBe('http://localhost:5173/api/mcp')
+    expect(resolveDefaultMcpEndpoint(null)).toBe('https://your-domain.com/api/mcp')
+  })
 
   it('validates endpoint protocols and redirects logged-out setup without creating a token', async () => {
     const navigateToLogin = vi.fn(async () => undefined)
