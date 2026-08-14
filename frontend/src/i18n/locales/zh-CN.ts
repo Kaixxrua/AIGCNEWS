@@ -6,6 +6,7 @@ const overrides = {
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
   navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', changePassword: '修改密码', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
   footer: { poweredBy: '由 {brandName} 提供支持', disclaimer: '免责声明', privacy: '隐私政策', mcp: 'MCP 接入', ecosystem: '商务合作：', infringement: '侵权投诉' },
+  masthead: { todayNew: '今日更新' },
   auth: {
     login: '登录', logout: '退出登录', username: '用户名', password: '密码', email: '邮箱', otp: '验证码', newPassword: '新密码', confirmPassword: '确认密码',
     loginTitle: 'AIGC 资讯 · 登录', loginDescription: '欢迎回来，请登录您的账号', registerTitle: 'AIGC 资讯 · 注册', registerDescription: '创建您的账号，开启 AI 资讯之旅', forgotTitle: 'AIGC 资讯 · 重置密码', forgotDescription: '通过邮箱验证码设置新密码',

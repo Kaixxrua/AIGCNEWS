@@ -4,6 +4,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
 import BrandWordmark from '@/components/layout/BrandWordmark.vue'
+import MastheadMeta from '@/components/layout/MastheadMeta.vue'
 import GitHubLink from '@/components/GitHubLink.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -65,11 +66,12 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
     <!-- ═══ 居中悬浮画板（暖白纸质毛玻璃主面板） ═══ -->
     <div class="main-canvas">
-      <!-- 顶部品牌条：故障特效字标与工具图标居中成组 -->
+      <!-- 顶部品牌条：左侧报头信息，故障特效字标与工具图标居中成组 -->
       <div
         class="absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
         style="z-index: 100; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised);"
       >
+        <MastheadMeta />
         <div class="flex items-center gap-3">
           <BrandWordmark :text="brandName" />
           <span class="topbar-divider" aria-hidden="true"></span>
