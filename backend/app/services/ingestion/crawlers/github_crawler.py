@@ -2,7 +2,10 @@ from __future__ import annotations
 
 """GitHub Trending 爬虫包装器：封装 source_github_trending.fetch_github_trending。
 
-直接爬取 github.com/trending 页面，支持 daily/weekly/monthly 三周期。
+直接爬取 github.com/trending 页面，仅采 daily 日榜。
+weekly/monthly 榜单采集已退役（遗留看板，2026-08-14 起停止写入
+github_trending_weekly / github_trending_monthly channel）；解析层的
+多周期支持保留给 github_hot_service 项目库候选池使用。
 """
 
 import logging
@@ -21,13 +24,11 @@ logger = logging.getLogger(__name__)
 
 _CHANNEL_MAP = {
     "daily": "github_trending_daily",
-    "weekly": "github_trending_weekly",
-    "monthly": "github_trending_monthly",
 }
 
 
 class GitHubCrawler(BaseCrawler):
-    """GitHub Trending 爬虫（数据源：github.com/trending 页面）。"""
+    """GitHub Trending 爬虫（数据源：github.com/trending 页面，仅日榜）。"""
 
     @property
     def source_name(self) -> str:
@@ -35,7 +36,7 @@ class GitHubCrawler(BaseCrawler):
 
     @property
     def supported_periods(self) -> List[str]:
-        return ["daily", "weekly", "monthly"]
+        return ["daily"]
 
     async def _do_fetch(
         self,
