@@ -261,6 +261,11 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "AIGC_NEWS"
     SMTP_USE_TLS: bool = True
 
+    # 邮件池（多服务商 failover + 本地配额护栏）：JSON 数组，非空时接管全部
+    # 外发邮件；既有单 SMTP 配置（DB/env）自动并入为最低优先级兜底 entry。
+    # 字段与限额口径（UTC 日/月窗口）见 .env.example 邮件池一节
+    EMAIL_POOL_JSON: str = ""
+
     # 普通用户每日消息上限（0 = 不限制，仅对 role='user' 生效，admin 不受限）
     USER_DAILY_MESSAGE_LIMIT: int = 20
 

@@ -15,6 +15,12 @@ from backend.app.services.email.otp_store import (
     OtpStoreUnavailableError,
     RedisOtpStore,
 )
+from backend.app.services.email.pool_transport import (
+    EmailPoolEntry,
+    EmailPoolQuotaStore,
+    EmailPoolTransport,
+    parse_email_pool_entries,
+)
 from backend.app.services.email.smtp_config_provider import resolve_smtp_config
 from backend.app.services.email.smtp_transport import SmtpDeliveryError, SmtpTransport
 
@@ -71,7 +77,7 @@ class EmailService:
         *,
         otp_store: RedisOtpStore | None = None,
         renderer: EmailMessageRenderer | None = None,
-        transport: SmtpTransport | None = None,
+        transport: SmtpTransport | EmailPoolTransport | None = None,
     ) -> None:
         self._otp_store = otp_store or RedisOtpStore(
             redis_client, compare_digest=hmac.compare_digest
@@ -225,6 +231,10 @@ def build_email_service(redis_client, *, config=None) -> EmailService:
     config 为 None（生产默认）时经 smtp_config_provider 解析生效配置
     （DB 行覆盖 env，60s TTL 热生效）；显式传入 Settings 兼容对象则
     保持旧的属性读取路径（测试与独立脚本专用）。
+
+    EMAIL_POOL_JSON 非空时以 EmailPoolTransport 接管外发：池内 entry
+    按 priority 升序 failover，既有单 SMTP 配置并入为兜底 entry（按
+    host 去重）；池为空时行为与改造前完全一致。
     """
     if config is None:
         resolved = resolve_smtp_config(env=settings)
@@ -235,6 +245,7 @@ def build_email_service(redis_client, *, config=None) -> EmailService:
         from_email = resolved.from_email
         from_name = resolved.from_name
         use_tls = resolved.use_tls
+        pool_json = settings.EMAIL_POOL_JSON
     else:
         host = config.SMTP_HOST
         port = config.SMTP_PORT
@@ -243,17 +254,49 @@ def build_email_service(redis_client, *, config=None) -> EmailService:
         from_email = config.SMTP_FROM_EMAIL
         from_name = config.SMTP_FROM_NAME
         use_tls = config.SMTP_USE_TLS
+        pool_json = getattr(config, "EMAIL_POOL_JSON", "") or ""
     otp_store = RedisOtpStore(redis_client, compare_digest=hmac.compare_digest)
     renderer = EmailMessageRenderer()
-    transport = SmtpTransport(
-        host=host,
-        port=port,
-        username=username,
-        password=password,
-        from_email=from_email,
-        from_name=from_name,
-        use_tls=use_tls,
+
+    pool_entries = parse_email_pool_entries(
+        pool_json,
+        default_from_email=from_email,
+        default_from_name=from_name,
     )
+    if pool_entries and host and host not in {entry.host for entry in pool_entries}:
+        pool_entries.append(
+            EmailPoolEntry(
+                name="legacy-smtp",
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                from_email=from_email,
+                from_name=from_name,
+                use_tls=use_tls,
+                priority=max(entry.priority for entry in pool_entries) + 10,
+            )
+        )
+        pool_entries.sort(key=lambda entry: entry.priority)
+
+    if pool_entries:
+        logger.info(
+            "[EMAIL] 邮件池已启用：%s",
+            ", ".join(entry.name for entry in pool_entries),
+        )
+        transport: SmtpTransport | EmailPoolTransport = EmailPoolTransport(
+            pool_entries, quota=EmailPoolQuotaStore(redis_client)
+        )
+    else:
+        transport = SmtpTransport(
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            from_email=from_email,
+            from_name=from_name,
+            use_tls=use_tls,
+        )
     return EmailService(
         redis_client=redis_client,
         smtp_host=host,
