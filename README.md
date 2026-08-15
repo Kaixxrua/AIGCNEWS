@@ -118,6 +118,8 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 
 Any MCP client that supports Streamable HTTP can point directly at this URL; the Web site offers one-click import configs for 9 client types (Cursor, Codex, VS Code, Windsurf, etc.); stdio-only clients can bridge via `npx mcp-remote https://aigcnews.cn/api/mcp`. For self-hosted local development, the endpoint is `http://localhost:8000/api/mcp`.
 
+![Claude Code calling AIGC Radar MCP: one prompt to search_github_ai_projects returns curated RAG evaluation projects with star counts](docs/assets/screenshot-mcp-call.png)
+
 Public tools (no auth required, all read-only):
 
 | Tool | Purpose |
