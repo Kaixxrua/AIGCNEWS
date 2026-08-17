@@ -30,7 +30,9 @@ from backend.app.services.mcp.inbound.context import (
     parse_mcp_request,
 )
 from backend.app.services.mcp.inbound.rate_limit import (
+    McpQuotaExceededError,
     enforce_mcp_rate_limit,
+    mcp_quota_exceeded_projection,
     mcp_rate_limited_projection,
 )
 from backend.app.services.mcp.inbound.tools import McpToolContext
@@ -90,8 +92,19 @@ async def mcp_endpoint(
     except McpRequestError as exc:
         return _http_response(application.error(exc.request_id, exc.code, exc.message))
     try:
+        # 分层配额（Red）：role/membership_tier 以 MCP token 关联的库内用户
+        # 为准（get_user_by_mcp_token_hash JOIN 已带列，零额外查询）；
+        # 匿名 user=None → 上下文属性回退 user/free 走 IP 日配额。
         await enforce_mcp_rate_limit(
-            request, method=inbound.method, user_id=authorization.user_id
+            request,
+            method=inbound.method,
+            user_id=authorization.user_id,
+            role=authorization.role,
+            membership_tier=authorization.membership_tier,
+        )
+    except McpQuotaExceededError as exc:
+        return _http_response(
+            mcp_quota_exceeded_projection(inbound.request_id, exc)
         )
     except RateLimitExceededError:
         return _http_response(mcp_rate_limited_projection(inbound.request_id))

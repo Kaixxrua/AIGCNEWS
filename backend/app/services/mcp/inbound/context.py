@@ -57,6 +57,18 @@ class McpAuthorizationContext:
         except (TypeError, ValueError):
             return 0
 
+    @property
+    def role(self) -> str:
+        """库内角色（MCP token JOIN 已带列）；匿名或缺列按 user。"""
+
+        return str((self.user or {}).get("role") or "user")
+
+    @property
+    def membership_tier(self) -> str:
+        """库内会员档位（0045）；匿名或缺列按 free，未知档由配额层归一。"""
+
+        return str((self.user or {}).get("membership_tier") or "free")
+
     def has_scope(self, scope: str) -> bool:
         return scope in (self.user or {}).get("scopes", frozenset())
 
