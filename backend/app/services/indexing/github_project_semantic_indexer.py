@@ -270,6 +270,7 @@ def sync_github_project_semantic_index(
     db: GitHubProjectSemanticSourceRepository,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    if not settings.project_semantic_indexing_enabled and not kwargs.pop("force", False):
+    force = bool(kwargs.pop("force", False))
+    if not settings.project_semantic_indexing_enabled and not force:
         return {"status": "disabled", "selected": 0, "counts": {}}
     return GitHubProjectSemanticIndexer(db=db).sync_batch(**kwargs)

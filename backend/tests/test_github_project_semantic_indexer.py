@@ -9,6 +9,7 @@ from backend.app.services.indexing.github_project_semantic_indexer import (
     GitHubProjectSemanticIndexer,
     build_project_semantic_chunks,
     project_semantic_fingerprint,
+    sync_github_project_semantic_index,
 )
 
 PROJECT = {
@@ -167,6 +168,32 @@ class GitHubProjectSemanticIndexerTests(unittest.TestCase):
 
         self.assertEqual(result["counts"], {"dry_run": 2})
         embeddings.assert_not_called()
+
+
+class SyncGitHubProjectSemanticIndexTests(unittest.TestCase):
+    def test_force_is_popped_before_reaching_sync_batch_when_enabled(self) -> None:
+        db = MagicMock()
+        db.list_github_projects_for_semantic_sync.return_value = []
+        with (
+            patch(
+                "backend.app.services.indexing.github_project_semantic_indexer.settings.project_semantic_indexing_enabled",
+                True,
+            ),
+            patch.object(GitHubProjectSemanticIndexer, "sync_batch", return_value={"status": "success"}) as sync_batch,
+        ):
+            result = sync_github_project_semantic_index(db=db, force=True, limit=5)
+
+        self.assertEqual(result, {"status": "success"})
+        self.assertNotIn("force", sync_batch.call_args.kwargs)
+
+    def test_disabled_without_force_short_circuits(self) -> None:
+        with patch(
+            "backend.app.services.indexing.github_project_semantic_indexer.settings.project_semantic_indexing_enabled",
+            False,
+        ):
+            result = sync_github_project_semantic_index(db=MagicMock())
+
+        self.assertEqual(result, {"status": "disabled", "selected": 0, "counts": {}})
 
 
 if __name__ == "__main__":
