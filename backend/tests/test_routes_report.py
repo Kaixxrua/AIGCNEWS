@@ -300,15 +300,24 @@ class ReportEvaluationAdminGateTests(unittest.TestCase):
 
 
 class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
+    @staticmethod
+    def _empty_user_subscription_repository() -> MagicMock:
+        # 档位校验的体系 B 读侧：默认无存量订阅
+        repository = MagicMock()
+        repository.list_subscriptions.return_value = []
+        return repository
+
     def test_subscribe_uses_authenticated_user_and_repository(self) -> None:
         repository = MagicMock(spec=BriefingSubscriptionRepository)
         repository.upsert_briefing_subscription.return_value = {"id": 42}
+        repository.get_user_briefing_subscriptions.return_value = []
 
         result = asyncio.run(
             routes_report.subscribe_briefing(
                 routes_report.SubscribeRequest(source="github"),
                 user={"user_id": 7, "email": "reader@example.com"},
                 repository=repository,
+                user_subscription_repository=self._empty_user_subscription_repository(),
             )
         )
 
@@ -371,14 +380,21 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
             {"id": 1},
             {"id": 2},
         ]
+        repository.get_user_briefing_subscriptions.return_value = []
 
         result = asyncio.run(
             routes_report.batch_subscribe_briefings(
                 routes_report.BatchSubscribeRequest(
                     sources=["github", "invalid", "github", "news"],
                 ),
-                user={"user_id": 7, "email": "reader@example.com"},
+                # 多模块批量订阅是会员档行为；免费档单模块由配额专项测试覆盖
+                user={
+                    "user_id": 7,
+                    "email": "reader@example.com",
+                    "membership_tier": "member",
+                },
                 repository=repository,
+                user_subscription_repository=self._empty_user_subscription_repository(),
             )
         )
 
