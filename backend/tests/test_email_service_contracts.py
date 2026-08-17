@@ -463,6 +463,35 @@ class ExtractedEmailBoundaryTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
+    async def test_password_change_purpose_uses_isolated_key_namespace(self) -> None:
+        redis = FakeRedis()
+        store = RedisOtpStore(redis)
+
+        await store.store("USER@example.com", "123456", purpose="password_change")
+
+        self.assertEqual(
+            redis.calls[:3],
+            [
+                ("get", "email:change:lock:user@example.com"),
+                ("set", "email:change:code:user@example.com", "123456", 300),
+                ("set", "email:change:lock:user@example.com", "1", 60),
+            ],
+        )
+        self.assertTrue(
+            await store.verify(
+                "user@example.com", "123456",
+                purpose="password_change", consume=True,
+            )
+        )
+        self.assertEqual(
+            redis.calls[-1],
+            (
+                "delete",
+                "email:change:code:user@example.com",
+                "email:change:attempts:user@example.com",
+            ),
+        )
+
     async def test_resend_does_not_replenish_guess_budget(self) -> None:
         # AUTH-D 渗透链：猜 4 次 → 等 60 秒冷却 → 重发新码 → 继续猜。
         # 修复后预算跨重发累计，第 5 次错误尝试连新码一并销毁

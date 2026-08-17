@@ -31,6 +31,8 @@ class AuthRouteBoundaryTests(unittest.TestCase):
                 "reset_password",
                 "register",
                 "login",
+                "send_change_password_otp",
+                "change_password",
             }
         }
         self.assertEqual(
@@ -40,6 +42,8 @@ class AuthRouteBoundaryTests(unittest.TestCase):
                 "reset_password",
                 "register",
                 "login",
+                "send_change_password_otp",
+                "change_password",
             },
         )
         for name, function in account_routes.items():

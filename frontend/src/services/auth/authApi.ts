@@ -27,10 +27,16 @@ export async function fetchCurrentUser(): Promise<AuthUserDTO> {
   return res.data
 }
 
-/** 已登录改密：当前密码校验，免邮箱验证码（无 SMTP 的自托管也可轮换密码） */
-export async function changePassword(currentPassword: string, newPassword: string): Promise<{ detail: string }> {
+/** 已登录改密发码：验证码发送到当前账号邮箱（purpose=password_change） */
+export async function sendChangePasswordOtp(): Promise<{ detail: string }> {
+  const res = await api.post<{ detail: string }>('/auth/me/send-password-change-otp')
+  return res.data
+}
+
+/** 已登录改密：邮箱验证码校验（验证码替代当前密码；无 SMTP 的自托管环境无改密路径） */
+export async function changePassword(emailCode: string, newPassword: string): Promise<{ detail: string }> {
   const res = await api.post<{ detail: string }>('/auth/me/password', {
-    current_password: currentPassword,
+    email_code: emailCode,
     new_password: newPassword,
   })
   return res.data

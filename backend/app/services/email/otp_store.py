@@ -6,7 +6,7 @@ import hmac
 from collections.abc import Callable
 from typing import Literal
 
-OtpPurpose = Literal["registration", "password_reset", "push_channel_verify"]
+OtpPurpose = Literal["registration", "password_reset", "push_channel_verify", "password_change"]
 
 OTP_CODE_PREFIX = "email:code:"
 OTP_LOCK_PREFIX = "email:lock:"
@@ -17,6 +17,9 @@ RESET_ATTEMPTS_PREFIX = "email:reset:attempts:"
 PUSH_CODE_PREFIX = "email:push:code:"
 PUSH_LOCK_PREFIX = "email:push:lock:"
 PUSH_ATTEMPTS_PREFIX = "email:push:attempts:"
+CHANGE_CODE_PREFIX = "email:change:code:"
+CHANGE_LOCK_PREFIX = "email:change:lock:"
+CHANGE_ATTEMPTS_PREFIX = "email:change:attempts:"
 OTP_TTL = 300
 LOCK_TTL = 60
 MAX_ATTEMPTS = 5
@@ -31,10 +34,10 @@ class OtpCooldownError(RuntimeError):
 
 
 def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str]:
-    """返回 (code_key, lock_key, attempts_key)；两种用途都必须有尝试计数键。
+    """返回 (code_key, lock_key, attempts_key)；所有用途都必须有尝试计数键。
 
     历史上 registration 的 attempts_key 为 None（无限次尝试），6 位验证码
-    在 5 分钟 TTL 内可被穷举，因此两种用途统一为 MAX_ATTEMPTS 次上限。
+    在 5 分钟 TTL 内可被穷举，因此所有用途统一为 MAX_ATTEMPTS 次上限。
     """
     email_lower = email.lower()
     if purpose == "password_reset":
@@ -48,6 +51,12 @@ def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str]:
             f"{PUSH_CODE_PREFIX}{email_lower}",
             f"{PUSH_LOCK_PREFIX}{email_lower}",
             f"{PUSH_ATTEMPTS_PREFIX}{email_lower}",
+        )
+    if purpose == "password_change":
+        return (
+            f"{CHANGE_CODE_PREFIX}{email_lower}",
+            f"{CHANGE_LOCK_PREFIX}{email_lower}",
+            f"{CHANGE_ATTEMPTS_PREFIX}{email_lower}",
         )
     return (
         f"{OTP_CODE_PREFIX}{email_lower}",

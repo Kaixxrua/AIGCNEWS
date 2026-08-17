@@ -120,7 +120,7 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 ### 3.10 账号体系
 
 - 邮箱验证码注册 / 登录 / 忘记密码重置，JWT（HS256，默认 7 天）
-- **空库首启动自动种子默认管理员**（`admin@aigcnews.internal` / `admin123456`，可用 `DEFAULT_ADMIN_*` 覆盖，置空即禁用），登录后站内改密只需当前密码、免 SMTP；注册新用户仍依赖邮件通道（SMTP 或 dev 模式日志打印验证码），见 [self-hosting.zh-CN.md](self-hosting.zh-CN.md)
+- **空库首启动自动种子默认管理员**（`admin@aigcnews.internal` / `admin123456`，可用 `DEFAULT_ADMIN_*` 覆盖，置空即禁用），站内改密凭账号邮箱验证码（注册 / 重置 / 改密均依赖邮件通道：SMTP 或 dev 模式日志打印验证码），见 [self-hosting.zh-CN.md](self-hosting.zh-CN.md)
 - 防刷：OTP 5 分钟有效 + 60s 发送冷却 + 5 次尝试上限；登录 / 注册按 IP 固定窗口限流
 
 ### 3.11 管理后台（`/monitor`，管理员）
