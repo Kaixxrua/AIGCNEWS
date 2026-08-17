@@ -635,11 +635,24 @@ onBeforeUnmount(() => {
   border-radius: 5px;
   background: var(--projects-paper-light);
   box-shadow: 3px 3px 0 var(--shadow-hard);
-  transition: background 150ms ease;
+  transition:
+    background 150ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .tweet-card:hover {
   background: var(--acid-soft);
+}
+
+/* 悬停浮起：与项目库卡片同一配方（左上位移 + 微旋 + 硬阴影加深），
+   仅在有悬停能力的设备启用（触屏不留粘滞态）；键盘焦点进入卡内控件时同样浮起 */
+@media (hover: hover) {
+  .tweet-card:hover,
+  .tweet-card:focus-within {
+    transform: translate(-2px, -4px) rotate(-0.4deg);
+    box-shadow: 8px 8px 0 var(--shadow-hard);
+  }
 }
 
 .tweet-head {
