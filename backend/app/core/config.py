@@ -139,6 +139,7 @@ class Settings(BaseSettings):
     project_semantic_search_enabled: bool = False
     project_ai_search_strategy: Literal["legacy", "shadow", "v2"] = "legacy"
     project_search_adoption_weight: float = 0.006
+    project_semantic_popularity_first: bool = True
     project_search_shadow_sample_rate: float = 0.0
     project_search_shadow_workers: int = 2
     project_search_shadow_capacity: int = 8

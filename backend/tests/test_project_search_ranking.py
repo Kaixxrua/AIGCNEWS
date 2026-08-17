@@ -1,6 +1,7 @@
 from backend.app.repositories.project_catalog import ProjectLexicalCandidate
 from backend.app.services.project_search_ranking import (
     ProjectCandidateSearchResult,
+    order_candidates_by_popularity,
     rank_legacy_project_candidate_ids,
     rank_v2_project_candidate_ids,
 )
@@ -136,3 +137,31 @@ def test_v2_ranker_adoption_bonus_rejects_non_mapping_input() -> None:
     assert rank_v2_project_candidate_ids(
         strict, [], semantic, adoption_stars=object(), adoption_weight=0.006
     ) == expected
+
+
+def test_popularity_ordering_sorts_by_stars_and_preserves_fusion_order_on_ties() -> None:
+    ordered = order_candidates_by_popularity(
+        ["owner/fit", "owner/veteran", "owner/niche", "owner/unknown"],
+        {"owner/veteran": 106_000, "owner/fit": 20_000, "owner/niche": 20_000},
+    )
+
+    assert ordered == ["owner/veteran", "owner/fit", "owner/niche", "owner/unknown"]
+
+
+def test_popularity_ordering_pins_exact_match_above_heat() -> None:
+    ordered = order_candidates_by_popularity(
+        ["Owner/Exact-Tool", "owner/veteran"],
+        {"owner/veteran": 106_000, "Owner/Exact-Tool": 5},
+        exact_repo_id="owner/exact-tool",
+    )
+
+    assert ordered == ["Owner/Exact-Tool", "owner/veteran"]
+
+
+def test_popularity_ordering_tolerates_non_numeric_and_missing_stars() -> None:
+    ordered = order_candidates_by_popularity(
+        ["owner/a", "owner/b", "owner/c"],
+        {"owner/a": "not-a-number", "owner/c": 10},
+    )
+
+    assert ordered == ["owner/c", "owner/a", "owner/b"]

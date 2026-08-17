@@ -101,3 +101,33 @@ def rank_v2_project_candidate_ids(
             repo_id,
         ),
     )[:limit]
+
+
+def order_candidates_by_popularity(
+    repo_ids: Sequence[str],
+    stars: Mapping[str, int],
+    *,
+    exact_repo_id: str = "",
+) -> list[str]:
+    """语义搜索展示序：精确命中钉在榜首，其余按热度（stars）降序。
+
+    lane 融合只决定候选名单；展示序默认让位给热度，避免向量噪声把
+    高星主流项目埋在长尾相似项后面。热度缺失按 0 处理，同热度回落到
+    传入的融合位次，保证确定性排序。
+    """
+    ordered_ids = [str(repo_id) for repo_id in repo_ids]
+    fusion_rank = {repo_id: index for index, repo_id in enumerate(ordered_ids)}
+    normalized_exact = exact_repo_id.strip().casefold()
+
+    def _stars_of(repo_id: str) -> int:
+        value = stars.get(repo_id, 0)
+        return int(value) if isinstance(value, (int, float)) else 0
+
+    return sorted(
+        ordered_ids,
+        key=lambda repo_id: (
+            0 if normalized_exact and repo_id.casefold() == normalized_exact else 1,
+            -_stars_of(repo_id),
+            fusion_rank[repo_id],
+        ),
+    )

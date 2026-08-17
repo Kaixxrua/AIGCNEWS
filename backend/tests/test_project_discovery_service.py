@@ -736,6 +736,105 @@ class ProjectDiscoveryTests(unittest.TestCase):
         self.assertEqual(ranked[0], "owner/fresh-fit")
         self.assertGreater(ranked.index("owner/veteran"), 4)
 
+    def _run_v2_semantic_popularity_search(
+        self,
+        repo: Any,
+        *,
+        popularity_first: bool,
+        query: str = "AI coding agent CLI",
+    ) -> list[str]:
+        semantic_search = MagicMock()
+        semantic_search.search_repo_ids = MagicMock(
+            return_value=[
+                types.SimpleNamespace(repo_id="owner/veteran"),
+                types.SimpleNamespace(repo_id="owner/deep-sem"),
+            ]
+        )
+        originals = (
+            project_discovery.settings.project_ai_search_strategy,
+            project_discovery.settings.project_semantic_search_enabled,
+            project_discovery.settings.project_semantic_popularity_first,
+        )
+        project_discovery.settings.project_ai_search_strategy = "v2"
+        project_discovery.settings.project_semantic_search_enabled = True
+        project_discovery.settings.project_semantic_popularity_first = popularity_first
+        try:
+            asyncio.run(
+                project_discovery.search_projects(
+                    query=query,
+                    mode="generic",
+                    repository_factory=lambda: repo,
+                    semantic_search_factory=lambda: semantic_search,
+                )
+            )
+        finally:
+            (
+                project_discovery.settings.project_ai_search_strategy,
+                project_discovery.settings.project_semantic_search_enabled,
+                project_discovery.settings.project_semantic_popularity_first,
+            ) = originals
+        return repo.list_projects.call_args.kwargs["candidate_repo_ids"]
+
+    def _build_v2_semantic_repository(self) -> Any:
+        class SemanticRepository:
+            def __init__(self) -> None:
+                self.find_lexical_candidate_repo_ids = MagicMock(return_value=[])
+                self.find_lexical_candidate_lanes = MagicMock(
+                    return_value=ProjectLexicalCandidateLanes(
+                        strict=(
+                            ProjectLexicalCandidate(
+                                "owner/fit", "strict", term_coverage=3, match_strength=3
+                            ),
+                        ),
+                        relaxed=(
+                            ProjectLexicalCandidate(
+                                "owner/veteran", "relaxed", term_coverage=1, match_strength=1
+                            ),
+                        ),
+                    )
+                )
+                self.get_project_stars_map = MagicMock(
+                    return_value={
+                        "owner/veteran": 106_000,
+                        "owner/deep-sem": 30_000,
+                        "owner/fit": 20_000,
+                    }
+                )
+                self.list_projects = MagicMock(
+                    return_value={
+                        "items": [{"full_name": "owner/veteran", "stars": 106_000}],
+                        "total": 1,
+                    }
+                )
+
+        return SemanticRepository()
+
+    def test_v2_semantic_lane_defaults_to_popularity_order(self) -> None:
+        ranked = self._run_v2_semantic_popularity_search(
+            self._build_v2_semantic_repository(), popularity_first=True
+        )
+
+        # 热度优先：106k 元老登顶，30k 语义独苗压过 20k 拟合冠军
+        self.assertEqual(ranked, ["owner/veteran", "owner/deep-sem", "owner/fit"])
+
+    def test_v2_semantic_popularity_order_keeps_exact_match_first(self) -> None:
+        ranked = self._run_v2_semantic_popularity_search(
+            self._build_v2_semantic_repository(),
+            popularity_first=True,
+            query="owner/fit",
+        )
+
+        # 精确命中力压 106k 热度冠军钉在榜首
+        self.assertEqual(ranked[0], "owner/fit")
+        self.assertEqual(ranked[1], "owner/veteran")
+
+    def test_v2_semantic_popularity_first_disabled_keeps_fit_order(self) -> None:
+        ranked = self._run_v2_semantic_popularity_search(
+            self._build_v2_semantic_repository(), popularity_first=False
+        )
+
+        self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
+
     def test_normalize_request_generic_mode_discards_taxonomy_and_scope(self) -> None:
         request = project_discovery._normalize_search_request(
             query="agent",
