@@ -38,7 +38,24 @@ def test_adapter_structurally_satisfies_semantic_source_contract() -> None:
 
     assert callable(contract.list_github_projects_for_semantic_sync)
     assert callable(contract.upsert_github_project_semantic_source)
+    assert callable(contract.mark_github_project_semantic_snapshot_current)
     assert callable(contract.get_github_project_semantic_status)
+
+
+def test_mark_snapshot_current_only_touches_watermark_columns() -> None:
+    repository, database, cursor = _repository()
+
+    repository.mark_github_project_semantic_snapshot_current(
+        "owner/repo", repo_pushed_at="2026-08-01", checked_at="2026-08-17T00:00:00+00:00"
+    )
+
+    sql, params = cursor.execute.call_args.args
+    assert sql.lstrip().startswith("UPDATE github_project_semantic_sources")
+    assert "readme_repo_pushed_at" in sql
+    assert "readme_checked_at" in sql
+    assert "index_status" not in sql
+    assert params == ("2026-08-01", "2026-08-17T00:00:00+00:00", "2026-08-17T00:00:00+00:00", "owner/repo")
+    assert database.transaction_count == 1
 
 
 def test_sync_query_preserves_filters_order_retry_policy_and_normalization() -> None:

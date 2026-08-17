@@ -276,6 +276,14 @@ class GitHubProjectSemanticSourceRepository(Protocol):
         self, payload: dict[str, Any]
     ) -> None: ...
 
+    def mark_github_project_semantic_snapshot_current(
+        self,
+        repo_id: str,
+        *,
+        repo_pushed_at: str,
+        checked_at: str,
+    ) -> None: ...
+
     def get_github_project_semantic_status(
         self, *, min_stars: int = 500
     ) -> dict[str, Any]: ...

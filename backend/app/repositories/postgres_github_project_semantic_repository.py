@@ -151,6 +151,29 @@ class PostgresGitHubProjectSemanticSourceRepository:
                 data["repo_id"] = repo_id
                 cursor.execute(sql, tuple(data[column] for column in columns))
 
+    def mark_github_project_semantic_snapshot_current(
+        self,
+        repo_id: str,
+        *,
+        repo_pushed_at: str,
+        checked_at: str,
+    ) -> None:
+        """轻量推进快照水位：内容未变时只更新 pushed_at/检查时间。
+
+        与 upsert 的全列覆盖语义不同，这里只动三个字段，避免把
+        未指定的索引状态列重置回默认值。
+        """
+        sql = """
+            UPDATE github_project_semantic_sources
+            SET readme_repo_pushed_at = %s,
+                readme_checked_at = %s,
+                updated_at = %s
+            WHERE repo_id = %s
+        """
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, (repo_pushed_at, checked_at, checked_at, repo_id))
+
     def get_github_project_semantic_status(
         self, *, min_stars: int = 500
     ) -> dict[str, Any]:

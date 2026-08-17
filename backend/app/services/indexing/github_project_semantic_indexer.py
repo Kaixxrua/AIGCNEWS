@@ -150,6 +150,13 @@ class GitHubProjectSemanticIndexer:
         readme = self._readme_snapshot(project, fetch_readme=fetch_readme)
         fingerprint = project_semantic_fingerprint(project, readme["sha256"])
         if fingerprint == str(project.get("indexed_fingerprint") or ""):
+            # 内容未变也要推进 readme_repo_pushed_at 水位，否则选择查询的
+            # pushed_at 比较会让这批项目永远被重复选中（活锁）。
+            self.db.mark_github_project_semantic_snapshot_current(
+                str(project.get("repo_id") or ""),
+                repo_pushed_at=str(project.get("pushed_at") or ""),
+                checked_at=_utcnow(),
+            )
             return {"repo_id": project.get("repo_id"), "status": "unchanged", "chunk_count": 0}
         chunks = build_project_semantic_chunks(project, readme["text"])
         if dry_run:

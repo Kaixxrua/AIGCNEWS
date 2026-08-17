@@ -157,6 +157,29 @@ class GitHubProjectSemanticIndexerTests(unittest.TestCase):
 
         self.assertEqual(result["counts"], {"succeeded": 1, "failed": 1})
 
+    def test_unchanged_project_advances_snapshot_watermark_without_vector_writes(self) -> None:
+        fingerprint = project_semantic_fingerprint(PROJECT, "")
+        project = {
+            **PROJECT,
+            "indexed_fingerprint": fingerprint,
+            "pushed_at": "2026-08-01",
+        }
+        db = MagicMock()
+        vectors = MagicMock()
+        indexer = GitHubProjectSemanticIndexer(
+            db=db, vectors=vectors, embeddings=MagicMock()
+        )
+
+        result = indexer.sync_project(project, fetch_readme=False)
+
+        self.assertEqual(result["status"], "unchanged")
+        vectors.upsert_project_chunks.assert_not_called()
+        db.mark_github_project_semantic_snapshot_current.assert_called_once()
+        mark_kwargs = db.mark_github_project_semantic_snapshot_current.call_args
+        self.assertEqual(mark_kwargs.args[0], "owner/repo")
+        self.assertEqual(mark_kwargs.kwargs["repo_pushed_at"], "2026-08-01")
+        self.assertTrue(mark_kwargs.kwargs["checked_at"])
+
     def test_sync_batch_defers_flush_to_batch_end(self) -> None:
         projects = [{**PROJECT, "repo_id": f"owner/repo-{index}"} for index in range(2)]
         db = MagicMock()
