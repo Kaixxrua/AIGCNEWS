@@ -55,6 +55,7 @@ export const useAuthStore = defineStore('auth', () => {
   // ── Getters ────────────────────────────────────────────────────────────────
   const isLoggedIn = computed(() => status.value === 'authenticated')
   const isAdmin = computed(() => status.value === 'authenticated' && user.value?.role === 'admin')
+  const isMember = computed(() => status.value === 'authenticated' && user.value?.membership_tier === 'member')
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -132,6 +133,7 @@ export const useAuthStore = defineStore('auth', () => {
     status,
     isLoggedIn,
     isAdmin,
+    isMember,
     pendingChatMessage,
     savePendingMessage,
     consumePendingMessage,

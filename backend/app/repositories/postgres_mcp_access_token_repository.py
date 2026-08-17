@@ -160,7 +160,7 @@ class PostgresMcpAccessTokenRepository:
                 cursor.execute(
                     """
                     SELECT t.id AS token_id, t.user_id, t.scopes_json, t.expires_at,
-                           t.revoked_at, t.deleted_at, u.email, u.role
+                           t.revoked_at, t.deleted_at, u.email, u.role, u.membership_tier
                     FROM user_mcp_tokens t JOIN users u ON u.id = t.user_id
                     WHERE t.token_hash = %s AND t.revoked_at IS NULL AND t.deleted_at IS NULL
                       AND (t.expires_at IS NULL OR t.expires_at > CURRENT_TIMESTAMP)

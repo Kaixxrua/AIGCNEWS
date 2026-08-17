@@ -29,8 +29,27 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 42
-    assert migrations[-1].filename == "0042_github_growth_suspicion.sql"
+    assert migrations[-1].version == 45
+    assert migrations[-1].filename == "0045_users_membership_tier.sql"
+
+
+def test_users_membership_tier_migration_is_idempotent_add_column() -> None:
+    sql = (MIGRATIONS_DIR / "0045_users_membership_tier.sql").read_text(
+        encoding="utf-8"
+    )
+
+    # 与 0034/0035 同一幂等补列先例：IF NOT EXISTS 允许先手工补列配合热重启，
+    # runner 重放为空操作再登记台账。不加 CHECK（PG 无 ADD CONSTRAINT IF NOT
+    # EXISTS 先例语法），枚举校验在应用层 membership tiers 模块收口。
+    assert (
+        "ALTER TABLE users\n"
+        "    ADD COLUMN IF NOT EXISTS membership_tier TEXT NOT NULL DEFAULT 'free';"
+    ) in sql
+    statements = "\n".join(
+        line for line in sql.splitlines() if not line.strip().startswith("--")
+    )
+    assert "CHECK" not in statements
+    assert "ADD CONSTRAINT" not in statements
 
 
 def test_error_events_migration_is_idempotent_append_only_table() -> None:

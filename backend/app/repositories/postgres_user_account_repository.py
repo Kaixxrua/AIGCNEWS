@@ -33,9 +33,11 @@ class PostgresUserAccountRepository:
         # 身份核验专用：按主键查询且不取 hashed_password；disabled 供
         # auth.RequireUser 判定禁用账号（0029 起 users 表才有此列）。
         # pwd_ver 供 RequireUser 比对 JWT 声明，改密后旧 token 立即失效（0041）。
+        # membership_tier 供会员权益判定（0045），授予/吊销下一个请求即生效。
         return self._fetchone(
             """
-            SELECT id, phone, email, username, role, disabled, pwd_ver, created_at
+            SELECT id, phone, email, username, role, disabled, pwd_ver,
+                   membership_tier, created_at
             FROM users
             WHERE id = %s
             """,
@@ -45,7 +47,8 @@ class PostgresUserAccountRepository:
     def get_user_by_phone(self, phone: str) -> dict[str, Any] | None:
         return self._fetchone(
             """
-            SELECT id, phone, email, username, hashed_password, role, created_at
+            SELECT id, phone, email, username, hashed_password, role,
+                   membership_tier, created_at
             FROM users
             WHERE phone = %s
             """,
@@ -57,7 +60,8 @@ class PostgresUserAccountRepository:
         # pwd_ver 供登录签发时写入 JWT 声明（改密即失效旧令牌）
         return self._fetchone(
             """
-            SELECT id, phone, email, username, hashed_password, role, disabled, pwd_ver, created_at
+            SELECT id, phone, email, username, hashed_password, role, disabled,
+                   pwd_ver, membership_tier, created_at
             FROM users
             WHERE email = %s
             """,
@@ -79,6 +83,17 @@ class PostgresUserAccountRepository:
             """,
             (phone, username, hashed_password, role),
         )
+
+    def set_membership_tier(self, *, user_id: int, tier: str) -> int:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE users SET membership_tier = %s WHERE id = %s
+                    """,
+                    (tier, int(user_id)),
+                )
+                return int(cursor.rowcount)
 
     def update_user_password(
         self,
