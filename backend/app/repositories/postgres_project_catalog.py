@@ -82,7 +82,7 @@ _LIST_PROJECT_COLUMN_PAIRS = (
     ("NULL::text image_url", "{image} image_url"),
     ("c.description", "{description} description"),
     ("ge.description_zh", "{description_zh} description_zh"),
-    ("NULL::text description_en", "{description_en} description_en"),
+    ("ge.description_en", "{description_en} description_en"),
     ("ge.category_slug", "{category_slug} category_slug"),
     (
         "COALESCE(NULLIF(ge.category_name_zh,''),ge.category_name) category_name",

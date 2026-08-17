@@ -92,6 +92,15 @@ class GitHubProjectEnrichmentRepository(Protocol):
         prompt_version: str, model_provider: str = "", model_name: str = "",
     ) -> None: ...
 
+    def list_github_projects_needing_english_description(
+        self, *, after_repo_id: str = "", limit: int = 200,
+    ) -> list[dict[str, Any]]: ...
+
+    def update_github_repo_description_en(
+        self, *, repo_id: str, description_en: str,
+        prompt_version: str, model_provider: str = "", model_name: str = "",
+    ) -> None: ...
+
     def mark_github_repo_enrichment_failed(
         self,
         repo_id: str,

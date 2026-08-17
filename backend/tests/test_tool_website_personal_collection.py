@@ -258,6 +258,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
                     '{"category_slug":"models_infra",'
                     '"subcategory_slug":"model_management",'
                     '"description_zh":"提供 AI 模型相关服务。",'
+                    '"description_en":"Provides practical access to AI model services.",'
                     '"tags_zh":["模型服务"],"tags_en":["Model service"],"confidence":0.9}'
                 ),
             },
@@ -267,6 +268,7 @@ class ToolWebsiteEnricherTests(unittest.TestCase):
 
         self.assertEqual(result.category_slug, "models_infra")
         self.assertEqual(result.subcategory_slug, "model_management")
+        self.assertEqual(result.description_en, "Provides practical access to AI model services.")
         self.assertEqual(result.tags_en, ["Model service"])
 
     def test_bilingual_tag_backfill_dry_run_advances_without_model_or_writes(self) -> None:

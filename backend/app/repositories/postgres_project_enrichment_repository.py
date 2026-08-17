@@ -9,7 +9,11 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
-from backend.app.domain.project_taxonomy import ENGLISH_LABEL_BY_SLUG
+from backend.app.domain.project_taxonomy import (
+    ENGLISH_LABEL_BY_SLUG,
+    RAW_DESCRIPTION_ENGLISH_MIN_CHARS,
+    raw_description_needs_english,
+)
 from backend.app.repositories.postgres_runtime_provider_repository import (
     PostgresRuntimeProviderSettingRepository,
 )
@@ -233,13 +237,14 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     INSERT INTO github_repo_enrichments (
                         repo_id, category_slug, category_name, category_name_zh, category_name_en,
                         subcategory_slug, subcategory_name, subcategory_name_zh, subcategory_name_en,
-                        description_zh, tags_json, tags_zh_json, tags_en_json, confidence,
+                        description_zh, description_en, tags_json, tags_zh_json, tags_en_json, confidence,
                         source_fingerprint, prompt_version, model_provider, model_name,
                         status, error_msg, enriched_at, updated_at
                     ) VALUES (
                         %(repo_id)s, %(category_slug)s, %(category_name)s,
                         %(category_name_zh)s, %(category_name_en)s, %(subcategory_slug)s,
                         %(subcategory_name)s, %(subcategory_name_zh)s, %(subcategory_name_en)s, %(description_zh)s,
+                        %(description_en)s,
                         %(tags_json)s, %(tags_zh_json)s, %(tags_en_json)s, %(confidence)s, %(source_fingerprint)s,
                         %(prompt_version)s, %(model_provider)s, %(model_name)s,
                         %(status)s, %(error_msg)s, %(enriched_at)s, %(updated_at)s
@@ -254,6 +259,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                         subcategory_name_zh=EXCLUDED.subcategory_name_zh,
                         subcategory_name_en=EXCLUDED.subcategory_name_en,
                         description_zh=EXCLUDED.description_zh,
+                        description_en=EXCLUDED.description_en,
                         tags_json=EXCLUDED.tags_json,
                         tags_zh_json=EXCLUDED.tags_zh_json,
                         tags_en_json=EXCLUDED.tags_en_json,
@@ -313,6 +319,82 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     """,
                     (tags_zh_json, tags_zh_json, tags_en_json, prompt_version,
                      model_provider, model_name, _utcnow(), canonical_id),
+                )
+
+    def list_github_projects_needing_english_description(
+        self, *, after_repo_id: str = "", limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """圈选已富化成功、尚无英文策展描述、且原生描述不足以服务英文读者的项目。
+
+        SQL 预过滤（空/过短/含任一 CJK，含任一即捞）放宽到超集，精确口径由
+        Python 侧 raw_description_needs_english 二次校验（沿用本模块
+        "SQL 下推 + Python 同构复核"惯例）；为满足键集分页语义，循环扫原始页
+        直到选满 limit 或原始结果耗尽，保证 len(返回值)==limit 当且仅当可能还有更多。
+        """
+        capped_limit = max(1, min(int(limit or 200), 500))
+        # chr(13312)/chr(40959) 即 project_taxonomy.CJK_PATTERN 区间 [㐀-鿿] 的端点。
+        prefilter = f"""
+              AND (
+                  COALESCE(NULLIF(btrim(c.description), ''), NULL) IS NULL
+                  OR char_length(btrim(c.description)) < {RAW_DESCRIPTION_ENGLISH_MIN_CHARS}
+                  OR c.description ~ ('[' || chr(13312) || '-' || chr(40959) || ']')
+              )
+        """
+        selected: list[dict[str, Any]] = []
+        cursor = str(after_repo_id or "")
+        while len(selected) < capped_limit:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor_obj:
+                    cursor_obj.execute(
+                        """
+                        SELECT c.repo_id, c.full_name, c.description, c.language,
+                               c.topics_json, c.stars, e.source_fingerprint
+                        FROM github_repo_candidates c
+                        JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
+                        LEFT JOIN github_repo_aliases a ON a.alias_repo_id = c.repo_id
+                        WHERE c.repo_id > %s
+                          AND e.status = 'succeeded'
+                          AND COALESCE(e.description_en, '') = ''
+                          AND a.alias_repo_id IS NULL
+                        """
+                        + prefilter
+                        + """
+                        ORDER BY c.repo_id COLLATE "C" ASC
+                        LIMIT %s
+                        """,
+                        (cursor, capped_limit),
+                    )
+                    rows = cursor_obj.fetchall()
+            if not rows:
+                break
+            cursor = str(rows[-1]["repo_id"])
+            for source_row in rows:
+                row = dict(source_row)
+                if raw_description_needs_english(row.get("description")):
+                    selected.append(row)
+                    if len(selected) >= capped_limit:
+                        break
+            if len(rows) < capped_limit:
+                break
+        return selected
+
+    def update_github_repo_description_en(
+        self, *, repo_id: str, description_en: str,
+        prompt_version: str, model_provider: str = "", model_name: str = "",
+    ) -> None:
+        """只更新英文策展描述（+版本/模型元数据），不动中文文案与分类标签。"""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                canonical_id = self._canonical_repo_id(cursor, str(repo_id or ""))
+                cursor.execute(
+                    """
+                    UPDATE github_repo_enrichments
+                    SET description_en=%s, prompt_version=%s, model_provider=%s, model_name=%s,
+                        updated_at=%s
+                    WHERE repo_id=%s AND status='succeeded'
+                    """,
+                    (description_en, prompt_version, model_provider, model_name,
+                     _utcnow(), canonical_id),
                 )
 
     def mark_github_repo_enrichment_failed(

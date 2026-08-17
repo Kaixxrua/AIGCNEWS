@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-PROMPT_VERSION = "v5"
+PROMPT_VERSION = "v6"
 
 PROJECT_TAXONOMY: List[Dict[str, Any]] = [
     {
@@ -470,6 +470,25 @@ def clean_text(value: Any, *, max_len: int = 512) -> str:
     return text[:max_len]
 
 
+# CJK 统一表意文字区间（tags_en/description_en 校验与原生描述判定共用同一事实源）。
+CJK_PATTERN = r"[㐀-鿿]"
+
+# 原生 GitHub 描述是否不足以服务英文读者的判定口径（英文策展描述补跑圈选依据）：
+# 为空、过短（一句话信息量不足）或本身是中文。CJK 占比 0.5 起算中文为主——
+# 英文句中夹中文产品名（占比少数）仍视为合格英文，不补。
+RAW_DESCRIPTION_ENGLISH_MIN_CHARS = 50
+RAW_DESCRIPTION_CJK_MAJORITY_RATIO = 0.5
+
+
+def raw_description_needs_english(raw_description: Any) -> bool:
+    """原生描述是否需要补英文策展文案：空 / <50 字符 / CJK 占比过半。"""
+    text = str(raw_description or "").strip()
+    if len(text) < RAW_DESCRIPTION_ENGLISH_MIN_CHARS:
+        return True
+    cjk_chars = len(re.findall(CJK_PATTERN, text))
+    return cjk_chars / len(text) >= RAW_DESCRIPTION_CJK_MAJORITY_RATIO
+
+
 def extract_message_text(message_or_content: Any) -> str:
     """Extract final text from LangChain string or multipart message content."""
     content = getattr(message_or_content, "content", message_or_content)
@@ -596,12 +615,16 @@ def normalize_enrichment(
         description_zh = clean_text(fallback_description, max_len=160)
     # English copy must be model-authored; never derive it from Chinese or raw metadata.
     description_en = clean_text(data.get("description_en"), max_len=320)
+    if not description_en:
+        raise ValueError("模型必须返回英文描述")
+    if re.search(CJK_PATTERN, description_en):
+        raise ValueError("英文描述不得包含中文")
 
     tags = normalize_tags(data.get("tags_zh", data.get("tags")), fallback_tag)
     tags_en = normalize_tags(data.get("tags_en"), default="")
     if not tags_en or len(tags_en) != len(tags):
         raise ValueError("模型必须返回与中文标签一一对应的英文标签")
-    if any(re.search(r"[㐀-鿿]", tag) for tag in tags_en):
+    if any(re.search(CJK_PATTERN, tag) for tag in tags_en):
         raise ValueError("英文标签不得包含中文")
     return EnrichmentResult(
         category_slug=category_slug,

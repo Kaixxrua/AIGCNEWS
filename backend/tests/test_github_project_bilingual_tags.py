@@ -20,7 +20,11 @@ def make_enricher() -> tuple[GitHubProjectEnricher, MagicMock]:
 
 def test_normalize_enrichment_requires_paired_bilingual_tags() -> None:
     result = normalize_enrichment(
-        {"tags_zh": ["代码助手"], "tags_en": ["Coding assistant"]},
+        {
+            "description_en": "A coding assistant for your IDE.",
+            "tags_zh": ["代码助手"],
+            "tags_en": ["Coding assistant"],
+        },
         fallback_description="描述",
     )
     assert result.tags == ["代码助手"]
@@ -28,7 +32,11 @@ def test_normalize_enrichment_requires_paired_bilingual_tags() -> None:
 
     with pytest.raises(ValueError, match="一一对应"):
         normalize_enrichment(
-            {"tags_zh": ["代码助手", "IDE"], "tags_en": ["Coding assistant"]},
+            {
+                "description_en": "A coding assistant for your IDE.",
+                "tags_zh": ["代码助手", "IDE"],
+                "tags_en": ["Coding assistant"],
+            },
             fallback_description="描述",
         )
 

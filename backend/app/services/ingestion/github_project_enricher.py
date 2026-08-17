@@ -122,16 +122,17 @@ def _exit_batch(batch_id: int) -> None:
 
 
 _SYSTEM_PROMPT = f"""\
-你是一个 AI 开源项目收藏夹的技术策展人。请根据 GitHub 仓库元数据，完成四件事：
+你是一个 AI 开源项目收藏夹的技术策展人。请根据 GitHub 仓库元数据，完成五件事：
 1. 从给定一级分类中选择最合适的 category_slug，优先按“用户拿它来做什么”分类，而不是按底层技术名词分类。
 2. 从该一级分类下选择最合适的 subcategory_slug。
 3. 写一句中文短描述，说明这个项目能解决什么问题、适合什么使用场景。
-4. 给 1-4 个中文短标签，并按相同顺序给出等量、自然的英文短标签。
+4. 写一句自然的英文短描述，说明项目用途与适用场景；不得包含中文。
+5. 给 1-4 个中文短标签，并按相同顺序给出等量、自然的英文短标签。
 
 {CATEGORY_PROMPT}
 
 只返回 JSON，不要 Markdown，不要解释。格式：
-{{"category_slug":"coding_tools","subcategory_slug":"ide_plugins","description_zh":"一句 40 到 90 个中文字符的短描述。","tags_zh":["IDE 插件","代码助手"],"tags_en":["IDE plugin","Coding assistant"],"confidence":0.86}}
+{{"category_slug":"coding_tools","subcategory_slug":"ide_plugins","description_zh":"一句 40 到 90 个中文字符的短描述。","description_en":"A natural one-sentence English description of what the project does and when to use it, 60 to 200 characters.","tags_zh":["IDE 插件","代码助手"],"tags_en":["IDE plugin","Coding assistant"],"confidence":0.86}}
 """
 
 
@@ -428,6 +429,64 @@ class GitHubProjectEnricher:
             except Exception as exc:  # noqa: BLE001 - preserve successful enrichment
                 failed += 1
                 failures.append({"repo_id": repo_id, "error": str(exc)[:300]})
+        next_cursor = str(rows[-1]["repo_id"]) if rows else str(after_repo_id or "")
+        return {
+            "status": "dry_run" if dry_run else ("partial" if failed else "success"),
+            "processed": len(rows),
+            "succeeded": succeeded,
+            "failed": failed,
+            "next_cursor": next_cursor,
+            "has_more": len(rows) >= max(1, min(int(limit), 500)),
+            "failures": failures,
+        }
+
+    def backfill_english_descriptions(
+        self, *, after_repo_id: str = "", limit: int = 200,
+        concurrency: int = 10, dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """为原生描述不足以服务英文读者的已富化项目补写英文策展描述。
+
+        与 backfill_bilingual_tags 同型：整跑当前 prompt，但只落
+        description_en（+prompt_version/模型元数据），中文文案、分类与标签
+        保持不动。失败的行不写库、保持未补状态，下次调用自然重试；
+        dry_run 只圈选不发起模型调用。
+        """
+        rows = self.db.list_github_projects_needing_english_description(
+            after_repo_id=after_repo_id,
+            limit=limit,
+        )
+        succeeded = failed = 0
+        failures: list[dict[str, Any]] = []
+        lock = threading.Lock()
+
+        def _backfill_row(row: Dict[str, Any]) -> None:
+            nonlocal succeeded, failed
+            repo_id = str(row.get("repo_id") or "")
+            try:
+                result = self._enrich_one(row)
+                self.db.update_github_repo_description_en(
+                    repo_id=repo_id,
+                    description_en=result.description_en,
+                    prompt_version=PROMPT_VERSION,
+                    **self.model_meta,
+                )
+                with lock:
+                    succeeded += 1
+            except Exception as exc:  # noqa: BLE001 - 保留既有成功富化，仅记录失败
+                with lock:
+                    failed += 1
+                    failures.append({"repo_id": repo_id, "error": str(exc)[:300]})
+
+        if not dry_run:
+            concurrency = max(1, min(int(concurrency or 1), 10))
+            if concurrency <= 1:
+                for row in rows:
+                    _backfill_row(row)
+            else:
+                with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                    futures = [executor.submit(_backfill_row, row) for row in rows]
+                    for future in as_completed(futures):
+                        future.result()
         next_cursor = str(rows[-1]["repo_id"]) if rows else str(after_repo_id or "")
         return {
             "status": "dry_run" if dry_run else ("partial" if failed else "success"),
