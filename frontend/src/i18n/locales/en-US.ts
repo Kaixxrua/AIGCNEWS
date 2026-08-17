@@ -5,8 +5,8 @@ const enUS = {
   navigation: { home: 'Home', dashboard: 'Dashboard', papers: 'Papers', projects: 'Projects', chat: 'Chat', report: 'Report', xboard: 'X Board', wechat: 'WeChat', subscriptions: 'My Subscriptions', mcp: 'MCP', membership: 'Membership', contact: 'Contact', monitor: 'Monitor', loginAccount: 'Log in', logout: 'Log out', changePassword: 'Change password', monitorAlert: 'GitHub project enrichment failures need attention on the Monitor page' },
   membership: {
     title: 'Membership', subtitle: 'Unlock higher MCP quotas and every briefing module — and keep this site running.',
-    free: { name: 'Free', price: '$0', features: { mcpAnonymous: 'MCP anonymous calls: 100/day', mcpFree: '3,000 calls/month with a registered token', briefingFree: 'Briefings: 1 daily module' } },
-    member: { name: 'Member', priceMonthly: '¥19 / month', priceYearly: '¥129 / year', features: { mcpMember: 'MCP calls: 100,000/month', briefingMember: 'Briefings: all 8 modules', support: 'Priority support and future member perks' } },
+    free: { name: 'Free', price: '$0', currentPlan: 'Default plan', features: { mcpAnonymous: 'MCP anonymous calls: 100/day', mcpFree: '3,000 calls/month with a registered token', briefingFree: 'Briefings: 1 daily module' } },
+    member: { name: 'Member', badge: 'Recommended', priceMonthly: '¥19', priceMonthlyPeriod: '/ month', priceYearly: '¥129 / year', yearlySavings: 'Save ¥99 with annual billing', features: { mcpMember: 'MCP calls: 100,000/month', briefingMember: 'Briefings: all 8 modules', support: 'Priority support and future member perks' } },
     currentMember: 'Active member', cta: 'Contact us to subscribe', ctaHint: 'Online payment is on the way — contact us first and membership is activated right after confirmation.', ctaMailSubject: 'AIGC News membership inquiry', memberNote: 'Thank you! Your membership is active.',
   },
   footer: { poweredBy: 'Powered by {brandName}', disclaimer: 'Disclaimer', privacy: 'Privacy Policy', mcp: 'MCP Access', ecosystem: 'Business & Partnerships: ', infringement: 'Report Infringement' },
