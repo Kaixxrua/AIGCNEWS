@@ -205,6 +205,10 @@ def create_chat_model(
             "max_tokens": settings.llm_max_tokens,
             "streaming": True,
             "max_retries": 2,
+            # 同步流式 invoke 不受 langchain stream_chunk_timeout 保护
+            # （仅 async 路径生效），必须靠 request_timeout 兜住上游中转
+            # 「连接挂着但长时间零字节」的悬挂请求（524 风暴实测形态）。
+            "request_timeout": settings.llm_request_timeout,
             "default_headers": {"User-Agent": COMPATIBLE_RELAY_USER_AGENT},
         }
         if resolved.reasoning_effort:

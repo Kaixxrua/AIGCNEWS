@@ -62,6 +62,18 @@ _GITHUB_METRICS_REFRESH_LIMIT = 0  # 0 表示刷新全部符合条件的项目
 _GITHUB_METRICS_MIN_STARS = 300
 _GITHUB_METRICS_MAX_AGE = timedelta(hours=2, minutes=15)
 
+# ── GitHub 锁保底（2026-08-17 富化悬挂致锁死事故后引入）────────────────
+# 事故形态：富化 LLM 调用在上游 524 风暴中长时间悬挂，github_lock 被
+# 无限期持有，热榜采集逐小时被 max_instances 静默跳过且零入库告警也
+# 堵在锁后。三层保底：
+#   1) 等锁封顶（GitHub/X 操作锁通用）：持有方异常悬挂时等待方响亮失败
+#      （计入连续失败告警），GitHub 锁顺带请求富化批次终止推动自愈；
+#   2) 富化补跑整体封顶：超时即放锁，悬挂线程在终止信号/请求超时处收尾；
+#   3) 每日流水线整体封顶（刷新+快照+打分+富化全链）。
+_JOB_LOCK_WAIT_TIMEOUT = 3 * 3600
+_GITHUB_ENRICH_TOP_UP_TIMEOUT = 45 * 60
+_GITHUB_DAILY_PIPELINE_TIMEOUT = 2 * 3600
+
 # 调度任务连续失败告警：阈值内只记日志，达到阈值才经 notify_ops_alert.py 发信
 _DEFAULT_ALERT_FAILURE_THRESHOLD = 3
 _ALERT_FAILURE_THRESHOLD_ENV = "SCHEDULER_JOB_ALERT_FAILURE_THRESHOLD"
@@ -351,6 +363,45 @@ async def _reconcile_recent_arxiv_daily_snapshots(
             logger.error("[Scheduler] Arxiv 日榜快照补齐失败 %s: %s", target_date, exc)
 
 
+def _cancel_github_enrichment_safely() -> None:
+    """请求终止运行中的 GitHub 富化批次（若有），失败仅记日志。"""
+    try:
+        from backend.app.services.ingestion.github_project_enricher import (
+            request_github_enrichment_cancel,
+        )
+
+        if request_github_enrichment_cancel():
+            logger.info("[Scheduler] 已向运行中的 GitHub 富化批次发送终止信号。")
+    except Exception as exc:  # noqa: BLE001 - 终止请求失败不阻塞主流程
+        logger.warning("[Scheduler] 请求 GitHub 富化批次终止失败（非致命）: %s", exc)
+
+
+async def _acquire_job_lock(
+    lock: asyncio.Lock,
+    *,
+    job_label: str,
+    release_stuck_enrichment: bool = False,
+) -> bool:
+    """有界等锁：超时判定持有方异常悬挂，返回 False 交由 _guarded 计入连续失败告警。
+
+    release_stuck_enrichment=True（GitHub 锁）时顺带请求富化批次终止：
+    若持有方正卡在富化批处理，终止信号让它在下个条目检查点退出，
+    后续整点实例即可自愈，无需人工重启。
+    """
+    try:
+        await asyncio.wait_for(lock.acquire(), timeout=_JOB_LOCK_WAIT_TIMEOUT)
+    except TimeoutError:
+        logger.error(
+            "[Scheduler] %s 等待调度锁超过 %ds，判定上轮任务悬挂，本轮放弃并告警。",
+            job_label,
+            _JOB_LOCK_WAIT_TIMEOUT,
+        )
+        if release_stuck_enrichment:
+            _cancel_github_enrichment_safely()
+        return False
+    return True
+
+
 async def _run_single_source_job(
     source_name: str,
     *,
@@ -380,13 +431,21 @@ async def _run_single_source_job(
                 target_date=target_date,
             )
         else:
-            async with lock:
+            if not await _acquire_job_lock(
+                lock,
+                job_label=f"{source_name} 采集",
+                release_stuck_enrichment=source_name == "github",
+            ):
+                return False
+            try:
                 result = await asyncio.to_thread(
                     run_single_source_pipeline,
                     source_name,
                     dependencies=dependencies,
                     target_date=target_date,
                 )
+            finally:
+                lock.release()
         ingested = result.get("ingested_total", 0)
         logger.info("[Scheduler] %s 采集完成，入库 %d 条。", source_name, ingested)
         if zero_ingest_reporter is not None:
@@ -413,15 +472,37 @@ async def _run_github_project_daily_pipeline_job(
             run_github_project_daily_pipeline,
         )
 
-        async with lock:
-            result = await asyncio.to_thread(
-                run_github_project_daily_pipeline,
-                refresh_limit=80,
-                enrich_concurrency=5,
-                ingestion=active_repositories.github_ingestion,
-                enrichment=active_repositories.github_enrichment,
-                semantic_sources=active_repositories.github_semantic_sources,
-            )
+        if not await _acquire_job_lock(
+            lock,
+            job_label="GitHub 项目库每日流水线",
+            release_stuck_enrichment=True,
+        ):
+            return False
+        try:
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        run_github_project_daily_pipeline,
+                        refresh_limit=80,
+                        enrich_concurrency=5,
+                        ingestion=active_repositories.github_ingestion,
+                        enrichment=active_repositories.github_enrichment,
+                        semantic_sources=active_repositories.github_semantic_sources,
+                    ),
+                    timeout=_GITHUB_DAILY_PIPELINE_TIMEOUT,
+                )
+            except TimeoutError:
+                # 封顶只放开锁与本次等待：后台线程继续跑到终止信号/
+                # 请求超时处自行收尾，写入均为幂等 upsert。
+                logger.error(
+                    "[Scheduler] GitHub 项目库每日流水线超过 %ds 封顶，"
+                    "已释放锁并请求富化批次终止。",
+                    _GITHUB_DAILY_PIPELINE_TIMEOUT,
+                )
+                _cancel_github_enrichment_safely()
+                return False
+        finally:
+            lock.release()
         logger.info("[Scheduler] GitHub 项目库每日流水线完成：%s", result)
         return True
     except Exception as exc:
@@ -535,7 +616,13 @@ async def _run_github_project_metrics_refresh_job(
     logger.info("[Scheduler] 触发 GitHub 当天指标刷新: %s", metric_date)
     lock = github_lock or asyncio.Lock()
     try:
-        async with lock:
+        if not await _acquire_job_lock(
+            lock,
+            job_label="GitHub 当天指标刷新",
+            release_stuck_enrichment=True,
+        ):
+            return False
+        try:
             result = await _refresh_current_github_project_metrics(
                 metric_date,
                 repository,
@@ -545,9 +632,23 @@ async def _run_github_project_metrics_refresh_job(
             # 重复烧模型调用；补跑失败不拖累已完成的指标刷新
             top_up: Dict[str, Any] | None = None
             try:
-                top_up = await _enrich_newly_eligible_github_projects(enrichment)
+                top_up = await asyncio.wait_for(
+                    _enrich_newly_eligible_github_projects(enrichment),
+                    timeout=_GITHUB_ENRICH_TOP_UP_TIMEOUT,
+                )
+            except TimeoutError:
+                # 封顶放锁，悬挂线程在终止信号/请求超时处自行收尾；
+                # 指标刷新本身已完成，任务仍算成功
+                logger.error(
+                    "[Scheduler] GitHub 富化补跑超过 %ds 封顶，"
+                    "已释放锁并请求批次终止（指标刷新不受影响）。",
+                    _GITHUB_ENRICH_TOP_UP_TIMEOUT,
+                )
+                _cancel_github_enrichment_safely()
             except Exception as exc:  # noqa: BLE001 - 非致命，记入日志即可
                 logger.error("[Scheduler] GitHub 富化补跑失败（非致命）: %s", exc, exc_info=True)
+        finally:
+            lock.release()
         logger.info(
             "[Scheduler] GitHub 当天指标刷新完成：%s，富化补跑：%s",
             result,
@@ -580,7 +681,13 @@ async def _run_github_project_metrics_closing_job(
     logger.info("[Scheduler] 触发 GitHub 指标关榜刷新: %s", metric_date)
     lock = github_lock or asyncio.Lock()
     try:
-        async with lock:
+        if not await _acquire_job_lock(
+            lock,
+            job_label="GitHub 指标关榜刷新",
+            release_stuck_enrichment=True,
+        ):
+            return False
+        try:
             corroborated = await _fetch_growth_corroboration(metric_date, documents)
             result = await asyncio.to_thread(
                 refresh_and_compute_github_project_metrics,
@@ -591,6 +698,8 @@ async def _run_github_project_metrics_closing_job(
                 corroborated_repo_ids=corroborated,
                 db=repository,
             )
+        finally:
+            lock.release()
         logger.info("[Scheduler] GitHub 指标关榜刷新完成：%s", result)
         return True
     except Exception as exc:
@@ -611,7 +720,13 @@ async def _reconcile_current_github_project_metrics(
     active_repository = repository
     lock = github_lock or asyncio.Lock()
     try:
-        async with lock:
+        if not await _acquire_job_lock(
+            lock,
+            job_label="GitHub 指标启动补跑",
+            release_stuck_enrichment=True,
+        ):
+            return
+        try:
             status = await asyncio.to_thread(
                 active_repository.get_github_metric_refresh_status,
                 metric_date=metric_date,
@@ -626,6 +741,8 @@ async def _reconcile_current_github_project_metrics(
                 metric_date,
                 active_repository,
             )
+        finally:
+            lock.release()
     except Exception as exc:
         logger.warning("[Scheduler] GitHub 当天指标启动补跑失败: %s", exc, exc_info=True)
 

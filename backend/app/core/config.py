@@ -220,6 +220,9 @@ class Settings(BaseSettings):
     reranker_model_name: str = "Pro/BAAI/bge-reranker-v2-m3"
     llm_temperature: float = 0.2
     llm_max_tokens: int = 150000
+    # OpenAI 兼容分支单次请求超时（秒）。上游中转「连接挂着但零字节」
+    # 悬挂时按此值失败，避免同步流式 invoke 无限等待拖垮调度锁。
+    llm_request_timeout: float = 300.0
 
     # 联网搜索配置（使用 Kimi $web_search builtin_function）
     # KIMI_API_KEY：Moonshot AI 的 API Key（https://platform.moonshot.cn）
