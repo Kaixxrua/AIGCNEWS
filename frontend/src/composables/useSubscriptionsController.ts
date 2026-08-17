@@ -17,6 +17,7 @@ import type { SubscriptionsApi } from '@/services/subscriptions/subscriptionsApi
 
 interface ApiErrorLike {
   response?: {
+    status?: number
     data?: {
       message?: string
       detail?: { message?: string; code?: string } | string
@@ -27,6 +28,9 @@ interface ApiErrorLike {
 
 export function getErrorMessage(err: unknown, fallback: string): string {
   const e = err as ApiErrorLike
+  // 订阅档位超限是唯一的 403 来源（push 路由）：映射为稳定 key 走 i18n，
+  // detail 是运营口径中文，不做多语言透传。
+  if (e.response?.status === 403) return 'quota-exceeded'
   const data = e.response?.data
   const detail = data?.detail
   const detailMessage = typeof detail === 'string' ? detail : detail?.message

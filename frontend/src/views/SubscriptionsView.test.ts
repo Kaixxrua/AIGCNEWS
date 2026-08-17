@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SubscriptionsView from './SubscriptionsView.vue'
@@ -6,6 +6,9 @@ import SubscriptionsView from './SubscriptionsView.vue'
 const controllerSpy = vi.hoisted(() => vi.fn())
 const ctlBox = vi.hoisted(() => ({ current: null as null | Record<string, any> }))
 const confirmSpy = vi.hoisted(() => vi.fn())
+const authBox = vi.hoisted(() => ({ isMember: false, isAdmin: false }))
+
+vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
 
 vi.mock('@/composables/useSubscriptionsController', async () => {
   const { computed, ref } = await import('vue')
@@ -26,7 +29,9 @@ vi.mock('@/composables/useSubscriptionsController', async () => {
     subscriptionFormBusy: ref(false),
     busyChannelIds: ref(new Set()),
     busySubscriptionIds: ref(new Set()),
-    bindableChannels: computed(() => []),
+    bindableChannels: computed(() =>
+      (ctlBox.current?.channels.value ?? []).filter((c: any) => c.verified && c.status === 'active'),
+    ),
     canSubmitEmail: ref(true),
     canSubmitOtp: ref(false),
     canSubmitWebhook: ref(true),
@@ -87,6 +92,8 @@ const i18n = createI18n({
           selectChannel: '选择渠道',
           noBindableChannel: '暂无可用渠道',
           create: '创建订阅',
+          quotaHint: '免费档最多订阅 1 个日报模块；',
+          quotaUpgrade: '开通会员解锁全部模块 →',
           paused: '已暂停',
           pause: '暂停',
           resume: '恢复',
@@ -104,7 +111,7 @@ const i18n = createI18n({
           'subscription-deleted': '订阅已删除',
           'channel-deleted': '渠道已删除',
         },
-        errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试' },
+        errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试', 'quota-exceeded': '免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。' },
       },
     },
   },
@@ -113,7 +120,9 @@ const i18n = createI18n({
 })
 
 const mountView = async () => {
-  const wrapper = mount(SubscriptionsView, { global: { plugins: [i18n] } })
+  const wrapper = mount(SubscriptionsView, {
+    global: { plugins: [i18n], stubs: { RouterLink: RouterLinkStub } },
+  })
   await flushPromises()
   return wrapper
 }
@@ -175,6 +184,9 @@ beforeEach(() => {
   confirmSpy.mockReset()
   vi.stubGlobal('confirm', confirmSpy)
   controllerSpy.mockClear()
+  authBox.isMember = false
+  authBox.isAdmin = false
+  ctl().newSource.value = 'all'
 })
 
 describe('SubscriptionsView rendering', () => {
@@ -298,5 +310,48 @@ describe('SubscriptionsView interactions', () => {
 
     expect(wrapper.findAll('button').some((button) => button.attributes('title') === '发送测试')).toBe(false)
     expect(wrapper.text()).toContain('已停用')
+  })
+})
+
+describe('SubscriptionsView membership quota gating', () => {
+  const createButton = (wrapper: any) =>
+    wrapper.findAll('button').find((button: any) => button.text() === '创建订阅')
+
+  it('disables create and shows the upgrade hint when a free user is at the limit', async () => {
+    ctl().channels.value = [emailChannel]
+    ctl().subscriptions.value = [subscription]
+    ctl().newSource.value = 'all'
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('免费档最多订阅 1 个日报模块')
+    expect(createButton(wrapper)!.attributes('disabled')).toBeDefined()
+  })
+
+  it('keeps create enabled for an already-active source (same-module change)', async () => {
+    ctl().channels.value = [emailChannel]
+    ctl().subscriptions.value = [subscription]
+    ctl().newSource.value = 'dailyhot'
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).not.toContain('免费档最多订阅 1 个日报模块')
+    expect(createButton(wrapper)!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('never gates members', async () => {
+    authBox.isMember = true
+    ctl().channels.value = [emailChannel]
+    ctl().subscriptions.value = [subscription]
+    ctl().newSource.value = 'all'
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).not.toContain('免费档最多订阅 1 个日报模块')
+    expect(createButton(wrapper)!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('maps the quota-exceeded token to the localized upgrade message', async () => {
+    ctl().error.value = 'quota-exceeded'
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。')
   })
 })

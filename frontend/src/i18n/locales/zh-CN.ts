@@ -4,7 +4,13 @@ const overrides = {
   infrastructure: { appName: 'AIGC 新闻', loading: '加载中…', unavailable: '暂不可用' },
   common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', githubRepo: 'GitHub 仓库', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
-  navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', changePassword: '修改密码', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
+  navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', membership: '会员', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', changePassword: '修改密码', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
+  membership: {
+    title: '会员', subtitle: '解锁更高的 MCP 调用额度与全部简报模块，也支持本站持续运营。',
+    free: { name: '免费版', price: '¥0', features: { mcpAnonymous: 'MCP 匿名调用 100 次/天', mcpFree: '注册并创建令牌后 3,000 次/月', briefingFree: '简报订阅 1 个日报模块' } },
+    member: { name: '会员', priceMonthly: '¥19 / 月', priceYearly: '¥129 / 年', features: { mcpMember: 'MCP 调用 100,000 次/月', briefingMember: '简报订阅全部 8 个模块', support: '优先支持与后续会员权益' } },
+    currentMember: '当前已是会员', cta: '联系开通', ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。', ctaMailSubject: 'AIGC News 会员开通咨询', memberNote: '感谢支持！会员权益已生效。',
+  },
   footer: { poweredBy: '由 {brandName} 提供支持', disclaimer: '免责声明', privacy: '隐私政策', mcp: 'MCP 接入', ecosystem: '商务合作：', infringement: '侵权投诉' },
   masthead: { todayNew: '今日更新' },
   auth: {
@@ -52,6 +58,7 @@ const overrides = {
     subs: {
       title: '订阅', count: '{count} 条订阅', source: '来源', channel: '渠道',
       selectChannel: '选择渠道', noBindableChannel: '暂无可用渠道：请先添加并完成验证', create: '创建订阅',
+      quotaHint: '免费档最多订阅 1 个日报模块；', quotaUpgrade: '开通会员解锁全部模块 →',
       paused: '已暂停', pause: '暂停', resume: '恢复', delete: '删除', deleteConfirm: '确定删除该订阅？',
       empty: '还没有订阅',
     },
@@ -60,7 +67,7 @@ const overrides = {
       'otp-sent': '验证码已发送，请查收邮件', 'channel-verified': '渠道验证成功', 'webhook-created': 'Webhook 渠道已验证并添加',
       'test-sent': '测试消息已发送', 'subscription-created': '订阅已创建', 'subscription-deleted': '订阅已删除', 'channel-deleted': '渠道已删除',
     },
-    errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试' },
+    errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试', 'quota-exceeded': '免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。' },
   },
 } as const
 
@@ -390,6 +397,11 @@ const explicitBusinessTranslations: Record<string, string> = {
   'report.type.xLabel': 'X 动态',
   'report.type.xDesc': 'X/Twitter 推文',
   'report.selectHint': '综合 · 学术 · 工程 · 行业 · 产品 · 社区 | 每日简报',
+  'report.type.dailyhotLabel': '全网热榜',
+  'report.type.dailyhotDesc': '中文站点热榜聚合',
+  'report.freeTierHint': '免费档可订阅 1 个日报模块。',
+  'report.upgradeCta': '开通会员解锁全部模块 →',
+  'report.subscribeQuotaExceeded': '免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。',
   'report.generatingType': '正在生成“{type}”…',
   'report.loginRequired': '请先登录后订阅简报，即将跳转至登录页。',
   'report.chooseDomains': '选择要订阅的日报领域',

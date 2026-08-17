@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { MailPlus, RefreshCw, Send, Trash2, Webhook } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useSubscriptionsController } from '@/composables/useSubscriptionsController'
+import { useAuthStore } from '@/stores/authStore'
 import {
   SUBSCRIPTION_SOURCES,
   detectWebhookPlatform,
@@ -14,6 +15,7 @@ defineOptions({ name: 'SubscriptionsView' })
 
 const { t, te } = useI18n()
 const ctl = useSubscriptionsController()
+const authStore = useAuthStore()
 
 const errorText = computed(() => {
   const key = `subscriptions.errors.${ctl.error.value}`
@@ -26,6 +28,22 @@ const noticeText = computed(() => {
 
 const webhookPlatformLabel = computed(() =>
   t(`subscriptions.channels.platform.${detectWebhookPlatform(ctl.webhookInput.value)}`),
+)
+
+// 免费档 1 个日报模块上限（会员/admin 不限）：已达上限且当前选择的不是
+// 已活跃模块时置灰新增按钮；同模块换渠道属存量变更，后端放行，不置灰。
+// 跨体系（邮件简报）占用由后端 403 兜底 → subscriptions.errors.quota-exceeded。
+const activeDailySources = computed(() =>
+  ctl.subscriptions.value
+    .filter((subscription) => subscription.status === 'active')
+    .map((subscription) => subscription.source),
+)
+const subscriptionQuotaReached = computed(
+  () =>
+    !authStore.isMember &&
+    !authStore.isAdmin &&
+    activeDailySources.value.length >= 1 &&
+    !activeDailySources.value.includes(ctl.newSource.value),
 )
 
 const channelTypeLabel = (channel: PushChannel): string =>
@@ -255,10 +273,16 @@ onMounted(() => {
             <p v-if="!ctl.bindableChannels.value.length" class="text-2xs text-amber-600">
               {{ t('subscriptions.subs.noBindableChannel') }}
             </p>
+            <p v-else-if="subscriptionQuotaReached" class="text-2xs" style="color: var(--notice-warn-ink)">
+              {{ t('subscriptions.subs.quotaHint') }}
+              <RouterLink to="/membership" class="font-semibold underline underline-offset-2">
+                {{ t('subscriptions.subs.quotaUpgrade') }}
+              </RouterLink>
+            </p>
             <button
               type="submit"
               class="self-start rounded-[4px] border border-ink bg-ink px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink disabled:opacity-40"
-              :disabled="!ctl.canSubmitSubscription.value"
+              :disabled="!ctl.canSubmitSubscription.value || subscriptionQuotaReached"
             >
               {{ t('subscriptions.subs.create') }}
             </button>

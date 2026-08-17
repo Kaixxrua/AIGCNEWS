@@ -1,4 +1,4 @@
-import { Circle, Code2, FileText, Globe, Newspaper, Rocket } from 'lucide-vue-next'
+import { Circle, Code2, FileText, Flame, Globe, Newspaper, Rocket } from 'lucide-vue-next'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 
 export const REPORT_TYPES = [
@@ -9,6 +9,7 @@ export const REPORT_TYPES = [
   { key: 'producthunt', labelKey: 'producthuntLabel', icon: Rocket, descKey: 'producthuntDesc' },
   { key: 'hackernews',  labelKey: 'hackernewsLabel', icon: Circle, descKey: 'hackernewsDesc' },
   { key: 'x',           labelKey: 'xLabel', icon: XLogoIcon, descKey: 'xDesc' },
+  { key: 'dailyhot',    labelKey: 'dailyhotLabel', icon: Flame, descKey: 'dailyhotDesc' },
 ] as const
 
 export type ReportKey = (typeof REPORT_TYPES)[number]['key']

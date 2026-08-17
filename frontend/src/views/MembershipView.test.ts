@@ -1,0 +1,119 @@
+import { mount, RouterLinkStub } from '@vue/test-utils'
+import { createI18n } from 'vue-i18n'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import MembershipView from './MembershipView.vue'
+import type { SiteContactPage } from '@/services/site/contactPageApi'
+
+const authBox = vi.hoisted(() => ({ isMember: false }))
+const configBox = vi.hoisted(() => ({ current: null as null | { value: SiteContactPage } }))
+
+vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
+
+vi.mock('@/composables/useContactPageConfig', async () => {
+  const { ref } = await import('vue')
+  if (!configBox.current) {
+    configBox.current = ref<SiteContactPage>({
+      enabled: false,
+      navLabel: '',
+      title: '',
+      subtitle: '',
+      serviceCards: [],
+      contactEntries: [],
+      bodyMarkdown: '',
+      updatedAt: null,
+    })
+  }
+  return { useContactPageConfig: () => ({ contactPageConfig: configBox.current }) }
+})
+
+const i18n = createI18n({
+  legacy: false,
+  locale: 'zh-CN',
+  messages: {
+    'zh-CN': {
+      membership: {
+        title: '会员',
+        subtitle: '解锁更高的 MCP 调用额度与全部简报模块。',
+        free: {
+          name: '免费版',
+          price: '¥0',
+          features: {
+            mcpAnonymous: 'MCP 匿名调用 100 次/天',
+            mcpFree: '注册并创建令牌后 3,000 次/月',
+            briefingFree: '简报订阅 1 个日报模块',
+          },
+        },
+        member: {
+          name: '会员',
+          priceMonthly: '¥19 / 月',
+          priceYearly: '¥129 / 年',
+          features: {
+            mcpMember: 'MCP 调用 100,000 次/月',
+            briefingMember: '简报订阅全部 8 个模块',
+            support: '优先支持与后续会员权益',
+          },
+        },
+        currentMember: '当前已是会员',
+        cta: '联系开通',
+        ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。',
+        ctaMailSubject: 'AIGC News 会员开通咨询',
+        memberNote: '感谢支持！会员权益已生效。',
+      },
+    },
+  },
+  missingWarn: false,
+  fallbackWarn: false,
+})
+
+const mountView = () =>
+  mount(MembershipView, {
+    global: { plugins: [i18n], stubs: { RouterLink: RouterLinkStub } },
+  })
+
+beforeEach(() => {
+  authBox.isMember = false
+  configBox.current!.value = { ...configBox.current!.value, enabled: false }
+})
+
+describe('MembershipView', () => {
+  it('renders the tier comparison with pricing', () => {
+    const wrapper = mountView()
+    const text = wrapper.text()
+
+    expect(text).toContain('会员')
+    expect(text).toContain('免费版')
+    expect(text).toContain('¥19 / 月')
+    expect(text).toContain('¥129 / 年')
+    expect(text).toContain('MCP 调用 100,000 次/月')
+    expect(text).toContain('简报订阅 1 个日报模块')
+    expect(text).toContain('简报订阅全部 8 个模块')
+  })
+
+  it('links the CTA to the contact page when the site page is enabled', () => {
+    configBox.current!.value = { ...configBox.current!.value, enabled: true }
+    const wrapper = mountView()
+
+    const link = wrapper.findComponent(RouterLinkStub)
+    expect(link.exists()).toBe(true)
+    expect(link.props('to')).toBe('/contact')
+  })
+
+  it('falls back to a mailto CTA when the contact page is disabled', () => {
+    const wrapper = mountView()
+
+    const anchor = wrapper.find('a.cta-button')
+    expect(anchor.exists()).toBe(true)
+    expect(anchor.attributes('href')).toContain('mailto:kaixxrua@gmail.com')
+    expect(anchor.attributes('href')).toContain(encodeURIComponent('AIGC News 会员开通咨询'))
+  })
+
+  it('shows the active-member state instead of the CTA for members', () => {
+    authBox.isMember = true
+    const wrapper = mountView()
+
+    expect(wrapper.text()).toContain('当前已是会员')
+    expect(wrapper.text()).toContain('感谢支持！会员权益已生效。')
+    expect(wrapper.find('a.cta-button').exists()).toBe(false)
+    expect(wrapper.findComponent(RouterLinkStub).exists()).toBe(false)
+  })
+})

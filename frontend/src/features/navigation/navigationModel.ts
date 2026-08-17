@@ -86,6 +86,12 @@ export const NAV_ITEMS: readonly NavigationItem[] = [
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8a3 3 0 100 6h3"/><path d="M17 8a3 3 0 110 6h-3"/><path d="M8 12h8"/><path d="M12 4v3"/><path d="M12 17v3"/></svg>`,
   },
   {
+    to: '/membership',
+    labelKey: 'navigation.membership',
+    exact: false,
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11.562 3.266a.5.5 0 01.876 0L15.39 8.87a1 1 0 001.516.294L21.183 5.5a.5.5 0 01.798.519l-2.834 10.246a1 1 0 01-.956.735H5.81a1 1 0 01-.957-.735L2.02 6.02a.5.5 0 01.798-.519l4.276 3.664a1 1 0 001.516-.294z"/><path d="M5 21h14"/></svg>`,
+  },
+  {
     to: '/contact',
     labelKey: 'navigation.contact',
     exact: false,

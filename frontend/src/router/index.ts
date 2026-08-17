@@ -23,6 +23,7 @@ const DisclaimerView = () => import('@/views/DisclaimerView.vue')
 const PrivacyView = () => import('@/views/PrivacyView.vue')
 const McpConnectView = () => import('@/views/McpConnectView.vue')
 const ContactPageView = () => import('@/views/ContactPageView.vue')
+const MembershipView = () => import('@/views/MembershipView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -117,6 +118,12 @@ const router = createRouter({
           path: 'privacy',
           name: 'privacy',
           component: PrivacyView,
+        },
+        {
+          path: 'membership',
+          name: 'membership',
+          component: MembershipView,
+          // 游客可见：会员页本身是获客入口，不做登录门控
         },
         {
           path: 'contact',

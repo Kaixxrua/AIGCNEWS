@@ -19,6 +19,8 @@ interface ReportSubscriptionOperations {
 
 interface UseReportSubscriptionsOptions {
   isLoggedIn: Readonly<Ref<boolean>>
+  /** 会员档位：免费档订阅面板退化为单选（后端按 1 模块上限强校验） */
+  isMember: Readonly<Ref<boolean>>
   selectedSource: Ref<ReportKey>
   selectedDate: Ref<string>
   locale: Ref<string>
@@ -30,8 +32,16 @@ interface UseReportSubscriptionsOptions {
 const getApiErrorMessage = (error: unknown): string | undefined =>
   (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
 
+/** 订阅档位超限（后端 403）统一映射 i18n 升级文案；detail 是运营口径中文，不做多语言透传。 */
+const getSubscriptionErrorMessage = (error: unknown, fallback: string): string => {
+  const status = (error as { response?: { status?: number } })?.response?.status
+  if (status === 403) return i18n.global.t('report.subscribeQuotaExceeded')
+  return getApiErrorMessage(error) || fallback
+}
+
 export const useReportSubscriptions = ({
   isLoggedIn,
+  isMember,
   selectedSource,
   selectedDate,
   locale,
@@ -106,8 +116,11 @@ export const useReportSubscriptions = ({
   const toggleSubscribeSource = (source: ReportKey) => {
     if (selectedSubscribeSources.value.includes(source)) {
       selectedSubscribeSources.value = selectedSubscribeSources.value.filter(item => item !== source)
-    } else {
+    } else if (isMember.value) {
       selectedSubscribeSources.value = [...selectedSubscribeSources.value, source]
+    } else {
+      // 免费档单选：新选择直接替换，避免「超上限 403」的可预见失败
+      selectedSubscribeSources.value = [source]
     }
   }
 
@@ -142,7 +155,7 @@ export const useReportSubscriptions = ({
       scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
       showSubscribePanel.value = false
     } catch (error: unknown) {
-      setError(getApiErrorMessage(error) || '订阅操作失败')
+      setError(getSubscriptionErrorMessage(error, '订阅操作失败'))
     } finally {
       isSubscribing.value = false
     }

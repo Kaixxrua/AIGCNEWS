@@ -35,3 +35,18 @@ describe('navigation site page gating', () => {
     expect(isNavigationItemSitePageEnabled({}, { contactPage: false })).toBe(true)
   })
 })
+
+describe('membership navigation item', () => {
+  it('exposes an ungated membership entry right before the contact item', () => {
+    const index = NAV_ITEMS.findIndex((item) => item.to === '/membership')
+    expect(index).toBeGreaterThan(-1)
+    const item = NAV_ITEMS[index]!
+    expect(item.labelKey).toBe('navigation.membership')
+    // 获客入口：匿名可见，不受特性开关 / 站点页面 / 登录 / 管理员门控
+    expect(item.featureKey).toBeUndefined()
+    expect(item.sitePageKey).toBeUndefined()
+    expect(item.requiresAuth).toBeUndefined()
+    expect(item.requiresAdmin).toBeUndefined()
+    expect(NAV_ITEMS.findIndex((entry) => entry.to === '/contact')).toBe(index + 1)
+  })
+})

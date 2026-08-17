@@ -8,6 +8,7 @@ defineProps<{
   showLoginPrompt: boolean
   showSubscribePanel: boolean
   isSubscribing: boolean
+  isMember: boolean
   selectedSubscribeSources: ReportKey[]
   isSourceSubscribed: (source: ReportKey) => boolean
 }>()
@@ -42,6 +43,11 @@ const emit = defineEmits<{
       <div>
         <p class="text-sm font-semibold text-stone-700">{{ t('report.chooseDomains') }}</p>
         <p class="text-2xs text-stone-400 mt-0.5">{{ t('report.chooseDomainsHint') }}</p>
+        <!-- 免费档单选提示 + 会员升级入口（notice-warn 软提示，非错误态） -->
+        <p v-if="!isMember" class="text-2xs mt-1" style="color: var(--notice-warn-ink)">
+          {{ t('report.freeTierHint') }}
+          <RouterLink to="/membership" class="font-semibold underline underline-offset-2">{{ t('report.upgradeCta') }}</RouterLink>
+        </p>
       </div>
       <button class="text-2xs text-stone-400 hover:text-stone-600" :disabled="isSubscribing" @click="emit('closeSubscribePanel')">{{ t('common.cancel') }}</button>
     </div>

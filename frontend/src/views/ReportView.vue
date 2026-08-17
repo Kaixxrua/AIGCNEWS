@@ -84,6 +84,7 @@ const {
   sendToEmail,
 } = useReportSubscriptions({
   isLoggedIn: computed(() => authStore.isLoggedIn),
+  isMember: computed(() => authStore.isMember),
   selectedSource: selectedType,
   selectedDate,
   locale,
@@ -141,6 +142,7 @@ const {
         :show-login-prompt="showLoginPrompt"
         :show-subscribe-panel="showSubscribePanel"
         :is-subscribing="isSubscribing"
+        :is-member="authStore.isMember"
         :selected-subscribe-sources="selectedSubscribeSources"
         :is-source-subscribed="isSourceSubscribed"
         @close-login-prompt="closeLoginPrompt"
