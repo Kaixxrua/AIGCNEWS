@@ -91,6 +91,7 @@ from backend.app.services.mcp.admin_service import McpAdminService
 from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.personal_projects import PersonalProjectsService
+from backend.app.services.project_adoptions import ProjectAdoptionService
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 from backend.app.services.push.channel_service import PushChannelService
 from backend.app.services.push.subscription_service import UserSubscriptionService
@@ -509,6 +510,11 @@ def get_personal_projects_service(
 def get_project_catalog_query_service() -> ProjectCatalogQueryService:
     """公共项目目录查询编排服务；仓储仍经工厂按次解析，保持既有连接语义。"""
     return ProjectCatalogQueryService(repository_factory=get_project_catalog_repository)
+
+
+def get_project_adoption_service() -> ProjectAdoptionService:
+    """采纳回执编排服务；仓储经工厂按次解析，与目录查询同一连接语义。"""
+    return ProjectAdoptionService()
 
 
 def get_github_hot_board_reader() -> GitHubHotBoardReader:

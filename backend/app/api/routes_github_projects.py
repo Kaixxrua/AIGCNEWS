@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from backend.app.api.dependencies import (
     get_personal_projects_service,
+    get_project_adoption_service,
     get_project_catalog_query_service,
 )
 from backend.app.core.auth import OptionalUser, RequireUser, extract_user_id
@@ -14,6 +15,10 @@ from backend.app.models.schema_projects import (
     GitHubProjectSort,
     GitHubProjectsResponse,
     GitHubProjectTagsResponse,
+    ProjectAdoptionReceipt,
+    ProjectAdoptionRequest,
+    ProjectAdoptionResponse,
+    ProjectAdoptionStats,
     ProjectFavoriteRequest,
     ProjectFavoriteResponse,
     ProjectScope,
@@ -34,6 +39,7 @@ from backend.app.services.personal_projects import (
     PersonalWebsiteOperationFailed,
     WebsiteContentBlockedError,
 )
+from backend.app.services.project_adoptions import ProjectAdoptionService
 from backend.app.services.project_catalog.query_service import (
     PUBLIC_PROJECT_MIN_STARS,
     ProjectCatalogQueryService,
@@ -456,3 +462,53 @@ async def remove_my_tool_website(
 async def get_project_taxonomy() -> ProjectTaxonomyResponse:
     """返回普通用户手动添加工具网站时可选的分类体系。"""
     return ProjectTaxonomyResponse(items=_taxonomy_items())
+
+
+@router.post(
+    "/projects/adoptions",
+    response_model=ProjectAdoptionResponse,
+    tags=["Projects"],
+)
+async def submit_project_adoption(
+    payload: ProjectAdoptionRequest,
+    service: ProjectAdoptionService = Depends(get_project_adoption_service),
+) -> ProjectAdoptionResponse:
+    """写入一条采纳回执（复用决策：adopted / reference_only / declined）。
+
+    公开端点：回执是闭环度量的数据来源，agent 侧（MCP/插件/hook）通常无账号；
+    字段均有界且仅追加，decision 枚举由 pydantic 与服务层双重校验。
+    """
+    try:
+        recorded = service.record(
+            {
+                "project_full_name": payload.project_full_name.strip(),
+                "decision": payload.decision,
+                "reason": payload.reason.strip(),
+                "query": payload.query.strip(),
+                "source": "rest",
+            }
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ProjectAdoptionResponse(
+        receipt=ProjectAdoptionReceipt(
+            id=recorded["id"],
+            project_full_name=recorded["project_full_name"],
+            decision=recorded["decision"],
+            created_at=str(recorded["created_at"]),
+        ),
+        stats=ProjectAdoptionStats(**recorded["stats"]),
+    )
+
+
+@router.get(
+    "/projects/adoptions/stats",
+    response_model=ProjectAdoptionStats,
+    tags=["Projects"],
+)
+async def get_project_adoption_stats(
+    days: int = Query(default=30, ge=1, le=365),
+    service: ProjectAdoptionService = Depends(get_project_adoption_service),
+) -> ProjectAdoptionStats:
+    """采纳回执聚合：窗口内与累计的决策分布及复用率（adopted / 全部）。"""
+    return ProjectAdoptionStats(**service.stats(since_days=days))

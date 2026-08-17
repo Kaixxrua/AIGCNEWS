@@ -25,6 +25,7 @@ PUBLIC_TOOL_NAMES = [
     "search_github_projects",
     "search_github_ai_projects",
     "get_project_categories",
+    "submit_project_adoption",
 ]
 PRIVATE_TOOL_NAME = "search_my_project_favorites"
 RESOURCE_URIS = [

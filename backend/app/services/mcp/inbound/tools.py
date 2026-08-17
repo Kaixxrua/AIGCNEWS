@@ -49,6 +49,7 @@ from backend.app.services.project_catalog.query_service import (
     PUBLIC_PROJECT_MIN_STARS,
     ProjectCatalogQueryService,
 )
+from backend.app.services.project_adoptions import ProjectAdoptionService
 from backend.app.services.project_discovery import (
     localize_project_item,
     public_project_item,
@@ -76,6 +77,7 @@ class McpToolContext:
     catalog_queries: ProjectCatalogQueryService = field(
         default_factory=ProjectCatalogQueryService
     )
+    adoptions: ProjectAdoptionService = field(default_factory=ProjectAdoptionService)
 
     @property
     def authorization(self) -> McpAuthorizationContext:
@@ -425,6 +427,31 @@ async def _tool_get_project_categories(
     }
 
 
+async def _tool_submit_project_adoption(
+    context: McpToolContext, args: dict[str, Any]
+) -> dict[str, Any]:
+    recorded = await asyncio.to_thread(
+        context.adoptions.record,
+        {
+            "project_full_name": args["project_full_name"],
+            "decision": args["decision"],
+            "reason": args.get("reason") or "",
+            "query": args.get("query") or "",
+            "source": args.get("source") or "mcp",
+        },
+    )
+    return {
+        "receipt": {
+            "id": recorded["id"],
+            "project_full_name": recorded["project_full_name"],
+            "decision": recorded["decision"],
+            "created_at": str(recorded["created_at"]),
+        },
+        "stats": recorded["stats"],
+        "attribution": mcp_attribution(context.request),
+    }
+
+
 _TOOL_HANDLERS: dict[str, ToolHandler] = {
     "search_papers": _tool_search_papers,
     "search_documents": _tool_search_documents,
@@ -433,6 +460,7 @@ _TOOL_HANDLERS: dict[str, ToolHandler] = {
     "search_github_projects": _tool_search_github_projects,
     "search_github_ai_projects": _tool_search_github_ai_projects,
     "get_project_categories": _tool_get_project_categories,
+    "submit_project_adoption": _tool_submit_project_adoption,
     "search_my_project_favorites": _tool_search_my_project_favorites,
 }
 MCP_TOOL_REGISTRY = {

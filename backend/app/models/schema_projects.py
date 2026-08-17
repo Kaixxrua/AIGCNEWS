@@ -208,3 +208,33 @@ class ProjectTaxonomyItem(BaseModel):
 
 class ProjectTaxonomyResponse(BaseModel):
     items: list[ProjectTaxonomyItem]
+
+
+ProjectAdoptionDecision = Literal["adopted", "reference_only", "declined"]
+
+
+class ProjectAdoptionRequest(BaseModel):
+    project_full_name: str = Field(min_length=3, max_length=200)
+    decision: ProjectAdoptionDecision
+    reason: str = Field(default="", max_length=500)
+    query: str = Field(default="", max_length=200)
+
+
+class ProjectAdoptionReceipt(BaseModel):
+    id: int
+    project_full_name: str
+    decision: str
+    created_at: str
+
+
+class ProjectAdoptionStats(BaseModel):
+    window_days: int
+    window: dict[str, int]
+    total: dict[str, int]
+    window_adoption_rate: float
+    total_adoption_rate: float
+
+
+class ProjectAdoptionResponse(BaseModel):
+    receipt: ProjectAdoptionReceipt
+    stats: ProjectAdoptionStats

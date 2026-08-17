@@ -247,6 +247,39 @@ class GetProjectCategoriesInput(McpInputModel):
     pass
 
 
+AdoptionDecision = Literal["adopted", "reference_only", "declined"]
+AdoptionSource = Literal["mcp", "rest", "plugin", "hook"]
+
+
+class SubmitProjectAdoptionInput(McpInputModel):
+    project_full_name: StrictStr = Field(
+        min_length=3,
+        max_length=200,
+        description="GitHub repository full name (owner/repo) the decision applies to.",
+    )
+    decision: AdoptionDecision = Field(
+        description=(
+            "The reuse outcome: 'adopted' (the project was integrated or depended on), "
+            "'reference_only' (used as design reference only), or 'declined' (rejected, "
+            "build-from-scratch chosen)."
+        ),
+    )
+    reason: StrictStr = Field(
+        default="",
+        max_length=500,
+        description="Optional short reason for the decision; keep under one sentence.",
+    )
+    query: StrictStr = Field(
+        default="",
+        max_length=200,
+        description="Optional search query that surfaced this project, for recall-quality review.",
+    )
+    source: AdoptionSource = Field(
+        default="mcp",
+        description="Receipt origin: mcp (default), rest, plugin, or hook.",
+    )
+
+
 class SearchMyProjectFavoritesInput(McpInputModel):
     q: StrictStr = Field(default="", max_length=120)
     category: StrictStr = Field(default="", max_length=64)
@@ -283,6 +316,7 @@ TOOL_INPUT_MODELS: dict[str, type[McpInputModel]] = {
     "search_github_projects": SearchGitHubProjectsInput,
     "search_github_ai_projects": SearchGitHubAIProjectsInput,
     "get_project_categories": GetProjectCategoriesInput,
+    "submit_project_adoption": SubmitProjectAdoptionInput,
     "search_my_project_favorites": SearchMyProjectFavoritesInput,
 }
 

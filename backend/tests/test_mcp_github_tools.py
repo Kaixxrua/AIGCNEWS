@@ -38,7 +38,7 @@ from backend.app.services.mcp.inbound import (
 class ToolMetadataTests(unittest.TestCase):
     def test_tool_names_and_routing_boundaries(self) -> None:
         tools = {tool["name"]: tool for tool in inbound_catalog.MCP_TOOLS}
-        self.assertEqual(len(tools), 7)
+        self.assertEqual(len(tools), 8)
         self.assertTrue(
             {
                 "search_papers",
@@ -48,6 +48,7 @@ class ToolMetadataTests(unittest.TestCase):
                 "search_github_projects",
                 "search_github_ai_projects",
                 "get_project_categories",
+                "submit_project_adoption",
             }.issubset(tools)
         )
         generic = tools["search_github_projects"]["description"].lower()
@@ -907,7 +908,7 @@ class McpProtocolTests(unittest.TestCase):
             "/api/mcp",
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
-        self.assertEqual(len(listed.json()["result"]["tools"]), 7)
+        self.assertEqual(len(listed.json()["result"]["tools"]), 8)
 
     def test_prompts_require_mcp_first_and_sequential_web_fallback(self) -> None:
         prompts = {}
@@ -1074,7 +1075,7 @@ class McpProtocolTests(unittest.TestCase):
         finally:
             self.client.app.dependency_overrides.clear()
         names = {tool["name"] for tool in listed.json()["result"]["tools"]}
-        self.assertEqual(len(names), 8)
+        self.assertEqual(len(names), 9)
         self.assertIn("search_my_project_favorites", names)
 
     def test_private_favorites_tool_is_owner_scoped(self) -> None:
