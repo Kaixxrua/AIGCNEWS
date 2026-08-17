@@ -645,12 +645,14 @@ onBeforeUnmount(() => {
   background: var(--acid-soft);
 }
 
-/* 悬停浮起：与项目库卡片同一配方（左上位移 + 微旋 + 硬阴影加深），
+/* 悬停浮起：左上位移 + 硬阴影加深（项目库同款浮起感）。
+   不抄项目库的 rotate(-0.4deg)：旋转会让字形离开像素网格，浏览器对变换层
+   重采样时文字退化为灰阶抗锯齿——推文卡整段正文，糊感远比项目卡显眼。
    仅在有悬停能力的设备启用（触屏不留粘滞态）；键盘焦点进入卡内控件时同样浮起 */
 @media (hover: hover) {
   .tweet-card:hover,
   .tweet-card:focus-within {
-    transform: translate(-2px, -4px) rotate(-0.4deg);
+    transform: translate(-2px, -4px);
     box-shadow: 8px 8px 0 var(--shadow-hard);
   }
 }
