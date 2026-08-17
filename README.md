@@ -120,7 +120,7 @@ Any MCP client that supports Streamable HTTP can point directly at this URL; the
 
 ![Claude Code calling AIGC Radar MCP: one prompt to search_github_ai_projects returns curated RAG evaluation projects with star counts](docs/assets/screenshot-mcp-call.png)
 
-Public tools (no auth required; all read-only except the append-only adoption receipt):
+Public tools (no auth required, all read-only):
 
 | Tool | Purpose |
 | --- | --- |
@@ -131,11 +131,8 @@ Public tools (no auth required; all read-only except the append-only adoption re
 | `get_top_items` | Daily / weekly / monthly ranking snapshots |
 | `get_paper_detail` | Details for a single indexed document |
 | `get_project_categories` | Project categories with subcategory counts |
-| `submit_project_adoption` | Adoption receipt: after a search leads to a concrete decision, report it once (adopted / reference_only / declined) — powers the reuse-rate metric |
 
 Sending `Authorization: Bearer <MCP access token>` additionally unlocks `search_my_project_favorites` (personal favorites search). Logged-in users can mint minimal-scope, revocable read-only tokens with device labels and expiry — the plaintext token is shown only once, and the server stores only its digest.
-
-**The reuse loop** — the product bet is "while building, the AI proactively surfaces mature technology instead of reinventing wheels", and the loop is closed end to end: deterministic triggers (a dsh plugin listening on `agent/pre-step`, a Claude Code `UserPromptSubmit` hook, and the MCP `instructions` themselves) nudge the agent to search *before* writing code; the search tools answer with curated, star-gated projects; the agent files one adoption receipt (`submit_project_adoption` or `POST /api/projects/adoptions`) recording adopted / reference_only / declined; receipts aggregate into a reuse-rate metric at `GET /api/projects/adoptions/stats`. Full mechanics, decision semantics, and hook recipes: [docs/reuse-loop.md](docs/reuse-loop.md).
 
 On the context side, it provides resources (`aigc-news://dashboard/summary`, `aigc-news://report/latest`, etc.), resource templates, and prompts (`daily_research_brief`, `project_discovery`). For full protocol parameters, the MCP-first policy, and fallback semantics, see [docs/mcp-server.md](docs/mcp-server.md).
 

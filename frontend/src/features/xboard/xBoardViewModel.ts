@@ -383,15 +383,109 @@ export const formatLocalTime = (iso: string, timeZone?: string): string => {
 }
 
 /**
- * 行主序分列：第 i 条进第 i % columnCount 列——跨列横读仍是连续顺序，
- * 满足「左上 = 最新一条，从左到右、从上到下」。CSS columns 是列主序
- * （先填满一列再下一列），无法用纯 CSS 满足该排序，只能 JS 分列。
+ * 估高贪心分列：每条放入当前累计估高最矮的列（同高先比卡数、再取最左）。
+ * 推文卡高度差可达 5–10 倍（纯文字 ~200px vs 多图/长文 >1000px），旧的
+ * 纯轮询（i % n）完全不管高度，列高严重失衡——短列尾部会留下大片空白
+ * （实测某页列高 2372/628/274/1296，空洞 2098px）。
+ * 列内部仍保持传入顺序（时间降序），左上角依旧是最新一条；跨列横读
+ * 连续性本就被高度差破坏，不再作为契约。
+ * 缺省估高器时退化为轮询（等高假设下的旧行为）。
  */
-export const distributeColumns = <T>(items: T[], columnCount: number): T[][] => {
+export const distributeColumns = <T>(items: T[], columnCount: number, estimateHeight?: (item: T) => number): T[][] => {
   const count = Math.max(1, Math.floor(columnCount) || 1)
   const columns: T[][] = Array.from({ length: count }, () => [])
-  items.forEach((item, index) => columns[index % count]?.push(item))
+  if (!estimateHeight) {
+    items.forEach((item, index) => columns[index % count]?.push(item))
+    return columns
+  }
+  const heights: number[] = new Array<number>(count).fill(0)
+  for (const item of items) {
+    let target = 0
+    for (let i = 1; i < count; i += 1) {
+      const h = heights[i] ?? 0
+      const best = heights[target] ?? 0
+      // 同高取卡数更少者（估高全 0 的退化场景仍能摊匀），再同取最左
+      if (h < best || (h === best && (columns[i]?.length ?? 0) < (columns[target]?.length ?? 0))) target = i
+    }
+    columns[target]?.push(item)
+    heights[target] = (heights[target] ?? 0) + Math.max(0, estimateHeight(item) || 0)
+  }
   return columns
+}
+
+/** CJK/全角字符按 1em 计宽，其余（拉丁/数字/空格）按 Inter 均值 ~0.52em */
+const WIDE_CHAR_RE = /[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/
+
+const textAdvancePx = (text: string, fontSize: number): number => {
+  let units = 0
+  for (const ch of text) units += WIDE_CHAR_RE.test(ch) ? 1 : 0.52
+  return units * fontSize
+}
+
+/** 折行估算：whitespace-pre-line 下显式换行各自独立成行（空段也占一行） */
+const estimateTextLines = (text: string, widthPx: number, fontSize: number): number => {
+  if (!text || widthPx <= 0) return 0
+  return text
+    .split('\n')
+    .reduce((lines, seg) => lines + Math.max(1, Math.ceil(textAdvancePx(seg, fontSize) / widthPx)), 0)
+}
+
+type TweetMedia = NonNullable<TopDoc['media']>[number]
+
+/** 单件媒体渲染高度：有落库尺寸按真实宽高比；视频占位缺省 16/9（与模板一致），照片按 4:3 估 */
+const estimateMediaHeight = (item: TweetMedia, widthPx: number): number => {
+  if (item.width && item.height && item.width > 0) return widthPx * (item.height / item.width)
+  return widthPx * (item.type === 'photo' ? 0.75 : 9 / 16)
+}
+
+/**
+ * 推文卡渲染高度估算（瀑布流分列用）：按模板结构逐项累加——头部行、
+ * 正文折行（按字宽）、媒体真实宽高比、引用卡、链接卡、时间行。
+ * 只需列间相对比较准确：媒体项用落库真实宽高比，是估高的主项。
+ * 返回值已把列间距（16px）折进每卡，可直接累加比较。
+ */
+export const estimateTweetCardHeight = (doc: TopDoc, columnWidth: number, locale: string): number => {
+  const cardWidth = Math.max(120, columnWidth)
+  const bodyWidth = cardWidth - 34 // 卡边框 1px×2 + 正文块 px-4
+  let height = 2 // 卡上下边框
+  if (retweetedByHandle(doc)) height += 25 // 转贴标注行（pt-2.5 + 文字行）
+  height += 48 // 卡头（py-3 + h-6 头像行）
+  const media = doc.media ?? []
+  if (media.length > 0) {
+    const mediaWidth = cardWidth - 26 // 媒体区 padding 12px×2 + 卡边框
+    height += 12 + (media.length - 1) * 8 // 媒体区顶距 + 件间 gap
+    for (const item of media) height += estimateMediaHeight(item, mediaWidth)
+  }
+  height += 24 // 正文块 py-3
+  height += estimateTextLines(displayTweetText(doc, locale), bodyWidth, 14) * 20 // text-sm leading-5
+  const quote = tweetQuote(doc)
+  if (quote) {
+    const quoteInnerWidth = bodyWidth - 34 // mx-1 + 引用卡边框 + px-3
+    height += 42 // mt-2 + 引用卡边框 + 引用头（pt-2 + 头像行）+ 卡底余量
+    height += estimateTextLines(displayQuoteText(quote, locale), quoteInnerWidth, 11) * 16 // text-2xs leading-4
+    const quoteMedia = quote.media ?? []
+    if (quoteMedia.length > 0) {
+      height += 14 // 媒体块 pt-1.5 + pb-2
+      for (const item of quoteMedia) height += estimateMediaHeight(item, quoteInnerWidth)
+    }
+  }
+  const card = tweetLinkCard(doc)
+  if (card) {
+    const cardInnerWidth = bodyWidth - 12 // mx-1 + 卡边框
+    height += 50 // mt-2 + 卡边框 + body py-2 + 标题行
+    if (card.image_url) {
+      height += card.image_width && card.image_height && card.image_width > 0
+        ? Math.min(260, cardInnerWidth * (card.image_height / card.image_width)) // 模板限高 260px
+        : 150 // 无尺寸元数据按常见缩略图高度估
+    }
+    if (card.description) {
+      // 描述限两行（-webkit-line-clamp: 2）
+      height += Math.min(2, estimateTextLines(card.description, cardInnerWidth - 24, 11)) * 16 + 2
+    }
+    if (card.domain) height += 16
+  }
+  if (tweetTimestamp(doc)) height += 23 // mt-2 + 时间行
+  return height + 16 // 列间距 gap-4 折进每卡
 }
 
 /** 全天推文客户端分页：页数下限 1（空列表也按 1 页算，避免 0 页状态）。 */

@@ -14,7 +14,6 @@
 | 文档 | 内容 |
 |---|---|
 | [mcp-server.md](mcp-server.md) | AIGC Radar MCP（旗舰接口）：协议参数、MCP-first 策略、fallback 语义与鉴权 |
-| [reuse-loop.md](reuse-loop.md) | 复用检查闭环：触发（dsh 插件 / Claude Code hook / MCP instructions）→ 检索 → 采纳回执 → 复用率度量 |
 | [mcp-registry.md](mcp-registry.md) | AIGC Radar MCP 登记到官方 registry 与目录站的发布手册 |
 | [subscriptions.md](subscriptions.md) | 订阅推送：用户订阅与推送渠道的数据模型、API、验证码与凭据加密策略 |
 | [dailyhot-source.md](dailyhot-source.md) | DailyHot 聚合热榜源：自托管 DailyHotApi 的部署、配置与验证 |

@@ -9,7 +9,7 @@ import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 import { showToast } from '@/composables/useToast'
-import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
@@ -28,8 +28,9 @@ const {
 // 窗口日期是否就是今天：今天 = 最近 24h 滚动窗口（days_back=0）
 const isToday = computed(() => selectedDate.value === today)
 
-// 时间序（新→旧）+ 行主序分列：左上 = 最新推文，从左到右、从上到下。
-// CSS columns 是列主序（先填满一列），无法满足该排序，故 JS 分列。
+// 时间序（新→旧）+ 估高贪心分列：每条进当前最矮列，列内保持时间降序、
+// 左上角是最新一条。纯轮询不管卡高（纯文字 ~200px vs 多图 >1000px），
+// 列高失衡会在短列尾部留下大片空白；CSS columns 是列主序，两者都不用。
 const timelineDocs = computed(() => timelineTweets(docs.value))
 // 全天推文客户端分页：时间线排序与瀑布流分列仅在当前页内进行
 const pagedTimelineDocs = computed(() => paginateItems(timelineDocs.value, currentPage.value, pageSize))
@@ -48,7 +49,22 @@ const computeColumnCount = () => {
 }
 const columnCount = ref(computeColumnCount())
 const updateColumnCount = () => { columnCount.value = computeColumnCount() }
-const masonryColumns = computed(() => distributeColumns(pagedTimelineDocs.value, columnCount.value))
+
+// 估高分列需要真实列宽：量滚动容器内容宽（减 p-6 双内侧边距与列间距）。
+// 滚动容器常驻（不受加载/空态 v-if 影响），ResizeObserver 直接挂它。
+const MASONRY_GAP_PX = 16
+const scrollContentWidth = ref(0)
+let scrollResizeObserver: ResizeObserver | null = null
+const masonryColumnWidth = computed(() => {
+  const count = columnCount.value
+  const width = (scrollContentWidth.value - MASONRY_GAP_PX * (count - 1)) / count
+  return width > 0 ? width : 280 // 首帧未测量时的回退列宽
+})
+const masonryColumns = computed(() => distributeColumns(
+  pagedTimelineDocs.value,
+  columnCount.value,
+  (doc) => estimateTweetCardHeight(doc, masonryColumnWidth.value, locale.value),
+))
 
 // 翻页回顶：滚动的是内层 overflow-y-auto 容器而非 window
 const scrollEl = ref<HTMLElement | null>(null)
@@ -164,11 +180,23 @@ const handleDeleteSelected = async () => {
 onMounted(() => {
   window.addEventListener('resize', updateColumnCount)
   window.addEventListener('keydown', onLightboxKeydown)
+  // 量滚动容器内容宽供瀑布流估高（p-6 = 双侧各 24px；clientWidth 不含滚动条）
+  if (scrollEl.value) {
+    scrollContentWidth.value = scrollEl.value.clientWidth - 48
+    // jsdom 等无 ResizeObserver 环境跳过观测，首帧回退列宽接管
+    if (typeof ResizeObserver !== 'undefined') {
+      scrollResizeObserver = new ResizeObserver(() => {
+        scrollContentWidth.value = (scrollEl.value?.clientWidth ?? 0) - 48
+      })
+      scrollResizeObserver.observe(scrollEl.value)
+    }
+  }
   load()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateColumnCount)
   window.removeEventListener('keydown', onLightboxKeydown)
+  scrollResizeObserver?.disconnect()
   dispose()
 })
 </script>
@@ -258,7 +286,7 @@ onBeforeUnmount(() => {
         <p class="mt-1 text-xs">{{ t(emptyCopy.hintKey, { earliest: earliestSnapshotDate }) }}</p>
       </div>
 
-      <!-- 瀑布流推文墙（行主序：每列顶部横读即最新 N 条） -->
+      <!-- 瀑布流推文墙（估高贪心分列：每条进当前最矮列，列内时间降序） -->
       <div v-else class="masonry-grid">
         <div
           v-for="(column, columnIndex) in masonryColumns"
@@ -559,8 +587,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* 行主序瀑布流：JS 轮询分列（见 distributeColumns），列高各自独立，
-   卡片按内容高度堆叠；v-bind 列数跟随视口断点（768/1024/1280）。 */
+/* 估高贪心瀑布流：JS 按卡片估高把每条放进当前最矮列（见 distributeColumns），
+   列高各自独立、卡片按内容高度堆叠；v-bind 列数跟随视口断点（768/1024/1280）。 */
 .masonry-grid {
   display: grid;
   grid-template-columns: repeat(v-bind(columnCount), minmax(0, 1fr));

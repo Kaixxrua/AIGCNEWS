@@ -138,7 +138,7 @@ const nextPageButton = (wrapper: VueWrapper) => {
 }
 
 describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
-  it('挂载即调用 load，并按行主序把当前页推文分进 JS 列', async () => {
+  it('挂载即调用 load，并把当前页推文按估高贪心分进 JS 列', async () => {
     controller().docs.value = makeTweets(25)
     const wrapper = await mountView()
 
@@ -148,14 +148,15 @@ describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
     // 25 条 > 单页 20：首屏只渲染第一页 20 张卡
     expect(wrapper.findAll('article.tweet-card')).toHaveLength(20)
 
-    // jsdom 视口 1024 → 3 列；行主序：第 i 条进第 i % 3 列（7/7/6）
+    // jsdom 视口 1024 → 3 列；测试卡等高，估高贪心在同高时取最左列，
+    // 分布退化为轮询：第 i 条进第 i % 3 列（7/7/6）
     const columns = wrapper.findAll('.masonry-col')
     expect(columns).toHaveLength(3)
     expect(columns[0]!.findAll('.tweet-card')).toHaveLength(7)
     expect(columns[1]!.findAll('.tweet-card')).toHaveLength(7)
     expect(columns[2]!.findAll('.tweet-card')).toHaveLength(6)
 
-    // 每列自上而下是索引步进列数的子序列（左上 = 最新，横读连续）
+    // 每列自上而下是索引步进列数的子序列（列内保持时间降序）
     const colTexts = columns.map((col) => col.findAll('.tweet-card').map((card) => card.text()))
     expect(colTexts[0]!.every((text, i) => text.includes(`Tweet ${i * 3} body`))).toBe(true)
     expect(colTexts[1]!.every((text, i) => text.includes(`Tweet ${i * 3 + 1} body`))).toBe(true)

@@ -7,6 +7,7 @@ import {
   displayTweetText,
   distributeColumns,
   emptyStateCopyKeys,
+  estimateTweetCardHeight,
   extractXHandle,
   flattenTweets,
   formatLocalTime,
@@ -505,12 +506,71 @@ describe('xBoardViewModel', () => {
     expect(tweetTextSegments(translatedDoc, 'en-US')).not.toEqual([{ text: '直播更新，不见不散', isUrl: false }])
   })
 
-  it('distributeColumns deals items round-robin so cross-column reads stay row-major', () => {
+  it('distributeColumns without an estimator falls back to round-robin (equal-height assumption)', () => {
     expect(distributeColumns([0, 1, 2, 3, 4, 5, 6], 3)).toEqual([[0, 3, 6], [1, 4], [2, 5]])
     expect(distributeColumns([], 4)).toEqual([[], [], [], []])
     // 非法列数兜底为 1；小数为取整
     expect(distributeColumns([1, 2], 0)).toEqual([[1, 2]])
     expect(distributeColumns([1, 2, 3], 2.7)).toEqual([[1, 3], [2]])
+  })
+
+  it('distributeColumns with an estimator greedily fills the shortest column', () => {
+    // 一高多矮：高卡独占一列，后续矮卡集中填其余两列——列内顺序仍保持传入序
+    const heights: Record<string, number> = { a: 1000, b: 200, c: 200, d: 200, e: 200 }
+    const estimate = (id: string) => heights[id] ?? 0
+    expect(distributeColumns(['a', 'b', 'c', 'd', 'e'], 3, estimate)).toEqual([
+      ['a'], ['b', 'd'], ['c', 'e'],
+    ])
+    // 同高并列取最左列：等高条目退化为轮询
+    expect(distributeColumns([1, 2, 3, 4], 2, () => 100)).toEqual([[1, 3], [2, 4]])
+    // 非法估高按 0 处理，不产生 NaN 污染后续比较
+    expect(distributeColumns([1, 2], 2, () => Number.NaN)).toEqual([[1], [2]])
+    expect(distributeColumns([1, 2], 2, () => -50)).toEqual([[1], [2]])
+  })
+
+  it('estimateTweetCardHeight ranks media-heavy cards far above text-only ones', () => {
+    const column = 300
+    const plain = tweet('openai', '1', { summary: 'short update' })
+    const withPhoto = tweet('openai', '2', {
+      summary: 'short update',
+      media: [{ type: 'photo', url: 'https://pbs.twimg.com/media/a.jpg', width: 1600, height: 900 }],
+    })
+    const withTallVideo = tweet('openai', '3', {
+      summary: 'short update',
+      media: [{ type: 'video', url: 'https://video.twimg.com/ext_tw_video/v.mp4', width: 720, height: 1280 }],
+    })
+    const longText = tweet('openai', '4', { summary: '很长的更新'.repeat(80) })
+    const hPlain = estimateTweetCardHeight(plain, column, 'en-US')
+    const hPhoto = estimateTweetCardHeight(withPhoto, column, 'en-US')
+    const hVideo = estimateTweetCardHeight(withTallVideo, column, 'en-US')
+    const hLong = estimateTweetCardHeight(longText, column, 'en-US')
+    // 真实宽高比是估高主项：16:9 图 > 纯文字；9:16 竖视频 > 16:9 图
+    expect(hPhoto).toBeGreaterThan(hPlain)
+    expect(hVideo).toBeGreaterThan(hPhoto)
+    expect(hLong).toBeGreaterThan(hPlain)
+    // 估高随列宽单调增长（媒体随列宽等比放大）
+    expect(estimateTweetCardHeight(withPhoto, 500, 'en-US')).toBeGreaterThan(hPhoto)
+    // 引用卡/链接卡/转贴行都增加估高
+    const withQuote = tweet('openai', '5', {
+      summary: 'short update',
+      quote: { url: 'https://x.com/a/status/9', text: 'quoted', author_name: 'A' },
+    })
+    expect(estimateTweetCardHeight(withQuote, column, 'en-US')).toBeGreaterThan(hPlain)
+    const withLink = tweet('openai', '6', {
+      summary: 'short update',
+      link_card: { url: 'https://example.com', title: 'Example' },
+    })
+    expect(estimateTweetCardHeight(withLink, column, 'en-US')).toBeGreaterThan(hPlain)
+    const reposted = tweet('openai', '7', { summary: 'short update', retweeted_by: 'someone' })
+    expect(estimateTweetCardHeight(reposted, column, 'en-US')).toBeGreaterThan(hPlain)
+    // 中文界面用译文折行：译文明显更长（多折一行）时估高更高
+    const translated = tweet('openai', '8', {
+      summary: 'ok',
+      translation_zh: '好的，这是一条明显更长的中文译文内容，用来验证中文界面按译文折行后估高随之增加',
+    })
+    expect(estimateTweetCardHeight(translated, column, 'zh-CN')).toBeGreaterThan(
+      estimateTweetCardHeight(translated, column, 'en-US'),
+    )
   })
 
   it('pageCount floors at 1 page and handles empty, boundary and large totals', () => {
