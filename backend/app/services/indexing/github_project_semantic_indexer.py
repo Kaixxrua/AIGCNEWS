@@ -193,7 +193,7 @@ class GitHubProjectSemanticIndexer:
                 for (kind, index, text), vector in zip(chunks, vectors, strict=True)
             ]
             with _vector_write_lock:
-                count = self._vectors().upsert_project_chunks(repo_id, vector_chunks)
+                count = self._vectors().upsert_project_chunks(repo_id, vector_chunks, flush=False)
             self.db.upsert_github_project_semantic_source(
                 {**base, "indexed_fingerprint": fingerprint, "chunk_count": count, "index_status": "succeeded", "index_error": None, "indexed_at": _utcnow()}
             )
@@ -248,6 +248,14 @@ class GitHubProjectSemanticIndexer:
                 self._embeddings()
             with ThreadPoolExecutor(max_workers=concurrency) as executor:
                 results = list(executor.map(sync_one, projects))
+        if not dry_run and self.vectors is not None and any(
+            result.get("status") == "succeeded" for result in results
+        ):
+            # 逐项目 flush 会把吞吐钉死在 ~20/min；按批一次落盘即可被检索。
+            try:
+                self._vectors().flush()
+            except Exception as exc:
+                logger.warning("GitHub project semantic batch flush failed: %s", exc)
         counts: dict[str, int] = {}
         for result in results:
             status = str(result.get("status") or "unknown")

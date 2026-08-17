@@ -157,6 +157,23 @@ class GitHubProjectSemanticIndexerTests(unittest.TestCase):
 
         self.assertEqual(result["counts"], {"succeeded": 1, "failed": 1})
 
+    def test_sync_batch_defers_flush_to_batch_end(self) -> None:
+        projects = [{**PROJECT, "repo_id": f"owner/repo-{index}"} for index in range(2)]
+        db = MagicMock()
+        db.list_github_projects_for_semantic_sync.return_value = projects
+        vectors = MagicMock()
+        vectors.upsert_project_chunks.return_value = 1
+        embeddings = MagicMock()
+        embeddings.embed_documents.return_value = [[0.1] * 1024]
+        indexer = GitHubProjectSemanticIndexer(db=db, vectors=vectors, embeddings=embeddings)
+
+        result = indexer.sync_batch(limit=2, concurrency=2, fetch_readme=False)
+
+        self.assertEqual(result["counts"], {"succeeded": 2})
+        for call in vectors.upsert_project_chunks.call_args_list:
+            self.assertIs(call.kwargs["flush"], False)
+        vectors.flush.assert_called_once_with()
+
     def test_concurrent_dry_run_does_not_load_embedding_model(self) -> None:
         projects = [{**PROJECT, "repo_id": f"owner/repo-{index}"} for index in range(2)]
         db = MagicMock()

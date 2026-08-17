@@ -133,7 +133,13 @@ class ProjectVectorRepository:
     def _quoted(value: str) -> str:
         return value.replace("\\", "\\\\").replace('"', '\\"')
 
-    def upsert_project_chunks(self, repo_id: str, chunks: Iterable[ProjectVectorChunk]) -> int:
+    def upsert_project_chunks(
+        self,
+        repo_id: str,
+        chunks: Iterable[ProjectVectorChunk],
+        *,
+        flush: bool = True,
+    ) -> int:
         collection = self.ensure_collection()
         chunk_list = list(chunks)
         if any(len(chunk.embedding) != self.dimension for chunk in chunk_list):
@@ -150,8 +156,13 @@ class ProjectVectorRepository:
         if obsolete:
             quoted = ", ".join(f'"{self._quoted(chunk_id)}"' for chunk_id in obsolete)
             collection.delete(f"chunk_id in [{quoted}]")
-        collection.flush()
+        if flush:
+            self.flush()
         return len(chunk_list)
+
+    def flush(self) -> None:
+        """批量回填时由调用方按批触发；growing segment 无需逐条落盘即可被检索。"""
+        self.ensure_collection().flush()
 
     def count_project_chunks(self, repo_id: str) -> int:
         collection = self.ensure_collection()
