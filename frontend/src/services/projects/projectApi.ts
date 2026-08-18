@@ -148,6 +148,16 @@ export interface ToolWebsiteDeleteResponse {
   website_id: number
 }
 
+export interface PersonalWebsiteQuota {
+  tier: 'free' | 'member'
+  unlimited: boolean
+  limit: number | null
+  used: number
+  remaining: number | null
+  window_seconds: number
+  reset_at: string | null
+}
+
 export interface ToolWebsiteUpdatePayload {
   title: string
   description?: string
@@ -373,6 +383,20 @@ export async function unrecommendGitHubProject(
 ): Promise<GitHubProjectRecommendResponse> {
   const res = await api.delete('/ops/github-projects/recommendations', { data: payload })
   return normalizeGitHubProjectRecommendResponse(res.data, payload, i18n.global.t('projects.recommendationRemoved'))
+}
+
+export async function fetchMyToolWebsiteQuota(): Promise<PersonalWebsiteQuota> {
+  const res = await api.get('/projects/me/tool-websites/quota')
+  const data = res.data ?? {}
+  return {
+    tier: data.tier === 'member' ? 'member' : 'free',
+    unlimited: Boolean(data.unlimited),
+    limit: data.limit == null ? null : Number(data.limit),
+    used: Number(data.used ?? 0),
+    remaining: data.remaining == null ? null : Number(data.remaining),
+    window_seconds: Number(data.window_seconds ?? 86400),
+    reset_at: data.reset_at ?? null,
+  }
 }
 
 export async function addMyToolWebsite(url: string): Promise<ToolWebsiteAddResponse> {

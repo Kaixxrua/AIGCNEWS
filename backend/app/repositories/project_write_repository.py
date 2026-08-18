@@ -192,7 +192,17 @@ class ToolWebsiteEnrichmentRepository(Protocol):
     ) -> None: ...
 
 
+class PersonalWebsiteQuotaLimitReached(RuntimeError):
+    def __init__(self, usage: dict[str, Any]) -> None:
+        super().__init__("personal website quota exceeded")
+        self.usage = usage
+
+
 class UserProjectCollectionRepository(Protocol):
+    def get_personal_website_quota_usage(
+        self, *, user_id: int, window_seconds: int
+    ) -> dict[str, Any]: ...
+
     def add_project_favorite(
         self,
         *,
@@ -200,6 +210,9 @@ class UserProjectCollectionRepository(Protocol):
         source: str,
         repo_id: Any = None,
         website_id: Any = None,
+        website_quota_enabled: bool = False,
+        website_quota_limit: int | None = None,
+        website_quota_window_seconds: int = 86400,
     ) -> dict[str, Any]: ...
 
     def remove_project_favorite(
@@ -212,7 +225,14 @@ class UserProjectCollectionRepository(Protocol):
     ) -> bool: ...
 
     def link_user_tool_website(
-        self, *, user_id: int, website_id: int, added_via: str = "auto"
+        self,
+        *,
+        user_id: int,
+        website_id: int,
+        added_via: str = "auto",
+        quota_enabled: bool = False,
+        quota_limit: int | None = None,
+        quota_window_seconds: int = 86400,
     ) -> dict[str, Any]: ...
 
     def unlink_user_tool_website(self, *, user_id: int, website_id: int) -> bool: ...

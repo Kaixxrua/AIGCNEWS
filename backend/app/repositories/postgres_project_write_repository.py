@@ -13,6 +13,9 @@ from backend.app.repositories.postgres_project_catalog import (
     PostgresProjectCatalogRepository,
 )
 from backend.app.repositories.project_catalog_normalization import normalize_project_row
+from backend.app.repositories.project_write_repository import (
+    PersonalWebsiteQuotaLimitReached,
+)
 
 
 def _iso(value: Any) -> str | None:
@@ -236,6 +239,96 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
             raise LookupError("工具网站不存在或不可收藏")
         return "website", str(row["id"])
 
+    @staticmethod
+    def _personal_website_quota_usage(
+        cursor: Any, *, user_id: int, window_seconds: int
+    ) -> dict[str, Any]:
+        cursor.execute(
+            """SELECT COUNT(*) AS used,
+                      MIN(created_at) + (%s * INTERVAL '1 second') AS reset_at
+                 FROM personal_website_quota_events
+                WHERE user_id = %s
+                  AND created_at > CURRENT_TIMESTAMP - (%s * INTERVAL '1 second')""",
+            (int(window_seconds), int(user_id), int(window_seconds)),
+        )
+        row = cursor.fetchone() or {}
+        return {
+            "used": int(row.get("used") or 0),
+            "reset_at": _iso(row.get("reset_at")),
+        }
+
+    def get_personal_website_quota_usage(
+        self, *, user_id: int, window_seconds: int
+    ) -> dict[str, Any]:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                return self._personal_website_quota_usage(
+                    cursor,
+                    user_id=int(user_id),
+                    window_seconds=int(window_seconds),
+                )
+
+    @staticmethod
+    def _has_personal_website_relation(
+        cursor: Any, *, user_id: int, website_id: int
+    ) -> bool:
+        cursor.execute(
+            """SELECT EXISTS (
+                    SELECT 1 FROM user_tool_websites
+                     WHERE user_id = %s AND website_id = %s
+                ) OR EXISTS (
+                    SELECT 1 FROM project_favorites
+                     WHERE user_id = %s AND project_source = 'website'
+                       AND project_id = %s
+                ) AS owned""",
+            (int(user_id), int(website_id), int(user_id), str(website_id)),
+        )
+        row = cursor.fetchone() or {}
+        return bool(row.get("owned"))
+
+    def _prepare_personal_website_add(
+        self,
+        cursor: Any,
+        *,
+        user_id: int,
+        website_id: int,
+        quota_enabled: bool,
+        quota_limit: int | None,
+        quota_window_seconds: int,
+    ) -> bool:
+        if not quota_enabled:
+            return not self._has_personal_website_relation(
+                cursor, user_id=user_id, website_id=website_id
+            )
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('personal_website_quota'), %s)",
+            (int(user_id),),
+        )
+        if self._has_personal_website_relation(
+            cursor, user_id=user_id, website_id=website_id
+        ):
+            return False
+        if quota_limit is not None:
+            usage = self._personal_website_quota_usage(
+                cursor,
+                user_id=user_id,
+                window_seconds=quota_window_seconds,
+            )
+            if int(usage["used"]) >= int(quota_limit):
+                raise PersonalWebsiteQuotaLimitReached(usage)
+        return True
+
+    @staticmethod
+    def _record_personal_website_add(
+        cursor: Any, *, user_id: int, website_id: int, operation: str
+    ) -> None:
+        cursor.execute(
+            """INSERT INTO personal_website_quota_events
+                   (user_id, website_id, operation)
+               VALUES (%s, %s, %s)""",
+            (int(user_id), int(website_id), operation),
+        )
+
     def add_project_favorite(
         self,
         *,
@@ -243,6 +336,9 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
         source: str,
         repo_id: Any = None,
         website_id: Any = None,
+        website_quota_enabled: bool = False,
+        website_quota_limit: int | None = None,
+        website_quota_window_seconds: int = 86400,
     ) -> dict[str, Any]:
         user_id = int(user_id)
         with self._database.transaction() as connection:
@@ -255,6 +351,16 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                     user_id=user_id,
                     require_access=True,
                 )
+                should_record = False
+                if project_source == "website":
+                    should_record = self._prepare_personal_website_add(
+                        cursor,
+                        user_id=user_id,
+                        website_id=int(project_id),
+                        quota_enabled=website_quota_enabled,
+                        quota_limit=website_quota_limit,
+                        quota_window_seconds=website_quota_window_seconds,
+                    )
                 cursor.execute(
                     """INSERT INTO project_favorites (user_id, project_source, project_id)
                        VALUES (%s, %s, %s)
@@ -264,6 +370,13 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                     (user_id, project_source, project_id),
                 )
                 row = cursor.fetchone() or {}
+                if should_record:
+                    self._record_personal_website_add(
+                        cursor,
+                        user_id=user_id,
+                        website_id=int(project_id),
+                        operation="favorite",
+                    )
         result: dict[str, Any] = {
             "source": project_source,
             "project_id": project_id,
@@ -306,7 +419,14 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                 return cursor.rowcount > 0
 
     def link_user_tool_website(
-        self, *, user_id: int, website_id: int, added_via: str = "auto"
+        self,
+        *,
+        user_id: int,
+        website_id: int,
+        added_via: str = "auto",
+        quota_enabled: bool = False,
+        quota_limit: int | None = None,
+        quota_window_seconds: int = 86400,
     ) -> dict[str, Any]:
         user_id, website_id = int(user_id), int(website_id)
         added_via = (added_via or "auto").strip().lower()
@@ -317,6 +437,14 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                 cursor.execute("SELECT id FROM tool_websites WHERE id = %s LIMIT 1", (website_id,))
                 if not cursor.fetchone():
                     raise LookupError("工具网站不存在")
+                should_record = self._prepare_personal_website_add(
+                    cursor,
+                    user_id=user_id,
+                    website_id=website_id,
+                    quota_enabled=quota_enabled,
+                    quota_limit=quota_limit,
+                    quota_window_seconds=quota_window_seconds,
+                )
                 cursor.execute(
                     """INSERT INTO user_tool_websites (user_id, website_id, added_via)
                        VALUES (%s, %s, %s)
@@ -327,6 +455,13 @@ class PostgresProjectWriteRepository(PostgresProjectCatalogRepository):
                     (user_id, website_id, added_via),
                 )
                 row = cursor.fetchone() or {}
+                if should_record:
+                    self._record_personal_website_add(
+                        cursor,
+                        user_id=user_id,
+                        website_id=website_id,
+                        operation=added_via if added_via in {"auto", "manual"} else "auto",
+                    )
         return {
             "user_added": True,
             "user_added_at": _iso(row.get("created_at")),

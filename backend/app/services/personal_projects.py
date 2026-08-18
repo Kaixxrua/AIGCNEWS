@@ -13,12 +13,17 @@ from backend.app.domain.project_taxonomy import (
     normalize_subcategory,
 )
 from backend.app.repositories.project_write_repository import (
+    PersonalWebsiteQuotaLimitReached,
     ToolWebsiteEnrichmentRepository,
     UserProjectCollectionRepository,
 )
 from backend.app.services.ingestion.tool_website_fetcher import ToolWebsiteFetchError
 from backend.app.services.ingestion.website_content_moderation import (
     ModerationUnavailableError,
+)
+from backend.app.services.membership.tiers import (
+    MEMBERSHIP_TIER_MEMBER,
+    normalize_membership_tier,
 )
 
 
@@ -40,6 +45,16 @@ class PersonalWebsiteOperationFailed(PersonalProjectsError):
 
 class WebsiteContentBlockedError(PersonalProjectsError):
     """The website was rejected by adult-content moderation."""
+
+
+PERSONAL_WEBSITE_FREE_LIMIT = 5
+PERSONAL_WEBSITE_QUOTA_WINDOW_SECONDS = 86400
+
+
+class PersonalWebsiteQuotaExceeded(PersonalProjectsError):
+    def __init__(self, quota: dict[str, Any]) -> None:
+        super().__init__("免费用户滚动 24 小时内最多添加 5 个网页收藏，开通会员后不限量。")
+        self.quota = quota
 
 
 class WebsiteEnricher(Protocol):
@@ -198,6 +213,49 @@ class PersonalProjectsService:
             **filters,
         )
 
+    @staticmethod
+    def _quota_projection(
+        usage: dict[str, Any], *, membership_tier: str, role: str
+    ) -> dict[str, Any]:
+        tier = normalize_membership_tier(membership_tier)
+        unlimited = tier == MEMBERSHIP_TIER_MEMBER or role == "admin"
+        used = int(usage.get("used") or 0)
+        limit = None if unlimited else PERSONAL_WEBSITE_FREE_LIMIT
+        return {
+            "tier": tier,
+            "unlimited": unlimited,
+            "limit": limit,
+            "used": used,
+            "remaining": None if unlimited else max(0, PERSONAL_WEBSITE_FREE_LIMIT - used),
+            "window_seconds": PERSONAL_WEBSITE_QUOTA_WINDOW_SECONDS,
+            "reset_at": usage.get("reset_at") if used else None,
+        }
+
+    async def get_website_quota(
+        self,
+        *,
+        user_id: int,
+        membership_tier: str = "free",
+        role: str = "user",
+    ) -> dict[str, Any]:
+        owner_id = _require_owner(user_id)
+        usage = await self._run_sync(
+            self._collection.get_personal_website_quota_usage,
+            user_id=owner_id,
+            window_seconds=PERSONAL_WEBSITE_QUOTA_WINDOW_SECONDS,
+        )
+        return self._quota_projection(
+            usage, membership_tier=membership_tier, role=role
+        )
+
+    @staticmethod
+    def _website_quota_policy(
+        *, membership_tier: str, role: str
+    ) -> tuple[bool, int | None]:
+        tier = normalize_membership_tier(membership_tier)
+        unlimited = tier == MEMBERSHIP_TIER_MEMBER or role == "admin"
+        return True, None if unlimited else PERSONAL_WEBSITE_FREE_LIMIT
+
     async def add_favorite(
         self,
         *,
@@ -205,16 +263,39 @@ class PersonalProjectsService:
         source: str,
         repo_id: Any = None,
         website_id: Any = None,
+        membership_tier: str = "free",
+        role: str = "user",
     ) -> dict[str, Any]:
         owner_id = _require_owner(user_id)
+        is_website = _normalize_source(source) == "website"
+        quota_enabled, quota_limit = (False, None)
+        if is_website:
+            quota_enabled, quota_limit = self._website_quota_policy(
+                membership_tier=membership_tier,
+                role=role,
+            )
+        favorite_kwargs = {
+            "user_id": owner_id,
+            "source": source,
+            "repo_id": repo_id,
+            "website_id": website_id,
+        }
+        if is_website:
+            favorite_kwargs.update(
+                website_quota_enabled=quota_enabled,
+                website_quota_limit=quota_limit,
+                website_quota_window_seconds=PERSONAL_WEBSITE_QUOTA_WINDOW_SECONDS,
+            )
         try:
             return await self._run_sync(
                 self._collection.add_project_favorite,
-                user_id=owner_id,
-                source=source,
-                repo_id=repo_id,
-                website_id=website_id,
+                **favorite_kwargs,
             )
+        except PersonalWebsiteQuotaLimitReached as exc:
+            quota = self._quota_projection(
+                exc.usage, membership_tier=membership_tier, role=role
+            )
+            raise PersonalWebsiteQuotaExceeded(quota) from exc
         except ValueError as exc:
             raise InvalidPersonalProjectRequest(str(exc)) from exc
         except LookupError as exc:
@@ -242,8 +323,19 @@ class PersonalProjectsService:
         except LookupError as exc:
             raise PersonalProjectNotFound(str(exc)) from exc
 
-    async def add_tool_website(self, *, user_id: int, url: str) -> dict[str, Any]:
+    async def add_tool_website(
+        self,
+        *,
+        user_id: int,
+        url: str,
+        membership_tier: str = "free",
+        role: str = "user",
+    ) -> dict[str, Any]:
         owner_id = _require_owner(user_id)
+        quota_enabled, quota_limit = self._website_quota_policy(
+            membership_tier=membership_tier,
+            role=role,
+        )
         clean_url = (url or "").strip()
         if not clean_url:
             raise InvalidPersonalProjectRequest("URL 不能为空")
@@ -263,6 +355,10 @@ class PersonalProjectsService:
                 owner_id=owner_id,
                 result=result,
                 added_via="existing" if result.get("duplicate") else "auto",
+                quota_enabled=quota_enabled,
+                quota_limit=quota_limit,
+                membership_tier=membership_tier,
+                role=role,
             )
         except ToolWebsiteFetchError as exc:
             raise InvalidPersonalProjectRequest(str(exc)) from exc
@@ -270,6 +366,11 @@ class PersonalProjectsService:
             raise PersonalWebsiteOperationFailed(str(exc)) from exc
         except PersonalProjectsError:
             raise
+        except PersonalWebsiteQuotaLimitReached as exc:
+            quota = self._quota_projection(
+                exc.usage, membership_tier=membership_tier, role=role
+            )
+            raise PersonalWebsiteQuotaExceeded(quota) from exc
         except (ValueError, LookupError) as exc:
             raise InvalidPersonalProjectRequest(str(exc)) from exc
         except Exception as exc:
@@ -303,8 +404,14 @@ class PersonalProjectsService:
         subcategory_slug: str,
         tags: list[str],
         description_en: str = "",
+        membership_tier: str = "free",
+        role: str = "user",
     ) -> dict[str, Any]:
         owner_id = _require_owner(user_id)
+        quota_enabled, quota_limit = self._website_quota_policy(
+            membership_tier=membership_tier,
+            role=role,
+        )
         clean_url = (url or "").strip()
         clean_title = (title or "").strip()
         clean_description_zh = (description_zh or "").strip()
@@ -339,6 +446,9 @@ class PersonalProjectsService:
                     user_id=owner_id,
                     website_id=int(website_id),
                     added_via="manual",
+                    quota_enabled=quota_enabled,
+                    quota_limit=quota_limit,
+                    quota_window_seconds=PERSONAL_WEBSITE_QUOTA_WINDOW_SECONDS,
                 )
                 payload = build_tool_website_override(
                     user_id=owner_id,
@@ -363,6 +473,11 @@ class PersonalProjectsService:
             raise PersonalWebsiteOperationFailed(str(exc)) from exc
         except PersonalProjectsError:
             raise
+        except PersonalWebsiteQuotaLimitReached as exc:
+            quota = self._quota_projection(
+                exc.usage, membership_tier=membership_tier, role=role
+            )
+            raise PersonalWebsiteQuotaExceeded(quota) from exc
         except (ValueError, LookupError) as exc:
             raise InvalidPersonalProjectRequest(str(exc)) from exc
         except Exception as exc:
@@ -428,6 +543,10 @@ class PersonalProjectsService:
         owner_id: int,
         result: dict[str, Any],
         added_via: str,
+        quota_enabled: bool,
+        quota_limit: int | None,
+        membership_tier: str,
+        role: str,
     ) -> dict[str, Any]:
         item = result.get("item") or {}
         website_id = item.get("website_id")
@@ -438,6 +557,9 @@ class PersonalProjectsService:
             user_id=owner_id,
             website_id=int(website_id),
             added_via=added_via,
+            quota_enabled=quota_enabled,
+            quota_limit=quota_limit,
+            quota_window_seconds=PERSONAL_WEBSITE_QUOTA_WINDOW_SECONDS,
         )
         owner_item = await self._run_sync(
             self._collection.get_tool_website_item_for_user,

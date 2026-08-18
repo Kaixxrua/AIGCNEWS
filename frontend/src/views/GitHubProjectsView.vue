@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import type { AppLocale } from '@/i18n'
 import type {
@@ -58,6 +59,11 @@ const editDialogOpen = ref(false)
 const homeGuideOpen = ref(false)
 const editTarget = ref<GitHubProjectItem | null>(null)
 const VIEW_REFRESH_INTERVAL = 60_000
+// 与 dashboard 统计卡片保持同步：收录/下架会改变项目库总数，页面挂起时
+// 数字停留在加载时刻的旧值。视图激活且标签页可见时每 30s 静默刷新
+// （preserveContent 不闪 loading），节奏比 dashboard 的 10s 缓——列表
+// 查询重于纯计数接口，无需更高频。
+const SYNC_POLL_INTERVAL = 30_000
 let hasActivatedOnce = false
 let searchTimer: number | undefined
 
@@ -84,6 +90,15 @@ const {
   recommendProject, refreshReads, removeToolWebsite, requiresPersonalLogin, savingEdit, successMsg, tagsLoading,
   taxonomy, taxonomyLoading, toggleFavorite, total,
 } = controller
+const websiteQuota = controller.websiteQuota ?? ref(null)
+const websiteQuotaLoading = controller.websiteQuotaLoading ?? ref(false)
+// 轮询刷新由 onMounted/onActivated 恢复、stopViewReads 暂停；跳过加载中
+// 与后台标签页，避免与用户操作触发的请求叠加。
+const { pause: pauseSyncPoll, resume: resumeSyncPoll } = useIntervalFn(() => {
+  if (!isViewActive.value || route.name !== 'github-projects' || loading.value) return
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+  void refreshReads({ clearSuccess: false, preserveContent: true })
+}, SYNC_POLL_INTERVAL, { immediate: false })
 const sourceOptions = computed<SourceOption[]>(() => [
   { value: 'all', label: t('projects.source.allLabel'), hint: t('projects.source.allHint') },
   { value: 'website', label: t('projects.source.websiteLabel'), hint: t('projects.source.websiteHint'), authOnly: true },
@@ -106,6 +121,19 @@ const personalLoginCopy = computed(() => isWebsiteOnlyView.value
   ? { kicker: t('projects.loginWebsiteKicker'), title: t('projects.loginWebsiteTitle'), description: t('projects.loginWebsiteDescription') }
   : { kicker: t('projects.loginFavoritesKicker'), title: t('projects.loginFavoritesTitle'), description: t('projects.loginFavoritesDescription') })
 const starsBadgeLabel = computed(() => source.value === 'all' ? t('projects.starsThresholdBadge') : '')
+const websiteQuotaExhausted = computed(() => websiteQuota.value?.unlimited === false && websiteQuota.value.remaining === 0)
+const websiteQuotaHint = computed(() => {
+  if (websiteQuotaLoading.value && !websiteQuota.value) return t('projects.websiteQuotaLoading')
+  if (!websiteQuota.value) return ''
+  if (websiteQuota.value.unlimited) return t('projects.websiteQuotaUnlimited')
+  if (websiteQuota.value.remaining === 0) {
+    const resetAt = websiteQuota.value.reset_at
+      ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(websiteQuota.value.reset_at))
+      : ''
+    return t('projects.websiteQuotaExhausted', { time: resetAt })
+  }
+  return t('projects.websiteQuotaRemaining', { count: websiteQuota.value.remaining })
+})
 const activeFilterLabel = computed(() => {
   if (selectedTag.value) return t('projects.filterTag', { tag: selectedTag.value })
   if (selectedLanguage.value) return t('projects.filterLanguage', { language: selectedLanguage.value })
@@ -264,7 +292,7 @@ const openAddDialog = () => {
   if (!authStore.isLoggedIn) { router.push({ path: '/login', query: { redirect: '/projects?source=website' } }); return }
   addToolError.value = ''
   addDialogOpen.value = true
-  void loadTaxonomy()
+  void Promise.all([loadTaxonomy(), controller.loadWebsiteQuota?.()])
 }
 const closeAddDialog = () => { if (!addingTool.value) { addDialogOpen.value = false; addToolError.value = '' } }
 const openEditDialog = (repo: GitHubProjectItem) => {
@@ -306,10 +334,12 @@ watch(() => authStore.isLoggedIn, (loggedIn) => {
   void refreshReads()
 })
 const stopViewReads = () => {
+  pauseSyncPoll()
   if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = undefined }
   controller.deactivate()
 }
 onMounted(() => {
+  resumeSyncPoll()
   const hadSort = Boolean(String(route.query.sort ?? '').trim())
   if (applyRouteState()) {
     sortIsExplicit.value = hadSort
@@ -317,6 +347,7 @@ onMounted(() => {
   }
 })
 onActivated(() => {
+  resumeSyncPoll()
   controller.activate()
   if (!hasActivatedOnce) { hasActivatedOnce = true; return }
   if (searchQuery.value !== debouncedQuery.value) searchTimer = window.setTimeout(() => { debouncedQuery.value = searchQuery.value }, 280)
@@ -353,16 +384,18 @@ onBeforeUnmount(stopViewReads)
           <span>⌂</span>
           {{ t('projects.setHome') }}
         </button>
-        <button
-          v-if="isWebsiteOnlyView && !requiresPersonalLogin"
-          type="button"
-          class="projects-add-btn"
-          :title="isMyCollection && !authStore.isLoggedIn ? t('projects.loginAction') : ''"
-          @click="openAddDialog"
-        >
-          <span>＋</span>
-          {{ t('projects.addWebsite') }}
-        </button>
+        <div v-if="isWebsiteOnlyView && !requiresPersonalLogin" class="projects-website-add">
+          <span v-if="websiteQuotaHint" class="projects-website-add__quota">{{ websiteQuotaHint }}</span>
+          <button
+            type="button"
+            class="projects-add-btn"
+            :title="websiteQuotaHint"
+            @click="openAddDialog"
+          >
+            <span>＋</span>
+            {{ t('projects.addWebsite') }}
+          </button>
+        </div>
       </div>
     </section>
 
@@ -537,6 +570,8 @@ onBeforeUnmount(stopViewReads)
       :taxonomy-loading="taxonomyLoading"
       :busy="addingTool"
       :error="addToolError"
+      :quota-hint="websiteQuotaHint"
+      :quota-exhausted="websiteQuotaExhausted"
       @close="closeAddDialog"
       @submit-auto="submitToolWebsite"
       @submit-manual="submitToolWebsite"
@@ -698,6 +733,20 @@ onBeforeUnmount(stopViewReads)
 .projects-home-btn span {
   font-size: 15px;
   line-height: 1;
+}
+
+.projects-website-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.projects-website-add__quota {
+  max-width: 220px;
+  color: rgb(var(--stone-600-rgb));
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
 }
 
 .projects-add-btn {

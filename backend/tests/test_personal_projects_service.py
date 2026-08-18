@@ -20,6 +20,10 @@ class PersonalProjectsServiceTests(unittest.IsolatedAsyncioTestCase):
         self.collection = MagicMock()
         self.enrichment = MagicMock()
         self.enricher = MagicMock()
+        self.collection.get_personal_website_quota_usage.return_value = {
+            "used": 0,
+            "reset_at": None,
+        }
         self.service = PersonalProjectsService(
             collection=self.collection,
             enrichment=self.enrichment,
@@ -75,6 +79,58 @@ class PersonalProjectsServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.service.remove_favorite(user_id=7, source="website")
         self.assertIn("website_id 不能为空", str(invalid.exception))
 
+    async def test_free_website_quota_is_enforced_after_duplicate_resolution(self) -> None:
+        self.enricher.add_and_enrich.return_value = {
+            "duplicate": True,
+            "item": {"website_id": 42},
+        }
+        self.collection.link_user_tool_website.return_value = {"user_added": True}
+        self.collection.get_tool_website_item_for_user.return_value = {"website_id": 42}
+
+        result = await self.service.add_tool_website(user_id=7, url="https://example.com")
+
+        self.assertTrue(result["duplicate"])
+        self.collection.get_personal_website_quota_usage.assert_not_called()
+        self.collection.link_user_tool_website.assert_called_once_with(
+            user_id=7,
+            website_id=42,
+            added_via="existing",
+            quota_enabled=True,
+            quota_limit=5,
+            quota_window_seconds=86400,
+        )
+
+    async def test_member_website_quota_is_unlimited(self) -> None:
+        self.enricher.add_and_enrich.return_value = {
+            "duplicate": False,
+            "item": {"website_id": 42},
+        }
+        self.collection.link_user_tool_website.return_value = {"user_added": True}
+        self.collection.get_tool_website_item_for_user.return_value = {"website_id": 42}
+
+        await self.service.add_tool_website(
+            user_id=7,
+            url="https://example.com",
+            membership_tier="member",
+        )
+
+        self.collection.get_personal_website_quota_usage.assert_not_called()
+        self.assertIsNone(
+            self.collection.link_user_tool_website.call_args.kwargs["quota_limit"]
+        )
+
+    async def test_website_quota_projection_reports_remaining(self) -> None:
+        self.collection.get_personal_website_quota_usage.return_value = {
+            "used": 3,
+            "reset_at": "2026-08-19T00:00:00+00:00",
+        }
+
+        quota = await self.service.get_website_quota(user_id=7)
+
+        self.assertEqual(quota["remaining"], 2)
+        self.assertFalse(quota["unlimited"])
+        self.assertEqual(quota["window_seconds"], 86400)
+
     async def test_auto_website_sequences_enrichment_link_and_owner_projection(
         self,
     ) -> None:
@@ -106,6 +162,9 @@ class PersonalProjectsServiceTests(unittest.IsolatedAsyncioTestCase):
             user_id=7,
             website_id=42,
             added_via="existing",
+            quota_enabled=True,
+            quota_limit=5,
+            quota_window_seconds=86400,
         )
         collection.get_tool_website_item_for_user.assert_called_once_with(
             user_id=7,

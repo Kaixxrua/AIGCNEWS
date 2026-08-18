@@ -133,6 +133,16 @@ class ToolWebsiteManualAddRequest(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=8)
 
 
+class PersonalWebsiteQuotaResponse(BaseModel):
+    tier: Literal["free", "member"]
+    unlimited: bool
+    limit: int | None = None
+    used: int = 0
+    remaining: int | None = None
+    window_seconds: int = 86400
+    reset_at: str | None = None
+
+
 class ToolWebsiteAddResponse(BaseModel):
     status: str
     message: str

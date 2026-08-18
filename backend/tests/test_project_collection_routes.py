@@ -179,7 +179,12 @@ def test_favorite_routes_use_injected_service() -> None:
     assert removed.status_code == 200
     assert removed.json()["deleted"] is True
     service.add_favorite.assert_awaited_once_with(
-        user_id=7, source="github", repo_id="repo-1", website_id=None
+        user_id=7,
+        source="github",
+        repo_id="repo-1",
+        website_id=None,
+        membership_tier="free",
+        role="user",
     )
     service.remove_favorite.assert_awaited_once_with(
         user_id=7, source="github", repo_id="repo-1", website_id=None
@@ -236,7 +241,10 @@ def test_personal_website_routes_use_injected_service() -> None:
     assert updated.json()["item"]["title"] == "My Tool"
     assert removed.status_code == 200
     service.add_tool_website.assert_awaited_once_with(
-        user_id=7, url=" https://example.test "
+        user_id=7,
+        url=" https://example.test ",
+        membership_tier="free",
+        role="user",
     )
     assert service.update_tool_website.call_args.kwargs["user_id"] == 7
     assert service.update_tool_website.call_args.kwargs["website_id"] == 11
@@ -342,6 +350,7 @@ def test_personal_routes_do_not_orchestrate_collection_or_enricher_directly() ->
         "/projects/me/tool-websites",
         "/projects/me/tool-websites/manual",
         "/projects/me/tool-websites/{website_id}",
+        "/projects/me/tool-websites/quota",
     }
     assert "ToolWebsiteEnricher" not in imports
     assert not direct_calls & {

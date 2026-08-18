@@ -16,6 +16,8 @@ const props = defineProps<{
   taxonomyLoading: boolean
   busy: boolean
   error: string
+  quotaHint?: string
+  quotaExhausted?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -107,6 +109,7 @@ watch([category, () => props.taxonomy], () => {
           <p class="tool-modal__hint">
             {{ t(isMyCollection ? 'projects.dialog.mineHint' : 'projects.dialog.autoHint') }}
           </p>
+          <p v-if="quotaHint" class="tool-modal__hint">{{ quotaHint }}</p>
 
           <div class="tool-modal__tabs" :aria-label="t('projects.dialog.addMethod')">
             <button type="button" :class="mode === 'auto' ? 'tool-modal__tab--active' : ''" :disabled="busy" @click="mode = 'auto'">{{ t('projects.dialog.auto') }}</button>
@@ -148,7 +151,7 @@ watch([category, () => props.taxonomy], () => {
           <p v-if="displayedError" class="tool-modal__error">{{ displayedError }}</p>
           <div class="tool-modal__actions">
             <button type="button" class="btn-secondary" :disabled="busy" @click="close">{{ t('common.cancel') }}</button>
-            <button type="submit" class="projects-add-submit" :disabled="busy">
+            <button type="submit" class="projects-add-submit" :disabled="busy || quotaExhausted">
               {{ busy ? t(mode === 'manual' ? 'projects.dialog.saving' : 'projects.dialog.enriching') : t(mode === 'manual' ? 'projects.dialog.manualSave' : 'projects.dialog.addEnrich') }}
             </button>
           </div>

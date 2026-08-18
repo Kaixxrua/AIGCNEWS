@@ -15,6 +15,7 @@ from backend.app.models.schema_projects import (
     GitHubProjectSort,
     GitHubProjectsResponse,
     GitHubProjectTagsResponse,
+    PersonalWebsiteQuotaResponse,
     ProjectAdoptionReceipt,
     ProjectAdoptionRequest,
     ProjectAdoptionResponse,
@@ -37,6 +38,7 @@ from backend.app.services.personal_projects import (
     PersonalProjectNotFound,
     PersonalProjectsService,
     PersonalWebsiteOperationFailed,
+    PersonalWebsiteQuotaExceeded,
     WebsiteContentBlockedError,
 )
 from backend.app.services.project_adoptions import ProjectAdoptionService
@@ -46,6 +48,39 @@ from backend.app.services.project_catalog.query_service import (
 )
 
 router = APIRouter()
+
+
+def _membership_inputs(user: dict[str, Any]) -> dict[str, str]:
+    return {
+        "membership_tier": str(user.get("membership_tier") or "free"),
+        "role": str(user.get("role") or "user"),
+    }
+
+
+def _raise_website_quota_exceeded(exc: PersonalWebsiteQuotaExceeded) -> None:
+    quota = dict(exc.quota)
+    retry_after = 1
+    reset_at = quota.get("reset_at")
+    if reset_at:
+        from datetime import datetime, timezone
+
+        try:
+            reset = datetime.fromisoformat(str(reset_at))
+            if reset.tzinfo is None:
+                reset = reset.replace(tzinfo=timezone.utc)
+            retry_after = max(1, int((reset - datetime.now(timezone.utc)).total_seconds()))
+        except ValueError:
+            pass
+    raise HTTPException(
+        status_code=429,
+        detail={
+            "error": "personal_website_quota_exceeded",
+            "message": str(exc),
+            **quota,
+            "retry_after": retry_after,
+        },
+        headers={"Retry-After": str(retry_after)},
+    ) from exc
 
 
 def _favorite_request_from_inputs(
@@ -305,7 +340,10 @@ async def favorite_project(
             source=request.source,
             repo_id=request.repo_id,
             website_id=request.website_id,
+            **_membership_inputs(user),
         )
+    except PersonalWebsiteQuotaExceeded as exc:
+        _raise_website_quota_exceeded(exc)
     except InvalidPersonalProjectRequest as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PersonalProjectNotFound as exc:
@@ -354,6 +392,25 @@ async def unfavorite_project(
     )
 
 
+@router.get(
+    "/projects/me/tool-websites/quota",
+    response_model=PersonalWebsiteQuotaResponse,
+    tags=["Projects"],
+)
+async def get_my_tool_website_quota(
+    user: dict[str, Any] = Depends(RequireUser),
+    service: PersonalProjectsService = Depends(get_personal_projects_service),
+) -> PersonalWebsiteQuotaResponse:
+    user_id = extract_user_id(user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="用户身份无效")
+    quota = await service.get_website_quota(
+        user_id=user_id,
+        **_membership_inputs(user),
+    )
+    return PersonalWebsiteQuotaResponse(**quota)
+
+
 @router.post("/projects/me/tool-websites", response_model=ToolWebsiteAddResponse, tags=["Projects"])
 async def add_my_tool_website(
     request: ToolWebsiteAddRequest,
@@ -368,7 +425,10 @@ async def add_my_tool_website(
         result = await service.add_tool_website(
             user_id=user_id,
             url=request.url,
+            **_membership_inputs(user),
         )
+    except PersonalWebsiteQuotaExceeded as exc:
+        _raise_website_quota_exceeded(exc)
     except WebsiteContentBlockedError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except InvalidPersonalProjectRequest as exc:
@@ -398,7 +458,10 @@ async def add_my_tool_website_manual(
             category_slug=request.category_slug,
             subcategory_slug=request.subcategory_slug,
             tags=request.tags,
+            **_membership_inputs(user),
         )
+    except PersonalWebsiteQuotaExceeded as exc:
+        _raise_website_quota_exceeded(exc)
     except WebsiteContentBlockedError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except InvalidPersonalProjectRequest as exc:

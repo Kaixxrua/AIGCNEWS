@@ -4,6 +4,7 @@ import {
   addMyToolWebsiteManual,
   favoriteProject,
   fetchMyProjectCollection,
+  fetchMyToolWebsiteQuota,
   fetchMyProjectTags,
   fetchProjectCategories,
   fetchProjects,
@@ -40,6 +41,7 @@ const defaultApi = {
   addMyToolWebsiteManual,
   favoriteProject,
   fetchMyProjectCollection,
+  fetchMyToolWebsiteQuota,
   fetchMyProjectTags,
   fetchProjectCategories,
   fetchProjects,
@@ -51,7 +53,9 @@ const defaultApi = {
   updateMyToolWebsite,
 }
 
-export type ProjectCatalogApi = typeof defaultApi
+export type ProjectCatalogApi = Omit<typeof defaultApi, 'fetchMyToolWebsiteQuota'> & {
+  fetchMyToolWebsiteQuota?: typeof fetchMyToolWebsiteQuota
+}
 
 type Translate = (key: string, params?: Record<string, unknown>) => string
 
@@ -98,7 +102,11 @@ const fallbackCategory = (): GitHubProjectCategory => ({
 
 const errorDetail = (error: unknown) => {
   const candidate = error as { response?: { data?: { detail?: unknown } }; message?: unknown }
-  return String(candidate?.response?.data?.detail ?? candidate?.message ?? error)
+  const detail = candidate?.response?.data?.detail
+  if (detail && typeof detail === 'object' && 'message' in detail) {
+    return String((detail as { message?: unknown }).message ?? candidate?.message ?? error)
+  }
+  return String(detail ?? candidate?.message ?? error)
 }
 
 export const useProjectCatalogController = (options: ProjectCatalogControllerOptions = {}) => {
@@ -130,6 +138,8 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
   const categoriesLoading = ref(false)
   const tagsLoading = ref(false)
   const taxonomyLoading = ref(false)
+  const websiteQuota = ref<Awaited<ReturnType<typeof fetchMyToolWebsiteQuota>> | null>(null)
+  const websiteQuotaLoading = ref(false)
   const addingTool = ref(false)
   const savingEdit = ref(false)
   const deletingWebsiteId = ref<number | string | null>(null)
@@ -170,6 +180,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     categoriesLoading.value = false
     tagsLoading.value = false
     taxonomyLoading.value = false
+    websiteQuotaLoading.value = false
     addingTool.value = false
     savingEdit.value = false
     deletingWebsiteId.value = null
@@ -348,8 +359,28 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     }
   }
 
+  const loadWebsiteQuota = async () => {
+    if (!loggedIn()) {
+      websiteQuota.value = null
+      return
+    }
+    const generation = viewGeneration
+    websiteQuotaLoading.value = true
+    if (!api.fetchMyToolWebsiteQuota) return
+    try {
+      const quota = await api.fetchMyToolWebsiteQuota()
+      if (activeGeneration(generation)) websiteQuota.value = quota
+    } catch (error) {
+      console.error('Failed to load website quota:', error)
+    } finally {
+      if (activeGeneration(generation)) websiteQuotaLoading.value = false
+    }
+  }
+
   const refreshReads = async (loadOptions: ProjectCatalogLoadOptions = {}) => {
-    await Promise.all([loadCategories(), loadPersonalTags(), loadProjects(loadOptions)])
+    const reads = [loadCategories(), loadPersonalTags(), loadProjects(loadOptions)]
+    if (loggedIn() && source.value === 'website') reads.push(loadWebsiteQuota())
+    await Promise.all(reads)
     if (loggedIn()) await loadTaxonomy()
   }
 
@@ -442,10 +473,26 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
       resetFiltersForWebsiteView()
       successMsg.value = result.message || t(result.duplicate ? 'projects.websiteExists' : 'projects.websiteAdded')
       void replaceRoute(true)
-      await Promise.all([loadCategories(), loadPersonalTags(), loadProjects({ clearSuccess: false })])
+      await Promise.all([loadCategories(), loadPersonalTags(), loadProjects({ clearSuccess: false }), loadWebsiteQuota()])
       return activeGeneration(generation)
     } catch (error) {
-      if (activeGeneration(generation)) addToolError.value = errorDetail(error)
+      if (activeGeneration(generation)) {
+        addToolError.value = errorDetail(error)
+        const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+        if (detail && typeof detail === 'object' && 'error' in detail
+          && (detail as { error?: unknown }).error === 'personal_website_quota_exceeded') {
+          const quota = detail as Record<string, unknown>
+          websiteQuota.value = {
+            tier: quota.tier === 'member' ? 'member' : 'free',
+            unlimited: Boolean(quota.unlimited),
+            limit: quota.limit == null ? null : Number(quota.limit),
+            used: Number(quota.used ?? 0),
+            remaining: quota.remaining == null ? null : Number(quota.remaining),
+            window_seconds: Number(quota.window_seconds ?? 86400),
+            reset_at: typeof quota.reset_at === 'string' ? quota.reset_at : null,
+          }
+        }
+      }
       return false
     } finally {
       if (activeGeneration(generation)) addingTool.value = false
@@ -506,6 +553,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     tagsLoading.value = false
     errorMsg.value = ''
     successMsg.value = ''
+    websiteQuota.value = null
   }
 
   return {
@@ -531,6 +579,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     loadPersonalTags,
     loadProjects,
     loadTaxonomy,
+    loadWebsiteQuota,
     loading,
     page,
     pageSize,
@@ -557,6 +606,8 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     taxonomy,
     taxonomyLoading,
     toggleFavorite,
+    websiteQuota,
+    websiteQuotaLoading,
     total,
     removeToolWebsite,
   }
