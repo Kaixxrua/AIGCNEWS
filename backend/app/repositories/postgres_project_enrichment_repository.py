@@ -74,6 +74,19 @@ _FINGERPRINT_SQL = (
     ", 'UTF8')), 'hex')"
 )
 
+# 改名墓碑行排除：repo 改名后旧名候选行保留（github_repo_aliases 记录
+# 旧名→新名映射），富化写入侧经 _canonical_repo_id 归一到新名行落库，
+# 旧名行永远等不到自己名下的富化记录。若不排除，旧名行会被反复圈选、
+# 白烧模型调用，且待处理计数永远清不零。与目录读取侧
+# postgres_project_catalog 的别名过滤语义一致。
+_ALIAS_TOMBSTONE_EXCLUSION_SQL = """
+    NOT EXISTS (
+        SELECT 1 FROM github_repo_aliases ga
+        WHERE ga.alias_repo_id = c.repo_id
+          AND ga.canonical_repo_id <> c.repo_id
+    )
+"""
+
 
 def _enrichment_eligibility_sql(
     *,
@@ -161,6 +174,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
                     LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
                     WHERE COALESCE(ls.stars, c.stars, 0) >= %s
+                      AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
                       AND {eligibility}
                     ORDER BY COALESCE(ls.stars, c.stars, 0) DESC,
                              c.full_name COLLATE "C" ASC
@@ -413,7 +427,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
     def get_github_project_enrichment_status(self, *, min_stars: int = 500) -> dict[str, Any]:
         # latest_snap 物化原因见 get_github_projects_needing_enrichment：
         # 防止内联后 DISTINCT ON 全索引扫描落入嵌套循环内层导致代价失控。
-        base = """
+        base = f"""
             WITH latest_snap AS MATERIALIZED (
                 SELECT DISTINCT ON (repo_id) * FROM github_repo_snapshots
                 ORDER BY repo_id, snapshot_date DESC
@@ -423,6 +437,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                 LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
                 LEFT JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
                 WHERE COALESCE(ls.stars,c.stars,0) >= %s
+                  AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
             )
         """
         with self._database.transaction() as connection:

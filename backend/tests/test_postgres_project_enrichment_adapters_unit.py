@@ -39,6 +39,11 @@ def test_github_candidate_query_pushes_eligibility_and_limit_into_sql() -> None:
     assert "e.repo_id IS NULL" in sql
     assert "e.status IS DISTINCT FROM 'succeeded'" in sql
     assert "DISTINCT ON (repo_id)" in sql
+    # 改名墓碑行（旧名候选行）必须排除：富化写入归一到新名行，
+    # 旧名行若入选会永远重复富化、待处理计数清不零
+    assert "github_repo_aliases ga" in sql
+    assert "ga.alias_repo_id = c.repo_id" in sql
+    assert "ga.canonical_repo_id <> c.repo_id" in sql
     assert params == (600, 25)
 
     repository.get_github_projects_needing_enrichment(
@@ -61,6 +66,22 @@ def test_github_candidate_query_pushes_eligibility_and_limit_into_sql() -> None:
     assert "e.repo_id IS NULL" in sql
     assert "e.status IS DISTINCT FROM 'succeeded'" not in sql
     assert params == (500, 7)
+
+
+def test_github_enrichment_status_query_excludes_alias_tombstones() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"eligible": 0, "succeeded": 0, "failed": 0}
+    cursor.fetchall.return_value = []
+    repository = PostgresGitHubProjectEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+
+    status = repository.get_github_project_enrichment_status(min_stars=600)
+
+    assert status["pending"] == 0
+    for call in cursor.execute.call_args_list:
+        sql = call.args[0]
+        assert "github_repo_aliases ga" in sql
+        assert "ga.alias_repo_id = c.repo_id" in sql
+    assert cursor.execute.call_args_list[0].args[1] == (600,)
 
 
 def test_github_fingerprint_sql_matches_python_fingerprint() -> None:

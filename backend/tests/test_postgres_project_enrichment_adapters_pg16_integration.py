@@ -63,12 +63,17 @@ def test_pg16_github_candidates_fingerprint_status_and_alias_upsert(repositories
     database, github, _ = repositories
     with database.transaction() as connection:
         with connection.cursor() as cursor:
+            # renamed_old：改名墓碑行（旧名候选行保留 + alias 指向新名），
+            # stars 最高也必须被候选圈选与状态计数同时排除——否则富化写入
+            # 归一到新名行后旧名行永远 pending，队列清不零。
             cursor.execute("""INSERT INTO github_repo_candidates
                 (repo_id,full_name,description,language,topics_json,stars,forks,watchers)
                 VALUES ('canonical','acme/agent','Agent','Python','[\"rag\"]',600,2,3),
-                       ('new','acme/new','New','Go','[]',550,1,1)""")
+                       ('new','acme/new','New','Go','[]',550,1,1),
+                       ('renamed_old','acme/old-name','Old','Rust','[]',900,9,9)""")
             cursor.execute("""INSERT INTO github_repo_aliases
-                (alias_repo_id,canonical_repo_id,full_name) VALUES ('alias','canonical','old/agent')""")
+                (alias_repo_id,canonical_repo_id,full_name) VALUES ('alias','canonical','old/agent'),
+                ('renamed_old','canonical','acme/old-name')""")
             cursor.execute("""INSERT INTO github_repo_snapshots
                 (repo_id,snapshot_date,captured_at,stars,forks,watchers,open_issues)
                 VALUES ('canonical','2026-07-27','now',700,4,5,6),
