@@ -721,6 +721,45 @@ class PostgresProjectCatalogRepository:
             if row.get("repo_id")
         }
 
+    def get_project_heat_map(
+        self, repo_ids: list[str]
+    ) -> dict[str, tuple[float, int, int]]:
+        """语义搜索展示序的热度查询，口径与列表 hot 排序一致。
+
+        返回 {repo_id: (hot_score, daily_star_growth, stars)}；hot_score 取
+        当日 github_repo_daily_metrics 的 v5 算法分，无当日指标的项目三项
+        按 0 兜底，由 stars 在同热度项目间维持量级感。
+        """
+        ids = [str(value).strip() for value in repo_ids if str(value or "").strip()][:400]
+        if not ids:
+            return {}
+        with self._transaction() as connection:
+            with connection.cursor() as cursor:
+                self._begin_read(cursor)
+                cursor.execute(
+                    """
+                    SELECT c.repo_id,
+                           COALESCE(gm.hot_score, 0) AS hot_score,
+                           COALESCE(gm.daily_star_growth, 0) AS daily_star_growth,
+                           COALESCE(c.stars, 0) AS stars
+                    FROM github_repo_candidates c
+                    LEFT JOIN github_repo_daily_metrics gm
+                      ON gm.repo_id = c.repo_id AND gm.metric_date = %s
+                    WHERE c.repo_id = ANY(%s)
+                    """,
+                    (_today(), ids),
+                )
+                rows = cursor.fetchall()
+        return {
+            str(row.get("repo_id") or ""): (
+                float(row.get("hot_score") or 0),
+                int(row.get("daily_star_growth") or 0),
+                int(row.get("stars") or 0),
+            )
+            for row in rows
+            if row.get("repo_id")
+        }
+
     def list_github_hot_for_date(
         self,
         *,

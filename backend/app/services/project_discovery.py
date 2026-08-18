@@ -29,7 +29,7 @@ from backend.app.services.ingestion.source_github_mcp import (
 from backend.app.services.project_reranker import get_project_reranker
 from backend.app.services.project_search_ranking import (
     ProjectCandidateSearchResult,
-    order_candidates_by_popularity,
+    order_candidates_by_heat,
     rank_legacy_project_candidate_ids,
     rank_v2_project_candidate_ids,
 )
@@ -315,6 +315,19 @@ async def _retrieve_hybrid_candidates(
     )
 
 
+def _candidate_id_pool(
+    lanes: ProjectLexicalCandidateLanes,
+    semantic_repo_ids: tuple[str, ...],
+) -> list[str]:
+    return list(
+        dict.fromkeys(
+            [candidate.repo_id for candidate in lanes.strict]
+            + [candidate.repo_id for candidate in lanes.relaxed]
+            + list(semantic_repo_ids)
+        )
+    )
+
+
 async def _lookup_adoption_stars(
     repository: Any,
     lanes: ProjectLexicalCandidateLanes,
@@ -325,18 +338,35 @@ async def _lookup_adoption_stars(
     stars_lookup = _declared_callable(repository, "get_project_stars_map")
     if not needed or not callable(stars_lookup):
         return {}
-    candidate_id_pool = list(
-        dict.fromkeys(
-            [candidate.repo_id for candidate in lanes.strict]
-            + [candidate.repo_id for candidate in lanes.relaxed]
-            + list(semantic_repo_ids)
-        )
-    )
     try:
-        return await asyncio.to_thread(stars_lookup, candidate_id_pool)
+        return await asyncio.to_thread(
+            stars_lookup, _candidate_id_pool(lanes, semantic_repo_ids)
+        )
     except Exception:
         logger.warning(
             "project search adoption stars lookup failed; falling back to fit-only ranking",
+            exc_info=True,
+        )
+        return {}
+
+
+async def _lookup_project_heat(
+    repository: Any,
+    lanes: ProjectLexicalCandidateLanes,
+    semantic_repo_ids: tuple[str, ...],
+    *,
+    needed: bool,
+) -> dict[str, tuple[float, int, int]]:
+    heat_lookup = _declared_callable(repository, "get_project_heat_map")
+    if not needed or not callable(heat_lookup):
+        return {}
+    try:
+        return await asyncio.to_thread(
+            heat_lookup, _candidate_id_pool(lanes, semantic_repo_ids)
+        )
+    except Exception:
+        logger.warning(
+            "project search heat lookup failed; falling back to fit-only ranking",
             exc_info=True,
         )
         return {}
@@ -360,16 +390,23 @@ async def _rank_hybrid_candidates(
     adoption_weight = float(
         getattr(settings, "project_search_adoption_weight", 0.0) or 0.0
     )
-    # 语义 lane 实际产出候选时，展示序默认切换为热度优先（精确命中仍钉榜首）；
-    # lane 为空（语义关闭或检索失败）保持 lane 融合拟合序，优雅降级。
-    popularity_first = bool(
+    # 语义 lane 实际产出候选时，展示序默认切换为热度优先（hot_score v5，
+    # 精确命中仍钉榜首）；lane 为空（语义关闭或检索失败）保持 lane 融合
+    # 拟合序，优雅降级。
+    heat_first = bool(
         candidate_search.semantic_repo_ids
-    ) and bool(getattr(settings, "project_semantic_popularity_first", True))
+    ) and bool(getattr(settings, "project_semantic_heat_first", True))
     adoption_stars = await _lookup_adoption_stars(
         repository,
         lanes,
         candidate_search.semantic_repo_ids,
-        needed=adoption_weight > 0 or popularity_first,
+        needed=adoption_weight > 0,
+    )
+    heat_map = await _lookup_project_heat(
+        repository,
+        lanes,
+        candidate_search.semantic_repo_ids,
+        needed=heat_first,
     )
     ranked_repo_ids = rank_v2_project_candidate_ids(
         lanes.strict,
@@ -379,10 +416,10 @@ async def _rank_hybrid_candidates(
         adoption_stars=adoption_stars,
         adoption_weight=adoption_weight,
     )
-    if popularity_first and adoption_stars:
-        ranked_repo_ids = order_candidates_by_popularity(
+    if heat_first and heat_map:
+        ranked_repo_ids = order_candidates_by_heat(
             ranked_repo_ids,
-            adoption_stars,
+            heat_map,
             exact_repo_id=exact_repo_id,
         )
     return ranked_repo_ids, legacy_repo_ids

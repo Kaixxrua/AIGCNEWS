@@ -1,7 +1,7 @@
 from backend.app.repositories.project_catalog import ProjectLexicalCandidate
 from backend.app.services.project_search_ranking import (
     ProjectCandidateSearchResult,
-    order_candidates_by_popularity,
+    order_candidates_by_heat,
     rank_legacy_project_candidate_ids,
     rank_v2_project_candidate_ids,
 )
@@ -139,29 +139,37 @@ def test_v2_ranker_adoption_bonus_rejects_non_mapping_input() -> None:
     ) == expected
 
 
-def test_popularity_ordering_sorts_by_stars_and_preserves_fusion_order_on_ties() -> None:
-    ordered = order_candidates_by_popularity(
-        ["owner/fit", "owner/veteran", "owner/niche", "owner/unknown"],
-        {"owner/veteran": 106_000, "owner/fit": 20_000, "owner/niche": 20_000},
+def test_heat_ordering_sorts_by_hot_score_then_growth_then_stars() -> None:
+    ordered = order_candidates_by_heat(
+        ["owner/quiet-giant", "owner/viral", "owner/rising", "owner/steady"],
+        {
+            # hot_score 主导：暴涨新贵压过安静巨头
+            "owner/viral": (99.2, 568, 18_000),
+            "owner/rising": (42.0, 120, 5_000),
+            # hot_score 相同：日增星多者居前
+            "owner/steady": (42.0, 200, 9_000),
+            # 无当日指标：三项归零，靠 stars 也翻不了热度盘
+            "owner/quiet-giant": (0.0, 0, 500_000),
+        },
     )
 
-    assert ordered == ["owner/veteran", "owner/fit", "owner/niche", "owner/unknown"]
+    assert ordered == ["owner/viral", "owner/steady", "owner/rising", "owner/quiet-giant"]
 
 
-def test_popularity_ordering_pins_exact_match_above_heat() -> None:
-    ordered = order_candidates_by_popularity(
-        ["Owner/Exact-Tool", "owner/veteran"],
-        {"owner/veteran": 106_000, "Owner/Exact-Tool": 5},
+def test_heat_ordering_pins_exact_match_above_heat() -> None:
+    ordered = order_candidates_by_heat(
+        ["Owner/Exact-Tool", "owner/viral"],
+        {"owner/viral": (99.2, 568, 18_000), "Owner/Exact-Tool": (0.0, 0, 5)},
         exact_repo_id="owner/exact-tool",
     )
 
-    assert ordered == ["Owner/Exact-Tool", "owner/veteran"]
+    assert ordered == ["Owner/Exact-Tool", "owner/viral"]
 
 
-def test_popularity_ordering_tolerates_non_numeric_and_missing_stars() -> None:
-    ordered = order_candidates_by_popularity(
+def test_heat_ordering_tolerates_malformed_entries_and_missing_heat() -> None:
+    ordered = order_candidates_by_heat(
         ["owner/a", "owner/b", "owner/c"],
-        {"owner/a": "not-a-number", "owner/c": 10},
+        {"owner/a": "not-a-tuple", "owner/c": (12.0, 50, 30_000)},
     )
 
     assert ordered == ["owner/c", "owner/a", "owner/b"]

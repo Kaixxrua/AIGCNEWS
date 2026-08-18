@@ -64,6 +64,10 @@ class ProjectCatalogRepository(Protocol):
 
     def get_project_stars_map(self, repo_ids: list[str]) -> dict[str, int]: ...
 
+    def get_project_heat_map(
+        self, repo_ids: list[str]
+    ) -> dict[str, tuple[float, int, int]]: ...
+
     def list_github_hot_for_date(
         self,
         *,

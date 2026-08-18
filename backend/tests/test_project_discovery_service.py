@@ -736,11 +736,11 @@ class ProjectDiscoveryTests(unittest.TestCase):
         self.assertEqual(ranked[0], "owner/fresh-fit")
         self.assertGreater(ranked.index("owner/veteran"), 4)
 
-    def _run_v2_semantic_popularity_search(
+    def _run_v2_semantic_heat_search(
         self,
         repo: Any,
         *,
-        popularity_first: bool,
+        heat_first: bool,
         query: str = "AI coding agent CLI",
     ) -> list[str]:
         semantic_search = MagicMock()
@@ -753,11 +753,11 @@ class ProjectDiscoveryTests(unittest.TestCase):
         originals = (
             project_discovery.settings.project_ai_search_strategy,
             project_discovery.settings.project_semantic_search_enabled,
-            project_discovery.settings.project_semantic_popularity_first,
+            project_discovery.settings.project_semantic_heat_first,
         )
         project_discovery.settings.project_ai_search_strategy = "v2"
         project_discovery.settings.project_semantic_search_enabled = True
-        project_discovery.settings.project_semantic_popularity_first = popularity_first
+        project_discovery.settings.project_semantic_heat_first = heat_first
         try:
             asyncio.run(
                 project_discovery.search_projects(
@@ -771,7 +771,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
             (
                 project_discovery.settings.project_ai_search_strategy,
                 project_discovery.settings.project_semantic_search_enabled,
-                project_discovery.settings.project_semantic_popularity_first,
+                project_discovery.settings.project_semantic_heat_first,
             ) = originals
         return repo.list_projects.call_args.kwargs["candidate_repo_ids"]
 
@@ -800,6 +800,14 @@ class ProjectDiscoveryTests(unittest.TestCase):
                         "owner/fit": 20_000,
                     }
                 )
+                self.get_project_heat_map = MagicMock(
+                    return_value={
+                        # (hot_score v5, daily_star_growth, stars)
+                        "owner/veteran": (85.5, 300, 106_000),
+                        "owner/deep-sem": (12.0, 50, 30_000),
+                        "owner/fit": (0.0, 0, 20_000),
+                    }
+                )
                 self.list_projects = MagicMock(
                     return_value={
                         "items": [{"full_name": "owner/veteran", "stars": 106_000}],
@@ -809,29 +817,38 @@ class ProjectDiscoveryTests(unittest.TestCase):
 
         return SemanticRepository()
 
-    def test_v2_semantic_lane_defaults_to_popularity_order(self) -> None:
-        ranked = self._run_v2_semantic_popularity_search(
-            self._build_v2_semantic_repository(), popularity_first=True
+    def test_v2_semantic_lane_defaults_to_heat_order(self) -> None:
+        ranked = self._run_v2_semantic_heat_search(
+            self._build_v2_semantic_repository(), heat_first=True
         )
 
-        # 热度优先：106k 元老登顶，30k 语义独苗压过 20k 拟合冠军
+        # 热度（hot_score v5）优先：85.5 分元老登顶，12 分语义独苗压过
+        # 当日无热度的拟合冠军（其 20k stars 只在同热度时兜底）
         self.assertEqual(ranked, ["owner/veteran", "owner/deep-sem", "owner/fit"])
 
-    def test_v2_semantic_popularity_order_keeps_exact_match_first(self) -> None:
-        ranked = self._run_v2_semantic_popularity_search(
+    def test_v2_semantic_heat_order_keeps_exact_match_first(self) -> None:
+        ranked = self._run_v2_semantic_heat_search(
             self._build_v2_semantic_repository(),
-            popularity_first=True,
+            heat_first=True,
             query="owner/fit",
         )
 
-        # 精确命中力压 106k 热度冠军钉在榜首
+        # 精确命中力压 85.5 分热度冠军钉在榜首
         self.assertEqual(ranked[0], "owner/fit")
         self.assertEqual(ranked[1], "owner/veteran")
 
-    def test_v2_semantic_popularity_first_disabled_keeps_fit_order(self) -> None:
-        ranked = self._run_v2_semantic_popularity_search(
-            self._build_v2_semantic_repository(), popularity_first=False
+    def test_v2_semantic_heat_first_disabled_keeps_fit_order(self) -> None:
+        ranked = self._run_v2_semantic_heat_search(
+            self._build_v2_semantic_repository(), heat_first=False
         )
+
+        self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
+
+    def test_v2_semantic_heat_lookup_failure_falls_back_to_fit_order(self) -> None:
+        repo = self._build_v2_semantic_repository()
+        repo.get_project_heat_map = MagicMock(side_effect=RuntimeError("pg down"))
+
+        ranked = self._run_v2_semantic_heat_search(repo, heat_first=True)
 
         self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
 
