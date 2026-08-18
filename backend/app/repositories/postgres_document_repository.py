@@ -669,7 +669,21 @@ class PostgresDocumentRepository:
 
     def get_today_document_count(self) -> int:
         today = _local_today()
-        return self._fetch_count("SELECT COUNT(*) AS cnt FROM documents WHERE LEFT(created_at, 10) = %s", (today,))
+        # github 源不计 documents 行，改计 github_repo_candidates 当日
+        # first_seen_at 锚点的新入库项目；其余来源仍按 documents.created_at
+        # 当日入库计数。两侧同为 LEFT(...,10) 词法日期前缀，口径一致。
+        return self._fetch_count(
+            """
+            SELECT (
+                SELECT COUNT(*) FROM documents
+                WHERE LEFT(created_at, 10) = %s AND source <> 'github'
+            ) + (
+                SELECT COUNT(*) FROM github_repo_candidates
+                WHERE LEFT(COALESCE(first_seen_at, ''), 10) = %s
+            ) AS cnt
+            """,
+            (today, today),
+        )
 
     def clear_all_documents(self) -> int:
         # 文档与排行快照同事务清空：不留指向已删文档的孤儿快照行

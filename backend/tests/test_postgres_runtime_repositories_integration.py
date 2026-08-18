@@ -25,6 +25,9 @@ try:
     from backend.app.repositories.postgres_ingestion_task_repository import (
         PostgresIngestionTaskRepository,
     )
+    from backend.app.repositories.postgres_project_ingestion_repository import (
+        PostgresGitHubProjectIngestionRepository,
+    )
     from backend.app.repositories.postgres_rank_snapshot_repository import (
         PostgresRankSnapshotRepository,
     )
@@ -46,7 +49,7 @@ def _test_dsn() -> str:
 
 
 @pytest.fixture(scope="module")
-def repositories() -> Iterator[tuple[Any, Any, Any]]:
+def repositories() -> Iterator[tuple[Any, Any, Any, Any]]:
     dsn = _test_dsn()
     schema = f"runtime_it_{uuid.uuid4().hex}"
     with psycopg.connect(dsn, autocommit=True) as admin:
@@ -68,6 +71,7 @@ def repositories() -> Iterator[tuple[Any, Any, Any]]:
             PostgresDocumentRepository(database),
             PostgresIngestionTaskRepository(database),
             PostgresRankSnapshotRepository(database),
+            PostgresGitHubProjectIngestionRepository(database),
         )
     finally:
         database.close()
@@ -106,7 +110,7 @@ def _document(doc_id: str, **overrides: Any) -> dict[str, Any]:
 
 
 def test_real_postgres_document_upsert_search_feeds_and_stats(repositories) -> None:
-    documents, _, _ = repositories
+    documents, _, _, _ = repositories
     documents.upsert_document(_document("doc-b", raw_score=4.0, rank_in_period=3))
     documents.upsert_document(_document("doc-a", raw_score=4.0, rank_in_period=2))
     documents.upsert_document(
@@ -146,7 +150,7 @@ def test_real_postgres_document_upsert_search_feeds_and_stats(repositories) -> N
 
 
 def test_real_postgres_tasks_preserve_order_pagination_and_clear(repositories) -> None:
-    _, tasks, _ = repositories
+    _, tasks, _, _ = repositories
     first = tasks.create_task("first")
     second = tasks.create_task("second")
     tasks.finish_task(first, status="failed", error_msg="boom", item_count=3)
@@ -161,7 +165,7 @@ def test_real_postgres_tasks_preserve_order_pagination_and_clear(repositories) -
 
 
 def test_real_postgres_snapshots_sync_filter_order_and_delete(repositories) -> None:
-    documents, _, snapshots = repositories
+    documents, _, snapshots, _ = repositories
     documents.upsert_document(_document("github-one", source="github", rank_in_period=10))
     snapshots.upsert_rank_snapshot("doc-a", "2026-07-28", "huggingface_daily_html", 2, 3.0, 2.0)
     snapshots.upsert_rank_snapshot("doc-a", "2026-07-28", "huggingface_weekly_html", 1, 8.0, 7.0)
@@ -179,7 +183,7 @@ def test_real_postgres_snapshots_sync_filter_order_and_delete(repositories) -> N
 
 
 def test_real_postgres_replace_channel_snapshots_is_atomic_and_syncs_scores(repositories) -> None:
-    documents, _, snapshots = repositories
+    documents, _, snapshots, _ = repositories
     documents.upsert_document(_document("doc-r1"))
     documents.upsert_document(_document("doc-r2"))
     snapshots.upsert_rank_snapshot("doc-r1", "2026-08-08", "huggingface_daily_html", 5, 1.0, 1.0)
@@ -211,7 +215,7 @@ def test_real_postgres_replace_channel_snapshots_is_atomic_and_syncs_scores(repo
 
 
 def test_real_postgres_clear_all_documents_removes_orphan_snapshots(repositories) -> None:
-    documents, _, snapshots = repositories
+    documents, _, snapshots, _ = repositories
     documents.upsert_document(_document("doc-clear"))
     snapshots.upsert_rank_snapshot("doc-clear", "2026-08-08", "huggingface_daily_html", 1, 5.0, 5.0)
 
@@ -223,7 +227,7 @@ def test_real_postgres_clear_all_documents_removes_orphan_snapshots(repositories
 
 
 def test_real_postgres_snapshot_read_projects_translation_zh(repositories) -> None:
-    documents, _, snapshots = repositories
+    documents, _, snapshots, _ = repositories
     documents.upsert_document(
         _document(
             "doc-x-zh",
@@ -244,7 +248,7 @@ def test_real_postgres_snapshot_read_projects_translation_zh(repositories) -> No
 
 
 def test_real_postgres_list_recent_by_source_supports_non_x_published_date(repositories) -> None:
-    documents, _, _ = repositories
+    documents, _, _, _ = repositories
     documents.upsert_document(
         _document(
             "doc-news-new",
@@ -279,7 +283,7 @@ def test_real_postgres_list_recent_by_source_supports_non_x_published_date(repos
 
 
 def test_real_postgres_list_recent_by_source_covers_restamped_trending_rows(repositories) -> None:
-    documents, _, _ = repositories
+    documents, _, _, _ = repositories
     # github 榜单源语义：published_date 每日上榜刷新、created_at 保留首次入池。
     # 重上榜老仓必须随「近 N 小时上榜」窗口回窗，而不是被首次入池时间卡住。
     documents.upsert_document(
@@ -309,7 +313,7 @@ def test_real_postgres_list_recent_by_source_covers_restamped_trending_rows(repo
 
 
 def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositories) -> None:
-    documents, _, _ = repositories
+    documents, _, _, _ = repositories
     # X 行钉死 created_at ≈ published_at（生产上首次入池时间贴近推文时间），
     # 让窗口断言只表达 published_at 语义；created_at 兜底进窗由 news/github
     # 用例覆盖
@@ -359,3 +363,37 @@ def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositor
         limit=10,
     )
     assert [row["id"] for row in bounded] == ["doc-x-old", "doc-x-stale"]
+
+
+def test_real_postgres_today_count_github_uses_candidate_first_seen(repositories) -> None:
+    documents, _, _, project_ingestion = repositories
+    # github 源 documents 行（created_at 当日）不再计入今日更新；
+    # 今日更新中的 github 部分改计 github_repo_candidates 当日
+    # first_seen_at 的新入库项目。
+    baseline = documents.get_today_document_count()
+    documents.upsert_document(
+        _document(
+            "doc-gh-today",
+            source="github",
+            source_channel="github_trending_daily",
+        )
+    )
+    project_ingestion.upsert_github_repo_candidate(
+        {
+            "repo_id": "it-today-new-repo",
+            "full_name": "it/today-new-repo",
+            "url": "https://github.com/it/today-new-repo",
+            "first_seen_at": _CREATED_AT_TODAY,
+        }
+    )
+    project_ingestion.upsert_github_repo_candidate(
+        {
+            "repo_id": "it-old-repo",
+            "full_name": "it/old-repo",
+            "url": "https://github.com/it/old-repo",
+            "first_seen_at": "2026-01-01T00:00:00+00:00",
+        }
+    )
+
+    # 只 +1（当日新入库项目）；github documents 行与历史锚点项目均不计入。
+    assert documents.get_today_document_count() == baseline + 1
