@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import { useClipboard } from '@/composables/useClipboard'
 import { useMcpConnectController } from '@/composables/useMcpConnectController'
 import McpSetupWizard from '@/components/mcp/McpSetupWizard.vue'
+import { DSH_PLUGIN_INSTALL_COMMAND, DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
 import { formatLocaleDate } from '@/i18n/formatters'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -23,6 +24,7 @@ const controller = useMcpConnectController({
 
 const {
   copiedKey,
+  copyDshInstallCommand,
   copyHostInstruction,
   deletingId,
   displayedPublicTools,
@@ -66,6 +68,21 @@ onBeforeUnmount(dispose)
       </section>
 
       <McpSetupWizard :controller="controller" :is-logged-in="authStore.isLoggedIn" @login="router.push('/login')" />
+
+      <section class="glass-card flex flex-wrap items-center gap-x-6 gap-y-4 p-4 md:p-5" :aria-label="t('mcp.dshPlugin.kicker')">
+        <div class="min-w-0 flex-1 basis-72">
+          <p class="text-2xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.dshPlugin.kicker') }}</p>
+          <h2 class="mt-1 text-base font-semibold text-stone-800">{{ t('mcp.dshPlugin.title') }}</h2>
+          <p class="mt-1 max-w-3xl text-xs leading-5 text-stone-500">{{ t('mcp.dshPlugin.description') }}</p>
+        </div>
+        <div class="flex w-full flex-col gap-2 md:w-auto md:min-w-[320px] md:basis-[340px]">
+          <code class="block overflow-x-auto whitespace-nowrap rounded-xl border border-stone-700 bg-stone-900 px-3 py-2 font-mono text-2xs leading-5 text-stone-100">{{ DSH_PLUGIN_INSTALL_COMMAND }}</code>
+          <div class="flex gap-2">
+            <button type="button" class="btn-primary flex-1 justify-center text-xs" @click="copyDshInstallCommand">{{ t(copiedKey === 'dsh-install' ? 'mcp.copied' : 'mcp.dshPlugin.copy') }}</button>
+            <a :href="DSH_PLUGIN_REPOSITORY_URL" target="_blank" rel="noopener" class="btn-secondary text-xs">{{ t('mcp.dshPlugin.repository') }}</a>
+          </div>
+        </div>
+      </section>
 
       <section v-if="authStore.isLoggedIn" class="glass-card p-5 md:p-6">
         <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.tokenManagement') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.tokenTitle') }}</h2></div><button class="btn-secondary text-xs" :disabled="loadingTokens" @click="loadTokens">{{ t(loadingTokens ? 'common.refreshing' : 'common.refresh') }}</button></div>

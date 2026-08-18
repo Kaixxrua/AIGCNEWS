@@ -169,8 +169,6 @@ const explicitBusinessTranslations: Record<string, string> = {
   'mcp.wizard.stepCommandDescription': '第 2 步：复制公开配置命令；登录后可选生成收藏 Token。',
   'mcp.wizard.stepVerify': '验证连接',
   'mcp.wizard.stepVerifyDescription': '第 3 步：对公开端点跑一次握手，确认网络可达。',
-  'mcp.wizard.stepDone': '完成与扩展',
-  'mcp.wizard.stepDoneDescription': '第 4 步：dsh 终端用户可再装原生插件。',
   'mcp.wizard.prev': '上一步',
   'mcp.wizard.next': '下一步',
   'mcp.wizard.stepProgress': '第 {current} 步 · 共 {total} 步',

@@ -2,7 +2,6 @@
 import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { McpConnectController } from '@/composables/useMcpConnectController'
-import { DSH_PLUGIN_INSTALL_COMMAND, DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
 import { mcpClientOptions, type McpClientOption } from '@/features/mcp/mcpClientCatalog'
 import { resolveMcpFeedback } from '@/features/mcp/mcpFeedback'
 
@@ -21,7 +20,6 @@ const {
   clientLabel,
   clientOption,
   copiedKey,
-  copyDshInstallCommand,
   copyGeneratedCommand,
   copyQuickCommand,
   creating,
@@ -45,13 +43,11 @@ const stepTitleKeys = [
   'mcp.wizard.stepClient',
   'mcp.wizard.stepCommand',
   'mcp.wizard.stepVerify',
-  'mcp.wizard.stepDone',
 ] as const
 const stepDescriptionKeys = [
   'mcp.wizard.stepClientDescription',
   'mcp.wizard.stepCommandDescription',
   'mcp.wizard.stepVerifyDescription',
-  'mcp.wizard.stepDoneDescription',
 ] as const
 
 const currentStep = ref(0)
@@ -180,15 +176,6 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
           <p v-if="endpointWarning" class="mt-2 text-xs text-rose-700">{{ endpointWarning }}</p>
           <p v-if="testMessageDisplay" class="mt-3 text-xs text-stone-500">{{ testMessageDisplay }}</p>
           <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3"><div v-for="phase in testPhases" :key="phase.label" class="rounded-xl border border-stone-200 bg-card p-2"><p class="text-2xs text-stone-700">{{ t(`mcp.phase.${phase.descriptionKey}`) }}</p><p class="mt-1 text-2xs" :class="phase.status === 'success' ? 'text-emerald-600' : phase.status === 'error' ? 'text-rose-600' : 'text-stone-400'">{{ phase.detail ? resolveMcpFeedback(phase.detail, t) : t(`mcp.phaseStatus.${phase.status}`) }}</p></div></div>
-        </div>
-
-        <div v-else>
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <div><p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.dshPlugin.kicker') }}</p><h3 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.dshPlugin.title') }}</h3><p class="mt-2 max-w-3xl text-sm text-stone-500">{{ t('mcp.dshPlugin.description') }}</p></div>
-            <a :href="DSH_PLUGIN_REPOSITORY_URL" target="_blank" rel="noopener" class="btn-secondary text-xs">{{ t('mcp.dshPlugin.repository') }}</a>
-          </div>
-          <pre class="mcp-quick-command mt-4 overflow-auto rounded-2xl border border-stone-700 bg-stone-900 p-4 font-mono text-2xs leading-5 text-stone-100">{{ DSH_PLUGIN_INSTALL_COMMAND }}</pre>
-          <button type="button" class="btn-primary mt-3 w-full justify-center" @click="copyDshInstallCommand">{{ t(copiedKey === 'dsh-install' ? 'mcp.copied' : 'mcp.dshPlugin.copy') }}</button>
         </div>
       </div>
     </Transition>
