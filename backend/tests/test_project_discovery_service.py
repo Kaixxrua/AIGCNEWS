@@ -875,6 +875,171 @@ class ProjectDiscoveryTests(unittest.TestCase):
         # 不被 12 分的语义独苗 deep-sem 罢黜（对照 generic 热度序用例）。
         self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
 
+    def _build_low_relevance_repository(self) -> Any:
+        """strict lane 全空、仅宽松 lane 有一条部分命中（噪声）的仓库。"""
+
+        class LowRelevanceRepository:
+            def __init__(self) -> None:
+                self.find_lexical_candidate_repo_ids = MagicMock(return_value=[])
+                self.find_lexical_candidate_lanes = MagicMock(
+                    return_value=ProjectLexicalCandidateLanes(
+                        strict=(),
+                        relaxed=(
+                            ProjectLexicalCandidate(
+                                "owner/noise", "relaxed", term_coverage=1, match_strength=1
+                            ),
+                        ),
+                    )
+                )
+                self.get_project_stars_map = MagicMock(return_value={"owner/noise": 30_000})
+                self.get_project_heat_map = MagicMock(
+                    return_value={"owner/noise": (12.0, 50, 30_000)}
+                )
+                self.list_projects = MagicMock(
+                    return_value={
+                        "items": [{"full_name": "owner/noise", "stars": 30_000}],
+                        "total": 1,
+                    }
+                )
+
+        return LowRelevanceRepository()
+
+    def _run_low_relevance_search(
+        self,
+        repo: Any,
+        fallback: Any,
+        *,
+        mode: str = "generic",
+        page: int = 1,
+    ) -> dict[str, Any]:
+        semantic_search = MagicMock()
+        semantic_search.search_repo_ids = MagicMock(return_value=[])
+        originals = (
+            project_discovery.settings.project_ai_search_strategy,
+            project_discovery.settings.project_semantic_search_enabled,
+        )
+        project_discovery.settings.project_ai_search_strategy = "v2"
+        project_discovery.settings.project_semantic_search_enabled = True
+        try:
+            return asyncio.run(
+                project_discovery.search_projects(
+                    query="windows screenshot tool",
+                    mode=mode,
+                    page=page,
+                    repository_factory=lambda: repo,
+                    semantic_search_factory=lambda: semantic_search,
+                    fallback_search=fallback,
+                )
+            )
+        finally:
+            (
+                project_discovery.settings.project_ai_search_strategy,
+                project_discovery.settings.project_semantic_search_enabled,
+            ) = originals
+
+    def test_generic_strict_lane_empty_falls_back_with_low_relevance_reason(self) -> None:
+        fallback = MagicMock(
+            return_value={
+                "items": [
+                    {
+                        "full_name": "upstream/screenshot-tool",
+                        "url": "https://github.com/upstream/screenshot-tool",
+                        "stars": 8_000,
+                        "result_origin": "github_api_fallback",
+                    }
+                ],
+                "github_total_count": 3,
+                "queries": ["windows screenshot tool stars:>=500"],
+                "cache_hit": False,
+            }
+        )
+
+        result = self._run_low_relevance_search(
+            self._build_low_relevance_repository(), fallback
+        )
+
+        # 本地只留下宽松 lane 噪声时，generic 检索让位 GitHub 全量语料，
+        # 并保留 local_total 供调用方判断本地覆盖度
+        fallback.assert_called_once()
+        self.assertTrue(result["fallback_used"])
+        self.assertEqual(result["fallback_reason"], "local_low_relevance")
+        self.assertEqual(result["result_origin"], "github_api_fallback")
+        self.assertEqual(result["local_total"], 1)
+        self.assertEqual(
+            [item["full_name"] for item in result["items"]],
+            ["upstream/screenshot-tool"],
+        )
+
+    def test_generic_strict_lane_empty_fallback_failure_keeps_local_noise(self) -> None:
+        fallback = MagicMock(side_effect=RuntimeError("github unavailable"))
+
+        result = self._run_low_relevance_search(
+            self._build_low_relevance_repository(), fallback
+        )
+
+        self.assertTrue(result["fallback_used"])
+        self.assertEqual(result["fallback_reason"], "local_low_relevance")
+        self.assertEqual(result["fallback_error"], "GitHub fallback failed: github unavailable")
+        self.assertEqual(result["result_origin"], "aigc_news_local")
+
+    def test_generic_strict_lane_empty_skip_gates_suppress_low_relevance_fallback(self) -> None:
+        fallback = MagicMock(return_value={"items": [], "total": 0})
+
+        result = self._run_low_relevance_search(
+            self._build_low_relevance_repository(), fallback, page=2
+        )
+
+        # 回退仅第一页：第二页保持本地结果，不重复打 GitHub
+        fallback.assert_not_called()
+        self.assertFalse(result["fallback_used"])
+        self.assertEqual(result["result_origin"], "aigc_news_local")
+
+    def test_ai_mode_strict_lane_empty_keeps_local_semantic_results(self) -> None:
+        fallback = MagicMock(return_value={"items": [], "total": 0})
+
+        result = self._run_low_relevance_search(
+            self._build_low_relevance_repository(), fallback, mode="ai"
+        )
+
+        # ai 模式精选库域内：宽松/语义命中通常有意义，不回退
+        fallback.assert_not_called()
+        self.assertFalse(result["fallback_used"])
+        self.assertEqual(result["result_origin"], "aigc_news_local")
+        self.assertEqual([item["full_name"] for item in result["items"]], ["owner/noise"])
+
+    def test_generic_strict_lane_hit_never_triggers_low_relevance_fallback(self) -> None:
+        fallback = MagicMock(return_value={"items": [], "total": 0})
+        semantic_search = MagicMock()
+        semantic_search.search_repo_ids = MagicMock(
+            return_value=[types.SimpleNamespace(repo_id="owner/veteran")]
+        )
+        originals = (
+            project_discovery.settings.project_ai_search_strategy,
+            project_discovery.settings.project_semantic_search_enabled,
+        )
+        project_discovery.settings.project_ai_search_strategy = "v2"
+        project_discovery.settings.project_semantic_search_enabled = True
+        try:
+            result = asyncio.run(
+                project_discovery.search_projects(
+                    query="AI coding agent CLI",
+                    mode="generic",
+                    repository_factory=lambda: self._build_v2_semantic_repository(),
+                    semantic_search_factory=lambda: semantic_search,
+                    fallback_search=fallback,
+                )
+            )
+        finally:
+            (
+                project_discovery.settings.project_ai_search_strategy,
+                project_discovery.settings.project_semantic_search_enabled,
+            ) = originals
+
+        # strict lane 有全词命中（owner/fit）时本地结果成立，不回退
+        fallback.assert_not_called()
+        self.assertFalse(result["fallback_used"])
+        self.assertEqual(result["result_origin"], "aigc_news_local")
+
     def test_normalize_request_generic_mode_discards_taxonomy_and_scope(self) -> None:
         request = project_discovery._normalize_search_request(
             query="agent",

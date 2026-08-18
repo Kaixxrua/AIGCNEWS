@@ -562,8 +562,14 @@ async def _hybrid_search(
     semantic_search_factory: Any | None,
     reranker_factory: Any | None,
     shadow_manager_factory: Any | None,
-) -> dict[str, Any]:
-    """Relevance pipeline: candidate retrieval → strategy ranking → shadow → hydration."""
+) -> tuple[dict[str, Any], bool]:
+    """Relevance pipeline: candidate retrieval → strategy ranking → shadow → hydration.
+
+    Returns (page result, strict_lexical_empty): the flag is True when no local
+    repo matched all query terms lexically (v2: empty strict lane; legacy: empty
+    flat lexical candidates), i.e. the ranked pool rests on relaxed/semantic
+    matches only.
+    """
     lexical_lane_search = _declared_callable(repository, "find_lexical_candidate_lanes")
     use_lanes = strategy == "v2" and callable(lexical_lane_search)
     candidate_search, lanes = await _retrieve_hybrid_candidates(
@@ -572,6 +578,7 @@ async def _hybrid_search(
         use_lanes=use_lanes,
         semantic_search_factory=semantic_search_factory,
     )
+    strict_lexical_empty = not candidate_search.lexical_repo_ids
     exact_repo_id = request.query if _EXACT_REPO_QUERY.fullmatch(request.query) else ""
     candidate_repo_ids, legacy_repo_ids = await _rank_hybrid_candidates(
         repository,
@@ -591,13 +598,14 @@ async def _hybrid_search(
             exact_repo_id=exact_repo_id,
         )
     if not candidate_repo_ids:
-        return {"items": [], "total": 0}
-    return await _apply_reranker(
+        return {"items": [], "total": 0}, strict_lexical_empty
+    result = await _apply_reranker(
         repository,
         request,
         candidate_repo_ids=candidate_repo_ids,
         reranker_factory=reranker_factory,
     )
+    return result, strict_lexical_empty
 
 
 async def _list_plain_page(repository: Any, request: _ProjectSearchRequest) -> dict[str, Any]:
@@ -721,6 +729,7 @@ async def _run_github_fallback(
     base: dict[str, Any],
     *,
     fallback_search: Any,
+    reason: str = "local_zero_results",
 ) -> dict[str, Any]:
     fallback_sort = "stars" if request.effective_sort == "relevance" else request.effective_sort
     try:
@@ -740,7 +749,7 @@ async def _run_github_fallback(
         return {
             **base,
             "fallback_used": True,
-            "fallback_reason": "local_zero_results",
+            "fallback_reason": reason,
             "fallback_error": f"GitHub fallback failed: {exc}",
         }
 
@@ -752,7 +761,7 @@ async def _run_github_fallback(
         "has_next": False,
         "result_origin": "github_api_fallback" if fallback_items else "aigc_news_local",
         "fallback_used": True,
-        "fallback_reason": "local_zero_results",
+        "fallback_reason": reason,
         "fallback_error": str(fallback.get("error") or ""),
         "github_total_count": int(fallback.get("github_total_count") or 0),
         "fallback_queries": fallback.get("queries") or [],
@@ -805,8 +814,9 @@ async def search_projects(
         and request.effective_sort == "relevance"
         and callable(lexical_candidate_search)
     )
+    strict_lexical_empty = False
     if hybrid_attempted:
-        result = await _hybrid_search(
+        result, strict_lexical_empty = await _hybrid_search(
             request,
             repository,
             strategy=strategy,
@@ -817,6 +827,24 @@ async def search_projects(
     else:
         result = await _list_plain_page(repository, request)
     base = _assemble_base_response(request, result)
+    skip_reason = _github_fallback_skip_reason(request)
+    # generic 低相关护栏：strict 词法 lane 全空 = 本地精选库没有任何项目
+    # 同时命中全部查询词，残留结果只是宽松/语义 lane 的热度噪声（典型如
+    # "windows screenshot tool" 命中无关 AI 项目）。此时把结果让给 GitHub
+    # 全量语料，而不是返回噪声。ai 模式不受影响：精选库语义命中在其域内
+    # 通常有意义。
+    if (
+        base["total"] > 0
+        and strict_lexical_empty
+        and request.mode == "generic"
+        and not skip_reason
+    ):
+        return await _run_github_fallback(
+            request,
+            base,
+            fallback_search=fallback_search,
+            reason="local_low_relevance",
+        )
     if base["total"] > 0:
         return base
 
@@ -830,7 +858,6 @@ async def search_projects(
         if retried is not None:
             return retried
 
-    skip_reason = _github_fallback_skip_reason(request)
     if skip_reason:
         return {**base, "fallback_skipped_reason": skip_reason}
     return await _run_github_fallback(request, base, fallback_search=fallback_search)
