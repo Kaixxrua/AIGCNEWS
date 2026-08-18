@@ -118,8 +118,17 @@ class MultiSourceIngestionRuntime:
     ) -> dict[str, int]:
         crawler = self.host._crawlers.get(source_name)
         if crawler is None:
+            # 源缺席有两种：未注册（未知源名），或构造期失败被跳过
+            # （如可插拔源插件缺失）——后者必须带上构造失败原因，否则
+            # 调度日志只剩"未知数据源"，无法定位到插件层。
+            construction_errors: list[str] = (
+                getattr(self.host, "crawler_construction_errors", None) or []
+            )
+            detail = ""
+            if construction_errors:
+                detail = "；另有爬虫工厂构造失败: " + " | ".join(construction_errors)
             raise ValueError(
-                f"未知数据源 '{source_name}'，可用: {self.host.registered_sources}"
+                f"未知数据源 '{source_name}'，可用: {self.host.registered_sources}{detail}"
             )
 
         task_name = (

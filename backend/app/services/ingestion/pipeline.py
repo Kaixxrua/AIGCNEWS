@@ -222,10 +222,31 @@ class IngestionOrchestrator:
         self.task_writer = dependencies.task_writer
         self._cache_invalidator = dependencies.cache_invalidator
 
+        # 按工厂隔离构造：单个源的构造失败（如可插拔源插件缺失抛
+        # XTransportUnavailable）只下线该源，不得拖死其他源的采集。
+        # 失败记录在 crawler_construction_errors，run_single_source 命中
+        # 未知源时将其带上，保持失败响亮可定位。
         self._crawlers: Dict[str, BaseCrawler] = {}
+        self._crawler_construction_errors: List[str] = []
         for factory in dependencies.crawler_factories:
-            crawler = factory()
+            try:
+                crawler = factory()
+            except Exception as exc:
+                factory_name = getattr(factory, "__qualname__", repr(factory))
+                logger.error(
+                    "[Orchestrator] 爬虫工厂 %s 构造失败，跳过该源（不影响其他源）: %s",
+                    factory_name,
+                    exc,
+                    exc_info=True,
+                )
+                self._crawler_construction_errors.append(f"{factory_name}: {exc}")
+                continue
             self._crawlers[crawler.source_name] = crawler
+
+    @property
+    def crawler_construction_errors(self) -> List[str]:
+        """构造期被跳过的源的失败原因（getattr 兜底：测试以 __new__ 构造）。"""
+        return getattr(self, "_crawler_construction_errors", [])
 
     @property
     def registered_sources(self) -> List[str]:

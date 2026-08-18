@@ -5,7 +5,9 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 from backend.app.services.ingestion.base_crawler import CrawlResult
+from backend.app.services.ingestion.composition import IngestionDependencies
 from backend.app.services.ingestion.pipeline import IngestionOrchestrator
+from backend.app.services.source_plugins.x_source import XTransportUnavailable
 
 
 class _Crawler:
@@ -363,6 +365,53 @@ class EffectiveTopNContractTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(count, 1)
         self.assertEqual(select_top.call_args.kwargs["top_n"], 25)
+
+
+class CrawlerConstructionIsolationContractTests(unittest.IsolatedAsyncioTestCase):
+    """单个爬虫工厂构造失败不得拖死其他源（2026-08-18 事故回归契约）。
+
+    可插拔源插件缺失时 XCrawler 构造抛 XTransportUnavailable；orchestrator
+    必须跳过该源并记录原因，其余源照常采集；对缺席源的单源调度要报出
+    构造失败原因，而不是一句"未知数据源"。
+    """
+
+    @staticmethod
+    def _bad_factory() -> object:
+        raise XTransportUnavailable("X 源插件不可用（x_source_enabled 关闭或实现缺失）")
+
+    def _orchestrator(self) -> IngestionOrchestrator:
+        good = _Crawler("news", ["daily"], {})
+        dependencies = IngestionDependencies(
+            repositories=MagicMock(),
+            task_writer=MagicMock(),
+            vector_writer_factory=MagicMock(),
+            graph_extractor_factory=MagicMock(),
+            graph_writer_factory=MagicMock(),
+            pdf_vector_writer_factory=MagicMock(),
+            pdf_indexer=MagicMock(),
+            cache_invalidator=AsyncMock(),
+            crawler_factories=(lambda: good, self._bad_factory),
+        )
+        return IngestionOrchestrator(dependencies)
+
+    def test_faulty_factory_is_skipped_without_blocking_other_sources(self) -> None:
+        orchestrator = self._orchestrator()
+
+        self.assertEqual(orchestrator.registered_sources, ["news"])
+        self.assertEqual(len(orchestrator.crawler_construction_errors), 1)
+        self.assertIn(
+            "X 源插件不可用", orchestrator.crawler_construction_errors[0]
+        )
+
+    async def test_run_single_source_reports_construction_failure(self) -> None:
+        orchestrator = self._orchestrator()
+
+        with self.assertRaises(ValueError) as context:
+            await orchestrator.run_single_source("x")
+
+        message = str(context.exception)
+        self.assertIn("未知数据源 'x'", message)
+        self.assertIn("X 源插件不可用", message)
 
 
 if __name__ == "__main__":
