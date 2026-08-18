@@ -1152,13 +1152,17 @@ def test_github_service_without_reader_keeps_trending_snapshot_reads() -> None:
 
 
 def test_github_service_metric_dates_drive_default_resolution_with_reader() -> None:
-    github_hot = FakeGitHubHotReader(dates=["2026-08-09"])
-    reader = FakeRankSnapshotReader(dates=["2026-08-08"])
+    # 回溯窗口锚定真实今天（today-6..today），硬编码日期会随时间漂出窗口
+    today = policy.today_local()
+    recent = (today - timedelta(days=1)).isoformat()
+    older = (today - timedelta(days=2)).isoformat()
+    github_hot = FakeGitHubHotReader(dates=[recent])
+    reader = FakeRankSnapshotReader(dates=[older])
     service = DashboardQueryService(reader, github_hot)
 
     resolution = service.resolve_display_snapshot_date(None, "daily", "github")
 
-    assert resolution["resolved_date"] == "2026-08-09"
+    assert resolution["resolved_date"] == recent
     assert github_hot.date_calls == [policy.DEFAULT_SNAPSHOT_LOOKBACK_DAYS]
     assert reader.date_calls == []
 
