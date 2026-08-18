@@ -166,6 +166,43 @@ def test_heat_ordering_pins_exact_match_above_heat() -> None:
     assert ordered == ["Owner/Exact-Tool", "owner/viral"]
 
 
+def test_heat_ordering_pins_small_strict_lane_above_heat() -> None:
+    # strict lane 全词命中的确定答案不被 99 分热度冠军罢黜
+    ordered = order_candidates_by_heat(
+        ["owner/strict-fit", "owner/viral", "owner/rising"],
+        {
+            "owner/viral": (99.2, 568, 18_000),
+            "owner/rising": (42.0, 120, 5_000),
+            "owner/strict-fit": (0.0, 0, 500),
+        },
+        pinned_repo_ids={"owner/strict-fit"},
+    )
+
+    assert ordered == ["owner/strict-fit", "owner/viral", "owner/rising"]
+
+
+def test_heat_ordering_pinned_entries_keep_fusion_order_and_exact_stays_first() -> None:
+    ordered = order_candidates_by_heat(
+        ["owner/second-fit", "Owner/Exact-Tool", "owner/viral", "owner/first-fit"],
+        {
+            "owner/viral": (99.2, 568, 18_000),
+            "owner/first-fit": (0.0, 0, 500),
+            "owner/second-fit": (0.0, 0, 600),
+            "Owner/Exact-Tool": (0.0, 0, 5),
+        },
+        exact_repo_id="owner/exact-tool",
+        pinned_repo_ids={"owner/first-fit", "owner/second-fit"},
+    )
+
+    # 精确命中仍居首；pinned 之间不看热度，按融合位次 second-fit → first-fit
+    assert ordered == [
+        "Owner/Exact-Tool",
+        "owner/second-fit",
+        "owner/first-fit",
+        "owner/viral",
+    ]
+
+
 def test_heat_ordering_tolerates_malformed_entries_and_missing_heat() -> None:
     ordered = order_candidates_by_heat(
         ["owner/a", "owner/b", "owner/c"],

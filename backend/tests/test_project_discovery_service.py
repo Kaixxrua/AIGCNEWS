@@ -820,14 +820,55 @@ class ProjectDiscoveryTests(unittest.TestCase):
 
         return SemanticRepository()
 
-    def test_v2_semantic_lane_defaults_to_heat_order(self) -> None:
+    def test_v2_semantic_heat_order_pins_small_strict_lane_above_heat(self) -> None:
         ranked = self._run_v2_semantic_heat_search(
             self._build_v2_semantic_repository(), heat_first=True
         )
 
-        # 热度（hot_score v5）优先：85.5 分元老登顶，12 分语义独苗压过
-        # 当日无热度的拟合冠军（其 20k stars 只在同热度时兜底）
-        self.assertEqual(ranked, ["owner/veteran", "owner/deep-sem", "owner/fit"])
+        # strict lane 仅 1 条（一页放得下）：全词命中的拟合冠军钉在榜首，
+        # 其后才是热度序——85.5 分元老压过 12 分语义独苗
+        self.assertEqual(ranked, ["owner/fit", "owner/veteran", "owner/deep-sem"])
+
+    def test_v2_semantic_heat_order_rules_when_strict_lane_exceeds_one_page(self) -> None:
+        class WideStrictRepository:
+            def __init__(self) -> None:
+                self.find_lexical_candidate_repo_ids = MagicMock(return_value=[])
+                # 11 条 strict 命中 > 默认页大小 10：宽泛探索查询，不钉
+                self.find_lexical_candidate_lanes = MagicMock(
+                    return_value=ProjectLexicalCandidateLanes(
+                        strict=tuple(
+                            ProjectLexicalCandidate(
+                                f"owner/fit-{index}", "strict", term_coverage=3, match_strength=3
+                            )
+                            for index in range(11)
+                        ),
+                        relaxed=(
+                            ProjectLexicalCandidate(
+                                "owner/veteran", "relaxed", term_coverage=1, match_strength=1
+                            ),
+                        ),
+                    )
+                )
+                self.get_project_stars_map = MagicMock(return_value={})
+                self.get_project_heat_map = MagicMock(
+                    return_value={
+                        "owner/veteran": (85.5, 300, 106_000),
+                        "owner/deep-sem": (12.0, 50, 30_000),
+                    }
+                )
+                self.list_projects = MagicMock(
+                    return_value={
+                        "items": [{"full_name": "owner/veteran", "stars": 106_000}],
+                        "total": 1,
+                    }
+                )
+
+        ranked = self._run_v2_semantic_heat_search(WideStrictRepository(), heat_first=True)
+
+        # 大 strict lane 保持热度序：语义/宽松热项居前，strict 群按融合位次垫后
+        self.assertEqual(ranked[0], "owner/veteran")
+        self.assertEqual(ranked[1], "owner/deep-sem")
+        self.assertEqual(ranked[2], "owner/fit-0")
 
     def test_v2_semantic_heat_order_keeps_exact_match_first(self) -> None:
         ranked = self._run_v2_semantic_heat_search(

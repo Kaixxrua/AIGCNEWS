@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -108,6 +108,7 @@ def order_candidates_by_heat(
     heat: Mapping[str, tuple[float, int, int]],
     *,
     exact_repo_id: str = "",
+    pinned_repo_ids: Collection[str] = (),
 ) -> list[str]:
     """语义搜索展示序：精确命中钉在榜首，其余按 hot_score(v5) 热度降序。
 
@@ -115,10 +116,16 @@ def order_candidates_by_heat(
     把当红项目埋在长尾相似项后面。热度口径与列表 hot 排序一致：
     hot_score → daily_star_growth → stars 依次兜底；三项全同（含无当日
     指标的项目）回落到传入的融合位次，保证确定性排序。
+
+    例外：pinned_repo_ids（调用方仅在 strict lane 一页放得下时传入）是
+    全部严格查询词都命中的确定答案，钉在精确命中之后、热度重排之上，
+    相互间保持融合拟合序——避免唯一正确答案被当红噪声罢黜（典型如
+    "windows screenshot tool" 的 strict 独苗被无关热项压出首页）。
     """
     ordered_ids = [str(repo_id) for repo_id in repo_ids]
     fusion_rank = {repo_id: index for index, repo_id in enumerate(ordered_ids)}
     normalized_exact = exact_repo_id.strip().casefold()
+    pinned = {str(repo_id) for repo_id in pinned_repo_ids}
 
     def _heat_of(repo_id: str) -> tuple[float, int, int]:
         value = heat.get(repo_id)
@@ -131,11 +138,16 @@ def order_candidates_by_heat(
             int(stars) if isinstance(stars, (int, float)) else 0,
         )
 
-    return sorted(
-        ordered_ids,
-        key=lambda repo_id: (
-            0 if normalized_exact and repo_id.casefold() == normalized_exact else 1,
+    def _sort_key(repo_id: str) -> tuple[int, tuple[float, int, int], int]:
+        if normalized_exact and repo_id.casefold() == normalized_exact:
+            return (0, (0.0, 0, 0), fusion_rank[repo_id])
+        if repo_id in pinned:
+            # pinned 之间不看热度，保持融合拟合序
+            return (1, (0.0, 0, 0), fusion_rank[repo_id])
+        return (
+            2,
             tuple(-component for component in _heat_of(repo_id)),
             fusion_rank[repo_id],
-        ),
-    )
+        )
+
+    return sorted(ordered_ids, key=_sort_key)
