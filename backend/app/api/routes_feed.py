@@ -128,6 +128,13 @@ async def _github_feed_rows(
             rows = [_project_to_feed_row(item) for item in items if isinstance(item, dict)]
             rows = [row for row in rows if row["id"]]
             if rows:
+                # 整榜共用最新快照时间作 pubDate：各条目 captured_at 来自不同时次的
+                # 快照刷新，若保留原值，全局按时间归并会把热榜打散成「重捕先后」序。
+                # 统一后稳定排序保留 hot 名次，pubDate 语义 = 本期热榜快照时间。
+                latest = max(row["published_at"] for row in rows)
+                if latest:
+                    for row in rows:
+                        row["published_at"] = latest
                 return rows
             logger.warning("[Feed] 项目库今日热榜为空，github feed 回退 documents 池")
         except Exception as exc:

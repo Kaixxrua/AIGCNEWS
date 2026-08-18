@@ -310,6 +310,29 @@ def test_github_feed_serves_today_hot_board_instead_of_documents_pool() -> None:
     assert kwargs["page_size"] == 50
 
 
+def test_github_feed_preserves_hot_rank_despite_mixed_capture_batches() -> None:
+    # 热榜条目 captured_at 分属不同时次的快照刷新；feed 必须保持 hot 名次，
+    # 不能按捕获时间重排（pubDate 统一归一到最新快照时间）。
+    documents = MagicMock()
+    catalog = _catalog(
+        [
+            _hot_item("rank1/newly-recaptured", captured_at="2026-08-18T06:48:47+00:00"),
+            _hot_item("rank2/earlier-batch", captured_at="2026-08-17T23:17:00+00:00"),
+            _hot_item("rank3/mid-batch", captured_at="2026-08-18T05:17:00+00:00"),
+        ]
+    )
+    client = _client(documents=documents, catalog=catalog)
+
+    response = client.get("/api/feeds/github.xml")
+
+    assert response.status_code == 200
+    body = response.text
+    assert body.index("rank1/newly-recaptured") < body.index("rank2/earlier-batch")
+    assert body.index("rank2/earlier-batch") < body.index("rank3/mid-batch")
+    # 三条 pubDate 均为最新快照时间 06:48:47
+    assert body.count("<pubDate>Tue, 18 Aug 2026 06:48:47 +0000</pubDate>") == 3
+
+
 def test_github_feed_falls_back_to_documents_pool_when_hot_board_unavailable() -> None:
     for catalog in (_catalog(error=RuntimeError("db down")), _catalog([])):
         documents = MagicMock()
