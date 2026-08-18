@@ -12,6 +12,7 @@ from starlette.requests import Request
 from backend.app.monitoring.mcp_tools import (
     MCP_TOOL_CALL_METRICS,
     McpToolCallMetrics,
+    bucket_client_name,
     bucket_tool_name,
 )
 from backend.app.repositories.briefing_repository import BriefingReader
@@ -181,8 +182,16 @@ class McpProtocolApplication:
                 )
             # 鉴权前置计数（既有顺序不变），但仅注册表内工具单独统计，
             # 未知名归入固定桶，防止随机 name 无限膨胀指标基数。
+            # UA 命中已知客户端（如 dsh 插件）时同步记入客户端桶。
+            request = self._dependencies.tools.request
+            user_agent = (
+                request.headers.get("user-agent", "")
+                if isinstance(request, Request)
+                else ""
+            )
             self._dependencies.tool_call_metrics.record(
-                bucket_tool_name(name, MCP_TOOL_REGISTRY)
+                bucket_tool_name(name, MCP_TOOL_REGISTRY),
+                client=bucket_client_name(user_agent),
             )
             arguments = params.get("arguments", {})
             if (

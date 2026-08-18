@@ -771,6 +771,7 @@ def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
     assert stats["total_visits"] == 700
     assert stats["today_unique_visitors"] == 7
     assert isinstance(stats["mcp_total_calls"], int)
+    assert isinstance(stats["mcp_dsh_calls"], int)
     assert calls == [
         {"source": "github", "scope": "all", "page": 1, "page_size": 1, "sort": "stars"}
     ]
@@ -811,6 +812,7 @@ def test_summary_github_stat_falls_back_to_documents_when_catalog_unavailable(mo
     assert stats["source_counts"] == {"arxiv": 5, "github": 461, "news": 7}
     assert stats["total_documents"] == 5 + 461 + 7
     assert isinstance(stats["mcp_total_calls"], int)
+    assert isinstance(stats["mcp_dsh_calls"], int)
 
 
 def test_live_stats_returns_flat_counters(monkeypatch) -> None:
@@ -838,6 +840,7 @@ def test_live_stats_returns_flat_counters(monkeypatch) -> None:
     assert body["total_visits"] == 700
     assert body["today_unique_visitors"] == 7
     assert isinstance(body["mcp_total_calls"], int)
+    assert isinstance(body["mcp_dsh_calls"], int)
 
 
 # ── 默认视图快照日期回溯（Unit C）────────────────────────────────────

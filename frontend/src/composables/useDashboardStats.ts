@@ -25,11 +25,13 @@ export const useDashboardStats = (getStats: () => Stats) => {
   }
 
   const mcpTotalCalls = computed(() => Number(getStats().mcp_total_calls ?? 0))
+  const mcpDshCalls = computed(() => Number(getStats().mcp_dsh_calls ?? 0))
 
   return {
     statValues,
     visitorValues,
     mcpTotalCalls,
+    mcpDshCalls,
     updateStatSources,
     updateVisitorSources,
   }

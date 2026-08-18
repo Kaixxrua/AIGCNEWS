@@ -10,7 +10,7 @@ import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
-import { CalendarDays, ArrowRight, MailPlus, Plug } from 'lucide-vue-next'
+import { CalendarDays, ArrowRight, MailPlus, Plug, Terminal } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 
@@ -23,6 +23,7 @@ const {
   statValues,
   visitorValues,
   mcpTotalCalls,
+  mcpDshCalls,
   updateStatSources,
   updateVisitorSources,
 } = useDashboardStats(() => currentStats())
@@ -167,10 +168,12 @@ onBeforeUnmount(pauseLivePoll)
             </span>
           </RouterLink>
 
-          <!-- MCP 总调用次数 -->
-          <div
-            class="stagger-enter glass-card flex items-center gap-2.5 px-3 py-2.5"
+          <!-- MCP 总调用次数（点击前往 MCP 接入页） -->
+          <RouterLink
+            to="/mcp"
+            class="stagger-enter glass-card card-hover flex items-center gap-2.5 px-3 py-2.5 transition-colors"
             style="animation-delay: 0.4s"
+            :aria-label="t('dashboard.mcpCalls.title')"
           >
             <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
               <Plug class="h-4 w-4" />
@@ -179,7 +182,23 @@ onBeforeUnmount(pauseLivePoll)
               <span class="text-2xs font-semibold text-stone-400">{{ t('dashboard.mcpCalls.title') }}</span>
               <RollingNumber :value="mcpTotalCalls" grouping class="text-base font-extrabold tabular-nums" />
             </span>
-          </div>
+          </RouterLink>
+
+          <!-- dsh 插件调用次数（MCP 调用中的 dsh 客户端分桶，点击前往接入页） -->
+          <RouterLink
+            to="/mcp"
+            class="stagger-enter glass-card card-hover flex items-center gap-2.5 px-3 py-2.5 transition-colors"
+            style="animation-delay: 0.45s"
+            :aria-label="t('dashboard.dshCalls.title')"
+          >
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
+              <Terminal class="h-4 w-4" />
+            </span>
+            <span class="flex min-w-0 flex-col">
+              <span class="text-2xs font-semibold text-stone-400">{{ t('dashboard.dshCalls.title') }}</span>
+              <RollingNumber :value="mcpDshCalls" grouping class="text-base font-extrabold tabular-nums" />
+            </span>
+          </RouterLink>
       </aside>
     </div>
   </div>

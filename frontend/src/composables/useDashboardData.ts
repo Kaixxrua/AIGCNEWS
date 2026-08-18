@@ -43,6 +43,7 @@ const LIVE_COUNTER_FIELDS = [
   'total_documents', 'source_counts',
   'registered_users', 'today_registered_users', 'user_count',
   'today_new_documents', 'today_visits', 'total_visits', 'mcp_total_calls',
+  'mcp_dsh_calls',
 ] as const
 
 const pickLiveCounters = (source: Stats): Stats => {

@@ -103,6 +103,7 @@ export interface Stats {
   today_visits?: number
   total_visits?: number
   mcp_total_calls?: number
+  mcp_dsh_calls?: number
 }
 
 const MODULE_KEYWORDS: Record<string, string[]> = {

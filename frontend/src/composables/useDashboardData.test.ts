@@ -129,13 +129,13 @@ describe('Dashboard request lifecycle contract', () => {
   })
 
   it('merges live counters on refreshLiveStats and skips while viewing history', async () => {
-    liveStatsApi.fetchLiveStats.mockResolvedValue({ total_documents: 99, mcp_total_calls: 5, source_counts: { arxiv: 4 } })
+    liveStatsApi.fetchLiveStats.mockResolvedValue({ total_documents: 99, mcp_total_calls: 5, mcp_dsh_calls: 2, source_counts: { arxiv: 4 } })
     const mounted = mountDashboard()
     await flush()
     mounted.updateStatSources.mockClear()
 
     await mounted.dashboard.refreshLiveStats()
-    expect(mounted.dashboard.stats.value).toMatchObject({ total_documents: 99, mcp_total_calls: 5 })
+    expect(mounted.dashboard.stats.value).toMatchObject({ total_documents: 99, mcp_total_calls: 5, mcp_dsh_calls: 2 })
     expect(mounted.updateStatSources).toHaveBeenCalledOnce()
 
     liveStatsApi.fetchLiveStats.mockClear()
@@ -177,20 +177,22 @@ describe('Dashboard request lifecycle contract', () => {
     // summary 走 3600s 缓存：首次加载含 mcp_total_calls=1232，live 轮询前进到 1233 后，
     // 切 tab 重新应用同一份陈旧 summary 不得让计数回退（回归：首页 MCP 调用数 1233→1232）
     defaultDashboardApi.fetchSummary.mockResolvedValue({
-      stats: { total_documents: 3, mcp_total_calls: 1232, source_counts: { arxiv: 3 } },
+      stats: { total_documents: 3, mcp_total_calls: 1232, mcp_dsh_calls: 40, source_counts: { arxiv: 3 } },
       isFinalized: true, isEmbargoed: false,
     })
-    liveStatsApi.fetchLiveStats.mockResolvedValue({ total_documents: 5, mcp_total_calls: 1233, source_counts: { arxiv: 5 } })
+    liveStatsApi.fetchLiveStats.mockResolvedValue({ total_documents: 5, mcp_total_calls: 1233, mcp_dsh_calls: 41, source_counts: { arxiv: 5 } })
     const mounted = mountDashboard()
     await flush()
 
     await mounted.dashboard.refreshLiveStats()
     expect(mounted.dashboard.stats.value.mcp_total_calls).toBe(1233)
+    expect(mounted.dashboard.stats.value.mcp_dsh_calls).toBe(41)
 
     mounted.dashboard.activeTab.value = 'github'
     await flush()
 
     expect(mounted.dashboard.stats.value.mcp_total_calls).toBe(1233)
+    expect(mounted.dashboard.stats.value.mcp_dsh_calls).toBe(41)
     expect(mounted.dashboard.stats.value.total_documents).toBe(5)
     expect(mounted.dashboard.stats.value.source_counts).toEqual({ arxiv: 5 })
     mounted.app.unmount()

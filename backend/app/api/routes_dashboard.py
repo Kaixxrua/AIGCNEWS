@@ -74,18 +74,33 @@ async def _get_source_counts(
     return source_counts
 
 
-async def _get_mcp_total_calls() -> int:
-    """MCP 工具调用累计次数（公开营销位口径；计数器不可用时静默为 0）。"""
+async def _get_mcp_call_counts() -> tuple[int, int]:
+    """MCP 工具调用累计次数与其中 dsh 插件来源次数。
 
-    def _query() -> int:
-        from backend.app.monitoring.mcp_tools import MCP_TOOL_CALL_METRICS
+    公开营销位口径；计数器不可用时两者静默为 0。一次 snapshot 同时取
+    总数与客户端分桶，避免同一请求内重复读盘。
+    """
 
-        return int(MCP_TOOL_CALL_METRICS.snapshot().get("total_calls", 0))
+    def _query() -> tuple[int, int]:
+        from backend.app.monitoring.mcp_tools import (
+            DSH_PLUGIN_CLIENT,
+            MCP_TOOL_CALL_METRICS,
+        )
+
+        snapshot = MCP_TOOL_CALL_METRICS.snapshot()
+        clients = snapshot.get("clients")
+        dsh_entry = (
+            clients.get(DSH_PLUGIN_CLIENT) if isinstance(clients, dict) else None
+        )
+        dsh_calls = (
+            int(dsh_entry.get("calls", 0)) if isinstance(dsh_entry, dict) else 0
+        )
+        return int(snapshot.get("total_calls", 0)), dsh_calls
 
     try:
         return await asyncio.to_thread(_query)
     except Exception:
-        return 0
+        return 0, 0
 
 
 def get_site_visit_repository() -> PostgresSiteVisitRepository:
@@ -418,7 +433,7 @@ async def get_dashboard_summary(
         )
         user_count = registered_users + today_registered_users
         visit_stats = await _get_site_visit_stats(visits)
-        mcp_total_calls = await _get_mcp_total_calls()
+        mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts()
         return {
             "top_list": [],
             "radar": [],
@@ -432,6 +447,7 @@ async def get_dashboard_summary(
                 "today_visits": visit_stats.today_visits,
                 "total_visits": visit_stats.total_visits,
                 "mcp_total_calls": mcp_total_calls,
+                "mcp_dsh_calls": mcp_dsh_calls,
             },
             "period": "daily",
             "snapshot_date": snapshot_date,
@@ -459,7 +475,7 @@ async def get_dashboard_summary(
     user_count = registered_users + today_registered_users
     today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
     visit_stats = await _get_site_visit_stats(visits)
-    mcp_total_calls = await _get_mcp_total_calls()
+    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts()
 
     return {
         "top_list": top10,
@@ -475,6 +491,7 @@ async def get_dashboard_summary(
             "today_visits": visit_stats.today_visits,
             "total_visits": visit_stats.total_visits,
             "mcp_total_calls": mcp_total_calls,
+            "mcp_dsh_calls": mcp_dsh_calls,
         },
         "period": "daily",
         "snapshot_date": snapshot_date,
@@ -508,7 +525,7 @@ async def get_dashboard_live_stats(
     user_count = registered_users + today_registered_users
     today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
     visit_stats = await _get_site_visit_stats(visits)
-    mcp_total_calls = await _get_mcp_total_calls()
+    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts()
     return {
         "total_documents": total_documents,
         "source_counts": source_counts,
@@ -520,6 +537,7 @@ async def get_dashboard_live_stats(
         "today_visits": visit_stats.today_visits,
         "total_visits": visit_stats.total_visits,
         "mcp_total_calls": mcp_total_calls,
+        "mcp_dsh_calls": mcp_dsh_calls,
     }
 
 

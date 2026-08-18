@@ -238,4 +238,19 @@ describe('MCP connect controller', () => {
     expect(controller.setupError.value).toEqual({ kind: 'key', key: 'mcp.copyFailed', params: undefined })
     expect(JSON.stringify(controller.setupError.value)).not.toContain('aigc-news')
   })
+
+  it('copies the fixed dsh install command regardless of endpoint validity', async () => {
+    const copy = vi.fn(async () => undefined)
+    const { controller } = createController({ copy })
+
+    await controller.copyDshInstallCommand()
+    expect(copy).toHaveBeenCalledWith('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
+    expect(controller.copiedKey.value).toBe('dsh-install')
+
+    // 端点非法只影响 quickCommand，安装命令是固定常量仍可复制
+    controller.endpointUrl.value = 'not a url'
+    await controller.copyDshInstallCommand()
+    expect(copy).toHaveBeenCalledTimes(2)
+    expect(controller.copiedKey.value).toBe('dsh-install')
+  })
 })

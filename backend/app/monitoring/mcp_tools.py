@@ -32,6 +32,24 @@ def bucket_tool_name(tool_name: str, known_names: Container[str]) -> str:
     return UNKNOWN_TOOL_NAME
 
 
+# 客户端来源桶：仅 User-Agent 前缀命中已知客户端时单独成桶，其余一律空桶
+# 不计数。与工具名同策略，防止随机 UA 字符串无限膨胀计数器基数（每个新桶
+# 都会永久落盘）。
+DSH_PLUGIN_CLIENT = "dsh-aigc-radar"
+_CLIENT_UA_PREFIXES = ((DSH_PLUGIN_CLIENT, "dsh-aigc-radar/"),)
+
+
+def bucket_client_name(user_agent: Any) -> str:
+    """把 User-Agent 归并到已知客户端桶；未命中或非字符串一律返回空串。"""
+    if not isinstance(user_agent, str):
+        return ""
+    ua = user_agent.strip()
+    for bucket, prefix in _CLIENT_UA_PREFIXES:
+        if ua.startswith(prefix):
+            return bucket
+    return ""
+
+
 class McpToolCallStore(Protocol):
     """Persistence boundary for MCP tool-call counter state."""
 
@@ -106,6 +124,11 @@ class McpToolCallMetrics:
     survive process restarts. Persistence failures are logged and never break
     dispatch. Without a store the counter stays process-local and resets on
     restart; pair with ``uptime_seconds`` when reading such snapshots.
+
+    ``record`` additionally accepts a known-client bucket (see
+    :func:`bucket_client_name`) so calls from first-party clients such as the
+    dsh plugin are counted alongside the per-tool totals. Client counts are
+    persisted under the ``clients`` key of the same payload.
     """
 
     def __init__(self, store: McpToolCallStore | None = None) -> None:
@@ -115,13 +138,18 @@ class McpToolCallMetrics:
         self._since = datetime.now(timezone.utc)
         self._calls: Dict[str, int] = {}
         self._last_called_at: Dict[str, datetime] = {}
+        self._clients: Dict[str, int] = {}
+        self._client_last_called_at: Dict[str, datetime] = {}
 
-    def record(self, tool_name: str) -> None:
+    def record(self, tool_name: str, client: str = "") -> None:
         now = datetime.now(timezone.utc)
         with self._lock:
             self._ensure_loaded()
             self._calls[tool_name] = self._calls.get(tool_name, 0) + 1
             self._last_called_at[tool_name] = now
+            if client:
+                self._clients[client] = self._clients.get(client, 0) + 1
+                self._client_last_called_at[client] = now
             if self._store is not None:
                 try:
                     self._store.save(self._snapshot())
@@ -133,6 +161,24 @@ class McpToolCallMetrics:
             self._ensure_loaded()
             return self._snapshot()
 
+    @staticmethod
+    def _hydrate_entries(payload: Any) -> tuple[Dict[str, int], Dict[str, datetime]]:
+        """宽容读取 ``{name: {calls, last_called_at}}`` 映射；坏条目一律跳过。"""
+        counts: Dict[str, int] = {}
+        last_called_at: Dict[str, datetime] = {}
+        if not isinstance(payload, dict):
+            return counts, last_called_at
+        for name, entry in payload.items():
+            if not isinstance(name, str) or not isinstance(entry, dict):
+                continue
+            calls = entry.get("calls")
+            last_seen = _parse_iso(entry.get("last_called_at"))
+            if not isinstance(calls, int) or calls <= 0 or last_seen is None:
+                continue
+            counts[name] = calls
+            last_called_at[name] = last_seen
+        return counts, last_called_at
+
     def _ensure_loaded(self) -> None:
         """Hydrate from the store exactly once; caller must hold ``_lock``."""
         if self._loaded:
@@ -141,38 +187,37 @@ class McpToolCallMetrics:
         payload = self._store.load() if self._store is not None else None
         if not payload:
             return
-        tools = payload.get("tools")
-        if isinstance(tools, dict):
-            for name, entry in tools.items():
-                if not isinstance(name, str) or not isinstance(entry, dict):
-                    continue
-                calls = entry.get("calls")
-                last_called_at = _parse_iso(entry.get("last_called_at"))
-                if (
-                    not isinstance(calls, int)
-                    or calls <= 0
-                    or last_called_at is None
-                ):
-                    continue
-                self._calls[name] = calls
-                self._last_called_at[name] = last_called_at
+        self._calls, self._last_called_at = self._hydrate_entries(
+            payload.get("tools")
+        )
+        self._clients, self._client_last_called_at = self._hydrate_entries(
+            payload.get("clients")
+        )
         since = _parse_iso(payload.get("since"))
         if since is not None:
             self._since = since
 
+    @staticmethod
+    def _entries_payload(
+        counts: Dict[str, int], last_called_at: Dict[str, datetime]
+    ) -> Dict[str, Any]:
+        return {
+            name: {
+                "calls": counts[name],
+                "last_called_at": last_called_at[name].isoformat(),
+            }
+            for name in sorted(counts)
+        }
+
     def _snapshot(self) -> Dict[str, Any]:
         """Build the wire payload; caller must hold ``_lock``."""
-        tools = {
-            name: {
-                "calls": self._calls[name],
-                "last_called_at": self._last_called_at[name].isoformat(),
-            }
-            for name in sorted(self._calls)
-        }
         return {
             "since": self._since.isoformat(),
             "total_calls": sum(self._calls.values()),
-            "tools": tools,
+            "tools": self._entries_payload(self._calls, self._last_called_at),
+            "clients": self._entries_payload(
+                self._clients, self._client_last_called_at
+            ),
         }
 
 

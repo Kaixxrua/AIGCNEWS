@@ -26,6 +26,7 @@ vi.mock('@/composables/useMcpConnectController', async () => {
     clientLabel: ref(''),
     clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude' }),
     copiedKey: ref(''),
+    copyDshInstallCommand: vi.fn(),
     copyGeneratedCommand: vi.fn(),
     copyHostInstruction: vi.fn(),
     copyQuickCommand: vi.fn(),
@@ -83,6 +84,14 @@ const i18n = createI18n({
         bearerWarning: '命令只显示一次',
         copyOneTime: '复制一次性命令',
         valid: '有效',
+        copied: '已复制',
+        dshPlugin: {
+          kicker: 'DSH 插件',
+          title: 'dsh 终端用户：一条命令接入',
+          description: 'dsh-aigc-radar 是 dsh 终端的原生插件。',
+          copy: '复制安装命令',
+          repository: 'GitHub 仓库',
+        },
       },
     },
   },
@@ -128,6 +137,7 @@ beforeEach(() => {
   controller().selectedShell.value = 'bash'
   for (const fn of [
     controller().clientDisplayLabel,
+    controller().copyDshInstallCommand,
     controller().copyGeneratedCommand,
     controller().copyHostInstruction,
     controller().copyQuickCommand,
@@ -211,13 +221,14 @@ describe('McpConnectView localized rendering', () => {
     const wrapper = await mountView()
     const sections = wrapper.findAll('section')
 
-    expect(sections.length).toBe(6)
+    expect(sections.length).toBe(7)
     expect(sections[0]!.text()).toContain('公开端点')
     expect(sections[1]!.text()).toContain('search_github_ai_projects')
     expect(sections[2]!.text()).toContain('免登录接入')
-    expect(sections[3]!.text()).toContain('MCP 优先路由')
-    expect(sections[4]!.text()).toContain('鉴权配置')
-    expect(sections[5]!.text()).toContain('令牌管理')
+    expect(sections[3]!.text()).toContain('dsh 终端用户：一条命令接入')
+    expect(sections[4]!.text()).toContain('MCP 优先路由')
+    expect(sections[5]!.text()).toContain('鉴权配置')
+    expect(sections[6]!.text()).toContain('令牌管理')
   })
 })
 
@@ -233,6 +244,29 @@ describe('McpConnectView privacy and auth behavior', () => {
 
     await copyButton!.trigger('click')
     expect(controller().copyQuickCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the dsh plugin install command and forwards its copy', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('dsh 终端用户：一条命令接入')
+    expect(wrapper.text()).toContain('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
+    const repoLink = wrapper.find('a[href="https://github.com/Kaixxrua/dsh-aigc-radar"]')
+    expect(repoLink.exists()).toBe(true)
+    expect(repoLink.text()).toBe('GitHub 仓库')
+
+    const copyButton = wrapper.findAll('button').find((button) => button.text() === '复制安装命令')
+    expect(copyButton).toBeDefined()
+    await copyButton!.trigger('click')
+    expect(controller().copyDshInstallCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the copied state for the dsh install command', async () => {
+    controller().copiedKey.value = 'dsh-install'
+    const wrapper = await mountView()
+
+    const copyButton = wrapper.findAll('button').find((button) => button.text() === '已复制')
+    expect(copyButton).toBeDefined()
   })
 
   it('offers the quick connect path without login', async () => {

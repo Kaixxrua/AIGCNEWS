@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from backend.app.api import routes_mcp
 from backend.app.api.dependencies import (
@@ -20,10 +21,12 @@ from backend.app.api.dependencies import (
 from backend.app.core.auth import get_mcp_access_token_authenticator
 from backend.app.monitoring import metrics as monitor_metrics
 from backend.app.monitoring.mcp_tools import (
+    DSH_PLUGIN_CLIENT,
     MAX_TOOL_NAME_LENGTH,
     UNKNOWN_TOOL_NAME,
     JsonMcpToolCallStore,
     McpToolCallMetrics,
+    bucket_client_name,
     bucket_tool_name,
 )
 from backend.app.repositories.briefing_repository import BriefingReader
@@ -72,6 +75,29 @@ class BucketToolNameUnitTests(unittest.TestCase):
         )
 
 
+class BucketClientNameUnitTests(unittest.TestCase):
+    """客户端桶：仅 UA 前缀命中已知客户端，其余一律空桶不计数。"""
+
+    def test_dsh_plugin_user_agent_hits_bucket(self) -> None:
+        self.assertEqual(
+            bucket_client_name("dsh-aigc-radar/0.1.0"), DSH_PLUGIN_CLIENT
+        )
+        self.assertEqual(
+            bucket_client_name("  dsh-aigc-radar/1.2.3  "), DSH_PLUGIN_CLIENT
+        )
+
+    def test_unrelated_and_lookalike_user_agents_miss(self) -> None:
+        self.assertEqual(bucket_client_name("Mozilla/5.0"), "")
+        # 无版本斜杠与前缀不一致的相似串均不命中
+        self.assertEqual(bucket_client_name("dsh-aigc-radar"), "")
+        self.assertEqual(bucket_client_name("not-dsh-aigc-radar/1.0"), "")
+        self.assertEqual(bucket_client_name(""), "")
+
+    def test_non_string_user_agent_misses(self) -> None:
+        self.assertEqual(bucket_client_name(None), "")
+        self.assertEqual(bucket_client_name(123), "")
+
+
 class McpToolCallMetricsUnitTests(unittest.TestCase):
     def test_snapshot_starts_empty_with_parseable_since(self) -> None:
         snapshot = McpToolCallMetrics().snapshot()
@@ -105,6 +131,26 @@ class McpToolCallMetricsUnitTests(unittest.TestCase):
         first.record("get_top_items")
 
         self.assertEqual(second.snapshot()["total_calls"], 0)
+
+    def test_snapshot_clients_start_empty(self) -> None:
+        snapshot = McpToolCallMetrics().snapshot()
+
+        self.assertEqual(snapshot["clients"], {})
+
+    def test_record_with_client_accumulates_client_bucket(self) -> None:
+        metrics = McpToolCallMetrics()
+
+        metrics.record("search_github_ai_projects", client=DSH_PLUGIN_CLIENT)
+        metrics.record("search_github_ai_projects")  # 空客户端桶不计入 clients
+        metrics.record("get_top_items", client=DSH_PLUGIN_CLIENT)
+
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["total_calls"], 3)
+        self.assertEqual(list(snapshot["clients"]), [DSH_PLUGIN_CLIENT])
+        self.assertEqual(snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 2)
+        datetime.fromisoformat(
+            snapshot["clients"][DSH_PLUGIN_CLIENT]["last_called_at"]
+        )
 
 
 class McpToolCallPersistenceTests(unittest.TestCase):
@@ -141,14 +187,88 @@ class McpToolCallPersistenceTests(unittest.TestCase):
         metrics.record("search_papers")
 
         persisted = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(set(persisted), {"since", "total_calls", "tools"})
+        self.assertEqual(set(persisted), {"since", "total_calls", "tools", "clients"})
         self.assertEqual(persisted["total_calls"], 1)
         self.assertEqual(persisted["tools"]["search_papers"]["calls"], 1)
+        self.assertEqual(persisted["clients"], {})
         datetime.fromisoformat(persisted["since"])
         datetime.fromisoformat(
             persisted["tools"]["search_papers"]["last_called_at"]
         )
         self.assertFalse(self.path.with_name(self.path.name + ".tmp").exists())
+
+    def test_new_instance_recovers_client_counts_across_restart(self) -> None:
+        first = McpToolCallMetrics(store=self.store)
+        first.record("get_top_items", client=DSH_PLUGIN_CLIENT)
+        first.record("get_top_items", client=DSH_PLUGIN_CLIENT)
+        first.record("search_papers")
+
+        restarted = McpToolCallMetrics(store=self.store)
+        snapshot = restarted.snapshot()
+
+        self.assertEqual(snapshot["total_calls"], 3)
+        self.assertEqual(snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 2)
+        datetime.fromisoformat(
+            snapshot["clients"][DSH_PLUGIN_CLIENT]["last_called_at"]
+        )
+
+        restarted.record("get_top_items", client=DSH_PLUGIN_CLIENT)
+        self.assertEqual(
+            restarted.snapshot()["clients"][DSH_PLUGIN_CLIENT]["calls"], 3
+        )
+
+    def test_legacy_payload_without_clients_hydrates_empty(self) -> None:
+        # 旧版落盘文件无 clients 键：升级后首次加载客户端桶为空，不报错
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text(
+            json.dumps(
+                {
+                    "since": "2026-08-04T00:00:00+00:00",
+                    "total_calls": 2,
+                    "tools": {
+                        "get_top_items": {
+                            "calls": 2,
+                            "last_called_at": "2026-08-04T01:00:00+00:00",
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        metrics = McpToolCallMetrics(store=self.store)
+
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["total_calls"], 2)
+        self.assertEqual(snapshot["clients"], {})
+
+    def test_invalid_client_entries_are_skipped_on_load(self) -> None:
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text(
+            json.dumps(
+                {
+                    "since": "2026-08-04T00:00:00+00:00",
+                    "tools": {},
+                    "clients": {
+                        DSH_PLUGIN_CLIENT: {
+                            "calls": 4,
+                            "last_called_at": "2026-08-04T01:00:00+00:00",
+                        },
+                        "zero_calls": {
+                            "calls": 0,
+                            "last_called_at": "2026-08-04T01:00:00+00:00",
+                        },
+                        "bad_timestamp": {"calls": 5, "last_called_at": "n/a"},
+                        "not_a_mapping": "oops",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        metrics = McpToolCallMetrics(store=self.store)
+
+        snapshot = metrics.snapshot()
+        self.assertEqual(list(snapshot["clients"]), [DSH_PLUGIN_CLIENT])
+        self.assertEqual(snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 4)
 
     def test_missing_file_starts_empty(self) -> None:
         metrics = McpToolCallMetrics(store=self.store)
@@ -220,7 +340,9 @@ class McpToolCallPersistenceTests(unittest.TestCase):
 
 class McpToolCallDispatchTests(unittest.IsolatedAsyncioTestCase):
     def _build_application(
-        self, tool_call_metrics: McpToolCallMetrics
+        self,
+        tool_call_metrics: McpToolCallMetrics,
+        request: object = ...,  # type: ignore[assignment]
     ) -> application.McpProtocolApplication:
         dependencies = application.McpProtocolDependencies(
             authorization=context.McpAuthorizationContext(None),
@@ -230,7 +352,7 @@ class McpToolCallDispatchTests(unittest.IsolatedAsyncioTestCase):
                 papers=MagicMock(),
                 rank_snapshots=MagicMock(),
                 project_collection=MagicMock(),
-                request=MagicMock(),
+                request=MagicMock() if request is ... else request,
             ),
             briefing_repository=MagicMock(),
             session_transport=context.McpSessionTransport(),
@@ -322,6 +444,51 @@ class McpToolCallDispatchTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(metrics.snapshot()["total_calls"], 0)
 
+    async def test_dsh_plugin_user_agent_records_client_bucket(self) -> None:
+        metrics = McpToolCallMetrics()
+        dsh_request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "headers": [(b"user-agent", b"dsh-aigc-radar/0.1.0")],
+            }
+        )
+        app = self._build_application(metrics, request=dsh_request)
+
+        response = await self._dispatch(
+            app,
+            "tools/call",
+            {"name": "search_my_project_favorites", "arguments": {}},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["total_calls"], 1)
+        self.assertEqual(
+            snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 1
+        )
+
+    async def test_unrecognized_user_agent_leaves_clients_empty(self) -> None:
+        metrics = McpToolCallMetrics()
+        plain_request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "headers": [(b"user-agent", b"some-mcp-client/1.0")],
+            }
+        )
+        app = self._build_application(metrics, request=plain_request)
+
+        await self._dispatch(
+            app,
+            "tools/call",
+            {"name": "search_my_project_favorites", "arguments": {}},
+        )
+
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["total_calls"], 1)
+        self.assertEqual(snapshot["clients"], {})
+
 
 class McpToolCallRouteWiringTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -368,6 +535,26 @@ class McpToolCallRouteWiringTests(unittest.TestCase):
         snapshot = isolated.snapshot()
         self.assertEqual(snapshot["total_calls"], 1)
         self.assertEqual(snapshot["tools"]["search_github_ai_projects"]["calls"], 1)
+
+    def test_route_records_dsh_plugin_user_agent_into_client_bucket(self) -> None:
+        isolated = McpToolCallMetrics()
+
+        with patch.object(routes_mcp, "MCP_TOOL_CALL_METRICS", isolated):
+            response = self.client.post(
+                "/api/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 7,
+                    "method": "tools/call",
+                    "params": {"name": "search_github_ai_projects", "arguments": {}},
+                },
+                headers={"user-agent": "dsh-aigc-radar/0.1.0"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        snapshot = isolated.snapshot()
+        self.assertEqual(snapshot["total_calls"], 1)
+        self.assertEqual(snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 1)
 
 
 class CollectMetricsMcpToolCallsTests(unittest.TestCase):

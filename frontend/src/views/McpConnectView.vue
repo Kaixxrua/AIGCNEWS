@@ -5,6 +5,7 @@ import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useRouter } from 'vue-router'
 import { useClipboard } from '@/composables/useClipboard'
 import { useMcpConnectController } from '@/composables/useMcpConnectController'
+import { DSH_PLUGIN_INSTALL_COMMAND, DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
 import { mcpClientOptions, type McpClientOption } from '@/features/mcp/mcpClientCatalog'
 import { resolveMcpFeedback } from '@/features/mcp/mcpFeedback'
 import { formatLocaleDate } from '@/i18n/formatters'
@@ -21,6 +22,7 @@ const {
   clientLabel,
   clientOption,
   copiedKey,
+  copyDshInstallCommand,
   copyGeneratedCommand,
   copyHostInstruction,
   copyQuickCommand,
@@ -151,6 +153,15 @@ onBeforeUnmount(dispose)
             <button class="btn-primary mt-3 w-full justify-center" :disabled="!quickCommand" @click="copyQuickCommand">{{ t(copiedKey === 'quick-command' ? 'mcp.copied' : 'mcp.copyQuick') }}</button>
           </div>
         </div>
+      </section>
+
+      <section class="glass-card p-5 md:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div><p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.dshPlugin.kicker') }}</p><h2 class="mt-1 text-xl font-semibold text-stone-800">{{ t('mcp.dshPlugin.title') }}</h2><p class="mt-2 max-w-3xl text-sm text-stone-500">{{ t('mcp.dshPlugin.description') }}</p></div>
+          <a :href="DSH_PLUGIN_REPOSITORY_URL" target="_blank" rel="noopener" class="btn-secondary text-xs">{{ t('mcp.dshPlugin.repository') }}</a>
+        </div>
+        <pre class="mcp-quick-command mt-4 overflow-auto rounded-2xl border border-stone-700 bg-stone-900 p-4 font-mono text-2xs leading-5 text-stone-100">{{ DSH_PLUGIN_INSTALL_COMMAND }}</pre>
+        <button class="btn-primary mt-3 w-full justify-center" @click="copyDshInstallCommand">{{ t(copiedKey === 'dsh-install' ? 'mcp.copied' : 'mcp.dshPlugin.copy') }}</button>
       </section>
 
       <section class="glass-card p-5 md:p-6">
