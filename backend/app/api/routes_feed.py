@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from typing import Any
@@ -97,6 +98,23 @@ def _item_description(row: dict[str, Any], *, full: bool) -> str:
     return "\n\n".join(parts)
 
 
+def _parse_tags(value: Any) -> list[str]:
+    """解析 tags 列（JSON 数组串，如 '["x", "daily"]'）；脏值按逗号分隔回落。
+
+    documents.tags 与 authors 同约定——仓储层刻意保持 JSON 字符串透传，
+     feed 渲染处自行解析。
+    """
+    if not isinstance(value, str) or not value.strip():
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, list):
+        return [str(tag).strip() for tag in parsed if str(tag).strip()]
+    return [tag.strip() for tag in value.split(",") if tag.strip()]
+
+
 def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -> str | None:
     """把文档行渲染为 <item> XML；缺 id/title/link 的行返回 None。"""
     doc_id = str(row.get("id") or "").strip()
@@ -106,11 +124,7 @@ def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -
         return None
 
     description = _item_description(row, full=full)
-    tags = row.get("tags")
-    categories = ""
-    if isinstance(tags, str) and tags.strip():
-        for tag in [t.strip() for t in tags.split(",") if t.strip()]:
-            categories += f"<category>{escape(tag)}</category>"
+    categories = "".join(f"<category>{escape(tag)}</category>" for tag in _parse_tags(row.get("tags")))
 
     published = _parse_published_at(row.get("published_at"))
     pub_date = f"<pubDate>{format_datetime(published, usegmt=False)}</pubDate>" if published else ""

@@ -78,6 +78,15 @@ def test_build_feed_item_escapes_xml_and_renders_categories() -> None:
     assert "<category>LLM</category><category>Agent</category>" in item
 
 
+def test_build_feed_item_parses_json_array_tags() -> None:
+    # documents.tags 的真实存储形态是 JSON 数组串（与 authors 同约定）；
+    # 逗号分隔仅为脏值回落，JSON 形态不得渲染出引号/括号碎片。
+    item = build_feed_item(_doc("x1", tags='["x", "daily", "MiniMax_AI"]'), "https://aigcnews.cn")
+    assert item is not None
+    assert "<category>x</category><category>daily</category><category>MiniMax_AI</category>" in item
+    assert '["' not in item
+
+
 def test_build_feed_item_skips_rows_missing_id_title_or_link() -> None:
     assert build_feed_item(_doc("", title="t"), "https://aigcnews.cn") is None
     assert build_feed_item(_doc("i", title=""), "https://aigcnews.cn") is None
