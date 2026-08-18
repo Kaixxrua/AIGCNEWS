@@ -238,9 +238,16 @@ if __name__ == "__main__":
 | 通道 | 入口 |
 |---|---|
 | MCP（推荐） | `search_github_ai_projects`（AI/Agent/RAG/LLM 工程产物）/ `search_github_projects`（通用软件） |
-| REST | `GET /api/projects?q=...&page_size=...` |
+| 程序化 REST | `GET /api/v1/projects/search`（+ `/api/v1/projects/categories`） |
+| 网站浏览（免费） | `GET /api/projects?q=...&page_size=...` |
 
 同一项目库：500 Stars 准入、分类体系、中英双语描述与标签、星标增长快照。
+
+程序化通道（MCP 与 `/api/v1`）共享同一套限速与收费口径：MCP token 即
+API key（`Authorization: Bearer`，McpConnect 页签发）；匿名按 IP
+100 次/日、免费档 3000 次/月、会员档 100000 次/月，**两通道共用一个
+配额池**（MCP 用 1000 次，REST 只剩 2000 次）；超限返回 429 +
+`Retry-After` + 分档升级引导。网站浏览端点不参与配额，永远免费。
 
 ## ③ 回执层
 
