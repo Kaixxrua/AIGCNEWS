@@ -9,6 +9,8 @@ import ProjectPagination from '@/components/projects/ProjectPagination.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
 import BrowserHomeGuideDialog from '@/components/projects/BrowserHomeGuideDialog.vue'
+import McpPromptExampleList from '@/components/mcp/McpPromptExampleList.vue'
+import { MCP_PROMO_DISMISSED_STORAGE_KEY, MCP_PROMO_EXAMPLE_IDS } from '@/features/mcp/mcpExamplePrompts'
 import type { GitHubProjectItem } from '@/services/projects/projectApi'
 
 const controllerSpy = vi.hoisted(() => vi.fn())
@@ -106,7 +108,7 @@ const mountView = async () => {
   const wrapper = mount(GitHubProjectsView, {
     global: {
       plugins: [testRouter, i18n],
-      stubs: { Teleport: true },
+      stubs: { Teleport: true, McpPromptExampleList: true },
     },
   })
   await flushPromises()
@@ -173,6 +175,7 @@ beforeEach(() => {
   auth().isAdmin = false
   controllerSpy.mockClear()
   routerPush.mockClear()
+  window.localStorage.removeItem(MCP_PROMO_DISMISSED_STORAGE_KEY)
 })
 
 describe('GitHubProjectsView controller wiring', () => {
@@ -263,7 +266,7 @@ describe('GitHubProjectsView controller wiring', () => {
     await testRouter.push('/projects')
     await testRouter.isReady()
     const wrapper = mount(Harness, {
-      global: { plugins: [testRouter, i18n], stubs: { Teleport: true } },
+      global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true } },
     })
     await flushPromises()
     expect(controller().activate).toHaveBeenCalledTimes(1)
@@ -382,5 +385,76 @@ describe('GitHubProjectsView dialog orchestration', () => {
     await wrapper.find('.projects-login-prompt__action').trigger('click')
 
     expect(routerPush).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/projects' } })
+  })
+})
+
+describe('GitHubProjectsView MCP guidance', () => {
+  it('shows the MCP promo card with the promo example subset by default', async () => {
+    const wrapper = await mountView()
+
+    const promo = wrapper.find('.projects-mcp-promo')
+    expect(promo.exists()).toBe(true)
+    expect(promo.find('a[href="/mcp"]').exists()).toBe(true)
+
+    const list = wrapper.findComponent(McpPromptExampleList)
+    expect(list.exists()).toBe(true)
+    expect(list.props('examples').map((example: { id: string }) => example.id)).toEqual([...MCP_PROMO_EXAMPLE_IDS])
+    expect(list.props('mode')).toBe('demo-copy')
+  })
+
+  it('hides the promo card when a weekly dismissal is still active', async () => {
+    window.localStorage.setItem(MCP_PROMO_DISMISSED_STORAGE_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000))
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+  })
+
+  it('shows the promo card again after the stored dismissal expires', async () => {
+    window.localStorage.setItem(MCP_PROMO_DISMISSED_STORAGE_KEY, String(Date.now() - 1000))
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(true)
+  })
+
+  it('hides the promo card while the personal login prompt is shown', async () => {
+    controller().requiresPersonalLogin.value = true
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+  })
+
+  it('dismisses the promo card for the session only without persisting', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.find('.projects-mcp-promo__dismiss').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+    expect(window.localStorage.getItem(MCP_PROMO_DISMISSED_STORAGE_KEY)).toBeNull()
+  })
+
+  it('persists a weekly dismissal from the dismiss-week button', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.find('.projects-mcp-promo__dismiss-week').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+    const stored = Number(window.localStorage.getItem(MCP_PROMO_DISMISSED_STORAGE_KEY))
+    expect(Number.isFinite(stored)).toBe(true)
+    expect(stored).toBeGreaterThan(Date.now())
+  })
+
+  it('runs an in-site search demo when an example emits demo', async () => {
+    const wrapper = await mountView()
+    controller().loadProjects.mockClear()
+
+    wrapper.findComponent(McpPromptExampleList).vm.$emit('demo', 'RAG 框架')
+    await nextTick()
+
+    const init = controllerSpy.mock.calls[0]![0]
+    expect(init.routeState.searchQuery.value).toBe('RAG 框架')
+    expect(init.routeState.debouncedQuery.value).toBe('RAG 框架')
+    expect(controller().loadProjects).toHaveBeenCalled()
   })
 })

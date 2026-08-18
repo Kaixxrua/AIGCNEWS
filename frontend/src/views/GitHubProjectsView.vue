@@ -20,8 +20,11 @@ import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.v
 import BrowserHomeGuideDialog from '@/components/projects/BrowserHomeGuideDialog.vue'
 import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '@/components/projects/ProjectPagination.vue'
+import McpPromptExampleList from '@/components/mcp/McpPromptExampleList.vue'
 import { useProjectCatalogController } from '@/composables/useProjectCatalogController'
 import { defaultProjectScopeForQuery, defaultProjectSortForQuery, useProjectRouteState } from '@/composables/useProjectRouteState'
+import { useMcpPromoDismissed } from '@/composables/useMcpPromoDismissed'
+import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_EXAMPLE_IDS, mcpExamplesByIds } from '@/features/mcp/mcpExamplePrompts'
 import {
   canEditWebsiteProject,
   canFavoriteProject,
@@ -214,6 +217,21 @@ const handleChipClick = (chip: ProjectChip) => {
   if (chip.type === 'tag' && isPersonalView.value) { searchQuery.value = ''; debouncedQuery.value = ''; selectPersonalTag(chip.value); return }
   resetScopeToAll(); selectedCategory.value = 'all'; selectedSubcategory.value = 'all'; selectedLanguage.value = ''; selectedTag.value = ''; searchQuery.value = chip.value; debouncedQuery.value = chip.value
 }
+const { dismissed: mcpPromoDismissed, dismiss: dismissMcpPromo, dismissForWeek: dismissMcpPromoForWeek } = useMcpPromoDismissed()
+const mcpPromoExamples = mcpExamplesByIds(MCP_PROMO_EXAMPLE_IDS)
+const mcpEmptyStateExamples = mcpExamplesByIds(MCP_EMPTY_STATE_EXAMPLE_IDS)
+// 复刻 handleChipClick 末尾分支：双赋值跳过 280ms 防抖，立即触发站内搜索演示
+const runMcpExampleDemo = (query: string) => {
+  if (source.value !== 'all') return
+  page.value = 1
+  resetScopeToAll()
+  selectedCategory.value = 'all'
+  selectedSubcategory.value = 'all'
+  selectedLanguage.value = ''
+  selectedTag.value = ''
+  searchQuery.value = query
+  debouncedQuery.value = query
+}
 const goPage = (nextPage: number) => {
   const target = Math.max(1, Math.min(totalPages.value, nextPage))
   pageJump.value = ''
@@ -380,6 +398,34 @@ onBeforeUnmount(stopViewReads)
       @clear-personal-tag="clearPersonalTag"
     />
 
+    <section v-if="!mcpPromoDismissed && !requiresPersonalLogin" class="projects-mcp-promo glass-card" aria-labelledby="mcp-promo-title">
+      <div class="projects-mcp-promo__controls">
+        <button type="button" class="projects-mcp-promo__dismiss-week" @click="dismissMcpPromoForWeek">
+          {{ t('projects.mcpPromo.dismissWeek') }}
+        </button>
+        <button type="button" class="projects-mcp-promo__dismiss" :aria-label="t('common.close')" @click="dismissMcpPromo">×</button>
+      </div>
+      <div class="projects-mcp-promo__copy">
+        <p class="projects-kicker">{{ t('projects.mcpPromo.kicker') }}</p>
+        <h2 id="mcp-promo-title">{{ t('projects.mcpPromo.title') }}</h2>
+        <p>{{ t('projects.mcpPromo.pitch') }}</p>
+        <p class="projects-mcp-promo__try">{{ t('projects.mcpPromo.tryLabel') }}</p>
+        <McpPromptExampleList
+          :examples="mcpPromoExamples"
+          :mode="source === 'all' ? 'demo-copy' : 'copy-only'"
+          layout="chips"
+          @demo="runMcpExampleDemo"
+        />
+      </div>
+      <RouterLink to="/mcp" class="projects-mcp-promo__action">
+        {{ t('projects.mcpPromo.cta') }}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14" />
+          <path d="m14 7 5 5-5 5" />
+        </svg>
+      </RouterLink>
+    </section>
+
     <section v-if="successMsg && !requiresPersonalLogin" class="projects-toast projects-toast--success glass-card">
       {{ successMsg }}
     </section>
@@ -422,6 +468,15 @@ onBeforeUnmount(stopViewReads)
       <p class="projects-kicker">EMPTY COLLECTION</p>
       <h2>{{ t(searchQuery || hasActiveFilter ? 'projects.emptyMatchTitle' : isWebsiteOnlyView ? 'projects.emptyWebsiteTitle' : source === 'favorites' ? 'projects.emptyFavoritesTitle' : 'projects.emptyLibraryTitle') }}</h2>
       <p>{{ t(searchQuery || hasActiveFilter ? 'projects.emptyMatchHint' : isWebsiteOnlyView ? 'projects.emptyWebsiteHint' : source === 'favorites' ? 'projects.emptyFavoritesHint' : 'projects.emptyLibraryHint') }}</p>
+      <div v-if="searchQuery || hasActiveFilter" class="empty-state__mcp">
+        <p class="empty-state__mcp-lead">{{ t('projects.mcpEmpty.lead') }}</p>
+        <McpPromptExampleList
+          :examples="mcpEmptyStateExamples"
+          :mode="source === 'all' ? 'demo-copy' : 'copy-only'"
+          layout="chips"
+          @demo="runMcpExampleDemo"
+        />
+      </div>
     </section>
 
     <section v-else class="projects-grid" :aria-label="t('navigation.projects')">
@@ -786,6 +841,181 @@ onBeforeUnmount(stopViewReads)
   height: 16px;
 }
 
+.projects-mcp-promo {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 10px;
+  padding: 16px 20px;
+}
+
+.projects-mcp-promo__copy {
+  max-width: 720px;
+}
+
+.projects-mcp-promo__copy h2 {
+  color: var(--projects-accent);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  font-size: clamp(18px, 2vw, 22px);
+  line-height: 1.1;
+}
+
+.projects-mcp-promo__copy > p:not(.projects-kicker) {
+  margin-top: 8px;
+  color: rgb(var(--stone-500-rgb));
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.projects-mcp-promo__try {
+  font-size: 12px;
+}
+
+.projects-mcp-promo :deep(.mcp-prompt-list) {
+  margin-top: 12px;
+}
+
+.projects-mcp-promo :deep(.mcp-prompt-demo),
+.projects-mcp-promo :deep(.mcp-prompt-text--static),
+.empty-state :deep(.mcp-prompt-demo),
+.empty-state :deep(.mcp-prompt-text--static) {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--projects-accent);
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: rgb(var(--stone-600-rgb));
+  background: var(--projects-paper-light);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.projects-mcp-promo :deep(.mcp-prompt-demo),
+.empty-state :deep(.mcp-prompt-demo) {
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.projects-mcp-promo :deep(.mcp-prompt-demo):hover,
+.empty-state :deep(.mcp-prompt-demo):hover {
+  background: var(--projects-acid-soft);
+}
+
+.projects-mcp-promo :deep(.mcp-prompt-copy),
+.empty-state :deep(.mcp-prompt-copy) {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--projects-accent);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.projects-mcp-promo :deep(.mcp-prompt-copy):hover,
+.empty-state :deep(.mcp-prompt-copy):hover {
+  background: var(--projects-acid-soft);
+}
+
+.projects-mcp-promo__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: var(--projects-control-height);
+  border: 1px solid var(--projects-accent);
+  border-radius: 4px;
+  padding: 0 19px;
+  color: var(--projects-on-acid);
+  background: var(--projects-acid);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  transition: background 160ms ease;
+}
+
+.projects-mcp-promo__action:hover {
+  color: var(--projects-paper-light);
+  background: var(--projects-accent);
+}
+
+.projects-mcp-promo__action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.projects-mcp-promo__controls {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.projects-mcp-promo__dismiss {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--projects-accent);
+  border-radius: 4px;
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.projects-mcp-promo__dismiss-week {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid var(--projects-accent);
+  border-radius: 4px;
+  color: var(--projects-accent);
+  background: var(--projects-paper-light);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.projects-mcp-promo__dismiss:hover,
+.projects-mcp-promo__dismiss-week:hover {
+  background: var(--projects-acid-soft);
+}
+
+.empty-state__mcp {
+  margin-top: 24px;
+}
+
+.empty-state__mcp-lead {
+  margin-bottom: 10px;
+  color: rgb(var(--stone-500-rgb));
+  font-size: 13px;
+}
+
+.empty-state :deep(.mcp-prompt-list) {
+  justify-content: center;
+}
+
 .projects-grid {
   position: relative;
   columns: 260px;
@@ -844,6 +1074,15 @@ onBeforeUnmount(stopViewReads)
   .projects-login-prompt {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .projects-mcp-promo {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .projects-mcp-promo__action {
+    width: 100%;
   }
 
   .projects-hero {
