@@ -118,6 +118,8 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 
 Any MCP client that supports Streamable HTTP can point directly at this URL; the Web site offers one-click import configs for 9 client types (Cursor, Codex, VS Code, Windsurf, etc.); stdio-only clients can bridge via `npx mcp-remote https://aigcnews.cn/api/mcp`. For self-hosted local development, the endpoint is `http://localhost:8000/api/mcp`.
 
+[dsh](https://github.com/deepseek-ai/deepseek-harness) (DeepSeek Harness) users can skip manual MCP setup and install the native plugin [dsh-aigc-radar](https://github.com/Kaixxrua/dsh-aigc-radar): it rides the same `/api/mcp` endpoint, but renders results as native search cards in the dsh Web UI and ships a proactive reuse check out of the box.
+
 ![Claude Code calling AIGC Radar MCP: one prompt to search_github_ai_projects returns curated RAG evaluation projects with star counts](docs/assets/screenshot-mcp-call.png)
 
 Public tools (no auth required; all read-only except the append-only adoption receipt):
@@ -135,7 +137,7 @@ Public tools (no auth required; all read-only except the append-only adoption re
 
 Sending `Authorization: Bearer <MCP access token>` additionally unlocks `search_my_project_favorites` (personal favorites search). Logged-in users can mint minimal-scope, revocable read-only tokens with device labels and expiry — the plaintext token is shown only once, and the server stores only its digest.
 
-**The reuse loop** — the product bet is "while building, the AI proactively surfaces mature technology instead of reinventing wheels", and the loop is closed end to end: deterministic triggers (a dsh plugin listening on `agent/pre-step`, a Claude Code `UserPromptSubmit` hook, and the MCP `instructions` themselves) nudge the agent to search *before* writing code; the search tools answer with curated, star-gated projects; the agent files one adoption receipt (`submit_project_adoption` or `POST /api/projects/adoptions`) recording adopted / reference_only / declined; receipts aggregate into a reuse-rate metric at `GET /api/projects/adoptions/stats`. Full mechanics, decision semantics, and hook recipes: [docs/reuse-loop.md](docs/reuse-loop.md).
+**The reuse loop** — the product bet is "while building, the AI proactively surfaces mature technology instead of reinventing wheels", and the loop is closed end to end: deterministic triggers (a [dsh plugin](https://github.com/Kaixxrua/dsh-aigc-radar) listening on `agent/pre-step`, a Claude Code `UserPromptSubmit` hook, and the MCP `instructions` themselves) nudge the agent to search *before* writing code; the search tools answer with curated, star-gated projects; the agent files one adoption receipt (`submit_project_adoption` or `POST /api/projects/adoptions`) recording adopted / reference_only / declined; receipts aggregate into a reuse-rate metric at `GET /api/projects/adoptions/stats`. Full mechanics, decision semantics, and hook recipes: [docs/reuse-loop.md](docs/reuse-loop.md).
 
 On the context side, it provides resources (`aigc-news://dashboard/summary`, `aigc-news://report/latest`, etc.), resource templates, and prompts (`daily_research_brief`, `project_discovery`). For full protocol parameters, the MCP-first policy, and fallback semantics, see [docs/mcp-server.md](docs/mcp-server.md).
 

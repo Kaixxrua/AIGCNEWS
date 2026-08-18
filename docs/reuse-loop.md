@@ -25,7 +25,7 @@ dsh 原生插件在 `agent/pre-step` 事件上注册了瀑布监听器：用户�
 双重门控后，在该 step 注入一条 `pluginUserMessage`，引导 agent 先调用
 `search_ai_projects` 再动手。只在每个 turn 的 step 1 触发，不改写用户原文。
 
-仓库：`dsh-aigc-radar`（随 awesome-dsh-plugin 投稿公开发布）。
+仓库：[dsh-aigc-radar](https://github.com/Kaixxrua/dsh-aigc-radar)（随 awesome-dsh-plugin 投稿公开发布）。
 
 ### b) Claude Code UserPromptSubmit hook（本机配方）
 

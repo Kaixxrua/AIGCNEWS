@@ -118,6 +118,8 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 
 任何支持 Streamable HTTP 的 MCP 客户端都可以直接指向该 URL；Web 站点内置 9 类客户端（Cursor、Codex、VS Code、Windsurf 等）的一键导入配置；仅支持 stdio 的客户端可经 `npx mcp-remote https://aigcnews.cn/api/mcp` 桥接。自托管本地开发时 endpoint 为 `http://localhost:8000/api/mcp`。
 
+使用 [dsh](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek Harness）的用户可以免去手动配置 MCP，直接安装原生插件 [dsh-aigc-radar](https://github.com/Kaixxrua/dsh-aigc-radar)：走同一个 `/api/mcp` 端点，但结果在 dsh Web UI 渲染为原生搜索卡片，并内置主动复用检查。
+
 公开工具（无需鉴权；除仅追加的采纳回执外全部只读）：
 
 | 工具 | 用途 |
@@ -133,7 +135,7 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 
 携带 `Authorization: Bearer <MCP access token>` 时额外解锁 `search_my_project_favorites`（个人收藏检索）。登录用户可签发最小权限、可撤销的只读 Token，支持设备标签与有效期 —— 明文仅在创建时展示一次，服务端只保存摘要。
 
-**复用闭环** —— 产品赌注是"做项目的时候，AI 自动发现成熟技术，避免重复造轮子"，闭环端到端打通：确定性触发（dsh 插件监听 `agent/pre-step`、Claude Code `UserPromptSubmit` hook、MCP `instructions` 本身）在 agent 动手写代码之前推它先检索；检索工具返回精选且有 Stars 门槛的项目；agent 随后写一条采纳回执（`submit_project_adoption` 或 `POST /api/projects/adoptions`），记录 adopted / reference_only / declined；回执聚合成复用率指标，见 `GET /api/projects/adoptions/stats`。完整机制、决策语义与 hook 配方：[docs/reuse-loop.md](docs/reuse-loop.md)。
+**复用闭环** —— 产品赌注是"做项目的时候，AI 自动发现成熟技术，避免重复造轮子"，闭环端到端打通：确定性触发（[dsh 插件](https://github.com/Kaixxrua/dsh-aigc-radar)监听 `agent/pre-step`、Claude Code `UserPromptSubmit` hook、MCP `instructions` 本身）在 agent 动手写代码之前推它先检索；检索工具返回精选且有 Stars 门槛的项目；agent 随后写一条采纳回执（`submit_project_adoption` 或 `POST /api/projects/adoptions`），记录 adopted / reference_only / declined；回执聚合成复用率指标，见 `GET /api/projects/adoptions/stats`。完整机制、决策语义与 hook 配方：[docs/reuse-loop.md](docs/reuse-loop.md)。
 
 Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://report/latest` 等）、resource templates 与 prompts（`daily_research_brief`、`project_discovery`）。完整的协议参数、MCP-first 策略与 fallback 语义见 [docs/mcp-server.md](docs/mcp-server.md)。
 
