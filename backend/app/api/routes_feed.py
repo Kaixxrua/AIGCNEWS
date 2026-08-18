@@ -11,6 +11,9 @@
     全文是会员权益；Cache-Control 交双边缘缓存，回源压力近零。
   - 会员 feed 复用 user_mcp_tokens 鉴权（hash_mcp_token → token→user→tier），
     响应 noindex + private/no-store——带 token 的 URL 绝不进边缘缓存。
+  - github 源由站内项目库「今日暴涨 top50」热榜供稿（scope=today + hot 排序，
+    与 /projects 页同口径），不镜像 trending 抓取的 documents 池；
+    热榜查询失败或为空时回退 documents 池兜底，保证 feed 不断更。
   - XML 渲染为纯函数，路由层只做读库与鉴权，便于契约测试。
 """
 
@@ -18,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from typing import Any
@@ -29,6 +33,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from backend.app.api.dependencies import (
     get_document_repository,
     get_mcp_access_token_repository,
+    get_project_catalog_query_service,
 )
 from backend.app.core.auth import hash_mcp_token
 from backend.app.repositories.document_repository import DocumentRecentReader
@@ -37,6 +42,9 @@ from backend.app.services.membership.tiers import (
     normalize_membership_tier,
 )
 from backend.app.services.papers.presentation import public_base_url
+from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -60,6 +68,76 @@ _CHANNEL_DESCRIPTION = "AI 资讯聚合：arXiv 论文、GitHub 项目、Product
 
 _MEMBER_ONLY_DETAIL = "全文 RSS 是会员权益，开通会员后使用你的访问令牌订阅"
 _INVALID_TOKEN_DETAIL = "feed 令牌无效或已吊销"
+
+# github 源供稿口径：站内项目库「今日暴涨」热榜（scope=today 强制 hot 排序）top50。
+_GITHUB_HOT_FEED_LIMIT = 50
+
+
+def _project_to_feed_row(item: dict[str, Any]) -> dict[str, Any]:
+    """项目库热榜条目 → feed 行（与 documents 行同形，供统一渲染/归并排序）。"""
+    full_name = str(item.get("full_name") or "").strip()
+    description = str(item.get("description_zh") or item.get("description") or "").strip()
+    stars = item.get("stars")
+    stats = f"⭐ {int(stars):,}" if isinstance(stars, (int, float)) else ""
+    growth = item.get("daily_star_growth")
+    if isinstance(growth, (int, float)) and growth > 0:
+        stats = f"{stats} · 今日 +{int(growth):,}" if stats else f"今日 +{int(growth):,}"
+    summary = f"{description}\n\n{stats}" if description and stats else description or stats
+
+    topics = item.get("topics")
+    tags = [str(tag).strip() for tag in (topics if isinstance(topics, list) else []) if str(tag).strip()]
+    language = str(item.get("language") or "").strip()
+    if language:
+        tags.insert(0, language)
+
+    return {
+        "id": full_name,
+        "source": "github",
+        "title": full_name,
+        "url": str(item.get("url") or "").strip() or f"https://github.com/{full_name}",
+        "summary": summary,
+        "published_at": str(item.get("captured_at") or "").strip(),
+        "published_date": str(item.get("daily_growth_date") or item.get("snapshot_date") or "").strip(),
+        "created_at": "",
+        "tags": json.dumps(tags, ensure_ascii=False),
+    }
+
+
+async def _github_feed_rows(
+    documents: DocumentRecentReader,
+    catalog: ProjectCatalogQueryService | None,
+    *,
+    since_iso: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """github 源行：优先站内今日热榜，热榜不可用/为空时回退 documents 池。"""
+    if catalog is not None:
+        try:
+            page = await catalog.list_public_projects(
+                scope="today",
+                category="",
+                subcategory="",
+                q="",
+                language="",
+                page=1,
+                page_size=min(limit, _GITHUB_HOT_FEED_LIMIT),
+                sort=None,
+                user_id=None,
+            )
+            items = page.result.get("items") or []
+            rows = [_project_to_feed_row(item) for item in items if isinstance(item, dict)]
+            rows = [row for row in rows if row["id"]]
+            if rows:
+                return rows
+            logger.warning("[Feed] 项目库今日热榜为空，github feed 回退 documents 池")
+        except Exception as exc:
+            logger.warning("[Feed] 项目库今日热榜查询失败，github feed 回退 documents 池: %s", exc)
+    return await asyncio.to_thread(
+        documents.list_recent_by_source,
+        "github",
+        since_iso=since_iso,
+        limit=limit,
+    )
 
 
 def _parse_published_at(value: Any) -> datetime | None:
@@ -192,20 +270,23 @@ async def _collect_rows(
     *,
     window: timedelta,
     limit: int,
+    catalog: ProjectCatalogQueryService | None = None,
 ) -> list[dict[str, Any]]:
-    """并发拉取各源滚动窗口文档，按发布时间归并后截断。"""
+    """并发拉取各源滚动窗口文档（github 改由站内今日热榜供稿），按发布时间归并后截断。"""
     since = (datetime.now(timezone.utc) - window).isoformat()
-    batches = await asyncio.gather(
-        *(
-            asyncio.to_thread(
-                documents.list_recent_by_source,
-                source,
-                since_iso=since,
-                limit=limit,
-            )
-            for source in sorted(sources)
+    doc_sources = sorted(sources - {"github"})
+    tasks: list[Any] = [
+        asyncio.to_thread(
+            documents.list_recent_by_source,
+            source,
+            since_iso=since,
+            limit=limit,
         )
-    )
+        for source in doc_sources
+    ]
+    if "github" in sources:
+        tasks.append(_github_feed_rows(documents, catalog, since_iso=since, limit=limit))
+    batches = await asyncio.gather(*tasks)
     merged = [row for batch in batches for row in batch]
     return _sort_rows_newest_first(merged)[:limit]
 
@@ -226,6 +307,7 @@ def _resolve_base_url(request: Request) -> str:
 async def feed_all(
     request: Request,
     documents: DocumentRecentReader = Depends(get_document_repository),
+    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
     """综合公开 feed：全部源按发布时间归并，摘要 + 回链。"""
     rows = await _collect_rows(
@@ -233,6 +315,7 @@ async def feed_all(
         FEED_SOURCES,
         window=_PUBLIC_FEED_WINDOW,
         limit=_PUBLIC_FEED_LIMIT,
+        catalog=catalog,
     )
     base_url = _resolve_base_url(request)
     items = [item for row in rows if (item := build_feed_item(row, base_url)) is not None]
@@ -268,6 +351,7 @@ async def feed_member(
     source: str | None = Query(default=None),
     documents: DocumentRecentReader = Depends(get_document_repository),
     tokens=Depends(get_mcp_access_token_repository),
+    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
     """会员全文 feed：token 鉴权（复用 MCP access token），非会员 fail-closed 403。"""
     if not token:
@@ -293,6 +377,7 @@ async def feed_member(
         sources,
         window=_MEMBER_FEED_WINDOW,
         limit=_MEMBER_FEED_LIMIT,
+        catalog=catalog,
     )
     base_url = _resolve_base_url(request)
     items = [item for row in rows if (item := build_feed_item(row, base_url, full=True)) is not None]
@@ -317,6 +402,7 @@ async def feed_by_source(
     source: str,
     request: Request,
     documents: DocumentRecentReader = Depends(get_document_repository),
+    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
     """单源公开 feed；非法源 404。"""
     normalized = source.strip().lower()
@@ -330,6 +416,7 @@ async def feed_by_source(
         {normalized},
         window=_PUBLIC_FEED_WINDOW,
         limit=_PUBLIC_FEED_LIMIT,
+        catalog=catalog,
     )
     base_url = _resolve_base_url(request)
     items = [item for row in rows if (item := build_feed_item(row, base_url)) is not None]
