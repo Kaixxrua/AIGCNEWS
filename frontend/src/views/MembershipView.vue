@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check } from 'lucide-vue-next'
+import { ArrowLeftRight, Check } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 
@@ -17,6 +17,13 @@ const authStore = useAuthStore()
 const { contactPageConfig } = useContactPageConfig()
 
 const isMember = computed(() => authStore.isMember)
+
+/** 计费周期切换：默认月付，按钮在项目库配方（右侧、描边小按钮）里切到年付 */
+const billingPeriod = ref<'monthly' | 'yearly'>('monthly')
+const isYearly = computed(() => billingPeriod.value === 'yearly')
+const toggleBilling = () => {
+  billingPeriod.value = isYearly.value ? 'monthly' : 'yearly'
+}
 
 const contactHref = computed(() =>
   contactPageConfig.value.enabled
@@ -58,11 +65,27 @@ const MEMBER_FEATURES = ['mcpMember', 'briefingMember', 'support'] as const
           </span>
           <h2 class="tier-name">{{ t('membership.member.name') }}</h2>
           <p class="tier-price">
-            <span class="tier-price-amount">{{ t('membership.member.priceMonthly') }}</span>
-            <span class="tier-price-period">{{ t('membership.member.priceMonthlyPeriod') }}</span>
+            <span class="tier-price-amount">
+              {{ isYearly ? t('membership.member.priceYearlyAmount') : t('membership.member.priceMonthly') }}
+            </span>
+            <span class="tier-price-period">
+              {{ isYearly ? t('membership.member.priceYearlyPeriod') : t('membership.member.priceMonthlyPeriod') }}
+            </span>
+            <button
+              type="button"
+              class="tier-billing-btn"
+              :aria-pressed="isYearly"
+              @click="toggleBilling"
+            >
+              <ArrowLeftRight :size="13" :stroke-width="2.5" aria-hidden="true" />
+              {{ isYearly ? t('membership.member.billMonthly') : t('membership.member.billYearly') }}
+            </button>
           </p>
           <p class="tier-price-yearly">
-            {{ t('membership.member.priceYearly') }}
+            <template v-if="isYearly">
+              {{ t('membership.member.priceMonthly') }}{{ t('membership.member.priceMonthlyPeriod') }}
+            </template>
+            <template v-else>{{ t('membership.member.priceYearly') }}</template>
             <span class="tier-savings">{{ t('membership.member.yearlySavings') }}</span>
           </p>
           <hr class="tier-divider" />
@@ -89,7 +112,7 @@ const MEMBER_FEATURES = ['mcpMember', 'briefingMember', 'support'] as const
 <style scoped>
 /* Hallmark · component: pricing-cards · genre: editorial · theme: project-locked
  * (paper/acid/Playfair 既有 token，零新增色值)
- * states: default · hover · focus-visible(全局 outline) · active · member-success
+ * states: default · hover · focus-visible(全局 outline) · active · member-success · billing-toggle(aria-pressed)
  * pre-emit critique: P4 H5 E4 S4 R4 V4 · contrast: pass */
 .membership-page {
   width: 100%;
@@ -188,6 +211,47 @@ const MEMBER_FEATURES = ['mcpMember', 'briefingMember', 'support'] as const
   margin: 0;
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+/* 计费周期切换：项目库 projects-home-btn 配方（1px 描边、4px 方角、小字重 800），
+   钉在价格行右侧；aria-pressed=年付态反色为 ink 底（btn-primary 同色关系） */
+.tier-billing-btn {
+  margin-left: auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 6px 12px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.tier-billing-btn:hover {
+  background: var(--acid-soft);
+}
+
+.tier-billing-btn:active {
+  transform: translateY(1px);
+}
+
+.tier-billing-btn[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--btn-primary-label);
+  border-color: var(--ink);
+}
+
+.tier-billing-btn[aria-pressed='true']:hover {
+  background: var(--acid);
+  color: var(--acid-ink);
 }
 
 /* 价格用 Playfair 大字号：订阅制编辑流派的价格牌惯例 */

@@ -8,7 +8,7 @@ const overrides = {
   membership: {
     title: '会员', subtitle: '解锁更高的 MCP 调用额度与全部简报模块，也支持本站持续运营。',
     free: { name: '免费版', price: '¥0', currentPlan: '当前默认方案', features: { mcpAnonymous: 'MCP 匿名调用 100 次/天', mcpFree: '注册并创建令牌后 3,000 次/月', briefingFree: '简报订阅 1 个日报模块' } },
-    member: { name: '会员', badge: '推荐', priceMonthly: '¥19', priceMonthlyPeriod: '/ 月', priceYearly: '¥129 / 年', yearlySavings: '年付省 ¥99', features: { mcpMember: 'MCP 调用 100,000 次/月', briefingMember: '简报订阅全部 8 个模块', support: '优先支持与后续会员权益' } },
+    member: { name: '会员', badge: '推荐', priceMonthly: '¥19', priceMonthlyPeriod: '/ 月', priceYearly: '¥129 / 年', priceYearlyAmount: '¥129', priceYearlyPeriod: '/ 年', yearlySavings: '年付省 ¥99', billMonthly: '按月付', billYearly: '按年付', features: { mcpMember: 'MCP 调用 100,000 次/月', briefingMember: '简报订阅全部 8 个模块', support: '优先支持与后续会员权益' } },
     currentMember: '当前已是会员', cta: '联系开通', ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。', ctaMailSubject: 'AIGC News 会员开通咨询', memberNote: '感谢支持！会员权益已生效。',
   },
   footer: { poweredBy: '由 {brandName} 提供支持', disclaimer: '免责声明', privacy: '隐私政策', mcp: 'MCP 接入', ecosystem: '商务合作：', infringement: '侵权投诉' },

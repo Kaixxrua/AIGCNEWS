@@ -50,7 +50,11 @@ const i18n = createI18n({
           priceMonthly: '¥19',
           priceMonthlyPeriod: '/ 月',
           priceYearly: '¥129 / 年',
+          priceYearlyAmount: '¥129',
+          priceYearlyPeriod: '/ 年',
           yearlySavings: '年付省 ¥99',
+          billMonthly: '按月付',
+          billYearly: '按年付',
           features: {
             mcpMember: 'MCP 调用 100,000 次/月',
             briefingMember: '简报订阅全部 8 个模块',
@@ -131,5 +135,37 @@ describe('MembershipView', () => {
     const wrapper = mountView()
 
     expect(wrapper.find('.tier-badge').text()).toBe('推荐')
+  })
+
+  it('toggles the member price between monthly and yearly billing', async () => {
+    const wrapper = mountView()
+    const memberCard = wrapper.find('.tier-card--member')
+    const button = memberCard.find('.tier-billing-btn')
+    const amount = () => memberCard.find('.tier-price-amount').text()
+    const period = () => memberCard.find('.tier-price-period').text()
+    const yearlyLine = () => memberCard.find('.tier-price-yearly').text()
+
+    // 默认月付：大价 ¥19/月，副行年付锚定，按钮指向年付
+    expect(button.text()).toBe('按年付')
+    expect(button.attributes('aria-pressed')).toBe('false')
+    expect(amount()).toBe('¥19')
+    expect(period()).toBe('/ 月')
+    expect(yearlyLine()).toContain('¥129 / 年')
+    expect(yearlyLine()).toContain('年付省 ¥99')
+
+    // 切到年付：大价换 ¥129/年，副行回指月付，节省标常驻
+    await button.trigger('click')
+    expect(button.text()).toBe('按月付')
+    expect(button.attributes('aria-pressed')).toBe('true')
+    expect(amount()).toBe('¥129')
+    expect(period()).toBe('/ 年')
+    expect(yearlyLine()).toContain('¥19/ 月')
+    expect(yearlyLine()).toContain('年付省 ¥99')
+
+    // 再切回月付
+    await button.trigger('click')
+    expect(button.text()).toBe('按年付')
+    expect(amount()).toBe('¥19')
+    expect(period()).toBe('/ 月')
   })
 })
