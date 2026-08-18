@@ -53,24 +53,35 @@ def _rate_limited_response() -> JSONResponse:
 def _quota_exceeded_response(exc: ApiQuotaExceededError) -> JSONResponse:
     """分层配额 429 投影：quota_scope/tier/limit/retry_after + 分档升级引导。
 
-    匿名→领免费 token，免费→升会员，会员→告知窗口重置时间；与 MCP
-    quota 投影的文案口径一致（同一配额池，同一商业语义）。
+    匿名→aigcnews.cn/mcp 登录建 token 或开通 VIP，免费→开通 VIP，
+    会员→告知窗口重置时间；与 MCP quota 投影保持中英双语和同一商业口径。
+    额度数字走 exc.limit 插值，不随档位调整发生文案漂移。
     """
 
     if exc.quota_scope == "daily":
         message = (
-            f"Anonymous daily quota exceeded ({exc.limit} calls/day). "
-            "Create a free account and MCP token for a higher monthly quota."
+            f"已达今日匿名调用上限（{exc.limit} 次/天，按 IP 计）。"
+            "请前往 https://aigcnews.cn/mcp 登录并创建 MCP token 获得月度配额，"
+            "或前往 https://aigcnews.cn/membership 开通 VIP 享更高额度。"
+            f"Anonymous daily quota exhausted ({exc.limit} calls/day per IP): "
+            "sign in at https://aigcnews.cn/mcp to create an MCP token for "
+            "a monthly quota, or upgrade to VIP at https://aigcnews.cn/membership."
         )
     elif exc.tier == "member":
         message = (
-            f"Member monthly quota exceeded ({exc.limit} calls/month); "
-            f"the window resets in {exc.retry_after} seconds."
+            f"本月 VIP 额度已用完（{exc.limit} 次/月），"
+            f"配额窗口将于约 {exc.retry_after} 秒后重置。"
+            f"VIP monthly quota exhausted ({exc.limit} calls/month); "
+            f"the window resets in about {exc.retry_after} seconds."
         )
     else:
         message = (
-            f"Free monthly quota exceeded ({exc.limit} calls/month). "
-            "Upgrade to a membership for a higher quota."
+            f"本月免费额度已用完（{exc.limit} 次/月）。"
+            "请前往 https://aigcnews.cn/membership 开通 VIP 享更高额度，"
+            f"或等待配额窗口重置（约 {exc.retry_after} 秒后）。"
+            f"Free monthly quota exhausted ({exc.limit} calls/month): "
+            "upgrade to VIP at https://aigcnews.cn/membership for a higher "
+            "quota, or wait for the window to reset."
         )
     return JSONResponse(
         {

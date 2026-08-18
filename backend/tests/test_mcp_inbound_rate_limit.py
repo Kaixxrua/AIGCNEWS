@@ -426,7 +426,8 @@ class QuotaExceededProjectionTests(unittest.TestCase):
         self.assertIn("MCP-Protocol-Version", projection.headers)
         error = projection.body["error"]
         self.assertEqual(error["code"], MCP_JSONRPC_RATE_LIMITED)
-        self.assertIn("free account", error["message"])
+        self.assertIn("aigcnews.cn/mcp", error["message"])
+        self.assertIn("aigcnews.cn/membership", error["message"])
         self.assertEqual(
             error["data"],
             {
@@ -442,7 +443,9 @@ class QuotaExceededProjectionTests(unittest.TestCase):
             quota_scope="monthly", tier="free", limit=2000, retry_after=600
         )
         projection = mcp_quota_exceeded_projection(9, exc)
-        self.assertIn("membership", projection.body["error"]["message"])
+        message = projection.body["error"]["message"]
+        self.assertIn("aigcnews.cn/membership", message)
+        self.assertIn("VIP", message)
         self.assertEqual(projection.body["error"]["data"]["tier"], "free")
 
     def test_member_projection_reports_window_reset(self) -> None:
@@ -450,7 +453,9 @@ class QuotaExceededProjectionTests(unittest.TestCase):
             quota_scope="monthly", tier="member", limit=20000, retry_after=42
         )
         projection = mcp_quota_exceeded_projection(9, exc)
-        self.assertIn("20000", projection.body["error"]["message"])
+        message = projection.body["error"]["message"]
+        self.assertIn("VIP monthly quota", message)
+        self.assertIn("window resets", message)
         self.assertEqual(projection.body["error"]["data"]["tier"], "member")
 
 

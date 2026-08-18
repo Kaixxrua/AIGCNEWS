@@ -430,7 +430,8 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         self.assertEqual(payload["quota_scope"], "daily")
         self.assertEqual(payload["tier"], "free")
         self.assertEqual(payload["limit"], 1)
-        self.assertIn("free account", payload["detail"])
+        self.assertIn("aigcnews.cn/mcp", payload["detail"])
+        self.assertIn("aigcnews.cn/membership", payload["detail"])
 
     def test_free_user_monthly_quota_exceeded_guides_to_membership(self) -> None:
         self.app.dependency_overrides[OptionalMcpUser] = lambda: {
@@ -446,7 +447,8 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         payload = throttled.json()
         self.assertEqual(payload["quota_scope"], "monthly")
         self.assertEqual(payload["tier"], "free")
-        self.assertIn("membership", payload["detail"])
+        self.assertIn("aigcnews.cn/membership", payload["detail"])
+        self.assertIn("VIP", payload["detail"])
 
     def test_member_user_gets_member_quota(self) -> None:
         self.app.dependency_overrides[OptionalMcpUser] = lambda: {
@@ -466,7 +468,8 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         payload = throttled.json()
         self.assertEqual(payload["tier"], "member")
         self.assertEqual(payload["limit"], 3)
-        self.assertIn("calls/month", payload["detail"])
+        self.assertIn("VIP monthly quota", payload["detail"])
+        self.assertIn("window resets", payload["detail"])
 
     def test_admin_user_skips_quota_entirely(self) -> None:
         self.app.dependency_overrides[OptionalMcpUser] = lambda: {

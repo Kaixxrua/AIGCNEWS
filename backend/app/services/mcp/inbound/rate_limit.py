@@ -236,24 +236,36 @@ def mcp_quota_exceeded_projection(
     """HTTP 429 projection for tools/call 分层配额超限（区别于分钟级限速）。
 
     error.data 为加性扩展（quota_scope/tier/limit/retry_after），供客户端
-    区分「慢下来重试」与「升级档位」；message 按档位给升级引导：
-    匿名→领免费 key，免费→升会员，会员→告知窗口重置时间。
+    区分「慢下来重试」与「升级档位」；message 中英双语、按档给引导：
+    匿名→aigcnews.cn/mcp 登录建 token 或开通 VIP，免费→开通 VIP，
+    会员→告知窗口重置时间。额度数字一律走 exc.limit 插值，不在文案里
+    硬编码（档位调整时文案不漂移）。
     """
 
     if exc.quota_scope == "daily":
         message = (
-            f"Anonymous daily quota exceeded ({exc.limit} tool calls/day). "
-            "Create a free account and MCP token for a higher monthly quota."
+            f"已达今日匿名调用上限（{exc.limit} 次/天，按 IP 计）。"
+            "请前往 https://aigcnews.cn/mcp 登录并创建 MCP token 获得月度配额，"
+            "或前往 https://aigcnews.cn/membership 开通 VIP 享更高额度。"
+            f"Anonymous daily quota exhausted ({exc.limit} calls/day per IP): "
+            "sign in at https://aigcnews.cn/mcp to create an MCP token for "
+            "a monthly quota, or upgrade to VIP at https://aigcnews.cn/membership."
         )
     elif exc.tier == MEMBERSHIP_TIER_MEMBER:
         message = (
-            f"Member monthly quota exceeded ({exc.limit} tool calls/month); "
-            f"the window resets in {exc.retry_after} seconds."
+            f"本月 VIP 额度已用完（{exc.limit} 次/月），"
+            f"配额窗口将于约 {exc.retry_after} 秒后重置。"
+            f"VIP monthly quota exhausted ({exc.limit} calls/month); "
+            f"the window resets in about {exc.retry_after} seconds."
         )
     else:
         message = (
-            f"Free monthly quota exceeded ({exc.limit} tool calls/month). "
-            "Upgrade to a membership for a higher quota."
+            f"本月免费额度已用完（{exc.limit} 次/月）。"
+            "请前往 https://aigcnews.cn/membership 开通 VIP 享更高额度，"
+            f"或等待配额窗口重置（约 {exc.retry_after} 秒后）。"
+            f"Free monthly quota exhausted ({exc.limit} calls/month): "
+            "upgrade to VIP at https://aigcnews.cn/membership for a higher "
+            "quota, or wait for the window to reset."
         )
     return McpProtocolResponse(
         status_code=429,
