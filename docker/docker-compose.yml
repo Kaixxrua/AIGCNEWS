@@ -159,6 +159,54 @@ services:
       retries: 18
       start_period: 30s
 
+  # Go 版 AIGC Radar MCP（金丝雀）：与 mcp-api 并存，环境/安全口径逐项对齐，
+  # 无状态（计数聚合在 Redis，不写本地文件），切换由边缘层回源目标决定。
+  # 当前仅探活/版本端点可用；/api/mcp 协议面落地进度见 mcp-go/README.md。
+  mcp-api-go:
+    build:
+      context: ..
+      dockerfile: mcp-go/Dockerfile
+    container_name: aigc-mcp-go
+    restart: always
+    logging: *default-logging
+    mem_limit: 512m
+    profiles: ["mcp-go"]
+    ports:
+      # 仅绑定回环地址：与 Python 版同策略，公网必须经边缘回源
+      - "127.0.0.1:8002:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+      project-catalog-postgres:
+        condition: service_healthy
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      # 与 backend-api/mcp-api 同一钉死口径，防 overlay 网络别名歧义
+      - REDIS_HOST=redis-aigc
+      # 出站代理（Phase 2 的 GitHub 兜底/embedding 调用需要），与 Python 同口径
+      - OUTBOUND_PROXY=${OUTBOUND_PROXY:-}
+      - HTTP_PROXY=${OUTBOUND_PROXY:-}
+      - HTTPS_PROXY=${OUTBOUND_PROXY:-}
+      - ALL_PROXY=${OUTBOUND_PROXY:-}
+      - http_proxy=${OUTBOUND_PROXY:-}
+      - https_proxy=${OUTBOUND_PROXY:-}
+      - all_proxy=${OUTBOUND_PROXY:-}
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,mcp-api,aigc-mcp,mcp-api-go,aigc-mcp-go,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,mcp-api,aigc-mcp,mcp-api-go,aigc-mcp-go,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - default
+    # healthcheck 在镜像内（wget 探 /api/ready），与 Python 版超时参数一致
+
   project-catalog-postgres:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     restart: unless-stopped

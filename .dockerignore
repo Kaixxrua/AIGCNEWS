@@ -1,0 +1,5 @@
+# 仓库根 .dockerignore 只服务 mcp-go 镜像（唯一以仓库根为构建上下文
+# 的 Dockerfile）；backend/ 与 frontend/ 镜像各自有独立上下文，不受此影响。
+# 裁剪后上下文仅含 mcp-go/，避免 storage/、.git、node_modules 进入构建。
+*
+!mcp-go

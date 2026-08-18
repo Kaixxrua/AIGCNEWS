@@ -144,6 +144,38 @@ jobs:
           backend/tests/test_postgres_push_repositories_integration.py
           EOF
 
+  mcp-go:
+    name: MCP Go build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mcp-go
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: mcp-go/go.sum
+
+      - name: Verify go.mod/go.sum tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # 探活端点测试直接回放 backend/tests/parity 黄金语料（字节级硬门禁）
+      - name: Test (parity corpus gate included)
+        run: go test ./... -count=1
+
   compose-smoke:
     name: Compose and image smoke
     runs-on: ubuntu-latest
