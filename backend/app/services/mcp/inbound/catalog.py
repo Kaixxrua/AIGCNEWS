@@ -229,7 +229,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "do not pass query-language values such as zh, en, 中文, or 英文 as repository languages. For query-language metadata use "
             "intent.language with zh, en, mixed, or und. "
             "For non-AI GitHub or open-source software, call search_github_projects instead. Use returned AIGC_NEWS fields such as "
-            "description_zh, tags, categories, language, stars, daily_star_growth, hot_score, and URL before inspecting repositories. "
+            "description_zh, tags, categories, language, license, stars, daily_star_growth, hot_score, and URL before inspecting repositories. "
             "If local results are zero, this tool may perform a bounded read-only AI-focused GitHub Search fallback labeled github_api_fallback. "
             "Set lang='en' when the user speaks English to receive English-only text fields; the default 'zh' returns "
             "the bilingual Chinese-preferred payload. Every returned item carries data_source \"aigcnews.cn\" and the response "

@@ -1115,6 +1115,16 @@ class ProjectDiscoveryTests(unittest.TestCase):
         finally:
             project_discovery.settings.project_ai_search_strategy = original
 
+    def test_public_item_maps_license_from_spdx_column(self) -> None:
+        item = project_discovery.public_project_item(
+            {"full_name": "owner/repo", "license_spdx_id": "GPL-3.0"}
+        )
+        self.assertEqual(item["license"], "GPL-3.0")
+
+        no_license = project_discovery.public_project_item({"full_name": "owner/repo"})
+        self.assertEqual(no_license["license"], "")
+
+
     def test_github_fallback_skip_reason_priority_order(self) -> None:
         base_kwargs = {
             "query": "agent",

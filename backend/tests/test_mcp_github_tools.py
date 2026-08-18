@@ -403,6 +403,21 @@ class QueryModeTests(unittest.TestCase):
         self.assertEqual(normalized["watchers"], 12)
         self.assertTrue(normalized["community_metrics_complete"])
 
+    def test_normalization_maps_license_spdx_id(self) -> None:
+        normalized = source_github_mcp._normalize_repo(
+            {
+                "id": 1,
+                "full_name": "owner/repo",
+                "license": {"spdx_id": "MIT"},
+            }
+        )
+        self.assertEqual(normalized["license_spdx_id"], "MIT")
+
+        without_license = source_github_mcp._normalize_repo(
+            {"id": 1, "full_name": "owner/repo", "license": None}
+        )
+        self.assertEqual(without_license["license_spdx_id"], "")
+
     def setUp(self) -> None:
         source_github_mcp._clear_fallback_cache()
 

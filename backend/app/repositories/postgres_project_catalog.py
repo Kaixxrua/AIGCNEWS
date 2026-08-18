@@ -102,6 +102,7 @@ _LIST_PROJECT_COLUMN_PAIRS = (
     ("ge.tags_en_json::text tags_en_json", "{tags_en} tags_en_json"),
     ("'system'::text tags_origin", "{tags_origin} tags_origin"),
     ("c.language", "NULL::text language"),
+    ("c.license_spdx_id", "NULL::text license_spdx_id"),
     ("c.topics_json", "'[]' topics_json"),
     (
         "CASE WHEN gm.repo_id IS NOT NULL THEN gm.stars ELSE COALESCE(c.stars,0) END stars",

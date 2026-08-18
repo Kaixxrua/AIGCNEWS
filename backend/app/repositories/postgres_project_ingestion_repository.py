@@ -19,12 +19,13 @@ def _utcnow() -> str:
 
 _CANDIDATE_UPSERT_SQL = """
     INSERT INTO github_repo_candidates (
-        repo_id, full_name, title, url, description, language, topics_json,
+        repo_id, full_name, title, url, description, language, license_spdx_id,
+        topics_json,
         created_at, pushed_at, stars, forks, watchers, source_channels,
         first_seen_at, last_seen_at, last_snapshot_at
     ) VALUES (
         %(repo_id)s, %(full_name)s, %(title)s, %(url)s, %(description)s,
-        %(language)s, %(topics_json)s, %(created_at)s, %(pushed_at)s,
+        %(language)s, %(license_spdx_id)s, %(topics_json)s, %(created_at)s, %(pushed_at)s,
         %(stars)s, %(forks)s, %(watchers)s, %(source_channels)s,
         %(first_seen_at)s, %(last_seen_at)s, %(last_snapshot_at)s
     )
@@ -33,6 +34,7 @@ _CANDIDATE_UPSERT_SQL = """
         url=COALESCE(NULLIF(EXCLUDED.url, ''), github_repo_candidates.url),
         description=COALESCE(NULLIF(EXCLUDED.description, ''), github_repo_candidates.description),
         language=COALESCE(NULLIF(EXCLUDED.language, ''), github_repo_candidates.language),
+        license_spdx_id=COALESCE(NULLIF(EXCLUDED.license_spdx_id, ''), github_repo_candidates.license_spdx_id),
         topics_json=COALESCE(NULLIF(EXCLUDED.topics_json, '[]'), github_repo_candidates.topics_json),
         created_at=COALESCE(NULLIF(github_repo_candidates.created_at, ''), EXCLUDED.created_at),
         pushed_at=GREATEST(COALESCE(github_repo_candidates.pushed_at, ''), COALESCE(EXCLUDED.pushed_at, '')),
@@ -180,6 +182,7 @@ class PostgresGitHubProjectIngestionRepository:
         )
         payload.setdefault("description", "")
         payload.setdefault("language", "")
+        payload.setdefault("license_spdx_id", "")
         payload.setdefault("topics_json", "[]")
         payload.setdefault("created_at", "")
         payload.setdefault("pushed_at", "")
@@ -426,6 +429,7 @@ class PostgresGitHubProjectIngestionRepository:
                 url=COALESCE(NULLIF(c.url,''), o.url),
                 description=COALESCE(NULLIF(c.description,''), o.description),
                 language=COALESCE(NULLIF(c.language,''), o.language),
+                license_spdx_id=COALESCE(NULLIF(c.license_spdx_id,''), o.license_spdx_id),
                 topics_json=COALESCE(NULLIF(c.topics_json,'[]'), o.topics_json),
                 created_at=COALESCE(NULLIF(c.created_at,''), o.created_at),
                 pushed_at=GREATEST(COALESCE(c.pushed_at,''), COALESCE(o.pushed_at,'')),
@@ -461,7 +465,8 @@ class PostgresGitHubProjectIngestionRepository:
         cursor.execute(
             """
             INSERT INTO github_repo_candidates (
-                repo_id, full_name, title, url, description, language, topics_json,
+                repo_id, full_name, title, url, description, language, license_spdx_id,
+                topics_json,
                 created_at, pushed_at, stars, forks, watchers, source_channels,
                 first_seen_at, last_seen_at, last_snapshot_at,
                 availability_status, not_found_count, availability_checked_at
@@ -469,7 +474,7 @@ class PostgresGitHubProjectIngestionRepository:
             SELECT %s, %s,
                    CASE WHEN LOWER(COALESCE(title,''))=LOWER(%s) OR COALESCE(title,'')=''
                         THEN %s ELSE title END,
-                   url, description, language, topics_json, created_at, pushed_at,
+                   url, description, language, license_spdx_id, topics_json, created_at, pushed_at,
                    stars, forks, watchers, source_channels,
                    first_seen_at, last_seen_at, last_snapshot_at,
                    'active', 0, %s

@@ -101,6 +101,7 @@ def public_project_item(item: dict[str, Any]) -> dict[str, Any]:
         "tags_origin": "user" if item.get("tags_origin") == "user" else "system",
         "topics": _bounded_strings(item.get("topics")),
         "language": _clipped(item.get("language"), 64),
+        "license": _clipped(item.get("license_spdx_id") or item.get("license"), 64),
         "stars": int(item.get("stars") or 0),
         "forks": int(item.get("forks") or 0),
         "pushed_at": item.get("pushed_at"),

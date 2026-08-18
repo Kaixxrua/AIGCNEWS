@@ -136,6 +136,7 @@ def _normalize_repo(item: Dict[str, Any]) -> Dict[str, Any]:
         "subcategory_name": "",
         "tags": tags,
         "language": language,
+        "license_spdx_id": str((item.get("license") or {}).get("spdx_id") or ""),
         "topics": topics[:12],
         "stars": int(item.get("stargazers_count") or 0),
         "forks": int(item.get("forks_count") or 0),

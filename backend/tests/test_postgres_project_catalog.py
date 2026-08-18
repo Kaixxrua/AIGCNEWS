@@ -622,3 +622,13 @@ def test_union_branches_align_daily_growth_observed_at_column_type() -> None:
     # text，否则 UNION ALL 报类型不匹配，source=all（公开列表默认）整表 500
     assert "NULL::text daily_growth_observed_at" in rows_sql
     assert "NULL::timestamptz daily_growth_observed_at" not in rows_sql
+
+
+def test_union_branches_align_license_column_type() -> None:
+    database = Database([{"cnt": 0}, []])
+    PostgresProjectCatalogRepository(database).list_projects(source="all")
+    rows_sql = database.cursor.calls[2][0]
+    # license 只在 github 分支有源列；website 分支必须补同型 text 占位，
+    # 否则 UNION ALL 类型不匹配
+    assert "c.license_spdx_id" in rows_sql
+    assert "NULL::text license_spdx_id" in rows_sql

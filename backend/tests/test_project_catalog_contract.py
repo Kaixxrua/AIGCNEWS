@@ -38,6 +38,7 @@ PUBLIC_PROJECT_FIELDS = {
     "tags_origin",
     "topics",
     "language",
+    "license",
     "stars",
     "forks",
     "pushed_at",

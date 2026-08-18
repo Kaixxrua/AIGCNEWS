@@ -8,8 +8,54 @@ import httpx
 from backend.app.services.ingestion import github_project_metrics_service as metrics
 from backend.app.services.ingestion.source_github import (
     GitHubRepoMetricsResult,
+    _parse_graphql_repo,
+    _parse_metrics_item,
     fetch_github_repo_metrics,
 )
+
+
+class LicenseParsingTests(unittest.TestCase):
+    def test_graphql_parser_maps_license_spdx_id(self) -> None:
+        node = {
+            "id": "repo-1",
+            "name": "repo",
+            "owner": {"login": "owner"},
+            "licenseInfo": {"spdxId": "MIT"},
+        }
+        self.assertEqual(_parse_graphql_repo(node)["license_spdx_id"], "MIT")
+
+        no_license = _parse_graphql_repo(
+            {"id": "repo-2", "name": "repo", "owner": {"login": "owner"}, "licenseInfo": None}
+        )
+        self.assertEqual(no_license["license_spdx_id"], "")
+
+    def test_rest_parser_maps_license_spdx_id(self) -> None:
+        item = {"full_name": "owner/repo", "license": {"spdx_id": "Apache-2.0"}}
+        self.assertEqual(_parse_metrics_item(item)["license_spdx_id"], "Apache-2.0")
+
+        no_license = _parse_metrics_item({"full_name": "owner/repo", "license": None})
+        self.assertEqual(no_license["license_spdx_id"], "")
+
+    def test_candidate_payload_carries_license_with_existing_fallback(self) -> None:
+        payload = metrics._candidate_payload(
+            {"full_name": "owner/repo", "license_spdx_id": "MIT"},
+            existing=None,
+            captured_at="now",
+        )
+        self.assertEqual(payload["license_spdx_id"], "MIT")
+
+        # 本次抓取缺值时保留库中已有 license，不被空值冲掉
+        retained = metrics._candidate_payload(
+            {"full_name": "owner/repo"},
+            existing={"license_spdx_id": "GPL-3.0"},
+            captured_at="now",
+        )
+        self.assertEqual(retained["license_spdx_id"], "GPL-3.0")
+
+        absent = metrics._candidate_payload(
+            {"full_name": "owner/repo"}, existing=None, captured_at="now"
+        )
+        self.assertEqual(absent["license_spdx_id"], "")
 
 
 class GitHubRepoMetricsFetchTests(unittest.TestCase):

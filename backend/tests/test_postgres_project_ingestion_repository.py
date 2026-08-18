@@ -114,3 +114,24 @@ def test_upsert_metric_observations_failure_propagates_out_of_one_transaction() 
 
     # 只开启了一个事务：候选 upsert 与可用性恢复随失败一起回滚，不留中间态
     assert database.transaction_count == 1
+
+
+def test_candidate_upsert_sql_carries_license_spdx_id() -> None:
+    repository, _, cursor = repository_with_cursor()
+    observation = _observation("owner/one", "owner/one")
+    observation["candidate"]["license_spdx_id"] = "Apache-2.0"
+
+    repository.upsert_github_repo_metric_observations([observation], checked_at="now")
+
+    candidate_sql, candidate_params = cursor.executemany.call_args_list[0].args
+    assert "license_spdx_id" in candidate_sql
+    assert [row["license_spdx_id"] for row in candidate_params] == ["Apache-2.0"]
+
+
+def test_candidate_payload_defaults_license_spdx_id_empty() -> None:
+    payload = PostgresGitHubProjectIngestionRepository._candidate_payload(
+        {"repo_id": "owner/one", "full_name": "owner/one"}
+    )
+
+    assert payload["license_spdx_id"] == ""
+

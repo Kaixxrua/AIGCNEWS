@@ -341,6 +341,7 @@ def _parse_metrics_item(item: Dict[str, Any]) -> Dict[str, Any]:
         "watchers": watchers,
         "community_metrics_complete": community_metrics_complete,
         "open_issues": int(item.get("open_issues_count") or 0),
+        "license_spdx_id": str((item.get("license") or {}).get("spdx_id") or ""),
         "created_at": (item.get("created_at") or "")[:10],
         "pushed_at": (item.get("pushed_at") or "")[:10],
     }
@@ -469,6 +470,7 @@ def _parse_graphql_repo(node: Dict[str, Any]) -> Dict[str, Any]:
         "community_metrics_complete": isinstance(node.get("watchers"), dict)
         and "totalCount" in node["watchers"],
         "open_issues": int(((node.get("issues") or {}).get("totalCount") or 0)),
+        "license_spdx_id": str((node.get("licenseInfo") or {}).get("spdxId") or ""),
         "created_at": str(node.get("createdAt") or "")[:10],
         "pushed_at": str(node.get("pushedAt") or "")[:10],
     }
@@ -521,6 +523,7 @@ def fetch_github_repo_metrics_batch(
                           issues(states: OPEN) {{ totalCount }}
                           createdAt
                           pushedAt
+                          licenseInfo {{ spdxId }}
                           repositoryTopics(first: 10) {{ edges {{ node {{ topic {{ name }} }} }} }}
                         }}'''
                     )
