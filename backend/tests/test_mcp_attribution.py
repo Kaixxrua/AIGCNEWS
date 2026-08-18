@@ -125,6 +125,54 @@ class McpAttributionContractTests(unittest.TestCase):
         )
         self.assertIn("AIGC Radar", data["attribution"])
 
+    def test_project_search_items_carry_data_source(self) -> None:
+        self.project_search_runtime.search_projects.return_value = {
+            "items": [
+                {"full_name": "owner/local", "result_origin": "aigc_news_local"},
+                {"full_name": "owner/fallback", "result_origin": "github_api_fallback"},
+            ],
+            "total": 2,
+        }
+
+        data = self.call_tool("search_github_ai_projects", {"q": "agent"})
+
+        for item in data["items"]:
+            self.assertEqual(item["data_source"], "aigcnews.cn")
+        # result_origin 记录出处语义不变：兜底条目仍标 github_api_fallback
+        self.assertEqual(data["items"][0]["result_origin"], "aigc_news_local")
+        self.assertEqual(data["items"][1]["result_origin"], "github_api_fallback")
+
+    def test_favorites_items_carry_data_source_and_attribution(self) -> None:
+        async def authenticated_user():
+            return {
+                "user_id": 42,
+                "role": "user",
+                "scopes": frozenset({"projects:favorites:read"}),
+            }
+
+        self.application_repositories.project_collections.list_user_project_collection.return_value = {
+            "items": [{"id": "github:1", "full_name": "owner/fav", "stars": 900}],
+            "total": 1,
+        }
+        self.client.app.dependency_overrides[routes_mcp.OptionalMcpUser] = (
+            authenticated_user
+        )
+        try:
+            data = self.call_tool("search_my_project_favorites", {"q": "fav"})
+        finally:
+            self.client.app.dependency_overrides.clear()
+
+        self.assertEqual(
+            data["attribution"], f"Data provided by AIGC Radar · {TEST_BASE_URL}"
+        )
+        item = data["items"][0]
+        self.assertEqual(item["data_source"], "aigcnews.cn")
+        self.assertEqual(
+            item["detail_url"],
+            f"{TEST_BASE_URL}/projects?q=owner%2Ffav"
+            "&utm_source=mcp&utm_medium=tool",
+        )
+
     def test_report_latest_markdown_carries_source_footer(self) -> None:
         self.briefing_repository.get_briefing_by_date.return_value = {
             "content_zh": "# 日报正文",

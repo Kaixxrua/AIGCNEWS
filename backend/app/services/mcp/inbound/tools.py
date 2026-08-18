@@ -33,6 +33,7 @@ from backend.app.services.mcp.inbound.attribution import (
     enrich_doc_detail_url,
     enrich_project_detail_url,
     mcp_attribution,
+    tag_project_data_source,
 )
 from backend.app.services.mcp.inbound.catalog import (
     _PROJECT_SORT_CHOICES,
@@ -45,11 +46,11 @@ from backend.app.services.papers.presentation import (
     project_pdf_media_url,
     safe_document,
 )
+from backend.app.services.project_adoptions import ProjectAdoptionService
 from backend.app.services.project_catalog.query_service import (
     PUBLIC_PROJECT_MIN_STARS,
     ProjectCatalogQueryService,
 )
-from backend.app.services.project_adoptions import ProjectAdoptionService
 from backend.app.services.project_discovery import (
     localize_project_item,
     public_project_item,
@@ -296,7 +297,9 @@ async def _search_project_library(
     if not isinstance(result, dict):
         return result
     result["items"] = [
-        enrich_project_detail_url(localize_project_item(dict(item), lang), request)
+        tag_project_data_source(
+            enrich_project_detail_url(localize_project_item(dict(item), lang), request)
+        )
         for item in result.get("items") or []
         if isinstance(item, dict)
     ]
@@ -385,7 +388,12 @@ async def _tool_search_my_project_favorites(
         enriched_only=True,
     )
     items = [
-        localize_project_item(public_project_item(item), lang)
+        tag_project_data_source(
+            enrich_project_detail_url(
+                localize_project_item(public_project_item(item), lang),
+                tool_context.request,
+            )
+        )
         for item in result.get("items") or []
     ]
     total = int(result.get("total") or 0)
@@ -406,6 +414,7 @@ async def _tool_search_my_project_favorites(
         "lang": lang,
         "sort": sort,
         "marker": next_marker,
+        "attribution": mcp_attribution(tool_context.request),
     }
 
 

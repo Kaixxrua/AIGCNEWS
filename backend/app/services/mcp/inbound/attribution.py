@@ -13,6 +13,11 @@ _BRAND_BASE_URL = "https://aigcnews.cn"
 _UTM_TOOL = "utm_source=mcp&utm_medium=tool"
 _UTM_RESOURCE = "utm_source=mcp&utm_medium=resource"
 
+# 条目级数据来源打标：条目被 LLM 单独引用/复制出响应上下文时仍携带提供方标识。
+# 与 item["result_origin"] 互补——result_origin 记记录出处（aigc_news_local /
+# github_api_fallback），data_source 恒为提供方品牌域，不随兜底路径变化。
+MCP_PROJECT_DATA_SOURCE = "aigcnews.cn"
+
 
 def _base_url(request: Request | None) -> str:
     if request is not None:
@@ -36,6 +41,12 @@ def enrich_doc_detail_url(doc: dict[str, Any], request: Request | None) -> dict[
     else:
         doc["detail_url"] = None
     return doc
+
+
+def tag_project_data_source(item: dict[str, Any]) -> dict[str, Any]:
+    """项目条目强制打标提供方数据来源；就地修改并返回同一 dict 便于链式调用。"""
+    item["data_source"] = MCP_PROJECT_DATA_SOURCE
+    return item
 
 
 def enrich_project_detail_url(item: dict[str, Any], request: Request | None) -> dict[str, Any]:
