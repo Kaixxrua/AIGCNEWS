@@ -52,6 +52,8 @@ from backend.app.core.redis_client import close_redis_client, create_redis_clien
 from backend.app.core.scheduler import create_scheduler_runtime
 from backend.app.monitoring.error_event_capture import ErrorEventCapture
 from backend.app.monitoring.health import create_application_monitoring_runtime
+from backend.app.monitoring.mcp_redis_metrics import create_redis_mcp_tool_call_metrics
+from backend.app.monitoring.mcp_tools import JsonMcpToolCallStore
 from backend.app.repositories.application_repository_context import (
     configure_application_repositories,
 )
@@ -69,6 +71,7 @@ from backend.app.services.email.pool_config_provider import (
 from backend.app.services.email.smtp_config_provider import (
     configure_smtp_settings_reader,
 )
+from backend.app.services.mcp.inbound.tools import MCP_TOOL_REGISTRY
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.rag.composition import RagChatServiceProvider
 from backend.app.services.runtime_provider.runtime import (
@@ -136,6 +139,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.postgres_database = postgres_database
     app.state.application_database_backend = "postgres"
     app.state.redis = None
+    app.state.mcp_tool_call_metrics = None
     app.state.project_search_runtime = None
     app.state.monitoring_runtime = None
     app.state.operations_runtime = None
@@ -278,6 +282,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 prefix="aigc-cache:",
             )
             app.state.redis = redis_client
+            # MCP 调用计数迁移 Redis 聚合（PR 0.2）：主/独立 MCP 双进程共享
+            # mcpmetrics:* 命名空间；历史 JSON 一次性种子并入（每源幂等），
+            # 过渡期内双写 shadow，读路径 Redis 优先、故障回退本地 JSON。
+            mcp_tool_call_metrics = create_redis_mcp_tool_call_metrics(
+                redis_client,
+                JsonMcpToolCallStore(settings.mcp_tool_call_metrics_path),
+                "backend-api",
+            )
+            app.state.mcp_tool_call_metrics = mcp_tool_call_metrics
+            await mcp_tool_call_metrics.seed_from_json(MCP_TOOL_REGISTRY)
             logger.info("[Startup] Redis cache initialized.")
         except Exception as exc:
             app.state.redis = None

@@ -20,6 +20,8 @@ def _settings(*, scheduler_enabled: bool = False) -> SimpleNamespace:
         redis_password="",
         env="test",
         JWT_SECRET_KEY="test-only-jwt-secret-key-with-32+chars",
+        # lifespan 的 Redis 指标绑定读取该配置（PR 0.2）
+        mcp_tool_call_metrics_path="storage/metrics/mcp_tool_calls.json",
     )
 
 

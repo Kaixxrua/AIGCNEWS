@@ -74,20 +74,17 @@ async def _get_source_counts(
     return source_counts
 
 
-async def _get_mcp_call_counts() -> tuple[int, int]:
+async def _get_mcp_call_counts(request: Request) -> tuple[int, int]:
     """MCP 工具调用累计次数与其中 dsh 插件来源次数。
 
-    公开营销位口径；计数器不可用时两者静默为 0。一次 snapshot 同时取
-    总数与客户端分桶，避免同一请求内重复读盘。
+    公开营销位口径；计数器不可用时两者静默为 0。优先读 Redis 聚合
+    （主/独立 MCP 双进程共享），未绑定或故障时由服务层回退本地 JSON。
     """
+    from backend.app.monitoring.mcp_redis_metrics import resolve_tool_call_metrics
+    from backend.app.monitoring.mcp_tools import DSH_PLUGIN_CLIENT
 
-    def _query() -> tuple[int, int]:
-        from backend.app.monitoring.mcp_tools import (
-            DSH_PLUGIN_CLIENT,
-            MCP_TOOL_CALL_METRICS,
-        )
-
-        snapshot = MCP_TOOL_CALL_METRICS.snapshot()
+    try:
+        snapshot = await resolve_tool_call_metrics(request).snapshot()
         clients = snapshot.get("clients")
         dsh_entry = (
             clients.get(DSH_PLUGIN_CLIENT) if isinstance(clients, dict) else None
@@ -96,9 +93,6 @@ async def _get_mcp_call_counts() -> tuple[int, int]:
             int(dsh_entry.get("calls", 0)) if isinstance(dsh_entry, dict) else 0
         )
         return int(snapshot.get("total_calls", 0)), dsh_calls
-
-    try:
-        return await asyncio.to_thread(_query)
     except Exception:
         return 0, 0
 
@@ -433,7 +427,7 @@ async def get_dashboard_summary(
         )
         user_count = registered_users + today_registered_users
         visit_stats = await _get_site_visit_stats(visits)
-        mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts()
+        mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts(request)
         return {
             "top_list": [],
             "radar": [],
@@ -475,7 +469,7 @@ async def get_dashboard_summary(
     user_count = registered_users + today_registered_users
     today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
     visit_stats = await _get_site_visit_stats(visits)
-    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts()
+    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts(request)
 
     return {
         "top_list": top10,
@@ -506,6 +500,7 @@ async def get_dashboard_summary(
 @router.get("/dashboard/live-stats")
 @cache(expire=10, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_dashboard_live_stats(
+    request: Request,
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
@@ -525,7 +520,7 @@ async def get_dashboard_live_stats(
     user_count = registered_users + today_registered_users
     today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
     visit_stats = await _get_site_visit_stats(visits)
-    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts()
+    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts(request)
     return {
         "total_documents": total_documents,
         "source_counts": source_counts,

@@ -44,6 +44,8 @@ from backend.app.core.postgres_migrations import pending_migration_labels
 from backend.app.core.redis_client import close_redis_client, create_redis_client
 from backend.app.monitoring.error_event_capture import ErrorEventCapture
 from backend.app.monitoring.health import create_application_monitoring_runtime
+from backend.app.monitoring.mcp_redis_metrics import create_redis_mcp_tool_call_metrics
+from backend.app.monitoring.mcp_tools import JsonMcpToolCallStore
 from backend.app.repositories.application_repository_context import (
     configure_application_repositories,
 )
@@ -53,6 +55,7 @@ from backend.app.repositories.application_repository_factory import (
 from backend.app.repositories.postgres_error_event_repository import (
     PostgresErrorEventRepository,
 )
+from backend.app.services.mcp.inbound.tools import MCP_TOOL_REGISTRY
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.runtime_provider.runtime import (
     ApplicationModelProviderRuntime,
@@ -112,6 +115,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.postgres_database = postgres_database
     app.state.application_database_backend = "postgres"
     app.state.redis = None
+    app.state.mcp_tool_call_metrics = None
     app.state.project_search_runtime = None
     app.state.monitoring_runtime = None
     app.state.model_provider_runtime = None
@@ -181,6 +185,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 prefix="aigc-cache:",
             )
             app.state.redis = redis_client
+            # MCP 调用计数 Redis 聚合：与主进程共享 mcpmetrics:* 命名空间，
+            # 本进程历史 JSON（storage/metrics_mcp）按 "mcp-api" 源幂等种子并入。
+            mcp_tool_call_metrics = create_redis_mcp_tool_call_metrics(
+                redis_client,
+                JsonMcpToolCallStore(settings.mcp_tool_call_metrics_path),
+                "mcp-api",
+            )
+            app.state.mcp_tool_call_metrics = mcp_tool_call_metrics
+            await mcp_tool_call_metrics.seed_from_json(MCP_TOOL_REGISTRY)
             logger.info("[Startup] Redis cache initialized.")
         except Exception as exc:
             app.state.redis = None

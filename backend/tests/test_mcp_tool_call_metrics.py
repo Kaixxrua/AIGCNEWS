@@ -12,14 +12,21 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from backend.app.api import routes_mcp
+from backend.app.api import routes_dashboard, routes_mcp
 from backend.app.api.dependencies import (
     get_application_repositories,
     get_briefing_repository,
     get_project_search_runtime,
 )
 from backend.app.core.auth import get_mcp_access_token_authenticator
-from backend.app.monitoring import metrics as monitor_metrics
+from backend.app.monitoring import mcp_redis_metrics, metrics as monitor_metrics
+from backend.app.monitoring.mcp_redis_metrics import (
+    _RECORD_SCRIPT,
+    _SEED_SCRIPT,
+    LocalMcpToolCallMetrics,
+    RedisMcpToolCallMetrics,
+    create_redis_mcp_tool_call_metrics,
+)
 from backend.app.monitoring.mcp_tools import (
     DSH_PLUGIN_CLIENT,
     MAX_TOOL_NAME_LENGTH,
@@ -365,9 +372,12 @@ class McpToolCallPersistenceTests(unittest.TestCase):
 class McpToolCallDispatchTests(unittest.IsolatedAsyncioTestCase):
     def _build_application(
         self,
-        tool_call_metrics: McpToolCallMetrics,
+        tool_call_metrics: object,
         request: object = ...,  # type: ignore[assignment]
     ) -> application.McpProtocolApplication:
+        # 分派层接口已异步化（PR 0.2）：裸 JSON 计数器包一层异步门面
+        if isinstance(tool_call_metrics, McpToolCallMetrics):
+            tool_call_metrics = LocalMcpToolCallMetrics(tool_call_metrics)
         dependencies = application.McpProtocolDependencies(
             authorization=context.McpAuthorizationContext(None),
             tools=tools.McpToolContext(
@@ -560,6 +570,7 @@ class McpToolCallDispatchTests(unittest.IsolatedAsyncioTestCase):
 class McpToolCallRouteWiringTests(unittest.TestCase):
     def setUp(self) -> None:
         app = FastAPI()
+        self.app = app
         self.briefing_repository = MagicMock()
         self.token_repository = MagicMock()
         self.project_search_runtime = MagicMock()
@@ -586,17 +597,17 @@ class McpToolCallRouteWiringTests(unittest.TestCase):
 
     def test_route_records_tool_calls_into_shared_singleton(self) -> None:
         isolated = McpToolCallMetrics()
+        self.app.state.mcp_tool_call_metrics = LocalMcpToolCallMetrics(isolated)
 
-        with patch.object(routes_mcp, "MCP_TOOL_CALL_METRICS", isolated):
-            response = self.client.post(
+        response = self.client.post(
                 "/api/mcp",
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 7,
-                    "method": "tools/call",
-                    "params": {"name": "search_github_ai_projects", "arguments": {}},
-                },
-            )
+            json={
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "tools/call",
+                "params": {"name": "search_github_ai_projects", "arguments": {}},
+            },
+        )
 
         self.assertEqual(response.status_code, 200)
         snapshot = isolated.snapshot()
@@ -612,13 +623,13 @@ class McpToolCallRouteWiringTests(unittest.TestCase):
             "params": {"name": "search_github_ai_projects", "arguments": {}},
         }
 
-        with patch.object(routes_mcp, "MCP_TOOL_CALL_METRICS", isolated):
-            bench = self.client.post(
-                "/api/mcp",
-                json=payload,
-                headers={"user-agent": "mcp-latency-bench/0.1"},
-            )
-            twin = self.client.post("/api/mcp", json=payload)
+        self.app.state.mcp_tool_call_metrics = LocalMcpToolCallMetrics(isolated)
+        bench = self.client.post(
+            "/api/mcp",
+            json=payload,
+            headers={"user-agent": "mcp-latency-bench/0.1"},
+        )
+        twin = self.client.post("/api/mcp", json=payload)
 
         # 压测请求响应与孪生请求逐字节一致（免计数不泄漏到线格式），
         # 但仅孪生请求进入计数
@@ -630,18 +641,18 @@ class McpToolCallRouteWiringTests(unittest.TestCase):
 
     def test_route_records_dsh_plugin_user_agent_into_client_bucket(self) -> None:
         isolated = McpToolCallMetrics()
+        self.app.state.mcp_tool_call_metrics = LocalMcpToolCallMetrics(isolated)
 
-        with patch.object(routes_mcp, "MCP_TOOL_CALL_METRICS", isolated):
-            response = self.client.post(
-                "/api/mcp",
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 7,
-                    "method": "tools/call",
-                    "params": {"name": "search_github_ai_projects", "arguments": {}},
-                },
-                headers={"user-agent": "dsh-aigc-radar/0.1.0"},
-            )
+        response = self.client.post(
+            "/api/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "tools/call",
+                "params": {"name": "search_github_ai_projects", "arguments": {}},
+            },
+            headers={"user-agent": "dsh-aigc-radar/0.1.0"},
+        )
 
         self.assertEqual(response.status_code, 200)
         snapshot = isolated.snapshot()
@@ -690,6 +701,552 @@ class CollectMetricsMcpToolCallsTests(unittest.TestCase):
         self.assertEqual(
             result["mcp_tool_calls"]["tools"]["search_papers"]["calls"], 1
         )
+
+
+
+class FakeRedis:
+    """最小内存 Redis 仿真：字符串/哈希原语 + 本模块两段 Lua 脚名的语义回放。
+
+    eval 按脚本对象身份分发（_RECORD_SCRIPT / _SEED_SCRIPT），在 Python 侧
+    复刻 Lua 的原子语义；fail=True 时所有操作抛 ConnectionError 模拟故障。
+    """
+
+    def __init__(self) -> None:
+        self.strings: dict[bytes, bytes] = {}
+        self.hashes: dict[bytes, dict[bytes, bytes]] = {}
+        self.fail = False
+
+    @staticmethod
+    def _b(value: object) -> bytes:
+        if isinstance(value, bytes):
+            return value
+        if isinstance(value, str):
+            return value.encode("utf-8")
+        return str(value).encode("utf-8")
+
+    def _check(self) -> None:
+        if self.fail:
+            raise ConnectionError("redis down")
+
+    async def set(self, key: object, value: object, nx: bool = False) -> object:
+        self._check()
+        k, v = self._b(key), self._b(value)
+        if nx and k in self.strings:
+            return None
+        self.strings[k] = v
+        return True
+
+    async def get(self, key: object) -> bytes | None:
+        self._check()
+        return self.strings.get(self._b(key))
+
+    async def delete(self, *keys: object) -> int:
+        self._check()
+        removed = 0
+        for key in keys:
+            k = self._b(key)
+            removed += self.strings.pop(k, None) is not None
+            removed += self.hashes.pop(k, None) is not None
+        return removed
+
+    async def hgetall(self, key: object) -> dict[bytes, bytes]:
+        self._check()
+        return dict(self.hashes.get(self._b(key), {}))
+
+    def _incr(self, key: bytes, by: int) -> None:
+        self.strings[key] = str(int(self.strings.get(key, b"0")) + by).encode()
+
+    def _hincrby(self, key: bytes, field: bytes, by: int) -> None:
+        h = self.hashes.setdefault(key, {})
+        h[field] = str(int(h.get(field, b"0")) + by).encode()
+
+    def _hset_max(self, key: bytes, field: bytes, value: bytes) -> None:
+        h = self.hashes.setdefault(key, {})
+        cur = h.get(field)
+        if cur is None or value > cur:
+            h[field] = value
+
+    async def eval(self, script: str, numkeys: int, *args: object) -> int:
+        self._check()
+        keys = [self._b(k) for k in args[:numkeys]]
+        argv = [self._b(a) for a in args[numkeys:]]
+        total, since, tool_calls, tool_last, client_calls, client_last = keys
+        if script == _RECORD_SCRIPT:
+            tool, client, now = argv
+            self._incr(total, 1)
+            self.strings.setdefault(since, now)
+            self._hincrby(tool_calls, tool, 1)
+            self._hset_max(tool_last, tool, now)
+            if client:
+                self._hincrby(client_calls, client, 1)
+                self._hset_max(client_last, client, now)
+            return 1
+        if script == _SEED_SCRIPT:
+            since_v = argv[0]
+            if since_v:
+                cur = self.strings.get(since)
+                if cur is None or since_v < cur:
+                    self.strings[since] = since_v
+            total_v = int(argv[1])
+            if total_v > 0:
+                self._incr(total, total_v)
+            i = 2
+            for calls_key, last_key in (
+                (tool_calls, tool_last),
+                (client_calls, client_last),
+            ):
+                n = int(argv[i])
+                i += 1
+                for _ in range(n):
+                    name, calls, last = argv[i], int(argv[i + 1]), argv[i + 2]
+                    i += 3
+                    if calls > 0:
+                        self._hincrby(calls_key, name, calls)
+                    if last:
+                        self._hset_max(last_key, name, last)
+            return 1
+        raise AssertionError(f"unexpected lua script: {script!r}")
+
+
+class RedisMcpToolCallMetricsRecordTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "mcp_tool_calls.json"
+        self.store = JsonMcpToolCallStore(str(self.path))
+        self.shadow = McpToolCallMetrics(store=self.store)
+        self.redis = FakeRedis()
+        self.metrics = create_redis_mcp_tool_call_metrics(
+            self.redis, self.store, "test-src", shadow=self.shadow
+        )
+
+    async def test_record_writes_total_since_tool_and_client(self) -> None:
+        await self.metrics.record("search_papers", client=DSH_PLUGIN_CLIENT)
+        await self.metrics.record("search_papers", client=DSH_PLUGIN_CLIENT)
+        await self.metrics.record("get_top_items")
+
+        self.assertEqual(self.redis.strings[b"mcpmetrics:total"], b"3")
+        since = self.redis.strings[b"mcpmetrics:since"].decode()
+        datetime.fromisoformat(since)
+        self.assertEqual(
+            self.redis.hashes[b"mcpmetrics:tool_calls"],
+            {b"search_papers": b"2", b"get_top_items": b"1"},
+        )
+        tool_last = self.redis.hashes[b"mcpmetrics:tool_last"]
+        datetime.fromisoformat(tool_last[b"search_papers"].decode())
+        self.assertEqual(
+            self.redis.hashes[b"mcpmetrics:client_calls"],
+            {DSH_PLUGIN_CLIENT.encode(): b"2"},
+        )
+
+    async def test_record_without_client_skips_client_keys(self) -> None:
+        await self.metrics.record("get_top_items")
+
+        self.assertEqual(self.redis.strings[b"mcpmetrics:total"], b"1")
+        self.assertNotIn(b"mcpmetrics:client_calls", self.redis.hashes)
+
+    async def test_record_dual_writes_json_shadow(self) -> None:
+        await self.metrics.record("get_top_items", client=DSH_PLUGIN_CLIENT)
+
+        persisted = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["total_calls"], 1)
+        self.assertEqual(persisted["tools"]["get_top_items"]["calls"], 1)
+        self.assertEqual(persisted["clients"][DSH_PLUGIN_CLIENT]["calls"], 1)
+
+    async def test_redis_failure_keeps_shadow_and_never_raises(self) -> None:
+        self.redis.fail = True
+
+        with self.assertLogs(
+            "backend.app.monitoring.mcp_redis_metrics", level="WARNING"
+        ):
+            await self.metrics.record("get_top_items")
+
+        self.assertEqual(self.shadow.snapshot()["total_calls"], 1)
+
+
+class RedisMcpToolCallMetricsSnapshotTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "mcp_tool_calls.json"
+        self.store = JsonMcpToolCallStore(str(self.path))
+        self.shadow = McpToolCallMetrics(store=self.store)
+        self.redis = FakeRedis()
+        self.metrics = create_redis_mcp_tool_call_metrics(
+            self.redis, self.store, "test-src", shadow=self.shadow
+        )
+
+    async def test_snapshot_reads_redis_aggregate_in_shadow_shape(self) -> None:
+        # 另一进程（或 Go 侧）直接写 Redis 的计数也必须出现在快照里
+        self.redis.strings[b"mcpmetrics:total"] = b"5"
+        self.redis.strings[b"mcpmetrics:since"] = b"2026-08-01T00:00:00+00:00"
+        self.redis.hashes[b"mcpmetrics:tool_calls"] = {
+            b"search_papers": b"3",
+            b"get_top_items": b"2",
+        }
+        self.redis.hashes[b"mcpmetrics:tool_last"] = {
+            b"search_papers": b"2026-08-02T00:00:00+00:00",
+            b"get_top_items": b"2026-08-01T12:00:00+00:00",
+        }
+        self.redis.hashes[b"mcpmetrics:client_calls"] = {DSH_PLUGIN_CLIENT.encode(): b"4"}
+        self.redis.hashes[b"mcpmetrics:client_last"] = {
+            DSH_PLUGIN_CLIENT.encode(): b"2026-08-02T00:00:00+00:00"
+        }
+
+        snapshot = await self.metrics.snapshot()
+
+        self.assertEqual(snapshot["total_calls"], 5)
+        self.assertEqual(snapshot["since"], "2026-08-01T00:00:00+00:00")
+        self.assertEqual(list(snapshot["tools"]), ["get_top_items", "search_papers"])
+        self.assertEqual(
+            snapshot["tools"]["search_papers"],
+            {"calls": 3, "last_called_at": "2026-08-02T00:00:00+00:00"},
+        )
+        self.assertEqual(snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 4)
+
+    async def test_snapshot_falls_back_to_shadow_when_redis_never_written(self) -> None:
+        self.shadow.record("get_top_items")
+
+        snapshot = await self.metrics.snapshot()
+
+        self.assertEqual(snapshot["total_calls"], 1)
+        self.assertIn("get_top_items", snapshot["tools"])
+
+    async def test_snapshot_falls_back_to_shadow_on_redis_error(self) -> None:
+        self.shadow.record("get_top_items")
+        self.redis.fail = True
+
+        with self.assertLogs(
+            "backend.app.monitoring.mcp_redis_metrics", level="WARNING"
+        ):
+            snapshot = await self.metrics.snapshot()
+
+        self.assertEqual(snapshot["total_calls"], 1)
+
+    async def test_snapshot_skips_malformed_redis_entries(self) -> None:
+        self.redis.strings[b"mcpmetrics:total"] = b"2"
+        self.redis.hashes[b"mcpmetrics:tool_calls"] = {
+            b"good": b"2",
+            b"no_last": b"1",
+        }
+        self.redis.hashes[b"mcpmetrics:tool_last"] = {
+            b"good": b"2026-08-02T00:00:00+00:00",
+        }
+
+        snapshot = await self.metrics.snapshot()
+
+        self.assertEqual(list(snapshot["tools"]), ["good"])
+        # total 以 Redis 计数器为准（聚合口径），不因坏条目回退
+        self.assertEqual(snapshot["total_calls"], 2)
+
+
+class RedisMcpToolCallMetricsSeedTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "mcp_tool_calls.json"
+        self.store = JsonMcpToolCallStore(str(self.path))
+        self.shadow = McpToolCallMetrics(store=self.store)
+        self.redis = FakeRedis()
+        self.metrics = create_redis_mcp_tool_call_metrics(
+            self.redis, self.store, "test-src", shadow=self.shadow
+        )
+
+    def _write_payload(self, payload: dict) -> None:
+        self.path.write_text(json.dumps(payload), encoding="utf-8")
+
+    async def test_seed_merges_json_payload_into_redis_once(self) -> None:
+        self._write_payload(
+            {
+                "since": "2026-08-01T00:00:00+00:00",
+                "total_calls": 5,
+                "tools": {
+                    "search_papers": {
+                        "calls": 3,
+                        "last_called_at": "2026-08-02T00:00:00+00:00",
+                    },
+                    "get_top_items": {
+                        "calls": 2,
+                        "last_called_at": "2026-08-01T12:00:00+00:00",
+                    },
+                },
+                "clients": {
+                    DSH_PLUGIN_CLIENT: {
+                        "calls": 4,
+                        "last_called_at": "2026-08-02T00:00:00+00:00",
+                    }
+                },
+            }
+        )
+
+        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        snapshot = await self.metrics.snapshot()
+
+        self.assertEqual(snapshot["total_calls"], 5)
+        self.assertEqual(snapshot["since"], "2026-08-01T00:00:00+00:00")
+        self.assertEqual(snapshot["tools"]["search_papers"]["calls"], 3)
+        self.assertEqual(snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 4)
+
+        # 幂等：marker 已认领，第二次种子不重复累加
+        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        self.assertEqual((await self.metrics.snapshot())["total_calls"], 5)
+
+    async def test_seed_rebuckets_legacy_unknown_tool_names(self) -> None:
+        # bucket 特性上线前的旧文件可能含原始工具名：种子时归入固定桶并合并
+        self._write_payload(
+            {
+                "since": "2026-08-01T00:00:00+00:00",
+                "total_calls": 5,
+                "tools": {
+                    "old_random_tool_a": {
+                        "calls": 2,
+                        "last_called_at": "2026-08-01T01:00:00+00:00",
+                    },
+                    "old_random_tool_b": {
+                        "calls": 3,
+                        "last_called_at": "2026-08-01T02:00:00+00:00",
+                    },
+                },
+            }
+        )
+
+        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        snapshot = await self.metrics.snapshot()
+
+        self.assertEqual(list(snapshot["tools"]), [UNKNOWN_TOOL_NAME])
+        self.assertEqual(snapshot["tools"][UNKNOWN_TOOL_NAME]["calls"], 5)
+        self.assertEqual(
+            snapshot["tools"][UNKNOWN_TOOL_NAME]["last_called_at"],
+            "2026-08-01T02:00:00+00:00",
+        )
+
+    async def test_seed_keeps_earliest_since_and_latest_last_called(self) -> None:
+        # 另一源已种子/计数：since 取更早者，last 取更晚者，计数累加
+        self.redis.strings[b"mcpmetrics:total"] = b"10"
+        self.redis.strings[b"mcpmetrics:since"] = b"2026-07-01T00:00:00+00:00"
+        self.redis.hashes[b"mcpmetrics:tool_calls"] = {b"search_papers": b"10"}
+        self.redis.hashes[b"mcpmetrics:tool_last"] = {
+            b"search_papers": b"2026-08-05T00:00:00+00:00"
+        }
+        self._write_payload(
+            {
+                "since": "2026-08-01T00:00:00+00:00",
+                "total_calls": 3,
+                "tools": {
+                    "search_papers": {
+                        "calls": 3,
+                        "last_called_at": "2026-08-02T00:00:00+00:00",
+                    }
+                },
+            }
+        )
+
+        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        snapshot = await self.metrics.snapshot()
+
+        self.assertEqual(snapshot["since"], "2026-07-01T00:00:00+00:00")
+        self.assertEqual(snapshot["total_calls"], 13)
+        self.assertEqual(
+            snapshot["tools"]["search_papers"]["last_called_at"],
+            "2026-08-05T00:00:00+00:00",
+        )
+
+    async def test_seed_releases_marker_on_write_failure_for_retry(self) -> None:
+        self._write_payload(
+            {
+                "since": "2026-08-01T00:00:00+00:00",
+                "total_calls": 2,
+                "tools": {
+                    "get_top_items": {
+                        "calls": 2,
+                        "last_called_at": "2026-08-01T01:00:00+00:00",
+                    }
+                },
+            }
+        )
+
+        # 认领标记成功、种子写失败：标记被释放，恢复后重试可成功
+        class FlakyEvalRedis(FakeRedis):
+            async def eval(self, script: str, numkeys: int, *args: object) -> int:
+                raise ConnectionError("eval boom")
+
+        flaky = FlakyEvalRedis()
+        service = create_redis_mcp_tool_call_metrics(
+            flaky, self.store, "test-src", shadow=self.shadow
+        )
+        with self.assertLogs(
+            "backend.app.monitoring.mcp_redis_metrics", level="WARNING"
+        ):
+            await service.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        self.assertNotIn(b"mcpmetrics:seeded:test-src", flaky.strings)
+
+        recovered = create_redis_mcp_tool_call_metrics(
+            self.redis, self.store, "test-src", shadow=self.shadow
+        )
+        await recovered.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        self.assertEqual((await recovered.snapshot())["total_calls"], 2)
+
+    async def test_seed_marker_claim_failure_is_non_fatal(self) -> None:
+        self.redis.fail = True
+        with self.assertLogs(
+            "backend.app.monitoring.mcp_redis_metrics", level="WARNING"
+        ):
+            await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+
+    async def test_seed_with_missing_json_claims_marker_without_writes(self) -> None:
+        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+
+        self.assertIn(b"mcpmetrics:seeded:test-src", self.redis.strings)
+        self.assertNotIn(b"mcpmetrics:total", self.redis.strings)
+        # 幂等：再次调用提前返回
+        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+
+
+class McpToolCallRedisDispatchTests(unittest.IsolatedAsyncioTestCase):
+    """分派层经异步接口写入 Redis 聚合 + JSON shadow（双写期行为钉住）。"""
+
+    def _build(self, redis: FakeRedis) -> tuple[application.McpProtocolApplication, McpToolCallMetrics]:
+        shadow = McpToolCallMetrics()
+        service = RedisMcpToolCallMetrics(redis, shadow)
+        dependencies = application.McpProtocolDependencies(
+            authorization=context.McpAuthorizationContext(None),
+            tools=tools.McpToolContext(
+                user=None,
+                documents=MagicMock(),
+                papers=MagicMock(),
+                rank_snapshots=MagicMock(),
+                project_collection=MagicMock(),
+                request=MagicMock(),
+            ),
+            briefing_repository=MagicMock(),
+            session_transport=context.McpSessionTransport(),
+            tool_call_metrics=service,
+        )
+        return application.McpProtocolApplication(dependencies), shadow
+
+    async def _call(self, app: application.McpProtocolApplication) -> None:
+        inbound = context.McpInboundRequest(
+            request_id=1,
+            method="tools/call",
+            params={"name": "search_my_project_favorites", "arguments": {}},
+            has_id=True,
+        )
+        await app.dispatch(inbound)
+
+    async def test_dispatch_dual_writes_redis_and_shadow(self) -> None:
+        redis = FakeRedis()
+        app, shadow = self._build(redis)
+
+        await self._call(app)
+
+        self.assertEqual(redis.strings[b"mcpmetrics:total"], b"1")
+        self.assertEqual(shadow.snapshot()["total_calls"], 1)
+
+    async def test_dispatch_redis_failure_still_returns_result(self) -> None:
+        redis = FakeRedis()
+        app, shadow = self._build(redis)
+        redis.fail = True
+
+        with self.assertLogs(
+            "backend.app.monitoring.mcp_redis_metrics", level="WARNING"
+        ):
+            await self._call(app)
+
+        self.assertEqual(shadow.snapshot()["total_calls"], 1)
+
+
+class McpToolCallModuleDefaultFallbackTests(unittest.TestCase):
+    """app.state 未绑定（不经 lifespan）时回退模块级 JSON 门面。"""
+
+    def test_resolve_falls_back_to_module_default(self) -> None:
+        isolated = McpToolCallMetrics()
+        request = types.SimpleNamespace(
+            app=types.SimpleNamespace(state=types.SimpleNamespace())
+        )
+        with patch.object(
+            mcp_redis_metrics,
+            "MCP_TOOL_CALL_METRICS_SERVICE",
+            LocalMcpToolCallMetrics(isolated),
+        ):
+            service = mcp_redis_metrics.resolve_tool_call_metrics(request)
+        self.assertIsInstance(service, LocalMcpToolCallMetrics)
+        self.assertIs(service.shadow, isolated)
+
+    def test_resolve_prefers_app_state_binding(self) -> None:
+        bound = LocalMcpToolCallMetrics(McpToolCallMetrics())
+        request = types.SimpleNamespace(
+            app=types.SimpleNamespace(
+                state=types.SimpleNamespace(mcp_tool_call_metrics=bound)
+            )
+        )
+        self.assertIs(mcp_redis_metrics.resolve_tool_call_metrics(request), bound)
+
+
+class DashboardMcpCallCountsTests(unittest.IsolatedAsyncioTestCase):
+    def _request(self, service: object) -> object:
+        return types.SimpleNamespace(
+            app=types.SimpleNamespace(
+                state=types.SimpleNamespace(mcp_tool_call_metrics=service)
+            )
+        )
+
+    async def test_counts_come_from_bound_service_snapshot(self) -> None:
+        redis = FakeRedis()
+        shadow = McpToolCallMetrics()
+        service = RedisMcpToolCallMetrics(redis, shadow)
+        await service.record("get_top_items", client=DSH_PLUGIN_CLIENT)
+        await service.record("search_papers")
+
+        total, dsh = await routes_dashboard._get_mcp_call_counts(
+            self._request(service)
+        )
+
+        self.assertEqual(total, 2)
+        self.assertEqual(dsh, 1)
+
+    async def test_snapshot_failure_silently_returns_zero_pair(self) -> None:
+        class BoomService:
+            async def snapshot(self) -> dict:
+                raise RuntimeError("boom")
+
+        total, dsh = await routes_dashboard._get_mcp_call_counts(
+            self._request(BoomService())
+        )
+
+        self.assertEqual((total, dsh), (0, 0))
+
+
+class CollectMetricsSnapshotParamTests(unittest.TestCase):
+    def test_collect_metrics_prefers_prepassed_snapshot(self) -> None:
+        task_reader = MagicMock(spec=RecentTaskReader)
+        task_reader.get_recent_tasks.return_value = []
+        evaluation_reader = MagicMock(spec=EvaluationSummaryReader)
+        evaluation_reader.get_eval_summary.return_value = {}
+        document_statistics = MagicMock(spec=DocumentStatisticsReader)
+        document_statistics.get_document_count.return_value = 1
+        briefing_reader = MagicMock(spec=BriefingReader)
+        briefing_reader.list_briefings.return_value = []
+
+        local = McpToolCallMetrics()
+        local.record("search_papers")
+        redis_snapshot = {
+            "since": "2026-08-01T00:00:00+00:00",
+            "total_calls": 42,
+            "tools": {},
+            "clients": {},
+        }
+
+        result = monitor_metrics.collect_metrics(
+            task_reader=task_reader,
+            evaluation_reader=evaluation_reader,
+            document_statistics=document_statistics,
+            briefing_reader=briefing_reader,
+            mcp_tool_calls=local,
+            mcp_tool_calls_snapshot=redis_snapshot,
+        )
+
+        # 预取好的 Redis 聚合快照优先于本地同步计数器
+        self.assertEqual(result["mcp_tool_calls"]["total_calls"], 42)
 
 
 if __name__ == "__main__":

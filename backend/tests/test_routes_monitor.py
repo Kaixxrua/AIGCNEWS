@@ -164,6 +164,7 @@ class MonitorRouteTests(unittest.TestCase):
             evaluation_reader=evaluation_reader,
             document_statistics=document_statistics,
             briefing_reader=briefing_reader,
+            mcp_tool_calls_snapshot=unittest.mock.ANY,
         )
 
     def test_system_metrics_rejects_authenticated_non_admin(self) -> None:

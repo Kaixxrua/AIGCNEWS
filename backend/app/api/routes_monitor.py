@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from backend.app.api.dependencies import (
     get_briefing_repository,
@@ -67,6 +67,7 @@ async def health_check(
 
 @router.get("/monitor/metrics")
 async def system_metrics(
+    request: Request,
     _: dict = Depends(RequireAdmin),
     evaluation_reader: EvaluationSummaryReader = Depends(get_evaluation_repository),
     task_reader: RecentTaskReader = Depends(get_ingestion_task_repository),
@@ -76,15 +77,20 @@ async def system_metrics(
     """Collect runtime metrics: uptime, document count, task stats, eval summary.
 
     管理员口径与 /monitor/tasks 一致：运行指标不对普通注册用户暴露。
+    MCP 调用计数优先取 Redis 聚合快照（app.state 服务，异步），
+    再在 worker 线程里跑其余同步采集。
     """
+    from backend.app.monitoring.mcp_redis_metrics import resolve_tool_call_metrics
     from backend.app.monitoring.metrics import collect_metrics
 
+    mcp_snapshot = await resolve_tool_call_metrics(request).snapshot()
     result = await asyncio.to_thread(
         collect_metrics,
         task_reader=task_reader,
         evaluation_reader=evaluation_reader,
         document_statistics=document_statistics,
         briefing_reader=briefing_reader,
+        mcp_tool_calls_snapshot=mcp_snapshot,
     )
     return result
 

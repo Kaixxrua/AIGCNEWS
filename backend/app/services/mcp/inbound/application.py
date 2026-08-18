@@ -9,9 +9,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from starlette.requests import Request
 
+from backend.app.monitoring.mcp_redis_metrics import (
+    MCP_TOOL_CALL_METRICS_SERVICE,
+    McpToolCallMetricsRecorder,
+)
 from backend.app.monitoring.mcp_tools import (
-    MCP_TOOL_CALL_METRICS,
-    McpToolCallMetrics,
     bucket_client_name,
     bucket_tool_name,
     is_benchmark_user_agent,
@@ -86,8 +88,8 @@ class McpProtocolDependencies:
     tools: McpToolContext
     briefing_repository: BriefingReader
     session_transport: McpSessionTransport
-    tool_call_metrics: McpToolCallMetrics = field(
-        default_factory=lambda: MCP_TOOL_CALL_METRICS
+    tool_call_metrics: McpToolCallMetricsRecorder = field(
+        default_factory=lambda: MCP_TOOL_CALL_METRICS_SERVICE
     )
 
 
@@ -196,7 +198,7 @@ class McpProtocolApplication:
             if is_benchmark_user_agent(user_agent):
                 logger.debug("benchmark-tagged tools/call excluded from metrics")
             else:
-                self._dependencies.tool_call_metrics.record(
+                await self._dependencies.tool_call_metrics.record(
                     bucket_tool_name(name, MCP_TOOL_REGISTRY),
                     client=bucket_client_name(user_agent),
                 )

@@ -22,11 +22,21 @@ def collect_metrics(
     document_statistics: DocumentStatisticsReader,
     briefing_reader: BriefingReader,
     mcp_tool_calls: McpToolCallMetrics | None = None,
+    mcp_tool_calls_snapshot: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    """Collect runtime metrics for the monitor dashboard."""
+    """Collect runtime metrics for the monitor dashboard.
+
+    ``mcp_tool_calls_snapshot`` 是调用方预先 await 好的 Redis 聚合快照
+    （routes_monitor 从 app.state 服务取）；未提供时回退到注入的或共享
+    单例的同步 JSON 计数器，保持既有默认行为。
+    """
 
     uptime_seconds = (datetime.now(timezone.utc) - _START_TIME).total_seconds()
-    tool_calls = (mcp_tool_calls or MCP_TOOL_CALL_METRICS).snapshot()
+    tool_calls = (
+        mcp_tool_calls_snapshot
+        if mcp_tool_calls_snapshot is not None
+        else (mcp_tool_calls or MCP_TOOL_CALL_METRICS).snapshot()
+    )
 
     try:
         task_summary = _task_summary(task_reader)
