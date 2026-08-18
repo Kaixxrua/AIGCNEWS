@@ -7,7 +7,10 @@ import {
   type McpShellId,
 } from '@/features/mcp/mcpClientCatalog'
 import { generateMcpClientCommand } from '@/features/mcp/mcpCommandGenerator'
-import { DSH_PLUGIN_INSTALL_COMMAND } from '@/features/mcp/dshPlugin'
+import {
+  DSH_PLUGIN_INSTALL_METHODS,
+  type DshPluginInstallMethodId,
+} from '@/features/mcp/dshPlugin'
 import {
   feedbackKey,
   feedbackLiteral,
@@ -258,7 +261,11 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     if (quickCommand.value) await copyText(quickCommand.value, 'quick-command')
   }
 
-  const copyDshInstallCommand = async () => copyText(DSH_PLUGIN_INSTALL_COMMAND, 'dsh-install')
+  const copyDshInstallCommand = async (methodId: DshPluginInstallMethodId = 'npm') => {
+    const method = DSH_PLUGIN_INSTALL_METHODS.find((candidate) => candidate.id === methodId)
+    if (!method) return
+    await copyText(method.command, `dsh-install-${method.id}`)
+  }
 
   const copyHostInstruction = async () => copyText(translate('mcp.hostInstruction'), 'host-instruction')
 

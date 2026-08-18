@@ -120,6 +120,19 @@ Any MCP client that supports Streamable HTTP can point directly at this URL; the
 
 [dsh](https://github.com/deepseek-ai/deepseek-harness) (DeepSeek Harness) users can skip manual MCP setup and install the native plugin [dsh-aigc-radar](https://github.com/Kaixxrua/dsh-aigc-radar): it rides the same `/api/mcp` endpoint, but renders results as native search cards in the dsh Web UI and ships a proactive reuse check out of the box.
 
+```sh
+# Recommended: prebuilt npm package
+dsh plugin --profile web add dsh-aigc-radar
+
+# Reproducible: pin the published release
+dsh plugin --profile web add dsh-aigc-radar@0.2.0
+
+# Source fallback
+dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar
+```
+
+GitHub installs run a source build; see the [plugin README](https://github.com/Kaixxrua/dsh-aigc-radar#install) for pnpm build approval and commit-pinning details.
+
 ![Claude Code calling AIGC Radar MCP: one prompt to search_github_ai_projects returns curated RAG evaluation projects with star counts](docs/assets/screenshot-mcp-call.png)
 
 Public tools (no auth required; all read-only except the append-only adoption receipt):

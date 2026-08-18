@@ -239,18 +239,27 @@ describe('MCP connect controller', () => {
     expect(JSON.stringify(controller.setupError.value)).not.toContain('aigc-news')
   })
 
-  it('copies the fixed dsh install command regardless of endpoint validity', async () => {
+  it('copies every dsh install method with independent feedback regardless of endpoint validity', async () => {
     const copy = vi.fn(async () => undefined)
     const { controller } = createController({ copy })
 
     await controller.copyDshInstallCommand()
-    expect(copy).toHaveBeenCalledWith('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
-    expect(controller.copiedKey.value).toBe('dsh-install')
+    expect(copy).toHaveBeenLastCalledWith('dsh plugin --profile web add dsh-aigc-radar')
+    expect(controller.copiedKey.value).toBe('dsh-install-npm')
 
-    // 端点非法只影响 quickCommand，安装命令是固定常量仍可复制
+    await controller.copyDshInstallCommand('npm-pinned')
+    expect(copy).toHaveBeenLastCalledWith('dsh plugin --profile web add dsh-aigc-radar@0.2.0')
+    expect(controller.copiedKey.value).toBe('dsh-install-npm-pinned')
+
+    // 端点非法只影响 quickCommand，插件安装命令仍可复制
     controller.endpointUrl.value = 'not a url'
-    await controller.copyDshInstallCommand()
-    expect(copy).toHaveBeenCalledTimes(2)
-    expect(controller.copiedKey.value).toBe('dsh-install')
+    await controller.copyDshInstallCommand('github')
+    expect(copy).toHaveBeenLastCalledWith('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
+    expect(controller.copiedKey.value).toBe('dsh-install-github')
+    expect(copy).toHaveBeenCalledTimes(3)
+
+    copy.mockRejectedValueOnce(new Error('clipboard denied'))
+    await controller.copyDshInstallCommand('npm')
+    expect(controller.setupError.value).toEqual({ kind: 'key', key: 'mcp.copyFailed', params: undefined })
   })
 })

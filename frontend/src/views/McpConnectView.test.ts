@@ -100,6 +100,10 @@ const i18n = createI18n({
           description: 'dsh-aigc-radar 是 dsh 终端的原生插件。',
           copy: '复制安装命令',
           repository: 'GitHub 仓库',
+          recommended: '推荐',
+          sourceWarningTitle: '源码构建：',
+          sourceWarning: 'pnpm 10+ 可能要求 allowBuilds；固定提交：',
+          methods: { npm: { title: 'npm 包 · 最新版', description: '安装预构建包。' }, npmPinned: { title: 'npm 包 · 固定 0.2.0', description: '固定已验证版本。' }, github: { title: 'GitHub 源码兜底', description: '现场构建源码。' } },
         },
       },
     },
@@ -265,26 +269,32 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(controller().copyQuickCommand).toHaveBeenCalledTimes(1)
   })
 
-  it('renders the dsh plugin install command and forwards its copy', async () => {
+  it('renders ordered dsh install methods and forwards each copy action', async () => {
     const wrapper = await mountView()
-    expect(wrapper.text()).toContain('dsh 终端用户：一条命令接入')
-    expect(wrapper.text()).toContain('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
+    const methods = wrapper.findAll('[data-install-method]')
+    expect(methods.map((item) => item.attributes('data-install-method'))).toEqual(['npm', 'npm-pinned', 'github'])
+    expect(methods[0]!.text()).toContain('推荐')
+    expect(methods[0]!.text()).toContain('dsh plugin --profile web add dsh-aigc-radar')
+    expect(methods[1]!.text()).toContain('dsh plugin --profile web add dsh-aigc-radar@0.2.0')
+    expect(methods[2]!.text()).toContain('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
+    expect(methods[2]!.text()).toContain('allowBuilds')
+    expect(methods[2]!.text()).toContain('github:Kaixxrua/dsh-aigc-radar#<sha>')
+    expect(methods[0]!.text()).not.toContain('allowBuilds')
+    expect(methods[1]!.text()).not.toContain('allowBuilds')
     const repoLink = wrapper.find('a[href="https://github.com/Kaixxrua/dsh-aigc-radar"]')
-    expect(repoLink.exists()).toBe(true)
-    expect(repoLink.text()).toBe('GitHub 仓库')
-
-    const copyButton = wrapper.findAll('button').find((button) => button.text() === '复制安装命令')
-    expect(copyButton).toBeDefined()
-    await copyButton!.trigger('click')
-    expect(controller().copyDshInstallCommand).toHaveBeenCalledTimes(1)
+    expect(repoLink.attributes('target')).toBe('_blank')
+    expect(repoLink.attributes('rel')).toBe('noopener')
+    for (const method of methods) await method.get('button').trigger('click')
+    expect(controller().copyDshInstallCommand.mock.calls).toEqual([['npm'], ['npm-pinned'], ['github']])
   })
 
-  it('shows the copied state for the dsh install command', async () => {
-    controller().copiedKey.value = 'dsh-install'
+  it('shows copied state only for the matching dsh install method', async () => {
+    controller().copiedKey.value = 'dsh-install-npm-pinned'
     const wrapper = await mountView()
-
-    const copyButton = wrapper.findAll('button').find((button) => button.text() === '已复制')
-    expect(copyButton).toBeDefined()
+    const methods = wrapper.findAll('[data-install-method]')
+    expect(methods[0]!.get('button').text()).toBe('复制安装命令')
+    expect(methods[1]!.get('button').text()).toBe('已复制')
+    expect(methods[2]!.get('button').text()).toBe('复制安装命令')
   })
 
   it('offers the quick connect path without login', async () => {

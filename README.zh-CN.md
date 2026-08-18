@@ -120,6 +120,19 @@ claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp
 
 使用 [dsh](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek Harness）的用户可以免去手动配置 MCP，直接安装原生插件 [dsh-aigc-radar](https://github.com/Kaixxrua/dsh-aigc-radar)：走同一个 `/api/mcp` 端点，但结果在 dsh Web UI 渲染为原生搜索卡片，并内置主动复用检查。
 
+```sh
+# 推荐：npm 预构建包
+dsh plugin --profile web add dsh-aigc-radar
+
+# 可复现：固定已发布版本
+dsh plugin --profile web add dsh-aigc-radar@0.2.0
+
+# 源码兜底
+dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar
+```
+
+GitHub 安装会现场构建源码；pnpm 构建放行与固定 commit 的细节见[插件 README](https://github.com/Kaixxrua/dsh-aigc-radar#安装)。
+
 公开工具（无需鉴权；除仅追加的采纳回执外全部只读）：
 
 | 工具 | 用途 |

@@ -6,7 +6,7 @@ import { useRouter } from 'vue-router'
 import { useClipboard } from '@/composables/useClipboard'
 import { useMcpConnectController } from '@/composables/useMcpConnectController'
 import McpSetupWizard from '@/components/mcp/McpSetupWizard.vue'
-import { DSH_PLUGIN_INSTALL_COMMAND, DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
+import { DSH_PLUGIN_INSTALL_METHODS, DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
 import { formatLocaleDate } from '@/i18n/formatters'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -69,18 +69,28 @@ onBeforeUnmount(dispose)
 
       <McpSetupWizard :controller="controller" :is-logged-in="authStore.isLoggedIn" @login="router.push('/login')" />
 
-      <section class="glass-card flex flex-wrap items-center gap-x-6 gap-y-4 p-4 md:p-5" :aria-label="t('mcp.dshPlugin.kicker')">
-        <div class="min-w-0 flex-1 basis-72">
-          <p class="text-2xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.dshPlugin.kicker') }}</p>
-          <h2 class="mt-1 text-base font-semibold text-stone-800">{{ t('mcp.dshPlugin.title') }}</h2>
-          <p class="mt-1 max-w-3xl text-xs leading-5 text-stone-500">{{ t('mcp.dshPlugin.description') }}</p>
-        </div>
-        <div class="flex w-full flex-col gap-2 md:w-auto md:min-w-[320px] md:basis-[340px]">
-          <code class="block overflow-x-auto whitespace-nowrap rounded-xl border border-stone-700 bg-stone-900 px-3 py-2 font-mono text-2xs leading-5 text-stone-100">{{ DSH_PLUGIN_INSTALL_COMMAND }}</code>
-          <div class="flex gap-2">
-            <button type="button" class="btn-primary flex-1 justify-center text-xs" @click="copyDshInstallCommand">{{ t(copiedKey === 'dsh-install' ? 'mcp.copied' : 'mcp.dshPlugin.copy') }}</button>
-            <a :href="DSH_PLUGIN_REPOSITORY_URL" target="_blank" rel="noopener" class="btn-secondary text-xs">{{ t('mcp.dshPlugin.repository') }}</a>
+      <section class="glass-card p-4 md:p-5" :aria-label="t('mcp.dshPlugin.kicker')">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="min-w-0 flex-1 basis-72">
+            <p class="text-2xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.dshPlugin.kicker') }}</p>
+            <h2 class="mt-1 text-base font-semibold text-stone-800">{{ t('mcp.dshPlugin.title') }}</h2>
+            <p class="mt-1 max-w-3xl text-xs leading-5 text-stone-500">{{ t('mcp.dshPlugin.description') }}</p>
           </div>
+          <a :href="DSH_PLUGIN_REPOSITORY_URL" target="_blank" rel="noopener" class="btn-secondary text-xs">{{ t('mcp.dshPlugin.repository') }}</a>
+        </div>
+        <div class="mt-4 grid gap-3">
+          <article v-for="method in DSH_PLUGIN_INSTALL_METHODS" :key="method.id" class="dsh-install-method grid min-w-0 gap-3 border border-stone-200 bg-card/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center" :class="method.recommended ? 'dsh-install-method--recommended' : ''" :data-install-method="method.id">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-xs font-extrabold text-stone-800">{{ t(method.titleKey) }}</h3>
+                <span v-if="method.recommended" class="border border-stone-900 bg-[var(--acid)] px-2 py-0.5 text-2xs font-extrabold text-stone-900">{{ t('mcp.dshPlugin.recommended') }}</span>
+              </div>
+              <p class="mt-1 text-2xs leading-5 text-stone-500">{{ t(method.descriptionKey) }}</p>
+              <code class="mt-2 block overflow-x-auto whitespace-nowrap border border-stone-700 bg-stone-900 px-3 py-2 font-mono text-2xs leading-5 text-stone-100">{{ method.command }}</code>
+              <p v-if="method.sourceInstall" class="dsh-source-warning mt-2 text-2xs leading-5 text-amber-800"><strong>{{ t('mcp.dshPlugin.sourceWarningTitle') }}</strong> {{ t('mcp.dshPlugin.sourceWarning') }} <code>github:Kaixxrua/dsh-aigc-radar#&lt;sha&gt;</code></p>
+            </div>
+            <button type="button" class="btn-primary justify-center text-xs" @click="copyDshInstallCommand(method.id)">{{ t(copiedKey === `dsh-install-${method.id}` ? 'mcp.copied' : 'mcp.dshPlugin.copy') }}</button>
+          </article>
         </div>
       </section>
 
@@ -126,6 +136,12 @@ onBeforeUnmount(dispose)
 </template>
 
 <style scoped>
+.dsh-install-method { border-radius: 4px; }
+
+.dsh-install-method--recommended { border-color: var(--ink); box-shadow: 3px 3px 0 var(--shadow-hard); }
+
+.dsh-source-warning code { color: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+
 .mcp-connect-page {
   --paper: var(--projects-paper);
   --paper-light: var(--projects-paper-light);
