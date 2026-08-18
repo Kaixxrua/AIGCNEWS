@@ -47,6 +47,8 @@ def _doc(
         "title": title,
         "url": url,
         "published_at": published_at,
+        "published_date": "",
+        "created_at": "",
         "summary": summary,
         "translation_zh": translation_zh,
         "tags": tags,
@@ -69,6 +71,26 @@ def test_build_feed_item_non_arxiv_links_to_original_url() -> None:
     item = build_feed_item(_doc("n1", source="news"), "https://aigcnews.cn")
     assert item is not None
     assert "<link>https://example.com/a</link>" in item
+
+
+def test_build_feed_item_uses_non_x_published_date_when_published_at_missing() -> None:
+    row = _doc(
+        "n1",
+        source="news",
+        published_at="",
+    )
+    row["published_date"] = "2026-08-18"
+    item = build_feed_item(row, "https://aigcnews.cn")
+    assert item is not None
+    assert "<pubDate>Tue, 18 Aug 2026 00:00:00 +0000</pubDate>" in item
+
+
+def test_build_feed_item_falls_back_to_created_at_when_both_dates_missing() -> None:
+    row = _doc("n1", source="news", published_at="")
+    row["created_at"] = "2026-08-18T03:00:00+00:00"
+    item = build_feed_item(row, "https://aigcnews.cn")
+    assert item is not None
+    assert "<pubDate>Tue, 18 Aug 2026 03:00:00 +0000</pubDate>" in item
 
 
 def test_build_feed_item_escapes_xml_and_renders_categories() -> None:

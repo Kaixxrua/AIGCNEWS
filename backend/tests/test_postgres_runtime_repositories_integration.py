@@ -230,6 +230,9 @@ def test_real_postgres_snapshot_read_projects_translation_zh(repositories) -> No
             source="x",
             source_channel="x_daily_watchlist",
             translation_zh="中文译文",
+            # published_at 为空的 X 行会回退 created_at 进入近期窗口；
+            # 钉到窗口外，避免污染同模块共享 schema 下的窗口/排序用例
+            created_at="2026-07-29T01:00:00+00:00",
         )
     )
     snapshots.upsert_rank_snapshot("doc-x-zh", "2026-07-29", "x_daily_watchlist", 1, 9.0, 9.0)
@@ -238,6 +241,40 @@ def test_real_postgres_snapshot_read_projects_translation_zh(repositories) -> No
 
     assert len(rows) == 1
     assert rows[0]["translation_zh"] == "中文译文"
+
+
+def test_real_postgres_list_recent_by_source_supports_non_x_published_date(repositories) -> None:
+    documents, _, _ = repositories
+    documents.upsert_document(
+        _document(
+            "doc-news-new",
+            source="news",
+            source_channel="tech_news",
+            published_date="2026-08-07",
+            created_at="2026-08-07T02:00:00+00:00",
+        )
+    )
+    documents.upsert_document(
+        _document(
+            "doc-news-old",
+            source="news",
+            source_channel="tech_news",
+            published_date="2026-08-05",
+            created_at="2026-08-05T02:00:00+00:00",
+        )
+    )
+    documents.upsert_document(
+        _document(
+            "doc-news-mid",
+            source="news",
+            source_channel="tech_news",
+            published_date="2026-08-06",
+            created_at="2026-08-06T09:00:00+00:00",
+        )
+    )
+    rows = documents.list_recent_by_source("news", since_iso="2026-08-06T00:00:00+00:00", limit=10)
+    # published_at 恒空的非 X 源：窗口过滤与排序均由 created_at 驱动
+    assert [row["id"] for row in rows] == ["doc-news-new", "doc-news-mid"]
 
 
 def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositories) -> None:

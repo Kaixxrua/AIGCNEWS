@@ -63,7 +63,7 @@ _INVALID_TOKEN_DETAIL = "feed 令牌无效或已吊销"
 
 
 def _parse_published_at(value: Any) -> datetime | None:
-    """解析 published_at（'YYYY-MM-DDTHH:MM:SS+00:00' 词法可比 ISO 串）；脏串返回 None。"""
+    """解析 ISO 日期/时间字符串；脏串返回 None。"""
     if not value:
         return None
     try:
@@ -73,6 +73,15 @@ def _parse_published_at(value: Any) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def _row_published_value(row: dict[str, Any]) -> str:
+    """跨源统一时间口径：X 优先 published_at，其他源回退业务日期/入库时间。"""
+    for field in ("published_at", "published_date", "created_at"):
+        value = str(row.get(field) or "").strip()
+        if value and _parse_published_at(value) is not None:
+            return value
+    return ""
 
 
 def _item_link(row: dict[str, Any], base_url: str) -> str | None:
@@ -126,7 +135,7 @@ def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -
     description = _item_description(row, full=full)
     categories = "".join(f"<category>{escape(tag)}</category>" for tag in _parse_tags(row.get("tags")))
 
-    published = _parse_published_at(row.get("published_at"))
+    published = _parse_published_at(_row_published_value(row))
     pub_date = f"<pubDate>{format_datetime(published, usegmt=False)}</pubDate>" if published else ""
     return (
         "<item>"
@@ -165,14 +174,14 @@ def build_rss_xml(
 
 
 def _sort_rows_newest_first(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """按 published_at 新到旧排序；脏时间串排尾（保持原相对序）。"""
+    """按跨源有效时间新到旧排序；脏时间串排尾（保持原相对序）。"""
 
     def key(row: dict[str, Any]) -> tuple[int, str]:
-        parsed = _parse_published_at(row.get("published_at"))
-        if parsed is None:
+        published_value = _row_published_value(row)
+        if not published_value:
             return (0, "")
         # 词法可比的 ISO 串可直接倒序比较，无需回传 datetime。
-        return (1, str(row.get("published_at")))
+        return (1, published_value)
 
     return sorted(rows, key=key, reverse=True)
 

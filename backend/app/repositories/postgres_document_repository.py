@@ -581,21 +581,27 @@ class PostgresDocumentRepository:
         until_iso: str | None = None,
         limit: int = 500,
     ) -> list[dict[str, Any]]:
-        """滚动窗口读取：published_at（UTC ISO 串）落在 [since_iso, until_iso] 的源文档，新到旧。
+        """滚动窗口读取近期文档，新到旧。
 
-        published_at 统一为 'YYYY-MM-DDTHH:MM:SS+00:00' 词法可比的 ISO 串，
-        SQL 词法过滤后由路由层按解析结果二次过滤（剔除脏时间串）。
-        until_iso 缺省 = 无上限（兼容既有调用方）；提供时必须下推到 SQL，
-        否则历史窗口（days_back 位移后）的 LIMIT 截断会落在窗口外的新数据上。
+        窗口键 = COALESCE(NULLIF(published_at,''), created_at)：X 源有规范化
+        published_at（推文发布时间）；其余源 published_at 恒空，回退 created_at
+        （入库时间，「最近入池」语义）。刻意不用 published_date 过滤：它是
+        date-only 业务日期，词法比较会在窗口边界日误杀（"2026-08-16" <
+        "2026-08-16T00:00:00+00:00"），且与 created_at 同日无增益；业务日期
+        的展示由路由层回退链（published_at→published_date→created_at）负责。
+        三列皆 ISO 字符串，保持词法比较契约；路由层仍会解析容错脏值。
+        until_iso 必须下推，避免窗口外新数据占满 LIMIT（X 看板 days_back
+        回移依赖该语义）。
         """
-        clause = f"{_document_projection()} WHERE d.source = %s AND d.published_at >= %s"
+        recent_at = "COALESCE(NULLIF(d.published_at, ''), d.created_at)"
+        clause = f"{_document_projection()} WHERE d.source = %s AND {recent_at} >= %s"
         params: list[Any] = [source, since_iso]
         if until_iso:
-            clause += " AND d.published_at <= %s"
+            clause += f" AND {recent_at} <= %s"
             params.append(until_iso)
         rows = self._fetch_rows(
             clause
-            + " ORDER BY d.published_at DESC, COALESCE(d.raw_score, d.score, 0) DESC LIMIT %s",
+            + f" ORDER BY {recent_at} DESC, COALESCE(d.raw_score, d.score, 0) DESC LIMIT %s",
             (*params, limit),
         )
         return [_deserialize_row_media(row) for row in rows]
