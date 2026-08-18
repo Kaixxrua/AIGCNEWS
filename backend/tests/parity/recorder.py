@@ -777,6 +777,15 @@ CASES: tuple[ParityCase, ...] = (
         replay="stubbed",
     ),
     ParityCase(
+        # 压测打标：UA 命中 mcp-latency-bench/ 前缀。响应须与 unknown-tool-call
+        # 逐字节一致（免计数不泄漏到线格式）；「不进调用指标」由
+        # test_mcp_tool_call_metrics 的分派/路由级用例钉住。
+        "bench-tagged-tool-call", "protocol", "POST", "/api/mcp",
+        body=_tool_call("not-a-tool"),
+        headers={"user-agent": "mcp-latency-bench/0.1"},
+        replay="stubbed",
+    ),
+    ParityCase(
         "tool-call-missing-name", "protocol", "POST", "/api/mcp",
         body=_rpc(6, "tools/call", {"arguments": {}}),
     ),

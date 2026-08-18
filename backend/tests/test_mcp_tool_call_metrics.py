@@ -28,12 +28,36 @@ from backend.app.monitoring.mcp_tools import (
     McpToolCallMetrics,
     bucket_client_name,
     bucket_tool_name,
+    is_benchmark_user_agent,
 )
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.task_repository import RecentTaskReader
 from backend.app.services.mcp.inbound import application, context, tools
+
+
+class BenchmarkUserAgentUnitTests(unittest.TestCase):
+    """压测打标：仅 mcp-latency-bench/ 前缀（含版本斜杠）命中免计数。"""
+
+    def test_bench_prefix_hits(self) -> None:
+        self.assertTrue(is_benchmark_user_agent("mcp-latency-bench/0.1"))
+        self.assertTrue(is_benchmark_user_agent("mcp-latency-bench/9.9 extra"))
+        self.assertTrue(is_benchmark_user_agent("  mcp-latency-bench/0.1  "))
+
+    def test_non_bench_user_agents_miss(self) -> None:
+        # 前缀边界：缺斜杠、前缀拼写偏差均不命中
+        self.assertFalse(is_benchmark_user_agent("mcp-latency-bench"))
+        self.assertFalse(is_benchmark_user_agent("mcp-latency-benchx/0.1"))
+        self.assertFalse(is_benchmark_user_agent("Mcp-Latency-Bench/0.1"))
+        self.assertFalse(is_benchmark_user_agent("dsh-aigc-radar/1.0"))
+        self.assertFalse(is_benchmark_user_agent("testclient"))
+        self.assertFalse(is_benchmark_user_agent(""))
+
+    def test_non_string_user_agents_miss(self) -> None:
+        self.assertFalse(is_benchmark_user_agent(None))
+        self.assertFalse(is_benchmark_user_agent(123))
+        self.assertFalse(is_benchmark_user_agent(b"mcp-latency-bench/0.1"))
 
 
 class BucketToolNameUnitTests(unittest.TestCase):
@@ -444,6 +468,49 @@ class McpToolCallDispatchTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(metrics.snapshot()["total_calls"], 0)
 
+    async def test_benchmark_tagged_tools_call_is_not_recorded(self) -> None:
+        metrics = McpToolCallMetrics()
+        bench_request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "headers": [(b"user-agent", b"mcp-latency-bench/0.1")],
+            }
+        )
+        app = self._build_application(metrics, request=bench_request)
+
+        # 已知名路径（匿名即鉴权拒绝、不触仓储）同样免计数
+        response = await self._dispatch(
+            app,
+            "tools/call",
+            {"name": "search_my_project_favorites", "arguments": {}},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["total_calls"], 0)
+        self.assertEqual(snapshot["tools"], {})
+        self.assertEqual(snapshot["clients"], {})
+
+    async def test_non_benchmark_user_agent_still_records(self) -> None:
+        metrics = McpToolCallMetrics()
+        plain_request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "headers": [(b"user-agent", b"some-mcp-client/1.0")],
+            }
+        )
+        app = self._build_application(metrics, request=plain_request)
+
+        await self._dispatch(
+            app,
+            "tools/call",
+            {"name": "search_my_project_favorites", "arguments": {}},
+        )
+
+        self.assertEqual(metrics.snapshot()["total_calls"], 1)
+
     async def test_dsh_plugin_user_agent_records_client_bucket(self) -> None:
         metrics = McpToolCallMetrics()
         dsh_request = Request(
@@ -532,6 +599,31 @@ class McpToolCallRouteWiringTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
+        snapshot = isolated.snapshot()
+        self.assertEqual(snapshot["total_calls"], 1)
+        self.assertEqual(snapshot["tools"]["search_github_ai_projects"]["calls"], 1)
+
+    def test_route_excludes_benchmark_tagged_calls_from_metrics(self) -> None:
+        isolated = McpToolCallMetrics()
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {"name": "search_github_ai_projects", "arguments": {}},
+        }
+
+        with patch.object(routes_mcp, "MCP_TOOL_CALL_METRICS", isolated):
+            bench = self.client.post(
+                "/api/mcp",
+                json=payload,
+                headers={"user-agent": "mcp-latency-bench/0.1"},
+            )
+            twin = self.client.post("/api/mcp", json=payload)
+
+        # 压测请求响应与孪生请求逐字节一致（免计数不泄漏到线格式），
+        # 但仅孪生请求进入计数
+        self.assertEqual(bench.status_code, 200)
+        self.assertEqual(bench.content, twin.content)
         snapshot = isolated.snapshot()
         self.assertEqual(snapshot["total_calls"], 1)
         self.assertEqual(snapshot["tools"]["search_github_ai_projects"]["calls"], 1)

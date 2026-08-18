@@ -38,6 +38,19 @@ def bucket_tool_name(tool_name: str, known_names: Container[str]) -> str:
 DSH_PLUGIN_CLIENT = "dsh-aigc-radar"
 _CLIENT_UA_PREFIXES = ((DSH_PLUGIN_CLIENT, "dsh-aigc-radar/"),)
 
+# 压测打标：scripts/benchmark_mcp_latency.py 等压测客户端以该 UA 前缀自我
+# 标识；命中前缀的 tools/call 完全不进入本计数器（dashboard 的
+# mcp_total_calls 不含压测流量）。打标不影响限流——压测仍受既有突发/配额
+# 约束，以保证测量结果代表真实客户端体验。
+BENCHMARK_UA_PREFIX = "mcp-latency-bench/"
+
+
+def is_benchmark_user_agent(user_agent: Any) -> bool:
+    """判断 User-Agent 是否为压测客户端；非字符串或空前缀不命中。"""
+    if not isinstance(user_agent, str):
+        return False
+    return user_agent.strip().startswith(BENCHMARK_UA_PREFIX)
+
 
 def bucket_client_name(user_agent: Any) -> str:
     """把 User-Agent 归并到已知客户端桶；未命中或非字符串一律返回空串。"""

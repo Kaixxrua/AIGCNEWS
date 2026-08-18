@@ -14,6 +14,7 @@ from backend.app.monitoring.mcp_tools import (
     McpToolCallMetrics,
     bucket_client_name,
     bucket_tool_name,
+    is_benchmark_user_agent,
 )
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
@@ -183,16 +184,22 @@ class McpProtocolApplication:
             # 鉴权前置计数（既有顺序不变），但仅注册表内工具单独统计，
             # 未知名归入固定桶，防止随机 name 无限膨胀指标基数。
             # UA 命中已知客户端（如 dsh 插件）时同步记入客户端桶。
+            # UA 命中压测前缀（mcp-latency-bench/）时整体免计数：压测流量
+            # 不进 dashboard 的 mcp_total_calls，但仍受限流约束（限流在路由
+            # 层先于本处分派）。
             request = self._dependencies.tools.request
             user_agent = (
                 request.headers.get("user-agent", "")
                 if isinstance(request, Request)
                 else ""
             )
-            self._dependencies.tool_call_metrics.record(
-                bucket_tool_name(name, MCP_TOOL_REGISTRY),
-                client=bucket_client_name(user_agent),
-            )
+            if is_benchmark_user_agent(user_agent):
+                logger.debug("benchmark-tagged tools/call excluded from metrics")
+            else:
+                self._dependencies.tool_call_metrics.record(
+                    bucket_tool_name(name, MCP_TOOL_REGISTRY),
+                    client=bucket_client_name(user_agent),
+                )
             arguments = params.get("arguments", {})
             if (
                 name == "search_my_project_favorites"
