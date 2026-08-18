@@ -379,6 +379,7 @@ async def _rank_hybrid_candidates(
     lanes: ProjectLexicalCandidateLanes | None,
     candidate_search: ProjectCandidateSearchResult,
     exact_repo_id: str,
+    client_intent_used: bool = False,
 ) -> tuple[list[str], list[str]]:
     """Return (ranked candidate ids, legacy ranked ids); legacy stays authoritative outside v2."""
     legacy_repo_ids = rank_legacy_project_candidate_ids(
@@ -393,9 +394,13 @@ async def _rank_hybrid_candidates(
     # 语义 lane 实际产出候选时，展示序默认切换为热度优先（hot_score v5，
     # 精确命中仍钉榜首）；lane 为空（语义关闭或检索失败）保持 lane 融合
     # 拟合序，优雅降级。
-    heat_first = bool(
-        candidate_search.semantic_repo_ids
-    ) and bool(getattr(settings, "project_semantic_heat_first", True))
+    # 例外：宿主 agent 传入结构化 intent 的是任务型复用检索，要的是任务
+    # 适配而非当红——此时保持 v2 拟合序，让 fit 冠军不被热度罢黜。
+    heat_first = (
+        bool(candidate_search.semantic_repo_ids)
+        and bool(getattr(settings, "project_semantic_heat_first", True))
+        and not client_intent_used
+    )
     adoption_stars = await _lookup_adoption_stars(
         repository,
         lanes,
@@ -574,6 +579,7 @@ async def _hybrid_search(
         lanes=lanes,
         candidate_search=candidate_search,
         exact_repo_id=exact_repo_id,
+        client_intent_used=request.client_intent_used,
     )
     if strategy == "shadow" and callable(lexical_lane_search):
         _submit_shadow_comparison(

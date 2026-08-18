@@ -742,6 +742,8 @@ class ProjectDiscoveryTests(unittest.TestCase):
         *,
         heat_first: bool,
         query: str = "AI coding agent CLI",
+        mode: str = "generic",
+        client_intent: dict[str, Any] | None = None,
     ) -> list[str]:
         semantic_search = MagicMock()
         semantic_search.search_repo_ids = MagicMock(
@@ -762,7 +764,8 @@ class ProjectDiscoveryTests(unittest.TestCase):
             asyncio.run(
                 project_discovery.search_projects(
                     query=query,
-                    mode="generic",
+                    mode=mode,
+                    client_intent=client_intent,
                     repository_factory=lambda: repo,
                     semantic_search_factory=lambda: semantic_search,
                 )
@@ -850,6 +853,26 @@ class ProjectDiscoveryTests(unittest.TestCase):
 
         ranked = self._run_v2_semantic_heat_search(repo, heat_first=True)
 
+        self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
+
+    def test_v2_client_intent_search_keeps_fit_order_over_heat(self) -> None:
+        intent = {
+            "schema_version": "project-search-intent-client-v1",
+            "language": "en",
+            "lexical_terms": ["AI", "coding", "agent", "CLI"],
+            "semantic_queries": ["AI coding agent CLI framework for task automation"],
+        }
+
+        ranked = self._run_v2_semantic_heat_search(
+            self._build_v2_semantic_repository(),
+            heat_first=True,
+            mode="ai",
+            client_intent=intent,
+        )
+
+        # 宿主 agent 传入结构化 intent 的是任务型复用检索：即使语义 lane 有
+        # 产出且 heat_first 开启，也保持 v2 拟合序——0 热度的拟合冠军 fit
+        # 不被 12 分的语义独苗 deep-sem 罢黜（对照 generic 热度序用例）。
         self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
 
     def test_normalize_request_generic_mode_discards_taxonomy_and_scope(self) -> None:
