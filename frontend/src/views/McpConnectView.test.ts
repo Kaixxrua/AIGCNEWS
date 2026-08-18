@@ -80,6 +80,16 @@ const i18n = createI18n({
         toolSearchPapers: '检索 arXiv 论文',
         loginToConfigure: '登录后配置',
         quickConnect: '免登录接入',
+        wizard: {
+          stepClient: '选择客户端与终端',
+          stepCommand: '复制接入命令',
+          stepVerify: '验证连接',
+          stepDone: '完成与扩展',
+          prev: '上一步',
+          next: '下一步',
+          stepProgress: '第 {current} 步 · 共 {total} 步',
+          resourcesToggle: '工具清单 · 示例提问 · 路由规则',
+        },
         copyQuick: '复制配置命令',
         bearerWarning: '命令只显示一次',
         copyOneTime: '复制一次性命令',
@@ -188,8 +198,12 @@ describe('McpConnectView localized rendering', () => {
     expect(text).toContain('把 AIGC 雷达接入你的 Agent')
     expect(text).toContain('AIGC RADAR MCP')
     expect(text).toContain('公开端点')
-    expect(text).toContain('鉴权配置')
+    expect(text).toContain('选择客户端与终端')
+    expect(text).toContain('复制接入命令')
+    expect(text).toContain('验证连接')
+    expect(text).toContain('完成与扩展')
     expect(text).toContain('令牌管理')
+    expect(text).toContain('工具清单 · 示例提问 · 路由规则')
     expect(text).toContain('MCP 优先路由')
     expect(text).toContain('AI 工程产物')
     expect(text).toContain('Streamable HTTP')
@@ -199,6 +213,10 @@ describe('McpConnectView localized rendering', () => {
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain('https://aigcnews.cn/api/mcp')
+
+    await wrapper.findAll('.mcp-step-dot')[2]!.trigger('click')
+    await flushPromises()
+
     const handshake = wrapper.findAll('button').find((button) => button.text() === 'mcp.publicHandshake')
     expect(handshake).toBeDefined()
     expect(handshake!.attributes('disabled')).toBeUndefined()
@@ -217,25 +235,26 @@ describe('McpConnectView localized rendering', () => {
     expect(text).toContain('检索 arXiv 论文')
   })
 
-  it('orders public tools and routing ahead of the authenticated favorites setup', async () => {
+  it('orders hero, wizard and tokens ahead of the collapsed resources area', async () => {
     const wrapper = await mountView()
     const sections = wrapper.findAll('section')
 
-    expect(sections.length).toBe(7)
+    expect(sections.length).toBe(5)
     expect(sections[0]!.text()).toContain('公开端点')
-    expect(sections[1]!.text()).toContain('search_github_ai_projects')
-    expect(sections[2]!.text()).toContain('免登录接入')
-    expect(sections[3]!.text()).toContain('dsh 终端用户：一条命令接入')
+    expect(sections[1]!.text()).toContain('选择客户端与终端')
+    expect(sections[2]!.text()).toContain('令牌管理')
+    expect(sections[3]!.text()).toContain('search_github_ai_projects')
     expect(sections[4]!.text()).toContain('MCP 优先路由')
-    expect(sections[5]!.text()).toContain('鉴权配置')
-    expect(sections[6]!.text()).toContain('令牌管理')
   })
+
 })
 
 describe('McpConnectView privacy and auth behavior', () => {
   it('renders the secret-free quick command visibly and forwards quick copy', async () => {
     controller().quickCommand.value = 'claude mcp add --scope user --transport http aigc-news https://aigcnews.cn/api/mcp'
     const wrapper = await mountView()
+    await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
+    await flushPromises()
 
     expect(wrapper.text()).toContain('claude mcp add --scope user --transport http aigc-news')
     const copyButton = wrapper.findAll('button').find((button) => button.text() === '复制配置命令')
@@ -248,6 +267,8 @@ describe('McpConnectView privacy and auth behavior', () => {
 
   it('renders the dsh plugin install command and forwards its copy', async () => {
     const wrapper = await mountView()
+    await wrapper.findAll('.mcp-step-dot')[3]!.trigger('click')
+    await flushPromises()
 
     expect(wrapper.text()).toContain('dsh 终端用户：一条命令接入')
     expect(wrapper.text()).toContain('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
@@ -264,6 +285,8 @@ describe('McpConnectView privacy and auth behavior', () => {
   it('shows the copied state for the dsh install command', async () => {
     controller().copiedKey.value = 'dsh-install'
     const wrapper = await mountView()
+    await wrapper.findAll('.mcp-step-dot')[3]!.trigger('click')
+    await flushPromises()
 
     const copyButton = wrapper.findAll('button').find((button) => button.text() === '已复制')
     expect(copyButton).toBeDefined()
@@ -273,15 +296,19 @@ describe('McpConnectView privacy and auth behavior', () => {
     auth().isLoggedIn = false
     controller().quickCommand.value = 'codex mcp add aigc-news --url https://aigcnews.cn/api/mcp'
     const wrapper = await mountView()
+    await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
+    await flushPromises()
 
-    expect(wrapper.text()).toContain('免登录接入')
     expect(wrapper.text()).toContain('codex mcp add aigc-news')
+    expect(wrapper.text()).toContain('mcp.loginRequiredTitle')
     expect(wrapper.text()).not.toContain('令牌管理')
   })
 
   it('never renders the transient command while offering one-time copy', async () => {
     controller().transientCommand.value = 'claude mcp add --header "Authorization: Bearer SECRET-TOKEN-VALUE"'
     const wrapper = await mountView()
+    await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
+    await flushPromises()
 
     expect(wrapper.text()).toContain('命令只显示一次')
     expect(wrapper.text()).not.toContain('SECRET-TOKEN-VALUE')
@@ -297,6 +324,8 @@ describe('McpConnectView privacy and auth behavior', () => {
     auth().isLoggedIn = false
     const pushSpy = vi.spyOn(testRouter, 'push')
     const wrapper = await mountView()
+    await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
+    await flushPromises()
 
     const loginButton = wrapper.findAll('button').find((button) => button.text() === '登录后配置')
     expect(loginButton).toBeDefined()
