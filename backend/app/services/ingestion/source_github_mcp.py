@@ -76,12 +76,19 @@ def _build_queries(
         # GitHub combines free-text terms with AND semantics. Start with the
         # caller's exact intent, then progressively relax long feature lists so
         # an analogy/product name (for example "like iShot") cannot turn a
-        # useful software search into a guaranteed zero-result query.
+        # useful software search into a guaranteed zero-result query. Feature
+        # words usually sit at the TAIL of natural queries ("batch website
+        # screenshot CLI"), so relax the tail as well as the head — otherwise
+        # the informative pair ("screenshot CLI") is never tried on its own
+        # and the fallback wrongly reports zero results.
         term_sets = [base_parts]
         if len(base_parts) > 4:
             term_sets.append(base_parts[:4])
+        if len(base_parts) > 3:
+            term_sets.append(base_parts[-3:])
         if len(base_parts) > 2:
             term_sets.append(base_parts[:2])
+            term_sets.append(base_parts[-2:])
         return list(
             dict.fromkeys(
                 " ".join(terms + qualifiers)

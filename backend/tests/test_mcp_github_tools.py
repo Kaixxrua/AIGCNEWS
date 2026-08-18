@@ -449,10 +449,27 @@ class QueryModeTests(unittest.TestCase):
             [
                 "Windows screenshot rounded corners iShot stars:>=500",
                 "Windows screenshot rounded corners stars:>=500",
+                "rounded corners iShot stars:>=500",
                 "Windows screenshot stars:>=500",
+                "corners iShot stars:>=500",
             ],
         )
         self.assertTrue(all("LLM" not in query and "RAG" not in query for query in queries))
+
+    def test_generic_query_relaxes_tail_feature_words(self) -> None:
+        # 特征词常在自然查询尾部（"batch website screenshot CLI"）：只做头部截断
+        # 时永远试不出最有信息量的尾部组合，fallback 会对 shot-scraper/pageres
+        # 这类明确存在的方案误报零结果。
+        queries = source_github_mcp._build_queries(
+            q="batch website screenshot CLI",
+            category="",
+            subcategory="",
+            language="",
+            min_stars=500,
+            mode="generic",
+        )
+        self.assertIn("screenshot CLI stars:>=500", queries)
+        self.assertIn("website screenshot CLI stars:>=500", queries)
 
     def test_generic_query_keeps_user_supplied_ai_term(self) -> None:
         queries = source_github_mcp._build_queries(
@@ -500,14 +517,14 @@ class QueryModeTests(unittest.TestCase):
             "total_count": 1,
             "error": "",
         }
-        with patch.object(source_github_mcp, "_search_once", side_effect=[empty, match, empty]) as search_once:
+        with patch.object(source_github_mcp, "_search_once", side_effect=[empty, match, empty, empty, empty]) as search_once:
             result = source_github_mcp.search_github_projects_fallback(
                 q="Windows screenshot rounded corners iShot",
                 limit=1,
             )
-        self.assertEqual(search_once.call_count, 3)
+        self.assertEqual(search_once.call_count, 5)
         self.assertEqual(result["items"][0]["full_name"], "owner/repo")
-        self.assertEqual(len(result["queries"]), 3)
+        self.assertEqual(len(result["queries"]), 5)
 
     def test_fallback_globally_sorts_across_retries(self) -> None:
         low = {
@@ -524,7 +541,7 @@ class QueryModeTests(unittest.TestCase):
             "error": "",
         }
         empty = {"items": [], "total_count": 0, "error": ""}
-        with patch.object(source_github_mcp, "_search_once", side_effect=[low, high, empty]):
+        with patch.object(source_github_mcp, "_search_once", side_effect=[low, high, empty, empty, empty]):
             result = source_github_mcp.search_github_projects_fallback(
                 q="Windows screenshot rounded corners iShot",
                 sort="stars",
