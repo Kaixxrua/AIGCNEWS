@@ -273,18 +273,53 @@ def test_real_postgres_list_recent_by_source_supports_non_x_published_date(repos
         )
     )
     rows = documents.list_recent_by_source("news", since_iso="2026-08-06T00:00:00+00:00", limit=10)
-    # published_at 恒空的非 X 源：窗口过滤与排序均由 created_at 驱动
+    # 非 X 源（published_at 恒空）：new 经 published_date 键进窗，mid 的
+    # date-only 键在边界日词法偏严、经 created_at 兜底进窗；按业务时间链倒序
     assert [row["id"] for row in rows] == ["doc-news-new", "doc-news-mid"]
+
+
+def test_real_postgres_list_recent_by_source_covers_restamped_trending_rows(repositories) -> None:
+    documents, _, _ = repositories
+    # github 榜单源语义：published_date 每日上榜刷新、created_at 保留首次入池。
+    # 重上榜老仓必须随「近 N 小时上榜」窗口回窗，而不是被首次入池时间卡住。
+    documents.upsert_document(
+        _document(
+            "doc-gh-retrend",
+            source="github",
+            source_channel="github_trending_daily",
+            published_date="2026-08-17",
+            created_at="2026-07-05T02:00:00+00:00",
+        )
+    )
+    documents.upsert_document(
+        _document(
+            "doc-gh-stale",
+            source="github",
+            source_channel="github_trending_daily",
+            published_date="2026-08-10",
+            created_at="2026-06-01T02:00:00+00:00",
+        )
+    )
+    rows = documents.list_recent_by_source(
+        "github",
+        since_iso="2026-08-16T00:00:00+00:00",
+        limit=10,
+    )
+    assert [row["id"] for row in rows] == ["doc-gh-retrend"]
 
 
 def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositories) -> None:
     documents, _, _ = repositories
+    # X 行钉死 created_at ≈ published_at（生产上首次入池时间贴近推文时间），
+    # 让窗口断言只表达 published_at 语义；created_at 兜底进窗由 news/github
+    # 用例覆盖
     documents.upsert_document(
         _document(
             "doc-x-new",
             source="x",
             source_channel="x_daily_watchlist",
             published_at="2026-08-07T01:30:00+00:00",
+            created_at="2026-08-07T01:30:00+00:00",
             media='[{"type": "photo", "url": "https://pbs.twimg.com/a.jpg"}]',
         )
     )
@@ -294,6 +329,7 @@ def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositor
             source="x",
             source_channel="x_daily_watchlist",
             published_at="2026-08-06T20:00:00+00:00",
+            created_at="2026-08-06T20:00:00+00:00",
         )
     )
     documents.upsert_document(
@@ -302,6 +338,7 @@ def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositor
             source="x",
             source_channel="x_daily_watchlist",
             published_at="2026-08-05T12:00:00+00:00",
+            created_at="2026-08-05T12:00:00+00:00",
         )
     )
     # 其他源不受影响

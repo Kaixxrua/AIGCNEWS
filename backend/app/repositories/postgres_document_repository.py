@@ -583,19 +583,22 @@ class PostgresDocumentRepository:
     ) -> list[dict[str, Any]]:
         """滚动窗口读取近期文档，新到旧。
 
-        窗口键 = COALESCE(NULLIF(published_at,''), created_at)：X 源有规范化
-        published_at（推文发布时间）；其余源 published_at 恒空，回退 created_at
-        （入库时间，「最近入池」语义）。刻意不用 published_date 过滤：它是
-        date-only 业务日期，词法比较会在窗口边界日误杀（"2026-08-16" <
-        "2026-08-16T00:00:00+00:00"），且与 created_at 同日无增益；业务日期
-        的展示由路由层回退链（published_at→published_date→created_at）负责。
-        三列皆 ISO 字符串，保持词法比较契约；路由层仍会解析容错脏值。
-        until_iso 必须下推，避免窗口外新数据占满 LIMIT（X 看板 days_back
-        回移依赖该语义）。
+        窗口/排序键 = COALESCE(NULLIF(published_at,''), NULLIF(published_date,''),
+        created_at)——与展示层 pubDate/lastmod 同一回退链：X 源为推文发布时间，
+        github 等榜单源为每日上榜刷新的 published_date（窗口语义即「近 N 小时
+        上榜」，重上榜仓不受首次入池时间限制），其余源为业务日期。
+        额外 OR created_at >= since 兜底两种键形态漏检：
+          1. date-only 键在边界日词法偏严（"2026-08-16" < "2026-08-16T00:00:00+00:00"）；
+          2. 业务日期滞后于入池的源（arXiv 老论文当日新收录）。
+        until_iso 只约束主键：X 行主键即 published_at，看板 days_back 回移
+        语义不变（路由层另有 published_at 精确复筛）。
         """
-        recent_at = "COALESCE(NULLIF(d.published_at, ''), d.created_at)"
-        clause = f"{_document_projection()} WHERE d.source = %s AND {recent_at} >= %s"
-        params: list[Any] = [source, since_iso]
+        recent_at = "COALESCE(NULLIF(d.published_at, ''), NULLIF(d.published_date, ''), d.created_at)"
+        clause = (
+            f"{_document_projection()} WHERE d.source = %s"
+            f" AND ({recent_at} >= %s OR d.created_at >= %s)"
+        )
+        params: list[Any] = [source, since_iso, since_iso]
         if until_iso:
             clause += f" AND {recent_at} <= %s"
             params.append(until_iso)

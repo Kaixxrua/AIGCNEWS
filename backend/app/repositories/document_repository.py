@@ -113,11 +113,11 @@ class DocumentFeedReader(Protocol):
 class DocumentRecentReader(Protocol):
     """Read documents published within a trailing time window (rolling N hours).
 
-    窗口过滤/排序键契约：COALESCE(published_at, created_at)——X 源为推文
-    发布时间，其余源 published_at 恒空，回退 created_at（「最近入池」语义）。
-    published_date 是 date-only 业务日期，刻意不参与窗口过滤（词法比较会在
-    边界日误杀："2026-08-16" < "2026-08-16T00:00:00+00:00"）；业务日期的
-    展示由调用方回退链（published_at→published_date→created_at）负责。
+    窗口/排序键契约：COALESCE(published_at, published_date, created_at)——
+    与展示层 pubDate/lastmod 同一回退链（X=推文时间，榜单源=每日上榜刷新
+    的 published_date，其余=业务日期）；并 OR created_at >= since 兜底
+    date-only 键边界日漏检与「业务日期滞后于入池」（arXiv 老论文新收录）。
+    until_iso 仅约束主键（X 看板 days_back 依赖其对 published_at 精确）。
     """
 
     def list_recent_by_source(

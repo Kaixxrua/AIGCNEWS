@@ -32,10 +32,10 @@ const i18n = createI18n({
   messages: {
     'zh-CN': {
       membership: {
-        title: '会员',
+        title: 'vip',
         subtitle: '解锁更高的 MCP 调用额度与全部简报模块。',
         free: {
-          name: '免费版',
+          name: 'free',
           price: '¥0',
           currentPlan: '当前默认方案',
           features: {
@@ -45,7 +45,7 @@ const i18n = createI18n({
           },
         },
         member: {
-          name: '会员',
+          name: 'vip',
           badge: '推荐',
           priceMonthly: '¥19',
           priceMonthlyPeriod: '/ 月',
@@ -59,14 +59,14 @@ const i18n = createI18n({
           features: {
             mcpMember: 'MCP 调用 20,000 次/月',
             briefingMember: '简报订阅全部 8 个模块',
-            support: '优先支持与后续会员权益',
+            support: '优先支持与后续 vip 权益',
           },
         },
-        currentMember: '当前已是会员',
+        currentMember: '当前已是 vip',
         cta: '联系开通',
         ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。',
-        ctaMailSubject: 'AIGC News 会员开通咨询',
-        memberNote: '感谢支持！会员权益已生效。',
+        ctaMailSubject: 'AIGC News vip 开通咨询',
+        memberNote: '感谢支持！vip 权益已生效。',
       },
     },
   },
@@ -74,9 +74,11 @@ const i18n = createI18n({
   fallbackWarn: false,
 })
 
+/* RouterLink 未注册时 Vue 3.5 会把它渲染成注释节点，stubs 拦截不到未解析组件；
+   用 global.components 直接注册桩，RouterLinkStub 才会真正渲染并可被 findComponent 断言。 */
 const mountView = () =>
   mount(MembershipView, {
-    global: { plugins: [i18n], stubs: { RouterLink: RouterLinkStub } },
+    global: { plugins: [i18n], components: { RouterLink: RouterLinkStub } },
   })
 
 beforeEach(() => {
@@ -89,8 +91,8 @@ describe('MembershipView', () => {
     const wrapper = mountView()
     const text = wrapper.text()
 
-    expect(text).toContain('会员')
-    expect(text).toContain('免费版')
+    expect(text).toContain('vip')
+    expect(text).toContain('free')
     // 大字号金额 + 周期后缀拆分 + 年付锚定 + 节省标
     expect(text).toContain('¥19')
     expect(text).toContain('/ 月')
@@ -119,15 +121,15 @@ describe('MembershipView', () => {
     const anchor = wrapper.find('a.tier-cta')
     expect(anchor.exists()).toBe(true)
     expect(anchor.attributes('href')).toContain('mailto:kaixxrua@gmail.com')
-    expect(anchor.attributes('href')).toContain(encodeURIComponent('AIGC News 会员开通咨询'))
+    expect(anchor.attributes('href')).toContain(encodeURIComponent('AIGC News vip 开通咨询'))
   })
 
   it('shows the active-member state instead of the CTA for members', () => {
     authBox.isMember = true
     const wrapper = mountView()
 
-    expect(wrapper.find('.tier-badge').text()).toBe('当前已是会员')
-    expect(wrapper.text()).toContain('感谢支持！会员权益已生效。')
+    expect(wrapper.find('.tier-badge').text()).toBe('当前已是 vip')
+    expect(wrapper.text()).toContain('感谢支持！vip 权益已生效。')
     expect(wrapper.find('a.tier-cta').exists()).toBe(false)
     expect(wrapper.findComponent(RouterLinkStub).exists()).toBe(false)
   })
