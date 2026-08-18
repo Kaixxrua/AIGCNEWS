@@ -79,6 +79,9 @@ const MEMBER_FEATURES = ['mcpMember', 'briefingMember', 'support'] as const
             >
               <ArrowLeftRight :size="13" :stroke-width="2.5" aria-hidden="true" />
               {{ isYearly ? t('membership.member.billMonthly') : t('membership.member.billYearly') }}
+              <!-- 折扣标只在月付态出现：1 − 129/(19×12) = 43.4%，向下取整 -43%（保守口径）；
+                   年付态按钮是降级动作，不带折扣标 -->
+              <span v-if="!isYearly" class="tier-billing-tag">{{ t('membership.member.yearlyDiscount') }}</span>
             </button>
           </p>
           <p class="tier-price-yearly">
@@ -252,6 +255,17 @@ const MEMBER_FEATURES = ['mcpMember', 'briefingMember', 'support'] as const
 .tier-billing-btn[aria-pressed='true']:hover {
   background: var(--acid);
   color: var(--acid-ink);
+}
+
+/* 折扣百分比标：acid 实色小胶囊（tier-badge 的同族配方），嵌在描边按钮内制造对比 */
+.tier-billing-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--acid);
+  color: var(--acid-ink);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.5;
 }
 
 /* 价格用 Playfair 大字号：订阅制编辑流派的价格牌惯例 */
