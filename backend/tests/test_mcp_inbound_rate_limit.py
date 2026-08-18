@@ -302,7 +302,7 @@ class McpRouteRateLimitContracts(unittest.TestCase):
 
 
 class QuotaEnforcementTests(unittest.IsolatedAsyncioTestCase):
-    """tools/call 分层配额：匿名日 100 / 免费月 3000 / 会员月 100000。"""
+    """tools/call 分层配额：匿名日 100 / 免费月 2000 / 会员月 20000。"""
 
     async def test_anonymous_tool_call_consumes_daily_ip_quota(self) -> None:
         redis = FakeRedis()
@@ -439,7 +439,7 @@ class QuotaExceededProjectionTests(unittest.TestCase):
 
     def test_free_monthly_projection_guides_to_membership(self) -> None:
         exc = McpQuotaExceededError(
-            quota_scope="monthly", tier="free", limit=3000, retry_after=600
+            quota_scope="monthly", tier="free", limit=2000, retry_after=600
         )
         projection = mcp_quota_exceeded_projection(9, exc)
         self.assertIn("membership", projection.body["error"]["message"])
@@ -447,10 +447,10 @@ class QuotaExceededProjectionTests(unittest.TestCase):
 
     def test_member_projection_reports_window_reset(self) -> None:
         exc = McpQuotaExceededError(
-            quota_scope="monthly", tier="member", limit=100000, retry_after=42
+            quota_scope="monthly", tier="member", limit=20000, retry_after=42
         )
         projection = mcp_quota_exceeded_projection(9, exc)
-        self.assertIn("100000", projection.body["error"]["message"])
+        self.assertIn("20000", projection.body["error"]["message"])
         self.assertEqual(projection.body["error"]["data"]["tier"], "member")
 
 

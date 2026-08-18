@@ -159,7 +159,7 @@ class EnforceRateLimitTests(unittest.IsolatedAsyncioTestCase):
 
 
 class QuotaEnforcementTests(unittest.IsolatedAsyncioTestCase):
-    """分层配额：匿名日 100 / 免费月 3000 / 会员月 100000（与 MCP 同池）。"""
+    """分层配额：匿名日 100 / 免费月 2000 / 会员月 20000（与 MCP 同池）。"""
 
     async def test_anonymous_call_consumes_daily_ip_quota_in_shared_bucket(self) -> None:
         redis = FakeRedis()

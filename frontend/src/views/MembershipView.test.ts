@@ -40,7 +40,7 @@ const i18n = createI18n({
           currentPlan: '当前默认方案',
           features: {
             mcpAnonymous: 'MCP 匿名调用 100 次/天',
-            mcpFree: '注册并创建令牌后 3,000 次/月',
+            mcpFree: '注册并创建令牌后 2,000 次/月',
             briefingFree: '简报订阅 1 个日报模块',
           },
         },
@@ -57,7 +57,7 @@ const i18n = createI18n({
           billMonthly: '按月付',
           billYearly: '按年付',
           features: {
-            mcpMember: 'MCP 调用 100,000 次/月',
+            mcpMember: 'MCP 调用 20,000 次/月',
             briefingMember: '简报订阅全部 8 个模块',
             support: '优先支持与后续会员权益',
           },
@@ -98,7 +98,7 @@ describe('MembershipView', () => {
     expect(text).toContain('年付省 ¥99')
     expect(text).toContain('推荐')
     expect(text).toContain('当前默认方案')
-    expect(text).toContain('MCP 调用 100,000 次/月')
+    expect(text).toContain('MCP 调用 20,000 次/月')
     expect(text).toContain('简报订阅 1 个日报模块')
     expect(text).toContain('简报订阅全部 8 个模块')
   })

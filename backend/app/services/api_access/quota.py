@@ -7,7 +7,7 @@
 
 配额桶字符串与 ``services/mcp/inbound/rate_limit`` 完全一致：MCP 与
 REST 共享同一个配额池——用户 MCP 通道用了 1000 次，REST 通道就只剩
-2000 次，杜绝双通道套利。突发桶独立（``api.search``，流量形状与
+1000 次，杜绝双通道套利。突发桶独立（``api.search``，流量形状与
 JSON-RPC 协议方法不同）。改任一侧的配额桶名/窗口/额度时必须同步
 另一侧，契约测试（test_projects_api_access.SharedPoolContract）守护同值。
 """
@@ -40,15 +40,15 @@ API_ANONYMOUS_SEARCH_LIMIT = 30
 API_AUTHENTICATED_SEARCH_LIMIT = 120
 
 # 配额桶与 MCP inbound 共享（同值即同池，勿漂移）：匿名日 100（IP 键）/
-# 免费月 3000 / 会员月 100000（用户键）。月窗为 30 天滚动固定窗口而非
+# 免费月 2000 / 会员月 20000（用户键）。月窗为 30 天滚动固定窗口而非
 # 自然月——INCR+EXPIRE 原语无日历语义，滚动窗对脉冲式用量更友好。
 API_QUOTA_DAILY_BUCKET = "mcp.quota.daily"
 API_QUOTA_MONTHLY_BUCKET = "mcp.quota.monthly"
 API_QUOTA_DAILY_WINDOW_SECONDS = 86400
 API_QUOTA_MONTHLY_WINDOW_SECONDS = 2592000
 API_ANONYMOUS_DAILY_SEARCH_QUOTA = 100
-API_FREE_MONTHLY_SEARCH_QUOTA = 3000
-API_MEMBER_MONTHLY_SEARCH_QUOTA = 100000
+API_FREE_MONTHLY_SEARCH_QUOTA = 2000
+API_MEMBER_MONTHLY_SEARCH_QUOTA = 20000
 
 
 class ApiQuotaExceededError(RuntimeError):
