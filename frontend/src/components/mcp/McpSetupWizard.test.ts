@@ -9,7 +9,6 @@ const buildController = () => ({
   clientLabel: ref(''),
   clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude' }),
   copiedKey: ref(''),
-  copyDshInstallCommand: vi.fn(),
   copyGeneratedCommand: vi.fn(),
   copyQuickCommand: vi.fn(),
   creating: ref(false),
@@ -71,11 +70,9 @@ const i18n = createI18n({
           stepClient: '选择客户端与终端',
           stepCommand: '复制接入命令',
           stepVerify: '验证连接',
-          stepDone: '完成与扩展',
           stepClientDescription: '第 1 步：选择客户端。',
           stepCommandDescription: '第 2 步：复制命令。',
           stepVerifyDescription: '第 3 步：验证。',
-          stepDoneDescription: '第 4 步：扩展。',
           prev: '上一步',
           next: '下一步',
           stepProgress: '第 {current} 步 · 共 {total} 步',
@@ -118,9 +115,9 @@ describe('McpSetupWizard navigation', () => {
   it('starts on the client step with the full client catalog and prev disabled', async () => {
     const wrapper = await mountWizard()
 
-    expect(wrapper.text()).toContain('第 1 步 · 共 4 步')
+    expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
     expect(wrapper.text()).toContain('客户端与终端')
-    expect(wrapper.findAll('.mcp-step-dot')).toHaveLength(4)
+    expect(wrapper.findAll('.mcp-step-dot')).toHaveLength(3)
     expect(wrapper.findAll('.mcp-choice').length).toBeGreaterThanOrEqual(9)
     expect(prevButton(wrapper)!.attributes('disabled')).toBeDefined()
     expect(nextButton(wrapper)!.attributes('disabled')).toBeUndefined()
@@ -131,16 +128,16 @@ describe('McpSetupWizard navigation', () => {
 
     await nextButton(wrapper)!.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('第 2 步 · 共 4 步')
+    expect(wrapper.text()).toContain('第 2 步 · 共 3 步')
     expect(wrapper.text()).toContain('生成的配置命令')
 
     await nextButton(wrapper)!.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('第 3 步 · 共 4 步')
+    expect(wrapper.text()).toContain('第 3 步 · 共 3 步')
 
     await prevButton(wrapper)!.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('第 2 步 · 共 4 步')
+    expect(wrapper.text()).toContain('第 2 步 · 共 3 步')
     expect(ctl().selectedClient.value).toBe('claude-code')
   })
 
@@ -148,16 +145,16 @@ describe('McpSetupWizard navigation', () => {
     const wrapper = await mountWizard()
     const dots = wrapper.findAll('.mcp-step-dot')
 
-    await dots[3]!.trigger('click')
+    await dots[2]!.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('第 4 步 · 共 4 步')
-    expect(wrapper.text()).toContain('dsh 终端用户：一条命令接入')
+    expect(wrapper.text()).toContain('第 3 步 · 共 3 步')
+    expect(wrapper.text()).toContain('公开端点')
     expect(nextButton(wrapper)!.attributes('disabled')).toBeDefined()
     expect(prevButton(wrapper)!.attributes('disabled')).toBeUndefined()
 
     await wrapper.findAll('.mcp-step-dot')[0]!.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('第 1 步 · 共 4 步')
+    expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
   })
 })
 
@@ -185,17 +182,6 @@ describe('McpSetupWizard step content', () => {
     expect(handshake).toBeDefined()
     await handshake!.trigger('click')
     expect(ctl().testPublicHandshake).toHaveBeenCalledTimes(1)
-  })
-
-  it('renders the dsh install command and forwards its copy on the final step', async () => {
-    const wrapper = await mountWizard()
-    await wrapper.findAll('.mcp-step-dot')[3]!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
-    expect(wrapper.find('a[href="https://github.com/Kaixxrua/dsh-aigc-radar"]').exists()).toBe(true)
-    await buttonByText(wrapper, '复制安装命令')!.trigger('click')
-    expect(ctl().copyDshInstallCommand).toHaveBeenCalledTimes(1)
   })
 
   it('emits login from the command step CTA when logged out', async () => {

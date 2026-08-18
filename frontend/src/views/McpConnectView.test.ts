@@ -84,7 +84,6 @@ const i18n = createI18n({
           stepClient: '选择客户端与终端',
           stepCommand: '复制接入命令',
           stepVerify: '验证连接',
-          stepDone: '完成与扩展',
           prev: '上一步',
           next: '下一步',
           stepProgress: '第 {current} 步 · 共 {total} 步',
@@ -201,7 +200,7 @@ describe('McpConnectView localized rendering', () => {
     expect(text).toContain('选择客户端与终端')
     expect(text).toContain('复制接入命令')
     expect(text).toContain('验证连接')
-    expect(text).toContain('完成与扩展')
+    expect(text).toContain('dsh 终端用户：一条命令接入')
     expect(text).toContain('令牌管理')
     expect(text).toContain('工具清单 · 示例提问 · 路由规则')
     expect(text).toContain('MCP 优先路由')
@@ -239,12 +238,13 @@ describe('McpConnectView localized rendering', () => {
     const wrapper = await mountView()
     const sections = wrapper.findAll('section')
 
-    expect(sections.length).toBe(5)
+    expect(sections.length).toBe(6)
     expect(sections[0]!.text()).toContain('公开端点')
     expect(sections[1]!.text()).toContain('选择客户端与终端')
-    expect(sections[2]!.text()).toContain('令牌管理')
-    expect(sections[3]!.text()).toContain('search_github_ai_projects')
-    expect(sections[4]!.text()).toContain('MCP 优先路由')
+    expect(sections[2]!.text()).toContain('dsh 终端用户：一条命令接入')
+    expect(sections[3]!.text()).toContain('令牌管理')
+    expect(sections[4]!.text()).toContain('search_github_ai_projects')
+    expect(sections[5]!.text()).toContain('MCP 优先路由')
   })
 
 })
@@ -267,9 +267,6 @@ describe('McpConnectView privacy and auth behavior', () => {
 
   it('renders the dsh plugin install command and forwards its copy', async () => {
     const wrapper = await mountView()
-    await wrapper.findAll('.mcp-step-dot')[3]!.trigger('click')
-    await flushPromises()
-
     expect(wrapper.text()).toContain('dsh 终端用户：一条命令接入')
     expect(wrapper.text()).toContain('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
     const repoLink = wrapper.find('a[href="https://github.com/Kaixxrua/dsh-aigc-radar"]')
@@ -285,8 +282,6 @@ describe('McpConnectView privacy and auth behavior', () => {
   it('shows the copied state for the dsh install command', async () => {
     controller().copiedKey.value = 'dsh-install'
     const wrapper = await mountView()
-    await wrapper.findAll('.mcp-step-dot')[3]!.trigger('click')
-    await flushPromises()
 
     const copyButton = wrapper.findAll('button').find((button) => button.text() === '已复制')
     expect(copyButton).toBeDefined()
