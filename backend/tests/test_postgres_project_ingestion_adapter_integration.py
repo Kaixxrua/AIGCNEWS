@@ -775,3 +775,91 @@ def test_trending_metric_inputs_upsert_status_and_hot_reads(
         ).fetchone()
     assert stored["hot_score"] == 10.5
     assert stored["daily_growth_available"] is True
+
+
+def test_snapshot_created_at_backfilled_from_candidate(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    """API created_at 缺失时，快照写入从 candidates 回填权威建仓日期。
+
+    回归：hot_service 曾用 published_date（收录时间）冒充建仓日期，把老仓
+    标成 new_repo_surge。固化语义：空入参回填 candidates.created_at、
+    显式入参优先、同日冲突保留已有非空值、指标输入读取对遗留空行兜底。
+    """
+    repository, database = postgres_ingestion
+    try:
+        repository.upsert_github_repo_candidate(
+            {
+                "repo_id": "acme/created-fallback",
+                "full_name": "acme/created-fallback",
+                "created_at": "2024-03-11",
+                "stars": 1200,
+            }
+        )
+        # 空入参 → 回填 candidates.created_at
+        repository.insert_github_repo_snapshot(
+            {
+                "repo_id": "acme/created-fallback",
+                "snapshot_date": "2026-08-19",
+                "captured_at": "2026-08-19T01:00:00+00:00",
+                "stars": 1200,
+                "forks": 30,
+                "watchers": 30,
+                "community_metrics_complete": True,
+                "repo_created_at": "",
+            }
+        )
+        # 显式入参优先于回填
+        repository.insert_github_repo_snapshot(
+            {
+                "repo_id": "acme/created-fallback",
+                "snapshot_date": "2026-08-18",
+                "captured_at": "2026-08-18T01:00:00+00:00",
+                "stars": 1190,
+                "forks": 29,
+                "watchers": 29,
+                "community_metrics_complete": True,
+                "repo_created_at": "2024-03-10",
+            }
+        )
+        # 同日冲突：已有非空值不被空入参覆盖
+        repository.insert_github_repo_snapshot(
+            {
+                "repo_id": "acme/created-fallback",
+                "snapshot_date": "2026-08-18",
+                "captured_at": "2026-08-18T02:00:00+00:00",
+                "stars": 1195,
+                "forks": 29,
+                "watchers": 29,
+                "community_metrics_complete": True,
+                "repo_created_at": "",
+            }
+        )
+        # 遗留空行：绕过写入 SQL 直接插入空 created_at，验证读侧兜底
+        with database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO github_repo_snapshots (repo_id, snapshot_date, "
+                "captured_at, stars, forks, watchers, community_metrics_complete, "
+                "open_issues, repo_created_at, repo_pushed_at) VALUES "
+                "('acme/created-fallback', '2026-08-17', "
+                "'2026-08-17T01:00:00+00:00', 1180, 28, 28, TRUE, 0, '', '')"
+            )
+            rows = connection.execute(
+                "SELECT snapshot_date, repo_created_at FROM github_repo_snapshots "
+                "WHERE repo_id='acme/created-fallback' ORDER BY snapshot_date"
+            ).fetchall()
+        by_date = {row["snapshot_date"]: row["repo_created_at"] for row in rows}
+        assert by_date["2026-08-17"] == ""
+        assert by_date["2026-08-18"] == "2024-03-10"
+        assert by_date["2026-08-19"] == "2024-03-11"
+
+        inputs = repository.get_github_daily_metric_inputs(
+            metric_date="2026-08-17",
+            previous_date="2026-08-16",
+            baseline_start_date="2026-08-10",
+            repo_ids=["acme/created-fallback"],
+        )
+        assert len(inputs) == 1
+        assert inputs[0]["repo_created_at"] == "2024-03-11"
+    finally:
+        _delete_candidates(database, "acme/created-fallback")

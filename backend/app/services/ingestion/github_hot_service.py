@@ -220,9 +220,9 @@ def refresh_github_hot_candidates(
                 "topics_json": __import__("json").dumps(
                     repo.get("topics") or repo.get("tags") or [], ensure_ascii=False
                 ),
-                "created_at": repo.get("created_at")
-                or repo.get("published_date")
-                or "",
+                # created_at 缺失时留空：published_date 是收录/发布时间，
+                # 冒充建仓日期会把老仓标成新仓（new_repo_surge 误报源）。
+                "created_at": repo.get("created_at") or "",
                 "pushed_at": repo.get("pushed_at") or "",
                 "stars": int(repo.get("stars") or 0),
                 "forks": int(repo.get("forks") or 0),
@@ -248,9 +248,7 @@ def refresh_github_hot_candidates(
                     1 if repo.get("_community_metrics_complete") else 0
                 ),
                 "open_issues": int(repo.get("open_issues") or 0),
-                "repo_created_at": repo.get("created_at")
-                or repo.get("published_date")
-                or "",
+                "repo_created_at": repo.get("created_at") or "",
                 "repo_pushed_at": repo.get("pushed_at") or "",
             }
         )

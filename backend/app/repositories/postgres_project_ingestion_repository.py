@@ -70,9 +70,16 @@ _SNAPSHOT_UPSERT_SQL = """
         repo_id, snapshot_date, captured_at, stars, forks, watchers,
         community_metrics_complete, open_issues, repo_created_at, repo_pushed_at
     ) VALUES (
-        %(repo_id)s, %(snapshot_date)s, %(captured_at)s, %(stars)s,
+        %(repo_id)s::character varying, %(snapshot_date)s, %(captured_at)s, %(stars)s,
         %(forks)s, %(watchers)s, %(community_metrics_complete)s,
-        %(open_issues)s, %(repo_created_at)s, %(repo_pushed_at)s
+        %(open_issues)s,
+        COALESCE(
+            NULLIF(%(repo_created_at)s::character varying, ''),
+            (SELECT NULLIF(c.created_at, '') FROM github_repo_candidates c
+             WHERE c.repo_id = %(repo_id)s::character varying),
+            ''
+        ),
+        %(repo_pushed_at)s
     ) ON CONFLICT (repo_id, snapshot_date) DO UPDATE SET
         captured_at=GREATEST(COALESCE(github_repo_snapshots.captured_at,''), COALESCE(EXCLUDED.captured_at,'')),
         stars=GREATEST(COALESCE(github_repo_snapshots.stars,0), COALESCE(EXCLUDED.stars,0)),
@@ -1161,7 +1168,8 @@ class PostgresGitHubProjectIngestionRepository:
             """
             SELECT s.repo_id,c.full_name,s.snapshot_date metric_date,COALESCE(s.stars,0) stars,
                 COALESCE(s.forks,0) forks,COALESCE(s.watchers,0) watchers,
-                s.community_metrics_complete,COALESCE(s.open_issues,0) open_issues,s.repo_created_at,
+                s.community_metrics_complete,COALESCE(s.open_issues,0) open_issues,
+                COALESCE(NULLIF(s.repo_created_at,''),NULLIF(c.created_at,''),'') repo_created_at,
                 COALESCE(NULLIF(s.repo_pushed_at,''),NULLIF(c.pushed_at,'')) repo_pushed_at,
                 prev.snapshot_date previous_snapshot_date,COALESCE(prev.stars,0) previous_stars,
                 COALESCE(prev.forks,0) previous_forks,COALESCE(prev.watchers,0) previous_watchers,

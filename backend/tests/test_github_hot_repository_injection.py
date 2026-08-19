@@ -201,3 +201,52 @@ def test_search_merge_preserves_authoritative_subscriber_count(monkeypatch) -> N
     assert candidate["community_metrics_complete"] is True
     assert first_snapshot["watchers"] == 12
     assert first_snapshot["community_metrics_complete"] == 1
+
+
+def test_missing_created_at_never_falls_back_to_published_date(monkeypatch) -> None:
+    """回归：published_date 是收录/发布时间，冒充建仓日期会把老仓标成新仓。
+
+    API created_at 缺失时 candidate.created_at 与 snapshot.repo_created_at
+    都必须留空，由 SQL 层回填 candidates 里的权威值。
+    """
+    repository = MagicMock(spec=GitHubProjectIngestionRepository)
+    repository.upsert_github_trending_hit.return_value = "acme/legacy"
+    monkeypatch.setattr(
+        github_hot_service,
+        "fetch_github_trending_repos",
+        lambda *, period, limit: (
+            [
+                {
+                    "full_name": "acme/legacy",
+                    "stars": 9000,
+                    "published_date": "2026-08-18",
+                }
+            ]
+            if period == "daily"
+            else []
+        ),
+    )
+    monkeypatch.setattr(
+        github_hot_service,
+        "fetch_github_candidate_repos",
+        lambda *, limit: [],
+    )
+    monkeypatch.setattr(
+        github_hot_service,
+        "fetch_github_repo_metrics_batch",
+        lambda names: [],
+    )
+
+    github_hot_service.refresh_github_hot_candidates(
+        20,
+        observed_date="2026-08-19",
+        db=repository,
+    )
+
+    candidate = repository.upsert_github_repo_candidate.call_args.args[0]
+    snapshots = [
+        call.args[0] for call in repository.insert_github_repo_snapshot.call_args_list
+    ]
+    assert candidate["created_at"] == ""
+    assert snapshots
+    assert all(snapshot["repo_created_at"] == "" for snapshot in snapshots)
