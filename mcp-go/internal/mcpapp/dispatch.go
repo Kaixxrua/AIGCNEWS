@@ -25,9 +25,10 @@ import (
 	"aigcnews/mcp-go/internal/wire"
 )
 
-// ToolHandler 执行一个已注册工具，返回的数据将进入 content 文本与
-// structuredContent 双层编码（PR 1.2 仅用于未知工具/崩溃语料面）。
-type ToolHandler func(arguments map[string]any) (map[string]any, error)
+// ToolHandler 执行一个已注册工具。返回值必须是可直接 JSON 编码的有序结构
+// （jsonx.Object/[]any/标量），将进入 content 文本与 structuredContent
+// 双层编码；保序责任在处理器，dispatch 不做 map 重排。
+type ToolHandler func(arguments map[string]any) (any, error)
 
 // ToolRegistry 按名查找工具处理器。
 type ToolRegistry interface {
@@ -149,49 +150,35 @@ func (a *App) call(req wire.ValidatedRequest) wire.Response {
 		return wire.Result(req.RequestID, toolResult(
 			jsonx.Object{{Key: "error", Value: message}}, true))
 	}
-	if name == "get_project_categories" {
-		return wire.Result(req.RequestID, toolResult(orderedProjectCategories(data), false))
-	}
 	return wire.Result(req.RequestID, toolResult(data, false))
 }
 
-func orderedProjectCategories(data map[string]any) jsonx.Object {
-	items := []any{}
-	if raw, ok := data["items"].([]any); ok {
-		for _, item := range raw {
-			if category, ok := item.(map[string]any); ok {
-				subcategories := []any{}
-				if rawSub, ok := category["subcategories"].([]any); ok {
-					for _, sub := range rawSub {
-						if value, ok := sub.(map[string]any); ok {
-							subcategories = append(subcategories, jsonx.Object{{Key: "slug", Value: value["slug"]}, {Key: "name", Value: value["name"]}, {Key: "name_zh", Value: value["name_zh"]}, {Key: "name_en", Value: value["name_en"]}, {Key: "project_count", Value: value["project_count"]}})
-						}
-					}
-				}
-				items = append(items, jsonx.Object{{Key: "slug", Value: category["slug"]}, {Key: "name", Value: category["name"]}, {Key: "name_zh", Value: category["name_zh"]}, {Key: "name_en", Value: category["name_en"]}, {Key: "project_count", Value: category["project_count"]}, {Key: "subcategories", Value: subcategories}})
-			}
-		}
-	}
-	return jsonx.Object{
-		{Key: "items", Value: items},
-		{Key: "total", Value: data["total"]},
-		{Key: "today_count", Value: data["today_count"]},
-		{Key: "recommended_count", Value: data["recommended_count"]},
-		{Key: "min_stars", Value: data["min_stars"]},
-		{Key: "source", Value: data["source"]},
-		{Key: "attribution", Value: data["attribution"]},
-	}
-}
+// maxToolResultChars 复刻 responses.py 的 MAX_TOOL_RESULT_CHARS
+// （catalog.py 的 100_000）：按 rune 计数，超长则整体替换为
+// truncated/reason/preview 包络。
+const maxToolResultChars = 100_000
 
 // toolResult 复刻 responses._tool_response：内层 text 用 Python 默认
 // 分隔符（", " / ": "）的 json.dumps，外层信封紧凑；成功才带
 // structuredContent。顶层键序 content/isError/structuredContent 与
 // Python 插入序一致（亦恰好是按字母序）。
+//
+// 内层 text 超过 100000 字符（rune 口径）时替换为截断包络并重新编码；
+// structuredContent 也随之变为截断包络（Python 行为：safe_data 被替换）。
 func toolResult(data any, isError bool) jsonx.Object {
+	text := pythonDumps(data)
+	if runes := []rune(text); len(runes) > maxToolResultChars {
+		data = jsonx.Object{
+			{Key: "truncated", Value: true},
+			{Key: "reason", Value: "Tool result exceeded 100000 characters."},
+			{Key: "preview", Value: string(runes[:maxToolResultChars])},
+		}
+		text = pythonDumps(data)
+	}
 	result := jsonx.Object{
 		{Key: "content", Value: []any{jsonx.Object{
 			{Key: "type", Value: "text"},
-			{Key: "text", Value: pythonDumps(data)},
+			{Key: "text", Value: text},
 		}}},
 		{Key: "isError", Value: isError},
 	}

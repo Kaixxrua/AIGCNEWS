@@ -47,6 +47,10 @@ type Config struct {
 	// TrustedProxyIPs 对齐 Python 侧 trusted_proxy_ips（config.py 334 行），
 	// 逗号分隔的可信代理 IP 串，默认 "127.0.0.1,::1"，原样装载不做解析。
 	TrustedProxyIPs string
+	// PublicBaseURL 对齐 public_base_url（config.py 324 行）：对外站点 origin，
+	// 仅来自 PUBLIC_BASE_URL 配置，绝不从请求派生（防缓存投毒）。默认 None →
+	// Go 侧空串；消费方自行 TrimRight("/",)（对齐 Python 的 rstrip("/")）。
+	PublicBaseURL string
 }
 
 // lookup 从环境取值；与 os.LookupEnv 同形，便于测试注入。
@@ -109,6 +113,7 @@ func (c *Config) load(lookup lookupFunc) error {
 	}
 	loadString(lookup, "REDIS_PASSWORD", &c.Redis.Password)
 	loadString(lookup, "TRUSTED_PROXY_IPS", &c.TrustedProxyIPs)
+	loadString(lookup, "PUBLIC_BASE_URL", &c.PublicBaseURL)
 	if c.Port < 1 || c.Port > 65_535 {
 		return fmt.Errorf("config: MCP_SERVER_PORT=%d 超出 1..65535", c.Port)
 	}

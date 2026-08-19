@@ -1,16 +1,20 @@
 // Package replay 是黄金语料的 Go 回放门禁：直接消费
-// backend/tests/parity/corpus/protocol.jsonl，按 corpus_manifest.json 的
-// 归一化规则逐字节比对 /api/mcp 的响应。
+// backend/tests/parity/corpus/{protocol,tools}.jsonl，按 corpus_manifest.json
+// 的归一化规则逐字节比对 /api/mcp 的响应。
 //
 // 本包只含测试代码，不进生产二进制。用例纳入范围随 PR 里程碑推进：
 //
 //   - PR 1.2：信封/解析/认证/通知/错误面 + 无注册表时的 tools/call 错误面；
-//   - PR 1.3（本包当前）：限流层落地，rate-limited-429 解除跳过
+//   - PR 1.3：限流层落地，rate-limited-429 解除跳过
 //     （miniredis + 限额覆盖 + warmup，镜像 recorder.py 的用例编排）；
 //   - PR 1.4：tools/list* / resources-list / resources-templates-list /
-//     prompts-list（静态清单落地后解除跳过）。
+//     prompts-list（静态清单落地后解除跳过）；
+//   - PR 2.2（本包当前）：tools.jsonl 回放 harness 落地，
+//     search-papers*/search-documents*/get-project-categories* 11 例解除跳过，
+//     文档检索由 fixtures.json documents 段注入 stub 仓储驱动。
 //
-// 语料新增用例会立即进入回放并以逐字节差异暴露，不允许静默漏测。
+// 语料新增用例会立即进入回放并以逐字节差异暴露，不允许静默漏测：
+// tools.jsonl 每个用例必须在 toolsCorpusMilestones 显式登记归属 PR。
 package replay
 
 import (
@@ -79,9 +83,9 @@ func corpusPath(t *testing.T, name string) string {
 	return filepath.Join(root, "backend", "tests", "parity", "corpus", name)
 }
 
-func loadProtocolCases(t *testing.T) []corpusCase {
+func loadCases(t *testing.T, corpus string) []corpusCase {
 	t.Helper()
-	raw, err := os.ReadFile(corpusPath(t, "protocol.jsonl"))
+	raw, err := os.ReadFile(corpusPath(t, corpus))
 	if err != nil {
 		t.Skipf("parity corpus 不可读（%v），跳过回放", err)
 	}
@@ -98,6 +102,10 @@ func loadProtocolCases(t *testing.T) []corpusCase {
 		cases = append(cases, c)
 	}
 	return cases
+}
+
+func loadProtocolCases(t *testing.T) []corpusCase {
+	return loadCases(t, "protocol.jsonl")
 }
 
 // fixtureToken 对齐 fixtures.json tokens 段（recorder._TOKENS 的导出）。
@@ -169,18 +177,184 @@ func loadFixtureAuthenticator(t *testing.T) fixtureAuthenticator {
 	return fixtureAuthenticator{tokens: byDigest}
 }
 
+// ── 文档 fixture（recorder._StubDocuments 的 Go 镜像） ──────────────────
+
+// fixtureDocuments 复刻 _StubDocuments.search_document_page 的分支表；
+// 分页参数被刻意忽略（stub 不按 page/limit 切片，语料分页用例依赖此形态）。
+type fixtureDocuments struct {
+	arxivA    mcpapp.DocumentRow
+	arxivB    mcpapp.DocumentRow
+	news      mcpapp.DocumentRow
+	oversized mcpapp.DocumentRow
+}
+
+func (f fixtureDocuments) SearchDocumentPage(query, source string, _, _ int) (mcpapp.DocumentPage, error) {
+	switch {
+	case query == "oversized":
+		return mcpapp.DocumentPage{Items: []mcpapp.DocumentRow{f.oversized}, Total: 1}, nil
+	case query == "empty-query":
+		return mcpapp.DocumentPage{Items: []mcpapp.DocumentRow{}, Total: 0}, nil
+	case strings.ToLower(source) == "news":
+		return mcpapp.DocumentPage{Items: []mcpapp.DocumentRow{f.news}, Total: 1}, nil
+	default:
+		return mcpapp.DocumentPage{Items: []mcpapp.DocumentRow{f.arxivA, f.arxivB}, Total: 17}, nil
+	}
+}
+
+// loadFixtureDocuments 把 fixtures.json documents 段转成 DocumentRow。
+// 解码用 UseNumber 保留 Python 的 int/float 区分（raw_score 7 int vs 42.5
+// float）；created_at 的 {"__type__":"datetime"} 标记转成 Python str(datetime)
+// 形状（isoformat 的 "T" 换空格，与 safe_document 的 str() 一致）。
+func loadFixtureDocuments(t *testing.T) fixtureDocuments {
+	t.Helper()
+	raw, err := os.ReadFile(corpusPath(t, "fixtures.json"))
+	if err != nil {
+		t.Skipf("fixtures 不可读（%v），跳过回放", err)
+	}
+	var fixtures struct {
+		Documents map[string]map[string]any `json:"documents"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&fixtures); err != nil {
+		t.Fatalf("fixtures 解析失败: %v", err)
+	}
+	row := func(name string) mcpapp.DocumentRow {
+		doc, ok := fixtures.Documents[name]
+		if !ok {
+			t.Fatalf("fixtures.documents 缺少 %s", name)
+		}
+		return documentRowFromFixture(t, name, doc)
+	}
+	return fixtureDocuments{
+		arxivA:    row("arxiv_a"),
+		arxivB:    row("arxiv_b"),
+		news:      row("news"),
+		oversized: row("oversized"),
+	}
+}
+
+func documentRowFromFixture(t *testing.T, name string, doc map[string]any) mcpapp.DocumentRow {
+	t.Helper()
+	str := func(key string) *string {
+		value, present := doc[key]
+		if !present || value == nil {
+			return nil
+		}
+		s, ok := value.(string)
+		if !ok {
+			t.Fatalf("documents.%s.%s 非字符串: %T", name, key, value)
+		}
+		return &s
+	}
+	floatPtr := func(key string) *float64 {
+		value, present := doc[key]
+		if !present || value == nil {
+			return nil
+		}
+		number, ok := value.(json.Number)
+		if !ok {
+			t.Fatalf("documents.%s.%s 非数字: %T", name, key, value)
+		}
+		f, err := number.Float64()
+		if err != nil {
+			t.Fatalf("documents.%s.%s 浮点解析失败: %v", name, key, err)
+		}
+		return &f
+	}
+	row := mcpapp.DocumentRow{
+		ID:            str("id"),
+		Source:        str("source"),
+		SourceChannel: str("source_channel"),
+		Title:         str("title"),
+		URL:           str("url"),
+		Summary:       str("summary"),
+		PublishedDate: str("published_date"),
+		Tags:          str("tags"),
+		Score:         floatPtr("score"),
+		RankInPeriod:  int32PtrFromFixture(t, name, doc["rank_in_period"]),
+		LocalPDFPath:  str("local_pdf_path"),
+		Authors:       str("authors"),
+		ArxivID:       str("arxiv_id"),
+	}
+	// raw_score 保留 int/float 区分（Python 7 int vs 42.5 float）。
+	switch value := doc["raw_score"].(type) {
+	case nil:
+	case json.Number:
+		text := value.String()
+		if strings.ContainsAny(text, ".eE") {
+			f, err := value.Float64()
+			if err != nil {
+				t.Fatalf("documents.%s.raw_score 浮点解析失败: %v", name, err)
+			}
+			row.RawScore = f
+		} else {
+			n, err := value.Int64()
+			if err != nil {
+				t.Fatalf("documents.%s.raw_score 整数解析失败: %v", name, err)
+			}
+			row.RawScore = n
+		}
+	default:
+		t.Fatalf("documents.%s.raw_score 非数字: %T", name, value)
+	}
+	// created_at 的 datetime 标记 → Python str(datetime) 形状。
+	switch value := doc["created_at"].(type) {
+	case nil:
+	case map[string]any:
+		if value["__type__"] != "datetime" {
+			t.Fatalf("documents.%s.created_at 未知标记: %v", name, value)
+		}
+		iso, ok := value["value"].(string)
+		if !ok {
+			t.Fatalf("documents.%s.created_at.value 非字符串: %T", name, value["value"])
+		}
+		formatted := strings.Replace(iso, "T", " ", 1)
+		row.CreatedAt = &formatted
+	case string:
+		row.CreatedAt = &value
+	default:
+		t.Fatalf("documents.%s.created_at 类型异常: %T", name, value)
+	}
+	return row
+}
+
+func int32PtrFromFixture(t *testing.T, name string, value any) *int32 {
+	t.Helper()
+	if value == nil {
+		return nil
+	}
+	number, ok := value.(json.Number)
+	if !ok {
+		t.Fatalf("documents.%s.rank_in_period 非数字: %T", name, value)
+	}
+	n, err := number.Int64()
+	if err != nil {
+		t.Fatalf("documents.%s.rank_in_period 整数解析失败: %v", name, err)
+	}
+	asInt32 := int32(n)
+	return &asInt32
+}
+
 func newReplayHandler(t *testing.T, caseName string) http.Handler {
 	t.Helper()
+	// 对齐 recorder 的 stub 装配：分类走静态仓储，文档检索走 fixtures.json
+	// documents 段的 stub（_StubDocuments），PUBLIC_BASE_URL 在录制侧未配置
+	// → 空串（pdf_media_url 相对路径 + detail_url/attribution 品牌兜底）。
+	registry := mcpapp.Handlers{}
+	for name, handler := range mcpapp.NewProjectCategoriesHandlers(mcpapp.StaticProjectCategoriesRepository{}) {
+		registry[name] = handler
+	}
+	for name, handler := range mcpapp.NewDocumentsHandlers(loadFixtureDocuments(t), "") {
+		registry[name] = handler
+	}
 	// 对齐 recorder profile 语义：
 	// tool_handler_crash → search_papers 处理器抛错；
 	// dispatch_crash → 分派阶段 panic（internal-error-500 用例）。
-	registry := mcpapp.Handlers{
-		"search_papers": func(map[string]any) (map[string]any, error) {
+	if caseName == "tool-call-handler-crash" {
+		registry["search_papers"] = func(map[string]any) (any, error) {
 			return nil, errParityProbe
-		},
-	}
-	for name, handler := range mcpapp.NewProjectCategoriesHandlers(mcpapp.StaticProjectCategoriesRepository{}) {
-		registry[name] = handler
+		}
 	}
 	app := mcpapp.New(version.ServerName, version.Fallback, registry)
 	if caseName == "internal-error-500" {
@@ -283,5 +457,78 @@ func replayCase(t *testing.T, c corpusCase) {
 		if value, ok := got[name]; !ok || value != want {
 			t.Errorf("header %s = %q, want %q", name, value, want)
 		}
+	}
+}
+
+// ── tools.jsonl 回放（工具语料） ─────────────────────────────────────────
+
+// toolsCorpusMilestones 显式登记 tools.jsonl 每个用例的归属 PR。语料新增
+// 用例未登记 → 测试失败（不允许静默漏测）；登记了但语料不存在 → 同样失败
+// （防止用例重命名后登记表漂移成僵尸）。
+var toolsCorpusMilestones = map[string]string{
+	"search-papers":                    "PR 2.2",
+	"search-papers-pagination":         "PR 2.2",
+	"search-papers-empty":              "PR 2.2",
+	"search-papers-oversized":          "PR 2.2",
+	"search-papers-missing-q":          "PR 2.2",
+	"search-papers-extra-arg":          "PR 2.2",
+	"search-documents-all":             "PR 2.2",
+	"search-documents-news":            "PR 2.2",
+	"search-documents-invalid-source":  "PR 2.2",
+	"get-project-categories":           "PR 2.2",
+	"get-project-categories-with-args": "PR 2.2",
+
+	"get-paper-detail":           "PR 2.3",
+	"get-paper-detail-not-found": "PR 2.3",
+
+	"get-top-items":              "PR 2.4",
+	"get-top-items-embargoed":    "PR 2.4",
+	"get-top-items-default-date": "PR 2.4",
+	"get-top-items-invalid-date": "PR 2.4",
+	"get-top-items-weekly":       "PR 2.4",
+
+	"favorites-first-page":            "PR 2.5",
+	"favorites-next-page":             "PR 2.5",
+	"favorites-anonymous":             "PR 2.5",
+	"favorites-no-scope":              "PR 2.5",
+	"favorites-bad-marker":            "PR 2.5",
+	"favorites-marker-limit-mismatch": "PR 2.5",
+
+	"search-github-projects":       "PR 2.7",
+	"search-github-ai-projects":    "PR 2.8",
+	"search-github-ai-projects-en": "PR 2.8",
+}
+
+// toolsCorpusCurrentMilestone 是本包当前解锁的里程碑；其余用例带里程碑
+// 标注跳过，等对应 PR 接入时前移。
+const toolsCorpusCurrentMilestone = "PR 2.2"
+
+// TestToolsCorpus 逐案回放 tools.jsonl 当前里程碑范围内的用例。
+func TestToolsCorpus(t *testing.T) {
+	cases := loadCases(t, "tools.jsonl")
+	seen := map[string]bool{}
+	for _, c := range cases {
+		milestone, registered := toolsCorpusMilestones[c.Name]
+		if !registered {
+			t.Fatalf("语料用例 %q 未在 toolsCorpusMilestones 登记归属 PR", c.Name)
+		}
+		seen[c.Name] = true
+		c := c
+		t.Run(c.Name, func(t *testing.T) {
+			if milestone != toolsCorpusCurrentMilestone {
+				t.Skipf("归属 %s（当前 %s）", milestone, toolsCorpusCurrentMilestone)
+			}
+			replayCase(t, c)
+		})
+	}
+	var stale []string
+	for name := range toolsCorpusMilestones {
+		if !seen[name] {
+			stale = append(stale, name)
+		}
+	}
+	if len(stale) > 0 {
+		sort.Strings(stale)
+		t.Fatalf("登记表含有语料中不存在的用例: %s", strings.Join(stale, ", "))
 	}
 }

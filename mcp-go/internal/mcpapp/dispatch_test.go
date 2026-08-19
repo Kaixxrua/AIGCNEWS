@@ -86,7 +86,7 @@ func TestUnknownMethodAndPing(t *testing.T) {
 
 func TestToolsCallValidationUnknownAndCrash(t *testing.T) {
 	a := New("aigc-radar", "1.2.0", Handlers{
-		"crash": func(map[string]any) (map[string]any, error) { return nil, errors.New("boom") },
+		"crash": func(map[string]any) (any, error) { return nil, errors.New("boom") },
 	})
 	r := a.Dispatch(rpc(6, "tools/call", `{"arguments":{}}`))
 	want := `{"jsonrpc":"2.0","id":6,"error":{"code":-32602,"message":"tools/call params.name is required"}}`
@@ -111,7 +111,7 @@ func TestToolsCallValidationUnknownAndCrash(t *testing.T) {
 
 func TestSuccessfulToolCallHasStructuredContent(t *testing.T) {
 	a := New("aigc-radar", "1.2.0", Handlers{
-		"ok": func(map[string]any) (map[string]any, error) {
+		"ok": func(map[string]any) (any, error) {
 			return map[string]any{"items": []any{}}, nil
 		},
 	})

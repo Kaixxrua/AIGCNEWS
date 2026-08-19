@@ -5,8 +5,10 @@
 // PR 1.2 范围：/api/mcp 协议面——认证（authn）、解析/信封（wire）、
 // 无状态分派（mcpapp），以 backend/tests/parity/corpus/protocol.jsonl
 // 为逐字节门禁。
-// PR 1.3 范围：Redis 限流层（ratelimit）落在解析之后、分派之前；
-// 静态清单（PR 1.4）尚未接入。
+// PR 1.3 范围：Redis 限流层（ratelimit）落在解析之后、分派之前。
+// PR 1.4 范围：静态清单（tools/resources/prompts 目录）。
+// PR 2.1 范围：get_project_categories 工具（静态分类仓储）。
+// PR 2.2 范围：search_papers / search_documents 工具（Postgres 文档检索）。
 package main
 
 import (
@@ -18,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -67,9 +70,19 @@ func run() int {
 	slog.Info("[Startup] Postgres connection pool opened.")
 
 	serverVersion := version.Resolve()
-	// PR 1.2：工具注册表为空——所有 tools/call 走未知工具分支（语料钉死），
-	// 真实工具自 Phase 2 逐只接入。
-	app := mcpapp.New(version.ServerName, serverVersion, mcpapp.NewProjectCategoriesHandlers(mcpapp.StaticProjectCategoriesRepository{}))
+	// 工具注册表（Phase 2 逐只接入）：get_project_categories 走静态仓储
+	// （PR 2.1）；search_papers/search_documents 走 Postgres 文档检索
+	// （PR 2.2）。publicBaseURL 仅取自 PUBLIC_BASE_URL 配置并 rstrip("/")，
+	// 与 Python presentation.public_base_url 同语义。
+	registry := mcpapp.Handlers{}
+	for name, handler := range mcpapp.NewProjectCategoriesHandlers(mcpapp.StaticProjectCategoriesRepository{}) {
+		registry[name] = handler
+	}
+	publicBaseURL := strings.TrimRight(cfg.PublicBaseURL, "/")
+	for name, handler := range mcpapp.NewDocumentsHandlers(postgres.NewDocumentRepository(pool), publicBaseURL) {
+		registry[name] = handler
+	}
+	app := mcpapp.New(version.ServerName, serverVersion, registry)
 
 	// 限流层接线（PR 1.3）。对齐 Python 语义：redis-py 构造不预连，故障
 	// 发生在请求期并由 enforce 的 except 吞掉（fail-open）；go-redis 同样
