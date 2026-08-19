@@ -40,7 +40,8 @@ const i18n = createI18n({
           currentPlan: '当前默认方案',
           features: {
             mcpAnonymous: 'MCP 匿名调用 100 次/天',
-            mcpFree: '注册并创建令牌后 2,000 次/月',
+            mcpFree: '注册后 MCP/API 共用 2,000 次/30 天滚动窗口',
+            websiteFree: '滚动 24 小时最多添加 5 个个人网页收藏',
             briefingFree: '简报订阅 1 个日报模块',
           },
         },
@@ -57,7 +58,8 @@ const i18n = createI18n({
           billMonthly: '按月付',
           billYearly: '按年付',
           features: {
-            mcpMember: 'MCP 调用 20,000 次/月',
+            mcpMember: 'MCP/API 共用 20,000 次/30 天滚动窗口',
+            websiteMember: '个人网页收藏添加不限量',
             briefingMember: '简报订阅全部 8 个模块',
             support: '优先支持与后续 vip 权益',
           },
@@ -100,7 +102,11 @@ describe('MembershipView', () => {
     expect(text).toContain('年付省 ¥99')
     expect(text).toContain('推荐')
     expect(text).toContain('当前默认方案')
-    expect(text).toContain('MCP 调用 20,000 次/月')
+    expect(text).toContain('MCP 匿名调用 100 次/天')
+    expect(text).toContain('注册后 MCP/API 共用 2,000 次/30 天滚动窗口')
+    expect(text).toContain('MCP/API 共用 20,000 次/30 天滚动窗口')
+    expect(text).toContain('滚动 24 小时最多添加 5 个个人网页收藏')
+    expect(text).toContain('个人网页收藏添加不限量')
     expect(text).toContain('简报订阅 1 个日报模块')
     expect(text).toContain('简报订阅全部 8 个模块')
   })

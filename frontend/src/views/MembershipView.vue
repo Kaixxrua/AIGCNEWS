@@ -31,8 +31,8 @@ const contactHref = computed(() =>
     : `mailto:kaixxrua@gmail.com?subject=${encodeURIComponent(t('membership.ctaMailSubject'))}`,
 )
 
-const FREE_FEATURES = ['mcpAnonymous', 'mcpFree', 'briefingFree'] as const
-const MEMBER_FEATURES = ['mcpMember', 'briefingMember', 'support'] as const
+const FREE_FEATURES = ['mcpAnonymous', 'mcpFree', 'websiteFree', 'briefingFree'] as const
+const MEMBER_FEATURES = ['mcpMember', 'websiteMember', 'briefingMember', 'support'] as const
 </script>
 
 <template>
