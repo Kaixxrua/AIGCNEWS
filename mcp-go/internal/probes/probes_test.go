@@ -102,6 +102,32 @@ func TestNotFound(t *testing.T) {
 	mux := NewMux(version.Fallback, readyTrue)
 	requireExchange(t, do(t, mux, "GET", "/api/nope"), http.StatusNotFound,
 		`{"detail":"Not Found"}`)
+	// /api/mcp 未挂载时同样按未注册 404。
+	requireExchange(t, do(t, mux, "POST", "/api/mcp"), http.StatusNotFound,
+		`{"detail":"Not Found"}`)
+}
+
+type echoHandler struct{ body string }
+
+func (h echoHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(h.body)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(h.body))
+}
+
+func TestMCPMountAndTrailingSlash(t *testing.T) {
+	mux := NewMux(version.Fallback, readyTrue, echoHandler{body: `{"ok":true}`})
+	requireExchange(t, do(t, mux, "POST", "/api/mcp"), http.StatusOK, `{"ok":true}`)
+
+	// /api/mcp 是已注册路径：单层尾斜杠同样 307 到去斜杠形式。
+	req := httptest.NewRequest("POST", "http://example.test/api/mcp/", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTemporaryRedirect ||
+		rec.Header().Get("Location") != "http://example.test/api/mcp" {
+		t.Fatalf("redirect = %d %q", rec.Code, rec.Header().Get("Location"))
+	}
 }
 
 // Starlette redirect_slashes 实测：单层尾斜杠 307 到去斜杠绝对 URL，空体；

@@ -2,7 +2,9 @@
 // mcp-api 并存，compose 服务 mcp-api-go，127.0.0.1:8002）。
 //
 // PR 1.1 范围：配置装载、Postgres 连接池、探活/版本端点。
-// /api/mcp 协议面自 PR 1.2 起逐层落地（见 backend/tests/parity 语料门禁）。
+// PR 1.2 范围：/api/mcp 协议面——认证（authn）、解析/信封（wire）、
+// 无状态分派（mcpapp），以 backend/tests/parity/corpus/protocol.jsonl
+// 为逐字节门禁；限流（PR 1.3）与静态清单（PR 1.4）尚未接入。
 package main
 
 import (
@@ -17,7 +19,9 @@ import (
 	"syscall"
 	"time"
 
+	"aigcnews/mcp-go/internal/authn"
 	"aigcnews/mcp-go/internal/config"
+	"aigcnews/mcp-go/internal/mcpapp"
 	"aigcnews/mcp-go/internal/postgres"
 	"aigcnews/mcp-go/internal/probes"
 	"aigcnews/mcp-go/internal/version"
@@ -57,9 +61,14 @@ func run() int {
 	}
 	slog.Info("[Startup] Postgres connection pool opened.")
 
-	mux := probes.NewMux(version.Resolve(), func(ctx context.Context) bool {
+	serverVersion := version.Resolve()
+	// PR 1.2：工具注册表为空——所有 tools/call 走未知工具分支（语料钉死），
+	// 真实工具自 Phase 2 逐只接入。
+	app := mcpapp.New(version.ServerName, serverVersion, nil)
+	mcpHandler := mcpapp.NewHandler(app, authn.Authenticator{DB: authn.PgxQuerier{Pool: pool}})
+	mux := probes.NewMux(serverVersion, func(ctx context.Context) bool {
 		return postgres.Ping(ctx, pool, cfg.Postgres.PoolTimeoutSeconds) == nil
-	})
+	}, mcpHandler)
 
 	server := &http.Server{
 		Addr:              net.JoinHostPort("", strconv.Itoa(cfg.Port)),
