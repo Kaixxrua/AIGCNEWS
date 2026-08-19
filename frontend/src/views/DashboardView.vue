@@ -184,9 +184,9 @@ onBeforeUnmount(pauseLivePoll)
             </span>
           </RouterLink>
 
-          <!-- dsh 插件调用次数（MCP 调用中的 dsh 客户端分桶，点击前往接入页） -->
+          <!-- dsh 插件调用次数（MCP 调用中的 dsh 客户端分桶，点击前往插件页） -->
           <RouterLink
-            to="/mcp"
+            to="/dsh"
             class="stagger-enter glass-card card-hover flex items-center gap-2.5 px-3 py-2.5 transition-colors"
             style="animation-delay: 0.45s"
             :aria-label="t('dashboard.dshCalls.title')"

@@ -4,7 +4,7 @@ const overrides = {
   infrastructure: { appName: 'AIGC 新闻', loading: '加载中…', unavailable: '暂不可用' },
   common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', githubRepo: 'GitHub 仓库', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
-  navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', membership: 'vip', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', changePassword: '修改密码', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
+  navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', dsh: 'dsh 插件', membership: 'vip', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', changePassword: '修改密码', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
   membership: {
     title: 'vip', subtitle: '解锁更高的 MCP 调用额度、个人网页不限量收藏与全部简报模块，也支持本站持续运营。',
     free: { name: 'free', price: '¥0', currentPlan: '当前默认方案', features: { mcpAnonymous: 'MCP 匿名调用 100 次/天', mcpFree: '注册后 MCP/API 共用 2,000 次/30 天滚动窗口', websiteFree: '滚动 24 小时最多添加 5 个个人网页收藏', briefingFree: '简报订阅 1 个日报模块' } },
@@ -69,10 +69,14 @@ const overrides = {
     },
     errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试', 'quota-exceeded': '免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。' },
   },
+  dsh: { eyebrow: 'AIGC 雷达 · DSH', title: '在 dsh 终端里搜索 AI 项目', description: '安装原生 dsh-aigc-radar 插件，即可通过 AIGC Radar 公开端点使用项目库卡片与检索路由，无需 Token。', mcpLink: '改为配置 MCP', repository: 'GitHub 仓库', installKicker: '安装', installTitle: '选择安装方式', installDescription: '推荐直接安装最新 npm 包；需要可复现环境时固定已验证版本，也可使用 GitHub 源码兜底。', recommended: '推荐', copy: '复制安装命令', sourceWarningTitle: '源码构建：', sourceWarning: 'pnpm 10+ 可能要求 allowBuilds；需要不可变源码时请固定提交：', capabilitiesKicker: '插件能力', capabilitiesTitle: '原生卡片与检索路由', capabilitiesDescription: '插件把 AIGC Radar 项目搜索卡片、Code Mode、路由提示和 pre-step 主动触发直接带进 dsh web profile。' },
   mcpExamples: { sectionKicker: '这样提问', sectionTitle: '连接后，用自然语言提问', sectionDescription: '以下示例对应上方公开工具，复制到已连接的客户端即可。', copy: '复制', copyAria: '复制该提示词', demoAria: '在站内搜索 {query}', toolTagLabel: '调用 {tool}', ragFrameworks: { prompt: '在 AI 项目库中找 RAG 框架，按 Star 数排序。' }, agentFrameworks: { prompt: '对比最近更新的 Agent 框架项目，推荐值得复用的。' }, weeklyRanking: { prompt: '看看本周 AI 项目和论文榜单前十。' }, papersRagSurvey: { prompt: '搜索关于检索增强生成评估的 arXiv 论文。' }, categories: { prompt: 'AI 项目库有哪些分类，各有多少项目？' }, nonAiScreenshot: { prompt: '找一个 Windows 上的开源截图工具。' } },
 } as const
 
 const explicitBusinessTranslations: Record<string, string> = {
+  'mcp.dshPlugin.crossLinkTitle': '在 dsh 中原生使用 AIGC Radar',
+  'mcp.dshPlugin.crossLinkDescription': 'dsh 现在有独立的 npm 优先安装页，不再混入 MCP 客户端配置流程。',
+  'mcp.dshPlugin.openPage': '打开 dsh 安装页',
   'monitor.contactPageConfig.title': '联系合作页配置',
   'monitor.contactPageConfig.enabledBadge': '已启用',
   'monitor.contactPageConfig.disabledBadge': '未启用',
@@ -181,9 +185,9 @@ const explicitBusinessTranslations: Record<string, string> = {
   'mcp.dshPlugin.kicker': 'DSH 插件',
   'mcp.dshPlugin.title': 'dsh 终端用户：一条命令接入',
   'mcp.dshPlugin.description': 'dsh-aigc-radar 是 dsh 终端的原生插件：内置项目库搜索卡片与检索路由提示，走公共端点免 Token；可按复现需求选择安装方式。',
+  'mcp.dshPlugin.recommended': '推荐',
   'mcp.dshPlugin.copy': '复制安装命令',
   'mcp.dshPlugin.repository': 'GitHub 仓库',
-  'mcp.dshPlugin.recommended': '推荐',
   'mcp.dshPlugin.sourceWarningTitle': '源码构建：',
   'mcp.dshPlugin.sourceWarning': 'pnpm 10+ 可能要求为 dsh-aigc-radar 配置 allowBuilds；需要不可变 Git 源码时可固定提交：',
   'mcp.dshPlugin.methods.npm.title': 'npm 包 · 最新版',

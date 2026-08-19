@@ -26,7 +26,6 @@ vi.mock('@/composables/useMcpConnectController', async () => {
     clientLabel: ref(''),
     clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude' }),
     copiedKey: ref(''),
-    copyDshInstallCommand: vi.fn(),
     copyGeneratedCommand: vi.fn(),
     copyHostInstruction: vi.fn(),
     copyQuickCommand: vi.fn(),
@@ -104,12 +103,19 @@ const i18n = createI18n({
           kicker: 'DSH 插件',
           title: 'dsh 终端用户：一条命令接入',
           description: 'dsh-aigc-radar 是 dsh 终端的原生插件。',
+          crossLinkTitle: '在 dsh 中原生使用 AIGC Radar',
+          crossLinkDescription: 'dsh 现在有独立安装页。',
+          openPage: '打开 dsh 安装页',
+          recommended: '推荐',
           copy: '复制安装命令',
           repository: 'GitHub 仓库',
-          recommended: '推荐',
           sourceWarningTitle: '源码构建：',
           sourceWarning: 'pnpm 10+ 可能要求 allowBuilds；固定提交：',
-          methods: { npm: { title: 'npm 包 · 最新版', description: '安装预构建包。' }, npmPinned: { title: 'npm 包 · 固定 0.2.0', description: '固定已验证版本。' }, github: { title: 'GitHub 源码兜底', description: '现场构建源码。' } },
+          methods: {
+            npm: { title: 'npm 包 · 最新版', description: '安装预构建包。' },
+            npmPinned: { title: 'npm 包 · 固定 0.2.0', description: '固定已验证版本。' },
+            github: { title: 'GitHub 源码兜底', description: '现场构建源码。' },
+          },
         },
       },
     },
@@ -122,6 +128,7 @@ const testRouter = createRouter({
   history: createMemoryHistory(),
   routes: [
     { path: '/mcp', name: 'mcp-connect', component: McpConnectView },
+    { path: '/dsh', name: 'dsh', component: { template: '<div />' } },
     { path: '/login', name: 'login', component: { template: '<div />' } },
     { path: '/membership', name: 'membership', component: { template: '<div />' } },
   ],
@@ -157,7 +164,6 @@ beforeEach(() => {
   controller().selectedShell.value = 'bash'
   for (const fn of [
     controller().clientDisplayLabel,
-    controller().copyDshInstallCommand,
     controller().copyGeneratedCommand,
     controller().copyHostInstruction,
     controller().copyQuickCommand,
@@ -212,7 +218,7 @@ describe('McpConnectView localized rendering', () => {
     expect(text).toContain('选择客户端与终端')
     expect(text).toContain('复制接入命令')
     expect(text).toContain('验证连接')
-    expect(text).toContain('dsh 终端用户：一条命令接入')
+    expect(text).toContain('在 dsh 中原生使用 AIGC Radar')
     expect(text).toContain('令牌管理')
     expect(text).toContain('工具清单 · 示例提问 · 路由规则')
     expect(text).toContain('MCP 优先路由')
@@ -253,7 +259,7 @@ describe('McpConnectView localized rendering', () => {
     expect(sections.length).toBe(6)
     expect(sections[0]!.text()).toContain('公开端点')
     expect(sections[1]!.text()).toContain('选择客户端与终端')
-    expect(sections[2]!.text()).toContain('dsh 终端用户：一条命令接入')
+    expect(sections[2]!.text()).toContain('在 dsh 中原生使用 AIGC Radar')
     expect(sections[3]!.text()).toContain('令牌管理')
     expect(sections[4]!.text()).toContain('search_github_ai_projects')
     expect(sections[5]!.text()).toContain('MCP 优先路由')
@@ -277,32 +283,13 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(controller().copyQuickCommand).toHaveBeenCalledTimes(1)
   })
 
-  it('renders ordered dsh install methods and forwards each copy action', async () => {
+  it('links to the standalone dsh page without rendering install commands', async () => {
     const wrapper = await mountView()
-    const methods = wrapper.findAll('[data-install-method]')
-    expect(methods.map((item) => item.attributes('data-install-method'))).toEqual(['npm', 'npm-pinned', 'github'])
-    expect(methods[0]!.text()).toContain('推荐')
-    expect(methods[0]!.text()).toContain('dsh plugin --profile web add dsh-aigc-radar')
-    expect(methods[1]!.text()).toContain('dsh plugin --profile web add dsh-aigc-radar@0.2.0')
-    expect(methods[2]!.text()).toContain('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
-    expect(methods[2]!.text()).toContain('allowBuilds')
-    expect(methods[2]!.text()).toContain('github:Kaixxrua/dsh-aigc-radar#<sha>')
-    expect(methods[0]!.text()).not.toContain('allowBuilds')
-    expect(methods[1]!.text()).not.toContain('allowBuilds')
-    const repoLink = wrapper.find('a[href="https://github.com/Kaixxrua/dsh-aigc-radar"]')
-    expect(repoLink.attributes('target')).toBe('_blank')
-    expect(repoLink.attributes('rel')).toBe('noopener')
-    for (const method of methods) await method.get('button').trigger('click')
-    expect(controller().copyDshInstallCommand.mock.calls).toEqual([['npm'], ['npm-pinned'], ['github']])
-  })
-
-  it('shows copied state only for the matching dsh install method', async () => {
-    controller().copiedKey.value = 'dsh-install-npm-pinned'
-    const wrapper = await mountView()
-    const methods = wrapper.findAll('[data-install-method]')
-    expect(methods[0]!.get('button').text()).toBe('复制安装命令')
-    expect(methods[1]!.get('button').text()).toBe('已复制')
-    expect(methods[2]!.get('button').text()).toBe('复制安装命令')
+    expect(wrapper.text()).toContain('在 dsh 中原生使用 AIGC Radar')
+    expect(wrapper.findAll('[data-install-method]')).toHaveLength(0)
+    const link = wrapper.get('a[href="/dsh"]')
+    expect(link.text()).toContain('打开 dsh 安装页')
+    expect(wrapper.text()).not.toContain('dsh-aigc-radar@0.2.0')
   })
 
   it('offers the quick connect path without login', async () => {

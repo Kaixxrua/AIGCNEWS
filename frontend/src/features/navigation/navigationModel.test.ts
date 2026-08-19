@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NAV_ITEMS, isNavigationItemFeatureEnabled, isNavigationItemSitePageEnabled } from './navigationModel'
+import { NAV_ITEMS, isNavigationItemActive, isNavigationItemFeatureEnabled, isNavigationItemSitePageEnabled } from './navigationModel'
 
 describe('navigation feature gating', () => {
   it('marks the X board item with its feature key', () => {
@@ -33,6 +33,21 @@ describe('navigation site page gating', () => {
 
   it('never hides items without a site page key', () => {
     expect(isNavigationItemSitePageEnabled({}, { contactPage: false })).toBe(true)
+  })
+})
+
+describe('dsh navigation item', () => {
+  it('exposes a public entry immediately after MCP', () => {
+    const mcpIndex = NAV_ITEMS.findIndex((item) => item.to === '/mcp')
+    const item = NAV_ITEMS[mcpIndex + 1]!
+    expect(item.to).toBe('/dsh')
+    expect(item.labelKey).toBe('navigation.dsh')
+    expect(item.requiresAuth).toBeUndefined()
+    expect(item.requiresAdmin).toBeUndefined()
+    expect(item.featureKey).toBeUndefined()
+    expect(item.sitePageKey).toBeUndefined()
+    expect(isNavigationItemActive(item, '/dsh')).toBe(true)
+    expect(isNavigationItemActive(item, '/mcp')).toBe(false)
   })
 })
 

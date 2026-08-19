@@ -22,6 +22,7 @@ const PaperReadView = () => import('@/views/PaperReadView.vue')
 const DisclaimerView = () => import('@/views/DisclaimerView.vue')
 const PrivacyView = () => import('@/views/PrivacyView.vue')
 const McpConnectView = () => import('@/views/McpConnectView.vue')
+const DshView = () => import('@/views/DshView.vue')
 const ContactPageView = () => import('@/views/ContactPageView.vue')
 const MembershipView = () => import('@/views/MembershipView.vue')
 
@@ -95,6 +96,11 @@ const router = createRouter({
           path: 'mcp',
           name: 'mcp-connect',
           component: McpConnectView,
+        },
+        {
+          path: 'dsh',
+          name: 'dsh',
+          component: DshView,
         },
         {
           path: 'monitor',
