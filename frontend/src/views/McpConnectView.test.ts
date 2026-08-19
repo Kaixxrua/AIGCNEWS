@@ -7,11 +7,11 @@ import McpConnectView from './McpConnectView.vue'
 const controllerSpy = vi.hoisted(() => vi.fn())
 const clipboardCopy = vi.hoisted(() => vi.fn())
 const ctlBox = vi.hoisted(() => ({ current: null as null | Record<string, any> }))
-const authBox = vi.hoisted(() => ({ current: null as null | { isLoggedIn: boolean; isAdmin: boolean } }))
+const authBox = vi.hoisted(() => ({ current: null as null | { isLoggedIn: boolean; isAdmin: boolean; isMember: boolean } }))
 
 vi.mock('@/stores/authStore', async () => {
   const { reactive } = await import('vue')
-  if (!authBox.current) authBox.current = reactive({ isLoggedIn: true, isAdmin: false })
+  if (!authBox.current) authBox.current = reactive({ isLoggedIn: true, isAdmin: false, isMember: false })
   return { useAuthStore: () => authBox.current }
 })
 
@@ -90,6 +90,12 @@ const i18n = createI18n({
           resourcesToggle: '工具清单 · 示例提问 · 路由规则',
         },
         copyQuick: '复制配置命令',
+        quota: {
+          anonymous: '匿名调用限额 100 次/天；登录后升至 2,000 次/30 天滚动窗口，开通 vip 可达 20,000 次。',
+          free: '当前免费档额度 2,000 次/30 天滚动窗口；开通 vip 升至 20,000 次。',
+          loginCta: '登录提升额度',
+          vipCta: '开通 vip',
+        },
         bearerWarning: '命令只显示一次',
         copyOneTime: '复制一次性命令',
         valid: '有效',
@@ -117,6 +123,7 @@ const testRouter = createRouter({
   routes: [
     { path: '/mcp', name: 'mcp-connect', component: McpConnectView },
     { path: '/login', name: 'login', component: { template: '<div />' } },
+    { path: '/membership', name: 'membership', component: { template: '<div />' } },
   ],
 })
 
@@ -129,7 +136,7 @@ const mountView = async () => {
 }
 
 const controller = () => ctlBox.current as Record<string, any>
-const auth = () => authBox.current as { isLoggedIn: boolean; isAdmin: boolean }
+const auth = () => authBox.current as { isLoggedIn: boolean; isAdmin: boolean; isMember: boolean }
 
 beforeEach(() => {
   controller().clientLabel.value = ''
@@ -164,6 +171,7 @@ beforeEach(() => {
     fn.mockClear()
   }
   auth().isLoggedIn = true
+  auth().isMember = false
   controllerSpy.mockClear()
   clipboardCopy.mockClear()
 })
@@ -360,5 +368,33 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(deleteButton).toBeDefined()
     await deleteButton!.trigger('click')
     expect(controller().removeToken).toHaveBeenCalledWith(token)
+  })
+})
+
+describe('McpConnectView quota upsell notice', () => {
+  it('prompts anonymous visitors to log in for a higher quota', async () => {
+    auth().isLoggedIn = false
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('匿名调用限额 100 次/天')
+    const cta = wrapper.get('a[href="/login"]')
+    expect(cta.text()).toContain('登录提升额度')
+    expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+  })
+
+  it('prompts free-tier users to open VIP for a higher quota', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('当前免费档额度 2,000 次/30 天滚动窗口')
+    const cta = wrapper.get('a[href="/membership"]')
+    expect(cta.text()).toContain('开通 vip')
+  })
+
+  it('hides the notice for active VIP members', async () => {
+    auth().isMember = true
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).not.toContain('开通 vip')
+    expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
   })
 })

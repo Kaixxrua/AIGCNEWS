@@ -64,6 +64,10 @@ onBeforeUnmount(dispose)
             <span class="text-2xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.publicEndpoint') }}</span>
             <span class="break-all font-mono text-xs text-stone-700">{{ normalizedEndpoint }}</span>
           </div>
+          <div v-if="!authStore.isMember" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[20px] border border-amber-200 bg-amber-50/70 px-3 py-2">
+            <p class="min-w-0 flex-1 basis-64 text-xs leading-5 text-amber-900">{{ t(authStore.isLoggedIn ? 'mcp.quota.free' : 'mcp.quota.anonymous') }}</p>
+            <RouterLink :to="authStore.isLoggedIn ? '/membership' : '/login'" class="btn-secondary shrink-0 text-xs">{{ t(authStore.isLoggedIn ? 'mcp.quota.vipCta' : 'mcp.quota.loginCta') }}</RouterLink>
+          </div>
         </div>
       </section>
 
