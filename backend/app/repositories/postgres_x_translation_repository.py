@@ -48,7 +48,7 @@ class PostgresXTranslationTaskRepository:
                             status = 'running'
                             AND (
                                 lease_expires_at < CURRENT_TIMESTAMP
-                                OR (lease_expires_at IS NULL AND updated_at < CURRENT_TIMESTAMP - make_interval(secs => %s))
+                                OR (lease_expires_at IS NULL AND started_at < CURRENT_TIMESTAMP - make_interval(secs => %s))
                             )
                        )
                     """,
@@ -78,7 +78,7 @@ class PostgresXTranslationTaskRepository:
                                         x_translation_tasks.lease_expires_at < CURRENT_TIMESTAMP
                                         OR (
                                             x_translation_tasks.lease_expires_at IS NULL
-                                            AND x_translation_tasks.updated_at < CURRENT_TIMESTAMP
+                                            AND x_translation_tasks.started_at < CURRENT_TIMESTAMP
                                                 - make_interval(secs => %s)
                                         )
                                     )
@@ -88,7 +88,7 @@ class PostgresXTranslationTaskRepository:
                             WHERE status = 'running'
                               AND (
                                   x_translation_tasks.lease_expires_at < CURRENT_TIMESTAMP
-                                  OR (x_translation_tasks.lease_expires_at IS NULL AND x_translation_tasks.updated_at < CURRENT_TIMESTAMP - make_interval(secs => %s))
+                                  OR (x_translation_tasks.lease_expires_at IS NULL AND x_translation_tasks.started_at < CURRENT_TIMESTAMP - make_interval(secs => %s))
                               )
                         ) AS stale_running,
                         MIN(x_translation_tasks.created_at) FILTER (WHERE status = 'pending') AS oldest_pending_at,
@@ -148,7 +148,7 @@ class PostgresXTranslationTaskRepository:
                     WHERE status = 'running'
                       AND (
                         (lease_expires_at IS NOT NULL AND lease_expires_at < CURRENT_TIMESTAMP)
-                        OR (lease_expires_at IS NULL AND updated_at < CURRENT_TIMESTAMP - make_interval(secs => %s))
+                        OR (lease_expires_at IS NULL AND started_at < CURRENT_TIMESTAMP - make_interval(secs => %s))
                       )
                     """,
                     (seconds,),

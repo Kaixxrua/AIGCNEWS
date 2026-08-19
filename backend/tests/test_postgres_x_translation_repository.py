@@ -51,6 +51,8 @@ def test_count_retryable_includes_stale_running() -> None:
     query = cursor.execute.call_args.args[0]
     assert "status IN ('pending', 'failed')" in query
     assert "status = 'running'" in query
+    # 历史 NULL 租约行锚定 started_at：updated_at 会被采集 upsert 续期
+    assert "started_at < CURRENT_TIMESTAMP" in query
     assert "make_interval(secs => %s)" in query
     assert cursor.execute.call_args.args[1] == (120,)
 
@@ -107,6 +109,7 @@ def test_recover_stale_running_resets_claim() -> None:
     query, params = cursor.execute.call_args.args
     assert "SET status = 'pending', started_at = NULL" in query
     assert "status = 'running'" in query
+    assert "started_at < CURRENT_TIMESTAMP" in query
     assert params == (60,)
 
 

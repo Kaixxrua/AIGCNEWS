@@ -155,6 +155,46 @@ def test_expired_lease_can_be_reclaimed_and_old_token_cannot_overwrite(
     assert task["claim_token"] is None and task["lease_expires_at"] is None
 
 
+def test_legacy_running_row_without_lease_recovers_by_started_at(
+    x_translation_repository: tuple[Any, PostgresDatabaseLifecycle],
+) -> None:
+    """0052 前的历史 running 行（lease 为 NULL）会被采集 upsert 的 ON CONFLICT
+    反复续期 updated_at；僵死判定必须锚定领取时刻 started_at，否则永久卡死。"""
+    repository, database = x_translation_repository
+    document_id = _insert_pending_task(
+        database, f"l{uuid.uuid4().hex[:8]}", "legacy stuck tweet"
+    )
+    with database.transaction() as connection:
+        connection.execute(
+            """
+            UPDATE x_translation_tasks
+            SET status = 'running',
+                started_at = CURRENT_TIMESTAMP - interval '1 hour',
+                updated_at = CURRENT_TIMESTAMP,
+                attempt_count = 2
+            WHERE document_id = %s
+            """,
+            (document_id,),
+        )
+
+    # updated_at 刚被“续期”，但 started_at 早已过期：必须可回收
+    assert repository.recover_stale_running(900) == 1
+
+    with database.transaction() as connection:
+        row = connection.execute(
+            "SELECT status, started_at, claim_token FROM x_translation_tasks WHERE document_id = %s",
+            (document_id,),
+        ).fetchone()
+        # 模块级共享 schema：清理残留，避免影响后续并发领取计数
+        connection.execute(
+            "DELETE FROM x_translation_tasks WHERE document_id = %s", (document_id,)
+        )
+        connection.execute("DELETE FROM documents WHERE id = %s", (document_id,))
+    assert row["status"] == "pending"
+    assert row["started_at"] is None
+    assert row["claim_token"] is None
+
+
 def test_concurrent_claims_do_not_overlap(
     x_translation_repository: tuple[Any, PostgresDatabaseLifecycle],
 ) -> None:
