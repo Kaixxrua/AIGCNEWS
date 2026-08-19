@@ -48,6 +48,8 @@ class PostgresMcpAccessTokenRepository:
             "deleted_at",
             "created_at",
             "last_used_at",
+            # 会员到期时间（0048）随 token→user JOIN 透出，供读取侧判定生效档位
+            "membership_expires_at",
         ):
             item[field] = _to_iso_string(item.get(field))
         return item
@@ -160,7 +162,8 @@ class PostgresMcpAccessTokenRepository:
                 cursor.execute(
                     """
                     SELECT t.id AS token_id, t.user_id, t.scopes_json, t.expires_at,
-                           t.revoked_at, t.deleted_at, u.email, u.role, u.membership_tier
+                           t.revoked_at, t.deleted_at, u.email, u.role, u.membership_tier,
+                           u.membership_expires_at
                     FROM user_mcp_tokens t JOIN users u ON u.id = t.user_id
                     WHERE t.token_hash = %s AND t.revoked_at IS NULL AND t.deleted_at IS NULL
                       AND (t.expires_at IS NULL OR t.expires_at > CURRENT_TIMESTAMP)

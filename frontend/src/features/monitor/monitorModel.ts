@@ -683,3 +683,39 @@ export const removeXCredential = (credentials: XCredential[], id: number) => cre
 export const replaceXCredential = (credentials: XCredential[], updated?: XCredential) => (
   updated ? credentials.map((item) => item.id === updated.id ? updated : item) : credentials
 )
+
+// ── 用户组（会员档位）运营授予 ─────────────────────────────────────────────
+// 与后端 routes_ops_membership 契约同构：库内权威档位只有 free / member，
+// tier=free 即吊销会员；授予/吊销下一个请求即生效（RequireUser 每请求查库）。
+export type MembershipTier = 'free' | 'member'
+
+export interface MembershipGrantForm {
+  email: string
+  tier: MembershipTier
+  /** YYYY-MM-DD；空串 = 长期有效。仅 member 档有意义（free 吊销时后端强制清空） */
+  expires_on: string
+}
+
+export interface MembershipGrantResult {
+  user_id: number
+  email: string | null
+  membership_tier: string
+  membership_expires_at: string | null
+  revoked: boolean
+}
+
+export const createMembershipGrantForm = (): MembershipGrantForm => ({
+  email: '',
+  tier: 'member',
+  expires_on: '',
+})
+
+// 到期日为日期粒度：按北京时间当日 23:59:59 收口（+08:00 显式时区），
+// 与站点「北京时间」口径一致；后端对 naive datetime 才按 UTC 兜底。
+export const buildMembershipGrantPayload = (form: MembershipGrantForm) => ({
+  email: form.email.trim().toLowerCase(),
+  tier: form.tier,
+  expires_at: form.tier === 'member' && form.expires_on
+    ? `${form.expires_on}T23:59:59+08:00`
+    : null,
+})

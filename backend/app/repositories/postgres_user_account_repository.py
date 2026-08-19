@@ -33,11 +33,12 @@ class PostgresUserAccountRepository:
         # 身份核验专用：按主键查询且不取 hashed_password；disabled 供
         # auth.RequireUser 判定禁用账号（0029 起 users 表才有此列）。
         # pwd_ver 供 RequireUser 比对 JWT 声明，改密后旧 token 立即失效（0041）。
-        # membership_tier 供会员权益判定（0045），授予/吊销下一个请求即生效。
+        # membership_tier 供会员权益判定（0045），授予/吊销下一个请求即生效；
+        # membership_expires_at（0048）供生效档位判定，NULL = 长期有效。
         return self._fetchone(
             """
             SELECT id, phone, email, username, role, disabled, pwd_ver,
-                   membership_tier, created_at
+                   membership_tier, membership_expires_at, created_at
             FROM users
             WHERE id = %s
             """,
@@ -84,14 +85,23 @@ class PostgresUserAccountRepository:
             (phone, username, hashed_password, role),
         )
 
-    def set_membership_tier(self, *, user_id: int, tier: str) -> int:
+    def set_membership_tier(
+        self,
+        *,
+        user_id: int,
+        tier: str,
+        expires_at: datetime | None = None,
+    ) -> int:
+        # expires_at 与档位同事务写入：member+NULL=长期有效；free 一律传 NULL 清档
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    UPDATE users SET membership_tier = %s WHERE id = %s
+                    UPDATE users
+                    SET membership_tier = %s, membership_expires_at = %s
+                    WHERE id = %s
                     """,
-                    (tier, int(user_id)),
+                    (tier, expires_at, int(user_id)),
                 )
                 return int(cursor.rowcount)
 

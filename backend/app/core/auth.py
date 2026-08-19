@@ -13,7 +13,7 @@ from jose import JWTError, jwt
 
 from backend.app.core.config import settings
 from backend.app.repositories.user_account_repository import UserAccountReader
-from backend.app.services.membership.tiers import normalize_membership_tier
+from backend.app.services.membership.tiers import resolve_effective_tier
 
 logger = logging.getLogger(__name__)
 
@@ -166,8 +166,15 @@ async def RequireUser(
     identity["role"] = record.get("role") or "user"
     # 会员档位以库内为准（0045），授予/吊销下一个请求即生效；
     # 库内缺列（迁移未应用）时回退 free，与 pwd_ver 缺列跳过同属热重启兼容口径。
-    identity["membership_tier"] = normalize_membership_tier(
-        record.get("membership_tier")
+    # 到期语义（0048）：member 过期的生效档位按 free，expires_at 原样透传供
+    # /auth/me 等读取侧展示；库内缺列时 .get → None（长期有效）。
+    identity["membership_tier"] = resolve_effective_tier(
+        record.get("membership_tier"),
+        record.get("membership_expires_at"),
+    )
+    expires_at = record.get("membership_expires_at")
+    identity["membership_expires_at"] = (
+        expires_at.isoformat() if hasattr(expires_at, "isoformat") else None
     )
     return identity
 

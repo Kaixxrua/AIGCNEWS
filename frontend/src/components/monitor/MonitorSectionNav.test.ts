@@ -1,10 +1,10 @@
 import { mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MonitorSectionNav from './MonitorSectionNav.vue'
 import i18n, { setAppLocale } from '@/i18n'
 import { MONITOR_NAV, type MonitorSectionKey } from '@/features/monitor/monitorViewModel'
 
-const mountNav = (props: { active?: MonitorSectionKey; alertKeys?: MonitorSectionKey[]; sections?: typeof MONITOR_NAV } = {}) =>
+const mountNav = (props: { active?: MonitorSectionKey; alertKeys?: MonitorSectionKey[]; sections?: typeof MONITOR_NAV; onSelect?: (key: MonitorSectionKey) => void } = {}) =>
   mount(MonitorSectionNav, {
     global: { plugins: [i18n] },
     props: { sections: MONITOR_NAV, active: 'tasks', alertKeys: [], ...props },
@@ -15,7 +15,7 @@ describe('MonitorSectionNav', () => {
     setAppLocale('zh-CN')
   })
 
-  it('renders 5 categories and 14 leaves in MONITOR_NAV order with localized labels', () => {
+  it('renders 5 categories and 15 leaves in MONITOR_NAV order with localized labels', () => {
     const wrapper = mountNav()
     expect(wrapper.find('nav.monitor-nav').attributes('aria-label')).toBe('监控分区')
     const headers = wrapper.findAll('.monitor-nav-group-header')
@@ -29,7 +29,7 @@ describe('MonitorSectionNav', () => {
       '采集控制', 'GitHub 爬取', 'GitHub 富化',
       'X 关注账号', 'X 凭证', '微信公众号',
       '模型服务', '定时任务', 'SMTP 邮件', 'MCP 服务',
-      '联系合作页',
+      '联系合作页', '用户组',
     ])
   })
 
@@ -52,10 +52,12 @@ describe('MonitorSectionNav', () => {
   })
 
   it('emits select on leaf click without moving the active state itself', async () => {
-    const wrapper = mountNav({ active: 'tasks' })
+    const onSelect = vi.fn()
+    const wrapper = mountNav({ active: 'tasks', onSelect })
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
     await leaves[12]!.trigger('click')
-    expect(wrapper.emitted('select')).toEqual([['mcp-server']])
+    // 监听 prop 断言替代 emitted()：本环境 VTU 的 emitted 追踪不记录模板内 emit
+    expect(onSelect).toHaveBeenCalledWith('mcp-server')
     // 哑组件契约：激活态由父级持有，点击后不自动迁移
     expect(leaves[0]!.classes()).toContain('active')
     expect(leaves[12]!.classes()).not.toContain('active')

@@ -52,6 +52,7 @@ const createApi = (): MonitorApi => ({
   fetchSmtpConfig: vi.fn(), saveSmtpConfig: vi.fn(), testSmtpConfig: vi.fn(async () => ({ status: 'success', message: '' })),
   fetchEmailPoolConfig: vi.fn(), saveEmailPoolConfig: vi.fn(), testEmailPoolConfig: vi.fn(async () => ({ status: 'success', message: '' })),
   fetchSiteContactPageConfig: vi.fn(), saveSiteContactPageConfig: vi.fn(), uploadSiteImage: vi.fn(),
+  grantMembership: vi.fn(async () => ({ user_id: 7, email: 'member@example.com', membership_tier: 'member', membership_expires_at: null, revoked: false })),
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
@@ -1055,5 +1056,48 @@ describe('Monitor GitHub enrichment controls', () => {
     await controller.retryFailedEnrichments()
     await controller.backfillPendingEnrichments()
     expect(api.triggerGithubEnrichment).not.toHaveBeenCalled()
+  })
+
+  it('grants membership and surfaces the last operation result', async () => {
+    const { api, controller } = createController()
+    controller.membershipForm.value = { email: '  Member@Example.com ', tier: 'member', expires_on: '2027-01-01' }
+
+    await controller.grantMembership()
+
+    expect(api.grantMembership).toHaveBeenCalledWith({ email: 'Member@Example.com', tier: 'member', expires_on: '2027-01-01' })
+    expect(controller.membershipLastResult.value?.membership_tier).toBe('member')
+    expect(controller.successMsg.value).toContain('member@example.com')
+    expect(controller.errorMsg.value).toBe('')
+  })
+
+  it('rejects an invalid membership email without calling the API', async () => {
+    const { api, controller } = createController()
+    controller.membershipForm.value = { email: 'not-an-email', tier: 'member', expires_on: '' }
+
+    await controller.grantMembership()
+
+    expect(api.grantMembership).not.toHaveBeenCalled()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.membership.invalidEmail'))
+  })
+
+  it('maps a 404 from the grant endpoint to the user-not-found message', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.grantMembership).mockRejectedValueOnce({ response: { status: 404, data: { detail: '用户不存在' } } })
+    controller.membershipForm.value = { email: 'ghost@example.com', tier: 'free', expires_on: '' }
+
+    await controller.grantMembership()
+
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.membership.userNotFound'))
+    expect(controller.membershipLastResult.value).toBeNull()
+  })
+
+  it('surfaces the revoke message when granting the free tier', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.grantMembership).mockResolvedValueOnce({ user_id: 8, email: 'member@example.com', membership_tier: 'free', membership_expires_at: null, revoked: true })
+    controller.membershipForm.value = { email: 'member@example.com', tier: 'free', expires_on: '' }
+
+    await controller.grantMembership()
+
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.membership.revoked', { email: 'member@example.com' }))
   })
 })

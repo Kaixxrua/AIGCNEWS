@@ -436,4 +436,30 @@ describe('Monitor API contract', () => {
     await expect(monitorApi.cancelGithubEnrichment()).resolves.toEqual({ status: 'cancelling', message: 'stopping' })
     expect(transport.post).toHaveBeenLastCalledWith('/ops/github-projects/enrich-cancel')
   })
+
+  it('grants membership with normalized email and Beijing end-of-day expiry', async () => {
+    transport.post.mockResolvedValueOnce({
+      data: { user_id: 7, email: 'member@example.com', membership_tier: 'member', membership_expires_at: '2027-01-01T15:59:59+00:00', revoked: false },
+    })
+    const result = await monitorApi.grantMembership({ email: '  Member@Example.COM ', tier: 'member', expires_on: '2027-01-01' })
+    expect(result.membership_tier).toBe('member')
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/membership/grant', {
+      email: 'member@example.com',
+      tier: 'member',
+      expires_at: '2027-01-01T23:59:59+08:00',
+    })
+  })
+
+  it('sends null expiry for permanent grants and free-tier revocations', async () => {
+    transport.post.mockResolvedValue({ data: {} })
+    await monitorApi.grantMembership({ email: 'a@example.com', tier: 'member', expires_on: '' })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/membership/grant', {
+      email: 'a@example.com', tier: 'member', expires_at: null,
+    })
+    // 吊销语义：即使表单残留日期，free 档也不下发到期时间
+    await monitorApi.grantMembership({ email: 'a@example.com', tier: 'free', expires_on: '2027-01-01' })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/membership/grant', {
+      email: 'a@example.com', tier: 'free', expires_at: null,
+    })
+  })
 })

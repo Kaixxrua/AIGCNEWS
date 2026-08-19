@@ -76,6 +76,7 @@ describe('monitor presentation localization boundary', () => {
       ['smtp', 'monitor.nav.smtp', true],
       ['mcp-server', 'monitor.nav.mcpServer', true],
       ['contact-page', 'monitor.nav.contactPage', true],
+      ['membership', 'monitor.nav.membership', true],
     ])
     expect(DEFAULT_MONITOR_SECTION).toBe('tasks')
     expect(MONITOR_NAV.every(category => Boolean(category.icon))).toBe(true)

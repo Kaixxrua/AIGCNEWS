@@ -9,6 +9,7 @@ import GithubEnrichmentPanel from '@/components/monitor/GithubEnrichmentPanel.vu
 import ErrorLogPanel from '@/components/monitor/ErrorLogPanel.vue'
 import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
 import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
+import MembershipGrantPanel from '@/components/monitor/MembershipGrantPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
 import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
 import MonitorSectionNav from '@/components/monitor/MonitorSectionNav.vue'
@@ -37,6 +38,7 @@ const {
   loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp,
   emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
+  membershipForm, grantingMembership, membershipLastResult, grantMembership,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
   dispose, fetchMcpServers, refreshData, goPage, goErrorLogsPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig, saveEmailPoolConfig, testEmailPoolConfig, resetMcpForm, editMcpServer, saveMcpServer,
@@ -331,6 +333,15 @@ onUnmounted(dispose)
             :loading="loadingSiteContactPage"
             :saving="savingSiteContactPage"
             @save="saveSiteContactPageConfig"
+          />
+        </template>
+        <template v-else-if="currentSection === 'membership'">
+          <MembershipGrantPanel
+            v-if="authStore.isAdmin"
+            :form="membershipForm"
+            :granting="grantingMembership"
+            :last-result="membershipLastResult"
+            @save="grantMembership"
           />
         </template>
       </div>

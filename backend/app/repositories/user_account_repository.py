@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Protocol
 
 
@@ -32,8 +33,14 @@ class UserAccountWriter(Protocol):
         hashed_password: str,
     ) -> int: ...
 
-    def set_membership_tier(self, *, user_id: int, tier: str) -> int:
-        """Update the membership tier; returns affected row count (0 = user missing)."""
+    def set_membership_tier(
+        self,
+        *,
+        user_id: int,
+        tier: str,
+        expires_at: datetime | None = None,
+    ) -> int:
+        """Update the membership tier and expiry (None = permanent); returns affected row count (0 = user missing)."""
         ...
 
     def create_user_with_email(

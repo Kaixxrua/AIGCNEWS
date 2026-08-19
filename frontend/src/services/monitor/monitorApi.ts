@@ -4,10 +4,10 @@ import type {
   EmailPoolConfig, EmailPoolForm, EmailPoolTestResult,
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
-  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
+  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
   SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
+import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
@@ -53,6 +53,7 @@ export interface MonitorApi {
   saveGithubEnrichmentConfig(reasoningEffort: string): Promise<GithubEnrichmentConfig>
   triggerGithubEnrichment(limit: number, concurrency: number): Promise<GithubEnrichmentTriggerResult>
   cancelGithubEnrichment(): Promise<GithubEnrichmentCancelResult>
+  grantMembership(form: MembershipGrantForm): Promise<MembershipGrantResult>
 }
 
 export const monitorApi: MonitorApi = {
@@ -193,4 +194,8 @@ export const monitorApi: MonitorApi = {
     })).data
   },
   async cancelGithubEnrichment() { return (await api.post('/ops/github-projects/enrich-cancel')).data },
+  // 用户组（会员档位）授予：tier=free 即吊销；后端按邮箱查库，404=用户不存在
+  async grantMembership(form) {
+    return (await api.post('/ops/membership/grant', buildMembershipGrantPayload(form))).data
+  },
 }

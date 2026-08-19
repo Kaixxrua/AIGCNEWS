@@ -624,5 +624,6 @@ async def me(
         "email": current_user.get("email"),
         "role": current_user.get("role"),
         "membership_tier": current_user.get("membership_tier"),
+        "membership_expires_at": current_user.get("membership_expires_at"),
         "password_change_required": change_required,
     }

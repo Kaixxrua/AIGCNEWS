@@ -15,6 +15,7 @@ from backend.app.services.mcp.inbound.catalog import (
     MAX_REQUEST_BYTES,
     MCP_PROTOCOL_VERSION,
 )
+from backend.app.services.membership.tiers import resolve_effective_tier
 
 
 @dataclass(frozen=True)
@@ -65,9 +66,13 @@ class McpAuthorizationContext:
 
     @property
     def membership_tier(self) -> str:
-        """库内会员档位（0045）；匿名或缺列按 free，未知档由配额层归一。"""
+        """库内生效会员档位（0045/0048）；匿名或缺列按 free，过期 member 回落 free。"""
 
-        return str((self.user or {}).get("membership_tier") or "free")
+        user = self.user or {}
+        return resolve_effective_tier(
+            user.get("membership_tier"),
+            user.get("membership_expires_at"),
+        )
 
     def has_scope(self, scope: str) -> bool:
         return scope in (self.user or {}).get("scopes", frozenset())

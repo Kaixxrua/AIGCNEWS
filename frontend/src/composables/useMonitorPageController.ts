@@ -2,9 +2,9 @@ import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
-  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
-  type McpServerConfig, type McpToolCallMetricsSnapshot, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
+  type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
 import { useGithubCrawlPolling } from './useGithubCrawlPolling'
 import { ENRICHMENT_POLL_INTERVAL, useEnrichmentPolling } from './useEnrichmentPolling'
@@ -73,6 +73,10 @@ export const useMonitorPageController = ({
   const siteContactPageForm = ref(createSiteContactPageForm())
   const loadingSiteContactPage = ref(false)
   const savingSiteContactPage = ref(false)
+  // 用户组（会员档位）授予：无列表接口，只保留表单与最近一次操作结果
+  const membershipForm = ref(createMembershipGrantForm())
+  const grantingMembership = ref(false)
+  const membershipLastResult = ref<MembershipGrantResult | null>(null)
   const mcpServers = ref<McpServerConfig[]>([])
   const mcpForm = ref(createEmptyMcpForm())
   const loadingMcpServers = ref(false)
@@ -402,6 +406,29 @@ export const useMonitorPageController = ({
     } catch (error) { errorMsg.value = detail(error) }
     finally { savingSiteContactPage.value = false }
   }
+  const MEMBERSHIP_EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+  const grantMembership = async () => {
+    if (grantingMembership.value) return
+    clearMessages()
+    const email = membershipForm.value.email.trim()
+    // 与 SMTP 发件邮箱同款无害前端校验，提前拦截 422 往返
+    if (!MEMBERSHIP_EMAIL_PATTERN.test(email)) {
+      errorMsg.value = i18n.global.t('monitor.membership.invalidEmail')
+      return
+    }
+    grantingMembership.value = true
+    try {
+      const result = await api.grantMembership({ ...membershipForm.value, email })
+      membershipLastResult.value = result
+      successMsg.value = result.revoked
+        ? i18n.global.t('monitor.membership.revoked', { email: result.email || email })
+        : i18n.global.t('monitor.membership.granted', { email: result.email || email })
+    } catch (error) {
+      // 后端 404 detail 为「用户不存在」；统一走本地化文案保持口径一致
+      errorMsg.value = statusOf(error) === 404 ? i18n.global.t('monitor.membership.userNotFound') : detail(error)
+    }
+    finally { grantingMembership.value = false }
+  }
   const editSchedulerConfig = (job: SchedulerJobConfig) => {
     clearMessages()
     editingSchedulerJobId.value = job.job_id
@@ -638,12 +665,14 @@ export const useMonitorPageController = ({
     loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp,
     emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
+    membershipForm, grantingMembership, membershipLastResult,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
     fetchErrorLogs, goErrorLogsPage,
     fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchSmtpConfig, fetchEmailPoolConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig,
     saveEmailPoolConfig, testEmailPoolConfig,
     fetchSiteContactPageConfig, saveSiteContactPageConfig,
+    grantMembership,
     editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
     resetMcpForm, editMcpServer, saveMcpServer, testMcpServer, deleteMcpServer, ingestSingleSource, generateAllBriefings,
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,

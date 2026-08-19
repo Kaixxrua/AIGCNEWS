@@ -29,8 +29,48 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 45
-    assert migrations[-1].filename == "0045_users_membership_tier.sql"
+    assert migrations[-1].version == 51
+    assert migrations[-1].filename == "0051_payment_orders.sql"
+
+
+def test_payment_orders_migration_is_idempotent_orders_table() -> None:
+    sql = (MIGRATIONS_DIR / "0051_payment_orders.sql").read_text(encoding="utf-8")
+
+    # 订单台账表：IF NOT EXISTS 幂等（与 0042/0045/0046 同一先例）；枚举
+    # （plan/channel/status）校验在应用层 services/payments 收口，库层不加
+    # CHECK/ADD CONSTRAINT（PG 无 ADD CONSTRAINT IF NOT EXISTS 先例语法）。
+    assert "CREATE TABLE IF NOT EXISTS payment_orders" in sql
+    assert "order_no TEXT NOT NULL" in sql
+    assert "user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE" in sql
+    assert "amount_cents INTEGER NOT NULL" in sql
+    assert "status TEXT NOT NULL DEFAULT 'pending'" in sql
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_orders_order_no" in sql
+    assert "WHERE idempotency_key <> ''" in sql
+    assert "idx_payment_orders_user_created" in sql
+    assert "idx_payment_orders_status_expires" in sql
+    statements = "\n".join(
+        line for line in sql.splitlines() if not line.strip().startswith("--")
+    )
+    assert "CHECK" not in statements
+    assert "ADD CONSTRAINT" not in statements
+
+
+def test_users_membership_expires_at_migration_is_idempotent_add_column() -> None:
+    sql = (MIGRATIONS_DIR / "0048_users_membership_expires_at.sql").read_text(
+        encoding="utf-8"
+    )
+
+    # 与 0045 同一幂等补列先例：TIMESTAMPTZ NULL（NULL = 长期有效），
+    # 过期判定在应用层 membership tiers 模块收口，不加 CHECK/默认值约束。
+    assert (
+        "ALTER TABLE users\n"
+        "    ADD COLUMN IF NOT EXISTS membership_expires_at TIMESTAMPTZ NULL;"
+    ) in sql
+    statements = "\n".join(
+        line for line in sql.splitlines() if not line.strip().startswith("--")
+    )
+    assert "CHECK" not in statements
+    assert "ADD CONSTRAINT" not in statements
 
 
 def test_users_membership_tier_migration_is_idempotent_add_column() -> None:

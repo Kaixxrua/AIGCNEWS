@@ -39,7 +39,7 @@ from backend.app.core.auth import hash_mcp_token
 from backend.app.repositories.document_repository import DocumentRecentReader
 from backend.app.services.membership.tiers import (
     MEMBERSHIP_TIER_MEMBER,
-    normalize_membership_tier,
+    resolve_effective_tier,
 )
 from backend.app.services.papers.presentation import public_base_url
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
@@ -372,7 +372,10 @@ async def feed_member(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=_INVALID_TOKEN_DETAIL,
         )
-    if normalize_membership_tier(identity.get("membership_tier")) != MEMBERSHIP_TIER_MEMBER:
+    if resolve_effective_tier(
+        identity.get("membership_tier"),
+        identity.get("membership_expires_at"),
+    ) != MEMBERSHIP_TIER_MEMBER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=_MEMBER_ONLY_DETAIL,
