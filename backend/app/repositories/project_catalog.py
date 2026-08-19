@@ -62,6 +62,13 @@ class ProjectCatalogRepository(Protocol):
         relaxed_limit: int = 150,
     ) -> ProjectLexicalCandidateLanes: ...
 
+    def find_repo_ids_by_name_segment(
+        self,
+        *,
+        name: str,
+        limit: int = 2,
+    ) -> list[str]: ...
+
     def get_project_stars_map(self, repo_ids: list[str]) -> dict[str, int]: ...
 
     def get_project_heat_map(

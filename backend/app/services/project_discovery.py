@@ -42,6 +42,7 @@ PROJECT_SORT_CHOICES = {"relevance", "hot", "stars", "updated", "recent", "name"
 PROJECT_SCOPE_CHOICES = {"all", "today", "recommended"}
 _FALLBACK_SORTS = {"relevance", "stars", "updated"}
 _EXACT_REPO_QUERY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_EXACT_REPO_NAME_QUERY = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 def _clipped(value: Any, limit: int) -> str:
@@ -565,6 +566,28 @@ async def _apply_reranker(
     )
 
 
+async def _resolve_unique_repo_name_exact(repository: Any, query: str) -> str:
+    """裸仓库名查询的钉顶解析：名段唯一命中一个 active 项目时返回其 repo_id。
+
+    多个命中（歧义）、零命中、仓库不支持该查询或查询失败时都返回 ""，
+    退化为普通相关性排序——宁可不钉，也不错钉。
+    """
+    lookup = _declared_callable(repository, "find_repo_ids_by_name_segment")
+    if lookup is None:
+        return ""
+    try:
+        raw_repo_ids = await asyncio.to_thread(lookup, name=query, limit=2)
+    except Exception as exc:
+        logger.warning("Repo-name exact pin lookup failed for %r: %s", query, exc)
+        return ""
+    repo_ids = [
+        repo_id
+        for repo_id in (str(value or "").strip() for value in raw_repo_ids)
+        if repo_id
+    ]
+    return repo_ids[0] if len(repo_ids) == 1 else ""
+
+
 async def _hybrid_search(
     request: _ProjectSearchRequest,
     repository: Any,
@@ -591,6 +614,10 @@ async def _hybrid_search(
     )
     strict_lexical_empty = not candidate_search.lexical_repo_ids
     exact_repo_id = request.query if _EXACT_REPO_QUERY.fullmatch(request.query) else ""
+    if strategy == "v2" and not exact_repo_id and _EXACT_REPO_NAME_QUERY.fullmatch(request.query):
+        # 裸仓库名（如 "pi"）：名段唯一命中时视同精确查询钉顶，v2/heat
+        # 展示序下不被热度罢黜；legacy 序由 SQL 名段层级自然置顶，无需查询。
+        exact_repo_id = await _resolve_unique_repo_name_exact(repository, request.query)
     candidate_repo_ids, legacy_repo_ids = await _rank_hybrid_candidates(
         repository,
         strategy=strategy,

@@ -75,6 +75,7 @@ def stripped(function: Any) -> inspect.Signature:
 def test_signatures_match_frozen_contract_exactly() -> None:
     assert stripped(PostgresProjectCatalogRepository.find_lexical_candidate_repo_ids) == stripped(ProjectCatalogRepository.find_lexical_candidate_repo_ids)
     assert stripped(PostgresProjectCatalogRepository.find_lexical_candidate_lanes) == stripped(ProjectCatalogRepository.find_lexical_candidate_lanes)
+    assert stripped(PostgresProjectCatalogRepository.find_repo_ids_by_name_segment) == stripped(ProjectCatalogRepository.find_repo_ids_by_name_segment)
     assert stripped(PostgresProjectCatalogRepository.list_projects) == stripped(ProjectCatalogRepository.list_projects)
     assert stripped(PostgresProjectCatalogRepository.get_project_categories) == stripped(ProjectCatalogRepository.get_project_categories)
     assert stripped(PostgresProjectCatalogRepository.list_github_hot_for_date) == stripped(ProjectCatalogRepository.list_github_hot_for_date)
@@ -305,10 +306,70 @@ def test_lexical_lanes_placeholder_count_and_param_order_align() -> None:
         "concept:agent", "%agent%", "concept:agent", "%agent%",
         "concept:agent", "%智能体%", "concept:agent", "%智能体%",
     )
-    # 3. scored 匹配强度：normalized_query ×2（精确等值）+ prefix ×2（前缀）
-    assert params[19:23] == ("ai agent", "ai agent", "ai agent%", "ai agent%")
+    # 3. scored 匹配强度：normalized_query ×3（full_name/名段/title 精确等值）
+    #    + prefix ×3（名段/full_name/title 前缀）
+    assert params[19:25] == (
+        "ai agent", "ai agent", "ai agent", "ai agent%", "ai agent%", "ai agent%",
+    )
     # 4. 车道边界：覆盖组数（term:0/term:1/concept:agent）、strict_limit、relaxed_limit
-    assert params[23:] == (3, 100, 80)
+    assert params[25:] == (3, 100, 80)
+
+
+def test_lexical_lanes_score_repo_name_segment_tiers() -> None:
+    database = Database([[]])
+    PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(q="pi")
+
+    sql, params = database.cursor.calls[1]
+    # 名段等值(5)/前缀(3) 高于 full_name 整体前缀(2)：裸名 "pi" 搜索时
+    # earendil-works/pi 必须压过 pi-hole、pingcap/* 等 owner 前缀命中。
+    assert "WHEN LOWER(split_part(e.full_name, '/', 2)) = LOWER(%s) THEN 5" in sql
+    assert "WHEN split_part(e.full_name, '/', 2) ILIKE %s ESCAPE '=' THEN 3" in sql
+    assert "WHEN LOWER(e.full_name) = LOWER(%s) THEN 6" in sql
+    assert "WHEN e.full_name ILIKE %s ESCAPE '=' THEN 2" in sql
+    assert sql.count("%s") == len(params)
+    # 单 term：filter(min_stars) + hit(2 分支 × (group_id, pattern)) + 强度 6 + 边界 3
+    assert params == (500, "term:0", "%pi%", "term:0", "%pi%", "pi", "pi", "pi", "pi%", "pi%", "pi%", 1, 150, 150)
+
+
+def test_lexical_candidate_ids_order_by_repo_name_segment_tiers() -> None:
+    database = Database([[{"repo_id": "earendil-works/pi"}]])
+    result = PostgresProjectCatalogRepository(database).find_lexical_candidate_repo_ids(q="PI")
+
+    assert result == ["earendil-works/pi"]
+    sql, params = database.cursor.calls[1]
+    assert "WHEN LOWER(split_part(c.full_name,'/',2))=LOWER(%s) THEN 1" in sql
+    assert "WHEN split_part(c.full_name,'/',2) ILIKE %s ESCAPE '=' THEN 3" in sql
+    assert "WHEN LOWER(c.full_name)=LOWER(%s) THEN 0" in sql
+    assert "WHEN c.full_name ILIKE %s ESCAPE '=' THEN 4" in sql
+    # min_stars + 词过滤 7 字段 ILIKE + 等值 ×3 + 前缀 ×3 + limit
+    assert params == (500, *(("%PI%",) * 7), "PI", "PI", "PI", "PI%", "PI%", "PI%", 200)
+
+
+def test_find_repo_ids_by_name_segment_is_active_canonical_and_bounded() -> None:
+    database = Database([[{"repo_id": "earendil-works/pi"}]])
+    result = PostgresProjectCatalogRepository(database).find_repo_ids_by_name_segment(
+        name=" pi' OR TRUE -- ",
+        limit=100,
+    )
+
+    assert result == ["earendil-works/pi"]
+    sql, params = database.cursor.calls[1]
+    assert "LOWER(split_part(c.full_name, '/', 2)) = LOWER(%s)" in sql
+    assert "c.availability_status = 'active'" in sql
+    # 非规范别名不参与唯一性判定，避免同一项目被双计
+    assert "NOT EXISTS" in sql
+    assert "github_repo_aliases ga" in sql
+    assert "LIMIT %s" in sql
+    # 注入串只进参数不进 SQL；首尾空白归一；limit 收敛到 10 上限
+    assert "OR TRUE" not in sql
+    assert params == ("pi' OR TRUE --", 10)
+    assert database.entered == database.exited == 1
+
+
+def test_find_repo_ids_by_name_segment_empty_short_circuits() -> None:
+    database = Database([])
+    assert PostgresProjectCatalogRepository(database).find_repo_ids_by_name_segment(name="  ") == []
+    assert database.entered == 0
 
 
 def test_empty_typed_lexical_plan_short_circuits_without_transaction() -> None:
@@ -343,13 +404,19 @@ def test_plain_query_relevance_orders_by_name_and_title_match_strength() -> None
         source="github",
     )
     rows_sql, rows_params = database.cursor.calls[2]
+    # 名段（'/' 后的仓库名）等值/前缀层级插在 full_name 等值与 title 等值之间：
+    # 裸名搜索时唯一同名仓库压过 owner 前缀命中（pi-hole、pingcap/* 之流）。
     assert "CASE WHEN LOWER(full_name)=LOWER(%s) THEN 0" in rows_sql
-    assert "WHEN LOWER(COALESCE(title,''))=LOWER(%s) THEN 1" in rows_sql
-    assert "WHEN full_name ILIKE %s ESCAPE '=' THEN 2" in rows_sql
-    assert "WHEN COALESCE(title,'') ILIKE %s ESCAPE '=' THEN 3" in rows_sql
+    assert "WHEN LOWER(split_part(full_name,'/',2))=LOWER(%s) THEN 1" in rows_sql
+    assert "WHEN LOWER(COALESCE(title,''))=LOWER(%s) THEN 2" in rows_sql
+    assert "WHEN split_part(full_name,'/',2) ILIKE %s ESCAPE '=' THEN 3" in rows_sql
+    assert "WHEN full_name ILIKE %s ESCAPE '=' THEN 4" in rows_sql
+    assert "WHEN COALESCE(title,'') ILIKE %s ESCAPE '=' THEN 5" in rows_sql
+    assert "ELSE 6 END" in rows_sql
     assert "stars DESC, forks DESC, full_name ASC" in rows_sql
-    assert rows_params.count("langchain") >= 2
-    assert any(str(value) == "langchain%" for value in rows_params)
+    # 精确等值 ×3（full_name/名段/title）+ 前缀 ×3，其余参数均带 % 包裹
+    assert rows_params.count("langchain") == 3
+    assert sum(1 for value in rows_params if str(value) == "langchain%") == 3
 
 
 def test_representative_website_user_overrides_and_favorites_branch() -> None:

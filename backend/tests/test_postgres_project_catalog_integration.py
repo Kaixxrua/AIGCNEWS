@@ -53,12 +53,14 @@ EXPECTED_PUBLIC_FIELDS = {
     "tags_origin",
     "topics",
     "language",
+    "license",
     "stars",
     "forks",
     "pushed_at",
     "daily_star_growth",
     "daily_growth_available",
     "hot_score",
+    "growth_suspicion_score",
     "is_recommended",
     "result_origin",
 }
@@ -243,6 +245,73 @@ def test_real_catalog_empty_term_relevance_search_returns_empty_page(catalog: An
         assert result["items"] == []
         assert result["page"] == 1
         assert result["page_size"] == 24
+
+
+def test_real_repo_name_segment_outranks_owner_prefix(catalog: Any) -> None:
+    """裸仓库名搜索：名段等值必须压过 full_name 整体前缀（earendil-works/pi 契约）。
+
+    pintail-owner/other 的 full_name 以查询词开头（旧逻辑的高层级），
+    someone/pintail 仅名段恰好等于查询词；名段层级上线后后者必须排第一，
+    即使前者星数高三个数量级。title 刻意避开精确/前缀命中，保证区分度
+    只来自名段。
+    """
+    database = catalog._database
+    candidates_sql = """
+        INSERT INTO github_repo_candidates (
+            repo_id, full_name, title, url, description, language, topics_json,
+            created_at, pushed_at, stars, forks, watchers, source_channels,
+            first_seen_at, last_seen_at, last_snapshot_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    enrichment_sql = """
+        INSERT INTO github_repo_enrichments (
+            repo_id, category_slug, category_name, subcategory_slug, subcategory_name,
+            description_zh, tags_json, confidence, source_fingerprint, prompt_version,
+            model_provider, model_name, status, enriched_at, updated_at
+        ) VALUES (%s, 'rag_knowledge', 'RAG 与知识库', 'rag_framework', 'RAG 框架',
+                  '夹具', '[]', 0.9, repeat('c', 64), 'fixture-v1',
+                  'fixture', 'fixture', 'succeeded', '2026-07-23T08:00:00Z', '2026-07-23T08:00:00Z')
+    """
+
+    def insert_candidate(repo_id: str, title: str, stars: int) -> None:
+        with database.transaction() as connection:
+            connection.execute(
+                candidates_sql,
+                (
+                    repo_id, repo_id, title, f"https://github.com/{repo_id}",
+                    "name segment fixture", "Python", "[]",
+                    "2025-01-01T00:00:00Z", "2026-07-20T08:00:00Z", stars, 1, 1,
+                    "fixture", "2026-07-01T00:00:00Z", "2026-07-20T08:00:00Z",
+                    "2026-07-23T09:00:00Z",
+                ),
+            )
+            connection.execute(enrichment_sql, (repo_id,))
+
+    extra_ids = ("pintail-owner/other", "someone/pintail", "second/pintail")
+    try:
+        insert_candidate("pintail-owner/other", "Other", 900000)
+        insert_candidate("someone/pintail", "Someone Pintail", 600)
+
+        lanes = catalog.find_lexical_candidate_lanes(q="pintail", min_stars=500)
+        assert [item.repo_id for item in lanes.strict] == ["someone/pintail", "pintail-owner/other"]
+        assert [item.match_strength for item in lanes.strict] == [5, 2]
+
+        flat = catalog.find_lexical_candidate_repo_ids(q="pintail", min_stars=500)
+        assert flat[:2] == ["someone/pintail", "pintail-owner/other"]
+
+        page = catalog.list_projects(source="github", q="pintail", sort="relevance", min_stars=500)
+        assert [item["repo_id"] for item in page["items"]] == ["someone/pintail", "pintail-owner/other"]
+
+        # 裸名唯一命中：钉顶查询只回一个；第二个同名仓库出现后唯一性消失
+        assert catalog.find_repo_ids_by_name_segment(name="pintail") == ["someone/pintail"]
+        insert_candidate("second/pintail", "Pintail Two", 550)
+        assert catalog.find_repo_ids_by_name_segment(name="pintail") == ["someone/pintail", "second/pintail"]
+    finally:
+        with database.transaction() as connection:
+            connection.execute(
+                "DELETE FROM github_repo_candidates WHERE repo_id = ANY(%s)",
+                (list(extra_ids),),
+            )
 
 
 def test_real_favorites_visibility_matches_category_counts(catalog: Any) -> None:

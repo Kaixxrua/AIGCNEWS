@@ -420,16 +420,25 @@ def _resolve_order(
         elif q:
             normalized_query = " ".join(str(q).split())
             prefix = f"{escape_like_literal(normalized_query)}%"
+            # 名段层级：split_part(full_name,'/',2) 即仓库名本身。裸名搜索
+            # （如 "pi"）时，仓库名恰好等于查询词的项目必须压过 owner/repo
+            # 整体前缀命中的项目（pi-hole、pingcap/*）；owner/repo 全形
+            # 等值仍是最高层。无 '/' 的行 split_part 返回 ''，天然不命中。
             order = (
                 "CASE"
                 " WHEN LOWER(full_name)=LOWER(%s) THEN 0"
-                " WHEN LOWER(COALESCE(title,''))=LOWER(%s) THEN 1"
-                " WHEN full_name ILIKE %s ESCAPE '=' THEN 2"
-                " WHEN COALESCE(title,'') ILIKE %s ESCAPE '=' THEN 3"
-                " ELSE 4 END,"
+                " WHEN LOWER(split_part(full_name,'/',2))=LOWER(%s) THEN 1"
+                " WHEN LOWER(COALESCE(title,''))=LOWER(%s) THEN 2"
+                " WHEN split_part(full_name,'/',2) ILIKE %s ESCAPE '=' THEN 3"
+                " WHEN full_name ILIKE %s ESCAPE '=' THEN 4"
+                " WHEN COALESCE(title,'') ILIKE %s ESCAPE '=' THEN 5"
+                " ELSE 6 END,"
                 "stars DESC, forks DESC, full_name ASC"
             )
-            order_params.extend([normalized_query, normalized_query, prefix, prefix])
+            order_params.extend([
+                normalized_query, normalized_query, normalized_query,
+                prefix, prefix, prefix,
+            ])
         else:
             order = orders["stars"]
     else:
@@ -506,17 +515,52 @@ class PostgresProjectCatalogRepository:
             filters.append(_term_match_filter(_GH_TERM_MATCH_FIELDS))
             params.extend([like] * len(_GH_TERM_MATCH_FIELDS))
         prefix = f"{escape_like_literal(normalized_query)}%"
+        # 层级口径与 _resolve_order / find_lexical_candidate_lanes 一致：
+        # 仓库名段等值/前缀高于 full_name 整体前缀，裸名搜索不被 owner 前缀淹没。
         sql = f"""SELECT c.repo_id FROM github_repo_candidates c
             LEFT JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id
             LEFT JOIN github_repo_aliases ga ON ga.alias_repo_id=c.repo_id AND ga.canonical_repo_id<>c.repo_id
             WHERE {' AND '.join(filters)}
-            ORDER BY CASE WHEN LOWER(c.full_name)=LOWER(%s) THEN 0 WHEN LOWER(COALESCE(c.title,''))=LOWER(%s) THEN 1 WHEN c.full_name ILIKE %s ESCAPE '=' THEN 2 WHEN COALESCE(c.title,'') ILIKE %s ESCAPE '=' THEN 3 ELSE 4 END,
+            ORDER BY CASE WHEN LOWER(c.full_name)=LOWER(%s) THEN 0 WHEN LOWER(split_part(c.full_name,'/',2))=LOWER(%s) THEN 1 WHEN LOWER(COALESCE(c.title,''))=LOWER(%s) THEN 2 WHEN split_part(c.full_name,'/',2) ILIKE %s ESCAPE '=' THEN 3 WHEN c.full_name ILIKE %s ESCAPE '=' THEN 4 WHEN COALESCE(c.title,'') ILIKE %s ESCAPE '=' THEN 5 ELSE 6 END,
                 COALESCE(c.stars,0) DESC,c.repo_id COLLATE "C" ASC LIMIT %s"""
-        params.extend([normalized_query, normalized_query, prefix, prefix, limit])
+        params.extend([
+            normalized_query, normalized_query, normalized_query,
+            prefix, prefix, prefix, limit,
+        ])
         with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
                 cursor.execute(sql, tuple(params))
+                rows = cursor.fetchall()
+        return [str(row.get("repo_id") or "") for row in rows if row.get("repo_id")]
+
+    def find_repo_ids_by_name_segment(
+        self,
+        *,
+        name: str,
+        limit: int = 2,
+    ) -> list[str]:
+        """按仓库名段（full_name 的 '/' 后部分）等值匹配，供裸名查询钉顶判唯一。
+
+        只看 active 且未被别名归并的仓库；调用方以 limit=2 取回后按
+        len==1 判定唯一命中。不设 min_stars——这是身份定位而非发现召回。
+        """
+        normalized = " ".join(str(name or "").split()).strip()
+        if not normalized:
+            return []
+        limit = max(1, min(int(limit or 2), 10))
+        sql = """SELECT c.repo_id FROM github_repo_candidates c
+            WHERE LOWER(split_part(c.full_name, '/', 2)) = LOWER(%s)
+              AND c.availability_status = 'active'
+              AND NOT EXISTS (SELECT 1 FROM github_repo_aliases ga
+                              WHERE ga.alias_repo_id = c.repo_id
+                              AND ga.canonical_repo_id <> c.repo_id)
+            ORDER BY COALESCE(c.stars, 0) DESC, c.repo_id COLLATE "C" ASC
+            LIMIT %s"""
+        with self._transaction() as connection:
+            with connection.cursor() as cursor:
+                self._begin_read(cursor)
+                cursor.execute(sql, (normalized, limit))
                 rows = cursor.fetchall()
         return [str(row.get("repo_id") or "") for row in rows if row.get("repo_id")]
 
@@ -631,8 +675,10 @@ class PostgresProjectCatalogRepository:
                     e.stars,
                     COUNT(*)::integer AS term_coverage,
                     CASE
-                        WHEN LOWER(e.full_name) = LOWER(%s) THEN 4
-                        WHEN LOWER(COALESCE(e.title, '')) = LOWER(%s) THEN 3
+                        WHEN LOWER(e.full_name) = LOWER(%s) THEN 6
+                        WHEN LOWER(split_part(e.full_name, '/', 2)) = LOWER(%s) THEN 5
+                        WHEN LOWER(COALESCE(e.title, '')) = LOWER(%s) THEN 4
+                        WHEN split_part(e.full_name, '/', 2) ILIKE %s ESCAPE '=' THEN 3
                         WHEN e.full_name ILIKE %s ESCAPE '=' THEN 2
                         WHEN COALESCE(e.title, '') ILIKE %s ESCAPE '=' THEN 1
                         ELSE 0
@@ -665,7 +711,8 @@ class PostgresProjectCatalogRepository:
         #   1. filter_params —— eligible CTE 的 WHERE 条件（min_stars 及各维度过滤）
         #   2. hit_params    —— raw_hits 每个词/别名两行分支，每行 4 个参数：
         #                       (group_id, pattern) ×（候选文档分支 + 增强文档分支）
-        #   3. scored 匹配强度 —— normalized_query ×2（精确等值）+ prefix ×2（前缀）
+        #   3. scored 匹配强度 —— normalized_query ×3（full_name/名段/title 精确等值）
+        #                       + prefix ×3（名段/full_name/title 前缀）
         #   4. 车道边界      —— len(group_ids)（strict 覆盖度）、strict_limit、relaxed_limit
         params = tuple(
             filter_params
@@ -673,6 +720,8 @@ class PostgresProjectCatalogRepository:
             + [
                 normalized_query,
                 normalized_query,
+                normalized_query,
+                prefix,
                 prefix,
                 prefix,
                 len(group_ids),
