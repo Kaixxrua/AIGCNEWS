@@ -265,6 +265,8 @@ def test_public_feed_merges_sources_newest_first_with_cache_headers() -> None:
     response = client.get("/api/feed.xml")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/rss+xml")
+    # 必须显式带 charset=utf-8：GBK 区域环境（中文 Windows 浏览器）无 charset 会花屏
+    assert "charset=utf-8" in response.headers["content-type"]
     assert response.headers["cache-control"] == "public, max-age=900"
     body = response.text
     # 全局按发布时间归并：news 的新条目必须排在 arxiv 旧条目之前
@@ -431,6 +433,7 @@ def test_member_feed_returns_full_content_for_member() -> None:
     response = client.get("/api/feeds/member.xml?token=ok")
     assert response.status_code == 200
     assert "中文译文" in response.text
+    assert "charset=utf-8" in response.headers["content-type"]
     assert response.headers["x-robots-tag"] == "noindex"
     assert response.headers["cache-control"] == "private, no-store"
 

@@ -60,6 +60,10 @@ _MEMBER_FEED_LIMIT = 500
 
 _PUBLIC_CACHE_CONTROL = "public, max-age=900"
 _MEMBER_CACHE_CONTROL = "private, no-store"
+# Starlette 只对 text/* 自动补 charset；application/rss+xml 必须显式声明，
+# 否则 GBK 区域环境（中文 Windows 浏览器/控制台）会把 UTF-8 字节按 GBK 解码出花屏。
+# XML 声明里的 encoding 对规范解析器够用，但裸览/下载场景以 HTTP 头为准。
+_FEED_MEDIA_TYPE = "application/rss+xml; charset=utf-8"
 # 自托管部署未配置 PUBLIC_BASE_URL 时，与 sitemap/MCP 回链同策略回落品牌站点。
 _BRAND_BASE_URL = "https://aigcnews.cn"
 
@@ -301,7 +305,7 @@ async def _collect_rows(
 def _xml_response(xml: str, *, cache_control: str) -> Response:
     return Response(
         content=xml,
-        media_type="application/rss+xml",
+        media_type=_FEED_MEDIA_TYPE,
         headers={"Cache-Control": cache_control},
     )
 
@@ -399,7 +403,7 @@ async def feed_member(
     )
     return Response(
         content=xml,
-        media_type="application/rss+xml",
+        media_type=_FEED_MEDIA_TYPE,
         headers={
             "Cache-Control": _MEMBER_CACHE_CONTROL,
             "X-Robots-Tag": "noindex",
