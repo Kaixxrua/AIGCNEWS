@@ -20,7 +20,7 @@ const messages = {
     wizard: {
       ariaLabel: 'dsh 安装向导', stepIdentity: '选择身份', stepIdentityDescription: '选择身份。', stepInstall: '安装方式', stepInstallDescription: '选择安装方式。', stepCommand: '生成命令', stepCommandDescription: '生成命令。',
       identityGuest: '游客', identityUser: '普通用户', identityVip: 'VIP', identityGuestDescription: '游客试用。', identityUserDescription: '普通配额。', identityVipDescription: 'VIP 配额。',
-      vipRequired: '需要会员', vipCta: '开通 VIP', continueAsFree: '按普通用户继续', tokenCreating: '正在生成令牌', tokenRetry: '重试', commandLabel: '安装命令', patchLabel: '配置补丁', copyPatch: '复制补丁', oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: '游客受 IP 限额。',
+      vipRequired: '需要会员', vipCta: '开通 VIP', continueAsFree: '按普通用户继续', tokenCreating: '正在生成令牌', tokenRetry: '重试', commandLabel: '安装命令', tokenCommandNote: '命令会写入 dsh 补丁配置。', oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: '游客受 IP 限额。',
     },
     methods: { npm: { title: 'npm 最新版', description: '预构建。' }, npmPinned: { title: 'npm 固定版', description: '固定。' }, github: { title: 'GitHub 源码', description: '源码。' } },
   },

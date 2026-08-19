@@ -9,8 +9,7 @@ describe('useDshSetupController', () => {
     expect(await controller.next(false, false)).toBe('ok')
     expect(await controller.next(false, false)).toBe('ok')
     expect(controller.step.value).toBe(2)
-    expect(controller.command.value).toContain('dsh-aigc-radar@0.2.0')
-    expect(controller.patch.value).toBe('')
+    expect(controller.installLine.value).toBe('dsh plugin --profile web add dsh-aigc-radar@0.2.0')
     expect(createMcpToken).not.toHaveBeenCalled()
   })
 
@@ -26,7 +25,7 @@ describe('useDshSetupController', () => {
     expect(controller.step.value).toBe(1)
   })
 
-  it('creates one token, safely quotes it in YAML, and reuses it after stepping back', async () => {
+  it('creates one token and folds it into a single install line with safe quoting', async () => {
     const createMcpToken = vi.fn().mockResolvedValue({ token: "aigc_mcp_ab'cd" })
     const controller = useDshSetupController({ createMcpToken })
     controller.identity.value = 'user'
@@ -34,7 +33,10 @@ describe('useDshSetupController', () => {
     await controller.next(true, false)
     expect(createMcpToken).toHaveBeenCalledOnce()
     expect(createMcpToken).toHaveBeenCalledWith({ client_type: 'other', client_label: 'dsh-aigc-radar' })
-    expect(controller.patch.value).toContain("mcpToken: 'aigc_mcp_ab''cd'")
+    const line = controller.installLine.value
+    expect(line.startsWith('dsh plugin --profile web add dsh-aigc-radar && printf ')).toBe(true)
+    expect(line).toContain('"        mcpToken: \'aigc_mcp_ab\'\'cd\'"')
+    expect(line.endsWith('> ~/.dsh/profiles/web/cordis.patch.yml')).toBe(true)
     controller.previous()
     await controller.next(true, false)
     expect(createMcpToken).toHaveBeenCalledOnce()
@@ -49,10 +51,28 @@ describe('useDshSetupController', () => {
     await controller.next(true, false)
     await controller.next(true, false)
     expect(controller.error.value).toBe('mcp.tokenCreateFailed')
-    expect(controller.token.value).toBe('')
+    expect(controller.installLine.value).toBe(controller.command.value)
     expect(await controller.generate()).toBe(true)
     expect(controller.error.value).toBe('')
-    expect(controller.token.value).toBe('aigc_mcp_retry')
+    expect(controller.installLine.value).toContain('aigc_mcp_retry')
     expect(createMcpToken).toHaveBeenCalledTimes(2)
+  })
+
+  it('fast-paths VIP members straight to the install step, only once', () => {
+    const controller = useDshSetupController({ createMcpToken: vi.fn() })
+    controller.syncAuth(true, false)
+    expect(controller.step.value).toBe(0)
+    controller.syncAuth(false, true)
+    expect(controller.step.value).toBe(0)
+
+    controller.syncAuth(true, true)
+    expect(controller.identity.value).toBe('vip')
+    expect(controller.step.value).toBe(1)
+
+    // 用户手动返回身份步骤后，不再被强行前推
+    controller.previous()
+    expect(controller.step.value).toBe(0)
+    controller.syncAuth(true, true)
+    expect(controller.step.value).toBe(0)
   })
 })

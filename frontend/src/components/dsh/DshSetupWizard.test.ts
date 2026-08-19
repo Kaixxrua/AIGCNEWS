@@ -35,7 +35,7 @@ vi.mock('@/composables/useLoginPrompt', () => ({
 
 const messages = {
   mcp: {
-    copied: '已复制', copyFailed: '复制失败',
+    copied: '已复制', copyFailed: '复制失败', tokenCreateFailed: 'Token 创建失败。',
     wizard: { prev: '上一步', next: '下一步', stepProgress: '{current}/{total}' },
     dshPlugin: { methods: {
       npm: { title: 'npm 最新版', description: '预构建。' },
@@ -51,10 +51,10 @@ const messages = {
       stepInstall: '安装方式', stepInstallDescription: '选择安装方式。',
       stepCommand: '生成命令', stepCommandDescription: '生成命令。',
       identityGuest: '游客', identityUser: '普通用户', identityVip: 'VIP',
-      identityGuestDescription: '游客试用。', identityUserDescription: '普通配额。', identityVipDescription: 'VIP 配额。',
+      identityGuestDescription: '游客试用。', identityUserDescription: '普通配额说明。', identityVipDescription: 'VIP 配额。',
       vipRequired: '该档位需要有效会员。', vipCta: '开通 VIP', continueAsFree: '按普通用户继续',
       tokenCreating: '正在生成令牌', tokenRetry: '重试',
-      commandLabel: '安装命令', patchLabel: '配置补丁', copyPatch: '复制补丁',
+      commandLabel: '安装命令', tokenCommandNote: '命令会写入 dsh 补丁配置。',
       oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: '游客受 IP 限额。',
     },
   },
@@ -111,6 +111,28 @@ describe('DshSetupWizard identity gate', () => {
     expect(wrapper.text()).toContain('npm 最新版')
   })
 
+  it('hides the free-account card once the user is logged in', async () => {
+    const auth = useAuthStore()
+    auth.status = 'authenticated'
+    auth.user = freeUser
+    const wrapper = await mountWizard()
+
+    expect(wrapper.text()).toContain('游客试用。')
+    expect(wrapper.text()).toContain('VIP 配额。')
+    expect(wrapper.text()).not.toContain('普通配额说明。')
+  })
+
+  it('sends VIP members straight to the install-method step', async () => {
+    const auth = useAuthStore()
+    auth.status = 'authenticated'
+    auth.user = memberUser
+    const wrapper = await mountWizard()
+    await nextTick()
+
+    expect(wrapper.text()).toContain('npm 最新版')
+    expect(wrapper.text()).not.toContain('游客试用。')
+  })
+
   it('blocks VIP for non-members with an upgrade hint and free-tier escape', async () => {
     const auth = useAuthStore()
     auth.status = 'authenticated'
@@ -123,11 +145,17 @@ describe('DshSetupWizard identity gate', () => {
     expect(wrapper.get('a[href="/membership"]').text()).toContain('开通 VIP')
     await wrapper.findAll('button').find((b) => b.text().includes('按普通用户继续'))!.trigger('click')
     expect(wrapper.text()).not.toContain('该档位需要有效会员。')
+
+    // 免费用户从 VIP 门禁逃逸后仍可前进到安装步骤并签发 token
+    createMcpToken.mockResolvedValue({ token: 'aigc_mcp_free' })
+    await nextButton(wrapper).trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('npm 最新版')
   })
 })
 
-describe('DshSetupWizard command generation', () => {
-  it('guest path shows the command without issuing a token', async () => {
+describe('DshSetupWizard one-line command generation', () => {
+  it('guest path shows the plain install command without issuing a token', async () => {
     const wrapper = await mountWizard()
     await nextButton(wrapper).trigger('click')
     await nextTick()
@@ -135,17 +163,20 @@ describe('DshSetupWizard command generation', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('dsh plugin --profile web add dsh-aigc-radar')
+    expect(wrapper.text()).not.toContain('printf')
     expect(wrapper.text()).toContain('游客受 IP 限额。')
     expect(createMcpToken).not.toHaveBeenCalled()
   })
 
-  it('user path auto-issues one token and renders the YAML patch', async () => {
+  it('user path auto-issues one token and renders a single composite command', async () => {
     const auth = useAuthStore()
     auth.status = 'authenticated'
     auth.user = freeUser
     createMcpToken.mockResolvedValue({ token: "aigc_mcp_x'y" })
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('普通用户'))!.trigger('click')
+    // 已登录时 Free 卡隐藏，经 VIP 门禁「按普通用户继续」进入账号路径
+    await wrapper.findAll('button').find((b) => b.text().includes('VIP'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('按普通用户继续'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
     await nextButton(wrapper).trigger('click')
@@ -153,8 +184,11 @@ describe('DshSetupWizard command generation', () => {
 
     expect(createMcpToken).toHaveBeenCalledOnce()
     expect(createMcpToken).toHaveBeenCalledWith({ client_type: 'other', client_label: 'dsh-aigc-radar' })
-    expect(wrapper.text()).toContain("mcpToken: 'aigc_mcp_x''y'")
-    expect(wrapper.text()).toContain('令牌仅显示一次。')
+    const text = wrapper.text()
+    expect(text).toContain("mcpToken: 'aigc_mcp_x''y'")
+    expect(text).toContain('~/.dsh/profiles/web/cordis.patch.yml')
+    expect(text).toContain('命令会写入 dsh 补丁配置。')
+    expect(text).toContain('令牌仅显示一次。')
   })
 
   it('shows retry state when token creation fails', async () => {
@@ -163,7 +197,8 @@ describe('DshSetupWizard command generation', () => {
     auth.user = freeUser
     createMcpToken.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce({ token: 'aigc_mcp_ok' })
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('普通用户'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('VIP'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('按普通用户继续'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
     await nextButton(wrapper).trigger('click')
@@ -176,13 +211,14 @@ describe('DshSetupWizard command generation', () => {
     expect(createMcpToken).toHaveBeenCalledTimes(2)
   })
 
-  it('copies the install command and patch with independent feedback', async () => {
+  it('copies the single install line with one button', async () => {
     const auth = useAuthStore()
     auth.status = 'authenticated'
     auth.user = freeUser
     createMcpToken.mockResolvedValue({ token: 'aigc_mcp_demo' })
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('普通用户'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('VIP'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('按普通用户继续'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
     await nextButton(wrapper).trigger('click')
@@ -190,11 +226,10 @@ describe('DshSetupWizard command generation', () => {
 
     await wrapper.findAll('button').find((b) => b.text().includes('复制安装命令'))!.trigger('click')
     await nextTick()
-    expect(copy).toHaveBeenCalledWith('dsh plugin --profile web add dsh-aigc-radar')
-
-    await wrapper.findAll('button').find((b) => b.text().includes('复制补丁'))!.trigger('click')
-    await nextTick()
-    expect(copy).toHaveBeenCalledTimes(2)
-    expect(String(copy.mock.calls[1]![0])).toContain("mcpToken: 'aigc_mcp_demo'")
+    expect(copy).toHaveBeenCalledTimes(1)
+    const copied = String(copy.mock.calls[0]![0])
+    expect(copied.startsWith('dsh plugin --profile web add dsh-aigc-radar && printf ')).toBe(true)
+    expect(copied).toContain("mcpToken: 'aigc_mcp_demo'")
+    expect(copied).toContain('> ~/.dsh/profiles/web/cordis.patch.yml')
   })
 })
