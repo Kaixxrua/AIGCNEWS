@@ -4,9 +4,9 @@
 //
 // 本包只含测试代码，不进生产二进制。用例纳入范围随 PR 里程碑推进：
 //
-//   - PR 1.2（本包当前）：信封/解析/认证/通知/错误面 + 无注册表时的
-//     tools/call 错误面；
-//   - PR 1.3：rate-limited-429（限流层落地后解除跳过）；
+//   - PR 1.2：信封/解析/认证/通知/错误面 + 无注册表时的 tools/call 错误面；
+//   - PR 1.3（本包当前）：限流层落地，rate-limited-429 解除跳过
+//     （miniredis + 限额覆盖 + warmup，镜像 recorder.py 的用例编排）；
 //   - PR 1.4：tools/list* / resources-list / resources-templates-list /
 //     prompts-list（静态清单落地后解除跳过）。
 //
@@ -32,9 +32,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
+
 	"aigcnews/mcp-go/internal/authn"
 	"aigcnews/mcp-go/internal/jsonx"
 	"aigcnews/mcp-go/internal/mcpapp"
+	"aigcnews/mcp-go/internal/ratelimit"
 	"aigcnews/mcp-go/internal/version"
 )
 
@@ -57,7 +61,6 @@ type corpusCase struct {
 
 // deferredSkips 记录显式推迟的用例及归属里程碑；键不在语料中出现也算失败。
 var deferredSkips = map[string]string{
-	"rate-limited-429":                  "PR 1.3 限流层",
 	"tools-list":                        "PR 1.4 静态清单",
 	"tools-list-authenticated":          "PR 1.4 静态清单",
 	"tools-list-id-null":                "PR 1.4 静态清单",
@@ -69,6 +72,13 @@ var deferredSkips = map[string]string{
 	"resources-list":                    "PR 1.4 静态清单",
 	"resources-templates-list":          "PR 1.4 静态清单",
 	"prompts-list":                      "PR 1.4 静态清单",
+}
+
+// warmupRequests 镜像 recorder.py ParityCase.warmup：录制前把同一请求
+// 原样发送 N 次以预热状态（rate-limited-429 用 warmup=1 消耗掉被压到 1
+// 的匿名 tools/call 分钟限额，第二次才录得 429）。
+var warmupRequests = map[string]int{
+	"rate-limited-429": 1,
 }
 
 // sessionIDPattern 与 corpus_manifest.json normalizations 一致。
@@ -189,7 +199,26 @@ func newReplayHandler(t *testing.T, caseName string) http.Handler {
 	if caseName == "internal-error-500" {
 		app.PanicOnMethods = map[string]bool{"tools/list": true}
 	}
-	return mcpapp.NewHandler(app, loadFixtureAuthenticator(t))
+	return mcpapp.NewHandler(app, loadFixtureAuthenticator(t), replayLimiter(t, caseName))
+}
+
+// replayLimiter 镜像 recorder 的限流编排：默认不限流（nil，对齐
+// FakeRedis 每用例新建=空窗口的多数用例形态）；rate-limited-429 起
+// miniredis 并把匿名 tools/call 分钟限额压到 1
+// （rate_limit_overrides=(("MCP_ANONYMOUS_TOOL_CALL_LIMIT", 1),)）。
+// 可信代理列表置空：httptest 对端 192.0.2.1 直连归因，与语料无 XFF
+// 的请求头一致。
+func replayLimiter(t *testing.T, caseName string) *ratelimit.Limiter {
+	t.Helper()
+	if caseName != "rate-limited-429" {
+		return nil
+	}
+	mini := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	return ratelimit.NewLimiter(ratelimit.GoRedis{Client: client}, "", func(l *ratelimit.Limits) {
+		l.AnonymousToolCallPerMinute = 1
+	})
 }
 
 var errParityProbe = errors.New("parity probe")
@@ -239,12 +268,20 @@ func replayCase(t *testing.T, c corpusCase) {
 	default:
 		body = []byte(c.Body.Body)
 	}
-	req := httptest.NewRequest(c.Body.Method, "http://parity.test"+c.Body.Path, bytes.NewReader(body))
-	for name, value := range c.Body.Headers {
-		req.Header.Set(name, value)
+	buildRequest := func() *http.Request {
+		req := httptest.NewRequest(c.Body.Method, "http://parity.test"+c.Body.Path, bytes.NewReader(body))
+		for name, value := range c.Body.Headers {
+			req.Header.Set(name, value)
+		}
+		return req
+	}
+	// 预热（recorder.py:1203-1204）：录制前原样发送同请求，响应丢弃；
+	// 限流用例靠它把窗口计数推到限额边沿。
+	for range warmupRequests[c.Name] {
+		handler.ServeHTTP(httptest.NewRecorder(), buildRequest())
 	}
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, buildRequest())
 
 	if rec.Code != c.Response.Status {
 		t.Errorf("status = %d, want %d\nbody: %s", rec.Code, c.Response.Status, rec.Body.String())

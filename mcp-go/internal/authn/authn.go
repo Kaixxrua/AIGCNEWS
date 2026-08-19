@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -33,14 +34,21 @@ const (
 	invalidScopesDetail = "MCP Token 权限无效"
 )
 
+// 会员档位常量，对齐 backend/app/services/membership/tiers.py。
+const (
+	TierFree   = "free"
+	TierMember = "member"
+)
+
 // Identity 是认证通过后的用户视图；字段对齐 Python 侧 user dict 的消费面
-// （user_id/email/role/membership_tier + scopes 集合）。
+// （user_id/email/role/membership_tier/membership_expires_at + scopes 集合）。
 type Identity struct {
-	UserID         int
-	Email          string
-	Role           string
-	MembershipTier string
-	Scopes         []string
+	UserID              int
+	Email               string
+	Role                string
+	MembershipTier      string
+	MembershipExpiresAt *time.Time
+	Scopes              []string
 }
 
 // HasScope 对齐 McpAuthorizationContext.has_scope。
@@ -51,6 +59,22 @@ func (i Identity) HasScope(scope string) bool {
 		}
 	}
 	return false
+}
+
+// EffectiveTier 对齐 tiers.resolve_effective_tier：未知/空档位一律 free；
+// member 已过期（expiry <= now）回落 free。
+func (i Identity) EffectiveTier(now time.Time) string {
+	tier := i.MembershipTier
+	if tier != TierFree && tier != TierMember {
+		tier = TierFree
+	}
+	if tier != TierMember || i.MembershipExpiresAt == nil {
+		return tier
+	}
+	if !i.MembershipExpiresAt.After(now) {
+		return TierFree
+	}
+	return tier
 }
 
 // Response 是认证失败的 HTTP 投射（独立于 wire 层，避免环依赖）。
@@ -133,7 +157,7 @@ func (a Authenticator) Authenticate(ctx context.Context, authorization string) (
 	err = tx.QueryRow(ctx, lookupSQL, hex.EncodeToString(digest[:])).Scan(
 		&row.TokenID, &row.UserID, &row.ScopesJSON, &row.ExpiresAt,
 		&row.RevokedAt, &row.DeletedAt, &row.Email, &row.Role,
-		&row.MembershipTier,
+		&row.MembershipTier, &row.MembershipExpiresAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Identity{}, unauthorized(invalidTokenDetail)
@@ -154,31 +178,35 @@ func (a Authenticator) Authenticate(ctx context.Context, authorization string) (
 		return Identity{}, unauthorized(invalidScopesDetail)
 	}
 	return Identity{
-		UserID:         row.UserID,
-		Email:          row.Email,
-		Role:           row.Role,
-		MembershipTier: row.MembershipTier,
-		Scopes:         scopes,
+		UserID:              row.UserID,
+		Email:               row.Email,
+		Role:                row.Role,
+		MembershipTier:      row.MembershipTier,
+		MembershipExpiresAt: row.MembershipExpiresAt,
+		Scopes:              scopes,
 	}, nil
 }
 
 type tokenRow struct {
-	TokenID        int
-	UserID         int
-	ScopesJSON     string
-	ExpiresAt      any
-	RevokedAt      any
-	DeletedAt      any
-	Email          string
-	Role           string
-	MembershipTier string
+	TokenID             int
+	UserID              int
+	ScopesJSON          string
+	ExpiresAt           any
+	RevokedAt           any
+	DeletedAt           any
+	Email               string
+	Role                string
+	MembershipTier      string
+	MembershipExpiresAt *time.Time
 }
 
 // lookupSQL / lastUsedSQL 与 Python 仓储逐字同义（占位符 %s → $1 是
-// psycopg → pgx 的机械转写）；列清单不得增删，SQL 行为属兼容面。
+// psycopg → pgx 的机械转写）；列清单不得增删，SQL 行为属兼容面——
+// 10 列含 u.membership_expires_at（0048 会员到期透出，供生效档位判定）。
 const lookupSQL = `
                     SELECT t.id AS token_id, t.user_id, t.scopes_json, t.expires_at,
-                           t.revoked_at, t.deleted_at, u.email, u.role, u.membership_tier
+                           t.revoked_at, t.deleted_at, u.email, u.role, u.membership_tier,
+                           u.membership_expires_at
                     FROM user_mcp_tokens t JOIN users u ON u.id = t.user_id
                     WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.deleted_at IS NULL
                       AND (t.expires_at IS NULL OR t.expires_at > CURRENT_TIMESTAMP)

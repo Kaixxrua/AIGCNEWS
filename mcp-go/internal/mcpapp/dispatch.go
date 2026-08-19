@@ -21,6 +21,7 @@ import (
 
 	"aigcnews/mcp-go/internal/authn"
 	"aigcnews/mcp-go/internal/jsonx"
+	"aigcnews/mcp-go/internal/ratelimit"
 	"aigcnews/mcp-go/internal/wire"
 )
 
@@ -198,16 +199,19 @@ type Authenticator interface {
 	Authenticate(ctx context.Context, authorization string) (authn.Identity, *authn.Response)
 }
 
-// Handler 把认证、解析、分派接成 http.Handler。顺序对齐 FastAPI：
-// 路由方法闸（405）→ 依赖认证（401）→ 请求体解析（协议错误）→ 分派；
-// 限流缝在 PR 1.3 落在解析之后、分派之前。
+// Handler 把认证、解析、限流、分派接成 http.Handler。顺序对齐 FastAPI
+// routes_mcp.py：路由方法闸（405）→ 依赖认证（401）→ 请求体解析
+// （协议错误）→ 限流（429，解析之后分派之前）→ 分派。
 type Handler struct {
-	app  *App
-	auth Authenticator
+	app     *App
+	auth    Authenticator
+	limiter *ratelimit.Limiter
 }
 
-func NewHandler(app *App, auth Authenticator) *Handler {
-	return &Handler{app: app, auth: auth}
+// NewHandler 接线；limiter 为 nil 时不限流（回放多数用例与 Redis 未接线
+// 场景，对齐 Python app.state.redis 缺失语义）。
+func NewHandler(app *App, auth Authenticator, limiter *ratelimit.Limiter) *Handler {
+	return &Handler{app: app, auth: auth, limiter: limiter}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -221,20 +225,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, `{"detail":"Method Not Allowed"}`)
 		return
 	}
+	var identity authn.Identity
 	if h.auth != nil {
-		_, authFailure := h.auth.Authenticate(r.Context(), r.Header.Get("Authorization"))
+		id, authFailure := h.auth.Authenticate(r.Context(), r.Header.Get("Authorization"))
 		if authFailure != nil {
 			authFailure.Write(w)
 			return
 		}
-		// PR 1.2 分派不消费身份；PR 1.4 起 tools/list 私有工具按
-		// is_authenticated 分叉，身份经参数传入。
+		identity = id
 	}
 	req, parseErr := wire.ParseRequest(r)
 	if parseErr != nil {
 		wire.Error(parseErr.RequestID, parseErr.Code, parseErr.Message).Write(w)
 		return
 	}
+	// 限流缝：enforce_mcp_rate_limit 的调用点在 parse 之后、dispatch 之前；
+	// 身份（user_id/role/生效档位）与可信代理 XFF 链全部由限流器消费。
+	if exceeded := h.limiter.Enforce(r.Context(), req.Method, identity, r); exceeded != nil {
+		exceeded.Projection(req.RequestID).Write(w)
+		return
+	}
+	// PR 1.4 起 tools/list 私有工具按 is_authenticated 分叉，身份经参数传入分派。
 	h.app.Dispatch(req).Write(w)
 }
 

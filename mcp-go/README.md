@@ -4,7 +4,7 @@ Python MCP 入站（`backend/app/services/mcp/inbound/*`，独立进程 `mcp_mai
 的全量 Go 重写。目标：抗高并发、单容器静态二进制、与 Python 版**逐字节**
 线格式一致。
 
-## 当前状态（PR 1.2）
+## 当前状态（PR 1.3）
 
 - ✅ 配置装载（环境变量与 Python `config.py` 同名同默认值）
 - ✅ Postgres 连接池（pgx/v5，DSN/超时/statement_timeout 对齐 psycopg 口径）
@@ -15,9 +15,13 @@ Python MCP 入站（`backend/app/services/mcp/inbound/*`，独立进程 `mcp_mai
   Bearer token 认证（authn，SQL 与 Python 仓储逐字同义）、无状态分派
   （mcpapp：initialize/通知/未知方法/tools/call 错误面）；非 POST 405、
   panic → 500 纯文本均按 Starlette 口径复刻
-- ✅ 回放门禁 `internal/replay`：protocol.jsonl 28 例逐字节通过；
-  限流（PR 1.3）与静态清单（PR 1.4）用例显式登记跳过，语料新增即红
-- ⬜ 限流（PR 1.3）、工具目录/资源/prompts（PR 1.4）、逐工具移植（Phase 2）
+- ✅ Redis 固定窗口限流：分钟突发桶 + tools/call 分层配额、TTL 自愈、
+  Redis 故障 fail-open、可信代理 XFF 首跳归因；限流缝严格位于解析之后、
+  分派之前，429 JSON-RPC 投影与 Python 逐字节一致
+- ✅ 回放门禁 `internal/replay`：protocol.jsonl 29 例逐字节通过（含
+  miniredis + warmup 的 `rate-limited-429`）；静态清单（PR 1.4）11 例
+  显式登记跳过，语料新增即红
+- ⬜ 工具目录/资源/prompts（PR 1.4）、逐工具移植（Phase 2）
 
 ## 设计要点
 

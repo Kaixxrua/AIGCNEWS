@@ -88,10 +88,69 @@ func TestInvalidValuesFailFast(t *testing.T) {
 		"zero max":        {"POSTGRES_POOL_MAX_SIZE": "0"},
 		"min exceeds max": {"POSTGRES_POOL_MIN_SIZE": "5", "POSTGRES_POOL_MAX_SIZE": "4"},
 		"zero timeout":    {"POSTGRES_POOL_TIMEOUT_SECONDS": "0"},
+		"bad redis port":  {"REDIS_PORT": "six-three-seven-nine"},
+		"bad redis db":    {"REDIS_DB": "0.5"},
 	} {
 		var c Config
 		if err := c.load(envMap(pairs)); err == nil {
 			t.Errorf("%s: 期望报错，实际成功", name)
 		}
+	}
+}
+
+// Redis 与可信代理默认值必须与 backend/app/core/config.py 逐字一致；漂移即违约。
+func TestRedisDefaults(t *testing.T) {
+	var c Config
+	if err := c.load(envMap(nil)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := Redis{
+		Host:     "localhost",
+		Port:     6379,
+		DB:       0,
+		Password: "",
+	}
+	if c.Redis != want {
+		t.Errorf("Redis = %+v, want %+v", c.Redis, want)
+	}
+	if c.TrustedProxyIPs != "127.0.0.1,::1" {
+		t.Errorf("TrustedProxyIPs = %q, want %q", c.TrustedProxyIPs, "127.0.0.1,::1")
+	}
+}
+
+func TestRedisEnvOverrides(t *testing.T) {
+	var c Config
+	err := c.load(envMap(map[string]string{
+		"REDIS_HOST":        "aigcnews-redis",
+		"REDIS_PORT":        "6380",
+		"REDIS_DB":          "2",
+		"REDIS_PASSWORD":    `p@ss"word\x`,
+		"TRUSTED_PROXY_IPS": "172.19.0.1,127.0.0.1",
+	}))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := c.Redis
+	if r.Host != "aigcnews-redis" || r.Port != 6380 || r.DB != 2 ||
+		r.Password != `p@ss"word\x` {
+		t.Errorf("Redis = %+v", r)
+	}
+	if c.TrustedProxyIPs != "172.19.0.1,127.0.0.1" {
+		t.Errorf("TrustedProxyIPs = %q", c.TrustedProxyIPs)
+	}
+}
+
+// 空 REDIS_PASSWORD 与完全不设置等价：均落到默认空串。
+func TestRedisEmptyPasswordEqualsUnset(t *testing.T) {
+	var withEmpty Config
+	if err := withEmpty.load(envMap(map[string]string{"REDIS_PASSWORD": ""})); err != nil {
+		t.Fatalf("load with empty: %v", err)
+	}
+	var unset Config
+	if err := unset.load(envMap(nil)); err != nil {
+		t.Fatalf("load unset: %v", err)
+	}
+	if withEmpty.Redis != unset.Redis {
+		t.Errorf("空 REDIS_PASSWORD=%+v, 未设置=%+v, 二者应一致", withEmpty.Redis, unset.Redis)
 	}
 }

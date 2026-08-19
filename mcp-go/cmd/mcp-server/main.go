@@ -4,7 +4,9 @@
 // PR 1.1 范围：配置装载、Postgres 连接池、探活/版本端点。
 // PR 1.2 范围：/api/mcp 协议面——认证（authn）、解析/信封（wire）、
 // 无状态分派（mcpapp），以 backend/tests/parity/corpus/protocol.jsonl
-// 为逐字节门禁；限流（PR 1.3）与静态清单（PR 1.4）尚未接入。
+// 为逐字节门禁。
+// PR 1.3 范围：Redis 限流层（ratelimit）落在解析之后、分派之前；
+// 静态清单（PR 1.4）尚未接入。
 package main
 
 import (
@@ -24,7 +26,10 @@ import (
 	"aigcnews/mcp-go/internal/mcpapp"
 	"aigcnews/mcp-go/internal/postgres"
 	"aigcnews/mcp-go/internal/probes"
+	"aigcnews/mcp-go/internal/ratelimit"
 	"aigcnews/mcp-go/internal/version"
+
+	goredis "github.com/redis/go-redis/v9"
 )
 
 // shutdownGrace 进程退出宽限。Python 侧由 uvicorn 默认值兜底；
@@ -65,7 +70,22 @@ func run() int {
 	// PR 1.2：工具注册表为空——所有 tools/call 走未知工具分支（语料钉死），
 	// 真实工具自 Phase 2 逐只接入。
 	app := mcpapp.New(version.ServerName, serverVersion, nil)
-	mcpHandler := mcpapp.NewHandler(app, authn.Authenticator{DB: authn.PgxQuerier{Pool: pool}})
+
+	// 限流层接线（PR 1.3）。对齐 Python 语义：redis-py 构造不预连，故障
+	// 发生在请求期并由 enforce 的 except 吞掉（fail-open）；go-redis 同样
+	// 惰性建连，ratelimit 对每个命令错误放行，故这里不做启动 Ping——
+	// Redis 晚于本进程拉起时两实现都会自动恢复限流。
+	redisClient := goredis.NewClient(&goredis.Options{
+		Addr:     net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)),
+		Password: cfg.Redis.Password, // 空串 = 免认证（对齐 Python password or None）
+		DB:       cfg.Redis.DB,
+	})
+	defer func() { _ = redisClient.Close() }()
+	limiter := ratelimit.NewLimiter(ratelimit.GoRedis{Client: redisClient}, cfg.TrustedProxyIPs)
+	slog.Info("[Startup] 限流层已接线（Redis 故障时请求级 fail-open）",
+		"addr", redisClient.Options().Addr, "db", cfg.Redis.DB)
+
+	mcpHandler := mcpapp.NewHandler(app, authn.Authenticator{DB: authn.PgxQuerier{Pool: pool}}, limiter)
 	mux := probes.NewMux(serverVersion, func(ctx context.Context) bool {
 		return postgres.Ping(ctx, pool, cfg.Postgres.PoolTimeoutSeconds) == nil
 	}, mcpHandler)

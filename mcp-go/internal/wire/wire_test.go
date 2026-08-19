@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"aigcnews/mcp-go/internal/jsonx"
 )
 
 func request(t *testing.T, body string) *http.Request {
@@ -97,6 +99,28 @@ func TestResponseProjections(t *testing.T) {
 	errResponse := Error(nil, MethodNotFound, "Method not found")
 	if string(errResponse.Body) != `{"jsonrpc":"2.0","id":null,"error":{"code":-32601,"message":"Method not found"}}` {
 		t.Fatalf("error body = %s", errResponse.Body)
+	}
+}
+
+func TestErrorResponseWithDataAndHeaders(t *testing.T) {
+	extra := http.Header{}
+	extra.Set("Retry-After", "42")
+	response := ErrorResponse(http.StatusTooManyRequests, float64(7), -32000, "limited", jsonx.Object{
+		{Key: "scope", Value: "daily"},
+		{Key: "retry_after", Value: int64(42)},
+	}, extra)
+	if response.Status != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", response.Status)
+	}
+	if got := response.Headers.Get("Retry-After"); got != "42" {
+		t.Fatalf("Retry-After = %q, want 42", got)
+	}
+	if got := response.Headers.Get("MCP-Protocol-Version"); got != ProtocolVersion {
+		t.Fatalf("protocol version = %q, want %q", got, ProtocolVersion)
+	}
+	want := `{"jsonrpc":"2.0","id":7,"error":{"code":-32000,"message":"limited","data":{"scope":"daily","retry_after":42}}}`
+	if string(response.Body) != want {
+		t.Fatalf("body = %s, want %s", response.Body, want)
 	}
 }
 

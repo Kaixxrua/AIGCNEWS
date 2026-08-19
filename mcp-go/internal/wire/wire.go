@@ -157,14 +157,25 @@ func Result(id any, result any) Response {
 }
 
 func Error(id any, code int, message string) Response {
-	return envelope(http.StatusOK, jsonx.Object{
+	return ErrorResponse(http.StatusOK, id, code, message, nil, nil)
+}
+
+// ErrorResponse 产出任意状态码的 JSON-RPC 错误信封；data 非 nil 时追加
+// error.data（键序由调用方的 Object 决定），extra 并入协议头之上
+// （限流 429 投影的 Retry-After 走这里）。
+func ErrorResponse(status int, id any, code int, message string, data jsonx.Object, extra http.Header) Response {
+	errorObject := jsonx.Object{
+		{Key: "code", Value: code},
+		{Key: "message", Value: message},
+	}
+	if data != nil {
+		errorObject = append(errorObject, jsonx.Pair{Key: "data", Value: data})
+	}
+	return envelope(status, jsonx.Object{
 		{Key: "jsonrpc", Value: "2.0"},
 		{Key: "id", Value: id},
-		{Key: "error", Value: jsonx.Object{
-			{Key: "code", Value: code},
-			{Key: "message", Value: message},
-		}},
-	}, nil)
+		{Key: "error", Value: errorObject},
+	}, extra)
 }
 
 func Notification() Response {

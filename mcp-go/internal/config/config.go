@@ -28,12 +28,25 @@ type Postgres struct {
 	StatementTimeoutMillis int
 }
 
+// Redis 镜像 backend.app.core.config.Settings 的 redis_* 字段，
+// 默认值与 Python 侧逐字一致（见 config.py 232-235 行）。
+type Redis struct {
+	Host     string // REDIS_HOST，默认 "localhost"
+	Port     int    // REDIS_PORT，默认 6379
+	DB       int    // REDIS_DB，默认 0
+	Password string // REDIS_PASSWORD，默认 ""
+}
+
 // Config 是 mcp-server 的根配置。
 type Config struct {
 	// Port 为 HTTP 监听端口（容器内恒 8000，compose 映射 127.0.0.1:8002:8000）。
 	// Python 侧由 uvicorn --port 旗标给出，Go 侧改由环境变量注入。
 	Port     int
 	Postgres Postgres
+	Redis    Redis
+	// TrustedProxyIPs 对齐 Python 侧 trusted_proxy_ips（config.py 334 行），
+	// 逗号分隔的可信代理 IP 串，默认 "127.0.0.1,::1"，原样装载不做解析。
+	TrustedProxyIPs string
 }
 
 // lookup 从环境取值；与 os.LookupEnv 同形，便于测试注入。
@@ -54,6 +67,13 @@ func (c *Config) load(lookup lookupFunc) error {
 		ConnectTimeoutSeconds:  5,
 		StatementTimeoutMillis: 15_000,
 	}
+	c.Redis = Redis{
+		Host:     "localhost",
+		Port:     6379,
+		DB:       0,
+		Password: "",
+	}
+	c.TrustedProxyIPs = "127.0.0.1,::1"
 	if err := loadInt(lookup, "MCP_SERVER_PORT", &c.Port); err != nil {
 		return err
 	}
@@ -80,6 +100,15 @@ func (c *Config) load(lookup lookupFunc) error {
 	if err := loadInt(lookup, "POSTGRES_STATEMENT_TIMEOUT_MS", &c.Postgres.StatementTimeoutMillis); err != nil {
 		return err
 	}
+	loadString(lookup, "REDIS_HOST", &c.Redis.Host)
+	if err := loadInt(lookup, "REDIS_PORT", &c.Redis.Port); err != nil {
+		return err
+	}
+	if err := loadInt(lookup, "REDIS_DB", &c.Redis.DB); err != nil {
+		return err
+	}
+	loadString(lookup, "REDIS_PASSWORD", &c.Redis.Password)
+	loadString(lookup, "TRUSTED_PROXY_IPS", &c.TrustedProxyIPs)
 	if c.Port < 1 || c.Port > 65_535 {
 		return fmt.Errorf("config: MCP_SERVER_PORT=%d 超出 1..65535", c.Port)
 	}

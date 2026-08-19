@@ -9,8 +9,10 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"aigcnews/mcp-go/internal/authn"
+	"aigcnews/mcp-go/internal/ratelimit"
 	"aigcnews/mcp-go/internal/wire"
 )
 
@@ -124,6 +126,7 @@ func TestSuccessfulToolCallHasStructuredContent(t *testing.T) {
 
 type stubAuthenticator struct {
 	failDetail string
+	identity   authn.Identity
 	seen       bool
 }
 
@@ -136,7 +139,7 @@ func (s *stubAuthenticator) Authenticate(_ context.Context, authorization string
 			Headers: http.Header{},
 		}
 	}
-	return authn.Identity{}, nil
+	return s.identity, nil
 }
 
 func post(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
@@ -148,7 +151,7 @@ func post(t *testing.T, handler http.Handler, body string) *httptest.ResponseRec
 }
 
 func TestHandlerMethodGate(t *testing.T) {
-	handler := NewHandler(newApp(), nil)
+	handler := NewHandler(newApp(), nil, nil)
 	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodHead} {
 		req := httptest.NewRequest(method, "http://example.test/api/mcp", nil)
 		rec := httptest.NewRecorder()
@@ -167,7 +170,7 @@ func TestHandlerMethodGate(t *testing.T) {
 
 func TestHandlerAuthPrecedesParsing(t *testing.T) {
 	auth := &stubAuthenticator{failDetail: "MCP Token 无效、已过期或已撤销"}
-	handler := NewHandler(newApp(), auth)
+	handler := NewHandler(newApp(), auth, nil)
 	// 请求体是非法 JSON：若解析先于认证会回 -32700，401 证明顺序正确。
 	req := httptest.NewRequest(http.MethodPost, "http://example.test/api/mcp", strings.NewReader("{"))
 	req.Header.Set("Authorization", "Bearer whatever")
@@ -185,7 +188,7 @@ func TestHandlerAuthPrecedesParsing(t *testing.T) {
 }
 
 func TestHandlerAnonymousPassesThrough(t *testing.T) {
-	handler := NewHandler(newApp(), &stubAuthenticator{})
+	handler := NewHandler(newApp(), &stubAuthenticator{}, nil)
 	rec := post(t, handler, `{"jsonrpc":"2.0","id":9,"method":"ping"}`)
 	want := `{"jsonrpc":"2.0","id":9,"error":{"code":-32601,"message":"Method not found"}}`
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
@@ -194,11 +197,66 @@ func TestHandlerAnonymousPassesThrough(t *testing.T) {
 }
 
 func TestHandlerParseErrorProjection(t *testing.T) {
-	handler := NewHandler(newApp(), nil)
+	handler := NewHandler(newApp(), nil, nil)
 	rec := post(t, handler, "{")
 	want := `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
+	}
+}
+
+// countingRedis 钉住 Handler 将认证身份传给 limiter，且限流发生在解析之后：
+// user 维度分钟桶限额为 1，第一次通过、第二次同请求投影 429。
+type countingRedis struct {
+	counts map[string]int64
+}
+
+func (r *countingRedis) Incr(_ context.Context, key string) (int64, error) {
+	if r.counts == nil {
+		r.counts = map[string]int64{}
+	}
+	r.counts[key]++
+	return r.counts[key], nil
+}
+
+func (r *countingRedis) TTL(context.Context, string) (time.Duration, error) {
+	return 50 * time.Second, nil
+}
+
+func (r *countingRedis) Expire(context.Context, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func TestHandlerRateLimitAfterParseUsesAuthenticatedIdentity(t *testing.T) {
+	store := &countingRedis{}
+	limiter := ratelimit.NewLimiter(store, "", func(l *ratelimit.Limits) {
+		l.AuthenticatedProtocolPerMinute = 1
+	})
+	auth := &stubAuthenticator{identity: authn.Identity{UserID: 42, Role: "user"}}
+	handler := NewHandler(newApp(), auth, limiter)
+	body := `{"jsonrpc":"2.0","id":9,"method":"ping"}`
+	if rec := post(t, handler, body); rec.Code != http.StatusOK {
+		t.Fatalf("first request status=%d body=%s", rec.Code, rec.Body)
+	}
+	rec := post(t, handler, body)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request status=%d body=%s", rec.Code, rec.Body)
+	}
+	if store.counts["ratelimit:mcp.protocol:user:42"] != 2 {
+		t.Fatalf("authenticated bucket counts=%v", store.counts)
+	}
+}
+
+func TestHandlerParseErrorDoesNotConsumeRateLimit(t *testing.T) {
+	store := &countingRedis{}
+	limiter := ratelimit.NewLimiter(store, "")
+	handler := NewHandler(newApp(), nil, limiter)
+	rec := post(t, handler, "{")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
+	}
+	if len(store.counts) != 0 {
+		t.Fatalf("parse failure consumed rate limit: %v", store.counts)
 	}
 }
 
@@ -207,7 +265,7 @@ func TestHandlerParseErrorProjection(t *testing.T) {
 func TestHandlerPanicBecomes500(t *testing.T) {
 	app := newApp()
 	app.PanicOnMethods = map[string]bool{"tools/list": true}
-	handler := NewHandler(app, nil)
+	handler := NewHandler(app, nil, nil)
 	rec := post(t, handler, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status=%d", rec.Code)

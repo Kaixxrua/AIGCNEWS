@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -73,6 +74,13 @@ func (r fakeRow) Scan(dest ...any) error {
 			*d = value.(int)
 		case *string:
 			*d = value.(string)
+		case **time.Time:
+			if value == nil {
+				*d = nil
+			} else {
+				v := value.(time.Time)
+				*d = &v
+			}
 		case *any:
 			*d = value
 		}
@@ -97,13 +105,13 @@ func TestAuthenticateRejectsNonBearer(t *testing.T) {
 }
 
 func TestAuthenticateLookupAndConditionalTouch(t *testing.T) {
-	tx := &fakeTx{row: fakeRow{values: []any{7, 42, `["projects:favorites:read"]`, nil, nil, nil, "u@example.com", "user", "pro"}}}
+	tx := &fakeTx{row: fakeRow{values: []any{7, 42, `["projects:favorites:read"]`, nil, nil, nil, "u@example.com", "user", "member", nil}}}
 	identity, response := authenticator(tx).Authenticate(context.Background(), "bEaReR secret")
 	if response != nil {
 		t.Fatalf("unexpected response: %+v", response)
 	}
 	if identity.UserID != 42 || identity.Email != "u@example.com" ||
-		identity.Role != "user" || identity.MembershipTier != "pro" ||
+		identity.Role != "user" || identity.MembershipTier != "member" ||
 		len(identity.Scopes) != 1 || !identity.HasScope("projects:favorites:read") ||
 		identity.HasScope("projects:favorites:write") {
 		t.Fatalf("bad identity: %+v", identity)
@@ -140,7 +148,7 @@ func TestAuthenticateMalformedScopes(t *testing.T) {
 		"object":             `{"read":true}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			tx := &fakeTx{row: fakeRow{values: []any{7, 42, raw, nil, nil, nil, "u@example.com", "user", "free"}}}
+			tx := &fakeTx{row: fakeRow{values: []any{7, 42, raw, nil, nil, nil, "u@example.com", "user", "free", nil}}}
 			_, response := authenticator(tx).Authenticate(context.Background(), "Bearer secret")
 			assertUnauthorized(t, response, invalidScopesDetail)
 		})
@@ -160,7 +168,7 @@ func TestAuthenticateDatabaseFailures(t *testing.T) {
 	})
 	t.Run("update", func(t *testing.T) {
 		tx := &fakeTx{
-			row:     fakeRow{values: []any{7, 42, `[]`, nil, nil, nil, "u@example.com", "user", "free"}},
+			row:     fakeRow{values: []any{7, 42, `[]`, nil, nil, nil, "u@example.com", "user", "free", nil}},
 			execErr: errors.New("lock timeout"),
 		}
 		_, response := authenticator(tx).Authenticate(context.Background(), "Bearer x")
@@ -168,7 +176,7 @@ func TestAuthenticateDatabaseFailures(t *testing.T) {
 	})
 	t.Run("commit", func(t *testing.T) {
 		tx := &fakeTx{
-			row:         fakeRow{values: []any{7, 42, `[]`, nil, nil, nil, "u@example.com", "user", "free"}},
+			row:         fakeRow{values: []any{7, 42, `[]`, nil, nil, nil, "u@example.com", "user", "free", nil}},
 			commitError: errors.New("commit failed"),
 		}
 		_, response := authenticator(tx).Authenticate(context.Background(), "Bearer x")
@@ -220,5 +228,32 @@ func TestResponseWrite(t *testing.T) {
 	}
 	if rec.Body.String() != `{"detail":"MCP Token 无效、已过期或已撤销"}` {
 		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
+// EffectiveTier 对齐 tiers.resolve_effective_tier：未知档 fail-closed 归 free，
+// member 到期（含恰在边界）回落 free。
+func TestEffectiveTier(t *testing.T) {
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	past := now.Add(-time.Second)
+	future := now.Add(time.Hour)
+	for name, tc := range map[string]struct {
+		identity Identity
+		want     string
+	}{
+		"anonymous":          {Identity{}, TierFree},
+		"unknown-tier":       {Identity{MembershipTier: "pro"}, TierFree},
+		"empty-tier":         {Identity{MembershipTier: ""}, TierFree},
+		"free":               {Identity{MembershipTier: "free"}, TierFree},
+		"member-no-expiry":   {Identity{MembershipTier: "member"}, TierMember},
+		"member-future":      {Identity{MembershipTier: "member", MembershipExpiresAt: &future}, TierMember},
+		"member-expired":     {Identity{MembershipTier: "member", MembershipExpiresAt: &past}, TierFree},
+		"member-at-boundary": {Identity{MembershipTier: "member", MembershipExpiresAt: &now}, TierFree},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := tc.identity.EffectiveTier(now); got != tc.want {
+				t.Fatalf("EffectiveTier = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
