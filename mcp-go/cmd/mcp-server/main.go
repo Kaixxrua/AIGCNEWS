@@ -9,6 +9,7 @@
 // PR 1.4 范围：静态清单（tools/resources/prompts 目录）。
 // PR 2.1 范围：get_project_categories 工具（静态分类仓储）。
 // PR 2.2 范围：search_papers / search_documents 工具（Postgres 文档检索）。
+// PR 2.3 范围：get_paper_detail 工具（Postgres 单文档详情）。
 package main
 
 import (
@@ -80,6 +81,9 @@ func run() int {
 	}
 	publicBaseURL := strings.TrimRight(cfg.PublicBaseURL, "/")
 	for name, handler := range mcpapp.NewDocumentsHandlers(postgres.NewDocumentRepository(pool), publicBaseURL) {
+		registry[name] = handler
+	}
+	for name, handler := range mcpapp.NewPaperDetailHandlers(postgres.NewPaperDetailRepository(pool), publicBaseURL) {
 		registry[name] = handler
 	}
 	app := mcpapp.New(version.ServerName, serverVersion, registry)

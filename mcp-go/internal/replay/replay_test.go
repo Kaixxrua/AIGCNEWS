@@ -9,9 +9,11 @@
 //     （miniredis + 限额覆盖 + warmup，镜像 recorder.py 的用例编排）；
 //   - PR 1.4：tools/list* / resources-list / resources-templates-list /
 //     prompts-list（静态清单落地后解除跳过）；
-//   - PR 2.2（本包当前）：tools.jsonl 回放 harness 落地，
-//     search-papers*/search-documents*/get-project-categories* 11 例解除跳过，
-//     文档检索由 fixtures.json documents 段注入 stub 仓储驱动。
+//   - PR 2.2：tools.jsonl 回放 harness 落地，search-papers*/search-documents* /
+//     get-project-categories* 11 例解除跳过；文档检索由 fixtures.json
+//     documents 段注入 stub 仓储驱动；
+//   - PR 2.3：get-paper-detail happy/not-found 两例解除跳过，共享同一
+//     fixture 文档仓储与 public projection。
 //
 // 语料新增用例会立即进入回放并以逐字节差异暴露，不允许静默漏测：
 // tools.jsonl 每个用例必须在 toolsCorpusMilestones 显式登记归属 PR。
@@ -201,6 +203,21 @@ func (f fixtureDocuments) SearchDocumentPage(query, source string, _, _ int) (mc
 	}
 }
 
+func (f fixtureDocuments) GetPaperDetail(paperID string) (*mcpapp.DocumentRow, error) {
+	if paperID == derefFixtureString(f.arxivA.ID, "") {
+		row := f.arxivA
+		return &row, nil
+	}
+	return nil, nil
+}
+
+func derefFixtureString(value *string, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
 // loadFixtureDocuments 把 fixtures.json documents 段转成 DocumentRow。
 // 解码用 UseNumber 保留 Python 的 int/float 区分（raw_score 7 int vs 42.5
 // float）；created_at 的 {"__type__":"datetime"} 标记转成 Python str(datetime)
@@ -345,7 +362,11 @@ func newReplayHandler(t *testing.T, caseName string) http.Handler {
 	for name, handler := range mcpapp.NewProjectCategoriesHandlers(mcpapp.StaticProjectCategoriesRepository{}) {
 		registry[name] = handler
 	}
-	for name, handler := range mcpapp.NewDocumentsHandlers(loadFixtureDocuments(t), "") {
+	documents := loadFixtureDocuments(t)
+	for name, handler := range mcpapp.NewDocumentsHandlers(documents, "") {
+		registry[name] = handler
+	}
+	for name, handler := range mcpapp.NewPaperDetailHandlers(documents, "") {
 		registry[name] = handler
 	}
 	// 对齐 recorder profile 语义：
@@ -499,11 +520,29 @@ var toolsCorpusMilestones = map[string]string{
 	"search-github-ai-projects-en": "PR 2.8",
 }
 
-// toolsCorpusCurrentMilestone 是本包当前解锁的里程碑；其余用例带里程碑
-// 标注跳过，等对应 PR 接入时前移。
-const toolsCorpusCurrentMilestone = "PR 2.2"
+// toolsCorpusCurrentMilestone 是本包当前解锁的里程碑。先前 PR 的工具必须继续
+// 回放，避免新工具接入使已解锁语料静默失去覆盖；其后用例带里程碑标注跳过。
+const toolsCorpusCurrentMilestone = "PR 2.3"
 
-// TestToolsCorpus 逐案回放 tools.jsonl 当前里程碑范围内的用例。
+var toolsCorpusMilestoneOrder = []string{
+	"PR 2.2", "PR 2.3", "PR 2.4", "PR 2.5", "PR 2.6", "PR 2.7", "PR 2.8",
+}
+
+func toolsCorpusMilestoneEnabled(milestone string) bool {
+	current := -1
+	candidate := -1
+	for i, value := range toolsCorpusMilestoneOrder {
+		if value == toolsCorpusCurrentMilestone {
+			current = i
+		}
+		if value == milestone {
+			candidate = i
+		}
+	}
+	return current >= 0 && candidate >= 0 && candidate <= current
+}
+
+// TestToolsCorpus 逐案回放 tools.jsonl 中截至当前里程碑的用例。
 func TestToolsCorpus(t *testing.T) {
 	cases := loadCases(t, "tools.jsonl")
 	seen := map[string]bool{}
@@ -515,7 +554,7 @@ func TestToolsCorpus(t *testing.T) {
 		seen[c.Name] = true
 		c := c
 		t.Run(c.Name, func(t *testing.T) {
-			if milestone != toolsCorpusCurrentMilestone {
+			if !toolsCorpusMilestoneEnabled(milestone) {
 				t.Skipf("归属 %s（当前 %s）", milestone, toolsCorpusCurrentMilestone)
 			}
 			replayCase(t, c)
