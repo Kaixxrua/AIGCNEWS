@@ -70,6 +70,7 @@ from backend.app.repositories.wechat_session_repository import (
     WeChatSessionRepository,
 )
 from backend.app.repositories.x_credentials_repository import XCredentialRepository
+from backend.app.repositories.x_translation_repository import XTranslationTaskRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.briefing.composition import provide_daily_briefing_service
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
@@ -207,6 +208,12 @@ def get_mcp_admin_service(
     from backend.app.services.mcp_connection_tester import test_mcp_server_connection
 
     return McpAdminService(repository, test_mcp_server_connection)
+
+
+def get_x_translation_task_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> XTranslationTaskRepository:
+    return repositories.x_translation_tasks
 
 
 def get_x_watch_account_repository(

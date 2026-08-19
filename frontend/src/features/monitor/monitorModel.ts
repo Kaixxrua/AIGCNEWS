@@ -8,6 +8,26 @@ export interface Task {
   finished_at: string | null
 }
 
+export interface XTranslationStatus {
+  pending: number
+  running: number
+  succeeded: number
+  failed: number
+  skipped: number
+  retryable: number
+  stale_running: number
+  batch_running: number
+  latest_failure_error: string | null
+  latest_failure_model_provider: string | null
+  latest_failure_model_name: string | null
+}
+
+export interface XTranslationRetryResult {
+  status: string
+  message: string
+  result?: { retryable?: number; limit?: number }
+}
+
 export interface SchedulerJobConfig {
   job_id: string
   name: string

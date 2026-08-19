@@ -29,8 +29,17 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 51
-    assert migrations[-1].filename == "0051_payment_orders.sql"
+    assert migrations[-1].version == 52
+    assert migrations[-1].filename == "0052_x_translation_task_leases.sql"
+
+
+def test_x_translation_task_leases_migration_is_idempotent() -> None:
+    sql = (MIGRATIONS_DIR / "0052_x_translation_task_leases.sql").read_text(encoding="utf-8")
+
+    # 租约/认领令牌：IF NOT EXISTS 幂等；status 枚举保持 0049 原有集合不变。
+    assert "ADD COLUMN IF NOT EXISTS claim_token VARCHAR(36)" in sql
+    assert "ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ" in sql
+    assert "CREATE INDEX IF NOT EXISTS idx_x_translation_tasks_running_lease" in sql
 
 
 def test_payment_orders_migration_is_idempotent_orders_table() -> None:

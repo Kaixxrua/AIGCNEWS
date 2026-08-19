@@ -335,6 +335,11 @@ class IngestionOrchestrator:
             graph_extractor_factory=self.dependencies.graph_extractor_factory,
             graph_writer_factory=self.dependencies.graph_writer_factory,
         )
+        if source_name == "x" and self.dependencies.x_translation_processor is not None:
+            try:
+                await asyncio.to_thread(self.dependencies.x_translation_processor().process)
+            except Exception as exc:
+                logger.warning("[Orchestrator][x] 翻译处理失败（不影响采集）: %s", exc)
         return count
 
     def _start_arxiv_pdf_background(self, papers: List[dict]) -> None:

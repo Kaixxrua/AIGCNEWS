@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -158,85 +159,138 @@ class PostgresDocumentRepository:
     def __init__(self, database: PostgresDatabaseLifecycle) -> None:
         self._database = database
 
-    def upsert_document(self, doc: dict[str, Any]) -> None:
-        doc.setdefault("created_at", _utcnow())
-        doc.setdefault("indexed", 0)
-        doc.setdefault("in_daily", 0)
-        doc.setdefault("in_weekly", 0)
-        doc.setdefault("in_monthly", 0)
-        doc.setdefault("score", 0.0)
-        doc.setdefault("raw_score", doc.get("score", 0.0))
-        doc.setdefault("stars", 0)
-        doc.setdefault("forks", 0)
-        doc.setdefault("language", "")
-        doc.setdefault("source_channel", "")
-        doc.setdefault("rank_in_period", 9999)
-        doc.setdefault("local_pdf_path", None)
-        doc.setdefault("media", None)
-        doc.setdefault("quote", None)
-        doc.setdefault("link_card", None)
-        doc.setdefault("published_at", None)
-        doc.setdefault("author_avatar_url", None)
-        doc.setdefault("author_name", None)
-        doc.setdefault("retweeted_by", None)
-        doc.setdefault("translation_zh", None)
-        doc.setdefault("authors", None)
-        doc.setdefault("arxiv_id", None)
-        if isinstance(doc.get("tags"), list):
-            doc["tags"] = json.dumps(doc["tags"], ensure_ascii=False)
-        if isinstance(doc.get("authors"), list):
-            doc["authors"] = json.dumps(doc["authors"], ensure_ascii=False)
-        if isinstance(doc.get("media"), list):
-            doc["media"] = json.dumps(doc["media"], ensure_ascii=False)
-        if isinstance(doc.get("quote"), dict):
-            doc["quote"] = json.dumps(doc["quote"], ensure_ascii=False)
-        if isinstance(doc.get("link_card"), dict):
-            doc["link_card"] = json.dumps(doc["link_card"], ensure_ascii=False)
+    @staticmethod
+    def _document_params(doc: dict[str, Any]) -> dict[str, Any]:
         params = dict(doc)
+        defaults = {
+            "created_at": _utcnow(), "indexed": 0, "in_daily": 0,
+            "in_weekly": 0, "in_monthly": 0, "score": 0.0,
+            "stars": 0, "forks": 0, "language": "", "source_channel": "",
+            "rank_in_period": 9999, "local_pdf_path": None, "media": None,
+            "quote": None, "link_card": None, "published_at": None,
+            "author_avatar_url": None, "author_name": None, "retweeted_by": None,
+            "translation_zh": None, "authors": None, "arxiv_id": None,
+        }
+        for key, value in defaults.items():
+            params.setdefault(key, params.get("score", 0.0) if key == "raw_score" else value)
+        params.setdefault("raw_score", params.get("score", 0.0))
+        for key in ("tags", "authors", "media", "quote", "link_card"):
+            if isinstance(params.get(key), (list, dict)):
+                params[key] = json.dumps(params[key], ensure_ascii=False)
         for key in ("indexed", "in_daily", "in_weekly", "in_monthly"):
             params[key] = bool(params[key])
+        return params
+
+    def upsert_document(self, doc: dict[str, Any]) -> None:
+        params = self._document_params(doc)
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO documents
-                        (id, source, source_channel, title, url, summary, published_date,
-                         published_at, tags, score, raw_score, stars, forks, language, rank_in_period,
-                         indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, quote, link_card, author_avatar_url, author_name, retweeted_by, translation_zh, authors, arxiv_id, created_at)
-                    VALUES
-                        (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s,
-                         %(summary)s, %(published_date)s, %(published_at)s, %(tags)s, %(score)s,
-                         %(raw_score)s, %(stars)s, %(forks)s, %(language)s,
-                         %(rank_in_period)s, %(indexed)s, %(in_daily)s, %(in_weekly)s,
-                         %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(quote)s, %(link_card)s, %(author_avatar_url)s, %(author_name)s, %(retweeted_by)s, %(translation_zh)s, %(authors)s, %(arxiv_id)s, %(created_at)s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        source_channel=EXCLUDED.source_channel, title=EXCLUDED.title,
-                        url=EXCLUDED.url, summary=EXCLUDED.summary,
-                        published_date=COALESCE(NULLIF(EXCLUDED.published_date, ''), documents.published_date),
-                        published_at=COALESCE(NULLIF(EXCLUDED.published_at, ''), documents.published_at),
-                        tags=EXCLUDED.tags, score=GREATEST(documents.score, EXCLUDED.score),
-                        raw_score=GREATEST(documents.raw_score, EXCLUDED.raw_score),
-                        stars=COALESCE(NULLIF(EXCLUDED.stars, 0), documents.stars),
-                        forks=COALESCE(NULLIF(EXCLUDED.forks, 0), documents.forks),
-                        language=COALESCE(NULLIF(EXCLUDED.language, ''), documents.language),
-                        rank_in_period=LEAST(documents.rank_in_period, EXCLUDED.rank_in_period),
-                        indexed=EXCLUDED.indexed,
-                        in_daily=(documents.in_daily OR EXCLUDED.in_daily),
-                        in_weekly=(documents.in_weekly OR EXCLUDED.in_weekly),
-                        in_monthly=(documents.in_monthly OR EXCLUDED.in_monthly),
-                        local_pdf_path=COALESCE(EXCLUDED.local_pdf_path, documents.local_pdf_path),
-                        media=COALESCE(NULLIF(EXCLUDED.media, ''), documents.media),
-                        quote=COALESCE(NULLIF(EXCLUDED.quote, ''), documents.quote),
-                        link_card=COALESCE(NULLIF(EXCLUDED.link_card, ''), documents.link_card),
-                        author_avatar_url=COALESCE(NULLIF(EXCLUDED.author_avatar_url, ''), documents.author_avatar_url),
-                        author_name=COALESCE(NULLIF(EXCLUDED.author_name, ''), documents.author_name),
-                        retweeted_by=COALESCE(NULLIF(EXCLUDED.retweeted_by, ''), documents.retweeted_by),
-                        translation_zh=COALESCE(NULLIF(EXCLUDED.translation_zh, ''), documents.translation_zh),
-                        authors=COALESCE(NULLIF(EXCLUDED.authors, ''), documents.authors),
-                        arxiv_id=COALESCE(NULLIF(EXCLUDED.arxiv_id, ''), documents.arxiv_id)
-                    """,
-                    params,
-                )
+                self._execute_document_upsert(cursor, params)
+
+    def upsert_x_document_with_translation_targets(
+        self, doc: dict[str, Any], targets: list[dict[str, Any]]
+    ) -> None:
+        """Upsert an X document and seed its translation targets atomically."""
+        params = self._document_params(doc)
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                self._execute_document_upsert(cursor, params)
+                for target in targets:
+                    source_text = str(target.get("source_text") or "")
+                    if not source_text:
+                        continue
+                    source_tweet_id = str(target.get("source_tweet_id") or "")
+                    target_kind = str(target.get("target_kind") or "")
+                    source_lang = str(target.get("source_lang") or "")
+                    fingerprint = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+                    cursor.execute(
+                        """
+                        INSERT INTO x_translation_tasks
+                            (document_id, target_kind, source_tweet_id, source_text,
+                             source_lang, source_fingerprint, status, skip_reason,
+                             translation_zh, prompt_version)
+                        VALUES (%s, %s, %s, %s, %s, %s,
+                                CASE WHEN lower(%s) LIKE 'zh%%' OR lower(%s) = 'zxx'
+                                     THEN 'skipped' ELSE 'pending' END,
+                                CASE WHEN lower(%s) LIKE 'zh%%' OR lower(%s) = 'zxx'
+                                     THEN 'source_language' ELSE NULL END,
+                                NULL, 'x-translation-v1')
+                        ON CONFLICT (document_id, target_kind) DO UPDATE SET
+                            source_tweet_id = EXCLUDED.source_tweet_id,
+                            source_text = EXCLUDED.source_text,
+                            source_lang = EXCLUDED.source_lang,
+                            source_fingerprint = EXCLUDED.source_fingerprint,
+                            status = CASE
+                                WHEN x_translation_tasks.source_fingerprint = EXCLUDED.source_fingerprint
+                                    THEN x_translation_tasks.status
+                                WHEN lower(EXCLUDED.source_lang) LIKE 'zh%%'
+                                     OR lower(EXCLUDED.source_lang) = 'zxx'
+                                    THEN 'skipped'
+                                ELSE 'pending'
+                            END,
+                            skip_reason = CASE
+                                WHEN lower(EXCLUDED.source_lang) LIKE 'zh%%'
+                                     OR lower(EXCLUDED.source_lang) = 'zxx'
+                                    THEN 'source_language' ELSE NULL END,
+                            translation_zh = CASE
+                                WHEN x_translation_tasks.source_fingerprint = EXCLUDED.source_fingerprint
+                                    THEN x_translation_tasks.translation_zh
+                                ELSE NULL
+                            END,
+                            completed_at = CASE
+                                WHEN x_translation_tasks.source_fingerprint = EXCLUDED.source_fingerprint
+                                    THEN x_translation_tasks.completed_at
+                                ELSE NULL
+                            END,
+                            updated_at = CURRENT_TIMESTAMP
+                        """,
+                        (params["id"], target_kind, source_tweet_id, source_text,
+                         source_lang, fingerprint, source_lang, source_lang,
+                         source_lang, source_lang),
+                    )
+
+    @staticmethod
+    def _execute_document_upsert(cursor: Any, params: dict[str, Any]) -> None:
+        cursor.execute(
+            """
+            INSERT INTO documents
+                (id, source, source_channel, title, url, summary, published_date,
+                 published_at, tags, score, raw_score, stars, forks, language, rank_in_period,
+                 indexed, in_daily, in_weekly, in_monthly, local_pdf_path, media, quote, link_card, author_avatar_url, author_name, retweeted_by, translation_zh, authors, arxiv_id, created_at)
+            VALUES
+                (%(id)s, %(source)s, %(source_channel)s, %(title)s, %(url)s,
+                 %(summary)s, %(published_date)s, %(published_at)s, %(tags)s, %(score)s,
+                 %(raw_score)s, %(stars)s, %(forks)s, %(language)s,
+                 %(rank_in_period)s, %(indexed)s, %(in_daily)s, %(in_weekly)s,
+                 %(in_monthly)s, %(local_pdf_path)s, %(media)s, %(quote)s, %(link_card)s, %(author_avatar_url)s, %(author_name)s, %(retweeted_by)s, %(translation_zh)s, %(authors)s, %(arxiv_id)s, %(created_at)s)
+            ON CONFLICT (id) DO UPDATE SET
+                source_channel=EXCLUDED.source_channel, title=EXCLUDED.title,
+                url=EXCLUDED.url, summary=EXCLUDED.summary,
+                published_date=COALESCE(NULLIF(EXCLUDED.published_date, ''), documents.published_date),
+                published_at=COALESCE(NULLIF(EXCLUDED.published_at, ''), documents.published_at),
+                tags=EXCLUDED.tags, score=GREATEST(documents.score, EXCLUDED.score),
+                raw_score=GREATEST(documents.raw_score, EXCLUDED.raw_score),
+                stars=COALESCE(NULLIF(EXCLUDED.stars, 0), documents.stars),
+                forks=COALESCE(NULLIF(EXCLUDED.forks, 0), documents.forks),
+                language=COALESCE(NULLIF(EXCLUDED.language, ''), documents.language),
+                rank_in_period=LEAST(documents.rank_in_period, EXCLUDED.rank_in_period),
+                indexed=EXCLUDED.indexed,
+                in_daily=(documents.in_daily OR EXCLUDED.in_daily),
+                in_weekly=(documents.in_weekly OR EXCLUDED.in_weekly),
+                in_monthly=(documents.in_monthly OR EXCLUDED.in_monthly),
+                local_pdf_path=COALESCE(EXCLUDED.local_pdf_path, documents.local_pdf_path),
+                media=COALESCE(NULLIF(EXCLUDED.media, ''), documents.media),
+                quote=COALESCE(NULLIF(EXCLUDED.quote, ''), documents.quote),
+                link_card=COALESCE(NULLIF(EXCLUDED.link_card, ''), documents.link_card),
+                author_avatar_url=COALESCE(NULLIF(EXCLUDED.author_avatar_url, ''), documents.author_avatar_url),
+                author_name=COALESCE(NULLIF(EXCLUDED.author_name, ''), documents.author_name),
+                retweeted_by=COALESCE(NULLIF(EXCLUDED.retweeted_by, ''), documents.retweeted_by),
+                translation_zh=COALESCE(NULLIF(EXCLUDED.translation_zh, ''), documents.translation_zh),
+                authors=COALESCE(NULLIF(EXCLUDED.authors, ''), documents.authors),
+                arxiv_id=COALESCE(NULLIF(EXCLUDED.arxiv_id, ''), documents.arxiv_id)
+            """,
+            params,
+        )
 
     def delete_document(self, doc_id: str) -> bool:
         with self._database.transaction() as connection:

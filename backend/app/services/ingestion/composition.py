@@ -36,6 +36,7 @@ class IngestionDependencies:
     pdf_indexer: PdfIndexer
     cache_invalidator: CacheInvalidator
     crawler_factories: Sequence[CrawlerFactory]
+    x_translation_processor: ResourceFactory | None = None
 
 
 def provide_ingestion_dependencies(
@@ -143,6 +144,10 @@ def provide_ingestion_dependencies(
             ),
         )
 
+    from backend.app.services.ingestion.x_translation_service import (
+        XTranslationProcessor,
+    )
+
     return IngestionDependencies(
         repositories=repositories,
         task_writer=(
@@ -155,4 +160,7 @@ def provide_ingestion_dependencies(
         pdf_indexer=download_and_index_arxiv_pdfs,
         cache_invalidator=clear_and_warm_dashboard_cache,
         crawler_factories=tuple(crawler_factories),
+        x_translation_processor=lambda: XTranslationProcessor(
+            repositories.x_translation_tasks
+        ),
     )

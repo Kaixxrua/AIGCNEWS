@@ -21,6 +21,7 @@ import SmtpConfigPanel from '@/components/monitor/SmtpConfigPanel.vue'
 import EmailPoolConfigPanel from '@/components/monitor/EmailPoolConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
 import XWatchCard from '@/components/monitor/XWatchCard.vue'
+import XTranslationPanel from '@/components/monitor/XTranslationPanel.vue'
 import WechatAccountPanel from '@/components/wechat/WechatAccountPanel.vue'
 import { useMonitorPageController } from '@/composables/useMonitorPageController'
 import {
@@ -49,6 +50,7 @@ const {
   crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
   enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, cancellingEnrichment, enrichmentConcurrency, enrichmentPolling,
   enrichmentCancelWatching,
+  xTranslationStatus, loadingXTranslation, retryingXTranslation, xTranslationPolling, fetchXTranslationStatus, retryXTranslations,
   enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
   fetchGithubEnrichmentStatus, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
 } = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
@@ -251,7 +253,16 @@ onUnmounted(dispose)
 
         <!-- ═══ 账号源（Admin 专属） ═══ -->
         <template v-else-if="currentSection === 'x-watch'">
-          <XWatchCard v-if="authStore.isAdmin" />
+          <div v-if="authStore.isAdmin" class="space-y-4">
+            <XWatchCard />
+            <XTranslationPanel
+              :status="xTranslationStatus"
+              :loading="loadingXTranslation"
+              :retrying="retryingXTranslation || xTranslationPolling"
+              @refresh="fetchXTranslationStatus"
+              @retry="retryXTranslations"
+            />
+          </div>
         </template>
         <template v-else-if="currentSection === 'x-credentials'">
           <XCredentialCard v-if="authStore.isAdmin" />

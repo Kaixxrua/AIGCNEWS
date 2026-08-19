@@ -113,6 +113,9 @@ from backend.app.repositories.postgres_wechat_session_repository import (
 from backend.app.repositories.postgres_x_credentials_repository import (
     PostgresXCredentialRepository,
 )
+from backend.app.repositories.postgres_x_translation_repository import (
+    PostgresXTranslationTaskRepository,
+)
 from backend.app.repositories.postgres_x_watch_repository import (
     PostgresXWatchAccountRepository,
 )
@@ -155,6 +158,7 @@ from backend.app.repositories.wechat_session_repository import (
     WeChatSessionRepository,
 )
 from backend.app.repositories.x_credentials_repository import XCredentialRepository
+from backend.app.repositories.x_translation_repository import XTranslationTaskRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 
 
@@ -195,6 +199,7 @@ class ApplicationRepositories:
     project_recommendations: GitHubProjectRecommendationRepository
     github_semantic_sources: GitHubProjectSemanticSourceRepository
     x_credentials: XCredentialRepository
+    x_translation_tasks: XTranslationTaskRepository
     x_watch_accounts: XWatchAccountRepository
     wechat_login_attempts: WeChatLoginAttemptRepository
     wechat_sessions: WeChatSessionRepository
@@ -275,6 +280,7 @@ def create_application_repositories(
             postgres,
             bootstrap=_env_x_credentials(),
         ),
+        x_translation_tasks=PostgresXTranslationTaskRepository(postgres),
         x_watch_accounts=PostgresXWatchAccountRepository(
             postgres,
             defaults=_env_x_watch_handles(),

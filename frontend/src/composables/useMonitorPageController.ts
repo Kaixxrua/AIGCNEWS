@@ -107,6 +107,10 @@ export const useMonitorPageController = ({
   const enrichmentReasoningEffort = ref('')
   const enrichmentEffectiveReasoningEffort = ref('')
   const savingEnrichmentReasoningEffort = ref(false)
+  const xTranslationStatus = ref<Awaited<ReturnType<MonitorApi['fetchXTranslationStatus']>> | null>(null)
+  const loadingXTranslation = ref(false)
+  const retryingXTranslation = ref(false)
+  const xTranslationPolling = ref(false)
   const isTaskRunning = computed(() => tasks.value.length > 0 && tasks.value[0]?.status === 'running')
   const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
   const errorLogsTotalPages = computed(() => Math.max(1, Math.ceil(errorLogsTotal.value / errorLogsPageSize.value)))
@@ -154,6 +158,7 @@ export const useMonitorPageController = ({
     pendingTimers.clear()
     // 终止观望标志复位：watch 链被清定时器截断后，组件重挂不应残留锁定态
     enrichmentCancelWatching.value = false
+    xTranslationPolling.value = false
     disposeCrawlPolling()
     disposeEnrichmentPolling()
   }
@@ -245,9 +250,48 @@ export const useMonitorPageController = ({
     } catch (error) { errorMsg.value = detail(error) }
     finally { savingEnrichmentReasoningEffort.value = false }
   }
+  const X_TRANSLATION_POLL_INTERVAL = 4000
+  const X_TRANSLATION_MAX_POLLS = 150
+  const pollXTranslationStatus = async (attempt: number) => {
+    if (!xTranslationPolling.value) return
+    try { xTranslationStatus.value = await api.fetchXTranslationStatus() }
+    catch (error) { console.error('Failed to poll X translation status', error) }
+    if (!xTranslationPolling.value) return
+    const status = xTranslationStatus.value
+    if ((!status?.batch_running && !status?.running) || attempt >= X_TRANSLATION_MAX_POLLS) {
+      xTranslationPolling.value = false
+      return
+    }
+    scheduleTracked(() => { void pollXTranslationStatus(attempt + 1) }, X_TRANSLATION_POLL_INTERVAL)
+  }
+  const beginXTranslationPolling = () => {
+    if (xTranslationPolling.value) return
+    xTranslationPolling.value = true
+    scheduleTracked(() => { void pollXTranslationStatus(1) }, X_TRANSLATION_POLL_INTERVAL)
+  }
+  const fetchXTranslationStatus = async () => {
+    if (!isAdmin.value) return
+    loadingXTranslation.value = true
+    try {
+      xTranslationStatus.value = await api.fetchXTranslationStatus()
+      if (xTranslationStatus.value.batch_running || xTranslationStatus.value.running) beginXTranslationPolling()
+    } catch (error) { console.error('Failed to fetch X translation status', error) }
+    finally { loadingXTranslation.value = false }
+  }
+  const retryXTranslations = async () => {
+    if (retryingXTranslation.value || xTranslationPolling.value || !xTranslationStatus.value?.retryable) return
+    clearMessages(); retryingXTranslation.value = true
+    try {
+      const result = await api.retryXTranslations(200, 3)
+      successMsg.value = result.message || i18n.global.t('monitor.xTranslation.queued')
+      if (result.status === 'queued') beginXTranslationPolling()
+      else await fetchXTranslationStatus()
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { retryingXTranslation.value = false }
+  }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -657,7 +701,7 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchErrorLogs(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), resumeGithubCrawlPolling()])
   })
 
   return {
@@ -679,6 +723,7 @@ export const useMonitorPageController = ({
     crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
     enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, cancellingEnrichment, enrichmentConcurrency, enrichmentPolling,
     enrichmentCancelWatching,
+    xTranslationStatus, loadingXTranslation, retryingXTranslation, xTranslationPolling, fetchXTranslationStatus, retryXTranslations,
     enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
     fetchGithubEnrichmentStatus, fetchGithubEnrichmentConfig, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
     dispose,

@@ -63,6 +63,12 @@ const createApi = (): MonitorApi => ({
   cancelGithubEnrichment: vi.fn(async () => ({ status: 'cancelling', message: '' })),
   fetchXWatchAccounts: vi.fn(async () => []), saveXWatchAccount: vi.fn(), deleteXWatchAccount: vi.fn(), testXWatchAccount: vi.fn(),
   fetchXCredentials: vi.fn(async () => []), saveXCredential: vi.fn(), deleteXCredential: vi.fn(), testXCredential: vi.fn(),
+  fetchXTranslationStatus: vi.fn(async () => ({
+    pending: 0, running: 0, succeeded: 0, failed: 0, skipped: 0,
+    retryable: 0, stale_running: 0, batch_running: 0,
+    latest_failure_error: null, latest_failure_model_provider: null, latest_failure_model_name: null,
+  })),
+  retryXTranslations: vi.fn(async () => ({ status: 'queued', message: '' })),
 })
 
 const createController = (api = createApi(), isAdmin = true) => {
@@ -169,6 +175,56 @@ describe('Monitor page controller contract', () => {
     await nextTick()
     expect(api.fetchProviderConfig).toHaveBeenCalledOnce()
     expect(api.fetchSchedulerConfigs).toHaveBeenCalledOnce()
+  })
+
+  it('fetches X translation status and polls a queued retry until the batch settles', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchXTranslationStatus)
+      .mockResolvedValueOnce({
+        pending: 2, running: 0, succeeded: 3, failed: 1, skipped: 1,
+        retryable: 3, stale_running: 0, batch_running: 0,
+        latest_failure_error: '503 unavailable', latest_failure_model_provider: 'openai', latest_failure_model_name: 'model',
+      })
+      .mockResolvedValueOnce({
+        pending: 0, running: 2, succeeded: 3, failed: 1, skipped: 1,
+        retryable: 1, stale_running: 0, batch_running: 1,
+        latest_failure_error: '503 unavailable', latest_failure_model_provider: 'openai', latest_failure_model_name: 'model',
+      })
+      .mockResolvedValueOnce({
+        pending: 0, running: 0, succeeded: 6, failed: 0, skipped: 1,
+        retryable: 0, stale_running: 0, batch_running: 0,
+        latest_failure_error: null, latest_failure_model_provider: null, latest_failure_model_name: null,
+      })
+    const { controller } = createController(api)
+
+    await controller.fetchXTranslationStatus()
+    expect(controller.xTranslationStatus.value?.retryable).toBe(3)
+    await controller.retryXTranslations()
+    expect(api.retryXTranslations).toHaveBeenCalledWith(200, 3)
+    expect(controller.xTranslationPolling.value).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(controller.xTranslationStatus.value?.running).toBe(2)
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(controller.xTranslationStatus.value?.succeeded).toBe(6)
+    expect(controller.xTranslationPolling.value).toBe(false)
+  })
+
+  it('resumes X translation polling from server status and clears it on dispose', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchXTranslationStatus).mockResolvedValue({
+      pending: 0, running: 1, succeeded: 3, failed: 0, skipped: 1,
+      retryable: 0, stale_running: 0, batch_running: 1,
+      latest_failure_error: null, latest_failure_model_provider: null, latest_failure_model_name: null,
+    })
+    const { controller } = createController(api)
+
+    await controller.fetchXTranslationStatus()
+    expect(controller.xTranslationPolling.value).toBe(true)
+    controller.dispose()
+    expect(controller.xTranslationPolling.value).toBe(false)
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(api.fetchXTranslationStatus).toHaveBeenCalledTimes(1)
   })
 
   it('populates provider form reasoning effort from config and forwards it on save', async () => {

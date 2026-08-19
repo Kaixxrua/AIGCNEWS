@@ -15,6 +15,30 @@ from backend.app.services.ingestion.document_projection import (
 
 logger = logging.getLogger(__name__)
 
+
+def _translation_targets_for_x_document(write: dict) -> list[dict]:
+    """Build durable outer/quote translation inputs from the untruncated X write."""
+    targets = [{
+        "target_kind": "outer",
+        "source_tweet_id": str(write.get("tweet_id") or ""),
+        "source_text": write.get("summary") or "",
+        "source_lang": write.get("language") or "",
+    }]
+    quote = write.get("quote")
+    if isinstance(quote, str):
+        try:
+            quote = json.loads(quote)
+        except json.JSONDecodeError:
+            quote = None
+    if isinstance(quote, dict) and quote.get("tweet_id") and quote.get("text"):
+        targets.append({
+            "target_kind": "quote",
+            "source_tweet_id": str(quote["tweet_id"]),
+            "source_text": str(quote["text"]),
+            "source_lang": str(quote.get("language") or ""),
+        })
+    return targets
+
 # 全天累积型快照 channel：同一 snapshot_date 内多轮采集取并集（X 看板展示
 # 当天全部推文）。upsert 冲突键 (doc_id, snapshot_date, source_channel) 保留
 # LEAST(rank_in_period)/GREATEST(raw_score, score)，天然幂等；删除推文仍经
@@ -44,6 +68,7 @@ def project_document_write(
         title = title[:1024]
     return {
         "id": document.metadata["id"],
+        "tweet_id": paper.get("tweet_id"),
         "source": source,
         "source_channel": paper.get(
             "source_channel", paper.get("channel", "")
@@ -117,7 +142,15 @@ class IngestionPersistenceAdapter:
         channel_writes: dict[str, list[dict]] = {}
         for paper, document in zip(sorted_papers, vector_documents):
             write = project_document_write(paper, document, source_label)
-            self.documents.upsert_document(write)
+            if write["source"] == "x" and hasattr(
+                self.documents, "upsert_x_document_with_translation_targets"
+            ):
+                targets = _translation_targets_for_x_document(write)
+                self.documents.upsert_x_document_with_translation_targets(
+                    write, targets
+                )
+            else:
+                self.documents.upsert_document(write)
             channel_writes.setdefault(write["source_channel"], []).append(
                 {
                     "doc_id": write["id"],

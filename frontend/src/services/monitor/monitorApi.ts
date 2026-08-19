@@ -5,7 +5,7 @@ import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, PagedResult, ProviderConfig, ProviderForm, ProviderTestResult,
-  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XWatchAccount, XWatchAccountForm,
+  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
 import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
@@ -40,6 +40,8 @@ export interface MonitorApi {
   saveXCredential(form: XCredentialForm): Promise<XCredential>
   deleteXCredential(id: number): Promise<{ message?: string; deleted?: boolean }>
   testXCredential(id: number): Promise<{ status?: string; message?: string; credential?: XCredential }>
+  fetchXTranslationStatus(): Promise<XTranslationStatus>
+  retryXTranslations(limit?: number, concurrency?: number): Promise<XTranslationRetryResult>
   ingestSource(source: SourceKey): Promise<{ message?: string }>
   generateAllBriefings(forceRegenerate: boolean): Promise<{ message?: string }>
   clearDashboardCache(): Promise<{ message?: string }>
@@ -149,6 +151,10 @@ export const monitorApi: MonitorApi = {
   },
   async deleteXCredential(id) { return (await api.delete(`/ops/x-credentials/${id}`)).data },
   async testXCredential(id) { return (await api.post(`/ops/x-credentials/${id}/test`, null, { timeout: 60_000 })).data },
+  async fetchXTranslationStatus() { return (await api.get('/ops/x-translations/status')).data },
+  async retryXTranslations(limit = 200, concurrency = 3) {
+    return (await api.post('/ops/x-translations/retry', { limit, concurrency })).data
+  },
   async ingestSource(source) { return (await api.post('/ops/ingest-source', null, { params: { source, limit: 20 } })).data },
   async generateAllBriefings(forceRegenerate) {
     return (await api.post('/ops/briefing/generate-all', null, { params: { force_regenerate: forceRegenerate } })).data

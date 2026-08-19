@@ -14,6 +14,7 @@ from backend.app.api import (
     routes_ops_site,
     routes_ops_smtp,
     routes_ops_x,
+    routes_ops_x_translation,
 )
 from backend.app.api.dependencies import (
     get_briefing_admin_service,
@@ -125,6 +126,7 @@ async def test_provider_config(
 
 router.include_router(routes_ops_mcp.router)
 router.include_router(routes_ops_x.router)
+router.include_router(routes_ops_x_translation.router)
 router.include_router(routes_ops_smtp.router)
 router.include_router(routes_ops_email_pool.router)
 router.include_router(routes_ops_site.router)

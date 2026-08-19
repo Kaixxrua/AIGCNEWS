@@ -53,6 +53,21 @@ describe('Monitor API contract', () => {
     await expect(monitorApi.fetchMcpServers()).resolves.toEqual([])
   })
 
+  it('uses the X translation status and retry endpoints', async () => {
+    const status = {
+      pending: 2, running: 1, succeeded: 3, failed: 1, skipped: 1,
+      retryable: 3, stale_running: 0, batch_running: 1,
+      latest_failure_error: '503 unavailable', latest_failure_model_provider: 'openai', latest_failure_model_name: 'model',
+    }
+    transport.get.mockResolvedValueOnce({ data: status })
+    await expect(monitorApi.fetchXTranslationStatus()).resolves.toEqual(status)
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/x-translations/status')
+
+    transport.post.mockResolvedValueOnce({ data: { status: 'queued', message: 'queued', result: { retryable: 3, limit: 200 } } })
+    await expect(monitorApi.retryXTranslations()).resolves.toEqual({ status: 'queued', message: 'queued', result: { retryable: 3, limit: 200 } })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/x-translations/retry', { limit: 200, concurrency: 3 })
+  })
+
   it('preserves scheduler config list and update endpoints', async () => {
     transport.get.mockResolvedValueOnce({ data: { items: [schedulerConfig] } })
     await expect(monitorApi.fetchSchedulerConfigs()).resolves.toEqual([schedulerConfig])
