@@ -109,9 +109,10 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       @change-password="changePasswordOpen = true"
     />
 
-    <!-- 默认密码常驻警示：点击打开改密对话框，改密成功后自动消失 -->
+    <!-- 默认密码常驻警示：点击打开改密对话框，改密成功后自动消失；
+         弹窗打开期间隐藏（其 z-index 高于遮罩，否则会浮在弹窗上层） -->
     <button
-      v-if="showDefaultPasswordBanner"
+      v-if="showDefaultPasswordBanner && !changePasswordOpen"
       class="default-pwd-banner"
       @click="changePasswordOpen = true"
     >

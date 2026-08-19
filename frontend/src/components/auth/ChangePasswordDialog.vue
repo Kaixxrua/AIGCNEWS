@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AuthFeedback from '@/components/auth/AuthFeedback.vue'
 import PasswordConfirmationFields from '@/components/auth/PasswordConfirmationFields.vue'
 import { useChangePasswordForm } from '@/composables/useChangePasswordForm'
+import { useDockSuppression } from '@/composables/useDockSuppression'
 import { useAuthStore } from '@/stores/authStore'
 import { changePassword } from '@/services/auth/authApi'
 
@@ -17,6 +18,9 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+
+// 弹窗打开期间隐藏底部 dock 浮岛，避免其透出在遮罩后方
+useDockSuppression(() => props.modelValue)
 
 const visible = computed({
   get: () => props.modelValue,
