@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 REGISTRATION_PURPOSE = "registration"
 PASSWORD_RESET_PURPOSE = "password_reset"
+PASSWORD_CHANGE_PURPOSE = "password_change"
 
 
 class AccountRepository(Protocol):
@@ -231,6 +232,23 @@ class AccountLifecycle:
         )
         return ResetOtpRequestResult()
 
+    async def request_change_password_otp(
+        self,
+        *,
+        email: str,
+    ) -> ResetOtpRequestResult:
+        """已登录改密的发码路径：账号已注销（JWT 滞留）时不真实投递。"""
+        normalized_email = _normalize_email_domain(email)
+        user = await asyncio.to_thread(
+            self._repository.get_user_by_email, normalized_email
+        )
+        await self._otp.send_otp(
+            normalized_email,
+            purpose=PASSWORD_CHANGE_PURPOSE,
+            deliver=user is not None,
+        )
+        return ResetOtpRequestResult()
+
     async def reset_password(
         self,
         *,
@@ -270,22 +288,26 @@ class AccountLifecycle:
         self,
         *,
         email: str,
-        current_password: str,
+        email_code: str,
         new_password: str,
     ) -> PasswordChangeResult:
-        """已登录用户凭当前密码改密（产品决策：当前密码校验替代邮箱验证码）。
+        """已登录用户凭邮箱验证码改密（验证码替代当前密码校验）。
 
-        与 login 同构：账号缺失与口令错误统一抛 InvalidCredentials，
-        不区分“账号不存在”与“密码错误”，避免账号枚举。
+        已确认产品决策：强制邮箱验证码，不保留免 SMTP 的旧口令回退路径。
+        与 reset_password 同构：先验码（consume=False）→ 更新 → 消耗。
         """
         normalized_email = _normalize_email_domain(email)
+        verified = await self._otp.verify_otp(
+            normalized_email,
+            email_code,
+            consume=False,
+            purpose=PASSWORD_CHANGE_PURPOSE,
+        )
         user = await asyncio.to_thread(
             self._repository.get_user_by_email, normalized_email
         )
-        if user is None or not self._verify_password(
-            current_password, str(user["hashed_password"])
-        ):
-            raise InvalidCredentials
+        if not verified or user is None:
+            raise InvalidOtp
 
         hashed_password = self._hash_password(new_password)
         affected_rows = await asyncio.to_thread(
@@ -297,4 +319,7 @@ class AccountLifecycle:
         if affected_rows != 1:
             raise PasswordChangeFailed
 
+        await self._otp.consume_otp(
+            normalized_email, purpose=PASSWORD_CHANGE_PURPOSE
+        )
         return PasswordChangeResult()

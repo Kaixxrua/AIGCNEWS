@@ -149,6 +149,8 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
             "/api/auth/register": "RegisterRequest",
             "/api/auth/login": "LoginRequest",
             "/api/auth/me/password": "ChangePasswordRequest",
+            # 已登录发码：无请求体（邮箱取自 JWT 声明）
+            "/api/auth/me/send-password-change-otp": None,
         }
 
         for path, schema in expected.items():
@@ -181,7 +183,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
         )
         self.assertEqual(
             schemas["ChangePasswordRequest"]["required"],
-            ["current_password", "new_password"],
+            ["email_code", "new_password"],
         )
         for schema, field in (
             ("SendEmailOtpRequest", "email"),

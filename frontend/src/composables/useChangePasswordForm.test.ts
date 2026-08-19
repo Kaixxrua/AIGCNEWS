@@ -6,33 +6,36 @@ vi.mock('vue-i18n', () => ({
 
 import { useChangePasswordForm } from './useChangePasswordForm'
 
-type SubmitFn = (currentPassword: string, newPassword: string) => Promise<unknown>
+type SubmitFn = (emailCode: string, newPassword: string) => Promise<unknown>
+type SendOtpFn = () => Promise<unknown>
 
 describe('useChangePasswordForm', () => {
   let submit: Mock<SubmitFn>
+  let sendOtp: Mock<SendOtpFn>
 
   beforeEach(() => {
     submit = vi.fn<SubmitFn>().mockResolvedValue({ detail: 'ok' })
+    sendOtp = vi.fn<SendOtpFn>().mockResolvedValue({ detail: 'sent' })
   })
 
   const makeForm = (onChanged?: () => Promise<void> | void) =>
-    useChangePasswordForm({ submit, onChanged })
+    useChangePasswordForm({ submit, sendOtp, onChanged })
 
-  it('rejects an empty current password without calling submit', async () => {
+  it('rejects an invalid otp without calling submit', async () => {
     const form = makeForm()
-    form.currentPwd.value = '   '
+    form.otp.value = '123'
     form.password.value = 'newpass1'
     form.confirmPwd.value = 'newpass1'
 
     await form.handleSubmit()
 
-    expect(form.errorMsg.value).toBe('auth.currentPasswordRequired')
+    expect(form.errorMsg.value).toBe('auth.invalidOtp')
     expect(submit).not.toHaveBeenCalled()
   })
 
   it('rejects a weak new password', async () => {
     const form = makeForm()
-    form.currentPwd.value = 'old-secret'
+    form.otp.value = '123456'
     form.password.value = '123'
     form.confirmPwd.value = '123'
 
@@ -44,7 +47,7 @@ describe('useChangePasswordForm', () => {
 
   it('rejects mismatched password confirmation', async () => {
     const form = makeForm()
-    form.currentPwd.value = 'old-secret'
+    form.otp.value = '123456'
     form.password.value = 'newpass1'
     form.confirmPwd.value = 'newpass2'
 
@@ -54,16 +57,16 @@ describe('useChangePasswordForm', () => {
     expect(submit).not.toHaveBeenCalled()
   })
 
-  it('submits current and new password, marks done, and invokes onChanged on success', async () => {
+  it('submits code and new password, marks done, and invokes onChanged on success', async () => {
     const onChanged = vi.fn()
     const form = makeForm(onChanged)
-    form.currentPwd.value = 'old-secret'
+    form.otp.value = '123456'
     form.password.value = 'newpass1'
     form.confirmPwd.value = 'newpass1'
 
     await form.handleSubmit()
 
-    expect(submit).toHaveBeenCalledWith('old-secret', 'newpass1')
+    expect(submit).toHaveBeenCalledWith('123456', 'newpass1')
     expect(form.changeDone.value).toBe(true)
     expect(form.successMsg.value).toBe('auth.changeSuccess')
     expect(form.errorMsg.value).toBe('')
@@ -74,7 +77,7 @@ describe('useChangePasswordForm', () => {
   it('maps a 429 failure to the rate-limited message', async () => {
     submit.mockRejectedValue({ response: { status: 429 } })
     const form = makeForm()
-    form.currentPwd.value = 'old-secret'
+    form.otp.value = '123456'
     form.password.value = 'newpass1'
     form.confirmPwd.value = 'newpass1'
 
@@ -86,21 +89,21 @@ describe('useChangePasswordForm', () => {
   })
 
   it('surfaces the backend detail message for other failures', async () => {
-    submit.mockRejectedValue({ response: { status: 400, data: { detail: '当前密码错误' } } })
+    submit.mockRejectedValue({ response: { status: 400, data: { detail: '验证码错误或已过期' } } })
     const form = makeForm()
-    form.currentPwd.value = 'wrong-secret'
+    form.otp.value = '000000'
     form.password.value = 'newpass1'
     form.confirmPwd.value = 'newpass1'
 
     await form.handleSubmit()
 
-    expect(form.errorMsg.value).toBe('当前密码错误')
+    expect(form.errorMsg.value).toBe('验证码错误或已过期')
   })
 
   it('falls back to the generic failure message without details', async () => {
     submit.mockRejectedValue({})
     const form = makeForm()
-    form.currentPwd.value = 'old-secret'
+    form.otp.value = '123456'
     form.password.value = 'newpass1'
     form.confirmPwd.value = 'newpass1'
 
@@ -109,9 +112,33 @@ describe('useChangePasswordForm', () => {
     expect(form.errorMsg.value).toBe('auth.changeFailed')
   })
 
+  it('sends otp, starts countdown, and shows the sent hint', async () => {
+    const form = makeForm()
+
+    await form.handleSendOtp()
+
+    expect(sendOtp).toHaveBeenCalledTimes(1)
+    expect(form.countdown.value).toBeGreaterThan(0)
+    expect(form.otpBtnDisabled.value).toBe(true)
+    expect(form.successMsg.value).toBe('auth.changeOtpSent')
+    expect(form.errorMsg.value).toBe('')
+    expect(form.otpLoading.value).toBe(false)
+  })
+
+  it('maps a 429 send-otp failure to the rate-limited message without countdown', async () => {
+    sendOtp.mockRejectedValue({ response: { status: 429 } })
+    const form = makeForm()
+
+    await form.handleSendOtp()
+
+    expect(form.errorMsg.value).toBe('auth.rateLimited')
+    expect(form.countdown.value).toBe(0)
+    expect(form.otpBtnDisabled.value).toBe(false)
+  })
+
   it('reset clears all form state', async () => {
     const form = makeForm()
-    form.currentPwd.value = 'old-secret'
+    form.otp.value = '123456'
     form.password.value = 'newpass1'
     form.confirmPwd.value = 'newpass1'
     await form.handleSubmit()
@@ -119,12 +146,14 @@ describe('useChangePasswordForm', () => {
 
     form.reset()
 
-    expect(form.currentPwd.value).toBe('')
+    expect(form.otp.value).toBe('')
     expect(form.password.value).toBe('')
     expect(form.confirmPwd.value).toBe('')
     expect(form.errorMsg.value).toBe('')
     expect(form.successMsg.value).toBe('')
     expect(form.changeDone.value).toBe(false)
     expect(form.loading.value).toBe(false)
+    expect(form.otpLoading.value).toBe(false)
+    expect(form.countdown.value).toBe(0)
   })
 })
