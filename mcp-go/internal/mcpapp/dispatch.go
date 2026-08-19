@@ -142,11 +142,45 @@ func (a *App) call(req wire.ValidatedRequest) wire.Response {
 	}
 	data, err := handler(args)
 	if err != nil {
-		// 处理器失败在结果层收敛，不泄漏内部细节（语料钉死固定文案）。
+		message := "Tool execution failed."
+		if inputErr, ok := err.(ToolInputError); ok {
+			message = inputErr.Error()
+		}
 		return wire.Result(req.RequestID, toolResult(
-			jsonx.Object{{Key: "error", Value: "Tool execution failed."}}, true))
+			jsonx.Object{{Key: "error", Value: message}}, true))
+	}
+	if name == "get_project_categories" {
+		return wire.Result(req.RequestID, toolResult(orderedProjectCategories(data), false))
 	}
 	return wire.Result(req.RequestID, toolResult(data, false))
+}
+
+func orderedProjectCategories(data map[string]any) jsonx.Object {
+	items := []any{}
+	if raw, ok := data["items"].([]any); ok {
+		for _, item := range raw {
+			if category, ok := item.(map[string]any); ok {
+				subcategories := []any{}
+				if rawSub, ok := category["subcategories"].([]any); ok {
+					for _, sub := range rawSub {
+						if value, ok := sub.(map[string]any); ok {
+							subcategories = append(subcategories, jsonx.Object{{Key: "slug", Value: value["slug"]}, {Key: "name", Value: value["name"]}, {Key: "name_zh", Value: value["name_zh"]}, {Key: "name_en", Value: value["name_en"]}, {Key: "project_count", Value: value["project_count"]}})
+						}
+					}
+				}
+				items = append(items, jsonx.Object{{Key: "slug", Value: category["slug"]}, {Key: "name", Value: category["name"]}, {Key: "name_zh", Value: category["name_zh"]}, {Key: "name_en", Value: category["name_en"]}, {Key: "project_count", Value: category["project_count"]}, {Key: "subcategories", Value: subcategories}})
+			}
+		}
+	}
+	return jsonx.Object{
+		{Key: "items", Value: items},
+		{Key: "total", Value: data["total"]},
+		{Key: "today_count", Value: data["today_count"]},
+		{Key: "recommended_count", Value: data["recommended_count"]},
+		{Key: "min_stars", Value: data["min_stars"]},
+		{Key: "source", Value: data["source"]},
+		{Key: "attribution", Value: data["attribution"]},
+	}
 }
 
 // toolResult 复刻 responses._tool_response：内层 text 用 Python 默认

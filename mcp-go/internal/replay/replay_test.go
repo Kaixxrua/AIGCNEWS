@@ -179,6 +179,9 @@ func newReplayHandler(t *testing.T, caseName string) http.Handler {
 			return nil, errParityProbe
 		},
 	}
+	for name, handler := range mcpapp.NewProjectCategoriesHandlers(mcpapp.StaticProjectCategoriesRepository{}) {
+		registry[name] = handler
+	}
 	app := mcpapp.New(version.ServerName, version.Fallback, registry)
 	if caseName == "internal-error-500" {
 		app.PanicOnMethods = map[string]bool{"tools/list": true}

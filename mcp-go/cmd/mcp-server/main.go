@@ -69,7 +69,7 @@ func run() int {
 	serverVersion := version.Resolve()
 	// PR 1.2：工具注册表为空——所有 tools/call 走未知工具分支（语料钉死），
 	// 真实工具自 Phase 2 逐只接入。
-	app := mcpapp.New(version.ServerName, serverVersion, nil)
+	app := mcpapp.New(version.ServerName, serverVersion, mcpapp.NewProjectCategoriesHandlers(mcpapp.StaticProjectCategoriesRepository{}))
 
 	// 限流层接线（PR 1.3）。对齐 Python 语义：redis-py 构造不预连，故障
 	// 发生在请求期并由 enforce 的 except 吞掉（fail-open）；go-redis 同样
