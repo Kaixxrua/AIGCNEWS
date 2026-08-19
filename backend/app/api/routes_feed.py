@@ -8,7 +8,8 @@
 
 设计要点：
   - 公开 feed 只出摘要 + 回链（arxiv 指站内阅读页，其余源指原文链接），
-    全文是会员权益；Cache-Control 交双边缘缓存，回源压力近零。
+    全文是会员权益；每条摘要尾部带一行会员订阅钩子（指向 /membership），
+    会员 feed 不带。Cache-Control 交双边缘缓存，回源压力近零。
   - 会员 feed 复用 user_mcp_tokens 鉴权（hash_mcp_token → token→user→tier），
     响应 noindex + private/no-store——带 token 的 URL 绝不进边缘缓存。
   - github 源由站内项目库「今日暴涨 top50」热榜供稿（scope=today + hot 排序，
@@ -72,6 +73,11 @@ _CHANNEL_DESCRIPTION = "AI 资讯聚合：arXiv 论文、GitHub 项目、Product
 
 _MEMBER_ONLY_DETAIL = "全文 RSS 是会员权益，开通会员后使用你的访问令牌订阅"
 _INVALID_TOKEN_DETAIL = "feed 令牌无效或已吊销"
+
+# 公开 feed 转化钩子：每条摘要尾部一行，指向游客可见的会员页（获客漏斗末端）。
+# RSS 条目在阅读器里被逐条消费、脱离 channel 上下文，钩子须随条目走。
+# 会员 feed 不带钩子——付费内容里不插广告。
+_PUBLIC_HOOK_PREFIX = "📮 订阅会员全文 RSS（中文译文 · 完整归档）："
 
 # github 源供稿口径：站内项目库「今日暴涨」热榜（scope=today 强制 hot 排序）top50。
 _GITHUB_HOT_FEED_LIMIT = 50
@@ -222,6 +228,9 @@ def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -
         return None
 
     description = _item_description(row, full=full)
+    if not full:
+        hook = f"{_PUBLIC_HOOK_PREFIX}{base_url}/membership"
+        description = f"{description}\n\n{hook}" if description else hook
     categories = "".join(f"<category>{escape(tag)}</category>" for tag in _parse_tags(row.get("tags")))
 
     published = _parse_published_at(_row_published_value(row))

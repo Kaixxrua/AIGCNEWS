@@ -70,7 +70,16 @@ def test_build_feed_item_arxiv_links_to_internal_read_page() -> None:
     assert "<link>https://aigcnews.cn/papers/2508.12345/read</link>" in item
     assert '<guid isPermaLink="false">arxiv:2508.12345</guid>' in item
     assert "<pubDate>Tue, 18 Aug 2026 08:00:00 +0000</pubDate>" in item
-    assert "<description>摘要</description>" in item
+    # 公开条目：摘要 + 转化钩子（指向游客可见的会员页）
+    assert "<description>摘要\n\n📮 订阅会员全文 RSS（中文译文 · 完整归档）：https://aigcnews.cn/membership</description>" in item
+
+
+def test_build_feed_item_full_mode_omits_conversion_hook() -> None:
+    # 会员条目不带钩子——付费内容里不插广告
+    item = build_feed_item(_doc("2508.12345", translation_zh="中文译文"), "https://aigcnews.cn", full=True)
+    assert item is not None
+    assert "📮" not in item
+    assert "中文译文" in item
 
 
 def test_build_feed_item_non_arxiv_links_to_original_url() -> None:
@@ -132,7 +141,10 @@ def test_build_feed_item_full_mode_appends_translation_once() -> None:
     full = build_feed_item(row, "https://aigcnews.cn", full=True)
     assert full is not None and "摘要\n\n中文译文" in full
     public = build_feed_item(row, "https://aigcnews.cn", full=False)
-    assert public is not None and "中文译文" not in public
+    # 防泄漏口径：译文正文不得以「摘要\n\n译文」的追加形态出现在公开条目；
+    # 钩子营销文案里提到"中文译文"四字不算泄漏
+    assert public is not None and "摘要\n\n中文译文" not in public
+    assert "📮" in public
     # 译文与摘要相同（未翻译内容回填）时不重复
     same = build_feed_item(_doc("i", translation_zh="摘要"), "https://aigcnews.cn", full=True)
     assert same is not None and same.count("摘要") == 1
@@ -433,6 +445,8 @@ def test_member_feed_returns_full_content_for_member() -> None:
     response = client.get("/api/feeds/member.xml?token=ok")
     assert response.status_code == 200
     assert "中文译文" in response.text
+    # 会员 feed 不带获客钩子
+    assert "📮" not in response.text
     assert "charset=utf-8" in response.headers["content-type"]
     assert response.headers["x-robots-tag"] == "noindex"
     assert response.headers["cache-control"] == "private, no-store"
