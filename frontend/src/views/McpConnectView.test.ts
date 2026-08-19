@@ -6,6 +6,7 @@ import McpConnectView from './McpConnectView.vue'
 
 const controllerSpy = vi.hoisted(() => vi.fn())
 const clipboardCopy = vi.hoisted(() => vi.fn())
+const requestLogin = vi.hoisted(() => vi.fn())
 const ctlBox = vi.hoisted(() => ({ current: null as null | Record<string, any> }))
 const authBox = vi.hoisted(() => ({ current: null as null | { isLoggedIn: boolean; isAdmin: boolean; isMember: boolean } }))
 
@@ -17,6 +18,10 @@ vi.mock('@/stores/authStore', async () => {
 
 vi.mock('@/composables/useClipboard', () => ({
   useClipboard: () => ({ copy: clipboardCopy }),
+}))
+
+vi.mock('@/composables/useLoginPrompt', () => ({
+  useLoginPrompt: () => ({ requestLogin }),
 }))
 
 vi.mock('@/composables/useMcpConnectController', async () => {
@@ -180,11 +185,11 @@ beforeEach(() => {
   auth().isMember = false
   controllerSpy.mockClear()
   clipboardCopy.mockClear()
+  requestLogin.mockClear()
 })
 
 describe('McpConnectView controller boundary', () => {
-  it('hands clipboard, auth, navigation and translate seams to the controller', async () => {
-    const pushSpy = vi.spyOn(testRouter, 'push')
+  it('hands clipboard, auth, login prompt and translate seams to the controller', async () => {
     await mountView()
 
     expect(controllerSpy).toHaveBeenCalledOnce()
@@ -194,7 +199,7 @@ describe('McpConnectView controller boundary', () => {
     expect(typeof init.translate).toBe('function')
 
     await init.navigateToLogin()
-    expect(pushSpy).toHaveBeenCalledWith('/login')
+    expect(requestLogin).toHaveBeenCalledWith('/mcp')
   })
 
   it('loads tokens on mount and disposes the controller on unmount', async () => {
@@ -264,7 +269,6 @@ describe('McpConnectView localized rendering', () => {
     expect(sections[4]!.text()).toContain('search_github_ai_projects')
     expect(sections[5]!.text()).toContain('MCP 优先路由')
   })
-
 })
 
 describe('McpConnectView privacy and auth behavior', () => {
@@ -320,9 +324,8 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(controller().copyGeneratedCommand).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the login call-to-action when logged out and routes to login', async () => {
+  it('shows the login call-to-action when logged out and opens the login prompt in place', async () => {
     auth().isLoggedIn = false
-    const pushSpy = vi.spyOn(testRouter, 'push')
     const wrapper = await mountView()
     await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
     await flushPromises()
@@ -332,7 +335,8 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(wrapper.text()).not.toContain('令牌管理')
 
     await loginButton!.trigger('click')
-    expect(pushSpy).toHaveBeenCalledWith('/login')
+    expect(requestLogin).toHaveBeenCalledWith('/mcp')
+    expect(testRouter.currentRoute.value.fullPath).toBe('/mcp')
   })
 
   it('renders tokens from controller state and forwards removal', async () => {
@@ -364,9 +368,12 @@ describe('McpConnectView quota upsell notice', () => {
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain('匿名调用限额 100 次/天')
-    const cta = wrapper.get('a[href="/login"]')
+    const cta = wrapper.get('a[href="/mcp"]')
     expect(cta.text()).toContain('登录提升额度')
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+
+    await cta.trigger('click')
+    expect(requestLogin).toHaveBeenCalledWith('/mcp')
   })
 
   it('prompts free-tier users to open VIP for a higher quota', async () => {

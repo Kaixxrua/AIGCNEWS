@@ -2,6 +2,7 @@ import axios from 'axios'
 import { showToast } from '@/composables/useToast'
 import { i18n } from '@/i18n'
 import { readAuthToken, removeAuthToken } from '@/services/http/authTokenStorage'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 
 export const api = axios.create({
   baseURL: '/api',
@@ -63,9 +64,8 @@ api.interceptors.response.use(
       if (!isAuthEndpoint) {
         _is401Handling = true
         try {
-          const { default: router } = await import('@/router/index')
           showToast(i18n.global.t('auth.sessionExpired'))
-          await router.push('/login')
+          useLoginPrompt().requestLogin()
         } finally {
           _is401Handling = false
         }

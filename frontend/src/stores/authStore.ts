@@ -84,14 +84,14 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value!
   }
 
-  /** 退出：清除 token/user，跳转 /login */
+  /** 退出：清除 token/user，回到首页 */
   function logout(): void {
     token.value = null
     user.value = null
     status.value = 'anonymous'
     removeStorage(TOKEN_KEY)
     import('@/router/index').then(({ default: router }) => {
-      router.push('/login')
+      router.push('/')
     })
   }
 

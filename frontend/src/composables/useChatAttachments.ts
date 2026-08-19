@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
 import { showToast } from '@/composables/useToast'
@@ -14,7 +14,7 @@ import {
 export const useChatAttachments = (inputText: Ref<string>) => {
   const store = useChatStore()
   const authStore = useAuthStore()
-  const router = useRouter()
+  const { requestLogin } = useLoginPrompt()
   const isUploading = ref(false)
   const attachmentMetas = ref<AttachmentMeta[]>([])
 
@@ -39,7 +39,7 @@ export const useChatAttachments = (inputText: Ref<string>) => {
 
     if (!authStore.isLoggedIn) {
       authStore.savePendingMessage(inputText.value.trim())
-      router.push({ path: '/login', query: { redirect: '/chat' } })
+      requestLogin('/chat')
       input.value = ''
       return
     }

@@ -14,6 +14,7 @@ import type {
 } from '@/services/projects/projectApi'
 import router from '@/router'
 import { useAuthStore } from '@/stores/authStore'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
@@ -41,6 +42,7 @@ defineOptions({ name: 'GitHubProjectsView' })
 const { locale, t } = useI18n()
 const categoryLabel = (item: Parameters<typeof localizedCategoryName>[0]) => localizedCategoryName(item, locale.value as AppLocale)
 const authStore = useAuthStore()
+const { requestLogin } = useLoginPrompt()
 const route = useRoute()
 const source = ref<ProjectViewSource>('all')
 const selectedScope = ref<ProjectScope>(defaultProjectScopeForQuery('all', ''))
@@ -79,7 +81,7 @@ const controller = useProjectCatalogController({
   isLoggedIn: () => authStore.isLoggedIn,
   isAdmin: () => authStore.isAdmin,
   currentRedirect: currentProjectsRedirect,
-  navigateToLogin: async (redirect) => { await router.push({ path: '/login', query: { redirect } }) },
+  navigateToLogin: async (redirect) => { requestLogin(redirect) },
   replaceRouteFromState,
 })
 
@@ -287,9 +289,9 @@ watch(debouncedQuery, (value) => {
   }
 })
 
-const goToPersonalLogin = () => { router.push({ path: '/login', query: { redirect: currentProjectsRedirect() } }) }
+const goToPersonalLogin = () => { requestLogin(currentProjectsRedirect()) }
 const openAddDialog = () => {
-  if (!authStore.isLoggedIn) { router.push({ path: '/login', query: { redirect: '/projects?source=website' } }); return }
+  if (!authStore.isLoggedIn) { requestLogin('/projects?source=website'); return }
   addToolError.value = ''
   addDialogOpen.value = true
   void Promise.all([loadTaxonomy(), controller.loadWebsiteQuota?.()])

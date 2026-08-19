@@ -45,3 +45,12 @@ describe('contact site page contract', () => {
     expect(record?.meta.requiresAdmin).toBeUndefined()
   })
 })
+
+// 契约：订阅管理页要求登录；匿名深链走 /login 全屏回退，应用内交互走登录弹框。
+describe('subscriptions auth contract', () => {
+  it('anonymous deep link to subscriptions redirects to /login with redirect', () => {
+    const resolved = router.resolve('/subscriptions')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
+      .toEqual({ path: '/login', query: { redirect: '/subscriptions' } })
+  })
+})

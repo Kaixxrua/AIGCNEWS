@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
 import ReportSubscriptionPanel from '@/components/report/ReportSubscriptionPanel.vue'
@@ -12,6 +12,7 @@ import { useReportController } from '@/composables/useReportController'
 import { useReportSubscriptions } from '@/composables/useReportSubscriptions'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import { useAuthStore } from '@/stores/authStore'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import {
   getReportTypeInfo,
   type BatchSubscriptionResponse,
@@ -22,7 +23,7 @@ import {
 
 const { locale, t } = useI18n()
 const authStore = useAuthStore()
-const router = useRouter()
+const { requestLogin } = useLoginPrompt()
 const route = useRoute()
 
 const { renderMarkdown } = useLatexRenderer()
@@ -106,7 +107,7 @@ const {
     },
   },
   redirectToLogin: () => {
-    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    requestLogin(route.fullPath)
   },
   setError: message => { errorMsg.value = message },
 })

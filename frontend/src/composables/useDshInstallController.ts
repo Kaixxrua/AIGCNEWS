@@ -18,14 +18,10 @@ export const useDshInstallController = (options: DshInstallControllerOptions = {
   let timer: ReturnType<typeof setTimeout> | undefined
   let active = true
 
-  const copyDshInstallCommand = async (methodId: DshPluginInstallMethodId = 'npm') => {
-    const method = DSH_PLUGIN_INSTALL_METHODS.find((candidate) => candidate.id === methodId)
-      ?? DSH_PLUGIN_INSTALL_METHODS[0]
-    if (!method) return
+  const copyValue = async (key: string, value: string) => {
     try {
-      await copy(method.command)
+      await copy(value)
       if (!active) return
-      const key = `dsh-install-${method.id}`
       copiedKey.value = key
       if (timer) cancelSchedule(timer)
       timer = schedule(() => {
@@ -36,6 +32,13 @@ export const useDshInstallController = (options: DshInstallControllerOptions = {
     }
   }
 
+  const copyDshInstallCommand = async (methodId: DshPluginInstallMethodId = 'npm') => {
+    const method = DSH_PLUGIN_INSTALL_METHODS.find((candidate) => candidate.id === methodId)
+      ?? DSH_PLUGIN_INSTALL_METHODS[0]
+    if (!method) return
+    await copyValue(`dsh-install-${method.id}`, method.command)
+  }
+
   const dispose = () => {
     if (!active) return
     active = false
@@ -44,5 +47,5 @@ export const useDshInstallController = (options: DshInstallControllerOptions = {
     timer = undefined
   }
 
-  return { copiedKey, copyDshInstallCommand, dispose }
+  return { copiedKey, copyValue, copyDshInstallCommand, dispose }
 }

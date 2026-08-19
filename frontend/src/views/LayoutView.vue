@@ -12,6 +12,8 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
 import AppDock from '@/components/layout/AppDock.vue'
 import LayoutFooter from '@/components/layout/LayoutFooter.vue'
 import ChangePasswordDialog from '@/components/auth/ChangePasswordDialog.vue'
+import LoginDialog from '@/components/auth/LoginDialog.vue'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import {
   KEEP_ALIVE_MAX,
   KEEP_ALIVE_VIEW_NAMES,
@@ -26,6 +28,7 @@ import { dockSuppressed } from '@/composables/useDockSuppression'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const { isOpen: loginOpen, redirectTarget: loginRedirect, requestLogin, closeLoginPrompt } = useLoginPrompt()
 // 实例化即开始对 admin 轮询富化失败状态；失败 > 0 时「监控」导航按钮显示红点
 const enrichmentAlert = useEnrichmentAlertStore()
 const dockAlertItems = computed(() => (enrichmentAlert.hasFailures ? ['/monitor'] : []))
@@ -104,7 +107,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       :is-admin="authStore.isAdmin"
       :is-logged-in="authStore.isLoggedIn"
       :alert-items="dockAlertItems"
-      @login="router.push('/login')"
+      @login="requestLogin()"
       @logout="authStore.logout()"
       @change-password="changePasswordOpen = true"
     />
@@ -126,6 +129,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     </button>
 
     <ChangePasswordDialog v-model="changePasswordOpen" />
+    <LoginDialog v-model="loginOpen" :redirect="loginRedirect" @success="closeLoginPrompt" />
 
     <LayoutFooter :brand-name="brandName" />
 

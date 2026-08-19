@@ -16,6 +16,9 @@ describe('useDshInstallController', () => {
       'dsh plugin --profile web add dsh-aigc-radar',
     ])
     expect(controller.copiedKey.value).toBe('dsh-install-npm')
+    await controller.copyValue('dsh-patch', 'secret patch')
+    expect(copy).toHaveBeenLastCalledWith('secret patch')
+    expect(controller.copiedKey.value).toBe('dsh-patch')
     controller.dispose()
   })
 

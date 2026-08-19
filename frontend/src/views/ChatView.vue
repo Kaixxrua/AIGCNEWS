@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useChatStore, type ChatSettings } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import ChatComposer from '@/components/chat/ChatComposer.vue'
 import ChatConversationSidebar from '@/components/chat/ChatConversationSidebar.vue'
@@ -17,7 +17,7 @@ import { CHAT_SERVICE_ENABLED } from '@/features/chat/chatFeatureFlags'
 const { t } = useI18n()
 const store = useChatStore()
 const authStore = useAuthStore()
-const router = useRouter()
+const { requestLogin } = useLoginPrompt()
 const inputText = ref('')
 const listRef = ref<HTMLElement | null>(null)
 const showSettings = ref(false)
@@ -111,7 +111,7 @@ const handleSend = async () => {
 
   if (!authStore.isLoggedIn) {
     authStore.savePendingMessage(text)
-    router.push({ path: '/login', query: { redirect: '/chat' } })
+    requestLogin('/chat')
     return
   }
 

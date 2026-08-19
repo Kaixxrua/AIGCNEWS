@@ -49,6 +49,20 @@ describe('getRoutePolicyRedirect', () => {
     expect(getRoutePolicyRedirect(route({ guestOnly: true }), auth('degraded'))).toBeNull()
     expect(getRoutePolicyRedirect(route({ guestOnly: true }), auth('anonymous'))).toBeNull()
   })
+
+  it('preserves query and hash in the login redirect for protected deep links', () => {
+    expect(getRoutePolicyRedirect(
+      route({ requiresAuth: true }, '/membership/checkout?plan=yearly#payment'),
+      auth('anonymous'),
+    )).toEqual({ path: '/login', query: { redirect: '/membership/checkout?plan=yearly#payment' } })
+  })
+
+  it('anonymous requiresAdmin hits login, not the non-admin home redirect', () => {
+    expect(getRoutePolicyRedirect(route({ requiresAdmin: true }, '/monitor'), auth('anonymous')))
+      .toEqual({ path: '/login', query: { redirect: '/monitor' } })
+    expect(getRoutePolicyRedirect(route({ requiresAdmin: true }, '/monitor'), auth('authenticated')))
+      .toEqual({ path: '/' })
+  })
 })
 
 describe('getFeatureGateRedirect', () => {

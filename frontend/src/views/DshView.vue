@@ -1,21 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import { useClipboard } from '@/composables/useClipboard'
-import { useDshInstallController } from '@/composables/useDshInstallController'
-import { DSH_PLUGIN_INSTALL_METHODS, DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
+import DshSetupWizard from '@/components/dsh/DshSetupWizard.vue'
+import { DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
 
 const { t } = useI18n()
-const { copy } = useClipboard()
-const copyError = ref(false)
-const controller = useDshInstallController({
-  copy,
-  onCopyError: () => { copyError.value = true },
-})
-const { copiedKey, copyDshInstallCommand, dispose } = controller
-
-onBeforeUnmount(dispose)
 </script>
 
 <template>
@@ -35,38 +24,7 @@ onBeforeUnmount(dispose)
           </div>
         </section>
 
-        <section class="glass-card p-5 md:p-7" :aria-label="t('dsh.installTitle')">
-          <p class="text-2xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('dsh.installKicker') }}</p>
-          <h2 class="mt-1 text-xl font-extrabold">{{ t('dsh.installTitle') }}</h2>
-          <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('dsh.installDescription') }}</p>
-          <p v-if="copyError" class="mt-4 border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700">{{ t('mcp.copyFailed') }}</p>
-          <div class="mt-5 grid gap-3">
-            <article
-              v-for="method in DSH_PLUGIN_INSTALL_METHODS"
-              :key="method.id"
-              class="dsh-install-method grid min-w-0 gap-4 border border-stone-200 bg-card/70 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
-              :class="method.recommended ? 'dsh-install-method--recommended' : ''"
-              :data-install-method="method.id"
-            >
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-sm font-extrabold">{{ t(method.titleKey) }}</h3>
-                  <span v-if="method.recommended" class="border border-stone-900 bg-[var(--acid)] px-2 py-0.5 text-2xs font-extrabold">{{ t('dsh.recommended') }}</span>
-                </div>
-                <p class="mt-1 text-xs leading-5 text-stone-500">{{ t(method.descriptionKey) }}</p>
-                <code class="mt-3 block overflow-x-auto whitespace-nowrap border border-stone-700 bg-stone-900 px-3 py-2 font-mono text-xs leading-5 text-stone-100">{{ method.command }}</code>
-                <p v-if="method.sourceInstall" class="mt-3 text-xs leading-5 text-amber-800">
-                  <strong>{{ t('dsh.sourceWarningTitle') }}</strong>
-                  {{ t('dsh.sourceWarning') }}
-                  <code>github:Kaixxrua/dsh-aigc-radar#&lt;sha&gt;</code>
-                </p>
-              </div>
-              <button type="button" class="btn-primary justify-center text-xs" @click="copyDshInstallCommand(method.id)">
-                {{ t(copiedKey === `dsh-install-${method.id}` ? 'mcp.copied' : 'dsh.copy') }}
-              </button>
-            </article>
-          </div>
-        </section>
+        <DshSetupWizard />
 
         <section class="glass-card grid gap-3 p-5 md:grid-cols-[auto_minmax(0,1fr)] md:items-start md:p-6">
           <div class="flex h-10 w-10 items-center justify-center border border-ink bg-[var(--acid)] text-lg font-black">✦</div>

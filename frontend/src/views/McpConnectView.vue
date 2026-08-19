@@ -2,22 +2,22 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
-import { useRouter } from 'vue-router'
 import { useClipboard } from '@/composables/useClipboard'
 import { useMcpConnectController } from '@/composables/useMcpConnectController'
 import McpSetupWizard from '@/components/mcp/McpSetupWizard.vue'
 import { formatLocaleDate } from '@/i18n/formatters'
 import { useAuthStore } from '@/stores/authStore'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 
 const { t } = useI18n()
-const router = useRouter()
 const authStore = useAuthStore()
 const { copy } = useClipboard()
+const { requestLogin } = useLoginPrompt()
 
 const controller = useMcpConnectController({
   copy,
   isLoggedIn: () => authStore.isLoggedIn,
-  navigateToLogin: async () => { await router.push('/login') },
+  navigateToLogin: async () => { requestLogin('/mcp') },
   translate: t,
 })
 
@@ -64,12 +64,12 @@ onBeforeUnmount(dispose)
           </div>
           <div v-if="!authStore.isMember" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[20px] border border-amber-200 bg-amber-50/70 px-3 py-2">
             <p class="min-w-0 flex-1 basis-64 text-xs leading-5 text-amber-900">{{ t(authStore.isLoggedIn ? 'mcp.quota.free' : 'mcp.quota.anonymous') }}</p>
-            <RouterLink :to="authStore.isLoggedIn ? '/membership' : '/login'" class="btn-secondary shrink-0 text-xs">{{ t(authStore.isLoggedIn ? 'mcp.quota.vipCta' : 'mcp.quota.loginCta') }}</RouterLink>
+            <RouterLink :to="authStore.isLoggedIn ? '/membership' : '/mcp'" @click="!authStore.isLoggedIn && requestLogin('/mcp')" class="btn-secondary shrink-0 text-xs">{{ t(authStore.isLoggedIn ? 'mcp.quota.vipCta' : 'mcp.quota.loginCta') }}</RouterLink>
           </div>
         </div>
       </section>
 
-      <McpSetupWizard :controller="controller" :is-logged-in="authStore.isLoggedIn" @login="router.push('/login')" />
+      <McpSetupWizard :controller="controller" :is-logged-in="authStore.isLoggedIn" @login="requestLogin('/mcp')" />
 
       <section class="glass-card flex flex-wrap items-center justify-between gap-4 p-4 md:p-5" :aria-label="t('mcp.dshPlugin.kicker')">
         <div class="min-w-0 flex-1 basis-72">

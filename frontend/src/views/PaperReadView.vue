@@ -9,11 +9,13 @@ import { usePaperReaderController } from '@/composables/usePaperReaderController
 import { api } from '@/services/http/apiClient'
 import { fetchPaperDetail, type PaperItem } from '@/services/papers/paperApi'
 import { useAuthStore } from '@/stores/authStore'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { useChatStore } from '@/stores/chatStore'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const { requestLogin } = useLoginPrompt()
 const chatStore = useChatStore()
 const { connect } = useEventSource()
 const { renderMarkdown, copyFormulas, handleFormulaCopy } = useLatexRenderer()
@@ -61,10 +63,8 @@ watch(paperId, handlePaperIdChange)
 onMounted(() => document.addEventListener('click', handleFormulaCopy))
 onUnmounted(() => document.removeEventListener('click', handleFormulaCopy))
 
-const loginRedirect = computed(() => ({
-  path: '/login',
-  query: { redirect: route.fullPath },
-}))
+const loginRedirect = computed(() => route.fullPath)
+const openLogin = () => requestLogin(loginRedirect.value)
 </script>
 
 <template>
@@ -92,7 +92,7 @@ const loginRedirect = computed(() => ({
     />
     <div v-if="!conversationEnabled" class="guest-cta flex items-center justify-center gap-3 px-4 py-2 text-sm">
       <span>{{ $t('paper.guestCta') }}</span>
-      <router-link :to="loginRedirect" class="guest-cta-link">{{ $t('paper.guestLogin') }}</router-link>
+      <button type="button" class="guest-cta-link" @click="openLogin">{{ $t('paper.guestLogin') }}</button>
     </div>
     <PaperDocumentPanel
       :paper="paper"

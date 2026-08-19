@@ -15,11 +15,13 @@ import type { GitHubProjectItem } from '@/services/projects/projectApi'
 
 const controllerSpy = vi.hoisted(() => vi.fn())
 const routerPush = vi.hoisted(() => vi.fn())
+const requestLogin = vi.hoisted(() => vi.fn())
 const ctlBox = vi.hoisted(() => ({ current: null as null | Record<string, any> }))
 const authBox = vi.hoisted(() => ({ current: null as null | { isLoggedIn: boolean; isAdmin: boolean } }))
 const routeStateBox = vi.hoisted(() => ({ current: null as null | Record<string, any> }))
 
 vi.mock('@/router', () => ({ default: { push: routerPush } }))
+vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin }) }))
 
 vi.mock('@/stores/authStore', async () => {
   const { reactive } = await import('vue')
@@ -175,6 +177,7 @@ beforeEach(() => {
   auth().isAdmin = false
   controllerSpy.mockClear()
   routerPush.mockClear()
+  requestLogin.mockClear()
   window.localStorage.removeItem(MCP_PROMO_DISMISSED_STORAGE_KEY)
 })
 
@@ -193,7 +196,8 @@ describe('GitHubProjectsView controller wiring', () => {
     expect(init.replaceRouteFromState).toBe(routeState().replaceRouteFromState)
 
     await init.navigateToLogin('/projects?source=website')
-    expect(routerPush).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/projects?source=website' } })
+    expect(requestLogin).toHaveBeenCalledWith('/projects?source=website')
+    expect(routerPush).not.toHaveBeenCalledWith(expect.objectContaining({ path: '/login' }))
   })
 
   it('refreshes reads on mount when route state applies', async () => {
@@ -324,14 +328,14 @@ describe('GitHubProjectsView dialog orchestration', () => {
     expect(wrapper.findComponent(BrowserHomeGuideDialog).props('open')).toBe(false)
   })
 
-  it('redirects anonymous add attempts to login instead of opening the dialog', async () => {
+  it('opens the login prompt for anonymous add attempts instead of leaving the page', async () => {
     auth().isLoggedIn = false
     const wrapper = await mountView()
     await switchToWebsiteSource(wrapper)
 
     await wrapper.find('.projects-add-btn').trigger('click')
 
-    expect(routerPush).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/projects?source=website' } })
+    expect(requestLogin).toHaveBeenCalledWith('/projects?source=website')
     expect(wrapper.findComponent(ToolWebsiteAddDialog).props('open')).toBe(false)
   })
 
@@ -384,7 +388,8 @@ describe('GitHubProjectsView dialog orchestration', () => {
 
     await wrapper.find('.projects-login-prompt__action').trigger('click')
 
-    expect(routerPush).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/projects' } })
+    expect(requestLogin).toHaveBeenCalledWith('/projects')
+    expect(routerPush).not.toHaveBeenCalledWith(expect.objectContaining({ path: '/login' }))
   })
 })
 

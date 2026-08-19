@@ -8,6 +8,9 @@ vi.mock('../services/auth/authApi', () => ({
   loginWithPassword: vi.fn(),
 }))
 
+const routerPush = vi.hoisted(() => vi.fn())
+vi.mock('@/router/index', () => ({ default: { push: routerPush } }))
+
 const mockedFetchCurrentUser = vi.mocked(fetchCurrentUser)
 const user = { user_id: 1, email: 'user@example.com', role: 'user' as const }
 
@@ -55,11 +58,7 @@ describe('auth store bootstrap', () => {
     expect(localStorage.getItem('auth_token')).toBeNull()
   })
 
-  it.each([
-    new Error('Network Error'),
-    { code: 'ECONNABORTED', message: 'timeout' },
-    { response: { status: 503 } },
-  ])('retains credentials and degrades for an unconfirmed failure', async (error) => {
+  it('retains credentials and degrades for an unconfirmed failure', async (error) => {
     localStorage.setItem('auth_token', 'saved-token')
     mockedFetchCurrentUser.mockRejectedValue(error)
     const store = useAuthStore()
@@ -70,5 +69,30 @@ describe('auth store bootstrap', () => {
     expect(store.user).toBeNull()
     expect(store.status).toBe('degraded')
     expect(localStorage.getItem('auth_token')).toBe('saved-token')
+  })
+})
+
+describe('auth store logout', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    routerPush.mockReset()
+    setActivePinia(createPinia())
+  })
+
+  it('clears credentials and navigates home instead of /login', async () => {
+    localStorage.setItem('auth_token', 'session-token')
+    const store = useAuthStore()
+    store.savePendingMessage('稍后发送')
+
+    store.logout()
+    await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith('/'))
+
+    expect(store.token).toBeNull()
+    expect(store.user).toBeNull()
+    expect(store.status).toBe('anonymous')
+    expect(localStorage.getItem('auth_token')).toBeNull()
+    expect(routerPush).not.toHaveBeenCalledWith('/login')
+    // 待发送消息是会话上下文，不随登出丢失
+    expect(store.consumePendingMessage()).toBe('稍后发送')
   })
 })

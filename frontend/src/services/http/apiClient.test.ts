@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
     create: vi.fn(() => apiClient),
     requestUse,
     responseUse,
-    routerPush: vi.fn(),
+    requestLogin: vi.fn(),
     useAuthStore: vi.fn(),
     getActivePinia: vi.fn(),
     showToast: vi.fn(),
@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('axios', () => ({ default: { create: mocks.create } }))
 vi.mock('../../stores/authStore', () => ({ useAuthStore: mocks.useAuthStore }))
 vi.mock('pinia', () => ({ getActivePinia: mocks.getActivePinia }))
-vi.mock('../../router/index', () => ({ default: { push: mocks.routerPush } }))
+vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin: mocks.requestLogin }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: mocks.showToast }))
 
 import { api } from './apiClient'
@@ -45,7 +45,7 @@ const responseRejectedInterceptor = mocks.responseUse.mock.calls[0]![1] as Rejec
 
 describe('frontend API transport contract', () => {
   beforeEach(() => {
-    mocks.routerPush.mockReset()
+    mocks.requestLogin.mockReset()
     mocks.useAuthStore.mockReset()
     mocks.getActivePinia.mockReset()
     mocks.showToast.mockReset()
@@ -93,38 +93,38 @@ describe('frontend API transport contract', () => {
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('must-not-be-logged')
   })
 
-  it('single-flights non-auth 401 navigation and releases the guard after navigation settles', async () => {
+  it('opens the shared login prompt for non-auth 401 responses after clearing auth state', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const authStore = { token: 'old-token', user: { id: 1 } as unknown, status: 'authenticated' }
-    const pinia = {}
-    mocks.getActivePinia.mockReturnValue(pinia)
+    mocks.getActivePinia.mockReturnValue({})
     mocks.useAuthStore.mockReturnValue(authStore)
     localStorage.setItem('auth_token', 'old-token')
 
-    let finishNavigation!: () => void
-    mocks.routerPush.mockImplementationOnce(() => new Promise<void>((resolve) => { finishNavigation = resolve }))
     const firstError = { config: { url: '/projects' }, response: { status: 401 } }
-    const first = responseRejectedInterceptor(firstError)
-    await vi.waitFor(() => expect(mocks.routerPush).toHaveBeenCalledOnce())
+    await expect(responseRejectedInterceptor(firstError)).rejects.toBe(firstError)
 
-    const concurrentError = { config: { url: '/papers/search' }, response: { status: 401 } }
-    await expect(responseRejectedInterceptor(concurrentError)).rejects.toBe(concurrentError)
     expect(mocks.showToast).toHaveBeenCalledOnce()
-    expect(mocks.routerPush).toHaveBeenCalledOnce()
+    expect(mocks.requestLogin).toHaveBeenCalledOnce()
+    expect(mocks.requestLogin).toHaveBeenCalledWith()
     expect(localStorage.getItem('auth_token')).toBeNull()
     expect(authStore).toEqual({ token: null, user: null, status: 'anonymous' })
-
-    finishNavigation()
-    await expect(first).rejects.toBe(firstError)
-
-    mocks.routerPush.mockResolvedValueOnce(undefined)
-    const laterError = { config: { url: '/dashboard' }, response: { status: 401 } }
-    await expect(responseRejectedInterceptor(laterError)).rejects.toBe(laterError)
-    expect(mocks.showToast).toHaveBeenCalledTimes(2)
-    expect(mocks.routerPush).toHaveBeenCalledTimes(2)
   })
 
-  it.each(['/auth/login', '/auth/me', '/auth/me/mcp-tokens'])('cleans auth state but suppresses login navigation for %s', async (url) => {
+  it('reasserts the login prompt for each subsequent 401 without navigating away', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    mocks.getActivePinia.mockReturnValue({})
+    mocks.useAuthStore.mockReturnValue({ token: 'old-token', user: null, status: 'authenticated' })
+
+    const firstError = { config: { url: '/projects' }, response: { status: 401 } }
+    await expect(responseRejectedInterceptor(firstError)).rejects.toBe(firstError)
+    const secondError = { config: { url: '/papers/search' }, response: { status: 401 } }
+    await expect(responseRejectedInterceptor(secondError)).rejects.toBe(secondError)
+
+    expect(mocks.showToast).toHaveBeenCalledTimes(2)
+    expect(mocks.requestLogin).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['/auth/login', '/auth/me', '/auth/me/mcp-tokens'])('cleans auth state but suppresses the login prompt for %s', async (url) => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const authStore = { token: 'old-token', user: { id: 1 } as unknown, status: 'authenticated' }
     mocks.getActivePinia.mockReturnValue({})
@@ -137,6 +137,6 @@ describe('frontend API transport contract', () => {
     expect(localStorage.getItem('auth_token')).toBeNull()
     expect(authStore).toEqual({ token: null, user: null, status: 'anonymous' })
     expect(mocks.showToast).not.toHaveBeenCalled()
-    expect(mocks.routerPush).not.toHaveBeenCalled()
+    expect(mocks.requestLogin).not.toHaveBeenCalled()
   })
 })

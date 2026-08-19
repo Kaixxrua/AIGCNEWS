@@ -1,60 +1,56 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import DshView from './DshView.vue'
 
 const copy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copy }) }))
+vi.mock('@/services/mcp/mcpTokenApi', () => ({ createMcpToken: vi.fn().mockResolvedValue({ token: 'aigc_mcp_test' }) }))
 
 const messages = {
-  mcp: {
-    copied: '已复制',
-    dshPlugin: {
-      methods: {
-        npm: { title: 'npm 包 · 最新版', description: '安装预构建包。' },
-        npmPinned: { title: 'npm 包 · 固定 0.2.0', description: '固定已验证版本。' },
-        github: { title: 'GitHub 源码兜底', description: '现场构建源码。' },
-      },
-    },
-  },
+  mcp: { copied: '已复制', copyFailed: '复制失败', wizard: { prev: '上一步', next: '下一步', stepProgress: '{current}/{total}' }, dshPlugin: { methods: {
+    npm: { title: 'npm 最新版', description: '预构建。' }, npmPinned: { title: 'npm 固定版', description: '固定。' }, github: { title: 'GitHub 源码', description: '源码。' },
+  } } },
   dsh: {
-    eyebrow: 'AIGC RADAR FOR DSH', title: '在 dsh 终端里搜索 AI 项目', description: '无需 Token。',
-    mcpLink: '改为配置 MCP', repository: 'GitHub 仓库', installKicker: '安装', installTitle: '选择安装方式',
-    installDescription: '选择一种安装方式。', recommended: '推荐', copy: '复制安装命令',
-    sourceWarningTitle: '源码构建：', sourceWarning: 'pnpm 10+ 可能要求 allowBuilds；固定提交：',
+    eyebrow: 'AIGC RADAR FOR DSH', title: '在 dsh 终端里搜索 AI 项目', description: '选择身份后开始安装。',
+    mcpLink: '改为配置 MCP', repository: 'GitHub 仓库', recommended: '推荐', copy: '复制安装命令',
     capabilitiesKicker: '插件能力', capabilitiesTitle: '原生卡片与检索路由', capabilitiesDescription: '插件能力说明。',
+    wizard: {
+      ariaLabel: 'dsh 安装向导', stepIdentity: '选择身份', stepIdentityDescription: '选择身份。', stepInstall: '安装方式', stepInstallDescription: '选择安装方式。', stepCommand: '生成命令', stepCommandDescription: '生成命令。',
+      identityGuest: '游客', identityUser: '普通用户', identityVip: 'VIP', identityGuestDescription: '游客试用。', identityUserDescription: '普通配额。', identityVipDescription: 'VIP 配额。',
+      vipRequired: '需要会员', vipCta: '开通 VIP', continueAsFree: '按普通用户继续', tokenCreating: '正在生成令牌', tokenRetry: '重试', commandLabel: '安装命令', patchLabel: '配置补丁', copyPatch: '复制补丁', oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: '游客受 IP 限额。',
+    },
+    methods: { npm: { title: 'npm 最新版', description: '预构建。' }, npmPinned: { title: 'npm 固定版', description: '固定。' }, github: { title: 'GitHub 源码', description: '源码。' } },
   },
 }
 
-const router = createRouter({
-  history: createMemoryHistory(),
-  routes: [
-    { path: '/dsh', component: DshView },
-    { path: '/mcp', component: { template: '<div />' } },
-  ],
-})
+const router = createRouter({ history: createMemoryHistory(), routes: [
+  { path: '/dsh', component: DshView }, { path: '/mcp', component: { template: '<div />' } },
+] })
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': messages } })
 
 const mountView = async () => {
-  await router.push('/dsh')
-  await router.isReady()
-  const wrapper = mount(DshView, { global: { plugins: [router, i18n] } })
-  await flushPromises()
-  return wrapper
+  await router.push('/dsh'); await router.isReady()
+  const wrapper = mount(DshView, { global: { plugins: [router, i18n, setActivePinia(createPinia())] } })
+  await flushPromises(); return wrapper
 }
 
+beforeEach(() => { copy.mockClear(); setActivePinia(createPinia()) })
+
 describe('DshView', () => {
-  it('renders ordered npm and source install methods', async () => {
+  it('walks guests through identity, install method, and command steps', async () => {
     const wrapper = await mountView()
-    const methods = wrapper.findAll('[data-install-method]')
-    expect(methods.map((item) => item.attributes('data-install-method'))).toEqual(['npm', 'npm-pinned', 'github'])
-    expect(methods[0]!.text()).toContain('推荐')
-    expect(methods[0]!.text()).toContain('dsh plugin --profile web add dsh-aigc-radar')
-    expect(methods[1]!.text()).toContain('dsh-aigc-radar@0.2.0')
-    expect(methods[2]!.text()).toContain('github:Kaixxrua/dsh-aigc-radar')
-    expect(methods[2]!.text()).toContain('allowBuilds')
-    expect(methods[0]!.text()).not.toContain('allowBuilds')
+    expect(wrapper.text()).toContain('选择身份')
+    expect(wrapper.findAll('.dsh-wizard button').length).toBeGreaterThan(3)
+    const next = wrapper.findAll('button').find(button => button.text().includes('下一步'))!
+    await next.trigger('click')
+    expect(wrapper.text()).toContain('npm 最新版')
+    await wrapper.findAll('button').find(button => button.text().includes('npm 固定版'))!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text().includes('下一步'))!.trigger('click')
+    expect(wrapper.text()).toContain('dsh plugin --profile web add dsh-aigc-radar@0.2.0')
+    expect(wrapper.text()).toContain('游客受 IP 限额。')
   })
 
   it('links to MCP and the repository', async () => {
@@ -65,14 +61,12 @@ describe('DshView', () => {
     expect(repository.attributes('rel')).toBe('noopener')
   })
 
-  it('copies the selected method and shows matching feedback', async () => {
-    copy.mockClear()
+  it('copies the generated install command', async () => {
     const wrapper = await mountView()
-    const methods = wrapper.findAll('[data-install-method]')
-    await methods[1]!.get('button').trigger('click')
-    await flushPromises()
-    expect(copy).toHaveBeenCalledWith('dsh plugin --profile web add dsh-aigc-radar@0.2.0')
-    expect(methods[1]!.get('button').text()).toBe('已复制')
-    expect(methods[0]!.get('button').text()).toBe('复制安装命令')
+    await wrapper.findAll('button').find(button => button.text().includes('下一步'))!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text().includes('下一步'))!.trigger('click')
+    const copyButton = wrapper.findAll('button').find(button => button.text().includes('复制安装命令'))!
+    await copyButton.trigger('click'); await flushPromises()
+    expect(copy).toHaveBeenCalledWith('dsh plugin --profile web add dsh-aigc-radar')
   })
 })
