@@ -31,6 +31,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from backend.app.core.scheduler_registry import (
     CONVERSATION_CLEANUP_JOB,
     DAILY_BRIEFING_JOB,
+    PAYMENT_ORDER_CLOSING_JOB,
     SOURCE_JOB_DESCRIPTORS,
     SUBSCRIPTION_DISPATCH_JOB,
     JobDescriptor,
@@ -46,6 +47,7 @@ from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
+from backend.app.repositories.payment_order_repository import PaymentOrderWriter
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.services.briefing.dispatch import (
     BRIEFING_SOURCES,
@@ -864,6 +866,31 @@ async def _run_conversation_cleanup_job(
         return False
 
 
+# 支付订单超时关单：单轮批量上限，积压由后续轮次收敛（5 分钟一轮）。
+_PAYMENT_ORDER_CLOSING_BATCH_LIMIT = 200
+
+
+async def _run_payment_order_closing_job(orders: PaymentOrderWriter) -> bool:
+    """支付订单超时关单：pending 且 expires_at <= now 批量转 expired。
+
+    条件更新天然幂等（已 paid/closed 的行不动）；仓储异常吞掉返回
+    False 计入连续失败告警，绝不向上抛断调度循环。过期单仍可经回调走
+    expired→paid 迟到支付特许边，关单不等于拒付。
+    """
+    try:
+        expired = await asyncio.to_thread(
+            orders.mark_expired_overdue,
+            now=datetime.now(timezone.utc),
+            limit=_PAYMENT_ORDER_CLOSING_BATCH_LIMIT,
+        )
+        if expired:
+            logger.info("[Scheduler] 支付订单超时关单：本轮过期 %d 笔。", expired)
+        return True
+    except Exception as exc:
+        logger.error("[Scheduler] 支付订单超时关单失败: %s", exc, exc_info=True)
+        return False
+
+
 async def _run_x_credentials_probe_job(
     *,
     repositories: ApplicationRepositories,
@@ -973,6 +1000,7 @@ class ApplicationSchedulerRuntime:
         semantic_search_enabled: bool = False,
         semantic_search_warmup: Any | None = None,
         x_media_warmup_enabled: bool = False,
+        payments_enabled: bool = False,
         # 默认 True：直接构造运行时的既有调用方（多为测试）保持旧行为；
         # 策略收口在 create_scheduler_runtime（读 settings，默认关闭）。
         x_source_enabled: bool = True,
@@ -990,6 +1018,7 @@ class ApplicationSchedulerRuntime:
         self._semantic_search_enabled = semantic_search_enabled
         self._semantic_search_warmup = semantic_search_warmup
         self._x_media_warmup_enabled = x_media_warmup_enabled
+        self._payments_enabled = payments_enabled
         self._x_source_enabled = x_source_enabled
         self._shutdown_grace_seconds = max(0.0, float(shutdown_grace_seconds))
         self._timezone_name = timezone_name
@@ -1214,6 +1243,14 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_payment_order_closing_job(self) -> None:
+        await self._run_tracked(
+            lambda: self._guarded(
+                "payment_order_closing",
+                lambda: _run_payment_order_closing_job(self.repositories.orders),
+            )
+        )
+
     def _is_source_job_suppressed(self, descriptor: JobDescriptor) -> bool:
         """特性开关关闭的源任务不注册、不允许在线启用（X 链路透出前不占调度面）。"""
         return (
@@ -1259,6 +1296,8 @@ class ApplicationSchedulerRuntime:
             return SUBSCRIPTION_DISPATCH_JOB
         if job_id == CONVERSATION_CLEANUP_JOB.id:
             return CONVERSATION_CLEANUP_JOB
+        if job_id == "payment_order_closing" and self._payments_enabled:
+            return PAYMENT_ORDER_CLOSING_JOB
         if job_id == "project_semantic_warmup" and self._semantic_search_enabled:
             return project_semantic_warmup_job_descriptor(
                 timezone=self._timezone_name
@@ -1274,6 +1313,10 @@ class ApplicationSchedulerRuntime:
             return self._run_subscription_dispatch_job
         if descriptor.id == CONVERSATION_CLEANUP_JOB.id:
             return self._run_conversation_cleanup_job
+        if descriptor.source == "payment_order_closing":
+            if not self._payments_enabled:
+                return None
+            return self._run_payment_order_closing_job
         if descriptor.source == "project_semantic_warmup":
             if not self._semantic_search_enabled:
                 return None
@@ -1422,6 +1465,20 @@ class ApplicationSchedulerRuntime:
         else:
             logger.info("[Scheduler] 跳过已停用的会话清理任务: conversation_cleanup")
 
+        if self._payments_enabled:
+            payment_closing = self._effective_descriptor(PAYMENT_ORDER_CLOSING_JOB)
+            if payment_closing is not None:
+                _register_job(
+                    self.scheduler,
+                    payment_closing,
+                    self._run_payment_order_closing_job,
+                )
+                logger.info("[Scheduler] 注册支付订单超时关单任务: payment_order_closing")
+            else:
+                logger.info("[Scheduler] 跳过已停用的支付关单任务: payment_order_closing")
+        else:
+            logger.info("[Scheduler] 支付开关关闭，跳过支付订单超时关单任务。")
+
         self.scheduler.start()
         # 登记为活动运行时：手动运维入口（IngestionAdminService）借此复用
         # github/x 串行锁，与调度任务保持同一互斥口径。
@@ -1520,6 +1577,7 @@ def create_scheduler_runtime(
         x_media_warmup_enabled=bool(
             getattr(settings, "x_media_warmup_enabled", False)
         ),
+        payments_enabled=bool(getattr(settings, "payments_enabled", False)),
         x_source_enabled=bool(getattr(settings, "x_source_enabled", False)),
         shutdown_grace_seconds=float(
             getattr(settings, "scheduler_shutdown_grace_seconds", 30.0)

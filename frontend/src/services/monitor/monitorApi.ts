@@ -12,6 +12,10 @@ import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildM
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
   fetchErrorLogs(page: number, pageSize: number): Promise<ErrorLogPage>
+  fetchPaymentOrders(params: { status?: string; channel?: string; planCode?: string; email?: string; page: number; pageSize: number }): Promise<import('@/features/monitor/monitorModel').PaymentOrderPage>
+  fetchPaymentOrderDetail(orderNo: string): Promise<import('@/features/monitor/monitorModel').PaymentOrder>
+  markPaymentOrderPaid(orderNo: string, note?: string): Promise<{ order?: import('@/features/monitor/monitorModel').PaymentOrder }>
+  closePaymentOrder(orderNo: string): Promise<{ order?: import('@/features/monitor/monitorModel').PaymentOrder }>
   fetchSchedulerStatus(): Promise<SchedulerStatus>
   fetchSchedulerConfigs(): Promise<SchedulerJobConfig[]>
   saveSchedulerConfig(form: SchedulerJobConfigForm): Promise<{ item?: SchedulerJobConfig; message?: string }>
@@ -67,6 +71,13 @@ export const monitorApi: MonitorApi = {
     const { data } = await api.get('/monitor/errors', { params: { page, page_size: pageSize } })
     return { items: data?.items || [], total: data?.total || 0, page: data?.page || page, page_size: data?.page_size || pageSize }
   },
+  async fetchPaymentOrders({ status, channel, planCode, email, page, pageSize }) {
+    const { data } = await api.get('/ops/payments/orders', { params: { status, channel, plan_code: planCode, email, page, page_size: pageSize } })
+    return { items: Array.isArray(data?.items) ? data.items : [], total: data?.total || 0, page: data?.page || page, page_size: data?.page_size || pageSize }
+  },
+  async fetchPaymentOrderDetail(orderNo) { return (await api.get(`/ops/payments/orders/${encodeURIComponent(orderNo)}`)).data },
+  async markPaymentOrderPaid(orderNo, note = '') { return (await api.post(`/ops/payments/orders/${encodeURIComponent(orderNo)}/mark-paid`, { note })).data },
+  async closePaymentOrder(orderNo) { return (await api.post(`/ops/payments/orders/${encodeURIComponent(orderNo)}/close`)).data },
   async fetchSchedulerStatus() { return (await api.get('/ops/scheduler/status')).data },
   async fetchSchedulerConfigs() {
     const { data } = await api.get('/ops/scheduler/config')

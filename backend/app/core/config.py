@@ -50,6 +50,46 @@ class Settings(BaseSettings):
             )
         return value
 
+    # ── 支付收费骨架（ADR 0002）────────────────────────────────────────
+    # 全局开关：默认 False，用户侧支付路由整组 404（feature gate 先例）；
+    # 营业执照/商户号就位后逐渠道填凭证 + 置 True。
+    payments_enabled: bool = False
+    # 下单后未支付订单的挂起时长，超时由 payment_order_closing 任务关单。
+    payments_order_ttl_minutes: int = 30
+    # 渠道回调 notify_url 的公网基址（如 https://aigcradar.cn）；为空时
+    # 下单走请求 Host 推导。骨架期可留空。
+    payments_public_base_url: str = ""
+    # 微信支付 v3 Native（扫码）：商户号凭证。骨架期全部留空 → 渠道 503。
+    wechat_pay_appid: str = ""
+    wechat_pay_mchid: str = ""
+    wechat_pay_mch_serial_no: str = ""
+    wechat_pay_api_v3_key: str = ""
+    wechat_pay_private_key_path: str = ""
+    # 支付宝电脑网站支付（alipay.trade.page.pay）：RSA2 密钥对文件路径。
+    alipay_appid: str = ""
+    alipay_private_key_path: str = ""
+    alipay_public_key_path: str = ""
+    # Stripe（国际卡）：secret key + webhook 签名 secret。
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+
+    @field_validator("wechat_pay_api_v3_key", "stripe_secret_key", "stripe_webhook_secret")
+    @classmethod
+    def _validate_payment_secret_placeholder(cls, value: str) -> str:
+        # 沿用 wechat_session_encryption_key 先例：示例占位符直接拒绝，
+        # 防止 .env.example 的 CHANGEME 被原样带进生产。
+        if value.startswith("CHANGEME"):
+            raise ValueError("payment secrets must not use the example placeholder")
+        return value
+
+    @field_validator("payments_order_ttl_minutes")
+    @classmethod
+    def _validate_payments_order_ttl(cls, value: int) -> int:
+        # 关单窗口：太短用户来不及扫码，太久 pending 订单堆积。
+        if not 5 <= value <= 24 * 60:
+            raise ValueError("payments_order_ttl_minutes must be within 5..1440")
+        return value
+
     # 推送渠道凭据静态加密（webhook secret、bot token 等）。密钥必须是 32 字节
     # 随机值的 URL-safe Base64，只由部署环境提供；缺失或非法时含凭据的渠道
     # 类型拒绝处理 secret，不降级为明文（email 渠道无凭据，不受影响）。

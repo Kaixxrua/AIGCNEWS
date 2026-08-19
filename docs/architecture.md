@@ -1,6 +1,6 @@
 # AIGCNEWS 架构（当前态）
 
-> 最后更新：2026-08-13
+> 最后更新：2026-08-19
 > 文档定位：开发者向的具体架构 —— 分层、路由、服务域、存储、调度、部署。功能与产品视角见 [project-overview.md](project-overview.md)。本文只描述当前事实，不记录历史方案；退役事项见各专项 runbook。
 
 ## 一、技术栈
@@ -65,11 +65,12 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | `routes_chat.py` / `routes_attachments.py` / `routes_vision.py` | RequireUser | 对话 SSE、会话与消息管理、附件（图片入 Redis 零落盘 / PDF 落盘解析）、视觉问答 |
 | `routes_mcp.py` | OptionalMcpUser | **POST `/api/mcp` 单端点**，JSON-RPC 全协议（见第七节） |
 | `routes_monitor.py` | 公开 + RequireAdmin | `/live` `/ready` 健康探针（公开）；health / metrics / tasks（管理员） |
-| `routes_ops.py` + 4 个子路由 | RequireAdmin | 采集触发 / 数据清理 / 调度器状态与配置 / Provider 配置与测试 / 简报批量 / 缓存清理 / 项目运维；`routes_ops_github.py`（爬取、富化、推荐、指标）、`routes_ops_mcp.py`（出站 MCP 配置）、`routes_ops_smtp.py`（SMTP 面板）、`routes_ops_x.py`（见下行） |
+| `routes_ops.py` + 子路由 | RequireAdmin | 采集触发 / 数据清理 / 调度器状态与配置 / Provider 配置与测试 / 简报批量 / 缓存清理 / 项目运维；`routes_ops_github.py`（爬取、富化、推荐、指标）、`routes_ops_mcp.py`（出站 MCP 配置）、`routes_ops_smtp.py`（SMTP 面板）、`routes_ops_x.py`（见下行）、`routes_ops_payments.py`（支付订单列表、详情、补单、关单） |
 | `routes_ops_x.py` | RequireAdmin | X watchlist / 凭据池 CRUD 与测活、日榜快照回填 |
 | `routes_wechat.py` / `routes_wechat_media.py` | 插件门控 + 角色 | 公众号扫码登录、账号与文章同步（管理员）；关注目录与 Feed（用户）；mmbiz 媒体代理（公开但 IP 限流） |
 | `routes_x_media.py` | 插件门控，公开 | twimg 图片代理、mp4 首帧封面（IP 限流；`<img>` 无法带 Authorization 故公开） |
 | `routes_features.py` / `routes_sitemap.py` | 公开 | 特性开关播报；近 90 天论文页 sitemap |
+| `routes_payments.py` | payments_enabled + RequireUser（回调按 provider 验签） | 套餐、创建订单、我的订单、订单状态、微信/支付宝/Stripe 回调；关闭时用户侧 404，渠道未配置时创建返回 503 |
 
 特性开关：`x_source_enabled` / `wechat_source_enabled` 以 router 级依赖实现"关闭即 404，等同未部署"；`chat` 另有 `CHAT_SERVICE_ENABLED` 总开关。
 
@@ -89,6 +90,7 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | `runtime_provider/` | 应用级模型 Provider 池（管理面板可改、300s 延迟关闭旧客户端）；chat/embedding 工厂 |
 | `vision/` | SiliconFlow Kimi-K2.5 视觉问答；截图进程内缓存 TTL 300s，零落盘 |
 | `x_watch/` `x_credentials/` `x_janitor/` | X watchlist 管理；凭据池 CRUD + 测活；已删推文清理（fail-closed） |
+| `payments/` | 会员套餐、订单状态机、provider registry、回调验签结果与恰好一次发权益；provider 当前为凭证未配置桩 |
 | `source_plugins/` | 私有插件加载器：X 传输层与微信门面的公共契约 + fail-closed 加载；开关关或包缺失即 404 / 跳过 |
 | `media_cache.py` | 微信 / X 媒体共享磁盘缓存（LRU + TTL，默认 512MiB / 7 天） |
 | `*_admin.py` | 运维面服务（采集、爬取、富化、调度配置、SMTP、快照回填、数据清理…），全部仅管理员 |
@@ -118,6 +120,7 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | 项目库 | `github_repo_candidates`、`github_repo_snapshots`、`github_repo_daily_metrics`、`github_trending_hits`、`github_repo_enrichments`、`github_repo_aliases`、`github_repo_recommendations`、`github_project_semantic_sources`、`project_favorites`、`tool_websites`、`tool_website_enrichments`、`user_tool_websites`、`user_tool_website_overrides`、catalog 迁移工具表 ×3、`project_catalog_applied_events`(outbox 去重) |
 | 订阅推送 | `push_channels`、`user_subscriptions`、`push_deliveries` |
 | MCP | `user_mcp_tokens`（SHA-256 摘要 + hint + scopes + 有效期 + 撤销，明文不落库）、`mcp_server_configs`（出站配置） |
+| 支付订单 | `payment_orders`（订单号、用户、套餐、渠道、金额分、状态、幂等键、渠道回调原文、支付与权益时间）；迁移 0051 |
 | 运行配置 | `runtime_provider_settings`（单行）、`smtp_settings`(0036，单行)、`scheduler_job_config`(0016) |
 | X（插件） | `x_watch_accounts`、`x_credentials`、`x_credentials_bootstrap_state` |
 | 微信（插件） | `wechat_official_accounts`、`wechat_articles`、`wechat_sessions`、`wechat_login_attempts`、`wechat_account_follows` |
@@ -142,7 +145,8 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | API 缓存（FastAPICache） | `aigc-cache:*` | 10s–1h |
 | 独立访客 | `visitor:{YYYY-MM-DD}`（SET） | 48h |
 | OTP（注册 / 重置 / 推送验证） | `email:{code,lock,attempts}:…` 三套前缀 | 300s / 60s / 300s |
-| 固定窗口限流 | `ratelimit:{action}:{identity}` | 按动作；MCP 60s |
+| 固定窗口限流 | `ratelimit:{action}:{identity}` | 按动作；MCP 60s；支付套餐/回调使用 `ratelimit:payments.plans:*`、`ratelimit:payments.callback:*` |
+| 支付匿名访问 | `ratelimit:payments.plans:{client_ip}` / `ratelimit:payments.callback:{client_ip}` | 固定窗口；Redis 故障 fail-open |
 | MCP 限流分桶 | `mcp.protocol` / `mcp.tool_call` | 匿名 60/30、认证 240/120 req-min，故障放行 |
 
 ## 五、定时调度
@@ -154,7 +158,7 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | 逐源采集 | arxiv :01 · github :02 · techmeme :03 · producthunt :04 · hackernews :05 · dailyhot :07（每小时）；x_watchlist 每 2h :06 |
 | 关榜补采（昨日切片定稿） | x_closing 00:31 · metrics_closing 00:33 · hackernews_closing 00:35 · news_closing 00:36 |
 | 项目库 | daily_pipeline 02:00（入库/快照/打分/富化）· metrics_refresh 每 2h :17 · semantic_warmup 每 30min（开关门控） |
-| 运维 | daily_briefing 08:00 · subscription_dispatch 每 30min（只读缓存幂等投递）· x_credentials_probe 每 2h :08 · x_deleted_janitor 每 6h :11 · conversation_cleanup 每 7 天 03:30 |
+| 运维 | daily_briefing 08:00 · subscription_dispatch 每 30min（只读缓存幂等投递）· x_credentials_probe 每 2h :08 · x_deleted_janitor 每 6h :11 · conversation_cleanup 每 7 天 03:30 · payment_order_closing 每 5min（payments_enabled 门控，pending → expired） |
 
 - **DB 覆盖**：`scheduler_job_config` 可将任意任务改为"每日窗口 × 间隔分钟"或停用，经 `/ops/scheduler/config` 热生效。
 - **互斥**：`github_job_lock` / `x_operation_lock` 串行化手动运维与调度运行。
@@ -185,7 +189,8 @@ stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
 | `/subscriptions` | SubscriptionsView | requiresAuth |
 | `/chat` | ChatView | requiresAdmin + `CHAT_SERVICE_ENABLED` |
 | `/wechat` | WechatView | requiresAdmin + `wechatSource` |
-| `/monitor` | MonitorView（12+ 面板编排） | requiresAdmin |
+| `/monitor` | MonitorView（12+ 面板编排，含支付订单详情与回调载荷管理员投影） | requiresAdmin |
+| `/membership/checkout?plan=monthly|yearly` | MembershipCheckoutView（套餐金额来自支付 API，二维码/跳转指令与支付轮询） | requiresAuth + payments_enabled |
 | `/login` · `/register` · `/forgot-password` | 认证三页 | guestOnly |
 
 守卫为纯函数（`features/navigation/routePolicy.ts`）：匿名访问受保护页 → `/login?redirect=…`；非管理员 → `/`；特性关闭 → `/`。

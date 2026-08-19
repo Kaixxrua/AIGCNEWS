@@ -77,6 +77,15 @@ export const useMonitorPageController = ({
   const membershipForm = ref(createMembershipGrantForm())
   const grantingMembership = ref(false)
   const membershipLastResult = ref<MembershipGrantResult | null>(null)
+  const paymentOrders = ref<Awaited<ReturnType<MonitorApi['fetchPaymentOrders']>>['items']>([])
+  const paymentOrdersTotal = ref(0)
+  const paymentOrdersPage = ref(1)
+  const paymentOrdersPageSize = ref(20)
+  const paymentOrdersFilter = ref({ status: '', channel: '', planCode: '', email: '' })
+  const loadingPaymentOrders = ref(false)
+  const paymentOrderDetail = ref<Awaited<ReturnType<MonitorApi['fetchPaymentOrderDetail']>> | null>(null)
+  const loadingPaymentOrderDetail = ref(false)
+  const paymentOrdersTotalPages = computed(() => Math.max(1, Math.ceil(paymentOrdersTotal.value / paymentOrdersPageSize.value)))
   const mcpServers = ref<McpServerConfig[]>([])
   const mcpForm = ref(createEmptyMcpForm())
   const loadingMcpServers = ref(false)
@@ -132,6 +141,30 @@ export const useMonitorPageController = ({
       errorLogsTotal.value = data.total
     } catch (error) { console.error('Failed to fetch error logs', error) }
   }
+  const fetchPaymentOrders = async () => {
+    if (!isAdmin.value) return
+    loadingPaymentOrders.value = true
+    try {
+      const data = await api.fetchPaymentOrders({ ...paymentOrdersFilter.value, page: paymentOrdersPage.value, pageSize: paymentOrdersPageSize.value })
+      paymentOrders.value = data.items
+      paymentOrdersTotal.value = data.total
+    } catch (error) { console.error('Failed to fetch payment orders', error) }
+    finally { loadingPaymentOrders.value = false }
+  }
+  const fetchPaymentOrderDetail = async (orderNo: string) => {
+    loadingPaymentOrderDetail.value = true
+    try { paymentOrderDetail.value = await api.fetchPaymentOrderDetail(orderNo) }
+    catch (error) { console.error('Failed to fetch payment order detail', error) }
+    finally { loadingPaymentOrderDetail.value = false }
+  }
+  const clearPaymentOrderDetail = () => { paymentOrderDetail.value = null }
+  const goPaymentOrdersPage = async (targetPage: number) => {
+    if (targetPage < 1 || targetPage > paymentOrdersTotalPages.value) return
+    paymentOrdersPage.value = targetPage
+    await fetchPaymentOrders()
+  }
+  const markPaymentOrderPaid = async (orderNo: string) => { await api.markPaymentOrderPaid(orderNo); await fetchPaymentOrders() }
+  const closePaymentOrder = async (orderNo: string) => { await api.closePaymentOrder(orderNo); await fetchPaymentOrders() }
   const setSuccessMessage = (message: string) => { successMsg.value = message }
   const setErrorMessage = (message: string) => { errorMsg.value = message }
   const { crawlPolling, crawlStatus, beginCrawlPolling, resumeGithubCrawlPolling, disposeCrawlPolling } = useGithubCrawlPolling({
@@ -291,7 +324,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -709,6 +742,7 @@ export const useMonitorPageController = ({
     loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp,
     emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
+    paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersPageSize, paymentOrdersFilter, loadingPaymentOrders, paymentOrdersTotalPages, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
     membershipForm, grantingMembership, membershipLastResult,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,

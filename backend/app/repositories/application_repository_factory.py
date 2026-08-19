@@ -25,6 +25,7 @@ from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenRepository,
 )
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
+from backend.app.repositories.payment_order_repository import PaymentOrderRepository
 from backend.app.repositories.postgres_attachment_repository import (
     PostgresAttachmentRepository,
 )
@@ -60,6 +61,9 @@ from backend.app.repositories.postgres_mcp_access_token_repository import (
 )
 from backend.app.repositories.postgres_mcp_server_repository import (
     PostgresMcpServerConfigRepository,
+)
+from backend.app.repositories.postgres_payment_order_repository import (
+    PostgresPaymentOrderRepository,
 )
 from backend.app.repositories.postgres_project_enrichment_repository import (
     PostgresGitHubProjectEnrichmentRepository,
@@ -176,6 +180,7 @@ class ApplicationIngestionTaskRepository(
 @dataclass(frozen=True)
 class ApplicationRepositories:
     users: UserAccountRepository
+    orders: PaymentOrderRepository
     conversations: ConversationRepository
     attachments: AttachmentRepository
     documents: DocumentRepository
@@ -254,6 +259,7 @@ def create_application_repositories(
 ) -> ApplicationRepositories:
     return ApplicationRepositories(
         users=PostgresUserAccountRepository(postgres),
+        orders=PostgresPaymentOrderRepository(postgres),
         conversations=PostgresConversationRepository(postgres),
         attachments=PostgresAttachmentRepository(postgres),
         documents=PostgresDocumentRepository(postgres),

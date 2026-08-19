@@ -1,0 +1,70 @@
+"""套餐与日历年月续约语义单测（支付骨架 PR-2）。
+
+金额/时长是商业承诺：1900 分月付、12900 分年付由本文件钉死，任何漂移
+必须改测试。月末钳制与日历年月语义是续约计算的核心正确性来源。
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from backend.app.services.payments.plans import (
+    MEMBER_MONTHLY,
+    MEMBER_YEARLY,
+    MEMBERSHIP_PLANS,
+    UnknownPlanError,
+    get_plan,
+)
+
+
+def _dt(year: int, month: int, day: int) -> datetime:
+    return datetime(year, month, day, 12, 0, tzinfo=timezone.utc)
+
+
+def test_plan_amounts_are_pinned_in_cents() -> None:
+    assert MEMBER_MONTHLY.code == "member_monthly"
+    assert MEMBER_MONTHLY.amount_cents == 1900
+    assert MEMBER_MONTHLY.currency == "CNY"
+    assert MEMBER_MONTHLY.months == 1
+    assert MEMBER_YEARLY.code == "member_yearly"
+    assert MEMBER_YEARLY.amount_cents == 12900
+    assert MEMBER_YEARLY.currency == "CNY"
+    assert MEMBER_YEARLY.months == 12
+    assert set(MEMBERSHIP_PLANS) == {"member_monthly", "member_yearly"}
+
+
+def test_extend_from_uses_calendar_months_not_fixed_days() -> None:
+    # 日历年月：3/15 + 1 月 = 4/15（不是 +30 天）
+    assert MEMBER_MONTHLY.extend_from(_dt(2026, 3, 15)) == _dt(2026, 4, 15)
+    # 跨年：12/15 + 1 月 = 次年 1/15
+    assert MEMBER_MONTHLY.extend_from(_dt(2026, 12, 15)) == _dt(2027, 1, 15)
+    # 年付：8/19 + 12 月 = 次年 8/19
+    assert MEMBER_YEARLY.extend_from(_dt(2026, 8, 19)) == _dt(2027, 8, 19)
+
+
+def test_extend_from_clamps_month_end() -> None:
+    # 1/31 + 1 月 → 2/28（平年钳制）
+    assert MEMBER_MONTHLY.extend_from(_dt(2026, 1, 31)) == _dt(2026, 2, 28)
+    # 闰年：2024/1/31 + 1 月 → 2024/2/29
+    assert MEMBER_MONTHLY.extend_from(_dt(2024, 1, 31)) == _dt(2024, 2, 29)
+    # 闰日续约年付：2024/2/29 + 12 月 → 2025/2/28
+    assert MEMBER_YEARLY.extend_from(_dt(2024, 2, 29)) == _dt(2025, 2, 28)
+    # 8/31 + 1 月 → 9/30
+    assert MEMBER_MONTHLY.extend_from(_dt(2026, 8, 31)) == _dt(2026, 9, 30)
+    # 时区保留
+    extended = MEMBER_MONTHLY.extend_from(_dt(2026, 1, 31))
+    assert extended.tzinfo is not None
+
+
+def test_get_plan_is_fail_closed_on_unknown_codes() -> None:
+    assert get_plan("member_monthly") is MEMBER_MONTHLY
+    with pytest.raises(UnknownPlanError):
+        get_plan("member_lifetime")
+    with pytest.raises(UnknownPlanError):
+        get_plan("")
+    with pytest.raises(UnknownPlanError):
+        get_plan(None)
+    with pytest.raises(UnknownPlanError):
+        get_plan(1900)

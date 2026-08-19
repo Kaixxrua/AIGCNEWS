@@ -17,6 +17,7 @@
 | [reuse-loop.md](reuse-loop.md) | 复用检查闭环：触发（dsh 插件 / Claude Code hook / MCP instructions）→ 检索 → 采纳回执 → 复用率度量 |
 | [mcp-registry.md](mcp-registry.md) | AIGC Radar MCP 登记到官方 registry 与目录站的发布手册 |
 | [subscriptions.md](subscriptions.md) | 订阅推送：用户订阅与推送渠道的数据模型、API、验证码与凭据加密策略 |
+| [payments.md](payments.md) | 会员订阅与在线支付骨架（ADR 0002）：套餐、渠道、订单状态机、回调纪律、收银台 |
 | [dailyhot-source.md](dailyhot-source.md) | DailyHot 聚合热榜源：自托管 DailyHotApi 的部署、配置与验证 |
 
 ## 开发规范

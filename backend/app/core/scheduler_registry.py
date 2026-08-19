@@ -34,6 +34,7 @@ JobSource = Literal[
     "project_semantic_warmup",
     "conversation_cleanup",
     "x_media_warmup",
+    "payment_order_closing",
 ]
 
 
@@ -291,6 +292,18 @@ CONVERSATION_CLEANUP_JOB = CronJobDescriptor(
     source="conversation_cleanup",
     name="会话历史定期清理（7 天清 5 条）",
     schedule=CronSchedule(day="*/7", hour=3, minute=30),
+)
+
+# 支付订单超时关单：pending 超过 TTL（payments_order_ttl_minutes）即过期，
+# 之后回调走 expired→paid 迟到支付特许边（钱已收必须发权益）。5 分钟一轮，
+# 单轮限量（仓储侧 limit）防长事务；mark_expired_overdue 是条件更新，
+# 重复点火幂等，错过合并一次即可（coalesce=True）。
+PAYMENT_ORDER_CLOSING_JOB = IntervalJobDescriptor(
+    id="payment_order_closing",
+    source="payment_order_closing",
+    name="支付订单超时关单（到期 pending → expired）",
+    schedule=IntervalSchedule(minutes=5),
+    timezone="Asia/Shanghai",
 )
 
 

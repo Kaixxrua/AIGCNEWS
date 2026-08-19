@@ -1,13 +1,16 @@
-import { mount, RouterLinkStub } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MembershipView from './MembershipView.vue'
+import { paymentApi } from '@/services/payments/paymentApi'
 import type { SiteContactPage } from '@/services/site/contactPageApi'
 
 const authBox = vi.hoisted(() => ({ isMember: false }))
 const configBox = vi.hoisted(() => ({ current: null as null | { value: SiteContactPage } }))
+const paymentBox = vi.hoisted(() => ({ listPlans: vi.fn() }))
 
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
+vi.mock('@/services/payments/paymentApi', () => ({ paymentApi: paymentBox }))
 
 vi.mock('@/composables/useContactPageConfig', async () => {
   const { ref } = await import('vue')
@@ -66,6 +69,8 @@ const i18n = createI18n({
         },
         currentMember: '当前已是 vip',
         cta: '联系开通',
+        ctaOnline: '立即开通',
+        ctaOnlineHint: '在线支付：支付成功后权益立即生效。',
         ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。',
         ctaMailSubject: 'AIGC News vip 开通咨询',
         memberNote: '感谢支持！vip 权益已生效。',
@@ -86,6 +91,7 @@ const mountView = () =>
 beforeEach(() => {
   authBox.isMember = false
   configBox.current!.value = { ...configBox.current!.value, enabled: false }
+  paymentBox.listPlans.mockReset().mockRejectedValue(new Error('payments disabled'))
 })
 
 describe('MembershipView', () => {
@@ -111,9 +117,22 @@ describe('MembershipView', () => {
     expect(text).toContain('简报订阅全部 8 个模块')
   })
 
-  it('links the in-card CTA to the contact page when the site page is enabled', () => {
+  it('links the in-card CTA to the online checkout when plans are available', async () => {
+    paymentBox.listPlans.mockResolvedValue({ plans: [], channels: [] })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const link = wrapper.findComponent(RouterLinkStub)
+    expect(link.exists()).toBe(true)
+    expect(link.props('to')).toEqual({ path: '/membership/checkout', query: { plan: 'monthly' } })
+    expect(link.text()).toContain('立即开通')
+    expect(link.classes()).toContain('tier-cta')
+  })
+
+  it('links the in-card CTA to the contact page when the site page is enabled', async () => {
     configBox.current!.value = { ...configBox.current!.value, enabled: true }
     const wrapper = mountView()
+    await flushPromises()
 
     const link = wrapper.findComponent(RouterLinkStub)
     expect(link.exists()).toBe(true)
@@ -144,6 +163,16 @@ describe('MembershipView', () => {
     const wrapper = mountView()
 
     expect(wrapper.find('.tier-badge').text()).toBe('推荐')
+  })
+
+  it('updates the online checkout query when billing switches to yearly', async () => {
+    paymentBox.listPlans.mockResolvedValue({ plans: [], channels: [] })
+    const wrapper = mountView()
+    await flushPromises()
+    const button = wrapper.find('.tier-card--member .tier-billing-btn')
+    await button.trigger('click')
+    const link = wrapper.findComponent(RouterLinkStub)
+    expect(link.props('to')).toEqual({ path: '/membership/checkout', query: { plan: 'yearly' } })
   })
 
   it('toggles the member price between monthly and yearly billing', async () => {

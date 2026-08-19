@@ -12,6 +12,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from backend.app.core.scheduler_registry import (
     CONVERSATION_CLEANUP_JOB,
     DAILY_BRIEFING_JOB,
+    PAYMENT_ORDER_CLOSING_JOB,
     SOURCE_JOB_DESCRIPTORS,
     SUBSCRIPTION_DISPATCH_JOB,
     CronJobDescriptor,
@@ -200,6 +201,23 @@ class SchedulerDescriptorTests(unittest.TestCase):
         self.assertEqual(str(semantic_trigger.timezone), "UTC")
         self.assertTrue(semantic.coalesce)
         self.assertEqual(semantic.misfire_grace_time, 300)
+
+    def test_payment_order_closing_descriptor_is_five_minute_interval(self) -> None:
+        descriptor = PAYMENT_ORDER_CLOSING_JOB
+        self.assertIsInstance(descriptor, IntervalJobDescriptor)
+        self.assertEqual(descriptor.id, "payment_order_closing")
+        self.assertEqual(descriptor.source, "payment_order_closing")
+        self.assertEqual(descriptor.name, "支付订单超时关单（到期 pending → expired）")
+        self.assertTrue(descriptor.replace_existing)
+        self.assertEqual(descriptor.max_instances, 1)
+        self.assertTrue(descriptor.coalesce)
+        self.assertEqual(descriptor.misfire_grace_time, 300)
+        trigger = build_trigger(descriptor)
+        self.assertIsInstance(trigger, IntervalTrigger)
+        self.assertEqual(trigger.interval.total_seconds(), 300)
+        self.assertEqual(str(trigger.timezone), "Asia/Shanghai")
+        with self.assertRaises(FrozenInstanceError):
+            descriptor.name = "changed"  # type: ignore[misc]
 
     def test_build_trigger_returns_fresh_instances_without_mutating_descriptor(self) -> None:
         descriptor = CronJobDescriptor(

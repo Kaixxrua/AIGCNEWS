@@ -10,6 +10,7 @@ import ErrorLogPanel from '@/components/monitor/ErrorLogPanel.vue'
 import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
 import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MembershipGrantPanel from '@/components/monitor/MembershipGrantPanel.vue'
+import PaymentOrdersPanel from '@/components/monitor/PaymentOrdersPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
 import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
 import MonitorSectionNav from '@/components/monitor/MonitorSectionNav.vue'
@@ -40,6 +41,7 @@ const {
   emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
   membershipForm, grantingMembership, membershipLastResult, grantMembership,
+  paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersTotalPages, paymentOrdersFilter, loadingPaymentOrders, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
   dispose, fetchMcpServers, refreshData, goPage, goErrorLogsPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig, saveEmailPoolConfig, testEmailPoolConfig, resetMcpForm, editMcpServer, saveMcpServer,
@@ -345,6 +347,9 @@ onUnmounted(dispose)
             :saving="savingSiteContactPage"
             @save="saveSiteContactPageConfig"
           />
+        </template>
+        <template v-else-if="currentSection === 'payment-orders'">
+          <PaymentOrdersPanel v-if="authStore.isAdmin" :items="paymentOrders" :total="paymentOrdersTotal" :page="paymentOrdersPage" :total-pages="paymentOrdersTotalPages" :loading="loadingPaymentOrders" :filters="paymentOrdersFilter" :detail="paymentOrderDetail" :detail-loading="loadingPaymentOrderDetail" @refresh="fetchPaymentOrders" @detail="fetchPaymentOrderDetail" @close-detail="clearPaymentOrderDetail" @go-page="goPaymentOrdersPage" @mark-paid="markPaymentOrderPaid" @close="closePaymentOrder" />
         </template>
         <template v-else-if="currentSection === 'membership'">
           <MembershipGrantPanel

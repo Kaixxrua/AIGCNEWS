@@ -724,6 +724,33 @@ export interface MembershipGrantResult {
   revoked: boolean
 }
 
+export interface PaymentOrder {
+  id: number
+  order_no: string
+  user_id: number
+  email: string | null
+  plan_code: string
+  channel: string
+  amount_cents: number
+  currency: string
+  status: string
+  channel_order_no: string
+  idempotency_key: string
+  paid_at: string | null
+  grant_expires_at: string | null
+  expires_at: string
+  created_at: string
+  updated_at: string
+  callback_payload?: string
+}
+
+export interface PaymentOrderPage {
+  items: PaymentOrder[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export const createMembershipGrantForm = (): MembershipGrantForm => ({
   email: '',
   tier: 'member',

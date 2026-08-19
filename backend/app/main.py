@@ -25,6 +25,7 @@ from backend.app.api import (
     routes_monitor,
     routes_ops,
     routes_papers,
+    routes_payments,
     routes_projects_api,
     routes_push,
     routes_report,
@@ -484,6 +485,7 @@ app.include_router(routes_monitor.router, prefix="/api", tags=["Monitor"])
 app.include_router(routes_report.router, prefix="/api", tags=["Report"])
 app.include_router(routes_sitemap.router, prefix="/api", tags=["Sitemap"])
 app.include_router(routes_feed.router, prefix="/api", tags=["Feed"])
+app.include_router(routes_payments.router, prefix="/api", tags=["Payments"])
 app.include_router(routes_ops.router, prefix="/api", tags=["Ops"])
 app.include_router(routes_wechat.router, prefix="/api", tags=["WeChat"])
 app.include_router(routes_x_media.router, prefix="/api", tags=["Media"])

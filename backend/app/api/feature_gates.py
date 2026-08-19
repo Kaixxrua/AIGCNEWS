@@ -29,3 +29,18 @@ def require_wechat_source_enabled() -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="wechat_source_disabled",
         )
+
+
+def require_payments_enabled() -> None:
+    """支付骨架总开关关闭时 404（对外与未部署收费能力一致）。
+
+    渠道凭证缺失不走到这里：开关开 + 渠道未配置由路由层映射 503
+    payment_channel_not_configured（ADR 0002 的 404/503 双层语义）。
+    """
+    from backend.app.core.config import settings
+
+    if not settings.payments_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="payments_disabled",
+        )

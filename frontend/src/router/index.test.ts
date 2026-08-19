@@ -46,6 +46,28 @@ describe('contact site page contract', () => {
   })
 })
 
+// 契约：会员结算页要求登录 —— 匿名深链守卫仍重定向 /login?redirect=，
+// 保留 query/hash 用于支付计划参数（会员页本身公开获客）。
+describe('membership checkout auth contract', () => {
+  it('checkout route requires auth', () => {
+    const record = router.getRoutes().find((r) => r.path === '/membership/checkout')
+    expect(record, 'missing route /membership/checkout').toBeDefined()
+    expect(record?.name).toBe('membership-checkout')
+    expect(record?.meta.requiresAuth).toBe(true)
+  })
+
+  it('anonymous deep link to checkout preserves the full redirect', () => {
+    const resolved = router.resolve('/membership/checkout?plan=yearly')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
+      .toEqual({ path: '/login', query: { redirect: '/membership/checkout?plan=yearly' } })
+  })
+
+  it('authenticated visitor is permitted to open checkout', () => {
+    const resolved = router.resolve('/membership/checkout')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
+  })
+})
+
 // 契约：订阅管理页要求登录；匿名深链走 /login 全屏回退，应用内交互走登录弹框。
 describe('subscriptions auth contract', () => {
   it('anonymous deep link to subscriptions redirects to /login with redirect', () => {

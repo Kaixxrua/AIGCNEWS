@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeftRight, Check } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
+import { paymentApi } from '@/services/payments/paymentApi'
 
 defineOptions({ name: 'MembershipView' })
 
 /**
- * 会员页：档位对比 + 定价 + 人工开通 CTA（执照/商户号未落地，先接咨询）。
- * 游客可见（获客入口）；CTA 优先进联系合作页，页面未启用时回退站长邮箱。
+ * 会员页：档位对比 + 定价 + 开通 CTA。
+ * 游客可见（获客入口）。CTA 分三支：支付开关开启（plans 接口可达）→
+ * 在线收银台；否则退回联系合作页，页面未启用时回退站长邮箱。
  * 定价卡为商业化布局：动作收进卡内、付费档抬升 + 推荐徽章、年付价格锚定。
  */
 const { t } = useI18n()
@@ -24,6 +26,23 @@ const isYearly = computed(() => billingPeriod.value === 'yearly')
 const toggleBilling = () => {
   billingPeriod.value = isYearly.value ? 'monthly' : 'yearly'
 }
+
+// 在线收银台可用性 = plans 接口可达（payments_enabled 关闭时整组 404）。
+// 探测失败静默保持 false，CTA 维持联系开通兜底，不改变现有行为。
+const checkoutAvailable = ref(false)
+const checkoutTo = computed(() => ({
+  path: '/membership/checkout',
+  query: { plan: billingPeriod.value },
+}))
+
+onMounted(async () => {
+  try {
+    await paymentApi.listPlans()
+    checkoutAvailable.value = true
+  } catch {
+    checkoutAvailable.value = false
+  }
+})
 
 const contactHref = computed(() =>
   contactPageConfig.value.enabled
@@ -99,11 +118,16 @@ const MEMBER_FEATURES = ['mcpMember', 'websiteMember', 'briefingMember', 'suppor
             </li>
           </ul>
           <template v-if="!isMember">
-            <RouterLink v-if="contactPageConfig.enabled" to="/contact" class="tier-cta">
+            <RouterLink v-if="checkoutAvailable" :to="checkoutTo" class="tier-cta">
+              {{ t('membership.ctaOnline') }}
+            </RouterLink>
+            <RouterLink v-else-if="contactPageConfig.enabled" to="/contact" class="tier-cta">
               {{ t('membership.cta') }}
             </RouterLink>
             <a v-else :href="contactHref" class="tier-cta">{{ t('membership.cta') }}</a>
-            <p class="tier-cta-hint">{{ t('membership.ctaHint') }}</p>
+            <p class="tier-cta-hint">
+              {{ checkoutAvailable ? t('membership.ctaOnlineHint') : t('membership.ctaHint') }}
+            </p>
           </template>
           <p v-else class="tier-member-note">{{ t('membership.memberNote') }}</p>
         </article>

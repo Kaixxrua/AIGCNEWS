@@ -25,6 +25,7 @@ const McpConnectView = () => import('@/views/McpConnectView.vue')
 const DshView = () => import('@/views/DshView.vue')
 const ContactPageView = () => import('@/views/ContactPageView.vue')
 const MembershipView = () => import('@/views/MembershipView.vue')
+const MembershipCheckoutView = () => import('@/views/MembershipCheckoutView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -130,6 +131,14 @@ const router = createRouter({
           name: 'membership',
           component: MembershipView,
           // 游客可见：会员页本身是获客入口，不做登录门控
+        },
+        {
+          path: 'membership/checkout',
+          name: 'membership-checkout',
+          component: MembershipCheckoutView,
+          // 下单须登录（支付开关关闭时会员页不会给出入口，直达也由
+          // 后端 gate 404 兜底）
+          meta: { requiresAuth: true },
         },
         {
           path: 'contact',
