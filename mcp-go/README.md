@@ -18,10 +18,9 @@ Python MCP 入站（`backend/app/services/mcp/inbound/*`，独立进程 `mcp_mai
 - ✅ Redis 固定窗口限流：分钟突发桶 + tools/call 分层配额、TTL 自愈、
   Redis 故障 fail-open、可信代理 XFF 首跳归因；限流缝严格位于解析之后、
   分派之前，429 JSON-RPC 投影与 Python 逐字节一致
-- ✅ 回放门禁 `internal/replay`：protocol.jsonl 29 例逐字节通过（含
-  miniredis + warmup 的 `rate-limited-429`）；静态清单（PR 1.4）11 例
-  显式登记跳过，语料新增即红
-- ⬜ 工具目录/资源/prompts（PR 1.4）、逐工具移植（Phase 2）
+- ✅ 回放门禁 `internal/replay`：protocol.jsonl 40 例逐字节通过（含
+  miniredis + warmup 的 `rate-limited-429` 与 PR 1.4 静态清单）
+- ✅ 工具目录/资源/prompts（PR 1.4）；⬜ 逐工具移植（Phase 2）
 
 ## 设计要点
 

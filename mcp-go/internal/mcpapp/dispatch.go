@@ -67,6 +67,18 @@ func New(serverName, serverVersion string, tools ToolRegistry) *App {
 
 // Dispatch 消费已校验请求并产出框架无关响应。
 func (a *App) Dispatch(req wire.ValidatedRequest) wire.Response {
+	return a.dispatch(req, authn.Identity{}, false)
+}
+
+// DispatchWithIdentity dispatches a request after the HTTP authentication layer
+// has established whether an identity was supplied. The explicit authenticated
+// bit is intentional: a valid identity may contain zero-valued fields in tests,
+// and catalog visibility must not infer authentication from UserID.
+func (a *App) DispatchWithIdentity(req wire.ValidatedRequest, identity authn.Identity, authenticated bool) wire.Response {
+	return a.dispatch(req, identity, authenticated)
+}
+
+func (a *App) dispatch(req wire.ValidatedRequest, identity authn.Identity, authenticated bool) wire.Response {
 	// JSON-RPC 约定：无 id 的消息是通知，一律 204 空体（任何方法同口径）。
 	if !req.HasID {
 		return wire.Notification()
@@ -77,11 +89,17 @@ func (a *App) Dispatch(req wire.ValidatedRequest) wire.Response {
 	switch req.Method {
 	case "initialize":
 		return a.initialize(req)
+	case "tools/list":
+		return wire.Result(req.RequestID, ToolsList(authenticated))
+	case "resources/list":
+		return wire.Result(req.RequestID, ResourcesList())
+	case "resources/templates/list":
+		return wire.Result(req.RequestID, ResourceTemplatesList())
+	case "prompts/list":
+		return wire.Result(req.RequestID, PromptsList())
 	case "tools/call":
 		return a.call(req)
 	default:
-		// tools/list、resources/*、prompts/* 自 PR 1.4 起接入；此前与未知
-		// 方法同口径（ping 也是 Method not found，刻意非标准但已冻结）。
 		return wire.Error(req.RequestID, wire.MethodNotFound, "Method not found")
 	}
 }
@@ -246,7 +264,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// PR 1.4 起 tools/list 私有工具按 is_authenticated 分叉，身份经参数传入分派。
-	h.app.Dispatch(req).Write(w)
+	h.app.DispatchWithIdentity(req, identity, h.auth != nil && r.Header.Get("Authorization") != "").Write(w)
 }
 
 // writeInternalServerError 对齐 ServerErrorMiddleware：纯文本定长 500。

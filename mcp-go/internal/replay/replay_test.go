@@ -10,8 +10,7 @@
 //   - PR 1.4：tools/list* / resources-list / resources-templates-list /
 //     prompts-list（静态清单落地后解除跳过）。
 //
-// 跳过即声明：deferredSkips 表里的每个名字都必须出现在语料中且被跳过，
-// 语料新增用例会立即以"未裁决"失败暴露，不允许静默漏测。
+// 语料新增用例会立即进入回放并以逐字节差异暴露，不允许静默漏测。
 package replay
 
 import (
@@ -57,21 +56,6 @@ type corpusCase struct {
 		Headers map[string]string `json:"headers"`
 		Body    string            `json:"body"`
 	} `json:"response"`
-}
-
-// deferredSkips 记录显式推迟的用例及归属里程碑；键不在语料中出现也算失败。
-var deferredSkips = map[string]string{
-	"tools-list":                        "PR 1.4 静态清单",
-	"tools-list-authenticated":          "PR 1.4 静态清单",
-	"tools-list-id-null":                "PR 1.4 静态清单",
-	"tools-list-id-float":               "PR 1.4 静态清单",
-	"tools-list-id-bool":                "PR 1.4 静态清单",
-	"tools-list-id-zero":                "PR 1.4 静态清单",
-	"tools-list-without-params":         "PR 1.4 静态清单",
-	"tools-list-unknown-session-header": "PR 1.4 静态清单",
-	"resources-list":                    "PR 1.4 静态清单",
-	"resources-templates-list":          "PR 1.4 静态清单",
-	"prompts-list":                      "PR 1.4 静态清单",
 }
 
 // warmupRequests 镜像 recorder.py ParityCase.warmup：录制前把同一请求
@@ -227,23 +211,12 @@ var errParityProbe = errors.New("parity probe")
 func TestProtocolCorpus(t *testing.T) {
 	cases := loadProtocolCases(t)
 	seen := map[string]bool{}
-	skipped := map[string]bool{}
 	for _, c := range cases {
 		c := c
-		if reason, deferred := deferredSkips[c.Name]; deferred {
-			skipped[c.Name] = true
-			t.Logf("SKIP %s（%s）", c.Name, reason)
-			continue
-		}
 		seen[c.Name] = true
 		t.Run(c.Name, func(t *testing.T) {
 			replayCase(t, c)
 		})
-	}
-	for name := range deferredSkips {
-		if !skipped[name] {
-			t.Errorf("推迟用例 %s 未在语料中出现——里程碑到期或语料已删，须更新 deferredSkips", name)
-		}
 	}
 	var names []string
 	for name := range seen {
