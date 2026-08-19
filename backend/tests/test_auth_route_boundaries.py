@@ -31,7 +31,6 @@ class AuthRouteBoundaryTests(unittest.TestCase):
                 "reset_password",
                 "register",
                 "login",
-                "send_change_password_otp",
                 "change_password",
             }
         }
@@ -42,7 +41,6 @@ class AuthRouteBoundaryTests(unittest.TestCase):
                 "reset_password",
                 "register",
                 "login",
-                "send_change_password_otp",
                 "change_password",
             },
         )

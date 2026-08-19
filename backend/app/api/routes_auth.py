@@ -237,13 +237,15 @@ class ResetPasswordRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    email_code: str
+    current_password: str
     new_password: str
 
-    @field_validator("email_code")
+    @field_validator("current_password")
     @classmethod
-    def validate_email_code(cls, value: str) -> str:
-        return _validate_email_code(value)
+    def validate_current_password(cls, value: str) -> str:
+        if not value:
+            raise ValueError("当前密码不能为空")
+        return value
 
     @field_validator("new_password")
     @classmethod
@@ -373,37 +375,7 @@ async def reset_password(
     return {"detail": "密码重置成功"}
 
 
-@router.post("/auth/me/send-password-change-otp", summary="发送改密邮箱验证码（已登录）")
-async def send_change_password_otp(
-    request: Request,
-    response: Response,
-    current_user: dict[str, Any] = Depends(RequireUser),
-    repository: UserAccountRepository = Depends(get_user_account_repository),
-) -> dict[str, Any]:
-    """向当前登录用户的账号邮箱发送改密验证码（purpose=password_change）。"""
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Pragma"] = "no-cache"
-    await _enforce_rate_limit(
-        request, action="auth.send_change_otp", limit=_OTP_SEND_RATE_LIMIT
-    )
-    email = str(current_user.get("email") or "")
-    if not email:
-        raise HTTPException(status_code=401, detail="用户身份无效")
-    lifecycle = build_account_lifecycle(
-        repository=repository,
-        otp=_get_email_service(request),
-        password_hasher=hash_password,
-    )
-    try:
-        await lifecycle.request_change_password_otp(email=email)
-    except OtpSendRateLimitedError as exc:
-        raise HTTPException(status_code=429, detail=exc.detail) from exc
-    except OtpDeliveryUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=exc.detail) from exc
-    return {"detail": "验证码已发送至当前账号邮箱"}
-
-
-@router.post("/auth/me/password", summary="已登录改密（邮箱验证码校验）")
+@router.post("/auth/me/password", summary="已登录改密（当前密码校验）")
 async def change_password(
     body: ChangePasswordRequest,
     request: Request,
@@ -411,10 +383,10 @@ async def change_password(
     current_user: dict[str, Any] = Depends(RequireUser),
     repository: UserAccountRepository = Depends(get_user_account_repository),
 ) -> dict[str, Any]:
-    """凭邮箱验证码修改密码（验证码替代当前密码，产品决策：强制邮箱验证）。
+    """凭当前密码修改密码（产品决策：当前密码校验，无需邮箱验证码）。
 
-    JWT 无 email 声明视为身份无效（401）。注意：无 SMTP 的自托管环境
-    无可用改密路径（免验证码旧口令路径已按决策移除）。
+    JWT 无 email 声明视为身份无效（401）。当前密码错误统一返回 400，
+    接口受 auth.change_password 频率限制保护，抵御口令爆破。
     """
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
@@ -433,13 +405,13 @@ async def change_password(
     try:
         await lifecycle.change_password(
             email=email,
-            email_code=body.email_code,
+            current_password=body.current_password,
             new_password=body.new_password,
         )
-    except account_lifecycle.InvalidOtp as exc:
+    except account_lifecycle.InvalidCredentials as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="验证码错误或已过期",
+            detail="当前密码错误",
         ) from exc
     except account_lifecycle.PasswordChangeFailed as exc:
         raise HTTPException(

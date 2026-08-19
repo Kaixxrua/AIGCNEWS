@@ -50,9 +50,9 @@ class PasswordPolicyTests(unittest.TestCase):
                 new_password="admin123456",
             )
         with self.assertRaises(ValidationError):
-            ChangePasswordRequest(email_code="123456", new_password="short")
+            ChangePasswordRequest(current_password="old-secret", new_password="short")
         with self.assertRaises(ValidationError):
-            ChangePasswordRequest(email_code="abcde", new_password="x9" * 5)
+            ChangePasswordRequest(current_password="", new_password="x9" * 5)
         # 合法值三个 schema 均放行
         strong = "Str0ng!Passphrase"
         self.assertEqual(
@@ -68,7 +68,7 @@ class PasswordPolicyTests(unittest.TestCase):
             strong,
         )
         self.assertEqual(
-            ChangePasswordRequest(email_code="123456", new_password=strong)
+            ChangePasswordRequest(current_password="old-secret", new_password=strong)
             .new_password,
             strong,
         )
