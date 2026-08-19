@@ -484,25 +484,32 @@ def test_dynamic_category_formatting_preserves_taxonomy_and_defaults() -> None:
     ]
 
 
-def test_public_github_list_projects_requires_active_availability_status() -> None:
+def test_public_github_list_projects_retains_not_found_repos() -> None:
+    """下架（not_found）仓库保留在项目库列表，由前端置灰展示。
+
+    列表总数须与分类计数、dashboard 统计卡片口径一致，
+    因此不再按 availability_status 过滤；但条目须透出
+    availability_status 供前端渲染置灰卡片。
+    """
     database = Database([{"cnt": 0}, []])
     PostgresProjectCatalogRepository(database).list_projects(source="github")
     for sql, _params in database.cursor.calls[1:]:
-        assert "c.availability_status = 'active'" in sql
+        assert "c.availability_status = 'active'" not in sql
+        assert "c.availability_status" in sql
 
 
-def test_lexical_candidate_repo_ids_requires_active_availability_status() -> None:
+def test_lexical_candidate_repo_ids_retain_not_found_repos() -> None:
     database = Database([[{"repo_id": "owner/repo"}]])
     PostgresProjectCatalogRepository(database).find_lexical_candidate_repo_ids(q="agent")
     sql, _params = database.cursor.calls[1]
-    assert "c.availability_status = 'active'" in sql
+    assert "availability_status" not in sql
 
 
-def test_lexical_candidate_lanes_eligible_requires_active_availability_status() -> None:
+def test_lexical_candidate_lanes_retain_not_found_repos() -> None:
     database = Database([[]])
     PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(q="agent")
     sql, _params = database.cursor.calls[1]
-    assert "c.availability_status = 'active'" in sql
+    assert "availability_status" not in sql
 
 
 def test_relevance_sort_uses_strong_field_match_branch() -> None:

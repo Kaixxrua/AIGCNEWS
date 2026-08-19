@@ -179,6 +179,9 @@ _LIST_PROJECT_COLUMN_PAIRS = (
         "COALESCE(gm.growth_corroborated,FALSE) growth_corroborated",
         "FALSE growth_corroborated",
     ),
+    # 下架（not_found）仓库保留在列表中，前端据此渲染置灰卡片；
+    # website 分支无可用性概念，恒为 active。
+    ("c.availability_status", "'active'::text availability_status"),
     ("ge.confidence", "we.confidence"),
 )
 _GH_SELECT_COLUMNS = tuple(github for github, _website in _LIST_PROJECT_COLUMN_PAIRS)
@@ -482,7 +485,9 @@ class PostgresProjectCatalogRepository:
             return []
         limit = max(1, min(int(limit or 200), 200))
         normalized_query = " ".join(str(q or "").split())
-        filters = ["COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL", "c.availability_status = 'active'"]
+        # 已下架（not_found）仓库保留在搜索结果中，前端以置灰卡片展示，
+        # 与列表/分类/仪表盘统计口径一致；仅 dashboard 日榜仍排除不可用仓库。
+        filters = ["COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL"]
         params: list[Any] = [min_stars]
         if enriched_only:
             filters.append("ge.status = 'succeeded'")
@@ -548,7 +553,8 @@ class PostgresProjectCatalogRepository:
         strict_limit = max(1, min(int(strict_limit or 150), 150))
         relaxed_limit = max(1, min(int(relaxed_limit or 150), 150))
         prefix = f"{escape_like_literal(normalized_query)}%"
-        filters = ["COALESCE(c.stars, 0) >= %s", "c.availability_status = 'active'"]
+        # 与 list_projects 同一可见性口径：not_found 仓库保留（前端置灰展示）。
+        filters = ["COALESCE(c.stars, 0) >= %s"]
         filter_params: list[Any] = [min_stars]
         if enriched_only:
             filters.append("ge.status = 'succeeded'")
@@ -771,8 +777,10 @@ class PostgresProjectCatalogRepository:
     ) -> list[dict[str, Any]]:
         """看板 GitHub 今日暴涨榜：指定指标日按 hot_score(v5) 排序的正增长仓库。
 
-        与 list_projects(scope="today") 同一收录口径（min_stars、enriched、
-        availability_status='active'、daily_growth_available、正增长），但
+        收录口径与 list_projects(scope="today") 一致（min_stars、enriched、
+        daily_growth_available、正增长），但日榜额外排除
+        availability_status='not_found' 的已下架仓库——榜单没有置灰卡片
+        形态，上榜仓库必须可访问；项目库列表则保留下架仓库并置灰展示。
         指标日期由调用方传入——看板默认视图可能回溯到窗口内最近有指标的
         日期，历史视图则显式指定；scope="today" 内部硬编码当天，无法复用。
         """
@@ -869,7 +877,10 @@ class PostgresProjectCatalogRepository:
                 return {"items": [], "total": 0, "page": page, "page_size": page_size}
             source = "github"
 
-        gh_filters = ["COALESCE(c.stars, 0) >= %s", "c.availability_status = 'active'"]
+        # 已下架（not_found）仓库保留在项目库中：条目携带
+        # availability_status 由前端渲染置灰卡片，保证列表总数与分类计数、
+        # dashboard 统计卡片（github_library_total）口径一致。
+        gh_filters = ["COALESCE(c.stars, 0) >= %s"]
         gh_filter_params: list[Any] = [min_stars]
         web_filters = ["TRUE"]
         web_filter_params: list[Any] = []
