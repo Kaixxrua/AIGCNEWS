@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="Live site" src="https://img.shields.io/badge/Live-aigcnews.cn-blue"></a>
   <a href="https://github.com/Kaixxrua/AIGC_NEWS/actions/workflows/contract-baseline.yml"><img alt="CI: Contract Baseline" src="https://github.com/Kaixxrua/AIGC_NEWS/actions/workflows/contract-baseline.yml/badge.svg?branch=main"></a>
-  <a href="LICENSE"><img alt="License: BSL 1.1" src="https://img.shields.io/badge/License-BSL%201.1-lightgrey"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/License-AGPL--3.0-blue"></a>
   <a href="https://cursor.com/en-US/install-mcp?name=aigc-radar&config=eyJ1cmwiOiJodHRwczovL2FpZ2NuZXdzLmNuL2FwaS9tY3AifQ=="><img alt="Install in Cursor" src="https://cursor.com/deeplink/mcp-install-dark.svg"></a>
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="Install in VS Code" src="https://img.shields.io/badge/Install%20in-VS%20Code-007acc"></a>
 </p>
@@ -254,4 +254,4 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 
 ## License
 
-[Business Source License 1.1](LICENSE) © 2026 Kaixxrua — non-production and internal non-commercial use allowed; commercial use and public deployment require the licensor's prior written authorization; each version converts to Apache-2.0 four years after its first public distribution.
+[GNU Affero General Public License v3.0](LICENSE) © 2026 Kaixxrua — free to use, modify, and self-host, including commercially; if you run a modified version as a public network service, you must offer its source under AGPL-3.0. Commercial licensing available on request.
