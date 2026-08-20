@@ -16,6 +16,8 @@
 // 当前按仓储未装配语义投射 -32603）。
 // PR 2.5 范围：search_my_project_favorites 工具（身份感知注册缝 +
 // Postgres 收藏检索）。
+// PR 2.6 范围：submit_project_adoption 工具（采纳回执写路径；
+// 匿名可写，无语料用例，门禁为 Go 单测）。
 package main
 
 import (
@@ -94,6 +96,10 @@ func run() int {
 	registry["get_paper_detail"] = papers.Get
 	rankSnapshots := postgres.NewRankSnapshotRepository(pool)
 	registry["get_top_items"] = mcpapp.NewGetTopItemsService(rankSnapshots, publicBaseURL).Get
+	// 采纳回执写路径（PR 2.6）：匿名可写的普通工具（Python 匿名短路
+	// 仅覆盖 favorites），McpToolContext.adoptions 的 Go 对应物。
+	registry["submit_project_adoption"] = mcpapp.NewAdoptionsService(
+		postgres.NewProjectAdoptionsRepository(pool), publicBaseURL).Submit
 	app := mcpapp.New(version.ServerName, serverVersion, registry)
 	// 身份感知工具（PR 2.5）：收藏检索需要 UserID + scope 判定，
 	// 认证/scope 文案在处理器内产生（对齐 Python dispatcher 短路 +

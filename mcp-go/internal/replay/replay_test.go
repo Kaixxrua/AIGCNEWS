@@ -21,6 +21,8 @@
 //   - PR 2.5：search_my_project_favorites 落地（身份感知注册缝 +
 //     fixtures.json favorites_rows 驱动的 _StubProjectCollections 镜像），
 //     favorites-* 6 例解除跳过。
+//   - PR 2.6：submit_project_adoption 落地（写路径，无语料用例——
+//     recorder 未为本工具录制 stub，门禁为 mcpapp 包 Go 单测）。
 //
 // 语料新增用例会立即进入回放并以逐字节差异暴露，不允许静默漏测：
 // tools.jsonl 每个用例必须在 toolsCorpusMilestones 显式登记归属 PR。
@@ -643,7 +645,8 @@ var toolsCorpusMilestones = map[string]string{
 
 // toolsCorpusCurrentMilestone 是本包当前解锁的里程碑。先前 PR 的工具必须继续
 // 回放，避免新工具接入使已解锁语料静默失去覆盖；其后用例带里程碑标注跳过。
-const toolsCorpusCurrentMilestone = "PR 2.5"
+// PR 2.6 无语料用例（写路径未录制），里程碑仅作进度标注推进。
+const toolsCorpusCurrentMilestone = "PR 2.6"
 
 var toolsCorpusMilestoneOrder = []string{
 	"PR 2.2", "PR 2.3", "PR 2.4", "PR 2.5", "PR 2.6", "PR 2.7", "PR 2.8",
