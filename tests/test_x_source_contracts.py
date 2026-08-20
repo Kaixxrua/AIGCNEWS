@@ -1157,7 +1157,99 @@ class XTransportCredentialProviderContracts(unittest.IsolatedAsyncioTestCase):
             await transport.fetch_watchlist_tweets(["openai"])
 
         self.assertIn("x_auth_all_credentials_failed", str(ctx.exception))
+
+    async def test_twitter_api_401_rotates_to_backup_and_discards_partial(self) -> None:
+        """twitter-cli 把 GraphQL 401（code 32 Could not authenticate you）包成
+        TwitterAPIError——须归一为认证失效并轮换备用凭据（生产实证）。"""
+        calls: list[tuple[str, str]] = []
+
+        def factory(auth_token: str, ct0: str) -> _FakeClient:
+            client = _FakeClient()
+            calls.append((auth_token, ct0))
+            if auth_token == "primary":
+                client.fetch_user.side_effect = [
+                    UserProfile(id="11", name="OpenAI", screen_name="openai"),
+                    TwitterAPIError(401, "Could not authenticate you"),
+                ]
+                client.fetch_user_tweets.return_value = [_tweet("primary-partial")]
+            else:
+                # openai 的 user_id 已被主凭据写入注入缓存，备用凭据只需
+                # 为 karpathy 调一次 fetch_user。
+                client.fetch_user.return_value = UserProfile(
+                    id="22", name="Karpathy", screen_name="karpathy"
+                )
+                client.fetch_user_tweets.side_effect = [
+                    [_tweet("backup-openai")],
+                    [_tweet("backup-karpathy")],
+                ]
+            return client
+
+        def provider():
+            return [
+                {"id": 1, "enabled": True, "auth_token": "primary", "ct0": "c1"},
+                {"id": 2, "enabled": True, "auth_token": "backup", "ct0": "c2"},
+            ]
+
+        transport = x_transport.XTransport(
+            credential_provider=provider,
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        result = await transport.fetch_watchlist_tweets(["openai", "karpathy"])
+
+        self.assertEqual(calls, [("primary", "c1"), ("backup", "c2")])
+        # 401 中止主凭据本轮并丢弃 partial：全部结果来自备用凭据
+        self.assertEqual([t.id for t in result["openai"]], ["backup-openai"])
+        self.assertEqual([t.id for t in result["karpathy"]], ["backup-karpathy"])
+
+    async def test_twitter_api_403_all_credentials_failed_raises_auth_abort(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def factory(auth_token: str, ct0: str) -> _FakeClient:
+            client = _FakeClient()
+            calls.append((auth_token, ct0))
+            client.fetch_user.side_effect = TwitterAPIError(403, "Forbidden")
+            return client
+
+        def provider():
+            return [
+                {"id": 1, "enabled": True, "auth_token": "first", "ct0": "c1"},
+                {"id": 2, "enabled": True, "auth_token": "second", "ct0": "c2"},
+            ]
+
+        transport = x_transport.XTransport(
+            credential_provider=provider,
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        with self.assertRaises(x_transport.XAuthAbort) as ctx:
+            await transport.fetch_watchlist_tweets(["openai"])
+
+        self.assertIn("x_auth_all_credentials_failed", str(ctx.exception))
         self.assertEqual(calls, [("first", "c1"), ("second", "c2")])
+
+    async def test_legacy_client_path_twitter_api_401_raises_auth_expired(self) -> None:
+        """无 credential_provider 的旧路径：401 同样归一为 x_auth_expired，
+        与推文存在性探测的 401/403 口径保持一致。"""
+        client = _FakeClient()
+        client.fetch_user.side_effect = TwitterAPIError(401, "Could not authenticate you")
+        transport = x_transport.XTransport(
+            lambda: client,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        with self.assertRaises(x_transport.XAuthAbort) as ctx:
+            await transport.fetch_watchlist_tweets(["openai"])
+
+        self.assertIn("x_auth_expired", str(ctx.exception))
 
     async def test_disabled_or_incomplete_credentials_are_skipped(self) -> None:
         calls: list[tuple[str, str]] = []

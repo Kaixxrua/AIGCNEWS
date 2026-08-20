@@ -721,6 +721,11 @@ class XTransport:
 
         故障分级：
           - NotFoundError（账号消失）：个体问题，跳过，不计故障
+          - TwitterAPIError(401/403)：twitter-cli 把 GraphQL 认证失效包成
+            TwitterAPIError 而非 AuthenticationError（生产实证：HTTP 401
+            code 32 "Could not authenticate you"）——凭证级失效，归一为
+            AuthenticationError 立即中止本轮，交给凭证池 fallback 或上抛
+            XAuthAbort；不拿死凭据锤其余账号，也绝不误计为基础设施故障
           - TwitterAPIError(429)：twitter-cli 内部退避后仍限流（它把 429 包成
             TwitterAPIError 而非 RateLimitError）——跳过该账号保住本轮其余
             覆盖（观测：部分限流轮仍能收到 7/12），但记账；整轮零成功时
@@ -758,6 +763,14 @@ class XTransport:
                     )
                     break
                 except TwitterAPIError as exc:
+                    if exc.status_code in (401, 403):
+                        # 凭证级认证失效（twitter-cli 把 GraphQL 401/403 包成
+                        # TwitterAPIError 而非 AuthenticationError）：归一为
+                        # AuthenticationError，凭证池路径据此轮换备用凭据、
+                        # 单 client 路径据此上抛 XAuthAbort("x_auth_expired")。
+                        raise AuthenticationError(
+                            "Twitter API 认证失败 (HTTP %d)" % exc.status_code
+                        ) from exc
                     if exc.status_code == 429:
                         rate_limited = True
                         logger.warning(
