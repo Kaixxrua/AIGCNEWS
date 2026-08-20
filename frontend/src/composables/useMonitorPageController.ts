@@ -2,7 +2,7 @@ import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
-  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createPaymentConfigForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
   type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
 } from '@/features/monitor/monitorModel'
@@ -86,6 +86,12 @@ export const useMonitorPageController = ({
   const paymentOrderDetail = ref<Awaited<ReturnType<MonitorApi['fetchPaymentOrderDetail']>> | null>(null)
   const loadingPaymentOrderDetail = ref(false)
   const paymentOrdersTotalPages = computed(() => Math.max(1, Math.ceil(paymentOrdersTotal.value / paymentOrdersPageSize.value)))
+  // 支付渠道配置（ADR 0002）：DB 覆盖行优先 env，密文只写入不回填
+  const paymentConfig = ref<Awaited<ReturnType<MonitorApi['fetchPaymentConfig']>> | null>(null)
+  const paymentForm = ref(createPaymentConfigForm())
+  const loadingPaymentConfig = ref(false)
+  const savingPaymentConfig = ref(false)
+  const resettingPaymentConfig = ref(false)
   const mcpServers = ref<McpServerConfig[]>([])
   const mcpForm = ref(createEmptyMcpForm())
   const loadingMcpServers = ref(false)
@@ -165,6 +171,60 @@ export const useMonitorPageController = ({
   }
   const markPaymentOrderPaid = async (orderNo: string) => { await api.markPaymentOrderPaid(orderNo); await fetchPaymentOrders() }
   const closePaymentOrder = async (orderNo: string) => { await api.closePaymentOrder(orderNo); await fetchPaymentOrders() }
+  const fetchPaymentConfig = async () => {
+    if (!isAdmin.value) return
+    loadingPaymentConfig.value = true
+    try {
+      paymentConfig.value = await api.fetchPaymentConfig()
+      paymentForm.value = createPaymentConfigForm(paymentConfig.value)
+    } catch (error) { console.error('Failed to fetch payment config', error) }
+    finally { loadingPaymentConfig.value = false }
+  }
+  const PAYMENT_TTL_MIN = 5
+  const PAYMENT_TTL_MAX = 1440
+  const PAYMENT_BASE_URL_PATTERN = /^https?:\/\/\S+$/i
+  // 保存成功后归零密文输入态：密文永不回填，下一次保存按留空=保留语义
+  const resetPaymentSecretInputs = () => {
+    const form = paymentForm.value
+    form.wechat_api_v3_key = ''; form.wechat_private_key_pem = ''
+    form.alipay_private_key_pem = ''; form.alipay_public_key_pem = ''
+    form.stripe_secret_key = ''; form.stripe_webhook_secret = ''
+    form.clear_wechat_api_v3_key = false; form.clear_wechat_private_key_pem = false
+    form.clear_alipay_private_key_pem = false; form.clear_alipay_public_key_pem = false
+    form.clear_stripe_secret_key = false; form.clear_stripe_webhook_secret = false
+  }
+  const savePaymentConfig = async () => {
+    if (savingPaymentConfig.value) return
+    clearMessages()
+    const form = paymentForm.value
+    // 与后端同口径的无害前端校验，提前拦截 400 往返
+    if (!Number.isInteger(form.order_ttl_minutes) || form.order_ttl_minutes < PAYMENT_TTL_MIN || form.order_ttl_minutes > PAYMENT_TTL_MAX) {
+      errorMsg.value = i18n.global.t('monitor.paymentConfig.invalidTtl')
+      return
+    }
+    const baseUrl = form.public_base_url.trim()
+    if (baseUrl && !PAYMENT_BASE_URL_PATTERN.test(baseUrl)) {
+      errorMsg.value = i18n.global.t('monitor.paymentConfig.invalidBaseUrl')
+      return
+    }
+    savingPaymentConfig.value = true
+    try {
+      paymentConfig.value = await api.savePaymentConfig({ ...form, public_base_url: baseUrl })
+      resetPaymentSecretInputs()
+      successMsg.value = i18n.global.t('monitor.paymentConfig.saved')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { savingPaymentConfig.value = false }
+  }
+  const resetPaymentConfig = async () => {
+    if (resettingPaymentConfig.value || !confirm(i18n.global.t('monitor.paymentConfig.resetConfirm'))) return
+    clearMessages(); resettingPaymentConfig.value = true
+    try {
+      paymentConfig.value = await api.resetPaymentConfig()
+      paymentForm.value = createPaymentConfigForm(paymentConfig.value)
+      successMsg.value = i18n.global.t('monitor.paymentConfig.resetDone')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { resettingPaymentConfig.value = false }
+  }
   const setSuccessMessage = (message: string) => { successMsg.value = message }
   const setErrorMessage = (message: string) => { errorMsg.value = message }
   const { crawlPolling, crawlStatus, beginCrawlPolling, resumeGithubCrawlPolling, disposeCrawlPolling } = useGithubCrawlPolling({
@@ -324,7 +384,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -734,7 +794,7 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), resumeGithubCrawlPolling()])
   })
 
   return {
@@ -743,6 +803,7 @@ export const useMonitorPageController = ({
     emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
     paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersPageSize, paymentOrdersFilter, loadingPaymentOrders, paymentOrdersTotalPages, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
+    paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, fetchPaymentConfig, savePaymentConfig, resetPaymentConfig,
     membershipForm, grantingMembership, membershipLastResult,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,

@@ -1255,7 +1255,19 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    def _payments_runtime_enabled(self) -> bool:
+        """Use DB configuration when bound; preserve constructor input in isolated tests."""
+        from backend.app.services.payments.runtime_config import resolve_payment_config
+        from backend.app.services.payments import runtime_config
+
+        if runtime_config._reader is None:
+            return self._payments_enabled
+        return resolve_payment_config().enabled
+
     async def _run_payment_order_closing_job(self) -> None:
+        if not self._payments_runtime_enabled():
+            logger.info("[Scheduler] 支付开关关闭，跳过支付订单超时关单任务。")
+            return
         await self._run_tracked(
             lambda: self._guarded(
                 "payment_order_closing",
@@ -1308,7 +1320,7 @@ class ApplicationSchedulerRuntime:
             return SUBSCRIPTION_DISPATCH_JOB
         if job_id == CONVERSATION_CLEANUP_JOB.id:
             return CONVERSATION_CLEANUP_JOB
-        if job_id == "payment_order_closing" and self._payments_enabled:
+        if job_id == "payment_order_closing" and self._payments_runtime_enabled():
             return PAYMENT_ORDER_CLOSING_JOB
         if job_id == "project_semantic_warmup" and self._semantic_search_enabled:
             return project_semantic_warmup_job_descriptor(
@@ -1326,7 +1338,7 @@ class ApplicationSchedulerRuntime:
         if descriptor.id == CONVERSATION_CLEANUP_JOB.id:
             return self._run_conversation_cleanup_job
         if descriptor.source == "payment_order_closing":
-            if not self._payments_enabled:
+            if not self._payments_runtime_enabled():
                 return None
             return self._run_payment_order_closing_job
         if descriptor.source == "project_semantic_warmup":
@@ -1477,7 +1489,7 @@ class ApplicationSchedulerRuntime:
         else:
             logger.info("[Scheduler] 跳过已停用的会话清理任务: conversation_cleanup")
 
-        if self._payments_enabled:
+        if self._payments_runtime_enabled():
             payment_closing = self._effective_descriptor(PAYMENT_ORDER_CLOSING_JOB)
             if payment_closing is not None:
                 _register_job(

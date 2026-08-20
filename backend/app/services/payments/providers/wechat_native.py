@@ -15,7 +15,16 @@ from typing import Any, Mapping
 from fastapi import Response
 from fastapi.responses import JSONResponse
 
-from backend.app.core.config import Settings
+from typing import Protocol
+
+
+class WeChatProviderConfig(Protocol):
+    wechat_appid: str
+    wechat_mchid: str
+    wechat_mch_serial_no: str
+    wechat_api_v3_key: str
+    wechat_private_key_pem: str
+
 from backend.app.services.payments.providers.base import (
     PaymentInstruction,
     ProviderNotConfiguredError,
@@ -25,22 +34,26 @@ from backend.app.services.payments.providers.base import (
 CHANNEL_WECHAT_NATIVE = "wechat_native"
 
 
+def _config_value(config: object, *names: str) -> str:
+    return next((str(value) for name in names if (value := getattr(config, name, ""))), "")
+
+
 class WeChatNativePaymentProvider:
     """WeChat Pay v3 Native（扫码）渠道；凭证未齐时全部能力 503。"""
 
     channel = CHANNEL_WECHAT_NATIVE
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: WeChatProviderConfig) -> None:
         self._settings = settings
 
     def is_configured(self) -> bool:
         return all(
             [
-                self._settings.wechat_pay_appid,
-                self._settings.wechat_pay_mchid,
-                self._settings.wechat_pay_mch_serial_no,
-                self._settings.wechat_pay_api_v3_key,
-                self._settings.wechat_pay_private_key_path,
+                _config_value(self._settings, "wechat_appid", "wechat_pay_appid"),
+                _config_value(self._settings, "wechat_mchid", "wechat_pay_mchid"),
+                _config_value(self._settings, "wechat_mch_serial_no", "wechat_pay_mch_serial_no"),
+                _config_value(self._settings, "wechat_api_v3_key", "wechat_pay_api_v3_key"),
+                _config_value(self._settings, "wechat_private_key_pem", "wechat_pay_private_key_path"),
             ]
         )
 

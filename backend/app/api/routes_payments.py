@@ -52,6 +52,7 @@ from backend.app.services.payments.orders import (
     normalize_order_status,
 )
 from backend.app.services.payments.plans import MEMBERSHIP_PLANS, UnknownPlanError, get_plan
+from backend.app.services.payments.runtime_config import EffectivePaymentConfig, resolve_payment_config
 from backend.app.services.payments.providers.base import (
     CallbackVerificationError,
     PaymentProvider,
@@ -114,11 +115,9 @@ def _to_public_order(row: Mapping[str, Any]) -> PaymentOrderPublic:
     )
 
 
-def _public_base_url(request: Request) -> str:
+def _public_base_url(request: Request, config: EffectivePaymentConfig) -> str:
     """回调/回跳公网基址：显式配置优先，缺省按请求 Host 推导。"""
-    from backend.app.core.config import settings
-
-    configured = settings.payments_public_base_url.strip().rstrip("/")
+    configured = config.public_base_url.strip().rstrip("/")
     if configured:
         return configured
     return str(request.base_url).rstrip("/")
@@ -169,8 +168,7 @@ async def create_payment_order(
     providers: dict[str, PaymentProvider] = Depends(get_payment_providers),
 ) -> CreatePaymentOrderResponse:
     """创建待支付订单并返回渠道支付指令；幂等键命中返回既有单。"""
-    from backend.app.core.config import settings
-
+    config = resolve_payment_config()
     user_id = extract_user_id(user)
     if user_id is None:
         raise HTTPException(
@@ -203,7 +201,7 @@ async def create_payment_order(
             detail="payment_channel_not_configured",
         )
 
-    base_url = _public_base_url(request)
+    base_url = _public_base_url(request, config)
     notify_url = f"{base_url}/api/payments/callback/{payload.channel}"
     return_url = f"{base_url}/membership/checkout"
 
@@ -230,7 +228,7 @@ async def create_payment_order(
             )
 
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(minutes=int(settings.payments_order_ttl_minutes))
+    expires_at = now + timedelta(minutes=config.order_ttl_minutes)
     order_row: dict[str, Any] | None = None
     # order_no 冲突（概率极低）换号重试；幂等键并发冲突按既有单回读。
     for _ in range(3):

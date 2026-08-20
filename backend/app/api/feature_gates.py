@@ -37,9 +37,9 @@ def require_payments_enabled() -> None:
     渠道凭证缺失不走到这里：开关开 + 渠道未配置由路由层映射 503
     payment_channel_not_configured（ADR 0002 的 404/503 双层语义）。
     """
-    from backend.app.core.config import settings
+    from backend.app.services.payments.runtime_config import resolve_payment_config
 
-    if not settings.payments_enabled:
+    if not resolve_payment_config().enabled:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="payments_disabled",

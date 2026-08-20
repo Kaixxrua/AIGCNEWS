@@ -6,7 +6,13 @@
 
 from __future__ import annotations
 
-from backend.app.core.config import Settings
+from typing import Protocol
+
+
+class PaymentProviderConfig(Protocol):
+    stripe_secret_key: str
+    stripe_webhook_secret: str
+
 from backend.app.services.payments.providers.alipay_page import (
     AlipayPagePaymentProvider,
 )
@@ -17,10 +23,10 @@ from backend.app.services.payments.providers.wechat_native import (
 )
 
 
-def build_payment_providers(settings: Settings) -> dict[str, PaymentProvider]:
+def build_payment_providers(config: PaymentProviderConfig) -> dict[str, PaymentProvider]:
     providers = (
-        WeChatNativePaymentProvider(settings),
-        AlipayPagePaymentProvider(settings),
-        StripePaymentProvider(settings),
+        WeChatNativePaymentProvider(config),
+        AlipayPagePaymentProvider(config),
+        StripePaymentProvider(config),
     )
     return {provider.channel: provider for provider in providers}

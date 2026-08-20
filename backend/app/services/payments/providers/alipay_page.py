@@ -13,7 +13,14 @@ from typing import Any, Mapping
 
 from fastapi import Response
 
-from backend.app.core.config import Settings
+from typing import Protocol
+
+
+class AlipayProviderConfig(Protocol):
+    alipay_appid: str
+    alipay_private_key_pem: str
+    alipay_public_key_pem: str
+
 from backend.app.services.payments.providers.base import (
     PaymentInstruction,
     ProviderNotConfiguredError,
@@ -23,20 +30,24 @@ from backend.app.services.payments.providers.base import (
 CHANNEL_ALIPAY_PAGE = "alipay_page"
 
 
+def _config_value(config: object, *names: str) -> str:
+    return next((str(value) for name in names if (value := getattr(config, name, ""))), "")
+
+
 class AlipayPagePaymentProvider:
     """支付宝电脑网站支付渠道；凭证未齐时全部能力 503。"""
 
     channel = CHANNEL_ALIPAY_PAGE
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: AlipayProviderConfig) -> None:
         self._settings = settings
 
     def is_configured(self) -> bool:
         return all(
             [
-                self._settings.alipay_appid,
-                self._settings.alipay_private_key_path,
-                self._settings.alipay_public_key_path,
+                _config_value(self._settings, "alipay_appid"),
+                _config_value(self._settings, "alipay_private_key_pem", "alipay_private_key_path"),
+                _config_value(self._settings, "alipay_public_key_pem", "alipay_public_key_path"),
             ]
         )
 

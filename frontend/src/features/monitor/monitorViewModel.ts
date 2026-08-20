@@ -9,6 +9,8 @@ export type {
   McpServerForm,
   McpToolCallEntry,
   McpToolCallMetricsSnapshot,
+  PaymentConfig,
+  PaymentConfigForm,
   ProviderConfig,
   ProviderForm,
   SchedulerStatus,
@@ -48,7 +50,7 @@ export type MonitorSectionKey =
   | 'collect' | 'crawl' | 'enrichment'
   | 'x-watch' | 'x-credentials' | 'wechat'
   | 'provider' | 'scheduler' | 'smtp' | 'mcp-server'
-  | 'contact-page' | 'membership' | 'payment-orders'
+  | 'contact-page' | 'membership' | 'payment-config' | 'payment-orders'
 
 export interface MonitorNavLeaf {
   key: MonitorSectionKey
@@ -89,6 +91,7 @@ export const MONITOR_NAV: MonitorNavCategory[] = [
   { key: 'site', labelKey: 'monitor.nav.group.site', icon: Globe, children: [
     { key: 'contact-page', labelKey: 'monitor.nav.contactPage', adminOnly: true },
     { key: 'membership', labelKey: 'monitor.nav.membership', adminOnly: true },
+    { key: 'payment-config', labelKey: 'monitor.nav.paymentConfig', adminOnly: true },
     { key: 'payment-orders', labelKey: 'monitor.nav.paymentOrders', adminOnly: true },
   ] },
 ]

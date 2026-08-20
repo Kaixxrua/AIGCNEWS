@@ -15,7 +15,13 @@ from typing import Any, Mapping
 from fastapi import Response
 from fastapi.responses import JSONResponse
 
-from backend.app.core.config import Settings
+from typing import Protocol
+
+
+class StripeProviderConfig(Protocol):
+    stripe_secret_key: str
+    stripe_webhook_secret: str
+
 from backend.app.services.payments.providers.base import (
     PaymentInstruction,
     ProviderNotConfiguredError,
@@ -30,14 +36,14 @@ class StripePaymentProvider:
 
     channel = CHANNEL_STRIPE
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: StripeProviderConfig) -> None:
         self._settings = settings
 
     def is_configured(self) -> bool:
         return all(
             [
-                self._settings.stripe_secret_key,
-                self._settings.stripe_webhook_secret,
+                getattr(self._settings, "stripe_secret_key", ""),
+                getattr(self._settings, "stripe_webhook_secret", ""),
             ]
         )
 

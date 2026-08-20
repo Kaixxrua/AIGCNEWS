@@ -751,6 +751,105 @@ export interface PaymentOrderPage {
   page_size: number
 }
 
+// ── 支付渠道配置（ADR 0002 面板）────────────────────────────────────────────
+// 生效来源与 SMTP 同语义：database=页面保存的 DB 覆盖行；environment=env；
+// unconfigured=两者皆无。密文字段只回 *_configured 布尔 + *_masked 脱敏值，
+// 永不回明文；表单密文留空=保留，勾选 clear_*=擦除。
+
+export interface PaymentConfig {
+  enabled: boolean
+  order_ttl_minutes: number
+  public_base_url: string
+  wechat_appid: string
+  wechat_mchid: string
+  wechat_mch_serial_no: string
+  alipay_appid: string
+  source: SmtpConfigSource
+  updated_at: string | null
+  wechat_configured: boolean
+  alipay_configured: boolean
+  stripe_configured: boolean
+  wechat_api_v3_key_configured: boolean
+  wechat_api_v3_key_masked: string | null
+  wechat_private_key_pem_configured: boolean
+  wechat_private_key_pem_masked: string | null
+  alipay_private_key_pem_configured: boolean
+  alipay_private_key_pem_masked: string | null
+  alipay_public_key_pem_configured: boolean
+  alipay_public_key_pem_masked: string | null
+  stripe_secret_key_configured: boolean
+  stripe_secret_key_masked: string | null
+  stripe_webhook_secret_configured: boolean
+  stripe_webhook_secret_masked: string | null
+}
+
+export interface PaymentConfigForm {
+  enabled: boolean
+  order_ttl_minutes: number
+  public_base_url: string
+  wechat_appid: string
+  wechat_mchid: string
+  wechat_mch_serial_no: string
+  wechat_api_v3_key: string
+  wechat_private_key_pem: string
+  alipay_appid: string
+  alipay_private_key_pem: string
+  alipay_public_key_pem: string
+  stripe_secret_key: string
+  stripe_webhook_secret: string
+  clear_wechat_api_v3_key: boolean
+  clear_wechat_private_key_pem: boolean
+  clear_alipay_private_key_pem: boolean
+  clear_alipay_public_key_pem: boolean
+  clear_stripe_secret_key: boolean
+  clear_stripe_webhook_secret: boolean
+}
+
+export const createPaymentConfigForm = (config?: PaymentConfig | null): PaymentConfigForm => ({
+  enabled: config?.enabled ?? false,
+  order_ttl_minutes: config?.order_ttl_minutes || 30,
+  public_base_url: config?.public_base_url || '',
+  wechat_appid: config?.wechat_appid || '',
+  wechat_mchid: config?.wechat_mchid || '',
+  wechat_mch_serial_no: config?.wechat_mch_serial_no || '',
+  wechat_api_v3_key: '',
+  wechat_private_key_pem: '',
+  alipay_appid: config?.alipay_appid || '',
+  alipay_private_key_pem: '',
+  alipay_public_key_pem: '',
+  stripe_secret_key: '',
+  stripe_webhook_secret: '',
+  clear_wechat_api_v3_key: false,
+  clear_wechat_private_key_pem: false,
+  clear_alipay_private_key_pem: false,
+  clear_alipay_public_key_pem: false,
+  clear_stripe_secret_key: false,
+  clear_stripe_webhook_secret: false,
+})
+
+// null 密文 = 后端保留语义；绝不回传 masked 响应值
+export const buildPaymentConfigPayload = (form: PaymentConfigForm) => ({
+  enabled: form.enabled,
+  order_ttl_minutes: form.order_ttl_minutes,
+  public_base_url: form.public_base_url.trim(),
+  wechat_appid: form.wechat_appid.trim(),
+  wechat_mchid: form.wechat_mchid.trim(),
+  wechat_mch_serial_no: form.wechat_mch_serial_no.trim(),
+  wechat_api_v3_key: form.wechat_api_v3_key || null,
+  wechat_private_key_pem: form.wechat_private_key_pem || null,
+  alipay_appid: form.alipay_appid.trim(),
+  alipay_private_key_pem: form.alipay_private_key_pem || null,
+  alipay_public_key_pem: form.alipay_public_key_pem || null,
+  stripe_secret_key: form.stripe_secret_key || null,
+  stripe_webhook_secret: form.stripe_webhook_secret || null,
+  clear_wechat_api_v3_key: form.clear_wechat_api_v3_key,
+  clear_wechat_private_key_pem: form.clear_wechat_private_key_pem,
+  clear_alipay_private_key_pem: form.clear_alipay_private_key_pem,
+  clear_alipay_public_key_pem: form.clear_alipay_public_key_pem,
+  clear_stripe_secret_key: form.clear_stripe_secret_key,
+  clear_stripe_webhook_secret: form.clear_stripe_webhook_secret,
+})
+
 export const createMembershipGrantForm = (): MembershipGrantForm => ({
   email: '',
   tier: 'member',

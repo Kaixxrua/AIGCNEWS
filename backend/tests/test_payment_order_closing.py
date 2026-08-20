@@ -4,12 +4,20 @@ from __future__ import annotations
 test_scheduler_x_media_warmup.py 的既有模式。
 """
 
+import asyncio
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from backend.app.core import scheduler
+from backend.app.core.config import settings
 from backend.app.core.scheduler_registry import PAYMENT_ORDER_CLOSING_JOB
+from backend.app.repositories.payment_settings_repository import PaymentSettings
+from backend.app.services.payments.config_admin import PaymentConfigAdminService
+from backend.app.services.payments.runtime_config import (
+    configure_payment_settings_reader,
+    reset_payment_config_provider,
+)
 
 
 def _runtime(**overrides) -> scheduler.ApplicationSchedulerRuntime:
@@ -112,6 +120,105 @@ class PaymentOrderClosingRegistrationTests(unittest.TestCase):
             asyncio.run(runtime._run_payment_order_closing_job())
 
         closing.assert_awaited_once_with(repositories.orders)
+
+
+
+def _payment_settings_row(*, enabled: bool) -> PaymentSettings:
+    return PaymentSettings(
+        enabled=enabled,
+        order_ttl_minutes=30,
+        public_base_url="",
+        wechat_appid="",
+        wechat_mchid="",
+        wechat_mch_serial_no="",
+        wechat_api_v3_key="",
+        wechat_private_key_pem="",
+        alipay_appid="",
+        alipay_private_key_pem="",
+        alipay_public_key_pem="",
+        stripe_secret_key="",
+        stripe_webhook_secret="",
+        updated_at=datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc),
+    )
+
+
+class FakePaymentSettingsRepository:
+    def __init__(self, row: PaymentSettings | None = None) -> None:
+        self._row = row
+
+    def get_payment_settings(self) -> PaymentSettings | None:
+        return self._row
+
+    def upsert_payment_settings(self, **kwargs) -> PaymentSettings:
+        self._row = PaymentSettings(
+            **kwargs,
+            updated_at=datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc),
+        )
+        return self._row
+
+    def delete_payment_settings(self) -> int:
+        had_row = self._row is not None
+        self._row = None
+        return 1 if had_row else 0
+
+
+class PaymentOrderClosingHotToggleTests(unittest.TestCase):
+    """reader 已绑定（生产形态）时，关单任务热启停以 DB 覆盖行为准，无需重建调度器。"""
+
+    def setUp(self) -> None:
+        reset_payment_config_provider()
+
+    def tearDown(self) -> None:
+        reset_payment_config_provider()
+
+    @staticmethod
+    def _bind(*, enabled: bool) -> FakePaymentSettingsRepository:
+        repo = FakePaymentSettingsRepository(_payment_settings_row(enabled=enabled))
+        configure_payment_settings_reader(repo)
+        return repo
+
+    def test_db_row_overrides_constructor_param_when_reader_bound(self) -> None:
+        # 冷启动 env/构造参数关闭，但面板已在 DB 打开 → 注册关单任务
+        self._bind(enabled=True)
+        runtime, fake_scheduler = _runtime(payments_enabled=False)
+        _start(runtime)
+
+        self.assertTrue(
+            any(
+                item.kwargs.get("id") == "payment_order_closing"
+                for item in fake_scheduler.add_job.call_args_list
+            )
+        )
+
+    def test_panel_save_toggles_descriptor_and_callback_without_rebuild(self) -> None:
+        repo = self._bind(enabled=True)
+        service = PaymentConfigAdminService(repo, env_config=settings)
+        runtime, _ = _runtime(payments_enabled=True)
+
+        self.assertIsNotNone(runtime._base_descriptor("payment_order_closing"))
+        self.assertIsNotNone(runtime._resolve_callback(PAYMENT_ORDER_CLOSING_JOB))
+
+        # 面板关闭 → 同一 runtime 立即不再暴露 descriptor/callback
+        asyncio.run(service.update_config({"enabled": False, "order_ttl_minutes": 30}))
+        self.assertIsNone(runtime._base_descriptor("payment_order_closing"))
+        self.assertIsNone(runtime._resolve_callback(PAYMENT_ORDER_CLOSING_JOB))
+
+        # 面板重新打开 → 恢复
+        asyncio.run(service.update_config({"enabled": True, "order_ttl_minutes": 30}))
+        self.assertIsNotNone(runtime._base_descriptor("payment_order_closing"))
+        self.assertIsNotNone(runtime._resolve_callback(PAYMENT_ORDER_CLOSING_JOB))
+
+    def test_row_delete_falls_back_to_environment_settings(self) -> None:
+        repo = self._bind(enabled=True)
+        service = PaymentConfigAdminService(repo, env_config=settings)
+        runtime, _ = _runtime(payments_enabled=False)
+
+        self.assertIsNotNone(runtime._base_descriptor("payment_order_closing"))
+
+        # 删除覆盖行 → 回落 env（此处钉死为关）→ 立即下线
+        with patch.object(settings, "payments_enabled", False):
+            asyncio.run(service.reset_config())
+            self.assertIsNone(runtime._base_descriptor("payment_order_closing"))
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ from backend.app.repositories.mcp_access_token_repository import (
 )
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.payment_order_repository import PaymentOrderRepository
+from backend.app.repositories.payment_settings_repository import PaymentSettingsRepository
+from backend.app.repositories.payment_settings_repository import PaymentSettingsRepository
 from backend.app.repositories.postgres_attachment_repository import (
     PostgresAttachmentRepository,
 )
@@ -64,6 +66,12 @@ from backend.app.repositories.postgres_mcp_server_repository import (
 )
 from backend.app.repositories.postgres_payment_order_repository import (
     PostgresPaymentOrderRepository,
+)
+from backend.app.repositories.postgres_payment_settings_repository import (
+    PostgresPaymentSettingsRepository,
+)
+from backend.app.repositories.postgres_payment_settings_repository import (
+    PostgresPaymentSettingsRepository,
 )
 from backend.app.repositories.postgres_project_enrichment_repository import (
     PostgresGitHubProjectEnrichmentRepository,
@@ -192,6 +200,7 @@ class ApplicationRepositories:
     runtime_provider_settings: RuntimeProviderSettingRepository
     scheduler_job_configs: SchedulerJobConfigRepository
     smtp_settings: SmtpSettingsRepository
+    payment_settings: PaymentSettingsRepository
     email_pool_settings: EmailPoolSettingsRepository
     site_contact_page: SiteContactPageRepository
     error_events: ErrorEventRepository
@@ -271,6 +280,7 @@ def create_application_repositories(
         runtime_provider_settings=PostgresRuntimeProviderSettingRepository(postgres),
         scheduler_job_configs=PostgresSchedulerJobConfigRepository(postgres),
         smtp_settings=PostgresSmtpSettingsRepository(postgres),
+        payment_settings=PostgresPaymentSettingsRepository(postgres),
         email_pool_settings=PostgresEmailPoolSettingsRepository(postgres),
         site_contact_page=PostgresSiteContactPageRepository(postgres),
         error_events=PostgresErrorEventRepository(postgres),

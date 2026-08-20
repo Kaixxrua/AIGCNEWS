@@ -33,6 +33,7 @@ from backend.app.repositories.mcp_access_token_repository import (
 )
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.payment_order_repository import PaymentOrderRepository
+from backend.app.repositories.payment_settings_repository import PaymentSettingsRepository
 from backend.app.repositories.project_catalog_factory import (
     get_project_catalog_repository,
 )
@@ -92,8 +93,10 @@ from backend.app.services.ingestion_admin import IngestionAdminService
 from backend.app.services.mcp.admin_service import McpAdminService
 from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
+from backend.app.services.payments.config_admin import PaymentConfigAdminService
 from backend.app.services.payments.providers.base import PaymentProvider
 from backend.app.services.payments.providers.registry import build_payment_providers
+from backend.app.services.payments.runtime_config import resolve_payment_config
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.project_adoptions import ProjectAdoptionService
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
@@ -307,15 +310,21 @@ def get_payment_order_repository(
     return repositories.orders
 
 
+def get_payment_settings_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> PaymentSettingsRepository:
+    return repositories.payment_settings
+
+
+def get_payment_config_admin_service(
+    repository: PaymentSettingsRepository = Depends(get_payment_settings_repository),
+) -> PaymentConfigAdminService:
+    return PaymentConfigAdminService(repository)
+
+
 def get_payment_providers() -> dict[str, PaymentProvider]:
-    """请求时从 settings 构建渠道注册表。
-
-    纯配置读取，成本可忽略；与 feature_gates 请求时读 settings 同一先例，
-    测试可经 dependency_overrides 或 settings 单例翻转两个方向。
-    """
-    from backend.app.core.config import settings
-
-    return build_payment_providers(settings)
+    """Build providers from the request-time effective payment configuration."""
+    return build_payment_providers(resolve_payment_config())
 
 
 def get_runtime_provider_setting_repository(

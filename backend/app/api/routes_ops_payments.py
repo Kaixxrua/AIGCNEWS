@@ -17,12 +17,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.app.api.dependencies import (
+    get_payment_config_admin_service,
     get_payment_order_repository,
     get_user_account_repository,
 )
 from backend.app.core.auth import RequireAdmin, extract_user_id
+from backend.app.models.schema_payments import PaymentConfigRequest, PaymentConfigResponse
 from backend.app.repositories.payment_order_repository import PaymentOrderRepository
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.services.payments.config_admin import PaymentConfigAdminService
 from backend.app.services.payments.grant import mark_paid_and_grant
 from backend.app.services.payments.orders import (
     ORDER_STATUS_CLOSED,
@@ -34,6 +37,38 @@ from backend.app.services.payments.plans import UnknownPlanError, get_plan
 from backend.app.services.payments.providers.base import VerifiedCallback
 
 router = APIRouter()
+
+
+@router.get("/ops/payments/config", response_model=PaymentConfigResponse, tags=["Ops"])
+async def get_payment_config(
+    _: dict = Depends(RequireAdmin),
+    service: PaymentConfigAdminService = Depends(get_payment_config_admin_service),
+) -> PaymentConfigResponse:
+    """Return only masked payment configuration; never return credentials."""
+    projection = await service.get_config()
+    return PaymentConfigResponse.model_validate(projection, from_attributes=True)
+
+
+@router.put("/ops/payments/config", response_model=PaymentConfigResponse, tags=["Ops"])
+async def update_payment_config(
+    request: PaymentConfigRequest,
+    _: dict = Depends(RequireAdmin),
+    service: PaymentConfigAdminService = Depends(get_payment_config_admin_service),
+) -> PaymentConfigResponse:
+    try:
+        projection = await service.update_config(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PaymentConfigResponse.model_validate(projection, from_attributes=True)
+
+
+@router.delete("/ops/payments/config", response_model=PaymentConfigResponse, tags=["Ops"])
+async def reset_payment_config(
+    _: dict = Depends(RequireAdmin),
+    service: PaymentConfigAdminService = Depends(get_payment_config_admin_service),
+) -> PaymentConfigResponse:
+    projection = await service.reset_config()
+    return PaymentConfigResponse.model_validate(projection, from_attributes=True)
 
 
 class OpsMarkPaidRequest(BaseModel):

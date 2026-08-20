@@ -72,6 +72,7 @@ from backend.app.services.email.pool_config_provider import (
 from backend.app.services.email.smtp_config_provider import (
     configure_smtp_settings_reader,
 )
+from backend.app.services.payments.runtime_config import configure_payment_settings_reader
 from backend.app.services.mcp.inbound.tools import MCP_TOOL_REGISTRY
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.rag.composition import RagChatServiceProvider
@@ -192,6 +193,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # 报告推送、调度器简报）经 resolve_smtp_config 读 DB 行覆盖 env。
         configure_smtp_settings_reader(
             app.state.application_repositories.smtp_settings
+        )
+        configure_payment_settings_reader(
+            app.state.application_repositories.payment_settings
         )
         # 邮件池配置热生效：DB 行覆盖 EMAIL_POOL_JSON env，同上口径。
         configure_email_pool_settings_reader(
@@ -386,6 +390,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             try:
                 configure_runtime_provider_settings(None)
                 configure_smtp_settings_reader(None)
+                configure_payment_settings_reader(None)
                 configure_email_pool_settings_reader(None)
                 configure_application_repositories(None)
             except Exception as exc:
