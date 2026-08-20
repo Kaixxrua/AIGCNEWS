@@ -19,8 +19,8 @@ const messages = {
     capabilitiesKicker: '插件能力', capabilitiesTitle: '原生卡片与检索路由', capabilitiesDescription: '插件能力说明。',
     wizard: {
       ariaLabel: 'dsh 安装向导', stepIdentity: '选择身份', stepIdentityDescription: '选择身份。', stepInstall: '安装方式', stepInstallDescription: '选择安装方式。', stepCommand: '生成命令', stepCommandDescription: '生成命令。',
-      identityGuest: '游客', identityUser: '普通用户', identityVip: 'VIP', identityGuestDescription: '游客试用。', identityUserDescription: '普通配额。', identityVipDescription: 'VIP 配额。',
-      vipRequired: '需要会员', vipCta: '开通 VIP', continueAsFree: '按普通用户继续', tokenCreating: '正在生成令牌', tokenRetry: '重试', commandLabel: '安装命令', tokenCommandNote: '命令会写入 dsh 补丁配置。', oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: '游客受 IP 限额。',
+      identityGuest: 'guest', identityUser: 'Free', identityVip: 'VIP', identityGuestDescription: 'guest 试用。', identityUserDescription: 'Free 配额。', identityVipDescription: 'VIP 配额。',
+      vipRequired: '需要会员', vipCta: '开通 VIP', continueAsFree: '按 Free 继续', tokenCreating: '正在生成令牌', tokenRetry: '重试', commandLabel: '安装命令', tokenCommandNote: '命令会写入 dsh 补丁配置。', oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: 'guest 受 IP 限额。',
     },
     methods: { npm: { title: 'npm 最新版', description: '预构建。' }, npmPinned: { title: 'npm 固定版', description: '固定。' }, github: { title: 'GitHub 源码', description: '源码。' } },
   },
@@ -50,7 +50,7 @@ describe('DshView', () => {
     await wrapper.findAll('button').find(button => button.text().includes('npm 固定版'))!.trigger('click')
     await wrapper.findAll('button').find(button => button.text().includes('下一步'))!.trigger('click')
     expect(wrapper.text()).toContain('dsh plugin --profile web add dsh-aigc-radar@0.2.0')
-    expect(wrapper.text()).toContain('游客受 IP 限额。')
+    expect(wrapper.text()).toContain('guest 受 IP 限额。')
   })
 
   it('links to MCP and the repository', async () => {

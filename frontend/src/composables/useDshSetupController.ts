@@ -64,9 +64,16 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
   const previous = () => { step.value = Math.max(0, step.value - 1) }
   // VIP 会员免选身份，直接进入安装方式步骤；每次向导会话只自动跳一次，
   // 用户手动返回身份步骤后不再强行前推。
+  // 普通登录用户仍停留在身份步骤，但默认身份从 guest 归一化为 user（Free），
+  // 避免以隐藏的游客身份误入免 token 路径。
   let vipFastPathUsed = false
   const syncAuth = (isLoggedIn: boolean, isMember: boolean) => {
-    if (vipFastPathUsed || !isLoggedIn || !isMember || step.value !== 0) return
+    if (!isLoggedIn) return
+    if (!isMember) {
+      if (step.value === 0 && identity.value === 'guest') identity.value = 'user'
+      return
+    }
+    if (vipFastPathUsed || step.value !== 0) return
     vipFastPathUsed = true
     identity.value = 'vip'
     step.value = 1

@@ -1,22 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useAuthStore } from '@/stores/authStore'
-
-/* 顶栏右上角用户信息：用户名 + 用户组（free / vip），与左侧 MastheadMeta
-   镜像的报纸刊头式两行小字（绝对定位，不参与居中 flex 排布）。
-   仅登录后显示；档位展示与会员页命名一致：member → vip，缺省按 free。 */
-const { t } = useI18n()
-const authStore = useAuthStore()
-
-const userName = computed(() => authStore.user?.email ?? '')
-const tierLabel = computed(() => (authStore.user?.membership_tier === 'member' ? 'vip' : 'free'))
+/* 顶栏右上角固定标识：无论真实登录态如何，始终显示「未登录 / guest」两行
+   报纸刊头式小字（绝对定位，不参与居中 flex 排布，与左侧 MastheadMeta 镜像）。
+   这是刻意的视觉/品牌标识，不代表真实会话状态——真实认证操作由 Dock 承担。
+   因此对辅助技术隐藏（aria-hidden），避免冒充真实会话信息。 */
 </script>
 
 <template>
-  <div v-if="authStore.isLoggedIn" class="masthead-user">
-    <span class="masthead-user__name">{{ userName }}</span>
-    <span class="masthead-user__tier">{{ t('masthead.userGroup', { tier: tierLabel }) }}</span>
+  <div class="masthead-user" aria-hidden="true">
+    <span class="masthead-user__status">未登录</span>
+    <span class="masthead-user__identity">guest</span>
   </div>
 </template>
 
@@ -40,7 +32,7 @@ const tierLabel = computed(() => (authStore.user?.membership_tier === 'member' ?
   text-align: right;
 }
 
-.masthead-user__name {
+.masthead-user__status {
   font-weight: 800;
   color: var(--ink);
 }

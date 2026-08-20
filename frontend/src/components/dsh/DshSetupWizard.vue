@@ -24,17 +24,18 @@ const identities: { id: DshIdentity; title: string; description: string }[] = [
   { id: 'user', title: 'dsh.wizard.identityUser', description: 'dsh.wizard.identityUserDescription' },
   { id: 'vip', title: 'dsh.wizard.identityVip', description: 'dsh.wizard.identityVipDescription' },
 ]
-// 已登录用户看不到 Free 卡：账号配额路径由 VIP 卡门禁里的「按普通用户继续」承接
-const visibleIdentities = computed(() => identities.filter((entry) => entry.id !== 'user' || !auth.isLoggedIn))
+// 已登录用户隐藏 guest 卡：账号路径在 Free 与 VIP 之间明确选择
+const visibleIdentities = computed(() => identities.filter((entry) => entry.id !== 'guest' || !auth.isLoggedIn))
 const installMethods = DSH_PLUGIN_INSTALL_METHODS
 const currentTitle = computed(() => ['dsh.wizard.stepIdentity', 'dsh.wizard.stepInstall', 'dsh.wizard.stepCommand'][controller.step])
 const onNext = async () => {
   const result = await controller.next(auth.isLoggedIn, auth.isMember)
   if (result === 'login') requestLogin('/dsh')
 }
-watch(() => [auth.isLoggedIn, auth.isMember] as const, async ([loggedIn, isMember]) => {
+// 登录态变化只同步身份（VIP 直达安装步、普通用户归一化为 Free）；
+// 不再自动推进步骤，是否继续完全由用户点「下一步」决定。
+watch(() => [auth.isLoggedIn, auth.isMember] as const, ([loggedIn, isMember]) => {
   controller.syncAuth(loggedIn, isMember)
-  if (loggedIn && controller.step === 0 && controller.identity !== 'guest') await onNext()
 }, { immediate: true })
 onBeforeUnmount(installCopy.dispose)
 </script>

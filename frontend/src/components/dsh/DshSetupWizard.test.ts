@@ -50,12 +50,12 @@ const messages = {
       stepIdentity: '选择身份', stepIdentityDescription: '选择身份。',
       stepInstall: '安装方式', stepInstallDescription: '选择安装方式。',
       stepCommand: '生成命令', stepCommandDescription: '生成命令。',
-      identityGuest: '游客', identityUser: '普通用户', identityVip: 'VIP',
-      identityGuestDescription: '游客试用。', identityUserDescription: '普通配额说明。', identityVipDescription: 'VIP 配额。',
-      vipRequired: '该档位需要有效会员。', vipCta: '开通 VIP', continueAsFree: '按普通用户继续',
+      identityGuest: 'guest', identityUser: 'Free', identityVip: 'VIP',
+      identityGuestDescription: 'guest 试用。', identityUserDescription: 'Free 配额说明。', identityVipDescription: 'VIP 配额。',
+      vipRequired: '该档位需要有效会员。', vipCta: '开通 VIP', continueAsFree: '按 Free 继续',
       tokenCreating: '正在生成令牌', tokenRetry: '重试',
       commandLabel: '安装命令', tokenCommandNote: '命令会写入 dsh 补丁配置。',
-      oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: '游客受 IP 限额。',
+      oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: 'guest 受 IP 限额。',
     },
   },
 }
@@ -86,7 +86,7 @@ beforeEach(async () => {
 describe('DshSetupWizard identity gate', () => {
   it('opens the global login prompt when a logged-out user picks the account tier', async () => {
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('普通用户'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('Free'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
 
@@ -95,31 +95,40 @@ describe('DshSetupWizard identity gate', () => {
     expect(wrapper.text()).toContain('选择身份。')
   })
 
-  it('auto-advances after login completes while still on the identity step', async () => {
+  it('stays on the identity step after login completes until the user advances', async () => {
     const auth = useAuthStore()
     auth.status = 'anonymous'
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('普通用户'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('Free'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
     expect(promptState.open.value).toBe(true)
 
     auth.status = 'authenticated'
+    auth.user = freeUser
     await nextTick()
     await nextTick()
 
+    // 登录完成后不再自动跳步：停留在身份步骤，由用户明确点下一步
+    expect(wrapper.text()).toContain('选择身份。')
+    expect(wrapper.text()).not.toContain('npm 最新版')
+
+    await nextButton(wrapper).trigger('click')
+    await nextTick()
     expect(wrapper.text()).toContain('npm 最新版')
   })
 
-  it('hides the free-account card once the user is logged in', async () => {
+  it('shows Free and VIP cards but not the guest card once the user is logged in', async () => {
     const auth = useAuthStore()
     auth.status = 'authenticated'
     auth.user = freeUser
     const wrapper = await mountWizard()
 
-    expect(wrapper.text()).toContain('游客试用。')
+    // 普通登录用户停留在身份步骤，在 Free 与 VIP 之间明确选择
+    expect(wrapper.text()).toContain('选择身份。')
+    expect(wrapper.text()).toContain('Free 配额说明。')
     expect(wrapper.text()).toContain('VIP 配额。')
-    expect(wrapper.text()).not.toContain('普通配额说明。')
+    expect(wrapper.text()).not.toContain('guest 试用。')
   })
 
   it('sends VIP members straight to the install-method step', async () => {
@@ -130,7 +139,7 @@ describe('DshSetupWizard identity gate', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('npm 最新版')
-    expect(wrapper.text()).not.toContain('游客试用。')
+    expect(wrapper.text()).not.toContain('guest 试用。')
   })
 
   it('blocks VIP for non-members with an upgrade hint and free-tier escape', async () => {
@@ -143,7 +152,7 @@ describe('DshSetupWizard identity gate', () => {
 
     expect(wrapper.text()).toContain('该档位需要有效会员。')
     expect(wrapper.get('a[href="/membership"]').text()).toContain('开通 VIP')
-    await wrapper.findAll('button').find((b) => b.text().includes('按普通用户继续'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('按 Free 继续'))!.trigger('click')
     expect(wrapper.text()).not.toContain('该档位需要有效会员。')
 
     // 免费用户从 VIP 门禁逃逸后仍可前进到安装步骤并签发 token
@@ -164,7 +173,7 @@ describe('DshSetupWizard one-line command generation', () => {
 
     expect(wrapper.text()).toContain('dsh plugin --profile web add dsh-aigc-radar')
     expect(wrapper.text()).not.toContain('printf')
-    expect(wrapper.text()).toContain('游客受 IP 限额。')
+    expect(wrapper.text()).toContain('guest 受 IP 限额。')
     expect(createMcpToken).not.toHaveBeenCalled()
   })
 
@@ -174,9 +183,8 @@ describe('DshSetupWizard one-line command generation', () => {
     auth.user = freeUser
     createMcpToken.mockResolvedValue({ token: "aigc_mcp_x'y" })
     const wrapper = await mountWizard()
-    // 已登录时 Free 卡隐藏，经 VIP 门禁「按普通用户继续」进入账号路径
-    await wrapper.findAll('button').find((b) => b.text().includes('VIP'))!.trigger('click')
-    await wrapper.findAll('button').find((b) => b.text().includes('按普通用户继续'))!.trigger('click')
+    // 已登录普通用户直接选 Free 卡进入账号路径
+    await wrapper.findAll('button').find((b) => b.text().includes('Free 配额说明。'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
     await nextButton(wrapper).trigger('click')
@@ -197,8 +205,7 @@ describe('DshSetupWizard one-line command generation', () => {
     auth.user = freeUser
     createMcpToken.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce({ token: 'aigc_mcp_ok' })
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('VIP'))!.trigger('click')
-    await wrapper.findAll('button').find((b) => b.text().includes('按普通用户继续'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('Free 配额说明。'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
     await nextButton(wrapper).trigger('click')
@@ -217,8 +224,7 @@ describe('DshSetupWizard one-line command generation', () => {
     auth.user = freeUser
     createMcpToken.mockResolvedValue({ token: 'aigc_mcp_demo' })
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('VIP'))!.trigger('click')
-    await wrapper.findAll('button').find((b) => b.text().includes('按普通用户继续'))!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text().includes('Free 配额说明。'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
     await nextButton(wrapper).trigger('click')

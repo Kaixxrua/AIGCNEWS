@@ -58,10 +58,26 @@ describe('useDshSetupController', () => {
     expect(createMcpToken).toHaveBeenCalledTimes(2)
   })
 
+  it('normalizes a logged-in free user from guest to user without leaving the identity step', () => {
+    const controller = useDshSetupController({ createMcpToken: vi.fn() })
+    controller.syncAuth(true, false)
+    expect(controller.identity.value).toBe('user')
+    expect(controller.step.value).toBe(0)
+
+    // 不覆盖已做出的 vip 选择，也不在未登录或会员路径下触发
+    controller.identity.value = 'vip'
+    controller.syncAuth(true, false)
+    expect(controller.identity.value).toBe('vip')
+    controller.identity.value = 'guest'
+    controller.syncAuth(false, false)
+    expect(controller.identity.value).toBe('guest')
+  })
+
   it('fast-paths VIP members straight to the install step, only once', () => {
     const controller = useDshSetupController({ createMcpToken: vi.fn() })
     controller.syncAuth(true, false)
     expect(controller.step.value).toBe(0)
+    expect(controller.identity.value).toBe('user')
     controller.syncAuth(false, true)
     expect(controller.step.value).toBe(0)
 
