@@ -1,0 +1,1938 @@
+[
+ {
+  "concept_id": "coding_productivity",
+  "phrases": [
+   "编程开发效率",
+   "编程效率",
+   "开发效率",
+   "编码速度",
+   "coding productivity",
+   "developer productivity"
+  ],
+  "aliases": [
+   "coding productivity",
+   "developer productivity",
+   "code intelligence",
+   "context optimization",
+   "context window optimization",
+   "coding agent memory",
+   "memory upgrade",
+   "开发效率",
+   "编程效率"
+  ]
+ },
+ {
+  "concept_id": "context_management",
+  "phrases": [
+   "上下文管理",
+   "上下文压缩",
+   "上下文优化",
+   "token 消耗",
+   "token 节省",
+   "令牌消耗",
+   "令牌节省",
+   "上下文",
+   "context management",
+   "context compression",
+   "context window"
+  ],
+  "aliases": [
+   "context compression",
+   "context management",
+   "context optimization",
+   "context window",
+   "token reduction",
+   "上下文窗口",
+   "上下文压缩",
+   "上下文管理"
+  ]
+ },
+ {
+  "concept_id": "codebase_memory",
+  "phrases": [
+   "代码库持久记忆",
+   "项目持久记忆",
+   "代码库记忆",
+   "项目记忆",
+   "长期记忆",
+   "codebase memory",
+   "code intelligence",
+   "codebase indexing"
+  ],
+  "aliases": [
+   "codebase memory",
+   "code intelligence",
+   "codebase indexing",
+   "persistent memory",
+   "knowledge graph",
+   "编程智能体",
+   "代码库索引",
+   "知识图谱"
+  ]
+ },
+ {
+  "concept_id": "agent_task_tracking",
+  "phrases": [
+   "Agent 任务跟踪",
+   "智能体任务跟踪",
+   "任务依赖管理",
+   "依赖管理",
+   "任务跟踪",
+   "任务管理",
+   "task tracking",
+   "dependency tracking",
+   "task management"
+  ],
+  "aliases": [
+   "task tracking",
+   "dependency tracking",
+   "coding agent memory",
+   "persistent memory",
+   "context memory",
+   "任务跟踪",
+   "持久记忆",
+   "上下文记忆"
+  ]
+ },
+ {
+  "concept_id": "coding_assistant",
+  "phrases": [
+   "编程智能体",
+   "编程助手",
+   "编码助手",
+   "coding agent",
+   "coding assistant",
+   "ai coding",
+   "编程"
+  ],
+  "aliases": [
+   "coding agent",
+   "coding assistant",
+   "ai coding",
+   "编程智能体",
+   "编程助手",
+   "编码助手",
+   "ai 编程"
+  ]
+ },
+ {
+  "concept_id": "developer_tools",
+  "phrases": [
+   "开发者工具",
+   "开发工具",
+   "developer tools",
+   "dev tools",
+   "devtool",
+   "devtools"
+  ],
+  "aliases": [
+   "developer tools",
+   "dev tools",
+   "开发者工具",
+   "开发工具"
+  ]
+ },
+ {
+  "concept_id": "workflow",
+  "phrases": [
+   "智能体工作流",
+   "工作流",
+   "agent workflow",
+   "workflow",
+   "workflows"
+  ],
+  "aliases": [
+   "workflow automation",
+   "agent workflow",
+   "工作流",
+   "智能体工作流"
+  ]
+ },
+ {
+  "concept_id": "rag",
+  "phrases": [
+   "知识库问答",
+   "知识库",
+   "retrieval augmented",
+   "检索增强",
+   "rag"
+  ],
+  "aliases": [
+   "rag",
+   "knowledge base",
+   "retrieval augmented",
+   "知识库",
+   "检索增强"
+  ]
+ },
+ {
+  "concept_id": "self_hosted",
+  "phrases": [
+   "本地部署",
+   "自托管",
+   "私有化部署",
+   "self-hosted",
+   "self hosted",
+   "selfhost",
+   "self hosting"
+  ],
+  "aliases": [
+   "self-hosted",
+   "self hosted",
+   "local deployment",
+   "自托管",
+   "本地部署",
+   "私有化部署"
+  ]
+ },
+ {
+  "concept_id": "learning",
+  "phrases": [
+   "入门教程",
+   "教程",
+   "入门",
+   "tutorial",
+   "tutorials"
+  ],
+  "aliases": [
+   "tutorial",
+   "learning"
+  ]
+ },
+ {
+  "concept_id": "agent",
+  "phrases": [
+   "智能体",
+   "ai agent",
+   "agent",
+   "agents"
+  ],
+  "aliases": [
+   "agent",
+   "ai agent",
+   "agents",
+   "智能体",
+   "助手"
+  ]
+ },
+ {
+  "concept_id": "llm",
+  "phrases": [
+   "大语言模型",
+   "大模型",
+   "large language model",
+   "llms",
+   "llm"
+  ],
+  "aliases": [
+   "large language model",
+   "llm",
+   "大模型",
+   "大语言模型"
+  ]
+ },
+ {
+  "concept_id": "prompt_engineering",
+  "phrases": [
+   "提示词",
+   "提示工程",
+   "prompt engineering",
+   "prompt management",
+   "prompts",
+   "prompt"
+  ],
+  "aliases": [
+   "prompt engineering",
+   "prompt management",
+   "prompt",
+   "提示词",
+   "提示工程"
+  ]
+ },
+ {
+  "concept_id": "llm_evaluation",
+  "phrases": [
+   "基准测试",
+   "评测",
+   "评估",
+   "benchmarks",
+   "benchmark",
+   "evaluation",
+   "evals",
+   "eval"
+  ],
+  "aliases": [
+   "evaluation",
+   "benchmark",
+   "eval",
+   "评测",
+   "评估",
+   "基准测试"
+  ]
+ },
+ {
+  "concept_id": "mcp",
+  "phrases": [
+   "model context protocol",
+   "mcp"
+  ],
+  "aliases": [
+   "model context protocol",
+   "mcp server",
+   "mcp",
+   "mcp 服务"
+  ]
+ },
+ {
+  "concept_id": "function_calling",
+  "phrases": [
+   "工具调用",
+   "工具使用",
+   "function calling",
+   "tool calling",
+   "tool use"
+  ],
+  "aliases": [
+   "function calling",
+   "tool calling",
+   "tool use",
+   "工具调用"
+  ]
+ },
+ {
+  "concept_id": "multi_agent",
+  "phrases": [
+   "多智能体",
+   "multi-agent",
+   "multi agent",
+   "multiagent",
+   "agent swarm"
+  ],
+  "aliases": [
+   "multi-agent",
+   "multi agent",
+   "agent swarm",
+   "多智能体",
+   "swarm"
+  ]
+ },
+ {
+  "concept_id": "agent_memory",
+  "phrases": [
+   "智能体记忆",
+   "agent memory",
+   "agentic memory"
+  ],
+  "aliases": [
+   "agent memory",
+   "agentic memory",
+   "智能体记忆"
+  ]
+ },
+ {
+  "concept_id": "llm_observability",
+  "phrases": [
+   "链路追踪",
+   "可观测",
+   "observability",
+   "opentelemetry",
+   "tracing",
+   "otel"
+  ],
+  "aliases": [
+   "observability",
+   "tracing",
+   "trace",
+   "opentelemetry",
+   "可观测性",
+   "链路追踪",
+   "llm observability"
+  ]
+ },
+ {
+  "concept_id": "llm_serving",
+  "phrases": [
+   "模型推理",
+   "推理框架",
+   "推理加速",
+   "模型部署",
+   "模型服务",
+   "llm serving",
+   "model serving",
+   "inference server",
+   "llm inference"
+  ],
+  "aliases": [
+   "model serving",
+   "llm serving",
+   "inference",
+   "模型推理",
+   "推理框架",
+   "模型服务"
+  ]
+ },
+ {
+  "concept_id": "fine_tuning",
+  "phrases": [
+   "微调",
+   "fine-tuning",
+   "fine tuning",
+   "finetuning",
+   "fine-tune",
+   "fine tune",
+   "finetune"
+  ],
+  "aliases": [
+   "fine-tuning",
+   "fine tuning",
+   "finetune",
+   "lora",
+   "qlora",
+   "微调"
+  ]
+ },
+ {
+  "concept_id": "vector_search",
+  "phrases": [
+   "向量数据库",
+   "向量检索",
+   "向量搜索",
+   "向量库",
+   "vector database",
+   "vector search",
+   "vector db"
+  ],
+  "aliases": [
+   "vector database",
+   "vector search",
+   "vector index",
+   "向量数据库",
+   "向量检索"
+  ]
+ },
+ {
+  "concept_id": "embedding",
+  "phrases": [
+   "嵌入模型",
+   "文本嵌入",
+   "向量化",
+   "embeddings",
+   "embedding"
+  ],
+  "aliases": [
+   "embedding",
+   "embeddings",
+   "text embedding",
+   "向量化",
+   "嵌入"
+  ]
+ },
+ {
+  "concept_id": "speech_tts",
+  "phrases": [
+   "语音合成",
+   "语音播报",
+   "配音",
+   "text to speech",
+   "tts"
+  ],
+  "aliases": [
+   "text to speech",
+   "tts",
+   "speech synthesis",
+   "语音合成",
+   "配音"
+  ]
+ },
+ {
+  "concept_id": "speech_asr",
+  "phrases": [
+   "语音识别",
+   "语音转文字",
+   "语音转写",
+   "speech recognition",
+   "speech to text",
+   "asr"
+  ],
+  "aliases": [
+   "speech recognition",
+   "speech to text",
+   "asr",
+   "transcription",
+   "语音识别",
+   "语音转文字"
+  ]
+ },
+ {
+  "concept_id": "image_generation",
+  "phrases": [
+   "图像生成",
+   "图像合成",
+   "文生图",
+   "ai 绘画",
+   "ai绘画",
+   "text to image",
+   "image generation"
+  ],
+  "aliases": [
+   "text to image",
+   "image generation",
+   "stable diffusion",
+   "图像生成",
+   "文生图",
+   "ai 绘画"
+  ]
+ },
+ {
+  "concept_id": "video_generation",
+  "phrases": [
+   "视频生成",
+   "ai 视频",
+   "ai视频",
+   "text to video",
+   "video generation"
+  ],
+  "aliases": [
+   "text to video",
+   "video generation",
+   "视频生成",
+   "ai 视频"
+  ]
+ },
+ {
+  "concept_id": "code_review",
+  "phrases": [
+   "代码审查",
+   "代码评审",
+   "code review",
+   "code-review",
+   "codereview"
+  ],
+  "aliases": [
+   "code review",
+   "code-review",
+   "codereview",
+   "代码审查",
+   "代码评审"
+  ]
+ },
+ {
+  "concept_id": "cli",
+  "phrases": [
+   "命令行",
+   "终端",
+   "command line",
+   "command-line",
+   "cli",
+   "tui"
+  ],
+  "aliases": [
+   "command line",
+   "command-line",
+   "cli",
+   "terminal",
+   "tui",
+   "命令行",
+   "终端"
+  ]
+ },
+ {
+  "concept_id": "terminal_emulator",
+  "phrases": [
+   "终端模拟器",
+   "terminal emulator"
+  ],
+  "aliases": [
+   "terminal emulator",
+   "终端模拟器",
+   "terminal"
+  ]
+ },
+ {
+  "concept_id": "chatbot",
+  "phrases": [
+   "聊天机器人",
+   "对话机器人",
+   "ai 聊天",
+   "ai聊天",
+   "chatbot",
+   "chat bot"
+  ],
+  "aliases": [
+   "chatbot",
+   "chat bot",
+   "conversational ai",
+   "聊天机器人",
+   "对话机器人"
+  ]
+ },
+ {
+  "concept_id": "text2sql",
+  "phrases": [
+   "自然语言查询数据库",
+   "自然语言查数",
+   "text2sql",
+   "text to sql",
+   "text-to-sql",
+   "nl2sql"
+  ],
+  "aliases": [
+   "text2sql",
+   "text-to-sql",
+   "text to sql",
+   "nl2sql",
+   "自然语言查询"
+  ]
+ },
+ {
+  "concept_id": "local_llm",
+  "phrases": [
+   "本地大模型",
+   "本地模型",
+   "离线大模型",
+   "离线模型",
+   "local llm",
+   "local model"
+  ],
+  "aliases": [
+   "local llm",
+   "local model",
+   "offline llm",
+   "本地大模型",
+   "本地模型"
+  ]
+ },
+ {
+  "concept_id": "crypto",
+  "phrases": [
+   "密码学",
+   "加密",
+   "cryptography",
+   "encryption",
+   "crypto"
+  ],
+  "aliases": [
+   "encryption",
+   "cryptography",
+   "crypto",
+   "密码学",
+   "加密"
+  ]
+ },
+ {
+  "concept_id": "password_manager",
+  "phrases": [
+   "密码管理",
+   "密码库",
+   "密码本",
+   "password manager",
+   "password vault",
+   "密码"
+  ],
+  "aliases": [
+   "password manager",
+   "password vault",
+   "credentials",
+   "密码管理",
+   "密码库",
+   "密码"
+  ]
+ },
+ {
+  "concept_id": "screenshot",
+  "phrases": [
+   "屏幕截图",
+   "截图",
+   "抓图",
+   "screenshots",
+   "screenshot",
+   "screen capture",
+   "screen shot",
+   "snip"
+  ],
+  "aliases": [
+   "screenshot",
+   "screen capture",
+   "screen shot",
+   "snipping",
+   "截图",
+   "抓图"
+  ]
+ },
+ {
+  "concept_id": "screen_recording",
+  "phrases": [
+   "屏幕录制",
+   "录制屏幕",
+   "录屏",
+   "screen recording",
+   "screen recorder"
+  ],
+  "aliases": [
+   "screen recording",
+   "screen recorder",
+   "录屏",
+   "屏幕录制"
+  ]
+ },
+ {
+  "concept_id": "note_taking",
+  "phrases": [
+   "笔记",
+   "备忘录",
+   "便签",
+   "note-taking",
+   "note taking",
+   "notes"
+  ],
+  "aliases": [
+   "note-taking",
+   "note taking",
+   "notes",
+   "笔记",
+   "备忘录",
+   "便签"
+  ]
+ },
+ {
+  "concept_id": "photo_management",
+  "phrases": [
+   "相册",
+   "照片",
+   "图库",
+   "photo management",
+   "photo manager",
+   "photography",
+   "photos",
+   "photo"
+  ],
+  "aliases": [
+   "photo",
+   "photos",
+   "gallery",
+   "photo manager",
+   "相册",
+   "照片",
+   "图库"
+  ]
+ },
+ {
+  "concept_id": "video_download",
+  "phrases": [
+   "视频下载",
+   "下载视频",
+   "下载器",
+   "video downloader",
+   "video download"
+  ],
+  "aliases": [
+   "video downloader",
+   "video download",
+   "download video",
+   "视频下载",
+   "下载器"
+  ]
+ },
+ {
+  "concept_id": "file_sync",
+  "phrases": [
+   "文件同步",
+   "云同步",
+   "同步盘",
+   "网盘",
+   "file sync",
+   "cloud sync"
+  ],
+  "aliases": [
+   "file sync",
+   "cloud sync",
+   "file synchronization",
+   "文件同步",
+   "云同步",
+   "网盘"
+  ]
+ },
+ {
+  "concept_id": "file_manager",
+  "phrases": [
+   "文件管理器",
+   "文件管理",
+   "file manager",
+   "file browser"
+  ],
+  "aliases": [
+   "file manager",
+   "file browser",
+   "文件管理",
+   "文件管理器"
+  ]
+ },
+ {
+  "concept_id": "pdf_tools",
+  "phrases": [
+   "pdf"
+  ],
+  "aliases": [
+   "pdf",
+   "pdf tools",
+   "pdf editor",
+   "pdf 工具"
+  ]
+ },
+ {
+  "concept_id": "clipboard",
+  "phrases": [
+   "剪贴板",
+   "clipboard"
+  ],
+  "aliases": [
+   "clipboard",
+   "剪贴板"
+  ]
+ },
+ {
+  "concept_id": "launcher",
+  "phrases": [
+   "应用启动器",
+   "启动器",
+   "launcher"
+  ],
+  "aliases": [
+   "launcher",
+   "app launcher",
+   "启动器",
+   "应用启动器"
+  ]
+ },
+ {
+  "concept_id": "remote_desktop",
+  "phrases": [
+   "远程桌面",
+   "远程控制",
+   "远程协助",
+   "remote desktop",
+   "remote access"
+  ],
+  "aliases": [
+   "remote desktop",
+   "remote access",
+   "远程桌面",
+   "远程控制",
+   "远程协助"
+  ]
+ },
+ {
+  "concept_id": "backup",
+  "phrases": [
+   "数据备份",
+   "备份",
+   "backups",
+   "backup"
+  ],
+  "aliases": [
+   "backup",
+   "backups",
+   "备份",
+   "数据备份"
+  ]
+ },
+ {
+  "concept_id": "rss",
+  "phrases": [
+   "订阅器",
+   "rss 阅读",
+   "feed reader",
+   "rss"
+  ],
+  "aliases": [
+   "rss",
+   "rss reader",
+   "feed reader",
+   "rss 阅读器",
+   "订阅"
+  ]
+ },
+ {
+  "concept_id": "ocr",
+  "phrases": [
+   "文字识别",
+   "光学字符识别",
+   "ocr"
+  ],
+  "aliases": [
+   "ocr",
+   "optical character recognition",
+   "文字识别",
+   "光学字符识别"
+  ]
+ },
+ {
+  "concept_id": "translation",
+  "phrases": [
+   "机器翻译",
+   "翻译",
+   "translation",
+   "translator",
+   "translate"
+  ],
+  "aliases": [
+   "translation",
+   "machine translation",
+   "translate",
+   "翻译",
+   "机器翻译"
+  ]
+ },
+ {
+  "concept_id": "window_manager",
+  "phrases": [
+   "平铺窗口",
+   "窗口管理",
+   "window manager",
+   "tiling window",
+   "tiling wm"
+  ],
+  "aliases": [
+   "window manager",
+   "tiling window",
+   "窗口管理",
+   "平铺窗口"
+  ]
+ },
+ {
+  "concept_id": "wiki",
+  "phrases": [
+   "维基",
+   "wiki"
+  ],
+  "aliases": [
+   "wiki",
+   "维基",
+   "知识库",
+   "documentation"
+  ]
+ },
+ {
+  "concept_id": "blog",
+  "phrases": [
+   "博客",
+   "blogging",
+   "blog"
+  ],
+  "aliases": [
+   "blog",
+   "blogging",
+   "static blog",
+   "博客"
+  ]
+ },
+ {
+  "concept_id": "forum",
+  "phrases": [
+   "社区论坛",
+   "论坛",
+   "forums",
+   "forum",
+   "bbs"
+  ],
+  "aliases": [
+   "forum",
+   "forums",
+   "discussion board",
+   "论坛",
+   "社区",
+   "bbs"
+  ]
+ },
+ {
+  "concept_id": "markdown",
+  "phrases": [
+   "markdown 笔记",
+   "md 笔记",
+   "md 文档",
+   "markdown"
+  ],
+  "aliases": [
+   "markdown",
+   "markdown editor",
+   "mdx",
+   "markdown 笔记"
+  ]
+ },
+ {
+  "concept_id": "static_site",
+  "phrases": [
+   "静态网站",
+   "静态站点",
+   "static site",
+   "ssg"
+  ],
+  "aliases": [
+   "static site",
+   "static site generator",
+   "静态网站",
+   "静态站点",
+   "ssg"
+  ]
+ },
+ {
+  "concept_id": "cms",
+  "phrases": [
+   "内容管理系统",
+   "内容管理",
+   "cms"
+  ],
+  "aliases": [
+   "cms",
+   "headless cms",
+   "content management",
+   "内容管理"
+  ]
+ },
+ {
+  "concept_id": "ebook",
+  "phrases": [
+   "电子书",
+   "e-books",
+   "ebook",
+   "e-book",
+   "epub"
+  ],
+  "aliases": [
+   "ebook",
+   "e-book",
+   "epub",
+   "mobi",
+   "电子书"
+  ]
+ },
+ {
+  "concept_id": "knowledge_management",
+  "phrases": [
+   "知识管理",
+   "第二大脑",
+   "knowledge management",
+   "second brain",
+   "pkm"
+  ],
+  "aliases": [
+   "knowledge management",
+   "second brain",
+   "pkm",
+   "知识管理",
+   "第二大脑"
+  ]
+ },
+ {
+  "concept_id": "mind_map",
+  "phrases": [
+   "思维导图",
+   "脑图",
+   "mind map",
+   "mindmap"
+  ],
+  "aliases": [
+   "mind map",
+   "mindmap",
+   "思维导图",
+   "脑图"
+  ]
+ },
+ {
+  "concept_id": "reverse_proxy",
+  "phrases": [
+   "反向代理",
+   "反代",
+   "reverse proxy"
+  ],
+  "aliases": [
+   "reverse proxy",
+   "反向代理",
+   "反代"
+  ]
+ },
+ {
+  "concept_id": "dns",
+  "phrases": [
+   "域名解析",
+   "dns"
+  ],
+  "aliases": [
+   "dns",
+   "dns server",
+   "域名解析"
+  ]
+ },
+ {
+  "concept_id": "vpn_proxy",
+  "phrases": [
+   "科学上网",
+   "翻墙",
+   "代理",
+   "proxy server",
+   "proxy",
+   "vpn"
+  ],
+  "aliases": [
+   "proxy",
+   "vpn",
+   "proxy server",
+   "代理",
+   "翻墙",
+   "科学上网"
+  ]
+ },
+ {
+  "concept_id": "ad_block",
+  "phrases": [
+   "去广告",
+   "广告拦截",
+   "广告过滤",
+   "ad blocker",
+   "adblock",
+   "ad block"
+  ],
+  "aliases": [
+   "ad blocker",
+   "adblock",
+   "ad block",
+   "去广告",
+   "广告拦截",
+   "广告过滤"
+  ]
+ },
+ {
+  "concept_id": "torrent",
+  "phrases": [
+   "种子",
+   "磁力",
+   "bt 下载",
+   "bittorrent",
+   "torrent"
+  ],
+  "aliases": [
+   "torrent",
+   "bittorrent",
+   "bt 下载",
+   "种子",
+   "磁力"
+  ]
+ },
+ {
+  "concept_id": "media_server",
+  "phrases": [
+   "媒体服务器",
+   "媒体库",
+   "影音库",
+   "media server",
+   "media center"
+  ],
+  "aliases": [
+   "media server",
+   "media center",
+   "媒体服务器",
+   "媒体库",
+   "影音"
+  ]
+ },
+ {
+  "concept_id": "music_player",
+  "phrases": [
+   "音乐播放器",
+   "音乐播放",
+   "music player"
+  ],
+  "aliases": [
+   "music player",
+   "audio player",
+   "音乐播放器",
+   "音乐"
+  ]
+ },
+ {
+  "concept_id": "video_player",
+  "phrases": [
+   "视频播放器",
+   "播放器",
+   "video player",
+   "media player"
+  ],
+  "aliases": [
+   "video player",
+   "media player",
+   "视频播放器",
+   "播放器"
+  ]
+ },
+ {
+  "concept_id": "home_automation",
+  "phrases": [
+   "智能家居",
+   "家庭自动化",
+   "smart home",
+   "home automation"
+  ],
+  "aliases": [
+   "smart home",
+   "home automation",
+   "智能家居",
+   "家庭自动化"
+  ]
+ },
+ {
+  "concept_id": "status_page",
+  "phrases": [
+   "可用性监控",
+   "状态页",
+   "status page",
+   "uptime"
+  ],
+  "aliases": [
+   "status page",
+   "uptime monitor",
+   "状态页",
+   "可用性监控"
+  ]
+ },
+ {
+  "concept_id": "ecommerce",
+  "phrases": [
+   "网上购物",
+   "商城",
+   "电商",
+   "online store",
+   "online shop",
+   "e-commerce",
+   "ecommerce"
+  ],
+  "aliases": [
+   "ecommerce",
+   "e-commerce",
+   "online store",
+   "商城系统",
+   "电商",
+   "商城"
+  ]
+ },
+ {
+  "concept_id": "payment",
+  "phrases": [
+   "支付",
+   "收银",
+   "payments",
+   "payment",
+   "checkout"
+  ],
+  "aliases": [
+   "payment",
+   "payments",
+   "payment gateway",
+   "checkout",
+   "支付",
+   "收银"
+  ]
+ },
+ {
+  "concept_id": "auth_sso",
+  "phrases": [
+   "单点登录",
+   "认证",
+   "鉴权",
+   "登录",
+   "authentication",
+   "oauth2",
+   "oauth",
+   "sso"
+  ],
+  "aliases": [
+   "authentication",
+   "sso",
+   "oauth",
+   "单点登录",
+   "认证",
+   "鉴权",
+   "登录"
+  ]
+ },
+ {
+  "concept_id": "crm",
+  "phrases": [
+   "客户关系管理",
+   "crm"
+  ],
+  "aliases": [
+   "crm",
+   "customer relationship management",
+   "客户关系管理"
+  ]
+ },
+ {
+  "concept_id": "erp",
+  "phrases": [
+   "企业资源计划",
+   "erp"
+  ],
+  "aliases": [
+   "erp",
+   "enterprise resource planning",
+   "企业资源计划"
+  ]
+ },
+ {
+  "concept_id": "project_management",
+  "phrases": [
+   "项目管理",
+   "项目协作",
+   "看板",
+   "project management",
+   "kanban",
+   "task board"
+  ],
+  "aliases": [
+   "project management",
+   "kanban",
+   "task board",
+   "项目管理",
+   "看板",
+   "项目协作"
+  ]
+ },
+ {
+  "concept_id": "todo",
+  "phrases": [
+   "待办事项",
+   "待办",
+   "任务清单",
+   "todo list",
+   "to-do",
+   "todos",
+   "todo"
+  ],
+  "aliases": [
+   "todo",
+   "to-do",
+   "todo list",
+   "task list",
+   "待办",
+   "待办事项"
+  ]
+ },
+ {
+  "concept_id": "calendar",
+  "phrases": [
+   "日历",
+   "日程",
+   "calendars",
+   "calendar"
+  ],
+  "aliases": [
+   "calendar",
+   "schedule",
+   "scheduling",
+   "日历",
+   "日程"
+  ]
+ },
+ {
+  "concept_id": "email_tools",
+  "phrases": [
+   "邮件",
+   "邮箱",
+   "e-mail",
+   "email",
+   "mail"
+  ],
+  "aliases": [
+   "email",
+   "mail",
+   "e-mail",
+   "smtp",
+   "邮件",
+   "邮箱"
+  ]
+ },
+ {
+  "concept_id": "time_tracking",
+  "phrases": [
+   "时间追踪",
+   "时间管理",
+   "time tracking",
+   "time tracker",
+   "timesheet"
+  ],
+  "aliases": [
+   "time tracking",
+   "time tracker",
+   "timesheet",
+   "时间追踪",
+   "时间管理"
+  ]
+ },
+ {
+  "concept_id": "expense_tracking",
+  "phrases": [
+   "记账",
+   "账单",
+   "expense tracker",
+   "expense tracking",
+   "budget"
+  ],
+  "aliases": [
+   "expense tracker",
+   "expense tracking",
+   "budget",
+   "记账",
+   "账单"
+  ]
+ },
+ {
+  "concept_id": "database",
+  "phrases": [
+   "数据库",
+   "databases",
+   "database",
+   "dbms"
+  ],
+  "aliases": [
+   "database",
+   "databases",
+   "sql",
+   "dbms",
+   "数据库"
+  ]
+ },
+ {
+  "concept_id": "monitoring",
+  "phrases": [
+   "监控",
+   "告警",
+   "monitoring",
+   "alerting",
+   "monitor"
+  ],
+  "aliases": [
+   "monitoring",
+   "alerting",
+   "monitor",
+   "metrics",
+   "监控",
+   "告警"
+  ]
+ },
+ {
+  "concept_id": "log_management",
+  "phrases": [
+   "日志管理",
+   "日志分析",
+   "日志收集",
+   "log management",
+   "log analysis",
+   "log aggregation"
+  ],
+  "aliases": [
+   "log management",
+   "log analysis",
+   "log aggregation",
+   "日志管理",
+   "日志分析",
+   "日志"
+  ]
+ },
+ {
+  "concept_id": "ci_cd",
+  "phrases": [
+   "持续集成",
+   "持续部署",
+   "ci/cd",
+   "ci cd",
+   "cicd"
+  ],
+  "aliases": [
+   "ci/cd",
+   "continuous integration",
+   "continuous deployment",
+   "cicd",
+   "持续集成",
+   "持续部署"
+  ]
+ },
+ {
+  "concept_id": "message_queue",
+  "phrases": [
+   "消息队列",
+   "消息中间件",
+   "message queue",
+   "message broker",
+   "pub/sub",
+   "pubsub"
+  ],
+  "aliases": [
+   "message queue",
+   "message broker",
+   "pub/sub",
+   "pubsub",
+   "消息队列",
+   "消息中间件"
+  ]
+ },
+ {
+  "concept_id": "search_engine",
+  "phrases": [
+   "搜索引擎",
+   "全文检索",
+   "全文搜索",
+   "search engine",
+   "full-text search",
+   "full text search"
+  ],
+  "aliases": [
+   "search engine",
+   "full-text search",
+   "full text search",
+   "搜索引擎",
+   "全文检索"
+  ]
+ },
+ {
+  "concept_id": "crawler",
+  "phrases": [
+   "网页抓取",
+   "网页爬取",
+   "爬虫",
+   "web scraping",
+   "crawler",
+   "scraper",
+   "spider"
+  ],
+  "aliases": [
+   "crawler",
+   "scraper",
+   "web scraping",
+   "spider",
+   "爬虫",
+   "网页抓取"
+  ]
+ },
+ {
+  "concept_id": "admin_panel",
+  "phrases": [
+   "管理后台",
+   "后台管理",
+   "管理面板",
+   "admin dashboard",
+   "admin panel",
+   "admin ui"
+  ],
+  "aliases": [
+   "admin panel",
+   "admin dashboard",
+   "admin ui",
+   "管理后台",
+   "后台管理",
+   "管理面板"
+  ]
+ },
+ {
+  "concept_id": "dashboard",
+  "phrases": [
+   "数据看板",
+   "仪表盘",
+   "dashboards",
+   "dashboard"
+  ],
+  "aliases": [
+   "dashboard",
+   "dashboards",
+   "metrics dashboard",
+   "仪表盘",
+   "数据看板"
+  ]
+ },
+ {
+  "concept_id": "api_client",
+  "phrases": [
+   "接口调试",
+   "接口测试",
+   "api 调试",
+   "api 测试",
+   "api client",
+   "http client"
+  ],
+  "aliases": [
+   "api client",
+   "http client",
+   "rest client",
+   "api 调试",
+   "api 测试",
+   "接口调试"
+  ]
+ },
+ {
+  "concept_id": "web_framework",
+  "phrases": [
+   "web 框架",
+   "web框架",
+   "web framework"
+  ],
+  "aliases": [
+   "web framework",
+   "webframework",
+   "web 框架"
+  ]
+ },
+ {
+  "concept_id": "low_code",
+  "phrases": [
+   "低代码",
+   "零代码",
+   "low-code",
+   "low code",
+   "no-code",
+   "no code"
+  ],
+  "aliases": [
+   "low-code",
+   "low code",
+   "no-code",
+   "低代码",
+   "零代码"
+  ]
+ },
+ {
+  "concept_id": "docker_container",
+  "phrases": [
+   "容器化",
+   "容器",
+   "containers",
+   "container",
+   "docker"
+  ],
+  "aliases": [
+   "docker",
+   "container",
+   "containers",
+   "容器",
+   "容器化"
+  ]
+ },
+ {
+  "concept_id": "kubernetes",
+  "phrases": [
+   "kubernetes",
+   "k8s"
+  ],
+  "aliases": [
+   "kubernetes",
+   "k8s",
+   "容器编排"
+  ]
+ },
+ {
+  "concept_id": "git_tools",
+  "phrases": [
+   "git"
+  ],
+  "aliases": [
+   "git",
+   "git 工具",
+   "version control",
+   "版本控制"
+  ]
+ },
+ {
+  "concept_id": "editor_ide",
+  "phrases": [
+   "代码编辑器",
+   "编辑器",
+   "editors",
+   "editor",
+   "ide"
+  ],
+  "aliases": [
+   "editor",
+   "code editor",
+   "编辑器",
+   "代码编辑器"
+  ]
+ },
+ {
+  "concept_id": "firewall",
+  "phrases": [
+   "防火墙",
+   "firewall"
+  ],
+  "aliases": [
+   "firewall",
+   "waf",
+   "防火墙"
+  ]
+ },
+ {
+  "concept_id": "iot",
+  "phrases": [
+   "物联网",
+   "iot"
+  ],
+  "aliases": [
+   "iot",
+   "internet of things",
+   "物联网"
+  ]
+ },
+ {
+  "concept_id": "printing_3d",
+  "phrases": [
+   "3d 打印",
+   "3d打印",
+   "3d printing"
+  ],
+  "aliases": [
+   "3d printing",
+   "3d 打印",
+   "3d打印"
+  ]
+ },
+ {
+  "concept_id": "game_engine",
+  "phrases": [
+   "游戏引擎",
+   "game engine"
+  ],
+  "aliases": [
+   "game engine",
+   "game development",
+   "游戏引擎"
+  ]
+ },
+ {
+  "concept_id": "game_mod",
+  "phrases": [
+   "游戏模组",
+   "模组",
+   "mod 管理",
+   "mod管理",
+   "mod 加载",
+   "mods",
+   "mod"
+  ],
+  "aliases": [
+   "game mod",
+   "mod manager",
+   "mod loader",
+   "游戏模组",
+   "模组",
+   "游戏 mod"
+  ]
+ },
+ {
+  "concept_id": "emulator",
+  "phrases": [
+   "模拟器",
+   "仿真器",
+   "emulation",
+   "emulator"
+  ],
+  "aliases": [
+   "emulator",
+   "emulation",
+   "模拟器",
+   "仿真器"
+  ]
+ },
+ {
+  "concept_id": "whiteboard",
+  "phrases": [
+   "白板",
+   "画板",
+   "whiteboard"
+  ],
+  "aliases": [
+   "whiteboard",
+   "白板",
+   "画板"
+  ]
+ },
+ {
+  "concept_id": "diagram",
+  "phrases": [
+   "流程图",
+   "架构图",
+   "图表",
+   "diagramming",
+   "diagrams",
+   "diagram"
+  ],
+  "aliases": [
+   "diagram",
+   "diagrams",
+   "chart",
+   "流程图",
+   "架构图",
+   "图表"
+  ]
+ },
+ {
+  "concept_id": "image_optimization",
+  "phrases": [
+   "图片压缩",
+   "图像压缩",
+   "图片优化",
+   "image optimization",
+   "image compression"
+  ],
+  "aliases": [
+   "image optimization",
+   "image compression",
+   "图片压缩",
+   "图像压缩",
+   "图片优化"
+  ]
+ },
+ {
+  "concept_id": "video_converter",
+  "phrases": [
+   "视频转换",
+   "格式转换",
+   "转码",
+   "video transcoding",
+   "video converter",
+   "transcoding"
+  ],
+  "aliases": [
+   "video converter",
+   "transcoding",
+   "ffmpeg",
+   "视频转换",
+   "转码",
+   "格式转换"
+  ]
+ },
+ {
+  "concept_id": "data_analysis",
+  "phrases": [
+   "数据分析",
+   "数据可视化",
+   "data analysis",
+   "data analytics",
+   "business intelligence",
+   "data visualization"
+  ],
+  "aliases": [
+   "data analysis",
+   "data analytics",
+   "business intelligence",
+   "data visualization",
+   "数据分析",
+   "数据可视化"
+  ]
+ },
+ {
+  "concept_id": "etl",
+  "phrases": [
+   "数据集成",
+   "数据管道",
+   "data pipeline",
+   "data integration",
+   "etl",
+   "elt"
+  ],
+  "aliases": [
+   "etl",
+   "elt",
+   "data pipeline",
+   "data integration",
+   "数据集成",
+   "数据管道"
+  ]
+ },
+ {
+  "concept_id": "data_labeling",
+  "phrases": [
+   "数据标注",
+   "标注工具",
+   "data labeling",
+   "data annotation"
+  ],
+  "aliases": [
+   "data labeling",
+   "data annotation",
+   "数据标注",
+   "标注工具"
+  ]
+ },
+ {
+  "concept_id": "feature_flag",
+  "phrases": [
+   "功能开关",
+   "灰度发布",
+   "feature flags",
+   "feature flag",
+   "feature toggle"
+  ],
+  "aliases": [
+   "feature flag",
+   "feature flags",
+   "feature toggle",
+   "功能开关",
+   "灰度发布"
+  ]
+ },
+ {
+  "concept_id": "api_gateway",
+  "phrases": [
+   "api 网关",
+   "api网关",
+   "网关",
+   "api gateway"
+  ],
+  "aliases": [
+   "api gateway",
+   "api 网关",
+   "网关"
+  ]
+ },
+ {
+  "concept_id": "secrets_manager",
+  "phrases": [
+   "密钥管理",
+   "密钥",
+   "secrets management",
+   "secret management"
+  ],
+  "aliases": [
+   "secrets management",
+   "secret manager",
+   "vault",
+   "密钥管理",
+   "密钥"
+  ]
+ },
+ {
+  "concept_id": "code_search",
+  "phrases": [
+   "代码搜索",
+   "代码检索",
+   "code search"
+  ],
+  "aliases": [
+   "code search",
+   "代码搜索",
+   "代码检索"
+  ]
+ },
+ {
+  "concept_id": "diff_tool",
+  "phrases": [
+   "文件对比",
+   "对比工具",
+   "diff tool",
+   "diff"
+  ],
+  "aliases": [
+   "diff tool",
+   "merge tool",
+   "文件对比",
+   "对比工具"
+  ]
+ }
+]

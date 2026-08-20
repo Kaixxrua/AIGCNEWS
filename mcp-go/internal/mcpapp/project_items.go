@@ -310,6 +310,14 @@ func publicProjectItem(row map[string]any) jsonx.Object {
 	}
 }
 
+// PublicProjectItem 导出 publicProjectItem：生产检索引擎
+// （internal/projectsearch，PR 2.7/2.8）对仓储 normalize 行与 GitHub
+// fallback 归一化行做同一 30 键有序投影；本包处理器沿用私有原形。
+// 输入是 map（仓储行/归一化行），输出是保序 jsonx.Object。
+func PublicProjectItem(row map[string]any) jsonx.Object {
+	return publicProjectItem(row)
+}
+
 // objectValue 按键取 jsonx.Object 的值（缺键 → nil，对齐 dict.get）。
 func objectValue(item jsonx.Object, key string) any {
 	for _, pair := range item {

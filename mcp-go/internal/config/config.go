@@ -37,6 +37,46 @@ type Redis struct {
 	Password string // REDIS_PASSWORD，默认 ""
 }
 
+// ProjectSearch 镜像 config.py 的项目检索字段（179-206 与 278-281 行），
+// PR 2.7 引入。默认值与 Python 侧逐字一致；MILVUS_*/EMBEDDING_* 等语义
+// 组件字段随 PR 2.8 语义检索落地时增补。
+type ProjectSearch struct {
+	AIStrategy                  string  // PROJECT_AI_SEARCH_STRATEGY，默认 "legacy"
+	SemanticEnabled             bool    // PROJECT_SEMANTIC_SEARCH_ENABLED，默认 false
+	SemanticHeatFirst           bool    // PROJECT_SEMANTIC_HEAT_FIRST，默认 true
+	SemanticQueryTimeoutSeconds float64 // PROJECT_SEMANTIC_QUERY_TIMEOUT_SECONDS，默认 6.0
+	SemanticRepoLimit           int     // PROJECT_SEMANTIC_REPO_LIMIT，默认 200
+	SemanticChunkLimit          int     // PROJECT_SEMANTIC_CHUNK_LIMIT，默认 800
+	SemanticMinScore            float64 // PROJECT_SEMANTIC_MIN_SCORE，默认 0.45
+	SemanticCollectionName      string  // PROJECT_SEMANTIC_COLLECTION_NAME
+	MilvusHost                  string  // MILVUS_HOST
+	MilvusPort                  int     // MILVUS_PORT
+	MilvusUser                  string  // MILVUS_USER
+	MilvusPassword              string  // MILVUS_PASSWORD
+	MilvusDBName                string  // MILVUS_DB_NAME
+	MilvusDimension             int     // MILVUS_DIMENSION
+	MilvusIndexType             string  // MILVUS_INDEX_TYPE
+	MilvusMetricType            string  // MILVUS_METRIC_TYPE
+	EmbeddingProvider           string  // EMBEDDING_PROVIDER
+	EmbeddingAPIKey             string  // EMBEDDING_API_KEY
+	EmbeddingBaseURL            string  // EMBEDDING_BASE_URL
+	EmbeddingModelName          string  // EMBEDDING_MODEL_NAME
+	OpenAIAPIKey                string  // OPENAI_API_KEY
+	OpenAIBaseURL               string  // OPENAI_BASE_URL
+	SiliconFlowAPIKey           string  // SILICONFLOW_API_KEY
+	AdoptionWeight              float64 // PROJECT_SEARCH_ADOPTION_WEIGHT，默认 0.006
+	RerankerEnabled             bool    // PROJECT_RERANKER_ENABLED，默认 false
+	RerankerURL                 string  // PROJECT_RERANKER_URL
+	RerankerModelName           string  // PROJECT_RERANKER_MODEL_NAME
+	RerankerTimeoutSeconds      float64 // PROJECT_RERANKER_TIMEOUT_SECONDS
+	RerankerCandidateLimit      int     // PROJECT_RERANKER_CANDIDATE_LIMIT，默认 20
+	RerankerMinCandidates       int     // PROJECT_RERANKER_MIN_CANDIDATES，默认 5
+	GitHubToken                 string  // GITHUB_TOKEN，默认 ""
+	FallbackEnabled             bool    // MCP_GITHUB_FALLBACK_ENABLED，默认 true
+	FallbackUseToken            bool    // MCP_GITHUB_FALLBACK_USE_TOKEN，默认 false
+	FallbackTimeoutSeconds      float64 // MCP_GITHUB_FALLBACK_TIMEOUT_SECONDS，默认 8.0
+}
+
 // Config 是 mcp-server 的根配置。
 type Config struct {
 	// Port 为 HTTP 监听端口（容器内恒 8000，compose 映射 127.0.0.1:8002:8000）。
@@ -54,6 +94,9 @@ type Config struct {
 	// SchedulerTimezone 对齐 scheduler_timezone（config.py 344 行）：看板
 	// "今日" 统计的时区锚，默认 "Asia/Shanghai"。
 	SchedulerTimezone string
+	// ProjectSearch 项目库检索（PR 2.7 search_github_projects 引擎与
+	// GitHub fallback）。
+	ProjectSearch ProjectSearch
 }
 
 // lookup 从环境取值；与 os.LookupEnv 同形，便于测试注入。
@@ -119,6 +162,112 @@ func (c *Config) load(lookup lookupFunc) error {
 	loadString(lookup, "TRUSTED_PROXY_IPS", &c.TrustedProxyIPs)
 	loadString(lookup, "PUBLIC_BASE_URL", &c.PublicBaseURL)
 	loadString(lookup, "SCHEDULER_TIMEZONE", &c.SchedulerTimezone)
+	c.ProjectSearch = ProjectSearch{
+		AIStrategy:                  "legacy",
+		SemanticEnabled:             false,
+		SemanticHeatFirst:           true,
+		SemanticQueryTimeoutSeconds: 6.0,
+		SemanticRepoLimit:           200,
+		SemanticChunkLimit:          800,
+		SemanticMinScore:            0.45,
+		SemanticCollectionName:      "aigc_github_projects_v1",
+		MilvusHost:                  "localhost",
+		MilvusPort:                  19530,
+		MilvusDBName:                "default",
+		MilvusDimension:             1024,
+		MilvusIndexType:             "HNSW",
+		MilvusMetricType:            "COSINE",
+		EmbeddingProvider:           "openai",
+		EmbeddingModelName:          "nomic-embed-text",
+		AdoptionWeight:              0.006,
+		RerankerEnabled:             false,
+		RerankerURL:                 "https://api.siliconflow.cn/v1/rerank",
+		RerankerModelName:           "Pro/BAAI/bge-reranker-v2-m3",
+		RerankerTimeoutSeconds:      1.0,
+		RerankerCandidateLimit:      20,
+		RerankerMinCandidates:       5,
+		GitHubToken:                 "",
+		FallbackEnabled:             true,
+		FallbackUseToken:            false,
+		FallbackTimeoutSeconds:      8.0,
+	}
+	loadString(lookup, "PROJECT_AI_SEARCH_STRATEGY", &c.ProjectSearch.AIStrategy)
+	if err := loadBool(lookup, "PROJECT_SEMANTIC_SEARCH_ENABLED", &c.ProjectSearch.SemanticEnabled); err != nil {
+		return err
+	}
+	if err := loadBool(lookup, "PROJECT_SEMANTIC_HEAT_FIRST", &c.ProjectSearch.SemanticHeatFirst); err != nil {
+		return err
+	}
+	if err := loadInt(lookup, "PROJECT_SEMANTIC_REPO_LIMIT", &c.ProjectSearch.SemanticRepoLimit); err != nil {
+		return err
+	}
+	if err := loadInt(lookup, "PROJECT_SEMANTIC_CHUNK_LIMIT", &c.ProjectSearch.SemanticChunkLimit); err != nil {
+		return err
+	}
+	if err := loadFloat(lookup, "PROJECT_SEMANTIC_MIN_SCORE", &c.ProjectSearch.SemanticMinScore); err != nil {
+		return err
+	}
+	loadString(lookup, "PROJECT_SEMANTIC_COLLECTION_NAME", &c.ProjectSearch.SemanticCollectionName)
+	loadString(lookup, "MILVUS_HOST", &c.ProjectSearch.MilvusHost)
+	if err := loadInt(lookup, "MILVUS_PORT", &c.ProjectSearch.MilvusPort); err != nil {
+		return err
+	}
+	loadString(lookup, "MILVUS_USER", &c.ProjectSearch.MilvusUser)
+	loadString(lookup, "MILVUS_PASSWORD", &c.ProjectSearch.MilvusPassword)
+	loadString(lookup, "MILVUS_DB_NAME", &c.ProjectSearch.MilvusDBName)
+	if err := loadInt(lookup, "MILVUS_DIMENSION", &c.ProjectSearch.MilvusDimension); err != nil {
+		return err
+	}
+	loadString(lookup, "MILVUS_INDEX_TYPE", &c.ProjectSearch.MilvusIndexType)
+	loadString(lookup, "MILVUS_METRIC_TYPE", &c.ProjectSearch.MilvusMetricType)
+	loadString(lookup, "EMBEDDING_PROVIDER", &c.ProjectSearch.EmbeddingProvider)
+	loadString(lookup, "EMBEDDING_API_KEY", &c.ProjectSearch.EmbeddingAPIKey)
+	loadString(lookup, "EMBEDDING_BASE_URL", &c.ProjectSearch.EmbeddingBaseURL)
+	loadString(lookup, "EMBEDDING_MODEL_NAME", &c.ProjectSearch.EmbeddingModelName)
+	loadString(lookup, "OPENAI_API_KEY", &c.ProjectSearch.OpenAIAPIKey)
+	loadString(lookup, "OPENAI_BASE_URL", &c.ProjectSearch.OpenAIBaseURL)
+	loadString(lookup, "SILICONFLOW_API_KEY", &c.ProjectSearch.SiliconFlowAPIKey)
+	if err := loadFloat(lookup, "PROJECT_SEMANTIC_QUERY_TIMEOUT_SECONDS", &c.ProjectSearch.SemanticQueryTimeoutSeconds); err != nil {
+		return err
+	}
+	if err := loadFloat(lookup, "PROJECT_SEARCH_ADOPTION_WEIGHT", &c.ProjectSearch.AdoptionWeight); err != nil {
+		return err
+	}
+	if err := loadBool(lookup, "PROJECT_RERANKER_ENABLED", &c.ProjectSearch.RerankerEnabled); err != nil {
+		return err
+	}
+	loadString(lookup, "PROJECT_RERANKER_URL", &c.ProjectSearch.RerankerURL)
+	loadString(lookup, "PROJECT_RERANKER_MODEL_NAME", &c.ProjectSearch.RerankerModelName)
+	if err := loadFloat(lookup, "PROJECT_RERANKER_TIMEOUT_SECONDS", &c.ProjectSearch.RerankerTimeoutSeconds); err != nil {
+		return err
+	}
+	if err := loadInt(lookup, "PROJECT_RERANKER_CANDIDATE_LIMIT", &c.ProjectSearch.RerankerCandidateLimit); err != nil {
+		return err
+	}
+	if err := loadInt(lookup, "PROJECT_RERANKER_MIN_CANDIDATES", &c.ProjectSearch.RerankerMinCandidates); err != nil {
+		return err
+	}
+	loadString(lookup, "GITHUB_TOKEN", &c.ProjectSearch.GitHubToken)
+	if err := loadBool(lookup, "MCP_GITHUB_FALLBACK_ENABLED", &c.ProjectSearch.FallbackEnabled); err != nil {
+		return err
+	}
+	if err := loadBool(lookup, "MCP_GITHUB_FALLBACK_USE_TOKEN", &c.ProjectSearch.FallbackUseToken); err != nil {
+		return err
+	}
+	if err := loadFloat(lookup, "MCP_GITHUB_FALLBACK_TIMEOUT_SECONDS", &c.ProjectSearch.FallbackTimeoutSeconds); err != nil {
+		return err
+	}
+	if c.ProjectSearch.SemanticRepoLimit <= 0 || c.ProjectSearch.SemanticChunkLimit <= 0 || c.ProjectSearch.MilvusDimension <= 0 {
+		return fmt.Errorf("config: semantic and Milvus sizes must be positive")
+	}
+	// PROJECT_AI_SEARCH_STRATEGY 是 pydantic Literal 字段：非法值在 Python
+	// 侧启动即校验失败，Go 同策略 fail-fast（引擎内 _resolve_strategy 的
+	// 非法→legacy 映射是第二层防御，不替代启动校验）。
+	switch c.ProjectSearch.AIStrategy {
+	case "legacy", "shadow", "v2":
+	default:
+		return fmt.Errorf("config: PROJECT_AI_SEARCH_STRATEGY=%q 必须是 legacy/shadow/v2 之一", c.ProjectSearch.AIStrategy)
+	}
 	if c.Port < 1 || c.Port > 65_535 {
 		return fmt.Errorf("config: MCP_SERVER_PORT=%d 超出 1..65535", c.Port)
 	}
@@ -180,5 +329,24 @@ func loadFloat(lookup lookupFunc, name string, dst *float64) error {
 		return fmt.Errorf("config: %s=%q 不是合法浮点数: %w", name, v, err)
 	}
 	*dst = f
+	return nil
+}
+
+// loadBool 解析布尔环境变量。pydantic-settings 的 bool 接受
+// true/1/yes/on 与 false/0/no/off（大小写不敏感）；Go 侧同口径，
+// 其余值启动即报错（与 pydantic 校验失败同策略）。
+func loadBool(lookup lookupFunc, name string, dst *bool) error {
+	v, ok := lookup(name)
+	if !ok || strings.TrimSpace(v) == "" {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "1", "yes", "on":
+		*dst = true
+	case "false", "0", "no", "off":
+		*dst = false
+	default:
+		return fmt.Errorf("config: %s=%q 不是合法布尔值", name, v)
+	}
 	return nil
 }

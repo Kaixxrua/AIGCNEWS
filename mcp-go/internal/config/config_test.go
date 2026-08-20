@@ -90,11 +90,110 @@ func TestInvalidValuesFailFast(t *testing.T) {
 		"zero timeout":    {"POSTGRES_POOL_TIMEOUT_SECONDS": "0"},
 		"bad redis port":  {"REDIS_PORT": "six-three-seven-nine"},
 		"bad redis db":    {"REDIS_DB": "0.5"},
+		// PR 2.7 项目检索字段
+		"bad ai strategy":      {"PROJECT_AI_SEARCH_STRATEGY": "LEGACY"},
+		"unknown ai strategy":  {"PROJECT_AI_SEARCH_STRATEGY": "hybrid"},
+		"bad semantic bool":    {"PROJECT_SEMANTIC_SEARCH_ENABLED": "enabled"},
+		"bad heat first bool":  {"PROJECT_SEMANTIC_HEAT_FIRST": "y"},
+		"bad semantic timeout": {"PROJECT_SEMANTIC_QUERY_TIMEOUT_SECONDS": "fast"},
+		"bad adoption weight":  {"PROJECT_SEARCH_ADOPTION_WEIGHT": "high"},
+		"bad reranker bool":    {"PROJECT_RERANKER_ENABLED": "on-fire"},
+		"bad reranker limit":   {"PROJECT_RERANKER_CANDIDATE_LIMIT": "many"},
+		"bad fallback bool":    {"MCP_GITHUB_FALLBACK_ENABLED": "maybe"},
+		"bad fallback token":   {"MCP_GITHUB_FALLBACK_USE_TOKEN": "2"},
+		"bad fallback timeout": {"MCP_GITHUB_FALLBACK_TIMEOUT_SECONDS": "slow"},
 	} {
 		var c Config
 		if err := c.load(envMap(pairs)); err == nil {
 			t.Errorf("%s: 期望报错，实际成功", name)
 		}
+	}
+}
+
+// ProjectSearch 默认值必须与 backend/app/core/config.py（179-206、278-281 行）
+// 逐字一致；漂移即违约。
+func TestProjectSearchDefaults(t *testing.T) {
+	var c Config
+	if err := c.load(envMap(nil)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := ProjectSearch{
+		AIStrategy:                  "legacy",
+		SemanticEnabled:             false,
+		SemanticHeatFirst:           true,
+		SemanticQueryTimeoutSeconds: 6.0,
+		SemanticRepoLimit:           200,
+		SemanticChunkLimit:          800,
+		SemanticMinScore:            0.45,
+		SemanticCollectionName:      "aigc_github_projects_v1",
+		MilvusHost:                  "localhost",
+		MilvusPort:                  19530,
+		MilvusDBName:                "default",
+		MilvusDimension:             1024,
+		MilvusIndexType:             "HNSW",
+		MilvusMetricType:            "COSINE",
+		EmbeddingProvider:           "openai",
+		EmbeddingModelName:          "nomic-embed-text",
+		AdoptionWeight:              0.006,
+		RerankerEnabled:             false,
+		RerankerURL:                 "https://api.siliconflow.cn/v1/rerank",
+		RerankerModelName:           "Pro/BAAI/bge-reranker-v2-m3",
+		RerankerTimeoutSeconds:      1.0,
+		RerankerCandidateLimit:      20,
+		RerankerMinCandidates:       5,
+		GitHubToken:                 "",
+		FallbackEnabled:             true,
+		FallbackUseToken:            false,
+		FallbackTimeoutSeconds:      8.0,
+	}
+	if c.ProjectSearch != want {
+		t.Errorf("ProjectSearch = %+v, want %+v", c.ProjectSearch, want)
+	}
+}
+
+func TestProjectSearchEnvOverrides(t *testing.T) {
+	var c Config
+	err := c.load(envMap(map[string]string{
+		"PROJECT_AI_SEARCH_STRATEGY":             "v2",
+		"PROJECT_SEMANTIC_SEARCH_ENABLED":        "true",
+		"PROJECT_SEMANTIC_HEAT_FIRST":            "0",
+		"PROJECT_SEMANTIC_QUERY_TIMEOUT_SECONDS": "2.5",
+		"PROJECT_SEMANTIC_REPO_LIMIT":            "50",
+		"PROJECT_SEMANTIC_CHUNK_LIMIT":           "700",
+		"PROJECT_SEMANTIC_MIN_SCORE":             "0.5",
+		"PROJECT_SEMANTIC_COLLECTION_NAME":       "projects",
+		"MILVUS_HOST":                            "milvus",
+		"MILVUS_PORT":                            "19531",
+		"MILVUS_DIMENSION":                       "768",
+		"EMBEDDING_PROVIDER":                     "openai",
+		"EMBEDDING_MODEL_NAME":                   "embed",
+		"PROJECT_RERANKER_URL":                   "https://api.siliconflow.cn/v1/rerank",
+		"PROJECT_RERANKER_MODEL_NAME":            "rerank",
+		"PROJECT_RERANKER_TIMEOUT_SECONDS":       "2",
+		"PROJECT_RERANKER_MIN_CANDIDATES":        "3",
+		"PROJECT_SEARCH_ADOPTION_WEIGHT":         "0.01",
+		"PROJECT_RERANKER_ENABLED":               "yes",
+		"PROJECT_RERANKER_CANDIDATE_LIMIT":       "24",
+		"GITHUB_TOKEN":                           "ghp_x",
+		"MCP_GITHUB_FALLBACK_ENABLED":            "off",
+		"MCP_GITHUB_FALLBACK_USE_TOKEN":          "on",
+		"MCP_GITHUB_FALLBACK_TIMEOUT_SECONDS":    "4",
+	}))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	ps := c.ProjectSearch
+	if ps.AIStrategy != "v2" || !ps.SemanticEnabled || ps.SemanticHeatFirst ||
+		ps.SemanticQueryTimeoutSeconds != 2.5 || ps.SemanticRepoLimit != 50 ||
+		ps.SemanticChunkLimit != 700 || ps.SemanticMinScore != 0.5 ||
+		ps.SemanticCollectionName != "projects" || ps.MilvusHost != "milvus" ||
+		ps.MilvusPort != 19531 || ps.MilvusDimension != 768 ||
+		ps.EmbeddingModelName != "embed" || ps.RerankerModelName != "rerank" ||
+		ps.RerankerTimeoutSeconds != 2 || ps.RerankerMinCandidates != 3 ||
+		ps.AdoptionWeight != 0.01 || !ps.RerankerEnabled || ps.RerankerCandidateLimit != 24 ||
+		ps.GitHubToken != "ghp_x" || ps.FallbackEnabled || !ps.FallbackUseToken ||
+		ps.FallbackTimeoutSeconds != 4.0 {
+		t.Errorf("ProjectSearch = %+v", ps)
 	}
 }
 

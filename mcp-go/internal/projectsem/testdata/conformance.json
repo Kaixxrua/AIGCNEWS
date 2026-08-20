@@ -1,0 +1,2688 @@
+{
+ "queries": [
+  {
+   "q": "",
+   "normalized": "",
+   "terms": [],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "",
+    "language": "und",
+    "lexical_terms": [],
+    "semantic_queries": [],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "",
+    "strict_terms": [],
+    "concepts": []
+   }
+  },
+  {
+   "q": "   ",
+   "normalized": "",
+   "terms": [],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "",
+    "language": "und",
+    "lexical_terms": [],
+    "semantic_queries": [],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "",
+    "strict_terms": [],
+    "concepts": []
+   }
+  },
+  {
+   "q": "中文",
+   "normalized": "中文",
+   "terms": [
+    "中文"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "中文",
+    "language": "zh",
+    "lexical_terms": [
+     "中文"
+    ],
+    "semantic_queries": [
+     "中文"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "中文",
+    "strict_terms": [],
+    "concepts": []
+   }
+  },
+  {
+   "q": "纯中文项目",
+   "normalized": "纯中文项目",
+   "terms": [
+    "纯中文项目"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "纯中文项目",
+    "language": "zh",
+    "lexical_terms": [
+     "纯中文项目"
+    ],
+    "semantic_queries": [
+     "纯中文项目"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "纯中文项目",
+    "strict_terms": [],
+    "concepts": []
+   }
+  },
+  {
+   "q": "hello world",
+   "normalized": "hello world",
+   "terms": [
+    "hello",
+    "world"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "hello world",
+    "language": "en",
+    "lexical_terms": [
+     "hello",
+     "world"
+    ],
+    "semantic_queries": [
+     "hello world"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "hello world",
+    "strict_terms": [
+     "hello",
+     "world"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "MCP server",
+   "normalized": "MCP server",
+   "terms": [
+    "MCP",
+    "server"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "MCP server",
+    "language": "en",
+    "lexical_terms": [
+     "MCP",
+     "server"
+    ],
+    "semantic_queries": [
+     "MCP server",
+     "MCP server model context protocol mcp 服务"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "mcp"
+    ],
+    "bilingual_aliases": [
+     "model context protocol",
+     "mcp 服务"
+    ]
+   },
+   "plan": {
+    "normalized_query": "MCP server",
+    "strict_terms": [
+     "server"
+    ],
+    "concepts": [
+     {
+      "concept_id": "mcp",
+      "primary_terms": [
+       "MCP"
+      ],
+      "aliases": [
+       "model context protocol",
+       "mcp server",
+       "mcp",
+       "mcp 服务"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "mcp",
+   "normalized": "mcp",
+   "terms": [
+    "mcp"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "mcp",
+    "language": "en",
+    "lexical_terms": [
+     "mcp"
+    ],
+    "semantic_queries": [
+     "mcp",
+     "mcp model context protocol mcp server mcp 服务"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "mcp"
+    ],
+    "bilingual_aliases": [
+     "model context protocol",
+     "mcp server",
+     "mcp 服务"
+    ]
+   },
+   "plan": {
+    "normalized_query": "mcp",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "mcp",
+      "primary_terms": [
+       "mcp"
+      ],
+      "aliases": [
+       "model context protocol",
+       "mcp server",
+       "mcp",
+       "mcp 服务"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "RAG knowledge base",
+   "normalized": "RAG knowledge base",
+   "terms": [
+    "RAG",
+    "knowledge",
+    "base"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "RAG knowledge base",
+    "language": "en",
+    "lexical_terms": [
+     "RAG",
+     "knowledge",
+     "base"
+    ],
+    "semantic_queries": [
+     "RAG knowledge base",
+     "RAG knowledge base retrieval augmented 知识库 检索增强"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "rag"
+    ],
+    "bilingual_aliases": [
+     "retrieval augmented",
+     "知识库",
+     "检索增强"
+    ]
+   },
+   "plan": {
+    "normalized_query": "RAG knowledge base",
+    "strict_terms": [
+     "knowledge",
+     "base"
+    ],
+    "concepts": [
+     {
+      "concept_id": "rag",
+      "primary_terms": [
+       "RAG"
+      ],
+      "aliases": [
+       "rag",
+       "knowledge base",
+       "retrieval augmented",
+       "知识库",
+       "检索增强"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "中英 mixed query",
+   "normalized": "中英 mixed query",
+   "terms": [
+    "中英",
+    "mixed",
+    "query"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "中英 mixed query",
+    "language": "mixed",
+    "lexical_terms": [
+     "mixed",
+     "query"
+    ],
+    "semantic_queries": [
+     "中英 mixed query"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "中英 mixed query",
+    "strict_terms": [
+     "mixed",
+     "query"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "owner/repo",
+   "normalized": "owner/repo",
+   "terms": [
+    "owner"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "owner/repo",
+    "language": "en",
+    "lexical_terms": [
+     "owner"
+    ],
+    "semantic_queries": [
+     "owner/repo"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "owner/repo",
+    "strict_terms": [
+     "owner"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "github.com/foo/bar",
+   "normalized": "github.com/foo/bar",
+   "terms": [
+    "github.com",
+    "foo",
+    "bar"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "github.com/foo/bar",
+    "language": "en",
+    "lexical_terms": [
+     "github.com",
+     "foo",
+     "bar"
+    ],
+    "semantic_queries": [
+     "github.com/foo/bar"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "github.com/foo/bar",
+    "strict_terms": [
+     "github.com",
+     "foo",
+     "bar"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "cli",
+   "normalized": "cli",
+   "terms": [
+    "cli"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "cli",
+    "language": "en",
+    "lexical_terms": [
+     "cli"
+    ],
+    "semantic_queries": [
+     "cli",
+     "cli command line command-line terminal tui 命令行 终端"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "cli"
+    ],
+    "bilingual_aliases": [
+     "command line",
+     "command-line",
+     "terminal",
+     "tui",
+     "命令行",
+     "终端"
+    ]
+   },
+   "plan": {
+    "normalized_query": "cli",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "cli",
+      "primary_terms": [
+       "cli"
+      ],
+      "aliases": [
+       "command line",
+       "command-line",
+       "cli",
+       "terminal",
+       "tui",
+       "命令行",
+       "终端"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "client",
+   "normalized": "client",
+   "terms": [
+    "client"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "client",
+    "language": "en",
+    "lexical_terms": [
+     "client"
+    ],
+    "semantic_queries": [
+     "client"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "client",
+    "strict_terms": [
+     "client"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "git",
+   "normalized": "git",
+   "terms": [
+    "git"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "git",
+    "language": "en",
+    "lexical_terms": [
+     "git"
+    ],
+    "semantic_queries": [
+     "git",
+     "git git 工具 version control 版本控制"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "git_tools"
+    ],
+    "bilingual_aliases": [
+     "git 工具",
+     "version control",
+     "版本控制"
+    ]
+   },
+   "plan": {
+    "normalized_query": "git",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "git_tools",
+      "primary_terms": [
+       "git"
+      ],
+      "aliases": [
+       "git",
+       "git 工具",
+       "version control",
+       "版本控制"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "digital",
+   "normalized": "digital",
+   "terms": [
+    "digital"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "digital",
+    "language": "en",
+    "lexical_terms": [
+     "digital"
+    ],
+    "semantic_queries": [
+     "digital"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "digital",
+    "strict_terms": [
+     "digital"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "otel",
+   "normalized": "otel",
+   "terms": [
+    "otel"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "otel",
+    "language": "en",
+    "lexical_terms": [
+     "otel"
+    ],
+    "semantic_queries": [
+     "otel",
+     "otel observability tracing trace opentelemetry 可观测性 链路追踪 llm observability"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "llm_observability"
+    ],
+    "bilingual_aliases": [
+     "observability",
+     "tracing",
+     "trace",
+     "opentelemetry",
+     "可观测性",
+     "链路追踪",
+     "llm observability"
+    ]
+   },
+   "plan": {
+    "normalized_query": "otel",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "llm_observability",
+      "primary_terms": [
+       "otel"
+      ],
+      "aliases": [
+       "observability",
+       "tracing",
+       "trace",
+       "opentelemetry",
+       "可观测性",
+       "链路追踪",
+       "llm observability"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "hotel",
+   "normalized": "hotel",
+   "terms": [
+    "hotel"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "hotel",
+    "language": "en",
+    "lexical_terms": [
+     "hotel"
+    ],
+    "semantic_queries": [
+     "hotel"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "hotel",
+    "strict_terms": [
+     "hotel"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "c++",
+   "normalized": "c++",
+   "terms": [
+    "c++"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "c++",
+    "language": "en",
+    "lexical_terms": [
+     "c++"
+    ],
+    "semantic_queries": [
+     "c++"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "c++",
+    "strict_terms": [
+     "c++"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "c#",
+   "normalized": "c#",
+   "terms": [
+    "c#"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "c#",
+    "language": "en",
+    "lexical_terms": [
+     "c#"
+    ],
+    "semantic_queries": [
+     "c#"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "c#",
+    "strict_terms": [
+     "c#"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": ".net",
+   "normalized": ".net",
+   "terms": [
+    ".net"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": ".net",
+    "language": "en",
+    "lexical_terms": [
+     ".net"
+    ],
+    "semantic_queries": [
+     ".net"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": ".net",
+    "strict_terms": [
+     ".net"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "langgraph",
+   "normalized": "langgraph",
+   "terms": [
+    "langgraph"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "langgraph",
+    "language": "en",
+    "lexical_terms": [
+     "langgraph"
+    ],
+    "semantic_queries": [
+     "langgraph"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "langgraph",
+    "strict_terms": [
+     "langgraph"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "123",
+   "normalized": "123",
+   "terms": [
+    "123"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "123",
+    "language": "en",
+    "lexical_terms": [
+     "123"
+    ],
+    "semantic_queries": [
+     "123"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "123",
+    "strict_terms": [
+     "123"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "a",
+   "normalized": "a",
+   "terms": [],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "a",
+    "language": "en",
+    "lexical_terms": [],
+    "semantic_queries": [
+     "a"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "a",
+    "strict_terms": [
+     "a"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "_",
+   "normalized": "_",
+   "terms": [],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "_",
+    "language": "und",
+    "lexical_terms": [],
+    "semantic_queries": [
+     "_"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "_",
+    "strict_terms": [],
+    "concepts": []
+   }
+  },
+  {
+   "q": "foo-bar",
+   "normalized": "foo-bar",
+   "terms": [
+    "foo-bar"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "foo-bar",
+    "language": "en",
+    "lexical_terms": [
+     "foo-bar"
+    ],
+    "semantic_queries": [
+     "foo-bar"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "foo-bar",
+    "strict_terms": [
+     "foo-bar"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "foo.bar",
+   "normalized": "foo.bar",
+   "terms": [
+    "foo.bar"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "foo.bar",
+    "language": "en",
+    "lexical_terms": [
+     "foo.bar"
+    ],
+    "semantic_queries": [
+     "foo.bar"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "foo.bar",
+    "strict_terms": [
+     "foo.bar"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "帮我找一下 MCP 服务",
+   "normalized": "帮我找一下 MCP 服务",
+   "terms": [
+    "帮我找一下",
+    "MCP",
+    "服务"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "MCP 服务",
+    "language": "zh",
+    "lexical_terms": [
+     "MCP"
+    ],
+    "semantic_queries": [
+     "MCP 服务",
+     "MCP 服务 model context protocol mcp server"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "mcp"
+    ],
+    "bilingual_aliases": [
+     "model context protocol",
+     "mcp server"
+    ]
+   },
+   "plan": {
+    "normalized_query": "MCP 服务",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "mcp",
+      "primary_terms": [
+       "MCP"
+      ],
+      "aliases": [
+       "model context protocol",
+       "mcp server",
+       "mcp",
+       "mcp 服务"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "给我推荐本地部署的 RAG 工具",
+   "normalized": "给我推荐本地部署的 RAG 工具",
+   "terms": [
+    "给我推荐本地部署的",
+    "RAG"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "本地部署的 RAG 工具",
+    "language": "zh",
+    "lexical_terms": [
+     "本地部署",
+     "RAG"
+    ],
+    "semantic_queries": [
+     "本地部署的 RAG 工具",
+     "本地部署的 RAG 工具 self-hosted"
+    ],
+    "intent_class": "self_hosted",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "self_hosted",
+     "rag"
+    ],
+    "bilingual_aliases": [
+     "self-hosted"
+    ]
+   },
+   "plan": {
+    "normalized_query": "本地部署的 RAG 工具",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "self_hosted",
+      "primary_terms": [
+       "本地部署"
+      ],
+      "aliases": [
+       "self-hosted",
+       "self hosted",
+       "local deployment",
+       "自托管",
+       "本地部署",
+       "私有化部署"
+      ]
+     },
+     {
+      "concept_id": "rag",
+      "primary_terms": [
+       "RAG"
+      ],
+      "aliases": [
+       "rag",
+       "knowledge base",
+       "retrieval augmented",
+       "知识库",
+       "检索增强"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "我想学习教程",
+   "normalized": "我想学习教程",
+   "terms": [
+    "我想学习教程"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "教程",
+    "language": "zh",
+    "lexical_terms": [
+     "教程"
+    ],
+    "semantic_queries": [
+     "教程",
+     "教程 tutorial learning"
+    ],
+    "intent_class": "learning",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "learning"
+    ],
+    "bilingual_aliases": [
+     "tutorial",
+     "learning"
+    ]
+   },
+   "plan": {
+    "normalized_query": "教程",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "learning",
+      "primary_terms": [
+       "教程"
+      ],
+      "aliases": [
+       "tutorial",
+       "learning"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "find me a workflow",
+   "normalized": "find me a workflow",
+   "terms": [
+    "find",
+    "me",
+    "workflow"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "a workflow",
+    "language": "en",
+    "lexical_terms": [
+     "workflow"
+    ],
+    "semantic_queries": [
+     "a workflow",
+     "a workflow workflow automation agent workflow 工作流 智能体工作流"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "workflow"
+    ],
+    "bilingual_aliases": [
+     "workflow automation",
+     "agent workflow",
+     "工作流",
+     "智能体工作流"
+    ]
+   },
+   "plan": {
+    "normalized_query": "a workflow",
+    "strict_terms": [
+     "a"
+    ],
+    "concepts": [
+     {
+      "concept_id": "workflow",
+      "primary_terms": [
+       "workflow"
+      ],
+      "aliases": [
+       "workflow automation",
+       "agent workflow",
+       "工作流",
+       "智能体工作流"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "recommend me code review",
+   "normalized": "recommend me code review",
+   "terms": [
+    "recommend",
+    "me",
+    "code",
+    "review"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "code review",
+    "language": "en",
+    "lexical_terms": [
+     "code review"
+    ],
+    "semantic_queries": [
+     "code review",
+     "code review code-review codereview 代码审查 代码评审"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "code_review"
+    ],
+    "bilingual_aliases": [
+     "code-review",
+     "codereview",
+     "代码审查",
+     "代码评审"
+    ]
+   },
+   "plan": {
+    "normalized_query": "code review",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "code_review",
+      "primary_terms": [
+       "code review"
+      ],
+      "aliases": [
+       "code review",
+       "code-review",
+       "codereview",
+       "代码审查",
+       "代码评审"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "智能体工作流",
+   "normalized": "智能体工作流",
+   "terms": [
+    "智能体工作流"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "智能体工作流",
+    "language": "zh",
+    "lexical_terms": [
+     "智能体工作流"
+    ],
+    "semantic_queries": [
+     "智能体工作流",
+     "智能体工作流 workflow automation agent workflow"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "workflow"
+    ],
+    "bilingual_aliases": [
+     "workflow automation",
+     "agent workflow"
+    ]
+   },
+   "plan": {
+    "normalized_query": "智能体工作流",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "workflow",
+      "primary_terms": [
+       "智能体工作流"
+      ],
+      "aliases": [
+       "workflow automation",
+       "agent workflow",
+       "工作流",
+       "智能体工作流"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "工作流 automation",
+   "normalized": "工作流 automation",
+   "terms": [
+    "工作流",
+    "automation"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "工作流 automation",
+    "language": "mixed",
+    "lexical_terms": [
+     "工作流",
+     "automation"
+    ],
+    "semantic_queries": [
+     "工作流 automation",
+     "工作流 automation workflow automation agent workflow 智能体工作流"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "workflow"
+    ],
+    "bilingual_aliases": [
+     "workflow automation",
+     "agent workflow",
+     "智能体工作流"
+    ]
+   },
+   "plan": {
+    "normalized_query": "工作流 automation",
+    "strict_terms": [
+     "automation"
+    ],
+    "concepts": [
+     {
+      "concept_id": "workflow",
+      "primary_terms": [
+       "工作流"
+      ],
+      "aliases": [
+       "workflow automation",
+       "agent workflow",
+       "工作流",
+       "智能体工作流"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "model context protocol",
+   "normalized": "model context protocol",
+   "terms": [
+    "model",
+    "context",
+    "protocol"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "model context protocol",
+    "language": "en",
+    "lexical_terms": [
+     "model context protocol"
+    ],
+    "semantic_queries": [
+     "model context protocol",
+     "model context protocol mcp server mcp mcp 服务"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "mcp"
+    ],
+    "bilingual_aliases": [
+     "mcp server",
+     "mcp",
+     "mcp 服务"
+    ]
+   },
+   "plan": {
+    "normalized_query": "model context protocol",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "mcp",
+      "primary_terms": [
+       "model context protocol"
+      ],
+      "aliases": [
+       "model context protocol",
+       "mcp server",
+       "mcp",
+       "mcp 服务"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "知识库问答",
+   "normalized": "知识库问答",
+   "terms": [
+    "知识库问答"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "知识库问答",
+    "language": "zh",
+    "lexical_terms": [
+     "知识库问答"
+    ],
+    "semantic_queries": [
+     "知识库问答",
+     "知识库问答 rag knowledge base retrieval augmented 检索增强"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "rag"
+    ],
+    "bilingual_aliases": [
+     "rag",
+     "knowledge base",
+     "retrieval augmented",
+     "检索增强"
+    ]
+   },
+   "plan": {
+    "normalized_query": "知识库问答",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "rag",
+      "primary_terms": [
+       "知识库问答"
+      ],
+      "aliases": [
+       "rag",
+       "knowledge base",
+       "retrieval augmented",
+       "知识库",
+       "检索增强"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "向量数据库",
+   "normalized": "向量数据库",
+   "terms": [
+    "向量数据库"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "向量数据库",
+    "language": "zh",
+    "lexical_terms": [
+     "向量数据库"
+    ],
+    "semantic_queries": [
+     "向量数据库",
+     "向量数据库 vector database vector search vector index 向量检索"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "vector_search"
+    ],
+    "bilingual_aliases": [
+     "vector database",
+     "vector search",
+     "vector index",
+     "向量检索"
+    ]
+   },
+   "plan": {
+    "normalized_query": "向量数据库",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "vector_search",
+      "primary_terms": [
+       "向量数据库"
+      ],
+      "aliases": [
+       "vector database",
+       "vector search",
+       "vector index",
+       "向量数据库",
+       "向量检索"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "embedding",
+   "normalized": "embedding",
+   "terms": [
+    "embedding"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "embedding",
+    "language": "en",
+    "lexical_terms": [
+     "embedding"
+    ],
+    "semantic_queries": [
+     "embedding",
+     "embedding embeddings text embedding 向量化 嵌入"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "embedding"
+    ],
+    "bilingual_aliases": [
+     "embeddings",
+     "text embedding",
+     "向量化",
+     "嵌入"
+    ]
+   },
+   "plan": {
+    "normalized_query": "embedding",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "embedding",
+      "primary_terms": [
+       "embedding"
+      ],
+      "aliases": [
+       "embedding",
+       "embeddings",
+       "text embedding",
+       "向量化",
+       "嵌入"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "self-hosted",
+   "normalized": "self-hosted",
+   "terms": [
+    "self-hosted"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "self-hosted",
+    "language": "en",
+    "lexical_terms": [
+     "self-hosted"
+    ],
+    "semantic_queries": [
+     "self-hosted",
+     "self-hosted self hosted local deployment 自托管 本地部署 私有化部署"
+    ],
+    "intent_class": "self_hosted",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "self_hosted"
+    ],
+    "bilingual_aliases": [
+     "self hosted",
+     "local deployment",
+     "自托管",
+     "本地部署",
+     "私有化部署"
+    ]
+   },
+   "plan": {
+    "normalized_query": "self-hosted",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "self_hosted",
+      "primary_terms": [
+       "self-hosted"
+      ],
+      "aliases": [
+       "self-hosted",
+       "self hosted",
+       "local deployment",
+       "自托管",
+       "本地部署",
+       "私有化部署"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "框架 sdk",
+   "normalized": "框架 sdk",
+   "terms": [
+    "框架",
+    "sdk"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "框架 sdk",
+    "language": "mixed",
+    "lexical_terms": [
+     "sdk"
+    ],
+    "semantic_queries": [
+     "框架 sdk"
+    ],
+    "intent_class": "sdk",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "框架 sdk",
+    "strict_terms": [
+     "sdk"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "example sample",
+   "normalized": "example sample",
+   "terms": [
+    "example",
+    "sample"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "example sample",
+    "language": "en",
+    "lexical_terms": [
+     "example",
+     "sample"
+    ],
+    "semantic_queries": [
+     "example sample"
+    ],
+    "intent_class": "examples",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "example sample",
+    "strict_terms": [
+     "example",
+     "sample"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "示例项目",
+   "normalized": "示例项目",
+   "terms": [
+    "示例项目"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "示例项目",
+    "language": "zh",
+    "lexical_terms": [
+     "示例项目"
+    ],
+    "semantic_queries": [
+     "示例项目"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "示例项目",
+    "strict_terms": [],
+    "concepts": []
+   }
+  },
+  {
+   "q": "PDF tools",
+   "normalized": "PDF tools",
+   "terms": [
+    "PDF",
+    "tools"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "PDF tools",
+    "language": "en",
+    "lexical_terms": [
+     "PDF",
+     "tools"
+    ],
+    "semantic_queries": [
+     "PDF tools",
+     "PDF tools pdf editor pdf 工具"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "pdf_tools"
+    ],
+    "bilingual_aliases": [
+     "pdf editor",
+     "pdf 工具"
+    ]
+   },
+   "plan": {
+    "normalized_query": "PDF tools",
+    "strict_terms": [
+     "tools"
+    ],
+    "concepts": [
+     {
+      "concept_id": "pdf_tools",
+      "primary_terms": [
+       "PDF"
+      ],
+      "aliases": [
+       "pdf",
+       "pdf tools",
+       "pdf editor",
+       "pdf 工具"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "开发者工具",
+   "normalized": "开发者工具",
+   "terms": [
+    "开发者工具"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "开发者工具",
+    "language": "zh",
+    "lexical_terms": [
+     "开发者工具"
+    ],
+    "semantic_queries": [
+     "开发者工具",
+     "开发者工具 developer tools dev tools 开发工具"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "developer_tools"
+    ],
+    "bilingual_aliases": [
+     "developer tools",
+     "dev tools",
+     "开发工具"
+    ]
+   },
+   "plan": {
+    "normalized_query": "开发者工具",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "developer_tools",
+      "primary_terms": [
+       "开发者工具"
+      ],
+      "aliases": [
+       "developer tools",
+       "dev tools",
+       "开发者工具",
+       "开发工具"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "视频生成",
+   "normalized": "视频生成",
+   "terms": [
+    "视频生成"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "视频生成",
+    "language": "zh",
+    "lexical_terms": [
+     "视频生成"
+    ],
+    "semantic_queries": [
+     "视频生成",
+     "视频生成 text to video video generation ai 视频"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "video_generation"
+    ],
+    "bilingual_aliases": [
+     "text to video",
+     "video generation",
+     "ai 视频"
+    ]
+   },
+   "plan": {
+    "normalized_query": "视频生成",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "video_generation",
+      "primary_terms": [
+       "视频生成"
+      ],
+      "aliases": [
+       "text to video",
+       "video generation",
+       "视频生成",
+       "ai 视频"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "屏幕截图",
+   "normalized": "屏幕截图",
+   "terms": [
+    "屏幕截图"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "屏幕截图",
+    "language": "zh",
+    "lexical_terms": [
+     "屏幕截图"
+    ],
+    "semantic_queries": [
+     "屏幕截图",
+     "屏幕截图 screenshot screen capture screen shot snipping 抓图"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "screenshot"
+    ],
+    "bilingual_aliases": [
+     "screenshot",
+     "screen capture",
+     "screen shot",
+     "snipping",
+     "抓图"
+    ]
+   },
+   "plan": {
+    "normalized_query": "屏幕截图",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "screenshot",
+      "primary_terms": [
+       "屏幕截图"
+      ],
+      "aliases": [
+       "screenshot",
+       "screen capture",
+       "screen shot",
+       "snipping",
+       "截图",
+       "抓图"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "代码搜索",
+   "normalized": "代码搜索",
+   "terms": [
+    "代码搜索"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "代码搜索",
+    "language": "zh",
+    "lexical_terms": [
+     "代码搜索"
+    ],
+    "semantic_queries": [
+     "代码搜索",
+     "代码搜索 code search 代码检索"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "code_search"
+    ],
+    "bilingual_aliases": [
+     "code search",
+     "代码检索"
+    ]
+   },
+   "plan": {
+    "normalized_query": "代码搜索",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "code_search",
+      "primary_terms": [
+       "代码搜索"
+      ],
+      "aliases": [
+       "code search",
+       "代码搜索",
+       "代码检索"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "otel tracing",
+   "normalized": "otel tracing",
+   "terms": [
+    "otel",
+    "tracing"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "otel tracing",
+    "language": "en",
+    "lexical_terms": [
+     "otel",
+     "tracing"
+    ],
+    "semantic_queries": [
+     "otel tracing",
+     "otel tracing observability trace opentelemetry 可观测性 链路追踪 llm observability"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "llm_observability"
+    ],
+    "bilingual_aliases": [
+     "observability",
+     "trace",
+     "opentelemetry",
+     "可观测性",
+     "链路追踪",
+     "llm observability"
+    ]
+   },
+   "plan": {
+    "normalized_query": "otel tracing",
+    "strict_terms": [
+     "otel"
+    ],
+    "concepts": [
+     {
+      "concept_id": "llm_observability",
+      "primary_terms": [
+       "tracing"
+      ],
+      "aliases": [
+       "observability",
+       "tracing",
+       "trace",
+       "opentelemetry",
+       "可观测性",
+       "链路追踪",
+       "llm observability"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "foo foo FOO",
+   "normalized": "foo foo FOO",
+   "terms": [
+    "foo"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "foo foo FOO",
+    "language": "en",
+    "lexical_terms": [
+     "foo"
+    ],
+    "semantic_queries": [
+     "foo foo FOO"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "foo foo FOO",
+    "strict_terms": [
+     "foo",
+     "foo",
+     "FOO"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "ＡＩ　ＭＣＰ",
+   "normalized": "AI MCP",
+   "terms": [
+    "AI",
+    "MCP"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "AI MCP",
+    "language": "en",
+    "lexical_terms": [
+     "AI",
+     "MCP"
+    ],
+    "semantic_queries": [
+     "AI MCP",
+     "AI MCP model context protocol mcp server mcp 服务"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "mcp"
+    ],
+    "bilingual_aliases": [
+     "model context protocol",
+     "mcp server",
+     "mcp 服务"
+    ]
+   },
+   "plan": {
+    "normalized_query": "AI MCP",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "mcp",
+      "primary_terms": [
+       "MCP"
+      ],
+      "aliases": [
+       "model context protocol",
+       "mcp server",
+       "mcp",
+       "mcp 服务"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "帮我找\u001c MCP\u001f",
+   "normalized": "帮我找 MCP",
+   "terms": [
+    "帮我找",
+    "MCP"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "MCP",
+    "language": "en",
+    "lexical_terms": [
+     "MCP"
+    ],
+    "semantic_queries": [
+     "MCP",
+     "MCP model context protocol mcp server mcp 服务"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "mcp"
+    ],
+    "bilingual_aliases": [
+     "model context protocol",
+     "mcp server",
+     "mcp 服务"
+    ]
+   },
+   "plan": {
+    "normalized_query": "MCP",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "mcp",
+      "primary_terms": [
+       "MCP"
+      ],
+      "aliases": [
+       "model context protocol",
+       "mcp server",
+       "mcp",
+       "mcp 服务"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "normalized": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "terms": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "language": "en",
+    "lexical_terms": [
+     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "semantic_queries": [
+     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "strict_terms": [
+     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "café Straße",
+   "normalized": "café Straße",
+   "terms": [
+    "caf",
+    "Stra"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "café Straße",
+    "language": "en",
+    "lexical_terms": [
+     "caf",
+     "Stra"
+    ],
+    "semantic_queries": [
+     "café Straße"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "café Straße",
+    "strict_terms": [
+     "caf",
+     "Stra",
+     "e"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "ß",
+   "normalized": "ß",
+   "terms": [],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "ß",
+    "language": "und",
+    "lexical_terms": [],
+    "semantic_queries": [
+     "ß"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "ß",
+    "strict_terms": [],
+    "concepts": []
+   }
+  },
+  {
+   "q": "deploy mcp rag agent",
+   "normalized": "deploy mcp rag agent",
+   "terms": [
+    "deploy",
+    "mcp",
+    "rag",
+    "agent"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "deploy mcp rag agent",
+    "language": "en",
+    "lexical_terms": [
+     "deploy",
+     "mcp",
+     "rag",
+     "agent"
+    ],
+    "semantic_queries": [
+     "deploy mcp rag agent",
+     "deploy mcp rag agent model context protocol"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "mcp",
+     "rag",
+     "agent"
+    ],
+    "bilingual_aliases": [
+     "model context protocol"
+    ]
+   },
+   "plan": {
+    "normalized_query": "deploy mcp rag agent",
+    "strict_terms": [
+     "deploy"
+    ],
+    "concepts": [
+     {
+      "concept_id": "mcp",
+      "primary_terms": [
+       "mcp"
+      ],
+      "aliases": [
+       "model context protocol",
+       "mcp server",
+       "mcp",
+       "mcp 服务"
+      ]
+     },
+     {
+      "concept_id": "rag",
+      "primary_terms": [
+       "rag"
+      ],
+      "aliases": [
+       "rag",
+       "knowledge base",
+       "retrieval augmented",
+       "知识库",
+       "检索增强"
+      ]
+     },
+     {
+      "concept_id": "agent",
+      "primary_terms": [
+       "agent"
+      ],
+      "aliases": [
+       "agent",
+       "ai agent",
+       "agents",
+       "智能体",
+       "助手"
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "clients": [
+  {
+   "q": "mcp rag",
+   "payload": {
+    "language": "en",
+    "intent_class": "general_discovery",
+    "lexical_terms": [
+     "mcp",
+     "rag"
+    ],
+    "semantic_queries": [
+     "mcp rag projects"
+    ],
+    "topics": [
+     "AI",
+     "ai"
+    ],
+    "languages": [
+     "Go"
+    ],
+    "artifact_types": [
+     "server"
+    ],
+    "must_have": [
+     "tools"
+    ],
+    "should_have": [
+     "open source"
+    ]
+   },
+   "ok": true,
+   "intent": {
+    "schema_version": "project-search-intent-client-v1",
+    "normalized_query": "mcp rag",
+    "language": "en",
+    "lexical_terms": [
+     "mcp",
+     "rag"
+    ],
+    "semantic_queries": [
+     "mcp rag projects"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [
+     "AI"
+    ],
+    "languages": [
+     "Go"
+    ],
+    "artifact_types": [
+     "server"
+    ],
+    "must_have": [
+     "tools"
+    ],
+    "should_have": [
+     "open source"
+    ],
+    "concept_ids": [
+     "mcp",
+     "rag"
+    ],
+    "bilingual_aliases": [
+     "model context protocol"
+    ]
+   }
+  },
+  {
+   "q": "c++ c# .net langgraph",
+   "payload": {
+    "language": "en",
+    "intent_class": "sdk",
+    "lexical_terms": [
+     "c++ c# .net langgraph"
+    ],
+    "semantic_queries": [
+     "c++ c# .net langgraph projects"
+    ]
+   },
+   "ok": true,
+   "intent": {
+    "schema_version": "project-search-intent-client-v1",
+    "normalized_query": "c++ c# .net langgraph",
+    "language": "en",
+    "lexical_terms": [
+     "c++ c# .net langgraph"
+    ],
+    "semantic_queries": [
+     "c++ c# .net langgraph projects"
+    ],
+    "intent_class": "sdk",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   }
+  },
+  {
+   "q": "中文 MCP",
+   "payload": {
+    "language": "mixed",
+    "intent_class": "framework",
+    "lexical_terms": [
+     "MCP"
+    ],
+    "semantic_queries": [
+     "中文 MCP"
+    ]
+   },
+   "ok": true,
+   "intent": {
+    "schema_version": "project-search-intent-client-v1",
+    "normalized_query": "中文 MCP",
+    "language": "mixed",
+    "lexical_terms": [
+     "MCP"
+    ],
+    "semantic_queries": [
+     "中文 MCP"
+    ],
+    "intent_class": "framework",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "mcp"
+    ],
+    "bilingual_aliases": [
+     "model context protocol",
+     "mcp server",
+     "mcp 服务"
+    ]
+   }
+  },
+  {
+   "q": "mcp",
+   "payload": {
+    "language": "en",
+    "lexical_terms": [],
+    "semantic_queries": [
+     "mcp"
+    ]
+   },
+   "ok": false,
+   "error": "client intent requires lexical_terms and semantic_queries"
+  },
+  {
+   "q": "mcp",
+   "payload": {
+    "language": "en",
+    "lexical_terms": [
+     "mcp"
+    ],
+    "semantic_queries": [
+     "tools"
+    ]
+   },
+   "ok": true,
+   "intent": {
+    "schema_version": "project-search-intent-client-v1",
+    "normalized_query": "mcp",
+    "language": "en",
+    "lexical_terms": [
+     "mcp"
+    ],
+    "semantic_queries": [
+     "tools"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "mcp"
+    ],
+    "bilingual_aliases": [
+     "model context protocol",
+     "mcp server",
+     "mcp 服务"
+    ]
+   }
+  },
+  {
+   "q": "mcp",
+   "payload": {
+    "language": "en",
+    "lexical_terms": [
+     "mcp\u0000"
+    ],
+    "semantic_queries": [
+     "mcp"
+    ]
+   },
+   "ok": false,
+   "error": "intent values must be non-empty, bounded text without control characters"
+  },
+  {
+   "q": "mcp",
+   "payload": {
+    "language": "en",
+    "lexical_terms": [
+     "mcp"
+    ],
+    "semantic_queries": [
+     "mcp"
+    ],
+    "topics": [
+     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ]
+   },
+   "ok": false,
+   "error": "intent values must be non-empty, bounded text without control characters"
+  }
+ ],
+ "norms": [
+  {
+   "values": [],
+   "max_items": 8,
+   "max_chars": 40,
+   "ok": true,
+   "result": []
+  },
+  {
+   "values": [
+    " Go ",
+    "go",
+    "ＧＯ",
+    "Python"
+   ],
+   "max_items": 8,
+   "max_chars": 40,
+   "ok": true,
+   "result": [
+    "Go",
+    "Python"
+   ]
+  },
+  {
+   "values": [
+    "a",
+    "b",
+    "c"
+   ],
+   "max_items": 2,
+   "max_chars": 40,
+   "ok": true,
+   "result": [
+    "a",
+    "b"
+   ]
+  },
+  {
+   "values": [
+    "x\n"
+   ],
+   "max_items": 8,
+   "max_chars": 40,
+   "ok": false,
+   "error": "intent values must be non-empty, bounded text without control characters"
+  },
+  {
+   "values": [
+    "xxxxx"
+   ],
+   "max_items": 8,
+   "max_chars": 4,
+   "ok": false,
+   "error": "intent values must be non-empty, bounded text without control characters"
+  },
+  {
+   "values": [
+    "　"
+   ],
+   "max_items": 8,
+   "max_chars": 40,
+   "ok": false,
+   "error": "intent values must be non-empty, bounded text without control characters"
+  },
+  {
+   "values": [
+    "ok",
+    "bad"
+   ],
+   "max_items": 1,
+   "max_chars": 40,
+   "ok": true,
+   "result": [
+    "ok"
+   ]
+  }
+ ],
+ "escapes": [
+  [
+   "",
+   ""
+  ],
+  [
+   "a=b%c_d",
+   "a==b=%c=_d"
+  ],
+  [
+   "==%_",
+   "=====%=_"
+  ],
+  [
+   "100%_done",
+   "100=%=_done"
+  ]
+ ]
+}

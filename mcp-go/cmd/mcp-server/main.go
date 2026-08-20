@@ -38,6 +38,7 @@ import (
 	"aigcnews/mcp-go/internal/mcpapp"
 	"aigcnews/mcp-go/internal/postgres"
 	"aigcnews/mcp-go/internal/probes"
+	"aigcnews/mcp-go/internal/projectsearch"
 	"aigcnews/mcp-go/internal/ratelimit"
 	"aigcnews/mcp-go/internal/version"
 
@@ -100,6 +101,77 @@ func run() int {
 	// 仅覆盖 favorites），McpToolContext.adoptions 的 Go 对应物。
 	registry["submit_project_adoption"] = mcpapp.NewAdoptionsService(
 		postgres.NewProjectAdoptionsRepository(pool), publicBaseURL).Submit
+	projectCatalog := postgres.NewProjectSearchRepository(pool, cfg.SchedulerTimezone, cfg.Postgres.StatementTimeoutMillis)
+	projectFallback := projectsearch.NewGitHubFallback(projectsearch.GitHubFallbackConfig{
+		Enabled:        cfg.ProjectSearch.FallbackEnabled,
+		UseToken:       cfg.ProjectSearch.FallbackUseToken,
+		Token:          cfg.ProjectSearch.GitHubToken,
+		TimeoutSeconds: cfg.ProjectSearch.FallbackTimeoutSeconds,
+	})
+	var semanticSearch projectsearch.SemanticSearcher
+	if cfg.ProjectSearch.SemanticEnabled {
+		embedding := projectsearch.NewOpenAIEmbeddingClient(projectsearch.EmbeddingConfig{
+			Provider:          cfg.ProjectSearch.EmbeddingProvider,
+			APIKey:            cfg.ProjectSearch.EmbeddingAPIKey,
+			BaseURL:           cfg.ProjectSearch.EmbeddingBaseURL,
+			ModelName:         cfg.ProjectSearch.EmbeddingModelName,
+			SiliconFlowAPIKey: cfg.ProjectSearch.SiliconFlowAPIKey,
+			OpenAIAPIKey:      cfg.ProjectSearch.OpenAIAPIKey,
+			OpenAIBaseURL:     cfg.ProjectSearch.OpenAIBaseURL,
+			TimeoutSeconds:    cfg.ProjectSearch.SemanticQueryTimeoutSeconds,
+		})
+		milvusRepo, milvusErr := projectsearch.NewMilvusVectorRepository(projectsearch.MilvusConfig{
+			Host:                cfg.ProjectSearch.MilvusHost,
+			Port:                cfg.ProjectSearch.MilvusPort,
+			User:                cfg.ProjectSearch.MilvusUser,
+			Password:            cfg.ProjectSearch.MilvusPassword,
+			DBName:              cfg.ProjectSearch.MilvusDBName,
+			CollectionName:      cfg.ProjectSearch.SemanticCollectionName,
+			Dimension:           cfg.ProjectSearch.MilvusDimension,
+			IndexType:           cfg.ProjectSearch.MilvusIndexType,
+			MetricType:          cfg.ProjectSearch.MilvusMetricType,
+			QueryTimeoutSeconds: cfg.ProjectSearch.SemanticQueryTimeoutSeconds,
+		})
+		if milvusErr != nil {
+			slog.Error("[Startup] Milvus 语义检索装配失败", "err", milvusErr)
+			return 1
+		}
+		semanticSearch = projectsearch.NewProjectSemanticSearch(embedding, milvusRepo, projectsearch.SemanticConfig{
+			Enabled:             true,
+			RepoLimit:           cfg.ProjectSearch.SemanticRepoLimit,
+			ChunkLimit:          cfg.ProjectSearch.SemanticChunkLimit,
+			MinScore:            cfg.ProjectSearch.SemanticMinScore,
+			QueryTimeoutSeconds: cfg.ProjectSearch.SemanticQueryTimeoutSeconds,
+		})
+	}
+	var reranker projectsearch.Reranker
+	if cfg.ProjectSearch.RerankerEnabled {
+		reranker = projectsearch.NewProjectReranker(projectsearch.RerankerConfig{
+			Enabled:           true,
+			URL:               cfg.ProjectSearch.RerankerURL,
+			ModelName:         cfg.ProjectSearch.RerankerModelName,
+			TimeoutSeconds:    cfg.ProjectSearch.RerankerTimeoutSeconds,
+			CandidateLimit:    cfg.ProjectSearch.RerankerCandidateLimit,
+			MinCandidates:     cfg.ProjectSearch.RerankerMinCandidates,
+			SiliconFlowAPIKey: cfg.ProjectSearch.SiliconFlowAPIKey,
+		})
+	}
+	projectEngine, err := projectsearch.NewEngine(projectCatalog, projectFallback, semanticSearch, reranker, projectsearch.EngineConfig{
+		Strategy:                    cfg.ProjectSearch.AIStrategy,
+		SemanticEnabled:             cfg.ProjectSearch.SemanticEnabled,
+		SemanticHeatFirst:           cfg.ProjectSearch.SemanticHeatFirst,
+		SemanticQueryTimeoutSeconds: cfg.ProjectSearch.SemanticQueryTimeoutSeconds,
+		AdoptionWeight:              cfg.ProjectSearch.AdoptionWeight,
+		RerankerEnabled:             cfg.ProjectSearch.RerankerEnabled,
+		RerankerCandidateLimit:      cfg.ProjectSearch.RerankerCandidateLimit,
+	})
+	if err != nil {
+		slog.Error("[Startup] 项目检索引擎装配失败", "err", err)
+		return 1
+	}
+	projectSearch := mcpapp.NewProjectSearchService(projectEngine, publicBaseURL)
+	registry["search_github_projects"] = projectSearch.Get
+	registry["search_github_ai_projects"] = projectSearch.Search
 	app := mcpapp.New(version.ServerName, serverVersion, registry)
 	// 身份感知工具（PR 2.5）：收藏检索需要 UserID + scope 判定，
 	// 认证/scope 文案在处理器内产生（对齐 Python dispatcher 短路 +
@@ -109,17 +181,18 @@ func run() int {
 			postgres.NewProjectCollectionsRepository(pool, cfg.SchedulerTimezone),
 			publicBaseURL,
 		).Get)
-	// resources/read 装配（PR 2.4）：榜单快照 + 看板统计 + 简报三个 Postgres
-	// 适配器，分类/论文详情复用上方同名服务。projects/library 的语义检索
-	// 仓储属 PR 2.8，届时经 SetProjectLibrary 补接。
-	app.SetResources(mcpapp.NewResourceService(
+	// resources/read 装配（PR 2.4/2.8）：榜单快照 + 看板统计 + 简报
+	// 复用 Postgres 适配器，projects/library 与 AI 搜索共用同一服务。
+	resources := mcpapp.NewResourceService(
 		rankSnapshots,
 		postgres.NewDocumentStatistics(pool, cfg.SchedulerTimezone),
 		postgres.NewBriefingRepository(pool),
 		categories,
 		papers,
 		publicBaseURL,
-	))
+	)
+	resources.SetProjectLibrary(projectSearch.Search)
+	app.SetResources(resources)
 
 	// 限流层接线（PR 1.3）。对齐 Python 语义：redis-py 构造不预连，故障
 	// 发生在请求期并由 enforce 的 except 吞掉（fail-open）；go-redis 同样

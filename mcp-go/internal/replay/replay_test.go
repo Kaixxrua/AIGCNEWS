@@ -203,9 +203,21 @@ type fixtureDocuments struct {
 	sourceCounts    map[string]int
 	todayCount      int
 	briefings       map[string]mcpapp.BriefingRecord
-	projectSearches map[string]map[string]any
+	projectSearches map[string]jsonx.Object
 	favoritesRows   []map[string]any
 	yesterdayHN     map[string]bool
+}
+
+type fixtureProjectSearchEngine struct {
+	results map[string]jsonx.Object
+}
+
+func (f fixtureProjectSearchEngine) SearchProjects(input mcpapp.ProjectSearchInput) (jsonx.Object, error) {
+	result, ok := f.results[input.Mode]
+	if !ok {
+		return nil, errors.New("fixture project search result unavailable")
+	}
+	return result, nil
 }
 
 func (f fixtureDocuments) SearchDocumentPage(query, source string, _, _ int) (mcpapp.DocumentPage, error) {
@@ -260,14 +272,6 @@ func (f fixtureDocuments) GetBriefing(key string) (*mcpapp.BriefingRecord, error
 	return &briefing, nil
 }
 
-func (f fixtureDocuments) ProjectLibrary(arguments map[string]any) (any, error) {
-	query, _ := arguments["q"].(string)
-	if query != "rag" {
-		return nil, mcpapp.ToolInputError{Message: "Resource read failed"}
-	}
-	return f.projectSearches["ai"], nil
-}
-
 // fixtureProjectCollections 复刻 recorder._StubProjectCollections：仅读
 // page（page<=1 → 前两行，否则第三行），其余过滤参数刻意忽略，total 恒 3。
 // 行原样透传 fixtures.json favorites_rows（UseNumber 解码保留 int/float
@@ -301,13 +305,13 @@ func loadFixtureDocuments(t *testing.T) fixtureDocuments {
 		t.Skipf("fixtures 不可读（%v），跳过回放", err)
 	}
 	var fixtures struct {
-		Documents       map[string]map[string]any   `json:"documents"`
-		Dashboard       map[string][]map[string]any `json:"dashboard_channels"`
-		SourceCounts    map[string]int              `json:"source_counts"`
-		TodayCount      int                         `json:"today_document_count"`
-		ProjectSearches map[string]map[string]any   `json:"project_search_results"`
-		FavoritesRows   []map[string]any            `json:"favorites_rows"`
-		Briefings       map[string]struct {
+		Documents          map[string]map[string]any   `json:"documents"`
+		Dashboard          map[string][]map[string]any `json:"dashboard_channels"`
+		SourceCounts       map[string]int              `json:"source_counts"`
+		TodayCount         int                         `json:"today_document_count"`
+		ProjectSearchesRaw json.RawMessage             `json:"project_search_results"`
+		FavoritesRows      []map[string]any            `json:"favorites_rows"`
+		Briefings          map[string]struct {
 			ContentZH string `json:"content_zh"`
 			ContentEN string `json:"content_en"`
 			Content   string `json:"content"`
@@ -318,6 +322,22 @@ func loadFixtureDocuments(t *testing.T) fixtureDocuments {
 	decoder.UseNumber()
 	if err := decoder.Decode(&fixtures); err != nil {
 		t.Fatalf("fixtures 解析失败: %v", err)
+	}
+	orderedProjects, err := jsonx.DecodeOrdered(fixtures.ProjectSearchesRaw)
+	if err != nil {
+		t.Fatalf("fixtures.project_search_results 保序解析失败: %v", err)
+	}
+	projectSearchesObject, ok := orderedProjects.(jsonx.Object)
+	if !ok {
+		t.Fatalf("fixtures.project_search_results 类型 = %T，want json object", orderedProjects)
+	}
+	projectSearches := make(map[string]jsonx.Object, len(projectSearchesObject))
+	for _, pair := range projectSearchesObject {
+		result, ok := pair.Value.(jsonx.Object)
+		if !ok {
+			t.Fatalf("fixtures.project_search_results.%s 类型 = %T，want json object", pair.Key, pair.Value)
+		}
+		projectSearches[pair.Key] = result
 	}
 	row := func(name string) mcpapp.DocumentRow {
 		doc, ok := fixtures.Documents[name]
@@ -349,7 +369,7 @@ func loadFixtureDocuments(t *testing.T) fixtureDocuments {
 		sourceCounts:    fixtures.SourceCounts,
 		todayCount:      fixtures.TodayCount,
 		briefings:       briefings,
-		projectSearches: fixtures.ProjectSearches,
+		projectSearches: projectSearches,
 		favoritesRows:   fixtures.FavoritesRows,
 		yesterdayHN:     yesterdayHN,
 	}
@@ -470,6 +490,10 @@ func newReplayHandler(t *testing.T, caseName string) http.Handler {
 	for name, handler := range mcpapp.NewDocumentsHandlers(documents, "") {
 		registry[name] = handler
 	}
+	projectSearch := mcpapp.NewProjectSearchService(
+		fixtureProjectSearchEngine{results: documents.projectSearches}, "")
+	registry["search_github_projects"] = projectSearch.Get
+	registry["search_github_ai_projects"] = projectSearch.Search
 	for name, handler := range mcpapp.NewPaperDetailHandlers(documents, "") {
 		registry[name] = handler
 	}
@@ -478,7 +502,7 @@ func newReplayHandler(t *testing.T, caseName string) http.Handler {
 	resources := mcpapp.NewResourceService(documents, documents, documents,
 		mcpapp.NewProjectCategoriesService(mcpapp.StaticProjectCategoriesRepository{}),
 		mcpapp.NewPaperDetailService(documents, ""), "")
-	resources.SetProjectLibrary(documents.ProjectLibrary)
+	resources.SetProjectLibrary(projectSearch.Search)
 	// 冻结时钟，镜像 recorder._frozen_time 的两个独立 patch 点：
 	// 看板钟（dashboard_policy.datetime）钉在 CST 2026-08-10 12:00（UTC 瞬
 	// 间 +8h 平移后与 policy 的 timezone(timedelta(hours=8)) 同读数）；
@@ -646,7 +670,7 @@ var toolsCorpusMilestones = map[string]string{
 // toolsCorpusCurrentMilestone 是本包当前解锁的里程碑。先前 PR 的工具必须继续
 // 回放，避免新工具接入使已解锁语料静默失去覆盖；其后用例带里程碑标注跳过。
 // PR 2.6 无语料用例（写路径未录制），里程碑仅作进度标注推进。
-const toolsCorpusCurrentMilestone = "PR 2.6"
+const toolsCorpusCurrentMilestone = "PR 2.8"
 
 var toolsCorpusMilestoneOrder = []string{
 	"PR 2.2", "PR 2.3", "PR 2.4", "PR 2.5", "PR 2.6", "PR 2.7", "PR 2.8",
@@ -725,7 +749,7 @@ var resourcesCorpusMilestones = map[string]string{
 
 // resourcesCorpusCurrentMilestone 是资源语料当前解锁的里程碑（复用
 // toolsCorpusMilestoneOrder 的排序）。
-const resourcesCorpusCurrentMilestone = "PR 2.4"
+const resourcesCorpusCurrentMilestone = "PR 2.8"
 
 // TestResourcesCorpus 逐案回放 resources.jsonl 中截至当前里程碑的用例。
 func TestResourcesCorpus(t *testing.T) {

@@ -1,0 +1,234 @@
+package projectsearch
+
+import (
+	"math"
+	"sort"
+	"strings"
+
+	"aigcnews/mcp-go/internal/projectsem"
+)
+
+// LexicalCandidate is the projectsearch-facing alias of the frozen semantic
+// retrieval candidate shape.
+type LexicalCandidate = projectsem.LexicalCandidate
+
+// HeatTriple is (hot_score, daily_star_growth, stars).
+type HeatTriple struct {
+	HotScore    float64
+	DailyGrowth int
+	Stars       int
+}
+
+const rankingK = 60
+
+// RankLegacyProjectCandidateIDs reproduces the two-lane RRF used by the
+// legacy search path. Each lane de-duplicates independently, preserving the
+// source's literal (rather than case-folded) repository identity.
+func RankLegacyProjectCandidateIDs(lexicalRepoIDs, semanticRepoIDs []string, rankConstant, limit int) []string {
+	if rankConstant <= 0 {
+		rankConstant = rankingK
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	scores := map[string]float64{}
+	best := map[string]int{}
+	for _, lane := range []struct {
+		weight float64
+		ids    []string
+	}{
+		{0.45, lexicalRepoIDs},
+		{0.55, semanticRepoIDs},
+	} {
+		seen := map[string]bool{}
+		for rank, raw := range lane.ids {
+			id := strings.TrimSpace(raw)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			r := rank + 1
+			scores[id] += lane.weight / float64(rankConstant+r)
+			if old, ok := best[id]; !ok || r < old {
+				best[id] = r
+			}
+		}
+	}
+	ids := make([]string, 0, len(scores))
+	for id := range scores {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		if scores[ids[i]] != scores[ids[j]] {
+			return scores[ids[i]] > scores[ids[j]]
+		}
+		if best[ids[i]] != best[ids[j]] {
+			return best[ids[i]] < best[ids[j]]
+		}
+		return ids[i] < ids[j]
+	})
+	if len(ids) > limit {
+		ids = ids[:limit]
+	}
+	return ids
+}
+
+// RankV2ProjectCandidateIDs fuses strict lexical, relaxed lexical and semantic
+// lanes, then applies the optional adoption ballast to already eligible IDs.
+func RankV2ProjectCandidateIDs(strict, relaxed []LexicalCandidate, semantic []string, exactRepoID string, rankConstant, limit int, adoptionStars map[string]int, adoptionWeight float64) []string {
+	if rankConstant <= 0 {
+		rankConstant = rankingK
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	scores := map[string]float64{}
+	best := map[string]int{}
+	coverage := map[string]int{}
+	strength := map[string]int{}
+	add := func(weight float64, ids []string, candidates map[string]LexicalCandidate) {
+		seen := map[string]bool{}
+		for rank, raw := range ids {
+			id := strings.TrimSpace(raw)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			r := rank + 1
+			scores[id] += weight / float64(rankConstant+r)
+			if old, ok := best[id]; !ok || r < old {
+				best[id] = r
+			}
+			if candidate, ok := candidates[id]; ok {
+				if candidate.TermCoverage > coverage[id] {
+					coverage[id] = candidate.TermCoverage
+				}
+				if candidate.MatchStrength > strength[id] {
+					strength[id] = candidate.MatchStrength
+				}
+			}
+		}
+	}
+	strictMap := make(map[string]LexicalCandidate, len(strict))
+	relaxedMap := make(map[string]LexicalCandidate, len(relaxed))
+	strictIDs := make([]string, 0, len(strict))
+	relaxedIDs := make([]string, 0, len(relaxed))
+	for _, c := range strict {
+		strictMap[c.RepoID] = c
+		strictIDs = append(strictIDs, c.RepoID)
+	}
+	for _, c := range relaxed {
+		relaxedMap[c.RepoID] = c
+		relaxedIDs = append(relaxedIDs, c.RepoID)
+	}
+	add(0.45, strictIDs, strictMap)
+	add(0.15, relaxedIDs, relaxedMap)
+	add(0.40, semantic, nil)
+	if adoptionWeight > 0 && len(adoptionStars) > 0 {
+		maxStars := 0
+		for rawID, stars := range adoptionStars {
+			id := strings.TrimSpace(rawID)
+			if _, ok := scores[id]; !ok || stars <= 0 {
+				continue
+			}
+			if stars > maxStars {
+				maxStars = stars
+			}
+		}
+		if maxStars > 0 {
+			denominator := math.Log1p(float64(maxStars))
+			if denominator > 0 {
+				for rawID, stars := range adoptionStars {
+					id := strings.TrimSpace(rawID)
+					if _, ok := scores[id]; ok && stars > 0 {
+						scores[id] += adoptionWeight * math.Log1p(float64(stars)) / denominator
+					}
+				}
+			}
+		}
+	}
+	exact := strings.ToLower(strings.TrimSpace(exactRepoID))
+	ids := make([]string, 0, len(scores))
+	for id := range scores {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		a, b := ids[i], ids[j]
+		exactA := exact != "" && strings.EqualFold(a, exact)
+		exactB := exact != "" && strings.EqualFold(b, exact)
+		if exactA != exactB {
+			return exactA
+		}
+		if scores[a] != scores[b] {
+			return scores[a] > scores[b]
+		}
+		if strength[a] != strength[b] {
+			return strength[a] > strength[b]
+		}
+		if coverage[a] != coverage[b] {
+			return coverage[a] > coverage[b]
+		}
+		if best[a] != best[b] {
+			return best[a] < best[b]
+		}
+		return a < b
+	})
+	if len(ids) > limit {
+		ids = ids[:limit]
+	}
+	return ids
+}
+
+// OrderCandidatesByHeat applies exact, strict-pinned and heat tiers while
+// preserving fusion order for ties.
+func OrderCandidatesByHeat(repoIDs []string, heat map[string]HeatTriple, exactRepoID string, pinnedRepoIDs []string) []string {
+	fusion := make(map[string]int, len(repoIDs))
+	for i, id := range repoIDs {
+		fusion[id] = i
+	}
+	pinned := make(map[string]bool, len(pinnedRepoIDs))
+	for _, id := range pinnedRepoIDs {
+		pinned[id] = true
+	}
+	exact := strings.ToLower(strings.TrimSpace(exactRepoID))
+	out := append([]string(nil), repoIDs...)
+	heatOf := func(id string) HeatTriple {
+		if h, ok := heat[id]; ok {
+			return h
+		}
+		return HeatTriple{}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		exactA := exact != "" && strings.EqualFold(a, exact)
+		exactB := exact != "" && strings.EqualFold(b, exact)
+		tierA, tierB := 2, 2
+		if exactA {
+			tierA = 0
+		} else if pinned[a] {
+			tierA = 1
+		}
+		if exactB {
+			tierB = 0
+		} else if pinned[b] {
+			tierB = 1
+		}
+		if tierA != tierB {
+			return tierA < tierB
+		}
+		if tierA == 2 {
+			ha, hb := heatOf(a), heatOf(b)
+			if ha.HotScore != hb.HotScore {
+				return ha.HotScore > hb.HotScore
+			}
+			if ha.DailyGrowth != hb.DailyGrowth {
+				return ha.DailyGrowth > hb.DailyGrowth
+			}
+			if ha.Stars != hb.Stars {
+				return ha.Stars > hb.Stars
+			}
+		}
+		return fusion[a] < fusion[b]
+	})
+	return out
+}
