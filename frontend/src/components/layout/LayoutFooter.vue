@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { dockSuppressed } from '@/composables/useDockSuppression'
 
 const { t } = useI18n()
 defineProps<{
@@ -11,12 +12,14 @@ defineProps<{
 const icpNumber = '蜀ICP备2026011291号'
 const icpLookupUrl = 'https://beian.miit.gov.cn/'
 
+// 本行 z-index 高于全屏浮层遮罩，浮层（登录对话框等）打开期间须随 dock
+// 一起隐藏，否则会浮在遮罩上层且链接仍可点击
 const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${encodeURIComponent(t('footer.infringement'))}`)
 </script>
 
 <template>
   <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 商务合作 / 侵权投诉） ═══ -->
-  <div class="dock-footer">
+  <div v-show="!dockSuppressed" class="dock-footer">
     <span>{{ t('footer.poweredBy', { brandName }) }}</span>
     <span class="footer-sep">·</span>
     <RouterLink to="/disclaimer" class="footer-link">{{ t('footer.disclaimer') }}</RouterLink>

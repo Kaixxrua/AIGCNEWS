@@ -1,10 +1,16 @@
 import { createApp } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import MastheadUser from './MastheadUser.vue'
 import i18n, { setAppLocale } from '@/i18n'
 
-/* MastheadUser 是固定标识：无论匿名、Free 还是 VIP，始终渲染「未登录 / guest」，
-   不读 authStore、不随 locale 变化。组件无依赖，直接挂载即可。 */
+/* authStore 以 hoisted 盒子桩化：直控登录态与档位，绕过 pinia/token 存储。 */
+const authBox = vi.hoisted(() => ({
+  isLoggedIn: false,
+  user: null as null | { email: string; membership_tier?: 'free' | 'member' },
+}))
+
+vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
+
 let unmount: (() => void) | undefined
 
 const mountMastheadUser = () => {
@@ -21,34 +27,57 @@ describe('MastheadUser', () => {
   afterEach(() => {
     unmount?.()
     unmount = undefined
+    authBox.isLoggedIn = false
+    authBox.user = null
     setAppLocale('zh-CN')
   })
 
-  it('always renders the fixed 未登录 / guest lines for anonymous visitors', () => {
+  it('shows the fixed 未登录 / guest lines for anonymous visitors', () => {
     const host = mountMastheadUser()
 
     expect(host.querySelector('.masthead-user__status')?.textContent).toBe('未登录')
     expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('guest')
   })
 
-  it('renders the same fixed lines regardless of session state', () => {
-    // 组件不读取 authStore：匿名、Free、VIP 三种真实会话下输出完全一致
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user')?.textContent).toBe('未登录guest')
-  })
-
-  it('hides the decorative badge from assistive technology', () => {
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user')?.getAttribute('aria-hidden')).toBe('true')
-  })
-
-  it('keeps the fixed lines under the English locale too', () => {
+  it('keeps the anonymous lines fixed under the English locale too', () => {
     setAppLocale('en-US')
     const host = mountMastheadUser()
 
     expect(host.querySelector('.masthead-user__status')?.textContent).toBe('未登录')
     expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('guest')
+  })
+
+  it('shows the account email and free group once a free-tier user logs in', () => {
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'reader@example.com', membership_tier: 'free' }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__status')?.textContent).toBe('reader@example.com')
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
+  })
+
+  it('labels member-tier accounts as vip', () => {
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'vip@example.com', membership_tier: 'member' }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：vip')
+  })
+
+  it('falls back to free when the tier field is missing', () => {
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'legacy@example.com' }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
+  })
+
+  it('follows the active locale for the logged-in group label', () => {
+    setAppLocale('en-US')
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'vip@example.com', membership_tier: 'member' }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('Group: vip')
   })
 })
