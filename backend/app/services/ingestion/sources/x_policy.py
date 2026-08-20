@@ -125,6 +125,29 @@ def filter_tweets_to_snapshot_date(tweets: Iterable[Any], snapshot_date: str) ->
     return fresh
 
 
+def filter_tweets_to_window(
+    tweets: Iterable[Any],
+    *,
+    window_start: datetime,
+    window_end: datetime,
+) -> list[Any]:
+    """只保留固定 UTC 半开区间内的推文，并按稳定 tweet ID 去重。"""
+    start = window_start.astimezone(timezone.utc)
+    end = window_end.astimezone(timezone.utc)
+    seen_ids: set[str] = set()
+    selected: list[Any] = []
+    for tweet in tweets:
+        parsed = parse_tweet_datetime(str(getattr(tweet, "created_at", "") or ""))
+        tweet_id = str(getattr(tweet, "id", "") or "")
+        if parsed is None or not tweet_id or not (start <= parsed < end):
+            continue
+        if tweet_id in seen_ids:
+            continue
+        seen_ids.add(tweet_id)
+        selected.append(tweet)
+    return selected
+
+
 def compose_tweet_url(screen_name: str, tweet_id: str) -> str:
     """拼接推文 canonical URL（Tweet 对象不带 url 字段）。"""
     return f"https://x.com/{screen_name}/status/{tweet_id}"
@@ -333,13 +356,15 @@ def _project_quoted_tweet(tweet: Any) -> dict | None:
 def project_tweets(
     tweets: Iterable[Any],
     *,
-    limit: int,
+    limit: int | None,
     source_channel: str = X_CHANNEL,
+    timeline: bool = False,
 ) -> list[dict]:
-    """过滤 → 打分 → 降序 → 截断 → 投影为标准条目 dict。
+    """过滤、去重并投影为标准条目 dict。
 
-    输入为 twitter-cli 的 Tweet dataclass（鸭子类型，测试可用同类对象）。
-    合并所有账号的推文统一排序，rank_in_period 从 1 开始。
+    默认保持历史互动分排序/截断语义。滚动窗口采集传 ``timeline=True``：
+    按发布时间倒序（tweet ID 作为稳定 tie-breaker）投影全部合格推文，
+    ``limit`` 仅保留为旧调用方兼容的参数，不再造成漏采。
     """
     ingestible = [tweet for tweet in tweets if is_ingestible_tweet(tweet)]
 
@@ -353,18 +378,31 @@ def project_tweets(
             views=int(getattr(metrics, "views", 0) or 0),
         )
 
-    ranked = sorted(ingestible, key=_score, reverse=True)
-    # 纯转贴以原贴 id/指标入库：多账号转同一贴（或转自己旧贴）会产生重复
-    # id，降序后保留首次出现（同分同内容，取先者），避免重复条目占满截断名额
+    if timeline:
+        def _timeline_key(tweet: Any) -> tuple[datetime, int, str]:
+            parsed = parse_tweet_datetime(str(getattr(tweet, "created_at", "") or ""))
+            tweet_id = str(getattr(tweet, "id", "") or "")
+            try:
+                numeric_id = int(tweet_id)
+            except ValueError:
+                numeric_id = -1
+            return (parsed or datetime.min.replace(tzinfo=timezone.utc), numeric_id, tweet_id)
+
+        ordered = sorted(ingestible, key=_timeline_key, reverse=True)
+    else:
+        ordered = sorted(ingestible, key=_score, reverse=True)
+
+    # 纯转贴以原贴 id/指标入库；重复 ID 只保留首次出现。
     seen_ids: set[str] = set()
-    deduped: list[Any] = []
-    for tweet in ranked:
-        dedup_id = str(getattr(tweet, "id", ""))
+    ranked: list[Any] = []
+    for tweet in ordered:
+        dedup_id = str(getattr(tweet, "id", "") or "")
         if dedup_id in seen_ids:
             continue
         seen_ids.add(dedup_id)
-        deduped.append(tweet)
-    ranked = deduped[:limit]
+        ranked.append(tweet)
+    if not timeline and limit is not None:
+        ranked = ranked[:limit]
 
     results: list[dict] = []
     for rank, tweet in enumerate(ranked, start=1):

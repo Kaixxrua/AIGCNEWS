@@ -280,7 +280,37 @@ class PostgresDocumentRepository:
                 in_monthly=(documents.in_monthly OR EXCLUDED.in_monthly),
                 local_pdf_path=COALESCE(EXCLUDED.local_pdf_path, documents.local_pdf_path),
                 media=COALESCE(NULLIF(EXCLUDED.media, ''), documents.media),
-                quote=COALESCE(NULLIF(EXCLUDED.quote, ''), documents.quote),
+                quote=CASE
+                    WHEN NULLIF(EXCLUDED.quote, '') IS NULL THEN documents.quote
+                    WHEN EXCLUDED.source <> 'x' OR documents.source <> 'x' THEN EXCLUDED.quote
+                    -- The source projection never carries durable LLM translations.
+                    -- Keep a completed quote translation only when it still belongs
+                    -- to this exact quoted tweet text (the task fingerprint input).
+                    WHEN NOT pg_input_is_valid(EXCLUDED.quote, 'jsonb') THEN documents.quote
+                    WHEN NULLIF(documents.quote, '') IS NULL THEN EXCLUDED.quote
+                    WHEN NOT pg_input_is_valid(documents.quote, 'jsonb') THEN EXCLUDED.quote
+                    WHEN jsonb_typeof(EXCLUDED.quote::jsonb) <> 'object' THEN EXCLUDED.quote
+                    WHEN jsonb_typeof(documents.quote::jsonb) <> 'object' THEN EXCLUDED.quote
+                    WHEN NULLIF(BTRIM(EXCLUDED.quote::jsonb ->> 'tweet_id'), '') IS NULL THEN EXCLUDED.quote
+                    WHEN NULLIF(BTRIM(EXCLUDED.quote::jsonb ->> 'text'), '') IS NULL THEN EXCLUDED.quote
+                    WHEN EXCLUDED.quote::jsonb ->> 'tweet_id'
+                         IS DISTINCT FROM documents.quote::jsonb ->> 'tweet_id' THEN EXCLUDED.quote
+                    WHEN EXCLUDED.quote::jsonb ->> 'text'
+                         IS DISTINCT FROM documents.quote::jsonb ->> 'text' THEN EXCLUDED.quote
+                    WHEN jsonb_typeof(documents.quote::jsonb -> 'translation_zh') = 'string'
+                         AND NULLIF(BTRIM(documents.quote::jsonb ->> 'translation_zh'), '') IS NOT NULL
+                         AND (
+                            jsonb_typeof(EXCLUDED.quote::jsonb -> 'translation_zh') IS DISTINCT FROM 'string'
+                            OR NULLIF(BTRIM(EXCLUDED.quote::jsonb ->> 'translation_zh'), '') IS NULL
+                         )
+                        THEN jsonb_set(
+                            EXCLUDED.quote::jsonb,
+                            '{translation_zh}',
+                            to_jsonb(documents.quote::jsonb ->> 'translation_zh'),
+                            true
+                        )::text
+                    ELSE EXCLUDED.quote
+                END,
                 link_card=COALESCE(NULLIF(EXCLUDED.link_card, ''), documents.link_card),
                 author_avatar_url=COALESCE(NULLIF(EXCLUDED.author_avatar_url, ''), documents.author_avatar_url),
                 author_name=COALESCE(NULLIF(EXCLUDED.author_name, ''), documents.author_name),
@@ -647,12 +677,33 @@ class PostgresDocumentRepository:
         until_iso 只约束主键：X 行主键即 published_at，看板 days_back 回移
         语义不变（路由层另有 published_at 精确复筛）。
         """
+        if source == "x":
+            # X 的发布时间是唯一的窗口/排序主键。不要回退到 created_at：
+            # 回退会让迟到入库的旧推文挤进当前窗口，也会让非法时间串
+            # 破坏 published_at 的时间线语义。
+            clause = (
+                f"{_document_projection()} WHERE d.source = %s"
+                " AND NULLIF(d.published_at, '') IS NOT NULL"
+                " AND d.published_at >= %s"
+            )
+            params: list[Any] = [source, since_iso]
+            if until_iso:
+                clause += " AND d.published_at < %s"
+                params.append(until_iso)
+            rows = self._fetch_rows(
+                clause
+                + " ORDER BY d.published_at DESC, "
+                "COALESCE(d.raw_score, d.score, 0) DESC, d.id DESC LIMIT %s",
+                (*params, limit),
+            )
+            return [_deserialize_row_media(row) for row in rows]
+
         recent_at = "COALESCE(NULLIF(d.published_at, ''), NULLIF(d.published_date, ''), d.created_at)"
         clause = (
             f"{_document_projection()} WHERE d.source = %s"
             f" AND ({recent_at} >= %s OR d.created_at >= %s)"
         )
-        params: list[Any] = [source, since_iso, since_iso]
+        params = [source, since_iso, since_iso]
         if until_iso:
             clause += f" AND {recent_at} <= %s"
             params.append(until_iso)

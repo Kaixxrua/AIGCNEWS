@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 # 凭据池模式下相邻账号请求间隔秒数（与实现侧默认值保持一致）。
@@ -54,6 +55,21 @@ class XTransportProtocol(Protocol):
         Raises:
             XAuthNotConfigured: 凭据未配置。
             XAuthAbort / XRateLimitAbort: 中止级故障，调用方应整轮失败。
+        """
+        ...
+
+    async def fetch_watchlist_tweets_window(
+        self,
+        handles: Iterable[str],
+        *,
+        window_start: datetime,
+        window_end: datetime,
+        count_per_user: int = 20,
+    ) -> dict[str, list[Any]]:
+        """抓取固定 UTC 窗口内推文；实现可用游标分页覆盖整个窗口。
+
+        旧实现若不提供该方法，由 crawler 回退到 ``fetch_watchlist_tweets``，
+        保持测试替身和旧私有插件兼容。
         """
         ...
 

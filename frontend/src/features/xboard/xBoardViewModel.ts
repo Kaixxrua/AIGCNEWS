@@ -24,6 +24,40 @@ export const tweetTimestamp = (doc: TopDoc): string => (
   doc.published_at || doc.published_date || ''
 )
 
+const tweetTimeMs = (doc: TopDoc): number => {
+  const value = new Date(tweetTimestamp(doc)).getTime()
+  return Number.isFinite(value) ? value : Number.NaN
+}
+
+const tweetId = (doc: TopDoc): string => (
+  doc.url?.match(/\/status\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
+)
+
+/** 时间线比较器：新时间优先；非法时间沉底；同刻按 tweet ID 稳定降序。 */
+export const compareTweetTimeDescending = (a: TopDoc, b: TopDoc): number => {
+  const ta = tweetTimeMs(a)
+  const tb = tweetTimeMs(b)
+  const aValid = Number.isFinite(ta)
+  const bValid = Number.isFinite(tb)
+  if (aValid !== bValid) return aValid ? -1 : 1
+  if (aValid && bValid && ta !== tb) return tb - ta
+
+  const aId = tweetId(a)
+  const bId = tweetId(b)
+  if (aId && bId && aId !== bId) {
+    try {
+      const byNumericId = BigInt(bId) - BigInt(aId)
+      if (byNumericId < 0n) return -1
+      if (byNumericId > 0n) return 1
+    } catch {
+      // 非标准 ID 回退到字符串比较。
+    }
+    return bId.localeCompare(aId)
+  }
+  if (aId !== bId) return aId ? -1 : 1
+  return tweetScore(b) - tweetScore(a)
+}
+
 /**
  * 作者头像：仅落库的 twimg 地址经同源代理返回——pbs.twimg.com 在中国大陆
  * 不可直连，浏览器直连会让看板头像整块挂掉；缺失或非白名单主机的地址一律
@@ -308,7 +342,7 @@ export const quoteMediaItems = (quote: NonNullable<TopDoc['quote']>): NonNullabl
 
 const sortTweets = (tweets: TopDoc[]): TopDoc[] => (
   [...tweets].sort((a, b) => (
-    tweetScore(b) - tweetScore(a) || tweetTimestamp(b).localeCompare(tweetTimestamp(a))
+    tweetScore(b) - tweetScore(a) || compareTweetTimeDescending(a, b)
   ))
 )
 
@@ -352,12 +386,7 @@ export const countTweets = (sections: XBoardSection[]): number => (
  * 缺时间戳的条目沉底不丢弃；同一时刻按互动分降序。
  */
 export const timelineTweets = (docs: TopDoc[]): TopDoc[] => (
-  [...docs].sort((a, b) => {
-    const ta = tweetTimestamp(a)
-    const tb = tweetTimestamp(b)
-    if (!ta !== !tb) return ta ? -1 : 1
-    return tb.localeCompare(ta) || tweetScore(b) - tweetScore(a)
-  })
+  [...docs].sort(compareTweetTimeDescending)
 )
 
 /**

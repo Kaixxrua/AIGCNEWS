@@ -306,11 +306,18 @@ class IngestionOrchestrator:
             len(papers),
         )
 
-        selected = _select_top(
-            papers,
-            top_n=self._effective_top_n(source_name),
-            source_label=label,
-        )
+        if source_name == "x":
+            # X rolling-window ingestion is completeness-first: the crawler has
+            # already filtered, deduplicated, and timeline-sorted the full UTC
+            # window. Reapplying engagement Top-N here would silently recreate
+            # the old low-interaction tweet loss.
+            selected = list(papers)
+        else:
+            selected = _select_top(
+                papers,
+                top_n=self._effective_top_n(source_name),
+                source_label=label,
+            )
         selected = _apply_existing_summary_short_circuit(
             selected,
             self.documents,

@@ -260,19 +260,21 @@ describe('xBoardViewModel', () => {
     expect(groupTweetsByHandle(docs).map((section) => section.handle)).toEqual(['alpha', 'beta'])
   })
 
-  it('timelineTweets sorts newest first, ties by score, sinks docs without timestamps', () => {
+  it('timelineTweets sorts by publication instant, then tweet ID, and sinks invalid timestamps', () => {
     const docs = [
       tweet('openai', 'old', { published_at: '2026-08-01T01:00:00Z', raw_score: 999 }),
       tweet('openai', 'new', { published_at: '2026-08-04T01:00:00Z', raw_score: 1 }),
       tweet('openai', 'no-ts', { raw_score: 500 }),
-      tweet('openai', 'same-hi', { published_at: '2026-08-04T01:00:00Z', raw_score: 50 }),
+      tweet('openai', 'same-hi', { published_at: '2026-08-04T01:00:00+00:00', raw_score: 50 }),
+      tweet('openai', 'bad', { published_at: 'not-a-date', raw_score: 9999 }),
     ]
     const ordered = timelineTweets(docs)
     expect(ordered.map((doc) => doc.url)).toEqual([
-      'https://x.com/openai/status/same-hi', // 同一时刻分数高者在前
+      'https://x.com/openai/status/same-hi',
       'https://x.com/openai/status/new',
       'https://x.com/openai/status/old',
-      'https://x.com/openai/status/no-ts', // 无时间戳沉底不丢弃
+      'https://x.com/openai/status/bad',
+      'https://x.com/openai/status/no-ts',
     ])
     // 不就地修改入参
     expect(docs[0]?.url).toBe('https://x.com/openai/status/old')

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, Optional
 
 from backend.app.services.ingestion.base_crawler import (
@@ -111,10 +112,11 @@ class XCrawler(BaseCrawler):
         limit: int,
         target_date: Optional[str] = None,
     ) -> CrawlResult:
-        # snapshot_date 默认当天 CST；显式 target_date（回填/关榜轮）按指定
-        # 日期归属并过滤——关榜轮在次日 00:3x 采集昨日（D）推文，accumulate
-        # 语义幂等补入 D 切片，收齐 hourly 末轮之后发布的尾巴推文。
+        # 显式 target_date 保留历史 CST 日历日回填语义；默认采集固定 UTC
+        # 滚动窗口，window_end 在本轮入口只取一次，避免账号间窗口漂移。
         snapshot_date = target_date or today_cst()
+        window_end = datetime.now(timezone.utc)
+        window_start = window_end - timedelta(hours=24)
         channel = x_policy.X_CHANNEL
 
         handles = self._watchlist_provider()
@@ -131,10 +133,37 @@ class XCrawler(BaseCrawler):
             )
 
         try:
-            tweets_by_handle = await self._transport.fetch_watchlist_tweets(
-                handles,
-                self._tweets_per_account,
-            )
+            if target_date:
+                tweets_by_handle = await self._transport.fetch_watchlist_tweets(
+                    handles,
+                    self._tweets_per_account,
+                )
+                tweets = [tweet for batch in tweets_by_handle.values() for tweet in batch]
+                tweets = x_policy.filter_tweets_to_snapshot_date(tweets, snapshot_date)
+                timeline = False
+            else:
+                window_fetch = getattr(self._transport, "fetch_watchlist_tweets_window", None)
+                if callable(window_fetch):
+                    tweets_by_handle = await window_fetch(
+                        handles,
+                        window_start=window_start,
+                        window_end=window_end,
+                        count_per_user=self._tweets_per_account,
+                    )
+                else:
+                    # 旧私有插件/测试替身兼容：旧接口结果仍经窗口过滤，
+                    # 但其固定 count 可能无法覆盖完整窗口，日志会明确标识。
+                    tweets_by_handle = await self._transport.fetch_watchlist_tweets(
+                        handles,
+                        self._tweets_per_account,
+                    )
+                tweets = [tweet for batch in tweets_by_handle.values() for tweet in batch]
+                tweets = x_policy.filter_tweets_to_window(
+                    tweets,
+                    window_start=window_start,
+                    window_end=window_end,
+                )
+                timeline = True
         except (XAuthNotConfigured, XAuthAbort, XRateLimitAbort, XTransportUnavailable) as exc:
             # 中止级故障：整轮失败，走 ingestion_tasks 失败面（响亮、不连锤）
             return CrawlResult(
@@ -146,23 +175,28 @@ class XCrawler(BaseCrawler):
                 error=str(exc),
             )
 
-        tweets = [tweet for batch in tweets_by_handle.values() for tweet in batch]
-        # 日榜只收当天（CST）发布的推文：watchlist 抓的是账号近期 N 条，
-        # 不过滤会把数周前的旧推文混进当天快照
-        fetched_count = len(tweets)
-        tweets = x_policy.filter_tweets_to_snapshot_date(tweets, snapshot_date)
-        items = x_policy.project_tweets(tweets, limit=limit, source_channel=channel)
+        fetched_count = sum(len(batch) for batch in tweets_by_handle.values())
+        items = x_policy.project_tweets(
+            tweets,
+            limit=None if timeline else limit,
+            source_channel=channel,
+            timeline=timeline,
+        )
         for item in items:
             item.setdefault("source", "x")
             item.setdefault("source_channel", channel)
             item.setdefault("channel", channel)
 
         logger.info(
-            "[X] 爬虫完成: %d/%d 账号抓取 %d 条，当日(CST)过滤后 %d 条入库候选，snapshot=%s",
+            "[X] 爬虫完成: %d/%d 账号抓取 %d 条，窗口/快照过滤后 %d 条入库候选，"
+            "mode=%s window=%s..%s snapshot=%s",
             len(tweets_by_handle),
             len(handles),
             fetched_count,
             len(items),
+            "timeline" if timeline else "snapshot",
+            window_start.isoformat(),
+            window_end.isoformat(),
             snapshot_date,
         )
 

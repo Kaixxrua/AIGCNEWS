@@ -269,7 +269,7 @@ async def get_top_list(
 
 
 def _published_at_within(value: Any, start: datetime, end: datetime) -> bool:
-    """published_at ISO 串解析后落在 [start, end] 闭区间；空值/无法解析一律剔除。"""
+    """published_at ISO 串解析后落在 [start, end) 半开区间；空值/无法解析一律剔除。"""
     if not isinstance(value, str) or not value:
         return False
     try:
@@ -278,7 +278,7 @@ def _published_at_within(value: Any, start: datetime, end: datetime) -> bool:
         return False
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return start <= parsed <= end
+    return start <= parsed < end
 
 
 # X 看板日期位移上限：与前端快照日期清单长度一致，防止深翻扫全表
