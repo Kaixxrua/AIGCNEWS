@@ -13,7 +13,6 @@ from __future__ import annotations
 仅支持 daily 周期。
 """
 
-import asyncio
 import logging
 import os
 from typing import Any, Callable, List, Optional
@@ -62,15 +61,6 @@ def _env_inter_account_delay() -> float:
     return value if value > 0 else DEFAULT_INTER_ACCOUNT_DELAY
 
 
-def _needs_zh_translation(lang: str) -> bool:
-    """zh*（含 zh-cn/zh-tw）与 zxx（无语言内容，如纯媒体）不需要翻译。
-
-    lang 缺失时仍尝试翻译（X 服务端自行判定），宁可多请求不漏翻。
-    """
-    code = (lang or "").strip().lower()
-    return not code.startswith("zh") and code != "zxx"
-
-
 class XCrawler(BaseCrawler):
     """X/Twitter 爬虫（数据源：twitter-cli 内部 GraphQL，cookie 凭据）。
 
@@ -79,9 +69,6 @@ class XCrawler(BaseCrawler):
         实现类构造（特性开关关闭或插件缺失时抛 XTransportUnavailable），
         并读 TWITTER_INTER_ACCOUNT_DELAY_SECONDS 作为账号间隔基线。
     tweets_per_account: 缺省读 TWITTER_TWEETS_PER_ACCOUNT env（回落 20）。
-    translation_fetcher: 可注入的翻译抓取器 (tweet_ids) -> {id: 译文}；
-        缺省回落 transport.fetch_tweet_translations（duck-typed，旧 fake
-        transport 无此方法时自动跳过翻译附着）。
     """
 
     def __init__(
@@ -90,7 +77,6 @@ class XCrawler(BaseCrawler):
         watchlist_provider: Optional[Callable[[], list[str]]] = None,
         credential_provider: Optional[Callable[[], list[dict[str, Any]]]] = None,
         tweets_per_account: Optional[int] = None,
-        translation_fetcher: Optional[Callable[[list[str]], dict[str, str]]] = None,
     ) -> None:
         if transport is not None:
             self._transport = transport
@@ -110,7 +96,6 @@ class XCrawler(BaseCrawler):
             if tweets_per_account is not None
             else _env_tweets_per_account()
         )
-        self._translation_fetcher = translation_fetcher
 
     @property
     def source_name(self) -> str:
@@ -167,7 +152,6 @@ class XCrawler(BaseCrawler):
         fetched_count = len(tweets)
         tweets = x_policy.filter_tweets_to_snapshot_date(tweets, snapshot_date)
         items = x_policy.project_tweets(tweets, limit=limit, source_channel=channel)
-        await self._attach_zh_translations(tweets, items)
         for item in items:
             item.setdefault("source", "x")
             item.setdefault("source_channel", channel)
@@ -190,96 +174,3 @@ class XCrawler(BaseCrawler):
             items=items,
         )
 
-    async def _attach_zh_translations(self, tweets: list[Any], items: list[dict]) -> None:
-        """尽力而为：为最终入选的非中文推文附着 X 中文翻译（translation_zh）。
-
-        仅对 project_tweets 截断后的条目抓取（请求量有界）；被引推文
-        同口径补译，附着于 quote.translation_zh。翻译链路任何失败只记
-        日志，绝不影响主采集结果入库。
-        """
-        fetcher = self._translation_fetcher or getattr(
-            self._transport, "fetch_tweet_translations", None
-        )
-        if fetcher is None or not items:
-            return
-        lang_by_id = {
-            str(getattr(tweet, "id", "")): str(getattr(tweet, "lang", "") or "")
-            for tweet in tweets
-        }
-        tweets_by_id = {str(getattr(tweet, "id", "")): tweet for tweet in tweets}
-        # 被引推文映射：quote 投影不含被引 id，只能经原始 Tweet 对象找回翻译主键
-        quoted_by_outer: dict[str, Any] = {}
-        for tweet in tweets:
-            outer_id = str(getattr(tweet, "id", "") or "")
-            quoted = getattr(tweet, "quoted_tweet", None)
-            quote_id = str(getattr(quoted, "id", "") or "") if quoted is not None else ""
-            if outer_id and quote_id:
-                quoted_by_outer[outer_id] = quoted
-        targets: list[str] = []
-        for item in items:
-            outer_id = str(item.get("tweet_id") or "")
-            if outer_id and _needs_zh_translation(lang_by_id.get(outer_id, "")):
-                targets.append(outer_id)
-            quoted = quoted_by_outer.get(outer_id)
-            if (
-                quoted is not None
-                and isinstance(item.get("quote"), dict)
-                and _needs_zh_translation(str(getattr(quoted, "lang", "") or ""))
-            ):
-                targets.append(str(getattr(quoted, "id", "")))
-        # 去重保序：被引推文可能同时是另一条入选外推（或自引），只请求一次
-        targets = list(dict.fromkeys(targets))
-        if not targets:
-            return
-        try:
-            translations = await asyncio.to_thread(fetcher, targets)
-        except Exception:
-            logger.warning("[X] 中文翻译抓取失败，跳过（不影响入库）", exc_info=True)
-            return
-        attached = 0
-        attached_quotes = 0
-        for item in items:
-            text = translations.get(str(item.get("tweet_id") or ""), "")
-            if text:
-                # translateTweet 译文带 HTML 实体（&amp; 等）：先解码还原显示文本
-                text = x_policy.decode_tweet_html_entities(text)
-                # X 译文剥链接或内联保留 t.co（形态不一致）：统一还原展开式
-                tweet = tweets_by_id.get(str(item.get("tweet_id") or ""))
-                if tweet is not None:
-                    raw_text = str(getattr(tweet, "text", "") or "")
-                    text = x_policy.restore_translation_urls(
-                        text,
-                        raw_text,
-                        item.get("media") or [],
-                        getattr(tweet, "urls", None),
-                    )
-                    # 译文剥回复 @ 前缀（回复链元数据）：同口径前置补回
-                    text = x_policy.restore_translation_mentions(text, raw_text)
-                item["translation_zh"] = text
-                attached += 1
-            # 被引推文同口径补译：附着于 quote.translation_zh（随 quote JSON 落库）
-            quote = item.get("quote")
-            quoted = quoted_by_outer.get(str(item.get("tweet_id") or ""))
-            if not isinstance(quote, dict) or quoted is None:
-                continue
-            quote_text = translations.get(str(getattr(quoted, "id", "") or ""), "")
-            if not quote_text:
-                continue
-            quote_raw_text = str(getattr(quoted, "text", "") or "")
-            quote["translation_zh"] = x_policy.restore_translation_mentions(
-                x_policy.restore_translation_urls(
-                    # 与外推同口径：先解码 HTML 实体再补链接/@前缀
-                    x_policy.decode_tweet_html_entities(quote_text),
-                    quote_raw_text,
-                    quote.get("media") or [],
-                    getattr(quoted, "urls", None),
-                ),
-                quote_raw_text,
-            )
-            attached_quotes += 1
-        logger.info(
-            "[X] 中文翻译附着: 外推 %d 条、引文 %d 条（请求 %d 条）",
-            attached,
-            attached_quotes,
-            len(targets),
-        )

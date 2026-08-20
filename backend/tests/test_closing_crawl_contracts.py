@@ -194,7 +194,6 @@ def _x_crawler(tweets: list[Any]) -> x_crawler_module.XCrawler:
     return x_crawler_module.XCrawler(
         transport=_FakeXTransport(tweets),  # type: ignore[arg-type]
         watchlist_provider=lambda: ["openai"],
-        translation_fetcher=lambda ids: {},
     )
 
 

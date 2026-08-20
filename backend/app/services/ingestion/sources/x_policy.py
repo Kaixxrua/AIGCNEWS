@@ -324,6 +324,8 @@ def _project_quoted_tweet(tweet: Any) -> dict | None:
         ),
         "text": text,
         "media": media,
+        "tweet_id": quote_id,
+        "language": str(getattr(quoted, "lang", "") or ""),
         "published_at": parsed_dt.isoformat() if parsed_dt else "",
     }
 
@@ -406,6 +408,7 @@ def project_tweets(
                 "published_at": parsed_dt.isoformat() if parsed_dt else "",
                 "published_date": parsed_dt.strftime("%Y-%m-%d") if parsed_dt else "",
                 "tweet_id": tweet_id,
+                "language": str(getattr(tweet, "lang", "") or ""),
                 "author": screen_name,
                 "author_name": author_name,
                 "author_avatar_url": author_avatar_url,
