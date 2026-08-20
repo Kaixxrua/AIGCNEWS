@@ -137,7 +137,13 @@ class XWatchAdminServiceTests(unittest.TestCase):
         tester.assert_not_called()
         store.update_x_watch_test_result.assert_not_called()
 
-    def test_account_test_serializes_with_x_lock(self) -> None:
+    def test_account_tests_run_concurrently_without_shared_lock(self) -> None:
+        """手动关注账号测试走轻量并发道：不与其它 X 操作串行。
+
+        X 操作大锁只保护采集/回填等重路径（共享出口 IP，叠加放大 429）；
+        单次手动探测并发执行互不干扰——若退回持锁实现，enter/exit 会严格
+        交替，本用例的 enter/enter 交错断言立即变红。
+        """
         timestamps: list[tuple[str, float]] = []
         call_count = {"n": 0}
 
@@ -152,7 +158,7 @@ class XWatchAdminServiceTests(unittest.TestCase):
         store = MagicMock()
         store.get_x_watch_account.return_value = row
         store.update_x_watch_test_result.return_value = row
-        service = XWatchAdminService(store, slow_tester, x_lock=asyncio.Lock())
+        service = XWatchAdminService(store, slow_tester)
 
         async def run_both() -> None:
             await asyncio.gather(
@@ -164,10 +170,9 @@ class XWatchAdminServiceTests(unittest.TestCase):
 
         self.assertEqual(len(timestamps), 4)
         sorted_timestamps = sorted(timestamps, key=lambda item: item[1])
+        # 并发交错：两个 enter 都先于任一 exit（串行实现为 enter/exit/enter/exit）
         self.assertEqual(sorted_timestamps[0][0], "enter")
-        self.assertEqual(sorted_timestamps[1][0], "exit")
-        self.assertEqual(sorted_timestamps[2][0], "enter")
-        self.assertEqual(sorted_timestamps[3][0], "exit")
+        self.assertEqual(sorted_timestamps[1][0], "enter")
         self.assertEqual(call_count["n"], 2)
 
 

@@ -166,7 +166,13 @@ def test_single_credential_probe_persists_safe_result_without_fallback() -> None
     assert tester.call_count == 1
 
 
-def test_credential_test_serializes_with_x_lock() -> None:
+def test_credential_tests_run_concurrently_without_shared_lock() -> None:
+    """手动凭证测试走轻量并发道：不与其它 X 操作串行。
+
+    X 操作大锁只保护采集/回填/凭证池测活等重路径（共享出口 IP，叠加放大
+    429）；单次手动探测并发执行互不干扰——若退回持锁实现，两个测试会串行
+    （enter/exit 交替），本用例的 enter/enter 交错断言立即变红。
+    """
     timestamps: list[tuple[str, float]] = []
     call_count = {"n": 0}
 
@@ -181,7 +187,7 @@ def test_credential_test_serializes_with_x_lock() -> None:
     store = MagicMock()
     store.get_x_credential.return_value = row
     store.update_x_credential_test_result.return_value = row
-    service = XCredentialAdminService(store, slow_tester, x_lock=asyncio.Lock())
+    service = XCredentialAdminService(store, slow_tester)
 
     async def run_both() -> None:
         await asyncio.gather(
@@ -193,8 +199,7 @@ def test_credential_test_serializes_with_x_lock() -> None:
 
     assert len(timestamps) == 4
     sorted_timestamps = sorted(timestamps, key=lambda item: item[1])
+    # 并发交错：两个 enter 都先于任一 exit（串行实现为 enter/exit/enter/exit）
     assert sorted_timestamps[0][0] == "enter"
-    assert sorted_timestamps[1][0] == "exit"
-    assert sorted_timestamps[2][0] == "enter"
-    assert sorted_timestamps[3][0] == "exit"
+    assert sorted_timestamps[1][0] == "enter"
     assert call_count["n"] == 2

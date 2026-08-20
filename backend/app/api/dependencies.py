@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Mapping
 
 from fastapi import Depends, HTTPException, Request, status
@@ -247,24 +246,11 @@ def get_optional_x_credential_repository(
     return repositories.x_credentials if repositories is not None else None
 
 
-def get_x_operation_lock(request: Request) -> asyncio.Lock:
-    """Return the shared X/Twitter operation lock from the app runtime.
-
-    If the application runtime is not configured (e.g. isolated route tests),
-    return a fresh lock so endpoints remain testable without a scheduler.
-    """
-    lock = getattr(request.app.state, "x_operation_lock", None)
-    if isinstance(lock, asyncio.Lock):
-        return lock
-    return asyncio.Lock()
-
-
 def get_x_watch_admin_service(
     repository: XWatchAccountRepository = Depends(get_x_watch_account_repository),
     credential_repository: XCredentialRepository | None = Depends(
         get_optional_x_credential_repository
     ),
-    x_lock: asyncio.Lock = Depends(get_x_operation_lock),
 ) -> XWatchAdminService:
     from backend.app.services.x_watch.probe import test_x_watch_account
 
@@ -276,20 +262,22 @@ def get_x_watch_admin_service(
             return {"status": "failed", "message": "x_auth_not_configured"}
         return test_x_watch_account(handle, credentials[0])
 
-    return XWatchAdminService(repository, tester, x_lock=x_lock)
+    # 手动单账号测活只发 1-2 次请求，与采集并发互不干扰；不占用 X 操作大锁
+    # （大锁留给采集/回填/凭证池测活等重路径，防止共享出口 IP 上 429 叠加放大）。
+    return XWatchAdminService(repository, tester)
 
 
 def get_x_credential_admin_service(
     repository: XCredentialRepository = Depends(get_x_credential_repository),
     watch_repository: XWatchAccountRepository = Depends(get_x_watch_account_repository),
-    x_lock: asyncio.Lock = Depends(get_x_operation_lock),
 ) -> XCredentialAdminService:
     from backend.app.services.x_credentials.probe import probe_x_credential
 
     def tester(credential: Mapping[str, Any], handle: str) -> Mapping[str, Any]:
         return probe_x_credential(credential, handle)
 
-    return XCredentialAdminService(repository, tester, x_lock=x_lock)
+    # 与上同理：手动单凭证测试走轻量并发道，不排在采集大锁后面。
+    return XCredentialAdminService(repository, tester)
 
 
 def get_mcp_access_token_repository(

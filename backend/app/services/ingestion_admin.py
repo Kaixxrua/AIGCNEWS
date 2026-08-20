@@ -18,9 +18,10 @@ class IngestionAdminService:
     """Expose ingestion entry points as background-task compatible commands.
 
     github/x 手动单源采集复用调度器的串行锁（core/scheduler.py 的
-    ``_github_job_lock`` / ``_x_operation_lock``），与 dependencies.py 中
-    ``get_x_operation_lock`` 的口径一致：运行时未提供锁时回退为无锁，
+    ``_github_job_lock`` / ``_x_operation_lock``）：运行时未提供锁时回退为无锁，
     保证隔离测试可直接调用；其余源不加串行锁，直接放行。
+    手动凭证/关注测活（x_credentials / x_watch admin 服务）是轻量探测，
+    不走此锁，与采集并发执行。
     """
 
     def __init__(

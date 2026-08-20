@@ -93,15 +93,20 @@ XCredentialTester = Callable[[Mapping[str, Any], str], Mapping[str, Any]]
 
 
 class XCredentialAdminService:
+    """凭证管理 + 手动测活。
+
+    手动测活是轻量探测（单凭证 1-2 次请求），刻意不持有 X 操作大锁：
+    大锁只串行采集/回填/凭证池测活等重路径（共享出口 IP，叠加会放大 429），
+    手动测试与采集并发执行互不干扰。
+    """
+
     def __init__(
         self,
         store: XCredentialStore,
         tester: XCredentialTester | None = None,
-        x_lock: asyncio.Lock | None = None,
     ) -> None:
         self._store = store
         self._tester = tester
-        self._x_lock = x_lock
 
     async def list_credentials(self) -> list[SafeXCredentialProjection]:
         rows = await asyncio.to_thread(self._store.list_x_credentials)
@@ -145,21 +150,12 @@ class XCredentialAdminService:
     ) -> XCredentialTestOutcome:
         if self._tester is None:
             raise RuntimeError("X credential tester is not configured")
-        if self._x_lock is None:
-            outcome = await asyncio.to_thread(
-                self._test_connection,
-                credential_id,
-                probe_handle,
-                self._tester,
-            )
-        else:
-            async with self._x_lock:
-                outcome = await asyncio.to_thread(
-                    self._test_connection,
-                    credential_id,
-                    probe_handle,
-                    self._tester,
-                )
+        outcome = await asyncio.to_thread(
+            self._test_connection,
+            credential_id,
+            probe_handle,
+            self._tester,
+        )
         if outcome is None:
             raise XCredentialAdminNotFoundError("X 凭证不存在")
         return XCredentialTestOutcome(
