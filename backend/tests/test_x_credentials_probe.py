@@ -104,6 +104,39 @@ def test_pool_probe_is_serial_and_persists_each_result() -> None:
     assert [call.args[0] for call in update_result.call_args_list] == [1, 2]
 
 
+def test_pool_probe_continues_after_primary_rate_limit_and_updates_backup(
+    monkeypatch,
+) -> None:
+    credentials = [
+        {"id": 1, "auth_token": "test-auth-primary", "ct0": "test-ct0-primary"},
+        {"id": 2, "auth_token": "test-auth-backup", "ct0": "test-ct0-backup"},
+    ]
+    primary_result = {"status": "failed", "message": "x_rate_limited"}
+    backup_result = {"status": "succeeded", "message": "成功拉取 1 条近期推文"}
+    probe = MagicMock(side_effect=[primary_result, backup_result])
+    update_result = MagicMock()
+    monkeypatch.setattr(probe_module, "probe_x_credential", probe)
+
+    results = probe_all_x_credentials(
+        credentials,
+        "openai",
+        update_result=update_result,
+    )
+
+    assert results == [
+        {"credential_id": 1, **primary_result},
+        {"credential_id": 2, **backup_result},
+    ]
+    assert [call.args[0]["id"] for call in probe.call_args_list] == [1, 2]
+    assert [call.args[1] for call in probe.call_args_list] == ["openai", "openai"]
+    assert update_result.call_args_list == [
+        ((1, primary_result),),
+        ((2, backup_result),),
+    ]
+    assert "test-auth-primary" not in str(results)
+    assert "test-ct0-backup" not in str(results)
+
+
 def test_pool_probe_without_watch_handle_persists_failure_for_every_row() -> None:
     credentials = [{"id": 1}, {"id": 2}]
     update_result = MagicMock()

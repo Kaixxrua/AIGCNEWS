@@ -910,6 +910,11 @@ async def _run_x_credentials_probe_job(
             repositories.x_watch_accounts.list_enabled_x_handles,
         )
         handle = handles[0] if handles else ""
+        logger.info(
+            "[Scheduler] X 凭证池测活输入：启用凭证 %d 个，watch handle %s。",
+            len(credentials),
+            "可用" if handle else "缺失",
+        )
 
         lock = x_lock or asyncio.Lock()
         async with lock:
@@ -920,10 +925,17 @@ async def _run_x_credentials_probe_job(
                 update_result=repositories.x_credentials.update_x_credential_test_result,
             )
         succeeded = sum(1 for result in results if result.get("status") == "succeeded")
+        marker_counts: dict[str, int] = {}
+        for result in results:
+            if result.get("status") == "succeeded":
+                continue
+            marker = str(result.get("message") or "unknown")
+            marker_counts[marker] = marker_counts.get(marker, 0) + 1
         logger.info(
-            "[Scheduler] X 凭证池测活完成：%d/%d 成功。",
+            "[Scheduler] X 凭证池测活完成：%d/%d 成功，失败标记 %s。",
             succeeded,
             len(results),
+            marker_counts or "无",
         )
         return True
     except Exception as exc:

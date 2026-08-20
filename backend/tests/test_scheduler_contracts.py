@@ -707,6 +707,105 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class SchedulerXCredentialsProbeJobTests(unittest.TestCase):
+    """x_credentials_probe 调度入口与池测活函数的委托契约。"""
+
+    def test_job_delegates_enabled_pool_first_handle_and_update_callback(self) -> None:
+        credentials = [
+            {"id": 1, "auth_token": "test-auth-primary", "ct0": "test-ct0-primary"},
+            {"id": 2, "auth_token": "test-auth-backup", "ct0": "test-ct0-backup"},
+        ]
+        repositories = MagicMock()
+        repositories.x_credentials.list_enabled_x_credentials.return_value = credentials
+        repositories.x_watch_accounts.list_enabled_x_handles.return_value = [
+            "openai",
+            "anthropic",
+        ]
+        probe_results = [
+            {"credential_id": 1, "status": "failed", "message": "x_rate_limited"},
+            {"credential_id": 2, "status": "succeeded", "message": "成功拉取 1 条近期推文"},
+        ]
+        probe_pool = MagicMock(return_value=probe_results)
+        x_lock = asyncio.Lock()
+
+        with patch.object(scheduler, "probe_all_x_credentials", new=probe_pool):
+            succeeded = asyncio.run(
+                scheduler._run_x_credentials_probe_job(
+                    repositories=repositories,
+                    x_lock=x_lock,
+                )
+            )
+
+        self.assertTrue(succeeded)
+        repositories.x_credentials.list_enabled_x_credentials.assert_called_once_with()
+        repositories.x_watch_accounts.list_enabled_x_handles.assert_called_once_with()
+        probe_pool.assert_called_once_with(
+            credentials,
+            "openai",
+            update_result=repositories.x_credentials.update_x_credential_test_result,
+        )
+        # 只传入首个启用 handle；凭证池整体原样透传给池测活。
+        self.assertEqual(probe_pool.call_args.args[0], credentials)
+        self.assertEqual(probe_pool.call_args.args[1], "openai")
+
+    def test_job_without_watch_handle_still_delegates_pool(self) -> None:
+        credentials = [
+            {"id": 1, "auth_token": "test-auth-primary", "ct0": "test-ct0-primary"},
+        ]
+        repositories = MagicMock()
+        repositories.x_credentials.list_enabled_x_credentials.return_value = credentials
+        repositories.x_watch_accounts.list_enabled_x_handles.return_value = []
+        probe_results = [
+            {
+                "credential_id": 1,
+                "status": "failed",
+                "message": "x_probe_no_watch_handle",
+            },
+        ]
+        probe_pool = MagicMock(return_value=probe_results)
+
+        with patch.object(scheduler, "probe_all_x_credentials", new=probe_pool):
+            succeeded = asyncio.run(
+                scheduler._run_x_credentials_probe_job(repositories=repositories)
+            )
+
+        self.assertTrue(succeeded)
+        probe_pool.assert_called_once_with(
+            credentials,
+            "",
+            update_result=repositories.x_credentials.update_x_credential_test_result,
+        )
+
+    def test_job_logs_only_safe_markers_and_counts(self) -> None:
+        credentials = [
+            {"id": 1, "auth_token": "test-auth-primary", "ct0": "test-ct0-primary"},
+            {"id": 2, "auth_token": "test-auth-backup", "ct0": "test-ct0-backup"},
+        ]
+        repositories = MagicMock()
+        repositories.x_credentials.list_enabled_x_credentials.return_value = credentials
+        repositories.x_watch_accounts.list_enabled_x_handles.return_value = ["openai"]
+        probe_pool = MagicMock(
+            return_value=[
+                {"credential_id": 1, "status": "failed", "message": "x_rate_limited"},
+                {"credential_id": 2, "status": "succeeded", "message": "成功拉取 1 条近期推文"},
+            ]
+        )
+
+        with (
+            patch.object(scheduler, "probe_all_x_credentials", new=probe_pool),
+            self.assertLogs(scheduler.logger, level="INFO") as captured,
+        ):
+            asyncio.run(scheduler._run_x_credentials_probe_job(repositories=repositories))
+
+        joined = "\n".join(captured.output)
+        self.assertIn("启用凭证 2 个", joined)
+        self.assertIn("watch handle 可用", joined)
+        self.assertIn("1/2 成功", joined)
+        self.assertIn("x_rate_limited", joined)
+        self.assertNotIn("test-auth-primary", joined)
+        self.assertNotIn("test-ct0-backup", joined)
+
+
 class SchedulerXSourceGateTests(unittest.TestCase):
     """x_source_enabled=False 时 X 链路任务（采集/测活/收尾）整体不注册。"""
 
