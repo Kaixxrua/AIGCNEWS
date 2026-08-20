@@ -55,6 +55,7 @@ from backend.app.services.payments.plans import MEMBERSHIP_PLANS, UnknownPlanErr
 from backend.app.services.payments.runtime_config import EffectivePaymentConfig, resolve_payment_config
 from backend.app.services.payments.providers.base import (
     CallbackVerificationError,
+    ChannelUpstreamError,
     PaymentProvider,
     ProviderNotConfiguredError,
 )
@@ -214,12 +215,18 @@ async def create_payment_order(
             idempotency_key=idempotency_key,
         )
         if existing is not None:
-            instruction = await asyncio.to_thread(
-                provider.create_payment,
-                order=existing,
-                notify_url=notify_url,
-                return_url=return_url,
-            )
+            try:
+                instruction = await asyncio.to_thread(
+                    provider.create_payment,
+                    order=existing,
+                    notify_url=notify_url,
+                    return_url=return_url,
+                )
+            except ChannelUpstreamError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="payment_channel_upstream_error",
+                ) from exc
             return CreatePaymentOrderResponse(
                 order=_to_public_order(existing),
                 instruction=PaymentInstructionPublic(
@@ -270,6 +277,11 @@ async def create_payment_order(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="payment_channel_not_configured",
+        ) from exc
+    except ChannelUpstreamError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="payment_channel_upstream_error",
         ) from exc
 
     return CreatePaymentOrderResponse(

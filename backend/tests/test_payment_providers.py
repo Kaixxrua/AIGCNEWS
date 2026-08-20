@@ -97,9 +97,6 @@ def test_stub_capabilities_raise_provider_not_configured() -> None:
     with pytest.raises(ProviderNotConfiguredError):
         alipay.create_payment(order=order, notify_url="https://x/cb", return_url=None)
 
-    stripe = StripePaymentProvider(_settings())
-    with pytest.raises(ProviderNotConfiguredError):
-        stripe.verify_and_parse_callback(raw_body=b"{}", headers={})
 
 
 # ── ACK 应答契约（与渠道的线上约定，骨架期即钉死） ──────────────────────

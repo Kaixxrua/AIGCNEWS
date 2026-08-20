@@ -49,6 +49,12 @@ class ProviderNotConfiguredError(RuntimeError):
     """渠道凭证未配置：路由映射 503 payment_channel_not_configured。"""
 
 
+class ChannelUpstreamError(RuntimeError):
+    """渠道远端调用失败（网络错误或非 2xx）：路由映射 502
+    payment_channel_upstream_error。与未配置区分——这表示渠道侧已受理
+    交互但调用失败，订单已落库，前端提示重试而非「未配置」。"""
+
+
 class PaymentProvider(Protocol):
     """一个支付渠道的骨架接口。"""
 

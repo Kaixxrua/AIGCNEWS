@@ -1,6 +1,6 @@
 # 会员订阅与在线支付
 
-> 本文描述会员订阅收费骨架（2026-08-19）。支付默认关闭；营业执照、商户号和 provider 凭证就绪后，配置凭证并单独打开 `payments_enabled`。
+> 本文描述会员订阅收费能力（2026-08-20）。支付默认关闭；营业执照、商户号和 provider 凭证就绪后，配置凭证并单独打开 `payments_enabled`。
 
 ## 商品
 
@@ -19,7 +19,7 @@
 - 支付宝电脑网站支付
 - Stripe 国际卡
 
-provider 位于 `backend/app/services/payments/providers/`。当前实现是“未配置即不可用”桩：配置检查和 ACK 契约已建立，真实下单与官方验签待商户凭证就绪后按渠道独立实现。支付开关保持 `payments_enabled=False` 时，用户支付路由返回 404 `payments_disabled`；开关打开但渠道缺凭证时，创建订单返回 503 `payment_channel_not_configured`。
+provider 位于 `backend/app/services/payments/providers/`。Stripe Checkout 已接入真实下单与 `checkout.session.completed` webhook 验签；支付宝电脑网站支付、微信 Native 扫码仍按各自接入 PR 逐步启用。Stripe 使用 CNY 单一商品金额源，不引入官方 SDK。支付开关保持 `payments_enabled=False` 时，用户支付路由返回 404 `payments_disabled`；开关打开但渠道缺凭证时，创建订单返回 503 `payment_channel_not_configured`；渠道远端返回错误时返回 502 `payment_channel_upstream_error`。
 
 ## 订单与状态
 
@@ -57,6 +57,16 @@ provider 位于 `backend/app/services/payments/providers/`。当前实现是“�
 ## 回调安全与限流
 
 签名必须作用于原始请求字节；provider 还必须检查渠道时间戳和 replay protection。订单金额、币种和渠道订单号必须与本地订单一致；不一致时 fail-closed，记录 error event，零状态变更。公开套餐和回调限流键为 `ratelimit:payments.plans:{client_ip}` 与 `ratelimit:payments.callback:{client_ip}`。Redis 故障时限流 fail-open，但验签、金额和状态校验不会放宽。
+
+### Stripe Checkout 配置
+
+在 monitor 支付配置面板填写 `stripe_secret_key` 与 `stripe_webhook_secret`，保存后运行时立即生效。Stripe Dashboard 新建 webhook endpoint：
+
+```text
+https://<public-base-url>/api/payments/callback/stripe
+```
+
+只订阅 `checkout.session.completed` 事件，并将 endpoint signing secret 填入 `stripe_webhook_secret`。success/cancel URL 会回到收银台并携带 `order_no`，前端可继续轮询订单状态；Stripe `query_order` 暂不启用，支付结果以验签 webhook 为准。
 
 provider ACK 形状见 [ADR 0002](adr/0002-payment-callback-verification.md)。
 
