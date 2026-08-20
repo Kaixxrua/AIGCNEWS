@@ -176,6 +176,89 @@ jobs:
       - name: Test (parity corpus gate included)
         run: go test ./... -count=1
 
+  parity-live-diff:
+    name: Python and Go MCP live parity
+    needs: mcp-go
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      POSTGRES_DATABASE: aigcnews_parity
+      POSTGRES_USER: aigcnews_parity
+      POSTGRES_PASSWORD: aigcnews_parity
+      NEO4J_PASSWORD: ci_placeholder
+      MINIO_ACCESS_KEY: ci_placeholder
+      MINIO_SECRET_KEY: ci_placeholder
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # mcp-api and mcp-api-go load the deployment-only ../.env when it exists.
+      # A clean checkout has none, so inject only their database connection via
+      # a CI-local Compose override rather than broadening deployment defaults.
+      - name: Create parity Compose override
+        shell: bash
+        run: |
+          cat >"$RUNNER_TEMP/parity-compose.yml" <<'YAML'
+          services:
+            mcp-api:
+              environment:
+                POSTGRES_HOST: project-catalog-postgres
+                POSTGRES_PORT: "5432"
+                POSTGRES_USER: aigcnews_parity
+                POSTGRES_PASSWORD: aigcnews_parity
+                POSTGRES_DATABASE: aigcnews_parity
+                POSTGRES_SSLMODE: disable
+                POSTGRES_POOL_MIN_SIZE: "1"
+                POSTGRES_POOL_MAX_SIZE: "4"
+            mcp-api-go:
+              environment:
+                POSTGRES_HOST: project-catalog-postgres
+                POSTGRES_PORT: "5432"
+                POSTGRES_USER: aigcnews_parity
+                POSTGRES_PASSWORD: aigcnews_parity
+                POSTGRES_DATABASE: aigcnews_parity
+                POSTGRES_SSLMODE: disable
+                POSTGRES_POOL_MIN_SIZE: "1"
+                POSTGRES_POOL_MAX_SIZE: "4"
+          YAML
+
+      - name: Start Python and Go MCP services
+        shell: bash
+        run: >-
+          docker compose --file docker/docker-compose.yml
+          --file "$RUNNER_TEMP/parity-compose.yml" --profile mcp-go
+          up --detach --build --wait mcp-api mcp-api-go
+
+      - name: Diff live MCP endpoints against each other
+        run: >-
+          python backend/tests/parity/live_diff.py
+          --python-mcp http://127.0.0.1:8001
+          --go http://127.0.0.1:8002
+          --replay static
+          --timeout 15
+          --json-report "$RUNNER_TEMP/live-diff.json"
+
+      - name: Upload live parity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-live-diff
+          path: ${{ runner.temp }}/live-diff.json
+          if-no-files-found: warn
+
+      - name: Stop parity services
+        if: always()
+        shell: bash
+        run: >-
+          docker compose --file docker/docker-compose.yml
+          --file "$RUNNER_TEMP/parity-compose.yml" --profile mcp-go
+          down --volumes --remove-orphans
+
   compose-smoke:
     name: Compose and image smoke
     runs-on: ubuntu-latest
