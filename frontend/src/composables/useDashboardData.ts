@@ -35,24 +35,23 @@ const isCanceledError = (error: unknown): boolean => {
   return candidate.name === 'CanceledError' || candidate.code === 'ERR_CANCELED'
 }
 
-/* 实时计数字段由 10s 轮询与 visitor-count（10s 短缓存）持有，任何时刻都比
-   summary 的 3600s 缓存新。summary 重放（切 tab / KeepAlive 回页 / 首屏竞态）
-   一律保留状态里已有的实时值，否则今日访客数等计数会出现"前进后回退"跳变
-   （回归：首屏 visitor-count 先到 9、summary 后到盖回 6）。 */
-const LIVE_COUNTER_FIELDS = [
-  'total_documents', 'source_counts',
-  'registered_users', 'today_registered_users', 'user_count',
-  'today_new_documents', 'today_visits', 'total_visits', 'mcp_total_calls',
-  'mcp_dsh_calls',
+/* 动态计数由 live-stats 直接读取 Redis/数据库，静态 summary 只负责快照元数据。
+   保留已知的较新计数，避免旧客户端或兼容接口响应把数字从 4001 回退到 3993。 */
+const MONOTONIC_COUNTER_FIELDS = [
+  'total_documents', 'registered_users', 'user_count', 'total_visits',
+  'mcp_total_calls', 'mcp_dsh_calls',
 ] as const
 
-const pickLiveCounters = (source: Stats): Stats => {
-  const picked: Stats = {}
-  for (const key of LIVE_COUNTER_FIELDS) {
-    const value = source[key]
-    if (value !== undefined) Object.assign(picked, { [key]: value })
+const mergeLiveStats = (current: Stats, incoming: Stats): Stats => {
+  const merged: Stats = { ...current, ...incoming }
+  for (const key of MONOTONIC_COUNTER_FIELDS) {
+    const oldValue = current[key]
+    const newValue = incoming[key]
+    if (typeof oldValue === 'number' && typeof newValue === 'number') {
+      Object.assign(merged, { [key]: Math.max(oldValue, newValue) })
+    }
   }
-  return picked
+  return merged
 }
 
 export const useDashboardData = (options: DashboardDataOptions) => {
@@ -107,14 +106,20 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     controller: AbortController,
     generation: number,
   ) => {
-    const [summary, top] = await Promise.all([
-      dashboardApi.fetchSummary({ period: PERIOD, date: selectedDate, signal: controller.signal }),
+    const staticSummaryRequest = dashboardApi.fetchSummaryStatic
+      ? dashboardApi.fetchSummaryStatic({ period: PERIOD, date: selectedDate, signal: controller.signal })
+      : dashboardApi.fetchSummary({ period: PERIOD, date: selectedDate, signal: controller.signal })
+    const [summary, top, live] = await Promise.all([
+      staticSummaryRequest,
       dashboardApi.fetchTop({ limit: 10, source: tab, period: PERIOD, date: selectedDate, signal: controller.signal }),
+      fetchLiveStats(controller.signal),
     ])
     if (!isCurrentDashboardRequest(controller, generation)) return false
-    // 实时计数字段以状态里已持有的较新值为准（首屏 visitor-count 可能已先落地），
-    // 屏蔽 summary 3600s 缓存的陈旧计数；其余字段仍以 summary 为准
-    stats.value = { ...summary.stats, ...pickLiveCounters(stats.value) }
+    const legacySummary = summary as { stats?: Stats }
+    if (legacySummary.stats) {
+      stats.value = mergeLiveStats(stats.value, legacySummary.stats)
+    }
+    stats.value = mergeLiveStats(stats.value, live)
     tabList.value = top.items
     isFinalized.value = summary.isFinalized
     isEmbargoed.value = summary.isEmbargoed
@@ -139,24 +144,6 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     }
   }
 
-  const fetchUserCountMetric = async (controller: AbortController, generation: number) => {
-    try {
-      const visitor = await dashboardApi.fetchVisitorCount(controller.signal)
-      if (!isCurrentDashboardRequest(controller, generation)) return
-      stats.value = {
-        ...stats.value,
-        registered_users: visitor.registeredUsers ?? stats.value.registered_users ?? 0,
-        today_registered_users: visitor.todayRegisteredUsers ?? 0,
-        user_count: visitor.userCount ?? 0,
-        today_visits: visitor.todayVisits ?? 0,
-        total_visits: visitor.totalVisits ?? 0,
-      }
-      options.updateVisitorSources(stats.value)
-    } catch (error: unknown) {
-      if (isCanceledError(error)) return
-      console.warn('[Dashboard] 获取用户数失败', error)
-    }
-  }
 
   const stopDashboardRequests = () => {
     dashboardController?.abort()
@@ -174,7 +161,6 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       await Promise.all([
         fetchDashboardData(activeTab.value, currentDate.value, controller, generation),
         fetchAvailableDates(),
-        fetchUserCountMetric(controller, generation),
       ])
       if (isCurrentDashboardRequest(controller, generation)) options.updateStatSources(stats.value)
     } catch (error: unknown) {
@@ -184,15 +170,21 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   }
 
   /* 10s 实时计数轮询：合并最新计数，变化的数字走滚筒差位滚动，无变化静止。
-     历史日期/静默期/加载中跳过，避免覆盖对应口径的统计数字。 */
+     历史日期/静默期/加载中跳过；停用、切页后的延迟响应不得回写。 */
   const refreshLiveStats = async () => {
     if (loading.value || tabLoading.value || isViewingHistory.value || isEmbargoed.value) return
+    const controller = dashboardController
+    const generation = dashboardGeneration
+    if (!controller) return
     try {
-      const live = await fetchLiveStats()
-      stats.value = { ...stats.value, ...live }
+      const live = await fetchLiveStats(controller.signal)
+      if (!isCurrentDashboardRequest(controller, generation) || isViewingHistory.value || isEmbargoed.value) return
+      stats.value = mergeLiveStats(stats.value, live)
       options.updateStatSources(stats.value)
-    } catch {
-      /* 实时计数失败静默，保留当前展示值 */
+    } catch (error: unknown) {
+      if (!isCanceledError(error)) {
+        /* 实时计数失败静默，保留当前展示值 */
+      }
     }
   }
 
@@ -202,7 +194,6 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       await Promise.all([
         fetchDashboardData(activeTab.value, currentDate.value, controller, generation),
         fetchAvailableDates(),
-        fetchUserCountMetric(controller, generation),
       ])
     } catch (error: unknown) {
       if (!isCanceledError(error) && isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)

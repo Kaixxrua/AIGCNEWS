@@ -125,9 +125,9 @@ async def _get_site_visit_stats(visits: SiteVisitStatsReader) -> SiteVisitStats:
         return SiteVisitStats(today_visits=0, total_visits=0)
 
 
-# 使用该 builder 的端点实际消费的 query 参数并集（见各路由 Query 声明）：
-#   top/radar/summary/snapshot-dates: limit/source/date（看板已仅日榜，无 period）
-#   x/recent: hours/limit；live-stats/visitor-count: 无参数
+# 使用该 builder 的静态端点实际消费的 query 参数并集（见各路由 Query 声明）：
+#   top/radar/summary-static/snapshot-dates: limit/source/date（看板已仅日榜，无 period）
+#   x/recent: hours/limit；summary/live-stats/visitor-count 均不使用 FastAPI response cache。
 # 白名单外的参数一律不进 key——前端 _t 破缓存参数如此，匿名用户构造的
 # 随机参数更是如此：否则每个新参数值都生成新 key，可写爆 Redis 缓存。
 _DASHBOARD_CACHE_KEY_QUERY_PARAMS = frozenset(
@@ -387,10 +387,95 @@ async def get_trend_radar(
     }
 
 
-@router.get("/dashboard/summary")
+async def _build_dashboard_static_payload(
+    *,
+    date: Optional[str],
+    rank_snapshots: RankSnapshotReader,
+    github_hot: GitHubHotBoardReader,
+) -> dict[str, Any]:
+    """Build the date-addressed ranking portion of the dashboard response."""
+    query_service = DashboardQueryService(rank_snapshots, github_hot)
+    resolution = await asyncio.to_thread(
+        query_service.resolve_display_snapshot_date, date, "daily", None
+    )
+    snapshot_date = resolution["resolved_date"]
+    board = policy.compute_board_status(snapshot_date)
+    base = {
+        "period": "daily",
+        "snapshot_date": snapshot_date,
+        "requested_date": resolution["requested_date"],
+        "resolved_date": resolution["resolved_date"],
+        "stale": resolution["stale"],
+        "is_finalized": board["is_finalized"],
+        "is_embargoed": board["is_embargoed"],
+    }
+    if board["is_embargoed"]:
+        return {"top_list": [], "radar": [], **base}
+
+    docs = await asyncio.to_thread(
+        query_service.get_docs_for_date, snapshot_date, "daily", None, 500
+    )
+    deduped = policy.dedupe_docs(docs)
+    return {
+        "top_list": deduped[:10],
+        "radar": policy.score_categories(deduped[:50]),
+        **base,
+    }
+
+
+@router.get("/dashboard/summary-static")
 @cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
+async def get_dashboard_summary_static(
+    date: Optional[str] = Query(
+        default=None,
+        description="快照日期 YYYY-MM-DD，不传默认今天；今日无快照时回溯最近有快照的日期",
+    ),
+    rank_snapshots: RankSnapshotReader = Depends(get_rank_snapshot_repository),
+    github_hot: GitHubHotBoardReader = Depends(get_github_hot_board_reader),
+):
+    """Return the cacheable ranking/date portion of the dashboard."""
+    return await _build_dashboard_static_payload(
+        date=date, rank_snapshots=rank_snapshots, github_hot=github_hot
+    )
+
+
+async def _get_dashboard_stats(
+    request: Request,
+    *,
+    user_statistics: UserStatisticsReader,
+    document_statistics: DocumentStatisticsReader,
+    catalog: ProjectCatalogQueryService,
+    visits: SiteVisitStatsReader,
+) -> dict[str, Any]:
+    """Read current global dashboard counters; never cache this aggregate."""
+    source_counts = await _get_source_counts(document_statistics, catalog)
+    registered_users = await asyncio.to_thread(user_statistics.get_user_count)
+    today_registered_users = await asyncio.to_thread(
+        user_statistics.get_today_registered_user_count
+    )
+    visit_stats = await _get_site_visit_stats(visits)
+    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts(request)
+    return {
+        "total_documents": sum(source_counts.values()),
+        "source_counts": source_counts,
+        "registered_users": registered_users,
+        "today_registered_users": today_registered_users,
+        "user_count": registered_users + today_registered_users,
+        "today_new_documents": await asyncio.to_thread(
+            document_statistics.get_today_document_count
+        ),
+        "today_unique_visitors": visit_stats.today_visits,
+        "today_visits": visit_stats.today_visits,
+        "total_visits": visit_stats.total_visits,
+        "mcp_total_calls": mcp_total_calls,
+        "mcp_dsh_calls": mcp_dsh_calls,
+    }
+
+
+@router.get("/dashboard/summary")
 async def get_dashboard_summary(
     request: Request,
+    response: Response,
     date: Optional[str] = Query(
         default=None,
         description="快照日期 YYYY-MM-DD，不传默认今天；今日无快照时回溯最近"
@@ -403,114 +488,39 @@ async def get_dashboard_summary(
     github_hot: GitHubHotBoardReader = Depends(get_github_hot_board_reader),
     visits: SiteVisitStatsReader = Depends(get_site_visit_repository),
 ):
-    """Return a combined dashboard payload: daily top-10 + radar + basic stats + source breakdown.
-
-    当传入 date 参数时，从 document_rank_snapshots 表查询该日期的历史排行数据；
-    未传入时默认查当天，当天无快照则回溯窗口内最近有快照的日期（stale 标记）。
-    github 日榜改读项目库 v5 热度指标（今日暴涨口径），不再镜像 trending。
-    """
-    query_service = DashboardQueryService(rank_snapshots, github_hot)
-    resolution = await asyncio.to_thread(
-        query_service.resolve_display_snapshot_date, date, "daily", None
+    """Return the legacy combined payload with fresh global counters."""
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+    static = await _build_dashboard_static_payload(
+        date=date, rank_snapshots=rank_snapshots, github_hot=github_hot
     )
-    snapshot_date = resolution["resolved_date"]
-
-    board = policy.compute_board_status(snapshot_date)
-
-    # 静默期拦截：返回空排行数据，但统计卡片仍显示全库累计数量
-    if board["is_embargoed"]:
-        source_counts_embargo = await _get_source_counts(document_statistics, catalog)
-        total_embargo = sum(source_counts_embargo.values())
-        registered_users = await asyncio.to_thread(user_statistics.get_user_count)
-        today_registered_users = await asyncio.to_thread(
-            user_statistics.get_today_registered_user_count
-        )
-        user_count = registered_users + today_registered_users
-        visit_stats = await _get_site_visit_stats(visits)
-        mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts(request)
-        return {
-            "top_list": [],
-            "radar": [],
-            "stats": {
-                "total_documents": total_embargo,
-                "source_counts": source_counts_embargo,
-                "registered_users": registered_users,
-                "today_registered_users": today_registered_users,
-                "user_count": user_count,
-                "today_unique_visitors": visit_stats.today_visits,
-                "today_visits": visit_stats.today_visits,
-                "total_visits": visit_stats.total_visits,
-                "mcp_total_calls": mcp_total_calls,
-                "mcp_dsh_calls": mcp_dsh_calls,
-            },
-            "period": "daily",
-            "snapshot_date": snapshot_date,
-            "requested_date": resolution["requested_date"],
-            "resolved_date": resolution["resolved_date"],
-            "stale": resolution["stale"],
-            "is_finalized": board["is_finalized"],
-            "is_embargoed": True,
-        }
-
-    docs = await asyncio.to_thread(
-        query_service.get_docs_for_date, snapshot_date, "daily", None, 500
+    stats = await _get_dashboard_stats(
+        request,
+        user_statistics=user_statistics,
+        document_statistics=document_statistics,
+        catalog=catalog,
+        visits=visits,
     )
-    deduped = policy.dedupe_docs(docs)
-    top10 = deduped[:10]
-    radar = policy.score_categories(deduped[:50])
-
-    # ── 统计卡片数据 ──────────────────────────────────────────────
-    # 始终使用全库累计统计，数字不随日期切换而变化，
-    # 展示的是每个来源在数据库中的实际入库总量。
-    source_counts = await _get_source_counts(document_statistics, catalog)
-    total_documents = sum(source_counts.values())
-    registered_users = await asyncio.to_thread(user_statistics.get_user_count)
-    today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
-    user_count = registered_users + today_registered_users
-    today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
-    visit_stats = await _get_site_visit_stats(visits)
-    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts(request)
-
-    return {
-        "top_list": top10,
-        "radar": radar,
-        "stats": {
-            "total_documents": total_documents,
-            "source_counts": source_counts,
-            "registered_users": registered_users,
-            "today_registered_users": today_registered_users,
-            "user_count": user_count,
-            "today_new_documents": today_new_documents,
-            "today_unique_visitors": visit_stats.today_visits,
-            "today_visits": visit_stats.today_visits,
-            "total_visits": visit_stats.total_visits,
-            "mcp_total_calls": mcp_total_calls,
-            "mcp_dsh_calls": mcp_dsh_calls,
-        },
-        "period": "daily",
-        "snapshot_date": snapshot_date,
-        "requested_date": resolution["requested_date"],
-        "resolved_date": resolution["resolved_date"],
-        "stale": resolution["stale"],
-        "is_finalized": board["is_finalized"],
-        "is_embargoed": False,
-    }
+    return {**static, "stats": stats}
 
 
 @router.get("/dashboard/live-stats")
-@cache(expire=10, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_dashboard_live_stats(
     request: Request,
+    response: Response,
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
     visits: SiteVisitStatsReader = Depends(get_site_visit_repository),
 ):
-    """首页统计带实时计数（10s 短缓存聚合并发访客的轮询）。
+    """首页统计带实时计数（由前端每 10 秒轮询，不缓存响应）。
 
     与 summary 统计卡片同一口径但不含排行数据；前端每 10s 轮询一次，
     仅数字变化时滚筒动画滚动差位，无变化则静止。
     """
+    response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
     source_counts = await _get_source_counts(document_statistics, catalog)
     total_documents = sum(source_counts.values())
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
@@ -571,18 +581,20 @@ async def get_snapshot_dates(
 
 
 @router.get("/dashboard/visitor-count")
-@cache(expire=10, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_visitor_count(
     request: Request,
+    response: Response,
     user_statistics: UserStatisticsReader = Depends(get_user_account_repository),
     visits: SiteVisitStatsReader = Depends(get_site_visit_repository),
 ):
-    """返回用户数与访问计数指标（10s 短缓存聚合匿名轮询，与 live-stats 口径一致）。
+    """返回用户数与访问计数指标（不缓存，与 live-stats 口径一致）。
 
-    行为变化：数据最多旧 10 秒；此前每次请求直查两次 COUNT。
     行为变化：today_unique_visitors 此前是 user_count 的占位别名，现为真实
     今日访问次数（纯次数口径，与 today_visits 相同）；新增 total_visits 累计字段。
     """
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
     today_registered_users = await asyncio.to_thread(user_statistics.get_today_registered_user_count)
     user_count = registered_users + today_registered_users

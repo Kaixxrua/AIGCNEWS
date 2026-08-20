@@ -7,13 +7,9 @@ from typing import Any
 
 from starlette.requests import Request
 
-from backend.app.api.dependencies import (
-    get_github_hot_board_reader,
-    get_project_catalog_query_service,
-)
+from backend.app.api.dependencies import get_github_hot_board_reader
 from backend.app.api.routes_dashboard import (
-    get_dashboard_summary,
-    get_site_visit_repository,
+    get_dashboard_summary_static,
     get_top_list,
     get_x_recent,
 )
@@ -25,8 +21,9 @@ logger = logging.getLogger(__name__)
 
 # 与前端首屏请求逐字节对齐的预热组合（cache key 只含
 # limit/source/date/hours/days_back 白名单参数，period 不进 key）：
-# - useDashboardData: summary(date=当天) + top(6 个源 tab, limit=10, date=当天)
+# - useDashboardData: summary-static(date=当天) + top(6 个源 tab, limit=10, date=当天)
 # - useXBoardController: x/recent(hours=24, days_back=0, limit=500) 默认滚动窗口
+# 动态统计接口不预热：MCP/访客/用户计数必须始终读当前值。
 # key 不一致 = 预热写入的缓存无人命中，因此参数必须与前端保持同源维护。
 _DASHBOARD_TAB_SOURCES = ("github", "arxiv", "news", "producthunt", "hackernews", "x")
 _TOP_LIMIT = 10
@@ -69,35 +66,27 @@ def _stub_request(path: str, query_string: str) -> Request:
 async def warm_dashboard_cache(repositories: ApplicationRepositories) -> None:
     """采集完成后重建 dashboard 热缓存，替代「删完 key 等用户撞 ~3s 冷查询」。
 
-    直接调用带 @cache 装饰器的端点函数：cache key 与真实 HTTP 请求同源生成，
-    不存在手工拼 key 的漂移风险。无 request 形参的端点（x/recent）经装饰器
-    注入位 `__fastapi_cache_request` 传入 stub Request，与 FastAPI 运行时一致。
+    直接调用带 @cache 装饰器的静态端点函数：cache key 与真实 HTTP 请求同源生成，
+    不存在手工拼 key 的漂移风险。无 request 形参的端点经装饰器注入位
+    `__fastapi_cache_request` 传入 stub Request，与 FastAPI 运行时一致。
 
     单个端点失败仅记日志，不影响其余端点与采集主流程；整体调用方
     （orchestrator）本就将缓存维护视为非致命路径。
     """
     today = datetime.now(_CST).strftime("%Y-%m-%d")
     github_hot = get_github_hot_board_reader()
-    catalog = get_project_catalog_query_service()
-    site_visits = get_site_visit_repository()
 
     warmups: list[tuple[str, Any, dict[str, Any]]] = [
         (
-            "summary",
-            get_dashboard_summary,
+            "summary-static",
+            get_dashboard_summary_static,
             {
-                "request": _stub_request(
-                    "/api/dashboard/summary", f"period=daily&date={today}"
-                ),
                 "date": today,
-                "user_statistics": repositories.users,
-                "document_statistics": repositories.documents,
                 "rank_snapshots": repositories.rank_snapshots,
-                "catalog": catalog,
                 "github_hot": github_hot,
-                # 直调不走 FastAPI DI，Depends 默认值不会解析；
-                # 漏传会把 Depends 对象当仓储用，0 计数污染 3600s 缓存
-                "visits": site_visits,
+                "__fastapi_cache_request": _stub_request(
+                    "/api/dashboard/summary-static", f"period=daily&date={today}"
+                ),
             },
         ),
     ]

@@ -764,6 +764,8 @@ def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
         FastAPICache.reset()
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, max-age=0, must-revalidate"
+    assert response.headers["pragma"] == "no-cache"
     stats = response.json()["stats"]
     assert stats["source_counts"] == {"arxiv": 5, "github": 6983, "news": 7}
     assert stats["total_documents"] == 5 + 6983 + 7
@@ -775,6 +777,45 @@ def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
     assert calls == [
         {"source": "github", "scope": "all", "page": 1, "page_size": 1, "sort": "stars"}
     ]
+
+
+def test_summary_static_is_cacheable_without_dynamic_stats(monkeypatch) -> None:
+    client = _summary_client(monkeypatch, lambda: object())
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-static-summary")
+    try:
+        response = client.get("/api/dashboard/summary-static?date=2020-01-02")
+    finally:
+        FastAPICache.reset()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "stats" not in body
+    assert {"top_list", "radar", "snapshot_date", "is_finalized", "is_embargoed"} <= body.keys()
+
+
+def test_summary_reads_current_mcp_stats_on_each_request(monkeypatch) -> None:
+    class FakeCatalog:
+        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
+            return {"items": [], "total": 6983, "page": 1, "page_size": 1}
+
+    readings = iter([(3993, 7), (4001, 8)])
+
+    async def fake_mcp_counts(request: Request) -> tuple[int, int]:
+        return next(readings)
+
+    monkeypatch.setattr(routes_dashboard, "_get_mcp_call_counts", fake_mcp_counts)
+    client = _summary_client(monkeypatch, lambda: FakeCatalog())
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-summary-live")
+    try:
+        first = client.get("/api/dashboard/summary?date=2020-01-02")
+        second = client.get("/api/dashboard/summary?date=2020-01-02")
+    finally:
+        FastAPICache.reset()
+
+    assert first.status_code == second.status_code == 200
+    assert first.headers["cache-control"] == "no-store, max-age=0, must-revalidate"
+    assert second.json()["stats"]["mcp_total_calls"] == 4001
+    assert second.json()["stats"]["mcp_dsh_calls"] == 8
 
 
 def test_github_library_count_failure_logs_warning_and_returns_none(monkeypatch, caplog) -> None:
@@ -808,6 +849,8 @@ def test_summary_github_stat_falls_back_to_documents_when_catalog_unavailable(mo
         FastAPICache.reset()
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, max-age=0, must-revalidate"
+    assert response.headers["pragma"] == "no-cache"
     stats = response.json()["stats"]
     assert stats["source_counts"] == {"arxiv": 5, "github": 461, "news": 7}
     assert stats["total_documents"] == 5 + 461 + 7
@@ -828,6 +871,8 @@ def test_live_stats_returns_flat_counters(monkeypatch) -> None:
         FastAPICache.reset()
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, max-age=0, must-revalidate"
+    assert response.headers["pragma"] == "no-cache"
     body = response.json()
     assert body["source_counts"] == {"arxiv": 5, "github": 6983, "news": 7}
     assert body["total_documents"] == 5 + 6983 + 7

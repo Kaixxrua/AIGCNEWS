@@ -21,6 +21,14 @@ describe('Dashboard API contract', () => {
       params: { date: '2026-07-27' }, signal,
     })
 
+    transport.get.mockResolvedValueOnce({ data: { is_finalized: true, is_embargoed: false } })
+    await expect(dashboardApi.fetchSummaryStatic!({ date: '2026-07-27', signal })).resolves.toEqual({
+      isFinalized: true, isEmbargoed: false,
+    })
+    expect(transport.get).toHaveBeenLastCalledWith('/dashboard/summary-static', {
+      params: { date: '2026-07-27' }, signal,
+    })
+
     transport.get.mockResolvedValueOnce({ data: { items: null } })
     await expect(dashboardApi.fetchTop({ source: 'arxiv', date: '2026-07-27', signal })).resolves.toEqual({ items: [], isEmbargoed: false, sourceStatus: {} })
     expect(transport.get).toHaveBeenLastCalledWith('/dashboard/top', {

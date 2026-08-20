@@ -14,7 +14,6 @@ from backend.app.api.dashboard_cache_warmup import (
     _stub_request,
     warm_dashboard_cache,
 )
-from backend.app.repositories.site_visit_repository import SiteVisitStats
 
 _CST = timezone(timedelta(hours=8))
 
@@ -93,31 +92,12 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
         )
         self._reader_patch.start()
         self.addCleanup(self._reader_patch.stop)
-        catalog = SimpleNamespace(github_library_total=AsyncMock(return_value=0))
-        self._catalog_patch = patch(
-            "backend.app.api.dashboard_cache_warmup.get_project_catalog_query_service",
-            lambda: catalog,
-        )
-        self._catalog_patch.start()
-        self.addCleanup(self._catalog_patch.stop)
-        # 预热直调不走 FastAPI DI，仓储按依赖函数解析；假实现返回固定计数，
-        # 用于断言预热写入的 summary 缓存携带真实访客数而非 0。
-        self._visits = MagicMock()
-        self._visits.get_visit_stats.return_value = SiteVisitStats(
-            today_visits=7, total_visits=700
-        )
-        self._visits_patch = patch(
-            "backend.app.api.dashboard_cache_warmup.get_site_visit_repository",
-            lambda: self._visits,
-        )
-        self._visits_patch.start()
-        self.addCleanup(self._visits_patch.stop)
         self.addCleanup(FastAPICache.reset)
 
     async def test_warm_populates_frontend_initial_load_keys(self) -> None:
         await warm_dashboard_cache(_make_repositories())
 
-        # summary + 6 个源 tab 的 top + x/recent，共 8 个 key
+        # static summary + 6 个源 tab 的 top + x/recent，共 8 个 key
         self.assertEqual(len(_dashboard_keys()), 1 + len(_DASHBOARD_TAB_SOURCES) + 1)
 
     async def test_frontend_request_shape_hits_warmed_cache(self) -> None:
@@ -144,33 +124,25 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("items", result)
         self.assertFalse(result["is_embargoed"] and result["items"] is None)
 
-    async def test_warmed_summary_carries_real_visit_counts(self) -> None:
-        """回归：预热直调必须显式传 visits 仓储。
-
-        漏传时端点拿到 Depends 默认值，AttributeError 被宽捕获吞成 0 并写进
-        3600s summary 缓存——2026-08-13 生产看板访客数间歇为 0 的根因。
-        """
+    async def test_warmup_uses_static_summary_without_dynamic_counters(self) -> None:
         repositories = _make_repositories()
         await warm_dashboard_cache(repositories)
+        instances_after_warm = _FakeQueryService.instances
 
         today = _today()
-        result = await routes_dashboard.get_dashboard_summary(
-            request=_stub_request(
-                "/api/dashboard/summary", f"period=daily&date={today}"
-            ),
+        result = await routes_dashboard.get_dashboard_summary_static(
             date=today,
-            user_statistics=repositories.users,
-            document_statistics=repositories.documents,
             rank_snapshots=repositories.rank_snapshots,
-            catalog=MagicMock(),
             github_hot=None,
-            visits=MagicMock(),  # 命中缓存则不会执行函数体，传什么都不会被读
+            __fastapi_cache_request=_stub_request(
+                "/api/dashboard/summary-static", f"date={today}"
+            ),
         )
 
-        self.assertEqual(result["stats"]["today_visits"], 7)
-        self.assertEqual(result["stats"]["total_visits"], 700)
-        # 仅预热时查过一次计数库：二次调用命中缓存，未再执行端点体
-        self.assertEqual(self._visits.get_visit_stats.call_count, 1)
+        self.assertNotIn("stats", result)
+        self.assertIn("top_list", result)
+        self.assertIn("radar", result)
+        self.assertEqual(_FakeQueryService.instances, instances_after_warm)
 
     async def test_single_endpoint_failure_does_not_break_others(self) -> None:
         # x/recent 依赖的 documents 查询抛错：该端点预热失败，

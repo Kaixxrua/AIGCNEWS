@@ -4,6 +4,8 @@ import type {
   DashboardRecentXWireResponse,
   DashboardSnapshotDatesWireResponse,
   DashboardSummaryWireResponse,
+  DashboardStaticSummary,
+  DashboardStaticSummaryWireResponse,
   DashboardTopWireResponse,
   DashboardVisitorCountWireResponse,
   GitHubHotPeriod,
@@ -17,6 +19,8 @@ export type {
   DashboardRecentX,
   DashboardRecentXParams,
   DashboardSnapshotDatesParams,
+  DashboardStaticSummary,
+  DashboardStaticSummaryWireResponse,
   DashboardSummary,
   DashboardSummaryParams,
   DashboardTop,
@@ -37,6 +41,17 @@ export const dashboardApi: DashboardApi = {
     })
     return {
       stats: response.data?.stats ?? {},
+      isFinalized: response.data?.is_finalized ?? false,
+      isEmbargoed: response.data?.is_embargoed ?? false,
+    }
+  },
+
+  async fetchSummaryStatic({ period, date, signal }): Promise<DashboardStaticSummary> {
+    const response = await api.get<DashboardStaticSummaryWireResponse>('/dashboard/summary-static', {
+      params: { period, date },
+      signal,
+    })
+    return {
       isFinalized: response.data?.is_finalized ?? false,
       isEmbargoed: response.data?.is_embargoed ?? false,
     }

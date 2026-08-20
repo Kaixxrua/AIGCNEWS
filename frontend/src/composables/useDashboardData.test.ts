@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const defaultDashboardApi = vi.hoisted(() => ({
   fetchSummary: vi.fn(),
+  fetchSummaryStatic: vi.fn(),
   fetchTop: vi.fn(),
   fetchSnapshotDates: vi.fn(),
   fetchVisitorCount: vi.fn(),
@@ -59,6 +60,8 @@ describe('Dashboard request lifecycle contract', () => {
     Object.values(defaultDashboardApi).forEach(mock => mock.mockReset())
     liveStatsApi.fetchLiveStats.mockReset()
     defaultDashboardApi.fetchSummary.mockResolvedValue({ stats: { total_documents: 3 }, isFinalized: true, isEmbargoed: false })
+    defaultDashboardApi.fetchSummaryStatic.mockResolvedValue({ isFinalized: true, isEmbargoed: false })
+    liveStatsApi.fetchLiveStats.mockResolvedValue({ total_documents: 3 })
     defaultDashboardApi.fetchTop.mockResolvedValue({
       items: [{ id: 1, title: 'Top' }],
       sourceStatus: { arxiv: { is_finalized: false, is_embargoed: false, day_boundary: 'PT', finalize_hour: 17 } },
@@ -72,21 +75,25 @@ describe('Dashboard request lifecycle contract', () => {
     vi.restoreAllMocks()
   })
 
-  it('loads summary, top ten, snapshot availability, and visitors with shared date defaults', async () => {
-    let resolveVisitors!: (value: { registeredUsers: number; todayRegisteredUsers: number; userCount: number; todayVisits: number; totalVisits: number }) => void
-    defaultDashboardApi.fetchVisitorCount.mockImplementation(() => new Promise((resolve) => { resolveVisitors = resolve }))
+  it('loads static summary, live counters, top ten, and snapshot availability with shared date defaults', async () => {
+    liveStatsApi.fetchLiveStats.mockResolvedValue({
+      total_documents: 3,
+      registered_users: 7,
+      user_count: 9,
+      today_visits: 21,
+      total_visits: 365,
+    })
     const mounted = mountDashboard()
-    await flush()
-    resolveVisitors({ registeredUsers: 7, todayRegisteredUsers: 2, userCount: 9, todayVisits: 21, totalVisits: 365 })
     await flush()
 
     expect(mounted.dashboard.activeTab.value).toBe('github')
-    expect(defaultDashboardApi.fetchSummary).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal) })
+    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal) })
     expect(defaultDashboardApi.fetchTop).toHaveBeenCalledWith({
       limit: 10, source: 'github', period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal),
     })
     expect(defaultDashboardApi.fetchSnapshotDates).toHaveBeenCalledWith({ limit: 90, source: 'github', period: 'daily', signal: expect.any(AbortSignal) })
-    expect(defaultDashboardApi.fetchVisitorCount).toHaveBeenCalledWith(expect.any(AbortSignal))
+    expect(liveStatsApi.fetchLiveStats).toHaveBeenCalledWith(expect.any(AbortSignal))
+    expect(defaultDashboardApi.fetchVisitorCount).not.toHaveBeenCalled()
     expect(mounted.dashboard.stats.value).toMatchObject({ total_documents: 3, registered_users: 7, user_count: 9, today_visits: 21, total_visits: 365 })
     expect(mounted.dashboard.tabList.value).toEqual([{ id: 1, title: 'Top' }])
     expect(mounted.dashboard.isFinalized.value).toBe(true)
@@ -96,7 +103,7 @@ describe('Dashboard request lifecycle contract', () => {
       arxiv: { is_finalized: false, is_embargoed: false, day_boundary: 'PT', finalize_hour: 17 },
     })
     expect(mounted.dashboard.hasData.value).toBe(true)
-    expect(mounted.updateVisitorSources).toHaveBeenCalledBefore(mounted.updateStatSources)
+    expect(mounted.updateStatSources).toHaveBeenCalled()
     mounted.app.unmount()
   })
 
@@ -122,7 +129,7 @@ describe('Dashboard request lifecycle contract', () => {
     expect(mounted.dashboard.tabList.value).toEqual([])
     await pending
 
-    expect(defaultDashboardApi.fetchSummary).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-20', signal: expect.any(AbortSignal) })
+    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-20', signal: expect.any(AbortSignal) })
     expect(mounted.updateStatSources).toHaveBeenCalledOnce()
     expect(mounted.dashboard.isViewingHistory.value).toBe(true)
     mounted.app.unmount()
@@ -148,16 +155,19 @@ describe('Dashboard request lifecycle contract', () => {
     mounted.app.unmount()
   })
 
-  it('keeps fresh visitor counts when a slower stale summary resolves last on first load', async () => {
-    // 首屏竞态回归：visitor-count（10s 缓存）先落地 today_visits=9，
-    // summary（3600s 缓存）后到 today_visits=6 —— 卡片不得 9→6 回退
+  it('keeps fresh live counters when a slower legacy summary resolves last on first load', async () => {
+    // 兼容旧注入端：summary 带着较旧的动态计数到达时，不能覆盖首屏 live-stats。
     type Summary = Awaited<ReturnType<DashboardApi['fetchSummary']>>
     let resolveSummary!: (value: Summary) => void
-    defaultDashboardApi.fetchSummary.mockImplementation(() => new Promise<Summary>((resolve) => { resolveSummary = resolve }))
-    defaultDashboardApi.fetchVisitorCount.mockResolvedValue({ registeredUsers: 7, todayRegisteredUsers: 2, userCount: 9, todayVisits: 9, totalVisits: 100 })
+    defaultDashboardApi.fetchSummaryStatic.mockImplementation(() => new Promise((resolve) => {
+      resolveSummary = resolve as (value: Summary) => void
+    }))
+    liveStatsApi.fetchLiveStats.mockResolvedValue({
+      total_documents: 3, today_visits: 9, total_visits: 100,
+    })
     const mounted = mountDashboard()
     await flush()
-    expect(mounted.dashboard.stats.value.today_visits).toBe(9)
+    expect(mounted.dashboard.stats.value).toEqual({})
 
     resolveSummary({
       stats: { total_documents: 3, today_visits: 6, total_visits: 97, mcp_total_calls: 1232 },
@@ -167,7 +177,6 @@ describe('Dashboard request lifecycle contract', () => {
 
     expect(mounted.dashboard.stats.value.today_visits).toBe(9)
     expect(mounted.dashboard.stats.value.total_visits).toBe(100)
-    // 非实时字段仍以 summary 为准
     expect(mounted.dashboard.stats.value.total_documents).toBe(3)
     expect(mounted.dashboard.stats.value.mcp_total_calls).toBe(1232)
     mounted.app.unmount()
@@ -176,7 +185,7 @@ describe('Dashboard request lifecycle contract', () => {
   it('keeps fresher live counters when a stale cached summary is re-applied', async () => {
     // summary 走 3600s 缓存：首次加载含 mcp_total_calls=1232，live 轮询前进到 1233 后，
     // 切 tab 重新应用同一份陈旧 summary 不得让计数回退（回归：首页 MCP 调用数 1233→1232）
-    defaultDashboardApi.fetchSummary.mockResolvedValue({
+    defaultDashboardApi.fetchSummaryStatic.mockResolvedValue({
       stats: { total_documents: 3, mcp_total_calls: 1232, mcp_dsh_calls: 40, source_counts: { arxiv: 3 } },
       isFinalized: true, isEmbargoed: false,
     })
@@ -199,7 +208,7 @@ describe('Dashboard request lifecycle contract', () => {
   })
 
   it('applies cached summary counters before the first live poll succeeds', async () => {
-    defaultDashboardApi.fetchSummary.mockResolvedValue({
+    defaultDashboardApi.fetchSummaryStatic.mockResolvedValue({
       stats: { total_documents: 3, mcp_total_calls: 1232 },
       isFinalized: true, isEmbargoed: false,
     })
@@ -215,7 +224,7 @@ describe('Dashboard request lifecycle contract', () => {
 
   it('aborts dashboard and availability requests on replacement and deactivation', async () => {
     const dashboardSignals: AbortSignal[] = []
-    defaultDashboardApi.fetchSummary.mockImplementation(async ({ signal }) => {
+    defaultDashboardApi.fetchSummaryStatic.mockImplementation(async ({ signal }) => {
       dashboardSignals.push(signal!)
       return { stats: { total_documents: 3 }, isFinalized: true, isEmbargoed: false }
     })
@@ -242,7 +251,8 @@ describe('Dashboard request lifecycle contract', () => {
     type Summary = Awaited<ReturnType<DashboardApi['fetchSummary']>>
     const deferred: Array<{ resolve: (value: Summary) => void }> = []
     const injectedApi: DashboardApi = {
-      fetchSummary: vi.fn(() => new Promise<Summary>((resolve) => deferred.push({ resolve }))),
+      fetchSummary: vi.fn(async () => ({ stats: {}, isFinalized: true, isEmbargoed: false })),
+      fetchSummaryStatic: vi.fn(() => new Promise<Summary>((resolve) => deferred.push({ resolve }))),
       fetchTop: vi.fn(async () => ({ items: [], isEmbargoed: false, sourceStatus: {} })),
       fetchSnapshotDates: vi.fn(async () => []),
       fetchVisitorCount: vi.fn(async () => ({ registeredUsers: 0, todayRegisteredUsers: 0, userCount: 0, todayVisits: 0, totalVisits: 0 })),
@@ -252,6 +262,7 @@ describe('Dashboard request lifecycle contract', () => {
       bulkDeleteDocuments: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_ids: ['x:1'], deleted_count: 1, not_found_count: 0 })),
       rebuildXSnapshot: vi.fn(async () => ({ status: 'succeeded', message: 'ok', results: [], skipped_no_date: 0 })),
     }
+    liveStatsApi.fetchLiveStats.mockResolvedValue({})
     const mounted = mountDashboard({ dashboardApi: injectedApi, now: () => new Date(2026, 6, 27, 12).getTime() })
     await flush()
     mounted.dashboard.activeTab.value = 'arxiv'
@@ -269,20 +280,20 @@ describe('Dashboard request lifecycle contract', () => {
   it('skips first activation refresh and refreshes a kept-alive view after 60 seconds', async () => {
     const mounted = mountDashboard()
     await flush()
-    expect(defaultDashboardApi.fetchSummary).toHaveBeenCalledTimes(1)
+    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledTimes(1)
 
     mounted.visible.value = false
     await nextTick()
     mounted.visible.value = true
     await flush()
-    expect(defaultDashboardApi.fetchSummary).toHaveBeenCalledTimes(1)
+    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledTimes(1)
 
     mounted.visible.value = false
     await nextTick()
     vi.advanceTimersByTime(60_000)
     mounted.visible.value = true
     await flush()
-    expect(defaultDashboardApi.fetchSummary).toHaveBeenCalledTimes(2)
+    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledTimes(2)
     mounted.app.unmount()
   })
 })

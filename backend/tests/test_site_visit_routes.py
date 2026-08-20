@@ -57,6 +57,8 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         response = TestClient(app).get("/api/dashboard/visitor-count")
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0, must-revalidate")
+        self.assertEqual(response.headers["pragma"], "no-cache")
         body = response.json()
         self.assertEqual(body["today_visits"], 0)
         self.assertEqual(body["total_visits"], 0)

@@ -6,6 +6,23 @@ export interface DashboardSummaryWireResponse {
   is_embargoed?: boolean | null
 }
 
+export interface DashboardStaticSummaryWireResponse {
+  top_list?: TopDoc[] | null
+  radar?: unknown[] | null
+  period?: string | null
+  snapshot_date?: string | null
+  requested_date?: string | null
+  resolved_date?: string | null
+  stale?: boolean | null
+  is_finalized?: boolean | null
+  is_embargoed?: boolean | null
+}
+
+export interface DashboardStaticSummary {
+  isFinalized: boolean
+  isEmbargoed: boolean
+}
+
 /** 单源榜单状态（/dashboard/top 的 source_status wire 契约） */
 export interface SourceBoardStatus {
   is_finalized?: boolean | null
@@ -147,6 +164,7 @@ export interface GitHubHotResponse {
 
 export interface DashboardApi {
   fetchSummary(params: DashboardSummaryParams): Promise<DashboardSummary>
+  fetchSummaryStatic?(params: DashboardSummaryParams): Promise<DashboardStaticSummary>
   fetchTop(params: DashboardTopParams): Promise<DashboardTop>
   fetchRecentX(params: DashboardRecentXParams): Promise<DashboardRecentX>
   fetchSnapshotDates(params: DashboardSnapshotDatesParams): Promise<string[]>

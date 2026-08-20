@@ -53,7 +53,7 @@ class DashboardUserStatisticsRepositoryTests(unittest.TestCase):
         repository.get_today_registered_user_count.assert_called_once_with()
         visits.get_visit_stats.assert_called_once()
 
-    def test_visitor_count_short_cache_aggregates_anonymous_polls(self) -> None:
+    def test_visitor_count_reads_current_counters_on_each_poll(self) -> None:
         app = FastAPI()
         app.include_router(routes_dashboard.router, prefix="/api")
         repository = MagicMock()
@@ -71,10 +71,10 @@ class DashboardUserStatisticsRepositoryTests(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.json(), first.json())
-        # 10s 短缓存窗口内重复匿名轮询只读一次库
-        repository.get_user_count.assert_called_once_with()
-        repository.get_today_registered_user_count.assert_called_once_with()
-        visits.get_visit_stats.assert_called_once()
+        # 动态访客端点不缓存：两次轮询均重新读取当前值。
+        self.assertEqual(repository.get_user_count.call_count, 2)
+        self.assertEqual(repository.get_today_registered_user_count.call_count, 2)
+        self.assertEqual(visits.get_visit_stats.call_count, 2)
 
 
 if __name__ == "__main__":
