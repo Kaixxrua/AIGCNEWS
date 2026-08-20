@@ -51,6 +51,9 @@ type Config struct {
 	// 仅来自 PUBLIC_BASE_URL 配置，绝不从请求派生（防缓存投毒）。默认 None →
 	// Go 侧空串；消费方自行 TrimRight("/",)（对齐 Python 的 rstrip("/")）。
 	PublicBaseURL string
+	// SchedulerTimezone 对齐 scheduler_timezone（config.py 344 行）：看板
+	// "今日" 统计的时区锚，默认 "Asia/Shanghai"。
+	SchedulerTimezone string
 }
 
 // lookup 从环境取值；与 os.LookupEnv 同形，便于测试注入。
@@ -78,6 +81,7 @@ func (c *Config) load(lookup lookupFunc) error {
 		Password: "",
 	}
 	c.TrustedProxyIPs = "127.0.0.1,::1"
+	c.SchedulerTimezone = "Asia/Shanghai"
 	if err := loadInt(lookup, "MCP_SERVER_PORT", &c.Port); err != nil {
 		return err
 	}
@@ -114,6 +118,7 @@ func (c *Config) load(lookup lookupFunc) error {
 	loadString(lookup, "REDIS_PASSWORD", &c.Redis.Password)
 	loadString(lookup, "TRUSTED_PROXY_IPS", &c.TrustedProxyIPs)
 	loadString(lookup, "PUBLIC_BASE_URL", &c.PublicBaseURL)
+	loadString(lookup, "SCHEDULER_TIMEZONE", &c.SchedulerTimezone)
 	if c.Port < 1 || c.Port > 65_535 {
 		return fmt.Errorf("config: MCP_SERVER_PORT=%d 超出 1..65535", c.Port)
 	}

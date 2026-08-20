@@ -10,6 +10,10 @@
 // PR 2.1 范围：get_project_categories 工具（静态分类仓储）。
 // PR 2.2 范围：search_papers / search_documents 工具（Postgres 文档检索）。
 // PR 2.3 范围：get_paper_detail 工具（Postgres 单文档详情）。
+// PR 2.4 范围：get_top_items 工具（Postgres 榜单快照）+ resources/read
+// 六路由（dashboard/summary、dashboard/top、projects/categories、
+// report/latest、papers/{id}；projects/library 待 PR 2.8 语义检索落地后接线，
+// 当前按仓储未装配语义投射 -32603）。
 package main
 
 import (
@@ -73,20 +77,33 @@ func run() int {
 	serverVersion := version.Resolve()
 	// 工具注册表（Phase 2 逐只接入）：get_project_categories 走静态仓储
 	// （PR 2.1）；search_papers/search_documents 走 Postgres 文档检索
-	// （PR 2.2）。publicBaseURL 仅取自 PUBLIC_BASE_URL 配置并 rstrip("/")，
-	// 与 Python presentation.public_base_url 同语义。
+	// （PR 2.2）；get_paper_detail 走 Postgres 单文档（PR 2.3）；
+	// get_top_items 走榜单快照（PR 2.4）。publicBaseURL 仅取自
+	// PUBLIC_BASE_URL 配置并 rstrip("/")，与 Python
+	// presentation.public_base_url 同语义。
 	registry := mcpapp.Handlers{}
-	for name, handler := range mcpapp.NewProjectCategoriesHandlers(mcpapp.StaticProjectCategoriesRepository{}) {
-		registry[name] = handler
-	}
+	categories := mcpapp.NewProjectCategoriesService(mcpapp.StaticProjectCategoriesRepository{})
+	registry["get_project_categories"] = categories.Get
 	publicBaseURL := strings.TrimRight(cfg.PublicBaseURL, "/")
 	for name, handler := range mcpapp.NewDocumentsHandlers(postgres.NewDocumentRepository(pool), publicBaseURL) {
 		registry[name] = handler
 	}
-	for name, handler := range mcpapp.NewPaperDetailHandlers(postgres.NewPaperDetailRepository(pool), publicBaseURL) {
-		registry[name] = handler
-	}
+	papers := mcpapp.NewPaperDetailService(postgres.NewPaperDetailRepository(pool), publicBaseURL)
+	registry["get_paper_detail"] = papers.Get
+	rankSnapshots := postgres.NewRankSnapshotRepository(pool)
+	registry["get_top_items"] = mcpapp.NewGetTopItemsService(rankSnapshots, publicBaseURL).Get
 	app := mcpapp.New(version.ServerName, serverVersion, registry)
+	// resources/read 装配（PR 2.4）：榜单快照 + 看板统计 + 简报三个 Postgres
+	// 适配器，分类/论文详情复用上方同名服务。projects/library 的语义检索
+	// 仓储属 PR 2.8，届时经 SetProjectLibrary 补接。
+	app.SetResources(mcpapp.NewResourceService(
+		rankSnapshots,
+		postgres.NewDocumentStatistics(pool, cfg.SchedulerTimezone),
+		postgres.NewBriefingRepository(pool),
+		categories,
+		papers,
+		publicBaseURL,
+	))
 
 	// 限流层接线（PR 1.3）。对齐 Python 语义：redis-py 构造不预连，故障
 	// 发生在请求期并由 enforce 的 except 吞掉（fail-open）；go-redis 同样

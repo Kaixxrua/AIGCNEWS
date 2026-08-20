@@ -14,6 +14,10 @@
 //     documents 段注入 stub 仓储驱动；
 //   - PR 2.3：get-paper-detail happy/not-found 两例解除跳过，共享同一
 //     fixture 文档仓储与 public projection。
+//   - PR 2.4：get_top_items 工具与 resources/read 全路由落地；看板钟与
+//     report 日期锚冻结（recorder._frozen_time 双 patch 点的 Go 镜像）；
+//     resources.jsonl harness 落地，13 例解除跳过（resource-projects-library
+//     依赖 search_github_ai_projects 富化，归 PR 2.8）。
 //
 // 语料新增用例会立即进入回放并以逐字节差异暴露，不允许静默漏测：
 // tools.jsonl 每个用例必须在 toolsCorpusMilestones 显式登记归属 PR。
@@ -34,8 +38,10 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -184,10 +190,16 @@ func loadFixtureAuthenticator(t *testing.T) fixtureAuthenticator {
 // fixtureDocuments 复刻 _StubDocuments.search_document_page 的分支表；
 // 分页参数被刻意忽略（stub 不按 page/limit 切片，语料分页用例依赖此形态）。
 type fixtureDocuments struct {
-	arxivA    mcpapp.DocumentRow
-	arxivB    mcpapp.DocumentRow
-	news      mcpapp.DocumentRow
-	oversized mcpapp.DocumentRow
+	arxivA          mcpapp.DocumentRow
+	arxivB          mcpapp.DocumentRow
+	news            mcpapp.DocumentRow
+	oversized       mcpapp.DocumentRow
+	channels        map[string][]mcpapp.DocumentRow
+	sourceCounts    map[string]int
+	todayCount      int
+	briefings       map[string]mcpapp.BriefingRecord
+	projectSearches map[string]map[string]any
+	yesterdayHN     map[string]bool
 }
 
 func (f fixtureDocuments) SearchDocumentPage(query, source string, _, _ int) (mcpapp.DocumentPage, error) {
@@ -211,6 +223,45 @@ func (f fixtureDocuments) GetPaperDetail(paperID string) (*mcpapp.DocumentRow, e
 	return nil, nil
 }
 
+// GetSnapshotDocuments 镜像 recorder._StubRankSnapshots.get_snapshot_documents：
+// sourceType/limit 被刻意忽略（stub 不过滤不截断），逐字对齐录制侧。
+func (f fixtureDocuments) GetSnapshotDocuments(_, sourceChannel, _ string, _ int) ([]mcpapp.DocumentRow, error) {
+	return append([]mcpapp.DocumentRow(nil), f.channels[sourceChannel]...), nil
+}
+
+// GetSnapshotDocIDs 镜像 stub：hn_daily_html 恒回昨日 id 集（不区分日期），
+// 其余渠道空集。
+func (f fixtureDocuments) GetSnapshotDocIDs(_, sourceChannel string) (map[string]bool, error) {
+	if sourceChannel == "hn_daily_html" {
+		return f.yesterdayHN, nil
+	}
+	return map[string]bool{}, nil
+}
+
+func (f fixtureDocuments) GetSourceCounts() (map[string]int, error) {
+	return f.sourceCounts, nil
+}
+
+func (f fixtureDocuments) GetTodayDocumentCount() (int, error) {
+	return f.todayCount, nil
+}
+
+func (f fixtureDocuments) GetBriefing(key string) (*mcpapp.BriefingRecord, error) {
+	briefing, ok := f.briefings[key]
+	if !ok {
+		return nil, nil
+	}
+	return &briefing, nil
+}
+
+func (f fixtureDocuments) ProjectLibrary(arguments map[string]any) (any, error) {
+	query, _ := arguments["q"].(string)
+	if query != "rag" {
+		return nil, mcpapp.ToolInputError{Message: "Resource read failed"}
+	}
+	return f.projectSearches["ai"], nil
+}
+
 func derefFixtureString(value *string, fallback string) string {
 	if value == nil {
 		return fallback
@@ -229,7 +280,17 @@ func loadFixtureDocuments(t *testing.T) fixtureDocuments {
 		t.Skipf("fixtures 不可读（%v），跳过回放", err)
 	}
 	var fixtures struct {
-		Documents map[string]map[string]any `json:"documents"`
+		Documents       map[string]map[string]any   `json:"documents"`
+		Dashboard       map[string][]map[string]any `json:"dashboard_channels"`
+		SourceCounts    map[string]int              `json:"source_counts"`
+		TodayCount      int                         `json:"today_document_count"`
+		ProjectSearches map[string]map[string]any   `json:"project_search_results"`
+		Briefings       map[string]struct {
+			ContentZH string `json:"content_zh"`
+			ContentEN string `json:"content_en"`
+			Content   string `json:"content"`
+		} `json:"briefings"`
+		YesterdayHN []string `json:"yesterday_hn_ids"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
@@ -243,11 +304,31 @@ func loadFixtureDocuments(t *testing.T) fixtureDocuments {
 		}
 		return documentRowFromFixture(t, name, doc)
 	}
+	channels := map[string][]mcpapp.DocumentRow{}
+	for channel, records := range fixtures.Dashboard {
+		for i, record := range records {
+			channels[channel] = append(channels[channel], documentRowFromFixture(t, channel+"["+strconv.Itoa(i)+"]", record))
+		}
+	}
+	briefings := map[string]mcpapp.BriefingRecord{}
+	for key, record := range fixtures.Briefings {
+		briefings[key] = mcpapp.BriefingRecord{ContentZH: record.ContentZH, ContentEN: record.ContentEN, Content: record.Content}
+	}
+	yesterdayHN := map[string]bool{}
+	for _, id := range fixtures.YesterdayHN {
+		yesterdayHN[id] = true
+	}
 	return fixtureDocuments{
-		arxivA:    row("arxiv_a"),
-		arxivB:    row("arxiv_b"),
-		news:      row("news"),
-		oversized: row("oversized"),
+		arxivA:          row("arxiv_a"),
+		arxivB:          row("arxiv_b"),
+		news:            row("news"),
+		oversized:       row("oversized"),
+		channels:        channels,
+		sourceCounts:    fixtures.SourceCounts,
+		todayCount:      fixtures.TodayCount,
+		briefings:       briefings,
+		projectSearches: fixtures.ProjectSearches,
+		yesterdayHN:     yesterdayHN,
 	}
 }
 
@@ -369,6 +450,22 @@ func newReplayHandler(t *testing.T, caseName string) http.Handler {
 	for name, handler := range mcpapp.NewPaperDetailHandlers(documents, "") {
 		registry[name] = handler
 	}
+	topItems := mcpapp.NewGetTopItemsService(documents, "")
+	registry["get_top_items"] = topItems.Get
+	resources := mcpapp.NewResourceService(documents, documents, documents,
+		mcpapp.NewProjectCategoriesService(mcpapp.StaticProjectCategoriesRepository{}),
+		mcpapp.NewPaperDetailService(documents, ""), "")
+	resources.SetProjectLibrary(documents.ProjectLibrary)
+	// 冻结时钟，镜像 recorder._frozen_time 的两个独立 patch 点：
+	// 看板钟（dashboard_policy.datetime）钉在 CST 2026-08-10 12:00（UTC 瞬
+	// 间 +8h 平移后与 policy 的 timezone(timedelta(hours=8)) 同读数）；
+	// report/latest 日期锚（application._date.today）钉 2026-08-10。
+	frozenNow := func() time.Time { return time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC) }
+	topItems.SetNow(frozenNow)
+	resources.SetNow(frozenNow)
+	resources.SetToday(func() string { return "2026-08-10" })
+	app := mcpapp.New(version.ServerName, version.Fallback, registry)
+	app.SetResources(resources)
 	// 对齐 recorder profile 语义：
 	// tool_handler_crash → search_papers 处理器抛错；
 	// dispatch_crash → 分派阶段 panic（internal-error-500 用例）。
@@ -377,7 +474,6 @@ func newReplayHandler(t *testing.T, caseName string) http.Handler {
 			return nil, errParityProbe
 		}
 	}
-	app := mcpapp.New(version.ServerName, version.Fallback, registry)
 	if caseName == "internal-error-500" {
 		app.PanicOnMethods = map[string]bool{"tools/list": true}
 	}
@@ -522,17 +618,21 @@ var toolsCorpusMilestones = map[string]string{
 
 // toolsCorpusCurrentMilestone 是本包当前解锁的里程碑。先前 PR 的工具必须继续
 // 回放，避免新工具接入使已解锁语料静默失去覆盖；其后用例带里程碑标注跳过。
-const toolsCorpusCurrentMilestone = "PR 2.3"
+const toolsCorpusCurrentMilestone = "PR 2.4"
 
 var toolsCorpusMilestoneOrder = []string{
 	"PR 2.2", "PR 2.3", "PR 2.4", "PR 2.5", "PR 2.6", "PR 2.7", "PR 2.8",
 }
 
 func toolsCorpusMilestoneEnabled(milestone string) bool {
+	return toolsCorpusMilestoneEnabledAt(toolsCorpusCurrentMilestone, milestone)
+}
+
+func toolsCorpusMilestoneEnabledAt(currentMilestone, milestone string) bool {
 	current := -1
 	candidate := -1
 	for i, value := range toolsCorpusMilestoneOrder {
-		if value == toolsCorpusCurrentMilestone {
+		if value == currentMilestone {
 			current = i
 		}
 		if value == milestone {
@@ -562,6 +662,63 @@ func TestToolsCorpus(t *testing.T) {
 	}
 	var stale []string
 	for name := range toolsCorpusMilestones {
+		if !seen[name] {
+			stale = append(stale, name)
+		}
+	}
+	if len(stale) > 0 {
+		sort.Strings(stale)
+		t.Fatalf("登记表含有语料中不存在的用例: %s", strings.Join(stale, ", "))
+	}
+}
+
+// ── resources.jsonl 回放（资源语料） ─────────────────────────────────────
+
+// resourcesCorpusMilestones 显式登记 resources.jsonl 每个用例的归属 PR，
+// 语义与 toolsCorpusMilestones 相同（未登记/僵尸登记均失败）。
+// resource-projects-library 依赖 search_github_ai_projects 的 PR 2.8 富化
+// （detail_url/data_source/lang），登记 PR 2.8 并在其落地前跳过。
+var resourcesCorpusMilestones = map[string]string{
+	"resource-dashboard-summary":           "PR 2.4",
+	"resource-dashboard-summary-weekly":    "PR 2.4",
+	"resource-dashboard-summary-embargoed": "PR 2.4",
+	"resource-dashboard-top":               "PR 2.4",
+	"resource-projects-categories":         "PR 2.4",
+	"resource-projects-library":            "PR 2.8",
+	"resource-report-latest-zh":            "PR 2.4",
+	"resource-report-latest-en":            "PR 2.4",
+	"resource-report-not-found":            "PR 2.4",
+	"resource-report-oversized":            "PR 2.4",
+	"resource-paper-detail":                "PR 2.4",
+	"resource-unknown-uri":                 "PR 2.4",
+	"resource-bad-scheme":                  "PR 2.4",
+	"resource-missing-uri":                 "PR 2.4",
+}
+
+// resourcesCorpusCurrentMilestone 是资源语料当前解锁的里程碑（复用
+// toolsCorpusMilestoneOrder 的排序）。
+const resourcesCorpusCurrentMilestone = "PR 2.4"
+
+// TestResourcesCorpus 逐案回放 resources.jsonl 中截至当前里程碑的用例。
+func TestResourcesCorpus(t *testing.T) {
+	cases := loadCases(t, "resources.jsonl")
+	seen := map[string]bool{}
+	for _, c := range cases {
+		milestone, registered := resourcesCorpusMilestones[c.Name]
+		if !registered {
+			t.Fatalf("语料用例 %q 未在 resourcesCorpusMilestones 登记归属 PR", c.Name)
+		}
+		seen[c.Name] = true
+		c := c
+		t.Run(c.Name, func(t *testing.T) {
+			if !toolsCorpusMilestoneEnabledAt(resourcesCorpusCurrentMilestone, milestone) {
+				t.Skipf("归属 %s（当前 %s）", milestone, resourcesCorpusCurrentMilestone)
+			}
+			replayCase(t, c)
+		})
+	}
+	var stale []string
+	for name := range resourcesCorpusMilestones {
 		if !seen[name] {
 			stale = append(stale, name)
 		}

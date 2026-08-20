@@ -48,6 +48,7 @@ type App struct {
 	serverName    string
 	serverVersion string
 	tools         ToolRegistry
+	resources     *ResourceService
 	sessionID     func() string
 
 	// PanicOnMethods 是回放/测试专用注入缝（对应 recorder.py 的
@@ -65,6 +66,8 @@ func New(serverName, serverVersion string, tools ToolRegistry) *App {
 		sessionID:     newSessionID,
 	}
 }
+
+func (a *App) SetResources(resources *ResourceService) { a.resources = resources }
 
 // Dispatch 消费已校验请求并产出框架无关响应。
 func (a *App) Dispatch(req wire.ValidatedRequest) wire.Response {
@@ -96,6 +99,22 @@ func (a *App) dispatch(req wire.ValidatedRequest, identity authn.Identity, authe
 		return wire.Result(req.RequestID, ResourcesList())
 	case "resources/templates/list":
 		return wire.Result(req.RequestID, ResourceTemplatesList())
+	case "resources/read":
+		if a.resources == nil {
+			return wire.Error(req.RequestID, wire.InternalError, "Resource read failed")
+		}
+		uri, ok := req.Params["uri"].(string)
+		if !ok {
+			return wire.Error(req.RequestID, wire.InvalidParams, "resources/read params.uri is required.")
+		}
+		result, err := a.resources.ReadResource(uri)
+		if err != nil {
+			if inputErr, ok := err.(ResourceInputError); ok {
+				return wire.Error(req.RequestID, wire.InvalidParams, inputErr.Error())
+			}
+			return wire.Error(req.RequestID, wire.InternalError, "Resource read failed")
+		}
+		return wire.Result(req.RequestID, result)
 	case "prompts/list":
 		return wire.Result(req.RequestID, PromptsList())
 	case "tools/call":

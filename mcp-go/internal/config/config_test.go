@@ -154,3 +154,21 @@ func TestRedisEmptyPasswordEqualsUnset(t *testing.T) {
 		t.Errorf("空 REDIS_PASSWORD=%+v, 未设置=%+v, 二者应一致", withEmpty.Redis, unset.Redis)
 	}
 }
+
+// SchedulerTimezone 默认值与 config.py 344 行逐字一致，SCHEDULER_TIMEZONE 可覆盖。
+func TestSchedulerTimezone(t *testing.T) {
+	var def Config
+	if err := def.load(envMap(nil)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if def.SchedulerTimezone != "Asia/Shanghai" {
+		t.Errorf("SchedulerTimezone = %q, want %q", def.SchedulerTimezone, "Asia/Shanghai")
+	}
+	var overridden Config
+	if err := overridden.load(envMap(map[string]string{"SCHEDULER_TIMEZONE": "UTC"})); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if overridden.SchedulerTimezone != "UTC" {
+		t.Errorf("SchedulerTimezone = %q, want %q", overridden.SchedulerTimezone, "UTC")
+	}
+}
