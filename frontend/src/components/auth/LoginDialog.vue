@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 import LoginForm from '@/components/auth/LoginForm.vue'
 
 const props = defineProps<{ modelValue: boolean; redirect?: unknown }>()
 const emit = defineEmits<{ (event: 'update:modelValue', value: boolean): void; (event: 'success'): void }>()
-const { t } = useI18n()
 useDockSuppression(() => props.modelValue)
 const close = () => emit('update:modelValue', false)
 const success = () => { emit('success'); close() }
@@ -15,9 +13,9 @@ const success = () => { emit('success'); close() }
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="modelValue" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" @click.self="close">
-        <div class="relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto">
-          <button type="button" class="absolute right-3 top-3 z-10 text-lg leading-none opacity-70 hover:opacity-100" :aria-label="t('common.close')" @click="close">✕</button>
-          <LoginForm :redirect="redirect" dialog @success="success" />
+        <!-- 卡片本体由 LoginForm 的 dialog 模式渲染（含右上角 ✕ 与文A切换），这里只管遮罩与滚动容器 -->
+        <div class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto">
+          <LoginForm :redirect="redirect" dialog @success="success" @close="close" />
         </div>
       </div>
     </Transition>

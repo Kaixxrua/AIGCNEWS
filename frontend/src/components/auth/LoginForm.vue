@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { getErrorDetail, getSafeInternalRedirect, hasTrimmedValue } from '@/features/auth/authViewModel'
 
 const props = withDefaults(defineProps<{ redirect?: unknown; dialog?: boolean }>(), { dialog: false })
-const emit = defineEmits<{ (event: 'success'): void }>()
+const emit = defineEmits<{ (event: 'success'): void; (event: 'close'): void }>()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -40,13 +40,18 @@ const handleLogin = async () => {
 </script>
 
 <template>
-  <div class="w-full max-w-sm">
+  <!-- dialog 模式由外层 glass-card 兜住整个登录内容（遮罩半透明，透明背景看不清）；
+       standalone /login 保持「透明头部 + 独立表单卡」原样，两种形态共用同一份模板。 -->
+  <div class="w-full max-w-sm" :class="{ 'glass-card p-6': dialog }">
     <AuthPageHeader :title="t('auth.loginTitle')" :description="t('auth.loginDescription')">
       <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
         <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 2-2 3-2.5 4"/><circle cx="12" cy="17" r=".5" fill="currentColor"/>
       </svg>
+      <template v-if="dialog" #actions>
+        <button type="button" class="rounded p-1 text-lg leading-none text-stone-400 transition-colors hover:text-stone-800" :aria-label="t('common.close')" @click="emit('close')">✕</button>
+      </template>
     </AuthPageHeader>
-    <div class="glass-card mt-4 space-y-4 p-6 stagger-enter" style="animation-delay: 0.1s">
+    <div :class="dialog ? 'space-y-4' : 'glass-card mt-4 space-y-4 p-6 stagger-enter'" :style="dialog ? undefined : 'animation-delay: 0.1s'">
       <div class="space-y-1.5"><label class="text-xs font-medium text-stone-500">{{ t('auth.email') }}</label><input v-model="email" type="email" class="input" :placeholder="t('auth.emailPlaceholder')" autocomplete="email" :disabled="loading" @keydown.enter="handleLogin" /></div>
       <div class="space-y-1.5"><label class="text-xs font-medium text-stone-500">{{ t('auth.password') }}</label><input v-model="password" type="password" class="input" :placeholder="t('auth.passwordPlaceholder')" autocomplete="current-password" :disabled="loading" @keydown.enter="handleLogin" /></div>
       <AuthFeedback :message="errorMsg" type="error" />

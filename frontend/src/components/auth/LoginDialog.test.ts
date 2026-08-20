@@ -11,15 +11,23 @@ const mountDialog = () => mount(LoginDialog, {
   props: { modelValue: true, redirect: '/dsh' },
   global: {
     plugins: [i18n],
-    stubs: { LoginForm: { props: ['redirect', 'dialog'], emits: ['success'], template: '<button class="login-form" @click="$emit(\'success\')">登录</button>' } },
+    stubs: { LoginForm: { props: ['redirect', 'dialog'], emits: ['success', 'close'], template: '<button class="login-form" @click="$emit(\'success\')">登录</button>' } },
   },
 })
 
 describe('LoginDialog', () => {
-  it('renders as a modal and closes from its close button', async () => {
+  it('renders as a modal and closes when the form emits close', async () => {
     const wrapper = mountDialog()
     expect(document.body.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBe('true')
-    ;(document.body.querySelector('button[aria-label="关闭"]') as HTMLButtonElement).click()
+    wrapper.findComponent(LoginForm).vm.$emit('close')
+    await nextTick()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+    wrapper.unmount()
+  })
+
+  it('closes from a backdrop click outside the card', async () => {
+    const wrapper = mountDialog()
+    ;(document.body.querySelector('[role="dialog"]') as HTMLElement).click()
     await nextTick()
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
     wrapper.unmount()

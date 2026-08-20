@@ -10,7 +10,7 @@ vi.mock('@/stores/authStore', () => ({ useAuthStore: () => ({ login }) }))
 const messages = { auth: {
   loginTitle: '登录', loginDescription: '欢迎回来', email: '邮箱', emailPlaceholder: '邮箱地址', password: '密码', passwordPlaceholder: '密码',
   fillEmailPassword: '请填写邮箱和密码', forgotPassword: '忘记密码', loggingIn: '登录中', login: '登录', noAccount: '没有账号', registerNow: '立即注册', loginFailed: '登录失败',
-} }
+}, common: { close: '关闭' } }
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': messages } })
 const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/', component: { template: '<div />' } }, { path: '/dsh', component: { template: '<div />' } },
@@ -46,5 +46,30 @@ describe('LoginForm', () => {
     expect(router.currentRoute.value.fullPath).toBe('/')
     expect(wrapper.get('a[href="/register?redirect=/"]').exists()).toBe(true)
     expect(wrapper.get('a[href="/forgot-password?redirect=/"]').exists()).toBe(true)
+  })
+
+  it('wraps the whole login content in one opaque card in dialog mode', () => {
+    const wrapper = mountForm({ dialog: true })
+    const card = wrapper.get('.glass-card')
+    // 外层卡片兜住标题/表单/注册链接，内层表单不再重复成卡
+    expect(card.element.classList.contains('max-w-sm')).toBe(true)
+    expect(card.text()).toContain('欢迎回来')
+    expect(card.text()).toContain('没有账号')
+    expect(wrapper.findAll('.glass-card')).toHaveLength(1)
+  })
+
+  it('keeps the standalone layout: transparent header plus a separate form card', () => {
+    const wrapper = mountForm()
+    const cards = wrapper.findAll('.glass-card')
+    expect(cards).toHaveLength(1)
+    expect(cards[0].element.classList.contains('max-w-sm')).toBe(false)
+    expect(wrapper.find('button[aria-label="关闭"]').exists()).toBe(false)
+  })
+
+  it('renders a close button only in dialog mode and emits close from it', async () => {
+    const wrapper = mountForm({ dialog: true })
+    await wrapper.get('button[aria-label="关闭"]').trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(wrapper.emitted('success')).toBeUndefined()
   })
 })
