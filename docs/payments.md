@@ -19,7 +19,7 @@
 - 支付宝电脑网站支付
 - Stripe 国际卡
 
-provider 位于 `backend/app/services/payments/providers/`。Stripe Checkout 已接入真实下单与 `checkout.session.completed` webhook 验签；支付宝电脑网站支付、微信 Native 扫码仍按各自接入 PR 逐步启用。Stripe 使用 CNY 单一商品金额源，不引入官方 SDK。支付开关保持 `payments_enabled=False` 时，用户支付路由返回 404 `payments_disabled`；开关打开但渠道缺凭证时，创建订单返回 503 `payment_channel_not_configured`；渠道远端返回错误时返回 502 `payment_channel_upstream_error`。
+provider 位于 `backend/app/services/payments/providers/`。Stripe Checkout 与支付宝电脑网站支付已接入真实下单和回调验签；微信 Native 扫码仍按接入 PR 启用。三渠道共用 CNY 单一商品金额源，不引入官方 SDK。支付开关保持 `payments_enabled=False` 时，用户支付路由返回 404 `payments_disabled`；开关打开但渠道缺凭证时，创建订单返回 503 `payment_channel_not_configured`；渠道远端返回错误时返回 502 `payment_channel_upstream_error`。
 
 ## 订单与状态
 
@@ -67,6 +67,16 @@ https://<public-base-url>/api/payments/callback/stripe
 ```
 
 只订阅 `checkout.session.completed` 事件，并将 endpoint signing secret 填入 `stripe_webhook_secret`。success/cancel URL 会回到收银台并携带 `order_no`，前端可继续轮询订单状态；Stripe `query_order` 暂不启用，支付结果以验签 webhook 为准。
+
+### 支付宝电脑网站支付配置
+
+在 monitor 支付配置面板填写支付宝 AppID、应用私钥和支付宝公钥。`alipay.trade.page.pay` 会生成带 RSA2 签名的支付跳转 URL；在支付宝开放平台将异步通知地址设为：
+
+```text
+https://<public-base-url>/api/payments/callback/alipay_page
+```
+
+支付宝回调只接受 `TRADE_SUCCESS` 或 `TRADE_FINISHED`，并用支付宝公钥验证 `sign`；回调中的 `total_amount` 元串必须能严格表示为整数分。订单对账/人工补单查单使用 `alipay.trade.query`。
 
 provider ACK 形状见 [ADR 0002](adr/0002-payment-callback-verification.md)。
 
