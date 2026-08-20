@@ -18,6 +18,9 @@
 //     report 日期锚冻结（recorder._frozen_time 双 patch 点的 Go 镜像）；
 //     resources.jsonl harness 落地，13 例解除跳过（resource-projects-library
 //     依赖 search_github_ai_projects 富化，归 PR 2.8）。
+//   - PR 2.5：search_my_project_favorites 落地（身份感知注册缝 +
+//     fixtures.json favorites_rows 驱动的 _StubProjectCollections 镜像），
+//     favorites-* 6 例解除跳过。
 //
 // 语料新增用例会立即进入回放并以逐字节差异暴露，不允许静默漏测：
 // tools.jsonl 每个用例必须在 toolsCorpusMilestones 显式登记归属 PR。
@@ -199,6 +202,7 @@ type fixtureDocuments struct {
 	todayCount      int
 	briefings       map[string]mcpapp.BriefingRecord
 	projectSearches map[string]map[string]any
+	favoritesRows   []map[string]any
 	yesterdayHN     map[string]bool
 }
 
@@ -262,6 +266,21 @@ func (f fixtureDocuments) ProjectLibrary(arguments map[string]any) (any, error) 
 	return f.projectSearches["ai"], nil
 }
 
+// fixtureProjectCollections 复刻 recorder._StubProjectCollections：仅读
+// page（page<=1 → 前两行，否则第三行），其余过滤参数刻意忽略，total 恒 3。
+// 行原样透传 fixtures.json favorites_rows（UseNumber 解码保留 int/float
+// 区分），对齐 Python stub 的 dict 浅拷贝语义（投影链只读不改写）。
+type fixtureProjectCollections struct {
+	rows []map[string]any
+}
+
+func (f fixtureProjectCollections) ListUserProjectCollection(filters mcpapp.ProjectCollectionFilters) (mcpapp.ProjectCollectionPage, error) {
+	if filters.Page <= 1 {
+		return mcpapp.ProjectCollectionPage{Items: []map[string]any{f.rows[0], f.rows[1]}, Total: 3}, nil
+	}
+	return mcpapp.ProjectCollectionPage{Items: []map[string]any{f.rows[2]}, Total: 3}, nil
+}
+
 func derefFixtureString(value *string, fallback string) string {
 	if value == nil {
 		return fallback
@@ -285,6 +304,7 @@ func loadFixtureDocuments(t *testing.T) fixtureDocuments {
 		SourceCounts    map[string]int              `json:"source_counts"`
 		TodayCount      int                         `json:"today_document_count"`
 		ProjectSearches map[string]map[string]any   `json:"project_search_results"`
+		FavoritesRows   []map[string]any            `json:"favorites_rows"`
 		Briefings       map[string]struct {
 			ContentZH string `json:"content_zh"`
 			ContentEN string `json:"content_en"`
@@ -328,6 +348,7 @@ func loadFixtureDocuments(t *testing.T) fixtureDocuments {
 		todayCount:      fixtures.TodayCount,
 		briefings:       briefings,
 		projectSearches: fixtures.ProjectSearches,
+		favoritesRows:   fixtures.FavoritesRows,
 		yesterdayHN:     yesterdayHN,
 	}
 }
@@ -466,6 +487,10 @@ func newReplayHandler(t *testing.T, caseName string) http.Handler {
 	resources.SetToday(func() string { return "2026-08-10" })
 	app := mcpapp.New(version.ServerName, version.Fallback, registry)
 	app.SetResources(resources)
+	// PR 2.5：favorites 走身份感知注册缝；录制侧 PUBLIC_BASE_URL 未配置
+	// → 空串，detail_url/attribution 落品牌兜底 https://aigcnews.cn。
+	app.RegisterIdentityTool("search_my_project_favorites",
+		mcpapp.NewFavoritesService(fixtureProjectCollections{rows: documents.favoritesRows}, "").Get)
 	// 对齐 recorder profile 语义：
 	// tool_handler_crash → search_papers 处理器抛错；
 	// dispatch_crash → 分派阶段 panic（internal-error-500 用例）。
@@ -618,7 +643,7 @@ var toolsCorpusMilestones = map[string]string{
 
 // toolsCorpusCurrentMilestone 是本包当前解锁的里程碑。先前 PR 的工具必须继续
 // 回放，避免新工具接入使已解锁语料静默失去覆盖；其后用例带里程碑标注跳过。
-const toolsCorpusCurrentMilestone = "PR 2.4"
+const toolsCorpusCurrentMilestone = "PR 2.5"
 
 var toolsCorpusMilestoneOrder = []string{
 	"PR 2.2", "PR 2.3", "PR 2.4", "PR 2.5", "PR 2.6", "PR 2.7", "PR 2.8",

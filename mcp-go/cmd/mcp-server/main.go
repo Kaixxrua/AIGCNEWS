@@ -14,6 +14,8 @@
 // 六路由（dashboard/summary、dashboard/top、projects/categories、
 // report/latest、papers/{id}；projects/library 待 PR 2.8 语义检索落地后接线，
 // 当前按仓储未装配语义投射 -32603）。
+// PR 2.5 范围：search_my_project_favorites 工具（身份感知注册缝 +
+// Postgres 收藏检索）。
 package main
 
 import (
@@ -93,6 +95,14 @@ func run() int {
 	rankSnapshots := postgres.NewRankSnapshotRepository(pool)
 	registry["get_top_items"] = mcpapp.NewGetTopItemsService(rankSnapshots, publicBaseURL).Get
 	app := mcpapp.New(version.ServerName, serverVersion, registry)
+	// 身份感知工具（PR 2.5）：收藏检索需要 UserID + scope 判定，
+	// 认证/scope 文案在处理器内产生（对齐 Python dispatcher 短路 +
+	// handler 内分支的同文案双检查）。日期锚复用调度时区。
+	app.RegisterIdentityTool("search_my_project_favorites",
+		mcpapp.NewFavoritesService(
+			postgres.NewProjectCollectionsRepository(pool, cfg.SchedulerTimezone),
+			publicBaseURL,
+		).Get)
 	// resources/read 装配（PR 2.4）：榜单快照 + 看板统计 + 简报三个 Postgres
 	// 适配器，分类/论文详情复用上方同名服务。projects/library 的语义检索
 	// 仓储属 PR 2.8，届时经 SetProjectLibrary 补接。

@@ -30,6 +30,13 @@ import (
 // 双层编码；保序责任在处理器，dispatch 不做 map 重排。
 type ToolHandler func(arguments map[string]any) (any, error)
 
+// IdentityToolHandler 是需要用户身份的工具处理器（PR 2.5 起：
+// search_my_project_favorites 等 *my* 族）。匿名请求拿到零值
+// authn.Identity{}（UserID=0），对齐 Python user_id<=0 分支；
+// 认证/scope 判定文案由处理器内产生，dispatch 不特判工具名
+// （Python application.py 的 dispatcher 短路与处理器内分支同文案）。
+type IdentityToolHandler func(identity authn.Identity, arguments map[string]any) (any, error)
+
 // ToolRegistry 按名查找工具处理器。
 type ToolRegistry interface {
 	Lookup(name string) (ToolHandler, bool)
@@ -48,6 +55,7 @@ type App struct {
 	serverName    string
 	serverVersion string
 	tools         ToolRegistry
+	identityTools map[string]IdentityToolHandler
 	resources     *ResourceService
 	sessionID     func() string
 
@@ -68,6 +76,15 @@ func New(serverName, serverVersion string, tools ToolRegistry) *App {
 }
 
 func (a *App) SetResources(resources *ResourceService) { a.resources = resources }
+
+// RegisterIdentityTool 注册身份感知工具（与 tools 注册表并行，名冲突以
+// 身份表优先——现行目录无重名工具，双表仅为最小侵入演进）。
+func (a *App) RegisterIdentityTool(name string, handler IdentityToolHandler) {
+	if a.identityTools == nil {
+		a.identityTools = map[string]IdentityToolHandler{}
+	}
+	a.identityTools[name] = handler
+}
 
 // Dispatch 消费已校验请求并产出框架无关响应。
 func (a *App) Dispatch(req wire.ValidatedRequest) wire.Response {
@@ -118,7 +135,7 @@ func (a *App) dispatch(req wire.ValidatedRequest, identity authn.Identity, authe
 	case "prompts/list":
 		return wire.Result(req.RequestID, PromptsList())
 	case "tools/call":
-		return a.call(req)
+		return a.call(req, identity)
 	default:
 		return wire.Error(req.RequestID, wire.MethodNotFound, "Method not found")
 	}
@@ -145,12 +162,18 @@ func (a *App) initialize(req wire.ValidatedRequest) wire.Response {
 	return wire.WithSession(wire.Result(req.RequestID, result), a.sessionID())
 }
 
-func (a *App) call(req wire.ValidatedRequest) wire.Response {
+func (a *App) call(req wire.ValidatedRequest, identity authn.Identity) wire.Response {
 	name, ok := req.Params["name"].(string)
 	if !ok || name == "" {
 		return wire.Error(req.RequestID, wire.InvalidParams, "tools/call params.name is required")
 	}
 	args, _ := req.Params["arguments"].(map[string]any)
+	// 身份感知表优先；匿名请求 identity 为零值（UserID=0），
+	// 由处理器投射 "Authentication is required for this tool."。
+	if handler, found := a.identityTools[name]; found {
+		data, err := handler(identity, args)
+		return toolCallResult(req, data, err)
+	}
 	var handler ToolHandler
 	found := false
 	if a.tools != nil {
@@ -161,6 +184,12 @@ func (a *App) call(req wire.ValidatedRequest) wire.Response {
 			jsonx.Object{{Key: "error", Value: "Unknown tool: " + name}}, true))
 	}
 	data, err := handler(args)
+	return toolCallResult(req, data, err)
+}
+
+// toolCallResult 把处理器产出/错误折叠成统一包络：ToolInputError 文案直出，
+// 其余错误一律 "Tool execution failed."（isError 均无 structuredContent）。
+func toolCallResult(req wire.ValidatedRequest, data any, err error) wire.Response {
 	if err != nil {
 		message := "Tool execution failed."
 		if inputErr, ok := err.(ToolInputError); ok {
