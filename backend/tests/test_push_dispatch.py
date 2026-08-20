@@ -195,6 +195,46 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         # 两次发送 = 两次构建：实例不再永久缓存
         self.assertEqual(factory.call_count, 2)
 
+    def test_uninjected_email_service_receives_redis_client(self) -> None:
+        """构造注入的 redis_client 透传至 build_email_service，启用邮件池配额护栏。"""
+        sentinel = object()
+        service = SubscriptionDispatchService(
+            subscriptions=FakeSubscriptionRepository([_subscription(1)]),
+            deliveries=FakeDeliveryRepository(),
+            briefings=FakeBriefingRepository(
+                {"2026-08-05": {"content_zh": "今日 AI 要闻"}}
+            ),
+            redis_client=sentinel,
+        )
+
+        with patch(
+            "backend.app.services.email_service.build_email_service",
+            return_value=FakeEmailService(),
+        ) as factory:
+            summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["sent"], 1)
+        factory.assert_called_once_with(sentinel)
+
+    def test_uninjected_email_service_defaults_redis_none_fail_open(self) -> None:
+        """缺省 redis_client=None：配额护栏 fail-open，仅保留纯 failover。"""
+        service = SubscriptionDispatchService(
+            subscriptions=FakeSubscriptionRepository([_subscription(1)]),
+            deliveries=FakeDeliveryRepository(),
+            briefings=FakeBriefingRepository(
+                {"2026-08-05": {"content_zh": "今日 AI 要闻"}}
+            ),
+        )
+
+        with patch(
+            "backend.app.services.email_service.build_email_service",
+            return_value=FakeEmailService(),
+        ) as factory:
+            summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["sent"], 1)
+        factory.assert_called_once_with(None)
+
     def test_dispatch_all_defaults_to_cst_today(self) -> None:
         # 缺省日期必须与简报生成/缓存键同口径（CST），服务器本地时区不算数。
         service, _, briefing_repo, email = self._make_service(

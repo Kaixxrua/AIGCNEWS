@@ -44,6 +44,7 @@ async def send_briefing_to_subscribers(
     content: str,
     briefing_id: int,
     subscriptions: BriefingDispatchSubscriptionRepository,
+    redis_client: Any | None = None,
 ) -> int:
     subscribers = [
         subscriber
@@ -53,7 +54,9 @@ async def send_briefing_to_subscribers(
     if not subscribers:
         return 0
 
-    email_svc = email_service.build_email_service(None)
+    # redis_client 接入邮件池配额计数与熔断；None 时护栏 fail-open、
+    # 退化为纯 failover（EmailPoolQuotaStore 既有契约）。
+    email_svc = email_service.build_email_service(redis_client)
 
     sent = 0
     delivered_ids: list[int] = []
@@ -98,6 +101,8 @@ async def send_briefing_to_subscribers(
 
 async def run_daily_briefing_dispatch(
     repositories: ApplicationRepositories,
+    *,
+    redis_client: Any | None = None,
 ) -> None:
     logger.info(
         "[Briefing] 触发每日自动简报生成（%d 个维度）...", len(BRIEFING_SOURCES)
@@ -148,6 +153,7 @@ async def run_daily_briefing_dispatch(
                     content=content,
                     briefing_id=briefing_id,
                     subscriptions=repositories.briefing_subscriptions,
+                    redis_client=redis_client,
                 )
                 logger.info(
                     "[Briefing] 订阅简报发送完成: source=%s sent=%d",

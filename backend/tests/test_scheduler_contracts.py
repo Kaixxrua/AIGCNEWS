@@ -406,10 +406,71 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             repositories=repositories,
             x_lock=runtime._x_operation_lock,
         )
-        daily_briefing.assert_awaited_once_with(repositories)
-        subscription_dispatch.assert_awaited_once_with(repositories)
+        daily_briefing.assert_awaited_once_with(repositories, redis_client=None)
+        subscription_dispatch.assert_awaited_once_with(repositories, redis_client=None)
         conversation_cleanup.assert_awaited_once_with(repositories.conversations)
         semantic_warmup.assert_awaited_once_with(semantic_warmup_callback)
+
+    def test_runtime_forwards_redis_client_to_briefing_jobs(self) -> None:
+        """构造注入的 redis_client 透传至简报/订阅派发任务，启用邮件池配额护栏。"""
+        repositories = MagicMock()
+        sentinel = object()
+        runtime = scheduler.ApplicationSchedulerRuntime(
+            repositories,
+            redis_client=sentinel,
+        )
+        daily_briefing = AsyncMock()
+        subscription_dispatch = AsyncMock()
+
+        with (
+            patch.object(
+                scheduler,
+                "_run_daily_briefing_job",
+                new=daily_briefing,
+            ),
+            patch.object(
+                scheduler,
+                "_run_subscription_dispatch_job",
+                new=subscription_dispatch,
+            ),
+        ):
+            asyncio.run(runtime._run_daily_briefing_job())
+            asyncio.run(runtime._run_subscription_dispatch_job())
+
+        daily_briefing.assert_awaited_once_with(repositories, redis_client=sentinel)
+        subscription_dispatch.assert_awaited_once_with(
+            repositories, redis_client=sentinel
+        )
+
+    def test_module_jobs_forward_redis_client_to_dispatch_layer(self) -> None:
+        """模块级 job 函数把 redis_client 继续透传到 services 派发层。"""
+        repositories = MagicMock()
+        sentinel = object()
+
+        with patch.object(
+            scheduler, "run_daily_briefing_dispatch", new=AsyncMock()
+        ) as dispatch_mock:
+            asyncio.run(
+                scheduler._run_daily_briefing_job(
+                    repositories, redis_client=sentinel
+                )
+            )
+        dispatch_mock.assert_awaited_once_with(repositories, redis_client=sentinel)
+
+        with patch(
+            "backend.app.services.push.dispatch_service.SubscriptionDispatchService"
+        ) as service_cls:
+            service_cls.return_value.dispatch_all = AsyncMock(return_value={})
+            result = asyncio.run(
+                scheduler._run_subscription_dispatch_job(
+                    repositories, redis_client=sentinel
+                )
+            )
+        self.assertTrue(result)
+        self.assertEqual(
+            service_cls.call_args.kwargs.get("redis_client"),
+            sentinel,
+        )
 
     def test_optional_jobs_freeze_intervals_options_and_startup_order(self) -> None:
         fake_scheduler, events = self._start_scheduler(

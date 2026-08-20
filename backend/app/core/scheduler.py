@@ -785,13 +785,17 @@ async def _run_github_project_enrichment_job(repository: Any) -> None:
 
 async def _run_daily_briefing_job(
     repositories: ApplicationRepositories,
+    *,
+    redis_client: Any | None = None,
 ) -> None:
     """一行委托：每日简报生成与订阅派发编排归属于 services/briefing。"""
-    await run_daily_briefing_dispatch(repositories)
+    await run_daily_briefing_dispatch(repositories, redis_client=redis_client)
 
 
 async def _run_subscription_dispatch_job(
     repositories: ApplicationRepositories,
+    *,
+    redis_client: Any | None = None,
 ) -> bool:
     """订阅简报派发：枚举频率 × 来源读缓存，经 push_deliveries 幂等投递。"""
     logger.info("[Scheduler] 触发订阅简报派发（全频率幂等投递）...")
@@ -805,6 +809,7 @@ async def _run_subscription_dispatch_job(
         briefings=repositories.briefings,
         secret_box=build_push_channel_secret_box(),
         webhook_sender=WebhookSender(),
+        redis_client=redis_client,
     )
     try:
         summary = await service.dispatch_all()
@@ -1024,6 +1029,9 @@ class ApplicationSchedulerRuntime:
         zero_ingest_threshold: int = _DEFAULT_ZERO_INGEST_ALERT_THRESHOLD,
         zero_ingest_watch_sources: tuple[str, ...] = _DEFAULT_ZERO_INGEST_WATCH_SOURCES,
         zero_ingest_notifier: Callable[[str, int, str], None] | None = None,
+        # 邮件池配额计数/熔断依赖 Redis；None 时护栏 fail-open（仅纯 failover），
+        # 与 EmailPoolQuotaStore 契约一致。
+        redis_client: Any | None = None,
     ) -> None:
         self.repositories = repositories
         self.scheduler = scheduler or AsyncIOScheduler(timezone=timezone_name)
@@ -1047,6 +1055,7 @@ class ApplicationSchedulerRuntime:
             notifier=zero_ingest_notifier,
         )
         self._active_tasks: set[asyncio.Task[Any]] = set()
+        self._redis_client = redis_client
         self._stopping = False
         self._stop_lock = asyncio.Lock()
 
@@ -1217,7 +1226,9 @@ class ApplicationSchedulerRuntime:
         await self._run_tracked(
             lambda: self._guarded(
                 "daily_briefing",
-                lambda: _run_daily_briefing_job(self.repositories),
+                lambda: _run_daily_briefing_job(
+                    self.repositories, redis_client=self._redis_client
+                ),
             )
         )
 
@@ -1225,7 +1236,9 @@ class ApplicationSchedulerRuntime:
         await self._run_tracked(
             lambda: self._guarded(
                 "subscription_dispatch",
-                lambda: _run_subscription_dispatch_job(self.repositories),
+                lambda: _run_subscription_dispatch_job(
+                    self.repositories, redis_client=self._redis_client
+                ),
             )
         )
 
@@ -1583,6 +1596,7 @@ def create_scheduler_runtime(
     enabled: bool = True,
     semantic_search_warmup: Any | None = None,
     job_config_overrides: Mapping[str, Any] | None = None,
+    redis_client: Any | None = None,
 ) -> ApplicationSchedulerRuntime:
     from backend.app.core.config import settings
 
@@ -1611,4 +1625,5 @@ def create_scheduler_runtime(
         alert_failure_threshold=_alert_failure_threshold_from_env(),
         zero_ingest_threshold=_zero_ingest_threshold_from_env(),
         zero_ingest_watch_sources=_zero_ingest_watch_sources_from_env(),
+        redis_client=redis_client,
     )

@@ -57,6 +57,8 @@ class SubscriptionDispatchService:
         email_service: Any = _EMAIL_SERVICE_UNSET,
         secret_box: Any = _SECRET_BOX_UNSET,
         webhook_sender: Any | None = None,
+        # 邮件池配额计数/熔断依赖 Redis；None 时护栏 fail-open（仅纯 failover）。
+        redis_client: Any | None = None,
     ) -> None:
         self._subscriptions = subscriptions
         self._deliveries = deliveries
@@ -64,6 +66,7 @@ class SubscriptionDispatchService:
         self._email_service = email_service
         self._secret_box = secret_box
         self._webhook_sender = webhook_sender
+        self._redis_client = redis_client
 
     async def dispatch_all(self, *, today: date | None = None) -> dict[str, int]:
         """枚举全部频率与来源执行一轮派发，返回计数摘要。"""
@@ -252,7 +255,8 @@ class SubscriptionDispatchService:
             # 未注入时每次发送按当前生效配置即时构建：SMTP 配置入 DB 后
             # 免重启热生效（provider 60s TTL 限制 DB 读取频率），不再
             # 永久缓存实例。显式注入（测试 fake）仍优先。
+            # redis_client 供邮件池配额计数与熔断；None 时护栏 fail-open。
             from backend.app.services.email_service import build_email_service
 
-            return build_email_service(None)
+            return build_email_service(self._redis_client)
         return self._email_service

@@ -330,6 +330,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 project_search_runtime.warmup_semantic_search
             ),
             job_config_overrides=job_configs,
+            # 简报/订阅派发链路的邮件池配额护栏依赖 Redis（缺省 fail-open）
+            redis_client=getattr(app.state, "redis", None),
         )
         app.state.scheduler_runtime = scheduler_runtime
         app.state.x_operation_lock = scheduler_runtime.x_operation_lock

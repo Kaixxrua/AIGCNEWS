@@ -195,6 +195,32 @@ class SendBriefingToSubscribersTests(unittest.IsolatedAsyncioTestCase):
         factory.assert_not_called()
         repository.mark_briefing_delivered.assert_not_called()
 
+    async def test_send_briefing_threads_redis_client_to_factory(self) -> None:
+        """调度器注入的 redis 透传至工厂：启用邮件池配额计数与熔断护栏。"""
+        repository = MagicMock()
+        repository.get_active_subscribers.return_value = [
+            {"id": 11, "email": "subscriber@example.com"}
+        ]
+        email_service = MagicMock()
+        email_service.send_briefing = AsyncMock()
+        sentinel = object()
+
+        with patch(
+            "backend.app.services.email_service.build_email_service",
+            return_value=email_service,
+        ) as factory:
+            sent = await dispatch.send_briefing_to_subscribers(
+                source="github",
+                date_str="2026-08-20",
+                content="briefing content",
+                briefing_id=7,
+                subscriptions=repository,
+                redis_client=sentinel,
+            )
+
+        self.assertEqual(sent, 1)
+        factory.assert_called_once_with(sentinel)
+
 
 class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
     async def test_parses_stream_and_sends_joined_content(self) -> None:
@@ -392,6 +418,39 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
             period="daily",
             date_str="2026-08-08",
         )
+
+    async def test_threads_redis_client_into_email_factory(self) -> None:
+        """run 级入口把 redis_client 透传到每维度派发链路的邮件工厂。"""
+        streams = {
+            "github": [
+                {"type": "start", "data": {"date": "2026-08-20"}},
+                {"type": "content", "data": "正文"},
+                {"type": "done", "data": {"briefing_id": 42}},
+            ],
+        }
+        service = _FakeBriefingService(streams)
+        repositories = _repositories_with_subscribers(
+            [{"id": 5, "email": "subscriber@example.com"}]
+        )
+        email_service = MagicMock()
+        email_service.send_briefing = AsyncMock()
+        sentinel = object()
+
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", ["github"]),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=service
+            ),
+            patch(
+                "backend.app.services.email_service.build_email_service",
+                return_value=email_service,
+            ) as factory,
+        ):
+            await dispatch.run_daily_briefing_dispatch(
+                repositories, redis_client=sentinel
+            )
+
+        factory.assert_called_once_with(sentinel)
 
 
 if __name__ == "__main__":
