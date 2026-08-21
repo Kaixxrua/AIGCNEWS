@@ -429,7 +429,7 @@ register_exception_handlers(app)
 
 
 def _resolve_app_version() -> str:
-    """委托共享解析（core.app_version）：独立 MCP 进程（mcp_main.py）同源。"""
+    """委托共享解析（core.app_version）。"""
     return resolve_app_version()
 
 

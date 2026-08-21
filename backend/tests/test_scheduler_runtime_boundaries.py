@@ -39,15 +39,14 @@ class SchedulerRuntimeBoundaryTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        # 应用状态只允许由 lifespan 组合根赋值。组合根有两个：主进程 main.py
-        # 与独立 MCP 进程 mcp_main.py（同代码瘦入口，见 mcp_main.py 模块 docstring）。
-        # scheduler_runtime 仍钉死在 main.py——MCP 进程不得携带调度器。
+        # 应用状态只允许由 lifespan 组合根赋值。组合根只有主进程 main.py
+        # （独立 MCP 进程 mcp_main.py 已随 W6-U3 退役删除）。
+        # scheduler_runtime 仍钉死在 main.py。
         composition_roots = app_directory / "main.py"
-        mcp_root = app_directory / "mcp_main.py"
         allowed_assigners = {
             "scheduler_runtime": {composition_roots},
-            "project_search_runtime": {composition_roots, mcp_root},
-            "monitoring_runtime": {composition_roots, mcp_root},
+            "project_search_runtime": {composition_roots},
+            "monitoring_runtime": {composition_roots},
         }
 
         for attribute, allowed in allowed_assigners.items():

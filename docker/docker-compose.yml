@@ -94,74 +94,9 @@ services:
       retries: 18
       start_period: 30s
 
-  # 独立 MCP 进程（AIGC Radar MCP，backend.app.mcp_main:app）：与 backend-api
-  # 同镜像同代码、不同生命周期——主站迭代/重启不再中断 MCP 长连接会话。
-  # 挂载面收窄为仅 /api/mcp + 探活/版本（契约：tests/test_mcp_standalone_app.py）。
-  mcp-api:
-    build: ../backend
-    container_name: aigc-mcp
-    restart: always
-    logging: *default-logging
-    # 语义搜索 embedding 模型常驻（与主进程同一模型），按宿主余量调
-    mem_limit: 2g
-    ports:
-      # 仅绑定回环地址：公网访问必须经边缘（独立域名/独立 TLS 策略）回源
-      - "127.0.0.1:8001:8000"
-    depends_on:
-      redis:
-        condition: service_healthy
-      milvus:
-        condition: service_healthy
-      project-catalog-postgres:
-        condition: service_healthy
-    env_file:
-      - path: ../.env
-        required: false
-    environment:
-      # 与 backend-api 同一钉死口径，防 overlay 附加网络内的同名别名歧义
-      - REDIS_HOST=redis-aigc
-      - HF_ENDPOINT=https://hf-mirror.com
-      - HF_HUB_OFFLINE=0
-      - TRANSFORMERS_OFFLINE=0
-      - HF_HOME=/hf-cache
-      # MCP 工具调用计数是单写者 JSON 存贮：绝不能与主进程共享同一文件
-      # （原子替换不损坏但会互相覆盖计数），本进程独立目录
-      - MCP_TOOL_CALL_METRICS_PATH=storage/metrics_mcp/mcp_tool_calls.json
-      # 出站代理由部署方在 .env 的 OUTBOUND_PROXY 注入；GitHub API 兜底搜索需要
-      - OUTBOUND_PROXY=${OUTBOUND_PROXY:-}
-      - HTTP_PROXY=${OUTBOUND_PROXY:-}
-      - HTTPS_PROXY=${OUTBOUND_PROXY:-}
-      - ALL_PROXY=${OUTBOUND_PROXY:-}
-      - http_proxy=${OUTBOUND_PROXY:-}
-      - https_proxy=${OUTBOUND_PROXY:-}
-      - all_proxy=${OUTBOUND_PROXY:-}
-      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,mcp-api,aigc-mcp,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn
-      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,mcp-api,aigc-mcp,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ../backend:/src/backend
-      # MCP 工具调用计数持久化（本进程独占；uid 1000 写入；首次部署前宿主机预建并属主 1000）
-      - ../storage/metrics_mcp:/src/storage/metrics_mcp
-      # 语义搜索 embedding 模型缓存，与主进程共享宿主 HF 缓存目录（只读复用）
-      - ../storage/hf_cache/huggingface:/hf-cache
-    command: uvicorn backend.app.mcp_main:app --host 0.0.0.0 --port 8000
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - default
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5)"]
-      interval: 10s
-      timeout: 7s
-      retries: 18
-      start_period: 30s
-
-  # Go 版 AIGC Radar MCP（金丝雀）：与 mcp-api 并存，环境/安全口径逐项对齐，
-  # 无状态（计数聚合在 Redis，不写本地文件），切换由边缘层回源目标决定。
-  # 当前仅探活/版本端点可用；/api/mcp 协议面落地进度见 mcp-go/README.md。
+  # Go 版 AIGC Radar MCP：生产 /api/mcp 的唯一服务者（W5 起经 frontend
+  # 精确路由承载全部 MCP 流量，Python 侧 mcp-api 已随 W6-U3 移除）。
+  # 无状态（计数聚合在 Redis，不写本地文件），环境/安全口径与 backend-api 对齐。
   mcp-api-go:
     build:
       context: ..
