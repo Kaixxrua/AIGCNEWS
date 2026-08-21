@@ -30,6 +30,7 @@ from backend.app.monitoring.mcp_redis_metrics import (
 from backend.app.monitoring.mcp_tools import (
     DSH_PLUGIN_CLIENT,
     MAX_TOOL_NAME_LENGTH,
+    MCP_TOOL_NAMES,
     UNKNOWN_TOOL_NAME,
     JsonMcpToolCallStore,
     McpToolCallMetrics,
@@ -70,25 +71,28 @@ class BenchmarkUserAgentUnitTests(unittest.TestCase):
 class BucketToolNameUnitTests(unittest.TestCase):
     """工具名基数封顶：仅注册表已知名单独统计，其余归固定桶。"""
 
+    def test_frozen_names_match_live_registry(self) -> None:
+        # 过渡守护：Python 入站工具栈（W6-U4）删除前，冻结表必须与注册表
+        # 逐序一致；U4 删除 tools 模块时本用例一并移除。
+        self.assertEqual(list(MCP_TOOL_NAMES), list(tools.MCP_TOOL_REGISTRY))
+
     def test_known_names_pass_through(self) -> None:
-        for name in tools.MCP_TOOL_REGISTRY:
+        for name in MCP_TOOL_NAMES:
             with self.subTest(name=name):
-                self.assertEqual(
-                    bucket_tool_name(name, tools.MCP_TOOL_REGISTRY), name
-                )
+                self.assertEqual(bucket_tool_name(name, MCP_TOOL_NAMES), name)
 
     def test_unknown_names_land_in_fixed_bucket(self) -> None:
         self.assertEqual(
-            bucket_tool_name("definitely_unknown_tool", tools.MCP_TOOL_REGISTRY),
+            bucket_tool_name("definitely_unknown_tool", MCP_TOOL_NAMES),
             UNKNOWN_TOOL_NAME,
         )
 
     def test_blank_and_oversized_names_land_in_fixed_bucket(self) -> None:
-        self.assertEqual(bucket_tool_name("", tools.MCP_TOOL_REGISTRY), UNKNOWN_TOOL_NAME)
-        self.assertEqual(bucket_tool_name("   ", tools.MCP_TOOL_REGISTRY), UNKNOWN_TOOL_NAME)
+        self.assertEqual(bucket_tool_name("", MCP_TOOL_NAMES), UNKNOWN_TOOL_NAME)
+        self.assertEqual(bucket_tool_name("   ", MCP_TOOL_NAMES), UNKNOWN_TOOL_NAME)
         oversized = "x" * (MAX_TOOL_NAME_LENGTH + 100)
         self.assertEqual(
-            bucket_tool_name(oversized, tools.MCP_TOOL_REGISTRY),
+            bucket_tool_name(oversized, MCP_TOOL_NAMES),
             UNKNOWN_TOOL_NAME,
         )
 
@@ -96,12 +100,12 @@ class BucketToolNameUnitTests(unittest.TestCase):
         # 注册表判定在截断之后：拼接到超长再截断无法伪造出已知名
         padded = "search_papers" + " " * MAX_TOOL_NAME_LENGTH
         self.assertEqual(
-            bucket_tool_name(padded, tools.MCP_TOOL_REGISTRY),
+            bucket_tool_name(padded, MCP_TOOL_NAMES),
             "search_papers",
         )
         long_suffix = "search_papers" + "x" * MAX_TOOL_NAME_LENGTH
         self.assertEqual(
-            bucket_tool_name(long_suffix, tools.MCP_TOOL_REGISTRY),
+            bucket_tool_name(long_suffix, MCP_TOOL_NAMES),
             UNKNOWN_TOOL_NAME,
         )
 
@@ -979,7 +983,7 @@ class RedisMcpToolCallMetricsSeedTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        await self.metrics.seed_from_json(MCP_TOOL_NAMES)
         snapshot = await self.metrics.snapshot()
 
         self.assertEqual(snapshot["total_calls"], 5)
@@ -988,7 +992,7 @@ class RedisMcpToolCallMetricsSeedTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 4)
 
         # 幂等：marker 已认领，第二次种子不重复累加
-        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        await self.metrics.seed_from_json(MCP_TOOL_NAMES)
         self.assertEqual((await self.metrics.snapshot())["total_calls"], 5)
 
     async def test_seed_rebuckets_legacy_unknown_tool_names(self) -> None:
@@ -1010,7 +1014,7 @@ class RedisMcpToolCallMetricsSeedTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        await self.metrics.seed_from_json(MCP_TOOL_NAMES)
         snapshot = await self.metrics.snapshot()
 
         self.assertEqual(list(snapshot["tools"]), [UNKNOWN_TOOL_NAME])
@@ -1041,7 +1045,7 @@ class RedisMcpToolCallMetricsSeedTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        await self.metrics.seed_from_json(MCP_TOOL_NAMES)
         snapshot = await self.metrics.snapshot()
 
         self.assertEqual(snapshot["since"], "2026-07-01T00:00:00+00:00")
@@ -1077,13 +1081,13 @@ class RedisMcpToolCallMetricsSeedTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs(
             "backend.app.monitoring.mcp_redis_metrics", level="WARNING"
         ):
-            await service.seed_from_json(tools.MCP_TOOL_REGISTRY)
+            await service.seed_from_json(MCP_TOOL_NAMES)
         self.assertNotIn(b"mcpmetrics:seeded:test-src", flaky.strings)
 
         recovered = create_redis_mcp_tool_call_metrics(
             self.redis, self.store, "test-src", shadow=self.shadow
         )
-        await recovered.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        await recovered.seed_from_json(MCP_TOOL_NAMES)
         self.assertEqual((await recovered.snapshot())["total_calls"], 2)
 
     async def test_seed_marker_claim_failure_is_non_fatal(self) -> None:
@@ -1091,15 +1095,15 @@ class RedisMcpToolCallMetricsSeedTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs(
             "backend.app.monitoring.mcp_redis_metrics", level="WARNING"
         ):
-            await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+            await self.metrics.seed_from_json(MCP_TOOL_NAMES)
 
     async def test_seed_with_missing_json_claims_marker_without_writes(self) -> None:
-        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        await self.metrics.seed_from_json(MCP_TOOL_NAMES)
 
         self.assertIn(b"mcpmetrics:seeded:test-src", self.redis.strings)
         self.assertNotIn(b"mcpmetrics:total", self.redis.strings)
         # 幂等：再次调用提前返回
-        await self.metrics.seed_from_json(tools.MCP_TOOL_REGISTRY)
+        await self.metrics.seed_from_json(MCP_TOOL_NAMES)
 
 
 class McpToolCallRedisDispatchTests(unittest.IsolatedAsyncioTestCase):

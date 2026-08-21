@@ -54,7 +54,7 @@ from backend.app.core.scheduler import create_scheduler_runtime
 from backend.app.monitoring.error_event_capture import ErrorEventCapture
 from backend.app.monitoring.health import create_application_monitoring_runtime
 from backend.app.monitoring.mcp_redis_metrics import create_redis_mcp_tool_call_metrics
-from backend.app.monitoring.mcp_tools import JsonMcpToolCallStore
+from backend.app.monitoring.mcp_tools import MCP_TOOL_NAMES, JsonMcpToolCallStore
 from backend.app.repositories.application_repository_context import (
     configure_application_repositories,
 )
@@ -73,7 +73,6 @@ from backend.app.services.email.smtp_config_provider import (
     configure_smtp_settings_reader,
 )
 from backend.app.services.payments.runtime_config import configure_payment_settings_reader
-from backend.app.services.mcp.inbound.tools import MCP_TOOL_REGISTRY
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.rag.composition import RagChatServiceProvider
 from backend.app.services.runtime_provider.runtime import (
@@ -296,7 +295,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 "backend-api",
             )
             app.state.mcp_tool_call_metrics = mcp_tool_call_metrics
-            await mcp_tool_call_metrics.seed_from_json(MCP_TOOL_REGISTRY)
+            await mcp_tool_call_metrics.seed_from_json(MCP_TOOL_NAMES)
             logger.info("[Startup] Redis cache initialized.")
         except Exception as exc:
             app.state.redis = None

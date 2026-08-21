@@ -6,8 +6,8 @@ import json
 import unittest
 from pathlib import Path
 
+from backend.app.core.app_version import _FALLBACK_APP_VERSION
 from backend.app.main import _APP_VERSION, _resolve_app_version, app
-from backend.app.services.mcp.inbound.catalog import MCP_SERVER_VERSION
 
 SERVER_JSON = Path(__file__).resolve().parents[2] / "server.json"
 
@@ -17,8 +17,11 @@ class ApiVersionTests(unittest.TestCase):
         document = json.loads(SERVER_JSON.read_text(encoding="utf-8"))
         self.assertEqual(_resolve_app_version(), document["version"])
 
-    def test_version_matches_mcp_server_info(self) -> None:
-        self.assertEqual(_resolve_app_version(), MCP_SERVER_VERSION)
+    def test_fallback_matches_server_json(self) -> None:
+        # 容器内无 server.json 时回退常量必须与清单同值（入站 MCP 栈退役后
+        # 不再与 services.mcp 常量联动，本断言承接防漂移职责）。
+        document = json.loads(SERVER_JSON.read_text(encoding="utf-8"))
+        self.assertEqual(_FALLBACK_APP_VERSION, document["version"])
 
     def test_not_hardcoded_legacy_default(self) -> None:
         self.assertNotEqual(_APP_VERSION, "1.0.0")

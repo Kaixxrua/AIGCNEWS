@@ -18,11 +18,26 @@ logger = logging.getLogger(__name__)
 UNKNOWN_TOOL_NAME = "__unknown__"
 MAX_TOOL_NAME_LENGTH = 64
 
+# MCP 工具名冻结表：生产 /api/mcp 已由 Go 网关服务（mcp-go/），Python 入站
+# 工具栈退役（W6）后，本表是指标播种与分桶的唯一工具名来源。工具集变更 =
+# 先改 Go catalog，再逐序同步本表（顺序即 tools/list 契约顺序）。
+MCP_TOOL_NAMES: tuple[str, ...] = (
+    "search_papers",
+    "search_documents",
+    "get_paper_detail",
+    "get_top_items",
+    "search_github_projects",
+    "search_github_ai_projects",
+    "get_project_categories",
+    "submit_project_adoption",
+    "search_my_project_favorites",
+)
+
 
 def bucket_tool_name(tool_name: str, known_names: Container[str]) -> str:
     """把 tools/call 名归并到有限基数桶。
 
-    仅 ``known_names``（MCP_TOOL_REGISTRY）内的名字保留原名单独统计；
+    仅 ``known_names``（MCP_TOOL_NAMES）内的名字保留原名单独统计；
     其余（含超长、空串）截断判定后统一归入 ``__unknown__`` 桶。已知工具
     名本身远短于上限，截断只影响未知名的判定路径。
     """
