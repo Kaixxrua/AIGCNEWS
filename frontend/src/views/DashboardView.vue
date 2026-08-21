@@ -10,13 +10,11 @@ import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
-import { CalendarDays, ArrowRight, MailPlus, Plug, Terminal } from 'lucide-vue-next'
-import { useAuthStore } from '@/stores/authStore'
+import { CalendarDays, ArrowRight, MailPlus, Plug, Rss, Terminal } from 'lucide-vue-next'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 
 defineOptions({ name: 'DashboardView' })
 const { t } = useI18n()
-const authStore = useAuthStore()
 
 let currentStats: () => Stats = () => ({})
 const {
@@ -94,7 +92,7 @@ onBeforeUnmount(pauseLivePoll)
       @select-source="selectSourceTab"
     />
 
-    <!-- 主区域：榜单/空态占满剩余高度，日历与公众号入口收入右侧栏 -->
+    <!-- 主区域：榜单/空态占满剩余高度，日历与订阅入口收入右侧栏 -->
     <div class="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
       <!-- 加载中：仅转圈，数据就绪后内容卡片直接出现 -->
       <SpinnerLoader v-if="loading" class="order-2 min-h-[360px] min-w-0 flex-1 lg:order-1" />
@@ -122,33 +120,12 @@ onBeforeUnmount(pauseLivePoll)
         @select-source="selectSourceTab"
       />
 
-      <aside v-if="!loading" class="order-1 flex w-full max-w-[320px] shrink-0 flex-col gap-2 self-center lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch">
+      <aside v-if="!loading" class="order-1 flex min-h-0 w-full max-w-[320px] shrink-0 flex-col gap-2 self-center lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch lg:overflow-y-auto">
           <GlassCalendar
             :model-value="currentDate"
             :available-dates="availableDates"
             @update:model-value="onDateChange"
           />
-          <!-- 公众号快捷入口（仅管理员） -->
-          <RouterLink
-            v-if="authStore.isAdmin"
-            to="/wechat"
-            class="stagger-enter glass-card card-hover flex min-h-[44px] shrink-0 items-center justify-between gap-2 px-2.5 py-1.5 transition-colors"
-            style="animation-delay: 0.3s"
-          >
-            <span class="flex items-center gap-2">
-              <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M9.5 4C5.36 4 2 6.91 2 10.5c0 1.96 1.13 3.72 2.94 4.96L4 19l3.85-1.93c.67.18 1.38.28 2.12.28.23 0 .46-.01.68-.03"/>
-                  <path d="M14.5 9c3.87 0 7 2.69 7 6s-3.13 6-7 6c-.63 0-1.24-.06-1.83-.18L11 21.5l.5-2.5c-1.5-1.1-2.5-2.77-2.5-4.62 0-3.31 3.13-6 7-6z"/>
-                </svg>
-              </span>
-              <span class="text-xs font-medium text-stone-500">{{ t('wechat.panelTitle') }}</span>
-            </span>
-            <svg class="h-4 w-4 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </RouterLink>
-
           <!-- 每日简报订阅入口 -->
           <RouterLink
             to="/report"
@@ -167,6 +144,37 @@ onBeforeUnmount(pauseLivePoll)
               <ArrowRight class="h-3.5 w-3.5" />
             </span>
           </RouterLink>
+
+          <!-- RSS 订阅入口：公开摘要可直接订阅，会员全文只引导到权益页；不在 DOM 暴露 token -->
+          <div
+            class="stagger-enter glass-card flex flex-col gap-2 px-3 py-2.5"
+            style="animation-delay: 0.4s"
+          >
+            <span class="flex items-center gap-2">
+              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
+                <Rss class="h-4 w-4" />
+              </span>
+              <span class="text-sm font-bold text-stone-800">{{ t('dashboard.rss.title') }}</span>
+            </span>
+            <div class="mt-auto flex flex-col gap-1.5">
+              <a
+                href="/api/feed.xml"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="digest-cta inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink bg-ink px-2 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink"
+              >
+                {{ t('dashboard.rss.publicCta') }}
+                <ArrowRight class="h-3.5 w-3.5" />
+              </a>
+              <RouterLink
+                to="/membership"
+                class="inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink px-2 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-accent-soft"
+              >
+                {{ t('dashboard.rss.memberCta') }}
+                <ArrowRight class="h-3.5 w-3.5" />
+              </RouterLink>
+            </div>
+          </div>
 
           <!-- MCP 总调用次数（点击前往 MCP 接入页） -->
           <RouterLink
@@ -187,7 +195,7 @@ onBeforeUnmount(pauseLivePoll)
           <!-- dsh 插件调用次数（MCP 调用中的 dsh 客户端分桶，点击前往插件页） -->
           <RouterLink
             to="/dsh"
-            class="stagger-enter glass-card card-hover flex items-center gap-2.5 px-3 py-2.5 transition-colors"
+            class="stagger-enter glass-card card-hover mt-auto flex items-center gap-2.5 px-3 py-2.5 transition-colors"
             style="animation-delay: 0.45s"
             :aria-label="t('dashboard.dshCalls.title')"
           >
