@@ -157,6 +157,7 @@ from backend.app.repositories.task_repository import (
     LatestTaskReader,
     MonitorTaskRepository,
     RecentTaskReader,
+    TaskByIdReader,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.repositories.user_subscription_repository import (
@@ -178,6 +179,7 @@ class ApplicationIngestionTaskRepository(
     IngestionTaskWriter,
     LatestTaskReader,
     LatestTaskByNameReader,
+    TaskByIdReader,
     RecentTaskReader,
     MonitorTaskRepository,
     IngestionTaskAdminRepository,

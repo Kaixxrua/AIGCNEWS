@@ -30,6 +30,17 @@ class LatestTaskByNameReader(Protocol):
     def get_latest_task_by_name(self, task_name: str) -> dict[str, Any] | None: ...
 
 
+class TaskByIdReader(Protocol):
+    """Read boundary for a single ingestion task by primary key.
+
+    调度器据此在单源采集完成后回读任务终态：X rolling-window 完整性失败
+    会被 orchestrator 记为 failed，调度层据此返回失败进入连续失败告警，
+    不再仅凭 ingested_total>0 误判成功。
+    """
+
+    def get_task(self, task_id: int) -> dict[str, Any] | None: ...
+
+
 class RecentTaskReader(Protocol):
     """Read boundary for recent ingestion task metrics."""
 

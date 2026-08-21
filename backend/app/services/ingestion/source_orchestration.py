@@ -10,6 +10,19 @@ logger = logging.getLogger(__name__)
 
 _PERIODS = ("daily", "weekly", "monthly")
 
+# X rolling-window 完整性失败的稳定错误前缀：crawler fail-closed 产出。
+# 该故障必须穿透「其他源/其他周期成功」的掩盖——X 是新发布内容的
+# 关键入口，rolling 不完整意味着已发布推文可能漏采，绝不能让整轮
+# 任务以 success 收场。
+_X_WINDOW_INCOMPLETE_PREFIX = "x_window_incomplete"
+
+
+def _is_critical_x_failure(source_name: str, error: str | None) -> bool:
+    """是否为 X rolling-window 完整性失败（需穿透整轮成功掩盖）。"""
+    return source_name == "x" and bool(error) and str(error).startswith(
+        _X_WINDOW_INCOMPLETE_PREFIX
+    )
+
 
 class IngestionOrchestrationHost(Protocol):
     limit: int
@@ -139,6 +152,7 @@ class MultiSourceIngestionRuntime:
         task_id = self.host._create_task(task_name)
         total = 0
         failed_periods: list[tuple[str, str]] = []
+        critical_x_failures: list[str] = []
         arxiv_papers_for_pdf: list[dict] = []
 
         try:
@@ -164,6 +178,8 @@ class MultiSourceIngestionRuntime:
                         crawl_result.error,
                     )
                     failed_periods.append((period, crawl_result.error or "unknown"))
+                    if _is_critical_x_failure(source_name, crawl_result.error):
+                        critical_x_failures.append(crawl_result.error or "unknown")
                     continue
                 if not crawl_result.items:
                     logger.info(
@@ -197,6 +213,20 @@ class MultiSourceIngestionRuntime:
 
             if source_name == "arxiv":
                 self.host._start_arxiv_pdf_background(arxiv_papers_for_pdf)
+
+            if critical_x_failures:
+                # X rolling-window 不完整 = 已发布推文可能漏采。无论其他周期/
+                # 源是否入库，整轮必须记 failed 并保留稳定错误标记，不触发
+                # 成功专属的 cache clear/warmup。
+                error_msg = "; ".join(critical_x_failures)
+                self.host._finish_task(
+                    task_id, status="failed", error_msg=error_msg, item_count=total
+                )
+                logger.error(
+                    "[Orchestrator] X rolling-window 不完整，单源整轮失败: %s",
+                    error_msg,
+                )
+                return {source_name: total, "ingested_total": total}
 
             if total == 0 and failed_periods:
                 # 单源整轮零入库且存在采集错误：不能记 success，否则
@@ -240,6 +270,7 @@ class MultiSourceIngestionRuntime:
         stats["huggingface"] = 0
         total = 0
         crawl_errors: list[str] = []
+        critical_x_failures: list[str] = []
         arxiv_papers_for_pdf: list[dict] = []
 
         try:
@@ -291,6 +322,10 @@ class MultiSourceIngestionRuntime:
                         crawl_errors.append(
                             f"{source_key}/{period}: {crawl_result.error or 'unknown'}"
                         )
+                        if _is_critical_x_failure(source_key, crawl_result.error):
+                            critical_x_failures.append(
+                                f"{source_key}/{period}: {crawl_result.error}"
+                            )
                         continue
                     if not crawl_result.items:
                         logger.info(
@@ -332,6 +367,22 @@ class MultiSourceIngestionRuntime:
                 self.host._finish_task(task_id, status="failed", error_msg=error_msg)
                 logger.error("[Orchestrator] 全源采集零入库: %s", error_msg)
                 stats["ingested_total"] = 0
+                return stats
+
+            if critical_x_failures:
+                # GitHub/news 等其他源成功不能把 X rolling-window 不完整
+                # 伪装成整轮 success。整轮记 failed、保留已入库计数，并跳过
+                # 成功专属的 cache clear 与 PDF 后台启动（避免误触发）。
+                error_msg = "; ".join(critical_x_failures)
+                self.host._finish_task(
+                    task_id, status="failed", error_msg=error_msg, item_count=total
+                )
+                logger.error(
+                    "[Orchestrator] X rolling-window 不完整（其他源已入库 %d 条仍记失败）: %s",
+                    total,
+                    error_msg,
+                )
+                stats["ingested_total"] = total
                 return stats
 
             self.host._finish_task(task_id, status="success", item_count=total)

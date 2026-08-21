@@ -32,6 +32,8 @@ from backend.app.services.source_plugins.x_source import (
     XRateLimitAbort,
     XTransportProtocol,
     XTransportUnavailable,
+    XWindowFetchResult,
+    XWindowHandleResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,6 +136,7 @@ class XCrawler(BaseCrawler):
 
         try:
             if target_date:
+                # 关榜/回填路径：保留历史 count 接口 + CST 日历日过滤，不改语义。
                 tweets_by_handle = await self._transport.fetch_watchlist_tweets(
                     handles,
                     self._tweets_per_account,
@@ -141,29 +144,40 @@ class XCrawler(BaseCrawler):
                 tweets = [tweet for batch in tweets_by_handle.values() for tweet in batch]
                 tweets = x_policy.filter_tweets_to_snapshot_date(tweets, snapshot_date)
                 timeline = False
+                fetched_count = sum(len(batch) for batch in tweets_by_handle.values())
             else:
-                window_fetch = getattr(self._transport, "fetch_watchlist_tweets_window", None)
-                if callable(window_fetch):
-                    tweets_by_handle = await window_fetch(
-                        handles,
-                        window_start=window_start,
-                        window_end=window_end,
-                        count_per_user=self._tweets_per_account,
+                # rolling 路径 fail-closed：只接受 typed envelope 且每个 handle
+                # 都证明窗口覆盖完整；缺 API / plain dict / 结构非法 / 任一
+                # complete=False 一律整轮失败，绝不把 partial 送入下游。
+                incomplete_error = await self._fetch_complete_window(
+                    handles,
+                    window_start=window_start,
+                    window_end=window_end,
+                )
+                if isinstance(incomplete_error, str):
+                    return CrawlResult(
+                        source="x",
+                        source_channel=channel,
+                        snapshot_date=snapshot_date,
+                        period="daily",
+                        items=[],
+                        error=incomplete_error,
                     )
-                else:
-                    # 旧私有插件/测试替身兼容：旧接口结果仍经窗口过滤，
-                    # 但其固定 count 可能无法覆盖完整窗口，日志会明确标识。
-                    tweets_by_handle = await self._transport.fetch_watchlist_tweets(
-                        handles,
-                        self._tweets_per_account,
-                    )
-                tweets = [tweet for batch in tweets_by_handle.values() for tweet in batch]
+                window_result = incomplete_error
+                tweets = [
+                    tweet
+                    for handle in handles
+                    for tweet in window_result.by_handle[handle].tweets
+                ]
                 tweets = x_policy.filter_tweets_to_window(
                     tweets,
                     window_start=window_start,
                     window_end=window_end,
                 )
                 timeline = True
+                fetched_count = sum(
+                    result.fetched_count for result in window_result.by_handle.values()
+                )
         except (XAuthNotConfigured, XAuthAbort, XRateLimitAbort, XTransportUnavailable) as exc:
             # 中止级故障：整轮失败，走 ingestion_tasks 失败面（响亮、不连锤）
             return CrawlResult(
@@ -174,8 +188,6 @@ class XCrawler(BaseCrawler):
                 items=[],
                 error=str(exc),
             )
-
-        fetched_count = sum(len(batch) for batch in tweets_by_handle.values())
         items = x_policy.project_tweets(
             tweets,
             limit=None if timeline else limit,
@@ -188,9 +200,8 @@ class XCrawler(BaseCrawler):
             item.setdefault("channel", channel)
 
         logger.info(
-            "[X] 爬虫完成: %d/%d 账号抓取 %d 条，窗口/快照过滤后 %d 条入库候选，"
+            "[X] 爬虫完成: %d 账号抓取 %d 条，窗口/快照过滤后 %d 条入库候选，"
             "mode=%s window=%s..%s snapshot=%s",
-            len(tweets_by_handle),
             len(handles),
             fetched_count,
             len(items),
@@ -207,4 +218,71 @@ class XCrawler(BaseCrawler):
             period="daily",
             items=items,
         )
+
+    async def _fetch_complete_window(
+        self,
+        handles: list[str],
+        *,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> XWindowFetchResult | str:
+        """抓取并强校验 rolling-window 完整性；非法/不完整返回稳定错误串。
+
+        通过校验返回 ``XWindowFetchResult``；任一失败返回以
+        ``x_window_incomplete:`` 开头的错误标记（调用方据此整轮失败、
+        不 enrich/persist/翻译）。校验项：
+          - transport 必须暴露可调用的 ``fetch_watchlist_tweets_window``
+          - 返回值必须是 ``XWindowFetchResult``（拒绝 plain dict/旧插件）
+          - 窗口边界必须与本轮请求一致
+          - 结果必须覆盖且仅覆盖请求 handles（无缺失/多余）
+          - 每个 handle 结果必须是合法的 ``XWindowHandleResult``
+          - 整体 ``complete`` 必须为真
+        """
+        window_fetch = getattr(self._transport, "fetch_watchlist_tweets_window", None)
+        if not callable(window_fetch):
+            return "x_window_incomplete:missing_window_api"
+
+        result = await window_fetch(
+            handles,
+            window_start=window_start,
+            window_end=window_end,
+            count_per_user=self._tweets_per_account,
+        )
+
+        if not isinstance(result, XWindowFetchResult):
+            return "x_window_incomplete:unexpected_result_type"
+
+        if result.window_start is None or result.window_end is None:
+            return "x_window_incomplete:missing_window_bounds"
+        if (
+            result.window_start != window_start
+            or result.window_end != window_end
+        ):
+            return "x_window_incomplete:window_bounds_mismatch"
+
+        requested = list(handles)
+        if list(result.requested_handles) != requested:
+            return "x_window_incomplete:handles_mismatch"
+
+        by_handle = result.by_handle
+        if set(by_handle) != set(requested):
+            return "x_window_incomplete:handles_mismatch"
+        for handle, handle_result in by_handle.items():
+            if not isinstance(handle_result, XWindowHandleResult):
+                return f"x_window_incomplete:invalid_handle_result:{handle}"
+
+        if not result.complete:
+            incomplete = result.incomplete_handles()
+            reasons = ",".join(
+                f"{handle}={by_handle[handle].reason}"
+                for handle in incomplete
+                if handle in by_handle
+            )
+            return (
+                "x_window_incomplete:incomplete_handles:"
+                f"{','.join(incomplete)}"
+                + (f"({reasons})" if reasons else "")
+            )
+
+        return result
 

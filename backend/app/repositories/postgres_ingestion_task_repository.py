@@ -51,6 +51,16 @@ class PostgresIngestionTaskRepository:
                     (status, _utcnow(), error_msg, item_count, task_id),
                 )
 
+    def get_task(self, task_id: int) -> dict[str, Any] | None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT * FROM ingestion_tasks WHERE id = %s LIMIT 1",
+                    (task_id,),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+
     def get_latest_task(self) -> dict[str, Any] | None:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:

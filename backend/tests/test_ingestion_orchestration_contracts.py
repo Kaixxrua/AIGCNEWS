@@ -336,7 +336,10 @@ class EffectiveTopNContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(orchestrator._effective_top_n("x"), 7)
         self.assertEqual(orchestrator._effective_top_n("github"), 10)
 
-    async def test_enrich_and_ingest_passes_x_override_to_select_top(self) -> None:
+    async def test_enrich_and_ingest_bypasses_engagement_top_n_for_x(self) -> None:
+        """X rolling-window 完整性优先：crawler 已按窗口过滤/去重/排序，
+        pipeline 不再二次 engagement Top-N（013edeb 起），否则会重新
+        引入低互动推文漏采。"""
         orchestrator = self._bare_orchestrator()
         orchestrator.snapshot_date = "2026-08-06"
         orchestrator.documents = MagicMock()
@@ -364,7 +367,39 @@ class EffectiveTopNContractTests(unittest.IsolatedAsyncioTestCase):
             count = await orchestrator._enrich_and_ingest("x", [{"title": "tweet"}], 1)
 
         self.assertEqual(count, 1)
-        self.assertEqual(select_top.call_args.kwargs["top_n"], 25)
+        # X 不经过 engagement Top-N 截断
+        select_top.assert_not_called()
+
+    async def test_enrich_and_ingest_applies_top_n_for_non_x(self) -> None:
+        """非 X 源仍按 engagement Top-N 截断（top_n 取源 override 或默认）。"""
+        orchestrator = self._bare_orchestrator()
+        orchestrator.snapshot_date = "2026-08-06"
+        orchestrator.documents = MagicMock()
+        orchestrator.rank_snapshots = MagicMock()
+        orchestrator.dependencies = MagicMock()
+
+        with (
+            patch(
+                "backend.app.services.ingestion.pipeline._select_top",
+                return_value=[{"title": "paper"}],
+            ) as select_top,
+            patch(
+                "backend.app.services.ingestion.pipeline._apply_existing_summary_short_circuit",
+                side_effect=lambda papers, *_: papers,
+            ),
+            patch(
+                "backend.app.services.ingestion.pipeline.enrich_papers",
+                new=AsyncMock(side_effect=lambda papers, **_: papers),
+            ),
+            patch(
+                "backend.app.services.ingestion.pipeline.asyncio.to_thread",
+                new=AsyncMock(return_value=1),
+            ),
+        ):
+            count = await orchestrator._enrich_and_ingest("arxiv", [{"title": "paper"}], 1)
+
+        self.assertEqual(count, 1)
+        self.assertEqual(select_top.call_args.kwargs["top_n"], 10)
 
 
 class CrawlerConstructionIsolationContractTests(unittest.IsolatedAsyncioTestCase):

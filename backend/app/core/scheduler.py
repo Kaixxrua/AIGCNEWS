@@ -449,6 +449,25 @@ async def _run_single_source_job(
             finally:
                 lock.release()
         ingested = result.get("ingested_total", 0)
+        if source_name == "x":
+            # X rolling-window 完整性失败时，pipeline 返回 ingested_total 可能 >0
+            # （其他周期/历史数据），但任务已被 orchestrator 记为 failed。调度层
+            # 不能仅凭入库计数判定成功，必须回读刚结束任务的终态，让
+            # x_window_incomplete 进入连续失败告警与重试面。
+            task_name = (
+                f"single:x:{target_date}" if target_date else "single:x"
+            )
+            latest_task = await asyncio.to_thread(
+                active_repositories.ingestion_tasks.get_latest_task_by_name,
+                task_name,
+            )
+            if latest_task and latest_task.get("status") == "failed":
+                logger.error(
+                    "[Scheduler] x 采集任务被标记失败（task_id=%s）: %s",
+                    latest_task.get("id"),
+                    latest_task.get("error_msg"),
+                )
+                return False
         logger.info("[Scheduler] %s 采集完成，入库 %d 条。", source_name, ingested)
         if zero_ingest_reporter is not None:
             try:
