@@ -29,7 +29,11 @@ class XAuthAbort(Exception):
 
 
 class XRateLimitAbort(Exception):
-    """触发限流（twitter-cli 内部退避后仍 429），中止整轮采集。"""
+    """凭据池耗尽后触发限流；单 client 路径立即中止整轮采集。
+
+    provider 模式会在 429 后丢弃当前凭据的 partial 结果，并按配置顺序
+    用下一凭据从完整 watchlist 开始串行重试；所有可用凭据均限流后才上抛。
+    """
 
 
 class XTransportUnavailable(Exception):
@@ -50,7 +54,10 @@ class XTransportProtocol(Protocol):
         handles: Iterable[str],
         count_per_user: int = 20,
     ) -> dict[str, list[Any]]:
-        """按 watchlist 顺序抓取各账号近期推文，返回 {handle: [Tweet, ...]}。
+        """按 watchlist 顺序逐账号抓取近期推文，返回 {handle: [Tweet, ...]}。
+
+        provider 模式下，账号级 429 会放弃当前凭据的 partial 结果，
+        用下一凭据从完整 watchlist 串行重试；凭据池耗尽才抛出限流异常。
 
         Raises:
             XAuthNotConfigured: 凭据未配置。
@@ -67,6 +74,9 @@ class XTransportProtocol(Protocol):
         count_per_user: int = 20,
     ) -> dict[str, list[Any]]:
         """抓取固定 UTC 窗口内推文；实现可用游标分页覆盖整个窗口。
+
+        账号请求保持串行；provider 模式遇到 429 时切换凭据并从完整
+        watchlist 重试，失败凭据的 partial 结果不会返回。
 
         旧实现若不提供该方法，由 crawler 回退到 ``fetch_watchlist_tweets``，
         保持测试替身和旧私有插件兼容。
