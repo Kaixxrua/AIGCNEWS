@@ -20,6 +20,9 @@ COPY --from=build /out/mcp-server /usr/local/bin/mcp-server
 USER 1000
 EXPOSE 8000
 # 就绪探针与 Python mcp-api 同口径（/api/ready，未就绪 503）。
+# 容器注入了 socks5h 出站代理变量；busybox wget 不支持 socks5h 且不读
+# NO_PROXY，探针进程内清空代理变量防误判 unhealthy。
 HEALTHCHECK --interval=10s --timeout=7s --retries=18 --start-period=30s \
-  CMD wget -q -T 5 -O /dev/null http://127.0.0.1:8000/api/ready || exit 1
+  CMD http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= all_proxy= ALL_PROXY= \
+      wget -q -T 5 -O /dev/null http://127.0.0.1:8000/api/ready || exit 1
 ENTRYPOINT ["/usr/local/bin/mcp-server"]
