@@ -176,36 +176,36 @@ onBeforeUnmount(pauseLivePoll)
             </div>
           </div>
 
-          <!-- MCP 总调用次数（点击前往 MCP 接入页） -->
+          <!-- MCP 总调用次数（点击前往 MCP 接入页）：纵向布局与简报/RSS 卡同构，吃掉侧栏高度空隙 -->
           <RouterLink
             to="/mcp"
-            class="stagger-enter glass-card card-hover flex items-center gap-2.5 px-3 py-2.5 transition-colors"
+            class="stagger-enter glass-card card-hover flex flex-col gap-2 px-3 py-2.5 transition-colors"
             style="animation-delay: 0.4s"
             :aria-label="t('dashboard.mcpCalls.title')"
           >
-            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
-              <Plug class="h-4 w-4" />
-            </span>
-            <span class="flex min-w-0 flex-col">
+            <span class="flex items-center gap-2">
+              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
+                <Plug class="h-4 w-4" />
+              </span>
               <span class="text-2xs font-semibold text-stone-400">{{ t('dashboard.mcpCalls.title') }}</span>
-              <RollingNumber :value="mcpTotalCalls" grouping class="text-base font-extrabold tabular-nums" />
             </span>
+            <RollingNumber :value="mcpTotalCalls" grouping class="text-2xl font-extrabold tabular-nums" />
           </RouterLink>
 
           <!-- dsh 插件调用次数（MCP 调用中的 dsh 客户端分桶，点击前往插件页） -->
           <RouterLink
             to="/dsh"
-            class="stagger-enter glass-card card-hover mt-auto flex items-center gap-2.5 px-3 py-2.5 transition-colors"
+            class="stagger-enter glass-card card-hover mt-auto flex flex-col gap-2 px-3 py-2.5 transition-colors"
             style="animation-delay: 0.45s"
             :aria-label="t('dashboard.dshCalls.title')"
           >
-            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
-              <Terminal class="h-4 w-4" />
-            </span>
-            <span class="flex min-w-0 flex-col">
+            <span class="flex items-center gap-2">
+              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
+                <Terminal class="h-4 w-4" />
+              </span>
               <span class="text-2xs font-semibold text-stone-400">{{ t('dashboard.dshCalls.title') }}</span>
-              <RollingNumber :value="mcpDshCalls" grouping class="text-base font-extrabold tabular-nums" />
             </span>
+            <RollingNumber :value="mcpDshCalls" grouping class="text-2xl font-extrabold tabular-nums" />
           </RouterLink>
       </aside>
     </div>
