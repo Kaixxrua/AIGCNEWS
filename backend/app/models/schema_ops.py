@@ -480,3 +480,15 @@ class EmailPoolTestResponse(BaseModel):
     to_email: str = ""
     provider: Optional[str] = None
     latency_ms: Optional[int] = None
+
+
+class EmailDeliveryDayStat(BaseModel):
+    # date 为 Asia/Shanghai 自然日（YYYY-MM-DD）
+    date: str
+    sent: int
+    failed: int
+
+
+class EmailDeliveryStatsResponse(BaseModel):
+    # 按日期倒序，最多覆盖最近 7 天；无发送记录的日期不出现在列表中
+    days: list[EmailDeliveryDayStat]

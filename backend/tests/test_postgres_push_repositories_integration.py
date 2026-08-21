@@ -333,3 +333,98 @@ def test_push_delivery_requires_existing_subscription(database) -> None:
     repository = PostgresPushDeliveryRepository(database)
     with pytest.raises(psycopg.errors.ForeignKeyViolation):
         repository.create_delivery(subscription_id=999_999_999, item_key="orphan")
+
+
+def test_count_email_deliveries_by_day_scopes_channel_and_window(database) -> None:
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    repository = PostgresPushDeliveryRepository(database)
+    user_id = _create_user(database)
+    email_channel = _create_channel(database, user_id)
+    webhook_channel = _create_channel(
+        database,
+        user_id,
+        target=f"https://example.com/hook-{uuid.uuid4().hex}",
+        channel_type="webhook",
+    )
+    email_subscription_id = _create_subscription(
+        database, user_id=user_id, channel_id=int(email_channel["id"])
+    )
+    webhook_subscription_id = _create_subscription(
+        database, user_id=user_id, channel_id=int(webhook_channel["id"])
+    )
+
+    # 模块共享 schema：前面用例已留下 sent/failed 的 email 投递，
+    # 先取基线，后面按增量断言
+    baseline_14d = {
+        row["date"]: row for row in repository.count_email_deliveries_by_day(days=14)
+    }
+
+    # email 渠道：两条 sent + 一条 failed 终态，全部归今日（Asia/Shanghai）
+    for item_key in ("item-a", "item-b"):
+        delivery = repository.create_delivery(
+            subscription_id=email_subscription_id, item_key=item_key
+        )
+        assert delivery is not None
+        repository.mark_delivery_sent(delivery_id=int(delivery["id"]), attempts=1)
+    failed = repository.create_delivery(
+        subscription_id=email_subscription_id, item_key="item-c"
+    )
+    assert failed is not None
+    repository.record_attempt_failed(
+        delivery_id=int(failed["id"]),
+        attempts=3,
+        last_error="smtp rejected",
+        exhausted=True,
+    )
+    # pending 不计入统计
+    assert (
+        repository.create_delivery(
+            subscription_id=email_subscription_id, item_key="item-pending"
+        )
+        is not None
+    )
+
+    # webhook 渠道的 sent 不计入 email 统计
+    webhook_delivery = repository.create_delivery(
+        subscription_id=webhook_subscription_id, item_key="item-hook"
+    )
+    assert webhook_delivery is not None
+    repository.mark_delivery_sent(delivery_id=int(webhook_delivery["id"]), attempts=1)
+
+    # 10 天前的 sent：days=7 窗口外、days=14 窗口内
+    old = repository.create_delivery(
+        subscription_id=email_subscription_id, item_key="item-old"
+    )
+    assert old is not None
+    repository.mark_delivery_sent(delivery_id=int(old["id"]), attempts=1)
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE push_deliveries"
+            " SET sent_at = CURRENT_TIMESTAMP - INTERVAL '10 days'"
+            " WHERE id = %s",
+            (int(old["id"]),),
+        )
+
+    shanghai_today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    today = shanghai_today.isoformat()
+    old_day = (shanghai_today - timedelta(days=10)).isoformat()
+
+    stats_7d = repository.count_email_deliveries_by_day(days=7)
+    by_day_7d = {row["date"]: row for row in stats_7d}
+    base_today = baseline_14d.get(today, {"sent": 0, "failed": 0})
+    # 增量恰好 +2 sent / +1 failed：pending 与 webhook 行均未混入
+    assert by_day_7d[today]["sent"] == base_today["sent"] + 2
+    assert by_day_7d[today]["failed"] == base_today["failed"] + 1
+    # 7 天窗口剔除 10 天前的 sent
+    assert old_day not in by_day_7d
+
+    stats_14d = repository.count_email_deliveries_by_day(days=14)
+    by_day_14d = {row["date"]: row for row in stats_14d}
+    base_old = baseline_14d.get(old_day, {"sent": 0, "failed": 0})
+    assert by_day_14d[old_day]["sent"] == base_old["sent"] + 1
+    # 结果按日期倒序
+    assert [row["date"] for row in stats_14d] == sorted(
+        (row["date"] for row in stats_14d), reverse=True
+    )

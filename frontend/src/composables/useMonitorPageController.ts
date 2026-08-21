@@ -4,7 +4,7 @@ import { i18n } from '@/i18n'
 import {
   createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createPaymentConfigForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
-  type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey,
+  type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey, type EmailDeliveryDayStat,
 } from '@/features/monitor/monitorModel'
 import { useGithubCrawlPolling } from './useGithubCrawlPolling'
 import { ENRICHMENT_POLL_INTERVAL, useEnrichmentPolling } from './useEnrichmentPolling'
@@ -69,6 +69,8 @@ export const useMonitorPageController = ({
   const loadingEmailPoolConfig = ref(false)
   const savingEmailPoolConfig = ref(false)
   const testingEmailPool = ref(false)
+  const emailDeliveryStats = ref<EmailDeliveryDayStat[]>([])
+  const loadingEmailDeliveryStats = ref(false)
   const siteContactPageConfig = ref<Awaited<ReturnType<MonitorApi['fetchSiteContactPageConfig']>> | null>(null)
   const siteContactPageForm = ref(createSiteContactPageForm())
   const loadingSiteContactPage = ref(false)
@@ -304,6 +306,15 @@ export const useMonitorPageController = ({
     } catch (error) { console.error('Failed to fetch email pool config', error) }
     finally { loadingEmailPoolConfig.value = false }
   }
+  const fetchEmailDeliveryStats = async () => {
+    if (!isAdmin.value) return
+    loadingEmailDeliveryStats.value = true
+    try {
+      const result = await api.fetchEmailDeliveryStats()
+      emailDeliveryStats.value = Array.isArray(result?.days) ? result.days : []
+    } catch (error) { console.error('Failed to fetch email delivery stats', error) }
+    finally { loadingEmailDeliveryStats.value = false }
+  }
   const fetchSiteContactPageConfig = async () => {
     if (!isAdmin.value) return
     loadingSiteContactPage.value = true
@@ -384,7 +395,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -794,13 +805,13 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), resumeGithubCrawlPolling()])
   })
 
   return {
     tasks, total, page, pageSize, errorLogs, errorLogsTotal, errorLogsPage, errorLogsPageSize, errorLogsTotalPages, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
     loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp,
-    emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+    emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, emailDeliveryStats, loadingEmailDeliveryStats, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
     siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
     paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersPageSize, paymentOrdersFilter, loadingPaymentOrders, paymentOrdersTotalPages, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
     paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, fetchPaymentConfig, savePaymentConfig, resetPaymentConfig,
@@ -808,7 +819,7 @@ export const useMonitorPageController = ({
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
     fetchErrorLogs, goErrorLogsPage,
-    fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchSmtpConfig, fetchEmailPoolConfig, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig,
+    fetchSchedulerStatus, fetchSchedulerConfigs, fetchMcpToolCalls, fetchProviderConfig, fetchSmtpConfig, fetchEmailPoolConfig, fetchEmailDeliveryStats, fetchMcpServers, refreshData, goPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig,
     saveEmailPoolConfig, testEmailPoolConfig,
     fetchSiteContactPageConfig, saveSiteContactPageConfig,
     grantMembership,

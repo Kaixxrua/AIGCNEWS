@@ -1,7 +1,7 @@
 import { api } from '@/services/http/apiClient'
 import type {
   ErrorLogPage,
-  EmailPoolConfig, EmailPoolForm, EmailPoolTestResult,
+  EmailPoolConfig, EmailPoolForm, EmailPoolTestResult, EmailDeliveryDayStat,
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, PagedResult, PaymentConfig, PaymentConfigForm, ProviderConfig, ProviderForm, ProviderTestResult,
@@ -32,6 +32,7 @@ export interface MonitorApi {
   fetchEmailPoolConfig(): Promise<EmailPoolConfig>
   saveEmailPoolConfig(form: EmailPoolForm): Promise<EmailPoolConfig>
   testEmailPoolConfig(): Promise<EmailPoolTestResult>
+  fetchEmailDeliveryStats(): Promise<{ days: EmailDeliveryDayStat[] }>
   fetchSiteContactPageConfig(): Promise<SiteContactPageConfig>
   saveSiteContactPageConfig(form: SiteContactPageForm): Promise<SiteContactPageConfig>
   uploadSiteImage(file: File): Promise<SiteImageUploadResult>
@@ -119,6 +120,8 @@ export const monitorApi: MonitorApi = {
   // 池测试经真实 failover 链路投递：aiosmtplib 默认单步 60s 超时会按 entry 数
   // 累加（死 host 场景），故放宽到 120s；收件人缺省为当前管理员登录邮箱
   async testEmailPoolConfig() { return (await api.post('/ops/email-pool/test', {}, { timeout: 120_000 })).data },
+  // 按自然日（Asia/Shanghai）统计 email 渠道投递成功/失败数，后端固定最近 7 天
+  async fetchEmailDeliveryStats() { return (await api.get('/ops/email-pool/delivery-stats')).data },
   async fetchSiteContactPageConfig() { return (await api.get('/ops/site/contact-page')).data },
   async saveSiteContactPageConfig(form) { return (await api.put('/ops/site/contact-page', buildSiteContactPagePayload(form))).data },
   // 站点公开素材上传（二维码/正文插图）：multipart 直传，返回站内 /api/media/site/... URL

@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.app.api.dependencies import get_email_pool_config_admin_service
+from backend.app.api.dependencies import (
+    get_email_pool_config_admin_service,
+    get_push_delivery_repository,
+)
 from backend.app.core.auth import RequireAdmin
 from backend.app.models.schema_ops import (
+    EmailDeliveryStatsResponse,
     EmailPoolConfigRequest,
     EmailPoolConfigResponse,
     EmailPoolTestRequest,
     EmailPoolTestResponse,
 )
+from backend.app.repositories.push_delivery_repository import PushDeliveryRepository
 from backend.app.services.email_pool_config_admin import (
     EmailPoolConfigAdminService,
     EmailPoolNotConfiguredError,
@@ -74,3 +81,24 @@ async def test_email_pool_config(
     except EmailPoolTestDeliveryError as exc:
         raise HTTPException(status_code=502, detail=exc.detail) from exc
     return EmailPoolTestResponse(**result)
+
+
+# ── 邮件投递统计 ─────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/ops/email-pool/delivery-stats",
+    response_model=EmailDeliveryStatsResponse,
+    tags=["Ops"],
+)
+async def get_email_delivery_stats(
+    _: dict = Depends(RequireAdmin),
+    repository: PushDeliveryRepository = Depends(get_push_delivery_repository),
+) -> EmailDeliveryStatsResponse:
+    """按自然日（Asia/Shanghai）统计 email 渠道投递成功/失败数，最近 7 天。
+
+    数据来自 push_deliveries 台账：sent 以 sent_at 归日，failed 以进入
+    终态的 updated_at 归日；无记录的日期不出现在列表中。
+    """
+    days = await asyncio.to_thread(repository.count_email_deliveries_by_day, days=7)
+    return EmailDeliveryStatsResponse.model_validate({"days": days})

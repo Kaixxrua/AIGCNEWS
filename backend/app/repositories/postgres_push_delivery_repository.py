@@ -95,3 +95,39 @@ class PostgresPushDeliveryRepository(PushDeliveryRepository):
                     """,
                     (status, attempts, last_error[:2000], delivery_id),
                 )
+
+    def count_email_deliveries_by_day(self, *, days: int) -> list[dict[str, Any]]:
+        cutoff = max(1, days)
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                # 归日口径：sent 用 sent_at，failed 用进入终态的 updated_at；
+                # 自然日按 Asia/Shanghai 切分， cutoff 为上海当日零点前推 N-1 天。
+                cursor.execute(
+                    """
+                    SELECT
+                        (COALESCE(d.sent_at, d.updated_at)
+                            AT TIME ZONE 'Asia/Shanghai')::date AS day,
+                        COUNT(*) FILTER (WHERE d.status = 'sent') AS sent,
+                        COUNT(*) FILTER (WHERE d.status = 'failed') AS failed
+                    FROM push_deliveries d
+                    JOIN user_subscriptions s ON s.id = d.subscription_id
+                    JOIN push_channels c ON c.id = s.channel_id
+                    WHERE c.channel_type = 'email'
+                      AND d.status IN ('sent', 'failed')
+                      AND COALESCE(d.sent_at, d.updated_at) >= (
+                          ((now() AT TIME ZONE 'Asia/Shanghai')::date - (%s - 1))
+                          ::timestamp AT TIME ZONE 'Asia/Shanghai'
+                      )
+                    GROUP BY 1
+                    ORDER BY 1 DESC
+                    """,
+                    (cutoff,),
+                )
+                return [
+                    {
+                        "date": row["day"].isoformat(),
+                        "sent": int(row["sent"]),
+                        "failed": int(row["failed"]),
+                    }
+                    for row in cursor.fetchall()
+                ]

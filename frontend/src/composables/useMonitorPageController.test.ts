@@ -54,6 +54,7 @@ const createApi = (): MonitorApi => ({
   fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), testProviderConnection: vi.fn(async () => ({ status: 'success', message: '' })), fetchMcpServers: vi.fn(async () => []),
   fetchSmtpConfig: vi.fn(), saveSmtpConfig: vi.fn(), testSmtpConfig: vi.fn(async () => ({ status: 'success', message: '' })),
   fetchEmailPoolConfig: vi.fn(), saveEmailPoolConfig: vi.fn(), testEmailPoolConfig: vi.fn(async () => ({ status: 'success', message: '' })),
+  fetchEmailDeliveryStats: vi.fn(async () => ({ days: [] })),
   fetchSiteContactPageConfig: vi.fn(), saveSiteContactPageConfig: vi.fn(), uploadSiteImage: vi.fn(),
   grantMembership: vi.fn(async () => ({ user_id: 7, email: 'member@example.com', membership_tier: 'member', membership_expires_at: null, revoked: false })),
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
@@ -94,6 +95,7 @@ describe('Monitor page controller contract', () => {
     expect(api.fetchSiteContactPageConfig).not.toHaveBeenCalled()
     expect(api.fetchMcpServers).not.toHaveBeenCalled()
     expect(api.fetchGithubEnrichmentStatus).not.toHaveBeenCalled()
+    expect(api.fetchEmailDeliveryStats).not.toHaveBeenCalled()
     expect(api.fetchErrorLogs).not.toHaveBeenCalled()
     expect(controller.enrichmentStatus.value).toBeNull()
   })
@@ -130,6 +132,27 @@ describe('Monitor page controller contract', () => {
     await controller.refreshData()
     expect(controller.errorLogs.value).toEqual([])
     expect(controller.errorLogsTotal.value).toBe(0)
+  })
+
+  it('loads email delivery stats for admins on refresh', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchEmailDeliveryStats).mockResolvedValueOnce({
+      days: [{ date: '2026-08-21', sent: 12, failed: 1 }],
+    })
+    const { controller } = createController(api, true)
+    await controller.refreshData()
+    expect(api.fetchEmailDeliveryStats).toHaveBeenCalled()
+    expect(controller.emailDeliveryStats.value).toEqual([
+      { date: '2026-08-21', sent: 12, failed: 1 },
+    ])
+  })
+
+  it('keeps email delivery stats empty when the fetch fails', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchEmailDeliveryStats).mockRejectedValueOnce(new Error('boom'))
+    const { controller } = createController(api, true)
+    await controller.refreshData()
+    expect(controller.emailDeliveryStats.value).toEqual([])
   })
 
   it('pages error logs within bounds only', async () => {

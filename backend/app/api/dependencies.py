@@ -45,6 +45,7 @@ from backend.app.repositories.project_write_repository import (
     UserProjectCollectionRepository,
 )
 from backend.app.repositories.push_channel_repository import PushChannelRepository
+from backend.app.repositories.push_delivery_repository import PushDeliveryRepository
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.repositories.runtime_provider_repository import (
     RuntimeProviderSettingRepository,
@@ -430,6 +431,12 @@ def get_email_pool_config_admin_service(
     return EmailPoolConfigAdminService(
         repository, redis_client=getattr(request.app.state, "redis", None)
     )
+
+
+def get_push_delivery_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> PushDeliveryRepository:
+    return repositories.push_deliveries
 
 
 def get_site_contact_page_repository(

@@ -5,7 +5,10 @@ from unittest.mock import MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.api.dependencies import get_email_pool_config_admin_service
+from backend.app.api.dependencies import (
+    get_email_pool_config_admin_service,
+    get_push_delivery_repository,
+)
 from backend.app.api.routes_ops import router as ops_router
 from backend.app.core.auth import RequireAdmin
 from backend.app.services.email_pool_config_admin import (
@@ -242,10 +245,56 @@ def test_email_pool_routes_require_admin() -> None:
         json={"entries": [_entry_payload()]},
     )
     test_response = client.post("/api/ops/email-pool/test", json={})
+    stats_response = client.get("/api/ops/email-pool/delivery-stats")
 
     assert get_response.status_code in (401, 403)
     assert put_response.status_code in (401, 403)
     assert test_response.status_code in (401, 403)
+    assert stats_response.status_code in (401, 403)
     service.get_config.assert_not_called()
     service.update_config.assert_not_called()
     service.send_test_email.assert_not_called()
+
+
+# ── 邮件投递统计 ─────────────────────────────────────────────────────────────
+
+
+def _stats_client(repository: MagicMock) -> TestClient:
+    app = FastAPI()
+    app.include_router(ops_router, prefix="/api")
+    app.dependency_overrides[RequireAdmin] = lambda: {
+        "role": "admin",
+        "email": "admin@example.test",
+    }
+    app.dependency_overrides[get_push_delivery_repository] = lambda: repository
+    return TestClient(app)
+
+
+def test_get_email_delivery_stats_returns_day_buckets() -> None:
+    repository = MagicMock()
+    repository.count_email_deliveries_by_day.return_value = [
+        {"date": "2026-08-21", "sent": 12, "failed": 1},
+        {"date": "2026-08-20", "sent": 9, "failed": 0},
+    ]
+
+    response = _stats_client(repository).get("/api/ops/email-pool/delivery-stats")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "days": [
+            {"date": "2026-08-21", "sent": 12, "failed": 1},
+            {"date": "2026-08-20", "sent": 9, "failed": 0},
+        ]
+    }
+    # 端点固定查询最近 7 天窗口
+    repository.count_email_deliveries_by_day.assert_called_once_with(days=7)
+
+
+def test_get_email_delivery_stats_returns_empty_list_when_no_deliveries() -> None:
+    repository = MagicMock()
+    repository.count_email_deliveries_by_day.return_value = []
+
+    response = _stats_client(repository).get("/api/ops/email-pool/delivery-stats")
+
+    assert response.status_code == 200
+    assert response.json() == {"days": []}

@@ -607,7 +607,14 @@ const explicitBusinessTranslations: Record<string, string> = {
   'monitor.emailPoolConfig.duplicateName': '服务商名称重复：{name}',
   'monitor.emailPoolConfig.invalidPort': '{name}：端口必须是 1-65535 之间的整数。',
   'monitor.emailPoolConfig.invalidFromEmail': '{name}：发件邮箱格式不正确，或留空以继承。',
-  'monitor.emailPoolConfig.hint': '配置保存到数据库并优先于 EMAIL_POOL_JSON 环境变量；删除全部服务商后保存即恢复使用环境变量。池内按优先级数字从小到大依次尝试，上方单 SMTP 配置自动并入为最低优先级兜底。密码按服务商名称保留——改名会丢失已存密码。测试邮件走真实故障转移链路，会消耗服务商配额计数，可能触发当日熔断。'
+  'monitor.emailPoolConfig.hint': '配置保存到数据库并优先于 EMAIL_POOL_JSON 环境变量；删除全部服务商后保存即恢复使用环境变量。池内按优先级数字从小到大依次尝试，上方单 SMTP 配置自动并入为最低优先级兜底。密码按服务商名称保留——改名会丢失已存密码。测试邮件走真实故障转移链路，会消耗服务商配额计数，可能触发当日熔断。',
+  'monitor.emailPoolConfig.deliveryStats.title': '发送统计',
+  'monitor.emailPoolConfig.deliveryStats.todaySent': '今日已发 {count} 封',
+  'monitor.emailPoolConfig.deliveryStats.todayFailed': '失败 {count} 封',
+  'monitor.emailPoolConfig.deliveryStats.todayEmpty': '今日暂无发送记录',
+  'monitor.emailPoolConfig.deliveryStats.daySent': '成功 {count}',
+  'monitor.emailPoolConfig.deliveryStats.dayFailed': '失败 {count}',
+  'monitor.emailPoolConfig.deliveryStats.empty': '近 7 天（按北京时间自然日）暂无邮件投递记录。'
 }
 
 type MessageTree = Record<string, unknown>

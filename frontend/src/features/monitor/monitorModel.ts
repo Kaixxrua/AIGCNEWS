@@ -260,6 +260,13 @@ export interface EmailPoolTestResult {
   latency_ms?: number | null
 }
 
+// 按 Asia/Shanghai 自然日归日的 email 渠道投递统计；无记录的日期不下发
+export interface EmailDeliveryDayStat {
+  date: string
+  sent: number
+  failed: number
+}
+
 export interface McpToolSummary { name: string; description: string }
 
 export interface McpServerConfig {

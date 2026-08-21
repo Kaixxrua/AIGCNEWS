@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import {
@@ -6,6 +7,7 @@ import {
 } from '@/features/monitor/monitorViewModel'
 import {
   createEmailPoolEntryForm,
+  type EmailDeliveryDayStat,
   type EmailPoolConfig,
   type EmailPoolEntryForm,
   type EmailPoolForm,
@@ -17,6 +19,8 @@ const props = defineProps<{
   loading: boolean
   saving: boolean
   testing: boolean
+  stats: EmailDeliveryDayStat[]
+  statsLoading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -55,6 +59,18 @@ const passwordBadge = (entry: EmailPoolEntryForm) => {
   const saved = props.config?.entries?.find((item) => item.name === entry.name.trim())
   return saved?.password_configured && saved.password_masked ? saved.password_masked : ''
 }
+
+// 后端按 Asia/Shanghai 自然日归日；前端须用同一时区求"今天"，否则跨时区
+// 管理员在 UTC±边缘时段会找不到今日行
+const todayStat = computed(() => {
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+  return props.stats.find((day) => day.date === today) ?? null
+})
 </script>
 
 <template>
@@ -65,6 +81,23 @@ const passwordBadge = (entry: EmailPoolEntryForm) => {
       <span class="badge" :class="sourceBadge(config?.source).class">{{ sourceBadge(config?.source).label }}</span>
       <span v-if="config?.entries?.length" class="badge monitor-status-unknown">{{ t('monitor.emailPoolConfig.entryCount', { count: config.entries.length }) }}</span>
       <span v-if="config?.updated_at" class="ml-auto text-2xs monitor-caption">{{ t('monitor.updatedAt', { date: formatDate(config.updated_at) }) }}</span>
+    </div>
+
+    <div class="monitor-check-row mb-3 px-3 py-2 text-xs">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span class="monitor-caption">{{ t('monitor.emailPoolConfig.deliveryStats.title') }}</span>
+        <template v-if="todayStat">
+          <span class="badge monitor-status-success">{{ t('monitor.emailPoolConfig.deliveryStats.todaySent', { count: todayStat.sent }) }}</span>
+          <span v-if="todayStat.failed > 0" class="badge monitor-status-error">{{ t('monitor.emailPoolConfig.deliveryStats.todayFailed', { count: todayStat.failed }) }}</span>
+        </template>
+        <span v-else-if="!statsLoading" class="monitor-caption">{{ t('monitor.emailPoolConfig.deliveryStats.todayEmpty') }}</span>
+      </div>
+      <div v-if="stats.length" class="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 monitor-caption">
+        <span v-for="day in stats" :key="day.date" class="whitespace-nowrap">
+          {{ day.date.slice(5) }} · {{ t('monitor.emailPoolConfig.deliveryStats.daySent', { count: day.sent }) }}<template v-if="day.failed > 0"> · <span class="delivery-stats-failed">{{ t('monitor.emailPoolConfig.deliveryStats.dayFailed', { count: day.failed }) }}</span></template>
+        </span>
+      </div>
+      <div v-else-if="!statsLoading" class="mt-1.5 monitor-caption">{{ t('monitor.emailPoolConfig.deliveryStats.empty') }}</div>
     </div>
 
     <div v-if="!form.entries.length" class="monitor-check-row mb-3 px-3 py-2 text-xs monitor-caption">
@@ -153,3 +186,12 @@ const passwordBadge = (entry: EmailPoolEntryForm) => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 失败计数用主题错误色内联强调（先例：GithubEnrichmentPanel 的 --error-accent 用法） */
+.delivery-stats-failed {
+  color: var(--error-accent);
+  font-weight: 600;
+}
+</style>
+

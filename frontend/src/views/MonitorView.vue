@@ -40,7 +40,7 @@ const enrichmentAlert = useEnrichmentAlertStore()
 const {
   tasks, total, page, errorLogs, errorLogsTotal, errorLogsPage, errorLogsTotalPages, schedulerStatus, schedulerConfigs, schedulerConfigForm, loadingSchedulerConfigs, savingSchedulerConfig, editingSchedulerJobId, mcpToolCalls, loading, errorMsg, successMsg, providerConfig, providerForm,
   loadingProviderConfig, savingProviderConfig, testingProvider, smtpConfig, smtpForm, loadingSmtpConfig, savingSmtpConfig, testingSmtp,
-  emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
+  emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, emailDeliveryStats, loadingEmailDeliveryStats, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
   membershipForm, grantingMembership, membershipLastResult, grantMembership,
   paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersTotalPages, paymentOrdersFilter, loadingPaymentOrders, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
@@ -324,6 +324,8 @@ onUnmounted(dispose)
             :loading="loadingEmailPoolConfig"
             :saving="savingEmailPoolConfig"
             :testing="testingEmailPool"
+            :stats="emailDeliveryStats"
+            :stats-loading="loadingEmailDeliveryStats"
             @save="saveEmailPoolConfig"
             @test="testEmailPoolConfig"
           />
