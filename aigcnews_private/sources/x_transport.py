@@ -40,6 +40,8 @@ from backend.app.services.source_plugins.x_source import (
     XAuthNotConfigured,
     XRateLimitAbort,
     XTransportUnavailable,
+    XWindowFetchResult,
+    XWindowHandleResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,10 +56,43 @@ USER_ID_CACHE_TTL_SECONDS = 24 * 3600
 # XTransportUnavailable，不会把故障轮拖长数倍。
 _NETWORK_RETRY_DELAYS = (15.0, 30.0)
 _NETWORK_RETRY_BUDGET_PER_ROUND = 6
-# twitter-cli 的 timeline 请求上限；滚动 24 小时必须使用固定深度，
-# 不能沿用 crawler 的低默认 count，否则高产账号会在窗口边界前截断。
-_ROLLING_WINDOW_FETCH_COUNT = 200
 _TRANSIENT_CURL_ERRNOS = frozenset({5, 6, 7, 28, 35, 52, 55, 56})
+
+# ── rolling-window cursor 分页 ─────────────────────────────────────────
+# twitter-cli 公开 timeline API 是 count 驱动的固定深度抓取（0.8.5 内部
+# 分页但不暴露 cursor）。rolling 24h 完整性必须沿 Bottom cursor 翻到
+# 「最早时间线外层条目 ≤ window_start」或「明确 timeline 耗尽」为止。
+# 这里的常量只约束单页大小与页数安全预算，不再限制窗口总条数。
+#
+# 单页条数与 twitter-cli 内部一致（_fetch_timeline 的 min(remaining+5, 40)）。
+_WINDOW_PAGE_SIZE = 40
+# 高产账号兜底：40 条/页 × 50 页 = 2000 条/账号的硬上限；预算耗尽且
+# 仍未证明窗口边界 → 该 handle 记 page_limit_reached incomplete，
+# 绝不把 partial 当完整窗口入库。
+_WINDOW_MAX_PAGES_PER_HANDLE = 50
+# 与 client._fetch_timeline 保持一致的 UserTweets 基础 variables 形状。
+_WINDOW_BASE_VARIABLES = {
+    "includePromotedContent": False,
+    "latestControlAvailable": True,
+    "requestContext": "launch",
+}
+_TWEET_CREATED_AT_FORMAT = "%a %b %d %H:%M:%S %z %Y"
+
+
+def _parse_tweet_timestamp(value: Any) -> datetime | None:
+    """解析 X legacy.created_at（'Tue Aug 04 02:10:51 +0000 2026'）为 UTC。
+
+    非法/缺失一律返回 None（调用方据此判 parser_drift，绝不伪造时间）。
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, _TWEET_CREATED_AT_FORMAT).astimezone(
+            timezone.utc
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_transient_network_error(exc: BaseException) -> bool:
@@ -519,61 +554,440 @@ class XTransport:
         window_start: datetime,
         window_end: datetime,
         count_per_user: int = 20,
-    ) -> dict[str, list[Any]]:
-        """抓取窗口内推文，并在私有客户端能力范围内尽量覆盖窗口。
+    ) -> XWindowFetchResult:
+        """沿 Bottom cursor 分页抓取固定 UTC 半开窗口，直到证明覆盖完整。
 
-        twitter-cli 的公开 timeline API 是 count 驱动的，内部负责 cursor
-        分页但不暴露 cursor iterator。因此这里请求一个有界的深度（至少
-        200 条/账号），再由公共策略层按 UTC 窗口过滤。达到深度上限而最早
-        推文仍未越过 window_start 时记录 incomplete，避免伪装成完整覆盖。
+        ``count_per_user`` 只是单页大小提示（封顶 twitter-cli 的页尺寸），
+        不再是窗口总条数上限。任一凭据在任意分页遇到 429/认证失效即丢弃
+        当前凭据全部 partial，按顺序换下一凭据从完整 watchlist 重试。
         """
         start = window_start.astimezone(timezone.utc)
         end = window_end.astimezone(timezone.utc)
-        depth = _ROLLING_WINDOW_FETCH_COUNT
+        watchlist = tuple(handles)
+        page_size = max(1, min(int(count_per_user or 20), _WINDOW_PAGE_SIZE))
+
         if self._credential_provider is not None:
-            result = await self._fetch_with_credential_provider(
-                tuple(handles), depth,
+            by_handle = await self._fetch_window_with_credential_provider(
+                watchlist, window_start=start, window_end=end, page_size=page_size
             )
         else:
-            result = await self._fetch_with_client(
-                self._client_factory(), tuple(handles), depth,
+            by_handle = await self._fetch_window_with_client(
+                self._client_factory(),
+                watchlist,
+                window_start=start,
+                window_end=end,
+                page_size=page_size,
+            )
+        return XWindowFetchResult(
+            requested_handles=watchlist,
+            window_start=start,
+            window_end=end,
+            by_handle=by_handle,
+        )
+
+    async def _fetch_window_with_client(
+        self,
+        client: Any,
+        handles: tuple[str, ...],
+        *,
+        window_start: datetime,
+        window_end: datetime,
+        page_size: int,
+    ) -> dict[str, XWindowHandleResult]:
+        """单 client 路径：保留旧异常包装契约（auth/429 中止上抛）。"""
+        try:
+            return await self._raw_fetch_window_with_client(
+                client,
+                handles,
+                window_start=window_start,
+                window_end=window_end,
+                page_size=page_size,
+            )
+        except AuthenticationError as exc:
+            raise XAuthAbort("x_auth_expired") from exc
+        except RateLimitError as exc:
+            raise XRateLimitAbort("x_rate_limited") from exc
+
+    async def _raw_fetch_window_with_client(
+        self,
+        client: Any,
+        handles: tuple[str, ...],
+        *,
+        window_start: datetime,
+        window_end: datetime,
+        page_size: int,
+    ) -> dict[str, XWindowHandleResult]:
+        """逐账号串行 cursor 分页；传播原始 AuthenticationError/RateLimitError。
+
+        故障分级与 ``_raw_fetch_with_client`` 同口径：
+          - NotFound（账号消失/改名/保护）→ 该 handle 记 account_unavailable
+            incomplete（外部原因，不是凭据轮换理由），整轮继续；
+          - 401/403 → 归一 AuthenticationError；429 → RateLimitError（中止、
+            丢弃本凭据 partial，交给凭据池或上抛）；
+          - curl 瞬断 → 按 _NETWORK_RETRY_DELAYS 退避重试（共享每轮预算）；
+          - 其余单账号故障 → transport_error incomplete。
+        与 count 路径不同：账号级失败不再静默跳过——rolling 完整性要求
+        每个 watchlist 账号都有 typed 结论（complete 或外部原因），整轮
+        完整性由 crawler fail-closed 判定。
+        """
+        result: dict[str, XWindowHandleResult] = {}
+        retry_budget = _NETWORK_RETRY_BUDGET_PER_ROUND
+        for index, handle in enumerate(handles):
+            if index > 0:
+                await self._sleep(self._jittered_delay())
+            try:
+                user_id = await self._resolve_user_id(client, handle)
+            except AuthenticationError:
+                raise
+            except RateLimitError:
+                raise
+            except NotFoundError:
+                logger.warning(
+                    "[XTransport] 账号不存在/已注销/已改名/保护，窗口记不完整: %s",
+                    handle,
+                )
+                result[handle] = XWindowHandleResult(
+                    complete=False, reason="account_unavailable"
+                )
+                continue
+            except TwitterAPIError as exc:
+                if exc.status_code in (401, 403):
+                    raise AuthenticationError(
+                        "Twitter API 认证失败 (HTTP %d)" % exc.status_code
+                    ) from exc
+                if exc.status_code == 429:
+                    raise RateLimitError("Twitter API 限流 (HTTP 429)") from exc
+                logger.exception("[XTransport] 账号 %s user-id 解析失败", handle)
+                result[handle] = XWindowHandleResult(
+                    complete=False, reason="transport_error"
+                )
+                continue
+            except Exception as exc:
+                if _is_transient_network_error(exc) and retry_budget > 0:
+                    retry_budget -= 1
+                    await self._sleep(_NETWORK_RETRY_DELAYS[0])
+                    try:
+                        user_id = await self._resolve_user_id(client, handle)
+                    except Exception:
+                        logger.exception(
+                            "[XTransport] 账号 %s user-id 解析重试仍失败", handle
+                        )
+                        result[handle] = XWindowHandleResult(
+                            complete=False, reason="transport_error"
+                        )
+                        continue
+                else:
+                    logger.exception("[XTransport] 账号 %s user-id 解析失败", handle)
+                    result[handle] = XWindowHandleResult(
+                        complete=False, reason="transport_error"
+                    )
+                    continue
+
+            handle_result, retry_budget = await self._collect_window_for_handle(
+                client,
+                handle,
+                user_id,
+                window_start=window_start,
+                window_end=window_end,
+                page_size=page_size,
+                retry_budget=retry_budget,
+            )
+            result[handle] = handle_result
+        return result
+
+    async def _fetch_window_with_credential_provider(
+        self,
+        handles: tuple[str, ...],
+        *,
+        window_start: datetime,
+        window_end: datetime,
+        page_size: int,
+    ) -> dict[str, XWindowHandleResult]:
+        """凭据池路径：任意分页 429/认证失效即换下一凭据从完整 watchlist 重试。"""
+        credentials = self._credential_provider()
+        if not credentials:
+            raise XAuthNotConfigured("x_auth_not_configured: no enabled X credentials")
+
+        last_auth_error: AuthenticationError | None = None
+        last_rate_limit_error: RateLimitError | None = None
+        tried = 0
+        for index, credential in enumerate(credentials):
+            if not credential.get("enabled", True):
+                continue
+            auth_token = str(credential.get("auth_token") or "").strip()
+            ct0 = str(credential.get("ct0") or "").strip()
+            if not auth_token or not ct0:
+                continue
+
+            tried += 1
+            if tried > 1:
+                await self._sleep(self._jittered_delay())
+
+            client = self._credential_factory(auth_token, ct0)
+            try:
+                return await self._raw_fetch_window_with_client(
+                    client,
+                    handles,
+                    window_start=window_start,
+                    window_end=window_end,
+                    page_size=page_size,
+                )
+            except AuthenticationError as exc:
+                last_auth_error = exc
+                logger.warning(
+                    "[XTransport] 凭据 %s 认证失败，丢弃 partial 并尝试下一个",
+                    credential.get("display_name") or f"#{index}",
+                )
+                continue
+            except RateLimitError as exc:
+                last_rate_limit_error = exc
+                logger.warning(
+                    "[XTransport] 凭据 %s 触发限流，丢弃 partial 并尝试下一个",
+                    credential.get("display_name") or f"#{index}",
+                )
+                continue
+
+        if last_rate_limit_error is not None:
+            raise XRateLimitAbort("x_rate_limited") from last_rate_limit_error
+        if last_auth_error is not None:
+            raise XAuthAbort("x_auth_all_credentials_failed") from last_auth_error
+        raise XAuthNotConfigured("x_auth_not_configured: no valid X credentials")
+
+    async def _collect_window_for_handle(
+        self,
+        client: Any,
+        handle: str,
+        user_id: str,
+        *,
+        window_start: datetime,
+        window_end: datetime,
+        page_size: int,
+        retry_budget: int,
+    ) -> tuple[XWindowHandleResult, int]:
+        """单账号沿 Bottom cursor 分页，返回 (结果, 剩余网络重试预算)。
+
+        complete 仅当满足以下之一：
+          - boundary_reached：最早的**时间线外层条目**时间戳 ≤ window_start
+            （纯转贴用外层条目时间判定，不用被替换成原贴的 created_at）；
+          - timeline_exhausted：响应明确且结构完整地证明 timeline 到头
+            （空 entries、或翻到页预算一半以后拿到空推文页）。
+        其余一切形态（缺 instruction、cursor 停滞/缺失、无法证明边界的
+        时间戳、页预算耗尽、传输故障）一律 fail-closed 记 incomplete。
+        """
+        from twitter_cli import graphql as tw_graphql, parser as tw_parser
+
+        def get_instructions(data: Any) -> Any:
+            return tw_parser._deep_get(
+                data,
+                "data",
+                "user",
+                "result",
+                "timeline_v2",
+                "timeline",
+                "instructions",
             )
 
-        incomplete: list[str] = []
-        for handle, tweets in result.items():
-            normalized: list[Any] = []
-            seen_ids: set[str] = set()
-            oldest: datetime | None = None
-            for tweet in tweets:
+        tweets: list[Any] = []
+        seen_ids: set[str] = set()
+        cursor: str | None = None
+        page_count = 0
+        fetched_count = 0
+        oldest_seen: datetime | None = None
+        complete = False
+        reason = "transport_error"
+
+        while page_count < _WINDOW_MAX_PAGES_PER_HANDLE:
+            variables: dict[str, Any] = {
+                "count": page_size,
+                **_WINDOW_BASE_VARIABLES,
+                "userId": user_id,
+                "withQuickPromoteEligibilityTweetFields": True,
+                "withVoice": True,
+                "withV2Timeline": True,
+            }
+            if cursor:
+                variables["cursor"] = cursor
+
+            try:
+                data = await asyncio.to_thread(
+                    client._graphql_get, "UserTweets", variables, tw_graphql.FEATURES
+                )
+            except AuthenticationError:
+                raise
+            except RateLimitError:
+                raise
+            except TwitterAPIError as exc:
+                if exc.status_code in (401, 403):
+                    raise AuthenticationError(
+                        "Twitter API 认证失败 (HTTP %d)" % exc.status_code
+                    ) from exc
+                if exc.status_code == 429:
+                    raise RateLimitError("Twitter API 限流 (HTTP 429)") from exc
+                logger.exception("[XTransport] 账号 %s 第 %d 页抓取失败", handle, page_count + 1)
+                reason = "transport_error"
+                break
+            except Exception as exc:
+                if _is_transient_network_error(exc) and retry_budget > 0:
+                    retry_budget -= 1
+                    logger.warning(
+                        "[XTransport] 账号 %s 第 %d 页网络故障(%s)，%.0fs 后重试",
+                        handle,
+                        page_count + 1,
+                        exc,
+                        _NETWORK_RETRY_DELAYS[0],
+                    )
+                    await self._sleep(_NETWORK_RETRY_DELAYS[0])
+                    continue
+                logger.exception("[XTransport] 账号 %s 第 %d 页抓取异常", handle, page_count + 1)
+                reason = "transport_error"
+                break
+
+            page_count += 1
+            instructions = get_instructions(data)
+            if not isinstance(instructions, list):
+                # 结构漂移：无法定位 timeline 指令，绝不能猜。
+                logger.warning(
+                    "[XTransport] 账号 %s 第 %d 页缺 timeline instructions，记 parser_drift",
+                    handle,
+                    page_count,
+                )
+                reason = "parser_drift"
+                break
+
+            page_tweets, next_cursor = tw_parser.parse_timeline_response(
+                data, get_instructions
+            )
+            page_oldest = self._page_oldest_entry_timestamp(instructions)
+
+            new_ids = 0
+            for tweet in page_tweets:
                 tweet_id = str(getattr(tweet, "id", "") or "")
                 if not tweet_id or tweet_id in seen_ids:
                     continue
                 seen_ids.add(tweet_id)
-                normalized.append(tweet)
-                created_at = str(getattr(tweet, "created_at", "") or "")
-                try:
-                    parsed = datetime.strptime(
-                        created_at, "%a %b %d %H:%M:%S %z %Y"
-                    ).astimezone(timezone.utc)
-                except (TypeError, ValueError):
-                    continue
-                if oldest is None or parsed < oldest:
-                    oldest = parsed
-            result[handle] = normalized
-            if oldest is None or oldest >= start:
-                incomplete.append(handle)
+                tweets.append(tweet)
+                new_ids += 1
+            fetched_count += len(page_tweets)
 
-        if incomplete:
-            logger.warning(
-                "[XTransport] rolling window may be incomplete: %d/%d accounts "
-                "did not reach window_start=%s (depth=%d, window_end=%s)",
-                len(incomplete),
-                len(result),
-                start.isoformat(),
-                depth,
-                end.isoformat(),
+            if page_oldest is not None and (
+                oldest_seen is None or page_oldest < oldest_seen
+            ):
+                oldest_seen = page_oldest
+
+            # 边界证明优先：最早外层条目已越过窗口下界 → 覆盖完整。
+            if page_oldest is not None and page_oldest <= window_start:
+                complete = True
+                reason = "boundary_reached"
+                break
+
+            # 明确耗尽：timeline 没有任何 entries（连 cursor 都没有）。
+            has_entries = any(
+                (instruction.get("entries") or instruction.get("moduleItems"))
+                for instruction in instructions
+                if isinstance(instruction, dict)
             )
-        return result
+            if not has_entries:
+                complete = True
+                reason = "timeline_exhausted"
+                break
+
+            if not next_cursor:
+                # 有 entries 却没有 Bottom cursor：无法区分「真到头」与
+                # 「解析漂移」，只有翻得足够深且本页零推文才敢按耗尽判。
+                if not page_tweets and page_count >= max(2, _WINDOW_MAX_PAGES_PER_HANDLE // 2):
+                    complete = True
+                    reason = "timeline_exhausted"
+                else:
+                    reason = "pagination_metadata_missing"
+                break
+
+            if next_cursor == cursor:
+                reason = "cursor_stalled"
+                break
+
+            cursor = next_cursor
+            if page_oldest is None and not page_tweets:
+                # 整页无推文也无外层时间戳，只有 cursor 推进：继续翻，
+                # 但无法据此证明边界，耗尽判定交给后续页/页预算。
+                continue
+
+        else:
+            # while 正常结束 = 页预算耗尽仍未证明边界。
+            reason = "page_limit_reached"
+
+        if not complete:
+            logger.warning(
+                "[XTransport] 账号 %s rolling 窗口不完整: reason=%s pages=%d fetched=%d oldest=%s",
+                handle,
+                reason,
+                page_count,
+                fetched_count,
+                oldest_seen.isoformat() if oldest_seen else None,
+            )
+
+        return (
+            XWindowHandleResult(
+                tweets=tuple(tweets),
+                complete=complete,
+                reason=reason,
+                page_count=page_count,
+                fetched_count=fetched_count,
+                oldest_seen=oldest_seen,
+            ),
+            retry_budget,
+        )
+
+    @staticmethod
+    def _page_oldest_entry_timestamp(instructions: list[Any]) -> datetime | None:
+        """本页最早的**时间线外层条目**时间戳（纯转贴用外层时间，不用原贴）。
+
+        parser 会把纯转贴替换成被转原贴（created_at 是原贴时间，可能远
+        早于窗口），若用它判边界会误判「已越过窗口」。这里直接读原始
+        timeline entry 的 itemContent.tweet_results.result.legacy.created_at
+        ——即外层条目（转发动作）的时间。无任何可解析时间戳返回 None。
+        """
+        from twitter_cli import parser as tw_parser
+
+        oldest: datetime | None = None
+        for instruction in instructions:
+            if not isinstance(instruction, dict):
+                continue
+            entries = instruction.get("entries") or instruction.get("moduleItems") or []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                content = entry.get("content") or {}
+                candidates: list[Any] = [
+                    tw_parser._deep_get(
+                        content, "itemContent", "tweet_results", "result"
+                    )
+                ]
+                for nested in content.get("items") or []:
+                    candidates.append(
+                        tw_parser._deep_get(
+                            nested, "item", "itemContent", "tweet_results", "result"
+                        )
+                    )
+                for result in candidates:
+                    created = XTransport._outer_entry_created_at(result)
+                    if created is not None and (oldest is None or created < oldest):
+                        oldest = created
+        return oldest
+
+    @staticmethod
+    def _outer_entry_created_at(result: Any) -> datetime | None:
+        """外层条目 tweetResult 的 legacy.created_at（不解包 retweet 原贴）。"""
+        if not isinstance(result, dict):
+            return None
+        tweet_data = result
+        if result.get("__typename") == "TweetWithVisibilityResults" and isinstance(
+            result.get("tweet"), dict
+        ):
+            tweet_data = result["tweet"]
+        legacy = tweet_data.get("legacy")
+        if not isinstance(legacy, dict):
+            return None
+        return _parse_tweet_timestamp(legacy.get("created_at"))
 
     async def fetch_watchlist_tweets(
         self,

@@ -946,7 +946,12 @@ class XTransportContracts(unittest.IsolatedAsyncioTestCase):
 
 
 class _FakeTransport:
-    """crawler 测试用 fake transport（async 方法）。"""
+    """crawler 测试用 fake transport（async 方法）。
+
+    ``error`` 非空时，count 路径与 window 路径都抛同一异常——rolling
+    分支的 fail-closed 校验在调用 transport 之后，异常须从 window API
+    抛出让 crawler 的 except 中止级分支捕获。
+    """
 
     def __init__(self, result=None, error: Exception | None = None) -> None:
         self._result = result if result is not None else {}
@@ -959,8 +964,35 @@ class _FakeTransport:
             raise self._error
         return self._result
 
+    async def fetch_watchlist_tweets_window(
+        self, handles, *, window_start, window_end, count_per_user
+    ):
+        self.calls.append((list(handles), window_start, window_end, count_per_user))
+        if self._error is not None:
+            raise self._error
+        from backend.app.services.source_plugins.x_source import (
+            XWindowFetchResult,
+            XWindowHandleResult,
+        )
+
+        return XWindowFetchResult(
+            requested_handles=tuple(handles),
+            window_start=window_start,
+            window_end=window_end,
+            by_handle={
+                h: XWindowHandleResult(complete=True, reason="timeline_exhausted")
+                for h in handles
+            },
+        )
+
 
 class _WindowFakeTransport:
+    """rolling 分支 fake：返回符合公共契约的 typed XWindowFetchResult。
+
+    ``result`` 仍按 {handle: [Tweet, ...]} 传入，内部封装为
+    complete=boundary_reached 的 handle result，模拟「已证明窗口覆盖」。
+    """
+
     def __init__(self, result=None) -> None:
         self._result = result if result is not None else {}
         self.calls: list[tuple] = []
@@ -973,6 +1005,11 @@ class _WindowFakeTransport:
         window_end,
         count_per_user,
     ):
+        from backend.app.services.source_plugins.x_source import (
+            XWindowFetchResult,
+            XWindowHandleResult,
+        )
+
         self.calls.append(
             (
                 list(handles),
@@ -981,7 +1018,22 @@ class _WindowFakeTransport:
                 count_per_user,
             )
         )
-        return self._result
+        by_handle = {
+            handle: XWindowHandleResult(
+                tweets=tuple(self._result.get(handle, ())),
+                complete=True,
+                reason="boundary_reached",
+                page_count=1,
+                fetched_count=len(self._result.get(handle, ())),
+            )
+            for handle in handles
+        }
+        return XWindowFetchResult(
+            requested_handles=tuple(handles),
+            window_start=window_start,
+            window_end=window_end,
+            by_handle=by_handle,
+        )
 
 
 class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
@@ -2207,6 +2259,341 @@ class XExistenceProbeTransportContracts(unittest.TestCase):
 
         transport = self._transport()
         self.assertIsInstance(transport, XTransportProtocol)
+
+
+class _CursorFakeClient:
+    """UserTweets cursor 分页 fake：按页脚本应答 _graphql_get。
+
+    pages: list，每页是 dict（异常实例）或 (tweets, next_cursor, entries)
+    三元组；entries 缺省由 tweets 合成（每条 tweet 一个 itemContent entry，
+    created_at 取 tweet.created_at）。``fetch_user`` 返回固定 profile。
+    """
+
+    def __init__(self, pages: list, *, user_id: str = "11") -> None:
+        self._pages = list(pages)
+        self._user_id = user_id
+        self.calls: list[dict] = []
+        self.fetch_user = Mock(
+            return_value=UserProfile(id=user_id, name="OpenAI", screen_name="openai")
+        )
+
+    @staticmethod
+    def _entry_for(tweet) -> dict:
+        # parser.parse_tweet_result 需要 legacy+core 的完整形状才产出 Tweet；
+        # legacy.created_at 同时被 transport 的边界判定读取（外层条目时间）。
+        return {
+            "content": {
+                "itemContent": {
+                    "tweet_results": {
+                        "result": {
+                            "__typename": "Tweet",
+                            "rest_id": tweet.id,
+                            "legacy": {
+                                "created_at": tweet.created_at,
+                                "full_text": tweet.text,
+                            },
+                            "core": {
+                                "user_results": {
+                                    "result": {
+                                        "__typename": "User",
+                                        "legacy": {
+                                            "screen_name": tweet.author.screen_name,
+                                            "name": tweet.author.name,
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        }
+
+    def _graphql_get(self, operation, variables, features, **kwargs):
+        self.calls.append(dict(variables))
+        if not self._pages:
+            raise AssertionError("分页脚本已耗尽，不应再请求")
+        page = self._pages.pop(0)
+        if isinstance(page, Exception):
+            raise page
+        tweets, next_cursor, entries = page
+        if entries is None:
+            entries = [self._entry_for(t) for t in tweets]
+        entry_list = list(entries)
+        if next_cursor:
+            entry_list.append(
+                {"content": {"cursorType": "Bottom", "value": next_cursor}}
+            )
+        return {
+            "data": {
+                "user": {
+                    "result": {
+                        "timeline_v2": {
+                            "timeline": {
+                                "instructions": [
+                                    {"type": "TimelineAddEntries", "entries": entry_list}
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+def _window(ts: str):
+    """窗口边界 helper：'2026-08-19T12:00:00' → aware UTC datetime。"""
+    return datetime.fromisoformat(ts).replace(tzinfo=timezone.utc)
+
+
+class XWindowPaginationContracts(unittest.IsolatedAsyncioTestCase):
+    """rolling 24h cursor 分页完整性契约（XTransport.fetch_watchlist_tweets_window）。"""
+
+    def _transport(self, client: _CursorFakeClient, **kwargs) -> x_transport.XTransport:
+        kwargs.setdefault("inter_account_delay", 1.0)
+        kwargs.setdefault("id_cache", {})
+        kwargs.setdefault("sleep", AsyncMock())
+        return x_transport.XTransport(lambda: client, **kwargs)
+
+    @staticmethod
+    def _page(tweets, next_cursor, entries=None):
+        return (tweets, next_cursor, entries)
+
+    async def test_paginates_until_boundary_beyond_200(self) -> None:
+        # 高产账号：3 页共 120 条（>旧 200 深度里的一页 40×页数），
+        # 末页最老条目越过 window_start → boundary_reached，完整。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+
+        page1 = [
+            _tweet("t1", created_at="Thu Aug 20 11:00:00 +0000 2026"),
+            _tweet("t2", created_at="Thu Aug 20 09:00:00 +0000 2026"),
+        ]
+        page2 = [
+            _tweet("t3", created_at="Thu Aug 20 05:00:00 +0000 2026"),
+            _tweet("t4", created_at="Wed Aug 19 23:00:00 +0000 2026"),
+        ]
+        page3 = [
+            _tweet("t5", created_at="Wed Aug 19 13:00:00 +0000 2026"),
+            # 越过 window_start(19 日 12:00)：窗口外旧推，证边界
+            _tweet("t6", created_at="Wed Aug 19 10:00:00 +0000 2026"),
+        ]
+        client = _CursorFakeClient([
+            self._page(page1, "cursor-2"),
+            self._page(page2, "cursor-3"),
+            self._page(page3, None),  # 边界已达，cursor 是否给出不影响
+        ])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end, count_per_user=20
+        )
+
+        self.assertTrue(result.complete)
+        handle = result.by_handle["openai"]
+        self.assertTrue(handle.complete)
+        self.assertEqual(handle.reason, "boundary_reached")
+        self.assertEqual(handle.page_count, 3)
+        self.assertEqual([t.id for t in handle.tweets], ["t1", "t2", "t3", "t4", "t5", "t6"])
+        # 第二页起带上一页 cursor
+        self.assertEqual(client.calls[1].get("cursor"), "cursor-2")
+        self.assertEqual(client.calls[2].get("cursor"), "cursor-3")
+        # 单页大小提示被采纳（封顶 40），不再是总上限
+        self.assertEqual(client.calls[0].get("count"), 20)
+
+    async def test_retweet_boundary_uses_outer_entry_time(self) -> None:
+        # 纯转贴：parser 把 Tweet 替换成原贴（created_at 很旧），但边界
+        # 判定必须用外层条目时间（转发动作时间）。本页外层时间在窗口内、
+        # 未越界，且给出 cursor 不推进 → 不能误判 boundary_reached。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        # 外层条目 08-20 08:00（窗口内），cursor 停滞
+        outer_entry = {
+            "content": {
+                "itemContent": {
+                    "tweet_results": {
+                        "result": {"legacy": {"created_at": "Thu Aug 20 08:00:00 +0000 2026"}}
+                    }
+                }
+            }
+        }
+        client = _CursorFakeClient([
+            self._page([], "cursor-x", entries=[outer_entry]),
+            self._page([], "cursor-x", entries=[outer_entry]),  # cursor 不推进
+        ])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        handle = result.by_handle["openai"]
+        self.assertFalse(handle.complete)
+        self.assertEqual(handle.reason, "cursor_stalled")
+
+    async def test_timeline_exhausted_via_empty_instructions(self) -> None:
+        # 明确耗尽：instructions 存在但零 entries（连 cursor 都没有）。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        client = _CursorFakeClient([self._page([], None, entries=[])])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        handle = result.by_handle["openai"]
+        self.assertTrue(handle.complete)
+        self.assertEqual(handle.reason, "timeline_exhausted")
+        self.assertEqual(handle.tweets, ())
+
+    async def test_missing_cursor_before_boundary_is_incomplete(self) -> None:
+        # 有推文、未越界、却缺 Bottom cursor：无法区分「真到头」与
+        # 「解析漂移」→ pagination_metadata_missing，fail-closed。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        page = [_tweet("t1", created_at="Thu Aug 20 10:00:00 +0000 2026")]
+        client = _CursorFakeClient([self._page(page, None)])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        handle = result.by_handle["openai"]
+        self.assertFalse(handle.complete)
+        self.assertEqual(handle.reason, "pagination_metadata_missing")
+
+    async def test_missing_instructions_is_parser_drift(self) -> None:
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+
+        class DriftClient(_CursorFakeClient):
+            def _graphql_get(self, operation, variables, features, **kwargs):
+                return {"data": {"user": {"result": {}}}}  # 无 timeline_v2
+
+        transport = self._transport(DriftClient([]))
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        handle = result.by_handle["openai"]
+        self.assertFalse(handle.complete)
+        self.assertEqual(handle.reason, "parser_drift")
+
+    async def test_page_budget_exhausted_is_incomplete(self) -> None:
+        # 每页都在窗口内且 cursor 推进，但永远越不过边界：
+        # 页预算耗尽 → page_limit_reached，绝不截断为成功。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        pages = [
+            self._page(
+                [_tweet(f"t{i}", created_at="Thu Aug 20 10:00:00 +0000 2026")],
+                f"cursor-{i}",
+            )
+            for i in range(x_transport._WINDOW_MAX_PAGES_PER_HANDLE)
+        ]
+        client = _CursorFakeClient(pages)
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        handle = result.by_handle["openai"]
+        self.assertFalse(handle.complete)
+        self.assertEqual(handle.reason, "page_limit_reached")
+        self.assertEqual(handle.page_count, x_transport._WINDOW_MAX_PAGES_PER_HANDLE)
+
+    async def test_not_found_marks_account_unavailable_and_continues(self) -> None:
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+
+        class TwoAccountsClient(_CursorFakeClient):
+            def __init__(self, pages):
+                super().__init__(pages)
+                self.fetch_user = Mock(
+                    side_effect=[
+                        NotFoundError("gone"),
+                        UserProfile(id="22", name="K", screen_name="karpathy"),
+                    ]
+                )
+
+        ok_page = [_tweet("k1", created_at="Wed Aug 19 10:00:00 +0000 2026")]
+        client = TwoAccountsClient([self._page(ok_page, None)])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["ghost", "karpathy"], window_start=start, window_end=end
+        )
+
+        self.assertFalse(result.complete)
+        self.assertEqual(
+            result.by_handle["ghost"].reason, "account_unavailable"
+        )
+        # 账号级失败不中止整轮：第二个账号仍被抓取且完整
+        self.assertTrue(result.by_handle["karpathy"].complete)
+        self.assertEqual(result.incomplete_handles(), ("ghost",))
+
+    async def test_later_page_429_rotates_credential_and_restarts_watchlist(self) -> None:
+        # 凭据池：primary 在第二页 429 → 丢弃其 partial，backup 从
+        # 完整 watchlist 第一个账号重新开始。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+
+        primary = _CursorFakeClient([
+            self._page([_tweet("p1", created_at="Thu Aug 20 11:00:00 +0000 2026")], "c2"),
+            TwitterAPIError(429, "rate limited"),
+        ])
+        backup = _CursorFakeClient([
+            self._page([_tweet("b1", created_at="Wed Aug 19 10:00:00 +0000 2026")], None),
+        ])
+        credentials = [
+            {"auth_token": "tok1", "ct0": "ct1", "enabled": True, "display_name": "primary"},
+            {"auth_token": "tok2", "ct0": "ct2", "enabled": True, "display_name": "backup"},
+        ]
+        clients = {"tok1": primary, "tok2": backup}
+        transport = x_transport.XTransport(
+            credential_provider=lambda: credentials,
+            credential_factory=lambda tok, ct0: clients[tok],
+            inter_account_delay=1.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        # primary partial（p1）绝不出现；只有 backup 的完整窗口
+        self.assertTrue(result.complete)
+        self.assertEqual([t.id for t in result.by_handle["openai"].tweets], ["b1"])
+
+    async def test_all_credentials_429_raise_stable_marker(self) -> None:
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        # 每条凭据独立 client（共享同一分页脚本会被第一条耗尽）
+        clients = {
+            "tok1": _CursorFakeClient([TwitterAPIError(429, "rl")]),
+            "tok2": _CursorFakeClient([TwitterAPIError(429, "rl")]),
+        }
+        credentials = [
+            {"auth_token": "tok1", "ct0": "ct1", "enabled": True},
+            {"auth_token": "tok2", "ct0": "ct2", "enabled": True},
+        ]
+        transport = x_transport.XTransport(
+            credential_provider=lambda: credentials,
+            credential_factory=lambda tok, ct0: clients[tok],
+            inter_account_delay=1.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        with self.assertRaises(x_transport.XRateLimitAbort) as ctx:
+            await transport.fetch_watchlist_tweets_window(
+                ["openai"], window_start=start, window_end=end
+            )
+        self.assertIn("x_rate_limited", str(ctx.exception))
 
 
 class XTransportNetworkRetryContracts(unittest.IsolatedAsyncioTestCase):
