@@ -21,6 +21,7 @@ import (
 
 	"aigcnews/mcp-go/internal/authn"
 	"aigcnews/mcp-go/internal/jsonx"
+	"aigcnews/mcp-go/internal/metrics"
 	"aigcnews/mcp-go/internal/ratelimit"
 	"aigcnews/mcp-go/internal/wire"
 )
@@ -59,6 +60,14 @@ type App struct {
 	resources     *ResourceService
 	sessionID     func() string
 
+	// metrics 是 dashboard 工具调用计数写者；nil 表示未接线（回放多数
+	// 用例与 Redis 未接线场景，对齐 Python app.state 缺失语义），
+	// tools/call 不记录。
+	metrics *metrics.Recorder
+	// knownToolNames 对齐 Python MCP_TOOL_REGISTRY：注册表内工具名按原名
+	// 单独统计，其余归入 __unknown__（防基数膨胀）。
+	knownToolNames map[string]struct{}
+
 	// PanicOnMethods 是回放/测试专用注入缝（对应 recorder.py 的
 	// profile="dispatch_crash"）：命中的方法在分派时 panic，以钉住
 	// 500 投射。生产装配不得设置。
@@ -75,6 +84,13 @@ func New(serverName, serverVersion string, tools ToolRegistry) *App {
 	}
 }
 
+// SetMetrics 接线 dashboard 工具调用计数（可选）。knownToolNames 应等于
+// 当前注册表（含身份感知工具）的全部名字。
+func (a *App) SetMetrics(recorder *metrics.Recorder, knownToolNames map[string]struct{}) {
+	a.metrics = recorder
+	a.knownToolNames = knownToolNames
+}
+
 func (a *App) SetResources(resources *ResourceService) { a.resources = resources }
 
 // RegisterIdentityTool 注册身份感知工具（与 tools 注册表并行，名冲突以
@@ -88,7 +104,7 @@ func (a *App) RegisterIdentityTool(name string, handler IdentityToolHandler) {
 
 // Dispatch 消费已校验请求并产出框架无关响应。
 func (a *App) Dispatch(req wire.ValidatedRequest) wire.Response {
-	return a.dispatch(req, authn.Identity{}, false)
+	return a.dispatch(req, authn.Identity{}, false, "")
 }
 
 // DispatchWithIdentity dispatches a request after the HTTP authentication layer
@@ -96,15 +112,22 @@ func (a *App) Dispatch(req wire.ValidatedRequest) wire.Response {
 // bit is intentional: a valid identity may contain zero-valued fields in tests,
 // and catalog visibility must not infer authentication from UserID.
 func (a *App) DispatchWithIdentity(req wire.ValidatedRequest, identity authn.Identity, authenticated bool) wire.Response {
-	return a.dispatch(req, identity, authenticated)
+	return a.DispatchWithIdentityUA(req, identity, authenticated, "")
 }
 
-func (a *App) dispatch(req wire.ValidatedRequest, identity authn.Identity, authenticated bool) wire.Response {
+// DispatchWithIdentityUA 与 DispatchWithIdentity 相同，额外携带调用方
+// User-Agent（HTTP 层在分派前读取），供 dashboard 工具调用计数按
+// bench/客户端分桶；回放与测试经 Dispatch* 直入时为空串，不参与计数。
+func (a *App) DispatchWithIdentityUA(req wire.ValidatedRequest, identity authn.Identity, authenticated bool, userAgent string) wire.Response {
+	return a.dispatch(req, identity, authenticated, userAgent)
+}
+
+func (a *App) dispatch(req wire.ValidatedRequest, identity authn.Identity, authenticated bool, userAgent string) wire.Response {
 	// JSON-RPC 约定：无 id 的消息是通知，一律 204 空体（任何方法同口径）。
 	if !req.HasID {
 		return wire.Notification()
 	}
-	if a.PanicOnMethods[req.Method] {
+	if a.PanicOnMethods != nil && a.PanicOnMethods[req.Method] {
 		panic("parity probe")
 	}
 	switch req.Method {
@@ -144,6 +167,7 @@ func (a *App) dispatch(req wire.ValidatedRequest, identity authn.Identity, authe
 		}
 		return wire.Result(req.RequestID, result)
 	case "tools/call":
+		a.recordToolCall(req, userAgent)
 		return a.call(req, identity)
 	default:
 		return wire.Error(req.RequestID, wire.MethodNotFound, "Method not found")
@@ -194,6 +218,28 @@ func (a *App) call(req wire.ValidatedRequest, identity authn.Identity) wire.Resp
 	}
 	data, err := handler(args)
 	return toolCallResult(req, data, err)
+}
+
+// recordToolCall 对齐 application.py tools/call 的鉴权前置计数：仅当计数器
+// 已接线、name 为合法非空字符串、且 UA 非压测前缀时记录；bench 前缀
+// （mcp-latency-bench/）整体免计数但仍受限流约束（限流在路由层先于分派）。
+// 计数时机先于工具执行，与 Python 一致（失败调用同样计入）。
+func (a *App) recordToolCall(req wire.ValidatedRequest, userAgent string) {
+	if a.metrics == nil {
+		return
+	}
+	name, ok := req.Params["name"].(string)
+	if !ok || name == "" {
+		return
+	}
+	if metrics.IsBenchmarkUserAgent(userAgent) {
+		return
+	}
+	a.metrics.Record(
+		context.Background(),
+		metrics.BucketToolName(name, a.knownToolNames),
+		metrics.BucketClientName(userAgent),
+	)
 }
 
 // toolCallResult 把处理器产出/错误折叠成统一包络：ToolInputError 文案直出，
@@ -342,7 +388,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// PR 1.4 起 tools/list 私有工具按 is_authenticated 分叉，身份经参数传入分派。
-	h.app.DispatchWithIdentity(req, identity, h.auth != nil && r.Header.Get("Authorization") != "").Write(w)
+	// User-Agent 在分派前读取（对齐 application.py），供 dashboard 计数
+	// 按 bench/客户端分桶；不参与协议行为。
+	h.app.DispatchWithIdentityUA(req, identity, h.auth != nil && r.Header.Get("Authorization") != "", r.Header.Get("User-Agent")).Write(w)
 }
 
 // writeInternalServerError 对齐 ServerErrorMiddleware：纯文本定长 500。
