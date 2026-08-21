@@ -4,23 +4,29 @@ Python MCP 入站（`backend/app/services/mcp/inbound/*`，独立进程 `mcp_mai
 的全量 Go 重写。目标：抗高并发、单容器静态二进制、与 Python 版**逐字节**
 线格式一致。
 
-## 当前状态（PR 1.3）
+## 当前状态（Phase 2 已完成，金丝雀）
 
 - ✅ 配置装载（环境变量与 Python `config.py` 同名同默认值）
-- ✅ Postgres 连接池（pgx/v5，DSN/超时/statement_timeout 对齐 psycopg 口径）
+- ✅ Postgres 连接池与仓储适配器（pgx/v5，DSN/超时/statement_timeout 对齐 psycopg 口径）
 - ✅ `/api/live`、`/api/version`、`/api/ready` 三端点字节对齐
   （404/405/307 形状按 mcp_main.app 实测复刻；语料用例直接回放比对）
 - ✅ Dockerfile（静态二进制 → alpine，uid 1000）与 compose 服务 `mcp-api-go`
 - ✅ `/api/mcp` 协议面：解析/校验（wire）、有序紧凑 JSON（jsonx）、
   Bearer token 认证（authn，SQL 与 Python 仓储逐字同义）、无状态分派
-  （mcpapp：initialize/通知/未知方法/tools/call 错误面）；非 POST 405、
+  （mcpapp：initialize/通知/未知方法/tools/call、resources、prompts）；非 POST 405、
   panic → 500 纯文本均按 Starlette 口径复刻
 - ✅ Redis 固定窗口限流：分钟突发桶 + tools/call 分层配额、TTL 自愈、
   Redis 故障 fail-open、可信代理 XFF 首跳归因；限流缝严格位于解析之后、
   分派之前，429 JSON-RPC 投影与 Python 逐字节一致
-- ✅ 回放门禁 `internal/replay`：protocol.jsonl 40 例逐字节通过（含
-  miniredis + warmup 的 `rate-limited-429` 与 PR 1.4 静态清单）
-- ✅ 工具目录/资源/prompts（PR 1.4）；⬜ 逐工具移植（Phase 2）
+- ✅ 工具目录与已迁移工具：文档/论文详情、官方榜单、资源、项目分类、
+  GitHub 项目搜索（AI 与非 AI）、收藏夹、采纳回执及 prompts/get
+- ✅ 回放门禁 `internal/replay`：protocol、surface、tools、resources 与 prompts
+  语料逐字节回放；包含 miniredis + warmup 的 `rate-limited-429` 场景
+- ✅ Python-vs-Go 静态 live-diff helper 与 CI gate 已加入；运行时依赖服务可用时
+  可执行等价服务回放对照
+
+金丝雀范围仍与 Python `mcp-api` 并存；生产流量切换、Python 下线与边缘路由变更
+不在本阶段。
 
 ## 设计要点
 
