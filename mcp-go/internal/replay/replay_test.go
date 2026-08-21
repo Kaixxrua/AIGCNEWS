@@ -628,6 +628,15 @@ func replayCase(t *testing.T, c corpusCase) {
 	}
 }
 
+// TestPromptsCorpus covers prompts/get cases from the frozen prompt corpus.
+func TestPromptsCorpus(t *testing.T) {
+	cases := loadCases(t, "prompts.jsonl")
+	for _, c := range cases {
+		c := c
+		t.Run(c.Name, func(t *testing.T) { replayCase(t, c) })
+	}
+}
+
 // ── tools.jsonl 回放（工具语料） ─────────────────────────────────────────
 
 // toolsCorpusMilestones 显式登记 tools.jsonl 每个用例的归属 PR。语料新增

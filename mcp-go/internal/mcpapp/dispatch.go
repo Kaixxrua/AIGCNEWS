@@ -134,6 +134,15 @@ func (a *App) dispatch(req wire.ValidatedRequest, identity authn.Identity, authe
 		return wire.Result(req.RequestID, result)
 	case "prompts/list":
 		return wire.Result(req.RequestID, PromptsList())
+	case "prompts/get":
+		result, err := GetPrompt(req.Params["name"], req.Params["arguments"])
+		if err != nil {
+			if inputErr, ok := err.(PromptInputError); ok {
+				return wire.Error(req.RequestID, wire.InvalidParams, inputErr.Error())
+			}
+			return wire.Error(req.RequestID, wire.InternalError, "Prompt rendering failed")
+		}
+		return wire.Result(req.RequestID, result)
 	case "tools/call":
 		return a.call(req, identity)
 	default:
