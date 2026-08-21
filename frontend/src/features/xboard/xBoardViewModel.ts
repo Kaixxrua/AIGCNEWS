@@ -390,6 +390,25 @@ export const timelineTweets = (docs: TopDoc[]): TopDoc[] => (
 )
 
 /**
+ * keyset 多页合并：把 x/recent 续页拍平到同一时间线。
+ * 按文档 id 去重（keyset 严格递减，正常不会重叠；重叠说明窗口在两次
+ * 请求之间被新推文推挤，以先到的版本为准），再按时间线比较器统一排序。
+ */
+export const mergePagedTweets = (pages: TopDoc[][]): TopDoc[] => {
+  const seen = new Set<string>()
+  const merged: TopDoc[] = []
+  for (const page of pages) {
+    for (const doc of page) {
+      const id = doc.id ?? doc.url ?? ''
+      if (id && seen.has(id)) continue
+      if (id) seen.add(id)
+      merged.push(doc)
+    }
+  }
+  return timelineTweets(merged)
+}
+
+/**
  * 发布时间格式化：落库 published_at 是带时区的 ISO（UTC），展示时换算成
  * 用户系统时区（不传 timeZone 时 Intl 默认本地时区）。输出保持旧版
  * 「YYYY-MM-DD HH:mm」形状；无法解析的输入返回空串由模板跳过渲染。

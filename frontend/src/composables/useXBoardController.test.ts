@@ -5,8 +5,8 @@ import type { DashboardRecentX } from '@/services/dashboard/dashboardContracts'
 const doc = (id: string, url: string, rawScore: number, overrides: Record<string, unknown> = {}) => ({ id, title: url, url, raw_score: rawScore, ...overrides })
 
 const recentDocs = () => [
-  doc('x:1', 'https://x.com/openai/status/1', 5),
-  doc('x:2', 'https://x.com/karpathy/status/2', 50),
+  doc('x:2', 'https://x.com/karpathy/status/2', 50, { published_at: '2026-08-04T07:00:00Z' }),
+  doc('x:1', 'https://x.com/openai/status/1', 5, { published_at: '2026-08-04T06:00:00Z' }),
 ]
 
 const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
@@ -36,8 +36,8 @@ describe('useXBoardController', () => {
     const api = createApi({
       fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({
         items: [
-          doc('x:1', 'https://x.com/openai/status/1', 5, { media }),
-          doc('x:2', 'https://x.com/karpathy/status/2', 50),
+          doc('x:1', 'https://x.com/openai/status/1', 5, { media, published_at: '2026-08-04T06:00:00Z' }),
+          doc('x:2', 'https://x.com/karpathy/status/2', 50, { published_at: '2026-08-04T07:00:00Z' }),
         ],
         total: 2,
         windowHours: 24,
@@ -46,7 +46,8 @@ describe('useXBoardController', () => {
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
     await controller.load()
 
-    expect(controller.docs.value[0]?.media).toEqual(media)
+    const openaiTweet = controller.docs.value.find((item) => item.url === 'https://x.com/openai/status/1')
+    expect(openaiTweet?.media).toEqual(media)
     const flattened = controller.sections.value.flatMap((section) => section.tweets)
     expect(flattened.find((tweet) => tweet.url === 'https://x.com/openai/status/1')?.media).toEqual(media)
   })
@@ -218,7 +219,13 @@ describe('useXBoardController', () => {
   })
 
   const docPage = (count: number) =>
-    Array.from({ length: count }, (_, index) => doc(`x:${index + 1}`, `https://x.com/openai/status/${index + 1}`, index))
+    Array.from({ length: count }, (_, index) => doc(
+      `x:${index + 1}`,
+      `https://x.com/openai/status/${index + 1}`,
+      index,
+      // 发布时间倒序即索引升序（x:1 最新），与文档 id 次序一致
+      { published_at: new Date(Date.UTC(2026, 7, 4, 8, 0, 0) - (index + 1) * 60_000).toISOString() },
+    ))
 
   const createPagedApi = (count: number, overrides: Partial<XBoardApi> = {}) => createApi({
     fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: docPage(count), total: count, windowHours: 24 })),
@@ -318,4 +325,50 @@ describe('useXBoardController', () => {
     controller.toggleSelectAll([])
     expect(controller.selectedIds.value.size).toBe(20)
   })
+  it('follows nextCursor pages until hasMore=false, merging and deduping across pages', async () => {
+    const pageOne = [
+      doc('x:1', 'https://x.com/openai/status/1', 5, { published_at: '2026-08-04T07:00:00Z' }),
+      doc('x:2', 'https://x.com/openai/status/2', 6, { published_at: '2026-08-04T06:00:00Z' }),
+    ]
+    const pageTwo = [
+      // 与第一页重叠的条目（窗口推挤/边界并列）必须去重
+      doc('x:2', 'https://x.com/openai/status/2', 6, { published_at: '2026-08-04T06:00:00Z' }),
+      doc('x:3', 'https://x.com/karpathy/status/3', 50, { published_at: '2026-08-04T05:00:00Z' }),
+    ]
+    const calls: Array<{ cursor?: string }> = []
+    const api = createApi({
+      fetchRecentX: vi.fn(async (params): Promise<DashboardRecentX> => {
+        calls.push({ cursor: params.cursor })
+        if (!params.cursor) {
+          return { items: pageOne, total: 2, windowHours: 24, hasMore: true, nextCursor: 'cursor-2' }
+        }
+        return { items: pageTwo, total: 2, windowHours: 24, hasMore: false, nextCursor: null }
+      }),
+    })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+
+    expect(calls).toEqual([{ cursor: undefined }, { cursor: 'cursor-2' }])
+    // 合并后按发布时间倒序、跨页去重
+    expect(controller.docs.value.map((item) => item.id)).toEqual(['x:1', 'x:2', 'x:3'])
+  })
+
+  it('stops at the page budget even if the server keeps returning hasMore', async () => {
+    const api = createApi({
+      fetchRecentX: vi.fn(async (params): Promise<DashboardRecentX> => ({
+        items: [doc(`x:${params.cursor ?? 'first'}`, `https://x.com/openai/status/${params.cursor ?? '1'}`, 1)],
+        total: 1,
+        windowHours: 24,
+        hasMore: true,
+        nextCursor: `${(params.cursor ? Number(params.cursor) : 0) + 1}`,
+      })),
+    })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+
+    // 硬顶 MAX_PAGES_PER_LOAD=8：最多 8 次请求，不会无限续页
+    expect(api.fetchRecentX).toHaveBeenCalledTimes(8)
+    expect(controller.docs.value).toHaveLength(8)
+  })
 })
+

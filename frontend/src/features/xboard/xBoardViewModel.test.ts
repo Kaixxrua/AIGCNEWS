@@ -27,6 +27,7 @@ import {
   quoteMediaItems,
   quoteTextSegments,
   retweetedByHandle,
+  mergePagedTweets,
   timelineTweets,
   tweetLinkCard,
   tweetQuote,
@@ -258,6 +259,20 @@ describe('xBoardViewModel', () => {
   it('breaks section score ties by handle name', () => {
     const docs = [tweet('beta', '1', { raw_score: 10 }), tweet('alpha', '2', { raw_score: 10 })]
     expect(groupTweetsByHandle(docs).map((section) => section.handle)).toEqual(['alpha', 'beta'])
+  })
+
+  it('mergePagedTweets flattens pages, dedupes by id, and sorts newest first', () => {
+    const older = tweet('a', '10', { id: 'x:10', published_at: '2026-08-04T01:00:00Z' })
+    const newest = tweet('a', '12', { id: 'x:12', published_at: '2026-08-04T03:00:00Z' })
+    const middle = tweet('b', '11', { id: 'x:11', published_at: '2026-08-04T02:00:00Z', raw_score: 3 })
+    const middleDup = tweet('b', '11', { id: 'x:11', published_at: '2026-08-04T02:00:00Z', raw_score: 99 })
+
+    const merged = mergePagedTweets([[newest, middle], [middleDup, older]])
+
+    expect(merged.map((item) => item.id)).toEqual(['x:12', 'x:11', 'x:10'])
+    // 重叠条目以先到的版本为准（不替换为后页的同 id 行）
+    expect(merged[1]?.raw_score).toBe(3)
+    expect(mergePagedTweets([])).toEqual([])
   })
 
   it('timelineTweets sorts by publication instant, then tweet ID, and sinks invalid timestamps', () => {

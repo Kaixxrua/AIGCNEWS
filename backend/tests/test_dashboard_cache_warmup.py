@@ -50,7 +50,7 @@ class _FakeQueryService:
 
 
 def _make_repositories(*, recent_docs_raiser: bool = False) -> SimpleNamespace:
-    def _list_recent(source, since_iso, limit, until_iso=None):
+    def _list_recent(source, since_iso, limit, until_iso=None, keyset_after=None):
         if recent_docs_raiser:
             raise RuntimeError("documents 查询故障")
         return []

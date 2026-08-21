@@ -70,15 +70,21 @@ export const dashboardApi: DashboardApi = {
     }
   },
 
-  async fetchRecentX({ hours = 24, daysBack = 0, limit = 500, signal, cacheBuster }) {
+  async fetchRecentX({ hours = 24, daysBack = 0, limit = 500, cursor, signal, cacheBuster }) {
     const params: Record<string, unknown> = { hours, days_back: daysBack, limit }
+    if (cursor) params.cursor = cursor
     if (cacheBuster) params._t = cacheBuster
     const response = await api.get<DashboardRecentXWireResponse>('/dashboard/x/recent', { params, signal })
     const items = Array.isArray(response.data?.items) ? response.data.items : []
+    const nextCursor = typeof response.data?.next_cursor === 'string' && response.data.next_cursor
+      ? response.data.next_cursor
+      : null
     return {
       items,
       total: response.data?.total ?? items.length,
       windowHours: response.data?.window_hours ?? hours,
+      hasMore: (response.data?.has_more ?? false) && nextCursor !== null,
+      nextCursor,
     }
   },
 

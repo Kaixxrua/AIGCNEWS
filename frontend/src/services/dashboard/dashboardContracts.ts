@@ -52,6 +52,10 @@ export interface DashboardRecentXWireResponse {
   total?: number | null
   window_hours?: number | null
   days_back?: number | null
+  /** 满页时为 true，配合 next_cursor 续查（旧后端缺省视为无下一页） */
+  has_more?: boolean | null
+  /** keyset 续页游标；只编码公开排序位置，不含凭据 */
+  next_cursor?: string | null
 }
 
 export interface DashboardVisitorCountWireResponse {
@@ -92,6 +96,10 @@ export interface DashboardRecentX {
   items: TopDoc[]
   total: number
   windowHours: number
+  /** 满页且有可续查游标时为 true（旧后端缺省为 false，即单页语义） */
+  hasMore: boolean
+  /** 续页游标；hasMore=false 或无下一页时为 null */
+  nextCursor: string | null
 }
 
 export interface DashboardVisitorCount {
@@ -128,6 +136,8 @@ export interface DashboardRecentXParams {
   /** 整数天位移：0 = 最近 hours 小时；1 = 昨天此刻往前 hours 小时（滑窗按天回移） */
   daysBack?: number
   limit?: number
+  /** keyset 续页游标（上一页的 nextCursor）；不传 = 第一页 */
+  cursor?: string
   signal?: AbortSignal
   cacheBuster?: number
 }

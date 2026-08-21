@@ -220,6 +220,8 @@ def test_upsert_document_persists_quote() -> None:
                 "url": "https://x.com/comfyui/status/2000",
                 "author": "comfyui",
                 "author_name": "ComfyUI",
+                "tweet_id": "2000",
+                "language": "en",
                 "text": "quoted text",
                 "media": [],
                 "published_at": "2026-08-07T01:00:00+00:00",
@@ -230,8 +232,10 @@ def test_upsert_document_persists_quote() -> None:
     sql = cursor.execute.call_args.args[0]
     params = cursor.execute.call_args.args[1]
     assert "quote" in sql
-    # 冲突更新走 COALESCE(NULLIF(...))：新值缺失时保留已有引用卡片
-    assert "quote=COALESCE(NULLIF(EXCLUDED.quote, ''), documents.quote)" in sql
+    # 冲突更新按 quote 的 tweet_id/text 合并，避免丢失已完成的引用译文。
+    assert "quote=CASE" in sql
+    assert "pg_input_is_valid(EXCLUDED.quote, 'jsonb')" in sql
+    assert "jsonb_set(" in sql
     assert json.loads(params["quote"])["author"] == "comfyui"
 
 

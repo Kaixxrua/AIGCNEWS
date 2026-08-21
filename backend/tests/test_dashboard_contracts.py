@@ -462,6 +462,182 @@ def test_top_route_serves_limit_past_legacy_50_cap() -> None:
     assert too_big.status_code == 422
 
 
+def test_x_recent_first_page_contract_unchanged_and_cursor_isolated() -> None:
+    """默认请求（无 cursor）字段集不变；cursor 进入缓存 key 隔离页缓存。"""
+    key_first = routes_dashboard._dashboard_cache_key_builder(
+        routes_dashboard.get_x_recent,
+        namespace="dashboard",
+        request=_request("/api/dashboard/x/recent", "hours=24&limit=500"),
+    )
+    key_second = routes_dashboard._dashboard_cache_key_builder(
+        routes_dashboard.get_x_recent,
+        namespace="dashboard",
+        request=_request("/api/dashboard/x/recent", "hours=24&limit=500&cursor=abc123"),
+    )
+    assert key_first != key_second
+
+
+def test_x_recent_full_page_emits_next_cursor_and_continuation_uses_keyset() -> None:
+    now = datetime.now(timezone.utc)
+    page_one = [
+        {
+            "id": f"x:p1-{index}",
+            "source": "x",
+            "published_at": (now - timedelta(hours=index)).isoformat(),
+            "raw_score": 10 - index,
+            "score": 10 - index,
+        }
+        for index in range(3)
+    ]
+    page_two = [
+        {
+            "id": "x:p2-0",
+            "source": "x",
+            "published_at": (now - timedelta(hours=4)).isoformat(),
+            "raw_score": 3,
+            "score": 3,
+        }
+    ]
+
+    class FakeRecentReader:
+        def __init__(self) -> None:
+            self.keysets: list[tuple[str, float, str] | None] = []
+
+        def list_recent_by_source(
+            self, source, *, since_iso, until_iso=None, limit=500, keyset_after=None
+        ):
+            self.keysets.append(keyset_after)
+            return page_two if keyset_after is not None else page_one[:limit]
+
+    reader = FakeRecentReader()
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_document_repository] = lambda: reader
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-xrecent-keyset")
+    try:
+        client = TestClient(app)
+        first = client.get("/api/dashboard/x/recent?hours=24&limit=3")
+        assert first.status_code == 200
+        first_payload = first.json()
+        assert first_payload["has_more"] is True
+        next_cursor = first_payload["next_cursor"]
+        assert isinstance(next_cursor, str) and next_cursor
+
+        second = client.get(f"/api/dashboard/x/recent?hours=24&limit=3&cursor={next_cursor}")
+    finally:
+        FastAPICache.reset()
+
+    assert second.status_code == 200
+    second_payload = second.json()
+    assert [item["id"] for item in second_payload["items"]] == ["x:p2-0"]
+    assert second_payload["has_more"] is False
+    assert second_payload["next_cursor"] is None
+
+    # 第一页无 keyset；第二页游标解回 (published_at, score, id) 严格续查
+    assert reader.keysets[0] is None
+    keyset = reader.keysets[1]
+    assert keyset is not None
+    assert keyset[0] == page_one[-1]["published_at"]
+    assert keyset[1] == float(page_one[-1]["raw_score"])
+    assert keyset[2] == page_one[-1]["id"]
+
+
+def test_x_recent_malformed_cursor_falls_back_to_first_page() -> None:
+    now = datetime.now(timezone.utc)
+    docs = [
+        {
+            "id": "x:only",
+            "source": "x",
+            "published_at": (now - timedelta(hours=1)).isoformat(),
+            "raw_score": 1,
+            "score": 1,
+        }
+    ]
+
+    class FakeRecentReader:
+        def __init__(self) -> None:
+            self.keysets: list[tuple[str, float, str] | None] = []
+
+        def list_recent_by_source(
+            self, source, *, since_iso, until_iso=None, limit=500, keyset_after=None
+        ):
+            self.keysets.append(keyset_after)
+            return docs
+
+    reader = FakeRecentReader()
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_document_repository] = lambda: reader
+
+    FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-xrecent-badcursor")
+    try:
+        client = TestClient(app)
+        for bad in ("not-base64!!", "aGVsbG8", "", "%"):
+            response = client.get(f"/api/dashboard/x/recent?hours=24&cursor={bad}")
+            assert response.status_code == 200, bad
+            assert [item["id"] for item in response.json()["items"]] == ["x:only"]
+    finally:
+        FastAPICache.reset()
+
+    # 非法游标一律回退第一页（keyset_after=None），绝不 400/500
+    assert reader.keysets and all(keyset is None for keyset in reader.keysets)
+
+
+def test_postgres_x_recent_keyset_clause_matches_order_and_strictly_continues() -> None:
+    """仓储 X 分支：keyset 续页 WHERE 与 ORDER BY 同序，严格小于跳过并列。"""
+    from backend.app.repositories.postgres_document_repository import (
+        PostgresDocumentRepository,
+    )
+
+    captured: list[tuple[str, tuple]] = []
+    repo = PostgresDocumentRepository.__new__(PostgresDocumentRepository)
+    repo._fetch_rows = lambda clause, params: captured.append((clause, params)) or []
+
+    repo.list_recent_by_source(
+        "x",
+        since_iso="2026-08-20T00:00:00+00:00",
+        until_iso="2026-08-21T00:00:00+00:00",
+        limit=500,
+        keyset_after=("2026-08-20T12:00:00+00:00", 7.5, "doc-9"),
+    )
+
+    assert len(captured) == 1
+    clause, params = captured[0]
+    score_expr = "COALESCE(d.raw_score, d.score, 0)"
+    # 排序键保持 published_at → score → id 三级稳定降序
+    assert f"ORDER BY d.published_at DESC, {score_expr} DESC, d.id DESC" in clause
+    # 续页条件：published_at 更早，或同时刻分数更低，或同刻同分 id 更小
+    assert (
+        f"d.published_at < %s OR (d.published_at = %s AND {score_expr} < %s)"
+        f" OR (d.published_at = %s AND {score_expr} = %s AND d.id < %s)"
+    ).replace("\n", " ") in clause.replace("\n", " ").replace("  ", " ")
+    anchor = "2026-08-20T12:00:00+00:00"
+    assert params == (
+        "x",
+        "2026-08-20T00:00:00+00:00",
+        "2026-08-21T00:00:00+00:00",
+        anchor,
+        anchor,
+        7.5,
+        anchor,
+        7.5,
+        "doc-9",
+        500,
+    )
+
+    # 无 keyset 时参数序列与旧版完全一致（向后兼容）
+    captured.clear()
+    repo.list_recent_by_source(
+        "x",
+        since_iso="2026-08-20T00:00:00+00:00",
+        until_iso="2026-08-21T00:00:00+00:00",
+        limit=500,
+    )
+    _, params = captured[0]
+    assert params == ("x", "2026-08-20T00:00:00+00:00", "2026-08-21T00:00:00+00:00", 500)
+
+
 def test_x_recent_route_serves_rolling_window_and_filters_stale_rows() -> None:
     now = datetime.now(timezone.utc)
     docs = [
@@ -477,7 +653,9 @@ def test_x_recent_route_serves_rolling_window_and_filters_stale_rows() -> None:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, str | None, int]] = []
 
-        def list_recent_by_source(self, source, *, since_iso, until_iso=None, limit=500):
+        def list_recent_by_source(
+            self, source, *, since_iso, until_iso=None, limit=500, keyset_after=None
+        ):
             self.calls.append((source, since_iso, until_iso, limit))
             return docs
 
@@ -535,7 +713,9 @@ def test_x_recent_days_back_shifts_the_window_by_whole_days() -> None:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, str | None, int]] = []
 
-        def list_recent_by_source(self, source, *, since_iso, until_iso=None, limit=500):
+        def list_recent_by_source(
+            self, source, *, since_iso, until_iso=None, limit=500, keyset_after=None
+        ):
             self.calls.append((source, since_iso, until_iso, limit))
             return docs
 
@@ -574,7 +754,9 @@ def test_x_recent_short_cache_ignores_frontend_cache_buster() -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def list_recent_by_source(self, source, *, since_iso, until_iso=None, limit=500):
+        def list_recent_by_source(
+            self, source, *, since_iso, until_iso=None, limit=500, keyset_after=None
+        ):
             self.calls += 1
             return docs
 

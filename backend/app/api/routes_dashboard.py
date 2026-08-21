@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import logging
@@ -127,11 +128,11 @@ async def _get_site_visit_stats(visits: SiteVisitStatsReader) -> SiteVisitStats:
 
 # 使用该 builder 的静态端点实际消费的 query 参数并集（见各路由 Query 声明）：
 #   top/radar/summary-static/snapshot-dates: limit/source/date（看板已仅日榜，无 period）
-#   x/recent: hours/limit；summary/live-stats/visitor-count 均不使用 FastAPI response cache。
+#   x/recent: hours/limit/days_back/cursor；summary/live-stats/visitor-count 均不使用 FastAPI response cache。
 # 白名单外的参数一律不进 key——前端 _t 破缓存参数如此，匿名用户构造的
 # 随机参数更是如此：否则每个新参数值都生成新 key，可写爆 Redis 缓存。
 _DASHBOARD_CACHE_KEY_QUERY_PARAMS = frozenset(
-    {"limit", "source", "date", "hours", "days_back"}
+    {"limit", "source", "date", "hours", "days_back", "cursor"}
 )
 
 
@@ -284,6 +285,53 @@ def _published_at_within(value: Any, start: datetime, end: datetime) -> bool:
 # X 看板日期位移上限：与前端快照日期清单长度一致，防止深翻扫全表
 _X_RECENT_MAX_DAYS_BACK = 60
 
+# x/recent keyset 续页游标：base64url(JSON [published_at, score, id])，
+# 只编码文档的公开排序位置，不含任何凭据；与仓储层 X 分支
+# ORDER BY published_at DESC, score DESC, id DESC 一一对应。
+_X_RECENT_CURSOR_VERSION = 1
+
+
+def _x_recent_cursor_from_doc(doc: Dict[str, Any]) -> Optional[str]:
+    published_at = doc.get("published_at")
+    doc_id = doc.get("id")
+    if not isinstance(published_at, str) or not published_at or not doc_id:
+        return None
+    raw_score = doc.get("raw_score")
+    score = doc.get("score")
+    try:
+        score_value = float(
+            raw_score if raw_score not in (None, "") else (score or 0)
+        )
+    except (TypeError, ValueError):
+        score_value = 0.0
+    payload = [_X_RECENT_CURSOR_VERSION, published_at, score_value, str(doc_id)]
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _parse_x_recent_cursor(value: str) -> Optional[tuple[str, float, str]]:
+    """解析续页游标；任何非法输入返回 None（调用方回退第一页，绝不 400）。"""
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if (
+        not isinstance(payload, list)
+        or len(payload) != 4
+        or payload[0] != _X_RECENT_CURSOR_VERSION
+        or not isinstance(payload[1], str)
+        or not payload[1]
+        or not isinstance(payload[3], str)
+        or not payload[3]
+    ):
+        return None
+    try:
+        score_value = float(payload[2])
+    except (TypeError, ValueError):
+        return None
+    return payload[1], score_value, payload[3]
+
 
 @router.get("/dashboard/x/recent")
 @cache(expire=600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
@@ -291,6 +339,10 @@ async def get_x_recent(
     hours: int = Query(default=24, ge=1, le=72),
     days_back: int = Query(default=0, ge=0, le=_X_RECENT_MAX_DAYS_BACK),
     limit: int = Query(default=500, ge=1, le=500),
+    cursor: Optional[str] = Query(
+        default=None,
+        description="keyset 续页游标（上一页响应的 next_cursor），不传返回第一页",
+    ),
     documents: DocumentRecentReader = Depends(get_document_repository),
 ):
     """滚动 N 小时（默认 24）发布的 X 推文，按发布时间新到旧；days_back 整体回移窗口。
@@ -298,29 +350,39 @@ async def get_x_recent(
     窗口 = [now - days_back·24h - hours, now - days_back·24h]：days_back=0 即
     「最近 N 小时」（默认视图），days_back=1 即「昨天此时此刻往前 N 小时」，
     供 X 看板日期选择器按整数天滑动。不走快照/定稿/静默期语义：数据直查
-    documents 表，用户时区由前端展示层换算。key 含 days_back 不含前端 _t
-    破缓存参数。冷算 ~2.3s（500 条），TTL 600s 覆盖采集 cadence（5 分钟）：
-    每次采集成功后 clear_and_warm_dashboard_cache 先清后暖本 key，数据
-    新鲜度由「距上次采集」界定而非 TTL；TTL 只在采集停摆时兜底过期。
+    documents 表，用户时区由前端展示层换算。key 含 days_back/cursor 不含
+    前端 _t 破缓存参数。冷算 ~2.3s（500 条），TTL 600s 覆盖采集 cadence
+    （5 分钟）：每次采集成功后 clear_and_warm_dashboard_cache 先清后暖本 key，
+    数据新鲜度由「距上次采集」界定而非 TTL；TTL 只在采集停摆时兜底过期。
     行为变化：缓存过期口径 120s→600s，采集正常时实际新鲜度不变。
+
+    分页：单页上限 500。满页时响应携带 ``next_cursor``/``has_more``，前端
+    以其续查下一页（keyset 严格递减，跨页去重）；默认请求（无 cursor）的
+    字段与首页语义完全不变，旧客户端无感知。
     """
     end = datetime.now(timezone.utc) - timedelta(days=days_back)
     cutoff = end - timedelta(hours=hours)
+    keyset_after = _parse_x_recent_cursor(cursor) if cursor else None
     docs = await asyncio.to_thread(
         lambda: documents.list_recent_by_source(
             "x",
             since_iso=cutoff.isoformat(),
             until_iso=end.isoformat(),
             limit=limit,
+            keyset_after=keyset_after,
         )
     )
     items = [doc for doc in docs if _published_at_within(doc.get("published_at"), cutoff, end)]
+    has_more = len(items) >= limit
+    next_cursor = _x_recent_cursor_from_doc(items[-1]) if has_more and items else None
     return {
         "items": items,
         "total": len(items),
         "period": "daily",
         "window_hours": hours,
         "days_back": days_back,
+        "has_more": has_more and next_cursor is not None,
+        "next_cursor": next_cursor,
         "snapshot_date": None,
         "is_finalized": False,
         "is_embargoed": False,

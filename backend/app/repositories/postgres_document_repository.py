@@ -664,6 +664,7 @@ class PostgresDocumentRepository:
         since_iso: str,
         until_iso: str | None = None,
         limit: int = 500,
+        keyset_after: tuple[str, float, str] | None = None,
     ) -> list[dict[str, Any]]:
         """滚动窗口读取近期文档，新到旧。
 
@@ -681,6 +682,9 @@ class PostgresDocumentRepository:
             # X 的发布时间是唯一的窗口/排序主键。不要回退到 created_at：
             # 回退会让迟到入库的旧推文挤进当前窗口，也会让非法时间串
             # 破坏 published_at 的时间线语义。
+            # keyset_after = 上一页末行的排序位置 (published_at, score, id)，
+            # 与下方 ORDER BY 完全同序；严格不等式续查天然跳过同值并列。
+            score_expr = "COALESCE(d.raw_score, d.score, 0)"
             clause = (
                 f"{_document_projection()} WHERE d.source = %s"
                 " AND NULLIF(d.published_at, '') IS NOT NULL"
@@ -690,10 +694,27 @@ class PostgresDocumentRepository:
             if until_iso:
                 clause += " AND d.published_at < %s"
                 params.append(until_iso)
+            if keyset_after is not None:
+                last_published, last_score, last_id = keyset_after
+                clause += (
+                    f" AND (d.published_at < %s"
+                    f" OR (d.published_at = %s AND {score_expr} < %s)"
+                    f" OR (d.published_at = %s AND {score_expr} = %s AND d.id < %s))"
+                )
+                params.extend(
+                    [
+                        last_published,
+                        last_published,
+                        last_score,
+                        last_published,
+                        last_score,
+                        last_id,
+                    ]
+                )
             rows = self._fetch_rows(
                 clause
                 + " ORDER BY d.published_at DESC, "
-                "COALESCE(d.raw_score, d.score, 0) DESC, d.id DESC LIMIT %s",
+                f"{score_expr} DESC, d.id DESC LIMIT %s",
                 (*params, limit),
             )
             return [_deserialize_row_media(row) for row in rows]

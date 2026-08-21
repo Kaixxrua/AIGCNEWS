@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import type { DashboardApi } from '@/services/dashboard/dashboardContracts'
 import { dashboardApi } from '@/services/dashboard/dashboardApi'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
-import { clampPage, groupTweetsByHandle, pageCount } from '@/features/xboard/xBoardViewModel'
+import { clampPage, groupTweetsByHandle, mergePagedTweets, pageCount } from '@/features/xboard/xBoardViewModel'
 
 export interface XBoardApi {
   fetchRecentX: DashboardApi['fetchRecentX']
@@ -20,8 +20,11 @@ export interface XBoardControllerOptions {
 }
 
 const SNAPSHOT_DATE_LIMIT = 60
-// 看板一次拉全量（后端 limit 上限/DB 读取上限均为 500），客户端分页
+// 看板每页拉取上限（与后端 limit 上限一致）；满页时沿 nextCursor 续页，
+// 不再把 500 当作窗口总量上限
 const TOP_LIMIT = 500
+// 单次刷新最多自动续页数：硬顶 4000 条/窗口，防止异常窗口无限请求
+const MAX_PAGES_PER_LOAD = 8
 // 窗口长度固定 24 小时：日期选择器只做整数天位移（days_back），
 // 窗口 = [所选日期的当前钟点 - 24h, 所选日期的当前钟点]，随访问时刻滑动
 export const XBOARD_RECENT_WINDOW_HOURS = 24
@@ -82,15 +85,24 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     loading.value = true
     errorMsg.value = ''
     try {
-      const result = await api.fetchRecentX({
-        hours: XBOARD_RECENT_WINDOW_HOURS,
-        daysBack: daysBack.value,
-        limit: TOP_LIMIT,
-        signal: controller.signal,
-        cacheBuster: Date.now(),
-      })
+      const pages: TopDoc[][] = []
+      let cursor: string | undefined
+      for (let depth = 0; depth < MAX_PAGES_PER_LOAD; depth += 1) {
+        const result = await api.fetchRecentX({
+          hours: XBOARD_RECENT_WINDOW_HOURS,
+          daysBack: daysBack.value,
+          limit: TOP_LIMIT,
+          cursor,
+          signal: controller.signal,
+          cacheBuster: Date.now(),
+        })
+        if (!isActive.value || request !== generation) return
+        pages.push(result.items)
+        if (!result.hasMore || !result.nextCursor) break
+        cursor = result.nextCursor
+      }
       if (isActive.value && request === generation) {
-        docs.value = result.items
+        docs.value = mergePagedTweets(pages)
       }
     } catch (error) {
       if (isActive.value && request === generation && !controller.signal.aborted) {

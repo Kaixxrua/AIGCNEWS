@@ -124,6 +124,8 @@ class DocumentRecentReader(Protocol):
     的 published_date，其余=业务日期）；并 OR created_at >= since 兜底
     date-only 键边界日漏检与「业务日期滞后于入池」（arXiv 老论文新收录）。
     until_iso 仅约束主键（X 看板 days_back 依赖其对 published_at 精确）。
+    keyset_after 只对 X 分支生效：上一页末行的排序位置
+    ``(published_at, score, id)``，实现按严格递减续查，不传时返回第一页。
     """
 
     def list_recent_by_source(
@@ -133,6 +135,7 @@ class DocumentRecentReader(Protocol):
         since_iso: str,
         until_iso: str | None = None,
         limit: int = 500,
+        keyset_after: tuple[str, float, str] | None = None,
     ) -> list[dict[str, Any]]: ...
 
 

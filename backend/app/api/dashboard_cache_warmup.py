@@ -116,6 +116,8 @@ async def warm_dashboard_cache(repositories: ApplicationRepositories) -> None:
                 "hours": _X_RECENT_HOURS,
                 "days_back": _X_RECENT_DAYS_BACK,
                 "limit": _X_RECENT_LIMIT,
+                # 直调绕过 FastAPI DI：显式传 None，否则 cursor 保持 Query 默认对象
+                "cursor": None,
                 "documents": repositories.documents,
                 "__fastapi_cache_request": _stub_request(
                     "/api/dashboard/x/recent",
