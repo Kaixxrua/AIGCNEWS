@@ -91,6 +91,9 @@ type Config struct {
 	// 仅来自 PUBLIC_BASE_URL 配置，绝不从请求派生（防缓存投毒）。默认 None →
 	// Go 侧空串；消费方自行 TrimRight("/",)（对齐 Python 的 rstrip("/")）。
 	PublicBaseURL string
+	// CORSAllowedOrigins 对齐 cors_allowed_origins（config.py 325-327 行），
+	// 保留逗号分隔原串；HTTP 层通过 ParseCORSAllowedOrigins 做同口径清洗。
+	CORSAllowedOrigins string
 	// SchedulerTimezone 对齐 scheduler_timezone（config.py 344 行）：看板
 	// "今日" 统计的时区锚，默认 "Asia/Shanghai"。
 	SchedulerTimezone string
@@ -124,6 +127,7 @@ func (c *Config) load(lookup lookupFunc) error {
 		Password: "",
 	}
 	c.TrustedProxyIPs = "127.0.0.1,::1"
+	c.CORSAllowedOrigins = "http://localhost:5173,http://127.0.0.1:5173,https://aigcnews.cn,https://www.aigcnews.cn"
 	c.SchedulerTimezone = "Asia/Shanghai"
 	if err := loadInt(lookup, "MCP_SERVER_PORT", &c.Port); err != nil {
 		return err
@@ -161,6 +165,7 @@ func (c *Config) load(lookup lookupFunc) error {
 	loadString(lookup, "REDIS_PASSWORD", &c.Redis.Password)
 	loadString(lookup, "TRUSTED_PROXY_IPS", &c.TrustedProxyIPs)
 	loadString(lookup, "PUBLIC_BASE_URL", &c.PublicBaseURL)
+	loadString(lookup, "CORS_ALLOWED_ORIGINS", &c.CORSAllowedOrigins)
 	loadString(lookup, "SCHEDULER_TIMEZONE", &c.SchedulerTimezone)
 	c.ProjectSearch = ProjectSearch{
 		AIStrategy:                  "legacy",
@@ -298,6 +303,19 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return c, nil
+}
+
+// ParseCORSAllowedOrigins reproduces the Python middleware's comma-separated
+// allowlist construction: trim each entry and discard empty entries.
+func ParseCORSAllowedOrigins(raw string) []string {
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if origin := strings.TrimSpace(part); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }
 
 func loadString(lookup lookupFunc, name string, dst *string) {

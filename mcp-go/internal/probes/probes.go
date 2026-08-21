@@ -61,6 +61,12 @@ func NewMux(serverVersion string, readiness Readiness, mcp ...http.Handler) http
 	return h
 }
 
+// NewMuxWithCORS keeps the manual route surface intact while placing CORS
+// before /api/mcp's intentional POST-only method gate.
+func NewMuxWithCORS(serverVersion string, readiness Readiness, cors CORSConfig, mcp ...http.Handler) http.Handler {
+	return WithCORS(NewMux(serverVersion, readiness, mcp...), cors)
+}
+
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Starlette redirect_slashes 复刻：已注册路径恰好一个尾斜杠时
 	// 307 到去斜杠形式（先于方法判定；双层尾斜杠不递归，落 404）。

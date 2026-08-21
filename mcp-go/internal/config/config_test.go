@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -38,6 +39,9 @@ func TestDefaults(t *testing.T) {
 	if pg != want {
 		t.Errorf("Postgres = %+v, want %+v", pg, want)
 	}
+	if c.CORSAllowedOrigins != "http://localhost:5173,http://127.0.0.1:5173,https://aigcnews.cn,https://www.aigcnews.cn" {
+		t.Errorf("CORSAllowedOrigins = %q", c.CORSAllowedOrigins)
+	}
 }
 
 func TestEnvOverrides(t *testing.T) {
@@ -55,6 +59,7 @@ func TestEnvOverrides(t *testing.T) {
 		"POSTGRES_POOL_TIMEOUT_SECONDS":    "2.5",
 		"POSTGRES_CONNECT_TIMEOUT_SECONDS": "3",
 		"POSTGRES_STATEMENT_TIMEOUT_MS":    "9000",
+		"CORS_ALLOWED_ORIGINS":             " https://one.example, ,https://two.example ",
 	}))
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -70,6 +75,9 @@ func TestEnvOverrides(t *testing.T) {
 		pg.PoolTimeoutSeconds != 2.5 || pg.ConnectTimeoutSeconds != 3 ||
 		pg.StatementTimeoutMillis != 9000 {
 		t.Errorf("Postgres = %+v", pg)
+	}
+	if got := ParseCORSAllowedOrigins(c.CORSAllowedOrigins); !reflect.DeepEqual(got, []string{"https://one.example", "https://two.example"}) {
+		t.Errorf("CORS origins = %#v", got)
 	}
 }
 
@@ -255,6 +263,14 @@ func TestRedisEmptyPasswordEqualsUnset(t *testing.T) {
 }
 
 // SchedulerTimezone 默认值与 config.py 344 行逐字一致，SCHEDULER_TIMEZONE 可覆盖。
+func TestParseCORSAllowedOrigins(t *testing.T) {
+	got := ParseCORSAllowedOrigins(" https://a.example, ,https://b.example,, ")
+	want := []string{"https://a.example", "https://b.example"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("origins = %#v, want %#v", got, want)
+	}
+}
+
 func TestSchedulerTimezone(t *testing.T) {
 	var def Config
 	if err := def.load(envMap(nil)); err != nil {

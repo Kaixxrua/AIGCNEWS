@@ -69,11 +69,11 @@ func TestValidateSearchGitHubProjectsArgsErrors(t *testing.T) {
 		{"q数组", map[string]any{"q": []any{"a"}},
 			"q: Input should be a valid string"},
 		{"sort非枚举", map[string]any{"q": "x", "sort": "bogus"},
-			"sort: Input should be 'relevance', 'hot', 'stars', 'updated', 'recent' or 'name'"},
+			"sort: Input should be 'hot', 'stars', 'updated', 'recent', 'name' or 'relevance'"},
 		{"sort非字符串", map[string]any{"q": "x", "sort": float64(1)},
-			"sort: Input should be 'relevance', 'hot', 'stars', 'updated', 'recent' or 'name'"},
+			"sort: Input should be 'hot', 'stars', 'updated', 'recent', 'name' or 'relevance'"},
 		{"sort带空白不strip", map[string]any{"q": "x", "sort": " stars "},
-			"sort: Input should be 'relevance', 'hot', 'stars', 'updated', 'recent' or 'name'"},
+			"sort: Input should be 'hot', 'stars', 'updated', 'recent', 'name' or 'relevance'"},
 		{"lang非枚举", map[string]any{"q": "x", "lang": "fr"},
 			"lang: Input should be 'zh' or 'en'"},
 		{"lang为null", map[string]any{"q": "x", "lang": nil},
@@ -124,7 +124,7 @@ func TestValidateSearchGitHubProjectsArgsErrors(t *testing.T) {
 			"language": "zh", "sort": "bogus", "page": float64(0),
 			"limit": float64(21), "extra": float64(1)},
 			"q: Field required; " + languageValueError +
-				"; sort: Input should be 'relevance', 'hot', 'stars', 'updated', 'recent' or 'name'" +
+				"; sort: Input should be 'hot', 'stars', 'updated', 'recent', 'name' or 'relevance'" +
 				"; page: Input should be greater than or equal to 1" +
 				"; limit: Input should be less than or equal to 20" +
 				"; extra: Extra inputs are not permitted"},

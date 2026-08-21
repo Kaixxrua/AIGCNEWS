@@ -209,8 +209,10 @@ func run() int {
 		"addr", redisClient.Options().Addr, "db", cfg.Redis.DB)
 
 	mcpHandler := mcpapp.NewHandler(app, authn.Authenticator{DB: authn.PgxQuerier{Pool: pool}}, limiter)
-	mux := probes.NewMux(serverVersion, func(ctx context.Context) bool {
+	mux := probes.NewMuxWithCORS(serverVersion, func(ctx context.Context) bool {
 		return postgres.Ping(ctx, pool, cfg.Postgres.PoolTimeoutSeconds) == nil
+	}, probes.CORSConfig{
+		AllowedOrigins: config.ParseCORSAllowedOrigins(cfg.CORSAllowedOrigins),
 	}, mcpHandler)
 
 	server := &http.Server{

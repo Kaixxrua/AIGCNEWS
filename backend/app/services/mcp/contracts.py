@@ -29,7 +29,7 @@ SourceChoice = Literal["all", "arxiv", "github", "news", "producthunt", "hackern
 PeriodChoice = Literal["daily", "weekly", "monthly"]
 ProjectScope = Literal["all", "today", "recommended"]
 ProjectSort = Literal["hot", "stars", "updated", "recent", "name"]
-ProjectDiscoverySort = Literal["relevance", "hot", "stars", "updated", "recent", "name"]
+ProjectDiscoverySort = Literal["hot", "stars", "updated", "recent", "name", "relevance"]
 ProjectResponseLang = Literal["zh", "en"]
 IntentText30 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=30)]
 IntentText40 = Annotated[StrictStr, StringConstraints(min_length=1, max_length=40)]

@@ -107,7 +107,7 @@ type searchGitHubProjectsInput struct {
 
 // projectDiscoverySortChoices 逐字复刻 ProjectDiscoverySort Literal
 // （contracts.py:32；文案序即 Literal 声明序）。
-var projectDiscoverySortChoices = []string{"relevance", "hot", "stars", "updated", "recent", "name"}
+var projectDiscoverySortChoices = []string{"hot", "stars", "updated", "recent", "name", "relevance"}
 
 // validateSearchGitHubProjectsArgs 复刻 SearchGitHubProjectsInput 的
 // pydantic v2 校验。错误顺序：字段定义序（q → language → sort → lang →
@@ -163,14 +163,14 @@ func validateSearchGitHubProjectsArgs(args map[string]any) (searchGitHubProjects
 		}
 	}
 
-	// sort: Literal["relevance","hot","stars","updated","recent","name"] |
+	// sort: Literal["hot","stars","updated","recent","name","relevance"] |
 	// None。null/缺省 → ""（Python None，合法）；字符串六枚举之一原样；
 	// 其余（含非字符串）→ 同一条 Literal 消息（pydantic v2 把 union 折叠
 	// 成单条）。Literal 不经 strip。
 	if raw, present := args["sort"]; present && raw != nil {
 		value, ok := raw.(string)
 		if !ok || !contains(projectDiscoverySortChoices, value) {
-			failures = append(failures, "sort: Input should be 'relevance', 'hot', 'stars', 'updated', 'recent' or 'name'")
+			failures = append(failures, "sort: Input should be 'hot', 'stars', 'updated', 'recent', 'name' or 'relevance'")
 		} else {
 			input.sort = value
 		}

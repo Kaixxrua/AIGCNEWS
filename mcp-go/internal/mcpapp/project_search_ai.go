@@ -183,7 +183,7 @@ func validateSearchGitHubAIProjectsArgs(args map[string]any) (searchGitHubAIProj
 	if raw, present := args["sort"]; present && raw != nil {
 		value, ok := raw.(string)
 		if !ok || !contains(projectDiscoverySortChoices, value) {
-			failures = append(failures, "sort: Input should be 'relevance', 'hot', 'stars', 'updated', 'recent' or 'name'")
+			failures = append(failures, "sort: Input should be 'hot', 'stars', 'updated', 'recent', 'name' or 'relevance'")
 		} else {
 			input.sort = value
 		}

@@ -93,11 +93,15 @@ class ToolMetadataTests(unittest.TestCase):
         self.assertIn("search_papers first only", ai)
         self.assertIn("dominant deliverable", ai)
         self.assertIn("default to relevance", ai)
+        expected_discovery_sort = ["hot", "stars", "updated", "recent", "name", "relevance"]
         for tool_name in ("search_github_ai_projects",):
             sort_schema = tools[tool_name]["inputSchema"]["properties"]["sort"]
-            self.assertIn("relevance", json.dumps(sort_schema))
+            self.assertEqual(sort_schema["anyOf"][0]["enum"], expected_discovery_sort)
         generic_schema = input_schema("search_github_projects")
-        self.assertIn("relevance", json.dumps(generic_schema["properties"]["sort"]))
+        self.assertEqual(
+            generic_schema["properties"]["sort"]["anyOf"][0]["enum"],
+            expected_discovery_sort,
+        )
         self.assertNotIn("intent", generic_schema["properties"])
         favorites_schema = input_schema("search_my_project_favorites")
         self.assertNotIn("relevance", json.dumps(favorites_schema["properties"]["sort"]))
