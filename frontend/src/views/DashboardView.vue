@@ -120,7 +120,7 @@ onBeforeUnmount(pauseLivePoll)
         @select-source="selectSourceTab"
       />
 
-      <aside v-if="!loading" class="order-1 flex min-h-0 w-full max-w-[320px] shrink-0 flex-col gap-2 self-center lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch lg:overflow-y-auto">
+      <aside v-if="!loading" class="order-1 flex min-h-0 w-full max-w-[320px] shrink-0 flex-col gap-2 self-center pb-1 lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch lg:overflow-y-auto">
           <GlassCalendar
             :model-value="currentDate"
             :available-dates="availableDates"
