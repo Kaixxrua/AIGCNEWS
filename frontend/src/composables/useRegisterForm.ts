@@ -16,10 +16,11 @@ import { useOtpCountdown } from './useOtpCountdown'
 interface RegisterFormDependencies {
   post: (url: string, payload: Record<string, string>) => Promise<unknown>
   login: (email: string, password: string) => Promise<unknown>
-  replace: () => void | Promise<unknown>
+  /** 注册+自动登录成功后的收尾：页面模式延迟跳目标，弹窗模式立即关弹窗（不跳页） */
+  onSuccess: () => void
 }
 
-export const useRegisterForm = ({ post, login, replace }: RegisterFormDependencies) => {
+export const useRegisterForm = ({ post, login, onSuccess }: RegisterFormDependencies) => {
   const { t } = useI18n()
   const email = ref('')
   const otp = ref('')
@@ -87,7 +88,7 @@ export const useRegisterForm = ({ post, login, replace }: RegisterFormDependenci
       await login(normalizedEmail, password.value)
       successMsg.value = t('auth.registerSuccess')
       redirectTimer = setTimeout(() => {
-        void replace()
+        void onSuccess()
       }, REGISTER_REDIRECT_DELAY_MS)
     } catch (e: unknown) {
       errorMsg.value = getErrorDetail(e, t('auth.registerFailed'))

@@ -44,8 +44,19 @@ describe('LoginForm', () => {
     await wrapper.get('input[type="password"]').setValue('secret')
     await wrapper.get('.btn-primary').trigger('click'); await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/')
-    expect(wrapper.get('a[href="/register?redirect=/"]').exists()).toBe(true)
+    // dialog 模式注册入口是切换按钮而非路由链接，忘记密码仍是站内路由
+    expect(wrapper.find('a[href^="/register"]').exists()).toBe(false)
     expect(wrapper.get('a[href="/forgot-password?redirect=/"]').exists()).toBe(true)
+  })
+
+  it('emits switch-to-register from the dialog register entry and keeps a route link on the page', async () => {
+    const dialogForm = mountForm({ dialog: true })
+    await dialogForm.get('.glass-card p button').trigger('click')
+    expect(dialogForm.emitted('switch-to-register')).toHaveLength(1)
+
+    const pageForm = mountForm()
+    expect(pageForm.get('a[href^="/register"]').exists()).toBe(true)
+    expect(pageForm.find('.glass-card p button').exists()).toBe(false)
   })
 
   it('wraps the whole login content in one opaque card in dialog mode', () => {

@@ -11,7 +11,7 @@ const mountDialog = () => mount(LoginDialog, {
   props: { modelValue: true, redirect: '/dsh' },
   global: {
     plugins: [i18n],
-    stubs: { LoginForm: { props: ['redirect', 'dialog'], emits: ['success', 'close'], template: '<button class="login-form" @click="$emit(\'success\')">登录</button>' } },
+    stubs: { LoginForm: { props: ['redirect', 'dialog'], emits: ['success', 'close', 'switch-to-register'], template: '<button class="login-form" @click="$emit(\'success\')">登录</button>' } },
   },
 })
 
@@ -39,6 +39,15 @@ describe('LoginDialog', () => {
     await nextTick()
     expect(wrapper.emitted('success')).toHaveLength(1)
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+    wrapper.unmount()
+  })
+
+  it('forwards switch-to-register without closing itself (LayoutView owns the swap)', async () => {
+    const wrapper = mountDialog()
+    wrapper.findComponent(LoginForm).vm.$emit('switch-to-register')
+    await nextTick()
+    expect(wrapper.emitted('switch-to-register')).toHaveLength(1)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     wrapper.unmount()
   })
 })

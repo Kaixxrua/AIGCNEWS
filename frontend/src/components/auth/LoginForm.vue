@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { getErrorDetail, getSafeInternalRedirect, hasTrimmedValue } from '@/features/auth/authViewModel'
 
 const props = withDefaults(defineProps<{ redirect?: unknown; dialog?: boolean }>(), { dialog: false })
-const emit = defineEmits<{ (event: 'success'): void; (event: 'close'): void }>()
+const emit = defineEmits<{ (event: 'success'): void; (event: 'close'): void; (event: 'switch-to-register'): void }>()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -62,6 +62,11 @@ const handleLogin = async () => {
         {{ loading ? t('auth.loggingIn') : t('auth.login') }}
       </button>
     </div>
-    <p class="mt-5 text-center text-sm text-stone-400 stagger-enter" style="animation-delay: 0.2s">{{ t('auth.noAccount') }} <RouterLink :to="{ path: '/register', query: redirectQuery }" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors">{{ t('auth.registerNow') }}</RouterLink></p>
+    <p class="mt-5 text-center text-sm text-stone-400" :class="{ 'stagger-enter': !dialog }" :style="dialog ? undefined : 'animation-delay: 0.2s'">
+      {{ t('auth.noAccount') }}
+      <!-- dialog 模式在弹窗内直接切注册卡；standalone /login 保留路由跳转 -->
+      <button v-if="dialog" type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-register')">{{ t('auth.registerNow') }}</button>
+      <RouterLink v-else :to="{ path: '/register', query: redirectQuery }" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors">{{ t('auth.registerNow') }}</RouterLink>
+    </p>
   </div>
 </template>
