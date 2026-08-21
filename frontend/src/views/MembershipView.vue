@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeftRight, Check } from 'lucide-vue-next'
+import { ArrowLeftRight, Check, X } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { paymentApi } from '@/services/payments/paymentApi'
@@ -9,10 +9,12 @@ import { paymentApi } from '@/services/payments/paymentApi'
 defineOptions({ name: 'MembershipView' })
 
 /**
- * 会员页：档位对比 + 定价 + 开通 CTA。
+ * 会员页：三档对比（guest / free / vip）+ 定价 + 开通 CTA。
  * 游客可见（获客入口）。CTA 分三支：支付开关开启（plans 接口可达）→
  * 在线收银台；否则退回联系合作页，页面未启用时回退站长邮箱。
  * 定价卡为商业化布局：动作收进卡内、付费档抬升 + 推荐徽章、年付价格锚定。
+ * 特性列表勾/叉双态：✓ 为已含权益，✗ 为该档不可用（升级诱因），
+ * RSS 一行三档区分——游客不可订阅、免费档公开摘要、vip 全文+归档。
  */
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -50,8 +52,31 @@ const contactHref = computed(() =>
     : `mailto:kaixxrua@gmail.com?subject=${encodeURIComponent(t('membership.ctaMailSubject'))}`,
 )
 
-const FREE_FEATURES = ['mcpAnonymous', 'mcpFree', 'websiteFree', 'briefingFree'] as const
-const MEMBER_FEATURES = ['mcpMember', 'websiteMember', 'briefingMember', 'support'] as const
+/** 特性条目：included=false 渲染 ✗（该档不可用），勾/叉对比即三档区分度 */
+type TierFeature = { key: string; included: boolean }
+
+const GUEST_FEATURES: readonly TierFeature[] = [
+  { key: 'browse', included: true },
+  { key: 'mcpAnonymous', included: true },
+  { key: 'rss', included: false },
+  { key: 'briefing', included: false },
+  { key: 'website', included: false },
+]
+const FREE_FEATURES: readonly TierFeature[] = [
+  { key: 'mcpFree', included: true },
+  { key: 'websiteFree', included: true },
+  { key: 'briefingFree', included: true },
+  { key: 'rssFree', included: true },
+  { key: 'rssFull', included: false },
+  { key: 'briefingAll', included: false },
+]
+const MEMBER_FEATURES: readonly TierFeature[] = [
+  { key: 'mcpMember', included: true },
+  { key: 'websiteMember', included: true },
+  { key: 'briefingMember', included: true },
+  { key: 'rssMember', included: true },
+  { key: 'support', included: true },
+]
 </script>
 
 <template>
@@ -64,15 +89,52 @@ const MEMBER_FEATURES = ['mcpMember', 'websiteMember', 'briefingMember', 'suppor
 
       <section class="stagger-enter tier-grid" style="animation-delay: 0.05s">
         <article class="glass-card tier-card">
+          <h2 class="tier-name">{{ t('membership.guest.name') }}</h2>
+          <p class="tier-price">
+            <span class="tier-price-amount">{{ t('membership.guest.price') }}</span>
+          </p>
+          <hr class="tier-divider" />
+          <ul class="tier-features">
+            <li
+              v-for="feature in GUEST_FEATURES"
+              :key="feature.key"
+              :class="{ 'tier-feature--excluded': !feature.included }"
+            >
+              <Check
+                v-if="feature.included"
+                :size="14"
+                :stroke-width="2.5"
+                class="tier-check"
+                aria-hidden="true"
+              />
+              <X v-else :size="14" :stroke-width="2.5" class="tier-x" aria-hidden="true" />
+              <span>{{ t(`membership.guest.features.${feature.key}`) }}</span>
+            </li>
+          </ul>
+          <p class="tier-plan-note">{{ t('membership.guest.note') }}</p>
+        </article>
+
+        <article class="glass-card tier-card">
           <h2 class="tier-name">{{ t('membership.free.name') }}</h2>
           <p class="tier-price">
             <span class="tier-price-amount">{{ t('membership.free.price') }}</span>
           </p>
           <hr class="tier-divider" />
           <ul class="tier-features">
-            <li v-for="key in FREE_FEATURES" :key="key">
-              <Check :size="14" :stroke-width="2.5" class="tier-check" aria-hidden="true" />
-              <span>{{ t(`membership.free.features.${key}`) }}</span>
+            <li
+              v-for="feature in FREE_FEATURES"
+              :key="feature.key"
+              :class="{ 'tier-feature--excluded': !feature.included }"
+            >
+              <Check
+                v-if="feature.included"
+                :size="14"
+                :stroke-width="2.5"
+                class="tier-check"
+                aria-hidden="true"
+              />
+              <X v-else :size="14" :stroke-width="2.5" class="tier-x" aria-hidden="true" />
+              <span>{{ t(`membership.free.features.${feature.key}`) }}</span>
             </li>
           </ul>
           <p class="tier-plan-note">{{ t('membership.free.currentPlan') }}</p>
@@ -112,9 +174,20 @@ const MEMBER_FEATURES = ['mcpMember', 'websiteMember', 'briefingMember', 'suppor
           </p>
           <hr class="tier-divider" />
           <ul class="tier-features">
-            <li v-for="key in MEMBER_FEATURES" :key="key">
-              <Check :size="14" :stroke-width="2.5" class="tier-check" aria-hidden="true" />
-              <span>{{ t(`membership.member.features.${key}`) }}</span>
+            <li
+              v-for="feature in MEMBER_FEATURES"
+              :key="feature.key"
+              :class="{ 'tier-feature--excluded': !feature.included }"
+            >
+              <Check
+                v-if="feature.included"
+                :size="14"
+                :stroke-width="2.5"
+                class="tier-check"
+                aria-hidden="true"
+              />
+              <X v-else :size="14" :stroke-width="2.5" class="tier-x" aria-hidden="true" />
+              <span>{{ t(`membership.member.features.${feature.key}`) }}</span>
             </li>
           </ul>
           <template v-if="!isMember">
@@ -139,7 +212,7 @@ const MEMBER_FEATURES = ['mcpMember', 'websiteMember', 'briefingMember', 'suppor
 <style scoped>
 /* Hallmark · component: pricing-cards · genre: editorial · theme: project-locked
  * (paper/acid/Playfair 既有 token，零新增色值)
- * states: default · hover · focus-visible(全局 outline) · active · member-success · billing-toggle(aria-pressed)
+ * states: default · hover · focus-visible(全局 outline) · active · member-success · billing-toggle(aria-pressed) · feature-excluded(✗)
  * pre-emit critique: P4 H5 E4 S4 R4 V4 · contrast: pass */
 .membership-page {
   width: 100%;
@@ -151,9 +224,10 @@ const MEMBER_FEATURES = ['mcpMember', 'websiteMember', 'briefingMember', 'suppor
   box-sizing: border-box;
 }
 
+/* 三档卡（guest/free/vip）：比两档时期的 860px 加宽，给第三张卡让位 */
 .membership-card {
   width: 100%;
-  max-width: 860px;
+  max-width: 1020px;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -354,6 +428,17 @@ const MEMBER_FEATURES = ['mcpMember', 'websiteMember', 'briefingMember', 'suppor
   flex-shrink: 0;
   margin-top: 3px;
   color: var(--projects-success);
+}
+
+/* ✗ 排除项：图标与文案同步降透明度，一眼读出「该档不含」（对比 ✓ 即区分度） */
+.tier-x {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--ink-faint);
+}
+
+.tier-feature--excluded {
+  color: var(--ink-faint);
 }
 
 /* 免费档底部：无动作可言，安静标注默认身份（虚线发丝分隔） */

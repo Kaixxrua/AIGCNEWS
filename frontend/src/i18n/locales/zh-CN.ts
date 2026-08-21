@@ -7,8 +7,9 @@ const overrides = {
   navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', dsh: 'dsh 插件', membership: 'vip', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', changePassword: '修改密码', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
   membership: {
     title: 'vip', subtitle: '解锁更高的 MCP 调用额度、个人网页不限量收藏与全部简报模块，也支持本站持续运营。',
-    free: { name: 'free', price: '¥0', currentPlan: '当前默认方案', features: { mcpAnonymous: 'MCP 匿名调用 100 次/天', mcpFree: '注册后 MCP/API 共用 2,000 次/30 天滚动窗口', websiteFree: '滚动 24 小时最多添加 5 个个人网页收藏', briefingFree: '简报订阅 1 个日报模块' } },
-    member: { name: 'vip', badge: '推荐', priceMonthly: '¥19', priceMonthlyPeriod: '/ 月', priceYearly: '¥129 / 年', priceYearlyAmount: '¥129', priceYearlyPeriod: '/ 年', yearlySavings: '年付省 ¥99', yearlyDiscount: '-43%', billMonthly: '按月付', billYearly: '按年付', features: { mcpMember: 'MCP/API 共用 20,000 次/30 天滚动窗口', websiteMember: '个人网页收藏添加不限量', briefingMember: '简报订阅全部 8 个模块', support: '优先支持与后续 vip 权益' } },
+    guest: { name: 'guest', price: '¥0', note: '无需注册，打开即用', features: { browse: '浏览榜单、论文与项目库', mcpAnonymous: 'MCP 匿名调用 100 次/天', rss: 'RSS 订阅', briefing: '简报邮件订阅', website: '个人网页收藏' } },
+    free: { name: 'free', price: '¥0', currentPlan: '当前默认方案', features: { mcpFree: 'MCP/API 共用 2,000 次/30 天滚动窗口', websiteFree: '滚动 24 小时最多添加 5 个个人网页收藏', briefingFree: '简报订阅 1 个日报模块', rssFree: 'RSS 公开摘要订阅（近 48 小时）', rssFull: 'RSS 中文译文、全文与 7 天完整归档', briefingAll: '简报订阅全部 8 个模块' } },
+    member: { name: 'vip', badge: '推荐', priceMonthly: '¥19', priceMonthlyPeriod: '/ 月', priceYearly: '¥129 / 年', priceYearlyAmount: '¥129', priceYearlyPeriod: '/ 年', yearlySavings: '年付省 ¥99', yearlyDiscount: '-43%', billMonthly: '按月付', billYearly: '按年付', features: { mcpMember: 'MCP/API 共用 20,000 次/30 天滚动窗口', websiteMember: '个人网页收藏添加不限量', briefingMember: '简报订阅全部 8 个模块', rssMember: 'RSS 中文译文、全文与 7 天完整归档', support: '优先支持与后续 vip 权益' } },
     currentMember: '当前已是 vip', cta: '联系开通', ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。', ctaMailSubject: 'AIGC News vip 开通咨询', memberNote: '感谢支持！vip 权益已生效。',
     ctaOnline: '立即开通', ctaOnlineHint: '在线支付：支付成功后权益立即生效。',
     checkout: {
