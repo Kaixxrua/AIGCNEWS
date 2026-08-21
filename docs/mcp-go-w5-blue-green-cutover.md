@@ -84,6 +84,17 @@ Go 容器入栈 + frontend nginx 精确路由。
 - 注意：本镜像 delta 仅在 latest tag；main 已含新 conf，下次常规前端
   发布烘焙后无漂移。
 
+## 追加：健康检查代理坑（同日修复 3a0e88c）
+
+切流后发现 aigc-mcp-go 报 unhealthy：compose 注入的 socks5h 出站代理
+变量被镜像内 busybox wget 探针继承——wget 不支持 socks5h 且不读
+NO_PROXY，探针全挂但服务本身正常（Python 镜像探针用 python/curl 故
+同 env 下无恙）。修复 = Dockerfile HEALTHCHECK 命令加进程级空代理
+前缀；一次性容器共享网络命名空间复现（exit=1）并验证（exit=0）。
+生产用单层 delta 镜像（二进制不变）+ force-recreate 落地，容器
+healthy，边缘 200。教训：凡注入代理变量的容器，探针/内部回环调用
+必须进程内清代理。
+
 ## 结论
 
 生产 MCP 流量已由 Go 网关服务，行为与 Python 逐字节等价（W3 94/94 +
