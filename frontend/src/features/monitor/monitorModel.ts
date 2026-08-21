@@ -330,6 +330,14 @@ export interface GithubCrawlStatus {
   enriched_failed: number
 }
 
+export interface GithubUnprocessableProject {
+  repo_id: string
+  full_name: string
+  url: string
+  stars: number
+  reason: 'missing_description'
+}
+
 export interface GithubEnrichmentStatus {
   eligible: number
   succeeded: number
@@ -338,6 +346,8 @@ export interface GithubEnrichmentStatus {
   // 后端进程内是否有富化批处理在跑；刷新页面后据此恢复「终止」入口
   running?: boolean
   by_category?: Array<{ slug: string; name: string; count: number }>
+  unprocessable?: number
+  unprocessable_projects?: GithubUnprocessableProject[]
 }
 
 // 富化任务专用推理强度配置：reasoning_effort 为空串表示跟随模型服务配置，

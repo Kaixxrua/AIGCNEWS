@@ -37,12 +37,20 @@ def _json_list(value: Any) -> list[str]:
 
 
 def _github_fingerprint(row: dict[str, Any]) -> str:
+    # README 只有成功快照才参与指纹；限流/失败/不存在时使用空 hash，
+    # 避免一次临时抓取故障把已成功富化项目反复标成 changed。
+    readme_sha256 = (
+        str(row.get("readme_sha256") or "")
+        if str(row.get("readme_status") or "") == "succeeded"
+        else ""
+    )
     source = "\n".join(
         (
             str(row.get("full_name") or ""),
             str(row.get("description") or ""),
             str(row.get("language") or ""),
             str(row.get("topics_json") or ""),
+            readme_sha256,
         )
     )
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
@@ -63,14 +71,16 @@ _RUN_SCOPE_WHERE = """
 """
 
 # 与 _github_fingerprint 等价的 SQL 表达式（refresh_changed 过滤下推用）：
-# sha256("\n".join(full_name, description, language, topics_json)) 的 UTF-8 hex。
-# 两侧必须保持同一拼接顺序与编码，Python 侧仍保留二次校验兜底。
+# sha256("\n".join(full_name, description, language, topics_json, readme_sha256))。
+# 只有 succeeded README 快照的 hash 参与；两侧必须保持同一拼接顺序与编码。
 _FINGERPRINT_SQL = (
     "encode(sha256(convert_to("
     "COALESCE(c.full_name, '') || E'\\n' || "
     "COALESCE(c.description, '') || E'\\n' || "
     "COALESCE(c.language, '') || E'\\n' || "
-    "COALESCE(c.topics_json, '')"
+    "COALESCE(c.topics_json, '') || E'\\n' || "
+    "CASE WHEN ss.readme_status = 'succeeded' "
+    "THEN COALESCE(ss.readme_sha256, '') ELSE '' END"
     ", 'UTF8')), 'hex')"
 )
 
@@ -97,13 +107,20 @@ def _enrichment_eligibility_sql(
     """候选 eligibility 的 SQL 片段；与 Python 侧二次校验逻辑严格同构。"""
     if force:
         return "TRUE"
+
+    # 普通补跑只消费真正没有富化记录的候选；失败记录仅在显式开启
+    # retry_failed 时进入。历史 succeeded 行的双语/fingerprint 修复属于
+    # refresh_changed 专用路径，不能因为一次指纹策略升级挤占新项目队列。
     clauses = ["e.repo_id IS NULL"]
     if retry_failed:
         clauses.append("e.status IS DISTINCT FROM 'succeeded'")
     if refresh_changed:
         clauses.append(
-            "(e.prompt_version IS DISTINCT FROM %s"
-            f" OR e.source_fingerprint IS DISTINCT FROM {_FINGERPRINT_SQL})"
+            "(e.status = 'succeeded' AND ("
+            "COALESCE(BTRIM(e.description_zh), '') = '' OR "
+            "COALESCE(BTRIM(e.description_en), '') = '' OR "
+            f"e.source_fingerprint IS DISTINCT FROM {_FINGERPRINT_SQL} OR "
+            "e.prompt_version IS DISTINCT FROM %s))"
         )
     return "(" + " OR ".join(clauses) + ")"
 
@@ -149,6 +166,13 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         if refresh_changed and not force:
             params.append(prompt_version)
         params.append(capped_limit)
+        priority_order = "" if force or not retry_failed else """
+                             CASE
+                                 WHEN e.repo_id IS NULL THEN 0
+                                 WHEN e.status IS DISTINCT FROM 'succeeded' THEN 1
+                                 ELSE 2
+                             END ASC,
+        """
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -169,15 +193,22 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                            ls.snapshot_date, ls.captured_at,
                            e.status AS existing_status,
                            e.prompt_version AS existing_prompt_version,
-                           e.source_fingerprint AS existing_source_fingerprint
+                           e.source_fingerprint AS existing_source_fingerprint,
+                           e.description_zh AS existing_description_zh,
+                           e.description_en AS existing_description_en,
+                           ss.readme_text, ss.readme_sha256, ss.readme_status
                     FROM github_repo_candidates c
                     LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
                     LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
+                    LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
                     WHERE COALESCE(ls.stars, c.stars, 0) >= %s
+                      AND BTRIM(COALESCE(c.description, '')) <> ''
                       AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
                       AND {eligibility}
-                    ORDER BY COALESCE(ls.stars, c.stars, 0) DESC,
-                             c.full_name COLLATE "C" ASC
+                    ORDER BY {priority_order}
+                             COALESCE(ls.stars, c.stars, 0) DESC,
+                             c.full_name COLLATE "C" ASC,
+                             c.repo_id COLLATE "C" ASC
                     LIMIT %s
                     """,
                     tuple(params),
@@ -188,19 +219,30 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         selected: list[dict[str, Any]] = []
         for source_row in rows:
             row = dict(source_row)
+            if not str(row.get("description") or "").strip():
+                continue
             fingerprint = _github_fingerprint(row)
+            status = str(row.get("existing_status") or "")
             missing = row.get("existing_status") is None
             stale = force or missing
             if not stale and retry_failed:
-                stale = row.get("existing_status") != "succeeded"
-            if not stale and refresh_changed:
+                stale = status != "succeeded"
+            if not stale and refresh_changed and status == "succeeded":
                 stale = (
-                    row.get("existing_prompt_version") != prompt_version
+                    not str(row.get("existing_description_zh") or "").strip()
+                    or not str(row.get("existing_description_en") or "").strip()
                     or row.get("existing_source_fingerprint") != fingerprint
+                    or row.get("existing_prompt_version") != prompt_version
                 )
             if not stale:
                 continue
-            for key in ("existing_status", "existing_prompt_version", "existing_source_fingerprint"):
+            for key in (
+                "existing_status",
+                "existing_prompt_version",
+                "existing_source_fingerprint",
+                "existing_description_zh",
+                "existing_description_en",
+            ):
                 row.pop(key, None)
             row["source_fingerprint"] = fingerprint
             selected.append(normalize_project_row(row))
@@ -432,11 +474,25 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                 SELECT DISTINCT ON (repo_id) * FROM github_repo_snapshots
                 ORDER BY repo_id, snapshot_date DESC
             ), eligible AS (
-                SELECT c.repo_id, e.status, e.category_slug, e.category_name
+                SELECT c.repo_id, c.full_name, c.url, c.description,
+                       COALESCE(ls.stars,c.stars,0) AS stars,
+                       e.status, e.category_slug, e.category_name
                 FROM github_repo_candidates c
                 LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
                 LEFT JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
                 WHERE COALESCE(ls.stars,c.stars,0) >= %s
+                  AND BTRIM(COALESCE(c.description, '')) <> ''
+                  AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
+            ), unprocessable AS (
+                SELECT c.repo_id, c.full_name, c.url,
+                       COALESCE(ls.stars,c.stars,0) AS stars,
+                       'missing_description' AS reason
+                FROM github_repo_candidates c
+                LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
+                LEFT JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
+                WHERE COALESCE(ls.stars,c.stars,0) >= %s
+                  AND BTRIM(COALESCE(c.description, '')) = ''
+                  AND e.status IS DISTINCT FROM 'succeeded'
                   AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
             )
         """
@@ -444,13 +500,20 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
             with connection.cursor() as cursor:
                 cursor.execute(base + """SELECT COUNT(*) AS eligible,
                     COUNT(*) FILTER (WHERE status='succeeded') AS succeeded,
-                    COUNT(*) FILTER (WHERE status='failed') AS failed FROM eligible""", (min_stars,))
+                    COUNT(*) FILTER (WHERE status='failed') AS failed FROM eligible""", (min_stars, min_stars))
                 row = cursor.fetchone() or {}
                 cursor.execute(base + """SELECT category_slug AS slug, category_name AS name,
                     COUNT(*) AS count FROM eligible WHERE status='succeeded'
                     GROUP BY category_slug, category_name
-                    ORDER BY count DESC, category_name COLLATE "C" ASC""", (min_stars,))
+                    ORDER BY count DESC, category_name COLLATE "C" ASC""", (min_stars, min_stars))
                 categories = cursor.fetchall()
+                cursor.execute(base + """SELECT repo_id, full_name, url, stars, reason
+                    FROM unprocessable
+                    ORDER BY stars DESC, full_name COLLATE "C" ASC, repo_id COLLATE "C" ASC
+                    LIMIT 100""", (min_stars, min_stars))
+                unprocessable_projects = cursor.fetchall()
+                cursor.execute(base + """SELECT COUNT(*) AS count FROM unprocessable""", (min_stars, min_stars))
+                unprocessable_row = cursor.fetchone() or {}
         eligible = int(row.get("eligible") or 0)
         succeeded = int(row.get("succeeded") or 0)
         failed = int(row.get("failed") or 0)
@@ -458,7 +521,16 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                 "pending": max(eligible - succeeded - failed, 0),
                 "by_category": [{"slug": item.get("slug") or "other",
                                  "name": item.get("name") or "其他",
-                                 "count": int(item.get("count") or 0)} for item in categories]}
+                                 "count": int(item.get("count") or 0)} for item in categories],
+                "unprocessable": int(unprocessable_row.get("count") or 0),
+                "unprocessable_projects": [
+                    {"repo_id": str(item.get("repo_id") or ""),
+                     "full_name": str(item.get("full_name") or ""),
+                     "url": str(item.get("url") or ""),
+                     "stars": int(item.get("stars") or 0),
+                     "reason": str(item.get("reason") or "missing_description")}
+                    for item in unprocessable_projects
+                ]}
 
     def count_github_run_enrichment_candidates(
         self, *, channel: str, first_seen_after: str, min_stars: int = 500

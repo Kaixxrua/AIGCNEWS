@@ -81,7 +81,8 @@ def test_github_enrichment_status_query_excludes_alias_tombstones() -> None:
         sql = call.args[0]
         assert "github_repo_aliases ga" in sql
         assert "ga.alias_repo_id = c.repo_id" in sql
-    assert cursor.execute.call_args_list[0].args[1] == (600,)
+    # The shared CTE is reused by the eligible and unprocessable queries.
+    assert cursor.execute.call_args_list[0].args[1] == (600, 600)
 
 
 def test_github_fingerprint_sql_matches_python_fingerprint() -> None:
@@ -98,9 +99,11 @@ def test_github_fingerprint_sql_matches_python_fingerprint() -> None:
         "description": "Agent 描述",
         "language": "Python",
         "topics_json": '["rag"]',
+        "readme_status": "succeeded",
+        "readme_sha256": "readme-hash",
     }
     expected = hashlib.sha256(
-        "acme/agent\nAgent 描述\nPython\n[\"rag\"]".encode("utf-8")
+        "acme/agent\nAgent 描述\nPython\n[\"rag\"]\nreadme-hash".encode("utf-8")
     ).hexdigest()
     assert _github_fingerprint(row) == expected
     assert "COALESCE(c.full_name, '')" in _FINGERPRINT_SQL
@@ -124,13 +127,20 @@ def test_postgres_enrichment_adapters_expose_protocols_and_provider_reader() -> 
 
 
 def test_github_candidate_selection_preserves_fingerprint_and_refresh_semantics() -> None:
+    from backend.app.repositories.postgres_project_enrichment_repository import _github_fingerprint
+
     cursor = MagicMock()
     cursor.fetchall.return_value = [
         {
             "repo_id": "1", "full_name": "acme/agent", "description": "Agent",
             "language": "Python", "topics_json": '["rag"]', "stars": 800,
             "existing_status": "succeeded", "existing_prompt_version": "v1",
-            "existing_source_fingerprint": "stale",
+            "existing_source_fingerprint": _github_fingerprint({
+                "full_name": "acme/agent", "description": "Agent",
+                "language": "Python", "topics_json": '["rag"]',
+            }),
+            "existing_description_zh": "中文描述",
+            "existing_description_en": "English description",
         },
         {
             "repo_id": "2", "full_name": "acme/new", "description": "New",
@@ -145,8 +155,10 @@ def test_github_candidate_selection_preserves_fingerprint_and_refresh_semantics(
     refreshed = repository.get_github_projects_needing_enrichment(refresh_changed=True)
 
     assert [row["repo_id"] for row in normal] == ["2"]
-    assert [row["repo_id"] for row in refreshed] == ["1", "2"]
-    assert refreshed[0]["topics"] == ["rag"]
+    # refresh_changed no longer forces complete bilingual records; raw changes
+    # and missing fields are detected by the unified eligibility predicate.
+    assert [row["repo_id"] for row in refreshed] == ["2"]
+    assert refreshed[0]["topics"] == []
     assert len(refreshed[0]["source_fingerprint"]) == 64
     assert "DISTINCT ON (repo_id)" in cursor.execute.call_args_list[0].args[0]
 

@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
 import GithubCrawlControls from '@/components/monitor/GithubCrawlControls.vue'
 import GithubEnrichmentPanel from '@/components/monitor/GithubEnrichmentPanel.vue'
+import GithubUnprocessableProjectsPanel from '@/components/monitor/GithubUnprocessableProjectsPanel.vue'
 import ErrorLogPanel from '@/components/monitor/ErrorLogPanel.vue'
 import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
 import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
@@ -252,6 +253,10 @@ onUnmounted(dispose)
             @cancel="cancelEnrichment"
             @update-concurrency="(value) => (enrichmentConcurrency = value)"
             @update-reasoning-effort="saveEnrichmentReasoningEffort"
+          />
+          <GithubUnprocessableProjectsPanel
+            :items="enrichmentStatus?.unprocessable_projects ?? []"
+            :total="enrichmentStatus?.unprocessable ?? 0"
           />
         </template>
 
