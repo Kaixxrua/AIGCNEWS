@@ -1069,13 +1069,10 @@ onBeforeUnmount(stopViewReads)
 
 .projects-grid {
   position: relative;
-  columns: 260px;
-  column-gap: 12px;
-}
-
-.projects-grid > * {
-  margin-block-end: 12px;
-  break-inside: avoid;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  align-items: start;
 }
 
 
@@ -1118,7 +1115,7 @@ onBeforeUnmount(stopViewReads)
   }
 
   .projects-grid {
-    columns: 1;
+    grid-template-columns: 1fr;
   }
 
   .projects-hero,
