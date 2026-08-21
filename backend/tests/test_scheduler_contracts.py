@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from backend.app.core import scheduler
+from backend.app.core.config import settings as app_settings
 from backend.app.core.scheduler_triggers import DailyWindowIntervalTrigger
 from backend.app.repositories.scheduler_job_config_repository import SchedulerJobConfig
 
@@ -908,3 +909,48 @@ class SchedulerXSourceGateTests(unittest.TestCase):
         self.assertIn("x_credentials_probe", registered)
         self.assertIn("x_deleted_janitor", registered)
         self.assertIn("x_closing", registered)
+
+
+class CreateSchedulerRuntimeXPluginGateTests(unittest.TestCase):
+    """create_scheduler_runtime 的 X 门控：开关开但插件缺失时整体抑制。
+
+    直接构造 ApplicationSchedulerRuntime 的旧行为不变（x_source_enabled
+    默认 True）；策略收口在工厂——插件不可导入时按 fail closed 传
+    x_source_enabled=False，X 链路任务不注册、在线配置亦无法启用。
+    """
+
+    _LOADER = "backend.app.services.source_plugins.load_x_transport_class"
+
+    def _create(self) -> scheduler.ApplicationSchedulerRuntime:
+        return scheduler.create_scheduler_runtime(MagicMock())
+
+    def test_flag_on_plugin_missing_suppresses_x(self) -> None:
+        with (
+            patch.object(app_settings, "x_source_enabled", True),
+            patch(self._LOADER, return_value=None),
+            self.assertLogs("backend.app.core.scheduler", level="WARNING") as captured,
+        ):
+            runtime = self._create()
+
+        self.assertIs(runtime._x_source_enabled, False)
+        self.assertIn("X 源插件不可导入", "\n".join(captured.output))
+
+    def test_flag_on_plugin_present_keeps_x(self) -> None:
+        sentinel = type("XTransport", (), {})
+        with (
+            patch.object(app_settings, "x_source_enabled", True),
+            patch(self._LOADER, return_value=sentinel),
+        ):
+            runtime = self._create()
+
+        self.assertIs(runtime._x_source_enabled, True)
+
+    def test_flag_off_never_touches_loader(self) -> None:
+        with (
+            patch.object(app_settings, "x_source_enabled", False),
+            patch(self._LOADER) as loader_mock,
+        ):
+            runtime = self._create()
+
+        self.assertIs(runtime._x_source_enabled, False)
+        loader_mock.assert_not_called()
