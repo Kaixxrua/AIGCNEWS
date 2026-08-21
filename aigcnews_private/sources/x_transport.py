@@ -8,11 +8,11 @@ from __future__ import annotations
   - 账号顺序处理 + 账号间抖动延迟：凭据为主账号 cookie，
     温和节奏优先于吞吐（不并发 gather）
   - screen_name → user_id 模块级 24h 缓存：请求量减半
-  - 异常分级：认证失效/限流 → 中止整轮（不拿死凭据锤其余账号）；
+  - 异常分级：认证失效/限流 → 中止当前凭据（不拿死凭据锤其余账号）；
     单账号 NotFound/其他异常 → 记录并跳过
   - 支持注入 credential_provider：按启用顺序构造独立 TwitterClient，
-    认证失败时丢弃 partial result 并从完整 watchlist 用下一凭据重试；
-    429 不切换账号以避免扩大 IP 级限流
+    认证失败或 429 时丢弃 partial result，并从完整 watchlist 用下一凭据重试；
+    每个 watchlist 账号仍严格串行处理
 
 凭据来源优先级：
   1. 注入的 ``credential_provider``（生产数据库事实源）
@@ -24,6 +24,7 @@ import logging
 import os
 import random
 import time
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Iterable, Mapping, MutableMapping
 
 from twitter_cli.exceptions import (
@@ -53,6 +54,9 @@ USER_ID_CACHE_TTL_SECONDS = 24 * 3600
 # XTransportUnavailable，不会把故障轮拖长数倍。
 _NETWORK_RETRY_DELAYS = (15.0, 30.0)
 _NETWORK_RETRY_BUDGET_PER_ROUND = 6
+# twitter-cli 的 timeline 请求上限；滚动 24 小时必须使用固定深度，
+# 不能沿用 crawler 的低默认 count，否则高产账号会在窗口边界前截断。
+_ROLLING_WINDOW_FETCH_COUNT = 200
 _TRANSIENT_CURL_ERRNOS = frozenset({5, 6, 7, 28, 35, 52, 55, 56})
 
 
@@ -508,6 +512,69 @@ class XTransport:
         self._id_cache = id_cache if id_cache is not None else _USER_ID_CACHE
         self._sleep = sleep or asyncio.sleep
 
+    async def fetch_watchlist_tweets_window(
+        self,
+        handles: Iterable[str],
+        *,
+        window_start: datetime,
+        window_end: datetime,
+        count_per_user: int = 20,
+    ) -> dict[str, list[Any]]:
+        """抓取窗口内推文，并在私有客户端能力范围内尽量覆盖窗口。
+
+        twitter-cli 的公开 timeline API 是 count 驱动的，内部负责 cursor
+        分页但不暴露 cursor iterator。因此这里请求一个有界的深度（至少
+        200 条/账号），再由公共策略层按 UTC 窗口过滤。达到深度上限而最早
+        推文仍未越过 window_start 时记录 incomplete，避免伪装成完整覆盖。
+        """
+        start = window_start.astimezone(timezone.utc)
+        end = window_end.astimezone(timezone.utc)
+        depth = _ROLLING_WINDOW_FETCH_COUNT
+        if self._credential_provider is not None:
+            result = await self._fetch_with_credential_provider(
+                tuple(handles), depth,
+            )
+        else:
+            result = await self._fetch_with_client(
+                self._client_factory(), tuple(handles), depth,
+            )
+
+        incomplete: list[str] = []
+        for handle, tweets in result.items():
+            normalized: list[Any] = []
+            seen_ids: set[str] = set()
+            oldest: datetime | None = None
+            for tweet in tweets:
+                tweet_id = str(getattr(tweet, "id", "") or "")
+                if not tweet_id or tweet_id in seen_ids:
+                    continue
+                seen_ids.add(tweet_id)
+                normalized.append(tweet)
+                created_at = str(getattr(tweet, "created_at", "") or "")
+                try:
+                    parsed = datetime.strptime(
+                        created_at, "%a %b %d %H:%M:%S %z %Y"
+                    ).astimezone(timezone.utc)
+                except (TypeError, ValueError):
+                    continue
+                if oldest is None or parsed < oldest:
+                    oldest = parsed
+            result[handle] = normalized
+            if oldest is None or oldest >= start:
+                incomplete.append(handle)
+
+        if incomplete:
+            logger.warning(
+                "[XTransport] rolling window may be incomplete: %d/%d accounts "
+                "did not reach window_start=%s (depth=%d, window_end=%s)",
+                len(incomplete),
+                len(result),
+                start.isoformat(),
+                depth,
+                end.isoformat(),
+            )
+        return result
+
     async def fetch_watchlist_tweets(
         self,
         handles: Iterable[str],
@@ -727,9 +794,9 @@ class XTransport:
             AuthenticationError 立即中止本轮，交给凭证池 fallback 或上抛
             XAuthAbort；不拿死凭据锤其余账号，也绝不误计为基础设施故障
           - TwitterAPIError(429)：twitter-cli 内部退避后仍限流（它把 429 包成
-            TwitterAPIError 而非 RateLimitError）——跳过该账号保住本轮其余
-            覆盖（观测：部分限流轮仍能收到 7/12），但记账；整轮零成功时
-            升级为 XRateLimitAbort
+            TwitterAPIError 而非 RateLimitError）——凭据级限流，立即中止当前
+            凭据并丢弃 partial result；provider 路径交给下一凭据重试完整列表，
+            单 client 路径升级为 XRateLimitAbort
           - curl 层网络故障（代理拒连/超时/截断）：按 _NETWORK_RETRY_DELAYS
             退避重试，骑过出口代理分钟级抖动；预算烧完或仍失败才计故障
           - 其他异常（解析漂移等）：跳过并计系统性故障；整轮零
@@ -739,7 +806,6 @@ class XTransport:
         watchlist = tuple(handles)
         result: dict[str, list[Any]] = {}
         infra_failures = 0
-        rate_limited = False
         retry_budget = _NETWORK_RETRY_BUDGET_PER_ROUND
         for index, handle in enumerate(watchlist):
             if index > 0:
@@ -772,13 +838,11 @@ class XTransport:
                             "Twitter API 认证失败 (HTTP %d)" % exc.status_code
                         ) from exc
                     if exc.status_code == 429:
-                        rate_limited = True
-                        logger.warning(
-                            "[XTransport] 账号 %s 触发限流(429)，跳过本轮", handle
-                        )
-                    else:
-                        infra_failures += 1
-                        logger.exception("[XTransport] 账号 %s 抓取失败，跳过", handle)
+                        raise RateLimitError(
+                            "Twitter API 限流 (HTTP 429)"
+                        ) from exc
+                    infra_failures += 1
+                    logger.exception("[XTransport] 账号 %s 抓取失败，跳过", handle)
                     break
                 except Exception as exc:
                     if (
@@ -806,8 +870,6 @@ class XTransport:
         if result or not watchlist:
             return result
         # 零成功轮升级：绝不让基础设施级故障以「空结果成功」静默收场
-        if rate_limited:
-            raise XRateLimitAbort("x_rate_limited")
         if infra_failures:
             raise XTransportUnavailable("x_transport_unavailable")
         return result
@@ -817,7 +879,7 @@ class XTransport:
         handles: Iterable[str],
         count_per_user: int,
     ) -> dict[str, list[Any]]:
-        """按顺序尝试 credential_provider 返回的凭据，认证失败时 fallback。"""
+        """按顺序尝试凭据，认证失败或 429 时从完整列表 fallback。"""
         credentials = self._credential_provider()
         if not credentials:
             raise XAuthNotConfigured("x_auth_not_configured: no enabled X credentials")
@@ -827,6 +889,7 @@ class XTransport:
         # retries the complete list rather than the unconsumed suffix.
         watchlist = tuple(handles)
         last_auth_error: AuthenticationError | None = None
+        last_rate_limit_error: RateLimitError | None = None
         tried = 0
         for index, credential in enumerate(credentials):
             if not credential.get("enabled", True):
@@ -853,8 +916,15 @@ class XTransport:
                 )
                 continue
             except RateLimitError as exc:
-                raise XRateLimitAbort("x_rate_limited") from exc
+                last_rate_limit_error = exc
+                logger.warning(
+                    "[XTransport] 凭据 %s 触发限流，丢弃 partial 并尝试下一个",
+                    credential.get("display_name") or f"#{index}",
+                )
+                continue
 
+        if last_rate_limit_error is not None:
+            raise XRateLimitAbort("x_rate_limited") from last_rate_limit_error
         if last_auth_error is not None:
             raise XAuthAbort("x_auth_all_credentials_failed") from last_auth_error
         raise XAuthNotConfigured("x_auth_not_configured: no valid X credentials")

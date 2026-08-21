@@ -9,6 +9,7 @@ from __future__ import annotations
 """
 
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
 from curl_cffi.requests.exceptions import (
@@ -24,7 +25,6 @@ from twitter_cli.exceptions import (
 from twitter_cli.models import Author, Metrics, Tweet, TweetMedia, UserProfile
 
 from aigcnews_private.sources import x_transport
-from backend.app.services.ingestion.crawlers import x_crawler
 from backend.app.services.ingestion.sources import x_policy
 
 
@@ -647,30 +647,23 @@ class XTransportContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([t.id for t in result["karpathy"]], ["b1"])
         self.assertNotIn("sama", result)  # 其他异常 → 跳过
 
-    async def test_twitter_api_429_skips_account_but_keeps_partial_coverage(self) -> None:
-        """twitter-cli 把 429 包成 TwitterAPIError（内部退避后仍限流）。
-
-        部分账号限流时跳过该账号、保住本轮其余覆盖（生产观测：部分
-        限流轮仍能收到 7/12）；不升级为中止。
-        """
+    async def test_twitter_api_429_aborts_legacy_single_client(self) -> None:
+        """legacy single-client path 将 TwitterAPIError(429) 升级为整轮失败。"""
         client = _FakeClient()
-        client.fetch_user.side_effect = [
-            UserProfile(id="11", name="OpenAI", screen_name="openai"),
-            UserProfile(id="22", name="Kimi", screen_name="kimi_moonshot"),
-        ]
-        client.fetch_user_tweets.side_effect = [
-            TwitterAPIError(429, "Rate limited after 3 retries"),
-            [_tweet("k1", screen_name="kimi_moonshot")],
-        ]
+        client.fetch_user.return_value = UserProfile(
+            id="11", name="OpenAI", screen_name="openai"
+        )
+        client.fetch_user_tweets.side_effect = TwitterAPIError(
+            429, "Rate limited after 3 retries"
+        )
         transport = self._transport(client)
 
-        result = await transport.fetch_watchlist_tweets(
-            ["openai", "kimi_moonshot"], count_per_user=5
-        )
+        with self.assertRaisesRegex(x_transport.XRateLimitAbort, "x_rate_limited"):
+            await transport.fetch_watchlist_tweets(
+                ["openai", "kimi_moonshot"], count_per_user=5
+            )
 
-        self.assertNotIn("openai", result)
-        self.assertEqual([t.id for t in result["kimi_moonshot"]], ["k1"])
-        self.assertEqual(client.fetch_user_tweets.call_count, 2)
+        self.assertEqual(client.fetch_user_tweets.call_count, 1)
 
     async def test_all_accounts_429_raises_rate_limit_abort(self) -> None:
         """整轮零成功且发生限流 → XRateLimitAbort（不让限流静默成空结果）。"""
@@ -800,13 +793,70 @@ class XTransportContracts(unittest.IsolatedAsyncioTestCase):
             unittest.mock.call("22", 5),
         ])
 
-    async def test_rate_limit_does_not_rotate_to_backup_credential(self) -> None:
+    async def test_rate_limit_rotates_to_backup_from_full_watchlist(self) -> None:
         primary = _FakeClient()
-        primary.fetch_user.return_value = UserProfile(
-            id="11", name="OpenAI", screen_name="openai"
-        )
-        primary.fetch_user_tweets.side_effect = RateLimitError("429")
+        primary.fetch_user.side_effect = [
+            UserProfile(id="11", name="OpenAI", screen_name="openai"),
+            UserProfile(id="22", name="Karpathy", screen_name="karpathy"),
+        ]
+        primary.fetch_user_tweets.side_effect = [
+            [_tweet("primary-partial", screen_name="openai")],
+            RateLimitError("429"),
+        ]
         backup = _FakeClient()
+        backup.fetch_user_tweets.side_effect = [
+            [_tweet("backup-openai", screen_name="openai")],
+            [_tweet("backup-karpathy", screen_name="karpathy")],
+        ]
+        factory = Mock(side_effect=[primary, backup])
+        transport = x_transport.XTransport(
+            credential_provider=lambda: [
+                {"display_name": "primary", "auth_token": "auth-1", "ct0": "ct0-1", "enabled": True},
+                {"display_name": "backup", "auth_token": "auth-2", "ct0": "ct0-2", "enabled": True},
+            ],
+            credential_factory=factory,
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
+        result = await transport.fetch_watchlist_tweets(
+            ["openai", "karpathy"], count_per_user=5
+        )
+
+        self.assertEqual([tweet.id for tweet in result["openai"]], ["backup-openai"])
+        self.assertEqual([tweet.id for tweet in result["karpathy"]], ["backup-karpathy"])
+        self.assertNotIn(
+            "primary-partial",
+            [tweet.id for tweets in result.values() for tweet in tweets],
+        )
+        self.assertEqual(
+            factory.call_args_list,
+            [
+                unittest.mock.call("auth-1", "ct0-1"),
+                unittest.mock.call("auth-2", "ct0-2"),
+            ],
+        )
+        # backup 从第一个 handle 重新开始，而不是接着 kimi/karpathy。
+        backup.fetch_user_tweets.assert_has_calls(
+            [unittest.mock.call("11", 5), unittest.mock.call("22", 5)]
+        )
+
+    async def test_twitter_api_429_rotates_to_backup_from_full_watchlist(self) -> None:
+        primary = _FakeClient()
+        primary.fetch_user.side_effect = [
+            UserProfile(id="11", name="OpenAI", screen_name="openai"),
+            UserProfile(id="22", name="Karpathy", screen_name="karpathy"),
+        ]
+        primary.fetch_user_tweets.side_effect = [
+            [_tweet("primary-partial", screen_name="openai")],
+            TwitterAPIError(429, "Rate limited after retries"),
+        ]
+        backup = _FakeClient()
+        backup.fetch_user_tweets.side_effect = [
+            [_tweet("backup-openai", screen_name="openai")],
+            [_tweet("backup-karpathy", screen_name="karpathy")],
+        ]
         factory = Mock(side_effect=[primary, backup])
         transport = x_transport.XTransport(
             credential_provider=lambda: [
@@ -819,12 +869,39 @@ class XTransportContracts(unittest.IsolatedAsyncioTestCase):
             sleep=AsyncMock(),
         )
 
+        result = await transport.fetch_watchlist_tweets(
+            ["openai", "karpathy"], count_per_user=5
+        )
+
+        self.assertEqual(
+            [tweet.id for tweets in result.values() for tweet in tweets],
+            ["backup-openai", "backup-karpathy"],
+        )
+        self.assertEqual(
+            backup.fetch_user_tweets.call_args_list,
+            [unittest.mock.call("11", 5), unittest.mock.call("22", 5)],
+        )
+
+    async def test_all_provider_credentials_rate_limited_raise_pool_marker(self) -> None:
+        clients = [_FakeClient(), _FakeClient()]
+        for client in clients:
+            client.fetch_user.return_value = UserProfile(
+                id="11", name="OpenAI", screen_name="openai"
+            )
+            client.fetch_user_tweets.side_effect = RateLimitError("429")
+        transport = x_transport.XTransport(
+            credential_provider=lambda: [
+                {"auth_token": "auth-1", "ct0": "ct0-1", "enabled": True},
+                {"auth_token": "auth-2", "ct0": "ct0-2", "enabled": True},
+            ],
+            credential_factory=Mock(side_effect=clients),
+            inter_account_delay=0.0,
+            id_cache={},
+            sleep=AsyncMock(),
+        )
+
         with self.assertRaisesRegex(x_transport.XRateLimitAbort, "x_rate_limited"):
             await transport.fetch_watchlist_tweets(["openai"])
-
-        factory.assert_called_once_with("auth-1", "ct0-1")
-        backup.fetch_user.assert_not_called()
-        backup.fetch_user_tweets.assert_not_called()
 
     async def test_all_auth_failures_raise_stable_pool_marker(self) -> None:
         clients = [_FakeClient(), _FakeClient()]
@@ -883,6 +960,30 @@ class _FakeTransport:
         return self._result
 
 
+class _WindowFakeTransport:
+    def __init__(self, result=None) -> None:
+        self._result = result if result is not None else {}
+        self.calls: list[tuple] = []
+
+    async def fetch_watchlist_tweets_window(
+        self,
+        handles,
+        *,
+        window_start,
+        window_end,
+        count_per_user,
+    ):
+        self.calls.append(
+            (
+                list(handles),
+                window_start,
+                window_end,
+                count_per_user,
+            )
+        )
+        return self._result
+
+
 class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
     def _crawler(self, transport, handles=("openai",)):
         from backend.app.services.ingestion.crawlers import x_crawler
@@ -902,7 +1003,11 @@ class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
         crawler = self._crawler(transport)
 
         with patch.object(x_crawler, "today_cst", return_value="2026-08-04"):
-            result = await crawler._do_fetch(period="daily", limit=25)
+            result = await crawler._do_fetch(
+                period="daily",
+                limit=25,
+                target_date="2026-08-04",
+            )
 
         self.assertEqual(transport.calls, [(["openai"], 7)])
         self.assertIsNone(result.error)
@@ -934,10 +1039,43 @@ class XCrawlerContracts(unittest.IsolatedAsyncioTestCase):
         crawler = self._crawler(transport)
 
         with patch.object(x_crawler, "today_cst", return_value="2026-08-04"):
-            result = await crawler._do_fetch(period="daily", limit=25)
+            result = await crawler._do_fetch(
+                period="daily",
+                limit=25,
+                target_date="2026-08-04",
+            )
 
         self.assertIsNone(result.error)
         self.assertEqual([item["tweet_id"] for item in result.items], ["3001"])
+
+    async def test_default_fetches_complete_rolling_window_in_timeline_order(self) -> None:
+        from backend.app.services.ingestion.crawlers import x_crawler
+
+        transport = _WindowFakeTransport(
+            result={
+                "openai": [
+                    _tweet("2002", created_at="Thu Aug 20 11:00:00 +0000 2026"),
+                    _tweet("2001", created_at="Thu Aug 20 10:00:00 +0000 2026"),
+                    _tweet("2002", created_at="Thu Aug 20 11:00:00 +0000 2026"),
+                    _tweet("1999", created_at="Wed Aug 19 09:59:59 +0000 2026"),
+                ]
+            }
+        )
+        crawler = self._crawler(transport)
+        fixed_end = datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc)
+
+        with patch.object(x_crawler, "datetime") as datetime_type:
+            datetime_type.now.return_value = fixed_end
+            result = await crawler._do_fetch(period="daily", limit=25)
+
+        self.assertEqual(len(transport.calls), 1)
+        handles, window_start, window_end, count = transport.calls[0]
+        self.assertEqual(handles, ["openai"])
+        self.assertEqual(window_start, datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc))
+        self.assertEqual(window_end, fixed_end)
+        self.assertEqual(count, 7)
+        self.assertIsNone(result.error)
+        self.assertEqual([item["tweet_id"] for item in result.items], ["2002", "2001"])
 
     async def test_empty_watchlist_returns_ok_zero_items(self) -> None:
         transport = _FakeTransport()
@@ -1102,7 +1240,7 @@ class XTransportCredentialProviderContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([t.id for t in result["openai"]], ["backup-tweet"])
         self.assertEqual([t.id for t in result["karpathy"]], ["karpathy-backup"])
 
-    async def test_rate_limit_does_not_rotate_account(self) -> None:
+    async def test_rate_limit_exhausts_all_credentials(self) -> None:
         calls: list[tuple[str, str]] = []
 
         def factory(auth_token: str, ct0: str) -> _FakeClient:
@@ -1128,10 +1266,10 @@ class XTransportCredentialProviderContracts(unittest.IsolatedAsyncioTestCase):
             sleep=AsyncMock(),
         )
 
-        with self.assertRaises(x_transport.XRateLimitAbort):
+        with self.assertRaisesRegex(x_transport.XRateLimitAbort, "x_rate_limited"):
             await transport.fetch_watchlist_tweets(["openai"])
 
-        self.assertEqual(calls, [("primary", "c1")])
+        self.assertEqual(calls, [("primary", "c1"), ("backup", "c2")])
 
     async def test_all_credentials_authentication_failed(self) -> None:
         calls: list[tuple[str, str]] = []
