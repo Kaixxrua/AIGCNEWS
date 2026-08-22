@@ -2698,6 +2698,161 @@ class XWindowPaginationContracts(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(tw_graphql.FALLBACK_QUERY_IDS.get("UserTweetsAndReplies"))
 
+    async def test_replies_excluded_handles_fall_back_to_user_tweets(self) -> None:
+        # 2026-08-22 用户决策：grok 的 AndReplies 被「@grok …」提问回复
+        # 刷爆（会话模块耗尽页预算 → 恒 fail-closed，内容亦无收录价值），
+        # 该账号回退 UserTweets（只含原创/转贴/引用/自回复线程），并沿用
+        # UserTweets 实测 200 的旧变量形状（withV2Timeline/
+        # latestControlAvailable/requestContext 不得被精简五键替换）。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        client = _CursorFakeClient([
+            self._page(
+                [_tweet("t1", created_at="Wed Aug 19 10:00:00 +0000 2026")], None
+            ),
+        ])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["grok"], window_start=start, window_end=end, count_per_user=20
+        )
+
+        self.assertTrue(result.by_handle["grok"].complete)
+        self.assertEqual(client.operations, ["UserTweets"])
+        self.assertEqual(
+            set(client.calls[0]),
+            {
+                "count",
+                "userId",
+                "includePromotedContent",
+                "withQuickPromoteEligibilityTweetFields",
+                "withVoice",
+                "withV2Timeline",
+                "latestControlAvailable",
+                "requestContext",
+            },
+        )
+        # 大小写不敏感：watchlist 里写成 Grok 也必须命中排除集
+        client2 = _CursorFakeClient([
+            self._page(
+                [_tweet("t1", created_at="Wed Aug 19 10:00:00 +0000 2026")], None
+            ),
+        ])
+        transport2 = self._transport(client2)
+        await transport2.fetch_watchlist_tweets_window(
+            ["Grok"], window_start=start, window_end=end
+        )
+        self.assertEqual(client2.operations, ["UserTweets"])
+
+    async def test_conversation_ancestor_tweets_are_dropped(self) -> None:
+        # AndReplies 的会话模块会附带回复对象的父贴，作者多为非观察
+        # 名单账号（grok 时间线的「@grok …」提问者即此形态）。这些祖先
+        # 条目不得入库：作者 != 当前 handle 且非转贴 → 丢弃；本账号的
+        # 回复与原创照常保留。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        reply = _tweet(
+            "r1",
+            text="@someone yes, exactly",
+            created_at="Thu Aug 20 09:00:00 +0000 2026",
+        )
+        ancestor = _tweet(
+            "a1",
+            screen_name="random_user",
+            author_name="Random User",
+            text="@grok explain this",
+            created_at="Thu Aug 20 08:30:00 +0000 2026",
+        )
+        boundary = _tweet("t9", created_at="Wed Aug 19 10:00:00 +0000 2026")
+        client = _CursorFakeClient([self._page([reply, ancestor, boundary], None)])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        handle = result.by_handle["openai"]
+        self.assertTrue(handle.complete)
+        ids = [t.id for t in handle.tweets]
+        self.assertIn("r1", ids)
+        self.assertIn("t9", ids)
+        self.assertNotIn("a1", ids)
+
+    async def test_retweet_with_foreign_original_author_is_kept(self) -> None:
+        # 转贴豁免：parser 已把条目换成原贴（作者变成非本账号），但这是
+        # 2026-08-13 起刻意收录的「watchlist 账号转贴带入」路径——
+        # is_retweet 标记保留，作者过滤必须放行。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        retweet_entry = {
+            "content": {
+                "itemContent": {
+                    "tweet_results": {
+                        "result": {
+                            "__typename": "Tweet",
+                            "rest_id": "rt-outer",
+                            "legacy": {
+                                "created_at": "Thu Aug 20 09:00:00 +0000 2026",
+                                "full_text": "RT @some_author original text",
+                                "retweeted_status_result": {
+                                    "result": {
+                                        "__typename": "Tweet",
+                                        "rest_id": "orig-1",
+                                        "legacy": {
+                                            "created_at": "Thu Aug 20 08:30:00 +0000 2026",
+                                            "full_text": "original text",
+                                        },
+                                        "core": {
+                                            "user_results": {
+                                                "result": {
+                                                    "__typename": "User",
+                                                    "legacy": {
+                                                        "screen_name": "some_author",
+                                                        "name": "Some Author",
+                                                    },
+                                                }
+                                            }
+                                        },
+                                    }
+                                },
+                            },
+                            "core": {
+                                "user_results": {
+                                    "result": {
+                                        "__typename": "User",
+                                        "legacy": {
+                                            "screen_name": "openai",
+                                            "name": "OpenAI",
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        }
+        boundary_entry = _CursorFakeClient._entry_for(
+            _tweet("t9", created_at="Wed Aug 19 10:00:00 +0000 2026")
+        )
+        client = _CursorFakeClient([
+            self._page([], None, entries=[retweet_entry, boundary_entry]),
+        ])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        handle = result.by_handle["openai"]
+        self.assertTrue(handle.complete)
+        ids = [t.id for t in handle.tweets]
+        self.assertIn("orig-1", ids)
+        parsed_rt = next(t for t in handle.tweets if t.id == "orig-1")
+        self.assertTrue(parsed_rt.is_retweet)
+        self.assertEqual(parsed_rt.retweeted_by, "openai")
+        self.assertEqual(parsed_rt.author.screen_name, "some_author")
+
 
 class XTransportNetworkRetryContracts(unittest.IsolatedAsyncioTestCase):
     """单账号网络抖动重试契约：curl 层链路故障退避重试,业务错误不重试。

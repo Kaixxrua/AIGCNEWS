@@ -80,6 +80,11 @@ _WINDOW_MAX_PAGES_PER_HANDLE = 50
 # X-Client-Transaction-Id 头（twitter_cli ClientTransaction 注入，
 # 缺失时空体 404）。
 _WINDOW_TIMELINE_OPERATION = "UserTweetsAndReplies"
+# 不采回复贴的账号（screen_name 小写）：2026-08-22 用户决策——grok 的
+# AndReplies 时间线被海量「@grok …」提问回复刷爆，页预算会被会话模块
+# 耗尽（page_limit_reached 恒 fail-closed），且回复内容对站点无收录
+# 价值；该账号退回 UserTweets（只含原创/转贴/引用/自回复线程）。
+_REPLIES_EXCLUDED_HANDLES = frozenset({"grok"})
 # 与网页端 fetchUserTweetsAndReplies 严格对齐的 variables 形状
 # （2026-08-22 实测 200）。多余的 UserTweets 时代变量
 # （withV2Timeline/latestControlAvailable/requestContext）不发送：
@@ -780,7 +785,14 @@ class XTransport:
 
         操作：UserTweetsAndReplies（2026-08-22 起，含对他人回复；
         需 X-Client-Transaction-Id，响应固定 v1 结构，见
-        _WINDOW_TIMELINE_OPERATION 注释）。
+        _WINDOW_TIMELINE_OPERATION 注释）；_REPLIES_EXCLUDED_HANDLES
+        中的账号（grok）回退 UserTweets（不采回复贴，用户决策）。
+
+        AndReplies 时间线的会话模块会把**回复对象的父贴**（作者多为非
+        观察名单账号）一并下发，parse_timeline_response 会将其解析成独立
+        文档——入库过滤只对作者 == 当前 handle 的条目与转贴豁免
+        （转贴已由 parser 换成原贴作者，但属 2026-08-13 起刻意收录的
+        「watchlist 账号转贴带入」路径，is_retweet 标记保留可识别）。
 
         complete 仅当满足以下之一：
           - boundary_reached：最早的**时间线外层条目**时间戳 ≤ window_start
@@ -826,6 +838,11 @@ class XTransport:
         oldest_seen: datetime | None = None
         complete = False
         reason = "transport_error"
+        replies_excluded = handle.lower() in _REPLIES_EXCLUDED_HANDLES
+        # 被排除账号回退 UserTweets：沿用该操作实测 200 的旧变量形状
+        # （含 withV2Timeline/latestControlAvailable/requestContext），
+        # 不混用 AndReplies 的精简五键。
+        operation = "UserTweets" if replies_excluded else _WINDOW_TIMELINE_OPERATION
 
         while page_count < _WINDOW_MAX_PAGES_PER_HANDLE:
             variables: dict[str, Any] = {
@@ -835,13 +852,17 @@ class XTransport:
                 "withQuickPromoteEligibilityTweetFields": True,
                 "withVoice": True,
             }
+            if replies_excluded:
+                variables["withV2Timeline"] = True
+                variables["latestControlAvailable"] = True
+                variables["requestContext"] = "launch"
             if cursor:
                 variables["cursor"] = cursor
 
             try:
                 data = await asyncio.to_thread(
                     client._graphql_get,
-                    _WINDOW_TIMELINE_OPERATION,
+                    operation,
                     variables,
                     tw_graphql.FEATURES,
                 )
@@ -896,6 +917,16 @@ class XTransport:
             for tweet in page_tweets:
                 tweet_id = str(getattr(tweet, "id", "") or "")
                 if not tweet_id or tweet_id in seen_ids:
+                    continue
+                # 会话祖先过滤：AndReplies 下发的父贴作者不是本账号，
+                # 丢弃；转贴（parser 已换成原贴作者、保留 is_retweet）
+                # 豁免，属刻意收录的转贴带入路径。
+                author = str(
+                    getattr(getattr(tweet, "author", None), "screen_name", "") or ""
+                )
+                if author.lower() != handle.lower() and not getattr(
+                    tweet, "is_retweet", False
+                ):
                     continue
                 seen_ids.add(tweet_id)
                 tweets.append(tweet)
