@@ -143,3 +143,62 @@ def test_status_aggregation_preserves_pending_derivation() -> None:
         "chunk_count": 21,
         "last_indexed_at": "2026-07-28T00:00:00Z",
     }
+
+
+def test_readme_bootstrap_selector_only_picks_active_empty_description_candidates() -> None:
+    repository, database, cursor = _repository()
+    cursor.fetchall.return_value = [{"repo_id": "owner/repo"}]
+
+    rows = repository.list_github_projects_for_readme_bootstrap(
+        limit=5000, min_stars=600, after_repo_id="owner/alpha"
+    )
+
+    sql, params = cursor.execute.call_args.args
+    # 只圈选 description 为空、未 404 下架、非改名墓碑的候选
+    assert "BTRIM(COALESCE(c.description, '')) = ''" in sql
+    assert "c.availability_status = 'active'" in sql
+    assert "ga.alias_repo_id = c.repo_id" in sql
+    assert "ga.canonical_repo_id <> c.repo_id" in sql
+    # 不与富化表 join：首次运行的 README-only 项目还没有富化记录
+    assert "github_repo_enrichments" not in sql
+    # 需要 README 的条件：无快照行 / pushed_at 水位过期 / 失败重试到期
+    assert "ss.repo_id IS NULL" in sql
+    assert "ss.readme_repo_pushed_at" in sql
+    assert "ss.readme_status IN ('failed', 'rate_limited')" in sql
+    assert "ss.readme_next_retry_at" in sql
+    assert 'ORDER BY c.repo_id COLLATE "C" ASC' in sql
+    assert "LIMIT %s" in sql
+    assert params == (600, "owner/alpha", 1000)
+    assert rows == [{"repo_id": "owner/repo"}]
+    assert database.transaction_count == 1
+
+
+def test_readme_snapshot_upsert_only_touches_readme_columns() -> None:
+    repository, _, cursor = _repository()
+    cursor.fetchone.return_value = {"canonical_repo_id": "owner/canonical"}
+
+    repository.upsert_github_project_readme_snapshot({
+        "repo_id": "owner/old-name",
+        "readme_text": "README body",
+        "readme_sha256": "hash",
+        "readme_etag": "etag",
+        "readme_status": "succeeded",
+        "readme_checked_at": "2026-08-21T00:00:00+00:00",
+        "readme_fetched_at": "2026-08-21T00:00:00+00:00",
+        "readme_repo_pushed_at": "2026-08-01T00:00:00+00:00",
+        "readme_error": None,
+    })
+
+    resolve_call, upsert_call = cursor.execute.call_args_list
+    assert resolve_call.args[1] == ("owner/old-name",)
+    sql, params = upsert_call.args
+    assert "INSERT INTO github_project_semantic_sources" in sql
+    assert "ON CONFLICT (repo_id) DO UPDATE" in sql
+    assert "readme_text = EXCLUDED.readme_text" in sql
+    assert "readme_repo_pushed_at = EXCLUDED.readme_repo_pushed_at" in sql
+    # bootstrap 只写 README 快照列，绝不动索引状态/指纹列
+    assert "index_status = EXCLUDED" not in sql
+    assert "indexed_fingerprint = EXCLUDED" not in sql
+    assert params[0] == "owner/canonical"
+    assert params[1:4] == ("README body", "hash", "etag")
+    assert params[4] == "succeeded"

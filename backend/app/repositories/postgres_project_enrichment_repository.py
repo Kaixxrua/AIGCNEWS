@@ -56,19 +56,44 @@ def _github_fingerprint(row: dict[str, Any]) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+# README 只有成功且清洗后非空的快照才是富化输入；仅有 semantic source 行、
+# hash 或失败状态都不能解锁模型调用。该谓词与 _has_github_enrichment_input
+# 保持同构，供标准队列、状态统计和显式运行范围复用。
+_GITHUB_ENRICHMENT_INPUT_SQL = """
+    (
+        BTRIM(COALESCE(c.description, '')) <> ''
+        OR (
+            ss.readme_status = 'succeeded'
+            AND BTRIM(COALESCE(ss.readme_text, '')) <> ''
+        )
+    )
+"""
+
 # 单次爬取运行的富化范围（三重去重，绝不触碰项目库存量）：
 # 渠道标记 + first_seen_at 锚点 + 排除已成功富化。CLI 脚本
 # scripts/enrich_github_projects_run.py 与本模块共用此片段，保持单一事实源。
-_RUN_SCOPE_WHERE = """
+_RUN_SCOPE_WHERE = f"""
     FROM github_repo_candidates c
+    LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
     WHERE c.source_channels LIKE %s
       AND c.first_seen_at >= %s
       AND COALESCE(c.stars, 0) >= %s
+      AND {_GITHUB_ENRICHMENT_INPUT_SQL}
       AND NOT EXISTS (
           SELECT 1 FROM github_repo_enrichments e
           WHERE e.repo_id = c.repo_id AND e.status = 'succeeded'
       )
 """
+
+def _has_github_enrichment_input(row: dict[str, Any]) -> bool:
+    """Return whether a candidate has a usable description or README snapshot."""
+    if str(row.get("description") or "").strip():
+        return True
+    return (
+        str(row.get("readme_status") or "") == "succeeded"
+        and bool(str(row.get("readme_text") or "").strip())
+    )
+
 
 # 与 _github_fingerprint 等价的 SQL 表达式（refresh_changed 过滤下推用）：
 # sha256("\n".join(full_name, description, language, topics_json, readme_sha256))。
@@ -185,7 +210,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
                            c.language, c.topics_json, c.created_at, c.pushed_at,
                            c.source_channels, c.first_seen_at, c.last_seen_at,
-                           c.last_snapshot_at,
+                           c.last_snapshot_at, c.availability_status,
                            COALESCE(ls.stars, c.stars, 0) AS stars,
                            COALESCE(ls.forks, c.forks, 0) AS forks,
                            COALESCE(ls.watchers, c.watchers, 0) AS watchers,
@@ -202,7 +227,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
                     LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
                     WHERE COALESCE(ls.stars, c.stars, 0) >= %s
-                      AND BTRIM(COALESCE(c.description, '')) <> ''
+                      AND {_GITHUB_ENRICHMENT_INPUT_SQL}
                       AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
                       AND {eligibility}
                     ORDER BY {priority_order}
@@ -219,7 +244,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         selected: list[dict[str, Any]] = []
         for source_row in rows:
             row = dict(source_row)
-            if not str(row.get("description") or "").strip():
+            if not _has_github_enrichment_input(row):
                 continue
             fingerprint = _github_fingerprint(row)
             status = str(row.get("existing_status") or "")
@@ -480,8 +505,9 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                 FROM github_repo_candidates c
                 LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
                 LEFT JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
+                LEFT JOIN github_project_semantic_sources ss ON ss.repo_id=c.repo_id
                 WHERE COALESCE(ls.stars,c.stars,0) >= %s
-                  AND BTRIM(COALESCE(c.description, '')) <> ''
+                  AND {_GITHUB_ENRICHMENT_INPUT_SQL}
                   AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
             ), unprocessable AS (
                 SELECT c.repo_id, c.full_name, c.url,
@@ -490,9 +516,15 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                 FROM github_repo_candidates c
                 LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
                 LEFT JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
+                LEFT JOIN github_project_semantic_sources ss ON ss.repo_id=c.repo_id
                 WHERE COALESCE(ls.stars,c.stars,0) >= %s
                   AND BTRIM(COALESCE(c.description, '')) = ''
+                  AND NOT (
+                      ss.readme_status = 'succeeded'
+                      AND BTRIM(COALESCE(ss.readme_text, '')) <> ''
+                  )
                   AND e.status IS DISTINCT FROM 'succeeded'
+                  AND c.availability_status = 'active'
                   AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
             )
         """
@@ -562,10 +594,11 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
                            c.language, c.topics_json, c.created_at, c.pushed_at,
                            c.source_channels, c.first_seen_at, c.last_seen_at,
-                           c.last_snapshot_at,
+                           c.last_snapshot_at, c.availability_status,
                            COALESCE(c.stars, 0) AS stars,
                            COALESCE(c.forks, 0) AS forks,
-                           COALESCE(c.watchers, 0) AS watchers
+                           COALESCE(c.watchers, 0) AS watchers,
+                           ss.readme_text, ss.readme_sha256, ss.readme_status
                     """
                     + _RUN_SCOPE_WHERE
                     + "  AND c.repo_id > %s ORDER BY c.repo_id LIMIT %s",

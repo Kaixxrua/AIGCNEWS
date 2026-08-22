@@ -92,6 +92,8 @@ class GitHubProjectEnrichmentRepository(Protocol):
         prompt_version: str, model_provider: str = "", model_name: str = "",
     ) -> None: ...
 
+    # Deprecated compatibility methods. New backfills must use the unified
+    # bilingual enrichment selector and upsert payload above.
     def list_github_projects_needing_english_description(
         self, *, after_repo_id: str = "", limit: int = 200,
     ) -> list[dict[str, Any]]: ...
@@ -283,6 +285,18 @@ class GitHubProjectRecommendationRepository(Protocol):
 
 
 class GitHubProjectSemanticSourceRepository(Protocol):
+    def list_github_projects_for_readme_bootstrap(
+        self,
+        *,
+        limit: int = 100,
+        min_stars: int = 500,
+        after_repo_id: str = "",
+    ) -> list[dict[str, Any]]: ...
+
+    def upsert_github_project_readme_snapshot(
+        self, payload: dict[str, Any]
+    ) -> None: ...
+
     def list_github_projects_for_semantic_sync(
         self,
         *,

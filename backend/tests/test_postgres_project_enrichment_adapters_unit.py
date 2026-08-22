@@ -38,6 +38,13 @@ def test_github_candidate_query_pushes_eligibility_and_limit_into_sql() -> None:
     assert "LIMIT %s" in sql
     assert "e.repo_id IS NULL" in sql
     assert "e.status IS DISTINCT FROM 'succeeded'" in sql
+    # 可富化输入 = 非空原始 description，或 succeeded 且非空的 README 快照；
+    # 仅 README 行/pending/failed/限流/404 都不能解锁模型调用
+    assert "BTRIM(COALESCE(c.description, '')) <> ''" in sql
+    assert "readme_status = 'succeeded'" in sql
+    assert "BTRIM(COALESCE(ss.readme_text, '')) <> ''" in sql
+    assert "LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id" in sql
+    assert "c.availability_status" in sql
     assert "DISTINCT ON (repo_id)" in sql
     # 改名墓碑行（旧名候选行）必须排除：富化写入归一到新名行，
     # 旧名行若入选会永远重复富化、待处理计数清不零

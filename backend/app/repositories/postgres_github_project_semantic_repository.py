@@ -47,6 +47,91 @@ class PostgresGitHubProjectSemanticSourceRepository:
     ) -> None:
         self._database = database
 
+    def list_github_projects_for_readme_bootstrap(
+        self,
+        *,
+        limit: int = 100,
+        min_stars: int = 500,
+        after_repo_id: str = "",
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT c.repo_id, c.full_name, c.pushed_at,
+                   ss.readme_text, ss.readme_sha256, ss.readme_etag,
+                   ss.readme_status, ss.readme_checked_at,
+                   ss.readme_fetched_at, ss.readme_repo_pushed_at,
+                   ss.readme_error, ss.readme_retry_count,
+                   ss.readme_next_retry_at
+            FROM github_repo_candidates c
+            LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
+            WHERE NOT EXISTS (
+                    SELECT 1 FROM github_repo_aliases ga
+                    WHERE ga.alias_repo_id = c.repo_id
+                      AND ga.canonical_repo_id <> c.repo_id
+                  )
+              AND COALESCE(c.stars, 0) >= %s
+              AND c.availability_status = 'active'
+              AND BTRIM(COALESCE(c.description, '')) = ''
+              AND c.repo_id COLLATE "C" > %s COLLATE "C"
+              AND (
+                    ss.repo_id IS NULL
+                 OR COALESCE(ss.readme_repo_pushed_at, '') < COALESCE(c.pushed_at, '')
+                 OR (
+                        ss.readme_status IN ('failed', 'rate_limited')
+                    AND (
+                        ss.readme_next_retry_at IS NULL
+                        OR ss.readme_next_retry_at <= CURRENT_TIMESTAMP::text
+                    )
+                 )
+              )
+            ORDER BY c.repo_id COLLATE "C" ASC
+            LIMIT %s
+        """
+        params = (
+            min_stars,
+            after_repo_id,
+            max(1, min(int(limit or 100), 1000)),
+        )
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def upsert_github_project_readme_snapshot(self, payload: dict[str, Any]) -> None:
+        data = dict(payload)
+        now = str(data.get("readme_checked_at") or _utcnow())
+        defaults = {
+            "readme_text": None,
+            "readme_sha256": "",
+            "readme_etag": "",
+            "readme_status": "pending",
+            "readme_checked_at": now,
+            "readme_fetched_at": None,
+            "readme_repo_pushed_at": None,
+            "readme_error": None,
+            "readme_retry_count": 0,
+            "readme_next_retry_at": None,
+            "updated_at": now,
+        }
+        for key, value in defaults.items():
+            data.setdefault(key, value)
+        columns = ("repo_id", *defaults.keys())
+        placeholders = ", ".join(["%s"] * len(columns))
+        assignments = ", ".join(
+            f"{column} = EXCLUDED.{column}" for column in defaults
+        )
+        sql = f"""
+            INSERT INTO github_project_semantic_sources ({', '.join(columns)})
+            VALUES ({placeholders})
+            ON CONFLICT (repo_id) DO UPDATE SET {assignments}
+        """
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                data["repo_id"] = self._resolve_repo_id(
+                    cursor, str(data.get("repo_id") or "")
+                )
+                cursor.execute(sql, tuple(data[column] for column in columns))
+
     def list_github_projects_for_semantic_sync(
         self,
         *,

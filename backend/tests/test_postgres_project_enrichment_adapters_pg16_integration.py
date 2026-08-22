@@ -96,9 +96,94 @@ def test_pg16_github_candidates_fingerprint_status_and_alias_upsert(repositories
     )
     assert github.get_github_project_enrichment_status() == {
         "eligible": 2, "succeeded": 1, "failed": 1, "pending": 0,
+        "unprocessable": 0, "unprocessable_projects": [],
         "by_category": [{"slug": "agent", "name": "Agent", "count": 1}],
     }
     assert [row["repo_id"] for row in github.get_github_projects_needing_enrichment(retry_failed=True)] == ["new"]
+
+
+def test_pg16_readme_only_repos_enter_enrichment_and_not_found_stay_out_of_unprocessable(
+    repositories,
+) -> None:
+    """description 空 + 成功 README 的仓库进入标准队列；404 下架仓库不进无法富化名单。"""
+    database, github, _ = repositories
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO github_repo_candidates
+                (repo_id,full_name,description,language,topics_json,stars,forks,watchers,availability_status)
+                VALUES
+                ('readme_only','acme/readme-only','','Python','[]',800,1,1,'active'),
+                ('readme_failed','acme/readme-failed','','Go','[]',700,1,1,'active'),
+                ('both_empty','acme/both-empty','','Rust','[]',650,1,1,'active'),
+                ('gone','QAI-brain/awesome-QAI-Papers-QDiffusion','','','[]',900,1,1,'not_found')""")
+            cursor.execute("""INSERT INTO github_project_semantic_sources
+                (repo_id,readme_text,readme_sha256,readme_status,updated_at)
+                VALUES
+                ('readme_only','Awesome QAI papers README body','h1','succeeded','now'),
+                ('readme_failed','stale text','h2','failed','now'),
+                ('gone','','','not_found','now')""")
+
+    queue = {row["repo_id"] for row in github.get_github_projects_needing_enrichment(limit=100)}
+    # README-only 首次可富化；failed/空 README 与 404 仓库都不是可富化输入
+    assert "readme_only" in queue
+    assert "readme_failed" not in queue
+    assert "both_empty" not in queue
+    assert "gone" not in queue
+
+    status = github.get_github_project_enrichment_status(min_stars=500)
+    unprocessable_ids = {row["repo_id"] for row in status["unprocessable_projects"]}
+    # 404（QDiffusion 形态）与有有效 README 的都不进名单；仅真正双空的计入，
+    # 且计数与详情列表一致
+    assert "gone" not in unprocessable_ids
+    assert "readme_only" not in unprocessable_ids
+    assert "readme_failed" in unprocessable_ids
+    assert "both_empty" in unprocessable_ids
+    assert status["unprocessable"] == len(unprocessable_ids)
+
+
+def test_pg16_readme_hash_change_triggers_refresh(repositories) -> None:
+    """README 快照 hash 变化改变源指纹，refresh_changed 重新圈选已富化项目。"""
+    database, github, _ = repositories
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO github_repo_candidates
+                (repo_id,full_name,description,language,topics_json,stars,forks,watchers)
+                VALUES ('readme_fp','acme/readme-fp','','Python','[]',800,1,1)""")
+            cursor.execute("""INSERT INTO github_project_semantic_sources
+                (repo_id,readme_text,readme_sha256,readme_status,updated_at)
+                VALUES ('readme_fp','README v1 body','hash-v1','succeeded','now')""")
+
+    row = next(
+        item
+        for item in github.get_github_projects_needing_enrichment(limit=100)
+        if item["repo_id"] == "readme_fp"
+    )
+    github.upsert_github_repo_enrichment({
+        "repo_id": "readme_fp", "category_slug": "agent", "category_name": "Agent",
+        "description_zh": "智能体", "description_en": "Agent",
+        "tags": [], "source_fingerprint": row["source_fingerprint"],
+        "prompt_version": "v1",
+    })
+    assert "readme_fp" not in {
+        item["repo_id"]
+        for item in github.get_github_projects_needing_enrichment(
+            refresh_changed=True, prompt_version="v1", limit=100,
+        )
+    }
+
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE github_project_semantic_sources "
+                "SET readme_text='README v2 body', readme_sha256='hash-v2' "
+                "WHERE repo_id='readme_fp'"
+            )
+    assert "readme_fp" in {
+        item["repo_id"]
+        for item in github.get_github_projects_needing_enrichment(
+            refresh_changed=True, prompt_version="v1", limit=100,
+        )
+    }
 
 
 def test_pg16_website_metadata_merge_item_and_enrichment_failure(repositories) -> None:
@@ -158,11 +243,12 @@ def test_pg16_refresh_changed_uses_sql_fingerprint_equivalent_to_python(reposito
     fingerprint = stable["source_fingerprint"]
     github.upsert_github_repo_enrichment({
         "repo_id": "stable", "category_slug": "agent", "category_name": "Agent",
-        "description_zh": "智能体", "tags": ["RAG"], "source_fingerprint": fingerprint,
+        "description_zh": "智能体", "description_en": "Agent",
+        "tags": ["RAG"], "source_fingerprint": fingerprint,
         "prompt_version": "v1",
     })
 
-    # 指纹与版本一致：SQL 下推必须排除该项目
+    # 指纹、双语字段与版本一致：SQL 下推必须排除该项目
     assert "stable" not in {
         row["repo_id"]
         for row in github.get_github_projects_needing_enrichment(

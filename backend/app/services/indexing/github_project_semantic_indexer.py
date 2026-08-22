@@ -123,6 +123,23 @@ class GitHubProjectSemanticIndexer:
         existing_text = str(project.get("readme_text") or "")
         existing_hash = str(project.get("readme_sha256") or "")
         existing_etag = str(project.get("readme_etag") or "")
+        # README bootstrap runs before enrichment in the daily pipeline. Reuse a
+        # successful snapshot for the same pushed watermark so semantic indexing
+        # does not issue a second GitHub request in the same cycle.
+        if (
+            fetch_readme
+            and str(project.get("readme_status") or "") == "succeeded"
+            and bool(existing_text.strip())
+            and str(project.get("readme_repo_pushed_at") or "")
+            >= str(project.get("pushed_at") or "")
+        ):
+            return {
+                "text": existing_text,
+                "sha256": existing_hash,
+                "etag": existing_etag,
+                "status": "succeeded",
+                "error": "",
+            }
         if not fetch_readme:
             return {
                 "text": existing_text,

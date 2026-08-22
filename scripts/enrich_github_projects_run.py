@@ -95,10 +95,11 @@ def list_run_candidates(
                 SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
                        c.language, c.topics_json, c.created_at, c.pushed_at,
                        c.source_channels, c.first_seen_at, c.last_seen_at,
-                       c.last_snapshot_at,
+                       c.last_snapshot_at, c.availability_status,
                        COALESCE(c.stars, 0) AS stars,
                        COALESCE(c.forks, 0) AS forks,
-                       COALESCE(c.watchers, 0) AS watchers
+                       COALESCE(c.watchers, 0) AS watchers,
+                       ss.readme_text, ss.readme_sha256, ss.readme_status
                 """
                 + _RUN_SCOPE_WHERE
                 + "  AND c.repo_id > %s ORDER BY c.repo_id LIMIT %s",
