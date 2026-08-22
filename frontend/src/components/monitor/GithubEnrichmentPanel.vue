@@ -34,10 +34,17 @@ watch(() => props.reasoningEffort, (value) => { effortDraft.value = value })
 const commitReasoningEffort = () => emit('updateReasoningEffort', effortDraft.value)
 
 const eligible = computed(() => props.status?.eligible ?? 0)
-// 三段进度：已成功（绿）/ 失败（红）/ 待处理（轨道底色），宽度按 eligible 占比
-const succeededPct = computed(() => (eligible.value > 0 ? ((props.status?.succeeded ?? 0) / eligible.value) * 100 : 0))
-const failedPct = computed(() => (eligible.value > 0 ? ((props.status?.failed ?? 0) / eligible.value) * 100 : 0))
-const succeededPercent = computed(() => Math.round(succeededPct.value))
+const retainedTotal = computed(() => props.status?.retained_total ?? 0)
+// 进度条分母 = 可执行队列 eligible + 在库保留 retainedTotal：
+// 保留段以灰色补齐在条上，直观对齐项目库总数（eligible + retained = 库内富化成功全集）。
+// 队列完成度标签仍按 succeeded/eligible 计，灰色段不参与完成率。
+const barTotal = computed(() => eligible.value + retainedTotal.value)
+const succeededPct = computed(() => (barTotal.value > 0 ? ((props.status?.succeeded ?? 0) / barTotal.value) * 100 : 0))
+const failedPct = computed(() => (barTotal.value > 0 ? ((props.status?.failed ?? 0) / barTotal.value) * 100 : 0))
+const retainedPct = computed(() => (barTotal.value > 0 ? (retainedTotal.value / barTotal.value) * 100 : 0))
+const succeededPercent = computed(() =>
+  eligible.value > 0 ? Math.round(((props.status?.succeeded ?? 0) / eligible.value) * 100) : 0,
+)
 
 // 在库但已退出可执行队列的项目：单独成组展示，不并入进度分母；
 // 分桶顺序按可溯源优先级（下架 → 星数回落 → 简介被删 → 改名旧名）。
@@ -53,7 +60,6 @@ const RETAINED_BUCKET_I18N: Record<GithubRetainedReason, string> = {
   lost_input: 'monitor.enrichment.retainedBucketLostInput',
   tombstone: 'monitor.enrichment.retainedBucketTombstone',
 }
-const retainedTotal = computed(() => props.status?.retained_total ?? 0)
 const retainedChips = computed(() => {
   const buckets = props.status?.retained_buckets ?? {}
   return RETAINED_BUCKET_ORDER
@@ -77,7 +83,7 @@ const retainedChips = computed(() => {
       </button>
     </div>
 
-    <div v-if="status && status.eligible > 0" class="mb-3">
+    <div v-if="status && barTotal > 0" class="mb-3">
       <div class="flex items-center justify-between text-2xs monitor-caption mb-1">
         <span>{{ t('monitor.enrichment.progress') }}</span>
         <span class="tabular-nums font-bold">{{ succeededPercent }}%</span>
@@ -92,6 +98,14 @@ const retainedChips = computed(() => {
       >
         <div class="enrichment-progress-succeeded" :style="{ width: `${succeededPct}%` }" />
         <div class="enrichment-progress-failed" :style="{ width: `${failedPct}%` }" />
+        <!-- 在库保留段：margin-left:auto 跳过待处理间隙钉在条尾，
+             灰色标注与项目库总数的差额 -->
+        <div
+          v-if="retainedTotal > 0"
+          class="enrichment-progress-retained"
+          :style="{ width: `${retainedPct}%` }"
+          :title="t('monitor.enrichment.retainedBarTooltip', { count: retainedTotal })"
+        />
       </div>
       <p v-if="polling" class="mt-1.5 flex items-center gap-1.5 text-2xs monitor-caption">
         <span class="enrichment-polling-spinner" />
@@ -174,6 +188,7 @@ const retainedChips = computed(() => {
     </div>
 
     <p v-if="status && retainedTotal > 0" class="mt-2 text-2xs monitor-caption tabular-nums">
+      <span class="enrichment-retained-swatch" aria-hidden="true" />
       {{ t('monitor.enrichment.retainedLead', { count: retainedTotal }) }}
       <span v-for="chip in retainedChips" :key="chip.reason" class="enrichment-retained-chip">
         {{ t(RETAINED_BUCKET_I18N[chip.reason], { count: chip.count }) }}
@@ -233,6 +248,23 @@ const retainedChips = computed(() => {
   transition: width 0.4s ease;
 }
 
+/* 在库保留段：灰色标注与项目库总数的差额；margin-left:auto 使其越过
+   待处理间隙钉在条尾，队列 100% 完成时与绿色段相接 */
+.enrichment-progress-retained {
+  margin-left: auto;
+  background: var(--ink-faint);
+  transition: width 0.4s ease;
+}
+
+.enrichment-retained-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 8px;
+  margin-right: 2px;
+  border-radius: 2px;
+  background: var(--ink-faint);
+}
+
 .enrichment-polling-spinner {
   display: inline-block;
   width: 10px;
@@ -262,7 +294,8 @@ const retainedChips = computed(() => {
     animation: none;
   }
   .enrichment-progress-succeeded,
-  .enrichment-progress-failed {
+  .enrichment-progress-failed,
+  .enrichment-progress-retained {
     transition: none;
   }
 }
