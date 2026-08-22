@@ -133,6 +133,8 @@ dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar
 
 GitHub installs run a source build; see the [plugin README](https://github.com/Kaixxrua/dsh-aigc-radar#install) for pnpm build approval and commit-pinning details.
 
+MCP and `/api/v1` share one quota pool: anonymous callers get 30 calls/day per IP; free accounts get 60/day plus 1,200 calls per rolling 30 days; members get 400/day plus 8,000 per rolling 30 days. For logged-in callers, daily pacing is checked first, so hitting the daily limit does not consume monthly quota.
+
 ![Claude Code calling AIGC Radar MCP: one prompt to search_github_ai_projects returns curated RAG evaluation projects with star counts](docs/assets/screenshot-mcp-call.png)
 
 Public tools (no auth required; all read-only except the append-only adoption receipt):
