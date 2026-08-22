@@ -26,7 +26,7 @@ APP_ID = "2021000000000000"
 ORDER = {
     "order_no": "P20260820120000ABC123",
     "plan_code": "member_yearly",
-    "amount_cents": 12900,
+    "amount_cents": 15900,
     "currency": "CNY",
 }
 
@@ -63,7 +63,7 @@ def _callback_fields() -> dict[str, str]:
         "out_trade_no": ORDER["order_no"],
         "trade_no": "2026082022000000000000000001",
         "trade_status": "TRADE_SUCCESS",
-        "total_amount": "129.00",
+        "total_amount": "159.00",
         "gmt_payment": "2026-08-20 20:30:00",
         "sign_type": "RSA2",
     }
@@ -102,7 +102,7 @@ def test_create_payment_builds_signed_page_pay_redirect(key_pair: tuple) -> None
     biz_content = json.loads(parsed["biz_content"])
     assert biz_content == {
         "out_trade_no": ORDER["order_no"],
-        "total_amount": "129.00",
+        "total_amount": "159.00",
         "subject": "AIGC Radar Membership (Yearly)",
         "product_code": "FAST_INSTANT_TRADE_PAY",
     }
@@ -126,7 +126,7 @@ def test_callback_rsa2_round_trip_normalizes_yuan_to_cents(
 
     assert verified.order_no == ORDER["order_no"]
     assert verified.channel_order_no == "2026082022000000000000000001"
-    assert verified.amount_cents == 12900
+    assert verified.amount_cents == 15900
     assert verified.currency == "CNY"
     assert verified.paid_at == datetime(2026, 8, 20, 12, 30, tzinfo=timezone.utc)
 
@@ -136,7 +136,7 @@ def test_callback_rejects_three_decimal_amount_bad_signature_and_unsuccessful_st
 ) -> None:
     private, _, _ = key_pair
     fields = _callback_fields()
-    fields["total_amount"] = "129.001"
+    fields["total_amount"] = "159.001"
     body, _ = _signed_callback(fields, private)
     with pytest.raises(CallbackVerificationError, match="at most two decimals"):
         _provider(key_pair).verify_and_parse_callback(raw_body=body, headers={})

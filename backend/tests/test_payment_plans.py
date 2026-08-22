@@ -1,6 +1,6 @@
 """套餐与日历年月续约语义单测（支付骨架 PR-2）。
 
-金额/时长是商业承诺：1900 分月付、12900 分年付由本文件钉死，任何漂移
+金额/时长是商业承诺：1900 分月付、15900 分年付由本文件钉死，任何漂移
 必须改测试。月末钳制与日历年月语义是续约计算的核心正确性来源。
 """
 
@@ -29,7 +29,7 @@ def test_plan_amounts_are_pinned_in_cents() -> None:
     assert MEMBER_MONTHLY.currency == "CNY"
     assert MEMBER_MONTHLY.months == 1
     assert MEMBER_YEARLY.code == "member_yearly"
-    assert MEMBER_YEARLY.amount_cents == 12900
+    assert MEMBER_YEARLY.amount_cents == 15900
     assert MEMBER_YEARLY.currency == "CNY"
     assert MEMBER_YEARLY.months == 12
     assert set(MEMBERSHIP_PLANS) == {"member_monthly", "member_yearly"}

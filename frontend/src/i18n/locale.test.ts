@@ -78,19 +78,19 @@ describe('application locale contract', () => {
     (locale) => {
       i18n.global.locale.value = locale
       // 营销卡价格字面量与后端 plans.py 常量同口径（member_monthly ¥19 /
-      // member_yearly ¥129）；收银台金额只渲染 plans API，字面量漂移必须红在这里。
+      // member_yearly ¥159）；收银台金额只渲染 plans API，字面量漂移必须红在这里。
       expect(i18n.global.t('membership.member.priceMonthly')).toBe('¥19')
-      expect(i18n.global.t('membership.member.priceYearlyAmount')).toBe('¥129')
+      expect(i18n.global.t('membership.member.priceYearlyAmount')).toBe('¥159')
     },
   )
 
   it('keeps the yearly anchor line locale-specific but amount-pinned', () => {
     i18n.global.locale.value = 'zh-CN'
-    expect(i18n.global.t('membership.member.priceYearly')).toBe('¥129 / 年')
-    expect(i18n.global.t('membership.member.yearlySavings')).toBe('年付省 ¥99')
+    expect(i18n.global.t('membership.member.priceYearly')).toBe('¥159 / 年')
+    expect(i18n.global.t('membership.member.yearlySavings')).toBe('年付省 ¥69')
     i18n.global.locale.value = 'en-US'
-    expect(i18n.global.t('membership.member.priceYearly')).toBe('¥129 / year')
-    expect(i18n.global.t('membership.member.yearlySavings')).toBe('Save ¥99 with annual billing')
+    expect(i18n.global.t('membership.member.priceYearly')).toBe('¥159 / year')
+    expect(i18n.global.t('membership.member.yearlySavings')).toBe('Save ¥69 with annual billing')
   })
 
   it('provides an explicit Chinese value for every business catalog leaf', () => {

@@ -61,7 +61,7 @@ def _create_order(
         user_id=user_id,
         plan_code=plan,
         channel=channel,
-        amount_cents=1900 if plan == "member_monthly" else 12900,
+        amount_cents=1900 if plan == "member_monthly" else 15900,
         currency="CNY",
         idempotency_key="",
         expires_at=NOW,

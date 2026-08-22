@@ -24,7 +24,7 @@ ACK 只表示回调处理结果，不代替订单状态查询。已支付订单�
 
 `payments_enabled=False` 时，用户支付路由表现为 404 `payments_disabled`，保持支付功能暗栈。开关开启但对应 provider 凭证缺失时，创建订单返回 503 `payment_channel_not_configured`。Ops 订单端点不受用户支付开关隐藏，管理员仍可查询和处理台账。
 
-套餐为 `member_monthly`（1900 CNY cents，1 个日历月）和 `member_yearly`（12900 CNY cents，12 个月）。
+套餐为 `member_monthly`（1900 CNY cents，1 个日历月）和 `member_yearly`（15900 CNY cents，12 个月）。
 
 ## 限流
 

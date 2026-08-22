@@ -67,11 +67,11 @@ const i18n = createI18n({
           badge: '推荐',
           priceMonthly: '¥19',
           priceMonthlyPeriod: '/ 月',
-          priceYearly: '¥129 / 年',
-          priceYearlyAmount: '¥129',
+          priceYearly: '¥159 / 年',
+          priceYearlyAmount: '¥159',
           priceYearlyPeriod: '/ 年',
-          yearlySavings: '年付省 ¥99',
-          yearlyDiscount: '-43%',
+          yearlySavings: '年付省 ¥69',
+          yearlyDiscount: '-30%',
           billMonthly: '按月付',
           billYearly: '按年付',
           features: {
@@ -121,8 +121,8 @@ describe('MembershipView', () => {
     // 大字号金额 + 周期后缀拆分 + 年付锚定 + 节省标
     expect(text).toContain('¥19')
     expect(text).toContain('/ 月')
-    expect(text).toContain('¥129 / 年')
-    expect(text).toContain('年付省 ¥99')
+    expect(text).toContain('¥159 / 年')
+    expect(text).toContain('年付省 ¥69')
     expect(text).toContain('推荐')
     expect(text).toContain('当前默认方案')
     expect(text).toContain('无需注册，打开即用')
@@ -240,29 +240,29 @@ describe('MembershipView', () => {
     const period = () => memberCard.find('.tier-price-period').text()
     const yearlyLine = () => memberCard.find('.tier-price-yearly').text()
 
-    // 默认月付：大价 ¥19/月，副行年付锚定，按钮指向年付并带 -43% 折扣标
+    // 默认月付：大价 ¥19/月，副行年付锚定，按钮指向年付并带 -30% 折扣标
     expect(button.text()).toContain('按年付')
-    expect(button.find('.tier-billing-tag').text()).toBe('-43%')
+    expect(button.find('.tier-billing-tag').text()).toBe('-30%')
     expect(button.attributes('aria-pressed')).toBe('false')
     expect(amount()).toBe('¥19')
     expect(period()).toBe('/ 月')
-    expect(yearlyLine()).toContain('¥129 / 年')
-    expect(yearlyLine()).toContain('年付省 ¥99')
+    expect(yearlyLine()).toContain('¥159 / 年')
+    expect(yearlyLine()).toContain('年付省 ¥69')
 
-    // 切到年付：大价换 ¥129/年，副行回指月付，节省标常驻；降级按钮不带折扣标
+    // 切到年付：大价换 ¥159/年，副行回指月付，节省标常驻；降级按钮不带折扣标
     await button.trigger('click')
     expect(button.text()).toBe('按月付')
     expect(button.find('.tier-billing-tag').exists()).toBe(false)
     expect(button.attributes('aria-pressed')).toBe('true')
-    expect(amount()).toBe('¥129')
+    expect(amount()).toBe('¥159')
     expect(period()).toBe('/ 年')
     expect(yearlyLine()).toContain('¥19/ 月')
-    expect(yearlyLine()).toContain('年付省 ¥99')
+    expect(yearlyLine()).toContain('年付省 ¥69')
 
     // 再切回月付，折扣标回来
     await button.trigger('click')
     expect(button.text()).toContain('按年付')
-    expect(button.find('.tier-billing-tag').text()).toBe('-43%')
+    expect(button.find('.tier-billing-tag').text()).toBe('-30%')
     expect(amount()).toBe('¥19')
     expect(period()).toBe('/ 月')
   })

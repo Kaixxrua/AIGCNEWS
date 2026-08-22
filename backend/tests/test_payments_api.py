@@ -292,7 +292,7 @@ def test_plans_are_public_and_pin_amounts(harness: Any) -> None:
     plans = {plan["code"]: plan for plan in body["plans"]}
     assert plans["member_monthly"]["amount_cents"] == 1900
     assert plans["member_monthly"]["months"] == 1
-    assert plans["member_yearly"]["amount_cents"] == 12900
+    assert plans["member_yearly"]["amount_cents"] == 15900
     assert plans["member_yearly"]["months"] == 12
     assert all(plan["currency"] == "CNY" for plan in body["plans"])
     channels = {channel["channel"]: channel["available"] for channel in body["channels"]}
@@ -355,7 +355,7 @@ def test_create_order_happy_path_returns_instruction(harness: Any) -> None:
     order = body["order"]
     assert order["order_no"].startswith("P")
     assert order["plan_code"] == "member_yearly"
-    assert order["amount_cents"] == 12900
+    assert order["amount_cents"] == 15900
     assert order["status"] == "pending"
     assert body["instruction"]["kind"] == "qr_code"
     assert body["instruction"]["content"].endswith(order["order_no"])

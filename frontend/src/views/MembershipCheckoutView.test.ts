@@ -20,7 +20,7 @@ vi.mock('@/services/payments/paymentApi', () => ({ paymentApi: apiBox }))
 const plansResponse = (overrides: Partial<PaymentPlansResponse> = {}): PaymentPlansResponse => ({
   plans: [
     { code: 'member_monthly', tier: 'member', amount_cents: 1900, currency: 'CNY', months: 1 },
-    { code: 'member_yearly', tier: 'member', amount_cents: 12900, currency: 'CNY', months: 12 },
+    { code: 'member_yearly', tier: 'member', amount_cents: 15900, currency: 'CNY', months: 12 },
   ],
   channels: [
     { channel: 'wechat_native', available: true },
@@ -124,7 +124,7 @@ describe('MembershipCheckoutView', () => {
   it('renders the plan amount from the plans API, not from i18n literals', async () => {
     const { wrapper } = await mountView({ plan: 'yearly' })
 
-    expect(wrapper.find('.checkout-amount').text()).toContain('¥129')
+    expect(wrapper.find('.checkout-amount').text()).toContain('¥159')
     expect(wrapper.find('.checkout-amount').text()).toContain('/ 年')
     expect(wrapper.find('.checkout-plan-name').text()).toBe('vip · 按年付')
     expect(apiBox.listPlans).toHaveBeenCalledTimes(1)

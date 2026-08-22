@@ -30,7 +30,7 @@ WEBHOOK_SECRET = "whsec_checkout_secret"
 ORDER = {
     "order_no": "P20260820120000ABC123",
     "plan_code": "member_yearly",
-    "amount_cents": 12900,
+    "amount_cents": 15900,
     "currency": "CNY",
 }
 
@@ -99,7 +99,7 @@ def test_create_payment_posts_checkout_form_and_returns_redirect() -> None:
     assert form == {
         "mode": "payment",
         "line_items[0][price_data][currency]": "cny",
-        "line_items[0][price_data][unit_amount]": "12900",
+        "line_items[0][price_data][unit_amount]": "15900",
         "line_items[0][price_data][product_data][name]": "AIGC Radar Membership (Yearly)",
         "line_items[0][quantity]": "1",
         "metadata[order_no]": ORDER["order_no"],
@@ -133,7 +133,7 @@ def test_webhook_signature_round_trip_parses_cents_and_uppercases_currency() -> 
 
     assert verified.order_no == ORDER["order_no"]
     assert verified.channel_order_no == "pi_test_123"
-    assert verified.amount_cents == 12900
+    assert verified.amount_cents == 15900
     assert verified.currency == "CNY"
     assert verified.paid_at == datetime.fromtimestamp(1_755_681_600, tz=timezone.utc)
 

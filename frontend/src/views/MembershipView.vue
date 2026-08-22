@@ -161,7 +161,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
             >
               <ArrowLeftRight :size="13" :stroke-width="2.5" aria-hidden="true" />
               {{ isYearly ? t('membership.member.billMonthly') : t('membership.member.billYearly') }}
-              <!-- 折扣标只在月付态出现：1 − 129/(19×12) = 43.4%，向下取整 -43%（保守口径）；
+              <!-- 折扣标只在月付态出现：1 − 159/(19×12) = 30.3%，向下取整 -30%（保守口径）；
                    年付态按钮是降级动作，不带折扣标 -->
               <span v-if="!isYearly" class="tier-billing-tag">{{ t('membership.member.yearlyDiscount') }}</span>
             </button>
@@ -390,7 +390,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   color: var(--ink-secondary);
 }
 
-/* 年付节省标：语义绿淡染小胶囊（19×12−129=99，真实算术） */
+/* 年付节省标：语义绿淡染小胶囊（19×12−159=69，真实算术） */
 .tier-savings {
   margin-left: 8px;
   padding: 2px 8px;

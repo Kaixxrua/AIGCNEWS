@@ -1,7 +1,7 @@
 """会员套餐定义：支付收费骨架的商品权威来源（ADR 0002）。
 
 金额一律整数分（杜绝浮点）；时长按日历年月（非 30/365 天），月末钳制
-（1 月 31 日 + 1 月 → 2 月 28 日）。前端营销卡 i18n 字面量（'¥19'/'¥129'）
+（1 月 31 日 + 1 月 → 2 月 28 日）。前端营销卡 i18n 字面量（'¥19'/'¥159'）
 是展示文案，与本文件由两侧测试钉住防漂移；收银台交易面金额只从
 GET /api/payments/plans 渲染。
 """
@@ -61,7 +61,7 @@ MEMBER_MONTHLY = MembershipPlan(
 MEMBER_YEARLY = MembershipPlan(
     code=PLAN_CODE_MEMBER_YEARLY,
     tier=MEMBERSHIP_TIER_MEMBER,
-    amount_cents=12900,
+    amount_cents=15900,
     currency="CNY",
     months=12,
 )
