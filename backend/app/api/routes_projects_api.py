@@ -2,9 +2,10 @@
 
 与网站 ``/api/projects`` 同一个项目库、同一个查询服务，但走商业配额面：
 Bearer MCP token 认证（``OptionalMcpUser``，McpConnect 页签发的同一个
-token 即 API key）；匿名调用按 IP 走日配额，登录用户按会员档位走月配额，
-与 MCP 通道共享同一个配额池（见 services/api_access/quota）。网站浏览
-端点保持不变、永远免费——收费面只覆盖程序化调用。
+token 即 API key）；匿名调用按 IP 走日配额，登录用户按会员档位走日+月
+双层配额（日 pacing 防突发烧穿月度额度），与 MCP 通道共享同一个配额池
+（见 services/api_access/quota）。网站浏览端点保持不变、永远免费——
+收费面只覆盖程序化调用。
 """
 
 from __future__ import annotations
@@ -54,11 +55,13 @@ def _quota_exceeded_response(exc: ApiQuotaExceededError) -> JSONResponse:
     """分层配额 429 投影：quota_scope/tier/limit/retry_after + 分档升级引导。
 
     匿名→aigcnews.cn/mcp 登录建 token 或开通 VIP，免费→开通 VIP，
-    会员→告知窗口重置时间；与 MCP quota 投影保持中英双语和同一商业口径。
-    额度数字走 exc.limit 插值，不随档位调整发生文案漂移。
+    会员→告知窗口重置时间；登录档日配额（pacing 层）与匿名日配额同
+    scope 不同文案，按 exc.identity_kind 区分。与 MCP quota 投影保持
+    中英双语和同一商业口径。额度数字走 exc.limit 插值，不随档位调整
+    发生文案漂移。
     """
 
-    if exc.quota_scope == "daily":
+    if exc.quota_scope == "daily" and exc.identity_kind == "ip":
         message = (
             f"已达今日匿名调用上限（{exc.limit} 次/天，按 IP 计）。"
             "请前往 https://aigcnews.cn/mcp 登录并创建 MCP token 获得月度配额，"
@@ -66,6 +69,22 @@ def _quota_exceeded_response(exc: ApiQuotaExceededError) -> JSONResponse:
             f"Anonymous daily quota exhausted ({exc.limit} calls/day per IP): "
             "sign in at https://aigcnews.cn/mcp to create an MCP token for "
             "a monthly quota, or upgrade to VIP at https://aigcnews.cn/membership."
+        )
+    elif exc.quota_scope == "daily" and exc.tier == "member":
+        message = (
+            f"今日 VIP 额度已用完（{exc.limit} 次/天），"
+            f"配额窗口将于约 {exc.retry_after} 秒后重置。"
+            f"VIP daily quota exhausted ({exc.limit} calls/day); "
+            f"the window resets in about {exc.retry_after} seconds."
+        )
+    elif exc.quota_scope == "daily":
+        message = (
+            f"已达今日免费调用上限（{exc.limit} 次/天）。"
+            "请前往 https://aigcnews.cn/membership 开通 VIP 享更高日度与月度额度，"
+            f"或等待配额窗口重置（约 {exc.retry_after} 秒后）。"
+            f"Free daily quota exhausted ({exc.limit} calls/day): "
+            "upgrade to VIP at https://aigcnews.cn/membership for higher "
+            "daily and monthly quotas, or wait for the window to reset."
         )
     elif exc.tier == "member":
         message = (
@@ -91,6 +110,7 @@ def _quota_exceeded_response(exc: ApiQuotaExceededError) -> JSONResponse:
             "tier": exc.tier,
             "limit": exc.limit,
             "retry_after": exc.retry_after,
+            "identity_kind": exc.identity_kind,
         },
         status_code=429,
         headers={"Retry-After": str(exc.retry_after)},

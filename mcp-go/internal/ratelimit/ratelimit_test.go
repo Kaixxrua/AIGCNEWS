@@ -88,9 +88,10 @@ func TestEnforceToolCallBurstBucketLimits(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mr, rdb := newRedisPair(t)
-			// 拉高配额桶，让分钟桶成为唯一约束面。
+			// 拉高配额桶（含登录档日 pacing 桶），让分钟桶成为唯一约束面。
 			limiter := NewLimiter(rdb, "", func(l *Limits) {
 				l.AnonymousDailyToolCallQuota = 100000
+				l.FreeDailyToolCallQuota = 100000
 				l.FreeMonthlyToolCallQuota = 100000
 			})
 			ctx := context.Background()
@@ -123,28 +124,90 @@ func TestEnforceAnonymousDailyQuota(t *testing.T) {
 		l.AnonymousToolCallPerMinute = 1000
 	})
 	ctx := context.Background()
-	for i := int64(1); i <= 100; i++ {
+	for i := int64(1); i <= 30; i++ {
 		if exceeded := limiter.Enforce(ctx, "tools/call", authn.Identity{}, anonymousRequest()); exceeded != nil {
 			t.Fatalf("call %d should pass, got %+v", i, exceeded)
 		}
 	}
 	exceeded := limiter.Enforce(ctx, "tools/call", authn.Identity{}, anonymousRequest())
 	if exceeded == nil {
-		t.Fatal("101st call should be rejected")
+		t.Fatal("31st call should be rejected")
 	}
 	if !exceeded.Quota || exceeded.QuotaScope != "daily" {
-		t.Fatalf("101st call should hit daily quota, got %+v", exceeded)
+		t.Fatalf("31st call should hit daily quota, got %+v", exceeded)
 	}
-	if exceeded.Tier != authn.TierFree || exceeded.Limit != 100 {
-		t.Fatalf("daily quota should report tier=free limit=100, got %+v", exceeded)
+	if exceeded.Tier != authn.TierFree || exceeded.Limit != 30 {
+		t.Fatalf("daily quota should report tier=free limit=30, got %+v", exceeded)
+	}
+	if exceeded.IdentityKind != "ip" {
+		t.Fatalf("anonymous daily quota should report identity_kind=ip, got %+v", exceeded)
 	}
 	// miniredis 模拟时钟不自动流逝，TTL 恰为整窗。
 	if exceeded.RetryAfter != QuotaDailyWindowSeconds {
 		t.Fatalf("RetryAfter = %d, want %d", exceeded.RetryAfter, QuotaDailyWindowSeconds)
 	}
 	key := "ratelimit:mcp.quota.daily:ip:192.0.2.1"
-	if value, err := mr.Get(key); err != nil || value != "101" {
-		t.Fatalf("key %s = %q, %v; want %q", key, value, err, "101")
+	if value, err := mr.Get(key); err != nil || value != "31" {
+		t.Fatalf("key %s = %q, %v; want %q", key, value, err, "31")
+	}
+}
+
+// 登录档日 pacing：先日桶后月桶，日桶超限后请求被拒且不再消耗月配额。
+func TestEnforceDailyPacingQuotaByTier(t *testing.T) {
+	future := time.Now().Add(24 * time.Hour)
+	past := time.Now().Add(-24 * time.Hour)
+	cases := []struct {
+		name      string
+		identity  authn.Identity
+		wantLimit int64
+		wantTier  string
+	}{
+		{"free", authn.Identity{UserID: 7, Role: "user", MembershipTier: authn.TierFree}, 2, authn.TierFree},
+		{"member", authn.Identity{UserID: 8, Role: "user", MembershipTier: authn.TierMember, MembershipExpiresAt: &future}, 4, authn.TierMember},
+		// member 已过期回落 free 档（resolve_effective_tier 语义）。
+		{"member-expired", authn.Identity{UserID: 10, Role: "user", MembershipTier: authn.TierMember, MembershipExpiresAt: &past}, 2, authn.TierFree},
+		// 未知档 fail-closed 按 free。
+		{"tier-unknown", authn.Identity{UserID: 11, Role: "user", MembershipTier: "gold"}, 2, authn.TierFree},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mr, rdb := newRedisPair(t)
+			limiter := NewLimiter(rdb, "", func(l *Limits) {
+				l.AuthenticatedToolCallPerMinute = 1000 // 拉高分钟桶
+				l.FreeDailyToolCallQuota = 2
+				l.MemberDailyToolCallQuota = 4
+				l.FreeMonthlyToolCallQuota = 100000 // 拉高月桶，让日桶成为约束面
+				l.MemberMonthlyToolCallQuota = 100000
+			})
+			ctx := context.Background()
+			for i := int64(1); i <= tc.wantLimit; i++ {
+				if exceeded := limiter.Enforce(ctx, "tools/call", tc.identity, anonymousRequest()); exceeded != nil {
+					t.Fatalf("call %d should pass, got %+v", i, exceeded)
+				}
+			}
+			exceeded := limiter.Enforce(ctx, "tools/call", tc.identity, anonymousRequest())
+			if exceeded == nil {
+				t.Fatal("quota+1 call should be rejected")
+			}
+			if !exceeded.Quota || exceeded.QuotaScope != "daily" {
+				t.Fatalf("should hit daily pacing quota, got %+v", exceeded)
+			}
+			if exceeded.Tier != tc.wantTier || exceeded.Limit != tc.wantLimit {
+				t.Fatalf("tier/limit = %s/%d, want %s/%d", exceeded.Tier, exceeded.Limit, tc.wantTier, tc.wantLimit)
+			}
+			if exceeded.IdentityKind != "user" {
+				t.Fatalf("authenticated daily quota should report identity_kind=user, got %+v", exceeded)
+			}
+			if exceeded.RetryAfter != QuotaDailyWindowSeconds {
+				t.Fatalf("RetryAfter = %d, want %d", exceeded.RetryAfter, QuotaDailyWindowSeconds)
+			}
+			// 被日桶拒绝的请求不消耗月配额：月度键停在日限额。
+			monthlyKey := "ratelimit:" + QuotaMonthlyBucket + ":user:" + strconv.Itoa(tc.identity.UserID)
+			if value, err := mr.Get(monthlyKey); err != nil || value != strconv.FormatInt(tc.wantLimit, 10) {
+				t.Fatalf("monthly key %s = %q, %v; want %d (daily-rejected hit must not consume monthly quota)",
+					monthlyKey, value, err, tc.wantLimit)
+			}
+		})
 	}
 }
 
@@ -208,7 +271,10 @@ func TestEnforceAdminExemptsQuotaButNotBurst(t *testing.T) {
 			t.Fatalf("admin hit %d should pass, got %+v", i, exceeded)
 		}
 	}
-	// admin 不消耗配额：配额键不存在。
+	// admin 不消耗配额：日/月配额键都不存在。
+	if mr.Exists("ratelimit:mcp.quota.daily:user:9") {
+		t.Fatal("admin must not consume daily quota")
+	}
 	if mr.Exists("ratelimit:mcp.quota.monthly:user:9") {
 		t.Fatal("admin must not consume quota")
 	}

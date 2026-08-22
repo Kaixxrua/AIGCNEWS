@@ -3,8 +3,9 @@
 // backend/app/services/auth/rate_limit.py 的 hit_rate_limit 原语：
 //
 //   - 两层正交限速：分钟级突发桶防爬（所有方法），tools/call 再叠加
-//     分层配额桶（匿名按日 100 以 IP 为键 / 免费月 2000、会员月 20000
-//     以用户为键，月窗为 30 天滚动固定窗口而非自然月）；
+//     分层配额桶（匿名按日 30 以 IP 为键 / 免费 60/天 + 月 1200、
+//     会员 400/天 + 月 8000 以用户为键，月窗为 30 天滚动固定窗口而非
+//     自然月；登录档日桶是 pacing 层，防脉冲烧穿月度商业额度）；
 //   - 先分钟桶后配额桶，被分钟桶 429 的请求不消耗配额；
 //   - admin 豁免配额（运营排查不受商业约束），但不豁免分钟桶；
 //   - 除超限外任何 Redis 错误 fail-open（可用性优先于严格性）。
@@ -48,16 +49,18 @@ const (
 	KeyPrefix = "ratelimit:"
 )
 
-// Limits 集中七个限额常量，默认值与 Python 逐字一致；字段导出供回放
+// Limits 集中九个限额常量，默认值与 Python 逐字一致；字段导出供回放
 // 语料按场景覆盖（如提速测试的小配额）。
 type Limits struct {
 	AnonymousProtocolPerMinute     int64 // MCP_ANONYMOUS_PROTOCOL_LIMIT = 60
 	AnonymousToolCallPerMinute     int64 // MCP_ANONYMOUS_TOOL_CALL_LIMIT = 30
 	AuthenticatedProtocolPerMinute int64 // MCP_AUTHENTICATED_PROTOCOL_LIMIT = 240
 	AuthenticatedToolCallPerMinute int64 // MCP_AUTHENTICATED_TOOL_CALL_LIMIT = 120
-	AnonymousDailyToolCallQuota    int64 // MCP_ANONYMOUS_DAILY_TOOL_CALL_QUOTA = 100
-	FreeMonthlyToolCallQuota       int64 // MCP_FREE_MONTHLY_TOOL_CALL_QUOTA = 2000
-	MemberMonthlyToolCallQuota     int64 // MCP_MEMBER_MONTHLY_TOOL_CALL_QUOTA = 20000
+	AnonymousDailyToolCallQuota    int64 // MCP_ANONYMOUS_DAILY_TOOL_CALL_QUOTA = 30
+	FreeDailyToolCallQuota         int64 // MCP_FREE_DAILY_TOOL_CALL_QUOTA = 60
+	FreeMonthlyToolCallQuota       int64 // MCP_FREE_MONTHLY_TOOL_CALL_QUOTA = 1200
+	MemberDailyToolCallQuota       int64 // MCP_MEMBER_DAILY_TOOL_CALL_QUOTA = 400
+	MemberMonthlyToolCallQuota     int64 // MCP_MEMBER_MONTHLY_TOOL_CALL_QUOTA = 8000
 }
 
 func defaultLimits() Limits {
@@ -66,9 +69,11 @@ func defaultLimits() Limits {
 		AnonymousToolCallPerMinute:     30,
 		AuthenticatedProtocolPerMinute: 240,
 		AuthenticatedToolCallPerMinute: 120,
-		AnonymousDailyToolCallQuota:    100,
-		FreeMonthlyToolCallQuota:       2000,
-		MemberMonthlyToolCallQuota:     20000,
+		AnonymousDailyToolCallQuota:    30,
+		FreeDailyToolCallQuota:         60,
+		FreeMonthlyToolCallQuota:       1200,
+		MemberDailyToolCallQuota:       400,
+		MemberMonthlyToolCallQuota:     8000,
 	}
 }
 
@@ -163,32 +168,49 @@ func (l *Limiter) Enforce(ctx context.Context, method string, id authn.Identity,
 		return nil
 	}
 
-	// 3. tools/call 分层配额桶：认证按用户走月配额（档位取生效档，
-	// 未知档 fail-closed 按 free），匿名按 IP 走日配额（按免费档口径
-	// 报告）。配额是商业软约束而非安全边界：固定窗口 + INCR 在并发下
-	// 可能瞬时超 1，与 Python 同口径，可接受。
-	var quotaBucket, quotaIdentity, quotaScope, tier string
-	var quotaLimit, quotaWindowSeconds int64
+	// 3. tools/call 分层配额桶：认证按用户先日 pacing 桶后月商业额度桶
+	// （档位取生效档，未知档 fail-closed 按 free；被日桶拒绝的请求不再
+	// 消耗月配额），匿名按 IP 走日配额（按免费档口径报告）。配额是商业
+	// 软约束而非安全边界：固定窗口 + INCR 在并发下可能瞬时超 1，与
+	// Python 同口径，可接受。
 	if id.UserID > 0 {
-		tier = id.EffectiveTier(time.Now())
-		quotaBucket = QuotaMonthlyBucket
-		quotaIdentity = "user:" + strconv.Itoa(id.UserID)
-		quotaWindowSeconds = QuotaMonthlyWindowSeconds
-		quotaScope = "monthly"
+		tier := id.EffectiveTier(time.Now())
+		quotaIdentity := "user:" + strconv.Itoa(id.UserID)
+		// 3.1 日 pacing 桶（与匿名同桶不同键：mcp.quota.daily:user:<id>）
+		dailyLimit := l.limits.FreeDailyToolCallQuota
 		if tier == authn.TierMember {
-			quotaLimit = l.limits.MemberMonthlyToolCallQuota
-		} else {
-			quotaLimit = l.limits.FreeMonthlyToolCallQuota
+			dailyLimit = l.limits.MemberDailyToolCallQuota
 		}
-	} else {
-		tier = authn.TierFree
-		quotaBucket = QuotaDailyBucket
-		quotaIdentity = "ip:" + ClientIP(r, l.trusted)
-		quotaWindowSeconds = QuotaDailyWindowSeconds
-		quotaScope = "daily"
-		quotaLimit = l.limits.AnonymousDailyToolCallQuota
+		if exceeded := l.enforceQuotaBucket(
+			ctx, QuotaDailyBucket, quotaIdentity, QuotaDailyWindowSeconds,
+			"daily", tier, dailyLimit, "user",
+		); exceeded != nil {
+			return exceeded
+		}
+		// 3.2 月度商业额度桶
+		monthlyLimit := l.limits.FreeMonthlyToolCallQuota
+		if tier == authn.TierMember {
+			monthlyLimit = l.limits.MemberMonthlyToolCallQuota
+		}
+		return l.enforceQuotaBucket(
+			ctx, QuotaMonthlyBucket, quotaIdentity, QuotaMonthlyWindowSeconds,
+			"monthly", tier, monthlyLimit, "user",
+		)
 	}
-	exceeded, err = l.hit(ctx, quotaBucket, quotaIdentity, quotaLimit, time.Duration(quotaWindowSeconds)*time.Second)
+	// 匿名没有账号档位，按免费档口径返回（日配额本身更紧）
+	return l.enforceQuotaBucket(
+		ctx, QuotaDailyBucket, "ip:"+ClientIP(r, l.trusted), QuotaDailyWindowSeconds,
+		"daily", authn.TierFree, l.limits.AnonymousDailyToolCallQuota, "ip",
+	)
+}
+
+// enforceQuotaBucket 镜像 Python 的 _hit_quota_bucket：单桶命中 + 超限
+// 投影；Redis 故障 fail-open（返回 nil 放行）。
+func (l *Limiter) enforceQuotaBucket(
+	ctx context.Context, bucket, identity string, windowSeconds int64,
+	quotaScope, tier string, limit int64, identityKind string,
+) *Exceeded {
+	exceeded, err := l.hit(ctx, bucket, identity, limit, time.Duration(windowSeconds)*time.Second)
 	if err != nil {
 		l.logger.Warn("MCP quota check skipped: redis unavailable", "error", err)
 		return nil
@@ -197,11 +219,12 @@ func (l *Limiter) Enforce(ctx context.Context, method string, id authn.Identity,
 		return nil
 	}
 	return &Exceeded{
-		Quota:      true,
-		QuotaScope: quotaScope,
-		Tier:       tier,
-		Limit:      quotaLimit,
-		RetryAfter: l.quotaRetryAfter(ctx, quotaBucket, quotaIdentity, quotaWindowSeconds),
+		Quota:        true,
+		QuotaScope:   quotaScope,
+		Tier:         tier,
+		Limit:        limit,
+		RetryAfter:   l.quotaRetryAfter(ctx, bucket, identity, windowSeconds),
+		IdentityKind: identityKind,
 	}
 }
 

@@ -24,7 +24,9 @@ from backend.app.services.api_access.quota import (
     API_ANONYMOUS_DAILY_SEARCH_QUOTA,
     API_ANONYMOUS_SEARCH_LIMIT,
     API_AUTHENTICATED_SEARCH_LIMIT,
+    API_FREE_DAILY_SEARCH_QUOTA,
     API_FREE_MONTHLY_SEARCH_QUOTA,
+    API_MEMBER_DAILY_SEARCH_QUOTA,
     API_MEMBER_MONTHLY_SEARCH_QUOTA,
     API_QUOTA_DAILY_BUCKET,
     API_QUOTA_DAILY_WINDOW_SECONDS,
@@ -81,9 +83,11 @@ class SharedPoolContract(unittest.TestCase):
         self.assertEqual(API_QUOTA_MONTHLY_WINDOW_SECONDS, 2592000)
 
     def test_quota_amounts_match_mcp_gateway(self) -> None:
-        self.assertEqual(API_ANONYMOUS_DAILY_SEARCH_QUOTA, 100)
-        self.assertEqual(API_FREE_MONTHLY_SEARCH_QUOTA, 2000)
-        self.assertEqual(API_MEMBER_MONTHLY_SEARCH_QUOTA, 20000)
+        self.assertEqual(API_ANONYMOUS_DAILY_SEARCH_QUOTA, 30)
+        self.assertEqual(API_FREE_DAILY_SEARCH_QUOTA, 60)
+        self.assertEqual(API_FREE_MONTHLY_SEARCH_QUOTA, 1200)
+        self.assertEqual(API_MEMBER_DAILY_SEARCH_QUOTA, 400)
+        self.assertEqual(API_MEMBER_MONTHLY_SEARCH_QUOTA, 8000)
 
     def test_burst_limits_match_mcp_tool_call(self) -> None:
         self.assertEqual(API_ANONYMOUS_SEARCH_LIMIT, 30)
@@ -138,7 +142,7 @@ class EnforceRateLimitTests(unittest.IsolatedAsyncioTestCase):
 
 
 class QuotaEnforcementTests(unittest.IsolatedAsyncioTestCase):
-    """分层配额：匿名日 100 / 免费月 2000 / 会员月 20000（与 MCP 同池）。"""
+    """分层配额：匿名日 30 / 免费 60/天+1200/月 / 会员 400/天+8000/月（与 MCP 同池）。"""
 
     async def test_anonymous_call_consumes_daily_ip_quota_in_shared_bucket(self) -> None:
         redis = FakeRedis()
@@ -149,14 +153,54 @@ class QuotaEnforcementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(redis.values[key], 1)
         self.assertEqual(redis.expirations[key], API_QUOTA_DAILY_WINDOW_SECONDS)
 
-    async def test_authenticated_call_consumes_monthly_user_quota(self) -> None:
+    async def test_authenticated_call_consumes_daily_and_monthly_user_quota(self) -> None:
         redis = FakeRedis()
         request = _request(redis, xff="1.2.3.4", client=_TRUSTED_CLIENT)
         await enforce_api_search_rate_limit(request, user_id=42)
-        key = "ratelimit:mcp.quota.monthly:user:42"
-        self.assertEqual(redis.values[key], 1)
-        self.assertEqual(redis.expirations[key], API_QUOTA_MONTHLY_WINDOW_SECONDS)
+        # 登录档日 pacing 桶先行命中（与匿名同桶不同键），再命中月度桶
+        daily_key = "ratelimit:mcp.quota.daily:user:42"
+        monthly_key = "ratelimit:mcp.quota.monthly:user:42"
+        self.assertEqual(redis.values[daily_key], 1)
+        self.assertEqual(redis.expirations[daily_key], API_QUOTA_DAILY_WINDOW_SECONDS)
+        self.assertEqual(redis.values[monthly_key], 1)
+        self.assertEqual(redis.expirations[monthly_key], API_QUOTA_MONTHLY_WINDOW_SECONDS)
         self.assertNotIn("ratelimit:mcp.quota.daily:ip:1.2.3.4", redis.values)
+
+    async def test_authenticated_daily_pacing_quota_boundary(self) -> None:
+        """登录档日 pacing：日桶超限后请求被拒，且不再消耗月度配额。"""
+        redis = FakeRedis()
+        request = _request(redis, client=_TRUSTED_CLIENT)
+        with patch.object(api_quota, "API_FREE_DAILY_SEARCH_QUOTA", 2):
+            await enforce_api_search_rate_limit(request, user_id=7)
+            await enforce_api_search_rate_limit(request, user_id=7)
+            with self.assertRaises(ApiQuotaExceededError) as caught:
+                await enforce_api_search_rate_limit(request, user_id=7)
+        exc = caught.exception
+        self.assertEqual(exc.quota_scope, "daily")
+        self.assertEqual(exc.tier, "free")
+        self.assertEqual(exc.limit, 2)
+        self.assertEqual(exc.identity_kind, "user")
+        self.assertEqual(exc.retry_after, API_QUOTA_DAILY_WINDOW_SECONDS)
+        # 被日桶拒绝的第 3 发不消耗月配额：月度键停在 2
+        self.assertEqual(redis.values["ratelimit:mcp.quota.monthly:user:7"], 2)
+
+    async def test_member_daily_pacing_uses_member_limit(self) -> None:
+        redis = FakeRedis()
+        request = _request(redis, client=_TRUSTED_CLIENT)
+        with patch.object(api_quota, "API_FREE_DAILY_SEARCH_QUOTA", 1):
+            with patch.object(api_quota, "API_MEMBER_DAILY_SEARCH_QUOTA", 3):
+                for _ in range(3):
+                    await enforce_api_search_rate_limit(
+                        request, user_id=7, membership_tier="member"
+                    )
+                with self.assertRaises(ApiQuotaExceededError) as caught:
+                    await enforce_api_search_rate_limit(
+                        request, user_id=7, membership_tier="member"
+                    )
+        exc = caught.exception
+        self.assertEqual(exc.quota_scope, "daily")
+        self.assertEqual(exc.tier, "member")
+        self.assertEqual(exc.identity_kind, "user")
 
     async def test_anonymous_daily_quota_boundary(self) -> None:
         redis = FakeRedis()
@@ -367,6 +411,7 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(f"ratelimit:{API_SEARCH_BUCKET}:user:42", self.redis.values)
+        self.assertIn("ratelimit:mcp.quota.daily:user:42", self.redis.values)
         self.assertIn("ratelimit:mcp.quota.monthly:user:42", self.redis.values)
 
     def test_burst_limit_returns_429_without_quota_fields(self) -> None:
@@ -409,8 +454,56 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         self.assertEqual(payload["quota_scope"], "daily")
         self.assertEqual(payload["tier"], "free")
         self.assertEqual(payload["limit"], 1)
+        self.assertEqual(payload["identity_kind"], "ip")
         self.assertIn("aigcnews.cn/mcp", payload["detail"])
         self.assertIn("aigcnews.cn/membership", payload["detail"])
+
+    def test_free_user_daily_quota_exceeded_guides_to_membership(self) -> None:
+        """登录免费档日 pacing 429：identity_kind=user，文案指向 membership。"""
+        self.app.dependency_overrides[OptionalMcpUser] = lambda: {
+            "user_id": 42,
+            "scopes": frozenset(),
+            "role": "user",
+            "membership_tier": "free",
+        }
+        with patch.object(api_quota, "API_FREE_DAILY_SEARCH_QUOTA", 1):
+            first = self.client.get("/api/v1/projects/search")
+            self.assertEqual(first.status_code, 200)
+            throttled = self.client.get("/api/v1/projects/search")
+        self.assertEqual(throttled.status_code, 429)
+        self.assertEqual(
+            throttled.headers["Retry-After"], str(API_QUOTA_DAILY_WINDOW_SECONDS)
+        )
+        payload = throttled.json()
+        self.assertEqual(payload["error"], "quota_exceeded")
+        self.assertEqual(payload["quota_scope"], "daily")
+        self.assertEqual(payload["tier"], "free")
+        self.assertEqual(payload["identity_kind"], "user")
+        self.assertIn("aigcnews.cn/membership", payload["detail"])
+        self.assertIn("Free daily quota exhausted", payload["detail"])
+        # 被日桶拒绝的请求不消耗月配额：月度键只有第 1 发
+        self.assertEqual(
+            self.redis.values["ratelimit:mcp.quota.monthly:user:42"], 1
+        )
+
+    def test_member_daily_quota_exceeded_reports_window_reset(self) -> None:
+        """会员档日 pacing 429：告知窗口重置，不做升级引导。"""
+        self.app.dependency_overrides[OptionalMcpUser] = lambda: {
+            "user_id": 42,
+            "scopes": frozenset(),
+            "role": "user",
+            "membership_tier": "member",
+        }
+        with patch.object(api_quota, "API_MEMBER_DAILY_SEARCH_QUOTA", 1):
+            self.client.get("/api/v1/projects/search")
+            throttled = self.client.get("/api/v1/projects/search")
+        self.assertEqual(throttled.status_code, 429)
+        payload = throttled.json()
+        self.assertEqual(payload["quota_scope"], "daily")
+        self.assertEqual(payload["tier"], "member")
+        self.assertEqual(payload["identity_kind"], "user")
+        self.assertIn("VIP daily quota", payload["detail"])
+        self.assertIn("window resets", payload["detail"])
 
     def test_free_user_monthly_quota_exceeded_guides_to_membership(self) -> None:
         self.app.dependency_overrides[OptionalMcpUser] = lambda: {
