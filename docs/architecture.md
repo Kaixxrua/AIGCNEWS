@@ -38,7 +38,7 @@
 ### 3.1 分层与组合根
 
 ```text
-Transport   api/routes_*.py        REST + SSE + MCP 入口，DTO 与鉴权
+Transport   api/routes_*.py        REST + SSE 入口，DTO 与鉴权（MCP 入站为独立 Go 服务 mcp-go/）
 Service     services/*             领域逻辑（采集、RAG、简报、项目搜索、推送、MCP…）
 Repository  repositories/*_repository.py   按能力拆分的 Protocol（端口）
 Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适配器
@@ -63,7 +63,7 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | `routes_report.py` | 公开 + RequireUser + RequireAdmin | 简报读取（公开）；订阅 / 立即发送（用户）；SSE 生成、评估记录（管理员） |
 | `routes_push.py` | RequireUser | 推送渠道（邮箱 OTP / webhook 验证、测试）与订阅 CRUD |
 | `routes_chat.py` / `routes_attachments.py` / `routes_vision.py` | RequireUser | 对话 SSE、会话与消息管理、附件（图片入 Redis 零落盘 / PDF 落盘解析）、视觉问答 |
-| `routes_mcp.py` | OptionalMcpUser | **POST `/api/mcp` 单端点**，JSON-RPC 全协议（见第七节） |
+| —（独立 Go 服务 `mcp-go/`，nginx `location = /api/mcp` 直达） | MCP token | **POST `/api/mcp` 单端点**，JSON-RPC 全协议（见第七节；Python 入站已随 W6 退役删除） |
 | `routes_monitor.py` | 公开 + RequireAdmin | `/live` `/ready` 健康探针（公开）；health / metrics / tasks（管理员） |
 | `routes_ops.py` + 子路由 | RequireAdmin | 采集触发 / 数据清理 / 调度器状态与配置 / Provider 配置与测试 / 简报批量 / 缓存清理 / 项目运维；`routes_ops_github.py`（爬取、富化、推荐、指标）、`routes_ops_mcp.py`（出站 MCP 配置）、`routes_ops_smtp.py`（SMTP 面板）、`routes_ops_x.py`（见下行）、`routes_ops_payments.py`（支付订单列表、详情、补单、关单） |
 | `routes_ops_x.py` | RequireAdmin | X watchlist / 凭据池 CRUD 与测活、日榜快照回填 |
@@ -206,22 +206,30 @@ stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
 
 ## 七、AIGC Radar MCP 服务（入站）
 
-`POST /api/mcp` 单端点，Streamable HTTP（纯 POST 请求/响应，无 GET 流）。模块位于 `services/mcp/inbound/`：
+`POST /api/mcp` 单端点，Streamable HTTP（纯 POST 请求/响应，无 GET 流）。
+自 W5 起由独立 Go 服务（`mcp-go/`，compose 服务 `mcp-api-go`）承载，
+frontend nginx `location = /api/mcp` 直接路由；Python 入站实现已随 W6
+全部退役删除。
 
-| 文件 | 职责 |
+Go 侧布局：
+
+| 包 | 职责 |
 |---|---|
-| `catalog.py` | 静态注册表：serverInfo `aigc-radar`，7 公开工具 + 私有工具，3 resources + 4 templates + 2 prompts，`MCP_HOST_INSTRUCTIONS` 路由策略 |
-| `application.py` | JSON-RPC 分发：initialize / tools/list / tools/call / resources/* / prompts/*；通知（无 id）→ 204 |
-| `tools.py` | 8 个工具 handler + 注册表；输入经 `contracts.py` 严格 Pydantic（extra=forbid） |
-| `context.py` | 请求解析（64KiB 上限、禁 batch）、鉴权上下文、会话头（`MCP-Protocol-Version` / `Mcp-Session-Id`） |
-| `rate_limit.py` | Redis 固定窗口（见 4.4），超限 429 + `Retry-After` + JSON-RPC `-32000` |
-| `responses.py` / `attribution.py` | 结果序列化（100k 字符截断为 preview）；品牌归因行与 `detail_url` UTM 回链 |
+| `internal/mcpapp` | JSON-RPC 分发：initialize / tools/list / tools/call / resources/* / prompts/*；通知（无 id）→ 204；8 工具 handler；静态注册表（serverInfo `aigc-radar`，3 resources + 4 templates + 2 prompts，`MCP_HOST_INSTRUCTIONS` 路由策略）；结果序列化（100k 字符截断为 preview）与品牌归因 `detail_url` UTM 回链 |
+| `internal/ratelimit` | Redis 固定窗口（见 4.4），超限 429 + `Retry-After` + JSON-RPC `-32000`；桶字符串/额度与 REST 共享配额池同值同池 |
+| `internal/version` | serverInfo 名与版本回退常量（server.json 优先），与 Python 侧契约测试双向钉住 |
+| `internal/replay` | 冻结语料（`backend/tests/parity/corpus/`）逐字节回放门禁 |
 
-语义要点：
+Python 侧保留（`services/mcp/`）：`contracts.py`（工具输入模型，REST/测试
+复用）、`admin_service.py`（ops 后台 MCP 管理）、`protocol.py` /
+`transport.py`（出站客户端，供 mcp_connection_tester）、
+`inbound/context.py`（`McpAuthorizationContext`，REST 侧 token 身份投影）。
+
+语义要点（Go 逐字节对齐，冻结语料守护）：
 
 - 工具错误一律以 `isError: true` 的工具结果返回（非协议错误）；未知方法 `-32601`、参数 `-32602`、内部 `-32603`，协议错误 HTTP 200。
 - `search_my_project_favorites` 需 scope `projects:favorites:read`，匿名调用短路为"需要认证"工具错误；base64 游标分页。
-- 工具经由冻结的 `McpToolContext` 调用 repository / service，与 REST 共用同一套数据端口。
+- 工具与 REST 共用同一套数据端口（同一 Postgres 仓储语义）。
 - token 模型：SHA-256 摘要 + 展示 hint、scopes、client_type/label、有效期、撤销、每用户活跃上限 20（事务内软淘汰最旧）。
 
 ## 八、部署形态

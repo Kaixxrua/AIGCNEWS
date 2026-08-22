@@ -69,3 +69,20 @@
 - 删除 admin_service/protocol/transport/context 之外任何被引用文件
   前必须重跑闭包 grep 证明无引用。
 - shared redis-aigc 的公网限流键一律不动。
+
+## 执行状态（2026-08-22 完结）
+
+- U1 `16244f3`、U2 `645a053`、U3 `852a3da`：已落地。
+- U4 `4289909`（+ 前置测试修复 `7d63152`，c2d997b 引入的预存红）：
+  入站工具栈 12 文件删除、15 文件收口改写；门禁全绿（收集 2753
+  零导入错误、受影响文件全数通过、全量套件对原始 main 零新增失败、
+  PG 集成 8/8）。支付热开关×3、migration 连续性、document upsert
+  共 5 项失败为 main 预存红，与本线无关，另行处理。
+- U5：回放线束与 live_diff/recorder/corpus_parity 测试已于 U3 删除；
+  全仓复核零残留引用；corpus/ + manifest 按既定决策保留为冻结契约
+  （Go `internal/replay` 门禁与 catalog 生成物来源）。
+- U6：aigc-mcp / w3-python / w3-redis / pg-it-w6u4 容器已移除；
+  parity_py / parity_go 孪生库已 drop；frontend 镜像干净重建按
+  "可择机"暂缓（运行中镜像行为正确，仅 delta tag 漂移）。
+- U7：docs/architecture.md 第七节与路由表、mcp-go/README.md、
+  W5 结论与本文件状态更新（随本状态一并提交）。

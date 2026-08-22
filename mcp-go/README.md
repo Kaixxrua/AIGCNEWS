@@ -1,10 +1,15 @@
-# AIGC Radar MCP — Go 实现（金丝雀阶段）
+# AIGC Radar MCP — Go 实现（生产承载）
 
-Python MCP 入站（`backend/app/services/mcp/inbound/*`，独立进程 `mcp_main.py`）
-的全量 Go 重写。目标：抗高并发、单容器静态二进制、与 Python 版**逐字节**
-线格式一致。
+Python MCP 入站（`backend/app/services/mcp/inbound/*` 与独立进程
+`mcp_main.py`，均已随 W6 退役删除）的全量 Go 重写，现为生产 `/api/mcp`
+的唯一承载：抗高并发、单容器静态二进制、与 Python 版**逐字节**线格式
+一致（冻结语料回放门禁常驻）。
 
-## 当前状态（Phase 2 已完成，金丝雀）
+## 当前状态（生产承载中）
+
+- ✅ 生产流量：W5 蓝绿切流完成，frontend nginx `location = /api/mcp`
+  直连本服务；W6 已删除 Python 网关层（main `4289909`：入站工具栈、
+  独立进程与回放线束全删）
 
 - ✅ 配置装载（环境变量与 Python `config.py` 同名同默认值）
 - ✅ Postgres 连接池与仓储适配器（pgx/v5，DSN/超时/statement_timeout 对齐 psycopg 口径）
@@ -25,8 +30,10 @@ Python MCP 入站（`backend/app/services/mcp/inbound/*`，独立进程 `mcp_mai
 - ✅ Python-vs-Go 静态 live-diff helper 与 CI gate 已加入；运行时依赖服务可用时
   可执行等价服务回放对照
 
-金丝雀范围仍与 Python `mcp-api` 并存；生产流量切换、Python 下线与边缘路由变更
-不在本阶段。
+Python 网关层已删除：配额桶/版本名等跨语言契约由冻结字面量与
+`internal/version` 常量双向钉住（见 backend 侧契约测试）。回滚 =
+revert W6 提交 + 重启 aigc-backend；nginx 路由回滚镜像 tag
+`docker-frontend-web:pre-mcpgo-rollback` 仍保留。
 
 ## 设计要点
 

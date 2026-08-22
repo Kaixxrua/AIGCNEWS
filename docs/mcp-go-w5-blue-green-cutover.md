@@ -101,3 +101,11 @@ healthy，边缘 200。教训：凡注入代理变量的容器，探针/内部�
 写路径），性能基线占优（W4）。进入烘焙期；金丝雀健康后执行 W6
 （删除 Python 网关层：main.py routes_mcp 挂载、mcp-api 服务、
 mcp_main.py 与工具处理器）。
+
+**2026-08-22 更新**：烘焙通过，W6 已执行完毕——U1–U3（指标播种解耦、
+挂载摘除、独立进程与回放线束删除：`16244f3` / `645a053` / `852a3da`）
+与 U4（入站工具栈删除，`4289909`）全部落地；U5 收口复核零残留，
+U6 运行侧清理完成（aigc-mcp / w3-python / w3-redis 容器移除，
+parity_py / parity_go 孪生库已 drop）。回滚姿态变化：nginx 路由
+回滚镜像 tag 仍有效；Python 侧代码已不存在，回退 Python 承载需
+revert W6 提交并重启 aigc-backend。
