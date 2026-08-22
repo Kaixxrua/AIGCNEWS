@@ -109,10 +109,43 @@ def test_create_payment_builds_signed_page_pay_redirect(key_pair: tuple) -> None
     public = serialization.load_pem_public_key(public_pem.encode())
     public.verify(
         base64.b64decode(parsed["sign"]),
-        _canonical_params({key: value for key, value in parsed.items() if key != "sign"}).encode(),
+        _canonical_params(
+            {key: value for key, value in parsed.items() if key != "sign"},
+            exclude_sign_type=False,
+        ).encode(),
         padding.PKCS1v15(),
         hashes.SHA256(),
     )
+
+
+def test_request_sign_string_includes_sign_type() -> None:
+    """钉死请求加签串形状：与网关 invalid-signature 报错里的验签串同构。
+
+    网关原文（2026-08-22 真实报错）：app_id=...&biz_content={...}&charset=utf-8
+    &method=alipay.trade.page.pay&notify_url=...&return_url=...&sign_type=RSA2
+    &timestamp=...&version=1.0 —— sign_type 必须参与请求签名。
+    """
+    params = {
+        "app_id": APP_ID,
+        "method": "alipay.trade.page.pay",
+        "charset": "utf-8",
+        "sign_type": "RSA2",
+        "timestamp": "2026-08-22 09:00:43",
+        "version": "1.0",
+        "notify_url": "https://aigcnews.cn/api/payments/callback/alipay_page",
+        "return_url": "https://aigcnews.cn/membership/checkout?order_no=P20260822090043729004&plan=monthly",
+        "biz_content": '{"out_trade_no":"P20260822090043729004","total_amount":"19.00","subject":"AIGC Radar Membership (Monthly)","product_code":"FAST_INSTANT_TRADE_PAY"}',
+    }
+    assert _canonical_params(params, exclude_sign_type=False) == (
+        'app_id=2021000000000000&biz_content={"out_trade_no":"P20260822090043729004",'
+        '"total_amount":"19.00","subject":"AIGC Radar Membership (Monthly)",'
+        '"product_code":"FAST_INSTANT_TRADE_PAY"}&charset=utf-8&method=alipay.trade.page.pay'
+        "&notify_url=https://aigcnews.cn/api/payments/callback/alipay_page"
+        "&return_url=https://aigcnews.cn/membership/checkout?order_no=P20260822090043729004&plan=monthly"
+        "&sign_type=RSA2&timestamp=2026-08-22 09:00:43&version=1.0"
+    )
+    # 回调验签仍按官方规则剔除 sign_type
+    assert "sign_type" not in _canonical_params(params)
 
 
 def test_callback_rsa2_round_trip_normalizes_yuan_to_cents(
@@ -186,7 +219,10 @@ def test_query_order_posts_signed_trade_query_and_returns_status(
     public = serialization.load_pem_public_key(public_pem.encode())
     public.verify(
         base64.b64decode(form["sign"]),
-        _canonical_params({key: value for key, value in form.items() if key != "sign"}).encode(),
+        _canonical_params(
+            {key: value for key, value in form.items() if key != "sign"},
+            exclude_sign_type=False,
+        ).encode(),
         padding.PKCS1v15(),
         hashes.SHA256(),
     )
@@ -243,7 +279,10 @@ def test_bare_base64_keys_sign_and_verify_round_trip(
     public = serialization.load_pem_public_key(public_pem.encode())
     public.verify(
         base64.b64decode(parsed["sign"]),
-        _canonical_params({key: value for key, value in parsed.items() if key != "sign"}).encode(),
+        _canonical_params(
+            {key: value for key, value in parsed.items() if key != "sign"},
+            exclude_sign_type=False,
+        ).encode(),
         padding.PKCS1v15(),
         hashes.SHA256(),
     )

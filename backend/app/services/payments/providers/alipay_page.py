@@ -69,12 +69,17 @@ def _load_pem(value: str, armors: tuple[str, ...]) -> list[bytes]:
     ]
 
 
-def _canonical_params(params: Mapping[str, Any]) -> str:
-    """支付宝 RSA2 待签名串：排序，剔除 sign/sign_type 和空值。"""
+def _canonical_params(params: Mapping[str, Any], *, exclude_sign_type: bool = True) -> str:
+    """支付宝 RSA2 待签名串：排序，剔除 sign 和空值。
+
+    回调验签按官方规则额外剔除 sign_type（默认）；请求加签必须保留
+    sign_type——网关验签串包含它（invalid-signature 报错原文可证）。
+    """
+    excluded = {"sign", "sign_type"} if exclude_sign_type else {"sign"}
     return "&".join(
         f"{key}={params[key]}"
         for key in sorted(params)
-        if key not in {"sign", "sign_type"}
+        if key not in excluded
         and params[key] is not None
         and str(params[key]) != ""
     )
@@ -82,7 +87,7 @@ def _canonical_params(params: Mapping[str, Any]) -> str:
 
 def _sign_params(private_key: Any, params: Mapping[str, Any]) -> str:
     signature = private_key.sign(
-        _canonical_params(params).encode(_ALIPAY_CHARSET),
+        _canonical_params(params, exclude_sign_type=False).encode(_ALIPAY_CHARSET),
         padding.PKCS1v15(),
         hashes.SHA256(),
     )
