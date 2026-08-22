@@ -176,10 +176,10 @@ onBeforeUnmount(pauseLivePoll)
             </div>
           </div>
 
-          <!-- MCP 总调用次数（点击前往 MCP 接入页）：紧凑横排，mt-auto 把 MCP/dsh 两张计数卡整体吸附到侧栏底线，与排行榜下边缘对齐 -->
+          <!-- MCP 总调用次数（点击前往 MCP 接入页）：flex-1 吃掉侧栏剩余高度，与 dsh 卡一起撑满侧栏，底线与排行榜下边缘对齐且不留空 -->
           <RouterLink
             to="/mcp"
-            class="stagger-enter glass-card card-hover mt-auto flex items-center gap-2 px-3 py-2 transition-colors"
+            class="stagger-enter glass-card card-hover flex flex-1 items-center gap-2 px-3 py-2 transition-colors"
             style="animation-delay: 0.4s"
             :aria-label="t('dashboard.mcpCalls.title')"
           >
@@ -192,10 +192,10 @@ onBeforeUnmount(pauseLivePoll)
             <RollingNumber :value="mcpTotalCalls" grouping class="ml-auto text-lg font-extrabold tabular-nums" />
           </RouterLink>
 
-          <!-- dsh 插件调用次数（MCP 调用中的 dsh 客户端分桶，点击前往插件页）：紧随 MCP 卡，底线对齐排行榜 -->
+          <!-- dsh 插件调用次数（MCP 调用中的 dsh 客户端分桶，点击前往插件页）：与 MCP 卡平分剩余高度，底线对齐排行榜 -->
           <RouterLink
             to="/dsh"
-            class="stagger-enter glass-card card-hover flex items-center gap-2 px-3 py-2 transition-colors"
+            class="stagger-enter glass-card card-hover flex flex-1 items-center gap-2 px-3 py-2 transition-colors"
             style="animation-delay: 0.45s"
             :aria-label="t('dashboard.dshCalls.title')"
           >
