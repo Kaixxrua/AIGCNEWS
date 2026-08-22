@@ -2,7 +2,7 @@
 
 覆盖：分钟突发桶与分层配额双形态 429、匿名/免费/会员三档、admin 豁免、
 Redis 故障 fail-open、真实 Bearer token 认证路径（无效 401）、以及与
-MCP inbound 共享配额池的桶字符串契约（同值即同池，防双通道套利）。
+Go 网关（mcp-go）共享配额池的桶字符串契约（同值即同池，防双通道套利）。
 """
 
 from __future__ import annotations
@@ -37,7 +37,6 @@ from backend.app.services.api_access.quota import (
     enforce_api_search_rate_limit,
 )
 from backend.app.services.auth.rate_limit import RateLimitExceededError
-from backend.app.services.mcp.inbound import rate_limit as mcp_rate_limit
 from backend.tests.test_email_service_contracts import FakeRedis
 
 
@@ -67,49 +66,29 @@ _TRUSTED_CLIENT = ("127.0.0.1", 5000)
 
 
 class SharedPoolContract(unittest.TestCase):
-    """REST 配额桶与 MCP inbound 同值——同值即同池，守护双通道共享语义。"""
+    """REST 配额桶与 MCP 通道同值——同值即同池，守护双通道共享语义。
 
-    def test_quota_buckets_match_mcp_inbound(self) -> None:
-        self.assertEqual(API_QUOTA_DAILY_BUCKET, mcp_rate_limit.MCP_QUOTA_DAILY_BUCKET)
-        self.assertEqual(
-            API_QUOTA_MONTHLY_BUCKET, mcp_rate_limit.MCP_QUOTA_MONTHLY_BUCKET
-        )
-        self.assertEqual(
-            API_QUOTA_DAILY_WINDOW_SECONDS,
-            mcp_rate_limit.MCP_QUOTA_DAILY_WINDOW_SECONDS,
-        )
-        self.assertEqual(
-            API_QUOTA_MONTHLY_WINDOW_SECONDS,
-            mcp_rate_limit.MCP_QUOTA_MONTHLY_WINDOW_SECONDS,
-        )
+    MCP 半边的实现已迁至 Go 网关（mcp-go/internal/ratelimit/ratelimit.go，
+    其常量注释与原 Python inbound/rate_limit 逐字对应，且 Go 测试按桶
+    字符串钉住键形）；本类把 REST 常量钉死在双方共享的冻结字面值上，
+    任一侧漂移都会在此或 Go 侧测试中显红。
+    """
 
-    def test_quota_amounts_match_mcp_inbound(self) -> None:
-        self.assertEqual(
-            API_ANONYMOUS_DAILY_SEARCH_QUOTA,
-            mcp_rate_limit.MCP_ANONYMOUS_DAILY_TOOL_CALL_QUOTA,
-        )
-        self.assertEqual(
-            API_FREE_MONTHLY_SEARCH_QUOTA,
-            mcp_rate_limit.MCP_FREE_MONTHLY_TOOL_CALL_QUOTA,
-        )
-        self.assertEqual(
-            API_MEMBER_MONTHLY_SEARCH_QUOTA,
-            mcp_rate_limit.MCP_MEMBER_MONTHLY_TOOL_CALL_QUOTA,
-        )
+    def test_quota_buckets_match_mcp_gateway(self) -> None:
+        self.assertEqual(API_QUOTA_DAILY_BUCKET, "mcp.quota.daily")
+        self.assertEqual(API_QUOTA_MONTHLY_BUCKET, "mcp.quota.monthly")
+        self.assertEqual(API_QUOTA_DAILY_WINDOW_SECONDS, 86400)
+        self.assertEqual(API_QUOTA_MONTHLY_WINDOW_SECONDS, 2592000)
+
+    def test_quota_amounts_match_mcp_gateway(self) -> None:
+        self.assertEqual(API_ANONYMOUS_DAILY_SEARCH_QUOTA, 100)
+        self.assertEqual(API_FREE_MONTHLY_SEARCH_QUOTA, 2000)
+        self.assertEqual(API_MEMBER_MONTHLY_SEARCH_QUOTA, 20000)
 
     def test_burst_limits_match_mcp_tool_call(self) -> None:
-        self.assertEqual(
-            API_ANONYMOUS_SEARCH_LIMIT,
-            mcp_rate_limit.MCP_ANONYMOUS_TOOL_CALL_LIMIT,
-        )
-        self.assertEqual(
-            API_AUTHENTICATED_SEARCH_LIMIT,
-            mcp_rate_limit.MCP_AUTHENTICATED_TOOL_CALL_LIMIT,
-        )
-        self.assertEqual(
-            API_RATE_LIMIT_WINDOW_SECONDS,
-            mcp_rate_limit.MCP_RATE_LIMIT_WINDOW_SECONDS,
-        )
+        self.assertEqual(API_ANONYMOUS_SEARCH_LIMIT, 30)
+        self.assertEqual(API_AUTHENTICATED_SEARCH_LIMIT, 120)
+        self.assertEqual(API_RATE_LIMIT_WINDOW_SECONDS, 60)
 
 
 class ClientIpTests(unittest.TestCase):

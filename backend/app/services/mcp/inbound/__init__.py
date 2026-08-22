@@ -1,1 +1,1 @@
-"""Inbound MCP catalogs and response projections."""
+"""MCP 入站授权上下文（REST 侧复用）；协议分发与工具栈已随 W6-U4 退役至 mcp-go。"""

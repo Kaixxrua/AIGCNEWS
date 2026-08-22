@@ -4,21 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.app.api import routes_github_projects, routes_ops
-from backend.app.services.mcp.inbound import tools as inbound_tools
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
-
-
-def test_mcp_categories_use_catalog_factory() -> None:
-    repository = MagicMock()
-    repository.get_project_categories.return_value = {
-        "items": [], "total": 0, "today_count": 0, "recommended_count": 0
-    }
-    factory = MagicMock(return_value=repository)
-    context = MagicMock()
-    context.catalog_queries = ProjectCatalogQueryService(repository_factory=factory)
-    result = asyncio.run(inbound_tools._tool_get_project_categories(context, {}))
-    factory.assert_called_once_with()
-    assert result["source"] == "github"
 
 
 def test_canonical_categories_use_catalog_factory() -> None:

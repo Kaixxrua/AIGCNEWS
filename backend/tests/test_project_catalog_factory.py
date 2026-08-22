@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from backend.app.api import routes_github_projects
 from backend.app.repositories import project_catalog_factory
 from backend.app.services import project_discovery
-from backend.app.services.mcp.inbound import tools as inbound_tools
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
 
@@ -56,15 +55,6 @@ def test_explicit_discovery_repository_factory_takes_precedence() -> None:
 
     factory.assert_not_called()
     assert result["total"] == 1
-
-
-def test_mcp_project_search_does_not_pin_mysql_repository() -> None:
-    search = AsyncMock(return_value={"items": [], "total": 0})
-
-    with patch.object(inbound_tools, "search_projects", search):
-        asyncio.run(inbound_tools._search_project_library({"q": "workflow"}, mode="generic"))
-
-    assert "repository_factory" not in search.call_args.kwargs
 
 
 def test_public_rest_project_handlers_use_catalog_factory() -> None:

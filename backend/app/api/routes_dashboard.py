@@ -171,7 +171,7 @@ def _dashboard_cache_key_builder(
     return f"{namespace}:{func.__name__}:{digest}"
 
 
-# Compatibility exports consumed by routes_mcp and older callers.
+# Compatibility exports consumed by older callers (routes_mcp 已随 W6-U4 删除).
 def _compute_board_status(snapshot_date_str: str) -> dict:
     return policy.compute_board_status(snapshot_date_str)
 

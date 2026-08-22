@@ -5,10 +5,12 @@ import re
 import unittest
 from pathlib import Path
 
-from backend.app.services.mcp.inbound.catalog import MCP_SERVER_NAME, MCP_SERVER_VERSION
-
 ROOT = Path(__file__).resolve().parents[2]
 SERVER_JSON = ROOT / "server.json"
+# 入站 MCP 栈退役后，serverInfo 名称/版本由 Go 网关持有
+# （mcp-go/internal/version/version.go：运行时优先读 server.json，常量兜底）。
+# 此处钉住 server.json 与 Go 兜底常量同值，防止双语漂移。
+GO_VERSION_SOURCE = ROOT / "mcp-go" / "internal" / "version" / "version.go"
 
 # Constraints mirrored from the official MCP registry schema
 # https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json
@@ -18,6 +20,15 @@ _TITLE_MAX = 100
 _ICON_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"}
 _REGISTRY_NAME = "io.github.kaixxrua/aigc-radar"
 _PRODUCTION_MCP_URL = "https://aigcnews.cn/api/mcp"
+
+
+def _go_version_const(name: str) -> str:
+    match = re.search(
+        rf'\b{name} = "([^"]+)"',
+        GO_VERSION_SOURCE.read_text(encoding="utf-8"),
+    )
+    assert match, f"{name} not found in {GO_VERSION_SOURCE}"
+    return match.group(1)
 
 
 class RegistryMetadataTests(unittest.TestCase):
@@ -39,7 +50,7 @@ class RegistryMetadataTests(unittest.TestCase):
         self.assertRegex(name, _NAME_RE)
         self.assertGreaterEqual(len(name), 3)
         self.assertLessEqual(len(name), 200)
-        self.assertTrue(name.endswith(f"/{MCP_SERVER_NAME}"))
+        self.assertTrue(name.endswith(f"/{_go_version_const('ServerName')}"))
 
     def test_title_fits_schema_limit(self) -> None:
         title = self.document["title"]
@@ -51,8 +62,8 @@ class RegistryMetadataTests(unittest.TestCase):
         self.assertGreaterEqual(len(description), 1)
         self.assertLessEqual(len(description), _DESCRIPTION_MAX)
 
-    def test_version_matches_server_info(self) -> None:
-        self.assertEqual(self.document["version"], MCP_SERVER_VERSION)
+    def test_version_matches_go_server_info_fallback(self) -> None:
+        self.assertEqual(self.document["version"], _go_version_const("Fallback"))
 
     def test_hosted_remote_points_to_production_endpoint(self) -> None:
         remotes = self.document["remotes"]

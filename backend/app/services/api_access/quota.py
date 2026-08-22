@@ -5,7 +5,7 @@
 档位走 30 天滚动窗，admin 豁免配额。Redis 故障 fail-open（可用性优先，
 与 auth/MCP 限速同策略）。
 
-配额桶字符串与 ``services/mcp/inbound/rate_limit`` 完全一致：MCP 与
+配额桶字符串与 Go 网关（``mcp-go/internal/ratelimit``）完全一致：MCP 与
 REST 共享同一个配额池——用户 MCP 通道用了 1000 次，REST 通道就只剩
 1000 次，杜绝双通道套利。突发桶独立（``api.search``，流量形状与
 JSON-RPC 协议方法不同）。改任一侧的配额桶名/窗口/额度时必须同步

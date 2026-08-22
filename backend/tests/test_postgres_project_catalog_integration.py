@@ -214,26 +214,15 @@ def test_real_catalog_scope_favorites_and_categories(catalog: Any) -> None:
     assert counts["agents_automation"] == 1
 
 
-def test_real_rows_preserve_serialization_and_mcp_contract(catalog: Any) -> None:
-    from backend.app.services.mcp.inbound.responses import _tool_response
-
+def test_real_rows_preserve_public_serialization(catalog: Any) -> None:
     row = catalog.list_projects(
         source="github", category="rag_knowledge", min_stars=500
     )["items"][0]
     public = public_project_item(row)
-    response = _tool_response({"items": [public], "total": 1})
 
     assert set(public) == EXPECTED_PUBLIC_FIELDS
-    assert response["isError"] is False
-    assert response["content"] == [
-        {
-            "type": "text",
-            "text": json.dumps(response["structuredContent"], ensure_ascii=False),
-        }
-    ]
-    assert json.loads(response["content"][0]["text"]) == response["structuredContent"]
-    assert response["structuredContent"]["items"][0]["id"] == "github:acme/alpha"
-    assert "repo_id" not in response["structuredContent"]["items"][0]
+    assert public["id"] == "github:acme/alpha"
+    assert "repo_id" not in public
 
 
 def test_real_catalog_empty_term_relevance_search_returns_empty_page(catalog: Any) -> None:

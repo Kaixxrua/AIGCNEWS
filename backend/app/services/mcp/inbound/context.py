@@ -1,49 +1,18 @@
 from __future__ import annotations
 
-import json
-import uuid
 from dataclasses import dataclass
-from json import JSONDecodeError
 from typing import Any
 
-from starlette.requests import Request
-
-from backend.app.services.mcp.inbound.catalog import (
-    _JSONRPC_INVALID_PARAMS,
-    _JSONRPC_INVALID_REQUEST,
-    _JSONRPC_PARSE_ERROR,
-    MAX_REQUEST_BYTES,
-    MCP_PROTOCOL_VERSION,
-)
 from backend.app.services.membership.tiers import resolve_effective_tier
 
 
 @dataclass(frozen=True)
-class McpRequestError(Exception):
-    """JSON-RPC request validation failure with its preserved wire projection."""
-
-    request_id: Any
-    code: int
-    message: str
-
-
-@dataclass(frozen=True)
-class McpInboundRequest:
-    """Validated inbound JSON-RPC request fields consumed by the route adapter."""
-
-    request_id: Any
-    method: str
-    params: dict[str, Any]
-    has_id: bool
-
-    @property
-    def is_initialized_notification(self) -> bool:
-        return self.method == "notifications/initialized" and not self.has_id
-
-
-@dataclass(frozen=True)
 class McpAuthorizationContext:
-    """Bounded identity and scope view for one inbound MCP request."""
+    """MCP token 身份与 scope 的有界视图。
+
+    入站协议分发/会话传输已随 W6-U4 退役（生产 /api/mcp 由 mcp-go 服务）；
+    本类型仍被 REST 侧 routes_projects_api 复用做 token 身份投影。
+    """
 
     user: dict[str, Any] | None
 
@@ -76,84 +45,3 @@ class McpAuthorizationContext:
 
     def has_scope(self, scope: str) -> bool:
         return scope in (self.user or {}).get("scopes", frozenset())
-
-
-@dataclass(frozen=True)
-class McpSessionTransport:
-    """Stateless MCP response header and initialize-session policy."""
-
-    protocol_version: str = MCP_PROTOCOL_VERSION
-
-    def headers(self, session_id: str | None = None) -> dict[str, str]:
-        headers = {"MCP-Protocol-Version": self.protocol_version}
-        if session_id:
-            headers["Mcp-Session-Id"] = session_id
-        return headers
-
-    def new_session_id(self) -> str:
-        return f"aigc-radar-{uuid.uuid4().hex}"
-
-
-async def parse_mcp_request(request: Request) -> McpInboundRequest:
-    """Read and validate the bounded JSON-RPC envelope without dispatching it."""
-
-    content_length = request.headers.get("content-length")
-    if content_length:
-        try:
-            if int(content_length) > MAX_REQUEST_BYTES:
-                raise McpRequestError(
-                    None, _JSONRPC_INVALID_REQUEST, "Request body too large"
-                )
-        except ValueError:
-            raise McpRequestError(
-                None, _JSONRPC_INVALID_REQUEST, "Invalid Content-Length"
-            ) from None
-
-    raw = await request.body()
-    if len(raw) > MAX_REQUEST_BYTES:
-        raise McpRequestError(None, _JSONRPC_INVALID_REQUEST, "Request body too large")
-
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, JSONDecodeError):
-        raise McpRequestError(None, _JSONRPC_PARSE_ERROR, "Parse error") from None
-
-    if isinstance(payload, list):
-        raise McpRequestError(
-            None,
-            _JSONRPC_INVALID_REQUEST,
-            "Batch JSON-RPC requests are not supported",
-        )
-    if not isinstance(payload, dict):
-        raise McpRequestError(None, _JSONRPC_INVALID_REQUEST, "Invalid Request")
-
-    request_id = payload.get("id")
-    if request_id is not None and not isinstance(request_id, (str, int, float)):
-        raise McpRequestError(None, _JSONRPC_INVALID_REQUEST, "Invalid request id")
-    if payload.get("jsonrpc") != "2.0":
-        raise McpRequestError(
-            request_id, _JSONRPC_INVALID_REQUEST, "Invalid JSON-RPC version"
-        )
-
-    method = payload.get("method")
-    if not isinstance(method, str) or not method:
-        raise McpRequestError(request_id, _JSONRPC_INVALID_REQUEST, "Missing method")
-
-    if "params" not in payload:
-        params: dict[str, Any] = {}
-    else:
-        raw_params = payload["params"]
-        if not isinstance(raw_params, dict):
-            raise McpRequestError(
-                request_id, _JSONRPC_INVALID_PARAMS, "params must be an object"
-            )
-        params = raw_params
-
-    # 无 id 的消息按 JSON-RPC 约定属于通知（notification）：不在此拒绝，
-    # 由 dispatch 统一吞掉返回 204 空响应（通知不应产生 JSON-RPC 响应体）。
-    return McpInboundRequest(
-        request_id=request_id,
-        method=method,
-        params=params,
-        has_id="id" in payload,
-    )

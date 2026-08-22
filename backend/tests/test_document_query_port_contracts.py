@@ -1,23 +1,19 @@
 from __future__ import annotations
 
 import ast
-import asyncio
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from starlette.requests import Request
 
-from backend.app.services.mcp.inbound import tools as inbound_tools
 from backend.app.services.rag import database_tools
 from backend.app.services.rag.retriever import HybridRetriever
 
 TARGETED_DOCUMENT_CONSUMERS = (
     Path(__file__).parents[1] / "app/services/rag/retriever.py",
     Path(__file__).parents[1] / "app/services/rag/database_tools.py",
-    Path(__file__).parents[1] / "app/api/routes_mcp.py",
 )
 
 
@@ -46,24 +42,6 @@ def test_document_query_consumers_use_ports_without_sql_or_mysql_facade() -> Non
         assert "MySQLRepository" not in imported_names
         assert "_connect" not in called_attributes
         assert not any(sql_keywords.search(value) for value in string_literals)
-
-
-def _request(*, forwarded_proto: str | None = None) -> Request:
-    headers = []
-    if forwarded_proto:
-        headers.append((b"x-forwarded-proto", forwarded_proto.encode()))
-    return Request(
-        {
-            "type": "http",
-            "method": "POST",
-            "scheme": "http",
-            "server": ("testserver", 80),
-            "path": "/api/mcp",
-            "root_path": "",
-            "query_string": b"",
-            "headers": headers,
-        }
-    )
 
 
 def test_explicit_document_ids_are_lowercase_deduplicated_in_caller_order() -> None:
@@ -232,64 +210,3 @@ def test_knowledge_stats_uses_logical_counts_and_reader_source_scope(
     if source == "news":
         assert "news 来源共 3 条，以下按热度排序前 7 条" in result["formatted"]
 
-
-def _mcp_tool_context(*, forwarded_proto: str | None = None):
-    return inbound_tools.McpToolContext(
-        user=None,
-        documents=MagicMock(),
-        papers=MagicMock(),
-        rank_snapshots=MagicMock(),
-        project_collection=MagicMock(),
-        request=_request(forwarded_proto=forwarded_proto),
-    )
-
-
-def test_mcp_paper_detail_uses_reader_and_public_projection() -> None:
-    repository = MagicMock()
-    repository.get_paper_detail.return_value = {
-        "id": "paper-1",
-        "source": "arxiv",
-        "title": "Paper",
-        "published_date": date(2026, 7, 27),
-        "local_pdf_path": "/srv/papers/paper-1.pdf",
-    }
-    result = asyncio.run(
-        inbound_tools._tool_get_paper_detail(
-            _mcp_tool_context(forwarded_proto="https"),
-            {"paper_id": "paper-1"},
-            repository,
-        )
-    )
-
-    repository.get_paper_detail.assert_called_once_with("paper-1")
-    assert result == {
-        "item": {
-            "id": "paper-1",
-            "source": "arxiv",
-            "title": "Paper",
-            "published_date": "2026-07-27",
-            # 不采信可伪造的 Host/X-Forwarded-Proto：默认相对路径，
-            # 绝对 URL 只能来自 PUBLIC_BASE_URL 配置
-            "pdf_media_url": "/api/media/papers/paper-1.pdf",
-            # arXiv 文档附站内阅读页回链（UTM 标记 mcp/tool 渠道）
-            "detail_url": "https://aigcnews.cn/papers/paper-1/read?utm_source=mcp&utm_medium=tool",
-        },
-        # AIGC Radar 品牌署名行：未配 PUBLIC_BASE_URL 时回链指向品牌站点
-        "attribution": "Data provided by AIGC Radar · https://aigcnews.cn",
-    }
-
-
-def test_mcp_paper_detail_reports_missing_document() -> None:
-    repository = MagicMock()
-    repository.get_paper_detail.return_value = None
-    with pytest.raises(
-        inbound_tools.McpToolInputError,
-        match=re.escape("Document 'missing' not found."),
-    ):
-        asyncio.run(
-            inbound_tools._tool_get_paper_detail(
-                _mcp_tool_context(), {"paper_id": "missing"}, repository
-            )
-        )
-
-    repository.get_paper_detail.assert_called_once_with("missing")

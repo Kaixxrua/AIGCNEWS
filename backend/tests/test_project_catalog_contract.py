@@ -14,7 +14,6 @@ import pytest
 from backend.app.api import routes_github_projects
 from backend.app.repositories.project_catalog import ProjectCatalogRepository
 from backend.app.services import project_discovery
-from backend.app.services.mcp.inbound import responses as inbound_responses
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "project_catalog_cases.json"
 PUBLIC_PROJECT_FIELDS = {
@@ -357,16 +356,3 @@ def test_rest_project_and_category_serialization_is_frozen() -> None:
     assert categories["today_count"] == 1
     assert categories["recommended_count"] == 1
 
-
-def test_mcp_tool_response_matches_structured_content_and_public_fields() -> None:
-    fixture = load_catalog_cases()
-    public_item = project_discovery.public_project_item(fixture["projects"]["alpha"])
-    response = inbound_responses._tool_response({"items": [public_item], "total": 1})
-
-    assert response["isError"] is False
-    assert response["content"] == [
-        {"type": "text", "text": json.dumps(response["structuredContent"], ensure_ascii=False)}
-    ]
-    assert json.loads(response["content"][0]["text"]) == response["structuredContent"]
-    assert set(response["structuredContent"]["items"][0]) == PUBLIC_PROJECT_FIELDS
-    assert "repo_id" not in response["structuredContent"]["items"][0]

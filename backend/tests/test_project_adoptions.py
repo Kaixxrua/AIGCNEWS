@@ -17,10 +17,6 @@ from backend.app.services.mcp.contracts import (
     TOOL_INPUT_MODELS,
     SubmitProjectAdoptionInput,
 )
-from backend.app.services.mcp.inbound import (
-    catalog as inbound_catalog,
-    tools as inbound_tools,
-)
 from backend.app.services.project_adoptions import (
     ProjectAdoptionService,
     adoption_rate,
@@ -209,18 +205,10 @@ class ServiceTests(unittest.TestCase):
 
 
 class McpContractTests(unittest.TestCase):
-    def test_tool_is_registered_across_catalog_contracts_and_handlers(self) -> None:
-        names = {tool["name"] for tool in inbound_catalog.MCP_TOOLS}
-        self.assertIn("submit_project_adoption", names)
-        self.assertIn("submit_project_adoption", inbound_catalog.MCP_TOOL_DEFINITIONS)
-        self.assertIn("submit_project_adoption", TOOL_INPUT_MODELS)
-        self.assertIn("submit_project_adoption", inbound_tools._TOOL_HANDLERS)
+    """契约层（contracts.py）输入模型钉住；入站 catalog/tools 已随 W6-U4 退役。"""
 
-    def test_description_teaches_when_to_call(self) -> None:
-        definition = inbound_catalog.MCP_TOOL_DEFINITIONS["submit_project_adoption"]
-        description = definition["description"].lower()
-        for marker in ("adopted", "reference_only", "declined", "at most once", "reuse-rate"):
-            self.assertIn(marker, description)
+    def test_submit_adoption_registered_in_tool_input_models(self) -> None:
+        self.assertIn("submit_project_adoption", TOOL_INPUT_MODELS)
 
     def test_input_model_validation(self) -> None:
         parsed = SubmitProjectAdoptionInput.model_validate(
@@ -236,49 +224,6 @@ class McpContractTests(unittest.TestCase):
             SubmitProjectAdoptionInput.model_validate(
                 {"project_full_name": "owner/repo", "decision": "adopted", "extra": 1}
             )
-
-
-class McpHandlerTests(unittest.IsolatedAsyncioTestCase):
-    def _context(self, repository: FakeAdoptionRepository) -> Any:
-        return inbound_tools.McpToolContext(
-            user=None,
-            documents=MagicMock(),
-            papers=MagicMock(),
-            rank_snapshots=MagicMock(),
-            project_collection=MagicMock(),
-            request=MagicMock(),
-            adoptions=ProjectAdoptionService(repository_factory=lambda: repository),
-        )
-
-    async def test_call_tool_records_receipt_and_returns_stats(self) -> None:
-        repository = FakeAdoptionRepository()
-        result = await inbound_tools._call_tool(
-            self._context(repository),
-            "submit_project_adoption",
-            {
-                "project_full_name": "owner/repo",
-                "decision": "reference_only",
-                "reason": "good patterns",
-                "query": "rag framework",
-            },
-        )
-
-        self.assertFalse(result.get("isError"))
-        payload = result["structuredContent"]
-        self.assertEqual(payload["receipt"]["decision"], "reference_only")
-        self.assertEqual(payload["stats"]["total"], {"reference_only": 1})
-        self.assertIn("attribution", payload)
-        self.assertEqual(repository.receipts[0]["source"], "mcp")
-
-    async def test_invalid_decision_returns_tool_error(self) -> None:
-        repository = FakeAdoptionRepository()
-        result = await inbound_tools._call_tool(
-            self._context(repository),
-            "submit_project_adoption",
-            {"project_full_name": "owner/repo", "decision": "maybe"},
-        )
-        self.assertTrue(result.get("isError"))
-        self.assertEqual(repository.receipts, [])
 
 
 class RestRouteTests(unittest.TestCase):
