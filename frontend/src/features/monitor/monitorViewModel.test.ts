@@ -78,6 +78,7 @@ describe('monitor presentation localization boundary', () => {
       ['mcp-server', 'monitor.nav.mcpServer', true],
       ['contact-page', 'monitor.nav.contactPage', true],
       ['membership', 'monitor.nav.membership', true],
+      ['user-stats', 'monitor.nav.userStats', true],
       ['payment-config', 'monitor.nav.paymentConfig', true],
       ['payment-orders', 'monitor.nav.paymentOrders', true],
     ])

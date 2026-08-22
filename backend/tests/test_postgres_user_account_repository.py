@@ -39,6 +39,7 @@ def test_postgres_repository_exposes_combined_user_contract() -> None:
     assert callable(contract.get_user_by_email)
     assert callable(contract.create_user_with_email)
     assert callable(contract.get_today_registered_user_count)
+    assert callable(contract.get_effective_member_count)
 
 
 def test_account_reads_normalize_email_and_copy_rows() -> None:
@@ -106,6 +107,21 @@ def test_today_count_uses_shanghai_date_boundary() -> None:
     sql, params = cursor.execute.call_args.args
     assert "AT TIME ZONE 'Asia/Shanghai'" in sql
     assert params == (date(2026, 7, 28),)
+
+
+def test_effective_member_count_matches_effective_tier_semantics() -> None:
+    repository, _, cursor = repository_with_cursor()
+    cursor.fetchone.return_value = {"cnt": 3}
+
+    result = repository.get_effective_member_count()
+
+    assert result == 3
+    sql, params = cursor.execute.call_args.args
+    # 口径钉样：member 档 + 未到期（NULL=长期有效），与 resolve_effective_tier 一致
+    assert "membership_tier = 'member'" in sql
+    assert "membership_expires_at IS NULL" in sql
+    assert "membership_expires_at > now()" in sql
+    assert params == ()
 
 
 def test_missing_insert_id_is_rejected() -> None:

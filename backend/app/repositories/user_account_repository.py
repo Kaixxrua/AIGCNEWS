@@ -59,6 +59,10 @@ class UserStatisticsReader(Protocol):
 
     def get_today_registered_user_count(self) -> int: ...
 
+    def get_effective_member_count(self) -> int:
+        """Count users whose effective tier is member (member tier, not expired)."""
+        ...
+
 
 class UserAccountRepository(
     UserAccountReader,

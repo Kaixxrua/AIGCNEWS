@@ -5,7 +5,7 @@ import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, PagedResult, PaymentConfig, PaymentConfigForm, ProviderConfig, ProviderForm, ProviderTestResult,
-  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
+  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, UserStatsResponse, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
 import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildPaymentConfigPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
@@ -65,6 +65,7 @@ export interface MonitorApi {
   cancelGithubEnrichment(): Promise<GithubEnrichmentCancelResult>
   grantMembership(form: MembershipGrantForm): Promise<MembershipGrantResult>
   fetchVisitPlatformStats(window: VisitStatsWindow): Promise<VisitPlatformStatsResponse>
+  fetchUserStats(): Promise<UserStatsResponse>
 }
 
 export const monitorApi: MonitorApi = {
@@ -228,5 +229,8 @@ export const monitorApi: MonitorApi = {
   },
   async fetchVisitPlatformStats(window) {
     return (await api.get('/monitor/visit-platforms', { params: { window } })).data
+  },
+  async fetchUserStats() {
+    return (await api.get('/monitor/user-stats')).data
   },
 }

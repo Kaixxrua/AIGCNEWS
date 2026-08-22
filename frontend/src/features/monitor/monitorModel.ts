@@ -461,6 +461,13 @@ export interface VisitPlatformStatsResponse {
   platforms: VisitPlatformShare[]
 }
 
+/* 用户与会员统计：member_users 是生效 VIP 数（member 档且未到期），
+   口径与后端 tiers.resolve_effective_tier 一致（到期自动回落 free，库内不回写）。 */
+export interface UserStatsResponse {
+  total_users: number
+  member_users: number
+}
+
 // 归一规则与后端 control_plane 一致：trim + 小写 + 截断列宽（VARCHAR(32)）
 export const REASONING_EFFORT_MAX_LENGTH = 32
 

@@ -29,6 +29,20 @@ class PostgresUserAccountRepository:
         )
         return int(row["cnt"] if row else 0)
 
+    def get_effective_member_count(self) -> int:
+        # 生效口径与 tiers.resolve_effective_tier 一致：member 且未到期
+        # （expires_at NULL = 长期有效，已过期按 free）；未知档位 fail-closed，
+        # 等值匹配 'member' 天然不计入
+        row = self._fetchone(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM users
+            WHERE membership_tier = 'member'
+              AND (membership_expires_at IS NULL OR membership_expires_at > now())
+            """,
+        )
+        return int(row["cnt"] if row else 0)
+
     def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
         # 身份核验专用：按主键查询且不取 hashed_password；disabled 供
         # auth.RequireUser 判定禁用账号（0029 起 users 表才有此列）。

@@ -55,6 +55,10 @@ describe('Monitor API contract', () => {
     transport.get.mockResolvedValueOnce({ data: { window: '7d', platforms: [] } })
     await expect(monitorApi.fetchVisitPlatformStats('7d')).resolves.toEqual({ window: '7d', platforms: [] })
     expect(transport.get).toHaveBeenLastCalledWith('/monitor/visit-platforms', { params: { window: '7d' } })
+
+    transport.get.mockResolvedValueOnce({ data: { total_users: 120, member_users: 7 } })
+    await expect(monitorApi.fetchUserStats()).resolves.toEqual({ total_users: 120, member_users: 7 })
+    expect(transport.get).toHaveBeenLastCalledWith('/monitor/user-stats')
   })
 
   it('uses the X translation status and retry endpoints', async () => {

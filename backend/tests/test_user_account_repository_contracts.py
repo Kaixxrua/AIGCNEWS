@@ -53,9 +53,11 @@ class UserAccountRepositoryContractTests(unittest.TestCase):
         repository = MagicMock(spec=UserStatisticsReader)
         repository.get_user_count.return_value = 10
         repository.get_today_registered_user_count.return_value = 2
+        repository.get_effective_member_count.return_value = 4
 
         self.assertEqual(repository.get_user_count(), 10)
         self.assertEqual(repository.get_today_registered_user_count(), 2)
+        self.assertEqual(repository.get_effective_member_count(), 4)
         with self.assertRaises(AttributeError):
             repository.get_user_by_email("reader@example.com")
         with self.assertRaises(AttributeError):

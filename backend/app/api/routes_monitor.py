@@ -13,6 +13,7 @@ from backend.app.api.dependencies import (
     get_health_check_service,
     get_ingestion_task_repository,
     get_readiness_check,
+    get_user_account_repository,
 )
 from backend.app.api.routes_dashboard import cst_today, get_site_visit_repository
 from backend.app.core.auth import RequireAdmin
@@ -26,6 +27,7 @@ from backend.app.repositories.task_repository import (
     MonitorTaskRepository,
     RecentTaskReader,
 )
+from backend.app.repositories.user_account_repository import UserStatisticsReader
 from backend.app.services.dashboard.visit_platforms import (
     build_platform_breakdown_response,
     window_start_date,
@@ -147,3 +149,19 @@ async def visit_platform_breakdown(
         visits.get_platform_breakdown, window_start_date(window, today)
     )
     return build_platform_breakdown_response(rows, window, today)
+
+
+@router.get("/monitor/user-stats")
+async def user_stats(
+    _: dict = Depends(RequireAdmin),
+    users: UserStatisticsReader = Depends(get_user_account_repository),
+):
+    """注册用户数与生效 VIP 数（member 档且未到期，口径同 resolve_effective_tier）。
+
+    管理员口径与 /monitor/tasks 一致。Depends 键复用
+    dependencies.get_user_account_repository 同一函数对象，
+    契约测试用 dependency_overrides 替换时对全部消费路由同时生效。
+    """
+    total_users = await asyncio.to_thread(users.get_user_count)
+    member_users = await asyncio.to_thread(users.get_effective_member_count)
+    return {"total_users": total_users, "member_users": member_users}

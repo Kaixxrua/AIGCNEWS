@@ -21,6 +21,7 @@ import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
 import SchedulerConfigPanel from '@/components/monitor/SchedulerConfigPanel.vue'
 import SiteContactPageConfigPanel from '@/components/monitor/SiteContactPageConfigPanel.vue'
 import SmtpConfigPanel from '@/components/monitor/SmtpConfigPanel.vue'
+import UserStatsPanel from '@/components/monitor/UserStatsPanel.vue'
 import VisitStatsPanel from '@/components/monitor/VisitStatsPanel.vue'
 import EmailPoolConfigPanel from '@/components/monitor/EmailPoolConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
@@ -388,6 +389,9 @@ onUnmounted(dispose)
             :last-result="membershipLastResult"
             @save="grantMembership"
           />
+        </template>
+        <template v-else-if="currentSection === 'user-stats'">
+          <UserStatsPanel v-if="authStore.isAdmin" />
         </template>
       </div>
     </div>

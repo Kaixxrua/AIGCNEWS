@@ -16,6 +16,7 @@ from backend.app.api.dependencies import (
     get_health_check_service,
     get_ingestion_task_repository,
     get_readiness_check,
+    get_user_account_repository,
 )
 from backend.app.api.routes_dashboard import get_site_visit_repository
 from backend.app.core.auth import RequireAdmin, RequireUser
@@ -417,6 +418,57 @@ class VisitPlatformBreakdownRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["window"], "7d")
+
+
+class UserStatsRouteTests(unittest.TestCase):
+    """GET /api/monitor/user-stats：注册用户数与生效 VIP 数（admin 专属）。"""
+
+    @staticmethod
+    def _build_app(users) -> FastAPI:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[get_user_account_repository] = lambda: users
+        return app
+
+    def test_requires_admin_before_repository_calls(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        users = MagicMock()
+        app.dependency_overrides[get_user_account_repository] = lambda: users
+
+        response = TestClient(app).get("/api/monitor/user-stats")
+
+        self.assertIn(response.status_code, (401, 403))
+        users.get_user_count.assert_not_called()
+        users.get_effective_member_count.assert_not_called()
+
+    def test_rejects_authenticated_non_admin(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        users = MagicMock()
+        app.dependency_overrides[RequireUser] = lambda: {"role": "user"}
+        app.dependency_overrides[get_user_account_repository] = lambda: users
+
+        response = TestClient(app).get("/api/monitor/user-stats")
+
+        self.assertEqual(response.status_code, 403)
+        users.get_user_count.assert_not_called()
+
+    def test_returns_total_and_effective_member_counts(self) -> None:
+        users = MagicMock()
+        users.get_user_count.return_value = 120
+        users.get_effective_member_count.return_value = 7
+        app = self._build_app(users)
+
+        response = TestClient(app).get("/api/monitor/user-stats")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(), {"total_users": 120, "member_users": 7}
+        )
+        users.get_user_count.assert_called_once_with()
+        users.get_effective_member_count.assert_called_once_with()
 
 
 if __name__ == "__main__":
