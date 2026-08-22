@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
+import PaymentSecretField from './PaymentSecretField.vue'
 import {
   formatDate,
   type PaymentConfig,
@@ -35,24 +36,6 @@ const channelBadge = (configured: boolean | undefined) =>
   configured
     ? { class: 'monitor-status-success', label: t('monitor.paymentConfig.channelConfigured') }
     : { class: 'monitor-status-unknown', label: t('monitor.paymentConfig.channelMissing') }
-
-// 密文/PEM 字段：永不回填明文；已配置时显示脱敏 badge，勾选 clear = 保存时擦除
-interface SecretField {
-  key: 'wechat_api_v3_key' | 'wechat_private_key_pem' | 'alipay_private_key_pem' | 'alipay_public_key_pem' | 'stripe_secret_key' | 'stripe_webhook_secret'
-  labelKey: string
-  textarea?: boolean
-}
-const secretFields: SecretField[] = [
-  { key: 'wechat_api_v3_key', labelKey: 'monitor.paymentConfig.wechatApiV3Key' },
-  { key: 'wechat_private_key_pem', labelKey: 'monitor.paymentConfig.wechatPrivateKey', textarea: true },
-  { key: 'alipay_private_key_pem', labelKey: 'monitor.paymentConfig.alipayPrivateKey', textarea: true },
-  { key: 'alipay_public_key_pem', labelKey: 'monitor.paymentConfig.alipayPublicKey', textarea: true },
-  { key: 'stripe_secret_key', labelKey: 'monitor.paymentConfig.stripeSecretKey' },
-  { key: 'stripe_webhook_secret', labelKey: 'monitor.paymentConfig.stripeWebhookSecret' },
-]
-const secretConfigured = (key: SecretField['key']) => props.config?.[`${key}_configured` as keyof PaymentConfig] as boolean | undefined
-const secretMasked = (key: SecretField['key']) => props.config?.[`${key}_masked` as keyof PaymentConfig] as string | null | undefined
-const clearKey = (key: SecretField['key']) => `clear_${key}` as keyof PaymentConfigForm
 </script>
 
 <template>
@@ -87,7 +70,10 @@ const clearKey = (key: SecretField['key']) => `clear_${key}` as keyof PaymentCon
 
     <!-- 微信支付 -->
     <div class="mt-4 border-t border-stone-200/60 pt-3 dark:border-stone-700/60">
-      <h4 class="mb-2 text-xs font-semibold monitor-caption">{{ t('monitor.paymentConfig.wechat') }}</h4>
+      <div class="mb-2 flex items-center gap-2">
+        <h4 class="text-xs font-semibold monitor-caption">{{ t('monitor.paymentConfig.wechat') }}</h4>
+        <span class="text-2xs monitor-caption">{{ t('monitor.paymentConfig.secretWriteOnly') }}</span>
+      </div>
       <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
         <label class="block">
           <span class="mb-1 block text-xs monitor-caption">{{ t('monitor.paymentConfig.wechatAppid') }}</span>
@@ -102,35 +88,39 @@ const clearKey = (key: SecretField['key']) => `clear_${key}` as keyof PaymentCon
           <input :value="form.wechat_mch_serial_no" type="text" class="input w-full py-2 text-xs" autocomplete="off" :disabled="loading || saving || resetting" @input="updateForm('wechat_mch_serial_no', ($event.target as HTMLInputElement).value)" />
         </label>
       </div>
+      <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <PaymentSecretField field-key="wechat_api_v3_key" label-key="monitor.paymentConfig.wechatApiV3Key" :config="config" :form="form" :disabled="loading || saving || resetting" />
+        <PaymentSecretField field-key="wechat_private_key_pem" label-key="monitor.paymentConfig.wechatPrivateKey" textarea :config="config" :form="form" :disabled="loading || saving || resetting" />
+      </div>
     </div>
 
     <!-- 支付宝 -->
     <div class="mt-4 border-t border-stone-200/60 pt-3 dark:border-stone-700/60">
-      <h4 class="mb-2 text-xs font-semibold monitor-caption">{{ t('monitor.paymentConfig.alipay') }}</h4>
+      <div class="mb-2 flex items-center gap-2">
+        <h4 class="text-xs font-semibold monitor-caption">{{ t('monitor.paymentConfig.alipay') }}</h4>
+        <span class="text-2xs monitor-caption">{{ t('monitor.paymentConfig.secretWriteOnly') }}</span>
+      </div>
       <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
         <label class="block">
           <span class="mb-1 block text-xs monitor-caption">{{ t('monitor.paymentConfig.alipayAppid') }}</span>
           <input :value="form.alipay_appid" type="text" class="input w-full py-2 text-xs" autocomplete="off" :disabled="loading || saving || resetting" @input="updateForm('alipay_appid', ($event.target as HTMLInputElement).value)" />
         </label>
       </div>
+      <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <PaymentSecretField field-key="alipay_private_key_pem" label-key="monitor.paymentConfig.alipayPrivateKey" textarea :config="config" :form="form" :disabled="loading || saving || resetting" />
+        <PaymentSecretField field-key="alipay_public_key_pem" label-key="monitor.paymentConfig.alipayPublicKey" textarea :config="config" :form="form" :disabled="loading || saving || resetting" />
+      </div>
     </div>
 
-    <!-- 密文区：三渠道共用同一交互（留空保留 / masked badge / 清除勾选） -->
-    <div class="mt-4 border-t border-stone-200/60 pt-3">
-      <h4 class="mb-2 text-xs font-semibold monitor-caption">{{ t('monitor.paymentConfig.secretsTitle') }}</h4>
+    <!-- Stripe -->
+    <div class="mt-4 border-t border-stone-200/60 pt-3 dark:border-stone-700/60">
+      <div class="mb-2 flex items-center gap-2">
+        <h4 class="text-xs font-semibold monitor-caption">{{ t('monitor.paymentConfig.stripe') }}</h4>
+        <span class="text-2xs monitor-caption">{{ t('monitor.paymentConfig.secretWriteOnly') }}</span>
+      </div>
       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div v-for="field in secretFields" :key="field.key">
-          <div class="mb-1 flex items-center gap-2">
-            <span class="text-xs monitor-caption">{{ t(field.labelKey) }}</span>
-            <span v-if="secretConfigured(field.key)" class="badge monitor-status-success">{{ secretMasked(field.key) }}</span>
-            <label v-if="secretConfigured(field.key)" class="inline-flex items-center gap-1 text-2xs monitor-caption">
-              <input :checked="form[clearKey(field.key)] as boolean" type="checkbox" class="rounded border-stone-300 text-stone-700 focus:ring-stone-400" :disabled="loading || saving || resetting" @change="updateForm(clearKey(field.key), ($event.target as HTMLInputElement).checked)" />
-              {{ t('monitor.paymentConfig.clearSecret') }}
-            </label>
-          </div>
-          <textarea v-if="field.textarea" :value="form[field.key]" rows="3" class="input w-full py-2 text-xs font-mono" :placeholder="t('monitor.paymentConfig.retainSecret')" autocomplete="off" spellcheck="false" :disabled="loading || saving || resetting" @input="updateForm(field.key, ($event.target as HTMLTextAreaElement).value)" />
-          <input v-else :value="form[field.key]" type="password" class="input w-full py-2 text-xs" :placeholder="t('monitor.paymentConfig.retainSecret')" autocomplete="new-password" :disabled="loading || saving || resetting" @input="updateForm(field.key, ($event.target as HTMLInputElement).value)" />
-        </div>
+        <PaymentSecretField field-key="stripe_secret_key" label-key="monitor.paymentConfig.stripeSecretKey" :config="config" :form="form" :disabled="loading || saving || resetting" />
+        <PaymentSecretField field-key="stripe_webhook_secret" label-key="monitor.paymentConfig.stripeWebhookSecret" :config="config" :form="form" :disabled="loading || saving || resetting" />
       </div>
     </div>
 

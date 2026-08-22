@@ -102,4 +102,26 @@ describe('PaymentConfigPanel', () => {
     expect(payload.alipay_private_key_pem).toBeNull()
     expect(payload.public_base_url).toBe('https://pay.example.com')
   })
+
+  it('groups each channel secret field inside its own channel section', () => {
+    // 渠道密钥各归各位的契约：微信/支付宝/Stripe 的密钥只出现在各自区块内，
+    // 防回归回「三渠道混排在一个密文区」的旧布局
+    const wrapper = mountPanel(buildConfig())
+    const sectionText = (title: string) => {
+      const h4 = wrapper.findAll('h4').find(node => node.text() === title)
+      expect(h4, `section ${title}`).toBeTruthy()
+      return (h4!.element.parentElement?.parentElement?.textContent) ?? ''
+    }
+    const wechat = sectionText('微信支付')
+    expect(wechat).toContain('API v3 密钥')
+    expect(wechat).toContain('商户私钥')
+    expect(wechat).not.toContain('支付宝公钥')
+    const alipay = sectionText('支付宝')
+    expect(alipay).toContain('应用私钥')
+    expect(alipay).toContain('支付宝公钥')
+    expect(alipay).not.toContain('商户私钥')
+    const stripe = sectionText('Stripe 支付')
+    expect(stripe).toContain('Stripe Secret Key')
+    expect(stripe).toContain('Stripe Webhook Secret')
+  })
 })
