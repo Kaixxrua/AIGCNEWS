@@ -314,6 +314,8 @@ onUnmounted(dispose)
             :loading="loadingSmtpConfig"
             :saving="savingSmtpConfig"
             :testing="testingSmtp"
+            :stats="emailDeliveryStats"
+            :stats-loading="loadingEmailDeliveryStats"
             @save="saveSmtpConfig"
             @test="testSmtpConfig"
           />

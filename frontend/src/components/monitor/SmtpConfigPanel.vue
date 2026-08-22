@@ -6,6 +6,8 @@ import {
   type SmtpConfig,
   type SmtpForm,
 } from '@/features/monitor/monitorViewModel'
+import { type EmailDeliveryDayStat } from '@/features/monitor/monitorModel'
+import EmailDeliveryStatsBlock from './EmailDeliveryStatsBlock.vue'
 
 const props = defineProps<{
   config: SmtpConfig | null
@@ -13,6 +15,8 @@ const props = defineProps<{
   loading: boolean
   saving: boolean
   testing: boolean
+  stats: EmailDeliveryDayStat[]
+  statsLoading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -42,6 +46,8 @@ const sourceBadge = (source: SmtpConfig['source'] | undefined) => {
       <span v-else class="badge monitor-status-unknown">{{ t('monitor.smtpConfig.passwordMissing') }}</span>
       <span v-if="config?.updated_at" class="ml-auto text-2xs monitor-caption">{{ t('monitor.updatedAt', { date: formatDate(config.updated_at) }) }}</span>
     </div>
+
+    <EmailDeliveryStatsBlock :stats="stats" :stats-loading="statsLoading" />
 
     <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-[minmax(200px,1.2fr)_minmax(90px,0.4fr)_minmax(150px,0.8fr)_minmax(190px,1fr)] lg:items-end">
       <label class="block">
