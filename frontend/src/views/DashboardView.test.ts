@@ -77,7 +77,10 @@ describe('DashboardView', () => {
     expect(wrapper.text()).not.toContain('免费订阅全部来源的摘要；vip 解锁中文译文、全文与 7 天完整归档。')
     expect(wrapper.find('a[href="/wechat"]').exists()).toBe(false)
     expect(wrapper.get('aside').classes()).toContain('min-h-0')
-    expect(wrapper.get('a[href="/dsh"]').classes()).toContain('mt-auto')
+    // mt-auto 在 MCP 卡上：MCP/dsh 两张紧凑计数卡作为整体吸附侧栏底线，与排行榜下边缘对齐
+    expect(wrapper.get('a[href="/mcp"]').classes()).toContain('mt-auto')
+    expect(wrapper.get('a[href="/dsh"]').classes()).not.toContain('mt-auto')
+    expect(wrapper.get('a[href="/dsh"]').classes()).toContain('items-center')
 
     const publicFeed = wrapper.get('a[href="/api/feed.xml"]')
     expect(publicFeed.text()).toContain('订阅公开摘要')

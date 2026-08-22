@@ -120,7 +120,7 @@ onBeforeUnmount(pauseLivePoll)
         @select-source="selectSourceTab"
       />
 
-      <aside v-if="!loading" class="order-1 flex min-h-0 w-full max-w-[320px] shrink-0 flex-col gap-2 self-center pb-1 lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch lg:overflow-y-auto">
+      <aside v-if="!loading" class="order-1 flex min-h-0 w-full max-w-[320px] shrink-0 flex-col gap-2 self-center lg:order-2 lg:w-[212px] lg:max-w-none lg:self-stretch lg:overflow-y-auto">
           <GlassCalendar
             :model-value="currentDate"
             :available-dates="availableDates"
@@ -176,36 +176,36 @@ onBeforeUnmount(pauseLivePoll)
             </div>
           </div>
 
-          <!-- MCP 总调用次数（点击前往 MCP 接入页）：纵向布局与简报/RSS 卡同构，吃掉侧栏高度空隙 -->
+          <!-- MCP 总调用次数（点击前往 MCP 接入页）：紧凑横排，mt-auto 把 MCP/dsh 两张计数卡整体吸附到侧栏底线，与排行榜下边缘对齐 -->
           <RouterLink
             to="/mcp"
-            class="stagger-enter glass-card card-hover flex flex-col gap-2 px-3 py-2.5 transition-colors"
+            class="stagger-enter glass-card card-hover mt-auto flex items-center gap-2 px-3 py-2 transition-colors"
             style="animation-delay: 0.4s"
             :aria-label="t('dashboard.mcpCalls.title')"
           >
             <span class="flex items-center gap-2">
-              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
-                <Plug class="h-4 w-4" />
+              <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
+                <Plug class="h-3.5 w-3.5" />
               </span>
               <span class="text-2xs font-semibold text-stone-400">{{ t('dashboard.mcpCalls.title') }}</span>
             </span>
-            <RollingNumber :value="mcpTotalCalls" grouping class="text-2xl font-extrabold tabular-nums" />
+            <RollingNumber :value="mcpTotalCalls" grouping class="ml-auto text-lg font-extrabold tabular-nums" />
           </RouterLink>
 
-          <!-- dsh 插件调用次数（MCP 调用中的 dsh 客户端分桶，点击前往插件页） -->
+          <!-- dsh 插件调用次数（MCP 调用中的 dsh 客户端分桶，点击前往插件页）：紧随 MCP 卡，底线对齐排行榜 -->
           <RouterLink
             to="/dsh"
-            class="stagger-enter glass-card card-hover mt-auto flex flex-col gap-2 px-3 py-2.5 transition-colors"
+            class="stagger-enter glass-card card-hover flex items-center gap-2 px-3 py-2 transition-colors"
             style="animation-delay: 0.45s"
             :aria-label="t('dashboard.dshCalls.title')"
           >
             <span class="flex items-center gap-2">
-              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
-                <Terminal class="h-4 w-4" />
+              <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
+                <Terminal class="h-3.5 w-3.5" />
               </span>
               <span class="text-2xs font-semibold text-stone-400">{{ t('dashboard.dshCalls.title') }}</span>
             </span>
-            <RollingNumber :value="mcpDshCalls" grouping class="text-2xl font-extrabold tabular-nums" />
+            <RollingNumber :value="mcpDshCalls" grouping class="ml-auto text-lg font-extrabold tabular-nums" />
           </RouterLink>
       </aside>
     </div>
