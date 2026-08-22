@@ -23,7 +23,9 @@ const listRef = ref<HTMLElement | null>(null)
 const showSettings = ref(false)
 const isSending = ref(false)
 const isLoadingInit = ref(false)
-const showSidebar = ref(true)
+// 窄屏默认收起会话侧栏：375px 下 220px 侧栏会把对话区挤到不可用；
+// 展开时以浮层形式盖在对话区上（见下方媒体查询）。
+const showSidebar = ref(typeof window === 'undefined' ? true : window.innerWidth >= 768)
 const {
   isUploading,
   attachmentMetas,
@@ -132,9 +134,12 @@ const handleKeydown = async (e: KeyboardEvent) => {
 
 const handleCreateConversation = () => {
   if (!authStore.isLoggedIn) return
+  // 移动端侧栏是浮层：新建/选中会话后自动收起，把屏幕还给对话区
+  if (window.innerWidth < 768) showSidebar.value = false
   void store.createNewConversation('global')
 }
 const handleOpenConversation = (conversationId: string) => {
+  if (window.innerWidth < 768) showSidebar.value = false
   void store.openConversation(conversationId)
 }
 
@@ -225,7 +230,7 @@ const cancelSettings = () => { showSettings.value = false }
       <div v-if="showSettings" class="fixed inset-0 z-20" @click="cancelSettings" />
 
       <!-- 消息列表 -->
-      <div ref="listRef" class="stagger-enter flex-1 overflow-y-auto px-5 py-5" style="animation-delay: 0.1s">
+      <div ref="listRef" class="chat-message-scroll stagger-enter flex-1 overflow-y-auto px-5 py-5" style="animation-delay: 0.1s">
         <ChatMessageList
           :messages="messages"
           :render-markdown="renderMarkdown"
@@ -343,6 +348,23 @@ const cancelSettings = () => { showSettings.value = false }
   .chat-header > div:last-child {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  /* 会话侧栏改浮层：盖在对话区上而不是挤占它（inline width 220px 需 !important） */
+  .chat-sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    width: min(260px, 78vw) !important;
+    background: var(--paper-raised) !important;
+    box-shadow: 6px 0 0 rgb(var(--chat-shadow-rgb) / 0.12);
+  }
+
+  /* 消息列表收窄边距，把宽度让给气泡与代码块 */
+  .chat-message-scroll {
+    padding: 12px;
   }
 }
 

@@ -35,7 +35,6 @@ const { isOpen: loginOpen, redirectTarget: loginRedirect, requestLogin, closeLog
 const registerOpen = ref(false)
 const switchToRegister = () => { closeLoginPrompt(); registerOpen.value = true }
 const switchToLogin = () => { registerOpen.value = false; requestLogin(loginRedirect.value) }
-const closeRegisterPrompt = () => { registerOpen.value = false }
 // 登录成功后前往登录前想去的页面（redirect 由 requestLogin 时记录，消费后复位）
 const afterLoginSuccess = () => {
   closeLoginPrompt()
@@ -190,7 +189,8 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     height: 100dvh;
     min-height: 100dvh;
     margin-top: 0;
-    border-radius: 18px;
+    /* 四边贴边的全屏画板不再保留 18px 圆角：角落露底色且浪费内容空间 */
+    border-radius: 0;
   }
 
   .main-canvas > .absolute.top-0 {

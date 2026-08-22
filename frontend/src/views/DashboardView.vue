@@ -250,6 +250,14 @@ onBeforeUnmount(pauseLivePoll)
 .dashboard-page :deep(.rounded-xl),
 .dashboard-page :deep(.rounded-2xl) { border-radius: 4px; }
 
+/* 移动端：收窄页边距；榜单内容先于日历/订阅侧栏出现（手机首屏先看内容），
+   侧栏卡片横向撑满避免 320px 限宽居中留下的两侧空槽。 */
+@media (max-width: 639px) {
+  .dashboard-page { padding: 8px 12px 16px; }
+  .dashboard-page .order-2 { order: 1; }
+  .dashboard-page aside.order-1 { order: 2; max-width: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dashboard-page *, .dashboard-page *::before, .dashboard-page *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }

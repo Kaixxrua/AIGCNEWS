@@ -1163,6 +1163,35 @@ onBeforeUnmount(stopViewReads)
   }
 }
 
+/* 窄屏（375px 基准）：在 720px 断点之上再收窄页边距与卡片间距，
+   空状态标题收小避免撑破；h1 已有 clamp(18px,…) 兜底，无需再压 */
+@media (max-width: 639px) {
+  .projects-page {
+    padding: 12px 12px 96px;
+  }
+
+  .projects-hero {
+    padding: 10px 12px;
+  }
+
+  .projects-grid {
+    gap: 10px;
+  }
+
+  .projects-mcp-promo,
+  .projects-login-prompt {
+    padding: 14px;
+  }
+
+  .empty-state {
+    padding: 28px 16px;
+  }
+
+  .empty-state h2 {
+    font-size: 26px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .projects-page *, .projects-page *::before, .projects-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }

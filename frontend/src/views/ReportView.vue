@@ -248,4 +248,10 @@ const {
   border-color: rgb(var(--chat-ink-rgb) / 0.45);
   background: var(--paper-raised);
 }
+
+/* 移动端：外壳与操作卡收窄边距，把宽度让给内容阅读区 */
+@media (max-width: 639px) {
+  .report-shell { padding: 10px; gap: 8px; }
+  .report-shell > .glass-card:first-child { padding: 10px 12px; }
+}
 </style>

@@ -68,6 +68,17 @@ const masonryColumns = computed(() => distributeColumns(
 
 // 翻页回顶：滚动的是内层 overflow-y-auto 容器而非 window
 const scrollEl = ref<HTMLElement | null>(null)
+
+// 实测滚动容器的水平 padding 得出内容宽：移动端媒体查询把 p-6 收成 12px，
+// 写死常量会让瀑布流估高在窄屏失真。
+const measureScrollContentWidth = () => {
+  const el = scrollEl.value
+  if (!el) return
+  const style = window.getComputedStyle(el)
+  scrollContentWidth.value =
+    el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+}
+
 const onGoPage = (next: number) => {
   goPage(next)
   scrollEl.value?.scrollTo({ top: 0 })
@@ -180,16 +191,13 @@ const handleDeleteSelected = async () => {
 onMounted(() => {
   window.addEventListener('resize', updateColumnCount)
   window.addEventListener('keydown', onLightboxKeydown)
-  // 量滚动容器内容宽供瀑布流估高（p-6 = 双侧各 24px；clientWidth 不含滚动条）
-  if (scrollEl.value) {
-    scrollContentWidth.value = scrollEl.value.clientWidth - 48
+  // 量滚动容器内容宽供瀑布流估高：padding 随断点变化（移动端 12px、桌面 24px），
+  // 必须实测 computed style 而不是写死常量；clientWidth 不含滚动条。
+  measureScrollContentWidth()
+  if (scrollEl.value && typeof ResizeObserver !== 'undefined') {
     // jsdom 等无 ResizeObserver 环境跳过观测，首帧回退列宽接管
-    if (typeof ResizeObserver !== 'undefined') {
-      scrollResizeObserver = new ResizeObserver(() => {
-        scrollContentWidth.value = (scrollEl.value?.clientWidth ?? 0) - 48
-      })
-      scrollResizeObserver.observe(scrollEl.value)
-    }
+    scrollResizeObserver = new ResizeObserver(measureScrollContentWidth)
+    scrollResizeObserver.observe(scrollEl.value)
   }
   load()
 })
@@ -907,5 +915,38 @@ a.tweet-link:hover {
   color: var(--projects-on-acid);
   box-shadow: 2px 2px 0 var(--shadow-hard);
   transform: translate(-1px, -1px);
+}
+
+/* 移动端：收窄滚动区边距；卡片头部动作钮加高到可触尺寸；
+   详情浮层与图片预览全屏化，去掉圆角与阴影吃掉的可视面积 */
+@media (max-width: 639px) {
+  .xboard-page > div {
+    padding: 12px 12px 80px;
+    gap: 12px;
+  }
+
+  .tweet-icon-btn {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .detail-backdrop { padding: 0; }
+
+  .detail-panel {
+    width: 100%;
+    max-height: 100dvh;
+    border-right: none;
+    border-left: none;
+    border-radius: 0;
+  }
+
+  .lightbox-backdrop { padding: 0; }
+
+  .lightbox-image {
+    border-right: none;
+    border-left: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
 }
 </style>

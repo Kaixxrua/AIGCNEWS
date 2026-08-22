@@ -307,6 +307,13 @@ const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdow
     font-size: 23px;
   }
 
+  /* 服务卡与联系方式卡强制单列：auto-fill/auto-fit 的 minmax 下限
+     在 375px 减去页边距后只剩一列，但显式单列能避免临界宽度抖动 */
+  .service-grid,
+  .entry-list {
+    grid-template-columns: 1fr;
+  }
+
   .entry-qr {
     width: 200px;
     height: 200px;

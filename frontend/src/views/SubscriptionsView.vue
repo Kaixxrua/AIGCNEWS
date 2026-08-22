@@ -68,8 +68,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-6 pb-24">
+  <div class="subs-page flex h-full min-h-0 flex-col overflow-hidden">
+    <div class="subs-scroll flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-6 pb-24">
       <!-- 页头 -->
       <div class="stagger-enter flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div>
@@ -336,3 +336,18 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 移动端：收窄滚动区边距；渠道/订阅表单行内输入框 + 按钮保持横排
+   （min-w-0 + shrink-0 已防溢出），仅收紧卡片内边距 */
+@media (max-width: 639px) {
+  .subs-scroll {
+    padding: 12px 12px 80px;
+    gap: 12px;
+  }
+
+  .subs-scroll :deep(.glass-card) {
+    padding: 12px;
+  }
+}
+</style>

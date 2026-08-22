@@ -198,6 +198,18 @@ onBeforeUnmount(dispose)
   }
 }
 
+/* 移动端：收窄滚动区边距；目录 chip 加高到可触尺寸 */
+@media (max-width: 639px) {
+  .wechat-page > div {
+    padding: 12px 12px 80px;
+    gap: 12px;
+  }
+
+  .wechat-directory-item {
+    padding: 8px 12px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wechat-page :deep(*),
   .wechat-page :deep(*::before),

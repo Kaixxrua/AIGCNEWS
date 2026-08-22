@@ -133,6 +133,16 @@ const openLogin = () => requestLogin(loginRedirect.value)
   text-underline-offset: 3px;
 }
 
+/* 窄屏：游客提示文案较长时允许换行，避免把登录按钮挤出视口 */
+@media (max-width: 639px) {
+  .paper-read-shell.guest-mode .guest-cta {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    padding: 8px 12px;
+    text-align: center;
+  }
+}
+
 .paper-read-shell > div {
   border-color: var(--rule) !important;
   background: var(--paper) !important;
