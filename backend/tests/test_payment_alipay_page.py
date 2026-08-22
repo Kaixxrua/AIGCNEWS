@@ -213,3 +213,95 @@ def test_query_order_maps_upstream_500() -> None:
     )
     with pytest.raises(ChannelUpstreamError, match="HTTP 500"):
         provider.query_order(order=ORDER)
+
+
+def _bare_base64(pem: str) -> str:
+    """模拟支付宝密钥工具导出形态：剥掉 PEM 头尾，只留 Base64 主体。"""
+    return "".join(line for line in pem.splitlines() if not line.startswith("-----"))
+
+
+def test_bare_base64_keys_sign_and_verify_round_trip(
+    key_pair: tuple[rsa.RSAPrivateKey, str, str],
+) -> None:
+    """monitor 面板粘入的常为无头尾裸 Base64，必须与 PEM 文本等效可用。"""
+    private, private_pem, public_pem = key_pair
+    provider = AlipayPagePaymentProvider(
+        SimpleNamespace(
+            alipay_appid=APP_ID,
+            alipay_private_key_pem=_bare_base64(private_pem),
+            alipay_public_key_pem=_bare_base64(public_pem),
+        )
+    )
+    assert provider.is_configured()
+
+    instruction = provider.create_payment(
+        order=ORDER,
+        notify_url="https://pay.example.test/api/payments/callback/alipay_page",
+        return_url=None,
+    )
+    parsed = dict(httpx.QueryParams(instruction.content.split("?", 1)[1]))
+    public = serialization.load_pem_public_key(public_pem.encode())
+    public.verify(
+        base64.b64decode(parsed["sign"]),
+        _canonical_params({key: value for key, value in parsed.items() if key != "sign"}).encode(),
+        padding.PKCS1v15(),
+        hashes.SHA256(),
+    )
+
+    body, _ = _signed_callback(_callback_fields(), private)
+    verified = provider.verify_and_parse_callback(raw_body=body, headers={})
+    assert verified.order_no == ORDER["order_no"]
+
+
+def test_bare_base64_tolerates_embedded_whitespace_and_pkcs1(
+    key_pair: tuple[rsa.RSAPrivateKey, str, str],
+) -> None:
+    private, private_pem, public_pem = key_pair
+    # 编辑器复制常带入的 64 列折行
+    folded_private = "\n".join(
+        _bare_base64(private_pem)[i : i + 64]
+        for i in range(0, len(_bare_base64(private_pem)), 64)
+    )
+    # PKCS#1（TraditionalOpenSSL）裸 Base64 也须可加载
+    pkcs1_bare = _bare_base64(
+        private.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        ).decode()
+    )
+    for candidate in (folded_private, pkcs1_bare):
+        provider = AlipayPagePaymentProvider(
+            SimpleNamespace(
+                alipay_appid=APP_ID,
+                alipay_private_key_pem=candidate,
+                alipay_public_key_pem=public_pem,
+            )
+        )
+        instruction = provider.create_payment(
+            order=ORDER,
+            notify_url="https://pay.example.test/api/payments/callback/alipay_page",
+            return_url=None,
+        )
+        assert instruction.kind == "redirect_url"
+
+
+def test_pem_file_path_still_supported(
+    key_pair: tuple[rsa.RSAPrivateKey, str, str], tmp_path
+) -> None:
+    """env 形态的文件路径输入不得被裸 Base64 兼容破坏。"""
+    private, private_pem, public_pem = key_pair
+    private_path = tmp_path / "alipay_private.pem"
+    public_path = tmp_path / "alipay_public.pem"
+    private_path.write_text(private_pem)
+    public_path.write_text(public_pem)
+    provider = AlipayPagePaymentProvider(
+        SimpleNamespace(
+            alipay_appid=APP_ID,
+            alipay_private_key_pem=str(private_path),
+            alipay_public_key_pem=str(public_path),
+        )
+    )
+    body, _ = _signed_callback(_callback_fields(), private)
+    verified = provider.verify_and_parse_callback(raw_body=body, headers={})
+    assert verified.order_no == ORDER["order_no"]

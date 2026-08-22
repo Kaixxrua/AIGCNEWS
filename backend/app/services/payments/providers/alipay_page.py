@@ -50,11 +50,23 @@ def _config_value(config: object, *names: str) -> str:
     return next((str(value) for name in names if (value := getattr(config, name, ""))), "")
 
 
-def _load_pem(value: str) -> bytes:
-    """同时支持 monitor 保存的 PEM 文本和 env 配置的文件路径。"""
+def _load_pem(value: str, armors: tuple[str, ...]) -> list[bytes]:
+    """归一化密钥输入，返回待尝试的 PEM 字节串列表。
+
+    三种形态：PEM 文本（含 BEGIN 原样使用）、文件路径（存在则读文件）、
+    裸 Base64（支付宝密钥工具导出/复制的常见形态，去空白后按 armors
+    依次补 PEM 头尾尝试）。
+    """
     if "BEGIN" in value:
-        return value.encode("utf-8")
-    return Path(value).read_bytes()
+        return [value.encode("utf-8")]
+    path = Path(value)
+    if path.is_file():
+        return [path.read_bytes()]
+    body = "".join(value.split())
+    return [
+        f"-----BEGIN {armor}-----\n{body}\n-----END {armor}-----\n".encode("utf-8")
+        for armor in armors
+    ]
 
 
 def _canonical_params(params: Mapping[str, Any]) -> str:
@@ -78,17 +90,24 @@ def _sign_params(private_key: Any, params: Mapping[str, Any]) -> str:
 
 
 def _load_private_key(value: str) -> Any:
-    try:
-        return serialization.load_pem_private_key(_load_pem(value), password=None)
-    except (OSError, ValueError, TypeError) as exc:
-        raise ProviderNotConfiguredError("alipay private key is unavailable") from exc
+    # 裸 Base64 无法从外观区分 PKCS#8 / PKCS#1，两种 armor 都尝试。
+    last_exc: Exception | None = None
+    for pem in _load_pem(value, ("PRIVATE KEY", "RSA PRIVATE KEY")):
+        try:
+            return serialization.load_pem_private_key(pem, password=None)
+        except (OSError, ValueError, TypeError) as exc:
+            last_exc = exc
+    raise ProviderNotConfiguredError("alipay private key is unavailable") from last_exc
 
 
 def _load_public_key(value: str) -> Any:
-    try:
-        return serialization.load_pem_public_key(_load_pem(value))
-    except (OSError, ValueError, TypeError) as exc:
-        raise CallbackVerificationError("alipay public key is unavailable") from exc
+    last_exc: Exception | None = None
+    for pem in _load_pem(value, ("PUBLIC KEY", "RSA PUBLIC KEY")):
+        try:
+            return serialization.load_pem_public_key(pem)
+        except (OSError, ValueError, TypeError) as exc:
+            last_exc = exc
+    raise CallbackVerificationError("alipay public key is unavailable") from last_exc
 
 
 def _product_name(order: Mapping[str, Any]) -> str:
