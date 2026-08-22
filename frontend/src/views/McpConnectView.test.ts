@@ -118,7 +118,6 @@ const i18n = createI18n({
           sourceWarning: 'pnpm 10+ 可能要求 allowBuilds；固定提交：',
           methods: {
             npm: { title: 'npm 包 · 最新版', description: '安装预构建包。' },
-            npmPinned: { title: 'npm 包 · 固定 0.2.0', description: '固定已验证版本。' },
             github: { title: 'GitHub 源码兜底', description: '现场构建源码。' },
           },
         },

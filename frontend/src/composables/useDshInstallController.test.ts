@@ -6,12 +6,12 @@ describe('useDshInstallController', () => {
     const copy = vi.fn().mockResolvedValue(undefined)
     const controller = useDshInstallController({ copy })
 
-    await controller.copyDshInstallCommand('npm-pinned')
+    await controller.copyDshInstallCommand('npm')
     await controller.copyDshInstallCommand('github')
     await controller.copyDshInstallCommand('unknown' as any)
 
     expect(copy.mock.calls.map(([value]) => value)).toEqual([
-      'dsh plugin --profile web add dsh-aigc-radar@0.2.0',
+      'dsh plugin --profile web add dsh-aigc-radar',
       'dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar',
       'dsh plugin --profile web add dsh-aigc-radar',
     ])

@@ -39,7 +39,6 @@ const messages = {
     wizard: { prev: '上一步', next: '下一步', stepProgress: '{current}/{total}' },
     dshPlugin: { methods: {
       npm: { title: 'npm 最新版', description: '预构建。' },
-      npmPinned: { title: 'npm 固定版', description: '固定。' },
       github: { title: 'GitHub 源码', description: '源码。' },
     } },
   },

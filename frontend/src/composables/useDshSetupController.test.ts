@@ -5,11 +5,11 @@ describe('useDshSetupController', () => {
   it('lets guests reach a selected command without creating a token', async () => {
     const createMcpToken = vi.fn()
     const controller = useDshSetupController({ createMcpToken })
-    controller.selectedMethod.value = 'npm-pinned'
+    controller.selectedMethod.value = 'github'
     expect(await controller.next(false, false)).toBe('ok')
     expect(await controller.next(false, false)).toBe('ok')
     expect(controller.step.value).toBe(2)
-    expect(controller.installLine.value).toBe('dsh plugin --profile web add dsh-aigc-radar@0.2.0')
+    expect(controller.installLine.value).toBe('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
     expect(createMcpToken).not.toHaveBeenCalled()
   })
 

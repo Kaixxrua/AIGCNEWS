@@ -11,7 +11,7 @@ vi.mock('@/services/mcp/mcpTokenApi', () => ({ createMcpToken: vi.fn().mockResol
 
 const messages = {
   mcp: { copied: '已复制', copyFailed: '复制失败', wizard: { prev: '上一步', next: '下一步', stepProgress: '{current}/{total}' }, dshPlugin: { methods: {
-    npm: { title: 'npm 最新版', description: '预构建。' }, npmPinned: { title: 'npm 固定版', description: '固定。' }, github: { title: 'GitHub 源码', description: '源码。' },
+    npm: { title: 'npm 最新版', description: '预构建。' }, github: { title: 'GitHub 源码', description: '源码。' },
   } } },
   dsh: {
     eyebrow: 'AIGC RADAR FOR DSH', title: '在 dsh 终端里搜索 AI 项目', description: '选择身份后开始安装。',
@@ -22,7 +22,7 @@ const messages = {
       identityGuest: 'guest', identityUser: 'Free', identityVip: 'VIP', identityGuestDescription: 'guest 试用。', identityUserDescription: 'Free 配额。', identityVipDescription: 'VIP 配额。',
       vipRequired: '需要会员', vipCta: '开通 VIP', continueAsFree: '按 Free 继续', tokenCreating: '正在生成令牌', tokenRetry: '重试', commandLabel: '安装命令', tokenCommandNote: '命令会写入 dsh 补丁配置。', oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: 'guest 受 IP 限额。',
     },
-    methods: { npm: { title: 'npm 最新版', description: '预构建。' }, npmPinned: { title: 'npm 固定版', description: '固定。' }, github: { title: 'GitHub 源码', description: '源码。' } },
+    methods: { npm: { title: 'npm 最新版', description: '预构建。' }, github: { title: 'GitHub 源码', description: '源码。' } },
   },
 }
 
@@ -47,9 +47,9 @@ describe('DshView', () => {
     const next = wrapper.findAll('button').find(button => button.text().includes('下一步'))!
     await next.trigger('click')
     expect(wrapper.text()).toContain('npm 最新版')
-    await wrapper.findAll('button').find(button => button.text().includes('npm 固定版'))!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text().includes('GitHub 源码'))!.trigger('click')
     await wrapper.findAll('button').find(button => button.text().includes('下一步'))!.trigger('click')
-    expect(wrapper.text()).toContain('dsh plugin --profile web add dsh-aigc-radar@0.2.0')
+    expect(wrapper.text()).toContain('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar')
     expect(wrapper.text()).toContain('guest 受 IP 限额。')
   })
 

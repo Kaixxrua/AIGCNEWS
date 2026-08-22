@@ -4,7 +4,7 @@
  * dsh 终端用户的原生接入方式：插件内置项目库搜索卡片与检索路由提示，
  * 走 AIGC Radar 公共 MCP 端点且免 Token，一条命令装入 dsh web profile。
  */
-export type DshPluginInstallMethodId = 'npm' | 'npm-pinned' | 'github'
+export type DshPluginInstallMethodId = 'npm' | 'github'
 
 export interface DshPluginInstallMethod {
   id: DshPluginInstallMethodId
@@ -24,12 +24,6 @@ export const DSH_PLUGIN_INSTALL_METHODS: readonly DshPluginInstallMethod[] = [
     titleKey: 'mcp.dshPlugin.methods.npm.title',
     descriptionKey: 'mcp.dshPlugin.methods.npm.description',
     recommended: true,
-  },
-  {
-    id: 'npm-pinned',
-    command: 'dsh plugin --profile web add dsh-aigc-radar@0.2.0',
-    titleKey: 'mcp.dshPlugin.methods.npmPinned.title',
-    descriptionKey: 'mcp.dshPlugin.methods.npmPinned.description',
   },
   {
     id: 'github',
