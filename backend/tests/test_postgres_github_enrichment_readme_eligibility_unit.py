@@ -107,3 +107,80 @@ class TestUnprocessableCteFilters:
     def test_reason_label_kept_for_frontend_contract(self) -> None:
         sql = self._status_sql()
         assert "missing_description" in sql
+
+class TestRetainedBreakdown:
+    """在库但已退出可执行队列的分桶溯源（catalog_succeeded − eligible 差额）。"""
+
+    def _run_status(self) -> tuple[str, dict, MagicMock]:
+        cursor = MagicMock()
+        cursor.fetchone.side_effect = [
+            {
+                "eligible": 0,
+                "succeeded": 0,
+                "failed": 0,
+            },
+            {"count": 0},
+        ]
+        cursor.fetchall.side_effect = [
+            [],  # by_category
+            [],  # unprocessable_projects
+            [
+                {"reason": "not_found", "count": 13},
+                {"reason": "snapshot_below_threshold", "count": 51},
+                {"reason": "lost_input", "count": 11},
+                {"reason": "tombstone", "count": 1},
+                {"reason": "unexpected_future_reason", "count": 9},
+            ],  # retained buckets
+            [
+                {
+                    "repo_id": "acme/gone",
+                    "full_name": "acme/gone",
+                    "url": "https://github.com/acme/gone",
+                    "stars": 900,
+                    "reason": "not_found",
+                }
+            ],  # retained projects
+        ]
+        repository = PostgresGitHubProjectEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+        status = repository.get_github_project_enrichment_status(min_stars=500)
+        sql = "\n".join(str(call.args[0]) for call in cursor.execute.call_args_list)
+        return sql, status, cursor
+
+    def test_retained_cte_is_catalog_succeeded_minus_queue(self) -> None:
+        sql, _, _ = self._run_status()
+        # 只统计富化成功过的在库行，且按当前口径不再可执行
+        assert "retained AS" in sql
+        assert "e.status = 'succeeded'" in sql
+        assert "c.availability_status = 'not_found'" in sql
+        assert "snapshot_below_threshold" in sql
+        assert "lost_input" in sql
+        assert "tombstone" in sql
+        # 与 eligible 同构的否定谓词（快照星数 + 输入 + 非墓碑）
+        assert sql.count(_GITHUB_ENRICHMENT_INPUT_SQL.strip()) >= 4
+
+    def test_all_base_queries_pass_five_min_stars_params(self) -> None:
+        _, _, cursor = self._run_status()
+        for call in cursor.execute.call_args_list:
+            assert call.args[1] == (500,) * 5
+
+    def test_response_carries_buckets_total_and_projects(self) -> None:
+        _, status, _ = self._run_status()
+        # 四个桶固定出现；未识别的未来 reason 不进固定桶也不虚增 total
+        assert status["retained_buckets"] == {
+            "tombstone": 1,
+            "not_found": 13,
+            "snapshot_below_threshold": 51,
+            "lost_input": 11,
+        }
+        assert status["retained_total"] == 76
+        assert status["retained_projects"] == [{
+            "repo_id": "acme/gone",
+            "full_name": "acme/gone",
+            "url": "https://github.com/acme/gone",
+            "stars": 900,
+            "reason": "not_found",
+        }]
+        # 既有键位保持不动（additive 变更）
+        for key in ("eligible", "succeeded", "failed", "pending",
+                    "unprocessable", "unprocessable_projects"):
+            assert key in status

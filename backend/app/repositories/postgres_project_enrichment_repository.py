@@ -526,31 +526,96 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                   AND e.status IS DISTINCT FROM 'succeeded'
                   AND c.availability_status = 'active'
                   AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
+            ), retained AS (
+                -- 在库但已退出可执行队列（catalog_succeeded − eligible 的差额）：
+                -- 富化成功过、继续在项目库展示，但按当前口径不再处理。
+                -- 仅供面板分桶计数与溯源列表，不进可执行队列、不进 unprocessable。
+                -- reason 互斥，按排查优先级归类：
+                --   tombstone=改名前的旧仓库行（成果已归一到新名）；
+                --   not_found=源仓库 404 下架，置灰保留；
+                --   snapshot_below_threshold=最新快照星数回落至门槛以下；
+                --   lost_input=简介被作者删除且没有有效 README 快照。
+                SELECT c.repo_id, c.full_name, c.url,
+                       COALESCE(ls.stars, c.stars, 0) AS stars,
+                       CASE
+                           WHEN EXISTS (
+                               SELECT 1 FROM github_repo_aliases ga
+                               WHERE ga.alias_repo_id = c.repo_id
+                                 AND ga.canonical_repo_id <> c.repo_id
+                           ) THEN 'tombstone'
+                           WHEN c.availability_status = 'not_found' THEN 'not_found'
+                           WHEN COALESCE(ls.stars, c.stars, 0) < %s
+                               THEN 'snapshot_below_threshold'
+                           ELSE 'lost_input'
+                       END AS reason
+                FROM github_repo_candidates c
+                JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
+                    AND e.status = 'succeeded'
+                LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
+                LEFT JOIN github_project_semantic_sources ss ON ss.repo_id=c.repo_id
+                WHERE COALESCE(c.stars,0) >= %s
+                  AND NOT (
+                      COALESCE(ls.stars, c.stars, 0) >= %s
+                      AND {_GITHUB_ENRICHMENT_INPUT_SQL}
+                      AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
+                  )
             )
         """
+        # base 文本共 5 个 %s（eligible/unprocessable 各 1，retained 3），
+        # 即使某条 SELECT 不引用 retained 也必须按文本位置补齐参数。
+        status_params = (min_stars,) * 5
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(base + """SELECT COUNT(*) AS eligible,
                     COUNT(*) FILTER (WHERE status='succeeded') AS succeeded,
-                    COUNT(*) FILTER (WHERE status='failed') AS failed FROM eligible""", (min_stars, min_stars))
+                    COUNT(*) FILTER (WHERE status='failed') AS failed FROM eligible""", status_params)
                 row = cursor.fetchone() or {}
                 cursor.execute(base + """SELECT category_slug AS slug, category_name AS name,
                     COUNT(*) AS count FROM eligible WHERE status='succeeded'
                     GROUP BY category_slug, category_name
-                    ORDER BY count DESC, category_name COLLATE "C" ASC""", (min_stars, min_stars))
+                    ORDER BY count DESC, category_name COLLATE "C" ASC""", status_params)
                 categories = cursor.fetchall()
                 cursor.execute(base + """SELECT repo_id, full_name, url, stars, reason
                     FROM unprocessable
                     ORDER BY stars DESC, full_name COLLATE "C" ASC, repo_id COLLATE "C" ASC
-                    LIMIT 100""", (min_stars, min_stars))
+                    LIMIT 100""", status_params)
                 unprocessable_projects = cursor.fetchall()
-                cursor.execute(base + """SELECT COUNT(*) AS count FROM unprocessable""", (min_stars, min_stars))
+                cursor.execute(base + """SELECT COUNT(*) AS count FROM unprocessable""", status_params)
                 unprocessable_row = cursor.fetchone() or {}
+                cursor.execute(base + """SELECT reason, COUNT(*) AS count
+                    FROM retained GROUP BY reason""", status_params)
+                retained_bucket_rows = cursor.fetchall()
+                cursor.execute(base + """SELECT repo_id, full_name, url, stars, reason
+                    FROM retained
+                    ORDER BY stars DESC, full_name COLLATE "C" ASC, repo_id COLLATE "C" ASC
+                    LIMIT 100""", status_params)
+                retained_projects = cursor.fetchall()
         eligible = int(row.get("eligible") or 0)
         succeeded = int(row.get("succeeded") or 0)
         failed = int(row.get("failed") or 0)
+        retained_buckets = {
+            reason: 0
+            for reason in (
+                "tombstone", "not_found", "snapshot_below_threshold", "lost_input",
+            )
+        }
+        for bucket_row in retained_bucket_rows:
+            reason = str(bucket_row.get("reason") or "")
+            if reason in retained_buckets:
+                retained_buckets[reason] = int(bucket_row.get("count") or 0)
+        retained_total = sum(retained_buckets.values())
         return {"eligible": eligible, "succeeded": succeeded, "failed": failed,
                 "pending": max(eligible - succeeded - failed, 0),
+                "retained_total": retained_total,
+                "retained_buckets": retained_buckets,
+                "retained_projects": [
+                    {"repo_id": str(item.get("repo_id") or ""),
+                     "full_name": str(item.get("full_name") or ""),
+                     "url": str(item.get("url") or ""),
+                     "stars": int(item.get("stars") or 0),
+                     "reason": str(item.get("reason") or "")}
+                    for item in retained_projects
+                ],
                 "by_category": [{"slug": item.get("slug") or "other",
                                  "name": item.get("name") or "其他",
                                  "count": int(item.get("count") or 0)} for item in categories],

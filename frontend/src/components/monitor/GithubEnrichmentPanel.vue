@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { GithubEnrichmentStatus } from '@/features/monitor/monitorModel'
+import type { GithubEnrichmentStatus, GithubRetainedReason } from '@/features/monitor/monitorModel'
 
 const { t } = useI18n()
 
@@ -38,6 +38,28 @@ const eligible = computed(() => props.status?.eligible ?? 0)
 const succeededPct = computed(() => (eligible.value > 0 ? ((props.status?.succeeded ?? 0) / eligible.value) * 100 : 0))
 const failedPct = computed(() => (eligible.value > 0 ? ((props.status?.failed ?? 0) / eligible.value) * 100 : 0))
 const succeededPercent = computed(() => Math.round(succeededPct.value))
+
+// 在库但已退出可执行队列的项目：单独成组展示，不并入进度分母；
+// 分桶顺序按可溯源优先级（下架 → 星数回落 → 简介被删 → 改名旧名）。
+const RETAINED_BUCKET_ORDER: GithubRetainedReason[] = [
+  'not_found',
+  'snapshot_below_threshold',
+  'lost_input',
+  'tombstone',
+]
+const RETAINED_BUCKET_I18N: Record<GithubRetainedReason, string> = {
+  not_found: 'monitor.enrichment.retainedBucketNotFound',
+  snapshot_below_threshold: 'monitor.enrichment.retainedBucketSnapshotBelow',
+  lost_input: 'monitor.enrichment.retainedBucketLostInput',
+  tombstone: 'monitor.enrichment.retainedBucketTombstone',
+}
+const retainedTotal = computed(() => props.status?.retained_total ?? 0)
+const retainedChips = computed(() => {
+  const buckets = props.status?.retained_buckets ?? {}
+  return RETAINED_BUCKET_ORDER
+    .map((reason) => ({ reason, count: buckets[reason] ?? 0 }))
+    .filter((chip) => chip.count > 0)
+})
 </script>
 
 <template>
@@ -151,6 +173,13 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
       </button>
     </div>
 
+    <p v-if="status && retainedTotal > 0" class="mt-2 text-2xs monitor-caption tabular-nums">
+      {{ t('monitor.enrichment.retainedLead', { count: retainedTotal }) }}
+      <span v-for="chip in retainedChips" :key="chip.reason" class="enrichment-retained-chip">
+        {{ t(RETAINED_BUCKET_I18N[chip.reason], { count: chip.count }) }}
+      </span>
+    </p>
+
     <p class="mt-3 text-2xs monitor-caption">{{ t('monitor.enrichment.hint') }}</p>
   </div>
 </template>
@@ -212,6 +241,15 @@ const succeededPercent = computed(() => Math.round(succeededPct.value))
   border-top-color: transparent;
   border-radius: 9999px;
   animation: enrichment-spin 0.8s linear infinite;
+}
+
+.enrichment-retained-chip {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--projects-accent);
+  border-radius: 4px;
+  background: var(--paper-muted);
 }
 
 @keyframes enrichment-spin {

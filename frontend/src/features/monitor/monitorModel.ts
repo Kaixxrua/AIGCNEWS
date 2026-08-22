@@ -345,11 +345,32 @@ export interface GithubUnprocessableProject {
   reason: 'missing_description'
 }
 
+// 在库但已退出可执行队列的项目（catalog_succeeded − eligible 差额）的互斥原因：
+// not_found=源仓库 404 下架；snapshot_below_threshold=最新快照星数回落至门槛以下；
+// lost_input=简介被作者删除且无有效 README；tombstone=改名前的旧仓库行（成果归一到新名）
+export type GithubRetainedReason =
+  | 'not_found'
+  | 'snapshot_below_threshold'
+  | 'lost_input'
+  | 'tombstone'
+
+export interface GithubRetainedProject {
+  repo_id: string
+  full_name: string
+  url: string
+  stars: number
+  reason: GithubRetainedReason
+}
+
 export interface GithubEnrichmentStatus {
   eligible: number
   succeeded: number
   failed: number
   pending: number
+  // 在库但按当前口径不再处理的项目：分桶计数 + 溯源列表（上限 100 条）
+  retained_total?: number
+  retained_buckets?: Partial<Record<GithubRetainedReason, number>>
+  retained_projects?: GithubRetainedProject[]
   // 后端进程内是否有富化批处理在跑；刷新页面后据此恢复「终止」入口
   running?: boolean
   by_category?: Array<{ slug: string; name: string; count: number }>

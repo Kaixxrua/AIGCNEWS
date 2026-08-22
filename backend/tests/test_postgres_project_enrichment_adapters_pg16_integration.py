@@ -98,6 +98,12 @@ def test_pg16_github_candidates_fingerprint_status_and_alias_upsert(repositories
         "eligible": 2, "succeeded": 1, "failed": 1, "pending": 0,
         "unprocessable": 0, "unprocessable_projects": [],
         "by_category": [{"slug": "agent", "name": "Agent", "count": 1}],
+        # 在库但退出队列的分桶溯源：canonical 仍在队列口径内、renamed_old
+        # 无富化记录，本用例无 retained 行
+        "retained_total": 0,
+        "retained_buckets": {"tombstone": 0, "not_found": 0,
+                             "snapshot_below_threshold": 0, "lost_input": 0},
+        "retained_projects": [],
     }
     assert [row["repo_id"] for row in github.get_github_projects_needing_enrichment(retry_failed=True)] == ["new"]
 
@@ -184,6 +190,88 @@ def test_pg16_readme_hash_change_triggers_refresh(repositories) -> None:
             refresh_changed=True, prompt_version="v1", limit=100,
         )
     }
+
+
+def test_pg16_retained_breakdown_buckets_and_projects(repositories) -> None:
+    """在库但已退出可执行队列的项目按互斥原因分桶，且可逐仓库溯源。
+
+    播种忠实复刻生产生命周期：先富化成功（当时仍符合口径），
+    随后各自发生退出事件——改名、404 下架、快照星数回落、简介被删。
+    """
+    database, github, _ = repositories
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO github_repo_candidates
+                (repo_id,full_name,description,language,topics_json,stars,forks,watchers,availability_status)
+                VALUES
+                ('ret_tomb','acme/before-rename','Was great','Python','[]',950,1,1,'active'),
+                ('ret_gone404','acme/taken-down','','Go','[]',900,1,1,'active'),
+                ('ret_dropped','acme/lost-stars','Still described','Rust','[]',600,1,1,'active'),
+                ('ret_lost','acme/desc-deleted','Had a description','C++','[]',850,1,1,'active')""")
+
+    # 1) 四个仓库都在“还符合口径”时完成富化
+    for repo_id in ("ret_tomb", "ret_gone404", "ret_dropped", "ret_lost"):
+        github.upsert_github_repo_enrichment({
+            "repo_id": repo_id, "category_slug": "agent", "category_name": "Agent",
+            "description_zh": "智能体", "tags": [],
+            "source_fingerprint": f"fp-{repo_id}", "prompt_version": "v1",
+        })
+
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            # 2) 各自发生退出事件
+            # ret_tomb：改名为 canonical，旧行变墓碑（成果归一到新名）
+            cursor.execute("""INSERT INTO github_repo_aliases
+                (alias_repo_id,canonical_repo_id,full_name)
+                VALUES ('ret_tomb','canonical','acme/before-rename')""")
+            # ret_gone404：两次 404 观测后下架
+            cursor.execute("UPDATE github_repo_candidates SET availability_status='not_found' "
+                           "WHERE repo_id='ret_gone404'")
+            # ret_dropped：最新快照星数回落到门槛以下（candidates 仍 600）
+            cursor.execute("""INSERT INTO github_repo_snapshots
+                (repo_id,snapshot_date,captured_at,stars,forks,watchers,open_issues)
+                VALUES ('ret_dropped','2026-08-20','now',450,1,1,1)""")
+            # ret_lost：作者删掉简介，README 抓取也失败
+            cursor.execute("UPDATE github_repo_candidates SET description='' "
+                           "WHERE repo_id='ret_lost'")
+            cursor.execute("""INSERT INTO github_project_semantic_sources
+                (repo_id,readme_text,readme_sha256,readme_status,updated_at)
+                VALUES ('ret_lost','','','failed','now')""")
+
+    status = github.get_github_project_enrichment_status(min_stars=500)
+
+    # 逐仓库溯源：列表必须给出具体项目与互斥原因（模块共享 schema，按 repo 断言）
+    retained = {row["repo_id"]: row for row in status["retained_projects"]}
+    assert retained["ret_tomb"]["reason"] == "tombstone"
+    assert retained["ret_gone404"]["reason"] == "not_found"
+    assert retained["ret_dropped"]["reason"] == "snapshot_below_threshold"
+    assert retained["ret_lost"]["reason"] == "lost_input"
+    # 列表展示用星数为最新快照优先（ret_dropped 显示 450 而非 600）
+    assert retained["ret_dropped"]["stars"] == 450
+    for row in retained.values():
+        assert {"repo_id", "full_name", "url", "stars", "reason"} <= set(row)
+
+    # 分桶计数与列表自洽：每个桶至少覆盖我播种的这一行
+    buckets = status["retained_buckets"]
+    assert buckets["tombstone"] >= 1
+    assert buckets["not_found"] >= 1
+    assert buckets["snapshot_below_threshold"] >= 1
+    assert buckets["lost_input"] >= 1
+    assert status["retained_total"] == sum(buckets.values())
+    assert status["retained_total"] == len(status["retained_projects"]) or \
+        status["retained_total"] > len(status["retained_projects"])  # 列表有 100 条上限
+
+    # 四行都富化成功过：绝不进入无法富化名单
+    unprocessable_ids = {row["repo_id"] for row in status["unprocessable_projects"]}
+    assert not {"ret_tomb", "ret_gone404", "ret_dropped", "ret_lost"} & unprocessable_ids
+
+    # 队列侧同步退出：四行都不再被圈选
+    queue = {row["repo_id"] for row in github.get_github_projects_needing_enrichment(limit=500)}
+    assert not {"ret_tomb", "ret_gone404", "ret_dropped", "ret_lost"} & queue
+
+    # 反向 sanity：前序用例的 404 仓库（无富化记录）两边都不出现
+    assert "gone" not in retained
+    assert "gone" not in unprocessable_ids
 
 
 def test_pg16_website_metadata_merge_item_and_enrichment_failure(repositories) -> None:

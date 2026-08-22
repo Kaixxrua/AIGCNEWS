@@ -257,6 +257,8 @@ onUnmounted(dispose)
           <GithubUnprocessableProjectsPanel
             :items="enrichmentStatus?.unprocessable_projects ?? []"
             :total="enrichmentStatus?.unprocessable ?? 0"
+            :retained-items="enrichmentStatus?.retained_projects ?? []"
+            :retained-total="enrichmentStatus?.retained_total ?? 0"
           />
         </template>
 

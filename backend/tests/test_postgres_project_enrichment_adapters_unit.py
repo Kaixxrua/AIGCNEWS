@@ -88,8 +88,9 @@ def test_github_enrichment_status_query_excludes_alias_tombstones() -> None:
         sql = call.args[0]
         assert "github_repo_aliases ga" in sql
         assert "ga.alias_repo_id = c.repo_id" in sql
-    # The shared CTE is reused by the eligible and unprocessable queries.
-    assert cursor.execute.call_args_list[0].args[1] == (600, 600)
+    # The shared CTE is reused by eligible, unprocessable and retained
+    # statistics; retained 引 3 处 %s（展示门槛 + 否定队列谓词 2 处）。
+    assert cursor.execute.call_args_list[0].args[1] == (600,) * 5
 
 
 def test_github_fingerprint_sql_matches_python_fingerprint() -> None:
