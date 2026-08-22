@@ -74,6 +74,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   { key: 'mcpMember', included: true },
   { key: 'websiteMember', included: true },
   { key: 'briefingMember', included: true },
+  { key: 'rssFree', included: true },
   { key: 'rssMember', included: true },
   { key: 'support', included: true },
 ]

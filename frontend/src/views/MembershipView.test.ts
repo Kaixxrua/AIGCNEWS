@@ -78,6 +78,7 @@ const i18n = createI18n({
             mcpMember: 'MCP/API 共用 20,000 次/30 天滚动窗口',
             websiteMember: '个人网页收藏添加不限量',
             briefingMember: '简报订阅全部 8 个模块',
+            rssFree: 'RSS 公开摘要订阅（近 48 小时）',
             rssMember: 'RSS 中文译文、全文与 7 天完整归档',
             support: '优先支持与后续 vip 权益',
           },
@@ -161,6 +162,13 @@ describe('MembershipView', () => {
     const freeRssRow = freeRows.find((row) => row.text().includes('RSS 公开摘要订阅'))
     expect(freeRssRow?.classes()).not.toContain('tier-feature--excluded')
     expect(freeRssRow?.find('.tier-check').exists()).toBe(true)
+
+    // vip 继承免费的公开摘要 RSS（✓），再叠加全文归档
+    const memberRows = memberCard.findAll('.tier-features li')
+    const memberRssFreeRow = memberRows.find((row) => row.text().includes('RSS 公开摘要订阅'))
+    expect(memberRssFreeRow?.classes()).not.toContain('tier-feature--excluded')
+    expect(memberRssFreeRow?.find('.tier-check').exists()).toBe(true)
+    expect(memberCard.findAll('.tier-check')).toHaveLength(6)
 
     // 排除项图标总数 = 3 + 2
     expect(wrapper.findAll('.tier-x')).toHaveLength(5)
