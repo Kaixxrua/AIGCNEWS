@@ -13,6 +13,12 @@ type PwaMessages = {
     updateAvailable: string
     reload: string
     later: string
+    installApp: string
+    iosGuideTitle: string
+    iosGuideStepShare: string
+    iosGuideStepAdd: string
+    iosGuideNote: string
+    gotIt: string
   }
 }
 
@@ -21,6 +27,12 @@ const enUS: PwaMessages = {
     updateAvailable: 'A new version is available.',
     reload: 'Reload now',
     later: 'Later',
+    installApp: 'Install app',
+    iosGuideTitle: 'Add to Home Screen',
+    iosGuideStepShare: 'Tap the Share button in Safari’s toolbar.',
+    iosGuideStepAdd: 'Choose “Add to Home Screen” from the share sheet.',
+    iosGuideNote: 'iOS installs this site from Safari; there is no native prompt.',
+    gotIt: 'Got it',
   },
 }
 
@@ -41,6 +53,12 @@ const zhCN = deepMerge(enUS, {
     updateAvailable: '发现新版本。',
     reload: '立即更新',
     later: '稍后',
+    installApp: '安装应用',
+    iosGuideTitle: '添加到主屏幕',
+    iosGuideStepShare: '在 Safari 工具栏中点击「分享」按钮。',
+    iosGuideStepAdd: '在分享菜单中选择「添加到主屏幕」。',
+    iosGuideNote: 'iOS 需要通过 Safari 手动安装本站点，没有系统弹窗。',
+    gotIt: '知道了',
   },
 }) as PwaMessages
 

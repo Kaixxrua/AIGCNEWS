@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { isNavigationItemActive, type NavigationItem } from '@/features/navigation/navigationModel'
+import { showInstallEntry, usePwaInstall } from '@/pwa/installPrompt'
 
 const props = defineProps<{
   items: readonly NavigationItem[]
@@ -19,9 +20,11 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { promptInstall } = usePwaInstall()
 const hoveredNav = ref<string | null>(null)
 const hoveredAuth = ref(false)
 const hoveredChangePwd = ref(false)
+const hoveredInstall = ref(false)
 </script>
 
 <template>
@@ -52,6 +55,27 @@ const hoveredChangePwd = ref(false)
         </span>
       </Transition>
     </RouterLink>
+    <!-- PWA 安装入口：仅浏览器判定可安装（或 iOS 待手动安装且未装）时出现；
+         Android/桌面 Chrome 直调系统弹窗，iOS 展示「分享 → 添加到主屏幕」指引卡片。 -->
+    <button
+      v-if="showInstallEntry"
+      class="dock-item dock-item--install"
+      :aria-label="t('pwa.installApp')"
+      @click="promptInstall"
+      @mouseenter="hoveredInstall = true"
+      @mouseleave="hoveredInstall = false"
+    >
+      <span class="dock-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v10"/>
+          <polyline points="7,9 12,14 17,9"/>
+          <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
+        </svg>
+      </span>
+      <Transition name="dock-label">
+        <span v-if="hoveredInstall" class="dock-label">{{ t('pwa.installApp') }}</span>
+      </Transition>
+    </button>
     <!-- ═══ Dock 中的登录/登出按钮（与导航栏分隔） ═══ -->
     <div class="dock-auth-sep" />
     <!-- 未登录：绿色登录按钮 -->
@@ -257,6 +281,13 @@ const hoveredChangePwd = ref(false)
 .dock-item--change-pwd:hover {
   color: var(--ink);
   background: var(--acid-soft);
+  transform: translateY(-2px);
+}
+
+.dock-item--install { color: var(--acid-ink); background: var(--acid-soft); }
+.dock-item--install:hover {
+  color: var(--acid-ink);
+  background: var(--acid);
   transform: translateY(-2px);
 }
 
