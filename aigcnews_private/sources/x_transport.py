@@ -34,6 +34,10 @@ from twitter_cli.exceptions import (
     TwitterAPIError,
 )
 
+# 上游 twitter-cli 本地补丁（FALLBACK queryId 钉住 + ClientTransaction
+# 初始化修复），必须在任何 TwitterClient 构造/_graphql_get 调用前应用。
+from aigcnews_private.sources import x_twitter_cli_compat as _x_twitter_cli_compat  # noqa: F401
+
 from backend.app.services.source_plugins.x_source import (
     DEFAULT_INTER_ACCOUNT_DELAY,
     XAuthAbort,
@@ -70,11 +74,19 @@ _WINDOW_PAGE_SIZE = 40
 # 仍未证明窗口边界 → 该 handle 记 page_limit_reached incomplete，
 # 绝不把 partial 当完整窗口入库。
 _WINDOW_MAX_PAGES_PER_HANDLE = 50
-# 与 client._fetch_timeline 保持一致的 UserTweets 基础 variables 形状。
+# 窗口抓取操作：2026-08-22 起从 UserTweets 切到 UserTweetsAndReplies，
+# 把「对他人的回复」纳入 rolling 窗口（此前结构性不采，见 2026-08-22
+# 实证：UserTweets 只含原创/转贴/引用/自回复线程）。该操作强制要求
+# X-Client-Transaction-Id 头（twitter_cli ClientTransaction 注入，
+# 缺失时空体 404）。
+_WINDOW_TIMELINE_OPERATION = "UserTweetsAndReplies"
+# 与网页端 fetchUserTweetsAndReplies 严格对齐的 variables 形状
+# （2026-08-22 实测 200）。多余的 UserTweets 时代变量
+# （withV2Timeline/latestControlAvailable/requestContext）不发送：
+# withV2Timeline 被服务端忽略（响应固定 v1 结构），其余两个未在网页端
+# 形状中出现，X 对未知变量历史上有过 404 先例，不冒这个险。
 _WINDOW_BASE_VARIABLES = {
     "includePromotedContent": False,
-    "latestControlAvailable": True,
-    "requestContext": "launch",
 }
 _TWEET_CREATED_AT_FORMAT = "%a %b %d %H:%M:%S %z %Y"
 
@@ -766,6 +778,10 @@ class XTransport:
     ) -> tuple[XWindowHandleResult, int]:
         """单账号沿 Bottom cursor 分页，返回 (结果, 剩余网络重试预算)。
 
+        操作：UserTweetsAndReplies（2026-08-22 起，含对他人回复；
+        需 X-Client-Transaction-Id，响应固定 v1 结构，见
+        _WINDOW_TIMELINE_OPERATION 注释）。
+
         complete 仅当满足以下之一：
           - boundary_reached：最早的**时间线外层条目**时间戳 ≤ window_start
             （纯转贴用外层条目时间判定，不用被替换成原贴的 created_at）；
@@ -777,12 +793,27 @@ class XTransport:
         from twitter_cli import graphql as tw_graphql, parser as tw_parser
 
         def get_instructions(data: Any) -> Any:
-            return tw_parser._deep_get(
+            # UserTweetsAndReplies 当前固定回 v1 结构
+            # （data.user.result.timeline.timeline.instructions，
+            # withV2Timeline 被服务端忽略）；保留 timeline_v2 优先探测，
+            # 服务端日后升级到 v2 时无需改代码。
+            instructions = tw_parser._deep_get(
                 data,
                 "data",
                 "user",
                 "result",
                 "timeline_v2",
+                "timeline",
+                "instructions",
+            )
+            if isinstance(instructions, list):
+                return instructions
+            return tw_parser._deep_get(
+                data,
+                "data",
+                "user",
+                "result",
+                "timeline",
                 "timeline",
                 "instructions",
             )
@@ -803,14 +834,16 @@ class XTransport:
                 "userId": user_id,
                 "withQuickPromoteEligibilityTweetFields": True,
                 "withVoice": True,
-                "withV2Timeline": True,
             }
             if cursor:
                 variables["cursor"] = cursor
 
             try:
                 data = await asyncio.to_thread(
-                    client._graphql_get, "UserTweets", variables, tw_graphql.FEATURES
+                    client._graphql_get,
+                    _WINDOW_TIMELINE_OPERATION,
+                    variables,
+                    tw_graphql.FEATURES,
                 )
             except AuthenticationError:
                 raise

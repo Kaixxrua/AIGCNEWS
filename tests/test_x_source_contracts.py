@@ -2262,17 +2262,20 @@ class XExistenceProbeTransportContracts(unittest.TestCase):
 
 
 class _CursorFakeClient:
-    """UserTweets cursor 分页 fake：按页脚本应答 _graphql_get。
+    """timeline cursor 分页 fake：按页脚本应答 _graphql_get。
 
     pages: list，每页是 dict（异常实例）或 (tweets, next_cursor, entries)
     三元组；entries 缺省由 tweets 合成（每条 tweet 一个 itemContent entry，
     created_at 取 tweet.created_at）。``fetch_user`` 返回固定 profile。
+    operation 名实录到 ``operations``（默认忽略），供窗口抓取钉住
+    UserTweetsAndReplies 切换。
     """
 
     def __init__(self, pages: list, *, user_id: str = "11") -> None:
         self._pages = list(pages)
         self._user_id = user_id
         self.calls: list[dict] = []
+        self.operations: list[str] = []
         self.fetch_user = Mock(
             return_value=UserProfile(id=user_id, name="OpenAI", screen_name="openai")
         )
@@ -2311,6 +2314,7 @@ class _CursorFakeClient:
 
     def _graphql_get(self, operation, variables, features, **kwargs):
         self.calls.append(dict(variables))
+        self.operations.append(operation)
         if not self._pages:
             raise AssertionError("分页脚本已耗尽，不应再请求")
         page = self._pages.pop(0)
@@ -2594,6 +2598,105 @@ class XWindowPaginationContracts(unittest.IsolatedAsyncioTestCase):
                 ["openai"], window_start=start, window_end=end
             )
         self.assertIn("x_rate_limited", str(ctx.exception))
+
+    async def test_window_fetch_uses_replies_operation_with_web_variables(self) -> None:
+        # 2026-08-22 起窗口抓取切 UserTweetsAndReplies（含对他人回复）。
+        # 钉住操作名与 variables 形状：与网页端 fetchUserTweetsAndReplies
+        # 严格对齐的五键 + cursor；UserTweets 时代的
+        # withV2Timeline/latestControlAvailable/requestContext 不得回潮
+        # （withV2Timeline 被服务端忽略，未知变量历史上有 404 先例）。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        client = _CursorFakeClient([
+            self._page([_tweet("t1", created_at="Thu Aug 20 11:00:00 +0000 2026")], "c2"),
+            self._page([_tweet("t2", created_at="Wed Aug 19 10:00:00 +0000 2026")], None),
+        ])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end, count_per_user=20
+        )
+
+        self.assertTrue(result.complete)
+        self.assertEqual(
+            client.operations, ["UserTweetsAndReplies", "UserTweetsAndReplies"]
+        )
+        expected_keys = {
+            "count",
+            "userId",
+            "includePromotedContent",
+            "withQuickPromoteEligibilityTweetFields",
+            "withVoice",
+        }
+        self.assertEqual(set(client.calls[0]), expected_keys)
+        self.assertEqual(set(client.calls[1]), expected_keys | {"cursor"})
+        self.assertIs(client.calls[0]["includePromotedContent"], False)
+
+    async def test_reply_tweets_are_collected_in_window(self) -> None:
+        # 对他人回复（@ 开头正文）必须进入窗口结果且通过入库策略——
+        # 这是切换 UserTweetsAndReplies 的全部意义。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+        reply = _tweet(
+            "r1",
+            text="@ajambrosino yes, exactly",
+            created_at="Thu Aug 20 09:00:00 +0000 2026",
+        )
+        boundary = _tweet("t9", created_at="Wed Aug 19 10:00:00 +0000 2026")
+        client = _CursorFakeClient([self._page([reply, boundary], None)])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        handle = result.by_handle["openai"]
+        self.assertTrue(handle.complete)
+        ids = [t.id for t in handle.tweets]
+        self.assertIn("r1", ids)
+        parsed_reply = next(t for t in handle.tweets if t.id == "r1")
+        self.assertTrue(x_policy.is_ingestible_tweet(parsed_reply))
+
+    async def test_v1_timeline_envelope_accepted(self) -> None:
+        # UserTweetsAndReplies 实测固定回 v1 结构
+        # （data.user.result.timeline.timeline.instructions；
+        # withV2Timeline 被服务端忽略）。transport 必须兼容该路径，
+        # 同时保留 timeline_v2 优先探测。
+        start = _window("2026-08-19T12:00:00")
+        end = _window("2026-08-20T12:00:00")
+
+        class V1EnvelopeClient(_CursorFakeClient):
+            def _graphql_get(self, operation, variables, features, **kwargs):
+                data = super()._graphql_get(operation, variables, features, **kwargs)
+                result = data["data"]["user"]["result"]
+                result["timeline"] = result.pop("timeline_v2")
+                return data
+
+        page = [
+            _tweet("t1", created_at="Thu Aug 20 11:00:00 +0000 2026"),
+            # 越过 window_start(19 日 12:00)：证 v1 路径下边界判定同样有效
+            _tweet("t2", created_at="Wed Aug 19 10:00:00 +0000 2026"),
+        ]
+        client = V1EnvelopeClient([self._page(page, None)])
+        transport = self._transport(client)
+
+        result = await transport.fetch_watchlist_tweets_window(
+            ["openai"], window_start=start, window_end=end
+        )
+
+        handle = result.by_handle["openai"]
+        self.assertTrue(handle.complete)
+        self.assertEqual(handle.reason, "boundary_reached")
+        self.assertEqual([t.id for t in handle.tweets], ["t1", "t2"])
+
+    def test_and_replies_query_id_has_pinned_fallback(self) -> None:
+        # UserTweetsAndReplies 必须钉住 fallback queryId：_graphql_get 的
+        # stale-retry（404/422 时失效重解析）只在 using_fallback 时生效，
+        # 而 using_fallback 的判定依赖该表。值过期可接受（stale-retry
+        # 兜底），缺失不可接受。
+        from twitter_cli import graphql as tw_graphql
+
+        self.assertTrue(tw_graphql.FALLBACK_QUERY_IDS.get("UserTweetsAndReplies"))
 
 
 class XTransportNetworkRetryContracts(unittest.IsolatedAsyncioTestCase):
