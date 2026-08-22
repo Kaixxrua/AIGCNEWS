@@ -15,7 +15,10 @@ const apiBox = vi.hoisted(() => ({
   getOrder: vi.fn(),
 }))
 
+const redirectBox = vi.hoisted(() => ({ redirectToUrl: vi.fn() }))
+
 vi.mock('@/services/payments/paymentApi', () => ({ paymentApi: apiBox }))
+vi.mock('@/services/payments/redirect', () => redirectBox)
 
 const plansResponse = (overrides: Partial<PaymentPlansResponse> = {}): PaymentPlansResponse => ({
   plans: [
@@ -72,8 +75,9 @@ const i18n = createI18n({
           createFailed: '创建订单失败，请稍后重试。',
           qrPlaceholder: '支付二维码',
           scanHint: '请使用对应 App「扫一扫」完成支付',
-          redirectHint: '点击下方按钮跳转支付页完成支付',
+          redirectHint: '正在跳转支付页，若未自动跳转请点击下方按钮',
           redirectAction: '前往支付',
+          expireCountdown: '订单支付有效期剩余 {time}',
           awaiting: '等待支付结果…',
           orderNo: '订单号',
           paid: '支付成功，vip 已开通！',
@@ -112,6 +116,7 @@ beforeEach(() => {
   apiBox.listPlans.mockReset().mockResolvedValue(plansResponse())
   apiBox.createOrder.mockReset().mockResolvedValue(createResponse)
   apiBox.getOrder.mockReset().mockResolvedValue(paidOrder)
+  redirectBox.redirectToUrl.mockReset()
 })
 
 afterEach(() => {
@@ -159,6 +164,96 @@ describe('MembershipCheckoutView', () => {
     )
     expect(wrapper.text()).toContain('等待支付结果…')
     expect(wrapper.text()).toContain('P202608190001AB12CD')
+  })
+
+  it('auto-redirects redirect_url instructions after a short delay and keeps a manual link', async () => {
+    apiBox.listPlans.mockResolvedValue(
+      plansResponse({
+        channels: [
+          { channel: 'wechat_native', available: false },
+          { channel: 'alipay_page', available: true },
+          { channel: 'stripe', available: false },
+        ],
+      }),
+    )
+    const gatewayUrl = 'https://openapi.alipay.com/gateway.do?app_id=x&sign=y'
+    apiBox.createOrder.mockResolvedValue({
+      order: {
+        ...paidOrder,
+        status: 'pending',
+        paid_at: null,
+        channel_order_no: '',
+        channel: 'alipay_page',
+      },
+      instruction: { kind: 'redirect_url', content: gatewayUrl },
+    })
+    const { wrapper } = await mountView()
+
+    await wrapper.find('.checkout-submit').trigger('click')
+    await flushPromises()
+
+    // 延迟窗口内不跳，先渲染提示与手动兜底链接
+    expect(redirectBox.redirectToUrl).not.toHaveBeenCalled()
+    expect(wrapper.find('a.checkout-redirect').attributes('href')).toBe(gatewayUrl)
+    expect(wrapper.text()).toContain('正在跳转支付页')
+
+    await vi.advanceTimersByTimeAsync(600)
+    expect(redirectBox.redirectToUrl).toHaveBeenCalledTimes(1)
+    expect(redirectBox.redirectToUrl).toHaveBeenCalledWith(gatewayUrl)
+  })
+
+  it('never auto-redirects qr_code instructions', async () => {
+    const { wrapper } = await mountView()
+    await wrapper.find('.checkout-submit').trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(redirectBox.redirectToUrl).not.toHaveBeenCalled()
+  })
+
+  it('ticks a live countdown from the backend expires_at while awaiting payment', async () => {
+    vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+    // 全程保持 pending：隔离倒计时展示与轮询状态翻转两条链路；
+    // TTL 缩到 2 分钟，避免快进越过 PAYMENT_POLL_MAX 触发 poll_timeout
+    apiBox.createOrder.mockResolvedValue({
+      order: {
+        ...paidOrder,
+        status: 'pending',
+        paid_at: null,
+        channel_order_no: '',
+        expires_at: '2026-08-19T12:02:00Z',
+      },
+      instruction: { kind: 'qr_code', content: 'weixin://wxpay/bizpayurl?pr=abc' },
+    })
+    apiBox.getOrder.mockResolvedValue({
+      ...paidOrder,
+      status: 'pending',
+      paid_at: null,
+      expires_at: '2026-08-19T12:02:00Z',
+    })
+    const { wrapper } = await mountView()
+    await wrapper.find('.checkout-submit').trigger('click')
+    await flushPromises()
+
+    // 订单 12:02 过期 → 创建时刻剩 02:00
+    expect(wrapper.text()).toContain('订单支付有效期剩余 02:00')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(wrapper.text()).toContain('订单支付有效期剩余 01:59')
+    // 到期后钳在 00:00，状态翻转仍由后端轮询裁决
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000)
+    expect(wrapper.text()).toContain('订单支付有效期剩余 00:00')
+  })
+
+  it('stops showing the countdown once the order reaches a terminal state', async () => {
+    vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+    const { wrapper } = await mountView()
+    await wrapper.find('.checkout-submit').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('订单支付有效期剩余')
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+    expect(wrapper.text()).toContain('支付成功')
+    expect(wrapper.text()).not.toContain('订单支付有效期剩余')
   })
 
   it('lands on the paid state when polling observes the paid status', async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   PAYMENT_CHANNELS,
   formatAmountCents,
+  formatCountdownMs,
   isTerminalOrderStatus,
   periodForPlanCode,
   planCodeForPeriod,
@@ -58,6 +59,24 @@ describe('formatAmountCents', () => {
 
   it('prefixes the currency code for non-CNY amounts', () => {
     expect(formatAmountCents(500, 'USD')).toBe('USD 5')
+  })
+})
+
+describe('formatCountdownMs', () => {
+  it('formats sub-hour remainders as MM:SS', () => {
+    expect(formatCountdownMs(30 * 60 * 1000)).toBe('30:00')
+    expect(formatCountdownMs(59_000)).toBe('00:59')
+    expect(formatCountdownMs(59_999)).toBe('00:59')
+  })
+
+  it('formats hour-plus remainders as H:MM:SS', () => {
+    expect(formatCountdownMs(3600 * 1000)).toBe('1:00:00')
+    expect(formatCountdownMs((23 * 3600 + 59 * 60 + 59) * 1000)).toBe('23:59:59')
+  })
+
+  it('clamps negative remainders to 00:00', () => {
+    expect(formatCountdownMs(0)).toBe('00:00')
+    expect(formatCountdownMs(-1)).toBe('00:00')
   })
 })
 

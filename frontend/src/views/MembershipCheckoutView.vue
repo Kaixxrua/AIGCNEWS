@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Check, LoaderCircle, QrCode } from 'lucide-vue-next'
 import { paymentApi } from '@/services/payments/paymentApi'
+import { redirectToUrl } from '@/services/payments/redirect'
 import { usePaymentCheckout } from '@/composables/usePaymentCheckout'
 import {
   formatAmountCents,
+  formatCountdownMs,
   resolvePlan,
   type BillingPeriod,
   type PaymentChannel,
@@ -60,6 +62,43 @@ const periodSuffix = computed(() =>
 const submitting = computed(() => phase.value === 'creating')
 const awaitingPayment = computed(() => phase.value === 'awaiting_payment')
 
+// redirect_url 指令（支付宝/Stripe）：短暂展示提示后自动跳渠道收银台，
+// 手动链接保留为兜底（跳转被拦截/用户返回时可再点）。
+const REDIRECT_DELAY_MS = 600
+watch(instruction, (next, _prev, onCleanup) => {
+  if (!next || next.kind !== 'redirect_url') return
+  const timer = setTimeout(() => redirectToUrl(next.content), REDIRECT_DELAY_MS)
+  onCleanup(() => clearTimeout(timer))
+})
+
+// 倒计时：权威截止时间是后端订单 expires_at（= 面板订单过期时间），
+// 每秒刷新只做展示；到期状态翻转仍由轮询拿到的后端状态裁决。
+const nowMs = ref(Date.now())
+let countdownTimer: ReturnType<typeof setInterval> | null = null
+const stopCountdown = () => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+}
+watch(
+  awaitingPayment,
+  (waiting) => {
+    stopCountdown()
+    if (!waiting) return
+    nowMs.value = Date.now()
+    countdownTimer = setInterval(() => {
+      nowMs.value = Date.now()
+    }, 1000)
+  },
+  { immediate: true },
+)
+const countdownLabel = computed(() => {
+  const expiresAt = order.value?.expires_at
+  if (!awaitingPayment.value || !expiresAt) return ''
+  return formatCountdownMs(Date.parse(expiresAt) - nowMs.value)
+})
+
 onMounted(async () => {
   try {
     const response = await paymentApi.listPlans()
@@ -80,7 +119,10 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(disposeCheckout)
+onBeforeUnmount(() => {
+  stopCountdown()
+  disposeCheckout()
+})
 
 const selectChannel = (channel: PaymentChannel) => {
   if (!channelAvailable(channel)) return
@@ -162,6 +204,9 @@ const submit = () => {
           <p class="checkout-awaiting">
             <LoaderCircle :size="14" class="checkout-spin" aria-hidden="true" />
             {{ t('membership.checkout.awaiting') }}
+          </p>
+          <p v-if="countdownLabel" class="checkout-countdown">
+            {{ t('membership.checkout.expireCountdown', { time: countdownLabel }) }}
           </p>
           <p v-if="order" class="checkout-order-no">{{ t('membership.checkout.orderNo') }}：{{ order.order_no }}</p>
         </section>
@@ -395,6 +440,14 @@ const submit = () => {
   margin: 0;
   font-size: 12px;
   color: var(--ink-muted);
+}
+
+.checkout-countdown {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-secondary);
 }
 
 .checkout-spin {

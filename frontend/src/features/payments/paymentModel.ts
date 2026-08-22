@@ -81,6 +81,17 @@ export const formatAmountCents = (amountCents: number, currency: string): string
   return currency === 'CNY' ? `¥${digits}` : `${currency} ${digits}`
 }
 
+/** 剩余毫秒 → 倒计时文本：MM:SS，超过一小时 H:MM:SS；负值钳到 00:00。 */
+export const formatCountdownMs = (ms: number): string => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(seconds).padStart(2, '0')
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
 /** 轮询终止态：只有 pending 值得继续轮询；expired/closed 不再变化。 */
 export const isTerminalOrderStatus = (status: string): boolean =>
   status === 'paid' || status === 'expired' || status === 'closed'
