@@ -115,6 +115,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 enabled=False,
                 job_config_overrides={},
                 semantic_search_warmup=project_search_runtime.warmup_semantic_search,
+                redis_client=redis_client,
             )
             scheduler_runtime.start.assert_not_called()
             scheduler_runtime.stop.assert_awaited_once_with()
@@ -225,6 +226,7 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             enabled=True,
             job_config_overrides={},
             semantic_search_warmup=project_search_runtime.warmup_semantic_search,
+            redis_client=redis_client,
         )
         scheduler_runtime.stop.assert_awaited_once_with()
         project_search_runtime.close.assert_awaited_once_with()
