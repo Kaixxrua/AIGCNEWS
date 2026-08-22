@@ -188,10 +188,11 @@ export const useMonitorPageController = ({
   // 保存成功后归零密文输入态：密文永不回填，下一次保存按留空=保留语义
   const resetPaymentSecretInputs = () => {
     const form = paymentForm.value
-    form.wechat_api_v3_key = ''; form.wechat_private_key_pem = ''
+    form.wechat_api_v3_key = ''; form.wechat_private_key_pem = ''; form.wechat_public_key_pem = ''
     form.alipay_private_key_pem = ''; form.alipay_public_key_pem = ''
     form.stripe_secret_key = ''; form.stripe_webhook_secret = ''
     form.clear_wechat_api_v3_key = false; form.clear_wechat_private_key_pem = false
+    form.clear_wechat_public_key_pem = false
     form.clear_alipay_private_key_pem = false; form.clear_alipay_public_key_pem = false
     form.clear_stripe_secret_key = false; form.clear_stripe_webhook_secret = false
   }

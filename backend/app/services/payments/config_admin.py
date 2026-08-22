@@ -20,13 +20,14 @@ from backend.app.services.secret_masking import mask_token
 _SECRET_FIELDS = (
     "wechat_api_v3_key",
     "wechat_private_key_pem",
+    "wechat_public_key_pem",
     "alipay_private_key_pem",
     "alipay_public_key_pem",
     "stripe_secret_key",
     "stripe_webhook_secret",
 )
 _TEXT_FIELDS = (
-    "wechat_appid", "wechat_mchid", "wechat_mch_serial_no", "alipay_appid",
+    "wechat_appid", "wechat_mchid", "wechat_mch_serial_no", "wechat_public_key_id", "alipay_appid",
 )
 
 
@@ -38,6 +39,7 @@ class PaymentConfigProjection:
     wechat_appid: str
     wechat_mchid: str
     wechat_mch_serial_no: str
+    wechat_public_key_id: str
     alipay_appid: str
     source: str
     updated_at: str | None
@@ -48,6 +50,8 @@ class PaymentConfigProjection:
     wechat_api_v3_key_masked: str | None
     wechat_private_key_pem_configured: bool
     wechat_private_key_pem_masked: str | None
+    wechat_public_key_pem_configured: bool
+    wechat_public_key_pem_masked: str | None
     alipay_private_key_pem_configured: bool
     alipay_private_key_pem_masked: str | None
     alipay_public_key_pem_configured: bool
@@ -117,9 +121,11 @@ class PaymentConfigAdminService:
             enabled=config.enabled, order_ttl_minutes=config.order_ttl_minutes,
             public_base_url=config.public_base_url, wechat_appid=config.wechat_appid,
             wechat_mchid=config.wechat_mchid, wechat_mch_serial_no=config.wechat_mch_serial_no,
+            wechat_public_key_id=config.wechat_public_key_id,
             alipay_appid=config.alipay_appid, source=config.source, updated_at=updated_at,
             wechat_configured=all((config.wechat_appid, config.wechat_mchid, config.wechat_mch_serial_no,
-                                    config.wechat_api_v3_key, config.wechat_private_key_pem)),
+                                    config.wechat_api_v3_key, config.wechat_private_key_pem,
+                                    config.wechat_public_key_id, config.wechat_public_key_pem)),
             alipay_configured=all((config.alipay_appid, config.alipay_private_key_pem, config.alipay_public_key_pem)),
             stripe_configured=all((config.stripe_secret_key, config.stripe_webhook_secret)),
             **{f"{field}_configured": bool(getattr(config, field)) for field in _SECRET_FIELDS},

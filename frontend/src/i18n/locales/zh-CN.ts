@@ -556,6 +556,8 @@ const explicitBusinessTranslations: Record<string, string> = {
   'monitor.paymentConfig.wechatMchSerialNo': '商户证书序列号',
   'monitor.paymentConfig.wechatApiV3Key': 'API v3 密钥',
   'monitor.paymentConfig.wechatPrivateKey': '商户私钥（PEM）',
+  'monitor.paymentConfig.wechatPublicKeyId': '微信支付公钥 ID',
+  'monitor.paymentConfig.wechatPublicKeyPem': '微信支付公钥（PEM）',
   'monitor.paymentConfig.alipay': '支付宝',
   'monitor.paymentConfig.alipayAppid': '应用 AppID',
   'monitor.paymentConfig.alipayPrivateKey': '应用私钥（PEM）',

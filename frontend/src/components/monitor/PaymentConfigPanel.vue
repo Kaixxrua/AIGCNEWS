@@ -74,7 +74,7 @@ const channelBadge = (configured: boolean | undefined) =>
         <h4 class="text-xs font-semibold monitor-caption">{{ t('monitor.paymentConfig.wechat') }}</h4>
         <span class="text-2xs monitor-caption">{{ t('monitor.paymentConfig.secretWriteOnly') }}</span>
       </div>
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
         <label class="block">
           <span class="mb-1 block text-xs monitor-caption">{{ t('monitor.paymentConfig.wechatAppid') }}</span>
           <input :value="form.wechat_appid" type="text" class="input w-full py-2 text-xs" autocomplete="off" :disabled="loading || saving || resetting" @input="updateForm('wechat_appid', ($event.target as HTMLInputElement).value)" />
@@ -87,10 +87,15 @@ const channelBadge = (configured: boolean | undefined) =>
           <span class="mb-1 block text-xs monitor-caption">{{ t('monitor.paymentConfig.wechatMchSerialNo') }}</span>
           <input :value="form.wechat_mch_serial_no" type="text" class="input w-full py-2 text-xs" autocomplete="off" :disabled="loading || saving || resetting" @input="updateForm('wechat_mch_serial_no', ($event.target as HTMLInputElement).value)" />
         </label>
+        <label class="block">
+          <span class="mb-1 block text-xs monitor-caption">{{ t('monitor.paymentConfig.wechatPublicKeyId') }}</span>
+          <input :value="form.wechat_public_key_id" type="text" class="input w-full py-2 text-xs" autocomplete="off" :disabled="loading || saving || resetting" @input="updateForm('wechat_public_key_id', ($event.target as HTMLInputElement).value)" />
+        </label>
       </div>
       <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
         <PaymentSecretField field-key="wechat_api_v3_key" label-key="monitor.paymentConfig.wechatApiV3Key" :config="config" :form="form" :disabled="loading || saving || resetting" />
         <PaymentSecretField field-key="wechat_private_key_pem" label-key="monitor.paymentConfig.wechatPrivateKey" textarea :config="config" :form="form" :disabled="loading || saving || resetting" />
+        <PaymentSecretField field-key="wechat_public_key_pem" label-key="monitor.paymentConfig.wechatPublicKeyPem" textarea :config="config" :form="form" :disabled="loading || saving || resetting" />
       </div>
     </div>
 

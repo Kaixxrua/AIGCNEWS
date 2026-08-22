@@ -72,6 +72,8 @@ class PaymentConfigRequest(BaseModel):
     wechat_mch_serial_no: str = Field(default="", max_length=256)
     wechat_api_v3_key: str | None = Field(default=None, max_length=4096)
     wechat_private_key_pem: str | None = Field(default=None, max_length=20000)
+    wechat_public_key_id: str = Field(default="", max_length=256)
+    wechat_public_key_pem: str | None = Field(default=None, max_length=20000)
     alipay_appid: str = Field(default="", max_length=256)
     alipay_private_key_pem: str | None = Field(default=None, max_length=20000)
     alipay_public_key_pem: str | None = Field(default=None, max_length=20000)
@@ -79,6 +81,7 @@ class PaymentConfigRequest(BaseModel):
     stripe_webhook_secret: str | None = Field(default=None, max_length=4096)
     clear_wechat_api_v3_key: bool = False
     clear_wechat_private_key_pem: bool = False
+    clear_wechat_public_key_pem: bool = False
     clear_alipay_private_key_pem: bool = False
     clear_alipay_public_key_pem: bool = False
     clear_stripe_secret_key: bool = False
@@ -92,6 +95,7 @@ class PaymentConfigResponse(BaseModel):
     wechat_appid: str
     wechat_mchid: str
     wechat_mch_serial_no: str
+    wechat_public_key_id: str
     alipay_appid: str
     source: str
     updated_at: str | None
@@ -102,6 +106,8 @@ class PaymentConfigResponse(BaseModel):
     wechat_api_v3_key_masked: str | None
     wechat_private_key_pem_configured: bool
     wechat_private_key_pem_masked: str | None
+    wechat_public_key_pem_configured: bool
+    wechat_public_key_pem_masked: str | None
     alipay_private_key_pem_configured: bool
     alipay_private_key_pem_masked: str | None
     alipay_public_key_pem_configured: bool

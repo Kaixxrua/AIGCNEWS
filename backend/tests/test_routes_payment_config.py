@@ -30,6 +30,7 @@ def _projection(**overrides) -> PaymentConfigProjection:
         "wechat_appid": "wx123",
         "wechat_mchid": "1600000000",
         "wechat_mch_serial_no": "SERIAL",
+        "wechat_public_key_id": "PUB_KEY_ID_0114",
         "alipay_appid": "",
         "source": "database",
         "updated_at": "2026-08-20T10:00:00+00:00",
@@ -40,6 +41,8 @@ def _projection(**overrides) -> PaymentConfigProjection:
         "wechat_api_v3_key_masked": "abcd****wxyz",
         "wechat_private_key_pem_configured": True,
         "wechat_private_key_pem_masked": "----****----",
+        "wechat_public_key_pem_configured": True,
+        "wechat_public_key_pem_masked": "----****----",
         "alipay_private_key_pem_configured": False,
         "alipay_private_key_pem_masked": None,
         "alipay_public_key_pem_configured": False,
@@ -79,6 +82,7 @@ def test_get_payment_config_returns_masked_projection_without_plaintext() -> Non
     assert "stripe_secret_key" not in body
     assert "wechat_api_v3_key" not in body
     assert "wechat_private_key_pem" not in body
+    assert "wechat_public_key_pem" not in body
     assert "alipay_private_key_pem" not in body
 
 

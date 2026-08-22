@@ -513,6 +513,24 @@ def test_site_visit_platform_days_schema_is_additive_and_day_platform_keyed() ->
     assert "CHECK" not in normalized
 
 
+def test_payment_wechat_public_key_schema_is_additive() -> None:
+    # 微信支付公钥模式：回调验签材料（公钥 ID + 公钥 PEM）随面板/DB 配置面下发，
+    # 只加列不动存量——默认空串表示"未配置"，fail-closed 由 provider 侧 7 字段门控。
+    # 按文件名定位而非下标：0054 在并行会话中停驻/变动，位置钉法会被牵连。
+    migration = next(
+        item
+        for item in discover_migrations()
+        if item.filename == "0055_payment_wechat_public_key.sql"
+    )
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert "ALTER TABLE payment_settings" in migration.sql
+    assert "ADD COLUMN IF NOT EXISTS wechat_public_key_id TEXT NOT NULL DEFAULT ''" in migration.sql
+    assert "ADD COLUMN IF NOT EXISTS wechat_public_key_pem TEXT NOT NULL DEFAULT ''" in migration.sql
+    assert "DROP" not in normalized
+    assert "UPDATE " not in normalized
+
+
 def test_live_postgres_apply_twice_and_introspect_schema() -> None:
     dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
     if not dsn:

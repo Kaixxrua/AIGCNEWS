@@ -21,6 +21,9 @@ const buildConfig = (overrides: Partial<PaymentConfig> = {}): PaymentConfig => (
   wechat_api_v3_key_masked: 'abcd****wxyz',
   wechat_private_key_pem_configured: true,
   wechat_private_key_pem_masked: '----****END ',
+  wechat_public_key_id: 'PUB_KEY_ID_0114',
+  wechat_public_key_pem_configured: true,
+  wechat_public_key_pem_masked: '----****END ',
   alipay_private_key_pem_configured: false,
   alipay_private_key_pem_masked: null,
   alipay_public_key_pem_configured: false,
@@ -101,6 +104,15 @@ describe('PaymentConfigPanel', () => {
     expect(payload.stripe_secret_key).toBe('sk_live_new')
     expect(payload.alipay_private_key_pem).toBeNull()
     expect(payload.public_base_url).toBe('https://pay.example.com')
+    // 微信支付公钥：ID 是文本字段（随配置回显、trim 提交），PEM 走密文保留/擦除语义
+    expect(payload.wechat_public_key_id).toBe('PUB_KEY_ID_0114')
+    expect(payload.wechat_public_key_pem).toBeNull()
+    expect(payload.clear_wechat_public_key_pem).toBe(false)
+    form.wechat_public_key_pem = '-----BEGIN PUBLIC KEY-----\nnew\n-----END PUBLIC KEY-----'
+    form.clear_wechat_public_key_pem = true
+    const updated = buildPaymentConfigPayload(form)
+    expect(updated.wechat_public_key_pem).toContain('BEGIN PUBLIC KEY')
+    expect(updated.clear_wechat_public_key_pem).toBe(true)
   })
 
   it('groups each channel secret field inside its own channel section', () => {
@@ -115,6 +127,8 @@ describe('PaymentConfigPanel', () => {
     const wechat = sectionText('微信支付')
     expect(wechat).toContain('API v3 密钥')
     expect(wechat).toContain('商户私钥')
+    expect(wechat).toContain('微信支付公钥 ID')
+    expect(wechat).toContain('微信支付公钥（PEM）')
     expect(wechat).not.toContain('支付宝公钥')
     const alipay = sectionText('支付宝')
     expect(alipay).toContain('应用私钥')

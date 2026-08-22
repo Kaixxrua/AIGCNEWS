@@ -19,7 +19,7 @@
 - 支付宝电脑网站支付
 - Stripe 国际卡
 
-provider 位于 `backend/app/services/payments/providers/`。Stripe Checkout 与支付宝电脑网站支付已接入真实下单和回调验签；微信 Native 扫码仍按接入 PR 启用。三渠道共用 CNY 单一商品金额源，不引入官方 SDK。支付开关保持 `payments_enabled=False` 时，用户支付路由返回 404 `payments_disabled`；开关打开但渠道缺凭证时，创建订单返回 503 `payment_channel_not_configured`；渠道远端返回错误时返回 502 `payment_channel_upstream_error`。
+provider 位于 `backend/app/services/payments/providers/`。三渠道均已接入真实下单和回调验签，不引入官方 SDK。支付开关保持 `payments_enabled=False` 时，用户支付路由返回 404 `payments_disabled`；开关打开但渠道缺凭证时，创建订单返回 503 `payment_channel_not_configured`；渠道远端返回错误时返回 502 `payment_channel_upstream_error`。
 
 ## 订单与状态
 
@@ -77,6 +77,20 @@ https://<public-base-url>/api/payments/callback/alipay_page
 ```
 
 支付宝回调只接受 `TRADE_SUCCESS` 或 `TRADE_FINISHED`，并用支付宝公钥验证 `sign`；回调中的 `total_amount` 元串必须能严格表示为整数分。订单对账/人工补单查单使用 `alipay.trade.query`。
+
+### 微信支付 Native 配置
+
+微信侧需要普通商户号 + Native 产品 + 一个已绑定的 AppID（已认证服务号或开放平台「网站应用」）。在 monitor 支付配置面板填写七项：AppID、商户号 mchid、商户 API 证书序列号、API v3 密钥、商户 API 证书私钥（PEM）、微信支付公钥 ID、微信支付公钥（PEM）；七项齐全渠道才判定为已配置（fail-closed）。
+
+验签采用**微信支付公钥模式**（不做平台证书自动下载轮换）：商户平台「账户中心 → API 安全」页可申请「微信支付公钥」，一次性复制公钥 ID（`PUB_KEY_ID_...`）并下载公钥 PEM 静态配置；回调验签时 `Wechatpay-Serial` 头必须等于该公钥 ID。下单与查单请求用商户 API 证书私钥按 v3 规程加签（`WECHATPAY2-SHA256-RSA2048`）。
+
+回调通知地址（商户平台 Native 产品配置或下单 `notify_url` 均为此值）：
+
+```text
+https://<public-base-url>/api/payments/callback/wechat_native
+```
+
+回调只接受 `event_type=TRANSACTION.SUCCESS` 且解密后 `trade_state=SUCCESS`；`resource` 为 `AEAD_AES_256_GCM`，用 API v3 密钥（必须 32 字节）解密；`amount.total` 单位为分、币种必须 CNY；时间戳超出 ±5 分钟即拒绝。关单对账/人工补单查单走 `GET /v3/pay/transactions/out-trade-no/{order_no}`。Native 扫码在微信侧完成支付，无前台回跳，下单不使用 `return_url`。
 
 provider ACK 形状见 [ADR 0002](adr/0002-payment-callback-verification.md)。
 

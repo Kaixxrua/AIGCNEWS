@@ -1,8 +1,8 @@
-"""渠道桩与配置契约单测（支付骨架 PR-2）。
+"""渠道注册表、配置契约与 ACK 应答形状单测。
 
-骨架期渠道能力刻意未实现：create/verify/query 一律 ProviderNotConfiguredError
-（路由映射 503），但 ACK 应答报文形状必须现在就钉住——形状错了渠道会
-无限重发，这是与微信/支付宝/Stripe 的线上契约。
+三渠道（微信 Native / 支付宝 page.pay / Stripe Checkout）均已真实接入；
+本文件钉住的是跨渠道契约：注册表完整性、is_configured fail-closed 语义
+（缺任意一项凭证即 503）、ACK 应答报文形状（形状错了渠道会无限重发）。
 """
 
 from __future__ import annotations
@@ -58,6 +58,8 @@ def test_wechat_configured_requires_full_credential_set() -> None:
         wechat_pay_mch_serial_no="SERIAL",
         wechat_pay_api_v3_key="k" * 32,
         wechat_pay_private_key_path="/secrets/apiclient_key.pem",
+        wechat_pay_public_key_id="PUB_KEY_ID_0114",
+        wechat_pay_public_key_path="/secrets/wechat_pay_public_key.pem",
     )
     assert WeChatNativePaymentProvider(_settings(**full)).is_configured() is True
     # 缺任意一项即不可用（fail-closed）
@@ -80,10 +82,10 @@ def test_alipay_and_stripe_configured_checks() -> None:
     assert StripePaymentProvider(_settings(stripe_secret_key="sk_live_x")).is_configured() is False
 
 
-# ── 骨架期能力：一律未配置 ─────────────────────────────────────────────
+# ── 未配置即不可用：create/verify/query 一律 503 ──────────────────────
 
 
-def test_stub_capabilities_raise_provider_not_configured() -> None:
+def test_unconfigured_capabilities_raise_provider_not_configured() -> None:
     provider = WeChatNativePaymentProvider(_settings())
     order = {"order_no": "P1"}
     with pytest.raises(ProviderNotConfiguredError):

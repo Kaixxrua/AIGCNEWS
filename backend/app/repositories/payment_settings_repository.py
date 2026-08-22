@@ -17,6 +17,8 @@ class PaymentSettings:
     wechat_mch_serial_no: str
     wechat_api_v3_key: str
     wechat_private_key_pem: str
+    wechat_public_key_id: str
+    wechat_public_key_pem: str
     alipay_appid: str
     alipay_private_key_pem: str
     alipay_public_key_pem: str
@@ -41,6 +43,8 @@ class PaymentSettingsManager(PaymentSettingsReader, Protocol):
         wechat_mch_serial_no: str,
         wechat_api_v3_key: str,
         wechat_private_key_pem: str,
+        wechat_public_key_id: str,
+        wechat_public_key_pem: str,
         alipay_appid: str,
         alipay_private_key_pem: str,
         alipay_public_key_pem: str,

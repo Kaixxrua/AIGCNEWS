@@ -133,6 +133,8 @@ def _payment_settings_row(*, enabled: bool) -> PaymentSettings:
         wechat_mch_serial_no="",
         wechat_api_v3_key="",
         wechat_private_key_pem="",
+        wechat_public_key_id="",
+        wechat_public_key_pem="",
         alipay_appid="",
         alipay_private_key_pem="",
         alipay_public_key_pem="",

@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     wechat_pay_mch_serial_no: str = ""
     wechat_pay_api_v3_key: str = ""
     wechat_pay_private_key_path: str = ""
+    # 微信支付公钥模式：回调验签用（商户平台 API 安全页可复制公钥 ID/下载公钥）。
+    wechat_pay_public_key_id: str = ""
+    wechat_pay_public_key_path: str = ""
     # 支付宝电脑网站支付（alipay.trade.page.pay）：RSA2 密钥对文件路径。
     alipay_appid: str = ""
     alipay_private_key_path: str = ""

@@ -39,6 +39,8 @@ def _row(**overrides) -> PaymentSettings:
         "wechat_mch_serial_no": "",
         "wechat_api_v3_key": "",
         "wechat_private_key_pem": "",
+        "wechat_public_key_id": "",
+        "wechat_public_key_pem": "",
         "alipay_appid": "",
         "alipay_private_key_pem": "",
         "alipay_public_key_pem": "",
@@ -80,6 +82,8 @@ def _effective(**overrides) -> EffectivePaymentConfig:
         "wechat_mch_serial_no": "",
         "wechat_api_v3_key": "",
         "wechat_private_key_pem": "",
+        "wechat_public_key_id": "",
+        "wechat_public_key_pem": "",
         "alipay_appid": "",
         "alipay_private_key_pem": "",
         "alipay_public_key_pem": "",
@@ -145,6 +149,8 @@ class ProviderDualFormTests(unittest.TestCase):
                 wechat_mch_serial_no="SERIAL",
                 wechat_api_v3_key="k" * 32,
                 wechat_private_key_pem="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
+                wechat_public_key_id="PUB_KEY_ID_0114",
+                wechat_public_key_pem="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
             )
         )
         assert providers["wechat_native"].is_configured() is True
@@ -181,6 +187,8 @@ class ProviderDualFormTests(unittest.TestCase):
             wechat_pay_mch_serial_no="SERIAL",
             wechat_pay_api_v3_key="k" * 32,
             wechat_pay_private_key_path="/secrets/apiclient_key.pem",
+            wechat_pay_public_key_id="PUB_KEY_ID_0114",
+            wechat_pay_public_key_path="/secrets/wechat_pay_public_key.pem",
         )  # type: ignore[arg-type]
         providers = build_payment_providers(env)
         assert providers["wechat_native"].is_configured() is True

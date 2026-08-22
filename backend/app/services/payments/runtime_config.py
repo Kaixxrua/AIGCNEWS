@@ -26,6 +26,8 @@ class EffectivePaymentConfig:
     wechat_mch_serial_no: str
     wechat_api_v3_key: str
     wechat_private_key_pem: str
+    wechat_public_key_id: str
+    wechat_public_key_pem: str
     alipay_appid: str
     alipay_private_key_pem: str
     alipay_public_key_pem: str
@@ -65,6 +67,8 @@ def _environment_config(env: object) -> EffectivePaymentConfig:
         wechat_mch_serial_no=str(getattr(env, "wechat_pay_mch_serial_no", "") or ""),
         wechat_api_v3_key=str(getattr(env, "wechat_pay_api_v3_key", "") or ""),
         wechat_private_key_pem=str(getattr(env, "wechat_pay_private_key_path", "") or ""),
+        wechat_public_key_id=str(getattr(env, "wechat_pay_public_key_id", "") or ""),
+        wechat_public_key_pem=str(getattr(env, "wechat_pay_public_key_path", "") or ""),
         alipay_appid=str(getattr(env, "alipay_appid", "") or ""),
         alipay_private_key_pem=str(getattr(env, "alipay_private_key_path", "") or ""),
         alipay_public_key_pem=str(getattr(env, "alipay_public_key_path", "") or ""),
@@ -89,6 +93,8 @@ def effective_payment_config_from_row(row: PaymentSettings, *, env: object = set
         wechat_mch_serial_no=row.wechat_mch_serial_no,
         wechat_api_v3_key=row.wechat_api_v3_key or fallback.wechat_api_v3_key,
         wechat_private_key_pem=row.wechat_private_key_pem or fallback.wechat_private_key_pem,
+        wechat_public_key_id=row.wechat_public_key_id,
+        wechat_public_key_pem=row.wechat_public_key_pem or fallback.wechat_public_key_pem,
         alipay_appid=row.alipay_appid,
         alipay_private_key_pem=row.alipay_private_key_pem or fallback.alipay_private_key_pem,
         alipay_public_key_pem=row.alipay_public_key_pem or fallback.alipay_public_key_pem,

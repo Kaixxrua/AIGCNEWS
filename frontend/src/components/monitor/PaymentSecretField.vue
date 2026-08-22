@@ -7,6 +7,7 @@ import type { PaymentConfig, PaymentConfigForm } from '@/features/monitor/monito
 type PaymentSecretFieldKey =
   | 'wechat_api_v3_key'
   | 'wechat_private_key_pem'
+  | 'wechat_public_key_pem'
   | 'alipay_private_key_pem'
   | 'alipay_public_key_pem'
   | 'stripe_secret_key'

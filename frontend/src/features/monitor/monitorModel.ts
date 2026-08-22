@@ -840,6 +840,9 @@ export interface PaymentConfig {
   wechat_api_v3_key_masked: string | null
   wechat_private_key_pem_configured: boolean
   wechat_private_key_pem_masked: string | null
+  wechat_public_key_id: string
+  wechat_public_key_pem_configured: boolean
+  wechat_public_key_pem_masked: string | null
   alipay_private_key_pem_configured: boolean
   alipay_private_key_pem_masked: string | null
   alipay_public_key_pem_configured: boolean
@@ -859,6 +862,8 @@ export interface PaymentConfigForm {
   wechat_mch_serial_no: string
   wechat_api_v3_key: string
   wechat_private_key_pem: string
+  wechat_public_key_id: string
+  wechat_public_key_pem: string
   alipay_appid: string
   alipay_private_key_pem: string
   alipay_public_key_pem: string
@@ -866,6 +871,7 @@ export interface PaymentConfigForm {
   stripe_webhook_secret: string
   clear_wechat_api_v3_key: boolean
   clear_wechat_private_key_pem: boolean
+  clear_wechat_public_key_pem: boolean
   clear_alipay_private_key_pem: boolean
   clear_alipay_public_key_pem: boolean
   clear_stripe_secret_key: boolean
@@ -881,6 +887,8 @@ export const createPaymentConfigForm = (config?: PaymentConfig | null): PaymentC
   wechat_mch_serial_no: config?.wechat_mch_serial_no || '',
   wechat_api_v3_key: '',
   wechat_private_key_pem: '',
+  wechat_public_key_id: config?.wechat_public_key_id || '',
+  wechat_public_key_pem: '',
   alipay_appid: config?.alipay_appid || '',
   alipay_private_key_pem: '',
   alipay_public_key_pem: '',
@@ -888,6 +896,7 @@ export const createPaymentConfigForm = (config?: PaymentConfig | null): PaymentC
   stripe_webhook_secret: '',
   clear_wechat_api_v3_key: false,
   clear_wechat_private_key_pem: false,
+  clear_wechat_public_key_pem: false,
   clear_alipay_private_key_pem: false,
   clear_alipay_public_key_pem: false,
   clear_stripe_secret_key: false,
@@ -904,6 +913,8 @@ export const buildPaymentConfigPayload = (form: PaymentConfigForm) => ({
   wechat_mch_serial_no: form.wechat_mch_serial_no.trim(),
   wechat_api_v3_key: form.wechat_api_v3_key || null,
   wechat_private_key_pem: form.wechat_private_key_pem || null,
+  wechat_public_key_id: form.wechat_public_key_id.trim(),
+  wechat_public_key_pem: form.wechat_public_key_pem || null,
   alipay_appid: form.alipay_appid.trim(),
   alipay_private_key_pem: form.alipay_private_key_pem || null,
   alipay_public_key_pem: form.alipay_public_key_pem || null,
@@ -911,6 +922,7 @@ export const buildPaymentConfigPayload = (form: PaymentConfigForm) => ({
   stripe_webhook_secret: form.stripe_webhook_secret || null,
   clear_wechat_api_v3_key: form.clear_wechat_api_v3_key,
   clear_wechat_private_key_pem: form.clear_wechat_private_key_pem,
+  clear_wechat_public_key_pem: form.clear_wechat_public_key_pem,
   clear_alipay_private_key_pem: form.clear_alipay_private_key_pem,
   clear_alipay_public_key_pem: form.clear_alipay_public_key_pem,
   clear_stripe_secret_key: form.clear_stripe_secret_key,
