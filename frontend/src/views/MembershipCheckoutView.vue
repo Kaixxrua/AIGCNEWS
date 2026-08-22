@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Check, LoaderCircle, QrCode } from 'lucide-vue-next'
 import { paymentApi } from '@/services/payments/paymentApi'
-import { redirectToUrl } from '@/services/payments/redirect'
+import { openPaymentPageInNewTab } from '@/services/payments/redirect'
 import { usePaymentCheckout } from '@/composables/usePaymentCheckout'
 import {
   formatAmountCents,
@@ -23,6 +23,8 @@ defineOptions({ name: 'MembershipCheckoutView' })
  * 收银台：金额/套餐只渲染 GET /api/payments/plans 响应（后端 plans.py 是唯一
  * 权威）；渠道 available=false 置灰（凭证未配置）。qr_code 指令骨架期渲染
  * 占位框 + 原文文本（不引二维码库，渠道接入后替换为真实二维码）。
+ * redirect_url 指令在新标签页打开渠道收银台，本页保留轮询与倒计时；
+ * 回跳（?order_no=）恢复订单状态并续上轮询（回跳续单）。
  */
 const { t } = useI18n()
 const route = useRoute()
@@ -34,7 +36,7 @@ const plan = ref<PaymentPlan | null>(null)
 const channels = ref<PaymentChannelAvailability[]>([])
 const selectedChannel = ref<PaymentChannel | null>(null)
 
-const { phase, order, instruction, beginCheckout, restartCheckout, disposeCheckout } =
+const { phase, order, instruction, beginCheckout, restartCheckout, resumeCheckout, disposeCheckout } =
   usePaymentCheckout({ api: paymentApi })
 
 const period = computed<BillingPeriod>(() =>
@@ -62,12 +64,12 @@ const periodSuffix = computed(() =>
 const submitting = computed(() => phase.value === 'creating')
 const awaitingPayment = computed(() => phase.value === 'awaiting_payment')
 
-// redirect_url 指令（支付宝/Stripe）：短暂展示提示后自动跳渠道收银台，
-// 手动链接保留为兜底（跳转被拦截/用户返回时可再点）。
+// redirect_url 指令（支付宝/Stripe）：短暂展示提示后在新标签页打开渠道收银台，
+// 本页轮询/倒计时不中断；手动链接保留为弹窗被拦截时的兜底。
 const REDIRECT_DELAY_MS = 600
 watch(instruction, (next, _prev, onCleanup) => {
   if (!next || next.kind !== 'redirect_url') return
-  const timer = setTimeout(() => redirectToUrl(next.content), REDIRECT_DELAY_MS)
+  const timer = setTimeout(() => openPaymentPageInNewTab(next.content), REDIRECT_DELAY_MS)
   onCleanup(() => clearTimeout(timer))
 })
 
@@ -111,6 +113,10 @@ onMounted(async () => {
     }
     selectedChannel.value =
       PAYMENT_CHANNELS.find((channel) => channelAvailable(channel)) ?? null
+    // 回跳续单：渠道 return_url 带回 ?order_no= 时恢复订单（终态直达 / pending 续轮询）；
+    // 查无此单静默回落全新收银台
+    const resumeOrderNo = typeof route.query.order_no === 'string' ? route.query.order_no : ''
+    if (resumeOrderNo) await resumeCheckout(resumeOrderNo)
   } catch (error) {
     console.error('Failed to load payment plans', error)
     plansFailed.value = true
@@ -187,9 +193,10 @@ const submit = () => {
           </button>
         </section>
 
-        <!-- 支付指令：qr_code 骨架期占位框 + 原文；redirect_url 直跳 -->
-        <section v-if="instruction && awaitingPayment" class="checkout-instruction">
-          <template v-if="instruction.kind === 'qr_code'">
+        <!-- 支付指令与等待态：qr_code 骨架期占位框 + 原文；redirect_url 新标签页
+             自动打开 + 兜底链接；回跳续单（无指令）只显等待、倒计时与订单号 -->
+        <section v-if="awaitingPayment" class="checkout-instruction">
+          <template v-if="instruction?.kind === 'qr_code'">
             <div class="checkout-qr" aria-hidden="true">
               <QrCode :size="44" :stroke-width="1.5" />
               <span class="checkout-qr-label">{{ t('membership.checkout.qrPlaceholder') }}</span>
@@ -197,10 +204,11 @@ const submit = () => {
             <p class="checkout-instruction-hint">{{ t('membership.checkout.scanHint') }}</p>
             <code class="checkout-instruction-raw">{{ instruction.content }}</code>
           </template>
-          <template v-else-if="instruction.kind === 'redirect_url'">
+          <template v-else-if="instruction?.kind === 'redirect_url'">
             <p class="checkout-instruction-hint">{{ t('membership.checkout.redirectHint') }}</p>
-            <a :href="instruction.content" class="checkout-redirect">{{ t('membership.checkout.redirectAction') }}</a>
+            <a :href="instruction.content" target="_blank" rel="noopener" class="checkout-redirect">{{ t('membership.checkout.redirectAction') }}</a>
           </template>
+          <p v-else class="checkout-instruction-hint">{{ t('membership.checkout.resumeHint') }}</p>
           <p class="checkout-awaiting">
             <LoaderCircle :size="14" class="checkout-spin" aria-hidden="true" />
             {{ t('membership.checkout.awaiting') }}

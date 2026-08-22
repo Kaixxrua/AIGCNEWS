@@ -15,7 +15,7 @@ const apiBox = vi.hoisted(() => ({
   getOrder: vi.fn(),
 }))
 
-const redirectBox = vi.hoisted(() => ({ redirectToUrl: vi.fn() }))
+const redirectBox = vi.hoisted(() => ({ openPaymentPageInNewTab: vi.fn() }))
 
 vi.mock('@/services/payments/paymentApi', () => ({ paymentApi: apiBox }))
 vi.mock('@/services/payments/redirect', () => redirectBox)
@@ -75,9 +75,10 @@ const i18n = createI18n({
           createFailed: '创建订单失败，请稍后重试。',
           qrPlaceholder: '支付二维码',
           scanHint: '请使用对应 App「扫一扫」完成支付',
-          redirectHint: '正在跳转支付页，若未自动跳转请点击下方按钮',
+          redirectHint: '正在新标签页打开支付页，若未自动打开请点击下方按钮',
           redirectAction: '前往支付',
           expireCountdown: '订单支付有效期剩余 {time}',
+          resumeHint: '已恢复待支付订单：如未完成支付，请在支付页继续；订单过期后可重新发起。',
           awaiting: '等待支付结果…',
           orderNo: '订单号',
           paid: '支付成功，vip 已开通！',
@@ -116,7 +117,7 @@ beforeEach(() => {
   apiBox.listPlans.mockReset().mockResolvedValue(plansResponse())
   apiBox.createOrder.mockReset().mockResolvedValue(createResponse)
   apiBox.getOrder.mockReset().mockResolvedValue(paidOrder)
-  redirectBox.redirectToUrl.mockReset()
+  redirectBox.openPaymentPageInNewTab.mockReset()
 })
 
 afterEach(() => {
@@ -166,7 +167,7 @@ describe('MembershipCheckoutView', () => {
     expect(wrapper.text()).toContain('P202608190001AB12CD')
   })
 
-  it('auto-redirects redirect_url instructions after a short delay and keeps a manual link', async () => {
+  it('auto-opens redirect_url instructions in a new tab after a short delay and keeps a manual link', async () => {
     apiBox.listPlans.mockResolvedValue(
       plansResponse({
         channels: [
@@ -192,22 +193,60 @@ describe('MembershipCheckoutView', () => {
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
 
-    // 延迟窗口内不跳，先渲染提示与手动兜底链接
-    expect(redirectBox.redirectToUrl).not.toHaveBeenCalled()
-    expect(wrapper.find('a.checkout-redirect').attributes('href')).toBe(gatewayUrl)
-    expect(wrapper.text()).toContain('正在跳转支付页')
+    // 延迟窗口内不跳，先渲染提示与新标签页兜底链接
+    expect(redirectBox.openPaymentPageInNewTab).not.toHaveBeenCalled()
+    const fallback = wrapper.find('a.checkout-redirect')
+    expect(fallback.attributes('href')).toBe(gatewayUrl)
+    expect(fallback.attributes('target')).toBe('_blank')
+    expect(wrapper.text()).toContain('正在新标签页打开支付页')
 
     await vi.advanceTimersByTimeAsync(600)
-    expect(redirectBox.redirectToUrl).toHaveBeenCalledTimes(1)
-    expect(redirectBox.redirectToUrl).toHaveBeenCalledWith(gatewayUrl)
+    expect(redirectBox.openPaymentPageInNewTab).toHaveBeenCalledTimes(1)
+    expect(redirectBox.openPaymentPageInNewTab).toHaveBeenCalledWith(gatewayUrl)
   })
 
-  it('never auto-redirects qr_code instructions', async () => {
+  it('never auto-opens qr_code instructions', async () => {
     const { wrapper } = await mountView()
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
     await vi.advanceTimersByTimeAsync(5000)
-    expect(redirectBox.redirectToUrl).not.toHaveBeenCalled()
+    expect(redirectBox.openPaymentPageInNewTab).not.toHaveBeenCalled()
+  })
+
+  it('resumes the return-url order straight into the paid state', async () => {
+    apiBox.getOrder.mockResolvedValue(paidOrder)
+    const { wrapper } = await mountView({ plan: 'monthly', order_no: paidOrder.order_no })
+
+    expect(apiBox.getOrder).toHaveBeenCalledWith(paidOrder.order_no)
+    expect(wrapper.text()).toContain('支付成功')
+    expect(apiBox.createOrder).not.toHaveBeenCalled()
+  })
+
+  it('resumes a still-pending return-url order into awaiting with countdown and polling', async () => {
+    vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+    apiBox.getOrder.mockResolvedValue({ ...paidOrder, status: 'pending', paid_at: null })
+    const { wrapper } = await mountView({ plan: 'monthly', order_no: paidOrder.order_no })
+
+    expect(wrapper.text()).toContain('等待支付结果…')
+    expect(wrapper.text()).toContain('已恢复待支付订单')
+    expect(wrapper.text()).toContain('订单支付有效期剩余 30:00')
+    expect(wrapper.text()).toContain(paidOrder.order_no)
+    // 回跳页不再出现下单按钮（防重复发起）
+    expect(wrapper.find('.checkout-submit').exists()).toBe(false)
+    expect(apiBox.createOrder).not.toHaveBeenCalled()
+
+    // 轮询续上：3 秒后再查一次单
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+    expect(apiBox.getOrder.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('falls back to a fresh checkout when the return-url order_no is unknown', async () => {
+    apiBox.getOrder.mockRejectedValue({ response: { status: 404 } })
+    const { wrapper } = await mountView({ plan: 'monthly', order_no: 'P404UNKNOWN' })
+
+    expect(wrapper.find('.checkout-submit').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('等待支付结果…')
   })
 
   it('ticks a live countdown from the backend expires_at while awaiting payment', async () => {

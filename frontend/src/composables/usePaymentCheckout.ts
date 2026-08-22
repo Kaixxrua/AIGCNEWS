@@ -133,5 +133,37 @@ export const usePaymentCheckout = ({ api, schedule }: UsePaymentCheckoutOptions)
     phase.value = 'idle'
   }
 
-  return { phase, order, instruction, errorDetail, beginCheckout, restartCheckout, disposeCheckout }
+  /**
+   * 回跳续单：支付页 return_url 带回 order_no 时按它恢复订单——
+   * 终态直接落对应阶段（不轮询），pending 续上轮询；查单失败返回 false，
+   * 调用方（收银台视图）静默回落到全新收银台。
+   */
+  const resumeCheckout = async (orderNo: string): Promise<boolean> => {
+    let latest: PaymentOrder
+    try {
+      latest = await api.getOrder(orderNo)
+    } catch (error) {
+      console.error('Failed to resume payment order', error)
+      return false
+    }
+    if (disposed) return false
+    clearPollTimer()
+    order.value = latest
+    instruction.value = null
+    if (isTerminalOrderStatus(latest.status)) {
+      phase.value =
+        latest.status === 'paid'
+          ? 'paid'
+          : latest.status === 'expired'
+            ? 'expired'
+            : 'closed'
+      return true
+    }
+    phase.value = 'awaiting_payment'
+    pollCount = 0
+    pollTimer = schedulePoll(() => { void pollOrder() }, PAYMENT_POLL_INTERVAL)
+    return true
+  }
+
+  return { phase, order, instruction, errorDetail, beginCheckout, restartCheckout, resumeCheckout, disposeCheckout }
 }

@@ -173,4 +173,51 @@ describe('usePaymentCheckout', () => {
     expect(checkout.phase.value).toBe('awaiting_payment')
     expect(checkout.order.value?.status).toBe('pending')
   })
+
+  it('resumes a pending order from a return jump and restarts polling', async () => {
+    const getOrder = vi.fn().mockResolvedValue(order({ status: 'pending' }))
+    const { runPolls, checkout } = makeHarness({ getOrder })
+
+    const ok = await checkout.resumeCheckout('P202608190001AB12CD')
+
+    expect(ok).toBe(true)
+    expect(checkout.phase.value).toBe('awaiting_payment')
+    expect(checkout.order.value?.order_no).toBe('P202608190001AB12CD')
+    // 续单不重建支付指令：回跳页不再渲染二维码/跳转区
+    expect(checkout.instruction.value).toBeNull()
+
+    await runPolls(1)
+    // resume 查单 + 一轮轮询
+    expect(getOrder).toHaveBeenCalledTimes(2)
+    expect(checkout.phase.value).toBe('awaiting_payment')
+  })
+
+  it('resumes a paid order straight to the terminal phase without polling', async () => {
+    const getOrder = vi
+      .fn()
+      .mockResolvedValue(order({ status: 'paid', paid_at: '2026-08-19T12:05:00Z' }))
+    const { runPolls, checkout } = makeHarness({ getOrder })
+
+    expect(await checkout.resumeCheckout('P202608190001AB12CD')).toBe(true)
+    expect(checkout.phase.value).toBe('paid')
+
+    await runPolls(2)
+    expect(getOrder).toHaveBeenCalledTimes(1)
+  })
+
+  it('maps resumed expired/closed orders and fails soft on unknown order_no', async () => {
+    const expired = makeHarness({ getOrder: vi.fn().mockResolvedValue(order({ status: 'expired' })) })
+    expect(await expired.checkout.resumeCheckout('P1')).toBe(true)
+    expect(expired.checkout.phase.value).toBe('expired')
+
+    const closed = makeHarness({ getOrder: vi.fn().mockResolvedValue(order({ status: 'closed' })) })
+    expect(await closed.checkout.resumeCheckout('P1')).toBe(true)
+    expect(closed.checkout.phase.value).toBe('closed')
+
+    // 查无此单（404）：返回 false，停留在 idle，视图回落全新收银台
+    const missing = makeHarness({ getOrder: vi.fn().mockRejectedValue(new Error('404')) })
+    expect(await missing.checkout.resumeCheckout('P404')).toBe(false)
+    expect(missing.checkout.phase.value).toBe('idle')
+    expect(missing.checkout.order.value).toBeNull()
+  })
 })
