@@ -497,6 +497,22 @@ def test_site_visit_days_schema_is_additive_and_day_keyed() -> None:
     assert "UPDATE " not in normalized
 
 
+def test_site_visit_platform_days_schema_is_additive_and_day_platform_keyed() -> None:
+    # 平台维度计数表：beacon UA 归类的唯一存储。platform 值域由应用层枚举约束，
+    # 刻意不加 CHECK——新增平台桶只是展示维度变化，不应触发 schema 迁移。
+    migration = discover_migrations()[53]
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert migration.filename == "0054_site_visit_platform_days.sql"
+    assert "CREATE TABLE IF NOT EXISTS site_visit_platform_days" in migration.sql
+    assert "PRIMARY KEY (day, platform)" in migration.sql
+    assert "visits BIGINT NOT NULL DEFAULT 0" in migration.sql
+    assert "ALTER TABLE" not in normalized
+    assert "DROP" not in normalized
+    assert "UPDATE " not in normalized
+    assert "CHECK" not in normalized
+
+
 def test_live_postgres_apply_twice_and_introspect_schema() -> None:
     dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
     if not dsn:

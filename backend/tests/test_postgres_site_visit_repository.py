@@ -8,6 +8,7 @@ from backend.app.repositories.postgres_site_visit_repository import (
     PostgresSiteVisitRepository,
 )
 from backend.app.repositories.site_visit_repository import (
+    PlatformVisits,
     SiteVisitRepository,
     SiteVisitStats,
 )
@@ -40,6 +41,7 @@ def test_adapter_exposes_site_visit_repository_contract() -> None:
 
     assert callable(contract.record_visit)
     assert callable(contract.get_visit_stats)
+    assert callable(contract.get_platform_breakdown)
 
 
 def test_record_visit_upserts_day_row_and_returns_fresh_counters() -> None:
@@ -54,7 +56,24 @@ def test_record_visit_upserts_day_row_and_returns_fresh_counters() -> None:
     assert "INSERT INTO site_visit_days" in upsert_sql
     assert "ON CONFLICT (day) DO UPDATE" in upsert_sql
     assert upsert_params == (date(2026, 8, 13),)
-    assert "SUM(visits)" in cursor.execute.call_args_list[1].args[0]
+    platform_sql, platform_params = cursor.execute.call_args_list[1].args
+    assert "INSERT INTO site_visit_platform_days" in platform_sql
+    assert "ON CONFLICT (day, platform) DO UPDATE" in platform_sql
+    # 未传 platform 时落默认 other 桶
+    assert platform_params == (date(2026, 8, 13), "other")
+    assert "SUM(visits)" in cursor.execute.call_args_list[2].args[0]
+
+
+def test_record_visit_writes_platform_bucket_in_same_transaction() -> None:
+    repository, database, cursor = _make_repository()
+    cursor.fetchone.side_effect = [{"visits": 1}, {"total": 1}]
+
+    repository.record_visit(date(2026, 8, 22), platform="ios")
+
+    assert database.transaction_count == 1
+    platform_sql, platform_params = cursor.execute.call_args_list[1].args
+    assert "INSERT INTO site_visit_platform_days" in platform_sql
+    assert platform_params == (date(2026, 8, 22), "ios")
 
 
 def test_record_visit_handles_empty_returning_row() -> None:
@@ -97,3 +116,33 @@ def test_get_visit_stats_tolerates_empty_result_row() -> None:
     assert repository.get_visit_stats(date(2026, 8, 13)) == SiteVisitStats(
         today_visits=0, total_visits=0
     )
+
+
+def test_get_platform_breakdown_with_window_lower_bound() -> None:
+    repository, database, cursor = _make_repository()
+    cursor.fetchall.return_value = [
+        {"platform": "ios", "visits": 12},
+        {"platform": "windows", "visits": 3},
+    ]
+
+    result = repository.get_platform_breakdown(date(2026, 8, 16))
+
+    assert result == [
+        PlatformVisits(platform="ios", visits=12),
+        PlatformVisits(platform="windows", visits=3),
+    ]
+    assert database.transaction_count == 1
+    sql, params = cursor.execute.call_args.args
+    assert "FROM site_visit_platform_days" in sql
+    assert "GROUP BY platform" in sql
+    assert params == (date(2026, 8, 16), date(2026, 8, 16))
+
+
+def test_get_platform_breakdown_all_time_passes_none_bound() -> None:
+    repository, _, cursor = _make_repository()
+    cursor.fetchall.return_value = []
+
+    assert repository.get_platform_breakdown(None) == []
+    sql, params = cursor.execute.call_args.args
+    assert "%s::date IS NULL" in sql
+    assert params == (None, None)

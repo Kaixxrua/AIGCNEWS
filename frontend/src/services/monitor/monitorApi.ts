@@ -5,7 +5,7 @@ import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, PagedResult, PaymentConfig, PaymentConfigForm, ProviderConfig, ProviderForm, ProviderTestResult,
-  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
+  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
 import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildPaymentConfigPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
@@ -64,6 +64,7 @@ export interface MonitorApi {
   triggerGithubEnrichment(limit: number, concurrency: number): Promise<GithubEnrichmentTriggerResult>
   cancelGithubEnrichment(): Promise<GithubEnrichmentCancelResult>
   grantMembership(form: MembershipGrantForm): Promise<MembershipGrantResult>
+  fetchVisitPlatformStats(window: VisitStatsWindow): Promise<VisitPlatformStatsResponse>
 }
 
 export const monitorApi: MonitorApi = {
@@ -224,5 +225,8 @@ export const monitorApi: MonitorApi = {
   // 用户组（会员档位）授予：tier=free 即吊销；后端按邮箱查库，404=用户不存在
   async grantMembership(form) {
     return (await api.post('/ops/membership/grant', buildMembershipGrantPayload(form))).data
+  },
+  async fetchVisitPlatformStats(window) {
+    return (await api.get('/monitor/visit-platforms', { params: { window } })).data
   },
 }

@@ -21,6 +21,7 @@ import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
 import SchedulerConfigPanel from '@/components/monitor/SchedulerConfigPanel.vue'
 import SiteContactPageConfigPanel from '@/components/monitor/SiteContactPageConfigPanel.vue'
 import SmtpConfigPanel from '@/components/monitor/SmtpConfigPanel.vue'
+import VisitStatsPanel from '@/components/monitor/VisitStatsPanel.vue'
 import EmailPoolConfigPanel from '@/components/monitor/EmailPoolConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
 import XWatchCard from '@/components/monitor/XWatchCard.vue'
@@ -209,6 +210,9 @@ onUnmounted(dispose)
             :loading="loading"
             @go-page="goErrorLogsPage"
           />
+        </template>
+        <template v-else-if="currentSection === 'visit-stats'">
+          <VisitStatsPanel v-if="authStore.isAdmin" />
         </template>
 
         <!-- ═══ 采集（Admin 专属） ═══ -->

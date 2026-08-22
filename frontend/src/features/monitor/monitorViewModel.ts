@@ -18,6 +18,10 @@ export type {
   SmtpForm,
   SourceKey,
   Task,
+  VisitPlatformKey,
+  VisitPlatformShare,
+  VisitPlatformStatsResponse,
+  VisitStatsWindow,
 } from './monitorModel'
 
 import type { McpServerConfig, McpToolCallMetricsSnapshot, SourceKey } from './monitorModel'
@@ -46,7 +50,7 @@ export const SOURCE_LIST: SourceItem[] = [
 ]
 
 export type MonitorSectionKey =
-  | 'tasks' | 'mcp-calls' | 'errors'
+  | 'tasks' | 'mcp-calls' | 'errors' | 'visit-stats'
   | 'collect' | 'crawl' | 'enrichment'
   | 'x-watch' | 'x-credentials' | 'wechat'
   | 'provider' | 'scheduler' | 'smtp' | 'mcp-server'
@@ -71,6 +75,7 @@ export const MONITOR_NAV: MonitorNavCategory[] = [
     { key: 'tasks', labelKey: 'monitor.nav.tasks', adminOnly: false },
     { key: 'mcp-calls', labelKey: 'monitor.nav.mcpCalls', adminOnly: false },
     { key: 'errors', labelKey: 'monitor.nav.errors', adminOnly: true },
+    { key: 'visit-stats', labelKey: 'monitor.nav.visitStats', adminOnly: true },
   ] },
   { key: 'ingestion', labelKey: 'monitor.nav.group.ingestion', icon: CloudDownload, children: [
     { key: 'collect', labelKey: 'monitor.nav.collect', adminOnly: true },

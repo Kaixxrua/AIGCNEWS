@@ -15,7 +15,7 @@ describe('MonitorSectionNav', () => {
     setAppLocale('zh-CN')
   })
 
-  it('renders 5 categories and 17 leaves in MONITOR_NAV order with localized labels', () => {
+  it('renders 5 categories and 18 leaves in MONITOR_NAV order with localized labels', () => {
     const wrapper = mountNav()
     expect(wrapper.find('nav.monitor-nav').attributes('aria-label')).toBe('监控分区')
     const headers = wrapper.findAll('.monitor-nav-group-header')
@@ -25,7 +25,7 @@ describe('MonitorSectionNav', () => {
     expect(headers.every(header => header.find('.monitor-nav-icon').exists())).toBe(true)
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
     expect(leaves.map(leaf => leaf.find('.monitor-nav-label').text())).toEqual([
-      '任务历史', 'MCP 调用', '错误日志',
+      '任务历史', 'MCP 调用', '错误日志', '访问统计',
       '采集控制', 'GitHub 爬取', 'GitHub 富化',
       'X 关注账号', 'X 凭证', '微信公众号',
       '模型服务', '定时任务', 'SMTP 邮件', 'MCP 服务',
@@ -37,9 +37,9 @@ describe('MonitorSectionNav', () => {
     const wrapper = mountNav({ active: 'crawl' })
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
     expect(leaves.filter(leaf => leaf.classes().includes('active'))).toHaveLength(1)
-    expect(leaves[4]!.classes()).toContain('active')
-    expect(leaves[4]!.attributes('aria-current')).toBe('true')
-    expect(leaves[3]!.attributes('aria-current')).toBeUndefined()
+    expect(leaves[5]!.classes()).toContain('active')
+    expect(leaves[5]!.attributes('aria-current')).toBe('true')
+    expect(leaves[4]!.attributes('aria-current')).toBeUndefined()
   })
 
   it('renders the alert dot on the flagged leaf while its category is expanded', () => {
@@ -47,7 +47,7 @@ describe('MonitorSectionNav', () => {
     const dots = wrapper.findAll('.monitor-nav-alert')
     expect(dots).toHaveLength(1)
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
-    expect(leaves[5]!.find('.monitor-nav-alert').exists()).toBe(true)
+    expect(leaves[6]!.find('.monitor-nav-alert').exists()).toBe(true)
     expect(dots[0]!.attributes('title')).toBe('GitHub 项目库存在富化失败，请到监控页处理')
   })
 
@@ -55,12 +55,12 @@ describe('MonitorSectionNav', () => {
     const onSelect = vi.fn()
     const wrapper = mountNav({ active: 'tasks', onSelect })
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
-    await leaves[12]!.trigger('click')
+    await leaves[13]!.trigger('click')
     // 监听 prop 断言替代 emitted()：本环境 VTU 的 emitted 追踪不记录模板内 emit
     expect(onSelect).toHaveBeenCalledWith('mcp-server')
     // 哑组件契约：激活态由父级持有，点击后不自动迁移
     expect(leaves[0]!.classes()).toContain('active')
-    expect(leaves[12]!.classes()).not.toContain('active')
+    expect(leaves[13]!.classes()).not.toContain('active')
   })
 
   it('collapses a category on header click and hands the alert dot to the header', async () => {

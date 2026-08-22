@@ -895,7 +895,7 @@ class FakeSiteVisits:
 
         return SiteVisitStats(today_visits=7, total_visits=700)
 
-    def record_visit(self, day) -> Any:
+    def record_visit(self, day, platform: str = "other") -> Any:
         from backend.app.repositories.site_visit_repository import SiteVisitStats
 
         return SiteVisitStats(today_visits=8, total_visits=701)

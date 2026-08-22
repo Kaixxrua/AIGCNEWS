@@ -39,6 +39,7 @@ from backend.app.services.dashboard.query_service import (
     DashboardQueryService,
     GitHubHotBoardReader,
 )
+from backend.app.services.dashboard.visit_platforms import classify_platform
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
 router = APIRouter()
@@ -107,7 +108,8 @@ def get_site_visit_repository() -> PostgresSiteVisitRepository:
     return PostgresSiteVisitRepository(postgres_database)
 
 
-def _cst_today() -> date:
+def cst_today() -> date:
+    """CST（UTC+8）当天日期：访问计数与平台窗口的统一自然日口径。"""
     tz_cst = timezone(timedelta(hours=8))
     return datetime.now(tz_cst).date()
 
@@ -120,7 +122,7 @@ async def _get_site_visit_stats(visits: SiteVisitStatsReader) -> SiteVisitStats:
     感知。
     """
     try:
-        return await asyncio.to_thread(visits.get_visit_stats, _cst_today())
+        return await asyncio.to_thread(visits.get_visit_stats, cst_today())
     except psycopg.Error:
         logger.warning("[Dashboard] 站点访问计数查询失败，回退为 0", exc_info=True)
         return SiteVisitStats(today_visits=0, total_visits=0)
@@ -673,12 +675,15 @@ async def get_visitor_count(
 
 @router.post("/dashboard/visit")
 async def record_site_visit(
+    request: Request,
     visits: SiteVisitRecorder = Depends(get_site_visit_repository),
 ):
     """站点访问 beacon：前端每 tab 会话首次进入发一次（sessionStorage 守卫）。
 
     纯次数口径——每次调用当天（CST）计数 +1，不按访客去重；返回计数后的
     最新值，前端统计卡片可即时刷新，无需等待 live-stats 轮询。
+    同时按 User-Agent 归类平台桶写入平台维度表（不落 UA 原文，仅聚合计数）。
     """
-    stats = await asyncio.to_thread(visits.record_visit, _cst_today())
+    platform = classify_platform(request.headers.get("user-agent"))
+    stats = await asyncio.to_thread(visits.record_visit, cst_today(), platform)
     return {"today_visits": stats.today_visits, "total_visits": stats.total_visits}

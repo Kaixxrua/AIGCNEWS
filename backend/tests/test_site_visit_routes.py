@@ -37,8 +37,29 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"today_visits": 8, "total_visits": 701})
-        (day_arg,), _ = visits.record_visit.call_args
+        (day_arg, platform_arg), _ = visits.record_visit.call_args
         self.assertIsInstance(day_arg, date)
+        # TestClient 默认不带浏览器 UA 特征，落入 other 桶
+        self.assertEqual(platform_arg, "other")
+
+    def test_record_visit_classifies_user_agent_into_platform_bucket(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_dashboard.router, prefix="/api")
+        visits = MagicMock()
+        visits.record_visit.return_value = SiteVisitStats(today_visits=1, total_visits=1)
+        app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
+
+        iphone_ua = (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+        )
+        response = TestClient(app).post(
+            "/api/dashboard/visit", headers={"User-Agent": iphone_ua}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        (_, platform_arg), _ = visits.record_visit.call_args
+        self.assertEqual(platform_arg, "ios")
 
     def test_visit_stats_failure_falls_back_to_zero_on_read_endpoints(self) -> None:
         """计数不可用（如 0038 迁移滞后）时读端点静默为 0，不拖垮看板轮询。"""

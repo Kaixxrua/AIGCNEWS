@@ -439,6 +439,28 @@ export const createEmptyMcpToolCallMetrics = (): McpToolCallMetricsSnapshot => (
   since: '', total_calls: 0, tools: {},
 })
 
+/* 访客平台统计：桶集合与后端 visit_platforms.PLATFORM_BUCKETS 双向冻结。
+   share 是后端信息性字段（一位小数直接相加可能漂移 ±0.1），
+   UI 展示百分比以 visits 经 visitStatsViewModel.computeShares 本地重算为准。 */
+export type VisitPlatformKey = 'ios' | 'android' | 'windows' | 'macos' | 'other'
+
+export type VisitStatsWindow = 'today' | '7d' | '30d' | 'all'
+
+export interface VisitPlatformShare {
+  platform: VisitPlatformKey
+  visits: number
+  share: number
+}
+
+export interface VisitPlatformStatsResponse {
+  window: VisitStatsWindow
+  /** all 窗口为 null（无下界） */
+  start_date: string | null
+  end_date: string
+  total_visits: number
+  platforms: VisitPlatformShare[]
+}
+
 // 归一规则与后端 control_plane 一致：trim + 小写 + 截断列宽（VARCHAR(32)）
 export const REASONING_EFFORT_MAX_LENGTH = 32
 

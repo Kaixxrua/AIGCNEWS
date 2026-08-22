@@ -96,7 +96,7 @@ describe('application locale contract', () => {
   it('provides an explicit Chinese value for every business catalog leaf', () => {
     const zhLeaves = catalogLeaves(messages['zh-CN'])
     const enLeaves = catalogLeaves(messages['en-US'])
-    const intentionallyShared = /(?:appName|chinese|english|github|hn|hackernews|producthunt|emailPlaceholder|recommendedBadge|stars|sortStars|forks|rag|arxivDesc|githubDesc|producthuntDesc|hackernewsDesc|\.x|authToken|ct0|priceMonthly|priceYearlyAmount|yearlyDiscount|guest\.name|free\.name|member\.name|identityGuest|identityUser|identityVip)$/
+    const intentionallyShared = /(?:appName|chinese|english|github|hn|hackernews|producthunt|emailPlaceholder|recommendedBadge|stars|sortStars|forks|rag|arxivDesc|githubDesc|producthuntDesc|hackernewsDesc|\.x|authToken|ct0|priceMonthly|priceYearlyAmount|yearlyDiscount|guest\.name|free\.name|member\.name|identityGuest|identityUser|identityVip|platform\.(?:ios|android|windows|macos))$/
     const inherited = Object.keys(zhLeaves).filter(
       key => zhLeaves[key] === enLeaves[key] && !intentionallyShared.test(key),
     )

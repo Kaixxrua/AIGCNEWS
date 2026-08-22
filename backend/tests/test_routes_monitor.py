@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI
@@ -16,11 +17,13 @@ from backend.app.api.dependencies import (
     get_ingestion_task_repository,
     get_readiness_check,
 )
+from backend.app.api.routes_dashboard import get_site_visit_repository
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.error_event_repository import ErrorEventReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
+from backend.app.repositories.site_visit_repository import PlatformVisits
 from backend.app.repositories.task_repository import (
     MonitorTaskRepository,
     RecentTaskReader,
@@ -312,6 +315,108 @@ class MonitorRouteTests(unittest.TestCase):
                 )
                 self.assertEqual(response.status_code, 422)
         repository.list_events.assert_not_called()
+
+
+class VisitPlatformBreakdownRouteTests(unittest.TestCase):
+    """GET /api/monitor/visit-platforms：访客平台分布（admin 专属）。"""
+
+    @staticmethod
+    def _build_app(visits) -> FastAPI:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        # Depends 键即 routes_dashboard 的同一工厂对象
+        app.dependency_overrides[get_site_visit_repository] = lambda: visits
+        return app
+
+    def test_requires_admin_before_repository_calls(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        visits = MagicMock()
+        app.dependency_overrides[get_site_visit_repository] = lambda: visits
+
+        response = TestClient(app).get("/api/monitor/visit-platforms")
+
+        self.assertIn(response.status_code, (401, 403))
+        visits.get_platform_breakdown.assert_not_called()
+
+    def test_rejects_authenticated_non_admin(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        visits = MagicMock()
+        # 已登录但非管理员：真实 RequireAdmin 在被覆盖的 RequireUser 之上判 403
+        app.dependency_overrides[RequireUser] = lambda: {"role": "user"}
+        app.dependency_overrides[get_site_visit_repository] = lambda: visits
+
+        response = TestClient(app).get("/api/monitor/visit-platforms")
+
+        self.assertEqual(response.status_code, 403)
+        visits.get_platform_breakdown.assert_not_called()
+
+    def test_aggregates_fixed_bucket_shape_for_window(self) -> None:
+        visits = MagicMock()
+        visits.get_platform_breakdown.return_value = [
+            PlatformVisits(platform="ios", visits=6),
+            PlatformVisits(platform="windows", visits=2),
+        ]
+        app = self._build_app(visits)
+
+        response = TestClient(app).get(
+            "/api/monitor/visit-platforms", params={"window": "7d"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["window"], "7d")
+        self.assertEqual(body["total_visits"], 8)
+        self.assertEqual(
+            [entry["platform"] for entry in body["platforms"]],
+            ["ios", "android", "windows", "macos", "other"],
+        )
+        ios = body["platforms"][0]
+        self.assertEqual(ios["visits"], 6)
+        self.assertEqual(ios["share"], 75.0)
+        # 窗口下界按含今天的 7 个自然日传入仓储
+        (since_arg,), _ = visits.get_platform_breakdown.call_args
+        self.assertIsInstance(since_arg, date)
+
+    def test_all_window_passes_none_lower_bound(self) -> None:
+        visits = MagicMock()
+        visits.get_platform_breakdown.return_value = []
+        app = self._build_app(visits)
+
+        response = TestClient(app).get(
+            "/api/monitor/visit-platforms", params={"window": "all"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIsNone(body["start_date"])
+        self.assertEqual(body["total_visits"], 0)
+        (since_arg,), _ = visits.get_platform_breakdown.call_args
+        self.assertIsNone(since_arg)
+
+    def test_invalid_window_is_422(self) -> None:
+        visits = MagicMock()
+        app = self._build_app(visits)
+
+        for window in ("1d", "365d", "week", ""):
+            with self.subTest(window=window):
+                response = TestClient(app).get(
+                    "/api/monitor/visit-platforms", params={"window": window}
+                )
+                self.assertEqual(response.status_code, 422)
+        visits.get_platform_breakdown.assert_not_called()
+
+    def test_default_window_is_7d(self) -> None:
+        visits = MagicMock()
+        visits.get_platform_breakdown.return_value = []
+        app = self._build_app(visits)
+
+        response = TestClient(app).get("/api/monitor/visit-platforms")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["window"], "7d")
 
 
 if __name__ == "__main__":

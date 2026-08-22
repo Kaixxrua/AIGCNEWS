@@ -51,6 +51,10 @@ describe('Monitor API contract', () => {
     expect(transport.get).toHaveBeenLastCalledWith('/ops/scheduler/status')
     transport.get.mockResolvedValueOnce({ data: { items: null } })
     await expect(monitorApi.fetchMcpServers()).resolves.toEqual([])
+
+    transport.get.mockResolvedValueOnce({ data: { window: '7d', platforms: [] } })
+    await expect(monitorApi.fetchVisitPlatformStats('7d')).resolves.toEqual({ window: '7d', platforms: [] })
+    expect(transport.get).toHaveBeenLastCalledWith('/monitor/visit-platforms', { params: { window: '7d' } })
   })
 
   it('uses the X translation status and retry endpoints', async () => {

@@ -14,15 +14,21 @@ from backend.app.api.dependencies import (
     get_ingestion_task_repository,
     get_readiness_check,
 )
+from backend.app.api.routes_dashboard import cst_today, get_site_visit_repository
 from backend.app.core.auth import RequireAdmin
 from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.error_event_repository import ErrorEventReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
+from backend.app.repositories.site_visit_repository import SiteVisitPlatformReader
 from backend.app.repositories.task_repository import (
     MonitorTaskRepository,
     RecentTaskReader,
+)
+from backend.app.services.dashboard.visit_platforms import (
+    build_platform_breakdown_response,
+    window_start_date,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,3 +127,23 @@ async def recent_error_events(
     """
     result = await asyncio.to_thread(db.list_events, page, page_size)
     return result
+
+
+@router.get("/monitor/visit-platforms")
+async def visit_platform_breakdown(
+    window: str = Query(default="7d", pattern="^(today|7d|30d|all)$"),
+    _: dict = Depends(RequireAdmin),
+    visits: SiteVisitPlatformReader = Depends(get_site_visit_repository),
+):
+    """站点访问的平台分布（beacon 按 User-Agent 归类，纯次数口径）。
+
+    管理员口径与 /monitor/tasks 一致。平台计数自 0054 迁移上线日起算，
+    更早的访问没有平台维度，all 窗口合计小于站点总访问量是预期。
+    Depends 键复用 routes_dashboard.get_site_visit_repository 同一函数对象，
+    契约测试用 dependency_overrides 替换时对两个路由同时生效。
+    """
+    today = cst_today()
+    rows = await asyncio.to_thread(
+        visits.get_platform_breakdown, window_start_date(window, today)
+    )
+    return build_platform_breakdown_response(rows, window, today)
