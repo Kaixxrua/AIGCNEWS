@@ -10,6 +10,7 @@ from backend.app.services.dashboard.policy import (
     SnapshotDateResolution,
     build_date_resolution,
     github_metric_to_doc,
+    is_embargoed,
     resolve_default_snapshot_date,
     resolve_snapshot_date,
     today_local,
@@ -90,8 +91,9 @@ class DashboardQueryService:
         """解析看板展示日期：显式 date 原样生效（诚实服务，不回溯）。
 
         默认视图（无 date）在 today 无快照时，按 source+period 口径向前
-        回溯窗口内最近一个有快照的日期；结果始终带 requested/resolved/
-        stale 标记，回溯绝不静默。github 日榜注入 v5 读取后按指标日期回溯。
+        回溯窗口内最近一个可展示快照日期（跳过静默期）；结果始终带
+        requested/resolved/stale 标记，回溯绝不静默。github 日榜注入 v5 读取后
+        按指标日期回溯。
         """
         requested = resolve_snapshot_date(date_param)
         if date_param:
@@ -105,7 +107,10 @@ class DashboardQueryService:
             available = self._rank_snapshots.get_snapshot_dates(
                 DEFAULT_SNAPSHOT_LOOKBACK_DAYS, source, period
             )
-        resolved = resolve_default_snapshot_date(available) or requested
+        displayable_dates = [
+            raw_date for raw_date in available if not is_embargoed(str(raw_date))
+        ]
+        resolved = resolve_default_snapshot_date(displayable_dates) or requested
         return build_date_resolution(requested, resolved)
 
     def get_docs_for_date(

@@ -1139,20 +1139,25 @@ def test_display_date_default_uses_today_when_snapshots_exist() -> None:
     }
 
 
-def test_display_date_default_falls_back_and_marks_stale() -> None:
-    today = policy.today_local()
-    yesterday = (today - timedelta(days=1)).isoformat()
-    reader = FakeRankSnapshotReader(dates=[yesterday])
+def test_display_date_default_skips_embargoed_fallback_and_marks_stale(monkeypatch) -> None:
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[no-untyped-def]
+            value = cls(2026, 8, 10, 10, 0, 0)
+            return value.replace(tzinfo=tz) if tz else value
+
+    monkeypatch.setattr(policy, "datetime", _FrozenDateTime)
+    reader = FakeRankSnapshotReader(dates=["2026-08-09", "2026-08-08"])
     service = DashboardQueryService(reader)
 
     resolution = service.resolve_display_snapshot_date(None, "daily", "github")
 
     assert resolution == {
-        "requested_date": today.isoformat(),
-        "resolved_date": yesterday,
+        "requested_date": "2026-08-10",
+        "resolved_date": "2026-08-08",
         "stale": True,
     }
-    # 回溯查询按 source+period 口径且有界
+    # 回溯查询按 source+period 口径且有界；昨日静默期日期不可作为展示候选
     assert reader.date_calls == [
         (policy.DEFAULT_SNAPSHOT_LOOKBACK_DAYS, "github", "daily")
     ]
@@ -1334,7 +1339,7 @@ def test_top_route_github_metricless_date_returns_honest_empty_board() -> None:
     assert reader.document_calls == []
 
 
-def test_top_route_github_default_view_fallback_still_respects_embargo(monkeypatch) -> None:
+def test_top_route_github_default_view_skips_embargoed_fallback_date(monkeypatch) -> None:
     class _FrozenDateTime(datetime):
         @classmethod
         def now(cls, tz=None):  # type: ignore[no-untyped-def]
@@ -1342,9 +1347,12 @@ def test_top_route_github_default_view_fallback_still_respects_embargo(monkeypat
             return value.replace(tzinfo=tz) if tz else value
 
     monkeypatch.setattr(policy, "datetime", _FrozenDateTime)
-    # today=2026-08-10 无指标 → 回溯到昨天 08-09 → 昨天仍在静默期 → 拦截
+    # today=2026-08-10 无指标；昨天 08-09 仍在静默期，应继续回溯到已定稿的 08-08。
     reader = FakeRankSnapshotReader()
-    github_hot = FakeGitHubHotReader(dates=["2026-08-09", "2026-08-08"])
+    github_hot = FakeGitHubHotReader(
+        {"2026-08-08": [_github_metric_row(metric_date="2026-08-08")]},
+        dates=["2026-08-09", "2026-08-08"],
+    )
 
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-v5embargo")
     try:
@@ -1356,13 +1364,12 @@ def test_top_route_github_default_view_fallback_still_respects_embargo(monkeypat
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["items"] == []
+    assert [item["id"] for item in payload["items"]] == ["owner/repo"]
     assert payload["requested_date"] == "2026-08-10"
-    assert payload["resolved_date"] == "2026-08-09"
+    assert payload["resolved_date"] == "2026-08-08"
     assert payload["stale"] is True
-    assert payload["is_embargoed"] is True
-    # 静默期拦截先于榜单查询，未解禁数据不外泄
-    assert github_hot.hot_calls == []
+    assert payload["is_embargoed"] is False
+    assert github_hot.hot_calls == [("2026-08-08", 500)]
 
 
 def test_github_service_without_reader_keeps_trending_snapshot_reads() -> None:
@@ -1384,8 +1391,8 @@ def test_github_service_without_reader_keeps_trending_snapshot_reads() -> None:
 def test_github_service_metric_dates_drive_default_resolution_with_reader() -> None:
     # 回溯窗口锚定真实今天（today-6..today），硬编码日期会随时间漂出窗口
     today = policy.today_local()
-    recent = (today - timedelta(days=1)).isoformat()
-    older = (today - timedelta(days=2)).isoformat()
+    recent = (today - timedelta(days=2)).isoformat()
+    older = (today - timedelta(days=3)).isoformat()
     github_hot = FakeGitHubHotReader(dates=[recent])
     reader = FakeRankSnapshotReader(dates=[older])
     service = DashboardQueryService(reader, github_hot)
@@ -1520,7 +1527,7 @@ def test_summary_mix_view_github_items_come_from_metrics(monkeypatch) -> None:
     assert all(call[1] != "github_trending_daily" for call in reader.document_calls)
 
 
-def test_top_route_default_view_fallback_still_respects_embargo(monkeypatch) -> None:
+def test_top_route_explicit_date_still_respects_embargo(monkeypatch) -> None:
     class _FrozenDateTime(datetime):
         @classmethod
         def now(cls, tz=None):  # type: ignore[no-untyped-def]
@@ -1528,23 +1535,25 @@ def test_top_route_default_view_fallback_still_respects_embargo(monkeypatch) -> 
             return value.replace(tzinfo=tz) if tz else value
 
     monkeypatch.setattr(policy, "datetime", _FrozenDateTime)
-    # today=2026-08-10 无快照 → 回溯到昨天 08-09 → 昨天仍在静默期 → 拦截
     reader = FakeRankSnapshotReader(dates=["2026-08-09", "2026-08-08"])
 
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-embargo")
     try:
-        response = _top_client(reader).get("/api/dashboard/top")
+        response = _top_client(reader).get(
+            "/api/dashboard/top?date=2026-08-09"
+        )
     finally:
         FastAPICache.reset()
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["items"] == []
-    assert payload["requested_date"] == "2026-08-10"
+    assert payload["requested_date"] == "2026-08-09"
     assert payload["resolved_date"] == "2026-08-09"
-    assert payload["stale"] is True
+    assert payload["stale"] is False
     assert payload["is_embargoed"] is True
-    # 静默期拦截先于文档查询，未解禁数据不外泄
+    # 显式请求仍不回溯；静默期拦截先于文档查询，未解禁数据不外泄
+    assert reader.date_calls == []
     assert reader.document_calls == []
 
 
