@@ -2268,7 +2268,7 @@ class _CursorFakeClient:
     三元组；entries 缺省由 tweets 合成（每条 tweet 一个 itemContent entry，
     created_at 取 tweet.created_at）。``fetch_user`` 返回固定 profile。
     operation 名实录到 ``operations``（默认忽略），供窗口抓取钉住
-    UserTweetsAndReplies 切换。
+    操作选择与变量形状。
     """
 
     def __init__(self, pages: list, *, user_id: str = "11") -> None:
@@ -2599,12 +2599,13 @@ class XWindowPaginationContracts(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIn("x_rate_limited", str(ctx.exception))
 
-    async def test_window_fetch_uses_replies_operation_with_web_variables(self) -> None:
-        # 2026-08-22 起窗口抓取切 UserTweetsAndReplies（含对他人回复）。
-        # 钉住操作名与 variables 形状：与网页端 fetchUserTweetsAndReplies
-        # 严格对齐的五键 + cursor；UserTweets 时代的
-        # withV2Timeline/latestControlAvailable/requestContext 不得回潮
-        # （withV2Timeline 被服务端忽略，未知变量历史上有 404 先例）。
+    async def test_window_fetch_uses_user_tweets_operation_with_web_variables(self) -> None:
+        # 窗口抓取用 UserTweets（主页「帖子」Tab 口径：原创/转贴/引用/
+        # 自回复线程，不含对他人回复）——2026-08-24 用户决策全局回退，
+        # 详见 _WINDOW_TIMELINE_OPERATION 注释。钉住操作名与
+        # variables 形状：与网页端 fetchUserTweets 对齐且实测 200 的
+        # 八键 + cursor；withV2Timeline/latestControlAvailable/
+        # requestContext 三键不得丢失。
         start = _window("2026-08-19T12:00:00")
         end = _window("2026-08-20T12:00:00")
         client = _CursorFakeClient([
@@ -2618,23 +2619,25 @@ class XWindowPaginationContracts(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(result.complete)
-        self.assertEqual(
-            client.operations, ["UserTweetsAndReplies", "UserTweetsAndReplies"]
-        )
+        self.assertEqual(client.operations, ["UserTweets", "UserTweets"])
         expected_keys = {
             "count",
             "userId",
             "includePromotedContent",
             "withQuickPromoteEligibilityTweetFields",
             "withVoice",
+            "withV2Timeline",
+            "latestControlAvailable",
+            "requestContext",
         }
         self.assertEqual(set(client.calls[0]), expected_keys)
         self.assertEqual(set(client.calls[1]), expected_keys | {"cursor"})
         self.assertIs(client.calls[0]["includePromotedContent"], False)
 
-    async def test_reply_tweets_are_collected_in_window(self) -> None:
-        # 对他人回复（@ 开头正文）必须进入窗口结果且通过入库策略——
-        # 这是切换 UserTweetsAndReplies 的全部意义。
+    async def test_reply_shaped_tweets_in_page_are_kept(self) -> None:
+        # UserTweets 主页口径含**自回复线程**（@开头正文的回复贴）——
+        # 解析与入库策略不得把 @ 开头条目误杀。（「对他人的回复」自
+        # 2026-08-24 起在操作层即不下发，无需在本层拦截。）
         start = _window("2026-08-19T12:00:00")
         end = _window("2026-08-20T12:00:00")
         reply = _tweet(
@@ -2658,10 +2661,10 @@ class XWindowPaginationContracts(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(x_policy.is_ingestible_tweet(parsed_reply))
 
     async def test_v1_timeline_envelope_accepted(self) -> None:
-        # UserTweetsAndReplies 实测固定回 v1 结构
-        # （data.user.result.timeline.timeline.instructions；
-        # withV2Timeline 被服务端忽略）。transport 必须兼容该路径，
-        # 同时保留 timeline_v2 优先探测。
+        # v1 信封兼容：AndReplies 时代（2026-08-22~08-24）实测固定回 v1
+        # 结构（data.user.result.timeline.timeline.instructions；
+        # withV2Timeline 被服务端忽略）。transport 保留 timeline_v2
+        # 优先探测 + v1 回退双路径，服务端日后变更无需改代码。
         start = _window("2026-08-19T12:00:00")
         end = _window("2026-08-20T12:00:00")
 
@@ -2690,65 +2693,53 @@ class XWindowPaginationContracts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([t.id for t in handle.tweets], ["t1", "t2"])
 
     def test_and_replies_query_id_has_pinned_fallback(self) -> None:
-        # UserTweetsAndReplies 必须钉住 fallback queryId：_graphql_get 的
-        # stale-retry（404/422 时失效重解析）只在 using_fallback 时生效，
-        # 而 using_fallback 的判定依赖该表。值过期可接受（stale-retry
-        # 兜底），缺失不可接受。
+        # UserTweetsAndReplies 的 fallback queryId 钉住项保留为回滚保险：
+        # 窗口抓取已于 2026-08-24 全局回退 UserTweets（该操作当前不被
+        # 调用），但若日后重启，_graphql_get 的 stale-retry（404/422
+        # 失效重解析）只在 using_fallback 时生效，而 using_fallback
+        # 依赖该表。值过期可接受（stale-retry 兜底），缺失不可接受。
         from twitter_cli import graphql as tw_graphql
 
         self.assertTrue(tw_graphql.FALLBACK_QUERY_IDS.get("UserTweetsAndReplies"))
 
-    async def test_replies_excluded_handles_fall_back_to_user_tweets(self) -> None:
-        # 2026-08-22 用户决策：grok 的 AndReplies 被「@grok …」提问回复
-        # 刷爆（会话模块耗尽页预算 → 恒 fail-closed，内容亦无收录价值），
-        # 该账号回退 UserTweets（只含原创/转贴/引用/自回复线程），并沿用
-        # UserTweets 实测 200 的旧变量形状（withV2Timeline/
-        # latestControlAvailable/requestContext 不得被精简五键替换）。
+    async def test_all_handles_use_same_homepage_scope(self) -> None:
+        # 2026-08-24 用户决策：所有观察账号统一主页口径（UserTweets，
+        # 不采对他人回复）——此前按账号单列排除的机制（grok 08-22、
+        # thsottiaux 08-24）随全局回退移除，任何账号不得再走
+        # AndReplies 或丢失 UserTweets 的历史三键变量。
         start = _window("2026-08-19T12:00:00")
         end = _window("2026-08-20T12:00:00")
         client = _CursorFakeClient([
             self._page(
                 [_tweet("t1", created_at="Wed Aug 19 10:00:00 +0000 2026")], None
             ),
+            self._page(
+                [_tweet("t2", created_at="Wed Aug 19 10:00:00 +0000 2026")], None
+            ),
+            self._page(
+                [_tweet("t3", created_at="Wed Aug 19 10:00:00 +0000 2026")], None
+            ),
         ])
         transport = self._transport(client)
 
         result = await transport.fetch_watchlist_tweets_window(
-            ["grok"], window_start=start, window_end=end, count_per_user=20
+            ["openai", "grok", "thsottiaux"],
+            window_start=start,
+            window_end=end,
         )
 
-        self.assertTrue(result.by_handle["grok"].complete)
-        self.assertEqual(client.operations, ["UserTweets"])
-        self.assertEqual(
-            set(client.calls[0]),
-            {
-                "count",
-                "userId",
-                "includePromotedContent",
-                "withQuickPromoteEligibilityTweetFields",
-                "withVoice",
-                "withV2Timeline",
-                "latestControlAvailable",
-                "requestContext",
-            },
-        )
-        # 大小写不敏感：watchlist 里写成 Grok 也必须命中排除集
-        client2 = _CursorFakeClient([
-            self._page(
-                [_tweet("t1", created_at="Wed Aug 19 10:00:00 +0000 2026")], None
-            ),
-        ])
-        transport2 = self._transport(client2)
-        await transport2.fetch_watchlist_tweets_window(
-            ["Grok"], window_start=start, window_end=end
-        )
-        self.assertEqual(client2.operations, ["UserTweets"])
+        self.assertTrue(result.complete)
+        self.assertEqual(client.operations, ["UserTweets"] * 3)
+        for call in client.calls:
+            self.assertIn("withV2Timeline", call)
+            self.assertIn("latestControlAvailable", call)
+            self.assertIn("requestContext", call)
 
     async def test_conversation_ancestor_tweets_are_dropped(self) -> None:
-        # AndReplies 的会话模块会附带回复对象的父贴，作者多为非观察
-        # 名单账号（grok 时间线的「@grok …」提问者即此形态）。这些祖先
-        # 条目不得入库：作者 != 当前 handle 且非转贴 → 丢弃；本账号的
-        # 回复与原创照常保留。
+        # 防御性保留：AndReplies 已于 2026-08-24 停用，其会话模块附带的
+        # 回复对象父贴（作者多为非观察名单账号，如 grok 时间线的
+        # 「@grok …」提问者）不再下发；但过滤规则保留——作者 != 当前
+        # handle 且非转贴 → 丢弃；本账号条目与转贴豁免照常。
         start = _window("2026-08-19T12:00:00")
         end = _window("2026-08-20T12:00:00")
         reply = _tweet(

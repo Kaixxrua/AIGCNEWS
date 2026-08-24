@@ -8,18 +8,20 @@ twitter_cli 0.8.5 副本原地应用。
 
 补丁内容：
 
-1. ``FALLBACK_QUERY_IDS`` 补 ``UserTweetsAndReplies`` 钉住项——窗口抓取
-   切到该操作后，``_graphql_get`` 的 stale-retry（404/422 失效重解析）
-   依赖此表判定 using_fallback。值取自 2026-08-22 当前 bundle
-   （main.7792f4fa.js）并实测 200；日后过期可接受（stale-retry 兜底），
-   缺失不可接受。
+1. ``FALLBACK_QUERY_IDS`` 补 ``UserTweetsAndReplies`` 钉住项——
+   ``_graphql_get`` 的 stale-retry（404/422 失效重解析）依赖此表判定
+   using_fallback。值取自 2026-08-22 当前 bundle（main.7792f4fa.js）
+   并实测 200。窗口抓取已于 2026-08-24 全局回退 UserTweets（见
+   x_transport._WINDOW_TIMELINE_OPERATION 注释），该操作当前不被
+   调用，钉住项作为回滚保险保留。
 2. ``TwitterClient._ensure_client_transaction`` 修复 x-client-transaction-id
    初始化：上游只抓未登录 https://x.com，而 2026-08 起该页面只回
    x-web 壳（无 ondemand.s 引用）→ 初始化恒失败（日志特征：
    ``Failed to init ClientTransaction: 'NoneType' object has no attribute
    'group'``）。UserTweetsAndReplies 强制要求 X-Client-Transaction-Id，
-   缺失时空体 404。修复：有凭证时优先抓登录态 https://x.com/home
-   （纯浏览器导航头 + Cookie；API 头会 401），失败再退回上游路径。
+   缺失时空体 404（2026-08-24 生产实测全账号中招）。修复：有凭证时
+   优先抓登录态 https://x.com/home（纯浏览器导航头 + Cookie；API 头
+   会 401），失败再退回上游路径。该补丁同样作为回滚保险保留。
 
 上游升级后若内部结构漂移，``apply()`` 的断言在导入期响亮失败，
 绝不静默退回旧行为。

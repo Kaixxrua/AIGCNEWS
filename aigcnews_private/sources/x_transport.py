@@ -74,24 +74,24 @@ _WINDOW_PAGE_SIZE = 40
 # 仍未证明窗口边界 → 该 handle 记 page_limit_reached incomplete，
 # 绝不把 partial 当完整窗口入库。
 _WINDOW_MAX_PAGES_PER_HANDLE = 50
-# 窗口抓取操作：2026-08-22 起从 UserTweets 切到 UserTweetsAndReplies，
-# 把「对他人的回复」纳入 rolling 窗口（此前结构性不采，见 2026-08-22
-# 实证：UserTweets 只含原创/转贴/引用/自回复线程）。该操作强制要求
-# X-Client-Transaction-Id 头（twitter_cli ClientTransaction 注入，
-# 缺失时空体 404）。
-_WINDOW_TIMELINE_OPERATION = "UserTweetsAndReplies"
-# 不采回复贴的账号（screen_name 小写）：2026-08-22 用户决策——grok 的
-# AndReplies 时间线被海量「@grok …」提问回复刷爆，页预算会被会话模块
-# 耗尽（page_limit_reached 恒 fail-closed），且回复内容对站点无收录
-# 价值；该账号退回 UserTweets（只含原创/转贴/引用/自回复线程）。
-_REPLIES_EXCLUDED_HANDLES = frozenset({"grok"})
-# 与网页端 fetchUserTweetsAndReplies 严格对齐的 variables 形状
-# （2026-08-22 实测 200）。多余的 UserTweets 时代变量
-# （withV2Timeline/latestControlAvailable/requestContext）不发送：
-# withV2Timeline 被服务端忽略（响应固定 v1 结构），其余两个未在网页端
-# 形状中出现，X 对未知变量历史上有过 404 先例，不冒这个险。
+# 窗口抓取操作：UserTweets —— 主页「帖子」Tab 口径，只含
+# 原创/转贴/引用/自回复线程，不含「对他人的回复」。
+# 口径沿革：2026-08-22 曾切到 UserTweetsAndReplies 把对他人回复纳入
+# rolling 窗口；2026-08-24 用户决策全局回退——高产回复账号（如
+# thsottiaux，Codex 事故期单日几十条回复）会占满 24h 窗口并稀释
+# 原创信号，且主页不可见的内容站点亦不收录；grok 此前（08-22）已按
+# 同口径单列排除，本次推及全部账号。附带收益：UserTweets 不要求
+# X-Client-Transaction-Id 头（AndReplies 缺失时只回空体 404，
+# 2026-08-24 生产实测全账号因此中断）。
+_WINDOW_TIMELINE_OPERATION = "UserTweets"
+# 与网页端 fetchUserTweets 对齐且实测 200 的 variables 形状。
+# withV2Timeline/latestControlAvailable/requestContext 是该操作的
+# 历史三键，一直保持发送，勿按 AndReplies 时代的精简五键回潮。
 _WINDOW_BASE_VARIABLES = {
     "includePromotedContent": False,
+    "withV2Timeline": True,
+    "latestControlAvailable": True,
+    "requestContext": "launch",
 }
 _TWEET_CREATED_AT_FORMAT = "%a %b %d %H:%M:%S %z %Y"
 
@@ -783,16 +783,15 @@ class XTransport:
     ) -> tuple[XWindowHandleResult, int]:
         """单账号沿 Bottom cursor 分页，返回 (结果, 剩余网络重试预算)。
 
-        操作：UserTweetsAndReplies（2026-08-22 起，含对他人回复；
-        需 X-Client-Transaction-Id，响应固定 v1 结构，见
-        _WINDOW_TIMELINE_OPERATION 注释）；_REPLIES_EXCLUDED_HANDLES
-        中的账号（grok）回退 UserTweets（不采回复贴，用户决策）。
+        操作：_WINDOW_TIMELINE_OPERATION（当前 UserTweets，主页口径，
+        不采对他人回复；口径沿革与该操作要求见常量注释）。
 
-        AndReplies 时间线的会话模块会把**回复对象的父贴**（作者多为非
-        观察名单账号）一并下发，parse_timeline_response 会将其解析成独立
-        文档——入库过滤只对作者 == 当前 handle 的条目与转贴豁免
-        （转贴已由 parser 换成原贴作者，但属 2026-08-13 起刻意收录的
-        「watchlist 账号转贴带入」路径，is_retweet 标记保留可识别）。
+        会话模块过滤（防御性保留）：AndReplies 时代（2026-08-22~08-24）
+        时间线的会话模块会把**回复对象的父贴**（作者多为非观察名单
+        账号）一并下发；该操作虽已停用，过滤规则保留——作者 != 当前
+        handle 且非转贴 → 丢弃（转贴已由 parser 换成原贴作者，但属
+        2026-08-13 起刻意收录的「watchlist 账号转贴带入」路径，
+        is_retweet 标记保留可识别）。
 
         complete 仅当满足以下之一：
           - boundary_reached：最早的**时间线外层条目**时间戳 ≤ window_start
@@ -805,10 +804,10 @@ class XTransport:
         from twitter_cli import graphql as tw_graphql, parser as tw_parser
 
         def get_instructions(data: Any) -> Any:
-            # UserTweetsAndReplies 当前固定回 v1 结构
-            # （data.user.result.timeline.timeline.instructions，
-            # withV2Timeline 被服务端忽略）；保留 timeline_v2 优先探测，
-            # 服务端日后升级到 v2 时无需改代码。
+            # 两种信封都兼容：timeline_v2 优先探测，v1
+            # （data.user.result.timeline.timeline.instructions）回退。
+            # AndReplies 时代实测固定回 v1（withV2Timeline 被服务端
+            # 忽略）；双路径保留，服务端日后变更无需改代码。
             instructions = tw_parser._deep_get(
                 data,
                 "data",
@@ -838,11 +837,7 @@ class XTransport:
         oldest_seen: datetime | None = None
         complete = False
         reason = "transport_error"
-        replies_excluded = handle.lower() in _REPLIES_EXCLUDED_HANDLES
-        # 被排除账号回退 UserTweets：沿用该操作实测 200 的旧变量形状
-        # （含 withV2Timeline/latestControlAvailable/requestContext），
-        # 不混用 AndReplies 的精简五键。
-        operation = "UserTweets" if replies_excluded else _WINDOW_TIMELINE_OPERATION
+        operation = _WINDOW_TIMELINE_OPERATION
 
         while page_count < _WINDOW_MAX_PAGES_PER_HANDLE:
             variables: dict[str, Any] = {
@@ -852,10 +847,6 @@ class XTransport:
                 "withQuickPromoteEligibilityTweetFields": True,
                 "withVoice": True,
             }
-            if replies_excluded:
-                variables["withV2Timeline"] = True
-                variables["latestControlAvailable"] = True
-                variables["requestContext"] = "launch"
             if cursor:
                 variables["cursor"] = cursor
 
