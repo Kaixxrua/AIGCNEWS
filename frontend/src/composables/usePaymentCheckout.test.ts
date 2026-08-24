@@ -36,7 +36,7 @@ interface Harness {
 }
 
 /** 手动泵定时器的测试线束：schedule 只排队不执行，runPolls 逐轮驱动。 */
-const makeHarness = (apiOverrides: Partial<PaymentApi>): Harness => {
+const makeHarness = (apiOverrides: Partial<PaymentApi>, onOrderPaid?: () => void): Harness => {
   const queue: Array<() => void> = []
   const api: PaymentApi = {
     listPlans: vi.fn(),
@@ -50,6 +50,7 @@ const makeHarness = (apiOverrides: Partial<PaymentApi>): Harness => {
       queue.push(cb)
       return queue.length as unknown as ReturnType<typeof setTimeout>
     },
+    onOrderPaid,
   })
   const runPolls = async (count: number) => {
     for (let i = 0; i < count; i += 1) {
@@ -219,5 +220,66 @@ describe('usePaymentCheckout', () => {
     expect(await missing.checkout.resumeCheckout('P404')).toBe(false)
     expect(missing.checkout.phase.value).toBe('idle')
     expect(missing.checkout.order.value).toBeNull()
+  })
+
+  it('fires onOrderPaid exactly once when polling lands on paid', async () => {
+    const onOrderPaid = vi.fn()
+    const getOrder = vi
+      .fn()
+      .mockResolvedValueOnce(order({ status: 'pending' }))
+      .mockResolvedValueOnce(order({ status: 'paid', paid_at: '2026-08-19T12:05:00Z' }))
+    const { runPolls, checkout } = makeHarness({ getOrder }, onOrderPaid)
+
+    await checkout.beginCheckout('member_monthly', 'wechat_native')
+    await runPolls(2)
+
+    expect(checkout.phase.value).toBe('paid')
+    expect(onOrderPaid).toHaveBeenCalledTimes(1)
+
+    // 终态后不再有后续轮询，钩子不二次触发
+    await runPolls(3)
+    expect(onOrderPaid).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires onOrderPaid when a created order is already paid (idempotent hit)', async () => {
+    const onOrderPaid = vi.fn()
+    const createOrder = vi.fn().mockResolvedValue(created({ status: 'paid', paid_at: '2026-08-19T12:05:00Z' }))
+    const { checkout } = makeHarness({ createOrder }, onOrderPaid)
+
+    await checkout.beginCheckout('member_monthly', 'wechat_native')
+
+    expect(checkout.phase.value).toBe('paid')
+    expect(onOrderPaid).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires onOrderPaid when a resumed order is already paid', async () => {
+    const onOrderPaid = vi.fn()
+    const getOrder = vi.fn().mockResolvedValue(order({ status: 'paid', paid_at: '2026-08-19T12:05:00Z' }))
+    const { checkout } = makeHarness({ getOrder }, onOrderPaid)
+
+    expect(await checkout.resumeCheckout('P202608190001AB12CD')).toBe(true)
+
+    expect(checkout.phase.value).toBe('paid')
+    expect(onOrderPaid).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire onOrderPaid for expired, closed, or timed-out orders', async () => {
+    // expired / closed 终态
+    for (const status of ['expired', 'closed'] as const) {
+      const onOrderPaid = vi.fn()
+      const harness = makeHarness({ getOrder: vi.fn().mockResolvedValue(order({ status })) }, onOrderPaid)
+      await harness.checkout.beginCheckout('member_monthly', 'wechat_native')
+      await harness.runPolls(1)
+      expect(harness.checkout.phase.value).toBe(status)
+      expect(onOrderPaid).not.toHaveBeenCalled()
+    }
+
+    // 轮询超时（一直 pending）也不触发
+    const onOrderPaid = vi.fn()
+    const timeout = makeHarness({ getOrder: vi.fn().mockResolvedValue(order({ status: 'pending' })) }, onOrderPaid)
+    await timeout.checkout.beginCheckout('member_monthly', 'wechat_native')
+    await timeout.runPolls(PAYMENT_POLL_MAX)
+    expect(timeout.checkout.phase.value).toBe('poll_timeout')
+    expect(onOrderPaid).not.toHaveBeenCalled()
   })
 })

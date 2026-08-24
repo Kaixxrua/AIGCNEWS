@@ -6,6 +6,7 @@ import { Check, LoaderCircle, QrCode } from 'lucide-vue-next'
 import { paymentApi } from '@/services/payments/paymentApi'
 import { openPaymentPageInNewTab } from '@/services/payments/redirect'
 import { usePaymentCheckout } from '@/composables/usePaymentCheckout'
+import { useAuthStore } from '@/stores/authStore'
 import {
   formatAmountCents,
   formatCountdownMs,
@@ -29,6 +30,7 @@ defineOptions({ name: 'MembershipCheckoutView' })
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const plansLoading = ref(true)
 const plansFailed = ref(false)
@@ -36,8 +38,17 @@ const plan = ref<PaymentPlan | null>(null)
 const channels = ref<PaymentChannelAvailability[]>([])
 const selectedChannel = ref<PaymentChannel | null>(null)
 
+// 支付到账（轮询/幂等命中/回跳续单任一路径）立刻刷新用户信息：
+// 顶栏用户组与会员到期时间随之更新，无需手动刷新页面
 const { phase, order, instruction, beginCheckout, restartCheckout, resumeCheckout, disposeCheckout } =
-  usePaymentCheckout({ api: paymentApi })
+  usePaymentCheckout({
+    api: paymentApi,
+    onOrderPaid: () => {
+      void authStore.fetchMe().catch((error) => {
+        console.warn('支付成功后刷新用户信息失败', error)
+      })
+    },
+  })
 
 const period = computed<BillingPeriod>(() =>
   route.query.plan === 'yearly' ? 'yearly' : 'monthly',

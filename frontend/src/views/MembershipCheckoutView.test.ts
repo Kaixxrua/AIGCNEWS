@@ -1,8 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MembershipCheckoutView from './MembershipCheckoutView.vue'
+import { useAuthStore } from '@/stores/authStore'
 import type {
   CreatePaymentOrderResponse,
   PaymentOrder,
@@ -105,11 +107,16 @@ const mountView = async (query: Record<string, string> = { plan: 'monthly' }) =>
     ],
   })
   await router.push({ path: '/membership/checkout', query })
+  // 收银台在支付到账后调 authStore.fetchMe 刷新顶栏档位/到期时间：挂真实 store，
+  // fetchMe 桩成 resolved 空值，避免测试环境真的打 /auth/me
+  const pinia = setActivePinia(createPinia())
+  const authStore = useAuthStore()
+  authStore.fetchMe = vi.fn().mockResolvedValue(undefined)
   const wrapper = mount(MembershipCheckoutView, {
-    global: { plugins: [i18n, router] },
+    global: { plugins: [i18n, router, pinia] },
   })
   await flushPromises()
-  return { wrapper, router }
+  return { wrapper, router, authStore }
 }
 
 beforeEach(() => {
@@ -305,6 +312,21 @@ describe('MembershipCheckoutView', () => {
 
     expect(apiBox.getOrder).toHaveBeenCalledWith('P202608190001AB12CD')
     expect(wrapper.text()).toContain('支付成功，vip 已开通！')
+  })
+
+  it('refreshes the user identity once polling observes the paid status', async () => {
+    const { wrapper, authStore } = await mountView()
+    await wrapper.find('.checkout-submit').trigger('click')
+    await flushPromises()
+
+    expect(authStore.fetchMe).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    // 到账后自动拉一次 /auth/me：顶栏用户组与到期时间无需手动刷新页面即更新
+    expect(wrapper.text()).toContain('支付成功，vip 已开通！')
+    expect(authStore.fetchMe).toHaveBeenCalledTimes(1)
   })
 
   it('shows the expired state with a restart action when the order expires', async () => {

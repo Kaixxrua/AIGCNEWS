@@ -7,6 +7,8 @@ export interface AuthUserDTO {
   email_verified?: boolean
   /** 会员档位（0045）：free / member；缺省按 free 处理 */
   membership_tier?: 'free' | 'member'
+  /** 会员到期时间（0048，ISO 字符串）；null/缺省 = 长期有效 */
+  membership_expires_at?: string | null
   /** 种子默认管理员仍使用公开默认密码时为真：前端常驻提醒改密 */
   password_change_required?: boolean
 }

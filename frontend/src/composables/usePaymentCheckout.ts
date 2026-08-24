@@ -23,6 +23,9 @@ export type CheckoutPhase =
 interface UsePaymentCheckoutOptions {
   api: PaymentApi
   schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
+  /** 订单落 paid 终态时触发（轮询/幂等命中/回跳续单三条路径都会到）：
+      调用方借此刷新用户会员身份，支付成功后右上角档位无需手动刷新页面 */
+  onOrderPaid?: () => void
 }
 
 /** 幂等键：同一次收银台会话内重复提交（双击/重试）命中后端既有订单。 */
@@ -30,7 +33,7 @@ const newIdempotencyKey = (): string =>
   globalThis.crypto?.randomUUID?.() ??
   `checkout-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
-export const usePaymentCheckout = ({ api, schedule }: UsePaymentCheckoutOptions) => {
+export const usePaymentCheckout = ({ api, schedule, onOrderPaid }: UsePaymentCheckoutOptions) => {
   const schedulePoll = schedule ?? ((cb: () => void, delay: number) => setTimeout(cb, delay))
 
   const phase = ref<CheckoutPhase>('idle')
@@ -55,6 +58,12 @@ export const usePaymentCheckout = ({ api, schedule }: UsePaymentCheckoutOptions)
     clearPollTimer()
   }
 
+  /** 落终态：paid 额外触发 onOrderPaid（会员身份刷新钩子） */
+  const landTerminalPhase = (status: 'paid' | 'expired' | 'closed') => {
+    phase.value = status
+    if (status === 'paid') onOrderPaid?.()
+  }
+
   const pollOrder = async () => {
     const current = order.value
     if (disposed || !current) return
@@ -75,12 +84,7 @@ export const usePaymentCheckout = ({ api, schedule }: UsePaymentCheckoutOptions)
     if (disposed) return
     order.value = latest
     if (isTerminalOrderStatus(latest.status)) {
-      phase.value =
-        latest.status === 'paid'
-          ? 'paid'
-          : latest.status === 'expired'
-            ? 'expired'
-            : 'closed'
+      landTerminalPhase(latest.status as 'paid' | 'expired' | 'closed')
       return
     }
     if (pollCount >= PAYMENT_POLL_MAX) {
@@ -104,12 +108,7 @@ export const usePaymentCheckout = ({ api, schedule }: UsePaymentCheckoutOptions)
       instruction.value = created.instruction
       if (isTerminalOrderStatus(created.order.status)) {
         // 幂等命中既有单：直接落到对应终态（paid/expired/closed），不轮询
-        phase.value =
-          created.order.status === 'paid'
-            ? 'paid'
-            : created.order.status === 'expired'
-              ? 'expired'
-              : 'closed'
+        landTerminalPhase(created.order.status as 'paid' | 'expired' | 'closed')
         return
       }
       phase.value = 'awaiting_payment'
@@ -151,12 +150,7 @@ export const usePaymentCheckout = ({ api, schedule }: UsePaymentCheckoutOptions)
     order.value = latest
     instruction.value = null
     if (isTerminalOrderStatus(latest.status)) {
-      phase.value =
-        latest.status === 'paid'
-          ? 'paid'
-          : latest.status === 'expired'
-            ? 'expired'
-            : 'closed'
+      landTerminalPhase(latest.status as 'paid' | 'expired' | 'closed')
       return true
     }
     phase.value = 'awaiting_payment'

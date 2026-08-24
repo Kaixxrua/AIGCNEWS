@@ -6,7 +6,7 @@ import i18n, { setAppLocale } from '@/i18n'
 /* authStore 以 hoisted 盒子桩化：直控登录态与档位，绕过 pinia/token 存储。 */
 const authBox = vi.hoisted(() => ({
   isLoggedIn: false,
-  user: null as null | { email: string; membership_tier?: 'free' | 'member' },
+  user: null as null | { email: string; membership_tier?: 'free' | 'member'; membership_expires_at?: string | null },
 }))
 
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
@@ -79,5 +79,55 @@ describe('MastheadUser', () => {
     const host = mountMastheadUser()
 
     expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('Group: vip')
+  })
+
+  /* 到期行期望值用 Intl 现算，与组件同一格式化器口径，免受宿主 ICU 差异影响 */
+  const formatExpiry = (raw: string, locale: string) =>
+    new Intl.DateTimeFormat(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(Date.parse(raw))
+
+  it('shows the expiry date line for member accounts with an expiry', () => {
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: '2027-01-01T15:59:59+00:00' }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__expiry')?.textContent).toBe(`至 ${formatExpiry('2027-01-01T15:59:59+00:00', 'zh-CN')}`)
+  })
+
+  it('shows the lifetime line for member accounts without an expiry', () => {
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: null }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__expiry')?.textContent).toBe('长期有效')
+  })
+
+  it('omits the expiry line for free-tier accounts even if an expiry leaks through', () => {
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'reader@example.com', membership_tier: 'free', membership_expires_at: '2027-01-01T15:59:59+00:00' }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__expiry')).toBeNull()
+  })
+
+  it('hides the expiry line when the timestamp cannot be parsed', () => {
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: 'not-a-date' }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__expiry')).toBeNull()
+  })
+
+  it('renders the expiry lines in English under the en-US locale', () => {
+    setAppLocale('en-US')
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: '2027-01-01T15:59:59+00:00' }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__expiry')?.textContent).toBe(`until ${formatExpiry('2027-01-01T15:59:59+00:00', 'en-US')}`)
+
+    unmount?.()
+    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: null }
+    const lifetimeHost = mountMastheadUser()
+    expect(lifetimeHost.querySelector('.masthead-user__expiry')?.textContent).toBe('lifetime')
   })
 })
