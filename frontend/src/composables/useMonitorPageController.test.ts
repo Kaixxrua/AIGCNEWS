@@ -57,6 +57,7 @@ const createApi = (): MonitorApi => ({
   fetchEmailDeliveryStats: vi.fn(async () => ({ days: [] })),
   fetchSiteContactPageConfig: vi.fn(), saveSiteContactPageConfig: vi.fn(), uploadSiteImage: vi.fn(),
   grantMembership: vi.fn(async () => ({ user_id: 7, email: 'member@example.com', membership_tier: 'member', membership_expires_at: null, revoked: false })),
+  listMembershipUsers: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 20 })),
   fetchPaymentPlanPricing: vi.fn(async () => ({ plans: [] as PaymentPlanPricing[] })),
   savePaymentPlanPricing: vi.fn(async () => ({ plans: [] as PaymentPlanPricing[] })),
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
@@ -1183,6 +1184,131 @@ describe('Monitor GitHub enrichment controls', () => {
     await controller.grantMembership()
 
     expect(controller.successMsg.value).toBe(i18n.global.t('monitor.membership.revoked', { email: 'member@example.com' }))
+  })
+
+  it('fetches membership users for admins and fills paging refs', async () => {
+    const api = createApi()
+    vi.mocked(api.listMembershipUsers).mockResolvedValueOnce({
+      items: [{
+        user_id: 31,
+        email: 'vip@example.com',
+        phone: null,
+        username: 'vip',
+        role: 'user',
+        disabled: false,
+        membership_tier: 'member',
+        membership_expires_at: '2027-01-01T15:59:59+00:00',
+        created_at: '2026-08-01T02:00:00+00:00',
+        effective_tier: 'member',
+      }],
+      total: 41,
+      page: 1,
+      page_size: 20,
+    })
+    const { controller } = createController(api)
+
+    await controller.refreshData()
+
+    expect(api.listMembershipUsers).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 20 })
+    expect(controller.membershipUsers.value).toHaveLength(1)
+    expect(controller.membershipUsers.value[0]).toMatchObject({ user_id: 31, effective_tier: 'member' })
+    expect(controller.membershipUsersTotal.value).toBe(41)
+    expect(controller.membershipUsersTotalPages.value).toBe(3)
+  })
+
+  it('does not fetch membership users for non-admin users', async () => {
+    const { api, controller } = createController(createApi(), false)
+
+    await controller.refreshData()
+
+    expect(api.listMembershipUsers).not.toHaveBeenCalled()
+    expect(controller.membershipUsers.value).toEqual([])
+  })
+
+  it('refetches membership users after a successful grant', async () => {
+    const { api, controller } = createController()
+    await controller.refreshData()
+    vi.mocked(api.listMembershipUsers).mockClear()
+    controller.membershipForm.value = { email: 'member@example.com', tier: 'member', expires_on: '2027-01-01' }
+
+    await controller.grantMembership()
+
+    expect(api.listMembershipUsers).toHaveBeenCalledOnce()
+  })
+
+  it('clamps membership user paging to the known page range', async () => {
+    const api = createApi()
+    vi.mocked(api.listMembershipUsers).mockResolvedValue({ items: [], total: 41, page: 1, page_size: 20 })
+    const { controller } = createController(api)
+    await controller.refreshData()
+    vi.mocked(api.listMembershipUsers).mockClear()
+
+    await controller.goMembershipUsersPage(2)
+    expect(api.listMembershipUsers).toHaveBeenCalledWith({ query: '', page: 2, pageSize: 20 })
+    expect(controller.membershipUsersPage.value).toBe(2)
+
+    // 越界页直接拒绝，不打 API
+    await controller.goMembershipUsersPage(4)
+    await controller.goMembershipUsersPage(0)
+    expect(api.listMembershipUsers).toHaveBeenCalledOnce()
+    expect(controller.membershipUsersPage.value).toBe(2)
+  })
+
+  it('debounces the membership user search and resets to the first page', async () => {
+    const api = createApi()
+    const { controller } = createController(api)
+    await controller.refreshData()
+    await controller.goMembershipUsersPage(1)
+    vi.mocked(api.listMembershipUsers).mockClear()
+
+    controller.setMembershipUsersQuery('vip')
+    controller.setMembershipUsersQuery('vip@')
+    expect(api.listMembershipUsers).not.toHaveBeenCalled()
+    expect(controller.membershipUsersQuery.value).toBe('vip@')
+
+    await vi.advanceTimersByTimeAsync(300)
+    expect(api.listMembershipUsers).toHaveBeenCalledOnce()
+    expect(api.listMembershipUsers).toHaveBeenCalledWith({ query: 'vip@', page: 1, pageSize: 20 })
+    expect(controller.membershipUsersPage.value).toBe(1)
+  })
+
+  it('backfills the grant form from a user row (Beijing-date expiry)', async () => {
+    const { controller } = createController()
+
+    controller.editMembershipUser({
+      user_id: 31,
+      email: 'vip@example.com',
+      phone: null,
+      username: 'vip',
+      role: 'user',
+      disabled: false,
+      membership_tier: 'member',
+      // UTC 16:30 已过北京时间零点：回填须落在次日，证明按 +08:00 换算
+      membership_expires_at: '2026-12-31T16:30:00+00:00',
+      created_at: '2026-08-01T02:00:00+00:00',
+      effective_tier: 'member',
+    })
+
+    expect(controller.membershipForm.value).toEqual({ email: 'vip@example.com', tier: 'member', expires_on: '2027-01-01' })
+  })
+
+  it('backfills an empty expiry for free-tier and lifetime rows', async () => {
+    const { controller } = createController()
+
+    controller.editMembershipUser({
+      user_id: 32,
+      email: 'free@example.com',
+      phone: null,
+      username: null,
+      role: 'user',
+      disabled: false,
+      membership_tier: 'free',
+      membership_expires_at: null,
+      created_at: null,
+      effective_tier: 'free',
+    })
+
+    expect(controller.membershipForm.value).toEqual({ email: 'free@example.com', tier: 'free', expires_on: '' })
   })
 
   const pricingPlans = (monthlyOverride: number | null, yearlyOverride: number | null): PaymentPlanPricing[] => [

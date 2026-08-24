@@ -11,6 +11,7 @@ import ErrorLogPanel from '@/components/monitor/ErrorLogPanel.vue'
 import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
 import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MembershipGrantPanel from '@/components/monitor/MembershipGrantPanel.vue'
+import MembershipUserListPanel from '@/components/monitor/MembershipUserListPanel.vue'
 import PaymentOrdersPanel from '@/components/monitor/PaymentOrdersPanel.vue'
 import PaymentConfigPanel from '@/components/monitor/PaymentConfigPanel.vue'
 import PaymentPricingPanel from '@/components/monitor/PaymentPricingPanel.vue'
@@ -46,6 +47,8 @@ const {
   emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, emailDeliveryStats, loadingEmailDeliveryStats, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
   membershipForm, grantingMembership, membershipLastResult, grantMembership,
+  membershipUsers, membershipUsersTotal, membershipUsersPage, membershipUsersTotalPages, membershipUsersQuery, loadingMembershipUsers,
+  goMembershipUsersPage, setMembershipUsersQuery, editMembershipUser,
   paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersTotalPages, paymentOrdersFilter, loadingPaymentOrders, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
   paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, savePaymentConfig, resetPaymentConfig,
   paymentPricing, paymentPricingForm, loadingPaymentPricing, savingPaymentPricing, savePaymentPlanPricing,
@@ -398,6 +401,18 @@ onUnmounted(dispose)
             :granting="grantingMembership"
             :last-result="membershipLastResult"
             @save="grantMembership"
+          />
+          <MembershipUserListPanel
+            v-if="authStore.isAdmin"
+            :items="membershipUsers"
+            :total="membershipUsersTotal"
+            :page="membershipUsersPage"
+            :total-pages="membershipUsersTotalPages"
+            :loading="loadingMembershipUsers"
+            :query="membershipUsersQuery"
+            @update:query="setMembershipUsersQuery"
+            @go-page="goMembershipUsersPage"
+            @edit="editMembershipUser"
           />
         </template>
         <template v-else-if="currentSection === 'user-stats'">

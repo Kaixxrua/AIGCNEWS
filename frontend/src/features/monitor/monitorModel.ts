@@ -791,6 +791,29 @@ export interface MembershipGrantResult {
   revoked: boolean
 }
 
+// ── 用户列表（会员运营）─────────────────────────────────────────────────────
+// 与 GET /ops/membership/users 契约同构；effective_tier 为后端裁决的生效档位
+// （member 到期自动回落 free，库内 membership_tier 不回写）。
+export interface MembershipUserItem {
+  user_id: number
+  email: string | null
+  phone: string | null
+  username: string | null
+  role: string
+  disabled: boolean
+  membership_tier: MembershipTier
+  membership_expires_at: string | null
+  created_at: string | null
+  effective_tier: MembershipTier
+}
+
+export interface MembershipUserPage {
+  items: MembershipUserItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export interface PaymentOrder {
   id: number
   order_no: string
@@ -1007,3 +1030,12 @@ export const buildMembershipGrantPayload = (form: MembershipGrantForm) => ({
     ? `${form.expires_on}T23:59:59+08:00`
     : null,
 })
+
+// 列表「编辑」回填表单：ISO 到期时刻 → 北京时间日期（buildMembershipGrantPayload
+// 的逆运算），date input 只接受 YYYY-MM-DD；NULL 到期 = 长期有效，回填空串
+export const membershipExpiryToFormDate = (value: string | null | undefined): string => {
+  if (!value) return ''
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return ''
+  return new Date(timestamp + 8 * 3600 * 1000).toISOString().slice(0, 10)
+}

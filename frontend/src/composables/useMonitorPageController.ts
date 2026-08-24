@@ -2,10 +2,10 @@ import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
-  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createPaymentConfigForm, createPaymentPlanPricingForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createPaymentConfigForm, createPaymentPlanPricingForm, createProviderForm, createSiteContactPageForm, createSmtpForm, membershipExpiryToFormDate, removeMcpServer, replaceMcpServer, upsertMcpServer,
   buildPaymentPlanPricingPayload,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
-  type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type PaymentPlanPricing, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey, type EmailDeliveryDayStat,
+  type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type MembershipUserItem, type PaymentPlanPricing, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey, type EmailDeliveryDayStat,
 } from '@/features/monitor/monitorModel'
 import { useGithubCrawlPolling } from './useGithubCrawlPolling'
 import { ENRICHMENT_POLL_INTERVAL, useEnrichmentPolling } from './useEnrichmentPolling'
@@ -76,10 +76,17 @@ export const useMonitorPageController = ({
   const siteContactPageForm = ref(createSiteContactPageForm())
   const loadingSiteContactPage = ref(false)
   const savingSiteContactPage = ref(false)
-  // 用户组（会员档位）授予：无列表接口，只保留表单与最近一次操作结果
+  // 用户组（会员档位）授予：表单 + 最近一次操作结果 + 全量用户列表（搜索/分页）
   const membershipForm = ref(createMembershipGrantForm())
   const grantingMembership = ref(false)
   const membershipLastResult = ref<MembershipGrantResult | null>(null)
+  const membershipUsers = ref<MembershipUserItem[]>([])
+  const membershipUsersTotal = ref(0)
+  const membershipUsersPage = ref(1)
+  const membershipUsersPageSize = ref(20)
+  const membershipUsersQuery = ref('')
+  const loadingMembershipUsers = ref(false)
+  const membershipUsersTotalPages = computed(() => Math.max(1, Math.ceil(membershipUsersTotal.value / membershipUsersPageSize.value)))
   const paymentOrders = ref<Awaited<ReturnType<MonitorApi['fetchPaymentOrders']>>['items']>([])
   const paymentOrdersTotal = ref(0)
   const paymentOrdersPage = ref(1)
@@ -429,7 +436,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchMembershipUsers(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -589,6 +596,41 @@ export const useMonitorPageController = ({
     finally { savingSiteContactPage.value = false }
   }
   const MEMBERSHIP_EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+  const fetchMembershipUsers = async () => {
+    if (!isAdmin.value) return
+    loadingMembershipUsers.value = true
+    try {
+      const data = await api.listMembershipUsers({ query: membershipUsersQuery.value.trim(), page: membershipUsersPage.value, pageSize: membershipUsersPageSize.value })
+      membershipUsers.value = data.items
+      membershipUsersTotal.value = data.total
+    } catch (error) { console.error('Failed to fetch membership users', error) }
+    finally { loadingMembershipUsers.value = false }
+  }
+  const goMembershipUsersPage = async (targetPage: number) => {
+    if (targetPage < 1 || targetPage > membershipUsersTotalPages.value) return
+    membershipUsersPage.value = targetPage
+    await fetchMembershipUsers()
+  }
+  // 搜索词变化防抖 300ms 回第 1 页重拉；句柄登记进 pendingTimers 随卸载清理
+  const MEMBERSHIP_QUERY_DEBOUNCE_MS = 300
+  let membershipQueryTimer: ReturnType<typeof setTimeout> | null = null
+  const setMembershipUsersQuery = (value: string) => {
+    membershipUsersQuery.value = value
+    if (membershipQueryTimer) clearTimeout(membershipQueryTimer)
+    membershipQueryTimer = scheduleTracked(() => {
+      membershipUsersPage.value = 1
+      void fetchMembershipUsers()
+    }, MEMBERSHIP_QUERY_DEBOUNCE_MS)
+  }
+  // 列表「编辑」把行回填到授予表单：邮箱 + 库内档位 + 到期日（北京时间粒度）
+  const editMembershipUser = (user: MembershipUserItem) => {
+    clearMessages()
+    membershipForm.value = {
+      email: user.email ?? '',
+      tier: user.membership_tier === 'member' ? 'member' : 'free',
+      expires_on: membershipExpiryToFormDate(user.membership_expires_at),
+    }
+  }
   const grantMembership = async () => {
     if (grantingMembership.value) return
     clearMessages()
@@ -605,6 +647,8 @@ export const useMonitorPageController = ({
       successMsg.value = result.revoked
         ? i18n.global.t('monitor.membership.revoked', { email: result.email || email })
         : i18n.global.t('monitor.membership.granted', { email: result.email || email })
+      // 授予/吊销下一请求即生效：列表同步刷新，避免管理员看到陈旧档位
+      void fetchMembershipUsers()
     } catch (error) {
       // 后端 404 detail 为「用户不存在」；统一走本地化文案保持口径一致
       errorMsg.value = statusOf(error) === 404 ? i18n.global.t('monitor.membership.userNotFound') : detail(error)
@@ -839,7 +883,7 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), fetchPaymentPlanPricing(), fetchMembershipUsers(), resumeGithubCrawlPolling()])
   })
 
   return {
@@ -851,6 +895,8 @@ export const useMonitorPageController = ({
     paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, fetchPaymentConfig, savePaymentConfig, resetPaymentConfig,
     paymentPricing, paymentPricingForm, loadingPaymentPricing, savingPaymentPricing, fetchPaymentPlanPricing, savePaymentPlanPricing,
     membershipForm, grantingMembership, membershipLastResult,
+    membershipUsers, membershipUsersTotal, membershipUsersPage, membershipUsersTotalPages, membershipUsersQuery, loadingMembershipUsers,
+    fetchMembershipUsers, goMembershipUsersPage, setMembershipUsersQuery, editMembershipUser,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,
     fetchErrorLogs, goErrorLogsPage,

@@ -64,10 +64,27 @@ class UserStatisticsReader(Protocol):
         ...
 
 
+class UserAccountAdminReader(Protocol):
+    """Read paginated user rows for admin/membership operations."""
+
+    def list_users(
+        self,
+        *,
+        query: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Paginated user rows newest-first with optional fuzzy match on
+        email/phone/username; returns (rows, total). Rows carry membership
+        tier/expiry columns but no password hashes."""
+        ...
+
+
 class UserAccountRepository(
     UserAccountReader,
     UserAccountWriter,
     UserStatisticsReader,
+    UserAccountAdminReader,
     Protocol,
 ):
     """Combined internal account persistence boundary."""

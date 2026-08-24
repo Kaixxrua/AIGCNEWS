@@ -4,7 +4,7 @@ import type {
   EmailPoolConfig, EmailPoolForm, EmailPoolTestResult, EmailDeliveryDayStat,
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
-  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, PagedResult, PaymentConfig, PaymentConfigForm, PaymentPlanPricing, PaymentPlanPricingForm, ProviderConfig, ProviderForm, ProviderTestResult,
+  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, MembershipUserPage, PagedResult, PaymentConfig, PaymentConfigForm, PaymentPlanPricing, PaymentPlanPricingForm, ProviderConfig, ProviderForm, ProviderTestResult,
   SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, UserStatsResponse, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
 import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildPaymentConfigPayload, buildPaymentPlanPricingPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
@@ -66,6 +66,7 @@ export interface MonitorApi {
   triggerGithubEnrichment(limit: number, concurrency: number): Promise<GithubEnrichmentTriggerResult>
   cancelGithubEnrichment(): Promise<GithubEnrichmentCancelResult>
   grantMembership(form: MembershipGrantForm): Promise<MembershipGrantResult>
+  listMembershipUsers(params: { query?: string; page: number; pageSize: number }): Promise<MembershipUserPage>
   fetchVisitPlatformStats(window: VisitStatsWindow): Promise<VisitPlatformStatsResponse>
   fetchUserStats(): Promise<UserStatsResponse>
 }
@@ -231,6 +232,11 @@ export const monitorApi: MonitorApi = {
   // 用户组（会员档位）授予：tier=free 即吊销；后端按邮箱查库，404=用户不存在
   async grantMembership(form) {
     return (await api.post('/ops/membership/grant', buildMembershipGrantPayload(form))).data
+  },
+  // 用户列表：email/phone/username 模糊搜索 + 分页；每行带后端裁决的生效档位
+  async listMembershipUsers({ query, page, pageSize }) {
+    const { data } = await api.get('/ops/membership/users', { params: { query: query || undefined, page, page_size: pageSize } })
+    return { items: Array.isArray(data?.items) ? data.items : [], total: data?.total || 0, page: data?.page || page, page_size: data?.page_size || pageSize }
   },
   async fetchVisitPlatformStats(window) {
     return (await api.get('/monitor/visit-platforms', { params: { window } })).data

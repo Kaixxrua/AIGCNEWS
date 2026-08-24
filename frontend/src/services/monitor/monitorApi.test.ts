@@ -530,4 +530,36 @@ describe('Monitor API contract', () => {
       email: 'a@example.com', tier: 'free', expires_at: null,
     })
   })
+
+  it('lists membership users with query/pagination params and safe defaults', async () => {
+    transport.get.mockResolvedValueOnce({
+      data: {
+        items: [{
+          user_id: 31, email: 'vip@example.com', phone: null, username: 'vip',
+          role: 'user', disabled: false, membership_tier: 'member',
+          membership_expires_at: '2027-01-01T15:59:59+00:00',
+          created_at: '2026-08-01T02:00:00+00:00', effective_tier: 'member',
+        }],
+        total: 41,
+        page: 2,
+        page_size: 20,
+      },
+    })
+    const page = await monitorApi.listMembershipUsers({ query: 'vip', page: 2, pageSize: 20 })
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/membership/users', {
+      params: { query: 'vip', page: 2, page_size: 20 },
+    })
+    expect(page.total).toBe(41)
+    expect(page.page).toBe(2)
+    expect(page.items[0]).toMatchObject({ user_id: 31, effective_tier: 'member' })
+
+    // 空搜索词不下发 query 参数；响应缺字段按空页兜底
+    transport.get.mockResolvedValueOnce({ data: {} })
+    await expect(monitorApi.listMembershipUsers({ query: '', page: 1, pageSize: 20 })).resolves.toEqual({
+      items: [], total: 0, page: 1, page_size: 20,
+    })
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/membership/users', {
+      params: { query: undefined, page: 1, page_size: 20 },
+    })
+  })
 })

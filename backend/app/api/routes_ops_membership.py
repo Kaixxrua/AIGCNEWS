@@ -13,7 +13,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 
 from backend.app.api.dependencies import get_user_account_repository
@@ -22,6 +22,7 @@ from backend.app.repositories.user_account_repository import UserAccountReposito
 from backend.app.services.membership.tiers import (
     MEMBERSHIP_TIER_FREE,
     normalize_membership_tier,
+    resolve_effective_tier,
 )
 
 router = APIRouter()
@@ -33,6 +34,56 @@ class MembershipGrantRequest(BaseModel):
     # 仅 member 档有意义；NULL/缺省 = 长期有效。naive datetime 按 UTC 解释，
     # 与库内 timestamptz 口径一致（前端按北京时间末日 23:59:+08:00 显式给时区）。
     expires_at: datetime | None = None
+
+
+def _serialize_membership_user(row: dict[str, Any]) -> dict[str, Any]:
+    expires_at = row.get("membership_expires_at")
+    created_at = row.get("created_at")
+    # 生效档位与 RequireUser 同一权威（resolve_effective_tier）：
+    # member 过期按 free，NULL 到期时间 = 长期有效
+    effective_tier = resolve_effective_tier(
+        row.get("membership_tier"),
+        expires_at,
+    )
+    return {
+        "user_id": int(row["id"]),
+        "email": row.get("email"),
+        "phone": row.get("phone"),
+        "username": row.get("username"),
+        "role": row.get("role") or "user",
+        "disabled": bool(row.get("disabled") or False),
+        "membership_tier": normalize_membership_tier(row.get("membership_tier")),
+        "membership_expires_at": (
+            expires_at.isoformat() if isinstance(expires_at, datetime) else expires_at
+        ),
+        "created_at": (
+            created_at.isoformat() if isinstance(created_at, datetime) else created_at
+        ),
+        "effective_tier": effective_tier,
+    }
+
+
+@router.get("/ops/membership/users", tags=["Ops"])
+async def list_membership_users(
+    query: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    _: dict = Depends(RequireAdmin),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> dict[str, Any]:
+    """会员运营用户列表：email/phone/username 模糊搜索 + 分页，每行带生效档位。"""
+    rows, total = await asyncio.to_thread(
+        repository.list_users,
+        query=query,
+        page=page,
+        page_size=page_size,
+    )
+    return {
+        "items": [_serialize_membership_user(row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.post("/ops/membership/grant", tags=["Ops"])

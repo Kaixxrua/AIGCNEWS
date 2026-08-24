@@ -35,6 +35,7 @@ class FakeUserAccountRepository:
     def __init__(self) -> None:
         self.records_by_id: dict[int, dict[str, Any]] = {}
         self.set_calls: list[tuple[int, str, Any]] = []
+        self.list_calls: list[dict[str, Any]] = []
 
     def add_user(self, record: dict[str, Any]) -> None:
         self.records_by_id[int(record["id"])] = record
@@ -47,6 +48,28 @@ class FakeUserAccountRepository:
             if record.get("email") == email:
                 return record
         return None
+
+    def list_users(
+        self,
+        *,
+        query: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[dict[str, Any]], int]:
+        self.list_calls.append({"query": query, "page": page, "page_size": page_size})
+        records = list(self.records_by_id.values())
+        if query and query.strip():
+            needle = query.strip().lower()
+            records = [
+                record
+                for record in records
+                if needle in str(record.get("email") or "").lower()
+                or needle in str(record.get("phone") or "").lower()
+                or needle in str(record.get("username") or "").lower()
+            ]
+        total = len(records)
+        start = (page - 1) * page_size
+        return records[start : start + page_size], total
 
     def set_membership_tier(
         self,
@@ -350,6 +373,125 @@ class MembershipGrantRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.repository.set_calls, [])
+
+
+class MembershipUserListRouteTests(unittest.TestCase):
+    """GET /ops/membership/users：管理员用户列表（用户组 + VIP 到期时间 + 分页）。"""
+
+    def setUp(self) -> None:
+        self.repository = FakeUserAccountRepository()
+        self.app = FastAPI()
+        self.app.include_router(routes_ops.router, prefix="/api")
+        self.app.state.application_repositories = SimpleNamespace(
+            users=self.repository
+        )
+        self.app.dependency_overrides[get_user_account_repository] = (
+            lambda: self.repository
+        )
+        self.client = TestClient(self.app)
+
+    def _list_as_admin(self) -> None:
+        self.app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+
+    def test_lists_users_with_pagination_envelope(self) -> None:
+        self._list_as_admin()
+        future = datetime.now(timezone.utc) + timedelta(days=30)
+        self.repository.add_user(
+            {
+                "id": 31,
+                "email": "member@example.com",
+                "phone": "13800000000",
+                "username": "member",
+                "role": "user",
+                "disabled": False,
+                "membership_tier": "member",
+                "membership_expires_at": future,
+                "created_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+            }
+        )
+
+        response = self.client.get("/api/ops/membership/users")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(body["page"], 1)
+        self.assertEqual(body["page_size"], 20)
+        item = body["items"][0]
+        self.assertEqual(item["user_id"], 31)
+        self.assertEqual(item["email"], "member@example.com")
+        self.assertEqual(item["phone"], "13800000000")
+        self.assertEqual(item["username"], "member")
+        self.assertEqual(item["role"], "user")
+        self.assertFalse(item["disabled"])
+        self.assertEqual(item["membership_tier"], "member")
+        self.assertEqual(item["effective_tier"], "member")
+        self.assertEqual(item["membership_expires_at"], future.isoformat())
+        self.assertEqual(
+            item["created_at"], datetime(2026, 8, 1, tzinfo=timezone.utc).isoformat()
+        )
+
+    def test_expired_member_reports_free_effective_tier(self) -> None:
+        self._list_as_admin()
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
+        self.repository.add_user(
+            {
+                "id": 32,
+                "email": "expired@example.com",
+                "role": "user",
+                "membership_tier": "member",
+                "membership_expires_at": past,
+            }
+        )
+
+        response = self.client.get("/api/ops/membership/users")
+
+        self.assertEqual(response.status_code, 200)
+        item = response.json()["items"][0]
+        # 库内档位不回写，但生效档位按 free 呈现
+        self.assertEqual(item["membership_tier"], "member")
+        self.assertEqual(item["effective_tier"], "free")
+
+    def test_query_and_pagination_are_forwarded_to_repository(self) -> None:
+        self._list_as_admin()
+        self.repository.add_user({"id": 33, "email": "reader@example.com"})
+
+        response = self.client.get(
+            "/api/ops/membership/users",
+            params={"query": "reader", "page": 2, "page_size": 10},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.repository.list_calls,
+            [{"query": "reader", "page": 2, "page_size": 10}],
+        )
+        body = response.json()
+        self.assertEqual(body["page"], 2)
+        self.assertEqual(body["page_size"], 10)
+
+    def test_page_bounds_are_enforced(self) -> None:
+        self._list_as_admin()
+
+        response = self.client.get(
+            "/api/ops/membership/users",
+            params={"page": 0},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.repository.list_calls, [])
+
+    def test_non_admin_is_forbidden(self) -> None:
+        # 不覆盖 RequireAdmin：真实依赖链 RequireUser（查库）→ 角色非 admin 即 403
+        self.repository.add_user({"id": 34, "role": "user"})
+
+        response = self.client.get(
+            "/api/ops/membership/users",
+            headers=_bearer({"user_id": 34, "role": "user"}),
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.repository.list_calls, [])
 
 
 class AuthMeMembershipTierTests(unittest.TestCase):

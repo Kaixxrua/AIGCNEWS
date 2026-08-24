@@ -43,6 +43,46 @@ class PostgresUserAccountRepository:
         )
         return int(row["cnt"] if row else 0)
 
+    def list_users(
+        self,
+        *,
+        query: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[dict[str, Any]], int]:
+        # 会员运营列表：email/phone/username 三列模糊搜索 + 新注册在前分页；
+        # 行内不含 hashed_password，生效档位由路由层 resolve_effective_tier 裁决
+        page = max(1, int(page))
+        page_size = min(100, max(1, int(page_size)))
+        keyword = (query or "").strip()
+        where = ""
+        params: list[Any] = []
+        if keyword:
+            pattern = f"%{keyword}%"
+            where = "WHERE email ILIKE %s OR phone ILIKE %s OR username ILIKE %s"
+            params = [pattern, pattern, pattern]
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"SELECT COUNT(*) AS cnt FROM users {where}",
+                    tuple(params),
+                )
+                count_row = cursor.fetchone()
+                total = int(count_row["cnt"] if count_row else 0)
+                cursor.execute(
+                    f"""
+                    SELECT id, phone, email, username, role, disabled,
+                           membership_tier, membership_expires_at, created_at
+                    FROM users
+                    {where}
+                    ORDER BY created_at DESC NULLS LAST, id DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    tuple([*params, page_size, (page - 1) * page_size]),
+                )
+                rows = [dict(row) for row in cursor.fetchall()]
+        return rows, total
+
     def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
         # 身份核验专用：按主键查询且不取 hashed_password；disabled 供
         # auth.RequireUser 判定禁用账号（0029 起 users 表才有此列）。

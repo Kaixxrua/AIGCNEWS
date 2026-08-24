@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from backend.app.repositories.user_account_repository import (
+    UserAccountAdminReader,
     UserAccountReader,
     UserAccountWriter,
     UserStatisticsReader,
@@ -66,6 +67,22 @@ class UserAccountRepositoryContractTests(unittest.TestCase):
                 email="reader@example.com",
                 hashed_password="hash",
             )
+
+    def test_admin_reader_spec_exposes_listing_without_writes(self) -> None:
+        repository = MagicMock(spec=UserAccountAdminReader)
+        repository.list_users.return_value = ([{"id": 42}], 1)
+
+        self.assertEqual(
+            repository.list_users(query="reader", page=2, page_size=50),
+            ([{"id": 42}], 1),
+        )
+        repository.list_users.assert_called_once_with(
+            query="reader", page=2, page_size=50
+        )
+        with self.assertRaises(AttributeError):
+            repository.set_membership_tier(user_id=42, tier="member")
+        with self.assertRaises(AttributeError):
+            repository.get_user_by_email("reader@example.com")
 
 
 if __name__ == "__main__":

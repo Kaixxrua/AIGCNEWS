@@ -2,7 +2,7 @@ import { enUS } from './en-US'
 
 const overrides = {
   infrastructure: { appName: 'AIGC 新闻', loading: '加载中…', unavailable: '暂不可用' },
-  common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', githubRepo: 'GitHub 仓库', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
+  common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', clear: '清除', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', githubRepo: 'GitHub 仓库', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
   navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', dsh: 'dsh 插件', membership: 'vip', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', changePassword: '修改密码', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
   membership: {
@@ -147,6 +147,17 @@ const explicitBusinessTranslations: Record<string, string> = {
   'monitor.membership.revoked': '已将 {email} 的用户组恢复为 free（吊销会员），下一个请求即生效。',
   'monitor.membership.lastResult': '最近操作：',
   'monitor.membership.expiresAt': '{date} 到期',
+  'monitor.membership.usersTitle': '用户列表',
+  'monitor.membership.usersHint': '全部注册用户的用户组与 VIP 到期时间；可按邮箱、手机号或用户名搜索，点「编辑」回填上方表单。',
+  'monitor.membership.searchPlaceholder': '搜索邮箱 / 手机号 / 用户名',
+  'monitor.membership.emptyUsers': '暂无用户',
+  'monitor.membership.phone': '手机号',
+  'monitor.membership.username': '用户名',
+  'monitor.membership.role': '角色',
+  'monitor.membership.registeredAt': '注册时间',
+  'monitor.membership.action': '操作',
+  'monitor.membership.disabled': '已禁用',
+  'monitor.membership.editUser': '编辑',
   'monitor.sources.arxiv': 'arXiv 论文',
   'monitor.sources.github': 'GitHub Trending',
   'monitor.sources.hackernews': 'Hacker News',
