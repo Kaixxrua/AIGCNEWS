@@ -54,15 +54,20 @@ describe('resolvePlan', () => {
 })
 
 describe('formatAmountCents', () => {
-  it('formats CNY amounts with the yuan sign and no trailing decimals', () => {
+  it('formats CNY amounts with the yuan sign and trims insignificant trailing zeros', () => {
     expect(formatAmountCents(1900, 'CNY')).toBe('¥19')
     expect(formatAmountCents(15900, 'CNY')).toBe('¥159')
-    expect(formatAmountCents(1990, 'CNY')).toBe('¥19.90')
+    // 角去尾零：¥19.9 而不是 ¥19.90；分位非零时保留两位
+    expect(formatAmountCents(1990, 'CNY')).toBe('¥19.9')
+    expect(formatAmountCents(1999, 'CNY')).toBe('¥19.99')
+    expect(formatAmountCents(1901, 'CNY')).toBe('¥19.01')
     expect(formatAmountCents(5, 'CNY')).toBe('¥0.05')
+    expect(formatAmountCents(1000000, 'CNY')).toBe('¥10000')
   })
 
   it('prefixes the currency code for non-CNY amounts', () => {
     expect(formatAmountCents(500, 'USD')).toBe('USD 5')
+    expect(formatAmountCents(550, 'USD')).toBe('USD 5.5')
   })
 })
 

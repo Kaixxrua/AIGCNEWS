@@ -75,10 +75,9 @@ export const resolvePlan = (
 ): PaymentPlan | null =>
   plans.find((plan) => plan.code === planCodeForPeriod(period)) ?? null
 
-/** 分 → 展示金额：CNY 用 ¥，其余原样带币种码；整元不补小数。 */
+/** 分 → 展示金额：CNY 用 ¥，其余原样带币种码；整元不补小数，角去尾零（19.90 → 19.9，19.99 保留）。 */
 export const formatAmountCents = (amountCents: number, currency: string): string => {
-  const yuan = amountCents / 100
-  const digits = Number.isInteger(yuan) ? String(yuan) : yuan.toFixed(2)
+  const digits = (amountCents / 100).toFixed(2).replace(/\.?0+$/, '')
   return currency === 'CNY' ? `¥${digits}` : `${currency} ${digits}`
 }
 
