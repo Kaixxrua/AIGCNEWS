@@ -51,14 +51,15 @@ from backend.app.services.payments.orders import (
     ORDER_STATUS_PAID,
     normalize_order_status,
 )
-from backend.app.services.payments.plans import MEMBERSHIP_PLANS, UnknownPlanError, get_plan
-from backend.app.services.payments.runtime_config import EffectivePaymentConfig, resolve_payment_config
+from backend.app.services.payments.plan_overrides import get_effective_plan, resolve_effective_plans
+from backend.app.services.payments.plans import UnknownPlanError, get_plan
 from backend.app.services.payments.providers.base import (
     CallbackVerificationError,
     ChannelUpstreamError,
     PaymentProvider,
     ProviderNotConfiguredError,
 )
+from backend.app.services.payments.runtime_config import EffectivePaymentConfig, resolve_payment_config
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,7 @@ async def list_payment_plans(
                 currency=plan.currency,
                 months=plan.months,
             )
-            for plan in MEMBERSHIP_PLANS.values()
+            for plan in resolve_effective_plans().values()
         ],
         channels=[
             PaymentChannelPublic(channel=channel, available=provider.is_configured())
@@ -184,7 +185,7 @@ async def create_payment_order(
     )
 
     try:
-        plan = get_plan(payload.plan_code)
+        plan = get_effective_plan(payload.plan_code)
     except UnknownPlanError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

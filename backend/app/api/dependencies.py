@@ -32,6 +32,9 @@ from backend.app.repositories.mcp_access_token_repository import (
 )
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
 from backend.app.repositories.payment_order_repository import PaymentOrderRepository
+from backend.app.repositories.payment_plan_overrides_repository import (
+    PaymentPlanOverridesRepository,
+)
 from backend.app.repositories.payment_settings_repository import PaymentSettingsRepository
 from backend.app.repositories.project_catalog_factory import (
     get_project_catalog_repository,
@@ -94,6 +97,7 @@ from backend.app.services.mcp.admin_service import McpAdminService
 from backend.app.services.ops_diagnostics import OpsDiagnosticsService
 from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.payments.config_admin import PaymentConfigAdminService
+from backend.app.services.payments.plan_overrides_admin import PaymentPlanOverridesAdminService
 from backend.app.services.payments.providers.base import PaymentProvider
 from backend.app.services.payments.providers.registry import build_payment_providers
 from backend.app.services.payments.runtime_config import resolve_payment_config
@@ -309,6 +313,18 @@ def get_payment_config_admin_service(
     repository: PaymentSettingsRepository = Depends(get_payment_settings_repository),
 ) -> PaymentConfigAdminService:
     return PaymentConfigAdminService(repository)
+
+
+def get_payment_plan_overrides_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> PaymentPlanOverridesRepository:
+    return repositories.payment_plan_overrides
+
+
+def get_payment_plan_overrides_admin_service(
+    repository: PaymentPlanOverridesRepository = Depends(get_payment_plan_overrides_repository),
+) -> PaymentPlanOverridesAdminService:
+    return PaymentPlanOverridesAdminService(repository)
 
 
 def get_payment_providers() -> dict[str, PaymentProvider]:

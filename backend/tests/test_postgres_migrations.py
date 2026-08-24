@@ -531,6 +531,25 @@ def test_payment_wechat_public_key_schema_is_additive() -> None:
     assert "UPDATE " not in normalized
 
 
+def test_payment_plan_overrides_schema_is_additive_and_bounded() -> None:
+    # 运行时调价覆盖表：缺行 = plans.py 默认价；CHECK 上下界拦「把分当元」录错。
+    # 按文件名定位而非下标：相邻迁移在并行会话中停驻/变动，位置钉法会被牵连。
+    migration = next(
+        item
+        for item in discover_migrations()
+        if item.filename == "0056_payment_plan_overrides.sql"
+    )
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert "CREATE TABLE IF NOT EXISTS payment_plan_overrides" in migration.sql
+    assert "plan_code TEXT PRIMARY KEY" in migration.sql
+    assert "amount_cents INTEGER NOT NULL" in migration.sql
+    assert "CHECK (amount_cents BETWEEN 100 AND 1000000)" in migration.sql
+    assert "ALTER TABLE" not in normalized
+    assert "DROP" not in normalized
+    assert "UPDATE " not in normalized
+
+
 def test_live_postgres_apply_twice_and_introspect_schema() -> None:
     dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
     if not dsn:

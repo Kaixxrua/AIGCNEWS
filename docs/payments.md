@@ -4,14 +4,24 @@
 
 ## 商品
 
-后端 `backend/app/services/payments/plans.py` 是商品与金额唯一来源：
+后端 `backend/app/services/payments/plans.py` 是商品与**默认金额**唯一来源：
 
-| code | 权益 | 金额 | 周期 |
+| code | 权益 | 默认金额 | 周期 |
 |---|---|---:|---:|
 | `member_monthly` | member | ¥19（1900 cents） | 1 个日历月 |
 | `member_yearly` | member | ¥159（15900 cents） | 12 个月 |
 
 金额始终以整数分存储。月末续费按日历月扩展并钳制到目标月份最后一天；有效期内的 member 从现有到期时间顺延，free 或已过期用户从当前时间起算。
+
+### 运行时调价（监控页入口）
+
+管理员可在监控页「支付配置」分组的**会员套餐定价**面板（`PaymentPricingPanel.vue`）调整月付/年付价格，无需改代码发布：
+
+- 覆盖行存于 `payment_plan_overrides`（迁移 0056，`plan_code` 主键 + `amount_cents` 整数分，CHECK 约束 100–1,000,000 分拦截「把分当元」录错）；**缺行即按 plans.py 默认价生效**。
+- Ops API：`GET/PUT /api/ops/payments/plans`（`RequireAdmin`，刻意不挂 `payments_enabled` 门——可先调价再开支付）。PUT 为整体聚合语义：`{monthly_amount_cents, yearly_amount_cents}` 整数 = upsert 覆盖，`null`/缺省 = 删除覆盖恢复默认价；越界返回 400 中文 detail。
+- 读路径：`plan_overrides.py` 以 60 秒 TTL 缓存合并默认目录与覆盖行；面板保存即失效缓存（本实例即时生效），其余实例最迟 60 秒内跟随；读库异常按默认价降级，绝不影响下单。
+- **在途订单快照语义**：调价只影响新订单。`GET /api/payments/plans` 与创建订单走生效价；在途 pending 订单仍以 `payment_orders` 行内金额快照收款，回调验款也对快照校验，天然免疫运行时调价。回调发放只取静态 `get_plan` 的 months/tier。
+- 前端会员卡（`MembershipView.vue`）的金额、年付锚定、「年付省 ¥N」与「-N%」折扣标全部由 plans 接口数据自算（`paymentModel.ts` 纯函数，向下取整、非正隐藏）；plans 探测失败按兜底常量渲染，兜底常量与 plans.py 默认价跨侧钉死。
 
 ## 支付渠道
 
@@ -53,6 +63,8 @@ provider 位于 `backend/app/services/payments/providers/`。三渠道均已接�
 - `GET /api/ops/payments/orders/{order_no}`：管理员详情，包含回调载荷和审计字段。
 - `POST /api/ops/payments/orders/{order_no}/mark-paid`：人工补单，复用恰好一次发权益事务。
 - `POST /api/ops/payments/orders/{order_no}/close`：人工关闭 pending 订单。
+- `GET /api/ops/payments/plans`：套餐定价投影（默认价/覆盖价/生效价/更新时间）。
+- `PUT /api/ops/payments/plans`：整体聚合调价（整数分 = 覆盖，`null` = 恢复默认），越界 400。
 
 ## 回调安全与限流
 

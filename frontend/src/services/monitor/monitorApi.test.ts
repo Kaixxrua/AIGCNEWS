@@ -4,7 +4,7 @@ const transport = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(),
 vi.mock('../http/apiClient', () => ({ api: transport }))
 
 import { monitorApi } from './monitorApi'
-import { createEmptyMcpForm, createEmptySchedulerJobConfigForm, createEmptyXCredentialForm, createGithubCrawlForm, createProviderForm, createSiteContactPageForm, createSmtpForm } from '@/features/monitor/monitorModel'
+import { createEmptyMcpForm, createEmptySchedulerJobConfigForm, createEmptyXCredentialForm, createGithubCrawlForm, createPaymentPlanPricingForm, createProviderForm, createSiteContactPageForm, createSmtpForm, buildPaymentPlanPricingPayload } from '@/features/monitor/monitorModel'
 
 const schedulerConfig = {
   job_id: 'ingest:arxiv',
@@ -458,6 +458,51 @@ describe('Monitor API contract', () => {
     transport.post.mockResolvedValue({ data: { status: 'cancelling', message: 'stopping' } })
     await expect(monitorApi.cancelGithubEnrichment()).resolves.toEqual({ status: 'cancelling', message: 'stopping' })
     expect(transport.post).toHaveBeenLastCalledWith('/ops/github-projects/enrich-cancel')
+  })
+
+  it('round-trips membership plan pricing via the ops endpoints', async () => {
+    const plans = [
+      {
+        code: 'member_monthly', tier: 'member', currency: 'CNY', months: 1,
+        default_amount_cents: 1900, override_amount_cents: 2500, amount_cents: 2500,
+        updated_at: '2026-08-24T10:00:00+00:00',
+      },
+      {
+        code: 'member_yearly', tier: 'member', currency: 'CNY', months: 12,
+        default_amount_cents: 15900, override_amount_cents: null, amount_cents: 15900,
+        updated_at: null,
+      },
+    ]
+    transport.get.mockResolvedValueOnce({ data: { plans } })
+    await expect(monitorApi.fetchPaymentPlanPricing()).resolves.toEqual({ plans })
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/payments/plans')
+
+    // 表单只回填覆盖价（默认价行留空）；保存时元转分、空串发 null 恢复默认
+    const form = createPaymentPlanPricingForm(plans)
+    expect(form).toEqual({ monthly_yuan: '25', yearly_yuan: '' })
+    transport.put.mockResolvedValueOnce({ data: { plans } })
+    await monitorApi.savePaymentPlanPricing(form)
+    expect(transport.put).toHaveBeenLastCalledWith('/ops/payments/plans', {
+      monthly_amount_cents: 2500,
+      yearly_amount_cents: null,
+    })
+  })
+
+  it('builds pricing payloads with yuan-to-cents conversion and bounds', () => {
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '19.9', yearly_yuan: '' })).toEqual({
+      monthly_amount_cents: 1990,
+      yearly_amount_cents: null,
+    })
+    // 双空 = 双恢复默认（整体聚合语义）
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '', yearly_yuan: '' })).toEqual({
+      monthly_amount_cents: null,
+      yearly_amount_cents: null,
+    })
+    // 非法/越界任一字段 → null：面板层拦截，绝不出请求
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '19.999', yearly_yuan: '' })).toBeNull()
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '0.5', yearly_yuan: '' })).toBeNull()
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '10001', yearly_yuan: '' })).toBeNull()
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '', yearly_yuan: 'abc' })).toBeNull()
   })
 
   it('grants membership with normalized email and Beijing end-of-day expiry', async () => {

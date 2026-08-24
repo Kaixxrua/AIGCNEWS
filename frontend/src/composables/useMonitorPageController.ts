@@ -2,9 +2,10 @@ import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
-  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createPaymentConfigForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createPaymentConfigForm, createPaymentPlanPricingForm, createProviderForm, createSiteContactPageForm, createSmtpForm, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  buildPaymentPlanPricingPayload,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
-  type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey, type EmailDeliveryDayStat,
+  type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type PaymentPlanPricing, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey, type EmailDeliveryDayStat,
 } from '@/features/monitor/monitorModel'
 import { useGithubCrawlPolling } from './useGithubCrawlPolling'
 import { ENRICHMENT_POLL_INTERVAL, useEnrichmentPolling } from './useEnrichmentPolling'
@@ -94,6 +95,11 @@ export const useMonitorPageController = ({
   const loadingPaymentConfig = ref(false)
   const savingPaymentConfig = ref(false)
   const resettingPaymentConfig = ref(false)
+  // 套餐定价（运行时调价）：plans.py 默认价 + payment_plan_overrides 覆盖行
+  const paymentPricing = ref<PaymentPlanPricing[]>([])
+  const paymentPricingForm = ref(createPaymentPlanPricingForm())
+  const loadingPaymentPricing = ref(false)
+  const savingPaymentPricing = ref(false)
   const mcpServers = ref<McpServerConfig[]>([])
   const mcpForm = ref(createEmptyMcpForm())
   const loadingMcpServers = ref(false)
@@ -227,6 +233,33 @@ export const useMonitorPageController = ({
       successMsg.value = i18n.global.t('monitor.paymentConfig.resetDone')
     } catch (error) { errorMsg.value = detail(error) }
     finally { resettingPaymentConfig.value = false }
+  }
+  const fetchPaymentPlanPricing = async () => {
+    if (!isAdmin.value) return
+    loadingPaymentPricing.value = true
+    try {
+      const response = await api.fetchPaymentPlanPricing()
+      paymentPricing.value = response.plans
+      paymentPricingForm.value = createPaymentPlanPricingForm(response.plans)
+    } catch (error) { console.error('Failed to fetch payment plan pricing', error) }
+    finally { loadingPaymentPricing.value = false }
+  }
+  const savePaymentPlanPricing = async () => {
+    if (savingPaymentPricing.value) return
+    clearMessages()
+    // 与后端同口径的前端校验（元、≤2 位小数、1–10000）：非法提前拦截 400 往返
+    if (buildPaymentPlanPricingPayload(paymentPricingForm.value) === null) {
+      errorMsg.value = i18n.global.t('monitor.paymentPricing.invalidAmount')
+      return
+    }
+    savingPaymentPricing.value = true
+    try {
+      const response = await api.savePaymentPlanPricing(paymentPricingForm.value)
+      paymentPricing.value = response.plans
+      paymentPricingForm.value = createPaymentPlanPricingForm(response.plans)
+      successMsg.value = i18n.global.t('monitor.paymentPricing.saved')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { savingPaymentPricing.value = false }
   }
   const setSuccessMessage = (message: string) => { successMsg.value = message }
   const setErrorMessage = (message: string) => { errorMsg.value = message }
@@ -396,7 +429,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -806,7 +839,7 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
   })
 
   return {
@@ -816,6 +849,7 @@ export const useMonitorPageController = ({
     siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
     paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersPageSize, paymentOrdersFilter, loadingPaymentOrders, paymentOrdersTotalPages, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
     paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, fetchPaymentConfig, savePaymentConfig, resetPaymentConfig,
+    paymentPricing, paymentPricingForm, loadingPaymentPricing, savingPaymentPricing, fetchPaymentPlanPricing, savePaymentPlanPricing,
     membershipForm, grantingMembership, membershipLastResult,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,

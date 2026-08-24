@@ -74,29 +74,30 @@ describe('application locale contract', () => {
   })
 
   it.each(['zh-CN', 'en-US'] as const)(
-    'pins the marketing price literals to the backend plan amounts in %s',
+    'pins the member price templates to the computed-amount shape in %s',
     (locale) => {
       i18n.global.locale.value = locale
-      // 营销卡价格字面量与后端 plans.py 常量同口径（member_monthly ¥19 /
-      // member_yearly ¥159）；收银台金额只渲染 plans API，字面量漂移必须红在这里。
-      expect(i18n.global.t('membership.member.priceMonthly')).toBe('¥19')
-      expect(i18n.global.t('membership.member.priceYearlyAmount')).toBe('¥159')
+      // 守卫口径变化：金额不再钉字面量（运行时调价后字面量必漂移），改钉
+      // 模板形状——插值键 {amount}/{percent} 与前端 computed 传参一致；
+      // 金额值本身由 paymentModel 兜底常量钉 + 后端 plans.py 常量钉双侧守住。
+      expect(i18n.global.t('membership.member.yearlySavings', { amount: '¥69' })).toContain('¥69')
+      expect(i18n.global.t('membership.member.yearlyDiscount', { percent: 30 })).toBe('-30%')
+      expect(i18n.global.t('membership.member.priceMonthlyPeriod')).toMatch(/^\//)
+      expect(i18n.global.t('membership.member.priceYearlyPeriod')).toMatch(/^\//)
     },
   )
 
-  it('keeps the yearly anchor line locale-specific but amount-pinned', () => {
+  it('keeps the yearly savings template locale-specific', () => {
     i18n.global.locale.value = 'zh-CN'
-    expect(i18n.global.t('membership.member.priceYearly')).toBe('¥159 / 年')
-    expect(i18n.global.t('membership.member.yearlySavings')).toBe('年付省 ¥69')
+    expect(i18n.global.t('membership.member.yearlySavings', { amount: '¥69' })).toBe('年付省 ¥69')
     i18n.global.locale.value = 'en-US'
-    expect(i18n.global.t('membership.member.priceYearly')).toBe('¥159 / year')
-    expect(i18n.global.t('membership.member.yearlySavings')).toBe('Save ¥69 with annual billing')
+    expect(i18n.global.t('membership.member.yearlySavings', { amount: '¥69' })).toBe('Save ¥69 with annual billing')
   })
 
   it('provides an explicit Chinese value for every business catalog leaf', () => {
     const zhLeaves = catalogLeaves(messages['zh-CN'])
     const enLeaves = catalogLeaves(messages['en-US'])
-    const intentionallyShared = /(?:appName|chinese|english|github|hn|hackernews|producthunt|emailPlaceholder|recommendedBadge|stars|sortStars|forks|rag|arxivDesc|githubDesc|producthuntDesc|hackernewsDesc|\.x|authToken|ct0|priceMonthly|priceYearlyAmount|yearlyDiscount|guest\.name|free\.name|member\.name|identityGuest|identityUser|identityVip|platform\.(?:ios|android|windows|macos))$/
+    const intentionallyShared = /(?:appName|chinese|english|github|hn|hackernews|producthunt|emailPlaceholder|recommendedBadge|stars|sortStars|forks|rag|arxivDesc|githubDesc|producthuntDesc|hackernewsDesc|\.x|authToken|ct0|yearlyDiscount|guest\.name|free\.name|member\.name|identityGuest|identityUser|identityVip|platform\.(?:ios|android|windows|macos))$/
     const inherited = Object.keys(zhLeaves).filter(
       key => zhLeaves[key] === enLeaves[key] && !intentionallyShared.test(key),
     )

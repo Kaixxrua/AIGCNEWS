@@ -5,6 +5,15 @@ import { ArrowLeftRight, Check, X } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { paymentApi } from '@/services/payments/paymentApi'
+import {
+  FALLBACK_MEMBER_MONTHLY_CENTS,
+  FALLBACK_MEMBER_YEARLY_CENTS,
+  computeYearlyDiscountPercent,
+  computeYearlySavingsCents,
+  formatAmountCents,
+  resolvePlan,
+} from '@/features/payments/paymentModel'
+import type { PaymentPlan } from '@/features/payments/paymentModel'
 
 defineOptions({ name: 'MembershipView' })
 
@@ -13,6 +22,8 @@ defineOptions({ name: 'MembershipView' })
  * 游客可见（获客入口）。CTA 分三支：支付开关开启（plans 接口可达）→
  * 在线收银台；否则退回联系合作页，页面未启用时回退站长邮箱。
  * 定价卡为商业化布局：动作收进卡内、付费档抬升 + 推荐徽章、年付价格锚定。
+ * 会员卡金额/折扣由 plans 接口价自算（管理员可在监控页运行时调价）；
+ * 探测失败按 paymentModel 兜底常量渲染（与 plans.py 默认价钉住）。
  * 特性列表勾/叉双态：✓ 为已含权益，✗ 为该档不可用（升级诱因），
  * RSS 一行三档区分——游客不可订阅、免费档公开摘要、vip 全文+归档。
  */
@@ -30,8 +41,9 @@ const toggleBilling = () => {
 }
 
 // 在线收银台可用性 = plans 接口可达（payments_enabled 关闭时整组 404）。
-// 探测失败静默保持 false，CTA 维持联系开通兜底，不改变现有行为。
+// 探测失败静默保持 false，CTA 维持联系开通兜底；金额渲染退回兜底常量。
 const checkoutAvailable = ref(false)
+const memberPlans = ref<PaymentPlan[] | null>(null)
 const checkoutTo = computed(() => ({
   path: '/membership/checkout',
   query: { plan: billingPeriod.value },
@@ -39,12 +51,53 @@ const checkoutTo = computed(() => ({
 
 onMounted(async () => {
   try {
-    await paymentApi.listPlans()
+    const response = await paymentApi.listPlans()
+    memberPlans.value = response.plans
     checkoutAvailable.value = true
   } catch {
+    memberPlans.value = null
     checkoutAvailable.value = false
   }
 })
+
+// 金额一律整数分；缺 plans 数据（探测失败/套餐缺席）一律回落兜底常量——
+// 单一代码路径，兜底渲染与调价前逐字节一致。
+const monthlyCents = computed(
+  () =>
+    (memberPlans.value ? resolvePlan(memberPlans.value, 'monthly') : null)?.amount_cents ??
+    FALLBACK_MEMBER_MONTHLY_CENTS,
+)
+const yearlyCents = computed(
+  () =>
+    (memberPlans.value ? resolvePlan(memberPlans.value, 'yearly') : null)?.amount_cents ??
+    FALLBACK_MEMBER_YEARLY_CENTS,
+)
+const plansCurrency = computed(() => memberPlans.value?.[0]?.currency ?? 'CNY')
+
+const memberAmountText = computed(() =>
+  formatAmountCents(isYearly.value ? yearlyCents.value : monthlyCents.value, plansCurrency.value),
+)
+// 锚点行两种态的字距保持既有排版：月付态看年付锚「¥159 / 年」（斜杠两侧空格），
+// 年付态看月付锚「¥19/ 月」（无空格，period 键内自带前导空格）。
+const anchorText = computed(() =>
+  isYearly.value
+    ? `${formatAmountCents(monthlyCents.value, plansCurrency.value)}${t('membership.member.priceMonthlyPeriod')}`
+    : `${formatAmountCents(yearlyCents.value, plansCurrency.value)} ${t('membership.member.priceYearlyPeriod')}`,
+)
+const savingsCents = computed(() =>
+  computeYearlySavingsCents(monthlyCents.value, yearlyCents.value),
+)
+const savingsText = computed(() =>
+  t('membership.member.yearlySavings', {
+    amount: formatAmountCents(savingsCents.value, plansCurrency.value),
+  }),
+)
+const discountPercent = computed(() =>
+  computeYearlyDiscountPercent(monthlyCents.value, yearlyCents.value),
+)
+const discountText = computed(() =>
+  t('membership.member.yearlyDiscount', { percent: discountPercent.value }),
+)
 
 const contactHref = computed(() =>
   contactPageConfig.value.enabled
@@ -148,7 +201,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
           <h2 class="tier-name">{{ t('membership.member.name') }}</h2>
           <p class="tier-price">
             <span class="tier-price-amount">
-              {{ isYearly ? t('membership.member.priceYearlyAmount') : t('membership.member.priceMonthly') }}
+              {{ memberAmountText }}
             </span>
             <span class="tier-price-period">
               {{ isYearly ? t('membership.member.priceYearlyPeriod') : t('membership.member.priceMonthlyPeriod') }}
@@ -161,17 +214,15 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
             >
               <ArrowLeftRight :size="13" :stroke-width="2.5" aria-hidden="true" />
               {{ isYearly ? t('membership.member.billMonthly') : t('membership.member.billYearly') }}
-              <!-- 折扣标只在月付态出现：1 − 159/(19×12) = 30.3%，向下取整 -30%（保守口径）；
+              <!-- 折扣标只在月付态且真实存在折扣时出现：前端按 plans 价自算
+                   1 − yearly/(monthly×12)，向下取整（保守口径），≤0 即隐藏；
                    年付态按钮是降级动作，不带折扣标 -->
-              <span v-if="!isYearly" class="tier-billing-tag">{{ t('membership.member.yearlyDiscount') }}</span>
+              <span v-if="!isYearly && discountPercent > 0" class="tier-billing-tag">{{ discountText }}</span>
             </button>
           </p>
           <p class="tier-price-yearly">
-            <template v-if="isYearly">
-              {{ t('membership.member.priceMonthly') }}{{ t('membership.member.priceMonthlyPeriod') }}
-            </template>
-            <template v-else>{{ t('membership.member.priceYearly') }}</template>
-            <span class="tier-savings">{{ t('membership.member.yearlySavings') }}</span>
+            {{ anchorText }}
+            <span v-if="savingsCents > 0" class="tier-savings">{{ savingsText }}</span>
           </p>
           <hr class="tier-divider" />
           <ul class="tier-features">
@@ -390,7 +441,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   color: var(--ink-secondary);
 }
 
-/* 年付节省标：语义绿淡染小胶囊（19×12−159=69，真实算术） */
+/* 年付节省标：语义绿淡染小胶囊（金额由前端按 plans 价自算，非正即不渲染） */
 .tier-savings {
   margin-left: 8px;
   padding: 2px 8px;

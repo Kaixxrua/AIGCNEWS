@@ -65,13 +65,10 @@ const i18n = createI18n({
         member: {
           name: 'vip',
           badge: '推荐',
-          priceMonthly: '¥19',
           priceMonthlyPeriod: '/ 月',
-          priceYearly: '¥159 / 年',
-          priceYearlyAmount: '¥159',
           priceYearlyPeriod: '/ 年',
-          yearlySavings: '年付省 ¥69',
-          yearlyDiscount: '-30%',
+          yearlySavings: '年付省 {amount}',
+          yearlyDiscount: '-{percent}%',
           billMonthly: '按月付',
           billYearly: '按年付',
           features: {
@@ -265,5 +262,45 @@ describe('MembershipView', () => {
     expect(button.find('.tier-billing-tag').text()).toBe('-30%')
     expect(amount()).toBe('¥19')
     expect(period()).toBe('/ 月')
+  })
+
+  const livePlans = (monthlyCents: number, yearlyCents: number) => ({
+    plans: [
+      { code: 'member_monthly', tier: 'member', amount_cents: monthlyCents, currency: 'CNY', months: 1 },
+      { code: 'member_yearly', tier: 'member', amount_cents: yearlyCents, currency: 'CNY', months: 12 },
+    ],
+    channels: [],
+  })
+
+  it('computes the member card amounts and discount from live plan data', async () => {
+    // 管理员在监控页调价后：金额/锚定/节省/折扣全部由 plans 价自算
+    paymentBox.listPlans.mockResolvedValue(livePlans(2500, 20000))
+    const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
+
+    expect(memberCard.find('.tier-price-amount').text()).toBe('¥25')
+    const yearlyLine = memberCard.find('.tier-price-yearly').text()
+    expect(yearlyLine).toContain('¥200 / 年')
+    expect(yearlyLine).toContain('年付省 ¥100')
+    expect(memberCard.find('.tier-billing-tag').text()).toBe('-33%')
+
+    // 切到年付态：大价与回指锚点同样跟随生效价
+    await memberCard.find('.tier-billing-btn').trigger('click')
+    expect(memberCard.find('.tier-price-amount').text()).toBe('¥200')
+    expect(memberCard.find('.tier-price-period').text()).toBe('/ 年')
+    expect(memberCard.find('.tier-price-yearly').text()).toContain('¥25/ 月')
+  })
+
+  it('hides the savings pill and discount badge when yearly is not cheaper', async () => {
+    // 年付 ≥ 月付×12 时折扣非正：省钱 pill 与折扣标一起隐藏，不渲染「-0%」
+    paymentBox.listPlans.mockResolvedValue(livePlans(1900, 22800))
+    const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
+
+    expect(memberCard.find('.tier-savings').exists()).toBe(false)
+    expect(memberCard.find('.tier-billing-tag').exists()).toBe(false)
+    expect(memberCard.find('.tier-price-yearly').text()).toContain('¥228 / 年')
   })
 })

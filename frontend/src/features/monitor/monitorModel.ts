@@ -929,6 +929,69 @@ export const buildPaymentConfigPayload = (form: PaymentConfigForm) => ({
   clear_stripe_webhook_secret: form.clear_stripe_webhook_secret,
 })
 
+// ── 会员套餐定价（监控页自助调价，ADR 0002 运行时覆盖）────────────────────
+// 默认价权威在后端 plans.py；本面板写的是 payment_plan_overrides 覆盖行，
+// null = 删除覆盖恢复默认。金额入表单按元（最多两位小数），出 payload 转整数分。
+
+export interface PaymentPlanPricing {
+  code: string
+  tier: string
+  currency: string
+  months: number
+  default_amount_cents: number
+  override_amount_cents: number | null
+  amount_cents: number
+  updated_at: string | null
+}
+
+export interface PaymentPlanPricingForm {
+  monthly_yuan: string
+  yearly_yuan: string
+}
+
+export interface PaymentPlanPricingPayload {
+  monthly_amount_cents: number | null
+  yearly_amount_cents: number | null
+}
+
+const centsToYuanInput = (cents: number | null): string =>
+  cents === null ? '' : String(cents / 100)
+
+export const createPaymentPlanPricingForm = (
+  plans?: PaymentPlanPricing[] | null,
+): PaymentPlanPricingForm => ({
+  monthly_yuan: centsToYuanInput(
+    plans?.find((plan) => plan.code === 'member_monthly')?.override_amount_cents ?? null,
+  ),
+  yearly_yuan: centsToYuanInput(
+    plans?.find((plan) => plan.code === 'member_yearly')?.override_amount_cents ?? null,
+  ),
+})
+
+// '' = 恢复默认（null）；正则钉死「元、最多两位小数」，×100 四舍五入到分；
+// 边界 1–10000 元与后端 100–1000000 分一致（拦「把分当元」录入事故）。
+const PRICING_YUAN_PATTERN = /^\d+(\.\d{1,2})?$/
+const PRICING_MIN_YUAN = 1
+const PRICING_MAX_YUAN = 10000
+
+const yuanToCents = (yuan: string): number | null | undefined => {
+  const trimmed = yuan.trim()
+  if (trimmed === '') return null
+  if (!PRICING_YUAN_PATTERN.test(trimmed)) return undefined
+  const value = Number(trimmed)
+  if (!(value >= PRICING_MIN_YUAN && value <= PRICING_MAX_YUAN)) return undefined
+  return Math.round(value * 100)
+}
+
+export const buildPaymentPlanPricingPayload = (
+  form: PaymentPlanPricingForm,
+): PaymentPlanPricingPayload | null => {
+  const monthly = yuanToCents(form.monthly_yuan)
+  const yearly = yuanToCents(form.yearly_yuan)
+  if (monthly === undefined || yearly === undefined) return null
+  return { monthly_amount_cents: monthly, yearly_amount_cents: yearly }
+}
+
 export const createMembershipGrantForm = (): MembershipGrantForm => ({
   email: '',
   tier: 'member',

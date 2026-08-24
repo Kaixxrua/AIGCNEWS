@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  FALLBACK_MEMBER_MONTHLY_CENTS,
+  FALLBACK_MEMBER_YEARLY_CENTS,
   PAYMENT_CHANNELS,
+  computeYearlyDiscountPercent,
+  computeYearlySavingsCents,
   formatAmountCents,
   formatCountdownMs,
   isTerminalOrderStatus,
@@ -92,5 +96,49 @@ describe('isTerminalOrderStatus', () => {
 describe('PAYMENT_CHANNELS', () => {
   it('lists the three skeleton channels in display order', () => {
     expect(PAYMENT_CHANNELS).toEqual(['wechat_native', 'alipay_page', 'stripe'])
+  })
+})
+
+describe('fallback plan price constants', () => {
+  // 与 backend/app/services/payments/plans.py 常量跨侧钉死：plans 探测失败时
+  // 会员卡按兜底价渲染，漂移必须改两侧测试。
+  it('pins the fallback prices to the backend default catalog', () => {
+    expect(FALLBACK_MEMBER_MONTHLY_CENTS).toBe(1900)
+    expect(FALLBACK_MEMBER_YEARLY_CENTS).toBe(15900)
+  })
+})
+
+describe('computeYearlySavingsCents', () => {
+  it('computes monthly×12 − yearly for the default catalog', () => {
+    expect(computeYearlySavingsCents(1900, 15900)).toBe(6900)
+  })
+
+  it('tracks runtime overrides', () => {
+    expect(computeYearlySavingsCents(2500, 20000)).toBe(10000)
+  })
+
+  it('goes non-positive when yearly is not cheaper (pill hides)', () => {
+    expect(computeYearlySavingsCents(1900, 22800)).toBe(0)
+    expect(computeYearlySavingsCents(1900, 30000)).toBeLessThan(0)
+  })
+})
+
+describe('computeYearlyDiscountPercent', () => {
+  it('computes floor((1 − yearly/(monthly×12)) × 100) for the default catalog', () => {
+    expect(computeYearlyDiscountPercent(1900, 15900)).toBe(30)
+  })
+
+  it('floors odd ratios instead of rounding up', () => {
+    // 1 − 20000/30000 = 33.33…% → 33
+    expect(computeYearlyDiscountPercent(2500, 20000)).toBe(33)
+  })
+
+  it('clamps to 0 when yearly is not cheaper (badge hides)', () => {
+    expect(computeYearlyDiscountPercent(1900, 22800)).toBe(0)
+    expect(computeYearlyDiscountPercent(1900, 30000)).toBe(0)
+  })
+
+  it('returns 0 for a non-positive baseline instead of dividing by zero', () => {
+    expect(computeYearlyDiscountPercent(0, 15900)).toBe(0)
   })
 })

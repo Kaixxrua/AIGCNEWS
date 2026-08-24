@@ -4,10 +4,10 @@ import type {
   EmailPoolConfig, EmailPoolForm, EmailPoolTestResult, EmailDeliveryDayStat,
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
-  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, PagedResult, PaymentConfig, PaymentConfigForm, ProviderConfig, ProviderForm, ProviderTestResult,
+  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, PagedResult, PaymentConfig, PaymentConfigForm, PaymentPlanPricing, PaymentPlanPricingForm, ProviderConfig, ProviderForm, ProviderTestResult,
   SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, UserStatsResponse, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildPaymentConfigPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
+import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildPaymentConfigPayload, buildPaymentPlanPricingPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
@@ -19,6 +19,8 @@ export interface MonitorApi {
   fetchPaymentConfig(): Promise<PaymentConfig>
   savePaymentConfig(form: PaymentConfigForm): Promise<PaymentConfig>
   resetPaymentConfig(): Promise<PaymentConfig>
+  fetchPaymentPlanPricing(): Promise<{ plans: PaymentPlanPricing[] }>
+  savePaymentPlanPricing(form: PaymentPlanPricingForm): Promise<{ plans: PaymentPlanPricing[] }>
   fetchSchedulerStatus(): Promise<SchedulerStatus>
   fetchSchedulerConfigs(): Promise<SchedulerJobConfig[]>
   saveSchedulerConfig(form: SchedulerJobConfigForm): Promise<{ item?: SchedulerJobConfig; message?: string }>
@@ -88,6 +90,9 @@ export const monitorApi: MonitorApi = {
   async fetchPaymentConfig() { return (await api.get('/ops/payments/config')).data },
   async savePaymentConfig(form) { return (await api.put('/ops/payments/config', buildPaymentConfigPayload(form))).data },
   async resetPaymentConfig() { return (await api.delete('/ops/payments/config')).data },
+  // 套餐定价：非密钥商业配置，整聚合 GET/PUT；表单元 → payload 整数分（null=恢复默认）
+  async fetchPaymentPlanPricing() { return (await api.get('/ops/payments/plans')).data },
+  async savePaymentPlanPricing(form) { return (await api.put('/ops/payments/plans', buildPaymentPlanPricingPayload(form))).data },
   async fetchSchedulerStatus() { return (await api.get('/ops/scheduler/status')).data },
   async fetchSchedulerConfigs() {
     const { data } = await api.get('/ops/scheduler/config')

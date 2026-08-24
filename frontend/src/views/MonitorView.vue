@@ -13,6 +13,7 @@ import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MembershipGrantPanel from '@/components/monitor/MembershipGrantPanel.vue'
 import PaymentOrdersPanel from '@/components/monitor/PaymentOrdersPanel.vue'
 import PaymentConfigPanel from '@/components/monitor/PaymentConfigPanel.vue'
+import PaymentPricingPanel from '@/components/monitor/PaymentPricingPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
 import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
 import MonitorSectionNav from '@/components/monitor/MonitorSectionNav.vue'
@@ -47,6 +48,7 @@ const {
   membershipForm, grantingMembership, membershipLastResult, grantMembership,
   paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersTotalPages, paymentOrdersFilter, loadingPaymentOrders, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
   paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, savePaymentConfig, resetPaymentConfig,
+  paymentPricing, paymentPricingForm, loadingPaymentPricing, savingPaymentPricing, savePaymentPlanPricing,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
   dispose, fetchMcpServers, refreshData, goPage, goErrorLogsPage, saveProviderConfig, testProviderConnection, saveSmtpConfig, testSmtpConfig, saveEmailPoolConfig, testEmailPoolConfig, resetMcpForm, editMcpServer, saveMcpServer,
@@ -367,6 +369,14 @@ onUnmounted(dispose)
           />
         </template>
         <template v-else-if="currentSection === 'payment-config'">
+          <PaymentPricingPanel
+            v-if="authStore.isAdmin"
+            :plans="paymentPricing"
+            :form="paymentPricingForm"
+            :loading="loadingPaymentPricing"
+            :saving="savingPaymentPricing"
+            @save="savePaymentPlanPricing"
+          />
           <PaymentConfigPanel
             v-if="authStore.isAdmin"
             :config="paymentConfig"

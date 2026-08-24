@@ -1,7 +1,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MonitorApi } from '@/services/monitor/monitorApi'
-import type { GithubCrawlStatus } from '@/features/monitor/monitorModel'
+import type { GithubCrawlStatus, PaymentPlanPricing } from '@/features/monitor/monitorModel'
 import { i18n } from '@/i18n'
 import { useMonitorPageController } from './useMonitorPageController'
 
@@ -57,6 +57,8 @@ const createApi = (): MonitorApi => ({
   fetchEmailDeliveryStats: vi.fn(async () => ({ days: [] })),
   fetchSiteContactPageConfig: vi.fn(), saveSiteContactPageConfig: vi.fn(), uploadSiteImage: vi.fn(),
   grantMembership: vi.fn(async () => ({ user_id: 7, email: 'member@example.com', membership_tier: 'member', membership_expires_at: null, revoked: false })),
+  fetchPaymentPlanPricing: vi.fn(async () => ({ plans: [] as PaymentPlanPricing[] })),
+  savePaymentPlanPricing: vi.fn(async () => ({ plans: [] as PaymentPlanPricing[] })),
   saveMcpServer: vi.fn(), testMcpServer: vi.fn(), deleteMcpServer: vi.fn(), ingestSource: vi.fn(),
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
@@ -1181,5 +1183,79 @@ describe('Monitor GitHub enrichment controls', () => {
     await controller.grantMembership()
 
     expect(controller.successMsg.value).toBe(i18n.global.t('monitor.membership.revoked', { email: 'member@example.com' }))
+  })
+
+  const pricingPlans = (monthlyOverride: number | null, yearlyOverride: number | null): PaymentPlanPricing[] => [
+    {
+      code: 'member_monthly', tier: 'member', currency: 'CNY', months: 1,
+      default_amount_cents: 1900, override_amount_cents: monthlyOverride,
+      amount_cents: monthlyOverride ?? 1900,
+      updated_at: monthlyOverride === null ? null : '2026-08-24T10:00:00+00:00',
+    },
+    {
+      code: 'member_yearly', tier: 'member', currency: 'CNY', months: 12,
+      default_amount_cents: 15900, override_amount_cents: yearlyOverride,
+      amount_cents: yearlyOverride ?? 15900,
+      updated_at: yearlyOverride === null ? null : '2026-08-24T10:00:00+00:00',
+    },
+  ]
+
+  it('fetches plan pricing for admins and fills the form from overrides', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchPaymentPlanPricing).mockResolvedValue({ plans: pricingPlans(2500, null) })
+    const { controller } = createController(api)
+
+    await controller.refreshData()
+
+    expect(api.fetchPaymentPlanPricing).toHaveBeenCalled()
+    expect(controller.paymentPricing.value.map((plan) => plan.code)).toEqual(['member_monthly', 'member_yearly'])
+    // 表单只回填覆盖价：默认价行留空（空串 = 恢复默认语义）
+    expect(controller.paymentPricingForm.value).toEqual({ monthly_yuan: '25', yearly_yuan: '' })
+  })
+
+  it('does not fetch plan pricing for non-admin users', async () => {
+    const { api, controller } = createController(createApi(), false)
+
+    await controller.refreshData()
+
+    expect(api.fetchPaymentPlanPricing).not.toHaveBeenCalled()
+    expect(controller.paymentPricing.value).toEqual([])
+  })
+
+  it('blocks invalid pricing input without calling the API', async () => {
+    const { api, controller } = createController()
+    controller.paymentPricingForm.value = { monthly_yuan: '19.999', yearly_yuan: '' }
+
+    await controller.savePaymentPlanPricing()
+
+    expect(api.savePaymentPlanPricing).not.toHaveBeenCalled()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.paymentPricing.invalidAmount'))
+  })
+
+  it('saves plan pricing and refills the form from the response', async () => {
+    const api = createApi()
+    const { controller } = createController(api)
+    controller.paymentPricingForm.value = { monthly_yuan: '25', yearly_yuan: '200' }
+    vi.mocked(api.savePaymentPlanPricing).mockResolvedValueOnce({ plans: pricingPlans(2500, 20000) })
+
+    await controller.savePaymentPlanPricing()
+
+    expect(api.savePaymentPlanPricing).toHaveBeenCalledWith({ monthly_yuan: '25', yearly_yuan: '200' })
+    expect(controller.paymentPricing.value[0]?.amount_cents).toBe(2500)
+    expect(controller.paymentPricingForm.value).toEqual({ monthly_yuan: '25', yearly_yuan: '200' })
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.paymentPricing.saved'))
+    expect(controller.errorMsg.value).toBe('')
+  })
+
+  it('surfaces the backend 400 detail on pricing save failure', async () => {
+    const { api, controller } = createController()
+    controller.paymentPricingForm.value = { monthly_yuan: '25', yearly_yuan: '' }
+    vi.mocked(api.savePaymentPlanPricing).mockRejectedValueOnce({
+      response: { status: 400, data: { detail: '套餐价格必须是 100-1000000 之间的整数分' } },
+    })
+
+    await controller.savePaymentPlanPricing()
+
+    expect(controller.errorMsg.value).toBe('套餐价格必须是 100-1000000 之间的整数分')
   })
 })

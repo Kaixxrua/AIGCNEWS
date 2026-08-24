@@ -4,7 +4,9 @@
 - 全部端点 RequireAdmin（403 非管理员）且**不挂** payments_enabled 门控；
 - 台账筛选/详情含 callback_payload + email（Ops 专属审计面）；
 - mark-paid 与用户回调共用发放入口：幂等 200、closed 409、恰好一次；
-- close 仅 pending → closed，终态 409。
+- close 仅 pending → closed，终态 409；
+- /ops/payments/plans 运行时调价：GET 默认投影、PUT 整体聚合
+  （整数分 = upsert，null = 删覆盖恢复默认价），越界 400 中文 detail。
 """
 
 from __future__ import annotations
@@ -18,12 +20,38 @@ from fastapi.testclient import TestClient
 
 from backend.app.api.dependencies import (
     get_payment_order_repository,
+    get_payment_plan_overrides_repository,
     get_user_account_repository,
 )
 from backend.app.api.routes_ops_payments import router
 from backend.app.core.auth import RequireAdmin
 from backend.app.core.config import settings
+from backend.app.repositories.payment_plan_overrides_repository import (
+    PaymentPlanOverride,
+)
 from backend.tests.test_payments_api import FakeOrders, FakeUsers
+
+
+class FakePlanOverrides:
+    """payment_plan_overrides 内存替身：list/upsert/delete 最小语义。"""
+
+    def __init__(self) -> None:
+        self.rows: dict[str, int] = {}
+
+    def list_plan_overrides(self) -> tuple[PaymentPlanOverride, ...]:
+        return tuple(
+            PaymentPlanOverride(plan_code=code, amount_cents=amount)
+            for code, amount in sorted(self.rows.items())
+        )
+
+    def upsert_plan_override(
+        self, *, plan_code: str, amount_cents: int
+    ) -> PaymentPlanOverride:
+        self.rows[plan_code] = amount_cents
+        return PaymentPlanOverride(plan_code=plan_code, amount_cents=amount_cents)
+
+    def delete_plan_override(self, plan_code: str) -> int:
+        return 1 if self.rows.pop(plan_code, None) is not None else 0
 
 
 @pytest.fixture()
@@ -33,6 +61,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Any:
     users = FakeUsers()
     users.add(7, email="buyer@example.com")
     orders = FakeOrders(users)
+    plan_overrides = FakePlanOverrides()
     app = FastAPI()
     app.include_router(router, prefix="/api")
     app.dependency_overrides[RequireAdmin] = lambda: {
@@ -41,8 +70,15 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Any:
     }
     app.dependency_overrides[get_payment_order_repository] = lambda: orders
     app.dependency_overrides[get_user_account_repository] = lambda: users
+    app.dependency_overrides[get_payment_plan_overrides_repository] = (
+        lambda: plan_overrides
+    )
     return SimpleNamespace(
-        client=TestClient(app), app=app, users=users, orders=orders
+        client=TestClient(app),
+        app=app,
+        users=users,
+        orders=orders,
+        plan_overrides=plan_overrides,
     )
 
 
@@ -89,6 +125,13 @@ def test_require_admin(harness: Any) -> None:
         == 403
     )
     assert harness.client.get("/api/ops/payments/orders/P1").status_code == 403
+    assert harness.client.get("/api/ops/payments/plans").status_code == 403
+    assert (
+        harness.client.put(
+            "/api/ops/payments/plans", json={"monthly_amount_cents": 2500}
+        ).status_code
+        == 403
+    )
 
 
 def test_list_orders_admin_filters_and_includes_email(harness: Any) -> None:
@@ -197,3 +240,67 @@ def test_close_order_only_from_pending(harness: Any) -> None:
         .status_code
         == 409
     )
+
+
+def test_get_plan_pricing_default_projection(harness: Any) -> None:
+    """缺行 = plans.py 默认价；payments_enabled=False（fixture 已置）也可达。"""
+    response = harness.client.get("/api/ops/payments/plans")
+    assert response.status_code == 200
+    plans = response.json()["plans"]
+    assert [plan["code"] for plan in plans] == ["member_monthly", "member_yearly"]
+    monthly, yearly = plans
+    assert monthly["default_amount_cents"] == 1900
+    assert monthly["override_amount_cents"] is None
+    assert monthly["amount_cents"] == 1900
+    assert monthly["months"] == 1
+    assert yearly["default_amount_cents"] == 15900
+    assert yearly["override_amount_cents"] is None
+    assert yearly["amount_cents"] == 15900
+    assert yearly["months"] == 12
+    assert yearly["currency"] == "CNY"
+    assert monthly["updated_at"] is None
+
+
+def test_put_plan_pricing_upsert_overrides(harness: Any) -> None:
+    response = harness.client.put(
+        "/api/ops/payments/plans",
+        json={"monthly_amount_cents": 2500, "yearly_amount_cents": 20000},
+    )
+    assert response.status_code == 200
+    plans = {plan["code"]: plan for plan in response.json()["plans"]}
+    assert plans["member_monthly"]["override_amount_cents"] == 2500
+    assert plans["member_monthly"]["amount_cents"] == 2500
+    assert plans["member_yearly"]["override_amount_cents"] == 20000
+    assert plans["member_yearly"]["amount_cents"] == 20000
+    # 默认价列不被覆盖污染
+    assert plans["member_monthly"]["default_amount_cents"] == 1900
+    assert plans["member_yearly"]["default_amount_cents"] == 15900
+    assert harness.plan_overrides.rows == {
+        "member_monthly": 2500,
+        "member_yearly": 20000,
+    }
+
+
+def test_put_plan_pricing_null_restores_default(harness: Any) -> None:
+    harness.plan_overrides.rows["member_monthly"] = 2500
+    response = harness.client.put(
+        "/api/ops/payments/plans",
+        json={"monthly_amount_cents": None, "yearly_amount_cents": 20000},
+    )
+    assert response.status_code == 200
+    plans = {plan["code"]: plan for plan in response.json()["plans"]}
+    assert plans["member_monthly"]["override_amount_cents"] is None
+    assert plans["member_monthly"]["amount_cents"] == 1900
+    assert plans["member_yearly"]["amount_cents"] == 20000
+    assert harness.plan_overrides.rows == {"member_yearly": 20000}
+
+
+def test_put_plan_pricing_out_of_bounds_400(harness: Any) -> None:
+    for bad in (0, 99, 1000001):
+        response = harness.client.put(
+            "/api/ops/payments/plans", json={"monthly_amount_cents": bad}
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "套餐价格必须是 100-1000000 之间的整数分"
+    # 越界请求不落库
+    assert harness.plan_overrides.rows == {}

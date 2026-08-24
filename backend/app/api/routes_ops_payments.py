@@ -19,10 +19,16 @@ from pydantic import BaseModel
 from backend.app.api.dependencies import (
     get_payment_config_admin_service,
     get_payment_order_repository,
+    get_payment_plan_overrides_admin_service,
     get_user_account_repository,
 )
 from backend.app.core.auth import RequireAdmin, extract_user_id
-from backend.app.models.schema_payments import PaymentConfigRequest, PaymentConfigResponse
+from backend.app.models.schema_payments import (
+    OpsPaymentPlanOverridesRequest,
+    OpsPaymentPlansResponse,
+    PaymentConfigRequest,
+    PaymentConfigResponse,
+)
 from backend.app.repositories.payment_order_repository import PaymentOrderRepository
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.payments.config_admin import PaymentConfigAdminService
@@ -33,6 +39,7 @@ from backend.app.services.payments.orders import (
     ORDER_STATUSES,
     normalize_order_status,
 )
+from backend.app.services.payments.plan_overrides_admin import PaymentPlanOverridesAdminService
 from backend.app.services.payments.plans import UnknownPlanError, get_plan
 from backend.app.services.payments.providers.base import VerifiedCallback
 
@@ -69,6 +76,30 @@ async def reset_payment_config(
 ) -> PaymentConfigResponse:
     projection = await service.reset_config()
     return PaymentConfigResponse.model_validate(projection, from_attributes=True)
+
+
+@router.get("/ops/payments/plans", response_model=OpsPaymentPlansResponse, tags=["Ops"])
+async def get_payment_plan_pricing(
+    _: dict = Depends(RequireAdmin),
+    service: PaymentPlanOverridesAdminService = Depends(get_payment_plan_overrides_admin_service),
+) -> OpsPaymentPlansResponse:
+    """套餐定价台账：默认价 + 运行时覆盖 + 生效价（非密钥商业配置，不涉掩码）。"""
+    entries = await service.list_plans()
+    return OpsPaymentPlansResponse(plans=entries)
+
+
+@router.put("/ops/payments/plans", response_model=OpsPaymentPlansResponse, tags=["Ops"])
+async def update_payment_plan_pricing(
+    request: OpsPaymentPlanOverridesRequest,
+    _: dict = Depends(RequireAdmin),
+    service: PaymentPlanOverridesAdminService = Depends(get_payment_plan_overrides_admin_service),
+) -> OpsPaymentPlansResponse:
+    """运行时调价：null/缺省恢复默认，整数分覆盖；只影响新订单（在途订单快照免疫）。"""
+    try:
+        entries = await service.update_plans(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return OpsPaymentPlansResponse(plans=entries)
 
 
 class OpsMarkPaidRequest(BaseModel):

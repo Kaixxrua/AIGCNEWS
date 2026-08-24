@@ -307,6 +307,45 @@ def test_plans_reflect_channel_availability(harness: Any) -> None:
     assert channels["wechat_native"] is True
 
 
+@pytest.fixture()
+def plan_override_reader() -> Any:
+    """注入 payment_plan_overrides 假 reader；用例后复位，避免污染默认价钉。"""
+    from backend.app.services.payments.plan_overrides import (
+        configure_plan_overrides_reader,
+    )
+    from backend.tests.test_payment_plan_overrides import FakePlanOverridesReader
+
+    reader = FakePlanOverridesReader({})
+    configure_plan_overrides_reader(reader)
+    yield reader
+    configure_plan_overrides_reader(None)
+
+
+def test_plans_endpoint_uses_runtime_overrides(harness: Any, plan_override_reader: Any) -> None:
+    plan_override_reader.amounts.update(
+        {"member_monthly": 2500, "member_yearly": 20000}
+    )
+    body = harness.client.get("/api/payments/plans").json()
+    plans = {plan["code"]: plan for plan in body["plans"]}
+    assert plans["member_monthly"]["amount_cents"] == 2500
+    assert plans["member_yearly"]["amount_cents"] == 20000
+    # 覆盖只换金额：时长/币种保持默认目录语义
+    assert plans["member_monthly"]["months"] == 1
+    assert plans["member_yearly"]["months"] == 12
+    assert all(plan["currency"] == "CNY" for plan in body["plans"])
+
+
+def test_plans_endpoint_degrades_to_defaults_on_reader_failure(
+    harness: Any, plan_override_reader: Any
+) -> None:
+    plan_override_reader.amounts["member_yearly"] = 20000
+    plan_override_reader.fail = True
+    body = harness.client.get("/api/payments/plans").json()
+    plans = {plan["code"]: plan for plan in body["plans"]}
+    assert plans["member_monthly"]["amount_cents"] == 1900
+    assert plans["member_yearly"]["amount_cents"] == 15900
+
+
 # ── 下单 ────────────────────────────────────────────────────────────────
 
 
@@ -365,6 +404,21 @@ def test_create_order_happy_path_returns_instruction(harness: Any) -> None:
     # 响应不泄露内部列
     assert "callback_payload" not in order
     assert "idempotency_key" not in order
+
+
+def test_create_order_snapshots_override_price(
+    harness: Any, plan_override_reader: Any
+) -> None:
+    """运行时调价后下单：订单行按生效价快照（买家付其所见）。"""
+    plan_override_reader.amounts.update(
+        {"member_monthly": 2500, "member_yearly": 20000}
+    )
+    response = harness.client.post(
+        "/api/payments/orders",
+        json={"plan_code": "member_yearly", "channel": "wechat_native"},
+    )
+    assert response.status_code == 200
+    assert response.json()["order"]["amount_cents"] == 20000
 
 
 def test_create_order_idempotency_key_returns_existing_order(harness: Any) -> None:

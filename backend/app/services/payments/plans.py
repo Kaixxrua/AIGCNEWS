@@ -1,15 +1,17 @@
 """会员套餐定义：支付收费骨架的商品权威来源（ADR 0002）。
 
 金额一律整数分（杜绝浮点）；时长按日历年月（非 30/365 天），月末钳制
-（1 月 31 日 + 1 月 → 2 月 28 日）。前端营销卡 i18n 字面量（'¥19'/'¥159'）
-是展示文案，与本文件由两侧测试钉住防漂移；收银台交易面金额只从
-GET /api/payments/plans 渲染。
+（1 月 31 日 + 1 月 → 2 月 28 日）。本文件常量是默认商业承诺；管理员可在
+监控页通过 payment_plan_overrides 表运行时调价（见 plan_overrides.py），
+缺行即按本文件默认价生效。前端营销卡金额/折扣由 plans 接口数据自算，
+兜底常量在 paymentModel.ts 与本文件由两侧测试钉住防漂移；收银台交易面
+金额只从 GET /api/payments/plans 渲染。
 """
 
 from __future__ import annotations
 
 import calendar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Mapping
 
@@ -77,3 +79,15 @@ def get_plan(code: object) -> MembershipPlan:
     if plan is None:
         raise UnknownPlanError(code)
     return plan
+
+
+def effective_plans(overrides: Mapping[str, int] | None) -> dict[str, MembershipPlan]:
+    """默认目录叠加运行时价格覆盖；未知覆盖码忽略，保持默认目录顺序。"""
+    plans: dict[str, MembershipPlan] = dict(MEMBERSHIP_PLANS)
+    if not overrides:
+        return plans
+    for code, amount_cents in overrides.items():
+        plan = plans.get(code)
+        if plan is not None:
+            plans[code] = replace(plan, amount_cents=int(amount_cents))
+    return plans

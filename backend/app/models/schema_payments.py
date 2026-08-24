@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 PAYMENT_CHANNELS: frozenset[str] = frozenset({"wechat_native", "alipay_page", "stripe"})
 
@@ -116,3 +116,27 @@ class PaymentConfigResponse(BaseModel):
     stripe_secret_key_masked: str | None
     stripe_webhook_secret_configured: bool
     stripe_webhook_secret_masked: str | None
+
+
+class OpsPaymentPlanEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    code: str
+    tier: str
+    currency: str
+    months: int
+    default_amount_cents: int
+    override_amount_cents: int | None
+    amount_cents: int
+    updated_at: str | None
+
+
+class OpsPaymentPlansResponse(BaseModel):
+    plans: list[OpsPaymentPlanEntry]
+
+
+class OpsPaymentPlanOverridesRequest(BaseModel):
+    """整体聚合语义：null/缺省 = 删除覆盖恢复默认价，整数分 = upsert。"""
+
+    monthly_amount_cents: int | None = None
+    yearly_amount_cents: int | None = None

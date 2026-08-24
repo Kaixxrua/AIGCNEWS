@@ -15,6 +15,7 @@ from backend.app.services.payments.plans import (
     MEMBER_YEARLY,
     MEMBERSHIP_PLANS,
     UnknownPlanError,
+    effective_plans,
     get_plan,
 )
 
@@ -68,3 +69,26 @@ def test_get_plan_is_fail_closed_on_unknown_codes() -> None:
         get_plan(None)
     with pytest.raises(UnknownPlanError):
         get_plan(1900)
+
+
+def test_effective_plans_merges_overrides() -> None:
+    merged = effective_plans({"member_monthly": 2500, "member_yearly": 20000})
+    assert merged["member_monthly"].amount_cents == 2500
+    assert merged["member_yearly"].amount_cents == 20000
+    # 覆盖只换金额：时长/币种/档位保持默认目录语义
+    assert merged["member_monthly"].months == 1
+    assert merged["member_yearly"].months == 12
+    assert merged["member_yearly"].currency == "CNY"
+    # 保序且默认常量不被污染
+    assert list(merged) == list(MEMBERSHIP_PLANS)
+    assert MEMBER_MONTHLY.amount_cents == 1900
+    assert MEMBER_YEARLY.amount_cents == 15900
+
+
+def test_effective_plans_empty_or_unknown_overrides_are_identity() -> None:
+    assert effective_plans(None) == dict(MEMBERSHIP_PLANS)
+    assert effective_plans({}) == dict(MEMBERSHIP_PLANS)
+    merged = effective_plans({"member_lifetime": 99900})
+    assert merged["member_monthly"].amount_cents == 1900
+    assert merged["member_yearly"].amount_cents == 15900
+    assert "member_lifetime" not in merged
