@@ -14,6 +14,31 @@
     <meta property="og:url" content="https://aigcnews.cn" />
     <meta property="og:image" content="https://aigcnews.cn/logo.png" />
     <meta name="twitter:card" content="summary" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://aigcnews.cn/#org",
+            "name": "AIGCNEWS",
+            "alternateName": ["AIGC News", "AIGC Radar", "AIGC 资讯"],
+            "url": "https://aigcnews.cn/",
+            "logo": "https://aigcnews.cn/logo.png",
+            "sameAs": ["https://github.com/Kaixxrua/AIGCNEWS"]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://aigcnews.cn/#site",
+            "url": "https://aigcnews.cn/",
+            "name": "AIGCNEWS",
+            "alternateName": ["AIGC News", "AIGC 资讯"],
+            "publisher": { "@id": "https://aigcnews.cn/#org" },
+            "inLanguage": "zh-CN"
+          }
+        ]
+      }
+    </script>
     <link rel="alternate" type="application/rss+xml" title="AIGCNEWS" href="/api/feed.xml" />
     <script>
       // 与 src/theme/theme.ts 的 resolveAppTheme 保持同步：存储值 → 系统偏好 → 浅色。
@@ -27,7 +52,7 @@
         } catch (e) { /* 存储被禁用时默认浅色 */ }
       })();
     </script>
-    <title>AIGCNEWS</title>
+    <title>AIGCNEWS · AIGC Radar — arXiv 论文、GitHub AI 项目、榜单与每日简报</title>
   </head>
   <body>
     <div id="app"></div>
