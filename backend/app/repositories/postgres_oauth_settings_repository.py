@@ -31,16 +31,33 @@ class OAuthSettingsSecretError(ValueError):
 
 
 def build_oauth_settings_secret_box(*, config=settings) -> WeChatSecretBox | None:
+    """构造 OAuth secret 的 AES-256-GCM envelope box。
+
+    密钥解析顺序：OAUTH_CONFIG_ENCRYPTION_KEY 显式配置优先；未配置时回落复用
+    WECHAT_SESSION_ENCRYPTION_KEY（同一 WeChatSecretBox 机制，生产已就位，免去
+    新增部署 env）。两者皆无 → None，写 secret 的路径 fail-closed。
+    显式配置但非法 → None（不静默回落，避免运维误以为生效的是专用密钥）。
+    """
     key = str(getattr(config, "oauth_config_encryption_key", "") or "")
-    if not key:
+    if key:
+        try:
+            return WeChatSecretBox.from_urlsafe_base64(
+                key,
+                str(getattr(config, "oauth_config_encryption_key_version", "v1")),
+            )
+        except WeChatSecretBoxError as exc:
+            logger.warning("OAuth 配置加密密钥非法: %s", exc)
+            return None
+    fallback = str(getattr(config, "wechat_session_encryption_key", "") or "")
+    if not fallback:
         return None
     try:
         return WeChatSecretBox.from_urlsafe_base64(
-            key,
-            str(getattr(config, "oauth_config_encryption_key_version", "v1")),
+            fallback,
+            str(getattr(config, "wechat_session_encryption_key_version", "v1")),
         )
     except WeChatSecretBoxError as exc:
-        logger.warning("OAuth 配置加密密钥非法: %s", exc)
+        logger.warning("微信会话加密密钥非法，OAuth secret 不可用: %s", exc)
         return None
 
 
@@ -156,7 +173,7 @@ class PostgresOAuthSettingsRepository:
             return ""
         if self._secret_box is None:
             raise OAuthSettingsSecretError(
-                "OAuth 配置加密密钥未配置，无法保存 client secret/app secret"
+                "OAuth 配置加密密钥未配置（OAUTH_CONFIG_ENCRYPTION_KEY 或 WECHAT_SESSION_ENCRYPTION_KEY），无法保存 client secret/app secret"
             )
         return json.dumps(self._secret_box.seal(value), ensure_ascii=False)
 
