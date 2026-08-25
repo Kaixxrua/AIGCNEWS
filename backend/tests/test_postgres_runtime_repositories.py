@@ -86,7 +86,8 @@ def test_document_upsert_normalizes_json_booleans_and_preserves_merge_rules() ->
     assert params["tags"] == '["AI", "Agent"]'
     assert params["indexed"] is True
     assert params["in_daily"] is False
-    assert document["tags"] == '["AI", "Agent"]'
+    # _document_params 复制入参后归一化，不再原位修改调用方 dict（8431fbf 之后的重构语义）。
+    assert document["tags"] == ["AI", "Agent"]
     assert database.transaction_count == 1
 
 
