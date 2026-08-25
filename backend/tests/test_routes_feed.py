@@ -13,6 +13,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -30,6 +32,7 @@ from backend.app.api.routes_feed import (
     _parse_member_sources,
     _parse_published_at,
     _project_to_feed_row,
+    _filter_rows_to_window,
     build_feed_item,
     build_rss_xml,
 )
@@ -59,6 +62,16 @@ def _doc(
         "translation_zh": translation_zh,
         "tags": tags,
     }
+
+
+def _iso_hours_ago(hours: float) -> str:
+    """相对当前时间的 ISO 串：路由测试的时间必须在实时窗口内（窗口过滤按 now 过滤）。"""
+    return (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+
+
+def _rfc822(iso: str) -> str:
+    """与 build_feed_item 一致的 pubDate 格式化，用于动态日期的断言。"""
+    return format_datetime(datetime.fromisoformat(iso), usegmt=False)
 
 
 # ---------------------------------------------------------------- 纯函数
@@ -261,14 +274,33 @@ def _cleanup_overrides():
     app.dependency_overrides.clear()
 
 
+def test_rss_window_filters_old_published_date_even_when_recently_ingested() -> None:
+    now = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
+    old = _doc("old", source="news", published_at="")
+    old["published_date"] = "2026-08-20"
+    old["created_at"] = "2026-08-25T11:59:00+00:00"
+    recent = _doc("recent", source="news", published_at="2026-08-25T11:00:00+00:00")
+    # published_at 脏串时回退 created_at；最终 pubDate 落在窗口内 → 保留
+    fallback = _doc("fallback", source="news", published_at="not-a-date")
+    fallback["created_at"] = "2026-08-25T11:58:00+00:00"
+    # 三个时间字段全无效 → 没有最终 pubDate 可言 → 丢弃
+    dateless = _doc("dateless", source="news", published_at="not-a-date")
+
+    filtered = _filter_rows_to_window(
+        [old, recent, fallback, dateless], window=timedelta(hours=48), now=now
+    )
+
+    assert [row["id"] for row in filtered] == ["recent", "fallback"]
+
+
 def test_public_feed_merges_sources_newest_first_with_cache_headers() -> None:
     documents = MagicMock()
 
     def fake_list(source: str, *, since_iso: str, until_iso=None, limit: int = 500):
         if source == "arxiv":
-            return [_doc("a-old", published_at="2026-08-17T01:00:00+00:00")]
+            return [_doc("a-old", published_at=_iso_hours_ago(47))]
         if source == "news":
-            return [_doc("n-new", source="news", published_at="2026-08-18T09:00:00+00:00")]
+            return [_doc("n-new", source="news", published_at=_iso_hours_ago(1))]
         return []
 
     documents.list_recent_by_source.side_effect = fake_list
@@ -304,7 +336,8 @@ def test_public_feed_by_source_and_unknown_source_404() -> None:
 
 def test_github_feed_serves_today_hot_board_instead_of_documents_pool() -> None:
     documents = MagicMock()
-    catalog = _catalog([_hot_item()])
+    captured = _iso_hours_ago(2)
+    catalog = _catalog([_hot_item(captured_at=captured)])
     client = _client(documents=documents, catalog=catalog)
 
     response = client.get("/api/feeds/github.xml")
@@ -313,7 +346,7 @@ def test_github_feed_serves_today_hot_board_instead_of_documents_pool() -> None:
     body = response.text
     assert "ifixai-ai/iFixAi" in body
     assert "中文简介" in body and "今日 +843" in body
-    assert "<pubDate>Tue, 18 Aug 2026 06:48:47 +0000</pubDate>" in body
+    assert f"<pubDate>{_rfc822(captured)}</pubDate>" in body
     # 不再镜像 trending 抓取的 documents 池
     documents.list_recent_by_source.assert_not_called()
     # 与站内 /projects?scope=today 同口径：scope=today + sort=None（服务端强制 hot）
@@ -328,11 +361,12 @@ def test_github_feed_preserves_hot_rank_despite_mixed_capture_batches() -> None:
     # 热榜条目 captured_at 分属不同时次的快照刷新；feed 必须保持 hot 名次，
     # 不能按捕获时间重排（pubDate 统一归一到最新快照时间）。
     documents = MagicMock()
+    latest = _iso_hours_ago(2)
     catalog = _catalog(
         [
-            _hot_item("rank1/newly-recaptured", captured_at="2026-08-18T06:48:47+00:00"),
-            _hot_item("rank2/earlier-batch", captured_at="2026-08-17T23:17:00+00:00"),
-            _hot_item("rank3/mid-batch", captured_at="2026-08-18T05:17:00+00:00"),
+            _hot_item("rank1/newly-recaptured", captured_at=latest),
+            _hot_item("rank2/earlier-batch", captured_at=_iso_hours_ago(26)),
+            _hot_item("rank3/mid-batch", captured_at=_iso_hours_ago(5)),
         ]
     )
     client = _client(documents=documents, catalog=catalog)
@@ -343,15 +377,20 @@ def test_github_feed_preserves_hot_rank_despite_mixed_capture_batches() -> None:
     body = response.text
     assert body.index("rank1/newly-recaptured") < body.index("rank2/earlier-batch")
     assert body.index("rank2/earlier-batch") < body.index("rank3/mid-batch")
-    # 三条 pubDate 均为最新快照时间 06:48:47
-    assert body.count("<pubDate>Tue, 18 Aug 2026 06:48:47 +0000</pubDate>") == 3
+    # 三条 pubDate 均归一到最新快照时间
+    assert body.count(f"<pubDate>{_rfc822(latest)}</pubDate>") == 3
 
 
 def test_github_feed_falls_back_to_documents_pool_when_hot_board_unavailable() -> None:
     for catalog in (_catalog(error=RuntimeError("db down")), _catalog([])):
         documents = MagicMock()
         documents.list_recent_by_source.return_value = [
-            _doc("gh-trending", source="github", url="https://github.com/a/b")
+            _doc(
+                "gh-trending",
+                source="github",
+                url="https://github.com/a/b",
+                published_at=_iso_hours_ago(3),
+            )
         ]
         client = _client(documents=documents, catalog=catalog)
 
@@ -369,18 +408,18 @@ def test_public_feed_merges_hot_board_items_with_other_sources() -> None:
 
     def fake_list(source: str, *, since_iso: str, until_iso=None, limit: int = 500):
         if source == "news":
-            return [_doc("n-old", source="news", published_at="2026-08-17T01:00:00+00:00")]
+            return [_doc("n-old", source="news", published_at=_iso_hours_ago(24))]
         return []
 
     documents.list_recent_by_source.side_effect = fake_list
-    catalog = _catalog([_hot_item()])
+    catalog = _catalog([_hot_item(captured_at=_iso_hours_ago(1))])
     client = _client(documents=documents, catalog=catalog)
 
     response = client.get("/api/feed.xml")
 
     assert response.status_code == 200
     body = response.text
-    # 热榜条目（captured_at 08-18）参与全局归并排序，排在隔日 news 之前
+    # 热榜条目（captured_at 更近）参与全局归并排序，排在隔日 news 之前
     assert body.index("ifixai-ai/iFixAi") < body.index("n-old")
     # github 不走 documents 池，其余源不受影响
     queried = {call.args[0] for call in documents.list_recent_by_source.call_args_list}
@@ -395,7 +434,7 @@ def test_member_feed_uses_hot_board_for_github_source() -> None:
         "user_id": 7,
         "membership_tier": "member",
     }
-    catalog = _catalog([_hot_item()])
+    catalog = _catalog([_hot_item(captured_at=_iso_hours_ago(2))])
     client = _client(documents=documents, tokens=tokens, catalog=catalog)
 
     response = client.get("/api/feeds/member.xml?token=ok&source=github,arxiv")
@@ -434,7 +473,9 @@ def test_member_feed_rejects_invalid_token_and_free_tier() -> None:
 
 def test_member_feed_returns_full_content_for_member() -> None:
     documents = MagicMock()
-    documents.list_recent_by_source.return_value = [_doc("a1", translation_zh="中文译文")]
+    documents.list_recent_by_source.return_value = [
+        _doc("a1", translation_zh="中文译文", published_at=_iso_hours_ago(3))
+    ]
     tokens = MagicMock()
     tokens.get_user_by_mcp_token_hash.return_value = {
         "user_id": 7,

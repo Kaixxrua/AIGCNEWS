@@ -284,6 +284,27 @@ def _sort_rows_newest_first(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(rows, key=key, reverse=True)
 
 
+def _filter_rows_to_window(
+    rows: list[dict[str, Any]],
+    *,
+    window: timedelta,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    """只保留最终 RSS pubDate 位于声明窗口内的条目。
+
+    DocumentRecentReader 为兼容历史数据，会把近期入库但业务日期较旧的行
+    返回给调用者。RSS 不能沿用这个 fallback：阅读器会把旧 pubDate 当作新
+    条目重新推送。因此这里按最终展示日期严格过滤，并丢弃无有效日期的行。
+    """
+    cutoff = now - window
+    return [
+        row
+        for row in rows
+        if (published := _parse_published_at(_row_published_value(row))) is not None
+        and cutoff <= published <= now
+    ]
+
+
 async def _collect_rows(
     documents: DocumentRecentReader,
     sources: set[str],
@@ -293,22 +314,31 @@ async def _collect_rows(
     catalog: ProjectCatalogQueryService | None = None,
 ) -> list[dict[str, Any]]:
     """并发拉取各源滚动窗口文档（github 改由站内今日热榜供稿），按发布时间归并后截断。"""
-    since = (datetime.now(timezone.utc) - window).isoformat()
+    now = datetime.now(timezone.utc)
+    since = (now - window).isoformat()
+    # 共享 reader 为兼容历史数据可能返回近期入库的旧日期行；多取一批，避免
+    # 这些行在数据库 LIMIT 内挤掉真正落在 RSS 窗口内的新条目，再由本层严格过滤。
+    candidate_limit = min(max(limit * 2, limit), 500)
     doc_sources = sorted(sources - {"github"})
     tasks: list[Any] = [
         asyncio.to_thread(
             documents.list_recent_by_source,
             source,
             since_iso=since,
-            limit=limit,
+            limit=candidate_limit,
         )
         for source in doc_sources
     ]
     if "github" in sources:
-        tasks.append(_github_feed_rows(documents, catalog, since_iso=since, limit=limit))
+        tasks.append(
+            _github_feed_rows(
+                documents, catalog, since_iso=since, limit=candidate_limit
+            )
+        )
     batches = await asyncio.gather(*tasks)
     merged = [row for batch in batches for row in batch]
-    return _sort_rows_newest_first(merged)[:limit]
+    filtered = _filter_rows_to_window(merged, window=window, now=now)
+    return _sort_rows_newest_first(filtered)[:limit]
 
 
 def _xml_response(xml: str, *, cache_control: str) -> Response:
