@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { PASSWORD_MIN_LENGTH } from '@/features/auth/authViewModel'
 const { t } = useI18n()
 defineProps<{
   password: string
@@ -31,7 +32,7 @@ const emit = defineEmits<{
       @input="emit('update:password', ($event.target as HTMLInputElement).value)"
     />
     <Transition name="fade-msg">
-      <p v-if="password && password.length < 6" class="text-2xs text-rose-500 pl-1">{{ t('auth.passwordMin') }}</p>
+      <p v-if="password && password.length < PASSWORD_MIN_LENGTH" class="text-2xs text-rose-500 pl-1">{{ t('auth.passwordMin') }}</p>
     </Transition>
   </div>
 

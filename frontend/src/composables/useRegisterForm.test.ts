@@ -24,7 +24,7 @@ describe('useRegisterForm', () => {
     const form = makeForm()
     form.email.value = 'a@b.com'
     form.otp.value = '123456'
-    form.password.value = 'secret123'
+    form.password.value = 'secret1234'
     form.confirmPwd.value = 'different'
     form.agreedToTerms.value = true
 
@@ -38,8 +38,8 @@ describe('useRegisterForm', () => {
     const form = makeForm()
     form.email.value = 'a@b.com'
     form.otp.value = '123456'
-    form.password.value = 'secret123'
-    form.confirmPwd.value = 'secret123'
+    form.password.value = 'secret1234'
+    form.confirmPwd.value = 'secret1234'
     form.agreedToTerms.value = false
 
     await form.handleRegister()
@@ -52,14 +52,14 @@ describe('useRegisterForm', () => {
     const form = makeForm()
     form.email.value = 'a@b.com'
     form.otp.value = '123456'
-    form.password.value = 'secret123'
-    form.confirmPwd.value = 'secret123'
+    form.password.value = 'secret1234'
+    form.confirmPwd.value = 'secret1234'
     form.agreedToTerms.value = true
 
     await form.handleRegister()
 
-    expect(post).toHaveBeenCalledWith('/auth/register', { email: 'a@b.com', email_code: '123456', password: 'secret123' })
-    expect(login).toHaveBeenCalledWith('a@b.com', 'secret123')
+    expect(post).toHaveBeenCalledWith('/auth/register', { email: 'a@b.com', email_code: '123456', password: 'secret1234' })
+    expect(login).toHaveBeenCalledWith('a@b.com', 'secret1234')
     expect(form.successMsg.value).toBe('auth.registerSuccess')
     // 延迟前不调用
     expect(onSuccess).not.toHaveBeenCalled()
@@ -72,8 +72,8 @@ describe('useRegisterForm', () => {
     const form = makeForm()
     form.email.value = 'a@b.com'
     form.otp.value = '123456'
-    form.password.value = 'secret123'
-    form.confirmPwd.value = 'secret123'
+    form.password.value = 'secret1234'
+    form.confirmPwd.value = 'secret1234'
     form.agreedToTerms.value = true
 
     await form.handleRegister()

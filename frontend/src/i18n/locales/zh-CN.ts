@@ -30,9 +30,9 @@ const overrides = {
   auth: {
     login: '登录', logout: '退出登录', username: '用户名', password: '密码', email: '邮箱', otp: '验证码', newPassword: '新密码', confirmPassword: '确认密码',
     loginTitle: 'AIGC 资讯 · 登录', loginDescription: '欢迎回来，请登录您的账号', registerTitle: 'AIGC 资讯 · 注册', registerDescription: '创建您的账号，开启 AI 资讯之旅', forgotTitle: 'AIGC 资讯 · 重置密码', forgotDescription: '通过邮箱验证码设置新密码',
-    emailPlaceholder: "you{'@'}example.com", passwordPlaceholder: '请输入密码', otpPlaceholder: '6 位数字验证码', newPasswordPlaceholder: '至少 6 个字符', confirmPasswordPlaceholder: '再次输入密码',
+    emailPlaceholder: "you{'@'}example.com", passwordPlaceholder: '请输入密码', otpPlaceholder: '6 位数字验证码', newPasswordPlaceholder: '至少 8 个字符', confirmPasswordPlaceholder: '再次输入密码',
     fillEmailPassword: '请填写邮箱和密码', loginFailed: '登录失败，请检查邮箱和密码', loggingIn: '登录中…', forgotPassword: '忘记密码？', noAccount: '还没有账号？', registerNow: '立即注册', hasAccount: '已有账号？', goLogin: '去登录', rememberPassword: '想起密码了？', backToLogin: '返回登录',
-    getOtp: '获取验证码', resendOtp: '重新获取({countdown}s)', invalidEmail: '请输入正确格式的邮箱地址', invalidEmailGeneric: '请输入有效的邮箱地址', invalidOtp: '验证码应为 6 位数字', passwordMin: '密码至少需要 6 个字符', passwordMismatch: '两次密码输入不一致', agreeTerms: '我已阅读并同意', terms: '《用户协议与免责声明》', and: '及', termsSuffix: '，包括但不限于 AI 内容免责、禁止违法输入等条款', agreeAria: '同意用户协议与免责声明',
+    getOtp: '获取验证码', resendOtp: '重新获取({countdown}s)', invalidEmail: '请输入正确格式的邮箱地址', invalidEmailGeneric: '请输入有效的邮箱地址', invalidOtp: '验证码应为 6 位数字', passwordMin: '密码至少需要 8 个字符', passwordMismatch: '两次密码输入不一致', agreeTerms: '我已阅读并同意', terms: '《用户协议与免责声明》', and: '及', termsSuffix: '，包括但不限于 AI 内容免责、禁止违法输入等条款', agreeAria: '同意用户协议与免责声明',
     registering: '注册中…', register: '注册', reset: '重置密码', resetting: '重置中…', rateLimited: '请 60 秒后再试', otpSent: '验证码已发送，请查收邮件', otpSentIfRegistered: '如果该邮箱已注册，验证码将发送至该邮箱', sendOtpFailed: '发送验证码失败，请稍后再试', registerSuccess: '注册成功！正在为您自动登录…', registerFailed: '注册失败，请稍后再试', mustAgree: '请阅读并同意《用户协议与免责声明》后再注册', resetSuccess: '密码重置成功，即将返回登录页…', resetFailed: '密码重置失败，请稍后再试', sessionExpired: '登录已过期，请重新登录。',
     changeTitle: '修改密码', changeDescription: '验证码将发送到当前账号邮箱，凭验证码设置新密码。', changeOtpLabel: '邮箱验证码', changeOtpSent: '验证码已发送至当前账号邮箱，5 分钟内有效', changeSubmit: '确认修改', changing: '修改中…', changeSuccess: '密码已修改', changeFailed: '密码修改失败，请稍后重试', defaultPasswordBanner: '当前账号仍在使用公开默认密码，请立即修改', defaultPasswordBannerAction: '立即修改',
   },

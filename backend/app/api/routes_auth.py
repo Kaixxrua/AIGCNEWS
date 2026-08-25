@@ -188,10 +188,10 @@ _WEAK_PASSWORD_BLOCKLIST = frozenset(
 
 
 def _validate_new_password(value: str) -> str:
-    # bcrypt 成本与在线爆破模型：10 位起 + 弱口令黑名单；
+    # bcrypt 成本与在线爆破模型：8 位起 + 弱口令黑名单；
     # 72 字节上限是 bcrypt 输入截断边界（超限静默截断会造成可用性歧义）
-    if len(value) < 10:
-        raise ValueError("password must be at least 10 characters")
+    if len(value) < 8:
+        raise ValueError("password must be at least 8 characters")
     if len(value.encode("utf-8")) > 72:
         raise ValueError("password must not exceed 72 UTF-8 bytes")
     if value.lower() in _WEAK_PASSWORD_BLOCKLIST:

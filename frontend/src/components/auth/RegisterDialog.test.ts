@@ -80,8 +80,8 @@ describe('RegisterDialog', () => {
     }
     setNative(inputs[0], 'new@example.com')
     setNative(inputs[1], '123456')
-    setNative(inputs[2], 'secret123')
-    setNative(inputs[3], 'secret123')
+    setNative(inputs[2], 'secret1234')
+    setNative(inputs[3], 'secret1234')
     await nextTick()
     // 勾选协议
     ;([...dialog.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === '同意协议') as HTMLButtonElement).click()
@@ -92,8 +92,8 @@ describe('RegisterDialog', () => {
     await new Promise(r => setTimeout(r, 900))
     await nextTick()
 
-    expect(apiPost).toHaveBeenCalledWith('/auth/register', { email: 'new@example.com', email_code: '123456', password: 'secret123' })
-    expect(login).toHaveBeenCalledWith('new@example.com', 'secret123')
+    expect(apiPost).toHaveBeenCalledWith('/auth/register', { email: 'new@example.com', email_code: '123456', password: 'secret1234' })
+    expect(login).toHaveBeenCalledWith('new@example.com', 'secret1234')
     expect(wrapper.emitted('success')).toHaveLength(1)
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
     // 弹窗模式不跳页

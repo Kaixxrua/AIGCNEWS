@@ -24,8 +24,8 @@ describe('useChangePasswordForm', () => {
   it('rejects an invalid otp without calling submit', async () => {
     const form = makeForm()
     form.otp.value = '123'
-    form.password.value = 'newpass1'
-    form.confirmPwd.value = 'newpass1'
+    form.password.value = 'newpass123'
+    form.confirmPwd.value = 'newpass123'
 
     await form.handleSubmit()
 
@@ -45,11 +45,23 @@ describe('useChangePasswordForm', () => {
     expect(submit).not.toHaveBeenCalled()
   })
 
+  it('rejects a nine-character password before submitting', async () => {
+    const form = makeForm()
+    form.otp.value = '123456'
+    form.password.value = '1234567'
+    form.confirmPwd.value = '1234567'
+
+    await form.handleSubmit()
+
+    expect(form.errorMsg.value).toBe('auth.passwordMin')
+    expect(submit).not.toHaveBeenCalled()
+  })
+
   it('rejects mismatched password confirmation', async () => {
     const form = makeForm()
     form.otp.value = '123456'
-    form.password.value = 'newpass1'
-    form.confirmPwd.value = 'newpass2'
+    form.password.value = 'newpass123'
+    form.confirmPwd.value = 'newpass124'
 
     await form.handleSubmit()
 
@@ -61,12 +73,12 @@ describe('useChangePasswordForm', () => {
     const onChanged = vi.fn()
     const form = makeForm(onChanged)
     form.otp.value = '123456'
-    form.password.value = 'newpass1'
-    form.confirmPwd.value = 'newpass1'
+    form.password.value = 'newpass123'
+    form.confirmPwd.value = 'newpass123'
 
     await form.handleSubmit()
 
-    expect(submit).toHaveBeenCalledWith('123456', 'newpass1')
+    expect(submit).toHaveBeenCalledWith('123456', 'newpass123')
     expect(form.changeDone.value).toBe(true)
     expect(form.successMsg.value).toBe('auth.changeSuccess')
     expect(form.errorMsg.value).toBe('')
@@ -78,8 +90,8 @@ describe('useChangePasswordForm', () => {
     submit.mockRejectedValue({ response: { status: 429 } })
     const form = makeForm()
     form.otp.value = '123456'
-    form.password.value = 'newpass1'
-    form.confirmPwd.value = 'newpass1'
+    form.password.value = 'newpass123'
+    form.confirmPwd.value = 'newpass123'
 
     await form.handleSubmit()
 
@@ -92,8 +104,8 @@ describe('useChangePasswordForm', () => {
     submit.mockRejectedValue({ response: { status: 400, data: { detail: '验证码错误或已过期' } } })
     const form = makeForm()
     form.otp.value = '000000'
-    form.password.value = 'newpass1'
-    form.confirmPwd.value = 'newpass1'
+    form.password.value = 'newpass123'
+    form.confirmPwd.value = 'newpass123'
 
     await form.handleSubmit()
 
@@ -104,8 +116,8 @@ describe('useChangePasswordForm', () => {
     submit.mockRejectedValue({})
     const form = makeForm()
     form.otp.value = '123456'
-    form.password.value = 'newpass1'
-    form.confirmPwd.value = 'newpass1'
+    form.password.value = 'newpass123'
+    form.confirmPwd.value = 'newpass123'
 
     await form.handleSubmit()
 
@@ -139,8 +151,8 @@ describe('useChangePasswordForm', () => {
   it('reset clears all form state', async () => {
     const form = makeForm()
     form.otp.value = '123456'
-    form.password.value = 'newpass1'
-    form.confirmPwd.value = 'newpass1'
+    form.password.value = 'newpass123'
+    form.confirmPwd.value = 'newpass123'
     await form.handleSubmit()
     expect(form.changeDone.value).toBe(true)
 

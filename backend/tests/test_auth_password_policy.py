@@ -13,19 +13,19 @@ from backend.app.api.routes_auth import (
 
 
 class PasswordPolicyTests(unittest.TestCase):
-    """新口令策略：最小长度 10 + 弱口令黑名单 + bcrypt 72 字节上限。
+    """新口令策略：最小长度 8 + 弱口令黑名单 + bcrypt 72 字节上限。
 
     渗透审计 AUTH-C：原最小 6 位无黑名单，配合登录固定窗口限速
     （每账号 10 次/10 分钟 ≈ 1440 次/天）在线爆破现实可行。
     """
 
     def test_rejects_short_passwords(self) -> None:
-        for value in ("", "a" * 9):
+        for value in ("", "a" * 7):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 _validate_new_password(value)
 
-    def test_accepts_ten_characters_and_above(self) -> None:
-        self.assertEqual(_validate_new_password("x9" * 5), "x9" * 5)
+    def test_accepts_eight_characters_and_above(self) -> None:
+        self.assertEqual(_validate_new_password("x9" * 4), "x9" * 4)
 
     def test_rejects_blocklisted_passwords_case_insensitively(self) -> None:
         for value in ("1234567890", "ADMIN123456", "Password123", "aigcnews123"):
@@ -52,7 +52,7 @@ class PasswordPolicyTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ChangePasswordRequest(email_code="123456", new_password="short")
         with self.assertRaises(ValidationError):
-            ChangePasswordRequest(email_code="abcde", new_password="x9" * 5)
+            ChangePasswordRequest(email_code="abcde", new_password="x9" * 4)
         # 合法值三个 schema 均放行
         strong = "Str0ng!Passphrase"
         self.assertEqual(
