@@ -87,9 +87,9 @@ describe('Dashboard request lifecycle contract', () => {
     await flush()
 
     expect(mounted.dashboard.activeTab.value).toBe('github')
-    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal) })
+    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledWith({ period: 'daily', date: undefined, signal: expect.any(AbortSignal) })
     expect(defaultDashboardApi.fetchTop).toHaveBeenCalledWith({
-      limit: 10, source: 'github', period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal),
+      limit: 10, source: 'github', period: 'daily', date: undefined, signal: expect.any(AbortSignal),
     })
     expect(defaultDashboardApi.fetchSnapshotDates).toHaveBeenCalledWith({ limit: 90, source: 'github', period: 'daily', signal: expect.any(AbortSignal) })
     expect(liveStatsApi.fetchLiveStats).toHaveBeenCalledWith(expect.any(AbortSignal))
@@ -114,7 +114,7 @@ describe('Dashboard request lifecycle contract', () => {
     await flush()
 
     expect(defaultDashboardApi.fetchTop).toHaveBeenLastCalledWith({
-      limit: 10, source: 'news', period: 'daily', date: '2026-07-27', signal: expect.any(AbortSignal),
+      limit: 10, source: 'news', period: 'daily', date: undefined, signal: expect.any(AbortSignal),
     })
     expect(mounted.dashboard.loading.value).toBe(false)
     await vi.waitFor(() => expect(mounted.dashboard.tabLoading.value).toBe(false))

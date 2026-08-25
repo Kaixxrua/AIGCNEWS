@@ -113,7 +113,8 @@ export interface DashboardVisitorCount {
 export interface DashboardSummaryParams {
   /** 榜单周期；缺省后端按默认周期解析（undefined 不入查询串） */
   period?: PeriodKey
-  date: string
+  /** 今天省略日期以启用后端的可展示日期回溯；历史日期显式传入。 */
+  date?: string
   signal?: AbortSignal
 }
 

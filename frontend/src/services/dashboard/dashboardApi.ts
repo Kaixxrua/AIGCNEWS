@@ -35,8 +35,11 @@ export type {
 
 export const dashboardApi: DashboardApi = {
   async fetchSummary({ period, date, signal }) {
+    const params: Record<string, unknown> = {}
+    if (period) params.period = period
+    if (date) params.date = date
     const response = await api.get<DashboardSummaryWireResponse>('/dashboard/summary', {
-      params: { period, date },
+      params,
       signal,
     })
     return {
@@ -47,8 +50,11 @@ export const dashboardApi: DashboardApi = {
   },
 
   async fetchSummaryStatic({ period, date, signal }): Promise<DashboardStaticSummary> {
+    const params: Record<string, unknown> = {}
+    if (period) params.period = period
+    if (date) params.date = date
     const response = await api.get<DashboardStaticSummaryWireResponse>('/dashboard/summary-static', {
-      params: { period, date },
+      params,
       signal,
     })
     return {
@@ -58,7 +64,8 @@ export const dashboardApi: DashboardApi = {
   },
 
   async fetchTop({ source, period, date, limit = 10, signal, cacheBuster }) {
-    const params: Record<string, unknown> = { limit, source, period, date }
+    const params: Record<string, unknown> = { limit, source, period }
+    if (date) params.date = date
     if (cacheBuster) params._t = cacheBuster
     const response = await api.get<DashboardTopWireResponse>('/dashboard/top', { params, signal })
     return {

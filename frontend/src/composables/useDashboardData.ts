@@ -106,12 +106,14 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     controller: AbortController,
     generation: number,
   ) => {
+    // 今天不显式传 date，让后端回溯到最近一个可展示快照；历史日期仍精确查询。
+    const requestDate = selectedDate === todayStr ? undefined : selectedDate
     const staticSummaryRequest = dashboardApi.fetchSummaryStatic
-      ? dashboardApi.fetchSummaryStatic({ period: PERIOD, date: selectedDate, signal: controller.signal })
-      : dashboardApi.fetchSummary({ period: PERIOD, date: selectedDate, signal: controller.signal })
+      ? dashboardApi.fetchSummaryStatic({ period: PERIOD, date: requestDate, signal: controller.signal })
+      : dashboardApi.fetchSummary({ period: PERIOD, date: requestDate, signal: controller.signal })
     const [summary, top, live] = await Promise.all([
       staticSummaryRequest,
-      dashboardApi.fetchTop({ limit: 10, source: tab, period: PERIOD, date: selectedDate, signal: controller.signal }),
+      dashboardApi.fetchTop({ limit: 10, source: tab, period: PERIOD, date: requestDate, signal: controller.signal }),
       fetchLiveStats(controller.signal),
     ])
     if (!isCurrentDashboardRequest(controller, generation)) return false
