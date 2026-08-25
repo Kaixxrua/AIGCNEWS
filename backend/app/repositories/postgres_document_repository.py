@@ -189,12 +189,18 @@ class PostgresDocumentRepository:
 
     def upsert_x_document_with_translation_targets(
         self, doc: dict[str, Any], targets: list[dict[str, Any]]
-    ) -> None:
-        """Upsert an X document and seed its translation targets atomically."""
+    ) -> bool:
+        """Upsert an X document and seed its translation targets atomically.
+
+        The returned flag describes only the ``documents`` row.  Translation-task
+        upserts below are deliberately not part of the new-document accounting.
+        """
         params = self._document_params(doc)
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                self._execute_document_upsert(cursor, params)
+                inserted = self._execute_document_upsert(
+                    cursor, params, return_inserted=True
+                )
                 for target in targets:
                     source_text = str(target.get("source_text") or "")
                     if not source_text:
@@ -248,11 +254,16 @@ class PostgresDocumentRepository:
                          source_lang, fingerprint, source_lang, source_lang,
                          source_lang, source_lang),
                     )
+        return inserted
 
     @staticmethod
-    def _execute_document_upsert(cursor: Any, params: dict[str, Any]) -> None:
-        cursor.execute(
-            """
+    def _execute_document_upsert(
+        cursor: Any,
+        params: dict[str, Any],
+        *,
+        return_inserted: bool = False,
+    ) -> bool:
+        sql = """
             INSERT INTO documents
                 (id, source, source_channel, title, url, summary, published_date,
                  published_at, tags, score, raw_score, stars, forks, language, rank_in_period,
@@ -318,9 +329,18 @@ class PostgresDocumentRepository:
                 translation_zh=COALESCE(NULLIF(EXCLUDED.translation_zh, ''), documents.translation_zh),
                 authors=COALESCE(NULLIF(EXCLUDED.authors, ''), documents.authors),
                 arxiv_id=COALESCE(NULLIF(EXCLUDED.arxiv_id, ''), documents.arxiv_id)
-            """,
-            params,
-        )
+        """
+        if return_inserted:
+            sql += " RETURNING (xmax = 0) AS inserted"
+        cursor.execute(sql, params)
+        if not return_inserted:
+            return False
+        row = cursor.fetchone()
+        if isinstance(row, dict):
+            return bool(row.get("inserted"))
+        if row:
+            return bool(row[0])
+        return False
 
     def delete_document(self, doc_id: str) -> bool:
         with self._database.transaction() as connection:

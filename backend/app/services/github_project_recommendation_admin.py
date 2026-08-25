@@ -34,6 +34,10 @@ class EnrichmentStatusReader(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class GitHubCatalogTotalReader(Protocol):
+    async def github_library_total(self) -> int: ...
+
+
 class GitHubProjectAdminValidationError(ValueError):
     pass
 
@@ -53,9 +57,11 @@ class GitHubProjectRecommendationAdminService:
         self,
         recommendations: RecommendationWriter,
         enrichment_status: EnrichmentStatusReader,
+        catalog: GitHubCatalogTotalReader | None = None,
     ) -> None:
         self._recommendations = recommendations
         self._enrichment_status = enrichment_status
+        self._catalog = catalog
 
     async def recommend(
         self,
@@ -105,6 +111,10 @@ class GitHubProjectRecommendationAdminService:
         status = await asyncio.to_thread(
             self._enrichment_status.get_github_project_enrichment_status
         )
+        if self._catalog is not None:
+            # 与首页 source_counts.github 复用同一目录查询口径，避免监控页把
+            # 当前队列进度误当成项目库总量。
+            status["github_library_total"] = await self._catalog.github_library_total()
         # 附带本进程富化批处理运行标记，供运维面板在刷新页面后仍能展示「终止」入口
         from backend.app.services.ingestion.github_project_enricher import (
             github_enrichment_batch_running,

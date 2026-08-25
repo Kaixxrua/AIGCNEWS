@@ -97,8 +97,8 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
     async def test_warm_populates_frontend_initial_load_keys(self) -> None:
         await warm_dashboard_cache(_make_repositories())
 
-        # static summary + 6 个源 tab 的 top + x/recent，共 8 个 key
-        self.assertEqual(len(_dashboard_keys()), 1 + len(_DASHBOARD_TAB_SOURCES) + 1)
+        # static summary + 6 个源 tab 的 top；X recent 是动态无缓存查询
+        self.assertEqual(len(_dashboard_keys()), 1 + len(_DASHBOARD_TAB_SOURCES))
 
     async def test_frontend_request_shape_hits_warmed_cache(self) -> None:
         repositories = _make_repositories()
@@ -145,8 +145,8 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_FakeQueryService.instances, instances_after_warm)
 
     async def test_single_endpoint_failure_does_not_break_others(self) -> None:
-        # x/recent 依赖的 documents 查询抛错：该端点预热失败，
-        # 但 summary 与 6 个 top 仍应写入缓存，且整体不向外抛异常
+        # 动态 X recent 不参与预热；即使 documents 查询故障，也不影响
+        # summary 与 6 个 top 的静态首屏缓存。
         await warm_dashboard_cache(_make_repositories(recent_docs_raiser=True))
 
         self.assertEqual(len(_dashboard_keys()), 1 + len(_DASHBOARD_TAB_SOURCES))

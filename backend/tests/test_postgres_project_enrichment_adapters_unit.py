@@ -44,7 +44,6 @@ def test_github_candidate_query_pushes_eligibility_and_limit_into_sql() -> None:
     assert "readme_status = 'succeeded'" in sql
     assert "BTRIM(COALESCE(ss.readme_text, '')) <> ''" in sql
     assert "LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id" in sql
-    assert "c.availability_status" in sql
     assert "DISTINCT ON (repo_id)" in sql
     # 改名墓碑行（旧名候选行）必须排除：富化写入归一到新名行，
     # 旧名行若入选会永远重复富化、待处理计数清不零
@@ -88,8 +87,7 @@ def test_github_enrichment_status_query_excludes_alias_tombstones() -> None:
         sql = call.args[0]
         assert "github_repo_aliases ga" in sql
         assert "ga.alias_repo_id = c.repo_id" in sql
-    # The shared CTE is reused by eligible, unprocessable and retained
-    # statistics; retained 引 3 处 %s（展示门槛 + 否定队列谓词 2 处）。
+    # The canonical catalog CTE is reused by all status projections.
     assert cursor.execute.call_args_list[0].args[1] == (600,) * 5
 
 

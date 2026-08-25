@@ -99,3 +99,14 @@ def test_public_rest_project_handlers_use_catalog_factory() -> None:
         min_stars=500,
         enriched_only=True,
     )
+
+
+def test_github_library_total_uses_dedicated_count() -> None:
+    repository = MagicMock()
+    repository.count_github_catalog_candidates.return_value = 18776
+
+    service = ProjectCatalogQueryService(repository_factory=lambda: repository)
+
+    assert asyncio.run(service.github_library_total()) == 18776
+    repository.count_github_catalog_candidates.assert_called_once_with(min_stars=500)
+    repository.list_projects.assert_not_called()

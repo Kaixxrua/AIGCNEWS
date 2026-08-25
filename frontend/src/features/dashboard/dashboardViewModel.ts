@@ -95,6 +95,14 @@ export interface TweetMediaItem {
 export interface Stats {
   total_documents?: number
   source_counts?: Record<string, number>
+  github_library_total?: number
+  github_enrichment?: {
+    total: number
+    succeeded: number
+    failed: number
+    unprocessable: number
+    pending: number
+  }
   registered_users?: number
   today_registered_users?: number
   user_count?: number

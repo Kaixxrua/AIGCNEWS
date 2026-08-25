@@ -87,13 +87,11 @@ class ProjectCatalogQueryService:
         )
 
     async def github_library_total(self) -> int:
-        """项目库 GitHub 收录总量（与 /projects 列表同一查询口径）。"""
-        result = await asyncio.to_thread(
-            self._repository_factory().list_projects,
-            source="github",
-            scope="all",
-            page=1,
-            page_size=1,
-            sort="stars",
+        """Return the public GitHub catalog total used by dashboard source counts."""
+        return int(
+            await asyncio.to_thread(
+                self._repository_factory().count_github_catalog_candidates,
+                min_stars=PUBLIC_PROJECT_MIN_STARS,
+            )
+            or 0
         )
-        return int(result.get("total") or 0)

@@ -196,20 +196,12 @@ def test_cache_key_ignores_frontend_cache_buster_param() -> None:
     assert first == second
 
 
-def test_x_recent_cache_ttl_covers_ingest_cadence() -> None:
-    """x/recent 冷算 ~2.3s：TTL 必须覆盖采集 cadence（5 分钟一轮）。
-
-    采集成功后 clear_and_warm_dashboard_cache 先清后暖本 key，新鲜度由
-    「距上次采集」界定；TTL 回退到 cadence 以下（如历史 120s）会让两轮
-    采集间隙的访问必然 MISS 付冷算。
-    """
+def test_x_recent_has_no_fixed_ttl() -> None:
+    """X 相对 now 的动态窗口不能依赖固定 TTL。"""
     import inspect
-    import re
 
     source = inspect.getsource(routes_dashboard.get_x_recent)
-    match = re.search(r"@cache\(expire=(\d+)", source)
-    assert match is not None, "get_x_recent 缺少 @cache(expire=...) 装饰器"
-    assert int(match.group(1)) >= 300
+    assert "@cache(" not in source
 
 
 def test_cache_key_ignores_unknown_params_but_separates_whitelisted_ones() -> None:
@@ -744,7 +736,7 @@ def test_x_recent_days_back_shifts_the_window_by_whole_days() -> None:
     assert now - timedelta(hours=48, minutes=1) <= parsed_since <= now - timedelta(hours=47, minutes=59)
 
 
-def test_x_recent_short_cache_ignores_frontend_cache_buster() -> None:
+def test_x_recent_reads_current_data_for_each_request() -> None:
     now = datetime.now(timezone.utc)
     docs = [
         {"id": "x:new", "source": "x", "published_at": (now - timedelta(hours=1)).isoformat()},
@@ -772,8 +764,8 @@ def test_x_recent_short_cache_ignores_frontend_cache_buster() -> None:
         client = TestClient(app)
         first = client.get("/api/dashboard/x/recent?hours=24&limit=500&_t=111")
         second = client.get("/api/dashboard/x/recent?hours=24&limit=500&_t=222")
-        # _t 不进缓存 key：相同业务参数的重复访问命中 120s 短缓存，只读一次库
-        assert reader.calls == 1
+        # X recent 不使用固定 TTL；即使业务参数相同也重新读取相对 now 的窗口。
+        assert reader.calls == 2
         other_params = client.get("/api/dashboard/x/recent?hours=48&limit=500&_t=333")
         shifted = client.get("/api/dashboard/x/recent?hours=24&days_back=1&limit=500&_t=444")
     finally:
@@ -785,7 +777,7 @@ def test_x_recent_short_cache_ignores_frontend_cache_buster() -> None:
     # 业务参数变化（含 days_back）仍是新 key，照常读库
     assert other_params.status_code == 200
     assert shifted.status_code == 200
-    assert reader.calls == 3
+    assert reader.calls == 4
 
 
 def test_top_route_preserves_x_media_metadata() -> None:
@@ -931,12 +923,12 @@ def _summary_client(monkeypatch, catalog_factory, reader=None, github_hot=None) 
 
 
 def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
-    calls: list[dict[str, Any]] = []
+    calls: list[int] = []
 
     class FakeCatalog:
-        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
-            calls.append(kwargs)
-            return {"items": [], "total": 6983, "page": 1, "page_size": 1}
+        def count_github_catalog_candidates(self, *, min_stars: int = 500) -> int:
+            calls.append(min_stars)
+            return 6983
 
     client = _summary_client(monkeypatch, lambda: FakeCatalog())
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
@@ -956,9 +948,7 @@ def test_summary_github_stat_uses_project_library_count(monkeypatch) -> None:
     assert stats["today_unique_visitors"] == 7
     assert isinstance(stats["mcp_total_calls"], int)
     assert isinstance(stats["mcp_dsh_calls"], int)
-    assert calls == [
-        {"source": "github", "scope": "all", "page": 1, "page_size": 1, "sort": "stars"}
-    ]
+    assert calls == [500]
 
 
 def test_summary_static_is_cacheable_without_dynamic_stats(monkeypatch) -> None:
@@ -977,8 +967,8 @@ def test_summary_static_is_cacheable_without_dynamic_stats(monkeypatch) -> None:
 
 def test_summary_reads_current_mcp_stats_on_each_request(monkeypatch) -> None:
     class FakeCatalog:
-        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
-            return {"items": [], "total": 6983, "page": 1, "page_size": 1}
+        def count_github_catalog_candidates(self, *, min_stars: int = 500) -> int:
+            return 6983
 
     readings = iter([(3993, 7), (4001, 8)])
 
@@ -1042,8 +1032,8 @@ def test_summary_github_stat_falls_back_to_documents_when_catalog_unavailable(mo
 
 def test_live_stats_returns_flat_counters(monkeypatch) -> None:
     class FakeCatalog:
-        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
-            return {"items": [], "total": 6983, "page": 1, "page_size": 1}
+        def count_github_catalog_candidates(self, *, min_stars: int = 500) -> int:
+            return 6983
 
     client = _summary_client(monkeypatch, lambda: FakeCatalog())
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract")
@@ -1501,8 +1491,8 @@ def test_summary_mix_view_github_items_come_from_metrics(monkeypatch) -> None:
     github_hot = FakeGitHubHotReader({date: [_github_metric_row(metric_date=date)]})
 
     class FakeCatalog:
-        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
-            return {"items": [], "total": 0, "page": 1, "page_size": 1}
+        def count_github_catalog_candidates(self, *, min_stars: int = 500) -> int:
+            return 0
 
     client = _summary_client(
         monkeypatch, lambda: FakeCatalog(), reader=reader, github_hot=github_hot
@@ -1585,8 +1575,8 @@ def test_summary_route_default_view_carries_resolution_markers(monkeypatch) -> N
     reader = FakeRankSnapshotReader(dates=[fallback])
 
     class FakeCatalog:
-        def list_projects(self, **kwargs: Any) -> dict[str, Any]:
-            return {"items": [], "total": 0, "page": 1, "page_size": 1}
+        def count_github_catalog_candidates(self, *, min_stars: int = 500) -> int:
+            return 0
 
     client = _summary_client(monkeypatch, lambda: FakeCatalog(), reader=reader)
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-summary-fb-mark")

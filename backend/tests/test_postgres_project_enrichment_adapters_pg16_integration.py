@@ -94,16 +94,26 @@ def test_pg16_github_candidates_fingerprint_status_and_alias_upsert(repositories
         "new", source_fingerprint=candidates[1]["source_fingerprint"],
         prompt_version="v1", error_msg="boom"
     )
+    # 完整状态投影（真实 PG）：活动统计 = canonical 有效项目（alias/墓碑排除，
+    # 4 行候选只算 canonical+new），四状态守恒 total = s/f/u/p；队列计数与
+    # catalog 展示口径分离；retained 桶全零但结构齐全。
     assert github.get_github_project_enrichment_status() == {
         "eligible": 2, "succeeded": 1, "failed": 1, "pending": 0,
-        "unprocessable": 0, "unprocessable_projects": [],
-        "by_category": [{"slug": "agent", "name": "Agent", "count": 1}],
-        # 在库但退出队列的分桶溯源：canonical 仍在队列口径内、renamed_old
-        # 无富化记录，本用例无 retained 行
+        "queue_pending": 0, "queue_failed": 1, "content_total": 1,
+        "catalog_total": 2, "catalog_succeeded": 1, "catalog_failed": 1,
+        "catalog_pending": 0, "catalog_unprocessable": 0,
+        "catalog_progress": {
+            "total": 2, "succeeded": 1, "failed": 1,
+            "unprocessable": 0, "pending": 0,
+        },
         "retained_total": 0,
-        "retained_buckets": {"tombstone": 0, "not_found": 0,
-                             "snapshot_below_threshold": 0, "lost_input": 0},
+        "retained_buckets": {
+            "tombstone": 0, "not_found": 0,
+            "snapshot_below_threshold": 0, "lost_input": 0,
+        },
         "retained_projects": [],
+        "by_category": [{"slug": "agent", "name": "Agent", "count": 1}],
+        "unprocessable": 0, "unprocessable_projects": [],
     }
     assert [row["repo_id"] for row in github.get_github_projects_needing_enrichment(retry_failed=True)] == ["new"]
 
@@ -311,6 +321,32 @@ def test_pg16_website_metadata_merge_item_and_enrichment_failure(repositories) -
     assert failed is not None
     assert failed["status"] == "failed"
     assert len(failed["error_msg"]) == 2000
+
+
+def test_pg16_run_scope_excludes_alias_tombstones(repositories) -> None:
+    """单次爬取运行范围（count/list 共用 _RUN_SCOPE_WHERE）同样排除改名墓碑行：
+    旧名行的富化写入会归一到新名，留在范围内会被反复圈选、白烧模型调用。"""
+    database, github, _ = repositories
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO github_repo_candidates
+                (repo_id,full_name,description,language,topics_json,stars,forks,watchers,
+                 source_channels,first_seen_at)
+                VALUES ('run_canonical','acme/run-new','Desc','Python','[]',900,2,3,
+                        'it-chan','2026-08-20T00:00:00Z'),
+                       ('run_old','acme/run-old','Desc','Python','[]',950,2,3,
+                        'it-chan','2026-08-20T00:00:00Z')""")
+            cursor.execute("""INSERT INTO github_repo_aliases
+                (alias_repo_id,canonical_repo_id,full_name)
+                VALUES ('run_old','run_canonical','acme/run-old')""")
+
+    assert github.count_github_run_enrichment_candidates(
+        channel="it-chan", first_seen_after="2026-08-01T00:00:00Z", min_stars=500
+    ) == 1
+    rows = github.list_github_run_enrichment_candidates(
+        channel="it-chan", first_seen_after="2026-08-01T00:00:00Z", min_stars=500
+    )
+    assert [row["repo_id"] for row in rows] == ["run_canonical"]
 
 
 def test_pg16_refresh_changed_uses_sql_fingerprint_equivalent_to_python(repositories) -> None:

@@ -126,6 +126,48 @@ def test_upsert_round_trips_authors_and_arxiv_id_with_conflict_merge(
     assert detail["authors"] == '["Carol Wang"]'
 
 
+def test_upsert_x_document_returning_distinguishes_insert_from_conflict_update(
+    postgres_documents: tuple[Any, Any],
+) -> None:
+    """xmax=0 探测在真实 PG 上区分 INSERT 与 ON CONFLICT UPDATE：新行 True、
+    重复 upsert False；翻译辅助表写入不计入新行口径（仪表盘缓存失效契约）。"""
+    repository, _ = postgres_documents
+    doc = {
+        "id": "it:x-inserted",
+        "source": "x",
+        "title": "tweet one",
+        "url": "https://x.com/openai/status/it-x-inserted",
+        "summary": "first",
+        "published_date": "2026-08-07",
+        "tags": [],
+    }
+    targets = [
+        {
+            "source_text": "hello world",
+            "source_tweet_id": "it:x-inserted",
+            "target_kind": "outer",
+            "source_lang": "en",
+        }
+    ]
+
+    assert (
+        repository.upsert_x_document_with_translation_targets(dict(doc), list(targets))
+        is True
+    )
+    # 重复 upsert（带内容更新）→ False；翻译辅助表再次写入不影响该标记
+    assert (
+        repository.upsert_x_document_with_translation_targets(
+            {**doc, "summary": "second"}, list(targets)
+        )
+        is False
+    )
+    # 内容不变的纯重复 upsert 也走 ON CONFLICT UPDATE 分支 → False
+    assert (
+        repository.upsert_x_document_with_translation_targets(dict(doc), [])
+        is False
+    )
+
+
 def test_delete_documents_removes_rows_and_snapshots_in_one_pass(
     postgres_documents: tuple[Any, Any],
 ) -> None:

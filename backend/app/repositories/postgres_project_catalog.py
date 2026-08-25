@@ -206,6 +206,19 @@ _GH_SELECT_FROM = (
     " LEFT JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
     " LEFT JOIN github_repo_recommendations gr ON gr.repo_id=c.repo_id AND gr.active=TRUE"
 )
+
+# alias 归并行（改名旧名）不进入公开统计/列表/搜索，避免同一项目双计。
+_GH_CANONICAL_ALIAS_FILTER = (
+    "NOT EXISTS (SELECT 1 FROM github_repo_aliases ga "
+    "WHERE ga.alias_repo_id = c.repo_id "
+    "AND ga.canonical_repo_id <> c.repo_id)"
+)
+# Public GitHub rows are the succeeded canonical relation.  Intake threshold is
+# intentionally not part of this predicate: a project that was enriched and
+# later falls below 500 stars remains searchable and countable.
+_GH_PUBLIC_SUCCEEDED_FILTER = (
+    "ge.status = 'succeeded' AND " + _GH_CANONICAL_ALIAS_FILTER
+)
 _WEB_SELECT_FROM = (
     " FROM tool_websites w"
     " LEFT JOIN tool_website_enrichments we ON we.website_id=w.id"
@@ -293,22 +306,30 @@ def _build_gh_branch(
     )
     params: list[Any] = [date]
     if scope == "today":
-        status = "AND ge_top.status = 'succeeded'" if enriched_only else ""
-        # 今日暴涨：先按热度取 Top-N 作为内层驱动表，再回连主表取全列。
+        # 今日暴涨内层 Top-N 驱动表与外层同一可见性口径：enriched-only 时按
+        # succeeded canonical 关系过滤（无星数门槛），否则按 intake 星数门槛。
+        if enriched_only:
+            top_filter = _GH_PUBLIC_SUCCEEDED_FILTER.replace(
+                "c.", "c_top."
+            ).replace("ge.", "ge_top.")
+            top_params: list[Any] = [date]
+        else:
+            top_filter = "COALESCE(c_top.stars,0)>=%s"
+            top_params = [date, min_stars]
         hot_join += (
             " JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top"
             " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
             " AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE"
             " AND gm_top.daily_star_growth>0"
             " LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
-            f" WHERE COALESCE(c_top.stars,0)>=%s {status}"
+            f" WHERE {top_filter}"
             " ORDER BY gm_top.hot_score DESC NULLS LAST,"
             " gm_top.daily_star_growth DESC NULLS LAST,"
             " gm_top.stars DESC NULLS LAST, c_top.full_name ASC"
             f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) today_top"
             " ON today_top.repo_id=c.repo_id"
         )
-        params.extend([date, min_stars])
+        params.extend(top_params)
     user_join = ""
     if user_id:
         user_join = (
@@ -496,10 +517,11 @@ class PostgresProjectCatalogRepository:
         normalized_query = " ".join(str(q or "").split())
         # 已下架（not_found）仓库保留在搜索结果中，前端以置灰卡片展示，
         # 与列表/分类/仪表盘统计口径一致；仅 dashboard 日榜仍排除不可用仓库。
-        filters = ["COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL"]
-        params: list[Any] = [min_stars]
-        if enriched_only:
-            filters.append("ge.status = 'succeeded'")
+        filters = [
+            _GH_PUBLIC_SUCCEEDED_FILTER if enriched_only else "COALESCE(c.stars, 0) >= %s",
+            "ga.alias_repo_id IS NULL",
+        ]
+        params: list[Any] = [] if enriched_only else [min_stars]
         if category:
             filters.append("ge.category_slug = %s"); params.append(category)
         if subcategory:
@@ -598,10 +620,12 @@ class PostgresProjectCatalogRepository:
         relaxed_limit = max(1, min(int(relaxed_limit or 150), 150))
         prefix = f"{escape_like_literal(normalized_query)}%"
         # 与 list_projects 同一可见性口径：not_found 仓库保留（前端置灰展示）。
-        filters = ["COALESCE(c.stars, 0) >= %s"]
-        filter_params: list[Any] = [min_stars]
-        if enriched_only:
-            filters.append("ge.status = 'succeeded'")
+        filters = [
+            _GH_PUBLIC_SUCCEEDED_FILTER
+            if enriched_only
+            else f"COALESCE(c.stars, 0) >= %s AND {_GH_CANONICAL_ALIAS_FILTER}"
+        ]
+        filter_params: list[Any] = [] if enriched_only else [min_stars]
         if category:
             filters.append("ge.category_slug = %s")
             filter_params.append(category)
@@ -618,11 +642,6 @@ class PostgresProjectCatalogRepository:
         if tag:
             filters.append("COALESCE(ge.tags_json::text, '') ILIKE %s")
             filter_params.append(f'%"{tag.strip()}"%')
-        filters.append(
-            "NOT EXISTS (SELECT 1 FROM github_repo_aliases ga "
-            "WHERE ga.alias_repo_id = c.repo_id "
-            "AND ga.canonical_repo_id <> c.repo_id)"
-        )
 
         candidate_document = (
             "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '')"
@@ -826,9 +845,9 @@ class PostgresProjectCatalogRepository:
     ) -> list[dict[str, Any]]:
         """看板 GitHub 今日暴涨榜：指定指标日按 hot_score(v5) 排序的正增长仓库。
 
-        收录口径与 list_projects(scope="today") 一致（min_stars、enriched、
-        daily_growth_available、正增长），但日榜额外排除
-        availability_status='not_found' 的已下架仓库——榜单没有置灰卡片
+        收录口径与 list_projects(scope="today") 一致（enriched-only 时为
+        succeeded canonical 关系、无星数门槛；daily_growth_available、正增长），
+        但日榜额外排除 availability_status='not_found' 的已下架仓库——榜单没有置灰卡片
         形态，上榜仓库必须可访问；项目库列表则保留下架仓库并置灰展示。
         指标日期由调用方传入——看板默认视图可能回溯到窗口内最近有指标的
         日期，历史视图则显式指定；scope="today" 内部硬编码当天，无法复用。
@@ -838,16 +857,15 @@ class PostgresProjectCatalogRepository:
             "gm.metric_date = %s",
             "gm.daily_growth_available = TRUE",
             "gm.daily_star_growth > 0",
-            "COALESCE(c.stars, 0) >= %s",
+            _GH_PUBLIC_SUCCEEDED_FILTER if enriched_only else "COALESCE(c.stars, 0) >= %s",
             "c.availability_status = 'active'",
         ]
-        params: list[Any] = [metric_date, min_stars]
+        params: list[Any] = [metric_date] if enriched_only else [metric_date, min_stars]
         enrichment_join = ""
         if enriched_only:
             enrichment_join = (
                 " LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id"
             )
-            conditions.append("ge.status = 'succeeded'")
         params.append(limit)
         sql = f"""
             SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
@@ -892,6 +910,26 @@ class PostgresProjectCatalogRepository:
             str(row.get("metric_date") or "") for row in rows if row.get("metric_date")
         ]
 
+    def count_github_catalog_candidates(self, *, min_stars: int = 500) -> int:
+        """Count public succeeded canonical GitHub projects.
+
+        ``min_stars`` remains in the signature for protocol compatibility, but
+        does not remove successful historical projects that later lose stars.
+        """
+        del min_stars
+        sql = f"""
+            SELECT COUNT(*) AS count
+            FROM github_repo_candidates c
+            LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id
+            WHERE {_GH_PUBLIC_SUCCEEDED_FILTER}
+        """
+        with self._transaction() as connection:
+            with connection.cursor() as cursor:
+                self._begin_read(cursor)
+                cursor.execute(sql)
+                row = cursor.fetchone() or {}
+        return int(row.get("count") or 0)
+
     def list_projects(
         self,
         *,
@@ -929,8 +967,12 @@ class PostgresProjectCatalogRepository:
         # 已下架（not_found）仓库保留在项目库中：条目携带
         # availability_status 由前端渲染置灰卡片，保证列表总数与分类计数、
         # dashboard 统计卡片（github_library_total）口径一致。
-        gh_filters = ["COALESCE(c.stars, 0) >= %s"]
-        gh_filter_params: list[Any] = [min_stars]
+        gh_filters = [
+            _GH_PUBLIC_SUCCEEDED_FILTER
+            if enriched_only
+            else f"COALESCE(c.stars, 0) >= %s AND {_GH_CANONICAL_ALIAS_FILTER}"
+        ]
+        gh_filter_params: list[Any] = [] if enriched_only else [min_stars]
         web_filters = ["TRUE"]
         web_filter_params: list[Any] = []
         if not favorites_only:
@@ -1081,7 +1123,6 @@ class PostgresProjectCatalogRepository:
                 web_user.append(user_id)
                 gh_filter = "AND pf.id IS NOT NULL"
                 web_filter = "AND (pf.id IS NOT NULL OR utw.id IS NOT NULL)"
-        status_gh = "AND ge.status='succeeded'" if enriched_only else ""
         if favorites_only:
             # 复用列表收藏夹分支的可见性谓词（LEFT JOIN + OR 条件），
             # 否则未富化的自建网站在列表可见却不计入分类计数，两者对不上。
@@ -1120,6 +1161,13 @@ class PostgresProjectCatalogRepository:
         parts: list[str] = []
         params: list[Any] = []
         if source in {"all", "github"}:
+            # 分类聚合计数与项目库列表/dashboard 同一口径：enriched-only 时为
+            # succeeded canonical 关系（无星数门槛，历史成功项目跌破 500 仍计入）。
+            gh_visibility = (
+                _GH_PUBLIC_SUCCEEDED_FILTER
+                if enriched_only
+                else f"COALESCE(c.stars,0)>=%s AND {_GH_CANONICAL_ALIAS_FILTER}"
+            )
             parts.append(
                 "SELECT ge.category_slug,ge.category_name,"
                 "COALESCE(NULLIF(ge.subcategory_slug,''),'') subcategory_slug,"
@@ -1127,11 +1175,11 @@ class PostgresProjectCatalogRepository:
                 " FROM github_repo_candidates c"
                 " JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
                 f" {gh_join}"
-                " WHERE COALESCE(c.stars,0)>=%s"
-                f" {status_gh} {gh_filter}"
+                f" WHERE {gh_visibility}"
+                f" {gh_filter}"
                 " GROUP BY ge.category_slug,ge.category_name,ge.subcategory_slug,ge.subcategory_name"
             )
-            params.extend(gh_user + [min_stars])
+            params.extend(gh_user + ([] if enriched_only else [min_stars]))
         if source in {"all", "website"}:
             parts.append(
                 f"SELECT {web_category_slug} category_slug,{web_category_name} category_name,"
@@ -1155,7 +1203,6 @@ class PostgresProjectCatalogRepository:
         date = _today()
         start, end = _today_range()
         if source in {"all", "github"}:
-            top_status_gh = "AND ge_top.status='succeeded'" if enriched_only else ""
             today_sql = (
                 "SELECT COUNT(*) count FROM (SELECT c_top.repo_id"
                 " FROM github_repo_candidates c_top"
@@ -1163,10 +1210,10 @@ class PostgresProjectCatalogRepository:
                 " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
                 " AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE"
                 " AND gm_top.daily_star_growth>0"
-                " WHERE COALESCE(c_top.stars,0)>=%s"
-                f" {top_status_gh}"
-                " ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,"
-                "gm_top.stars DESC NULLS LAST,c_top.full_name ASC"
+                " WHERE "
+                + (_GH_PUBLIC_SUCCEEDED_FILTER.replace("c.", "c_top.").replace("ge.", "ge_top.") if enriched_only else "COALESCE(c_top.stars,0)>=%s")
+                + " ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,"
+                + "gm_top.stars DESC NULLS LAST,c_top.full_name ASC"
                 f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) top"
                 " JOIN github_repo_candidates c ON c.repo_id=top.repo_id"
                 " JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
@@ -1174,7 +1221,7 @@ class PostgresProjectCatalogRepository:
                 " WHERE TRUE"
                 f" {gh_filter}"
             )
-            today_params = [date, min_stars] + gh_user
+            today_params = [date] + ([] if enriched_only else [min_stars]) + gh_user
         else:
             today_sql = (
                 "SELECT COUNT(*) count FROM tool_websites w"
@@ -1190,10 +1237,11 @@ class PostgresProjectCatalogRepository:
                 " JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
                 " JOIN github_repo_recommendations gr ON gr.repo_id=c.repo_id AND gr.active=TRUE"
                 f" {gh_join}"
-                " WHERE COALESCE(c.stars,0)>=%s"
-                f" {status_gh} {gh_filter}"
+                " WHERE "
+                + (_GH_PUBLIC_SUCCEEDED_FILTER if enriched_only else "COALESCE(c.stars,0)>=%s")
+                + f" {gh_filter}"
             )
-            recommended_params = gh_user + [min_stars]
+            recommended_params = gh_user + ([] if enriched_only else [min_stars])
         else:
             recommended_sql = "SELECT 0 count"
             recommended_params = []

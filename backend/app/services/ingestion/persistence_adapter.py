@@ -46,6 +46,24 @@ def _translation_targets_for_x_document(write: dict) -> list[dict]:
 ACCUMULATE_SNAPSHOT_CHANNELS = frozenset({"x_daily_watchlist"})
 
 
+class IngestionPersistenceResult(int):
+    """Integer-compatible persistence result with X insert accounting.
+
+    The integer value remains the ordinary number of document writes so existing
+    callers can keep comparing or aggregating it as before. ``new_x_rows`` is
+    sourced only from the PostgreSQL X document upsert result.
+    """
+
+    def __new__(cls, ingested_count: int, new_x_rows: int = 0):
+        result = int.__new__(cls, ingested_count)
+        result.new_x_rows = int(new_x_rows)
+        return result
+
+    @property
+    def ingested_count(self) -> int:
+        return int(self)
+
+
 
 def project_document_write(
     paper: dict,
@@ -127,12 +145,13 @@ class IngestionPersistenceAdapter:
         *,
         source_label: str,
         snapshot_date: str,
-    ) -> int:
+    ) -> IngestionPersistenceResult:
         if not papers:
             logger.info("[Pipeline][%s] 无数据，跳过。", source_label)
-            return 0
+            return IngestionPersistenceResult(0)
 
         sorted_papers = sort_papers_for_write(papers)
+        new_x_rows = 0
         vector_documents = project_documents(sorted_papers)
 
         # 先完成全部文档写入，再按 channel 落地快照：整 channel 替换型走
@@ -146,9 +165,11 @@ class IngestionPersistenceAdapter:
                 self.documents, "upsert_x_document_with_translation_targets"
             ):
                 targets = _translation_targets_for_x_document(write)
-                self.documents.upsert_x_document_with_translation_targets(
+                inserted = self.documents.upsert_x_document_with_translation_targets(
                     write, targets
                 )
+                if inserted is True:
+                    new_x_rows += 1
             else:
                 self.documents.upsert_document(write)
             channel_writes.setdefault(write["source_channel"], []).append(
@@ -224,4 +245,4 @@ class IngestionPersistenceAdapter:
         logger.info(
             "[Pipeline][%s] 入库完成，%d 条。", source_label, len(sorted_papers)
         )
-        return len(sorted_papers)
+        return IngestionPersistenceResult(len(sorted_papers), new_x_rows)

@@ -371,6 +371,19 @@ export interface GithubEnrichmentStatus {
   retained_total?: number
   retained_buckets?: Partial<Record<GithubRetainedReason, number>>
   retained_projects?: GithubRetainedProject[]
+  /** All canonical projects with successful generated enrichment, independent of current intake stars/input. */
+  content_total?: number
+  /** Same project-library total used by the homepage GitHub source card. */
+  github_library_total?: number
+  catalog_total?: number
+  catalog_succeeded?: number
+  catalog_failed?: number
+  catalog_pending?: number
+  catalog_unprocessable?: number
+  /** Pending count in the currently executable queue; distinct from catalog pending. */
+  queue_pending?: number
+  queue_failed?: number
+  catalog_progress?: { total: number; succeeded: number; failed: number; unprocessable: number; pending: number }
   // 后端进程内是否有富化批处理在跑；刷新页面后据此恢复「终止」入口
   running?: boolean
   by_category?: Array<{ slug: string; name: string; count: number }>

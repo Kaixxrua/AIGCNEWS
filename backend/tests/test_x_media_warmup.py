@@ -249,10 +249,11 @@ class SpawnWarmupTaskTest(unittest.IsolatedAsyncioTestCase):
 
 
 class CompositionWiringTest(unittest.IsolatedAsyncioTestCase):
-    """采集后钩子接线：cache_invalidator 须触发一次媒体预热 spawn。
+    """采集后钩子接线：cache_invalidator 仅在真实新 X 行时触发媒体预热 spawn。
 
     spawn 是 fire-and-forget（不拖慢采集主流程），断言「被调用且未被 await」
     即可；Redis 清理与 dashboard 预热路径由 test_dashboard_cache_warmup.py 覆盖。
+    X 零新增（纯更新/重复 upsert）时不得 spawn——媒体预热只追随真 INSERT。
     """
 
     async def test_cache_invalidator_spawns_media_warmup_once(self) -> None:
@@ -287,9 +288,45 @@ class CompositionWiringTest(unittest.IsolatedAsyncioTestCase):
             dependencies = provide_ingestion_dependencies(
                 repositories=repositories, task_writer=object()
             )
-            await dependencies.cache_invalidator()
+            await dependencies.cache_invalidator(new_x_rows=2)
 
         self.assertEqual(spawn_calls, [documents])
+
+    async def test_cache_invalidator_without_new_x_rows_skips_media_warmup(self) -> None:
+        from backend.app.services.ingestion.composition import (
+            provide_ingestion_dependencies,
+        )
+
+        documents = _fake_documents([])
+        repositories = SimpleNamespace(documents=documents)
+        spawn_calls: list[object] = []
+
+        def fake_spawn(docs: object) -> None:
+            spawn_calls.append(docs)
+            return None
+
+        with (
+            patch.object(settings, "x_source_enabled", False),
+            patch(
+                "backend.app.services.ingestion.cache_invalidation"
+                ".clear_dashboard_cache_safely",
+                new=AsyncMock(),
+            ),
+            patch(
+                "backend.app.api.dashboard_cache_warmup.warm_dashboard_cache",
+                new=AsyncMock(),
+            ),
+            patch(
+                "backend.app.services.x_media_warmup.spawn_x_media_warmup_task",
+                side_effect=fake_spawn,
+            ),
+        ):
+            dependencies = provide_ingestion_dependencies(
+                repositories=repositories, task_writer=object()
+            )
+            await dependencies.cache_invalidator()
+
+        self.assertEqual(spawn_calls, [])
 
     async def test_cache_invalidator_bridges_to_captured_main_loop(self) -> None:
         """生产形态回归：provide 在主 loop 捕获，cache_invalidator 在采集线程的
@@ -339,8 +376,9 @@ class CompositionWiringTest(unittest.IsolatedAsyncioTestCase):
             )
 
             def trigger_on_fresh_loop() -> None:
-                # 模拟采集 worker 线程：新建一次性 loop 触发失效钩子
-                asyncio.run(dependencies.cache_invalidator())
+                # 模拟采集 worker 线程：新建一次性 loop 触发失效钩子；
+                # 真实新 X 行（new_x_rows>0）才会带媒体预热 spawn
+                asyncio.run(dependencies.cache_invalidator(new_x_rows=1))
 
             # to_thread 期间主（测试）loop 保持空闲，可运行桥接回的协程
             await asyncio.to_thread(trigger_on_fresh_loop)

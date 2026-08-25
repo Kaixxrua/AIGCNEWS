@@ -52,11 +52,11 @@ class IngestionOrchestrationHost(Protocol):
         task_id: int,
         log_label: str | None = None,
         snapshot_date: str | None = None,
-    ) -> int: ...
+    ) -> object: ...
 
     def _start_arxiv_pdf_background(self, papers: list[dict]) -> None: ...
 
-    async def _clear_dashboard_cache(self) -> None: ...
+    async def _clear_dashboard_cache(self, *, new_x_rows: int = 0) -> None: ...
 
 
 class MultiSourceIngestionRuntime:
@@ -151,6 +151,8 @@ class MultiSourceIngestionRuntime:
         )
         task_id = self.host._create_task(task_name)
         total = 0
+        new_x_rows = 0
+        x_ingested_total = 0
         failed_periods: list[tuple[str, str]] = []
         critical_x_failures: list[str] = []
         arxiv_papers_for_pdf: list[dict] = []
@@ -197,13 +199,17 @@ class MultiSourceIngestionRuntime:
                     period,
                     len(crawl_result.items),
                 )
-                total += await self.host._enrich_and_ingest(
+                ingest_result = await self.host._enrich_and_ingest(
                     source_name=source_name,
                     papers=crawl_result.items,
                     task_id=task_id,
                     log_label=f"{source_name}_{period}",
                     snapshot_date=crawl_result.snapshot_date,
                 )
+                total += int(ingest_result)
+                new_x_rows += int(getattr(ingest_result, "new_x_rows", 0))
+                if source_name == "x":
+                    x_ingested_total += int(ingest_result)
                 if source_name == "arxiv":
                     arxiv_papers_for_pdf.extend(
                         paper
@@ -226,7 +232,11 @@ class MultiSourceIngestionRuntime:
                     "[Orchestrator] X rolling-window 不完整，单源整轮失败: %s",
                     error_msg,
                 )
-                return {source_name: total, "ingested_total": total}
+                return {
+                    source_name: total,
+                    "ingested_total": total,
+                    "new_x_rows": new_x_rows,
+                }
 
             if total == 0 and failed_periods:
                 # 单源整轮零入库且存在采集错误：不能记 success，否则
@@ -235,14 +245,31 @@ class MultiSourceIngestionRuntime:
                 error_msg = f"{source_name} 整轮零入库（{detail}）"
                 self.host._finish_task(task_id, status="failed", error_msg=error_msg)
                 logger.error("[Orchestrator] 单源采集零入库: %s", error_msg)
-                return {source_name: 0, "ingested_total": 0}
+                return {source_name: 0, "ingested_total": 0, "new_x_rows": 0}
 
             self.host._finish_task(task_id, status="success", item_count=total)
             try:
-                await self.host._clear_dashboard_cache()
-                logger.info(
-                    "[Orchestrator] dashboard cache cleared after single-source ingest."
-                )
+                cache_cleared = False
+                if total > 0:
+                    if source_name == "x":
+                        if new_x_rows > 0:
+                            await self.host._clear_dashboard_cache(
+                                new_x_rows=new_x_rows
+                            )
+                            cache_cleared = True
+                        else:
+                            logger.info(
+                                "[Orchestrator] X 无新增文档，跳过 dashboard cache invalidation."
+                            )
+                    else:
+                        await self.host._clear_dashboard_cache()
+                        cache_cleared = True
+                    if cache_cleared:
+                        logger.info(
+                            "[Orchestrator] dashboard cache cleared after single-source ingest."
+                        )
+                else:
+                    logger.info("[Orchestrator] no rows ingested; dashboard cache kept.")
             except Exception as exc:
                 logger.warning(
                     "[Orchestrator] 清理 dashboard cache 失败（非致命）: %s", exc
@@ -257,7 +284,11 @@ class MultiSourceIngestionRuntime:
             logger.error("[Orchestrator] 单源采集失败 %s: %s", source_name, exc)
             raise
 
-        return {source_name: total, "ingested_total": total}
+        return {
+            source_name: total,
+            "ingested_total": total,
+            "new_x_rows": new_x_rows,
+        }
 
     async def run_all(self) -> dict[str, int]:
         task_name = (
@@ -269,6 +300,8 @@ class MultiSourceIngestionRuntime:
         stats = {name: 0 for name in self.host._crawlers}
         stats["huggingface"] = 0
         total = 0
+        new_x_rows = 0
+        x_ingested_total = 0
         crawl_errors: list[str] = []
         critical_x_failures: list[str] = []
         arxiv_papers_for_pdf: list[dict] = []
@@ -342,15 +375,19 @@ class MultiSourceIngestionRuntime:
                         period,
                         len(crawl_result.items),
                     )
-                    count = await self.host._enrich_and_ingest(
+                    ingest_result = await self.host._enrich_and_ingest(
                         source_name=source_key,
                         papers=crawl_result.items,
                         task_id=task_id,
                         log_label=f"{source_key}_{period}",
                         snapshot_date=crawl_result.snapshot_date,
                     )
+                    count = int(ingest_result)
                     stats[source_key] += count
                     total += count
+                    new_x_rows += int(getattr(ingest_result, "new_x_rows", 0))
+                    if source_key == "x":
+                        x_ingested_total += count
                     if source_key == "arxiv":
                         arxiv_papers_for_pdf.extend(
                             paper
@@ -367,6 +404,7 @@ class MultiSourceIngestionRuntime:
                 self.host._finish_task(task_id, status="failed", error_msg=error_msg)
                 logger.error("[Orchestrator] 全源采集零入库: %s", error_msg)
                 stats["ingested_total"] = 0
+                stats["new_x_rows"] = 0
                 return stats
 
             if critical_x_failures:
@@ -383,14 +421,32 @@ class MultiSourceIngestionRuntime:
                     error_msg,
                 )
                 stats["ingested_total"] = total
+                stats["new_x_rows"] = new_x_rows
                 return stats
 
             self.host._finish_task(task_id, status="success", item_count=total)
             try:
-                await self.host._clear_dashboard_cache()
-                logger.info(
-                    "[Orchestrator] dashboard cache cleared after full ingest."
-                )
+                cache_cleared = False
+                if total > 0:
+                    non_x_ingested_total = total - x_ingested_total
+                    if new_x_rows > 0:
+                        await self.host._clear_dashboard_cache(
+                            new_x_rows=new_x_rows
+                        )
+                        cache_cleared = True
+                    elif non_x_ingested_total > 0:
+                        await self.host._clear_dashboard_cache()
+                        cache_cleared = True
+                    else:
+                        logger.info(
+                            "[Orchestrator] X 无新增文档，跳过 dashboard cache invalidation."
+                        )
+                    if cache_cleared:
+                        logger.info(
+                            "[Orchestrator] dashboard cache cleared after full ingest."
+                        )
+                else:
+                    logger.info("[Orchestrator] no rows ingested; dashboard cache kept.")
             except Exception as exc:
                 logger.warning(
                     "[Orchestrator] 清理 dashboard cache 失败（非致命）: %s", exc
@@ -407,4 +463,5 @@ class MultiSourceIngestionRuntime:
             raise
 
         stats["ingested_total"] = total
+        stats["new_x_rows"] = new_x_rows
         return stats

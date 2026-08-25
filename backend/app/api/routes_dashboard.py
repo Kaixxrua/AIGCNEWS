@@ -47,6 +47,12 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _get_optional_github_enrichment_repository(request: Request) -> Any:
+    """Keep dashboard contract tests usable before app repositories are booted."""
+    repositories = getattr(request.app.state, "application_repositories", None)
+    return getattr(repositories, "github_enrichment", None)
+
+
 async def _github_library_count(catalog: ProjectCatalogQueryService) -> Optional[int]:
     """项目库 GitHub 收录总量（与 /projects 列表同一查询口径）。
 
@@ -173,7 +179,7 @@ def _dashboard_cache_key_builder(
     return f"{namespace}:{func.__name__}:{digest}"
 
 
-# Compatibility exports consumed by older callers (routes_mcp 已随 W6-U4 删除).
+# Compatibility exports consumed by routes_mcp and older callers.
 def _compute_board_status(snapshot_date_str: str) -> dict:
     return policy.compute_board_status(snapshot_date_str)
 
@@ -336,7 +342,6 @@ def _parse_x_recent_cursor(value: str) -> Optional[tuple[str, float, str]]:
 
 
 @router.get("/dashboard/x/recent")
-@cache(expire=600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_x_recent(
     hours: int = Query(default=24, ge=1, le=72),
     days_back: int = Query(default=0, ge=0, le=_X_RECENT_MAX_DAYS_BACK),
@@ -353,10 +358,8 @@ async def get_x_recent(
     「最近 N 小时」（默认视图），days_back=1 即「昨天此时此刻往前 N 小时」，
     供 X 看板日期选择器按整数天滑动。不走快照/定稿/静默期语义：数据直查
     documents 表，用户时区由前端展示层换算。key 含 days_back/cursor 不含
-    前端 _t 破缓存参数。冷算 ~2.3s（500 条），TTL 600s 覆盖采集 cadence
-    （5 分钟）：每次采集成功后 clear_and_warm_dashboard_cache 先清后暖本 key，
-    数据新鲜度由「距上次采集」界定而非 TTL；TTL 只在采集停摆时兜底过期。
-    行为变化：缓存过期口径 120s→600s，采集正常时实际新鲜度不变。
+    前端 _t 破缓存参数。该接口不使用固定 TTL：相对 now 的窗口必须每次读取当前
+    数据，避免在没有新入库时也返回过期的 Redis 响应。
 
     分页：单页上限 500。满页时响应携带 ``next_cursor``/``has_more``，前端
     以其续查下一页（keyset 严格递减，跨页去重）；默认请求（无 cursor）的
@@ -503,16 +506,61 @@ async def get_dashboard_summary_static(
     )
 
 
+async def _get_github_enrichment_progress(
+    catalog: ProjectCatalogQueryService,
+    enrichment: Any,
+) -> dict[str, int]:
+    """Return one disjoint GitHub progress projection for all dashboard consumers."""
+    status = (
+        await asyncio.to_thread(enrichment.get_github_project_enrichment_status)
+        if enrichment is not None
+        else {}
+    )
+    explicit = status.get("catalog_progress") or {}
+    total = max(int(explicit.get("total", status.get("catalog_total", 0)) or 0), 0)
+    succeeded = max(int(explicit.get("succeeded", status.get("catalog_succeeded", 0)) or 0), 0)
+    failed = max(int(explicit.get("failed", status.get("catalog_failed", 0)) or 0), 0)
+    unprocessable = max(
+        int(explicit.get("unprocessable", status.get("catalog_unprocessable", status.get("unprocessable", 0))) or 0),
+        0,
+    )
+    pending = max(int(explicit.get("pending", status.get("catalog_pending", 0)) or 0), 0)
+    # The enrichment repository owns the mutually exclusive catalog projection.
+    # github_library_total remains a separate public succeeded-only metric.
+    return {
+        "total": total,
+        "succeeded": succeeded,
+        "failed": failed,
+        "unprocessable": unprocessable,
+        "pending": pending,
+    }
+
+
 async def _get_dashboard_stats(
     request: Request,
     *,
     user_statistics: UserStatisticsReader,
     document_statistics: DocumentStatisticsReader,
     catalog: ProjectCatalogQueryService,
+    enrichment: Any,
     visits: SiteVisitStatsReader,
 ) -> dict[str, Any]:
     """Read current global dashboard counters; never cache this aggregate."""
-    source_counts = await _get_source_counts(document_statistics, catalog)
+    if enrichment is not None:
+        source_counts, github_progress = await asyncio.gather(
+            asyncio.to_thread(document_statistics.get_source_counts),
+            _get_github_enrichment_progress(catalog, enrichment),
+        )
+        source_counts = {**source_counts, "github": github_progress["succeeded"]}
+    else:
+        source_counts = await _get_source_counts(document_statistics, catalog)
+        github_progress = {
+            "total": int(source_counts.get("github") or 0),
+            "succeeded": int(source_counts.get("github") or 0),
+            "failed": 0,
+            "unprocessable": 0,
+            "pending": 0,
+        }
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
     today_registered_users = await asyncio.to_thread(
         user_statistics.get_today_registered_user_count
@@ -522,6 +570,8 @@ async def _get_dashboard_stats(
     return {
         "total_documents": sum(source_counts.values()),
         "source_counts": source_counts,
+        "github_library_total": github_progress["succeeded"],
+        "github_enrichment": github_progress,
         "registered_users": registered_users,
         "today_registered_users": today_registered_users,
         "user_count": registered_users + today_registered_users,
@@ -551,6 +601,7 @@ async def get_dashboard_summary(
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
     github_hot: GitHubHotBoardReader = Depends(get_github_hot_board_reader),
     visits: SiteVisitStatsReader = Depends(get_site_visit_repository),
+    enrichment: Any = Depends(_get_optional_github_enrichment_repository),
 ):
     """Return the legacy combined payload with fresh global counters."""
     if response is not None:
@@ -564,6 +615,7 @@ async def get_dashboard_summary(
         user_statistics=user_statistics,
         document_statistics=document_statistics,
         catalog=catalog,
+        enrichment=enrichment,
         visits=visits,
     )
     return {**static, "stats": stats}
@@ -577,15 +629,30 @@ async def get_dashboard_live_stats(
     document_statistics: DocumentStatisticsReader = Depends(get_document_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
     visits: SiteVisitStatsReader = Depends(get_site_visit_repository),
+    enrichment: Any = Depends(_get_optional_github_enrichment_repository),
 ):
-    """首页统计带实时计数（由前端每 10 秒轮询，不缓存响应）。
+    """首页统计带实时计数（不缓存响应）。
 
     与 summary 统计卡片同一口径但不含排行数据；前端每 10s 轮询一次，
     仅数字变化时滚筒动画滚动差位，无变化则静止。
     """
     response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
     response.headers["Pragma"] = "no-cache"
-    source_counts = await _get_source_counts(document_statistics, catalog)
+    if enrichment is not None:
+        source_counts, github_progress = await asyncio.gather(
+            asyncio.to_thread(document_statistics.get_source_counts),
+            _get_github_enrichment_progress(catalog, enrichment),
+        )
+        source_counts = {**source_counts, "github": github_progress["succeeded"]}
+    else:
+        source_counts = await _get_source_counts(document_statistics, catalog)
+        github_progress = {
+            "total": int(source_counts.get("github") or 0),
+            "succeeded": int(source_counts.get("github") or 0),
+            "failed": 0,
+            "unprocessable": 0,
+            "pending": 0,
+        }
     total_documents = sum(source_counts.values())
     registered_users = await asyncio.to_thread(user_statistics.get_user_count)
     today_registered_users = await asyncio.to_thread(
@@ -598,6 +665,8 @@ async def get_dashboard_live_stats(
     return {
         "total_documents": total_documents,
         "source_counts": source_counts,
+        "github_library_total": github_progress["succeeded"],
+        "github_enrichment": github_progress,
         "registered_users": registered_users,
         "today_registered_users": today_registered_users,
         "user_count": user_count,

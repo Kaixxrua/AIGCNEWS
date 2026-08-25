@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { GithubEnrichmentStatus, GithubRetainedReason } from '@/features/monitor/monitorModel'
+import type { GithubEnrichmentStatus } from '@/features/monitor/monitorModel'
 
 const { t } = useI18n()
 
@@ -33,39 +33,40 @@ const effortDraft = ref(props.reasoningEffort)
 watch(() => props.reasoningEffort, (value) => { effortDraft.value = value })
 const commitReasoningEffort = () => emit('updateReasoningEffort', effortDraft.value)
 
-const eligible = computed(() => props.status?.eligible ?? 0)
-const retainedTotal = computed(() => props.status?.retained_total ?? 0)
-// 进度条分母 = 可执行队列 eligible + 在库保留 retainedTotal：
-// 保留段以灰色补齐在条上，直观对齐项目库总数（eligible + retained = 库内富化成功全集）。
-// 队列完成度标签仍按 succeeded/eligible 计，灰色段不参与完成率。
-const barTotal = computed(() => eligible.value + retainedTotal.value)
-const succeededPct = computed(() => (barTotal.value > 0 ? ((props.status?.succeeded ?? 0) / barTotal.value) * 100 : 0))
-const failedPct = computed(() => (barTotal.value > 0 ? ((props.status?.failed ?? 0) / barTotal.value) * 100 : 0))
-const retainedPct = computed(() => (barTotal.value > 0 ? (retainedTotal.value / barTotal.value) * 100 : 0))
-const succeededPercent = computed(() =>
-  eligible.value > 0 ? Math.round(((props.status?.succeeded ?? 0) / eligible.value) * 100) : 0,
-)
-
-// 在库但已退出可执行队列的项目：单独成组展示，不并入进度分母；
-// 分桶顺序按可溯源优先级（下架 → 星数回落 → 简介被删 → 改名旧名）。
-const RETAINED_BUCKET_ORDER: GithubRetainedReason[] = [
-  'not_found',
-  'snapshot_below_threshold',
-  'lost_input',
-  'tombstone',
-]
-const RETAINED_BUCKET_I18N: Record<GithubRetainedReason, string> = {
-  not_found: 'monitor.enrichment.retainedBucketNotFound',
-  snapshot_below_threshold: 'monitor.enrichment.retainedBucketSnapshotBelow',
-  lost_input: 'monitor.enrichment.retainedBucketLostInput',
-  tombstone: 'monitor.enrichment.retainedBucketTombstone',
-}
-const retainedChips = computed(() => {
-  const buckets = props.status?.retained_buckets ?? {}
-  return RETAINED_BUCKET_ORDER
-    .map((reason) => ({ reason, count: buckets[reason] ?? 0 }))
-    .filter((chip) => chip.count > 0)
+const progress = computed(() => {
+  const explicit = props.status?.catalog_progress
+  const total = Math.max(
+    Number(explicit?.total ?? props.status?.catalog_total ?? props.status?.eligible ?? 0),
+    0,
+  )
+  const succeeded = Math.max(Number(explicit?.succeeded ?? props.status?.catalog_succeeded ?? props.status?.succeeded ?? 0), 0)
+  const failed = Math.max(Number(explicit?.failed ?? props.status?.catalog_failed ?? props.status?.failed ?? 0), 0)
+  const unprocessable = Math.max(Number(explicit?.unprocessable ?? props.status?.catalog_unprocessable ?? props.status?.unprocessable ?? 0), 0)
+  const pending = Math.max(total - succeeded - failed - unprocessable, 0)
+  return { total, succeeded, failed, unprocessable, pending }
 })
+const succeededPct = computed(() => (progress.value.total > 0 ? Math.min(progress.value.succeeded / progress.value.total * 100, 100) : 0))
+const failedPct = computed(() => (progress.value.total > 0 ? Math.min(progress.value.failed / progress.value.total * 100, 100) : 0))
+const unprocessablePct = computed(() => (progress.value.total > 0 ? Math.min(progress.value.unprocessable / progress.value.total * 100, 100) : 0))
+const pendingPct = computed(() => (progress.value.total > 0 ? Math.min(progress.value.pending / progress.value.total * 100, 100) : 0))
+const succeededPercent = computed(() => Math.round(succeededPct.value))
+
+const retainedBuckets = computed(() => {
+  const buckets = props.status?.retained_buckets ?? {}
+  const definitions = [
+    { key: 'not_found', label: 'monitor.enrichment.retainedNotFound' },
+    { key: 'snapshot_below_threshold', label: 'monitor.enrichment.retainedBelowThreshold' },
+    { key: 'lost_input', label: 'monitor.enrichment.retainedLostInput' },
+    { key: 'tombstone', label: 'monitor.enrichment.retainedTombstone' },
+  ] as const
+  return definitions
+    .map(({ key, label }) => ({ key, label, count: Math.max(Number(buckets[key] ?? 0), 0) }))
+    .filter((bucket) => bucket.count > 0)
+})
+const retainedTotal = computed(() => Math.max(
+  Number(props.status?.retained_total ?? retainedBuckets.value.reduce((sum, bucket) => sum + bucket.count, 0)),
+  0,
+))
 </script>
 
 <template>
@@ -83,10 +84,11 @@ const retainedChips = computed(() => {
       </button>
     </div>
 
-    <div v-if="status && barTotal > 0" class="mb-3">
+    <div v-if="status && progress.total > 0" class="mb-3">
       <div class="flex items-center justify-between text-2xs monitor-caption mb-1">
         <span>{{ t('monitor.enrichment.progress') }}</span>
         <span class="tabular-nums font-bold">{{ succeededPercent }}%</span>
+        <span class="sr-only">{{ progress.succeeded }} succeeded, {{ progress.failed }} failed, {{ progress.unprocessable }} unprocessable, {{ progress.pending }} pending</span>
       </div>
       <div
         class="enrichment-progress"
@@ -98,14 +100,8 @@ const retainedChips = computed(() => {
       >
         <div class="enrichment-progress-succeeded" :style="{ width: `${succeededPct}%` }" />
         <div class="enrichment-progress-failed" :style="{ width: `${failedPct}%` }" />
-        <!-- 在库保留段：margin-left:auto 跳过待处理间隙钉在条尾，
-             灰色标注与项目库总数的差额 -->
-        <div
-          v-if="retainedTotal > 0"
-          class="enrichment-progress-retained"
-          :style="{ width: `${retainedPct}%` }"
-          :title="t('monitor.enrichment.retainedBarTooltip', { count: retainedTotal })"
-        />
+        <div class="enrichment-progress-unprocessable" :style="{ width: `${unprocessablePct}%` }" />
+        <div class="enrichment-progress-pending" :style="{ width: `${pendingPct}%` }" />
       </div>
       <p v-if="polling" class="mt-1.5 flex items-center gap-1.5 text-2xs monitor-caption">
         <span class="enrichment-polling-spinner" />
@@ -115,15 +111,32 @@ const retainedChips = computed(() => {
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
       <template v-if="status">
-        <span class="text-xs monitor-caption tabular-nums">{{ t('monitor.enrichment.enriched', { done: status.succeeded, total: status.eligible }) }}</span>
-        <span class="text-xs monitor-caption tabular-nums">{{ t('monitor.enrichment.pending', { count: status.pending }) }}</span>
+        <span class="text-xs monitor-caption tabular-nums">{{ t('monitor.enrichment.enriched', { done: progress.succeeded, total: progress.total }) }}</span>
+        <span class="text-xs monitor-caption tabular-nums">{{ progress.failed }} failed · {{ progress.unprocessable }} unprocessable · {{ progress.pending }} pending</span>
+        <span v-if="retainedTotal > 0" class="text-xs monitor-caption tabular-nums">
+          {{ t('monitor.enrichment.retainedSummary', { count: retainedTotal }) }}
+          <span class="inline-flex flex-wrap gap-1.5 ml-1.5">
+            <span
+              v-for="bucket in retainedBuckets"
+              :key="bucket.key"
+              class="enrichment-retained-chip rounded px-1.5 py-0.5"
+            >{{ t(bucket.label) }} {{ bucket.count }}</span>
+          </span>
+        </span>
+        <span v-if="status.github_library_total != null" class="text-xs monitor-caption tabular-nums">
+          {{ t('monitor.enrichment.libraryTotal', { count: status.github_library_total }) }}
+        </span>
+        <span v-if="status.content_total != null" class="text-xs monitor-caption tabular-nums">
+          {{ t('monitor.enrichment.contentTotal', { count: status.content_total }) }}
+        </span>
+        <span class="text-xs monitor-caption tabular-nums">{{ t('monitor.enrichment.pending', { count: progress.pending }) }}</span>
         <span v-if="status.failed > 0" class="text-xs monitor-status-error tabular-nums">{{ t('monitor.enrichment.failed', { count: status.failed }) }}</span>
       </template>
       <span v-else class="text-xs monitor-caption">{{ t(loading ? 'common.refreshing' : 'monitor.enrichment.empty') }}</span>
 
       <button
         class="monitor-btn-secondary relative"
-        :disabled="retrying || backfilling || cancelling || cancelWatching || polling || !status || status.failed <= 0"
+        :disabled="retrying || backfilling || cancelling || cancelWatching || polling || status?.running || !status || (status.queue_failed ?? status.failed) <= 0"
         :title="t('monitor.enrichment.retryTitle')"
         @click="emit('retry')"
       >
@@ -134,7 +147,7 @@ const retainedChips = computed(() => {
 
       <button
         class="monitor-btn-primary"
-        :disabled="backfilling || retrying || cancelling || cancelWatching || polling || !status || status.pending <= 0"
+        :disabled="backfilling || retrying || cancelling || cancelWatching || polling || status?.running || !status || (status.queue_pending ?? status.pending) <= 0"
         :title="t('monitor.enrichment.backfillTitle')"
         @click="emit('backfill')"
       >
@@ -186,14 +199,6 @@ const retainedChips = computed(() => {
         {{ t(cancelling || cancelWatching ? 'monitor.enrichment.cancelling' : 'monitor.enrichment.cancel') }}
       </button>
     </div>
-
-    <p v-if="status && retainedTotal > 0" class="mt-2 text-2xs monitor-caption tabular-nums">
-      <span class="enrichment-retained-swatch" aria-hidden="true" />
-      {{ t('monitor.enrichment.retainedLead', { count: retainedTotal }) }}
-      <span v-for="chip in retainedChips" :key="chip.reason" class="enrichment-retained-chip">
-        {{ t(RETAINED_BUCKET_I18N[chip.reason], { count: chip.count }) }}
-      </span>
-    </p>
 
     <p class="mt-3 text-2xs monitor-caption">{{ t('monitor.enrichment.hint') }}</p>
   </div>
@@ -248,21 +253,14 @@ const retainedChips = computed(() => {
   transition: width 0.4s ease;
 }
 
-/* 在库保留段：灰色标注与项目库总数的差额；margin-left:auto 使其越过
-   待处理间隙钉在条尾，队列 100% 完成时与绿色段相接 */
-.enrichment-progress-retained {
-  margin-left: auto;
-  background: var(--ink-faint);
+.enrichment-progress-unprocessable {
+  background: #9ca3af;
   transition: width 0.4s ease;
 }
 
-.enrichment-retained-swatch {
-  display: inline-block;
-  width: 10px;
-  height: 8px;
-  margin-right: 2px;
-  border-radius: 2px;
-  background: var(--ink-faint);
+.enrichment-progress-pending {
+  background: repeating-linear-gradient(135deg, #d6d3d1 0 4px, #e7e5e4 4px 8px);
+  transition: width 0.4s ease;
 }
 
 .enrichment-polling-spinner {
@@ -273,15 +271,6 @@ const retainedChips = computed(() => {
   border-top-color: transparent;
   border-radius: 9999px;
   animation: enrichment-spin 0.8s linear infinite;
-}
-
-.enrichment-retained-chip {
-  display: inline-block;
-  margin-left: 4px;
-  padding: 0 6px;
-  border: 1px solid var(--projects-accent);
-  border-radius: 4px;
-  background: var(--paper-muted);
 }
 
 @keyframes enrichment-spin {
@@ -295,7 +284,8 @@ const retainedChips = computed(() => {
   }
   .enrichment-progress-succeeded,
   .enrichment-progress-failed,
-  .enrichment-progress-retained {
+  .enrichment-progress-unprocessable,
+  .enrichment-progress-pending {
     transition: none;
   }
 }

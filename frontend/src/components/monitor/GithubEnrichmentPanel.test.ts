@@ -28,22 +28,74 @@ const mountPanel = (enrichmentStatus: GithubEnrichmentStatus) => mount(GithubEnr
   },
 })
 
-// 从 style 属性提取 width 百分比；缺失即测试失败
-const widthPctOf = (style: string | undefined): number => {
-  const match = /width:\s*([\d.]+)%/.exec(style ?? '')
-  if (!match || match[1] === undefined) throw new Error(`width style missing: ${style ?? '<none>'}`)
-  return parseFloat(match[1])
-}
-
 describe('GithubEnrichmentPanel', () => {
+  it('locks retry and backfill when the server reports a running batch after refresh', async () => {
+    const wrapper = mountPanel({ ...status, running: true })
+    const retry = wrapper.find('button.monitor-btn-secondary.relative')
+    const backfill = wrapper.find('button.monitor-btn-primary')
+
+    expect(retry.attributes('disabled')).toBeDefined()
+    expect(backfill.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button.enrichment-cancel-btn').exists()).toBe(true)
+
+    await wrapper.setProps({ status: { ...status, running: false } })
+
+    expect(retry.attributes('disabled')).toBeUndefined()
+    expect(backfill.attributes('disabled')).toBeUndefined()
+  })
+
+  it('renders public-library catalog totals for display while keeping actionable queue for buttons', () => {
+    // 展示口径 = 公共项目库宇宙；按钮禁用仍看可执行队列（actionable failed/pending）
+    const wrapper = mountPanel({
+      eligible: 17_800,
+      succeeded: 17_799,
+      failed: 1,
+      pending: 0,
+      catalog_total: 18_632,
+      catalog_succeeded: 18_631,
+      catalog_failed: 1,
+      catalog_pending: 0,
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('已富化 18631/18632')
+    expect(text).toContain('待处理 0')
+    expect(text).toContain('失败 1')
+    expect(wrapper.find('.enrichment-alert-dot').exists()).toBe(true)
+
+    const progressbar = wrapper.find('[role="progressbar"]')
+    expect(progressbar.exists()).toBe(true)
+    // 18,631 / 18,632 ≈ 99.99% → 显示 100%
+    expect(progressbar.attributes('aria-valuenow')).toBe('100')
+
+    // 可执行队列：failed=1 → retry 可用；pending=0 → backfill 禁用
+    const retry = wrapper.find('button.monitor-btn-secondary.relative')
+    const backfill = wrapper.find('button.monitor-btn-primary')
+    expect(retry.attributes('disabled')).toBeUndefined()
+    expect(backfill.attributes('disabled')).toBeDefined()
+  })
+
+  it('falls back to actionable fields for legacy responses without catalog counters', () => {
+    // 滚动发布期间旧响应没有 catalog_*：展示回退到 eligible/succeeded/failed/pending
+    const wrapper = mountPanel({ eligible: 10, succeeded: 9, failed: 1, pending: 0 })
+
+    const text = wrapper.text()
+    expect(text).toContain('9/10')
+    expect(text).toContain('待处理 0')
+    expect(text).toContain('失败 1')
+  })
+
   it('renders retained buckets as separate chips, not merged into progress totals', () => {
-    // 在库但退出队列的项目单独成组：已富化 x/y 文案计数不并入，
-    // 桶按溯源优先级排序，零计数桶不渲染
+    // 在库但退出队列的项目单独成组：进度分母不变，桶按溯源优先级排序，零计数桶不渲染
     const wrapper = mountPanel({
       eligible: 18_580,
       succeeded: 18_580,
       failed: 0,
       pending: 0,
+      catalog_total: 18_658,
+      catalog_succeeded: 18_656,
+      catalog_failed: 0,
+      catalog_pending: 2,
       retained_total: 76,
       retained_buckets: {
         tombstone: 1,
@@ -54,7 +106,7 @@ describe('GithubEnrichmentPanel', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('已富化 18580/18580')
+    expect(text).toContain('已富化 18656/18658')
     expect(text).toContain('另保留在库 76 个（不再处理）')
     const chips = wrapper.findAll('.enrichment-retained-chip')
     expect(chips).toHaveLength(4)
@@ -79,46 +131,40 @@ describe('GithubEnrichmentPanel', () => {
     expect(mountPanel(status).text()).not.toContain('另保留在库')
   })
 
-  it('renders the retained difference as a gray segment pinned to the progress bar end', () => {
-    // 进度条分母 = eligible + retained：绿色成功段按 18612/18688 缩窄，
-    // 灰色保留段钉在条尾，tooltip 标注数量；完成率标签仍按队列口径 100%。
+  it('drives retry/backfill buttons from queue counters, not catalog display math', () => {
+    // catalog 口径有 pending（展示 5），但可执行队列 queue_pending=0
+    // （例如 pending 项目正在跑或不在队列）：backfill 必须禁用。
+    // 反之 catalog failed=0 但 queue_failed>0（队列里还有可重试失败）：retry 可用。
     const wrapper = mountPanel({
-      eligible: 18_612,
-      succeeded: 18_612,
+      eligible: 100,
+      succeeded: 95,
       failed: 0,
-      pending: 0,
-      retained_total: 76,
-      retained_buckets: { not_found: 14, snapshot_below_threshold: 51, lost_input: 10, tombstone: 1 },
+      pending: 5,
+      catalog_total: 100,
+      catalog_succeeded: 95,
+      catalog_failed: 0,
+      catalog_unprocessable: 0,
+      queue_failed: 2,
+      queue_pending: 0,
     })
 
-    const segment = wrapper.find('.enrichment-progress-retained')
-    expect(segment.exists()).toBe(true)
-    expect(widthPctOf(segment.attributes('style'))).toBeCloseTo((76 / 18_688) * 100, 5)
-    expect(segment.attributes('title')).toContain('76')
+    const text = wrapper.text()
+    expect(text).toContain('95/100')
+    expect(text).toContain('5 pending')
 
-    const succeededWidth = widthPctOf(wrapper.find('.enrichment-progress-succeeded').attributes('style'))
-    expect(succeededWidth).toBeCloseTo((18_612 / 18_688) * 100, 5)
-    // 完成率标签保持队列口径（eligible 内百分比），不被灰色段拉低
-    expect(wrapper.text()).toContain('100%')
+    const retry = wrapper.find('button.monitor-btn-secondary.relative')
+    const backfill = wrapper.find('button.monitor-btn-primary')
+    expect(retry.attributes('disabled')).toBeUndefined()
+    expect(backfill.attributes('disabled')).toBeDefined()
   })
 
-  it('omits the gray segment when nothing is retained', () => {
-    const wrapper = mountPanel(status)
-    expect(wrapper.find('.enrichment-progress-retained').exists()).toBe(false)
-  })
+  it('falls back to legacy failed/pending for buttons when queue counters are absent', () => {
+    // 滚动发布期间旧响应没有 queue_*：按钮回退到 actionable failed/pending
+    const wrapper = mountPanel({ eligible: 10, succeeded: 5, failed: 1, pending: 4 })
 
-  it('still renders the progress bar when the queue is empty but retained projects exist', () => {
-    const wrapper = mountPanel({
-      eligible: 0,
-      succeeded: 0,
-      failed: 0,
-      pending: 0,
-      retained_total: 5,
-      retained_buckets: { not_found: 5 },
-    })
-    expect(wrapper.find('.enrichment-progress').exists()).toBe(true)
-    const segment = wrapper.find('.enrichment-progress-retained')
-    expect(segment.exists()).toBe(true)
-    expect(widthPctOf(segment.attributes('style'))).toBeCloseTo(100, 5)
+    const retry = wrapper.find('button.monitor-btn-secondary.relative')
+    const backfill = wrapper.find('button.monitor-btn-primary')
+    expect(retry.attributes('disabled')).toBeUndefined()
+    expect(backfill.attributes('disabled')).toBeUndefined()
   })
 })

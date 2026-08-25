@@ -98,6 +98,9 @@ class GitHubRunScopeRepositoryTests(unittest.TestCase):
         assert "NOT EXISTS" in sql
         assert "github_repo_enrichments" in sql
         assert "succeeded" in sql
+        # 改名墓碑行（旧名 alias 指向他行）不得反复进入富化运行范围
+        assert "github_repo_aliases" in sql
+        assert "ga.alias_repo_id = c.repo_id" in sql
 
     def test_list_uses_keyset_pagination_and_returns_fingerprint(self) -> None:
         db = FakeDB([[_candidate_row()]])

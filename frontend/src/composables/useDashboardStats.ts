@@ -19,6 +19,9 @@ export const useDashboardStats = (getStats: () => Stats) => {
   const updateStatSources = (nextStats: Stats) => {
     statValues.value = statCards.map(card => {
       if (card.key === 'total') return Number(nextStats.total_documents ?? 0)
+      if (card.key === 'github' && nextStats.github_enrichment) {
+        return Math.max(Number(nextStats.github_enrichment.succeeded ?? 0), 0)
+      }
       return Number(nextStats.source_counts?.[card.key] ?? 0)
     })
     updateVisitorSources(nextStats)

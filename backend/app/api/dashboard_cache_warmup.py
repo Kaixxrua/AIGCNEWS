@@ -11,7 +11,6 @@ from backend.app.api.dependencies import get_github_hot_board_reader
 from backend.app.api.routes_dashboard import (
     get_dashboard_summary_static,
     get_top_list,
-    get_x_recent,
 )
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
@@ -22,14 +21,10 @@ logger = logging.getLogger(__name__)
 # 与前端首屏请求逐字节对齐的预热组合（cache key 只含
 # limit/source/date/hours/days_back 白名单参数，period 不进 key）：
 # - useDashboardData: summary-static(date=当天) + top(6 个源 tab, limit=10, date=当天)
-# - useXBoardController: x/recent(hours=24, days_back=0, limit=500) 默认滚动窗口
-# 动态统计接口不预热：MCP/访客/用户计数必须始终读当前值。
+# 动态统计接口和 X recent 不预热：它们必须始终读取当前值。
 # key 不一致 = 预热写入的缓存无人命中，因此参数必须与前端保持同源维护。
 _DASHBOARD_TAB_SOURCES = ("github", "arxiv", "news", "producthunt", "hackernews", "x")
 _TOP_LIMIT = 10
-_X_RECENT_HOURS = 24
-_X_RECENT_DAYS_BACK = 0
-_X_RECENT_LIMIT = 500
 
 _CST = timezone(timedelta(hours=8))
 
@@ -108,26 +103,6 @@ async def warm_dashboard_cache(repositories: ApplicationRepositories) -> None:
                 },
             )
         )
-    warmups.append(
-        (
-            "x/recent",
-            get_x_recent,
-            {
-                "hours": _X_RECENT_HOURS,
-                "days_back": _X_RECENT_DAYS_BACK,
-                "limit": _X_RECENT_LIMIT,
-                # 直调绕过 FastAPI DI：显式传 None，否则 cursor 保持 Query 默认对象
-                "cursor": None,
-                "documents": repositories.documents,
-                "__fastapi_cache_request": _stub_request(
-                    "/api/dashboard/x/recent",
-                    f"hours={_X_RECENT_HOURS}&days_back={_X_RECENT_DAYS_BACK}"
-                    f"&limit={_X_RECENT_LIMIT}",
-                ),
-            },
-        )
-    )
-
     for name, endpoint, kwargs in warmups:
         try:
             await endpoint(**kwargs)

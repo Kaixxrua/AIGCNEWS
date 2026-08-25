@@ -609,8 +609,9 @@ def get_github_project_recommendation_admin_service(
     enrichment: GitHubProjectEnrichmentRepository = Depends(
         get_github_project_enrichment_repository
     ),
+    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ) -> GitHubProjectRecommendationAdminService:
-    return GitHubProjectRecommendationAdminService(recommendations, enrichment)
+    return GitHubProjectRecommendationAdminService(recommendations, enrichment, catalog)
 
 
 def get_github_project_semantic_source_repository(

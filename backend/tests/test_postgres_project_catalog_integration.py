@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import json
 import os
 import uuid
 from pathlib import Path
@@ -350,8 +349,8 @@ def test_real_favorites_visibility_matches_category_counts(catalog: Any) -> None
 
 
 def test_real_github_hot_board_reads_v5_metrics(catalog: Any) -> None:
-    # 看板 github 今日暴涨榜：同一收录口径（enriched/min_stars/active/正增长），
-    # hot_score(v5) 降序；夹具中 acme/draft 无增强无指标，永不出现。
+    # 看板 github 今日暴涨榜：公开口径为 succeeded canonical + active + 正增长
+    # （无星数门槛），hot_score(v5) 降序；夹具中 acme/draft 无增强无指标，永不出现。
     from datetime import date as _date
 
     today = _date.today().isoformat()  # 夹具指标日落 CURRENT_DATE
@@ -374,11 +373,20 @@ def test_real_github_hot_board_reads_v5_metrics(catalog: Any) -> None:
     assert first["growth_suspicion_signals"] == "[]"
     assert first["growth_corroborated"] is False
 
-    # min_stars 门槛与 /projects 口径一致：1000 以上只剩 alpha
+    # 公开榜无星数门槛：已成功富化的项目即使显式传 min_stars=1000 也保留
+    # （跌破门槛的成功存量不从公开口径消失）
     assert [
         row["repo_id"]
         for row in catalog.list_github_hot_for_date(
             metric_date=today, limit=10, min_stars=1000
+        )
+    ] == ["acme/alpha", "acme/beta"]
+    # 星数门槛只保留给非公开（intake/未成功队列）口径：1000 以上只剩 alpha
+    # （draft 无当日指标，永不出现）
+    assert [
+        row["repo_id"]
+        for row in catalog.list_github_hot_for_date(
+            metric_date=today, limit=10, min_stars=1000, enriched_only=False
         )
     ] == ["acme/alpha"]
     # 无指标日期返回空（诚实空榜，不回退）

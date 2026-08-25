@@ -35,6 +35,8 @@ class ProjectLexicalCandidateLanes:
 class ProjectCatalogRepository(Protocol):
     """Read boundary for the public project catalog."""
 
+    def count_github_catalog_candidates(self, *, min_stars: int = 500) -> int: ...
+
     def find_lexical_candidate_repo_ids(
         self,
         *,

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from backend.app.repositories.postgres_project_catalog import (
+    _GH_PUBLIC_SUCCEEDED_FILTER,
     RELEVANCE_STRONG_MATCH_THRESHOLD,
     PostgresProjectCatalogRepository,
     _strong_match_clause,
@@ -76,6 +77,7 @@ def test_signatures_match_frozen_contract_exactly() -> None:
     assert stripped(PostgresProjectCatalogRepository.find_lexical_candidate_repo_ids) == stripped(ProjectCatalogRepository.find_lexical_candidate_repo_ids)
     assert stripped(PostgresProjectCatalogRepository.find_lexical_candidate_lanes) == stripped(ProjectCatalogRepository.find_lexical_candidate_lanes)
     assert stripped(PostgresProjectCatalogRepository.find_repo_ids_by_name_segment) == stripped(ProjectCatalogRepository.find_repo_ids_by_name_segment)
+    assert stripped(PostgresProjectCatalogRepository.count_github_catalog_candidates) == stripped(ProjectCatalogRepository.count_github_catalog_candidates)
     assert stripped(PostgresProjectCatalogRepository.list_projects) == stripped(ProjectCatalogRepository.list_projects)
     assert stripped(PostgresProjectCatalogRepository.get_project_categories) == stripped(ProjectCatalogRepository.get_project_categories)
     assert stripped(PostgresProjectCatalogRepository.list_github_hot_for_date) == stripped(ProjectCatalogRepository.list_github_hot_for_date)
@@ -99,14 +101,16 @@ def test_list_github_hot_for_date_is_parameterized_ordered_and_bounded() -> None
     assert result == rows
     assert database.entered == database.exited == 1
     sql, params = database.cursor.calls[1]
-    # 指标日过滤 + 与 list_projects(scope="today") 同一收录口径
+    # 指标日过滤 + 与 list_projects(scope="today") 同一收录口径：
+    # succeeded canonical 关系（无星数门槛，历史成功项目跌破 500 仍上榜）
     assert "gm.metric_date = %s" in sql
     assert "gm.daily_growth_available = TRUE" in sql
     assert "gm.daily_star_growth > 0" in sql
-    assert "COALESCE(c.stars, 0) >= %s" in sql
-    assert "c.availability_status = 'active'" in sql
-    assert "github_repo_enrichments ge" in sql
     assert "ge.status = 'succeeded'" in sql
+    assert "github_repo_enrichments ge" in sql
+    assert "NOT EXISTS" in sql and "github_repo_aliases ga" in sql
+    assert "COALESCE(c.stars, 0) >= %s" not in sql
+    assert "c.availability_status = 'active'" in sql
     # hot_score(v5) 排序与 /projects 今日暴涨一致
     assert "ORDER BY gm.hot_score DESC NULLS LAST" in sql
     assert "gm.daily_star_growth DESC NULLS LAST" in sql
@@ -116,7 +120,7 @@ def test_list_github_hot_for_date_is_parameterized_ordered_and_bounded() -> None
     assert "gm.growth_corroborated" in sql
     # 注入串只进参数不进 SQL；limit 收敛到 500 上限
     assert "OR TRUE" not in sql
-    assert params == ("2026-08-10' OR TRUE --", 500, 500)
+    assert params == ("2026-08-10' OR TRUE --", 500)
 
 
 def test_list_github_hot_for_date_without_enrichment_filter_omits_join() -> None:
@@ -143,6 +147,28 @@ def test_list_github_hot_dates_returns_descending_strings_bounded() -> None:
     assert params == (365,)
 
 
+def test_count_github_catalog_candidates_uses_succeeded_canonical_predicate() -> None:
+    database = Database([{"count": 18776}])
+
+    result = PostgresProjectCatalogRepository(database).count_github_catalog_candidates(min_stars=500)
+
+    assert result == 18776
+    assert database.entered == database.exited == 1
+    sql, params = database.cursor.calls[1]
+    # 公开 GitHub 数 = succeeded canonical 关系：无星数门槛（历史成功项目
+    # 跌破 500 仍计入），alias 归并行不重复计数；min_stars 仅为协议兼容保留。
+    assert "ge.status = 'succeeded'" in sql
+    assert "COALESCE(c.stars" not in sql
+    assert "NOT EXISTS" in sql
+    assert "github_repo_aliases ga" in sql
+    assert params is None
+
+
+def test_count_github_catalog_candidates_empty_result_is_zero() -> None:
+    database = Database([None])
+    assert PostgresProjectCatalogRepository(database).count_github_catalog_candidates() == 0
+
+
 def test_empty_candidate_list_short_circuits_without_transaction() -> None:
     database = Database([])
     result = PostgresProjectCatalogRepository(database).list_projects(candidate_repo_ids=[])
@@ -167,7 +193,9 @@ def test_candidate_ids_and_injection_values_are_bound_not_interpolated() -> None
     assert 'x" OR TRUE --' not in count_sql
     assert any(value == "%100%" for value in params)
     assert any(value == "%safe%" for value in params)
-    assert all("github_repo_aliases" not in sql for sql, _ in calls)
+    # canonical 口径：alias 归并行必须被 NOT EXISTS 排除，避免同一项目双计
+    assert "github_repo_aliases" in count_sql
+    assert "NOT EXISTS" in count_sql
 
 
 def test_lexical_candidates_are_canonical_bounded_and_parameterized() -> None:
@@ -224,7 +252,9 @@ def test_lexical_lanes_are_typed_filtered_and_independently_bounded() -> None:
     assert "scored AS MATERIALIZED" in sql
     assert "github_repo_aliases ga" in sql
     assert "NOT EXISTS" in sql
-    assert "COALESCE(c.stars, 0) >= %s" in sql
+    # 与列表同一可见性口径：succeeded canonical 关系，无星数门槛
+    assert "ge.status = 'succeeded'" in sql
+    assert "COALESCE(c.stars, 0) >= %s" not in sql
     assert "ge.category_slug = %s" in sql
     assert "ge.subcategory_slug = %s" in sql
     assert "LOWER(COALESCE(c.language, '')) = LOWER(%s)" in sql
@@ -296,11 +326,11 @@ def test_lexical_lanes_placeholder_count_and_param_order_align() -> None:
     sql, params = database.cursor.calls[1]
     # 每个 %s 占位符必须恰好绑定一个参数（契约见 postgres_project_catalog 参数顺序注释）。
     assert sql.count("%s") == len(params)
-    # 1. filter_params：min_stars、category、tag（enriched 状态过滤无参数）
-    assert params[:3] == (500, "agents", '%"llm"%')
+    # 1. filter_params：category、tag（succeeded-only 可见性过滤无参数）
+    assert params[:2] == ("agents", '%"llm"%')
     # 2. hit_params：term:0、term:1、concept:agent 各词/别名 × 两个文档分支，
     #    每行交错绑定 (group_id, pattern, group_id, pattern)
-    assert params[3:19] == (
+    assert params[2:18] == (
         "term:0", "%ai%", "term:0", "%ai%",
         "term:1", "%agent%", "term:1", "%agent%",
         "concept:agent", "%agent%", "concept:agent", "%agent%",
@@ -308,11 +338,11 @@ def test_lexical_lanes_placeholder_count_and_param_order_align() -> None:
     )
     # 3. scored 匹配强度：normalized_query ×3（full_name/名段/title 精确等值）
     #    + prefix ×3（名段/full_name/title 前缀）
-    assert params[19:25] == (
+    assert params[18:24] == (
         "ai agent", "ai agent", "ai agent", "ai agent%", "ai agent%", "ai agent%",
     )
     # 4. 车道边界：覆盖组数（term:0/term:1/concept:agent）、strict_limit、relaxed_limit
-    assert params[25:] == (3, 100, 80)
+    assert params[24:] == (3, 100, 80)
 
 
 def test_lexical_lanes_score_repo_name_segment_tiers() -> None:
@@ -327,8 +357,9 @@ def test_lexical_lanes_score_repo_name_segment_tiers() -> None:
     assert "WHEN LOWER(e.full_name) = LOWER(%s) THEN 6" in sql
     assert "WHEN e.full_name ILIKE %s ESCAPE '=' THEN 2" in sql
     assert sql.count("%s") == len(params)
-    # 单 term：filter(min_stars) + hit(2 分支 × (group_id, pattern)) + 强度 6 + 边界 3
-    assert params == (500, "term:0", "%pi%", "term:0", "%pi%", "pi", "pi", "pi", "pi%", "pi%", "pi%", 1, 150, 150)
+    # 单 term：filter 无参数（succeeded-only）+ hit(2 分支 × (group_id, pattern))
+    # + 强度 6 + 边界 3
+    assert params == ("term:0", "%pi%", "term:0", "%pi%", "pi", "pi", "pi", "pi%", "pi%", "pi%", 1, 150, 150)
 
 
 def test_lexical_candidate_ids_order_by_repo_name_segment_tiers() -> None:
@@ -341,8 +372,8 @@ def test_lexical_candidate_ids_order_by_repo_name_segment_tiers() -> None:
     assert "WHEN split_part(c.full_name,'/',2) ILIKE %s ESCAPE '=' THEN 3" in sql
     assert "WHEN LOWER(c.full_name)=LOWER(%s) THEN 0" in sql
     assert "WHEN c.full_name ILIKE %s ESCAPE '=' THEN 4" in sql
-    # min_stars + 词过滤 7 字段 ILIKE + 等值 ×3 + 前缀 ×3 + limit
-    assert params == (500, *(("%PI%",) * 7), "PI", "PI", "PI", "PI%", "PI%", "PI%", 200)
+    # 词过滤 7 字段 ILIKE + 等值 ×3 + 前缀 ×3 + limit；succeeded-only 过滤无参数
+    assert params == (*(("%PI%",) * 7), "PI", "PI", "PI", "PI%", "PI%", "PI%", 200)
 
 
 def test_find_repo_ids_by_name_segment_is_active_canonical_and_bounded() -> None:
@@ -463,6 +494,51 @@ def test_today_branch_forces_hot_order_and_uses_bounded_top_set() -> None:
     rows_sql = database.cursor.calls[2][0]
     assert "LIMIT 50" in rows_sql
     assert "ORDER BY hot_score DESC NULLS LAST,daily_star_growth DESC NULLS LAST" in rows_sql
+
+
+def test_public_succeeded_filter_has_no_star_gate() -> None:
+    """已成功富化的项目跌破 500 Stars 仍保留在公开列表/统计/搜索中：
+
+    收录门槛只约束新 intake 与未成功队列，不进公共可见性谓词。
+    """
+    assert "stars" not in _GH_PUBLIC_SUCCEEDED_FILTER
+    assert "ge.status = 'succeeded'" in _GH_PUBLIC_SUCCEEDED_FILTER
+    assert "github_repo_aliases" in _GH_PUBLIC_SUCCEEDED_FILTER
+
+
+def test_today_branch_inner_top_set_uses_succeeded_canonical_predicate() -> None:
+    """今日暴涨内层 Top-N 驱动表与外层同一可见性口径（无星数门槛）。"""
+    database = Database([{"cnt": 0}, []])
+    PostgresProjectCatalogRepository(database).list_projects(source="github", scope="today")
+    rows_sql, rows_params = database.cursor.calls[2]
+    assert "ge_top.status = 'succeeded'" in rows_sql
+    assert "github_repo_aliases" in rows_sql
+    assert "COALESCE(c_top.stars,0)>=%s" not in rows_sql
+    # 内层驱动表不再绑定 min_stars：仅剩两个 metric_date + 分页参数
+    assert 500 not in rows_params
+
+
+def test_categories_github_branch_uses_succeeded_canonical_predicate() -> None:
+    """分类聚合计数与项目库列表/dashboard 同一口径：succeeded canonical 关系。
+
+    历史回归：aggregate 曾残留 COALESCE(c.stars,0)>=%s 占位却不绑定
+    min_stars 参数，enriched 路径直接占位/参数错位（生产 500）。
+    """
+    database = Database([[], {"count": 0}, {"count": 0}])
+    PostgresProjectCatalogRepository(database).get_project_categories(source="github")
+    assert len(database.cursor.calls) == 4
+    for sql, params in database.cursor.calls[1:]:
+        # 占位符与参数一一对应
+        assert sql.count("%s") == len(params)
+        assert "COALESCE(c.stars,0)>=%s" not in sql
+        assert "COALESCE(c_top.stars,0)>=%s" not in sql
+        assert "github_repo_aliases" in sql
+    aggregate_sql = database.cursor.calls[1][0]
+    today_sql = database.cursor.calls[2][0]
+    recommended_sql = database.cursor.calls[3][0]
+    assert "ge.status = 'succeeded'" in aggregate_sql
+    assert "ge_top.status = 'succeeded'" in today_sql
+    assert "ge.status = 'succeeded'" in recommended_sql
 
 
 def test_categories_use_one_consistent_read_transaction_and_three_queries() -> None:

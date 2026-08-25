@@ -115,7 +115,16 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
                 "weekly": "2026-07-23",
                 "monthly": "2026-07-22",
             }[period])
-        self.assertEqual(result, {"arxiv": 3, "news": 3, "huggingface": 0, "ingested_total": 6})
+        self.assertEqual(
+            result,
+            {
+                "arxiv": 3,
+                "news": 3,
+                "huggingface": 0,
+                "ingested_total": 6,
+                "new_x_rows": 0,
+            },
+        )
         orchestrator.task_writer.finish_task.assert_called_once_with(
             42, status="success", error_msg=None, item_count=6
         )
@@ -130,7 +139,7 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
         orchestrator.task_writer.finish_task.side_effect = lambda *args, **kwargs: events.append("finish")
         orchestrator._start_arxiv_pdf_background.side_effect = lambda papers: events.append("pdf")
 
-        async def clear_cache() -> None:
+        async def clear_cache(*, new_x_rows: int = 0) -> None:
             events.append("cache")
 
         with patch.object(
@@ -224,7 +233,15 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = await orchestrator.run_all()
 
-        self.assertEqual(result, {"news": 1, "huggingface": 0, "ingested_total": 1})
+        self.assertEqual(
+            result,
+            {
+                "news": 1,
+                "huggingface": 0,
+                "ingested_total": 1,
+                "new_x_rows": 0,
+            },
+        )
         orchestrator.task_writer.finish_task.assert_called_once_with(
             42, status="success", error_msg=None, item_count=1
         )
@@ -272,7 +289,10 @@ class IngestionOrchestrationContractTests(unittest.IsolatedAsyncioTestCase):
                 in {"record_github_trending_hits", "compute_github_daily_metrics"}
             )
         )
-        self.assertEqual(result, {"github": 2, "ingested_total": 2})
+        self.assertEqual(
+            result,
+            {"github": 2, "ingested_total": 2, "new_x_rows": 0},
+        )
         crawler.fetch.assert_has_awaits(
             [
                 call(period="weekly", limit=25, target_date=None),

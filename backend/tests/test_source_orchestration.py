@@ -15,6 +15,7 @@ from typing import Any
 from unittest.mock import patch
 
 from backend.app.services.ingestion.base_crawler import CrawlResult
+from backend.app.services.ingestion.persistence_adapter import IngestionPersistenceResult
 from backend.app.services.ingestion.source_orchestration import (
     MultiSourceIngestionRuntime,
 )
@@ -73,6 +74,7 @@ class FakeHost:
         target_date: str | None = None,
         fail_enrich: bool = False,
         fail_cache_clear: bool = False,
+        x_new_rows: int = 0,
     ) -> None:
         self.limit = limit
         self.target_date = target_date
@@ -80,11 +82,13 @@ class FakeHost:
         self._crawlers = crawlers
         self._fail_enrich = fail_enrich
         self._fail_cache_clear = fail_cache_clear
+        self._x_new_rows = x_new_rows
         self.created_tasks: list[str] = []
         self.finished: list[dict[str, Any]] = []
         self.enriched: list[dict[str, Any]] = []
         self.pdf_started: list[list[dict]] = []
         self.cache_cleared = 0
+        self.cache_cleared_new_x_rows: list[int] = []
 
     @property
     def registered_sources(self) -> list[str]:
@@ -125,15 +129,17 @@ class FakeHost:
                 "snapshot_date": snapshot_date,
             }
         )
-        return len(papers)
+        new_x_rows = self._x_new_rows if source_name == "x" else 0
+        return IngestionPersistenceResult(len(papers), new_x_rows=new_x_rows)
 
     def _start_arxiv_pdf_background(self, papers: list[dict]) -> None:
         self.pdf_started.append(papers)
 
-    async def _clear_dashboard_cache(self) -> None:
+    async def _clear_dashboard_cache(self, *, new_x_rows: int = 0) -> None:
         if self._fail_cache_clear:
             raise RuntimeError("cache clear down")
         self.cache_cleared += 1
+        self.cache_cleared_new_x_rows.append(new_x_rows)
 
 
 class TestSetPeriodFlags:
@@ -162,7 +168,7 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
 
         result = await runtime.run_single_source("news")
 
-        assert result == {"news": 2, "ingested_total": 2}
+        assert result == {"news": 2, "ingested_total": 2, "new_x_rows": 0}
         assert host.created_tasks == ["single:news:2024-03-02"]
         # 仅 daily 支持 → 只抓取一次；weekly/monthly 被跳过
         assert [c["period"] for c in crawler.fetch_calls] == ["daily"]
@@ -196,7 +202,7 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
 
         result = await runtime.run_single_source("news")
 
-        assert result == {"news": 1, "ingested_total": 1}
+        assert result == {"news": 1, "ingested_total": 1, "new_x_rows": 0}
         assert [e["log_label"] for e in host.enriched] == ["news_monthly"]
         assert host.finished[0]["status"] == "success"
         assert host.finished[0]["item_count"] == 1
@@ -248,7 +254,7 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
         ):
             result = await runtime.run_single_source("github")
 
-        assert result == {"github": 2, "ingested_total": 2}
+        assert result == {"github": 2, "ingested_total": 2, "new_x_rows": 0}
         assert [c["period"] for c in record_calls] == ["daily", "weekly"]
         assert all(c["db"] is host.github_ingestion for c in record_calls)
         # metrics 仅在 daily 且 repo_ids 非空时触发
@@ -277,7 +283,7 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
 
         result = await runtime.run_single_source("arxiv")
 
-        assert result == {"arxiv": 3, "ingested_total": 3}
+        assert result == {"arxiv": 3, "ingested_total": 3, "new_x_rows": 0}
         assert len(host.pdf_started) == 1
         assert [p["arxiv_id"] for p in host.pdf_started[0]] == ["2403.1", "2403.2"]
 
@@ -301,7 +307,7 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
 
         result = await runtime.run_single_source("news")
 
-        assert result == {"news": 1, "ingested_total": 1}
+        assert result == {"news": 1, "ingested_total": 1, "new_x_rows": 0}
         assert host.finished[0]["status"] == "success"
 
     async def test_all_periods_failed_finishes_failed_not_success(self) -> None:
@@ -320,7 +326,7 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
 
         result = await runtime.run_single_source("news")
 
-        assert result == {"news": 0, "ingested_total": 0}
+        assert result == {"news": 0, "ingested_total": 0, "new_x_rows": 0}
         assert len(host.finished) == 1
         finished = host.finished[0]
         assert finished["status"] == "failed"
@@ -345,7 +351,7 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
 
         result = await runtime.run_single_source("news")
 
-        assert result == {"news": 0, "ingested_total": 0}
+        assert result == {"news": 0, "ingested_total": 0, "new_x_rows": 0}
         assert host.finished[0]["status"] == "failed"
         assert "boom-daily" in host.finished[0]["error_msg"]
 
@@ -357,7 +363,7 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
 
         result = await runtime.run_single_source("news")
 
-        assert result == {"news": 0, "ingested_total": 0}
+        assert result == {"news": 0, "ingested_total": 0, "new_x_rows": 0}
         assert host.finished[0] == {
             "task_id": 1,
             "status": "success",
@@ -385,7 +391,7 @@ class TestRunAll(unittest.IsolatedAsyncioTestCase):
 
         stats = await runtime.run_all()
 
-        assert stats == {"arxiv": 1, "news": 2, "broken": 0, "huggingface": 0, "ingested_total": 3}
+        assert stats == {"arxiv": 1, "news": 2, "broken": 0, "huggingface": 0, "ingested_total": 3, "new_x_rows": 0}
         assert host.created_tasks == ["multi_source_ingest"]
         assert host.finished == [{"task_id": 1, "status": "success", "error_msg": None, "item_count": 3}]
         assert host.cache_cleared == 1
@@ -450,3 +456,119 @@ class TestRunAll(unittest.IsolatedAsyncioTestCase):
 
         assert stats["ingested_total"] == 3
         assert host.finished[0]["status"] == "success"
+
+
+class TestXNewRowCacheInvalidation(unittest.IsolatedAsyncioTestCase):
+    """X recent 缓存失效只由真实新入库行驱动：
+
+    - X 有真 INSERT（new_x_rows>0）：清理并携带 new_x_rows（触发 X 媒体预热）；
+    - X 零新增（纯更新/重复 upsert）：不清理、不预热，任务仍 success；
+    - 非 X 源成功：走 generic 清理（不带 new_x_rows）；
+    - 全源混合：X 零新增但其他源入库 → generic 清理；X 有新行 → X 口径清理。
+    """
+
+    @staticmethod
+    def _x_host(x_new_rows: int) -> FakeHost:
+        crawler = FakeCrawler(
+            "x",
+            ["daily"],
+            {"daily": _result("x", "daily", [{"title": "tweet"}])},
+        )
+        return FakeHost({"x": crawler}, x_new_rows=x_new_rows)
+
+    async def test_single_x_with_new_rows_clears_cache_with_count(self) -> None:
+        host = self._x_host(x_new_rows=3)
+        runtime = MultiSourceIngestionRuntime(host)
+
+        result = await runtime.run_single_source("x")
+
+        assert result == {"x": 1, "ingested_total": 1, "new_x_rows": 3}
+        assert host.cache_cleared == 1
+        assert host.cache_cleared_new_x_rows == [3]
+        assert host.finished[0]["status"] == "success"
+
+    async def test_single_x_without_new_rows_skips_cache_clear(self) -> None:
+        host = self._x_host(x_new_rows=0)
+        runtime = MultiSourceIngestionRuntime(host)
+
+        result = await runtime.run_single_source("x")
+
+        assert result == {"x": 1, "ingested_total": 1, "new_x_rows": 0}
+        assert host.cache_cleared == 0
+        assert host.finished[0]["status"] == "success"
+
+    async def test_single_non_x_source_uses_generic_cache_clear(self) -> None:
+        crawler = FakeCrawler(
+            "news",
+            ["daily"],
+            {"daily": _result("news", "daily", [{"title": "N"}])},
+        )
+        host = FakeHost({"news": crawler})
+        runtime = MultiSourceIngestionRuntime(host)
+
+        result = await runtime.run_single_source("news")
+
+        assert result == {"news": 1, "ingested_total": 1, "new_x_rows": 0}
+        assert host.cache_cleared == 1
+        assert host.cache_cleared_new_x_rows == [0]
+
+    async def test_run_all_x_zero_new_with_other_source_uses_generic_clear(self) -> None:
+        crawlers = {
+            "x": FakeCrawler(
+                "x", ["daily"], {"daily": _result("x", "daily", [{"title": "tweet"}])}
+            ),
+            "news": FakeCrawler(
+                "news", ["daily"], {"daily": _result("news", "daily", [{"title": "N"}])}
+            ),
+        }
+        host = FakeHost(crawlers, x_new_rows=0)
+        runtime = MultiSourceIngestionRuntime(host)
+
+        stats = await runtime.run_all()
+
+        assert stats["ingested_total"] == 2
+        assert stats["new_x_rows"] == 0
+        assert host.cache_cleared == 1
+        assert host.cache_cleared_new_x_rows == [0]
+
+    async def test_run_all_x_only_with_new_rows_clears_with_count(self) -> None:
+        host = self._x_host(x_new_rows=2)
+        runtime = MultiSourceIngestionRuntime(host)
+
+        stats = await runtime.run_all()
+
+        assert stats["ingested_total"] == 1
+        assert stats["new_x_rows"] == 2
+        assert host.cache_cleared == 1
+        assert host.cache_cleared_new_x_rows == [2]
+
+    async def test_run_all_x_only_zero_new_skips_cache_clear(self) -> None:
+        host = self._x_host(x_new_rows=0)
+        runtime = MultiSourceIngestionRuntime(host)
+
+        stats = await runtime.run_all()
+
+        assert stats["ingested_total"] == 1
+        assert stats["new_x_rows"] == 0
+        assert host.cache_cleared == 0
+        assert host.finished[0]["status"] == "success"
+
+    async def test_run_all_mixed_x_new_rows_and_other_source_clears_with_count(self) -> None:
+        crawlers = {
+            "x": FakeCrawler(
+                "x", ["daily"], {"daily": _result("x", "daily", [{"title": "tweet"}])}
+            ),
+            "news": FakeCrawler(
+                "news", ["daily"], {"daily": _result("news", "daily", [{"title": "N"}])}
+            ),
+        }
+        host = FakeHost(crawlers, x_new_rows=4)
+        runtime = MultiSourceIngestionRuntime(host)
+
+        stats = await runtime.run_all()
+
+        assert stats["ingested_total"] == 2
+        assert stats["new_x_rows"] == 4
+        assert host.cache_cleared == 1
+        assert host.cache_cleared_new_x_rows == [4]
+

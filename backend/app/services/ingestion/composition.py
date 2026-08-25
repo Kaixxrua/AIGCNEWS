@@ -13,7 +13,7 @@ from backend.app.repositories.task_repository import IngestionTaskWriter
 from backend.app.services.ingestion.base_crawler import BaseCrawler
 
 ResourceFactory = Callable[[], object]
-CacheInvalidator = Callable[[], Awaitable[None]]
+CacheInvalidator = Callable[..., Awaitable[None]]
 PdfIndexer = Callable[..., tuple[int, int]]
 CrawlerFactory = Callable[[], BaseCrawler]
 
@@ -65,8 +65,8 @@ def provide_ingestion_dependencies(
         # 无运行 loop 的同步/CLI 调用方：无并发 HTTP 读者，就地执行即可。
         main_loop = None
 
-    async def _clear_and_warm_on_loop() -> None:
-        """清缓存 + 首屏预热 + 媒体预热 spawn 的实际执行体（须在主 loop 跑）。"""
+    async def _clear_and_warm_on_loop(*, new_x_rows: int = 0) -> None:
+        """清缓存 + 首屏预热，按新 X 文档行数决定媒体预热。"""
         await clear_dashboard_cache_safely()
         # composition root 允许跨层装配：预热逻辑在 api 层（与路由同源生成 cache key）
         from backend.app.api.dashboard_cache_warmup import warm_dashboard_cache
@@ -75,11 +75,12 @@ def provide_ingestion_dependencies(
 
         # 媒体边缘预热走 detached task：冷图回源最坏 ~80s，不能拖慢采集主流程；
         # 开关关闭时 spawn 返回 None，零行为变更。
-        from backend.app.services.x_media_warmup import spawn_x_media_warmup_task
+        if new_x_rows > 0:
+            from backend.app.services.x_media_warmup import spawn_x_media_warmup_task
 
-        spawn_x_media_warmup_task(repositories.documents)
+            spawn_x_media_warmup_task(repositories.documents)
 
-    async def clear_and_warm_dashboard_cache() -> None:
+    async def clear_and_warm_dashboard_cache(*, new_x_rows: int = 0) -> None:
         """先清旧 dashboard key，再按前端首屏参数重建热缓存。
 
         纯删除式失效会让每个采集窗口后的首批用户撞上 ~3s 级冷查询；
@@ -107,12 +108,12 @@ def provide_ingestion_dependencies(
             # asyncio.to_thread 让主 loop 在等待采集期间保持空闲，故不会死锁。
             await asyncio.wrap_future(
                 asyncio.run_coroutine_threadsafe(
-                    _clear_and_warm_on_loop(), main_loop
+                    _clear_and_warm_on_loop(new_x_rows=new_x_rows), main_loop
                 )
             )
             return
         # 同 loop（单测）或无主 loop（CLI）：就地执行，行为与原先一致。
-        await _clear_and_warm_on_loop()
+        await _clear_and_warm_on_loop(new_x_rows=new_x_rows)
     from backend.app.services.ingestion.crawlers import (
         ArxivCrawler,
         DailyHotCrawler,

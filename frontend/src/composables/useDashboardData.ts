@@ -51,6 +51,9 @@ const mergeLiveStats = (current: Stats, incoming: Stats): Stats => {
       Object.assign(merged, { [key]: Math.max(oldValue, newValue) })
     }
   }
+  // Enrichment buckets are a state projection, not monotonic counters. Replace
+  // them verbatim so failed/deleted/repaired projects can lower the success card.
+  if (incoming.github_enrichment) merged.github_enrichment = incoming.github_enrichment
   return merged
 }
 
@@ -174,13 +177,15 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   /* 10s 实时计数轮询：合并最新计数，变化的数字走滚筒差位滚动，无变化静止。
      历史日期/静默期/加载中跳过；停用、切页后的延迟响应不得回写。 */
   const refreshLiveStats = async () => {
-    if (loading.value || tabLoading.value || isViewingHistory.value || isEmbargoed.value) return
+    // Global counters remain live even while the selected board is in its
+    // embargo window; only historical dates must stop the live poll.
+    if (loading.value || tabLoading.value || isViewingHistory.value) return
     const controller = dashboardController
     const generation = dashboardGeneration
     if (!controller) return
     try {
       const live = await fetchLiveStats(controller.signal)
-      if (!isCurrentDashboardRequest(controller, generation) || isViewingHistory.value || isEmbargoed.value) return
+      if (!isCurrentDashboardRequest(controller, generation) || isViewingHistory.value) return
       stats.value = mergeLiveStats(stats.value, live)
       options.updateStatSources(stats.value)
     } catch (error: unknown) {

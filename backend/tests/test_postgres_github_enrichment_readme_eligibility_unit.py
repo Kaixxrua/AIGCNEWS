@@ -82,6 +82,9 @@ class TestUnprocessableCteFilters:
                 "eligible": 0,
                 "succeeded": 0,
                 "failed": 0,
+                "catalog_total": 0,
+                "catalog_succeeded": 0,
+                "catalog_failed": 0,
             },
             {"count": 0},
         ]
@@ -96,7 +99,9 @@ class TestUnprocessableCteFilters:
         assert "BTRIM(COALESCE(c.description, '')) = ''" in sql
         assert "ss.readme_status = 'succeeded'" in sql
         assert "BTRIM(COALESCE(ss.readme_text, '')) <> ''" in sql
-        assert "e.status IS DISTINCT FROM 'succeeded'" in sql
+        # Failed rows are classified as failed by the canonical catalog CTE;
+        # they must not be reclassified as unprocessable.
+        assert "WHEN e.status = 'failed' THEN 'failed'" in sql
 
     def test_unprocessable_excludes_not_found_repos(self) -> None:
         # 已 2 次 404 确认的仓库（如 QAI-brain/awesome-QAI-Papers-QDiffusion）
@@ -108,6 +113,7 @@ class TestUnprocessableCteFilters:
         sql = self._status_sql()
         assert "missing_description" in sql
 
+
 class TestRetainedBreakdown:
     """在库但已退出可执行队列的分桶溯源（catalog_succeeded − eligible 差额）。"""
 
@@ -118,6 +124,9 @@ class TestRetainedBreakdown:
                 "eligible": 0,
                 "succeeded": 0,
                 "failed": 0,
+                "catalog_total": 0,
+                "catalog_succeeded": 0,
+                "catalog_failed": 0,
             },
             {"count": 0},
         ]
@@ -182,5 +191,6 @@ class TestRetainedBreakdown:
         }]
         # 既有键位保持不动（additive 变更）
         for key in ("eligible", "succeeded", "failed", "pending",
-                    "unprocessable", "unprocessable_projects"):
+                    "catalog_total", "catalog_succeeded", "catalog_failed",
+                    "catalog_pending", "unprocessable", "unprocessable_projects"):
             assert key in status

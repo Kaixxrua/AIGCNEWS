@@ -46,6 +46,7 @@ from backend.app.services.ingestion.document_projection import (
 )
 from backend.app.services.ingestion.persistence_adapter import (
     IngestionPersistenceAdapter,
+    IngestionPersistenceResult,
 )
 from backend.app.services.ingestion.source_orchestration import (
     MultiSourceIngestionRuntime,
@@ -161,7 +162,7 @@ def _ingest_documents(
     vector_writer_factory: Callable[[], object],
     graph_extractor_factory: Callable[[], object],
     graph_writer_factory: Callable[[], object],
-) -> int:
+) -> IngestionPersistenceResult:
     del task_id
     adapter = IngestionPersistenceAdapter(
         documents=document_writer,
@@ -286,8 +287,8 @@ class IngestionOrchestrator:
         task_id: int,
         log_label: Optional[str] = None,
         snapshot_date: Optional[str] = None,
-    ) -> int:
-        """内容丰富 → 三库写入，返回入库数量。
+    ) -> IngestionPersistenceResult:
+        """内容丰富 → 三库写入，返回入库数量与新 X 文档行数。
 
         Args:
             source_name: 纯数据源名称（"arxiv" / "github" / ...），用于 _ENRICH_MAP 查找
@@ -298,7 +299,7 @@ class IngestionOrchestrator:
         label = log_label or source_name
         if not papers:
             logger.info("[Orchestrator][%s] 无原始数据，跳过。", label)
-            return 0
+            return IngestionPersistenceResult(0)
 
         logger.info(
             "[Orchestrator][%s] %d 条 → 内容丰富...",
@@ -330,7 +331,7 @@ class IngestionOrchestrator:
             source_key=source_name,  # ← 修复 Bug1：传纯名称，不拼接 period
             delay=enrich_delay,
         )
-        count = await asyncio.to_thread(
+        result = await asyncio.to_thread(
             _ingest_documents,
             selected,
             task_id,
@@ -347,7 +348,7 @@ class IngestionOrchestrator:
                 await asyncio.to_thread(self.dependencies.x_translation_processor().process)
             except Exception as exc:
                 logger.warning("[Orchestrator][x] 翻译处理失败（不影响采集）: %s", exc)
-        return count
+        return result
 
     def _start_arxiv_pdf_background(self, papers: List[dict]) -> None:
         """启动后台线程：下载 Arxiv PDF 落盘 → PyMuPDF 解析 → 切片写入 Milvus（非阻塞）。
@@ -399,8 +400,11 @@ class IngestionOrchestrator:
         _BACKGROUND_PDF_THREADS.append(bg_thread)
         logger.info("[Orchestrator] 后台 PDF 下载线程已启动（daemon=True）。")
 
-    async def _clear_dashboard_cache(self) -> None:
-        await self._cache_invalidator()
+    async def _clear_dashboard_cache(self, *, new_x_rows: int = 0) -> None:
+        if new_x_rows > 0:
+            await self._cache_invalidator(new_x_rows=new_x_rows)
+        else:
+            await self._cache_invalidator()
 
     async def run_single_source(
         self,

@@ -56,9 +56,8 @@ def _github_fingerprint(row: dict[str, Any]) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
-# README 只有成功且清洗后非空的快照才是富化输入；仅有 semantic source 行、
-# hash 或失败状态都不能解锁模型调用。该谓词与 _has_github_enrichment_input
-# 保持同构，供标准队列、状态统计和显式运行范围复用。
+# README 只有成功且清洗后非空的快照才是富化输入；生成的 description_zh/
+# description_en 不参与输入判定，避免把模型产物误当成源材料。
 _GITHUB_ENRICHMENT_INPUT_SQL = """
     (
         BTRIM(COALESCE(c.description, '')) <> ''
@@ -69,21 +68,6 @@ _GITHUB_ENRICHMENT_INPUT_SQL = """
     )
 """
 
-# 单次爬取运行的富化范围（三重去重，绝不触碰项目库存量）：
-# 渠道标记 + first_seen_at 锚点 + 排除已成功富化。CLI 脚本
-# scripts/enrich_github_projects_run.py 与本模块共用此片段，保持单一事实源。
-_RUN_SCOPE_WHERE = f"""
-    FROM github_repo_candidates c
-    LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
-    WHERE c.source_channels LIKE %s
-      AND c.first_seen_at >= %s
-      AND COALESCE(c.stars, 0) >= %s
-      AND {_GITHUB_ENRICHMENT_INPUT_SQL}
-      AND NOT EXISTS (
-          SELECT 1 FROM github_repo_enrichments e
-          WHERE e.repo_id = c.repo_id AND e.status = 'succeeded'
-      )
-"""
 
 def _has_github_enrichment_input(row: dict[str, Any]) -> bool:
     """Return whether a candidate has a usable description or README snapshot."""
@@ -95,6 +79,11 @@ def _has_github_enrichment_input(row: dict[str, Any]) -> bool:
     )
 
 
+# 单次爬取运行的富化范围（三重去重，绝不触碰项目库存量）：
+# 单次爬取运行的富化范围（三重去重，绝不触碰项目库存量）：
+# 渠道标记 + first_seen_at 锚点 + 排除已成功富化。CLI 脚本
+# scripts/enrich_github_projects_run.py 与本模块共用此片段，保持单一事实源。
+# 改名墓碑行同样排除（定义在下方 _ALIAS_TOMBSTONE_EXCLUSION_SQL 之后）。
 # 与 _github_fingerprint 等价的 SQL 表达式（refresh_changed 过滤下推用）：
 # sha256("\n".join(full_name, description, language, topics_json, readme_sha256))。
 # 只有 succeeded README 快照的 hash 参与；两侧必须保持同一拼接顺序与编码。
@@ -120,6 +109,20 @@ _ALIAS_TOMBSTONE_EXCLUSION_SQL = """
         WHERE ga.alias_repo_id = c.repo_id
           AND ga.canonical_repo_id <> c.repo_id
     )
+"""
+
+_RUN_SCOPE_WHERE = f"""
+    FROM github_repo_candidates c
+    LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
+    WHERE c.source_channels LIKE %s
+      AND c.first_seen_at >= %s
+      AND COALESCE(c.stars, 0) >= %s
+      AND {_GITHUB_ENRICHMENT_INPUT_SQL}
+      AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
+      AND NOT EXISTS (
+          SELECT 1 FROM github_repo_enrichments e
+          WHERE e.repo_id = c.repo_id AND e.status = 'succeeded'
+      )
 """
 
 
@@ -210,12 +213,13 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
                            c.language, c.topics_json, c.created_at, c.pushed_at,
                            c.source_channels, c.first_seen_at, c.last_seen_at,
-                           c.last_snapshot_at, c.availability_status,
+                           c.last_snapshot_at,
                            COALESCE(ls.stars, c.stars, 0) AS stars,
                            COALESCE(ls.forks, c.forks, 0) AS forks,
                            COALESCE(ls.watchers, c.watchers, 0) AS watchers,
                            COALESCE(ls.open_issues, 0) AS open_issues,
                            ls.snapshot_date, ls.captured_at,
+                           ss.readme_text, ss.readme_sha256, ss.readme_status,
                            e.status AS existing_status,
                            e.prompt_version AS existing_prompt_version,
                            e.source_fingerprint AS existing_source_fingerprint,
@@ -226,7 +230,10 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     LEFT JOIN latest_snap ls ON ls.repo_id = c.repo_id
                     LEFT JOIN github_repo_enrichments e ON e.repo_id = c.repo_id
                     LEFT JOIN github_project_semantic_sources ss ON ss.repo_id = c.repo_id
-                    WHERE COALESCE(ls.stars, c.stars, 0) >= %s
+                    WHERE (
+                            COALESCE(ls.stars, c.stars, 0) >= %s
+                            OR e.status = 'succeeded'
+                          )
                       AND {_GITHUB_ENRICHMENT_INPUT_SQL}
                       AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
                       AND {eligibility}
@@ -492,8 +499,8 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         })
 
     def get_github_project_enrichment_status(self, *, min_stars: int = 500) -> dict[str, Any]:
-        # latest_snap 物化原因见 get_github_projects_needing_enrichment：
-        # 防止内联后 DISTINCT ON 全索引扫描落入嵌套循环内层导致代价失控。
+        # Keep queue progress separate from historical generated content. The latter
+        # intentionally has no current-star or source-input gate.
         base = f"""
             WITH latest_snap AS MATERIALIZED (
                 SELECT DISTINCT ON (repo_id) * FROM github_repo_snapshots
@@ -506,79 +513,87 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                 LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
                 LEFT JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
                 LEFT JOIN github_project_semantic_sources ss ON ss.repo_id=c.repo_id
-                WHERE COALESCE(ls.stars,c.stars,0) >= %s
+                WHERE (COALESCE(ls.stars,c.stars,0) >= %s OR e.status = 'succeeded')
                   AND {_GITHUB_ENRICHMENT_INPUT_SQL}
                   AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
-            ), unprocessable AS (
+            ), catalog AS (
                 SELECT c.repo_id, c.full_name, c.url,
                        COALESCE(ls.stars,c.stars,0) AS stars,
-                       'missing_description' AS reason
+                       e.status, e.category_slug, e.category_name,
+                       CASE
+                         WHEN e.status = 'succeeded' THEN 'succeeded'
+                         WHEN e.status = 'failed' THEN 'failed'
+                         WHEN c.availability_status = 'active'
+                              AND COALESCE(ls.stars,c.stars,0) >= scope._intake_threshold
+                              AND e.repo_id IS NULL
+                              AND BTRIM(COALESCE(c.description, '')) = ''
+                              AND NOT (ss.readme_status = 'succeeded'
+                                       AND BTRIM(COALESCE(ss.readme_text, '')) <> '')
+                           THEN 'unprocessable'
+                         ELSE 'pending'
+                       END AS state
                 FROM github_repo_candidates c
                 LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
                 LEFT JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
                 LEFT JOIN github_project_semantic_sources ss ON ss.repo_id=c.repo_id
-                WHERE COALESCE(ls.stars,c.stars,0) >= %s
-                  AND BTRIM(COALESCE(c.description, '')) = ''
-                  AND NOT (
-                      ss.readme_status = 'succeeded'
-                      AND BTRIM(COALESCE(ss.readme_text, '')) <> ''
-                  )
-                  AND e.status IS DISTINCT FROM 'succeeded'
-                  AND c.availability_status = 'active'
+                CROSS JOIN (SELECT %s::integer AS _intake_threshold) scope
+                WHERE (COALESCE(ls.stars,c.stars,0) >= scope._intake_threshold
+                       OR e.status = 'succeeded')
                   AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
+            ), content AS (
+                SELECT repo_id, status, category_slug, category_name, state
+                FROM catalog
+            ), unprocessable AS (
+                SELECT repo_id, full_name, url, stars,
+                       'missing_description' AS reason
+                FROM catalog
+                WHERE state = 'unprocessable'
             ), retained AS (
-                -- 在库但已退出可执行队列（catalog_succeeded − eligible 的差额）：
-                -- 富化成功过、继续在项目库展示，但按当前口径不再处理。
-                -- 仅供面板分桶计数与溯源列表，不进可执行队列、不进 unprocessable。
-                -- reason 互斥，按排查优先级归类：
-                --   tombstone=改名前的旧仓库行（成果已归一到新名）；
-                --   not_found=源仓库 404 下架，置灰保留；
-                --   snapshot_below_threshold=最新快照星数回落至门槛以下；
-                --   lost_input=简介被作者删除且没有有效 README 快照。
                 SELECT c.repo_id, c.full_name, c.url,
-                       COALESCE(ls.stars, c.stars, 0) AS stars,
+                       COALESCE(ls.stars,c.stars,0) AS stars,
                        CASE
-                           WHEN EXISTS (
-                               SELECT 1 FROM github_repo_aliases ga
-                               WHERE ga.alias_repo_id = c.repo_id
-                                 AND ga.canonical_repo_id <> c.repo_id
-                           ) THEN 'tombstone'
-                           WHEN c.availability_status = 'not_found' THEN 'not_found'
-                           WHEN COALESCE(ls.stars, c.stars, 0) < %s
-                               THEN 'snapshot_below_threshold'
-                           ELSE 'lost_input'
+                         WHEN EXISTS (SELECT 1 FROM github_repo_aliases ga
+                                      WHERE ga.alias_repo_id = c.repo_id
+                                        AND ga.canonical_repo_id <> c.repo_id) THEN 'tombstone'
+                         WHEN c.availability_status = 'not_found' THEN 'not_found'
+                         WHEN COALESCE(ls.stars,c.stars,0) < %s THEN 'snapshot_below_threshold'
+                         ELSE 'lost_input'
                        END AS reason
                 FROM github_repo_candidates c
                 JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
-                    AND e.status = 'succeeded'
+                    AND e.status='succeeded'
                 LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
                 LEFT JOIN github_project_semantic_sources ss ON ss.repo_id=c.repo_id
                 WHERE COALESCE(c.stars,0) >= %s
-                  AND NOT (
-                      COALESCE(ls.stars, c.stars, 0) >= %s
-                      AND {_GITHUB_ENRICHMENT_INPUT_SQL}
-                      AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
-                  )
+                  AND NOT (COALESCE(ls.stars,c.stars,0) >= %s
+                           AND {_GITHUB_ENRICHMENT_INPUT_SQL}
+                           AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL})
             )
         """
-        # base 文本共 5 个 %s（eligible/unprocessable 各 1，retained 3），
-        # 即使某条 SELECT 不引用 retained 也必须按文本位置补齐参数。
+        # base contains five independent intake-threshold placeholders:
+        # eligible, catalog scope, retained snapshot classification, and the
+        # retained current-star/input queue gate (three retained placeholders).
         status_params = (min_stars,) * 5
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(base + """SELECT COUNT(*) AS eligible,
                     COUNT(*) FILTER (WHERE status='succeeded') AS succeeded,
-                    COUNT(*) FILTER (WHERE status='failed') AS failed FROM eligible""", status_params)
+                    COUNT(*) FILTER (WHERE status='failed') AS failed,
+                    (SELECT COUNT(*) FROM content) AS catalog_total,
+                    (SELECT COUNT(*) FROM content WHERE state='succeeded') AS catalog_succeeded,
+                    (SELECT COUNT(*) FROM content WHERE state='failed') AS catalog_failed,
+                    (SELECT COUNT(*) FROM content WHERE state='unprocessable') AS catalog_unprocessable,
+                    (SELECT COUNT(*) FROM content WHERE state='pending') AS catalog_pending
+                    FROM eligible""", status_params)
                 row = cursor.fetchone() or {}
                 cursor.execute(base + """SELECT category_slug AS slug, category_name AS name,
-                    COUNT(*) AS count FROM eligible WHERE status='succeeded'
+                    COUNT(*) AS count FROM content WHERE state='succeeded'
                     GROUP BY category_slug, category_name
                     ORDER BY count DESC, category_name COLLATE "C" ASC""", status_params)
                 categories = cursor.fetchall()
                 cursor.execute(base + """SELECT repo_id, full_name, url, stars, reason
-                    FROM unprocessable
-                    ORDER BY stars DESC, full_name COLLATE "C" ASC, repo_id COLLATE "C" ASC
-                    LIMIT 100""", status_params)
+                    FROM unprocessable ORDER BY stars DESC, full_name COLLATE "C" ASC,
+                    repo_id COLLATE "C" ASC LIMIT 100""", status_params)
                 unprocessable_projects = cursor.fetchall()
                 cursor.execute(base + """SELECT COUNT(*) AS count FROM unprocessable""", status_params)
                 unprocessable_row = cursor.fetchone() or {}
@@ -586,48 +601,53 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     FROM retained GROUP BY reason""", status_params)
                 retained_bucket_rows = cursor.fetchall()
                 cursor.execute(base + """SELECT repo_id, full_name, url, stars, reason
-                    FROM retained
-                    ORDER BY stars DESC, full_name COLLATE "C" ASC, repo_id COLLATE "C" ASC
-                    LIMIT 100""", status_params)
+                    FROM retained ORDER BY stars DESC, full_name COLLATE "C" ASC,
+                    repo_id COLLATE "C" ASC LIMIT 100""", status_params)
                 retained_projects = cursor.fetchall()
         eligible = int(row.get("eligible") or 0)
         succeeded = int(row.get("succeeded") or 0)
         failed = int(row.get("failed") or 0)
-        retained_buckets = {
-            reason: 0
-            for reason in (
-                "tombstone", "not_found", "snapshot_below_threshold", "lost_input",
-            )
-        }
-        for bucket_row in retained_bucket_rows:
-            reason = str(bucket_row.get("reason") or "")
+        catalog_total = int(row.get("catalog_total") or 0)
+        catalog_succeeded = int(row.get("catalog_succeeded") or 0)
+        catalog_failed = int(row.get("catalog_failed") or 0)
+        retained_buckets = {reason: 0 for reason in
+                            ("tombstone", "not_found", "snapshot_below_threshold", "lost_input")}
+        for item in retained_bucket_rows:
+            reason = str(item.get("reason") or "")
             if reason in retained_buckets:
-                retained_buckets[reason] = int(bucket_row.get("count") or 0)
-        retained_total = sum(retained_buckets.values())
+                retained_buckets[reason] = int(item.get("count") or 0)
+        catalog_unprocessable = int(row.get("catalog_unprocessable") or 0)
+        catalog_pending = int(row.get("catalog_pending") or 0)
+        catalog_progress_total = catalog_total
+        catalog_progress_pending = catalog_pending
+        queue_pending = max(eligible - succeeded - failed, 0)
         return {"eligible": eligible, "succeeded": succeeded, "failed": failed,
-                "pending": max(eligible - succeeded - failed, 0),
-                "retained_total": retained_total,
+                "pending": queue_pending,
+                "queue_pending": queue_pending,
+                "queue_failed": failed,
+                "content_total": catalog_succeeded, "catalog_total": catalog_total,
+                "catalog_succeeded": catalog_succeeded, "catalog_failed": catalog_failed,
+                "catalog_pending": catalog_pending,
+                "catalog_unprocessable": catalog_unprocessable,
+                "catalog_progress": {"total": catalog_progress_total,
+                    "succeeded": catalog_succeeded, "failed": catalog_failed,
+                    "unprocessable": catalog_unprocessable,
+                    "pending": catalog_progress_pending},
+                "retained_total": sum(retained_buckets.values()),
                 "retained_buckets": retained_buckets,
-                "retained_projects": [
-                    {"repo_id": str(item.get("repo_id") or ""),
-                     "full_name": str(item.get("full_name") or ""),
-                     "url": str(item.get("url") or ""),
-                     "stars": int(item.get("stars") or 0),
-                     "reason": str(item.get("reason") or "")}
-                    for item in retained_projects
-                ],
+                "retained_projects": [{"repo_id": str(item.get("repo_id") or ""),
+                    "full_name": str(item.get("full_name") or ""), "url": str(item.get("url") or ""),
+                    "stars": int(item.get("stars") or 0), "reason": str(item.get("reason") or "")}
+                    for item in retained_projects],
                 "by_category": [{"slug": item.get("slug") or "other",
-                                 "name": item.get("name") or "其他",
-                                 "count": int(item.get("count") or 0)} for item in categories],
+                    "name": item.get("name") or "其他", "count": int(item.get("count") or 0)}
+                    for item in categories],
                 "unprocessable": int(unprocessable_row.get("count") or 0),
-                "unprocessable_projects": [
-                    {"repo_id": str(item.get("repo_id") or ""),
-                     "full_name": str(item.get("full_name") or ""),
-                     "url": str(item.get("url") or ""),
-                     "stars": int(item.get("stars") or 0),
-                     "reason": str(item.get("reason") or "missing_description")}
-                    for item in unprocessable_projects
-                ]}
+                "unprocessable_projects": [{"repo_id": str(item.get("repo_id") or ""),
+                    "full_name": str(item.get("full_name") or ""), "url": str(item.get("url") or ""),
+                    "stars": int(item.get("stars") or 0),
+                    "reason": str(item.get("reason") or "missing_description")}
+                    for item in unprocessable_projects]}
 
     def count_github_run_enrichment_candidates(
         self, *, channel: str, first_seen_after: str, min_stars: int = 500
@@ -659,11 +679,10 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
                            c.language, c.topics_json, c.created_at, c.pushed_at,
                            c.source_channels, c.first_seen_at, c.last_seen_at,
-                           c.last_snapshot_at, c.availability_status,
+                           c.last_snapshot_at,
                            COALESCE(c.stars, 0) AS stars,
                            COALESCE(c.forks, 0) AS forks,
-                           COALESCE(c.watchers, 0) AS watchers,
-                           ss.readme_text, ss.readme_sha256, ss.readme_status
+                           COALESCE(c.watchers, 0) AS watchers
                     """
                     + _RUN_SCOPE_WHERE
                     + "  AND c.repo_id > %s ORDER BY c.repo_id LIMIT %s",
