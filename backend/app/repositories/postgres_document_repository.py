@@ -815,17 +815,22 @@ class PostgresDocumentRepository:
 
     def get_today_document_count(self) -> int:
         today = _local_today()
-        # github 源不计 documents 行，改计 github_repo_candidates 当日
-        # first_seen_at 锚点的新入库项目；其余来源仍按 documents.created_at
-        # 当日入库计数。两侧同为 LEFT(...,10) 词法日期前缀，口径一致。
+        # github 源不计 documents 行，改计 github_repo_enrichments 当日
+        # enriched_at 锚点且 status='succeeded' 的入库项目（即
+        # github_library_total 的当日增量；候选池 first_seen 不计）。
+        # 其余来源仍按 documents.created_at 当日入库计数。
+        # 两侧同为 LEFT(...,10) 词法日期前缀，口径一致。
+        # 注意：upsert 重富化会覆写 enriched_at，prompt 版本升级等批量重跑
+        # 当日会把旧项目计入本计数。
         return self._fetch_count(
             """
             SELECT (
                 SELECT COUNT(*) FROM documents
                 WHERE LEFT(created_at, 10) = %s AND source <> 'github'
             ) + (
-                SELECT COUNT(*) FROM github_repo_candidates
-                WHERE LEFT(COALESCE(first_seen_at, ''), 10) = %s
+                SELECT COUNT(*) FROM github_repo_enrichments
+                WHERE status = 'succeeded'
+                  AND LEFT(COALESCE(enriched_at, ''), 10) = %s
             ) AS cnt
             """,
             (today, today),

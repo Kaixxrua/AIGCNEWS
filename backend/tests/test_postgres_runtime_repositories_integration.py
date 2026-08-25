@@ -25,6 +25,9 @@ try:
     from backend.app.repositories.postgres_ingestion_task_repository import (
         PostgresIngestionTaskRepository,
     )
+    from backend.app.repositories.postgres_project_enrichment_repository import (
+        PostgresGitHubProjectEnrichmentRepository,
+    )
     from backend.app.repositories.postgres_project_ingestion_repository import (
         PostgresGitHubProjectIngestionRepository,
     )
@@ -49,7 +52,7 @@ def _test_dsn() -> str:
 
 
 @pytest.fixture(scope="module")
-def repositories() -> Iterator[tuple[Any, Any, Any, Any]]:
+def database() -> Iterator[Any]:
     dsn = _test_dsn()
     schema = f"runtime_it_{uuid.uuid4().hex}"
     with psycopg.connect(dsn, autocommit=True) as admin:
@@ -67,16 +70,21 @@ def repositories() -> Iterator[tuple[Any, Any, Any, Any]]:
     )
     try:
         PostgresMigrationRunner(database).apply()
-        yield (
-            PostgresDocumentRepository(database),
-            PostgresIngestionTaskRepository(database),
-            PostgresRankSnapshotRepository(database),
-            PostgresGitHubProjectIngestionRepository(database),
-        )
+        yield database
     finally:
         database.close()
         with psycopg.connect(dsn, autocommit=True) as admin:
             admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
+@pytest.fixture(scope="module")
+def repositories(database: Any) -> Iterator[tuple[Any, Any, Any, Any]]:
+    yield (
+        PostgresDocumentRepository(database),
+        PostgresIngestionTaskRepository(database),
+        PostgresRankSnapshotRepository(database),
+        PostgresGitHubProjectIngestionRepository(database),
+    )
 
 
 # get_today_document_count uses the UTC+8 calendar day of created_at; pin the
@@ -365,11 +373,15 @@ def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositor
     assert [row["id"] for row in bounded] == ["doc-x-old", "doc-x-stale"]
 
 
-def test_real_postgres_today_count_github_uses_candidate_first_seen(repositories) -> None:
+def test_real_postgres_today_count_github_uses_enriched_library_entries(
+    repositories, database,
+) -> None:
     documents, _, _, project_ingestion = repositories
-    # github 源 documents 行（created_at 当日）不再计入今日更新；
-    # 今日更新中的 github 部分改计 github_repo_candidates 当日
-    # first_seen_at 的新入库项目。
+    enrichments = PostgresGitHubProjectEnrichmentRepository(database)
+    # github 源 documents 行（created_at 当日）不计入今日更新；候选池
+    # first_seen_at 当日但未富化成功的项目也不计。今日更新中的 github
+    # 部分只计 github_repo_enrichments 当日 enriched_at 且
+    # status='succeeded' 的入库项目。
     baseline = documents.get_today_document_count()
     documents.upsert_document(
         _document(
@@ -380,20 +392,65 @@ def test_real_postgres_today_count_github_uses_candidate_first_seen(repositories
     )
     project_ingestion.upsert_github_repo_candidate(
         {
-            "repo_id": "it-today-new-repo",
-            "full_name": "it/today-new-repo",
-            "url": "https://github.com/it/today-new-repo",
+            "repo_id": "it-today-candidate-only",
+            "full_name": "it/today-candidate-only",
+            "url": "https://github.com/it/today-candidate-only",
             "first_seen_at": _CREATED_AT_TODAY,
         }
     )
     project_ingestion.upsert_github_repo_candidate(
         {
-            "repo_id": "it-old-repo",
-            "full_name": "it/old-repo",
-            "url": "https://github.com/it/old-repo",
+            "repo_id": "it-today-enriched-repo",
+            "full_name": "it/today-enriched-repo",
+            "url": "https://github.com/it/today-enriched-repo",
+            "first_seen_at": _CREATED_AT_TODAY,
+        }
+    )
+    project_ingestion.upsert_github_repo_candidate(
+        {
+            "repo_id": "it-old-enriched-repo",
+            "full_name": "it/old-enriched-repo",
+            "url": "https://github.com/it/old-enriched-repo",
             "first_seen_at": "2026-01-01T00:00:00+00:00",
         }
     )
+    project_ingestion.upsert_github_repo_candidate(
+        {
+            "repo_id": "it-today-failed-repo",
+            "full_name": "it/today-failed-repo",
+            "url": "https://github.com/it/today-failed-repo",
+            "first_seen_at": _CREATED_AT_TODAY,
+        }
+    )
 
-    # 只 +1（当日新入库项目）；github documents 行与历史锚点项目均不计入。
+    def _enrichment(repo_id: str, **overrides: Any) -> dict[str, Any]:
+        payload = {
+            "repo_id": repo_id,
+            "category_slug": "agent",
+            "category_name": "Agent",
+            "description_zh": "测试项目",
+            "source_fingerprint": "f" * 64,
+            "prompt_version": "it-v1",
+            "status": "succeeded",
+            "enriched_at": _CREATED_AT_TODAY,
+        }
+        payload.update(overrides)
+        return payload
+
+    # 当日富化成功：计 +1
+    enrichments.upsert_github_repo_enrichment(_enrichment("it-today-enriched-repo"))
+    # 历史锚点的成功富化：不计
+    enrichments.upsert_github_repo_enrichment(
+        _enrichment(
+            "it-old-enriched-repo",
+            enriched_at="2026-01-01T00:00:00+00:00",
+        )
+    )
+    # 当日富化失败：不计
+    enrichments.upsert_github_repo_enrichment(
+        _enrichment("it-today-failed-repo", status="failed")
+    )
+
+    # 只 +1（当日富化成功的入库项目）；github documents 行、纯候选、
+    # 历史锚点与失败行均不计入。
     assert documents.get_today_document_count() == baseline + 1
