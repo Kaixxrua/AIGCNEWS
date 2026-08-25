@@ -97,3 +97,40 @@ async def test_exchange_rejects_non_https_metadata_endpoint() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(GoogleOAuthError):
             await _provider(client).exchange_code(code="c", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")
+
+
+def _exchange_handler(key, token: str):
+    public = key.public_key().public_numbers()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url == httpx.URL(DISCOVERY_URL):
+            return httpx.Response(200, json={"issuer": EXPECTED_ISSUER, "token_endpoint": "https://oauth.example/token", "jwks_uri": "https://oauth.example/keys"})
+        if str(request.url).endswith("/token"):
+            return httpx.Response(200, json={"id_token": token})
+        return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "k", "n": _b64(public.n), "e": _b64(public.e)}]})
+
+    return handler
+
+
+@pytest.mark.anyio
+async def test_exchange_accepts_google_no_scheme_issuer_form() -> None:
+    # Google 签发的 id_token iss 存在 "accounts.google.com"（无 scheme）形态，
+    # 与 discovery 的严格 issuer 不同；官方客户端库两者皆收，拒绝它会误杀合法登录。
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    claims = {"iss": "accounts.google.com", "aud": "client-id", "sub": "s", "email": "e@example.com", "email_verified": True, "nonce": "n", "iat": int(time.time()), "exp": int(time.time()) + 300}
+    token = jwt.encode(claims, key, algorithm="RS256", headers={"kid": "k"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_exchange_handler(key, token))) as client:
+        identity = await _provider(client).exchange_code(code="c", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")
+    assert identity.subject == "s"
+
+
+@pytest.mark.anyio
+async def test_exchange_rejects_unknown_token_issuer() -> None:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    claims = {"iss": "https://evil.example.com", "aud": "client-id", "sub": "s", "email": "e@example.com", "email_verified": True, "nonce": "n", "iat": int(time.time()), "exp": int(time.time()) + 300}
+    token = jwt.encode(claims, key, algorithm="RS256", headers={"kid": "k"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_exchange_handler(key, token))) as client:
+        with pytest.raises(GoogleTokenValidationError):
+            await _provider(client).exchange_code(code="c", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")

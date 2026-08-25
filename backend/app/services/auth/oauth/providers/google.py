@@ -15,6 +15,9 @@ from backend.app.services.auth.oauth.contracts import OAuthProviderConfig
 
 DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 EXPECTED_ISSUER = "https://accounts.google.com"
+# Google 的 id_token iss 声明存在带/不带 scheme 两种形态（Google 官方客户端库
+# 两者皆收），只认 discovery 的严格单值会把一批合法登录挡在回调里。
+ACCEPTED_TOKEN_ISSUERS = (EXPECTED_ISSUER, "accounts.google.com")
 _MAX_RESPONSE_BYTES = 1_048_576
 
 
@@ -123,8 +126,10 @@ class GoogleOIDCProvider:
             if not isinstance(id_token, str) or not id_token:
                 raise GoogleOAuthError("Google response did not contain an identity token")
             jwks = await _get_json(client, jwks_uri)
+            # discovery 的 issuer 已在上方严格校验；id_token 的 iss 按 Google
+            # 官方双形态白名单校验，不再依赖 discovery 单值透传。
             return _validate_id_token(
-                id_token, jwks, issuer=issuer,
+                id_token, jwks,
                 audience=self.config.client_id, nonce=nonce,
             )
 
@@ -181,7 +186,7 @@ def _base64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
-def _validate_id_token(token: str, jwks: dict[str, Any], *, issuer: str, audience: str, nonce: str | None) -> GoogleIdentity:
+def _validate_id_token(token: str, jwks: dict[str, Any], *, audience: str, nonce: str | None) -> GoogleIdentity:
     try:
         header = jwt.get_unverified_header(token)
         kid = header.get("kid")
@@ -189,7 +194,7 @@ def _validate_id_token(token: str, jwks: dict[str, Any], *, issuer: str, audienc
         key = next((item for item in keys or [] if isinstance(item, dict) and item.get("kid") == kid), None)
         if key is None:
             raise GoogleTokenValidationError("Google signing key not found")
-        claims = jwt.decode(token, key, algorithms=["RS256"], audience=audience, issuer=issuer, options={"require_exp": True, "require_iat": True, "require_sub": True})
+        claims = jwt.decode(token, key, algorithms=["RS256"], audience=audience, issuer=ACCEPTED_TOKEN_ISSUERS, options={"require_exp": True, "require_iat": True, "require_sub": True})
     except (JWTError, GoogleTokenValidationError, TypeError, ValueError) as exc:
         if isinstance(exc, GoogleTokenValidationError):
             raise

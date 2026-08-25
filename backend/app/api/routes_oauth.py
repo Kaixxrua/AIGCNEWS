@@ -181,6 +181,12 @@ async def oauth_callback(
     except HTTPException:
         raise
     except (GitHubOAuthError, GoogleOAuthError, WeChatOAuthError) as exc:
+        # 三个 provider 的异常消息均为固定 reason code（已核查不含 token/上游
+        # 原始响应），记录 reason 便于线上定位，不回传给浏览器。
+        logger.warning(
+            "OAuth callback failed: provider=%s reason=%s",
+            provider, str(exc) or type(exc).__name__,
+        )
         raise HTTPException(status_code=502, detail="oauth_callback_failed") from exc
     except (OAuthAdapterUnavailable, OAuthHandoffUnavailableError, OAuthRedirectError) as exc:
         raise HTTPException(status_code=503, detail="oauth_unavailable") from exc
