@@ -18,7 +18,7 @@ _MAX_TARGET_LENGTH = 2048
 
 
 class CreatePushChannelRequest(BaseModel):
-    channel_type: Literal["email", "webhook"] = "email"
+    channel_type: Literal["email", "webhook", "discord"] = "email"
     target: str
 
     @model_validator(mode="after")
@@ -57,6 +57,13 @@ class PushChannelResponse(BaseModel):
     verified: bool
     status: str
     created_at: datetime
+
+
+class TelegramLinkResponse(BaseModel):
+    attempt_id: str
+    deep_link: str
+    expires_at: datetime
+    status: Literal["pending", "completed", "expired"] = "pending"
 
 
 class CreateSubscriptionRequest(BaseModel):

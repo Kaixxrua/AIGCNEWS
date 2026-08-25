@@ -6,8 +6,8 @@ from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.repositories.push_channel_repository import PushChannelRepository
 
 _CHANNEL_COLUMNS = """
-    id, user_id, channel_type, target, encrypted_config, verified, status,
-    created_at, updated_at
+    id, user_id, channel_type, target, encrypted_config, provider_key,
+    display_target, verified, status, created_at, updated_at
 """
 
 
@@ -25,18 +25,22 @@ class PostgresPushChannelRepository(PushChannelRepository):
         target: str,
         encrypted_config: str | None,
         verified: bool = False,
+        provider_key: str | None = None,
+        display_target: str | None = None,
     ) -> dict[str, Any] | None:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
                     INSERT INTO push_channels
-                        (user_id, channel_type, target, encrypted_config, verified)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (user_id, channel_type, target) DO NOTHING
+                        (user_id, channel_type, target, encrypted_config, verified,
+                         provider_key, display_target)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
                     RETURNING {_CHANNEL_COLUMNS}
                     """,
-                    (user_id, channel_type, target, encrypted_config, verified),
+                    (user_id, channel_type, target, encrypted_config, verified,
+                     provider_key, display_target),
                 )
                 row = cursor.fetchone()
                 return dict(row) if row else None
@@ -58,6 +62,26 @@ class PostgresPushChannelRepository(PushChannelRepository):
                     LIMIT 1
                     """,
                     (user_id, channel_type, target),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+
+    def find_channel_by_provider_key(
+        self,
+        *,
+        channel_type: str,
+        provider_key: str,
+    ) -> dict[str, Any] | None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT {_CHANNEL_COLUMNS}
+                    FROM push_channels
+                    WHERE channel_type = %s AND provider_key = %s
+                    LIMIT 1
+                    """,
+                    (channel_type, provider_key),
                 )
                 row = cursor.fetchone()
                 return dict(row) if row else None

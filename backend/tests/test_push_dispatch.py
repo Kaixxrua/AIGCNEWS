@@ -3,15 +3,25 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 
+from backend.app.domain.wechat_secret_box import WeChatSecretBox
 from backend.app.services.push.dispatch_service import (
     MAX_DELIVERY_ATTEMPTS,
     SubscriptionDispatchService,
 )
+from backend.app.services.push.errors import TelegramDeliveryError
+from backend.app.services.push.secrets import seal_channel_config
+
+_TEST_KEY_MATERIAL = base64.urlsafe_b64encode(bytes(range(32))).decode()
+
+
+def _test_box() -> WeChatSecretBox:
+    return WeChatSecretBox.from_urlsafe_base64(_TEST_KEY_MATERIAL, "v1")
 
 
 class FakeSubscriptionRepository:
@@ -403,6 +413,257 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
         self.assertEqual(summary["sent"], 0)
         self.assertEqual(email.calls, [])
+
+
+class FakeTelegramSender:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self._fail = fail
+
+    async def send_message(self, *, chat_id: str, title: str, content: str) -> None:
+        self.calls.append({"chat_id": chat_id, "title": title, "content": content})
+        if self._fail:
+            raise TelegramDeliveryError("Telegram 请求失败")
+
+
+class FakePlatformWebhookSender:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self._fail = fail
+
+    async def send(self, *, url: str, title: str, content: str) -> None:
+        self.calls.append({"url": url, "title": title, "content": content})
+        if self._fail:
+            raise RuntimeError("Webhook 返回 HTTP 500（第 1 块）")
+
+
+def _direct_subscription(
+    subscription_id: int,
+    *,
+    channel_type: str,
+    target: str,
+    config: dict[str, Any],
+    role: str = "user",
+    tier: str = "member",
+    expires_at: Any = None,
+) -> dict[str, Any]:
+    """直投渠道订阅行：模拟 list_active_dispatchable 联表后的完整字段。"""
+    return {
+        "id": subscription_id,
+        "user_id": 7,
+        "channel_id": 100 + subscription_id,
+        "source": "all",
+        "frequency": "daily",
+        "status": "active",
+        "channel_type": channel_type,
+        "target": target,
+        "encrypted_config": seal_channel_config(_test_box(), config),
+        "role": role,
+        "membership_tier": tier,
+        "membership_expires_at": expires_at,
+    }
+
+
+class DirectChannelDispatchTests(unittest.TestCase):
+    """telegram/discord 渠道派发与会员抑制语义。"""
+
+    def _make_service(
+        self,
+        *,
+        subscriptions: list[dict[str, Any]],
+        telegram_sender: FakeTelegramSender | None = None,
+        webhook_sender: FakePlatformWebhookSender | None = None,
+    ) -> tuple[SubscriptionDispatchService, FakeDeliveryRepository]:
+        deliveries = FakeDeliveryRepository()
+        service = SubscriptionDispatchService(
+            subscriptions=FakeSubscriptionRepository(subscriptions),
+            deliveries=deliveries,
+            briefings=FakeBriefingRepository(
+                {"2026-08-05": {"content_zh": "今日 AI 要闻"}}
+            ),
+            secret_box=_test_box(),
+            webhook_sender=webhook_sender,
+            telegram_sender=telegram_sender,
+        )
+        return service, deliveries
+
+    def test_telegram_delivery_happy_path(self) -> None:
+        sender = FakeTelegramSender()
+        service, deliveries = self._make_service(
+            subscriptions=[
+                _direct_subscription(
+                    1,
+                    channel_type="telegram",
+                    target="tg:abc123",
+                    config={"chat_id": "424242001"},
+                )
+            ],
+            telegram_sender=sender,
+        )
+
+        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary, {"sent": 1, "skipped": 0, "failed": 0})
+        self.assertEqual(len(sender.calls), 1)
+        self.assertEqual(sender.calls[0]["chat_id"], "424242001")
+        self.assertIn("日报", sender.calls[0]["title"])
+        self.assertIn("2026-08-05", sender.calls[0]["title"])
+        self.assertEqual(sender.calls[0]["content"], "今日 AI 要闻")
+        row = deliveries.get_delivery(subscription_id=1, item_key="2026-08-05")
+        assert row is not None
+        self.assertEqual(row["status"], "sent")
+
+    def test_discord_delivery_uses_sealed_url(self) -> None:
+        sender = FakePlatformWebhookSender()
+        url = "https://discord.com/api/webhooks/123/token-abc"
+        service, _deliveries = self._make_service(
+            subscriptions=[
+                _direct_subscription(
+                    1,
+                    channel_type="discord",
+                    target="dg:xyz",
+                    config={"url": url},
+                )
+            ],
+            webhook_sender=sender,
+        )
+
+        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["sent"], 1)
+        self.assertEqual(sender.calls[0]["url"], url)
+
+    def test_expired_member_direct_channel_is_suppressed(self) -> None:
+        sender = FakeTelegramSender()
+        service, deliveries = self._make_service(
+            subscriptions=[
+                _direct_subscription(
+                    1,
+                    channel_type="telegram",
+                    target="tg:abc123",
+                    config={"chat_id": "424242001"},
+                    expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+                )
+            ],
+            telegram_sender=sender,
+        )
+
+        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        # 会员抑制不是 provider failure：不创建 delivery、不计 attempts
+        self.assertEqual(summary, {"sent": 0, "skipped": 1, "failed": 0})
+        self.assertEqual(sender.calls, [])
+        self.assertIsNone(
+            deliveries.get_delivery(subscription_id=1, item_key="2026-08-05")
+        )
+
+    def test_free_tier_discord_is_suppressed(self) -> None:
+        sender = FakePlatformWebhookSender()
+        service, deliveries = self._make_service(
+            subscriptions=[
+                _direct_subscription(
+                    1,
+                    channel_type="discord",
+                    target="dg:xyz",
+                    config={"url": "https://discord.com/api/webhooks/1/t"},
+                    tier="free",
+                )
+            ],
+            webhook_sender=sender,
+        )
+
+        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["skipped"], 1)
+        self.assertEqual(sender.calls, [])
+        self.assertIsNone(
+            deliveries.get_delivery(subscription_id=1, item_key="2026-08-05")
+        )
+
+    def test_admin_bypasses_membership_suppression(self) -> None:
+        sender = FakeTelegramSender()
+        service, _deliveries = self._make_service(
+            subscriptions=[
+                _direct_subscription(
+                    1,
+                    channel_type="telegram",
+                    target="tg:abc123",
+                    config={"chat_id": "424242001"},
+                    role="admin",
+                    tier="free",
+                )
+            ],
+            telegram_sender=sender,
+        )
+
+        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["sent"], 1)
+        self.assertEqual(len(sender.calls), 1)
+
+    def test_email_channel_not_subject_to_membership_suppression(self) -> None:
+        # email 不是直投渠道：免费用户照常派发，且行无需携带权益字段
+        email = FakeEmailService()
+        deliveries = FakeDeliveryRepository()
+        service = SubscriptionDispatchService(
+            subscriptions=FakeSubscriptionRepository([_subscription(1)]),
+            deliveries=deliveries,
+            briefings=FakeBriefingRepository(
+                {"2026-08-05": {"content_zh": "今日 AI 要闻"}}
+            ),
+            email_service=email,
+        )
+
+        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["sent"], 1)
+        self.assertEqual(len(email.calls), 1)
+
+    def test_telegram_failure_records_static_error(self) -> None:
+        sender = FakeTelegramSender(fail=True)
+        service, deliveries = self._make_service(
+            subscriptions=[
+                _direct_subscription(
+                    1,
+                    channel_type="telegram",
+                    target="tg:abc123",
+                    config={"chat_id": "424242001"},
+                )
+            ],
+            telegram_sender=sender,
+        )
+
+        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["failed"], 1)
+        row = deliveries.get_delivery(subscription_id=1, item_key="2026-08-05")
+        assert row is not None
+        self.assertEqual(row["attempts"], 1)
+        self.assertEqual(row["last_error"], "Telegram 请求失败")
+
+    def test_telegram_unconfigured_counts_failed_with_safe_message(self) -> None:
+        service, deliveries = self._make_service(
+            subscriptions=[
+                _direct_subscription(
+                    1,
+                    channel_type="telegram",
+                    target="tg:abc123",
+                    config={"chat_id": "424242001"},
+                )
+            ],
+            telegram_sender=None,
+        )
+
+        with patch(
+            "backend.app.services.push.telegram_service.build_telegram_bot_client",
+            return_value=None,
+        ):
+            summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["failed"], 1)
+        row = deliveries.get_delivery(subscription_id=1, item_key="2026-08-05")
+        assert row is not None
+        self.assertIn("未启用", row["last_error"])
 
 
 if __name__ == "__main__":

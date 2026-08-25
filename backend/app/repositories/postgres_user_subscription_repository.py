@@ -110,9 +110,11 @@ class PostgresUserSubscriptionRepository(UserSubscriptionRepository):
                     SELECT
                         s.id, s.user_id, s.channel_id, s.source, s.frequency,
                         s.status, s.created_at, s.updated_at,
-                        c.channel_type, c.target, c.encrypted_config
+                        c.channel_type, c.target, c.encrypted_config,
+                        u.role, u.membership_tier, u.membership_expires_at
                     FROM user_subscriptions s
                     JOIN push_channels c ON c.id = s.channel_id
+                    JOIN users u ON u.id = s.user_id
                     WHERE s.status = 'active'
                       AND s.frequency = %s
                       AND c.verified

@@ -63,6 +63,7 @@ from backend.app.repositories.smtp_settings_repository import SmtpSettingsReposi
 from backend.app.repositories.task_repository import (
     IngestionTaskAdminRepository,
 )
+from backend.app.repositories.telegram_link_attempt_repository import TelegramLinkAttemptRepository
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.repositories.user_subscription_repository import (
     UserSubscriptionRepository,
@@ -109,6 +110,7 @@ from backend.app.services.project_adoptions import ProjectAdoptionService
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 from backend.app.services.push.channel_service import PushChannelService
 from backend.app.services.push.subscription_service import UserSubscriptionService
+from backend.app.services.push.telegram_service import TelegramLinkService
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.composition import RagChatServiceProvider
 from backend.app.services.runtime_provider.admin_service import (
@@ -763,10 +765,25 @@ def get_user_subscription_repository(
     return repositories.user_subscriptions
 
 
+def get_telegram_link_attempt_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> TelegramLinkAttemptRepository:
+    return repositories.telegram_link_attempts
+
+
 def get_push_channel_service(
     channels: PushChannelRepository = Depends(get_push_channel_repository),
 ) -> PushChannelService:
     return PushChannelService(channels)
+
+
+def get_telegram_link_service(
+    attempts: TelegramLinkAttemptRepository = Depends(
+        get_telegram_link_attempt_repository
+    ),
+    channels: PushChannelRepository = Depends(get_push_channel_repository),
+) -> TelegramLinkService:
+    return TelegramLinkService(attempts=attempts, channels=channels)
 
 
 def get_user_subscription_service(

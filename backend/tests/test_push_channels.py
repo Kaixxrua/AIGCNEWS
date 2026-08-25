@@ -51,7 +51,8 @@ class FakePushChannelRepository:
         self.next_id = 1
 
     def create_channel(
-        self, *, user_id, channel_type, target, encrypted_config, verified=False
+        self, *, user_id, channel_type, target, encrypted_config, verified=False,
+        provider_key=None, display_target=None,
     ) -> dict | None:
         for row in self.rows.values():
             if (
@@ -68,6 +69,8 @@ class FakePushChannelRepository:
             "encrypted_config": encrypted_config,
             "verified": verified,
             "status": "active",
+            "provider_key": provider_key,
+            "display_target": display_target,
             "created_at": _NOW,
             "updated_at": _NOW,
         }
@@ -81,6 +84,17 @@ class FakePushChannelRepository:
                 row["user_id"] == user_id
                 and row["channel_type"] == channel_type
                 and row["target"] == target
+            ):
+                return dict(row)
+        return None
+
+    def find_channel_by_provider_key(
+        self, *, channel_type, provider_key
+    ) -> dict | None:
+        for row in self.rows.values():
+            if (
+                row["channel_type"] == channel_type
+                and row.get("provider_key") == provider_key
             ):
                 return dict(row)
         return None
@@ -666,7 +680,10 @@ class PushSubscriptionQuotaTests(_PushRouteTestBase):
         self.assertEqual(second.status_code, 403, second.text)
         self.assertEqual(
             second.json()["detail"],
-            "免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块",
+            {
+                "code": "quota-exceeded",
+                "message": "免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块",
+            },
         )
 
     def test_free_tier_same_source_on_new_channel_is_not_a_new_module(self) -> None:
@@ -732,7 +749,10 @@ class PushSubscriptionQuotaTests(_PushRouteTestBase):
         self.assertEqual(rejected.status_code, 403, rejected.text)
         self.assertEqual(
             rejected.json()["detail"],
-            "免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块",
+            {
+                "code": "quota-exceeded",
+                "message": "免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块",
+            },
         )
 
     def test_idempotent_patch_on_active_subscription_skips_quota(self) -> None:

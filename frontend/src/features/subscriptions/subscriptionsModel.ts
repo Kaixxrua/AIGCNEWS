@@ -13,7 +13,7 @@ export type SubscriptionSource =
 
 export type SubscriptionFrequency = 'daily'
 
-export type PushChannelType = 'email' | 'webhook'
+export type PushChannelType = 'email' | 'webhook' | 'discord' | 'telegram'
 export type PushChannelStatus = 'active' | 'disabled'
 export type SubscriptionStatus = 'active' | 'paused'
 
@@ -24,6 +24,15 @@ export interface PushChannel {
   verified: boolean
   status: PushChannelStatus
   created_at: string
+}
+
+export type TelegramLinkStatus = 'pending' | 'completed' | 'expired'
+
+export interface TelegramLinkAttempt {
+  attempt_id: string
+  deep_link: string
+  expires_at: string
+  status: TelegramLinkStatus
 }
 
 export interface UserSubscription {

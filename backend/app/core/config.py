@@ -123,6 +123,12 @@ class Settings(BaseSettings):
     # 类型拒绝处理 secret，不降级为明文（email 渠道无凭据，不受影响）。
     push_channel_encryption_key: str = ""
     push_channel_encryption_key_version: str = "v1"
+    telegram_push_enabled: bool = False
+    telegram_bot_token: str = ""
+    telegram_bot_username: str = ""
+    telegram_webhook_secret: str = ""
+    telegram_link_ttl_seconds: int = 300
+    telegram_request_timeout_seconds: float = 5.0
 
     @field_validator("push_channel_encryption_key_version")
     @classmethod

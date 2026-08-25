@@ -114,6 +114,9 @@ from backend.app.repositories.postgres_site_contact_page_repository import (
 from backend.app.repositories.postgres_smtp_settings_repository import (
     PostgresSmtpSettingsRepository,
 )
+from backend.app.repositories.postgres_telegram_link_attempt_repository import (
+    PostgresTelegramLinkAttemptRepository,
+)
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
@@ -169,6 +172,7 @@ from backend.app.repositories.task_repository import (
     RecentTaskReader,
     TaskByIdReader,
 )
+from backend.app.repositories.telegram_link_attempt_repository import TelegramLinkAttemptRepository
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.repositories.user_subscription_repository import (
     UserSubscriptionRepository,
@@ -238,6 +242,7 @@ class ApplicationRepositories:
     push_channels: PushChannelRepository
     user_subscriptions: UserSubscriptionRepository
     push_deliveries: PushDeliveryRepository
+    telegram_link_attempts: TelegramLinkAttemptRepository
 
 
 def _env_x_watch_handles() -> tuple[str, ...]:
@@ -333,4 +338,5 @@ def create_application_repositories(
         push_channels=PostgresPushChannelRepository(postgres),
         user_subscriptions=PostgresUserSubscriptionRepository(postgres),
         push_deliveries=PostgresPushDeliveryRepository(postgres),
+        telegram_link_attempts=PostgresTelegramLinkAttemptRepository(postgres),
     )

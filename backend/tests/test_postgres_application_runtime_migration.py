@@ -29,8 +29,27 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 52
-    assert migrations[-1].filename == "0052_x_translation_task_leases.sql"
+    assert migrations[-1].version == 60
+    assert migrations[-1].filename == "0060_telegram_discord_push_channels.sql"
+
+
+def test_telegram_discord_push_channels_migration_is_additive_and_idempotent() -> None:
+    sql = (MIGRATIONS_DIR / "0060_telegram_discord_push_channels.sql").read_text(
+        encoding="utf-8"
+    )
+
+    # 直投渠道扩展：仅 additive 补列 + 类型约束重建；provider_key 部分唯一索引
+    # 防同一 Telegram chat 被跨用户占用；link attempt 只存 nonce 哈希。
+    assert "ADD COLUMN IF NOT EXISTS provider_key VARCHAR(256)" in sql
+    assert "ADD COLUMN IF NOT EXISTS display_target VARCHAR(256)" in sql
+    assert "DROP CONSTRAINT IF EXISTS ck_push_channels_type" in sql
+    assert "'discord'" in sql and "'telegram'" in sql
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_push_channels_provider_key" in sql
+    assert "WHERE provider_key IS NOT NULL" in sql
+    assert "CREATE TABLE IF NOT EXISTS telegram_link_attempts" in sql
+    assert "nonce_hash CHAR(64) NOT NULL UNIQUE" in sql
+    assert "REFERENCES users(id) ON DELETE CASCADE" in sql
+    assert "CREATE INDEX IF NOT EXISTS ix_telegram_link_attempts_user_status" in sql
 
 
 def test_x_translation_task_leases_migration_is_idempotent() -> None:

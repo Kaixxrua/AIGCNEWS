@@ -22,6 +22,9 @@ vi.mock('@/composables/useSubscriptionsController', async () => {
     otpChannelId: ref(null),
     otpCode: ref(''),
     webhookInput: ref(''),
+    discordInput: ref(''),
+    telegramLink: ref(null),
+    telegramPolling: ref(false),
     channelFormBusy: ref(false),
     newChannelId: ref(null),
     newSource: ref('all'),
@@ -35,11 +38,15 @@ vi.mock('@/composables/useSubscriptionsController', async () => {
     canSubmitEmail: ref(true),
     canSubmitOtp: ref(false),
     canSubmitWebhook: ref(true),
+    canSubmitDiscord: ref(true),
+    canConnectTelegram: ref(true),
     canSubmitSubscription: ref(true),
     loadAll: vi.fn(),
     submitEmailChannel: vi.fn(),
     submitOtp: vi.fn(),
     submitWebhookChannel: vi.fn(),
+    submitDiscordChannel: vi.fn(),
+    connectTelegram: vi.fn(),
     toggleChannel: vi.fn(),
     removeChannel: vi.fn(),
     sendTest: vi.fn(),
@@ -73,6 +80,14 @@ const i18n = createI18n({
           webhookPlaceholder: 'https:// 开头的机器人 Webhook 地址',
           webhookSubmit: '验证并添加',
           webhookHint: '按域名自动识别',
+          discordTitle: '添加 Discord Webhook',
+          discordPlaceholder: 'https://discord.com/api/webhooks/...',
+          discordSubmit: '验证并添加',
+          discordHint: '使用 Discord Incoming Webhook，添加时会发送一条验证消息。',
+          telegramTitle: '连接 Telegram',
+          telegramConnect: '打开 Telegram 连接',
+          telegramPending: '等待你打开 Telegram 链接…',
+          vipOnly: '仅对有效会员和管理员开放',
           verified: '已验证',
           unverified: '未验证',
           disabled: '已停用',
@@ -82,7 +97,7 @@ const i18n = createI18n({
           delete: '删除',
           deleteConfirm: '删除该渠道将同时删除其全部订阅，确定删除？',
           empty: '还没有渠道',
-          platform: { wecom: '企业微信', dingtalk: '钉钉', lark: '飞书', generic: '通用 Webhook' },
+          platform: { wecom: '企业微信', dingtalk: '钉钉', lark: '飞书', generic: '通用 Webhook', discord: 'Discord', telegram: 'Telegram' },
         },
         subs: {
           title: '订阅',
@@ -110,8 +125,11 @@ const i18n = createI18n({
           'subscription-created': '订阅已创建',
           'subscription-deleted': '订阅已删除',
           'channel-deleted': '渠道已删除',
+          'discord-created': 'Discord Webhook 已验证并添加',
+          'telegram-link-created': 'Telegram 链接已打开，请在 Telegram 中完成连接',
+          'telegram-connected': 'Telegram 已连接',
         },
-        errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试', 'quota-exceeded': '免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。' },
+        errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试', 'quota-exceeded': '免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。', 'vip-required': 'Telegram 和 Discord 渠道仅对有效会员开放。' },
       },
     },
   },
@@ -165,6 +183,9 @@ beforeEach(() => {
   ctl().otpChannelId.value = null
   ctl().otpCode.value = ''
   ctl().webhookInput.value = ''
+  ctl().discordInput.value = ''
+  ctl().telegramLink.value = null
+  ctl().telegramPolling.value = false
   ctl().busyChannelIds.value = new Set()
   ctl().busySubscriptionIds.value = new Set()
   for (const fn of [
@@ -172,6 +193,8 @@ beforeEach(() => {
     ctl().submitEmailChannel,
     ctl().submitOtp,
     ctl().submitWebhookChannel,
+    ctl().submitDiscordChannel,
+    ctl().connectTelegram,
     ctl().toggleChannel,
     ctl().removeChannel,
     ctl().sendTest,
@@ -253,7 +276,11 @@ describe('SubscriptionsView interactions', () => {
     await webhookForm.trigger('submit.prevent')
     expect(ctl().submitWebhookChannel).toHaveBeenCalledTimes(1)
 
-    const subscriptionForm = wrapper.findAll('form')[2]!
+    const discordForm = wrapper.findAll('form')[2]!
+    await discordForm.trigger('submit.prevent')
+    expect(ctl().submitDiscordChannel).toHaveBeenCalledTimes(1)
+
+    const subscriptionForm = wrapper.findAll('form')[3]!
     await subscriptionForm.trigger('submit.prevent')
     expect(ctl().submitSubscription).toHaveBeenCalledTimes(1)
   })

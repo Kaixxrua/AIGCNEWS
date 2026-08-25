@@ -13,8 +13,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -36,6 +39,12 @@ try:
     )
     from backend.app.repositories.postgres_push_delivery_repository import (
         PostgresPushDeliveryRepository,
+    )
+    from backend.app.repositories.postgres_telegram_link_attempt_repository import (
+        PostgresTelegramLinkAttemptRepository,
+    )
+    from backend.app.repositories.postgres_user_subscription_repository import (
+        PostgresUserSubscriptionRepository,
     )
 finally:
     os.chdir(_IMPORT_CWD)
@@ -428,3 +437,198 @@ def test_count_email_deliveries_by_day_scopes_channel_and_window(database) -> No
     assert [row["date"] for row in stats_14d] == sorted(
         (row["date"] for row in stats_14d), reverse=True
     )
+
+
+def _create_member_user(database: Any, *, tier: str = "member", role: str = "user") -> int:
+    with database.transaction() as connection:
+        row = connection.execute(
+            "INSERT INTO users (email, hashed_password, role, membership_tier)"
+            " VALUES (%s, %s, %s, %s) RETURNING id",
+            (f"push-it-{uuid.uuid4().hex}@example.com", "hash", role, tier),
+        ).fetchone()
+        return int(row["id"])
+
+
+def test_push_channel_provider_key_cross_user_conflict_returns_none(database) -> None:
+    """0060：provider_key 部分唯一索引跨用户兜底；冲突返回 None 而非抛错。"""
+    channels = PostgresPushChannelRepository(database)
+    owner_id, other_id = _create_user(database), _create_user(database)
+    key = f"pk-{uuid.uuid4().hex}"
+
+    first = channels.create_channel(
+        user_id=owner_id,
+        channel_type="telegram",
+        target=f"tg-{uuid.uuid4().hex}",
+        encrypted_config="sealed",
+        verified=True,
+        provider_key=key,
+        display_target="Telegram 私聊 · ****2001",
+    )
+    assert first is not None
+    assert first["provider_key"] == key
+    assert first["display_target"] == "Telegram 私聊 · ****2001"
+
+    # 跨用户同 (channel_type, provider_key)：唯一索引兜底，静默拒绝
+    duplicate = channels.create_channel(
+        user_id=other_id,
+        channel_type="telegram",
+        target=f"tg-{uuid.uuid4().hex}",
+        encrypted_config="sealed",
+        verified=True,
+        provider_key=key,
+        display_target="other",
+    )
+    assert duplicate is None
+
+    found = channels.find_channel_by_provider_key(
+        channel_type="telegram", provider_key=key
+    )
+    assert found is not None
+    assert found["user_id"] == owner_id
+
+    # 不同 channel_type 同 key 不冲突（索引按 (channel_type, provider_key)）
+    other_type = channels.create_channel(
+        user_id=other_id,
+        channel_type="discord",
+        target=f"dg-{uuid.uuid4().hex}",
+        encrypted_config="sealed",
+        verified=True,
+        provider_key=key,
+        display_target="discord",
+    )
+    assert other_type is not None
+    assert (
+        channels.find_channel_by_provider_key(
+            channel_type="discord", provider_key=key
+        )["user_id"]
+        == other_id
+    )
+    # 未登记的类型查不到
+    assert (
+        channels.find_channel_by_provider_key(channel_type="webhook", provider_key=key)
+        is None
+    )
+
+
+def test_telegram_link_attempt_lifecycle(database) -> None:
+    attempts = PostgresTelegramLinkAttemptRepository(database)
+    channels = PostgresPushChannelRepository(database)
+    user_id, other_id = _create_user(database), _create_user(database)
+    attempt_id = uuid.uuid4()
+    nonce_hash = hashlib.sha256(b"nonce-a").hexdigest()
+    expires = datetime.now(timezone.utc) + timedelta(minutes=5)
+
+    created = attempts.create_attempt(
+        attempt_id=attempt_id,
+        user_id=user_id,
+        nonce_hash=nonce_hash,
+        expires_at=expires,
+    )
+    assert created["status"] == "pending"
+
+    # owner 范围查询；读取不回放 nonce_hash
+    assert attempts.get_attempt(user_id=other_id, attempt_id=attempt_id) is None
+    fetched = attempts.get_attempt(user_id=user_id, attempt_id=attempt_id)
+    assert fetched is not None
+    assert "nonce_hash" not in fetched
+
+    # 错误哈希不命中；正确哈希原子消费并记录 chat_id
+    assert (
+        attempts.consume_attempt(
+            nonce_hash=hashlib.sha256(b"wrong").hexdigest(), chat_id="1"
+        )
+        is None
+    )
+    consumed = attempts.consume_attempt(nonce_hash=nonce_hash, chat_id="424242001")
+    assert consumed is not None
+    assert consumed["status"] == "completed"
+    assert consumed["user_id"] == user_id
+    # 单次语义：二次消费被拒
+    assert attempts.consume_attempt(nonce_hash=nonce_hash, chat_id="424242001") is None
+
+    channel = channels.create_channel(
+        user_id=user_id,
+        channel_type="telegram",
+        target=f"tg-{uuid.uuid4().hex}",
+        encrypted_config="sealed",
+        verified=True,
+        provider_key=f"pk-{uuid.uuid4().hex}",
+        display_target="Telegram 私聊 · ****2001",
+    )
+    assert channel is not None
+    attempts.attach_channel(attempt_id=attempt_id, channel_id=int(channel["id"]))
+    after = attempts.get_attempt(user_id=user_id, attempt_id=attempt_id)
+    assert after is not None
+    assert int(after["channel_id"]) == int(channel["id"])
+    assert after["status"] == "completed"
+
+
+def test_telegram_link_attempt_expired_cannot_consume(database) -> None:
+    attempts = PostgresTelegramLinkAttemptRepository(database)
+    user_id = _create_user(database)
+    attempt_id = uuid.uuid4()
+    nonce_hash = hashlib.sha256(b"expired-nonce").hexdigest()
+    attempts.create_attempt(
+        attempt_id=attempt_id,
+        user_id=user_id,
+        nonce_hash=nonce_hash,
+        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+    assert attempts.consume_attempt(nonce_hash=nonce_hash, chat_id="1") is None
+    # 过期未被消费的 attempt 仍保持 pending（状态查询侧按 expires_at 呈现 expired）
+    fetched = attempts.get_attempt(user_id=user_id, attempt_id=attempt_id)
+    assert fetched is not None and fetched["status"] == "pending"
+
+
+def test_telegram_link_attempt_consume_single_winner_under_concurrency(database) -> None:
+    """并发回调同一 nonce：原子 UPDATE 保证恰好一个赢家。"""
+    attempts = PostgresTelegramLinkAttemptRepository(database)
+    user_id = _create_user(database)
+    attempt_id = uuid.uuid4()
+    nonce_hash = hashlib.sha256(b"race-nonce").hexdigest()
+    attempts.create_attempt(
+        attempt_id=attempt_id,
+        user_id=user_id,
+        nonce_hash=nonce_hash,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(
+            pool.map(
+                lambda _: attempts.consume_attempt(
+                    nonce_hash=nonce_hash, chat_id="424242001"
+                ),
+                range(8),
+            )
+        )
+    winners = [row for row in results if row is not None]
+    assert len(winners) == 1
+    assert winners[0]["attempt_id"] == attempt_id
+
+
+def test_list_active_dispatchable_carries_membership_fields(database) -> None:
+    """派发查询联表 users：带出 role/membership_tier/membership_expires_at。"""
+    channels = PostgresPushChannelRepository(database)
+    subscriptions = PostgresUserSubscriptionRepository(database)
+    user_id = _create_member_user(database, tier="member")
+    channel = channels.create_channel(
+        user_id=user_id,
+        channel_type="webhook",
+        target=f"https://example.com/hook-{uuid.uuid4().hex}",
+        encrypted_config="sealed",
+        verified=True,
+    )
+    assert channel is not None
+    subscription_id = _create_subscription(
+        database, user_id=user_id, channel_id=int(channel["id"])
+    )
+
+    rows = subscriptions.list_active_dispatchable(frequency="daily")
+    mine = [row for row in rows if int(row["id"]) == subscription_id]
+    assert len(mine) == 1
+    row = mine[0]
+    assert row["role"] == "user"
+    assert row["membership_tier"] == "member"
+    assert "membership_expires_at" in row
+    assert row["encrypted_config"] == "sealed"

@@ -7,12 +7,18 @@ from typing import Any
 
 from backend.app.repositories.push_channel_repository import PushChannelRepository
 from backend.app.services.email_service import EmailService
+from backend.app.services.membership.tiers import (
+    MEMBERSHIP_TIER_MEMBER,
+    resolve_effective_tier,
+)
 from backend.app.services.push.errors import (
     InvalidChannelOtpError,
     PushChannelDisabledError,
     PushChannelDuplicateError,
     PushChannelNotFoundError,
     PushChannelNotVerifiedError,
+    TelegramNotConfiguredError,
+    VipRequiredError,
     WebhookProbeFailedError,
 )
 from backend.app.services.push.secrets import seal_channel_config, unseal_channel_config
@@ -23,6 +29,8 @@ from backend.app.services.push.webhook_service import (
 
 CHANNEL_TYPE_EMAIL = "email"
 CHANNEL_TYPE_WEBHOOK = "webhook"
+CHANNEL_TYPE_DISCORD = "discord"
+CHANNEL_TYPE_TELEGRAM = "telegram"
 CHANNEL_STATUS_ACTIVE = "active"
 CHANNEL_STATUS_DISABLED = "disabled"
 CHANNEL_OTP_PURPOSE = "push_channel_verify"
@@ -59,6 +67,17 @@ class PushChannelService:
 
     def __init__(self, channels: PushChannelRepository) -> None:
         self._channels = channels
+
+    @staticmethod
+    def require_direct_channel_entitlement(user: dict[str, Any]) -> None:
+        """Require an effective member tier for bot/webhook channels."""
+        if user.get("role") == "admin":
+            return
+        tier = resolve_effective_tier(
+            user.get("membership_tier"), user.get("membership_expires_at")
+        )
+        if tier != MEMBERSHIP_TIER_MEMBER:
+            raise VipRequiredError("当前功能仅对有效会员开放")
 
     async def create_email_channel(
         self,
@@ -113,6 +132,7 @@ class PushChannelService:
         url: str,
         secret_box: Any,
         webhook_sender: WebhookSender,
+        channel_type: str = CHANNEL_TYPE_WEBHOOK,
     ) -> tuple[dict[str, Any], bool]:
         """创建 webhook 渠道：URL 校验 → 探测投递（即验证）→ 密封落库。
 
@@ -124,7 +144,7 @@ class PushChannelService:
         existing = await asyncio.to_thread(
             self._channels.find_channel_by_target,
             user_id=user_id,
-            channel_type=CHANNEL_TYPE_WEBHOOK,
+            channel_type=channel_type,
             target=target,
         )
         if existing is not None and existing["verified"]:
@@ -150,7 +170,7 @@ class PushChannelService:
         channel = await asyncio.to_thread(
             self._channels.create_channel,
             user_id=user_id,
-            channel_type=CHANNEL_TYPE_WEBHOOK,
+            channel_type=channel_type,
             target=target,
             encrypted_config=encrypted_config,
             verified=True,
@@ -257,8 +277,10 @@ class PushChannelService:
         email_service: EmailService | None = None,
         secret_box: Any = None,
         webhook_sender: WebhookSender | None = None,
+        telegram_sender: Any | None = None,
     ) -> dict[str, Any]:
-        """按渠道类型分发测试投递：email 走 SMTP，webhook 走平台载荷。"""
+        """按渠道类型分发测试投递：email 走 SMTP，webhook/discord 走平台载荷，
+        telegram 走 Bot API（chat_id 仅存在于密封配置）。"""
         channel = await asyncio.to_thread(
             self._channels.get_channel,
             user_id=user_id,
@@ -272,19 +294,28 @@ class PushChannelService:
                 channel_id=channel_id,
                 email_service=email_service,
             )
-        if channel["channel_type"] != CHANNEL_TYPE_WEBHOOK:
-            raise PushChannelNotFoundError("推送渠道不存在")
         if not channel["verified"]:
             raise PushChannelNotVerifiedError("推送渠道尚未验证")
         if channel["status"] != CHANNEL_STATUS_ACTIVE:
             raise PushChannelDisabledError("推送渠道已停用")
-        if webhook_sender is None:  # pragma: no cover - 防御性分支
-            raise PushChannelNotFoundError("推送渠道不存在")
         config = await asyncio.to_thread(
             unseal_channel_config,
             secret_box,
             channel["encrypted_config"] or "",
         )
+        if channel["channel_type"] == CHANNEL_TYPE_TELEGRAM:
+            if telegram_sender is None:
+                raise TelegramNotConfiguredError("Telegram 推送未启用")
+            await telegram_sender.send_message(
+                chat_id=str(config.get("chat_id") or ""),
+                title=_TEST_WEBHOOK_TITLE,
+                content=_TEST_WEBHOOK_CONTENT,
+            )
+            return channel
+        if channel["channel_type"] not in {CHANNEL_TYPE_WEBHOOK, CHANNEL_TYPE_DISCORD}:
+            raise PushChannelNotFoundError("推送渠道不存在")
+        if webhook_sender is None:  # pragma: no cover - 防御性分支
+            raise PushChannelNotFoundError("推送渠道不存在")
         await webhook_sender.send(
             url=str(config.get("url") or ""),
             title=_TEST_WEBHOOK_TITLE,

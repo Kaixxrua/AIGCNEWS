@@ -4,6 +4,7 @@ import type {
   SubscriptionFrequency,
   SubscriptionSource,
   UserSubscription,
+  TelegramLinkAttempt,
 } from '@/features/subscriptions/subscriptionsModel'
 import {
   isChannelBindable,
@@ -30,9 +31,12 @@ export function getErrorMessage(err: unknown, fallback: string): string {
   const e = err as ApiErrorLike
   // 订阅档位超限是唯一的 403 来源（push 路由）：映射为稳定 key 走 i18n，
   // detail 是运营口径中文，不做多语言透传。
-  if (e.response?.status === 403) return 'quota-exceeded'
   const data = e.response?.data
   const detail = data?.detail
+  if (e.response?.status === 403) {
+    const code = typeof detail === 'object' ? detail?.code : undefined
+    return code === 'vip-required' ? 'vip-required' : 'quota-exceeded'
+  }
   const detailMessage = typeof detail === 'string' ? detail : detail?.message
   return data?.message ?? detailMessage ?? e.message ?? fallback
 }
@@ -50,6 +54,9 @@ export function useSubscriptionsController(
   const otpChannelId = ref<number | null>(null)
   const otpCode = ref('')
   const webhookInput = ref('')
+  const discordInput = ref('')
+  const telegramLink = ref<TelegramLinkAttempt | null>(null)
+  const telegramPolling = ref(false)
   const channelFormBusy = ref(false)
 
   const newChannelId = ref<number | null>(null)
@@ -70,6 +77,10 @@ export function useSubscriptionsController(
   const canSubmitWebhook = computed(
     () => isHttpsUrlShape(webhookInput.value) && !channelFormBusy.value,
   )
+  const canSubmitDiscord = computed(
+    () => isHttpsUrlShape(discordInput.value) && !channelFormBusy.value,
+  )
+  const canConnectTelegram = computed(() => !channelFormBusy.value && !telegramPolling.value)
   const canSubmitSubscription = computed(
     () => newChannelId.value !== null && !subscriptionFormBusy.value,
   )
@@ -158,6 +169,54 @@ export function useSubscriptionsController(
       })
     } finally {
       channelFormBusy.value = false
+    }
+  }
+
+  const submitDiscordChannel = async (): Promise<boolean> => {
+    if (!canSubmitDiscord.value) return false
+    channelFormBusy.value = true
+    try {
+      return await _run(async () => {
+        await api.createDiscordChannel(discordInput.value.trim())
+        discordInput.value = ''
+        notice.value = 'discord-created'
+        await loadAll()
+      })
+    } finally {
+      channelFormBusy.value = false
+    }
+  }
+
+  const connectTelegram = async (): Promise<boolean> => {
+    if (!canConnectTelegram.value) return false
+    channelFormBusy.value = true
+    try {
+      return await _run(async () => {
+        const link = await api.createTelegramLink()
+        telegramLink.value = link
+        telegramPolling.value = true
+        if (typeof window !== 'undefined') {
+          window.open(link.deep_link, '_blank', 'noopener,noreferrer')
+        }
+        notice.value = 'telegram-link-created'
+        const deadline = Date.now() + Math.max(30_000, Date.parse(link.expires_at) - Date.now())
+        while (telegramPolling.value && Date.now() < deadline) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1500))
+          const latest = await api.getTelegramLink(link.attempt_id)
+          telegramLink.value = latest
+          if (latest.status !== 'pending') {
+            telegramPolling.value = false
+            if (latest.status === 'completed') {
+              notice.value = 'telegram-connected'
+              await loadAll()
+            }
+          }
+        }
+        telegramPolling.value = false
+      })
+    } finally {
+      channelFormBusy.value = false
+      telegramPolling.value = false
     }
   }
 
@@ -264,6 +323,9 @@ export function useSubscriptionsController(
     otpChannelId,
     otpCode,
     webhookInput,
+    discordInput,
+    telegramLink,
+    telegramPolling,
     channelFormBusy,
     newChannelId,
     newSource,
@@ -275,11 +337,15 @@ export function useSubscriptionsController(
     canSubmitEmail,
     canSubmitOtp,
     canSubmitWebhook,
+    canSubmitDiscord,
+    canConnectTelegram,
     canSubmitSubscription,
     loadAll,
     submitEmailChannel,
     submitOtp,
     submitWebhookChannel,
+    submitDiscordChannel,
+    connectTelegram,
     toggleChannel,
     removeChannel,
     sendTest,

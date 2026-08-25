@@ -72,10 +72,12 @@ const enUS = {
       otpHint: 'A verification code was sent to your inbox and is valid for 5 minutes', otpPlaceholder: '6-digit code', otpSubmit: 'Verify',
       webhookTitle: 'Add webhook channel', webhookPlaceholder: 'Bot webhook URL starting with https://', webhookSubmit: 'Verify & add',
       webhookHint: 'Platform auto-detected by domain (WeCom / DingTalk / Lark); other URLs receive generic JSON. A probe message is sent on creation',
+      discordTitle: 'Add Discord Webhook', discordPlaceholder: 'https://discord.com/api/webhooks/...', discordSubmit: 'Verify & add', discordHint: 'Uses a Discord Incoming Webhook. A verification message is sent when you add it.',
+      telegramTitle: 'Connect Telegram', telegramConnect: 'Open Telegram to connect', telegramPending: 'Waiting for you to open the Telegram link…', vipOnly: 'Available to active members and admins',
       verified: 'Verified', unverified: 'Unverified', disabled: 'Disabled', enable: 'Enable', disable: 'Disable',
       test: 'Send test', delete: 'Delete', deleteConfirm: 'Deleting this channel also deletes all its subscriptions. Continue?',
       empty: 'No channels yet — add an email or webhook first',
-      platform: { wecom: 'WeCom', dingtalk: 'DingTalk', lark: 'Lark', generic: 'Generic Webhook' },
+      platform: { wecom: 'WeCom', dingtalk: 'DingTalk', lark: 'Lark', generic: 'Generic Webhook', discord: 'Discord', telegram: 'Telegram' },
     },
     subs: {
       title: 'Subscriptions', count: '{count} subscriptions', source: 'Source', channel: 'Channel',
@@ -87,9 +89,9 @@ const enUS = {
     sources: { all: 'All sources', arxiv: 'arXiv Papers', github: 'GitHub Projects', news: 'Tech News', producthunt: 'Product Hunt', hackernews: 'Hacker News', x: 'X Board', dailyhot: 'Daily Hot' },
     notice: {
       'otp-sent': 'Verification code sent — check your inbox', 'channel-verified': 'Channel verified', 'webhook-created': 'Webhook channel verified and added',
-      'test-sent': 'Test message sent', 'subscription-created': 'Subscription created', 'subscription-deleted': 'Subscription deleted', 'channel-deleted': 'Channel deleted',
+      'test-sent': 'Test message sent', 'subscription-created': 'Subscription created', 'subscription-deleted': 'Subscription deleted', 'channel-deleted': 'Channel deleted', 'discord-created': 'Discord webhook verified and added', 'telegram-link-created': 'Telegram link opened — complete the connection in Telegram', 'telegram-connected': 'Telegram connected',
     },
-    errors: { 'load-failed': 'Failed to load, please try again', 'request-failed': 'Request failed, please try again', 'quota-exceeded': 'Free plan covers 1 daily briefing module. Membership unlocks all 8.' },
+    errors: { 'load-failed': 'Failed to load, please try again', 'request-failed': 'Request failed, please try again', 'quota-exceeded': 'Free plan covers 1 daily briefing module. Membership unlocks all 8.', 'vip-required': 'An active membership is required for Telegram and Discord channels.' },
   },
 } as const
 export default enUS

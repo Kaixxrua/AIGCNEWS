@@ -6,12 +6,16 @@ import type {
   SubscriptionSource,
   SubscriptionStatus,
   UserSubscription,
+  TelegramLinkAttempt,
 } from '@/features/subscriptions/subscriptionsModel'
 
 export interface SubscriptionsApi {
   listChannels(): Promise<PushChannel[]>
   createEmailChannel(email: string): Promise<PushChannel>
   createWebhookChannel(url: string): Promise<PushChannel>
+  createDiscordChannel(url: string): Promise<PushChannel>
+  createTelegramLink(): Promise<TelegramLinkAttempt>
+  getTelegramLink(attemptId: string): Promise<TelegramLinkAttempt>
   verifyChannel(channelId: number, code: string): Promise<PushChannel>
   setChannelStatus(channelId: number, status: PushChannelStatus): Promise<PushChannel>
   deleteChannel(channelId: number): Promise<void>
@@ -40,6 +44,18 @@ export const subscriptionsApi: SubscriptionsApi = {
 
   async createWebhookChannel(url: string): Promise<PushChannel> {
     return (await api.post('/push/me/channels', { channel_type: 'webhook', target: url })).data
+  },
+
+  async createDiscordChannel(url: string): Promise<PushChannel> {
+    return (await api.post('/push/me/channels', { channel_type: 'discord', target: url })).data
+  },
+
+  async createTelegramLink(): Promise<TelegramLinkAttempt> {
+    return (await api.post('/push/me/channels/telegram/link')).data
+  },
+
+  async getTelegramLink(attemptId: string): Promise<TelegramLinkAttempt> {
+    return (await api.get(`/push/me/channels/telegram/link/${encodeURIComponent(attemptId)}`)).data
   },
 
   async verifyChannel(channelId: number, code: string): Promise<PushChannel> {

@@ -620,6 +620,10 @@ def _webhook_subscription(
         "channel_type": "webhook",
         "target": url,
         "encrypted_config": seal_channel_config(_test_box(), {"url": url}),
+        # 派发查询联表携带的权益字段（直投渠道要求当前有效会员）
+        "role": "user",
+        "membership_tier": "member",
+        "membership_expires_at": None,
     }
 
 
@@ -722,7 +726,14 @@ class WebhookRouteTests(unittest.TestCase):
         app.include_router(routes_push.router, prefix="/api")
 
         async def user() -> dict:
-            return {"user_id": 7, "email": "owner@example.com", "role": "user"}
+            # webhook/discord 创建走会员门禁；既有用例语义固定会员档
+            # （免费档 403 行为由 telegram/discord 路由测试专项覆盖）
+            return {
+                "user_id": 7,
+                "email": "owner@example.com",
+                "role": "user",
+                "membership_tier": "member",
+            }
 
         app.dependency_overrides[RequireUser] = user
         app.dependency_overrides[get_push_channel_service] = lambda: (

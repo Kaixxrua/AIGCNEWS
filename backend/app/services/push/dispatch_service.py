@@ -20,10 +20,17 @@ from backend.app.repositories.user_subscription_repository import (
 from backend.app.services.briefing.daily_briefing import select_briefing_content
 from backend.app.services.email.message_renderer import SOURCE_LABELS
 from backend.app.services.ingestion.base_crawler import today_cst
+from backend.app.services.membership.tiers import (
+    MEMBERSHIP_TIER_MEMBER,
+    resolve_effective_tier,
+)
 from backend.app.services.push.channel_service import (
+    CHANNEL_TYPE_DISCORD,
     CHANNEL_TYPE_EMAIL,
+    CHANNEL_TYPE_TELEGRAM,
     CHANNEL_TYPE_WEBHOOK,
 )
+from backend.app.services.push.errors import TelegramNotConfiguredError
 from backend.app.services.push.secrets import unseal_channel_config
 from backend.app.services.push.webhook_service import WebhookSender
 
@@ -33,7 +40,19 @@ MAX_DELIVERY_ATTEMPTS = 3
 DEFAULT_LOCALE = "zh-CN"
 
 _FREQUENCIES: tuple[str, ...] = tuple(get_args(SubscriptionFrequency))
-_SUPPORTED_CHANNEL_TYPES = frozenset({CHANNEL_TYPE_EMAIL, CHANNEL_TYPE_WEBHOOK})
+_SUPPORTED_CHANNEL_TYPES = frozenset(
+    {
+        CHANNEL_TYPE_EMAIL,
+        CHANNEL_TYPE_WEBHOOK,
+        CHANNEL_TYPE_DISCORD,
+        CHANNEL_TYPE_TELEGRAM,
+    }
+)
+# 直投渠道（bot/webhook 类）要求当前有效会员；到期只暂停派发，
+# 不删渠道/订阅，权益恢复后下一轮自然接续。
+_DIRECT_CHANNEL_TYPES = frozenset(
+    {CHANNEL_TYPE_WEBHOOK, CHANNEL_TYPE_DISCORD, CHANNEL_TYPE_TELEGRAM}
+)
 _PERIOD_LABELS = {"daily": "日报"}
 _SECRET_BOX_UNSET = object()
 _EMAIL_SERVICE_UNSET = object()
@@ -43,6 +62,21 @@ def _webhook_title(source: str, frequency: str, issue_date: str) -> str:
     source_label = SOURCE_LABELS.get(source, source)
     period_label = _PERIOD_LABELS.get(frequency, frequency)
     return f"AIGC Radar · {source_label}{period_label} · {issue_date}"
+
+
+def _direct_dispatch_allowed(subscription: dict[str, Any]) -> bool:
+    """直投渠道派发门禁：admin 或当前有效 member；其余（含过期 member）暂停。
+
+    会员抑制不是 provider failure：不创建 delivery、不计 attempts。
+    派发查询（list_active_dispatchable）负责带出 role/membership 字段。
+    """
+    if subscription.get("role") == "admin":
+        return True
+    tier = resolve_effective_tier(
+        subscription.get("membership_tier"),
+        subscription.get("membership_expires_at"),
+    )
+    return tier == MEMBERSHIP_TIER_MEMBER
 
 
 class SubscriptionDispatchService:
@@ -57,6 +91,7 @@ class SubscriptionDispatchService:
         email_service: Any = _EMAIL_SERVICE_UNSET,
         secret_box: Any = _SECRET_BOX_UNSET,
         webhook_sender: Any | None = None,
+        telegram_sender: Any | None = None,
         # 邮件池配额计数/熔断依赖 Redis；None 时护栏 fail-open（仅纯 failover）。
         redis_client: Any | None = None,
     ) -> None:
@@ -66,6 +101,7 @@ class SubscriptionDispatchService:
         self._email_service = email_service
         self._secret_box = secret_box
         self._webhook_sender = webhook_sender
+        self._telegram_sender = telegram_sender
         self._redis_client = redis_client
 
     async def dispatch_all(self, *, today: date | None = None) -> dict[str, int]:
@@ -138,6 +174,15 @@ class SubscriptionDispatchService:
                 "[Dispatch] 暂不支持的渠道类型: channel_type=%s subscription=%s",
                 channel_type,
                 subscription_id,
+            )
+            return "skipped"
+        if channel_type in _DIRECT_CHANNEL_TYPES and not _direct_dispatch_allowed(
+            subscription
+        ):
+            logger.info(
+                "[Dispatch] 会员权益失效，暂停直投渠道派发: subscription=%s channel_type=%s",
+                subscription_id,
+                channel_type,
             )
             return "skipped"
 
@@ -221,12 +266,21 @@ class SubscriptionDispatchService:
                 date_str=issue_date,
             )
             return
-        # webhook：投递凭据以密封配置为准（target 仅作地址展示与唯一约束）。
+        # 直投渠道：投递凭据以密封配置为准（target 仅作展示与唯一约束）。
         config = await asyncio.to_thread(
             unseal_channel_config,
             self._resolve_secret_box(),
             subscription.get("encrypted_config") or "",
         )
+        if subscription["channel_type"] == CHANNEL_TYPE_TELEGRAM:
+            sender = self._resolve_telegram_sender()
+            await sender.send_message(
+                chat_id=str(config.get("chat_id") or ""),
+                title=_webhook_title(source, frequency, issue_date),
+                content=content,
+            )
+            return
+        # webhook/discord：同走平台化 webhook 载荷（discord 原生 content 格式）
         sender = self._resolve_webhook_sender()
         await sender.send(
             url=str(config.get("url") or ""),
@@ -249,6 +303,20 @@ class SubscriptionDispatchService:
         if self._webhook_sender is None:
             self._webhook_sender = WebhookSender()
         return self._webhook_sender
+
+    def _resolve_telegram_sender(self) -> Any:
+        if self._telegram_sender is None:
+            # bot token 为静态部署配置，构建一次后缓存；
+            # 未启用/未配置 token 时按领域错误计入失败（文案静态，不含凭据）。
+            from backend.app.services.push.telegram_service import (
+                build_telegram_bot_client,
+            )
+
+            client = build_telegram_bot_client()
+            if client is None:
+                raise TelegramNotConfiguredError("Telegram 推送未启用")
+            self._telegram_sender = client
+        return self._telegram_sender
 
     def _resolve_email_service(self) -> Any:
         if self._email_service is _EMAIL_SERVICE_UNSET:

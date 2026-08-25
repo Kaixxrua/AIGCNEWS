@@ -39,6 +39,8 @@ class UserSubscriptionRepository(Protocol):
     def list_active_dispatchable(self, *, frequency: str) -> list[dict[str, Any]]:
         """返回该频率下可派发的订阅：订阅启用且渠道已验证、启用。
 
-        联表携带 channel_type 与 target，供派发服务直接投递。
+        联表携带 channel_type、target、encrypted_config，以及用户的
+        role/membership_tier/membership_expires_at（直投渠道派发前的
+        有效会员抑制判定所需）。
         """
         ...

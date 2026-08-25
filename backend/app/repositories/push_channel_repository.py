@@ -14,6 +14,8 @@ class PushChannelRepository(Protocol):
         target: str,
         encrypted_config: str | None,
         verified: bool = False,
+        provider_key: str | None = None,
+        display_target: str | None = None,
     ) -> dict[str, Any] | None:
         """插入渠道并返回该行；唯一约束冲突时返回 None。"""
         ...
@@ -25,6 +27,15 @@ class PushChannelRepository(Protocol):
         channel_type: str,
         target: str,
     ) -> dict[str, Any] | None:
+        ...
+
+    def find_channel_by_provider_key(
+        self,
+        *,
+        channel_type: str,
+        provider_key: str,
+    ) -> dict[str, Any] | None:
+        """按 provider 指纹全局查找（跨用户），用于防同一目标被多人绑定。"""
         ...
 
     def get_channel(self, *, user_id: int, channel_id: int) -> dict[str, Any] | None:

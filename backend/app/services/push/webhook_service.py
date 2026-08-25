@@ -36,8 +36,12 @@ PROVIDER_GENERIC = "generic"
 PROVIDER_WECOM = "wecom"  # 企业微信群机器人
 PROVIDER_DINGTALK = "dingtalk"  # 钉钉自定义机器人
 PROVIDER_LARK = "lark"  # 飞书自定义机器人
+PROVIDER_DISCORD = "discord"
+PROVIDER_TELEGRAM = "telegram"
 
 _PROVIDER_HOSTS = {
+    "discord.com": PROVIDER_DISCORD,
+    "discordapp.com": PROVIDER_DISCORD,
     "qyapi.weixin.qq.com": PROVIDER_WECOM,
     "oapi.dingtalk.com": PROVIDER_DINGTALK,
     "open.feishu.cn": PROVIDER_LARK,
@@ -54,6 +58,8 @@ _CHUNK_BYTE_BUDGET = {
     PROVIDER_DINGTALK: 18000,  # 钉钉 markdown 上限约 20000 字节
     PROVIDER_LARK: 28000,
     PROVIDER_GENERIC: 28000,
+    PROVIDER_DISCORD: 1900,
+    PROVIDER_TELEGRAM: 3500,  # Telegram 单条上限 4096 字符
 }
 
 _OVERFLOW_FOOTER = "\n\n…内容过长已截断，完整报告见 https://aigcnews.cn"
@@ -61,7 +67,10 @@ _OVERFLOW_FOOTER = "\n\n…内容过长已截断，完整报告见 https://aigcn
 
 def detect_provider(url: str) -> str:
     """按主机名识别机器人平台；未知主机按通用 JSON 投递。"""
-    host = (urlsplit(url).hostname or "").lower()
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    if host in {"discord.com", "discordapp.com"} and not parsed.path.startswith("/api/webhooks/"):
+        return PROVIDER_GENERIC
     return _PROVIDER_HOSTS.get(host, PROVIDER_GENERIC)
 
 
@@ -92,6 +101,8 @@ def validate_webhook_url(raw: str) -> str:
         raise WebhookUrlError("Webhook URL 缺少主机名")
     if not _host_is_public(host):
         raise WebhookUrlError("Webhook URL 主机不在允许范围（需为可解析的公网地址）")
+    if host.lower() in {"discord.com", "discordapp.com"} and not parsed.path.startswith("/api/webhooks/"):
+        raise WebhookUrlError("Discord Webhook URL 路径非法")
     return candidate
 
 
@@ -134,6 +145,8 @@ def build_webhook_payload(
         }
     if provider == PROVIDER_LARK:
         return {"msg_type": "text", "content": {"text": f"{title}\n\n{content}"}}
+    if provider == PROVIDER_DISCORD:
+        return {"content": f"**{title}**\n\n{content}"}
     return {"title": title, "text": content, "source": "aigcnews.cn"}
 
 
@@ -233,7 +246,7 @@ class WebhookSender:
         chunk_index: int,
     ) -> None:
         """企业微信/钉钉/飞书 HTTP 200 也可能在响应体里报错。"""
-        if provider == PROVIDER_GENERIC:
+        if provider in {PROVIDER_GENERIC, PROVIDER_DISCORD}:
             return
         try:
             data = response.json()

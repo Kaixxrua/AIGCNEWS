@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { MailPlus, RefreshCw, Send, Trash2, Webhook } from 'lucide-vue-next'
+import { MailPlus, MessageCircle, RefreshCw, Send, Trash2, Webhook } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useSubscriptionsController } from '@/composables/useSubscriptionsController'
 import { useAuthStore } from '@/stores/authStore'
@@ -46,10 +46,14 @@ const subscriptionQuotaReached = computed(
     !activeDailySources.value.includes(ctl.newSource.value),
 )
 
-const channelTypeLabel = (channel: PushChannel): string =>
-  channel.channel_type === 'webhook'
-    ? t(`subscriptions.channels.platform.${detectWebhookPlatform(channel.target)}`)
-    : t('subscriptions.channels.emailLabel')
+const channelTypeLabel = (channel: PushChannel): string => {
+  if (channel.channel_type === 'webhook') {
+    return t(`subscriptions.channels.platform.${detectWebhookPlatform(channel.target)}`)
+  }
+  if (channel.channel_type === 'discord') return t('subscriptions.channels.platform.discord')
+  if (channel.channel_type === 'telegram') return t('subscriptions.channels.platform.telegram')
+  return t('subscriptions.channels.emailLabel')
+}
 
 const confirmRemoveChannel = (channel: PushChannel): void => {
   if (window.confirm(t('subscriptions.channels.deleteConfirm'))) {
@@ -173,12 +177,68 @@ onMounted(() => {
             </span>
           </form>
 
+          <!-- Discord Incoming Webhook -->
+          <form class="flex flex-col gap-2" @submit.prevent="ctl.submitDiscordChannel">
+            <label class="flex items-center gap-1.5 text-xs font-bold text-stone-500">
+              <MessageCircle class="h-3.5 w-3.5" />
+              {{ t('subscriptions.channels.discordTitle') }}
+            </label>
+            <div class="flex gap-2">
+              <input
+                v-model="ctl.discordInput.value"
+                type="url"
+                autocomplete="off"
+                :placeholder="t('subscriptions.channels.discordPlaceholder')"
+                class="min-w-0 flex-1 rounded-[4px] border border-stone-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-ink"
+              />
+              <button
+                type="submit"
+                class="shrink-0 rounded-[4px] border border-ink bg-ink px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink disabled:opacity-40"
+                :disabled="!ctl.canSubmitDiscord.value"
+              >
+                {{ t('subscriptions.channels.discordSubmit') }}
+              </button>
+            </div>
+            <span class="text-2xs leading-relaxed text-stone-400">
+              {{ t('subscriptions.channels.discordHint') }}
+            </span>
+          </form>
+
+          <!-- Telegram deep-link -->
+          <div class="flex flex-col gap-2 rounded-[4px] border border-stone-200 p-2.5">
+            <label class="flex items-center gap-1.5 text-xs font-bold text-stone-500">
+              <MessageCircle class="h-3.5 w-3.5" />
+              {{ t('subscriptions.channels.telegramTitle') }}
+            </label>
+            <button
+              type="button"
+              class="self-start rounded-[4px] border border-ink bg-ink px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink disabled:opacity-40"
+              :disabled="!ctl.canConnectTelegram.value"
+              @click="ctl.connectTelegram"
+            >
+              {{ t('subscriptions.channels.telegramConnect') }}
+            </button>
+            <a
+              v-if="ctl.telegramLink.value?.status === 'pending'"
+              :href="ctl.telegramLink.value.deep_link"
+              target="_blank"
+              rel="noreferrer"
+              class="text-2xs text-stone-500 underline underline-offset-2"
+            >
+              {{ t('subscriptions.channels.telegramPending') }}
+            </a>
+            <span class="text-2xs leading-relaxed text-stone-400">
+              {{ t('subscriptions.channels.vipOnly') }}
+            </span>
+          </div>
+
           <!-- 渠道列表 -->
           <SpinnerLoader v-if="ctl.loading.value && !ctl.channels.value.length" class="min-h-[96px]" :size="22" />
           <ul v-else-if="ctl.channels.value.length" class="flex flex-col divide-y divide-stone-100">
             <li v-for="channel in ctl.channels.value" :key="channel.id" class="flex items-center gap-2 py-2.5">
               <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
                 <Webhook v-if="channel.channel_type === 'webhook'" class="h-4 w-4" />
+                <MessageCircle v-else-if="channel.channel_type === 'discord' || channel.channel_type === 'telegram'" class="h-4 w-4" />
                 <MailPlus v-else class="h-4 w-4" />
               </span>
               <div class="min-w-0 flex-1">

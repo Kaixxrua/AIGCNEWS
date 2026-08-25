@@ -1,24 +1,29 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from backend.app.api.dependencies import (
     get_briefing_subscription_repository,
     get_push_channel_service,
+    get_telegram_link_service,
     get_user_subscription_repository,
     get_user_subscription_service,
 )
 from backend.app.core.auth import RequireUser
 from backend.app.core.client_ip import client_ip_from_request
+from backend.app.core.config import settings
 from backend.app.models.schema_push import (
     CreatePushChannelRequest,
     CreateSubscriptionRequest,
     PushChannelResponse,
     SubscriptionResponse,
+    TelegramLinkResponse,
     UpdatePushChannelRequest,
     UpdateSubscriptionRequest,
     VerifyPushChannelRequest,
@@ -45,6 +50,8 @@ from backend.app.services.membership.subscription_quota import (
 from backend.app.services.push.channel_service import PushChannelService
 from backend.app.services.push.errors import (
     InvalidChannelOtpError,
+    ProviderCredentialInvalidError,
+    ProviderRateLimitedError,
     PushChannelDisabledError,
     PushChannelDuplicateError,
     PushChannelNotFoundError,
@@ -52,6 +59,9 @@ from backend.app.services.push.errors import (
     PushDomainError,
     SubscriptionDuplicateError,
     SubscriptionNotFoundError,
+    TelegramDeliveryError,
+    TelegramNotConfiguredError,
+    VipRequiredError,
     WebhookDeliveryError,
     WebhookProbeFailedError,
     WebhookUrlError,
@@ -61,6 +71,10 @@ from backend.app.services.push.secrets import (
     build_push_channel_secret_box,
 )
 from backend.app.services.push.subscription_service import UserSubscriptionService
+from backend.app.services.push.telegram_service import (
+    TelegramLinkService,
+    build_telegram_bot_client,
+)
 from backend.app.services.push.webhook_service import WebhookSender
 
 logger = logging.getLogger(__name__)
@@ -124,10 +138,13 @@ def _set_no_store(response: Response) -> None:
 
 
 def _channel_payload(channel: dict[str, Any]) -> dict[str, Any]:
+    target = str(channel["target"])
+    if channel["channel_type"] in {"discord", "telegram"}:
+        target = str(channel.get("display_target") or channel.get("provider_key") or "已绑定渠道")
     return {
         "id": channel["id"],
         "channel_type": channel["channel_type"],
-        "target": channel["target"],
+        "target": target,
         "verified": channel["verified"],
         "status": channel["status"],
         "created_at": channel["created_at"],
@@ -151,12 +168,18 @@ def _map_domain_error(
     exc: PushDomainError | SubscriptionQuotaExceededError,
 ) -> HTTPException:
     if isinstance(exc, SubscriptionQuotaExceededError):
-        return HTTPException(status_code=403, detail=exc.detail)
+        return HTTPException(status_code=403, detail={"code": "quota-exceeded", "message": exc.detail})
+    if isinstance(exc, VipRequiredError):
+        return HTTPException(status_code=403, detail={"code": exc.code, "message": exc.detail})
     if isinstance(exc, (PushChannelNotFoundError, SubscriptionNotFoundError)):
         return HTTPException(status_code=404, detail=exc.detail)
     if isinstance(exc, (PushChannelDuplicateError, SubscriptionDuplicateError)):
         return HTTPException(status_code=409, detail=exc.detail)
-    if isinstance(exc, WebhookDeliveryError):
+    if isinstance(exc, ProviderRateLimitedError):
+        return HTTPException(status_code=429, detail=exc.detail)
+    if isinstance(exc, TelegramNotConfiguredError):
+        return HTTPException(status_code=503, detail=exc.detail)
+    if isinstance(exc, (WebhookDeliveryError, TelegramDeliveryError, ProviderCredentialInvalidError)):
         return HTTPException(status_code=502, detail=exc.detail)
     return HTTPException(status_code=400, detail=exc.detail)
 
@@ -228,7 +251,11 @@ async def create_push_channel(
     service: PushChannelService = Depends(get_push_channel_service),
 ) -> dict[str, Any]:
     _set_no_store(response)
-    if body.channel_type == "webhook":
+    if body.channel_type in {"webhook", "discord"}:
+        try:
+            PushChannelService.require_direct_channel_entitlement(current_user)
+        except VipRequiredError as exc:
+            raise _map_domain_error(exc) from exc
         await _enforce_rate_limit(
             request,
             action="push.channel_webhook",
@@ -240,11 +267,13 @@ async def create_push_channel(
                 url=body.target,
                 secret_box=build_push_channel_secret_box(),
                 webhook_sender=WebhookSender(),
+                channel_type=body.channel_type,
             )
         except (
             PushChannelDuplicateError,
             WebhookUrlError,
             WebhookProbeFailedError,
+            VipRequiredError,
         ) as exc:
             raise _map_domain_error(exc) from exc
         except PushChannelSecretError as exc:
@@ -348,12 +377,17 @@ async def test_push_channel(
             email_service=_get_email_service(request),
             secret_box=build_push_channel_secret_box(),
             webhook_sender=WebhookSender(),
+            telegram_sender=build_telegram_bot_client(),
         )
     except (
         PushChannelNotFoundError,
         PushChannelNotVerifiedError,
         PushChannelDisabledError,
         WebhookDeliveryError,
+        TelegramNotConfiguredError,
+        TelegramDeliveryError,
+        ProviderRateLimitedError,
+        ProviderCredentialInvalidError,
     ) as exc:
         raise _map_domain_error(exc) from exc
     except PushChannelSecretError as exc:
@@ -361,6 +395,114 @@ async def test_push_channel(
     except BriefingDeliveryError as exc:
         raise _map_email_error(exc) from exc
     return _channel_payload(channel)
+
+
+# ---------------------------------------------------------------------------
+# Telegram 绑定（deep-link + Bot webhook 回调）
+# ---------------------------------------------------------------------------
+
+_TELEGRAM_LINK_RATE_LIMIT = 5
+_TELEGRAM_WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
+
+
+@router.post(
+    "/push/me/channels/telegram/link",
+    response_model=TelegramLinkResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="创建当前用户的 Telegram 绑定 deep-link（一次性、短期有效）",
+)
+async def create_telegram_link(
+    request: Request,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    service: TelegramLinkService = Depends(get_telegram_link_service),
+) -> dict[str, Any]:
+    _set_no_store(response)
+    await _enforce_rate_limit(
+        request, action="push.telegram_link", limit=_TELEGRAM_LINK_RATE_LIMIT
+    )
+    try:
+        return await service.create_link(user=current_user)
+    except (VipRequiredError, TelegramNotConfiguredError) as exc:
+        raise _map_domain_error(exc) from exc
+
+
+@router.get(
+    "/push/me/channels/telegram/link/{attempt_id}",
+    response_model=TelegramLinkResponse,
+    summary="查询 Telegram 绑定状态（owner 范围，不回放 deep-link）",
+)
+async def get_telegram_link(
+    attempt_id: str,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    service: TelegramLinkService = Depends(get_telegram_link_service),
+) -> dict[str, Any]:
+    _set_no_store(response)
+    try:
+        parsed_attempt_id = UUID(attempt_id)
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise HTTPException(status_code=404, detail="绑定会话不存在") from exc
+    link = await service.get_link_status(
+        user_id=_user_id(current_user),
+        attempt_id=parsed_attempt_id,
+    )
+    if link is None:
+        raise HTTPException(status_code=404, detail="绑定会话不存在")
+    return link
+
+
+@router.post(
+    "/push/providers/telegram/webhook",
+    summary="Telegram Bot 回调（仅 secret header 校验，不建登录会话）",
+)
+async def telegram_webhook(
+    request: Request,
+    service: TelegramLinkService = Depends(get_telegram_link_service),
+) -> dict[str, Any]:
+    # 未启用或未配置校验 secret 时隐藏端点存在性；secret 不匹配同样 404。
+    configured_secret = str(settings.telegram_webhook_secret or "")
+    if not settings.telegram_push_enabled or not configured_secret:
+        raise HTTPException(status_code=404, detail="Not Found")
+    presented = request.headers.get(_TELEGRAM_WEBHOOK_SECRET_HEADER, "")
+    if not hmac.compare_digest(presented, configured_secret):
+        raise HTTPException(status_code=404, detail="Not Found")
+    try:
+        update = await request.json()
+    except Exception:
+        return {"ok": True}
+    message = update.get("message") if isinstance(update, dict) else None
+    if not isinstance(message, dict):
+        return {"ok": True}
+    chat = message.get("chat")
+    if not isinstance(chat, dict):
+        return {"ok": True}
+    chat_id = chat.get("id")
+    chat_type = str(chat.get("type") or "")
+    text = str(message.get("text") or "")
+    nonce = ""
+    if text.startswith("/start"):
+        nonce = text[len("/start"):].strip()
+    outcome = await service.complete_link(
+        nonce=nonce,
+        chat_id=str(chat_id) if chat_id is not None else "",
+        chat_type=chat_type,
+    )
+    if outcome == "ok":
+        client = build_telegram_bot_client()
+        if client is not None:
+            try:
+                await client.send_message(
+                    chat_id=str(chat_id),
+                    title="AIGCNEWS",
+                    content="Telegram 渠道绑定成功。",
+                )
+            except Exception as exc:
+                # best-effort 确认消息：失败只记异常类型，绝不带出含 token 的细节
+                logger.warning(
+                    "[Telegram] 绑定确认消息发送失败: %s", type(exc).__name__
+                )
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -411,6 +553,7 @@ async def create_user_subscription(
             channel_id=body.channel_id,
             source=body.source,
             frequency=body.frequency,
+            current_user=current_user,
         )
     except (
         PushChannelNotFoundError,
@@ -418,6 +561,7 @@ async def create_user_subscription(
         PushChannelDisabledError,
         SubscriptionDuplicateError,
         SubscriptionQuotaExceededError,
+        VipRequiredError,
     ) as exc:
         raise _map_domain_error(exc) from exc
     return _subscription_payload(subscription)
@@ -466,9 +610,10 @@ async def update_user_subscription(
             user_id=user_id,
             subscription_id=subscription_id,
             status=body.status,
+            current_user=current_user,
         )
-    except SubscriptionNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=exc.detail) from exc
+    except (SubscriptionNotFoundError, VipRequiredError) as exc:
+        raise _map_domain_error(exc) from exc
     subscriptions = await asyncio.to_thread(service.list_subscriptions, user_id=user_id)
     subscription = next(
         (item for item in subscriptions if item["id"] == subscription_id), None

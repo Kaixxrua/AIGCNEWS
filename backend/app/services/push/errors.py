@@ -8,9 +8,39 @@ from __future__ import annotations
 
 
 class PushDomainError(Exception):
+    code = "push-error"
+
     def __init__(self, detail: str) -> None:
         super().__init__(detail)
         self.detail = detail
+
+
+class VipRequiredError(PushDomainError):
+    code = "vip-required"
+
+
+class InvalidProviderTargetError(PushDomainError):
+    code = "invalid-provider-target"
+
+
+class ProviderRateLimitedError(PushDomainError):
+    code = "provider-rate-limited"
+
+
+class ProviderCredentialInvalidError(PushDomainError):
+    code = "provider-credential-invalid"
+
+
+class TelegramNotConfiguredError(PushDomainError):
+    """Telegram 推送未在部署侧启用（路由层映射 503）。"""
+
+    code = "telegram-not-configured"
+
+
+class TelegramDeliveryError(PushDomainError):
+    """Telegram Bot API 运行时投递失败（路由层映射 502）。"""
+
+    code = "telegram-delivery-failed"
 
 
 class PushChannelNotFoundError(PushDomainError):
