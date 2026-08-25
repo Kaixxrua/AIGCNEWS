@@ -191,9 +191,9 @@ class AccountLifecycle:
         user = await asyncio.to_thread(
             self._repository.get_user_by_email, normalized_email
         )
-        if user is None or not self._verify_password(
-            password, str(user["hashed_password"])
-        ):
+        if user is None or not bool(user.get("password_login_enabled", True)):
+            raise InvalidCredentials
+        if not self._verify_password(password, str(user["hashed_password"])):
             raise InvalidCredentials
         # 密码核验通过后才判定禁用：避免向密码错误的调用方泄露账号禁用状态
         if user.get("disabled"):

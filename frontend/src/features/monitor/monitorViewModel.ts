@@ -9,6 +9,9 @@ export type {
   McpServerForm,
   McpToolCallEntry,
   McpToolCallMetricsSnapshot,
+  OAuthConfig,
+  OAuthConfigForm,
+  OAuthProviderKey,
   PaymentConfig,
   PaymentConfigForm,
   ProviderConfig,
@@ -54,7 +57,7 @@ export type MonitorSectionKey =
   | 'tasks' | 'mcp-calls' | 'errors' | 'visit-stats'
   | 'collect' | 'crawl' | 'enrichment'
   | 'x-watch' | 'x-credentials' | 'wechat'
-  | 'provider' | 'scheduler' | 'smtp' | 'mcp-server'
+  | 'provider' | 'scheduler' | 'smtp' | 'mcp-server' | 'oauth-config'
   | 'contact-page' | 'membership' | 'user-stats' | 'payment-config' | 'payment-orders'
 
 export interface MonitorNavLeaf {
@@ -93,6 +96,7 @@ export const MONITOR_NAV: MonitorNavCategory[] = [
     { key: 'scheduler', labelKey: 'monitor.nav.scheduler', adminOnly: true },
     { key: 'smtp', labelKey: 'monitor.nav.smtp', adminOnly: true },
     { key: 'mcp-server', labelKey: 'monitor.nav.mcpServer', adminOnly: true },
+    { key: 'oauth-config', labelKey: 'monitor.nav.oauthConfig', adminOnly: true },
   ] },
   { key: 'site', labelKey: 'monitor.nav.group.site', icon: Globe, children: [
     { key: 'contact-page', labelKey: 'monitor.nav.contactPage', adminOnly: true },

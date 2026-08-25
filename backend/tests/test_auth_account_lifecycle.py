@@ -244,6 +244,25 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
             [("get_user_by_email", "missing@example.com")],
         )
 
+    async def test_oauth_only_account_never_verifies_password_or_issues(self) -> None:
+        self.repository.users["reader@example.com"] = {
+            "id": 42,
+            "email": "reader@example.com",
+            "role": "user",
+            "hashed_password": "unusable-password-hash",
+            "password_login_enabled": False,
+        }
+
+        with self.assertRaises(InvalidCredentials):
+            await self.lifecycle.login(
+                email="reader@example.com", password="plain-secret"
+            )
+
+        self.assertEqual(
+            self.events,
+            [("get_user_by_email", "reader@example.com")],
+        )
+
     async def test_login_disabled_account_verifies_password_but_never_issues(self) -> None:
         # 禁用判定必须在密码核验之后：不向密码错误方泄露禁用状态，
         # 但密码正确也绝不签发令牌（渗透实测：禁用账号原可登录拿 JWT）

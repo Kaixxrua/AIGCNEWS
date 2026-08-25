@@ -25,6 +25,8 @@ from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenRepository,
 )
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
+from backend.app.repositories.oauth_identity_repository import OAuthIdentityRepository
+from backend.app.repositories.oauth_settings_repository import OAuthSettingsRepository
 from backend.app.repositories.payment_order_repository import PaymentOrderRepository
 from backend.app.repositories.payment_plan_overrides_repository import (
     PaymentPlanOverridesRepository,
@@ -65,6 +67,12 @@ from backend.app.repositories.postgres_mcp_access_token_repository import (
 )
 from backend.app.repositories.postgres_mcp_server_repository import (
     PostgresMcpServerConfigRepository,
+)
+from backend.app.repositories.postgres_oauth_identity_repository import (
+    PostgresOAuthIdentityRepository,
+)
+from backend.app.repositories.postgres_oauth_settings_repository import (
+    PostgresOAuthSettingsRepository,
 )
 from backend.app.repositories.postgres_payment_order_repository import (
     PostgresPaymentOrderRepository,
@@ -192,6 +200,7 @@ class ApplicationIngestionTaskRepository(
 @dataclass(frozen=True)
 class ApplicationRepositories:
     users: UserAccountRepository
+    oauth_identities: OAuthIdentityRepository
     orders: PaymentOrderRepository
     conversations: ConversationRepository
     attachments: AttachmentRepository
@@ -205,6 +214,7 @@ class ApplicationRepositories:
     scheduler_job_configs: SchedulerJobConfigRepository
     smtp_settings: SmtpSettingsRepository
     payment_settings: PaymentSettingsRepository
+    oauth_settings: OAuthSettingsRepository
     payment_plan_overrides: PaymentPlanOverridesRepository
     email_pool_settings: EmailPoolSettingsRepository
     site_contact_page: SiteContactPageRepository
@@ -273,6 +283,7 @@ def create_application_repositories(
 ) -> ApplicationRepositories:
     return ApplicationRepositories(
         users=PostgresUserAccountRepository(postgres),
+        oauth_identities=PostgresOAuthIdentityRepository(postgres),
         orders=PostgresPaymentOrderRepository(postgres),
         conversations=PostgresConversationRepository(postgres),
         attachments=PostgresAttachmentRepository(postgres),
@@ -286,6 +297,7 @@ def create_application_repositories(
         scheduler_job_configs=PostgresSchedulerJobConfigRepository(postgres),
         smtp_settings=PostgresSmtpSettingsRepository(postgres),
         payment_settings=PostgresPaymentSettingsRepository(postgres),
+        oauth_settings=PostgresOAuthSettingsRepository(postgres),
         payment_plan_overrides=PostgresPaymentPlanOverridesRepository(postgres),
         email_pool_settings=PostgresEmailPoolSettingsRepository(postgres),
         site_contact_page=PostgresSiteContactPageRepository(postgres),

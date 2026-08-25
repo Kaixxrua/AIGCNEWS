@@ -14,7 +14,7 @@ describe('Features API contract', () => {
     const signal = new AbortController().signal
     transport.get.mockResolvedValueOnce({ data: { x_source: false, wechat_source: true } })
 
-    await expect(fetchFeatures(signal)).resolves.toEqual({ xSource: false, wechatSource: true })
+    await expect(fetchFeatures(signal)).resolves.toEqual({ xSource: false, wechatSource: true, oauthProviders: [] })
     expect(transport.get).toHaveBeenLastCalledWith('/features', { signal })
   })
 

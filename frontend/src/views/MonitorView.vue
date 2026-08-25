@@ -14,6 +14,7 @@ import MembershipGrantPanel from '@/components/monitor/MembershipGrantPanel.vue'
 import MembershipUserListPanel from '@/components/monitor/MembershipUserListPanel.vue'
 import PaymentOrdersPanel from '@/components/monitor/PaymentOrdersPanel.vue'
 import PaymentConfigPanel from '@/components/monitor/PaymentConfigPanel.vue'
+import OAuthConfigPanel from '@/components/monitor/OAuthConfigPanel.vue'
 import PaymentPricingPanel from '@/components/monitor/PaymentPricingPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
 import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
@@ -51,6 +52,7 @@ const {
   goMembershipUsersPage, setMembershipUsersQuery, editMembershipUser,
   paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersTotalPages, paymentOrdersFilter, loadingPaymentOrders, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
   paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, savePaymentConfig, resetPaymentConfig,
+  oauthConfig, oauthForm, loadingOAuthConfig, savingOAuthConfig, resettingOAuthConfig, saveOAuthConfig, resetOAuthConfig,
   paymentPricing, paymentPricingForm, loadingPaymentPricing, savingPaymentPricing, savePaymentPlanPricing,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
@@ -389,6 +391,18 @@ onUnmounted(dispose)
             :resetting="resettingPaymentConfig"
             @save="savePaymentConfig"
             @reset="resetPaymentConfig"
+          />
+        </template>
+        <template v-else-if="currentSection === 'oauth-config'">
+          <OAuthConfigPanel
+            v-if="authStore.isAdmin"
+            :config="oauthConfig"
+            :form="oauthForm"
+            :loading="loadingOAuthConfig"
+            :saving="savingOAuthConfig"
+            :resetting="resettingOAuthConfig"
+            @save="saveOAuthConfig"
+            @reset="resetOAuthConfig"
           />
         </template>
         <template v-else-if="currentSection === 'payment-orders'">

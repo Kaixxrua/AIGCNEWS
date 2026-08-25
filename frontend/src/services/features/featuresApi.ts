@@ -4,6 +4,7 @@ import type { FeaturesWireResponse } from './featuresContracts'
 export interface FeatureFlags {
   xSource: boolean
   wechatSource: boolean
+  oauthProviders: string[]
 }
 
 /**
@@ -14,6 +15,7 @@ export interface FeatureFlags {
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   xSource: true,
   wechatSource: true,
+  oauthProviders: [],
 }
 
 export const fetchFeatures = async (signal?: AbortSignal): Promise<FeatureFlags> => {
@@ -21,5 +23,8 @@ export const fetchFeatures = async (signal?: AbortSignal): Promise<FeatureFlags>
   return {
     xSource: response.data?.x_source ?? true,
     wechatSource: response.data?.wechat_source ?? true,
+    oauthProviders: Array.isArray(response.data?.oauth_providers)
+      ? response.data.oauth_providers.filter((provider): provider is string => typeof provider === 'string')
+      : [],
   }
 }

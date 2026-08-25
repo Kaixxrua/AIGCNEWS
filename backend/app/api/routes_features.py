@@ -5,17 +5,24 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from backend.app.core.config import settings
+from backend.app.services.auth.oauth.registry import configured_oauth_providers
+from backend.app.services.auth.oauth.runtime_config import resolve_oauth_config
 
 router = APIRouter()
 
 
 @router.get("/features")
-async def get_features() -> dict[str, bool]:
-    """返回可插拔采集源开关状态。"""
+async def get_features(request: Request) -> dict[str, object]:
+    """返回可插拔采集源和真实可用的 OAuth provider 状态。"""
+    config = resolve_oauth_config()
     return {
         "x_source": bool(settings.x_source_enabled),
         "wechat_source": bool(settings.wechat_source_enabled),
+        "oauth_providers": configured_oauth_providers(
+            redis_available=getattr(request.app.state, "redis", None) is not None,
+            config=config,
+        ),
     }

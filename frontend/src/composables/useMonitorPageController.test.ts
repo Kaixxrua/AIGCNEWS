@@ -53,6 +53,7 @@ const createApi = (): MonitorApi => ({
   fetchMcpToolCalls: vi.fn(async () => ({ since: '', total_calls: 0, tools: {} })),
   fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), testProviderConnection: vi.fn(async () => ({ status: 'success', message: '' })), fetchMcpServers: vi.fn(async () => []),
   fetchSmtpConfig: vi.fn(), saveSmtpConfig: vi.fn(), testSmtpConfig: vi.fn(async () => ({ status: 'success', message: '' })),
+  fetchOAuthConfig: vi.fn(), saveOAuthConfig: vi.fn(), resetOAuthConfig: vi.fn(),
   fetchEmailPoolConfig: vi.fn(), saveEmailPoolConfig: vi.fn(), testEmailPoolConfig: vi.fn(async () => ({ status: 'success', message: '' })),
   fetchEmailDeliveryStats: vi.fn(async () => ({ days: [] })),
   fetchSiteContactPageConfig: vi.fn(), saveSiteContactPageConfig: vi.fn(), uploadSiteImage: vi.fn(),
@@ -594,6 +595,143 @@ describe('Monitor SMTP config controls', () => {
     expect(controller.testingSmtp.value).toBe(false)
   })
 })
+
+describe('Monitor OAuth config controls', () => {
+  beforeEach(() => vi.useFakeTimers())
+
+  const oauthConfig = {
+    enabled_providers: ['github' as const],
+    public_base_url: 'https://aigcnews.cn',
+    github_client_id: 'gh-client-id',
+    google_client_id: '',
+    wechat_app_id: '',
+    state_ttl_seconds: 300,
+    handoff_ttl_seconds: 120,
+    source: 'database' as const,
+    updated_at: '2026-08-25T10:00:00+00:00',
+    github_client_secret_configured: true,
+    github_client_secret_masked: 'gho_****1234',
+    google_client_secret_configured: false,
+    google_client_secret_masked: null,
+    wechat_app_secret_configured: false,
+    wechat_app_secret_masked: null,
+  }
+
+  it('populates the OAuth form from the fetched config with blank secret drafts', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchOAuthConfig).mockResolvedValue(oauthConfig)
+
+    await controller.fetchOAuthConfig()
+
+    expect(controller.oauthConfig.value).toEqual(oauthConfig)
+    expect(controller.oauthForm.value).toMatchObject({
+      enabled_providers: ['github'],
+      public_base_url: 'https://aigcnews.cn',
+      github_client_id: 'gh-client-id',
+      github_client_secret: '',
+      state_ttl_seconds: 300,
+      handoff_ttl_seconds: 120,
+      clear_github_client_secret: false,
+    })
+    // 脱敏值绝不回填进密文草稿
+    expect(controller.oauthForm.value.github_client_secret).toBe('')
+    expect(controller.loadingOAuthConfig.value).toBe(false)
+  })
+
+  it('saves, clears secret drafts and clear flags, then surfaces the saved message', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchOAuthConfig).mockResolvedValue(oauthConfig)
+    await controller.fetchOAuthConfig()
+    controller.oauthForm.value = {
+      ...controller.oauthForm.value,
+      public_base_url: ' https://aigcnews.cn ',
+      github_client_secret: 'new-secret',
+      clear_github_client_secret: true,
+    }
+
+    vi.mocked(api.saveOAuthConfig).mockResolvedValue(oauthConfig)
+    await controller.saveOAuthConfig()
+
+    expect(api.saveOAuthConfig).toHaveBeenCalledWith(expect.objectContaining({
+      public_base_url: 'https://aigcnews.cn',
+      github_client_secret: 'new-secret',
+      clear_github_client_secret: true,
+    }))
+    expect(controller.oauthConfig.value).toEqual(oauthConfig)
+    // 保存成功后清掉敏感草稿与清空标志，防止下一次保存误擦 secret
+    expect(controller.oauthForm.value.github_client_secret).toBe('')
+    expect(controller.oauthForm.value.clear_github_client_secret).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.oauthConfig.saved'))
+    expect(controller.savingOAuthConfig.value).toBe(false)
+  })
+
+  it('surfaces save failure details and keeps the secret draft for retry', async () => {
+    const { api, controller } = createController()
+    controller.oauthForm.value = {
+      ...controller.oauthForm.value,
+      public_base_url: 'https://aigcnews.cn',
+      github_client_secret: 'new-secret',
+    }
+
+    vi.mocked(api.saveOAuthConfig).mockRejectedValue({ response: { data: { detail: 'base url invalid' } } })
+    await controller.saveOAuthConfig()
+
+    expect(controller.errorMsg.value).toBe('base url invalid')
+    expect(controller.successMsg.value).toBe('')
+    expect(controller.oauthForm.value.github_client_secret).toBe('new-secret')
+    expect(controller.savingOAuthConfig.value).toBe(false)
+  })
+
+  it('blocks out-of-range TTLs and malformed base URL without calling the API', async () => {
+    const { api, controller } = createController()
+    controller.oauthForm.value = { ...controller.oauthForm.value, state_ttl_seconds: 59 }
+    await controller.saveOAuthConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.oauthConfig.invalidStateTtl'))
+    expect(api.saveOAuthConfig).not.toHaveBeenCalled()
+
+    controller.clearMessages()
+    controller.oauthForm.value = { ...controller.oauthForm.value, state_ttl_seconds: 300, handoff_ttl_seconds: 601 }
+    await controller.saveOAuthConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.oauthConfig.invalidHandoffTtl'))
+    expect(api.saveOAuthConfig).not.toHaveBeenCalled()
+
+    controller.clearMessages()
+    controller.oauthForm.value = { ...controller.oauthForm.value, handoff_ttl_seconds: 120, public_base_url: 'ftp://evil' }
+    await controller.saveOAuthConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.oauthConfig.invalidBaseUrl'))
+    expect(api.saveOAuthConfig).not.toHaveBeenCalled()
+  })
+
+  it('resets to env fallback after confirmation and refills the form from the projection', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchOAuthConfig).mockResolvedValue(oauthConfig)
+    await controller.fetchOAuthConfig()
+    const envConfig = {
+      ...oauthConfig,
+      source: 'environment' as const,
+      github_client_secret_configured: false,
+      github_client_secret_masked: null,
+      updated_at: null,
+    }
+    vi.mocked(api.resetOAuthConfig).mockResolvedValue(envConfig)
+
+    await controller.resetOAuthConfig()
+
+    expect(api.resetOAuthConfig).toHaveBeenCalledOnce()
+    expect(controller.oauthConfig.value).toEqual(envConfig)
+    expect(controller.oauthForm.value.github_client_secret).toBe('')
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.oauthConfig.resetDone'))
+    expect(controller.resettingOAuthConfig.value).toBe(false)
+  })
+
+  it('does not fetch OAuth config for non-admin users', async () => {
+    const { api, controller } = createController(createApi(), false)
+    await controller.refreshData()
+    expect(api.fetchOAuthConfig).not.toHaveBeenCalled()
+    expect(controller.oauthConfig.value).toBeNull()
+  })
+})
+
 
 describe('Monitor site contact page controls', () => {
   beforeEach(() => {

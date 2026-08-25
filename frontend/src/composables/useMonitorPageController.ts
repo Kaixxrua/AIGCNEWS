@@ -2,7 +2,7 @@ import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
-  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createPaymentConfigForm, createPaymentPlanPricingForm, createProviderForm, createSiteContactPageForm, createSmtpForm, membershipExpiryToFormDate, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createOAuthConfigForm, createPaymentConfigForm, createPaymentPlanPricingForm, createProviderForm, createSiteContactPageForm, createSmtpForm, membershipExpiryToFormDate, removeMcpServer, replaceMcpServer, upsertMcpServer,
   buildPaymentPlanPricingPayload,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
   type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type MembershipUserItem, type PaymentPlanPricing, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey, type EmailDeliveryDayStat,
@@ -10,6 +10,7 @@ import {
 import { useGithubCrawlPolling } from './useGithubCrawlPolling'
 import { ENRICHMENT_POLL_INTERVAL, useEnrichmentPolling } from './useEnrichmentPolling'
 import { refreshContactPageConfig } from './useContactPageConfig'
+import { refreshFeatureFlags } from './useFeatureFlags'
 
 interface MonitorPageControllerOptions {
   isAdmin: ComputedRef<boolean>
@@ -102,6 +103,12 @@ export const useMonitorPageController = ({
   const loadingPaymentConfig = ref(false)
   const savingPaymentConfig = ref(false)
   const resettingPaymentConfig = ref(false)
+  // OAuth 快捷登录配置：与支付同语义；保存/重置后刷新 feature flags 让登录按钮即时显隐
+  const oauthConfig = ref<Awaited<ReturnType<MonitorApi['fetchOAuthConfig']>> | null>(null)
+  const oauthForm = ref(createOAuthConfigForm())
+  const loadingOAuthConfig = ref(false)
+  const savingOAuthConfig = ref(false)
+  const resettingOAuthConfig = ref(false)
   // 套餐定价（运行时调价）：plans.py 默认价 + payment_plan_overrides 覆盖行
   const paymentPricing = ref<PaymentPlanPricing[]>([])
   const paymentPricingForm = ref(createPaymentPlanPricingForm())
@@ -267,6 +274,65 @@ export const useMonitorPageController = ({
       successMsg.value = i18n.global.t('monitor.paymentPricing.saved')
     } catch (error) { errorMsg.value = detail(error) }
     finally { savingPaymentPricing.value = false }
+  }
+  const fetchOAuthConfig = async () => {
+    if (!isAdmin.value) return
+    loadingOAuthConfig.value = true
+    try {
+      oauthConfig.value = await api.fetchOAuthConfig()
+      oauthForm.value = createOAuthConfigForm(oauthConfig.value)
+    } catch (error) { console.error('Failed to fetch OAuth config', error) }
+    finally { loadingOAuthConfig.value = false }
+  }
+  const OAUTH_STATE_TTL_MIN = 60
+  const OAUTH_STATE_TTL_MAX = 900
+  const OAUTH_HANDOFF_TTL_MIN = 30
+  const OAUTH_HANDOFF_TTL_MAX = 600
+  const OAUTH_BASE_URL_PATTERN = /^https?:\/\/\S+$/i
+  // 保存成功后归零密文输入态：密文永不回填，下一次保存按留空=保留语义
+  const resetOAuthSecretInputs = () => {
+    const form = oauthForm.value
+    form.github_client_secret = ''; form.google_client_secret = ''; form.wechat_app_secret = ''
+    form.clear_github_client_secret = false; form.clear_google_client_secret = false
+    form.clear_wechat_app_secret = false
+  }
+  const saveOAuthConfig = async () => {
+    if (savingOAuthConfig.value) return
+    clearMessages()
+    const form = oauthForm.value
+    // 与后端同口径的无害前端校验，提前拦截 400 往返
+    if (!Number.isInteger(form.state_ttl_seconds) || form.state_ttl_seconds < OAUTH_STATE_TTL_MIN || form.state_ttl_seconds > OAUTH_STATE_TTL_MAX) {
+      errorMsg.value = i18n.global.t('monitor.oauthConfig.invalidStateTtl')
+      return
+    }
+    if (!Number.isInteger(form.handoff_ttl_seconds) || form.handoff_ttl_seconds < OAUTH_HANDOFF_TTL_MIN || form.handoff_ttl_seconds > OAUTH_HANDOFF_TTL_MAX) {
+      errorMsg.value = i18n.global.t('monitor.oauthConfig.invalidHandoffTtl')
+      return
+    }
+    const baseUrl = form.public_base_url.trim()
+    if (baseUrl && !OAUTH_BASE_URL_PATTERN.test(baseUrl)) {
+      errorMsg.value = i18n.global.t('monitor.oauthConfig.invalidBaseUrl')
+      return
+    }
+    savingOAuthConfig.value = true
+    try {
+      oauthConfig.value = await api.saveOAuthConfig({ ...form, public_base_url: baseUrl })
+      resetOAuthSecretInputs()
+      successMsg.value = i18n.global.t('monitor.oauthConfig.saved')
+      await refreshFeatureFlags()
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { savingOAuthConfig.value = false }
+  }
+  const resetOAuthConfig = async () => {
+    if (resettingOAuthConfig.value || !confirm(i18n.global.t('monitor.oauthConfig.resetConfirm'))) return
+    clearMessages(); resettingOAuthConfig.value = true
+    try {
+      oauthConfig.value = await api.resetOAuthConfig()
+      oauthForm.value = createOAuthConfigForm(oauthConfig.value)
+      successMsg.value = i18n.global.t('monitor.oauthConfig.resetDone')
+      await refreshFeatureFlags()
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { resettingOAuthConfig.value = false }
   }
   const setSuccessMessage = (message: string) => { successMsg.value = message }
   const setErrorMessage = (message: string) => { errorMsg.value = message }
@@ -436,7 +502,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchMembershipUsers(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchMembershipUsers(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), fetchOAuthConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -883,7 +949,7 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), fetchPaymentPlanPricing(), fetchMembershipUsers(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), fetchOAuthConfig(), fetchPaymentPlanPricing(), fetchMembershipUsers(), resumeGithubCrawlPolling()])
   })
 
   return {
@@ -893,6 +959,7 @@ export const useMonitorPageController = ({
     siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
     paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersPageSize, paymentOrdersFilter, loadingPaymentOrders, paymentOrdersTotalPages, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
     paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, fetchPaymentConfig, savePaymentConfig, resetPaymentConfig,
+    oauthConfig, oauthForm, loadingOAuthConfig, savingOAuthConfig, resettingOAuthConfig, fetchOAuthConfig, saveOAuthConfig, resetOAuthConfig,
     paymentPricing, paymentPricingForm, loadingPaymentPricing, savingPaymentPricing, fetchPaymentPlanPricing, savePaymentPlanPricing,
     membershipForm, grantingMembership, membershipLastResult,
     membershipUsers, membershipUsersTotal, membershipUsersPage, membershipUsersTotalPages, membershipUsersQuery, loadingMembershipUsers,

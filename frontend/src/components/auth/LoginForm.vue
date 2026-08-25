@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AuthFeedback from '@/components/auth/AuthFeedback.vue'
 import AuthPageHeader from '@/components/auth/AuthPageHeader.vue'
 import { useAuthStore } from '@/stores/authStore'
+import { fetchFeatures, type FeatureFlags } from '@/services/features/featuresApi'
+import { startOAuth } from '@/services/auth/authApi'
 import { getErrorDetail, getSafeInternalRedirect, hasTrimmedValue } from '@/features/auth/authViewModel'
 
 const props = withDefaults(defineProps<{ redirect?: unknown; dialog?: boolean }>(), { dialog: false })
@@ -17,8 +19,30 @@ const email = ref('')
 const password = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
+const oauthProviders = ref<string[]>([])
+const oauthLoading = ref(false)
 const redirectTarget = computed(() => getSafeInternalRedirect(props.redirect ?? route.query.redirect))
 const redirectQuery = computed(() => ({ redirect: redirectTarget.value }))
+
+onMounted(async () => {
+  try {
+    const features: FeatureFlags = await fetchFeatures()
+    oauthProviders.value = features.oauthProviders
+  } catch {
+    oauthProviders.value = []
+  }
+})
+
+const handleOAuth = async (provider: string) => {
+  oauthLoading.value = true
+  errorMsg.value = ''
+  try {
+    await startOAuth(provider, redirectTarget.value)
+  } catch (error: unknown) {
+    oauthLoading.value = false
+    errorMsg.value = getErrorDetail(error, t('auth.loginFailed'))
+  }
+}
 
 const handleLogin = async () => {
   errorMsg.value = ''
@@ -56,7 +80,13 @@ const handleLogin = async () => {
       <div class="space-y-1.5"><label class="text-xs font-medium text-stone-500">{{ t('auth.password') }}</label><input v-model="password" type="password" class="input" :placeholder="t('auth.passwordPlaceholder')" autocomplete="current-password" :disabled="loading" @keydown.enter="handleLogin" /></div>
       <AuthFeedback :message="errorMsg" type="error" />
       <div class="text-right"><RouterLink :to="{ path: '/forgot-password', query: redirectQuery }" class="text-xs font-medium text-stone-500 underline underline-offset-2 hover:text-stone-800 transition-colors">{{ t('auth.forgotPassword') }}</RouterLink></div>
-      <button class="btn-primary w-full justify-center py-3" :disabled="loading" @click="handleLogin">
+      <div v-if="oauthProviders.length" class="space-y-2 border-t border-stone-200 pt-4">
+        <p class="text-center text-xs text-stone-400">{{ t('auth.oauthOr') }}</p>
+        <button v-for="provider in oauthProviders" :key="provider" type="button" class="btn-secondary w-full justify-center py-2.5" :disabled="loading || oauthLoading" @click="handleOAuth(provider)">
+          {{ t(`auth.oauth.${provider}`) }}
+        </button>
+      </div>
+      <button class="btn-primary w-full justify-center py-3" :disabled="loading || oauthLoading" @click="handleLogin">
         <span v-if="loading" class="h-4 w-4 rounded-full border-2 animate-spin" style="border-color: color-mix(in srgb, currentColor 40%, transparent); border-top-color: currentColor" />
         <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
         {{ loading ? t('auth.loggingIn') : t('auth.login') }}

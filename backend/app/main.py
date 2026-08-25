@@ -22,6 +22,7 @@ from backend.app.api import (
     routes_feed,
     routes_github_projects,
     routes_monitor,
+    routes_oauth,
     routes_ops,
     routes_papers,
     routes_payments,
@@ -64,6 +65,7 @@ from backend.app.repositories.postgres_error_event_repository import (
     PostgresErrorEventRepository,
 )
 from backend.app.services.auth.default_admin_bootstrap import ensure_default_admin
+from backend.app.services.auth.oauth.runtime_config import configure_oauth_settings_reader
 from backend.app.services.chat import attachment_service
 from backend.app.services.email.pool_config_provider import (
     configure_email_pool_settings_reader,
@@ -195,6 +197,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         configure_payment_settings_reader(
             app.state.application_repositories.payment_settings
+        )
+        configure_oauth_settings_reader(
+            app.state.application_repositories.oauth_settings
         )
         # 套餐价格运行时覆盖热生效：绑定 DB reader 后，plans 端点与下单
         # 经 resolve_effective_plans 读覆盖行叠加 plans.py 默认价。
@@ -397,6 +402,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 configure_runtime_provider_settings(None)
                 configure_smtp_settings_reader(None)
                 configure_payment_settings_reader(None)
+                configure_oauth_settings_reader(None)
                 configure_plan_overrides_reader(None)
                 configure_email_pool_settings_reader(None)
                 configure_application_repositories(None)
@@ -482,6 +488,7 @@ app.add_middleware(
 )
 
 app.include_router(routes_auth.router, prefix="/api", tags=["Auth"])
+app.include_router(routes_oauth.router, prefix="/api", tags=["Auth"])
 app.include_router(routes_chat.router, prefix="/api", tags=["Chat"])
 app.include_router(routes_attachments.router, prefix="/api", tags=["Attachments"])
 app.include_router(routes_vision.router, prefix="/api", tags=["Vision"])

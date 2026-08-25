@@ -50,6 +50,31 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator(
+        "github_oauth_client_secret",
+        "google_oauth_client_secret",
+        "wechat_oauth_app_secret",
+    )
+    @classmethod
+    def _validate_oauth_secret_placeholder(cls, value: str) -> str:
+        if value.upper().startswith("CHANGEME"):
+            raise ValueError("OAuth secrets must not use the example placeholder")
+        return value
+
+    @field_validator("oauth_state_ttl_seconds")
+    @classmethod
+    def _validate_oauth_state_ttl(cls, value: int) -> int:
+        if not 60 <= value <= 900:
+            raise ValueError("oauth_state_ttl_seconds must be within 60..900")
+        return value
+
+    @field_validator("oauth_handoff_ttl_seconds")
+    @classmethod
+    def _validate_oauth_handoff_ttl(cls, value: int) -> int:
+        if not 30 <= value <= 600:
+            raise ValueError("oauth_handoff_ttl_seconds must be within 30..600")
+        return value
+
     # ── 支付收费骨架（ADR 0002）────────────────────────────────────────
     # 全局开关：默认 False，用户侧支付路由整组 404（feature gate 先例）；
     # 营业执照/商户号就位后逐渠道填凭证 + 置 True。
@@ -167,6 +192,32 @@ class Settings(BaseSettings):
         if value.startswith("CHANGEME"):
             raise ValueError(
                 "mcp_server_encryption_key must not use the example placeholder"
+            )
+        return value
+
+
+    # Monitor 管理的 OAuth client secret/app secret 加密密钥；业务凭据本身不从
+    # env 配置，只有这个部署级 AES-256-GCM 密钥由环境注入并跨 worker 保持稳定。
+    oauth_config_encryption_key: str = ""
+    oauth_config_encryption_key_version: str = "v1"
+
+    @field_validator("oauth_config_encryption_key_version")
+    @classmethod
+    def _validate_oauth_config_key_version(cls, value: str) -> str:
+        if not value or len(value) > 64:
+            raise ValueError(
+                "oauth_config_encryption_key_version must be 1..64 characters"
+            )
+        return value
+
+    @field_validator("oauth_config_encryption_key")
+    @classmethod
+    def _validate_oauth_config_key(cls, value: str) -> str:
+        if not value:
+            return value
+        if value.startswith("CHANGEME"):
+            raise ValueError(
+                "oauth_config_encryption_key must not use the example placeholder"
             )
         return value
 
@@ -324,6 +375,18 @@ class Settings(BaseSettings):
     # 对外站点 origin（如 https://aigcnews.cn），用于生成绝对 pdf_media_url。
     # 留空则返回相对路径；绝不从 Host / X-Forwarded-Proto 头派生（可伪造）。
     public_base_url: str | None = None
+
+
+    # OAuth 快捷登录（第一版 env-first；未加入 allowlist 或缺任一凭据时不暴露入口）。
+    oauth_enabled_providers: str = ""
+    github_oauth_client_id: str = ""
+    github_oauth_client_secret: str = ""
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    wechat_oauth_app_id: str = ""
+    wechat_oauth_app_secret: str = ""
+    oauth_state_ttl_seconds: int = 300
+    oauth_handoff_ttl_seconds: int = 120
 
     # CORS 允许的来源（逗号分隔）。浏览器直连 API 的场景只有前端，
     # 不再允许任意来源。

@@ -11,6 +11,7 @@ from backend.app.api import (
     routes_ops_github,
     routes_ops_mcp,
     routes_ops_membership,
+    routes_ops_oauth,
     routes_ops_payments,
     routes_ops_site,
     routes_ops_smtp,
@@ -132,6 +133,7 @@ router.include_router(routes_ops_smtp.router)
 router.include_router(routes_ops_email_pool.router)
 router.include_router(routes_ops_site.router)
 router.include_router(routes_ops_membership.router)
+router.include_router(routes_ops_oauth.router)
 router.include_router(routes_ops_payments.router)
 
 

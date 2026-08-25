@@ -13,6 +13,7 @@ from backend.app.core.config import settings
 @pytest.fixture()
 def client() -> TestClient:
     app = FastAPI()
+    app.state.redis = None
     app.include_router(router, prefix="/api")
     return TestClient(app)
 
@@ -25,7 +26,11 @@ class TestFeaturesRoute:
         response = client.get("/api/features")
 
         assert response.status_code == 200
-        assert response.json() == {"x_source": False, "wechat_source": False}
+        assert response.json() == {
+            "x_source": False,
+            "wechat_source": False,
+            "oauth_providers": [],
+        }
 
     def test_flags_on(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "x_source_enabled", True)
@@ -34,7 +39,26 @@ class TestFeaturesRoute:
         response = client.get("/api/features")
 
         assert response.status_code == 200
-        assert response.json() == {"x_source": True, "wechat_source": True}
+        assert response.json() == {
+            "x_source": True,
+            "wechat_source": True,
+            "oauth_providers": [],
+        }
+
+    def test_configured_provider_requires_redis(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "oauth_enabled_providers", "wechat,github")
+        monkeypatch.setattr(settings, "public_base_url", "https://aigcnews.example")
+        monkeypatch.setattr(settings, "github_oauth_client_id", "github-client")
+        monkeypatch.setattr(settings, "github_oauth_client_secret", "github-secret")
+        monkeypatch.setattr(settings, "wechat_oauth_app_id", "")
+        monkeypatch.setattr(settings, "wechat_oauth_app_secret", "")
+
+        assert client.get("/api/features").json()["oauth_providers"] == []
+
+        client.app.state.redis = object()
+        assert client.get("/api/features").json()["oauth_providers"] == ["github"]
 
     def test_requires_no_auth(self, client: TestClient) -> None:
         # 未携带任何凭据即可读取（前端首屏导航依赖该端点）

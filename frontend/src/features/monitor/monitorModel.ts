@@ -1015,6 +1015,80 @@ export const buildPaymentPlanPricingPayload = (
   return { monthly_amount_cents: monthly, yearly_amount_cents: yearly }
 }
 
+// ── OAuth 快捷登录配置（Monitor 面板）────────────────────────────────────────
+// 与支付配置同语义：database=DB 覆盖行；environment=env；unconfigured=两者皆无。
+// 密文（client secret / app secret）只写入不回填；留空=保留，勾选 clear_*=擦除。
+// 保存/重置后由控制器调用 refreshFeatureFlags() 让登录页按钮即时显隐。
+
+export type OAuthProviderKey = 'github' | 'google' | 'wechat'
+
+export interface OAuthConfig {
+  enabled_providers: OAuthProviderKey[]
+  public_base_url: string
+  github_client_id: string
+  google_client_id: string
+  wechat_app_id: string
+  state_ttl_seconds: number
+  handoff_ttl_seconds: number
+  source: SmtpConfigSource
+  updated_at: string | null
+  github_client_secret_configured: boolean
+  github_client_secret_masked: string | null
+  google_client_secret_configured: boolean
+  google_client_secret_masked: string | null
+  wechat_app_secret_configured: boolean
+  wechat_app_secret_masked: string | null
+}
+
+export interface OAuthConfigForm {
+  enabled_providers: OAuthProviderKey[]
+  public_base_url: string
+  github_client_id: string
+  github_client_secret: string
+  google_client_id: string
+  google_client_secret: string
+  wechat_app_id: string
+  wechat_app_secret: string
+  state_ttl_seconds: number
+  handoff_ttl_seconds: number
+  clear_github_client_secret: boolean
+  clear_google_client_secret: boolean
+  clear_wechat_app_secret: boolean
+}
+
+export const createOAuthConfigForm = (config?: OAuthConfig | null): OAuthConfigForm => ({
+  enabled_providers: [...(config?.enabled_providers ?? [])],
+  public_base_url: config?.public_base_url || '',
+  github_client_id: config?.github_client_id || '',
+  github_client_secret: '',
+  google_client_id: config?.google_client_id || '',
+  google_client_secret: '',
+  wechat_app_id: config?.wechat_app_id || '',
+  wechat_app_secret: '',
+  state_ttl_seconds: config?.state_ttl_seconds || 300,
+  handoff_ttl_seconds: config?.handoff_ttl_seconds || 120,
+  clear_github_client_secret: false,
+  clear_google_client_secret: false,
+  clear_wechat_app_secret: false,
+})
+
+// null 密文 = 后端保留语义；绝不回传 masked 响应值
+export const buildOAuthConfigPayload = (form: OAuthConfigForm) => ({
+  enabled_providers: form.enabled_providers,
+  public_base_url: form.public_base_url.trim(),
+  github_client_id: form.github_client_id.trim(),
+  github_client_secret: form.github_client_secret || null,
+  google_client_id: form.google_client_id.trim(),
+  google_client_secret: form.google_client_secret || null,
+  wechat_app_id: form.wechat_app_id.trim(),
+  wechat_app_secret: form.wechat_app_secret || null,
+  state_ttl_seconds: form.state_ttl_seconds,
+  handoff_ttl_seconds: form.handoff_ttl_seconds,
+  clear_github_client_secret: form.clear_github_client_secret,
+  clear_google_client_secret: form.clear_google_client_secret,
+  clear_wechat_app_secret: form.clear_wechat_app_secret,
+})
+
 export const createMembershipGrantForm = (): MembershipGrantForm => ({
   email: '',
   tier: 'member',

@@ -31,6 +31,8 @@ from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenRepository,
 )
 from backend.app.repositories.mcp_server_repository import McpServerConfigRepository
+from backend.app.repositories.oauth_identity_repository import OAuthIdentityRepository
+from backend.app.repositories.oauth_settings_repository import OAuthSettingsRepository
 from backend.app.repositories.payment_order_repository import PaymentOrderRepository
 from backend.app.repositories.payment_plan_overrides_repository import (
     PaymentPlanOverridesRepository,
@@ -77,6 +79,7 @@ from backend.app.repositories.wechat_session_repository import (
 from backend.app.repositories.x_credentials_repository import XCredentialRepository
 from backend.app.repositories.x_translation_repository import XTranslationTaskRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
+from backend.app.services.auth.oauth.config_admin import OAuthConfigAdminService
 from backend.app.services.briefing.composition import provide_daily_briefing_service
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
 from backend.app.services.briefing_admin import BriefingAdminService
@@ -150,6 +153,12 @@ def get_application_repositories(request: Request) -> ApplicationRepositories:
     if repositories is None:
         raise RuntimeError("Application repositories are not configured")
     return repositories
+
+
+def get_oauth_identity_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> OAuthIdentityRepository:
+    return repositories.oauth_identities
 
 
 def get_ingestion_task_repository(
@@ -307,6 +316,18 @@ def get_payment_settings_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> PaymentSettingsRepository:
     return repositories.payment_settings
+
+
+def get_oauth_settings_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> OAuthSettingsRepository:
+    return repositories.oauth_settings
+
+
+def get_oauth_config_admin_service(
+    repository: OAuthSettingsRepository = Depends(get_oauth_settings_repository),
+) -> OAuthConfigAdminService:
+    return OAuthConfigAdminService(repository)
 
 
 def get_payment_config_admin_service(

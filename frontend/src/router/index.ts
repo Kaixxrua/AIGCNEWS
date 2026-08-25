@@ -18,6 +18,7 @@ const MonitorView = () => import('@/views/MonitorView.vue')
 const LoginView = () => import('@/views/LoginView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
 const ForgotPasswordView = () => import('@/views/ForgotPasswordView.vue')
+const OAuthCallbackView = () => import('@/views/OAuthCallbackView.vue')
 const PaperReadView = () => import('@/views/PaperReadView.vue')
 const DisclaimerView = () => import('@/views/DisclaimerView.vue')
 const PrivacyView = () => import('@/views/PrivacyView.vue')
@@ -46,6 +47,12 @@ const router = createRouter({
       path: '/forgot-password',
       name: 'forgot-password',
       component: ForgotPasswordView,
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/oauth/callback',
+      name: 'oauth-callback',
+      component: OAuthCallbackView,
       meta: { guestOnly: true },
     },
 

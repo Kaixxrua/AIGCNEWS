@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
   fetchCurrentUser,
+  consumeOAuthHandoff,
   loginWithPassword,
   type AuthUserDTO,
 } from '@/services/auth/authApi'
@@ -84,6 +85,15 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value!
   }
 
+  async function loginWithOAuthHandoff(): Promise<string> {
+    const data = await consumeOAuthHandoff()
+    token.value = data.access_token
+    writeStorage(TOKEN_KEY, data.access_token)
+    await fetchMe()
+    status.value = 'authenticated'
+    return data.redirect_to
+  }
+
   /** 退出：清除 token/user，回到首页 */
   function logout(): void {
     token.value = null
@@ -138,6 +148,7 @@ export const useAuthStore = defineStore('auth', () => {
     savePendingMessage,
     consumePendingMessage,
     login,
+    loginWithOAuthHandoff,
     logout,
     fetchMe,
     initFromStorage,

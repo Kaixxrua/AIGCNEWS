@@ -2,7 +2,7 @@ import { api } from '@/services/http/apiClient'
 
 export interface AuthUserDTO {
   user_id: number
-  email: string
+  email: string | null
   role: 'user' | 'admin'
   email_verified?: boolean
   /** 会员档位（0045）：free / member；缺省按 free 处理 */
@@ -17,6 +17,19 @@ export interface LoginResponse {
   access_token: string
   role: string
   password_change_required?: boolean
+}
+
+export async function startOAuth(provider: string, redirectTo: string): Promise<void> {
+  window.location.assign(`/api/auth/oauth/${encodeURIComponent(provider)}/start?redirect_to=${encodeURIComponent(redirectTo)}`)
+}
+
+export interface OAuthConsumeResponse extends LoginResponse {
+  redirect_to: string
+}
+
+export async function consumeOAuthHandoff(): Promise<OAuthConsumeResponse> {
+  const res = await api.post<OAuthConsumeResponse>('/auth/oauth/consume', undefined)
+  return res.data
 }
 
 export async function loginWithPassword(email: string, password: string): Promise<LoginResponse> {
