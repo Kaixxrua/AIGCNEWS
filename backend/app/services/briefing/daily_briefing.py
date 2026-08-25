@@ -142,11 +142,11 @@ _WRITING_DISCIPLINE = r"""
 - 每个章节内的条目编号从 1 开始连续编号，不得沿用输入列表的全局编号
 """
 
-_PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以下今日热点内容（综合学术论文、开源项目、行业新闻），撰写一份**内容详尽、深度全面**的综合今日报。
+_PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以下今日内容（综合学术论文、开源项目、行业新闻），撰写一份**内容详尽、深度全面**的综合今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
-2. 包含"今日热点摘要"、"技术亮点"、"工程动态"、"行业资讯"、"值得关注"五个章节
+2. 包含"今日内容摘要"、"技术亮点"、"工程动态"、"行业资讯"、"值得关注"五个章节
 3. **每篇内容都必须详细分析**，包括：核心要点、技术细节、影响分析、相关背景（每篇至少 3-5 句话）
 4. 对每个章节进行深入的趋势总结和洞察点评
 5. 语言专业且详尽，面向技术从业者
@@ -154,7 +154,7 @@ _PROMPT_ALL = r"""你是一位专业的 AIGC 技术资讯编辑。请根据以�
 7. **务必覆盖所有提供的内容，不要遗漏任何一条**
 8. **每个一级或二级标题后面，必须添加具体的领域标签**，格式示例：## 标题 `#来源` `#领域`（反引号行内代码形式，切勿加反斜杠转义）。来源标签（必选1个）：`#arxiv` `#github` `#news` `#producthunt` `#hackernews` `#x`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#RAG` `#代码生成` `#图像生成` `#视频生成` `#语音合成` `#强化学习` `#数据集` `#评测基准` `#推理优化` `#模型压缩` `#开源模型` `#商业化` `#安全对齐` `#具身智能` `#知识图谱` `#MLOps` `#AI基础设施`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**今日热点内容（共 {count} 条）：**
+**今日内容（共 {count} 条）：**
 {articles}
 
 **生成日期：** {date}
@@ -177,18 +177,18 @@ _PROMPT_ARXIV = r"""你是一位专业的 AI 学术研究分析师。请根据�
 **生成日期：** {date}
 """ + _WRITING_DISCIPLINE
 
-_PROMPT_GITHUB = r"""你是一位专业的 AI 工程技术分析师。请根据以下今日 GitHub 热门开源项目，撰写一份**内容详尽、深度全面**的工程今日报。
+_PROMPT_GITHUB = r"""你是一位专业的 AI 工程技术分析师。请根据以下今日 GitHub 开源项目，撰写一份**内容详尽、深度全面**的工程今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"今日明星项目"、"技术栈分析"、"实践价值"三个章节
-3. **每个项目都必须详细分析**，包括：项目定位、核心功能、技术架构、使用场景、Stars 增长趋势、与同类项目对比（每个至少 4-6 句话）
+3. **每个项目都必须详细分析**，包括：项目定位、核心功能、技术架构、使用场景、与同类项目对比（每个至少 4-6 句话）
 4. 对开源生态的技术趋势进行深入洞察
 5. 语言务实，面向工程师和架构师
 6. **务必覆盖所有提供的项目，不要遗漏任何一个**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式示例：## 标题 `#来源` `#领域`（反引号行内代码形式，切勿加反斜杠转义）。来源标签（必选1个）：`#github`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#RAG` `#代码生成` `#推理优化` `#模型压缩` `#开源模型` `#MLOps` `#AI基础设施` `#数据工程` `#Web框架` `#CLI工具` `#DevOps` `#前端` `#Rust` `#Python`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**今日 GitHub 热门项目（共 {count} 个）：**
+**今日 GitHub 项目（共 {count} 个）：**
 {articles}
 
 **生成日期：** {date}
@@ -212,24 +212,24 @@ _PROMPT_NEWS = r"""你是一位专业的 AI 行业分析师。请根据以下今
 """ + _WRITING_DISCIPLINE
 
 
-_PROMPT_PRODUCTHUNT = r"""你是一位专业的 AI 产品分析师。请根据以下今日 Product Hunt 热门 AI 产品，撰写一份**内容详尽、深度全面**的产品今日报。
+_PROMPT_PRODUCTHUNT = r"""你是一位专业的 AI 产品分析师。请根据以下今日 Product Hunt AI 产品，撰写一份**内容详尽、深度全面**的产品今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"今日明星产品"、"功能亮点"、"市场价值"、"值得关注的产品"四个章节
-3. **每个产品都必须详细分析**，包括：产品定位、核心功能、目标用户、差异化优势、社区热度分析（每个至少 4-6 句话）
+3. **每个产品都必须详细分析**，包括：产品定位、核心功能、目标用户、差异化优势、与同类产品的差异（每个至少 4-6 句话）
 4. 对 AI 产品赛道的趋势进行深入洞察
 5. 语言通俗易懂，面向产品经理和技术创业者
 6. **务必覆盖所有提供的产品，不要遗漏任何一个**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式示例：## 标题 `#来源` `#领域`（反引号行内代码形式，切勿加反斜杠转义）。来源标签（必选1个）：`#producthunt`。领域标签（必选1-2个，选择最贴切的）：`#AI写作` `#AI设计` `#AI编程` `#AI营销` `#效率工具` `#开发者工具` `#SaaS` `#个人助理` `#协作工具` `#数据分析` `#自动化` `#API服务`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**今日 Product Hunt 热门产品（共 {count} 个）：**
+**今日 Product Hunt 产品（共 {count} 个）：**
 {articles}
 
 **生成日期：** {date}
 """ + _WRITING_DISCIPLINE
 
-_PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据以下今日 Hacker News AI 相关热门讨论，撰写一份**内容详尽、深度全面**的社区洞察今日报。
+_PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据以下今日 Hacker News AI 相关讨论，撰写一份**内容详尽、深度全面**的社区洞察今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
@@ -246,37 +246,37 @@ _PROMPT_HACKERNEWS = r"""你是一位专业的技术社区观察员。请根据�
 **生成日期：** {date}
 """ + _WRITING_DISCIPLINE
 
-_PROMPT_DAILYHOT = r"""你是一位专业的中文科技资讯编辑。请根据以下今日中文互联网各大站点热榜条目（36氪、IT之家、少数派、掘金、知乎、虎嗅、极客公园、爱范儿等），撰写一份**内容详尽、深度全面**的全网热榜今日报。
+_PROMPT_DAILYHOT = r"""你是一位专业的中文科技资讯编辑。请根据以下今日中文互联网各大站点内容（36氪、IT之家、少数派、掘金、知乎、虎嗅、极客公园、爱范儿等），撰写一份**内容详尽、深度全面**的全网资讯今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"AI 与大模型动态"、"产品与商业化"、"开发者与技术社区"、"其他值得关注"四个章节
-3. **每条热榜条目都必须详细分析**，包括：来源榜单、事件概述、背景与影响（每条至少 3-5 句话）
+3. **每条内容都必须详细分析**，包括：来源、事件概述、背景与影响（每条至少 3-5 句话）
 4. AI 相关条目优先详写；对跨榜单共同反映出的行业趋势进行深入洞察
 5. 语言通俗易懂，面向 AI 从业者与技术爱好者
 6. **务必覆盖所有提供的条目，不要遗漏任何一条**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式示例：## 标题 `#来源` `#领域`（反引号行内代码形式，切勿加反斜杠转义）。来源标签（必选1个）：`#dailyhot`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#产品发布` `#商业化` `#开源模型` `#AI基础设施` `#开发者工具` `#监管政策` `#行业动态` `#硬件` `#其他`。禁止使用过于宽泛的标签如 #ai #tool #trending
 
-**今日全网热榜条目（共 {count} 条）：**
+**今日全网内容（共 {count} 条）：**
 {articles}
 
 **生成日期：** {date}
 """ + _WRITING_DISCIPLINE
 
-_PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下今日 X（Twitter）上 AI 公司与知名开发者官方账号的热门推文（已按账号分组），撰写一份**内容详尽、深度全面**的 X 动态今日报。
+_PROMPT_X = r"""你是一位专业的 AI 行业观察员。请根据以下今日 X（Twitter）上 AI 公司与知名开发者官方账号的推文（已按账号分组），撰写一份**内容详尽、深度全面**的 X 动态今日报。
 
 **要求：**
 1. 使用 Markdown 格式输出
 2. 包含"官方发布与公告"、"研究与技术分享"、"行业观点与洞察"、"值得关注"四个章节
 3. **以账号为单位组织分析**：每个账号的当日动态写成一段完整评述，包括发布者的官方身份与职位背景、核心内容、背景与影响、对产品路线或研究方向释放的信号（每个账号至少 4-6 句话）；同一账号有多条推文时须逐条点明要点，但合并在同一账号条目下，不得拆成互不相干的孤立条目
-4. 对官方账号动态反映出的行业趋势进行深入洞察；这些账号均为 AI 公司与知名开发者的官方账号，影响力判断应基于发布者身份与内容本身
+4. 对官方账号动态反映出的行业趋势进行深入洞察；这些账号均为 AI 公司与知名开发者的官方账号，分析应基于发布者身份与内容本身
 5. 语言通俗易懂，面向 AI 从业者与技术爱好者
 6. **务必覆盖所有提供的账号，不要遗漏任何一个账号；账号下的每条推文都要提及**
 7. **每个一级或二级标题后面，必须添加具体的领域标签**，格式示例：## 标题 `#来源` `#领域`（反引号行内代码形式，切勿加反斜杠转义）。来源标签（必选1个）：`#x`。领域标签（必选1-2个，选择最贴切的）：`#LLM` `#Agent` `#多模态` `#开源模型` `#产品发布` `#研究论文` `#商业化` `#安全对齐` `#AI基础设施` `#开发者工具` `#观点争议` `#监管政策`。禁止使用过于宽泛的标签如 #ai #tool #trending
-8. 输入不包含点赞、转发等互动指标；全文禁止编造、引用或提及任何互动数据
+8. 只能根据输入中的推文内容和发布者身份进行分析，全文禁止编造输入中没有提供的事实
 9. 每个账号条目结尾必须用 Markdown 链接附上该账号当日推文的来源（使用输入中给出的 URL）
 
-**今日 X 关注账号动态（共 {count} 个账号）：**
+**今日 X 账号动态（共 {count} 个账号）：**
 {articles}
 
 **生成日期：** {date}
@@ -309,7 +309,7 @@ _SOURCE_CONFIG: Dict[str, tuple[str, str]] = {
     "news": (_PROMPT_NEWS, "_news"),
     "producthunt": (_PROMPT_PRODUCTHUNT, "_producthunt"),
     "hackernews": (_PROMPT_HACKERNEWS, "_hackernews"),
-    "x": (_PROMPT_X, "_x"),
+    "x": (_PROMPT_X, "_0800_x"),
     "dailyhot": (_PROMPT_DAILYHOT, "_dailyhot"),
 }
 
@@ -324,6 +324,16 @@ _SOURCE_CHANNELS: Dict[str, str] = {
     "x": "x_daily_watchlist",
     "dailyhot": "dailyhot_daily",
 }
+
+
+def get_briefing_cache_key(target_date: str, source: str) -> str:
+    """Return the persisted briefing cache key for a source.
+
+    This must stay in sync with the suffix used inside ``stream_generate``
+    (derived from ``_SOURCE_CONFIG``).
+    """
+    _, suffix = _SOURCE_CONFIG.get(source, _SOURCE_CONFIG["all"])
+    return f"{target_date}{suffix}"
 
 
 def _filter_docs_by_channel(
@@ -388,8 +398,7 @@ def _truncate_summary(summary: str, limit: int = _SUMMARY_LIMIT) -> str:
 def _group_x_docs_by_account(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """X 简报输入以账号为单位：按推文 URL 的 handle 分组（无 handle 回退昵称）。
 
-    分组顺序 = 账号首次出现顺序（输入已按互动分降序，即账号按其最高热推文
-    排序）；组内保持输入相对顺序。handle 与昵称都缺失的文档并入同一个
+    分组顺序 = 账号首次出现顺序（保留输入顺序）；组内保持输入相对顺序。handle 与昵称都缺失的文档并入同一个
     "官方账号动态"兜底分组，不静默丢弃。
     """
     groups: List[Dict[str, Any]] = []
@@ -461,30 +470,22 @@ def _format_articles(docs: List[Dict[str, Any]], source: str = "all") -> str:
         title = doc.get("title") or "无标题"
         summary = doc.get("summary") or ""
         url = doc.get("url") or ""
-        score = doc.get("score") or 0.0
-        src = doc.get("source") or source
+        src = str(doc.get("source") or source).lower()
 
-        if src == "github":
-            stars = int(doc.get("stars") or 0)
-            growth = int(doc.get("raw_score") or score or 0)
-            channel = doc.get("source_channel") or doc.get("channel") or ""
-            if stars > 0:
-                score_label = f"⭐ Stars: {stars}"
-                if channel.startswith("github_trending_") and growth:
-                    score_label += f"（+{growth} 本周期）"
-            else:
-                score_label = f"📈 本周期新增 Stars: {growth}"
-        elif src == "news":
-            score_label = f"📰 {doc.get('feed_name') or '新闻'}"
+        # 简报只接收内容和来源归属，不把 score/raw_score 或其他互动指标
+        # 暴露给模型。它们仍由 preparation.py 用于候选排序。
+        if src == "news":
+            attribution = f"📰 {doc.get('feed_name') or '新闻'}"
         elif src == "x":
-            # X 关注清单均为官方账号：标注发布者身份比分数更有信息量，
-            # 且 x 文档 score 恒为 0（真实互动分在 raw_score），展示评分只有噪音。
             author = str(doc.get("author_name") or "").strip().lstrip("@")
-            score_label = f"📣 @{author}" if author else "📣 官方账号动态"
+            attribution = f"📣 @{author}" if author else "📣 官方账号动态"
         else:
-            score_label = f"评分: {score:.1f}"
+            attribution = ""
 
-        lines.append(f"{i}. **{title}**（{score_label}）")
+        heading = f"{i}. **{title}**"
+        if attribution:
+            heading += f"（{attribution}）"
+        lines.append(heading)
         if summary:
             lines.append(f"   {_truncate_summary(summary)}")
         if url:

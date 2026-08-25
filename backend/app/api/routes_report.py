@@ -28,6 +28,7 @@ from backend.app.repositories.user_subscription_repository import (
 )
 from backend.app.services.briefing.daily_briefing import (
     DailyBriefingService,
+    get_briefing_cache_key,
     normalize_briefing_locale,
     select_briefing_content,
 )
@@ -210,10 +211,7 @@ async def get_latest_briefing(
     source = source if source in _VALID_SOURCES else "all"
 
     target = date or today_cst()
-    # 与 daily_briefing.py 的 cache_date = f"{today}{cache_suffix}" 保持一致
-    # （CST 口径；服务器本地时区在 0 点后可能与缓存日期错开一天）
-    suffix = "" if source == "all" else f"_{source}"
-    cache_key = f"{target}{suffix}"
+    cache_key = get_briefing_cache_key(target, source)
 
     item = repository.get_briefing_by_date(cache_key)
     if item is None:
@@ -330,8 +328,7 @@ async def _send_cached_briefing_to_email(
 ) -> str:
     """发送已生成的简报缓存到指定邮箱，返回实际使用的报告日期。"""
     target = date_str or today_cst()
-    suffix = "" if source == "all" else f"_{source}"
-    cache_key = f"{target}{suffix}"
+    cache_key = get_briefing_cache_key(target, source)
 
     item = repository.get_briefing_by_date(cache_key)
     if item is None:

@@ -4,6 +4,11 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
+from backend.app.services.briefing.x_window import (
+    x_briefing_cache_date,
+    x_rolling_window_bounds,
+)
+
 Document = dict[str, Any]
 PromptConfig = Mapping[str, tuple[str, str]]
 SourceChannels = Mapping[str, str]
@@ -41,6 +46,15 @@ class DocumentFallbackReader(Protocol):
 
     def get_latest_documents(self, *, limit: int) -> list[Document]: ...
 
+    def list_recent_by_source(
+        self,
+        source: str,
+        *,
+        since_iso: str,
+        until_iso: str | None = None,
+        limit: int = 500,
+    ) -> list[Document]: ...
+
 
 @dataclass(frozen=True)
 class BriefingContext:
@@ -50,6 +64,7 @@ class BriefingContext:
     source_type: str | None
     expected_channels: tuple[str, ...]
     fallback_sources: tuple[str, ...]
+    rolling_sources: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -72,20 +87,38 @@ def normalize_briefing_context(
     _, cache_suffix = source_config[normalized_source]
 
     if normalized_source == "all":
-        expected_channels = tuple(source_channels.values())
-        fallback_sources = tuple(source_channels.keys())
+        expected_channels = tuple(
+            channel
+            for src, channel in source_channels.items()
+            if channel and src != "x"
+        )
+        fallback_sources = tuple(src for src in source_channels if src != "x")
+        rolling_sources = ("x",)
+    elif normalized_source == "x":
+        expected_channels = ()
+        fallback_sources = ("x",)
+        rolling_sources = ("x",)
+        cache_suffix = ""
     else:
         channel = source_channels.get(normalized_source)
         expected_channels = (channel,) if channel else ()
         fallback_sources = (normalized_source,) if channel else ()
+        rolling_sources = ()
+
+    cache_date = (
+        x_briefing_cache_date(target_date)
+        if normalized_source == "x"
+        else f"{target_date}{cache_suffix}"
+    )
 
     return BriefingContext(
         target_date=target_date,
         source=normalized_source,
-        cache_date=f"{target_date}{cache_suffix}",
+        cache_date=cache_date,
         source_type=None if normalized_source == "all" else normalized_source,
         expected_channels=expected_channels,
         fallback_sources=fallback_sources,
+        rolling_sources=rolling_sources,
     )
 
 
@@ -202,6 +235,24 @@ def render_briefing_prompt(
     )
 
 
+def _load_rolling_documents(
+    context: BriefingContext,
+    document_feed: DocumentFallbackReader,
+    top_k: int,
+) -> list[Document]:
+    """Load rolling-window documents for configured rolling sources."""
+    if "x" not in context.rolling_sources:
+        return []
+    start, end = x_rolling_window_bounds(context.target_date)
+    docs = document_feed.list_recent_by_source(
+        source="x",
+        since_iso=start.isoformat(),
+        until_iso=end.isoformat(),
+        limit=top_k * 3,
+    )
+    return list(docs)
+
+
 def prepare_briefing(
     *,
     context: BriefingContext,
@@ -216,48 +267,55 @@ def prepare_briefing(
 ) -> PreparedBriefing:
     documents: list[Document] = []
     fallback_used = False
+    rolling_docs = _load_rolling_documents(context, document_feed, top_k)
 
-    for channel in context.expected_channels:
-        documents.extend(
-            snapshot_reader.get_snapshot_documents(
-                snapshot_date=context.target_date,
-                source_channel=channel,
-                source_type=context.source_type,
-                limit=top_k,
-            )
-        )
-
-    if documents:
-        if context.source == "all":
-            # 综合简报：跨源轮询，避免高分量纲来源挤掉其他来源。
-            documents = interleave_documents_by_source(documents, top_k=top_k)
-        else:
-            documents = order_snapshot_documents(
-                documents,
-                source=context.source,
-                top_k=top_k,
-            )
+    if context.source == "x":
+        documents = _sort_documents_for_source(rolling_docs, source="x")[:top_k]
     else:
-        # 快照未就绪（早间生成时今日快照尚未关榜）→ 文档表日期域兜底：
-        # 逐源在近期窗口内按分数取候选，再过滤 channel + 跨源轮询。
-        # 旧实现全表按 raw_score 取 top_k*3，低分量纲源（news/arxiv 等）
-        # 在截断处整源缺席，且无日期约束会混入陈旧条目。
-        since_date = _recent_window_start(context.target_date)
-        per_source_limit = top_k if context.source == "all" else top_k * 3
-        recent: list[Document] = []
-        for fallback_source in context.fallback_sources:
-            recent.extend(
-                document_feed.get_recent_top_documents(
-                    source_type=fallback_source,
-                    since_date=since_date,
-                    limit=per_source_limit,
+        for channel in context.expected_channels:
+            documents.extend(
+                snapshot_reader.get_snapshot_documents(
+                    snapshot_date=context.target_date,
+                    source_channel=channel,
+                    source_type=context.source_type,
+                    limit=top_k,
                 )
             )
-        filtered = filter_by_channel(recent, context.source)
-        if context.source == "all":
-            documents = interleave_documents_by_source(filtered, top_k=top_k)
+
+        if documents:
+            if context.source == "all":
+                documents = interleave_documents_by_source(
+                    documents + rolling_docs, top_k=top_k
+                )
+            else:
+                documents = order_snapshot_documents(
+                    documents,
+                    source=context.source,
+                    top_k=top_k,
+                )
         else:
-            documents = filtered[:top_k]
+            # 快照未就绪（早间生成时今日快照尚未关榜）→ 文档表日期域兜底：
+            # 逐源在近期窗口内按分数取候选，再过滤 channel + 跨源轮询。
+            # 旧实现全表按 raw_score 取 top_k*3，低分量纲源（news/arxiv 等）
+            # 在截断处整源缺席，且无日期约束会混入陈旧条目。
+            since_date = _recent_window_start(context.target_date)
+            per_source_limit = top_k if context.source == "all" else top_k * 3
+            recent: list[Document] = []
+            for fallback_source in context.fallback_sources:
+                recent.extend(
+                    document_feed.get_recent_top_documents(
+                        source_type=fallback_source,
+                        since_date=since_date,
+                        limit=per_source_limit,
+                    )
+                )
+            filtered = filter_by_channel(recent, context.source)
+            if context.source == "all":
+                documents = interleave_documents_by_source(
+                    filtered + rolling_docs, top_k=top_k
+                )
+            else:
+                documents = filtered[:top_k]
 
     if not documents:
         documents = document_feed.get_latest_documents(limit=top_k)

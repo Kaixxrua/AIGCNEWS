@@ -86,6 +86,27 @@ class ReportBriefingRepositoryTests(unittest.TestCase):
             },
         )
 
+    def test_latest_uses_x_fixed_anchor_cache_key(self) -> None:
+        repository = MagicMock(spec=BriefingReader)
+        repository.get_briefing_by_date.return_value = {
+            "id": 42,
+            "date": "2026-07-22_0800_x",
+            "content": "cached x",
+        }
+
+        result = asyncio.run(
+            routes_report.get_latest_briefing(
+                source="x",
+                date="2026-07-22",
+                repository=repository,
+            )
+        )
+
+        repository.get_briefing_by_date.assert_called_once_with(
+            "2026-07-22_0800_x"
+        )
+        self.assertEqual(result["cache_key"], "2026-07-22_0800_x")
+
     def test_latest_missing_preserves_response(self) -> None:
         repository = MagicMock(spec=BriefingReader)
         repository.get_briefing_by_date.return_value = None
