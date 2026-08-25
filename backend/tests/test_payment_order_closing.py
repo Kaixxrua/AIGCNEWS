@@ -138,8 +138,11 @@ def _payment_settings_row(*, enabled: bool) -> PaymentSettings:
         alipay_appid="",
         alipay_private_key_pem="",
         alipay_public_key_pem="",
-        stripe_secret_key="",
-        stripe_webhook_secret="",
+        overseas_provider="",
+        overseas_sandbox=False,
+        overseas_client_id="",
+        overseas_client_secret="",
+        overseas_webhook_secret="",
         updated_at=datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc),
     )
 

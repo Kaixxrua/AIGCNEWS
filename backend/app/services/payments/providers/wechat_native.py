@@ -190,7 +190,9 @@ class WeChatNativePaymentProvider:
         order: Mapping[str, Any],
         notify_url: str,
         return_url: str | None,
+        shopper_ip: str | None = None,
     ) -> PaymentInstruction:
+        del shopper_ip  # 本渠道无需下单人 IP（PingPong 等海外渠道必填）
         private_key = self._require_private_key()
         mchid = _config_value(self._settings, "wechat_mchid", "wechat_pay_mchid")
         body = json.dumps(

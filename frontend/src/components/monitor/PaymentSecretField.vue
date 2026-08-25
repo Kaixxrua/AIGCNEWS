@@ -10,8 +10,8 @@ type PaymentSecretFieldKey =
   | 'wechat_public_key_pem'
   | 'alipay_private_key_pem'
   | 'alipay_public_key_pem'
-  | 'stripe_secret_key'
-  | 'stripe_webhook_secret'
+  | 'overseas_client_secret'
+  | 'overseas_webhook_secret'
 
 const { t } = useI18n()
 

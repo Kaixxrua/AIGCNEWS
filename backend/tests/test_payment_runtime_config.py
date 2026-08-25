@@ -44,8 +44,11 @@ def _row(**overrides) -> PaymentSettings:
         "alipay_appid": "",
         "alipay_private_key_pem": "",
         "alipay_public_key_pem": "",
-        "stripe_secret_key": "",
-        "stripe_webhook_secret": "",
+        "overseas_provider": "",
+        "overseas_sandbox": False,
+        "overseas_client_id": "",
+        "overseas_client_secret": "",
+        "overseas_webhook_secret": "",
         "updated_at": datetime(2026, 8, 20, 10, 0, tzinfo=timezone.utc),
     }
     values.update(overrides)
@@ -87,8 +90,11 @@ def _effective(**overrides) -> EffectivePaymentConfig:
         "alipay_appid": "",
         "alipay_private_key_pem": "",
         "alipay_public_key_pem": "",
-        "stripe_secret_key": "",
-        "stripe_webhook_secret": "",
+        "overseas_provider": "",
+        "overseas_sandbox": False,
+        "overseas_client_id": "",
+        "overseas_client_secret": "",
+        "overseas_webhook_secret": "",
         "source": "database",
     }
     values.update(overrides)
@@ -155,26 +161,32 @@ class ProviderDualFormTests(unittest.TestCase):
         )
         assert providers["wechat_native"].is_configured() is True
 
-    def test_effective_config_with_pem_content_configures_alipay_and_stripe(self) -> None:
+    def test_effective_config_with_pem_content_configures_alipay_and_paypal(self) -> None:
         providers = build_payment_providers(
             _effective(
                 alipay_appid="2021000000000000",
                 alipay_private_key_pem="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----",
                 alipay_public_key_pem="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
-                stripe_secret_key="sk_live_x",
-                stripe_webhook_secret="whsec_x",
+                overseas_provider="paypal",
+                overseas_client_id="client-id",
+                overseas_client_secret="client-secret",
+                overseas_webhook_secret="webhook-id",
             )
         )
         assert providers["alipay_page"].is_configured() is True
-        assert providers["stripe"].is_configured() is True
+        assert providers["overseas_redirect"].is_configured() is True
 
     def test_effective_config_missing_pieces_stays_unconfigured(self) -> None:
         providers = build_payment_providers(
-            _effective(wechat_appid="wx123", stripe_secret_key="sk_live_x")
+            _effective(
+                wechat_appid="wx123",
+                overseas_provider="paypal",
+                overseas_client_id="client-id",
+            )
         )
+        # 微信只有 appid 远不齐；paypal 缺 client_secret/webhook_id 不齐
         assert providers["wechat_native"].is_configured() is False
-        # stripe 缺 webhook_secret 不齐
-        assert providers["stripe"].is_configured() is False
+        assert providers["overseas_redirect"].is_configured() is False
 
     def test_env_settings_form_still_accepted(self) -> None:
         """env 形态（Settings，私钥按路径）回归：构造载体 duck-type 不破坏既有调用。"""

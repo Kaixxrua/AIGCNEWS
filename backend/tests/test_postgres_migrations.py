@@ -550,6 +550,28 @@ def test_payment_plan_overrides_schema_is_additive_and_bounded() -> None:
     assert "UPDATE " not in normalized
 
 
+def test_payment_overseas_provider_schema_is_additive() -> None:
+    # 海外收单通用槽：服务商名 + 沙箱开关 + 三段通用凭证，空串 = 未配置（fail-closed
+    # 由 provider 侧四项齐全门控）。stripe 两列保留不读——不 DROP、不 UPDATE、不加
+    # CHECK（0051 先例：值域由应用层收口，加新服务商不应强制迁移）。
+    # 按文件名定位而非下标：相邻迁移在并行会话中停驻/变动，位置钉法会被牵连。
+    migration = next(
+        item
+        for item in discover_migrations()
+        if item.filename == "0058_payment_overseas_provider.sql"
+    )
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert "ALTER TABLE payment_settings" in migration.sql
+    assert "ADD COLUMN IF NOT EXISTS overseas_provider TEXT NOT NULL DEFAULT ''" in migration.sql
+    assert "ADD COLUMN IF NOT EXISTS overseas_sandbox BOOLEAN NOT NULL DEFAULT FALSE" in migration.sql
+    assert "ADD COLUMN IF NOT EXISTS overseas_client_id TEXT NOT NULL DEFAULT ''" in migration.sql
+    assert "ADD COLUMN IF NOT EXISTS overseas_client_secret TEXT NOT NULL DEFAULT ''" in migration.sql
+    assert "ADD COLUMN IF NOT EXISTS overseas_webhook_secret TEXT NOT NULL DEFAULT ''" in migration.sql
+    assert "DROP" not in normalized
+    assert "UPDATE " not in normalized
+
+
 def test_live_postgres_apply_twice_and_introspect_schema() -> None:
     dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
     if not dsn:

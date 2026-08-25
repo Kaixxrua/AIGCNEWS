@@ -70,7 +70,7 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | `routes_wechat.py` / `routes_wechat_media.py` | 插件门控 + 角色 | 公众号扫码登录、账号与文章同步（管理员）；关注目录与 Feed（用户）；mmbiz 媒体代理（公开但 IP 限流） |
 | `routes_x_media.py` | 插件门控，公开 | twimg 图片代理、mp4 首帧封面（IP 限流；`<img>` 无法带 Authorization 故公开） |
 | `routes_features.py` / `routes_sitemap.py` | 公开 | 特性开关播报；近 90 天论文页 sitemap |
-| `routes_payments.py` | payments_enabled + RequireUser（回调按 provider 验签） | 套餐、创建订单、我的订单、订单状态、微信/支付宝/Stripe 回调；关闭时用户侧 404，渠道未配置时创建返回 503 |
+| `routes_payments.py` | payments_enabled + RequireUser（回调按 provider 验签） | 套餐、创建订单、我的订单、订单状态、微信/支付宝/海外跳转回调；关闭时用户侧 404，渠道未配置时创建返回 503 |
 
 特性开关：`x_source_enabled` / `wechat_source_enabled` 以 router 级依赖实现"关闭即 404，等同未部署"；`chat` 另有 `CHAT_SERVICE_ENABLED` 总开关。
 

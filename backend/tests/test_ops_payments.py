@@ -136,6 +136,7 @@ def test_require_admin(harness: Any) -> None:
 
 def test_list_orders_admin_filters_and_includes_email(harness: Any) -> None:
     _create_order(harness, plan="member_monthly", channel="wechat_native")
+    # channel="stripe" 行模拟历史订单：渠道已下线但台账筛选须容忍存量值
     _create_order(harness, plan="member_yearly", channel="stripe")
     _create_order(harness, plan="member_monthly", channel="stripe", status="paid")
 

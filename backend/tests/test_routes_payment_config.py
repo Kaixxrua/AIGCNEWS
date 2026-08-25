@@ -36,7 +36,10 @@ def _projection(**overrides) -> PaymentConfigProjection:
         "updated_at": "2026-08-20T10:00:00+00:00",
         "wechat_configured": True,
         "alipay_configured": False,
-        "stripe_configured": True,
+        "overseas_configured": True,
+        "overseas_provider": "paypal",
+        "overseas_sandbox": True,
+        "overseas_client_id": "client-id-123",
         "wechat_api_v3_key_configured": True,
         "wechat_api_v3_key_masked": "abcd****wxyz",
         "wechat_private_key_pem_configured": True,
@@ -47,10 +50,10 @@ def _projection(**overrides) -> PaymentConfigProjection:
         "alipay_private_key_pem_masked": None,
         "alipay_public_key_pem_configured": False,
         "alipay_public_key_pem_masked": None,
-        "stripe_secret_key_configured": True,
-        "stripe_secret_key_masked": "sk_l****cret",
-        "stripe_webhook_secret_configured": True,
-        "stripe_webhook_secret_masked": "whse****cret",
+        "overseas_client_secret_configured": True,
+        "overseas_client_secret_masked": "sk_l****cret",
+        "overseas_webhook_secret_configured": True,
+        "overseas_webhook_secret_masked": "whse****cret",
     }
     values.update(overrides)
     return PaymentConfigProjection(**values)
@@ -76,10 +79,13 @@ def test_get_payment_config_returns_masked_projection_without_plaintext() -> Non
     body = response.json()
     assert body["enabled"] is True
     assert body["source"] == "database"
-    assert body["stripe_secret_key_configured"] is True
-    assert body["stripe_secret_key_masked"] == "sk_l****cret"
+    assert body["overseas_configured"] is True
+    assert body["overseas_provider"] == "paypal"
+    assert body["overseas_client_secret_configured"] is True
+    assert body["overseas_client_secret_masked"] == "sk_l****cret"
     # 响应契约绝不明文回传密钥：不存在未脱敏的密文字段键
-    assert "stripe_secret_key" not in body
+    assert "overseas_client_secret" not in body
+    assert "overseas_webhook_secret" not in body
     assert "wechat_api_v3_key" not in body
     assert "wechat_private_key_pem" not in body
     assert "wechat_public_key_pem" not in body
@@ -97,8 +103,11 @@ def test_update_payment_config_passes_payload_and_returns_projection() -> None:
             "order_ttl_minutes": 60,
             "public_base_url": "https://saved.example.test",
             "wechat_appid": "wx123",
-            "stripe_secret_key": None,
-            "clear_stripe_webhook_secret": True,
+            "overseas_provider": "pingpong",
+            "overseas_sandbox": True,
+            "overseas_client_id": "pp-client-id",
+            "overseas_client_secret": None,
+            "clear_overseas_webhook_secret": True,
         },
     )
 
@@ -107,8 +116,10 @@ def test_update_payment_config_passes_payload_and_returns_projection() -> None:
     service.update_config.assert_called_once()
     payload = service.update_config.call_args.args[0]
     assert payload["order_ttl_minutes"] == 60
-    assert payload["stripe_secret_key"] is None
-    assert payload["clear_stripe_webhook_secret"] is True
+    assert payload["overseas_provider"] == "pingpong"
+    assert payload["overseas_sandbox"] is True
+    assert payload["overseas_client_secret"] is None
+    assert payload["clear_overseas_webhook_secret"] is True
 
 
 def test_update_payment_config_maps_validation_error_to_400() -> None:

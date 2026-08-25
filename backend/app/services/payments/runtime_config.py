@@ -31,8 +31,11 @@ class EffectivePaymentConfig:
     alipay_appid: str
     alipay_private_key_pem: str
     alipay_public_key_pem: str
-    stripe_secret_key: str
-    stripe_webhook_secret: str
+    overseas_provider: str
+    overseas_sandbox: bool
+    overseas_client_id: str
+    overseas_client_secret: str
+    overseas_webhook_secret: str
     source: PaymentConfigSource
 
 
@@ -82,12 +85,15 @@ def _environment_config(env: object) -> EffectivePaymentConfig:
         alipay_appid=str(getattr(env, "alipay_appid", "") or ""),
         alipay_private_key_pem=str(getattr(env, "alipay_private_key_path", "") or ""),
         alipay_public_key_pem=str(getattr(env, "alipay_public_key_path", "") or ""),
-        stripe_secret_key=str(getattr(env, "stripe_secret_key", "") or ""),
-        stripe_webhook_secret=str(getattr(env, "stripe_webhook_secret", "") or ""),
+        overseas_provider=str(getattr(env, "overseas_payment_provider", "") or ""),
+        overseas_sandbox=bool(getattr(env, "overseas_payment_sandbox", False)),
+        overseas_client_id=str(getattr(env, "overseas_payment_client_id", "") or ""),
+        overseas_client_secret=str(getattr(env, "overseas_payment_client_secret", "") or ""),
+        overseas_webhook_secret=str(getattr(env, "overseas_payment_webhook_secret", "") or ""),
     )
     configured = any(values[key] for key in (
         "wechat_appid", "wechat_mchid", "wechat_api_v3_key", "alipay_appid",
-        "stripe_secret_key", "stripe_webhook_secret",
+        "overseas_client_id", "overseas_client_secret", "overseas_webhook_secret",
     ))
     return EffectivePaymentConfig(**values, source="environment" if configured or values["enabled"] else "unconfigured")
 
@@ -108,8 +114,11 @@ def effective_payment_config_from_row(row: PaymentSettings, *, env: object = set
         alipay_appid=row.alipay_appid,
         alipay_private_key_pem=row.alipay_private_key_pem or fallback.alipay_private_key_pem,
         alipay_public_key_pem=row.alipay_public_key_pem or fallback.alipay_public_key_pem,
-        stripe_secret_key=row.stripe_secret_key or fallback.stripe_secret_key,
-        stripe_webhook_secret=row.stripe_webhook_secret or fallback.stripe_webhook_secret,
+        overseas_provider=row.overseas_provider,
+        overseas_sandbox=row.overseas_sandbox,
+        overseas_client_id=row.overseas_client_id,
+        overseas_client_secret=row.overseas_client_secret or fallback.overseas_client_secret,
+        overseas_webhook_secret=row.overseas_webhook_secret or fallback.overseas_webhook_secret,
         source="database",
     )
 

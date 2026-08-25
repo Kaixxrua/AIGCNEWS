@@ -27,9 +27,9 @@
 
 - 微信支付 Native 扫码
 - 支付宝电脑网站支付
-- Stripe 国际卡
+- 海外跳转渠道 `overseas_redirect`（单槽多商：PayPal 或 PingPong，由监控页选配）
 
-provider 位于 `backend/app/services/payments/providers/`。三渠道均已接入真实下单和回调验签，不引入官方 SDK。支付开关保持 `payments_enabled=False` 时，用户支付路由返回 404 `payments_disabled`；开关打开但渠道缺凭证时，创建订单返回 503 `payment_channel_not_configured`；渠道远端返回错误时返回 502 `payment_channel_upstream_error`。
+provider 位于 `backend/app/services/payments/providers/`。三渠道均已接入真实下单和回调验签，不引入官方 SDK。收银台按界面语言门控渠道（纯展示层，服务端不感知语言）：中文界面只显示微信/支付宝，其他语言只显示海外渠道。支付开关保持 `payments_enabled=False` 时，用户支付路由返回 404 `payments_disabled`；开关打开但渠道缺凭证时，创建订单返回 503 `payment_channel_not_configured`；渠道远端返回错误时返回 502 `payment_channel_upstream_error`。
 
 ## 订单与状态
 
@@ -70,15 +70,29 @@ provider 位于 `backend/app/services/payments/providers/`。三渠道均已接�
 
 签名必须作用于原始请求字节；provider 还必须检查渠道时间戳和 replay protection。订单金额、币种和渠道订单号必须与本地订单一致；不一致时 fail-closed，记录 error event，零状态变更。公开套餐和回调限流键为 `ratelimit:payments.plans:{client_ip}` 与 `ratelimit:payments.callback:{client_ip}`。Redis 故障时限流 fail-open，但验签、金额和状态校验不会放宽。
 
-### Stripe Checkout 配置
+### 海外跳转渠道配置（PayPal / PingPong）
 
-在 monitor 支付配置面板填写 `stripe_secret_key` 与 `stripe_webhook_secret`，保存后运行时立即生效。Stripe Dashboard 新建 webhook endpoint：
+海外渠道是**单槽多商**：监控页支付配置面板的「海外支付」区选择服务商（PayPal / PingPong），填入三个通用凭证槽，保存后运行时立即生效；切换服务商无需改代码。槽位语义按服务商映射：
+
+| 通用槽 | PayPal | PingPong |
+|---|---|---|
+| `overseas_client_id` | Client ID | clientId（商户号） |
+| `overseas_client_secret` | Client Secret | 签名盐 salt（下单加签与回调验签共用） |
+| `overseas_webhook_secret` | Webhook ID | accId（门店号，回调归属钉死） |
+
+`overseas_sandbox` 勾选后两家都走各自沙箱端点（PayPal `api-m.sandbox.paypal.com`，PingPong `sandbox-acquirer-payment.pingpongx.com`）。未选择服务商时渠道 fail-closed（前端显示「即将开放」）。注意：**面板徽标「已配置」≠ 收银台可用**——徽标只看凭证齐全，收银台可用性还受 `payments_enabled` 总开关门控，两者刻意解耦。
+
+两家回调共用同一个渠道地址：
 
 ```text
-https://<public-base-url>/api/payments/callback/stripe
+https://<public-base-url>/api/payments/callback/overseas_redirect
 ```
 
-只订阅 `checkout.session.completed` 事件，并将 endpoint signing secret 填入 `stripe_webhook_secret`。success/cancel URL 会回到收银台并携带 `order_no`，前端可继续轮询订单状态；Stripe `query_order` 暂不启用，支付结果以验签 webhook 为准。
+**PayPal**：纯跳转链路（无 JS SDK）。下单走 `POST /v2/checkout/orders`（intent=CAPTURE，`reference_id`/`custom_id`/`PayPal-Request-Id` 均为本站订单号保证幂等），取 `rel=approve` 链接跳转；在 Developer Console 为该应用创建 webhook，订阅 `CHECKOUT.ORDER.APPROVED` 与 `PAYMENT.CAPTURE.COMPLETED`，把 Webhook ID 填入 `overseas_webhook_secret`。回调先经 `/v1/notifications/verify-webhook-signature` 在线验签；收到 `CHECKOUT.ORDER.APPROVED` 时服务端自动调用 capture API 并直接 ACK（零状态变更），`PAYMENT.CAPTURE.COMPLETED` 才发权益（金额从 `custom_id` 找回订单并归一到分校验）。**注意**：当前套餐为 CNY 定价，PayPal 跨境账户能否收 CNY 取决于商户协议——正式上线前需要美元套餐 PR（下一工作单元）并实测一笔沙箱单。
+
+**PingPong**：信封式签名（顶层 `{accId, clientId, signType, version, bizContent, sign}`，`sign = SHA256(salt + 全部非 sign 字段键升序 key=value&…)` 大写 hex）。下单走 `POST /v4/payment/prePay`（`merchantTransactionId`=本站订单号天然幂等），应答 `code=="000000"` 且含 `paymentUrl` 时跳转。回调按官方 PHP 参考实现验签（原始文本转义归一后解析），钉死 `clientId`/`accId` 归属；仅 `code=="000000"` + `notifyType=="RECHARGE"` + `status=="SUCCESS"` 发权益，其余状态与非 RECHARGE 通知一律 ACK 200 零状态变更（关单交给既有到期关单任务）。ACK 为纯文本 `OK` / `FAIL`。
+
+**风险提示**：两家 provider 均按官方文档 + mock 测试实现，接入时商户号尚在审核、未经真实沙箱联调；上线前务必以一笔沙箱单走通「下单 → 跳转 → 回调 → 发权益」全链路。
 
 ### 支付宝电脑网站支付配置
 
@@ -108,7 +122,7 @@ provider ACK 形状见 [ADR 0002](adr/0002-payment-callback-verification.md)。
 
 ## 前端收银台
 
-路由为 `/membership/checkout?plan=monthly|yearly`，由 `MembershipCheckoutView.vue` 懒加载。金额只取 `GET /api/payments/plans`；不可用渠道置灰并显示“即将开放”。Native 渠道显示二维码占位与原始支付指令，网页/Stripe 渠道显示跳转指令。创建订单后每 3 秒轮询一次，最多 200 次或 10 分钟；`paid`、`expired`、`closed` 终止，组件卸载会清理计时器并丢弃在途响应。
+路由为 `/membership/checkout?plan=monthly|yearly`，由 `MembershipCheckoutView.vue` 懒加载。金额只取 `GET /api/payments/plans`；渠道按界面语言门控（`visibleChannelsForLocale`：zh 前缀出微信/支付宝，其余语言出海外跳转槽），不可用渠道置灰并显示“即将开放”；会话中切换语言会按新可见集重选渠道。Native 渠道显示二维码占位与原始支付指令，支付宝/海外渠道显示跳转指令。创建订单后每 3 秒轮询一次，最多 200 次或 10 分钟；`paid`、`expired`、`closed` 终止，组件卸载会清理计时器并丢弃在途响应。
 
 ## 代码位置
 

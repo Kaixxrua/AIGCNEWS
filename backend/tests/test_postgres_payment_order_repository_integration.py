@@ -229,6 +229,7 @@ def test_payment_order_mark_expired_overdue_respects_limit(database, user_id) ->
 def test_payment_order_admin_list_filters_and_joins_email(database, user_id) -> None:
     repository = PostgresPaymentOrderRepository(database)
     _create(repository, user_id, plan_code="member_monthly", channel="wechat_native")
+    # channel="stripe" 行模拟历史订单：渠道已下线但台账筛选须容忍存量值
     _create(
         repository,
         user_id,

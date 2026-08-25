@@ -97,11 +97,16 @@ class Settings(BaseSettings):
     alipay_appid: str = ""
     alipay_private_key_path: str = ""
     alipay_public_key_path: str = ""
-    # Stripe（国际卡）：secret key + webhook 签名 secret。
-    stripe_secret_key: str = ""
-    stripe_webhook_secret: str = ""
+    # 海外收单通用槽（paypal / pingpong，空 = 未选服务商，渠道 fail-closed）。
+    # client_id = PayPal Client ID / PingPong 商户号；client_secret = PayPal
+    # Secret / PingPong 签名密钥；webhook_secret = PayPal Webhook ID / 通知盐。
+    overseas_payment_provider: str = ""
+    overseas_payment_sandbox: bool = False
+    overseas_payment_client_id: str = ""
+    overseas_payment_client_secret: str = ""
+    overseas_payment_webhook_secret: str = ""
 
-    @field_validator("wechat_pay_api_v3_key", "stripe_secret_key", "stripe_webhook_secret")
+    @field_validator("wechat_pay_api_v3_key", "overseas_payment_client_secret", "overseas_payment_webhook_secret")
     @classmethod
     def _validate_payment_secret_placeholder(cls, value: str) -> str:
         # 沿用 wechat_session_encryption_key 先例：示例占位符直接拒绝，

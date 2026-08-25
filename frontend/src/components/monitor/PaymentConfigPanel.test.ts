@@ -16,7 +16,10 @@ const buildConfig = (overrides: Partial<PaymentConfig> = {}): PaymentConfig => (
   updated_at: '2026-08-20T01:00:00+00:00',
   wechat_configured: true,
   alipay_configured: false,
-  stripe_configured: true,
+  overseas_configured: true,
+  overseas_provider: 'paypal',
+  overseas_sandbox: true,
+  overseas_client_id: 'PAYPAL_CLIENT_ID',
   wechat_api_v3_key_configured: true,
   wechat_api_v3_key_masked: 'abcd****wxyz',
   wechat_private_key_pem_configured: true,
@@ -28,10 +31,10 @@ const buildConfig = (overrides: Partial<PaymentConfig> = {}): PaymentConfig => (
   alipay_private_key_pem_masked: null,
   alipay_public_key_pem_configured: false,
   alipay_public_key_pem_masked: null,
-  stripe_secret_key_configured: true,
-  stripe_secret_key_masked: 'sk_l****cret',
-  stripe_webhook_secret_configured: true,
-  stripe_webhook_secret_masked: 'whse****cret',
+  overseas_client_secret_configured: true,
+  overseas_client_secret_masked: 'clie****cret',
+  overseas_webhook_secret_configured: true,
+  overseas_webhook_secret_masked: 'whid****cret',
   ...overrides,
 })
 
@@ -52,9 +55,9 @@ describe('PaymentConfigPanel', () => {
     expect(badges.some(text => text.includes('来源：数据库'))).toBe(true)
     expect(badges.some(text => text.includes('微信支付 · 已配置'))).toBe(true)
     expect(badges.some(text => text.includes('支付宝 · 未配置'))).toBe(true)
-    expect(badges.some(text => text.includes('Stripe · 已配置'))).toBe(true)
+    expect(badges.some(text => text.includes('Overseas · 已配置'))).toBe(true)
     // 脱敏 badge 只显示 masked 值，绝不明文
-    expect(wrapper.text()).toContain('sk_l****cret')
+    expect(wrapper.text()).toContain('clie****cret')
   })
 
   it('keeps secret inputs blank and never pre-fills masked values', () => {
@@ -95,15 +98,21 @@ describe('PaymentConfigPanel', () => {
 
   it('builds payload with null secrets for retain semantics and clear flags', () => {
     const form = createPaymentConfigForm(buildConfig())
-    form.stripe_secret_key = 'sk_live_new'
+    form.overseas_client_secret = 'new_client_secret'
     form.clear_wechat_api_v3_key = true
     const payload = buildPaymentConfigPayload(form)
     expect(payload.enabled).toBe(true)
     expect(payload.wechat_api_v3_key).toBeNull()
     expect(payload.clear_wechat_api_v3_key).toBe(true)
-    expect(payload.stripe_secret_key).toBe('sk_live_new')
+    expect(payload.overseas_client_secret).toBe('new_client_secret')
+    expect(payload.overseas_webhook_secret).toBeNull()
     expect(payload.alipay_private_key_pem).toBeNull()
     expect(payload.public_base_url).toBe('https://pay.example.com')
+    // 海外文本字段透传：provider/sandbox/client_id 随配置回显、原样提交
+    expect(payload.overseas_provider).toBe('paypal')
+    expect(payload.overseas_sandbox).toBe(true)
+    expect(payload.overseas_client_id).toBe('PAYPAL_CLIENT_ID')
+    expect(payload.clear_overseas_client_secret).toBe(false)
     // 微信支付公钥：ID 是文本字段（随配置回显、trim 提交），PEM 走密文保留/擦除语义
     expect(payload.wechat_public_key_id).toBe('PUB_KEY_ID_0114')
     expect(payload.wechat_public_key_pem).toBeNull()
@@ -115,8 +124,28 @@ describe('PaymentConfigPanel', () => {
     expect(updated.clear_wechat_public_key_pem).toBe(true)
   })
 
+  it('writes overseas provider select and sandbox checkbox back to the form', async () => {
+    const form = createPaymentConfigForm(null)
+    const wrapper = mountPanel(null, form)
+    const select = wrapper.find('select')
+    expect(select.exists()).toBe(true)
+    // 服务商选项是品牌字面量（不进 i18n）：未选/PayPal/PingPong
+    const options = select.findAll('option').map(option => [option.attributes('value'), option.text()])
+    expect(options[1]).toEqual(['paypal', 'PayPal'])
+    expect(options[2]).toEqual(['pingpong', 'PingPong'])
+    await select.setValue('pingpong')
+    expect(form.overseas_provider).toBe('pingpong')
+
+    const sandbox = wrapper.findAll('input[type="checkbox"]').find(
+      input => input.element.parentElement?.textContent?.includes('沙箱模式'),
+    )
+    expect(sandbox).toBeTruthy()
+    await sandbox!.setValue(true)
+    expect(form.overseas_sandbox).toBe(true)
+  })
+
   it('groups each channel secret field inside its own channel section', () => {
-    // 渠道密钥各归各位的契约：微信/支付宝/Stripe 的密钥只出现在各自区块内，
+    // 渠道密钥各归各位的契约：微信/支付宝/海外 的密钥只出现在各自区块内，
     // 防回归回「三渠道混排在一个密文区」的旧布局
     const wrapper = mountPanel(buildConfig())
     const sectionText = (title: string) => {
@@ -134,8 +163,10 @@ describe('PaymentConfigPanel', () => {
     expect(alipay).toContain('应用私钥')
     expect(alipay).toContain('支付宝公钥')
     expect(alipay).not.toContain('商户私钥')
-    const stripe = sectionText('Stripe 支付')
-    expect(stripe).toContain('Stripe Secret Key')
-    expect(stripe).toContain('Stripe Webhook Secret')
+    const overseas = sectionText('海外支付')
+    expect(overseas).toContain('Client Secret')
+    expect(overseas).toContain('Webhook 密钥')
+    expect(overseas).toContain('服务商')
+    expect(overseas).not.toContain('商户私钥')
   })
 })

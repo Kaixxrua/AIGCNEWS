@@ -194,13 +194,15 @@ class FakeProvider:
         self._configured = configured
         self._verified = verified
         self._verify_error = verify_error
+        # True 时验签返回 None（模拟「验签通过但非终态事件」，如 PayPal APPROVED 已自动 capture）
+        self._verified_none = False
         self.create_calls: list[dict[str, Any]] = []
 
     def is_configured(self) -> bool:
         return self._configured
 
     def create_payment(
-        self, *, order: dict[str, Any], notify_url: str, return_url: str | None
+        self, *, order: dict[str, Any], notify_url: str, return_url: str | None, shopper_ip: str | None = None
     ) -> PaymentInstruction:
         if not self._configured:
             raise ProviderNotConfiguredError("fake channel not configured")
@@ -209,15 +211,18 @@ class FakeProvider:
                 "order_no": order["order_no"],
                 "notify_url": notify_url,
                 "return_url": return_url,
+                "shopper_ip": shopper_ip,
             }
         )
         return PaymentInstruction(kind="qr_code", content=f"pay://{order['order_no']}")
 
     def verify_and_parse_callback(
         self, *, raw_body: bytes, headers: dict[str, str]
-    ) -> VerifiedCallback:
+    ) -> VerifiedCallback | None:
         if self._verify_error is not None:
             raise self._verify_error
+        if self._verified_none:
+            return None
         assert self._verified is not None
         return self._verified
 
@@ -243,7 +248,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Any:
     providers = {
         "wechat_native": provider,
         "alipay_page": FakeProvider("alipay_page"),
-        "stripe": FakeProvider("stripe"),
+        "overseas_redirect": FakeProvider("overseas_redirect"),
     }
 
     app = FastAPI()
@@ -296,14 +301,14 @@ def test_plans_are_public_and_pin_amounts(harness: Any) -> None:
     assert plans["member_yearly"]["months"] == 12
     assert all(plan["currency"] == "CNY" for plan in body["plans"])
     channels = {channel["channel"]: channel["available"] for channel in body["channels"]}
-    assert set(channels) == {"wechat_native", "alipay_page", "stripe"}
+    assert set(channels) == {"wechat_native", "alipay_page", "overseas_redirect"}
 
 
 def test_plans_reflect_channel_availability(harness: Any) -> None:
-    harness.providers["stripe"]._configured = False
+    harness.providers["overseas_redirect"]._configured = False
     body = harness.client.get("/api/payments/plans").json()
     channels = {channel["channel"]: channel["available"] for channel in body["channels"]}
-    assert channels["stripe"] is False
+    assert channels["overseas_redirect"] is False
     assert channels["wechat_native"] is True
 
 
@@ -375,10 +380,10 @@ def test_create_order_rejects_unknown_plan_and_channel(harness: Any) -> None:
 
 
 def test_create_order_503_when_channel_not_configured(harness: Any) -> None:
-    harness.providers["stripe"]._configured = False
+    harness.providers["overseas_redirect"]._configured = False
     response = harness.client.post(
         "/api/payments/orders",
-        json={"plan_code": "member_monthly", "channel": "stripe"},
+        json={"plan_code": "member_monthly", "channel": "overseas_redirect"},
     )
     assert response.status_code == 503
     assert response.json()["detail"] == "payment_channel_not_configured"

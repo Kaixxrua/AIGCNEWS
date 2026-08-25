@@ -210,11 +210,11 @@ export const useMonitorPageController = ({
     const form = paymentForm.value
     form.wechat_api_v3_key = ''; form.wechat_private_key_pem = ''; form.wechat_public_key_pem = ''
     form.alipay_private_key_pem = ''; form.alipay_public_key_pem = ''
-    form.stripe_secret_key = ''; form.stripe_webhook_secret = ''
+    form.overseas_client_secret = ''; form.overseas_webhook_secret = ''
     form.clear_wechat_api_v3_key = false; form.clear_wechat_private_key_pem = false
     form.clear_wechat_public_key_pem = false
     form.clear_alipay_private_key_pem = false; form.clear_alipay_public_key_pem = false
-    form.clear_stripe_secret_key = false; form.clear_stripe_webhook_secret = false
+    form.clear_overseas_client_secret = false; form.clear_overseas_webhook_secret = false
   }
   const savePaymentConfig = async () => {
     if (savingPaymentConfig.value) return

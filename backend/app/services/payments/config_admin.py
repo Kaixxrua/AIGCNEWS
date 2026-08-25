@@ -23,12 +23,15 @@ _SECRET_FIELDS = (
     "wechat_public_key_pem",
     "alipay_private_key_pem",
     "alipay_public_key_pem",
-    "stripe_secret_key",
-    "stripe_webhook_secret",
+    "overseas_client_secret",
+    "overseas_webhook_secret",
 )
 _TEXT_FIELDS = (
     "wechat_appid", "wechat_mchid", "wechat_mch_serial_no", "wechat_public_key_id", "alipay_appid",
+    "overseas_provider", "overseas_client_id",
 )
+# 海外服务商白名单：应用层收口（库层不加 CHECK，0051 先例——加新服务商不应强制迁移）。
+OVERSEAS_PROVIDERS: frozenset[str] = frozenset({"", "paypal", "pingpong"})
 
 
 @dataclass(frozen=True)
@@ -45,7 +48,10 @@ class PaymentConfigProjection:
     updated_at: str | None
     wechat_configured: bool
     alipay_configured: bool
-    stripe_configured: bool
+    overseas_configured: bool
+    overseas_provider: str
+    overseas_sandbox: bool
+    overseas_client_id: str
     wechat_api_v3_key_configured: bool
     wechat_api_v3_key_masked: str | None
     wechat_private_key_pem_configured: bool
@@ -56,10 +62,10 @@ class PaymentConfigProjection:
     alipay_private_key_pem_masked: str | None
     alipay_public_key_pem_configured: bool
     alipay_public_key_pem_masked: str | None
-    stripe_secret_key_configured: bool
-    stripe_secret_key_masked: str | None
-    stripe_webhook_secret_configured: bool
-    stripe_webhook_secret_masked: str | None
+    overseas_client_secret_configured: bool
+    overseas_client_secret_masked: str | None
+    overseas_webhook_secret_configured: bool
+    overseas_webhook_secret_masked: str | None
 
 
 class PaymentConfigAdminService:
@@ -84,6 +90,8 @@ class PaymentConfigAdminService:
         text = {field: str(values.get(field) or "").strip() for field in _TEXT_FIELDS}
         if any(value.startswith("CHANGEME") for value in text.values()):
             raise ValueError("支付配置不得使用 CHANGEME 示例占位符")
+        if text["overseas_provider"] not in OVERSEAS_PROVIDERS:
+            raise ValueError("海外支付服务商必须是 paypal 或 pingpong（留空 = 未接入）")
         existing = await asyncio.to_thread(self._repository.get_payment_settings)
         secret_values: dict[str, str] = {}
         for field in _SECRET_FIELDS:
@@ -100,7 +108,8 @@ class PaymentConfigAdminService:
         saved = await asyncio.to_thread(
             self._repository.upsert_payment_settings,
             enabled=bool(values.get("enabled", False)), order_ttl_minutes=ttl,
-            public_base_url=base_url, **text, **secret_values,
+            public_base_url=base_url, overseas_sandbox=bool(values.get("overseas_sandbox", False)),
+            **text, **secret_values,
         )
         invalidate_payment_config_cache()
         from backend.app.services.payments.runtime_config import effective_payment_config_from_row
@@ -127,7 +136,11 @@ class PaymentConfigAdminService:
                                     config.wechat_api_v3_key, config.wechat_private_key_pem,
                                     config.wechat_public_key_id, config.wechat_public_key_pem)),
             alipay_configured=all((config.alipay_appid, config.alipay_private_key_pem, config.alipay_public_key_pem)),
-            stripe_configured=all((config.stripe_secret_key, config.stripe_webhook_secret)),
+            overseas_configured=all((config.overseas_provider, config.overseas_client_id,
+                                     config.overseas_client_secret, config.overseas_webhook_secret)),
+            overseas_provider=config.overseas_provider,
+            overseas_sandbox=config.overseas_sandbox,
+            overseas_client_id=config.overseas_client_id,
             **{f"{field}_configured": bool(getattr(config, field)) for field in _SECRET_FIELDS},
             **{f"{field}_masked": mask_token(getattr(config, field)) for field in _SECRET_FIELDS},
         )

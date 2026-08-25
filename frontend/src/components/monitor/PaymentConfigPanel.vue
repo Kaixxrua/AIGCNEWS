@@ -46,7 +46,7 @@ const channelBadge = (configured: boolean | undefined) =>
       <span class="badge" :class="sourceBadge(config?.source).class">{{ sourceBadge(config?.source).label }}</span>
       <span class="badge" :class="channelBadge(config?.wechat_configured).class">{{ t('monitor.paymentConfig.wechat') }} · {{ channelBadge(config?.wechat_configured).label }}</span>
       <span class="badge" :class="channelBadge(config?.alipay_configured).class">{{ t('monitor.paymentConfig.alipay') }} · {{ channelBadge(config?.alipay_configured).label }}</span>
-      <span class="badge" :class="channelBadge(config?.stripe_configured).class">Stripe · {{ channelBadge(config?.stripe_configured).label }}</span>
+      <span class="badge" :class="channelBadge(config?.overseas_configured).class">Overseas · {{ channelBadge(config?.overseas_configured).label }}</span>
       <span v-if="config?.updated_at" class="ml-auto text-2xs monitor-caption">{{ t('monitor.updatedAt', { date: formatDate(config.updated_at) }) }}</span>
     </div>
 
@@ -117,15 +117,35 @@ const channelBadge = (configured: boolean | undefined) =>
       </div>
     </div>
 
-    <!-- Stripe -->
+    <!-- 海外渠道（单槽多商：PayPal / PingPong，服务商选项为品牌字面量，不进 i18n） -->
     <div class="mt-4 border-t border-stone-200/60 pt-3 dark:border-stone-700/60">
       <div class="mb-2 flex items-center gap-2">
-        <h4 class="text-xs font-semibold monitor-caption">{{ t('monitor.paymentConfig.stripe') }}</h4>
+        <h4 class="text-xs font-semibold monitor-caption">{{ t('monitor.paymentConfig.overseas') }}</h4>
         <span class="text-2xs monitor-caption">{{ t('monitor.paymentConfig.secretWriteOnly') }}</span>
       </div>
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <PaymentSecretField field-key="stripe_secret_key" label-key="monitor.paymentConfig.stripeSecretKey" :config="config" :form="form" :disabled="loading || saving || resetting" />
-        <PaymentSecretField field-key="stripe_webhook_secret" label-key="monitor.paymentConfig.stripeWebhookSecret" :config="config" :form="form" :disabled="loading || saving || resetting" />
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-[minmax(140px,0.5fr)_minmax(120px,0.4fr)_minmax(220px,1.5fr)] md:items-end">
+        <label class="block">
+          <span class="mb-1 block text-xs monitor-caption">{{ t('monitor.paymentConfig.overseasProvider') }}</span>
+          <select :value="form.overseas_provider" class="input w-full py-2 text-xs" :disabled="loading || saving || resetting" @change="updateForm('overseas_provider', ($event.target as HTMLSelectElement).value)">
+            <option value="">{{ t('monitor.paymentConfig.overseasProviderNone') }}</option>
+            <option value="paypal">PayPal</option>
+            <option value="pingpong">PingPong</option>
+          </select>
+        </label>
+        <div class="flex items-end pb-2">
+          <label class="inline-flex items-center gap-1.5 text-xs monitor-caption">
+            <input :checked="form.overseas_sandbox" type="checkbox" class="rounded border-stone-300 text-stone-700 focus:ring-stone-400" :disabled="loading || saving || resetting" @change="updateForm('overseas_sandbox', ($event.target as HTMLInputElement).checked)" />
+            {{ t('monitor.paymentConfig.overseasSandbox') }}
+          </label>
+        </div>
+        <label class="block">
+          <span class="mb-1 block text-xs monitor-caption">{{ t('monitor.paymentConfig.overseasClientId') }}</span>
+          <input :value="form.overseas_client_id" type="text" class="input w-full py-2 text-xs" autocomplete="off" :disabled="loading || saving || resetting" @input="updateForm('overseas_client_id', ($event.target as HTMLInputElement).value)" />
+        </label>
+      </div>
+      <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <PaymentSecretField field-key="overseas_client_secret" label-key="monitor.paymentConfig.overseasClientSecret" :config="config" :form="form" :disabled="loading || saving || resetting" />
+        <PaymentSecretField field-key="overseas_webhook_secret" label-key="monitor.paymentConfig.overseasWebhookSecret" :config="config" :form="form" :disabled="loading || saving || resetting" />
       </div>
     </div>
 

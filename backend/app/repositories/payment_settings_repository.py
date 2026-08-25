@@ -22,8 +22,11 @@ class PaymentSettings:
     alipay_appid: str
     alipay_private_key_pem: str
     alipay_public_key_pem: str
-    stripe_secret_key: str
-    stripe_webhook_secret: str
+    overseas_provider: str
+    overseas_sandbox: bool
+    overseas_client_id: str
+    overseas_client_secret: str
+    overseas_webhook_secret: str
     updated_at: datetime | None = None
 
 
@@ -48,8 +51,11 @@ class PaymentSettingsManager(PaymentSettingsReader, Protocol):
         alipay_appid: str,
         alipay_private_key_pem: str,
         alipay_public_key_pem: str,
-        stripe_secret_key: str,
-        stripe_webhook_secret: str,
+        overseas_provider: str,
+        overseas_sandbox: bool,
+        overseas_client_id: str,
+        overseas_client_secret: str,
+        overseas_webhook_secret: str,
     ) -> PaymentSettings: ...
 
     def delete_payment_settings(self) -> int: ...

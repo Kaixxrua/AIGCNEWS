@@ -194,7 +194,9 @@ class AlipayPagePaymentProvider:
         order: Mapping[str, Any],
         notify_url: str,
         return_url: str | None,
+        shopper_ip: str | None = None,
     ) -> PaymentInstruction:
+        del shopper_ip  # 本渠道无需下单人 IP（PingPong 等海外渠道必填）
         if not self.is_configured():
             raise ProviderNotConfiguredError("alipay_page channel not configured")
         private_key = _load_private_key(

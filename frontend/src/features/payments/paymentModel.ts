@@ -6,7 +6,8 @@
 
 export type PaymentPlanCode = 'member_monthly' | 'member_yearly'
 export type BillingPeriod = 'monthly' | 'yearly'
-export type PaymentChannel = 'wechat_native' | 'alipay_page' | 'stripe'
+// 海外渠道是单槽多商（PayPal/PingPong 由 Monitor 选配），前端只见统一槽 id
+export type PaymentChannel = 'wechat_native' | 'alipay_page' | 'overseas_redirect'
 
 export type PaymentOrderStatus = 'pending' | 'paid' | 'expired' | 'closed'
 
@@ -54,8 +55,17 @@ export interface CreatePaymentOrderResponse {
 export const PAYMENT_CHANNELS: readonly PaymentChannel[] = [
   'wechat_native',
   'alipay_page',
-  'stripe',
+  'overseas_redirect',
 ]
+
+// 收银台渠道按界面语言门控（纯展示层，服务端不感知语言）：
+// 中文界面只出国内扫码/跳转渠道，其他语言只出海外跳转槽。
+// zh-CN/zh-TW 等一律按前缀 zh 判定；空串与未知语言一律落海外集（英文为默认外语）。
+export const DOMESTIC_CHANNELS: readonly PaymentChannel[] = ['wechat_native', 'alipay_page']
+export const OVERSEAS_CHANNELS: readonly PaymentChannel[] = ['overseas_redirect']
+
+export const visibleChannelsForLocale = (locale: string): readonly PaymentChannel[] =>
+  locale.toLowerCase().startsWith('zh') ? DOMESTIC_CHANNELS : OVERSEAS_CHANNELS
 
 // 套餐码 ↔ 计费周期：收银台 query 参数（?plan=monthly|yearly）与后端
 // plan_code 的唯一换算口；未知值一律 null（fail-closed，不落单）。

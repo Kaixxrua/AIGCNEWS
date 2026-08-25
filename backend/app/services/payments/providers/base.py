@@ -1,15 +1,17 @@
 """支付渠道抽象（ADR 0002）。
 
-骨架期三渠道（微信 Native / 支付宝电脑网站 / Stripe）以"未配置即不可用"
+骨架期三渠道（微信 Native / 支付宝电脑网站 / 海外跳转）以"未配置即不可用"
 的桩落地：凭证就位后只需填充 create_payment 与 verify_and_parse_callback
-两个方法体，路由/状态机/发权益链路不变。
+两个方法体，路由/状态机/发权益链路不变。海外跳转是单槽渠道
+（overseas_redirect），由 registry 按 overseas_provider 分发到具体
+服务商实现（paypal / pingpong），未选服务商时落 fail-closed 桩。
 
 验签三条不可妥协的纪律（刻进接口契约，渠道接入 PR 必须遵守）：
 1. 验签必须作用于 raw_body 原始字节，禁止先 JSON parse 再验
-   （微信 v3 / Stripe 均对原始报文串签名）；
-2. 渠道时间戳/nonce 防重放窗口在 provider 内部检查（微信 v3 ±5 分钟、
-   Stripe webhook tolerance），通过后才返回 VerifiedCallback；
-3. 金额由 provider 归一到"分"（支付宝报文是元串、Stripe 是 cents），
+   （微信 v3 / PingPong 均对原始报文串签名）；
+2. 渠道时间戳/nonce 防重放窗口在 provider 内部检查（微信 v3 ±5 分钟），
+   通过后才返回 VerifiedCallback；
+3. 金额由 provider 归一到"分"（支付宝报文是元串、海外渠道是金额串），
    路由层不做单位换算。
 """
 
@@ -26,8 +28,8 @@ from fastapi import Response
 class PaymentInstruction:
     """下单成功返回给前端的支付指令。"""
 
-    kind: str  # "qr_code" | "redirect_url" | "client_secret"
-    content: str  # 微信 code_url / 支付宝跳转 URL / Stripe client_secret
+    kind: str  # "qr_code" | "redirect_url"
+    content: str  # 微信 code_url / 支付宝、海外渠道的跳转 URL
 
 
 @dataclass(frozen=True)
@@ -70,8 +72,13 @@ class PaymentProvider(Protocol):
         order: Mapping[str, Any],
         notify_url: str,
         return_url: str | None,
+        shopper_ip: str | None = None,
     ) -> PaymentInstruction:
-        """向渠道下单，返回支付指令；未配置抛 ProviderNotConfiguredError。"""
+        """向渠道下单，返回支付指令；未配置抛 ProviderNotConfiguredError。
+
+        shopper_ip 为可信代理口径的下单人 IP（PingPong 等渠道必填），
+        不需要的渠道忽略之。
+        """
         ...
 
     def verify_and_parse_callback(
@@ -79,9 +86,14 @@ class PaymentProvider(Protocol):
         *,
         raw_body: bytes,
         headers: Mapping[str, str],
-    ) -> VerifiedCallback:
+    ) -> VerifiedCallback | None:
         """验签并解析渠道异步通知；验签失败抛 CallbackVerificationError，
-        未配置抛 ProviderNotConfiguredError。"""
+        未配置抛 ProviderNotConfiguredError。
+
+        返回 None 表示「验签通过但非终态事件」（如 PayPal 已自动 capture 的
+        CHECKOUT.ORDER.APPROVED、PingPong 的非 SUCCESS 状态通知）：路由直接
+        build_ack_response(ok=True) 终止渠道重发，零状态变更。
+        """
         ...
 
     def build_ack_response(self, *, ok: bool) -> Response:

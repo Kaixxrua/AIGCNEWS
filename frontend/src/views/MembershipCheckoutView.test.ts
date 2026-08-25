@@ -30,7 +30,7 @@ const plansResponse = (overrides: Partial<PaymentPlansResponse> = {}): PaymentPl
   channels: [
     { channel: 'wechat_native', available: true },
     { channel: 'alipay_page', available: false },
-    { channel: 'stripe', available: false },
+    { channel: 'overseas_redirect', available: false },
   ],
   ...overrides,
 })
@@ -70,7 +70,7 @@ const i18n = createI18n({
           channelTitle: '支付方式',
           channelWechat: '微信支付',
           channelAlipay: '支付宝',
-          channelStripe: '银行卡（Stripe）',
+          channelOverseas: '海外支付（银行卡 / PayPal）',
           channelSoon: '即将开放',
           submit: '去支付',
           submitting: '创建订单中…',
@@ -90,6 +90,42 @@ const i18n = createI18n({
           retry: '重新发起支付',
           loadFailed: '收银台暂不可用。',
           backToMembership: '返回会员页',
+        },
+      },
+    },
+    'en-US': {
+      common: { loading: 'Loading…' },
+      membership: {
+        checkout: {
+          title: 'Subscribe to vip',
+          subtitle: 'Pick a payment method to finish.',
+          planMonthly: 'vip · Monthly',
+          planYearly: 'vip · Annual',
+          perMonth: '/ month',
+          perYear: '/ year',
+          channelTitle: 'Payment method',
+          channelWechat: 'WeChat Pay',
+          channelAlipay: 'Alipay',
+          channelOverseas: 'Card / PayPal',
+          channelSoon: 'Coming soon',
+          submit: 'Pay now',
+          submitting: 'Creating order…',
+          createFailed: 'Could not create the order. Please try again.',
+          qrPlaceholder: 'Payment QR code',
+          scanHint: 'Scan with the corresponding app to pay',
+          redirectHint: 'Opening the payment page in a new tab…',
+          redirectAction: 'Continue to payment',
+          expireCountdown: 'Time left to pay: {time}',
+          resumeHint: 'Pending order restored.',
+          awaiting: 'Waiting for payment…',
+          orderNo: 'Order no.',
+          paid: 'Payment received — vip is active!',
+          paidHint: 'Your membership is live.',
+          expired: 'This order has expired. Please start a new payment.',
+          pollTimeout: 'Payment confirmation timed out.',
+          retry: 'Start a new payment',
+          loadFailed: 'Checkout is unavailable right now.',
+          backToMembership: 'Back to membership',
         },
       },
     },
@@ -121,6 +157,7 @@ const mountView = async (query: Record<string, string> = { plan: 'monthly' }) =>
 
 beforeEach(() => {
   vi.useFakeTimers()
+  i18n.global.locale.value = 'zh-CN'
   apiBox.listPlans.mockReset().mockResolvedValue(plansResponse())
   apiBox.createOrder.mockReset().mockResolvedValue(createResponse)
   apiBox.getOrder.mockReset().mockResolvedValue(paidOrder)
@@ -147,12 +184,96 @@ describe('MembershipCheckoutView', () => {
     const { wrapper } = await mountView()
     const channels = wrapper.findAll('.checkout-channel')
 
-    expect(channels).toHaveLength(3)
+    // 中文界面只出国内渠道集（微信/支付宝），海外槽不渲染
+    expect(channels).toHaveLength(2)
     expect(channels[0].text()).toContain('微信支付')
     expect(channels[0].classes()).toContain('checkout-channel--selected')
+    expect(channels[1].text()).toContain('支付宝')
     expect(channels[1].attributes('disabled')).toBeDefined()
     expect(channels[1].text()).toContain('即将开放')
-    expect(channels[2].attributes('disabled')).toBeDefined()
+  })
+
+  it('shows only the overseas channel in English, greyed out when unconfigured', async () => {
+    i18n.global.locale.value = 'en-US'
+    const { wrapper } = await mountView()
+    const channels = wrapper.findAll('.checkout-channel')
+
+    expect(channels).toHaveLength(1)
+    expect(channels[0].text()).toContain('Card / PayPal')
+    expect(channels[0].attributes('disabled')).toBeDefined()
+    expect(channels[0].text()).toContain('Coming soon')
+    expect(wrapper.text()).not.toContain('WeChat Pay')
+    // 无可选渠道 → 提交按钮禁用
+    expect(wrapper.find('.checkout-submit').attributes('disabled')).toBeDefined()
+  })
+
+  it('auto-selects the overseas channel in English when available and submits with it', async () => {
+    i18n.global.locale.value = 'en-US'
+    apiBox.listPlans.mockResolvedValue(
+      plansResponse({
+        channels: [
+          { channel: 'wechat_native', available: true },
+          { channel: 'alipay_page', available: true },
+          { channel: 'overseas_redirect', available: true },
+        ],
+      }),
+    )
+    apiBox.createOrder.mockResolvedValue({
+      order: {
+        ...paidOrder,
+        status: 'pending',
+        paid_at: null,
+        channel_order_no: '',
+        channel: 'overseas_redirect',
+      },
+      instruction: { kind: 'redirect_url', content: 'https://www.sandbox.paypal.com/checkoutnow?token=x' },
+    })
+    const { wrapper } = await mountView()
+    const channels = wrapper.findAll('.checkout-channel')
+
+    expect(channels).toHaveLength(1)
+    expect(channels[0].classes()).toContain('checkout-channel--selected')
+
+    await wrapper.find('.checkout-submit').trigger('click')
+    await flushPromises()
+    expect(apiBox.createOrder).toHaveBeenCalledWith(
+      'member_monthly',
+      'overseas_redirect',
+      expect.any(String),
+    )
+  })
+
+  it('re-selects the channel when the locale switches mid-session', async () => {
+    apiBox.listPlans.mockResolvedValue(
+      plansResponse({
+        channels: [
+          { channel: 'wechat_native', available: true },
+          { channel: 'alipay_page', available: true },
+          { channel: 'overseas_redirect', available: true },
+        ],
+      }),
+    )
+    const { wrapper } = await mountView()
+
+    // zh-CN：默认选中微信支付
+    expect(wrapper.find('.checkout-channel').text()).toContain('微信支付')
+    expect(wrapper.find('.checkout-channel').classes()).toContain('checkout-channel--selected')
+
+    // 切英文：可见集变为海外槽，选中态随之迁移
+    i18n.global.locale.value = 'en-US'
+    await flushPromises()
+    const channels = wrapper.findAll('.checkout-channel')
+    expect(channels).toHaveLength(1)
+    expect(channels[0].text()).toContain('Card / PayPal')
+    expect(channels[0].classes()).toContain('checkout-channel--selected')
+
+    await wrapper.find('.checkout-submit').trigger('click')
+    await flushPromises()
+    expect(apiBox.createOrder).toHaveBeenCalledWith(
+      'member_monthly',
+      'overseas_redirect',
+      expect.any(String),
+    )
   })
 
   it('creates an order on submit and renders the qr placeholder with raw content', async () => {
@@ -180,7 +301,7 @@ describe('MembershipCheckoutView', () => {
         channels: [
           { channel: 'wechat_native', available: false },
           { channel: 'alipay_page', available: true },
-          { channel: 'stripe', available: false },
+          { channel: 'overseas_redirect', available: false },
         ],
       }),
     )

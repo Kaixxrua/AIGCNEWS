@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DOMESTIC_CHANNELS,
   FALLBACK_MEMBER_MONTHLY_CENTS,
   FALLBACK_MEMBER_YEARLY_CENTS,
+  OVERSEAS_CHANNELS,
   PAYMENT_CHANNELS,
   computeYearlyDiscountPercent,
   computeYearlySavingsCents,
@@ -11,6 +13,7 @@ import {
   periodForPlanCode,
   planCodeForPeriod,
   resolvePlan,
+  visibleChannelsForLocale,
 } from './paymentModel'
 import type { PaymentPlan } from './paymentModel'
 
@@ -99,8 +102,23 @@ describe('isTerminalOrderStatus', () => {
 })
 
 describe('PAYMENT_CHANNELS', () => {
-  it('lists the three skeleton channels in display order', () => {
-    expect(PAYMENT_CHANNELS).toEqual(['wechat_native', 'alipay_page', 'stripe'])
+  it('lists the three channels in display order', () => {
+    expect(PAYMENT_CHANNELS).toEqual(['wechat_native', 'alipay_page', 'overseas_redirect'])
+  })
+})
+
+describe('visibleChannelsForLocale', () => {
+  it('gates channels by locale: zh sees domestic only, other locales see overseas only', () => {
+    expect(DOMESTIC_CHANNELS).toEqual(['wechat_native', 'alipay_page'])
+    expect(OVERSEAS_CHANNELS).toEqual(['overseas_redirect'])
+    expect(visibleChannelsForLocale('zh-CN')).toEqual(['wechat_native', 'alipay_page'])
+    expect(visibleChannelsForLocale('zh-TW')).toEqual(['wechat_native', 'alipay_page'])
+    expect(visibleChannelsForLocale('en-US')).toEqual(['overseas_redirect'])
+  })
+
+  it('treats empty and unknown locales as overseas (English is the default foreign UI)', () => {
+    expect(visibleChannelsForLocale('')).toEqual(['overseas_redirect'])
+    expect(visibleChannelsForLocale('fr-FR')).toEqual(['overseas_redirect'])
   })
 })
 

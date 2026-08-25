@@ -871,7 +871,10 @@ export interface PaymentConfig {
   updated_at: string | null
   wechat_configured: boolean
   alipay_configured: boolean
-  stripe_configured: boolean
+  overseas_configured: boolean
+  overseas_provider: string
+  overseas_sandbox: boolean
+  overseas_client_id: string
   wechat_api_v3_key_configured: boolean
   wechat_api_v3_key_masked: string | null
   wechat_private_key_pem_configured: boolean
@@ -883,10 +886,10 @@ export interface PaymentConfig {
   alipay_private_key_pem_masked: string | null
   alipay_public_key_pem_configured: boolean
   alipay_public_key_pem_masked: string | null
-  stripe_secret_key_configured: boolean
-  stripe_secret_key_masked: string | null
-  stripe_webhook_secret_configured: boolean
-  stripe_webhook_secret_masked: string | null
+  overseas_client_secret_configured: boolean
+  overseas_client_secret_masked: string | null
+  overseas_webhook_secret_configured: boolean
+  overseas_webhook_secret_masked: string | null
 }
 
 export interface PaymentConfigForm {
@@ -903,15 +906,18 @@ export interface PaymentConfigForm {
   alipay_appid: string
   alipay_private_key_pem: string
   alipay_public_key_pem: string
-  stripe_secret_key: string
-  stripe_webhook_secret: string
+  overseas_provider: string
+  overseas_sandbox: boolean
+  overseas_client_id: string
+  overseas_client_secret: string
+  overseas_webhook_secret: string
   clear_wechat_api_v3_key: boolean
   clear_wechat_private_key_pem: boolean
   clear_wechat_public_key_pem: boolean
   clear_alipay_private_key_pem: boolean
   clear_alipay_public_key_pem: boolean
-  clear_stripe_secret_key: boolean
-  clear_stripe_webhook_secret: boolean
+  clear_overseas_client_secret: boolean
+  clear_overseas_webhook_secret: boolean
 }
 
 export const createPaymentConfigForm = (config?: PaymentConfig | null): PaymentConfigForm => ({
@@ -928,15 +934,18 @@ export const createPaymentConfigForm = (config?: PaymentConfig | null): PaymentC
   alipay_appid: config?.alipay_appid || '',
   alipay_private_key_pem: '',
   alipay_public_key_pem: '',
-  stripe_secret_key: '',
-  stripe_webhook_secret: '',
+  overseas_provider: config?.overseas_provider || '',
+  overseas_sandbox: config?.overseas_sandbox ?? false,
+  overseas_client_id: config?.overseas_client_id || '',
+  overseas_client_secret: '',
+  overseas_webhook_secret: '',
   clear_wechat_api_v3_key: false,
   clear_wechat_private_key_pem: false,
   clear_wechat_public_key_pem: false,
   clear_alipay_private_key_pem: false,
   clear_alipay_public_key_pem: false,
-  clear_stripe_secret_key: false,
-  clear_stripe_webhook_secret: false,
+  clear_overseas_client_secret: false,
+  clear_overseas_webhook_secret: false,
 })
 
 // null 密文 = 后端保留语义；绝不回传 masked 响应值
@@ -954,15 +963,18 @@ export const buildPaymentConfigPayload = (form: PaymentConfigForm) => ({
   alipay_appid: form.alipay_appid.trim(),
   alipay_private_key_pem: form.alipay_private_key_pem || null,
   alipay_public_key_pem: form.alipay_public_key_pem || null,
-  stripe_secret_key: form.stripe_secret_key || null,
-  stripe_webhook_secret: form.stripe_webhook_secret || null,
+  overseas_provider: form.overseas_provider,
+  overseas_sandbox: form.overseas_sandbox,
+  overseas_client_id: form.overseas_client_id.trim(),
+  overseas_client_secret: form.overseas_client_secret || null,
+  overseas_webhook_secret: form.overseas_webhook_secret || null,
   clear_wechat_api_v3_key: form.clear_wechat_api_v3_key,
   clear_wechat_private_key_pem: form.clear_wechat_private_key_pem,
   clear_wechat_public_key_pem: form.clear_wechat_public_key_pem,
   clear_alipay_private_key_pem: form.clear_alipay_private_key_pem,
   clear_alipay_public_key_pem: form.clear_alipay_public_key_pem,
-  clear_stripe_secret_key: form.clear_stripe_secret_key,
-  clear_stripe_webhook_secret: form.clear_stripe_webhook_secret,
+  clear_overseas_client_secret: form.clear_overseas_client_secret,
+  clear_overseas_webhook_secret: form.clear_overseas_webhook_secret,
 })
 
 // ── 会员套餐定价（监控页自助调价，ADR 0002 运行时覆盖）────────────────────

@@ -9,7 +9,9 @@ _COLUMNS = (
     "enabled, order_ttl_minutes, public_base_url, wechat_appid, wechat_mchid, "
     "wechat_mch_serial_no, wechat_api_v3_key, wechat_private_key_pem, "
     "wechat_public_key_id, wechat_public_key_pem, alipay_appid, "
-    "alipay_private_key_pem, alipay_public_key_pem, stripe_secret_key, stripe_webhook_secret, updated_at"
+    "alipay_private_key_pem, alipay_public_key_pem, overseas_provider, "
+    "overseas_sandbox, overseas_client_id, overseas_client_secret, "
+    "overseas_webhook_secret, updated_at"
 )
 
 
@@ -42,8 +44,11 @@ class PostgresPaymentSettingsRepository:
         alipay_appid: str,
         alipay_private_key_pem: str,
         alipay_public_key_pem: str,
-        stripe_secret_key: str,
-        stripe_webhook_secret: str,
+        overseas_provider: str,
+        overseas_sandbox: bool,
+        overseas_client_id: str,
+        overseas_client_secret: str,
+        overseas_webhook_secret: str,
     ) -> PaymentSettings:
         ttl = int(order_ttl_minutes)
         if not 5 <= ttl <= 1440:
@@ -53,8 +58,9 @@ class PostgresPaymentSettingsRepository:
             wechat_appid or "", wechat_mchid or "", wechat_mch_serial_no or "",
             wechat_api_v3_key or "", wechat_private_key_pem or "",
             wechat_public_key_id or "", wechat_public_key_pem or "", alipay_appid or "",
-            alipay_private_key_pem or "", alipay_public_key_pem or "", stripe_secret_key or "",
-            stripe_webhook_secret or "",
+            alipay_private_key_pem or "", alipay_public_key_pem or "",
+            overseas_provider or "", bool(overseas_sandbox), overseas_client_id or "",
+            overseas_client_secret or "", overseas_webhook_secret or "",
         )
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
@@ -65,9 +71,10 @@ class PostgresPaymentSettingsRepository:
                          wechat_mchid, wechat_mch_serial_no, wechat_api_v3_key,
                          wechat_private_key_pem, wechat_public_key_id, wechat_public_key_pem,
                          alipay_appid, alipay_private_key_pem,
-                         alipay_public_key_pem, stripe_secret_key, stripe_webhook_secret,
+                         alipay_public_key_pem, overseas_provider, overseas_sandbox,
+                         overseas_client_id, overseas_client_secret, overseas_webhook_secret,
                          updated_at)
-                    VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                     ON CONFLICT (id) DO UPDATE SET
                         enabled = EXCLUDED.enabled, order_ttl_minutes = EXCLUDED.order_ttl_minutes,
                         public_base_url = EXCLUDED.public_base_url, wechat_appid = EXCLUDED.wechat_appid,
@@ -75,8 +82,12 @@ class PostgresPaymentSettingsRepository:
                         wechat_api_v3_key = EXCLUDED.wechat_api_v3_key, wechat_private_key_pem = EXCLUDED.wechat_private_key_pem,
                         wechat_public_key_id = EXCLUDED.wechat_public_key_id, wechat_public_key_pem = EXCLUDED.wechat_public_key_pem,
                         alipay_appid = EXCLUDED.alipay_appid, alipay_private_key_pem = EXCLUDED.alipay_private_key_pem,
-                        alipay_public_key_pem = EXCLUDED.alipay_public_key_pem, stripe_secret_key = EXCLUDED.stripe_secret_key,
-                        stripe_webhook_secret = EXCLUDED.stripe_webhook_secret, updated_at = CURRENT_TIMESTAMP
+                        alipay_public_key_pem = EXCLUDED.alipay_public_key_pem,
+                        overseas_provider = EXCLUDED.overseas_provider, overseas_sandbox = EXCLUDED.overseas_sandbox,
+                        overseas_client_id = EXCLUDED.overseas_client_id,
+                        overseas_client_secret = EXCLUDED.overseas_client_secret,
+                        overseas_webhook_secret = EXCLUDED.overseas_webhook_secret,
+                        updated_at = CURRENT_TIMESTAMP
                     RETURNING {_COLUMNS}
                     """,
                     values,
@@ -99,6 +110,9 @@ class PostgresPaymentSettingsRepository:
             wechat_api_v3_key=str(row["wechat_api_v3_key"]), wechat_private_key_pem=str(row["wechat_private_key_pem"]),
             wechat_public_key_id=str(row["wechat_public_key_id"]), wechat_public_key_pem=str(row["wechat_public_key_pem"]),
             alipay_appid=str(row["alipay_appid"]), alipay_private_key_pem=str(row["alipay_private_key_pem"]),
-            alipay_public_key_pem=str(row["alipay_public_key_pem"]), stripe_secret_key=str(row["stripe_secret_key"]),
-            stripe_webhook_secret=str(row["stripe_webhook_secret"]), updated_at=row["updated_at"],
+            alipay_public_key_pem=str(row["alipay_public_key_pem"]),
+            overseas_provider=str(row["overseas_provider"]), overseas_sandbox=bool(row["overseas_sandbox"]),
+            overseas_client_id=str(row["overseas_client_id"]),
+            overseas_client_secret=str(row["overseas_client_secret"]),
+            overseas_webhook_secret=str(row["overseas_webhook_secret"]), updated_at=row["updated_at"],
         )

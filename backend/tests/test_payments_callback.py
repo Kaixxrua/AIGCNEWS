@@ -60,6 +60,23 @@ def test_verification_failure_returns_fail_ack_and_changes_nothing(harness) -> N
     assert harness.orders.rows == {}
 
 
+def test_verified_non_final_event_gets_ok_ack_and_changes_nothing(harness) -> None:  # noqa: F811
+    """验签通过但非终态事件（如 PayPal APPROVED 已自动 capture）→ 200 ACK、零状态变更。"""
+    order = _create(harness)
+    harness.provider._verified_none = True
+
+    response = _callback(harness.client)
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+    row = harness.orders.rows[order["order_no"]]
+    assert row["status"] == "pending"
+    assert row["channel_order_no"] == ""
+    assert row["callback_payload"] == ""
+    assert harness.users.get_user_by_id(7)["membership_tier"] == "free"
+    assert harness.error_events.events == []
+
+
 def test_unknown_order_no_404(harness) -> None:  # noqa: F811
     harness.provider._verified = _verified(
         {"order_no": "PGHOST", "amount_cents": 1, "currency": "CNY"}

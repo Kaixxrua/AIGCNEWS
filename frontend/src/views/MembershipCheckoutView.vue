@@ -11,23 +11,24 @@ import {
   formatAmountCents,
   formatCountdownMs,
   resolvePlan,
+  visibleChannelsForLocale,
   type BillingPeriod,
   type PaymentChannel,
   type PaymentChannelAvailability,
   type PaymentPlan,
-  PAYMENT_CHANNELS,
 } from '@/features/payments/paymentModel'
 
 defineOptions({ name: 'MembershipCheckoutView' })
 
 /**
  * 收银台：金额/套餐只渲染 GET /api/payments/plans 响应（后端 plans.py 是唯一
- * 权威）；渠道 available=false 置灰（凭证未配置）。qr_code 指令骨架期渲染
- * 占位框 + 原文文本（不引二维码库，渠道接入后替换为真实二维码）。
- * redirect_url 指令在新标签页打开渠道收银台，本页保留轮询与倒计时；
- * 回跳（?order_no=）恢复订单状态并续上轮询（回跳续单）。
+ * 权威）；渠道按界面语言门控——中文只出微信/支付宝，其他语言只出海外跳转槽
+ * （纯展示层门控，渠道凭证未配置时 available=false 置灰「即将开放」）。
+ * qr_code 指令骨架期渲染占位框 + 原文文本（不引二维码库，渠道接入后替换为
+ * 真实二维码）。redirect_url 指令在新标签页打开渠道收银台，本页保留轮询与
+ * 倒计时；回跳（?order_no=）恢复订单状态并续上轮询（回跳续单）。
  */
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
@@ -57,11 +58,20 @@ const period = computed<BillingPeriod>(() =>
 const CHANNEL_LABEL_KEYS: Record<PaymentChannel, string> = {
   wechat_native: 'membership.checkout.channelWechat',
   alipay_page: 'membership.checkout.channelAlipay',
-  stripe: 'membership.checkout.channelStripe',
+  overseas_redirect: 'membership.checkout.channelOverseas',
 }
+
+// 语言门控：只渲染/只默认选中当前语言可见的渠道集
+const visibleChannels = computed(() => visibleChannelsForLocale(locale.value))
 
 const channelAvailable = (channel: PaymentChannel) =>
   channels.value.find((item) => item.channel === channel)?.available ?? false
+
+// 会话中切换语言：当前选中渠道掉出可见集时按新可见集重选（无可用则清空待用户/默认逻辑）
+watch(visibleChannels, (next) => {
+  if (selectedChannel.value && next.includes(selectedChannel.value)) return
+  selectedChannel.value = next.find((channel) => channelAvailable(channel)) ?? null
+})
 
 const amountLabel = computed(() =>
   plan.value ? formatAmountCents(plan.value.amount_cents, plan.value.currency) : '',
@@ -75,7 +85,7 @@ const periodSuffix = computed(() =>
 const submitting = computed(() => phase.value === 'creating')
 const awaitingPayment = computed(() => phase.value === 'awaiting_payment')
 
-// redirect_url 指令（支付宝/Stripe）：短暂展示提示后在新标签页打开渠道收银台，
+// redirect_url 指令（支付宝/海外跳转）：短暂展示提示后在新标签页打开渠道收银台，
 // 本页轮询/倒计时不中断；手动链接保留为弹窗被拦截时的兜底。
 const REDIRECT_DELAY_MS = 600
 watch(instruction, (next, _prev, onCleanup) => {
@@ -123,7 +133,7 @@ onMounted(async () => {
       return
     }
     selectedChannel.value =
-      PAYMENT_CHANNELS.find((channel) => channelAvailable(channel)) ?? null
+      visibleChannels.value.find((channel) => channelAvailable(channel)) ?? null
     // 回跳续单：渠道 return_url 带回 ?order_no= 时恢复订单（终态直达 / pending 续轮询）；
     // 查无此单静默回落全新收银台
     const resumeOrderNo = typeof route.query.order_no === 'string' ? route.query.order_no : ''
@@ -184,7 +194,7 @@ const submit = () => {
         <section class="checkout-channels" role="radiogroup" :aria-label="t('membership.checkout.channelTitle')">
           <p class="checkout-section-label">{{ t('membership.checkout.channelTitle') }}</p>
           <button
-            v-for="channel in PAYMENT_CHANNELS"
+            v-for="channel in visibleChannels"
             :key="channel"
             type="button"
             class="checkout-channel"

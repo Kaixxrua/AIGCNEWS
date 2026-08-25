@@ -222,6 +222,7 @@ async def create_payment_order(
                     order=existing,
                     notify_url=notify_url,
                     return_url=return_url,
+                    shopper_ip=client_ip_from_request(request),
                 )
             except ChannelUpstreamError as exc:
                 raise HTTPException(
@@ -273,6 +274,7 @@ async def create_payment_order(
             order=order_row,
             notify_url=notify_url,
             return_url=return_url,
+            shopper_ip=client_ip_from_request(request),
         )
     except ProviderNotConfiguredError as exc:
         raise HTTPException(
@@ -373,6 +375,11 @@ async def payment_callback(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="payment_channel_not_configured",
         ) from exc
+
+    if verified is None:
+        # 验签通过但非终态事件（PayPal 已自动 capture 的 APPROVED、PingPong
+        # 非 SUCCESS 状态等）：直接 ACK 终止渠道重发，零状态变更。
+        return provider.build_ack_response(ok=True)
 
     order = await asyncio.to_thread(orders.get_order_by_order_no, verified.order_no)
     if order is None:

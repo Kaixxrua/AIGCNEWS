@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PAYMENT_CHANNELS: frozenset[str] = frozenset({"wechat_native", "alipay_page", "stripe"})
+PAYMENT_CHANNELS: frozenset[str] = frozenset({"wechat_native", "alipay_page", "overseas_redirect"})
 
 
 class PaymentPlanPublic(BaseModel):
@@ -77,15 +77,18 @@ class PaymentConfigRequest(BaseModel):
     alipay_appid: str = Field(default="", max_length=256)
     alipay_private_key_pem: str | None = Field(default=None, max_length=20000)
     alipay_public_key_pem: str | None = Field(default=None, max_length=20000)
-    stripe_secret_key: str | None = Field(default=None, max_length=4096)
-    stripe_webhook_secret: str | None = Field(default=None, max_length=4096)
+    overseas_provider: str = Field(default="", max_length=32)
+    overseas_sandbox: bool = False
+    overseas_client_id: str = Field(default="", max_length=256)
+    overseas_client_secret: str | None = Field(default=None, max_length=4096)
+    overseas_webhook_secret: str | None = Field(default=None, max_length=4096)
     clear_wechat_api_v3_key: bool = False
     clear_wechat_private_key_pem: bool = False
     clear_wechat_public_key_pem: bool = False
     clear_alipay_private_key_pem: bool = False
     clear_alipay_public_key_pem: bool = False
-    clear_stripe_secret_key: bool = False
-    clear_stripe_webhook_secret: bool = False
+    clear_overseas_client_secret: bool = False
+    clear_overseas_webhook_secret: bool = False
 
 
 class PaymentConfigResponse(BaseModel):
@@ -101,7 +104,10 @@ class PaymentConfigResponse(BaseModel):
     updated_at: str | None
     wechat_configured: bool
     alipay_configured: bool
-    stripe_configured: bool
+    overseas_configured: bool
+    overseas_provider: str
+    overseas_sandbox: bool
+    overseas_client_id: str
     wechat_api_v3_key_configured: bool
     wechat_api_v3_key_masked: str | None
     wechat_private_key_pem_configured: bool
@@ -112,10 +118,10 @@ class PaymentConfigResponse(BaseModel):
     alipay_private_key_pem_masked: str | None
     alipay_public_key_pem_configured: bool
     alipay_public_key_pem_masked: str | None
-    stripe_secret_key_configured: bool
-    stripe_secret_key_masked: str | None
-    stripe_webhook_secret_configured: bool
-    stripe_webhook_secret_masked: str | None
+    overseas_client_secret_configured: bool
+    overseas_client_secret_masked: str | None
+    overseas_webhook_secret_configured: bool
+    overseas_webhook_secret_masked: str | None
 
 
 class OpsPaymentPlanEntry(BaseModel):
