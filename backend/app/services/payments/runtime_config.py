@@ -57,6 +57,16 @@ def reset_payment_config_provider() -> None:
     configure_payment_settings_reader(None)
 
 
+def payment_settings_reader_bound() -> bool:
+    """生产形态探测：main 启动时绑定 DB reader 后为 True。
+
+    调度器等长期驻留组件借此决定开关口径——已绑定则以 resolve_payment_config
+    的 DB 覆盖行/env 解析为准（面板保存热生效），未绑定（测试/工具脚本形态）
+    回落构造参数。
+    """
+    return _reader is not None
+
+
 def _environment_config(env: object) -> EffectivePaymentConfig:
     values = dict(
         enabled=bool(getattr(env, "payments_enabled", False)),

@@ -49,6 +49,10 @@ from backend.app.repositories.application_repository_factory import (
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
 from backend.app.repositories.payment_order_repository import PaymentOrderWriter
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
+from backend.app.services.payments.runtime_config import (
+    payment_settings_reader_bound,
+    resolve_payment_config,
+)
 from backend.app.services.briefing.dispatch import (
     BRIEFING_SOURCES,
     run_daily_briefing_dispatch,
@@ -1330,6 +1334,20 @@ class ApplicationSchedulerRuntime:
             "_run_news_closing_job": self._run_news_closing_job,
         }
 
+    def _payments_enabled_effective(self) -> bool:
+        """支付开关热生效口径：reader 已绑定（生产形态）时以 DB 覆盖行/env 解析
+        为准——面板保存即热翻转，关单任务无需重启调度器；未绑定（测试/工具
+        形态）回落构造参数。配置面故障 fail-closed 到构造参数。"""
+        if not payment_settings_reader_bound():
+            return self._payments_enabled
+        try:
+            return resolve_payment_config().enabled
+        except Exception:
+            logger.warning(
+                "[Scheduler] 解析支付配置失败，关单任务回落构造开关", exc_info=True
+            )
+            return self._payments_enabled
+
     def _base_descriptor(self, job_id: str) -> JobDescriptor | None:
         for descriptor in SOURCE_JOB_DESCRIPTORS:
             if descriptor.id == job_id:
@@ -1340,7 +1358,7 @@ class ApplicationSchedulerRuntime:
             return SUBSCRIPTION_DISPATCH_JOB
         if job_id == CONVERSATION_CLEANUP_JOB.id:
             return CONVERSATION_CLEANUP_JOB
-        if job_id == "payment_order_closing" and self._payments_enabled:
+        if job_id == "payment_order_closing" and self._payments_enabled_effective():
             return PAYMENT_ORDER_CLOSING_JOB
         if job_id == "project_semantic_warmup" and self._semantic_search_enabled:
             return project_semantic_warmup_job_descriptor(
@@ -1358,7 +1376,7 @@ class ApplicationSchedulerRuntime:
         if descriptor.id == CONVERSATION_CLEANUP_JOB.id:
             return self._run_conversation_cleanup_job
         if descriptor.source == "payment_order_closing":
-            if not self._payments_enabled:
+            if not self._payments_enabled_effective():
                 return None
             return self._run_payment_order_closing_job
         if descriptor.source == "project_semantic_warmup":
@@ -1509,7 +1527,7 @@ class ApplicationSchedulerRuntime:
         else:
             logger.info("[Scheduler] 跳过已停用的会话清理任务: conversation_cleanup")
 
-        if self._payments_enabled:
+        if self._payments_enabled_effective():
             payment_closing = self._effective_descriptor(PAYMENT_ORDER_CLOSING_JOB)
             if payment_closing is not None:
                 _register_job(
